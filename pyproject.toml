@@ -16,6 +16,7 @@ dev = [
     "pre-commit>=4.0",
     "detect-secrets>=1.5",
     "pymupdf>=1.26",
+    "pytest-asyncio>=1.0",
 ]
 
 [build-system]
@@ -38,6 +39,9 @@ files = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --cov=ela --cov-branch --cov-report=term-missing"
+# Async ports (ADR 0005): every ``async def test_*`` runs on a fresh event loop, no marker needed.
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 branch = true
@@ -69,6 +73,7 @@ forbidden_modules = [
     "ela.permissions",
     "ela.providers",
     "ela.tasks",
+    "ela.testing",
     "ela.tools",
     "anthropic",
     "openai",
@@ -81,6 +86,8 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "2. ports importa solo stdlib e domain (CLAUDE.md, spec §49, §52)"
 type = "forbidden"
+# Direct imports only: ports -> domain -> pydantic is the domain's dependency, not the ports'.
+allow_indirect_imports = "True"
 source_modules = ["ela.ports"]
 forbidden_modules = [
     "ela.api",
@@ -95,6 +102,7 @@ forbidden_modules = [
     "ela.permissions",
     "ela.providers",
     "ela.tasks",
+    "ela.testing",
     "ela.tools",
     "pydantic",
     "anthropic",
@@ -120,6 +128,7 @@ source_modules = [
     "ela.memory",
     "ela.permissions",
     "ela.tasks",
+    "ela.testing",
     "ela.tools",
 ]
 forbidden_modules = ["anthropic", "openai", "httpx", "sqlalchemy", "fastapi", "typer"]
@@ -129,3 +138,53 @@ name = "4. executive, tasks, permissions e audit non importano providers né inf
 type = "forbidden"
 source_modules = ["ela.executive", "ela.tasks", "ela.permissions", "ela.audit"]
 forbidden_modules = ["ela.providers", "ela.infrastructure"]
+
+[[tool.importlinter.contracts]]
+name = "5. nessun modulo di produzione importa ela.testing: i fake servono solo ai test (CLAUDE.md, spec §51)"
+type = "forbidden"
+source_modules = [
+    "ela.domain",
+    "ela.ports",
+    "ela.api",
+    "ela.audit",
+    "ela.context",
+    "ela.devices",
+    "ela.evolution",
+    "ela.executive",
+    "ela.identity",
+    "ela.memory",
+    "ela.permissions",
+    "ela.providers",
+    "ela.tasks",
+    "ela.tools",
+]
+forbidden_modules = ["ela.testing"]
+
+[[tool.importlinter.contracts]]
+name = "6. ela.testing importa solo stdlib, domain e ports: un fake non dipende da nulla di reale (spec §51)"
+type = "forbidden"
+# Direct imports only, as for contract 2: the fakes reach pydantic only through the domain.
+allow_indirect_imports = "True"
+source_modules = ["ela.testing"]
+forbidden_modules = [
+    "ela.api",
+    "ela.audit",
+    "ela.context",
+    "ela.devices",
+    "ela.evolution",
+    "ela.executive",
+    "ela.identity",
+    "ela.infrastructure",
+    "ela.memory",
+    "ela.permissions",
+    "ela.providers",
+    "ela.tasks",
+    "ela.tools",
+    "pydantic",
+    "anthropic",
+    "openai",
+    "httpx",
+    "sqlalchemy",
+    "fastapi",
+    "typer",
+]

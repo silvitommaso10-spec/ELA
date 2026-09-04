@@ -120,6 +120,48 @@ VIOLATIONS: tuple[Case, ...] = (
         "def make(state):\n    return ela.domain.Task(id=i, created_at=n, goal='g', state=state)\n",
         "Task(state=...)",
     ),
+    Case(
+        "testing-imported-by-executive",
+        "testing-isolation",
+        "executive/loop.py",
+        "from ela.testing.fakes import FakeClock\n",
+        "ela.testing.fakes.FakeClock",
+    ),
+    Case(
+        "testing-imported-by-tasks",
+        "testing-isolation",
+        "tasks/engine.py",
+        "import ela.testing\n",
+        "ela.testing",
+    ),
+    Case(
+        "testing-imported-by-providers",
+        "testing-isolation",
+        "providers/claude.py",
+        "from ela import testing\n",
+        "ela.testing",
+    ),
+    Case(
+        "testing-imports-tasks",
+        "testing-imports",
+        "testing/extra.py",
+        "from ela.tasks import state_machine\n",
+        "ela.tasks.state_machine",
+    ),
+    Case(
+        "testing-imports-providers",
+        "testing-imports",
+        "testing/extra.py",
+        "from ela.providers import registry\n",
+        "ela.providers.registry",
+    ),
+    Case(
+        "testing-imports-pydantic",
+        "testing-imports",
+        "testing/extra.py",
+        "import pydantic\n",
+        "pydantic",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -144,6 +186,21 @@ ALLOWED: tuple[Case, ...] = (
         "from ela.domain import Task, TaskState\n"
         "t = Task(id=i, created_at=now, goal='g', state=TaskState.CREATED)\n"
         'u = t.model_copy(update={"goal": "other"})\n',
+        "",
+    ),
+    Case(
+        "testing-self-import",
+        "testing-isolation",
+        "testing/extra.py",
+        "from ela.testing import fakes\n",
+        "",
+    ),
+    Case(
+        "testing-imports-ports",
+        "testing-imports",
+        "testing/extra.py",
+        "import asyncio\nfrom ela.domain import Task\nfrom ela.ports import Clock\n"
+        "from ela.testing import fakes\nfrom . import fakes as again\n",
         "",
     ),
 )
