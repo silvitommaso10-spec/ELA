@@ -54,11 +54,31 @@ async def test_tasks_in_insertion_order_as_a_tuple(task_repository: TaskReposito
     assert tasks == (OTHER_TASK, TASK)
 
 
-async def test_tasks_filtered_by_state(task_repository: TaskRepository) -> None:
+async def test_tasks_filtered_by_states(task_repository: TaskRepository) -> None:
     await task_repository.add(TASK)
     await task_repository.add(OTHER_TASK)
-    assert await task_repository.tasks(state=TaskState.QUEUED) == (OTHER_TASK,)
-    assert await task_repository.tasks(state=TaskState.COMPLETED) == ()
+    assert await task_repository.tasks(states=frozenset({TaskState.QUEUED})) == (OTHER_TASK,)
+    assert await task_repository.tasks(states=frozenset({TaskState.COMPLETED})) == ()
+    assert await task_repository.tasks(states=frozenset()) == ()
+    both = frozenset({TaskState.PLANNING, TaskState.QUEUED})
+    assert await task_repository.tasks(states=both) == (TASK, OTHER_TASK)
+
+
+async def test_tasks_limit_keeps_the_first_in_insertion_order(
+    task_repository: TaskRepository,
+) -> None:
+    await task_repository.add(OTHER_TASK)
+    await task_repository.add(TASK)
+    assert await task_repository.tasks(limit=1) == (OTHER_TASK,)
+    assert await task_repository.tasks(limit=0) == ()
+    assert await task_repository.tasks(limit=10) == (OTHER_TASK, TASK)
+
+
+async def test_tasks_limit_applies_after_the_filter(task_repository: TaskRepository) -> None:
+    await task_repository.add(OTHER_TASK)
+    await task_repository.add(TASK)
+    queued = frozenset({TaskState.PLANNING})
+    assert await task_repository.tasks(states=queued, limit=1) == (TASK,)
 
 
 async def test_new_task_has_no_events(task_repository: TaskRepository) -> None:

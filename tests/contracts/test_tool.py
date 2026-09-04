@@ -12,7 +12,13 @@ from typing import get_type_hints
 import pytest
 
 from ela.domain import CapabilityId, ExecutionResult, PermissionDecision, PermissionOutcome
-from ela.ports import AuthorizationStore, NotAllowedError, PermissionGuardianPort, ToolPort
+from ela.ports import (
+    AuthorizationStore,
+    Clock,
+    NotAllowedError,
+    PermissionGuardianPort,
+    ToolPort,
+)
 from tests.domain.examples import PERMISSION_DECISION
 
 LONG_AGO = datetime(2000, 1, 1, tzinfo=UTC)
@@ -51,6 +57,17 @@ async def test_non_allowed_decision_is_refused(tool: ToolPort, outcome: Permissi
 async def test_expired_decision_is_refused(tool: ToolPort) -> None:
     with pytest.raises(NotAllowedError):
         await tool.execute(decision_for(tool, expires_at=LONG_AGO), ARGUMENTS)
+
+
+async def test_expiry_is_closed(tool: ToolPort, clock: Clock) -> None:
+    """A decision expiring at this very instant is already expired (ADR 0005).
+
+    The tool's own clock is not reachable through the port, so the boundary is probed with a
+    fake clock's instant: any implementation whose clock is at or past ``expires_at`` must refuse.
+    The exact-instant case on the fake tool is in ``tests/testing/test_fakes.py``.
+    """
+    with pytest.raises(NotAllowedError):
+        await tool.execute(decision_for(tool, expires_at=clock.now()), ARGUMENTS)
 
 
 async def test_decision_for_another_capability_is_refused(tool: ToolPort) -> None:

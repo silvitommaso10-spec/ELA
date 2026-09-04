@@ -15,6 +15,9 @@ Two conventions run through every port (ADR 0005):
 * **Reads are immutable, misses are explicit.** A collection comes back as a ``tuple``; a ``get`` on
   a missing key raises :class:`NotFoundError`; an insert on an existing key raises
   :class:`AlreadyExistsError`. Nothing is silently overwritten.
+* **Expiry is closed.** Anything with an ``expires_at`` — a decision, an authorization, an
+  approval, a heartbeat — is expired when ``expires_at <= now``. An implementation that treats
+  the exact instant as still valid violates the contract (§33: when in doubt, do not act).
 
 The module imports only the standard library and :mod:`ela.domain` (ADR 0002, rule 2). The
 protocols are ``runtime_checkable`` so that a contract test can ask ``isinstance``; the signature
@@ -161,8 +164,14 @@ class TaskRepository(Protocol):
     async def get(self, task_id: TaskId) -> Task:
         """The task with this id; :class:`NotFoundError` if there is none."""
 
-    async def tasks(self, *, state: TaskState | None = None) -> tuple[Task, ...]:
-        """Every stored task, or only those in ``state``, in insertion order."""
+    async def tasks(
+        self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
+    ) -> tuple[Task, ...]:
+        """Stored tasks in insertion order: those in ``states`` (all if ``None``), then ``limit``.
+
+        Recovery (M3.1) asks for the EXECUTING tasks without loading everything: the filter is
+        the repository's, the order is always insertion order, ``limit`` applies after the filter.
+        """
 
     async def append_event(self, event: TaskEvent) -> None:
         """Record an event of a stored task.
@@ -187,8 +196,19 @@ class AuditLog(Protocol):
     async def append(self, event: AuditEvent) -> None:
         """Add an event at the end of the log; :class:`AlreadyExistsError` if its id is there."""
 
-    async def read(self, *, task_id: TaskId | None = None) -> tuple[AuditEvent, ...]:
-        """The whole log, or only the events of one task, in append order."""
+    async def read(
+        self,
+        *,
+        task_id: TaskId | None = None,
+        since: datetime | None = None,
+        limit: int | None = None,
+    ) -> tuple[AuditEvent, ...]:
+        """Events in append order: of one task if ``task_id``, with ``created_at >= since``, the
+        first ``limit``.
+
+        ``since`` is inclusive, like every time boundary in the system (ADR 0005). All filters
+        apply before ``limit``.
+        """
 
 
 @runtime_checkable
@@ -292,8 +312,9 @@ class ToolPort(Protocol):
     A tool cannot run without a :class:`~ela.domain.PermissionDecision`: it is the first,
     mandatory argument of ``execute``. Contract for every implementation — before doing anything,
     the tool raises :class:`NotAllowedError` if the outcome is not ``ALLOWED``, if the decision is
-    for another capability, or if it has expired. A tool receives the decision as data and never
-    the Guardian or the store that produced it.
+    for another capability, or if it has expired (``expires_at <= now``: a decision expiring at
+    this very instant is already expired). A tool receives the decision as data and never the
+    Guardian or the store that produced it.
     """
 
     @property

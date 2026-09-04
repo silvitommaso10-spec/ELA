@@ -6,6 +6,8 @@ the signature and sync/async comparisons here cover what it cannot see.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 from ela import ports
@@ -86,11 +88,18 @@ class _AppendOnly:
         pass
 
 
-class _ReadWithALimit:
+class _ReadWithAFormat:
     async def append(self, event: AuditEvent) -> None:
         pass
 
-    async def read(self, *, task_id: TaskId | None = None, limit: int = 10) -> tuple[()]:
+    async def read(
+        self,
+        *,
+        task_id: TaskId | None = None,
+        since: datetime | None = None,
+        limit: int | None = None,
+        fmt: str = "json",
+    ) -> tuple[()]:
         return ()
 
 
@@ -98,7 +107,13 @@ class _SyncRead:
     async def append(self, event: AuditEvent) -> None:
         pass
 
-    def read(self, *, task_id: TaskId | None = None) -> tuple[()]:
+    def read(
+        self,
+        *,
+        task_id: TaskId | None = None,
+        since: datetime | None = None,
+        limit: int | None = None,
+    ) -> tuple[()]:
         return ()
 
 
@@ -107,8 +122,8 @@ def test_missing_method_fails_isinstance() -> None:
 
 
 def test_extra_parameter_fails_signature_check() -> None:
-    assert isinstance(_ReadWithALimit(), AuditLog)  # isinstance alone would let it through
-    assert parameter_shape(_ReadWithALimit, "read") != parameter_shape(AuditLog, "read")
+    assert isinstance(_ReadWithAFormat(), AuditLog)  # isinstance alone would let it through
+    assert parameter_shape(_ReadWithAFormat, "read") != parameter_shape(AuditLog, "read")
 
 
 def test_sync_method_fails_mode_check() -> None:

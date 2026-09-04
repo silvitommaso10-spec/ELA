@@ -63,6 +63,30 @@ esiste sovrascrittura silenziosa, e dove sostituire è legittimo il metodo si ch
 Ogni lettura di collezione ritorna una `tuple`, coerente con ADR 0003 §5: ciò che esce da un port
 è immutabile.
 
+### 2-bis. Le scadenze sono chiuse (review 2026-09-04)
+
+Ogni controllo di scadenza nel sistema — `PermissionDecision.expires_at`,
+`Authorization.expires_at`, `Approval.expires_at`, gli heartbeat dei nodi — usa il verso chiuso:
+**scaduto se `expires_at <= now`**. Una cosa che scade in questo istante è già scaduta.
+Un'implementazione che usa `<` viola il contratto. È §33 applicato al bordo: nel dubbio, non
+agire. Lo stesso verso vale per i filtri temporali in lettura: `AuditLog.read(since=)` è
+inclusivo (`created_at >= since`).
+
+Verifica: `tests/contracts/test_tool.py::test_expiry_is_closed`,
+`tests/testing/test_fakes.py::test_tool_expiry_is_measured_on_its_own_clock` (istante esatto),
+`tests/contracts/test_audit_log.py::test_read_since_is_inclusive`.
+
+### 2-ter. Le letture che cresceranno hanno filtri e `limit` da subito (review 2026-09-04)
+
+- `AuditLog.read(*, task_id=None, since=None, limit=None)`: M8.1 esporrà `/audit` e M2.2 farà
+  `verify_chain` sull'intero log; entrambi hanno bisogno di leggere a finestre.
+- `TaskRepository.tasks(*, states=None, limit=None)`: M3.1 recupera i task `EXECUTING` senza
+  heartbeat e non deve caricare tutto. `states` è un `frozenset[TaskState]`.
+
+In entrambi i casi l'ordine resta quello di inserimento, i filtri si applicano prima di `limit`,
+e `limit=0` ritorna la tupla vuota. Cambiare queste firme dopo che esistono i consumatori
+costerebbe più di fissarle ora.
+
 ### 3. I payload JSON sono `ela.domain.JsonMapping`
 
 I port non importano `pydantic` (ADR 0002, regola 2) ma gli argomenti di un tool e di una
@@ -123,7 +147,7 @@ soddisfa quei due `Protocol` (`tests/contracts/test_tool.py`,
 
 ### 6. `AuditLog` ha due membri
 
-`append(event)` e `read(*, task_id=None)`. Nessun update, delete, clear, replace: un architecture
+`append(event)` e `read(*, task_id=None, since=None, limit=None)`. Nessun update, delete, clear, replace: un architecture
 test (`append_only_violations`) verifica che i membri del `Protocol` siano esattamente questi due e
 che nessun nome contenga una parola di modifica; il contract test lo verifica sull'API pubblica di
 ogni implementazione. `append` di un evento con un id già presente solleva `AlreadyExistsError`:

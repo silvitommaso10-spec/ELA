@@ -147,8 +147,11 @@ class FakeTaskRepository:
         except KeyError:
             raise NotFoundError("task", task_id) from None
 
-    async def tasks(self, *, state: TaskState | None = None) -> tuple[Task, ...]:
-        return tuple(t for t in self._tasks.values() if state is None or t.state is state)
+    async def tasks(
+        self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
+    ) -> tuple[Task, ...]:
+        selected = (t for t in self._tasks.values() if states is None or t.state in states)
+        return tuple(selected)[:limit]
 
     async def append_event(self, event: TaskEvent) -> None:
         if event.task_id not in self._tasks:
@@ -179,10 +182,20 @@ class FakeAuditLog:
             raise AlreadyExistsError("audit event", event.id)
         self._events = (*self._events, event)
 
-    async def read(self, *, task_id: TaskId | None = None) -> tuple[AuditEvent, ...]:
-        if task_id is None:
-            return self._events
-        return tuple(event for event in self._events if event.task_id == task_id)
+    async def read(
+        self,
+        *,
+        task_id: TaskId | None = None,
+        since: datetime | None = None,
+        limit: int | None = None,
+    ) -> tuple[AuditEvent, ...]:
+        selected = (
+            event
+            for event in self._events
+            if (task_id is None or event.task_id == task_id)
+            and (since is None or event.created_at >= since)
+        )
+        return tuple(selected)[:limit]
 
 
 class FakeDeviceRegistry:
