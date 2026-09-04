@@ -3,7 +3,7 @@ name = "ela"
 version = "0.1.0"
 description = "ELA — Executive Life Assistant: assistente personale AI autonomo e distribuito"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["pydantic>=2.9"]
 
 [dependency-groups]
 dev = [

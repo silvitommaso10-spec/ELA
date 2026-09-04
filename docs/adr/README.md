@@ -10,6 +10,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 |----|--------|-------|
 | [0001](0001-stack.md) | Stack tecnico del Core | Accettata |
 | [0002](0002-architecture-rules.md) | Regole di dipendenza e come vengono verificate | Accettata |
+| [0003](0003-domain-model.md) | Forma del domain model: identità, tempo, immutabilità, ordine del rischio | Accettata |
 
 ## Template
 
