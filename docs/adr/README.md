@@ -14,6 +14,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0004](0004-task-transitions.md) | Transizioni di stato del Task e forma della funzione `transition` | Accettata |
 | [0005](0005-ports.md) | Forma dei ports: async dove c'è I/O, errori nominati, tool senza Guardian, fake in `ela.testing` | Accettata |
 | [0006](0006-persistence.md) | Persistenza: SQLAlchemy async su SQLite, ORM separato dal dominio, migrazioni alembic | Accettata |
+| [0007](0007-audit-log.md) | Audit log persistente: hash chain, quattro livelli di append-only | Accettata |
 
 ## Template
 

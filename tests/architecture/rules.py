@@ -9,6 +9,7 @@ of the tree (see ``test_rules_detect_violations.py``).
 from __future__ import annotations
 
 import ast
+import re
 import sys
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -38,6 +39,10 @@ STATE_EXEMPT = frozenset({STATE_MACHINE, PERSISTENCE_MAPPERS})
 #: Rule 8 (ADR 0006): the ORM and the domain never meet in one module.
 ORM_PACKAGE = "sqlalchemy.orm"
 DOMAIN_MODULE = f"{ROOT_PACKAGE}.domain"
+#: Rule 9 (ADR 0007): the audit adapter has no way to update or delete, not even raw SQL.
+AUDIT_ADAPTER = Path("infrastructure") / "persistence" / "audit_log.py"
+MUTATING_NAMES = frozenset({"update", "delete", "merge"})
+MUTATING_SQL = re.compile(r"\b(update|delete|replace|drop)\b", re.IGNORECASE)
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
 TESTING_DIR = "testing"
@@ -300,6 +305,49 @@ def check_orm_separation(pkg_root: Path) -> list[Violation]:
 
 Rule = Callable[[Path], list[Violation]]
 
+
+def check_audit_adapter_append_only(pkg_root: Path) -> list[Violation]:
+    """Rule 9: ``audit_log.py`` never names ``update``, ``delete`` or ``merge`` (ADR 0007).
+
+    Neither as an import, a name, an attribute (``session.delete``), nor as a word of a raw SQL
+    string passed to ``text(...)``. The other adapters may update; the audit adapter has no such
+    path at all, and the database and the ORM refuse one anyway.
+    """
+    rule = "audit-adapter-is-append-only"
+    path = pkg_root / AUDIT_ADAPTER
+    if not path.is_file():
+        return []
+    name = module_name(path, pkg_root)
+    found: list[Violation] = []
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            found.extend(
+                Violation(rule, name, alias.name, node.lineno)
+                for alias in node.names
+                if alias.name in MUTATING_NAMES
+            )
+        elif isinstance(node, ast.Name) and node.id in MUTATING_NAMES:
+            found.append(Violation(rule, name, node.id, node.lineno))
+        elif isinstance(node, ast.Attribute) and node.attr in MUTATING_NAMES:
+            found.append(Violation(rule, name, node.attr, node.lineno))
+        elif isinstance(node, ast.Call) and _is_named(node.func, "text"):
+            found.extend(
+                Violation(rule, name, f"text: {match.group(1).upper()}", node.lineno)
+                for argument in node.args
+                if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
+                for match in [MUTATING_SQL.search(argument.value)]
+                if match is not None
+            )
+    return found
+
+
+def _is_named(callee: ast.expr, function: str) -> bool:
+    return (isinstance(callee, ast.Name) and callee.id == function) or (
+        isinstance(callee, ast.Attribute) and callee.attr == function
+    )
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -309,4 +357,5 @@ RULES: dict[str, Rule] = {
     "testing-isolation": check_testing_isolation,
     "testing-imports": check_testing_imports,
     "orm-separation": check_orm_separation,
+    "audit-append-only": check_audit_adapter_append_only,
 }

@@ -12,16 +12,24 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.util.exc import CommandError
-from sqlalchemy import Column, MetaData, String, Table, create_engine, inspect
+from sqlalchemy import Column, MetaData, String, Table, create_engine, inspect, text
 
-from ela.infrastructure.persistence import SqlAuthorizationStore, SqlTaskRepository, make_engine
-from ela.infrastructure.persistence.orm import Base
+from ela.infrastructure.persistence import (
+    SqlAuditLog,
+    SqlAuthorizationStore,
+    SqlTaskRepository,
+    make_engine,
+    verify_chain,
+)
+from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS, Base
 from tests.architecture.violations import REPO_ROOT
-from tests.domain.examples import POLICY_AUTHORIZATION, TASK
+from tests.domain.examples import AUDIT_EVENT, POLICY_AUTHORIZATION, TASK
 
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 ALEMBIC = Path(sys.executable).parent / "alembic"
-TABLES = {"tasks", "task_events", "authorizations"}
+TABLES = {"tasks", "task_events", "authorizations", "audit_events"}
+REVISIONS = ["0002", "0001"]  # newest first, as ``walk_revisions`` yields them
+TRIGGERS_SQL = "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' ORDER BY name"
 EXPECTED_COLUMNS = {
     name: {column.name for column in table.columns} for name, table in Base.metadata.tables.items()
 }
@@ -48,15 +56,33 @@ def _tables(db: Path) -> dict[str, set[str]]:
         engine.dispose()
 
 
+def _triggers(db: Path) -> dict[str, str]:
+    engine = create_engine(f"sqlite:///{db.as_posix()}")
+    try:
+        with engine.connect() as connection:
+            return dict(connection.execute(text(TRIGGERS_SQL)).all())
+    finally:
+        engine.dispose()
+
+
+def _version(db: Path) -> str:
+    engine = create_engine(f"sqlite:///{db.as_posix()}")
+    try:
+        with engine.connect() as connection:
+            return connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    finally:
+        engine.dispose()
+
+
 @pytest.fixture
 def db(tmp_path: Path) -> Path:
     return tmp_path / "ela.db"
 
 
-def test_there_is_exactly_one_revision_and_it_is_the_head(db: Path) -> None:
+def test_the_revisions_form_one_chain_with_one_head(db: Path) -> None:
     script = ScriptDirectory.from_config(config_for(db))
-    assert script.get_heads() == ["0001"]
-    assert [revision.revision for revision in script.walk_revisions()] == ["0001"]
+    assert script.get_heads() == [REVISIONS[0]]
+    assert [revision.revision for revision in script.walk_revisions()] == REVISIONS
 
 
 def test_upgrade_from_zero_creates_the_schema(db: Path) -> None:
@@ -65,9 +91,28 @@ def test_upgrade_from_zero_creates_the_schema(db: Path) -> None:
     assert set(EXPECTED_COLUMNS) == TABLES
 
 
-def test_downgrade_to_base_removes_everything(db: Path) -> None:
+def test_upgrade_creates_the_append_only_triggers(db: Path) -> None:
+    """Alembic does not compare triggers: the migration must carry the same SQL as ``orm.py``."""
+    command.upgrade(config_for(db), "head")
+    assert _triggers(db) == APPEND_ONLY_TRIGGERS
+
+
+def test_downgrade_of_the_audit_migration_is_refused(db: Path) -> None:
+    """Removing the audit log is never a tooling operation (ADR 0007 §7)."""
     config = config_for(db)
     command.upgrade(config, "head")
+    with pytest.raises(NotImplementedError, match="no downgrade"):
+        command.downgrade(config, "0001")
+    assert "audit_events" in _tables(db)
+    assert _triggers(db) == APPEND_ONLY_TRIGGERS
+    assert _version(db) == "0002"
+
+
+def test_downgrade_to_base_from_0001_removes_everything(db: Path) -> None:
+    """The migrations before the audit log stay reversible."""
+    config = config_for(db)
+    command.upgrade(config, "0001")
+    assert "audit_events" not in _tables(db)
     command.downgrade(config, "base")
     assert _tables(db) == {}
 
@@ -101,10 +146,14 @@ async def test_the_adapters_work_on_the_migrated_database(db: Path) -> None:
     try:
         repository = SqlTaskRepository(engine)
         store = SqlAuthorizationStore(engine)
+        log = SqlAuditLog(engine)
         await repository.add(TASK)
         await store.grant(POLICY_AUTHORIZATION)
+        await log.append(AUDIT_EVENT)
         assert await repository.get(TASK.id) == TASK
         assert await store.record_use(POLICY_AUTHORIZATION.id) == 1
+        assert await log.read() == (AUDIT_EVENT,)
+        assert (await verify_chain(engine)).length == 1
     finally:
         await engine.dispose()
 

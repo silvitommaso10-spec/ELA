@@ -200,6 +200,34 @@ VIOLATIONS: tuple[Case, ...] = (
         "import sqlalchemy.orm\nimport ela.domain\n",
         "ela.domain",
     ),
+    Case(
+        "audit-adapter-imports-update",
+        "audit-append-only",
+        "infrastructure/persistence/audit_log.py",
+        "from sqlalchemy import select, update\n",
+        "update",
+    ),
+    Case(
+        "audit-adapter-calls-delete",
+        "audit-append-only",
+        "infrastructure/persistence/audit_log.py",
+        "async def forget(session, row):\n    await session.delete(row)\n",
+        "delete",
+    ),
+    Case(
+        "audit-adapter-calls-merge",
+        "audit-append-only",
+        "infrastructure/persistence/audit_log.py",
+        "def rewrite(session, row):\n    return session.merge(row)\n",
+        "merge",
+    ),
+    Case(
+        "audit-adapter-raw-sql",
+        "audit-append-only",
+        "infrastructure/persistence/audit_log.py",
+        "from sqlalchemy import text\nPURGE = text('delete from audit_events where seq > :keep')\n",
+        "text: DELETE",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -278,6 +306,22 @@ ALLOWED: tuple[Case, ...] = (
         "orm-separation",
         "infrastructure/persistence/rows.py",
         "from sqlalchemy.orm import DeclarativeBase\nfrom ela.ports import NotFoundError\n",
+        "",
+    ),
+    Case(
+        "audit-adapter-begin-immediate",
+        "audit-append-only",
+        "infrastructure/persistence/audit_log.py",
+        "from sqlalchemy import select, text\n"
+        "LOCK = text('BEGIN IMMEDIATE')\n"
+        "def head(session):\n    return session.scalar(select(1))\n",
+        "",
+    ),
+    Case(
+        "task-repository-uses-update",
+        "audit-append-only",
+        "infrastructure/persistence/task_repository.py",
+        "from sqlalchemy import update\n",
         "",
     ),
 )

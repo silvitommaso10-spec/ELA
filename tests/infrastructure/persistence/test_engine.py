@@ -104,21 +104,26 @@ async def test_make_engine_creates_the_directory_and_the_file(tmp_path: Path) ->
 # ----------------------------------------------------------------------------------------
 
 
-async def test_foreign_keys_are_on_for_a_new_connection(file_url: str) -> None:
+PRAGMAS = ["foreign_keys", "recursive_triggers"]
+
+
+@pytest.mark.parametrize("pragma", PRAGMAS)
+async def test_pragma_is_on_for_a_new_connection(file_url: str, pragma: str) -> None:
     engine = make_engine(file_url)
     try:
         async with engine.connect() as connection:
-            assert (await connection.execute(text("PRAGMA foreign_keys"))).scalar() == 1
+            assert (await connection.execute(text(f"PRAGMA {pragma}"))).scalar() == 1
     finally:
         await engine.dispose()
 
 
-async def test_without_the_listener_sqlite_keeps_foreign_keys_off(file_url: str) -> None:
-    """Negative case: the PRAGMA is our doing, SQLite does not enable it by itself."""
+@pytest.mark.parametrize("pragma", PRAGMAS)
+async def test_without_the_listener_sqlite_keeps_the_pragma_off(file_url: str, pragma: str) -> None:
+    """Negative case: the PRAGMAs are our doing, SQLite does not enable them by itself."""
     engine = create_async_engine(async_url(file_url))
     try:
         async with engine.connect() as connection:
-            assert (await connection.execute(text("PRAGMA foreign_keys"))).scalar() == 0
+            assert (await connection.execute(text(f"PRAGMA {pragma}"))).scalar() == 0
     finally:
         await engine.dispose()
 
@@ -147,7 +152,8 @@ async def test_memory_engine_shares_one_database_between_sessions() -> None:
         sessions = make_session_factory(engine)
         async with sessions() as first, sessions() as second:
             tables = await second.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
-            assert {row[0] for row in tables} >= {"tasks", "task_events", "authorizations"}
+            names = {row[0] for row in tables}
+            assert names >= {"tasks", "task_events", "authorizations", "audit_events"}
             await first.execute(text("SELECT 1"))
     finally:
         await engine.dispose()

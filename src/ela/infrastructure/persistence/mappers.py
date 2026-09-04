@@ -14,16 +14,25 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, JsonValue, TypeAdapter
 
 from ela.domain import (
+    Actor,
+    ActorKind,
     ApprovalId,
+    AuditEvent,
+    AuditEventId,
+    AuditEventType,
     Authorization,
     AuthorizationId,
     CapabilityId,
+    DecisionId,
+    DeviceId,
+    ErrorMetadata,
     IntentId,
     JsonMapping,
     PlanId,
+    ProviderUsage,
     StepId,
     Task,
     TaskEvent,
@@ -32,12 +41,20 @@ from ela.domain import (
     TaskId,
     TaskState,
 )
-from ela.infrastructure.persistence.orm import AuthorizationRow, TaskEventRow, TaskRow
+from ela.infrastructure.persistence.orm import (
+    AuditEventRow,
+    AuthorizationRow,
+    TaskEventRow,
+    TaskRow,
+)
 
 __all__ = [
+    "audit_event_to_row",
+    "audit_event_values",
     "authorization_to_row",
     "authorization_values",
     "event_to_row",
+    "row_to_audit_event",
     "row_to_authorization",
     "row_to_event",
     "row_to_task",
@@ -51,6 +68,11 @@ _JSON: TypeAdapter[JsonMapping] = TypeAdapter(JsonMapping)
 def _plain(payload: JsonMapping) -> dict[str, JsonValue]:
     """A frozen domain payload as plain JSON containers, ready for a ``JSON`` column."""
     return cast(dict[str, JsonValue], _JSON.dump_python(payload, mode="json"))
+
+
+def _plain_model(value: BaseModel | None) -> dict[str, Any] | None:
+    """A frozen value object as one JSON document (``Decimal`` and UUID become strings)."""
+    return None if value is None else value.model_dump(mode="json")
 
 
 def _optional_state(value: TaskState | None) -> str | None:
@@ -171,4 +193,57 @@ def row_to_authorization(row: AuthorizationRow) -> Authorization:
         expires_at=row.expires_at,
         max_uses=row.max_uses,
         metadata=row.metadata_,
+    )
+
+
+# --------------------------------------------------------------------------------------
+# AuditEvent
+# --------------------------------------------------------------------------------------
+
+
+def audit_event_values(event: AuditEvent) -> dict[str, Any]:
+    """Column values of an audit event; the two chain hashes are the log's, not the event's."""
+    return {
+        "id": event.id,
+        "created_at": event.created_at,
+        "event_type": event.event_type.value,
+        "actor_kind": event.actor.kind.value,
+        "actor_id": event.actor.id,
+        "summary": event.summary,
+        "task_id": event.task_id,
+        "step_id": event.step_id,
+        "capability_id": event.capability_id,
+        "decision_id": event.decision_id,
+        "authorization_id": event.authorization_id,
+        "device_id": event.device_id,
+        "tool_name": event.tool_name,
+        "usage": _plain_model(event.usage),
+        "error": _plain_model(event.error),
+        "payload": _plain(event.payload),
+    }
+
+
+def audit_event_to_row(event: AuditEvent) -> AuditEventRow:
+    return AuditEventRow(**audit_event_values(event))
+
+
+def row_to_audit_event(row: AuditEventRow) -> AuditEvent:
+    return AuditEvent(
+        id=AuditEventId(row.id),
+        created_at=row.created_at,
+        event_type=AuditEventType(row.event_type),
+        actor=Actor(kind=ActorKind(row.actor_kind), id=row.actor_id),
+        summary=row.summary,
+        task_id=None if row.task_id is None else TaskId(row.task_id),
+        step_id=None if row.step_id is None else StepId(row.step_id),
+        capability_id=None if row.capability_id is None else CapabilityId(row.capability_id),
+        decision_id=None if row.decision_id is None else DecisionId(row.decision_id),
+        authorization_id=(
+            None if row.authorization_id is None else AuthorizationId(row.authorization_id)
+        ),
+        device_id=None if row.device_id is None else DeviceId(row.device_id),
+        tool_name=row.tool_name,
+        usage=None if row.usage is None else ProviderUsage.model_validate(row.usage),
+        error=None if row.error is None else ErrorMetadata.model_validate(row.error),
+        payload=row.payload,
     )
