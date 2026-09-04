@@ -15,6 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from ela.domain import Task, TaskEvent, TaskEventType, TaskState
+from ela.tasks.errors import TaskError
 from ela.tasks.state_machine import (
     TERMINAL_STATES,
     TRANSITIONS,
@@ -276,6 +277,15 @@ def test_p8_every_state_reachable_and_no_dead_end() -> None:
     assert reachable_from(S.CREATED) == set(TaskState) - {S.CREATED}
     for state in LIVE:
         assert reachable_from(state) & TERMINAL_STATES, f"{state} cannot reach a terminal state"
+
+
+def test_illegal_transition_is_a_task_error() -> None:
+    """One base class for everything ela.tasks refuses (review M1.2); the Task Engine adds to it."""
+    assert issubclass(IllegalTransitionError, TaskError)
+    assert issubclass(TaskError, Exception)
+    assert not issubclass(TaskError, ValueError)
+    with pytest.raises(TaskError):
+        move(task_in(S.COMPLETED), S.PLANNING)
 
 
 def test_task_state_has_no_behaviour() -> None:

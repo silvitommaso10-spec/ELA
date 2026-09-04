@@ -25,6 +25,7 @@ from typing import Final, NamedTuple
 from pydantic import JsonValue
 
 from ela.domain import StepId, Task, TaskEvent, TaskEventId, TaskEventType, TaskId, TaskState
+from ela.tasks.errors import TaskError
 
 __all__ = [
     "TERMINAL_STATES",
@@ -77,7 +78,7 @@ set. Anything not listed here is illegal.
 """
 
 
-class IllegalTransitionError(Exception):
+class IllegalTransitionError(TaskError):
     """A transition the table does not allow. The task is left untouched."""
 
     def __init__(self, task_id: TaskId, current: TaskState, requested: TaskState) -> None:
