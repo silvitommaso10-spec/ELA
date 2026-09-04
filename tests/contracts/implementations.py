@@ -10,8 +10,12 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from weakref import WeakKeyDictionary
+
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.infrastructure.persistence import (
+    SqlAuditLog,
     SqlAuthorizationStore,
     SqlTaskRepository,
     make_engine,
@@ -76,16 +80,49 @@ def _sql_authorization_store() -> SqlAuthorizationStore:
     return SqlAuthorizationStore(make_engine(MEMORY_URL))
 
 
-async def _create_schema(instance: object) -> None:
+async def _create_all(engine: AsyncEngine) -> None:
     """``create_all`` on the in-memory engine; ``test_migrations.py`` proves it equals ``head``."""
-    assert isinstance(instance, SqlTaskRepository | SqlAuthorizationStore)
-    async with instance.engine.begin() as connection:
+    async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+
+
+async def _create_schema(instance: object) -> None:
+    assert isinstance(instance, SqlTaskRepository | SqlAuthorizationStore)
+    await _create_all(instance.engine)
 
 
 async def _dispose(instance: object) -> None:
     assert isinstance(instance, SqlTaskRepository | SqlAuthorizationStore)
     await instance.engine.dispose()
+
+
+class SqlAuditLogHarness:
+    """Builds ``SqlAuditLog`` instances and keeps their engines on their behalf.
+
+    The log exposes exactly ``append`` and ``read`` — no ``engine`` property, by contract — so
+    the harness remembers which engine each log was built on, to create the schema before the
+    test and dispose it after.
+    """
+
+    def __init__(self) -> None:
+        self._engines: WeakKeyDictionary[SqlAuditLog, AsyncEngine] = WeakKeyDictionary()
+
+    def make(self) -> SqlAuditLog:
+        engine = make_engine(MEMORY_URL)
+        log = SqlAuditLog(engine)
+        self._engines[log] = engine
+        return log
+
+    async def setup(self, instance: object) -> None:
+        assert isinstance(instance, SqlAuditLog)
+        await _create_all(self._engines[instance])
+
+    async def teardown(self, instance: object) -> None:
+        assert isinstance(instance, SqlAuditLog)
+        await self._engines.pop(instance).dispose()
+
+
+_audit_logs = SqlAuditLogHarness()
 
 
 def _guardian() -> FakePermissionGuardian:
@@ -107,7 +144,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("FakeTaskRepository", FakeTaskRepository),
         Implementation("SqlTaskRepository", _sql_task_repository, _create_schema, _dispose),
     ),
-    AuditLog: (Implementation("FakeAuditLog", FakeAuditLog),),
+    AuditLog: (
+        Implementation("FakeAuditLog", FakeAuditLog),
+        Implementation("SqlAuditLog", _audit_logs.make, _audit_logs.setup, _audit_logs.teardown),
+    ),
     DeviceRegistryPort: (Implementation("FakeDeviceRegistry", FakeDeviceRegistry),),
     CapabilityRegistryPort: (Implementation("FakeCapabilityRegistry", FakeCapabilityRegistry),),
     AuthorizationStore: (

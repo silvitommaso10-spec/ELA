@@ -4,18 +4,30 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone
 from enum import StrEnum
+from typing import Annotated, get_args, get_origin
 
 import pytest
 from annotated_types import MaxLen
 from pydantic import BaseModel
+from pydantic.fields import FieldInfo
 from sqlalchemy import Column, Integer, MetaData, String, Table, insert, select
 from sqlalchemy.exc import StatementError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.pool import StaticPool
 
-from ela.domain import NAME_MAX_LENGTH, Authorization, TaskEventType, TaskState
+from ela.audit.chain import GENESIS_HASH, link_hash
+from ela.domain import (
+    NAME_MAX_LENGTH,
+    ActorKind,
+    AuditEvent,
+    AuditEventType,
+    Authorization,
+    TaskEventType,
+    TaskState,
+)
 from ela.infrastructure.persistence.orm import (
+    AuditEventRow,
     AuthorizationRow,
     TaskEventRow,
     TaskRow,
@@ -91,9 +103,12 @@ def test_bind_and_result_without_a_database() -> None:
 # domain accepted.
 # ----------------------------------------------------------------------------------------
 
-BOUNDED_BY_THE_DOMAIN: dict[InstrumentedAttribute[str], tuple[type[BaseModel], str]] = {
+BOUNDED_BY_THE_DOMAIN: dict[
+    InstrumentedAttribute[str] | InstrumentedAttribute[str | None], tuple[type[BaseModel], str]
+] = {
     AuthorizationRow.capability_id: (Authorization, "capability_id"),
     AuthorizationRow.granted_by: (Authorization, "granted_by"),
+    AuditEventRow.capability_id: (AuditEvent, "capability_id"),
 }
 PERSISTED_ENUMS: dict[
     InstrumentedAttribute[str] | InstrumentedAttribute[str | None], type[StrEnum]
@@ -102,12 +117,27 @@ PERSISTED_ENUMS: dict[
     TaskEventRow.event_type: TaskEventType,
     TaskEventRow.previous_state: TaskState,
     TaskEventRow.new_state: TaskState,
+    AuditEventRow.event_type: AuditEventType,
+    AuditEventRow.actor_kind: ActorKind,
 }
+
+
+def _metadata_of(annotation: object) -> list[object]:
+    """The constraints on an annotation, looking through ``X | None`` into ``Annotated[X, …]``."""
+    found: list[object] = []
+    if get_origin(annotation) is Annotated:
+        for item in annotation.__metadata__:  # type: ignore[attr-defined]
+            found.extend(item.metadata if isinstance(item, FieldInfo) else [item])
+    for argument in get_args(annotation):
+        found.extend(_metadata_of(argument))
+    return found
 
 
 def max_length_of(model: type[BaseModel], field: str) -> int:
     """The ``max_length`` the domain declares on a field; fails if there is none."""
-    lengths = [m.max_length for m in model.model_fields[field].metadata if isinstance(m, MaxLen)]
+    info = model.model_fields[field]
+    metadata = [*info.metadata, *_metadata_of(info.annotation)]
+    lengths = [m.max_length for m in metadata if isinstance(m, MaxLen)]
     assert len(lengths) == 1, f"{model.__name__}.{field} declares no single max_length"
     return int(lengths[0])
 
@@ -126,7 +156,7 @@ def longest_value(enum: type[StrEnum]) -> int:
     "attribute", list(BOUNDED_BY_THE_DOMAIN), ids=lambda a: f"{a.class_.__name__}.{a.key}"
 )
 def test_string_columns_are_as_long_as_the_domain_allows(
-    attribute: InstrumentedAttribute[str],
+    attribute: InstrumentedAttribute[str] | InstrumentedAttribute[str | None],
 ) -> None:
     model, field = BOUNDED_BY_THE_DOMAIN[attribute]
     assert max_length_of(model, field) == NAME_MAX_LENGTH == column_length(attribute)
@@ -154,3 +184,9 @@ def test_an_overlong_enum_member_would_be_detected() -> None:
         TOO_LONG = "A" * (column_length(TaskRow.state) + 1)
 
     assert longest_value(Wide) > column_length(TaskRow.state)
+
+
+@pytest.mark.parametrize("attribute", [AuditEventRow.prev_hash, AuditEventRow.row_hash])
+def test_hash_columns_hold_exactly_one_sha256(attribute: InstrumentedAttribute[str]) -> None:
+    """The bound comes from the chain (``ela.audit.chain``), not from a number of its own."""
+    assert column_length(attribute) == len(GENESIS_HASH) == len(link_hash(GENESIS_HASH, {}))

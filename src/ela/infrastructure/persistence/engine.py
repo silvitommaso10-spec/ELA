@@ -5,8 +5,13 @@ creation, before a connection is attempted (§33: fail fast, not later). The URL
 a driver; :func:`async_url` derives ``sqlite+aiosqlite`` for the engine, :func:`sync_url` is what
 alembic uses.
 
-Every connection runs ``PRAGMA foreign_keys=ON``: SQLite keeps foreign keys off by default, and
-the schema relies on them (``task_events.task_id``, ``tasks.parent_id``).
+Every connection runs ``PRAGMA foreign_keys=ON`` — SQLite keeps foreign keys off by default, and
+the schema relies on them (``task_events.task_id``, ``tasks.parent_id``) — and
+``PRAGMA recursive_triggers=ON``: without it SQLite does not fire the DELETE triggers of an
+``INSERT OR REPLACE``, and the append-only triggers of ``audit_events`` could be walked around
+(ADR 0007). ``PRAGMA journal_mode=WAL`` is the required journal mode (ADR 0006 §12): readers do
+not block writers, so a long ``verify_chain`` in its snapshot never holds up an ``append``. On an
+in-memory database the pragma is a no-op (``memory``).
 """
 
 from __future__ import annotations
@@ -29,7 +34,12 @@ SQLITE = "sqlite"
 ASYNC_DRIVER = "sqlite+aiosqlite"
 MEMORY = ":memory:"
 DIRECTORY_MODE = 0o700
-"""The database directory holds tasks, authorizations and soon the audit trail (§57)."""
+"""The database directory holds tasks, authorizations and the audit trail (§57)."""
+CONNECTION_PRAGMAS = (
+    "PRAGMA journal_mode=WAL",
+    "PRAGMA foreign_keys=ON",
+    "PRAGMA recursive_triggers=ON",
+)
 
 
 def _parse(url: str) -> URL:
@@ -68,22 +78,23 @@ def ensure_directory(url: URL) -> None:
     Path(url.database).parent.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
 
 
-def _enable_foreign_keys(dbapi_connection: Any, _record: Any) -> None:
+def _configure_connection(dbapi_connection: Any, _record: Any) -> None:
     cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
+    for pragma in CONNECTION_PRAGMAS:
+        cursor.execute(pragma)
     cursor.close()
 
 
 def make_engine(url: str) -> AsyncEngine:
-    """An async engine on ``url``: directory created, foreign keys on, one shared connection for
-    ``:memory:`` so that every session sees the same database."""
+    """An async engine on ``url``: directory created, WAL, foreign keys and recursive triggers on,
+    one shared connection for ``:memory:`` so that every session sees the same database."""
     target = async_url(url)
     ensure_directory(target)
     if is_memory(target):
         engine = create_async_engine(target, poolclass=StaticPool)
     else:
         engine = create_async_engine(target)
-    event.listen(engine.sync_engine, "connect", _enable_foreign_keys)
+    event.listen(engine.sync_engine, "connect", _configure_connection)
     return engine
 
 

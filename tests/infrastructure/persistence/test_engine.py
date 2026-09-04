@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from ela.infrastructure.persistence import (
@@ -104,21 +104,56 @@ async def test_make_engine_creates_the_directory_and_the_file(tmp_path: Path) ->
 # ----------------------------------------------------------------------------------------
 
 
-async def test_foreign_keys_are_on_for_a_new_connection(file_url: str) -> None:
+PRAGMAS = ["foreign_keys", "recursive_triggers"]
+
+
+async def _journal_mode(engine: AsyncEngine) -> str:
+    async with engine.connect() as connection:
+        return str((await connection.execute(text("PRAGMA journal_mode"))).scalar())
+
+
+async def test_a_file_engine_runs_in_wal_mode(file_url: str) -> None:
+    """ADR 0006 §12: readers must not block writers (a long ``verify_chain`` vs an ``append``)."""
     engine = make_engine(file_url)
     try:
-        async with engine.connect() as connection:
-            assert (await connection.execute(text("PRAGMA foreign_keys"))).scalar() == 1
+        assert await _journal_mode(engine) == "wal"
     finally:
         await engine.dispose()
 
 
-async def test_without_the_listener_sqlite_keeps_foreign_keys_off(file_url: str) -> None:
-    """Negative case: the PRAGMA is our doing, SQLite does not enable it by itself."""
+async def test_without_the_listener_sqlite_uses_a_rollback_journal(file_url: str) -> None:
+    engine = create_async_engine(async_url(file_url))
+    try:
+        assert await _journal_mode(engine) == "delete"
+    finally:
+        await engine.dispose()
+
+
+async def test_a_memory_engine_ignores_the_journal_mode() -> None:
+    engine = make_engine(MEMORY_URL)
+    try:
+        assert await _journal_mode(engine) == "memory"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.parametrize("pragma", PRAGMAS)
+async def test_pragma_is_on_for_a_new_connection(file_url: str, pragma: str) -> None:
+    engine = make_engine(file_url)
+    try:
+        async with engine.connect() as connection:
+            assert (await connection.execute(text(f"PRAGMA {pragma}"))).scalar() == 1
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.parametrize("pragma", PRAGMAS)
+async def test_without_the_listener_sqlite_keeps_the_pragma_off(file_url: str, pragma: str) -> None:
+    """Negative case: the PRAGMAs are our doing, SQLite does not enable them by itself."""
     engine = create_async_engine(async_url(file_url))
     try:
         async with engine.connect() as connection:
-            assert (await connection.execute(text("PRAGMA foreign_keys"))).scalar() == 0
+            assert (await connection.execute(text(f"PRAGMA {pragma}"))).scalar() == 0
     finally:
         await engine.dispose()
 
@@ -147,7 +182,8 @@ async def test_memory_engine_shares_one_database_between_sessions() -> None:
         sessions = make_session_factory(engine)
         async with sessions() as first, sessions() as second:
             tables = await second.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
-            assert {row[0] for row in tables} >= {"tasks", "task_events", "authorizations"}
+            names = {row[0] for row in tables}
+            assert names >= {"tasks", "task_events", "authorizations", "audit_events"}
             await first.execute(text("SELECT 1"))
     finally:
         await engine.dispose()
