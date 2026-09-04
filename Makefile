@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test check
+.PHONY: install lint typecheck test milestones secrets check
 
 UV ?= uv
 
@@ -16,4 +16,10 @@ typecheck:
 test:
 	$(UV) run pytest
 
-check: lint typecheck test
+milestones:
+	$(UV) run python scripts/check_milestone.py
+
+secrets:
+	$(UV) run detect-secrets-hook --baseline .secrets.baseline $$(git ls-files)
+
+check: lint typecheck test milestones secrets

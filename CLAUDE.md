@@ -40,6 +40,8 @@ e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.
   100% branch coverage.
 - Ogni nuova regola architetturale → un architecture test in `tests/architecture/`.
 - Ogni bug trovato → prima un test che fallisce, poi il fix.
+- Tutto ciò che gira in `make check` ha un test che ne dimostra il fallimento nel caso
+  negativo.
 
 ## Fine sessione
 Produci un riepilogo con: file toccati, test aggiunti, output di `pytest -q --cov`,
