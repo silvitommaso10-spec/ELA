@@ -17,8 +17,9 @@ test:
 	$(UV) run pytest
 
 # Security-critical packages (CLAUDE.md "Qualità", spec §51): 100% branch coverage is a gate.
-# Add ela.permissions and ela.audit here when they have code.
-CRITICAL_PACKAGES = ela.tasks
+# Add ela.permissions and ela.audit here when they have code. ela.infrastructure.persistence is
+# here because it keeps the authorizations the Guardian consumes (M2.1) and, from M2.2, the audit.
+CRITICAL_PACKAGES = ela.tasks ela.infrastructure.persistence
 
 cov-critical:
 	$(UV) run pytest -o addopts="" -q $(foreach p,$(CRITICAL_PACKAGES),--cov=$(p)) \

@@ -162,6 +162,44 @@ VIOLATIONS: tuple[Case, ...] = (
         "import pydantic\n",
         "pydantic",
     ),
+    Case(
+        "infra-alembic-in-tasks",
+        "infra-libraries",
+        "tasks/migrate.py",
+        "import alembic\n",
+        "alembic",
+    ),
+    Case(
+        "infra-aiosqlite-in-audit",
+        "infra-libraries",
+        "audit/store.py",
+        "import aiosqlite\n",
+        "aiosqlite",
+    ),
+    Case(
+        "state-task-constructed-in-persistence",
+        "state-changes",
+        "infrastructure/persistence/loader.py",
+        "from ela.domain import Task, TaskState\n"
+        "def load(row):\n"
+        "    return Task(id=row.id, created_at=row.created_at, goal=row.goal, "
+        "state=TaskState(row.state))\n",
+        "Task(state=...)",
+    ),
+    Case(
+        "orm-meets-domain",
+        "orm-separation",
+        "infrastructure/persistence/models.py",
+        "from sqlalchemy.orm import DeclarativeBase\nfrom ela.domain import Task\n",
+        "ela.domain.Task",
+    ),
+    Case(
+        "orm-meets-domain-anywhere",
+        "orm-separation",
+        "memory/rows.py",
+        "import sqlalchemy.orm\nimport ela.domain\n",
+        "ela.domain",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -201,6 +239,45 @@ ALLOWED: tuple[Case, ...] = (
         "testing/extra.py",
         "import asyncio\nfrom ela.domain import Task\nfrom ela.ports import Clock\n"
         "from ela.testing import fakes\nfrom . import fakes as again\n",
+        "",
+    ),
+    Case(
+        "infra-alembic-in-infrastructure",
+        "infra-libraries",
+        "infrastructure/migrate.py",
+        "import alembic\nimport aiosqlite\n",
+        "",
+    ),
+    Case(
+        "state-mapper-rehydrates",
+        "state-changes",
+        "infrastructure/persistence/mappers.py",
+        "from ela.domain import Task, TaskState\n"
+        "def load(row):\n"
+        "    return Task(id=row.id, created_at=row.created_at, goal=row.goal, "
+        "state=TaskState(row.state))\n",
+        "",
+    ),
+    Case(
+        "mapper-imports-orm-module",
+        "orm-separation",
+        "infrastructure/persistence/bridge.py",
+        "from ela.domain import Task\nfrom ela.infrastructure.persistence.orm import TaskRow\n",
+        "",
+    ),
+    Case(
+        "repository-imports-sqlalchemy",
+        "orm-separation",
+        "infrastructure/persistence/repo.py",
+        "from sqlalchemy import select\nfrom sqlalchemy.ext.asyncio import AsyncSession\n"
+        "from ela.domain import Task\n",
+        "",
+    ),
+    Case(
+        "orm-without-domain",
+        "orm-separation",
+        "infrastructure/persistence/rows.py",
+        "from sqlalchemy.orm import DeclarativeBase\nfrom ela.ports import NotFoundError\n",
         "",
     ),
 )

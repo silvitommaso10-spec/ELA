@@ -1,1 +1,1 @@
-Fase: v0.1 — migrazioni dello schema di persistenza (spec §54).
+Fase: v0.1 — migrazioni alembic dello schema di persistenza (M2.1, spec §54, ADR 0006). `uv run alembic upgrade head` applica lo schema al database di `ELA_DB_URL`; `uv run alembic check` verifica che i modelli ORM e le migrazioni coincidano.

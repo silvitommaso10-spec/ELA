@@ -130,13 +130,19 @@ class FakeTaskRepository:
         self._events: dict[TaskId, tuple[TaskEvent, ...]] = {}
         self._event_ids: set[TaskEventId] = set()
 
+    def _require_parent(self, task: Task) -> None:
+        if task.parent_id is not None and task.parent_id not in self._tasks:
+            raise NotFoundError("task", task.parent_id)
+
     async def add(self, task: Task) -> None:
+        self._require_parent(task)
         if task.id in self._tasks:
             raise AlreadyExistsError("task", task.id)
         self._tasks[task.id] = task
         self._events[task.id] = ()
 
     async def save(self, task: Task) -> None:
+        self._require_parent(task)
         if task.id not in self._tasks:
             raise NotFoundError("task", task.id)
         self._tasks[task.id] = task

@@ -15,6 +15,7 @@ OTHER_TASK = TASK.model_copy(update={"id": OTHER_ID, "state": TaskState.QUEUED})
 OTHER_EVENT = TASK_EVENT.model_copy(
     update={"id": TaskEventId(UUID("00000000-0000-4000-8000-000000000102"))}
 )
+CHILD = OTHER_TASK.model_copy(update={"parent_id": TASK.id})
 
 
 async def test_add_then_get(task_repository: TaskRepository) -> None:
@@ -44,6 +45,29 @@ async def test_save_replaces(task_repository: TaskRepository) -> None:
 async def test_save_unknown_is_not_found(task_repository: TaskRepository) -> None:
     with pytest.raises(NotFoundError):
         await task_repository.save(TASK)
+
+
+async def test_child_after_parent_is_accepted(task_repository: TaskRepository) -> None:
+    await task_repository.add(TASK)
+    await task_repository.add(CHILD)
+    assert await task_repository.get(CHILD.id) == CHILD
+
+
+async def test_add_with_unknown_parent_is_not_found(task_repository: TaskRepository) -> None:
+    """The parent must be stored first (§15): the miss names the parent, and nothing is written."""
+    with pytest.raises(NotFoundError) as excinfo:
+        await task_repository.add(CHILD)
+    assert excinfo.value.key == TASK.id
+    with pytest.raises(NotFoundError):
+        await task_repository.get(CHILD.id)
+
+
+async def test_save_with_unknown_parent_is_not_found(task_repository: TaskRepository) -> None:
+    await task_repository.add(OTHER_TASK)
+    with pytest.raises(NotFoundError) as excinfo:
+        await task_repository.save(CHILD)
+    assert excinfo.value.key == TASK.id
+    assert await task_repository.get(OTHER_TASK.id) == OTHER_TASK
 
 
 async def test_tasks_in_insertion_order_as_a_tuple(task_repository: TaskRepository) -> None:

@@ -156,10 +156,17 @@ class TaskRepository(Protocol):
     """
 
     async def add(self, task: Task) -> None:
-        """Store a new task; :class:`AlreadyExistsError` if its id is already held."""
+        """Store a new task; :class:`AlreadyExistsError` if its id is already held.
+
+        A ``parent_id`` must name a stored task, else :class:`NotFoundError` for the parent
+        (M2.1): the Task Graph (§15) relies on that integrity, so every implementation keeps it.
+        """
 
     async def save(self, task: Task) -> None:
-        """Replace a stored task with this version; :class:`NotFoundError` if it is unknown."""
+        """Replace a stored task with this version; :class:`NotFoundError` if it is unknown.
+
+        Same rule as ``add`` for ``parent_id``: an unknown parent is :class:`NotFoundError`.
+        """
 
     async def get(self, task_id: TaskId) -> Task:
         """The task with this id; :class:`NotFoundError` if there is none."""

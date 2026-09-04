@@ -1,10 +1,15 @@
 """One fixture per port, parametrised over every registered implementation.
 
 A contract test asks for ``audit_log`` and runs once per implementation of ``AuditLog``; the
-fake today, a real adapter tomorrow, with no change to the test.
+fake today, a real adapter tomorrow, with no change to the test. The fixtures are async so that
+an adapter's ``setup``/``teardown`` (a schema to create, an engine to close) run in the same
+event loop as the test.
 """
 
 from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from typing import cast
 
 import pytest
 
@@ -21,70 +26,83 @@ from ela.ports import (
     TaskRepository,
     ToolPort,
 )
-from tests.contracts.implementations import implementations_of
+from tests.contracts.implementations import Implementation, implementations_of
+
+
+async def _instance(implementation: Implementation) -> AsyncIterator[object]:
+    instance = implementation.make()
+    if implementation.setup is not None:
+        await implementation.setup(instance)
+    try:
+        yield instance
+    finally:
+        if implementation.teardown is not None:
+            await implementation.teardown(instance)
 
 
 @pytest.fixture(params=implementations_of(Clock), ids=str)
-def clock(request: pytest.FixtureRequest) -> Clock:
-    instance: Clock = request.param.make()
-    return instance
+async def clock(request: pytest.FixtureRequest) -> AsyncIterator[Clock]:
+    async for instance in _instance(request.param):
+        yield cast(Clock, instance)
 
 
 @pytest.fixture(params=implementations_of(IdGenerator), ids=str)
-def ids(request: pytest.FixtureRequest) -> IdGenerator:
-    instance: IdGenerator = request.param.make()
-    return instance
+async def ids(request: pytest.FixtureRequest) -> AsyncIterator[IdGenerator]:
+    async for instance in _instance(request.param):
+        yield cast(IdGenerator, instance)
 
 
 @pytest.fixture(params=implementations_of(TaskRepository), ids=str)
-def task_repository(request: pytest.FixtureRequest) -> TaskRepository:
-    instance: TaskRepository = request.param.make()
-    return instance
+async def task_repository(request: pytest.FixtureRequest) -> AsyncIterator[TaskRepository]:
+    async for instance in _instance(request.param):
+        yield cast(TaskRepository, instance)
 
 
 @pytest.fixture(params=implementations_of(AuditLog), ids=str)
-def audit_log(request: pytest.FixtureRequest) -> AuditLog:
-    instance: AuditLog = request.param.make()
-    return instance
+async def audit_log(request: pytest.FixtureRequest) -> AsyncIterator[AuditLog]:
+    async for instance in _instance(request.param):
+        yield cast(AuditLog, instance)
 
 
 @pytest.fixture(params=implementations_of(DeviceRegistryPort), ids=str)
-def device_registry(request: pytest.FixtureRequest) -> DeviceRegistryPort:
-    instance: DeviceRegistryPort = request.param.make()
-    return instance
+async def device_registry(request: pytest.FixtureRequest) -> AsyncIterator[DeviceRegistryPort]:
+    async for instance in _instance(request.param):
+        yield cast(DeviceRegistryPort, instance)
 
 
 @pytest.fixture(params=implementations_of(CapabilityRegistryPort), ids=str)
-def capability_registry(request: pytest.FixtureRequest) -> CapabilityRegistryPort:
-    instance: CapabilityRegistryPort = request.param.make()
-    return instance
+async def capability_registry(
+    request: pytest.FixtureRequest,
+) -> AsyncIterator[CapabilityRegistryPort]:
+    async for instance in _instance(request.param):
+        yield cast(CapabilityRegistryPort, instance)
 
 
 @pytest.fixture(params=implementations_of(AuthorizationStore), ids=str)
-def authorization_store(request: pytest.FixtureRequest) -> AuthorizationStore:
-    instance: AuthorizationStore = request.param.make()
-    return instance
+async def authorization_store(request: pytest.FixtureRequest) -> AsyncIterator[AuthorizationStore]:
+    async for instance in _instance(request.param):
+        yield cast(AuthorizationStore, instance)
 
 
 @pytest.fixture(params=implementations_of(PermissionGuardianPort), ids=str)
-def guardian(request: pytest.FixtureRequest) -> PermissionGuardianPort:
-    instance: PermissionGuardianPort = request.param.make()
-    return instance
+async def guardian(request: pytest.FixtureRequest) -> AsyncIterator[PermissionGuardianPort]:
+    async for instance in _instance(request.param):
+        yield cast(PermissionGuardianPort, instance)
 
 
 @pytest.fixture(params=implementations_of(ToolPort), ids=str)
-def tool(request: pytest.FixtureRequest) -> ToolPort:
-    instance: ToolPort = request.param.make()
-    return instance
+async def tool(request: pytest.FixtureRequest) -> AsyncIterator[ToolPort]:
+    async for instance in _instance(request.param):
+        yield cast(ToolPort, instance)
 
 
 @pytest.fixture(params=implementations_of(ModelProvider), ids=str)
-def provider(request: pytest.FixtureRequest) -> ModelProvider:
-    instance: ModelProvider = request.param.make()
-    return instance
+async def provider(request: pytest.FixtureRequest) -> AsyncIterator[ModelProvider]:
+    async for instance in _instance(request.param):
+        yield cast(ModelProvider, instance)
 
 
 @pytest.fixture(params=implementations_of(ProviderRegistry), ids=str)
-def provider_registry(request: pytest.FixtureRequest) -> ProviderRegistry:
-    instance: ProviderRegistry = request.param.make()
-    return instance
+async def provider_registry(request: pytest.FixtureRequest) -> AsyncIterator[ProviderRegistry]:
+    async for instance in _instance(request.param):
+        yield cast(ProviderRegistry, instance)
