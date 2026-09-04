@@ -10,8 +10,11 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from ela.domain import (
+    Actor,
+    ActorKind,
     Approval,
     ApprovalStatus,
+    AuditEvent,
     Authorization,
     CapabilityId,
     CapabilitySpec,
@@ -184,6 +187,18 @@ def test_approval_is_bound_to_task_step_and_capability() -> None:
     for name in ("task_id", "step_id", "capability_id"):
         assert Approval.model_fields[name].is_required()
     assert EXAMPLES[Approval].status is ApprovalStatus.GRANTED
+
+
+def test_audit_actor_says_what_kind_of_actor_it_is() -> None:
+    """§32: knowing that "ela" acted is useless if it could also be a user called ela."""
+    assert AuditEvent.model_fields["actor"].annotation is Actor
+    for kind in ActorKind:
+        assert Actor(kind=kind, id="x").kind is kind
+
+
+def test_audit_actor_cannot_be_anonymous() -> None:
+    with pytest.raises(ValidationError):
+        Actor(kind=ActorKind.USER, id="")
 
 
 @pytest.mark.parametrize("field", ["input_tokens", "output_tokens"])

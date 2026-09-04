@@ -37,6 +37,8 @@ from pydantic import (
 )
 
 __all__ = [
+    "Actor",
+    "ActorKind",
     "Approval",
     "ApprovalId",
     "ApprovalStatus",
@@ -323,6 +325,18 @@ class AuditEventType(StrEnum):
     ERROR_RECORDED = "ERROR_RECORDED"
 
 
+class ActorKind(StrEnum):
+    """Who acted, in the only four shapes an audited action can have (§32).
+
+    ``SYSTEM`` is for what no one asked for: schedulers, retries, expiries.
+    """
+
+    ELA = "ELA"
+    USER = "USER"
+    DEVICE = "DEVICE"
+    SYSTEM = "SYSTEM"
+
+
 class IntentChannel(StrEnum):
     """How a :class:`UserIntent` reached ELA (§7, §9, §34)."""
 
@@ -459,6 +473,19 @@ class ErrorMetadata(_DomainModel):
     successful_fix: str | None = None
     retryable: bool = False
     details: JsonMapping = _json_payload("Everything else worth keeping about the failure (§64).")
+
+
+class Actor(_DomainModel):
+    """Who performed an audited action (§32).
+
+    A free-form string would let "ela", "ELA" and "ela@macbook" mean the same actor and none of
+    them be queryable: the kind says what sort of actor it is, the id says which one — an
+    :class:`ELAIdentity` id, a user name, a :class:`DeviceId`, or the name of the system process
+    that acted on its own.
+    """
+
+    kind: ActorKind
+    id: Annotated[str, Field(min_length=1)]
 
 
 # --------------------------------------------------------------------------------------
@@ -676,7 +703,7 @@ class AuditEvent(_DomainModel):
     id: AuditEventId
     created_at: UtcDatetime
     event_type: AuditEventType
-    actor: str
+    actor: Actor
     summary: str
     task_id: TaskId | None = None
     step_id: StepId | None = None

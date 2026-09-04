@@ -47,9 +47,9 @@ def test_json_payloads_cannot_be_mutated(model: type[BaseModel]) -> None:
 
 
 def test_models_without_a_json_payload_are_the_expected_ones() -> None:
-    """A payload is opt-in: TaskStep and ProviderUsage are fully typed and need none."""
+    """A payload is opt-in: Actor, TaskStep and ProviderUsage are fully typed and need none."""
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
-    assert without == ["ProviderUsage", "TaskStep"]
+    assert without == ["Actor", "ProviderUsage", "TaskStep"]
 
 
 def test_nested_mapping_is_frozen_too() -> None:

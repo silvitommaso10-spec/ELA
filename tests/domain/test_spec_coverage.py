@@ -33,6 +33,13 @@ SECTION_49_ENTITIES = frozenset(
 )
 """The entities spec §49 asks for, with the names the milestone fixed."""
 
+REVIEW_ADDITIONS = frozenset({"Actor"})
+"""Models added in review, on top of §49, with the reason written in ADR 0003.
+
+``Actor`` replaces the free-form ``AuditEvent.actor`` string: §32 requires knowing *who* acted,
+and a string cannot say whether "ela" is ELA, a user or a node.
+"""
+
 
 def test_all_section_49_entities_are_exported() -> None:
     missing = sorted(name for name in SECTION_49_ENTITIES if name not in domain.__all__)
@@ -42,10 +49,9 @@ def test_all_section_49_entities_are_exported() -> None:
 
 
 def test_every_public_model_belongs_to_section_49() -> None:
-    """A model that is not in §49 is either a mistake or a spec change: no silent additions."""
-    unexpected = sorted(
-        model.__name__ for model in domain_models() if model.__name__ not in SECTION_49_ENTITIES
-    )
+    """A model outside §49 is a spec change: it must be declared here and argued in an ADR."""
+    known = SECTION_49_ENTITIES | REVIEW_ADDITIONS
+    unexpected = sorted(model.__name__ for model in domain_models() if model.__name__ not in known)
     assert unexpected == []
 
 

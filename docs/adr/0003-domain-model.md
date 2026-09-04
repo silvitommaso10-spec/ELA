@@ -22,10 +22,29 @@ in `docs/milestones/M1.1.md`.
 - **Value object**: è definito interamente dai suoi valori, non ha identità né ciclo di vita,
   vive dentro l'entità che lo contiene. Nessun id, nessun `created_at`.
 
-Sono value object `DeviceCapability` (§16), `ProviderUsage` (§32) ed `ErrorMetadata` (§64): "24 GB
-di VRAM", "1200 token in ingresso" e "timeout del tool" non sono cose che si aggiornano, si
-sostituiscono insieme all'entità che le contiene. È una deroga consapevole alla formula "ogni
-entità di §49 ha un id tipizzato": si applica alle entità, non ai valori.
+Sono value object `DeviceCapability` (§16), `ProviderUsage` (§32), `ErrorMetadata` (§64) e
+`Actor` (§32): "24 GB di VRAM", "1200 token in ingresso", "timeout del tool" e "l'utente
+tommaso" non sono cose che si aggiornano, si sostituiscono insieme all'entità che le contiene. È
+una deroga consapevole alla formula "ogni entità di §49 ha un id tipizzato": si applica alle
+entità, non ai valori. `Actor.id` è un identificatore, non l'id di un'entità del dominio: dice
+*quale* attore, mentre `kind` dice di che tipo di attore si tratta.
+
+### 1-bis. `Actor` invece di una stringa libera (review M1.1)
+
+§49 non elenca un attore, e la prima versione di `AuditEvent` aveva `actor: str`. Un audit log è
+la risposta alla domanda "chi ha fatto cosa, con quale autorizzazione" (§32): con una stringa
+libera `"ela"`, `"ELA"` ed `"ela@macbook"` sono tre attori diversi per il log e lo stesso attore
+per chi legge, e non si può interrogare il log per "tutto ciò che ha fatto l'utente".
+
+Quindi `Actor(kind: ActorKind, id: str)` con `ActorKind` = ELA, USER, DEVICE, SYSTEM. `SYSTEM`
+copre ciò che nessuno ha chiesto: scheduler, retry, scadenze. `id` non può essere vuoto: un
+evento di audit senza attore identificabile non è un evento di audit.
+
+È un modello in più rispetto a §49 e come tale è dichiarato in
+`tests/domain/test_spec_coverage.py::REVIEW_ADDITIONS`: aggiungere un modello che §49 non prevede
+resta una decisione da argomentare, non un dettaglio implementativo. La scelta è stata presa in
+review prima che l'audit venisse persistito, quando cambiarla costa un `sed`; dopo sarebbe
+costata una migrazione.
 
 ### 2. Id tipizzati, con una eccezione
 
@@ -89,7 +108,22 @@ sarebbero alfabetici — CRITICAL < HIGH < LOW < MEDIUM < SAFE — cioè esattam
 significato. Un confronto con qualcosa che non è un `RiskLevel` solleva `TypeError` invece di
 ricadere silenziosamente sull'ordine alfabetico di `str`.
 
-### 7. Nessun comportamento
+### 7. Evoluzione degli enum
+
+Aggiungere un valore a un enum di evento (`TaskEventType`, `AuditEventType`) o di stato è una
+modifica **additiva** e non richiede un ADR, anche quando l'audit log sarà persistito: il log
+memorizza stringhe, i valori già scritti restano validi e nulla di ciò che è stato registrato
+cambia significato.
+
+Rinominare o rimuovere un valore è invece una modifica **rompente**: le righe già scritte
+continuerebbero a contenere il vecchio nome, che nessun enum saprebbe più leggere. Richiede un
+ADR e una migrazione esplicita.
+
+Gli enum fissati dalla spec — `TaskState` (§14), `RiskLevel` (§29), `PermissionOutcome` (§27),
+`ApprovalStatus` (§30), `ExecutionStatus` (§63) — sono chiusi: aggiungere un valore lì significa
+cambiare la spec, e i test in `tests/domain/test_enums.py` lo rendono visibile.
+
+### 8. Nessun comportamento
 
 I modelli sono dati. `TaskState` è un campo: quali transizioni siano legali lo decide il Task
 Engine (M1.2). `PermissionDecision.outcome` è obbligatorio e senza default: il fail-safe "nel
@@ -111,6 +145,9 @@ nasconderebbe un bug del chiamante invece di farlo emergere.
   tranne dove conta" non è immutabile; il Guardian legge `input_schema` e `scope`.
 - **Un wrapper `FrozenDict` esplicito** — equivalente, più codice; `MappingProxyType` con
   `AfterValidator`/`PlainSerializer` fa lo stesso con quattro righe e uno schema JSON corretto.
+- **`actor: str` con una convenzione di formato** (per esempio `"user:tommaso"`) — nessuna
+  validazione, nessun tipo, e il primo `"tommaso"` scritto senza prefisso resta nel log per
+  sempre.
 - **`IntEnum` per `RiskLevel`** — ordinabile per costruzione, ma serializza numeri: un audit log
   con `risk: 3` è illeggibile e fragile a un'aggiunta in mezzo alla scala.
 - **Lasciare l'ordine di `RiskLevel` a M1.3** — significherebbe che nel frattempo `SAFE < HIGH` è
@@ -123,6 +160,8 @@ nasconderebbe un bug del chiamante invece di farlo emergere.
   `tests/architecture/test_domain_models.py` lo verificano, ognuno con il proprio caso negativo.
 - Ogni nuovo modello deve comparire in `ela.domain.__all__`, in `tests/domain/examples.py` e in
   `tests/domain/strategies.py`, altrimenti `tests/domain/test_spec_coverage.py` fallisce.
+- Un modello che §49 non prevede va dichiarato in `REVIEW_ADDITIONS` con la sua motivazione: oggi
+  contiene solo `Actor`.
 - Aggiungere un'entità non prevista da §49 fa fallire
   `test_every_public_model_belongs_to_section_49`: è una modifica alla spec, non un dettaglio
   implementativo.

@@ -66,14 +66,25 @@ def test_datetime_fields_are_normalised(model: type[BaseModel]) -> None:
             assert value.tzinfo is UTC, f"{model.__name__}.{name}"
 
 
+VALUE_OBJECTS = frozenset({"Actor", "DeviceCapability", "ProviderUsage", "ErrorMetadata"})
+
+
 def test_every_entity_requires_created_at() -> None:
-    """Value objects have no ``created_at``; entities have it and it is never optional."""
-    entities = [model for model in domain_models() if "id" in model.model_fields]
+    """An entity has a life cycle, so it has a ``created_at``, and it is never optional."""
+    entities = [model for model in domain_models() if model.__name__ not in VALUE_OBJECTS]
     assert entities
     for model in entities:
         field = model.model_fields.get("created_at")
         assert field is not None, model.__name__
         assert field.is_required(), model.__name__
+
+
+def test_value_objects_have_no_timestamp_and_no_uuid_id() -> None:
+    """A value object is defined by its values: no life cycle, nothing to date (ADR 0003)."""
+    for model in domain_models():
+        if model.__name__ not in VALUE_OBJECTS:
+            continue
+        assert "created_at" not in model.model_fields, model.__name__
 
 
 def test_no_field_reads_the_clock() -> None:

@@ -14,6 +14,8 @@ from pydantic import BaseModel
 
 from ela import domain
 from ela.domain import (
+    Actor,
+    ActorKind,
     Approval,
     ApprovalStatus,
     AuditEvent,
@@ -89,6 +91,12 @@ counts = st.integers(min_value=0, max_value=10**6)
 def _optional[T](strategy: st.SearchStrategy[T]) -> st.SearchStrategy[T | None]:
     return st.none() | strategy
 
+
+actors = st.builds(
+    Actor,
+    kind=st.sampled_from(ActorKind),
+    id=st.text(min_size=1, max_size=24),
+)
 
 device_capabilities = st.builds(
     DeviceCapability,
@@ -274,7 +282,7 @@ audit_events = st.builds(
     id=uuids,
     created_at=utc_datetimes,
     event_type=st.sampled_from(AuditEventType),
-    actor=texts,
+    actor=actors,
     summary=texts,
     task_id=_optional(uuids),
     step_id=_optional(uuids),
@@ -332,6 +340,7 @@ execution_results = st.builds(
 )
 
 MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
+    domain.Actor: actors,
     domain.DeviceCapability: device_capabilities,
     domain.ProviderUsage: provider_usages,
     domain.ErrorMetadata: error_metadata,

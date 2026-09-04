@@ -15,6 +15,8 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from ela.domain import (
+    Actor,
+    ActorKind,
     Approval,
     ApprovalId,
     ApprovalStatus,
@@ -98,6 +100,8 @@ DEVICE_CAPABILITY: Final = DeviceCapability(
     available=True,
     attributes={"vram_gb": 24, "families": ["ada", "hopper"]},
 )
+
+ELA_ACTOR: Final = Actor(kind=ActorKind.ELA, id="ela")
 
 PROVIDER_USAGE: Final = ProviderUsage(
     input_tokens=1_200,
@@ -275,7 +279,7 @@ AUDIT_EVENT: Final = AuditEvent(
     id=AUDIT_EVENT_ID,
     created_at=NOW,
     event_type=AuditEventType.TOOL_EXECUTED,
-    actor="ela",
+    actor=ELA_ACTOR,
     summary="nota scritta in workspace/notes/briefing.md",
     task_id=TASK_ID,
     step_id=STEP_ID,
@@ -332,6 +336,7 @@ EXECUTION_RESULT: Final = ExecutionResult(
 EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
     type(example): example
     for example in (
+        ELA_ACTOR,
         DEVICE_CAPABILITY,
         PROVIDER_USAGE,
         ERROR_METADATA,
