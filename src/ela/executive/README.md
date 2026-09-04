@@ -1,1 +1,1 @@
-Fase: post-0.1 — Executive Core e Planner (spec §12, §13).
+Fase: v0.1 — Executive Core, Planner ed executor della pipeline Planner → Capability → Guardian → Tool → Audit (spec §12, §13, §27, §29, §54).
