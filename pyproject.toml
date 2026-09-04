@@ -47,27 +47,85 @@ source = ["ela"]
 root_package = "ela"
 include_external_packages = true
 
-[[tool.importlinter.contracts]]
-name = "domain e ports non dipendono da provider, api o tool (CLAUDE.md, spec §49, §52)"
-type = "forbidden"
-source_modules = ["ela.domain", "ela.ports"]
-forbidden_modules = ["ela.providers", "ela.api", "ela.tools"]
+# Le regole sono documentate in docs/adr/0002-architecture-rules.md. Ogni contratto ha la
+# versione "closed-world" in tests/architecture/rules.py; tests/architecture/test_import_linter.py
+# verifica che le liste qui sotto coprano tutti i package attuali di ela.
 
 [[tool.importlinter.contracts]]
-name = "il Core non importa librerie di infrastruttura (CLAUDE.md, spec §26, §50)"
+name = "1. domain importa solo stdlib e pydantic (CLAUDE.md, spec §49, §52)"
+type = "forbidden"
+source_modules = ["ela.domain"]
+forbidden_modules = [
+    "ela.ports",
+    "ela.api",
+    "ela.audit",
+    "ela.context",
+    "ela.devices",
+    "ela.evolution",
+    "ela.executive",
+    "ela.identity",
+    "ela.infrastructure",
+    "ela.memory",
+    "ela.permissions",
+    "ela.providers",
+    "ela.tasks",
+    "ela.tools",
+    "anthropic",
+    "openai",
+    "httpx",
+    "sqlalchemy",
+    "fastapi",
+    "typer",
+]
+
+[[tool.importlinter.contracts]]
+name = "2. ports importa solo stdlib e domain (CLAUDE.md, spec §49, §52)"
+type = "forbidden"
+source_modules = ["ela.ports"]
+forbidden_modules = [
+    "ela.api",
+    "ela.audit",
+    "ela.context",
+    "ela.devices",
+    "ela.evolution",
+    "ela.executive",
+    "ela.identity",
+    "ela.infrastructure",
+    "ela.memory",
+    "ela.permissions",
+    "ela.providers",
+    "ela.tasks",
+    "ela.tools",
+    "pydantic",
+    "anthropic",
+    "openai",
+    "httpx",
+    "sqlalchemy",
+    "fastapi",
+    "typer",
+]
+
+[[tool.importlinter.contracts]]
+name = "3. solo providers, infrastructure e api importano librerie di infrastruttura (CLAUDE.md, spec §26, §50)"
 type = "forbidden"
 source_modules = [
     "ela.domain",
     "ela.ports",
-    "ela.executive",
-    "ela.memory",
-    "ela.identity",
-    "ela.context",
-    "ela.tasks",
-    "ela.devices",
-    "ela.permissions",
     "ela.audit",
-    "ela.tools",
+    "ela.context",
+    "ela.devices",
     "ela.evolution",
+    "ela.executive",
+    "ela.identity",
+    "ela.memory",
+    "ela.permissions",
+    "ela.tasks",
+    "ela.tools",
 ]
-forbidden_modules = ["anthropic", "openai", "sqlalchemy", "fastapi", "httpx"]
+forbidden_modules = ["anthropic", "openai", "httpx", "sqlalchemy", "fastapi", "typer"]
+
+[[tool.importlinter.contracts]]
+name = "4. executive, tasks, permissions e audit non importano providers né infrastructure (CLAUDE.md, spec §52)"
+type = "forbidden"
+source_modules = ["ela.executive", "ela.tasks", "ela.permissions", "ela.audit"]
+forbidden_modules = ["ela.providers", "ela.infrastructure"]
