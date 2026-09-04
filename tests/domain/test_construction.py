@@ -10,6 +10,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from ela.domain import (
+    NAME_MAX_LENGTH,
     Actor,
     ActorKind,
     Approval,
@@ -33,7 +34,13 @@ from ela.domain import (
     Task,
     TaskState,
 )
-from tests.domain.examples import EXAMPLES, NOW, TASK_ID
+from tests.domain.examples import (
+    CAPABILITY_SPEC,
+    EXAMPLES,
+    NOW,
+    POLICY_AUTHORIZATION,
+    TASK_ID,
+)
 
 MODELS = sorted(EXAMPLES, key=lambda model: model.__name__)
 
@@ -99,6 +106,27 @@ def test_capability_id_rejects_everything_else(value: str) -> None:
             risk=RiskLevel.SAFE,
             requires_authorization=False,
         )
+
+
+def test_capability_id_is_bounded() -> None:
+    """The bound lives in the domain (review M2.1): 255 fits, 256 does not."""
+    longest = "a." + "b" * (NAME_MAX_LENGTH - 2)
+    assert len(longest) == NAME_MAX_LENGTH
+    CapabilitySpec(**{**CAPABILITY_SPEC.model_dump(), "id": longest})
+    with pytest.raises(ValidationError):
+        CapabilitySpec(**{**CAPABILITY_SPEC.model_dump(), "id": longest + "b"})
+
+
+@pytest.mark.parametrize("value", ["", "x" * (NAME_MAX_LENGTH + 1)])
+def test_granted_by_is_bounded_and_not_empty(value: str) -> None:
+    with pytest.raises(ValidationError):
+        Authorization.model_validate({**POLICY_AUTHORIZATION.model_dump(), "granted_by": value})
+
+
+def test_granted_by_accepts_the_longest_name() -> None:
+    name = "x" * NAME_MAX_LENGTH
+    grant = Authorization.model_validate({**POLICY_AUTHORIZATION.model_dump(), "granted_by": name})
+    assert grant.granted_by == name
 
 
 @pytest.mark.parametrize("value", ["camera", "gpu.cuda", "audio.input_device"])

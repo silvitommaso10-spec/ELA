@@ -22,7 +22,9 @@ DOMAIN_ALLOWED_EXTERNAL = frozenset({"pydantic"})
 #: The only internal module the ports may use.
 PORTS_ALLOWED_INTERNAL = f"{ROOT_PACKAGE}.domain"
 #: Infrastructure libraries the Core must never import.
-INFRA_LIBRARIES = frozenset({"anthropic", "openai", "httpx", "sqlalchemy", "fastapi", "typer"})
+INFRA_LIBRARIES = frozenset(
+    {"anthropic", "openai", "httpx", "sqlalchemy", "alembic", "aiosqlite", "fastapi", "typer"}
+)
 #: Top-level packages of ``ela`` allowed to import INFRA_LIBRARIES.
 INFRA_PACKAGES = frozenset({"providers", "infrastructure", "api"})
 #: Core packages that must stay independent from providers and infrastructure.
@@ -30,6 +32,12 @@ CORE_PACKAGES = ("executive", "tasks", "permissions", "audit")
 CORE_FORBIDDEN = tuple(f"{ROOT_PACKAGE}.{name}" for name in ("providers", "infrastructure"))
 #: The only module allowed to change the state of a Task (ADR 0004).
 STATE_MACHINE = Path("tasks") / "state_machine.py"
+#: The mapper rehydrates a Task in the state the database holds: exempt from rule 5 (ADR 0006).
+PERSISTENCE_MAPPERS = Path("infrastructure") / "persistence" / "mappers.py"
+STATE_EXEMPT = frozenset({STATE_MACHINE, PERSISTENCE_MAPPERS})
+#: Rule 8 (ADR 0006): the ORM and the domain never meet in one module.
+ORM_PACKAGE = "sqlalchemy.orm"
+DOMAIN_MODULE = f"{ROOT_PACKAGE}.domain"
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
 TESTING_DIR = "testing"
@@ -187,7 +195,7 @@ def check_state_changes(pkg_root: Path) -> list[Violation]:
     rule = "task-state-changes-only-in-the-state-machine"
     found: list[Violation] = []
     for path in _source_files(pkg_root):
-        if path.relative_to(pkg_root) == STATE_MACHINE:
+        if path.relative_to(pkg_root) in STATE_EXEMPT:
             continue
         name = module_name(path, pkg_root)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -268,6 +276,28 @@ def check_testing_imports(pkg_root: Path) -> list[Violation]:
     )
 
 
+def check_orm_separation(pkg_root: Path) -> list[Violation]:
+    """Rule 8: no module imports both ``sqlalchemy.orm`` and ``ela.domain`` (ADR 0006).
+
+    An ORM row that could see the domain could subclass it, or a domain model could be mapped
+    imperatively; keeping the two imports in different modules makes the explicit mapper the only
+    bridge. Reported: the domain import, in a module that also imports ``sqlalchemy.orm``.
+    """
+    rule = "orm-and-domain-never-meet"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        imports = imported_modules(path, pkg_root)
+        if not any(_is_within(name, ORM_PACKAGE) for name, _ in imports):
+            continue
+        name = module_name(path, pkg_root)
+        found.extend(
+            Violation(rule, name, imported, line)
+            for imported, line in imports
+            if _is_within(imported, DOMAIN_MODULE)
+        )
+    return found
+
+
 Rule = Callable[[Path], list[Violation]]
 
 RULES: dict[str, Rule] = {
@@ -278,4 +308,5 @@ RULES: dict[str, Rule] = {
     "state-changes": check_state_changes,
     "testing-isolation": check_testing_isolation,
     "testing-imports": check_testing_imports,
+    "orm-separation": check_orm_separation,
 }

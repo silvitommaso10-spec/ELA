@@ -268,7 +268,7 @@ authorizations = st.builds(
     created_at=utc_datetimes,
     capability_id=capability_ids,
     scope=st.lists(texts, max_size=3).map(tuple),
-    granted_by=texts,
+    granted_by=st.text(min_size=1, max_size=24),
     approval_id=_optional(uuids),
     task_id=_optional(uuids),
     step_id=_optional(uuids),

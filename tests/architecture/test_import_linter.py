@@ -128,6 +128,7 @@ LINTER_CASES = [
         "domain-infra-library",
         "ports-pydantic",
         "infra-tasks",
+        "infra-alembic-in-tasks",
         "core-tasks-providers",
         "testing-imported-by-executive",
         "testing-imports-tasks",

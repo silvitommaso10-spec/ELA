@@ -55,6 +55,7 @@ from ela.ports import (
     ModelProvider,
     NotAllowedError,
     NotFoundError,
+    check_limit,
 )
 
 __all__ = [
@@ -130,13 +131,19 @@ class FakeTaskRepository:
         self._events: dict[TaskId, tuple[TaskEvent, ...]] = {}
         self._event_ids: set[TaskEventId] = set()
 
+    def _require_parent(self, task: Task) -> None:
+        if task.parent_id is not None and task.parent_id not in self._tasks:
+            raise NotFoundError("task", task.parent_id)
+
     async def add(self, task: Task) -> None:
+        self._require_parent(task)
         if task.id in self._tasks:
             raise AlreadyExistsError("task", task.id)
         self._tasks[task.id] = task
         self._events[task.id] = ()
 
     async def save(self, task: Task) -> None:
+        self._require_parent(task)
         if task.id not in self._tasks:
             raise NotFoundError("task", task.id)
         self._tasks[task.id] = task
@@ -150,6 +157,7 @@ class FakeTaskRepository:
     async def tasks(
         self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
     ) -> tuple[Task, ...]:
+        check_limit(limit)
         selected = (t for t in self._tasks.values() if states is None or t.state in states)
         return tuple(selected)[:limit]
 
@@ -189,6 +197,7 @@ class FakeAuditLog:
         since: datetime | None = None,
         limit: int | None = None,
     ) -> tuple[AuditEvent, ...]:
+        check_limit(limit)
         selected = (
             event
             for event in self._events

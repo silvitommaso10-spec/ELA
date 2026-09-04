@@ -3,7 +3,13 @@ name = "ela"
 version = "0.1.0"
 description = "ELA — Executive Life Assistant: assistente personale AI autonomo e distribuito"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.9"]
+dependencies = [
+    "aiosqlite>=0.20",
+    "alembic>=1.13",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0",
+]
 
 [dependency-groups]
 dev = [
@@ -46,6 +52,9 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.coverage.run]
 branch = true
 source = ["ela"]
+# SQLAlchemy's async adapter switches greenlets inside a connect listener (M2.1); without this,
+# coverage loses the frame after the switch and reports the rest of the listener as unrun.
+concurrency = ["thread", "greenlet"]
 
 [tool.importlinter]
 root_package = "ela"
@@ -79,6 +88,8 @@ forbidden_modules = [
     "openai",
     "httpx",
     "sqlalchemy",
+    "alembic",
+    "aiosqlite",
     "fastapi",
     "typer",
 ]
@@ -109,6 +120,8 @@ forbidden_modules = [
     "openai",
     "httpx",
     "sqlalchemy",
+    "alembic",
+    "aiosqlite",
     "fastapi",
     "typer",
 ]
@@ -131,7 +144,16 @@ source_modules = [
     "ela.testing",
     "ela.tools",
 ]
-forbidden_modules = ["anthropic", "openai", "httpx", "sqlalchemy", "fastapi", "typer"]
+forbidden_modules = [
+    "anthropic",
+    "openai",
+    "httpx",
+    "sqlalchemy",
+    "alembic",
+    "aiosqlite",
+    "fastapi",
+    "typer",
+]
 
 [[tool.importlinter.contracts]]
 name = "4. executive, tasks, permissions e audit non importano providers né infrastructure (CLAUDE.md, spec §52)"
@@ -152,6 +174,7 @@ source_modules = [
     "ela.evolution",
     "ela.executive",
     "ela.identity",
+    "ela.infrastructure",
     "ela.memory",
     "ela.permissions",
     "ela.providers",
@@ -185,6 +208,8 @@ forbidden_modules = [
     "openai",
     "httpx",
     "sqlalchemy",
+    "alembic",
+    "aiosqlite",
     "fastapi",
     "typer",
 ]
