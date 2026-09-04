@@ -8,12 +8,13 @@ errors; the file.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -359,6 +360,63 @@ async def test_concurrent_appends_queue_on_the_lock_and_chain_up(file_url: str) 
         assert {event.id for event in await log.read()} == {first.id, second.id}
     finally:
         await engine.dispose()
+
+
+def _slow_down_the_windows(engine: AsyncEngine, seconds: float) -> None:
+    """Make every window of ``verify_chain`` take ``seconds``: a long verification, simulated."""
+
+    @event.listens_for(engine.sync_engine, "before_cursor_execute")
+    def _sleep(conn: object, cursor: object, statement: str, *args: object) -> None:
+        if "audit_events.seq >" in statement:
+            time.sleep(seconds)
+
+
+async def _verify_while_appending(engine: AsyncEngine, rows: int) -> tuple[bool, ChainSummary]:
+    """Start a slow verification, append one row meanwhile; whether the verification was still
+    running when the append returned, and what it saw."""
+    log = SqlAuditLog(engine)
+    await append_many(log, rows)
+    _slow_down_the_windows(engine, 0.05)
+    verification = asyncio.create_task(verify_chain(engine, batch_size=1))
+    await asyncio.sleep(0.1)  # the verification is inside its first windows
+    await log.append(AUDIT_EVENT.model_copy(update={"id": event_number(99)}))
+    still_running = not verification.done()
+    return still_running, await verification
+
+
+async def test_a_long_verification_does_not_block_an_append(file_url: str) -> None:
+    """Review M2.2: with WAL a reader never blocks a writer; the append returns while the
+    verification is still running, and the verification sees its snapshot, not the new row."""
+    engine = make_engine(file_url)
+    try:
+        await create_schema(engine)
+        still_running, summary = await _verify_while_appending(engine, rows=8)
+        assert still_running
+        assert summary.length == 8
+        assert (await verify_chain(engine)).length == 9
+    finally:
+        await engine.dispose()
+
+
+async def test_without_wal_the_append_waits_for_the_verification(file_url: str) -> None:
+    """Negative case: on a rollback journal the reader's snapshot holds the writer's commit."""
+    engine = create_async_engine(async_url(file_url))
+    try:
+        await create_schema(engine)
+        still_running, summary = await _verify_while_appending(engine, rows=8)
+        assert not still_running
+        assert summary.length == 8
+    finally:
+        await engine.dispose()
+
+
+async def test_verification_opens_its_snapshot_before_the_first_window(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    await append_many(SqlAuditLog(engine), 2)
+    recorded = statements(engine)
+    await verify_chain(engine)
+    assert recorded()[0] == "BEGIN"
 
 
 async def test_a_naive_since_is_refused(engine: AsyncEngine) -> None:

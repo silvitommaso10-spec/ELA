@@ -90,7 +90,10 @@ dell'utente). L'adapter converte le righe in record e chiama il Core; la direzio
 adapter di M2.1, perché il contract test pretende che l'API pubblica sia *esattamente* quella del
 port. Il harness dei contract test tiene il motore per conto suo (`SqlAuditLogHarness`).
 `verify_chain(engine, *, batch_size=1000) -> ChainSummary` legge a finestre keyset per `seq` in
-una sola transazione di lettura, non carica mai tutto il log (ADR 0005 §2-ter), e **solleva**
+una sola transazione di lettura aperta esplicitamente (`BEGIN`: pysqlite non ne apre una prima di
+un `SELECT`, e senza ogni finestra sarebbe uno snapshot a sé), così vede il log com'era all'inizio
+della verifica; il lock che quello snapshot comporterebbe per gli scrittori è risolto dal journal
+WAL del motore (ADR 0006 §12, review M2.2). Non carica mai tutto il log (ADR 0005 §2-ter), e **solleva**
 `AuditChainError` con il `seq` della prima riga incoerente (§33: un valore di ritorno si ignora,
 un'eccezione no). Log vuoto: `ChainSummary(0, GENESIS_HASH)`. `read` non verifica: una lettura a
 finestra non può controllare i legami fuori dalla finestra.
@@ -156,6 +159,9 @@ limite ha un test documentale (`test_a_truncated_tail_is_not_detected`).
   dell'insert senza un'altra lettura.
 - **`verify_chain` come metodo del log** — romperebbe "esattamente `append` e `read`".
 - **`verify_chain` che ritorna `False`** — un booleano si ignora (§33).
+- **Una transazione per finestra in `verify_chain`** — non bloccherebbe nessuno nemmeno senza
+  WAL, ma potrebbe mancare una riga appesa fra due finestre: la verifica deve vedere uno snapshot
+  coerente (review M2.2); il blocco si risolve con WAL.
 - **Retry in `append` sulla UNIQUE di `prev_hash`** — con il lock il caso non si presenta; un
   retry avrebbe aggiunto un ramo non raggiungibile in produzione.
 - **Chiave esterna su `task_id`** — un audit che non scrive perché manca un task è peggio di un

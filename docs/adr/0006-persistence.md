@@ -153,6 +153,20 @@ di connessione.
   la ripete, e il test è il legame. Le enum persistite stanno in `String(32)`; un test verifica
   ogni membro contro la lunghezza della colonna.
 
+### 12. Aggiunta in review M2.2 (2026-09-04): WAL è la modalità di journal richiesta
+
+`make_engine` esegue `PRAGMA journal_mode=WAL` a ogni connessione (su `:memory:` è un no-op).
+Motivo: `verify_chain` (ADR 0007 §4) legge l'intero log in **una** transazione, per vedere uno
+snapshot coerente — con una transazione per finestra potrebbe mancare una riga appesa a metà.
+Con il rollback journal un lettore con lo snapshot aperto blocca il commit di ogni scrittore, e un
+`append` attenderebbe la fine della verifica; in WAL i lettori non bloccano gli scrittori e lo
+snapshot resta quello dell'inizio. Un `append` durante una verifica lunga va a buon fine e la
+verifica non lo vede: `tests/infrastructure/persistence/test_audit_log.py::
+test_a_long_verification_does_not_block_an_append`, con il caso negativo su un motore senza il
+PRAGMA (`test_without_wal_the_append_waits_for_the_verification`) e il test sul journal mode in
+`test_engine.py`. Conseguenza: accanto al file `ela.db` vivono `ela.db-wal` e `ela.db-shm`, nella
+stessa directory a `0o700`; un backup copia tutti e tre (o usa l'API di backup di SQLite).
+
 ## Alternative considerate
 
 - **Motore sincrono dentro `asyncio.to_thread`** — mescola thread e loop e urta il

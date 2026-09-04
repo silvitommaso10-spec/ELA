@@ -44,6 +44,9 @@ __all__ = ["SqlAuditLog", "row_record", "verify_chain"]
 AUDIT_EVENT: Final = "audit event"
 DEFAULT_BATCH_SIZE: Final = 1000
 BEGIN_IMMEDIATE: Final = text("BEGIN IMMEDIATE")
+BEGIN_SNAPSHOT: Final = text("BEGIN")
+"""The read transaction of ``verify_chain``: pysqlite opens none before a ``SELECT`` on its own,
+and without one every window would be its own snapshot, missing a row appended midway."""
 
 
 def _canonical(value: object) -> object:
@@ -117,13 +120,17 @@ async def verify_chain(
 
     Raises :class:`~ela.audit.chain.AuditChainError` with the ``seq`` of the first row that does
     not fit the chain. Never loads the whole log: rows are read in ``seq`` order with a keyset
-    window, and a window shorter than ``batch_size`` is the last one.
+    window, and a window shorter than ``batch_size`` is the last one. All windows see the same
+    snapshot — the log as it was when the verification began — because the transaction is opened
+    explicitly (:data:`BEGIN_SNAPSHOT`); with the WAL journal of the engine (ADR 0006 §12) that
+    snapshot never blocks a concurrent ``append``.
     """
     if batch_size < 1:
         raise ValueError(f"batch_size must be >= 1, not {batch_size}")
     summary = EMPTY_CHAIN
     last_seq = 0
     async with make_session_factory(engine)() as session:
+        await session.execute(BEGIN_SNAPSHOT)
         while True:
             window = select(AuditEventRow).where(AuditEventRow.seq > last_seq)
             rows = (

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from ela.infrastructure.persistence import (
@@ -105,6 +105,36 @@ async def test_make_engine_creates_the_directory_and_the_file(tmp_path: Path) ->
 
 
 PRAGMAS = ["foreign_keys", "recursive_triggers"]
+
+
+async def _journal_mode(engine: AsyncEngine) -> str:
+    async with engine.connect() as connection:
+        return str((await connection.execute(text("PRAGMA journal_mode"))).scalar())
+
+
+async def test_a_file_engine_runs_in_wal_mode(file_url: str) -> None:
+    """ADR 0006 §12: readers must not block writers (a long ``verify_chain`` vs an ``append``)."""
+    engine = make_engine(file_url)
+    try:
+        assert await _journal_mode(engine) == "wal"
+    finally:
+        await engine.dispose()
+
+
+async def test_without_the_listener_sqlite_uses_a_rollback_journal(file_url: str) -> None:
+    engine = create_async_engine(async_url(file_url))
+    try:
+        assert await _journal_mode(engine) == "delete"
+    finally:
+        await engine.dispose()
+
+
+async def test_a_memory_engine_ignores_the_journal_mode() -> None:
+    engine = make_engine(MEMORY_URL)
+    try:
+        assert await _journal_mode(engine) == "memory"
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.parametrize("pragma", PRAGMAS)

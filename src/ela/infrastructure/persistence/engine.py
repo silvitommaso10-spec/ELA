@@ -9,7 +9,9 @@ Every connection runs ``PRAGMA foreign_keys=ON`` — SQLite keeps foreign keys o
 the schema relies on them (``task_events.task_id``, ``tasks.parent_id``) — and
 ``PRAGMA recursive_triggers=ON``: without it SQLite does not fire the DELETE triggers of an
 ``INSERT OR REPLACE``, and the append-only triggers of ``audit_events`` could be walked around
-(ADR 0007).
+(ADR 0007). ``PRAGMA journal_mode=WAL`` is the required journal mode (ADR 0006 §12): readers do
+not block writers, so a long ``verify_chain`` in its snapshot never holds up an ``append``. On an
+in-memory database the pragma is a no-op (``memory``).
 """
 
 from __future__ import annotations
@@ -33,7 +35,11 @@ ASYNC_DRIVER = "sqlite+aiosqlite"
 MEMORY = ":memory:"
 DIRECTORY_MODE = 0o700
 """The database directory holds tasks, authorizations and the audit trail (§57)."""
-CONNECTION_PRAGMAS = ("PRAGMA foreign_keys=ON", "PRAGMA recursive_triggers=ON")
+CONNECTION_PRAGMAS = (
+    "PRAGMA journal_mode=WAL",
+    "PRAGMA foreign_keys=ON",
+    "PRAGMA recursive_triggers=ON",
+)
 
 
 def _parse(url: str) -> URL:
@@ -80,8 +86,8 @@ def _configure_connection(dbapi_connection: Any, _record: Any) -> None:
 
 
 def make_engine(url: str) -> AsyncEngine:
-    """An async engine on ``url``: directory created, foreign keys and recursive triggers on, one
-    shared connection for ``:memory:`` so that every session sees the same database."""
+    """An async engine on ``url``: directory created, WAL, foreign keys and recursive triggers on,
+    one shared connection for ``:memory:`` so that every session sees the same database."""
     target = async_url(url)
     ensure_directory(target)
     if is_memory(target):
