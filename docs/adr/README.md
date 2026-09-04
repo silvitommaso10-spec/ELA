@@ -12,6 +12,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0002](0002-architecture-rules.md) | Regole di dipendenza e come vengono verificate | Accettata |
 | [0003](0003-domain-model.md) | Forma del domain model: identità, tempo, immutabilità, ordine del rischio | Accettata |
 | [0004](0004-task-transitions.md) | Transizioni di stato del Task e forma della funzione `transition` | Accettata |
+| [0005](0005-ports.md) | Forma dei ports: async dove c'è I/O, errori nominati, tool senza Guardian, fake in `ela.testing` | Accettata |
 
 ## Template
 

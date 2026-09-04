@@ -30,6 +30,11 @@ CORE_PACKAGES = ("executive", "tasks", "permissions", "audit")
 CORE_FORBIDDEN = tuple(f"{ROOT_PACKAGE}.{name}" for name in ("providers", "infrastructure"))
 #: The only module allowed to change the state of a Task (ADR 0004).
 STATE_MACHINE = Path("tasks") / "state_machine.py"
+#: The in-memory fakes: used by tests only, never by production code (ADR 0005).
+TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
+TESTING_DIR = "testing"
+#: What the fakes may import besides the standard library.
+TESTING_ALLOWED_INTERNAL = (f"{ROOT_PACKAGE}.domain", f"{ROOT_PACKAGE}.ports", TESTING_PACKAGE)
 #: The only state a Task may be *born* in outside the state machine.
 INITIAL_STATE = ("TaskState", "CREATED")
 
@@ -230,6 +235,39 @@ def _is_initial_state(value: ast.expr) -> bool:
     )
 
 
+def _is_testing(path: Path, pkg_root: Path) -> bool:
+    return path.relative_to(pkg_root).parts[0] == TESTING_DIR
+
+
+def check_testing_isolation(pkg_root: Path) -> list[Violation]:
+    """Rule 6: no production module imports ``ela.testing`` (ADR 0005).
+
+    A fake that reaches production code is a security bug, not a style issue: a ``FakeGuardian``
+    that allows everything must never be one import away from the real pipeline.
+    """
+    files = (path for path in _source_files(pkg_root) if not _is_testing(path, pkg_root))
+    return _violations(
+        "production-does-not-import-testing",
+        files,
+        pkg_root,
+        lambda imported: _is_within(imported, TESTING_PACKAGE),
+    )
+
+
+def check_testing_imports(pkg_root: Path) -> list[Violation]:
+    """Rule 7: ``ela.testing`` imports only the standard library, the domain and the ports."""
+    files = (path for path in _source_files(pkg_root) if _is_testing(path, pkg_root))
+    return _violations(
+        "testing-imports-only-stdlib-domain-and-ports",
+        files,
+        pkg_root,
+        lambda imported: (
+            _top_level(imported) not in STDLIB
+            and not any(_is_within(imported, prefix) for prefix in TESTING_ALLOWED_INTERNAL)
+        ),
+    )
+
+
 Rule = Callable[[Path], list[Violation]]
 
 RULES: dict[str, Rule] = {
@@ -238,4 +276,6 @@ RULES: dict[str, Rule] = {
     "infra-libraries": check_infra_libraries,
     "core-isolation": check_core_isolation,
     "state-changes": check_state_changes,
+    "testing-isolation": check_testing_isolation,
+    "testing-imports": check_testing_imports,
 }

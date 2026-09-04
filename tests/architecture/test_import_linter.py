@@ -22,6 +22,8 @@ from tests.architecture.rules import (
     INFRA_LIBRARIES,
     INFRA_PACKAGES,
     PORTS_ALLOWED_INTERNAL,
+    TESTING_ALLOWED_INTERNAL,
+    TESTING_PACKAGE,
     check_domain,
     top_level_modules,
 )
@@ -53,6 +55,10 @@ def _contract_for(rule: str) -> Contract:
             return contract
         if rule == "core-isolation" and forbidden == set(CORE_FORBIDDEN):
             return contract
+        if rule == "testing-isolation" and forbidden == {TESTING_PACKAGE}:
+            return contract
+        if rule == "testing-imports" and sources == {TESTING_PACKAGE}:
+            return contract
     raise AssertionError(f"pyproject.toml has no import-linter contract for rule {rule!r}")
 
 
@@ -74,6 +80,26 @@ def test_contracts_cover_current_packages() -> None:
 
     core = _contract_for("core-isolation")
     assert set(core["source_modules"]) == {f"ela.{name}" for name in CORE_PACKAGES}
+
+    isolation = _contract_for("testing-isolation")
+    assert set(isolation["source_modules"]) == top_level_modules(PACKAGE_ROOT) - {TESTING_PACKAGE}
+
+    testing = _contract_for("testing-imports")
+    assert set(testing["forbidden_modules"]) >= (
+        (modules - set(TESTING_ALLOWED_INTERNAL)) | INFRA_LIBRARIES | {"pydantic"}
+    )
+
+
+def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() -> None:
+    """Contracts 2 and 6 check direct imports only: ports and fakes reach pydantic via the domain.
+
+    Every other contract keeps the import-linter default and follows indirect chains too.
+    """
+    direct_only = {
+        c["name"] for c in _contracts() if c.get("allow_indirect_imports") in ("True", True)
+    }
+    expected = {_contract_for("ports")["name"], _contract_for("testing-imports")["name"]}
+    assert direct_only == expected
 
 
 def _run_lint_imports(project_root: Path) -> subprocess.CompletedProcess[str]:
@@ -98,7 +124,14 @@ _BY_ID = {case.id: case for case in VIOLATIONS}
 # One case per contract keeps the subprocess runs cheap; the pytest rules cover the rest.
 LINTER_CASES = [
     _BY_ID[case_id]
-    for case_id in ("domain-infra-library", "ports-pydantic", "infra-tasks", "core-tasks-providers")
+    for case_id in (
+        "domain-infra-library",
+        "ports-pydantic",
+        "infra-tasks",
+        "core-tasks-providers",
+        "testing-imported-by-executive",
+        "testing-imports-tasks",
+    )
 ]
 
 
