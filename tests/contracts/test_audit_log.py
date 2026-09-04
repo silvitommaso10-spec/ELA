@@ -51,8 +51,15 @@ async def test_read_limit_keeps_the_first_in_append_order(audit_log: AuditLog) -
     await audit_log.append(UNRELATED_EVENT)
     await audit_log.append(AUDIT_EVENT)
     assert await audit_log.read(limit=1) == (UNRELATED_EVENT,)
-    assert await audit_log.read(limit=0) == ()
     assert await audit_log.read(limit=10) == (UNRELATED_EVENT, AUDIT_EVENT)
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+async def test_a_non_positive_limit_is_a_callers_bug(audit_log: AuditLog, limit: int) -> None:
+    """``limit`` is ``None`` or >= 1 (review M2.1): never an empty answer to a wrong question."""
+    await audit_log.append(AUDIT_EVENT)
+    with pytest.raises(ValueError):
+        await audit_log.read(limit=limit)
 
 
 async def test_read_filters_apply_before_limit(audit_log: AuditLog) -> None:

@@ -55,6 +55,7 @@ from ela.ports import (
     ModelProvider,
     NotAllowedError,
     NotFoundError,
+    check_limit,
 )
 
 __all__ = [
@@ -156,6 +157,7 @@ class FakeTaskRepository:
     async def tasks(
         self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
     ) -> tuple[Task, ...]:
+        check_limit(limit)
         selected = (t for t in self._tasks.values() if states is None or t.state in states)
         return tuple(selected)[:limit]
 
@@ -195,6 +197,7 @@ class FakeAuditLog:
         since: datetime | None = None,
         limit: int | None = None,
     ) -> tuple[AuditEvent, ...]:
+        check_limit(limit)
         selected = (
             event
             for event in self._events

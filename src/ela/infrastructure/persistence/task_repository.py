@@ -25,7 +25,7 @@ from ela.infrastructure.persistence.mappers import (
     task_values,
 )
 from ela.infrastructure.persistence.orm import TaskEventRow, TaskRow
-from ela.ports import AlreadyExistsError, NotFoundError
+from ela.ports import AlreadyExistsError, NotFoundError, check_limit
 
 __all__ = ["SqlTaskRepository"]
 
@@ -88,7 +88,8 @@ class SqlTaskRepository:
     async def tasks(
         self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
     ) -> tuple[Task, ...]:
-        if (states is not None and not states) or (limit is not None and limit <= 0):
+        check_limit(limit)
+        if states is not None and not states:
             return ()
         query = select(TaskRow).order_by(TaskRow.seq)
         if states is not None:

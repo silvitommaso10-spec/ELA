@@ -174,13 +174,22 @@ async def test_record_use_increments_in_sql(engine: AsyncEngine, statements: Att
 # ----------------------------------------------------------------------------------------
 
 
-async def test_trivial_reads_run_no_query(engine: AsyncEngine, statements: Attach) -> None:
+async def test_an_empty_state_filter_runs_no_query(engine: AsyncEngine, statements: Attach) -> None:
     repository = SqlTaskRepository(engine)
     await repository.add(TASK)
     recorded = statements(engine)
     assert await repository.tasks(states=frozenset()) == ()
-    assert await repository.tasks(limit=0) == ()
-    assert await repository.tasks(limit=-1) == ()
+    assert recorded() == []
+
+
+async def test_a_bad_limit_is_refused_before_any_query(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    """``LIMIT -1`` would mean "no limit" to SQLite: the check happens before SQL is built."""
+    repository = SqlTaskRepository(engine)
+    recorded = statements(engine)
+    with pytest.raises(ValueError):
+        await repository.tasks(limit=-1)
     assert recorded() == []
 
 

@@ -66,6 +66,7 @@ __all__ = [
     "ProviderRegistry",
     "TaskRepository",
     "ToolPort",
+    "check_limit",
 ]
 
 
@@ -94,6 +95,12 @@ class AlreadyExistsError(PortError):
         self.kind = kind
         self.key = key
         super().__init__(f"{kind} {key!r} already exists")
+
+
+def check_limit(limit: int | None) -> None:
+    """The ``limit`` rule of every windowed read: ``None`` or at least 1, else ``ValueError``."""
+    if limit is not None and limit < 1:
+        raise ValueError(f"limit must be None or >= 1, not {limit}")
 
 
 class NotAllowedError(PortError):
@@ -178,6 +185,8 @@ class TaskRepository(Protocol):
 
         Recovery (M3.1) asks for the EXECUTING tasks without loading everything: the filter is
         the repository's, the order is always insertion order, ``limit`` applies after the filter.
+        ``limit`` is ``None`` or at least 1: a non-positive limit is a caller's bug and raises
+        ``ValueError`` in every implementation (review M2.1), never an empty result.
         """
 
     async def append_event(self, event: TaskEvent) -> None:
@@ -214,7 +223,8 @@ class AuditLog(Protocol):
         first ``limit``.
 
         ``since`` is inclusive, like every time boundary in the system (ADR 0005). All filters
-        apply before ``limit``.
+        apply before ``limit``. ``limit`` is ``None`` or at least 1: a non-positive limit raises
+        ``ValueError`` in every implementation (review M2.1).
         """
 
 

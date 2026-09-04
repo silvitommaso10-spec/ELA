@@ -94,8 +94,17 @@ async def test_tasks_limit_keeps_the_first_in_insertion_order(
     await task_repository.add(OTHER_TASK)
     await task_repository.add(TASK)
     assert await task_repository.tasks(limit=1) == (OTHER_TASK,)
-    assert await task_repository.tasks(limit=0) == ()
     assert await task_repository.tasks(limit=10) == (OTHER_TASK, TASK)
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+async def test_a_non_positive_limit_is_a_callers_bug(
+    task_repository: TaskRepository, limit: int
+) -> None:
+    """``limit`` is ``None`` or >= 1 (review M2.1): never an empty answer to a wrong question."""
+    await task_repository.add(TASK)
+    with pytest.raises(ValueError):
+        await task_repository.tasks(limit=limit)
 
 
 async def test_tasks_limit_applies_after_the_filter(task_repository: TaskRepository) -> None:

@@ -139,6 +139,20 @@ riusata (§30); l'`AuditLog` di M2.2 vivrà nello stesso package. La configurazi
 traccia anche i greenlet, perché l'adapter async di SQLAlchemy cambia greenlet dentro il listener
 di connessione.
 
+### 11. Aggiunte in review (2026-09-04)
+
+- **`limit` è `None` oppure ≥ 1**, per `TaskRepository.tasks` e `AuditLog.read`: un limite non
+  positivo è un bug del chiamante e solleva `ValueError` in ogni implementazione. Sostituisce la
+  frase "`limit=0` ritorna la tupla vuota" di ADR 0005 §2-ter: una risposta vuota a una domanda
+  sbagliata nasconde il bug, e in SQLite `LIMIT -1` significherebbe "nessun limite". Helper
+  `ela.ports.check_limit`, contract test su fake e SQLite.
+- **I bound vivono nel dominio.** `NAME_MAX_LENGTH = 255` in `domain.py` limita `CapabilityId` e
+  `Authorization.granted_by`; le colonne `String(255)` corrispondenti sono verificate contro quel
+  valore da `tests/infrastructure/persistence/test_orm_types.py`, così il database non può mai
+  rifiutare ciò che il dominio ha accettato. `orm.py` non può importare la costante (regola 8):
+  la ripete, e il test è il legame. Le enum persistite stanno in `String(32)`; un test verifica
+  ogni membro contro la lunghezza della colonna.
+
 ## Alternative considerate
 
 - **Motore sincrono dentro `asyncio.to_thread`** — mescola thread e loop e urta il

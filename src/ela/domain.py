@@ -67,6 +67,7 @@ __all__ = [
     "IntentChannel",
     "IntentId",
     "JsonMapping",
+    "NAME_MAX_LENGTH",
     "NetworkKind",
     "OperatingSystem",
     "PerformanceClass",
@@ -117,6 +118,13 @@ ExecutionId = NewType("ExecutionId", UUID)
 CAPABILITY_ID_PATTERN: Final = r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$"
 """Dotted capability name, at least two segments: ``core.echo``, ``workspace.write_note`` (§29)."""
 
+NAME_MAX_LENGTH: Final = 255
+"""Longest capability id or grantor name the domain accepts (review M2.1).
+
+A bound lives in one place, the domain: the database columns that store these values are sized
+from it, so persistence can never refuse what the domain accepted.
+"""
+
 DEVICE_CAPABILITY_NAME_PATTERN: Final = r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$"
 """Device trait name, one segment or more: ``camera``, ``gpu.cuda`` (§16)."""
 
@@ -130,7 +138,9 @@ identity of a capability. See ADR 0003.
 DeviceCapabilityName = NewType("DeviceCapabilityName", str)
 """Name of a :class:`DeviceCapability`, the hardware/software trait of a node (§16)."""
 
-_CapabilityIdField = Annotated[CapabilityId, Field(pattern=CAPABILITY_ID_PATTERN)]
+_CapabilityIdField = Annotated[
+    CapabilityId, Field(pattern=CAPABILITY_ID_PATTERN, max_length=NAME_MAX_LENGTH)
+]
 _DeviceCapabilityNameField = Annotated[
     DeviceCapabilityName, Field(pattern=DEVICE_CAPABILITY_NAME_PATTERN)
 ]
@@ -684,7 +694,7 @@ class Authorization(_DomainModel):
     created_at: UtcDatetime
     capability_id: _CapabilityIdField
     scope: tuple[str, ...] = ()
-    granted_by: str
+    granted_by: Annotated[str, Field(min_length=1, max_length=NAME_MAX_LENGTH)]
     approval_id: ApprovalId | None = None
     task_id: TaskId | None = None
     step_id: StepId | None = None
