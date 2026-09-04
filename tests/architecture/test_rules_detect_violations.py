@@ -31,6 +31,7 @@ def test_allowed_import_is_not_reported(package_copy: Path, case: Case) -> None:
 
 def test_violation_is_only_reported_by_its_rule(package_copy: Path) -> None:
     """executive/ importing ela.providers breaks rule 4 only: providers is not a library."""
-    apply(VIOLATIONS[-1], package_copy)  # executive/loop.py -> ela.providers.claude
+    case = next(c for c in VIOLATIONS if c.id == "core-executive-submodule")
+    apply(case, package_copy)  # executive/loop.py -> ela.providers.claude
     assert RULES["infra-libraries"](package_copy) == []
     assert len(RULES["core-isolation"](package_copy)) == 1

@@ -28,6 +28,10 @@ INFRA_PACKAGES = frozenset({"providers", "infrastructure", "api"})
 #: Core packages that must stay independent from providers and infrastructure.
 CORE_PACKAGES = ("executive", "tasks", "permissions", "audit")
 CORE_FORBIDDEN = tuple(f"{ROOT_PACKAGE}.{name}" for name in ("providers", "infrastructure"))
+#: The only module allowed to change the state of a Task (ADR 0004).
+STATE_MACHINE = Path("tasks") / "state_machine.py"
+#: The only state a Task may be *born* in outside the state machine.
+INITIAL_STATE = ("TaskState", "CREATED")
 
 
 @dataclass(frozen=True)
@@ -168,6 +172,64 @@ def check_core_isolation(pkg_root: Path) -> list[Violation]:
     )
 
 
+def check_state_changes(pkg_root: Path) -> list[Violation]:
+    """Rule 5: outside ``ela.tasks.state_machine`` nobody changes the state of a Task (ADR 0004).
+
+    Reported: ``x.model_copy(update={... "state": ...})`` with a literal dict, and
+    ``Task(..., state=<anything but TaskState.CREATED>)``. A heuristic on names, not on types:
+    it catches the obvious bypass, the review catches the rest.
+    """
+    rule = "task-state-changes-only-in-the-state-machine"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) == STATE_MACHINE:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if _copies_state(node):
+                found.append(
+                    Violation(rule, name, 'model_copy(update={"state": ...})', node.lineno)
+                )
+            elif _builds_task_in_a_state(node):
+                found.append(Violation(rule, name, "Task(state=...)", node.lineno))
+    return found
+
+
+def _copies_state(call: ast.Call) -> bool:
+    if not (isinstance(call.func, ast.Attribute) and call.func.attr == "model_copy"):
+        return False
+    for keyword in call.keywords:
+        if keyword.arg == "update" and isinstance(keyword.value, ast.Dict):
+            return any(
+                isinstance(key, ast.Constant) and key.value == "state" for key in keyword.value.keys
+            )
+    return False
+
+
+def _builds_task_in_a_state(call: ast.Call) -> bool:
+    callee = call.func
+    callee_name = callee.id if isinstance(callee, ast.Name) else getattr(callee, "attr", None)
+    if callee_name != "Task":
+        return False
+    for keyword in call.keywords:
+        if keyword.arg == "state":
+            return not _is_initial_state(keyword.value)
+    return False
+
+
+def _is_initial_state(value: ast.expr) -> bool:
+    enum_name, member = INITIAL_STATE
+    return (
+        isinstance(value, ast.Attribute)
+        and value.attr == member
+        and isinstance(value.value, ast.Name)
+        and value.value.id == enum_name
+    )
+
+
 Rule = Callable[[Path], list[Violation]]
 
 RULES: dict[str, Rule] = {
@@ -175,4 +237,5 @@ RULES: dict[str, Rule] = {
     "ports": check_ports,
     "infra-libraries": check_infra_libraries,
     "core-isolation": check_core_isolation,
+    "state-changes": check_state_changes,
 }

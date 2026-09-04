@@ -97,6 +97,29 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.providers.claude import Claude\n",
         "ela.providers.claude.Claude",
     ),
+    Case(
+        "state-model-copy",
+        "state-changes",
+        "tasks/engine.py",
+        'def run(task):\n    return task.model_copy(update={"state": TaskState.EXECUTING})\n',
+        'model_copy(update={"state": ...})',
+    ),
+    Case(
+        "state-task-constructed-executing",
+        "state-changes",
+        "executive/loop.py",
+        "from ela.domain import Task, TaskState\n"
+        "t = Task(id=i, created_at=now, goal='g', state=TaskState.EXECUTING)\n",
+        "Task(state=...)",
+    ),
+    Case(
+        "state-task-constructed-variable",
+        "state-changes",
+        "tasks/engine.py",
+        "import ela.domain\n"
+        "def make(state):\n    return ela.domain.Task(id=i, created_at=n, goal='g', state=state)\n",
+        "Task(state=...)",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -114,6 +137,15 @@ ALLOWED: tuple[Case, ...] = (
     ),
     Case("core-domain", "core-isolation", "tasks/state.py", "from ela.domain import Task\n", ""),
     Case("core-tools-providers", "core-isolation", "tools/shell.py", "import ela.providers\n", ""),
+    Case(
+        "state-task-created",
+        "state-changes",
+        "tasks/engine.py",
+        "from ela.domain import Task, TaskState\n"
+        "t = Task(id=i, created_at=now, goal='g', state=TaskState.CREATED)\n"
+        'u = t.model_copy(update={"goal": "other"})\n',
+        "",
+    ),
 )
 
 CASES = VIOLATIONS + ALLOWED

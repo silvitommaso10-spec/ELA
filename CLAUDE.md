@@ -38,6 +38,8 @@ e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.
 - `ruff check`, `ruff format`, `mypy --strict src/` devono passare.
 - `pytest` deve passare. Moduli security-critical (`permissions/`, `audit/`, `tasks/`):
   100% branch coverage.
+- Il gate `cov-critical` del Makefile (`CRITICAL_PACKAGES`) si estende a `permissions/` e
+  `audit/` nella stessa milestone in cui il package riceve codice, non dopo.
 - Ogni nuova regola architetturale → un architecture test in `tests/architecture/`.
 - Ogni bug trovato → prima un test che fallisce, poi il fix.
 - Tutto ciò che gira in `make check` ha un test che ne dimostra il fallimento nel caso
