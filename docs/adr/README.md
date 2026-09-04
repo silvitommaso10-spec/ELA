@@ -9,6 +9,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | ID | Titolo | Stato |
 |----|--------|-------|
 | [0001](0001-stack.md) | Stack tecnico del Core | Accettata |
+| [0002](0002-architecture-rules.md) | Regole di dipendenza e come vengono verificate | Accettata |
 
 ## Template
 

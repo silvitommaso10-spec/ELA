@@ -1,32 +1,27 @@
-"""Architecture tests for the layering rules (CLAUDE.md "Architettura", spec §49, §52)."""
+"""The architecture rules hold on the real source tree (CLAUDE.md "Architettura", spec §52)."""
 
-import ast
 import importlib
-import sys
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DOMAIN_PATH = REPO_ROOT / "src" / "ela" / "domain.py"
-ALLOWED_TOP_LEVEL = set(sys.stdlib_module_names) | {"pydantic"}
+import pytest
 
-
-def _imported_top_level_modules(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    modules: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            modules.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            if node.level:  # relative import: stays inside the ela package
-                modules.add("ela")
-            elif node.module:
-                modules.add(node.module.split(".")[0])
-    return modules
+from tests.architecture.rules import CORE_PACKAGES, RULES, Rule
+from tests.architecture.violations import PACKAGE_ROOT
 
 
-def test_domain_imports_only_stdlib_and_pydantic() -> None:
-    assert DOMAIN_PATH.is_file(), f"{DOMAIN_PATH} must exist"
+def test_required_modules_exist() -> None:
+    """A rule about a file that does not exist would hold vacuously."""
+    assert (PACKAGE_ROOT / "domain.py").is_file()
+    assert (PACKAGE_ROOT / "ports.py").is_file()
+    for name in CORE_PACKAGES:
+        assert (PACKAGE_ROOT / name / "__init__.py").is_file(), f"missing package ela.{name}"
 
-    forbidden = _imported_top_level_modules(DOMAIN_PATH) - ALLOWED_TOP_LEVEL
-    assert not forbidden, f"ela.domain imports outside stdlib/pydantic: {sorted(forbidden)}"
-    importlib.import_module("ela.domain")
+
+@pytest.mark.parametrize("rule", RULES.values(), ids=list(RULES))
+def test_rule_holds(rule: Rule) -> None:
+    violations = rule(PACKAGE_ROOT)
+    assert not violations, "\n".join(str(v) for v in violations)
+
+
+@pytest.mark.parametrize("module", ["ela.domain", "ela.ports"])
+def test_module_is_importable(module: str) -> None:
+    importlib.import_module(module)
