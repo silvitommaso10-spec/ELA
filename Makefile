@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test check
+.PHONY: install lint typecheck test milestones check
 
 UV ?= uv
 
@@ -16,4 +16,7 @@ typecheck:
 test:
 	$(UV) run pytest
 
-check: lint typecheck test
+milestones:
+	$(UV) run python scripts/check_milestone.py
+
+check: lint typecheck test milestones
