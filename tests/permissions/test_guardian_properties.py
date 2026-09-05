@@ -189,8 +189,14 @@ def test_allowed_implies_a_justification(
         assert spec.risk is RiskLevel.MEDIUM and covered
     assert decision.expires_at is not None
     assert h.now < decision.expires_at <= h.now + DEFAULT_DECISION_TTL
-    if covered and authorization is not None and authorization.expires_at is not None:
+    # The grant bounds the expiry only when the decision rests on it (ADR 0011 §9): MEDIUM, or
+    # SAFE/LOW that needs one. A covering grant that is not needed is not used, and the decision
+    # expires after the full TTL even if the grant expires sooner.
+    relied_upon = covered and (needs or spec.risk is RiskLevel.MEDIUM)
+    if relied_upon and authorization is not None and authorization.expires_at is not None:
         assert decision.expires_at <= authorization.expires_at
+    elif authorization is not None:
+        assert decision.expires_at == h.now + DEFAULT_DECISION_TTL
 
 
 def _reaches_the_grant(spec: CapabilitySpec, args: dict[str, Any], step: TaskStep | None) -> bool:

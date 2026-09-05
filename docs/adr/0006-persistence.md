@@ -1,6 +1,6 @@
 # 0006. Persistenza: SQLAlchemy async su SQLite, ORM separato dal dominio, migrazioni alembic
 
-- **Stato:** Accettata. Schema esteso da ADR 0008 §2 (`task_plans`, migrazione `0003`).
+- **Stato:** Accettata. Schema esteso da ADR 0008 §2 (`task_plans`, migrazione `0003`). `record_use` (§6) sostituito da `consume`, un `UPDATE` condizionale, da ADR 0012 §5.
 - **Data:** 2026-09-04
 - **Riferimenti spec:** §14, §15, §30, §33, §48, §51, §52, §54, §55, §57, §59
 - **Milestone:** M2.1

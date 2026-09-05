@@ -53,6 +53,8 @@ from ela.domain import (
 )
 from ela.ports import (
     AlreadyExistsError,
+    AuthorizationExhaustedError,
+    AuthorizationExpiredError,
     Clock,
     IdGenerator,
     ModelProvider,
@@ -282,11 +284,16 @@ class FakeAuthorizationStore:
         except KeyError:
             raise NotFoundError("authorization", authorization_id) from None
 
-    async def record_use(self, authorization_id: AuthorizationId) -> int:
-        if authorization_id not in self._uses:
-            raise NotFoundError("authorization", authorization_id)
-        self._uses[authorization_id] += 1
-        return self._uses[authorization_id]
+    async def consume(self, authorization_id: AuthorizationId, *, now: datetime) -> int:
+        """Same rules as the SQL store, in the same order: unknown, expired, exhausted, count."""
+        grant = await self.get(authorization_id)
+        uses = self._uses[authorization_id]
+        if grant.expires_at is not None and grant.expires_at <= now:
+            raise AuthorizationExpiredError(authorization_id, grant.expires_at)
+        if grant.max_uses is not None and uses >= grant.max_uses:
+            raise AuthorizationExhaustedError(authorization_id, uses, grant.max_uses)
+        self._uses[authorization_id] = uses + 1
+        return uses + 1
 
 
 # --------------------------------------------------------------------------------------

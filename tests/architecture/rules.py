@@ -69,6 +69,16 @@ DECISION_BUILDERS_EXEMPT = frozenset({PERMISSIONS_DIR, TESTING_DIR})
 #: Rule 14 (ADR 0011): outside ``ela.permissions`` nobody calls ``decide`` — only ``authorize``,
 #: which writes the audit event. No exemption: the fake *defines* ``decide``, it never calls it.
 DECIDE_METHOD = "decide"
+#: Rule 15 (ADR 0012): outside ``ela.permissions`` nobody builds an ``Authorization`` or widens one
+#: by ``model_copy`` — every production grant is born from ``authorization_from_approval``. The
+#: fakes may (rule 6 keeps them out of production); the persistence mapper reads grants back from
+#: rows, it does not coin them, and is the one exact-path exemption.
+AUTHORIZATION_MODEL = "Authorization"
+AUTHORIZATION_WIDENING_FIELDS = frozenset(
+    {"approval_id", "task_id", "step_id", "scope", "expires_at", "max_uses", "capability_id"}
+)
+AUTHORIZATION_BUILDERS_EXEMPT = frozenset({PERMISSIONS_DIR, TESTING_DIR})
+AUTHORIZATION_READER = PERSISTENCE_MAPPERS
 
 
 @dataclass(frozen=True)
@@ -515,6 +525,42 @@ def check_decide_callers(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_authorization_builders(pkg_root: Path) -> list[Violation]:
+    """Rule 15: outside ``ela.permissions`` nobody builds or widens an ``Authorization`` (ADR 0012).
+
+    Reported: any call ``Authorization(...)`` — by name or as an attribute — and any
+    ``x.model_copy(update={...})`` whose literal dict names a field that could widen a grant
+    (``max_uses``, ``expires_at``, ``scope``, the bindings). ``model_copy`` does not run the
+    validators, so a copy is the one way to hold a grant the type would refuse. ``ela.testing``
+    is exempt (rule 6 keeps it out of production); ``persistence/mappers.py`` reads rows back
+    and is exempt by exact path. A heuristic on names, like rules 5, 11 and 12.
+    """
+    rule = "authorizations-built-only-by-permissions"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        relative = path.relative_to(pkg_root)
+        if relative.parts[0] in AUTHORIZATION_BUILDERS_EXEMPT or relative == AUTHORIZATION_READER:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if _is_named(node.func, AUTHORIZATION_MODEL):
+                found.append(Violation(rule, name, f"{AUTHORIZATION_MODEL}(...)", node.lineno))
+            else:
+                widened = [
+                    f for f in sorted(AUTHORIZATION_WIDENING_FIELDS) if _copies_field(node, f)
+                ]
+                if widened:
+                    found.append(
+                        Violation(
+                            rule, name, f"model_copy(update={{{widened[0]!r}: ...}})", node.lineno
+                        )
+                    )
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -530,4 +576,5 @@ RULES: dict[str, Rule] = {
     "permissions-imports": check_permissions_imports,
     "decision-builders": check_decision_builders,
     "decide-callers": check_decide_callers,
+    "authorization-builders": check_authorization_builders,
 }

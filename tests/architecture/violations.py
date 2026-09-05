@@ -343,6 +343,46 @@ VIOLATIONS: tuple[Case, ...] = (
         ".decide(",
     ),
     Case(
+        "authorization-built-by-executive",
+        "authorization-builders",
+        "executive/loop.py",
+        "from ela.domain import Authorization\n"
+        "def grant(i, n, c):\n"
+        "    return Authorization(id=i, created_at=n, capability_id=c, granted_by='ela')\n",
+        "Authorization(...)",
+    ),
+    Case(
+        "authorization-built-via-the-module",
+        "authorization-builders",
+        "tools/shell.py",
+        "import ela.domain\n"
+        "def grant(i, n, c):\n"
+        "    return ela.domain.Authorization(id=i, created_at=n, capability_id=c, "
+        "granted_by='ela')\n",
+        "Authorization(...)",
+    ),
+    Case(
+        "authorization-widened-by-copy",
+        "authorization-builders",
+        "executive/loop.py",
+        'def reuse(a):\n    return a.model_copy(update={"max_uses": None})\n',
+        "model_copy(update={'max_uses': ...})",
+    ),
+    Case(
+        "authorization-unbound-by-copy",
+        "authorization-builders",
+        "executive/loop.py",
+        'def unbind(a):\n    return a.model_copy(update={"task_id": None, "step_id": None})\n',
+        "model_copy(update={'step_id': ...})",
+    ),
+    Case(
+        "authorization-built-by-another-persistence-module",
+        "authorization-builders",
+        "infrastructure/persistence/rows.py",
+        "from ela.domain import Authorization\ndef load(row):\n    return Authorization(**row)\n",
+        "Authorization(...)",
+    ),
+    Case(
         "decide-called-by-tools",
         "decide-callers",
         "tools/runner.py",
@@ -516,6 +556,33 @@ ALLOWED: tuple[Case, ...] = (
         "e = ela.domain.PermissionDecision(id=i, created_at=n, capability_id=c, "
         "outcome='DENIED', risk=r, reason='no')\n"
         'f = d.model_copy(update={"reason": "still no"})\n',
+        "",
+    ),
+    Case(
+        "authorization-built-by-permissions",
+        "authorization-builders",
+        "permissions/policy.py",
+        "from ela.domain import Authorization\n"
+        "def grant(i, n, c):\n"
+        "    return Authorization(id=i, created_at=n, capability_id=c, granted_by='policy')\n",
+        "",
+    ),
+    Case(
+        "authorization-built-by-the-fake",
+        "authorization-builders",
+        "testing/extra.py",
+        "from ela.domain import Authorization\n"
+        "def grant(i, n, c):\n"
+        "    return Authorization(id=i, created_at=n, capability_id=c, granted_by='fake')\n",
+        "",
+    ),
+    Case(
+        "authorization-copied-without-widening",
+        "authorization-builders",
+        "executive/loop.py",
+        "from ela.domain import AuthorizationId\n"
+        'def relabel(a, i):\n    return a.model_copy(update={"metadata": {"seen": True}})\n'
+        "def key(a):\n    return AuthorizationId(a.id)\n",
         "",
     ),
     Case(

@@ -54,6 +54,9 @@ from ela.domain import (
 __all__ = [
     "AlreadyExistsError",
     "AuditLog",
+    "AuthorizationExhaustedError",
+    "AuthorizationExpiredError",
+    "AuthorizationNotUsableError",
     "AuthorizationStore",
     "CapabilityRegistryPort",
     "Clock",
@@ -102,6 +105,36 @@ def check_limit(limit: int | None) -> None:
     """The ``limit`` rule of every windowed read: ``None`` or at least 1, else ``ValueError``."""
     if limit is not None and limit < 1:
         raise ValueError(f"limit must be None or >= 1, not {limit}")
+
+
+class AuthorizationNotUsableError(PortError):
+    """``consume`` refused to spend a grant that exists but cannot be used now (§30, §33).
+
+    Raised *instead of* counting: nothing changed in the store. The two subclasses say why, so a
+    caller can tell "ask again" (expired) from "someone else got there first" (exhausted).
+    """
+
+    def __init__(self, authorization_id: AuthorizationId, reason: str) -> None:
+        self.authorization_id = authorization_id
+        self.reason = reason
+        super().__init__(f"authorization {authorization_id!r} cannot be used: {reason}")
+
+
+class AuthorizationExpiredError(AuthorizationNotUsableError):
+    """The grant's ``expires_at`` is at or before the instant given (closed bound, ADR 0005)."""
+
+    def __init__(self, authorization_id: AuthorizationId, expires_at: datetime) -> None:
+        self.expires_at = expires_at
+        super().__init__(authorization_id, f"it expired at {expires_at.isoformat()}")
+
+
+class AuthorizationExhaustedError(AuthorizationNotUsableError):
+    """The grant was already used ``max_uses`` times: a single-use grant spent twice (§30)."""
+
+    def __init__(self, authorization_id: AuthorizationId, uses: int, max_uses: int) -> None:
+        self.uses = uses
+        self.max_uses = max_uses
+        super().__init__(authorization_id, f"it was used {uses} of {max_uses} times")
 
 
 class NotAllowedError(PortError):
@@ -269,9 +302,10 @@ class AuthorizationStore(Protocol):
     """Where the grants the Guardian consumes are kept (§30, §59).
 
     An :class:`~ela.domain.Authorization` is frozen and may carry ``max_uses``, so the store counts
-    the uses on its behalf. It only counts: whether ``uses < max_uses`` still holds is the
-    Guardian's judgement, and the Guardian receives the authorization as an argument — it never
-    holds this store (ADR 0005).
+    the uses on its behalf. The Guardian judges whether a grant covers a call and is usable, from
+    the count the caller reads here (``uses``, ADR 0011); ``consume`` then spends one use
+    atomically, so that two executors holding the same single-use grant cannot both act (ADR 0012).
+    The Guardian receives the authorization as an argument — it never holds this store (ADR 0005).
     """
 
     async def grant(self, authorization: Authorization) -> None:
@@ -286,8 +320,14 @@ class AuthorizationStore(Protocol):
     async def uses(self, authorization_id: AuthorizationId) -> int:
         """How many times the grant was used; :class:`NotFoundError` if unknown."""
 
-    async def record_use(self, authorization_id: AuthorizationId) -> int:
-        """Count one more use and return the new total; :class:`NotFoundError` if unknown."""
+    async def consume(self, authorization_id: AuthorizationId, *, now: datetime) -> int:
+        """Spend one use and return the new total — only if the grant exists, has not expired at
+        ``now`` (``expires_at <= now`` is expired, closed bound) and is not exhausted
+        (``uses < max_uses``). Otherwise nothing is counted and, in this order,
+        :class:`NotFoundError`, :class:`AuthorizationExpiredError` or
+        :class:`AuthorizationExhaustedError` is raised. The check and the count are one atomic
+        step: of two concurrent calls on a single-use grant exactly one returns. ``now`` is the
+        caller's fact, as ``authorization_uses`` is for the Guardian (ADR 0011 §5)."""
 
 
 # --------------------------------------------------------------------------------------

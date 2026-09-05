@@ -75,6 +75,7 @@ def _uuid(tail: int) -> UUID:
 
 NOW: Final = datetime(2026, 9, 4, 10, 30, tzinfo=UTC)
 LATER: Final = datetime(2026, 9, 4, 11, 0, tzinfo=UTC)
+MUCH_LATER: Final = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
 
 IDENTITY_ID: Final = IdentityId(_uuid(1))
 INTENT_ID: Final = IntentId(_uuid(2))
@@ -253,12 +254,13 @@ APPROVAL: Final = Approval(
     task_id=TASK_ID,
     step_id=STEP_ID,
     capability_id=WRITE_NOTE,
+    targets=("workspace/notes/briefing.md",),
     prompt="Posso scrivere il briefing in workspace/notes?",
     status=ApprovalStatus.GRANTED,
     decision_id=DECISION_ID,
     responded_at=LATER,
     responded_by="tommaso",
-    expires_at=LATER,
+    expires_at=MUCH_LATER,
     metadata={"channel": "phone"},
 )
 

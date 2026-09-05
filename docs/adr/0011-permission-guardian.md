@@ -1,6 +1,6 @@
 # 0011. Permission Guardian: catalogo, policy v0.1 per rischio, scope, autorizzazioni, fail-safe, audit delle decisioni
 
-- **Stato:** Accettata
+- **Stato:** Accettata. L'ordine di registrazione dell'uso ("`record_use` dopo l'esecuzione", Conseguenze) è superato da ADR 0012 §6: `authorize` → `consume` → tool.
 - **Data:** 2026-09-05
 - **Riferimenti spec:** §13, §27, §28, §29, §32, §33, §47, §49, §51, §52, §56, §57, §59, §62, §65
 - **Milestone:** M4.2
@@ -185,7 +185,11 @@ import.
 ### 9. Scadenza della decisione
 
 Una decisione `ALLOWED` scade: `expires_at = now + decision_ttl`, e non oltre
-`authorization.expires_at` se si regge su un'autorizzazione (il minimo dei due). `decision_ttl`
+`authorization.expires_at` se si regge su un'autorizzazione (il minimo dei due). La scadenza
+della decisione è limitata dal grant solo se la decisione si regge sul grant: MEDIUM, oppure
+SAFE/LOW con `requires_authorization` (della specifica o dello step). Un grant che copre ma non
+è necessario non viene usato (§6, famiglia 2) e non stringe nulla: la decisione scade dopo il TTL
+pieno anche se il grant scade prima. `decision_ttl`
 è un `timedelta` del costruttore, default `DEFAULT_DECISION_TTL = 5 minuti`; zero o negativo →
 `ValueError` alla costruzione (un Guardian che emette decisioni già scadute non permette mai
 nulla: errore di configurazione, non policy). `DENIED` e `REQUIRES_APPROVAL` non scadono

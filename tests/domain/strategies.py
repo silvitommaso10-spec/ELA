@@ -254,6 +254,7 @@ approvals = st.builds(
     task_id=uuids,
     step_id=uuids,
     capability_id=capability_ids,
+    targets=st.lists(texts, max_size=3).map(tuple),
     prompt=texts,
     status=st.sampled_from(ApprovalStatus),
     decision_id=_optional(uuids),
@@ -263,20 +264,39 @@ approvals = st.builds(
     metadata=json_mappings,
 )
 
-authorizations = st.builds(
+policy_authorizations = st.builds(
     Authorization,
     id=uuids,
     created_at=utc_datetimes,
     capability_id=capability_ids,
     scope=st.lists(texts, max_size=3).map(tuple),
     granted_by=st.text(min_size=1, max_size=24),
-    approval_id=_optional(uuids),
+    approval_id=st.none(),
     task_id=_optional(uuids),
     step_id=_optional(uuids),
     expires_at=_optional(utc_datetimes),
     max_uses=_optional(st.integers(min_value=1, max_value=100)),
     metadata=json_mappings,
 )
+"""A grant from a standing policy (§59): no approval, any binding, any use limit."""
+
+approval_authorizations = st.builds(
+    Authorization,
+    id=uuids,
+    created_at=utc_datetimes,
+    capability_id=capability_ids,
+    scope=st.lists(texts, max_size=3).map(tuple),
+    granted_by=st.text(min_size=1, max_size=24),
+    approval_id=uuids,
+    task_id=uuids,
+    step_id=uuids,
+    expires_at=_optional(utc_datetimes),
+    max_uses=st.just(1),
+    metadata=json_mappings,
+)
+"""A grant born from an approval (§30): single use, bound to a task and a step (ADR 0012 §1)."""
+
+authorizations = st.one_of(policy_authorizations, approval_authorizations)
 
 audit_events = st.builds(
     AuditEvent,

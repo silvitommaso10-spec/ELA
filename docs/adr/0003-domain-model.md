@@ -1,6 +1,6 @@
 # 0003. Forma del domain model: identità, tempo, immutabilità, ordine del rischio
 
-- **Stato:** Accettata
+- **Stato:** Accettata. `Authorization` vincolata (grant da approvazione ⇒ monouso e legato) e `Approval.targets` aggiunto da ADR 0012 §1.
 - **Data:** 2026-09-04
 - **Riferimenti spec:** §13, §14, §16, §17, §28, §29, §32, §33, §49, §51, §63, §64
 - **Milestone:** M1.1

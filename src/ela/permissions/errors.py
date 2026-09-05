@@ -8,10 +8,11 @@ unknown" from "the schema is wrong" without reading a message.
 
 from __future__ import annotations
 
-from ela.domain import CapabilityId, RiskLevel
+from ela.domain import ApprovalId, CapabilityId, RiskLevel
 from ela.ports import NotFoundError
 
 __all__ = [
+    "ApprovalMismatchError",
     "CapabilityNotFound",
     "InvalidArgumentsError",
     "InvalidCapabilityError",
@@ -69,3 +70,19 @@ class InvalidArgumentsError(PermissionsError):
         super().__init__(
             f"arguments for {capability_id!r} violate its schema: " + "; ".join(errors)
         )
+
+
+class ApprovalMismatchError(PermissionsError):
+    """An :class:`~ela.domain.Approval` that does not authorise *this* call (§30, §33).
+
+    Raised by ``authorization_from_approval`` before any grant exists: the approval is not
+    GRANTED, nobody signed it, it was answered late, or it cites another task, step, capability
+    or target. ``check`` names the check that failed (a member of ``Check``), ``reason`` says why
+    in words. An out-of-context "yes" produces this, never a grant.
+    """
+
+    def __init__(self, approval_id: ApprovalId, check: str, reason: str) -> None:
+        self.approval_id = approval_id
+        self.check = check
+        self.reason = reason
+        super().__init__(f"approval {approval_id!r} does not authorise this call: {reason}")

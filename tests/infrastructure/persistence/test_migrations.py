@@ -23,7 +23,7 @@ from ela.infrastructure.persistence import (
 )
 from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS, Base
 from tests.architecture.violations import REPO_ROOT
-from tests.domain.examples import AUDIT_EVENT, POLICY_AUTHORIZATION, TASK, TASK_PLAN
+from tests.domain.examples import AUDIT_EVENT, NOW, POLICY_AUTHORIZATION, TASK, TASK_PLAN
 
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 ALEMBIC = Path(sys.executable).parent / "alembic"
@@ -166,7 +166,7 @@ async def test_the_adapters_work_on_the_migrated_database(db: Path) -> None:
         await log.append(AUDIT_EVENT)
         assert await repository.get(TASK.id) == TASK
         assert await repository.plan(TASK.id) == TASK_PLAN
-        assert await store.record_use(POLICY_AUTHORIZATION.id) == 1
+        assert await store.consume(POLICY_AUTHORIZATION.id, now=NOW) == 1
         assert await log.read() == (AUDIT_EVENT,)
         assert (await verify_chain(engine)).length == 1
     finally:

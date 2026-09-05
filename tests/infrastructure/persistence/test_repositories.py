@@ -23,9 +23,16 @@ from ela.infrastructure.persistence import (
     SqlTaskRepository,
     make_engine,
 )
-from ela.ports import AlreadyExistsError, NotFoundError
+from ela.ports import AlreadyExistsError, AuthorizationExhaustedError, NotFoundError
 from tests.contracts.test_task_repository import CHILD, OTHER_TASK
-from tests.domain.examples import POLICY_AUTHORIZATION, SINGLE_USE_AUTHORIZATION, TASK, TASK_EVENT
+from tests.domain.examples import (
+    LATER,
+    NOW,
+    POLICY_AUTHORIZATION,
+    SINGLE_USE_AUTHORIZATION,
+    TASK,
+    TASK_EVENT,
+)
 from tests.infrastructure.persistence.conftest import Recorder, create_schema
 
 Attach = Callable[[AsyncEngine], Recorder]
@@ -129,7 +136,7 @@ async def test_data_survives_a_new_engine_on_the_same_file(file_url: str) -> Non
     await SqlTaskRepository(first).add(precise)
     await SqlTaskRepository(first).append_event(TASK_EVENT)
     await SqlAuthorizationStore(first).grant(SINGLE_USE_AUTHORIZATION)
-    await SqlAuthorizationStore(first).record_use(SINGLE_USE_AUTHORIZATION.id)
+    await SqlAuthorizationStore(first).consume(SINGLE_USE_AUTHORIZATION.id, now=NOW)
     await first.dispose()
 
     second = make_engine(file_url)
@@ -144,29 +151,79 @@ async def test_data_survives_a_new_engine_on_the_same_file(file_url: str) -> Non
         await second.dispose()
 
 
-async def test_record_use_counts_every_concurrent_call(file_url: str) -> None:
+async def test_concurrent_consumes_of_a_single_use_grant_let_exactly_one_through(
+    file_url: str,
+) -> None:
+    """ADR 0012 §5: the check and the count are one ``UPDATE`` under SQLite's write lock."""
     engine = make_engine(file_url)
     try:
         await create_schema(engine)
         store = SqlAuthorizationStore(engine)
-        await store.grant(POLICY_AUTHORIZATION)
-        totals = await asyncio.gather(
-            *(store.record_use(POLICY_AUTHORIZATION.id) for _ in range(20))
+        await store.grant(SINGLE_USE_AUTHORIZATION)
+        outcomes = await asyncio.gather(
+            *(store.consume(SINGLE_USE_AUTHORIZATION.id, now=NOW) for _ in range(20)),
+            return_exceptions=True,
         )
-        assert sorted(totals) == list(range(1, 21))
-        assert await store.uses(POLICY_AUTHORIZATION.id) == 20
+        assert [o for o in outcomes if not isinstance(o, BaseException)] == [1]
+        refused = [o for o in outcomes if isinstance(o, BaseException)]
+        assert len(refused) == 19
+        assert all(isinstance(o, AuthorizationExhaustedError) for o in refused)
+        assert await store.uses(SINGLE_USE_AUTHORIZATION.id) == 1
     finally:
         await engine.dispose()
 
 
-async def test_record_use_increments_in_sql(engine: AsyncEngine, statements: Attach) -> None:
+async def test_concurrent_consumes_of_a_limited_grant_count_exactly_max_uses(
+    file_url: str,
+) -> None:
+    engine = make_engine(file_url)
+    try:
+        await create_schema(engine)
+        store = SqlAuthorizationStore(engine)
+        five = POLICY_AUTHORIZATION.model_copy(update={"max_uses": 5})
+        await store.grant(five)
+        outcomes = await asyncio.gather(
+            *(store.consume(five.id, now=NOW) for _ in range(20)), return_exceptions=True
+        )
+        assert sorted(o for o in outcomes if isinstance(o, int)) == [1, 2, 3, 4, 5]
+        assert sum(isinstance(o, AuthorizationExhaustedError) for o in outcomes) == 15
+        assert await store.uses(five.id) == 5
+    finally:
+        await engine.dispose()
+
+
+async def test_consume_is_one_conditional_update_in_sql(
+    engine: AsyncEngine, statements: Attach
+) -> None:
     store = SqlAuthorizationStore(engine)
-    await store.grant(POLICY_AUTHORIZATION)
+    await store.grant(SINGLE_USE_AUTHORIZATION)
     recorded = statements(engine)
-    assert await store.record_use(POLICY_AUTHORIZATION.id) == 1
+    assert await store.consume(SINGLE_USE_AUTHORIZATION.id, now=NOW) == 1
     updates = [s for s in recorded() if s.startswith("UPDATE authorizations")]
     assert len(updates) == 1
-    assert "uses=(authorizations.uses + ?)" in updates[0]
+    (statement,) = updates
+    assert "uses=(authorizations.uses + ?)" in statement
+    assert "authorizations.uses < authorizations.max_uses" in statement
+    assert "authorizations.expires_at > ?" in statement
+    assert "authorizations.max_uses IS NULL" in statement
+    assert "authorizations.expires_at IS NULL" in statement
+
+
+async def test_a_refused_consume_updates_nothing_and_reads_once_to_name_the_error(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    """The safety is in the ``UPDATE`` that matches no row; the ``SELECT`` only names the error."""
+    store = SqlAuthorizationStore(engine)
+    await store.grant(SINGLE_USE_AUTHORIZATION)
+    await store.consume(SINGLE_USE_AUTHORIZATION.id, now=NOW)
+    recorded = statements(engine)
+    with pytest.raises(AuthorizationExhaustedError):
+        await store.consume(SINGLE_USE_AUTHORIZATION.id, now=NOW)
+    seen = recorded()
+    assert len([s for s in seen if s.startswith("UPDATE authorizations")]) == 1
+    assert len(_selects(seen, "authorizations")) == 1
+    assert await store.uses(SINGLE_USE_AUTHORIZATION.id) == 1
+    assert LATER > NOW  # the grant expires LATER: the refusal above was exhaustion, not expiry
 
 
 # ----------------------------------------------------------------------------------------

@@ -6,8 +6,10 @@ ADR that extends a port (0008: ``TaskRepository.add_plan``/``plan``; 0011: the s
 ``PermissionGuardianPort.decide``) documents the members it adds or changes in a row of its own,
 and a later ADR that shrinks a port (0010: ``CapabilityRegistryPort`` without ``register``)
 documents the members that remain in a replacing row. Extensions only add, replacements only
-remove; extensions apply first, then replacements; the result is what the code must match. A
-changed signature is checked by ``test_adr_guardian.py``, member by member here.
+remove; extensions apply first, then replacements; the result is what the code must match. An ADR
+that does both (0012: ``AuthorizationStore`` with ``consume`` and without ``record_use``) has two
+tables, each under its label, and is read by section (ADR 0012 §8). A changed signature is
+checked by ``test_adr_guardian.py``, member by member here.
 """
 
 from __future__ import annotations
@@ -21,19 +23,49 @@ from tests.contracts.protocols import is_async, members, method_names, port_prot
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0005-ports.md"
-EXTENDING_ADRS = (ADR_DIR / "0008-task-engine.md", ADR_DIR / "0011-permission-guardian.md")
-REPLACING_ADRS = (ADR_DIR / "0010-capability-catalogue.md",)
+EXTENDING = "Port estesi:"
+REPLACING = "Port sostituiti:"
+Source = tuple[Path, str | None]
+"""An ADR and the label of the table to read, or ``None`` to read the whole file."""
+EXTENDING_ADRS: tuple[Source, ...] = (
+    (ADR_DIR / "0008-task-engine.md", None),
+    (ADR_DIR / "0011-permission-guardian.md", None),
+    (ADR_DIR / "0012-authorizations.md", EXTENDING),
+)
+REPLACING_ADRS: tuple[Source, ...] = (
+    (ADR_DIR / "0010-capability-catalogue.md", None),
+    (ADR_DIR / "0012-authorizations.md", REPLACING),
+)
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")
 MEMBER = re.compile(r"`(\w+)`")
 
 
-def documented_ports(text: str) -> dict[str, tuple[str, frozenset[str]]]:
-    """Port name -> (mode, members) for every row of the table."""
+def section_of(text: str, label: str) -> str:
+    """The lines from ``label`` to the end of the first table after it (ADR 0012 §8)."""
+    lines = text.splitlines()
+    assert label in lines, f"the ADR must contain the label {label!r}"
+    start = lines.index(label) + 1
+    kept: list[str] = []
+    for line in lines[start:]:
+        if line.startswith("|"):
+            kept.append(line)
+        elif kept:
+            break
+    return "\n".join(kept)
+
+
+def documented_ports(
+    text: str, section: str | None = None
+) -> dict[str, tuple[str, frozenset[str]]]:
+    """Port name -> (mode, members) for every row of the table; a port appears at most once."""
+    if section is not None:
+        text = section_of(text, section)
     rows: dict[str, tuple[str, frozenset[str]]] = {}
     for line in text.splitlines():
         match = ROW.match(line)
         if match is not None:
             name, _, mode, cells = match.groups()
+            assert name not in rows, f"{name} appears in two rows: read the tables by section"
             rows[name] = (mode, frozenset(MEMBER.findall(cells)))
     assert rows, "the ADR must contain a port table"
     return rows
@@ -59,8 +91,17 @@ def all_documented_ports(
     return union
 
 
-def _read(paths: tuple[Path, ...]) -> tuple[str, ...]:
-    return tuple(path.read_text(encoding="utf-8") for path in paths)
+def _read(sources: tuple[Source, ...]) -> tuple[str, ...]:
+    """Each source as the text ``documented_ports`` should see: the whole file or one section."""
+    texts = []
+    for path, section in sources:
+        text = path.read_text(encoding="utf-8")
+        texts.append(text if section is None else section_of(text, section))
+    return tuple(texts)
+
+
+def _text(source: Source) -> str:
+    return _read((source,))[0]
 
 
 def documented() -> dict[str, tuple[str, frozenset[str]]]:
@@ -94,7 +135,7 @@ def test_table_modes_match_the_code() -> None:
 
 def test_each_adr_documents_its_own_members() -> None:
     base = documented_ports(ADR_PATH.read_text(encoding="utf-8"))
-    extension = documented_ports(EXTENDING_ADRS[0].read_text(encoding="utf-8"))
+    extension = documented_ports(_text(EXTENDING_ADRS[0]))
     assert set(extension) == {"TaskRepository"}
     assert extension["TaskRepository"][1] == {"add_plan", "plan"}
     assert not (base["TaskRepository"][1] & extension["TaskRepository"][1])
@@ -103,14 +144,14 @@ def test_each_adr_documents_its_own_members() -> None:
 def test_the_guardian_extension_changes_a_signature_not_the_members() -> None:
     """ADR 0011 adds ``authorization_uses`` to ``decide``: same member, documented as extension."""
     base = documented_ports(ADR_PATH.read_text(encoding="utf-8"))
-    extension = documented_ports(EXTENDING_ADRS[1].read_text(encoding="utf-8"))
+    extension = documented_ports(_text(EXTENDING_ADRS[1]))
     assert set(extension) == {"PermissionGuardianPort"}
     assert extension["PermissionGuardianPort"] == base["PermissionGuardianPort"]
 
 
 def test_each_replacing_adr_documents_a_shrunk_port() -> None:
     base = documented_ports(ADR_PATH.read_text(encoding="utf-8"))
-    replacement = documented_ports(REPLACING_ADRS[0].read_text(encoding="utf-8"))
+    replacement = documented_ports(_text(REPLACING_ADRS[0]))
     assert set(replacement) == {"CapabilityRegistryPort"}
     assert replacement["CapabilityRegistryPort"][1] == {"get", "specs"}
     assert base["CapabilityRegistryPort"][1] - replacement["CapabilityRegistryPort"][1] == {
@@ -118,8 +159,42 @@ def test_each_replacing_adr_documents_a_shrunk_port() -> None:
     }
 
 
+def test_the_authorizations_adr_extends_then_replaces_the_store() -> None:
+    """ADR 0012 §4: one row adds ``consume``, the other lists what remains — no ``record_use``."""
+    base = documented_ports(ADR_PATH.read_text(encoding="utf-8"))
+    extension = documented_ports(_text(EXTENDING_ADRS[2]))
+    replacement = documented_ports(_text(REPLACING_ADRS[1]))
+    assert set(extension) == set(replacement) == {"AuthorizationStore"}
+    assert extension["AuthorizationStore"][1] == {"consume"}
+    assert replacement["AuthorizationStore"][1] == {
+        "grant",
+        "get",
+        "for_capability",
+        "uses",
+        "consume",
+    }
+    assert base["AuthorizationStore"][1] - replacement["AuthorizationStore"][1] == {"record_use"}
+
+
+def test_a_file_with_two_rows_for_one_port_must_be_read_by_section() -> None:
+    text = (ADR_DIR / "0012-authorizations.md").read_text(encoding="utf-8")
+    with pytest.raises(AssertionError, match="two rows"):
+        documented_ports(text)
+    assert documented_ports(text, EXTENDING) != documented_ports(text, REPLACING)
+
+
+def test_a_missing_label_is_detected() -> None:
+    with pytest.raises(AssertionError, match="label"):
+        section_of("| `AuditLog` | §32 | async | `append` |", EXTENDING)
+    two_tables = "Port estesi:\n\n| a |\n| b |\n\ntext\n\nPort sostituiti:\n\n| c |\n"
+    assert section_of(two_tables, EXTENDING) == "| a |\n| b |"
+    assert section_of(two_tables, REPLACING) == "| c |"
+
+
 @pytest.mark.parametrize(
-    "path", [ADR_PATH, *EXTENDING_ADRS, *REPLACING_ADRS], ids=lambda p: p.name[:4]
+    "path",
+    sorted({ADR_PATH, *(p for p, _ in EXTENDING_ADRS), *(p for p, _ in REPLACING_ADRS)}),
+    ids=lambda p: p.name[:4],
 )
 def test_table_cites_the_spec(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
@@ -178,17 +253,23 @@ def test_a_drifted_table_is_detected() -> None:
     assert rows["AuditLog"][1] != coded["AuditLog"][1]
     assert rows["AuditLog"][0] != coded["AuditLog"][0]
     extended = all_documented_ports(
-        text, (EXTENDING_ADRS[0].read_text(encoding="utf-8").replace("`add_plan`, ", "", 1),)
+        text, (_text(EXTENDING_ADRS[0]).replace("`add_plan`, ", "", 1),)
     )
     assert extended["TaskRepository"][1] != coded["TaskRepository"][1]
-    replacing = REPLACING_ADRS[0].read_text(encoding="utf-8")
+    replacing = _text(REPLACING_ADRS[0])
     drifted_replacement = replacing.replace(
         "| `CapabilityRegistryPort` | §28, §29 | sync | `get`, `specs` |",
         "| `CapabilityRegistryPort` | §28, §29 | sync | `get` |",
         1,
     )
     assert drifted_replacement != replacing
-    replaced = all_documented_ports(text, _read(EXTENDING_ADRS), (drifted_replacement,))
+    others = _read(REPLACING_ADRS[1:])
+    replaced = all_documented_ports(text, _read(EXTENDING_ADRS), (drifted_replacement, *others))
     assert replaced["CapabilityRegistryPort"][1] != coded["CapabilityRegistryPort"][1]
-    without_replacement = all_documented_ports(text, _read(EXTENDING_ADRS))
+    without_replacement = all_documented_ports(text, _read(EXTENDING_ADRS), others)
     assert without_replacement["CapabilityRegistryPort"][1] != coded["CapabilityRegistryPort"][1]
+    without_the_store_replacement = all_documented_ports(
+        text, _read(EXTENDING_ADRS), _read(REPLACING_ADRS[:1])
+    )
+    assert "record_use" in without_the_store_replacement["AuthorizationStore"][1]
+    assert without_the_store_replacement["AuthorizationStore"][1] != coded["AuthorizationStore"][1]

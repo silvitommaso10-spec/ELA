@@ -220,11 +220,56 @@ def test_max_uses_must_be_positive(value: int) -> None:
         _authorization(max_uses=value)
 
 
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"max_uses": None}, "single use"),
+        ({"max_uses": 2}, "single use"),
+        ({"task_id": None}, "task_id"),
+        ({"step_id": None}, "step_id"),
+        ({"task_id": None, "step_id": None}, "task_id"),
+    ],
+    ids=["reusable", "two-uses", "no-task", "no-step", "unbound"],
+)
+def test_an_approval_born_authorization_is_single_use_and_bound(
+    overrides: dict[str, object], message: str
+) -> None:
+    """ADR 0012 §1: a grant that claims an approval cannot be reusable or unbound (§30)."""
+    fields = {
+        "approval_id": EXAMPLES[Approval].id,
+        "task_id": TASK_ID,
+        "step_id": EXAMPLES[Approval].step_id,
+        "max_uses": 1,
+    }
+    with pytest.raises(ValidationError, match=message):
+        _authorization(**(fields | overrides))
+
+
+def test_a_policy_authorization_is_not_bound_by_the_invariant() -> None:
+    assert _authorization(max_uses=None).approval_id is None
+    assert _authorization(max_uses=3, task_id=TASK_ID).step_id is None
+
+
+def test_the_invariant_survives_a_round_trip() -> None:
+    """``model_copy`` does not validate; ``model_validate`` of the dump does (ADR 0003 §3)."""
+    tampered = EXAMPLES[Authorization].model_copy(update={"max_uses": None})
+    with pytest.raises(ValidationError, match="single use"):
+        Authorization.model_validate(tampered.model_dump())
+
+
 def test_approval_is_bound_to_task_step_and_capability() -> None:
     """§30: an out-of-context yes must not authorise something else."""
     for name in ("task_id", "step_id", "capability_id"):
         assert Approval.model_fields[name].is_required()
     assert EXAMPLES[Approval].status is ApprovalStatus.GRANTED
+
+
+def test_approval_targets_default_to_empty_and_freeze() -> None:
+    """ADR 0012: ``targets`` is additive — an approval without targets is still valid."""
+    payload = {k: v for k, v in EXAMPLES[Approval].model_dump().items() if k != "targets"}
+    assert Approval.model_validate(payload).targets == ()
+    assert isinstance(EXAMPLES[Approval].targets, tuple)
+    assert EXAMPLES[Approval].targets == ("workspace/notes/briefing.md",)
 
 
 def test_audit_actor_says_what_kind_of_actor_it_is() -> None:

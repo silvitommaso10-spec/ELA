@@ -1,1 +1,1 @@
-Fase: v0.1 — persistenza SQLite via SQLAlchemy async e alembic: `TaskRepository` e `AuthorizationStore` (M2.1, spec §14, §30, §54); `AuditLog` append-only con hash chain e `verify_chain` (M2.2, spec §32); piani dei task in `task_plans` (M3.1, ADR 0008).
+Fase: v0.1 — persistenza SQLite via SQLAlchemy async e alembic: `TaskRepository` e `AuthorizationStore` (M2.1, spec §14, §30, §54); `AuditLog` append-only con hash chain e `verify_chain` (M2.2, spec §32); piani dei task in `task_plans` (M3.1, ADR 0008); `consume` atomico dei grant (M4.3, ADR 0012).
