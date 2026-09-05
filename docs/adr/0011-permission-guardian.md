@@ -185,7 +185,11 @@ import.
 ### 9. Scadenza della decisione
 
 Una decisione `ALLOWED` scade: `expires_at = now + decision_ttl`, e non oltre
-`authorization.expires_at` se si regge su un'autorizzazione (il minimo dei due). `decision_ttl`
+`authorization.expires_at` se si regge su un'autorizzazione (il minimo dei due). La scadenza
+della decisione è limitata dal grant solo se la decisione si regge sul grant: MEDIUM, oppure
+SAFE/LOW con `requires_authorization` (della specifica o dello step). Un grant che copre ma non
+è necessario non viene usato (§6, famiglia 2) e non stringe nulla: la decisione scade dopo il TTL
+pieno anche se il grant scade prima. `decision_ttl`
 è un `timedelta` del costruttore, default `DEFAULT_DECISION_TTL = 5 minuti`; zero o negativo →
 `ValueError` alla costruzione (un Guardian che emette decisioni già scadute non permette mai
 nulla: errore di configurazione, non policy). `DENIED` e `REQUIRES_APPROVAL` non scadono

@@ -463,6 +463,19 @@ def test_an_allowed_decision_never_outlives_its_authorization(h: Harness) -> Non
     )
 
 
+def test_an_unneeded_grant_about_to_expire_does_not_shorten_the_decision(h: Harness) -> None:
+    """ADR 0011 §9: the grant bounds the expiry only when the decision rests on it. A SAFE
+    capability that needs no authorization is allowed by the policy row; a covering grant that
+    expires in a second is not used, and the decision keeps the full TTL."""
+    about_to_expire = grant(ECHO, expires_at=h.now + timedelta(seconds=1))
+    decision = h.guardian.decide(ECHO, ECHO_ARGS, authorization=about_to_expire)
+    assert decision.outcome is ALLOWED
+    assert rule_of(decision) is Rule.ALLOW
+    assert decision.expires_at == h.now + DEFAULT_DECISION_TTL
+    assert about_to_expire.expires_at is not None
+    assert decision.expires_at > about_to_expire.expires_at
+
+
 @pytest.mark.parametrize(
     "spec, arguments, outcome",
     [(HIGH, ECHO_ARGS, DENIED), (COMPLETE, COMPLETE_ARGS, REQUIRES_APPROVAL)],
