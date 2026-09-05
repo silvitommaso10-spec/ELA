@@ -1,5 +1,13 @@
-"""Permissions: the capability catalogue (M4.1, ADR 0010) and the Guardian (M4.2, ADR 0011)."""
+"""Permissions: the capability catalogue (M4.1, ADR 0010), the Guardian (M4.2, ADR 0011) and the
+birth of authorizations from approvals (M4.3, ADR 0012)."""
 
+from ela.permissions.authorizations import (
+    CHECKS,
+    DEFAULT_AUTHORIZATION_TTL,
+    MAX_AUTHORIZATION_TTL,
+    Check,
+    authorization_from_approval,
+)
 from ela.permissions.capabilities import (
     CORE_ECHO,
     DEFAULT_NOTES_SCOPE,
@@ -18,6 +26,7 @@ from ela.permissions.capabilities import (
     workspace_write_note,
 )
 from ela.permissions.errors import (
+    ApprovalMismatchError,
     CapabilityNotFound,
     InvalidArgumentsError,
     InvalidCapabilityError,
@@ -35,10 +44,13 @@ from ela.permissions.guardian import (
 from ela.permissions.scope import scope_covers, targets_of, within_scope
 
 __all__ = [
+    "CHECKS",
     "CORE_ECHO",
+    "DEFAULT_AUTHORIZATION_TTL",
     "DEFAULT_DECISION_TTL",
     "DEFAULT_NOTES_SCOPE",
     "GUARDIAN_ACTOR",
+    "MAX_AUTHORIZATION_TTL",
     "MAX_RISK",
     "MODEL_COMPLETE",
     "POLICY_VERSION",
@@ -46,14 +58,17 @@ __all__ = [
     "SCHEMA_VALIDATOR",
     "V01_INTRODUCED_AT",
     "WORKSPACE_WRITE_NOTE",
+    "ApprovalMismatchError",
     "CapabilityNotFound",
     "CapabilityRegistry",
+    "Check",
     "InvalidArgumentsError",
     "InvalidCapabilityError",
     "PermissionGuardian",
     "PermissionsError",
     "RiskNotAllowedError",
     "Rule",
+    "authorization_from_approval",
     "catalogue_v01",
     "check_capability",
     "core_echo",

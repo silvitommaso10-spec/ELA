@@ -10,6 +10,9 @@ from ela.infrastructure.persistence.orm import Base
 from ela.tasks.graph import STEP_EVENTS
 from tests.architecture.rules import (
     AUDIT_ADAPTER,
+    AUTHORIZATION_BUILDERS_EXEMPT,
+    AUTHORIZATION_MODEL,
+    AUTHORIZATION_READER,
     CORE_PACKAGES,
     DECIDE_METHOD,
     DECISION_MODEL,
@@ -127,3 +130,13 @@ def test_the_guardian_really_builds_decisions_and_calls_decide() -> None:
     source = (PACKAGE_ROOT / PERMISSIONS_DIR / "guardian.py").read_text(encoding="utf-8")
     assert f"{DECISION_MODEL}(" in source
     assert f"self.{DECIDE_METHOD}(" in source
+
+
+def test_the_authorizations_module_really_builds_grants_and_the_mapper_really_reads_them() -> None:
+    """Rule 15 would hold vacuously if nothing built an ``Authorization``; two places do, both
+    exempt: the factory in ``permissions`` and the persistence mapper (read side)."""
+    factory = (PACKAGE_ROOT / PERMISSIONS_DIR / "authorizations.py").read_text(encoding="utf-8")
+    assert f"{AUTHORIZATION_MODEL}(" in factory
+    mapper = (PACKAGE_ROOT / AUTHORIZATION_READER).read_text(encoding="utf-8")
+    assert f"{AUTHORIZATION_MODEL}(" in mapper
+    assert {PERMISSIONS_DIR, TESTING_DIR} == AUTHORIZATION_BUILDERS_EXEMPT

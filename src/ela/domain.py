@@ -34,6 +34,7 @@ from pydantic import (
     Field,
     JsonValue,
     PlainSerializer,
+    model_validator,
 )
 
 __all__ = [
@@ -707,7 +708,9 @@ class Approval(_DomainModel):
     """The user's consent for one specific action (§30).
 
     Bound to a task, a step and a capability: an out-of-context "yes" must never authorise
-    something else.
+    something else. ``targets`` are the paths the consent is about — the targets of the
+    ``REQUIRES_APPROVAL`` decision that asked for it (M4.3, ADR 0012): "yes to writing this note"
+    authorises that note, not the folder. Empty when the capability has no targets.
     """
 
     id: ApprovalId
@@ -715,6 +718,7 @@ class Approval(_DomainModel):
     task_id: TaskId
     step_id: StepId
     capability_id: _CapabilityIdField
+    targets: tuple[str, ...] = ()
     prompt: str
     status: ApprovalStatus
     decision_id: DecisionId | None = None
@@ -744,6 +748,25 @@ class Authorization(_DomainModel):
     expires_at: UtcDatetime | None = None
     max_uses: Annotated[int, Field(gt=0)] | None = None
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
+
+    @model_validator(mode="after")
+    def _approval_born_grants_are_single_use_and_bound(self) -> Authorization:
+        """A grant with ``approval_id`` is single use and bound to its task and step (§30).
+
+        The invariant of the docstring, enforced (M4.3, ADR 0012 §1): a hand-built or tampered
+        grant that claims an approval but is reusable or unbound is refused by the type.
+        """
+        if self.approval_id is None:
+            return self
+        for name in ("task_id", "step_id"):
+            if getattr(self, name) is None:
+                raise ValueError(f"an authorization born from an approval needs {name}")
+        if self.max_uses != 1:
+            raise ValueError(
+                f"an authorization born from an approval is single use (max_uses=1), "
+                f"not {self.max_uses}"
+            )
+        return self
 
 
 class AuditEvent(_DomainModel):

@@ -1,6 +1,6 @@
 # 0011. Permission Guardian: catalogo, policy v0.1 per rischio, scope, autorizzazioni, fail-safe, audit delle decisioni
 
-- **Stato:** Accettata
+- **Stato:** Accettata. L'ordine di registrazione dell'uso ("`record_use` dopo l'esecuzione", Conseguenze) è superato da ADR 0012 §6: `authorize` → `consume` → tool.
 - **Data:** 2026-09-05
 - **Riferimenti spec:** §13, §27, §28, §29, §32, §33, §47, §49, §51, §52, §56, §57, §59, §62, §65
 - **Milestone:** M4.2
