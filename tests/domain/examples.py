@@ -142,6 +142,16 @@ USER_INTENT: Final = UserIntent(
     metadata={"locale": "it-IT"},
 )
 
+OTHER_STEP: Final = TaskStep(
+    id=OTHER_STEP_ID,
+    created_at=NOW,
+    goal="raccogliere l'agenda e i partecipanti",
+    required_capabilities=(MODEL_COMPLETE,),
+    risk=RiskLevel.SAFE,
+    expected_result="agenda e lista dei partecipanti",
+    requires_authorization=False,
+)
+
 TASK_STEP: Final = TaskStep(
     id=STEP_ID,
     created_at=NOW,
@@ -160,7 +170,7 @@ TASK_PLAN: Final = TaskPlan(
     created_at=NOW,
     task_id=TASK_ID,
     goal="preparare la riunione di domani",
-    steps=(TASK_STEP,),
+    steps=(OTHER_STEP, TASK_STEP),  # a valid DAG: TASK_STEP depends on OTHER_STEP (M3.2)
     metadata={"planner": "executive-core"},
 )
 

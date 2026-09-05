@@ -29,13 +29,14 @@ from ela.tasks.engine import OPERATIONS, SYSTEM_ACTOR, TASK_NAMESPACE, TaskEngin
 from ela.tasks.errors import ClockSkewError, TaskEngineError, TaskError
 from ela.tasks.state_machine import IllegalTransitionError
 from ela.testing.fakes import FakeClock
-from tests.domain.examples import DEVICE_ID, ELA_ACTOR, USER_INTENT
+from tests.domain.examples import DEVICE_ID, ELA_ACTOR, TASK_PLAN, USER_INTENT
 from tests.tasks.support import (
     ERROR,
     HOUR,
     Harness,
     approval_for,
     created,
+    dag_plan_for,
     decision_for,
     executing,
     h,
@@ -128,7 +129,7 @@ async def test_start_planning_moves_and_audits(h: Harness) -> None:
 
 async def test_plan_stores_the_plan_sets_plan_id_and_records_it(h: Harness) -> None:
     task = await planning(h, with_plan=False)
-    plan = plan_for(task.id)
+    plan = dag_plan_for(task.id, TASK_PLAN.steps)  # the two-step DAG of the examples
     planned = await h.engine.plan(task.id, plan)
     assert planned.plan_id == plan.id
     assert planned.state is S.PLANNING
@@ -139,7 +140,7 @@ async def test_plan_stores_the_plan_sets_plan_id_and_records_it(h: Harness) -> N
     assert event.metadata == {"operation": "plan", "plan_id": str(plan.id)}
     audit = (await h.audit.read())[-1]
     assert audit.event_type is AuditEventType.PLAN_CREATED
-    assert audit.payload["plan_id"] == str(plan.id) and audit.payload["steps"] == 1
+    assert audit.payload["plan_id"] == str(plan.id) and audit.payload["steps"] == 2
 
 
 async def test_plan_refuses_a_plan_of_another_task(h: Harness) -> None:

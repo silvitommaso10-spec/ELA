@@ -27,11 +27,13 @@ from ela.domain import (
     PermissionDecision,
     PermissionOutcome,
     PlanId,
+    StepId,
     Task,
     TaskEvent,
     TaskId,
     TaskPlan,
     TaskState,
+    TaskStep,
 )
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import FakeAuditLog, FakeClock, FakeIdGenerator, FakeTaskRepository
@@ -96,7 +98,31 @@ def _id(tail: int) -> UUID:
 
 
 def plan_for(task_id: TaskId, tail: int = 900) -> TaskPlan:
-    return TASK_PLAN.model_copy(update={"task_id": task_id, "id": _id(tail)})
+    """A plan with no steps (ADR 0004 P7): the life-cycle tests do not depend on the graph."""
+    return TASK_PLAN.model_copy(update={"task_id": task_id, "id": _id(tail), "steps": ()})
+
+
+def dag_plan_for(task_id: TaskId, steps: tuple[TaskStep, ...], tail: int = 900) -> TaskPlan:
+    """A plan with these steps, for the tests of the Task Graph (M3.2)."""
+    return TASK_PLAN.model_copy(update={"task_id": task_id, "id": _id(tail), "steps": steps})
+
+
+def step_result_for(
+    task_id: TaskId,
+    step_id: StepId,
+    status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
+    *,
+    tail: int = 940,
+) -> ExecutionResult:
+    return EXECUTION_RESULT.model_copy(
+        update={
+            "task_id": task_id,
+            "step_id": step_id,
+            "id": ExecutionId(_id(tail)),
+            "status": status,
+            "error": None,
+        }
+    )
 
 
 def approval_for(
@@ -169,6 +195,15 @@ async def queued(h: Harness) -> Task:
 
 async def executing(h: Harness) -> Task:
     task = await queued(h)
+    return await h.engine.start(task.id)
+
+
+async def executing_with(h: Harness, steps: tuple[TaskStep, ...]) -> Task:
+    """An EXECUTING task whose plan has these steps, all PENDING."""
+    task = await planning(h, with_plan=False)
+    plan = dag_plan_for(task.id, steps).model_copy(update={"id": PlanId(h.ids.new_uuid())})
+    task = await h.engine.plan(task.id, plan)
+    task = await h.engine.queue(task.id)
     return await h.engine.start(task.id)
 
 

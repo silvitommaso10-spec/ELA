@@ -83,6 +83,7 @@ __all__ = [
     "ProviderUsage",
     "RiskLevel",
     "StepId",
+    "StepState",
     "Task",
     "TaskEvent",
     "TaskEventId",
@@ -283,6 +284,21 @@ _RISK_ORDER: Final[tuple[RiskLevel, ...]] = (
 )
 
 
+class StepState(StrEnum):
+    """Where one :class:`TaskStep` of a plan stands (§13, §15; M3.2, ADR 0009).
+
+    Data only, like :class:`TaskState`: which moves are legal is the Task Graph's business
+    (``ela.tasks.graph``). The state is not stored: it is folded from the ``STEP_*`` events of
+    the task's trail, which is what makes it independent of any device (§15).
+    """
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
 class PermissionOutcome(StrEnum):
     """What the Guardian decided about one capability call (§27, §33)."""
 
@@ -317,6 +333,8 @@ class TaskEventType(StrEnum):
     STEP_STARTED = "STEP_STARTED"
     STEP_COMPLETED = "STEP_COMPLETED"
     STEP_FAILED = "STEP_FAILED"
+    STEP_CANCELLED = "STEP_CANCELLED"
+    """A step cancelled because a step it depends on failed (M3.2, ADR 0009)."""
     PLAN_ATTACHED = "PLAN_ATTACHED"
     HEARTBEAT = "HEARTBEAT"
     """A sign of life from whoever executes the task (M3.1): a trail entry, never an audit one."""
@@ -340,6 +358,10 @@ class AuditEventType(StrEnum):
     TASK_CANCELLED = "TASK_CANCELLED"
     TASK_EXPIRED = "TASK_EXPIRED"
     TASK_DENIED = "TASK_DENIED"
+    STEP_STARTED = "STEP_STARTED"
+    STEP_COMPLETED = "STEP_COMPLETED"
+    STEP_FAILED = "STEP_FAILED"
+    STEP_CANCELLED = "STEP_CANCELLED"
     PERMISSION_DECIDED = "PERMISSION_DECIDED"
     AUTHORIZATION_GRANTED = "AUTHORIZATION_GRANTED"
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"

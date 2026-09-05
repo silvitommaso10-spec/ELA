@@ -242,6 +242,25 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.tasks import state_machine\n",
         "ela.tasks.state_machine",
     ),
+    Case(
+        "step-event-built-by-executive",
+        "step-event-writers",
+        "executive/orchestrator.py",
+        "from ela.domain import TaskEvent, TaskEventType\n"
+        "e = TaskEvent(id=i, created_at=n, task_id=t, event_type=TaskEventType.STEP_STARTED, "
+        "step_id=s)\n",
+        "TaskEvent(event_type=STEP_*)",
+    ),
+    Case(
+        "step-event-built-with-a-string",
+        "step-event-writers",
+        "devices/node.py",
+        "import ela.domain\n"
+        "def done(i, n, t, s):\n"
+        "    return ela.domain.TaskEvent(id=i, created_at=n, task_id=t, "
+        "event_type='STEP_COMPLETED', step_id=s)\n",
+        "TaskEvent(event_type=STEP_*)",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -350,6 +369,24 @@ ALLOWED: tuple[Case, ...] = (
         "state-machine-callers",
         "executive/planner.py",
         "from ela.tasks.errors import TaskError\nfrom ela.tasks import errors\n",
+        "",
+    ),
+    Case(
+        "step-event-built-by-engine",
+        "step-event-writers",
+        "tasks/engine2.py",
+        "from ela.domain import TaskEvent, TaskEventType\n"
+        "e = TaskEvent(id=i, created_at=n, task_id=t, event_type=TaskEventType.STEP_FAILED, "
+        "step_id=s)\n",
+        "",
+    ),
+    Case(
+        "note-event-built-by-executive",
+        "step-event-writers",
+        "executive/orchestrator.py",
+        "from ela.domain import TaskEvent, TaskEventType\n"
+        "e = TaskEvent(id=i, created_at=n, task_id=t, event_type=TaskEventType.NOTE)\n"
+        "f = TaskEvent(id=i, created_at=n, task_id=t, event_type=kind)\n",
         "",
     ),
 )

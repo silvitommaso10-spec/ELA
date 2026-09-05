@@ -5,7 +5,9 @@ import importlib
 import pytest
 from pydantic import BaseModel
 
+from ela.domain import TaskEventType
 from ela.infrastructure.persistence.orm import Base
+from ela.tasks.graph import STEP_EVENTS
 from tests.architecture.rules import (
     AUDIT_ADAPTER,
     CORE_PACKAGES,
@@ -14,6 +16,7 @@ from tests.architecture.rules import (
     PORTS_ALLOWED_INTERNAL,
     RULES,
     STATE_MACHINE_MODULE,
+    STEP_EVENT_PREFIX,
     TESTING_DIR,
     Rule,
     imported_modules,
@@ -54,6 +57,7 @@ def test_rule_holds(rule: Rule) -> None:
         "ela.infrastructure.persistence",
         "ela.audit.chain",
         "ela.tasks.engine",
+        "ela.tasks.graph",
     ],
 )
 def test_module_is_importable(module: str) -> None:
@@ -87,3 +91,11 @@ def test_the_engine_really_imports_the_state_machine() -> None:
     engine = PACKAGE_ROOT / "tasks" / "engine.py"
     imported = [name for name, _ in imported_modules(engine, PACKAGE_ROOT)]
     assert any(name.startswith(STATE_MACHINE_MODULE) for name in imported)
+
+
+def test_rule_11_names_exactly_the_event_types_that_move_a_step() -> None:
+    """Rule 11 matches on the ``STEP_`` prefix: it must be the fold's set, no more, no less."""
+    assert {t for t in TaskEventType if t.name.startswith(STEP_EVENT_PREFIX)} == set(STEP_EVENTS)
+    engine = PACKAGE_ROOT / "tasks" / "engine.py"
+    imported = [name for name, _ in imported_modules(engine, PACKAGE_ROOT)]
+    assert any(name.startswith("ela.tasks.graph") for name in imported)

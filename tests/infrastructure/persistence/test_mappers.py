@@ -153,9 +153,10 @@ def test_rows_store_enum_values_and_plain_json() -> None:
 
 def test_a_plan_row_stores_the_steps_as_one_json_array() -> None:
     row = plan_to_row(TASK_PLAN)
-    assert type(row.steps) is list and len(row.steps) == 1
-    assert row.steps[0]["id"] == str(TASK_PLAN.steps[0].id)
-    assert row.steps[0]["dependencies"] == [str(TASK_PLAN.steps[0].dependencies[0])]
+    assert type(row.steps) is list and len(row.steps) == len(TASK_PLAN.steps) == 2
+    assert row.steps[1]["id"] == str(TASK_PLAN.steps[1].id)
+    assert row.steps[1]["dependencies"] == [str(TASK_PLAN.steps[1].dependencies[0])]
+    assert row.steps[0]["dependencies"] == []
 
 
 def test_a_new_authorization_row_has_no_uses_yet() -> None:

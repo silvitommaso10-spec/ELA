@@ -1,1 +1,1 @@
-Fase: v0.1 — state machine di §14 (M1.2, ADR 0004) e Task Engine (M3.1, ADR 0008): ciclo di vita, idempotenza, recovery dei task orfani. Il Task Graph (§15) è M3.2.
+Fase: v0.1 — state machine di §14 (M1.2, ADR 0004), Task Engine (M3.1, ADR 0008): ciclo di vita, idempotenza, recovery dei task orfani; Task Graph di §15 (M3.2, ADR 0009): DAG degli step, stato degli step piegato dalla trail, operazioni per step e propagazione dei fallimenti.
