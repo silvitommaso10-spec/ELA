@@ -318,5 +318,10 @@ decisione è quello della specifica registrata, un piano non può abbassarlo.
 - L'executor (M5) chiama `authorize`, registra l'uso (`record_use`) dopo l'esecuzione e scrive
   `TOOL_EXECUTED` con il `decision_id`; chi ottiene `REQUIRES_APPROVAL` crea l'`Approval`
   (engine, `APPROVAL_REQUESTED`): il Guardian decide, non chiede (§27).
-- Un piano i cui step dichiarano `required_capabilities` è vincolato a esse in esecuzione (§15):
-  il Planner (M6.2) deve dichiarare tutto ciò che uno step userà, o non dichiarare nulla.
+- **Vincolo per la milestone del Planner (M6.2), deciso in review il 2026-09-05.** Uno step
+  dichiara *sempre* tutte le capability che userà in `required_capabilities`: è la regola del
+  Planner, non un'opzione. La tupla vuota che in §15 non vincola esiste per i test e per i piani
+  costruiti a mano, non per il Planner: un piano prodotto dal Planner con uno step senza capability
+  dichiarate è un difetto del Planner. Chi implementa M6.2 trova qui il vincolo e lo rende
+  verificabile lì (validazione del piano o test), non nel Guardian, che continua a leggere la tupla
+  vuota come "non dichiarato".
