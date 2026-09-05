@@ -6,16 +6,28 @@ trail. On SQLite on a file: a simulated restart, with the audit chain still veri
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from pathlib import Path
 
-from ela.domain import ActorKind, AuditEventType, Task, TaskEventType, TaskId, TaskState
+from ela.domain import ActorKind, AuditEventType, Task, TaskEvent, TaskEventType, TaskId, TaskState
 from ela.infrastructure.persistence import SqlAuditLog, SqlTaskRepository, make_engine, verify_chain
 from ela.infrastructure.persistence.orm import Base
-from ela.tasks.engine import ORPHANED, SYSTEM_ACTOR, TaskEngine
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.tasks.engine import ORPHANED, SYSTEM_ACTOR, RecoverySummary, TaskEngine
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeTaskRepository
 from tests.domain.examples import ELA_ACTOR, USER_INTENT
-from tests.tasks.support import ORPHAN_AFTER, Harness, executing, h, plan_for, planning, task_in
+from tests.tasks.support import (
+    ERROR,
+    ORPHAN_AFTER,
+    Harness,
+    executing,
+    h,
+    make_harness,
+    plan_for,
+    planning,
+    result_for,
+    task_in,
+)
 
 __all__ = ["h"]
 
@@ -27,8 +39,9 @@ async def test_a_silent_executing_task_is_failed_as_orphaned(h: Harness) -> None
     task = await executing(h)
     started_at = h.clock.now()
     h.clock.advance(ORPHAN_AFTER)  # exactly the threshold: closed bound
-    marked = await h.engine.recover()
-    assert [t.id for t in marked] == [task.id]
+    summary = await h.engine.recover()
+    assert [t.id for t in summary.failed] == [task.id]
+    assert summary.skipped == ()
     failed = await h.repository.get(task.id)
     assert failed.state is S.FAILED
     event = (await h.repository.events(task.id))[-1]
@@ -47,7 +60,7 @@ async def test_a_silent_executing_task_is_failed_as_orphaned(h: Harness) -> None
 async def test_one_second_short_of_the_threshold_is_not_orphaned(h: Harness) -> None:
     task = await executing(h)
     h.clock.advance(ORPHAN_AFTER - ONE_SECOND)
-    assert await h.engine.recover() == ()
+    assert await h.engine.recover() == RecoverySummary((), ())
     assert (await h.repository.get(task.id)).state is S.EXECUTING
 
 
@@ -56,15 +69,15 @@ async def test_a_heartbeat_resets_the_count(h: Harness) -> None:
     h.clock.advance(ORPHAN_AFTER - ONE_SECOND)
     await h.engine.heartbeat(task.id)
     h.clock.advance(ORPHAN_AFTER - ONE_SECOND)
-    assert await h.engine.recover() == ()
+    assert await h.engine.recover() == RecoverySummary((), ())
     h.clock.advance(ONE_SECOND)
-    assert [t.id for t in await h.engine.recover()] == [task.id]
+    assert [t.id for t in (await h.engine.recover()).failed] == [task.id]
 
 
 async def test_other_states_are_left_alone(h: Harness) -> None:
     others = [await task_in(h, state) for state in S if state is not S.EXECUTING]
     h.clock.advance(ORPHAN_AFTER * 10)
-    assert await h.engine.recover() == ()
+    assert await h.engine.recover() == RecoverySummary((), ())
     for task in others:
         assert (await h.repository.get(task.id)).state is task.state
 
@@ -72,9 +85,9 @@ async def test_other_states_are_left_alone(h: Harness) -> None:
 async def test_recovery_is_idempotent(h: Harness) -> None:
     await executing(h)
     h.clock.advance(ORPHAN_AFTER)
-    assert len(await h.engine.recover()) == 1
+    assert len((await h.engine.recover()).failed) == 1
     audits = len(await h.audit.read())
-    assert await h.engine.recover() == ()
+    assert await h.engine.recover() == RecoverySummary((), ())
     assert len(await h.audit.read()) == audits
 
 
@@ -88,9 +101,9 @@ async def test_an_empty_trail_counts_from_creation(h: Harness) -> None:
     )
     await h.repository.add(stranded)
     h.clock.advance(ORPHAN_AFTER - ONE_SECOND)
-    assert await h.engine.recover() == ()
+    assert await h.engine.recover() == RecoverySummary((), ())
     h.clock.advance(ONE_SECOND)
-    (marked,) = await h.engine.recover()
+    (marked,) = (await h.engine.recover()).failed
     assert marked.id == stranded.id and marked.state is S.FAILED
 
 
@@ -103,16 +116,84 @@ async def test_recovery_marks_every_orphan_in_insertion_order(h: Harness) -> Non
     await h.engine.queue(second.id)
     await h.engine.start(second.id)
     h.clock.advance(ORPHAN_AFTER)
-    assert [t.id for t in await h.engine.recover()] == [first.id, second.id]
+    assert [t.id for t in (await h.engine.recover()).failed] == [first.id, second.id]
 
 
 async def test_a_recovered_task_can_be_failed_again_as_a_no_op(h: Harness) -> None:
     task = await executing(h)
     h.clock.advance(ORPHAN_AFTER)
-    (marked,) = await h.engine.recover()
-    from tests.tasks.support import ERROR
-
+    (marked,) = (await h.engine.recover()).failed
     assert await h.engine.fail(task.id, ERROR) == marked
+
+
+# --------------------------------------------------------------------------------------
+# Candidates that change between the listing and the lock (review M3.1): skipped, not failed
+# --------------------------------------------------------------------------------------
+
+
+class RacingRepository(FakeTaskRepository):
+    """A fake that runs a coroutine right after the pre-lock read of one task's trail.
+
+    That is the window between "this task looks orphaned" and the lock that re-checks it: what
+    the hook does there (complete the task, send a heartbeat) must be seen under the lock.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.race_on: TaskId | None = None
+        self.hook: Callable[[], Awaitable[None]] | None = None
+
+    async def events(self, task_id: TaskId) -> tuple[TaskEvent, ...]:
+        trail = await super().events(task_id)
+        if task_id == self.race_on and self.hook is not None:
+            hook, self.hook = self.hook, None
+            await hook()
+        return trail
+
+
+def _racing_harness() -> tuple[Harness, RacingRepository]:
+    h = make_harness()
+    repository = RacingRepository()
+    h.repository = repository
+    h.engine = TaskEngine(
+        repository, h.audit, h.clock, h.ids, actor=ELA_ACTOR, orphan_after=ORPHAN_AFTER
+    )
+    return h, repository
+
+
+async def test_a_candidate_that_changed_state_is_skipped_and_the_others_proceed() -> None:
+    h, repository = _racing_harness()
+    first = await executing(h)
+    second = await executing(h)
+    third = await executing(h)
+    h.clock.advance(ORPHAN_AFTER)
+
+    async def complete_second() -> None:
+        await h.engine.complete(second.id, result_for(second.id))
+
+    repository.race_on, repository.hook = second.id, complete_second
+    summary = await h.engine.recover()
+    assert [t.id for t in summary.failed] == [first.id, third.id]
+    assert [(t.id, t.state) for t in summary.skipped] == [(second.id, S.COMPLETED)]
+    assert (await repository.get(second.id)).state is S.COMPLETED
+    audits = await h.audit.read(task_id=second.id)
+    assert [a.event_type for a in audits][-1] is AuditEventType.TASK_COMPLETED
+
+
+async def test_a_candidate_alive_again_is_skipped() -> None:
+    h, repository = _racing_harness()
+    first = await executing(h)
+    second = await executing(h)
+    h.clock.advance(ORPHAN_AFTER)
+
+    async def heartbeat_first() -> None:
+        await h.engine.heartbeat(first.id)
+
+    repository.race_on, repository.hook = first.id, heartbeat_first
+    summary = await h.engine.recover()
+    assert [t.id for t in summary.failed] == [second.id]
+    assert [(t.id, t.state) for t in summary.skipped] == [(first.id, S.EXECUTING)]
+    assert (await repository.get(first.id)).state is S.EXECUTING
 
 
 # --------------------------------------------------------------------------------------
@@ -153,7 +234,7 @@ async def test_recovery_after_a_restart_on_sqlite(tmp_path: Path) -> None:
         after = TaskEngine(
             repository, audit, clock, ids, actor=ELA_ACTOR, orphan_after=ORPHAN_AFTER
         )
-        (marked,) = await after.recover()
+        (marked,) = (await after.recover()).failed
         assert marked.id == task.id and marked.state is S.FAILED
         assert (await repository.get(task.id)).state is S.FAILED
         events = await repository.events(task.id)
@@ -174,7 +255,7 @@ async def test_recovery_after_a_restart_on_sqlite(tmp_path: Path) -> None:
         ]
         assert trail[-1].error is not None and trail[-1].error.code == ORPHANED
         assert (await verify_chain(engine)).length == 6
-        assert await after.recover() == ()
+        assert await after.recover() == RecoverySummary((), ())
     finally:
         await engine.dispose()
 

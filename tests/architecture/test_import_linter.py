@@ -7,6 +7,7 @@ package of ``ela`` and that each one breaks on a violating module.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -108,9 +109,19 @@ def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() ->
     assert direct_only == expected
 
 
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def _run_lint_imports(project_root: Path) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "PYTHONPATH": str(project_root / "src")}
-    return subprocess.run(
+    """``lint-imports`` on a project root, with colour off: the assertions read its text.
+
+    A terminal that forces colour (``FORCE_COLOR``) would otherwise slip escape codes between
+    a contract's name and ``BROKEN``; the codes are stripped from the output as well.
+    """
+    env = {**os.environ, "PYTHONPATH": str(project_root / "src"), "NO_COLOR": "1"}
+    env.pop("FORCE_COLOR", None)
+    env.pop("CLICOLOR_FORCE", None)
+    result = subprocess.run(
         [str(LINT_IMPORTS), "--config", str(project_root / "pyproject.toml"), "--no-cache"],
         cwd=project_root,
         env=env,
@@ -118,6 +129,8 @@ def _run_lint_imports(project_root: Path) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+    result.stdout = ANSI.sub("", result.stdout)
+    return result
 
 
 def test_lint_imports_keeps_all_contracts_on_repo() -> None:

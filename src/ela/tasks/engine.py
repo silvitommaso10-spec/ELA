@@ -80,6 +80,7 @@ __all__ = [
     "SYSTEM_ACTOR",
     "TASK_NAMESPACE",
     "Operation",
+    "RecoverySummary",
     "TaskEngine",
 ]
 
@@ -111,6 +112,14 @@ class Operation(NamedTuple):
     audit_type: AuditEventType
     key: str | None
     """The metadata field that makes the operation idempotent, or ``None`` for state alone."""
+
+
+class RecoverySummary(NamedTuple):
+    """What :meth:`TaskEngine.recover` did: the orphans it failed, the candidates it left alone."""
+
+    failed: tuple[Task, ...]
+    skipped: tuple[Task, ...]
+    """Candidates that had changed under the lock: no longer EXECUTING, or alive again."""
 
 
 OPERATIONS: Final[Mapping[str, Operation]] = MappingProxyType(
@@ -360,34 +369,47 @@ class TaskEngine:
             )
             return task
 
-    async def recover(self) -> tuple[Task, ...]:
-        """Fail every EXECUTING task silent for ``orphan_after`` or longer (§14, closed bound)."""
+    async def recover(self) -> RecoverySummary:
+        """Fail every EXECUTING task silent for ``orphan_after`` or longer (§14, closed bound).
+
+        Safe to call at any time, not only at start-up: each candidate is re-read under its own
+        lock, and one that is no longer EXECUTING — or alive again — is skipped, never failed,
+        while the others proceed (ADR 0008 §6).
+        """
         now = self._clock.now()
-        marked: list[Task] = []
-        for task in await self._repository.tasks(states=frozenset({TaskState.EXECUTING})):
-            last_seen = _last_seen(task, await self._repository.events(task.id))
-            if now - last_seen < self._orphan_after:
+        failed: list[Task] = []
+        skipped: list[Task] = []
+        for candidate in await self._repository.tasks(states=frozenset({TaskState.EXECUTING})):
+            if not self._is_orphan(now, candidate, await self._repository.events(candidate.id)):
                 continue
-            error = ErrorMetadata(
-                code=ORPHANED,
-                message=f"no sign of life since {last_seen.isoformat()}",
-                retryable=True,
-                details={
-                    "last_seen_at": last_seen.isoformat(),
-                    "orphan_after_seconds": self._orphan_after.total_seconds(),
-                },
-            )
-            marked.append(
-                await self._apply(
-                    OPERATIONS["recover"],
-                    task.id,
-                    actor=SYSTEM_ACTOR,
-                    reason=error.message,
-                    error=error,
-                    payload={"code": ORPHANED},
+            async with self._lock(candidate.id):
+                task = await self._repository.get(candidate.id)
+                events = await self._repository.events(candidate.id)
+                if task.state is not TaskState.EXECUTING or not self._is_orphan(now, task, events):
+                    skipped.append(task)
+                    continue
+                last_seen = _last_seen(task, events)
+                error = ErrorMetadata(
+                    code=ORPHANED,
+                    message=f"no sign of life since {last_seen.isoformat()}",
+                    retryable=True,
+                    details={
+                        "last_seen_at": last_seen.isoformat(),
+                        "orphan_after_seconds": self._orphan_after.total_seconds(),
+                    },
                 )
-            )
-        return tuple(marked)
+                failed.append(
+                    await self._apply_loaded(
+                        OPERATIONS["recover"],
+                        task,
+                        events,
+                        actor=SYSTEM_ACTOR,
+                        reason=error.message,
+                        error=error,
+                        payload={"code": ORPHANED},
+                    )
+                )
+        return RecoverySummary(tuple(failed), tuple(skipped))
 
     # ----------------------------------------------------------------------------------
     # Operations of the table
@@ -540,6 +562,10 @@ class TaskEngine:
             raise ClockSkewError(task.id, now, last_seen)
         return now
 
+    def _is_orphan(self, now: datetime, task: Task, events: tuple[TaskEvent, ...]) -> bool:
+        """Silent for ``orphan_after`` or longer: the bound is closed (ADR 0005 §2-bis)."""
+        return now - _last_seen(task, events) >= self._orphan_after
+
     def _check_approval(self, task_id: TaskId, approval: Approval, status: ApprovalStatus) -> None:
         if approval.task_id != task_id:
             raise TaskEngineError(task_id, f"the approval is about task {approval.task_id}")
@@ -563,52 +589,83 @@ class TaskEngine:
         async with self._lock(task_id):
             task = await self._repository.get(task_id)
             events = await self._repository.events(task_id)
-            if task.state is op.target:
-                return self._already_applied(op, task, events, key)
-            if task.state not in op.sources:
-                if can_transition(task.state, op.target):
-                    raise TaskEngineError(
-                        task_id,
-                        f"{op.name} does not apply from {task.state}: another operation does",
-                    )
-                raise IllegalTransitionError(task_id, task.state, op.target)
-            now = self._now(task, events)
-            if guard is not None:
-                guard(task, now)
-            keyed: dict[str, JsonValue] = {} if op.key is None else {op.key: str(key)}
-            moved = transition(
+            return await self._apply_loaded(
+                op,
                 task,
-                op.target,
-                event_id=TaskEventId(self._ids.new_uuid()),
-                now=now,
-                message=reason,
-                metadata={"operation": op.name, **keyed},
+                events,
+                actor=actor,
+                reason=reason,
+                key=key,
+                payload=payload,
+                error=error,
+                decision_id=decision_id,
+                device_id=device_id,
+                guard=guard,
             )
-            await self._repository.save(moved.task)
-            await self._repository.append_event(moved.event)
-            await self._audit_log.append(
-                AuditEvent(
-                    id=AuditEventId(self._ids.new_uuid()),
-                    created_at=now,
-                    event_type=op.audit_type,
-                    actor=actor,
-                    summary=f"{op.name}: {task.state.value} -> {op.target.value}"
-                    + (f" ({reason})" if reason else ""),
-                    task_id=task_id,
-                    decision_id=decision_id,
-                    device_id=device_id,
-                    error=error,
-                    payload={
-                        "operation": op.name,
-                        "previous_state": task.state.value,
-                        "new_state": op.target.value,
-                        "reason": reason,
-                        **keyed,
-                        **({} if payload is None else payload),
-                    },
+
+    async def _apply_loaded(
+        self,
+        op: Operation,
+        task: Task,
+        events: tuple[TaskEvent, ...],
+        *,
+        actor: Actor,
+        reason: str,
+        key: UUID | None = None,
+        payload: Payload | None = None,
+        error: ErrorMetadata | None = None,
+        decision_id: DecisionId | None = None,
+        device_id: DeviceId | None = None,
+        guard: Guard | None = None,
+    ) -> Task:
+        """The write path proper, on a task already read under its lock by the caller."""
+        task_id = task.id
+        if task.state is op.target:
+            return self._already_applied(op, task, events, key)
+        if task.state not in op.sources:
+            if can_transition(task.state, op.target):
+                raise TaskEngineError(
+                    task_id,
+                    f"{op.name} does not apply from {task.state}: another operation does",
                 )
+            raise IllegalTransitionError(task_id, task.state, op.target)
+        now = self._now(task, events)
+        if guard is not None:
+            guard(task, now)
+        keyed: dict[str, JsonValue] = {} if op.key is None else {op.key: str(key)}
+        moved = transition(
+            task,
+            op.target,
+            event_id=TaskEventId(self._ids.new_uuid()),
+            now=now,
+            message=reason,
+            metadata={"operation": op.name, **keyed},
+        )
+        await self._repository.save(moved.task)
+        await self._repository.append_event(moved.event)
+        await self._audit_log.append(
+            AuditEvent(
+                id=AuditEventId(self._ids.new_uuid()),
+                created_at=now,
+                event_type=op.audit_type,
+                actor=actor,
+                summary=f"{op.name}: {task.state.value} -> {op.target.value}"
+                + (f" ({reason})" if reason else ""),
+                task_id=task_id,
+                decision_id=decision_id,
+                device_id=device_id,
+                error=error,
+                payload={
+                    "operation": op.name,
+                    "previous_state": task.state.value,
+                    "new_state": op.target.value,
+                    "reason": reason,
+                    **keyed,
+                    **({} if payload is None else payload),
+                },
             )
-            return moved.task
+        )
+        return moved.task
 
     def _already_applied(
         self, op: Operation, task: Task, events: tuple[TaskEvent, ...], key: UUID | None

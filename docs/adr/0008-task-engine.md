@@ -126,13 +126,19 @@ già escluso un campo di aggiornamento su `Task` ("i `TaskEvent` portano già i 
 
 ### 6. Recovery
 
-`recover()` legge `tasks(states={EXECUTING})` (ADR 0005 §2-ter: il consumatore previsto), per
-ciascuno prende `last_seen = max(task.created_at, created_at degli eventi)` — lo STATE_CHANGED in
-EXECUTING, gli HEARTBEAT, o la nascita se la trail è vuota — e se `now - last_seen >=
-orphan_after` (verso chiuso, ADR 0005 §2-bis) lo porta in FAILED per la riga `recover` con
-attore SYSTEM e `ErrorMetadata(code="orphaned", retryable=True, details={last_seen_at,
-orphan_after_seconds})`. Ritorna i task marcati; una seconda chiamata non trova nulla. Va
-chiamata all'avvio, prima di servire altre chiamate: chi la chiama è chi compone l'applicazione.
+`recover()` legge `tasks(states={EXECUTING})` (ADR 0005 §2-ter: il consumatore previsto) e, per
+ciascun candidato, prende `last_seen = max(task.created_at, created_at degli eventi)` — lo
+STATE_CHANGED in EXECUTING, gli HEARTBEAT, o la nascita se la trail è vuota. Un candidato è orfano
+se `now - last_seen >= orphan_after` (verso chiuso, ADR 0005 §2-bis). **Robusta per task, non
+per ordine di chiamata** (review 2026-09-05): `recover()` sarà chiamata anche periodicamente dal
+Proactive Core, non solo all'avvio, e un'assunzione sull'ordine delle chiamate è fragile. Per ogni
+orfano l'engine prende il lock del task, **ricarica** stato e trail e ricontrolla: se il task non
+è più EXECUTING, o ha dato un segno di vita nel frattempo, lo **salta**; altrimenti lo porta in
+FAILED per la riga `recover`, con attore SYSTEM e `ErrorMetadata(code="orphaned",
+retryable=True, details={last_seen_at, orphan_after_seconds})`. Un task che cambia sotto i piedi
+non interrompe la recovery degli altri, e il ricontrollo sotto lock rende irraggiungibile
+l'`IllegalTransitionError` che una chiamata cieca a `fail` avrebbe potuto sollevare. Ritorna
+`RecoverySummary(failed, skipped)`; una seconda chiamata immediata ritorna due tuple vuote.
 
 ### 7. Monotonia del tempo: si rifiuta
 
@@ -172,6 +178,11 @@ EXECUTING. È qui che si decide *quando* un task scade: la state machine decide 
 ELA (l'`actor` del costruttore) per ciò che compie ELA; `Actor(USER, approval.responded_by)` per
 `approve` e `deny_by_approval`; `SYSTEM_ACTOR` (`"task-engine"`) per `expire` e `recover`;
 `cancel` accetta un attore opzionale perché a fermare un task può essere l'utente (§65) o ELA.
+
+**Convenzione per gli attori SYSTEM** (review 2026-09-05): l'`id` di un `Actor` di tipo
+`SYSTEM` è il nome del componente in kebab-case — `task-engine` qui; `guardian`,
+`device-orchestrator`, `proactive-core` quando esisteranno — così ogni componente che agisce
+senza che nessuno glielo abbia chiesto è riconoscibile nel log senza reinventare la forma.
 
 ### 11. Serializzazione in-process
 
