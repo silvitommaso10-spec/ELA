@@ -1,9 +1,9 @@
 """Every implementation of every port that the contract tests must run on.
 
-The fakes are registered here today; a real adapter (SQLite repository, Claude provider, the
-Guardian of M2) is registered here the day it exists, and from then on it passes the same contract
-tests as the fake or ``make check`` fails. ``tests/contracts/test_protocols.py`` also checks that
-every port has at least one implementation.
+The fakes are registered here today; a real adapter (SQLite repository, the capability catalogue,
+the Guardian, a Claude provider) is registered here the day it exists, and from then on it passes
+the same contract tests as the fake or ``make check`` fails. ``tests/contracts/test_protocols.py``
+also checks that every port has at least one implementation.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from weakref import WeakKeyDictionary
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from ela.domain import RiskLevel
 from ela.infrastructure.persistence import (
     SqlAuditLog,
     SqlAuthorizationStore,
@@ -21,6 +22,7 @@ from ela.infrastructure.persistence import (
     make_engine,
 )
 from ela.infrastructure.persistence.orm import Base
+from ela.permissions import CapabilityRegistry
 from ela.ports import (
     AuditLog,
     AuthorizationStore,
@@ -47,7 +49,7 @@ from ela.testing.fakes import (
     FakeTaskRepository,
     FakeTool,
 )
-from tests.domain.examples import WRITE_NOTE
+from tests.domain.examples import CAPABILITY_SPEC, MODEL_COMPLETE, WRITE_NOTE
 
 Hook = Callable[[object], Awaitable[None]]
 
@@ -125,6 +127,21 @@ class SqlAuditLogHarness:
 _audit_logs = SqlAuditLogHarness()
 
 
+REGISTRY_CATALOGUE = (
+    CAPABILITY_SPEC,
+    CAPABILITY_SPEC.model_copy(update={"id": MODEL_COMPLETE, "risk": RiskLevel.MEDIUM}),
+)
+"""What every ``CapabilityRegistryPort`` implementation under contract is built with (ADR 0010)."""
+
+
+def _fake_registry() -> FakeCapabilityRegistry:
+    return FakeCapabilityRegistry(REGISTRY_CATALOGUE)
+
+
+def _registry() -> CapabilityRegistry:
+    return CapabilityRegistry(REGISTRY_CATALOGUE)
+
+
 def _guardian() -> FakePermissionGuardian:
     return FakePermissionGuardian(FakeClock(), FakeIdGenerator())
 
@@ -149,7 +166,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("SqlAuditLog", _audit_logs.make, _audit_logs.setup, _audit_logs.teardown),
     ),
     DeviceRegistryPort: (Implementation("FakeDeviceRegistry", FakeDeviceRegistry),),
-    CapabilityRegistryPort: (Implementation("FakeCapabilityRegistry", FakeCapabilityRegistry),),
+    CapabilityRegistryPort: (
+        Implementation("FakeCapabilityRegistry", _fake_registry),
+        Implementation("CapabilityRegistry", _registry),
+    ),
     AuthorizationStore: (
         Implementation("FakeAuthorizationStore", FakeAuthorizationStore),
         Implementation("SqlAuthorizationStore", _sql_authorization_store, _create_schema, _dispose),

@@ -671,6 +671,12 @@ class CapabilitySpec(_DomainModel):
         "JSON Schema of the arguments the capability accepts (§28)."
     )
     scope: tuple[str, ...] = ()
+    scoped_arguments: tuple[str, ...] = ()
+    """Names of the arguments the scope constrains (M4.1): ``("path",)`` for a note writer.
+
+    Data, like ``scope``: that each name is a string property of ``input_schema`` and that scope
+    and scoped arguments come together is the catalogue's check (ADR 0010), not the model's.
+    """
     requires_authorization: bool
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 

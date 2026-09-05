@@ -108,6 +108,16 @@ def test_capability_id_rejects_everything_else(value: str) -> None:
         )
 
 
+def test_capability_spec_scoped_arguments_default_to_none_and_freeze() -> None:
+    """M4.1: which arguments the scope constrains; data only, a tuple like ``scope``."""
+    bare = CapabilitySpec(**{**CAPABILITY_SPEC.model_dump(), "scoped_arguments": []})
+    assert bare.scoped_arguments == ()
+    assert CAPABILITY_SPEC.scoped_arguments == ("path",)
+    assert isinstance(CAPABILITY_SPEC.scoped_arguments, tuple)
+    with pytest.raises(ValidationError):
+        CapabilitySpec(**{**CAPABILITY_SPEC.model_dump(), "scoped_arguments": [1]})
+
+
 def test_capability_id_is_bounded() -> None:
     """The bound lives in the domain (review M2.1): 255 fits, 256 does not."""
     longest = "a." + "b" * (NAME_MAX_LENGTH - 2)

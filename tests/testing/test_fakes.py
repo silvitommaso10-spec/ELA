@@ -16,10 +16,12 @@ from ela.domain import (
     ExecutionStatus,
     PermissionOutcome,
     ProviderRequest,
+    RiskLevel,
 )
-from ela.ports import NotAllowedError
+from ela.ports import AlreadyExistsError, NotAllowedError
 from ela.testing.fakes import (
     DEFAULT_START,
+    FakeCapabilityRegistry,
     FakeClock,
     FakeIdGenerator,
     FakeModelProvider,
@@ -89,6 +91,25 @@ def test_ids_are_sequential_and_predictable() -> None:
 # --------------------------------------------------------------------------------------
 # FakePermissionGuardian
 # --------------------------------------------------------------------------------------
+
+
+def test_registry_is_empty_by_default_and_fixed_at_construction() -> None:
+    assert FakeCapabilityRegistry().specs() == ()
+    other = CAPABILITY_SPEC.model_copy(update={"id": CapabilityId("core.echo")})
+    registry = FakeCapabilityRegistry([other, CAPABILITY_SPEC])
+    assert registry.specs() == (other, CAPABILITY_SPEC)
+    assert not hasattr(registry, "register")
+
+
+def test_registry_refuses_a_duplicate_id_at_construction() -> None:
+    with pytest.raises(AlreadyExistsError):
+        FakeCapabilityRegistry([CAPABILITY_SPEC, CAPABILITY_SPEC])
+
+
+def test_registry_validates_nothing_else() -> None:
+    """A test may hold a HIGH capability to see the Guardian deny it (ADR 0010 §1)."""
+    high = CAPABILITY_SPEC.model_copy(update={"risk": RiskLevel.HIGH, "scope": ("../x",)})
+    assert FakeCapabilityRegistry([high]).get(high.id) is high
 
 
 def test_guardian_returns_the_configured_outcome() -> None:

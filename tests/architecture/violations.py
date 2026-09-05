@@ -261,6 +261,34 @@ VIOLATIONS: tuple[Case, ...] = (
         "event_type='STEP_COMPLETED', step_id=s)\n",
         "TaskEvent(event_type=STEP_*)",
     ),
+    Case(
+        "permissions-imports-tasks",
+        "permissions-imports",
+        "permissions/guardian.py",
+        "from ela.tasks.engine import TaskEngine\n",
+        "ela.tasks.engine.TaskEngine",
+    ),
+    Case(
+        "permissions-imports-tools",
+        "permissions-imports",
+        "permissions/guardian.py",
+        "import ela.tools\n",
+        "ela.tools",
+    ),
+    Case(
+        "permissions-imports-pydantic",
+        "permissions-imports",
+        "permissions/policy.py",
+        "import pydantic\n",
+        "pydantic",
+    ),
+    Case(
+        "permissions-imports-audit",
+        "permissions-imports",
+        "permissions/policy.py",
+        "from ela.audit import chain\n",
+        "ela.audit.chain",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -387,6 +415,15 @@ ALLOWED: tuple[Case, ...] = (
         "from ela.domain import TaskEvent, TaskEventType\n"
         "e = TaskEvent(id=i, created_at=n, task_id=t, event_type=TaskEventType.NOTE)\n"
         "f = TaskEvent(id=i, created_at=n, task_id=t, event_type=kind)\n",
+        "",
+    ),
+    Case(
+        "permissions-imports-domain-ports-jsonschema",
+        "permissions-imports",
+        "permissions/extra.py",
+        "import json\nimport jsonschema\nfrom jsonschema import Draft202012Validator\n"
+        "from ela.domain import CapabilitySpec\nfrom ela.ports import NotFoundError\n"
+        "from ela.permissions import capabilities\nfrom . import errors\n",
         "",
     ),
 )

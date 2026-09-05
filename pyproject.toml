@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.20",
     "alembic>=1.13",
+    "jsonschema>=4.23",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "sqlalchemy[asyncio]>=2.0",
@@ -23,6 +24,7 @@ dev = [
     "detect-secrets>=1.5",
     "pymupdf>=1.26",
     "pytest-asyncio>=1.0",
+    "types-jsonschema>=4.26.0.20260518",
 ]
 
 [build-system]
@@ -235,3 +237,34 @@ source_modules = [
     "ela.tools",
 ]
 forbidden_modules = ["ela.tasks.state_machine"]
+
+[[tool.importlinter.contracts]]
+name = "8. ela.permissions importa solo stdlib, domain, ports e jsonschema: il Guardian è indipendente dal resto (ADR 0010)"
+type = "forbidden"
+# Direct imports only, as for contracts 2 and 6: the domain brings pydantic, jsonschema its own.
+allow_indirect_imports = "True"
+source_modules = ["ela.permissions"]
+forbidden_modules = [
+    "ela.api",
+    "ela.audit",
+    "ela.context",
+    "ela.devices",
+    "ela.evolution",
+    "ela.executive",
+    "ela.identity",
+    "ela.infrastructure",
+    "ela.memory",
+    "ela.providers",
+    "ela.tasks",
+    "ela.testing",
+    "ela.tools",
+    "pydantic",
+    "anthropic",
+    "openai",
+    "httpx",
+    "sqlalchemy",
+    "alembic",
+    "aiosqlite",
+    "fastapi",
+    "typer",
+]

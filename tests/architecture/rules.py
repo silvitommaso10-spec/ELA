@@ -55,6 +55,12 @@ TESTING_DIR = "testing"
 TESTING_ALLOWED_INTERNAL = (f"{ROOT_PACKAGE}.domain", f"{ROOT_PACKAGE}.ports", TESTING_PACKAGE)
 #: The only state a Task may be *born* in outside the state machine.
 INITIAL_STATE = ("TaskState", "CREATED")
+#: Rule 13 (ADR 0010): the permissions package imports the standard library, the domain, the
+#: ports, itself and the JSON Schema validator — never a tool, a provider, the engine, the audit.
+PERMISSIONS_DIR = "permissions"
+PERMISSIONS_PACKAGE = f"{ROOT_PACKAGE}.permissions"
+PERMISSIONS_ALLOWED_INTERNAL = (DOMAIN_MODULE, f"{ROOT_PACKAGE}.ports", PERMISSIONS_PACKAGE)
+PERMISSIONS_ALLOWED_EXTERNAL = frozenset({"jsonschema"})
 
 
 @dataclass(frozen=True)
@@ -406,6 +412,25 @@ def _is_step_event(value: ast.expr) -> bool:
     )
 
 
+def check_permissions_imports(pkg_root: Path) -> list[Violation]:
+    """Rule 13: ``ela.permissions`` imports stdlib, domain, ports and ``jsonschema`` (ADR 0010).
+
+    The Guardian must be independent enough to block ELA (§47): the package that hosts it and
+    its catalogue reaches no tool, provider, engine, audit or infrastructure, and no pydantic
+    directly — the domain is its only way to a model. ``jsonschema`` is the one library it needs.
+    """
+    files = (path for path in _source_files(pkg_root / PERMISSIONS_DIR))
+    return _violations(
+        "permissions-import-only-stdlib-domain-ports-and-jsonschema",
+        files,
+        pkg_root,
+        lambda imported: (
+            _top_level(imported) not in STDLIB | PERMISSIONS_ALLOWED_EXTERNAL
+            and not any(_is_within(imported, prefix) for prefix in PERMISSIONS_ALLOWED_INTERNAL)
+        ),
+    )
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -418,4 +443,5 @@ RULES: dict[str, Rule] = {
     "audit-append-only": check_audit_adapter_append_only,
     "state-machine-callers": check_state_machine_callers,
     "step-event-writers": check_step_event_writers,
+    "permissions-imports": check_permissions_imports,
 }

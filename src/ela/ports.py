@@ -299,12 +299,11 @@ class AuthorizationStore(Protocol):
 class CapabilityRegistryPort(Protocol):
     """The catalogue of what ELA may do, as specifications (§28, §29).
 
-    Synchronous: the catalogue is declared, not fetched. A specification is registered once;
-    registering the same id again is an error, not a replacement.
+    Synchronous: the catalogue is declared, not fetched. Read-only (ADR 0010, M4.1): a registry
+    is populated once, when it is built, and has no way to change afterwards — a capability that
+    could be added at runtime could be added by whatever wants to run it. Two specifications
+    with the same id at construction are an :class:`AlreadyExistsError`, not a replacement.
     """
-
-    def register(self, spec: CapabilitySpec) -> None:
-        """Add a specification; :class:`AlreadyExistsError` if its id is already there."""
 
     def get(self, capability_id: CapabilityId) -> CapabilitySpec:
         """The specification with this id; :class:`NotFoundError` if there is none."""
