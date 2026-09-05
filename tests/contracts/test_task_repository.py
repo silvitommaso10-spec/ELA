@@ -6,9 +6,9 @@ from uuid import UUID
 
 import pytest
 
-from ela.domain import TaskEventId, TaskId, TaskState
+from ela.domain import PlanId, TaskEventId, TaskId, TaskState
 from ela.ports import AlreadyExistsError, NotFoundError, TaskRepository
-from tests.domain.examples import TASK, TASK_EVENT
+from tests.domain.examples import TASK, TASK_EVENT, TASK_PLAN
 
 OTHER_ID = TaskId(UUID("00000000-0000-4000-8000-000000000101"))
 OTHER_TASK = TASK.model_copy(update={"id": OTHER_ID, "state": TaskState.QUEUED})
@@ -144,3 +144,65 @@ async def test_duplicate_event_is_rejected(task_repository: TaskRepository) -> N
 async def test_events_of_unknown_task_is_not_found(task_repository: TaskRepository) -> None:
     with pytest.raises(NotFoundError):
         await task_repository.events(TASK.id)
+
+
+# --------------------------------------------------------------------------------------
+# Plans (M3.1, ADR 0008): one per task, stored once, read back with its steps
+# --------------------------------------------------------------------------------------
+
+OTHER_PLAN = TASK_PLAN.model_copy(
+    update={"id": PlanId(UUID("00000000-0000-4000-8000-000000000103")), "task_id": OTHER_ID}
+)
+
+
+async def test_add_plan_then_plan(task_repository: TaskRepository) -> None:
+    await task_repository.add(TASK)
+    await task_repository.add_plan(TASK_PLAN)
+    assert await task_repository.plan(TASK.id) == TASK_PLAN
+
+
+async def test_add_plan_for_unknown_task_is_not_found(task_repository: TaskRepository) -> None:
+    with pytest.raises(NotFoundError) as excinfo:
+        await task_repository.add_plan(TASK_PLAN)
+    assert excinfo.value.key == TASK.id
+
+
+async def test_second_plan_for_the_same_task_is_rejected(task_repository: TaskRepository) -> None:
+    """One plan per task: replanning is not a thing in v0.1 (ADR 0004)."""
+    await task_repository.add(TASK)
+    await task_repository.add_plan(TASK_PLAN)
+    another = OTHER_PLAN.model_copy(update={"task_id": TASK.id})
+    with pytest.raises(AlreadyExistsError):
+        await task_repository.add_plan(another)
+    assert await task_repository.plan(TASK.id) == TASK_PLAN
+
+
+async def test_same_plan_id_on_another_task_is_rejected(task_repository: TaskRepository) -> None:
+    await task_repository.add(TASK)
+    await task_repository.add(OTHER_TASK)
+    await task_repository.add_plan(TASK_PLAN)
+    with pytest.raises(AlreadyExistsError):
+        await task_repository.add_plan(TASK_PLAN.model_copy(update={"task_id": OTHER_ID}))
+    with pytest.raises(NotFoundError):
+        await task_repository.plan(OTHER_ID)
+
+
+async def test_plan_of_a_task_without_one_is_not_found(task_repository: TaskRepository) -> None:
+    await task_repository.add(TASK)
+    with pytest.raises(NotFoundError) as excinfo:
+        await task_repository.plan(TASK.id)
+    assert excinfo.value.key == TASK.id
+
+
+async def test_plan_of_unknown_task_is_not_found(task_repository: TaskRepository) -> None:
+    with pytest.raises(NotFoundError):
+        await task_repository.plan(TASK.id)
+
+
+async def test_plans_belong_to_their_task(task_repository: TaskRepository) -> None:
+    await task_repository.add(TASK)
+    await task_repository.add(OTHER_TASK)
+    await task_repository.add_plan(TASK_PLAN)
+    await task_repository.add_plan(OTHER_PLAN)
+    assert await task_repository.plan(TASK.id) == TASK_PLAN
+    assert await task_repository.plan(OTHER_ID) == OTHER_PLAN

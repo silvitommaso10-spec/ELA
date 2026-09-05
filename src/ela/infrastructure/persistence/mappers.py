@@ -39,12 +39,15 @@ from ela.domain import (
     TaskEventId,
     TaskEventType,
     TaskId,
+    TaskPlan,
     TaskState,
+    TaskStep,
 )
 from ela.infrastructure.persistence.orm import (
     AuditEventRow,
     AuthorizationRow,
     TaskEventRow,
+    TaskPlanRow,
     TaskRow,
 )
 
@@ -54,9 +57,12 @@ __all__ = [
     "authorization_to_row",
     "authorization_values",
     "event_to_row",
+    "plan_to_row",
+    "plan_values",
     "row_to_audit_event",
     "row_to_authorization",
     "row_to_event",
+    "row_to_plan",
     "row_to_task",
     "task_to_row",
     "task_values",
@@ -150,6 +156,38 @@ def row_to_event(row: TaskEventRow) -> TaskEvent:
         previous_state=_optional_task_state(row.previous_state),
         new_state=_optional_task_state(row.new_state),
         message=row.message,
+        metadata=row.metadata_,
+    )
+
+
+# --------------------------------------------------------------------------------------
+# TaskPlan
+# --------------------------------------------------------------------------------------
+
+
+def plan_values(plan: TaskPlan) -> dict[str, Any]:
+    """Column values of a plan; the steps become one JSON array (ADR 0008)."""
+    return {
+        "id": plan.id,
+        "created_at": plan.created_at,
+        "task_id": plan.task_id,
+        "goal": plan.goal,
+        "steps": [step.model_dump(mode="json") for step in plan.steps],
+        "metadata_": _plain(plan.metadata),
+    }
+
+
+def plan_to_row(plan: TaskPlan) -> TaskPlanRow:
+    return TaskPlanRow(**plan_values(plan))
+
+
+def row_to_plan(row: TaskPlanRow) -> TaskPlan:
+    return TaskPlan(
+        id=PlanId(row.id),
+        created_at=row.created_at,
+        task_id=TaskId(row.task_id),
+        goal=row.goal,
+        steps=tuple(TaskStep.model_validate(step) for step in row.steps),
         metadata=row.metadata_,
     )
 

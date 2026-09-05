@@ -213,3 +213,25 @@ forbidden_modules = [
     "fastapi",
     "typer",
 ]
+
+[[tool.importlinter.contracts]]
+name = "7. solo ela.tasks importa la state machine: il Task Engine è l'unico chiamante di transition (ADR 0008)"
+type = "forbidden"
+source_modules = [
+    "ela.domain",
+    "ela.ports",
+    "ela.api",
+    "ela.audit",
+    "ela.context",
+    "ela.devices",
+    "ela.evolution",
+    "ela.executive",
+    "ela.identity",
+    "ela.infrastructure",
+    "ela.memory",
+    "ela.permissions",
+    "ela.providers",
+    "ela.testing",
+    "ela.tools",
+]
+forbidden_modules = ["ela.tasks.state_machine"]

@@ -46,6 +46,7 @@ from ela.domain import (
     Task,
     TaskEvent,
     TaskId,
+    TaskPlan,
     TaskState,
     TaskStep,
 )
@@ -160,6 +161,10 @@ class TaskRepository(Protocol):
     cosa è successo" and "riprendere attività interrotte" (§14) need both from one place. The
     repository stores and nothing else — which transitions are legal is the state machine's
     business (ADR 0004), and ``save`` does not check them.
+
+    The :class:`~ela.domain.TaskPlan` of a task lives here too (M3.1, ADR 0008): the Task Graph
+    and the orchestrator read it by id, and an entity with an id is not something to rebuild by
+    scanning events. One plan per task, stored once; replanning is not a thing in v0.1 (ADR 0004).
     """
 
     async def add(self, task: Task) -> None:
@@ -198,6 +203,16 @@ class TaskRepository(Protocol):
 
     async def events(self, task_id: TaskId) -> tuple[TaskEvent, ...]:
         """The events of a stored task in insertion order; :class:`NotFoundError` if unknown."""
+
+    async def add_plan(self, plan: TaskPlan) -> None:
+        """Store the plan of a stored task.
+
+        :class:`NotFoundError` if ``plan.task_id`` is unknown; :class:`AlreadyExistsError` if
+        the task already has a plan or the plan id is already held.
+        """
+
+    async def plan(self, task_id: TaskId) -> TaskPlan:
+        """The plan of a stored task; :class:`NotFoundError` if the task is unknown or has none."""
 
 
 @runtime_checkable

@@ -30,6 +30,7 @@ __all__ = [
     "AuthorizationRow",
     "Base",
     "TaskEventRow",
+    "TaskPlanRow",
     "TaskRow",
     "UtcDateTime",
 ]
@@ -99,6 +100,26 @@ class TaskEventRow(Base):
     previous_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
     new_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
+
+
+class TaskPlanRow(Base):
+    """A :class:`~ela.domain.TaskPlan`, as stored: one per task (§13, §14; ADR 0008).
+
+    ``task_id`` is UNIQUE: a task has at most one plan, and replanning is not a thing in v0.1
+    (ADR 0004). The steps are value-like and immutable, so they travel as one JSON array; a table
+    of their own would be a migration with an ADR, the day something needs to query them in SQL.
+    """
+
+    __tablename__ = "task_plans"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[UUID] = mapped_column(Uuid, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    task_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tasks.id"), unique=True, nullable=False)
+    goal: Mapped[str] = mapped_column(Text, nullable=False)
+    steps: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
 
 

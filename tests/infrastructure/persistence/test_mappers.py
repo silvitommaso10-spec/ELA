@@ -10,16 +10,19 @@ from hypothesis import given, settings
 from pydantic import BaseModel
 from sqlalchemy import Table
 
-from ela.domain import AuditEvent, Authorization, Task, TaskEvent
+from ela.domain import AuditEvent, Authorization, Task, TaskEvent, TaskPlan
 from ela.infrastructure.persistence.mappers import (
     audit_event_to_row,
     audit_event_values,
     authorization_to_row,
     authorization_values,
     event_to_row,
+    plan_to_row,
+    plan_values,
     row_to_audit_event,
     row_to_authorization,
     row_to_event,
+    row_to_plan,
     row_to_task,
     task_to_row,
     task_values,
@@ -28,6 +31,7 @@ from ela.infrastructure.persistence.orm import (
     AuditEventRow,
     AuthorizationRow,
     TaskEventRow,
+    TaskPlanRow,
     TaskRow,
 )
 from tests.contracts.test_task_repository import CHILD
@@ -38,6 +42,7 @@ from tests.domain.examples import (
     SINGLE_USE_AUTHORIZATION,
     TASK,
     TASK_EVENT,
+    TASK_PLAN,
 )
 from tests.domain.strategies import MODEL_STRATEGIES
 
@@ -48,6 +53,7 @@ BARE_EVENT = TaskEvent(
     task_id=TASK.id,
     event_type=TASK_EVENT.event_type,
 )
+BARE_PLAN = TaskPlan(id=TASK_PLAN.id, created_at=TASK_PLAN.created_at, task_id=TASK.id, goal="bare")
 FAILED_AUDIT_EVENT = AUDIT_EVENT.model_copy(update={"error": ERROR_METADATA, "usage": None})
 BARE_AUDIT_EVENT = AuditEvent(
     id=AUDIT_EVENT.id,
@@ -70,6 +76,11 @@ def test_task_round_trip(task: Task) -> None:
 @pytest.mark.parametrize("event", [TASK_EVENT, BARE_EVENT], ids=["full", "bare"])
 def test_event_round_trip(event: TaskEvent) -> None:
     assert row_to_event(event_to_row(event)) == event
+
+
+@pytest.mark.parametrize("plan", [TASK_PLAN, BARE_PLAN], ids=["with-steps", "bare"])
+def test_plan_round_trip(plan: TaskPlan) -> None:
+    assert row_to_plan(plan_to_row(plan)) == plan
 
 
 @pytest.mark.parametrize(
@@ -105,6 +116,13 @@ def test_any_event_round_trips(event: BaseModel) -> None:
 
 
 @settings(max_examples=100)
+@given(MODEL_STRATEGIES[TaskPlan])
+def test_any_plan_round_trips(plan: BaseModel) -> None:
+    assert isinstance(plan, TaskPlan)
+    assert row_to_plan(plan_to_row(plan)) == plan
+
+
+@settings(max_examples=100)
 @given(MODEL_STRATEGIES[Authorization])
 def test_any_authorization_round_trips(authorization: BaseModel) -> None:
     assert isinstance(authorization, Authorization)
@@ -131,6 +149,13 @@ def test_rows_store_enum_values_and_plain_json() -> None:
     event = event_to_row(TASK_EVENT)
     assert (event.previous_state, event.new_state) == ("CREATED", "PLANNING")
     assert type(authorization_to_row(SINGLE_USE_AUTHORIZATION).scope) is list
+
+
+def test_a_plan_row_stores_the_steps_as_one_json_array() -> None:
+    row = plan_to_row(TASK_PLAN)
+    assert type(row.steps) is list and len(row.steps) == 1
+    assert row.steps[0]["id"] == str(TASK_PLAN.steps[0].id)
+    assert row.steps[0]["dependencies"] == [str(TASK_PLAN.steps[0].dependencies[0])]
 
 
 def test_a_new_authorization_row_has_no_uses_yet() -> None:
@@ -186,6 +211,10 @@ def test_event_mapper_covers_every_field() -> None:
     values = {c.key: getattr(row, c.key) for c in TaskEventRow.__mapper__.column_attrs}
     values.pop("seq")
     assert unmapped(TaskEvent, values, TaskEventRow.__table__) == set()
+
+
+def test_plan_mapper_covers_every_field() -> None:
+    assert unmapped(TaskPlan, plan_values(TASK_PLAN), TaskPlanRow.__table__) == set()
 
 
 def test_authorization_mapper_covers_every_field() -> None:

@@ -1,6 +1,6 @@
 # 0005. Forma dei ports: async dove c'è I/O, errori nominati, tool senza Guardian, fake in `ela.testing`
 
-- **Stato:** Accettata. §2-ter (limit=0) superata da ADR 0006 §11.
+- **Stato:** Accettata. §2-ter (limit=0) superata da ADR 0006 §11. `TaskRepository` estesa da ADR 0008 §2 (`add_plan`, `plan`).
 - **Data:** 2026-09-04
 - **Riferimenti spec:** §14, §15, §16, §17, §26, §27, §28, §30, §32, §33, §34, §49, §50, §51, §52, §59
 - **Milestone:** M1.3

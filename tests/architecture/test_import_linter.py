@@ -22,6 +22,7 @@ from tests.architecture.rules import (
     INFRA_LIBRARIES,
     INFRA_PACKAGES,
     PORTS_ALLOWED_INTERNAL,
+    STATE_MACHINE_MODULE,
     TESTING_ALLOWED_INTERNAL,
     TESTING_PACKAGE,
     check_domain,
@@ -59,6 +60,8 @@ def _contract_for(rule: str) -> Contract:
             return contract
         if rule == "testing-imports" and sources == {TESTING_PACKAGE}:
             return contract
+        if rule == "state-machine-callers" and forbidden == {STATE_MACHINE_MODULE}:
+            return contract
     raise AssertionError(f"pyproject.toml has no import-linter contract for rule {rule!r}")
 
 
@@ -88,6 +91,9 @@ def test_contracts_cover_current_packages() -> None:
     assert set(testing["forbidden_modules"]) >= (
         (modules - set(TESTING_ALLOWED_INTERNAL)) | INFRA_LIBRARIES | {"pydantic"}
     )
+
+    callers = _contract_for("state-machine-callers")
+    assert set(callers["source_modules"]) == modules - {"ela.tasks"}
 
 
 def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() -> None:
@@ -132,6 +138,7 @@ LINTER_CASES = [
         "core-tasks-providers",
         "testing-imported-by-executive",
         "testing-imports-tasks",
+        "state-machine-imported-by-executive",
     )
 ]
 
