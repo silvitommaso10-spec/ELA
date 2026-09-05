@@ -22,6 +22,8 @@ from tests.architecture.rules import (
     CORE_PACKAGES,
     INFRA_LIBRARIES,
     INFRA_PACKAGES,
+    PERMISSIONS_ALLOWED_INTERNAL,
+    PERMISSIONS_PACKAGE,
     PORTS_ALLOWED_INTERNAL,
     STATE_MACHINE_MODULE,
     TESTING_ALLOWED_INTERNAL,
@@ -63,6 +65,8 @@ def _contract_for(rule: str) -> Contract:
             return contract
         if rule == "state-machine-callers" and forbidden == {STATE_MACHINE_MODULE}:
             return contract
+        if rule == "permissions-imports" and sources == {PERMISSIONS_PACKAGE}:
+            return contract
     raise AssertionError(f"pyproject.toml has no import-linter contract for rule {rule!r}")
 
 
@@ -96,16 +100,26 @@ def test_contracts_cover_current_packages() -> None:
     callers = _contract_for("state-machine-callers")
     assert set(callers["source_modules"]) == modules - {"ela.tasks"}
 
+    permissions = _contract_for("permissions-imports")
+    assert set(permissions["forbidden_modules"]) >= (
+        (modules - set(PERMISSIONS_ALLOWED_INTERNAL)) | INFRA_LIBRARIES | {"pydantic"}
+    )
+
 
 def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() -> None:
-    """Contracts 2 and 6 check direct imports only: ports and fakes reach pydantic via the domain.
+    """Contracts 2, 6 and 8 check direct imports only: ports, fakes and permissions reach pydantic
+    via the domain (and permissions reaches jsonschema's dependencies via jsonschema).
 
     Every other contract keeps the import-linter default and follows indirect chains too.
     """
     direct_only = {
         c["name"] for c in _contracts() if c.get("allow_indirect_imports") in ("True", True)
     }
-    expected = {_contract_for("ports")["name"], _contract_for("testing-imports")["name"]}
+    expected = {
+        _contract_for("ports")["name"],
+        _contract_for("testing-imports")["name"],
+        _contract_for("permissions-imports")["name"],
+    }
     assert direct_only == expected
 
 
@@ -152,6 +166,7 @@ LINTER_CASES = [
         "testing-imported-by-executive",
         "testing-imports-tasks",
         "state-machine-imported-by-executive",
+        "permissions-imports-tasks",
     )
 ]
 

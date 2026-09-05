@@ -16,8 +16,9 @@ the ports.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 from typing import Final, NamedTuple
 from uuid import UUID
 
@@ -294,15 +295,21 @@ class FakeAuthorizationStore:
 
 
 class FakeCapabilityRegistry:
-    """Specifications by id (port :class:`~ela.ports.CapabilityRegistryPort`)."""
+    """Specifications by id, fixed at construction (:class:`~ela.ports.CapabilityRegistryPort`).
 
-    def __init__(self) -> None:
-        self._specs: dict[CapabilityId, CapabilitySpec] = {}
+    Read-only like the port (ADR 0010): the specifications are given to the constructor, a
+    duplicate id is an :class:`~ela.ports.AlreadyExistsError`, and nothing can be added later.
+    Unlike the real registry it validates nothing else: a test may register a HIGH capability to
+    see it denied.
+    """
 
-    def register(self, spec: CapabilitySpec) -> None:
-        if spec.id in self._specs:
-            raise AlreadyExistsError("capability", spec.id)
-        self._specs[spec.id] = spec
+    def __init__(self, specs: Iterable[CapabilitySpec] = ()) -> None:
+        catalogue: dict[CapabilityId, CapabilitySpec] = {}
+        for spec in specs:
+            if spec.id in catalogue:
+                raise AlreadyExistsError("capability", spec.id)
+            catalogue[spec.id] = spec
+        self._specs: Mapping[CapabilityId, CapabilitySpec] = MappingProxyType(catalogue)
 
     def get(self, capability_id: CapabilityId) -> CapabilitySpec:
         try:

@@ -1,6 +1,6 @@
 # 0001. Stack tecnico del Core
 
-- **Stato:** Accettata
+- **Stato:** Accettata. Validazione JSON Schema con `jsonschema` (Draft 2020-12) aggiunta allo stack del Core da ADR 0010 §4.
 - **Data:** 2026-09-04
 - **Riferimenti spec:** §48, §49, §51, §52, §53, §54
 

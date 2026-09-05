@@ -227,6 +227,7 @@ CAPABILITY_SPEC: Final = CapabilitySpec(
         "required": ["path", "body"],
     },
     scope=("workspace/notes",),
+    scoped_arguments=("path",),
     requires_authorization=True,
     metadata={"introduced_in": "0.1"},
 )

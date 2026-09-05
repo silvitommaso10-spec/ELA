@@ -226,6 +226,7 @@ capability_specs = st.builds(
     risk=st.sampled_from(RiskLevel),
     input_schema=json_mappings,
     scope=st.lists(texts, max_size=3).map(tuple),
+    scoped_arguments=st.lists(texts, max_size=3).map(tuple),
     requires_authorization=st.booleans(),
     metadata=json_mappings,
 )

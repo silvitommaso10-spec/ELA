@@ -12,6 +12,8 @@ from tests.architecture.rules import (
     AUDIT_ADAPTER,
     CORE_PACKAGES,
     ORM_PACKAGE,
+    PERMISSIONS_ALLOWED_EXTERNAL,
+    PERMISSIONS_DIR,
     PERSISTENCE_MAPPERS,
     PORTS_ALLOWED_INTERNAL,
     RULES,
@@ -33,6 +35,7 @@ def test_required_modules_exist() -> None:
     assert (PACKAGE_ROOT / TESTING_DIR / "fakes.py").is_file()
     assert (PACKAGE_ROOT / PERSISTENCE_MAPPERS).is_file()
     assert (PACKAGE_ROOT / AUDIT_ADAPTER).is_file()
+    assert (PACKAGE_ROOT / PERMISSIONS_DIR / "capabilities.py").is_file()
 
 
 def test_ports_really_import_the_domain() -> None:
@@ -58,6 +61,7 @@ def test_rule_holds(rule: Rule) -> None:
         "ela.audit.chain",
         "ela.tasks.engine",
         "ela.tasks.graph",
+        "ela.permissions.capabilities",
     ],
 )
 def test_module_is_importable(module: str) -> None:
@@ -99,3 +103,12 @@ def test_rule_11_names_exactly_the_event_types_that_move_a_step() -> None:
     engine = PACKAGE_ROOT / "tasks" / "engine.py"
     imported = [name for name, _ in imported_modules(engine, PACKAGE_ROOT)]
     assert any(name.startswith("ela.tasks.graph") for name in imported)
+
+
+def test_the_catalogue_really_imports_jsonschema_and_the_domain() -> None:
+    """Rule 13 would hold vacuously on a permissions package that imported nothing."""
+    catalogue = PACKAGE_ROOT / PERMISSIONS_DIR / "capabilities.py"
+    imported = [name for name, _ in imported_modules(catalogue, PACKAGE_ROOT)]
+    assert any(name.partition(".")[0] in PERMISSIONS_ALLOWED_EXTERNAL for name in imported)
+    assert any(name.startswith("ela.domain") for name in imported)
+    assert any(name.startswith("ela.ports") for name in imported)
