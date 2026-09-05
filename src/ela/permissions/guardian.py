@@ -19,9 +19,12 @@ Order of the checks, the first that denies wins (ADR 0011 §3):
    from the approved plan.
 4. **Policy row** (:data:`RISK_POLICY`): HIGH and CRITICAL are denied; LOW needs every target
    inside the capability's scope.
-5. **Authorization**, when MEDIUM or when the specification or the step requires one: a valid
-   grant allows, a missing, expired or exhausted one asks for approval, a grant that does not
-   cover the call is a doubt and denies.
+5. **Authorization.** A grant that does not *cover* the call (another capability, task or
+   step, a scope that misses the targets, a use count that cannot be true) denies, always: the
+   Guardian never ignores a fact it was handed, and an incoherent caller is a doubt. Then, when
+   MEDIUM or when the specification or the step requires one: a covering, *usable* grant allows;
+   none, or one expired or exhausted, asks for approval. A grant that is not needed is ignored
+   if it merely is not usable — an unused grant is not an incoherence.
 
 Whatever goes wrong inside the evaluation is a ``DENIED`` decision, never an exception (§33):
 the only errors that escape are a clock or an id generator that cannot even produce a denial.
@@ -95,6 +98,7 @@ class Rule(StrEnum):
     CATALOGUE = "CATALOGUE"
     ARGUMENTS = "ARGUMENTS"
     STEP_MISMATCH = "STEP_MISMATCH"
+    AUTHORIZATION_MISMATCH = "AUTHORIZATION_MISMATCH"
     AUTHORIZATION_REQUIRED = "AUTHORIZATION_REQUIRED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
@@ -123,13 +127,6 @@ class _Verdict:
     targets: tuple[object, ...] = ()
     applied_authorization: Authorization | None = None
     error: str | None = None
-
-
-class _AuthorizationStatus(StrEnum):
-    VALID = "VALID"
-    EXPIRED = "EXPIRED"
-    EXHAUSTED = "EXHAUSTED"
-    MISMATCH = "MISMATCH"
 
 
 class PermissionGuardian:
@@ -293,7 +290,21 @@ class PermissionGuardian:
                 targets,
             )
 
-        # 5. Authorization: MEDIUM always, SAFE/LOW when something requires it (decision E).
+        # 5a. A grant that does not cover the call is a caller's incoherence: DENIED, needed or
+        #     not (ADR 0011 §6). The Guardian never ignores a fact it was handed.
+        if authorization is not None:
+            mismatch = _mismatch(authorization, registered, task, step, targets, authorization_uses)
+            if mismatch is not None:
+                return _Verdict(
+                    PermissionOutcome.DENIED,
+                    Rule.AUTHORIZATION_MISMATCH,
+                    f"authorization does not cover this call of {capability.id}: {mismatch}",
+                    risk,
+                    targets,
+                )
+
+        # 5b. Is a grant needed? MEDIUM always; SAFE/LOW when the spec or the step requires it
+        #     (decision E). If not, a covering grant that is not usable is simply not used.
         required = registered.requires_authorization or (
             step is not None and step.requires_authorization
         )
@@ -316,22 +327,12 @@ class PermissionGuardian:
                 risk,
                 targets,
             )
-        status, detail = _authorization_status(
-            authorization, registered, task, step, targets, authorization_uses, now
-        )
-        if status is _AuthorizationStatus.MISMATCH:
-            return _Verdict(
-                PermissionOutcome.DENIED,
-                settled_by,
-                f"authorization does not cover this call of {capability.id}: {detail}",
-                risk,
-                targets,
-            )
-        if status is not _AuthorizationStatus.VALID:
+        unusable = _unusable(authorization, authorization_uses, now)
+        if unusable is not None:
             return _Verdict(
                 PermissionOutcome.REQUIRES_APPROVAL,
                 settled_by,
-                f"{capability.id} requires an authorization: {detail}",
+                f"{capability.id} requires an authorization: {unusable}",
                 risk,
                 targets,
             )
@@ -405,50 +406,45 @@ class PermissionGuardian:
         return decision
 
 
-def _authorization_status(
+def _mismatch(
     authorization: Authorization,
     spec: CapabilitySpec,
     task: Task | None,
     step: TaskStep | None,
     targets: tuple[object, ...],
     uses: int,
-    now: datetime,
-) -> tuple[_AuthorizationStatus, str]:
-    """Whether ``authorization`` covers this call, and why not (ADR 0011 §5–§6).
+) -> str | None:
+    """Why ``authorization`` does not *cover* this call, or ``None`` if it does (ADR 0011 §6).
 
-    A grant for another capability, another task or step, or a scope that does not cover the
-    targets is a *mismatch*: the wrong grant in the Guardian's hands, a doubt. An expired or
-    exhausted grant is the normal "ask" of §62, like no grant at all. Mismatches are checked
-    first: a wrong grant that also expired is still a wrong grant.
+    A grant for another capability, another task or step, a scope that does not cover the
+    targets, or a use count that cannot be true: the wrong grant in the Guardian's hands, a
+    doubt whether or not a grant was needed. Checked before usability: a wrong grant that also
+    expired is still a wrong grant.
     """
     if authorization.capability_id != spec.id:
-        return _AuthorizationStatus.MISMATCH, (
-            f"authorization {authorization.id} is for {authorization.capability_id}"
-        )
+        return f"authorization {authorization.id} is for {authorization.capability_id}"
     if authorization.task_id is not None and (task is None or task.id != authorization.task_id):
-        return _AuthorizationStatus.MISMATCH, (
-            f"authorization {authorization.id} is bound to task {authorization.task_id}"
-        )
+        return f"authorization {authorization.id} is bound to task {authorization.task_id}"
     if authorization.step_id is not None and (step is None or step.id != authorization.step_id):
-        return _AuthorizationStatus.MISMATCH, (
-            f"authorization {authorization.id} is bound to step {authorization.step_id}"
-        )
+        return f"authorization {authorization.id} is bound to step {authorization.step_id}"
     if not scope_covers(authorization.scope, targets):
-        return _AuthorizationStatus.MISMATCH, (
+        return (
             f"scope {list(authorization.scope)} of authorization {authorization.id} does not "
             f"cover targets {_describe(targets)}"
         )
     if uses < 0:
-        return _AuthorizationStatus.MISMATCH, f"a use count of {uses} cannot be true"
+        return f"a use count of {uses} cannot be true"
+    return None
+
+
+def _unusable(authorization: Authorization, uses: int, now: datetime) -> str | None:
+    """Why a covering ``authorization`` cannot be used now — expired (closed bound, ADR 0005
+    §2-bis) or exhausted — or ``None`` if it can. Not an incoherence: the normal "ask" of §62."""
     if authorization.expires_at is not None and authorization.expires_at <= now:
-        return _AuthorizationStatus.EXPIRED, (
-            f"authorization {authorization.id} expired at {authorization.expires_at.isoformat()}"
-        )
+        return f"authorization {authorization.id} expired at {authorization.expires_at.isoformat()}"
     if authorization.max_uses is not None and uses >= authorization.max_uses:
-        return _AuthorizationStatus.EXHAUSTED, (
-            f"authorization {authorization.id} was used {uses} of {authorization.max_uses} times"
-        )
-    return _AuthorizationStatus.VALID, "covered"
+        return f"authorization {authorization.id} was used {uses} of {authorization.max_uses} times"
+    return None
 
 
 def _json_targets(targets: tuple[object, ...]) -> list[JsonValue]:

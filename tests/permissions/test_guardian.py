@@ -367,7 +367,7 @@ def test_a_negative_use_count_is_a_doubt(h: Harness) -> None:
 def test_an_authorization_for_another_capability_is_denied(h: Harness) -> None:
     decision = h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=grant(ECHO))
     assert decision.outcome is DENIED
-    assert rule_of(decision) is Rule.APPROVAL_UNLESS_AUTHORIZED
+    assert rule_of(decision) is Rule.AUTHORIZATION_MISMATCH
     assert "does not cover" in decision.reason and "core.echo" in decision.reason
 
 
@@ -565,3 +565,139 @@ def test_step_ids_in_reasons_are_the_step_given(h: Harness) -> None:
     )
     decision = h.guardian.decide(ECHO, ECHO_ARGS, step=step)
     assert "00000000-0000-4000-8000-000000000042" in decision.reason
+
+
+# --------------------------------------------------------------------------------------
+# The six families of the review (2026-09-05): outcome AND rule for every combination
+# --------------------------------------------------------------------------------------
+
+AuthState = str
+STATES: tuple[AuthState, ...] = ("assente", "valida", "scaduta", "esaurita", "non copre")
+INCOHERENT_STEP = step_for(CapabilityId("other.capability"))
+
+
+def args_for(spec: CapabilitySpec) -> dict[str, Any]:
+    if spec.scoped_arguments:
+        return dict(NOTE_ARGS)
+    if spec.id == COMPLETE.id:
+        return dict(COMPLETE_ARGS)
+    return dict(ECHO_ARGS)
+
+
+def authorization_in(state: AuthState, spec: CapabilitySpec, h: Harness) -> tuple[Any, int]:
+    """An authorization for ``spec`` in one of the five states, with the use count to pass.
+
+    "non copre" is a grant bound to another task while no task is given: a mismatch whatever the
+    capability, so the same construction serves every specification.
+    """
+    if state == "assente":
+        return None, 0
+    if state == "valida":
+        return grant(spec), 0
+    if state == "scaduta":
+        return grant(spec, expires_at=h.now - timedelta(seconds=1)), 0
+    if state == "esaurita":
+        return grant(spec, max_uses=1), 1
+    return grant(spec, task_id=OTHER_TASK_ID), 0
+
+
+def decide_with(
+    h: Harness,
+    spec: CapabilitySpec,
+    state: AuthState,
+    *,
+    step: Any = None,
+    arguments: dict[str, Any] | None = None,
+) -> PermissionDecision:
+    authorization, uses = authorization_in(state, spec, h)
+    return h.guardian.decide(
+        spec,
+        args_for(spec) if arguments is None else arguments,
+        step=step,
+        authorization=authorization,
+        authorization_uses=uses,
+    )
+
+
+def _spec_id(value: Any) -> str:
+    return str(value.id) if isinstance(value, CapabilitySpec) else str(value)
+
+
+@pytest.mark.parametrize(
+    "spec, state",
+    [(spec, state) for spec in (NOTE, HIGH, CRITICAL) for state in ("assente", "valida")]
+    + [(spec, state) for spec in (ECHO, COMPLETE) for state in STATES[2:]],
+    ids=_spec_id,
+)
+def test_family_1_an_incoherent_step_denies_whatever_the_risk_and_the_grant(
+    h: Harness, spec: CapabilitySpec, state: AuthState
+) -> None:
+    decision = decide_with(h, spec, state, step=INCOHERENT_STEP)
+    assert decision.outcome is DENIED
+    assert rule_of(decision) is Rule.STEP_MISMATCH
+
+
+@pytest.mark.parametrize("spec", [ECHO, NOTE], ids=_spec_id)
+@pytest.mark.parametrize("state", ["valida", "scaduta", "esaurita"])
+def test_family_2_an_unneeded_grant_that_covers_is_not_used(
+    h: Harness, spec: CapabilitySpec, state: AuthState
+) -> None:
+    decision = decide_with(h, spec, state)
+    assert decision.outcome is ALLOWED
+    assert rule_of(decision) is (Rule.ALLOW if spec is ECHO else Rule.ALLOW_WITHIN_SCOPE)
+    assert decision.expires_at == h.now + DEFAULT_DECISION_TTL, "the decision does not rest on it"
+
+
+@pytest.mark.parametrize("spec", [ECHO, NOTE], ids=_spec_id)
+def test_family_2_an_unneeded_grant_that_does_not_cover_denies(
+    h: Harness, spec: CapabilitySpec
+) -> None:
+    """The Guardian never ignores a fact it was handed: an incoherent caller is a doubt (§33)."""
+    decision = decide_with(h, spec, "non copre")
+    assert decision.outcome is DENIED
+    assert rule_of(decision) is Rule.AUTHORIZATION_MISMATCH
+
+
+@pytest.mark.parametrize("state", ["scaduta", "esaurita"])
+def test_family_3_a_guarded_safe_capability_with_an_unusable_grant_asks(
+    h: Harness, state: AuthState
+) -> None:
+    decision = decide_with(h, GUARDED_ECHO, state)
+    assert decision.outcome is REQUIRES_APPROVAL
+    assert rule_of(decision) is Rule.AUTHORIZATION_REQUIRED
+
+
+def test_family_3_a_guarded_safe_capability_with_a_grant_that_does_not_cover_denies(
+    h: Harness,
+) -> None:
+    decision = decide_with(h, GUARDED_ECHO, "non copre")
+    assert decision.outcome is DENIED
+    assert rule_of(decision) is Rule.AUTHORIZATION_MISMATCH
+
+
+@pytest.mark.parametrize("state", ["assente", "scaduta", "esaurita"])
+def test_family_4_a_guarded_low_capability_in_scope_without_a_usable_grant_asks(
+    h: Harness, state: AuthState
+) -> None:
+    decision = decide_with(h, GUARDED_NOTE, state)
+    assert decision.outcome is REQUIRES_APPROVAL
+    assert rule_of(decision) is Rule.AUTHORIZATION_REQUIRED
+
+
+def test_family_5_low_outside_scope_with_a_valid_grant_is_denied_by_the_row(h: Harness) -> None:
+    decision = decide_with(h, NOTE, "valida", arguments={**NOTE_ARGS, "path": "elsewhere/x.md"})
+    assert decision.outcome is DENIED
+    assert rule_of(decision) is Rule.ALLOW_WITHIN_SCOPE
+
+
+@pytest.mark.parametrize(
+    "spec, state",
+    [(CRITICAL, "assente")] + [(spec, state) for spec in (HIGH, CRITICAL) for state in STATES[2:]],
+    ids=_spec_id,
+)
+def test_family_6_high_and_critical_are_denied_by_the_row_whatever_the_grant(
+    h: Harness, spec: CapabilitySpec, state: AuthState
+) -> None:
+    decision = decide_with(h, spec, state)
+    assert decision.outcome is DENIED
+    assert rule_of(decision) is Rule.DENY

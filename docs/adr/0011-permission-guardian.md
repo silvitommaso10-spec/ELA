@@ -57,15 +57,18 @@ L'ordine dei controlli, **il primo che nega vince**, e i dinieghi precedono la d
    §4): violazione → `DENIED`, anche per SAFE;
 3. coerenza con lo step (§15): `DENIED`;
 4. riga della tabella: HIGH/CRITICAL → `DENIED`; LOW fuori scope → `DENIED`;
-5. autorizzazione, quando la riga è MEDIUM oppure quando la specifica registrata o lo step
-   richiedono un'autorizzazione (§7): valida → `ALLOWED`; assente, scaduta o esaurita →
-   `REQUIRES_APPROVAL`; che non copre → `DENIED`.
+5. autorizzazione (§6): un'autorizzazione consegnata che **non copre** la chiamata → `DENIED`,
+   sempre, anche quando non sarebbe servita; poi, quando la riga è MEDIUM oppure quando la
+   specifica registrata o lo step richiedono un'autorizzazione (§7): coperta e **usabile** →
+   `ALLOWED`; assente, scaduta o esaurita → `REQUIRES_APPROVAL`. Quando non serve, una che copre
+   ma non è usabile è semplicemente ignorata.
 
 Il passo 4 precede il 5 di proposito: a un utente non si chiede di approvare ciò che sarebbe
 negato comunque (LOW fuori scope che richiede autorizzazione è `DENIED`, non "chiedi"). Ogni
 decisione porta in `metadata["rule"]` il controllo che l'ha stabilita (`Rule`: le quattro regole
-della tabella più `CATALOGUE`, `ARGUMENTS`, `STEP_MISMATCH`, `AUTHORIZATION_REQUIRED`,
-`INTERNAL_ERROR`). Niente viene eseguito o scritto prima della decisione.
+della tabella più `CATALOGUE`, `ARGUMENTS`, `STEP_MISMATCH`, `AUTHORIZATION_MISMATCH`,
+`AUTHORIZATION_REQUIRED`, `INTERNAL_ERROR`). Niente viene eseguito o scritto prima della
+decisione.
 
 ### 4. Scope: cosa vuol dire "rispettato"
 
@@ -122,14 +125,26 @@ def decide(
 ) -> PermissionDecision: ...
 ```
 
-### 6. Autorizzazione che non copre → `DENIED`, non `REQUIRES_APPROVAL`
+### 6. Copre / usabile: un'autorizzazione che non copre → `DENIED`, sempre
 
-Nessuna autorizzazione, una scaduta o una esaurita è il caso normale ("chiedi", §62). Una per
-un'altra capability, per un altro task o step, o con uno scope che non copre i bersagli è un
-grant sbagliato messo nelle mani del Guardian: dubbio, non mancanza (§33) → `DENIED`. I
-disallineamenti sono controllati prima della scadenza: un grant sbagliato che è anche scaduto
-resta sbagliato. L'`authorization_id` è comunque riportato nella decisione (contratto "echo" di
-M1.3); il motivo dice se e perché non è stata applicata.
+Il criterio è la distinzione fra due proprietà di un'`Authorization` consegnata al Guardian
+(review dell'utente, 2026-09-05):
+
+- **Copre** la chiamata: stessa capability; se legata a un task o a uno step, lo stesso task e lo
+  stesso step nel contesto (un contesto assente non basta); scope che copre i bersagli (§4);
+  conteggio degli usi non negativo. Un'autorizzazione che **non copre** è un'incoerenza del
+  chiamante — il grant sbagliato in mano al Guardian — e un chiamante incoerente è un dubbio
+  (§33): `DENIED` con `rule = AUTHORIZATION_MISMATCH`, **sempre**, anche quando la capability non
+  richiedeva alcuna autorizzazione. Il Guardian non ignora mai un fatto che gli viene consegnato.
+- **Usabile** adesso: non scaduta (`expires_at > now`, verso chiuso) e non esaurita
+  (`authorization_uses < max_uses`). Una che copre ma non è usabile non è un'incoerenza: quando
+  l'autorizzazione serve è il caso normale "chiedi" (§62) → `REQUIRES_APPROVAL`; quando non serve
+  è un grant inutile → ignorata, `ALLOWED` per la riga della tabella, e la decisione non si regge
+  su di essa (scadenza dal solo TTL).
+
+La copertura è controllata prima dell'usabilità: un grant sbagliato che è anche scaduto resta
+sbagliato. L'`authorization_id` è comunque riportato nella decisione (contratto "echo" di M1.3);
+il motivo dice se e perché non è stata applicata.
 
 ### 7. `requires_authorization` stringe soltanto
 
@@ -259,6 +274,10 @@ decisione è quello della specifica registrata, un piano non può abbassarlo.
 - **Autorizzazione che non copre → `REQUIRES_APPROVAL`** — tratta un grant sbagliato come una
   mancanza, e l'utente riceverebbe una richiesta per una chiamata che qualcuno ha già provato a
   coprire con il grant di un'altra. Dubbio → `DENIED`. Scartata.
+- **Ignorare un'autorizzazione che non copre quando non serve** (prima stesura di M4.2) — un
+  grant per un'altra capability o un altro task consegnato con una chiamata SAFE è un fatto
+  incoerente, e il Guardian non ignora i fatti che riceve. Scartata in review: `DENIED` sempre;
+  solo l'*inusabilità* di un grant che copre è ignorabile quando non serve.
 - **Il Guardian legge il conteggio degli usi dallo store** — gli darebbe I/O e un port che non
   deve possedere (ADR 0005 §4). Il chiamante porta il fatto. Scartata.
 - **`decide` scrive l'audit** — il port diventerebbe async e impuro, e ogni test di policy

@@ -22,8 +22,15 @@ from ela.domain import (
     RiskLevel,
     TaskStep,
 )
-from ela.permissions import DEFAULT_DECISION_TTL, InvalidArgumentsError, validate_arguments
+from ela.permissions import (
+    DEFAULT_DECISION_TTL,
+    RISK_POLICY,
+    InvalidArgumentsError,
+    Rule,
+    validate_arguments,
+)
 from ela.permissions.scope import scope_covers, targets_of
+from ela.ports import NotFoundError
 from ela.testing.fakes import FakeCapabilityRegistry
 from tests.domain.examples import TASK
 from tests.permissions.support import CATALOGUE, OTHER_TASK_ID, grant, harness, step_for
@@ -110,7 +117,7 @@ uses = st.integers(min_value=-1, max_value=4)
 def _is_registered(spec: CapabilitySpec) -> bool:
     try:
         return REGISTRY.get(spec.id) == spec
-    except LookupError:
+    except NotFoundError:
         return False
 
 
@@ -122,22 +129,25 @@ def _arguments_valid(spec: CapabilitySpec, args: dict[str, Any]) -> bool:
     return True
 
 
-def _authorization_covers(
-    authorization: Authorization | None,
+def _covers(
+    authorization: Authorization,
     spec: CapabilitySpec,
     task: Any,
     step: TaskStep | None,
     targets: tuple[object, ...],
     count: int,
 ) -> bool:
-    if authorization is None or authorization.capability_id != spec.id:
+    """The grant is coherent with the call (ADR 0011 §6): capability, task, step, scope, count."""
+    if authorization.capability_id != spec.id:
         return False
     if authorization.task_id is not None and (task is None or task.id != authorization.task_id):
         return False
     if authorization.step_id is not None and (step is None or step.id != authorization.step_id):
         return False
-    if not scope_covers(authorization.scope, targets) or count < 0:
-        return False
+    return scope_covers(authorization.scope, targets) and count >= 0
+
+
+def _usable(authorization: Authorization, count: int) -> bool:
     if authorization.expires_at is not None and authorization.expires_at <= NOW:
         return False
     return authorization.max_uses is None or count < authorization.max_uses
@@ -166,7 +176,9 @@ def test_allowed_implies_a_justification(
     assert _arguments_valid(spec, args)
     assert step is None or not step.required_capabilities or spec.id in step.required_capabilities
     targets = targets_of(spec, args)
-    covered = _authorization_covers(authorization, spec, task, step, targets, count)
+    coherent = authorization is None or _covers(authorization, spec, task, step, targets, count)
+    assert coherent, "a grant that does not cover the call is never ignored"
+    covered = authorization is not None and coherent and _usable(authorization, count)
     needs = spec.requires_authorization or (step is not None and step.requires_authorization)
     if spec.risk is RiskLevel.SAFE:
         assert covered or not needs
@@ -179,6 +191,18 @@ def test_allowed_implies_a_justification(
     assert h.now < decision.expires_at <= h.now + DEFAULT_DECISION_TTL
     if covered and authorization is not None and authorization.expires_at is not None:
         assert decision.expires_at <= authorization.expires_at
+
+
+def _reaches_the_grant(spec: CapabilitySpec, args: dict[str, Any], step: TaskStep | None) -> bool:
+    """Whether the checks before the grant (catalogue, arguments, step, policy row) all pass."""
+    if not (_is_registered(spec) and _arguments_valid(spec, args)):
+        return False
+    declared = step is None or not step.required_capabilities
+    if not declared and spec.id not in step.required_capabilities:  # type: ignore[union-attr]
+        return False
+    if RISK_POLICY[spec.risk] is Rule.DENY:
+        return False
+    return spec.risk is not RiskLevel.LOW or scope_covers(spec.scope, targets_of(spec, args))
 
 
 @given(specs, arguments, tasks, steps, authorizations, uses)
@@ -194,6 +218,11 @@ def test_decide_never_raises_and_always_names_a_rule(
     decision = harness().guardian.decide(
         spec, args, task=task, step=step, authorization=authorization, authorization_uses=count
     )
+    if _reaches_the_grant(spec, args, step) and authorization is not None:
+        targets = targets_of(spec, args)
+        if not _covers(authorization, spec, task, step, targets, count):
+            assert decision.outcome is PermissionOutcome.DENIED
+            assert decision.metadata["rule"] == "AUTHORIZATION_MISMATCH"
     assert decision.reason
     assert decision.metadata["policy"] == "v0.1"
     assert isinstance(decision.metadata["rule"], str)
