@@ -289,6 +289,67 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.audit import chain\n",
         "ela.audit.chain",
     ),
+    Case(
+        "decision-allowed-by-executive",
+        "decision-builders",
+        "executive/loop.py",
+        "from ela.domain import PermissionDecision, PermissionOutcome\n"
+        "d = PermissionDecision(id=i, created_at=n, capability_id=c, "
+        "outcome=PermissionOutcome.ALLOWED, risk=r, reason='ok')\n",
+        "PermissionDecision(outcome=...)",
+    ),
+    Case(
+        "decision-allowed-with-a-string",
+        "decision-builders",
+        "tools/shell.py",
+        "import ela.domain\n"
+        "def ok(i, n, c, r):\n"
+        "    return ela.domain.PermissionDecision(id=i, created_at=n, capability_id=c, "
+        "outcome='ALLOWED', risk=r, reason='ok')\n",
+        "PermissionDecision(outcome=...)",
+    ),
+    Case(
+        "decision-outcome-from-a-variable",
+        "decision-builders",
+        "executive/loop.py",
+        "from ela.domain import PermissionDecision\n"
+        "def build(i, n, c, r, outcome):\n"
+        "    return PermissionDecision(id=i, created_at=n, capability_id=c, "
+        "outcome=outcome, risk=r, reason='?')\n",
+        "PermissionDecision(outcome=...)",
+    ),
+    Case(
+        "decision-built-from-kwargs",
+        "decision-builders",
+        "infrastructure/persistence/decisions.py",
+        "from ela.domain import PermissionDecision\n"
+        "def load(row):\n    return PermissionDecision(**row)\n",
+        "PermissionDecision(outcome=...)",
+    ),
+    Case(
+        "decision-outcome-copied",
+        "decision-builders",
+        "executive/loop.py",
+        "from ela.domain import PermissionOutcome\n"
+        "def soften(d):\n"
+        '    return d.model_copy(update={"outcome": PermissionOutcome.ALLOWED})\n',
+        'model_copy(update={"outcome": ...})',
+    ),
+    Case(
+        "decide-called-by-executive",
+        "decide-callers",
+        "executive/loop.py",
+        "def run(guardian, spec, args):\n    return guardian.decide(spec, args)\n",
+        ".decide(",
+    ),
+    Case(
+        "decide-called-by-tools",
+        "decide-callers",
+        "tools/runner.py",
+        "async def run(self, spec, args):\n"
+        "    return await self._executor.guardian.decide(spec, args, task=None)\n",
+        ".decide(",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -424,6 +485,55 @@ ALLOWED: tuple[Case, ...] = (
         "import json\nimport jsonschema\nfrom jsonschema import Draft202012Validator\n"
         "from ela.domain import CapabilitySpec\nfrom ela.ports import NotFoundError\n"
         "from ela.permissions import capabilities\nfrom . import errors\n",
+        "",
+    ),
+    Case(
+        "decision-allowed-by-the-guardian",
+        "decision-builders",
+        "permissions/guardian2.py",
+        "from ela.domain import PermissionDecision, PermissionOutcome\n"
+        "d = PermissionDecision(id=i, created_at=n, capability_id=c, "
+        "outcome=PermissionOutcome.ALLOWED, risk=r, reason='ok')\n",
+        "",
+    ),
+    Case(
+        "decision-allowed-by-the-fake",
+        "decision-builders",
+        "testing/extra.py",
+        "from ela.domain import PermissionDecision, PermissionOutcome\n"
+        "def table(i, n, c, r, outcome):\n"
+        "    return PermissionDecision(id=i, created_at=n, capability_id=c, "
+        "outcome=outcome, risk=r, reason='table')\n",
+        "",
+    ),
+    Case(
+        "decision-denied-by-executive",
+        "decision-builders",
+        "executive/loop.py",
+        "import ela.domain\nfrom ela.domain import PermissionDecision, PermissionOutcome\n"
+        "d = PermissionDecision(id=i, created_at=n, capability_id=c, "
+        "outcome=PermissionOutcome.DENIED, risk=r, reason='no')\n"
+        "e = ela.domain.PermissionDecision(id=i, created_at=n, capability_id=c, "
+        "outcome='DENIED', risk=r, reason='no')\n"
+        'f = d.model_copy(update={"reason": "still no"})\n',
+        "",
+    ),
+    Case(
+        "decide-called-by-the-guardian",
+        "decide-callers",
+        "permissions/guardian2.py",
+        "class G:\n"
+        "    async def authorize(self, spec, args):\n"
+        "        return self.decide(spec, args)\n",
+        "",
+    ),
+    Case(
+        "decide-defined-by-the-fake",
+        "decide-callers",
+        "testing/extra.py",
+        "class FakeG:\n"
+        "    def decide(self, spec, args):\n"
+        "        return decide_table(spec, args)\n",
         "",
     ),
 )

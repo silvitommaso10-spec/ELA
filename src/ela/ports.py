@@ -322,6 +322,11 @@ class PermissionGuardianPort(Protocol):
 
     Contract for every implementation: a capability for which the Guardian has no rule is
     ``DENIED`` (§33, "nel dubbio non agire"). Doubt is never ``ALLOWED``.
+
+    ``authorization_uses`` is how many times ``authorization`` has already been used, read by the
+    caller from the :class:`AuthorizationStore` (ADR 0011, M4.2): the caller supplies facts, the
+    Guardian judges whether the grant is exhausted. Without an authorization the count is
+    meaningless and left at zero.
     """
 
     def decide(
@@ -332,6 +337,7 @@ class PermissionGuardianPort(Protocol):
         task: Task | None = None,
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
+        authorization_uses: int = 0,
     ) -> PermissionDecision:
         """Decide about one call of ``capability`` with ``arguments`` in this context."""
 

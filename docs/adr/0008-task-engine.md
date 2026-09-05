@@ -1,6 +1,6 @@
 # 0008. Task Engine: tabella delle operazioni, idempotenza, ordine delle scritture, heartbeat come evento, piano persistito, recovery
 
-- **Stato:** Accettata. §9 (`complete`) esteso da ADR 0009 §7 con la guardia sugli step; le operazioni per step sono in ADR 0009 §5.
+- **Stato:** Accettata. §9 (`complete`) esteso da ADR 0009 §7 con la guardia sugli step; le operazioni per step sono in ADR 0009 §5. §3: `PERMISSION_DECIDED` lo scrive il Guardian (`authorize`, ADR 0011 §8).
 - **Data:** 2026-09-04
 - **Riferimenti spec:** §12, §13, §14, §15, §27, §32, §33, §49, §51, §52, §63, §65
 - **Milestone:** M3.1

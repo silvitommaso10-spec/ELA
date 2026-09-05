@@ -11,6 +11,8 @@ from ela.tasks.graph import STEP_EVENTS
 from tests.architecture.rules import (
     AUDIT_ADAPTER,
     CORE_PACKAGES,
+    DECIDE_METHOD,
+    DECISION_MODEL,
     ORM_PACKAGE,
     PERMISSIONS_ALLOWED_EXTERNAL,
     PERMISSIONS_DIR,
@@ -36,6 +38,7 @@ def test_required_modules_exist() -> None:
     assert (PACKAGE_ROOT / PERSISTENCE_MAPPERS).is_file()
     assert (PACKAGE_ROOT / AUDIT_ADAPTER).is_file()
     assert (PACKAGE_ROOT / PERMISSIONS_DIR / "capabilities.py").is_file()
+    assert (PACKAGE_ROOT / PERMISSIONS_DIR / "guardian.py").is_file()
 
 
 def test_ports_really_import_the_domain() -> None:
@@ -62,6 +65,7 @@ def test_rule_holds(rule: Rule) -> None:
         "ela.tasks.engine",
         "ela.tasks.graph",
         "ela.permissions.capabilities",
+        "ela.permissions.guardian",
     ],
 )
 def test_module_is_importable(module: str) -> None:
@@ -112,3 +116,14 @@ def test_the_catalogue_really_imports_jsonschema_and_the_domain() -> None:
     assert any(name.partition(".")[0] in PERMISSIONS_ALLOWED_EXTERNAL for name in imported)
     assert any(name.startswith("ela.domain") for name in imported)
     assert any(name.startswith("ela.ports") for name in imported)
+
+
+def test_the_guardian_really_builds_decisions_and_calls_decide() -> None:
+    """Rules 12 and 14 would hold vacuously if nothing built a decision or called ``decide``.
+
+    The Guardian does both, inside the package the rules exempt: it constructs every
+    ``PermissionDecision`` and ``authorize`` calls ``self.decide``.
+    """
+    source = (PACKAGE_ROOT / PERMISSIONS_DIR / "guardian.py").read_text(encoding="utf-8")
+    assert f"{DECISION_MODEL}(" in source
+    assert f"self.{DECIDE_METHOD}(" in source

@@ -329,6 +329,7 @@ class GuardianCall(NamedTuple):
     task: Task | None
     step: TaskStep | None
     authorization: Authorization | None
+    authorization_uses: int
 
 
 class FakePermissionGuardian:
@@ -359,8 +360,12 @@ class FakePermissionGuardian:
         task: Task | None = None,
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
+        authorization_uses: int = 0,
     ) -> PermissionDecision:
-        self.calls = (*self.calls, GuardianCall(capability, arguments, task, step, authorization))
+        self.calls = (
+            *self.calls,
+            GuardianCall(capability, arguments, task, step, authorization, authorization_uses),
+        )
         outcome = self._outcomes.get(capability.id)
         if outcome is None:
             outcome = PermissionOutcome.DENIED

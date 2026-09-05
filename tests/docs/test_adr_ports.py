@@ -2,11 +2,12 @@
 
 The ADR is the documented decision, the module is the running code. Neither may drift from the
 other — members or sync/async mode — without this test noticing. An ADR is immutable, so a later
-ADR that extends a port (0008: ``TaskRepository.add_plan``/``plan``) documents the members it
-adds in a row of its own, and a later ADR that shrinks a port (0010: ``CapabilityRegistryPort``
-without ``register``) documents the members that remain in a replacing row. Extensions only add,
-replacements only remove; extensions apply first, then replacements; the result is what the code
-must match.
+ADR that extends a port (0008: ``TaskRepository.add_plan``/``plan``; 0011: the signature of
+``PermissionGuardianPort.decide``) documents the members it adds or changes in a row of its own,
+and a later ADR that shrinks a port (0010: ``CapabilityRegistryPort`` without ``register``)
+documents the members that remain in a replacing row. Extensions only add, replacements only
+remove; extensions apply first, then replacements; the result is what the code must match. A
+changed signature is checked by ``test_adr_guardian.py``, member by member here.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from tests.contracts.protocols import is_async, members, method_names, port_prot
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0005-ports.md"
-EXTENDING_ADRS = (ADR_DIR / "0008-task-engine.md",)
+EXTENDING_ADRS = (ADR_DIR / "0008-task-engine.md", ADR_DIR / "0011-permission-guardian.md")
 REPLACING_ADRS = (ADR_DIR / "0010-capability-catalogue.md",)
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")
 MEMBER = re.compile(r"`(\w+)`")
@@ -97,6 +98,14 @@ def test_each_adr_documents_its_own_members() -> None:
     assert set(extension) == {"TaskRepository"}
     assert extension["TaskRepository"][1] == {"add_plan", "plan"}
     assert not (base["TaskRepository"][1] & extension["TaskRepository"][1])
+
+
+def test_the_guardian_extension_changes_a_signature_not_the_members() -> None:
+    """ADR 0011 adds ``authorization_uses`` to ``decide``: same member, documented as extension."""
+    base = documented_ports(ADR_PATH.read_text(encoding="utf-8"))
+    extension = documented_ports(EXTENDING_ADRS[1].read_text(encoding="utf-8"))
+    assert set(extension) == {"PermissionGuardianPort"}
+    assert extension["PermissionGuardianPort"] == base["PermissionGuardianPort"]
 
 
 def test_each_replacing_adr_documents_a_shrunk_port() -> None:

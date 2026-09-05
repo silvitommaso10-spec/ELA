@@ -22,7 +22,7 @@ from ela.infrastructure.persistence import (
     make_engine,
 )
 from ela.infrastructure.persistence.orm import Base
-from ela.permissions import CapabilityRegistry
+from ela.permissions import CapabilityRegistry, PermissionGuardian
 from ela.ports import (
     AuditLog,
     AuthorizationStore,
@@ -142,8 +142,13 @@ def _registry() -> CapabilityRegistry:
     return CapabilityRegistry(REGISTRY_CATALOGUE)
 
 
-def _guardian() -> FakePermissionGuardian:
+def _fake_guardian() -> FakePermissionGuardian:
     return FakePermissionGuardian(FakeClock(), FakeIdGenerator())
+
+
+def _guardian() -> PermissionGuardian:
+    """The real Guardian on the real catalogue class, with fakes for what it does not own."""
+    return PermissionGuardian(_registry(), FakeClock(), FakeIdGenerator(), FakeAuditLog())
 
 
 def _tool() -> FakeTool:
@@ -174,7 +179,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("FakeAuthorizationStore", FakeAuthorizationStore),
         Implementation("SqlAuthorizationStore", _sql_authorization_store, _create_schema, _dispose),
     ),
-    PermissionGuardianPort: (Implementation("FakePermissionGuardian", _guardian),),
+    PermissionGuardianPort: (
+        Implementation("FakePermissionGuardian", _fake_guardian),
+        Implementation("PermissionGuardian", _guardian),
+    ),
     ToolPort: (Implementation("FakeTool", _tool),),
     ModelProvider: (Implementation("FakeModelProvider", _provider),),
     ProviderRegistry: (Implementation("FakeProviderRegistry", FakeProviderRegistry),),

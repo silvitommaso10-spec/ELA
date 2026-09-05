@@ -61,6 +61,14 @@ PERMISSIONS_DIR = "permissions"
 PERMISSIONS_PACKAGE = f"{ROOT_PACKAGE}.permissions"
 PERMISSIONS_ALLOWED_INTERNAL = (DOMAIN_MODULE, f"{ROOT_PACKAGE}.ports", PERMISSIONS_PACKAGE)
 PERMISSIONS_ALLOWED_EXTERNAL = frozenset({"jsonschema"})
+#: Rule 12 (ADR 0011): outside the Guardian nobody builds an allowing decision. The fakes may:
+#: rule 6 keeps them out of production, and a table-driven fake must be able to answer ALLOWED.
+DECISION_MODEL = "PermissionDecision"
+DENIED_OUTCOME = ("PermissionOutcome", "DENIED")
+DECISION_BUILDERS_EXEMPT = frozenset({PERMISSIONS_DIR, TESTING_DIR})
+#: Rule 14 (ADR 0011): outside ``ela.permissions`` nobody calls ``decide`` — only ``authorize``,
+#: which writes the audit event. No exemption: the fake *defines* ``decide``, it never calls it.
+DECIDE_METHOD = "decide"
 
 
 @dataclass(frozen=True)
@@ -228,12 +236,17 @@ def check_state_changes(pkg_root: Path) -> list[Violation]:
 
 
 def _copies_state(call: ast.Call) -> bool:
+    return _copies_field(call, "state")
+
+
+def _copies_field(call: ast.Call, field: str) -> bool:
+    """``x.model_copy(update={... field: ...})`` with a literal dict."""
     if not (isinstance(call.func, ast.Attribute) and call.func.attr == "model_copy"):
         return False
     for keyword in call.keywords:
         if keyword.arg == "update" and isinstance(keyword.value, ast.Dict):
             return any(
-                isinstance(key, ast.Constant) and key.value == "state" for key in keyword.value.keys
+                isinstance(key, ast.Constant) and key.value == field for key in keyword.value.keys
             )
     return False
 
@@ -431,6 +444,77 @@ def check_permissions_imports(pkg_root: Path) -> list[Violation]:
     )
 
 
+def check_decision_builders(pkg_root: Path) -> list[Violation]:
+    """Rule 12: outside ``ela.permissions`` nobody builds a ``PermissionDecision`` that could allow.
+
+    Reported: ``PermissionDecision(...)`` whose ``outcome`` is not the literal
+    ``PermissionOutcome.DENIED`` / ``"DENIED"`` — a variable, another member, or no ``outcome``
+    keyword at all (``**kwargs``) is a doubt — and ``x.model_copy(update={"outcome": ...})``. The
+    Guardian is the only producer of ``ALLOWED`` (ADR 0011); ``ela.testing`` is exempt because the
+    table-driven fake must answer ``ALLOWED`` in tests and rule 6 keeps it out of production.
+    A heuristic on names, like rules 5 and 11.
+    """
+    rule = "allowing-decisions-built-only-by-the-guardian"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root).parts[0] in DECISION_BUILDERS_EXEMPT:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if _is_named(node.func, DECISION_MODEL) and not _denies(node):
+                found.append(Violation(rule, name, "PermissionDecision(outcome=...)", node.lineno))
+            elif _copies_field(node, "outcome"):
+                found.append(
+                    Violation(rule, name, 'model_copy(update={"outcome": ...})', node.lineno)
+                )
+    return found
+
+
+def _denies(call: ast.Call) -> bool:
+    """The call names ``outcome`` and it is the literal DENIED; anything else is a doubt."""
+    enum_name, member = DENIED_OUTCOME
+    for keyword in call.keywords:
+        if keyword.arg == "outcome":
+            value = keyword.value
+            if isinstance(value, ast.Attribute):
+                return (
+                    value.attr == member
+                    and isinstance(value.value, ast.Name)
+                    and value.value.id == enum_name
+                )
+            return isinstance(value, ast.Constant) and value.value == member
+    return False
+
+
+def check_decide_callers(pkg_root: Path) -> list[Violation]:
+    """Rule 14: outside ``ela.permissions`` nobody calls ``<something>.decide(...)`` (ADR 0011).
+
+    ``decide`` is the pure port; ``authorize`` decides *and* writes ``PERMISSION_DECIDED``. A
+    module that called ``decide`` directly would obtain a decision the audit log never saw.
+    Reported: any call whose callee is an attribute named ``decide``. No exemption: the fake
+    defines ``decide`` and never calls it; the Guardian's own ``self.decide`` lives inside the
+    package.
+    """
+    rule = "decide-called-only-inside-permissions"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root).parts[0] == PERMISSIONS_DIR:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f".{DECIDE_METHOD}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == DECIDE_METHOD
+        )
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -444,4 +528,6 @@ RULES: dict[str, Rule] = {
     "state-machine-callers": check_state_machine_callers,
     "step-event-writers": check_step_event_writers,
     "permissions-imports": check_permissions_imports,
+    "decision-builders": check_decision_builders,
+    "decide-callers": check_decide_callers,
 }
