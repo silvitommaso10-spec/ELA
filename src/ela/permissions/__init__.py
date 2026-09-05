@@ -1,4 +1,4 @@
-"""Permissions: the capability catalogue (M4.1, ADR 0010) and, from M4.2, the Guardian (§27–§29)."""
+"""Permissions: the capability catalogue (M4.1, ADR 0010) and the Guardian (M4.2, ADR 0011)."""
 
 from ela.permissions.capabilities import (
     CORE_ECHO,
@@ -24,12 +24,25 @@ from ela.permissions.errors import (
     PermissionsError,
     RiskNotAllowedError,
 )
+from ela.permissions.guardian import (
+    DEFAULT_DECISION_TTL,
+    GUARDIAN_ACTOR,
+    POLICY_VERSION,
+    RISK_POLICY,
+    PermissionGuardian,
+    Rule,
+)
+from ela.permissions.scope import scope_covers, targets_of, within_scope
 
 __all__ = [
     "CORE_ECHO",
+    "DEFAULT_DECISION_TTL",
     "DEFAULT_NOTES_SCOPE",
+    "GUARDIAN_ACTOR",
     "MAX_RISK",
     "MODEL_COMPLETE",
+    "POLICY_VERSION",
+    "RISK_POLICY",
     "SCHEMA_VALIDATOR",
     "V01_INTRODUCED_AT",
     "WORKSPACE_WRITE_NOTE",
@@ -37,13 +50,18 @@ __all__ = [
     "CapabilityRegistry",
     "InvalidArgumentsError",
     "InvalidCapabilityError",
+    "PermissionGuardian",
     "PermissionsError",
     "RiskNotAllowedError",
+    "Rule",
     "catalogue_v01",
     "check_capability",
     "core_echo",
     "is_valid_scope_entry",
     "model_complete",
+    "scope_covers",
+    "targets_of",
     "validate_arguments",
+    "within_scope",
     "workspace_write_note",
 ]

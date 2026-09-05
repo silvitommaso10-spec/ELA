@@ -18,6 +18,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0008](0008-task-engine.md) | Task Engine: tabella delle operazioni, idempotenza, ordine delle scritture, heartbeat come evento, piano persistito, recovery | Accettata |
 | [0009](0009-task-graph.md) | Task Graph: DAG degli step, stato derivato dalla trail, operazioni per step, propagazione dei fallimenti | Accettata |
 | [0010](0010-capability-catalogue.md) | Catalogo delle capability v0.1: registro immutabile, port ridotto, validazione JSON Schema, rischio massimo MEDIUM | Accettata |
+| [0011](0011-permission-guardian.md) | Permission Guardian: catalogo, policy v0.1 per rischio, scope, autorizzazioni, fail-safe, audit delle decisioni | Accettata |
 
 ## Template
 

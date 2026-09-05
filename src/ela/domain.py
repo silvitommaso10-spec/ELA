@@ -67,6 +67,7 @@ __all__ = [
     "IntentChannel",
     "IntentId",
     "JsonMapping",
+    "JsonValue",
     "NAME_MAX_LENGTH",
     "NetworkKind",
     "OperatingSystem",

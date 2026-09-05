@@ -135,7 +135,7 @@ def test_guardian_denies_what_is_not_in_the_table() -> None:
 def test_guardian_records_every_call() -> None:
     guardian = FakePermissionGuardian(FakeClock(), FakeIdGenerator())
     guardian.decide(CAPABILITY_SPEC, ARGUMENTS, task=TASK)
-    assert guardian.calls == (GuardianCall(CAPABILITY_SPEC, ARGUMENTS, TASK, None, None),)
+    assert guardian.calls == (GuardianCall(CAPABILITY_SPEC, ARGUMENTS, TASK, None, None, 0),)
 
 
 # --------------------------------------------------------------------------------------
