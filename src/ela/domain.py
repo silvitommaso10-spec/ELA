@@ -318,14 +318,28 @@ class TaskEventType(StrEnum):
     STEP_COMPLETED = "STEP_COMPLETED"
     STEP_FAILED = "STEP_FAILED"
     PLAN_ATTACHED = "PLAN_ATTACHED"
+    HEARTBEAT = "HEARTBEAT"
+    """A sign of life from whoever executes the task (M3.1): a trail entry, never an audit one."""
     NOTE = "NOTE"
 
 
 class AuditEventType(StrEnum):
-    """What an :class:`AuditEvent` records (§32)."""
+    """What an :class:`AuditEvent` records (§32).
+
+    One type per operation of the Task Engine (M3.1, ADR 0008): a log queried by type — every
+    denial, every approval — is worth more than one filtered on its payload.
+    """
 
     TASK_CREATED = "TASK_CREATED"
+    TASK_PLANNING_STARTED = "TASK_PLANNING_STARTED"
     PLAN_CREATED = "PLAN_CREATED"
+    TASK_QUEUED = "TASK_QUEUED"
+    TASK_STARTED = "TASK_STARTED"
+    TASK_COMPLETED = "TASK_COMPLETED"
+    TASK_FAILED = "TASK_FAILED"
+    TASK_CANCELLED = "TASK_CANCELLED"
+    TASK_EXPIRED = "TASK_EXPIRED"
+    TASK_DENIED = "TASK_DENIED"
     PERMISSION_DECIDED = "PERMISSION_DECIDED"
     AUTHORIZATION_GRANTED = "AUTHORIZATION_GRANTED"
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"

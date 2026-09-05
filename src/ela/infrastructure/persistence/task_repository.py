@@ -15,22 +15,25 @@ from sqlalchemy import CursorResult, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from ela.domain import Task, TaskEvent, TaskId, TaskState
+from ela.domain import Task, TaskEvent, TaskId, TaskPlan, TaskState
 from ela.infrastructure.persistence.engine import make_session_factory
 from ela.infrastructure.persistence.mappers import (
     event_to_row,
+    plan_to_row,
     row_to_event,
+    row_to_plan,
     row_to_task,
     task_to_row,
     task_values,
 )
-from ela.infrastructure.persistence.orm import TaskEventRow, TaskRow
+from ela.infrastructure.persistence.orm import TaskEventRow, TaskPlanRow, TaskRow
 from ela.ports import AlreadyExistsError, NotFoundError, check_limit
 
 __all__ = ["SqlTaskRepository"]
 
 TASK = "task"
 TASK_EVENT = "task event"
+TASK_PLAN = "task plan"
 
 
 async def _exists(session: AsyncSession, task_id: TaskId) -> bool:
@@ -48,7 +51,10 @@ async def _require_parent(session: AsyncSession, task: Task) -> None:
 
 
 class SqlTaskRepository:
-    """Tasks and their events in ``tasks`` and ``task_events`` (port ``TaskRepository``)."""
+    """Port ``TaskRepository`` on ``tasks``, ``task_events`` and ``task_plans``.
+
+    One transaction per call, errors from the constraints (module docstring).
+    """
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -119,3 +125,21 @@ class SqlTaskRepository:
             )
             rows = await session.scalars(query)
             return tuple(row_to_event(row) for row in rows)
+
+    async def add_plan(self, plan: TaskPlan) -> None:
+        async with self._sessions() as session, session.begin():
+            await _require_task(session, plan.task_id)
+            session.add(plan_to_row(plan))
+            try:
+                await session.flush()
+            except IntegrityError:
+                # UNIQUE on ``id`` or on ``task_id``: either way the plan is already there.
+                raise AlreadyExistsError(TASK_PLAN, plan.id) from None
+
+    async def plan(self, task_id: TaskId) -> TaskPlan:
+        async with self._sessions() as session:
+            await _require_task(session, task_id)
+            row = await session.scalar(select(TaskPlanRow).where(TaskPlanRow.task_id == task_id))
+            if row is None:
+                raise NotFoundError(TASK_PLAN, task_id)
+            return row_to_plan(row)

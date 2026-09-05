@@ -37,6 +37,7 @@ from ela.domain import (
     JsonMapping,
     PermissionDecision,
     PermissionOutcome,
+    PlanId,
     ProviderRequest,
     ProviderResult,
     ProviderResultId,
@@ -45,6 +46,7 @@ from ela.domain import (
     TaskEvent,
     TaskEventId,
     TaskId,
+    TaskPlan,
     TaskState,
     TaskStep,
 )
@@ -124,12 +126,14 @@ class FakeIdGenerator:
 
 
 class FakeTaskRepository:
-    """Tasks and their events in two dictionaries (port :class:`~ela.ports.TaskRepository`)."""
+    """Tasks, their events and their plans in dictionaries (port ``TaskRepository``)."""
 
     def __init__(self) -> None:
         self._tasks: dict[TaskId, Task] = {}
         self._events: dict[TaskId, tuple[TaskEvent, ...]] = {}
         self._event_ids: set[TaskEventId] = set()
+        self._plans: dict[TaskId, TaskPlan] = {}
+        self._plan_ids: set[PlanId] = set()
 
     def _require_parent(self, task: Task) -> None:
         if task.parent_id is not None and task.parent_id not in self._tasks:
@@ -174,6 +178,22 @@ class FakeTaskRepository:
             return self._events[task_id]
         except KeyError:
             raise NotFoundError("task", task_id) from None
+
+    async def add_plan(self, plan: TaskPlan) -> None:
+        if plan.task_id not in self._tasks:
+            raise NotFoundError("task", plan.task_id)
+        if plan.task_id in self._plans or plan.id in self._plan_ids:
+            raise AlreadyExistsError("task plan", plan.id)
+        self._plans[plan.task_id] = plan
+        self._plan_ids.add(plan.id)
+
+    async def plan(self, task_id: TaskId) -> TaskPlan:
+        if task_id not in self._tasks:
+            raise NotFoundError("task", task_id)
+        try:
+            return self._plans[task_id]
+        except KeyError:
+            raise NotFoundError("task plan", task_id) from None
 
 
 class FakeAuditLog:

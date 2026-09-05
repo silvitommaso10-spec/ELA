@@ -228,6 +228,20 @@ VIOLATIONS: tuple[Case, ...] = (
         "from sqlalchemy import text\nPURGE = text('delete from audit_events where seq > :keep')\n",
         "text: DELETE",
     ),
+    Case(
+        "state-machine-imported-by-executive",
+        "state-machine-callers",
+        "executive/planner.py",
+        "from ela.tasks.state_machine import transition\n",
+        "ela.tasks.state_machine.transition",
+    ),
+    Case(
+        "state-machine-imported-by-persistence",
+        "state-machine-callers",
+        "infrastructure/persistence/loader.py",
+        "from ela.tasks import state_machine\n",
+        "ela.tasks.state_machine",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -322,6 +336,20 @@ ALLOWED: tuple[Case, ...] = (
         "audit-append-only",
         "infrastructure/persistence/task_repository.py",
         "from sqlalchemy import update\n",
+        "",
+    ),
+    Case(
+        "state-machine-imported-by-engine",
+        "state-machine-callers",
+        "tasks/engine2.py",
+        "from ela.tasks.state_machine import transition\nfrom . import state_machine\n",
+        "",
+    ),
+    Case(
+        "task-errors-imported-by-executive",
+        "state-machine-callers",
+        "executive/planner.py",
+        "from ela.tasks.errors import TaskError\nfrom ela.tasks import errors\n",
         "",
     ),
 )

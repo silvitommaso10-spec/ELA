@@ -23,12 +23,12 @@ from ela.infrastructure.persistence import (
 )
 from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS, Base
 from tests.architecture.violations import REPO_ROOT
-from tests.domain.examples import AUDIT_EVENT, POLICY_AUTHORIZATION, TASK
+from tests.domain.examples import AUDIT_EVENT, POLICY_AUTHORIZATION, TASK, TASK_PLAN
 
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 ALEMBIC = Path(sys.executable).parent / "alembic"
-TABLES = {"tasks", "task_events", "authorizations", "audit_events"}
-REVISIONS = ["0002", "0001"]  # newest first, as ``walk_revisions`` yields them
+TABLES = {"tasks", "task_events", "authorizations", "audit_events", "task_plans"}
+REVISIONS = ["0003", "0002", "0001"]  # newest first, as ``walk_revisions`` yields them
 TRIGGERS_SQL = "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' ORDER BY name"
 EXPECTED_COLUMNS = {
     name: {column.name for column in table.columns} for name, table in Base.metadata.tables.items()
@@ -98,13 +98,26 @@ def test_upgrade_creates_the_append_only_triggers(db: Path) -> None:
 
 
 def test_downgrade_of_the_audit_migration_is_refused(db: Path) -> None:
-    """Removing the audit log is never a tooling operation (ADR 0007 §7)."""
+    """Removing the audit log is never a tooling operation (ADR 0007 §7).
+
+    From head the reversible ``0003`` is undone first, then ``0002`` refuses and stays.
+    """
     config = config_for(db)
     command.upgrade(config, "head")
     with pytest.raises(NotImplementedError, match="no downgrade"):
         command.downgrade(config, "0001")
     assert "audit_events" in _tables(db)
+    assert "task_plans" not in _tables(db)
     assert _triggers(db) == APPEND_ONLY_TRIGGERS
+    assert _version(db) == "0002"
+
+
+def test_downgrade_of_the_plans_migration_removes_the_table(db: Path) -> None:
+    """``0003`` does not touch ``audit_events``, so it stays reversible (ADR 0008)."""
+    config = config_for(db)
+    command.upgrade(config, "head")
+    command.downgrade(config, "0002")
+    assert set(_tables(db)) == TABLES - {"task_plans"}
     assert _version(db) == "0002"
 
 
@@ -148,9 +161,11 @@ async def test_the_adapters_work_on_the_migrated_database(db: Path) -> None:
         store = SqlAuthorizationStore(engine)
         log = SqlAuditLog(engine)
         await repository.add(TASK)
+        await repository.add_plan(TASK_PLAN)
         await store.grant(POLICY_AUTHORIZATION)
         await log.append(AUDIT_EVENT)
         assert await repository.get(TASK.id) == TASK
+        assert await repository.plan(TASK.id) == TASK_PLAN
         assert await store.record_use(POLICY_AUTHORIZATION.id) == 1
         assert await log.read() == (AUDIT_EVENT,)
         assert (await verify_chain(engine)).length == 1

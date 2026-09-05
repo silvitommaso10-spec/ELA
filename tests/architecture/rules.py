@@ -33,6 +33,9 @@ CORE_PACKAGES = ("executive", "tasks", "permissions", "audit")
 CORE_FORBIDDEN = tuple(f"{ROOT_PACKAGE}.{name}" for name in ("providers", "infrastructure"))
 #: The only module allowed to change the state of a Task (ADR 0004).
 STATE_MACHINE = Path("tasks") / "state_machine.py"
+#: Rule 10 (ADR 0008): only the ``tasks`` package may import the state machine.
+STATE_MACHINE_MODULE = f"{ROOT_PACKAGE}.tasks.state_machine"
+TASKS_DIR = "tasks"
 #: The mapper rehydrates a Task in the state the database holds: exempt from rule 5 (ADR 0006).
 PERSISTENCE_MAPPERS = Path("infrastructure") / "persistence" / "mappers.py"
 STATE_EXEMPT = frozenset({STATE_MACHINE, PERSISTENCE_MAPPERS})
@@ -348,6 +351,24 @@ def _is_named(callee: ast.expr, function: str) -> bool:
     )
 
 
+def check_state_machine_callers(pkg_root: Path) -> list[Violation]:
+    """Rule 10: outside ``ela.tasks`` nobody imports ``ela.tasks.state_machine`` (ADR 0008).
+
+    The Task Engine is the only caller of ``transition``: a module that moved a task itself and
+    saved it would change state without a trail event and without an audit event. The rest of
+    ``ela.tasks`` (errors) stays importable from anywhere.
+    """
+    files = (
+        path for path in _source_files(pkg_root) if path.relative_to(pkg_root).parts[0] != TASKS_DIR
+    )
+    return _violations(
+        "state-machine-called-only-by-the-task-engine",
+        files,
+        pkg_root,
+        lambda imported: _is_within(imported, STATE_MACHINE_MODULE),
+    )
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -358,4 +379,5 @@ RULES: dict[str, Rule] = {
     "testing-imports": check_testing_imports,
     "orm-separation": check_orm_separation,
     "audit-append-only": check_audit_adapter_append_only,
+    "state-machine-callers": check_state_machine_callers,
 }

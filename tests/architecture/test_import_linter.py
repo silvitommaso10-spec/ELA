@@ -7,6 +7,7 @@ package of ``ela`` and that each one breaks on a violating module.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ from tests.architecture.rules import (
     INFRA_LIBRARIES,
     INFRA_PACKAGES,
     PORTS_ALLOWED_INTERNAL,
+    STATE_MACHINE_MODULE,
     TESTING_ALLOWED_INTERNAL,
     TESTING_PACKAGE,
     check_domain,
@@ -59,6 +61,8 @@ def _contract_for(rule: str) -> Contract:
             return contract
         if rule == "testing-imports" and sources == {TESTING_PACKAGE}:
             return contract
+        if rule == "state-machine-callers" and forbidden == {STATE_MACHINE_MODULE}:
+            return contract
     raise AssertionError(f"pyproject.toml has no import-linter contract for rule {rule!r}")
 
 
@@ -89,6 +93,9 @@ def test_contracts_cover_current_packages() -> None:
         (modules - set(TESTING_ALLOWED_INTERNAL)) | INFRA_LIBRARIES | {"pydantic"}
     )
 
+    callers = _contract_for("state-machine-callers")
+    assert set(callers["source_modules"]) == modules - {"ela.tasks"}
+
 
 def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() -> None:
     """Contracts 2 and 6 check direct imports only: ports and fakes reach pydantic via the domain.
@@ -102,9 +109,19 @@ def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() ->
     assert direct_only == expected
 
 
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def _run_lint_imports(project_root: Path) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "PYTHONPATH": str(project_root / "src")}
-    return subprocess.run(
+    """``lint-imports`` on a project root, with colour off: the assertions read its text.
+
+    A terminal that forces colour (``FORCE_COLOR``) would otherwise slip escape codes between
+    a contract's name and ``BROKEN``; the codes are stripped from the output as well.
+    """
+    env = {**os.environ, "PYTHONPATH": str(project_root / "src"), "NO_COLOR": "1"}
+    env.pop("FORCE_COLOR", None)
+    env.pop("CLICOLOR_FORCE", None)
+    result = subprocess.run(
         [str(LINT_IMPORTS), "--config", str(project_root / "pyproject.toml"), "--no-cache"],
         cwd=project_root,
         env=env,
@@ -112,6 +129,8 @@ def _run_lint_imports(project_root: Path) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+    result.stdout = ANSI.sub("", result.stdout)
+    return result
 
 
 def test_lint_imports_keeps_all_contracts_on_repo() -> None:
@@ -132,6 +151,7 @@ LINTER_CASES = [
         "core-tasks-providers",
         "testing-imported-by-executive",
         "testing-imports-tasks",
+        "state-machine-imported-by-executive",
     )
 ]
 
