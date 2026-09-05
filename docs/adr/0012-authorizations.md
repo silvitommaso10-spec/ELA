@@ -154,6 +154,12 @@ accettata:** se il tool fallisce dopo il `consume`, il grant è speso e serve un
 approvazione. Meglio chiedere due volte che eseguire due volte. ADR 0011 (Conseguenze, "registra
 l'uso dopo l'esecuzione") è superato da questo paragrafo: rimando nel suo stato.
 
+**Un solo `now` per chiamata (review del 2026-09-05).** `authorize` e `consume` della stessa
+chiamata ricevono lo **stesso istante**, letto una volta sola dal `Clock` dell'executor. Due letture
+diverse aprirebbero una finestra in cui il grant è valido per il Guardian e scaduto per lo store, o
+viceversa: nel primo caso il tool non gira per un grant appena giudicato buono, nel secondo un grant
+già scaduto per il Guardian verrebbe speso. Il fatto è uno e viaggia con la chiamata.
+
 Nessun servizio audited in questa milestone (decisione F): chi chiama
 `authorization_from_approval` è chi salva il grant nello store (`grant`) e scrive
 `AUTHORIZATION_GRANTED` — con `approval_id`, `authorization_id`, `task_id`, `step_id`,
@@ -230,9 +236,10 @@ categoria "firma modificata" registrata come debito in M4.2 non è questo caso e
   `tests/domain/strategies.py` genera i due rami coerenti.
 - `AuthorizationStore` perde `record_use` e prende `consume`; fake e SQLite passano lo stesso
   contratto (`tests/contracts/test_authorization_store.py`), la concorrenza è provata su file.
-- **Per M5**: `authorize` → `consume` → tool; un tool che fallisce dopo il `consume` costa una nuova
-  approvazione, mai un'azione doppia. M5 salva il grant, scrive `AUTHORIZATION_GRANTED`, riempie
-  `Approval.targets` dalla decisione e legge lo step dal piano del task.
+- **Per M5**: `authorize` → `consume` → tool, con **un solo `now`** letto dal `Clock` e passato a
+  entrambi (§6); un tool che fallisce dopo il `consume` costa una nuova approvazione, mai
+  un'azione doppia. M5 salva il grant, scrive `AUTHORIZATION_GRANTED`, riempie `Approval.targets`
+  dalla decisione e legge lo step dal piano del task.
 - **Per M8.1**: `DEFAULT_AUTHORIZATION_TTL` e `MAX_AUTHORIZATION_TTL` diventano setting (default 1
   ora, massimo 24), come `decision_ttl` (default 5 minuti, massimo 15).
 - `now` è un fatto del chiamante sia per `consume` sia per la generazione: un orologio sbagliato
