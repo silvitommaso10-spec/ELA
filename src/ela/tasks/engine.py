@@ -11,6 +11,9 @@ The engine is table-driven. :data:`OPERATIONS` says, for each operation, from wh
 applies, where it leads, which audit type it writes and which key makes it idempotent; the table
 is checked against ADR 0008 by ``tests/docs/test_adr_engine.py`` and against the transition table
 by ``tests/tasks/test_engine_table.py`` (every legal transition of ADR 0004 is some operation's).
+:data:`STEP_OPERATIONS` does the same for the steps of the plan (M3.2, ADR 0009): a step's state
+is folded from the ``STEP_*`` events of the trail by :mod:`ela.tasks.graph`, and this module is
+the only writer of those events (rule 11).
 
 Three rules run through every operation (ADR 0008):
 
@@ -32,7 +35,7 @@ sign of life for ``orphan_after`` are failed with code :data:`ORPHANED`.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timedelta
 from types import MappingProxyType
 from typing import Final, NamedTuple
@@ -55,6 +58,8 @@ from ela.domain import (
     ExecutionStatus,
     PermissionDecision,
     PermissionOutcome,
+    StepId,
+    StepState,
     Task,
     TaskEvent,
     TaskEventId,
@@ -65,7 +70,8 @@ from ela.domain import (
     UserIntent,
 )
 from ela.ports import AlreadyExistsError, AuditLog, Clock, IdGenerator, TaskRepository
-from ela.tasks.errors import ClockSkewError, TaskEngineError
+from ela.tasks.errors import ClockSkewError, IllegalStepTransitionError, TaskEngineError
+from ela.tasks.graph import STEP_EVENTS, GraphState, TaskGraph
 from ela.tasks.state_machine import (
     TERMINAL_STATES,
     IllegalTransitionError,
@@ -77,14 +83,17 @@ __all__ = [
     "LIVE_STATES",
     "OPERATIONS",
     "ORPHANED",
+    "STEP_OPERATIONS",
     "SYSTEM_ACTOR",
     "TASK_NAMESPACE",
     "Operation",
     "RecoverySummary",
+    "StepOperation",
     "TaskEngine",
 ]
 
 _S = TaskState
+_P = StepState
 
 TASK_NAMESPACE: Final = UUID("6f1c2a4e-3b7d-4d8a-9e21-5c0b7a1d2e33")
 """The UUID namespace of root task ids: ``TaskId = uuid5(TASK_NAMESPACE, str(intent.id))``.
@@ -97,7 +106,7 @@ ORPHANED: Final = "orphaned"
 """The error code of a task failed by :meth:`TaskEngine.recover`."""
 
 SYSTEM_ACTOR: Final = Actor(kind=ActorKind.SYSTEM, id="task-engine")
-"""Who acts when nobody asked: expiries and recovery (ADR 0003, ``ActorKind.SYSTEM``)."""
+"""Who acts when nobody asked: expiries, recovery, the cancellation of dependent steps."""
 
 LIVE_STATES: Final[frozenset[TaskState]] = frozenset(TaskState) - TERMINAL_STATES
 """The states a task can still leave: the sources of ``cancel`` and ``expire`` (ADR 0004 P3)."""
@@ -112,6 +121,17 @@ class Operation(NamedTuple):
     audit_type: AuditEventType
     key: str | None
     """The metadata field that makes the operation idempotent, or ``None`` for state alone."""
+
+
+class StepOperation(NamedTuple):
+    """One row of :data:`STEP_OPERATIONS`: a move of one step of the plan (ADR 0009)."""
+
+    name: str
+    sources: frozenset[StepState]
+    target: StepState
+    event_type: TaskEventType
+    audit_type: AuditEventType
+    key: str | None
 
 
 class RecoverySummary(NamedTuple):
@@ -200,7 +220,52 @@ transition table. ``deny`` is two rows because it records two different facts: a
 user rejected (``APPROVAL_RESOLVED``) and a decision of the Guardian (``TASK_DENIED``).
 """
 
-Guard = Callable[[Task, datetime], None]
+STEP_OPERATIONS: Final[Mapping[str, StepOperation]] = MappingProxyType(
+    {
+        op.name: op
+        for op in (
+            StepOperation(
+                "start_step",
+                frozenset({_P.PENDING}),
+                _P.RUNNING,
+                TaskEventType.STEP_STARTED,
+                AuditEventType.STEP_STARTED,
+                None,
+            ),
+            StepOperation(
+                "complete_step",
+                frozenset({_P.RUNNING}),
+                _P.COMPLETED,
+                TaskEventType.STEP_COMPLETED,
+                AuditEventType.STEP_COMPLETED,
+                "result_id",
+            ),
+            StepOperation(
+                "fail_step",
+                frozenset({_P.RUNNING}),
+                _P.FAILED,
+                TaskEventType.STEP_FAILED,
+                AuditEventType.STEP_FAILED,
+                None,
+            ),
+            StepOperation(
+                "cancel_step",
+                frozenset({_P.PENDING}),
+                _P.CANCELLED,
+                TaskEventType.STEP_CANCELLED,
+                AuditEventType.STEP_CANCELLED,
+                None,
+            ),
+        )
+    }
+)
+"""The moves of one step of the plan, as decided in ADR 0009, in the order of its table.
+
+``cancel_step`` has no public method: it is the propagation of ``fail_step`` to the PENDING
+descendants of the failed step, written with the SYSTEM actor because nobody asked for it.
+"""
+
+Guard = Callable[[Task, tuple[TaskEvent, ...], datetime], Awaitable[None]]
 Payload = Mapping[str, JsonValue]
 
 
@@ -217,12 +282,27 @@ def _last_change(events: tuple[TaskEvent, ...]) -> Mapping[str, JsonValue]:
     return {}
 
 
-def _require_plan(task: Task, _now: datetime) -> None:
+def _last_step_change(events: tuple[TaskEvent, ...], step_id: StepId) -> Mapping[str, JsonValue]:
+    """The metadata of the last ``STEP_*`` event of one step: which operation, with which key.
+
+    Only asked about a step that is no longer PENDING, and a step leaves PENDING through one of
+    these events only: the event exists, so there is no default.
+    """
+    return next(
+        event.metadata
+        for event in reversed(events)
+        if event.step_id == step_id and event.event_type in STEP_EVENTS
+    )
+
+
+async def _require_plan(task: Task, _events: tuple[TaskEvent, ...], _now: datetime) -> None:
     if task.plan_id is None:
         raise TaskEngineError(task.id, "the task has no plan: nothing to queue or approve")
 
 
-def _require_deadline_passed(task: Task, now: datetime) -> None:
+async def _require_deadline_passed(
+    task: Task, _events: tuple[TaskEvent, ...], now: datetime
+) -> None:
     if task.deadline is None:
         raise TaskEngineError(task.id, "the task has no deadline: it cannot expire")
     if task.deadline > now:
@@ -301,9 +381,14 @@ class TaskEngine:
             return task
 
     async def plan(self, task_id: TaskId, plan: TaskPlan) -> Task:
-        """Attach ``plan`` to a PLANNING task: store it, set ``plan_id``, record and audit it."""
+        """Attach ``plan`` to a PLANNING task: store it, set ``plan_id``, record and audit it.
+
+        The steps must form a DAG (ADR 0009): a cycle, a dependency on a step outside the plan or
+        a duplicate id is refused before anything is written.
+        """
         if plan.task_id != task_id:
             raise TaskEngineError(task_id, f"the plan belongs to task {plan.task_id}")
+        TaskGraph.from_plan(plan)
         async with self._lock(task_id):
             task = await self._repository.get(task_id)
             if task.plan_id is not None:
@@ -500,7 +585,8 @@ class TaskEngine:
         )
 
     async def complete(self, task_id: TaskId, result: ExecutionResult) -> Task:
-        """EXECUTING → COMPLETED, on a result that says SUCCEEDED (§63)."""
+        """EXECUTING → COMPLETED, on a result that says SUCCEEDED (§63) and a plan whose every
+        step is COMPLETED (ADR 0004 P7 "tutti gli step eseguiti"; ADR 0009)."""
         if result.task_id != task_id:
             raise TaskEngineError(task_id, f"the result is about task {result.task_id}")
         if result.status is not ExecutionStatus.SUCCEEDED:
@@ -513,6 +599,7 @@ class TaskEngine:
             key=result.id,
             device_id=result.device_id,
             payload={"capability_id": result.capability_id, "tool_name": result.tool_name},
+            guard=self._require_graph_complete,
         )
 
     async def fail(self, task_id: TaskId, error: ErrorMetadata) -> Task:
@@ -548,6 +635,68 @@ class TaskEngine:
         )
 
     # ----------------------------------------------------------------------------------
+    # The Task Graph: the steps of the plan (§15, ADR 0009)
+    # ----------------------------------------------------------------------------------
+
+    async def graph(self, task_id: TaskId) -> GraphState:
+        """The plan of the task as a graph, with where every step stands: read, never written.
+
+        ``NotFoundError`` of the repository if the task is unknown or has no plan.
+        """
+        async with self._lock(task_id):
+            await self._repository.get(task_id)
+            return await self._graph(task_id, await self._repository.events(task_id))
+
+    async def start_step(
+        self, task_id: TaskId, step_id: StepId, *, device_id: DeviceId | None = None
+    ) -> GraphState:
+        """PENDING → RUNNING for a step whose every dependency is COMPLETED (§13)."""
+        return await self._apply_step(
+            STEP_OPERATIONS["start_step"],
+            task_id,
+            step_id,
+            reason="" if device_id is None else f"on device {device_id}",
+            device_id=device_id,
+            must_be_ready=True,
+        )
+
+    async def complete_step(
+        self, task_id: TaskId, step_id: StepId, result: ExecutionResult
+    ) -> GraphState:
+        """RUNNING → COMPLETED, on a result that says SUCCEEDED for this task and this step."""
+        if result.task_id != task_id:
+            raise TaskEngineError(task_id, f"the result is about task {result.task_id}")
+        if result.step_id != step_id:
+            raise TaskEngineError(task_id, f"the result is about step {result.step_id}")
+        if result.status is not ExecutionStatus.SUCCEEDED:
+            raise TaskEngineError(task_id, f"the result is {result.status}, not SUCCEEDED")
+        return await self._apply_step(
+            STEP_OPERATIONS["complete_step"],
+            task_id,
+            step_id,
+            reason="",
+            key=result.id,
+            device_id=result.device_id,
+            payload={"capability_id": result.capability_id, "tool_name": result.tool_name},
+        )
+
+    async def fail_step(self, task_id: TaskId, step_id: StepId, error: ErrorMetadata) -> GraphState:
+        """RUNNING → FAILED, then every PENDING descendant → CANCELLED with the reason (§15).
+
+        A retry on a step already FAILED writes no second failure but completes the cascade a
+        crash may have cut short (ADR 0009: idempotent by outcome).
+        """
+        return await self._apply_step(
+            STEP_OPERATIONS["fail_step"],
+            task_id,
+            step_id,
+            reason=error.message,
+            error=error,
+            payload={"code": error.code},
+            cascade=error,
+        )
+
+    # ----------------------------------------------------------------------------------
     # The one write path
     # ----------------------------------------------------------------------------------
 
@@ -571,6 +720,21 @@ class TaskEngine:
             raise TaskEngineError(task_id, f"the approval is about task {approval.task_id}")
         if approval.status is not status:
             raise TaskEngineError(task_id, f"the approval is {approval.status}, not {status}")
+
+    async def _graph(self, task_id: TaskId, events: tuple[TaskEvent, ...]) -> GraphState:
+        graph = TaskGraph.from_plan(await self._repository.plan(task_id))
+        return GraphState(graph, graph.states(events))
+
+    async def _require_graph_complete(
+        self, task: Task, events: tuple[TaskEvent, ...], _now: datetime
+    ) -> None:
+        """Every step of the plan is COMPLETED: executing is not succeeding (§63, P7)."""
+        state = await self._graph(task.id, events)
+        pending = [str(s) for s in state.graph.order if state.states[s] is not StepState.COMPLETED]
+        if pending:
+            raise TaskEngineError(
+                task.id, f"{len(pending)} step(s) not COMPLETED: {', '.join(pending)}"
+            )
 
     async def _apply(
         self,
@@ -631,7 +795,7 @@ class TaskEngine:
             raise IllegalTransitionError(task_id, task.state, op.target)
         now = self._now(task, events)
         if guard is not None:
-            guard(task, now)
+            await guard(task, events, now)
         keyed: dict[str, JsonValue] = {} if op.key is None else {op.key: str(key)}
         moved = transition(
             task,
@@ -685,6 +849,170 @@ class TaskEngine:
             f"already {op.target.value} with {op.key} {recorded.get(op.key)!r} "
             f"(by {recorded.get('operation')}), not {key}",
         )
+
+    # ----------------------------------------------------------------------------------
+    # The write path of a step (ADR 0009): event, then audit; the task itself is not saved
+    # ----------------------------------------------------------------------------------
+
+    async def _apply_step(
+        self,
+        op: StepOperation,
+        task_id: TaskId,
+        step_id: StepId,
+        *,
+        reason: str,
+        key: UUID | None = None,
+        payload: Payload | None = None,
+        error: ErrorMetadata | None = None,
+        device_id: DeviceId | None = None,
+        must_be_ready: bool = False,
+        cascade: ErrorMetadata | None = None,
+    ) -> GraphState:
+        async with self._lock(task_id):
+            task = await self._repository.get(task_id)
+            events = await self._repository.events(task_id)
+            if task.state is not TaskState.EXECUTING:
+                raise TaskEngineError(
+                    task_id, f"{op.name} needs an EXECUTING task, not {task.state}"
+                )
+            graph, states = await self._graph(task_id, events)
+            graph.step(step_id)
+            current = states[step_id]
+            if current is op.target:
+                self._step_already_applied(op, task_id, events, step_id, key)
+            elif current not in op.sources:
+                raise IllegalStepTransitionError(step_id, current.value, op.target.value)
+            else:
+                now = self._now(task, events)
+                if must_be_ready and step_id not in graph.ready(states):
+                    waiting = sorted(
+                        str(d) for d in graph.dependencies(step_id) if states[d] is not _P.COMPLETED
+                    )
+                    raise TaskEngineError(
+                        task_id, f"step {step_id} is not ready: waiting for {', '.join(waiting)}"
+                    )
+                keyed: dict[str, JsonValue] = {} if op.key is None else {op.key: str(key)}
+                events = await self._write_step(
+                    op,
+                    task_id,
+                    step_id,
+                    events,
+                    now=now,
+                    actor=self._actor,
+                    previous=current,
+                    reason=reason,
+                    keyed=keyed,
+                    payload=payload,
+                    error=error,
+                    device_id=device_id,
+                )
+            if cascade is not None:
+                events = await self._cancel_dependents(graph, task, events, step_id, cascade)
+            return GraphState(graph, graph.states(events))
+
+    def _step_already_applied(
+        self,
+        op: StepOperation,
+        task_id: TaskId,
+        events: tuple[TaskEvent, ...],
+        step_id: StepId,
+        key: UUID | None,
+    ) -> None:
+        """Same rule as for the task (ADR 0008 §8): same operation and same key, or refused."""
+        if op.key is None:
+            return
+        recorded = _last_step_change(events, step_id)
+        if recorded.get("operation") == op.name and recorded.get(op.key) == str(key):
+            return
+        raise TaskEngineError(
+            task_id,
+            f"step {step_id} already {op.target.value} with {op.key} {recorded.get(op.key)!r} "
+            f"(by {recorded.get('operation')}), not {key}",
+        )
+
+    async def _cancel_dependents(
+        self,
+        graph: TaskGraph,
+        task: Task,
+        events: tuple[TaskEvent, ...],
+        failed: StepId,
+        error: ErrorMetadata,
+    ) -> tuple[TaskEvent, ...]:
+        """PENDING → CANCELLED for every descendant of ``failed`` still PENDING, in order.
+
+        Called on the first failure and on every retry, so a cascade cut short by a crash is
+        completed by the next call; steps already CANCELLED are left alone.
+        """
+        op = STEP_OPERATIONS["cancel_step"]
+        reason = f"dependency {failed} failed: {error.message}"
+        for step_id in graph.to_cancel(failed, graph.states(events)):
+            events = await self._write_step(
+                op,
+                task.id,
+                step_id,
+                events,
+                now=self._now(task, events),
+                actor=SYSTEM_ACTOR,
+                previous=StepState.PENDING,
+                reason=reason,
+                keyed={"cause_step_id": str(failed)},
+                payload=None,
+                error=None,
+                device_id=None,
+            )
+        return events
+
+    async def _write_step(
+        self,
+        op: StepOperation,
+        task_id: TaskId,
+        step_id: StepId,
+        events: tuple[TaskEvent, ...],
+        *,
+        now: datetime,
+        actor: Actor,
+        previous: StepState,
+        reason: str,
+        keyed: Mapping[str, JsonValue],
+        payload: Payload | None,
+        error: ErrorMetadata | None,
+        device_id: DeviceId | None,
+    ) -> tuple[TaskEvent, ...]:
+        """Event, then audit (ADR 0008 §4); returns the trail with the new event appended."""
+        event = TaskEvent(
+            id=TaskEventId(self._ids.new_uuid()),
+            created_at=now,
+            task_id=task_id,
+            event_type=op.event_type,
+            step_id=step_id,
+            message=reason,
+            metadata={"operation": op.name, **keyed},
+        )
+        await self._repository.append_event(event)
+        await self._audit_log.append(
+            AuditEvent(
+                id=AuditEventId(self._ids.new_uuid()),
+                created_at=now,
+                event_type=op.audit_type,
+                actor=actor,
+                summary=f"{op.name}: step {step_id} {previous.value} -> {op.target.value}"
+                + (f" ({reason})" if reason else ""),
+                task_id=task_id,
+                step_id=step_id,
+                device_id=device_id,
+                error=error,
+                payload={
+                    "operation": op.name,
+                    "step_id": str(step_id),
+                    "previous_step_state": previous.value,
+                    "new_step_state": op.target.value,
+                    "reason": reason,
+                    **keyed,
+                    **({} if payload is None else payload),
+                },
+            )
+        )
+        return (*events, event)
 
 
 def _user_actor(task_id: TaskId, approval: Approval) -> Actor:

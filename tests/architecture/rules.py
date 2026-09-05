@@ -36,6 +36,8 @@ STATE_MACHINE = Path("tasks") / "state_machine.py"
 #: Rule 10 (ADR 0008): only the ``tasks`` package may import the state machine.
 STATE_MACHINE_MODULE = f"{ROOT_PACKAGE}.tasks.state_machine"
 TASKS_DIR = "tasks"
+#: Rule 11 (ADR 0009): the ``TaskEvent`` types that move a step, written only by ``ela.tasks``.
+STEP_EVENT_PREFIX = "STEP_"
 #: The mapper rehydrates a Task in the state the database holds: exempt from rule 5 (ADR 0006).
 PERSISTENCE_MAPPERS = Path("infrastructure") / "persistence" / "mappers.py"
 STATE_EXEMPT = frozenset({STATE_MACHINE, PERSISTENCE_MAPPERS})
@@ -369,6 +371,41 @@ def check_state_machine_callers(pkg_root: Path) -> list[Violation]:
     )
 
 
+def check_step_event_writers(pkg_root: Path) -> list[Violation]:
+    """Rule 11: outside ``ela.tasks`` nobody builds a ``TaskEvent`` of a ``STEP_*`` type (ADR 0009).
+
+    The state of a step is folded from those events: a module that wrote one itself would move
+    a step without the graph's checks and without an audit event. Reported: a ``TaskEvent(...)``
+    call whose ``event_type`` is an attribute or a string starting with ``STEP_``. A heuristic on
+    names, like rule 5: it catches the obvious bypass, the review catches the rest.
+    """
+    rule = "step-events-written-only-by-the-task-engine"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root).parts[0] == TASKS_DIR:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _is_named(node.func, "TaskEvent"):
+                found.extend(
+                    Violation(rule, name, "TaskEvent(event_type=STEP_*)", node.lineno)
+                    for keyword in node.keywords
+                    if keyword.arg == "event_type" and _is_step_event(keyword.value)
+                )
+    return found
+
+
+def _is_step_event(value: ast.expr) -> bool:
+    if isinstance(value, ast.Attribute):
+        return value.attr.startswith(STEP_EVENT_PREFIX)
+    return (
+        isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+        and value.value.startswith(STEP_EVENT_PREFIX)
+    )
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -380,4 +417,5 @@ RULES: dict[str, Rule] = {
     "orm-separation": check_orm_separation,
     "audit-append-only": check_audit_adapter_append_only,
     "state-machine-callers": check_state_machine_callers,
+    "step-event-writers": check_step_event_writers,
 }
