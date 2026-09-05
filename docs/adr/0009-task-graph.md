@@ -59,8 +59,11 @@ Quattro mosse legali, nessuna auto-transizione, tre stati terminali. RUNNING →
 uno step parte solo quando ogni dipendenza è COMPLETED, e COMPLETED è terminale, quindi nulla da
 cui uno step in esecuzione dipende può fallire dopo; la propagazione tocca solo step PENDING.
 `cancel`, `expire` e `fail` del **task** non toccano gli step: il task è terminale, il suo grafo
-resta com'è, e ogni operazione di step su un task non EXECUTING è rifiutata. Il diagramma è
-confrontato con `STEP_TRANSITIONS` da `tests/docs/test_adr_graph.py`.
+resta com'è, e ogni operazione di step su un task non EXECUTING è rifiutata senza scrivere
+nulla (§33). Un risultato che un nodo riporta dopo un `cancel` o un `expire` del task non viene
+quindi registrato dal sistema, ma non è perso: resta al nodo che lo ha prodotto. Come il nodo lo
+gestisce — scarto, log locale — è protocollo dei nodi (M12), non dell'engine (review
+2026-09-05). Il diagramma è confrontato con `STEP_TRANSITIONS` da `tests/docs/test_adr_graph.py`.
 
 ### 4. `TaskGraph`: validazione, ordine, eseguibili, propagazione
 
