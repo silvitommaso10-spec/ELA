@@ -19,20 +19,24 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.domain import RiskLevel
 from ela.infrastructure.persistence import (
+    SqlApprovalStore,
     SqlAuditLog,
     SqlAuthorizationStore,
+    SqlExecutionResultStore,
     SqlTaskRepository,
     make_engine,
 )
 from ela.infrastructure.persistence.orm import Base
 from ela.permissions import CapabilityRegistry, PermissionGuardian
 from ela.ports import (
+    ApprovalStore,
     AuditLog,
     AuthorizationStore,
     AuthorizingGuardianPort,
     CapabilityRegistryPort,
     Clock,
     DeviceRegistryPort,
+    ExecutionResultStore,
     IdGenerator,
     ModelProvider,
     PermissionGuardianPort,
@@ -44,11 +48,13 @@ from ela.ports import (
     VerifierRegistryPort,
 )
 from ela.testing.fakes import (
+    FakeApprovalStore,
     FakeAuditLog,
     FakeAuthorizationStore,
     FakeCapabilityRegistry,
     FakeClock,
     FakeDeviceRegistry,
+    FakeExecutionResultStore,
     FakeIdGenerator,
     FakeModelProvider,
     FakePermissionGuardian,
@@ -100,6 +106,18 @@ def _sql_authorization_store() -> SqlAuthorizationStore:
     return SqlAuthorizationStore(make_engine(MEMORY_URL))
 
 
+def _sql_approval_store() -> SqlApprovalStore:
+    return SqlApprovalStore(make_engine(MEMORY_URL))
+
+
+def _sql_execution_result_store() -> SqlExecutionResultStore:
+    return SqlExecutionResultStore(make_engine(MEMORY_URL))
+
+
+SQL_STORES = (SqlTaskRepository, SqlAuthorizationStore, SqlApprovalStore, SqlExecutionResultStore)
+"""The adapters that expose their engine, so the schema can be created and the engine disposed."""
+
+
 async def _create_all(engine: AsyncEngine) -> None:
     """``create_all`` on the in-memory engine; ``test_migrations.py`` proves it equals ``head``."""
     async with engine.begin() as connection:
@@ -107,12 +125,12 @@ async def _create_all(engine: AsyncEngine) -> None:
 
 
 async def _create_schema(instance: object) -> None:
-    assert isinstance(instance, SqlTaskRepository | SqlAuthorizationStore)
+    assert isinstance(instance, SQL_STORES)
     await _create_all(instance.engine)
 
 
 async def _dispose(instance: object) -> None:
-    assert isinstance(instance, SqlTaskRepository | SqlAuthorizationStore)
+    assert isinstance(instance, SQL_STORES)
     await instance.engine.dispose()
 
 
@@ -273,6 +291,16 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     AuthorizationStore: (
         Implementation("FakeAuthorizationStore", FakeAuthorizationStore),
         Implementation("SqlAuthorizationStore", _sql_authorization_store, _create_schema, _dispose),
+    ),
+    ApprovalStore: (
+        Implementation("FakeApprovalStore", FakeApprovalStore),
+        Implementation("SqlApprovalStore", _sql_approval_store, _create_schema, _dispose),
+    ),
+    ExecutionResultStore: (
+        Implementation("FakeExecutionResultStore", FakeExecutionResultStore),
+        Implementation(
+            "SqlExecutionResultStore", _sql_execution_result_store, _create_schema, _dispose
+        ),
     ),
     PermissionGuardianPort: (
         Implementation("FakePermissionGuardian", _fake_guardian),

@@ -36,7 +36,13 @@ from ela.domain import (
     TaskStep,
 )
 from ela.tasks.engine import TaskEngine
-from ela.testing.fakes import FakeAuditLog, FakeClock, FakeIdGenerator, FakeTaskRepository
+from ela.testing.fakes import (
+    FakeApprovalStore,
+    FakeAuditLog,
+    FakeClock,
+    FakeIdGenerator,
+    FakeTaskRepository,
+)
 from tests.domain.examples import (
     APPROVAL,
     ELA_ACTOR,
@@ -57,6 +63,7 @@ class Harness:
     audit: FakeAuditLog
     clock: FakeClock
     ids: FakeIdGenerator
+    approvals: FakeApprovalStore
     engine: TaskEngine
 
     async def snapshot(self, task_id: TaskId) -> Snapshot:
@@ -79,8 +86,17 @@ def make_harness(orphan_after: timedelta = ORPHAN_AFTER) -> Harness:
     audit = FakeAuditLog()
     clock = FakeClock()
     ids = FakeIdGenerator()
-    engine = TaskEngine(repository, audit, clock, ids, actor=ELA_ACTOR, orphan_after=orphan_after)
-    return Harness(repository, audit, clock, ids, engine)
+    approvals = FakeApprovalStore()
+    engine = TaskEngine(
+        repository,
+        audit,
+        clock,
+        ids,
+        approvals=approvals,
+        actor=ELA_ACTOR,
+        orphan_after=orphan_after,
+    )
+    return Harness(repository, audit, clock, ids, approvals, engine)
 
 
 @pytest.fixture

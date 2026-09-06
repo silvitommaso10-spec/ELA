@@ -17,15 +17,25 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ela.domain import TaskId, TaskState
+from ela.domain import ApprovalStatus, TaskId, TaskState
 from ela.infrastructure.persistence import (
+    SqlApprovalStore,
     SqlAuthorizationStore,
+    SqlExecutionResultStore,
     SqlTaskRepository,
     make_engine,
 )
-from ela.ports import AlreadyExistsError, AuthorizationExhaustedError, NotFoundError
+from ela.ports import (
+    AlreadyExistsError,
+    ApprovalAlreadyAnsweredError,
+    AuthorizationExhaustedError,
+    NotFoundError,
+)
+from tests.contracts.test_approval_store import PENDING as PENDING_APPROVAL
 from tests.contracts.test_task_repository import CHILD, OTHER_TASK
 from tests.domain.examples import (
+    APPROVAL,
+    EXECUTION_RESULT,
     LATER,
     NOW,
     POLICY_AUTHORIZATION,
@@ -270,3 +280,109 @@ async def test_unknown_id_in_every_task_read(engine: AsyncEngine) -> None:
     for call in (repository.get(unknown), repository.events(unknown)):
         with pytest.raises(NotFoundError):
             await call
+
+
+# ----------------------------------------------------------------------------------------
+# respond: one conditional UPDATE, as consume (ADR 0015 §3)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_concurrent_answers_to_one_request_let_exactly_one_through(file_url: str) -> None:
+    engine = make_engine(file_url)
+    try:
+        await create_schema(engine)
+        store = SqlApprovalStore(engine)
+        await store.add(PENDING_APPROVAL)
+        outcomes = await asyncio.gather(
+            *(
+                store.respond(
+                    PENDING_APPROVAL.id,
+                    status=ApprovalStatus.GRANTED if i % 2 else ApprovalStatus.REJECTED,
+                    responded_by=f"user-{i}",
+                    now=NOW,
+                )
+                for i in range(20)
+            ),
+            return_exceptions=True,
+        )
+        answered = [o for o in outcomes if not isinstance(o, BaseException)]
+        assert len(answered) == 1
+        refused = [o for o in outcomes if isinstance(o, BaseException)]
+        assert len(refused) == 19
+        assert all(isinstance(o, ApprovalAlreadyAnsweredError) for o in refused)
+        assert await store.get(PENDING_APPROVAL.id) == answered[0]
+    finally:
+        await engine.dispose()
+
+
+async def test_respond_is_one_conditional_update_in_sql(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    store = SqlApprovalStore(engine)
+    await store.add(PENDING_APPROVAL)
+    recorded = statements(engine)
+    answered = await store.respond(
+        PENDING_APPROVAL.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=NOW
+    )
+    assert answered.status is ApprovalStatus.GRANTED
+    updates = [s for s in recorded() if s.startswith("UPDATE approvals")]
+    assert len(updates) == 1
+    (statement,) = updates
+    assert "SET status=?, responded_at=?, responded_by=?" in statement
+    assert "approvals.status = ?" in statement
+    assert "approvals.expires_at > ?" in statement
+    assert "approvals.expires_at IS NULL" in statement
+
+
+async def test_a_refused_answer_updates_nothing_and_reads_once_to_name_the_error(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    store = SqlApprovalStore(engine)
+    await store.add(PENDING_APPROVAL)
+    await store.respond(
+        PENDING_APPROVAL.id, status=ApprovalStatus.REJECTED, responded_by="tommaso", now=NOW
+    )
+    recorded = statements(engine)
+    with pytest.raises(ApprovalAlreadyAnsweredError):
+        await store.respond(
+            PENDING_APPROVAL.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=NOW
+        )
+    seen = recorded()
+    assert len([s for s in seen if s.startswith("UPDATE approvals")]) == 1
+    assert len(_selects(seen, "approvals")) == 1
+    assert (await store.get(PENDING_APPROVAL.id)).status is ApprovalStatus.REJECTED
+
+
+async def test_duplicate_request_and_result_are_caught_by_the_unique_constraint(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    approvals, results = SqlApprovalStore(engine), SqlExecutionResultStore(engine)
+    await approvals.add(PENDING_APPROVAL)
+    await results.add(EXECUTION_RESULT)
+    recorded = statements(engine)
+    with pytest.raises(AlreadyExistsError):
+        await approvals.add(PENDING_APPROVAL)
+    with pytest.raises(AlreadyExistsError):
+        await results.add(EXECUTION_RESULT)
+    seen = recorded()
+    assert len(_inserts(seen, "approvals")) == 1 and len(_inserts(seen, "execution_results")) == 1
+    assert _selects(seen, "approvals") == [] and _selects(seen, "execution_results") == []
+
+
+async def test_a_request_that_is_not_pending_is_refused_before_any_query(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    store = SqlApprovalStore(engine)
+    recorded = statements(engine)
+    with pytest.raises(ValueError, match="PENDING"):
+        await store.add(APPROVAL)
+    with pytest.raises(ValueError, match="GRANTED or REJECTED"):
+        await store.respond(
+            APPROVAL.id, status=ApprovalStatus.EXPIRED, responded_by="tommaso", now=NOW
+        )
+    assert recorded() == []
+
+
+async def test_the_two_stores_expose_their_engine(engine: AsyncEngine) -> None:
+    assert SqlApprovalStore(engine).engine is engine
+    assert SqlExecutionResultStore(engine).engine is engine

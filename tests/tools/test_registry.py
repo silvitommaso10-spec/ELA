@@ -9,10 +9,14 @@ import pytest
 
 from ela.domain import CapabilityId
 from ela.permissions import MODEL_COMPLETE, catalogue_v01
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.ports import AlreadyExistsError
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeTool
 from ela.tools import (
+    CORE_ECHO,
     EchoTool,
     EchoVerifier,
+    NotIdempotentError,
+    Tool,
     ToolNotFound,
     ToolRegistry,
     VerifierNotFound,
@@ -84,3 +88,57 @@ def test_the_verifier_registry_is_frozen() -> None:
     assert not hasattr(registry, "__dict__")
     with pytest.raises(AttributeError):
         registry.extra = 1  # type: ignore[attr-defined]
+
+
+# --------------------------------------------------------------------------------------
+# Only idempotent tools are registered (review of M5.3, ADR 0015 §8)
+# --------------------------------------------------------------------------------------
+
+
+def test_the_tools_of_v01_promise_that_twice_is_once(tmp_path: Path) -> None:
+    """Crash window 7a is repaired by running the tool again: every registered tool says so."""
+    registry = tools_v01(root=tmp_path, clock=FakeClock(), ids=FakeIdGenerator())
+    assert [tool.idempotent for tool in registry.tools()] == [True, True]  # type: ignore[attr-defined]
+    assert EchoTool.idempotent is WriteNoteTool.idempotent is True
+
+
+def test_a_tool_that_is_not_idempotent_is_refused_and_named() -> None:
+    """Negative case: the first non-idempotent tool cannot enter without the STARTED protocol."""
+    tool = FakeTool(
+        CapabilityId("model.complete"), FakeClock(), FakeIdGenerator(), name="x", idempotent=False
+    )
+    with pytest.raises(NotIdempotentError) as caught:
+        ToolRegistry((tool,))
+    assert caught.value.capability_id == CapabilityId("model.complete")
+    assert caught.value.name == "x"
+    assert caught.value.declared is False
+    assert "idempotent=False" in str(caught.value)
+    assert "STARTED protocol of ADR 0015 §8" in str(caught.value)
+    assert "7a" in str(caught.value)
+
+
+def test_a_tool_that_does_not_declare_it_is_refused_too() -> None:
+    """A doubt is not a yes (§33): forgetting the attribute reads as "no", never as "yes"."""
+
+    class _Undeclared:
+        capability_id = CapabilityId("core.echo")
+        name = "undeclared"
+
+        async def execute(self, decision: object, arguments: object) -> object:  # pragma: no cover
+            raise AssertionError("never registered, never called")
+
+    with pytest.raises(NotIdempotentError) as caught:
+        ToolRegistry((_Undeclared(),))  # type: ignore[arg-type]
+    assert caught.value.declared is None
+    assert "declares no idempotent" in str(caught.value)
+    assert not hasattr(Tool, "idempotent")  # the base gives no default to inherit by mistake
+
+
+def test_the_refusal_comes_before_the_duplicate_check() -> None:
+    """A non-idempotent duplicate is refused for what makes it dangerous, not for its key."""
+    echo = EchoTool(FakeClock(), FakeIdGenerator())
+    liar = FakeTool(CORE_ECHO, FakeClock(), FakeIdGenerator(), name="liar", idempotent=False)
+    with pytest.raises(NotIdempotentError):
+        ToolRegistry((echo, liar))
+    with pytest.raises(AlreadyExistsError):
+        ToolRegistry((echo, EchoTool(FakeClock(), FakeIdGenerator())))

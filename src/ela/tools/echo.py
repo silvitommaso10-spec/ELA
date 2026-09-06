@@ -23,6 +23,8 @@ class EchoTool(Tool):
     """
 
     output_keys: ClassVar[frozenset[str]] = frozenset({"message"})
+    idempotent: ClassVar[bool] = True
+    """Nothing is written and nothing leaves the process: a second run is the first one."""
 
     def __init__(self, clock: Clock, ids: IdGenerator, *, name: str = ECHO_TOOL_NAME) -> None:
         super().__init__(CORE_ECHO, clock, ids, name=name)

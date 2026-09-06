@@ -3,9 +3,11 @@
 SQLAlchemy 2 async on ``aiosqlite``; ORM rows kept apart from the domain entities and translated
 by an explicit mapper; schema owned by alembic (``migrations/``). Configuration comes from
 :class:`PersistenceSettings` (``ELA_DB_URL``). The audit log (§32) is append-only at every level
-and hash-chained; :func:`verify_chain` checks the chain (ADR 0007).
+and hash-chained; :func:`verify_chain` checks the chain (ADR 0007). Requests for consent and
+what tools produced live in ``approvals`` and ``execution_results`` (M5.3, ADR 0015).
 """
 
+from ela.infrastructure.persistence.approval_store import SqlApprovalStore
 from ela.infrastructure.persistence.audit_log import SqlAuditLog, verify_chain
 from ela.infrastructure.persistence.authorization_store import SqlAuthorizationStore
 from ela.infrastructure.persistence.engine import (
@@ -15,13 +17,16 @@ from ela.infrastructure.persistence.engine import (
     make_session_factory,
     sync_url,
 )
+from ela.infrastructure.persistence.execution_result_store import SqlExecutionResultStore
 from ela.infrastructure.persistence.settings import PersistenceSettings, default_db_url
 from ela.infrastructure.persistence.task_repository import SqlTaskRepository
 
 __all__ = [
     "PersistenceSettings",
+    "SqlApprovalStore",
     "SqlAuditLog",
     "SqlAuthorizationStore",
+    "SqlExecutionResultStore",
     "SqlTaskRepository",
     "async_url",
     "default_db_url",

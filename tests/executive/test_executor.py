@@ -29,6 +29,7 @@ from ela.domain import (
     TaskState,
 )
 from ela.executive import (
+    APPROVAL_NAMESPACE,
     AUTHORIZATION_NAMESPACE,
     DEFAULT_APPROVAL_TTL,
     GRANT_VANISHED,
@@ -61,7 +62,6 @@ from tests.executive.support import (
     World,
     fake_verifier,
     grant_for,
-    granted,
     world,
 )
 from tests.permissions.support import (
@@ -229,17 +229,25 @@ async def test_the_tool_is_looked_up_before_the_verifier() -> None:
 
 
 async def test_an_incoherent_approval_is_refused_before_anything(w: World) -> None:
+    """A GRANTED request of this step that names another capability: the store was tampered
+    with, or another executor's request landed here. Refused before any write."""
     task, step = await w.running(GUARDED_NOTE.id)
     asked = await w.executor.execute(task.id, step.id, NOTE_ARGS)
     assert asked.approval is not None
-    await w.engine.approve(task.id, granted(asked.approval, at=w.now))
+    await w.engine.approve(task.id, await w.answered(asked.approval))
     await w.engine.start(task.id)
-    before = len(await w.events())
-    wrong_step = granted(asked.approval, at=w.now).model_copy(
-        update={"step_id": StepId(w.ids.new_uuid())}
+    foreign = asked.approval.model_copy(
+        update={
+            "id": ApprovalId(w.ids.new_uuid()),
+            "capability_id": ECHO.id,
+            "decision_id": asked.decision.id,
+        }
     )
+    await w.approvals.add(foreign)
+    await w.answered(foreign)
+    before = len(await w.events())
     with pytest.raises(ApprovalMismatchError):
-        await w.executor.execute(task.id, step.id, NOTE_ARGS, approval=wrong_step)
+        await w.executor.execute(task.id, step.id, NOTE_ARGS)
     await nothing_written(w, before)
     assert await w.store.for_capability(GUARDED_NOTE.id) == ()
 
@@ -357,6 +365,11 @@ async def test_requires_approval_builds_the_request_and_lets_the_task_wait(w: Wo
     assert await w.step_state(task.id, step.id) is StepState.RUNNING
     assert w.tool(NOTE.id).calls == ()
     assert (await w.event_types(task.id))[-2:] == [E.PERMISSION_DECIDED, E.APPROVAL_REQUESTED]
+    # stored before the task waited on it, under the id of its decision (ADR 0015 §6)
+    assert approval.id == ApprovalId(uuid5(APPROVAL_NAMESPACE, str(execution.decision.id)))
+    assert await w.approvals.get(approval.id) == approval
+    assert await w.approvals.for_task(task.id) == (approval,)
+    assert await w.approvals.pending() == (approval,)
 
 
 async def test_the_approval_ttl_is_the_executors(w: World) -> None:
@@ -380,7 +393,7 @@ async def approved_and_resumed(w: World, capability_id: CapabilityId, arguments:
     asked = await w.executor.execute(task.id, step.id, arguments)
     assert asked.approval is not None
     w.clock.advance(timedelta(minutes=1))
-    approval = granted(asked.approval, at=w.now)
+    approval = await w.answered(asked.approval)  # respond first, then the engine (ADR 0015 §6)
     await w.engine.approve(task.id, approval)
     await w.engine.start(task.id)
     assert await w.step_state(task.id, step.id) is StepState.RUNNING
@@ -392,7 +405,7 @@ async def test_a_granted_approval_becomes_a_grant_that_is_recorded_consumed_and_
 ) -> None:
     task, step, approval, asked = await approved_and_resumed(w, NOTE.id, NOTE_ARGS)
     before = len(await w.events(task.id))
-    execution = await w.executor.execute(task.id, step.id, NOTE_ARGS, approval=approval)
+    execution = await w.executor.execute(task.id, step.id, NOTE_ARGS)
     grant = execution.authorization
     assert grant is not None
     assert grant.id == AuthorizationId(uuid5(AUTHORIZATION_NAMESPACE, str(approval.id)))
@@ -451,7 +464,7 @@ async def test_the_grant_is_born_at_the_executors_now_and_consumed_at_the_decisi
         return await original(authorization_id, now=now)
 
     w.store.consume = spy  # type: ignore[method-assign]
-    execution = await w.executor.execute(task.id, step.id, NOTE_ARGS, approval=approval)
+    execution = await w.executor.execute(task.id, step.id, NOTE_ARGS)
     assert execution.authorization is not None
     assert execution.authorization.created_at == w.now
     assert seen == [execution.decision.created_at]
@@ -471,7 +484,7 @@ async def test_the_same_approval_never_mints_a_second_grant(w: World) -> None:
     )
     await w.store.grant(minted)  # stored, not recorded: the crash window of ADR 0013 §8
     before = len(await w.events(task.id))
-    execution = await w.executor.execute(task.id, step.id, NOTE_ARGS, approval=approval)
+    execution = await w.executor.execute(task.id, step.id, NOTE_ARGS)
     assert execution.authorization == minted
     assert len(await w.store.for_capability(NOTE.id)) == 1
     types = (await w.event_types(task.id))[before:]
@@ -481,7 +494,7 @@ async def test_the_same_approval_never_mints_a_second_grant(w: World) -> None:
 
 async def test_a_grant_already_recorded_is_not_recorded_again(w: World) -> None:
     task, step, approval, _ = await approved_and_resumed(w, NOTE.id, NOTE_ARGS)
-    await w.executor.execute(task.id, step.id, NOTE_ARGS, approval=approval)
+    await w.executor.execute(task.id, step.id, NOTE_ARGS)
     # the step is closed; a second call with the same approval on a fresh RUNNING step of
     # another task cannot reuse it (bound), but the grant lookup itself is what we probe:
     grants = await w.store.for_capability(NOTE.id)
@@ -513,12 +526,15 @@ async def test_a_stored_grant_for_another_approval_under_the_same_id_is_refused(
     await w.store.grant(foreign)
     before = len(await w.events(task.id))
     with pytest.raises(ExecutorError, match="exists for another approval"):
-        await w.executor.execute(task.id, step.id, NOTE_ARGS, approval=approval)
+        await w.executor.execute(task.id, step.id, NOTE_ARGS)
     assert len(await w.events(task.id)) == before
     assert w.tool(NOTE.id).calls == ()
 
 
 async def test_an_exhausted_grant_found_in_the_store_asks_again_and_names_it(w: World) -> None:
+    """Window 6 of ADR 0013 §8: the grant of the GRANTED request was spent before the tool ran.
+    The retry finds the request, reuses its grant, and the Guardian asks again — a second
+    request for the step, born from a second decision (ADR 0015 §6)."""
     task, step, approval, _ = await approved_and_resumed(w, NOTE.id, NOTE_ARGS)
     minted = authorization_from_approval(
         approval,
@@ -526,7 +542,7 @@ async def test_an_exhausted_grant_found_in_the_store_asks_again_and_names_it(w: 
         step=step,
         capability=NOTE,
         now=w.now,
-        authorization_id=AuthorizationId(w.ids.new_uuid()),
+        authorization_id=AuthorizationId(uuid5(AUTHORIZATION_NAMESPACE, str(approval.id))),
     )
     await w.store.grant(minted)
     await w.store.consume(minted.id, now=w.now)
@@ -538,6 +554,10 @@ async def test_an_exhausted_grant_found_in_the_store_asks_again_and_names_it(w: 
     assert "used 1 of 1 times" in execution.approval.prompt
     assert execution.task.state is TaskState.WAITING_APPROVAL
     assert w.tool(NOTE.id).calls == ()
+    first, second = await w.approvals.for_task(task.id)
+    assert (first.status, second.status) == (ApprovalStatus.GRANTED, ApprovalStatus.PENDING)
+    assert first.id != second.id and first.decision_id != second.decision_id
+    assert len(await w.store.for_capability(NOTE.id)) == 1  # no second grant from the first yes
 
 
 async def test_a_usable_grant_found_in_the_store_is_consumed_and_used(w: World) -> None:

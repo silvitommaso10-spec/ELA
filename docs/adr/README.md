@@ -22,6 +22,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0012](0012-authorizations.md) | Autorizzazioni: nascita da un'Approval, consumo atomico, invariante del grant monouso | Accettata |
 | [0013](0013-executor.md) | Executor: uno step per chiamata, grant scelto e consumato prima del tool, ordine delle scritture, `ToolRegistryPort` e `AuthorizingGuardianPort`, tool v0.1 e workspace, regola 16 | Accettata |
 | [0014](0014-verification.md) | Verification: condizioni di successo come vocabolario chiuso per capability, `VerifierPort` e `VerifierRegistryPort`, verifica prima di `complete_step`, verifica fallita → task FAILED, `EXECUTION_VERIFIED`, regole 17 e 18 | Accettata |
+| [0015](0015-approval-and-result-persistence.md) | Persistenza di Approval ed ExecutionResult: `ApprovalStore` ed `ExecutionResultStore`, la risposta dallo store, ripresa di uno step interrotto, finestre 5, 7b, 8, 8a–8c e 9a riparate, richieste scadute in `recover()`, regola 19 | Accettata |
 
 ## Template
 

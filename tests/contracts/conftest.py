@@ -14,12 +14,14 @@ from typing import cast
 import pytest
 
 from ela.ports import (
+    ApprovalStore,
     AuditLog,
     AuthorizationStore,
     AuthorizingGuardianPort,
     CapabilityRegistryPort,
     Clock,
     DeviceRegistryPort,
+    ExecutionResultStore,
     IdGenerator,
     ModelProvider,
     PermissionGuardianPort,
@@ -86,6 +88,20 @@ async def capability_registry(
 async def authorization_store(request: pytest.FixtureRequest) -> AsyncIterator[AuthorizationStore]:
     async for instance in _instance(request.param):
         yield cast(AuthorizationStore, instance)
+
+
+@pytest.fixture(params=implementations_of(ApprovalStore), ids=str)
+async def approval_store(request: pytest.FixtureRequest) -> AsyncIterator[ApprovalStore]:
+    async for instance in _instance(request.param):
+        yield cast(ApprovalStore, instance)
+
+
+@pytest.fixture(params=implementations_of(ExecutionResultStore), ids=str)
+async def execution_result_store(
+    request: pytest.FixtureRequest,
+) -> AsyncIterator[ExecutionResultStore]:
+    async for instance in _instance(request.param):
+        yield cast(ExecutionResultStore, instance)
 
 
 @pytest.fixture(params=implementations_of(PermissionGuardianPort), ids=str)

@@ -87,6 +87,7 @@ EXECUTE_METHOD = "execute"
 SQL_EXECUTORS = frozenset({"session", "connection", "cursor"})
 # Rule 17 (ADR 0014 §9): only the executor completes a step, and only after verification.
 COMPLETE_STEP_METHOD = "complete_step"
+RESPOND_METHOD = "respond"
 # Rule 18 (ADR 0014 §10): the module of the verifiers, and the shared path classification the
 # tool and the verifier both use, have no path that writes.
 VERIFIERS_MODULE = Path("tools") / "verifiers.py"
@@ -664,6 +665,29 @@ def check_step_completers(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_approval_responders(pkg_root: Path) -> list[Violation]:
+    """Rule 19: no module of ``src/ela`` calls ``<x>.respond(...)`` (ADR 0015 §9).
+
+    The Core never answers its own requests for approval: a "yes" is the user's (§30, §62), and
+    it reaches the store through the API of M8.1, which will be the one exemption, by path,
+    when it exists. The definitions in ``ports.py``, in the SQL store and in the fake are not
+    calls and are not reported. A heuristic on names, like rules 16 and 17.
+    """
+    rule = "approval-answered-only-by-the-user"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f".{RESPOND_METHOD}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == RESPOND_METHOD
+        )
+    return found
+
+
 def check_verifier_read_only(pkg_root: Path) -> list[Violation]:
     """Rule 18: ``tools/verifiers.py`` and ``tools/paths.py`` have no path that writes (ADR 0014
     §10, decision I; review of M5.2 for the shared classification).
@@ -760,4 +784,5 @@ RULES: dict[str, Rule] = {
     "tool-execute-callers": check_tool_execute_callers,
     "step-completers": check_step_completers,
     "verifier-read-only": check_verifier_read_only,
+    "approval-responders": check_approval_responders,
 }

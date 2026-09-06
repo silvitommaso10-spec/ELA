@@ -10,8 +10,18 @@ from hypothesis import given, settings
 from pydantic import BaseModel
 from sqlalchemy import Table
 
-from ela.domain import AuditEvent, Authorization, Task, TaskEvent, TaskPlan
+from ela.domain import (
+    Approval,
+    AuditEvent,
+    Authorization,
+    ExecutionResult,
+    Task,
+    TaskEvent,
+    TaskPlan,
+)
 from ela.infrastructure.persistence.mappers import (
+    approval_to_row,
+    approval_values,
     audit_event_to_row,
     audit_event_values,
     authorization_to_row,
@@ -19,25 +29,35 @@ from ela.infrastructure.persistence.mappers import (
     event_to_row,
     plan_to_row,
     plan_values,
+    result_to_row,
+    result_values,
+    row_to_approval,
     row_to_audit_event,
     row_to_authorization,
     row_to_event,
     row_to_plan,
+    row_to_result,
     row_to_task,
     task_to_row,
     task_values,
 )
 from ela.infrastructure.persistence.orm import (
+    ApprovalRow,
     AuditEventRow,
     AuthorizationRow,
+    ExecutionResultRow,
     TaskEventRow,
     TaskPlanRow,
     TaskRow,
 )
+from tests.contracts.test_approval_store import PENDING
+from tests.contracts.test_execution_result_store import BARE as BARE_RESULT
 from tests.contracts.test_task_repository import CHILD
 from tests.domain.examples import (
+    APPROVAL,
     AUDIT_EVENT,
     ERROR_METADATA,
+    EXECUTION_RESULT,
     POLICY_AUTHORIZATION,
     SINGLE_USE_AUTHORIZATION,
     TASK,
@@ -99,6 +119,30 @@ def test_authorization_round_trip(authorization: Authorization) -> None:
 )
 def test_audit_event_round_trip(event: AuditEvent) -> None:
     assert row_to_audit_event(audit_event_to_row(event)) == event
+
+
+@pytest.mark.parametrize("approval", [APPROVAL, PENDING], ids=["answered", "pending"])
+def test_approval_round_trip(approval: Approval) -> None:
+    assert row_to_approval(approval_to_row(approval)) == approval
+
+
+@pytest.mark.parametrize("result", [EXECUTION_RESULT, BARE_RESULT], ids=["full", "bare"])
+def test_result_round_trip(result: ExecutionResult) -> None:
+    assert row_to_result(result_to_row(result)) == result
+
+
+@settings(max_examples=100)
+@given(MODEL_STRATEGIES[Approval])
+def test_any_approval_round_trips(approval: BaseModel) -> None:
+    assert isinstance(approval, Approval)
+    assert row_to_approval(approval_to_row(approval)) == approval
+
+
+@settings(max_examples=100)
+@given(MODEL_STRATEGIES[ExecutionResult])
+def test_any_result_round_trips(result: BaseModel) -> None:
+    assert isinstance(result, ExecutionResult)
+    assert row_to_result(result_to_row(result)) == result
 
 
 @settings(max_examples=100)
@@ -226,6 +270,25 @@ def test_authorization_mapper_covers_every_field() -> None:
 def test_audit_event_mapper_covers_every_field() -> None:
     table = AuditEventRow.__table__
     assert unmapped(AuditEvent, audit_event_values(AUDIT_EVENT), table) == set()
+
+
+def test_approval_mapper_covers_every_field() -> None:
+    assert unmapped(Approval, approval_values(APPROVAL), ApprovalRow.__table__) == set()
+
+
+def test_result_mapper_covers_every_field() -> None:
+    table = ExecutionResultRow.__table__
+    assert unmapped(ExecutionResult, result_values(EXECUTION_RESULT), table) == set()
+
+
+def test_approval_and_result_rows_store_enum_values_and_plain_json() -> None:
+    approval = approval_to_row(APPROVAL)
+    assert approval.status == "GRANTED" and type(approval.targets) is list
+    result = result_to_row(EXECUTION_RESULT)
+    assert result.status == "FAILED"
+    assert type(result.output) is dict and type(result.error) is dict
+    assert result.error["code"] == ERROR_METADATA.code
+    assert result.decision_id == EXECUTION_RESULT.decision_id
 
 
 def test_a_new_domain_field_is_detected() -> None:

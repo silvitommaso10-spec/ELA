@@ -12,11 +12,34 @@ from __future__ import annotations
 from ela.domain import CapabilityId
 from ela.ports import NotFoundError
 
-__all__ = ["ToolNotFound", "ToolsError", "VerifierNotFound"]
+__all__ = ["NotIdempotentError", "ToolNotFound", "ToolsError", "VerifierNotFound"]
 
 
 class ToolsError(Exception):
     """Base class of every error the tools package raises on its own."""
+
+
+class NotIdempotentError(ToolsError):
+    """A tool that does not promise that running it twice is running it once (ADR 0015 §8).
+
+    Raised by :class:`~ela.tools.registry.ToolRegistry` at construction, before anything can be
+    executed: crash window 7a — the instant between the tool's effect and the insert of its
+    result — is repaired by *repeating* the tool, and that repair is only safe while every
+    registered tool is idempotent. A tool that is not, or that does not say, needs the STARTED
+    protocol of ADR 0015 §8 first: a result persisted as STARTED before the tool acts, a retry
+    that verifies instead of repeating, and no tool ever started twice for one execution id.
+    """
+
+    def __init__(self, capability_id: CapabilityId, name: str, declared: object) -> None:
+        self.capability_id = capability_id
+        self.name = name
+        self.declared = declared
+        said = "declares idempotent=False" if declared is False else "declares no idempotent"
+        super().__init__(
+            f"tool {name!r} for {capability_id} {said}: a retry after a crash repeats the tool "
+            f"(crash window 7a), so a tool that cannot promise it needs the STARTED protocol of "
+            f"ADR 0015 §8 first"
+        )
 
 
 class ToolNotFound(NotFoundError):

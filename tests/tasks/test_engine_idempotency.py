@@ -296,7 +296,13 @@ async def test_concurrent_queues_write_one_event() -> None:
     h = make_harness()
     h.repository = YieldingRepository()
     h.engine = h.engine.__class__(
-        h.repository, h.audit, h.clock, h.ids, actor=ELA_ACTOR, orphan_after=timedelta(minutes=5)
+        h.repository,
+        h.audit,
+        h.clock,
+        h.ids,
+        approvals=h.approvals,
+        actor=ELA_ACTOR,
+        orphan_after=timedelta(minutes=5),
     )
     task = await planning(h)
     results = await asyncio.gather(*(h.engine.queue(task.id) for _ in range(5)))
@@ -316,7 +322,13 @@ async def test_without_the_lock_interleaving_would_duplicate() -> None:
     h = make_harness()
     h.repository = repository
     h.engine = h.engine.__class__(
-        repository, h.audit, h.clock, h.ids, actor=ELA_ACTOR, orphan_after=timedelta(minutes=5)
+        repository,
+        h.audit,
+        h.clock,
+        h.ids,
+        approvals=h.approvals,
+        actor=ELA_ACTOR,
+        orphan_after=timedelta(minutes=5),
     )
     task = await planning(h)
 

@@ -69,7 +69,13 @@ async def last_change(h: Harness, task_id: TaskId) -> tuple[TaskState | None, Ta
 def test_orphan_after_must_be_positive(h: Harness, orphan_after: timedelta) -> None:
     with pytest.raises(ValueError, match="positive"):
         TaskEngine(
-            h.repository, h.audit, h.clock, h.ids, actor=ELA_ACTOR, orphan_after=orphan_after
+            h.repository,
+            h.audit,
+            h.clock,
+            h.ids,
+            approvals=h.approvals,
+            actor=ELA_ACTOR,
+            orphan_after=orphan_after,
         )
 
 
@@ -505,7 +511,15 @@ async def test_cancel_defaults_to_ela(h: Harness) -> None:
 )
 async def test_expire_once_the_deadline_passed(h: Harness, state: TaskState) -> None:
     deadline = h.clock.now() + HOUR
-    h.engine = TaskEngine(h.repository, h.audit, h.clock, h.ids, actor=ELA_ACTOR, orphan_after=HOUR)
+    h.engine = TaskEngine(
+        h.repository,
+        h.audit,
+        h.clock,
+        h.ids,
+        approvals=h.approvals,
+        actor=ELA_ACTOR,
+        orphan_after=HOUR,
+    )
     task = await created(h, deadline=deadline)
     if state is not S.CREATED:
         task = await h.engine.start_planning(task.id)
@@ -633,6 +647,7 @@ async def test_a_clock_that_went_backwards_is_refused(h: Harness) -> None:
         h.audit,
         FakeClock(h.clock.now() - timedelta(seconds=1)),
         h.ids,
+        approvals=h.approvals,
         actor=ELA_ACTOR,
         orphan_after=HOUR,
     )
@@ -657,6 +672,7 @@ async def test_skew_is_measured_against_heartbeats_too(h: Harness) -> None:
         h.audit,
         FakeClock(h.clock.now() - timedelta(seconds=1)),
         h.ids,
+        approvals=h.approvals,
         actor=ELA_ACTOR,
         orphan_after=HOUR,
     )
@@ -673,6 +689,7 @@ async def test_skew_before_a_plan_is_refused(h: Harness) -> None:
         h.audit,
         FakeClock(datetime(2020, 1, 1, tzinfo=UTC)),
         h.ids,
+        approvals=h.approvals,
         actor=ELA_ACTOR,
         orphan_after=HOUR,
     )

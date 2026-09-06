@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import text
@@ -20,21 +21,25 @@ from ela.audit.chain import AuditChainError
 from ela.domain import (
     Actor,
     ActorKind,
+    ApprovalStatus,
     AuditEventType,
     CapabilityId,
     IntentId,
     PlanId,
     StepId,
     StepState,
+    TaskEventType,
     TaskId,
     TaskPlan,
     TaskState,
     TaskStep,
 )
-from ela.executive import VERIFICATION_FAILED, Executor
+from ela.executive import VERIFICATION_FAILED, Executor, ExecutorError
 from ela.infrastructure.persistence import (
+    SqlApprovalStore,
     SqlAuditLog,
     SqlAuthorizationStore,
+    SqlExecutionResultStore,
     SqlTaskRepository,
     make_engine,
     verify_chain,
@@ -52,7 +57,14 @@ from ela.tools import (
 )
 from tests.contracts.implementations import MEMORY_URL
 from tests.domain.examples import USER_INTENT
-from tests.executive.support import granted
+from tests.executive.support import (
+    Crashes,
+    Crashing,
+    SimulatedCrash,
+    audit_of,
+    saved_as,
+    trail_of,
+)
 from tests.infrastructure.persistence.conftest import create_schema
 from tests.tasks.support import ORPHAN_AFTER, result_for
 
@@ -73,12 +85,20 @@ class SqlPipeline:
         self.audit = SqlAuditLog(engine)
         self.repository = SqlTaskRepository(engine)
         self.store = SqlAuthorizationStore(engine)
+        self.approvals = SqlApprovalStore(engine)
+        self.results = SqlExecutionResultStore(engine)
         self.registry = catalogue_v01()
         self.guardian = PermissionGuardian(self.registry, self.clock, self.ids, self.audit)
         self.tools = tools_v01(root=workspace, clock=self.clock, ids=self.ids)
         self.verifiers = verifiers_v01(root=workspace)
         self.engine = TaskEngine(
-            self.repository, self.audit, self.clock, self.ids, actor=ELA, orphan_after=ORPHAN_AFTER
+            self.repository,
+            self.audit,
+            self.clock,
+            self.ids,
+            approvals=self.approvals,
+            actor=ELA,
+            orphan_after=ORPHAN_AFTER,
         )
         self.executor = Executor(
             registry=self.registry,
@@ -88,6 +108,8 @@ class SqlPipeline:
             engine=self.engine,
             repository=self.repository,
             authorizations=self.store,
+            approvals=self.approvals,
+            results=self.results,
             audit=self.audit,
             clock=self.clock,
             ids=self.ids,
@@ -172,6 +194,9 @@ async def test_write_note_leaves_the_file_and_a_verified_chain(
 class _ForgetfulNoteTool:
     """Claims the note of ``inner`` but removes it before answering (§63 on SQLite)."""
 
+    idempotent = True
+    """As the tool it wraps: removing the note twice leaves the same absence (ADR 0015 §8)."""
+
     def __init__(self, inner: object, root: Path) -> None:
         self._inner = inner
         self._root = root
@@ -204,6 +229,8 @@ async def test_a_failed_verification_fails_the_task_and_the_chain_still_verifies
         engine=p.engine,
         repository=p.repository,
         authorizations=p.store,
+        approvals=p.approvals,
+        results=p.results,
         audit=p.audit,
         clock=p.clock,
         ids=p.ids,
@@ -230,10 +257,12 @@ async def test_the_approval_flow_on_sqlite_consumes_the_grant_atomically_and_ver
     assert asked.task.state is TaskState.WAITING_APPROVAL
     assert asked.approval is not None
     p.clock.advance(timedelta(minutes=1))
-    approval = granted(asked.approval, at=p.clock.now())
+    approval = await p.approvals.respond(
+        asked.approval.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=p.clock.now()
+    )
     await p.engine.approve(task_id, approval)
     await p.engine.start(task_id)
-    execution = await p.executor.execute(task_id, step.id, arguments, approval=approval)
+    execution = await p.executor.execute(task_id, step.id, arguments)
     assert execution.authorization is not None
     assert await p.store.uses(execution.authorization.id) == 1
     assert execution.graph.states[step.id] is StepState.COMPLETED
@@ -283,3 +312,171 @@ async def test_a_verification_row_altered_behind_the_adapter_breaks_the_chain(
         )
     with pytest.raises(AuditChainError):
         await verify_chain(engine)
+
+
+# --------------------------------------------------------------------------------------
+# Crashes between writes, on SQLite, with the chain verified after every retry (ADR 0015 §8)
+# --------------------------------------------------------------------------------------
+
+
+class CrashingSqlPipeline(SqlPipeline):
+    """The SQL pipeline with every port that writes wrapped so that one write can die."""
+
+    def __init__(self, engine: AsyncEngine, workspace: Path) -> None:
+        super().__init__(engine, workspace)
+        self.crashes = Crashes(
+            Crashing(self.audit, "append"),
+            Crashing(self.repository, "save", "append_event"),
+            Crashing(self.results, "add"),
+            Crashing(self.approvals, "add"),
+        )
+        self.audit = self.crashes.audit  # type: ignore[assignment]
+        self.repository = self.crashes.repository  # type: ignore[assignment]
+        self.results = self.crashes.results  # type: ignore[assignment]
+        self.approvals = self.crashes.approvals  # type: ignore[assignment]
+        self.guardian = PermissionGuardian(self.registry, self.clock, self.ids, self.audit)
+        self.engine = TaskEngine(
+            self.repository,
+            self.audit,
+            self.clock,
+            self.ids,
+            approvals=self.approvals,
+            actor=ELA,
+            orphan_after=ORPHAN_AFTER,
+        )
+        self.executor = Executor(
+            registry=self.registry,
+            tools=self.tools,
+            verifiers=self.verifiers,
+            guardian=self.guardian,
+            engine=self.engine,
+            repository=self.repository,
+            authorizations=self.store,
+            approvals=self.approvals,
+            results=self.results,
+            audit=self.audit,
+            clock=self.clock,
+            ids=self.ids,
+            actor=ELA,
+        )
+
+
+@pytest.fixture
+def cp(engine: AsyncEngine, tmp_path: Path) -> CrashingSqlPipeline:
+    return CrashingSqlPipeline(engine, tmp_path / "workspace")
+
+
+async def approved(cp: CrashingSqlPipeline) -> tuple[Any, Any, dict[str, str]]:
+    """Ask, answer, resume: an EXECUTING task whose RUNNING step has a GRANTED request."""
+    step, task_id = await cp.running(WORKSPACE_WRITE_NOTE, requires_authorization=True)
+    arguments = {"path": NOTE_PATH, "body": "hi"}
+    asked = await cp.executor.execute(task_id, step.id, arguments)
+    assert asked.approval is not None
+    cp.clock.advance(timedelta(minutes=1))
+    answer = await cp.approvals.respond(
+        asked.approval.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=cp.clock.now()
+    )
+    await cp.engine.approve(task_id, answer)
+    await cp.engine.start(task_id)
+    return step, task_id, arguments
+
+
+REPAIRED_ON_THE_WAY_TO_COMPLETED = {
+    "1: AUTHORIZATION_GRANTED": lambda c: c.audit.arm("append", audit_of(E.AUTHORIZATION_GRANTED)),
+    "7b: TOOL_EXECUTED": lambda c: c.audit.arm("append", audit_of(E.TOOL_EXECUTED)),
+    "8a: EXECUTION_VERIFIED": lambda c: c.audit.arm("append", audit_of(E.EXECUTION_VERIFIED)),
+    "8b: STEP_COMPLETED": lambda c: c.repository.arm(
+        "append_event", trail_of(TaskEventType.STEP_COMPLETED)
+    ),
+}
+
+
+@pytest.mark.parametrize("window", sorted(REPAIRED_ON_THE_WAY_TO_COMPLETED))
+async def test_a_crash_on_the_way_to_completed_is_repaired_by_the_retry_on_sqlite(
+    cp: CrashingSqlPipeline, engine: AsyncEngine, window: str
+) -> None:
+    step, task_id, arguments = await approved(cp)
+    REPAIRED_ON_THE_WAY_TO_COMPLETED[window](cp.crashes)
+    with pytest.raises(SimulatedCrash):
+        await cp.executor.execute(task_id, step.id, arguments)
+    assert (await verify_chain(engine)).length == len(await cp.types(task_id))
+    cp.crashes.disarm()
+    execution = await cp.executor.execute(task_id, step.id, arguments)
+    assert execution.graph.states[step.id] is StepState.COMPLETED
+    assert (cp.workspace / NOTE_PATH).read_text(encoding="utf-8") == "hi"
+    types = await cp.types(task_id)
+    for event_type in (
+        E.AUTHORIZATION_GRANTED,
+        E.TOOL_EXECUTED,
+        E.EXECUTION_VERIFIED,
+        E.STEP_COMPLETED,
+    ):
+        assert types.count(event_type) == 1, event_type
+    assert types[-4:] == [
+        E.PERMISSION_DECIDED,
+        E.TOOL_EXECUTED,
+        E.EXECUTION_VERIFIED,
+        E.STEP_COMPLETED,
+    ]
+    assert types.count(E.PERMISSION_DECIDED) == 2  # the request, then the run: never a third
+    (stored,) = await cp.results.for_step(task_id, step.id)
+    executed = next(
+        e for e in await cp.audit.read(task_id=task_id) if e.event_type is E.TOOL_EXECUTED
+    )
+    assert executed.payload["result_id"] == str(stored.id)
+    assert executed.authorization_id == stored.authorization_id is not None
+    assert (await verify_chain(engine)).length == len(types)
+    await cp.engine.complete(task_id, result_for(task_id))
+    assert (await verify_chain(engine)).length == len(types) + 1
+
+
+async def test_window_5_on_sqlite_the_stored_request_is_asked_once(
+    cp: CrashingSqlPipeline, engine: AsyncEngine
+) -> None:
+    step, task_id = await cp.running(WORKSPACE_WRITE_NOTE, requires_authorization=True)
+    arguments = {"path": NOTE_PATH, "body": "hi"}
+    cp.crashes.repository.arm("save", saved_as(TaskState.WAITING_APPROVAL))
+    with pytest.raises(SimulatedCrash):
+        await cp.executor.execute(task_id, step.id, arguments)
+    (stored,) = await cp.approvals.for_task(task_id)
+    cp.crashes.disarm()
+    execution = await cp.executor.execute(task_id, step.id, arguments)
+    assert execution.decision is None and execution.approval == stored
+    assert execution.task.state is TaskState.WAITING_APPROVAL
+    assert await cp.approvals.pending() == (stored,)
+    types = await cp.types(task_id)
+    assert types.count(E.PERMISSION_DECIDED) == 1 and types[-1] is E.APPROVAL_REQUESTED
+    assert (await verify_chain(engine)).length == len(types)
+
+
+async def test_window_7a_on_sqlite_the_note_is_written_and_the_spent_grant_asks_again(
+    cp: CrashingSqlPipeline, engine: AsyncEngine
+) -> None:
+    """Declared: the effect is on disk, nothing is stored, the single-use grant was spent."""
+    step, task_id, arguments = await approved(cp)
+    cp.crashes.results.arm("add")
+    with pytest.raises(SimulatedCrash):
+        await cp.executor.execute(task_id, step.id, arguments)
+    assert (cp.workspace / NOTE_PATH).read_text(encoding="utf-8") == "hi"
+    assert await cp.results.for_step(task_id, step.id) == ()
+    cp.crashes.disarm()
+    execution = await cp.executor.execute(task_id, step.id, arguments)
+    assert execution.task.state is TaskState.WAITING_APPROVAL
+    assert execution.approval is not None and "used 1 of 1 times" in execution.approval.prompt
+    assert len(await cp.approvals.for_task(task_id)) == 2
+    assert (await verify_chain(engine)).length == len(await cp.types(task_id))
+
+
+async def test_window_9_on_sqlite_is_the_engines_hole_and_the_chain_still_verifies(
+    cp: CrashingSqlPipeline, engine: AsyncEngine
+) -> None:
+    step, task_id, arguments = await approved(cp)
+    cp.crashes.audit.arm("append", audit_of(E.STEP_COMPLETED))
+    with pytest.raises(SimulatedCrash):
+        await cp.executor.execute(task_id, step.id, arguments)
+    cp.crashes.disarm()
+    with pytest.raises(ExecutorError, match="is COMPLETED, not RUNNING"):
+        await cp.executor.execute(task_id, step.id, arguments)
+    types = await cp.types(task_id)
+    assert E.STEP_COMPLETED not in types and types[-1] is E.EXECUTION_VERIFIED
+    assert (await verify_chain(engine)).length == len(types)

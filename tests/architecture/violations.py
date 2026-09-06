@@ -428,6 +428,23 @@ VIOLATIONS: tuple[Case, ...] = (
         ".complete_step(",
     ),
     Case(
+        "approval-answered-by-the-executor",
+        "approval-responders",
+        "executive/executor.py",
+        "class X:\n"
+        "    async def run(self, a):\n"
+        "        return await self._approvals.respond(a, status=1, responded_by='ela', now=0)\n",
+        ".respond(",
+    ),
+    Case(
+        "approval-answered-by-tasks",
+        "approval-responders",
+        "tasks/answers.py",
+        "async def run(store, a):\n"
+        "    return await store.respond(a, status=1, responded_by='x', now=0)\n",
+        ".respond(",
+    ),
+    Case(
         "verifier-opens-for-writing",
         "verifier-read-only",
         "tools/verifiers.py",
@@ -515,6 +532,15 @@ VIOLATIONS: tuple[Case, ...] = (
 
 ALLOWED: tuple[Case, ...] = (
     Case("domain-stdlib-pydantic", "domain", "domain.py", "import enum\nimport pydantic\n", ""),
+    Case(
+        "approval-store-defines-respond",
+        "approval-responders",
+        "infrastructure/persistence/answers.py",
+        "class S:\n"
+        "    async def respond(self, a, *, status, responded_by, now):\n"
+        "        return a\n",
+        "",
+    ),
     Case("ports-domain", "ports", "ports.py", "from ela.domain import Task\nimport typing\n", ""),
     Case("ports-domain-relative", "ports", "ports.py", "from . import domain\n", ""),
     Case("infra-providers", "infra-libraries", "providers/claude.py", "import anthropic\n", ""),

@@ -83,6 +83,9 @@ class WriteNoteTool(Tool):
         }
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes"})
+    idempotent: ClassVar[bool] = True
+    """The note is overwritten with the same body: writing it twice leaves the same file, which
+    is what makes the retry of crash window 7a harmless (ADR 0015 §8)."""
 
     def __init__(
         self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = NOTES_TOOL_NAME
