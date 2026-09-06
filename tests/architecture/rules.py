@@ -85,6 +85,46 @@ AUTHORIZATION_READER = PERSISTENCE_MAPPERS
 EXECUTOR_MODULE = Path("executive") / "executor.py"
 EXECUTE_METHOD = "execute"
 SQL_EXECUTORS = frozenset({"session", "connection", "cursor"})
+# Rule 17 (ADR 0014 §9): only the executor completes a step, and only after verification.
+COMPLETE_STEP_METHOD = "complete_step"
+# Rule 18 (ADR 0014 §10): the module of the verifiers, and the shared path classification the
+# tool and the verifier both use, have no path that writes.
+VERIFIERS_MODULE = Path("tools") / "verifiers.py"
+PATHS_MODULE = Path("tools") / "paths.py"
+READ_ONLY_MODULES = (VERIFIERS_MODULE, PATHS_MODULE)
+OPENERS = frozenset({"open", "fdopen"})
+WRITING_OPEN_MODES = frozenset("wax+")
+WRITING_OPEN_FLAGS = frozenset({"O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND", "O_EXCL"})
+WRITING_CALLS = frozenset(
+    {
+        "write",
+        "writelines",
+        "unlink",
+        "remove",
+        "removedirs",
+        "rename",
+        "replace",
+        "rmdir",
+        "mkdir",
+        "makedirs",
+        "write_text",
+        "write_bytes",
+        "touch",
+        "chmod",
+        "chown",
+        "symlink",
+        "link",
+        "truncate",
+        "ftruncate",
+        "utime",
+        "rmtree",
+        "copy",
+        "copyfile",
+        "copytree",
+        "move",
+    }
+)
+SHUTIL = "shutil"
 
 
 @dataclass(frozen=True)
@@ -598,6 +638,109 @@ def _is_sql_executor(receiver: ast.expr) -> bool:
     return isinstance(receiver, ast.Name) and receiver.id in SQL_EXECUTORS
 
 
+def check_step_completers(pkg_root: Path) -> list[Violation]:
+    """Rule 17: outside ``executive/executor.py`` nobody calls ``<x>.complete_step(...)`` (ADR
+    0014 §9).
+
+    A step is COMPLETED only after its result was verified (§63), and the verification happens
+    in one place, the executor; a second caller of ``complete_step`` would be a second place to
+    complete a step on the tool's word alone. The definition in ``tasks/engine.py`` is not a
+    call and is not reported. A heuristic on names, like rule 16.
+    """
+    rule = "step-completed-only-by-the-executor"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) == EXECUTOR_MODULE:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f".{COMPLETE_STEP_METHOD}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == COMPLETE_STEP_METHOD
+        )
+    return found
+
+
+def check_verifier_read_only(pkg_root: Path) -> list[Violation]:
+    """Rule 18: ``tools/verifiers.py`` and ``tools/paths.py`` have no path that writes (ADR 0014
+    §10, decision I; review of M5.2 for the shared classification).
+
+    A verifier is read-only by construction: it looks at the world and changes nothing, and so
+    is the path classification it shares with the tool. Reported in those modules:
+    ``open``/``fdopen`` in a writing mode (``w``, ``a``, ``x``, ``+``) or with a mode that is not
+    a literal; ``os.open`` with a writing flag (``O_WRONLY``, ``O_RDWR``, ``O_CREAT``, ``O_TRUNC``,
+    ``O_APPEND``, ``O_EXCL``); any call named after a write — ``write``, ``unlink``, ``rename``,
+    ``mkdir``, ``chmod``, ``write_text``… (:data:`WRITING_CALLS`) — and any call through
+    ``shutil``. Closed-world on names, like rules 5, 11, 12, 15 and 16.
+    """
+    rule = "verifier-read-only"
+    found: list[Violation] = []
+    for relative in READ_ONLY_MODULES:
+        path = pkg_root / relative
+        if not path.is_file():
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f"{callee}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            for callee in [_callee(node.func)]
+            if _writes(node, callee)
+        )
+    return found
+
+
+def _callee(function: ast.expr) -> str:
+    if isinstance(function, ast.Name):
+        return function.id
+    if isinstance(function, ast.Attribute):
+        return f".{function.attr}"
+    return ""
+
+
+def _writes(call: ast.Call, callee: str) -> bool:
+    """Whether ``call`` may write, by the name of what it calls and its mode or flags."""
+    bare = callee.lstrip(".")
+    if bare in OPENERS:
+        if callee == ".open":  # os.open(path, flags): the flags say
+            return _has_writing_flag(_argument(call, 1, "flags"))
+        return _is_writing_mode(_argument(call, 1, "mode"))
+    if bare in WRITING_CALLS:
+        return True
+    receiver = call.func.value if isinstance(call.func, ast.Attribute) else None
+    return isinstance(receiver, ast.Name) and receiver.id == SHUTIL
+
+
+def _argument(call: ast.Call, position: int, keyword: str) -> ast.expr | None:
+    for item in call.keywords:
+        if item.arg == keyword:
+            return item.value
+    return call.args[position] if len(call.args) > position else None
+
+
+def _is_writing_mode(mode: ast.expr | None) -> bool:
+    if mode is None:
+        return False  # the default mode of ``open`` reads
+    if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
+        return any(letter in WRITING_OPEN_MODES for letter in mode.value)
+    return True  # a mode that is not a literal is a doubt
+
+
+def _has_writing_flag(flags: ast.expr | None) -> bool:
+    if flags is None:
+        return True  # ``os.open`` without flags is not a call this module may make
+    for node in ast.walk(flags):
+        if isinstance(node, ast.Attribute) and node.attr in WRITING_OPEN_FLAGS:
+            return True
+        if isinstance(node, ast.Name) and node.id in WRITING_OPEN_FLAGS:
+            return True
+    return False
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -615,4 +758,6 @@ RULES: dict[str, Rule] = {
     "decide-callers": check_decide_callers,
     "authorization-builders": check_authorization_builders,
     "tool-execute-callers": check_tool_execute_callers,
+    "step-completers": check_step_completers,
+    "verifier-read-only": check_verifier_read_only,
 }

@@ -411,6 +411,106 @@ VIOLATIONS: tuple[Case, ...] = (
         "async def run(tool, d, a):\n    return await tool.execute(d, a)\n",
         ".execute(",
     ),
+    Case(
+        "step-completed-by-another-executive-module",
+        "step-completers",
+        "executive/orchestrator.py",
+        "class O:\n"
+        "    async def run(self, t, s, r):\n"
+        "        return await self._engine.complete_step(t, s, r)\n",
+        ".complete_step(",
+    ),
+    Case(
+        "step-completed-by-tasks",
+        "step-completers",
+        "tasks/runner.py",
+        "async def run(engine, t, s, r):\n    return await engine.complete_step(t, s, r)\n",
+        ".complete_step(",
+    ),
+    Case(
+        "verifier-opens-for-writing",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "def w(p):\n    with open(p, 'w') as h:\n        return h\n",
+        "open(",
+    ),
+    Case(
+        "verifier-opens-with-a-variable-mode",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "def w(p, m):\n    return open(p, mode=m)\n",
+        "open(",
+    ),
+    Case(
+        "verifier-os-opens-for-writing",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "import os\ndef w(p):\n    return os.open(p, os.O_WRONLY | os.O_CREAT)\n",
+        ".open(",
+    ),
+    Case(
+        "verifier-fdopens-for-writing",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "import os\ndef w(fd):\n    return os.fdopen(fd, 'wb')\n",
+        ".fdopen(",
+    ),
+    Case(
+        "verifier-writes-a-descriptor",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "import os\ndef w(fd):\n    return os.write(fd, b'x')\n",
+        ".write(",
+    ),
+    Case(
+        "verifier-unlinks",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "import os\ndef w(p):\n    os.unlink(p)\n",
+        ".unlink(",
+    ),
+    Case(
+        "verifier-renames",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "from pathlib import Path\ndef w(p, q):\n    Path(p).rename(q)\n",
+        ".rename(",
+    ),
+    Case(
+        "verifier-writes-text",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "from pathlib import Path\ndef w(p):\n    Path(p).write_text('')\n",
+        ".write_text(",
+    ),
+    Case(
+        "verifier-makes-a-directory",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "from pathlib import Path\ndef w(p):\n    Path(p).mkdir(parents=True)\n",
+        ".mkdir(",
+    ),
+    Case(
+        "verifier-uses-shutil",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "import shutil\ndef w(p, q):\n    shutil.copymode(p, q)\n",
+        ".copymode(",
+    ),
+    Case(
+        "path-classification-unlinks",
+        "verifier-read-only",
+        "tools/paths.py",
+        "import os\ndef w(p):\n    os.unlink(p)\n",
+        ".unlink(",
+    ),
+    Case(
+        "path-classification-touches",
+        "verifier-read-only",
+        "tools/paths.py",
+        "from pathlib import Path\ndef w(p):\n    Path(p).touch()\n",
+        ".touch(",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -649,6 +749,53 @@ ALLOWED: tuple[Case, ...] = (
         "class T:\n"
         "    async def execute(self, decision, arguments):\n"
         "        return run(decision, arguments)\n",
+        "",
+    ),
+    Case(
+        "step-completed-by-the-executor",
+        "step-completers",
+        "executive/executor.py",
+        "async def run(engine, t, s, r):\n    return await engine.complete_step(t, s, r)\n",
+        "",
+    ),
+    Case(
+        "complete-step-defined-by-the-engine",
+        "step-completers",
+        "tasks/engine2.py",
+        "class E:\n    async def complete_step(self, t, s, r):\n        return r\n",
+        "",
+    ),
+    Case(
+        "verifier-reads-only",
+        "verifier-read-only",
+        "tools/verifiers.py",
+        "import os\n"
+        "def r(p):\n"
+        "    d = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)\n"
+        "    with os.fdopen(d, 'rb') as h:\n"
+        "        return h.read()\n"
+        "def s(p):\n"
+        "    with open(p, 'rb') as h, open(p) as g:\n"
+        "        return h.read() + g.read()\n"
+        "def t(p):\n"
+        "    return os.lstat(p).st_mode, os.fstat(3)\n",
+        "",
+    ),
+    Case(
+        "writes-outside-the-verifiers-module",
+        "verifier-read-only",
+        "tools/extra.py",
+        "import os\ndef w(p):\n    os.unlink(p)\n",
+        "",
+    ),
+    Case(
+        "path-classification-reads-only",
+        "verifier-read-only",
+        "tools/paths.py",
+        "from pathlib import Path\n"
+        "def c(root, p):\n"
+        "    t = Path(root) / p\n"
+        "    return t.resolve(), t.is_symlink(), t.lstat().st_mode\n",
         "",
     ),
 )

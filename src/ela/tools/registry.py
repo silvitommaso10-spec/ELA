@@ -1,10 +1,13 @@
-"""The registry of tools (spec §28; ADR 0013 §10): one tool per capability, fixed at construction.
+"""The registries of tools and verifiers (spec §28, §63; ADR 0013 §10, ADR 0014 §2).
 
-:class:`ToolRegistry` implements :class:`~ela.ports.ToolRegistryPort`. Like the capability
-catalogue (ADR 0010 §1) it has no way to change after it is built: what ELA can *execute* is
-decided when the registry is, and a tool registered under a capability is keyed by its own
-``capability_id`` — there is no argument through which a tool could claim another one.
-:func:`tools_v01` builds the tools of this milestone, the mirror of ``catalogue_v01``.
+:class:`ToolRegistry` implements :class:`~ela.ports.ToolRegistryPort` and
+:class:`VerifierRegistry` implements :class:`~ela.ports.VerifierRegistryPort`: one entry per
+capability, fixed at construction. Like the capability catalogue (ADR 0010 §1) neither has a
+way to change after it is built: what ELA can *execute* and what it can *verify* are decided
+when the registries are, and every entry is keyed by its own ``capability_id`` — there is no
+argument through which a tool or a verifier could claim another capability.
+:func:`tools_v01` and :func:`verifiers_v01` build the pairs of this version, mirrors of
+``catalogue_v01``: every tool has its verifier, and a capability without both is not executable.
 """
 
 from __future__ import annotations
@@ -14,12 +17,13 @@ from pathlib import Path
 from types import MappingProxyType
 
 from ela.domain import CapabilityId
-from ela.ports import AlreadyExistsError, Clock, IdGenerator, ToolPort
+from ela.ports import AlreadyExistsError, Clock, IdGenerator, ToolPort, VerifierPort
 from ela.tools.echo import EchoTool
-from ela.tools.errors import ToolNotFound
+from ela.tools.errors import ToolNotFound, VerifierNotFound
 from ela.tools.notes import WriteNoteTool
+from ela.tools.verifiers import EchoVerifier, WriteNoteVerifier
 
-__all__ = ["ToolRegistry", "tools_v01"]
+__all__ = ["ToolRegistry", "VerifierRegistry", "tools_v01", "verifiers_v01"]
 
 
 class ToolRegistry:
@@ -47,9 +51,43 @@ class ToolRegistry:
         return tuple(self._tools.values())
 
 
+class VerifierRegistry:
+    """Verifiers by capability id, frozen at construction (port ``VerifierRegistryPort``)."""
+
+    __slots__ = ("_verifiers",)
+
+    def __init__(self, verifiers: Iterable[VerifierPort]) -> None:
+        table: dict[CapabilityId, VerifierPort] = {}
+        for verifier in verifiers:
+            if verifier.capability_id in table:
+                raise AlreadyExistsError("verifier", verifier.capability_id)
+            table[verifier.capability_id] = verifier
+        self._verifiers: Mapping[CapabilityId, VerifierPort] = MappingProxyType(table)
+
+    def get(self, capability_id: CapabilityId) -> VerifierPort:
+        """The verifier of this capability; :class:`VerifierNotFound` if there is none."""
+        try:
+            return self._verifiers[capability_id]
+        except KeyError:
+            raise VerifierNotFound(capability_id) from None
+
+    def verifiers(self) -> tuple[VerifierPort, ...]:
+        """Every verifier, in construction order."""
+        return tuple(self._verifiers.values())
+
+
 def tools_v01(*, root: Path | str, clock: Clock, ids: IdGenerator) -> ToolRegistry:
     """The tools of v0.1 that run without a provider: ``core.echo`` and ``workspace.write_note``.
 
     ``model.complete`` has no tool yet (M7.2): the executor refuses it before any decision.
     """
     return ToolRegistry((EchoTool(clock, ids), WriteNoteTool(root, clock, ids)))
+
+
+def verifiers_v01(*, root: Path | str) -> VerifierRegistry:
+    """The verifiers of the tools of :func:`tools_v01`, on the same workspace ``root``.
+
+    No clock and no id source: a verifier creates no entity. ``model.complete`` has no verifier,
+    as it has no tool.
+    """
+    return VerifierRegistry((EchoVerifier(), WriteNoteVerifier(root)))

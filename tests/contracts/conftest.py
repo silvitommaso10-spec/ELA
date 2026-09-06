@@ -27,6 +27,8 @@ from ela.ports import (
     TaskRepository,
     ToolPort,
     ToolRegistryPort,
+    VerifierPort,
+    VerifierRegistryPort,
 )
 from tests.contracts.implementations import Implementation, implementations_of
 
@@ -110,6 +112,20 @@ async def tool_registry(request: pytest.FixtureRequest) -> AsyncIterator[ToolReg
 async def tool(request: pytest.FixtureRequest) -> AsyncIterator[ToolPort]:
     async for instance in _instance(request.param):
         yield cast(ToolPort, instance)
+
+
+@pytest.fixture(params=implementations_of(VerifierRegistryPort), ids=str)
+async def verifier_registry(
+    request: pytest.FixtureRequest,
+) -> AsyncIterator[VerifierRegistryPort]:
+    async for instance in _instance(request.param):
+        yield cast(VerifierRegistryPort, instance)
+
+
+@pytest.fixture(params=implementations_of(VerifierPort), ids=str)
+async def verifier(request: pytest.FixtureRequest) -> AsyncIterator[VerifierPort]:
+    async for instance in _instance(request.param):
+        yield cast(VerifierPort, instance)
 
 
 @pytest.fixture(params=implementations_of(ModelProvider), ids=str)

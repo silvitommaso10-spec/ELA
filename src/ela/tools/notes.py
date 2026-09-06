@@ -6,16 +6,13 @@ ADR 0011 §4); this tool decides whether it lies within the **workspace** — th
 boundaries are checked by two components on purpose (§28: a tool never trusts its caller): the
 scope protects the folder, the tool protects the filesystem.
 
-Four checks, in order, each a FAILED result with its code and nothing written (ADR 0013 §12):
-
-1. :data:`PATH_INVALID` — ``path`` is a relative POSIX path with no empty, ``.`` or ``..``
-   segment, no backslash, no NUL. ``a/../b`` is refused even though it would resolve inside:
-   traversal is refused as a *shape*, not as an outcome.
-2. :data:`PATH_SYMLINK` — no existing component of ``root / path`` is a symbolic link, whether
-   it points inside or outside the workspace: writing *through* a link is a doubt.
-3. :data:`PATH_OUTSIDE_WORKSPACE` — the resolved target is not under the resolved root: the
-   safety net behind 1 and 2.
-4. :data:`PATH_IS_DIRECTORY` — the target exists and is a directory.
+Where the path leads is classified by :mod:`ela.tools.paths`, once for this tool and for its
+verifier (ADR 0014 §2): one order, one set of codes, so the two cannot disagree on a path. Each
+refusal is a FAILED result with its code and nothing written (ADR 0013 §12): :data:`PATH_INVALID`,
+:data:`PATH_OUTSIDE_WORKSPACE`, :data:`PATH_SYMLINK`, :data:`PATH_IS_DIRECTORY`; a target that
+cannot be reached or is not a regular file is :data:`IO_ERROR` with the reason — the tool's I/O
+failure code, the shared classification in the message. A missing target is what the tool
+creates.
 
 The file is then written with ``O_NOFOLLOW`` and mode ``0o600``, its directories with ``0o700``
 (§57, as the database directory), and overwritten if it exists: a note is rewritten, which is
@@ -33,46 +30,38 @@ from typing import ClassVar, Final
 from ela.domain import CapabilityId, JsonMapping
 from ela.ports import Clock, IdGenerator
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
+from ela.tools.paths import (
+    PATH_INVALID,
+    PATH_IS_DIRECTORY,
+    PATH_MISSING,
+    PATH_OUTSIDE_WORKSPACE,
+    PATH_SYMLINK,
+    classify,
+    resolve_workspace,
+)
 
 __all__ = [
     "DIRECTORY_MODE",
     "FILE_MODE",
     "IO_ERROR",
     "NOTES_TOOL_NAME",
-    "PATH_INVALID",
-    "PATH_IS_DIRECTORY",
-    "PATH_OUTSIDE_WORKSPACE",
-    "PATH_SYMLINK",
     "WORKSPACE_WRITE_NOTE",
     "WriteNoteTool",
-    "is_relative_note_path",
 ]
 
 WORKSPACE_WRITE_NOTE: Final = CapabilityId("workspace.write_note")
 NOTES_TOOL_NAME: Final = "workspace-notes"
 
-PATH_INVALID: Final = "path.invalid"
-PATH_SYMLINK: Final = "path.symlink"
-PATH_OUTSIDE_WORKSPACE: Final = "path.outside_workspace"
-PATH_IS_DIRECTORY: Final = "path.is_directory"
 IO_ERROR: Final = "io.error"
 
-FORBIDDEN_PARTS: Final[frozenset[str]] = frozenset({"", ".", ".."})
-FORBIDDEN_CHARACTERS: Final = ("\\", "\0")
+REFUSALS: Final[frozenset[str]] = frozenset(
+    {PATH_INVALID, PATH_OUTSIDE_WORKSPACE, PATH_SYMLINK, PATH_IS_DIRECTORY}
+)
+"""The path problems the tool names with their own code; the rest is :data:`IO_ERROR`."""
+
 DIRECTORY_MODE: Final = 0o700
 FILE_MODE: Final = 0o600
 OPEN_FLAGS: Final = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-
-
-def is_relative_note_path(path: str) -> bool:
-    """Whether ``path`` has the shape a note path must have (check 1).
-
-    Relative, with no empty, ``.`` or ``..`` segment, no backslash and no NUL: the syntax of a
-    scope entry (ADR 0010 §3), restated here because a tool imports nothing of the Guardian.
-    """
-    if any(character in path for character in FORBIDDEN_CHARACTERS):
-        return False
-    return not any(part in FORBIDDEN_PARTS for part in path.split("/"))
 
 
 class WriteNoteTool(Tool):
@@ -99,9 +88,8 @@ class WriteNoteTool(Tool):
         self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = NOTES_TOOL_NAME
     ) -> None:
         super().__init__(WORKSPACE_WRITE_NOTE, clock, ids, name=name)
-        directory = Path(root).expanduser().absolute()
-        directory.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
-        self._root = directory.resolve()
+        Path(root).expanduser().absolute().mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
+        self._root = resolve_workspace(root)
 
     @property
     def root(self) -> Path:
@@ -128,19 +116,9 @@ class WriteNoteTool(Tool):
         return Outcome({"path": path, "bytes": len(data)})
 
     def _refusal(self, path: str) -> Outcome | None:
-        """Checks 1–4 of the module docstring; the first that fails names itself."""
-        if not is_relative_note_path(path):
-            return Outcome(
-                {}, PATH_INVALID, f"{path!r} is not a relative path without '.', '..' or '\\'"
-            )
-        current = self._root
-        for part in path.split("/"):
-            current = current / part
-            if current.is_symlink():
-                return Outcome({}, PATH_SYMLINK, f"{path!r} goes through a symbolic link")
-        target = self._root / path
-        if not target.resolve().is_relative_to(self._root):
-            return Outcome({}, PATH_OUTSIDE_WORKSPACE, f"{path!r} resolves outside the workspace")
-        if target.is_dir():
-            return Outcome({}, PATH_IS_DIRECTORY, f"{path!r} is a directory")
-        return None
+        """The shared classification, read as a writer: a missing note is what gets written."""
+        problem = classify(self._root, path)
+        if problem is None or problem.code == PATH_MISSING:
+            return None
+        code = problem.code if problem.code in REFUSALS else IO_ERROR
+        return Outcome({}, code, problem.message(path))

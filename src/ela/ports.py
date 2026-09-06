@@ -26,8 +26,9 @@ comparison in ``tests/contracts/test_protocols.py`` covers what ``isinstance`` c
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 from uuid import UUID
 
 from ela.domain import (
@@ -38,7 +39,9 @@ from ela.domain import (
     CapabilitySpec,
     Device,
     DeviceId,
+    ErrorMetadata,
     ExecutionResult,
+    ExecutionStatus,
     JsonMapping,
     PermissionDecision,
     ProviderRequest,
@@ -72,7 +75,14 @@ __all__ = [
     "TaskRepository",
     "ToolPort",
     "ToolRegistryPort",
+    "VERIFICATION_NOT_SUCCEEDED",
+    "VERIFICATION_NO_CONDITIONS",
+    "VERIFICATION_UNKNOWN_CONDITION",
+    "VERIFICATION_WRONG_CAPABILITY",
+    "VerifierPort",
+    "VerifierRegistryPort",
     "check_limit",
+    "check_verifiable",
 ]
 
 
@@ -107,6 +117,69 @@ def check_limit(limit: int | None) -> None:
     """The ``limit`` rule of every windowed read: ``None`` or at least 1, else ``ValueError``."""
     if limit is not None and limit < 1:
         raise ValueError(f"limit must be None or >= 1, not {limit}")
+
+
+VERIFICATION_WRONG_CAPABILITY: Final = "verification.wrong_capability"
+"""``verify`` was given a result of another capability (contract of :class:`VerifierPort`)."""
+VERIFICATION_NOT_SUCCEEDED: Final = "verification.not_succeeded"
+"""``verify`` was given a result whose status is not ``SUCCEEDED``: nothing to verify."""
+VERIFICATION_NO_CONDITIONS: Final = "verification.no_conditions"
+"""``verify`` was given no condition: the empty truth is a doubt (§33)."""
+VERIFICATION_UNKNOWN_CONDITION: Final = "verification.unknown_condition"
+"""A condition outside the verifier's vocabulary: it cannot be checked, so it does not hold."""
+
+
+def check_verifiable(
+    capability_id: CapabilityId,
+    vocabulary: frozenset[str],
+    conditions: Sequence[str],
+    result: ExecutionResult,
+) -> tuple[ErrorMetadata, ...]:
+    """The preconditions every ``verify`` shares (contract of :class:`VerifierPort`): the
+    failures that stop a verification before any condition is looked at, or nothing.
+
+    A result of another capability, a result that did not succeed and an empty list of
+    conditions are each one failure; a condition outside ``vocabulary`` is one failure per
+    condition. The verifier then checks nothing else: a call that could not be verified is
+    reported as such, never as a pass (§33, §63).
+    """
+    if result.capability_id != capability_id:
+        return (
+            ErrorMetadata(
+                code=VERIFICATION_WRONG_CAPABILITY,
+                message=f"the result is about {result.capability_id}, not {capability_id}",
+                tool_name=result.tool_name,
+                details={"condition": None},
+            ),
+        )
+    if result.status is not ExecutionStatus.SUCCEEDED:
+        return (
+            ErrorMetadata(
+                code=VERIFICATION_NOT_SUCCEEDED,
+                message=f"the result is {result.status.value}, not SUCCEEDED: nothing to verify",
+                tool_name=result.tool_name,
+                details={"condition": None},
+            ),
+        )
+    if not conditions:
+        return (
+            ErrorMetadata(
+                code=VERIFICATION_NO_CONDITIONS,
+                message="no success condition to check: an unverifiable result is not a success",
+                tool_name=result.tool_name,
+                details={"condition": None},
+            ),
+        )
+    return tuple(
+        ErrorMetadata(
+            code=VERIFICATION_UNKNOWN_CONDITION,
+            message=f"{condition!r} is not a condition the verifier of {capability_id} can check",
+            tool_name=result.tool_name,
+            details={"condition": condition},
+        )
+        for condition in conditions
+        if condition not in vocabulary
+    )
 
 
 class AuthorizationNotUsableError(PortError):
@@ -450,6 +523,67 @@ class ToolRegistryPort(Protocol):
 
     def tools(self) -> tuple[ToolPort, ...]:
         """Every registered tool, in registration order."""
+
+
+# --------------------------------------------------------------------------------------
+# Verification (§20, §63)
+# --------------------------------------------------------------------------------------
+
+
+@runtime_checkable
+class VerifierPort(Protocol):
+    """Checks the world against the success conditions of a step (§20, §63; ADR 0014).
+
+    Execution is not proof of success: after the tool ran, the executor (M5) asks the verifier
+    of the capability whether each of the step's ``success_conditions`` holds, and only then
+    completes the step. A verifier is a separate object from the tool on purpose — a tool that
+    verified itself would be certifying its own claim — and it is **read-only**: it looks at the
+    filesystem, at the tool's output, at whatever the capability touched, and changes nothing.
+    Async because it reads.
+
+    ``conditions`` is the closed vocabulary this verifier can check: a plan (§13) names its
+    success conditions from it, as it names its arguments from the capability's schema.
+
+    Contract for every implementation of ``verify``, fail-safe on its own (§33): a result about
+    another capability, a result whose status is not ``SUCCEEDED``, an empty ``conditions`` (the
+    empty truth is a doubt) and a condition outside the vocabulary are each a failure with a
+    named code, never a pass and never an exception; a condition that holds produces nothing;
+    every failure carries ``details["condition"]``. An empty tuple means verified.
+    """
+
+    @property
+    def capability_id(self) -> CapabilityId:
+        """The capability whose results this verifier checks."""
+
+    @property
+    def name(self) -> str:
+        """How the verifier is named in audit events."""
+
+    @property
+    def conditions(self) -> frozenset[str]:
+        """The success conditions this verifier can check: the vocabulary a plan may use."""
+
+    async def verify(
+        self, conditions: Sequence[str], arguments: JsonMapping, result: ExecutionResult
+    ) -> tuple[ErrorMetadata, ...]:
+        """One failure per condition that does not hold, in the order given; empty if all hold."""
+
+
+@runtime_checkable
+class VerifierRegistryPort(Protocol):
+    """The verifiers ELA can consult, one per capability (§63; ADR 0014).
+
+    Synchronous and read-only, like :class:`ToolRegistryPort`, and keyed the same way: by the
+    verifier's own ``capability_id``; two verifiers for one capability at construction are an
+    :class:`AlreadyExistsError`. A capability with a tool but no verifier is not executable: the
+    executor refuses it before asking the Guardian (§63: what cannot be verified is not done).
+    """
+
+    def get(self, capability_id: CapabilityId) -> VerifierPort:
+        """The verifier of this capability; :class:`NotFoundError` if there is none."""
+
+    def verifiers(self) -> tuple[VerifierPort, ...]:
+        """Every registered verifier, in registration order."""
 
 
 # --------------------------------------------------------------------------------------

@@ -13,26 +13,31 @@ import pytest
 
 from ela.domain import (
     CapabilityId,
+    ErrorMetadata,
     ExecutionStatus,
     PermissionOutcome,
     ProviderRequest,
     RiskLevel,
 )
-from ela.ports import AlreadyExistsError, NotAllowedError
+from ela.ports import VERIFICATION_NOT_SUCCEEDED, AlreadyExistsError, NotAllowedError
 from ela.testing.fakes import (
     DEFAULT_START,
+    FAKE_CONDITION,
     FakeCapabilityRegistry,
     FakeClock,
     FakeIdGenerator,
     FakeModelProvider,
     FakePermissionGuardian,
     FakeTool,
+    FakeVerifier,
     GuardianCall,
     ToolCall,
+    VerifierCall,
 )
 from tests.domain.examples import (
     CAPABILITY_SPEC,
     ERROR_METADATA,
+    EXECUTION_RESULT,
     PERMISSION_DECISION,
     PROVIDER_REQUEST,
     TASK,
@@ -191,6 +196,47 @@ def test_tool_default_output_is_empty() -> None:
     tool = FakeTool(WRITE_NOTE, FakeClock(), FakeIdGenerator())
     assert tool.name == "fake-tool"
     assert tool.capability_id == WRITE_NOTE
+
+
+# --------------------------------------------------------------------------------------
+# FakeVerifier
+# --------------------------------------------------------------------------------------
+
+
+SUCCEEDED = EXECUTION_RESULT.model_copy(update={"status": ExecutionStatus.SUCCEEDED, "error": None})
+MISMATCH = ErrorMetadata(code="fake.mismatch", message="differs", details={"actual_bytes": 0})
+
+
+def test_verifier_defaults_to_one_condition_that_holds() -> None:
+    verifier = FakeVerifier(WRITE_NOTE)
+    assert verifier.name == "fake-verifier"
+    assert verifier.capability_id == WRITE_NOTE
+    assert verifier.conditions == {FAKE_CONDITION}
+
+
+async def test_verifier_answers_from_its_table_and_names_the_condition() -> None:
+    verifier = FakeVerifier(WRITE_NOTE, conditions=("a.ok", "b.bad"), failures={"b.bad": MISMATCH})
+    failures = await verifier.verify(("a.ok", "b.bad", "a.ok"), ARGUMENTS, SUCCEEDED)
+    assert [f.code for f in failures] == ["fake.mismatch"]
+    assert failures[0].details == {"actual_bytes": 0, "condition": "b.bad"}
+    assert failures[0].message == MISMATCH.message
+    assert await verifier.verify(("a.ok",), ARGUMENTS, SUCCEEDED) == ()
+
+
+async def test_verifier_records_every_call_even_a_refused_one() -> None:
+    verifier = FakeVerifier(WRITE_NOTE)
+    refused = await verifier.verify((FAKE_CONDITION,), ARGUMENTS, EXECUTION_RESULT)  # FAILED
+    assert [f.code for f in refused] == [VERIFICATION_NOT_SUCCEEDED]
+    await verifier.verify((FAKE_CONDITION,), ARGUMENTS, SUCCEEDED)
+    assert verifier.calls == (
+        VerifierCall((FAKE_CONDITION,), ARGUMENTS, EXECUTION_RESULT),  # type: ignore[arg-type]
+        VerifierCall((FAKE_CONDITION,), ARGUMENTS, SUCCEEDED),  # type: ignore[arg-type]
+    )
+
+
+def test_verifier_refuses_a_failure_for_a_condition_it_does_not_know() -> None:
+    with pytest.raises(ValueError, match="outside the vocabulary"):
+        FakeVerifier(WRITE_NOTE, failures={"x.unknown": MISMATCH})
 
 
 # --------------------------------------------------------------------------------------

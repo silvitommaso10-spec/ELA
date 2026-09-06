@@ -39,8 +39,15 @@ REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),
     (ADR_DIR / "0012-authorizations.md", REPLACING),
 )
-INTRODUCING_ADRS: tuple[Source, ...] = ((ADR_DIR / "0013-executor.md", INTRODUCING),)
-"""ADRs that add whole ports (ADR 0013 §10): a port introduced must not exist already."""
+INTRODUCING_ADRS: tuple[Source, ...] = (
+    (ADR_DIR / "0013-executor.md", INTRODUCING),
+    (ADR_DIR / "0014-verification.md", INTRODUCING),
+)
+"""ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1): a port introduced must not exist
+already."""
+INTRODUCED_PORTS = frozenset(
+    {"AuthorizingGuardianPort", "ToolRegistryPort", "VerifierPort", "VerifierRegistryPort"}
+)
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")
 MEMBER = re.compile(r"`(\w+)`")
 
@@ -202,6 +209,19 @@ def test_the_executor_adr_introduces_two_ports_the_base_does_not_have() -> None:
     assert introduced["ToolRegistryPort"] == ("sync", frozenset({"get", "tools"}))
 
 
+def test_the_verification_adr_introduces_two_ports_the_base_does_not_have() -> None:
+    """ADR 0014 §1: the verifier and its registry are new ports, mirrors of the tool ones."""
+    base = documented_ports(ADR_PATH.read_text(encoding="utf-8"))
+    introduced = documented_ports(_text(INTRODUCING_ADRS[1]))
+    assert set(introduced) == {"VerifierPort", "VerifierRegistryPort"}
+    assert not (set(introduced) & set(base))
+    assert introduced["VerifierPort"] == (
+        "async",
+        frozenset({"capability_id", "name", "conditions", "verify"}),
+    )
+    assert introduced["VerifierRegistryPort"] == ("sync", frozenset({"get", "verifiers"}))
+
+
 def test_an_introduction_of_a_known_port_is_detected() -> None:
     base = "| `AuditLog` | §32 | async | `append`, `read` |"
     with pytest.raises(AssertionError, match="introduced twice"):
@@ -211,7 +231,7 @@ def test_an_introduction_of_a_known_port_is_detected() -> None:
     without = all_documented_ports(
         ADR_PATH.read_text(encoding="utf-8"), _read(EXTENDING_ADRS), _read(REPLACING_ADRS)
     )
-    assert set(coded_ports()) - set(without) == {"AuthorizingGuardianPort", "ToolRegistryPort"}
+    assert set(coded_ports()) - set(without) == INTRODUCED_PORTS
 
 
 def test_a_file_with_two_rows_for_one_port_must_be_read_by_section() -> None:

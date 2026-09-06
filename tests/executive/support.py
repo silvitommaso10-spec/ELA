@@ -1,10 +1,13 @@
-"""A world for the executor: fakes for the ports, the real Guardian and engine, fake tools.
+"""A world for the executor: fakes for the ports, the real Guardian and engine, fake tools and
+fake verifiers.
 
 The catalogue is the wide one of the Guardian tests (``tests/permissions/support.py``): it holds
 what production refuses — a HIGH capability, a guarded SAFE one — so the executor can be seen
-handling every outcome. ``model.complete`` is in the catalogue and has no tool, like production.
-Every task reaches EXECUTING and every step reaches RUNNING through the engine, never by writing
-the repository.
+handling every outcome. ``model.complete`` is in the catalogue and has neither tool nor
+verifier, like production. Every fake verifier knows two conditions: :data:`OK` holds,
+:data:`BAD` fails with :data:`BAD_FAILURE`, so a test chooses the verdict by choosing the
+step's ``success_conditions``. Every task reaches EXECUTING and every step reaches RUNNING
+through the engine, never by writing the repository.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from ela.domain import (
     AuthorizationId,
     CapabilityId,
     CapabilitySpec,
+    ErrorMetadata,
     IntentId,
     PlanId,
     RiskLevel,
@@ -35,7 +39,7 @@ from ela.domain import (
 )
 from ela.executive import Executor
 from ela.permissions import PermissionGuardian
-from ela.ports import AuthorizationStore, ToolPort
+from ela.ports import AuthorizationStore, ToolPort, VerifierPort
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
     FakeAuditLog,
@@ -46,6 +50,8 @@ from ela.testing.fakes import (
     FakeTaskRepository,
     FakeTool,
     FakeToolRegistry,
+    FakeVerifier,
+    FakeVerifierRegistry,
 )
 from tests.domain.examples import ELA_ACTOR, USER_INTENT
 from tests.permissions.support import CATALOGUE, COMPLETE
@@ -53,6 +59,17 @@ from tests.tasks.support import ORPHAN_AFTER
 
 TOOLED: tuple[CapabilitySpec, ...] = tuple(spec for spec in CATALOGUE if spec is not COMPLETE)
 """Every capability of the test catalogue but ``model.complete``, which has no tool (M7.2)."""
+
+OK = "fake.ok"
+"""A condition every fake verifier of the world knows, and that holds."""
+BAD = "fake.bad"
+"""A condition every fake verifier of the world knows, and that fails with :data:`BAD_FAILURE`."""
+BAD_FAILURE = ErrorMetadata(
+    code="fake.mismatch",
+    message="the world disagrees with the tool",
+    retryable=True,
+    details={"expected_bytes": 3, "actual_bytes": 0},
+)
 
 
 @dataclass
@@ -65,9 +82,11 @@ class World:
     registry: FakeCapabilityRegistry
     guardian: PermissionGuardian
     tools: FakeToolRegistry
+    verifiers: FakeVerifierRegistry
     engine: TaskEngine
     executor: Executor
     fake_tools: dict[CapabilityId, FakeTool] = field(default_factory=dict)
+    fake_verifiers: dict[CapabilityId, FakeVerifier] = field(default_factory=dict)
 
     @property
     def now(self) -> datetime:
@@ -76,12 +95,16 @@ class World:
     def tool(self, capability_id: CapabilityId) -> FakeTool:
         return self.fake_tools[capability_id]
 
+    def verifier(self, capability_id: CapabilityId) -> FakeVerifier:
+        return self.fake_verifiers[capability_id]
+
     async def running(
         self,
         capability_id: CapabilityId,
         *,
         requires_authorization: bool = False,
         capabilities: tuple[CapabilityId, ...] | None = None,
+        conditions: tuple[str, ...] = (OK,),
         goal: str = "run the capability",
     ) -> tuple[Task, TaskStep]:
         """An EXECUTING task whose one-step plan declares ``capability_id``, the step RUNNING."""
@@ -92,6 +115,7 @@ class World:
             required_capabilities=(capability_id,) if capabilities is None else capabilities,
             risk=RiskLevel.LOW,
             expected_result="done",
+            success_conditions=conditions,
             requires_authorization=requires_authorization,
         )
         intent = USER_INTENT.model_copy(update={"id": IntentId(self.ids.new_uuid())})
@@ -110,7 +134,9 @@ class World:
         await self.engine.start_step(task.id, step.id)
         return task, step
 
-    async def running_pair(self, capability_id: CapabilityId) -> tuple[Task, TaskStep, TaskStep]:
+    async def running_pair(
+        self, capability_id: CapabilityId, *, conditions: tuple[str, ...] = (OK,)
+    ) -> tuple[Task, TaskStep, TaskStep]:
         """Two steps, the second depending on the first; the first RUNNING, the second PENDING."""
         first = TaskStep(
             id=StepId(self.ids.new_uuid()),
@@ -119,6 +145,7 @@ class World:
             required_capabilities=(capability_id,),
             risk=RiskLevel.LOW,
             expected_result="done",
+            success_conditions=conditions,
             requires_authorization=False,
         )
         second = first.model_copy(
@@ -164,9 +191,24 @@ def fake_tools(clock: FakeClock, ids: FakeIdGenerator) -> dict[CapabilityId, Fak
     }
 
 
+def fake_verifier(capability_id: CapabilityId) -> FakeVerifier:
+    """A verifier for ``capability_id`` that knows :data:`OK` (holds) and :data:`BAD` (fails)."""
+    return FakeVerifier(
+        capability_id,
+        name=f"fake-{capability_id}-verifier",
+        conditions=(OK, BAD),
+        failures={BAD: BAD_FAILURE},
+    )
+
+
+def fake_verifiers() -> dict[CapabilityId, FakeVerifier]:
+    return {spec.id: fake_verifier(spec.id) for spec in TOOLED}
+
+
 def world(
     *,
     tools: Iterable[ToolPort] | None = None,
+    verifiers: Iterable[VerifierPort] | None = None,
     store: AuthorizationStore | None = None,
     **executor_options: Any,
 ) -> World:
@@ -177,10 +219,13 @@ def world(
     guardian = PermissionGuardian(registry, clock, ids, audit)
     fakes = fake_tools(clock, ids)
     tool_registry = FakeToolRegistry(fakes.values() if tools is None else tools)
+    checkers = fake_verifiers()
+    verifier_registry = FakeVerifierRegistry(checkers.values() if verifiers is None else verifiers)
     engine = TaskEngine(repository, audit, clock, ids, actor=ELA_ACTOR, orphan_after=ORPHAN_AFTER)
     executor = Executor(
         registry=registry,
         tools=tool_registry,
+        verifiers=verifier_registry,
         guardian=guardian,
         engine=engine,
         repository=repository,
@@ -200,9 +245,11 @@ def world(
         registry,
         guardian,
         tool_registry,
+        verifier_registry,
         engine,
         executor,
         fakes,
+        checkers,
     )
 
 

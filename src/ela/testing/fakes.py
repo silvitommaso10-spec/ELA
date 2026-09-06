@@ -16,7 +16,7 @@ the ports.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from types import MappingProxyType
 from typing import Final, NamedTuple
@@ -61,11 +61,14 @@ from ela.ports import (
     NotAllowedError,
     NotFoundError,
     ToolPort,
+    VerifierPort,
     check_limit,
+    check_verifiable,
 )
 
 __all__ = [
     "DEFAULT_START",
+    "FAKE_CONDITION",
     "FakeAuditLog",
     "FakeAuthorizationStore",
     "FakeCapabilityRegistry",
@@ -78,12 +81,18 @@ __all__ = [
     "FakeTaskRepository",
     "FakeTool",
     "FakeToolRegistry",
+    "FakeVerifier",
+    "FakeVerifierRegistry",
     "GuardianCall",
     "ToolCall",
+    "VerifierCall",
 ]
 
 DEFAULT_START: Final = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 """Where a :class:`FakeClock` starts unless told otherwise."""
+
+FAKE_CONDITION: Final = "fake.ok"
+"""The one condition a :class:`FakeVerifier` can check unless told otherwise; it holds."""
 
 
 # --------------------------------------------------------------------------------------
@@ -483,6 +492,98 @@ class FakeToolRegistry:
 
     def tools(self) -> tuple[ToolPort, ...]:
         return tuple(self._tools.values())
+
+
+# --------------------------------------------------------------------------------------
+# Verification
+# --------------------------------------------------------------------------------------
+
+
+class VerifierCall(NamedTuple):
+    """One verification a :class:`FakeVerifier` was asked, verbatim."""
+
+    conditions: tuple[str, ...]
+    arguments: JsonMapping
+    result: ExecutionResult
+
+
+class FakeVerifier:
+    """A verifier that answers from a table of failures (port :class:`~ela.ports.VerifierPort`).
+
+    ``conditions`` is its vocabulary; ``failures`` maps a condition to the failure it reports
+    (any other known condition holds). The preconditions of the contract come first, as for
+    every verifier: another capability, a result that did not succeed, no condition or an
+    unknown one are failures with the codes of :func:`~ela.ports.check_verifiable`. Every call
+    is recorded in ``calls``, whatever it answered; nothing is ever written anywhere.
+    """
+
+    def __init__(
+        self,
+        capability_id: CapabilityId,
+        *,
+        name: str = "fake-verifier",
+        conditions: Iterable[str] = (FAKE_CONDITION,),
+        failures: Mapping[str, ErrorMetadata] | None = None,
+    ) -> None:
+        self._capability_id = capability_id
+        self._name = name
+        self._conditions = frozenset(conditions)
+        self._failures: Mapping[str, ErrorMetadata] = MappingProxyType(
+            {} if failures is None else dict(failures)
+        )
+        unknown = set(self._failures) - self._conditions
+        if unknown:
+            raise ValueError(f"failures for conditions outside the vocabulary: {sorted(unknown)}")
+        self.calls: tuple[VerifierCall, ...] = ()
+
+    @property
+    def capability_id(self) -> CapabilityId:
+        return self._capability_id
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def conditions(self) -> frozenset[str]:
+        return self._conditions
+
+    async def verify(
+        self, conditions: Sequence[str], arguments: JsonMapping, result: ExecutionResult
+    ) -> tuple[ErrorMetadata, ...]:
+        self.calls = (*self.calls, VerifierCall(tuple(conditions), arguments, result))
+        refused = check_verifiable(self._capability_id, self._conditions, conditions, result)
+        if refused:
+            return refused
+        return tuple(
+            self._failures[condition].model_copy(
+                update={"details": {**self._failures[condition].details, "condition": condition}}
+            )
+            for condition in conditions
+            if condition in self._failures
+        )
+
+
+class FakeVerifierRegistry:
+    """Verifiers by capability id, fixed at construction (port
+    :class:`~ela.ports.VerifierRegistryPort`), keyed like :class:`FakeToolRegistry`."""
+
+    def __init__(self, verifiers: Iterable[VerifierPort] = ()) -> None:
+        table: dict[CapabilityId, VerifierPort] = {}
+        for verifier in verifiers:
+            if verifier.capability_id in table:
+                raise AlreadyExistsError("verifier", verifier.capability_id)
+            table[verifier.capability_id] = verifier
+        self._verifiers: Mapping[CapabilityId, VerifierPort] = MappingProxyType(table)
+
+    def get(self, capability_id: CapabilityId) -> VerifierPort:
+        try:
+            return self._verifiers[capability_id]
+        except KeyError:
+            raise NotFoundError("verifier", capability_id) from None
+
+    def verifiers(self) -> tuple[VerifierPort, ...]:
+        return tuple(self._verifiers.values())
 
 
 # --------------------------------------------------------------------------------------

@@ -13,12 +13,14 @@ from tests.architecture.rules import (
     AUTHORIZATION_BUILDERS_EXEMPT,
     AUTHORIZATION_MODEL,
     AUTHORIZATION_READER,
+    COMPLETE_STEP_METHOD,
     CORE_PACKAGES,
     DECIDE_METHOD,
     DECISION_MODEL,
     EXECUTE_METHOD,
     EXECUTOR_MODULE,
     ORM_PACKAGE,
+    PATHS_MODULE,
     PERMISSIONS_ALLOWED_EXTERNAL,
     PERMISSIONS_DIR,
     PERSISTENCE_MAPPERS,
@@ -27,6 +29,7 @@ from tests.architecture.rules import (
     STATE_MACHINE_MODULE,
     STEP_EVENT_PREFIX,
     TESTING_DIR,
+    VERIFIERS_MODULE,
     Rule,
     imported_modules,
 )
@@ -156,3 +159,22 @@ def test_the_executor_really_calls_a_tool_and_never_imports_the_tools() -> None:
     for path in sorted((PACKAGE_ROOT / "executive").rglob("*.py")):
         imported = [name for name, _ in imported_modules(path, PACKAGE_ROOT)]
         assert not any(name.startswith("ela.tools") for name in imported), path.name
+
+
+def test_the_executor_really_completes_steps_and_the_verifiers_really_read() -> None:
+    """Rule 17 would hold vacuously if the executor never called ``complete_step``; rule 18 if
+    the verifiers' module did not exist or never opened a file (ADR 0014 §9, §10)."""
+    executor = (PACKAGE_ROOT / EXECUTOR_MODULE).read_text(encoding="utf-8")
+    assert f".{COMPLETE_STEP_METHOD}(" in executor
+    verifiers = PACKAGE_ROOT / VERIFIERS_MODULE
+    assert verifiers.is_file()
+    source = verifiers.read_text(encoding="utf-8")
+    assert "os.open(" in source
+    assert "O_RDONLY" in source
+    assert "O_NOFOLLOW" in source
+    paths = PACKAGE_ROOT / PATHS_MODULE
+    assert paths.is_file()
+    classification = paths.read_text(encoding="utf-8")
+    assert ".resolve()" in classification
+    assert ".lstat()" in classification
+    assert ".is_symlink()" in classification

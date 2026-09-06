@@ -36,6 +36,8 @@ from ela.executive import (
     MAX_APPROVAL_TTL,
     TOOL_EXCEPTION,
     TOOL_REFUSED,
+    VERIFICATION_EXCEPTION,
+    VERIFICATION_FAILED,
     ExecutorError,
 )
 from ela.permissions import ApprovalMismatchError, Rule, authorization_from_approval
@@ -50,8 +52,18 @@ from ela.testing.fakes import (
     FakeClock,
     FakeIdGenerator,
     FakeTool,
+    FakeVerifier,
 )
-from tests.executive.support import World, grant_for, granted, world
+from tests.executive.support import (
+    BAD,
+    BAD_FAILURE,
+    OK,
+    World,
+    fake_verifier,
+    grant_for,
+    granted,
+    world,
+)
 from tests.permissions.support import (
     COMPLETE,
     COMPLETE_ARGS,
@@ -78,6 +90,8 @@ async def nothing_written(w: World, before: int) -> None:
     assert len(await w.events()) == before
     for tool in w.fake_tools.values():
         assert tool.calls == ()
+    for verifier in w.fake_verifiers.values():
+        assert verifier.calls == ()
 
 
 # --------------------------------------------------------------------------------------
@@ -170,6 +184,50 @@ async def test_a_capability_without_a_tool_is_refused_before_any_decision(w: Wor
     assert (await w.task(task.id)).state is TaskState.EXECUTING
 
 
+# --------------------------------------------------------------------------------------
+# What cannot be verified is not executed (ADR 0014 §3, decisions A and B)
+# --------------------------------------------------------------------------------------
+
+
+async def test_a_step_without_a_success_condition_is_refused(w: World) -> None:
+    task, step = await w.running(ECHO.id, conditions=())
+    before = len(await w.events())
+    with pytest.raises(ExecutorError, match="declares no success condition"):
+        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    await nothing_written(w, before)
+    assert (await w.task(task.id)).state is TaskState.EXECUTING
+
+
+async def test_a_condition_outside_the_verifiers_vocabulary_is_refused(w: World) -> None:
+    task, step = await w.running(ECHO.id, conditions=(OK, "made.up", "also.made_up"))
+    before = len(await w.events())
+    with pytest.raises(ExecutorError, match="made.up, also.made_up"):
+        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    await nothing_written(w, before)
+
+
+async def test_a_capability_without_a_verifier_is_refused_before_any_decision() -> None:
+    """The tool exists, the verifier does not: no decision, no grant spent, nothing run."""
+    w = world(verifiers=(fake_verifier(NOTE.id),))  # no verifier for core.echo
+    task, step = await w.running(GUARDED_ECHO.id)
+    policy = grant_for(GUARDED_ECHO, created_at=w.now, max_uses=1)
+    await w.store.grant(policy)
+    before = len(await w.events())
+    with pytest.raises(NotFoundError, match="verifier"):
+        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    assert len(await w.events()) == before
+    assert w.tool(GUARDED_ECHO.id).calls == ()
+    assert await w.store.uses(policy.id) == 0
+    assert E.PERMISSION_DECIDED not in await w.event_types(task.id)
+
+
+async def test_the_tool_is_looked_up_before_the_verifier() -> None:
+    w = world(tools=(), verifiers=())
+    task, step = await w.running(ECHO.id)
+    with pytest.raises(NotFoundError, match="tool"):
+        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+
+
 async def test_an_incoherent_approval_is_refused_before_anything(w: World) -> None:
     task, step = await w.running(GUARDED_NOTE.id)
     asked = await w.executor.execute(task.id, step.id, NOTE_ARGS)
@@ -229,9 +287,10 @@ async def test_allowed_runs_the_tool_records_it_and_completes_the_step(w: World)
         E.STEP_STARTED,
         E.PERMISSION_DECIDED,
         E.TOOL_EXECUTED,
+        E.EXECUTION_VERIFIED,
         E.STEP_COMPLETED,
     ]
-    executed = (await w.events(task.id))[-2]
+    executed = (await w.events(task.id))[-3]
     assert executed.actor.kind is ActorKind.ELA
     assert executed.decision_id == execution.decision.id
     assert executed.authorization_id is None
@@ -352,9 +411,10 @@ async def test_a_granted_approval_becomes_a_grant_that_is_recorded_consumed_and_
         E.AUTHORIZATION_GRANTED,
         E.PERMISSION_DECIDED,
         E.TOOL_EXECUTED,
+        E.EXECUTION_VERIFIED,
         E.STEP_COMPLETED,
     ]
-    recorded, _, executed, _ = (await w.events(task.id))[before:]
+    recorded, _, executed, verified, _ = (await w.events(task.id))[before:]
     assert recorded.actor.kind is ActorKind.USER and recorded.actor.id == "tommaso"
     assert recorded.authorization_id == grant.id
     assert recorded.decision_id == asked.id
@@ -376,6 +436,7 @@ async def test_a_granted_approval_becomes_a_grant_that_is_recorded_consumed_and_
     assert "prompt" not in json.dumps(recorded.model_dump(mode="json"))
     assert executed.authorization_id == grant.id
     assert executed.payload["uses"] == 1
+    assert verified.authorization_id == grant.id  # the same grant the run rested on
 
 
 async def test_the_grant_is_born_at_the_executors_now_and_consumed_at_the_decisions(
@@ -674,6 +735,265 @@ async def test_neither_arguments_nor_output_ever_enter_the_audit(w: World) -> No
 
 
 async def test_a_tool_refusal_and_a_raise_are_told_apart_from_a_denial(w: World) -> None:
-    """Sanity on the names: three different codes for three different facts."""
-    assert len({TOOL_EXCEPTION, TOOL_REFUSED, GRANT_VANISHED}) == 3
+    """Sanity on the names: five different codes for five different facts."""
+    assert (
+        len(
+            {
+                TOOL_EXCEPTION,
+                TOOL_REFUSED,
+                GRANT_VANISHED,
+                VERIFICATION_FAILED,
+                VERIFICATION_EXCEPTION,
+            }
+        )
+        == 5
+    )
     assert NotAllowedError is not RuntimeError
+
+
+# --------------------------------------------------------------------------------------
+# Verification: the tool's word is not enough (ADR 0014 §4–§8)
+# --------------------------------------------------------------------------------------
+
+
+async def test_a_passed_verification_completes_the_step_and_is_recorded(w: World) -> None:
+    task, step = await w.running(ECHO.id, conditions=(OK,))
+    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    assert execution.verification is not None
+    assert execution.verification.passed
+    assert execution.verification.conditions == (OK,)
+    assert execution.verification.failures == ()
+    assert execution.verification.error is None
+    assert execution.graph.states[step.id] is StepState.COMPLETED
+    assert execution.task.state is TaskState.EXECUTING
+    verifier = w.verifier(ECHO.id)
+    assert len(verifier.calls) == 1
+    assert verifier.calls[0].conditions == (OK,)
+    assert verifier.calls[0].arguments == ECHO_ARGS
+    assert verifier.calls[0].result == execution.result
+    executed, verified, completed = (await w.events(task.id))[-3:]
+    assert verified.event_type is E.EXECUTION_VERIFIED
+    assert completed.event_type is E.STEP_COMPLETED
+    assert verified.actor.kind is ActorKind.ELA
+    assert verified.decision_id == executed.decision_id == execution.decision.id
+    assert verified.authorization_id == executed.authorization_id is None
+    assert (verified.task_id, verified.step_id, verified.capability_id) == (
+        task.id,
+        step.id,
+        ECHO.id,
+    )
+    assert verified.tool_name == w.tool(ECHO.id).name
+    assert verified.device_id is None
+    assert verified.error is None
+    assert verified.summary == f"verify: passed core.echo by {verifier.name}"
+    assert execution.result is not None
+    assert verified.payload == {
+        "passed": True,
+        "result_id": str(execution.result.id),
+        "verifier": verifier.name,
+        "conditions": (OK,),
+        "failed": (),
+        "device": LOCAL_DEVICE,
+    }
+
+
+async def test_a_failed_verification_fails_the_step_and_the_task_with_the_metadata(
+    w: World,
+) -> None:
+    task, step = await w.running(ECHO.id, conditions=(BAD,))
+    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    assert execution.result is not None
+    assert execution.result.status is ExecutionStatus.SUCCEEDED  # the tool's word
+    assert len(w.tool(ECHO.id).calls) == 1
+    verification = execution.verification
+    assert verification is not None
+    assert not verification.passed
+    assert verification.conditions == (BAD,)
+    assert [f.code for f in verification.failures] == [BAD_FAILURE.code]
+    assert verification.failures[0].details["condition"] == BAD
+    assert execution.graph.states[step.id] is StepState.FAILED
+    assert execution.task.state is TaskState.FAILED
+    assert (await w.task(task.id)).state is TaskState.FAILED
+    assert (await w.event_types(task.id))[-4:] == [
+        E.TOOL_EXECUTED,
+        E.EXECUTION_VERIFIED,
+        E.STEP_FAILED,
+        E.TASK_FAILED,
+    ]
+    executed, verified, step_failed, task_failed = (await w.events(task.id))[-4:]
+    assert executed.payload["status"] == "SUCCEEDED"
+    error = verification.error
+    assert error is not None
+    assert verified.error == step_failed.error == task_failed.error == error
+    assert verified.payload["passed"] is False
+    assert verified.payload["failed"] == (BAD,)
+    assert verified.payload["conditions"] == (BAD,)
+    # §64, field by field
+    assert error.code == VERIFICATION_FAILED
+    assert error.message == (
+        f"1 of 1 success conditions failed for core.echo: {BAD} ({BAD_FAILURE.code})"
+    )
+    assert error.cause == BAD_FAILURE.message
+    assert error.tool_name == w.tool(ECHO.id).name
+    assert error.model is None
+    assert error.device_id is None
+    assert error.details["device"] == LOCAL_DEVICE
+    assert error.attempted_fix is None
+    assert error.successful_fix is None
+    assert error.retryable is BAD_FAILURE.retryable
+    assert error.details["conditions"] == (BAD,)
+    assert error.details["result_id"] == str(execution.result.id)
+    assert error.details["verifier"] == w.verifier(ECHO.id).name
+    (failure,) = error.details["failures"]
+    assert failure == {
+        "condition": BAD,
+        "code": BAD_FAILURE.code,
+        "message": BAD_FAILURE.message,
+        "retryable": True,
+        "details": {"expected_bytes": 3, "actual_bytes": 0},
+    }
+
+
+async def test_every_failed_condition_is_named_and_a_passed_one_is_not(w: World) -> None:
+    task, step = await w.running(ECHO.id, conditions=(OK, BAD))
+    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    assert execution.verification is not None
+    error = execution.verification.error
+    assert error is not None
+    assert error.message.startswith("1 of 2 success conditions failed for core.echo: ")
+    assert error.details["conditions"] == (OK, BAD)
+    assert [f["condition"] for f in error.details["failures"]] == [BAD]
+    verified = next(e for e in await w.events(task.id) if e.event_type is E.EXECUTION_VERIFIED)
+    assert verified.payload["failed"] == (BAD,)
+
+
+async def test_two_failed_conditions_make_one_error_with_two_failures() -> None:
+    worse = ErrorMetadata(code="fake.worse", message="and so does the sky", retryable=False)
+    verifier = FakeVerifier(
+        ECHO.id, conditions=(BAD, "fake.worse"), failures={BAD: BAD_FAILURE, "fake.worse": worse}
+    )
+    w = world(verifiers=(verifier,))
+    task, step = await w.running(ECHO.id, conditions=(BAD, "fake.worse"))
+    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    assert execution.verification is not None
+    error = execution.verification.error
+    assert error is not None
+    assert error.message.startswith("2 of 2 success conditions failed")
+    assert error.cause == f"{BAD_FAILURE.message}; {worse.message}"
+    assert error.retryable is False  # retryable only if every failure is
+    assert [f["condition"] for f in error.details["failures"]] == [BAD, "fake.worse"]
+    assert execution.task.state is TaskState.FAILED
+
+
+async def test_a_failed_verification_cancels_the_dependent_steps(w: World) -> None:
+    task, first, second = await w.running_pair(ECHO.id, conditions=(BAD,))
+    execution = await w.executor.execute(task.id, first.id, ECHO_ARGS)
+    assert execution.graph.states[first.id] is StepState.FAILED
+    assert execution.graph.states[second.id] is StepState.CANCELLED
+    assert execution.graph.is_blocked
+    assert execution.task.state is TaskState.FAILED
+
+
+class _CrashingVerifier(FakeVerifier):
+    async def verify(self, conditions: Any, arguments: Any, result: Any) -> Any:
+        self.calls = (*self.calls, (tuple(conditions), arguments, result))  # type: ignore[assignment]
+        raise RuntimeError("SECRET-REASON: the disk went away")
+
+
+async def test_a_verifier_that_raises_fails_the_step_and_the_task_without_the_message() -> None:
+    verifier = _CrashingVerifier(ECHO.id, name="crashing")
+    w = world(verifiers=(verifier,))
+    task, step = await w.running(ECHO.id, conditions=(OK,))
+    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    assert len(verifier.calls) == 1
+    assert execution.verification is not None
+    assert not execution.verification.passed
+    (failure,) = execution.verification.failures
+    assert failure.code == VERIFICATION_EXCEPTION
+    assert failure.message == "RuntimeError"
+    assert failure.details["condition"] is None
+    error = execution.verification.error
+    assert error is not None
+    assert error.code == VERIFICATION_FAILED
+    assert error.cause == "RuntimeError"
+    assert error.message == (
+        "1 of 1 success conditions failed for core.echo: "
+        f"{VERIFICATION_EXCEPTION} ({VERIFICATION_EXCEPTION})"
+    )
+    assert error.retryable is False
+    assert execution.graph.states[step.id] is StepState.FAILED
+    assert execution.task.state is TaskState.FAILED
+    types = await w.event_types(task.id)
+    assert types[-4:] == [E.TOOL_EXECUTED, E.EXECUTION_VERIFIED, E.STEP_FAILED, E.TASK_FAILED]
+    verified = (await w.events(task.id))[-3]
+    assert verified.payload["failed"] == (VERIFICATION_EXCEPTION,)
+    assert "SECRET-REASON" not in json.dumps([e.model_dump(mode="json") for e in await w.events()])
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        ExecutionStatus.FAILED,
+        ExecutionStatus.TIMED_OUT,
+        ExecutionStatus.CANCELLED,
+        ExecutionStatus.SKIPPED,
+    ],
+)
+async def test_a_result_that_did_not_succeed_is_not_verified(status: ExecutionStatus) -> None:
+    """The tool reported its own failure: the step fails, the task stays EXECUTING, and the
+    verifier is not consulted (ADR 0014 §4, decision C)."""
+    w = _world_with(FakeTool(ECHO.id, FakeClock(), FakeIdGenerator(), status=status))
+    task, step = await w.running(ECHO.id, conditions=(BAD,))
+    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    assert execution.verification is None
+    assert w.verifier(ECHO.id).calls == ()
+    types = await w.event_types(task.id)
+    assert E.EXECUTION_VERIFIED not in types
+    assert types[-2:] == [E.TOOL_EXECUTED, E.STEP_FAILED]
+    assert execution.graph.states[step.id] is StepState.FAILED
+    assert execution.task.state is TaskState.EXECUTING
+
+
+async def test_a_tool_that_raises_is_not_verified_either() -> None:
+    w = _world_with(_RaisingTool(ECHO.id, FakeClock(), FakeIdGenerator(), name="fire"))
+    task, step = await w.running(ECHO.id)
+    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    assert execution.verification is None
+    assert w.verifier(ECHO.id).calls == ()
+    assert execution.task.state is TaskState.EXECUTING
+
+
+async def test_the_verifier_is_consulted_only_after_a_run_and_with_the_runs_result(
+    w: World,
+) -> None:
+    for capability, arguments in ((ECHO, ECHO_ARGS), (NOTE, NOTE_ARGS), (HIGH, ECHO_ARGS)):
+        task, step = await w.running(capability.id)
+        await w.executor.execute(task.id, step.id, arguments)
+    for capability_id, verifier in w.fake_verifiers.items():
+        tool = w.tool(capability_id)
+        assert len(verifier.calls) == len(tool.calls)
+        for call in verifier.calls:
+            assert call.result.status is ExecutionStatus.SUCCEEDED
+            assert call.result.capability_id == capability_id
+    assert w.verifier(HIGH.id).calls == ()
+
+
+async def test_neither_arguments_output_nor_compared_content_enter_the_verification_audit(
+    w: World,
+) -> None:
+    leaky = ErrorMetadata(
+        code="fake.mismatch", message="the file differs", details={"expected_bytes": 11}
+    )
+    verifier = FakeVerifier(
+        NOTE.id, name="notes-verifier", conditions=(BAD,), failures={BAD: leaky}
+    )
+    secret_tool = FakeTool(NOTE.id, w.clock, w.ids, name="notes", output={"echo": "SECRET-OUTPUT"})
+    w = world(tools=(secret_tool,), verifiers=(verifier,))
+    w.fake_tools = {NOTE.id: secret_tool}
+    task, step = await w.running(NOTE.id, conditions=(BAD,))
+    execution = await w.executor.execute(task.id, step.id, SECRET_ARGS)
+    assert execution.task.state is TaskState.FAILED
+    serialized = json.dumps([event.model_dump(mode="json") for event in await w.events()])
+    assert "SECRET-BODY" not in serialized
+    assert "SECRET-OUTPUT" not in serialized
+    assert "expected_bytes" in serialized  # sizes, yes (decision F)
