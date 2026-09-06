@@ -98,7 +98,9 @@ capability, **`targets` = le stringhe di `decision.metadata["targets"]`** (ADR 0
 decisione → approvazione nasce qui), `prompt = "<capability>[ on <targets>] for step <id>
 (<goal>): <motivo>"` (nomina bersagli e motivo, mai gli argomenti: il prompt finisce nell'audit come
 `reason` di `APPROVAL_REQUESTED`), `decision_id`, **`expires_at = created_at + approval_ttl`** con
-`DEFAULT_APPROVAL_TTL = 24 ore` (decisione E; setting in M8.1) — e chiama
+`DEFAULT_APPROVAL_TTL = 24 ore` e tetto `MAX_APPROVAL_TTL = 7 giorni` (`ValueError` alla
+costruzione fuori da `(0, 7 giorni]`: nessun TTL senza tetto, la regola di M4.2 e M4.3; review
+del 2026-09-06; setting in M8.1 entro lo stesso tetto) — e chiama
 `engine.request_approval`. Chi fa scadere un task rimasto WAITING_APPROVAL **non è l'executor**:
 recovery o Proactive Core, rinvio registrato. Un `consume` che solleva scaduto/esaurito dopo un
 `ALLOWED` (un altro executor è arrivato prima) **chiede di nuovo**; un grant sparito fra `authorize`
@@ -139,7 +141,9 @@ come eccezioni (§63 "eseguire non è riuscire"), come un provider (ADR 0005).
 
 `TOOL_EXECUTED`: `created_at` del risultato, attore ELA, `summary = "execute: <status>
 <capability> by <tool>"`, task, step, capability, `decision_id`, `authorization_id` (il grant
-consumato, o nullo), `tool_name`, `device_id` nullo, `error` del risultato, payload `{status,
+consumato, o nullo: "con quale autorizzazione" è quella su cui la decisione si regge; un grant
+consegnato e ignorato non entra qui, è già nel `PERMISSION_DECIDED` se il Guardian lo cita —
+review del 2026-09-06), `tool_name`, `device_id` nullo, `error` del risultato, payload `{status,
 result_id, targets, duration_ms, device: "local", uses}`. **Mai** gli argomenti né l'`output`: il
 messaggio di `core.echo` e il corpo di una nota sono contenuto dell'utente (§57). "Device per ora
 è local": nessun `Device` registrato per il Core; il Device Orchestrator (§17) porterà un
@@ -267,6 +271,8 @@ directory temporanea), `ToolRegistry` e `FakeToolRegistry` sotto `ToolRegistryPo
 - **L'executor ritorna l'esito e non muove il task** — il chiamante avrebbe dovuto rifare ciò che
   il dominio ha già previsto (`deny_by_decision`, `request_approval`). Scartata (E).
 - **`Approval` senza scadenza** — un titolo aperto per sempre; 24 ore, setting in M8.1 (E).
+- **`approval_ttl` senza tetto** — la regola di M4.2 e M4.3 è "nessun TTL senza tetto"; 7 giorni,
+  `ValueError` oltre (review). Scartata.
 - **Consegnare sempre il grant legato allo step** — "un'altra nota nello stesso step" sarebbe un
   `DENIED AUTHORIZATION_MISMATCH` invece di una domanda. Scartata (F).
 - **`NotFoundError` da `consume` che esce** — lascerebbe il task EXECUTING fino alla recovery,
@@ -298,7 +304,7 @@ directory temporanea), `ToolRegistry` e `FakeToolRegistry` sotto `ToolRegistryPo
 ## Conseguenze
 
 - `Executor`, `Execution`, `select_authorization`, `approved_targets`, `AUTHORIZATION_NAMESPACE`,
-  `DEFAULT_APPROVAL_TTL`, `CONSUMING_RULES`, `LOCAL_DEVICE`, `TOOL_EXCEPTION`, `TOOL_REFUSED`,
+  `DEFAULT_APPROVAL_TTL`, `MAX_APPROVAL_TTL`, `CONSUMING_RULES`, `LOCAL_DEVICE`, `TOOL_EXCEPTION`, `TOOL_REFUSED`,
   `GRANT_VANISHED`, `ExecutorError` sono l'API pubblica di `ela.executive`; `Tool`, `Outcome`,
   `check_decision`, `EchoTool`, `WriteNoteTool`, `ToolRegistry`, `tools_v01`, `WorkspaceSettings`,
   `ToolNotFound` e i codici di errore quella di `ela.tools`.
@@ -309,7 +315,8 @@ directory temporanea), `ToolRegistry` e `FakeToolRegistry` sotto `ToolRegistryPo
   del Planner, da rendere verificabile lì (validazione del piano o test). L'orchestrator sceglie lo
   step successivo, chiama `Executor.execute`, e non chiude mai uno step: l'executor lo ha già fatto.
   Estende il vincolo di ADR 0011 (Conseguenze).
-- **Per M8.1.** `DEFAULT_APPROVAL_TTL` (24 ore) e `WorkspaceSettings` diventano setting con gli
+- **Per M8.1.** `DEFAULT_APPROVAL_TTL` (24 ore, tetto `MAX_APPROVAL_TTL` 7 giorni) e
+  `WorkspaceSettings` diventano setting con gli
   altri; `notes_scope` letto dall'ambiente; il nome della cartella delle note può cambiare lì con
   un ADR che sostituisca ADR 0010 §5.
 - **Rinvio.** Chi fa scadere un task rimasto WAITING_APPROVAL oltre `Approval.expires_at` (e

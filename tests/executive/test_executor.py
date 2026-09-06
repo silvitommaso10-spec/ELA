@@ -33,6 +33,7 @@ from ela.executive import (
     DEFAULT_APPROVAL_TTL,
     GRANT_VANISHED,
     LOCAL_DEVICE,
+    MAX_APPROVAL_TTL,
     TOOL_EXCEPTION,
     TOOL_REFUSED,
     ExecutorError,
@@ -185,9 +186,19 @@ async def test_an_incoherent_approval_is_refused_before_anything(w: World) -> No
     assert await w.store.for_capability(GUARDED_NOTE.id) == ()
 
 
-def test_a_non_positive_approval_ttl_is_a_configuration_error() -> None:
-    with pytest.raises(ValueError, match="approval_ttl must be positive"):
-        world(approval_ttl=timedelta(0))
+@pytest.mark.parametrize(
+    "ttl", [timedelta(0), timedelta(seconds=-1), MAX_APPROVAL_TTL + timedelta(seconds=1)], ids=str
+)
+def test_an_approval_ttl_outside_the_cap_is_a_configuration_error(ttl: timedelta) -> None:
+    """No TTL without a cap (review of M5.1): zero, negative or above seven days is refused."""
+    with pytest.raises(ValueError, match="approval_ttl must be positive and at most"):
+        world(approval_ttl=ttl)
+
+
+def test_the_approval_ttl_cap_is_seven_days_and_inclusive() -> None:
+    assert timedelta(days=7) == MAX_APPROVAL_TTL
+    assert DEFAULT_APPROVAL_TTL <= MAX_APPROVAL_TTL
+    world(approval_ttl=MAX_APPROVAL_TTL)
 
 
 # --------------------------------------------------------------------------------------

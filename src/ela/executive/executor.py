@@ -90,6 +90,7 @@ __all__ = [
     "DEFAULT_APPROVAL_TTL",
     "GRANT_VANISHED",
     "LOCAL_DEVICE",
+    "MAX_APPROVAL_TTL",
     "TOOL_EXCEPTION",
     "TOOL_REFUSED",
     "Execution",
@@ -108,9 +109,12 @@ uses it is retried (ADR 0013 §3). Changing it would change the id of every such
 DEFAULT_APPROVAL_TTL: Final = timedelta(hours=24)
 """How long a request for approval stays answerable (ADR 0013 §5, decision E).
 
-A setting in M8.1. Who expires a task left WAITING_APPROVAL is not the executor: recovery or the
-Proactive Core, later.
+A setting in M8.1, within :data:`MAX_APPROVAL_TTL`. Who expires a task left WAITING_APPROVAL is
+not the executor: recovery or the Proactive Core, later.
 """
+MAX_APPROVAL_TTL: Final = timedelta(days=7)
+"""The longest ``approval_ttl`` the executor accepts (review of M5.1): no TTL without a cap, the
+rule of M4.2 and M4.3. Above it is a configuration error, ``ValueError`` at construction."""
 
 CONSUMING_RULES: Final[frozenset[Rule]] = frozenset(
     {Rule.APPROVAL_UNLESS_AUTHORIZED, Rule.AUTHORIZATION_REQUIRED}
@@ -211,7 +215,8 @@ class Executor:
 
     ``actor`` is who the executor says it is in ``TOOL_EXECUTED`` (ELA acts); the user signs
     ``AUTHORIZATION_GRANTED`` through the approval. ``authorization_ttl`` is the life of a grant
-    born here (ADR 0012 §2), ``approval_ttl`` the life of a request for approval.
+    born here (ADR 0012 §2), ``approval_ttl`` the life of a request for approval (at most
+    :data:`MAX_APPROVAL_TTL`).
     """
 
     def __init__(
@@ -230,8 +235,10 @@ class Executor:
         authorization_ttl: timedelta = DEFAULT_AUTHORIZATION_TTL,
         approval_ttl: timedelta = DEFAULT_APPROVAL_TTL,
     ) -> None:
-        if approval_ttl <= timedelta(0):
-            raise ValueError(f"approval_ttl must be positive, not {approval_ttl}")
+        if not timedelta(0) < approval_ttl <= MAX_APPROVAL_TTL:
+            raise ValueError(
+                f"approval_ttl must be positive and at most {MAX_APPROVAL_TTL}, not {approval_ttl}"
+            )
         self._registry = registry
         self._tools = tools
         self._guardian = guardian
