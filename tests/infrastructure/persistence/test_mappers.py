@@ -14,6 +14,7 @@ from ela.domain import (
     Approval,
     AuditEvent,
     Authorization,
+    Device,
     ExecutionResult,
     Task,
     TaskEvent,
@@ -26,6 +27,8 @@ from ela.infrastructure.persistence.mappers import (
     audit_event_values,
     authorization_to_row,
     authorization_values,
+    device_to_row,
+    device_values,
     event_to_row,
     plan_to_row,
     plan_values,
@@ -34,6 +37,7 @@ from ela.infrastructure.persistence.mappers import (
     row_to_approval,
     row_to_audit_event,
     row_to_authorization,
+    row_to_device,
     row_to_event,
     row_to_plan,
     row_to_result,
@@ -45,6 +49,7 @@ from ela.infrastructure.persistence.orm import (
     ApprovalRow,
     AuditEventRow,
     AuthorizationRow,
+    DeviceRow,
     ExecutionResultRow,
     TaskEventRow,
     TaskPlanRow,
@@ -56,6 +61,7 @@ from tests.contracts.test_task_repository import CHILD
 from tests.domain.examples import (
     APPROVAL,
     AUDIT_EVENT,
+    DEVICE,
     ERROR_METADATA,
     EXECUTION_RESULT,
     POLICY_AUTHORIZATION,
@@ -72,6 +78,15 @@ BARE_EVENT = TaskEvent(
     created_at=TASK_EVENT.created_at,
     task_id=TASK.id,
     event_type=TASK_EVENT.event_type,
+)
+BARE_DEVICE = Device(
+    id=DEVICE.id,
+    created_at=DEVICE.created_at,
+    name="bare",
+    os=DEVICE.os,
+    availability=DEVICE.availability,
+    status=DEVICE.status,
+    privacy=DEVICE.privacy,
 )
 BARE_PLAN = TaskPlan(id=TASK_PLAN.id, created_at=TASK_PLAN.created_at, task_id=TASK.id, goal="bare")
 FAILED_AUDIT_EVENT = AUDIT_EVENT.model_copy(update={"error": ERROR_METADATA, "usage": None})
@@ -129,6 +144,18 @@ def test_approval_round_trip(approval: Approval) -> None:
 @pytest.mark.parametrize("result", [EXECUTION_RESULT, BARE_RESULT], ids=["full", "bare"])
 def test_result_round_trip(result: ExecutionResult) -> None:
     assert row_to_result(result_to_row(result)) == result
+
+
+@pytest.mark.parametrize("device", [DEVICE, BARE_DEVICE], ids=["full", "bare"])
+def test_device_round_trip(device: Device) -> None:
+    assert row_to_device(device_to_row(device)) == device
+
+
+@settings(max_examples=100)
+@given(MODEL_STRATEGIES[Device])
+def test_any_device_round_trips(device: BaseModel) -> None:
+    assert isinstance(device, Device)
+    assert row_to_device(device_to_row(device)) == device
 
 
 @settings(max_examples=100)
@@ -289,6 +316,27 @@ def test_approval_and_result_rows_store_enum_values_and_plain_json() -> None:
     assert type(result.output) is dict and type(result.error) is dict
     assert result.error["code"] == ERROR_METADATA.code
     assert result.decision_id == EXECUTION_RESULT.decision_id
+
+
+def test_device_mapper_covers_every_field() -> None:
+    assert unmapped(Device, device_values(DEVICE), DeviceRow.__table__) == set()
+
+
+def test_a_device_row_stores_enum_values_and_json_arrays() -> None:
+    row = device_to_row(DEVICE)
+    assert (row.os, row.availability, row.status) == ("MACOS", "ONLINE", "BUSY")
+    assert (row.performance, row.network, row.power_source, row.privacy) == (
+        "HIGH",
+        "LOCAL",
+        "AC",
+        "TRUSTED",
+    )
+    assert type(row.available_tools) is list and row.available_tools == [
+        "workspace_notes",
+        "browser",
+    ]
+    assert type(row.capabilities) is list and row.capabilities[0]["name"] == "gpu.cuda"
+    assert row.capabilities[0]["attributes"] == {"vram_gb": 24, "families": ["ada", "hopper"]}
 
 
 def test_a_new_domain_field_is_detected() -> None:

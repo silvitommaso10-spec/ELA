@@ -29,14 +29,23 @@ from ela.domain import (
     AuthorizationId,
     CapabilityId,
     DecisionId,
+    Device,
+    DeviceAvailability,
+    DeviceCapability,
     DeviceId,
+    DeviceStatus,
     ErrorMetadata,
     ExecutionId,
     ExecutionResult,
     ExecutionStatus,
     IntentId,
     JsonMapping,
+    NetworkKind,
+    OperatingSystem,
+    PerformanceClass,
     PlanId,
+    PowerSource,
+    PrivacyLevel,
     ProviderUsage,
     StepId,
     Task,
@@ -52,6 +61,7 @@ from ela.infrastructure.persistence.orm import (
     ApprovalRow,
     AuditEventRow,
     AuthorizationRow,
+    DeviceRow,
     ExecutionResultRow,
     TaskEventRow,
     TaskPlanRow,
@@ -65,6 +75,8 @@ __all__ = [
     "audit_event_values",
     "authorization_to_row",
     "authorization_values",
+    "device_to_row",
+    "device_values",
     "event_to_row",
     "plan_to_row",
     "plan_values",
@@ -73,6 +85,7 @@ __all__ = [
     "row_to_approval",
     "row_to_audit_event",
     "row_to_authorization",
+    "row_to_device",
     "row_to_event",
     "row_to_plan",
     "row_to_result",
@@ -339,6 +352,58 @@ def row_to_result(row: ExecutionResultRow) -> ExecutionResult:
         output=row.output,
         error=None if row.error is None else ErrorMetadata.model_validate(row.error),
         duration_ms=row.duration_ms,
+        metadata=row.metadata_,
+    )
+
+
+# --------------------------------------------------------------------------------------
+# Device
+# --------------------------------------------------------------------------------------
+
+
+def device_values(device: Device) -> dict[str, Any]:
+    """Column values of a node; the traits and the tool names travel as JSON arrays (§16)."""
+    return {
+        "id": device.id,
+        "created_at": device.created_at,
+        "name": device.name,
+        "os": device.os.value,
+        "availability": device.availability.value,
+        "status": device.status.value,
+        "capabilities": [capability.model_dump(mode="json") for capability in device.capabilities],
+        "available_tools": list(device.available_tools),
+        "performance": device.performance.value,
+        "network": device.network.value,
+        "power_source": device.power_source.value,
+        "privacy": device.privacy.value,
+        "current_workload": device.current_workload,
+        "last_seen_at": device.last_seen_at,
+        "metadata_": _plain(device.metadata),
+    }
+
+
+def device_to_row(device: Device) -> DeviceRow:
+    return DeviceRow(**device_values(device))
+
+
+def row_to_device(row: DeviceRow) -> Device:
+    return Device(
+        id=DeviceId(row.id),
+        created_at=row.created_at,
+        name=row.name,
+        os=OperatingSystem(row.os),
+        availability=DeviceAvailability(row.availability),
+        status=DeviceStatus(row.status),
+        capabilities=tuple(
+            DeviceCapability.model_validate(capability) for capability in row.capabilities
+        ),
+        available_tools=tuple(row.available_tools),
+        performance=PerformanceClass(row.performance),
+        network=NetworkKind(row.network),
+        power_source=PowerSource(row.power_source),
+        privacy=PrivacyLevel(row.privacy),
+        current_workload=row.current_workload,
+        last_seen_at=row.last_seen_at,
         metadata=row.metadata_,
     )
 

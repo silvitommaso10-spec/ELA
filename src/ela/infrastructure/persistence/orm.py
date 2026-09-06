@@ -17,7 +17,19 @@ from datetime import UTC, datetime
 from typing import Any, Final
 from uuid import UUID
 
-from sqlalchemy import DDL, JSON, DateTime, ForeignKey, Integer, String, Text, Uuid, event, text
+from sqlalchemy import (
+    DDL,
+    JSON,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Uuid,
+    event,
+    text,
+)
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.types import TypeDecorator
@@ -30,6 +42,7 @@ __all__ = [
     "AuditEventRow",
     "AuthorizationRow",
     "Base",
+    "DeviceRow",
     "ExecutionResultRow",
     "TaskEventRow",
     "TaskPlanRow",
@@ -201,6 +214,36 @@ class ExecutionResultRow(Base):
     output: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     error: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
+
+
+class DeviceRow(Base):
+    """A :class:`~ela.domain.Device`, as stored (§16; ADR 0016).
+
+    No foreign key: a store apart from the repository, like ``authorizations`` (ADR 0006 §6).
+    ``availability`` is indexed because the orchestrator (§17) will ask for the nodes that answer,
+    but what a reader gets is not this column: ``DeviceRegistry`` answers availability from
+    ``last_seen_at`` and the TTL (ADR 0016 §3). The column holds the last state observed.
+    """
+
+    __tablename__ = "devices"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[UUID] = mapped_column(Uuid, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    os: Mapped[str] = mapped_column(String(32), nullable=False)
+    availability: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    capabilities: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    available_tools: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    performance: Mapped[str] = mapped_column(String(32), nullable=False)
+    network: Mapped[str] = mapped_column(String(32), nullable=False)
+    power_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    privacy: Mapped[str] = mapped_column(String(32), nullable=False)
+    current_workload: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
 
 
