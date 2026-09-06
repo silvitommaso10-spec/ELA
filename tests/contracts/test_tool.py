@@ -14,6 +14,7 @@ import pytest
 from ela.domain import CapabilityId, ExecutionResult, PermissionDecision, PermissionOutcome
 from ela.ports import (
     AuthorizationStore,
+    AuthorizingGuardianPort,
     Clock,
     NotAllowedError,
     PermissionGuardianPort,
@@ -78,7 +79,7 @@ async def test_decision_for_another_capability_is_refused(tool: ToolPort) -> Non
 
 
 def test_tool_holds_no_guardian_and_no_store(tool: ToolPort) -> None:
-    forbidden = (PermissionGuardianPort, AuthorizationStore)
+    forbidden = (PermissionGuardianPort, AuthorizingGuardianPort, AuthorizationStore)
     for name, value in vars(tool).items():
         assert not isinstance(value, forbidden), f"{type(tool).__name__}.{name}"
     for method in (type(tool).__init__, type(tool).execute):

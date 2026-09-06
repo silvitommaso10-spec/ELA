@@ -219,6 +219,9 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "7. solo ela.tasks importa la state machine: il Task Engine è l'unico chiamante di transition (ADR 0008)"
 type = "forbidden"
+# Direct imports only (ADR 0013 §13): whoever uses the engine — the executor, the orchestrator,
+# the API — reaches the state machine through it without being able to call ``transition``.
+allow_indirect_imports = "True"
 source_modules = [
     "ela.domain",
     "ela.ports",

@@ -20,6 +20,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0010](0010-capability-catalogue.md) | Catalogo delle capability v0.1: registro immutabile, port ridotto, validazione JSON Schema, rischio massimo MEDIUM | Accettata |
 | [0011](0011-permission-guardian.md) | Permission Guardian: catalogo, policy v0.1 per rischio, scope, autorizzazioni, fail-safe, audit delle decisioni | Accettata |
 | [0012](0012-authorizations.md) | Autorizzazioni: nascita da un'Approval, consumo atomico, invariante del grant monouso | Accettata |
+| [0013](0013-executor.md) | Executor: uno step per chiamata, grant scelto e consumato prima del tool, ordine delle scritture, `ToolRegistryPort` e `AuthorizingGuardianPort`, tool v0.1 e workspace, regola 16 | Accettata |
 
 ## Template
 

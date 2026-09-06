@@ -79,6 +79,12 @@ AUTHORIZATION_WIDENING_FIELDS = frozenset(
 )
 AUTHORIZATION_BUILDERS_EXEMPT = frozenset({PERMISSIONS_DIR, TESTING_DIR})
 AUTHORIZATION_READER = PERSISTENCE_MAPPERS
+#: Rule 16 (ADR 0013): only the executor calls ``Tool.execute``. The exemption is one exact path;
+#: a receiver named like a SQLAlchemy session, connection or cursor is SQL's ``execute``, not a
+#: tool's — an exemption by name, closed and tested.
+EXECUTOR_MODULE = Path("executive") / "executor.py"
+EXECUTE_METHOD = "execute"
+SQL_EXECUTORS = frozenset({"session", "connection", "cursor"})
 
 
 @dataclass(frozen=True)
@@ -561,6 +567,37 @@ def check_authorization_builders(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_tool_execute_callers(pkg_root: Path) -> list[Violation]:
+    """Rule 16: outside ``executive/executor.py`` nobody calls ``<x>.execute(...)`` (ADR 0013).
+
+    The executor is the only place where a tool runs, and it runs it only with an ``ALLOWED``
+    decision in hand; a second caller would be a second place to get that wrong. Reported: any
+    call whose callee is an attribute named ``execute``, unless the receiver is a bare name in
+    :data:`SQL_EXECUTORS` (``session.execute(...)`` of SQLAlchemy in the persistence adapters).
+    A heuristic on names, like rules 5, 11, 12 and 15.
+    """
+    rule = "tool-execute-called-only-by-the-executor"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) == EXECUTOR_MODULE:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f".{EXECUTE_METHOD}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == EXECUTE_METHOD
+            and not _is_sql_executor(node.func.value)
+        )
+    return found
+
+
+def _is_sql_executor(receiver: ast.expr) -> bool:
+    return isinstance(receiver, ast.Name) and receiver.id in SQL_EXECUTORS
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -577,4 +614,5 @@ RULES: dict[str, Rule] = {
     "decision-builders": check_decision_builders,
     "decide-callers": check_decide_callers,
     "authorization-builders": check_authorization_builders,
+    "tool-execute-callers": check_tool_execute_callers,
 }

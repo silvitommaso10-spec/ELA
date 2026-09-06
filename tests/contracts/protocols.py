@@ -21,13 +21,16 @@ REQUIRED_PORTS = frozenset(
         "ToolPort",
         "PermissionGuardianPort",
         "AuthorizationStore",
+        "AuthorizingGuardianPort",
+        "ToolRegistryPort",
         "ModelProvider",
         "ProviderRegistry",
         "Clock",
         "IdGenerator",
     }
 )
-"""The eleven ports the milestone asks for, by name."""
+"""The eleven ports of M1.3 plus the two of M5.1 (ADR 0013: the audited Guardian, the tools), by
+name."""
 
 
 def is_protocol(obj: object) -> bool:

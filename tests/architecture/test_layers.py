@@ -16,6 +16,8 @@ from tests.architecture.rules import (
     CORE_PACKAGES,
     DECIDE_METHOD,
     DECISION_MODEL,
+    EXECUTE_METHOD,
+    EXECUTOR_MODULE,
     ORM_PACKAGE,
     PERMISSIONS_ALLOWED_EXTERNAL,
     PERMISSIONS_DIR,
@@ -42,6 +44,7 @@ def test_required_modules_exist() -> None:
     assert (PACKAGE_ROOT / AUDIT_ADAPTER).is_file()
     assert (PACKAGE_ROOT / PERMISSIONS_DIR / "capabilities.py").is_file()
     assert (PACKAGE_ROOT / PERMISSIONS_DIR / "guardian.py").is_file()
+    assert (PACKAGE_ROOT / EXECUTOR_MODULE).is_file()
 
 
 def test_ports_really_import_the_domain() -> None:
@@ -69,6 +72,8 @@ def test_rule_holds(rule: Rule) -> None:
         "ela.tasks.graph",
         "ela.permissions.capabilities",
         "ela.permissions.guardian",
+        "ela.executive.executor",
+        "ela.tools.registry",
     ],
 )
 def test_module_is_importable(module: str) -> None:
@@ -140,3 +145,14 @@ def test_the_authorizations_module_really_builds_grants_and_the_mapper_really_re
     mapper = (PACKAGE_ROOT / AUTHORIZATION_READER).read_text(encoding="utf-8")
     assert f"{AUTHORIZATION_MODEL}(" in mapper
     assert {PERMISSIONS_DIR, TESTING_DIR} == AUTHORIZATION_BUILDERS_EXEMPT
+
+
+def test_the_executor_really_calls_a_tool_and_never_imports_the_tools() -> None:
+    """Rule 16 would hold vacuously if the executor called no ``execute``; and the executor
+    depends on ``ToolRegistryPort``, never on ``ela.tools`` (ADR 0013 §10): the day a tool imports
+    a provider, contract 4 must not break through the executive package."""
+    source = (PACKAGE_ROOT / EXECUTOR_MODULE).read_text(encoding="utf-8")
+    assert f".{EXECUTE_METHOD}(" in source
+    for path in sorted((PACKAGE_ROOT / "executive").rglob("*.py")):
+        imported = [name for name, _ in imported_modules(path, PACKAGE_ROOT)]
+        assert not any(name.startswith("ela.tools") for name in imported), path.name

@@ -1,6 +1,6 @@
 # 0009. Task Graph: DAG degli step, stato derivato dalla trail, operazioni per step, propagazione dei fallimenti
 
-- **Stato:** Accettata
+- **Stato:** Accettata. §7 "chi esegue decide": l'executor chiude ogni step che ha eseguito con `complete_step`/`fail_step` (ADR 0013 §1, §5); la scelta dello step successivo resta a M6.2.
 - **Data:** 2026-09-05
 - **Riferimenti spec:** §13, §14, §15, §17, §32, §33, §51, §52, §63, §64, §65
 - **Milestone:** M3.2

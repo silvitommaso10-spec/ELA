@@ -5,11 +5,13 @@ other — members or sync/async mode — without this test noticing. An ADR is i
 ADR that extends a port (0008: ``TaskRepository.add_plan``/``plan``; 0011: the signature of
 ``PermissionGuardianPort.decide``) documents the members it adds or changes in a row of its own,
 and a later ADR that shrinks a port (0010: ``CapabilityRegistryPort`` without ``register``)
-documents the members that remain in a replacing row. Extensions only add, replacements only
-remove; extensions apply first, then replacements; the result is what the code must match. An ADR
-that does both (0012: ``AuthorizationStore`` with ``consume`` and without ``record_use``) has two
-tables, each under its label, and is read by section (ADR 0012 §8). A changed signature is
-checked by ``test_adr_guardian.py``, member by member here.
+documents the members that remain in a replacing row; an ADR that introduces whole ports (0013:
+``AuthorizingGuardianPort``, ``ToolRegistryPort``) lists them under "Port introdotti:". Extensions
+only add, replacements only remove, introductions only bring new names; introductions apply
+first, then extensions, then replacements; the result is what the code must match. An ADR that
+both extends and replaces (0012: ``AuthorizationStore`` with ``consume`` and without
+``record_use``) has two tables, each under its label, and is read by section (ADR 0012 §8). A
+changed signature is checked by ``test_adr_guardian.py``, member by member here.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0005-ports.md"
 EXTENDING = "Port estesi:"
 REPLACING = "Port sostituiti:"
+INTRODUCING = "Port introdotti:"
 Source = tuple[Path, str | None]
 """An ADR and the label of the table to read, or ``None`` to read the whole file."""
 EXTENDING_ADRS: tuple[Source, ...] = (
@@ -36,6 +39,8 @@ REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),
     (ADR_DIR / "0012-authorizations.md", REPLACING),
 )
+INTRODUCING_ADRS: tuple[Source, ...] = ((ADR_DIR / "0013-executor.md", INTRODUCING),)
+"""ADRs that add whole ports (ADR 0013 §10): a port introduced must not exist already."""
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")
 MEMBER = re.compile(r"`(\w+)`")
 
@@ -72,11 +77,19 @@ def documented_ports(
 
 
 def all_documented_ports(
-    base: str, extensions: tuple[str, ...] = (), replacements: tuple[str, ...] = ()
+    base: str,
+    extensions: tuple[str, ...] = (),
+    replacements: tuple[str, ...] = (),
+    introductions: tuple[str, ...] = (),
 ) -> dict[str, tuple[str, frozenset[str]]]:
-    """ADR 0005, then every extending ADR (members joined), then every replacing ADR (members
-    replaced, never more than before). Same mode throughout."""
+    """ADR 0005, then every introducing ADR (new ports only), then every extending ADR (members
+    joined), then every replacing ADR (members replaced, never more than before). Same mode
+    throughout."""
     union = documented_ports(base)
+    for text in introductions:
+        for name, row in documented_ports(text).items():
+            assert name not in union, f"{name} is introduced twice"
+            union[name] = row
     for text in extensions:
         for name, (mode, members_) in documented_ports(text).items():
             assert name in union, f"{name} is extended before being introduced"
@@ -106,7 +119,10 @@ def _text(source: Source) -> str:
 
 def documented() -> dict[str, tuple[str, frozenset[str]]]:
     return all_documented_ports(
-        ADR_PATH.read_text(encoding="utf-8"), _read(EXTENDING_ADRS), _read(REPLACING_ADRS)
+        ADR_PATH.read_text(encoding="utf-8"),
+        _read(EXTENDING_ADRS),
+        _read(REPLACING_ADRS),
+        _read(INTRODUCING_ADRS),
     )
 
 
@@ -176,6 +192,28 @@ def test_the_authorizations_adr_extends_then_replaces_the_store() -> None:
     assert base["AuthorizationStore"][1] - replacement["AuthorizationStore"][1] == {"record_use"}
 
 
+def test_the_executor_adr_introduces_two_ports_the_base_does_not_have() -> None:
+    """ADR 0013 §10: the audited Guardian and the tool registry are new ports, not extensions."""
+    base = documented_ports(ADR_PATH.read_text(encoding="utf-8"))
+    introduced = documented_ports(_text(INTRODUCING_ADRS[0]))
+    assert set(introduced) == {"AuthorizingGuardianPort", "ToolRegistryPort"}
+    assert not (set(introduced) & set(base))
+    assert introduced["AuthorizingGuardianPort"] == ("async", frozenset({"authorize"}))
+    assert introduced["ToolRegistryPort"] == ("sync", frozenset({"get", "tools"}))
+
+
+def test_an_introduction_of_a_known_port_is_detected() -> None:
+    base = "| `AuditLog` | §32 | async | `append`, `read` |"
+    with pytest.raises(AssertionError, match="introduced twice"):
+        all_documented_ports(base, introductions=("| `AuditLog` | §32 | async | `x` |",))
+    added = all_documented_ports(base, introductions=("| `Other` | §1 | sync | `x` |",))
+    assert added["Other"] == ("sync", frozenset({"x"}))
+    without = all_documented_ports(
+        ADR_PATH.read_text(encoding="utf-8"), _read(EXTENDING_ADRS), _read(REPLACING_ADRS)
+    )
+    assert set(coded_ports()) - set(without) == {"AuthorizingGuardianPort", "ToolRegistryPort"}
+
+
 def test_a_file_with_two_rows_for_one_port_must_be_read_by_section() -> None:
     text = (ADR_DIR / "0012-authorizations.md").read_text(encoding="utf-8")
     with pytest.raises(AssertionError, match="two rows"):
@@ -193,7 +231,14 @@ def test_a_missing_label_is_detected() -> None:
 
 @pytest.mark.parametrize(
     "path",
-    sorted({ADR_PATH, *(p for p, _ in EXTENDING_ADRS), *(p for p, _ in REPLACING_ADRS)}),
+    sorted(
+        {
+            ADR_PATH,
+            *(p for p, _ in EXTENDING_ADRS),
+            *(p for p, _ in REPLACING_ADRS),
+            *(p for p, _ in INTRODUCING_ADRS),
+        }
+    ),
     ids=lambda p: p.name[:4],
 )
 def test_table_cites_the_spec(path: Path) -> None:

@@ -58,6 +58,7 @@ __all__ = [
     "AuthorizationExpiredError",
     "AuthorizationNotUsableError",
     "AuthorizationStore",
+    "AuthorizingGuardianPort",
     "CapabilityRegistryPort",
     "Clock",
     "DeviceRegistryPort",
@@ -70,6 +71,7 @@ __all__ = [
     "ProviderRegistry",
     "TaskRepository",
     "ToolPort",
+    "ToolRegistryPort",
     "check_limit",
 ]
 
@@ -383,6 +385,31 @@ class PermissionGuardianPort(Protocol):
 
 
 @runtime_checkable
+class AuthorizingGuardianPort(Protocol):
+    """The audited entry of the Guardian: decide *and* record the decision (§27, §32; ADR 0013).
+
+    ``decide`` (:class:`PermissionGuardianPort`) is pure and synchronous; a decision the audit log
+    never saw does not exist (ADR 0011 §8), so whoever wants one — the executor, M5 — calls this
+    port instead. Async because it writes the log; a separate port because one port has one mode
+    (ADR 0005 §1). Same arguments as ``decide``; if the log refuses the event the exception
+    escapes and no decision is returned. No fake: the real Guardian is pure and runs on the fake
+    log, and it is the only implementation registered for the contract tests.
+    """
+
+    async def authorize(
+        self,
+        capability: CapabilitySpec,
+        arguments: JsonMapping,
+        *,
+        task: Task | None = None,
+        step: TaskStep | None = None,
+        authorization: Authorization | None = None,
+        authorization_uses: int = 0,
+    ) -> PermissionDecision:
+        """Decide about one call and append ``PERMISSION_DECIDED`` before returning."""
+
+
+@runtime_checkable
 class ToolPort(Protocol):
     """The implementation of one capability (§27, §28).
 
@@ -406,6 +433,23 @@ class ToolPort(Protocol):
         self, decision: PermissionDecision, arguments: JsonMapping
     ) -> ExecutionResult:
         """Run the capability under ``decision``; :class:`NotAllowedError` if it does not allow."""
+
+
+@runtime_checkable
+class ToolRegistryPort(Protocol):
+    """The tools ELA can execute, one per capability (§28; ADR 0013).
+
+    Synchronous and read-only, like :class:`CapabilityRegistryPort`: a table of tools already
+    built, fixed when the registry is. The key of every entry is the tool's own ``capability_id``
+    — a tool cannot be registered under another capability — and two tools for one capability at
+    construction are an :class:`AlreadyExistsError`. The executor (M5) is the only caller.
+    """
+
+    def get(self, capability_id: CapabilityId) -> ToolPort:
+        """The tool implementing this capability; :class:`NotFoundError` if there is none."""
+
+    def tools(self) -> tuple[ToolPort, ...]:
+        """Every registered tool, in registration order."""
 
 
 # --------------------------------------------------------------------------------------
