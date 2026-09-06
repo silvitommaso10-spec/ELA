@@ -62,6 +62,14 @@ colonna resta come ultimo stato osservato — l'heartbeat ci scrive `ONLINE` —
 sola, e il vincolo è che nessun chiamante fuori dal mapper legga `Device.availability` arrivando
 dal port nudo: chi decide passa da `DeviceRegistry`, e l'orchestratore di M6.2 farà lo stesso.
 
+**Impegno per M6.2.** In M6.1 questo vincolo vale per convenzione e per un test di comportamento
+(`test_the_stored_row_is_not_what_a_reader_gets`), perché `DeviceRegistry` è l'unico lettore del
+port. Il Device Orchestrator (§17) è il secondo lettore, ed è il primo che avrebbe un motivo per
+fidarsi della colonna: gli serve sapere quali nodi sono disponibili, e `availability` è lì, indicizzata
+e a portata di `SELECT`. **M6.2 rende il vincolo un test di architettura**: nessun modulo fuori da
+`ela.devices` e dal mapper legge `Device.availability` arrivando da `DeviceRegistryPort`. La regola
+arriva a quella milestone già assegnata, non da riscoprire.
+
 Il TTL è un'impostazione:
 
 | Variabile | Default | Verso |
@@ -205,9 +213,9 @@ Migrazione `0005`, reversibile (non tocca `audit_events`, quindi la regola di `0
   è già giudicata, e non deve conoscere il TTL.
 - `ela.devices` entra in `CRITICAL_PACKAGES` (100% di branch coverage): il registro decide se un
   nodo può essere usato, ed è la stessa famiglia di decisioni del Guardian.
-- Il vincolo di §3 — nessuno legge `Device.availability` arrivando dal port nudo — è una regola che
-  oggi vale per convenzione e per un test; se un secondo lettore del port comparirà, diventerà un
-  test di architettura.
+- Il vincolo di §3 — nessuno legge `Device.availability` arrivando dal port nudo — oggi vale per
+  convenzione e per un test di comportamento, ed è assegnato a M6.2 come test di architettura:
+  l'orchestratore è il secondo lettore del port e il primo che potrebbe fidarsi della colonna.
 - Il vincolo di §6 è un debito dichiarato a carico di M7, non di M6.1.
 - `tests/docs/test_adr_devices.py` verifica che le tabelle di §2, §3, §4 non driftino dal codice,
   e `tests/docs/test_adr_persistence.py` che §8 e `Base.metadata` descrivano la stessa tabella.
