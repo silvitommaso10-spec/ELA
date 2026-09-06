@@ -194,6 +194,9 @@ async def test_write_note_leaves_the_file_and_a_verified_chain(
 class _ForgetfulNoteTool:
     """Claims the note of ``inner`` but removes it before answering (§63 on SQLite)."""
 
+    idempotent = True
+    """As the tool it wraps: removing the note twice leaves the same absence (ADR 0015 §8)."""
+
     def __init__(self, inner: object, root: Path) -> None:
         self._inner = inner
         self._root = root

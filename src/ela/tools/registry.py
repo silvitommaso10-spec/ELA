@@ -19,7 +19,7 @@ from types import MappingProxyType
 from ela.domain import CapabilityId
 from ela.ports import AlreadyExistsError, Clock, IdGenerator, ToolPort, VerifierPort
 from ela.tools.echo import EchoTool
-from ela.tools.errors import ToolNotFound, VerifierNotFound
+from ela.tools.errors import NotIdempotentError, ToolNotFound, VerifierNotFound
 from ela.tools.notes import WriteNoteTool
 from ela.tools.verifiers import EchoVerifier, WriteNoteVerifier
 
@@ -27,13 +27,24 @@ __all__ = ["ToolRegistry", "VerifierRegistry", "tools_v01", "verifiers_v01"]
 
 
 class ToolRegistry:
-    """Tools by capability id, frozen at construction (port ``ToolRegistryPort``)."""
+    """Tools by capability id, frozen at construction (port ``ToolRegistryPort``).
+
+    **Only idempotent tools are registered** (review of M5.3): crash window 7a is repaired by
+    running the tool again, and that is safe only while every tool that can be executed promises
+    that twice is once. A tool that declares ``idempotent = False``, or that does not declare it
+    at all — a doubt is not a yes (§33) — is refused here, with the STARTED protocol of ADR 0015
+    §8 named in the message. So the first non-idempotent tool cannot enter without implementing
+    that protocol first: the guard does not depend on anyone remembering.
+    """
 
     __slots__ = ("_tools",)
 
     def __init__(self, tools: Iterable[ToolPort]) -> None:
         table: dict[CapabilityId, ToolPort] = {}
         for tool in tools:
+            declared = getattr(tool, "idempotent", None)
+            if declared is not True:
+                raise NotIdempotentError(tool.capability_id, tool.name, declared)
             if tool.capability_id in table:
                 raise AlreadyExistsError("tool", tool.capability_id)
             table[tool.capability_id] = tool

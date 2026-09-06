@@ -1,6 +1,8 @@
 # 0015. Persistenza di Approval ed ExecutionResult: `ApprovalStore` ed `ExecutionResultStore`, la risposta dallo store, ripresa di uno step interrotto, finestre 5, 7b, 8, 8a–8c e 9a riparate, richieste scadute in `recover()`, regola 19
 
-- **Stato:** Accettata
+- **Stato:** Accettata. Review del 2026-09-06: `pending` prende `now` opzionale (§1); il presidio
+  della finestra 7a è in codice — `Tool.idempotent` e il rifiuto del `ToolRegistry` (§8); le due
+  regole di `recover()` sono scritte insieme (§6).
 - **Data:** 2026-09-06
 - **Riferimenti spec:** §14, §27, §30, §32, §33, §54, §57, §62, §63
 - **Milestone:** M5.3
@@ -39,11 +41,15 @@ I port sono diciassette; ADR 0005 prende nello stato il rimando.
 
 **Contratto di `ApprovalStore`.** `add` accetta **solo** una richiesta PENDING (`ValueError`,
 decisione H): un "sì" entra nello store per una porta sola, `respond`. `for_task` ritorna ogni
-richiesta del task, di qualsiasi stato, in ordine di inserimento. `pending(*, limit=None)`
+richiesta del task, di qualsiasi stato, in ordine di inserimento. `pending(*, now=None, limit=None)`
 (decisione A) ritorna le PENDING **di tutti i task**, in ordine di inserimento, le prime `limit`
-(`check_limit`): "cosa aspetta una mia risposta" per M8.1 e per l'iPhone, aggiunto ora perché
-cambiare un port dopo costa più che aggiungerlo prima; le scadute sono comprese, lo store non ha
-un orologio. `respond(approval_id, *, status, responded_by, now) -> Approval` risponde **una
+(`check_limit`, applicato dopo il filtro): "cosa aspetta una mia risposta" per M8.1 e per
+l'iPhone, aggiunto ora perché cambiare un port dopo costa più che aggiungerlo prima. **`now` è
+opzionale** (review del 2026-09-06): se dato, una richiesta scaduta a quell'istante
+(`expires_at <= now`, lo **stesso verso chiuso** di `respond`) è esclusa — `respond` la
+rifiuterebbe, e mostrare all'utente una domanda che non può più ricevere risposta sarebbe
+chiedere l'impossibile (§33); se non è dato, tornano tutte, scadute comprese. Lo store resta
+senza orologio: chi ne ha uno — M8.1 — passa `now`. `respond(approval_id, *, status, responded_by, now) -> Approval` risponde **una
 volta**: `status` fuori da {GRANTED, REJECTED} → `ValueError` (`check_answer` in `ela.ports`,
 una fonte per fake e adapter come `check_limit`; PENDING non è una risposta ed EXPIRED non è
 dell'utente); id ignoto → `NotFoundError`; già risposta → `ApprovalAlreadyAnsweredError`; scaduta
@@ -171,8 +177,23 @@ della riga). Un task WAITING_APPROVAL senza PENDING scaduta, o senza alcuna PEND
 nello store, finestra 5c; oppure nessuna richiesta nello store, finestra 5b), è lasciato dov'è.
 `RecoverySummary` guadagna `expired`. **Lo store non viene toccato**: la richiesta resta PENDING
 (record immutabile), il fatto è `TASK_EXPIRED`; `ApprovalStatus.EXPIRED` resta nel dominio senza
-scrittore in v0.1. Un task EXECUTING con una PENDING scaduta (finestra 5 più un ritardo oltre il
-TTL) non aspetta: il retry è rifiutato, il task tace, e la regola degli orfani lo fallisce.
+scrittore in v0.1.
+
+**Le due regole di `recover()`, da leggere insieme** (confermato in review il 2026-09-06). Sono
+due perché guardano due stati diversi, e insieme non lasciano scoperto nessun task fermo:
+
+| Task | Sintomo | Regola | Esito |
+|---|---|---|---|
+| EXECUTING | silenzioso da `orphan_after` (nessun heartbeat) | orfani (ADR 0008 §6) | FAILED, codice `orphaned` |
+| WAITING_APPROVAL | l'ultima `Approval` PENDING è scaduta | richieste scadute (questo §) | EXPIRED, `TASK_EXPIRED` |
+
+Un task **EXECUTING** con una PENDING scaduta — la finestra 5 più un ritardo oltre il TTL: la
+richiesta è nello store, ma il task non è mai arrivato ad aspettarla — cade nella **prima** riga,
+non nella seconda: il retry dell'executor è rifiutato (`ExecutorError` "expired"), il task tace, e
+la regola degli orfani lo fallisce come qualunque altro EXECUTING senza segni di vita. È il
+comportamento voluto: quel task non sta aspettando l'utente, sta fermo, e ciò che lo descrive è
+"nessuno lo sta portando avanti", non "una domanda è scaduta". La seconda riga guarda solo
+WAITING_APPROVAL perché solo lì la richiesta scaduta *è* il motivo per cui il task non si muove.
 
 ### 7. Finestra 9a: lo step FAILED per verifica chiude il task
 
@@ -221,7 +242,20 @@ righe hanno il test del comportamento dichiarato.
 | 9a | `fail_step` (`STEP_FAILED` con `verification.failed`) | `engine.fail` | step FAILED, task EXECUTING, `is_blocked` | `engine.fail` con l'`error` di `STEP_FAILED` (§7). **Riparato.** |
 | 10 | `fail_step` per `grant_vanished` / `tool.refused` | — | come 9; con `tool.refused` il grant è speso | come 9; il grant speso costa una nuova approvazione. |
 
-**La finestra 7a resta dichiarata (decisione J).** Il primo tool non idempotente porta con sé
+**La finestra 7a resta dichiarata (decisione J), e il suo presidio è in codice** (review del
+2026-09-06). La riparazione della 7a è "il tool riesegue", e regge solo finché ogni tool
+eseguibile promette che due volte è come una. La promessa non può dipendere dalla memoria di chi
+scriverà il prossimo tool, quindi è dichiarata e verificata: `ela.tools.base.Tool` prende
+`idempotent: ClassVar[bool]` **senza default** — la risposta è del singolo tool, e dimenticarla
+non deve leggersi come un sì — dichiarato `True` da `EchoTool` (nulla è scritto) e da
+`WriteNoteTool` (la nota è sovrascritta con lo stesso corpo); `ToolRegistry`, **in costruzione**,
+rifiuta con `NotIdempotentError` ogni tool che dichiari `False` **o che non dichiari nulla** (un
+dubbio non è un sì, §33), e il messaggio nomina la finestra 7a e il piano STARTED qui sotto. Così
+il primo tool non idempotente non entra in un registro senza aver prima implementato il
+protocollo; il controllo precede quello sui doppioni, perché è ciò che rende il tool pericoloso,
+non la sua chiave.
+
+Il piano, per quel giorno: il primo tool non idempotente porta con sé
 l'id di esecuzione scritto prima dell'azione, in un `ExecutionResult` persistito con stato
 STARTED prima che il tool agisca. Un retry che trova uno STARTED senza esito per lo stesso step
 non riesegue: verifica (M5.2) se il tool ha lasciato un effetto verificabile e chiude lo step di
@@ -274,6 +308,15 @@ import-linter: non è un import.
   stato senza scrittore sarebbe uno stub; arriva con il primo tool non idempotente. Rinviata (J).
 - **`pending(task_id)` per task** — l'executor filtra `for_task` in memoria; l'inbox è per tutti i
   task. Scartata (A).
+- **`pending` senza `now`, con il filtro sulla scadenza lasciato al chiamante** — ogni chiamante
+  riscriverebbe il verso chiuso, e uno prima o poi lo sbaglierebbe; `now` opzionale lo tiene in
+  una riga sola, accanto a quella di `respond`, e lo store resta senza orologio. Scartata
+  (review).
+- **`Tool.idempotent` con default `True`** — un tool nuovo erediterebbe il sì senza che nessuno ci
+  pensi, cioè esattamente il rischio che il presidio esiste per togliere. Nessun default, e chi
+  non dichiara è rifiutato. Scartata (review).
+- **Solo una nota nell'ADR sul primo tool non idempotente** — una nota si legge se ci si ricorda
+  di cercarla; un rifiuto in costruzione si incontra. Scartata (review).
 - **`ApprovalStore` opzionale nell'engine** — un engine che non vede le richieste non le chiude,
   in silenzio. Obbligatorio. Scartata.
 - **Lo store scrive `EXPIRED` sulla richiesta scaduta** — il record è immutabile; il fatto è
@@ -285,6 +328,8 @@ import-linter: non è un import.
 
 ## Conseguenze
 
+- `Tool.idempotent` (senza default) e `NotIdempotentError` in `ela.tools`, con il rifiuto del
+  `ToolRegistry` in costruzione: la riparazione della finestra 7a non dipende da chi ricorda.
 - `ApprovalStore`, `ExecutionResultStore`, `ApprovalNotAnswerableError`,
   `ApprovalAlreadyAnsweredError`, `ApprovalExpiredError`, `ANSWERS`, `check_answer` in
   `ela.ports` (diciassette port); `ExecutionResult.decision_id` e `authorization_id` nel dominio;

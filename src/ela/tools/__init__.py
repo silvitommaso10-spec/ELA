@@ -10,7 +10,7 @@ classified once, in :mod:`ela.tools.paths`, for both.
 
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool, check_decision
 from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME, EchoTool
-from ela.tools.errors import ToolNotFound, ToolsError, VerifierNotFound
+from ela.tools.errors import NotIdempotentError, ToolNotFound, ToolsError, VerifierNotFound
 from ela.tools.notes import (
     DIRECTORY_MODE,
     FILE_MODE,
@@ -78,6 +78,7 @@ __all__ = [
     "WORKSPACE_WRITE_NOTE",
     "EchoTool",
     "EchoVerifier",
+    "NotIdempotentError",
     "Outcome",
     "PathProblem",
     "Tool",

@@ -487,10 +487,19 @@ class ApprovalStore(Protocol):
     async def for_task(self, task_id: TaskId) -> tuple[Approval, ...]:
         """Every request of this task, whatever its status, in insertion order."""
 
-    async def pending(self, *, limit: int | None = None) -> tuple[Approval, ...]:
+    async def pending(
+        self, *, now: datetime | None = None, limit: int | None = None
+    ) -> tuple[Approval, ...]:
         """Every PENDING request across tasks, in insertion order, the first ``limit``: what
-        waits for an answer (M8.1, the iPhone). Expired ones included: the store keeps no
-        clock; ``limit`` is ``None`` or at least 1, else ``ValueError``."""
+        waits for an answer (M8.1, the iPhone).
+
+        With ``now``, a request that has expired at that instant (``expires_at <= now``, closed
+        bound) is left out: it can no longer be answered (``respond`` refuses it), so showing it
+        would be asking for something that cannot be given (§33). Without ``now`` every PENDING
+        request comes back, expired or not: the store keeps no clock of its own, and the caller
+        that has one passes it. Requests without an ``expires_at`` never expire. ``limit`` is
+        ``None`` or at least 1, else ``ValueError``, and applies after the filter.
+        """
 
     async def respond(
         self,

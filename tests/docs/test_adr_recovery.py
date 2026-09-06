@@ -13,6 +13,10 @@ from pathlib import Path
 
 import pytest
 
+from ela.domain import AuditEventType, CapabilityId, TaskState
+from ela.tasks.engine import ORPHANED, RecoverySummary
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeTool
+from ela.tools import NotIdempotentError, Tool, ToolRegistry, tools_v01
 from tests.executive import test_executor_recovery as recovery
 
 ADR_PATH = (
@@ -95,3 +99,71 @@ def test_a_demoted_row_or_a_removed_test_is_detected() -> None:
 def test_a_missing_table_is_detected() -> None:
     with pytest.raises(AssertionError, match="crash-window table"):
         documented_windows("nothing")
+
+
+# --------------------------------------------------------------------------------------
+# The two rules of recover(), and the guard of window 7a (review of M5.3)
+# --------------------------------------------------------------------------------------
+
+RULE_ROW = re.compile(r"^\| (EXECUTING|WAITING_APPROVAL) \| (.+?) \| (.+?) \| (.+) \|$")
+
+
+def documented_recovery_rules(text: str) -> dict[str, str]:
+    """Task state -> outcome cell of the two-rule table of ADR 0015 §6."""
+    rows = {
+        state: outcome
+        for line in text.splitlines()
+        for state, _, _, outcome in [m.groups() for m in [RULE_ROW.match(line)] if m is not None]
+    }
+    assert rows, "ADR 0015 must contain the recovery-rules table"
+    return rows
+
+
+def test_the_two_recovery_rules_name_the_states_the_codes_and_the_events() -> None:
+    rules = documented_recovery_rules(ADR_PATH.read_text(encoding="utf-8"))
+    assert set(rules) == {TaskState.EXECUTING.value, TaskState.WAITING_APPROVAL.value}
+    assert ORPHANED in rules[TaskState.EXECUTING.value]
+    assert TaskState.FAILED.value in rules[TaskState.EXECUTING.value]
+    assert AuditEventType.TASK_EXPIRED.value in rules[TaskState.WAITING_APPROVAL.value]
+    assert TaskState.EXPIRED.value in rules[TaskState.WAITING_APPROVAL.value]
+    assert RecoverySummary._fields == ("failed", "skipped", "expired")
+
+
+def test_an_executing_task_with_an_expired_request_belongs_to_the_orphan_rule() -> None:
+    """The confirmation of the review, written in the ADR next to the table."""
+    text = ADR_PATH.read_text(encoding="utf-8")
+    assert "cade nella **prima** riga" in text
+    assert "la regola degli orfani lo fallisce" in text
+    assert "guarda solo\nWAITING_APPROVAL" in text
+
+
+def test_the_idempotence_guard_of_window_7a_is_documented_and_coded() -> None:
+    text = ADR_PATH.read_text(encoding="utf-8")
+    assert "`idempotent: ClassVar[bool]` **senza default**" in text
+    assert "`NotIdempotentError`" in text
+    assert "STARTED" in text
+    registry = tools_v01(root="/tmp/ela-adr-0015", clock=FakeClock(), ids=FakeIdGenerator())
+    tools = registry.tools()
+    assert tools and all(tool.idempotent is True for tool in tools)  # type: ignore[attr-defined]
+    assert "idempotent" not in vars(Tool)  # no default to inherit by mistake
+    with pytest.raises(NotIdempotentError):
+        ToolRegistry(
+            (
+                FakeTool(
+                    CapabilityId("core.echo"),
+                    FakeClock(),
+                    FakeIdGenerator(),
+                    idempotent=False,
+                ),
+            )
+        )
+
+
+def test_a_drifted_recovery_table_is_detected() -> None:
+    text = ADR_PATH.read_text(encoding="utf-8")
+    swapped = text.replace("| EXPIRED, `TASK_EXPIRED` |", "| FAILED, `TASK_FAILED` |", 1)
+    assert swapped != text
+    rules = documented_recovery_rules(swapped)
+    assert AuditEventType.TASK_EXPIRED.value not in rules[TaskState.WAITING_APPROVAL.value]
+    with pytest.raises(AssertionError, match="recovery-rules table"):
+        documented_recovery_rules("nothing")

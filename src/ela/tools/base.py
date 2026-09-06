@@ -76,10 +76,19 @@ class Tool(ABC):
 
     ``error_codes`` and ``output_keys`` declare what a subclass can produce; ADR 0013 documents
     them per tool and ``tests/docs/test_adr_executor.py`` compares.
+
+    ``idempotent`` says whether running the tool twice with the same arguments leaves the world
+    as running it once does. It has **no default**: a subclass declares it, because the answer is
+    the tool's alone and forgetting it must not read as a yes. It is what crash window 7a rests
+    on (ADR 0015 §8) — the instant between the tool's effect and the insert of its result, where
+    a retry runs the tool again — and :class:`~ela.tools.registry.ToolRegistry` refuses to
+    register a tool that does not declare it true: the first tool that cannot promise it brings
+    the STARTED protocol of ADR 0015 §8 with it.
     """
 
     error_codes: ClassVar[frozenset[str]] = frozenset({ARGUMENTS_INVALID})
     output_keys: ClassVar[frozenset[str]] = frozenset()
+    idempotent: ClassVar[bool]
 
     def __init__(
         self, capability_id: CapabilityId, clock: Clock, ids: IdGenerator, *, name: str

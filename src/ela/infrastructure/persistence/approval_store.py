@@ -69,13 +69,17 @@ class SqlApprovalStore:
             rows = await session.scalars(query)
             return tuple(row_to_approval(row) for row in rows)
 
-    async def pending(self, *, limit: int | None = None) -> tuple[Approval, ...]:
+    async def pending(
+        self, *, now: datetime | None = None, limit: int | None = None
+    ) -> tuple[Approval, ...]:
         check_limit(limit)
         query = (
             select(ApprovalRow)
             .where(ApprovalRow.status == ApprovalStatus.PENDING.value)
             .order_by(ApprovalRow.seq)
         )
+        if now is not None:  # the same closed bound ``respond`` applies
+            query = query.where(or_(ApprovalRow.expires_at.is_(None), ApprovalRow.expires_at > now))
         if limit is not None:
             query = query.limit(limit)
         async with self._sessions() as session:

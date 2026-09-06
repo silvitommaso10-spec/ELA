@@ -95,12 +95,56 @@ async def test_pending_lists_what_waits_across_tasks_in_insertion_order(
     assert await approval_store.pending() == (OTHER_TASK, OTHER)
     assert await approval_store.pending(limit=1) == (OTHER_TASK,)
     assert await approval_store.pending(limit=5) == (OTHER_TASK, OTHER)
+    assert await approval_store.pending(now=NOW) == (OTHER_TASK, OTHER)
 
 
-async def test_pending_includes_an_expired_request(approval_store: ApprovalStore) -> None:
-    """The store keeps no clock: what expired is the reader's to tell (ADR 0015 §1)."""
+async def test_pending_without_an_instant_includes_an_expired_request(
+    approval_store: ApprovalStore,
+) -> None:
+    """The store keeps no clock of its own: without ``now`` nothing is filtered by time."""
     await approval_store.add(PENDING)
     assert await approval_store.pending() == (PENDING,)
+
+
+async def test_pending_with_an_instant_leaves_out_what_can_no_longer_be_answered(
+    approval_store: ApprovalStore,
+) -> None:
+    """A request ``respond`` would refuse is not something that waits for an answer (§33)."""
+    await approval_store.add(PENDING)
+    await approval_store.add(OPEN_ENDED)
+    assert await approval_store.pending(now=NOW) == (PENDING, OPEN_ENDED)
+    assert await approval_store.pending(now=MUCH_LATER + timedelta(days=1)) == (OPEN_ENDED,)
+
+
+async def test_pending_applies_the_same_closed_bound_as_respond(
+    approval_store: ApprovalStore,
+) -> None:
+    """At the exact instant the request has expired, here as in ``respond`` (ADR 0005)."""
+    await approval_store.add(PENDING)
+    assert PENDING.expires_at == MUCH_LATER
+    assert await approval_store.pending(now=MUCH_LATER - timedelta(seconds=1)) == (PENDING,)
+    assert await approval_store.pending(now=MUCH_LATER) == ()
+    with pytest.raises(ApprovalExpiredError):
+        await approval_store.respond(
+            PENDING.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=MUCH_LATER
+        )
+
+
+async def test_pending_filters_by_time_before_it_limits(approval_store: ApprovalStore) -> None:
+    await approval_store.add(PENDING)  # expires at MUCH_LATER
+    await approval_store.add(OTHER)  # expires at MUCH_LATER
+    await approval_store.add(OPEN_ENDED)  # never expires
+    late = MUCH_LATER + timedelta(seconds=1)
+    assert await approval_store.pending(limit=2) == (PENDING, OTHER)
+    assert await approval_store.pending(now=late, limit=2) == (OPEN_ENDED,)
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+async def test_pending_refuses_a_non_positive_limit_with_an_instant_too(
+    approval_store: ApprovalStore, limit: int
+) -> None:
+    with pytest.raises(ValueError, match="limit"):
+        await approval_store.pending(now=NOW, limit=limit)
 
 
 @pytest.mark.parametrize("limit", [0, -1])

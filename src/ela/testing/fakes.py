@@ -338,9 +338,18 @@ class FakeApprovalStore:
     async def for_task(self, task_id: TaskId) -> tuple[Approval, ...]:
         return tuple(a for a in self._approvals.values() if a.task_id == task_id)
 
-    async def pending(self, *, limit: int | None = None) -> tuple[Approval, ...]:
+    async def pending(
+        self, *, now: datetime | None = None, limit: int | None = None
+    ) -> tuple[Approval, ...]:
         check_limit(limit)
-        waiting = [a for a in self._approvals.values() if a.status is ApprovalStatus.PENDING]
+        waiting = [
+            approval
+            for approval in self._approvals.values()
+            if approval.status is ApprovalStatus.PENDING
+            and not (
+                now is not None and approval.expires_at is not None and approval.expires_at <= now
+            )
+        ]
         return tuple(waiting if limit is None else waiting[:limit])
 
     async def respond(
@@ -509,11 +518,15 @@ class FakeTool:
         name: str = "fake-tool",
         output: JsonMapping | None = None,
         status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
+        idempotent: bool = True,
     ) -> None:
         self._capability_id = capability_id
         self._clock = clock
         self._ids = ids
         self._name = name
+        self.idempotent = idempotent
+        """Whether twice is once (ADR 0015 §8): ``False`` is how a test builds the tool
+        ``ToolRegistry`` must refuse."""
         self._output: JsonMapping = {} if output is None else output
         self._status = status
         self.calls: tuple[ToolCall, ...] = ()
