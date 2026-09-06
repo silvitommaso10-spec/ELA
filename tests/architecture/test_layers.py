@@ -13,10 +13,13 @@ from tests.architecture.rules import (
     AUTHORIZATION_BUILDERS_EXEMPT,
     AUTHORIZATION_MODEL,
     AUTHORIZATION_READER,
+    AVAILABILITY_FIELD,
     COMPLETE_STEP_METHOD,
     CORE_PACKAGES,
     DECIDE_METHOD,
     DECISION_MODEL,
+    DEVICE_REGISTRY_PORT,
+    DEVICES_DIR,
     EXECUTE_METHOD,
     EXECUTOR_MODULE,
     ORM_PACKAGE,
@@ -36,6 +39,8 @@ from tests.architecture.rules import (
 )
 from tests.architecture.violations import PACKAGE_ROOT
 
+ORCHESTRATOR_MODULE = "orchestrator.py"
+
 
 def test_required_modules_exist() -> None:
     """A rule about a file that does not exist would hold vacuously."""
@@ -49,6 +54,8 @@ def test_required_modules_exist() -> None:
     assert (PACKAGE_ROOT / PERMISSIONS_DIR / "capabilities.py").is_file()
     assert (PACKAGE_ROOT / PERMISSIONS_DIR / "guardian.py").is_file()
     assert (PACKAGE_ROOT / EXECUTOR_MODULE).is_file()
+    assert (PACKAGE_ROOT / DEVICES_DIR / "registry.py").is_file()
+    assert (PACKAGE_ROOT / DEVICES_DIR / ORCHESTRATOR_MODULE).is_file()
 
 
 def test_ports_really_import_the_domain() -> None:
@@ -95,7 +102,7 @@ def test_orm_module_really_imports_sqlalchemy_orm() -> None:
 def test_mapped_rows_are_not_domain_models() -> None:
     """The static rule 8 at runtime: no ORM class is (or derives from) a pydantic model."""
     mapped = [mapper.class_ for mapper in Base.registry.mappers]
-    assert len(mapped) == 7
+    assert len(mapped) == 8
     assert not any(issubclass(cls, BaseModel) for cls in mapped)
 
 
@@ -191,3 +198,28 @@ def test_the_ports_and_the_store_really_define_respond_and_the_executor_never_ca
     executor = (PACKAGE_ROOT / EXECUTOR_MODULE).read_text(encoding="utf-8")
     assert f".{RESPOND_METHOD}(" not in executor
     assert "_approvals.add(" in executor and "_results.add(" in executor
+
+
+def test_the_devices_package_really_derives_availability_and_holds_the_port() -> None:
+    """Rules 20 and 21 would hold vacuously if nothing read the field or named the port.
+
+    Both happen inside ``ela.devices``, which the rules exempt: the registry imports the port and
+    derives ``availability`` from the heartbeat, and the orchestrator reads the derived field. If
+    one day neither did, the rules would be guarding an empty room (ADR 0016 §3, ADR 0017 §9).
+    """
+    registry = PACKAGE_ROOT / DEVICES_DIR / "registry.py"
+    imported = [name for name, _ in imported_modules(registry, PACKAGE_ROOT)]
+    assert DEVICE_REGISTRY_PORT in imported
+    assert f'"{AVAILABILITY_FIELD}"' in registry.read_text(encoding="utf-8")
+    orchestrator = PACKAGE_ROOT / DEVICES_DIR / ORCHESTRATOR_MODULE
+    assert f".{AVAILABILITY_FIELD}" in orchestrator.read_text(encoding="utf-8")
+
+
+def test_the_orchestrator_really_has_no_way_to_reach_the_task_engine() -> None:
+    """Rule 22 at the level of the one module it is about (ADR 0017 §6): the orchestrator holds
+    ports and the registry, and nothing that could move — or fail — a task."""
+    orchestrator = PACKAGE_ROOT / DEVICES_DIR / ORCHESTRATOR_MODULE
+    imported = [name for name, _ in imported_modules(orchestrator, PACKAGE_ROOT)]
+    assert any(name.startswith("ela.ports") for name in imported)
+    assert not any(name.startswith("ela.tasks") for name in imported)
+    assert not any(name.startswith("ela.executive") for name in imported)

@@ -22,6 +22,7 @@ from ela.infrastructure.persistence import (
     SqlApprovalStore,
     SqlAuditLog,
     SqlAuthorizationStore,
+    SqlDeviceRegistry,
     SqlExecutionResultStore,
     SqlTaskRepository,
     make_engine,
@@ -106,6 +107,10 @@ def _sql_authorization_store() -> SqlAuthorizationStore:
     return SqlAuthorizationStore(make_engine(MEMORY_URL))
 
 
+def _sql_device_registry() -> SqlDeviceRegistry:
+    return SqlDeviceRegistry(make_engine(MEMORY_URL))
+
+
 def _sql_approval_store() -> SqlApprovalStore:
     return SqlApprovalStore(make_engine(MEMORY_URL))
 
@@ -114,7 +119,13 @@ def _sql_execution_result_store() -> SqlExecutionResultStore:
     return SqlExecutionResultStore(make_engine(MEMORY_URL))
 
 
-SQL_STORES = (SqlTaskRepository, SqlAuthorizationStore, SqlApprovalStore, SqlExecutionResultStore)
+SQL_STORES = (
+    SqlTaskRepository,
+    SqlAuthorizationStore,
+    SqlApprovalStore,
+    SqlExecutionResultStore,
+    SqlDeviceRegistry,
+)
 """The adapters that expose their engine, so the schema can be created and the engine disposed."""
 
 
@@ -283,7 +294,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("FakeAuditLog", FakeAuditLog),
         Implementation("SqlAuditLog", _audit_logs.make, _audit_logs.setup, _audit_logs.teardown),
     ),
-    DeviceRegistryPort: (Implementation("FakeDeviceRegistry", FakeDeviceRegistry),),
+    DeviceRegistryPort: (
+        Implementation("FakeDeviceRegistry", FakeDeviceRegistry),
+        Implementation("SqlDeviceRegistry", _sql_device_registry, _create_schema, _dispose),
+    ),
     CapabilityRegistryPort: (
         Implementation("FakeCapabilityRegistry", _fake_registry),
         Implementation("CapabilityRegistry", _registry),

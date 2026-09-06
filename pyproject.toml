@@ -271,3 +271,9 @@ forbidden_modules = [
     "fastapi",
     "typer",
 ]
+
+[[tool.importlinter.contracts]]
+name = "9. ela.devices non importa ela.tasks: il Device Orchestrator consiglia, non muove un task (ADR 0017)"
+type = "forbidden"
+source_modules = ["ela.devices"]
+forbidden_modules = ["ela.tasks"]

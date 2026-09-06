@@ -364,6 +364,14 @@ class AuditEventType(StrEnum):
     STEP_COMPLETED = "STEP_COMPLETED"
     STEP_FAILED = "STEP_FAILED"
     STEP_CANCELLED = "STEP_CANCELLED"
+    DEVICE_SELECTED = "DEVICE_SELECTED"
+    """The Device Orchestrator chose the node a step runs on (§17; M6.2, ADR 0017)."""
+    DEVICE_UNAVAILABLE = "DEVICE_UNAVAILABLE"
+    """No node was eligible for a step, so the task waits (§17, §33; M6.2, ADR 0017 §6).
+
+    A distinct type and not a payload of :attr:`DEVICE_SELECTED`: "every time ELA had nowhere to
+    run something" is a question the log must answer by type, as ADR 0008 argues for the engine.
+    """
     PERMISSION_DECIDED = "PERMISSION_DECIDED"
     AUTHORIZATION_GRANTED = "AUTHORIZATION_GRANTED"
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"

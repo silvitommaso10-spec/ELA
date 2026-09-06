@@ -35,8 +35,15 @@ TABLES = {
     "task_plans",
     "approvals",
     "execution_results",
+    "devices",
 }
-REVISIONS = ["0004", "0003", "0002", "0001"]  # newest first, as ``walk_revisions`` yields them
+REVISIONS = [
+    "0005",
+    "0004",
+    "0003",
+    "0002",
+    "0001",
+]  # newest first, as ``walk_revisions`` yields them
 TRIGGERS_SQL = "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' ORDER BY name"
 EXPECTED_COLUMNS = {
     name: {column.name for column in table.columns} for name, table in Base.metadata.tables.items()
@@ -116,7 +123,7 @@ def test_downgrade_of_the_audit_migration_is_refused(db: Path) -> None:
     with pytest.raises(NotImplementedError, match="no downgrade"):
         command.downgrade(config, "0001")
     assert "audit_events" in _tables(db)
-    assert set(_tables(db)) == TABLES - {"task_plans", "approvals", "execution_results"}
+    assert set(_tables(db)) == TABLES - {"task_plans", "approvals", "execution_results", "devices"}
     assert _triggers(db) == APPEND_ONLY_TRIGGERS
     assert _version(db) == "0002"
 
@@ -126,7 +133,7 @@ def test_downgrade_of_the_plans_migration_removes_the_table(db: Path) -> None:
     config = config_for(db)
     command.upgrade(config, "head")
     command.downgrade(config, "0002")
-    assert set(_tables(db)) == TABLES - {"task_plans", "approvals", "execution_results"}
+    assert set(_tables(db)) == TABLES - {"task_plans", "approvals", "execution_results", "devices"}
     assert _version(db) == "0002"
 
 
@@ -135,9 +142,20 @@ def test_downgrade_of_the_approvals_migration_removes_both_tables(db: Path) -> N
     config = config_for(db)
     command.upgrade(config, "head")
     command.downgrade(config, "0003")
-    assert set(_tables(db)) == TABLES - {"approvals", "execution_results"}
+    assert set(_tables(db)) == TABLES - {"approvals", "execution_results", "devices"}
     assert "task_plans" in _tables(db)
     assert _version(db) == "0003"
+    command.upgrade(config, "head")
+    assert _tables(db) == EXPECTED_COLUMNS
+
+
+def test_downgrade_of_the_devices_migration_removes_the_table(db: Path) -> None:
+    """``0005`` does not touch ``audit_events`` either: reversible down to ``0004`` (ADR 0016)."""
+    config = config_for(db)
+    command.upgrade(config, "head")
+    command.downgrade(config, "0004")
+    assert set(_tables(db)) == TABLES - {"devices"}
+    assert _version(db) == "0004"
     command.upgrade(config, "head")
     assert _tables(db) == EXPECTED_COLUMNS
 

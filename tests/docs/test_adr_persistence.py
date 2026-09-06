@@ -3,9 +3,10 @@
 Same pattern as ``test_adr_ports.py``: the ADR is the documented decision, the metadata is the
 running code, and neither may drift from the other without this test noticing. An ADR is
 immutable, so each ADR documents the tables it introduces (0006: tasks, task events,
-authorizations; 0007: audit events; 0008: task plans; 0015: approvals, execution results) and
-the union is what the metadata must match. A schema row has exactly two cells — the table and
-its columns — so that the other tables of an ADR (ports, operations) are never mistaken for one.
+authorizations; 0007: audit events; 0008: task plans; 0015: approvals, execution results;
+0016: devices) and the union is what the metadata must match. A schema row has exactly two
+cells — the table and its columns — so that the other tables of an ADR (ports, operations) are
+never mistaken for one.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ ADR_PATHS = {
     "0007": ADR_DIR / "0007-audit-log.md",
     "0008": ADR_DIR / "0008-task-engine.md",
     "0015": ADR_DIR / "0015-approval-and-result-persistence.md",
+    "0016": ADR_DIR / "0016-device-registry.md",
 }
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \|$")
 COLUMN = re.compile(r"`(\w+)`")
@@ -74,6 +76,7 @@ def test_each_adr_documents_its_own_tables() -> None:
     assert set(documented_tables(texts["0007"])) == {"audit_events"}
     assert set(documented_tables(texts["0008"])) == {"task_plans"}
     assert set(documented_tables(texts["0015"])) == {"approvals", "execution_results"}
+    assert set(documented_tables(texts["0016"])) == {"devices"}
 
 
 @pytest.mark.parametrize(
