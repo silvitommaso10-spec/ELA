@@ -48,6 +48,25 @@ DOMAIN_MODULE = f"{ROOT_PACKAGE}.domain"
 AUDIT_ADAPTER = Path("infrastructure") / "persistence" / "audit_log.py"
 MUTATING_NAMES = frozenset({"update", "delete", "merge"})
 MUTATING_SQL = re.compile(r"\b(update|delete|replace|drop)\b", re.IGNORECASE)
+#: Rule 20 (ADR 0016 §3, ADR 0017 §7): the availability of a node is *derived* from its last
+#: heartbeat, never read from the row. Outside ``ela.devices`` — which derives it — and the mapper
+#: — which stores and rehydrates it — nobody touches the field at all.
+DEVICES_DIR = "devices"
+AVAILABILITY_FIELD = "availability"
+#: Rule 21 (ADR 0017 §7): whoever decides goes through ``DeviceRegistry``, not the raw port. The
+#: exemptions are the four modules that legitimately name it: the ports that declare it, the
+#: package that holds it, the adapter that implements it, and the composition root that wires it.
+DEVICE_REGISTRY_PORT = f"{ROOT_PACKAGE}.ports.DeviceRegistryPort"
+DEVICE_PORT_ALLOWED = (
+    f"{ROOT_PACKAGE}.ports",
+    f"{ROOT_PACKAGE}.{DEVICES_DIR}",
+    f"{ROOT_PACKAGE}.infrastructure.persistence.device_registry",
+    f"{ROOT_PACKAGE}.api",
+)
+#: Rule 22 (ADR 0017 §6): the orchestrator advises and never commands. A package that cannot
+#: reach the Task Engine cannot fail a task because it found no node.
+DEVICES_PACKAGE = f"{ROOT_PACKAGE}.{DEVICES_DIR}"
+DEVICES_FORBIDDEN = (f"{ROOT_PACKAGE}.{TASKS_DIR}",)
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
 TESTING_DIR = "testing"
@@ -765,6 +784,73 @@ def _has_writing_flag(flags: ast.expr | None) -> bool:
     return False
 
 
+def check_device_availability_readers(pkg_root: Path) -> list[Violation]:
+    """Rule 20: outside ``ela.devices`` and the mapper nobody touches ``availability``.
+
+    ADR 0016 §3 and ADR 0017 §9. A stored ``availability`` says what was true when someone wrote
+    it and keeps saying it after the node went quiet; the answer a decision needs comes from
+    ``DeviceRegistry``, which derives it from the last heartbeat. The orchestrator (§17) is the
+    first reader with a motive to trust the column — it is indexed and one ``SELECT`` away — so
+    the convention becomes a rule here.
+    Reported: any ``.availability`` attribute and any ``availability=`` keyword. Closed-world on
+    names, like rules 5, 11, 12, 15 and 16: in a repository where the word has one meaning, a
+    false positive costs less than a false negative.
+    """
+    rule = "availability-derived-not-read"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        relative = path.relative_to(pkg_root)
+        if relative.parts[0] == DEVICES_DIR or relative == PERSISTENCE_MAPPERS:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr == AVAILABILITY_FIELD:
+                found.append(Violation(rule, name, f".{AVAILABILITY_FIELD}", node.lineno))
+            elif isinstance(node, ast.keyword) and node.arg == AVAILABILITY_FIELD:
+                found.append(Violation(rule, name, f"{AVAILABILITY_FIELD}=", node.lineno))
+    return found
+
+
+def check_device_port_readers(pkg_root: Path) -> list[Violation]:
+    """Rule 21: outside four modules nobody names ``DeviceRegistryPort`` (ADR 0016 §3, ADR 0017 §7).
+
+    Rule 20 forbids reading the stale field; this one removes the temptation, by keeping the raw
+    port out of the hands of whoever decides. ``ela.devices`` holds it, ``ela.ports`` declares it,
+    the SQL adapter implements it and ``ela.api`` wires it: everybody else asks ``DeviceRegistry``,
+    and gets an availability that is already judged.
+    """
+    files = (
+        path
+        for path in _source_files(pkg_root)
+        if not any(
+            _is_within(module_name(path, pkg_root), prefix) for prefix in DEVICE_PORT_ALLOWED
+        )
+    )
+    return _violations(
+        "device-registry-port-reached-only-through-the-registry",
+        files,
+        pkg_root,
+        lambda imported: _is_within(imported, DEVICE_REGISTRY_PORT),
+    )
+
+
+def check_devices_isolation(pkg_root: Path) -> list[Violation]:
+    """Rule 22: ``ela.devices`` does not import ``ela.tasks`` (ADR 0017 §6).
+
+    "The orchestrator only advises" is the property that makes a missing node an *attesa* and not
+    a failure (§17, §33). Kept structurally rather than promised in a docstring: a package with no
+    path to the Task Engine cannot move a task, whatever a future ``place`` decides to do.
+    """
+    files = _source_files(pkg_root / DEVICES_DIR)
+    return _violations(
+        "devices-advise-and-never-move-a-task",
+        files,
+        pkg_root,
+        lambda imported: any(_is_within(imported, prefix) for prefix in DEVICES_FORBIDDEN),
+    )
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -785,4 +871,7 @@ RULES: dict[str, Rule] = {
     "step-completers": check_step_completers,
     "verifier-read-only": check_verifier_read_only,
     "approval-responders": check_approval_responders,
+    "device-availability-readers": check_device_availability_readers,
+    "device-port-readers": check_device_port_readers,
+    "devices-isolation": check_devices_isolation,
 }

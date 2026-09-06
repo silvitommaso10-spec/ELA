@@ -528,9 +528,75 @@ VIOLATIONS: tuple[Case, ...] = (
         "from pathlib import Path\ndef w(p):\n    Path(p).touch()\n",
         ".touch(",
     ),
+    Case(
+        "availability-read-in-executive",
+        "device-availability-readers",
+        "executive/placement.py",
+        "def usable(device):\n    return device.availability == 'ONLINE'\n",
+        ".availability",
+    ),
+    Case(
+        "availability-built-in-tasks",
+        "device-availability-readers",
+        "tasks/nodes.py",
+        "from ela.domain import Device\n"
+        "def make(i, n):\n"
+        "    return Device(id=i, created_at=n, availability='ONLINE')\n",
+        "availability=",
+    ),
+    Case(
+        "device-port-in-executive",
+        "device-port-readers",
+        "executive/placement.py",
+        "from ela.ports import DeviceRegistryPort\n"
+        "async def nodes(port: DeviceRegistryPort):\n    return await port.devices()\n",
+        "ela.ports.DeviceRegistryPort",
+    ),
+    Case(
+        "device-port-in-testing",
+        "device-port-readers",
+        "testing/nodes.py",
+        "from ela.ports import DeviceRegistryPort\n",
+        "ela.ports.DeviceRegistryPort",
+    ),
+    Case(
+        "devices-import-tasks",
+        "devices-isolation",
+        "devices/placement.py",
+        "from ela.tasks.engine import TaskEngine\n",
+        "ela.tasks.engine.TaskEngine",
+    ),
+    Case(
+        "devices-import-tasks-relative",
+        "devices-isolation",
+        "devices/placement.py",
+        "from ..tasks import graph\n",
+        "ela.tasks.graph",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        "availability-inside-devices",
+        "device-availability-readers",
+        "devices/policy.py",
+        "def usable(device):\n    return device.availability == 'ONLINE'\n",
+        "",
+    ),
+    Case(
+        "device-port-in-the-registry",
+        "device-port-readers",
+        "devices/store.py",
+        "from ela.ports import DeviceRegistryPort\n",
+        "",
+    ),
+    Case(
+        "devices-import-ports-and-domain",
+        "devices-isolation",
+        "devices/placement.py",
+        "from ela.domain import Device\nfrom ela.ports import AuditLog\n",
+        "",
+    ),
     Case("domain-stdlib-pydantic", "domain", "domain.py", "import enum\nimport pydantic\n", ""),
     Case(
         "approval-store-defines-respond",

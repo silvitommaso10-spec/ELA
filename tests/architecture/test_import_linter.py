@@ -20,6 +20,8 @@ import pytest
 from tests.architecture.rules import (
     CORE_FORBIDDEN,
     CORE_PACKAGES,
+    DEVICES_FORBIDDEN,
+    DEVICES_PACKAGE,
     INFRA_LIBRARIES,
     INFRA_PACKAGES,
     PERMISSIONS_ALLOWED_INTERNAL,
@@ -67,6 +69,8 @@ def _contract_for(rule: str) -> Contract:
             return contract
         if rule == "permissions-imports" and sources == {PERMISSIONS_PACKAGE}:
             return contract
+        if rule == "devices-isolation" and sources == {DEVICES_PACKAGE}:
+            return contract
     raise AssertionError(f"pyproject.toml has no import-linter contract for rule {rule!r}")
 
 
@@ -104,6 +108,9 @@ def test_contracts_cover_current_packages() -> None:
     assert set(permissions["forbidden_modules"]) >= (
         (modules - set(PERMISSIONS_ALLOWED_INTERNAL)) | INFRA_LIBRARIES | {"pydantic"}
     )
+
+    devices = _contract_for("devices-isolation")
+    assert set(devices["forbidden_modules"]) == set(DEVICES_FORBIDDEN)
 
 
 def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() -> None:
@@ -170,6 +177,7 @@ LINTER_CASES = [
         "testing-imports-tasks",
         "state-machine-imported-by-executive",
         "permissions-imports-tasks",
+        "devices-import-tasks",
     )
 ]
 
