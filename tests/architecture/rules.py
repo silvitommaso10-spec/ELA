@@ -53,15 +53,16 @@ MUTATING_SQL = re.compile(r"\b(update|delete|replace|drop)\b", re.IGNORECASE)
 #: — which stores and rehydrates it — nobody touches the field at all.
 DEVICES_DIR = "devices"
 AVAILABILITY_FIELD = "availability"
-#: Rule 21 (ADR 0017 §7): whoever decides goes through ``DeviceRegistry``, not the raw port. The
-#: exemptions are the four modules that legitimately name it: the ports that declare it, the
-#: package that holds it, the adapter that implements it, and the composition root that wires it.
+#: Rule 21 (ADR 0017 §9): whoever decides goes through ``DeviceRegistry``, not the raw port. Three
+#: exemptions, one per module that names it today: the ports that declare it, the package that
+#: holds it, the adapter that implements it. The composition root of M8.1 will probably need a
+#: fourth, and it is deliberately not here yet: an exemption with no code behind it is a door
+#: opened before anyone knocks (review of M6.2).
 DEVICE_REGISTRY_PORT = f"{ROOT_PACKAGE}.ports.DeviceRegistryPort"
 DEVICE_PORT_ALLOWED = (
     f"{ROOT_PACKAGE}.ports",
     f"{ROOT_PACKAGE}.{DEVICES_DIR}",
     f"{ROOT_PACKAGE}.infrastructure.persistence.device_registry",
-    f"{ROOT_PACKAGE}.api",
 )
 #: Rule 22 (ADR 0017 §6): the orchestrator advises and never commands. A package that cannot
 #: reach the Task Engine cannot fail a task because it found no node.
@@ -813,12 +814,12 @@ def check_device_availability_readers(pkg_root: Path) -> list[Violation]:
 
 
 def check_device_port_readers(pkg_root: Path) -> list[Violation]:
-    """Rule 21: outside four modules nobody names ``DeviceRegistryPort`` (ADR 0016 §3, ADR 0017 §7).
+    """Rule 21: outside three modules nobody names ``DeviceRegistryPort`` (ADR 0017 §9).
 
-    Rule 20 forbids reading the stale field; this one removes the temptation, by keeping the raw
-    port out of the hands of whoever decides. ``ela.devices`` holds it, ``ela.ports`` declares it,
-    the SQL adapter implements it and ``ela.api`` wires it: everybody else asks ``DeviceRegistry``,
-    and gets an availability that is already judged.
+    Rule 20 forbids reading the stale field (ADR 0016 §3); this one removes the temptation, by
+    keeping the raw port out of the hands of whoever decides. ``ela.ports`` declares it,
+    ``ela.devices`` holds it and the SQL adapter implements it: everybody else asks
+    ``DeviceRegistry``, and gets an availability that is already judged.
     """
     files = (
         path

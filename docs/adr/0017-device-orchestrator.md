@@ -117,9 +117,18 @@ Due invarianti, entrambe con un test:
 promette. `max` restituisce il primo massimo, quindi lo stesso registro e lo stesso step danno
 sempre la stessa risposta.
 
-I pesi sono convenzionali; ciò che conta è l'ordine che producono. Stanno in questa tabella e
-`tests/docs/test_adr_orchestrator.py` la confronta con il codice: cambiarli è un cambio di ADR,
-non una riga di codice.
+I pesi sono convenzionali; ciò che conta è l'ordine che producono, ed è quello a essere stato
+scelto: i tratti pesano più di tutto perché sono *il motivo* per cui un task va su un nodo invece
+che su un altro (§17, la GPU per il rendering di §15), mentre rete e potenza sono preferenze a
+parità di capacità. Stanno in questa tabella e `tests/docs/test_adr_orchestrator.py` la confronta
+con il codice: cambiarli è un cambio di ADR, non una riga di codice.
+
+**I pesi sono da ritarare in Fase 12, con dati reali e non a occhio** (review di M6.2). Oggi non
+c'è niente da misurare: un nodo solo, nessuna rete, nessuna latenza osservata, nessuno storico di
+fallimenti. `NETWORK_POINTS` in particolare approssima la latenza con la distanza, e la latenza
+conterà davvero quando ci saranno nodi remoti veri e misure vere — a quel punto la taratura è un
+lavoro su numeri raccolti, non un'altra stima. Fino ad allora l'ordine di questa tabella è la
+politica dichiarata, non una misura.
 
 **L'ordine di `PrivacyLevel` sta qui, non nel dominio.** `RiskLevel` ha gli operatori di confronto
 nel dominio perché il catalogo, il Guardian e l'executor confrontano rischi: tre chiamanti. La
@@ -207,12 +216,20 @@ L'impegno lasciato aperto da M6.1 si chiude con tre regole, ognuna con il suo ca
 | Regola | Cosa vieta | Esenzioni |
 |--------|-----------|-----------|
 | 20 `device-availability-readers` | leggere `.availability` o passarlo come keyword | `ela.devices`, il mapper di persistenza |
-| 21 `device-port-readers` | nominare `DeviceRegistryPort` | `ela.ports`, `ela.devices`, l'adapter SQL, `ela.api` |
+| 21 `device-port-readers` | nominare `DeviceRegistryPort` | `ela.ports`, `ela.devices`, l'adapter SQL |
 | 22 `devices-isolation` | `ela.devices` che importa `ela.tasks` | nessuna |
 
 La 20 vieta di leggere il campo vecchio; la 21 toglie la tentazione, tenendo il port grezzo fuori
 dalle mani di chi decide; la 22 è la garanzia strutturale di §6. La 22 ha anche il contratto
 import-linter 9, come le altre regole sugli import.
+
+Le esenzioni della 21 sono **tre e non quattro**: ognuna corrisponde a codice che esiste oggi e
+che nomina davvero il port. Il composition root di M8.1 dovrà probabilmente nominarlo per
+costruire `SqlDeviceRegistry` e passarlo a `DeviceRegistry`, ma la sua esenzione **non** è stata
+aggiunta in anticipo (review di M6.2): un'esenzione senza codice che la giustifichi è una porta
+aperta prima che serva, e per di più aperta su un package — `ela.api` — che potrebbe non essere
+quello dove il composition root finirà. Quando servirà sarà una riga con la sua motivazione
+davanti.
 
 La 20 è una regola sui nomi, quindi ampia: colpirebbe anche un `.availability` su un oggetto che
 non è un `Device`. È voluto, come per le regole 5, 12, 15 e 16 — in un repository dove quella

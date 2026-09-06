@@ -560,6 +560,13 @@ VIOLATIONS: tuple[Case, ...] = (
         "ela.ports.DeviceRegistryPort",
     ),
     Case(
+        "device-port-in-api",
+        "device-port-readers",
+        "api/wiring.py",
+        "from ela.ports import DeviceRegistryPort\n",
+        "ela.ports.DeviceRegistryPort",
+    ),
+    Case(
         "devices-import-tasks",
         "devices-isolation",
         "devices/placement.py",
