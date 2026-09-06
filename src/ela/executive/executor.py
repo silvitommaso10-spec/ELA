@@ -32,6 +32,17 @@ One instant serves ``authorize`` and ``consume``: ``decision.created_at`` (ADR 0
 finds it instead of minting a second one, and writes the ``AUTHORIZATION_GRANTED`` a crash may
 have skipped (ADR 0013 §3, §8). What never enters the audit trail: the arguments, the tool's
 output, and the content the verifier compared (§57).
+
+Nothing the executor needs lives only in memory (M5.3, ADR 0015). The request for approval is
+stored in the :class:`~ela.ports.ApprovalStore` before the task waits on it, and the user's
+answer is read from there: a retry finds the GRANTED request of the step and turns it into the
+grant. The tool's result is stored in the :class:`~ela.ports.ExecutionResultStore` before
+``TOOL_EXECUTED`` names it. So a retry after a crash **resumes** instead of restarting: a stored
+result of a RUNNING step means the tool ran, and the call continues from the first write that is
+missing — the audit, the verification, the closing of the step — without asking the Guardian,
+spending a grant or running the tool again. A step FAILED by a verification whose task is still
+EXECUTING is failed now (ADR 0015 §7). What a retry cannot repair — the instant between the
+tool's effect and the insert of its result — is declared, not hidden.
 """
 
 from __future__ import annotations
@@ -78,12 +89,14 @@ from ela.permissions import (
 )
 from ela.ports import (
     AlreadyExistsError,
+    ApprovalStore,
     AuditLog,
     AuthorizationNotUsableError,
     AuthorizationStore,
     AuthorizingGuardianPort,
     CapabilityRegistryPort,
     Clock,
+    ExecutionResultStore,
     IdGenerator,
     NotAllowedError,
     NotFoundError,
@@ -97,12 +110,14 @@ from ela.tasks.engine import TaskEngine
 from ela.tasks.graph import GraphState
 
 __all__ = [
+    "APPROVAL_NAMESPACE",
     "AUTHORIZATION_NAMESPACE",
     "CONSUMING_RULES",
     "DEFAULT_APPROVAL_TTL",
     "GRANT_VANISHED",
     "LOCAL_DEVICE",
     "MAX_APPROVAL_TTL",
+    "RECOVERED",
     "TOOL_EXCEPTION",
     "TOOL_REFUSED",
     "VERIFICATION_EXCEPTION",
@@ -120,6 +135,17 @@ AUTHORIZATION_NAMESPACE: Final = UUID("2d9b7f61-8c4a-4e0b-9f3d-6a1e5c7b8d90")
 Arbitrary and fixed forever: one approval gives one grant, however many times the call that
 uses it is retried (ADR 0013 §3). Changing it would change the id of every such grant.
 """
+
+APPROVAL_NAMESPACE: Final = UUID("7c3e1a58-2f6b-4d90-a1c4-9e8b5d2f6a71")
+"""The UUID namespace of requests for approval: ``uuid5(APPROVAL_NAMESPACE, str(decision.id))``.
+
+Arbitrary and fixed forever: one ``REQUIRES_APPROVAL`` decision gives one request, and a second
+request for the same step is born only from a second decision of the Guardian (ADR 0015 §6).
+"""
+
+RECOVERED: Final = "recovered"
+"""The payload key an audit event written on a resumed run carries, set to ``True`` (ADR 0015 §5,
+decision E): the numbers it holds were read at the retry, not at the run. Absent otherwise."""
 
 DEFAULT_APPROVAL_TTL: Final = timedelta(hours=24)
 """How long a request for approval stays answerable (ADR 0013 §5, decision E).
@@ -175,18 +201,22 @@ class Verification(NamedTuple):
 
 
 class Execution(NamedTuple):
-    """What one call of :meth:`Executor.execute` did (ADR 0013 §1, ADR 0014 §8).
+    """What one call of :meth:`Executor.execute` did (ADR 0013 §1, ADR 0014 §8, ADR 0015 §4).
 
-    ``result`` is set only if the tool ran; ``approval`` only if one was requested;
-    ``verification`` only if the verifier was consulted (the tool ran and its result said
-    SUCCEEDED); ``graph`` is the state of the plan as last read or written. ``decision`` is
-    always there: every path after the preconditions goes through the Guardian.
+    ``result`` is set if the tool ran — in this call or, on a resumed run, in the one the crash
+    cut short; ``approval`` only if a request was made or completed by this call;
+    ``verification`` only if the verifier's word entered this call (consulted now, or read back
+    from ``EXECUTION_VERIFIED`` on a resume, with ``failures`` empty and the error carrying them
+    in ``details``); ``graph`` is the state of the plan as last read or written. ``decision`` is
+    ``None`` only when the call resumed a run, completed a request or failed a task the Guardian
+    had already decided about in an earlier call: its id is in ``result.decision_id`` or
+    ``approval.decision_id``, and the decision itself in ``PERMISSION_DECIDED``.
     """
 
     task: Task
     step_id: StepId
     graph: GraphState
-    decision: PermissionDecision
+    decision: PermissionDecision | None
     authorization: Authorization | None
     result: ExecutionResult | None
     approval: Approval | None
@@ -258,7 +288,8 @@ class Executor:
     (ELA acts); the user signs ``AUTHORIZATION_GRANTED`` through the approval.
     ``authorization_ttl`` is the life of a grant born here (ADR 0012 §2), ``approval_ttl`` the
     life of a request for approval (at most :data:`MAX_APPROVAL_TTL`). ``verifiers`` is
-    mandatory: an executor that cannot verify does not exist (§63).
+    mandatory: an executor that cannot verify does not exist (§63). ``approvals`` and ``results``
+    are mandatory too (ADR 0015): an executor that kept them in memory could not be retried.
     """
 
     def __init__(
@@ -271,6 +302,8 @@ class Executor:
         engine: TaskEngine,
         repository: TaskRepository,
         authorizations: AuthorizationStore,
+        approvals: ApprovalStore,
+        results: ExecutionResultStore,
         audit: AuditLog,
         clock: Clock,
         ids: IdGenerator,
@@ -289,6 +322,8 @@ class Executor:
         self._engine = engine
         self._repository = repository
         self._authorizations = authorizations
+        self._approvals = approvals
+        self._results = results
         self._audit = audit
         self._clock = clock
         self._ids = ids
@@ -296,20 +331,15 @@ class Executor:
         self._authorization_ttl = authorization_ttl
         self._approval_ttl = approval_ttl
 
-    async def execute(
-        self,
-        task_id: TaskId,
-        step_id: StepId,
-        arguments: JsonMapping,
-        *,
-        approval: Approval | None = None,
-    ) -> Execution:
+    async def execute(self, task_id: TaskId, step_id: StepId, arguments: JsonMapping) -> Execution:
         """Run and verify the one capability of a RUNNING step of an EXECUTING task (ADR 0013
-        §1–§9, ADR 0014 §3–§4).
+        §1–§9, ADR 0014 §3–§4), or resume what an earlier call left unfinished (ADR 0015 §5–§7).
 
-        ``approval`` is the user's GRANTED answer to a request this executor made earlier: it
+        A retry is this same call again. The user's answer to a request this executor made is
+        read from the :class:`~ela.ports.ApprovalStore`: the last GRANTED request of the step
         becomes the grant the call runs under. Preconditions that fail raise before anything is
-        written: :class:`~ela.executive.errors.ExecutorError`,
+        written: :class:`~ela.executive.errors.ExecutorError` (also for a request of this step
+        that expired unanswered: it is never asked again, ADR 0015 §6),
         :class:`~ela.tasks.errors.UnknownStepError`, ``CapabilityNotFound``, ``ToolNotFound``,
         ``VerifierNotFound``, ``ApprovalMismatchError``.
         """
@@ -319,6 +349,11 @@ class Executor:
         graph = await self._engine.graph(task_id)
         step = graph.graph.step(step_id)
         state = graph.states[step_id]
+        if state is StepState.FAILED:
+            unfinished = await self._unfinished_verification_failure(task_id, step_id)
+            if unfinished is not None:  # ADR 0015 §7: the task was to be failed with it
+                task = await self._engine.fail(task_id, unfinished)
+                return Execution(task, step_id, graph, None, None, None, None, None)
         if state is not StepState.RUNNING:
             raise ExecutorError(
                 task_id, f"step {step_id} is {state.value}, not RUNNING: start the step first"
@@ -347,10 +382,33 @@ class Executor:
             )
         targets = targets_of(spec, arguments)
 
+        stored = await self._results.for_step(task_id, step_id)
+        if len(stored) > 1:
+            raise ExecutorError(
+                task_id, f"step {step_id} has {len(stored)} results; a step runs once"
+            )
+        if stored:  # the tool ran in an earlier call: resume from the first missing write
+            return await self._resume(
+                task, graph, step, tool, verifier, arguments, targets, stored[0]
+            )
+
         now = self._clock.now()
+        requests = [a for a in await self._approvals.for_task(task_id) if a.step_id == step_id]
+        pending = [a for a in requests if a.status is ApprovalStatus.PENDING]
+        if pending:  # asked in an earlier call, the task never waited on it (ADR 0015 §6)
+            request = pending[-1]
+            if request.expires_at is not None and request.expires_at <= now:
+                raise ExecutorError(
+                    task_id,
+                    f"approval {request.id} for step {step_id} expired at "
+                    f"{request.expires_at.isoformat()} unanswered; it is not asked again",
+                )
+            task = await self._engine.request_approval(task_id, request)
+            return Execution(task, step_id, graph, None, None, None, request, None)
+        granted = [a for a in requests if a.status is ApprovalStatus.GRANTED]
         authorization: Authorization | None
-        if approval is not None:
-            authorization, uses = await self._grant(approval, task, step, spec, now)
+        if granted:
+            authorization, uses = await self._grant(granted[-1], task, step, spec, now)
         else:
             authorization, uses = await self._find_authorization(spec, targets, task, step, now)
 
@@ -384,29 +442,98 @@ class Executor:
                 )
                 return await self._fail(task, graph, decision, authorization, vanished)
 
-        result = await self._run_tool(tool, decision, arguments)
-        if result is None:
+        produced = await self._run_tool(tool, decision, arguments)
+        if produced is None:
             refused = ErrorMetadata(
                 code=TOOL_REFUSED,
                 message=f"{tool.name} refused the decision {decision.id}",
                 tool_name=tool.name,
             )
             return await self._fail(task, graph, decision, authorization, refused)
-        await self._record_execution(tool, decision, authorization, result, targets, consumed)
+        result = produced.model_copy(
+            update={
+                "decision_id": decision.id,
+                "authorization_id": None
+                if consumed is None or authorization is None
+                else authorization.id,
+            }
+        )
+        await self._results.add(result)
+        await self._record_execution(tool, result, targets, consumed)
         if result.status is not ExecutionStatus.SUCCEEDED:
             graph = await self._engine.fail_step(task_id, step_id, _failure_of(result, tool))
             return Execution(task, step_id, graph, decision, authorization, result, None, None)
 
         verification = await self._verify(verifier, tool, step, arguments, result)
-        await self._record_verification(
-            tool, verifier, decision, authorization, result, verification, consumed
-        )
-        if verification.error is None:
-            graph = await self._engine.complete_step(task_id, step_id, result)
+        await self._record_verification(tool, verifier, result, verification)
+        return await self._close(task, graph, step, decision, authorization, result, verification)
+
+    # ----------------------------------------------------------------------------------
+    # Resuming what an earlier call left unfinished (ADR 0015 §5, §7)
+    # ----------------------------------------------------------------------------------
+
+    async def _resume(
+        self,
+        task: Task,
+        graph: GraphState,
+        step: TaskStep,
+        tool: ToolPort,
+        verifier: VerifierPort,
+        arguments: JsonMapping,
+        targets: Sequence[object],
+        result: ExecutionResult,
+    ) -> Execution:
+        """Continue from the first write the crash skipped: the audit of the run, the
+        verification, the closing of the step. No Guardian, no grant, no tool."""
+        events = await self._audit.read(task_id=task.id)
+        if _event_about(events, AuditEventType.TOOL_EXECUTED, result.id) is None:
+            uses = (
+                None
+                if result.authorization_id is None
+                else await self._authorizations.uses(result.authorization_id)
+            )
+            await self._record_execution(tool, result, targets, uses, recovered=True)
+        if result.status is not ExecutionStatus.SUCCEEDED:
+            graph = await self._engine.fail_step(task.id, step.id, _failure_of(result, tool))
+            return Execution(task, step.id, graph, None, None, result, None, None)
+        verified = _event_about(events, AuditEventType.EXECUTION_VERIFIED, result.id)
+        if verified is None:  # re-verify: the verifier only reads (rule 18)
+            verification = await self._verify(verifier, tool, step, arguments, result)
+            await self._record_verification(tool, verifier, result, verification, recovered=True)
         else:
-            graph = await self._engine.fail_step(task_id, step_id, verification.error)
-            task = await self._engine.fail(task_id, verification.error)
-        return Execution(task, step_id, graph, decision, authorization, result, None, verification)
+            verification = Verification(step.success_conditions, (), verified.error)
+        return await self._close(task, graph, step, None, None, result, verification)
+
+    async def _close(
+        self,
+        task: Task,
+        graph: GraphState,
+        step: TaskStep,
+        decision: PermissionDecision | None,
+        authorization: Authorization | None,
+        result: ExecutionResult,
+        verification: Verification,
+    ) -> Execution:
+        """The step is COMPLETED on a passed verification; on a failed one the step and the task
+        are FAILED with the same error (ADR 0014 §4)."""
+        if verification.error is None:
+            graph = await self._engine.complete_step(task.id, step.id, result)
+        else:
+            graph = await self._engine.fail_step(task.id, step.id, verification.error)
+            task = await self._engine.fail(task.id, verification.error)
+        return Execution(task, step.id, graph, decision, authorization, result, None, verification)
+
+    async def _unfinished_verification_failure(
+        self, task_id: TaskId, step_id: StepId
+    ) -> ErrorMetadata | None:
+        """The error a FAILED step's task was to be failed with, if the crash came between
+        ``fail_step`` and ``fail`` (ADR 0015 §7): the ``STEP_FAILED`` of a verification."""
+        for event in reversed(await self._audit.read(task_id=task_id)):
+            if event.event_type is AuditEventType.STEP_FAILED and event.step_id == step_id:
+                if event.error is not None and event.error.code == VERIFICATION_FAILED:
+                    return event.error
+                return None
+        return None
 
     # ----------------------------------------------------------------------------------
     # Authorization: from an approval, or from the store
@@ -508,7 +635,7 @@ class Executor:
         targets = approved_targets(decision)
         where = f" on {', '.join(targets)}" if targets else ""
         approval = Approval(
-            id=ApprovalId(self._ids.new_uuid()),
+            id=ApprovalId(uuid5(APPROVAL_NAMESPACE, str(decision.id))),
             created_at=decision.created_at,
             task_id=decision.task_id,
             step_id=decision.step_id,
@@ -519,6 +646,7 @@ class Executor:
             decision_id=decision.id,
             expires_at=decision.created_at + self._approval_ttl,
         )
+        await self._approvals.add(approval)  # stored before the task waits on it (ADR 0015 §6)
         task = await self._engine.request_approval(decision.task_id, approval)
         return Execution(task, step.id, graph, decision, authorization, None, approval, None)
 
@@ -570,28 +698,27 @@ class Executor:
     async def _record_execution(
         self,
         tool: ToolPort,
-        decision: PermissionDecision,
-        authorization: Authorization | None,
         result: ExecutionResult,
         targets: Sequence[object],
-        consumed: int | None,
+        uses: int | None,
+        *,
+        recovered: bool = False,
     ) -> None:
-        """``TOOL_EXECUTED``: the fact, the decision, the grant, the targets — never the
-        arguments nor the output (§57)."""
+        """``TOOL_EXECUTED``: the fact, the decision and the grant the result carries, the
+        targets — never the arguments nor the output (§57). ``created_at`` is the result's when
+        written with the run, the clock's on a resume, which also marks the payload."""
         await self._audit.append(
             AuditEvent(
                 id=AuditEventId(self._ids.new_uuid()),
-                created_at=result.created_at,
+                created_at=self._clock.now() if recovered else result.created_at,
                 event_type=AuditEventType.TOOL_EXECUTED,
                 actor=self._actor,
-                summary=f"execute: {result.status.value} {decision.capability_id} by {tool.name}",
-                task_id=decision.task_id,
-                step_id=decision.step_id,
-                capability_id=decision.capability_id,
-                decision_id=decision.id,
-                authorization_id=None
-                if consumed is None or authorization is None
-                else authorization.id,
+                summary=f"execute: {result.status.value} {result.capability_id} by {tool.name}",
+                task_id=result.task_id,
+                step_id=result.step_id,
+                capability_id=result.capability_id,
+                decision_id=result.decision_id,
+                authorization_id=result.authorization_id,
                 tool_name=tool.name,
                 error=result.error,
                 payload={
@@ -600,7 +727,8 @@ class Executor:
                     "targets": _json_targets(targets),
                     "duration_ms": result.duration_ms,
                     "device": LOCAL_DEVICE,
-                    "uses": consumed,
+                    "uses": uses,
+                    **({RECOVERED: True} if recovered else {}),
                 },
             )
         )
@@ -646,14 +774,13 @@ class Executor:
         self,
         tool: ToolPort,
         verifier: VerifierPort,
-        decision: PermissionDecision,
-        authorization: Authorization | None,
         result: ExecutionResult,
         verification: Verification,
-        consumed: int | None,
+        *,
+        recovered: bool = False,
     ) -> None:
         """``EXECUTION_VERIFIED``: passed or failed, which conditions, which failed — never the
-        content that was compared (§57)."""
+        content that was compared (§57). On a resume the payload says so."""
         outcome = "passed" if verification.error is None else "failed"
         await self._audit.append(
             AuditEvent(
@@ -661,14 +788,12 @@ class Executor:
                 created_at=self._clock.now(),
                 event_type=AuditEventType.EXECUTION_VERIFIED,
                 actor=self._actor,
-                summary=f"verify: {outcome} {decision.capability_id} by {verifier.name}",
-                task_id=decision.task_id,
-                step_id=decision.step_id,
-                capability_id=decision.capability_id,
-                decision_id=decision.id,
-                authorization_id=None
-                if consumed is None or authorization is None
-                else authorization.id,
+                summary=f"verify: {outcome} {result.capability_id} by {verifier.name}",
+                task_id=result.task_id,
+                step_id=result.step_id,
+                capability_id=result.capability_id,
+                decision_id=result.decision_id,
+                authorization_id=result.authorization_id,
                 tool_name=tool.name,
                 error=verification.error,
                 payload={
@@ -678,9 +803,20 @@ class Executor:
                     "conditions": list(verification.conditions),
                     "failed": [_condition_of(failure) for failure in verification.failures],
                     "device": LOCAL_DEVICE,
+                    **({RECOVERED: True} if recovered else {}),
                 },
             )
         )
+
+
+def _event_about(
+    events: Sequence[AuditEvent], event_type: AuditEventType, result_id: ExecutionId
+) -> AuditEvent | None:
+    """The last event of this type whose payload names this result, or ``None``."""
+    for event in reversed(events):
+        if event.event_type is event_type and event.payload.get("result_id") == str(result_id):
+            return event
+    return None
 
 
 def _condition_of(failure: ErrorMetadata) -> str:

@@ -42,11 +42,19 @@ REPLACING_ADRS: tuple[Source, ...] = (
 INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0013-executor.md", INTRODUCING),
     (ADR_DIR / "0014-verification.md", INTRODUCING),
+    (ADR_DIR / "0015-approval-and-result-persistence.md", INTRODUCING),
 )
-"""ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1): a port introduced must not exist
-already."""
+"""ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
+not exist already."""
 INTRODUCED_PORTS = frozenset(
-    {"AuthorizingGuardianPort", "ToolRegistryPort", "VerifierPort", "VerifierRegistryPort"}
+    {
+        "AuthorizingGuardianPort",
+        "ToolRegistryPort",
+        "VerifierPort",
+        "VerifierRegistryPort",
+        "ApprovalStore",
+        "ExecutionResultStore",
+    }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")
 MEMBER = re.compile(r"`(\w+)`")
@@ -220,6 +228,19 @@ def test_the_verification_adr_introduces_two_ports_the_base_does_not_have() -> N
         frozenset({"capability_id", "name", "conditions", "verify"}),
     )
     assert introduced["VerifierRegistryPort"] == ("sync", frozenset({"get", "verifiers"}))
+
+
+def test_the_persistence_adr_introduces_the_two_stores_the_base_does_not_have() -> None:
+    """ADR 0015 §1: the requests for approval and the results get stores of their own."""
+    base = documented_ports(ADR_PATH.read_text(encoding="utf-8"))
+    introduced = documented_ports(_text(INTRODUCING_ADRS[2]))
+    assert set(introduced) == {"ApprovalStore", "ExecutionResultStore"}
+    assert not (set(introduced) & set(base))
+    assert introduced["ApprovalStore"] == (
+        "async",
+        frozenset({"add", "get", "for_task", "pending", "respond"}),
+    )
+    assert introduced["ExecutionResultStore"] == ("async", frozenset({"add", "get", "for_step"}))
 
 
 def test_an_introduction_of_a_known_port_is_detected() -> None:

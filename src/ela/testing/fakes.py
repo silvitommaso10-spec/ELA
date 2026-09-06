@@ -23,6 +23,9 @@ from typing import Final, NamedTuple
 from uuid import UUID
 
 from ela.domain import (
+    Approval,
+    ApprovalId,
+    ApprovalStatus,
     AuditEvent,
     Authorization,
     AuthorizationId,
@@ -43,6 +46,7 @@ from ela.domain import (
     ProviderResult,
     ProviderResultId,
     ProviderUsage,
+    StepId,
     Task,
     TaskEvent,
     TaskEventId,
@@ -53,6 +57,8 @@ from ela.domain import (
 )
 from ela.ports import (
     AlreadyExistsError,
+    ApprovalAlreadyAnsweredError,
+    ApprovalExpiredError,
     AuthorizationExhaustedError,
     AuthorizationExpiredError,
     Clock,
@@ -62,6 +68,7 @@ from ela.ports import (
     NotFoundError,
     ToolPort,
     VerifierPort,
+    check_answer,
     check_limit,
     check_verifiable,
 )
@@ -69,11 +76,13 @@ from ela.ports import (
 __all__ = [
     "DEFAULT_START",
     "FAKE_CONDITION",
+    "FakeApprovalStore",
     "FakeAuditLog",
     "FakeAuthorizationStore",
     "FakeCapabilityRegistry",
     "FakeClock",
     "FakeDeviceRegistry",
+    "FakeExecutionResultStore",
     "FakeIdGenerator",
     "FakeModelProvider",
     "FakePermissionGuardian",
@@ -305,6 +314,79 @@ class FakeAuthorizationStore:
             raise AuthorizationExhaustedError(authorization_id, uses, grant.max_uses)
         self._uses[authorization_id] = uses + 1
         return uses + 1
+
+
+class FakeApprovalStore:
+    """Requests for consent by id, answered once (port :class:`~ela.ports.ApprovalStore`)."""
+
+    def __init__(self) -> None:
+        self._approvals: dict[ApprovalId, Approval] = {}
+
+    async def add(self, approval: Approval) -> None:
+        if approval.status is not ApprovalStatus.PENDING:
+            raise ValueError(f"a request is added PENDING, not {approval.status.value}")
+        if approval.id in self._approvals:
+            raise AlreadyExistsError("approval", approval.id)
+        self._approvals[approval.id] = approval
+
+    async def get(self, approval_id: ApprovalId) -> Approval:
+        try:
+            return self._approvals[approval_id]
+        except KeyError:
+            raise NotFoundError("approval", approval_id) from None
+
+    async def for_task(self, task_id: TaskId) -> tuple[Approval, ...]:
+        return tuple(a for a in self._approvals.values() if a.task_id == task_id)
+
+    async def pending(self, *, limit: int | None = None) -> tuple[Approval, ...]:
+        check_limit(limit)
+        waiting = [a for a in self._approvals.values() if a.status is ApprovalStatus.PENDING]
+        return tuple(waiting if limit is None else waiting[:limit])
+
+    async def respond(
+        self,
+        approval_id: ApprovalId,
+        *,
+        status: ApprovalStatus,
+        responded_by: str,
+        now: datetime,
+    ) -> Approval:
+        """Same rules as the SQL store, in the same order: bad status, unknown, answered,
+        expired, then the write."""
+        check_answer(status)
+        approval = await self.get(approval_id)
+        if approval.status is not ApprovalStatus.PENDING:
+            raise ApprovalAlreadyAnsweredError(approval_id, approval.status)
+        if approval.expires_at is not None and approval.expires_at <= now:
+            raise ApprovalExpiredError(approval_id, approval.expires_at)
+        answered = approval.model_copy(
+            update={"status": status, "responded_by": responded_by, "responded_at": now}
+        )
+        self._approvals[approval_id] = answered
+        return answered
+
+
+class FakeExecutionResultStore:
+    """Results by id, insert-only (port :class:`~ela.ports.ExecutionResultStore`)."""
+
+    def __init__(self) -> None:
+        self._results: dict[ExecutionId, ExecutionResult] = {}
+
+    async def add(self, result: ExecutionResult) -> None:
+        if result.id in self._results:
+            raise AlreadyExistsError("execution result", result.id)
+        self._results[result.id] = result
+
+    async def get(self, result_id: ExecutionId) -> ExecutionResult:
+        try:
+            return self._results[result_id]
+        except KeyError:
+            raise NotFoundError("execution result", result_id) from None
+
+    async def for_step(self, task_id: TaskId, step_id: StepId) -> tuple[ExecutionResult, ...]:
+        return tuple(
+            r for r in self._results.values() if r.task_id == task_id and r.step_id == step_id
+        )
 
 
 # --------------------------------------------------------------------------------------

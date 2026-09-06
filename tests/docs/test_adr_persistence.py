@@ -3,9 +3,9 @@
 Same pattern as ``test_adr_ports.py``: the ADR is the documented decision, the metadata is the
 running code, and neither may drift from the other without this test noticing. An ADR is
 immutable, so each ADR documents the tables it introduces (0006: tasks, task events,
-authorizations; 0007: audit events; 0008: task plans) and the union is what the metadata must
-match. A schema row has exactly two cells — the table and its columns — so that the other tables
-of an ADR (ports, operations) are never mistaken for one.
+authorizations; 0007: audit events; 0008: task plans; 0015: approvals, execution results) and
+the union is what the metadata must match. A schema row has exactly two cells — the table and
+its columns — so that the other tables of an ADR (ports, operations) are never mistaken for one.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ ADR_PATHS = {
     "0006": ADR_DIR / "0006-persistence.md",
     "0007": ADR_DIR / "0007-audit-log.md",
     "0008": ADR_DIR / "0008-task-engine.md",
+    "0015": ADR_DIR / "0015-approval-and-result-persistence.md",
 }
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \|$")
 COLUMN = re.compile(r"`(\w+)`")
@@ -72,6 +73,7 @@ def test_each_adr_documents_its_own_tables() -> None:
     assert set(documented_tables(texts["0006"])) == {"tasks", "task_events", "authorizations"}
     assert set(documented_tables(texts["0007"])) == {"audit_events"}
     assert set(documented_tables(texts["0008"])) == {"task_plans"}
+    assert set(documented_tables(texts["0015"])) == {"approvals", "execution_results"}
 
 
 @pytest.mark.parametrize(
@@ -81,6 +83,8 @@ def test_each_adr_documents_its_own_tables() -> None:
         ("0006", "tasks", "`deadline`, `metadata` |", "`deadline`, `metadata`, `colour` |"),
         ("0007", "audit_events", "`prev_hash`, `row_hash` |", "`prev_hash` |"),
         ("0008", "task_plans", "`steps`, `metadata` |", "`metadata` |"),
+        ("0015", "approvals", "`responded_by`, `expires_at`", "`responded_by`"),
+        ("0015", "execution_results", "`decision_id`, `authorization_id`, ", ""),
     ],
 )
 def test_a_drifted_table_is_detected(adr: str, table: str, before: str, after: str) -> None:

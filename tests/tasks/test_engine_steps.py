@@ -23,7 +23,13 @@ from ela.domain import (
     TaskId,
     TaskState,
 )
-from ela.infrastructure.persistence import SqlAuditLog, SqlTaskRepository, make_engine, verify_chain
+from ela.infrastructure.persistence import (
+    SqlApprovalStore,
+    SqlAuditLog,
+    SqlTaskRepository,
+    make_engine,
+    verify_chain,
+)
 from ela.infrastructure.persistence.orm import Base
 from ela.ports import NotFoundError
 from ela.tasks.engine import STEP_OPERATIONS, SYSTEM_ACTOR, TaskEngine
@@ -314,6 +320,7 @@ async def test_a_clock_that_went_backwards_is_refused_for_steps_too(h: Harness) 
         h.audit,
         FakeClock(h.clock.now() - timedelta(seconds=1)),
         h.ids,
+        approvals=h.approvals,
         actor=ELA_ACTOR,
         orphan_after=HOUR,
     )
@@ -546,16 +553,19 @@ async def test_the_graph_survives_a_restart_on_sqlite(tmp_path: Path) -> None:
     engine = make_engine(url)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+    approvals = SqlApprovalStore(engine)
     mac = Harness(
         SqlTaskRepository(engine),  # type: ignore[arg-type]
         SqlAuditLog(engine),  # type: ignore[arg-type]
         clock,
         ids,
+        approvals,  # type: ignore[arg-type]
         TaskEngine(
             SqlTaskRepository(engine),
             SqlAuditLog(engine),
             clock,
             ids,
+            approvals=approvals,
             actor=ELA_ACTOR,
             orphan_after=ORPHAN_AFTER,
         ),
@@ -572,7 +582,13 @@ async def test_the_graph_survives_a_restart_on_sqlite(tmp_path: Path) -> None:
         repository = SqlTaskRepository(engine)
         audit = SqlAuditLog(engine)
         windows = TaskEngine(
-            repository, audit, clock, ids, actor=ELA_ACTOR, orphan_after=ORPHAN_AFTER
+            repository,
+            audit,
+            clock,
+            ids,
+            approvals=SqlApprovalStore(engine),
+            actor=ELA_ACTOR,
+            orphan_after=ORPHAN_AFTER,
         )
         resumed = await windows.graph(task.id)
         assert resumed.states == on_mac.states

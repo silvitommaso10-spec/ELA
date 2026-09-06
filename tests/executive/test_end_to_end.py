@@ -19,6 +19,7 @@ import pytest
 from ela.domain import (
     Actor,
     ActorKind,
+    ApprovalStatus,
     AuditEventType,
     CapabilityId,
     IntentId,
@@ -43,9 +44,11 @@ from ela.permissions import (
 )
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
+    FakeApprovalStore,
     FakeAuditLog,
     FakeAuthorizationStore,
     FakeClock,
+    FakeExecutionResultStore,
     FakeIdGenerator,
     FakeTaskRepository,
 )
@@ -65,7 +68,6 @@ from ela.tools import (
     verifiers_v01,
 )
 from tests.domain.examples import USER_INTENT
-from tests.executive.support import granted
 from tests.tasks.support import ORPHAN_AFTER, result_for
 
 E = AuditEventType
@@ -98,6 +100,7 @@ class Pipeline:
     def __init__(self, workspace: Path, *, tools: ToolRegistry | None = None) -> None:
         self.clock, self.ids, self.audit = FakeClock(), FakeIdGenerator(), FakeAuditLog()
         self.repository, self.store = FakeTaskRepository(), FakeAuthorizationStore()
+        self.approvals, self.results = FakeApprovalStore(), FakeExecutionResultStore()
         self.registry = catalogue_v01()
         self.guardian = PermissionGuardian(self.registry, self.clock, self.ids, self.audit)
         self.tools = (
@@ -105,7 +108,13 @@ class Pipeline:
         )
         self.verifiers = verifiers_v01(root=workspace)
         self.engine = TaskEngine(
-            self.repository, self.audit, self.clock, self.ids, actor=ELA, orphan_after=ORPHAN_AFTER
+            self.repository,
+            self.audit,
+            self.clock,
+            self.ids,
+            approvals=self.approvals,
+            actor=ELA,
+            orphan_after=ORPHAN_AFTER,
         )
         self.executor = Executor(
             registry=self.registry,
@@ -115,6 +124,8 @@ class Pipeline:
             engine=self.engine,
             repository=self.repository,
             authorizations=self.store,
+            approvals=self.approvals,
+            results=self.results,
             audit=self.audit,
             clock=self.clock,
             ids=self.ids,
@@ -319,10 +330,12 @@ async def test_a_step_that_requires_authorization_is_approved_granted_and_run_on
     assert not (workspace / NOTE_PATH).exists()
 
     p.clock.advance(timedelta(minutes=2))
-    approval = granted(asked.approval, at=p.clock.now())
+    approval = await p.approvals.respond(
+        asked.approval.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=p.clock.now()
+    )
     await p.engine.approve(task_id, approval)
     await p.engine.start(task_id)
-    execution = await p.executor.execute(task_id, step.id, arguments, approval=approval)
+    execution = await p.executor.execute(task_id, step.id, arguments)
     assert execution.authorization is not None
     assert await p.store.uses(execution.authorization.id) == 1
     assert execution.graph.states[step.id] is StepState.COMPLETED

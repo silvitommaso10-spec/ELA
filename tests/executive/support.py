@@ -12,7 +12,7 @@ through the engine, never by writing the repository.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -27,25 +27,38 @@ from ela.domain import (
     CapabilityId,
     CapabilitySpec,
     ErrorMetadata,
+    ExecutionResult,
     IntentId,
     PlanId,
     RiskLevel,
     StepId,
     StepState,
     Task,
+    TaskEventType,
     TaskId,
     TaskPlan,
+    TaskState,
     TaskStep,
 )
 from ela.executive import Executor
 from ela.permissions import PermissionGuardian
-from ela.ports import AuthorizationStore, ToolPort, VerifierPort
+from ela.ports import (
+    ApprovalStore,
+    AuditLog,
+    AuthorizationStore,
+    ExecutionResultStore,
+    TaskRepository,
+    ToolPort,
+    VerifierPort,
+)
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
+    FakeApprovalStore,
     FakeAuditLog,
     FakeAuthorizationStore,
     FakeCapabilityRegistry,
     FakeClock,
+    FakeExecutionResultStore,
     FakeIdGenerator,
     FakeTaskRepository,
     FakeTool,
@@ -72,13 +85,56 @@ BAD_FAILURE = ErrorMetadata(
 )
 
 
+class SimulatedCrash(Exception):
+    """The process died here: a write that never happened (ADR 0015 §8)."""
+
+
+class Crashing:
+    """A port whose named methods can be made to die instead of writing.
+
+    ``arm(method, when)`` makes the next calls of ``method`` for which ``when(*args, **kwargs)``
+    is true raise :class:`SimulatedCrash` before the inner port is touched; ``disarm()`` is the
+    restart. Every other member is the inner port's. Works on a fake and on a SQL adapter
+    alike, so the same crash can be simulated on both.
+    """
+
+    def __init__(self, inner: object, *methods: str) -> None:
+        self._inner = inner
+        self._methods = frozenset(methods)
+        self.armed: dict[str, Callable[..., bool]] = {}
+        self.refused = 0
+
+    def arm(self, method: str, when: Callable[..., bool] | None = None) -> None:
+        assert method in self._methods, method
+        self.armed[method] = (lambda *args, **kwargs: True) if when is None else when
+
+    def disarm(self) -> None:
+        self.armed = {}
+
+    def __getattr__(self, name: str) -> Any:
+        attribute = getattr(self._inner, name)
+        if name not in self._methods:
+            return attribute
+
+        async def guarded(*args: Any, **kwargs: Any) -> Any:
+            when = self.armed.get(name)
+            if when is not None and when(*args, **kwargs):
+                self.refused += 1
+                raise SimulatedCrash(f"{type(self._inner).__name__}.{name} never happened")
+            return await attribute(*args, **kwargs)
+
+        return guarded
+
+
 @dataclass
 class World:
-    repository: FakeTaskRepository
-    audit: FakeAuditLog
+    repository: TaskRepository
+    audit: AuditLog
     clock: FakeClock
     ids: FakeIdGenerator
     store: AuthorizationStore
+    approvals: ApprovalStore
+    results: ExecutionResultStore
     registry: FakeCapabilityRegistry
     guardian: PermissionGuardian
     tools: FakeToolRegistry
@@ -183,6 +239,69 @@ class World:
     async def task(self, task_id: TaskId) -> Task:
         return await self.repository.get(task_id)
 
+    async def answered(
+        self,
+        approval: Approval,
+        *,
+        status: ApprovalStatus = ApprovalStatus.GRANTED,
+        by: str = "tommaso",
+    ) -> Approval:
+        """The user's answer to a request the executor made, through the store (ADR 0015 §6)."""
+        return await self.approvals.respond(
+            approval.id, status=status, responded_by=by, now=self.now
+        )
+
+
+@dataclass
+class Crashes:
+    audit: Crashing
+    repository: Crashing
+    results: Crashing
+    approvals: Crashing
+
+    def disarm(self) -> None:
+        for port in (self.audit, self.repository, self.results, self.approvals):
+            port.disarm()
+
+
+def crashing_world(**options: Any) -> tuple[World, Crashes]:
+    """A world whose writes can be made to die one at a time."""
+    crashes = Crashes(
+        Crashing(FakeAuditLog(), "append"),
+        Crashing(FakeTaskRepository(), "save", "append_event"),
+        Crashing(FakeExecutionResultStore(), "add"),
+        Crashing(FakeApprovalStore(), "add"),
+    )
+    w = world(
+        audit=crashes.audit,  # type: ignore[arg-type]
+        repository=crashes.repository,  # type: ignore[arg-type]
+        results=crashes.results,  # type: ignore[arg-type]
+        approvals=crashes.approvals,  # type: ignore[arg-type]
+        **options,
+    )
+    return w, crashes
+
+
+def audit_of(event_type: AuditEventType) -> Any:
+    return lambda event: event.event_type is event_type
+
+
+def trail_of(event_type: TaskEventType) -> Any:
+    return lambda event: event.event_type is event_type
+
+
+def saved_as(state: TaskState) -> Any:
+    return lambda task: task.state is state
+
+
+async def count(w: World, task_id: Any, event_type: AuditEventType) -> int:
+    return (await w.event_types(task_id)).count(event_type)
+
+
+async def only_result(w: World, task_id: Any, step_id: Any) -> ExecutionResult:
+    (stored,) = await w.results.for_step(task_id, step_id)
+    return stored
+
 
 def fake_tools(clock: FakeClock, ids: FakeIdGenerator) -> dict[CapabilityId, FakeTool]:
     return {
@@ -210,18 +329,33 @@ def world(
     tools: Iterable[ToolPort] | None = None,
     verifiers: Iterable[VerifierPort] | None = None,
     store: AuthorizationStore | None = None,
+    approvals: ApprovalStore | None = None,
+    results: ExecutionResultStore | None = None,
+    repository: TaskRepository | None = None,
+    audit: AuditLog | None = None,
     **executor_options: Any,
 ) -> World:
-    clock, ids, audit = FakeClock(), FakeIdGenerator(), FakeAuditLog()
-    repository = FakeTaskRepository()
+    clock, ids = FakeClock(), FakeIdGenerator()
+    audit = FakeAuditLog() if audit is None else audit
+    repository = FakeTaskRepository() if repository is None else repository
     authorizations = FakeAuthorizationStore() if store is None else store
+    approval_store = FakeApprovalStore() if approvals is None else approvals
+    result_store = FakeExecutionResultStore() if results is None else results
     registry = FakeCapabilityRegistry(CATALOGUE)
     guardian = PermissionGuardian(registry, clock, ids, audit)
     fakes = fake_tools(clock, ids)
     tool_registry = FakeToolRegistry(fakes.values() if tools is None else tools)
     checkers = fake_verifiers()
     verifier_registry = FakeVerifierRegistry(checkers.values() if verifiers is None else verifiers)
-    engine = TaskEngine(repository, audit, clock, ids, actor=ELA_ACTOR, orphan_after=ORPHAN_AFTER)
+    engine = TaskEngine(
+        repository,
+        audit,
+        clock,
+        ids,
+        approvals=approval_store,
+        actor=ELA_ACTOR,
+        orphan_after=ORPHAN_AFTER,
+    )
     executor = Executor(
         registry=registry,
         tools=tool_registry,
@@ -230,6 +364,8 @@ def world(
         engine=engine,
         repository=repository,
         authorizations=authorizations,
+        approvals=approval_store,
+        results=result_store,
         audit=audit,
         clock=clock,
         ids=ids,
@@ -242,6 +378,8 @@ def world(
         clock,
         ids,
         authorizations,
+        approval_store,
+        result_store,
         registry,
         guardian,
         tool_registry,
@@ -280,7 +418,8 @@ def grant_for(
 
 
 def granted(approval: Approval, *, at: datetime, by: str = "tommaso") -> Approval:
-    """The user's yes to a request the executor made."""
+    """The user's yes to a request, as a value: for the engine's checks, not for a store — a
+    "yes" enters a store only through ``respond`` (ADR 0015 §1)."""
     return approval.model_copy(
         update={"status": ApprovalStatus.GRANTED, "responded_by": by, "responded_at": at}
     )

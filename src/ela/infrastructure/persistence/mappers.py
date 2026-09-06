@@ -19,7 +19,9 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 from ela.domain import (
     Actor,
     ActorKind,
+    Approval,
     ApprovalId,
+    ApprovalStatus,
     AuditEvent,
     AuditEventId,
     AuditEventType,
@@ -29,6 +31,9 @@ from ela.domain import (
     DecisionId,
     DeviceId,
     ErrorMetadata,
+    ExecutionId,
+    ExecutionResult,
+    ExecutionStatus,
     IntentId,
     JsonMapping,
     PlanId,
@@ -44,14 +49,18 @@ from ela.domain import (
     TaskStep,
 )
 from ela.infrastructure.persistence.orm import (
+    ApprovalRow,
     AuditEventRow,
     AuthorizationRow,
+    ExecutionResultRow,
     TaskEventRow,
     TaskPlanRow,
     TaskRow,
 )
 
 __all__ = [
+    "approval_to_row",
+    "approval_values",
     "audit_event_to_row",
     "audit_event_values",
     "authorization_to_row",
@@ -59,10 +68,14 @@ __all__ = [
     "event_to_row",
     "plan_to_row",
     "plan_values",
+    "result_to_row",
+    "result_values",
+    "row_to_approval",
     "row_to_audit_event",
     "row_to_authorization",
     "row_to_event",
     "row_to_plan",
+    "row_to_result",
     "row_to_task",
     "task_to_row",
     "task_values",
@@ -230,6 +243,102 @@ def row_to_authorization(row: AuthorizationRow) -> Authorization:
         step_id=None if row.step_id is None else StepId(row.step_id),
         expires_at=row.expires_at,
         max_uses=row.max_uses,
+        metadata=row.metadata_,
+    )
+
+
+# --------------------------------------------------------------------------------------
+# Approval
+# --------------------------------------------------------------------------------------
+
+
+def approval_values(approval: Approval) -> dict[str, Any]:
+    """Column values of a request for consent, for an insert or the answer's update."""
+    return {
+        "id": approval.id,
+        "created_at": approval.created_at,
+        "task_id": approval.task_id,
+        "step_id": approval.step_id,
+        "capability_id": approval.capability_id,
+        "targets": list(approval.targets),
+        "prompt": approval.prompt,
+        "status": approval.status.value,
+        "decision_id": approval.decision_id,
+        "responded_at": approval.responded_at,
+        "responded_by": approval.responded_by,
+        "expires_at": approval.expires_at,
+        "metadata_": _plain(approval.metadata),
+    }
+
+
+def approval_to_row(approval: Approval) -> ApprovalRow:
+    return ApprovalRow(**approval_values(approval))
+
+
+def row_to_approval(row: ApprovalRow) -> Approval:
+    return Approval(
+        id=ApprovalId(row.id),
+        created_at=row.created_at,
+        task_id=TaskId(row.task_id),
+        step_id=StepId(row.step_id),
+        capability_id=CapabilityId(row.capability_id),
+        targets=tuple(row.targets),
+        prompt=row.prompt,
+        status=ApprovalStatus(row.status),
+        decision_id=None if row.decision_id is None else DecisionId(row.decision_id),
+        responded_at=row.responded_at,
+        responded_by=row.responded_by,
+        expires_at=row.expires_at,
+        metadata=row.metadata_,
+    )
+
+
+# --------------------------------------------------------------------------------------
+# ExecutionResult
+# --------------------------------------------------------------------------------------
+
+
+def result_values(result: ExecutionResult) -> dict[str, Any]:
+    """Column values of a result; ``output`` and ``error`` travel as JSON documents."""
+    return {
+        "id": result.id,
+        "created_at": result.created_at,
+        "capability_id": result.capability_id,
+        "status": result.status.value,
+        "task_id": result.task_id,
+        "step_id": result.step_id,
+        "tool_name": result.tool_name,
+        "device_id": result.device_id,
+        "decision_id": result.decision_id,
+        "authorization_id": result.authorization_id,
+        "output": _plain(result.output),
+        "error": _plain_model(result.error),
+        "duration_ms": result.duration_ms,
+        "metadata_": _plain(result.metadata),
+    }
+
+
+def result_to_row(result: ExecutionResult) -> ExecutionResultRow:
+    return ExecutionResultRow(**result_values(result))
+
+
+def row_to_result(row: ExecutionResultRow) -> ExecutionResult:
+    return ExecutionResult(
+        id=ExecutionId(row.id),
+        created_at=row.created_at,
+        capability_id=CapabilityId(row.capability_id),
+        status=ExecutionStatus(row.status),
+        task_id=None if row.task_id is None else TaskId(row.task_id),
+        step_id=None if row.step_id is None else StepId(row.step_id),
+        tool_name=row.tool_name,
+        device_id=None if row.device_id is None else DeviceId(row.device_id),
+        decision_id=None if row.decision_id is None else DecisionId(row.decision_id),
+        authorization_id=(
+            None if row.authorization_id is None else AuthorizationId(row.authorization_id)
+        ),
+        output=row.output,
+        error=None if row.error is None else ErrorMetadata.model_validate(row.error),
+        duration_ms=row.duration_ms,
         metadata=row.metadata_,
     )
 

@@ -32,6 +32,9 @@ from typing import Final, Protocol, runtime_checkable
 from uuid import UUID
 
 from ela.domain import (
+    Approval,
+    ApprovalId,
+    ApprovalStatus,
     AuditEvent,
     Authorization,
     AuthorizationId,
@@ -40,12 +43,14 @@ from ela.domain import (
     Device,
     DeviceId,
     ErrorMetadata,
+    ExecutionId,
     ExecutionResult,
     ExecutionStatus,
     JsonMapping,
     PermissionDecision,
     ProviderRequest,
     ProviderResult,
+    StepId,
     Task,
     TaskEvent,
     TaskId,
@@ -55,7 +60,12 @@ from ela.domain import (
 )
 
 __all__ = [
+    "ANSWERS",
     "AlreadyExistsError",
+    "ApprovalAlreadyAnsweredError",
+    "ApprovalExpiredError",
+    "ApprovalNotAnswerableError",
+    "ApprovalStore",
     "AuditLog",
     "AuthorizationExhaustedError",
     "AuthorizationExpiredError",
@@ -65,6 +75,7 @@ __all__ = [
     "CapabilityRegistryPort",
     "Clock",
     "DeviceRegistryPort",
+    "ExecutionResultStore",
     "IdGenerator",
     "ModelProvider",
     "NotAllowedError",
@@ -81,6 +92,7 @@ __all__ = [
     "VERIFICATION_WRONG_CAPABILITY",
     "VerifierPort",
     "VerifierRegistryPort",
+    "check_answer",
     "check_limit",
     "check_verifiable",
 ]
@@ -117,6 +129,22 @@ def check_limit(limit: int | None) -> None:
     """The ``limit`` rule of every windowed read: ``None`` or at least 1, else ``ValueError``."""
     if limit is not None and limit < 1:
         raise ValueError(f"limit must be None or >= 1, not {limit}")
+
+
+ANSWERS: Final[frozenset[ApprovalStatus]] = frozenset(
+    {ApprovalStatus.GRANTED, ApprovalStatus.REJECTED}
+)
+"""The two statuses ``respond`` accepts (contract of :class:`ApprovalStore`): a yes or a no."""
+
+
+def check_answer(status: ApprovalStatus) -> None:
+    """The ``status`` rule of ``respond``: GRANTED or REJECTED, else ``ValueError``.
+
+    Shared by every implementation, like :func:`check_limit`: PENDING is not an answer and
+    EXPIRED is not the user's to say (the engine's recovery expires a task, ADR 0015 §6).
+    """
+    if status not in ANSWERS:
+        raise ValueError(f"an answer is GRANTED or REJECTED, not {status.value}")
 
 
 VERIFICATION_WRONG_CAPABILITY: Final = "verification.wrong_capability"
@@ -210,6 +238,35 @@ class AuthorizationExhaustedError(AuthorizationNotUsableError):
         self.uses = uses
         self.max_uses = max_uses
         super().__init__(authorization_id, f"it was used {uses} of {max_uses} times")
+
+
+class ApprovalNotAnswerableError(PortError):
+    """``respond`` refused to answer a request that exists but cannot be answered now (§30, §62).
+
+    Raised *instead of* writing: nothing changed in the store. The two subclasses say why, so a
+    caller can tell "someone already answered" from "too late".
+    """
+
+    def __init__(self, approval_id: ApprovalId, reason: str) -> None:
+        self.approval_id = approval_id
+        self.reason = reason
+        super().__init__(f"approval {approval_id!r} cannot be answered: {reason}")
+
+
+class ApprovalAlreadyAnsweredError(ApprovalNotAnswerableError):
+    """The request is no longer PENDING: one answer, ever (§30)."""
+
+    def __init__(self, approval_id: ApprovalId, status: ApprovalStatus) -> None:
+        self.status = status
+        super().__init__(approval_id, f"it is already {status.value}")
+
+
+class ApprovalExpiredError(ApprovalNotAnswerableError):
+    """The request's ``expires_at`` is at or before the instant given (closed bound, ADR 0005)."""
+
+    def __init__(self, approval_id: ApprovalId, expires_at: datetime) -> None:
+        self.expires_at = expires_at
+        super().__init__(approval_id, f"it expired at {expires_at.isoformat()}")
 
 
 class NotAllowedError(PortError):
@@ -403,6 +460,74 @@ class AuthorizationStore(Protocol):
         :class:`AuthorizationExhaustedError` is raised. The check and the count are one atomic
         step: of two concurrent calls on a single-use grant exactly one returns. ``now`` is the
         caller's fact, as ``authorization_uses`` is for the Guardian (ADR 0011 §5)."""
+
+
+@runtime_checkable
+class ApprovalStore(Protocol):
+    """Where the requests for the user's consent and their answers are kept (§30, §62; ADR 0015).
+
+    A request is born PENDING, in the executor (M5), and is answered **once**, GRANTED or
+    REJECTED, by the user through ``respond``: a "yes" enters the store by no other door — ``add``
+    refuses anything but PENDING — and the Core never answers its own requests (rule 19). What
+    was asked is never rewritten: ``respond`` fills ``status``, ``responded_by`` and
+    ``responded_at`` and nothing else. An expired request stays PENDING as stored; the store
+    writes no ``EXPIRED``, the engine's recovery expires the task (ADR 0015 §6).
+    """
+
+    async def add(self, approval: Approval) -> None:
+        """Store a new PENDING request; :class:`AlreadyExistsError` if its id is held.
+
+        A request that is not PENDING is a caller's bug and raises ``ValueError`` in every
+        implementation, before anything is written: an answer is given through ``respond``.
+        """
+
+    async def get(self, approval_id: ApprovalId) -> Approval:
+        """The request with this id; :class:`NotFoundError` if there is none."""
+
+    async def for_task(self, task_id: TaskId) -> tuple[Approval, ...]:
+        """Every request of this task, whatever its status, in insertion order."""
+
+    async def pending(self, *, limit: int | None = None) -> tuple[Approval, ...]:
+        """Every PENDING request across tasks, in insertion order, the first ``limit``: what
+        waits for an answer (M8.1, the iPhone). Expired ones included: the store keeps no
+        clock; ``limit`` is ``None`` or at least 1, else ``ValueError``."""
+
+    async def respond(
+        self,
+        approval_id: ApprovalId,
+        *,
+        status: ApprovalStatus,
+        responded_by: str,
+        now: datetime,
+    ) -> Approval:
+        """Answer the request and return it as stored — only if ``status`` is GRANTED or REJECTED
+        (else ``ValueError``, a caller's bug), the request exists, is still PENDING and has not
+        expired at ``now`` (``expires_at <= now`` is expired, closed bound). Otherwise nothing is
+        written and, in this order, :class:`NotFoundError`, :class:`ApprovalAlreadyAnsweredError`
+        or :class:`ApprovalExpiredError` is raised. ``responded_at`` is ``now``: the caller's
+        fact, as for ``consume``. The check and the write are one atomic step: of two concurrent
+        answers exactly one is recorded."""
+
+
+@runtime_checkable
+class ExecutionResultStore(Protocol):
+    """Where what a tool produced is kept (§63; ADR 0015).
+
+    A result is stored **before** ``TOOL_EXECUTED`` names it, so the audit never points at an
+    entity that does not exist, and so a retry after a crash finds what the tool did instead of
+    running it again (ADR 0015 §5). It holds the tool's ``output`` — the user's content (§57) —
+    which the audit trail never does. Insert-only: a result is a fact.
+    """
+
+    async def add(self, result: ExecutionResult) -> None:
+        """Store a new result; :class:`AlreadyExistsError` if its id is held."""
+
+    async def get(self, result_id: ExecutionId) -> ExecutionResult:
+        """The result with this id; :class:`NotFoundError` if there is none."""
+
+    async def for_step(self, task_id: TaskId, step_id: StepId) -> tuple[ExecutionResult, ...]:
+        """The results of this step of this task, in insertion order (one at most in v0.1: a
+        step runs once, ADR 0013 §1); empty if none."""
 
 
 # --------------------------------------------------------------------------------------

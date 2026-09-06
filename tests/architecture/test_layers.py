@@ -25,6 +25,7 @@ from tests.architecture.rules import (
     PERMISSIONS_DIR,
     PERSISTENCE_MAPPERS,
     PORTS_ALLOWED_INTERNAL,
+    RESPOND_METHOD,
     RULES,
     STATE_MACHINE_MODULE,
     STEP_EVENT_PREFIX,
@@ -94,7 +95,7 @@ def test_orm_module_really_imports_sqlalchemy_orm() -> None:
 def test_mapped_rows_are_not_domain_models() -> None:
     """The static rule 8 at runtime: no ORM class is (or derives from) a pydantic model."""
     mapped = [mapper.class_ for mapper in Base.registry.mappers]
-    assert len(mapped) == 5
+    assert len(mapped) == 7
     assert not any(issubclass(cls, BaseModel) for cls in mapped)
 
 
@@ -178,3 +179,15 @@ def test_the_executor_really_completes_steps_and_the_verifiers_really_read() -> 
     assert ".resolve()" in classification
     assert ".lstat()" in classification
     assert ".is_symlink()" in classification
+
+
+def test_the_ports_and_the_store_really_define_respond_and_the_executor_never_calls_it() -> None:
+    """Rule 19 would hold vacuously if nothing defined ``respond``; the executor, the one Core
+    module that handles requests for approval, must not answer them (ADR 0015 §9)."""
+    definers = ("ports.py", "infrastructure/persistence/approval_store.py", "testing/fakes.py")
+    for relative in definers:
+        source = (PACKAGE_ROOT / relative).read_text(encoding="utf-8")
+        assert f"def {RESPOND_METHOD}(" in source, relative
+    executor = (PACKAGE_ROOT / EXECUTOR_MODULE).read_text(encoding="utf-8")
+    assert f".{RESPOND_METHOD}(" not in executor
+    assert "_approvals.add(" in executor and "_results.add(" in executor

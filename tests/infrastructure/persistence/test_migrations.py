@@ -27,8 +27,16 @@ from tests.domain.examples import AUDIT_EVENT, NOW, POLICY_AUTHORIZATION, TASK, 
 
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 ALEMBIC = Path(sys.executable).parent / "alembic"
-TABLES = {"tasks", "task_events", "authorizations", "audit_events", "task_plans"}
-REVISIONS = ["0003", "0002", "0001"]  # newest first, as ``walk_revisions`` yields them
+TABLES = {
+    "tasks",
+    "task_events",
+    "authorizations",
+    "audit_events",
+    "task_plans",
+    "approvals",
+    "execution_results",
+}
+REVISIONS = ["0004", "0003", "0002", "0001"]  # newest first, as ``walk_revisions`` yields them
 TRIGGERS_SQL = "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' ORDER BY name"
 EXPECTED_COLUMNS = {
     name: {column.name for column in table.columns} for name, table in Base.metadata.tables.items()
@@ -100,14 +108,15 @@ def test_upgrade_creates_the_append_only_triggers(db: Path) -> None:
 def test_downgrade_of_the_audit_migration_is_refused(db: Path) -> None:
     """Removing the audit log is never a tooling operation (ADR 0007 §7).
 
-    From head the reversible ``0003`` is undone first, then ``0002`` refuses and stays.
+    From head the reversible ``0004`` and ``0003`` are undone first, then ``0002`` refuses and
+    stays.
     """
     config = config_for(db)
     command.upgrade(config, "head")
     with pytest.raises(NotImplementedError, match="no downgrade"):
         command.downgrade(config, "0001")
     assert "audit_events" in _tables(db)
-    assert "task_plans" not in _tables(db)
+    assert set(_tables(db)) == TABLES - {"task_plans", "approvals", "execution_results"}
     assert _triggers(db) == APPEND_ONLY_TRIGGERS
     assert _version(db) == "0002"
 
@@ -117,8 +126,20 @@ def test_downgrade_of_the_plans_migration_removes_the_table(db: Path) -> None:
     config = config_for(db)
     command.upgrade(config, "head")
     command.downgrade(config, "0002")
-    assert set(_tables(db)) == TABLES - {"task_plans"}
+    assert set(_tables(db)) == TABLES - {"task_plans", "approvals", "execution_results"}
     assert _version(db) == "0002"
+
+
+def test_downgrade_of_the_approvals_migration_removes_both_tables(db: Path) -> None:
+    """``0004`` does not touch ``audit_events`` either: reversible down to ``0003`` (ADR 0015)."""
+    config = config_for(db)
+    command.upgrade(config, "head")
+    command.downgrade(config, "0003")
+    assert set(_tables(db)) == TABLES - {"approvals", "execution_results"}
+    assert "task_plans" in _tables(db)
+    assert _version(db) == "0003"
+    command.upgrade(config, "head")
+    assert _tables(db) == EXPECTED_COLUMNS
 
 
 def test_downgrade_to_base_from_0001_removes_everything(db: Path) -> None:

@@ -29,7 +29,10 @@ Three rules run through every operation (ADR 0008):
 The clock is checked before every write: an instant earlier than the last one recorded for the
 task is a fault and raises :class:`~ela.tasks.errors.ClockSkewError` (the deferral of M1.2).
 Recovery (§14 "recuperare attività") is :meth:`TaskEngine.recover`: EXECUTING tasks without a
-sign of life for ``orphan_after`` are failed with code :data:`ORPHANED`.
+sign of life for ``orphan_after`` are failed with code :data:`ORPHANED`, and WAITING_APPROVAL
+tasks whose request for consent has expired are EXPIRED (M5.3, ADR 0015 §6): the engine reads
+the :class:`~ela.ports.ApprovalStore` for that and writes nothing to it — the request stays as
+it was asked, the fact is ``TASK_EXPIRED``.
 """
 
 from __future__ import annotations
@@ -69,7 +72,14 @@ from ela.domain import (
     TaskState,
     UserIntent,
 )
-from ela.ports import AlreadyExistsError, AuditLog, Clock, IdGenerator, TaskRepository
+from ela.ports import (
+    AlreadyExistsError,
+    ApprovalStore,
+    AuditLog,
+    Clock,
+    IdGenerator,
+    TaskRepository,
+)
 from ela.tasks.errors import ClockSkewError, IllegalStepTransitionError, TaskEngineError
 from ela.tasks.graph import STEP_EVENTS, GraphState, TaskGraph
 from ela.tasks.state_machine import (
@@ -135,11 +145,15 @@ class StepOperation(NamedTuple):
 
 
 class RecoverySummary(NamedTuple):
-    """What :meth:`TaskEngine.recover` did: the orphans it failed, the candidates it left alone."""
+    """What :meth:`TaskEngine.recover` did: the orphans it failed, the candidates it left alone,
+    the tasks whose request for consent had expired (ADR 0015 §6)."""
 
     failed: tuple[Task, ...]
     skipped: tuple[Task, ...]
-    """Candidates that had changed under the lock: no longer EXECUTING, or alive again."""
+    """Candidates that had changed under the lock: no longer EXECUTING or WAITING_APPROVAL,
+    alive again, or answered in the meantime."""
+    expired: tuple[Task, ...] = ()
+    """WAITING_APPROVAL tasks whose last PENDING request had expired: now EXPIRED."""
 
 
 OPERATIONS: Final[Mapping[str, Operation]] = MappingProxyType(
@@ -316,7 +330,9 @@ class TaskEngine:
 
     ``actor`` is who the engine says it is in the audit trail when ELA acts; the user acts through
     an :class:`~ela.domain.Approval`, the system through expiry and recovery. ``orphan_after`` is
-    how long an EXECUTING task may stay silent before :meth:`recover` fails it.
+    how long an EXECUTING task may stay silent before :meth:`recover` fails it. ``approvals`` is
+    where :meth:`recover` reads whether the request a WAITING_APPROVAL task waits on has expired
+    (ADR 0015 §6): mandatory, because an engine that cannot see the requests cannot close them.
     """
 
     def __init__(
@@ -326,6 +342,7 @@ class TaskEngine:
         clock: Clock,
         ids: IdGenerator,
         *,
+        approvals: ApprovalStore,
         actor: Actor,
         orphan_after: timedelta,
     ) -> None:
@@ -335,6 +352,7 @@ class TaskEngine:
         self._audit_log = audit_log
         self._clock = clock
         self._ids = ids
+        self._approvals = approvals
         self._actor = actor
         self._orphan_after = orphan_after
         self._locks: dict[TaskId, asyncio.Lock] = {}
@@ -455,11 +473,13 @@ class TaskEngine:
             return task
 
     async def recover(self) -> RecoverySummary:
-        """Fail every EXECUTING task silent for ``orphan_after`` or longer (§14, closed bound).
+        """Fail every EXECUTING task silent for ``orphan_after`` or longer (§14, closed bound),
+        then expire every WAITING_APPROVAL task whose request has expired (ADR 0015 §6).
 
         Safe to call at any time, not only at start-up: each candidate is re-read under its own
         lock, and one that is no longer EXECUTING — or alive again — is skipped, never failed,
-        while the others proceed (ADR 0008 §6).
+        while the others proceed (ADR 0008 §6). Likewise a task answered between the read and
+        the lock is skipped: its answer is in the store and whoever resumes it moves it.
         """
         now = self._clock.now()
         failed: list[Task] = []
@@ -494,7 +514,48 @@ class TaskEngine:
                         payload={"code": ORPHANED},
                     )
                 )
-        return RecoverySummary(tuple(failed), tuple(skipped))
+        expired: list[Task] = []
+        waiting = frozenset({TaskState.WAITING_APPROVAL})
+        for candidate in await self._repository.tasks(states=waiting):
+            if await self._expired_request(candidate.id, now) is None:
+                continue
+            async with self._lock(candidate.id):
+                task = await self._repository.get(candidate.id)
+                request = await self._expired_request(candidate.id, now)
+                if task.state is not TaskState.WAITING_APPROVAL or request is None:
+                    skipped.append(task)
+                    continue
+                events = await self._repository.events(candidate.id)
+                assert request.expires_at is not None
+                expired.append(
+                    await self._apply_loaded(
+                        OPERATIONS["expire"],
+                        task,
+                        events,
+                        actor=SYSTEM_ACTOR,
+                        reason=(
+                            f"approval {request.id} expired at {request.expires_at.isoformat()}"
+                        ),
+                        payload={
+                            "approval_id": str(request.id),
+                            "expires_at": request.expires_at.isoformat(),
+                        },
+                    )
+                )
+        return RecoverySummary(tuple(failed), tuple(skipped), tuple(expired))
+
+    async def _expired_request(self, task_id: TaskId, now: datetime) -> Approval | None:
+        """The request the task waits on — its last PENDING one — if it has expired at ``now``
+        (closed bound); ``None`` if there is none, or it can still be answered."""
+        pending = [
+            a for a in await self._approvals.for_task(task_id) if a.status is ApprovalStatus.PENDING
+        ]
+        if not pending:
+            return None
+        last = pending[-1]
+        if last.expires_at is None or last.expires_at > now:
+            return None
+        return last
 
     # ----------------------------------------------------------------------------------
     # Operations of the table

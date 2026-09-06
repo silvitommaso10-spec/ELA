@@ -26,9 +26,11 @@ __all__ = [
     "APPEND_ONLY_TRIGGERS",
     "HASHED_COLUMNS",
     "AppendOnlyViolation",
+    "ApprovalRow",
     "AuditEventRow",
     "AuthorizationRow",
     "Base",
+    "ExecutionResultRow",
     "TaskEventRow",
     "TaskPlanRow",
     "TaskRow",
@@ -146,6 +148,60 @@ class AuthorizationRow(Base):
     max_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
     uses: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+
+
+class ApprovalRow(Base):
+    """An :class:`~ela.domain.Approval`, as stored (§30; ADR 0015).
+
+    No foreign key on ``task_id``: a store apart from the repository, like ``authorizations``
+    (ADR 0006 §6). ``respond`` fills ``status``, ``responded_at`` and ``responded_by`` with one
+    conditional ``UPDATE``; nothing else is ever rewritten.
+    """
+
+    __tablename__ = "approvals"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[UUID] = mapped_column(Uuid, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    task_id: Mapped[UUID] = mapped_column(Uuid, nullable=False, index=True)
+    step_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    capability_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    targets: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    decision_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    responded_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    responded_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
+
+
+class ExecutionResultRow(Base):
+    """An :class:`~ela.domain.ExecutionResult`, as stored (§63; ADR 0015).
+
+    ``output`` is the user's content (§57): it lives here, in the private database, and never
+    in ``audit_events``. Insert-only; no foreign key on ``task_id`` (nullable in the domain).
+    """
+
+    __tablename__ = "execution_results"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[UUID] = mapped_column(Uuid, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    capability_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    task_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    step_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    tool_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    device_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    decision_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    authorization_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    output: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
 
 
 class AuditEventRow(Base):

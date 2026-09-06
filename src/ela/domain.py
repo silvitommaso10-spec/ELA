@@ -837,6 +837,9 @@ class ExecutionResult(_DomainModel):
     """The outcome of running one capability through a tool on a device (§63).
 
     Execution is not proof of success: ``status`` says how it ended and ``error`` says why.
+    ``decision_id`` and ``authorization_id`` say under which decision the tool ran and which
+    grant that run spent (§32; M5.3, ADR 0015): a result knows where it comes from, as an
+    :class:`AuditEvent` does. Both are ``None`` for a result no executor produced.
     """
 
     id: ExecutionId
@@ -847,6 +850,8 @@ class ExecutionResult(_DomainModel):
     step_id: StepId | None = None
     tool_name: str | None = None
     device_id: DeviceId | None = None
+    decision_id: DecisionId | None = None
+    authorization_id: AuthorizationId | None = None
     output: JsonMapping = _json_payload("What the execution produced, if anything (§63).")
     error: ErrorMetadata | None = None
     duration_ms: Annotated[int, Field(ge=0)] | None = None
