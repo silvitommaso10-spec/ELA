@@ -149,21 +149,33 @@ messaggio di `core.echo` e il corpo di una nota sono contenuto dell'utente (§57
 è local": nessun `Device` registrato per il Core; il Device Orchestrator (§17) porterà un
 `DeviceId`.
 
-### 8. Ordine delle scritture e crash
+### 8. Ordine delle scritture e finestre di crash
 
-Nessuna transazione fra port (ADR 0006 §4); l'ordine è quello in cui un crash lascia un buco, e i
-buchi che si possono riparare vengono riparati:
+Nessuna transazione fra port (ADR 0006 §4). Le scritture sono nell'ordine in cui il codice le
+fa; "retry" è la stessa chiamata `execute(task_id, step_id, arguments[, approval])` ripetuta dal
+chiamante. I buchi che si possono riparare vengono riparati; gli altri sono dichiarati qui
+(review del 2026-09-06):
 
-| Passo | Scrittura | Crash subito dopo | Retry della stessa chiamata |
-|---|---|---|---|
-| 1 | `store.grant` | manca `AUTHORIZATION_GRANTED` | `AlreadyExistsError` → rilettura → l'audit mancante viene scritto |
-| 2 | `AUTHORIZATION_GRANTED` | — | no-op |
-| 3 | `PERMISSION_DECIDED` (Guardian) | decisione non consegnata | nuova decisione |
-| 4 | `consume` | grant speso, tool non eseguito | `REQUIRES_APPROVAL`: si chiede di nuovo (ADR 0012 §6) |
-| 5 | tool | effetto prodotto, manca `TOOL_EXECUTED` | **limite dichiarato**: il tool rieseguirebbe (SAFE/LOW senza grant); `write_note` è idempotente, `echo` innocuo; i risultati non sono persistiti in v0.1 |
-| 6 | `TOOL_EXECUTED` | manca la chiusura dello step | lo step è ancora RUNNING: la chiamata riesegue (stesso limite del passo 5) |
-| 7 | `complete_step` / `fail_step` | buco dell'engine (ADR 0008 §4) | l'executor rifiuta (step non RUNNING) |
-| `deny` / `request_approval` | save → evento → audit (ADR 0008 §4) | buco dell'engine | l'executor rifiuta (task non EXECUTING) |
+| # | Il processo muore dopo… | …e prima di | Stato che resta | Retry |
+|---|---|---|---|---|
+| 0 | una precondizione fallita, o `authorization_from_approval` | qualsiasi scrittura | nulla scritto | riparte da zero |
+| 1 | `store.grant` | `AUTHORIZATION_GRANTED` | grant nello store, `uses = 0`, audit senza evento | `AlreadyExistsError` → rilettura, stesso `approval_id` → l'audit non ha l'evento → **scritto ora**. Riparato. |
+| 2 | `AUTHORIZATION_GRANTED` | `authorize` | grant e audit coerenti, nessuna decisione | grant riletto, audit trovato → nessun duplicato → nuova decisione. Nessun buco. |
+| 3 | `PERMISSION_DECIDED` (dentro il Guardian) | il ritorno della decisione | un `PERMISSION_DECIDED` senza seguito | nuova decisione, secondo `PERMISSION_DECIDED`. Non riparato: ogni decisione è un evento (ADR 0011 §8). |
+| 4 | `engine.deny` → `save` (task DENIED) | `STATE_CHANGED` / `TASK_DENIED` | task DENIED senza evento né audit | `ExecutorError` (task non EXECUTING). Buco dell'engine (ADR 0008 §4); `engine.deny` ripetuto solleva `TaskEngineError` perché l'ultimo `STATE_CHANGED` non porta la chiave. **Non riparato.** |
+| 5 | `engine.request_approval` → `save` (WAITING_APPROVAL) | `STATE_CHANGED` / `APPROVAL_REQUESTED` | task in attesa senza evento; l'`Approval` esisteva solo in memoria | `ExecutorError`. Il task aspetta un'approvazione che nessuno possiede: scade con la recovery/Proactive Core. **Non riparato.** Vale anche senza crash: l'`Approval` non è persistita in v0.1, chi chiama l'executor la deve tenere → **M5.3**. |
+| 6 | `consume` | il tool | grant speso (`uses + 1`), nessun effetto, nessun `TOOL_EXECUTED`, step RUNNING | il grant monouso è riselezionato ed è esaurito → `REQUIRES_APPROVAL` → si chiede di nuovo (ADR 0012 §6: meglio chiedere due volte). Un grant di policy con `max_uses > 1` è consumato di nuovo e il tool gira una volta. Accettato. |
+| 7 | il tool (effetto prodotto) | `TOOL_EXECUTED` | nota scritta, nessuna traccia, step RUNNING | tutta la pipeline riparte: nuova decisione, il tool **riesegue** (`write_note` sovrascrive lo stesso corpo, `echo` è innocuo); con un grant monouso già speso → domanda all'utente e seconda esecuzione dopo il nuovo sì. **Limite dichiarato**: i risultati non sono persistiti → **M5.3**. |
+| 8 | `TOOL_EXECUTED` | `complete_step` / `fail_step` | audit dice "eseguito", trail dice RUNNING | come 7: il tool riesegue e nasce un secondo `TOOL_EXECUTED`; il primo resta senza chiusura. **Non riparato** qui: un `TOOL_EXECUTED` SUCCEEDED di questo step senza `STEP_COMPLETED` deve chiudere lo step invece di rieseguire (il `result_id` è nel payload) → **M5.3**. |
+| 9 | `complete_step` / `fail_step` → `append_event` (`STEP_*`) | l'audit `STEP_*` | step COMPLETED/FAILED nella trail, audit mancante | `ExecutorError` (step non RUNNING). Buco dell'engine (ADR 0009 §5–6); la cascata di `fail_step` interrotta si completa chiamando `engine.fail_step` di nuovo (idempotente per esito): compito dell'orchestrator. |
+| 10 | `fail_step` per `grant_vanished` / `tool.refused` | — | come 9; con `tool.refused` il grant è speso | come 9; il grant speso costa una nuova approvazione (ADR 0012 §6). |
+
+Il solo buco che l'executor ripara è l'1, quello che tocca una proprietà di §30 (un sì, un grant,
+un evento). Gli altri sono buchi dell'engine già dichiarati (4, 5, 9) o il costo della non
+persistenza di `Approval` ed `ExecutionResult` (5, 7, 8), che è la milestone **M5.3**
+(`docs/milestones/M5.3.md`). **Vincolo:** `ApprovalStore` e la persistenza degli `ExecutionResult`
+sono prerequisiti di M6.2 e M8.1; **fino a M5.3 l'executor è utilizzabile solo in-process** — il
+chiamante tiene l'`Approval` in memoria e non sopravvive a un crash fra le finestre 5, 7 e 8.
 
 Nessun lock nell'executor: il `consume` atomico decide fra due executor sullo stesso grant (ADR
 0012 §5); fra la lettura dello stato e il tool un `cancel` concorrente non è visto (limite
@@ -321,10 +333,13 @@ directory temporanea), `ToolRegistry` e `FakeToolRegistry` sotto `ToolRegistryPo
   un ADR che sostituisca ADR 0010 §5.
 - **Rinvio.** Chi fa scadere un task rimasto WAITING_APPROVAL oltre `Approval.expires_at` (e
   imposta `ApprovalStatus.EXPIRED`) non è l'executor: recovery o Proactive Core.
-- **Limiti dichiarati.** Un crash fra il tool e `TOOL_EXECUTED` (o fra `TOOL_EXECUTED` e la
-  chiusura dello step) fa rieseguire il tool al retry: innocuo per i due tool di v0.1, da
-  riconsiderare con `model.complete` (M7.2), dove si deciderà se persistere i risultati. Il TOCTOU
-  sui link intermedi della workspace. Il `cancel` concorrente non visto fra lettura e tool.
+- **Per M5.3 (prerequisito di M6.2 e M8.1).** `ApprovalStore` (port, fake, SQLite, migrazione)
+  e la persistenza degli `ExecutionResult`: l'executor persiste l'`Approval` prima di
+  `request_approval` e legge la risposta dallo store; un `TOOL_EXECUTED` SUCCEEDED senza
+  `STEP_COMPLETED` chiude lo step invece di rieseguire (finestra 8); un retry dopo la finestra 7
+  non riesegue il tool. **Fino a M5.3 l'executor è utilizzabile solo in-process.**
+- **Limiti dichiarati.** Le finestre 3, 4, 6, 9 e 10 di §8. Il TOCTOU sui link intermedi della
+  workspace. Il `cancel` concorrente non visto fra lettura e tool.
 - L'audit di una chiamata: `AUTHORIZATION_GRANTED` (se un'approvazione entra), `PERMISSION_DECIDED`
   (Guardian), poi `TOOL_EXECUTED` e `STEP_COMPLETED`/`STEP_FAILED`, oppure `TASK_DENIED`, oppure
   `APPROVAL_REQUESTED`. Gli argomenti, l'`output` e il `prompt` non vi entrano mai.
