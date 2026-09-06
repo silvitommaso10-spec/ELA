@@ -67,26 +67,47 @@ classe da `tests/docs/test_adr_verification.py`:
 | Capability | Verifier | Nome | Condizioni | Codici di fallimento |
 |---|---|---|---|---|
 | `core.echo` | `EchoVerifier` | `core-echo-verifier` | `echo.message_matches` | comuni, `echo.message_mismatch` |
-| `workspace.write_note` | `WriteNoteVerifier` | `workspace-notes-verifier` | `note.exists`, `note.content_matches` | comuni, `note.missing`, `note.content_mismatch`, `note.unreadable` |
+| `workspace.write_note` | `WriteNoteVerifier` | `workspace-notes-verifier` | `note.exists`, `note.content_matches` | comuni, percorso, `note.content_mismatch`, `note.unreadable` |
+
+"comuni" sono i cinque codici di `COMMON_FAILURE_CODES`; "percorso" i sette di
+`ela.tools.paths.PATH_CODES` (sotto).
 
 `EchoVerifier`: `output["message"]` è la stringa `arguments["message"]`; altrimenti
 `echo.message_mismatch`, non ritentabile (un echo che non fa eco è un difetto del tool), con le
 due lunghezze e mai i due testi. È tutto il mondo osservabile di `core.echo`: limite dichiarato.
 
-`WriteNoteVerifier(root)`: stessa radice del tool (`resolve_workspace`: espansa, assoluta,
-risolta), **mai creata** — una radice assente è una nota assente. `note.exists`, nell'ordine:
-`path` con la forma di `is_relative_note_path`; `(root / path).resolve()` sotto la radice;
-nessun componente link (`lstat` su ciascuno); esistenza; **file regolare**; altrimenti
-`note.missing` con il motivo — un link che punta fuori è "resolves outside the workspace", uno
-che punta dentro "goes through a symbolic link", un componente che è un file "cannot be reached:
-NotADirectoryError". L'ordine differisce da quello del tool (ADR 0013 §12: link prima della
-risoluzione) perché con l'ordine del tool la rete di sicurezza "risolve fuori" era
-irraggiungibile in lettura (trovato dal gate al 100% in implementazione): stessa protezione,
-messaggi diversi. `note.content_matches`: tutto ciò che vale per `note.exists`, poi `os.open`
-con `O_RDONLY | O_NOFOLLOW | O_CLOEXEC`, `fstat` che riconferma il file regolare (una directory
-è "not a regular file", mai letta), `os.read` a blocchi, `os.close`; SHA-256 dei byte letti
-uguale allo SHA-256 di `body.encode("utf-8")`; altrimenti `note.content_mismatch` con
-`expected_bytes`/`actual_bytes`; `OSError` → `note.unreadable`. Tutti e tre ritentabili. **Il confronto è con l'intento** (gli
+**Dove porta un percorso è classificato una volta sola, in `ela.tools.paths`** (review del
+2026-09-06, punto 1): il tool lo chiede prima di scrivere, il verifier prima di leggere, con la
+stessa funzione `classify(root, path) -> PathProblem | None`. Un solo ordine, un solo insieme
+di codici, così i due non possono divergere: (1) `path.invalid` — forma (`is_relative_note_path`:
+relativo, senza segmenti vuoti, `.` o `..`, senza `\` né NUL; `a/../b` rifiutato come forma);
+(2) `path.outside_workspace` — `(root / path).resolve()` non è sotto la radice risolta: un link
+che punta fuori finisce qui; (3) `path.symlink` — un componente esistente è un link, anche verso
+dentro (attraversare un link è un dubbio, §33); (4) `path.unreachable` — l'OS non può guardare
+il bersaglio (un componente che è un file, un loop, un permesso): il tipo dell'errore, mai
+un'eccezione; (5) `path.missing`; (6) `path.is_directory`; (7) `path.not_regular` (FIFO, socket,
+device). `None` = un file regolare c'è. Il modulo è **di sola lettura per costruzione**:
+`resolve`, `is_symlink`, `lstat`, nulla di più; la regola 18 lo copre come copre i verifier
+(§10). `resolve_workspace` (radice espansa, assoluta, risolta) sta lì, condivisa; il tool crea la
+directory prima di risolverla, il verifier mai. Ogni chiamante decide cosa è un rifiuto: il
+tool scrive sopra `path.missing` e nomina con il proprio codice `path.invalid`,
+`path.outside_workspace`, `path.symlink`, `path.is_directory` (i quattro di ADR 0013 §11,
+invariati); `path.unreachable` e `path.not_regular` — che solo chi legge può nominare — sono per
+il tool `io.error` con il motivo condiviso nel messaggio (un FIFO aperto in scrittura
+bloccherebbe: non viene aperto). Il verifier legge solo `None`: ogni altro esito è un
+fallimento con **il codice della classificazione**, lo stesso che il tool avrebbe dato.
+`tests/tools/test_paths.py` lo prova: per ogni percorso malformato o fuori posto, tool e
+verifier rispondono con lo stesso codice e lo stesso messaggio. Con un solo ordine la rete di
+sicurezza "risolve fuori" è raggiungibile (un link verso fuori) sia in scrittura sia in lettura:
+in M5.1 lo era solo disabilitando i link in un test.
+
+`WriteNoteVerifier(root)`: stessa radice del tool, **mai creata** — una radice assente è una
+nota assente. `note.exists`: `classify` risponde `None`. `note.content_matches`: `note.exists`,
+poi `os.open` con `O_RDONLY | O_NOFOLLOW | O_CLOEXEC`, `fstat` che riconferma il file regolare
+(una directory è "not a regular file", mai letta), `os.read` a blocchi, `os.close`; SHA-256 dei
+byte letti uguale allo SHA-256 di `body.encode("utf-8")`; altrimenti `note.content_mismatch` con
+`expected_bytes`/`actual_bytes`; `OSError` → `note.unreadable`. I fallimenti di percorso e di
+contenuto sono ritentabili. **Il confronto è con l'intento** (gli
 argomenti), non con `output` del tool: un verifier che si fidasse del rapporto del tool non
 verificherebbe nulla. **Gli hash restano in memoria** (decisione F): lo SHA-256 di una nota breve
 si inverte per dizionario e l'audit non si redige; nel log vanno solo le dimensioni.
@@ -198,15 +219,17 @@ orchestrator, un modulo di `tasks`: riportati; l'executor, una definizione: no);
 
 ### 10. Regola architetturale 18: il modulo dei verifier non scrive
 
-`check_verifier_read_only` (decisione I): closed-world sull'AST di `tools/verifiers.py`.
-Riportati: `open`/`fdopen` con modalità di scrittura (`w`, `a`, `x`, `+`) o con una modalità
+`check_verifier_read_only` (decisione I): closed-world sull'AST di `tools/verifiers.py` **e di
+`tools/paths.py`** (la classificazione condivisa, review punto 1). Riportati: `open`/`fdopen` con modalità di scrittura (`w`, `a`, `x`, `+`) o con una modalità
 non letterale; `os.open` con un flag di scrittura (`O_WRONLY`, `O_RDWR`, `O_CREAT`, `O_TRUNC`,
 `O_APPEND`, `O_EXCL`) o senza flag; ogni chiamata con il nome di una scrittura (`write`,
 `writelines`, `unlink`, `remove`, `rename`, `replace`, `rmdir`, `mkdir`, `makedirs`, `write_text`,
 `write_bytes`, `touch`, `chmod`, `chown`, `symlink`, `link`, `truncate`, `utime`, `rmtree`, `copy`,
-`move`…); ogni chiamata attraverso `shutil`. Casi negativi per ciascuna famiglia; il modulo reale
-e una lettura `os.open(p, os.O_RDONLY | os.O_NOFOLLOW)` non sono riportati; vacuità (il modulo
-esiste e contiene `os.open(`, `O_RDONLY`, `O_NOFOLLOW`). La stessa proprietà è provata dal
+`move`…); ogni chiamata attraverso `shutil`. Casi negativi per ciascuna famiglia e per entrambi
+i moduli; il modulo reale, una lettura `os.open(p, os.O_RDONLY | os.O_NOFOLLOW)` e una
+classificazione con `resolve`/`is_symlink`/`lstat` non sono riportati; vacuità (i due moduli
+esistono; `verifiers.py` contiene `os.open(`, `O_RDONLY`, `O_NOFOLLOW`; `paths.py` contiene
+`.resolve()`, `.lstat()`, `.is_symlink()`). La stessa proprietà è provata dal
 comportamento: ogni test del verifier delle note confronta albero, dimensioni e mtime della
 workspace prima e dopo `verify`, anche sui fallimenti.
 
@@ -246,6 +269,12 @@ tool: nessuna capability, nessun effetto esterno, nessuna decisione (§27 mette 
   verità; stanno in `ela.ports` con `check_verifiable`, come `check_limit`. Scartata.
 - **Il verifier che confronta con `output` del tool** — verificherebbe la coerenza del tool con
   sé stesso. Il confronto è con gli argomenti. Scartata.
+- **Controlli sul percorso duplicati nel tool e nel verifier** (prima implementazione) — due
+  ordini e due insiemi di codici che potevano divergere, e l'hanno fatto (un link verso fuori
+  era `path.symlink` per il tool e "resolves outside" per il verifier). Una classificazione in
+  `ela.tools.paths`, di sola lettura. Scartata (review, punto 1).
+- **Allineare copiando l'ordine del tool nel verifier** — avrebbe lasciato due copie e la rete
+  di sicurezza irraggiungibile in lettura. Scartata (review, punto 1).
 - **Il vocabolario nel catalogo (`CapabilitySpec`)** — un campo del dominio per un dato che il
   Planner può leggere dal registro; se M6.2 lo vorrà, con un ADR. Rinviata.
 
@@ -255,7 +284,9 @@ tool: nessuna capability, nessun effetto esterno, nessuna decisione (§27 mette 
   sono in `ela.ports` (quindici port); `AuditEventType.EXECUTION_VERIFIED` nel dominio;
   `Verifier`, `COMMON_FAILURE_CODES`, `VERIFICATION_ARGUMENTS_INVALID`, `EchoVerifier`,
   `WriteNoteVerifier`, le condizioni e i codici, `VerifierRegistry`, `verifiers_v01`,
-  `VerifierNotFound`, `resolve_workspace` l'API di `ela.tools`; `Verification`,
+  `VerifierNotFound`, e da `ela.tools.paths` `classify`, `PathProblem`, `PATH_CODES`, i sette
+  codici `path.*`, `is_relative_note_path`, `resolve_workspace` l'API di `ela.tools`;
+  `Verification`,
   `Execution.verification`, `VERIFICATION_FAILED`, `VERIFICATION_EXCEPTION` quella di
   `ela.executive`; `FakeVerifier`, `FakeVerifierRegistry`, `VerifierCall`, `FAKE_CONDITION` in
   `ela.testing`.

@@ -54,9 +54,9 @@ from ela.tools import (
     NOTE_CONTENT_MATCHES,
     NOTE_CONTENT_MISMATCH,
     NOTE_EXISTS,
-    NOTE_MISSING,
     NOTES_TOOL_NAME,
     NOTES_VERIFIER_NAME,
+    PATH_MISSING,
     Outcome,
     ToolNotFound,
     ToolRegistry,
@@ -261,10 +261,10 @@ async def test_a_tool_that_lies_about_a_note_fails_the_task_with_the_reason(
     assert failed.error.code == VERIFICATION_FAILED
     assert failed.error.tool_name == NOTES_TOOL_NAME
     assert failed.error.details["verifier"] == NOTES_VERIFIER_NAME
-    expected_code = NOTE_CONTENT_MISMATCH if lie is not None else NOTE_MISSING
+    expected_code = NOTE_CONTENT_MISMATCH if lie is not None else PATH_MISSING
     assert expected_code in failed.error.message
     assert [f["code"] for f in failed.error.details["failures"]] == (
-        [NOTE_CONTENT_MISMATCH] if lie is not None else [NOTE_MISSING, NOTE_MISSING]
+        [NOTE_CONTENT_MISMATCH] if lie is not None else [PATH_MISSING, PATH_MISSING]
     )
     assert failed.error.retryable is True
     serialized = json.dumps([e.model_dump(mode="json") for e in await p.audit.read()])

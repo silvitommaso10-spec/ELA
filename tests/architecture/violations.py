@@ -497,6 +497,20 @@ VIOLATIONS: tuple[Case, ...] = (
         "import shutil\ndef w(p, q):\n    shutil.copymode(p, q)\n",
         ".copymode(",
     ),
+    Case(
+        "path-classification-unlinks",
+        "verifier-read-only",
+        "tools/paths.py",
+        "import os\ndef w(p):\n    os.unlink(p)\n",
+        ".unlink(",
+    ),
+    Case(
+        "path-classification-touches",
+        "verifier-read-only",
+        "tools/paths.py",
+        "from pathlib import Path\ndef w(p):\n    Path(p).touch()\n",
+        ".touch(",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -772,6 +786,16 @@ ALLOWED: tuple[Case, ...] = (
         "verifier-read-only",
         "tools/extra.py",
         "import os\ndef w(p):\n    os.unlink(p)\n",
+        "",
+    ),
+    Case(
+        "path-classification-reads-only",
+        "verifier-read-only",
+        "tools/paths.py",
+        "from pathlib import Path\n"
+        "def c(root, p):\n"
+        "    t = Path(root) / p\n"
+        "    return t.resolve(), t.is_symlink(), t.lstat().st_mode\n",
         "",
     ),
 )

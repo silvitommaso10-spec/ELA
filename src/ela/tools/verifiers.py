@@ -7,7 +7,9 @@
   read back from the disk with ``O_RDONLY | O_NOFOLLOW`` and its SHA-256 compared with the
   SHA-256 of ``body`` encoded as UTF-8. The comparison is with the *intent* (the arguments),
   never with what the tool claimed in its output: a verifier that trusted the tool's report
-  would verify nothing. The hashes stay in memory; a failure carries only sizes (§57).
+  would verify nothing. The hashes stay in memory; a failure carries only sizes (§57). Where
+  the path leads is classified by :mod:`ela.tools.paths`, the same function the tool uses, so a
+  path the tool refused is refused here with the same code, and a note the tool wrote is found.
 
 This module writes nothing: no ``open`` in a writing mode, no ``os.write``, no ``unlink``,
 ``rename``, ``mkdir`` or ``chmod`` — rule 18 (``check_verifier_read_only``) reads its AST and
@@ -25,7 +27,8 @@ from typing import ClassVar, Final
 
 from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping
 from ela.tools.echo import CORE_ECHO
-from ela.tools.notes import WORKSPACE_WRITE_NOTE, is_relative_note_path, resolve_workspace
+from ela.tools.notes import WORKSPACE_WRITE_NOTE
+from ela.tools.paths import PATH_CODES, classify, resolve_workspace
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
 
 __all__ = [
@@ -36,7 +39,6 @@ __all__ = [
     "NOTE_CONTENT_MATCHES",
     "NOTE_CONTENT_MISMATCH",
     "NOTE_EXISTS",
-    "NOTE_MISSING",
     "NOTE_UNREADABLE",
     "EchoVerifier",
     "WriteNoteVerifier",
@@ -50,10 +52,10 @@ ECHO_MESSAGE_MATCHES: Final = "echo.message_matches"
 ECHO_MESSAGE_MISMATCH: Final = "echo.message_mismatch"
 
 NOTE_EXISTS: Final = "note.exists"
-"""``root / path`` is a regular file, reached through no symbolic link, inside the workspace."""
+"""``root / path`` is a regular file, reached through no symbolic link, inside the workspace:
+:func:`~ela.tools.paths.classify` answers ``None``, else its code is the failure's."""
 NOTE_CONTENT_MATCHES: Final = "note.content_matches"
 """The note exists and its bytes hash to the same SHA-256 as ``body`` encoded as UTF-8."""
-NOTE_MISSING: Final = "note.missing"
 NOTE_CONTENT_MISMATCH: Final = "note.content_mismatch"
 NOTE_UNREADABLE: Final = "note.unreadable"
 
@@ -105,11 +107,9 @@ class WriteNoteVerifier(Verifier):
     """
 
     conditions: ClassVar[frozenset[str]] = frozenset({NOTE_EXISTS, NOTE_CONTENT_MATCHES})
-    failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
-        NOTE_MISSING,
-        NOTE_CONTENT_MISMATCH,
-        NOTE_UNREADABLE,
-    }
+    failure_codes: ClassVar[frozenset[str]] = (
+        COMMON_FAILURE_CODES | PATH_CODES | {NOTE_CONTENT_MISMATCH, NOTE_UNREADABLE}
+    )
 
     def __init__(self, root: Path | str, *, name: str = NOTES_VERIFIER_NAME) -> None:
         super().__init__(WORKSPACE_WRITE_NOTE, name=name)
@@ -127,9 +127,11 @@ class WriteNoteVerifier(Verifier):
                 "path and body must be strings",
                 retryable=False,
             )
-        missing = self._missing(condition, path)
-        if missing is not None or condition == NOTE_EXISTS:
-            return missing
+        problem = classify(self._root, path)
+        if problem is not None:
+            return self._failure(condition, problem.code, problem.message(path), retryable=True)
+        if condition == NOTE_EXISTS:
+            return None
         expected = body.encode("utf-8")
         try:
             data = self._read(self._root / path)
@@ -149,36 +151,6 @@ class WriteNoteVerifier(Verifier):
             retryable=True,
             details={"expected_bytes": len(expected), "actual_bytes": len(data)},
         )
-
-    def _missing(self, condition: str, path: str) -> ErrorMetadata | None:
-        """Why ``root / path`` is not a note (the checks of the tool, in reading), or ``None``."""
-        reason = self._absence(path)
-        if reason is None:
-            return None
-        return self._failure(condition, NOTE_MISSING, f"{path!r} {reason}", retryable=True)
-
-    def _absence(self, path: str) -> str | None:
-        """The checks of the tool, in reading: shape, where it resolves, links, existence,
-        a regular file. The first that fails names itself; ``None`` if the note is there."""
-        if not is_relative_note_path(path):
-            return "is not a relative path without '.', '..' or '\\'"
-        target = self._root / path
-        try:
-            if not target.resolve().is_relative_to(self._root):
-                return "resolves outside the workspace"
-            current = self._root
-            for part in path.split("/"):
-                current = current / part
-                if current.is_symlink():
-                    return "goes through a symbolic link"
-            mode = target.lstat().st_mode
-        except FileNotFoundError:
-            return "does not exist"
-        except OSError as error:  # a component that is a file, a loop, a permission
-            return f"cannot be reached: {type(error).__name__}"
-        if not stat.S_ISREG(mode):
-            return "is not a regular file"
-        return None
 
     @staticmethod
     def _read(target: Path) -> bytes:

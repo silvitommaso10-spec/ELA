@@ -20,6 +20,7 @@ from tests.architecture.rules import (
     EXECUTE_METHOD,
     EXECUTOR_MODULE,
     ORM_PACKAGE,
+    PATHS_MODULE,
     PERMISSIONS_ALLOWED_EXTERNAL,
     PERMISSIONS_DIR,
     PERSISTENCE_MAPPERS,
@@ -171,3 +172,9 @@ def test_the_executor_really_completes_steps_and_the_verifiers_really_read() -> 
     assert "os.open(" in source
     assert "O_RDONLY" in source
     assert "O_NOFOLLOW" in source
+    paths = PACKAGE_ROOT / PATHS_MODULE
+    assert paths.is_file()
+    classification = paths.read_text(encoding="utf-8")
+    assert ".resolve()" in classification
+    assert ".lstat()" in classification
+    assert ".is_symlink()" in classification

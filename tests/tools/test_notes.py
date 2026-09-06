@@ -179,7 +179,9 @@ async def test_a_directory_link_to_the_outside_is_refused_and_the_outside_untouc
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     (root / "notes").symlink_to(elsewhere, target_is_directory=True)
-    message = await refused(tool, root, {"path": "notes/a.md", "body": BODY}, PATH_SYMLINK)
+    message = await refused(
+        tool, root, {"path": "notes/a.md", "body": BODY}, PATH_OUTSIDE_WORKSPACE
+    )
     assert "notes/a.md" in message
     assert list(elsewhere.iterdir()) == []
 
@@ -191,7 +193,7 @@ async def test_a_file_link_to_the_outside_is_refused_and_its_target_unchanged(
     secret.write_text("untouched", encoding="utf-8")
     (root / "notes").mkdir()
     (root / "notes" / "a.md").symlink_to(secret)
-    await refused(tool, root, {"path": "notes/a.md", "body": BODY}, PATH_SYMLINK)
+    await refused(tool, root, {"path": "notes/a.md", "body": BODY}, PATH_OUTSIDE_WORKSPACE)
     assert secret.read_text(encoding="utf-8") == "untouched"
 
 
@@ -204,16 +206,22 @@ async def test_a_link_pointing_inside_the_root_is_refused_too(
     assert list((root / "real").iterdir()) == []
 
 
-async def test_a_target_that_resolves_outside_is_refused_by_the_safety_net(
-    tool: WriteNoteTool, root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+async def test_a_link_to_the_outside_is_named_as_outside_a_link_inside_as_a_link(
+    tool: WriteNoteTool, root: Path, tmp_path: Path
 ) -> None:
-    """Checks 1 and 2 catch every known escape; check 3 is proven on its own by disabling them."""
+    """One classification for the tool and the verifier (ela.tools.paths): where the path
+    resolves is checked before the links, so a link that escapes is "outside" and a link that
+    stays is "a link" — the same code the verifier answers with."""
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
-    (root / "notes").symlink_to(elsewhere, target_is_directory=True)
-    monkeypatch.setattr(Path, "is_symlink", lambda self: False)
-    await refused(tool, root, {"path": "notes/a.md", "body": BODY}, PATH_OUTSIDE_WORKSPACE)
-    assert list(elsewhere.iterdir()) == []
+    (root / "out").symlink_to(elsewhere, target_is_directory=True)
+    (root / "real").mkdir()
+    (root / "in").symlink_to(root / "real", target_is_directory=True)
+    outside = await refused(tool, root, {"path": "out/a.md", "body": BODY}, PATH_OUTSIDE_WORKSPACE)
+    inside = await refused(tool, root, {"path": "in/a.md", "body": BODY}, PATH_SYMLINK)
+    assert "resolves outside the workspace" in outside
+    assert "symbolic link" in inside
+    assert list(elsewhere.iterdir()) == [] and list((root / "real").iterdir()) == []
 
 
 async def test_a_directory_target_is_refused(tool: WriteNoteTool, root: Path) -> None:
@@ -227,7 +235,19 @@ async def test_an_os_error_is_a_failed_result_not_an_exception(
 ) -> None:
     (root / "workspace").write_text("a file where a directory should be", encoding="utf-8")
     message = await refused(tool, root, {"path": NOTE, "body": BODY}, IO_ERROR)
-    assert "Error" in message
+    assert "cannot be reached: NotADirectoryError" in message
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on this platform")
+async def test_a_target_that_is_not_a_regular_file_is_an_io_error(
+    tool: WriteNoteTool, root: Path
+) -> None:
+    """A FIFO or a socket at the path: the shared classification says not regular, the tool
+    names it with its own I/O code and never opens it (an open for writing would block)."""
+    (root / "workspace" / "notes").mkdir(parents=True)
+    os.mkfifo(root / NOTE)
+    message = await refused(tool, root, {"path": NOTE, "body": BODY}, IO_ERROR)
+    assert "is not a regular file" in message
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")

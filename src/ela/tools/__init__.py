@@ -4,7 +4,8 @@ ADR 0013; M5.2, ADR 0014).
 A tool executes under a :class:`~ela.domain.PermissionDecision` it receives as data and never
 sees the Guardian; the only module that calls a tool is the executor (rule 16). A verifier
 checks the world against the success conditions of a step after the tool ran, is a separate
-object from the tool by construction, and writes nothing (rule 18).
+object from the tool by construction, and writes nothing (rule 18). Where a note path leads is
+classified once, in :mod:`ela.tools.paths`, for both.
 """
 
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool, check_decision
@@ -15,12 +16,20 @@ from ela.tools.notes import (
     FILE_MODE,
     IO_ERROR,
     NOTES_TOOL_NAME,
-    PATH_INVALID,
-    PATH_IS_DIRECTORY,
-    PATH_OUTSIDE_WORKSPACE,
-    PATH_SYMLINK,
     WORKSPACE_WRITE_NOTE,
     WriteNoteTool,
+)
+from ela.tools.paths import (
+    PATH_CODES,
+    PATH_INVALID,
+    PATH_IS_DIRECTORY,
+    PATH_MISSING,
+    PATH_NOT_REGULAR,
+    PATH_OUTSIDE_WORKSPACE,
+    PATH_SYMLINK,
+    PATH_UNREACHABLE,
+    PathProblem,
+    classify,
     is_relative_note_path,
     resolve_workspace,
 )
@@ -33,7 +42,6 @@ from ela.tools.verifiers import (
     NOTE_CONTENT_MATCHES,
     NOTE_CONTENT_MISMATCH,
     NOTE_EXISTS,
-    NOTE_MISSING,
     NOTE_UNREADABLE,
     NOTES_VERIFIER_NAME,
     EchoVerifier,
@@ -57,17 +65,21 @@ __all__ = [
     "NOTE_CONTENT_MATCHES",
     "NOTE_CONTENT_MISMATCH",
     "NOTE_EXISTS",
-    "NOTE_MISSING",
     "NOTE_UNREADABLE",
+    "PATH_CODES",
     "PATH_INVALID",
     "PATH_IS_DIRECTORY",
+    "PATH_MISSING",
+    "PATH_NOT_REGULAR",
     "PATH_OUTSIDE_WORKSPACE",
     "PATH_SYMLINK",
+    "PATH_UNREACHABLE",
     "VERIFICATION_ARGUMENTS_INVALID",
     "WORKSPACE_WRITE_NOTE",
     "EchoTool",
     "EchoVerifier",
     "Outcome",
+    "PathProblem",
     "Tool",
     "ToolNotFound",
     "ToolRegistry",
@@ -79,6 +91,7 @@ __all__ = [
     "WriteNoteTool",
     "WriteNoteVerifier",
     "check_decision",
+    "classify",
     "default_workspace_dir",
     "is_relative_note_path",
     "resolve_workspace",

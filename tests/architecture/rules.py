@@ -87,8 +87,11 @@ EXECUTE_METHOD = "execute"
 SQL_EXECUTORS = frozenset({"session", "connection", "cursor"})
 # Rule 17 (ADR 0014 §9): only the executor completes a step, and only after verification.
 COMPLETE_STEP_METHOD = "complete_step"
-# Rule 18 (ADR 0014 §10): the module of the verifiers has no path that writes.
+# Rule 18 (ADR 0014 §10): the module of the verifiers, and the shared path classification the
+# tool and the verifier both use, have no path that writes.
 VERIFIERS_MODULE = Path("tools") / "verifiers.py"
+PATHS_MODULE = Path("tools") / "paths.py"
+READ_ONLY_MODULES = (VERIFIERS_MODULE, PATHS_MODULE)
 OPENERS = frozenset({"open", "fdopen"})
 WRITING_OPEN_MODES = frozenset("wax+")
 WRITING_OPEN_FLAGS = frozenset({"O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND", "O_EXCL"})
@@ -662,28 +665,33 @@ def check_step_completers(pkg_root: Path) -> list[Violation]:
 
 
 def check_verifier_read_only(pkg_root: Path) -> list[Violation]:
-    """Rule 18: ``tools/verifiers.py`` has no path that writes (ADR 0014 §10, decision I).
+    """Rule 18: ``tools/verifiers.py`` and ``tools/paths.py`` have no path that writes (ADR 0014
+    §10, decision I; review of M5.2 for the shared classification).
 
-    A verifier is read-only by construction: it looks at the world and changes nothing. Reported
-    in that module: ``open``/``fdopen`` in a writing mode (``w``, ``a``, ``x``, ``+``) or with a
-    mode that is not a literal; ``os.open`` with a writing flag (``O_WRONLY``, ``O_RDWR``,
-    ``O_CREAT``, ``O_TRUNC``, ``O_APPEND``, ``O_EXCL``); any call named after a write —
-    ``write``, ``unlink``, ``rename``, ``mkdir``, ``chmod``, ``write_text``… (:data:`WRITING_CALLS`)
-    — and any call through ``shutil``. Closed-world on names, like rules 5, 11, 12, 15 and 16.
+    A verifier is read-only by construction: it looks at the world and changes nothing, and so
+    is the path classification it shares with the tool. Reported in those modules:
+    ``open``/``fdopen`` in a writing mode (``w``, ``a``, ``x``, ``+``) or with a mode that is not
+    a literal; ``os.open`` with a writing flag (``O_WRONLY``, ``O_RDWR``, ``O_CREAT``, ``O_TRUNC``,
+    ``O_APPEND``, ``O_EXCL``); any call named after a write — ``write``, ``unlink``, ``rename``,
+    ``mkdir``, ``chmod``, ``write_text``… (:data:`WRITING_CALLS`) — and any call through
+    ``shutil``. Closed-world on names, like rules 5, 11, 12, 15 and 16.
     """
     rule = "verifier-read-only"
-    path = pkg_root / VERIFIERS_MODULE
-    if not path.is_file():
-        return []
-    name = module_name(path, pkg_root)
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    return [
-        Violation(rule, name, f"{callee}(", node.lineno)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        for callee in [_callee(node.func)]
-        if _writes(node, callee)
-    ]
+    found: list[Violation] = []
+    for relative in READ_ONLY_MODULES:
+        path = pkg_root / relative
+        if not path.is_file():
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f"{callee}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            for callee in [_callee(node.func)]
+            if _writes(node, callee)
+        )
+    return found
 
 
 def _callee(function: ast.expr) -> str:

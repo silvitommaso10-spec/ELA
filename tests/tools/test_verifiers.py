@@ -29,9 +29,15 @@ from ela.tools import (
     NOTE_CONTENT_MATCHES,
     NOTE_CONTENT_MISMATCH,
     NOTE_EXISTS,
-    NOTE_MISSING,
     NOTE_UNREADABLE,
     NOTES_VERIFIER_NAME,
+    PATH_CODES,
+    PATH_INVALID,
+    PATH_IS_DIRECTORY,
+    PATH_MISSING,
+    PATH_OUTSIDE_WORKSPACE,
+    PATH_SYMLINK,
+    PATH_UNREACHABLE,
     VERIFICATION_ARGUMENTS_INVALID,
     WORKSPACE_WRITE_NOTE,
     EchoTool,
@@ -171,8 +177,7 @@ def test_note_verifier_declares_itself(verifier: WriteNoteVerifier) -> None:
     assert verifier.capability_id == WORKSPACE_WRITE_NOTE
     assert verifier.name == NOTES_VERIFIER_NAME
     assert verifier.conditions == set(BOTH)
-    assert verifier.failure_codes == COMMON_FAILURE_CODES | {
-        NOTE_MISSING,
+    assert verifier.failure_codes == COMMON_FAILURE_CODES | PATH_CODES | {
         NOTE_CONTENT_MISMATCH,
         NOTE_UNREADABLE,
     }
@@ -216,7 +221,7 @@ async def test_a_deleted_note_is_missing_for_both_conditions(
     result = await written(tool)
     (root / NOTE).unlink()
     failures = await verify_unchanged(verifier, root, BOTH, {"path": NOTE, "body": BODY}, result)
-    assert codes(failures) == [NOTE_MISSING, NOTE_MISSING]
+    assert codes(failures) == [PATH_MISSING, PATH_MISSING]
     assert [f.details["condition"] for f in failures] == list(BOTH)
     assert "does not exist" in failures[0].message
     assert all(f.retryable for f in failures)
@@ -265,8 +270,8 @@ async def test_a_directory_at_the_path_is_missing(
     (root / NOTE).unlink()
     (root / NOTE).mkdir()
     failures = await verify_unchanged(verifier, root, BOTH, {"path": NOTE, "body": BODY}, result)
-    assert codes(failures) == [NOTE_MISSING, NOTE_MISSING]
-    assert "is not a regular file" in failures[0].message
+    assert codes(failures) == [PATH_IS_DIRECTORY, PATH_IS_DIRECTORY]
+    assert "is a directory" in failures[0].message
 
 
 @pytest.mark.parametrize("inside", [True, False], ids=["link-inside", "link-outside"])
@@ -279,7 +284,8 @@ async def test_a_link_at_the_path_is_missing_and_its_target_is_not_read(
     (root / NOTE).unlink()
     (root / NOTE).symlink_to(target)
     failures = await verify_unchanged(verifier, root, BOTH, {"path": NOTE, "body": BODY}, result)
-    assert codes(failures) == [NOTE_MISSING, NOTE_MISSING]
+    code = PATH_SYMLINK if inside else PATH_OUTSIDE_WORKSPACE  # the tool's code too
+    assert codes(failures) == [code, code]
     # a link pointing outside resolves outside; one pointing inside is caught as a link
     expected = "symbolic link" if inside else "resolves outside the workspace"
     assert expected in failures[0].message
@@ -297,7 +303,7 @@ async def test_a_link_in_an_intermediate_directory_is_missing(
     (root / "workspace" / "notes").rmdir()
     (root / "workspace" / "notes").symlink_to(elsewhere)
     failures = await verify_unchanged(verifier, root, BOTH, {"path": NOTE, "body": BODY}, result)
-    assert codes(failures) == [NOTE_MISSING, NOTE_MISSING]
+    assert codes(failures) == [PATH_OUTSIDE_WORKSPACE, PATH_OUTSIDE_WORKSPACE]
     assert "resolves outside the workspace" in failures[0].message
     # the same link pointing inside the workspace is still a link, and still missing
     inside = root / "inside"
@@ -306,7 +312,7 @@ async def test_a_link_in_an_intermediate_directory_is_missing(
     (root / "workspace" / "notes").unlink()
     (root / "workspace" / "notes").symlink_to(inside)
     failures = await verify_unchanged(verifier, root, BOTH, {"path": NOTE, "body": BODY}, result)
-    assert codes(failures) == [NOTE_MISSING, NOTE_MISSING]
+    assert codes(failures) == [PATH_SYMLINK, PATH_SYMLINK]
     assert "symbolic link" in failures[0].message
 
 
@@ -318,7 +324,7 @@ async def test_a_path_with_the_wrong_shape_is_missing(
 ) -> None:
     result = await written(tool)
     failures = await verify_unchanged(verifier, root, BOTH, {"path": path, "body": BODY}, result)
-    assert codes(failures) == [NOTE_MISSING, NOTE_MISSING]
+    assert codes(failures) == [PATH_INVALID, PATH_INVALID]
     assert "relative path" in failures[0].message
 
 
@@ -331,7 +337,7 @@ async def test_a_path_under_a_file_cannot_be_reached(
     failures = await verify_unchanged(
         verifier, root, BOTH, {"path": under_a_file, "body": BODY}, result
     )
-    assert codes(failures) == [NOTE_MISSING, NOTE_MISSING]
+    assert codes(failures) == [PATH_UNREACHABLE, PATH_UNREACHABLE]
     assert "cannot be reached: NotADirectoryError" in failures[0].message
 
 
@@ -339,7 +345,7 @@ async def test_a_missing_root_holds_no_note(tmp_path: Path) -> None:
     verifier = WriteNoteVerifier(tmp_path / "nowhere")
     result = succeeded(WORKSPACE_WRITE_NOTE, output={"path": NOTE, "bytes": 3})
     failures = await verifier.verify(BOTH, {"path": NOTE, "body": "hi\n"}, result)
-    assert codes(failures) == [NOTE_MISSING, NOTE_MISSING]
+    assert codes(failures) == [PATH_MISSING, PATH_MISSING]
     assert not (tmp_path / "nowhere").exists()
 
 

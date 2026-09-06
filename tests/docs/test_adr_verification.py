@@ -16,7 +16,7 @@ import pytest
 from ela.executive import VERIFICATION_EXCEPTION, VERIFICATION_FAILED
 from ela.permissions import catalogue_v01
 from ela.tasks.engine import OPERATIONS, STEP_OPERATIONS
-from ela.tools import COMMON_FAILURE_CODES, Verifier, verifiers_v01
+from ela.tools import COMMON_FAILURE_CODES, PATH_CODES, Verifier, verifiers_v01
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0014-verification.md"
 VERIFIER_ROW = re.compile(r"^\| `([a-z_.]+)` \| `(\w+)` \| `([\w-]+)` \| (.+?) \| (.+?) \|$")
@@ -25,22 +25,25 @@ OUTCOME_ROW = re.compile(
     r"\*{0,2}(EXECUTING|FAILED)\*{0,2} \|$"
 )
 CODE = re.compile(r"`([^`]+)`")
-COMMON = "comuni"
+SHORTHANDS = {"comuni": COMMON_FAILURE_CODES, "percorso": PATH_CODES}
+"""Words a codes cell may use for a whole family: the shared codes of ``ela.tools.verify`` and
+the seven of ``ela.tools.paths``."""
 EXECUTOR_CODES = {VERIFICATION_FAILED, VERIFICATION_EXCEPTION}
 
 
 def documented_verifiers(text: str) -> dict[str, tuple[str, str, frozenset[str], frozenset[str]]]:
-    """capability → (class, name, conditions, failure codes); "comuni" expands to the shared
-    codes of ``ela.tools.verify``."""
+    """capability → (class, name, conditions, failure codes); the shorthands expand."""
     rows = {}
     for line in text.splitlines():
         match = VERIFIER_ROW.match(line)
         if match is None:
             continue
         cid, cls, name, conditions, codes = match.groups()
-        own = frozenset(CODE.findall(codes))
-        common = COMMON_FAILURE_CODES if COMMON in codes else frozenset()
-        rows[cid] = (cls, name, frozenset(CODE.findall(conditions)), own | common)
+        expanded = frozenset(CODE.findall(codes))
+        for word, family in SHORTHANDS.items():
+            if word in codes:
+                expanded |= family
+        rows[cid] = (cls, name, frozenset(CODE.findall(conditions)), expanded)
     assert rows, "ADR 0014 must contain the verifiers table"
     return rows
 
@@ -108,6 +111,11 @@ def test_a_drifted_table_is_detected() -> None:
         ("`note.exists`, ", "", "workspace.write_note"),
         ("`note.unreadable`", "`note.locked`", "workspace.write_note"),
         ("comuni, `echo.message_mismatch`", "`echo.message_mismatch`", "core.echo"),
+        (
+            "comuni, percorso, `note.content_mismatch`",
+            "comuni, `note.content_mismatch`",
+            "workspace.write_note",
+        ),
     ]:
         drifted = text.replace(before, after, 1)
         assert drifted != text, before

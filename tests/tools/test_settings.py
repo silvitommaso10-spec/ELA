@@ -37,7 +37,7 @@ def test_dotenv_file_is_read_when_asked(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.delenv("ELA_WORKSPACE_DIR", raising=False)
     dotenv = tmp_path / ".env"
     dotenv.write_text(
-        "ELA_WORKSPACE_DIR=/from/dotenv\n",  # pragma: allowlist secret
+        "ELA_WORKSPACE_DIR=/tmp/test-not-a-secret\n",  # pragma: allowlist secret
         encoding="utf-8",
     )
-    assert WorkspaceSettings(_env_file=dotenv).workspace_dir == Path("/from/dotenv")
+    assert WorkspaceSettings(_env_file=dotenv).workspace_dir == Path("/tmp/test-not-a-secret")
