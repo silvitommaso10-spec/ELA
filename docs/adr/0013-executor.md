@@ -1,6 +1,6 @@
 # 0013. Executor: uno step per chiamata, grant scelto e consumato prima del tool, ordine delle scritture, `ToolRegistryPort` e `AuthorizingGuardianPort`, tool v0.1 e workspace, regola 16
 
-- **Stato:** Accettata
+- **Stato:** Accettata. La riga "SUCCEEDED → `complete_step`" di §5 passa per la verifica (ADR 0014 §4: `complete_step` solo dopo `EXECUTION_VERIFIED` passata; verifica fallita → `fail_step` e `fail`); tre precondizioni in più in §2 (ADR 0014 §3); la tabella di §8 estesa con le finestre 8a–8c e 9a (ADR 0014 §6); l'executor prende anche `verifiers: VerifierRegistryPort`.
 - **Data:** 2026-09-06
 - **Riferimenti spec:** §12, §13, §14, §15, §17, §18, §23, §27, §28, §29, §30, §32, §33, §47, §49, §51, §52, §57, §58, §63, §64, §65
 - **Milestone:** M5.1

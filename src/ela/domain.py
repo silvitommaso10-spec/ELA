@@ -369,6 +369,9 @@ class AuditEventType(StrEnum):
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"
     APPROVAL_RESOLVED = "APPROVAL_RESOLVED"
     TOOL_EXECUTED = "TOOL_EXECUTED"
+    EXECUTION_VERIFIED = "EXECUTION_VERIFIED"
+    """The verifier checked a SUCCEEDED result against the step's success conditions (§63,
+    M5.2, ADR 0014): written whether it passed or failed."""
     PROVIDER_CALLED = "PROVIDER_CALLED"
     ERROR_RECORDED = "ERROR_RECORDED"
 

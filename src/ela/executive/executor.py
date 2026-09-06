@@ -14,14 +14,24 @@ The outcomes of the Guardian are moves of the engine (ADR 0013 §5):
 * ``REQUIRES_APPROVAL`` → an :class:`~ela.domain.Approval` built from the decision (its targets
   are the decision's, ADR 0012 §6) and ``engine.request_approval``: the task waits.
 * ``ALLOWED`` → ``consume`` if the decision rests on the grant, then the tool, then the audit,
-  then the step is closed. A grant that turns out expired or exhausted at ``consume`` asks
-  again; one that vanished fails the step with :data:`GRANT_VANISHED`.
+  then the **verifier**, then the step is closed. A grant that turns out expired or exhausted
+  at ``consume`` asks again; one that vanished fails the step with :data:`GRANT_VANISHED`.
+
+Execution is not proof of success (§63, ADR 0014): a SUCCEEDED result is what the tool *says*;
+the verifier of the capability checks the world against the step's ``success_conditions`` and
+only its pass completes the step (``complete_step`` has one caller, this module: rule 17). A
+failed verification is a contradiction between the tool's claim and reality — a doubt (§33) —
+so the step **and the task** are FAILED with one :class:`~ela.domain.ErrorMetadata` that says
+what, why, which tool, which device (§64). A tool that reports its own failure is a different
+fact: the step fails, the task stays EXECUTING, and who decides about the task is the
+orchestrator (ADR 0013 §5). An action that cannot be verified — no verifier, no condition, a
+condition outside the verifier's vocabulary — is not executed at all.
 
 One instant serves ``authorize`` and ``consume``: ``decision.created_at`` (ADR 0012 §6, ADR 0013
 §6). A grant born from an approval has a deterministic id per approval, so a retry after a crash
 finds it instead of minting a second one, and writes the ``AUTHORIZATION_GRANTED`` a crash may
-have skipped (ADR 0013 §3, §8). What never enters the audit trail: the arguments and the tool's
-output (§57).
+have skipped (ADR 0013 §3, §8). What never enters the audit trail: the arguments, the tool's
+output, and the content the verifier compared (§57).
 """
 
 from __future__ import annotations
@@ -80,6 +90,8 @@ from ela.ports import (
     TaskRepository,
     ToolPort,
     ToolRegistryPort,
+    VerifierPort,
+    VerifierRegistryPort,
 )
 from ela.tasks.engine import TaskEngine
 from ela.tasks.graph import GraphState
@@ -93,8 +105,11 @@ __all__ = [
     "MAX_APPROVAL_TTL",
     "TOOL_EXCEPTION",
     "TOOL_REFUSED",
+    "VERIFICATION_EXCEPTION",
+    "VERIFICATION_FAILED",
     "Execution",
     "Executor",
+    "Verification",
     "approved_targets",
     "select_authorization",
 ]
@@ -131,16 +146,41 @@ TOOL_REFUSED: Final = "tool.refused"
 """Error code of a step failed because the tool refused the decision (``NotAllowedError``)."""
 GRANT_VANISHED: Final = "grant_vanished"
 """Error code of a step failed because the grant vanished between ``authorize`` and ``consume``."""
+VERIFICATION_FAILED: Final = "verification.failed"
+"""Error code of a step, and its task, failed because a success condition did not hold (ADR
+0014 §4): the tool said SUCCEEDED and the world said otherwise."""
+VERIFICATION_EXCEPTION: Final = "verification.exception"
+"""Error code of a step, and its task, failed because the verifier raised: a verifier that
+could not answer has not verified, and a doubt is a failure (§33)."""
 
 _CONSUMING_RULE_VALUES: Final[frozenset[str]] = frozenset(rule.value for rule in CONSUMING_RULES)
 
 
-class Execution(NamedTuple):
-    """What one call of :meth:`Executor.execute` did (ADR 0013 §1).
+class Verification(NamedTuple):
+    """What the verifier said about one SUCCEEDED result (ADR 0014 §4, §8).
 
-    ``result`` is set only if the tool ran; ``approval`` only if one was requested; ``graph`` is
-    the state of the plan as last read or written. ``decision`` is always there: every path
-    after the preconditions goes through the Guardian.
+    ``failures`` are the verifier's, one per condition that did not hold (or the one synthesised
+    from an exception); ``error`` is the :class:`~ela.domain.ErrorMetadata` the step and the task
+    are failed with, ``None`` when every condition held. Not persisted: ``EXECUTION_VERIFIED`` is
+    its trace.
+    """
+
+    conditions: tuple[str, ...]
+    failures: tuple[ErrorMetadata, ...]
+    error: ErrorMetadata | None
+
+    @property
+    def passed(self) -> bool:
+        return self.error is None
+
+
+class Execution(NamedTuple):
+    """What one call of :meth:`Executor.execute` did (ADR 0013 §1, ADR 0014 §8).
+
+    ``result`` is set only if the tool ran; ``approval`` only if one was requested;
+    ``verification`` only if the verifier was consulted (the tool ran and its result said
+    SUCCEEDED); ``graph`` is the state of the plan as last read or written. ``decision`` is
+    always there: every path after the preconditions goes through the Guardian.
     """
 
     task: Task
@@ -150,6 +190,7 @@ class Execution(NamedTuple):
     authorization: Authorization | None
     result: ExecutionResult | None
     approval: Approval | None
+    verification: Verification | None
 
 
 Candidate = tuple[Authorization, int]
@@ -213,10 +254,11 @@ def approved_targets(decision: PermissionDecision) -> tuple[str, ...]:
 class Executor:
     """The unit of work across the ports for one step (ADR 0013).
 
-    ``actor`` is who the executor says it is in ``TOOL_EXECUTED`` (ELA acts); the user signs
-    ``AUTHORIZATION_GRANTED`` through the approval. ``authorization_ttl`` is the life of a grant
-    born here (ADR 0012 §2), ``approval_ttl`` the life of a request for approval (at most
-    :data:`MAX_APPROVAL_TTL`).
+    ``actor`` is who the executor says it is in ``TOOL_EXECUTED`` and ``EXECUTION_VERIFIED``
+    (ELA acts); the user signs ``AUTHORIZATION_GRANTED`` through the approval.
+    ``authorization_ttl`` is the life of a grant born here (ADR 0012 §2), ``approval_ttl`` the
+    life of a request for approval (at most :data:`MAX_APPROVAL_TTL`). ``verifiers`` is
+    mandatory: an executor that cannot verify does not exist (§63).
     """
 
     def __init__(
@@ -224,6 +266,7 @@ class Executor:
         *,
         registry: CapabilityRegistryPort,
         tools: ToolRegistryPort,
+        verifiers: VerifierRegistryPort,
         guardian: AuthorizingGuardianPort,
         engine: TaskEngine,
         repository: TaskRepository,
@@ -241,6 +284,7 @@ class Executor:
             )
         self._registry = registry
         self._tools = tools
+        self._verifiers = verifiers
         self._guardian = guardian
         self._engine = engine
         self._repository = repository
@@ -260,13 +304,14 @@ class Executor:
         *,
         approval: Approval | None = None,
     ) -> Execution:
-        """Run the one capability of a RUNNING step of an EXECUTING task (ADR 0013 §1–§9).
+        """Run and verify the one capability of a RUNNING step of an EXECUTING task (ADR 0013
+        §1–§9, ADR 0014 §3–§4).
 
         ``approval`` is the user's GRANTED answer to a request this executor made earlier: it
         becomes the grant the call runs under. Preconditions that fail raise before anything is
         written: :class:`~ela.executive.errors.ExecutorError`,
         :class:`~ela.tasks.errors.UnknownStepError`, ``CapabilityNotFound``, ``ToolNotFound``,
-        ``ApprovalMismatchError``.
+        ``VerifierNotFound``, ``ApprovalMismatchError``.
         """
         task = await self._repository.get(task_id)
         if task.state is not TaskState.EXECUTING:
@@ -284,8 +329,22 @@ class Executor:
                 f"step {step_id} declares {len(step.required_capabilities)} capabilities; an "
                 "executable step declares exactly one",
             )
+        if not step.success_conditions:
+            raise ExecutorError(
+                task_id,
+                f"step {step_id} declares no success condition; an action that cannot be "
+                "verified is not executed",
+            )
         spec = self._registry.get(step.required_capabilities[0])
         tool = self._tools.get(spec.id)
+        verifier = self._verifiers.get(spec.id)
+        unknown = [c for c in step.success_conditions if c not in verifier.conditions]
+        if unknown:
+            raise ExecutorError(
+                task_id,
+                f"step {step_id} names success conditions {verifier.name} cannot check: "
+                f"{', '.join(unknown)}; an action that cannot be verified is not executed",
+            )
         targets = targets_of(spec, arguments)
 
         now = self._clock.now()
@@ -305,7 +364,7 @@ class Executor:
         )
         if decision.outcome is PermissionOutcome.DENIED:
             task = await self._engine.deny(task_id, decision=decision)
-            return Execution(task, step_id, graph, decision, authorization, None, None)
+            return Execution(task, step_id, graph, decision, authorization, None, None, None)
         if decision.outcome is PermissionOutcome.REQUIRES_APPROVAL:
             return await self._ask(graph, step, spec, decision, authorization, decision.reason)
 
@@ -334,11 +393,20 @@ class Executor:
             )
             return await self._fail(task, graph, decision, authorization, refused)
         await self._record_execution(tool, decision, authorization, result, targets, consumed)
-        if result.status is ExecutionStatus.SUCCEEDED:
+        if result.status is not ExecutionStatus.SUCCEEDED:
+            graph = await self._engine.fail_step(task_id, step_id, _failure_of(result, tool))
+            return Execution(task, step_id, graph, decision, authorization, result, None, None)
+
+        verification = await self._verify(verifier, tool, step, arguments, result)
+        await self._record_verification(
+            tool, verifier, decision, authorization, result, verification, consumed
+        )
+        if verification.error is None:
             graph = await self._engine.complete_step(task_id, step_id, result)
         else:
-            graph = await self._engine.fail_step(task_id, step_id, _failure_of(result, tool))
-        return Execution(task, step_id, graph, decision, authorization, result, None)
+            graph = await self._engine.fail_step(task_id, step_id, verification.error)
+            task = await self._engine.fail(task_id, verification.error)
+        return Execution(task, step_id, graph, decision, authorization, result, None, verification)
 
     # ----------------------------------------------------------------------------------
     # Authorization: from an approval, or from the store
@@ -452,7 +520,7 @@ class Executor:
             expires_at=decision.created_at + self._approval_ttl,
         )
         task = await self._engine.request_approval(decision.task_id, approval)
-        return Execution(task, step.id, graph, decision, authorization, None, approval)
+        return Execution(task, step.id, graph, decision, authorization, None, approval, None)
 
     async def _fail(
         self,
@@ -465,7 +533,7 @@ class Executor:
         """Nothing ran: the step is FAILED with the reason, so the task does not hang (§33)."""
         assert decision.step_id is not None
         graph = await self._engine.fail_step(task.id, decision.step_id, error)
-        return Execution(task, decision.step_id, graph, decision, authorization, None, None)
+        return Execution(task, decision.step_id, graph, decision, authorization, None, None, None)
 
     # ----------------------------------------------------------------------------------
     # The tool and its audit
@@ -536,6 +604,129 @@ class Executor:
                 },
             )
         )
+
+    # ----------------------------------------------------------------------------------
+    # The verifier and its audit
+    # ----------------------------------------------------------------------------------
+
+    async def _verify(
+        self,
+        verifier: VerifierPort,
+        tool: ToolPort,
+        step: TaskStep,
+        arguments: JsonMapping,
+        result: ExecutionResult,
+    ) -> Verification:
+        """The verifier's word on a SUCCEEDED result (ADR 0014 §4).
+
+        A verifier that raises has not verified: its exception becomes one failure named after
+        the exception's type — never its message (§57) — and the verification fails.
+        """
+        conditions = step.success_conditions
+        try:
+            failures = tuple(await verifier.verify(conditions, arguments, result))
+        except Exception as error:  # a verifier that could not answer: a doubt, recorded
+            failures = (
+                ErrorMetadata(
+                    code=VERIFICATION_EXCEPTION,
+                    message=type(error).__name__,
+                    tool_name=tool.name,
+                    details={"condition": None},
+                ),
+            )
+        if not failures:
+            return Verification(conditions, (), None)
+        return Verification(
+            conditions,
+            failures,
+            _verification_failure(result, tool, verifier, conditions, failures),
+        )
+
+    async def _record_verification(
+        self,
+        tool: ToolPort,
+        verifier: VerifierPort,
+        decision: PermissionDecision,
+        authorization: Authorization | None,
+        result: ExecutionResult,
+        verification: Verification,
+        consumed: int | None,
+    ) -> None:
+        """``EXECUTION_VERIFIED``: passed or failed, which conditions, which failed — never the
+        content that was compared (§57)."""
+        outcome = "passed" if verification.error is None else "failed"
+        await self._audit.append(
+            AuditEvent(
+                id=AuditEventId(self._ids.new_uuid()),
+                created_at=self._clock.now(),
+                event_type=AuditEventType.EXECUTION_VERIFIED,
+                actor=self._actor,
+                summary=f"verify: {outcome} {decision.capability_id} by {verifier.name}",
+                task_id=decision.task_id,
+                step_id=decision.step_id,
+                capability_id=decision.capability_id,
+                decision_id=decision.id,
+                authorization_id=None
+                if consumed is None or authorization is None
+                else authorization.id,
+                tool_name=tool.name,
+                error=verification.error,
+                payload={
+                    "passed": verification.error is None,
+                    "result_id": str(result.id),
+                    "verifier": verifier.name,
+                    "conditions": list(verification.conditions),
+                    "failed": [_condition_of(failure) for failure in verification.failures],
+                    "device": LOCAL_DEVICE,
+                },
+            )
+        )
+
+
+def _condition_of(failure: ErrorMetadata) -> str:
+    """The condition a failure is about, or its code when it is about no condition."""
+    condition = failure.details.get("condition")
+    return condition if isinstance(condition, str) else failure.code
+
+
+def _verification_failure(
+    result: ExecutionResult,
+    tool: ToolPort,
+    verifier: VerifierPort,
+    conditions: Sequence[str],
+    failures: Sequence[ErrorMetadata],
+) -> ErrorMetadata:
+    """The one error a failed verification becomes (§64; ADR 0014 §7): what (``code``,
+    ``message``), why (``cause``), which tool, which device; no fix attempted, retryable only
+    if every failure is."""
+    named = ", ".join(f"{_condition_of(f)} ({f.code})" for f in failures)
+    reported = [f.model_dump(mode="json") for f in failures]
+    return ErrorMetadata(
+        code=VERIFICATION_FAILED,
+        message=(
+            f"{len(failures)} of {len(conditions)} success conditions failed for "
+            f"{result.capability_id}: {named}"
+        ),
+        cause="; ".join(f.message for f in failures),
+        tool_name=tool.name,
+        retryable=all(f.retryable for f in failures),
+        details={
+            "conditions": list(conditions),
+            "failures": [
+                {
+                    "condition": _condition_of(f),
+                    "code": f.code,
+                    "message": f.message,
+                    "retryable": f.retryable,
+                    "details": {k: v for k, v in r["details"].items() if k != "condition"},
+                }
+                for f, r in zip(failures, reported, strict=True)
+            ],
+            "result_id": str(result.id),
+            "verifier": verifier.name,
+            "device": LOCAL_DEVICE,
+        },
+    )
 
 
 def _failure_of(result: ExecutionResult, tool: ToolPort) -> ErrorMetadata:

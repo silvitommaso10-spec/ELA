@@ -12,7 +12,7 @@ from __future__ import annotations
 from ela.domain import CapabilityId
 from ela.ports import NotFoundError
 
-__all__ = ["ToolNotFound", "ToolsError"]
+__all__ = ["ToolNotFound", "ToolsError", "VerifierNotFound"]
 
 
 class ToolsError(Exception):
@@ -28,4 +28,16 @@ class ToolNotFound(NotFoundError):
 
     def __init__(self, capability_id: CapabilityId) -> None:
         super().__init__("tool", capability_id)
+        self.capability_id = capability_id
+
+
+class VerifierNotFound(NotFoundError):
+    """``get`` on a capability no registered verifier checks (§63; ADR 0014).
+
+    Raised by the executor before any decision, like :class:`ToolNotFound`: an action that
+    cannot be verified is not executed, and no grant is spent on it.
+    """
+
+    def __init__(self, capability_id: CapabilityId) -> None:
+        super().__init__("verifier", capability_id)
         self.capability_id = capability_id

@@ -46,6 +46,7 @@ __all__ = [
     "WORKSPACE_WRITE_NOTE",
     "WriteNoteTool",
     "is_relative_note_path",
+    "resolve_workspace",
 ]
 
 WORKSPACE_WRITE_NOTE: Final = CapabilityId("workspace.write_note")
@@ -75,6 +76,16 @@ def is_relative_note_path(path: str) -> bool:
     return not any(part in FORBIDDEN_PARTS for part in path.split("/"))
 
 
+def resolve_workspace(root: Path | str) -> Path:
+    """Where the workspace really is: ``root`` expanded, made absolute and resolved.
+
+    Shared by the tool and its verifier (ADR 0014 §2) so that the two agree on the boundary;
+    nothing is created here — the tool creates the directory before resolving it, the verifier
+    never does.
+    """
+    return Path(root).expanduser().absolute().resolve()
+
+
 class WriteNoteTool(Tool):
     """Writes ``body`` at ``root / path`` (§29), never outside ``root``.
 
@@ -99,9 +110,8 @@ class WriteNoteTool(Tool):
         self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = NOTES_TOOL_NAME
     ) -> None:
         super().__init__(WORKSPACE_WRITE_NOTE, clock, ids, name=name)
-        directory = Path(root).expanduser().absolute()
-        directory.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
-        self._root = directory.resolve()
+        Path(root).expanduser().absolute().mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
+        self._root = resolve_workspace(root)
 
     @property
     def root(self) -> Path:

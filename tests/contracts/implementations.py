@@ -40,6 +40,8 @@ from ela.ports import (
     TaskRepository,
     ToolPort,
     ToolRegistryPort,
+    VerifierPort,
+    VerifierRegistryPort,
 )
 from ela.testing.fakes import (
     FakeAuditLog,
@@ -54,8 +56,17 @@ from ela.testing.fakes import (
     FakeTaskRepository,
     FakeTool,
     FakeToolRegistry,
+    FakeVerifier,
+    FakeVerifierRegistry,
 )
-from ela.tools import EchoTool, ToolRegistry, WriteNoteTool
+from ela.tools import (
+    EchoTool,
+    EchoVerifier,
+    ToolRegistry,
+    VerifierRegistry,
+    WriteNoteTool,
+    WriteNoteVerifier,
+)
 from tests.domain.examples import CAPABILITY_SPEC, MODEL_COMPLETE, WRITE_NOTE
 
 Hook = Callable[[object], Awaitable[None]]
@@ -197,6 +208,48 @@ def _tool_registry() -> ToolRegistry:
     return ToolRegistry(REGISTRY_TOOLS)
 
 
+def _fake_verifier() -> FakeVerifier:
+    return FakeVerifier(WRITE_NOTE)
+
+
+def _echo_verifier() -> EchoVerifier:
+    return EchoVerifier()
+
+
+class WriteNoteVerifierHarness:
+    """Builds ``WriteNoteVerifier`` instances on temporary workspaces, removed afterwards.
+
+    The verifier never creates its root (ADR 0014 §2), so the harness does, as the tool would.
+    """
+
+    def __init__(self) -> None:
+        self._roots: WeakKeyDictionary[WriteNoteVerifier, Path] = WeakKeyDictionary()
+
+    def make(self) -> WriteNoteVerifier:
+        root = Path(tempfile.mkdtemp(prefix="ela-workspace-"))
+        verifier = WriteNoteVerifier(root)
+        self._roots[verifier] = root
+        return verifier
+
+    async def teardown(self, instance: object) -> None:
+        assert isinstance(instance, WriteNoteVerifier)
+        shutil.rmtree(self._roots.pop(instance), ignore_errors=True)
+
+
+_note_verifiers = WriteNoteVerifierHarness()
+
+REGISTRY_VERIFIERS = (FakeVerifier(WRITE_NOTE), _echo_verifier())
+"""What every ``VerifierRegistryPort`` implementation under contract is built with (ADR 0014)."""
+
+
+def _fake_verifier_registry() -> FakeVerifierRegistry:
+    return FakeVerifierRegistry(REGISTRY_VERIFIERS)
+
+
+def _verifier_registry() -> VerifierRegistry:
+    return VerifierRegistry(REGISTRY_VERIFIERS)
+
+
 def _provider() -> FakeModelProvider:
     return FakeModelProvider(FakeClock(), FakeIdGenerator())
 
@@ -234,6 +287,15 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     ToolRegistryPort: (
         Implementation("FakeToolRegistry", _fake_tool_registry),
         Implementation("ToolRegistry", _tool_registry),
+    ),
+    VerifierPort: (
+        Implementation("FakeVerifier", _fake_verifier),
+        Implementation("EchoVerifier", _echo_verifier),
+        Implementation("WriteNoteVerifier", _note_verifiers.make, None, _note_verifiers.teardown),
+    ),
+    VerifierRegistryPort: (
+        Implementation("FakeVerifierRegistry", _fake_verifier_registry),
+        Implementation("VerifierRegistry", _verifier_registry),
     ),
     ModelProvider: (Implementation("FakeModelProvider", _provider),),
     ProviderRegistry: (Implementation("FakeProviderRegistry", FakeProviderRegistry),),
