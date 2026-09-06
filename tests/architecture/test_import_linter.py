@@ -108,7 +108,9 @@ def test_contracts_cover_current_packages() -> None:
 
 def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() -> None:
     """Contracts 2, 6 and 8 check direct imports only: ports, fakes and permissions reach pydantic
-    via the domain (and permissions reaches jsonschema's dependencies via jsonschema).
+    via the domain (and permissions reaches jsonschema's dependencies via jsonschema). Contract 7
+    too, since M5.1 (ADR 0013 §13): the executor imports the engine, which imports the state
+    machine; the rule is about *calling* ``transition``, and rule 10 stays direct by nature.
 
     Every other contract keeps the import-linter default and follows indirect chains too.
     """
@@ -118,6 +120,7 @@ def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() ->
     expected = {
         _contract_for("ports")["name"],
         _contract_for("testing-imports")["name"],
+        _contract_for("state-machine-callers")["name"],
         _contract_for("permissions-imports")["name"],
     }
     assert direct_only == expected

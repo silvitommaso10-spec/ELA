@@ -60,6 +60,7 @@ from ela.ports import (
     ModelProvider,
     NotAllowedError,
     NotFoundError,
+    ToolPort,
     check_limit,
 )
 
@@ -76,6 +77,7 @@ __all__ = [
     "FakeProviderRegistry",
     "FakeTaskRepository",
     "FakeTool",
+    "FakeToolRegistry",
     "GuardianCall",
     "ToolCall",
 ]
@@ -456,6 +458,31 @@ class FakeTool:
             output=self._output,
             duration_ms=0,
         )
+
+
+class FakeToolRegistry:
+    """Tools by capability id, fixed at construction (port :class:`~ela.ports.ToolRegistryPort`).
+
+    The key is the tool's own ``capability_id``; a second tool for the same capability is an
+    :class:`~ela.ports.AlreadyExistsError`, and nothing can be added later.
+    """
+
+    def __init__(self, tools: Iterable[ToolPort] = ()) -> None:
+        table: dict[CapabilityId, ToolPort] = {}
+        for tool in tools:
+            if tool.capability_id in table:
+                raise AlreadyExistsError("tool", tool.capability_id)
+            table[tool.capability_id] = tool
+        self._tools: Mapping[CapabilityId, ToolPort] = MappingProxyType(table)
+
+    def get(self, capability_id: CapabilityId) -> ToolPort:
+        try:
+            return self._tools[capability_id]
+        except KeyError:
+            raise NotFoundError("tool", capability_id) from None
+
+    def tools(self) -> tuple[ToolPort, ...]:
+        return tuple(self._tools.values())
 
 
 # --------------------------------------------------------------------------------------

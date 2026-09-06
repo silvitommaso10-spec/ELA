@@ -11,7 +11,13 @@ from typing import Protocol, runtime_checkable
 import pytest
 
 from ela.domain import AuditEvent, ExecutionResult, JsonMapping, PermissionDecision
-from ela.ports import AuditLog, AuthorizationStore, PermissionGuardianPort, ToolPort
+from ela.ports import (
+    AuditLog,
+    AuthorizationStore,
+    AuthorizingGuardianPort,
+    PermissionGuardianPort,
+    ToolPort,
+)
 from tests.architecture.port_rules import (
     append_only_violations,
     execute_without_decision,
@@ -21,12 +27,12 @@ from tests.architecture.port_rules import (
 from tests.contracts.protocols import port_protocols
 
 PORTS = tuple(port_protocols())
-GUARDIAN_AND_STORE = (PermissionGuardianPort, AuthorizationStore)
+GUARDIAN_AND_STORE = (PermissionGuardianPort, AuthorizingGuardianPort, AuthorizationStore)
 
 
 def test_the_module_actually_has_ports() -> None:
     """A rule applied to an empty tuple would hold vacuously."""
-    assert len(PORTS) == 11
+    assert len(PORTS) == 13
 
 
 def test_every_port_is_runtime_checkable() -> None:
@@ -113,6 +119,18 @@ class _ToolWithAGuardian(Protocol):
 
 
 @runtime_checkable
+class _ToolWithAnAuthorizingGuardian(Protocol):
+    """§28, but the tool receives the audited Guardian: same bypass, different door."""
+
+    async def execute(
+        self,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        guardian: AuthorizingGuardianPort,
+    ) -> ExecutionResult: ...
+
+
+@runtime_checkable
 class _ToolWithAStore(Protocol):
     async def execute(
         self,
@@ -146,7 +164,14 @@ def test_append_only_rule_reports_an_altered_log(log: type) -> None:
 
 @pytest.mark.parametrize(
     "tool",
-    [_ToolWithoutDecision, _ToolDecidingLater, _ToolWithAGuardian, _ToolWithAStore, _NoExecute],
+    [
+        _ToolWithoutDecision,
+        _ToolDecidingLater,
+        _ToolWithAGuardian,
+        _ToolWithAnAuthorizingGuardian,
+        _ToolWithAStore,
+        _NoExecute,
+    ],
     ids=lambda c: c.__name__,
 )
 def test_tool_rule_reports_execute_without_decision(tool: type) -> None:

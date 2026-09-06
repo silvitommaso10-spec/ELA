@@ -8,8 +8,11 @@ also checks that every port has at least one implementation.
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from weakref import WeakKeyDictionary
 
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -26,6 +29,7 @@ from ela.permissions import CapabilityRegistry, PermissionGuardian
 from ela.ports import (
     AuditLog,
     AuthorizationStore,
+    AuthorizingGuardianPort,
     CapabilityRegistryPort,
     Clock,
     DeviceRegistryPort,
@@ -35,6 +39,7 @@ from ela.ports import (
     ProviderRegistry,
     TaskRepository,
     ToolPort,
+    ToolRegistryPort,
 )
 from ela.testing.fakes import (
     FakeAuditLog,
@@ -48,7 +53,9 @@ from ela.testing.fakes import (
     FakeProviderRegistry,
     FakeTaskRepository,
     FakeTool,
+    FakeToolRegistry,
 )
+from ela.tools import EchoTool, ToolRegistry, WriteNoteTool
 from tests.domain.examples import CAPABILITY_SPEC, MODEL_COMPLETE, WRITE_NOTE
 
 Hook = Callable[[object], Awaitable[None]]
@@ -155,6 +162,41 @@ def _tool() -> FakeTool:
     return FakeTool(WRITE_NOTE, FakeClock(), FakeIdGenerator())
 
 
+def _echo_tool() -> EchoTool:
+    return EchoTool(FakeClock(), FakeIdGenerator())
+
+
+class WriteNoteToolHarness:
+    """Builds ``WriteNoteTool`` instances on temporary workspaces and removes them afterwards."""
+
+    def __init__(self) -> None:
+        self._roots: WeakKeyDictionary[WriteNoteTool, Path] = WeakKeyDictionary()
+
+    def make(self) -> WriteNoteTool:
+        root = Path(tempfile.mkdtemp(prefix="ela-workspace-"))
+        tool = WriteNoteTool(root, FakeClock(), FakeIdGenerator())
+        self._roots[tool] = root
+        return tool
+
+    async def teardown(self, instance: object) -> None:
+        assert isinstance(instance, WriteNoteTool)
+        shutil.rmtree(self._roots.pop(instance), ignore_errors=True)
+
+
+_note_tools = WriteNoteToolHarness()
+
+REGISTRY_TOOLS = (FakeTool(WRITE_NOTE, FakeClock(), FakeIdGenerator()), _echo_tool())
+"""What every ``ToolRegistryPort`` implementation under contract is built with (ADR 0013)."""
+
+
+def _fake_tool_registry() -> FakeToolRegistry:
+    return FakeToolRegistry(REGISTRY_TOOLS)
+
+
+def _tool_registry() -> ToolRegistry:
+    return ToolRegistry(REGISTRY_TOOLS)
+
+
 def _provider() -> FakeModelProvider:
     return FakeModelProvider(FakeClock(), FakeIdGenerator())
 
@@ -183,7 +225,16 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("FakePermissionGuardian", _fake_guardian),
         Implementation("PermissionGuardian", _guardian),
     ),
-    ToolPort: (Implementation("FakeTool", _tool),),
+    AuthorizingGuardianPort: (Implementation("PermissionGuardian", _guardian),),
+    ToolPort: (
+        Implementation("FakeTool", _tool),
+        Implementation("EchoTool", _echo_tool),
+        Implementation("WriteNoteTool", _note_tools.make, None, _note_tools.teardown),
+    ),
+    ToolRegistryPort: (
+        Implementation("FakeToolRegistry", _fake_tool_registry),
+        Implementation("ToolRegistry", _tool_registry),
+    ),
     ModelProvider: (Implementation("FakeModelProvider", _provider),),
     ProviderRegistry: (Implementation("FakeProviderRegistry", FakeProviderRegistry),),
 }

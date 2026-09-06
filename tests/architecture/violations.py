@@ -390,6 +390,27 @@ VIOLATIONS: tuple[Case, ...] = (
         "    return await self._executor.guardian.decide(spec, args, task=None)\n",
         ".decide(",
     ),
+    Case(
+        "tool-executed-by-tools",
+        "tool-execute-callers",
+        "tools/runner.py",
+        "async def run(tool, decision, args):\n    return await tool.execute(decision, args)\n",
+        ".execute(",
+    ),
+    Case(
+        "tool-executed-by-another-executive-module",
+        "tool-execute-callers",
+        "executive/orchestrator.py",
+        "class O:\n    async def run(self, d, a):\n        return await self._tool.execute(d, a)\n",
+        ".execute(",
+    ),
+    Case(
+        "tool-executed-inside-persistence",
+        "tool-execute-callers",
+        "infrastructure/persistence/rows.py",
+        "async def run(tool, d, a):\n    return await tool.execute(d, a)\n",
+        ".execute(",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -601,6 +622,33 @@ ALLOWED: tuple[Case, ...] = (
         "class FakeG:\n"
         "    def decide(self, spec, args):\n"
         "        return decide_table(spec, args)\n",
+        "",
+    ),
+    Case(
+        "tool-executed-by-the-executor",
+        "tool-execute-callers",
+        "executive/executor.py",
+        "async def run(tool, decision, args):\n    return await tool.execute(decision, args)\n",
+        "",
+    ),
+    Case(
+        "sql-executed-by-persistence",
+        "tool-execute-callers",
+        "infrastructure/persistence/repo.py",
+        "from sqlalchemy import select\n"
+        "async def head(session, connection, cursor):\n"
+        "    await session.execute(select(1))\n"
+        "    await connection.execute(select(1))\n"
+        "    cursor.execute('PRAGMA foreign_keys=ON')\n",
+        "",
+    ),
+    Case(
+        "execute-defined-by-a-tool",
+        "tool-execute-callers",
+        "tools/extra.py",
+        "class T:\n"
+        "    async def execute(self, decision, arguments):\n"
+        "        return run(decision, arguments)\n",
         "",
     ),
 )

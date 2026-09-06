@@ -16,6 +16,7 @@ import pytest
 from ela.ports import (
     AuditLog,
     AuthorizationStore,
+    AuthorizingGuardianPort,
     CapabilityRegistryPort,
     Clock,
     DeviceRegistryPort,
@@ -25,6 +26,7 @@ from ela.ports import (
     ProviderRegistry,
     TaskRepository,
     ToolPort,
+    ToolRegistryPort,
 )
 from tests.contracts.implementations import Implementation, implementations_of
 
@@ -88,6 +90,20 @@ async def authorization_store(request: pytest.FixtureRequest) -> AsyncIterator[A
 async def guardian(request: pytest.FixtureRequest) -> AsyncIterator[PermissionGuardianPort]:
     async for instance in _instance(request.param):
         yield cast(PermissionGuardianPort, instance)
+
+
+@pytest.fixture(params=implementations_of(AuthorizingGuardianPort), ids=str)
+async def authorizing_guardian(
+    request: pytest.FixtureRequest,
+) -> AsyncIterator[AuthorizingGuardianPort]:
+    async for instance in _instance(request.param):
+        yield cast(AuthorizingGuardianPort, instance)
+
+
+@pytest.fixture(params=implementations_of(ToolRegistryPort), ids=str)
+async def tool_registry(request: pytest.FixtureRequest) -> AsyncIterator[ToolRegistryPort]:
+    async for instance in _instance(request.param):
+        yield cast(ToolRegistryPort, instance)
 
 
 @pytest.fixture(params=implementations_of(ToolPort), ids=str)
