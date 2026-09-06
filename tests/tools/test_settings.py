@@ -36,8 +36,6 @@ def test_unknown_variables_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_dotenv_file_is_read_when_asked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ELA_WORKSPACE_DIR", raising=False)
     dotenv = tmp_path / ".env"
-    dotenv.write_text(
-        "ELA_WORKSPACE_DIR=/tmp/test-not-a-secret\n",  # pragma: allowlist secret
-        encoding="utf-8",
-    )
-    assert WorkspaceSettings(_env_file=dotenv).workspace_dir == Path("/tmp/test-not-a-secret")
+    workspace = "/tmp/ela-test-workspace"
+    dotenv.write_text(f"ELA_WORKSPACE_DIR={workspace}\n", encoding="utf-8")
+    assert WorkspaceSettings(_env_file=dotenv).workspace_dir == Path(workspace)
