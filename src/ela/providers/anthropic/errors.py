@@ -5,7 +5,10 @@ Two things happen here, and only here:
 * **Classification.** Which of :data:`~ela.ports.PROVIDER_ERROR_CODES` an exception is, and
   whether trying again could ever change the answer. The rule the milestone asks for lives in one
   place: 429 and 5xx are retried, a 4xx never is — retrying a rejected request only rejects it
-  again, and retrying an authentication failure cannot invent a credential.
+  again, and retrying an authentication failure cannot invent a credential. An answer that is not
+  an answer is neither: a 409 or a 422 is the API turning a request down, an unreadable body is
+  the channel breaking, and the two get different codes so that a serialisation bug never reads
+  as "your request was rejected" (review of M7.1).
 * **Redaction.** The message ELA keeps is built from the status code and the API's own error
   *type* — a closed vocabulary (``invalid_request_error``, ``rate_limit_error``, …) — never from
   the server's free text, which describes the request that was sent. It is the convention the
@@ -22,6 +25,7 @@ import anthropic
 from ela.ports import (
     PROVIDER_AUTHENTICATION_ERROR,
     PROVIDER_BAD_REQUEST,
+    PROVIDER_MALFORMED_RESPONSE,
     PROVIDER_RATE_LIMITED,
     PROVIDER_REJECTED,
     PROVIDER_SERVER_ERROR,
@@ -116,4 +120,6 @@ def classify(exc: anthropic.APIError) -> Failure:
         return Failure(PROVIDER_UNREACHABLE, "the provider could not be reached", retryable=True)
     if isinstance(exc, anthropic.APIStatusError):
         return _status_failure(exc)
-    return Failure(PROVIDER_REJECTED, f"unusable answer: {type(exc).__name__}", retryable=False)
+    return Failure(
+        PROVIDER_MALFORMED_RESPONSE, f"unusable answer: {type(exc).__name__}", retryable=False
+    )

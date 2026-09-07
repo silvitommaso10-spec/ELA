@@ -126,12 +126,20 @@ La tabella è datata: quando i prezzi cambiano, cambia qui, e `tests/docs/test_a
 fallisce se il codice e questo ADR si separano. La fonte di verità della spesa reale resta la
 Console.
 
+- **Listino verificato il:** 2026-09-07 (fonte: `platform.claude.com/docs/en/about-claude/pricing`)
+
+Quella data non è decorativa: nessun test si accorge che Anthropic ha cambiato listino — è un fatto
+del mondo, non del repository — quindi la verifica resta umana, ma il **promemoria** sta nel gate.
+`test_the_prices_have_been_checked_recently` fallisce quando sono passati più di **180 giorni**,
+dicendo di riverificare i prezzi e aggiornare la riga qui sopra. Un vincolo che vive nella memoria
+di qualcuno è un vincolo già scaduto.
+
 ### 7. Il vocabolario degli errori sta nel port, non nell'adapter
 
-`ela.ports` dichiara dodici codici (`PROVIDER_ERROR_CODES`) ed è lì che stanno, non dentro
+`ela.ports` dichiara tredici codici (`PROVIDER_ERROR_CODES`) ed è lì che stanno, non dentro
 `ela.providers`, per la ragione per cui §26 esiste: chi riceve un fallimento deve poter distinguere
 una credenziale rifiutata da un sovraccarico **senza importare — né conoscere — il provider che
-l'ha prodotto**. Un secondo provider riporta gli stessi dodici codici o non è intercambiabile con
+l'ha prodotto**. Un secondo provider riporta gli stessi tredici codici o non è intercambiabile con
 il primo.
 
 | Eccezione SDK | HTTP | Codice | `retryable` |
@@ -146,11 +154,18 @@ il primo.
 | `AuthenticationError`, `PermissionDeniedError` | 401, 403 | `provider.authentication_error` | no |
 | `BadRequestError` | 400 | `provider.bad_request` | no |
 | `NotFoundError` | 404 | `provider.unknown_model` | no |
-| altro `APIStatusError` 4xx, `APIResponseValidationError` | 4xx / — | `provider.rejected` | no |
+| altro `APIStatusError` 4xx (409, 422, …) | 4xx | `provider.rejected` | no |
+| `APIResponseValidationError` e ogni altro `APIError` | — | `provider.malformed_response` | no |
 | `stop_reason == "refusal"` | 200 | `provider.refusal` | no |
 
 Il rifiuto del modello ha un codice **proprio** e non è un guasto: è informazione che il Memory
 Core (§64) vorrà distinguere da un errore di sistema, e costa token come una risposta.
+
+Per la stessa ragione **`provider.rejected` e `provider.malformed_response` sono distinti** (review
+di M7.1). Un 409 o un 422 sono l'API che rifiuta una richiesta arrivata — per stato di una risorsa
+o per validazione; una risposta che non si riesce a interpretare è un guasto del **canale**, e la
+richiesta poteva essere perfetta. Accorpandoli, il primo bug di serializzazione si leggerebbe come
+«richiesta rifiutata» e manderebbe chi indaga dalla parte sbagliata.
 
 `retryable` descrive la **natura** del fallimento, non i tentativi rimasti: l'ultimo tentativo di un
 500 riporta comunque `retryable=True`.
@@ -182,7 +197,7 @@ dentro il client, e nei test il client è un doppio — la regola «5xx e 429 s�
 | 3 | parametro non ammesso | no | `provider.unsupported_parameter` | zero, modello risolto |
 | 4 | fallimento di trasporto | sì | `provider.timeout` / `provider.unreachable` | zero token, latenza reale |
 | 5 | 429 o 5xx esauriti i tentativi | sì | `provider.rate_limited` / `provider.server_error` | zero token, latenza di tutti i tentativi |
-| 6 | 4xx | sì | `provider.authentication_error` / `bad_request` / `unknown_model` / `rejected` | zero token |
+| 6 | 4xx, o risposta illeggibile | sì | `provider.authentication_error` / `bad_request` / `unknown_model` / `rejected` / `malformed_response` | zero token |
 | 7 | rifiuto del modello | sì | `provider.refusal` | **token reali** |
 | 8 | risposta | sì | nessuno | token, costo, valuta, latenza |
 

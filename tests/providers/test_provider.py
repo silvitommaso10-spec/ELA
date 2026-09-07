@@ -15,6 +15,7 @@ from ela.ports import (
     PROVIDER_AUTHENTICATION_ERROR,
     PROVIDER_BAD_REQUEST,
     PROVIDER_ERROR_CODES,
+    PROVIDER_MALFORMED_RESPONSE,
     PROVIDER_RATE_LIMITED,
     PROVIDER_REFUSAL,
     PROVIDER_REJECTED,
@@ -200,15 +201,20 @@ async def test_any_other_client_error_is_a_rejection() -> None:
     assert result.error.retryable is False
 
 
-async def test_an_answer_the_sdk_cannot_parse_is_a_rejection_and_not_a_retry() -> None:
-    """Neither a status nor a transport failure: a 200 that is not a message. Trying again on it
-    would just fetch the same unusable body."""
+async def test_an_answer_the_sdk_cannot_parse_is_a_broken_channel_not_a_rejection() -> None:
+    """Neither a status nor a transport failure: a 200 that is not a message.
+
+    Its own code, not ``provider.rejected`` (review of M7.1): the request may have been perfect
+    and it is the channel that broke — a serialisation bug that read as "richiesta rifiutata"
+    would send whoever investigates in the wrong direction. Retrying fetches the same body.
+    """
     provider, client = make_provider(unparseable_answer())
 
     result = await provider.complete(request())
 
     assert result.error is not None
-    assert result.error.code == PROVIDER_REJECTED
+    assert result.error.code == PROVIDER_MALFORMED_RESPONSE
+    assert result.error.code != PROVIDER_REJECTED
     assert result.error.retryable is False
     assert "APIResponseValidationError" in result.error.message
     assert client is not None and len(client.messages.calls) == 1

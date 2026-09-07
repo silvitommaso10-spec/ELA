@@ -10,13 +10,17 @@ the code never drift apart, and the date in the ADR says when a human last check
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
+
+import pytest
 
 from ela.ports import (
     PROVIDER_AUTHENTICATION_ERROR,
     PROVIDER_BAD_REQUEST,
     PROVIDER_ERROR_CODES,
+    PROVIDER_MALFORMED_RESPONSE,
     PROVIDER_RATE_LIMITED,
     PROVIDER_REFUSAL,
     PROVIDER_REJECTED,
@@ -45,6 +49,10 @@ MODEL_ROW = re.compile(
 HINT_ROW = re.compile(r"^\| ((?:`\w+`(?:, )?)+) \| `([\w.-]+)` \|$")
 ERROR_ROW = re.compile(r"^\| (.+) \| (.+) \| `(provider\.\w+)` \| (\*\*sì\*\*|no) \|$")
 SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| (.+) \| `?([\w.-]+)`? \| (.+) \|$")
+CHECKED_ON = re.compile(r"^- \*\*Listino verificato il:\*\* (\d{4}-\d{2}-\d{2})")
+MAX_PRICE_AGE_DAYS = 180
+"""Six months. Prices are a fact about the world, and no test can watch the world: what the gate
+can do is refuse to let the last human check drift out of sight (review of M7.1)."""
 NAME = re.compile(r"`(\w+)`")
 ABSENT = "assente"
 """How the §3 table writes a variable that has no default: the key is one of them."""
@@ -82,6 +90,56 @@ def test_the_model_table_matches_the_code() -> None:
         assert MODELS[model_id].supports_effort is effort
         assert PRICES[model_id].input == price_in
         assert PRICES[model_id].output == price_out
+
+
+def documented_price_check(text: str) -> date:
+    match = next(
+        (CHECKED_ON.match(line) for line in text.splitlines() if CHECKED_ON.match(line)), None
+    )
+    assert match is not None, "ADR 0020 §6 must say when the prices were last checked"
+    return date.fromisoformat(match.group(1))
+
+
+def price_check_problem(checked: date, today: date) -> str | None:
+    """Why this price check is not good enough, or ``None`` if it is (review of M7.1)."""
+    if checked > today:
+        return f"ADR 0020 §6 says the prices were checked on {checked}, which is in the future"
+    age = (today - checked).days
+    if age > MAX_PRICE_AGE_DAYS:
+        return (
+            f"the Anthropic prices in ADR 0020 §4 were last checked {age} days ago ({checked}). "
+            "Re-verify them on platform.claude.com/docs/en/about-claude/pricing, update the table "
+            "and ela/providers/anthropic/pricing.py if they changed, then update the date in §6."
+        )
+    return None
+
+
+def test_the_prices_have_been_checked_recently() -> None:
+    """The one thing no test can verify is whether the world still agrees with the table.
+
+    So the gate holds the *reminder* instead: when the last human check is older than six months,
+    this fails and says what to do. A constraint that lives in someone's memory has already
+    expired.
+    """
+    assert price_check_problem(documented_price_check(adr_text()), date.today()) is None
+
+
+def test_an_old_or_impossible_price_check_is_detected() -> None:
+    """The negative case of the gate above, without waiting six months for it."""
+    today = date(2027, 1, 1)
+    fresh = today - timedelta(days=MAX_PRICE_AGE_DAYS)
+    assert price_check_problem(fresh, today) is None
+
+    stale = price_check_problem(fresh - timedelta(days=1), today)
+    assert stale is not None
+    assert "platform.claude.com" in stale
+    assert str(MAX_PRICE_AGE_DAYS + 1) in stale
+
+    ahead = price_check_problem(today + timedelta(days=1), today)
+    assert ahead is not None and "in the future" in ahead
+
+    with pytest.raises(AssertionError, match="when the prices were last checked"):
+        documented_price_check("# 0020. Un ADR senza data\n")
 
 
 def test_the_cache_read_rate_of_the_adr_is_a_tenth_of_the_input_price() -> None:
@@ -149,6 +207,13 @@ def documented_errors(text: str) -> dict[str, bool]:
 
 def test_the_error_table_is_exactly_the_vocabulary_of_the_port() -> None:
     assert set(documented_errors(adr_text())) == set(PROVIDER_ERROR_CODES)
+    assert len(PROVIDER_ERROR_CODES) == 13
+
+
+def test_a_turned_down_request_and_an_unreadable_answer_are_two_different_things() -> None:
+    """Review of M7.1: a serialisation bug must not read as "your request was rejected"."""
+    assert PROVIDER_REJECTED != PROVIDER_MALFORMED_RESPONSE
+    assert {PROVIDER_REJECTED, PROVIDER_MALFORMED_RESPONSE} <= set(documented_errors(adr_text()))
 
 
 def test_what_the_table_calls_retryable() -> None:
@@ -166,6 +231,7 @@ def test_what_the_table_calls_retryable() -> None:
         PROVIDER_BAD_REQUEST,
         PROVIDER_UNKNOWN_MODEL,
         PROVIDER_REJECTED,
+        PROVIDER_MALFORMED_RESPONSE,
         PROVIDER_REFUSAL,
         PROVIDER_UNAVAILABLE,
         PROVIDER_UNKNOWN_MODEL_HINT,

@@ -84,6 +84,7 @@ __all__ = [
     "PROVIDER_AUTHENTICATION_ERROR",
     "PROVIDER_BAD_REQUEST",
     "PROVIDER_ERROR_CODES",
+    "PROVIDER_MALFORMED_RESPONSE",
     "PROVIDER_RATE_LIMITED",
     "PROVIDER_REFUSAL",
     "PROVIDER_REJECTED",
@@ -758,7 +759,12 @@ PROVIDER_BAD_REQUEST: Final = "provider.bad_request"
 PROVIDER_UNKNOWN_MODEL: Final = "provider.unknown_model"
 """The provider does not know the model that was asked for."""
 PROVIDER_REJECTED: Final = "provider.rejected"
-"""Any other refusal on the provider's side that retrying cannot fix."""
+"""Any other refusal on the provider's side that retrying cannot fix — a conflict with the state
+of a resource, a payload that failed validation. The request arrived and was turned down."""
+PROVIDER_MALFORMED_RESPONSE: Final = "provider.malformed_response"
+"""The provider answered something that is not an answer. Not a refusal: the request may well have
+been fine and the channel is what broke — a serialisation bug reads as a broken channel, which is
+what it is, instead of hiding behind "your request was rejected"."""
 PROVIDER_RATE_LIMITED: Final = "provider.rate_limited"
 """Too many requests. Retryable: the same call can succeed later."""
 PROVIDER_SERVER_ERROR: Final = "provider.server_error"
@@ -780,6 +786,7 @@ PROVIDER_ERROR_CODES: Final = frozenset(
         PROVIDER_BAD_REQUEST,
         PROVIDER_UNKNOWN_MODEL,
         PROVIDER_REJECTED,
+        PROVIDER_MALFORMED_RESPONSE,
         PROVIDER_RATE_LIMITED,
         PROVIDER_SERVER_ERROR,
         PROVIDER_UNREACHABLE,
@@ -791,7 +798,7 @@ PROVIDER_ERROR_CODES: Final = frozenset(
 
 It lives here, with the port, and not inside an adapter, for the reason §26 exists: a caller must
 be able to tell an authentication failure from an overload without importing — or even knowing —
-the provider that produced it. A second provider reports the same twelve codes or it is not
+the provider that produced it. A second provider reports the same thirteen codes or it is not
 interchangeable with the first.
 """
 
