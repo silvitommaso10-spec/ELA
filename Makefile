@@ -25,8 +25,11 @@ test:
 # boundary the user's content crosses to leave this machine and the place where it is decided
 # whether a failed call is tried again (M7.1, ADR 0020 §11); ela.routing decides *where* that
 # content goes and refuses to send it to a provider nobody chose (M7.3, ADR 0022).
+# ela.api è l'unica porta da cui un "sì" dell'utente entra nel sistema e l'unica che controlla il
+# token; ela.composition decide chi parla con chi e rifiuta una configurazione sbagliata
+# (M8.1, ADR 0023 §12).
 CRITICAL_PACKAGES = ela.tasks ela.infrastructure.persistence ela.audit ela.permissions \
-	ela.executive ela.tools ela.devices ela.providers ela.routing
+	ela.executive ela.tools ela.devices ela.providers ela.routing ela.api ela.composition
 
 cov-critical:
 	$(UV) run pytest -o addopts="" -q $(foreach p,$(CRITICAL_PACKAGES),--cov=$(p)) \

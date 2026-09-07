@@ -19,6 +19,7 @@ from weakref import WeakKeyDictionary
 from anthropic import AsyncAnthropic
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from ela.composition import SystemClock, UuidGenerator
 from ela.domain import RiskLevel
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
@@ -325,8 +326,14 @@ def _anthropic_on_a_double() -> AnthropicProvider:
 
 
 IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
-    Clock: (Implementation("FakeClock", FakeClock),),
-    IdGenerator: (Implementation("FakeIdGenerator", FakeIdGenerator),),
+    Clock: (
+        Implementation("FakeClock", FakeClock),
+        Implementation("SystemClock", SystemClock),
+    ),
+    IdGenerator: (
+        Implementation("FakeIdGenerator", FakeIdGenerator),
+        Implementation("UuidGenerator", UuidGenerator),
+    ),
     TaskRepository: (
         Implementation("FakeTaskRepository", FakeTaskRepository),
         Implementation("SqlTaskRepository", _sql_task_repository, _create_schema, _dispose),

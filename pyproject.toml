@@ -7,16 +7,19 @@ dependencies = [
     "aiosqlite>=0.20",
     "alembic>=1.13",
     "anthropic>=1.0",
+    "fastapi>=0.115",
     "jsonschema>=4.23",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "sqlalchemy[asyncio]>=2.0",
+    "uvicorn>=0.32",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
+    "httpx>=0.28",
     "hypothesis>=6.120",
     "ruff>=0.12",
     "mypy>=1.16",
@@ -75,6 +78,7 @@ forbidden_modules = [
     "ela.ports",
     "ela.api",
     "ela.audit",
+    "ela.composition",
     "ela.context",
     "ela.devices",
     "ela.evolution",
@@ -96,6 +100,7 @@ forbidden_modules = [
     "aiosqlite",
     "fastapi",
     "typer",
+    "uvicorn",
 ]
 
 [[tool.importlinter.contracts]]
@@ -107,6 +112,7 @@ source_modules = ["ela.ports"]
 forbidden_modules = [
     "ela.api",
     "ela.audit",
+    "ela.composition",
     "ela.context",
     "ela.devices",
     "ela.evolution",
@@ -129,15 +135,21 @@ forbidden_modules = [
     "aiosqlite",
     "fastapi",
     "typer",
+    "uvicorn",
 ]
 
 [[tool.importlinter.contracts]]
 name = "3. solo providers, infrastructure e api importano librerie di infrastruttura (CLAUDE.md, spec §26, §50)"
 type = "forbidden"
+# Direct imports only (M8.1): ela.composition importa ela.infrastructure e ela.providers — è ciò
+# per cui esiste — e attraverso di loro raggiunge sqlalchemy e l'SDK. La regola parla di chi
+# *nomina* una libreria, e la versione closed-world in rules.py legge gli import di ogni file.
+allow_indirect_imports = "True"
 source_modules = [
     "ela.domain",
     "ela.ports",
     "ela.audit",
+    "ela.composition",
     "ela.context",
     "ela.devices",
     "ela.evolution",
@@ -159,6 +171,7 @@ forbidden_modules = [
     "aiosqlite",
     "fastapi",
     "typer",
+    "uvicorn",
 ]
 
 [[tool.importlinter.contracts]]
@@ -175,6 +188,7 @@ source_modules = [
     "ela.ports",
     "ela.api",
     "ela.audit",
+    "ela.composition",
     "ela.context",
     "ela.devices",
     "ela.evolution",
@@ -199,6 +213,7 @@ source_modules = ["ela.testing"]
 forbidden_modules = [
     "ela.api",
     "ela.audit",
+    "ela.composition",
     "ela.context",
     "ela.devices",
     "ela.evolution",
@@ -220,6 +235,7 @@ forbidden_modules = [
     "aiosqlite",
     "fastapi",
     "typer",
+    "uvicorn",
 ]
 
 [[tool.importlinter.contracts]]
@@ -233,6 +249,7 @@ source_modules = [
     "ela.ports",
     "ela.api",
     "ela.audit",
+    "ela.composition",
     "ela.context",
     "ela.devices",
     "ela.evolution",
@@ -257,6 +274,7 @@ source_modules = ["ela.permissions"]
 forbidden_modules = [
     "ela.api",
     "ela.audit",
+    "ela.composition",
     "ela.context",
     "ela.devices",
     "ela.evolution",
@@ -278,11 +296,15 @@ forbidden_modules = [
     "aiosqlite",
     "fastapi",
     "typer",
+    "uvicorn",
 ]
 
 [[tool.importlinter.contracts]]
 name = "10. solo ela.providers.anthropic importa l'SDK anthropic (ADR 0020 §11, spec §26, §50)"
 type = "forbidden"
+# Direct imports only, per la stessa ragione del contratto 3: il composition root importa
+# l'adapter, e l'adapter importa l'SDK.
+allow_indirect_imports = "True"
 # Il contratto 3 lascia l'SDK a tutto providers/, infrastructure/ e api/: qui il confine è un solo
 # modulo. ela.providers non compare come sorgente perché includerebbe l'adapter stesso; i suoi
 # moduli sono elencati uno per uno e la regola 24 chiude il mondo (tests/architecture/rules.py).
@@ -291,6 +313,7 @@ source_modules = [
     "ela.ports",
     "ela.api",
     "ela.audit",
+    "ela.composition",
     "ela.context",
     "ela.devices",
     "ela.evolution",
@@ -318,3 +341,31 @@ name = "11. ela.tools non importa ela.routing: un tool riceve il router, non lo 
 type = "forbidden"
 source_modules = ["ela.tools"]
 forbidden_modules = ["ela.routing"]
+
+[[tool.importlinter.contracts]]
+name = "12. solo ela.composition nomina i concreti: nessun altro importa providers o infrastructure (ADR 0023 §12)"
+type = "forbidden"
+# Direct imports only: ela.api importa ela.composition, che nomina i concreti. Raggiungerli
+# *attraverso* il composition root è esattamente ciò per cui il composition root esiste.
+allow_indirect_imports = "True"
+# La regola 4 pone la stessa domanda a cinque package soltanto, perché erano gli unici a cui si
+# poneva. Con un composition root si pone a tutti, ela.api compreso: l'API riceve il mondo già
+# costruito e non lo costruisce.
+source_modules = [
+    "ela.domain",
+    "ela.ports",
+    "ela.api",
+    "ela.audit",
+    "ela.context",
+    "ela.devices",
+    "ela.evolution",
+    "ela.executive",
+    "ela.identity",
+    "ela.memory",
+    "ela.permissions",
+    "ela.routing",
+    "ela.tasks",
+    "ela.testing",
+    "ela.tools",
+]
+forbidden_modules = ["ela.providers", "ela.infrastructure"]

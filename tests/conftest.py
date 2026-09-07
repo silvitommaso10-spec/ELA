@@ -4,12 +4,17 @@
 this fixture makes that a property of the suite rather than a habit of one package: the HTTP
 transports are unusable, so a test that reached the real API — by forgetting a double, by picking
 up a key from the machine it runs on — fails loudly instead of spending money quietly (§57, §58).
+
+Both clients are covered: ``httpx2`` is what the vendor SDK calls with, ``httpx`` is what the API
+tests drive the app with (M8.1). ``ASGITransport`` is a different class and stays usable — it
+speaks to the application in this process and opens no socket at all.
 """
 
 from __future__ import annotations
 
 from typing import Any, NoReturn
 
+import httpx
 import httpx2
 import pytest
 
@@ -21,5 +26,6 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     def refuse(*args: Any, **kwargs: Any) -> NoReturn:
         raise AssertionError(NO_NETWORK)
 
-    monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", refuse)
-    monkeypatch.setattr(httpx2.HTTPTransport, "handle_request", refuse)
+    for library in (httpx, httpx2):
+        monkeypatch.setattr(library.AsyncHTTPTransport, "handle_async_request", refuse)
+        monkeypatch.setattr(library.HTTPTransport, "handle_request", refuse)
