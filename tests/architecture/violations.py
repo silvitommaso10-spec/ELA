@@ -830,8 +830,55 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.cli import main\n",
         "ela.cli.main",
     ),
+    # --- machine-access-in-one-place (rule 32, ADR 0028 §1) ---
+    Case(
+        "machine-ctypes-in-the-core",
+        "machine-access-in-one-place",
+        "perception/peek.py",
+        "import ctypes\n",
+        "ctypes",
+    ),
+    Case(
+        "machine-subprocess-in-a-tool",
+        "machine-access-in-one-place",
+        "tools/run.py",
+        "import subprocess\n",
+        "subprocess",
+    ),
+    Case(
+        # The spelling the milestone actually uses: an import of ``asyncio`` is innocent and the
+        # call is not, so a rule reading imports alone would have been silent here.
+        "machine-spawn-by-call",
+        "machine-access-in-one-place",
+        "tools/shell.py",
+        "import asyncio\nasync def go() -> None:\n    await asyncio.create_subprocess_exec('ls')\n",
+        "asyncio.create_subprocess_exec(...)",
+    ),
+    # --- perception-probe-imports-only-stdlib (rule 33, ADR 0028 §2) ---
+    Case(
+        "probe-imports-the-domain",
+        "perception-probe-imports-only-stdlib",
+        "infrastructure/perception/probe.py",
+        "from ela.domain import RawObservation\n",
+        "ela.domain.RawObservation",
+    ),
+    # --- perception-adapter-decides-nothing (rule 34, ADR 0028 §1) ---
+    Case(
+        "adapter-imports-a-state",
+        "perception-adapter-decides-nothing",
+        "infrastructure/perception/naming.py",
+        "from ela.domain import SensorState\n",
+        "ela.domain.SensorState",
+    ),
+    Case(
+        # The long way round to the same words: no import to see, so the rule reads names too.
+        "adapter-names-a-state-by-attribute",
+        "perception-adapter-decides-nothing",
+        "infrastructure/perception/sideways.py",
+        "from ela import domain\ndef off():\n    return domain.SensorCause\n",
+        "SensorCause",
+    ),
 )
-
 ALLOWED: tuple[Case, ...] = (
     Case(
         "a-placement-that-names-nobody",
@@ -1288,8 +1335,28 @@ ALLOWED: tuple[Case, ...] = (
         "    return t.resolve(), t.is_symlink(), t.lstat().st_mode\n",
         "",
     ),
+    Case(
+        "the-adapter-may-reach-the-machine",
+        "machine-access-in-one-place",
+        "infrastructure/perception/extra.py",
+        "import ctypes\n",
+        "",
+    ),
+    Case(
+        "the-probe-may-use-the-standard-library",
+        "perception-probe-imports-only-stdlib",
+        "infrastructure/perception/probe.py",
+        "import ctypes\nimport json\nimport sys\n",
+        "",
+    ),
+    Case(
+        "the-adapter-may-name-the-primitives",
+        "perception-adapter-decides-nothing",
+        "infrastructure/perception/plain.py",
+        "from ela.domain import ProbeFamily, RawObservation\n",
+        "",
+    ),
 )
-
 CASES = VIOLATIONS + ALLOWED
 
 

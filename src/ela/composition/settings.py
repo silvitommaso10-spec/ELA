@@ -29,6 +29,7 @@ from ela.devices.settings import DeviceSettings
 from ela.domain import NAME_MAX_LENGTH
 from ela.executive import DEFAULT_APPROVAL_TTL, MAX_APPROVAL_TTL
 from ela.infrastructure.persistence import PersistenceSettings
+from ela.perception import PerceptionSettings
 from ela.permissions import (
     DEFAULT_AUTHORIZATION_TTL,
     DEFAULT_DECISION_TTL,
@@ -230,7 +231,7 @@ class CoreSettings(BaseSettings):
 class Settings(BaseModel):
     """Everything ELA reads from the environment, in one immutable object (ADR 0023 §2).
 
-    Not a ``BaseSettings`` itself: it reads *through* the seven, not instead of them, and each of
+    Not a ``BaseSettings`` itself: it reads *through* the eight, not instead of them, and each of
     them stays constructible on its own — which is what keeps the tests that know one piece
     working, and keeps every validation next to the code it protects.
     """
@@ -244,12 +245,13 @@ class Settings(BaseModel):
     routing: RoutingSettings
     api: ApiSettings
     core: CoreSettings
+    perception: PerceptionSettings
 
     @classmethod
     def load(cls) -> Settings:
         """Read the environment (and ``.env``) once; :class:`ConfigurationError` if it is wrong.
 
-        The seven are built here and nowhere else. A failure names the variable and what to do
+        The eight are built here and nowhere else. A failure names the variable and what to do
         with it: whoever reads this message wrote the ``.env``, and a ``ValidationError`` dumped
         on a terminal is not an answer to them.
 
@@ -265,6 +267,7 @@ class Settings(BaseModel):
                 routing=RoutingSettings(),
                 api=ApiSettings(),
                 core=CoreSettings(),
+                perception=PerceptionSettings(),
             )
         except ValidationError as invalid:
             raise ConfigurationError(explain(invalid)) from invalid

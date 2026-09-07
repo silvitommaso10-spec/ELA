@@ -92,11 +92,34 @@ def test_each_new_rule_has_an_entry_in_rules_that_holds(key: str) -> None:
 
 
 def test_the_conseguenze_count_the_rules_the_code_has() -> None:
+    """ADR 0026 said thirty-one, and thirty-one is still checkable — by number, not by total.
+
+    An immutable document cannot keep counting a growing collection: M10.1 added three rules, and
+    a literal ``len(RULES) == 31`` would have made this test fail for a document that never became
+    wrong. What ADR 0026 actually claimed is *"the architecture rules go from twenty-nine to
+    **thirty-one**"*, and that claim is about the rules numbered up to 31 — which every rule
+    declares in its own docstring, so the count is derived from the code rather than restated.
+
+    The count of *today* is pinned by the newest ADR that changed it (``test_adr_perception.py``).
+    The thirteen import-linter contracts stay a plain equality: nothing since has added one, and
+    the day something does, its ADR will say so.
+    """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**trentuno**" in conseguenze
-    assert len(RULES) == 31
+    assert len(_rules_up_to(31)) == 31
     assert "**tredici**" in conseguenze
+
+
+def _rules_up_to(highest: int) -> list[str]:
+    """The rules whose declared number is at most ``highest``, read from their docstrings."""
+    numbered = []
+    for key, check in RULES.items():
+        found = re.search(r"Rule (\d+)", inspect.getdoc(check) or "")
+        assert found is not None, f"{key} does not say which rule number it is"
+        if int(found.group(1)) <= highest:
+            numbered.append(key)
+    return numbered
 
 
 # --------------------------------------------------------------------------------------

@@ -28,6 +28,7 @@ app.add_typer(nodes.providers, name="provider")
 app.command("health")(system.health)
 app.command("diagnostics")(system.diagnostics)
 app.command("approvals")(system.approvals)
+app.command("perception")(system.perception)
 app.command("init")(setup.init)
 app.command("serve")(serve.serve)
 

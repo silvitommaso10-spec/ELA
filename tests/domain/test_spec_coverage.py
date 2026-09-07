@@ -40,12 +40,19 @@ REVIEW_ADDITIONS = frozenset({"Actor"})
 and a string cannot say whether "ela" is ELA, a user or a node.
 """
 
-LATER_ADDITIONS = frozenset({"ModelRoute"})
+LATER_ADDITIONS = frozenset(
+    {"ModelRoute", "SensorStatus", "RawObservation", "Observation", "PerceptionChange"}
+)
 """Models a later milestone added, each argued in its own ADR.
 
 ``ModelRoute`` (M7.3, ADR 0022 §2) is the decision of the Model Router, and it is a domain value
 for the reason ``PermissionDecision`` is: whoever decides answers with data, and whoever acts
 executes it. §49 lists what v0.1 starts from, not what it may never grow.
+
+The four of perception (M10.1, ADR 0028) are values, not entities, and they are in the domain for
+one reason: :class:`~ela.ports.PerceptionProbe` names ``RawObservation``, and a port may import
+nothing but :mod:`ela.domain` (rule 2). That is the same criterion ADR 0026 §2 used to keep
+``PlacementDecision`` *out* — it crosses no port — applied in the other direction.
 """
 
 

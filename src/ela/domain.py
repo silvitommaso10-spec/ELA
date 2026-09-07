@@ -64,6 +64,7 @@ __all__ = [
     "ExecutionId",
     "ExecutionResult",
     "ExecutionStatus",
+    "FAMILY_FIELDS",
     "IdentityId",
     "IntentChannel",
     "IntentId",
@@ -72,22 +73,31 @@ __all__ = [
     "ModelRoute",
     "NAME_MAX_LENGTH",
     "NetworkKind",
+    "Observation",
     "OperatingSystem",
+    "PerceptionChange",
     "PerformanceClass",
     "PermissionDecision",
     "PermissionOutcome",
+    "PermissionState",
     "PlanId",
     "PowerSource",
     "PrivacyLevel",
+    "ProbeFamily",
     "ProviderRequest",
     "ProviderRequestId",
     "ProviderResult",
     "ProviderResultId",
     "ProviderStatus",
     "ProviderUsage",
+    "RawObservation",
     "RiskLevel",
+    "SensorCause",
+    "SensorState",
+    "SensorStatus",
     "StepId",
     "StepState",
+    "SystemPermission",
     "Task",
     "TaskEvent",
     "TaskEventId",
@@ -928,3 +938,240 @@ class ExecutionResult(_DomainModel):
     """
     duration_ms: Annotated[int, Field(ge=0)] | None = None
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
+
+
+# --------------------------------------------------------------------------------------
+# Perception (§10, §11; M10.1, ADR 0028)
+# --------------------------------------------------------------------------------------
+
+
+class SensorState(StrEnum):
+    """The three states of §11, verbatim, for the microphone and the webcam.
+
+    ``ACTIVE`` means **the device is in use by somebody**, not "ELA is capturing": §11 exists so
+    the user knows whether their webcam is on, and ELA is only one of the programs that could have
+    turned it on. Nothing widens this enum — it is the spec's, and it has three values.
+
+    A state is never read alone. It travels inside a :class:`SensorStatus`, next to the
+    :class:`SensorCause` that says whether it is an observation or a fail-safe default.
+    """
+
+    OFF = "OFF"
+    AVAILABLE = "AVAILABLE"
+    """Present, and not in use. *Not* "ELA may use it": whether ELA may is a permission, and
+    permissions are reported separately (:class:`SystemPermission`)."""
+    ACTIVE = "ACTIVE"
+
+
+class SensorCause(StrEnum):
+    """Why a :class:`SensorState` is what it is (M10.1, decisions 3 and 4).
+
+    The reason this exists instead of a fourth state: §11 declares three states and they are the
+    spec's, while "ELA could not look" is a different fact from "the device is off". An enum that
+    absorbs two different facts and a defence that cannot fire are the same mistake.
+
+    **Anything other than** :attr:`OBSERVED` **means the state is the fail-safe default and not a
+    claim about the world.** ``OFF`` alone does not exist: there is ``OFF because there is no
+    hardware`` and ``OFF because nobody looked``, and neither of them says "it is switched off".
+
+    ``DENIED_BY_SYSTEM`` is deliberately **not** here. Under §11-as-decided no state depends on a
+    permission — the microphone is observed through CoreAudio, which asks nobody, and cameras are
+    enumerated without TCC — so a "the system refuses" cause would be a value that can never fire.
+    It is born in the milestone where ELA first tries to *make* a device ``ACTIVE``: there
+    "macOS refuses me" will explain a state instead of being a separate fact. Until then the
+    refusal is a :class:`PermissionState` on the permissions map, where it fires today.
+    """
+
+    OBSERVED = "OBSERVED"
+    """ELA looked, and this is what it saw. The only cause that makes the state a fact."""
+    NO_HARDWARE = "NO_HARDWARE"
+    """``OFF`` because the device does not exist: a Mac with no camera, or a CI runner."""
+    NOT_OBSERVABLE = "NOT_OBSERVABLE"
+    """The question has no answer here: the webcam's "in use by anyone" (no public API), any
+    operating system that is not macOS, or a probe that timed out, died or spoke nonsense."""
+    NOT_LOOKING = "NOT_LOOKING"
+    """ELA has not looked — either because it is configured not to (``ELA_PERCEPTION_ENABLED``)
+    or because it has not looked *yet*. Both are the absence of an observation, not an
+    observation of absence."""
+
+
+class SystemPermission(StrEnum):
+    """An operating-system permission ELA needs somebody to grant it (§10, §11, §57).
+
+    Accessibility is not here: it gates Computer Control (§20), which is a different section and
+    a different milestone. These three are the ones §10 and §11 need.
+    """
+
+    CAMERA = "CAMERA"
+    MICROPHONE = "MICROPHONE"
+    SCREEN_RECORDING = "SCREEN_RECORDING"
+
+
+class PermissionState(StrEnum):
+    """What the operating system answers about a :class:`SystemPermission`.
+
+    Asking is not requesting: every one of these is read without showing the user anything and
+    without ever raising a prompt. That is what makes "the permission is missing" a question with
+    an answer rather than a failure to catch.
+
+    :attr:`NOT_DETERMINED` is not :attr:`DENIED`. It means nobody has ever asked — and, for a
+    process that is not a bundled application, nobody can: the prompt would have to be raised by
+    the responsible process, and a daemon has none. The grant comes from the user in System
+    Settings, or it does not come.
+    """
+
+    GRANTED = "GRANTED"
+    DENIED = "DENIED"
+    RESTRICTED = "RESTRICTED"
+    """Refused by a policy the user cannot lift here: managed device, parental controls."""
+    NOT_DETERMINED = "NOT_DETERMINED"
+    NOT_OBSERVABLE = "NOT_OBSERVABLE"
+    """Not read at all, or read as something this version does not understand (fail-safe: an
+    unknown answer is never optimistically mapped to ``GRANTED``)."""
+
+
+class ProbeFamily(StrEnum):
+    """A group of readings that share a cadence (M10.1, decision 6).
+
+    The three families are not a taxonomy, they are three measured cost classes and three
+    frequencies of change: the microphone goes on while you watch, a permission changes when a
+    human clicks in System Settings. Each has its own ``ELA_PERCEPTION_*_INTERVAL_SECONDS``.
+    """
+
+    SENSORS = "SENSORS"
+    SESSION = "SESSION"
+    PERMISSIONS = "PERMISSIONS"
+
+
+class SensorStatus(_DomainModel):
+    """A §11 state and the reason it says what it says — the two never separate (M10.1).
+
+    Nothing anywhere holds a bare :class:`SensorState`: not a field, not an API schema, not a line
+    of the CLI. ``OFF (NOT_OBSERVABLE)`` and ``OFF (NO_HARDWARE)`` are different answers, and a
+    reader shown only ``OFF`` has been told something ELA does not know.
+
+    Same trade as :attr:`Device.privacy` starting at ``LOCAL_ONLY``: an undeclared value must never
+    be read as a permission — here, an unobserved value must never be read as an observation.
+    """
+
+    state: SensorState
+    cause: SensorCause
+
+
+class RawObservation(_DomainModel):
+    """What the operating system answered, in primitives — no domain vocabulary (M10.1, dec. 1).
+
+    This is what crosses the boundary out of ELA's process, and it deliberately carries **no
+    decision**: an ``int`` for an ``AVAuthorizationStatus``, a ``bool`` for "in use", ``None`` for
+    "not read". Turning any of it into a :class:`SensorState` or a :class:`PermissionState` is
+    :func:`ela.perception.interpret`, inside the package the coverage gate covers — which is what
+    lets the adapter stay outside it honestly (architecture rule 34).
+
+    ``None`` is the only way absence is expressed, and it means exactly one thing: *this was not
+    read*. Whether that is because there is no hardware, because the probe timed out, or because
+    this family was not due, the answer is the same shape and the core decides what it means.
+    """
+
+    camera_count: Annotated[int, Field(ge=0)] | None = None
+    microphone_count: Annotated[int, Field(ge=0)] | None = None
+    microphone_in_use: bool | None = None
+    display_count: Annotated[int, Field(ge=0)] | None = None
+    display_asleep: bool | None = None
+    screen_locked: bool | None = None
+    on_console: bool | None = None
+    idle_seconds: Annotated[float, Field(ge=0)] | None = None
+    camera_permission: int | None = None
+    """``AVAuthorizationStatus``: 0 not determined, 1 restricted, 2 denied, 3 authorized. Kept as
+    the integer the framework returned — naming it is the core's job, and an integer this version
+    does not know becomes :attr:`PermissionState.NOT_OBSERVABLE` rather than a guess."""
+    microphone_permission: int | None = None
+    screen_recording_permission: bool | None = None
+
+
+FAMILY_FIELDS: Final[Mapping[ProbeFamily, tuple[str, ...]]] = MappingProxyType(
+    {
+        ProbeFamily.SENSORS: ("camera_count", "microphone_count", "microphone_in_use"),
+        ProbeFamily.SESSION: (
+            "display_count",
+            "display_asleep",
+            "screen_locked",
+            "on_console",
+            "idle_seconds",
+        ),
+        ProbeFamily.PERMISSIONS: (
+            "camera_permission",
+            "microphone_permission",
+            "screen_recording_permission",
+        ),
+    }
+)
+"""Which field of :class:`RawObservation` belongs to which family.
+
+One table, read by both sides: the probe to know what to read, the core to know what a refresh of
+one family may overwrite. Two tables would drift, and the drift would show up as a phantom change
+— a permission "changing" because the tick that refreshed the microphone did not read it.
+
+A test asserts that this partitions :attr:`RawObservation.model_fields` **exactly**, so a field
+added tomorrow cannot quietly belong to no family.
+"""
+
+
+def _freeze_permissions(
+    value: Mapping[SystemPermission, PermissionState],
+) -> Mapping[SystemPermission, PermissionState]:
+    return MappingProxyType(dict(value))
+
+
+def _thaw_permissions(
+    value: Mapping[SystemPermission, PermissionState],
+) -> dict[str, str]:
+    return {permission.value: state.value for permission, state in value.items()}
+
+
+_PermissionMap = Annotated[
+    Mapping[SystemPermission, PermissionState],
+    AfterValidator(_freeze_permissions),
+    PlainSerializer(_thaw_permissions, return_type=dict[str, str]),
+]
+"""The permissions map, deeply immutable, serialising to plain strings like every other payload."""
+
+
+class Observation(_DomainModel):
+    """What ELA believes about this machine at one instant (§10, first ring; M10.1).
+
+    Not a snapshot of the user's world: no screen content, no window titles, no audio, no image.
+    Device states, operating-system permissions, and the shape of the session — the things §10
+    calls "local detection", and nothing that a later milestone will have to ask permission for.
+
+    ``idle_seconds`` is the one behavioural datum, and it is carried **as a number**: turning it
+    into "present" or "away" is a threshold, and a threshold is a decision that belongs to whoever
+    decides (§45), not to whoever observes. It is also the one continuous field, so it is excluded
+    from the fingerprint the change detector compares — see :func:`ela.perception.fingerprint`.
+    """
+
+    observed_at: UtcDatetime
+    """When ELA formed this view. On the very first one, before any probe has run, this is the
+    instant of the belief and not of an observation — every cause says so."""
+    microphone: SensorStatus
+    camera: SensorStatus
+    permissions: _PermissionMap
+    display_count: Annotated[int, Field(ge=0)] | None = None
+    display_asleep: bool | None = None
+    screen_locked: bool | None = None
+    on_console: bool | None = None
+    idle_seconds: Annotated[float, Field(ge=0)] | None = None
+
+
+class PerceptionChange(_DomainModel):
+    """One thing that is no longer what it was, between two observations (§10; M10.1).
+
+    Deliberately flat and stringly-typed: a change is something to *show*, and the observation
+    next to it is where the values live with their types. It is not an audit event, and the
+    distinction is the criterion of ADR 0028 — the audit records what ELA decides, not what the
+    world does.
+    """
+
+    field: str
+    """The fingerprint key, e.g. ``microphone`` or ``permissions.CAMERA``."""
+    before: str
+    after: str

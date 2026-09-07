@@ -35,16 +35,24 @@ from ela.domain import (
     IntentChannel,
     ModelRoute,
     NetworkKind,
+    Observation,
     OperatingSystem,
+    PerceptionChange,
     PerformanceClass,
     PermissionDecision,
     PermissionOutcome,
+    PermissionState,
     PowerSource,
     PrivacyLevel,
     ProviderRequest,
     ProviderResult,
     ProviderUsage,
+    RawObservation,
     RiskLevel,
+    SensorCause,
+    SensorState,
+    SensorStatus,
+    SystemPermission,
     Task,
     TaskEvent,
     TaskEventType,
@@ -371,6 +379,47 @@ execution_results = st.builds(
     metadata=json_mappings,
 )
 
+sensor_statuses = st.builds(
+    SensorStatus, state=st.sampled_from(SensorState), cause=st.sampled_from(SensorCause)
+)
+
+_counts = _optional(st.integers(min_value=0, max_value=8))
+_flags = _optional(st.booleans())
+
+raw_observations = st.builds(
+    RawObservation,
+    camera_count=_counts,
+    microphone_count=_counts,
+    microphone_in_use=_flags,
+    display_count=_counts,
+    display_asleep=_flags,
+    screen_locked=_flags,
+    on_console=_flags,
+    idle_seconds=_optional(st.floats(min_value=0, max_value=1e6, allow_nan=False)),
+    camera_permission=_optional(st.integers(min_value=-2, max_value=9)),
+    microphone_permission=_optional(st.integers(min_value=-2, max_value=9)),
+    screen_recording_permission=_flags,
+)
+"""The permission integers deliberately range outside 0-3: a value this version does not
+understand must map to ``NOT_OBSERVABLE`` and never to ``GRANTED`` (§33)."""
+
+observations = st.builds(
+    Observation,
+    observed_at=utc_datetimes,
+    microphone=sensor_statuses,
+    camera=sensor_statuses,
+    permissions=st.fixed_dictionaries(
+        dict.fromkeys(SystemPermission, st.sampled_from(PermissionState))
+    ),
+    display_count=_counts,
+    display_asleep=_flags,
+    screen_locked=_flags,
+    on_console=_flags,
+    idle_seconds=_optional(st.floats(min_value=0, max_value=1e6, allow_nan=False)),
+)
+
+perception_changes = st.builds(PerceptionChange, field=texts, before=texts, after=texts)
+
 MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.Actor: actors,
     domain.DeviceCapability: device_capabilities,
@@ -392,5 +441,9 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.ProviderRequest: provider_requests,
     domain.ProviderResult: provider_results,
     domain.ExecutionResult: execution_results,
+    domain.SensorStatus: sensor_statuses,
+    domain.RawObservation: raw_observations,
+    domain.Observation: observations,
+    domain.PerceptionChange: perception_changes,
 }
 """One strategy per model, keyed by class."""

@@ -67,7 +67,22 @@ def test_datetime_fields_are_normalised(model: type[BaseModel]) -> None:
 
 
 VALUE_OBJECTS = frozenset(
-    {"Actor", "DeviceCapability", "ProviderUsage", "ErrorMetadata", "ModelRoute"}
+    {
+        "Actor",
+        "DeviceCapability",
+        "ProviderUsage",
+        "ErrorMetadata",
+        "ModelRoute",
+        # Perception (M10.1): four values and no entity. What ELA saw has no life cycle — it is
+        # replaced by the next look, never updated — so there is nothing to give an id to.
+        # ``Observation.observed_at`` is part of the value, not a birth date: an observation
+        # without the instant it belongs to is not a weaker observation, it is a different kind
+        # of claim.
+        "SensorStatus",
+        "RawObservation",
+        "Observation",
+        "PerceptionChange",
+    }
 )
 
 

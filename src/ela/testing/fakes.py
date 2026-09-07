@@ -43,11 +43,13 @@ from ela.domain import (
     PermissionDecision,
     PermissionOutcome,
     PlanId,
+    ProbeFamily,
     ProviderRequest,
     ProviderResult,
     ProviderResultId,
     ProviderStatus,
     ProviderUsage,
+    RawObservation,
     StepId,
     Task,
     TaskEvent,
@@ -91,6 +93,7 @@ __all__ = [
     "FakeModelProvider",
     "FakeModelRouter",
     "FakePermissionGuardian",
+    "FakeProbe",
     "FakeProviderRegistry",
     "FakeTaskRepository",
     "FakeTool",
@@ -855,3 +858,31 @@ class FakeModelRouter:
             profile=model_hint if model_hint else self._profile,
             skipped=self._skipped,
         )
+
+
+class FakeProbe:
+    """A :class:`~ela.ports.PerceptionProbe` that answers whatever the test wrote down.
+
+    ``answers`` is consumed one reading at a time and the last one repeats, so a test can say
+    "first the microphone is idle, then it is in use" without driving a clock. ``calls`` records
+    the families each read asked for — the question the cadence scheduler gets right or wrong.
+
+    Honours the port's promise not to raise: a test that wants a broken probe uses
+    :attr:`fails`, and even then the failure is the caller's to see, not this fake's to invent.
+    """
+
+    __slots__ = ("_answers", "calls", "fails")
+
+    def __init__(
+        self, answers: Sequence[RawObservation] | None = None, *, fails: bool = False
+    ) -> None:
+        self._answers = list(answers or [RawObservation()])
+        self.calls: tuple[frozenset[ProbeFamily], ...] = ()
+        self.fails = fails
+
+    async def read(self, families: frozenset[ProbeFamily]) -> RawObservation:
+        """The next answer; the last one repeats once the list runs out."""
+        self.calls = (*self.calls, families)
+        if self.fails:
+            raise RuntimeError("the probe broke its contract")
+        return self._answers.pop(0) if len(self._answers) > 1 else self._answers[0]

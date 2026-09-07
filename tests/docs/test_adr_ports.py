@@ -51,6 +51,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0014-verification.md", INTRODUCING),
     (ADR_DIR / "0015-approval-and-result-persistence.md", INTRODUCING),
     (ADR_DIR / "0022-model-router.md", INTRODUCING),
+    (ADR_DIR / "0028-perception-core.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
@@ -65,6 +66,7 @@ INTRODUCED_PORTS = frozenset(
         "VerifierRegistryPort",
         "ApprovalStore",
         "ExecutionResultStore",
+        "PerceptionProbe",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")

@@ -4,6 +4,10 @@
 process is listening. ``/diagnostics`` says how this ELA is composed — never a secret (not the
 API token, not the provider key) and never the user's content (no goals, no arguments, no
 output): it answers *what ELA is wired to*, not *what ELA is doing* (ADR 0023 §6).
+
+That line is also what decides how much of perception appears here: the operating-system
+permissions, because a missing permission is wiring — it says what ELA *can* do on this machine —
+and not the state of the microphone, which is the world and lives on ``/perception``.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ from fastapi import APIRouter, Request
 
 from ela.api.deps import ElaDep
 from ela.api.errors import DatabaseUnavailableError
-from ela.api.schemas import DiagnosticsOut, HealthOut
+from ela.api.schemas import DiagnosticsOut, HealthOut, PerceptionSummaryOut
 from ela.tasks.engine import RecoverySummary
 
 __all__ = ["router"]
@@ -45,6 +49,10 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
     for device in await ela.devices.available():
         nodes[device.name] = "available"
 
+    # The last observation, never a fresh one: ``/diagnostics`` says what ELA is wired to and is
+    # called by whatever watches ELA, so it must stay free. Looking is ``/perception``'s job.
+    seen = ela.perception.view.observation
+
     recovered: RecoverySummary = request.app.state.recovery
     return DiagnosticsOut(
         version=version("ela"),
@@ -64,4 +72,10 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
             "skipped": len(recovered.skipped),
             "expired": len(recovered.expired),
         },
+        perception=PerceptionSummaryOut(
+            enabled=ela.settings.perception.perception_enabled,
+            watching=ela.settings.perception.loop_enabled,
+            observed_at=seen.observed_at,
+            permissions=dict(seen.permissions),
+        ),
     )

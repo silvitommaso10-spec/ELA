@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import shutil
 import tempfile
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import cast
 from weakref import WeakKeyDictionary
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.composition import SystemClock, UuidGenerator
 from ela.domain import CapabilityId, RiskLevel
+from ela.infrastructure.perception import DarwinProbe, UnsupportedProbe
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
     SqlAuditLog,
@@ -44,6 +46,7 @@ from ela.ports import (
     IdGenerator,
     ModelProvider,
     ModelRouterPort,
+    PerceptionProbe,
     PermissionGuardianPort,
     ProviderRegistryPort,
     TaskRepository,
@@ -67,6 +70,7 @@ from ela.testing.fakes import (
     FakeModelProvider,
     FakeModelRouter,
     FakePermissionGuardian,
+    FakeProbe,
     FakeProviderRegistry,
     FakeTaskRepository,
     FakeTool,
@@ -384,6 +388,22 @@ VERIFIERS_V01 = _derived(_v01_verifiers)
 """Every verifier of ``verifiers_v01`` under the ``VerifierPort`` contract."""
 
 
+def _darwin_probe() -> DarwinProbe:
+    """The real macOS adapter, with a spawn that answers instead of starting anything.
+
+    Registered on every runner, Ubuntu included, and that is the point: the contract this port
+    must keep — *it does not fail, it reports* — is about what the adapter does with a bad answer,
+    and a bad answer costs no hardware to produce. What the helper process reads on a real Mac is
+    the smoke test's business (``tests/infrastructure/perception/test_probe_smoke.py``).
+    """
+    return DarwinProbe(timeout=timedelta(seconds=1), runner=_no_helper)
+
+
+async def _no_helper(argv: Sequence[str], timeout: float) -> tuple[int, str]:
+    del argv, timeout
+    return 0, "{}"
+
+
 IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     Clock: (
         Implementation("FakeClock", FakeClock),
@@ -446,6 +466,11 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     ProviderRegistryPort: (
         Implementation("FakeProviderRegistry", FakeProviderRegistry),
         Implementation("ProviderRegistry", ProviderRegistry),
+    ),
+    PerceptionProbe: (
+        Implementation("FakeProbe", FakeProbe),
+        Implementation("UnsupportedProbe", UnsupportedProbe),
+        Implementation("DarwinProbe", _darwin_probe),
     ),
     ModelRouterPort: (
         Implementation("FakeModelRouter", _fake_router),

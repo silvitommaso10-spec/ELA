@@ -49,9 +49,11 @@ from ela.domain import (
     JsonMapping,
     ModelRoute,
     PermissionDecision,
+    ProbeFamily,
     ProviderRequest,
     ProviderResult,
     ProviderStatus,
+    RawObservation,
     StepId,
     Task,
     TaskEvent,
@@ -98,6 +100,7 @@ __all__ = [
     "PROVIDER_UNKNOWN_MODEL_HINT",
     "PROVIDER_UNREACHABLE",
     "PROVIDER_UNSUPPORTED_PARAMETER",
+    "PerceptionProbe",
     "PermissionGuardianPort",
     "PortError",
     "ProviderRegistryPort",
@@ -1031,4 +1034,43 @@ class ModelRouterPort(Protocol):
         :raises RoutingError: with :data:`ROUTING_UNKNOWN_TASK_TYPE` if the policy has no route
             for ``task_type``, or :data:`PROVIDER_UNAVAILABLE` if no provider of the route is
             usable. In both cases nothing has been sent anywhere.
+        """
+
+
+# --------------------------------------------------------------------------------------
+# Perception (async: an I/O boundary, and the only one that touches the hardware)
+# --------------------------------------------------------------------------------------
+
+
+@runtime_checkable
+class PerceptionProbe(Protocol):
+    """Where ELA reads the state of the machine it runs on (§10, §11, §33, §57).
+
+    The narrowest port in ELA, and narrow on purpose: it answers with primitives
+    (:class:`~ela.domain.RawObservation`) and never with domain vocabulary. Whether an integer
+    means ``DENIED`` and whether a missing camera means ``OFF`` are decisions, and decisions live
+    in :mod:`ela.perception`, which the coverage gate covers — the adapter cannot be covered,
+    because no CI runner has a webcam, so it must not be allowed to decide anything (M10.1,
+    ADR 0028 §1; architecture rule 34).
+
+    What this port must **not** do is as much of the contract as what it must:
+
+    * **It reads state, never content.** No screen pixels, no audio samples, no window titles.
+      Whether the microphone is in use is a fact about the machine, of the same kind as whether
+      the display is asleep; a second of audio is not, and the milestone that first reads content
+      is born with its own ``MEDIUM`` capability (§57, ADR 0028 §9).
+    * **It never turns anything on.** Reading a permission is not requesting it, and no
+      implementation may raise a system prompt (§11: nothing active without a reason).
+    * **It does not fail — it reports.** A timeout, a dead helper process, an operating system
+      with no such notion: all of them come back as a :class:`~ela.domain.RawObservation` whose
+      fields are ``None``, never as an exception. The fail-safe of §33 is a *value* here, because
+      "not observable" is already a fact this domain can express, and a perception read must never
+      be able to take ELA down with it.
+    """
+
+    async def read(self, families: frozenset[ProbeFamily]) -> RawObservation:
+        """Read the requested families; every field outside them is ``None``.
+
+        ``families`` empty is a legal call that reads nothing and answers with an empty
+        observation: the scheduler asks for what is due, and nothing being due is normal.
         """

@@ -42,6 +42,7 @@ COMMANDS = (
     "diagnostics",
     "health",
     "init",
+    "perception",
     "provider list",
     "serve",
     "task approve",
@@ -97,5 +98,5 @@ def test_the_registry_holds_one_tool_and_one_verifier_per_capability(tmp_path: P
     }
 
 
-def test_the_cli_offers_the_eighteen_commands_of_v01() -> None:
+def test_the_cli_offers_the_nineteen_commands_of_v01() -> None:
     assert tuple(commands_of(cli_app)) == COMMANDS

@@ -79,3 +79,9 @@ semplificato» — sessantasei voci, ognuna con il suo rimando. Il disegno di co
 - **M9.1** — Le difese: il confronto del token a tempo costante reso strutturale, il piazzamento come dato che l'executor verifica, e due regole nuove. (ADR 0026)
 - **M9.3** — Le esenzioni senza codice dietro, ritirate: una tabella di 116 coppie che fallisce quando una porta non ha più nessuno dietro. (ADR 0027)
 - **M9.4** — Le finestre di crash derivate dall'ADR e i negativi dell'API osservati invece che dichiarati, con i documenti della release. (ADR 0015)
+
+## Non ancora rilasciato
+
+### Fase 10 — La percezione
+
+- **M10.1** — Il Perception Core, primo anello di §10: ELA guarda la macchina su cui gira, dice quali permessi le mancano senza poter morire nel farlo, e ogni stato di §11 viaggia con la causa che dice se è un'osservazione o un default. (ADR 0028)
