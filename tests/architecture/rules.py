@@ -36,8 +36,10 @@ INFRA_LIBRARIES = frozenset(
         "uvicorn",
     }
 )
-#: Top-level packages of ``ela`` allowed to import INFRA_LIBRARIES.
-INFRA_PACKAGES = frozenset({"providers", "infrastructure", "api"})
+#: Top-level packages of ``ela`` allowed to import INFRA_LIBRARIES. ``cli`` joined them in M8.2
+#: (ADR 0024 §7): the command line speaks HTTP with ``httpx`` and is written with ``typer``, which
+#: makes it the fourth edge — and the rule is about *edges*, not about how many there are.
+INFRA_PACKAGES = frozenset({"providers", "infrastructure", "api", "cli"})
 #: Core packages that must stay independent from providers and infrastructure.
 #: ``routing`` joined them in M7.3 (ADR 0022 §2): the Model Router chooses *between* providers
 #: and must not import one — it reaches them through ``ProviderRegistryPort``.
@@ -111,6 +113,17 @@ CONCRETE_ALLOWED = frozenset({PROVIDERS_DIR, "infrastructure", COMPOSITION_DIR})
 #: Rule 19's one exemption (ADR 0015 §9, ADR 0023 §8): the module of the API through which the
 #: user answers. Promised when the rule was written, opened now that the code behind it exists.
 APPROVAL_RESPONDER = Path("api") / "approvals.py"
+
+#: Rule 28 (ADR 0024 §7): the CLI talks to the ELA that is running, and never becomes a second
+#: one. Two clauses inside the package — no module of it names ``build`` or ``Ela``, and only
+#: ``cli/serve.py`` may reach ``ela.api`` or the composition root, because starting the process is
+#: the one command that is not a call — and one clause outside it: nobody imports ``ela.cli``, a
+#: CLI that is imported having become a library without anyone deciding so.
+CLI_DIR = "cli"
+CLI_PACKAGE = f"{ROOT_PACKAGE}.{CLI_DIR}"
+CLI_SERVE = Path(CLI_DIR) / "serve.py"
+COMPOSED_NAMES = frozenset({"build", "Ela"})
+CLI_FORBIDDEN_INTERNAL = (f"{ROOT_PACKAGE}.api", f"{COMPOSITION_PACKAGE}.root")
 
 #: Rule 25 (ADR 0021 §5): ``ModelProvider.complete`` is called from one module, the tool of
 #: ``model.complete``. It is where the user's content leaves this machine (§57), and it may leave
@@ -1093,6 +1106,55 @@ def check_concrete_names(pkg_root: Path) -> list[Violation]:
     )
 
 
+def check_cli_over_the_api(pkg_root: Path) -> list[Violation]:
+    """Rule 28: the CLI is a client of the local API, and nobody imports the CLI (ADR 0024 §7).
+
+    Three things would each turn the command line into a second ELA, and each has a consequence
+    that is not a matter of taste: a second world writing the same database has the ``run`` lock
+    of ADR 0023 §9 in only one of the two processes; a world built to answer one command declares
+    the ``local`` node alive (ADR 0023 §5-bis) and then exits; and a "yes" typed into a CLI that
+    called ``respond`` itself would be a second door into the system, where rule 19 allows exactly
+    one — the API's.
+
+    So: no module under ``cli/`` names ``build`` or ``Ela``, and none of them imports ``ela.api``
+    or ``ela.composition.root`` — except ``cli/serve.py``, an exemption by path, for the one
+    command whose job is to start the process there is nothing to talk to without.
+    ``ela.composition.settings`` stays open to all of them: reading the token is not composing.
+
+    Reported: the forbidden import, or the composing name wherever it appears — imported, called
+    or annotated. Closed-world on names, like rules 5, 11, 12, 15, 16 and 17.
+    """
+    rule = "cli-talks-over-the-api"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root / CLI_DIR):
+        relative, name = path.relative_to(pkg_root), module_name(path, pkg_root)
+        if relative != CLI_SERVE:
+            found.extend(
+                Violation(rule, name, imported, line)
+                for imported, line in imported_modules(path, pkg_root)
+                if any(_is_within(imported, prefix) for prefix in CLI_FORBIDDEN_INTERNAL)
+            )
+        found.extend(_composing_names(path, name, rule))
+    outside = (
+        path for path in _source_files(pkg_root) if path.relative_to(pkg_root).parts[0] != CLI_DIR
+    )
+    return found + _violations(
+        rule, outside, pkg_root, lambda imported: _is_within(imported, CLI_PACKAGE)
+    )
+
+
+def _composing_names(path: Path, name: str, rule: str) -> Iterator[Violation]:
+    """``build`` and ``Ela`` wherever they are written: the CLI holds no built world."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.alias) and node.name in COMPOSED_NAMES:
+            yield Violation(rule, name, node.name, getattr(node, "lineno", 0))
+        elif isinstance(node, ast.Name) and node.id in COMPOSED_NAMES:
+            yield Violation(rule, name, node.id, node.lineno)
+        elif isinstance(node, ast.Attribute) and node.attr in COMPOSED_NAMES:
+            yield Violation(rule, name, node.attr, node.lineno)
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -1121,4 +1183,5 @@ RULES: dict[str, Rule] = {
     "anthropic-import-isolation": check_anthropic_isolation,
     "provider-complete-callers": check_provider_complete_callers,
     "concrete-names": check_concrete_names,
+    "cli-over-the-api": check_cli_over_the_api,
 }

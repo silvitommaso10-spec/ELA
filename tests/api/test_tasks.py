@@ -69,10 +69,14 @@ async def test_a_limit_of_zero_is_a_caller_s_bug(client: AsyncClient) -> None:
 
 
 async def test_an_unknown_task_is_not_found(client: AsyncClient) -> None:
+    """And the message says *which* task, in the form the caller sent (review of M8.2): that
+    string travels into the error body and out of the CLI, and it has to be pasteable."""
     response = await client.get(f"/tasks/{UNKNOWN}")
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+    assert str(UNKNOWN) in response.json()["error"]["message"]
+    assert "UUID(" not in response.json()["error"]["message"]
 
 
 async def test_a_task_without_a_plan_has_no_steps(client: AsyncClient) -> None:

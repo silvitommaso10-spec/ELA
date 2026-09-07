@@ -1,0 +1,31 @@
+{
+  "goal": "salutare e lasciare una nota",
+  "steps": [
+    {
+      "id": "9c5b8f26-1a2b-4c3d-8e4f-000000000001",
+      "goal": "dire ciao, per vedere che la catena gira",
+      "required_capabilities": ["core.echo"],
+      "arguments": {
+        "message": "ciao, sono ELA"
+      },
+      "risk": "SAFE",
+      "expected_result": "il messaggio torna indietro identico",
+      "success_conditions": ["echo.message_matches"],
+      "requires_authorization": false
+    },
+    {
+      "id": "9c5b8f26-1a2b-4c3d-8e4f-000000000002",
+      "goal": "scrivere la nota del primo task",
+      "required_capabilities": ["workspace.write_note"],
+      "arguments": {
+        "path": "workspace/notes/first-task.md",
+        "body": "Primo task di ELA: eseguito dal Task Runner, autorizzato dall'utente.\n"
+      },
+      "dependencies": ["9c5b8f26-1a2b-4c3d-8e4f-000000000001"],
+      "risk": "MEDIUM",
+      "expected_result": "una nota su disco con quel testo",
+      "success_conditions": ["note.exists", "note.content_matches"],
+      "requires_authorization": true
+    }
+  ]
+}

@@ -17,5 +17,7 @@ dentro uno di loro.
 - `errors.py`: `ConfigurationError` — una configurazione sbagliata è un messaggio che nomina la
   variabile, non uno stack trace, e ferma l'avvio prima di ogni lavoro.
 
-Chi serve questo mondo su HTTP è `ela.api`; la CLI di M8.2 costruirà lo stesso `Ela` senza
-importare nessun web framework.
+Chi serve questo mondo su HTTP è `ela.api`. La CLI di M8.2 **non** lo costruisce: parla con il
+processo che lo ha costruito, attraverso l'API (ADR 0024 §2, regola 28). Di qui legge soltanto le
+settings — `ApiSettings` per un comando qualunque, `Settings.load()` per `ela serve`, che il
+processo lo avvia.

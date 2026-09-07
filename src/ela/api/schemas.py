@@ -18,6 +18,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from ela.audit.chain import ChainSummary
 from ela.domain import (
     Actor,
     Approval,
@@ -25,11 +26,19 @@ from ela.domain import (
     AuditEvent,
     AuditEventType,
     CapabilityId,
+    Device,
+    DeviceCapability,
     DeviceCapabilityName,
     DeviceId,
+    DeviceStatus,
     ErrorMetadata,
     JsonMapping,
+    NetworkKind,
+    OperatingSystem,
+    PerformanceClass,
     PlanId,
+    PowerSource,
+    PrivacyLevel,
     ProviderUsage,
     RiskLevel,
     StepId,
@@ -46,6 +55,8 @@ __all__ = [
     "ApprovalOut",
     "AuditEventOut",
     "CancelIn",
+    "ChainOut",
+    "DeviceOut",
     "DiagnosticsOut",
     "HealthOut",
     "PlanIn",
@@ -55,6 +66,7 @@ __all__ = [
     "TaskCreate",
     "TaskDetail",
     "TaskOut",
+    "TraitOut",
 ]
 
 
@@ -299,6 +311,76 @@ class AuditEventOut(BaseModel):
             error=event.error,
             payload=_plain(event, "payload"),
         )
+
+
+class TraitOut(BaseModel):
+    """A hardware or software trait of a node (§16), not a capability the Guardian rules on."""
+
+    name: DeviceCapabilityName
+    available: bool
+
+    @classmethod
+    def of(cls, trait: DeviceCapability) -> TraitOut:
+        return cls(name=trait.name, available=trait.available)
+
+
+class DeviceOut(BaseModel):
+    """A node as the registry judges it right now (§16; ADR 0024 §5).
+
+    ``available`` is the **derived** answer — whether the last heartbeat is still worth
+    something — and never the stored column, which keeps saying what was true when someone wrote
+    it (architecture rule 20). Which is why it arrives as an argument rather than being read off
+    the entity.
+    """
+
+    id: DeviceId
+    created_at: datetime
+    name: str
+    os: OperatingSystem
+    available: bool
+    status: DeviceStatus
+    capabilities: tuple[TraitOut, ...]
+    available_tools: tuple[str, ...]
+    performance: PerformanceClass
+    network: NetworkKind
+    power_source: PowerSource
+    privacy: PrivacyLevel
+    current_workload: float | None
+    last_seen_at: datetime | None
+
+    @classmethod
+    def of(cls, device: Device, *, available: bool) -> DeviceOut:
+        return cls(
+            id=device.id,
+            created_at=device.created_at,
+            name=device.name,
+            os=device.os,
+            available=available,
+            status=device.status,
+            capabilities=tuple(TraitOut.of(trait) for trait in device.capabilities),
+            available_tools=device.available_tools,
+            performance=device.performance,
+            network=device.network,
+            power_source=device.power_source,
+            privacy=device.privacy,
+            current_workload=device.current_workload,
+            last_seen_at=device.last_seen_at,
+        )
+
+
+class ChainOut(BaseModel):
+    """A verified audit chain in the two numbers worth keeping outside the log (ADR 0007).
+
+    Anchor them somewhere the log cannot reach and a truncated tail becomes detectable too: the
+    chain alone cannot prove that its own end is still there.
+    """
+
+    length: int
+    head_hash: str
+
+    @classmethod
+    def of(cls, summary: ChainSummary) -> ChainOut:
+        return cls(length=summary.length, head_hash=summary.head_hash)
 
 
 class HealthOut(BaseModel):

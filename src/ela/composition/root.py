@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from ela.audit.verifier import AuditVerifier
 from ela.composition.errors import ConfigurationError
 from ela.composition.settings import Settings
 from ela.composition.system import SystemClock, UuidGenerator
@@ -82,6 +83,14 @@ class Ela:
     ids: IdGenerator
     database: Database
     audit: AuditLog
+    audit_verifier: AuditVerifier
+    """The same log, asked a different question (ADR 0024 §4).
+
+    A second name and not a second object: the adapter that appends is the only one that can say
+    whether what was appended still hangs together. Kept apart from ``audit`` because the port a
+    caller receives says what that caller may do, and whoever verifies must not gain an
+    ``append``.
+    """
     repository: TaskRepository
     authorizations: AuthorizationStore
     approvals: ApprovalStore
@@ -214,6 +223,7 @@ async def build(settings: Settings) -> Ela:
         ids=ids,
         database=database,
         audit=audit,
+        audit_verifier=audit,
         repository=repository,
         authorizations=authorizations,
         approvals=approvals,

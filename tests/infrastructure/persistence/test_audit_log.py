@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from ela.audit.chain import GENESIS_HASH, AuditChainError, ChainFault, ChainSummary, link_hash
+from ela.audit.verifier import AuditVerifier
 from ela.domain import AuditEventId, TaskId
 from ela.infrastructure.persistence import (
     SqlAuditLog,
@@ -91,9 +92,15 @@ async def drop_triggers(engine: AsyncEngine) -> None:
 # ----------------------------------------------------------------------------------------
 
 
-def test_the_log_exposes_exactly_append_and_read(engine: AsyncEngine) -> None:
+def test_the_log_exposes_exactly_append_read_and_verify(engine: AsyncEngine) -> None:
+    """The first level of append-only is the surface itself: nothing here changes a row.
+
+    ``verify`` joined the two in M8.2 (ADR 0024 §4) and reads like ``read`` does; the port
+    ``AuditLog`` still declares two members, so receiving the log still gives nobody a third way
+    to write, and there is still no ``update``, no ``delete`` and no ``engine`` to go around them.
+    """
     log = SqlAuditLog(engine)
-    assert [name for name in dir(log) if not name.startswith("_")] == ["append", "read"]
+    assert [name for name in dir(log) if not name.startswith("_")] == ["append", "read", "verify"]
 
 
 # ----------------------------------------------------------------------------------------
@@ -442,3 +449,31 @@ async def test_the_log_survives_reopening_the_file(file_url: str) -> None:
         assert (await verify_chain(reopened)).length == 3
     finally:
         await reopened.dispose()
+
+
+# ----------------------------------------------------------------------------------------
+# ``verify``: the same answer, asked through the protocol (M8.2, ADR 0024 §4)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_adapter_is_the_verifier_the_core_asks(engine: AsyncEngine) -> None:
+    """One line over ``verify_chain``, and the only class that can answer it: the summary is made
+    of ``seq``, ``prev_hash`` and ``row_hash``, which an ``AuditEvent`` does not carry."""
+    log = SqlAuditLog(engine)
+    await append_many(log, 3)
+
+    assert isinstance(log, AuditVerifier)
+    assert await log.verify() == await verify_chain(engine)
+
+
+async def test_verify_raises_where_the_chain_breaks(engine: AsyncEngine) -> None:
+    """Raised, never returned as a ``False`` somebody can forget to look at (§33)."""
+    log = SqlAuditLog(engine)
+    await append_many(log, 3)
+    await drop_triggers(engine)
+    await raw(engine, "UPDATE audit_events SET summary = 'rewritten' WHERE seq = 2")
+
+    with pytest.raises(AuditChainError) as raised:
+        await log.verify()
+
+    assert (raised.value.position, raised.value.fault) == (2, ChainFault.ALTERED_ROW)

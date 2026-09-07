@@ -31,6 +31,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0021](0021-started-protocol-and-model-complete.md) | Protocollo STARTED per i tool che non si possono rifare, `ProviderUsage` da `Outcome` all'audit, `Outcome.retryable`, tool e verifier di `model.complete`, regola 25 | Accettata |
 | [0022](0022-model-router.md) | Model Router: `task_type` come argomento, tabella di rotte su profili, fallback sulla disponibilità dichiarata, `ELA_ANTHROPIC_MODEL` ritirata, regola 26 | Accettata |
 | [0023](0023-composition-root-and-api.md) | Composition root, configurazione unificata e API locale: `ela.composition`, `ela.api`, token statico su loopback, regola 27 | Accettata |
+| [0024](0024-cli.md) | La CLI di ELA: un client dell'API locale, `ela.cli`, `AuditVerifier` e le rotte `/devices` e `/audit/verify`, quattro codici di uscita, regola 3 estesa e regola 28 | Accettata |
 
 ## Template
 

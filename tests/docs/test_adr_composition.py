@@ -1,11 +1,15 @@
-"""The tables of ADR 0023 and the code say the same thing.
+"""The tables of ADR 0023 — and what ADR 0024 adds to them — say what the code says.
 
-Three tables, three shapes: §3 (the seven new variables), §6 (the twelve routes) and §10 (which
+Three tables, three shapes: §3 (the seven new variables), §6 (the routes) and §10 (which
 exception becomes which status). Plus the name architecture rule 27 is registered under.
 
+An ADR is immutable, so the two routes and the one failure that M8.2 added are repeated in
+ADR 0024 under their own labels ("Rotte aggiunte:", "Errori aggiunti:") in the same row shapes,
+and the two tests below read both documents: what the application serves is the union.
+
 What is *not* here is checked where the other tables of its kind are: the ports in
-``test_adr_ports.py``, the capabilities in ``test_adr_catalogue.py``. This module holds what only
-ADR 0023 says.
+``test_adr_ports.py``, the capabilities in ``test_adr_catalogue.py``, the commands and the exit
+codes of the CLI in ``test_adr_cli.py``.
 """
 
 from __future__ import annotations
@@ -15,23 +19,30 @@ from pathlib import Path
 
 import pytest
 
-from ela.api import approvals, audit, system, tasks
+from ela.api import approvals, audit, devices, system, tasks
 from ela.api.app import FAILURES
 from ela.api.tasks import PLAN_IS_TEMPORARY
 from ela.composition.settings import ApiSettings, CoreSettings
 from tests.architecture.rules import RULES
 from tests.architecture.violations import PACKAGE_ROOT
 
-ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0023-composition-root-and-api.md"
+ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
+ADR_PATH = ADR_DIR / "0023-composition-root-and-api.md"
+CLI_ADR_PATH = ADR_DIR / "0024-cli.md"
 SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| `([^`]+)` \| (?:`([^`]+)`|\*\(([^)]+)\)\*) \|")
 ROUTE_ROW = re.compile(r"^\| `(GET|POST)` \| `(/[\w{}/]*)` \| ([^|]+) \|$")
 ERROR_ROW = re.compile(r"^\| ([^|]+) \| (?:`(\w+)`|\*\(([^)]+)\)\*) \| `(\d{3})` \|$")
 RULE_NAME = "concretes-named-only-by-the-composition-root"
-ROUTERS = (system.router, tasks.router, approvals.router, audit.router)
+ROUTERS = (system.router, tasks.router, approvals.router, audit.router, devices.router)
 
 
 def adr_text() -> str:
     return ADR_PATH.read_text(encoding="utf-8")
+
+
+def cli_adr_text() -> str:
+    """ADR 0024, read whole: its added rows keep the shapes of the tables they extend."""
+    return CLI_ADR_PATH.read_text(encoding="utf-8")
 
 
 # ----------------------------------------------------------------------------------------
@@ -73,7 +84,7 @@ def test_the_table_names_the_two_ceilings_the_ttls_have() -> None:
 
 
 # ----------------------------------------------------------------------------------------
-# §6 — the twelve routes
+# §6 — the routes: twelve here, two more in ADR 0024 §5
 # ----------------------------------------------------------------------------------------
 
 
@@ -97,14 +108,22 @@ def coded_routes() -> set[tuple[str, str]]:
     }
 
 
-def test_the_routes_of_the_adr_are_the_routes_of_the_code() -> None:
-    assert documented_routes(adr_text()) == coded_routes()
+def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
+    assert documented_routes(adr_text()) | documented_routes(cli_adr_text()) == coded_routes()
 
 
-def test_there_are_twelve_of_them() -> None:
-    """The number is in the prose of §6 and in ``tests/api/test_security.py``, which proves that
-    every one of them is behind the token."""
-    assert len(coded_routes()) == 12
+def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
+    """Added, never replacing: what ADR 0023 documented is still served, unchanged."""
+    added = documented_routes(cli_adr_text())
+
+    assert added == {("GET", "/devices"), ("GET", "/audit/verify")}
+    assert not added & documented_routes(adr_text())
+
+
+def test_there_are_fourteen_of_them() -> None:
+    """The number is in the prose of ADR 0024 §5 and in ``tests/api/test_security.py``, which
+    proves that every one of them is behind the token."""
+    assert len(coded_routes()) == 14
 
 
 # ----------------------------------------------------------------------------------------
@@ -123,9 +142,13 @@ def documented_errors(text: str) -> dict[str, int]:
 
 
 def test_the_error_table_is_the_one_the_application_installs() -> None:
-    assert documented_errors(adr_text()) == {
+    assert documented_errors(adr_text()) | documented_errors(cli_adr_text()) == {
         failure.exception.__name__: failure.status for failure in FAILURES
     }
+
+
+def test_the_failure_m8_2_adds_is_the_one_adr_0024_documents() -> None:
+    assert documented_errors(cli_adr_text()) == {"AuditChainError": 409}
 
 
 def test_the_token_row_belongs_to_no_exception() -> None:

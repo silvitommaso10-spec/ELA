@@ -1,7 +1,12 @@
-"""The audit trail, read-only (spec §32; ADR 0005, ADR 0023 §6).
+"""The audit trail, read-only (spec §32; ADR 0005, ADR 0023 §6, ADR 0024 §4).
 
 There is no way to write here and there never will be: the port has ``append`` and ``read``, the
-adapter is append-only at four levels (ADR 0007), and what this route does is ``read``.
+adapter is append-only at four levels (ADR 0007), and what these routes do is ``read`` and
+``verify``.
+
+Verifying is the second question the trail exists to answer (§58): a log nobody can check is a
+log that has to be believed. It arrives here through the ``AuditVerifier`` protocol, so this
+module still names no adapter (architecture rule 27).
 """
 
 from __future__ import annotations
@@ -13,12 +18,23 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 
 from ela.api.deps import ElaDep
-from ela.api.schemas import AuditEventOut
+from ela.api.schemas import AuditEventOut, ChainOut
 from ela.domain import TaskId
 
 __all__ = ["router"]
 
 router = APIRouter(tags=["audit"])
+
+
+@router.get("/audit/verify")
+async def verify_audit(ela: ElaDep) -> ChainOut:
+    """Whether the chain still holds, and the two numbers to anchor outside the log.
+
+    A trail that does not verify is a ``409`` with ``audit.tampered`` and the position of the
+    first entry that does not fit: an answer that says *where*, because "something is wrong with
+    the log" is not something anybody can act on.
+    """
+    return ChainOut.of(await ela.audit_verifier.verify())
 
 
 @router.get("/audit")
