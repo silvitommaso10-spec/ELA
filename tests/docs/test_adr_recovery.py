@@ -56,11 +56,19 @@ def test_every_repaired_row_has_a_retry_test_and_vice_versa() -> None:
     assert windows_under_test() >= recovery.REPAIRED
 
 
-def test_the_declared_windows_have_a_test_of_their_own_too() -> None:
-    """A window that is not repaired still has a test that pins what the retry does."""
-    declared = {"5c", "7a", "9"}
+def test_every_declared_window_has_a_test_of_its_own_too() -> None:
+    """A window that is not repaired still has a test that pins what the retry does.
+
+    The set is **derived** from the table and no longer written here (M9.4). Until then it was
+    ``{"5c", "7a", "9"}`` — three of the ten rows the ADR leaves declared — and the other seven
+    made verifiable claims that nothing checked: what a retry does after a crash at that write
+    was, for those rows, a sentence in a document. A hand-written list cannot notice a row it
+    was never told about; a derived one fails the moment the table grows.
+    """
+    documented = set(documented_windows(ADR_PATH.read_text(encoding="utf-8")))
+    declared = documented - recovery.REPAIRED
+    assert declared, "the table must leave some window declared, or this test is vacuous"
     assert declared <= windows_under_test()
-    assert not (declared & recovery.REPAIRED)
 
 
 def test_a_repaired_row_never_defers_to_another_milestone() -> None:
@@ -95,6 +103,21 @@ def test_a_demoted_row_or_a_removed_test_is_detected() -> None:
             if REPAIRED_MARK in retry:
                 assert MILESTONE.search(retry) is None, window
     assert "5" in windows_under_test() and "zz" not in windows_under_test()
+
+
+def test_a_window_added_to_the_table_without_a_test_is_detected() -> None:
+    """The other half of the derivation: a row nobody tested cannot be added quietly."""
+    text = ADR_PATH.read_text(encoding="utf-8")
+    grown = text.replace(
+        "| 10 | `fail_step` per",
+        "| 11 | il processo muore in un modo nuovo | qualsiasi scrittura | nulla | ignoto |\n"
+        "| 10 | `fail_step` per",
+        1,
+    )
+    assert grown != text
+    documented = set(documented_windows(grown))
+    assert "11" in documented
+    assert not (documented - recovery.REPAIRED) <= windows_under_test()
 
 
 def test_a_missing_table_is_detected() -> None:

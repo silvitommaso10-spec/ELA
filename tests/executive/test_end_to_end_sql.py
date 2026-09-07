@@ -433,11 +433,13 @@ class CrashingSqlPipeline(SqlPipeline):
             Crashing(self.repository, "save", "append_event"),
             Crashing(self.results, "add"),
             Crashing(self.approvals, "add"),
+            Crashing(self.store, "grant", "consume"),
         )
         self.audit = self.crashes.audit  # type: ignore[assignment]
         self.repository = self.crashes.repository  # type: ignore[assignment]
         self.results = self.crashes.results  # type: ignore[assignment]
         self.approvals = self.crashes.approvals  # type: ignore[assignment]
+        self.store = self.crashes.authorizations  # type: ignore[assignment]
         self.guardian = PermissionGuardian(self.registry, self.clock, self.ids, self.audit)
         self.engine = TaskEngine(
             self.repository,
