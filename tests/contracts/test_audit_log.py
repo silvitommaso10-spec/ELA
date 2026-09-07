@@ -62,6 +62,51 @@ async def test_a_non_positive_limit_is_a_callers_bug(audit_log: AuditLog, limit:
         await audit_log.read(limit=limit)
 
 
+async def test_newest_first_reads_from_the_other_end(audit_log: AuditLog) -> None:
+    """The tuple keeps the order it was read in (ADR 0025 §3): newest to oldest."""
+    await audit_log.append(UNRELATED_EVENT)
+    await audit_log.append(AUDIT_EVENT)
+
+    assert await audit_log.read(newest_first=True) == (AUDIT_EVENT, UNRELATED_EVENT)
+    assert await audit_log.read() == (UNRELATED_EVENT, AUDIT_EVENT)
+
+
+async def test_newest_first_with_a_limit_keeps_the_last_entries(audit_log: AuditLog) -> None:
+    """The debt this parameter pays: ``tail -n 1`` is one entry, not the whole log trimmed."""
+    await audit_log.append(UNRELATED_EVENT)
+    await audit_log.append(AUDIT_EVENT)
+    await audit_log.append(LATER_EVENT)
+
+    assert await audit_log.read(limit=1, newest_first=True) == (LATER_EVENT,)
+    assert await audit_log.read(limit=2, newest_first=True) == (LATER_EVENT, AUDIT_EVENT)
+    assert await audit_log.read(limit=1) == (UNRELATED_EVENT,)
+
+
+async def test_newest_first_applies_the_filters_first_as_the_other_direction_does(
+    audit_log: AuditLog,
+) -> None:
+    await audit_log.append(UNRELATED_EVENT)
+    await audit_log.append(AUDIT_EVENT)
+    await audit_log.append(LATER_EVENT)
+
+    assert await audit_log.read(task_id=TASK_ID, newest_first=True) == (LATER_EVENT, AUDIT_EVENT)
+    assert await audit_log.read(task_id=TASK_ID, limit=1, newest_first=True) == (LATER_EVENT,)
+    assert await audit_log.read(since=LATER, limit=1, newest_first=True) == (LATER_EVENT,)
+
+
+async def test_newest_first_of_an_empty_log_is_empty(audit_log: AuditLog) -> None:
+    assert await audit_log.read(newest_first=True) == ()
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+async def test_a_non_positive_limit_is_a_callers_bug_in_both_directions(
+    audit_log: AuditLog, limit: int
+) -> None:
+    await audit_log.append(AUDIT_EVENT)
+    with pytest.raises(ValueError):
+        await audit_log.read(limit=limit, newest_first=True)
+
+
 async def test_read_filters_apply_before_limit(audit_log: AuditLog) -> None:
     await audit_log.append(UNRELATED_EVENT)
     await audit_log.append(AUDIT_EVENT)

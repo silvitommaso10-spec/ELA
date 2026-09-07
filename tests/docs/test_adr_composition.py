@@ -1,11 +1,12 @@
-"""The tables of ADR 0023 — and what ADR 0024 adds to them — say what the code says.
+"""The tables of ADR 0023 — and what ADR 0024 and ADR 0025 add to them — say what the code says.
 
-Three tables, three shapes: §3 (the seven new variables), §6 (the routes) and §10 (which
-exception becomes which status). Plus the name architecture rule 27 is registered under.
+Three tables, three shapes: §3 (the variables), §6 (the routes) and §10 (which exception becomes
+which status). Plus the name architecture rule 27 is registered under.
 
 An ADR is immutable, so the two routes and the one failure that M8.2 added are repeated in
-ADR 0024 under their own labels ("Rotte aggiunte:", "Errori aggiunti:") in the same row shapes,
-and the two tests below read both documents: what the application serves is the union.
+ADR 0024, and the route and the two variables that M8.3 added are repeated in ADR 0025, each
+under its own label ("Rotte aggiunte", "Errori aggiunti", "Variabili aggiunte") in the same row
+shapes; the tests below read all three documents, and what the application serves is the union.
 
 What is *not* here is checked where the other tables of its kind are: the ports in
 ``test_adr_ports.py``, the capabilities in ``test_adr_catalogue.py``, the commands and the exit
@@ -19,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from ela.api import approvals, audit, devices, system, tasks
+from ela.api import approvals, audit, devices, results, system, tasks
 from ela.api.app import FAILURES
 from ela.api.tasks import PLAN_IS_TEMPORARY
 from ela.composition.settings import ApiSettings, CoreSettings
@@ -29,11 +30,19 @@ from tests.architecture.violations import PACKAGE_ROOT
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0023-composition-root-and-api.md"
 CLI_ADR_PATH = ADR_DIR / "0024-cli.md"
+DEBTS_ADR_PATH = ADR_DIR / "0025-phase-8-debts.md"
 SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| `([^`]+)` \| (?:`([^`]+)`|\*\(([^)]+)\)\*) \|")
 ROUTE_ROW = re.compile(r"^\| `(GET|POST)` \| `(/[\w{}/]*)` \| ([^|]+) \|$")
 ERROR_ROW = re.compile(r"^\| ([^|]+) \| (?:`(\w+)`|\*\(([^)]+)\)\*) \| `(\d{3})` \|$")
 RULE_NAME = "concretes-named-only-by-the-composition-root"
-ROUTERS = (system.router, tasks.router, approvals.router, audit.router, devices.router)
+ROUTERS = (
+    system.router,
+    tasks.router,
+    approvals.router,
+    audit.router,
+    devices.router,
+    results.router,
+)
 
 
 def adr_text() -> str:
@@ -43,6 +52,11 @@ def adr_text() -> str:
 def cli_adr_text() -> str:
     """ADR 0024, read whole: its added rows keep the shapes of the tables they extend."""
     return CLI_ADR_PATH.read_text(encoding="utf-8")
+
+
+def debts_adr_text() -> str:
+    """ADR 0025, read the same way: one route added, two variables added (§10 of that ADR)."""
+    return DEBTS_ADR_PATH.read_text(encoding="utf-8")
 
 
 # ----------------------------------------------------------------------------------------
@@ -69,17 +83,35 @@ def coded_settings() -> dict[str, str | None]:
     }
 
 
-def test_the_seven_variables_are_the_ones_the_settings_declare() -> None:
-    assert documented_settings(adr_text()) == coded_settings()
+def test_the_nine_variables_are_the_ones_the_settings_declare() -> None:
+    assert documented_settings(adr_text()) | documented_settings(debts_adr_text()) == (
+        coded_settings()
+    )
 
 
-def test_the_table_names_the_two_ceilings_the_ttls_have() -> None:
-    """No TTL without a ceiling (ADR 0012, ADR 0013): the constraint column says so."""
-    text = adr_text()
-    rows = [line for line in text.splitlines() if SETTING_ROW.match(line)]
+def test_the_two_variables_of_m8_3_are_the_ones_adr_0025_adds() -> None:
+    """Added, never replacing: the seven of ADR 0023 §3 keep their rows there."""
+    added = documented_settings(debts_adr_text())
+
+    assert set(added) == {"ELA_DECISION_TTL_SECONDS", "ELA_NOTES_SCOPE"}
+    assert not set(added) & set(documented_settings(adr_text()))
+
+
+def test_every_ttl_in_the_tables_names_its_ceiling() -> None:
+    """No TTL without a ceiling (ADR 0012, ADR 0013, ADR 0025 §6): the constraint column says so.
+
+    Three now: a grant, a request for consent, and a decision. The rule is the reason the test
+    reads both documents instead of counting the rows of one — a fourth TTL added to a third ADR
+    without a ``MAX_`` beside it is what this must catch."""
+    rows = [
+        line
+        for text in (adr_text(), debts_adr_text())
+        for line in text.splitlines()
+        if SETTING_ROW.match(line)
+    ]
     ttls = [row for row in rows if "TTL_SECONDS" in row]
 
-    assert len(ttls) == 2
+    assert len(ttls) == 3
     assert all("MAX_" in row for row in ttls)
 
 
@@ -109,7 +141,20 @@ def coded_routes() -> set[tuple[str, str]]:
 
 
 def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
-    assert documented_routes(adr_text()) | documented_routes(cli_adr_text()) == coded_routes()
+    documented = (
+        documented_routes(adr_text())
+        | documented_routes(cli_adr_text())
+        | documented_routes(debts_adr_text())
+    )
+    assert documented == coded_routes()
+
+
+def test_the_route_of_m8_3_is_the_one_adr_0025_adds() -> None:
+    """The one route that returns what a tool produced (ADR 0025 §4)."""
+    added = documented_routes(debts_adr_text())
+
+    assert added == {("GET", "/tasks/{task_id}/results")}
+    assert not added & (documented_routes(adr_text()) | documented_routes(cli_adr_text()))
 
 
 def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
@@ -120,10 +165,10 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_fourteen_of_them() -> None:
-    """The number is in the prose of ADR 0024 §5 and in ``tests/api/test_security.py``, which
+def test_there_are_fifteen_of_them() -> None:
+    """The number is in the prose of ADR 0025 §10 and in ``tests/api/test_security.py``, which
     proves that every one of them is behind the token."""
-    assert len(coded_routes()) == 14
+    assert len(coded_routes()) == 15
 
 
 # ----------------------------------------------------------------------------------------

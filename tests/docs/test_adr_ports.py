@@ -40,6 +40,7 @@ EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0012-authorizations.md", EXTENDING),
     (ADR_DIR / "0020-provider-anthropic.md", EXTENDING),
     (ADR_DIR / "0021-started-protocol-and-model-complete.md", EXTENDING),
+    (ADR_DIR / "0025-phase-8-debts.md", EXTENDING),
 )
 REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),
@@ -164,6 +165,21 @@ def _text(source: Source) -> str:
     return _read((source,))[0]
 
 
+def _with_introductions(
+    base: str, extensions: tuple[str, ...], replacements: tuple[str, ...]
+) -> dict[str, tuple[str, frozenset[str]]]:
+    """The union of :func:`documented`, with ``extensions``/``replacements`` swapped in.
+
+    The introducing and renaming ADRs are always read. Since ADR 0025 an **extension** may name a
+    port that an introducing ADR brought (``ExecutionResultStore.for_task``), so leaving the
+    introductions out no longer produces a smaller union: it produces "extended before being
+    introduced", which is the harness protecting an invariant, not the drift under test.
+    """
+    return all_documented_ports(
+        base, extensions, replacements, _read(INTRODUCING_ADRS), _read(RENAMING_ADRS)
+    )
+
+
 def documented() -> dict[str, tuple[str, frozenset[str]]]:
     return all_documented_ports(
         ADR_PATH.read_text(encoding="utf-8"),
@@ -240,6 +256,21 @@ def test_the_authorizations_adr_extends_then_replaces_the_store() -> None:
     assert base["AuthorizationStore"][1] - replacement["AuthorizationStore"][1] == {"record_use"}
 
 
+def test_the_debts_adr_adds_one_member_to_two_ports_and_none_to_the_audit_log() -> None:
+    """ADR 0025 §2, §4, §10: ``count`` and ``for_task``.
+
+    ``AuditLog`` is deliberately **not** in that table — ``newest_first`` is a parameter of
+    ``read``, not a member — so the log still has the two members ADR 0007 promised, and this
+    test is where that promise is read from the documents instead of remembered.
+    """
+    extension = documented_ports(_text(EXTENDING_ADRS[-1]))
+    assert extension == {
+        "TaskRepository": ("async", frozenset({"count"})),
+        "ExecutionResultStore": ("async", frozenset({"for_task"})),
+    }
+    assert documented()["AuditLog"][1] == frozenset({"append", "read"})
+
+
 def test_the_executor_adr_introduces_two_ports_the_base_does_not_have() -> None:
     """ADR 0013 §10: the audited Guardian and the tool registry are new ports, not extensions."""
     base = documented_ports(ADR_PATH.read_text(encoding="utf-8"))
@@ -282,13 +313,21 @@ def test_an_introduction_of_a_known_port_is_detected() -> None:
         all_documented_ports(base, introductions=("| `AuditLog` | §32 | async | `x` |",))
     added = all_documented_ports(base, introductions=("| `Other` | §1 | sync | `x` |",))
     assert added["Other"] == ("sync", frozenset({"x"}))
+    base_text = ADR_PATH.read_text(encoding="utf-8")
+    of_base = tuple(
+        text
+        for text in _read(EXTENDING_ADRS)
+        if set(documented_ports(text)) <= set(documented_ports(base_text))
+    )
     without = all_documented_ports(
-        ADR_PATH.read_text(encoding="utf-8"),
-        _read(EXTENDING_ADRS),
-        _read(REPLACING_ADRS),
-        renames=_read(RENAMING_ADRS),
+        base_text, of_base, _read(REPLACING_ADRS), renames=_read(RENAMING_ADRS)
     )
     assert set(coded_ports()) - set(without) == INTRODUCED_PORTS
+    # And the extension left out is refused rather than ignored: ADR 0025 extends a port that
+    # only ADR 0015 declares, so reading it without the introductions is an error, not a gap.
+    assert len(of_base) < len(EXTENDING_ADRS)
+    with pytest.raises(AssertionError, match="extended before being introduced"):
+        all_documented_ports(base_text, _read(EXTENDING_ADRS), _read(REPLACING_ADRS))
 
 
 def test_a_file_with_two_rows_for_one_port_must_be_read_by_section() -> None:
@@ -375,8 +414,8 @@ def test_a_drifted_table_is_detected() -> None:
     coded = coded_ports()
     assert rows["AuditLog"][1] != coded["AuditLog"][1]
     assert rows["AuditLog"][0] != coded["AuditLog"][0]
-    extended = all_documented_ports(
-        text, (_text(EXTENDING_ADRS[0]).replace("`add_plan`, ", "", 1),)
+    extended = _with_introductions(
+        text, (_text(EXTENDING_ADRS[0]).replace("`add_plan`, ", "", 1),), ()
     )
     assert extended["TaskRepository"][1] != coded["TaskRepository"][1]
     replacing = _text(REPLACING_ADRS[0])
@@ -387,11 +426,11 @@ def test_a_drifted_table_is_detected() -> None:
     )
     assert drifted_replacement != replacing
     others = _read(REPLACING_ADRS[1:])
-    replaced = all_documented_ports(text, _read(EXTENDING_ADRS), (drifted_replacement, *others))
+    replaced = _with_introductions(text, _read(EXTENDING_ADRS), (drifted_replacement, *others))
     assert replaced["CapabilityRegistryPort"][1] != coded["CapabilityRegistryPort"][1]
-    without_replacement = all_documented_ports(text, _read(EXTENDING_ADRS), others)
+    without_replacement = _with_introductions(text, _read(EXTENDING_ADRS), others)
     assert without_replacement["CapabilityRegistryPort"][1] != coded["CapabilityRegistryPort"][1]
-    without_the_store_replacement = all_documented_ports(
+    without_the_store_replacement = _with_introductions(
         text, _read(EXTENDING_ADRS), _read(REPLACING_ADRS[:1])
     )
     assert "record_use" in without_the_store_replacement["AuthorizationStore"][1]

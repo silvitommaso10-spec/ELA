@@ -26,7 +26,14 @@ from ela.composition import (
 )
 from ela.devices.settings import DeviceSettings
 from ela.executive import DEFAULT_APPROVAL_TTL, MAX_APPROVAL_TTL
-from ela.permissions import DEFAULT_AUTHORIZATION_TTL, MAX_AUTHORIZATION_TTL
+from ela.permissions import (
+    DEFAULT_AUTHORIZATION_TTL,
+    DEFAULT_DECISION_TTL,
+    DEFAULT_NOTES_SCOPE,
+    MAX_AUTHORIZATION_TTL,
+    MAX_DECISION_TTL,
+    is_valid_scope_entry,
+)
 from ela.routing import DEFAULT_ROUTES
 from tests.composition.support import API_TOKEN, TOKEN, declare
 
@@ -175,7 +182,7 @@ def test_a_port_outside_the_range_stops_ela(
 
 
 # ----------------------------------------------------------------------------------------
-# The three durations: no TTL without a ceiling (ADR 0012, ADR 0013)
+# The four durations: no TTL without a ceiling (ADR 0012, ADR 0013, ADR 0025 §6)
 # ----------------------------------------------------------------------------------------
 
 
@@ -203,12 +210,72 @@ def test_a_request_for_consent_may_not_outlive_its_ceiling(
     assert "ELA_APPROVAL_TTL_SECONDS" in message
 
 
+def test_a_decision_may_not_outlive_its_ceiling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """ADR 0025 §6: past an hour it is not a decision any more, it is a permission — and
+    permissions are ``Authorization``, which has a ceiling of its own."""
+    over = int(MAX_DECISION_TTL.total_seconds()) + 1
+    message = refused(monkeypatch, tmp_path, ELA_DECISION_TTL_SECONDS=str(over))
+
+    assert "ELA_DECISION_TTL_SECONDS" in message
+    assert (
+        loaded(monkeypatch, tmp_path, ELA_DECISION_TTL_SECONDS=str(over - 1)).core.decision_ttl
+        == MAX_DECISION_TTL
+    )
+
+
+def test_the_decision_ttl_defaults_to_what_the_guardian_has_always_used(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    assert loaded(monkeypatch, tmp_path).core.decision_ttl == DEFAULT_DECISION_TTL
+
+
+def test_a_decision_lives_less_than_a_grant_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Not a coincidence to be preserved by hand: it is the argument of ADR 0025 §6."""
+    assert MAX_DECISION_TTL < MAX_AUTHORIZATION_TTL < MAX_APPROVAL_TTL
+
+
+# ----------------------------------------------------------------------------------------
+# ``ELA_NOTES_SCOPE``: the scope of the catalogue, from the environment (ADR 0025 §5)
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_notes_scope_defaults_to_the_convention_it_used_to_be(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    assert loaded(monkeypatch, tmp_path).core.notes_scope == DEFAULT_NOTES_SCOPE
+
+
+def test_the_notes_scope_can_be_moved(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    settings = loaded(monkeypatch, tmp_path, ELA_NOTES_SCOPE="appunti/2026")
+
+    assert settings.core.notes_scope == "appunti/2026"
+
+
+@pytest.mark.parametrize(
+    "scope", ["", "/workspace", "workspace/", "./notes", "a/../b", "note\\altre", "workspace//x"]
+)
+def test_a_scope_ela_cannot_compare_a_path_against_stops_the_start_up(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, scope: str
+) -> None:
+    """Refused, not repaired: a scope that never matches is a capability that never runs, and a
+    scope that matches too much is worse (§33)."""
+    assert not is_valid_scope_entry(scope)
+    message = refused(monkeypatch, tmp_path, ELA_NOTES_SCOPE=scope)
+
+    assert "ELA_NOTES_SCOPE" in message
+
+
 @pytest.mark.parametrize(
     ("variable", "value"),
     [
         ("ELA_AUTHORIZATION_TTL_SECONDS", "0"),
         ("ELA_APPROVAL_TTL_SECONDS", "0"),
         ("ELA_TASK_ORPHAN_AFTER_SECONDS", "0"),
+        ("ELA_DECISION_TTL_SECONDS", "0"),
         ("ELA_USER_NAME", ""),
     ],
 )

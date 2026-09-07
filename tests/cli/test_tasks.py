@@ -83,6 +83,49 @@ async def test_show_lists_the_steps_of_the_plan(cli: Cli, tmp_path: Path) -> Non
     assert "SAFE" in result.stdout
 
 
+async def test_results_show_the_table_and_the_output_in_full(cli: Cli, tmp_path: Path) -> None:
+    """``ela task results`` is the only command that gives back content (ADR 0025 §4).
+
+    Nothing is shortened: with a key, the answer of a model is what somebody came here for.
+    """
+    task_id = await created(cli)
+    await cli("task", "plan", task_id, "--file", written(tmp_path, echo_plan()))
+    await cli("task", "run", task_id)
+
+    result = await cli("task", "results", task_id)
+
+    assert result.exit_code == 0
+    header = result.stdout.splitlines()[0].split()
+    assert header == ["STEP", "CAPABILITY", "STATUS", "TOOL", "WHEN"]
+    assert "core.echo" in result.stdout
+    assert ECHO_MESSAGE in result.stdout
+
+
+async def test_results_of_a_task_that_never_ran_say_so(cli: Cli) -> None:
+    result = await cli("task", "results", await created(cli))
+
+    assert result.exit_code == 0
+    assert "nothing to show" in result.stdout
+
+
+async def test_results_as_json_are_the_api_s_own_answer(cli: Cli, tmp_path: Path) -> None:
+    task_id = await created(cli)
+    await cli("task", "plan", task_id, "--file", written(tmp_path, echo_plan()))
+    await cli("task", "run", task_id)
+
+    payload = json.loads((await cli("task", "results", task_id, "--json")).stdout)
+
+    assert [one["capability_id"] for one in payload] == ["core.echo"]
+    assert payload[0]["output"] == {"message": ECHO_MESSAGE}
+
+
+async def test_results_of_a_task_that_does_not_exist_is_a_refusal(cli: Cli) -> None:
+    result = await cli("task", "results", MISSING)
+
+    assert result.exit_code == REFUSED
+    assert "not_found" in result.stderr
+
+
 async def test_show_of_a_task_without_a_plan_has_no_steps(cli: Cli) -> None:
     result = await cli("task", "show", await created(cli), "--json")
 

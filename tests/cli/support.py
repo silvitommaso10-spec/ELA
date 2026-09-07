@@ -38,9 +38,13 @@ class LoopTransport(httpx.BaseTransport):
     def __init__(self, application: FastAPI, loop: asyncio.AbstractEventLoop) -> None:
         self._asgi = ASGITransport(app=application)
         self._loop = loop
+        self.requests: list[httpx.Request] = []
+        """Every request that went through, so a test can assert what the CLI *asked* and not
+        only what it printed (M8.3: ``audit tail`` must ask for ``n`` rows, not for all of them)."""
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         request.read()
+        self.requests.append(request)
 
         async def call() -> httpx.Response:
             answer = await self._asgi.handle_async_request(

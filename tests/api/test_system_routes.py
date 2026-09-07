@@ -18,6 +18,7 @@ from ela.api import create_app
 from ela.api.tasks import PLAN_IS_TEMPORARY
 from ela.composition import Ela
 from ela.domain import Task, TaskState
+from ela.ports import TaskRepository
 from ela.providers.anthropic import PROVIDER_NAME
 from ela.routing import DEFAULT_ROUTES
 from tests.api.support import AUTHORIZED, BASE, echo_plan, queued
@@ -75,6 +76,40 @@ async def test_diagnostics_counts_what_ela_is_holding(client: AsyncClient) -> No
     assert body["tasks"] == {TaskState.QUEUED.value: 1}
     assert body["pending_approvals"] == 0
     assert body["recovered"] == {"failed": 0, "skipped": 0, "expired": 0}
+
+
+async def test_diagnostics_counts_without_loading_the_tasks(ela: Ela) -> None:
+    """The debt of M8.1, paid (ADR 0025 §2): ``count`` is asked, ``tasks`` is not.
+
+    Asserting on the body alone would not catch a regression here — the body is the same either
+    way, and that it is the same is the other half of what this checks.
+    """
+    spy = _CountingRepository(ela.repository)
+    app = create_app(dataclasses.replace(ela, repository=spy))
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url=BASE, headers=AUTHORIZED) as client,
+    ):
+        await queued(client, echo_plan())
+        spy.calls.clear()
+
+        body = (await client.get("/diagnostics")).json()
+
+    assert body["tasks"] == {TaskState.QUEUED.value: 1}
+    assert "count" in spy.calls
+    assert "tasks" not in spy.calls
+
+
+class _CountingRepository:
+    """Every call goes through to the real repository; the names are written down on the way."""
+
+    def __init__(self, inner: TaskRepository) -> None:
+        self._inner = inner
+        self.calls: list[str] = []
+
+    def __getattr__(self, name: str) -> Any:
+        self.calls.append(name)
+        return getattr(self._inner, name)
 
 
 async def test_a_start_up_recovers_and_says_what_it_found(app: FastAPI) -> None:

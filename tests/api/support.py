@@ -51,7 +51,11 @@ def echo_plan() -> dict[str, Any]:
 
 
 def note_plan(path: str = NOTE_PATH, body: str = NOTE_BODY) -> dict[str, Any]:
-    """A plan of one step that needs the user's consent (§30): ``run`` stops and asks."""
+    """A plan of one step that needs the user's consent (§30): ``run`` stops and asks.
+
+    The risk is the catalogue's — ``workspace.write_note`` is LOW, protected by its scope — and
+    what makes the step ask is ``requires_authorization`` on the step itself (ADR 0025 §8.2).
+    """
     return {
         "goal": "write a note",
         "steps": [
@@ -60,7 +64,7 @@ def note_plan(path: str = NOTE_PATH, body: str = NOTE_BODY) -> dict[str, Any]:
                 "goal": "write",
                 "required_capabilities": [WORKSPACE_WRITE_NOTE],
                 "arguments": {"path": path, "body": body},
-                "risk": "MEDIUM",
+                "risk": "LOW",
                 "expected_result": "a note on disk",
                 "success_conditions": [NOTE_EXISTS, NOTE_CONTENT_MATCHES],
                 "requires_authorization": True,

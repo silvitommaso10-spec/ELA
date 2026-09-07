@@ -55,6 +55,8 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_AUTHORIZATION_TTL_SECONDS", "3600"),
     ("ELA_APPROVAL_TTL_SECONDS", "86400"),
     ("ELA_TASK_ORPHAN_AFTER_SECONDS", "900"),
+    ("ELA_DECISION_TTL_SECONDS", "300"),
+    ("ELA_NOTES_SCOPE", "workspace/notes"),
 )
 """Every optional variable, with ELA's own default beside it.
 

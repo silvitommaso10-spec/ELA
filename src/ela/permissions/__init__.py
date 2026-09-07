@@ -36,6 +36,7 @@ from ela.permissions.errors import (
 from ela.permissions.guardian import (
     DEFAULT_DECISION_TTL,
     GUARDIAN_ACTOR,
+    MAX_DECISION_TTL,
     POLICY_VERSION,
     RISK_POLICY,
     PermissionGuardian,
@@ -51,6 +52,7 @@ __all__ = [
     "DEFAULT_NOTES_SCOPE",
     "GUARDIAN_ACTOR",
     "MAX_AUTHORIZATION_TTL",
+    "MAX_DECISION_TTL",
     "MAX_RISK",
     "MODEL_COMPLETE",
     "POLICY_VERSION",

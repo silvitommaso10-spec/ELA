@@ -29,7 +29,14 @@ from ela.devices.settings import DeviceSettings
 from ela.domain import NAME_MAX_LENGTH
 from ela.executive import DEFAULT_APPROVAL_TTL, MAX_APPROVAL_TTL
 from ela.infrastructure.persistence import PersistenceSettings
-from ela.permissions import DEFAULT_AUTHORIZATION_TTL, MAX_AUTHORIZATION_TTL
+from ela.permissions import (
+    DEFAULT_AUTHORIZATION_TTL,
+    DEFAULT_DECISION_TTL,
+    DEFAULT_NOTES_SCOPE,
+    MAX_AUTHORIZATION_TTL,
+    MAX_DECISION_TTL,
+    is_valid_scope_entry,
+)
 from ela.providers.anthropic import AnthropicSettings
 from ela.routing import RoutingSettings
 from ela.tools.settings import WorkspaceSettings
@@ -62,6 +69,7 @@ _FIELD = re.compile(r'field "(\w+)"')
 
 _SECONDS_IN_AUTHORIZATION_TTL: Final = int(MAX_AUTHORIZATION_TTL.total_seconds())
 _SECONDS_IN_APPROVAL_TTL: Final = int(MAX_APPROVAL_TTL.total_seconds())
+_SECONDS_IN_DECISION_TTL: Final = int(MAX_DECISION_TTL.total_seconds())
 
 
 def _is_loopback(host: str) -> bool:
@@ -129,7 +137,19 @@ class ApiSettings(BaseSettings):
 
 
 class CoreSettings(BaseSettings):
-    """Who the user is, and the three durations the Executive Core runs on (ADR 0023 §3)."""
+    """Who the user is, the durations ELA runs on, and where a note may be written.
+
+    Three durations in M8.1 (ADR 0023 §3), four in M8.3, plus ``notes_scope`` (ADR 0025 §5, §6).
+
+    ``notes_scope`` is a path inside the workspace and would read better next to
+    ``ELA_WORKSPACE_DIR`` in :class:`~ela.tools.settings.WorkspaceSettings`. It is here instead
+    because what it configures is the **catalogue**: validating it means asking
+    :func:`~ela.permissions.is_valid_scope_entry` whether it is a well-formed scope entry, and
+    ``ela.tools`` imports only ``ela.domain`` and ``ela.ports`` today — a tool implements a
+    capability, it does not hold the catalogue. Copying the rule into ``ela.tools`` to avoid the
+    import would leave two definitions of "a valid scope", which is worse than one variable
+    sitting in the second-best class.
+    """
 
     model_config = SettingsConfigDict(env_prefix="ELA_", env_file=".env", extra="ignore")
 
@@ -151,6 +171,23 @@ class CoreSettings(BaseSettings):
     )
     """``ELA_APPROVAL_TTL_SECONDS``: how long a request for consent waits (ADR 0013)."""
 
+    decision_ttl_seconds: Annotated[int, Field(gt=0, le=_SECONDS_IN_DECISION_TTL)] = int(
+        DEFAULT_DECISION_TTL.total_seconds()
+    )
+    """``ELA_DECISION_TTL_SECONDS``: how long an ``ALLOWED`` decision stays usable (ADR 0011 §9).
+
+    Capped at :data:`~ela.permissions.MAX_DECISION_TTL`, and the reason is written there: past an
+    hour it is not a decision any more, it is a permission — and permissions are
+    ``Authorization``, which has a grant, a count of uses and an audit trail of its own."""
+
+    notes_scope: str = DEFAULT_NOTES_SCOPE
+    """``ELA_NOTES_SCOPE``: the only folder ``workspace.write_note`` may write in (§29).
+
+    Relative to the workspace, and it is the **scope** of the capability — what makes writing a
+    note LOW rather than something that needs consent every time. Changing it on an ELA that has
+    already run does not move the notes already written, and puts the grants given for paths in
+    the old scope out of scope: the Guardian will deny them, correctly and without warning."""
+
     task_orphan_after_seconds: Annotated[int, Field(gt=0)] = DEFAULT_ORPHAN_AFTER_SECONDS
     """``ELA_TASK_ORPHAN_AFTER_SECONDS``: how long an EXECUTING task may stay silent before
     ``recover()`` fails it as an orphan (ADR 0008 §6)."""
@@ -166,6 +203,28 @@ class CoreSettings(BaseSettings):
     @property
     def orphan_after(self) -> timedelta:
         return timedelta(seconds=self.task_orphan_after_seconds)
+
+    @property
+    def decision_ttl(self) -> timedelta:
+        return timedelta(seconds=self.decision_ttl_seconds)
+
+    @field_validator("notes_scope")
+    @classmethod
+    def _a_well_formed_scope(cls, value: str) -> str:
+        """A scope ELA cannot compare a path against stops the start-up, it is not repaired.
+
+        The same syntax the catalogue requires of every scope entry (ADR 0010 §5): relative, no
+        empty segment, no ``.`` or ``..``, no backslash. A malformed one would either be refused
+        later by ``check_capability`` — with a message about a capability, to somebody who wrote
+        a variable — or, worse, compared against a path and never match.
+        """
+        if not is_valid_scope_entry(value):
+            raise ValueError(
+                f"ELA_NOTES_SCOPE must be a relative path with no empty, '.' or '..' segment "
+                f"and no backslash, not {value!r} (spec §29: the scope is what makes "
+                "workspace.write_note LOW)"
+            )
+        return value
 
 
 class Settings(BaseModel):

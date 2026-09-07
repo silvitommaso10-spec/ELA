@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 from ela.cli.audit import DEFAULT_TAIL
 from ela.cli.errors import REFUSED
 from ela.composition import Ela
 from tests.api.support import echo_plan, tamper_with_the_trail
-from tests.cli.support import Cli
+from tests.cli.support import Cli, LoopTransport
 from tests.cli.test_tasks import created, written
 
 
@@ -30,6 +31,39 @@ async def test_tail_shows_the_last_entries_oldest_first(cli: Cli, tmp_path: Path
     shown = json.loads(result.stdout)
     assert len(shown) == 3
     assert shown == json.loads(everything.stdout)[-3:]
+
+
+async def test_tail_asks_for_the_last_n_instead_of_trimming_them_here(
+    cli: Cli, tmp_path: Path
+) -> None:
+    """The debt of ADR 0024 §6, paid (ADR 0025 §3).
+
+    Reading what was printed cannot tell the two apart — the same three lines come out either
+    way — so this reads what was *asked*: ``limit=3`` and ``newest_first``, one request.
+    """
+    await ran(cli, tmp_path)
+    transport = cast(LoopTransport, cli.transport)
+    transport.requests.clear()
+
+    await cli("audit", "tail", "-n", "3")
+
+    asked = [one.url for one in transport.requests if one.url.path == "/audit"]
+    assert len(asked) == 1
+    assert asked[0].params["limit"] == "3"
+    assert asked[0].params["newest_first"] == "true"
+
+
+async def test_the_default_count_is_asked_for_too(cli: Cli, tmp_path: Path) -> None:
+    """Negative case for the one above: without ``-n`` the number asked for is the default,
+    never "everything"."""
+    await ran(cli, tmp_path)
+    transport = cast(LoopTransport, cli.transport)
+    transport.requests.clear()
+
+    await cli("audit", "tail")
+
+    asked = [one.url for one in transport.requests if one.url.path == "/audit"]
+    assert asked[0].params["limit"] == str(DEFAULT_TAIL)
 
 
 async def test_tail_defaults_to_the_last_twenty(cli: Cli, tmp_path: Path) -> None:

@@ -188,7 +188,8 @@ MODEL_COMPLETE: Final = CapabilityId("model.complete")
 DEFAULT_NOTES_SCOPE: Final = "workspace/notes"
 """Where ``workspace.write_note`` may write unless the caller says otherwise (ADR 0010 §5).
 
-A convention until the Configuration milestone (M8.1) reads it from the environment.
+The **default**, and no longer a convention: since M8.3 the composition root passes
+``ELA_NOTES_SCOPE`` here (ADR 0025 §5), so this is what ELA uses when nobody says otherwise.
 """
 
 V01_INTRODUCED_AT: Final = datetime(2026, 9, 5, tzinfo=UTC)

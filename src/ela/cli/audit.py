@@ -32,13 +32,17 @@ def tail(
 ) -> None:
     """The last entries, oldest of them first.
 
-    The filters are the API's; the *last* ``n`` are taken here, because ``GET /audit`` answers
-    with the **first** entries and a tail is the other end. It reads the window it then trims,
-    which is the same debt ``/diagnostics`` declares for counting tasks (ADR 0024 §6).
+    ``newest_first`` is asked of the API, so ELA reads ``n`` rows from the end of the log instead
+    of reading the whole window and trimming it here (M8.3, ADR 0025 §3 — the debt ADR 0024 §6
+    declared). What comes back runs newest to oldest; it is turned around to print, because a
+    tail is read downwards even when it is fetched upwards.
     """
     with client.connect() as api:
-        payload = api.get("/audit", client.query(task_id=task, since=since))
-    shown = payload[-count:]
+        payload = api.get(
+            "/audit",
+            client.query(task_id=task, since=since, limit=count, newest_first=True),
+        )
+    shown = list(reversed(payload))
     emit(
         shown,
         as_json,

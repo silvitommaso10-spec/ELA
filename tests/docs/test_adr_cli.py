@@ -1,6 +1,7 @@
 """The tables of ADR 0024 and the CLI say the same thing.
 
-Four tables, four shapes: §3 (the seventeen commands and the route each one calls), §4 (the
+Four tables, four shapes: §3 (the commands and the route each one calls, seventeen here and an
+eighteenth in ADR 0025 §10), §4 (the
 protocol that ``audit verify`` needs and why it is not a port), §6 (the four exit codes) and §7
 (the rule that lets the CLI import typer, extended from ADR 0002). The routes ADR 0024 adds and
 the failure it adds are checked in ``test_adr_composition.py``, with the tables they extend.
@@ -25,6 +26,7 @@ from tests.contracts.protocols import method_names, port_protocols
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = REPO_ROOT / "docs" / "adr" / "0024-cli.md"
+DEBTS_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0025-phase-8-debts.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMMAND_ROW = re.compile(
@@ -38,6 +40,13 @@ RULE_NAME = "cli-talks-over-the-api"
 
 
 def adr_text() -> str:
+    """ADR 0024 and ADR 0025, read together: an ADR is immutable, so the command M8.3 adds is
+    documented there in the row shape of this table (ADR 0025 §10)."""
+    return ADR_PATH.read_text(encoding="utf-8") + "\n" + DEBTS_ADR_PATH.read_text(encoding="utf-8")
+
+
+def cli_adr_text() -> str:
+    """ADR 0024 alone, for the tables that are only its own: the exit codes and rule 28."""
     return ADR_PATH.read_text(encoding="utf-8")
 
 
@@ -48,8 +57,12 @@ def adr_text() -> str:
 
 def documented_commands() -> dict[str, tuple[str, str] | None]:
     """command → the (method, path) it calls, or ``None`` for the two that are local."""
+    return documented_commands_of(adr_text())
+
+
+def documented_commands_of(text: str) -> dict[str, tuple[str, str] | None]:
     rows: dict[str, tuple[str, str] | None] = {}
-    for line in adr_text().splitlines():
+    for line in text.splitlines():
         if (match := COMMAND_ROW.match(line)) is not None:
             method, path = match.group(2), match.group(3)
             rows[match.group(1)] = None if method is None else (method, path)
@@ -86,8 +99,15 @@ def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:
     assert set(documented_commands()) == coded_commands()
 
 
-def test_there_are_seventeen_of_them() -> None:
-    assert len(coded_commands()) == 17
+def test_there_are_eighteen_of_them() -> None:
+    assert len(coded_commands()) == 18
+
+
+def test_the_command_of_m8_3_is_the_one_adr_0025_adds() -> None:
+    """``ela task results``, the client of the one route that returns an output (ADR 0025 §4)."""
+    added = set(documented_commands()) - set(documented_commands_of(cli_adr_text()))
+
+    assert added == {"task results"}
 
 
 def test_only_two_commands_are_local_and_they_are_the_two_that_cannot_be_calls() -> None:
@@ -144,7 +164,7 @@ def test_a_local_command_can_only_work_or_be_misconfigured() -> None:
 def documented_protocol() -> tuple[str, str, str]:
     rows = [
         (match.group(1), match.group(2), match.group(3))
-        for line in adr_text().splitlines()
+        for line in cli_adr_text().splitlines()
         if (match := PROTOCOL_ROW.match(line)) is not None
     ]
     assert len(rows) == 1, "ADR 0024 §4 must document exactly one protocol"
@@ -177,7 +197,7 @@ def test_it_is_not_a_port_and_the_audit_log_still_has_two_members() -> None:
 def documented_exits() -> dict[int, str]:
     rows = {
         int(match.group(1)): match.group(2).strip()
-        for line in adr_text().splitlines()
+        for line in cli_adr_text().splitlines()
         if (match := EXIT_ROW.match(line)) is not None
     }
     assert rows, "ADR 0024 §6 must contain the table of the exit codes"
@@ -202,13 +222,13 @@ def test_each_code_says_which_of_the_four_situations_it_is() -> None:
 
 
 def test_rule_28_is_registered_under_the_name_the_adr_gives_it() -> None:
-    assert RULE_NAME in adr_text()
+    assert RULE_NAME in cli_adr_text()
     assert "cli-over-the-api" in RULES
 
 
 def test_the_extended_rule_3_names_the_fourth_edge() -> None:
     """ADR 0002's row is repeated whole under "Regole estese:", with ``cli/`` in it."""
-    rows = [line for line in adr_text().splitlines() if RULE_ROW.match(line)]
+    rows = [line for line in cli_adr_text().splitlines() if RULE_ROW.match(line)]
 
     assert len(rows) == 1
     assert rows[0].startswith("| 3 |")

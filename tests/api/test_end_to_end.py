@@ -27,7 +27,8 @@ async def test_a_whole_turn_of_ela_over_http(client: AsyncClient, ela: Ela) -> N
 
     task_id = await queued(client, note_plan(), text="scrivimi il briefing di domani")
 
-    # It stops and asks: writing a note is MEDIUM risk, and consent is the user's (§30).
+    # It stops and asks: the step declares ``requires_authorization``, and consent is the
+    # user's (§30). Not the risk: ``workspace.write_note`` is LOW, protected by its scope.
     first = (await client.post(f"/tasks/{task_id}/run")).json()
     assert first["outcome"] == "waiting_approval"
 

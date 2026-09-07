@@ -70,6 +70,16 @@ class SqlExecutionResultStore:
                 raise NotFoundError(EXECUTION_RESULT, result_id)
             return row_to_result(row)
 
+    async def for_task(self, task_id: TaskId) -> tuple[ExecutionResult, ...]:
+        query = (
+            select(ExecutionResultRow)
+            .where(ExecutionResultRow.task_id == task_id)
+            .order_by(ExecutionResultRow.seq)
+        )
+        async with self._sessions() as session:
+            rows = await session.scalars(query)
+            return tuple(row_to_result(row) for row in rows)
+
     async def for_step(self, task_id: TaskId, step_id: StepId) -> tuple[ExecutionResult, ...]:
         query = (
             select(ExecutionResultRow)

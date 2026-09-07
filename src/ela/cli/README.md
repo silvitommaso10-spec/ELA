@@ -1,4 +1,4 @@
-Fase: v0.1 — CLI (spec §54; M8.2, ADR 0024).
+Fase: v0.1 — CLI (spec §54; M8.2, ADR 0024; un comando in più con M8.3, ADR 0025).
 
 La riga di comando di ELA, e un **client** dell'API locale: stesso token, stessa porta, nessun
 secondo mondo costruito in proprio (regola di architettura 28). ADR 0023 §1 dava per scontato il
@@ -6,7 +6,7 @@ contrario; ADR 0024 §2 dice perché la direzione è cambiata — due processi c
 database avrebbero il lock di `run` in uno solo, un mondo costruito dichiara vivo il nodo `local`
 e poi esce, e un «sì» entrerebbe da una seconda porta dove la regola 19 ne concede una.
 
-- `app.py`: l'app typer e i diciassette comandi. `main()` è ciò che `ela` e `python -m ela.cli`
+- `app.py`: l'app typer e i diciotto comandi. `main()` è ciò che `ela` e `python -m ela.cli`
   chiamano.
 - `client.py`: `connect()` — il **seam** che i test sostituiscono — apre un `httpx.Client` con il
   token in header. Timeout asimmetrico: 5 secondi per connettersi, nessuno per la risposta, perché

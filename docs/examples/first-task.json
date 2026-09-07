@@ -1,4 +1,18 @@
 {
+  "_nota": [
+    "Perché il secondo step chiede il tuo consenso, e non è per il rischio.",
+    "workspace.write_note è LOW nel catalogo (spec §29): è lo *scope* a proteggerla — può",
+    "scrivere solo dentro la cartella autorizzata — e per questo la capability non richiede",
+    "un'autorizzazione da sé. A chiederla è lo step, con \"requires_authorization\": true.",
+    "Il Guardian ne domanda una quando la capability *oppure* lo step ne vogliono una: un piano",
+    "può alzare l'asticella su sé stesso, non abbassarla.",
+    "Il campo \"risk\" dello step il Guardian non lo legge mai — usa quello del catalogo",
+    "(ADR 0011 §2). Lo legge il Device Orchestrator, che da HIGH in su scarta un nodo degradato,",
+    "e finisce nella tabella di `ela task show` e nell'audit della collocazione: per questo qui",
+    "dice LOW, come il catalogo, e non MEDIUM come diceva prima di M8.3.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti, e questo file viene",
+    "mandato a ELA byte per byte da un test, perché non marcisca."
+  ],
   "goal": "salutare e lasciare una nota",
   "steps": [
     {
@@ -22,7 +36,7 @@
         "body": "Primo task di ELA: eseguito dal Task Runner, autorizzato dall'utente.\n"
       },
       "dependencies": ["9c5b8f26-1a2b-4c3d-8e4f-000000000001"],
-      "risk": "MEDIUM",
+      "risk": "LOW",
       "expected_result": "una nota su disco con quel testo",
       "success_conditions": ["note.exists", "note.content_matches"],
       "requires_authorization": true

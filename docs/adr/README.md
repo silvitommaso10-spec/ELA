@@ -32,6 +32,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0022](0022-model-router.md) | Model Router: `task_type` come argomento, tabella di rotte su profili, fallback sulla disponibilità dichiarata, `ELA_ANTHROPIC_MODEL` ritirata, regola 26 | Accettata |
 | [0023](0023-composition-root-and-api.md) | Composition root, configurazione unificata e API locale: `ela.composition`, `ela.api`, token statico su loopback, regola 27 | Accettata |
 | [0024](0024-cli.md) | La CLI di ELA: un client dell'API locale, `ela.cli`, `AuditVerifier` e le rotte `/devices` e `/audit/verify`, quattro codici di uscita, regola 3 estesa e regola 28 | Accettata |
+| [0025](0025-phase-8-debts.md) | I debiti di Fase 8: `TaskRepository.count`, `AuditLog.read(newest_first=)`, `ExecutionResultStore.for_task` con `GET /tasks/{id}/results` e `ela task results`, `ELA_NOTES_SCOPE` e `ELA_DECISION_TTL_SECONDS`, regola 29 | Accettata |
 
 ## Template
 

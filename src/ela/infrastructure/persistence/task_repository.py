@@ -9,9 +9,10 @@ so that a foreign-key failure is never mistaken for a duplicate.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, select, update
+from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -105,6 +106,21 @@ class SqlTaskRepository:
         async with self._sessions() as session:
             rows = await session.scalars(query)
             return tuple(row_to_task(row) for row in rows)
+
+    async def count(self, *, states: frozenset[TaskState] | None = None) -> Mapping[TaskState, int]:
+        """``GROUP BY state``: the database counts, and no row travels (M8.3, ADR 0025 §2).
+
+        A state with no task produces no group, which is exactly the contract — one entry per
+        state that has at least one task — so nothing has to be filtered out afterwards.
+        """
+        if states is not None and not states:
+            return {}
+        query = select(TaskRow.state, func.count()).group_by(TaskRow.state)
+        if states is not None:
+            query = query.where(TaskRow.state.in_([state.value for state in states]))
+        async with self._sessions() as session:
+            rows = await session.execute(query)
+            return {TaskState(state): total for state, total in rows.all()}
 
     async def append_event(self, event: TaskEvent) -> None:
         async with self._sessions() as session, session.begin():

@@ -86,6 +86,13 @@ DEVICE_PORT_ALLOWED = (
 #: reach the Task Engine cannot fail a task because it found no node.
 DEVICES_PACKAGE = f"{ROOT_PACKAGE}.{DEVICES_DIR}"
 DEVICES_FORBIDDEN = (f"{ROOT_PACKAGE}.{TASKS_DIR}",)
+#: Rule 29 (ADR 0025 §4): what a tool produced is the user's content too, and one model of
+#: ``ela.api`` carries it out. ``ExecutionResultOut`` lives in ``schemas.py`` because that is
+#: where every wire shape of the API is declared, so the single reader is that file.
+API_DIR = "api"
+OUTPUT_NAME = "output"
+OUTPUT_MODEL = "ExecutionResultOut"
+OUTPUT_SCHEMAS = Path("api") / "schemas.py"
 #: Rule 23 (ADR 0018 §5): the arguments of a step are the user's content (§57). They live in the
 #: plan and in the private database; the audit log records the *targets* of a call, never what was
 #: passed. With ADR 0018 the arguments became a persisted field read in three places, so the
@@ -1155,6 +1162,64 @@ def _composing_names(path: Path, name: str, rule: str) -> Iterator[Violation]:
             yield Violation(rule, name, node.attr, node.lineno)
 
 
+def check_tool_output_readers(pkg_root: Path) -> list[Violation]:
+    """Rule 29: inside ``ela.api``, what a tool produced has one model and one reader (M8.3).
+
+    ADR 0025 §4. ``ExecutionResult.output`` is the user's own content (§57) — the answer of a
+    model, the body of a note — and until M8.3 it left the machine nowhere. Now one route
+    returns it, and this rule is what keeps that "one" true: an ``output`` field added to
+    ``StepOut`` or to ``AuditEventOut`` would carry the same content out through a route that
+    was never meant to, and nothing in the type system would object.
+
+    The mirror of rule 23, at the opposite boundary: 23 says where the user's content may not
+    **enter** (an ``AuditEvent``), 29 says where it may **leave**. Two things are reported:
+
+    * a class field named ``output`` in any module of ``ela.api``, unless the class is
+      :data:`OUTPUT_MODEL`;
+    * the name ``output`` — as an attribute, a variable, a keyword or a string literal — in any
+      module of ``ela.api`` other than :data:`OUTPUT_SCHEMAS`, which is where the one model
+      reads it.
+
+    Closed-world on the name, like rules 5, 12, 15, 16, 20 and 23: in this package the word has
+    one meaning, and a false positive costs less than a false negative.
+    """
+    rule = "tool-output-readers"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root / API_DIR):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name != OUTPUT_MODEL:
+                found.extend(
+                    Violation(rule, name, f"{node.name}.{OUTPUT_NAME}", field.lineno)
+                    for field in node.body
+                    if isinstance(field, ast.AnnAssign)
+                    and isinstance(field.target, ast.Name)
+                    and field.target.id == OUTPUT_NAME
+                )
+        if path.relative_to(pkg_root) == OUTPUT_SCHEMAS:
+            continue
+        found.extend(
+            Violation(rule, name, mention, node.lineno)
+            for node in ast.walk(tree)
+            if (mention := _mentions_output(node)) is not None
+        )
+    return found
+
+
+def _mentions_output(node: ast.AST) -> str | None:
+    """How ``node`` names the output of an execution, or ``None`` if it does not."""
+    if isinstance(node, ast.Name) and node.id == OUTPUT_NAME:
+        return OUTPUT_NAME
+    if isinstance(node, ast.Attribute) and node.attr == OUTPUT_NAME:
+        return f".{OUTPUT_NAME}"
+    if isinstance(node, ast.keyword) and node.arg == OUTPUT_NAME:
+        return f"{OUTPUT_NAME}="
+    if isinstance(node, ast.Constant) and node.value == OUTPUT_NAME:
+        return f'"{OUTPUT_NAME}"'
+    return None
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -1184,4 +1249,5 @@ RULES: dict[str, Rule] = {
     "provider-complete-callers": check_provider_complete_callers,
     "concrete-names": check_concrete_names,
     "cli-over-the-api": check_cli_over_the_api,
+    "tool-output-readers": check_tool_output_readers,
 }
