@@ -114,7 +114,7 @@ async def run(
             await w.store.consume(stored.id, now=w.now)
     uses_before = {g.id: await w.store.uses(g.id) for g in await w.store.for_capability(spec.id)}
 
-    execution = await w.executor.execute(task.id, step.id, arguments)
+    execution = await w.execute(task.id, step.id)
 
     decision = execution.decision
     ran = tool.calls != () or (behaviour is ToolBehaviour.RAISE and execution.result is not None)

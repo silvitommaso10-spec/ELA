@@ -1,6 +1,6 @@
 # 0017. Device Orchestrator: filtri di idoneità, punteggio esplicito, attesa invece di fallimento
 
-- **Stato:** Accettata
+- **Stato:** Accettata. Il vincolo per M6.3 di §6 è applicato da ADR 0019 §9: chi riceve un `Placement` vuoto lascia il task `QUEUED`, non lo fallisce, non riscrive `DEVICE_UNAVAILABLE` e ritorna con esito `WAITING_DEVICE`.
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §13, §15, §16, §17, §32, §33, §57
 

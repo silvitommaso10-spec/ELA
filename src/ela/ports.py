@@ -612,8 +612,14 @@ class AuthorizingGuardianPort(Protocol):
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
         authorization_uses: int = 0,
+        device_id: DeviceId | None = None,
     ) -> PermissionDecision:
-        """Decide about one call and append ``PERMISSION_DECIDED`` before returning."""
+        """Decide about one call and append ``PERMISSION_DECIDED`` before returning.
+
+        ``device_id`` is the node the call is about (M6.3, ADR 0019 §4). It is **stamped on the
+        audit event and read by no rule**: a Guardian that decided by node would be a second,
+        weaker permission axis beside the one it exists to be.
+        """
 
 
 @runtime_checkable

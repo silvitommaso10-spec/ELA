@@ -587,12 +587,24 @@ class TaskStep(_DomainModel):
     Device independence is the point of §13: a step says which *capabilities* it needs and, at
     most, which device *traits* it would prefer. Which node runs it is the Device Orchestrator's
     decision (§17), so no ``DeviceId`` and no ``OperatingSystem`` appear here. See ADR 0003.
+
+    ``arguments`` is how the step says *what* the capability is called with (ADR 0018). It holds
+    data, not a schema: that the arguments match ``CapabilitySpec.input_schema`` is the Guardian's
+    check at decision time (§27), never the model's — validating twice would put the catalogue
+    inside the domain.
     """
 
     id: StepId
     created_at: UtcDatetime
     goal: str
     required_capabilities: tuple[_CapabilityIdField, ...] = ()
+    arguments: JsonMapping = _json_payload(
+        "The arguments of the capability this step requires (§27; ADR 0018): what the Guardian "
+        "validates against ``input_schema`` and what the scope constrains. They belong to the "
+        "plan, not to the caller, so a retry runs with the arguments the run used and the "
+        "targets an approval was given for stay the targets that are executed. Never in the "
+        "audit (§57, architecture rule 23)."
+    )
     preferred_device_traits: tuple[_DeviceCapabilityNameField, ...] = ()
     dependencies: tuple[StepId, ...] = ()
     risk: RiskLevel

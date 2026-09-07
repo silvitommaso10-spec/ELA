@@ -14,9 +14,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
+from ela.devices import DeviceOrchestrator, DeviceRegistry
 from ela.domain import (
     Approval,
     ApprovalStatus,
@@ -26,9 +27,13 @@ from ela.domain import (
     AuthorizationId,
     CapabilityId,
     CapabilitySpec,
+    Device,
+    DeviceId,
     ErrorMetadata,
     ExecutionResult,
+    ExecutionStatus,
     IntentId,
+    JsonMapping,
     PlanId,
     RiskLevel,
     StepId,
@@ -40,7 +45,7 @@ from ela.domain import (
     TaskState,
     TaskStep,
 )
-from ela.executive import Executor
+from ela.executive import Execution, Executor, TaskRunner
 from ela.permissions import PermissionGuardian
 from ela.ports import (
     ApprovalStore,
@@ -58,6 +63,7 @@ from ela.testing.fakes import (
     FakeAuthorizationStore,
     FakeCapabilityRegistry,
     FakeClock,
+    FakeDeviceRegistry,
     FakeExecutionResultStore,
     FakeIdGenerator,
     FakeTaskRepository,
@@ -66,8 +72,9 @@ from ela.testing.fakes import (
     FakeVerifier,
     FakeVerifierRegistry,
 )
+from tests.devices.nodes import node
 from tests.domain.examples import ELA_ACTOR, USER_INTENT
-from tests.permissions.support import CATALOGUE, COMPLETE
+from tests.permissions.support import ARGUMENTS, CATALOGUE, COMPLETE
 from tests.tasks.support import ORPHAN_AFTER
 
 TOOLED: tuple[CapabilitySpec, ...] = tuple(spec for spec in CATALOGUE if spec is not COMPLETE)
@@ -141,12 +148,20 @@ class World:
     verifiers: FakeVerifierRegistry
     engine: TaskEngine
     executor: Executor
+    devices: DeviceRegistry
+    orchestrator: DeviceOrchestrator
+    runner: TaskRunner
+    node: Device
     fake_tools: dict[CapabilityId, FakeTool] = field(default_factory=dict)
     fake_verifiers: dict[CapabilityId, FakeVerifier] = field(default_factory=dict)
 
     @property
     def now(self) -> datetime:
         return self.clock.now()
+
+    def intent(self) -> Any:
+        """A fresh intent, so that every task of a test has its own id (ADR 0008 §8)."""
+        return USER_INTENT.model_copy(update={"id": IntentId(self.ids.new_uuid())})
 
     def tool(self, capability_id: CapabilityId) -> FakeTool:
         return self.fake_tools[capability_id]
@@ -162,13 +177,21 @@ class World:
         capabilities: tuple[CapabilityId, ...] | None = None,
         conditions: tuple[str, ...] = (OK,),
         goal: str = "run the capability",
+        arguments: JsonMapping | None = None,
+        start: bool = True,
     ) -> tuple[Task, TaskStep]:
-        """An EXECUTING task whose one-step plan declares ``capability_id``, the step RUNNING."""
+        """An EXECUTING task whose one-step plan declares ``capability_id``, the step RUNNING.
+
+        ``arguments`` defaults to the ones the capability expects (``ARGUMENTS``): since ADR 0018
+        they belong to the step, so a plan without them is a plan that cannot be executed.
+        ``start=False`` stops before ``start_step``, leaving the step PENDING for the runner.
+        """
         step = TaskStep(
             id=StepId(self.ids.new_uuid()),
             created_at=self.now,
             goal=goal,
             required_capabilities=(capability_id,) if capabilities is None else capabilities,
+            arguments=ARGUMENTS.get(capability_id, {}) if arguments is None else arguments,
             risk=RiskLevel.LOW,
             expected_result="done",
             success_conditions=conditions,
@@ -186,8 +209,10 @@ class World:
         )
         await self.engine.plan(task.id, plan)
         await self.engine.queue(task.id)
-        task = await self.engine.start(task.id)
-        await self.engine.start_step(task.id, step.id)
+        if not start:
+            return await self.task(task.id), step
+        task = await self.engine.start(task.id, device_id=self.node.id)
+        await self.engine.start_step(task.id, step.id, device_id=self.node.id)
         return task, step
 
     async def running_pair(
@@ -199,6 +224,7 @@ class World:
             created_at=self.now,
             goal="first",
             required_capabilities=(capability_id,),
+            arguments=ARGUMENTS.get(capability_id, {}),
             risk=RiskLevel.LOW,
             expected_result="done",
             success_conditions=conditions,
@@ -223,9 +249,69 @@ class World:
         )
         await self.engine.plan(task.id, plan)
         await self.engine.queue(task.id)
-        task = await self.engine.start(task.id)
-        await self.engine.start_step(task.id, first.id)
+        task = await self.engine.start(task.id, device_id=self.node.id)
+        await self.engine.start_step(task.id, first.id, device_id=self.node.id)
         return task, first, second
+
+    async def queued(
+        self,
+        *capabilities: CapabilityId,
+        conditions: tuple[str, ...] = (OK,),
+        chain: bool = True,
+        goal: str = "walk the plan",
+        deadline: datetime | None = None,
+    ) -> tuple[Task, tuple[TaskStep, ...]]:
+        """A QUEUED task with one PENDING step per capability: what a runner is handed.
+
+        ``chain`` makes each step depend on the one before it, so the topological order is the
+        order given; without it the steps are independent and any of them may go first.
+        """
+        steps: list[TaskStep] = []
+        for index, capability_id in enumerate(capabilities):
+            steps.append(
+                TaskStep(
+                    id=StepId(self.ids.new_uuid()),
+                    created_at=self.now,
+                    goal=f"step {index}",
+                    required_capabilities=(capability_id,),
+                    arguments=ARGUMENTS.get(capability_id, {}),
+                    risk=RiskLevel.LOW,
+                    expected_result="done",
+                    success_conditions=conditions,
+                    dependencies=(steps[-1].id,) if chain and steps else (),
+                    requires_authorization=False,
+                )
+            )
+        task = await self.engine.create(self.intent(), deadline=deadline)
+        await self.engine.start_planning(task.id)
+        await self.engine.plan(
+            task.id,
+            TaskPlan(
+                id=PlanId(self.ids.new_uuid()),
+                created_at=self.now,
+                task_id=task.id,
+                goal=goal,
+                steps=tuple(steps),
+            ),
+        )
+        await self.engine.queue(task.id)
+        return await self.task(task.id), tuple(steps)
+
+    async def alive(self) -> Device:
+        """A sign of life from the one node (§16): the heartbeat a real node would send.
+
+        Needed by every test that moves the clock past :data:`HEARTBEAT_TTL` and still expects a
+        node to run on: availability is derived from the last heartbeat, not declared once.
+        """
+        return await self.devices.heartbeat(self.node.id)
+
+    async def execute(
+        self, task_id: TaskId, step_id: StepId, *, device_id: DeviceId | None = None
+    ) -> Execution:
+        """``executor.execute`` on the world's one node unless the test names another."""
+        return await self.executor.execute(
+            task_id, step_id, device_id=self.node.id if device_id is None else device_id
+        )
 
     async def events(self, task_id: TaskId | None = None) -> tuple[AuditEvent, ...]:
         return await self.audit.read(task_id=task_id)
@@ -303,9 +389,23 @@ async def only_result(w: World, task_id: Any, step_id: Any) -> ExecutionResult:
     return stored
 
 
-def fake_tools(clock: FakeClock, ids: FakeIdGenerator) -> dict[CapabilityId, FakeTool]:
+def fake_tools(
+    clock: FakeClock, ids: FakeIdGenerator, failing: frozenset[CapabilityId] = frozenset()
+) -> dict[CapabilityId, FakeTool]:
+    """One tool per capability of the catalogue; those in ``failing`` report their own failure.
+
+    A tool that says FAILED is not an exception: it is the outcome ADR 0014 §4 keeps distinct
+    from a failed verification, and the one whose task the runner has to close.
+    """
     return {
-        spec.id: FakeTool(spec.id, clock, ids, name=f"fake-{spec.id}", output={"ok": True})
+        spec.id: FakeTool(
+            spec.id,
+            clock,
+            ids,
+            name=f"fake-{spec.id}",
+            output={"ok": True},
+            status=ExecutionStatus.FAILED if spec.id in failing else ExecutionStatus.SUCCEEDED,
+        )
         for spec in TOOLED
     }
 
@@ -324,6 +424,16 @@ def fake_verifiers() -> dict[CapabilityId, FakeVerifier]:
     return {spec.id: fake_verifier(spec.id) for spec in TOOLED}
 
 
+HEARTBEAT_TTL = timedelta(seconds=60)
+"""The real default of ``ELA_DEVICE_HEARTBEAT_TTL_SECONDS`` (ADR 0016 §3), as ``tests/devices``.
+
+Deliberately short (review of M6.3). A long TTL would make the node of this world immortal and
+hide exactly the class of bug Fase 12 has to find: a node that goes quiet in the middle of a long
+task. So a test that moves the clock past a minute and then expects the walk to go on has to say
+so, with :meth:`World.alive` — because that is what would have to happen for real.
+"""
+
+
 def world(
     *,
     tools: Iterable[ToolPort] | None = None,
@@ -333,6 +443,7 @@ def world(
     results: ExecutionResultStore | None = None,
     repository: TaskRepository | None = None,
     audit: AuditLog | None = None,
+    failing: frozenset[CapabilityId] = frozenset(),
     **executor_options: Any,
 ) -> World:
     clock, ids = FakeClock(), FakeIdGenerator()
@@ -343,7 +454,7 @@ def world(
     result_store = FakeExecutionResultStore() if results is None else results
     registry = FakeCapabilityRegistry(CATALOGUE)
     guardian = PermissionGuardian(registry, clock, ids, audit)
-    fakes = fake_tools(clock, ids)
+    fakes = fake_tools(clock, ids, failing)
     tool_registry = FakeToolRegistry(fakes.values() if tools is None else tools)
     checkers = fake_verifiers()
     verifier_registry = FakeVerifierRegistry(checkers.values() if verifiers is None else verifiers)
@@ -356,6 +467,11 @@ def world(
         actor=ELA_ACTOR,
         orphan_after=ORPHAN_AFTER,
     )
+    device = node("core", tools=tuple(tool.name for tool in tool_registry.tools())).model_copy(
+        update={"last_seen_at": clock.now()}
+    )
+    devices = DeviceRegistry(FakeDeviceRegistry((device,)), clock, heartbeat_ttl=HEARTBEAT_TTL)
+    orchestrator = DeviceOrchestrator(devices, tool_registry, audit, ids, clock)
     executor = Executor(
         registry=registry,
         tools=tool_registry,
@@ -372,6 +488,14 @@ def world(
         actor=ELA_ACTOR,
         **executor_options,
     )
+    runner = TaskRunner(
+        engine=engine,
+        orchestrator=orchestrator,
+        executor=executor,
+        repository=repository,
+        results=result_store,
+        audit=audit,
+    )
     return World(
         repository,
         audit,
@@ -386,6 +510,10 @@ def world(
         verifier_registry,
         engine,
         executor,
+        devices,
+        orchestrator,
+        runner,
+        device,
         fakes,
         checkers,
     )

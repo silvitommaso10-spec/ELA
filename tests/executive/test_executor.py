@@ -33,7 +33,6 @@ from ela.executive import (
     AUTHORIZATION_NAMESPACE,
     DEFAULT_APPROVAL_TTL,
     GRANT_VANISHED,
-    LOCAL_DEVICE,
     MAX_APPROVAL_TTL,
     TOOL_EXCEPTION,
     TOOL_REFUSED,
@@ -66,7 +65,6 @@ from tests.executive.support import (
 )
 from tests.permissions.support import (
     COMPLETE,
-    COMPLETE_ARGS,
     ECHO,
     ECHO_ARGS,
     GUARDED_ECHO,
@@ -104,7 +102,7 @@ async def test_a_task_that_is_not_executing_is_refused(w: World) -> None:
     await w.engine.queue(task.id, reason="interrupted")
     before = len(await w.events())
     with pytest.raises(ExecutorError, match="needs an EXECUTING task, not QUEUED"):
-        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+        await w.execute(task.id, step.id)
     await nothing_written(w, before)
 
 
@@ -116,13 +114,13 @@ async def test_a_terminal_task_is_refused(w: World, state: TaskState) -> None:
     elif state is TaskState.FAILED:
         await w.engine.fail(task.id, ErrorMetadata(code="x", message="x"))
     else:
-        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+        await w.execute(task.id, step.id)
         await w.engine.complete(task.id, result_for(task.id))
     assert (await w.task(task.id)).state is state
     before = len(await w.events())
     calls = len(w.tool(ECHO.id).calls)
     with pytest.raises(ExecutorError, match=f"needs an EXECUTING task, not {state.value}"):
-        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+        await w.execute(task.id, step.id)
     assert len(await w.events()) == before
     assert len(w.tool(ECHO.id).calls) == calls
 
@@ -131,17 +129,17 @@ async def test_an_unknown_step_is_refused(w: World) -> None:
     task, _ = await w.running(ECHO.id)
     before = len(await w.events())
     with pytest.raises(UnknownStepError):
-        await w.executor.execute(task.id, StepId(w.ids.new_uuid()), ECHO_ARGS)
+        await w.execute(task.id, StepId(w.ids.new_uuid()))
     await nothing_written(w, before)
 
 
 async def test_a_completed_step_is_refused(w: World) -> None:
     task, step = await w.running(ECHO.id)
-    await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    await w.execute(task.id, step.id)
     assert await w.step_state(task.id, step.id) is StepState.COMPLETED
     before = len(await w.events())
     with pytest.raises(ExecutorError, match="is COMPLETED, not RUNNING: start the step first"):
-        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+        await w.execute(task.id, step.id)
     assert len(await w.events()) == before
     assert len(w.tool(ECHO.id).calls) == 1
 
@@ -151,7 +149,7 @@ async def test_a_pending_step_is_refused(w: World) -> None:
     assert await w.step_state(task.id, second.id) is StepState.PENDING
     before = len(await w.events())
     with pytest.raises(ExecutorError, match="is PENDING, not RUNNING: start the step first"):
-        await w.executor.execute(task.id, second.id, ECHO_ARGS)
+        await w.execute(task.id, second.id)
     await nothing_written(w, before)
     assert await w.step_state(task.id, first.id) is StepState.RUNNING
 
@@ -163,7 +161,7 @@ async def test_a_step_without_exactly_one_capability_is_refused(
     task, step = await w.running(ECHO.id, capabilities=capabilities)
     before = len(await w.events())
     with pytest.raises(ExecutorError, match="declares exactly one"):
-        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+        await w.execute(task.id, step.id)
     await nothing_written(w, before)
 
 
@@ -171,7 +169,7 @@ async def test_an_unknown_capability_is_refused(w: World) -> None:
     task, step = await w.running(CapabilityId("nobody.knows_this"))
     before = len(await w.events())
     with pytest.raises(NotFoundError):
-        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+        await w.execute(task.id, step.id)
     await nothing_written(w, before)
 
 
@@ -179,7 +177,7 @@ async def test_a_capability_without_a_tool_is_refused_before_any_decision(w: Wor
     task, step = await w.running(COMPLETE.id)
     before = len(await w.events())
     with pytest.raises(NotFoundError, match="tool"):
-        await w.executor.execute(task.id, step.id, COMPLETE_ARGS)
+        await w.execute(task.id, step.id)
     await nothing_written(w, before)
     assert (await w.task(task.id)).state is TaskState.EXECUTING
 
@@ -193,7 +191,7 @@ async def test_a_step_without_a_success_condition_is_refused(w: World) -> None:
     task, step = await w.running(ECHO.id, conditions=())
     before = len(await w.events())
     with pytest.raises(ExecutorError, match="declares no success condition"):
-        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+        await w.execute(task.id, step.id)
     await nothing_written(w, before)
     assert (await w.task(task.id)).state is TaskState.EXECUTING
 
@@ -202,7 +200,7 @@ async def test_a_condition_outside_the_verifiers_vocabulary_is_refused(w: World)
     task, step = await w.running(ECHO.id, conditions=(OK, "made.up", "also.made_up"))
     before = len(await w.events())
     with pytest.raises(ExecutorError, match="made.up, also.made_up"):
-        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+        await w.execute(task.id, step.id)
     await nothing_written(w, before)
 
 
@@ -214,7 +212,7 @@ async def test_a_capability_without_a_verifier_is_refused_before_any_decision() 
     await w.store.grant(policy)
     before = len(await w.events())
     with pytest.raises(NotFoundError, match="verifier"):
-        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+        await w.execute(task.id, step.id)
     assert len(await w.events()) == before
     assert w.tool(GUARDED_ECHO.id).calls == ()
     assert await w.store.uses(policy.id) == 0
@@ -225,14 +223,14 @@ async def test_the_tool_is_looked_up_before_the_verifier() -> None:
     w = world(tools=(), verifiers=())
     task, step = await w.running(ECHO.id)
     with pytest.raises(NotFoundError, match="tool"):
-        await w.executor.execute(task.id, step.id, ECHO_ARGS)
+        await w.execute(task.id, step.id)
 
 
 async def test_an_incoherent_approval_is_refused_before_anything(w: World) -> None:
     """A GRANTED request of this step that names another capability: the store was tampered
     with, or another executor's request landed here. Refused before any write."""
     task, step = await w.running(GUARDED_NOTE.id)
-    asked = await w.executor.execute(task.id, step.id, NOTE_ARGS)
+    asked = await w.execute(task.id, step.id)
     assert asked.approval is not None
     await w.engine.approve(task.id, await w.answered(asked.approval))
     await w.engine.start(task.id)
@@ -247,7 +245,7 @@ async def test_an_incoherent_approval_is_refused_before_anything(w: World) -> No
     await w.answered(foreign)
     before = len(await w.events())
     with pytest.raises(ApprovalMismatchError):
-        await w.executor.execute(task.id, step.id, NOTE_ARGS)
+        await w.execute(task.id, step.id)
     await nothing_written(w, before)
     assert await w.store.for_capability(GUARDED_NOTE.id) == ()
 
@@ -274,7 +272,7 @@ def test_the_approval_ttl_cap_is_seven_days_and_inclusive() -> None:
 
 async def test_allowed_runs_the_tool_records_it_and_completes_the_step(w: World) -> None:
     task, step = await w.running(ECHO.id)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.decision.outcome is PermissionOutcome.ALLOWED
     assert execution.authorization is None
     assert execution.approval is None
@@ -305,7 +303,7 @@ async def test_allowed_runs_the_tool_records_it_and_completes_the_step(w: World)
     assert executed.capability_id == ECHO.id
     assert (executed.task_id, executed.step_id) == (task.id, step.id)
     assert executed.tool_name == w.tool(ECHO.id).name
-    assert executed.device_id is None
+    assert executed.device_id == w.node.id
     assert executed.created_at == execution.result.created_at
     assert executed.error is None
     assert executed.summary == f"execute: SUCCEEDED core.echo by {w.tool(ECHO.id).name}"
@@ -314,15 +312,15 @@ async def test_allowed_runs_the_tool_records_it_and_completes_the_step(w: World)
         "result_id": str(execution.result.id),
         "targets": (),
         "duration_ms": 0,
-        "device": LOCAL_DEVICE,
+        "device": str(w.node.id),
         "uses": None,
     }
 
 
 async def test_denied_denies_the_task_and_runs_nothing(w: World) -> None:
-    task, step = await w.running(NOTE.id)
     outside = {"path": "workspace/other/x.md", "body": "..."}
-    execution = await w.executor.execute(task.id, step.id, outside)
+    task, step = await w.running(NOTE.id, arguments=outside)
+    execution = await w.execute(task.id, step.id)
     assert execution.decision.outcome is PermissionOutcome.DENIED
     assert execution.result is None and execution.approval is None
     assert execution.task.state is TaskState.DENIED
@@ -335,14 +333,14 @@ async def test_denied_denies_the_task_and_runs_nothing(w: World) -> None:
 
 async def test_high_risk_is_denied_too(w: World) -> None:
     task, step = await w.running(HIGH.id)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.task.state is TaskState.DENIED
     assert w.tool(HIGH.id).calls == ()
 
 
 async def test_requires_approval_builds_the_request_and_lets_the_task_wait(w: World) -> None:
     task, step = await w.running(NOTE.id, requires_authorization=True)
-    execution = await w.executor.execute(task.id, step.id, SECRET_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
     assert execution.result is None
     approval = execution.approval
@@ -375,7 +373,7 @@ async def test_requires_approval_builds_the_request_and_lets_the_task_wait(w: Wo
 async def test_the_approval_ttl_is_the_executors(w: World) -> None:
     short = world(approval_ttl=timedelta(minutes=5))
     task, step = await short.running(GUARDED_ECHO.id)
-    execution = await short.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await short.execute(task.id, step.id)
     assert execution.approval is not None
     assert execution.approval.expires_at == execution.decision.created_at + timedelta(minutes=5)
     assert execution.approval.targets == ()
@@ -390,7 +388,7 @@ async def test_the_approval_ttl_is_the_executors(w: World) -> None:
 async def approved_and_resumed(w: World, capability_id: CapabilityId, arguments: Any) -> Any:
     """Ask, let the user grant, resume: the task is EXECUTING again with the step RUNNING."""
     task, step = await w.running(capability_id, requires_authorization=True)
-    asked = await w.executor.execute(task.id, step.id, arguments)
+    asked = await w.execute(task.id, step.id)
     assert asked.approval is not None
     w.clock.advance(timedelta(minutes=1))
     approval = await w.answered(asked.approval)  # respond first, then the engine (ADR 0015 §6)
@@ -405,7 +403,7 @@ async def test_a_granted_approval_becomes_a_grant_that_is_recorded_consumed_and_
 ) -> None:
     task, step, approval, asked = await approved_and_resumed(w, NOTE.id, NOTE_ARGS)
     before = len(await w.events(task.id))
-    execution = await w.executor.execute(task.id, step.id, NOTE_ARGS)
+    execution = await w.execute(task.id, step.id)
     grant = execution.authorization
     assert grant is not None
     assert grant.id == AuthorizationId(uuid5(AUTHORIZATION_NAMESPACE, str(approval.id)))
@@ -464,7 +462,7 @@ async def test_the_grant_is_born_at_the_executors_now_and_consumed_at_the_decisi
         return await original(authorization_id, now=now)
 
     w.store.consume = spy  # type: ignore[method-assign]
-    execution = await w.executor.execute(task.id, step.id, NOTE_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.authorization is not None
     assert execution.authorization.created_at == w.now
     assert seen == [execution.decision.created_at]
@@ -484,7 +482,7 @@ async def test_the_same_approval_never_mints_a_second_grant(w: World) -> None:
     )
     await w.store.grant(minted)  # stored, not recorded: the crash window of ADR 0013 §8
     before = len(await w.events(task.id))
-    execution = await w.executor.execute(task.id, step.id, NOTE_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.authorization == minted
     assert len(await w.store.for_capability(NOTE.id)) == 1
     types = (await w.event_types(task.id))[before:]
@@ -494,7 +492,7 @@ async def test_the_same_approval_never_mints_a_second_grant(w: World) -> None:
 
 async def test_a_grant_already_recorded_is_not_recorded_again(w: World) -> None:
     task, step, approval, _ = await approved_and_resumed(w, NOTE.id, NOTE_ARGS)
-    await w.executor.execute(task.id, step.id, NOTE_ARGS)
+    await w.execute(task.id, step.id)
     # the step is closed; a second call with the same approval on a fresh RUNNING step of
     # another task cannot reuse it (bound), but the grant lookup itself is what we probe:
     grants = await w.store.for_capability(NOTE.id)
@@ -526,7 +524,7 @@ async def test_a_stored_grant_for_another_approval_under_the_same_id_is_refused(
     await w.store.grant(foreign)
     before = len(await w.events(task.id))
     with pytest.raises(ExecutorError, match="exists for another approval"):
-        await w.executor.execute(task.id, step.id, NOTE_ARGS)
+        await w.execute(task.id, step.id)
     assert len(await w.events(task.id)) == before
     assert w.tool(NOTE.id).calls == ()
 
@@ -546,7 +544,7 @@ async def test_an_exhausted_grant_found_in_the_store_asks_again_and_names_it(w: 
     )
     await w.store.grant(minted)
     await w.store.consume(minted.id, now=w.now)
-    execution = await w.executor.execute(task.id, step.id, NOTE_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.authorization == minted
     assert execution.decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
     assert execution.decision.authorization_id == minted.id
@@ -564,7 +562,7 @@ async def test_a_usable_grant_found_in_the_store_is_consumed_and_used(w: World) 
     task, step = await w.running(GUARDED_ECHO.id)
     policy = grant_for(GUARDED_ECHO, created_at=w.now, max_uses=3)
     await w.store.grant(policy)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.authorization == policy
     assert execution.decision.outcome is PermissionOutcome.ALLOWED
     assert await w.store.uses(policy.id) == 1
@@ -578,7 +576,7 @@ async def test_a_grant_the_decision_does_not_rest_on_is_not_consumed(w: World) -
     task, step = await w.running(ECHO.id)
     policy = grant_for(ECHO, created_at=w.now, max_uses=1)
     await w.store.grant(policy)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.authorization == policy
     assert execution.decision.outcome is PermissionOutcome.ALLOWED
     assert execution.decision.metadata["rule"] == Rule.ALLOW.value
@@ -592,7 +590,7 @@ async def test_a_grant_expiring_at_the_decisions_instant_is_not_consumed(w: Worl
     task, step = await w.running(GUARDED_ECHO.id)
     at_now = grant_for(GUARDED_ECHO, created_at=w.now, expires_at=w.now)
     await w.store.grant(at_now)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
     assert await w.store.uses(at_now.id) == 0
     assert w.tool(GUARDED_ECHO.id).calls == ()
@@ -620,7 +618,7 @@ async def test_a_grant_spent_by_someone_else_asks_again() -> None:
     task, step = await w.running(GUARDED_ECHO.id)
     policy = grant_for(GUARDED_ECHO, created_at=w.now, max_uses=1)
     await w.store.grant(policy)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.decision.outcome is PermissionOutcome.ALLOWED
     assert execution.approval is not None
     assert execution.approval.decision_id == execution.decision.id
@@ -636,7 +634,7 @@ async def test_a_grant_that_vanished_fails_the_step_and_runs_nothing() -> None:
     task, step = await w.running(GUARDED_ECHO.id)
     policy = grant_for(GUARDED_ECHO, created_at=w.now)
     await w.store.grant(policy)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.decision.outcome is PermissionOutcome.ALLOWED
     assert execution.result is None and execution.approval is None
     assert execution.graph.states[step.id] is StepState.FAILED
@@ -668,7 +666,7 @@ def _world_with(tool: FakeTool) -> World:
 async def test_a_tool_that_raises_is_a_failed_result_recorded_then_the_step_fails() -> None:
     w = _world_with(_RaisingTool(ECHO.id, FakeClock(), FakeIdGenerator(), name="fire"))
     task, step = await w.running(ECHO.id)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.result is not None
     assert execution.result.status is ExecutionStatus.FAILED
     assert execution.result.error is not None
@@ -689,7 +687,7 @@ async def test_a_failed_result_fails_the_step_with_the_tools_error() -> None:
     tool = FakeTool(ECHO.id, FakeClock(), FakeIdGenerator(), status=ExecutionStatus.FAILED)
     w = _world_with(tool)
     task, step = await w.running(ECHO.id)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.result is not None and execution.result.error is None
     failed = (await w.events(task.id))[-1]
     assert failed.event_type is E.STEP_FAILED
@@ -705,7 +703,7 @@ async def test_a_failed_result_fails_the_step_with_the_tools_error() -> None:
 async def test_any_status_but_succeeded_fails_the_step(status: ExecutionStatus) -> None:
     w = _world_with(FakeTool(ECHO.id, FakeClock(), FakeIdGenerator(), status=status))
     task, step = await w.running(ECHO.id)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.graph.states[step.id] is StepState.FAILED
     failed = (await w.events(task.id))[-1]
     assert failed.error is not None
@@ -716,7 +714,7 @@ async def test_a_tool_that_refuses_the_decision_fails_the_step_without_a_run() -
     ahead = FakeClock(FakeClock().now() + timedelta(days=1))
     w = _world_with(FakeTool(ECHO.id, ahead, FakeIdGenerator(), name="late"))
     task, step = await w.running(ECHO.id)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.result is None
     assert execution.graph.states[step.id] is StepState.FAILED
     types = await w.event_types(task.id)
@@ -730,9 +728,9 @@ async def test_a_tool_that_refuses_the_decision_fails_the_step_without_a_run() -
 
 
 async def test_the_executor_calls_the_tool_only_with_an_allowed_decision(w: World) -> None:
-    for capability, arguments in ((ECHO, ECHO_ARGS), (NOTE, NOTE_ARGS), (HIGH, ECHO_ARGS)):
+    for capability in (ECHO, NOTE, HIGH):
         task, step = await w.running(capability.id)
-        await w.executor.execute(task.id, step.id, arguments)
+        await w.execute(task.id, step.id)
     for tool in w.fake_tools.values():
         for call in tool.calls:
             assert call.decision.outcome is PermissionOutcome.ALLOWED
@@ -745,7 +743,7 @@ async def test_neither_arguments_nor_output_ever_enter_the_audit(w: World) -> No
     secret_tool = FakeTool(NOTE.id, w.clock, w.ids, name="notes", output={"echo": "SECRET-OUTPUT"})
     w = _world_with(secret_tool)
     task, step = await w.running(NOTE.id)
-    execution = await w.executor.execute(task.id, step.id, SECRET_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.result is not None
     assert execution.result.output == {"echo": "SECRET-OUTPUT"}
     serialized = json.dumps([event.model_dump(mode="json") for event in await w.events()])
@@ -778,7 +776,7 @@ async def test_a_tool_refusal_and_a_raise_are_told_apart_from_a_denial(w: World)
 
 async def test_a_passed_verification_completes_the_step_and_is_recorded(w: World) -> None:
     task, step = await w.running(ECHO.id, conditions=(OK,))
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.verification is not None
     assert execution.verification.passed
     assert execution.verification.conditions == (OK,)
@@ -803,7 +801,7 @@ async def test_a_passed_verification_completes_the_step_and_is_recorded(w: World
         ECHO.id,
     )
     assert verified.tool_name == w.tool(ECHO.id).name
-    assert verified.device_id is None
+    assert verified.device_id == w.node.id
     assert verified.error is None
     assert verified.summary == f"verify: passed core.echo by {verifier.name}"
     assert execution.result is not None
@@ -813,7 +811,7 @@ async def test_a_passed_verification_completes_the_step_and_is_recorded(w: World
         "verifier": verifier.name,
         "conditions": (OK,),
         "failed": (),
-        "device": LOCAL_DEVICE,
+        "device": str(w.node.id),
     }
 
 
@@ -821,7 +819,7 @@ async def test_a_failed_verification_fails_the_step_and_the_task_with_the_metada
     w: World,
 ) -> None:
     task, step = await w.running(ECHO.id, conditions=(BAD,))
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.result is not None
     assert execution.result.status is ExecutionStatus.SUCCEEDED  # the tool's word
     assert len(w.tool(ECHO.id).calls) == 1
@@ -856,8 +854,8 @@ async def test_a_failed_verification_fails_the_step_and_the_task_with_the_metada
     assert error.cause == BAD_FAILURE.message
     assert error.tool_name == w.tool(ECHO.id).name
     assert error.model is None
-    assert error.device_id is None
-    assert error.details["device"] == LOCAL_DEVICE
+    assert error.device_id == w.node.id
+    assert error.details["device"] == str(w.node.id)
     assert error.attempted_fix is None
     assert error.successful_fix is None
     assert error.retryable is BAD_FAILURE.retryable
@@ -876,7 +874,7 @@ async def test_a_failed_verification_fails_the_step_and_the_task_with_the_metada
 
 async def test_every_failed_condition_is_named_and_a_passed_one_is_not(w: World) -> None:
     task, step = await w.running(ECHO.id, conditions=(OK, BAD))
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.verification is not None
     error = execution.verification.error
     assert error is not None
@@ -894,7 +892,7 @@ async def test_two_failed_conditions_make_one_error_with_two_failures() -> None:
     )
     w = world(verifiers=(verifier,))
     task, step = await w.running(ECHO.id, conditions=(BAD, "fake.worse"))
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.verification is not None
     error = execution.verification.error
     assert error is not None
@@ -907,7 +905,7 @@ async def test_two_failed_conditions_make_one_error_with_two_failures() -> None:
 
 async def test_a_failed_verification_cancels_the_dependent_steps(w: World) -> None:
     task, first, second = await w.running_pair(ECHO.id, conditions=(BAD,))
-    execution = await w.executor.execute(task.id, first.id, ECHO_ARGS)
+    execution = await w.execute(task.id, first.id)
     assert execution.graph.states[first.id] is StepState.FAILED
     assert execution.graph.states[second.id] is StepState.CANCELLED
     assert execution.graph.is_blocked
@@ -924,7 +922,7 @@ async def test_a_verifier_that_raises_fails_the_step_and_the_task_without_the_me
     verifier = _CrashingVerifier(ECHO.id, name="crashing")
     w = world(verifiers=(verifier,))
     task, step = await w.running(ECHO.id, conditions=(OK,))
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert len(verifier.calls) == 1
     assert execution.verification is not None
     assert not execution.verification.passed
@@ -964,7 +962,7 @@ async def test_a_result_that_did_not_succeed_is_not_verified(status: ExecutionSt
     verifier is not consulted (ADR 0014 §4, decision C)."""
     w = _world_with(FakeTool(ECHO.id, FakeClock(), FakeIdGenerator(), status=status))
     task, step = await w.running(ECHO.id, conditions=(BAD,))
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.verification is None
     assert w.verifier(ECHO.id).calls == ()
     types = await w.event_types(task.id)
@@ -977,7 +975,7 @@ async def test_a_result_that_did_not_succeed_is_not_verified(status: ExecutionSt
 async def test_a_tool_that_raises_is_not_verified_either() -> None:
     w = _world_with(_RaisingTool(ECHO.id, FakeClock(), FakeIdGenerator(), name="fire"))
     task, step = await w.running(ECHO.id)
-    execution = await w.executor.execute(task.id, step.id, ECHO_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.verification is None
     assert w.verifier(ECHO.id).calls == ()
     assert execution.task.state is TaskState.EXECUTING
@@ -986,9 +984,9 @@ async def test_a_tool_that_raises_is_not_verified_either() -> None:
 async def test_the_verifier_is_consulted_only_after_a_run_and_with_the_runs_result(
     w: World,
 ) -> None:
-    for capability, arguments in ((ECHO, ECHO_ARGS), (NOTE, NOTE_ARGS), (HIGH, ECHO_ARGS)):
+    for capability in (ECHO, NOTE, HIGH):
         task, step = await w.running(capability.id)
-        await w.executor.execute(task.id, step.id, arguments)
+        await w.execute(task.id, step.id)
     for capability_id, verifier in w.fake_verifiers.items():
         tool = w.tool(capability_id)
         assert len(verifier.calls) == len(tool.calls)
@@ -1011,7 +1009,7 @@ async def test_neither_arguments_output_nor_compared_content_enter_the_verificat
     w = world(tools=(secret_tool,), verifiers=(verifier,))
     w.fake_tools = {NOTE.id: secret_tool}
     task, step = await w.running(NOTE.id, conditions=(BAD,))
-    execution = await w.executor.execute(task.id, step.id, SECRET_ARGS)
+    execution = await w.execute(task.id, step.id)
     assert execution.task.state is TaskState.FAILED
     serialized = json.dumps([event.model_dump(mode="json") for event in await w.events()])
     assert "SECRET-BODY" not in serialized

@@ -251,10 +251,14 @@ class FakeAuditLog:
 
 
 class FakeDeviceRegistry:
-    """Nodes by id (port :class:`~ela.ports.DeviceRegistryPort`)."""
+    """Nodes by id (port :class:`~ela.ports.DeviceRegistryPort`).
 
-    def __init__(self) -> None:
-        self._devices: dict[DeviceId, Device] = {}
+    ``devices`` seeds the registry in the order given, as :class:`FakeCapabilityRegistry` and
+    :class:`FakeToolRegistry` do: a test that needs a node to exist should not have to await it.
+    """
+
+    def __init__(self, devices: Iterable[Device] = ()) -> None:
+        self._devices: dict[DeviceId, Device] = {device.id: device for device in devices}
 
     async def register(self, device: Device) -> None:
         if device.id in self._devices:

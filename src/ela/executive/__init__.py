@@ -5,18 +5,22 @@
 Authorization → Tool → Audit → **Verification**, and is the only caller of ``Tool.execute``
 (rule 16) and of ``complete_step`` (rule 17) in the Core. Since M5.3 nothing it needs lives only
 in memory: requests for approval and results are stored, and a retry after a crash resumes the
-step from the first write that is missing instead of running the tool again. The Planner (§13)
-and the orchestrator that walks the graph arrive with M6.2.
+step from the first write that is missing instead of running the tool again.
+
+:mod:`ela.executive.runner` is the driver above it (M6.3, ADR 0019): the loop that chooses a
+ready step, asks the Device Orchestrator where it runs, executes it and closes the task. It
+writes nothing of its own — every fact it produces is already an event of ``place``, of the
+engine or of the executor. The Planner (§13) is still to come; M6.3 executes plans, it does not
+produce them.
 """
 
-from ela.executive.errors import ExecutorError
+from ela.executive.errors import ExecutorError, RunnerError
 from ela.executive.executor import (
     APPROVAL_NAMESPACE,
     AUTHORIZATION_NAMESPACE,
     CONSUMING_RULES,
     DEFAULT_APPROVAL_TTL,
     GRANT_VANISHED,
-    LOCAL_DEVICE,
     MAX_APPROVAL_TTL,
     RECOVERED,
     TOOL_EXCEPTION,
@@ -29,6 +33,7 @@ from ela.executive.executor import (
     approved_targets,
     select_authorization,
 )
+from ela.executive.runner import OUTCOMES, RUNNABLE_STATES, Run, RunOutcome, TaskRunner
 
 __all__ = [
     "APPROVAL_NAMESPACE",
@@ -36,8 +41,9 @@ __all__ = [
     "CONSUMING_RULES",
     "DEFAULT_APPROVAL_TTL",
     "GRANT_VANISHED",
-    "LOCAL_DEVICE",
     "MAX_APPROVAL_TTL",
+    "OUTCOMES",
+    "RUNNABLE_STATES",
     "RECOVERED",
     "TOOL_EXCEPTION",
     "TOOL_REFUSED",
@@ -46,6 +52,10 @@ __all__ = [
     "Execution",
     "Executor",
     "ExecutorError",
+    "Run",
+    "RunOutcome",
+    "RunnerError",
+    "TaskRunner",
     "Verification",
     "approved_targets",
     "select_authorization",
