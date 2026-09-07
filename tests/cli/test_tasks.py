@@ -90,10 +90,14 @@ async def test_show_of_a_task_without_a_plan_has_no_steps(cli: Cli) -> None:
 
 
 async def test_show_of_a_task_that_does_not_exist_is_a_refusal(cli: Cli) -> None:
+    """And the message carries the id in the form it was typed: it is what goes in the next
+    command, not ``UUID('…')``, which is Python's syntax for building one (review of M8.2)."""
     result = await cli("task", "show", MISSING)
 
     assert result.exit_code == REFUSED
     assert "not_found" in result.stderr
+    assert MISSING in result.stderr
+    assert "UUID(" not in result.stderr
 
 
 async def test_plan_queues_the_task(cli: Cli, tmp_path: Path) -> None:

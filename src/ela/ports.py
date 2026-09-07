@@ -118,6 +118,7 @@ __all__ = [
     "check_answer",
     "check_limit",
     "check_verifiable",
+    "named",
 ]
 
 
@@ -130,13 +131,24 @@ class PortError(Exception):
     """Base class of every error a port may raise, so a caller can catch them in one clause."""
 
 
+def named(key: object) -> str:
+    """A key as the caller wrote it, and can paste back (review of M8.2).
+
+    An identifier is quoted — ``repr`` — because an empty or space-padded key has to stay
+    visible in a message. A ``UUID`` is the exception: ``repr`` gives ``UUID('…')``, which is
+    Python's syntax for building one and not the identifier anybody typed, and that string
+    travels — through the API's error body, into what the CLI prints, into the next command.
+    """
+    return str(key) if isinstance(key, UUID) else repr(key)
+
+
 class NotFoundError(PortError):
     """A ``get`` on a key the port does not hold. Never ``None``: a miss is named, not implied."""
 
     def __init__(self, kind: str, key: object) -> None:
         self.kind = kind
         self.key = key
-        super().__init__(f"{kind} {key!r} not found")
+        super().__init__(f"{kind} {named(key)} not found")
 
 
 class AlreadyExistsError(PortError):
@@ -145,7 +157,7 @@ class AlreadyExistsError(PortError):
     def __init__(self, kind: str, key: object) -> None:
         self.kind = kind
         self.key = key
-        super().__init__(f"{kind} {key!r} already exists")
+        super().__init__(f"{kind} {named(key)} already exists")
 
 
 def check_limit(limit: int | None) -> None:

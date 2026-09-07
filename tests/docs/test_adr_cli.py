@@ -27,7 +27,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = REPO_ROOT / "docs" / "adr" / "0024-cli.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
-COMMAND_ROW = re.compile(r"^\| `ela ([\w ]+)` \| (?:`(GET|POST) (/[\w{}/]*)`|\*\(([^)]*)\)\*) \|$")
+COMMAND_ROW = re.compile(
+    r"^\| `ela ([\w ]+)` \| (?:`(GET|POST) (/[\w{}/]*)`|\*\(([^)]*)\)\*) \| ((?:`\d` ?)+) \|$"
+)
 EXIT_ROW = re.compile(r"^\| `(\d)` \| ([^|]+) \|$")
 PROTOCOL_ROW = re.compile(r"^\| `(\w+)` \| `(\w+)\(\)` \| `([\w.]+)` \| ([^|]+) \|$")
 RULE_ROW = re.compile(r"^\| (\d+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$")
@@ -52,6 +54,18 @@ def documented_commands() -> dict[str, tuple[str, str] | None]:
             method, path = match.group(2), match.group(3)
             rows[match.group(1)] = None if method is None else (method, path)
     assert rows, "ADR 0024 §3 must contain the table of the commands"
+    return rows
+
+
+def documented_command_exits() -> dict[str, frozenset[int]]:
+    """command → the exit codes its row promises. Read by ``tests/cli/test_exit_codes.py``,
+    which drives every command in the three ways that fail and checks it comes back with one."""
+    rows = {
+        match.group(1): frozenset(int(code) for code in re.findall(r"\d", match.group(5)))
+        for line in adr_text().splitlines()
+        if (match := COMMAND_ROW.match(line)) is not None
+    }
+    assert rows, "ADR 0024 §3 must give each command its exit codes"
     return rows
 
 
@@ -102,6 +116,24 @@ def test_every_route_is_reachable_from_the_command_line() -> None:
     called = {route for route in documented_commands().values() if route is not None}
 
     assert called == coded_routes()
+
+
+def test_a_command_that_talks_to_ela_can_end_in_any_of_the_four_ways() -> None:
+    """It can work, be refused, be misconfigured, or find nobody there."""
+    exits = documented_command_exits()
+    calling = [name for name, route in documented_commands().items() if route is not None]
+
+    assert calling
+    assert all(exits[name] == {OK, REFUSED, CONFIGURATION, UNREACHABLE} for name in calling)
+
+
+def test_a_local_command_can_only_work_or_be_misconfigured() -> None:
+    """``init`` and ``serve`` open no client, so nothing can refuse them and no port can be
+    closed to them: the two codes that belong to a client are not theirs to produce."""
+    exits = documented_command_exits()
+    local = [name for name, route in documented_commands().items() if route is None]
+
+    assert all(exits[name] == {OK, CONFIGURATION} for name in local)
 
 
 # ----------------------------------------------------------------------------------------

@@ -13,6 +13,7 @@ from pathlib import Path
 from ela.composition import Ela
 from ela.domain import AuditEventType, TaskState
 from tests.api.support import NOTE_BODY, NOTE_PATH, note_plan
+from tests.api.test_examples import EXAMPLE, example_plan
 from tests.cli.support import Cli
 from tests.cli.test_tasks import written
 
@@ -69,3 +70,30 @@ async def test_a_whole_turn_of_ela_from_the_command_line(
     # ELA is the node that did it, and says so.
     nodes = json.loads((await cli("device", "list", "--json")).stdout)
     assert nodes[0]["available"] is True
+
+
+async def test_the_round_of_getting_started_works_from_the_documented_file(
+    cli: Cli, ela: Ela
+) -> None:
+    """``docs/GETTING_STARTED.md``, walked: the example plan sent with ``--file``, as written.
+
+    The guide tells a person to run exactly these commands on exactly this file. If either drifts
+    — the file, or what ``task plan`` does with it — the first thing a newcomer types fails in
+    their hands, and this fails first.
+    """
+    created = await cli("task", "create", "il mio primo task", "--json")
+    task_id = json.loads(created.stdout)["id"]
+
+    planned = await cli("task", "plan", task_id, "--file", str(EXAMPLE))
+    assert TaskState.QUEUED.value in planned.stdout
+
+    assert "waiting_approval" in (await cli("task", "run", task_id)).stdout
+
+    approval = json.loads((await cli("approvals", "--json")).stdout)[0]
+    await cli("task", "approve", task_id, "--approval", approval["id"])
+    assert "completed" in (await cli("task", "run", task_id)).stdout
+
+    body = example_plan()["steps"][1]["arguments"]
+    note = ela.settings.workspace.workspace_dir / body["path"]
+    assert note.read_text(encoding="utf-8") == body["body"]
+    assert (await cli("audit", "verify")).exit_code == 0
