@@ -1,6 +1,6 @@
 # 0014. Verification: condizioni di successo come vocabolario chiuso per capability, `VerifierPort` e `VerifierRegistryPort`, verifica prima di `complete_step`, verifica fallita → task FAILED, `EXECUTION_VERIFIED`, regole 17 e 18
 
-- **Stato:** Accettata. Le finestre 8a–8c e 9a di §6 sono riparate da ADR 0015 §5 e §7 (ri-verifica sul risultato persistito, chiusura sul risultato riletto, `fail` al retry); `Execution.verification` di §8 può essere riletta da `EXECUTION_VERIFIED` su una ripresa, con `failures` vuota.
+- **Stato:** Accettata. Le finestre 8a–8c e 9a di §6 sono riparate da ADR 0015 §5 e §7 (ri-verifica sul risultato persistito, chiusura sul risultato riletto, `fail` al retry); `Execution.verification` di §8 può essere riletta da `EXECUTION_VERIFIED` su una ripresa, con `failures` vuota. **ADR 0019 §4**: dove §6 e la tabella di §7 dicono `device_id` `None` e `details["device"]` `"local"`, ora c'è il nodo che l'orchestrator ha scelto, sul campo di §64 e nel payload. **ADR 0019 §7**: la riga "il task resta EXECUTING" per un fallimento del tool è chiusa dal runner, che fallisce il task con lo **stesso** `ErrorMetadata` dello `STEP_FAILED`.
 - **Data:** 2026-09-06
 - **Riferimenti spec:** §13, §14, §15, §20, §27, §32, §33, §57, §58, §63, §64, §65
 - **Milestone:** M5.2

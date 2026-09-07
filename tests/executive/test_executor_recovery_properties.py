@@ -122,7 +122,7 @@ async def run(
     reference, _, tool_ref, _, task_ref, step_ref, arguments = await prepared(
         capability_key, grant, tool_status, verdict
     )
-    baseline = await reference.executor.execute(task_ref.id, step_ref.id, arguments)
+    baseline = await reference.execute(task_ref.id, step_ref.id)
     expected = await outcome(reference, task_ref, step_ref)
 
     w, crashes, tool, verifier, task, step, arguments = await prepared(
@@ -131,12 +131,12 @@ async def run(
     arm(crashes, crash)
     crashed = False
     try:
-        await w.executor.execute(task.id, step.id, arguments)
+        await w.execute(task.id, step.id)
     except SimulatedCrash:
         crashed = True
     crashes.disarm()
     if crashed:
-        await w.executor.execute(task.id, step.id, arguments)
+        await w.execute(task.id, step.id)
 
     ran = tool_ref.calls != ()
     spent = baseline.result is not None and baseline.result.authorization_id is not None
@@ -190,7 +190,7 @@ def test_every_crash_point_is_reachable(crash: Crash) -> None:
         )
         arm(crashes, crash)
         try:
-            await w.executor.execute(task.id, step.id, arguments)
+            await w.execute(task.id, step.id)
         except SimulatedCrash:
             return True
         return False

@@ -68,6 +68,13 @@ DEVICE_PORT_ALLOWED = (
 #: reach the Task Engine cannot fail a task because it found no node.
 DEVICES_PACKAGE = f"{ROOT_PACKAGE}.{DEVICES_DIR}"
 DEVICES_FORBIDDEN = (f"{ROOT_PACKAGE}.{TASKS_DIR}",)
+#: Rule 23 (ADR 0018 §5): the arguments of a step are the user's content (§57). They live in the
+#: plan and in the private database; the audit log records the *targets* of a call, never what was
+#: passed. With ADR 0018 the arguments became a persisted field read in three places, so the
+#: convention of the executor's docstring becomes a rule.
+AUDIT_EVENT = "AuditEvent"
+ARGUMENTS_NAME = "arguments"
+
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
 TESTING_DIR = "testing"
@@ -104,6 +111,10 @@ AUTHORIZATION_READER = PERSISTENCE_MAPPERS
 #: tool's — an exemption by name, closed and tested.
 EXECUTOR_MODULE = Path("executive") / "executor.py"
 EXECUTE_METHOD = "execute"
+#: Rule 16 (ADR 0019 §3): ``self._executor.execute(...)`` is the runner driving the executor, not
+#: a second place where a tool runs. One receiver name, as narrow as the SQLAlchemy exemption
+#: below: everything else called ``.execute(...)`` outside the executor is still reported.
+EXECUTOR_RECEIVERS = frozenset({"_executor"})
 SQL_EXECUTORS = frozenset({"session", "connection", "cursor"})
 # Rule 17 (ADR 0014 §9): only the executor completes a step, and only after verification.
 COMPLETE_STEP_METHOD = "complete_step"
@@ -634,7 +645,10 @@ def check_tool_execute_callers(pkg_root: Path) -> list[Violation]:
     The executor is the only place where a tool runs, and it runs it only with an ``ALLOWED``
     decision in hand; a second caller would be a second place to get that wrong. Reported: any
     call whose callee is an attribute named ``execute``, unless the receiver is a bare name in
-    :data:`SQL_EXECUTORS` (``session.execute(...)`` of SQLAlchemy in the persistence adapters).
+    :data:`SQL_EXECUTORS` (``session.execute(...)`` of SQLAlchemy in the persistence adapters) or
+    an attribute in :data:`EXECUTOR_RECEIVERS` (``self._executor.execute(...)``: the runner
+    driving the executor, ADR 0019 §3 — one step still runs in one place, and this is that place
+    being *called*, not a second tool call).
     A heuristic on names, like rules 5, 11, 12 and 15.
     """
     rule = "tool-execute-called-only-by-the-executor"
@@ -651,12 +665,17 @@ def check_tool_execute_callers(pkg_root: Path) -> list[Violation]:
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == EXECUTE_METHOD
             and not _is_sql_executor(node.func.value)
+            and not _is_the_executor(node.func.value)
         )
     return found
 
 
 def _is_sql_executor(receiver: ast.expr) -> bool:
     return isinstance(receiver, ast.Name) and receiver.id in SQL_EXECUTORS
+
+
+def _is_the_executor(receiver: ast.expr) -> bool:
+    return isinstance(receiver, ast.Attribute) and receiver.attr in EXECUTOR_RECEIVERS
 
 
 def check_step_completers(pkg_root: Path) -> list[Violation]:
@@ -785,6 +804,52 @@ def _has_writing_flag(flags: ast.expr | None) -> bool:
     return False
 
 
+def check_audit_arguments(pkg_root: Path) -> list[Violation]:
+    """Rule 23: no ``AuditEvent`` is built with the arguments of a call anywhere inside it.
+
+    ADR 0018 §5. What a tool was called *with* can be the user's content — the body of a note, the
+    text of a message — and §57 keeps that in the private database: the plan holds it, the
+    ``ExecutionResult`` holds it, the audit log holds the *targets* the scope constrains and the
+    decision that allowed them. Until M6.3 the arguments were a parameter and the rule was a
+    sentence in a docstring; now they are a field of ``TaskStep`` that three modules read, and a
+    sentence is not a guarantee.
+    Reported, anywhere in the subtree of an ``AuditEvent(...)`` call: the name ``arguments`` as a
+    variable, as an attribute, as a keyword or as a string literal (a payload key). Closed-world
+    on names, like rules 5, 12, 15, 16 and 20: in a repository where the word has one meaning, a
+    false positive costs less than a false negative.
+    """
+    rule = "arguments-never-enter-the-audit"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for call in ast.walk(tree):
+            if not (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == AUDIT_EVENT
+            ):
+                continue
+            for node in ast.walk(call):
+                mention = _mentions_arguments(node)
+                if mention is not None:
+                    found.append(Violation(rule, name, mention, node.lineno))
+    return found
+
+
+def _mentions_arguments(node: ast.AST) -> str | None:
+    """How ``node`` names the arguments of a call, or ``None`` if it does not."""
+    if isinstance(node, ast.Name) and node.id == ARGUMENTS_NAME:
+        return ARGUMENTS_NAME
+    if isinstance(node, ast.Attribute) and node.attr == ARGUMENTS_NAME:
+        return f".{ARGUMENTS_NAME}"
+    if isinstance(node, ast.keyword) and node.arg == ARGUMENTS_NAME:
+        return f"{ARGUMENTS_NAME}="
+    if isinstance(node, ast.Constant) and node.value == ARGUMENTS_NAME:
+        return f'"{ARGUMENTS_NAME}"'
+    return None
+
+
 def check_device_availability_readers(pkg_root: Path) -> list[Violation]:
     """Rule 20: outside ``ela.devices`` and the mapper nobody touches ``availability``.
 
@@ -875,4 +940,5 @@ RULES: dict[str, Rule] = {
     "device-availability-readers": check_device_availability_readers,
     "device-port-readers": check_device_port_readers,
     "devices-isolation": check_devices_isolation,
+    "audit-arguments": check_audit_arguments,
 }

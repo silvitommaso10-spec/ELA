@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.audit.chain import AuditChainError
+from ela.devices import DeviceOrchestrator, DeviceRegistry, local_device
 from ela.domain import (
     Actor,
     ActorKind,
@@ -25,6 +26,7 @@ from ela.domain import (
     AuditEventType,
     CapabilityId,
     IntentId,
+    JsonMapping,
     PlanId,
     StepId,
     StepState,
@@ -34,7 +36,13 @@ from ela.domain import (
     TaskState,
     TaskStep,
 )
-from ela.executive import VERIFICATION_FAILED, Executor, ExecutorError
+from ela.executive import (
+    VERIFICATION_FAILED,
+    Execution,
+    Executor,
+    ExecutorError,
+    TaskRunner,
+)
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
     SqlAuditLog,
@@ -47,7 +55,7 @@ from ela.infrastructure.persistence import (
 from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS
 from ela.permissions import CORE_ECHO, WORKSPACE_WRITE_NOTE, PermissionGuardian, catalogue_v01
 from ela.tasks.engine import TaskEngine
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.testing.fakes import FakeClock, FakeDeviceRegistry, FakeIdGenerator
 from ela.tools import (
     ECHO_MESSAGE_MATCHES,
     NOTE_CONTENT_MATCHES,
@@ -58,6 +66,7 @@ from ela.tools import (
 from tests.contracts.implementations import MEMORY_URL
 from tests.domain.examples import USER_INTENT
 from tests.executive.support import (
+    HEARTBEAT_TTL,
     Crashes,
     Crashing,
     SimulatedCrash,
@@ -75,6 +84,11 @@ CONDITIONS: dict[CapabilityId, tuple[str, ...]] = {
     CORE_ECHO: (ECHO_MESSAGE_MATCHES,),
     WORKSPACE_WRITE_NOTE: (NOTE_EXISTS, NOTE_CONTENT_MATCHES),
 }
+ARGUMENTS: dict[CapabilityId, JsonMapping] = {
+    CORE_ECHO: {"message": "hello"},
+    WORKSPACE_WRITE_NOTE: {"path": NOTE_PATH, "body": "hi"},
+}
+"""What each capability is called with; on the step since ADR 0018."""
 
 
 class SqlPipeline:
@@ -91,6 +105,15 @@ class SqlPipeline:
         self.guardian = PermissionGuardian(self.registry, self.clock, self.ids, self.audit)
         self.tools = tools_v01(root=workspace, clock=self.clock, ids=self.ids)
         self.verifiers = verifiers_v01(root=workspace)
+        self.device = local_device(created_at=self.clock.now()).model_copy(
+            update={
+                "last_seen_at": self.clock.now(),
+                "available_tools": tuple(tool.name for tool in self.tools.tools()),
+            }
+        )
+        self.devices = DeviceRegistry(
+            FakeDeviceRegistry((self.device,)), self.clock, heartbeat_ttl=HEARTBEAT_TTL
+        )
         self.engine = TaskEngine(
             self.repository,
             self.audit,
@@ -115,9 +138,36 @@ class SqlPipeline:
             ids=self.ids,
             actor=ELA,
         )
+        self._wire_the_walk()
+
+    def _wire_the_walk(self) -> None:
+        """The orchestrator and the runner over whatever audit this pipeline ended up with.
+
+        Called again by :class:`CrashingSqlPipeline`, which swaps the ports underneath: an
+        orchestrator holding the audit log of before the swap would write outside the crash.
+        """
+        self.orchestrator = DeviceOrchestrator(
+            self.devices, self.tools, self.audit, self.ids, self.clock
+        )
+        self.runner = TaskRunner(
+            engine=self.engine,
+            orchestrator=self.orchestrator,
+            executor=self.executor,
+            repository=self.repository,
+            results=self.results,
+            audit=self.audit,
+        )
+
+    async def execute(self, task_id: TaskId, step_id: StepId) -> Execution:
+        return await self.executor.execute(task_id, step_id, device_id=self.device.id)
 
     async def running(
-        self, capability_id: CapabilityId, *, requires_authorization: bool = False
+        self,
+        capability_id: CapabilityId,
+        *,
+        requires_authorization: bool = False,
+        arguments: JsonMapping | None = None,
+        start: bool = True,
     ) -> tuple[TaskStep, TaskId]:
         intent = USER_INTENT.model_copy(update={"id": IntentId(self.ids.new_uuid())})
         task = await self.engine.create(intent)
@@ -128,6 +178,7 @@ class SqlPipeline:
             created_at=self.clock.now(),
             goal=f"run {capability_id}",
             required_capabilities=(spec.id,),
+            arguments=ARGUMENTS[capability_id] if arguments is None else arguments,
             risk=spec.risk,
             expected_result="done",
             success_conditions=CONDITIONS[capability_id],
@@ -142,8 +193,9 @@ class SqlPipeline:
         )
         await self.engine.plan(task.id, plan)
         await self.engine.queue(task.id)
-        await self.engine.start(task.id)
-        await self.engine.start_step(task.id, step.id)
+        if start:
+            await self.engine.start(task.id, device_id=self.device.id)
+            await self.engine.start_step(task.id, step.id, device_id=self.device.id)
         return step, task.id
 
     async def types(self, task_id: TaskId) -> list[AuditEventType]:
@@ -167,7 +219,7 @@ def p(engine: AsyncEngine, tmp_path: Path) -> SqlPipeline:
 
 async def test_echo_leaves_a_verified_chain(p: SqlPipeline, engine: AsyncEngine) -> None:
     step, task_id = await p.running(CORE_ECHO)
-    execution = await p.executor.execute(task_id, step.id, {"message": "hello"})
+    execution = await p.execute(task_id, step.id)
     assert execution.result is not None and execution.result.output == {"message": "hello"}
     await p.engine.complete(task_id, result_for(task_id))
     types = await p.types(task_id)
@@ -185,7 +237,7 @@ async def test_write_note_leaves_the_file_and_a_verified_chain(
     p: SqlPipeline, engine: AsyncEngine, tmp_path: Path
 ) -> None:
     step, task_id = await p.running(WORKSPACE_WRITE_NOTE)
-    execution = await p.executor.execute(task_id, step.id, {"path": NOTE_PATH, "body": "hi"})
+    execution = await p.execute(task_id, step.id)
     assert execution.graph.states[step.id] is StepState.COMPLETED
     assert (tmp_path / "workspace" / NOTE_PATH).read_text(encoding="utf-8") == "hi"
     assert (await verify_chain(engine)).length == 10
@@ -237,7 +289,7 @@ async def test_a_failed_verification_fails_the_task_and_the_chain_still_verifies
         actor=ELA,
     )
     step, task_id = await p.running(WORKSPACE_WRITE_NOTE)
-    execution = await p.executor.execute(task_id, step.id, {"path": NOTE_PATH, "body": "hi"})
+    execution = await p.execute(task_id, step.id)
     assert execution.task.state is TaskState.FAILED
     assert execution.graph.states[step.id] is StepState.FAILED
     types = await p.types(task_id)
@@ -252,8 +304,7 @@ async def test_the_approval_flow_on_sqlite_consumes_the_grant_atomically_and_ver
     p: SqlPipeline, engine: AsyncEngine
 ) -> None:
     step, task_id = await p.running(WORKSPACE_WRITE_NOTE, requires_authorization=True)
-    arguments = {"path": NOTE_PATH, "body": "hi"}
-    asked = await p.executor.execute(task_id, step.id, arguments)
+    asked = await p.execute(task_id, step.id)
     assert asked.task.state is TaskState.WAITING_APPROVAL
     assert asked.approval is not None
     p.clock.advance(timedelta(minutes=1))
@@ -262,7 +313,7 @@ async def test_the_approval_flow_on_sqlite_consumes_the_grant_atomically_and_ver
     )
     await p.engine.approve(task_id, approval)
     await p.engine.start(task_id)
-    execution = await p.executor.execute(task_id, step.id, arguments)
+    execution = await p.execute(task_id, step.id)
     assert execution.authorization is not None
     assert await p.store.uses(execution.authorization.id) == 1
     assert execution.graph.states[step.id] is StepState.COMPLETED
@@ -282,7 +333,7 @@ async def test_a_row_altered_behind_the_adapter_breaks_the_chain(
     p: SqlPipeline, engine: AsyncEngine
 ) -> None:
     step, task_id = await p.running(CORE_ECHO)
-    await p.executor.execute(task_id, step.id, {"message": "hello"})
+    await p.execute(task_id, step.id)
     async with engine.begin() as connection:
         for name in APPEND_ONLY_TRIGGERS:
             await connection.execute(text(f"DROP TRIGGER {name}"))
@@ -300,7 +351,7 @@ async def test_a_verification_row_altered_behind_the_adapter_breaks_the_chain(
     p: SqlPipeline, engine: AsyncEngine
 ) -> None:
     step, task_id = await p.running(CORE_ECHO)
-    await p.executor.execute(task_id, step.id, {"message": "hello"})
+    await p.execute(task_id, step.id)
     async with engine.begin() as connection:
         for name in APPEND_ONLY_TRIGGERS:
             await connection.execute(text(f"DROP TRIGGER {name}"))
@@ -359,6 +410,7 @@ class CrashingSqlPipeline(SqlPipeline):
             ids=self.ids,
             actor=ELA,
         )
+        self._wire_the_walk()
 
 
 @pytest.fixture
@@ -366,11 +418,10 @@ def cp(engine: AsyncEngine, tmp_path: Path) -> CrashingSqlPipeline:
     return CrashingSqlPipeline(engine, tmp_path / "workspace")
 
 
-async def approved(cp: CrashingSqlPipeline) -> tuple[Any, Any, dict[str, str]]:
+async def approved(cp: CrashingSqlPipeline) -> tuple[Any, Any]:
     """Ask, answer, resume: an EXECUTING task whose RUNNING step has a GRANTED request."""
     step, task_id = await cp.running(WORKSPACE_WRITE_NOTE, requires_authorization=True)
-    arguments = {"path": NOTE_PATH, "body": "hi"}
-    asked = await cp.executor.execute(task_id, step.id, arguments)
+    asked = await cp.execute(task_id, step.id)
     assert asked.approval is not None
     cp.clock.advance(timedelta(minutes=1))
     answer = await cp.approvals.respond(
@@ -378,7 +429,7 @@ async def approved(cp: CrashingSqlPipeline) -> tuple[Any, Any, dict[str, str]]:
     )
     await cp.engine.approve(task_id, answer)
     await cp.engine.start(task_id)
-    return step, task_id, arguments
+    return step, task_id
 
 
 REPAIRED_ON_THE_WAY_TO_COMPLETED = {
@@ -395,13 +446,13 @@ REPAIRED_ON_THE_WAY_TO_COMPLETED = {
 async def test_a_crash_on_the_way_to_completed_is_repaired_by_the_retry_on_sqlite(
     cp: CrashingSqlPipeline, engine: AsyncEngine, window: str
 ) -> None:
-    step, task_id, arguments = await approved(cp)
+    step, task_id = await approved(cp)
     REPAIRED_ON_THE_WAY_TO_COMPLETED[window](cp.crashes)
     with pytest.raises(SimulatedCrash):
-        await cp.executor.execute(task_id, step.id, arguments)
+        await cp.execute(task_id, step.id)
     assert (await verify_chain(engine)).length == len(await cp.types(task_id))
     cp.crashes.disarm()
-    execution = await cp.executor.execute(task_id, step.id, arguments)
+    execution = await cp.execute(task_id, step.id)
     assert execution.graph.states[step.id] is StepState.COMPLETED
     assert (cp.workspace / NOTE_PATH).read_text(encoding="utf-8") == "hi"
     types = await cp.types(task_id)
@@ -434,13 +485,12 @@ async def test_window_5_on_sqlite_the_stored_request_is_asked_once(
     cp: CrashingSqlPipeline, engine: AsyncEngine
 ) -> None:
     step, task_id = await cp.running(WORKSPACE_WRITE_NOTE, requires_authorization=True)
-    arguments = {"path": NOTE_PATH, "body": "hi"}
     cp.crashes.repository.arm("save", saved_as(TaskState.WAITING_APPROVAL))
     with pytest.raises(SimulatedCrash):
-        await cp.executor.execute(task_id, step.id, arguments)
+        await cp.execute(task_id, step.id)
     (stored,) = await cp.approvals.for_task(task_id)
     cp.crashes.disarm()
-    execution = await cp.executor.execute(task_id, step.id, arguments)
+    execution = await cp.execute(task_id, step.id)
     assert execution.decision is None and execution.approval == stored
     assert execution.task.state is TaskState.WAITING_APPROVAL
     assert await cp.approvals.pending() == (stored,)
@@ -453,14 +503,14 @@ async def test_window_7a_on_sqlite_the_note_is_written_and_the_spent_grant_asks_
     cp: CrashingSqlPipeline, engine: AsyncEngine
 ) -> None:
     """Declared: the effect is on disk, nothing is stored, the single-use grant was spent."""
-    step, task_id, arguments = await approved(cp)
+    step, task_id = await approved(cp)
     cp.crashes.results.arm("add")
     with pytest.raises(SimulatedCrash):
-        await cp.executor.execute(task_id, step.id, arguments)
+        await cp.execute(task_id, step.id)
     assert (cp.workspace / NOTE_PATH).read_text(encoding="utf-8") == "hi"
     assert await cp.results.for_step(task_id, step.id) == ()
     cp.crashes.disarm()
-    execution = await cp.executor.execute(task_id, step.id, arguments)
+    execution = await cp.execute(task_id, step.id)
     assert execution.task.state is TaskState.WAITING_APPROVAL
     assert execution.approval is not None and "used 1 of 1 times" in execution.approval.prompt
     assert len(await cp.approvals.for_task(task_id)) == 2
@@ -470,13 +520,13 @@ async def test_window_7a_on_sqlite_the_note_is_written_and_the_spent_grant_asks_
 async def test_window_9_on_sqlite_is_the_engines_hole_and_the_chain_still_verifies(
     cp: CrashingSqlPipeline, engine: AsyncEngine
 ) -> None:
-    step, task_id, arguments = await approved(cp)
+    step, task_id = await approved(cp)
     cp.crashes.audit.arm("append", audit_of(E.STEP_COMPLETED))
     with pytest.raises(SimulatedCrash):
-        await cp.executor.execute(task_id, step.id, arguments)
+        await cp.execute(task_id, step.id)
     cp.crashes.disarm()
     with pytest.raises(ExecutorError, match="is COMPLETED, not RUNNING"):
-        await cp.executor.execute(task_id, step.id, arguments)
+        await cp.execute(task_id, step.id)
     types = await cp.types(task_id)
     assert E.STEP_COMPLETED not in types and types[-1] is E.EXECUTION_VERIFIED
     assert (await verify_chain(engine)).length == len(types)

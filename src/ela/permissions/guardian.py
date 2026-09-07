@@ -48,6 +48,7 @@ from ela.domain import (
     Authorization,
     CapabilitySpec,
     DecisionId,
+    DeviceId,
     JsonMapping,
     JsonValue,
     PermissionDecision,
@@ -358,12 +359,19 @@ class PermissionGuardian:
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
         authorization_uses: int = 0,
+        device_id: DeviceId | None = None,
     ) -> PermissionDecision:
         """Decide and record the decision as ``PERMISSION_DECIDED`` (§32; ADR 0011 §8).
 
         The arguments never enter the payload — they can carry the user's content (§57) — the
         targets do. If the audit log refuses the event the exception escapes and the decision is
         not returned: a decision that was not recorded does not exist.
+
+        ``device_id`` is the node the call is about (ADR 0019 §4): it reaches the audit event and
+        **nothing else**. :meth:`decide` does not take it and no rule of ADR 0011 reads it — a
+        node that could change an outcome would be a second permission axis, weaker than this one
+        and outside it, which is the mirror of why risk stays out of the orchestrator's score
+        (ADR 0017 §4).
         """
         decision = self.decide(
             capability,
@@ -398,6 +406,7 @@ class PermissionGuardian:
                 task_id=decision.task_id,
                 step_id=decision.step_id,
                 capability_id=decision.capability_id,
+                device_id=device_id,
                 decision_id=decision.id,
                 authorization_id=decision.authorization_id,
                 payload=payload,

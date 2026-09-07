@@ -1,6 +1,6 @@
 # 0003. Forma del domain model: identità, tempo, immutabilità, ordine del rischio
 
-- **Stato:** Accettata. `Authorization` vincolata (grant da approvazione ⇒ monouso e legato) e `Approval.targets` aggiunto da ADR 0012 §1. `ExecutionResult.decision_id` e `authorization_id` aggiunti da ADR 0015 §2: un risultato sa da quale decisione e quale grant è nato.
+- **Stato:** Accettata. `Authorization` vincolata (grant da approvazione ⇒ monouso e legato) e `Approval.targets` aggiunto da ADR 0012 §1. `ExecutionResult.decision_id` e `authorization_id` aggiunti da ADR 0015 §2: un risultato sa da quale decisione e quale grant è nato. **ADR 0018 §2**: `TaskStep.arguments: JsonMapping` — gli argomenti della capability dello step stanno nel piano, non nella chiamata, perché ciò che viene autorizzato sia ciò che viene eseguito anche dopo un crash; il dominio li tiene come dati e non li valida contro `input_schema` (è del Guardian, §27).
 - **Data:** 2026-09-04
 - **Riferimenti spec:** §13, §14, §16, §17, §28, §29, §32, §33, §49, §51, §63, §64
 - **Milestone:** M1.1

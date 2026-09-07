@@ -580,6 +580,43 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ..tasks import graph\n",
         "ela.tasks.graph",
     ),
+    Case(
+        "tool-executed-by-a-lookalike-receiver",
+        "tool-execute-callers",
+        "executive/loop.py",
+        "class R:\n    async def run(self, d, a):\n        return await self._tool.execute(d, a)\n",
+        ".execute(",
+    ),
+    Case(
+        "audit-arguments-as-a-payload-key",
+        "audit-arguments",
+        "executive/trace.py",
+        "from ela.domain import AuditEvent\n"
+        "def event(i, n, t, args):\n"
+        "    return AuditEvent(id=i, created_at=n, event_type=t, "
+        'payload={"arguments": args})\n',
+        '"arguments"',
+    ),
+    Case(
+        "audit-arguments-as-a-variable",
+        "audit-arguments",
+        "executive/trace.py",
+        "from ela.domain import AuditEvent\n"
+        "def event(i, n, t, arguments):\n"
+        "    return AuditEvent(id=i, created_at=n, event_type=t, "
+        'payload={"what": arguments})\n',
+        "arguments",
+    ),
+    Case(
+        "audit-arguments-from-the-step",
+        "audit-arguments",
+        "tasks/trace.py",
+        "from ela.domain import AuditEvent\n"
+        "def event(i, n, t, step):\n"
+        "    return AuditEvent(id=i, created_at=n, event_type=t, "
+        'payload={"what": step.arguments})\n',
+        ".arguments",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -602,6 +639,33 @@ ALLOWED: tuple[Case, ...] = (
         "devices-isolation",
         "devices/placement.py",
         "from ela.domain import Device\nfrom ela.ports import AuditLog\n",
+        "",
+    ),
+    Case(
+        "runner-calls-the-executor",
+        "tool-execute-callers",
+        "executive/runner.py",
+        "class R:\n"
+        "    async def run(self, t, s, d):\n"
+        "        return await self._executor.execute(t, s, device_id=d)\n",
+        "",
+    ),
+    Case(
+        "audit-targets-not-arguments",
+        "audit-arguments",
+        "executive/trace.py",
+        "from ela.domain import AuditEvent\n"
+        "def event(i, n, t, targets):\n"
+        "    return AuditEvent(id=i, created_at=n, event_type=t, "
+        'payload={"targets": list(targets)})\n',
+        "",
+    ),
+    Case(
+        "arguments-outside-an-audit-event",
+        "audit-arguments",
+        "executive/pipeline.py",
+        "async def call(tool, decision, arguments):\n"
+        "    return await tool.execute(decision, arguments)\n",
         "",
     ),
     Case("domain-stdlib-pydantic", "domain", "domain.py", "import enum\nimport pydantic\n", ""),

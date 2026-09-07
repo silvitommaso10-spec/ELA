@@ -3,6 +3,7 @@
 - **Stato:** Accettata. Review del 2026-09-06: `pending` prende `now` opzionale (§1); il presidio
   della finestra 7a è in codice — `Tool.idempotent` e il rifiuto del `ToolRegistry` (§8); le due
   regole di `recover()` sono scritte insieme (§6).
+  **ADR 0018 §4**: `execute` perde anche il parametro `arguments` (sono `step.arguments`) e prende `device_id` obbligatorio; la tabella delle finestre di §8 non cambia, ma la finestra 7b ora riscrive `targets` calcolati sugli **stessi** argomenti del run, perché il retry rilegge il piano.
 - **Data:** 2026-09-06
 - **Riferimenti spec:** §14, §27, §30, §32, §33, §54, §57, §62, §63
 - **Milestone:** M5.3

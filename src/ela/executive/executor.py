@@ -64,6 +64,7 @@ from ela.domain import (
     Authorization,
     AuthorizationId,
     CapabilitySpec,
+    DeviceId,
     ErrorMetadata,
     ExecutionId,
     ExecutionResult,
@@ -115,7 +116,6 @@ __all__ = [
     "CONSUMING_RULES",
     "DEFAULT_APPROVAL_TTL",
     "GRANT_VANISHED",
-    "LOCAL_DEVICE",
     "MAX_APPROVAL_TTL",
     "RECOVERED",
     "TOOL_EXCEPTION",
@@ -162,9 +162,6 @@ CONSUMING_RULES: Final[frozenset[Rule]] = frozenset(
 )
 """The rules under which an ``ALLOWED`` decision rests on the grant it was given (ADR 0011 §6,
 §9): only then is the grant consumed. ``ALLOW`` and ``ALLOW_WITHIN_SCOPE`` ignore the grant."""
-
-LOCAL_DEVICE: Final = "local"
-"""Where a tool runs until the Device Orchestrator (§17) exists: in the Core, ``device_id=None``."""
 
 TOOL_EXCEPTION: Final = "tool.exception"
 """Error code of a result synthesised from an exception the tool raised while acting."""
@@ -331,9 +328,15 @@ class Executor:
         self._authorization_ttl = authorization_ttl
         self._approval_ttl = approval_ttl
 
-    async def execute(self, task_id: TaskId, step_id: StepId, arguments: JsonMapping) -> Execution:
+    async def execute(self, task_id: TaskId, step_id: StepId, *, device_id: DeviceId) -> Execution:
         """Run and verify the one capability of a RUNNING step of an EXECUTING task (ADR 0013
         §1–§9, ADR 0014 §3–§4), or resume what an earlier call left unfinished (ADR 0015 §5–§7).
+
+        The arguments are the step's (``TaskStep.arguments``, ADR 0018), not the caller's: a
+        retry is the *same* call and must run on the *same* arguments, or the targets an audit
+        event records would not be the targets the tool acted on. ``device_id`` is the node the
+        orchestrator chose (ADR 0019 §4); it is mandatory because an execution without a node is
+        not a thing this system should be able to express.
 
         A retry is this same call again. The user's answer to a request this executor made is
         read from the :class:`~ela.ports.ApprovalStore`: the last GRANTED request of the step
@@ -370,6 +373,7 @@ class Executor:
                 f"step {step_id} declares no success condition; an action that cannot be "
                 "verified is not executed",
             )
+        arguments = step.arguments
         spec = self._registry.get(step.required_capabilities[0])
         tool = self._tools.get(spec.id)
         verifier = self._verifiers.get(spec.id)
@@ -419,6 +423,7 @@ class Executor:
             step=step,
             authorization=authorization,
             authorization_uses=uses,
+            device_id=device_id,
         )
         if decision.outcome is PermissionOutcome.DENIED:
             task = await self._engine.deny(task_id, decision=decision)
@@ -452,6 +457,7 @@ class Executor:
             return await self._fail(task, graph, decision, authorization, refused)
         result = produced.model_copy(
             update={
+                "device_id": device_id,
                 "decision_id": decision.id,
                 "authorization_id": None
                 if consumed is None or authorization is None
@@ -717,6 +723,7 @@ class Executor:
                 task_id=result.task_id,
                 step_id=result.step_id,
                 capability_id=result.capability_id,
+                device_id=result.device_id,
                 decision_id=result.decision_id,
                 authorization_id=result.authorization_id,
                 tool_name=tool.name,
@@ -726,7 +733,7 @@ class Executor:
                     "result_id": str(result.id),
                     "targets": _json_targets(targets),
                     "duration_ms": result.duration_ms,
-                    "device": LOCAL_DEVICE,
+                    "device": _device(result),
                     "uses": uses,
                     **({RECOVERED: True} if recovered else {}),
                 },
@@ -792,6 +799,7 @@ class Executor:
                 task_id=result.task_id,
                 step_id=result.step_id,
                 capability_id=result.capability_id,
+                device_id=result.device_id,
                 decision_id=result.decision_id,
                 authorization_id=result.authorization_id,
                 tool_name=tool.name,
@@ -802,7 +810,7 @@ class Executor:
                     "verifier": verifier.name,
                     "conditions": list(verification.conditions),
                     "failed": [_condition_of(failure) for failure in verification.failures],
-                    "device": LOCAL_DEVICE,
+                    "device": _device(result),
                     **({RECOVERED: True} if recovered else {}),
                 },
             )
@@ -817,6 +825,16 @@ def _event_about(
         if event.event_type is event_type and event.payload.get("result_id") == str(result_id):
             return event
     return None
+
+
+def _device(result: ExecutionResult) -> JsonValue:
+    """The node a result ran on, as an audit payload carries it (ADR 0019 §4).
+
+    The result is the authority, not the ``device_id`` of the call: on a resumed run the tool ran
+    in an earlier call, on the node that call chose, and reporting the node of the retry would
+    attribute the effect to whoever happens to pick the step up.
+    """
+    return None if result.device_id is None else str(result.device_id)
 
 
 def _condition_of(failure: ErrorMetadata) -> str:
@@ -845,6 +863,7 @@ def _verification_failure(
         ),
         cause="; ".join(f.message for f in failures),
         tool_name=tool.name,
+        device_id=result.device_id,
         retryable=all(f.retryable for f in failures),
         details={
             "conditions": list(conditions),
@@ -860,7 +879,7 @@ def _verification_failure(
             ],
             "result_id": str(result.id),
             "verifier": verifier.name,
-            "device": LOCAL_DEVICE,
+            "device": _device(result),
         },
     )
 

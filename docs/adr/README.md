@@ -25,6 +25,8 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0015](0015-approval-and-result-persistence.md) | Persistenza di Approval ed ExecutionResult: `ApprovalStore` ed `ExecutionResultStore`, la risposta dallo store, ripresa di uno step interrotto, finestre 5, 7b, 8, 8a–8c e 9a riparate, richieste scadute in `recover()`, regola 19 | Accettata |
 | [0016](0016-device-registry.md) | Device Registry: disponibilità derivata dall'heartbeat, nodo `local` deterministico, tabella `devices` | Accettata |
 | [0017](0017-device-orchestrator.md) | Device Orchestrator: filtri di idoneità, punteggio esplicito per i criteri di §17, attesa invece di fallimento, eventi `DEVICE_SELECTED`/`DEVICE_UNAVAILABLE`, regole 20–22 | Accettata |
+| [0018](0018-step-arguments.md) | Gli `arguments` di uno step stanno nel piano (`TaskStep.arguments`): ciò che è autorizzato è ciò che è eseguito, anche dopo un crash; regola 23 | Accettata |
+| [0019](0019-task-runner.md) | Task Runner: un ciclo ri-entrante che non scrive nulla di suo, `device_id` fino all'executor e all'audit, finestre R1–R9 | Accettata |
 
 ## Template
 

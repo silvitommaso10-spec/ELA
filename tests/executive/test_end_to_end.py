@@ -3,8 +3,9 @@ audit.
 
 The production catalogue (``catalogue_v01``), the production tools and verifiers (``tools_v01``
 and ``verifiers_v01`` on a temporary workspace), the real Guardian and the real engine; only the
-ports are fake. The orchestrator of M6.2 is played by the test: it starts the step, calls the
-executor, completes the task.
+ports are fake, plus one registered node so the Device Orchestrator of M6.2 has somewhere to
+place a step. Since M6.3 the walk itself is production code: :class:`~ela.executive.TaskRunner`
+starts the step, calls the executor and closes the task, and the test only says what the plan is.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import Any
 
 import pytest
 
+from ela.devices import DeviceOrchestrator, DeviceRegistry, local_device
 from ela.domain import (
     Actor,
     ActorKind,
@@ -33,7 +35,13 @@ from ela.domain import (
     TaskState,
     TaskStep,
 )
-from ela.executive import VERIFICATION_FAILED, Executor, ExecutorError
+from ela.executive import (
+    VERIFICATION_FAILED,
+    Execution,
+    Executor,
+    ExecutorError,
+    TaskRunner,
+)
 from ela.permissions import (
     CORE_ECHO,
     MODEL_COMPLETE,
@@ -48,6 +56,7 @@ from ela.testing.fakes import (
     FakeAuditLog,
     FakeAuthorizationStore,
     FakeClock,
+    FakeDeviceRegistry,
     FakeExecutionResultStore,
     FakeIdGenerator,
     FakeTaskRepository,
@@ -68,6 +77,7 @@ from ela.tools import (
     verifiers_v01,
 )
 from tests.domain.examples import USER_INTENT
+from tests.executive.support import HEARTBEAT_TTL
 from tests.tasks.support import ORPHAN_AFTER, result_for
 
 E = AuditEventType
@@ -79,6 +89,13 @@ CONDITIONS: dict[CapabilityId, tuple[str, ...]] = {
     WORKSPACE_WRITE_NOTE: (NOTE_EXISTS, NOTE_CONTENT_MATCHES),
 }
 """What a plan of v0.1 asks of each capability: the whole vocabulary of its verifier."""
+ARGUMENTS: dict[CapabilityId, JsonMapping] = {
+    CORE_ECHO: {"message": "hello, ELA"},
+    WORKSPACE_WRITE_NOTE: {"path": NOTE_PATH, "body": BODY},
+    MODEL_COMPLETE: {"input": "Riassumi le email della riunione."},
+}
+"""What each capability is called with. Since ADR 0018 this belongs to the step: a plan that does
+not say it is a plan that cannot be executed."""
 
 
 class _LyingNoteTool(WriteNoteTool):
@@ -107,6 +124,18 @@ class Pipeline:
             tools_v01(root=workspace, clock=self.clock, ids=self.ids) if tools is None else tools
         )
         self.verifiers = verifiers_v01(root=workspace)
+        self.device = local_device(created_at=self.clock.now()).model_copy(
+            update={
+                "last_seen_at": self.clock.now(),
+                "available_tools": tuple(tool.name for tool in self.tools.tools()),
+            }
+        )
+        self.devices = DeviceRegistry(
+            FakeDeviceRegistry((self.device,)), self.clock, heartbeat_ttl=HEARTBEAT_TTL
+        )
+        self.orchestrator = DeviceOrchestrator(
+            self.devices, self.tools, self.audit, self.ids, self.clock
+        )
         self.engine = TaskEngine(
             self.repository,
             self.audit,
@@ -131,6 +160,18 @@ class Pipeline:
             ids=self.ids,
             actor=ELA,
         )
+        self.runner = TaskRunner(
+            engine=self.engine,
+            orchestrator=self.orchestrator,
+            executor=self.executor,
+            repository=self.repository,
+            results=self.results,
+            audit=self.audit,
+        )
+
+    async def execute(self, task_id: TaskId, step_id: StepId) -> Execution:
+        """``executor.execute`` on the one node of this pipeline."""
+        return await self.executor.execute(task_id, step_id, device_id=self.device.id)
 
     async def planned_and_running(
         self,
@@ -138,6 +179,8 @@ class Pipeline:
         *,
         requires_authorization: bool = False,
         conditions: tuple[str, ...] | None = None,
+        arguments: JsonMapping | None = None,
+        start: bool = True,
     ) -> tuple[TaskStep, TaskId]:
         """Intent → task → plan → queue → start → step RUNNING, all through the engine."""
         intent = USER_INTENT.model_copy(update={"id": IntentId(self.ids.new_uuid())})
@@ -152,6 +195,7 @@ class Pipeline:
             if capability_id in {s.id for s in self.registry.specs()}
             else RiskLevel.LOW,
             expected_result="done",
+            arguments=ARGUMENTS.get(capability_id, {}) if arguments is None else arguments,
             success_conditions=CONDITIONS.get(capability_id, ("x.unknown",))
             if conditions is None
             else conditions,
@@ -166,8 +210,9 @@ class Pipeline:
         )
         await self.engine.plan(task.id, plan)
         await self.engine.queue(task.id)
-        await self.engine.start(task.id)
-        await self.engine.start_step(task.id, step.id)
+        if start:
+            await self.engine.start(task.id, device_id=self.device.id)
+            await self.engine.start_step(task.id, step.id, device_id=self.device.id)
         return step, task.id
 
     async def types(self, task_id: TaskId) -> list[AuditEventType]:
@@ -196,7 +241,7 @@ LIFE_CYCLE = [
 
 async def test_echo_end_to_end(p: Pipeline) -> None:
     step, task_id = await p.planned_and_running(CORE_ECHO)
-    execution = await p.executor.execute(task_id, step.id, {"message": "hello, ELA"})
+    execution = await p.execute(task_id, step.id)
     assert execution.result is not None
     assert execution.result.output == {"message": "hello, ELA"}
     assert execution.graph.states[step.id] is StepState.COMPLETED
@@ -225,7 +270,7 @@ async def test_write_note_end_to_end_writes_inside_the_workspace(
     p: Pipeline, workspace: Path
 ) -> None:
     step, task_id = await p.planned_and_running(WORKSPACE_WRITE_NOTE)
-    execution = await p.executor.execute(task_id, step.id, {"path": NOTE_PATH, "body": BODY})
+    execution = await p.execute(task_id, step.id)
     assert execution.result is not None
     assert execution.result.output == {"path": NOTE_PATH, "bytes": len(BODY.encode())}
     assert (workspace / NOTE_PATH).read_text(encoding="utf-8") == BODY
@@ -252,7 +297,7 @@ async def test_a_tool_that_lies_about_a_note_fails_the_task_with_the_reason(
     liar = _LyingNoteTool(workspace, clock, ids, body=lie)
     p = Pipeline(workspace, tools=ToolRegistry((liar,)))
     step, task_id = await p.planned_and_running(WORKSPACE_WRITE_NOTE)
-    execution = await p.executor.execute(task_id, step.id, {"path": NOTE_PATH, "body": BODY})
+    execution = await p.execute(task_id, step.id)
     assert execution.result is not None
     assert execution.result.status.value == "SUCCEEDED"
     assert execution.verification is not None
@@ -289,7 +334,7 @@ async def test_a_step_without_success_conditions_is_not_executed(
 ) -> None:
     step, task_id = await p.planned_and_running(WORKSPACE_WRITE_NOTE, conditions=())
     with pytest.raises(ExecutorError, match="declares no success condition"):
-        await p.executor.execute(task_id, step.id, {"path": NOTE_PATH, "body": BODY})
+        await p.execute(task_id, step.id)
     assert await p.types(task_id) == LIFE_CYCLE
     assert not (workspace / NOTE_PATH).exists()
 
@@ -301,7 +346,7 @@ async def test_a_condition_the_verifier_cannot_check_is_not_executed(
         WORKSPACE_WRITE_NOTE, conditions=(NOTE_EXISTS, "la nota contiene i partecipanti")
     )
     with pytest.raises(ExecutorError, match="la nota contiene i partecipanti"):
-        await p.executor.execute(task_id, step.id, {"path": NOTE_PATH, "body": BODY})
+        await p.execute(task_id, step.id)
     assert await p.types(task_id) == LIFE_CYCLE
     assert not (workspace / NOTE_PATH).exists()
 
@@ -309,9 +354,9 @@ async def test_a_condition_the_verifier_cannot_check_is_not_executed(
 async def test_write_note_outside_the_scope_denies_the_task_and_writes_nothing(
     p: Pipeline, workspace: Path
 ) -> None:
-    step, task_id = await p.planned_and_running(WORKSPACE_WRITE_NOTE)
     outside = {"path": "workspace/other/x.md", "body": BODY}
-    execution = await p.executor.execute(task_id, step.id, outside)
+    step, task_id = await p.planned_and_running(WORKSPACE_WRITE_NOTE, arguments=outside)
+    execution = await p.execute(task_id, step.id)
     assert execution.task.state is TaskState.DENIED
     assert execution.result is None
     assert await p.types(task_id) == [*LIFE_CYCLE, E.PERMISSION_DECIDED, E.TASK_DENIED]
@@ -322,8 +367,7 @@ async def test_a_step_that_requires_authorization_is_approved_granted_and_run_on
     p: Pipeline, workspace: Path
 ) -> None:
     step, task_id = await p.planned_and_running(WORKSPACE_WRITE_NOTE, requires_authorization=True)
-    arguments = {"path": NOTE_PATH, "body": BODY}
-    asked = await p.executor.execute(task_id, step.id, arguments)
+    asked = await p.execute(task_id, step.id)
     assert asked.task.state is TaskState.WAITING_APPROVAL
     assert asked.approval is not None
     assert asked.approval.targets == (NOTE_PATH,)
@@ -335,7 +379,7 @@ async def test_a_step_that_requires_authorization_is_approved_granted_and_run_on
     )
     await p.engine.approve(task_id, approval)
     await p.engine.start(task_id)
-    execution = await p.executor.execute(task_id, step.id, arguments)
+    execution = await p.execute(task_id, step.id)
     assert execution.authorization is not None
     assert await p.store.uses(execution.authorization.id) == 1
     assert execution.graph.states[step.id] is StepState.COMPLETED
@@ -359,7 +403,7 @@ async def test_a_step_that_requires_authorization_is_approved_granted_and_run_on
     other_step, other_task = await p.planned_and_running(
         WORKSPACE_WRITE_NOTE, requires_authorization=True
     )
-    again = await p.executor.execute(other_task, other_step.id, arguments)
+    again = await p.execute(other_task, other_step.id)
     assert again.task.state is TaskState.WAITING_APPROVAL
     assert again.authorization is None  # bound to the first task and step: not even a candidate
 
@@ -367,12 +411,12 @@ async def test_a_step_that_requires_authorization_is_approved_granted_and_run_on
 async def test_model_complete_has_no_tool_yet(p: Pipeline) -> None:
     step, task_id = await p.planned_and_running(MODEL_COMPLETE)
     with pytest.raises(ToolNotFound):
-        await p.executor.execute(task_id, step.id, {"input": "Riassumi."})
+        await p.execute(task_id, step.id)
     assert await p.types(task_id) == LIFE_CYCLE
 
 
 async def test_a_capability_outside_the_catalogue_is_refused_by_name(p: Pipeline) -> None:
     step, task_id = await p.planned_and_running(CapabilityId("nobody.knows_this"))
     with pytest.raises(CapabilityNotFound):
-        await p.executor.execute(task_id, step.id, {})
+        await p.execute(task_id, step.id)
     assert await p.types(task_id) == LIFE_CYCLE

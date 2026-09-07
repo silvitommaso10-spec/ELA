@@ -7,8 +7,10 @@ the first line, the Guardian does not rely on it being the only one.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from types import MappingProxyType
 from typing import Any, Final
 from uuid import UUID
 
@@ -17,6 +19,7 @@ from ela.domain import (
     AuthorizationId,
     CapabilityId,
     CapabilitySpec,
+    JsonMapping,
     RiskLevel,
     TaskId,
     TaskStep,
@@ -78,6 +81,26 @@ ECHO_ARGS: Final = {"message": "hello"}
 NOTE_ARGS: Final = {"path": "workspace/notes/briefing.md", "body": "..."}
 COMPLETE_ARGS: Final = {"input": "Riassumi le email della riunione."}
 
+ARGUMENTS: Final[Mapping[CapabilityId, JsonMapping]] = MappingProxyType(
+    {
+        ECHO.id: ECHO_ARGS,
+        GUARDED_ECHO.id: ECHO_ARGS,
+        HIGH.id: ECHO_ARGS,
+        CRITICAL.id: ECHO_ARGS,
+        UNCONSTRAINED_SCOPE.id: ECHO_ARGS,
+        NOTE.id: NOTE_ARGS,
+        GUARDED_NOTE.id: NOTE_ARGS,
+        LOOSE_NOTE.id: NOTE_ARGS,
+        COMPLETE.id: COMPLETE_ARGS,
+    }
+)
+"""Arguments that satisfy each capability of the catalogue (ADR 0018).
+
+Since M6.3 the arguments belong to the step, not to whoever calls the executor, so a test that
+builds a step needs to know what its capability is called with. One table so that no test invents
+a payload of its own and the executor can be exercised on a plan that is complete.
+"""
+
 OTHER_TASK_ID: Final = TaskId(UUID("00000000-0000-4000-8000-000000000099"))
 
 
@@ -124,6 +147,7 @@ def step_for(*required: CapabilityId, requires_authorization: bool = False) -> T
         created_at=NOW,
         goal="one step of the approved plan",
         required_capabilities=required,
+        arguments=ARGUMENTS.get(required[0], {}) if required else {},
         risk=RiskLevel.LOW,
         expected_result="something",
         requires_authorization=requires_authorization,
