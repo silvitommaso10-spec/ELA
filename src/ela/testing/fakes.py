@@ -45,6 +45,7 @@ from ela.domain import (
     ProviderRequest,
     ProviderResult,
     ProviderResultId,
+    ProviderStatus,
     ProviderUsage,
     StepId,
     Task,
@@ -56,6 +57,7 @@ from ela.domain import (
     TaskStep,
 )
 from ela.ports import (
+    PROVIDER_UNAVAILABLE,
     AlreadyExistsError,
     ApprovalAlreadyAnsweredError,
     ApprovalExpiredError,
@@ -695,7 +697,9 @@ class FakeModelProvider:
 
     ``reply`` is a string or a function of the request. ``usage`` counts words, deterministically.
     With ``error`` set, every result carries that error and an empty output, which is how a real
-    provider reports a failure (a result, not an exception).
+    provider reports a failure (a result, not an exception). ``status`` says whether the provider
+    is configured at all (ADR 0020 §2); an ``UNAVAILABLE`` fake answers with
+    :data:`~ela.ports.PROVIDER_UNAVAILABLE` and records no request, as the real one does.
     """
 
     def __init__(
@@ -706,19 +710,27 @@ class FakeModelProvider:
         name: str = "fake",
         reply: str | Callable[[ProviderRequest], str] = "ok",
         error: ErrorMetadata | None = None,
+        status: ProviderStatus = ProviderStatus.AVAILABLE,
     ) -> None:
         self._clock = clock
         self._ids = ids
         self._name = name
         self._reply = reply
         self._error = error
+        self._status = status
         self.requests: tuple[ProviderRequest, ...] = ()
 
     @property
     def name(self) -> str:
         return self._name
 
+    @property
+    def status(self) -> ProviderStatus:
+        return self._status
+
     async def complete(self, request: ProviderRequest) -> ProviderResult:
+        if self._status is ProviderStatus.UNAVAILABLE:
+            return self._unusable(request)
         self.requests = (*self.requests, request)
         if self._error is not None:
             output = ""
@@ -739,9 +751,26 @@ class FakeModelProvider:
             error=self._error,
         )
 
+    def _unusable(self, request: ProviderRequest) -> ProviderResult:
+        """What every provider answers when it is not configured (ADR 0020 §2): no work done."""
+        return ProviderResult(
+            id=ProviderResultId(self._ids.new_uuid()),
+            created_at=self._clock.now(),
+            request_id=request.id,
+            provider=self._name,
+            model="",
+            output="",
+            usage=ProviderUsage(input_tokens=0, output_tokens=0),
+            error=ErrorMetadata(
+                code=PROVIDER_UNAVAILABLE,
+                message=f"provider {self._name} is not configured",
+                retryable=False,
+            ),
+        )
+
 
 class FakeProviderRegistry:
-    """Providers by name (port :class:`~ela.ports.ProviderRegistry`)."""
+    """Providers by name (port :class:`~ela.ports.ProviderRegistryPort`)."""
 
     def __init__(self) -> None:
         self._providers: dict[str, ModelProvider] = {}

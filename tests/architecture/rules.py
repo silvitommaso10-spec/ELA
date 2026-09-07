@@ -75,6 +75,16 @@ DEVICES_FORBIDDEN = (f"{ROOT_PACKAGE}.{TASKS_DIR}",)
 AUDIT_EVENT = "AuditEvent"
 ARGUMENTS_NAME = "arguments"
 
+#: Rule 24 (ADR 0020 §11): ``anthropic`` is importable only from ``ela.providers.anthropic``.
+#: Rule 3 lets *all* of ``providers``, ``infrastructure`` and ``api`` import an infrastructure
+#: library; "one module imports the SDK" (§26, §50) needs its own rule, or it is a sentence in a
+#: README. The exemption is a directory, not a name: everything under the adapter may import it.
+ANTHROPIC_LIBRARY = "anthropic"
+PROVIDERS_DIR = "providers"
+PROVIDERS_PACKAGE = f"{ROOT_PACKAGE}.{PROVIDERS_DIR}"
+ANTHROPIC_ADAPTER_DIR = Path(PROVIDERS_DIR) / ANTHROPIC_LIBRARY
+ANTHROPIC_ADAPTER_MODULE = f"{PROVIDERS_PACKAGE}.{ANTHROPIC_LIBRARY}"
+
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
 TESTING_DIR = "testing"
@@ -181,6 +191,24 @@ def top_level_modules(pkg_root: Path) -> set[str]:
             names.add(f"{ROOT_PACKAGE}.{path.name}")
         elif path.suffix == ".py" and path.name != "__init__.py":
             names.add(f"{ROOT_PACKAGE}.{path.stem}")
+    return names
+
+
+def provider_modules_outside_the_adapter(pkg_root: Path) -> set[str]:
+    """The modules under ``ela.providers`` that are not the Anthropic adapter (rule 24).
+
+    Import-linter needs them listed one by one: naming ``ela.providers`` as a source would name
+    the adapter too. What this cannot cover — ``ela/providers/__init__.py`` itself — is covered by
+    the closed-world rule, which is why every contract has one (``test_import_linter.py``).
+    """
+    names: set[str] = set()
+    for path in (pkg_root / PROVIDERS_DIR).iterdir():
+        if path.name == ANTHROPIC_LIBRARY:
+            continue
+        if path.is_dir() and (path / "__init__.py").is_file():
+            names.add(f"{PROVIDERS_PACKAGE}.{path.name}")
+        elif path.suffix == ".py" and path.name != "__init__.py":
+            names.add(f"{PROVIDERS_PACKAGE}.{path.stem}")
     return names
 
 
@@ -923,6 +951,29 @@ def check_devices_isolation(pkg_root: Path) -> list[Violation]:
     )
 
 
+def check_anthropic_isolation(pkg_root: Path) -> list[Violation]:
+    """Rule 24: only ``ela.providers.anthropic`` imports the Anthropic SDK (ADR 0020 §11).
+
+    The adapter is the whole boundary with the vendor: what a provider's API is called, how it
+    fails, what it charges. A second module importing it would be a second boundary, and §26
+    ("il Core deve parlare con una Model Provider abstraction") would hold only by habit.
+
+    Note that ``ela.providers.anthropic`` — ELA's own package — is not the library: an import of
+    ``ela.providers.anthropic.settings`` is an internal import and is not reported.
+    """
+    files = (
+        path
+        for path in _source_files(pkg_root)
+        if ANTHROPIC_ADAPTER_DIR not in path.relative_to(pkg_root).parents
+    )
+    return _violations(
+        "anthropic-imported-only-by-its-adapter",
+        files,
+        pkg_root,
+        lambda imported: _top_level(imported) == ANTHROPIC_LIBRARY,
+    )
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -947,4 +998,5 @@ RULES: dict[str, Rule] = {
     "device-port-readers": check_device_port_readers,
     "devices-isolation": check_devices_isolation,
     "audit-arguments": check_audit_arguments,
+    "anthropic-import-isolation": check_anthropic_isolation,
 }

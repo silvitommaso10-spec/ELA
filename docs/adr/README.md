@@ -27,6 +27,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0017](0017-device-orchestrator.md) | Device Orchestrator: filtri di idoneità, punteggio esplicito per i criteri di §17, attesa invece di fallimento, eventi `DEVICE_SELECTED`/`DEVICE_UNAVAILABLE`, regole 20–22 | Accettata |
 | [0018](0018-step-arguments.md) | Gli `arguments` di uno step stanno nel piano (`TaskStep.arguments`): ciò che è autorizzato è ciò che è eseguito, anche dopo un crash; regola 23 | Accettata |
 | [0019](0019-task-runner.md) | Task Runner: un ciclo ri-entrante che non scrive nulla di suo, `device_id` fino all'executor e all'audit, finestre R1–R9 | Accettata |
+| [0020](0020-provider-anthropic.md) | Provider Anthropic: `ProviderStatus` dichiarato, chiave solo da `ELA_ANTHROPIC_API_KEY`, retry di ELA con backoff, costo stimato in `Decimal`, vocabolario chiuso degli errori nel port, regola 24 | Accettata |
 
 ## Template
 

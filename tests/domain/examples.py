@@ -314,7 +314,7 @@ PROVIDER_REQUEST: Final = ProviderRequest(
     instructions="Rispondi in italiano, per punti.",
     task_id=TASK_ID,
     model_hint="reasoning",
-    parameters={"max_output_tokens": 800, "temperature": 0.2},
+    parameters={"max_output_tokens": 800},
     metadata={"router": "quality"},
 )
 

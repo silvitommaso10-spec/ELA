@@ -12,7 +12,13 @@ import inspect
 from typing import get_type_hints
 
 from ela.domain import AuditEventType, CapabilityId, PermissionDecision, PermissionOutcome
-from ela.ports import AuditLog, AuthorizingGuardianPort, ModelProvider, ProviderRegistry, ToolPort
+from ela.ports import (
+    AuditLog,
+    AuthorizingGuardianPort,
+    ModelProvider,
+    ProviderRegistryPort,
+    ToolPort,
+)
 from tests.domain.examples import CAPABILITY_SPEC, TASK, TASK_STEP
 
 UNKNOWN_SPEC = CAPABILITY_SPEC.model_copy(update={"id": CapabilityId("nobody.knows_this")})
@@ -65,7 +71,7 @@ async def test_the_decision_echoes_the_context(
 def test_guardian_holds_no_tool_and_no_provider(
     authorizing_guardian: AuthorizingGuardianPort,
 ) -> None:
-    forbidden = (ToolPort, ModelProvider, ProviderRegistry)
+    forbidden = (ToolPort, ModelProvider, ProviderRegistryPort)
     for name, value in vars(authorizing_guardian).items():
         assert not isinstance(value, forbidden), f"{type(authorizing_guardian).__name__}.{name}"
     for method in (type(authorizing_guardian).__init__, type(authorizing_guardian).authorize):

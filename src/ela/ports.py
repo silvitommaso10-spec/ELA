@@ -50,6 +50,7 @@ from ela.domain import (
     PermissionDecision,
     ProviderRequest,
     ProviderResult,
+    ProviderStatus,
     StepId,
     Task,
     TaskEvent,
@@ -80,9 +81,23 @@ __all__ = [
     "ModelProvider",
     "NotAllowedError",
     "NotFoundError",
+    "PROVIDER_AUTHENTICATION_ERROR",
+    "PROVIDER_BAD_REQUEST",
+    "PROVIDER_ERROR_CODES",
+    "PROVIDER_MALFORMED_RESPONSE",
+    "PROVIDER_RATE_LIMITED",
+    "PROVIDER_REFUSAL",
+    "PROVIDER_REJECTED",
+    "PROVIDER_SERVER_ERROR",
+    "PROVIDER_TIMEOUT",
+    "PROVIDER_UNAVAILABLE",
+    "PROVIDER_UNKNOWN_MODEL",
+    "PROVIDER_UNKNOWN_MODEL_HINT",
+    "PROVIDER_UNREACHABLE",
+    "PROVIDER_UNSUPPORTED_PARAMETER",
     "PermissionGuardianPort",
     "PortError",
-    "ProviderRegistry",
+    "ProviderRegistryPort",
     "TaskRepository",
     "ToolPort",
     "ToolRegistryPort",
@@ -731,24 +746,94 @@ class VerifierRegistryPort(Protocol):
 # --------------------------------------------------------------------------------------
 
 
+PROVIDER_UNAVAILABLE: Final = "provider.unavailable"
+"""The provider has no usable configuration — no credentials, typically. Nothing was sent."""
+PROVIDER_UNKNOWN_MODEL_HINT: Final = "provider.unknown_model_hint"
+"""``ProviderRequest.model_hint`` names no profile this provider offers. Nothing was sent."""
+PROVIDER_UNSUPPORTED_PARAMETER: Final = "provider.unsupported_parameter"
+"""``ProviderRequest.parameters`` holds a key or a value this provider cannot honour."""
+PROVIDER_AUTHENTICATION_ERROR: Final = "provider.authentication_error"
+"""The credentials were refused (or lack the right). Never retried: retrying cannot fix it."""
+PROVIDER_BAD_REQUEST: Final = "provider.bad_request"
+"""The provider rejected the request as malformed."""
+PROVIDER_UNKNOWN_MODEL: Final = "provider.unknown_model"
+"""The provider does not know the model that was asked for."""
+PROVIDER_REJECTED: Final = "provider.rejected"
+"""Any other refusal on the provider's side that retrying cannot fix — a conflict with the state
+of a resource, a payload that failed validation. The request arrived and was turned down."""
+PROVIDER_MALFORMED_RESPONSE: Final = "provider.malformed_response"
+"""The provider answered something that is not an answer. Not a refusal: the request may well have
+been fine and the channel is what broke — a serialisation bug reads as a broken channel, which is
+what it is, instead of hiding behind "your request was rejected"."""
+PROVIDER_RATE_LIMITED: Final = "provider.rate_limited"
+"""Too many requests. Retryable: the same call can succeed later."""
+PROVIDER_SERVER_ERROR: Final = "provider.server_error"
+"""The provider failed on its side. Retryable."""
+PROVIDER_UNREACHABLE: Final = "provider.unreachable"
+"""The provider could not be reached at all. Retryable."""
+PROVIDER_TIMEOUT: Final = "provider.timeout"
+"""The call did not answer within the configured time. Retryable."""
+PROVIDER_REFUSAL: Final = "provider.refusal"
+"""The model declined to answer. Not a fault: a fact about the request, worth remembering
+separately from a breakdown (§64) — hence a code of its own, and ``retryable`` false."""
+
+PROVIDER_ERROR_CODES: Final = frozenset(
+    {
+        PROVIDER_UNAVAILABLE,
+        PROVIDER_UNKNOWN_MODEL_HINT,
+        PROVIDER_UNSUPPORTED_PARAMETER,
+        PROVIDER_AUTHENTICATION_ERROR,
+        PROVIDER_BAD_REQUEST,
+        PROVIDER_UNKNOWN_MODEL,
+        PROVIDER_REJECTED,
+        PROVIDER_MALFORMED_RESPONSE,
+        PROVIDER_RATE_LIMITED,
+        PROVIDER_SERVER_ERROR,
+        PROVIDER_UNREACHABLE,
+        PROVIDER_TIMEOUT,
+        PROVIDER_REFUSAL,
+    }
+)
+"""The closed vocabulary of ``ProviderResult.error.code`` (ADR 0020 §7).
+
+It lives here, with the port, and not inside an adapter, for the reason §26 exists: a caller must
+be able to tell an authentication failure from an overload without importing — or even knowing —
+the provider that produced it. A second provider reports the same thirteen codes or it is not
+interchangeable with the first.
+"""
+
+
 @runtime_checkable
 class ModelProvider(Protocol):
     """One model provider, in vendor-independent terms (§26, §50).
 
     Claude can be one; a local model can be another. The Core sees a request in, a result out,
     and what the call cost.
+
+    ``complete`` never raises for a provider failure: the failure *is* the result, with ``error``
+    set and its ``code`` taken from :data:`PROVIDER_ERROR_CODES`. That is what lets a caller
+    record a failed call as it records a successful one (§32, §64).
     """
 
     @property
     def name(self) -> str:
-        """The name the :class:`ProviderRegistry` knows this provider by."""
+        """The name the :class:`ProviderRegistryPort` knows this provider by."""
+
+    @property
+    def status(self) -> ProviderStatus:
+        """Whether the provider is configured well enough to be called at all (§25).
+
+        A provider that answers ``UNAVAILABLE`` is still registered and still answers
+        ``complete`` — with :data:`PROVIDER_UNAVAILABLE` and without touching the network. It is
+        how a missing credential becomes a fact ELA can read instead of a crash at start-up.
+        """
 
     async def complete(self, request: ProviderRequest) -> ProviderResult:
         """Answer ``request``; a failure is a result with ``error`` set, not an exception."""
 
 
 @runtime_checkable
-class ProviderRegistry(Protocol):
+class ProviderRegistryPort(Protocol):
     """The providers the Core can route to, by name (§50).
 
     Synchronous: an in-memory table of already-built providers. Should it ever discover providers

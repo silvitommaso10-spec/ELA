@@ -6,9 +6,12 @@ ADR that extends a port (0008: ``TaskRepository.add_plan``/``plan``; 0011: the s
 ``PermissionGuardianPort.decide``) documents the members it adds or changes in a row of its own,
 and a later ADR that shrinks a port (0010: ``CapabilityRegistryPort`` without ``register``)
 documents the members that remain in a replacing row; an ADR that introduces whole ports (0013:
-``AuthorizingGuardianPort``, ``ToolRegistryPort``) lists them under "Port introdotti:". Extensions
-only add, replacements only remove, introductions only bring new names; introductions apply
-first, then extensions, then replacements; the result is what the code must match. An ADR that
+``AuthorizingGuardianPort``, ``ToolRegistryPort``) lists them under "Port introdotti:"; an ADR
+that renames one (0020: ``ProviderRegistry`` -> ``ProviderRegistryPort``) says so under
+"Port rinominati:", in a row that names the old port and repeats its members unchanged.
+Extensions only add, replacements only remove, introductions only bring new names, a rename
+changes nothing but the name; renames apply first, then introductions, then extensions, then
+replacements; the result is what the code must match. An ADR that
 both extends and replaces (0012: ``AuthorizationStore`` with ``consume`` and without
 ``record_use``) has two tables, each under its label, and is read by section (ADR 0012 §8). A
 changed signature is checked by ``test_adr_guardian.py``, member by member here.
@@ -28,12 +31,14 @@ ADR_PATH = ADR_DIR / "0005-ports.md"
 EXTENDING = "Port estesi:"
 REPLACING = "Port sostituiti:"
 INTRODUCING = "Port introdotti:"
+RENAMING = "Port rinominati:"
 Source = tuple[Path, str | None]
 """An ADR and the label of the table to read, or ``None`` to read the whole file."""
 EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0008-task-engine.md", None),
     (ADR_DIR / "0011-permission-guardian.md", None),
     (ADR_DIR / "0012-authorizations.md", EXTENDING),
+    (ADR_DIR / "0020-provider-anthropic.md", EXTENDING),
 )
 REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),
@@ -46,6 +51,8 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
+RENAMING_ADRS: tuple[Source, ...] = ((ADR_DIR / "0020-provider-anthropic.md", RENAMING),)
+"""ADRs that rename a port (ADR 0020): the old name goes, the members stay."""
 INTRODUCED_PORTS = frozenset(
     {
         "AuthorizingGuardianPort",
@@ -58,6 +65,7 @@ INTRODUCED_PORTS = frozenset(
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")
 MEMBER = re.compile(r"`(\w+)`")
+RENAMES = re.compile(r"rinomina `(\w+)`")
 
 
 def section_of(text: str, label: str) -> str:
@@ -91,16 +99,37 @@ def documented_ports(
     return rows
 
 
+def renamed_ports(text: str) -> dict[str, str]:
+    """New port name -> the port it renames, from the second cell of each row."""
+    renames: dict[str, str] = {}
+    for line in text.splitlines():
+        match = ROW.match(line)
+        if match is not None:
+            old = RENAMES.search(match.group(2))
+            assert old is not None, f"{match.group(1)} does not say which port it renames"
+            renames[match.group(1)] = old.group(1)
+    return renames
+
+
 def all_documented_ports(
     base: str,
     extensions: tuple[str, ...] = (),
     replacements: tuple[str, ...] = (),
     introductions: tuple[str, ...] = (),
+    renames: tuple[str, ...] = (),
 ) -> dict[str, tuple[str, frozenset[str]]]:
-    """ADR 0005, then every introducing ADR (new ports only), then every extending ADR (members
-    joined), then every replacing ADR (members replaced, never more than before). Same mode
-    throughout."""
+    """ADR 0005, then every renaming ADR (same port, new name), then every introducing ADR (new
+    ports only), then every extending ADR (members joined), then every replacing ADR (members
+    replaced, never more than before). Same mode throughout."""
     union = documented_ports(base)
+    for text in renames:
+        old_names = renamed_ports(text)
+        for name, row in documented_ports(text).items():
+            old = old_names[name]
+            assert old in union, f"{name} renames {old}, which no ADR introduced"
+            assert name not in union, f"{name} exists already: a rename is not an introduction"
+            assert union[old] == row, f"the rename of {old} changes more than the name"
+            union[name] = union.pop(old)
     for text in introductions:
         for name, row in documented_ports(text).items():
             assert name not in union, f"{name} is introduced twice"
@@ -138,6 +167,7 @@ def documented() -> dict[str, tuple[str, frozenset[str]]]:
         _read(EXTENDING_ADRS),
         _read(REPLACING_ADRS),
         _read(INTRODUCING_ADRS),
+        _read(RENAMING_ADRS),
     )
 
 
@@ -250,7 +280,10 @@ def test_an_introduction_of_a_known_port_is_detected() -> None:
     added = all_documented_ports(base, introductions=("| `Other` | §1 | sync | `x` |",))
     assert added["Other"] == ("sync", frozenset({"x"}))
     without = all_documented_ports(
-        ADR_PATH.read_text(encoding="utf-8"), _read(EXTENDING_ADRS), _read(REPLACING_ADRS)
+        ADR_PATH.read_text(encoding="utf-8"),
+        _read(EXTENDING_ADRS),
+        _read(REPLACING_ADRS),
+        renames=_read(RENAMING_ADRS),
     )
     assert set(coded_ports()) - set(without) == INTRODUCED_PORTS
 
@@ -278,6 +311,7 @@ def test_a_missing_label_is_detected() -> None:
             *(p for p, _ in EXTENDING_ADRS),
             *(p for p, _ in REPLACING_ADRS),
             *(p for p, _ in INTRODUCING_ADRS),
+            *(p for p, _ in RENAMING_ADRS),
         }
     ),
     ids=lambda p: p.name[:4],
@@ -359,3 +393,41 @@ def test_a_drifted_table_is_detected() -> None:
     )
     assert "record_use" in without_the_store_replacement["AuthorizationStore"][1]
     assert without_the_store_replacement["AuthorizationStore"][1] != coded["AuthorizationStore"][1]
+
+
+def test_the_provider_adr_renames_one_port_and_extends_another() -> None:
+    """ADR 0020: ``ProviderRegistry`` gets the suffix the other registries have; the provider
+    gains ``status``. Neither table may quietly do the other's job."""
+    base = documented_ports(ADR_PATH.read_text(encoding="utf-8"))
+    rename = documented_ports(_text(RENAMING_ADRS[0]))
+    extension = documented_ports(_text(EXTENDING_ADRS[3]))
+    assert set(rename) == {"ProviderRegistryPort"}
+    assert renamed_ports(_text(RENAMING_ADRS[0])) == {"ProviderRegistryPort": "ProviderRegistry"}
+    assert rename["ProviderRegistryPort"] == base["ProviderRegistry"]
+    assert set(extension) == {"ModelProvider"}
+    assert extension["ModelProvider"][1] == {"status"}
+    assert "status" not in base["ModelProvider"][1]
+
+
+def test_a_rename_of_an_unknown_port_is_detected() -> None:
+    base = "| `AuditLog` | §32 | async | `append`, `read` |"
+    with pytest.raises(AssertionError, match="which no ADR introduced"):
+        all_documented_ports(base, renames=("| `Other` | rinomina `Absent` §1 | async | `x` |",))
+    with pytest.raises(AssertionError, match="changes more than the name"):
+        all_documented_ports(
+            base, renames=("| `Log` | rinomina `AuditLog` §32 | async | `append` |",)
+        )
+    with pytest.raises(AssertionError, match="does not say which port it renames"):
+        all_documented_ports(base, renames=("| `Log` | §32 | async | `append`, `read` |",))
+    renamed = all_documented_ports(
+        base, renames=("| `Log` | rinomina `AuditLog` §32 | async | `append`, `read` |",)
+    )
+    assert set(renamed) == {"Log"}
+
+
+def test_a_rename_onto_an_existing_port_is_detected() -> None:
+    base = "| `AuditLog` | §32 | async | `append`, `read` |\n| `Log` | §32 | async | `append` |"
+    with pytest.raises(AssertionError, match="a rename is not an introduction"):
+        all_documented_ports(
+            base, renames=("| `Log` | rinomina `AuditLog` §32 | async | `append`, `read` |",)
+        )

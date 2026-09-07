@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.20",
     "alembic>=1.13",
+    "anthropic>=1.0",
     "jsonschema>=4.23",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
@@ -271,6 +272,32 @@ forbidden_modules = [
     "fastapi",
     "typer",
 ]
+
+[[tool.importlinter.contracts]]
+name = "10. solo ela.providers.anthropic importa l'SDK anthropic (ADR 0020 §11, spec §26, §50)"
+type = "forbidden"
+# Il contratto 3 lascia l'SDK a tutto providers/, infrastructure/ e api/: qui il confine è un solo
+# modulo. ela.providers non compare come sorgente perché includerebbe l'adapter stesso; i suoi
+# moduli sono elencati uno per uno e la regola 24 chiude il mondo (tests/architecture/rules.py).
+source_modules = [
+    "ela.domain",
+    "ela.ports",
+    "ela.api",
+    "ela.audit",
+    "ela.context",
+    "ela.devices",
+    "ela.evolution",
+    "ela.executive",
+    "ela.identity",
+    "ela.infrastructure",
+    "ela.memory",
+    "ela.permissions",
+    "ela.providers.registry",
+    "ela.tasks",
+    "ela.testing",
+    "ela.tools",
+]
+forbidden_modules = ["anthropic"]
 
 [[tool.importlinter.contracts]]
 name = "9. ela.devices non importa ela.tasks: il Device Orchestrator consiglia, non muove un task (ADR 0017)"
