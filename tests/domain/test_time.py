@@ -66,7 +66,9 @@ def test_datetime_fields_are_normalised(model: type[BaseModel]) -> None:
             assert value.tzinfo is UTC, f"{model.__name__}.{name}"
 
 
-VALUE_OBJECTS = frozenset({"Actor", "DeviceCapability", "ProviderUsage", "ErrorMetadata"})
+VALUE_OBJECTS = frozenset(
+    {"Actor", "DeviceCapability", "ProviderUsage", "ErrorMetadata", "ModelRoute"}
+)
 
 
 def test_every_entity_requires_created_at() -> None:

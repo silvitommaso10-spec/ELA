@@ -18,6 +18,7 @@ from ela.tasks.engine import ORPHANED, RecoverySummary
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
 from ela.tools import NotIdempotentError, Outcome, Tool, ToolRegistry, tools_v01
 from tests.executive import test_executor_recovery as recovery
+from tests.routing.support import routing_for
 
 ADR_PATH = (
     Path(__file__).resolve().parents[2] / "docs" / "adr" / "0015-approval-and-result-persistence.md"
@@ -152,11 +153,13 @@ def test_the_idempotence_guard_of_window_7a_is_documented_and_coded() -> None:
     assert "STARTED" in text
     assert "M7.2 `model.complete`" in text  # the ADR named the tool that would carry it
     assert "idempotent" not in vars(Tool)  # no default to inherit by mistake
+    router, providers = routing_for(FakeModelProvider(FakeClock(), FakeIdGenerator()))
     registry = tools_v01(
         root="/tmp/ela-adr-0015",
         clock=FakeClock(),
         ids=FakeIdGenerator(),
-        provider=FakeModelProvider(FakeClock(), FakeIdGenerator()),
+        router=router,
+        providers=providers,
     )
     declared = {tool.name: tool.idempotent for tool in registry.tools()}
     assert declared == {"core-echo": True, "workspace-notes": True, "model-complete": False}

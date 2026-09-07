@@ -244,6 +244,14 @@ def model_complete() -> CapabilitySpec:
     The arguments mirror :class:`~ela.domain.ProviderRequest` so the tool builds the request
     without translating: ``input`` is mandatory; ``purpose``, ``instructions``, ``model_hint``
     and ``parameters`` are optional. Always requires an authorization: content leaves ELA.
+
+    ``task_type`` is the key the Model Router routes on (§25, ADR 0022 §2), and it is an argument
+    of its own rather than a reading of ``purpose``: ``purpose`` is documented as a human
+    description that travels into the audit trail, and a description must not be able to change
+    which model answers because somebody rewrote it. It carries **no ``enum``**: the vocabulary
+    of task types is the routing table's, and the table is configurable (``ELA_MODEL_ROUTES``)
+    while this catalogue is a constant. A type outside the table is refused by the router, with
+    a name of its own (``routing.unknown_task_type``) and before any call.
     """
     return CapabilitySpec(
         id=MODEL_COMPLETE,
@@ -256,6 +264,7 @@ def model_complete() -> CapabilitySpec:
                 "input": {"type": "string"},
                 "purpose": {"type": "string"},
                 "instructions": {"type": "string"},
+                "task_type": {"type": "string"},
                 "model_hint": {"type": "string"},
                 "parameters": {"type": "object"},
             },

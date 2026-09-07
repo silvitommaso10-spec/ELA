@@ -128,7 +128,7 @@ class AnthropicProvider:
         return await self._call(client, request, model, payload, started)
 
     def _model_for(self, request: ProviderRequest) -> Model:
-        model = model_for_hint(request.model_hint, self._settings.anthropic_model)
+        model = model_for_hint(request.model_hint)
         if model is None:
             raise UnsupportedRequestError(
                 Failure(

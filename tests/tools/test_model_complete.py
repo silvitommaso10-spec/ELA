@@ -1,12 +1,14 @@
 """``ModelCompleteTool`` (§29, MEDIUM): the capability through which content leaves the machine.
 
-Three things are under test and nothing else, because the tool does nothing else: that it builds
-the request the domain describes, that it hands a provider's failure on with the **code** and the
-**nature** the provider gave it (ADR 0020 §7, ADR 0021 §4), and that what a call consumed comes
-back with it whether the call worked or not (§32).
+Four things are under test and nothing else, because the tool does nothing else: that it builds
+the request the domain describes, that it goes **where the router says** and nowhere else (§25,
+ADR 0022), that it hands a provider's failure on with the **code** and the **nature** the
+provider gave it (ADR 0020 §7, ADR 0021 §4), and that what a call consumed comes back with it
+whether the call worked or not (§32).
 
-What is *not* under test here is which model answers: the tool does not choose (ADR 0021 §5), and
-the Model Router that will is M7.3.
+The tool still chooses nothing. What changed in M7.3 is who does: a policy, asked before the
+network, instead of whoever typed the arguments. Every failure of that policy is proved here to
+cost **zero requests** — the fake counts what it received.
 """
 
 from __future__ import annotations
@@ -30,18 +32,30 @@ from ela.ports import (
     PROVIDER_NO_OUTPUT,
     PROVIDER_RATE_LIMITED,
     PROVIDER_UNAVAILABLE,
+    ROUTING_ERROR_CODES,
+    ROUTING_UNKNOWN_TASK_TYPE,
+    ModelProvider,
     NotAllowedError,
 )
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
+from ela.testing.fakes import (
+    FakeClock,
+    FakeIdGenerator,
+    FakeModelProvider,
+    FakeModelRouter,
+    FakeProviderRegistry,
+)
 from ela.tools import ARGUMENTS_INVALID, MODEL_COMPLETE, MODEL_TOOL_NAME, ModelCompleteTool
+from tests.routing.support import routing_for
 from tests.tools.support import allowed
 
 INPUT = "Riassumi le email della riunione."
 ARGUMENTS = {"input": INPUT}
 
 
-def tool_with(provider: FakeModelProvider) -> ModelCompleteTool:
-    return ModelCompleteTool(provider, FakeClock(), FakeIdGenerator())
+def tool_with(provider: ModelProvider) -> ModelCompleteTool:
+    """The tool over a real router whose every route points at ``provider`` (M7.3)."""
+    router, providers = routing_for(provider)
+    return ModelCompleteTool(router, providers, FakeClock(), FakeIdGenerator())
 
 
 @pytest.fixture
@@ -66,7 +80,7 @@ async def test_the_answer_comes_back_with_the_provider_the_model_and_the_usage(
 
     assert result.status is ExecutionStatus.SUCCEEDED
     assert result.output["output"] == "una sintesi"
-    assert result.output["provider"] == provider.name == tool.provider_name
+    assert result.output["provider"] == provider.name
     assert result.output["model"] == "fake-model"
     assert result.output["finish_reason"] == "end_turn"
     assert result.usage is not None
@@ -109,18 +123,135 @@ async def test_a_request_without_a_purpose_names_the_capability(
     (request,) = provider.requests
     assert request.purpose == "model.complete"
     assert request.instructions is None
-    assert request.model_hint is None
     assert request.parameters == {}
 
 
-async def test_the_tool_does_not_choose_a_model(
+# --------------------------------------------------------------------------------------
+# Where the call goes (§25; ADR 0022)
+# --------------------------------------------------------------------------------------
+
+
+async def test_the_task_type_chooses_the_profile(
     tool: ModelCompleteTool, provider: FakeModelProvider
 ) -> None:
-    """ADR 0021 §5: the hint travels untouched and nothing invents one. M7.3 will choose."""
-    await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "model_hint": "quality"})
+    """The table of §25 read through the tool: the expensive profile for coding, the cheap one
+    for routine, and neither of them typed by the caller."""
+    await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "coding"})
+    await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "routine"})
     await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS)
 
-    assert [request.model_hint for request in provider.requests] == ["quality", None]
+    assert [request.model_hint for request in provider.requests] == ["quality", "cheap", "balanced"]
+
+
+async def test_an_explicit_hint_wins_over_the_table(
+    tool: ModelCompleteTool, provider: FakeModelProvider
+) -> None:
+    """ADR 0022 §3 (decision 5a): whoever wrote a hint has chosen. The provider is still the task
+    type's, and the result says which profile actually went out."""
+    result = await tool.execute(
+        allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "coding", "model_hint": "cheap"}
+    )
+
+    (request,) = provider.requests
+    assert request.model_hint == "cheap"
+    assert result.output["profile"] == "cheap"
+    assert result.output["provider"] == provider.name
+
+
+async def test_the_purpose_does_not_route(
+    tool: ModelCompleteTool, provider: FakeModelProvider
+) -> None:
+    """Decision 3a: ``purpose`` is a description that travels into the audit trail, and a
+    description must not be able to change which model answers because somebody rewrote it."""
+    for purpose in ("un riassunto", "CODING! quality! opus!"):
+        await tool.execute(
+            allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "routine", "purpose": purpose}
+        )
+
+    assert {request.model_hint for request in provider.requests} == {"cheap"}
+
+
+async def test_a_provider_that_is_down_is_skipped_and_the_jump_is_recorded() -> None:
+    """Decision 6a: the fallback reads a declared status, so ``down`` receives **nothing** — and
+    the skip is in the result, because a substitution nobody can see is a substitution (§33)."""
+    clock, ids = FakeClock(), FakeIdGenerator()
+    down = FakeModelProvider(clock, ids, name="down", status=ProviderStatus.UNAVAILABLE)
+    up = FakeModelProvider(clock, ids, name="up", reply="ok")
+    router, providers = routing_for(down, up)
+    tool = ModelCompleteTool(router, providers, clock, ids)
+
+    result = await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "coding"})
+
+    assert result.status is ExecutionStatus.SUCCEEDED
+    assert result.output["provider"] == "up"
+    assert result.output["skipped"] == ("down",)  # frozen by the domain, as every payload is
+    assert down.requests == ()  # not a failed call: no call
+
+
+async def test_no_provider_of_the_route_is_available() -> None:
+    """Every provider down: ``provider.unavailable``, the code ADR 0020 §7 already has for a wall
+    ELA cannot get past — and no request to anybody."""
+    clock, ids = FakeClock(), FakeIdGenerator()
+    down = FakeModelProvider(clock, ids, name="down", status=ProviderStatus.UNAVAILABLE)
+    other = FakeModelProvider(clock, ids, name="other", status=ProviderStatus.UNAVAILABLE)
+    router, providers = routing_for(down, other)
+    tool = ModelCompleteTool(router, providers, clock, ids)
+
+    result = await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert result.error.code == PROVIDER_UNAVAILABLE
+    assert result.error.retryable is False
+    assert down.requests == () and other.requests == ()
+    assert result.output == {}
+
+
+async def test_an_unknown_task_type_fails_before_the_network(
+    tool: ModelCompleteTool, provider: FakeModelProvider
+) -> None:
+    """Decision 7b: the vocabulary is closed, and a type nobody mapped is a bug in the plan, not
+    a case to cover with the default route."""
+    result = await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "telepathy"})
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert result.error.code == ROUTING_UNKNOWN_TASK_TYPE
+    assert result.error.code in ROUTING_ERROR_CODES
+    assert result.error.retryable is False
+    assert provider.requests == ()
+    assert INPUT not in result.error.message  # §57: a routing failure names a key, not content
+
+
+async def test_a_route_naming_a_provider_the_registry_lost_is_unavailable() -> None:
+    """The tool trusts neither its caller nor its collaborators (§28). A route naming a provider
+    that is not in the registry cannot happen through ``ModelRouter`` — it refuses at
+    construction (ADR 0022 §7) — so a fake router is what reaches this branch, and what it gets
+    is fail-safe: no provider, no call."""
+    tool = ModelCompleteTool(
+        FakeModelRouter(provider="ghost"), FakeProviderRegistry(), FakeClock(), FakeIdGenerator()
+    )
+
+    result = await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert result.error.code == PROVIDER_UNAVAILABLE
+    assert "ghost" in result.error.message
+
+
+async def test_the_router_is_asked_exactly_what_the_arguments_said() -> None:
+    router = FakeModelRouter(provider="fake")
+    registry = FakeProviderRegistry()
+    registry.register(FakeModelProvider(FakeClock(), FakeIdGenerator(), name="fake"))
+    tool = ModelCompleteTool(router, registry, FakeClock(), FakeIdGenerator())
+
+    await tool.execute(
+        allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "coding", "model_hint": "cheap"}
+    )
+    await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+
+    assert router.calls == (("coding", "cheap"), (None, None))
 
 
 # --------------------------------------------------------------------------------------
@@ -137,9 +268,21 @@ async def test_the_tool_does_not_choose_a_model(
         {"input": INPUT, "purpose": 7},
         {"input": INPUT, "instructions": ["a"]},
         {"input": INPUT, "model_hint": 1},
+        {"input": INPUT, "task_type": 5},
+        {"input": INPUT, "task_type": ["coding"]},
         {"input": INPUT, "parameters": "max_output_tokens=1"},
     ],
-    ids=["missing", "not-a-string", "null", "purpose", "instructions", "hint", "parameters"],
+    ids=[
+        "missing",
+        "not-a-string",
+        "null",
+        "purpose",
+        "instructions",
+        "hint",
+        "task-type",
+        "task-type-list",
+        "parameters",
+    ],
 )
 async def test_bad_arguments_fail_before_the_network(
     tool: ModelCompleteTool, provider: FakeModelProvider, arguments: dict[str, object]
@@ -152,6 +295,7 @@ async def test_bad_arguments_fail_before_the_network(
     assert result.error.retryable is False
     assert provider.requests == ()  # nothing left the machine
     assert result.usage is None
+    assert result.output == {}
 
 
 async def test_a_decision_that_does_not_allow_stops_the_tool_before_the_provider(

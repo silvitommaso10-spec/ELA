@@ -42,6 +42,7 @@ from ela.domain import (
     IdentityId,
     IntentChannel,
     IntentId,
+    ModelRoute,
     NetworkKind,
     OperatingSystem,
     PerformanceClass,
@@ -306,6 +307,13 @@ AUDIT_EVENT: Final = AuditEvent(
     payload={"path": "workspace/notes/briefing.md", "bytes": 2048},
 )
 
+MODEL_ROUTE: Final = ModelRoute(
+    task_type="reasoning",
+    provider="provider-a",
+    profile="quality",
+    skipped=("provider-b",),
+)
+
 PROVIDER_REQUEST: Final = ProviderRequest(
     id=PROVIDER_REQUEST_ID,
     created_at=NOW,
@@ -368,6 +376,7 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         APPROVAL,
         SINGLE_USE_AUTHORIZATION,
         AUDIT_EVENT,
+        MODEL_ROUTE,
         PROVIDER_REQUEST,
         PROVIDER_RESULT,
         EXECUTION_RESULT,

@@ -29,13 +29,14 @@ REQUIRED_PORTS = frozenset(
         "ExecutionResultStore",
         "ModelProvider",
         "ProviderRegistryPort",
+        "ModelRouterPort",
         "Clock",
         "IdGenerator",
     }
 )
 """The eleven ports of M1.3, the two of M5.1 (ADR 0013: the audited Guardian, the tools), the
-two of M5.2 (ADR 0014: the verifiers) and the two of M5.3 (ADR 0015: the requests for approval,
-the results), by name."""
+two of M5.2 (ADR 0014: the verifiers), the two of M5.3 (ADR 0015: the requests for approval,
+the results) and ``ModelRouterPort`` from M7.3 (ADR 0022 §5: who chooses the model), by name."""
 
 
 def is_protocol(obj: object) -> bool:

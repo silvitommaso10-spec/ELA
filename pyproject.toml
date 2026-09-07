@@ -84,6 +84,7 @@ forbidden_modules = [
     "ela.memory",
     "ela.permissions",
     "ela.providers",
+    "ela.routing",
     "ela.tasks",
     "ela.testing",
     "ela.tools",
@@ -115,6 +116,7 @@ forbidden_modules = [
     "ela.memory",
     "ela.permissions",
     "ela.providers",
+    "ela.routing",
     "ela.tasks",
     "ela.testing",
     "ela.tools",
@@ -143,6 +145,7 @@ source_modules = [
     "ela.identity",
     "ela.memory",
     "ela.permissions",
+    "ela.routing",
     "ela.tasks",
     "ela.testing",
     "ela.tools",
@@ -159,9 +162,9 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "4. executive, tasks, permissions e audit non importano providers né infrastructure (CLAUDE.md, spec §52)"
+name = "4. executive, tasks, permissions, audit e routing non importano providers né infrastructure (CLAUDE.md, spec §52)"
 type = "forbidden"
-source_modules = ["ela.executive", "ela.tasks", "ela.permissions", "ela.audit"]
+source_modules = ["ela.executive", "ela.tasks", "ela.permissions", "ela.audit", "ela.routing"]
 forbidden_modules = ["ela.providers", "ela.infrastructure"]
 
 [[tool.importlinter.contracts]]
@@ -181,6 +184,7 @@ source_modules = [
     "ela.memory",
     "ela.permissions",
     "ela.providers",
+    "ela.routing",
     "ela.tasks",
     "ela.tools",
 ]
@@ -204,6 +208,7 @@ forbidden_modules = [
     "ela.memory",
     "ela.permissions",
     "ela.providers",
+    "ela.routing",
     "ela.tasks",
     "ela.tools",
     "pydantic",
@@ -237,6 +242,7 @@ source_modules = [
     "ela.memory",
     "ela.permissions",
     "ela.providers",
+    "ela.routing",
     "ela.testing",
     "ela.tools",
 ]
@@ -259,6 +265,7 @@ forbidden_modules = [
     "ela.infrastructure",
     "ela.memory",
     "ela.providers",
+    "ela.routing",
     "ela.tasks",
     "ela.testing",
     "ela.tools",
@@ -293,6 +300,7 @@ source_modules = [
     "ela.memory",
     "ela.permissions",
     "ela.providers.registry",
+    "ela.routing",
     "ela.tasks",
     "ela.testing",
     "ela.tools",
@@ -304,3 +312,9 @@ name = "9. ela.devices non importa ela.tasks: il Device Orchestrator consiglia, 
 type = "forbidden"
 source_modules = ["ela.devices"]
 forbidden_modules = ["ela.tasks"]
+
+[[tool.importlinter.contracts]]
+name = "11. ela.tools non importa ela.routing: un tool riceve il router, non lo costruisce (ADR 0022 §2)"
+type = "forbidden"
+source_modules = ["ela.tools"]
+forbidden_modules = ["ela.routing"]

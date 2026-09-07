@@ -25,6 +25,7 @@ __all__ = [
     "DEFAULT_MODEL",
     "EFFORT_LEVELS",
     "HAIKU_4_5",
+    "LARGEST_OUTPUT_TOKENS",
     "MODELS",
     "OPUS_5",
     "PROFILES",
@@ -38,11 +39,17 @@ SONNET_5: Final = "claude-sonnet-5"
 HAIKU_4_5: Final = "claude-haiku-4-5"
 
 DEFAULT_MODEL: Final = SONNET_5
-"""The model that runs when nobody asked for one.
+"""The model that runs when a request names no profile at all.
 
 Deliberately not the most capable one: the default is what starts when no one has thought about
 cost, so it is the "balanced" profile. §25 gives the expensive model to planning, coding and
-reasoning — and those arrive as *explicit* hints from whoever routes (the Model Router, §25).
+reasoning, and those arrive as profiles from whoever routes — the Model Router, which since M7.3
+names a profile on **every** call it makes (ADR 0022 §3). So this is the answer for a
+``ProviderRequest`` built outside that path, and nothing else.
+
+It is a **constant, not a setting**: ``ELA_ANTHROPIC_MODEL`` was retired in M7.3 (ADR 0022 §8).
+Choosing the model per kind of task is the routing table's job, and a variable that overrode the
+default of one adapter while a table decided everything else would be a second, quieter policy.
 """
 
 EFFORT_LEVELS: Final = ("low", "medium", "high", "xhigh", "max")
@@ -68,6 +75,14 @@ MODELS: Final[Mapping[str, Model]] = MappingProxyType(
 """The three models of v0.1. ``claude-fable-5-1`` is out: it costs twice an Opus call and needs a
 30-day retention setting on the organisation, and no profile of §25 asks for it (ADR 0020 §4)."""
 
+LARGEST_OUTPUT_TOKENS: Final = max(model.max_output_tokens for model in MODELS.values())
+"""The most output any model of :data:`MODELS` can produce.
+
+An output budget above this asks for something no model can give and is a misconfiguration
+(``AnthropicSettings``); a budget between this and a *particular* model's limit is clamped for
+that model when the payload is built, which is a smaller model answering a call, not an error.
+"""
+
 PROFILES: Final[Mapping[str, str]] = MappingProxyType(
     {
         "quality": OPUS_5,
@@ -86,15 +101,15 @@ PROFILES: Final[Mapping[str, str]] = MappingProxyType(
 """``model_hint`` → model. The keys are §25's two lists, plus the middle the spec implies."""
 
 
-def model_for_hint(hint: str | None, default: str) -> Model | None:
+def model_for_hint(hint: str | None) -> Model | None:
     """The model a hint asks for, or ``None`` if the hint names nothing (ADR 0020 §5).
 
-    Three ways to name a model, in order: no hint at all is the configured default; a *profile*
-    is what §25 talks about and what a router will send; a model id already in :data:`MODELS` is
-    accepted as itself, so an operator can pin one without inventing a profile for it.
+    Three ways to name a model, in order: no hint at all is :data:`DEFAULT_MODEL`; a *profile* is
+    what §25 talks about and what the router sends; a model id already in :data:`MODELS` is
+    accepted as itself, so an operator can pin one in a route without inventing a profile for it.
     """
     if hint is None:
-        return MODELS[default]
+        return MODELS[DEFAULT_MODEL]
     if hint in PROFILES:
         return MODELS[PROFILES[hint]]
     return MODELS.get(hint)

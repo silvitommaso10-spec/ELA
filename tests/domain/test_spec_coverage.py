@@ -40,6 +40,14 @@ REVIEW_ADDITIONS = frozenset({"Actor"})
 and a string cannot say whether "ela" is ELA, a user or a node.
 """
 
+LATER_ADDITIONS = frozenset({"ModelRoute"})
+"""Models a later milestone added, each argued in its own ADR.
+
+``ModelRoute`` (M7.3, ADR 0022 §2) is the decision of the Model Router, and it is a domain value
+for the reason ``PermissionDecision`` is: whoever decides answers with data, and whoever acts
+executes it. §49 lists what v0.1 starts from, not what it may never grow.
+"""
+
 
 def test_all_section_49_entities_are_exported() -> None:
     missing = sorted(name for name in SECTION_49_ENTITIES if name not in domain.__all__)
@@ -50,7 +58,7 @@ def test_all_section_49_entities_are_exported() -> None:
 
 def test_every_public_model_belongs_to_section_49() -> None:
     """A model outside §49 is a spec change: it must be declared here and argued in an ADR."""
-    known = SECTION_49_ENTITIES | REVIEW_ADDITIONS
+    known = SECTION_49_ENTITIES | REVIEW_ADDITIONS | LATER_ADDITIONS
     unexpected = sorted(model.__name__ for model in domain_models() if model.__name__ not in known)
     assert unexpected == []
 

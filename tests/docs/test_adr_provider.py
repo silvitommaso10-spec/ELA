@@ -15,6 +15,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 import ela.ports
 import ela.tools
@@ -43,6 +44,7 @@ from ela.providers.anthropic.settings import (
     DEFAULT_MAX_OUTPUT_TOKENS,
     DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
+    RETIRED_SETTINGS,
     AnthropicSettings,
 )
 
@@ -154,10 +156,14 @@ def test_the_cache_read_rate_of_the_adr_is_a_tenth_of_the_input_price() -> None:
 
 
 def test_the_expensive_model_is_not_the_default() -> None:
-    """The decision of §4, in the code: what starts by itself is the balanced profile."""
+    """The decision of §4, in the code: what starts by itself is the balanced profile.
+
+    Since M7.3 that default is a constant and not a setting (ADR 0022 §8): what it answers is a
+    request that names no profile, and the router names one on every call it makes."""
     assert "Il default è `claude-sonnet-5`, non il modello più potente" in adr_text()
     assert DEFAULT_MODEL == "claude-sonnet-5"
-    assert AnthropicSettings(_env_file=None).anthropic_model == DEFAULT_MODEL
+    model = model_for_hint(None)
+    assert model is not None and model.id == DEFAULT_MODEL
 
 
 def test_the_model_the_adr_leaves_out_is_not_in_the_code() -> None:
@@ -185,13 +191,13 @@ def test_the_hint_table_matches_the_code() -> None:
     rows = documented_hints(adr_text())
     assert rows == dict(PROFILES)
     for hint, model_id in rows.items():
-        model = model_for_hint(hint, DEFAULT_MODEL)
+        model = model_for_hint(hint)
         assert model is not None and model.id == model_id
 
 
 def test_an_unmapped_hint_is_an_error_and_not_the_default() -> None:
     assert "`provider.unknown_model_hint`, **nessuna chiamata**" in adr_text()
-    assert model_for_hint("telepathy", DEFAULT_MODEL) is None
+    assert model_for_hint("telepathy") is None
 
 
 # ----------------------------------------------------------------------------------------
@@ -275,6 +281,8 @@ def documented_settings(text: str) -> dict[str, str]:
 
 
 def test_the_settings_table_matches_the_defaults() -> None:
+    """ADR 0020 §3 documented five variables; ADR 0022 §8 retired one of them, and an ADR is not
+    rewritten. What the code must have is what §3 declared **minus** what a later ADR retired."""
     rows = documented_settings(adr_text())
     assert set(rows) == {
         "ELA_ANTHROPIC_API_KEY",
@@ -283,13 +291,27 @@ def test_the_settings_table_matches_the_defaults() -> None:
         "ELA_ANTHROPIC_MAX_RETRIES",
         "ELA_ANTHROPIC_MAX_OUTPUT_TOKENS",
     }
+    assert set(rows) - set(RETIRED_SETTINGS) == {
+        f"ELA_{name.upper()}"
+        for name in AnthropicSettings.model_fields
+        if name not in {"anthropic_model"}
+    }
     settings = AnthropicSettings(_env_file=None)
     assert rows["ELA_ANTHROPIC_API_KEY"] == ABSENT
     assert settings.anthropic_api_key is None
-    assert rows["ELA_ANTHROPIC_MODEL"] == DEFAULT_MODEL
+    assert rows["ELA_ANTHROPIC_MODEL"] == DEFAULT_MODEL  # what it meant while it existed
     assert int(rows["ELA_ANTHROPIC_TIMEOUT_SECONDS"]) == DEFAULT_TIMEOUT_SECONDS == 60
     assert int(rows["ELA_ANTHROPIC_MAX_RETRIES"]) == DEFAULT_MAX_RETRIES == 2
     assert int(rows["ELA_ANTHROPIC_MAX_OUTPUT_TOKENS"]) == DEFAULT_MAX_OUTPUT_TOKENS == 4096
+
+
+def test_the_retired_variable_is_the_one_a_later_adr_retired() -> None:
+    """The settings a live ``AnthropicSettings`` reads are §3's minus ``ELA_ANTHROPIC_MODEL``,
+    which ADR 0022 §8 retired and which is refused rather than ignored."""
+    assert set(RETIRED_SETTINGS) == {"ELA_ANTHROPIC_MODEL"}
+    assert "ELA_ANTHROPIC_MODEL" in documented_settings(adr_text())
+    with pytest.raises(ValidationError, match="retired"):
+        AnthropicSettings(_env_file=None, anthropic_model=DEFAULT_MODEL)
 
 
 def test_the_backoff_of_the_adr_is_the_backoff_of_the_code() -> None:

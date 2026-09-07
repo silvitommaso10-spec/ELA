@@ -24,8 +24,9 @@ from ela.domain import (
     ExecutionStatus,
     ProviderUsage,
 )
-from ela.ports import VERIFICATION_UNKNOWN_CONDITION
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.ports import ROUTING_UNKNOWN_TASK_TYPE, VERIFICATION_UNKNOWN_CONDITION
+from ela.routing import BALANCED, QUALITY, ModelRouter
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
 from ela.tools import (
     COMMON_FAILURE_CODES,
     CORE_ECHO,
@@ -34,7 +35,9 @@ from ela.tools import (
     ECHO_VERIFIER_NAME,
     MODEL_ANSWERED,
     MODEL_COMPLETE,
+    MODEL_MISROUTED,
     MODEL_NO_ANSWER,
+    MODEL_ROUTED_AS_ASKED,
     MODEL_TOOL_NAME,
     MODEL_UNACCOUNTED,
     MODEL_VERIFIER_NAME,
@@ -60,6 +63,7 @@ from ela.tools import (
     WriteNoteVerifier,
 )
 from tests.domain.examples import EXECUTION_RESULT
+from tests.routing.support import routing_for
 from tests.tools.support import allowed
 
 NOTE = "workspace/notes/briefing.md"
@@ -426,11 +430,12 @@ async def test_an_unknown_condition_is_refused_before_any_read(
 
 
 # --------------------------------------------------------------------------------------
-# ``ModelCompleteVerifier`` (ADR 0021 §6)
+# ``ModelCompleteVerifier`` (ADR 0021 §6, ADR 0022 §10)
 # --------------------------------------------------------------------------------------
 
 
 ANSWERED = (MODEL_ANSWERED,)
+ROUTED = (MODEL_ROUTED_AS_ASKED,)
 MODEL_ARGUMENTS = {"input": "Riassumi le email della riunione."}
 MODEL_USAGE = ProviderUsage(input_tokens=12, output_tokens=34)
 
@@ -448,6 +453,8 @@ def completion(**update: object) -> ExecutionResult:
             "provider": "fake",
             "model": "fake-model",
             "finish_reason": "end_turn",
+            "profile": BALANCED,
+            "skipped": [],
         },
         usage=MODEL_USAGE,
     )
@@ -455,8 +462,15 @@ def completion(**update: object) -> ExecutionResult:
 
 
 @pytest.fixture
-def model_verifier() -> ModelCompleteVerifier:
-    return ModelCompleteVerifier()
+def model_router() -> ModelRouter:
+    """The real router over one provider named ``fake``: the same policy the tool would use."""
+    router, _ = routing_for(FakeModelProvider(FakeClock(), FakeIdGenerator()))
+    return router
+
+
+@pytest.fixture
+def model_verifier(model_router: ModelRouter) -> ModelCompleteVerifier:
+    return ModelCompleteVerifier(model_router)
 
 
 async def test_a_completion_with_a_text_a_source_and_a_usage_passes(
@@ -524,8 +538,114 @@ async def test_the_verifier_makes_no_second_call(
     model_verifier: ModelCompleteVerifier,
 ) -> None:
     """It holds no provider at all: asking again would charge again and send the content out a
-    second time (§57). The only world it looks at is the result."""
+    second time (§57). The only world it looks at is the result — and a router, which reads a
+    table and a declared status and calls nobody (ADR 0022 §7)."""
     assert not any("provider" in name for name in vars(model_verifier))
+
+
+# --------------------------------------------------------------------------------------
+# ``model.routed_as_asked`` (ADR 0022 §10, decision 10b of M7.2)
+# --------------------------------------------------------------------------------------
+
+
+async def test_a_call_that_went_where_the_policy_says_passes(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    """The route is recomputed from the **arguments**, not read from what the tool wrote."""
+    routed = completion(output={**dict(completion().output), "profile": QUALITY})
+
+    assert (
+        await model_verifier.verify(ROUTED, {**MODEL_ARGUMENTS, "task_type": "coding"}, routed)
+        == ()
+    )
+    assert await model_verifier.verify(ROUTED, MODEL_ARGUMENTS, completion()) == ()
+
+
+async def test_an_explicit_hint_is_what_the_condition_expects(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    """The hint wins in the router (ADR 0022 §3), so it wins here too: the verifier asks the same
+    question the tool asked, or it would fail every call that carried a hint."""
+    hinted = completion(output={**dict(completion().output), "profile": "cheap"})
+    arguments = {**MODEL_ARGUMENTS, "task_type": "coding", "model_hint": "cheap"}
+
+    assert await model_verifier.verify(ROUTED, arguments, hinted) == ()
+
+
+@pytest.mark.parametrize(
+    ("output", "expected", "actual"),
+    [
+        ({"provider": "somebody-else"}, "fake", "somebody-else"),
+        ({"profile": "cheap"}, BALANCED, BALANCED),
+    ],
+    ids=["another-provider", "another-profile"],
+)
+async def test_a_call_that_went_elsewhere_does_not_pass(
+    model_verifier: ModelCompleteVerifier,
+    output: dict[str, object],
+    expected: str,
+    actual: str,
+) -> None:
+    """§33: a call answered by somebody the policy did not choose is not a verified call, even
+    when the answer is perfectly good."""
+    result = completion(output={**dict(completion().output), **output})
+
+    failures = await model_verifier.verify(ROUTED, MODEL_ARGUMENTS, result)
+
+    assert codes(failures) == [MODEL_MISROUTED]
+    assert failures[0].details["condition"] == MODEL_ROUTED_AS_ASKED
+    assert failures[0].details["expected_provider"] == "fake"
+    assert failures[0].retryable is False
+
+
+async def test_a_policy_that_cannot_route_the_call_any_more_does_not_pass(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    """A run that cannot be justified today is not a run that was verified: the condition fails
+    with the routing code in the details, rather than passing for lack of an opinion."""
+    failures = await model_verifier.verify(
+        ROUTED, {**MODEL_ARGUMENTS, "task_type": "telepathy"}, completion()
+    )
+
+    assert codes(failures) == [MODEL_MISROUTED]
+    assert failures[0].details["routing_error"] == ROUTING_UNKNOWN_TASK_TYPE
+
+
+async def test_routing_arguments_of_the_wrong_type_are_refused(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    failures = await model_verifier.verify(
+        ROUTED, {**MODEL_ARGUMENTS, "task_type": 7}, completion()
+    )
+
+    assert codes(failures) == [VERIFICATION_ARGUMENTS_INVALID]
+
+
+async def test_the_misrouting_failure_never_names_the_content(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    """A failure names providers and profiles — configuration — never the user's text (§57)."""
+    private_text = "il numero di conto è 1234"
+    result = completion(output={**dict(completion().output), "provider": "somebody-else"})
+
+    failures = await model_verifier.verify(ROUTED, {"input": private_text}, result)
+
+    reported = json.dumps([failure.model_dump(mode="json") for failure in failures])
+    assert private_text not in reported
+
+
+async def test_both_conditions_are_checked_and_both_can_fail(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    """``verify`` answers per condition: a result that neither answered nor went where it should
+    fails twice, and each failure names its own condition."""
+    result = completion(output={"provider": "somebody-else"})
+
+    failures = await model_verifier.verify(
+        (MODEL_ANSWERED, MODEL_ROUTED_AS_ASKED), MODEL_ARGUMENTS, result
+    )
+
+    assert codes(failures) == [MODEL_NO_ANSWER, MODEL_MISROUTED]
 
 
 async def test_an_unknown_condition_is_refused(model_verifier: ModelCompleteVerifier) -> None:
@@ -536,4 +656,6 @@ async def test_an_unknown_condition_is_refused(model_verifier: ModelCompleteVeri
     assert ModelCompleteVerifier.failure_codes == COMMON_FAILURE_CODES | {
         MODEL_NO_ANSWER,
         MODEL_UNACCOUNTED,
+        MODEL_MISROUTED,
     }
+    assert ModelCompleteVerifier.conditions == {MODEL_ANSWERED, MODEL_ROUTED_AS_ASKED}

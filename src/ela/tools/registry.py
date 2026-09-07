@@ -17,7 +17,15 @@ from pathlib import Path
 from types import MappingProxyType
 
 from ela.domain import CapabilityId
-from ela.ports import AlreadyExistsError, Clock, IdGenerator, ModelProvider, ToolPort, VerifierPort
+from ela.ports import (
+    AlreadyExistsError,
+    Clock,
+    IdGenerator,
+    ModelRouterPort,
+    ProviderRegistryPort,
+    ToolPort,
+    VerifierPort,
+)
 from ela.tools.echo import EchoTool
 from ela.tools.errors import NotIdempotentError, ToolNotFound, VerifierNotFound
 from ela.tools.model import ModelCompleteTool
@@ -91,30 +99,40 @@ class VerifierRegistry:
 
 
 def tools_v01(
-    *, root: Path | str, clock: Clock, ids: IdGenerator, provider: ModelProvider
+    *,
+    root: Path | str,
+    clock: Clock,
+    ids: IdGenerator,
+    router: ModelRouterPort,
+    providers: ProviderRegistryPort,
 ) -> ToolRegistry:
     """The three tools of v0.1, in the order of the catalogue (§29).
 
-    ``provider`` is the one :class:`~ela.ports.ModelProvider` ``model.complete`` calls. It is
-    mandatory: a registry that quietly dropped the third tool when nobody passed a provider would
-    make a capability disappear from what ELA can do, and a provider with no credentials already
-    has a way to say so — it registers ``UNAVAILABLE`` and answers ``provider.unavailable``
-    without touching the network (ADR 0020 §2). Which provider, and which model, is a choice the
-    Model Router will make (§25, M7.3); here there is one.
+    ``router`` decides which provider answers ``model.complete`` and with which profile (§25,
+    ADR 0022), and ``providers`` is where the name it chose is resolved. Both are mandatory: a
+    registry that quietly dropped the third tool when nobody passed them would make a capability
+    disappear from what ELA can do, and a provider with no credentials already has a way to say
+    so — it registers ``UNAVAILABLE``, the router skips it, and if there is nothing else the call
+    fails with ``provider.unavailable`` without touching the network (ADR 0020 §2).
     """
     return ToolRegistry(
         (
             EchoTool(clock, ids),
             WriteNoteTool(root, clock, ids),
-            ModelCompleteTool(provider, clock, ids),
+            ModelCompleteTool(router, providers, clock, ids),
         )
     )
 
 
-def verifiers_v01(*, root: Path | str) -> VerifierRegistry:
+def verifiers_v01(*, root: Path | str, router: ModelRouterPort) -> VerifierRegistry:
     """The verifiers of the tools of :func:`tools_v01`, on the same workspace ``root``.
 
-    No clock and no id source: a verifier creates no entity. No provider either: the verifier of
+    No clock and no id source: a verifier creates no entity. ``router`` is the **same** port the
+    tools were given, and it is asked the same question again: a verifier that read the route out
+    of the result would be checking the tool's word, and a verifier that had a policy of its own
+    would be checking a second opinion (ADR 0022 §10). No provider: the verifier of
     ``model.complete`` reads the result of the call and never makes another one.
     """
-    return VerifierRegistry((EchoVerifier(), WriteNoteVerifier(root), ModelCompleteVerifier()))
+    return VerifierRegistry(
+        (EchoVerifier(), WriteNoteVerifier(root), ModelCompleteVerifier(router))
+    )

@@ -24,6 +24,7 @@ from ela.ports import (
     ExecutionResultStore,
     IdGenerator,
     ModelProvider,
+    ModelRouterPort,
     PermissionGuardianPort,
     ProviderRegistryPort,
     TaskRepository,
@@ -154,3 +155,9 @@ async def provider(request: pytest.FixtureRequest) -> AsyncIterator[ModelProvide
 async def provider_registry(request: pytest.FixtureRequest) -> AsyncIterator[ProviderRegistryPort]:
     async for instance in _instance(request.param):
         yield cast(ProviderRegistryPort, instance)
+
+
+@pytest.fixture(params=implementations_of(ModelRouterPort), ids=str)
+async def model_router(request: pytest.FixtureRequest) -> AsyncIterator[ModelRouterPort]:
+    async for instance in _instance(request.param):
+        yield cast(ModelRouterPort, instance)
