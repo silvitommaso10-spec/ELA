@@ -38,14 +38,17 @@ from ela.testing.fakes import (
 from ela.tools import tools_v01
 from tests.devices.conftest import TTL
 from tests.domain.examples import MUCH_LATER
+from tests.routing.support import routing_for
 
+_ROUTER, _PROVIDERS = routing_for(FakeModelProvider(FakeClock(), FakeIdGenerator()))
 V01_TOOL_NAMES = tuple(
     tool.name
     for tool in tools_v01(
         root="/tmp/ela-m6.1",
         clock=FakeClock(),
         ids=FakeIdGenerator(),
-        provider=FakeModelProvider(FakeClock(), FakeIdGenerator()),
+        router=_ROUTER,
+        providers=_PROVIDERS,
     ).tools()
 )
 """What the composition root (M8.1) will pass to ``ensure_local`` (ADR 0016 §4)."""

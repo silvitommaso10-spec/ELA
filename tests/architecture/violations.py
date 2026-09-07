@@ -98,6 +98,27 @@ VIOLATIONS: tuple[Case, ...] = (
         "ela.providers.claude.Claude",
     ),
     Case(
+        "core-routing-providers",
+        "core-isolation",
+        "routing/router.py",
+        "from ela.providers.anthropic import AnthropicProvider\n",
+        "ela.providers.anthropic.AnthropicProvider",
+    ),
+    Case(
+        "tools-import-routing",
+        "tools-routing-isolation",
+        "tools/model.py",
+        "from ela.routing import RoutePolicy\n",
+        "ela.routing.RoutePolicy",
+    ),
+    Case(
+        "tools-import-routing-submodule",
+        "tools-routing-isolation",
+        "tools/registry.py",
+        "from ela.routing.policy import DEFAULT_ROUTES\n",
+        "ela.routing.policy.DEFAULT_ROUTES",
+    ),
+    Case(
         "state-model-copy",
         "state-changes",
         "tasks/engine.py",
@@ -659,6 +680,13 @@ VIOLATIONS: tuple[Case, ...] = (
 )
 
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        "tools-import-the-router-port",
+        "tools-routing-isolation",
+        "tools/model.py",
+        "from ela.ports import ModelRouterPort\n",
+        "",
+    ),
     Case(
         "availability-inside-devices",
         "device-availability-readers",

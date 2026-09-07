@@ -39,6 +39,7 @@ from ela.domain import (
     ExecutionResult,
     ExecutionStatus,
     JsonMapping,
+    ModelRoute,
     PermissionDecision,
     PermissionOutcome,
     PlanId,
@@ -68,6 +69,7 @@ from ela.ports import (
     ModelProvider,
     NotAllowedError,
     NotFoundError,
+    RoutingError,
     ToolPort,
     VerifierPort,
     check_answer,
@@ -87,6 +89,7 @@ __all__ = [
     "FakeExecutionResultStore",
     "FakeIdGenerator",
     "FakeModelProvider",
+    "FakeModelRouter",
     "FakePermissionGuardian",
     "FakeProviderRegistry",
     "FakeTaskRepository",
@@ -802,3 +805,41 @@ class FakeProviderRegistry:
 
     def names(self) -> tuple[str, ...]:
         return tuple(sorted(self._providers))
+
+
+class FakeModelRouter:
+    """A router that always chooses the same provider (port ``ModelRouterPort``).
+
+    Honours ``model_hint`` over ``profile`` the way the real one does (ADR 0022 §3), so a test of
+    the tool can prove the hint wins without building a policy. With ``error`` set every call
+    raises it, which is how a test reaches the branches where nothing is sent: an unknown task
+    type, a route with no usable provider.
+
+    ``calls`` records ``(task_type, model_hint)`` per call, so a test can assert that the tool
+    asked what the arguments said and not what it preferred.
+    """
+
+    def __init__(
+        self,
+        *,
+        provider: str = "fake",
+        profile: str = "balanced",
+        skipped: tuple[str, ...] = (),
+        error: RoutingError | None = None,
+    ) -> None:
+        self._provider = provider
+        self._profile = profile
+        self._skipped = skipped
+        self._error = error
+        self.calls: tuple[tuple[str | None, str | None], ...] = ()
+
+    def route(self, task_type: str | None, model_hint: str | None) -> ModelRoute:
+        self.calls = (*self.calls, (task_type, model_hint))
+        if self._error is not None:
+            raise self._error
+        return ModelRoute(
+            task_type=task_type,
+            provider=self._provider,
+            profile=model_hint if model_hint else self._profile,
+            skipped=self._skipped,
+        )

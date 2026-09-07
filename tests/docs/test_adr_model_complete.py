@@ -81,11 +81,18 @@ def test_rule_25_is_registered_under_the_name_the_adr_gives_it() -> None:
 
 
 def test_the_tool_and_the_verifier_declare_what_the_adr_says_they_do() -> None:
-    """§1 and §6, as class-level facts rather than prose."""
+    """§1 and §6, as class-level facts rather than prose.
+
+    ``model.answered`` is the condition this ADR gave the verifier, and it is still there; the
+    second one, promised here as "``model.routed_as_asked`` in M7.3", arrived with ADR 0022 §10
+    and is checked there. What this test holds is that the promise was kept and the first
+    condition survived it.
+    """
     assert ModelCompleteTool.idempotent is False
     assert "idempotent = False" in text()
-    assert ModelCompleteVerifier.conditions == frozenset({"model.answered"})
+    assert "model.answered" in ModelCompleteVerifier.conditions
     assert "`model.routed_as_asked` in M7.3" in text()
+    assert "model.routed_as_asked" in ModelCompleteVerifier.conditions
 
 
 def test_the_adr_answers_the_debt_adr_0015_wrote_down() -> None:

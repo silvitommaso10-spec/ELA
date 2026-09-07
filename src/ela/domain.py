@@ -69,6 +69,7 @@ __all__ = [
     "IntentId",
     "JsonMapping",
     "JsonValue",
+    "ModelRoute",
     "NAME_MAX_LENGTH",
     "NetworkKind",
     "OperatingSystem",
@@ -837,6 +838,28 @@ class AuditEvent(_DomainModel):
     payload: JsonMapping = _json_payload(
         "What the event carried, in the detail the audit trail needs (§32)."
     )
+
+
+class ModelRoute(_DomainModel):
+    """Which provider answers a model call, and with what profile (§25; ADR 0022).
+
+    The decision of the Model Router, as data — the shape the Guardian's decision already has:
+    the router chooses, the route *is* the choice, and the tool executes it. A datum can be
+    compared, written into a result and **recomputed**, which an object cannot, and recomputing
+    it from the arguments is exactly what the verifier of ``model.routed_as_asked`` does.
+
+    ``provider`` is the **name** the :class:`~ela.ports.ProviderRegistryPort` knows, never the
+    provider itself: the domain names things, it does not hold them. ``profile`` is a
+    ``model_hint`` of §25 — ``quality``, ``balanced``, ``cheap``… — and never a vendor's model
+    id, which only an adapter may know (§26, ADR 0020 §5). ``skipped`` are the providers of the
+    route that were passed over because they were not usable, in the order the route names them:
+    a choice that jumped over somebody says so (§33).
+    """
+
+    task_type: str | None
+    provider: str
+    profile: str
+    skipped: tuple[str, ...] = ()
 
 
 class ProviderRequest(_DomainModel):

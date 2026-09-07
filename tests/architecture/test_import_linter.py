@@ -29,9 +29,11 @@ from tests.architecture.rules import (
     PERMISSIONS_PACKAGE,
     PORTS_ALLOWED_INTERNAL,
     PROVIDERS_PACKAGE,
+    ROUTING_PACKAGE,
     STATE_MACHINE_MODULE,
     TESTING_ALLOWED_INTERNAL,
     TESTING_PACKAGE,
+    TOOLS_PACKAGE,
     check_domain,
     provider_modules_outside_the_adapter,
     top_level_modules,
@@ -63,6 +65,8 @@ def _contract_for(rule: str) -> Contract:
         if rule == "infra-libraries" and forbidden == INFRA_LIBRARIES:
             return contract
         if rule == "core-isolation" and forbidden == set(CORE_FORBIDDEN):
+            return contract
+        if rule == "tools-routing-isolation" and sources == {TOOLS_PACKAGE}:
             return contract
         if rule == "testing-isolation" and forbidden == {TESTING_PACKAGE}:
             return contract
@@ -97,6 +101,9 @@ def test_contracts_cover_current_packages() -> None:
 
     core = _contract_for("core-isolation")
     assert set(core["source_modules"]) == {f"ela.{name}" for name in CORE_PACKAGES}
+
+    tools = _contract_for("tools-routing-isolation")
+    assert set(tools["forbidden_modules"]) == {ROUTING_PACKAGE}
 
     isolation = _contract_for("testing-isolation")
     assert set(isolation["source_modules"]) == top_level_modules(PACKAGE_ROOT) - {TESTING_PACKAGE}
@@ -189,6 +196,7 @@ LINTER_CASES = [
         "permissions-imports-tasks",
         "devices-import-tasks",
         "anthropic-in-the-registry",
+        "tools-import-routing",
     )
 ]
 

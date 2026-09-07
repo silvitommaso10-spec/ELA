@@ -21,9 +21,11 @@ from ela.providers.anthropic.payload import ALLOWED_PARAMETERS
 from tests.providers.support import answer, make_provider, request, settings
 
 
-def test_no_hint_is_the_configured_default() -> None:
-    model = model_for_hint(None, DEFAULT_MODEL)
-    assert model is not None and model.id == SONNET_5
+def test_no_hint_is_the_default_model() -> None:
+    """Since M7.3 the router names a profile on every call it makes, so this is what answers a
+    request built outside that path (ADR 0022 §8): the balanced model, not a configured one."""
+    model = model_for_hint(None)
+    assert model is not None and model.id == SONNET_5 == DEFAULT_MODEL
 
 
 @pytest.mark.parametrize(
@@ -43,17 +45,17 @@ def test_no_hint_is_the_configured_default() -> None:
     ],
 )
 def test_the_profiles_of_the_spec(hint: str, expected: str) -> None:
-    model = model_for_hint(hint, DEFAULT_MODEL)
+    model = model_for_hint(hint)
     assert model is not None and model.id == expected
 
 
 def test_a_model_id_is_accepted_as_itself() -> None:
-    model = model_for_hint(OPUS_5, DEFAULT_MODEL)
+    model = model_for_hint(OPUS_5)
     assert model is not None and model.id == OPUS_5
 
 
 def test_an_unknown_hint_resolves_to_nothing() -> None:
-    assert model_for_hint("telepathy", DEFAULT_MODEL) is None
+    assert model_for_hint("telepathy") is None
 
 
 def test_every_profile_points_at_a_model_ela_knows() -> None:

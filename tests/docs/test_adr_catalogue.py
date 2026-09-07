@@ -15,7 +15,12 @@ from pathlib import Path
 from ela.domain import CapabilitySpec, RiskLevel
 from ela.permissions import catalogue_v01
 
-ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0010-capability-catalogue.md"
+ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
+ADR_PATH = ADR_DIR / "0010-capability-catalogue.md"
+EXTENDING = "Capability estese:"
+EXTENDING_ADRS = ((ADR_DIR / "0022-model-router.md", EXTENDING),)
+"""ADRs that give a capability a new argument (ADR 0022 §2: ``task_type`` on ``model.complete``),
+under a label, with the whole row rewritten."""
 ROW = re.compile(
     r"^\| `([a-z_.]+)` \| (SAFE|LOW|MEDIUM|HIGH|CRITICAL) \| (.+?) \| (.+?) \| (sì|no) "
     r"\| (.+?) \| (.+?) \|$"
@@ -41,6 +46,28 @@ def _codes(cell: str) -> tuple[str, ...]:
 
 def _arguments(cell: str) -> dict[str, str]:
     return {} if cell.strip() == "—" else dict(ARGUMENT.findall(cell))
+
+
+def section(path: Path, label: str) -> str:
+    """The text after ``label`` in ``path``, up to the next heading: the table it introduces."""
+    text = path.read_text(encoding="utf-8")
+    assert label in text, f"{path.name} must carry the label {label!r}"
+    return text.split(label, 1)[1].split("\n#", 1)[0]
+
+
+def all_documented_capabilities() -> dict[str, Row]:
+    """ADR 0010's catalogue, then the rows later ADRs replace (ADR 0022 §2: ``task_type``).
+
+    An ADR is immutable and the catalogue is one table, so a capability that gains an argument
+    later is documented again, in full, by the ADR that gave it: the last row wins, and a row
+    that replaces a capability nobody declared is a drift.
+    """
+    union = documented_catalogue(ADR_PATH.read_text(encoding="utf-8"))
+    for path, label in EXTENDING_ADRS:
+        for cid, row in documented_catalogue(section(path, label)).items():
+            assert cid in union, f"{cid} is extended before being declared ({path.name})"
+            union[cid] = row
+    return union
 
 
 def documented_catalogue(text: str) -> dict[str, Row]:
@@ -79,7 +106,7 @@ def coded_row(spec: CapabilitySpec) -> Row:
 
 
 def test_table_matches_the_code() -> None:
-    documented = documented_catalogue(ADR_PATH.read_text(encoding="utf-8"))
+    documented = all_documented_capabilities()
     coded = {spec.id: coded_row(spec) for spec in catalogue_v01().specs()}
     assert list(documented) == list(coded)
     for cid, row in documented.items():

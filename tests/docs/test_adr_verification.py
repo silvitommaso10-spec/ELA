@@ -16,14 +16,20 @@ import pytest
 from ela.executive import VERIFICATION_EXCEPTION, VERIFICATION_FAILED
 from ela.permissions import catalogue_v01
 from ela.tasks.engine import OPERATIONS, STEP_OPERATIONS
+from ela.testing.fakes import FakeModelRouter
 from ela.tools import COMMON_FAILURE_CODES, PATH_CODES, Verifier, verifiers_v01
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0014-verification.md"
 ADDING_VERIFIERS = "Verifier aggiunti:"
+REPLACING_VERIFIERS = "Verifier sostituiti:"
 ADDING_ADRS = ((ADR_DIR / "0021-started-protocol-and-model-complete.md", ADDING_VERIFIERS),)
 """ADRs that add a verifier after ADR 0014 (ADR 0021 §10). An ADR is immutable: a verifier that
 arrives later is documented by its own ADR, under a label, as a port extended later is."""
+REPLACING_ADRS = ((ADR_DIR / "0022-model-router.md", REPLACING_VERIFIERS),)
+"""ADRs that change a verifier documented earlier (ADR 0022 §10: ``model.routed_as_asked`` is the
+second condition of ``model.complete``). Additions apply first, replacements after, and the
+replacing row is the one the code must match."""
 VERIFIER_ROW = re.compile(r"^\| `([a-z_.]+)` \| `(\w+)` \| `([\w-]+)` \| (.+?) \| (.+?) \|$")
 OUTCOME_ROW = re.compile(
     r"^\| (SUCCEEDED|non SUCCEEDED) \| (.+?) \| (.+?) \| (.+?) \| "
@@ -55,7 +61,7 @@ def documented_verifiers(text: str) -> dict[str, tuple[str, str, frozenset[str],
 
 def coded_verifiers() -> dict[str, tuple[str, str, frozenset[str], frozenset[str]]]:
     rows = {}
-    for verifier in verifiers_v01(root="/tmp/ela-adr-0014").verifiers():
+    for verifier in verifiers_v01(root="/tmp/ela-adr-0014", router=FakeModelRouter()).verifiers():
         assert isinstance(verifier, Verifier)
         rows[verifier.capability_id] = (
             type(verifier).__name__,
@@ -87,11 +93,15 @@ def section(path: Path, label: str) -> str:
 
 
 def all_documented_verifiers() -> dict[str, tuple[str, str, frozenset[str], frozenset[str]]]:
-    """ADR 0014's verifiers plus the ones later ADRs add, in the order they were introduced."""
+    """ADR 0014's verifiers, plus what later ADRs add, then what later ADRs replace."""
     union = documented_verifiers(ADR_PATH.read_text(encoding="utf-8"))
     for path, label in ADDING_ADRS:
         for cid, row in documented_verifiers(section(path, label)).items():
             assert cid not in union, f"{cid} is documented in more than one ADR ({path.name})"
+            union[cid] = row
+    for path, label in REPLACING_ADRS:
+        for cid, row in documented_verifiers(section(path, label)).items():
+            assert cid in union, f"{cid} is replaced before being documented ({path.name})"
             union[cid] = row
     return union
 
@@ -114,17 +124,33 @@ def test_adr_0014_documents_the_two_verifiers_that_predate_the_provider() -> Non
 
 
 def test_a_drifted_added_table_is_detected() -> None:
-    """The later table is held to account like the first one, or it would be decoration."""
-    text = section(*ADDING_ADRS[0])
+    """The later tables are held to account like the first one, or they would be decoration."""
     coded = coded_verifiers()
-    for before, after in (
-        ("| `model-complete-verifier` |", "| `model-complete-check` |"),
-        ("`model.unaccounted`", "`model.uncounted`"),
-        ("comuni, `model.no_answer`", "`model.no_answer`"),
+    for source, before, after in (
+        (ADDING_ADRS[0], "| `model-complete-verifier` |", "| `model-complete-check` |"),
+        (REPLACING_ADRS[0], "`model.unaccounted`", "`model.uncounted`"),
+        (REPLACING_ADRS[0], "comuni, `model.no_answer`", "`model.no_answer`"),
+        (REPLACING_ADRS[0], "`model.answered`, `model.routed_as_asked`", "`model.answered`"),
     ):
+        text = section(*source)
         drifted = text.replace(before, after, 1)
         assert drifted != text, before
         assert documented_verifiers(drifted)["model.complete"] != coded["model.complete"], before
+
+
+def test_the_second_condition_arrives_with_the_router() -> None:
+    """Decision 10b of M7.2, split in two: ADR 0021 documents the verifier with one condition,
+    ADR 0022 the same verifier with the one the router made possible."""
+    added = documented_verifiers(section(*ADDING_ADRS[0]))["model.complete"]
+    replaced = documented_verifiers(section(*REPLACING_ADRS[0]))["model.complete"]
+
+    assert added[2] == frozenset({"model.answered"})
+    assert replaced[2] == frozenset({"model.answered", "model.routed_as_asked"})
+    assert (
+        all_documented_verifiers()["model.complete"]
+        == replaced
+        == coded_verifiers()["model.complete"]
+    )
 
 
 def test_every_outcome_row_names_engine_operations_and_known_codes() -> None:

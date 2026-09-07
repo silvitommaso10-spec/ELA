@@ -4,11 +4,11 @@
   observable world of an echo, and a declared limit.
 * :class:`ModelCompleteVerifier` for ``model.complete``: the tool **answered and can account
   for it** — a text, the provider and the model that produced it, and a
-  :class:`~ela.domain.ProviderUsage`. It cannot check that the answer is *good*, and it must not
-  ask the model again: a second call would cost money and send the user's content out twice
-  (§57). What it can refuse is a success nobody can account for (§32), and that is a declared
-  limit, as the echo's is. Whether the call went where a routing policy said is
-  ``model.routed_as_asked``, and it arrives with the router in M7.3.
+  :class:`~ela.domain.ProviderUsage` — and it **went where the policy sends it**. It cannot check
+  that the answer is *good*, and it must not ask the model again: a second call would cost money
+  and send the user's content out twice (§57). What it can refuse is a success nobody can account
+  for (§32) and a call that went somewhere nobody chose (§25, §33), and the rest is a declared
+  limit, as the echo's is.
 * :class:`WriteNoteVerifier` for ``workspace.write_note``: the note **exists** as a regular
   file inside the workspace, and its **content matches** the body that was asked — the file is
   read back from the disk with ``O_RDONLY | O_NOFOLLOW`` and its SHA-256 compared with the
@@ -33,8 +33,9 @@ from pathlib import Path
 from typing import ClassVar, Final
 
 from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping
+from ela.ports import ModelRouterPort, RoutingError
 from ela.tools.echo import CORE_ECHO
-from ela.tools.model import MODEL_COMPLETE
+from ela.tools.model import MODEL_COMPLETE, routing_arguments
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
 from ela.tools.paths import PATH_CODES, classify, resolve_workspace
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
@@ -44,7 +45,9 @@ __all__ = [
     "ECHO_MESSAGE_MISMATCH",
     "ECHO_VERIFIER_NAME",
     "MODEL_ANSWERED",
+    "MODEL_MISROUTED",
     "MODEL_NO_ANSWER",
+    "MODEL_ROUTED_AS_ASKED",
     "MODEL_UNACCOUNTED",
     "MODEL_VERIFIER_NAME",
     "NOTES_VERIFIER_NAME",
@@ -68,6 +71,13 @@ MODEL_NO_ANSWER: Final = "model.no_answer"
 MODEL_UNACCOUNTED: Final = "model.unaccounted"
 """A SUCCEEDED completion with no usage: the call cannot be accounted for, and §32 asks that a
 provider call be. A tool that answers without saying what it consumed has not been verified."""
+MODEL_ROUTED_AS_ASKED: Final = "model.routed_as_asked"
+"""The provider that answered, and the profile that was asked for, are the ones the routing
+policy prescribes for these arguments (§25; ADR 0022 §10)."""
+MODEL_MISROUTED: Final = "model.misrouted"
+"""The call went to a provider — or asked for a profile — the policy does not prescribe for these
+arguments, or the policy cannot route them at all any more. Not a fault of the model: a fact
+about *where the request went*, which §25 made a decision and §33 forbids taking silently."""
 
 ECHO_MESSAGE_MATCHES: Final = "echo.message_matches"
 """``output["message"]`` is the string ``arguments["message"]``."""
@@ -192,23 +202,33 @@ class WriteNoteVerifier(Verifier):
 
 
 class ModelCompleteVerifier(Verifier):
-    """``model.complete`` answered, and the answer can be accounted for (§29, §32, §63).
+    """``model.complete`` answered, can be accounted for, and went where it was routed (§25, §32).
 
     Read-only like every verifier, and read-only in a stronger sense here: the world it could
     look at is a model, and looking would mean asking again — a second charge and the user's
     content across the network a second time (§57). So what it checks is what the run left
-    behind: a text, who produced it, and what it cost. It cannot judge whether the answer is
-    right; nothing in v0.1 can, and that is written down rather than implied.
+    behind: a text, who produced it, what it cost, and whether that provider is the one the
+    policy prescribes. It cannot judge whether the answer is right; nothing in v0.1 can, and
+    that is written down rather than implied.
+
+    ``router`` is the same port the tool used, and the route is **recomputed from the arguments**
+    rather than read from anything the tool wrote: a verifier that took the tool's word for where
+    the call went would be verifying the tool's report, which is the thing verification exists
+    not to do. Recomputing is reliable because :class:`~ela.domain.ProviderStatus` is static
+    (ADR 0020 §2) — the same question gets the same answer, skipped providers included — and that
+    is a dependency, written down here and in ADR 0022, that a mutable status would break.
     """
 
-    conditions: ClassVar[frozenset[str]] = frozenset({MODEL_ANSWERED})
+    conditions: ClassVar[frozenset[str]] = frozenset({MODEL_ANSWERED, MODEL_ROUTED_AS_ASKED})
     failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
         MODEL_NO_ANSWER,
         MODEL_UNACCOUNTED,
+        MODEL_MISROUTED,
     }
 
-    def __init__(self, *, name: str = MODEL_VERIFIER_NAME) -> None:
+    def __init__(self, router: ModelRouterPort, *, name: str = MODEL_VERIFIER_NAME) -> None:
         super().__init__(MODEL_COMPLETE, name=name)
+        self._router = router
 
     async def _check(
         self, condition: str, arguments: JsonMapping, result: ExecutionResult
@@ -220,6 +240,58 @@ class ModelCompleteVerifier(Verifier):
                 "input must be a string",
                 retryable=False,
             )
+        if condition == MODEL_ROUTED_AS_ASKED:
+            return self._routed(condition, arguments, result)
+        return self._answered(condition, result)
+
+    def _routed(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        """The route these arguments ask for, against the provider and profile that answered.
+
+        The comparison is strongest on the **provider**: ``output["provider"]`` is the name the
+        provider itself put in its result. The profile can only be compared with what the tool
+        declared — the model that answered is a vendor's id, which the Core does not translate
+        (§26) — and that is a declared limit of this condition.
+
+        A policy that no longer routes these arguments fails the condition rather than passing
+        it: a run that cannot be justified today is not a run that was verified.
+        """
+        routing = routing_arguments(arguments)
+        if routing is None:
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "task_type and model_hint must be strings",
+                retryable=False,
+            )
+        try:
+            route = self._router.route(*routing)
+        except RoutingError as error:
+            return self._failure(
+                condition,
+                MODEL_MISROUTED,
+                f"the policy does not route this call any more: {error.code}",
+                retryable=False,
+                details={"routing_error": error.code},
+            )
+        actual = (result.output.get("provider"), result.output.get("profile"))
+        if actual == (route.provider, route.profile):
+            return None
+        return self._failure(
+            condition,
+            MODEL_MISROUTED,
+            "the call did not go where the policy routes it",
+            retryable=False,
+            details={
+                "expected_provider": route.provider,
+                "actual_provider": actual[0],
+                "expected_profile": route.profile,
+                "actual_profile": actual[1],
+            },
+        )
+
+    def _answered(self, condition: str, result: ExecutionResult) -> ErrorMetadata | None:
         missing = tuple(
             key for key in ("output", "provider", "model") if not self._text(result, key)
         )

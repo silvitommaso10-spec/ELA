@@ -9,11 +9,17 @@ from pydantic import ValidationError
 
 from ela.domain import ProviderStatus
 from ela.providers.anthropic import AnthropicSettings, anthropic_provider
-from ela.providers.anthropic.models import DEFAULT_MODEL, OPUS_5, SONNET_5
+from ela.providers.anthropic.models import (
+    DEFAULT_MODEL,
+    LARGEST_OUTPUT_TOKENS,
+    OPUS_5,
+    SONNET_5,
+)
 from ela.providers.anthropic.settings import (
     DEFAULT_MAX_OUTPUT_TOKENS,
     DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
+    RETIRED_SETTINGS,
 )
 from ela.testing.fakes import FakeClock, FakeIdGenerator
 
@@ -38,7 +44,7 @@ def _clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_defaults() -> None:
     settings = AnthropicSettings(_env_file=None)
     assert settings.anthropic_api_key is None
-    assert settings.anthropic_model == DEFAULT_MODEL == SONNET_5
+    assert settings.anthropic_model is None  # retired in M7.3: a tombstone, never a value
     assert settings.anthropic_timeout_seconds == DEFAULT_TIMEOUT_SECONDS == 60.0
     assert settings.anthropic_max_retries == DEFAULT_MAX_RETRIES == 2
     assert settings.anthropic_max_output_tokens == DEFAULT_MAX_OUTPUT_TOKENS == 4096
@@ -86,10 +92,37 @@ def test_a_key_makes_the_provider_available(monkeypatch: pytest.MonkeyPatch) -> 
     assert provider.name == "anthropic"
 
 
-def test_an_unknown_model_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ELA_ANTHROPIC_MODEL", "gpt-4")
-    with pytest.raises(ValidationError):
+@pytest.mark.parametrize("value", ["gpt-4", SONNET_5, ""])
+def test_the_retired_model_variable_stops_ela_instead_of_being_ignored(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """ADR 0022 §8: ``ELA_ANTHROPIC_MODEL`` chose the model until M7.3, and the routing table
+    chooses it now. A variable that silently stopped working would leave whoever set it believing
+    it still does — so it is refused, at start-up, naming what to set instead (§33).
+
+    Even an empty value is refused: it was set on purpose, and telling an operator "this is gone"
+    is the point. A model ELA *knows* is refused too — being valid yesterday is not the question.
+    """
+    monkeypatch.setenv("ELA_ANTHROPIC_MODEL", value)
+
+    with pytest.raises(ValidationError, match="retired") as raised:
         AnthropicSettings(_env_file=None)
+
+    assert "ELA_MODEL_ROUTES" in str(raised.value)
+
+
+def test_the_retired_variable_is_refused_from_a_dotenv_file_too(tmp_path: Path) -> None:
+    """Not only from the environment: a ``.env`` left over from M7.2 must stop ELA as well."""
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(f"ELA_ANTHROPIC_MODEL={OPUS_5}\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="retired"):
+        AnthropicSettings(_env_file=dotenv)
+
+
+def test_what_the_retired_table_says_is_what_the_message_says() -> None:
+    assert set(RETIRED_SETTINGS) == {"ELA_ANTHROPIC_MODEL"}
+    assert "ELA_MODEL_ROUTES" in RETIRED_SETTINGS["ELA_ANTHROPIC_MODEL"]
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "601"])
@@ -106,19 +139,23 @@ def test_an_impossible_retry_count_is_refused(monkeypatch: pytest.MonkeyPatch, v
         AnthropicSettings(_env_file=None)
 
 
-def test_a_budget_larger_than_the_model_can_produce_is_refused(
+def test_a_budget_larger_than_any_model_can_produce_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ELA_ANTHROPIC_MODEL", "claude-haiku-4-5")
-    monkeypatch.setenv("ELA_ANTHROPIC_MAX_OUTPUT_TOKENS", "100000")
-    with pytest.raises(ValidationError):
+    """With no configured model, the guard is the largest model there is: past it the budget asks
+    for something nobody can give (ADR 0022 §8)."""
+    monkeypatch.setenv("ELA_ANTHROPIC_MAX_OUTPUT_TOKENS", str(LARGEST_OUTPUT_TOKENS + 1))
+    with pytest.raises(ValidationError, match="largest model"):
         AnthropicSettings(_env_file=None)
 
 
-def test_a_budget_the_model_can_produce_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ELA_ANTHROPIC_MODEL", "claude-haiku-4-5")
-    monkeypatch.setenv("ELA_ANTHROPIC_MAX_OUTPUT_TOKENS", "64000")
-    assert AnthropicSettings(_env_file=None).anthropic_max_output_tokens == 64_000
+def test_a_budget_one_model_cannot_produce_is_accepted_and_clamped_later(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """100k is more than Haiku's 64k and less than Opus's 128k: it is not a misconfiguration, it
+    is a default that ``build_payload`` clamps per model (``tests/providers/test_mapping.py``)."""
+    monkeypatch.setenv("ELA_ANTHROPIC_MAX_OUTPUT_TOKENS", "100000")
+    assert AnthropicSettings(_env_file=None).anthropic_max_output_tokens == 100_000
 
 
 def test_unknown_variables_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -128,5 +165,5 @@ def test_unknown_variables_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_dotenv_file_is_read_when_asked(tmp_path: Path) -> None:
     dotenv = tmp_path / ".env"
-    dotenv.write_text(f"ELA_ANTHROPIC_MODEL={OPUS_5}\n", encoding="utf-8")
-    assert AnthropicSettings(_env_file=dotenv).anthropic_model == OPUS_5
+    dotenv.write_text("ELA_ANTHROPIC_MAX_RETRIES=7\n", encoding="utf-8")
+    assert AnthropicSettings(_env_file=dotenv).anthropic_max_retries == 7

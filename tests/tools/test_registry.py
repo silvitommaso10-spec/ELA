@@ -10,7 +10,13 @@ import pytest
 from ela.domain import CapabilityId
 from ela.permissions import MODEL_COMPLETE, catalogue_v01
 from ela.ports import AlreadyExistsError
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider, FakeTool
+from ela.testing.fakes import (
+    FakeClock,
+    FakeIdGenerator,
+    FakeModelProvider,
+    FakeModelRouter,
+    FakeTool,
+)
 from ela.tools import (
     CORE_ECHO,
     EchoTool,
@@ -28,11 +34,13 @@ from ela.tools import (
     tools_v01,
     verifiers_v01,
 )
+from tests.routing.support import routing_for
 
 
 def registry_of(root: Path) -> ToolRegistry:
     clock, ids = FakeClock(), FakeIdGenerator()
-    return tools_v01(root=root, clock=clock, ids=ids, provider=FakeModelProvider(clock, ids))
+    router, providers = routing_for(FakeModelProvider(clock, ids))
+    return tools_v01(root=root, clock=clock, ids=ids, router=router, providers=providers)
 
 
 def test_get_unknown_names_the_capability() -> None:
@@ -57,11 +65,14 @@ def test_tools_v01_implements_the_whole_catalogue(tmp_path: Path) -> None:
     assert registry.get(MODEL_COMPLETE) is model
 
 
-def test_the_registry_needs_a_provider_for_the_model_tool(tmp_path: Path) -> None:
-    """A registry that dropped the third tool when nobody passed a provider would make a
-    capability disappear; a provider with no key says so through its status instead."""
+def test_the_registry_needs_a_router_and_a_registry_for_the_model_tool(tmp_path: Path) -> None:
+    """A registry that dropped the third tool when nobody passed a router would make a capability
+    disappear; a provider with no key says so through its status instead, and the router skips
+    it (ADR 0022 §7)."""
     with pytest.raises(TypeError):
         tools_v01(root=tmp_path, clock=FakeClock(), ids=FakeIdGenerator())  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        verifiers_v01(root=tmp_path)  # type: ignore[call-arg]
 
 
 def test_the_registry_is_frozen() -> None:
@@ -83,7 +94,7 @@ def test_verifiers_v01_covers_exactly_the_tools_of_v01(tmp_path: Path) -> None:
     """Every tool has its verifier and no verifier lacks a tool: a capability without both is
     not executable (ADR 0014 §3)."""
     tools = registry_of(tmp_path)
-    verifiers = verifiers_v01(root=tmp_path)
+    verifiers = verifiers_v01(root=tmp_path, router=FakeModelRouter())
     assert {v.capability_id for v in verifiers.verifiers()} == {
         t.capability_id for t in tools.tools()
     }

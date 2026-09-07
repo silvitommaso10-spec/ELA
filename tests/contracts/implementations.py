@@ -42,6 +42,7 @@ from ela.ports import (
     ExecutionResultStore,
     IdGenerator,
     ModelProvider,
+    ModelRouterPort,
     PermissionGuardianPort,
     ProviderRegistryPort,
     TaskRepository,
@@ -52,6 +53,7 @@ from ela.ports import (
 )
 from ela.providers import ProviderRegistry
 from ela.providers.anthropic import AnthropicProvider, AnthropicSettings, anthropic_provider
+from ela.routing import ModelRouter
 from ela.testing.fakes import (
     FakeApprovalStore,
     FakeAuditLog,
@@ -62,6 +64,7 @@ from ela.testing.fakes import (
     FakeExecutionResultStore,
     FakeIdGenerator,
     FakeModelProvider,
+    FakeModelRouter,
     FakePermissionGuardian,
     FakeProviderRegistry,
     FakeTaskRepository,
@@ -80,6 +83,7 @@ from ela.tools import (
 )
 from tests.domain.examples import CAPABILITY_SPEC, MODEL_COMPLETE, WRITE_NOTE
 from tests.providers.support import FakeAnthropic, answer, settings
+from tests.routing.support import policy_for
 
 Hook = Callable[[object], Awaitable[None]]
 
@@ -288,6 +292,16 @@ def _provider() -> FakeModelProvider:
     return FakeModelProvider(FakeClock(), FakeIdGenerator())
 
 
+def _fake_router() -> FakeModelRouter:
+    return FakeModelRouter(provider="fake")
+
+
+def _router() -> ModelRouter:
+    """The real router over a registry that has the provider its table names (ADR 0022 §7)."""
+    provider = _provider()
+    return ModelRouter(policy_for(provider.name), ProviderRegistry((provider,)))
+
+
 def _unconfigured_anthropic() -> AnthropicProvider:
     """The real adapter with no credentials: UNAVAILABLE, and still under the same contract."""
     return anthropic_provider(
@@ -374,6 +388,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     ProviderRegistryPort: (
         Implementation("FakeProviderRegistry", FakeProviderRegistry),
         Implementation("ProviderRegistry", ProviderRegistry),
+    ),
+    ModelRouterPort: (
+        Implementation("FakeModelRouter", _fake_router),
+        Implementation("ModelRouter", _router),
     ),
 }
 

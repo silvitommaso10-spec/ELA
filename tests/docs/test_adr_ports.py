@@ -49,6 +49,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0013-executor.md", INTRODUCING),
     (ADR_DIR / "0014-verification.md", INTRODUCING),
     (ADR_DIR / "0015-approval-and-result-persistence.md", INTRODUCING),
+    (ADR_DIR / "0022-model-router.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
@@ -56,6 +57,7 @@ RENAMING_ADRS: tuple[Source, ...] = ((ADR_DIR / "0020-provider-anthropic.md", RE
 """ADRs that rename a port (ADR 0020): the old name goes, the members stay."""
 INTRODUCED_PORTS = frozenset(
     {
+        "ModelRouterPort",
         "AuthorizingGuardianPort",
         "ToolRegistryPort",
         "VerifierPort",

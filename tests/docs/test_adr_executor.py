@@ -7,8 +7,11 @@ declarations. Each table has a distinctive row shape, so no other table test mis
 
 An ADR is immutable, so a tool that arrives later is documented by *its* ADR, under the label
 ``Tool aggiunti:`` (ADR 0021 §9), exactly as a port extended later is
-documented under ``Port estesi:``. The union of the tables is what the code must match, and a
-capability documented twice is a drift of its own.
+documented under ``Port estesi:``; a tool that *changes* later is documented under
+``Tool sostituiti:`` (ADR 0022 §9), and the replacing row wins. Additions apply first, then
+replacements — the same order ``test_adr_ports.py`` reads its tables in. The union is what the
+code must match, and a capability added twice, or replaced before it exists, is a drift of its
+own.
 """
 
 from __future__ import annotations
@@ -23,12 +26,18 @@ from ela.permissions import Rule, catalogue_v01
 from ela.tasks.engine import OPERATIONS, STEP_OPERATIONS
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
 from ela.tools import Tool, tools_v01
+from tests.routing.support import routing_for
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0013-executor.md"
 ADDING_TOOLS = "Tool aggiunti:"
+REPLACING_TOOLS = "Tool sostituiti:"
 ADDING_ADRS = ((ADR_DIR / "0021-started-protocol-and-model-complete.md", ADDING_TOOLS),)
 """ADRs that add a tool after ADR 0013: the label, then the table, read as ADR 0013's is."""
+REPLACING_ADRS = ((ADR_DIR / "0022-model-router.md", REPLACING_TOOLS),)
+"""ADRs that change a tool documented earlier (ADR 0022 §9: the router gives ``model.complete``
+two output keys and the routing codes). A replacement names a capability that already has a row,
+and its row is the one the code must match."""
 OUTCOME_ROW = re.compile(r"^\| `(ALLOWED|DENIED|REQUIRES_APPROVAL)`(.*?) \| `(\w+)` \| (.+) \|$")
 RULE_ROW = re.compile(r"^\| `([A-Z_]+)` \| (sì|no) \|$")
 TOOL_ROW = re.compile(r"^\| `([a-z_.]+)` \| `(\w+)` \| `([\w-]+)` \| (.+?) \| (.+?) \|$")
@@ -80,21 +89,27 @@ def section(path: Path, label: str) -> str:
 
 
 def all_documented_tools() -> dict[str, tuple[str, str, frozenset[str], frozenset[str]]]:
-    """ADR 0013's tools plus the ones later ADRs add, in the order they were introduced."""
+    """ADR 0013's tools, plus what later ADRs add, then what later ADRs replace."""
     union = documented_tools(ADR_PATH.read_text(encoding="utf-8"))
     for path, label in ADDING_ADRS:
         for cid, row in documented_tools(section(path, label)).items():
             assert cid not in union, f"{cid} is documented in more than one ADR ({path.name})"
             union[cid] = row
+    for path, label in REPLACING_ADRS:
+        for cid, row in documented_tools(section(path, label)).items():
+            assert cid in union, f"{cid} is replaced before being documented ({path.name})"
+            union[cid] = row
     return union
 
 
 def coded_tools() -> dict[str, tuple[str, str, frozenset[str], frozenset[str]]]:
+    router, providers = routing_for(FakeModelProvider(FakeClock(), FakeIdGenerator()))
     registry = tools_v01(
         root="/tmp/ela-adr-0013",
         clock=FakeClock(),
         ids=FakeIdGenerator(),
-        provider=FakeModelProvider(FakeClock(), FakeIdGenerator()),
+        router=router,
+        providers=providers,
     )
     rows = {}
     for tool in registry.tools():
@@ -160,17 +175,29 @@ def test_adr_0013_documents_the_two_tools_that_predate_the_provider() -> None:
 
 
 def test_a_drifted_added_table_is_detected() -> None:
-    """The later table is held to account like the first one, or it would be decoration."""
-    path, label = ADDING_ADRS[0]
-    text = section(path, label)
+    """The later tables are held to account like the first one, or they would be decoration."""
     coded = coded_tools()
-    for before, after in (
-        ("| `model-complete` |", "| `model-completion` |"),
-        ("`provider.no_output`, ", ""),
+    for source, before, after in (
+        (ADDING_ADRS[0], "| `model-complete` |", "| `model-completion` |"),
+        (REPLACING_ADRS[0], "| `model-complete` |", "| `model-completion` |"),
+        (REPLACING_ADRS[0], "`routing.unknown_task_type`, ", ""),
+        (REPLACING_ADRS[0], "`profile`, `skipped`", "`profile`"),
     ):
+        text = section(*source)
         drifted = text.replace(before, after, 1)
         assert drifted != text, before
         assert documented_tools(drifted)["model.complete"] != coded["model.complete"], before
+
+
+def test_the_replacing_table_is_the_one_the_code_must_match() -> None:
+    """ADR 0021's row for ``model.complete`` is the M7.2 one and stays as it was written; what
+    the code answers to is ADR 0022's."""
+    added = documented_tools(section(*ADDING_ADRS[0]))["model.complete"]
+    replaced = documented_tools(section(*REPLACING_ADRS[0]))["model.complete"]
+
+    assert added != replaced
+    assert all_documented_tools()["model.complete"] == replaced
+    assert coded_tools()["model.complete"] == replaced
 
 
 def test_a_drifted_table_is_detected() -> None:

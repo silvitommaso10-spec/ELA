@@ -29,8 +29,14 @@ INFRA_LIBRARIES = frozenset(
 #: Top-level packages of ``ela`` allowed to import INFRA_LIBRARIES.
 INFRA_PACKAGES = frozenset({"providers", "infrastructure", "api"})
 #: Core packages that must stay independent from providers and infrastructure.
-CORE_PACKAGES = ("executive", "tasks", "permissions", "audit")
+#: ``routing`` joined them in M7.3 (ADR 0022 §2): the Model Router chooses *between* providers
+#: and must not import one — it reaches them through ``ProviderRegistryPort``.
+CORE_PACKAGES = ("executive", "tasks", "permissions", "audit", "routing")
 CORE_FORBIDDEN = tuple(f"{ROOT_PACKAGE}.{name}" for name in ("providers", "infrastructure"))
+#: Rule 26 (ADR 0022 §2): the tools receive a router, they never build one.
+TOOLS_PACKAGE = f"{ROOT_PACKAGE}.tools"
+ROUTING_PACKAGE = f"{ROOT_PACKAGE}.routing"
+TOOLS_DIR = "tools"
 #: The only module allowed to change the state of a Task (ADR 0004).
 STATE_MACHINE = Path("tasks") / "state_machine.py"
 #: Rule 10 (ADR 0008): only the ``tasks`` package may import the state machine.
@@ -337,6 +343,23 @@ def check_core_isolation(pkg_root: Path) -> list[Violation]:
         files,
         pkg_root,
         lambda imported: any(_is_within(imported, prefix) for prefix in CORE_FORBIDDEN),
+    )
+
+
+def check_tools_routing_isolation(pkg_root: Path) -> list[Violation]:
+    """Rule 26: ``ela.tools`` does not import ``ela.routing`` (ADR 0022 §2).
+
+    The tool of ``model.complete`` and its verifier are given a :class:`~ela.ports.ModelRouterPort`
+    and know nothing else about routing: which table is in force, and how a route is chosen, is a
+    policy of the Core that the composition root assembles. A tool that imported the policy could
+    build one of its own — a second table, deciding where the user's content goes, next to the
+    one an operator configured (§25, §33).
+    """
+    return _violations(
+        "tools-do-not-import-the-router",
+        _source_files(pkg_root / TOOLS_DIR),
+        pkg_root,
+        lambda imported: _is_within(imported, ROUTING_PACKAGE),
     )
 
 
@@ -1028,6 +1051,7 @@ RULES: dict[str, Rule] = {
     "ports": check_ports,
     "infra-libraries": check_infra_libraries,
     "core-isolation": check_core_isolation,
+    "tools-routing-isolation": check_tools_routing_isolation,
     "state-changes": check_state_changes,
     "testing-isolation": check_testing_isolation,
     "testing-imports": check_testing_imports,

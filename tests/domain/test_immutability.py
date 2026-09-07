@@ -47,14 +47,16 @@ def test_json_payloads_cannot_be_mutated(model: type[BaseModel]) -> None:
 
 
 def test_models_without_a_json_payload_are_the_expected_ones() -> None:
-    """A payload is opt-in: Actor and ProviderUsage are fully typed and need none.
+    """A payload is opt-in: Actor, ModelRoute and ProviderUsage are fully typed and need none.
 
     ``TaskStep`` left this list in M6.3: ``arguments`` is a JSON payload (ADR 0018), and it is
     frozen like every other one — a plan that could be edited in place after the Guardian read it
-    would be a plan nobody decided about.
+    would be a plan nobody decided about. ``ModelRoute`` joined it in M7.3: a route is four
+    declared values, and a metadata bag on a routing decision would be a place to smuggle in a
+    choice the policy did not make (ADR 0022 §2).
     """
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
-    assert without == ["Actor", "ProviderUsage"]
+    assert without == ["Actor", "ModelRoute", "ProviderUsage"]
 
 
 def test_nested_mapping_is_frozen_too() -> None:

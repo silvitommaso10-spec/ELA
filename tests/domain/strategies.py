@@ -33,6 +33,7 @@ from ela.domain import (
     ExecutionResult,
     ExecutionStatus,
     IntentChannel,
+    ModelRoute,
     NetworkKind,
     OperatingSystem,
     PerformanceClass,
@@ -317,6 +318,14 @@ audit_events = st.builds(
     payload=json_mappings,
 )
 
+model_routes = st.builds(
+    ModelRoute,
+    task_type=_optional(texts),
+    provider=texts,
+    profile=texts,
+    skipped=st.tuples(),
+)
+
 provider_requests = st.builds(
     ProviderRequest,
     id=uuids,
@@ -379,6 +388,7 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.Approval: approvals,
     domain.Authorization: authorizations,
     domain.AuditEvent: audit_events,
+    domain.ModelRoute: model_routes,
     domain.ProviderRequest: provider_requests,
     domain.ProviderResult: provider_results,
     domain.ExecutionResult: execution_results,

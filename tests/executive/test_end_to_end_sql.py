@@ -81,6 +81,7 @@ from tests.executive.support import (
     trail_of,
 )
 from tests.infrastructure.persistence.conftest import create_schema
+from tests.routing.support import routing_for
 from tests.tasks.support import ORPHAN_AFTER, result_for
 
 E = AuditEventType
@@ -110,10 +111,15 @@ class SqlPipeline:
         self.registry = catalogue_v01()
         self.guardian = PermissionGuardian(self.registry, self.clock, self.ids, self.audit)
         self.provider = FakeModelProvider(self.clock, self.ids)
+        self.router, self.providers = routing_for(self.provider)
         self.tools = tools_v01(
-            root=workspace, clock=self.clock, ids=self.ids, provider=self.provider
+            root=workspace,
+            clock=self.clock,
+            ids=self.ids,
+            router=self.router,
+            providers=self.providers,
         )
-        self.verifiers = verifiers_v01(root=workspace)
+        self.verifiers = verifiers_v01(root=workspace, router=self.router)
         self.device = local_device(created_at=self.clock.now()).model_copy(
             update={
                 "last_seen_at": self.clock.now(),

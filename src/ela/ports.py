@@ -47,6 +47,7 @@ from ela.domain import (
     ExecutionResult,
     ExecutionStatus,
     JsonMapping,
+    ModelRoute,
     PermissionDecision,
     ProviderRequest,
     ProviderResult,
@@ -79,6 +80,7 @@ __all__ = [
     "ExecutionResultStore",
     "IdGenerator",
     "ModelProvider",
+    "ModelRouterPort",
     "NotAllowedError",
     "NotFoundError",
     "PROVIDER_AUTHENTICATION_ERROR",
@@ -99,6 +101,10 @@ __all__ = [
     "PermissionGuardianPort",
     "PortError",
     "ProviderRegistryPort",
+    "ROUTING_ERROR_CODES",
+    "ROUTING_UNKNOWN_PROVIDER",
+    "ROUTING_UNKNOWN_TASK_TYPE",
+    "RoutingError",
     "TaskRepository",
     "ToolPort",
     "ToolRegistryPort",
@@ -890,3 +896,80 @@ class ProviderRegistryPort(Protocol):
 
     def names(self) -> tuple[str, ...]:
         """The registered names, sorted."""
+
+
+# --------------------------------------------------------------------------------------
+# Model routing (§25)
+# --------------------------------------------------------------------------------------
+
+
+ROUTING_UNKNOWN_TASK_TYPE: Final = "routing.unknown_task_type"
+"""The policy has no route for that ``task_type``. Nothing was sent (ADR 0022 §5).
+
+The vocabulary of task types is **closed**, like the vocabulary of hints (ADR 0020 §5): a type
+nobody has mapped is a bug in whoever planned the step, not a case to cover with a default. A
+default route exists for a step that names **no** type at all, which is a different thing from a
+step that names the wrong one.
+"""
+
+ROUTING_UNKNOWN_PROVIDER: Final = "routing.unknown_provider"
+"""A route names a provider the registry does not have. Raised **when the router is built**, not
+when a step runs (ADR 0022 §7).
+
+Distinct from :data:`PROVIDER_UNAVAILABLE`, and the distinction is the point: a provider that is
+registered without credentials is *known* and gets skipped, which is the fallback §25 asks for; a
+provider that is not registered at all is a typo in ``ELA_MODEL_ROUTES``, and a typo must stop ELA
+before it works rather than divert a call in silence or fail a step hours later.
+"""
+
+ROUTING_ERROR_CODES: Final = frozenset(
+    {ROUTING_UNKNOWN_TASK_TYPE, ROUTING_UNKNOWN_PROVIDER, PROVIDER_UNAVAILABLE}
+)
+"""What a :class:`RoutingError` may carry (ADR 0022 §5).
+
+Three codes and one of them is borrowed: a route whose providers are all unusable ends in
+:data:`PROVIDER_UNAVAILABLE`, the code ADR 0020 §7 already gave to "this provider cannot be
+called". Coining ``routing.no_provider_available`` beside it would give one fact two names, and
+whoever reads a failure would have to know both to recognise the same wall.
+"""
+
+
+class RoutingError(PortError):
+    """The router cannot choose (§25, §33). Raised **before** any provider is called.
+
+    A failure of the router is an exception and not a result, unlike a failure of
+    :meth:`ModelProvider.complete`: there the callee is across a network, where breaking down is
+    ordinary and a result is what lets a caller record it; here the callee is a table in this
+    process, and ELA already says "the caller was wrong" with a :class:`PortError` — see
+    :class:`NotFoundError` and :class:`AuthorizationNotUsableError`. The tool of
+    ``model.complete`` turns it into a failed outcome carrying ``code``, so what reaches the
+    audit trail is the same either way.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+@runtime_checkable
+class ModelRouterPort(Protocol):
+    """Which provider and which profile answer a call (§25, "tipo di task" and "disponibilità").
+
+    Synchronous, like :class:`ProviderRegistryPort`: choosing reads a table and a declared
+    status, and reading a declared status is not I/O — that is the whole point of
+    :class:`~ela.domain.ProviderStatus` being a property of the configuration (ADR 0020 §2).
+
+    The router **never calls a provider**: it answers with a :class:`~ela.domain.ModelRoute`, and
+    a route that cannot be built is a :class:`RoutingError`. So the criterion §25 calls
+    "disponibilità" costs nothing, and a provider that is down never receives the user's content
+    only to hand it back (§57).
+    """
+
+    def route(self, task_type: str | None, model_hint: str | None) -> ModelRoute:
+        """The route for this ``task_type``, with ``model_hint`` winning over its profile.
+
+        :raises RoutingError: with :data:`ROUTING_UNKNOWN_TASK_TYPE` if the policy has no route
+            for ``task_type``, or :data:`PROVIDER_UNAVAILABLE` if no provider of the route is
+            usable. In both cases nothing has been sent anywhere.
+        """

@@ -30,6 +30,7 @@ from ela.domain import (
     IntentId,
     JsonMapping,
     PlanId,
+    ProviderStatus,
     RiskLevel,
     StepId,
     StepState,
@@ -55,6 +56,7 @@ from ela.permissions import (
     PermissionGuardian,
     catalogue_v01,
 )
+from ela.ports import ROUTING_UNKNOWN_TASK_TYPE
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
     FakeApprovalStore,
@@ -70,6 +72,7 @@ from ela.testing.fakes import (
 from ela.tools import (
     ECHO_MESSAGE_MATCHES,
     MODEL_ANSWERED,
+    MODEL_ROUTED_AS_ASKED,
     NOTE_CONTENT_MATCHES,
     NOTE_CONTENT_MISMATCH,
     NOTE_EXISTS,
@@ -84,6 +87,7 @@ from ela.tools import (
 )
 from tests.domain.examples import USER_INTENT
 from tests.executive.support import HEARTBEAT_TTL
+from tests.routing.support import routing_for
 from tests.tasks.support import ORPHAN_AFTER, result_for
 
 E = AuditEventType
@@ -93,7 +97,7 @@ BODY = "# Briefing\n\nSECRET-BODY\n"
 CONDITIONS: dict[CapabilityId, tuple[str, ...]] = {
     CORE_ECHO: (ECHO_MESSAGE_MATCHES,),
     WORKSPACE_WRITE_NOTE: (NOTE_EXISTS, NOTE_CONTENT_MATCHES),
-    MODEL_COMPLETE: (MODEL_ANSWERED,),
+    MODEL_COMPLETE: (MODEL_ANSWERED, MODEL_ROUTED_AS_ASKED),
 }
 """What a plan of v0.1 asks of each capability: the whole vocabulary of its verifier."""
 ARGUMENTS: dict[CapabilityId, JsonMapping] = {
@@ -121,19 +125,34 @@ class _LyingNoteTool(WriteNoteTool):
 class Pipeline:
     """Everything of §27 wired on the fakes, plus the moves the orchestrator will make."""
 
-    def __init__(self, workspace: Path, *, tools: ToolRegistry | None = None) -> None:
+    def __init__(
+        self,
+        workspace: Path,
+        *,
+        tools: ToolRegistry | None = None,
+        model_providers: tuple[FakeModelProvider, ...] | None = None,
+    ) -> None:
         self.clock, self.ids, self.audit = FakeClock(), FakeIdGenerator(), FakeAuditLog()
         self.repository, self.store = FakeTaskRepository(), FakeAuthorizationStore()
         self.approvals, self.results = FakeApprovalStore(), FakeExecutionResultStore()
         self.registry = catalogue_v01()
         self.guardian = PermissionGuardian(self.registry, self.clock, self.ids, self.audit)
-        self.provider = FakeModelProvider(self.clock, self.ids)
+        chain = model_providers or (FakeModelProvider(self.clock, self.ids),)
+        self.provider = next(p for p in chain if p.status is ProviderStatus.AVAILABLE)
+        """The provider that will answer: the first of the route that is usable (ADR 0022 §7)."""
+        self.router, self.providers = routing_for(*chain)
         self.tools = (
-            tools_v01(root=workspace, clock=self.clock, ids=self.ids, provider=self.provider)
+            tools_v01(
+                root=workspace,
+                clock=self.clock,
+                ids=self.ids,
+                router=self.router,
+                providers=self.providers,
+            )
             if tools is None
             else tools
         )
-        self.verifiers = verifiers_v01(root=workspace)
+        self.verifiers = verifiers_v01(root=workspace, router=self.router)
         self.device = local_device(created_at=self.clock.now()).model_copy(
             update={
                 "last_seen_at": self.clock.now(),
@@ -224,6 +243,19 @@ class Pipeline:
             await self.engine.start(task.id, device_id=self.device.id)
             await self.engine.start_step(task.id, step.id, device_id=self.device.id)
         return step, task.id
+
+    async def grant(self, task_id: TaskId, step_id: StepId) -> None:
+        """The approval a MEDIUM capability needs: ask, answer, resume (§27, ADR 0012)."""
+        asked = await self.execute(task_id, step_id)
+        assert asked.approval is not None
+        approval = await self.approvals.respond(
+            asked.approval.id,
+            status=ApprovalStatus.GRANTED,
+            responded_by="tommaso",
+            now=self.clock.now(),
+        )
+        await self.engine.approve(task_id, approval)
+        await self.engine.start(task_id)
 
     async def types(self, task_id: TaskId) -> list[AuditEventType]:
         return [e.event_type for e in await self.audit.read(task_id=task_id)]
@@ -459,6 +491,64 @@ async def test_model_complete_goes_out_through_the_guardian_and_comes_back_accou
     )
     assert executed.usage == execution.result.usage
     assert "Riassumi" not in json.dumps([e.model_dump(mode="json") for e in await p.audit.read()])
+
+
+async def test_a_routed_model_call_goes_where_the_table_says(p: Pipeline) -> None:
+    """The claim of M7.3, end to end (§25): the plan says *what kind of task* it is, and the
+    profile that reaches the provider is the table's — nobody typed it."""
+    step, task_id = await p.planned_and_running(
+        MODEL_COMPLETE, arguments={**ARGUMENTS[MODEL_COMPLETE], "task_type": "coding"}
+    )
+    await p.grant(task_id, step.id)
+    execution = await p.execute(task_id, step.id)
+
+    assert execution.graph.states[step.id] is StepState.COMPLETED  # both conditions held
+    assert p.provider.requests[0].model_hint == "quality"
+    assert execution.result is not None
+    assert execution.result.output["profile"] == "quality"
+    assert execution.result.output["skipped"] == ()
+
+
+async def test_a_provider_that_is_down_is_stepped_over_end_to_end(tmp_path: Path) -> None:
+    """Decision 6a through the whole pipeline: ``down`` is in the route, is never called, and the
+    step completes on ``up`` — with the jump readable in the stored result and in no audit event
+    (§57, rule 23)."""
+    clock, ids = FakeClock(), FakeIdGenerator()
+    down = FakeModelProvider(clock, ids, name="down", status=ProviderStatus.UNAVAILABLE)
+    up = FakeModelProvider(clock, ids, name="up")
+    p = Pipeline(tmp_path / "workspace", model_providers=(down, up))
+
+    step, task_id = await p.planned_and_running(MODEL_COMPLETE)
+    await p.grant(task_id, step.id)
+    execution = await p.execute(task_id, step.id)
+
+    assert execution.graph.states[step.id] is StepState.COMPLETED
+    assert down.requests == ()
+    assert len(up.requests) == 1
+    assert execution.result is not None
+    assert execution.result.output["provider"] == "up"
+    assert execution.result.output["skipped"] == ("down",)
+    events = json.dumps([e.model_dump(mode="json") for e in await p.audit.read()])
+    assert "skipped" not in events
+
+
+async def test_an_unknown_task_type_fails_the_step_without_a_call(p: Pipeline) -> None:
+    """Decision 7b end to end: the Guardian allows it — the schema says ``task_type`` is a
+    string — and the *router* refuses it, before the network, with a code of its own."""
+    step, task_id = await p.planned_and_running(
+        MODEL_COMPLETE, arguments={**ARGUMENTS[MODEL_COMPLETE], "task_type": "telepathy"}
+    )
+    await p.grant(task_id, step.id)
+    execution = await p.execute(task_id, step.id)
+
+    assert execution.graph.states[step.id] is StepState.FAILED
+    assert p.provider.requests == ()
+    executed = next(
+        e for e in await p.audit.read(task_id=task_id) if e.event_type is E.TOOL_EXECUTED
+    )
+    assert executed.error is not None
+    assert executed.error.code == ROUTING_UNKNOWN_TASK_TYPE
+    assert executed.error.retryable is False
 
 
 async def test_an_interrupted_model_call_is_never_made_twice(p: Pipeline) -> None:
