@@ -82,6 +82,22 @@ DEVICE_PORT_ALLOWED = (
     f"{ROOT_PACKAGE}.{DEVICES_DIR}",
     f"{ROOT_PACKAGE}.infrastructure.persistence.device_registry",
 )
+#: Rule 30 (ADR 0026 §5): outside ``ela.devices`` nobody builds a ``PlacementDecision`` that
+#: names a node. The mirror of rule 12: ``ensure_placed`` checks a claim, and a claim anybody can
+#: forge is not checked at all. No exemption — no fake builds one, and M9.1 does not open a door
+#: before somebody knocks.
+PLACEMENT_MODEL = "PlacementDecision"
+PLACEMENT_DEVICE_FIELD = "device"
+
+#: Rule 31 (ADR 0026 §6): the API's token is compared only with ``secrets.compare_digest``.
+#: The one mutation of eight the suite did not notice: ``compare_digest`` swapped for ``==``
+#: leaves 3551 tests green, because 100% branch coverage proves the line runs and says nothing
+#: about how long it takes. A property that cannot be timed without measuring the machine is
+#: defended in the shape of the code instead.
+SECURITY_MODULE = Path("api") / "security.py"
+CONSTANT_TIME_COMPARE = "compare_digest"
+TOKEN_NAMES = frozenset({"token", "presented"})
+
 #: Rule 22 (ADR 0017 §6): the orchestrator advises and never commands. A package that cannot
 #: reach the Task Engine cannot fail a task because it found no node.
 DEVICES_PACKAGE = f"{ROOT_PACKAGE}.{DEVICES_DIR}"
@@ -1220,6 +1236,108 @@ def _mentions_output(node: ast.AST) -> str | None:
     return None
 
 
+def check_placement_builders(pkg_root: Path) -> list[Violation]:
+    """Rule 30: outside ``ela.devices`` nobody builds a ``PlacementDecision`` that names a node.
+
+    The mirror of rule 12 (ADR 0026 §5). ``ensure_placed`` lets the executor check the
+    orchestrator's claim instead of believing it — but a claim anybody can forge is not a claim.
+    A module that could write ``PlacementDecision(device=some_node, ...)`` would hand the executor
+    a signature it cannot tell from the real one.
+
+    Reported: ``PlacementDecision(...)`` whose ``device`` is not the literal ``None`` — another
+    value, a variable, or no ``device`` keyword at all (``**kwargs``) is a doubt (§33) — and
+    ``x.model_copy(update={"device": ...})``, which would widen one that named nobody. A
+    heuristic on names, like rules 5, 11, 12 and 15.
+
+    No exemption. ``ela.testing`` has none because no fake builds a placement; the tests that need
+    a forged one live outside ``src/ela``, where the rules do not look, which is the honest place
+    for a forgery.
+    """
+    rule = "placement-decisions-built-only-by-the-orchestrator"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root).parts[0] == DEVICES_DIR:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if _is_named(node.func, PLACEMENT_MODEL) and not _places_nobody(node):
+                found.append(Violation(rule, name, "PlacementDecision(device=...)", node.lineno))
+            elif _copies_field(node, PLACEMENT_DEVICE_FIELD):
+                found.append(
+                    Violation(rule, name, 'model_copy(update={"device": ...})', node.lineno)
+                )
+    return found
+
+
+def _places_nobody(call: ast.Call) -> bool:
+    """The call names ``device`` and it is the literal ``None``; anything else is a doubt."""
+    for keyword in call.keywords:
+        if keyword.arg == PLACEMENT_DEVICE_FIELD:
+            return isinstance(keyword.value, ast.Constant) and keyword.value.value is None
+    return False
+
+
+def check_constant_time_token(pkg_root: Path) -> list[Violation]:
+    """Rule 31: the API's token is compared only with ``secrets.compare_digest`` (ADR 0026 §6).
+
+    Two things are reported in :data:`SECURITY_MODULE`:
+
+    * the module does not call ``compare_digest`` at all — the comparison has been replaced;
+    * a ``==``/``!=``/``in`` whose operands name the token (:data:`TOKEN_NAMES`, as a bare name or
+      as ``.encode()`` on one) — the comparison has been *added* beside it, which is the same
+      leak with the safe call left in place as decoration.
+
+    The scheme is compared with ``!=`` on purpose and stays allowed: it is not a secret, it is in
+    every request, and comparing it in variable time tells an attacker nothing they did not send.
+
+    Why a rule and not a test: the property is *how long the comparison takes*, and a test that
+    measured it would measure the runner instead — the mistake M9.1 spent its first commit
+    undoing (ADR 0006 §13). The shape of the code is the only place this can be pinned.
+    """
+    rule = "token-compared-in-constant-time"
+    path = pkg_root / SECURITY_MODULE
+    name = module_name(path, pkg_root)
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found = [
+        Violation(rule, name, f"{CONSTANT_TIME_COMPARE}(...)", 1)
+        for node in [tree]
+        if not any(
+            isinstance(call, ast.Call) and _is_named(call.func, CONSTANT_TIME_COMPARE)
+            for call in ast.walk(node)
+        )
+    ]
+    found.extend(
+        Violation(rule, name, f"{_operator(node)} on the token", node.lineno)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Compare) and _compares_the_token(node)
+    )
+    return found
+
+
+def _operator(node: ast.Compare) -> str:
+    return {ast.Eq: "==", ast.NotEq: "!=", ast.In: "in", ast.NotIn: "not in"}.get(
+        type(node.ops[0]), type(node.ops[0]).__name__
+    )
+
+
+def _names_the_token(node: ast.expr) -> bool:
+    """``token``/``presented``, bare or through a call on it (``token.encode()``)."""
+    if isinstance(node, ast.Name):
+        return node.id in TOKEN_NAMES
+    if isinstance(node, ast.Call):
+        return _names_the_token(node.func)
+    if isinstance(node, ast.Attribute):
+        return _names_the_token(node.value)
+    return False
+
+
+def _compares_the_token(node: ast.Compare) -> bool:
+    return any(_names_the_token(operand) for operand in [node.left, *node.comparators])
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -1250,4 +1368,6 @@ RULES: dict[str, Rule] = {
     "concrete-names": check_concrete_names,
     "cli-over-the-api": check_cli_over_the_api,
     "tool-output-readers": check_tool_output_readers,
+    "placement-builders": check_placement_builders,
+    "constant-time-token": check_constant_time_token,
 }

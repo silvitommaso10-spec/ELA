@@ -10,7 +10,7 @@ The package advises and does not command: it cannot import ``ela.tasks``, so no 
 move — or fail — a task (ADR 0017 §6, architecture rule 22).
 """
 
-from ela.devices.errors import UnsupportedOperatingSystemError
+from ela.devices.errors import NotPlacedError, UnsupportedOperatingSystemError
 from ela.devices.local import (
     DEVICE_NAMESPACE,
     LOCAL_DEVICE_ID,
@@ -31,10 +31,12 @@ from ela.devices.orchestrator import (
     WORKLOAD_POINTS,
     DeviceOrchestrator,
     Placement,
+    PlacementDecision,
     Refusal,
     Requirements,
     Score,
     choose,
+    ensure_placed,
     refusals,
     score,
 )
@@ -61,12 +63,15 @@ __all__ = [
     "DeviceOrchestrator",
     "DeviceRegistry",
     "DeviceSettings",
+    "NotPlacedError",
     "Placement",
+    "PlacementDecision",
     "Refusal",
     "Requirements",
     "Score",
     "UnsupportedOperatingSystemError",
     "choose",
+    "ensure_placed",
     "is_available",
     "local_device",
     "operating_system",

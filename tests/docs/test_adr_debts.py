@@ -74,11 +74,16 @@ def test_the_adr_says_which_rinvii_it_did_not_take() -> None:
 
 
 def test_the_counts_the_conseguenze_state_are_the_ones_the_code_has() -> None:
-    """Nine members, two, four, and twenty-nine rules: prose that a reader would trust."""
+    """Nine members, two, four, and twenty-nine rules: prose that a reader would trust.
+
+    ``ventinove`` is this ADR's own number and stays: an ADR is immutable and states what was
+    true when it was written. What the code has *now* is the number ADR 0026 gives, checked in
+    ``test_adr_placement.py`` — which is also what keeps the two from drifting apart silently.
+    """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
     numbers = re.findall(r"\*\*(\w+)\*\*", conseguenze)
 
     assert "due" in numbers  # AuditLog still has two members
     assert "quindici" in numbers and "diciotto" in numbers  # routes, commands
     assert "ventinove" in numbers
-    assert len(RULES) == 29
+    assert len(RULES) >= 29  # rules are only ever added

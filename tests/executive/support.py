@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from ela.devices import DeviceOrchestrator, DeviceRegistry
+from ela.devices import DeviceOrchestrator, DeviceRegistry, PlacementDecision, score
 from ela.domain import (
     Approval,
     ApprovalStatus,
@@ -35,6 +35,7 @@ from ela.domain import (
     IntentId,
     JsonMapping,
     PlanId,
+    PrivacyLevel,
     RiskLevel,
     StepId,
     StepState,
@@ -305,13 +306,56 @@ class World:
         """
         return await self.devices.heartbeat(self.node.id)
 
-    async def execute(
-        self, task_id: TaskId, step_id: StepId, *, device_id: DeviceId | None = None
-    ) -> Execution:
-        """``executor.execute`` on the world's one node unless the test names another."""
-        return await self.executor.execute(
-            task_id, step_id, device_id=self.node.id if device_id is None else device_id
+    async def placement(
+        self,
+        task_id: TaskId,
+        step_id: StepId,
+        *,
+        device_id: DeviceId | None = None,
+        max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY,
+    ) -> PlacementDecision:
+        """The decision ``executor.execute`` wants, built the way the orchestrator builds it.
+
+        Not ``orchestrator.place``: that writes a ``DEVICE_SELECTED`` event, and most tests here
+        assert the exact sequence of audit events an execution produces. So this reuses the two
+        real pieces — ``requirements`` (which resolves capabilities into tool names) and the node
+        as the **registry derives it**, availability included — and skips only the audit. A
+        decision built on ``self.node`` as it was registered would carry ``UNKNOWN``
+        availability and be refused by its own placement, which is exactly right and exactly not
+        what these tests are about.
+        """
+        graph = await self.engine.graph(task_id)
+        step = graph.graph.step(step_id)
+        wanted = self.node.id if device_id is None else device_id
+        found = [node for node in await self.devices.devices() if node.id == wanted]
+        requirements = self.orchestrator.requirements(step, max_privacy=max_privacy)
+        device = found[0] if found else None
+        return PlacementDecision(
+            created_at=self.clock.now(),
+            task_id=task_id,
+            step_id=step_id,
+            requirements=requirements,
+            device=device,
+            scores=() if device is None else (score(device, requirements),),
+            reason=f"placed on {wanted} by the test world",
         )
+
+    async def execute(
+        self,
+        task_id: TaskId,
+        step_id: StepId,
+        *,
+        device_id: DeviceId | None = None,
+        placement: PlacementDecision | None = None,
+    ) -> Execution:
+        """``executor.execute`` on the world's one node unless the test names another.
+
+        ``placement`` lets a test hand in a decision of its own — a forged one, one of another
+        step — which is how the refusals of ``ensure_placed`` are tested (ADR 0026 §3).
+        """
+        if placement is None:
+            placement = await self.placement(task_id, step_id, device_id=device_id)
+        return await self.executor.execute(task_id, step_id, placement=placement)
 
     async def events(self, task_id: TaskId | None = None) -> tuple[AuditEvent, ...]:
         return await self.audit.read(task_id=task_id)

@@ -122,6 +122,7 @@ async def test_an_expired_unanswered_request_is_never_asked_again() -> None:
     (stored,) = await w.approvals.for_task(task.id)
     assert stored.expires_at is not None
     w.clock.advance(stored.expires_at - w.now)  # the exact instant: closed bound
+    await w.alive()  # the node kept reporting itself; it is the *request* that expired, not it
     before = len(await w.events())
     with pytest.raises(ExecutorError, match=f"approval {stored.id} for step {step.id} expired"):
         await w.execute(task.id, step.id)

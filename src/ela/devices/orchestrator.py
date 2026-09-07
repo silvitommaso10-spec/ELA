@@ -30,10 +30,12 @@ What the caller must do with an empty placement is fixed by ADR 0017 §6: the ta
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Final, NamedTuple
 
+from ela.devices.errors import NotPlacedError
 from ela.devices.registry import AVAILABLE, DeviceRegistry
 from ela.domain import (
     Actor,
@@ -52,6 +54,7 @@ from ela.domain import (
     PowerSource,
     PrivacyLevel,
     RiskLevel,
+    StepId,
     TaskId,
     TaskStep,
 )
@@ -69,10 +72,12 @@ __all__ = [
     "WORKLOAD_POINTS",
     "DeviceOrchestrator",
     "Placement",
+    "PlacementDecision",
     "Refusal",
     "Requirements",
     "Score",
     "choose",
+    "ensure_placed",
     "refusals",
     "score",
 ]
@@ -212,6 +217,10 @@ class Placement(NamedTuple):
 
     ``scores`` holds **every** candidate in registration order, refused ones included: whoever
     reads the audit log must be able to see why a node lost, not only which one won.
+
+    The answer alone, with no trace of the question: :func:`choose` is pure and knows nothing
+    about tasks. What travels to whoever executes is a :class:`PlacementDecision`, which carries
+    the question too — see ADR 0026 §2.
     """
 
     device: Device | None
@@ -222,6 +231,78 @@ class Placement(NamedTuple):
     def waits(self) -> bool:
         """No node was eligible. The task stays ``QUEUED``; it does not fail (ADR 0017 §6)."""
         return self.device is None
+
+
+class PlacementDecision(NamedTuple):
+    """A placement plus what it is a placement *of*: the mirror of a decision (ADR 0026 §2).
+
+    A bare :class:`~ela.domain.DeviceId` says "here" without saying "for what", so whoever
+    receives one can only trust the sender. This says which task, which step, at what instant and
+    against which :class:`Requirements` the node was judged — which is exactly enough for the
+    receiver to check the claim instead of believing it (:func:`ensure_placed`).
+
+    Modelled on :class:`~ela.domain.PermissionDecision`, deliberately: the Guardian decides, the
+    decision travels as data, and the tool re-checks it before acting (ADR 0005 §5). The same
+    three pieces, for the other question — *which node may see this content* (§57).
+
+    It is **not** a domain entity: it is never persisted and it crosses no port, so it stays a
+    value of this package (ADR 0026 §2). Nobody outside ``ela.devices`` may build one that names
+    a node — architecture rule 30, the mirror of rule 12.
+    """
+
+    created_at: datetime
+    task_id: TaskId
+    step_id: StepId
+    requirements: Requirements
+    device: Device | None
+    scores: tuple[Score, ...]
+    reason: str
+
+    @property
+    def waits(self) -> bool:
+        """No node was eligible. The task stays ``QUEUED``; it does not fail (ADR 0017 §6)."""
+        return self.device is None
+
+
+def ensure_placed(decision: PlacementDecision, task_id: TaskId, step_id: StepId) -> Device:
+    """The node ``decision`` allows for this step; :class:`NotPlacedError` if it allows none.
+
+    The mirror of ``ela.tools.base.ensure_allowed`` (ADR 0005 §5, ADR 0026 §3), and it checks the
+    same three kinds of thing: that the decision is about *this* call, that it decided in favour,
+    and that what it decided on still holds. Three refusals, in order:
+
+    * the decision is about another task or another step — a placement is not transferable;
+    * it names no node (``waits``): nothing was chosen, so nothing may run;
+    * :func:`refusals` on the node it names, against the requirements it was judged under, is not
+      empty — the decision disagrees with itself.
+
+    The third is the one that matters and the reason this is not a formality. It re-runs the
+    **same pure function** the orchestrator ran, on the **same data** the orchestrator judged: no
+    second read of the registry, no second instant, no second policy. One implementation, two
+    call sites — as the executor and the tool both call ``ensure_allowed``.
+
+    What it cannot see is the world moving between the choice and the run: a node that lost its
+    heartbeat a moment ago still passes. That is a declared limit, not an oversight — a placement
+    does not expire in v0.1 (ADR 0026, vincoli dichiarati).
+    """
+    if decision.task_id != task_id or decision.step_id != step_id:
+        raise NotPlacedError(
+            task_id,
+            step_id,
+            f"the placement is for step {decision.step_id} of task {decision.task_id}",
+        )
+    if decision.device is None:
+        raise NotPlacedError(task_id, step_id, f"no node was chosen: {decision.reason}")
+    found = refusals(decision.device, decision.requirements)
+    if found:
+        named = ", ".join(refusal.value for refusal in found)
+        raise NotPlacedError(
+            task_id,
+            step_id,
+            f"node {decision.device.name} ({decision.device.id}) is refused by its own "
+            f"placement: {named}",
+        )
+    return decision.device
 
 
 def refusals(device: Device, requirements: Requirements) -> tuple[Refusal, ...]:
@@ -387,17 +468,95 @@ class DeviceOrchestrator:
         *,
         task_id: TaskId,
         max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY,
-    ) -> Placement:
+    ) -> PlacementDecision:
         """Choose a node for ``step`` and record the choice — or the wait — in the audit log.
 
         ``max_privacy`` is the most permissive node the caller tolerates, and defaults to the
         most restrictive level: a privacy nobody declared is not a permission (§33, §57; ADR 0017
         §5). Exactly one audit event per call, whatever the answer.
+
+        The answer comes back as a :class:`PlacementDecision` and not as a bare id, so that
+        whoever executes can check it instead of trusting it (ADR 0026 §2).
         """
         requirements = self.requirements(step, max_privacy=max_privacy)
         placement = choose(await self._registry.devices(), requirements)
         await self._audit.append(self._event(placement, step, task_id, requirements))
-        return placement
+        return PlacementDecision(
+            created_at=self._clock.now(),
+            task_id=task_id,
+            step_id=step.id,
+            requirements=requirements,
+            device=placement.device,
+            scores=placement.scores,
+            reason=placement.reason,
+        )
+
+    async def confirm(
+        self,
+        device_id: DeviceId,
+        step: TaskStep,
+        *,
+        task_id: TaskId,
+        max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY,
+    ) -> PlacementDecision:
+        """A decision for the node a **resumed** step was already given (ADR 0026 §4).
+
+        A step left RUNNING by a crash or by an approval has already been placed, and placing it
+        again could name a different node while a tool ran on the first (ADR 0019 §4). So the
+        caller reads its node back from the audit and asks here whether that node is *still*
+        eligible: this reads it from the registry, judges it against the same
+        :class:`Requirements` the step would get today, and names it only if :func:`refusals` is
+        empty. A node no longer registered, or no longer eligible, comes back as a decision that
+        names nobody — and the run waits, which is the answer ADR 0017 §6 already gives.
+
+        It **confirms** and never chooses, so it writes **no audit event**: a second
+        ``DEVICE_SELECTED`` would claim a choice nobody made, and the choice this confirms is
+        already in the log.
+        """
+        requirements = self.requirements(step, max_privacy=max_privacy)
+        found = [node for node in await self._registry.devices() if node.id == device_id]
+        if not found:
+            return self._confirmation(
+                task_id, step, requirements, None, (), f"node {device_id} is no longer registered"
+            )
+        judged = score(found[0], requirements)
+        if not judged.eligible:
+            named = ", ".join(refusal.value for refusal in judged.refusals)
+            return self._confirmation(
+                task_id,
+                step,
+                requirements,
+                None,
+                (judged,),
+                f"node {found[0].name} ({device_id}) is no longer eligible: {named}",
+            )
+        return self._confirmation(
+            task_id,
+            step,
+            requirements,
+            found[0],
+            (judged,),
+            f"{found[0].name} ({device_id}) still eligible, confirmed without a new choice",
+        )
+
+    def _confirmation(
+        self,
+        task_id: TaskId,
+        step: TaskStep,
+        requirements: Requirements,
+        device: Device | None,
+        scores: tuple[Score, ...],
+        reason: str,
+    ) -> PlacementDecision:
+        return PlacementDecision(
+            created_at=self._clock.now(),
+            task_id=task_id,
+            step_id=step.id,
+            requirements=requirements,
+            device=device,
+            scores=scores,
+            reason=reason,
+        )
 
     def _event(
         self,

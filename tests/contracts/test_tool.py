@@ -6,7 +6,10 @@ produced it (CLAUDE.md "Architettura", ADR 0005).
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import get_type_hints
 
 import pytest
@@ -19,8 +22,11 @@ from ela.ports import (
     PermissionGuardianPort,
     ToolPort,
 )
-from ela.testing.fakes import FakeClock
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
+from ela.tools import tools_v01
+from tests.contracts.implementations import implementations_of
 from tests.domain.examples import PERMISSION_DECISION
+from tests.routing.support import routing_for
 
 LONG_AGO = datetime(2000, 1, 1, tzinfo=UTC)
 FAR_AHEAD = datetime(2100, 1, 1, tzinfo=UTC)
@@ -88,3 +94,30 @@ def test_tool_holds_no_guardian_and_no_store(tool: ToolPort) -> None:
     for method in (type(tool).__init__, type(tool).execute):
         for name, hint in get_type_hints(method).items():
             assert hint not in forbidden, f"{method.__qualname__}({name})"
+
+
+def test_every_tool_of_v01_is_under_contract() -> None:
+    """The table is derived from ``tools_v01``, so a tool cannot be added and left unchecked.
+
+    ADR 0026 §8. ``ModelCompleteTool`` is named here on purpose: it is the tool that carries the
+    user's content off this machine (§57), it was the one missing from the hand-written table,
+    and a regression that drops the derivation would go unnoticed if this test only counted.
+    """
+    root = Path(tempfile.mkdtemp(prefix="ela-workspace-"))
+    try:
+        router, providers = routing_for(FakeModelProvider(FakeClock(), FakeIdGenerator()))
+        registry = tools_v01(
+            root=root,
+            clock=FakeClock(),
+            ids=FakeIdGenerator(),
+            router=router,
+            providers=providers,
+        )
+        expected = {type(tool).__name__ for tool in registry.tools()}
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    under_contract = {implementation.name for implementation in implementations_of(ToolPort)}
+
+    assert expected <= under_contract, f"not under contract: {expected - under_contract}"
+    assert "ModelCompleteTool" in under_contract

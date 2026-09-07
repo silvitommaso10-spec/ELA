@@ -647,6 +647,56 @@ VIOLATIONS: tuple[Case, ...] = (
         'payload={"what": step.arguments})\n',
         ".arguments",
     ),
+    # Rule 30 (ADR 0026 §5): a placement that names a node is the orchestrator's to build.
+    Case(
+        "placement-forged-by-the-runner",
+        "placement-builders",
+        "executive/loop.py",
+        "from ela.devices import PlacementDecision\n"
+        "def go(node, req):\n"
+        "    return PlacementDecision(created_at=None, task_id=None, step_id=None,\n"
+        "                             requirements=req, device=node, scores=(), reason='mine')\n",
+        "PlacementDecision(device=...)",
+    ),
+    Case(
+        "placement-built-without-naming-the-device",
+        "placement-builders",
+        "api/placements.py",
+        "from ela.devices import PlacementDecision\n"
+        "def go(**kw):\n    return PlacementDecision(**kw)\n",
+        "PlacementDecision(device=...)",
+    ),
+    Case(
+        "placement-widened-by-a-copy",
+        "placement-builders",
+        "executive/widen.py",
+        "def go(placement, node):\n    return placement.model_copy(update={'device': node})\n",
+        'model_copy(update={"device": ...})',
+    ),
+    # Rule 31 (ADR 0026 §6): the token is compared in constant time, and only so.
+    Case(
+        # Two reasons at once is what the real mutation produces; the harness compares one, so
+        # each case isolates one reason. That the real mutation is caught — by both — is
+        # ``test_the_mutation_that_survived_is_now_reported`` in ``test_layers.py``.
+        "token-compared-without-the-safe-call",
+        "constant-time-token",
+        "api/security.py",
+        "def authorized(header, token):\n"
+        "    presented = header.partition(' ')[2]\n"
+        "    return hash(presented) == hash(token)\n",
+        "compare_digest(...)",
+    ),
+    Case(
+        "token-compared-beside-the-safe-call",
+        "constant-time-token",
+        "api/security.py",
+        "import secrets\n"
+        "def authorized(header, token):\n"
+        "    presented = header.partition(' ')[2]\n"
+        "    if presented != token:\n        return False\n"
+        "    return secrets.compare_digest(presented.encode(), token.encode())\n",
+        "!= on the token",
+    ),
     Case(
         "tool-output-on-a-second-schema",
         "tool-output-readers",
@@ -751,6 +801,38 @@ VIOLATIONS: tuple[Case, ...] = (
 )
 
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        "a-placement-that-names-nobody",
+        "placement-builders",
+        "executive/waiting.py",
+        "from ela.devices import PlacementDecision\n"
+        "def go(req):\n"
+        "    return PlacementDecision(created_at=None, task_id=None, step_id=None,\n"
+        "                             requirements=req, device=None, scores=(), reason='wait')\n",
+        "",
+    ),
+    Case(
+        "the-orchestrator-names-a-device",
+        "placement-builders",
+        "devices/second.py",
+        "from ela.devices.orchestrator import PlacementDecision\n"
+        "def go(node, req):\n"
+        "    return PlacementDecision(created_at=None, task_id=None, step_id=None,\n"
+        "                             requirements=req, device=node, scores=(), reason='ok')\n",
+        "",
+    ),
+    Case(
+        "the-scheme-may-be-compared-in-plain-sight",
+        "constant-time-token",
+        "api/security.py",
+        "import secrets\n"
+        "SCHEME = 'bearer'\n"
+        "def authorized(header, token):\n"
+        "    scheme, _, presented = header.partition(' ')\n"
+        "    if scheme.lower() != SCHEME:\n        return False\n"
+        "    return secrets.compare_digest(presented.strip().encode(), token.encode())\n",
+        "",
+    ),
     Case(
         "cli-serve-imports-the-api",
         "cli-over-the-api",

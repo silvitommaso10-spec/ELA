@@ -17,7 +17,13 @@ from typing import Any
 
 import pytest
 
-from ela.devices import DeviceOrchestrator, DeviceRegistry, local_device
+from ela.devices import (
+    DeviceOrchestrator,
+    DeviceRegistry,
+    PlacementDecision,
+    local_device,
+    score,
+)
 from ela.domain import (
     Actor,
     ActorKind,
@@ -198,9 +204,41 @@ class Pipeline:
             audit=self.audit,
         )
 
+    async def alive(self) -> None:
+        """A sign of life from the one node, as a running ELA sends before every walk.
+
+        ``POST /tasks/{id}/run`` reports the local node alive before it starts (ADR 0023 §5-bis).
+        A test that lets the clock run past the heartbeat TTL — because the user takes their time
+        over an approval — must do the same, or the placement the executor checks would name a
+        node nobody would place on today (ADR 0026 §3).
+        """
+        await self.devices.heartbeat(self.device.id)
+
     async def execute(self, task_id: TaskId, step_id: StepId) -> Execution:
-        """``executor.execute`` on the one node of this pipeline."""
-        return await self.executor.execute(task_id, step_id, device_id=self.device.id)
+        """``executor.execute`` on the one node of this pipeline.
+
+        The decision is built the way the orchestrator builds it — the real ``requirements`` and
+        the node as the registry derives it — but without ``place``'s audit event, which these
+        tests count (ADR 0026 §3, as ``tests/executive/support.py``).
+        """
+        graph = await self.engine.graph(task_id)
+        step = graph.graph.step(step_id)
+        requirements = self.orchestrator.requirements(step)
+        found = [n for n in await self.devices.devices() if n.id == self.device.id]
+        device = found[0] if found else None
+        return await self.executor.execute(
+            task_id,
+            step_id,
+            placement=PlacementDecision(
+                created_at=self.clock.now(),
+                task_id=task_id,
+                step_id=step_id,
+                requirements=requirements,
+                device=device,
+                scores=() if device is None else (score(device, requirements),),
+                reason=f"placed on {self.device.id} by the test pipeline",
+            ),
+        )
 
     async def planned_and_running(
         self,
@@ -416,6 +454,9 @@ async def test_a_step_that_requires_authorization_is_approved_granted_and_run_on
     assert not (workspace / NOTE_PATH).exists()
 
     p.clock.advance(timedelta(minutes=2))
+    # The user took their time; the node kept reporting itself meanwhile (see `alive`).
+
+    await p.alive()
     approval = await p.approvals.respond(
         asked.approval.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=p.clock.now()
     )
