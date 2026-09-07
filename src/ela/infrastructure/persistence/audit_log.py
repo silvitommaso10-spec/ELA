@@ -1,10 +1,14 @@
 """``AuditLog`` on SQLAlchemy, with the hash chain of :mod:`ela.audit.chain` (spec §32; ADR 0007).
 
-Two public members, ``append`` and ``read``, and nothing else: no ``engine`` property, no way to
-change what was written. The chain is maintained here on the way in — ``append`` reads the hash
-at the head of the log and links the new row to it — and checked by :func:`verify_chain`, a
-function over the engine rather than a member of the log, so that the log's API stays exactly
-the port's.
+Three public members — ``append``, ``read`` and ``verify`` — and no way to change what was
+written: no ``engine`` property, no update, no delete. The chain is maintained here on the way in
+(``append`` reads the hash at the head of the log and links the new row to it) and checked by
+:func:`verify_chain`.
+
+``verify`` was added in M8.2 (ADR 0024 §4) so that the answer can be asked for through the
+``AuditVerifier`` protocol, and therefore over the API: the function stays where it is and the
+method is one line over it. It reads and reports; the port ``AuditLog`` keeps its two members, so
+holding one still gives nobody a third way to write.
 
 ``append`` starts its transaction with ``BEGIN IMMEDIATE``: SQLite then holds the write lock from
 the read of the head to the insert, so no other writer can slip a row in between (a second
@@ -76,6 +80,7 @@ class SqlAuditLog:
     """The append-only trail in ``audit_events`` (port ``AuditLog``)."""
 
     def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
         self._sessions = make_session_factory(engine)
 
     async def append(self, event: AuditEvent) -> None:
@@ -111,6 +116,13 @@ class SqlAuditLog:
         async with self._sessions() as session:
             rows = await session.scalars(query)
             return tuple(row_to_audit_event(row) for row in rows)
+
+    async def verify(self) -> ChainSummary:
+        """The whole chain, verified (protocol :class:`~ela.audit.verifier.AuditVerifier`).
+
+        :raises ~ela.audit.chain.AuditChainError: at the first entry that does not fit.
+        """
+        return await verify_chain(self._engine)
 
 
 async def verify_chain(

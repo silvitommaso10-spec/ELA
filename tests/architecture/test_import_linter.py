@@ -19,6 +19,7 @@ import pytest
 
 from tests.architecture.rules import (
     ANTHROPIC_LIBRARY,
+    CLI_PACKAGE,
     COMPOSITION_PACKAGE,
     CONCRETE_ALLOWED,
     CORE_FORBIDDEN,
@@ -85,6 +86,8 @@ def _contract_for(rule: str) -> Contract:
             return contract
         if rule == "anthropic-import-isolation" and forbidden == {ANTHROPIC_LIBRARY}:
             return contract
+        if rule == "cli-over-the-api" and forbidden == {CLI_PACKAGE}:
+            return contract
     raise AssertionError(f"pyproject.toml has no import-linter contract for rule {rule!r}")
 
 
@@ -138,6 +141,11 @@ def test_contracts_cover_current_packages() -> None:
     assert set(anthropic["source_modules"]) == (modules - {PROVIDERS_PACKAGE}) | (
         provider_modules_outside_the_adapter(PACKAGE_ROOT)
     )
+
+    # The third clause of rule 28: the contract covers "nobody imports the CLI"; the two clauses
+    # inside the package are the closed-world rule's, which reads names and not only imports.
+    cli = _contract_for("cli-over-the-api")
+    assert set(cli["source_modules"]) == modules - {CLI_PACKAGE}
 
 
 def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() -> None:
@@ -217,6 +225,7 @@ LINTER_CASES = [
         "anthropic-in-the-registry",
         "tools-import-routing",
         "concretes-named-by-the-api",
+        "cli-imported-by-the-api",
     )
 ]
 

@@ -93,8 +93,14 @@ async def test_a_read_snapshot_does_not_change(audit_log: AuditLog) -> None:
 
 
 def test_no_mutating_member_on_protocol_or_implementation(audit_log: AuditLog) -> None:
+    """The port has two members and no more; an implementation may *read* in one more way.
+
+    ``SqlAuditLog.verify`` is that way (M8.2, ADR 0024 §4), and it is why this is a check on what
+    each name does rather than a list: what must never appear is a member that changes what was
+    written, whatever it is called.
+    """
     assert members(AuditLog) == {"append", "read"}
     public = [name for name in dir(audit_log) if not name.startswith("_")]
-    assert sorted(public) == ["append", "read"]
+    assert members(AuditLog) <= set(public)
     for name in public:
         assert not any(word in name.lower() for word in MUTATING_WORDS), name

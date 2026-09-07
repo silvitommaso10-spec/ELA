@@ -22,10 +22,11 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from ela.api import approvals, audit, system, tasks
+from ela.api import approvals, audit, devices, system, tasks
 from ela.api.errors import DatabaseUnavailableError, TaskAlreadyRunningError
 from ela.api.problems import problem
 from ela.api.security import token_middleware
+from ela.audit.chain import AuditChainError
 from ela.composition import Ela
 from ela.executive import ExecutorError, RunnerError
 from ela.ports import AlreadyExistsError, ApprovalNotAnswerableError, NotFoundError
@@ -48,6 +49,7 @@ FAILURES: tuple[Failure, ...] = (
     Failure(NotFoundError, 404, "not_found"),
     Failure(AlreadyExistsError, 409, "already_exists"),
     Failure(ApprovalNotAnswerableError, 409, "not_answerable"),
+    Failure(AuditChainError, 409, "tampered"),
     Failure(GraphError, 422, "invalid"),
     Failure(TaskError, 409, "conflict"),
     Failure(ExecutorError, 409, "conflict"),
@@ -110,7 +112,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(ela: Ela) -> FastAPI:
-    """The application serving ``ela``: token first, then the twelve routes."""
+    """The application serving ``ela``: token first, then the fourteen routes."""
     app = FastAPI(
         title="ELA",
         version=version("ela"),
@@ -124,6 +126,12 @@ def create_app(ela: Ela) -> FastAPI:
     app.middleware("http")(token_middleware(ela.settings.api.token))
     for failure in FAILURES:
         app.add_exception_handler(failure.exception, _handler(failure))
-    for router in (system.router, tasks.router, approvals.router, audit.router):
+    for router in (
+        system.router,
+        tasks.router,
+        approvals.router,
+        audit.router,
+        devices.router,
+    ):
         app.include_router(router)
     return app

@@ -27,9 +27,12 @@ test:
 # content goes and refuses to send it to a provider nobody chose (M7.3, ADR 0022).
 # ela.api è l'unica porta da cui un "sì" dell'utente entra nel sistema e l'unica che controlla il
 # token; ela.composition decide chi parla con chi e rifiuta una configurazione sbagliata
-# (M8.1, ADR 0023 §12).
+# (M8.1, ADR 0023 §12). ela.cli porta il token in un header ed è la tastiera su cui quel "sì"
+# viene scritto: se sbaglia comando o esce con il codice sbagliato, sbaglia l'utente
+# (M8.2, ADR 0024 §7).
 CRITICAL_PACKAGES = ela.tasks ela.infrastructure.persistence ela.audit ela.permissions \
-	ela.executive ela.tools ela.devices ela.providers ela.routing ela.api ela.composition
+	ela.executive ela.tools ela.devices ela.providers ela.routing ela.api ela.composition \
+	ela.cli
 
 cov-critical:
 	$(UV) run pytest -o addopts="" -q $(foreach p,$(CRITICAL_PACKAGES),--cov=$(p)) \

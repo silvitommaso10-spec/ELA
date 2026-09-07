@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.api import create_app
 from ela.composition import Ela
+from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS
 from ela.permissions import CORE_ECHO, WORKSPACE_WRITE_NOTE
 from ela.tools import ECHO_MESSAGE_MATCHES, NOTE_CONTENT_MATCHES, NOTE_EXISTS
 from tests.composition.support import TOKEN
@@ -74,6 +77,22 @@ async def queued(client: AsyncClient, plan: dict[str, Any], text: str = "fai una
     planned = await client.post(f"/tasks/{task_id}/plan", json=plan)
     assert planned.status_code == 200, planned.text
     return task_id
+
+
+async def tamper_with_the_trail(ela: Ela) -> None:
+    """Rewrite one entry of the log, the way only somebody with the file could.
+
+    The triggers refuse an ``UPDATE`` (ADR 0007, level 3), so they go first: what is being
+    simulated is an attacker who has the database itself, which is exactly the case the chain
+    exists for — the trail cannot stop them, it can only make them visible.
+    """
+    engine = cast(AsyncEngine, ela.database)
+    async with engine.begin() as connection:
+        for trigger in APPEND_ONLY_TRIGGERS:
+            await connection.execute(text(f"DROP TRIGGER {trigger}"))
+        await connection.execute(
+            text("UPDATE audit_events SET summary = 'rewritten' WHERE seq = 1")
+        )
 
 
 def served_paths(app: FastAPI) -> list[tuple[str, str]]:

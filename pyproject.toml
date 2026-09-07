@@ -8,18 +8,24 @@ dependencies = [
     "alembic>=1.13",
     "anthropic>=1.0",
     "fastapi>=0.115",
+    "httpx>=0.28",
     "jsonschema>=4.23",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "sqlalchemy[asyncio]>=2.0",
+    "typer>=0.15",
     "uvicorn>=0.32",
 ]
+
+# `ela`: the command line of M8.2. It talks to the running ELA over the local API (ADR 0024);
+# `python -m ela.api` stays what `ela serve` calls.
+[project.scripts]
+ela = "ela.cli:main"
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
-    "httpx>=0.28",
     "hypothesis>=6.120",
     "ruff>=0.12",
     "mypy>=1.16",
@@ -78,6 +84,7 @@ forbidden_modules = [
     "ela.ports",
     "ela.api",
     "ela.audit",
+    "ela.cli",
     "ela.composition",
     "ela.context",
     "ela.devices",
@@ -112,6 +119,7 @@ source_modules = ["ela.ports"]
 forbidden_modules = [
     "ela.api",
     "ela.audit",
+    "ela.cli",
     "ela.composition",
     "ela.context",
     "ela.devices",
@@ -188,6 +196,7 @@ source_modules = [
     "ela.ports",
     "ela.api",
     "ela.audit",
+    "ela.cli",
     "ela.composition",
     "ela.context",
     "ela.devices",
@@ -213,6 +222,7 @@ source_modules = ["ela.testing"]
 forbidden_modules = [
     "ela.api",
     "ela.audit",
+    "ela.cli",
     "ela.composition",
     "ela.context",
     "ela.devices",
@@ -249,6 +259,7 @@ source_modules = [
     "ela.ports",
     "ela.api",
     "ela.audit",
+    "ela.cli",
     "ela.composition",
     "ela.context",
     "ela.devices",
@@ -274,6 +285,7 @@ source_modules = ["ela.permissions"]
 forbidden_modules = [
     "ela.api",
     "ela.audit",
+    "ela.cli",
     "ela.composition",
     "ela.context",
     "ela.devices",
@@ -313,6 +325,7 @@ source_modules = [
     "ela.ports",
     "ela.api",
     "ela.audit",
+    "ela.cli",
     "ela.composition",
     "ela.context",
     "ela.devices",
@@ -356,6 +369,7 @@ source_modules = [
     "ela.ports",
     "ela.api",
     "ela.audit",
+    "ela.cli",
     "ela.context",
     "ela.devices",
     "ela.evolution",
@@ -369,3 +383,30 @@ source_modules = [
     "ela.tools",
 ]
 forbidden_modules = ["ela.providers", "ela.infrastructure"]
+
+[[tool.importlinter.contracts]]
+name = "13. nessuno importa ela.cli: la CLI è un client, non una libreria (ADR 0024 §7)"
+type = "forbidden"
+# La seconda clausola della regola 28. Una CLI che qualcuno importa è una CLI diventata libreria
+# senza che nessuno l'abbia deciso: i comandi si invocano, e ciò che sanno fare sta dietro l'API.
+source_modules = [
+    "ela.domain",
+    "ela.ports",
+    "ela.api",
+    "ela.audit",
+    "ela.composition",
+    "ela.context",
+    "ela.devices",
+    "ela.evolution",
+    "ela.executive",
+    "ela.identity",
+    "ela.infrastructure",
+    "ela.memory",
+    "ela.permissions",
+    "ela.providers",
+    "ela.routing",
+    "ela.tasks",
+    "ela.testing",
+    "ela.tools",
+]
+forbidden_modules = ["ela.cli"]

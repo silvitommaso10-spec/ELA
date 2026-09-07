@@ -1,8 +1,9 @@
-"""``/audit`` (spec §32; ADR 0005, ADR 0023 §6): the trail, read-only and free of content.
+"""``/audit`` and ``/audit/verify`` (spec §32, §58; ADR 0005, ADR 0023 §6, ADR 0024 §4).
 
-Three filters, and one property that matters more than all of them: what leaves through this
-route carries no argument of a call and no output of a tool — not because the route strips them,
-but because an ``AuditEvent`` never holds them (architecture rule 23).
+The trail, read-only and free of content: what leaves through this route carries no argument of a
+call and no output of a tool — not because the route strips them, but because an ``AuditEvent``
+never holds them (architecture rule 23). And the second question, added in M8.2: whether what is
+in there still hangs together, which is what makes reading it worth anything.
 """
 
 from __future__ import annotations
@@ -14,7 +15,14 @@ from httpx import AsyncClient
 
 from ela.composition import Ela
 from ela.domain import AuditEventType
-from tests.api.support import ECHO_MESSAGE, NOTE_BODY, echo_plan, note_plan, queued
+from tests.api.support import (
+    ECHO_MESSAGE,
+    NOTE_BODY,
+    echo_plan,
+    note_plan,
+    queued,
+    tamper_with_the_trail,
+)
 
 
 async def test_the_trail_of_a_task_is_readable(client: AsyncClient) -> None:
@@ -82,3 +90,38 @@ async def test_no_argument_and_no_output_ever_leaves_through_the_audit(
     assert ECHO_MESSAGE not in trail  # what the tool was told to say
     assert "workspace/notes/briefing.md" in trail  # the target *is* recorded (§32)
     assert (ela.settings.workspace.workspace_dir / "workspace" / "notes" / "briefing.md").exists()
+
+
+# ----------------------------------------------------------------------------------------
+# ``/audit/verify`` (ADR 0024 §4): the second question the trail exists to answer
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_chain_verifies_and_reports_what_to_anchor(client: AsyncClient, ela: Ela) -> None:
+    await queued(client, echo_plan())
+
+    summary = (await client.get("/audit/verify")).json()
+
+    assert summary["length"] == len(await ela.audit.read())
+    assert len(summary["head_hash"]) == 64
+
+
+async def test_an_empty_log_verifies_to_the_genesis(client: AsyncClient) -> None:
+    """Nothing to verify is not a failure: it is a chain of length zero."""
+    summary = (await client.get("/audit/verify")).json()
+
+    assert summary == {"length": 0, "head_hash": "0" * 64}
+
+
+async def test_a_rewritten_entry_is_reported_with_its_position(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """409, and *where*: "something is wrong with the log" is not something anyone can act on."""
+    await queued(client, echo_plan())
+    await tamper_with_the_trail(ela)
+
+    answer = await client.get("/audit/verify")
+
+    assert answer.status_code == 409
+    assert answer.json()["error"]["code"] == "tampered"
+    assert "1" in answer.json()["error"]["message"]

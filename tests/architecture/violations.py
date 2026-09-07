@@ -54,7 +54,7 @@ VIOLATIONS: tuple[Case, ...] = (
         "from fastapi import FastAPI\n",
         "fastapi.FastAPI",
     ),
-    Case("infra-root-module", "infra-libraries", "cli.py", "import typer\n", "typer"),
+    Case("infra-root-module", "infra-libraries", "sync.py", "import typer\n", "typer"),
     Case(
         "infra-type-checking",
         "infra-libraries",
@@ -699,9 +699,65 @@ VIOLATIONS: tuple[Case, ...] = (
         "    return await store.respond(a, status=1, responded_by='x', now=0)\n",
         ".respond(",
     ),
+    Case(
+        "cli-composes-a-world",
+        "cli-over-the-api",
+        "cli/tasks.py",
+        "from ela.composition import Ela\n",
+        "Ela",
+    ),
+    Case(
+        "cli-builds",
+        "cli-over-the-api",
+        "cli/nodes.py",
+        "def go(settings: object) -> object:\n    return build(settings)\n",
+        "build",
+    ),
+    Case(
+        "cli-imports-the-api",
+        "cli-over-the-api",
+        "cli/system.py",
+        "from ela.api import create_app\n",
+        "ela.api.create_app",
+    ),
+    Case(
+        "cli-imports-the-composition-root",
+        "cli-over-the-api",
+        "cli/audit.py",
+        "from ela.composition.root import ELA_ACTOR\n",
+        "ela.composition.root.ELA_ACTOR",
+    ),
+    Case(
+        "cli-imported-by-the-api",
+        "cli-over-the-api",
+        "api/app.py",
+        "from ela.cli import main\n",
+        "ela.cli.main",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        "cli-serve-imports-the-api",
+        "cli-over-the-api",
+        "cli/serve.py",
+        "from ela.api import server\n",
+        "",
+    ),
+    Case(
+        "cli-reads-the-settings",
+        "cli-over-the-api",
+        "cli/client.py",
+        "from ela.composition.settings import ApiSettings\n",
+        "",
+    ),
+    Case(
+        "cli-imports-a-sibling",
+        "cli-over-the-api",
+        "cli/output.py",
+        "from ela.cli.client import connect\n",
+        "",
+    ),
     Case(
         "tools-import-the-router-port",
         "tools-routing-isolation",
