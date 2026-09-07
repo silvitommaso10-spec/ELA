@@ -13,8 +13,10 @@ import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 from weakref import WeakKeyDictionary
 
+from anthropic import AsyncAnthropic
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.domain import RiskLevel
@@ -41,13 +43,15 @@ from ela.ports import (
     IdGenerator,
     ModelProvider,
     PermissionGuardianPort,
-    ProviderRegistry,
+    ProviderRegistryPort,
     TaskRepository,
     ToolPort,
     ToolRegistryPort,
     VerifierPort,
     VerifierRegistryPort,
 )
+from ela.providers import ProviderRegistry
+from ela.providers.anthropic import AnthropicProvider, AnthropicSettings, anthropic_provider
 from ela.testing.fakes import (
     FakeApprovalStore,
     FakeAuditLog,
@@ -75,6 +79,7 @@ from ela.tools import (
     WriteNoteVerifier,
 )
 from tests.domain.examples import CAPABILITY_SPEC, MODEL_COMPLETE, WRITE_NOTE
+from tests.providers.support import FakeAnthropic, answer, settings
 
 Hook = Callable[[object], Awaitable[None]]
 
@@ -283,6 +288,28 @@ def _provider() -> FakeModelProvider:
     return FakeModelProvider(FakeClock(), FakeIdGenerator())
 
 
+def _unconfigured_anthropic() -> AnthropicProvider:
+    """The real adapter with no credentials: UNAVAILABLE, and still under the same contract."""
+    return anthropic_provider(
+        FakeClock(),
+        FakeIdGenerator(),
+        settings=AnthropicSettings(_env_file=None, anthropic_api_key=None),
+    )
+
+
+def _anthropic_on_a_double() -> AnthropicProvider:
+    """The real adapter on a client double: the contract holds on the answering path too.
+
+    No network: ``tests/conftest.py`` makes the HTTP transports unusable for the whole suite.
+    """
+    return AnthropicProvider(
+        cast(AsyncAnthropic, FakeAnthropic(answer(), repeat=True)),
+        clock=FakeClock(),
+        ids=FakeIdGenerator(),
+        settings=settings(),
+    )
+
+
 IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     Clock: (Implementation("FakeClock", FakeClock),),
     IdGenerator: (Implementation("FakeIdGenerator", FakeIdGenerator),),
@@ -339,8 +366,15 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("FakeVerifierRegistry", _fake_verifier_registry),
         Implementation("VerifierRegistry", _verifier_registry),
     ),
-    ModelProvider: (Implementation("FakeModelProvider", _provider),),
-    ProviderRegistry: (Implementation("FakeProviderRegistry", FakeProviderRegistry),),
+    ModelProvider: (
+        Implementation("FakeModelProvider", _provider),
+        Implementation("AnthropicProvider(no key)", _unconfigured_anthropic),
+        Implementation("AnthropicProvider", _anthropic_on_a_double),
+    ),
+    ProviderRegistryPort: (
+        Implementation("FakeProviderRegistry", FakeProviderRegistry),
+        Implementation("ProviderRegistry", ProviderRegistry),
+    ),
 }
 
 

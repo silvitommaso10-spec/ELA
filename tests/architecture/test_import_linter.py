@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from tests.architecture.rules import (
+    ANTHROPIC_LIBRARY,
     CORE_FORBIDDEN,
     CORE_PACKAGES,
     DEVICES_FORBIDDEN,
@@ -27,10 +28,12 @@ from tests.architecture.rules import (
     PERMISSIONS_ALLOWED_INTERNAL,
     PERMISSIONS_PACKAGE,
     PORTS_ALLOWED_INTERNAL,
+    PROVIDERS_PACKAGE,
     STATE_MACHINE_MODULE,
     TESTING_ALLOWED_INTERNAL,
     TESTING_PACKAGE,
     check_domain,
+    provider_modules_outside_the_adapter,
     top_level_modules,
 )
 from tests.architecture.violations import PACKAGE_ROOT, REPO_ROOT, VIOLATIONS, Case, apply
@@ -70,6 +73,8 @@ def _contract_for(rule: str) -> Contract:
         if rule == "permissions-imports" and sources == {PERMISSIONS_PACKAGE}:
             return contract
         if rule == "devices-isolation" and sources == {DEVICES_PACKAGE}:
+            return contract
+        if rule == "anthropic-import-isolation" and forbidden == {ANTHROPIC_LIBRARY}:
             return contract
     raise AssertionError(f"pyproject.toml has no import-linter contract for rule {rule!r}")
 
@@ -111,6 +116,11 @@ def test_contracts_cover_current_packages() -> None:
 
     devices = _contract_for("devices-isolation")
     assert set(devices["forbidden_modules"]) == set(DEVICES_FORBIDDEN)
+
+    anthropic = _contract_for("anthropic-import-isolation")
+    assert set(anthropic["source_modules"]) == (modules - {PROVIDERS_PACKAGE}) | (
+        provider_modules_outside_the_adapter(PACKAGE_ROOT)
+    )
 
 
 def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() -> None:
@@ -178,6 +188,7 @@ LINTER_CASES = [
         "state-machine-imported-by-executive",
         "permissions-imports-tasks",
         "devices-import-tasks",
+        "anthropic-in-the-registry",
     )
 ]
 

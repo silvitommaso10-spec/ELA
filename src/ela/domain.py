@@ -82,6 +82,7 @@ __all__ = [
     "ProviderRequestId",
     "ProviderResult",
     "ProviderResultId",
+    "ProviderStatus",
     "ProviderUsage",
     "RiskLevel",
     "StepId",
@@ -460,6 +461,19 @@ class PowerSource(StrEnum):
     AC = "AC"
     BATTERY = "BATTERY"
     UNKNOWN = "UNKNOWN"
+
+
+class ProviderStatus(StrEnum):
+    """Whether a model provider can be called at all (§25 "disponibilità", §26; ADR 0020 §2).
+
+    Two values and no ``UNKNOWN``: a provider that cannot say it is usable is not usable, and
+    ELA does not send the user's content to something it is unsure about (§33). The status is
+    a property of the *configuration* — credentials present or absent — not of the network:
+    a provider that is AVAILABLE can still fail a call, and says so in the result.
+    """
+
+    AVAILABLE = "AVAILABLE"
+    UNAVAILABLE = "UNAVAILABLE"
 
 
 class PrivacyLevel(StrEnum):

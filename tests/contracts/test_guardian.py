@@ -11,7 +11,7 @@ import inspect
 from typing import get_type_hints
 
 from ela.domain import CapabilityId, PermissionDecision, PermissionOutcome
-from ela.ports import ModelProvider, PermissionGuardianPort, ProviderRegistry, ToolPort
+from ela.ports import ModelProvider, PermissionGuardianPort, ProviderRegistryPort, ToolPort
 from tests.domain.examples import (
     CAPABILITY_SPEC,
     SINGLE_USE_AUTHORIZATION,
@@ -66,7 +66,7 @@ def test_decide_takes_the_use_count_as_a_fact(guardian: PermissionGuardianPort) 
 
 def test_guardian_holds_no_tool_and_no_provider(guardian: PermissionGuardianPort) -> None:
     """Mirror of ``test_tool_holds_no_guardian_and_no_store``: the Guardian never executes."""
-    forbidden = (ToolPort, ModelProvider, ProviderRegistry)
+    forbidden = (ToolPort, ModelProvider, ProviderRegistryPort)
     for name, value in vars(guardian).items():
         assert not isinstance(value, forbidden), f"{type(guardian).__name__}.{name}"
     for method in (type(guardian).__init__, type(guardian).decide):

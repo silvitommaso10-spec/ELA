@@ -626,6 +626,20 @@ VIOLATIONS: tuple[Case, ...] = (
         'payload={"what": step.arguments})\n',
         ".arguments",
     ),
+    Case(
+        "anthropic-in-the-registry",
+        "anthropic-import-isolation",
+        "providers/registry.py",
+        "import anthropic\n",
+        "anthropic",
+    ),
+    Case(
+        "anthropic-in-the-executor",
+        "anthropic-import-isolation",
+        "executive/summary.py",
+        "from anthropic import AsyncAnthropic\n",
+        "anthropic.AsyncAnthropic",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -657,6 +671,20 @@ ALLOWED: tuple[Case, ...] = (
         "class R:\n"
         "    async def run(self, t, s, d):\n"
         "        return await self._executor.execute(t, s, device_id=d)\n",
+        "",
+    ),
+    Case(
+        "anthropic-inside-its-adapter",
+        "anthropic-import-isolation",
+        "providers/anthropic/other.py",
+        "import anthropic\nfrom anthropic import AsyncAnthropic\n",
+        "",
+    ),
+    Case(
+        "the-adapter-package-is-not-the-library",
+        "anthropic-import-isolation",
+        "providers/registry.py",
+        "from ela.providers.anthropic import AnthropicProvider\n",
         "",
     ),
     Case(

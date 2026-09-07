@@ -79,6 +79,7 @@ def test_the_domain_declares_exactly_these_enums() -> None:
         "PermissionOutcome",
         "PowerSource",
         "PrivacyLevel",
+        "ProviderStatus",
         "RiskLevel",
         "StepState",
         "TaskEventType",

@@ -28,7 +28,7 @@ REQUIRED_PORTS = frozenset(
         "ApprovalStore",
         "ExecutionResultStore",
         "ModelProvider",
-        "ProviderRegistry",
+        "ProviderRegistryPort",
         "Clock",
         "IdGenerator",
     }

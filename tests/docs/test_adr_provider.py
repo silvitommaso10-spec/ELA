@@ -1,0 +1,212 @@
+"""The tables of ADR 0020 and ``ela.providers`` say the same thing.
+
+Four tables, four row shapes, so none is mistaken for another: §3 (the settings and their
+defaults), §4 (the models, their limits and their prices), §5 (``model_hint`` -> model) and §7
+(the SDK exceptions mapped onto ELA's error vocabulary). Prices and model limits are facts read
+from a vendor's documentation on a given day: what this test can hold is that the document and
+the code never drift apart, and the date in the ADR says when a human last checked the world.
+"""
+
+from __future__ import annotations
+
+import re
+from decimal import Decimal
+from pathlib import Path
+
+from ela.ports import (
+    PROVIDER_AUTHENTICATION_ERROR,
+    PROVIDER_BAD_REQUEST,
+    PROVIDER_ERROR_CODES,
+    PROVIDER_RATE_LIMITED,
+    PROVIDER_REFUSAL,
+    PROVIDER_REJECTED,
+    PROVIDER_SERVER_ERROR,
+    PROVIDER_TIMEOUT,
+    PROVIDER_UNAVAILABLE,
+    PROVIDER_UNKNOWN_MODEL,
+    PROVIDER_UNKNOWN_MODEL_HINT,
+    PROVIDER_UNREACHABLE,
+    PROVIDER_UNSUPPORTED_PARAMETER,
+)
+from ela.providers.anthropic.models import DEFAULT_MODEL, MODELS, PROFILES, model_for_hint
+from ela.providers.anthropic.pricing import PRICES
+from ela.providers.anthropic.provider import BACKOFF_BASE_SECONDS, BACKOFF_CAP_SECONDS
+from ela.providers.anthropic.settings import (
+    DEFAULT_MAX_OUTPUT_TOKENS,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_TIMEOUT_SECONDS,
+    AnthropicSettings,
+)
+
+ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0020-provider-anthropic.md"
+MODEL_ROW = re.compile(
+    r"^\| Claude [\w.\s]+ \| `([\w.-]+)` \| \S+ \| (\d+) \| (\d+) \| (\d+) \| (sì|no) \|$"
+)
+HINT_ROW = re.compile(r"^\| ((?:`\w+`(?:, )?)+) \| `([\w.-]+)` \|$")
+ERROR_ROW = re.compile(r"^\| (.+) \| (.+) \| `(provider\.\w+)` \| (\*\*sì\*\*|no) \|$")
+SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| (.+) \| `?([\w.-]+)`? \| (.+) \|$")
+NAME = re.compile(r"`(\w+)`")
+ABSENT = "assente"
+"""How the §3 table writes a variable that has no default: the key is one of them."""
+
+
+def adr_text() -> str:
+    return ADR_PATH.read_text(encoding="utf-8")
+
+
+# ----------------------------------------------------------------------------------------
+# §4 — the models and their prices
+# ----------------------------------------------------------------------------------------
+
+
+def documented_models(text: str) -> dict[str, tuple[int, Decimal, Decimal, bool]]:
+    rows = {
+        match.group(1): (
+            int(match.group(2)),
+            Decimal(match.group(3)),
+            Decimal(match.group(4)),
+            match.group(5) == "sì",
+        )
+        for line in text.splitlines()
+        if (match := MODEL_ROW.match(line)) is not None
+    }
+    assert rows, "ADR 0020 §4 must contain the model table"
+    return rows
+
+
+def test_the_model_table_matches_the_code() -> None:
+    rows = documented_models(adr_text())
+    assert set(rows) == set(MODELS) == set(PRICES)
+    for model_id, (max_output, price_in, price_out, effort) in rows.items():
+        assert MODELS[model_id].max_output_tokens == max_output
+        assert MODELS[model_id].supports_effort is effort
+        assert PRICES[model_id].input == price_in
+        assert PRICES[model_id].output == price_out
+
+
+def test_the_cache_read_rate_of_the_adr_is_a_tenth_of_the_input_price() -> None:
+    """The ADR states the rule in words; the code states it in numbers, model by model."""
+    assert "10% dell'input" in adr_text()
+    for model_id, price in PRICES.items():
+        assert price.cache_read == price.input / 10, model_id
+
+
+def test_the_expensive_model_is_not_the_default() -> None:
+    """The decision of §4, in the code: what starts by itself is the balanced profile."""
+    assert "Il default è `claude-sonnet-5`, non il modello più potente" in adr_text()
+    assert DEFAULT_MODEL == "claude-sonnet-5"
+    assert AnthropicSettings(_env_file=None).anthropic_model == DEFAULT_MODEL
+
+
+def test_the_model_the_adr_leaves_out_is_not_in_the_code() -> None:
+    assert "`claude-fable-5-1` resta fuori" in adr_text()
+    assert "claude-fable-5-1" not in MODELS
+
+
+# ----------------------------------------------------------------------------------------
+# §5 — model_hint -> model
+# ----------------------------------------------------------------------------------------
+
+
+def documented_hints(text: str) -> dict[str, str]:
+    rows: dict[str, str] = {}
+    for line in text.splitlines():
+        match = HINT_ROW.match(line)
+        if match is not None:
+            for hint in NAME.findall(match.group(1)):
+                rows[hint] = match.group(2)
+    assert rows, "ADR 0020 §5 must contain the hint table"
+    return rows
+
+
+def test_the_hint_table_matches_the_code() -> None:
+    rows = documented_hints(adr_text())
+    assert rows == dict(PROFILES)
+    for hint, model_id in rows.items():
+        model = model_for_hint(hint, DEFAULT_MODEL)
+        assert model is not None and model.id == model_id
+
+
+def test_an_unmapped_hint_is_an_error_and_not_the_default() -> None:
+    assert "`provider.unknown_model_hint`, **nessuna chiamata**" in adr_text()
+    assert model_for_hint("telepathy", DEFAULT_MODEL) is None
+
+
+# ----------------------------------------------------------------------------------------
+# §7 — the error vocabulary
+# ----------------------------------------------------------------------------------------
+
+
+def documented_errors(text: str) -> dict[str, bool]:
+    rows = {
+        match.group(3): match.group(4) == "**sì**"
+        for line in text.splitlines()
+        if (match := ERROR_ROW.match(line)) is not None
+    }
+    assert rows, "ADR 0020 §7 must contain the error table"
+    return rows
+
+
+def test_the_error_table_is_exactly_the_vocabulary_of_the_port() -> None:
+    assert set(documented_errors(adr_text())) == set(PROVIDER_ERROR_CODES)
+
+
+def test_what_the_table_calls_retryable() -> None:
+    """The rule of the milestone, read from the document: 429, 5xx and transport, no more."""
+    rows = documented_errors(adr_text())
+    retryable = {code for code, again in rows.items() if again}
+    assert retryable == {
+        PROVIDER_RATE_LIMITED,
+        PROVIDER_SERVER_ERROR,
+        PROVIDER_TIMEOUT,
+        PROVIDER_UNREACHABLE,
+    }
+    assert not retryable & {
+        PROVIDER_AUTHENTICATION_ERROR,
+        PROVIDER_BAD_REQUEST,
+        PROVIDER_UNKNOWN_MODEL,
+        PROVIDER_REJECTED,
+        PROVIDER_REFUSAL,
+        PROVIDER_UNAVAILABLE,
+        PROVIDER_UNKNOWN_MODEL_HINT,
+        PROVIDER_UNSUPPORTED_PARAMETER,
+    }
+
+
+# ----------------------------------------------------------------------------------------
+# §3 and §8 — the settings and the backoff
+# ----------------------------------------------------------------------------------------
+
+
+def documented_settings(text: str) -> dict[str, str]:
+    rows = {
+        match.group(1): match.group(3)
+        for line in text.splitlines()
+        if (match := SETTING_ROW.match(line)) is not None
+    }
+    assert rows, "ADR 0020 §3 must contain the settings table"
+    return rows
+
+
+def test_the_settings_table_matches_the_defaults() -> None:
+    rows = documented_settings(adr_text())
+    assert set(rows) == {
+        "ELA_ANTHROPIC_API_KEY",
+        "ELA_ANTHROPIC_MODEL",
+        "ELA_ANTHROPIC_TIMEOUT_SECONDS",
+        "ELA_ANTHROPIC_MAX_RETRIES",
+        "ELA_ANTHROPIC_MAX_OUTPUT_TOKENS",
+    }
+    settings = AnthropicSettings(_env_file=None)
+    assert rows["ELA_ANTHROPIC_API_KEY"] == ABSENT
+    assert settings.anthropic_api_key is None
+    assert rows["ELA_ANTHROPIC_MODEL"] == DEFAULT_MODEL
+    assert int(rows["ELA_ANTHROPIC_TIMEOUT_SECONDS"]) == DEFAULT_TIMEOUT_SECONDS == 60
+    assert int(rows["ELA_ANTHROPIC_MAX_RETRIES"]) == DEFAULT_MAX_RETRIES == 2
+    assert int(rows["ELA_ANTHROPIC_MAX_OUTPUT_TOKENS"]) == DEFAULT_MAX_OUTPUT_TOKENS == 4096
+
+
+def test_the_backoff_of_the_adr_is_the_backoff_of_the_code() -> None:
+    assert "`0.5 × 2ⁿ` secondi, con tetto **8 s**" in adr_text()
+    assert BACKOFF_BASE_SECONDS == 0.5
+    assert BACKOFF_CAP_SECONDS == 8.0
