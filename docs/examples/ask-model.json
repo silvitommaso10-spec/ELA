@@ -1,0 +1,35 @@
+{
+  "_nota": [
+    "Un piano con un solo step model.complete, per quando il provider avrà una chiave.",
+    "Senza chiave ELA parte lo stesso: il provider si registra UNAVAILABLE e lo step fallisce",
+    "con provider.unavailable *senza toccare la rete* (ADR 0020 §2). Per dargliela, metti",
+    "ELA_ANTHROPIC_API_KEY nel .env e riavvia `ela serve`.",
+    "Lo step chiede il tuo consenso e qui non c'è niente da dichiarare: model.complete è MEDIUM",
+    "e requires_authorization nel catalogo (spec §29), perché il contenuto esce da questa",
+    "macchina. Il contrario di first-task.json, dove è lo step ad alzare l'asticella.",
+    "\"task_type\" è la chiave su cui il Model Router sceglie (spec §25, ADR 0022): una delle",
+    "sette della tabella — analysis, classification, coding, extraction, planning, reasoning,",
+    "routine — e una fuori tabella fallisce con routing.unknown_task_type, prima della rete.",
+    "La risposta si legge con `ela task results <id>`: l'audit non porta mai l'output di un tool",
+    "(spec §57), il registro dei risultati sì (ADR 0025 §4).",
+    "Un secondo step che salvasse la risposta in una nota non è esprimibile in v0.1: gli",
+    "arguments stanno nel piano e nessun dato passa da uno step al successivo (ADR 0018 §6).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti."
+  ],
+  "goal": "chiedere una cosa al modello",
+  "steps": [
+    {
+      "id": "3f0d1a44-5b6c-4d7e-8f90-000000000001",
+      "goal": "farsi spiegare in due righe che cos'è un audit log append-only",
+      "required_capabilities": ["model.complete"],
+      "arguments": {
+        "input": "Spiega in due righe che cos'è un audit log append-only e perché serve.",
+        "purpose": "prima domanda al modello dall'esempio di ELA",
+        "task_type": "reasoning"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "due righe di testo, in italiano",
+      "success_conditions": ["model.answered", "model.routed_as_asked"]
+    }
+  ]
+}

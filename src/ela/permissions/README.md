@@ -4,10 +4,14 @@ ADR 0012).
 
 - `capabilities.py`: `CapabilityRegistry` immutabile, limitato a MEDIUM, validazione JSON Schema
   degli argomenti, catalogo `catalogue_v01` (`core.echo`, `workspace.write_note`,
-  `model.complete`).
+  `model.complete`). Lo scope di `workspace.write_note` è configurabile da M8.3
+  (`ELA_NOTES_SCOPE`, ADR 0025 §5); `DEFAULT_NOTES_SCOPE` ne è il default, non più una
+  convenzione.
 - `scope.py`: cosa vuol dire "dentro lo scope" (prefisso di percorso, regole fail-safe).
 - `guardian.py`: `PermissionGuardian` — `decide` (port, sincrono, puro, non solleva mai) e
-  `authorize` (decide e scrive `PERMISSION_DECIDED`); `RISK_POLICY`, la policy v0.1 per rischio.
+  `authorize` (decide e scrive `PERMISSION_DECIDED`); `RISK_POLICY`, la policy v0.1 per rischio;
+  `DEFAULT_DECISION_TTL` (5 minuti) e `MAX_DECISION_TTL` (1 ora): oltre non è una decisione, è
+  un permesso, e i permessi sono le `Authorization` (ADR 0025 §6).
 
 - `authorizations.py`: `authorization_from_approval` — la funzione pura che trasforma
   un'`Approval` GRANTED in un'`Authorization` monouso legata a task, step, capability e bersagli

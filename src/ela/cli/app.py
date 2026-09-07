@@ -1,6 +1,6 @@
 """The ``ela`` command: every sub-command, and nothing else (ADR 0024 §3).
 
-Seventeen commands over fourteen routes plus the two that are not calls at all — ``init``, which
+Eighteen commands over fifteen routes plus the two that are not calls at all — ``init``, which
 prepares the machine, and ``serve``, which starts the process. Nothing is composed here: the app
 holds commands, and each command opens a client when it runs.
 """

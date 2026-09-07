@@ -147,8 +147,13 @@ async def build(settings: Settings) -> Ela:
             SqlDeviceRegistry(database), clock, heartbeat_ttl=settings.devices.heartbeat_ttl
         )
 
-        capabilities = catalogue_v01()
-        guardian = PermissionGuardian(capabilities, clock, ids, audit)
+        # The scope of ``workspace.write_note`` and the life of a decision are configuration
+        # since M8.3 (ADR 0025 §5, §6): the catalogue and the Guardian have always accepted them,
+        # and until now this line was the reason they were constants.
+        capabilities = catalogue_v01(notes_scope=settings.core.notes_scope)
+        guardian = PermissionGuardian(
+            capabilities, clock, ids, audit, decision_ttl=settings.core.decision_ttl
+        )
 
         # The order of ADR 0022 §7: a provider, a registry that holds it, a router over the two.
         provider = anthropic_provider(clock, ids, settings=settings.anthropic)

@@ -65,6 +65,7 @@ from ela.ports import AuditLog, CapabilityRegistryPort, Clock, IdGenerator, NotF
 __all__ = [
     "DEFAULT_DECISION_TTL",
     "GUARDIAN_ACTOR",
+    "MAX_DECISION_TTL",
     "POLICY_VERSION",
     "RISK_POLICY",
     "PermissionGuardian",
@@ -79,6 +80,16 @@ DEFAULT_DECISION_TTL: Final = timedelta(minutes=5)
 
 Long enough for the decision to travel from the Core to a node (§56), short enough that a
 decision kept aside cannot be replayed once its authorization is gone.
+"""
+
+MAX_DECISION_TTL: Final = timedelta(hours=1)
+"""The ceiling ``ELA_DECISION_TTL_SECONDS`` may not pass (M8.3, ADR 0025 §6).
+
+A :class:`~ela.domain.PermissionDecision` is an answer given **in a context**, and a context that
+lasts an hour is already longer than anything ELA is doing right now. Beyond that it stops being
+a decision and becomes a permission — and permissions have an entity of their own, which is
+:class:`~ela.domain.Authorization`, with its own grant, its own uses and its own audit. A TTL
+without a ceiling would let the shorter-lived of the two quietly outlive the longer one.
 """
 
 GUARDIAN_ACTOR: Final = Actor(kind=ActorKind.SYSTEM, id="permission-guardian")

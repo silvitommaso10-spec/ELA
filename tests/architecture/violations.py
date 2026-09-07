@@ -648,6 +648,20 @@ VIOLATIONS: tuple[Case, ...] = (
         ".arguments",
     ),
     Case(
+        "tool-output-on-a-second-schema",
+        "tool-output-readers",
+        "api/schemas.py",
+        "from pydantic import BaseModel\nclass StepOut(BaseModel):\n    output: dict\n",
+        "StepOut.output",
+    ),
+    Case(
+        "tool-output-read-by-a-route",
+        "tool-output-readers",
+        "api/steps.py",
+        "def render(result):\n    return {'what': result.output}\n",
+        ".output",
+    ),
+    Case(
         "anthropic-in-the-registry",
         "anthropic-import-isolation",
         "providers/registry.py",
@@ -1147,6 +1161,18 @@ ALLOWED: tuple[Case, ...] = (
         "verifier-read-only",
         "tools/extra.py",
         "import os\ndef w(p):\n    os.unlink(p)\n",
+        "",
+    ),
+    Case(
+        "the-one-model-that-carries-the-output",
+        "tool-output-readers",
+        "api/schemas.py",
+        "from pydantic import BaseModel\n"
+        "class ExecutionResultOut(BaseModel):\n"
+        "    output: dict\n"
+        "    @classmethod\n"
+        "    def of(cls, result):\n"
+        "        return cls(output=result.output)\n",
         "",
     ),
     Case(

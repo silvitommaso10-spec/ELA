@@ -17,9 +17,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ela.domain import ApprovalStatus, TaskId, TaskState
+from ela.domain import ApprovalStatus, AuditEventId, TaskId, TaskState
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
+    SqlAuditLog,
     SqlAuthorizationStore,
     SqlExecutionResultStore,
     SqlTaskRepository,
@@ -35,6 +36,7 @@ from tests.contracts.test_approval_store import PENDING as PENDING_APPROVAL
 from tests.contracts.test_task_repository import CHILD, OTHER_TASK
 from tests.domain.examples import (
     APPROVAL,
+    AUDIT_EVENT,
     EXECUTION_RESULT,
     LATER,
     NOW,
@@ -381,6 +383,92 @@ async def test_a_request_that_is_not_pending_is_refused_before_any_query(
             APPROVAL.id, status=ApprovalStatus.EXPIRED, responded_by="tommaso", now=NOW
         )
     assert recorded() == []
+
+
+# ----------------------------------------------------------------------------------------
+# The debts of M8.3: what the database is asked, not only what it answers (ADR 0025 §2, §3)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_count_groups_in_sql_and_selects_no_task_column(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    """The whole point of ``count``: the database counts, and no row travels."""
+    repository = SqlTaskRepository(engine)
+    await repository.add(TASK)
+    await repository.add(OTHER_TASK)
+    recorded = statements(engine)
+
+    assert await repository.count() == {TASK.state: 1, OTHER_TASK.state: 1}
+
+    selects = _selects(recorded(), "tasks")
+    assert len(selects) == 1
+    assert "GROUP BY" in selects[0]
+    assert "count" in selects[0].lower()
+    assert "tasks.goal" not in selects[0]
+
+
+async def test_count_of_no_state_asks_the_database_nothing(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    """``frozenset()`` is a question about no state: the answer needs no query to be right."""
+    repository = SqlTaskRepository(engine)
+    await repository.add(TASK)
+    recorded = statements(engine)
+
+    assert await repository.count(states=frozenset()) == {}
+
+    assert _selects(recorded(), "tasks") == []
+
+
+async def test_a_tail_limits_in_sql_from_the_far_end(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    """``newest_first`` is the ``ORDER BY``, so the ``LIMIT`` takes rows from the right end and
+    the log is never read whole (ADR 0025 §3 — the debt ADR 0024 §6 declared)."""
+    log = SqlAuditLog(engine)
+    for index in range(3):
+        await log.append(
+            AUDIT_EVENT.model_copy(
+                update={"id": AuditEventId(UUID(f"00000000-0000-4000-8000-00000000090{index}"))}
+            )
+        )
+    recorded = statements(engine)
+
+    last = await log.read(limit=1, newest_first=True)
+
+    assert len(last) == 1
+    selects = _selects(recorded(), "audit_events")
+    assert len(selects) == 1
+    assert "DESC" in selects[0]
+    assert "LIMIT" in selects[0]
+
+
+async def test_reading_forwards_still_orders_the_way_it_always_did(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    """Negative case for the one above: without the flag there is no ``DESC`` to be found."""
+    log = SqlAuditLog(engine)
+    await log.append(AUDIT_EVENT)
+    recorded = statements(engine)
+
+    await log.read(limit=1)
+
+    assert "DESC" not in _selects(recorded(), "audit_events")[0]
+
+
+async def test_results_of_a_task_are_one_query_and_not_one_per_step(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    """``for_task`` exists so that reading what a task produced is not a loop (ADR 0025 §4)."""
+    store = SqlExecutionResultStore(engine)
+    await store.add(EXECUTION_RESULT)
+    recorded = statements(engine)
+
+    assert EXECUTION_RESULT.task_id is not None
+    assert await store.for_task(EXECUTION_RESULT.task_id) == (EXECUTION_RESULT,)
+
+    assert len(_selects(recorded(), "execution_results")) == 1
 
 
 async def test_the_two_stores_expose_their_engine(engine: AsyncEngine) -> None:

@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Annotated, cast
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ela.audit.chain import ChainSummary
 from ela.domain import (
@@ -32,6 +32,9 @@ from ela.domain import (
     DeviceId,
     DeviceStatus,
     ErrorMetadata,
+    ExecutionId,
+    ExecutionResult,
+    ExecutionStatus,
     JsonMapping,
     NetworkKind,
     OperatingSystem,
@@ -58,6 +61,7 @@ __all__ = [
     "ChainOut",
     "DeviceOut",
     "DiagnosticsOut",
+    "ExecutionResultOut",
     "HealthOut",
     "PlanIn",
     "RunOut",
@@ -81,6 +85,17 @@ def _plain(entity: BaseModel, field: str) -> JsonMapping:
     return cast(JsonMapping, entity.model_dump()[field])
 
 
+PLAN_EXTRA = ConfigDict(extra="ignore")
+"""An unknown key in a plan is **ignored**, and that is a decision (M8.3, ADR 0025 §8).
+
+JSON has no comments, and the example plans in ``docs/examples/`` are sent to this endpoint byte
+for byte by a test, so the only way one of them can explain itself is a key that survives the
+trip and means nothing. ``"_nota"`` is that key. Pydantic would ignore it anyway — this says so
+on purpose, because behaviour that a file on disk relies on must not be a default somebody else
+can change.
+"""
+
+
 class TaskCreate(BaseModel):
     """What the user asked. The plan comes separately, and today by hand (ADR 0023 §6)."""
 
@@ -94,7 +109,11 @@ class StepIn(BaseModel):
 
     ``id`` is the caller's: ``dependencies`` name the other steps by id, and a step id minted here
     would leave the caller with no way to express the shape of its own plan.
+
+    :data:`PLAN_EXTRA` applies here too: an unknown key is ignored, so a step can carry a note.
     """
+
+    model_config = PLAN_EXTRA
 
     id: UUID
     goal: str
@@ -125,6 +144,8 @@ class StepIn(BaseModel):
 
 class PlanIn(BaseModel):
     """A plan for a task that has none. That it is a DAG is checked where every plan is."""
+
+    model_config = PLAN_EXTRA
 
     goal: str
     steps: Annotated[tuple[StepIn, ...], Field(min_length=1)]
@@ -389,6 +410,51 @@ class HealthOut(BaseModel):
     status: str
     database: str
     now: datetime
+
+
+class ExecutionResultOut(BaseModel):
+    """What a tool produced (§63; M8.3, ADR 0025 §4).
+
+    ``output`` is the user's own content coming back to the user, on loopback, behind the user's
+    token — the answer of a model, the note that was written — and it is the reason this schema
+    exists: until M8.3 it left the machine nowhere, so a plan could complete and show nothing.
+    Architecture rule 29 keeps it to one module of ``ela.api``, which is the route that serves
+    this schema; the audit trail still never carries it (§57, rule 23).
+    """
+
+    id: ExecutionId
+    created_at: datetime
+    capability_id: CapabilityId
+    status: ExecutionStatus
+    task_id: UUID | None
+    step_id: UUID | None
+    tool_name: str | None
+    device_id: DeviceId | None
+    decision_id: UUID | None
+    authorization_id: UUID | None
+    output: JsonMapping
+    error: ErrorMetadata | None
+    usage: ProviderUsage | None
+    duration_ms: int | None
+
+    @classmethod
+    def of(cls, result: ExecutionResult) -> ExecutionResultOut:
+        return cls(
+            id=result.id,
+            created_at=result.created_at,
+            capability_id=result.capability_id,
+            status=result.status,
+            task_id=result.task_id,
+            step_id=result.step_id,
+            tool_name=result.tool_name,
+            device_id=result.device_id,
+            decision_id=result.decision_id,
+            authorization_id=result.authorization_id,
+            output=_plain(result, "output"),
+            error=result.error,
+            usage=result.usage,
+            duration_ms=result.duration_ms,
+        )
 
 
 class DiagnosticsOut(BaseModel):

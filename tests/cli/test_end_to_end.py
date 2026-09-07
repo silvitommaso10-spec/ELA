@@ -28,7 +28,8 @@ async def test_a_whole_turn_of_ela_from_the_command_line(
     planned = await cli("task", "plan", task_id, "--file", written(tmp_path, note_plan()))
     assert TaskState.QUEUED.value in planned.stdout
 
-    # It stops and asks: writing a note is MEDIUM risk, and consent is the user's (§30).
+    # It stops and asks: the step declares ``requires_authorization``, and consent is the
+    # user's (§30). Not the risk: ``workspace.write_note`` is LOW, protected by its scope.
     first = await cli("task", "run", task_id)
     assert "waiting_approval" in first.stdout
 

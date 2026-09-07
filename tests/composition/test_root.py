@@ -10,14 +10,22 @@ from __future__ import annotations
 
 import json
 import stat
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
 from ela.composition import ELA_ACTOR, ConfigurationError, Ela, Settings, build
 from ela.devices.local import LOCAL_DEVICE_ID, LOCAL_DEVICE_NAME
-from ela.domain import ActorKind, ProviderStatus
-from ela.permissions import MODEL_COMPLETE, catalogue_v01
+from ela.domain import ActorKind, PermissionOutcome, ProviderStatus
+from ela.permissions import (
+    CORE_ECHO,
+    DEFAULT_DECISION_TTL,
+    DEFAULT_NOTES_SCOPE,
+    MODEL_COMPLETE,
+    WORKSPACE_WRITE_NOTE,
+    catalogue_v01,
+)
 from ela.ports import ROUTING_EMPTY_ROUTES, ROUTING_UNKNOWN_PROVIDER
 from ela.providers.anthropic import PROVIDER_NAME
 from tests.composition.support import TOKEN, create_schema, database_url, declare
@@ -93,6 +101,56 @@ async def test_the_durations_of_the_settings_reach_the_engine_and_the_executor(
         assert await ela.engine.recover() == ((), (), ())  # an engine that works
     finally:
         await ela.aclose()
+
+
+async def test_the_notes_scope_of_the_settings_reaches_the_catalogue(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """ADR 0025 §5: ``catalogue_v01`` always took the parameter — this line is what M8.1 left.
+
+    And it is a **behavioural** check, not a field read: the Guardian denies a note outside the
+    configured scope and allows one inside it, which is what the variable is for.
+    """
+    ela = await built(monkeypatch, tmp_path, ELA_NOTES_SCOPE="appunti")
+    try:
+        spec = ela.capabilities.get(WORKSPACE_WRITE_NOTE)
+        assert spec.scope == ("appunti",)
+
+        inside = ela.guardian.decide(spec, {"path": "appunti/x.md", "body": "b"})
+        outside = ela.guardian.decide(spec, {"path": "workspace/notes/x.md", "body": "b"})
+
+        assert inside.outcome is PermissionOutcome.ALLOWED
+        assert outside.outcome is PermissionOutcome.DENIED
+    finally:
+        await ela.aclose()
+
+
+async def test_the_default_scope_is_still_the_one_the_catalogue_declares(ela: Ela) -> None:
+    """Negative case for the one above: with nothing set, nothing moved."""
+    assert ela.capabilities.get(WORKSPACE_WRITE_NOTE).scope == (DEFAULT_NOTES_SCOPE,)
+
+
+async def test_the_decision_ttl_of_the_settings_reaches_the_guardian(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """ADR 0025 §6, checked on a decision and not on a field: an ``ALLOWED`` expires when the
+    variable says it does."""
+    ela = await built(monkeypatch, tmp_path, ELA_DECISION_TTL_SECONDS="60")
+    try:
+        spec = ela.capabilities.get(CORE_ECHO)
+        decision = ela.guardian.decide(spec, {"message": "ciao"})
+
+        assert decision.expires_at is not None
+        assert decision.expires_at - decision.created_at == timedelta(seconds=60)
+    finally:
+        await ela.aclose()
+
+
+async def test_without_the_variable_a_decision_lives_as_long_as_it_always_did(ela: Ela) -> None:
+    decision = ela.guardian.decide(ela.capabilities.get(CORE_ECHO), {"message": "ciao"})
+
+    assert decision.expires_at is not None
+    assert decision.expires_at - decision.created_at == DEFAULT_DECISION_TTL
 
 
 async def test_ela_acts_as_itself(ela: Ela) -> None:

@@ -18,16 +18,17 @@ from tests.composition.support import TOKEN
 OTHER = "y" * 40
 
 
-def test_the_application_serves_the_fourteen_routes_of_the_adrs_and_its_schema(
+def test_the_application_serves_the_fifteen_routes_of_the_adrs_and_its_schema(
     app: FastAPI,
 ) -> None:
-    """Twelve routes (ADR 0023 §6) and the two of ADR 0024 §5, plus ``/openapi.json``, which the
-    loop below proves is behind the token like everything else — the HTML pages are off, a browser
-    cannot send a header."""
+    """Twelve routes (ADR 0023 §6), the two of ADR 0024 §5 and the one of ADR 0025 §4, plus
+    ``/openapi.json``, which the loop below proves is behind the token like everything else — the
+    HTML pages are off, a browser cannot send a header."""
     paths = served_paths(app)
 
     assert ("GET", "/openapi.json") in paths
-    assert len(paths) == 15
+    assert ("GET", "/tasks/{task_id}/results") in paths
+    assert len(paths) == 16
     assert not {path for _, path in paths} & {"/docs", "/redoc"}
 
 

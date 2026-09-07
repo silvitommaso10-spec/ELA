@@ -114,6 +114,76 @@ async def test_tasks_limit_applies_after_the_filter(task_repository: TaskReposit
     assert await task_repository.tasks(states=queued, limit=1) == (TASK,)
 
 
+async def test_count_is_by_state_and_never_zero(task_repository: TaskRepository) -> None:
+    """One entry per state that has at least one task, never one at zero (ADR 0025 §2)."""
+    await task_repository.add(TASK)  # PLANNING
+    await task_repository.add(OTHER_TASK)  # QUEUED
+
+    counted = await task_repository.count()
+
+    assert counted == {TaskState.PLANNING: 1, TaskState.QUEUED: 1}
+    assert TaskState.COMPLETED not in counted
+
+
+async def test_count_of_an_empty_repository_is_an_empty_mapping(
+    task_repository: TaskRepository,
+) -> None:
+    assert await task_repository.count() == {}
+
+
+async def test_count_counts_and_does_not_sample(task_repository: TaskRepository) -> None:
+    """Three tasks in one state come back as a three, not as three rows."""
+    for index in range(3):
+        await task_repository.add(
+            TASK.model_copy(
+                update={
+                    "id": TaskId(UUID(f"00000000-0000-4000-8000-00000000011{index}")),
+                    "state": TaskState.QUEUED,
+                }
+            )
+        )
+
+    assert await task_repository.count() == {TaskState.QUEUED: 3}
+
+
+async def test_count_filtered_by_states(task_repository: TaskRepository) -> None:
+    await task_repository.add(TASK)
+    await task_repository.add(OTHER_TASK)
+
+    assert await task_repository.count(states=frozenset({TaskState.QUEUED})) == {
+        TaskState.QUEUED: 1
+    }
+    assert await task_repository.count(states=frozenset({TaskState.COMPLETED})) == {}
+    both = frozenset({TaskState.PLANNING, TaskState.QUEUED})
+    assert await task_repository.count(states=both) == {
+        TaskState.PLANNING: 1,
+        TaskState.QUEUED: 1,
+    }
+
+
+async def test_count_of_no_state_is_the_one_case_that_differs_from_none(
+    task_repository: TaskRepository,
+) -> None:
+    """A question about no state answers with nothing; ``None`` asks about all of them."""
+    await task_repository.add(TASK)
+
+    assert await task_repository.count(states=frozenset()) == {}
+    assert await task_repository.count(states=None) == {TaskState.PLANNING: 1}
+
+
+async def test_count_agrees_with_tasks(task_repository: TaskRepository) -> None:
+    """The cheap answer and the expensive one say the same thing, which is the whole point."""
+    await task_repository.add(TASK)
+    await task_repository.add(OTHER_TASK)
+
+    counted = await task_repository.count()
+    loaded: dict[TaskState, int] = {}
+    for task in await task_repository.tasks():
+        loaded[task.state] = loaded.get(task.state, 0) + 1
+
+    assert counted == loaded
+
+
 async def test_new_task_has_no_events(task_repository: TaskRepository) -> None:
     await task_repository.add(TASK)
     assert await task_repository.events(TASK.id) == ()

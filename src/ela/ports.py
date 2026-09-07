@@ -26,7 +26,7 @@ comparison in ``tests/contracts/test_protocols.py`` covers what ``isinstance`` c
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Final, Protocol, runtime_checkable
 from uuid import UUID
@@ -394,6 +394,20 @@ class TaskRepository(Protocol):
         ``ValueError`` in every implementation (review M2.1), never an empty result.
         """
 
+    async def count(self, *, states: frozenset[TaskState] | None = None) -> Mapping[TaskState, int]:
+        """How many tasks there are in each state, without bringing the tasks back (M8.3).
+
+        One entry per state that has **at least one** task, never an entry at zero: the answer
+        says what there is, and a state nobody has reached is not a fact worth a row. ``states``
+        restricts the question (``None`` asks about all of them), and an **empty** ``frozenset``
+        is a question about no state at all — it answers with an empty mapping, which is the one
+        case where ``frozenset()`` and ``None`` do not mean the same thing.
+
+        No ``limit``: counting the first N of something is not a count. The reason this exists is
+        that ``GET /diagnostics`` used to count ten tasks by loading ten, and would have loaded
+        ten thousand (review of M8.1).
+        """
+
     async def append_event(self, event: TaskEvent) -> None:
         """Record an event of a stored task.
 
@@ -433,13 +447,20 @@ class AuditLog(Protocol):
         task_id: TaskId | None = None,
         since: datetime | None = None,
         limit: int | None = None,
+        newest_first: bool = False,
     ) -> tuple[AuditEvent, ...]:
-        """Events in append order: of one task if ``task_id``, with ``created_at >= since``, the
-        first ``limit``.
+        """Events of one task if ``task_id``, with ``created_at >= since``, ``limit`` of them.
 
         ``since`` is inclusive, like every time boundary in the system (ADR 0005). All filters
         apply before ``limit``. ``limit`` is ``None`` or at least 1: a non-positive limit raises
         ``ValueError`` in every implementation (review M2.1).
+
+        ``newest_first`` chooses **which end** the reading starts from, and the returned tuple is
+        always in the order it was read (M8.3, ADR 0025 §3): appended order by default, so
+        ``limit`` keeps the *first* entries; from the end when ``True``, so ``limit`` keeps the
+        *last* ones and the tuple runs newest to oldest. A tail is the other end of the log, and
+        taking it by reading the whole window and trimming it client-side — which is what
+        ``ela audit tail`` did until M8.3 — reads everything the log has (ADR 0024 §6).
         """
 
 
@@ -586,6 +607,16 @@ class ExecutionResultStore(Protocol):
         that cannot be run twice — the ``STARTED`` record written before it acted (ADR 0021 §1).
         The outcome names the record it settles in ``metadata["started_id"]``; a ``STARTED`` with
         no outcome is a run that was interrupted, never one to repeat.
+        """
+
+    async def for_task(self, task_id: TaskId) -> tuple[ExecutionResult, ...]:
+        """Every result of this task, in insertion order; empty if there is none (M8.3).
+
+        The question ``GET /tasks/{id}/results`` asks, and the reason it is a member rather than
+        a loop over ``for_step``: reading what a task produced would otherwise be one query per
+        step of its plan. A task that does not exist is not this store's business — it holds
+        results, not tasks — so an unknown id is an empty answer and not
+        :class:`NotFoundError`.
         """
 
 

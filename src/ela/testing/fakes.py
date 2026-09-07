@@ -193,6 +193,13 @@ class FakeTaskRepository:
         selected = (t for t in self._tasks.values() if states is None or t.state in states)
         return tuple(selected)[:limit]
 
+    async def count(self, *, states: frozenset[TaskState] | None = None) -> Mapping[TaskState, int]:
+        counted: dict[TaskState, int] = {}
+        for task in self._tasks.values():
+            if states is None or task.state in states:
+                counted[task.state] = counted.get(task.state, 0) + 1
+        return counted
+
     async def append_event(self, event: TaskEvent) -> None:
         if event.task_id not in self._tasks:
             raise NotFoundError("task", event.task_id)
@@ -244,11 +251,13 @@ class FakeAuditLog:
         task_id: TaskId | None = None,
         since: datetime | None = None,
         limit: int | None = None,
+        newest_first: bool = False,
     ) -> tuple[AuditEvent, ...]:
         check_limit(limit)
+        source = reversed(self._events) if newest_first else self._events
         selected = (
             event
-            for event in self._events
+            for event in source
             if (task_id is None or event.task_id == task_id)
             and (since is None or event.created_at >= since)
         )
@@ -416,6 +425,9 @@ class FakeExecutionResultStore:
         return tuple(
             r for r in self._results.values() if r.task_id == task_id and r.step_id == step_id
         )
+
+    async def for_task(self, task_id: TaskId) -> tuple[ExecutionResult, ...]:
+        return tuple(r for r in self._results.values() if r.task_id == task_id)
 
 
 # --------------------------------------------------------------------------------------

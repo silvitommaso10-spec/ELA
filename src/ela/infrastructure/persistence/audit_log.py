@@ -104,9 +104,17 @@ class SqlAuditLog:
         task_id: TaskId | None = None,
         since: datetime | None = None,
         limit: int | None = None,
+        newest_first: bool = False,
     ) -> tuple[AuditEvent, ...]:
+        """Events in append order, or from the end when ``newest_first`` (M8.3, ADR 0025 §3).
+
+        The direction is the ``ORDER BY``, so ``LIMIT`` takes its rows from the end the caller
+        asked for and the database never reads the other end of the log. The tuple keeps the
+        order it was read in: reversing it here would make ``limit`` and the order disagree.
+        """
         check_limit(limit)
-        query = select(AuditEventRow).order_by(AuditEventRow.seq)
+        order = AuditEventRow.seq.desc() if newest_first else AuditEventRow.seq
+        query = select(AuditEventRow).order_by(order)
         if task_id is not None:
             query = query.where(AuditEventRow.task_id == task_id)
         if since is not None:

@@ -22,7 +22,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from ela.api import approvals, audit, devices, system, tasks
+from ela.api import approvals, audit, devices, results, system, tasks
 from ela.api.errors import DatabaseUnavailableError, TaskAlreadyRunningError
 from ela.api.problems import problem
 from ela.api.security import token_middleware
@@ -112,7 +112,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(ela: Ela) -> FastAPI:
-    """The application serving ``ela``: token first, then the fourteen routes."""
+    """The application serving ``ela``: token first, then the fifteen routes."""
     app = FastAPI(
         title="ELA",
         version=version("ela"),
@@ -132,6 +132,7 @@ def create_app(ela: Ela) -> FastAPI:
         approvals.router,
         audit.router,
         devices.router,
+        results.router,
     ):
         app.include_router(router)
     return app

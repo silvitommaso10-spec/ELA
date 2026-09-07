@@ -35,9 +35,9 @@ async def health(ela: ElaDep) -> HealthOut:
 @router.get("/diagnostics")
 async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
     """How ELA is composed, and what start-up's ``recover()`` found (ADR 0023 §11)."""
-    tasks: dict[str, int] = {}
-    for task in await ela.repository.tasks():
-        tasks[task.state.value] = tasks.get(task.state.value, 0) + 1
+    # ``count`` and not ``tasks()``: this line used to count ten tasks by loading ten, and would
+    # have loaded ten thousand (review of M8.1, ADR 0025 §2). What it prints does not change.
+    tasks = {state.value: total for state, total in (await ela.repository.count()).items()}
 
     # Never ``device.availability`` from here: it is derived, and deriving it is the registry's
     # (architecture rule 20). What this asks for is the answer, not the column.

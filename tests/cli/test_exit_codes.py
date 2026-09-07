@@ -37,6 +37,7 @@ INVOCATIONS: dict[str, tuple[str, ...]] = {
     "task create": ("task", "create", "una cosa"),
     "task list": ("task", "list"),
     "task show": ("task", "show", MISSING),
+    "task results": ("task", "results", MISSING),
     "task plan": ("task", "plan", MISSING, "--file", PLAN),
     "task run": ("task", "run", MISSING),
     "task approve": ("task", "approve", MISSING, "--approval", MISSING),

@@ -1,9 +1,10 @@
-Fase: v0.1 — API (spec §54; M8.1, ADR 0023; due rotte in più con M8.2, ADR 0024).
+Fase: v0.1 — API (spec §54; M8.1, ADR 0023; due rotte in più con M8.2, ADR 0024; una con
+M8.3, ADR 0025).
 
 Un token statico, su loopback, davanti al mondo che `ela.composition` ha costruito. Questo
 package non costruisce niente: riceve un `Ela` e lo serve (regola di architettura 27).
 
-- `app.py`: `create_app(ela)` — le quattordici rotte, il middleware del token, e la tabella che
+- `app.py`: `create_app(ela)` — le quindici rotte, il middleware del token, e la tabella che
   traduce ogni eccezione in uno status. Le pagine di documentazione automatica sono **spente**:
   uno schema senza credenziali racconta la forma dell'API a chiunque scansioni la porta.
   Il `lifespan` chiama `recover()` una volta all'avvio (ADR 0023 §11).
@@ -22,6 +23,10 @@ package non costruisce niente: riceve un `Ela` e lo serve (regola di architettur
   adapter (regola 27, ADR 0024 §4).
 - `devices.py`: `/devices` — i nodi, con la disponibilità **derivata** e mai la colonna
   (regola 20). Chi la serve è `ela.cli` con `ela device list`.
+- `results.py`: `/tasks/{id}/results` — l'**unica** rotta che restituisce il contenuto prodotto da
+  un tool (§63): la risposta di un modello, il corpo di una nota. La regola 29 tiene `output` a un
+  solo modello di `schemas.py`, così un campo aggiunto altrove non lo porta fuori da una rotta che
+  non era pensata per portarlo (ADR 0025 §4).
 - `system.py`: `/health` (un giro vero al database attraverso il port) e `/diagnostics` (com'è
   composta ELA: mai un segreto, mai contenuto dell'utente).
 - `server.py`, `__main__.py`: `python -m ela.api`. L'indirizzo viene dalle settings, non dalla

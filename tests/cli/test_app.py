@@ -38,6 +38,7 @@ def test_every_command_of_the_milestone_is_there() -> None:
         "task create",
         "task list",
         "task show",
+        "task results",
         "task plan",
         "task run",
         "task approve",

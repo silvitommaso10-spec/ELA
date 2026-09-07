@@ -195,6 +195,46 @@ async def test_an_outcome_next_to_a_started_record_is_not_refused(
     assert len([r for r in stored if r.status is not ExecutionStatus.STARTED]) == 2
 
 
+async def test_for_task_is_every_step_of_that_task_in_insertion_order(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    """The question ``GET /tasks/{id}/results`` asks (ADR 0025 §4): one query, every step."""
+    await execution_result_store.add(OTHER_TASK)
+    await execution_result_store.add(OTHER)
+    await execution_result_store.add(OTHER_STEP)
+    await execution_result_store.add(RESULT)
+    assert RESULT.task_id is not None
+
+    assert await execution_result_store.for_task(RESULT.task_id) == (OTHER, OTHER_STEP, RESULT)
+
+
+async def test_for_task_of_a_task_with_nothing_is_empty_not_an_error(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    """This store holds results, not tasks: an id it never saw is an empty answer."""
+    await execution_result_store.add(RESULT)
+
+    assert await execution_result_store.for_task(TaskId(UUID(int=7))) == ()
+
+
+async def test_for_task_is_the_union_of_its_steps(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    """Not a new fact, the same facts asked for once: the loop over ``for_step`` it replaces."""
+    await execution_result_store.add(OTHER)
+    await execution_result_store.add(OTHER_STEP)
+    await execution_result_store.add(RESULT)
+    assert RESULT.task_id is not None and RESULT.step_id is not None
+    assert OTHER_STEP.step_id is not None
+
+    by_step = await execution_result_store.for_step(
+        RESULT.task_id, RESULT.step_id
+    ) + await execution_result_store.for_step(RESULT.task_id, OTHER_STEP.step_id)
+
+    for_task = await execution_result_store.for_task(RESULT.task_id)
+    assert sorted(r.id for r in for_task) == sorted(r.id for r in by_step)
+
+
 async def test_for_step_filters_by_task_and_step_in_insertion_order(
     execution_result_store: ExecutionResultStore,
 ) -> None:

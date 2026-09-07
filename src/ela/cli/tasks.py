@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from textwrap import indent
 from typing import Annotated, Any
 
 import typer
@@ -91,6 +92,43 @@ def show(task_id: TaskId, as_json: Json = False) -> None:
         ],
     )
     emit(payload, as_json, f"{_task(payload)}\n\n{steps}")
+
+
+@app.command("results")
+@handled
+def results(task_id: TaskId, as_json: Json = False) -> None:
+    """What the tools of this task produced (§63).
+
+    The table says which step produced what and how it ended; under it, every result that has an
+    output shows it in full. Nothing is shortened: the answer of a model is the reason this
+    command exists, and a truncated answer is not one.
+    """
+    with client.connect() as api:
+        payload = api.get(f"/tasks/{task_id}/results")
+    emit(payload, as_json, _results(payload))
+
+
+def _results(payload: list[dict[str, Any]]) -> str:
+    listing = table(
+        ("step", "capability", "status", "tool", "when"),
+        [
+            (
+                one["step_id"],
+                one["capability_id"],
+                one["status"],
+                one["tool_name"],
+                one["created_at"],
+            )
+            for one in payload
+        ],
+    )
+    blocks = [
+        f"{one['capability_id']} — step {one['step_id']}\n"
+        + indent(fields(list(one["output"].items())), "  ")
+        for one in payload
+        if one["output"]
+    ]
+    return "\n\n".join([listing, *blocks])
 
 
 @app.command("plan")

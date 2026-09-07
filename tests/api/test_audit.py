@@ -63,6 +63,41 @@ async def test_the_filters_are_the_port_s(client: AsyncClient) -> None:
     assert len(recent) == len(everything)
 
 
+async def test_newest_first_reads_the_other_end_and_limits_there(client: AsyncClient) -> None:
+    """ADR 0025 §3: the route says which end, and ``limit`` takes its rows from that end."""
+    await queued(client, echo_plan())
+    everything = (await client.get("/audit")).json()
+
+    last = (await client.get("/audit", params={"limit": 2, "newest_first": True})).json()
+    reversed_whole = (await client.get("/audit", params={"newest_first": True})).json()
+
+    assert len(everything) > 2
+    assert last == list(reversed(everything))[:2]
+    assert reversed_whole == list(reversed(everything))
+
+
+async def test_without_the_flag_the_route_answers_exactly_as_it_did(client: AsyncClient) -> None:
+    """The default is the behaviour ADR 0023 §6 documented: no caller changes under M8.3."""
+    await queued(client, echo_plan())
+
+    default = (await client.get("/audit", params={"limit": 2})).json()
+    explicit = (await client.get("/audit", params={"limit": 2, "newest_first": False})).json()
+    everything = (await client.get("/audit")).json()
+
+    assert default == explicit == everything[:2]
+
+
+async def test_newest_first_keeps_the_filters_of_the_port(client: AsyncClient) -> None:
+    await queued(client, echo_plan())
+    other = await queued(client, echo_plan(), text="un'altra cosa")
+
+    tail = (await client.get("/audit", params={"task_id": other, "newest_first": True})).json()
+    forwards = (await client.get("/audit", params={"task_id": other})).json()
+
+    assert tail == list(reversed(forwards))
+    assert all(event["task_id"] == other for event in tail)
+
+
 async def test_a_limit_of_zero_is_a_caller_s_bug(client: AsyncClient) -> None:
     assert (await client.get("/audit", params={"limit": 0})).status_code == 422
 
