@@ -37,6 +37,7 @@ from ela.devices.orchestrator import DeviceOrchestrator
 from ela.domain import (
     AuditEventType,
     DeviceId,
+    ExecutionStatus,
     PrivacyLevel,
     StepId,
     StepState,
@@ -278,9 +279,18 @@ class TaskRunner:
         the store — not whichever result this call happens to hold. ``complete`` keys idempotency
         on ``result_id``: a rule that depended on what is in memory would pick a different result
         after a crash, and the second call would be refused instead of being a no-op.
+
+        A step run by a tool that cannot be repeated has **two** stored rows: the ``STARTED``
+        record written before the call and the outcome that settles it (ADR 0021 §1). Only the
+        outcome closes a task — a record of an intention is not a result — so the STARTED rows
+        are dropped before counting, and "missing or ambiguous" keeps meaning what it meant.
         """
         last = graph.graph.order[-1]
-        stored = await self._results.for_step(task_id, last)
+        stored = [
+            result
+            for result in await self._results.for_step(task_id, last)
+            if result.status is not ExecutionStatus.STARTED
+        ]
         if len(stored) != 1:
             raise RunnerError(
                 task_id,

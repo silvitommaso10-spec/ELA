@@ -2,6 +2,13 @@
 
 * :class:`EchoVerifier` for ``core.echo``: the output repeats the message. It is the whole
   observable world of an echo, and a declared limit.
+* :class:`ModelCompleteVerifier` for ``model.complete``: the tool **answered and can account
+  for it** — a text, the provider and the model that produced it, and a
+  :class:`~ela.domain.ProviderUsage`. It cannot check that the answer is *good*, and it must not
+  ask the model again: a second call would cost money and send the user's content out twice
+  (§57). What it can refuse is a success nobody can account for (§32), and that is a declared
+  limit, as the echo's is. Whether the call went where a routing policy said is
+  ``model.routed_as_asked``, and it arrives with the router in M7.3.
 * :class:`WriteNoteVerifier` for ``workspace.write_note``: the note **exists** as a regular
   file inside the workspace, and its **content matches** the body that was asked — the file is
   read back from the disk with ``O_RDONLY | O_NOFOLLOW`` and its SHA-256 compared with the
@@ -27,6 +34,7 @@ from typing import ClassVar, Final
 
 from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping
 from ela.tools.echo import CORE_ECHO
+from ela.tools.model import MODEL_COMPLETE
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
 from ela.tools.paths import PATH_CODES, classify, resolve_workspace
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
@@ -35,17 +43,31 @@ __all__ = [
     "ECHO_MESSAGE_MATCHES",
     "ECHO_MESSAGE_MISMATCH",
     "ECHO_VERIFIER_NAME",
+    "MODEL_ANSWERED",
+    "MODEL_NO_ANSWER",
+    "MODEL_UNACCOUNTED",
+    "MODEL_VERIFIER_NAME",
     "NOTES_VERIFIER_NAME",
     "NOTE_CONTENT_MATCHES",
     "NOTE_CONTENT_MISMATCH",
     "NOTE_EXISTS",
     "NOTE_UNREADABLE",
     "EchoVerifier",
+    "ModelCompleteVerifier",
     "WriteNoteVerifier",
 ]
 
 ECHO_VERIFIER_NAME: Final = "core-echo-verifier"
 NOTES_VERIFIER_NAME: Final = "workspace-notes-verifier"
+MODEL_VERIFIER_NAME: Final = "model-complete-verifier"
+
+MODEL_ANSWERED: Final = "model.answered"
+"""The result carries a non-empty text, the provider and the model that produced it, and the
+:class:`~ela.domain.ProviderUsage` of the call (§32)."""
+MODEL_NO_ANSWER: Final = "model.no_answer"
+MODEL_UNACCOUNTED: Final = "model.unaccounted"
+"""A SUCCEEDED completion with no usage: the call cannot be accounted for, and §32 asks that a
+provider call be. A tool that answers without saying what it consumed has not been verified."""
 
 ECHO_MESSAGE_MATCHES: Final = "echo.message_matches"
 """``output["message"]`` is the string ``arguments["message"]``."""
@@ -167,3 +189,60 @@ class WriteNoteVerifier(Verifier):
             return b"".join(chunks)
         finally:
             os.close(descriptor)
+
+
+class ModelCompleteVerifier(Verifier):
+    """``model.complete`` answered, and the answer can be accounted for (§29, §32, §63).
+
+    Read-only like every verifier, and read-only in a stronger sense here: the world it could
+    look at is a model, and looking would mean asking again — a second charge and the user's
+    content across the network a second time (§57). So what it checks is what the run left
+    behind: a text, who produced it, and what it cost. It cannot judge whether the answer is
+    right; nothing in v0.1 can, and that is written down rather than implied.
+    """
+
+    conditions: ClassVar[frozenset[str]] = frozenset({MODEL_ANSWERED})
+    failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
+        MODEL_NO_ANSWER,
+        MODEL_UNACCOUNTED,
+    }
+
+    def __init__(self, *, name: str = MODEL_VERIFIER_NAME) -> None:
+        super().__init__(MODEL_COMPLETE, name=name)
+
+    async def _check(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        if not isinstance(arguments.get("input"), str):
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "input must be a string",
+                retryable=False,
+            )
+        missing = tuple(
+            key for key in ("output", "provider", "model") if not self._text(result, key)
+        )
+        if missing:
+            return self._failure(
+                condition,
+                MODEL_NO_ANSWER,
+                f"the result carries no {', '.join(missing)}",
+                retryable=False,
+                details={"missing": list(missing)},
+            )
+        if result.usage is None:
+            return self._failure(
+                condition,
+                MODEL_UNACCOUNTED,
+                "the result carries no provider usage: the call cannot be accounted for",
+                retryable=False,
+            )
+        return None
+
+    @staticmethod
+    def _text(result: ExecutionResult, key: str) -> bool:
+        """Whether ``output[key]`` is a non-empty string. The value never leaves this frame: a
+        verifier reports that something is missing, never what was there (§57)."""
+        value = result.output.get(key)
+        return isinstance(value, str) and value != ""

@@ -17,11 +17,12 @@ from pathlib import Path
 from types import MappingProxyType
 
 from ela.domain import CapabilityId
-from ela.ports import AlreadyExistsError, Clock, IdGenerator, ToolPort, VerifierPort
+from ela.ports import AlreadyExistsError, Clock, IdGenerator, ModelProvider, ToolPort, VerifierPort
 from ela.tools.echo import EchoTool
 from ela.tools.errors import NotIdempotentError, ToolNotFound, VerifierNotFound
+from ela.tools.model import ModelCompleteTool
 from ela.tools.notes import WriteNoteTool
-from ela.tools.verifiers import EchoVerifier, WriteNoteVerifier
+from ela.tools.verifiers import EchoVerifier, ModelCompleteVerifier, WriteNoteVerifier
 
 __all__ = ["ToolRegistry", "VerifierRegistry", "tools_v01", "verifiers_v01"]
 
@@ -29,12 +30,14 @@ __all__ = ["ToolRegistry", "VerifierRegistry", "tools_v01", "verifiers_v01"]
 class ToolRegistry:
     """Tools by capability id, frozen at construction (port ``ToolRegistryPort``).
 
-    **Only idempotent tools are registered** (review of M5.3): crash window 7a is repaired by
-    running the tool again, and that is safe only while every tool that can be executed promises
-    that twice is once. A tool that declares ``idempotent = False``, or that does not declare it
-    at all — a doubt is not a yes (§33) — is refused here, with the STARTED protocol of ADR 0015
-    §8 named in the message. So the first non-idempotent tool cannot enter without implementing
-    that protocol first: the guard does not depend on anyone remembering.
+    **Every tool declares whether it is idempotent, and none may stay silent** (M5.3, then M7.2).
+    Until M7.2 the registry accepted only ``True``, because crash window 7a was repaired by
+    running the tool again and that repair is safe only while twice is once. ADR 0021 §1 brings
+    the STARTED protocol the guard was waiting for, so ``False`` is now a legal answer: the
+    executor writes a STARTED record before such a tool acts and never runs it twice for one
+    step. What is still refused is a tool that declares *nothing*, or something that is not a
+    boolean — the executor reads this flag to choose between repeating a run and refusing to,
+    and a doubt is not a yes (§33).
     """
 
     __slots__ = ("_tools",)
@@ -43,7 +46,7 @@ class ToolRegistry:
         table: dict[CapabilityId, ToolPort] = {}
         for tool in tools:
             declared = getattr(tool, "idempotent", None)
-            if declared is not True:
+            if not isinstance(declared, bool):
                 raise NotIdempotentError(tool.capability_id, tool.name, declared)
             if tool.capability_id in table:
                 raise AlreadyExistsError("tool", tool.capability_id)
@@ -87,18 +90,31 @@ class VerifierRegistry:
         return tuple(self._verifiers.values())
 
 
-def tools_v01(*, root: Path | str, clock: Clock, ids: IdGenerator) -> ToolRegistry:
-    """The tools of v0.1 that run without a provider: ``core.echo`` and ``workspace.write_note``.
+def tools_v01(
+    *, root: Path | str, clock: Clock, ids: IdGenerator, provider: ModelProvider
+) -> ToolRegistry:
+    """The three tools of v0.1, in the order of the catalogue (§29).
 
-    ``model.complete`` has no tool yet (M7.2): the executor refuses it before any decision.
+    ``provider`` is the one :class:`~ela.ports.ModelProvider` ``model.complete`` calls. It is
+    mandatory: a registry that quietly dropped the third tool when nobody passed a provider would
+    make a capability disappear from what ELA can do, and a provider with no credentials already
+    has a way to say so — it registers ``UNAVAILABLE`` and answers ``provider.unavailable``
+    without touching the network (ADR 0020 §2). Which provider, and which model, is a choice the
+    Model Router will make (§25, M7.3); here there is one.
     """
-    return ToolRegistry((EchoTool(clock, ids), WriteNoteTool(root, clock, ids)))
+    return ToolRegistry(
+        (
+            EchoTool(clock, ids),
+            WriteNoteTool(root, clock, ids),
+            ModelCompleteTool(provider, clock, ids),
+        )
+    )
 
 
 def verifiers_v01(*, root: Path | str) -> VerifierRegistry:
     """The verifiers of the tools of :func:`tools_v01`, on the same workspace ``root``.
 
-    No clock and no id source: a verifier creates no entity. ``model.complete`` has no verifier,
-    as it has no tool.
+    No clock and no id source: a verifier creates no entity. No provider either: the verifier of
+    ``model.complete`` reads the result of the call and never makes another one.
     """
-    return VerifierRegistry((EchoVerifier(), WriteNoteVerifier(root)))
+    return VerifierRegistry((EchoVerifier(), WriteNoteVerifier(root), ModelCompleteVerifier()))

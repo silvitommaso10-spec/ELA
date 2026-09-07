@@ -29,6 +29,7 @@ from ela.domain import (
     JsonMapping,
     PermissionDecision,
     PermissionOutcome,
+    ProviderUsage,
 )
 from ela.ports import Clock, IdGenerator, NotAllowedError
 
@@ -45,11 +46,20 @@ class Outcome:
 
     ``code`` set means FAILED; the ``message`` names what went wrong in words that may enter the
     audit trail — a path, a type name, an OS error — never the content of an argument (§57).
+
+    ``retryable`` is the **nature** of the failure, not the attempts left (ADR 0020 §7): a rate
+    limit can succeed later, a rejected argument cannot. It defaults to ``False`` because a doubt
+    is not a yes (§33), and it exists because without it every failure of every tool reached the
+    audit trail as final — including the ones a provider had just described as temporary
+    (ADR 0021 §4). ``usage`` is what a provider call inside the tool consumed (§32); ``None`` for
+    a tool that calls no provider.
     """
 
     output: JsonMapping
     code: str | None = None
     message: str = ""
+    retryable: bool = False
+    usage: ProviderUsage | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -79,11 +89,12 @@ class Tool(ABC):
 
     ``idempotent`` says whether running the tool twice with the same arguments leaves the world
     as running it once does. It has **no default**: a subclass declares it, because the answer is
-    the tool's alone and forgetting it must not read as a yes. It is what crash window 7a rests
-    on (ADR 0015 §8) — the instant between the tool's effect and the insert of its result, where
-    a retry runs the tool again — and :class:`~ela.tools.registry.ToolRegistry` refuses to
-    register a tool that does not declare it true: the first tool that cannot promise it brings
-    the STARTED protocol of ADR 0015 §8 with it.
+    the tool's alone and forgetting it must not read as a yes (§33), and
+    :class:`~ela.tools.registry.ToolRegistry` refuses a tool that declares nothing. It is what
+    crash window 7a rests on (ADR 0015 §8) — the instant between the tool's effect and the insert
+    of its result. A tool that declares ``True`` is repaired by running it again; a tool that
+    declares ``False`` is run under the STARTED protocol of ADR 0021 §1 and never run twice for
+    one step. Both answers are now legal; only silence is not.
     """
 
     error_codes: ClassVar[frozenset[str]] = frozenset({ARGUMENTS_INVALID})
@@ -118,7 +129,10 @@ class Tool(ABC):
             None
             if outcome.code is None
             else ErrorMetadata(
-                code=outcome.code, message=outcome.message, tool_name=self._name, retryable=False
+                code=outcome.code,
+                message=outcome.message,
+                tool_name=self._name,
+                retryable=outcome.retryable,
             )
         )
         return ExecutionResult(
@@ -131,6 +145,7 @@ class Tool(ABC):
             tool_name=self._name,
             output=outcome.output,
             error=error,
+            usage=outcome.usage,
             duration_ms=max(0, int((finished - started).total_seconds() * 1000)),
         )
 

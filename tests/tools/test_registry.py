@@ -10,11 +10,13 @@ import pytest
 from ela.domain import CapabilityId
 from ela.permissions import MODEL_COMPLETE, catalogue_v01
 from ela.ports import AlreadyExistsError
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeTool
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider, FakeTool
 from ela.tools import (
     CORE_ECHO,
     EchoTool,
     EchoVerifier,
+    ModelCompleteTool,
+    ModelCompleteVerifier,
     NotIdempotentError,
     Tool,
     ToolNotFound,
@@ -28,6 +30,11 @@ from ela.tools import (
 )
 
 
+def registry_of(root: Path) -> ToolRegistry:
+    clock, ids = FakeClock(), FakeIdGenerator()
+    return tools_v01(root=root, clock=clock, ids=ids, provider=FakeModelProvider(clock, ids))
+
+
 def test_get_unknown_names_the_capability() -> None:
     registry = ToolRegistry(())
     with pytest.raises(ToolNotFound) as caught:
@@ -36,20 +43,25 @@ def test_get_unknown_names_the_capability() -> None:
     assert "tool 'nobody.knows_this' not found" in str(caught.value)
 
 
-def test_tools_v01_implements_a_subset_of_the_catalogue_without_model_complete(
-    tmp_path: Path,
-) -> None:
-    registry = tools_v01(root=tmp_path, clock=FakeClock(), ids=FakeIdGenerator())
+def test_tools_v01_implements_the_whole_catalogue(tmp_path: Path) -> None:
+    """Since M7.2 every capability of §29 has a tool: the last hole was ``model.complete``."""
+    registry = registry_of(tmp_path)
     implemented = {tool.capability_id for tool in registry.tools()}
     declared = {spec.id for spec in catalogue_v01().specs()}
-    assert implemented < declared
-    assert declared - implemented == {MODEL_COMPLETE}
-    with pytest.raises(ToolNotFound):
-        registry.get(MODEL_COMPLETE)
-    echo, notes = registry.tools()
+    assert implemented == declared
+    echo, notes, model = registry.tools()
     assert isinstance(echo, EchoTool)
     assert isinstance(notes, WriteNoteTool)
+    assert isinstance(model, ModelCompleteTool)
     assert notes.root == tmp_path.resolve()
+    assert registry.get(MODEL_COMPLETE) is model
+
+
+def test_the_registry_needs_a_provider_for_the_model_tool(tmp_path: Path) -> None:
+    """A registry that dropped the third tool when nobody passed a provider would make a
+    capability disappear; a provider with no key says so through its status instead."""
+    with pytest.raises(TypeError):
+        tools_v01(root=tmp_path, clock=FakeClock(), ids=FakeIdGenerator())  # type: ignore[call-arg]
 
 
 def test_the_registry_is_frozen() -> None:
@@ -70,16 +82,16 @@ def test_verifier_get_unknown_names_the_capability() -> None:
 def test_verifiers_v01_covers_exactly_the_tools_of_v01(tmp_path: Path) -> None:
     """Every tool has its verifier and no verifier lacks a tool: a capability without both is
     not executable (ADR 0014 §3)."""
-    tools = tools_v01(root=tmp_path, clock=FakeClock(), ids=FakeIdGenerator())
+    tools = registry_of(tmp_path)
     verifiers = verifiers_v01(root=tmp_path)
     assert {v.capability_id for v in verifiers.verifiers()} == {
         t.capability_id for t in tools.tools()
     }
-    with pytest.raises(VerifierNotFound):
-        verifiers.get(MODEL_COMPLETE)
-    echo, notes = verifiers.verifiers()
+    echo, notes, model = verifiers.verifiers()
     assert isinstance(echo, EchoVerifier)
     assert isinstance(notes, WriteNoteVerifier)
+    assert isinstance(model, ModelCompleteVerifier)
+    assert verifiers.get(MODEL_COMPLETE) is model
     assert notes._root == tmp_path.resolve()  # noqa: SLF001
 
 
@@ -91,30 +103,26 @@ def test_the_verifier_registry_is_frozen() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Only idempotent tools are registered (review of M5.3, ADR 0015 §8)
+# Every tool declares whether it is idempotent; silence is refused (ADR 0015 §8, ADR 0021 §1)
 # --------------------------------------------------------------------------------------
 
 
-def test_the_tools_of_v01_promise_that_twice_is_once(tmp_path: Path) -> None:
-    """Crash window 7a is repaired by running the tool again: every registered tool says so."""
-    registry = tools_v01(root=tmp_path, clock=FakeClock(), ids=FakeIdGenerator())
-    assert [tool.idempotent for tool in registry.tools()] == [True, True]  # type: ignore[attr-defined]
+def test_every_tool_of_v01_says_whether_twice_is_once(tmp_path: Path) -> None:
+    """Two tools are repaired by running them again; the third cannot be run again at all."""
+    registry = registry_of(tmp_path)
+    assert [tool.idempotent for tool in registry.tools()] == [True, True, False]  # type: ignore[attr-defined]
     assert EchoTool.idempotent is WriteNoteTool.idempotent is True
+    assert ModelCompleteTool.idempotent is False
 
 
-def test_a_tool_that_is_not_idempotent_is_refused_and_named() -> None:
-    """Negative case: the first non-idempotent tool cannot enter without the STARTED protocol."""
+def test_a_declared_false_is_accepted_since_the_started_protocol_exists() -> None:
+    """What the guard of ADR 0015 §8 was waiting for arrived (ADR 0021 §1): ``False`` is an
+    answer, and the executor knows what to do with it."""
     tool = FakeTool(
         CapabilityId("model.complete"), FakeClock(), FakeIdGenerator(), name="x", idempotent=False
     )
-    with pytest.raises(NotIdempotentError) as caught:
-        ToolRegistry((tool,))
-    assert caught.value.capability_id == CapabilityId("model.complete")
-    assert caught.value.name == "x"
-    assert caught.value.declared is False
-    assert "idempotent=False" in str(caught.value)
-    assert "STARTED protocol of ADR 0015 §8" in str(caught.value)
-    assert "7a" in str(caught.value)
+    registry = ToolRegistry((tool,))
+    assert registry.get(CapabilityId("model.complete")) is tool
 
 
 def test_a_tool_that_does_not_declare_it_is_refused_too() -> None:
@@ -130,15 +138,39 @@ def test_a_tool_that_does_not_declare_it_is_refused_too() -> None:
     with pytest.raises(NotIdempotentError) as caught:
         ToolRegistry((_Undeclared(),))  # type: ignore[arg-type]
     assert caught.value.declared is None
-    assert "declares no idempotent" in str(caught.value)
+    assert "declares no boolean idempotent" in str(caught.value)
+    assert "STARTED protocol of ADR 0021 §1" in str(caught.value)
     assert not hasattr(Tool, "idempotent")  # the base gives no default to inherit by mistake
 
 
+def test_a_non_boolean_declaration_is_refused_like_silence() -> None:
+    """``idempotent = "yes"`` is not an answer either: the executor reads a boolean or nothing."""
+
+    class _Chatty:
+        capability_id = CapabilityId("core.echo")
+        name = "chatty"
+        idempotent = "yes"
+
+        async def execute(self, decision: object, arguments: object) -> object:  # pragma: no cover
+            raise AssertionError("never registered, never called")
+
+    with pytest.raises(NotIdempotentError) as caught:
+        ToolRegistry((_Chatty(),))  # type: ignore[arg-type]
+    assert caught.value.declared == "yes"
+
+
 def test_the_refusal_comes_before_the_duplicate_check() -> None:
-    """A non-idempotent duplicate is refused for what makes it dangerous, not for its key."""
+    """A silent duplicate is refused for what makes it dangerous, not for its key."""
+
+    class _Silent:
+        capability_id = CORE_ECHO
+        name = "silent"
+
+        async def execute(self, decision: object, arguments: object) -> object:  # pragma: no cover
+            raise AssertionError("never registered, never called")
+
     echo = EchoTool(FakeClock(), FakeIdGenerator())
-    liar = FakeTool(CORE_ECHO, FakeClock(), FakeIdGenerator(), name="liar", idempotent=False)
     with pytest.raises(NotIdempotentError):
-        ToolRegistry((echo, liar))
+        ToolRegistry((echo, _Silent()))  # type: ignore[arg-type]
     with pytest.raises(AlreadyExistsError):
         ToolRegistry((echo, EchoTool(FakeClock(), FakeIdGenerator())))

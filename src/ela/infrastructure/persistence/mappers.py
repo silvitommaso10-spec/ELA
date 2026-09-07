@@ -326,6 +326,7 @@ def result_values(result: ExecutionResult) -> dict[str, Any]:
         "authorization_id": result.authorization_id,
         "output": _plain(result.output),
         "error": _plain_model(result.error),
+        "usage": _plain_model(result.usage),
         "duration_ms": result.duration_ms,
         "metadata_": _plain(result.metadata),
     }
@@ -351,6 +352,7 @@ def row_to_result(row: ExecutionResultRow) -> ExecutionResult:
         ),
         output=row.output,
         error=None if row.error is None else ErrorMetadata.model_validate(row.error),
+        usage=None if row.usage is None else ProviderUsage.model_validate(row.usage),
         duration_ms=row.duration_ms,
         metadata=row.metadata_,
     )

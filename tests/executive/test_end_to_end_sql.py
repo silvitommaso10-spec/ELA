@@ -56,7 +56,12 @@ from ela.infrastructure.persistence import (
 from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS
 from ela.permissions import CORE_ECHO, WORKSPACE_WRITE_NOTE, PermissionGuardian, catalogue_v01
 from ela.tasks.engine import TaskEngine
-from ela.testing.fakes import FakeClock, FakeDeviceRegistry, FakeIdGenerator
+from ela.testing.fakes import (
+    FakeClock,
+    FakeDeviceRegistry,
+    FakeIdGenerator,
+    FakeModelProvider,
+)
 from ela.tools import (
     ECHO_MESSAGE_MATCHES,
     NOTE_CONTENT_MATCHES,
@@ -104,7 +109,10 @@ class SqlPipeline:
         self.results = SqlExecutionResultStore(engine)
         self.registry = catalogue_v01()
         self.guardian = PermissionGuardian(self.registry, self.clock, self.ids, self.audit)
-        self.tools = tools_v01(root=workspace, clock=self.clock, ids=self.ids)
+        self.provider = FakeModelProvider(self.clock, self.ids)
+        self.tools = tools_v01(
+            root=workspace, clock=self.clock, ids=self.ids, provider=self.provider
+        )
         self.verifiers = verifiers_v01(root=workspace)
         self.device = local_device(created_at=self.clock.now()).model_copy(
             update={

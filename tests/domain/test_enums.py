@@ -51,7 +51,19 @@ def test_approval_status_covers_the_life_of_a_request() -> None:
 
 def test_execution_status_distinguishes_ending_from_succeeding() -> None:
     assert ExecutionStatus.SUCCEEDED != ExecutionStatus.FAILED
-    assert len(set(ExecutionStatus)) == 5
+    assert len(set(ExecutionStatus)) == 6
+
+
+def test_started_is_the_one_status_that_is_not_an_ending() -> None:
+    """ADR 0021 §1: a record of a tool that was *about* to act, for a tool that cannot be
+    run twice. Every other value says how something ended."""
+    assert ExecutionStatus.STARTED not in {
+        ExecutionStatus.SUCCEEDED,
+        ExecutionStatus.FAILED,
+        ExecutionStatus.TIMED_OUT,
+        ExecutionStatus.CANCELLED,
+        ExecutionStatus.SKIPPED,
+    }
 
 
 def _enums() -> list[type[StrEnum]]:

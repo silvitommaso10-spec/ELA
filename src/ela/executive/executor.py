@@ -41,8 +41,16 @@ grant. The tool's result is stored in the :class:`~ela.ports.ExecutionResultStor
 result of a RUNNING step means the tool ran, and the call continues from the first write that is
 missing — the audit, the verification, the closing of the step — without asking the Guardian,
 spending a grant or running the tool again. A step FAILED by a verification whose task is still
-EXECUTING is failed now (ADR 0015 §7). What a retry cannot repair — the instant between the
-tool's effect and the insert of its result — is declared, not hidden.
+EXECUTING is failed now (ADR 0015 §7).
+
+The instant between the tool's effect and the insert of its result — crash window 7a — was
+declared unrepairable while every tool was idempotent, because the repair was to run the tool
+again. Since M7.2 a tool may say it cannot be (``ToolPort.idempotent``), and for such a tool the
+executor writes an :class:`~ela.domain.ExecutionResult` with status ``STARTED`` **before** the
+call (ADR 0021 §1). A retry that finds that record with no outcome does not call the tool: the
+step is failed with :data:`EXECUTION_INTERRUPTED`, and nobody pays twice for a completion nobody
+read. The audit trail of a run carries what the call consumed, ``AuditEvent.usage`` from
+``ExecutionResult.usage`` (§32).
 """
 
 from __future__ import annotations
@@ -115,9 +123,11 @@ __all__ = [
     "AUTHORIZATION_NAMESPACE",
     "CONSUMING_RULES",
     "DEFAULT_APPROVAL_TTL",
+    "EXECUTION_INTERRUPTED",
     "GRANT_VANISHED",
     "MAX_APPROVAL_TTL",
     "RECOVERED",
+    "STARTED_ID",
     "TOOL_EXCEPTION",
     "TOOL_REFUSED",
     "VERIFICATION_EXCEPTION",
@@ -169,6 +179,18 @@ TOOL_REFUSED: Final = "tool.refused"
 """Error code of a step failed because the tool refused the decision (``NotAllowedError``)."""
 GRANT_VANISHED: Final = "grant_vanished"
 """Error code of a step failed because the grant vanished between ``authorize`` and ``consume``."""
+EXECUTION_INTERRUPTED: Final = "execution.interrupted"
+"""Error code of a step whose non-idempotent tool was started and never reported (ADR 0021 §2).
+
+The STARTED record says the tool was about to act; nothing says whether it did. Running it again
+is the one thing ELA must not do — it is why the record exists — so the step fails with this, and
+``retryable`` is ``True``: what failed is the crash, not the request, and a *new* step may ask
+again (a failed step never restarts, ADR 0009). Whether the money was spent is unknown, and the
+audit says so rather than guessing.
+"""
+STARTED_ID: Final = "started_id"
+"""Key of ``ExecutionResult.metadata`` on an outcome that settles a STARTED record (ADR 0021 §1):
+the id of that record, so the two rows of one run are one run and not two."""
 VERIFICATION_FAILED: Final = "verification.failed"
 """Error code of a step, and its task, failed because a success condition did not hold (ADR
 0014 §4): the tool said SUCCEEDED and the world said otherwise."""
@@ -386,15 +408,19 @@ class Executor:
             )
         targets = targets_of(spec, arguments)
 
-        stored = await self._results.for_step(task_id, step_id)
-        if len(stored) > 1:
+        started, settled = _split(await self._results.for_step(task_id, step_id))
+        if len(settled) > 1 or len(started) > 1:
             raise ExecutorError(
-                task_id, f"step {step_id} has {len(stored)} results; a step runs once"
+                task_id,
+                f"step {step_id} has {len(settled)} results and {len(started)} started records; "
+                "a step runs once",
             )
-        if stored:  # the tool ran in an earlier call: resume from the first missing write
+        if settled:  # the tool ran in an earlier call: resume from the first missing write
             return await self._resume(
-                task, graph, step, tool, verifier, arguments, targets, stored[0]
+                task, graph, step, tool, verifier, arguments, targets, settled[0]
             )
+        if started:  # ADR 0021 §2: it was started and never reported. It is not started again.
+            return await self._interrupted(task, graph, step, tool, targets, started[0])
 
         now = self._clock.now()
         requests = [a for a in await self._approvals.for_task(task_id) if a.step_id == step_id]
@@ -447,6 +473,10 @@ class Executor:
                 )
                 return await self._fail(task, graph, decision, authorization, vanished)
 
+        spent = None if consumed is None or authorization is None else authorization.id
+        record = (
+            None if tool.idempotent else await self._start_record(tool, decision, device_id, spent)
+        )
         produced = await self._run_tool(tool, decision, arguments)
         if produced is None:
             refused = ErrorMetadata(
@@ -459,9 +489,10 @@ class Executor:
             update={
                 "device_id": device_id,
                 "decision_id": decision.id,
-                "authorization_id": None
-                if consumed is None or authorization is None
-                else authorization.id,
+                "authorization_id": spent,
+                "metadata": produced.metadata
+                if record is None
+                else {**produced.metadata, STARTED_ID: str(record.id)},
             }
         )
         await self._results.add(result)
@@ -509,6 +540,48 @@ class Executor:
         else:
             verification = Verification(step.success_conditions, (), verified.error)
         return await self._close(task, graph, step, None, None, result, verification)
+
+    async def _interrupted(
+        self,
+        task: Task,
+        graph: GraphState,
+        step: TaskStep,
+        tool: ToolPort,
+        targets: Sequence[object],
+        record: ExecutionResult,
+    ) -> Execution:
+        """A non-idempotent tool was started and never reported: the step fails (ADR 0021 §2).
+
+        The tool is **not** run again — that is the whole reason the STARTED record was written
+        — and no outcome is invented: a second row claiming FAILED would say the tool ran and
+        failed, when what is known is only that it was about to run. So the record stays as it
+        is, ``TOOL_EXECUTED`` names it with :data:`EXECUTION_INTERRUPTED` and a payload whose
+        status is STARTED, and the step is failed with the same error. The task stays EXECUTING:
+        a tool's failure is the orchestrator's question, not this module's (ADR 0013 §5).
+
+        The audit is guarded the way a resume guards it: a crash between this event and
+        ``fail_step`` brings the call back here, and the event is written once.
+        """
+        error = ErrorMetadata(
+            code=EXECUTION_INTERRUPTED,
+            message=(
+                f"{tool.name} was started for step {step.id} and never reported; it cannot be "
+                "repeated, so whether it acted is unknown"
+            ),
+            tool_name=tool.name,
+            device_id=record.device_id,
+            retryable=True,
+        )
+        events = await self._audit.read(task_id=task.id)
+        if _event_about(events, AuditEventType.TOOL_EXECUTED, record.id) is None:
+            uses = (
+                None
+                if record.authorization_id is None
+                else await self._authorizations.uses(record.authorization_id)
+            )
+            await self._record_execution(tool, record, targets, uses, recovered=True, error=error)
+        graph = await self._engine.fail_step(task.id, step.id, error)
+        return Execution(task, step.id, graph, None, None, record, None, None)
 
     async def _close(
         self,
@@ -673,6 +746,36 @@ class Executor:
     # The tool and its audit
     # ----------------------------------------------------------------------------------
 
+    async def _start_record(
+        self,
+        tool: ToolPort,
+        decision: PermissionDecision,
+        device_id: DeviceId,
+        authorization_id: AuthorizationId | None,
+    ) -> ExecutionResult:
+        """The STARTED record of a tool that cannot be run twice (ADR 0021 §1).
+
+        Written **before** the tool acts and stored before it is called, so that the instant
+        between the action and the insert of its outcome — crash window 7a, declared unrepairable
+        in ADR 0015 §8 — leaves something behind. It carries everything the outcome will carry
+        except the outcome: whose decision, whose grant, which node. No audit event: nothing has
+        happened yet, and ``TOOL_EXECUTED`` is written at the outcome, interrupted or not.
+        """
+        record = ExecutionResult(
+            id=ExecutionId(self._ids.new_uuid()),
+            created_at=self._clock.now(),
+            capability_id=tool.capability_id,
+            status=ExecutionStatus.STARTED,
+            task_id=decision.task_id,
+            step_id=decision.step_id,
+            tool_name=tool.name,
+            device_id=device_id,
+            decision_id=decision.id,
+            authorization_id=authorization_id,
+        )
+        await self._results.add(record)
+        return record
+
     async def _run_tool(
         self, tool: ToolPort, decision: PermissionDecision, arguments: JsonMapping
     ) -> ExecutionResult | None:
@@ -709,10 +812,21 @@ class Executor:
         uses: int | None,
         *,
         recovered: bool = False,
+        error: ErrorMetadata | None = None,
     ) -> None:
         """``TOOL_EXECUTED``: the fact, the decision and the grant the result carries, the
         targets — never the arguments nor the output (§57). ``created_at`` is the result's when
-        written with the run, the clock's on a resume, which also marks the payload."""
+        written with the run, the clock's on a resume, which also marks the payload.
+
+        ``usage`` is the result's, and this is the only place ELA writes it: "provider usage
+        metadata" is one of the things §32 asks the audit log to hold, and until M7.2 the field
+        existed on :class:`~ela.domain.AuditEvent` with nothing to put in it. It is ``None`` for
+        a tool that calls no provider — which is not zero, and must not read as free.
+
+        ``error`` overrides the result's, and only one caller passes it: an interrupted run,
+        whose STARTED record carries no error of its own but whose audit entry must say why the
+        step is being failed (ADR 0021 §2).
+        """
         await self._audit.append(
             AuditEvent(
                 id=AuditEventId(self._ids.new_uuid()),
@@ -727,7 +841,8 @@ class Executor:
                 decision_id=result.decision_id,
                 authorization_id=result.authorization_id,
                 tool_name=tool.name,
-                error=result.error,
+                usage=result.usage,
+                error=result.error if error is None else error,
                 payload={
                     "status": result.status.value,
                     "result_id": str(result.id),
@@ -815,6 +930,19 @@ class Executor:
                 },
             )
         )
+
+
+def _split(
+    stored: Sequence[ExecutionResult],
+) -> tuple[tuple[ExecutionResult, ...], tuple[ExecutionResult, ...]]:
+    """The stored results of a step as (STARTED records, outcomes) — ADR 0021 §1.
+
+    A step runs once, so at most one of each: the split is what lets "the tool ran and its
+    outcome is here" be told apart from "the tool was started and never came back", which are
+    the two facts the resume path and the interrupted path rest on.
+    """
+    started = tuple(r for r in stored if r.status is ExecutionStatus.STARTED)
+    return started, tuple(r for r in stored if r.status is not ExecutionStatus.STARTED)
 
 
 def _event_about(

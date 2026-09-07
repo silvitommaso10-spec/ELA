@@ -17,7 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from ela.domain import ErrorMetadata, ExecutionResult, ExecutionStatus
+from ela.domain import (
+    ErrorMetadata,
+    ExecutionId,
+    ExecutionResult,
+    ExecutionStatus,
+    ProviderUsage,
+)
 from ela.ports import VERIFICATION_UNKNOWN_CONDITION
 from ela.testing.fakes import FakeClock, FakeIdGenerator
 from ela.tools import (
@@ -26,6 +32,12 @@ from ela.tools import (
     ECHO_MESSAGE_MATCHES,
     ECHO_MESSAGE_MISMATCH,
     ECHO_VERIFIER_NAME,
+    MODEL_ANSWERED,
+    MODEL_COMPLETE,
+    MODEL_NO_ANSWER,
+    MODEL_TOOL_NAME,
+    MODEL_UNACCOUNTED,
+    MODEL_VERIFIER_NAME,
     NOTE_CONTENT_MATCHES,
     NOTE_CONTENT_MISMATCH,
     NOTE_EXISTS,
@@ -42,6 +54,7 @@ from ela.tools import (
     WORKSPACE_WRITE_NOTE,
     EchoTool,
     EchoVerifier,
+    ModelCompleteVerifier,
     Verifier,
     WriteNoteTool,
     WriteNoteVerifier,
@@ -410,3 +423,117 @@ async def test_an_unknown_condition_is_refused_before_any_read(
         verifier, root, (NOTE_EXISTS, "note.is_poetry"), {"path": NOTE, "body": BODY}, result
     )
     assert codes(failures) == [VERIFICATION_UNKNOWN_CONDITION]
+
+
+# --------------------------------------------------------------------------------------
+# ``ModelCompleteVerifier`` (ADR 0021 §6)
+# --------------------------------------------------------------------------------------
+
+
+ANSWERED = (MODEL_ANSWERED,)
+MODEL_ARGUMENTS = {"input": "Riassumi le email della riunione."}
+MODEL_USAGE = ProviderUsage(input_tokens=12, output_tokens=34)
+
+
+def completion(**update: object) -> ExecutionResult:
+    """A SUCCEEDED ``model.complete`` result, then ``update`` applied."""
+    base = ExecutionResult(
+        id=ExecutionId(FakeIdGenerator().new_uuid()),
+        created_at=FakeClock().now(),
+        capability_id=MODEL_COMPLETE,
+        status=ExecutionStatus.SUCCEEDED,
+        tool_name=MODEL_TOOL_NAME,
+        output={
+            "output": "una sintesi",
+            "provider": "fake",
+            "model": "fake-model",
+            "finish_reason": "end_turn",
+        },
+        usage=MODEL_USAGE,
+    )
+    return base.model_copy(update=update)
+
+
+@pytest.fixture
+def model_verifier() -> ModelCompleteVerifier:
+    return ModelCompleteVerifier()
+
+
+async def test_a_completion_with_a_text_a_source_and_a_usage_passes(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    assert await model_verifier.verify(ANSWERED, MODEL_ARGUMENTS, completion()) == ()
+    assert model_verifier.name == MODEL_VERIFIER_NAME
+    assert model_verifier.capability_id == MODEL_COMPLETE
+
+
+@pytest.mark.parametrize(
+    ("output", "missing"),
+    [
+        ({"provider": "fake", "model": "m"}, ["output"]),
+        ({"output": "x", "model": "m"}, ["provider"]),
+        ({"output": "x", "provider": "fake"}, ["model"]),
+        ({"output": "", "provider": "fake", "model": "m"}, ["output"]),
+        ({"output": "x", "provider": 3, "model": "m"}, ["provider"]),
+        ({}, ["output", "provider", "model"]),
+    ],
+    ids=["no-text", "no-provider", "no-model", "empty-text", "provider-not-a-string", "nothing"],
+)
+async def test_an_answer_that_names_no_source_does_not_pass(
+    model_verifier: ModelCompleteVerifier, output: dict[str, object], missing: list[str]
+) -> None:
+    """The verifier does not trust the tool's word, and a claim with nothing behind it is not
+    a verification (§63)."""
+    failures = await model_verifier.verify(ANSWERED, MODEL_ARGUMENTS, completion(output=output))
+    assert codes(failures) == [MODEL_NO_ANSWER]
+    assert list(failures[0].details["missing"]) == missing
+    assert failures[0].details["condition"] == MODEL_ANSWERED
+
+
+async def test_a_completion_that_cannot_be_accounted_for_does_not_pass(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    """§32 asks that a provider call be accounted for: a success with no usage is not."""
+    failures = await model_verifier.verify(ANSWERED, MODEL_ARGUMENTS, completion(usage=None))
+    assert codes(failures) == [MODEL_UNACCOUNTED]
+    assert failures[0].retryable is False
+
+
+async def test_arguments_without_an_input_are_refused(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    failures = await model_verifier.verify(ANSWERED, {"input": 3}, completion())
+    assert codes(failures) == [VERIFICATION_ARGUMENTS_INVALID]
+
+
+async def test_the_verifier_never_names_the_answer_it_read(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    """A failure says what is missing, never what was there (§57)."""
+    private_text = "il numero di conto è 1234"
+    failures = await model_verifier.verify(
+        ANSWERED,
+        {"input": private_text},
+        completion(output={"output": private_text, "provider": "fake"}),
+    )
+    reported = json.dumps([failure.model_dump(mode="json") for failure in failures])
+    assert private_text not in reported
+
+
+async def test_the_verifier_makes_no_second_call(
+    model_verifier: ModelCompleteVerifier,
+) -> None:
+    """It holds no provider at all: asking again would charge again and send the content out a
+    second time (§57). The only world it looks at is the result."""
+    assert not any("provider" in name for name in vars(model_verifier))
+
+
+async def test_an_unknown_condition_is_refused(model_verifier: ModelCompleteVerifier) -> None:
+    failures = await model_verifier.verify(
+        (MODEL_ANSWERED, "model.is_true"), MODEL_ARGUMENTS, completion()
+    )
+    assert codes(failures) == [VERIFICATION_UNKNOWN_CONDITION]
+    assert ModelCompleteVerifier.failure_codes == COMMON_FAILURE_CODES | {
+        MODEL_NO_ANSWER,
+        MODEL_UNACCOUNTED,
+    }

@@ -344,6 +344,7 @@ EXECUTION_RESULT: Final = ExecutionResult(
     authorization_id=AUTHORIZATION_ID,
     output={"written": False},
     error=ERROR_METADATA,
+    usage=PROVIDER_USAGE,
     duration_ms=2_400,
     metadata={"verified": False},
 )

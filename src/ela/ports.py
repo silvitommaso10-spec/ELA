@@ -85,6 +85,7 @@ __all__ = [
     "PROVIDER_BAD_REQUEST",
     "PROVIDER_ERROR_CODES",
     "PROVIDER_MALFORMED_RESPONSE",
+    "PROVIDER_NO_OUTPUT",
     "PROVIDER_RATE_LIMITED",
     "PROVIDER_REFUSAL",
     "PROVIDER_REJECTED",
@@ -541,17 +542,32 @@ class ExecutionResultStore(Protocol):
     entity that does not exist, and so a retry after a crash finds what the tool did instead of
     running it again (ADR 0015 §5). It holds the tool's ``output`` — the user's content (§57) —
     which the audit trail never does. Insert-only: a result is a fact.
+
+    One rule beyond the id (M7.2, ADR 0021 §1-bis): **a step holds at most one ``STARTED``
+    record**. That record means a tool that cannot be run twice was about to run, so a second one
+    for the same step would be the very thing the protocol exists to prevent, written down as if
+    it were normal. The store refuses it, and refusing it is the store's job and not only the
+    executor's: the executor checks before it writes, and a check that lives only in the caller
+    protects nothing against a second caller. A second *outcome* is not refused here — the
+    executor already rejects one, and a UNIQUE on ``(task_id, step_id)`` was deliberately deferred
+    (ADR 0015, alternatives) — so the asymmetry is on purpose.
     """
 
     async def add(self, result: ExecutionResult) -> None:
-        """Store a new result; :class:`AlreadyExistsError` if its id is held."""
+        """Store a new result; :class:`AlreadyExistsError` if its id is held, or if it is a
+        ``STARTED`` record for a step that already has one."""
 
     async def get(self, result_id: ExecutionId) -> ExecutionResult:
         """The result with this id; :class:`NotFoundError` if there is none."""
 
     async def for_step(self, task_id: TaskId, step_id: StepId) -> tuple[ExecutionResult, ...]:
-        """The results of this step of this task, in insertion order (one at most in v0.1: a
-        step runs once, ADR 0013 §1); empty if none."""
+        """The results of this step of this task, in insertion order; empty if none.
+
+        A step runs once (ADR 0013 §1), so at most two rows: the outcome, and — only for a tool
+        that cannot be run twice — the ``STARTED`` record written before it acted (ADR 0021 §1).
+        The outcome names the record it settles in ``metadata["started_id"]``; a ``STARTED`` with
+        no outcome is a run that was interrupted, never one to repeat.
+        """
 
 
 # --------------------------------------------------------------------------------------
@@ -656,6 +672,16 @@ class ToolPort(Protocol):
     @property
     def name(self) -> str:
         """How the tool is named in audit events and execution results."""
+
+    @property
+    def idempotent(self) -> bool:
+        """Whether running this tool twice with the same arguments leaves the world as once does.
+
+        Declared, never defaulted: the answer belongs to the tool, and forgetting it must not
+        read as a yes (§33). The executor reads it to decide whether a run needs the STARTED
+        record of ADR 0021 §1 — a tool that can be repeated is repaired by repeating it
+        (ADR 0015 §8), one that cannot is never started twice for the same step.
+        """
 
     async def execute(
         self, decision: PermissionDecision, arguments: JsonMapping
@@ -776,6 +802,16 @@ PROVIDER_TIMEOUT: Final = "provider.timeout"
 PROVIDER_REFUSAL: Final = "provider.refusal"
 """The model declined to answer. Not a fault: a fact about the request, worth remembering
 separately from a breakdown (§64) — hence a code of its own, and ``retryable`` false."""
+PROVIDER_NO_OUTPUT: Final = "provider.no_output"
+"""The call succeeded and carries no text. Nothing was refused and nothing broke: an answer
+arrived and there is nothing in it (M7.2, ADR 0021 §5).
+
+The odd one out of the vocabulary, and deliberately in it. The other thirteen name a failure the
+provider *reported*; this one names a result a caller cannot use, and it exists so that an empty
+answer is refused where it is seen rather than passed on as a success with nothing inside — which
+would reach a verifier as a contradiction, and fail one layer later with less to say about why.
+Whoever notices first says it: today that is the tool of ``model.complete``, and any adapter that
+can tell an empty body from an answer may say it too."""
 
 PROVIDER_ERROR_CODES: Final = frozenset(
     {
@@ -792,14 +828,20 @@ PROVIDER_ERROR_CODES: Final = frozenset(
         PROVIDER_UNREACHABLE,
         PROVIDER_TIMEOUT,
         PROVIDER_REFUSAL,
+        PROVIDER_NO_OUTPUT,
     }
 )
 """The closed vocabulary of ``ProviderResult.error.code`` (ADR 0020 §7).
 
 It lives here, with the port, and not inside an adapter, for the reason §26 exists: a caller must
 be able to tell an authentication failure from an overload without importing — or even knowing —
-the provider that produced it. A second provider reports the same thirteen codes or it is not
+the provider that produced it. A second provider reports the same fourteen codes or it is not
 interchangeable with the first.
+
+Closed means closed: a caller that needs a name for a failure the vocabulary does not have adds
+it *here*, with an ADR, and never coins one of its own next to the code that raises it. A code
+outside the vocabulary is exactly what the vocabulary exists to forbid (review of M7.2, which
+brought :data:`PROVIDER_NO_OUTPUT` in from ``ela.tools.model``).
 """
 
 

@@ -38,6 +38,8 @@ TABLES = {
     "devices",
 }
 REVISIONS = [
+    "0007",
+    "0006",
     "0005",
     "0004",
     "0003",
@@ -45,6 +47,13 @@ REVISIONS = [
     "0001",
 ]  # newest first, as ``walk_revisions`` yields them
 TRIGGERS_SQL = "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' ORDER BY name"
+STARTED_INDEX = "ux_execution_results_started_step"
+"""One ``STARTED`` record per step (ADR 0021 §1-bis), as a partial unique index."""
+INDEXES_SQL = (
+    "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL ORDER BY name"
+)
+"""The indexes the schema declares. ``sql IS NULL`` filters out the ones SQLite creates for a
+UNIQUE column: those are the constraint, not a declaration of ours."""
 EXPECTED_COLUMNS = {
     name: {column.name for column in table.columns} for name, table in Base.metadata.tables.items()
 }
@@ -56,6 +65,21 @@ def config_for(db: Path, metadata: MetaData | None = None) -> Config:
     if metadata is not None:
         config.attributes["target_metadata"] = metadata
     return config
+
+
+def _indexes(db: Path) -> dict[str, str]:
+    engine = create_engine(f"sqlite:///{db.as_posix()}")
+    try:
+        with engine.connect() as connection:
+            return {name: _normalised(sql) for name, sql in connection.execute(text(INDEXES_SQL))}
+    finally:
+        engine.dispose()
+
+
+def _normalised(sql: str) -> str:
+    """The index DDL with its whitespace flattened: Alembic and ``create_all`` word it the same
+    way but do not always space it the same way."""
+    return " ".join(sql.split())
 
 
 def _tables(db: Path) -> dict[str, set[str]]:
@@ -110,6 +134,44 @@ def test_upgrade_creates_the_append_only_triggers(db: Path) -> None:
     """Alembic does not compare triggers: the migration must carry the same SQL as ``orm.py``."""
     command.upgrade(config_for(db), "head")
     assert _triggers(db) == APPEND_ONLY_TRIGGERS
+
+
+def test_upgrade_creates_the_same_indexes_as_the_orm(db: Path, tmp_path: Path) -> None:
+    """Alembic's check compares that an index *exists*; it does not compare the predicate of a
+    partial one. ``ux_execution_results_started_step`` is a constraint only while its
+    ``WHERE status = 'STARTED'`` is there (ADR 0021 §1-bis), so the two schemas — the migrated
+    one and the one ``create_all`` builds — are compared as DDL, predicate included.
+    """
+    command.upgrade(config_for(db), "head")
+    built = tmp_path / "from-metadata.db"
+    engine = create_engine(f"sqlite:///{built.as_posix()}")
+    try:
+        Base.metadata.create_all(engine)
+    finally:
+        engine.dispose()
+    migrated = _indexes(db)
+    assert migrated == _indexes(built)
+    assert "status = 'STARTED'" in migrated[STARTED_INDEX]
+
+
+def test_a_missing_predicate_would_be_detected(db: Path, tmp_path: Path) -> None:
+    """Negative case: an index on the same columns without the predicate is a different index —
+    it would forbid two results of any status for one step, not two STARTED records."""
+    command.upgrade(config_for(db), "head")
+    other = tmp_path / "total-index.db"
+    engine = create_engine(f"sqlite:///{other.as_posix()}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("CREATE TABLE execution_results (task_id TEXT, step_id TEXT, status TEXT); ")
+            )
+            connection.execute(
+                text(f"CREATE UNIQUE INDEX {STARTED_INDEX} ON execution_results (task_id, step_id)")
+            )
+    finally:
+        engine.dispose()
+    assert "status = 'STARTED'" not in _indexes(other)[STARTED_INDEX]
+    assert _indexes(other)[STARTED_INDEX] != _indexes(db)[STARTED_INDEX]
 
 
 def test_downgrade_of_the_audit_migration_is_refused(db: Path) -> None:

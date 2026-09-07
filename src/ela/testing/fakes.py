@@ -382,7 +382,11 @@ class FakeApprovalStore:
 
 
 class FakeExecutionResultStore:
-    """Results by id, insert-only (port :class:`~ela.ports.ExecutionResultStore`)."""
+    """Results by id, insert-only (port :class:`~ela.ports.ExecutionResultStore`).
+
+    Two refusals, as the port describes: a repeated id, and a second ``STARTED`` record for a
+    step that already has one (ADR 0021 §1-bis).
+    """
 
     def __init__(self) -> None:
         self._results: dict[ExecutionId, ExecutionResult] = {}
@@ -390,6 +394,13 @@ class FakeExecutionResultStore:
     async def add(self, result: ExecutionResult) -> None:
         if result.id in self._results:
             raise AlreadyExistsError("execution result", result.id)
+        if result.status is ExecutionStatus.STARTED and any(
+            held.status is ExecutionStatus.STARTED
+            and held.task_id == result.task_id
+            and held.step_id == result.step_id
+            for held in self._results.values()
+        ):
+            raise AlreadyExistsError("started record for step", result.step_id)
         self._results[result.id] = result
 
     async def get(self, result_id: ExecutionId) -> ExecutionResult:
@@ -525,16 +536,18 @@ class FakeTool:
         output: JsonMapping | None = None,
         status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
         idempotent: bool = True,
+        usage: ProviderUsage | None = None,
     ) -> None:
         self._capability_id = capability_id
         self._clock = clock
         self._ids = ids
         self._name = name
         self.idempotent = idempotent
-        """Whether twice is once (ADR 0015 §8): ``False`` is how a test builds the tool
-        ``ToolRegistry`` must refuse."""
+        """Whether twice is once (ADR 0015 §8, ADR 0021 §1): ``False`` is how a test builds a
+        tool the executor must run under the STARTED protocol."""
         self._output: JsonMapping = {} if output is None else output
         self._status = status
+        self._usage = usage
         self.calls: tuple[ToolCall, ...] = ()
 
     @property
@@ -566,6 +579,7 @@ class FakeTool:
             step_id=decision.step_id,
             tool_name=self._name,
             output=self._output,
+            usage=self._usage,
             duration_ms=0,
         )
 

@@ -11,6 +11,7 @@ classified once, in :mod:`ela.tools.paths`, for both.
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool, check_decision
 from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME, EchoTool
 from ela.tools.errors import NotIdempotentError, ToolNotFound, ToolsError, VerifierNotFound
+from ela.tools.model import MODEL_COMPLETE, MODEL_TOOL_NAME, ModelCompleteTool
 from ela.tools.notes import (
     DIRECTORY_MODE,
     FILE_MODE,
@@ -39,12 +40,17 @@ from ela.tools.verifiers import (
     ECHO_MESSAGE_MATCHES,
     ECHO_MESSAGE_MISMATCH,
     ECHO_VERIFIER_NAME,
+    MODEL_ANSWERED,
+    MODEL_NO_ANSWER,
+    MODEL_UNACCOUNTED,
+    MODEL_VERIFIER_NAME,
     NOTE_CONTENT_MATCHES,
     NOTE_CONTENT_MISMATCH,
     NOTE_EXISTS,
     NOTE_UNREADABLE,
     NOTES_VERIFIER_NAME,
     EchoVerifier,
+    ModelCompleteVerifier,
     WriteNoteVerifier,
 )
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
@@ -60,6 +66,12 @@ __all__ = [
     "ECHO_VERIFIER_NAME",
     "FILE_MODE",
     "IO_ERROR",
+    "MODEL_ANSWERED",
+    "MODEL_COMPLETE",
+    "MODEL_NO_ANSWER",
+    "MODEL_TOOL_NAME",
+    "MODEL_UNACCOUNTED",
+    "MODEL_VERIFIER_NAME",
     "NOTES_TOOL_NAME",
     "NOTES_VERIFIER_NAME",
     "NOTE_CONTENT_MATCHES",
@@ -78,6 +90,8 @@ __all__ = [
     "WORKSPACE_WRITE_NOTE",
     "EchoTool",
     "EchoVerifier",
+    "ModelCompleteTool",
+    "ModelCompleteVerifier",
     "NotIdempotentError",
     "Outcome",
     "PathProblem",

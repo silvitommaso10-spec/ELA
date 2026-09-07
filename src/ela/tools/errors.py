@@ -20,25 +20,26 @@ class ToolsError(Exception):
 
 
 class NotIdempotentError(ToolsError):
-    """A tool that does not promise that running it twice is running it once (ADR 0015 §8).
+    """A tool that does not *say* whether running it twice is running it once (ADR 0021 §1).
 
     Raised by :class:`~ela.tools.registry.ToolRegistry` at construction, before anything can be
-    executed: crash window 7a — the instant between the tool's effect and the insert of its
-    result — is repaired by *repeating* the tool, and that repair is only safe while every
-    registered tool is idempotent. A tool that is not, or that does not say, needs the STARTED
-    protocol of ADR 0015 §8 first: a result persisted as STARTED before the tool acts, a retry
-    that verifies instead of repeating, and no tool ever started twice for one execution id.
+    executed. Since M7.2 both answers are legal — ``True`` is repaired by repeating the tool
+    after a crash (window 7a of ADR 0015 §8), ``False`` runs under the STARTED protocol and is
+    never repeated — so what is refused here is **silence**: a tool whose ``idempotent`` is
+    missing, or is not a boolean at all. A doubt is not a yes (§33), and the executor reads this
+    flag to decide whether a run may be repeated: a wrong guess there repeats an action that
+    cannot be repeated.
     """
 
     def __init__(self, capability_id: CapabilityId, name: str, declared: object) -> None:
         self.capability_id = capability_id
         self.name = name
         self.declared = declared
-        said = "declares idempotent=False" if declared is False else "declares no idempotent"
         super().__init__(
-            f"tool {name!r} for {capability_id} {said}: a retry after a crash repeats the tool "
-            f"(crash window 7a), so a tool that cannot promise it needs the STARTED protocol of "
-            f"ADR 0015 §8 first"
+            f"tool {name!r} for {capability_id} declares no boolean idempotent "
+            f"({declared!r}): the executor repeats an idempotent tool after a crash and runs a "
+            f"non-idempotent one under the STARTED protocol of ADR 0021 §1, and it cannot guess "
+            f"which this is"
         )
 
 

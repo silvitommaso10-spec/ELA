@@ -26,6 +26,12 @@ ADR_PATHS = {
     "0015": ADR_DIR / "0015-approval-and-result-persistence.md",
     "0016": ADR_DIR / "0016-device-registry.md",
 }
+ADDING_COLUMNS = "Colonne aggiunte:"
+COLUMN_ADRS = {"0021": ADR_DIR / "0021-started-protocol-and-model-complete.md"}
+"""ADRs that add a column to a table another ADR created (ADR 0021 §11: ``execution_results``
+gains ``usage``). An ADR is immutable, so the new column is documented by the ADR that decided
+it, under a label, and appended to the columns the creating ADR listed — the same mechanism that
+lets a later ADR extend a port."""
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \|$")
 COLUMN = re.compile(r"`(\w+)`")
 
@@ -48,7 +54,25 @@ def all_documented_tables(texts: dict[str, str]) -> dict[str, tuple[str, ...]]:
         for name, columns in documented_tables(text).items():
             assert name not in union, f"{name} is documented in more than one ADR ({adr})"
             union[name] = columns
+    for adr, added in added_columns().items():
+        for name, columns in added.items():
+            assert name in union, f"{adr} adds columns to {name}, which no ADR creates"
+            union[name] = (*union[name], *columns)
     return union
+
+
+def section(path: Path, label: str) -> str:
+    """The text after ``label`` in ``path``, up to the next heading: the table it introduces."""
+    text = path.read_text(encoding="utf-8")
+    assert label in text, f"{path.name} must carry the label {label!r}"
+    return text.split(label, 1)[1].split("\n#", 1)[0]
+
+
+def added_columns() -> dict[str, dict[str, tuple[str, ...]]]:
+    """ADR -> table -> the columns that ADR appends to a table created elsewhere."""
+    return {
+        adr: documented_tables(section(path, ADDING_COLUMNS)) for adr, path in COLUMN_ADRS.items()
+    }
 
 
 def adr_texts() -> dict[str, str]:
@@ -77,6 +101,7 @@ def test_each_adr_documents_its_own_tables() -> None:
     assert set(documented_tables(texts["0008"])) == {"task_plans"}
     assert set(documented_tables(texts["0015"])) == {"approvals", "execution_results"}
     assert set(documented_tables(texts["0016"])) == {"devices"}
+    assert added_columns()["0021"] == {"execution_results": ("usage",)}
 
 
 @pytest.mark.parametrize(

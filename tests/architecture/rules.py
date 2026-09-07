@@ -85,6 +85,18 @@ PROVIDERS_PACKAGE = f"{ROOT_PACKAGE}.{PROVIDERS_DIR}"
 ANTHROPIC_ADAPTER_DIR = Path(PROVIDERS_DIR) / ANTHROPIC_LIBRARY
 ANTHROPIC_ADAPTER_MODULE = f"{PROVIDERS_PACKAGE}.{ANTHROPIC_LIBRARY}"
 
+#: Rule 25 (ADR 0021 §5): ``ModelProvider.complete`` is called from one module, the tool of
+#: ``model.complete``. It is where the user's content leaves this machine (§57), and it may leave
+#: only under a decision of the Guardian (§27) — which is a property of *that* module, not of the
+#: call. A second caller would be content going out on some other path. The definitions
+#: (``ports.py``, the adapter, the fakes) are ``def complete``, not calls, and are not reported.
+MODEL_TOOL_MODULE = Path("tools") / "model.py"
+COMPLETE_METHOD = "complete"
+#: The one homonym: ``TaskEngine.complete`` closes a task (ADR 0008). The exemption is the
+#: receiver, an attribute named ``_engine``, and not the module — a field called ``_engine``
+#: holding a provider would be reported, and a provider called through any other name is too.
+ENGINE_RECEIVERS = frozenset({"_engine"})
+
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
 TESTING_DIR = "testing"
@@ -974,6 +986,43 @@ def check_anthropic_isolation(pkg_root: Path) -> list[Violation]:
     )
 
 
+def check_provider_complete_callers(pkg_root: Path) -> list[Violation]:
+    """Rule 25: outside ``tools/model.py`` nobody calls ``<x>.complete(...)`` (ADR 0021 §5).
+
+    ``model.complete`` is the capability through which the user's content leaves this machine
+    (§29, §57), and the guarantee that it leaves only under an ``ALLOWED`` decision is not a
+    property of ``ModelProvider.complete`` — which will answer anyone — but of the one module
+    that calls it, a :class:`~ela.tools.base.Tool` whose base class checks the decision first.
+    A second caller anywhere in ``src/ela`` would be a second way out with no such check, which
+    is the same argument rule 16 makes for ``Tool.execute``.
+
+    Reported: any call whose callee is an attribute named ``complete``, unless the receiver is an
+    attribute in :data:`ENGINE_RECEIVERS` — ``self._engine.complete(...)``, the Task Engine
+    closing a task (ADR 0008), which shares the name and nothing else. A heuristic on the name,
+    like rules 5, 11, 12, 15, 16 and 17: ``complete_step`` is a different name and is rule 17's.
+    """
+    rule = "provider-complete-called-only-by-the-model-tool"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) == MODEL_TOOL_MODULE:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f".{COMPLETE_METHOD}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == COMPLETE_METHOD
+            and not _is_the_engine(node.func.value)
+        )
+    return found
+
+
+def _is_the_engine(receiver: ast.expr) -> bool:
+    return isinstance(receiver, ast.Attribute) and receiver.attr in ENGINE_RECEIVERS
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -999,4 +1048,5 @@ RULES: dict[str, Rule] = {
     "devices-isolation": check_devices_isolation,
     "audit-arguments": check_audit_arguments,
     "anthropic-import-isolation": check_anthropic_isolation,
+    "provider-complete-callers": check_provider_complete_callers,
 }

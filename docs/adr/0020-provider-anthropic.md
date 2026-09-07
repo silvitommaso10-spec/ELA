@@ -1,6 +1,8 @@
 # 0020. Provider Anthropic: stato dichiarato, chiave solo da ELA, retry proprio, costo stimato, vocabolario chiuso degli errori
 
-- **Stato:** Accettata
+- **Stato:** Accettata. §7 esteso dalla review di M7.2 (ADR 0021 §5): `provider.no_output` è
+  il **quattordicesimo** codice del vocabolario chiuso. La riga è nella tabella di §7; il
+  resto dell'ADR — gli otto esiti di §9 compresi — non cambia.
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §25, §26, §29, §32, §33, §50, §51, §57, §64
 
@@ -157,6 +159,16 @@ il primo.
 | altro `APIStatusError` 4xx (409, 422, …) | 4xx | `provider.rejected` | no |
 | `APIResponseValidationError` e ogni altro `APIError` | — | `provider.malformed_response` | no |
 | `stop_reason == "refusal"` | 200 | `provider.refusal` | no |
+| — (risposta senza testo) | 200 | `provider.no_output` | no |
+
+`provider.no_output` è entrato con la review di M7.2 ed è il quattordicesimo. È l'unico della
+tabella che non nomina un fallimento *riportato dal provider*: nomina un risultato che chi lo
+riceve non può usare — una chiamata riuscita e senza testo. Sta qui, e non accanto al codice che
+lo solleva, perché il vocabolario è chiuso e un codice fuori dal vocabolario è esattamente ciò
+che il vocabolario vieta: chi ha bisogno di un nome che non c'è lo aggiunge **qui**, con un ADR.
+Oggi lo solleva il tool di `model.complete` (ADR 0021 §5); l'adapter Anthropic non lo produce —
+la riga «risposta» di §9 resta com'è — e potrà produrlo il giorno in cui distinguerà un corpo
+vuoto da una risposta, senza che il vocabolario cambi.
 
 Il rifiuto del modello ha un codice **proprio** e non è un guasto: è informazione che il Memory
 Core (§64) vorrà distinguere da un errore di sistema, e costa token come una risposta.

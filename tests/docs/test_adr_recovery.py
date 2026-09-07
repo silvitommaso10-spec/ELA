@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from ela.domain import AuditEventType, CapabilityId, TaskState
+from ela.domain import AuditEventType, CapabilityId, JsonMapping, TaskState
 from ela.tasks.engine import ORPHANED, RecoverySummary
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeTool
-from ela.tools import NotIdempotentError, Tool, ToolRegistry, tools_v01
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
+from ela.tools import NotIdempotentError, Outcome, Tool, ToolRegistry, tools_v01
 from tests.executive import test_executor_recovery as recovery
 
 ADR_PATH = (
@@ -138,25 +138,40 @@ def test_an_executing_task_with_an_expired_request_belongs_to_the_orphan_rule() 
 
 
 def test_the_idempotence_guard_of_window_7a_is_documented_and_coded() -> None:
+    """ADR 0015 §8 declared the guard; what it still guards, after M7.2, is silence.
+
+    The guard was written so that the first tool that could not promise "twice is once" could
+    not be registered without bringing the STARTED protocol. It did its job: the tool arrived
+    (``model.complete``) and the protocol arrived with it (ADR 0021). So a declared ``False`` is
+    now legal, and a tool that declares *nothing* is still refused — which is what the guard was
+    about, a doubt never reading as a yes.
+    """
     text = ADR_PATH.read_text(encoding="utf-8")
     assert "`idempotent: ClassVar[bool]` **senza default**" in text
     assert "`NotIdempotentError`" in text
     assert "STARTED" in text
-    registry = tools_v01(root="/tmp/ela-adr-0015", clock=FakeClock(), ids=FakeIdGenerator())
-    tools = registry.tools()
-    assert tools and all(tool.idempotent is True for tool in tools)  # type: ignore[attr-defined]
+    assert "M7.2 `model.complete`" in text  # the ADR named the tool that would carry it
     assert "idempotent" not in vars(Tool)  # no default to inherit by mistake
+    registry = tools_v01(
+        root="/tmp/ela-adr-0015",
+        clock=FakeClock(),
+        ids=FakeIdGenerator(),
+        provider=FakeModelProvider(FakeClock(), FakeIdGenerator()),
+    )
+    declared = {tool.name: tool.idempotent for tool in registry.tools()}
+    assert declared == {"core-echo": True, "workspace-notes": True, "model-complete": False}
     with pytest.raises(NotIdempotentError):
-        ToolRegistry(
-            (
-                FakeTool(
-                    CapabilityId("core.echo"),
-                    FakeClock(),
-                    FakeIdGenerator(),
-                    idempotent=False,
-                ),
-            )
-        )
+        ToolRegistry((SilentTool(CapabilityId("core.echo"), FakeClock(), FakeIdGenerator()),))
+
+
+class SilentTool(Tool):
+    """A tool that declares no ``idempotent`` at all: what the guard still refuses (ADR 0021 §1)."""
+
+    async def _run(self, arguments: JsonMapping) -> Outcome:  # pragma: no cover - never runs
+        return Outcome({})
+
+    def __init__(self, capability_id: CapabilityId, clock: FakeClock, ids: FakeIdGenerator) -> None:
+        super().__init__(capability_id, clock, ids, name="silent")
 
 
 def test_a_drifted_recovery_table_is_detected() -> None:
