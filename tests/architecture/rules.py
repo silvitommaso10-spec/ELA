@@ -71,17 +71,13 @@ MUTATING_SQL = re.compile(r"\b(update|delete|replace|drop)\b", re.IGNORECASE)
 #: — which stores and rehydrates it — nobody touches the field at all.
 DEVICES_DIR = "devices"
 AVAILABILITY_FIELD = "availability"
-#: Rule 21 (ADR 0017 §9): whoever decides goes through ``DeviceRegistry``, not the raw port. Three
-#: exemptions, one per module that names it today: the ports that declare it, the package that
-#: holds it, the adapter that implements it. The composition root of M8.1 will probably need a
-#: fourth, and it is deliberately not here yet: an exemption with no code behind it is a door
-#: opened before anyone knocks (review of M6.2).
+#: Rule 21 (ADR 0017 §9, ADR 0027): whoever decides goes through ``DeviceRegistry``, not the raw
+#: port. **One** exemption, the package that holds the decision. The other two — ``ela.ports``,
+#: which *declares* the port and does not import it, and the SQL adapter, which is structural and
+#: names the port only in its docstrings — were opened for modules that never knocked, and are
+#: withdrawn by ADR 0027: restricting either of them made no rule speak.
 DEVICE_REGISTRY_PORT = f"{ROOT_PACKAGE}.ports.DeviceRegistryPort"
-DEVICE_PORT_ALLOWED = (
-    f"{ROOT_PACKAGE}.ports",
-    f"{ROOT_PACKAGE}.{DEVICES_DIR}",
-    f"{ROOT_PACKAGE}.infrastructure.persistence.device_registry",
-)
+DEVICE_PORT_ALLOWED = (f"{ROOT_PACKAGE}.{DEVICES_DIR}",)
 #: Rule 30 (ADR 0026 §5): outside ``ela.devices`` nobody builds a ``PlacementDecision`` that
 #: names a node. The mirror of rule 12: ``ensure_placed`` checks a claim, and a claim anybody can
 #: forge is not checked at all. No exemption — no fake builds one, and M9.1 does not open a door
@@ -163,8 +159,12 @@ ENGINE_RECEIVERS = frozenset({"_engine"})
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
 TESTING_DIR = "testing"
-#: What the fakes may import besides the standard library.
-TESTING_ALLOWED_INTERNAL = (f"{ROOT_PACKAGE}.domain", f"{ROOT_PACKAGE}.ports", TESTING_PACKAGE)
+#: What the fakes may import besides the standard library: the domain and the ports, which is
+#: what ADR 0002 and contract 5 have always said this rule allows. ``ela.testing`` itself was in
+#: the list and no module used it — ``fakes.py`` is one module — so the list said something the
+#: documentation never did. Withdrawn by ADR 0027, which closes a doc-vs-code drift rather than a
+#: decision: a second module under ``testing/`` will reopen it as an addition, with its reason.
+TESTING_ALLOWED_INTERNAL = (f"{ROOT_PACKAGE}.domain", f"{ROOT_PACKAGE}.ports")
 #: The only state a Task may be *born* in outside the state machine.
 INITIAL_STATE = ("TaskState", "CREATED")
 #: Rule 13 (ADR 0010): the permissions package imports the standard library, the domain, the
@@ -189,11 +189,14 @@ AUTHORIZATION_MODEL = "Authorization"
 AUTHORIZATION_WIDENING_FIELDS = frozenset(
     {"approval_id", "task_id", "step_id", "scope", "expires_at", "max_uses", "capability_id"}
 )
-AUTHORIZATION_BUILDERS_EXEMPT = frozenset({PERMISSIONS_DIR, TESTING_DIR})
+#: ``ela.testing`` was exempt here too and never coined a grant — the fakes import
+#: ``Authorization`` as a type, they do not build one. Withdrawn by ADR 0027; unlike rule 12,
+#: whose fake must be able to answer ALLOWED, no fake is the legitimate author of a grant.
+AUTHORIZATION_BUILDERS_EXEMPT = frozenset({PERMISSIONS_DIR})
 AUTHORIZATION_READER = PERSISTENCE_MAPPERS
 #: Rule 16 (ADR 0013): only the executor calls ``Tool.execute``. The exemption is one exact path;
-#: a receiver named like a SQLAlchemy session, connection or cursor is SQL's ``execute``, not a
-#: tool's — an exemption by name, closed and tested.
+#: a receiver named like a SQLAlchemy session or cursor is SQL's ``execute``, not a tool's — an
+#: exemption by name, closed and tested.
 EXECUTOR_MODULE = Path("executive") / "executor.py"
 EXECUTE_METHOD = "execute"
 #: Rule 16 (ADR 0019 §3): ``self._executor.execute(...)`` is the runner driving the executor, not
@@ -203,7 +206,11 @@ EXECUTE_METHOD = "execute"
 #: still reported.
 RUNNER_MODULE = Path("executive") / "runner.py"
 EXECUTOR_RECEIVERS = frozenset({"_executor"})
-SQL_EXECUTORS = frozenset({"session", "connection", "cursor"})
+#: ``connection`` was in this set and no module ever used it: ADR 0013 §9 wrote three names and
+#: the persistence has always executed through ``session`` and ``cursor``. Withdrawn by ADR 0027,
+#: with its price written there: the day the persistence executes on a ``connection`` this rule
+#: speaks, and reopening the name is one line plus a reason, not an accident.
+SQL_EXECUTORS = frozenset({"session", "cursor"})
 # Rule 17 (ADR 0014 §9): only the executor completes a step, and only after verification.
 COMPLETE_STEP_METHOD = "complete_step"
 RESPOND_METHOD = "respond"
@@ -1009,12 +1016,17 @@ def check_device_availability_readers(pkg_root: Path) -> list[Violation]:
 
 
 def check_device_port_readers(pkg_root: Path) -> list[Violation]:
-    """Rule 21: outside three modules nobody names ``DeviceRegistryPort`` (ADR 0017 §9).
+    """Rule 21: outside ``ela.devices`` nobody names ``DeviceRegistryPort`` (ADR 0017 §9).
 
     Rule 20 forbids reading the stale field (ADR 0016 §3); this one removes the temptation, by
-    keeping the raw port out of the hands of whoever decides. ``ela.ports`` declares it,
-    ``ela.devices`` holds it and the SQL adapter implements it: everybody else asks
-    ``DeviceRegistry``, and gets an availability that is already judged.
+    keeping the raw port out of the hands of whoever decides. ``ela.devices`` holds the decision:
+    everybody else asks ``DeviceRegistry``, and gets an availability that is already judged.
+
+    Two more modules were exempt and neither used it (ADR 0027). The rule looks at *imports*:
+    ``ela.ports`` **declares** ``DeviceRegistryPort`` and cannot import what it defines, and the
+    SQL adapter satisfies it structurally — it is a ``Protocol`` — so it names the port only in
+    its docstrings. Restricting either exemption made no rule speak, so both are withdrawn, and
+    the day one of those modules imports the port this rule says so.
     """
     files = (
         path
@@ -1371,3 +1383,287 @@ RULES: dict[str, Rule] = {
     "placement-builders": check_placement_builders,
     "constant-time-token": check_constant_time_token,
 }
+
+
+# --------------------------------------------------------------------------------------------
+# What each rule reads, and what kind of thing it is (ADR 0027)
+# --------------------------------------------------------------------------------------------
+
+#: A door: who is *exempt* from the rule. Restricted, the rule must report at least one
+#: violation — otherwise nobody is behind the door and it is an opening the next person will read
+#: as a permission already granted (review of M6.2, ADR 0017 §9).
+EXEMPTION = "exemption"
+#: What the rule *looks for* or *looks at*: a library, a method name, a field, a file. Restricted,
+#: it can only make the rule quieter, never louder — so the rule must report nothing.
+DETECTOR = "detector"
+#: What the rule could not be asked about at all. Not asserted, and the row carries the reason.
+SUBJECT = "subject"
+
+#: Restrict the constant as a whole: to a path that exists nowhere, a name nobody has, an empty
+#: set, a pattern that matches nothing.
+WHOLE = "whole"
+#: Restrict one element at a time. The elements are **read from the constant**, never listed
+#: here: a value added to an allowlist is covered without anybody remembering to add it twice.
+EACH = "each"
+
+_THE_PACKAGE_ITSELF = (
+    "the name of the package every rule walks: restricting it does not open or close a door, "
+    "it removes the subject"
+)
+
+
+@dataclass(frozen=True)
+class Constant:
+    """One constant, as one rule reads it.
+
+    ``tests/architecture/test_exemptions.py`` derives the (rule, constant) pairs from the AST of
+    this module and requires that they be exactly the rows below — so a constant added to an
+    existing rule has to be classified before the suite goes green — and then asserts the two
+    opposite properties: an ``EXEMPTION`` restricted makes its rule speak, a ``DETECTOR``
+    restricted leaves it silent. Misfiling a live door therefore fails; the shape it could still
+    hide in is a ``SUBJECT`` row, and there are three of those.
+    """
+
+    rule: str
+    name: str
+    kind: str
+    by: str = WHOLE
+    #: The ADR that opened the door, for an ``EXEMPTION``; ``"—"`` when no ADR documents it.
+    adr: str = ""
+    #: Required for a ``SUBJECT``, and for an ``EXEMPTION`` the real tree cannot prove.
+    reason: str = ""
+    #: The ``violations.ALLOWED`` case that stands in when the real tree is silent. An exemption
+    #: is proved by the real tree or by a case named here — never by nothing.
+    proof: str = ""
+
+
+CONSTANTS: tuple[Constant, ...] = (
+    # anthropic-import-isolation
+    Constant(
+        "anthropic-import-isolation",
+        "ANTHROPIC_ADAPTER_DIR",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0020 §11",
+    ),
+    Constant("anthropic-import-isolation", "ANTHROPIC_LIBRARY", DETECTOR),
+    Constant("anthropic-import-isolation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # approval-responders
+    Constant(
+        "approval-responders",
+        "APPROVAL_RESPONDER",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0015 §9; ADR 0023 §12",
+    ),
+    Constant("approval-responders", "RESPOND_METHOD", DETECTOR),
+    Constant("approval-responders", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # audit-append-only
+    Constant("audit-append-only", "AUDIT_ADAPTER", DETECTOR),
+    Constant("audit-append-only", "MUTATING_NAMES", DETECTOR),
+    Constant("audit-append-only", "MUTATING_SQL", DETECTOR),
+    Constant("audit-append-only", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # audit-arguments
+    Constant("audit-arguments", "ARGUMENTS_NAME", DETECTOR),
+    Constant("audit-arguments", "AUDIT_EVENT", DETECTOR),
+    Constant("audit-arguments", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # authorization-builders
+    Constant(
+        "authorization-builders",
+        "AUTHORIZATION_BUILDERS_EXEMPT",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0012 §7; ADR 0027",
+    ),
+    Constant("authorization-builders", "AUTHORIZATION_MODEL", DETECTOR),
+    Constant(
+        "authorization-builders", "AUTHORIZATION_READER", EXEMPTION, by=WHOLE, adr="ADR 0012 §7"
+    ),
+    Constant("authorization-builders", "AUTHORIZATION_WIDENING_FIELDS", DETECTOR),
+    Constant("authorization-builders", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # cli-over-the-api
+    Constant(
+        "cli-over-the-api",
+        "CLI_DIR",
+        SUBJECT,
+        reason="the package the rule is about, on both sides of it: restricted, every module "
+        'becomes "outside the CLI" and the rule reports itself',
+    ),
+    Constant("cli-over-the-api", "CLI_FORBIDDEN_INTERNAL", DETECTOR),
+    Constant("cli-over-the-api", "CLI_PACKAGE", DETECTOR),
+    Constant("cli-over-the-api", "CLI_SERVE", EXEMPTION, by=WHOLE, adr="ADR 0024 §7"),
+    Constant("cli-over-the-api", "COMPOSED_NAMES", DETECTOR),
+    Constant("cli-over-the-api", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # concrete-names
+    Constant("concrete-names", "CONCRETE_ALLOWED", EXEMPTION, by=EACH, adr="ADR 0023 §12"),
+    Constant("concrete-names", "CORE_FORBIDDEN", DETECTOR),
+    Constant("concrete-names", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # constant-time-token
+    Constant(
+        "constant-time-token", "CONSTANT_TIME_COMPARE", EXEMPTION, by=WHOLE, adr="ADR 0026 §6"
+    ),
+    Constant("constant-time-token", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "constant-time-token",
+        "SECURITY_MODULE",
+        SUBJECT,
+        reason="the one file this rule reads: restricted, the rule has nothing to open and "
+        "raises instead of speaking",
+    ),
+    Constant("constant-time-token", "TOKEN_NAMES", DETECTOR),
+    # core-isolation
+    Constant("core-isolation", "CORE_FORBIDDEN", DETECTOR),
+    Constant("core-isolation", "CORE_PACKAGES", DETECTOR),
+    Constant("core-isolation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # decide-callers
+    Constant("decide-callers", "DECIDE_METHOD", DETECTOR),
+    Constant("decide-callers", "PERMISSIONS_DIR", EXEMPTION, by=WHOLE, adr="ADR 0011"),
+    Constant("decide-callers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # decision-builders
+    Constant(
+        "decision-builders", "DECISION_BUILDERS_EXEMPT", EXEMPTION, by=EACH, adr="ADR 0011 §11"
+    ),
+    Constant("decision-builders", "DECISION_MODEL", DETECTOR),
+    Constant("decision-builders", "DENIED_OUTCOME", DETECTOR),
+    Constant("decision-builders", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # device-availability-readers
+    Constant("device-availability-readers", "AVAILABILITY_FIELD", DETECTOR),
+    Constant(
+        "device-availability-readers",
+        "DEVICES_DIR",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0016 §3; ADR 0017 §7",
+    ),
+    Constant(
+        "device-availability-readers", "PERSISTENCE_MAPPERS", EXEMPTION, by=WHOLE, adr="ADR 0016 §3"
+    ),
+    Constant("device-availability-readers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # device-port-readers
+    Constant(
+        "device-port-readers",
+        "DEVICE_PORT_ALLOWED",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0017 §9; ADR 0027",
+    ),
+    Constant("device-port-readers", "DEVICE_REGISTRY_PORT", DETECTOR),
+    Constant("device-port-readers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # devices-isolation
+    Constant("devices-isolation", "DEVICES_DIR", DETECTOR),
+    Constant("devices-isolation", "DEVICES_FORBIDDEN", DETECTOR),
+    Constant("devices-isolation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # domain
+    Constant("domain", "DOMAIN_ALLOWED_EXTERNAL", EXEMPTION, by=EACH, adr="ADR 0002 §1"),
+    Constant("domain", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("domain", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0002 §1"),
+    # infra-libraries
+    Constant("infra-libraries", "INFRA_LIBRARIES", DETECTOR),
+    Constant("infra-libraries", "INFRA_PACKAGES", EXEMPTION, by=EACH, adr="ADR 0002 §3"),
+    Constant("infra-libraries", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # orm-separation
+    Constant("orm-separation", "DOMAIN_MODULE", DETECTOR),
+    Constant("orm-separation", "ORM_PACKAGE", DETECTOR),
+    Constant("orm-separation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # permissions-imports
+    Constant(
+        "permissions-imports", "PERMISSIONS_ALLOWED_EXTERNAL", EXEMPTION, by=EACH, adr="ADR 0010"
+    ),
+    Constant(
+        "permissions-imports", "PERMISSIONS_ALLOWED_INTERNAL", EXEMPTION, by=EACH, adr="ADR 0010"
+    ),
+    Constant("permissions-imports", "PERMISSIONS_DIR", DETECTOR),
+    Constant("permissions-imports", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("permissions-imports", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0010"),
+    # placement-builders
+    Constant("placement-builders", "DEVICES_DIR", EXEMPTION, by=WHOLE, adr="ADR 0026 §5"),
+    Constant("placement-builders", "PLACEMENT_DEVICE_FIELD", DETECTOR),
+    Constant("placement-builders", "PLACEMENT_MODEL", DETECTOR),
+    Constant("placement-builders", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # ports
+    Constant("ports", "PORTS_ALLOWED_INTERNAL", EXEMPTION, by=WHOLE, adr="ADR 0002 §2"),
+    Constant("ports", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("ports", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0002 §2"),
+    # provider-complete-callers
+    Constant("provider-complete-callers", "COMPLETE_METHOD", DETECTOR),
+    Constant(
+        "provider-complete-callers", "ENGINE_RECEIVERS", EXEMPTION, by=EACH, adr="ADR 0021 §5"
+    ),
+    Constant(
+        "provider-complete-callers", "MODEL_TOOL_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0021 §5"
+    ),
+    Constant("provider-complete-callers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # state-changes
+    Constant("state-changes", "INITIAL_STATE", EXEMPTION, by=WHOLE, adr="ADR 0004"),
+    Constant("state-changes", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("state-changes", "STATE_EXEMPT", EXEMPTION, by=EACH, adr="ADR 0004; ADR 0006"),
+    # state-machine-callers
+    Constant("state-machine-callers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("state-machine-callers", "STATE_MACHINE_MODULE", DETECTOR),
+    Constant("state-machine-callers", "TASKS_DIR", EXEMPTION, by=WHOLE, adr="ADR 0008"),
+    # step-completers
+    Constant("step-completers", "COMPLETE_STEP_METHOD", DETECTOR),
+    Constant("step-completers", "EXECUTOR_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0014 §9"),
+    Constant("step-completers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # step-event-writers
+    Constant("step-event-writers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("step-event-writers", "STEP_EVENT_PREFIX", DETECTOR),
+    Constant(
+        "step-event-writers",
+        "TASKS_DIR",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0009",
+        proof="step-event-built-by-engine",
+        reason="the Task Engine is the legitimate writer, and it is silent on the real tree "
+        "only because it passes ``event_type=op.event_type`` from ``STEP_OPERATIONS`` — a "
+        "variable the name heuristic cannot see (ADR 0027)",
+    ),
+    # testing-imports
+    Constant("testing-imports", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("testing-imports", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0002 §7"),
+    Constant(
+        "testing-imports",
+        "TESTING_ALLOWED_INTERNAL",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0002 §7; ADR 0005",
+    ),
+    Constant("testing-imports", "TESTING_DIR", DETECTOR),
+    # testing-isolation
+    Constant("testing-isolation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("testing-isolation", "TESTING_DIR", DETECTOR),
+    Constant("testing-isolation", "TESTING_PACKAGE", DETECTOR),
+    # tool-execute-callers
+    Constant("tool-execute-callers", "EXECUTE_METHOD", DETECTOR),
+    Constant("tool-execute-callers", "EXECUTOR_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0013 §9"),
+    Constant("tool-execute-callers", "EXECUTOR_RECEIVERS", EXEMPTION, by=EACH, adr="ADR 0019 §3"),
+    Constant("tool-execute-callers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("tool-execute-callers", "RUNNER_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0019 §3"),
+    Constant(
+        "tool-execute-callers", "SQL_EXECUTORS", EXEMPTION, by=EACH, adr="ADR 0013 §9; ADR 0027"
+    ),
+    # tool-output-readers
+    Constant("tool-output-readers", "API_DIR", DETECTOR),
+    Constant("tool-output-readers", "OUTPUT_MODEL", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),
+    Constant("tool-output-readers", "OUTPUT_NAME", DETECTOR),
+    Constant("tool-output-readers", "OUTPUT_SCHEMAS", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),
+    Constant("tool-output-readers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    # tools-routing-isolation
+    Constant("tools-routing-isolation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("tools-routing-isolation", "ROUTING_PACKAGE", DETECTOR),
+    Constant("tools-routing-isolation", "TOOLS_DIR", DETECTOR),
+    # verifier-read-only
+    Constant("verifier-read-only", "OPENERS", DETECTOR),
+    Constant("verifier-read-only", "READ_ONLY_MODULES", DETECTOR),
+    Constant("verifier-read-only", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("verifier-read-only", "SHUTIL", DETECTOR),
+    Constant("verifier-read-only", "WRITING_CALLS", DETECTOR),
+    Constant("verifier-read-only", "WRITING_OPEN_FLAGS", DETECTOR),
+    Constant("verifier-read-only", "WRITING_OPEN_MODES", DETECTOR),
+)
+"""Every (rule, constant) pair the rules read, one row each (ADR 0027).
+
+Thirty-six doors, forty-seven detectors, thirty-three subjects — of which thirty-one are
+``ROOT_PACKAGE``, read by every rule.
+"""

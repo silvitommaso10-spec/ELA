@@ -35,9 +35,11 @@ from ela.domain import (
     PowerSource,
     PrivacyLevel,
 )
-from tests.architecture.rules import DEVICE_PORT_ALLOWED, RULES
+from tests.architecture.rules import DEVICE_PORT_ALLOWED, ROOT_PACKAGE, RULES
+from tests.docs.test_adr_exemptions import withdrawn
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0017-device-orchestrator.md"
+ADR_0027 = ADR_PATH.with_name("0027-exemptions-withdrawn.md")
 
 FILTER_ROW = re.compile(r"^\| F(\d) \| ([^|]+?) \| ([^|]+?) \| `(\w+)` \| ([^|]+?) \|$")
 """§4: the five hard filters, numbered — no other table in the ADR numbers its rows."""
@@ -233,17 +235,30 @@ def test_the_rule_table_names_rules_that_exist() -> None:
 
 
 def test_the_documented_exemptions_of_rule_21_are_the_ones_the_rule_has() -> None:
-    """Review of M6.2: three exemptions, one per module that names the port today.
+    """This ADR opened three doors; ADR 0027 withdrew two, and the code has what is left.
 
-    The composition root of M8.1 will probably need a fourth. It is not here in advance, and this
-    test is what makes adding it a deliberate act — the ADR row has to change with the code.
+    An ADR is immutable, so the row below still says three and this test reads the later ADR
+    too — what the code has plus what was withdrawn must be exactly what was opened. Adding a
+    fourth exemption (the composition root of M8.1 would have been one) stays a deliberate act:
+    it fails here until an ADR row says so.
     """
     (row,) = [match for match in rows(RULE_ROW) if match.group(1) == "21"]
     documented = row.group(4)
-    assert len(DEVICE_PORT_ALLOWED) == 3
     assert "`ela.ports`" in documented
     assert "`ela.devices`" in documented
     assert "ela.api" not in documented
+
+    gone = {
+        match.group(4)
+        for match in withdrawn(ADR_0027.read_text(encoding="utf-8"))
+        if match.group(2) == "device-port-readers"
+    }
+    assert set(DEVICE_PORT_ALLOWED) == {f"{ROOT_PACKAGE}.devices"}
+    assert set(DEVICE_PORT_ALLOWED) | gone == {
+        f"{ROOT_PACKAGE}.ports",
+        f"{ROOT_PACKAGE}.devices",
+        f"{ROOT_PACKAGE}.infrastructure.persistence.device_registry",
+    }
 
 
 def test_the_weights_are_declared_provisional() -> None:

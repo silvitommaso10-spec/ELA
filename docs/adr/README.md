@@ -34,6 +34,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0024](0024-cli.md) | La CLI di ELA: un client dell'API locale, `ela.cli`, `AuditVerifier` e le rotte `/devices` e `/audit/verify`, quattro codici di uscita, regola 3 estesa e regola 28 | Accettata |
 | [0025](0025-phase-8-debts.md) | I debiti di Fase 8: `TaskRepository.count`, `AuditLog.read(newest_first=)`, `ExecutionResultStore.for_task` con `GET /tasks/{id}/results` e `ela task results`, `ELA_NOTES_SCOPE` e `ELA_DECISION_TTL_SECONDS`, regola 29 | Accettata |
 | [0026](0026-placement-as-data.md) | Il piazzamento come dato: `PlacementDecision`, `ensure_placed` e `confirm`; il confronto del token a tempo costante; regole 30 e 31 | Accettata |
+| [0027](0027-exemptions-withdrawn.md) | Le esenzioni senza codice dietro, ritirate (regole 6, 15, 16, 21); la tabella `CONSTANTS` che se ne accorge, e il criterio dell'attore legittimo | Accettata |
 
 ## Template
 
