@@ -1,0 +1,187 @@
+"""``build`` (ADR 0023 §5): ELA put together once, and the configurations it refuses.
+
+The test builds the real thing — the SQL adapters, the catalogue, the Guardian, the router, the
+tools, the runner — on a database in a temporary directory. What is under test is the wiring
+itself: that ELA starts, that what the ADR promises about the order actually happened, and that
+a configuration ELA cannot honour stops it with a message instead of a stack trace.
+"""
+
+from __future__ import annotations
+
+import json
+import stat
+from pathlib import Path
+
+import pytest
+
+from ela.composition import ELA_ACTOR, ConfigurationError, Ela, Settings, build
+from ela.devices.local import LOCAL_DEVICE_ID, LOCAL_DEVICE_NAME
+from ela.domain import ActorKind, ProviderStatus
+from ela.permissions import MODEL_COMPLETE, catalogue_v01
+from ela.ports import ROUTING_EMPTY_ROUTES, ROUTING_UNKNOWN_PROVIDER
+from ela.providers.anthropic import PROVIDER_NAME
+from tests.composition.support import TOKEN, create_schema, database_url, declare
+
+ROUTER = "_router"
+"""Where the tool and the verifier keep the router they were given.
+
+Read here on purpose: ADR 0022 §10 asks for the **same object**, and no behavioural check can
+tell one router from a second one with an equal table — until the day one of the two tables
+changes, which is exactly the accident the rule exists to prevent.
+"""
+
+
+async def built(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> Ela:
+    declare(monkeypatch, tmp_path, **extra)
+    settings = Settings.load()
+    await create_schema(settings.persistence.db_url)
+    return await build(settings)
+
+
+# ----------------------------------------------------------------------------------------
+# What was built
+# ----------------------------------------------------------------------------------------
+
+
+async def test_every_piece_of_the_pipeline_is_there(ela: Ela) -> None:
+    assert [spec.id for spec in ela.capabilities.specs()] == [
+        spec.id for spec in catalogue_v01().specs()
+    ]
+    assert len(ela.tools.tools()) == len(ela.verifiers.verifiers()) == 3
+    assert ela.providers.names() == (PROVIDER_NAME,)
+    assert ela.runner is not None and ela.executor is not None
+
+
+async def test_the_tools_and_the_verifiers_share_one_router(ela: Ela) -> None:
+    """ADR 0022 §10: the verifier of ``model.routed_as_asked`` recomputes the route, and two
+    routers with two tables would fail every verification."""
+    tool = ela.tools.get(MODEL_COMPLETE)
+    verifier = ela.verifiers.get(MODEL_COMPLETE)
+
+    assert getattr(tool, ROUTER) is ela.router
+    assert getattr(verifier, ROUTER) is ela.router
+
+
+async def test_the_local_node_knows_which_tools_it_has(ela: Ela) -> None:
+    """ADR 0016 §4: without the names no node is ever eligible and every task waits."""
+    local = await ela.devices.get(LOCAL_DEVICE_ID)
+
+    assert local.available_tools == tuple(tool.name for tool in ela.tools.tools())
+
+
+async def test_the_local_node_is_alive_because_it_is_this_process(ela: Ela) -> None:
+    """ADR 0023 §5-bis: a node registered and never heard from is UNAVAILABLE, and nothing
+    would ever be placed on it."""
+    assert [device.name for device in await ela.devices.available()] == [LOCAL_DEVICE_NAME]
+
+
+async def test_the_workspace_is_created_and_is_the_user_s_alone(ela: Ela) -> None:
+    workspace = ela.settings.workspace.workspace_dir
+
+    assert workspace.is_dir()
+    assert stat.S_IMODE(workspace.stat().st_mode) == 0o700  # §57
+
+
+async def test_the_durations_of_the_settings_reach_the_engine_and_the_executor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The proof that they are *used* is in the API tests, where an approval expires when the
+    setting says; here it is that they are read at all."""
+    ela = await built(monkeypatch, tmp_path, ELA_TASK_ORPHAN_AFTER_SECONDS="60")
+    try:
+        assert ela.settings.core.orphan_after.total_seconds() == 60
+        assert await ela.engine.recover() == ((), (), ())  # an engine that works
+    finally:
+        await ela.aclose()
+
+
+async def test_ela_acts_as_itself(ela: Ela) -> None:
+    assert ELA_ACTOR.kind is ActorKind.ELA
+
+
+async def test_closing_twice_is_allowed(ela: Ela) -> None:
+    await ela.aclose()
+    await ela.aclose()
+
+
+# ----------------------------------------------------------------------------------------
+# A machine with no key still runs ELA (ADR 0020 §2)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_without_a_key_the_provider_is_unavailable_and_ela_starts(ela: Ela) -> None:
+    assert ela.providers.get(PROVIDER_NAME).status is ProviderStatus.UNAVAILABLE
+
+
+async def test_with_a_key_the_provider_is_available(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ela = await built(monkeypatch, tmp_path, ELA_ANTHROPIC_API_KEY=TOKEN)
+    try:
+        assert ela.providers.get(PROVIDER_NAME).status is ProviderStatus.AVAILABLE
+    finally:
+        await ela.aclose()
+
+
+# ----------------------------------------------------------------------------------------
+# What stops the start-up (ADR 0023 §5)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_database_nobody_migrated_stops_ela(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """ADR 0006 refused automatic migration; ADR 0023 §5 refuses silence about it."""
+    declare(monkeypatch, tmp_path)
+
+    with pytest.raises(ConfigurationError) as raised:
+        await build(Settings.load())
+
+    message = str(raised.value)
+    assert "alembic upgrade head" in message
+    assert "tasks" in message and "audit_events" in message
+
+
+async def test_a_route_naming_an_unknown_provider_stops_ela(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """ADR 0022 §7: a typo in ``ELA_MODEL_ROUTES`` stops ELA before it works, not a step later."""
+    table = json.dumps({"coding": {"providers": ["openai"], "profile": "quality"}})
+    declare(monkeypatch, tmp_path, ELA_MODEL_ROUTES=table)
+    await create_schema(database_url(tmp_path))
+
+    with pytest.raises(ConfigurationError) as raised:
+        await build(Settings.load())
+
+    assert ROUTING_UNKNOWN_PROVIDER in str(raised.value)
+    assert "ELA_MODEL_ROUTES" in str(raised.value)
+
+
+async def test_an_empty_routing_table_stops_ela(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    declare(monkeypatch, tmp_path, ELA_MODEL_ROUTES="{}")
+    await create_schema(database_url(tmp_path))
+
+    with pytest.raises(ConfigurationError) as raised:
+        await build(Settings.load())
+
+    assert ROUTING_EMPTY_ROUTES in str(raised.value)
+
+
+async def test_a_refused_configuration_leaves_no_connection_open(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``build`` opens the engine before it can know the rest is wrong; it releases it either way,
+    and the proof is that the very next ``build`` succeeds on the same file."""
+    declare(monkeypatch, tmp_path, ELA_MODEL_ROUTES="{}")
+    await create_schema(database_url(tmp_path))
+    with pytest.raises(ConfigurationError):
+        await build(Settings.load())
+
+    monkeypatch.delenv("ELA_MODEL_ROUTES")
+    ela = await build(Settings.load())
+    try:
+        assert await ela.repository.tasks() == ()
+    finally:
+        await ela.aclose()

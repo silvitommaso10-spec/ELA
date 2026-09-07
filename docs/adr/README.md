@@ -30,6 +30,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0020](0020-provider-anthropic.md) | Provider Anthropic: `ProviderStatus` dichiarato, chiave solo da `ELA_ANTHROPIC_API_KEY`, retry di ELA con backoff, costo stimato in `Decimal`, vocabolario chiuso degli errori nel port, regola 24 | Accettata |
 | [0021](0021-started-protocol-and-model-complete.md) | Protocollo STARTED per i tool che non si possono rifare, `ProviderUsage` da `Outcome` all'audit, `Outcome.retryable`, tool e verifier di `model.complete`, regola 25 | Accettata |
 | [0022](0022-model-router.md) | Model Router: `task_type` come argomento, tabella di rotte su profili, fallback sulla disponibilità dichiarata, `ELA_ANTHROPIC_MODEL` ritirata, regola 26 | Accettata |
+| [0023](0023-composition-root-and-api.md) | Composition root, configurazione unificata e API locale: `ela.composition`, `ela.api`, token statico su loopback, regola 27 | Accettata |
 
 ## Template
 

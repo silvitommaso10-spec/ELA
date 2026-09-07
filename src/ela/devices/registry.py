@@ -108,6 +108,16 @@ class DeviceRegistry:
         now = self._clock.now()
         return tuple(self.seen(device, now) for device in await self._devices.devices())
 
+    async def available(self) -> tuple[Device, ...]:
+        """The nodes whose last heartbeat is still worth something, in registration order.
+
+        The question "which nodes can ELA use right now" belongs here, where availability is
+        derived (ADR 0016 §3): a caller that filtered on the field itself would be reading a
+        column that keeps saying ``AVAILABLE`` after a node went quiet — which is what
+        architecture rule 20 exists to prevent.
+        """
+        return tuple(device for device in await self.devices() if device.availability is AVAILABLE)
+
     async def heartbeat(
         self,
         device_id: DeviceId,

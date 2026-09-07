@@ -20,6 +20,7 @@ from ela.infrastructure.persistence.engine import (
     sync_url,
 )
 from ela.infrastructure.persistence.execution_result_store import SqlExecutionResultStore
+from ela.infrastructure.persistence.schema import missing_tables
 from ela.infrastructure.persistence.settings import PersistenceSettings, default_db_url
 from ela.infrastructure.persistence.task_repository import SqlTaskRepository
 
@@ -36,6 +37,7 @@ __all__ = [
     "ensure_directory",
     "make_engine",
     "make_session_factory",
+    "missing_tables",
     "sync_url",
     "verify_chain",
 ]

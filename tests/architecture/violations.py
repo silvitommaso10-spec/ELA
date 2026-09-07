@@ -677,6 +677,28 @@ VIOLATIONS: tuple[Case, ...] = (
         "        return await self._provider.complete(arguments)\n",
         ".complete(",
     ),
+    Case(
+        "concretes-named-by-the-api",
+        "concrete-names",
+        "api/wiring.py",
+        "from ela.infrastructure.persistence import SqlAuditLog\n",
+        "ela.infrastructure.persistence.SqlAuditLog",
+    ),
+    Case(
+        "concretes-named-by-a-tool",
+        "concrete-names",
+        "tools/summary.py",
+        "from ela.providers.anthropic import anthropic_provider\n",
+        "ela.providers.anthropic.anthropic_provider",
+    ),
+    Case(
+        "approval-answered-by-a-second-api-module",
+        "approval-responders",
+        "api/inbox.py",
+        "async def yes(store, a):\n"
+        "    return await store.respond(a, status=1, responded_by='x', now=0)\n",
+        ".respond(",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -729,6 +751,29 @@ ALLOWED: tuple[Case, ...] = (
         "anthropic-import-isolation",
         "providers/registry.py",
         "from ela.providers.anthropic import AnthropicProvider\n",
+        "",
+    ),
+    Case(
+        "the-composition-root-names-the-concretes",
+        "concrete-names",
+        "composition/wiring.py",
+        "from ela.infrastructure.persistence import SqlAuditLog\n"
+        "from ela.providers.anthropic import anthropic_provider\n",
+        "",
+    ),
+    Case(
+        "an-adapter-may-import-its-neighbours",
+        "concrete-names",
+        "infrastructure/persistence/extra.py",
+        "from ela.infrastructure.persistence import make_engine\n",
+        "",
+    ),
+    Case(
+        "the-api-answers-approvals",
+        "approval-responders",
+        "api/approvals.py",
+        "async def yes(store, a):\n"
+        "    return await store.respond(a, status=1, responded_by='x', now=0)\n",
         "",
     ),
     Case(

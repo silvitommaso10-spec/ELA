@@ -1,0 +1,84 @@
+"""``/audit`` (spec §32; ADR 0005, ADR 0023 §6): the trail, read-only and free of content.
+
+Three filters, and one property that matters more than all of them: what leaves through this
+route carries no argument of a call and no output of a tool — not because the route strips them,
+but because an ``AuditEvent`` never holds them (architecture rule 23).
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime, timedelta
+
+from httpx import AsyncClient
+
+from ela.composition import Ela
+from ela.domain import AuditEventType
+from tests.api.support import ECHO_MESSAGE, NOTE_BODY, echo_plan, note_plan, queued
+
+
+async def test_the_trail_of_a_task_is_readable(client: AsyncClient) -> None:
+    task_id = await queued(client, echo_plan())
+    await client.post(f"/tasks/{task_id}/run")
+
+    events = (await client.get("/audit", params={"task_id": task_id})).json()
+
+    kinds = [event["event_type"] for event in events]
+    assert kinds[0] == AuditEventType.TASK_CREATED.value
+    assert AuditEventType.PERMISSION_DECIDED.value in kinds
+    assert AuditEventType.TOOL_EXECUTED.value in kinds
+    assert AuditEventType.EXECUTION_VERIFIED.value in kinds
+    assert all(event["task_id"] == task_id for event in events)
+
+
+async def test_the_trail_of_another_task_is_not_mixed_in(client: AsyncClient) -> None:
+    first = await queued(client, echo_plan(), text="una")
+    await queued(client, echo_plan(), text="due")
+
+    events = (await client.get("/audit", params={"task_id": first})).json()
+
+    assert {event["task_id"] for event in events} == {first}
+
+
+async def test_the_filters_are_the_port_s(client: AsyncClient) -> None:
+    await queued(client, echo_plan())
+    everything = (await client.get("/audit")).json()
+
+    first = (await client.get("/audit", params={"limit": 1})).json()
+    future = (await client.get("/audit", params={"since": "2099-01-01T00:00:00Z"})).json()
+    since = datetime.now(UTC) - timedelta(hours=1)
+    recent = (await client.get("/audit", params={"since": since.isoformat()})).json()
+
+    assert len(everything) > 1
+    assert first == everything[:1]
+    assert future == []
+    assert len(recent) == len(everything)
+
+
+async def test_a_limit_of_zero_is_a_caller_s_bug(client: AsyncClient) -> None:
+    assert (await client.get("/audit", params={"limit": 0})).status_code == 422
+
+
+async def test_an_unknown_task_has_an_empty_trail(client: AsyncClient) -> None:
+    assert (await client.get("/audit", params={"task_id": str(uuid.uuid4())})).json() == []
+
+
+async def test_no_argument_and_no_output_ever_leaves_through_the_audit(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """The whole point of rule 23, checked from outside: the trail records *targets*, never what
+    was passed and never what came back (§57)."""
+    echo = await queued(client, echo_plan(), text="echo")
+    await client.post(f"/tasks/{echo}/run")
+    note = await queued(client, note_plan(), text="note")
+    await client.post(f"/tasks/{note}/run")
+    approval = (await client.get("/approvals")).json()[0]
+    await client.post(f"/tasks/{note}/approve", json={"approval_id": approval["id"]})
+    await client.post(f"/tasks/{note}/run")
+
+    trail = (await client.get("/audit")).text
+
+    assert NOTE_BODY not in trail  # what the tool wrote
+    assert ECHO_MESSAGE not in trail  # what the tool was told to say
+    assert "workspace/notes/briefing.md" in trail  # the target *is* recorded (§32)
+    assert (ela.settings.workspace.workspace_dir / "workspace" / "notes" / "briefing.md").exists()

@@ -24,7 +24,17 @@ DOMAIN_ALLOWED_EXTERNAL = frozenset({"pydantic"})
 PORTS_ALLOWED_INTERNAL = f"{ROOT_PACKAGE}.domain"
 #: Infrastructure libraries the Core must never import.
 INFRA_LIBRARIES = frozenset(
-    {"anthropic", "openai", "httpx", "sqlalchemy", "alembic", "aiosqlite", "fastapi", "typer"}
+    {
+        "anthropic",
+        "openai",
+        "httpx",
+        "sqlalchemy",
+        "alembic",
+        "aiosqlite",
+        "fastapi",
+        "typer",
+        "uvicorn",
+    }
 )
 #: Top-level packages of ``ela`` allowed to import INFRA_LIBRARIES.
 INFRA_PACKAGES = frozenset({"providers", "infrastructure", "api"})
@@ -90,6 +100,17 @@ PROVIDERS_DIR = "providers"
 PROVIDERS_PACKAGE = f"{ROOT_PACKAGE}.{PROVIDERS_DIR}"
 ANTHROPIC_ADAPTER_DIR = Path(PROVIDERS_DIR) / ANTHROPIC_LIBRARY
 ANTHROPIC_ADAPTER_MODULE = f"{PROVIDERS_PACKAGE}.{ANTHROPIC_LIBRARY}"
+
+#: Rule 27 (ADR 0023 §12): the concrete implementations are named by the composition root and by
+#: nobody else. Rule 4 asks the same question of five packages, because they were the only ones it
+#: could be asked of; with a composition root it is asked of everything — ``ela.api`` included,
+#: which receives the world already built and does not build it.
+COMPOSITION_DIR = "composition"
+COMPOSITION_PACKAGE = f"{ROOT_PACKAGE}.{COMPOSITION_DIR}"
+CONCRETE_ALLOWED = frozenset({PROVIDERS_DIR, "infrastructure", COMPOSITION_DIR})
+#: Rule 19's one exemption (ADR 0015 §9, ADR 0023 §8): the module of the API through which the
+#: user answers. Promised when the rule was written, opened now that the code behind it exists.
+APPROVAL_RESPONDER = Path("api") / "approvals.py"
 
 #: Rule 25 (ADR 0021 §5): ``ModelProvider.complete`` is called from one module, the tool of
 #: ``model.complete``. It is where the user's content leaves this machine (§57), and it may leave
@@ -774,16 +795,20 @@ def check_step_completers(pkg_root: Path) -> list[Violation]:
 
 
 def check_approval_responders(pkg_root: Path) -> list[Violation]:
-    """Rule 19: no module of ``src/ela`` calls ``<x>.respond(...)`` (ADR 0015 §9).
+    """Rule 19: no module of ``src/ela`` calls ``<x>.respond(...)`` (ADR 0015 §9, ADR 0023 §8).
 
     The Core never answers its own requests for approval: a "yes" is the user's (§30, §62), and
-    it reaches the store through the API of M8.1, which will be the one exemption, by path,
-    when it exists. The definitions in ``ports.py``, in the SQL store and in the fake are not
-    calls and are not reported. A heuristic on names, like rules 16 and 17.
+    it reaches the store through the API — :data:`APPROVAL_RESPONDER`, the **one** exemption, by
+    path, promised when this rule was written and opened in M8.1 now that the code behind it
+    exists. A second caller anywhere is still a violation. The definitions in ``ports.py``, in
+    the SQL store and in the fake are not calls and are not reported. A heuristic on names, like
+    rules 16 and 17.
     """
     rule = "approval-answered-only-by-the-user"
     found: list[Violation] = []
     for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) == APPROVAL_RESPONDER:
+            continue
         name = module_name(path, pkg_root)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         found.extend(
@@ -1046,6 +1071,28 @@ def _is_the_engine(receiver: ast.expr) -> bool:
     return isinstance(receiver, ast.Attribute) and receiver.attr in ENGINE_RECEIVERS
 
 
+def check_concrete_names(pkg_root: Path) -> list[Violation]:
+    """Rule 27: only ``ela.composition`` imports ``ela.providers`` or ``ela.infrastructure``.
+
+    ADR 0023 §12. A composition root is worth having only if it is the *one* place that knows
+    what ELA is wired to: a second module naming an adapter is a second wiring, and §50 ("il Core
+    deve parlare con una Model Provider abstraction") would hold by habit rather than by
+    construction. The two packages themselves are exempt — an adapter may import its neighbours —
+    and so is the composition root, which exists to name them.
+    """
+    files = (
+        path
+        for path in _source_files(pkg_root)
+        if path.relative_to(pkg_root).parts[0] not in CONCRETE_ALLOWED
+    )
+    return _violations(
+        "concretes-named-only-by-the-composition-root",
+        files,
+        pkg_root,
+        lambda imported: any(_is_within(imported, prefix) for prefix in CORE_FORBIDDEN),
+    )
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -1073,4 +1120,5 @@ RULES: dict[str, Rule] = {
     "audit-arguments": check_audit_arguments,
     "anthropic-import-isolation": check_anthropic_isolation,
     "provider-complete-callers": check_provider_complete_callers,
+    "concrete-names": check_concrete_names,
 }

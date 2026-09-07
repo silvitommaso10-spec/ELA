@@ -117,6 +117,26 @@ async def test_devices_is_empty_before_anything_is_registered(registry: DeviceRe
     assert await registry.devices() == ()
 
 
+async def test_available_answers_which_nodes_can_be_used_now(registry: DeviceRegistry) -> None:
+    """The question "which nodes can ELA use right now" belongs to the registry, where
+    availability is derived: a caller filtering on the stored field would be reading a column
+    that keeps saying AVAILABLE after a node went quiet (rule 20, ADR 0016 §3)."""
+    stale = DEVICE.model_copy(update={"id": OTHER_ID, "name": "Windows"})
+    await registry.register(DEVICE)
+    await registry.register(stale)
+    await registry.heartbeat(DEVICE.id)
+
+    assert [device.name for device in await registry.available()] == [DEVICE.name]
+
+
+async def test_available_is_empty_when_nobody_has_been_heard_from(
+    registry: DeviceRegistry,
+) -> None:
+    await registry.register(DEVICE)
+
+    assert await registry.available() == ()
+
+
 # ----------------------------------------------------------------------------------------
 # What a heartbeat may carry (ADR 0016 §7)
 # ----------------------------------------------------------------------------------------

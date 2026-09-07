@@ -19,6 +19,8 @@ import pytest
 
 from tests.architecture.rules import (
     ANTHROPIC_LIBRARY,
+    COMPOSITION_PACKAGE,
+    CONCRETE_ALLOWED,
     CORE_FORBIDDEN,
     CORE_PACKAGES,
     DEVICES_FORBIDDEN,
@@ -64,7 +66,10 @@ def _contract_for(rule: str) -> Contract:
             return contract
         if rule == "infra-libraries" and forbidden == INFRA_LIBRARIES:
             return contract
-        if rule == "core-isolation" and forbidden == set(CORE_FORBIDDEN):
+        concretes = forbidden == set(CORE_FORBIDDEN)
+        if rule == "core-isolation" and concretes and "ela.api" not in sources:
+            return contract
+        if rule == "concrete-names" and concretes and "ela.api" in sources:
             return contract
         if rule == "tools-routing-isolation" and sources == {TOOLS_PACKAGE}:
             return contract
@@ -102,6 +107,11 @@ def test_contracts_cover_current_packages() -> None:
     core = _contract_for("core-isolation")
     assert set(core["source_modules"]) == {f"ela.{name}" for name in CORE_PACKAGES}
 
+    concretes = _contract_for("concrete-names")
+    allowed = {f"ela.{name}" for name in CONCRETE_ALLOWED}
+    assert set(concretes["source_modules"]) == modules - allowed
+    assert COMPOSITION_PACKAGE not in set(concretes["source_modules"])
+
     tools = _contract_for("tools-routing-isolation")
     assert set(tools["forbidden_modules"]) == {ROUTING_PACKAGE}
 
@@ -134,7 +144,13 @@ def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() ->
     """Contracts 2, 6 and 8 check direct imports only: ports, fakes and permissions reach pydantic
     via the domain (and permissions reaches jsonschema's dependencies via jsonschema). Contract 7
     too, since M5.1 (ADR 0013 §13): the executor imports the engine, which imports the state
-    machine; the rule is about *calling* ``transition``, and rule 10 stays direct by nature.
+    machine; the rule is about *calling* ``transition``.
+
+    Contracts 3, 10 and 12 joined them in M8.1, for one reason: ``ela.composition`` imports the
+    adapters — that is what a composition root is — and through them reaches SQLAlchemy and the
+    vendor SDK, while ``ela.api`` reaches the adapters through ``ela.composition``. All three
+    rules are about which module *names* a concrete thing, and that is exactly what their
+    closed-world versions in ``rules.py`` read off each file's own imports.
 
     Every other contract keeps the import-linter default and follows indirect chains too.
     """
@@ -143,9 +159,12 @@ def test_direct_only_contracts_are_the_ones_whose_source_imports_the_domain() ->
     }
     expected = {
         _contract_for("ports")["name"],
+        _contract_for("infra-libraries")["name"],
         _contract_for("testing-imports")["name"],
         _contract_for("state-machine-callers")["name"],
         _contract_for("permissions-imports")["name"],
+        _contract_for("anthropic-import-isolation")["name"],
+        _contract_for("concrete-names")["name"],
     }
     assert direct_only == expected
 
@@ -197,6 +216,7 @@ LINTER_CASES = [
         "devices-import-tasks",
         "anthropic-in-the-registry",
         "tools-import-routing",
+        "concretes-named-by-the-api",
     )
 ]
 

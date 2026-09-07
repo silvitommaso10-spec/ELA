@@ -15,11 +15,11 @@ from ela.domain import CapabilityId, ExecutionResult, PermissionDecision, Permis
 from ela.ports import (
     AuthorizationStore,
     AuthorizingGuardianPort,
-    Clock,
     NotAllowedError,
     PermissionGuardianPort,
     ToolPort,
 )
+from ela.testing.fakes import FakeClock
 from tests.domain.examples import PERMISSION_DECISION
 
 LONG_AGO = datetime(2000, 1, 1, tzinfo=UTC)
@@ -60,15 +60,18 @@ async def test_expired_decision_is_refused(tool: ToolPort) -> None:
         await tool.execute(decision_for(tool, expires_at=LONG_AGO), ARGUMENTS)
 
 
-async def test_expiry_is_closed(tool: ToolPort, clock: Clock) -> None:
+async def test_expiry_is_closed(tool: ToolPort) -> None:
     """A decision expiring at this very instant is already expired (ADR 0005).
 
-    The tool's own clock is not reachable through the port, so the boundary is probed with a
-    fake clock's instant: any implementation whose clock is at or past ``expires_at`` must refuse.
-    The exact-instant case on the fake tool is in ``tests/testing/test_fakes.py``.
+    The tool's own clock is not reachable through the port, so the boundary is probed with the
+    instant that clock is at: every tool here is built with a fresh :class:`FakeClock`, and a
+    decision expiring exactly then must be refused. Not the ``clock`` fixture — since M8.1 there
+    are two ``Clock`` implementations, and a real clock's *now* says nothing about a tool whose
+    own clock is somewhere else. The exact-instant case on the fake tool is in
+    ``tests/testing/test_fakes.py``.
     """
     with pytest.raises(NotAllowedError):
-        await tool.execute(decision_for(tool, expires_at=clock.now()), ARGUMENTS)
+        await tool.execute(decision_for(tool, expires_at=FakeClock().now()), ARGUMENTS)
 
 
 async def test_decision_for_another_capability_is_refused(tool: ToolPort) -> None:
