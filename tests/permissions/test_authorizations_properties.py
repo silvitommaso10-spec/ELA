@@ -85,7 +85,9 @@ def _should_grant(approval: Approval, task: Task, step: TaskStep, spec: Capabili
     )
 
 
-@settings(max_examples=400)
+# ``deadline=None`` as in the other property tests: Hypothesis fails an example that takes
+# longer than 200ms, and a runner under load is not a bug in the code under test.
+@settings(max_examples=400, deadline=None)
 @given(approval=approvals, task=tasks, step=steps, spec=specs, ttl=ttls)
 def test_a_grant_comes_back_iff_the_approval_is_this_call(
     approval: Approval, task: Task, step: TaskStep, spec: CapabilitySpec, ttl: timedelta
@@ -114,6 +116,7 @@ def test_a_grant_comes_back_iff_the_approval_is_this_call(
         assert Authorization.model_validate(grant.model_dump()) == grant
 
 
+@settings(deadline=None)
 @given(spec=st.sampled_from([NOTE, GUARDED_NOTE]), approved=targets)
 def test_the_scope_never_widens_beyond_what_was_approved(
     spec: CapabilitySpec, approved: tuple[str, ...]

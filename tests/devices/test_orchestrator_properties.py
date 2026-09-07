@@ -7,7 +7,7 @@ nobody can audit — and §17 exists precisely so that "where did this run, and 
 
 from __future__ import annotations
 
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from ela.devices import Requirements, choose, refusals
@@ -26,6 +26,9 @@ requirements = st.builds(
 )
 
 
+# ``deadline=None`` as in the other property tests: Hypothesis fails an example that takes
+# longer than 200ms, and a runner under load is not a bug in the code under test.
+@settings(deadline=None)
 @given(nodes=registries, needed=requirements)
 def test_choose_is_deterministic(nodes: list[Device], needed: Requirements) -> None:
     """Same registry, same step, same answer: no dictionary order, no clock, no randomness."""
@@ -33,6 +36,7 @@ def test_choose_is_deterministic(nodes: list[Device], needed: Requirements) -> N
     assert first == second
 
 
+@settings(deadline=None)
 @given(nodes=registries, needed=requirements)
 def test_choose_never_returns_a_refused_node(nodes: list[Device], needed: Requirements) -> None:
     placement = choose(nodes, needed)
@@ -40,6 +44,7 @@ def test_choose_never_returns_a_refused_node(nodes: list[Device], needed: Requir
         assert refusals(placement.device, needed) == ()
 
 
+@settings(deadline=None)
 @given(nodes=registries, needed=requirements)
 def test_choose_waits_exactly_when_nobody_is_eligible(
     nodes: list[Device], needed: Requirements
@@ -48,6 +53,7 @@ def test_choose_waits_exactly_when_nobody_is_eligible(
     assert choose(nodes, needed).waits is (eligible == [])
 
 
+@settings(deadline=None)
 @given(nodes=registries, needed=requirements)
 def test_the_chosen_node_scores_at_least_as_much_as_every_other_eligible_one(
     nodes: list[Device], needed: Requirements
@@ -59,6 +65,7 @@ def test_the_chosen_node_scores_at_least_as_much_as_every_other_eligible_one(
     assert all(s.points <= best.points for s in placement.scores if s.eligible)
 
 
+@settings(deadline=None)
 @given(nodes=registries, needed=requirements)
 def test_every_node_is_judged_once_in_registration_order(
     nodes: list[Device], needed: Requirements
@@ -69,6 +76,7 @@ def test_every_node_is_judged_once_in_registration_order(
     assert [candidate.device_id for candidate in placement.scores] == [n.id for n in nodes]
 
 
+@settings(deadline=None)
 @given(nodes=registries, needed=requirements)
 def test_a_placement_is_never_an_error(nodes: list[Device], needed: Requirements) -> None:
     """The property that makes "no node" an *attesa* and not a failure (ADR 0017 §6)."""

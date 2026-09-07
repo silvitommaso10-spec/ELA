@@ -171,7 +171,9 @@ def test_a_truncated_tail_is_not_detectable_by_the_chain_alone() -> None:
     assert truncated.length < full.length and truncated.head_hash != full.head_hash
 
 
-@settings(max_examples=100)
+# ``deadline=None`` as in the other property tests: Hypothesis fails an example that takes
+# longer than 200ms, and a runner under load is not a bug in the code under test.
+@settings(max_examples=100, deadline=None)
 @given(st.lists(records, max_size=8))
 def test_any_chain_built_with_link_hash_verifies(items: list[Record]) -> None:
     links = chain_of(*items)
@@ -180,7 +182,7 @@ def test_any_chain_built_with_link_hash_verifies(items: list[Record]) -> None:
     assert summary.head_hash == (links[-1].hash if links else GENESIS_HASH)
 
 
-@settings(max_examples=100)
+@settings(max_examples=100, deadline=None)
 @given(st.lists(records, min_size=1, max_size=8), st.data())
 def test_altering_any_record_breaks_the_chain(items: list[Record], data: st.DataObject) -> None:
     links = chain_of(*items)
