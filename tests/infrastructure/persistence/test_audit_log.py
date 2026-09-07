@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import event, select, text
 from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.util import await_only
 
 from ela.audit.chain import GENESIS_HASH, AuditChainError, ChainFault, ChainSummary, link_hash
 from ela.audit.verifier import AuditVerifier
@@ -369,12 +370,56 @@ async def test_concurrent_appends_queue_on_the_lock_and_chain_up(file_url: str) 
         await engine.dispose()
 
 
+WINDOW = "audit_events.seq >"
+"""What a window of ``verify_chain`` looks like from a statement listener."""
+
+DEADLOCK_GUARD = 30.0
+"""Seconds before a wait gives up. Not a margin: nothing that works waits anywhere near this
+long, and nothing that works fails because a machine was slow. It is what turns a regression
+that would hang the suite into a test that fails."""
+
+
+class _ParkedWindow:
+    """A verification stopped inside its own snapshot, and the switch that lets it go on."""
+
+    def __init__(self) -> None:
+        self.parked = asyncio.Event()
+        """Set by the verification once it is holding its snapshot."""
+        self.released = asyncio.Event()
+        """Set by the test once it has finished looking."""
+
+
+def _park_the_first_window(engine: AsyncEngine) -> _ParkedWindow:
+    """Hold ``verify_chain`` after its first window until the test releases it.
+
+    ``after_cursor_execute`` and not ``before``: SQLite takes the snapshot at the first read of
+    the transaction, so a listener firing before it would park a reader still holding nothing and
+    the append would have nothing to prove. Only the first window is held; the rest run at
+    whatever speed the machine has, because by then nothing depends on it.
+
+    The wait goes through :func:`~sqlalchemy.util.await_only` and not through a
+    ``threading.Event``. A statement listener does not run on the connection's thread: it runs in
+    the greenlet on the event loop's, so blocking it blocks the loop — and an append that cannot
+    reach the loop is an append this test would be timing rather than watching. ``await_only``
+    suspends the verification the way SQLAlchemy suspends it itself, and leaves the loop free.
+    """
+    window = _ParkedWindow()
+
+    @event.listens_for(engine.sync_engine, "after_cursor_execute")
+    def _hold(conn: object, cursor: object, statement: str, *args: object) -> None:
+        if WINDOW in statement and not window.parked.is_set():
+            window.parked.set()
+            await_only(window.released.wait())
+
+    return window
+
+
 def _slow_down_the_windows(engine: AsyncEngine, seconds: float) -> None:
     """Make every window of ``verify_chain`` take ``seconds``: a long verification, simulated."""
 
     @event.listens_for(engine.sync_engine, "before_cursor_execute")
     def _sleep(conn: object, cursor: object, statement: str, *args: object) -> None:
-        if "audit_events.seq >" in statement:
+        if WINDOW in statement:
             time.sleep(seconds)
 
 
@@ -391,13 +436,43 @@ async def _verify_while_appending(engine: AsyncEngine, rows: int) -> tuple[bool,
     return still_running, await verification
 
 
+async def _append_while_the_verification_is_parked(
+    engine: AsyncEngine, rows: int
+) -> tuple[bool, ChainSummary]:
+    """Append one row with the verification held open inside its snapshot; whether it was still
+    running when the append returned, and what it saw.
+
+    The verification is not made *slow*, it is made to *wait*: it stops on an event and goes on
+    when the test says so, so "still running" is true by construction and not by arithmetic on a
+    budget. What remains to be found out is the only thing worth asserting — whether the append
+    can get through while a reader holds a snapshot open. Under WAL it returns; under a rollback
+    journal it would sit on the lock until SQLite gave up, and that is a failure, not a hang.
+    """
+    log = SqlAuditLog(engine)
+    await append_many(log, rows)
+    window = _park_the_first_window(engine)
+    verification = asyncio.create_task(verify_chain(engine, batch_size=1))
+    try:
+        async with asyncio.timeout(DEADLOCK_GUARD):
+            await window.parked.wait()
+        await log.append(AUDIT_EVENT.model_copy(update={"id": event_number(99)}))
+        still_running = not verification.done()
+    finally:
+        window.released.set()
+    return still_running, await verification
+
+
 async def test_a_long_verification_does_not_block_an_append(file_url: str) -> None:
     """Review M2.2: with WAL a reader never blocks a writer; the append returns while the
-    verification is still running, and the verification sees its snapshot, not the new row."""
+    verification is still running, and the verification sees its snapshot, not the new row.
+
+    The verification is held open by an event and not by a sleep (the CI fix): what this asserts
+    is decided by SQLite's journal mode, never by how fast the machine got through 500ms.
+    """
     engine = make_engine(file_url)
     try:
         await create_schema(engine)
-        still_running, summary = await _verify_while_appending(engine, rows=8)
+        still_running, summary = await _append_while_the_verification_is_parked(engine, rows=8)
         assert still_running
         assert summary.length == 8
         assert (await verify_chain(engine)).length == 9

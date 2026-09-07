@@ -9,7 +9,7 @@ from typing import Any
 from ela.cli.errors import CONFIGURATION, REFUSED
 from ela.domain import TaskState
 from tests.api.support import ECHO_MESSAGE, echo_plan, note_plan
-from tests.cli.support import Cli
+from tests.cli.support import Cli, plain
 
 MISSING = "11111111-1111-4111-8111-111111111111"
 
@@ -123,7 +123,7 @@ async def test_results_of_a_task_that_does_not_exist_is_a_refusal(cli: Cli) -> N
     result = await cli("task", "results", MISSING)
 
     assert result.exit_code == REFUSED
-    assert "not_found" in result.stderr
+    assert "not_found" in plain(result.stderr)
 
 
 async def test_show_of_a_task_without_a_plan_has_no_steps(cli: Cli) -> None:
@@ -138,9 +138,9 @@ async def test_show_of_a_task_that_does_not_exist_is_a_refusal(cli: Cli) -> None
     result = await cli("task", "show", MISSING)
 
     assert result.exit_code == REFUSED
-    assert "not_found" in result.stderr
-    assert MISSING in result.stderr
-    assert "UUID(" not in result.stderr
+    assert "not_found" in plain(result.stderr)
+    assert MISSING in plain(result.stderr)
+    assert "UUID(" not in plain(result.stderr)
 
 
 async def test_plan_queues_the_task(cli: Cli, tmp_path: Path) -> None:
@@ -160,14 +160,14 @@ async def test_a_plan_that_is_not_json_never_reaches_ela(cli: Cli, tmp_path: Pat
     result = await cli("task", "plan", await created(cli), "--file", str(broken))
 
     assert result.exit_code == CONFIGURATION
-    assert "not valid JSON" in result.stderr
+    assert "not valid JSON" in plain(result.stderr)
 
 
 async def test_a_plan_file_that_is_not_there_never_reaches_ela(cli: Cli, tmp_path: Path) -> None:
     result = await cli("task", "plan", await created(cli), "--file", str(tmp_path / "nope.json"))
 
     assert result.exit_code == CONFIGURATION
-    assert "nope.json" in result.stderr
+    assert "nope.json" in plain(result.stderr)
 
 
 async def test_a_plan_that_cannot_be_a_graph_is_refused_by_ela(cli: Cli, tmp_path: Path) -> None:
@@ -177,7 +177,7 @@ async def test_a_plan_that_cannot_be_a_graph_is_refused_by_ela(cli: Cli, tmp_pat
     result = await cli("task", "plan", await created(cli), "--file", written(tmp_path, plan))
 
     assert result.exit_code == REFUSED
-    assert "invalid" in result.stderr
+    assert "invalid" in plain(result.stderr)
 
 
 async def test_run_walks_the_plan_and_says_where_it_stopped(cli: Cli, tmp_path: Path) -> None:
@@ -195,7 +195,7 @@ async def test_run_of_a_task_with_no_plan_is_a_refusal(cli: Cli) -> None:
     result = await cli("task", "run", await created(cli))
 
     assert result.exit_code == REFUSED
-    assert "conflict" in result.stderr
+    assert "conflict" in plain(result.stderr)
 
 
 async def test_cancel_stops_the_task_and_records_the_reason(cli: Cli, tmp_path: Path) -> None:
@@ -220,7 +220,7 @@ async def test_approve_needs_the_id_of_the_request(cli: Cli, tmp_path: Path) -> 
     result = await cli("task", "approve", task_id)
 
     assert result.exit_code == CONFIGURATION
-    assert "--approval" in result.stderr
+    assert "--approval" in plain(result.stderr)
 
 
 async def test_deny_refuses_the_request_and_denies_the_task(cli: Cli, tmp_path: Path) -> None:
@@ -239,7 +239,7 @@ async def test_an_answer_to_an_unknown_request_is_a_refusal(cli: Cli) -> None:
     result = await cli("task", "approve", await created(cli), "--approval", MISSING)
 
     assert result.exit_code == REFUSED
-    assert "not_found" in result.stderr
+    assert "not_found" in plain(result.stderr)
 
 
 async def test_the_echoed_message_is_the_one_that_was_planned(cli: Cli, tmp_path: Path) -> None:

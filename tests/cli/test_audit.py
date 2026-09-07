@@ -11,7 +11,7 @@ from ela.cli.audit import DEFAULT_TAIL
 from ela.cli.errors import REFUSED
 from ela.composition import Ela
 from tests.api.support import echo_plan, tamper_with_the_trail
-from tests.cli.support import Cli, LoopTransport
+from tests.cli.support import Cli, LoopTransport, plain
 from tests.cli.test_tasks import created, written
 
 
@@ -130,4 +130,4 @@ async def test_a_tampered_trail_is_a_refusal_with_a_position(
     result = await cli("audit", "verify")
 
     assert result.exit_code == REFUSED
-    assert "tampered" in result.stderr
+    assert "tampered" in plain(result.stderr)

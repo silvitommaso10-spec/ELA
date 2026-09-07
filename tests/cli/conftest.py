@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from tests.cli.support import cli  # noqa: F401 — re-exported as a fixture
+from tests.cli.support import (  # noqa: F401 — re-exported as fixtures
+    _output_without_a_terminal,
+    cli,
+)
 from tests.composition.support import (  # noqa: F401 — re-exported as fixtures
     _only_the_declared_environment,
     ela,
