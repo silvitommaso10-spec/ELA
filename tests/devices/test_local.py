@@ -29,14 +29,24 @@ from ela.domain import (
     PrivacyLevel,
 )
 from ela.ports import AlreadyExistsError, DeviceRegistryPort
-from ela.testing.fakes import FakeClock, FakeDeviceRegistry, FakeIdGenerator
+from ela.testing.fakes import (
+    FakeClock,
+    FakeDeviceRegistry,
+    FakeIdGenerator,
+    FakeModelProvider,
+)
 from ela.tools import tools_v01
 from tests.devices.conftest import TTL
 from tests.domain.examples import MUCH_LATER
 
 V01_TOOL_NAMES = tuple(
     tool.name
-    for tool in tools_v01(root="/tmp/ela-m6.1", clock=FakeClock(), ids=FakeIdGenerator()).tools()
+    for tool in tools_v01(
+        root="/tmp/ela-m6.1",
+        clock=FakeClock(),
+        ids=FakeIdGenerator(),
+        provider=FakeModelProvider(FakeClock(), FakeIdGenerator()),
+    ).tools()
 )
 """What the composition root (M8.1) will pass to ``ensure_local`` (ADR 0016 §4)."""
 

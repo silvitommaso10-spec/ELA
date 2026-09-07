@@ -320,8 +320,15 @@ class ApprovalStatus(StrEnum):
 
 
 class ExecutionStatus(StrEnum):
-    """How an execution ended (§63). Ending is not succeeding: the status says which."""
+    """How an execution ended (§63). Ending is not succeeding: the status says which.
 
+    ``STARTED`` is the one value that says nothing about an ending: it records that a tool was
+    *about* to act (M7.2, ADR 0021 §1). Only a tool that cannot be run twice writes one, and it
+    exists so that a crash between the action and the insert of its outcome is a fact ELA can
+    read — "this may have happened" — instead of an invitation to do it again (ADR 0015 §8).
+    """
+
+    STARTED = "STARTED"
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     TIMED_OUT = "TIMED_OUT"
@@ -888,5 +895,13 @@ class ExecutionResult(_DomainModel):
     authorization_id: AuthorizationId | None = None
     output: JsonMapping = _json_payload("What the execution produced, if anything (§63).")
     error: ErrorMetadata | None = None
+    usage: ProviderUsage | None = None
+    """What a provider call inside this execution consumed (§32; M7.2, ADR 0021 §3).
+
+    ``None`` for a tool that calls no provider, which is not the same as zero: zero tokens is a
+    call that cost nothing, ``None`` is a tool that never made one. It is the only route by which
+    "provider usage metadata" reaches the audit trail, the executor copying it into
+    :attr:`AuditEvent.usage`.
+    """
     duration_ms: Annotated[int, Field(ge=0)] | None = None
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)

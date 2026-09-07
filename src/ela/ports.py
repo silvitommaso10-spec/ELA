@@ -550,8 +550,13 @@ class ExecutionResultStore(Protocol):
         """The result with this id; :class:`NotFoundError` if there is none."""
 
     async def for_step(self, task_id: TaskId, step_id: StepId) -> tuple[ExecutionResult, ...]:
-        """The results of this step of this task, in insertion order (one at most in v0.1: a
-        step runs once, ADR 0013 §1); empty if none."""
+        """The results of this step of this task, in insertion order; empty if none.
+
+        A step runs once (ADR 0013 §1), so at most two rows: the outcome, and — only for a tool
+        that cannot be run twice — the ``STARTED`` record written before it acted (ADR 0021 §1).
+        The outcome names the record it settles in ``metadata["started_id"]``; a ``STARTED`` with
+        no outcome is a run that was interrupted, never one to repeat.
+        """
 
 
 # --------------------------------------------------------------------------------------
@@ -656,6 +661,16 @@ class ToolPort(Protocol):
     @property
     def name(self) -> str:
         """How the tool is named in audit events and execution results."""
+
+    @property
+    def idempotent(self) -> bool:
+        """Whether running this tool twice with the same arguments leaves the world as once does.
+
+        Declared, never defaulted: the answer belongs to the tool, and forgetting it must not
+        read as a yes (§33). The executor reads it to decide whether a run needs the STARTED
+        record of ADR 0021 §1 — a tool that can be repeated is repaired by repeating it
+        (ADR 0015 §8), one that cannot is never started twice for the same step.
+        """
 
     async def execute(
         self, decision: PermissionDecision, arguments: JsonMapping

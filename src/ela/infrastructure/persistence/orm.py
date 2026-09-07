@@ -195,6 +195,12 @@ class ExecutionResultRow(Base):
 
     ``output`` is the user's content (§57): it lives here, in the private database, and never
     in ``audit_events``. Insert-only; no foreign key on ``task_id`` (nullable in the domain).
+
+    ``usage`` is what a provider call inside the execution consumed (§32; M7.2, ADR 0021 §3),
+    as one JSON document — ``cost`` a string, because a ``Decimal`` that went through a float
+    would stop adding up. Nullable: a tool that calls no provider has none, and that is not zero.
+    A ``STARTED`` row (ADR 0021 §1) is one of these too, with no output, no error and no usage:
+    what it records is that a tool that cannot be run twice was about to run.
     """
 
     __tablename__ = "execution_results"
@@ -215,6 +221,9 @@ class ExecutionResultRow(Base):
     error: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    """Last on purpose: ``ALTER TABLE ADD COLUMN`` appends, so a database built by
+    ``create_all`` and one built by the migrations have the columns in the same order."""
 
 
 class DeviceRow(Base):

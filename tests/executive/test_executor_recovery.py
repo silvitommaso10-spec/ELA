@@ -529,7 +529,9 @@ async def test_two_results_for_one_step_are_refused_before_anything(w: World) ->
             )
         )
     before = len(await w.events())
-    with pytest.raises(ExecutorError, match="has 2 results; a step runs once"):
+    with pytest.raises(
+        ExecutorError, match="has 2 results and 0 started records; a step runs once"
+    ):
         await w.execute(task.id, step.id)
     assert len(await w.events()) == before
     assert w.tool(ECHO.id).calls == ()

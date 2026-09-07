@@ -4,6 +4,11 @@ Same pattern as the other ADR tests: §5 (outcome → engine operation → error
 engine's tables and the executor's constants, §6 (rule → consumes) against ``CONSUMING_RULES``,
 §11 (capability → tool → name → output → error codes) against ``tools_v01`` and the tools' own
 declarations. Each table has a distinctive row shape, so no other table test mistakes it.
+
+An ADR is immutable, so a tool that arrives later is documented by *its* ADR, under the label
+``Tool aggiunti:`` (ADR 0021 §9), exactly as a port extended later is
+documented under ``Port estesi:``. The union of the tables is what the code must match, and a
+capability documented twice is a drift of its own.
 """
 
 from __future__ import annotations
@@ -16,10 +21,14 @@ import pytest
 from ela.executive import CONSUMING_RULES, GRANT_VANISHED, TOOL_EXCEPTION, TOOL_REFUSED
 from ela.permissions import Rule, catalogue_v01
 from ela.tasks.engine import OPERATIONS, STEP_OPERATIONS
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
 from ela.tools import Tool, tools_v01
 
-ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0013-executor.md"
+ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
+ADR_PATH = ADR_DIR / "0013-executor.md"
+ADDING_TOOLS = "Tool aggiunti:"
+ADDING_ADRS = ((ADR_DIR / "0021-started-protocol-and-model-complete.md", ADDING_TOOLS),)
+"""ADRs that add a tool after ADR 0013: the label, then the table, read as ADR 0013's is."""
 OUTCOME_ROW = re.compile(r"^\| `(ALLOWED|DENIED|REQUIRES_APPROVAL)`(.*?) \| `(\w+)` \| (.+) \|$")
 RULE_ROW = re.compile(r"^\| `([A-Z_]+)` \| (sì|no) \|$")
 TOOL_ROW = re.compile(r"^\| `([a-z_.]+)` \| `(\w+)` \| `([\w-]+)` \| (.+?) \| (.+?) \|$")
@@ -62,8 +71,31 @@ def documented_tools(text: str) -> dict[str, tuple[str, str, frozenset[str], fro
     return rows
 
 
+def section(path: Path, label: str) -> str:
+    """The text after ``label`` in ``path``, up to the next heading: the table it introduces."""
+    text = path.read_text(encoding="utf-8")
+    assert label in text, f"{path.name} must carry the label {label!r}"
+    rest = text.split(label, 1)[1]
+    return rest.split("\n#", 1)[0]
+
+
+def all_documented_tools() -> dict[str, tuple[str, str, frozenset[str], frozenset[str]]]:
+    """ADR 0013's tools plus the ones later ADRs add, in the order they were introduced."""
+    union = documented_tools(ADR_PATH.read_text(encoding="utf-8"))
+    for path, label in ADDING_ADRS:
+        for cid, row in documented_tools(section(path, label)).items():
+            assert cid not in union, f"{cid} is documented in more than one ADR ({path.name})"
+            union[cid] = row
+    return union
+
+
 def coded_tools() -> dict[str, tuple[str, str, frozenset[str], frozenset[str]]]:
-    registry = tools_v01(root="/tmp/ela-adr-0013", clock=FakeClock(), ids=FakeIdGenerator())
+    registry = tools_v01(
+        root="/tmp/ela-adr-0013",
+        clock=FakeClock(),
+        ids=FakeIdGenerator(),
+        provider=FakeModelProvider(FakeClock(), FakeIdGenerator()),
+    )
     rows = {}
     for tool in registry.tools():
         assert isinstance(tool, Tool)
@@ -109,12 +141,36 @@ def test_consuming_rules_match_the_code() -> None:
 
 
 def test_tools_table_matches_the_code() -> None:
-    documented = documented_tools(ADR_PATH.read_text(encoding="utf-8"))
+    documented = all_documented_tools()
     coded = coded_tools()
     assert list(documented) == list(coded)
     for cid, row in documented.items():
         assert row == coded[cid], cid
-    assert set(documented) < {spec.id for spec in catalogue_v01().specs()}
+    assert set(documented) == {spec.id for spec in catalogue_v01().specs()}
+
+
+def test_adr_0013_documents_the_two_tools_that_predate_the_provider() -> None:
+    """The split is the point: ADR 0013 is not rewritten when a tool arrives (ADR 0021 §9)."""
+    assert set(documented_tools(ADR_PATH.read_text(encoding="utf-8"))) == {
+        "core.echo",
+        "workspace.write_note",
+    }
+    added = documented_tools(section(*ADDING_ADRS[0]))
+    assert set(added) == {"model.complete"}
+
+
+def test_a_drifted_added_table_is_detected() -> None:
+    """The later table is held to account like the first one, or it would be decoration."""
+    path, label = ADDING_ADRS[0]
+    text = section(path, label)
+    coded = coded_tools()
+    for before, after in (
+        ("| `model-complete` |", "| `model-completion` |"),
+        ("`provider.no_output`, ", ""),
+    ):
+        drifted = text.replace(before, after, 1)
+        assert drifted != text, before
+        assert documented_tools(drifted)["model.complete"] != coded["model.complete"], before
 
 
 def test_a_drifted_table_is_detected() -> None:

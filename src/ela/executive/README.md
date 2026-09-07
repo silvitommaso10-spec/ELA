@@ -1,6 +1,6 @@
 Fase: v0.1 — Executive Core (spec §12): l'executor della pipeline Planner → Capability → Guardian
 → Authorization → Tool → Device → Audit → **Verification** di §27 e §20 (M5.1, ADR 0013; M5.2,
-ADR 0014; M5.3, ADR 0015).
+ADR 0014; M5.3, ADR 0015; M7.2, ADR 0021).
 
 - `executor.py`: `Executor.execute(task_id, step_id, arguments)` esegue **uno step** (una
   capability) di un task EXECUTING: legge lo step dal piano, prende il grant dall'ultima
@@ -16,8 +16,15 @@ ADR 0014; M5.3, ADR 0015).
   riprende** ciò che un crash ha lasciato a metà: un risultato già nello store non fa girare il
   tool una seconda volta, ma completa l'audit, la verifica o la chiusura dello step
   (`"recovered": true` sugli eventi scritti al retry); una richiesta già nello store viene
-  richiesta, non duplicata, e mai se scaduta; uno step FAILED per verifica chiude il task. È
-  l'unico modulo del Core che chiama `Tool.execute` (regola 16) e `complete_step` (regola 17).
+  richiesta, non duplicata, e mai se scaduta; uno step FAILED per verifica chiude il task. Per un
+  tool che dichiara `idempotent = False` — il primo è `model.complete` — l'executor scrive un
+  `ExecutionResult` **STARTED prima** della chiamata (protocollo di ADR 0021 §1): un retry che
+  trova quella riga senza esito **non richiama il tool** e fallisce lo step con
+  `execution.interrupted`, perché rifarlo costerebbe di nuovo e manderebbe fuori il contenuto
+  dell'utente una seconda volta. La `ProviderUsage` del risultato finisce in `AuditEvent.usage`
+  del `TOOL_EXECUTED` (§32): è l'unico posto dove ELA scrive quel campo. È l'unico modulo del Core
+  che chiama `Tool.execute` (regola 16) e `complete_step` (regola 17).
 - `errors.py`: `ExecutorError`, le precondizioni che rifiutano prima di scrivere.
 
-Il Planner (§13) e l'orchestrator che percorre il grafo degli step arrivano con M6.2.
+Il Planner (§13) resta il pezzo mancante; l'orchestrator che percorre il grafo degli step è in
+`runner.py` (M6.3, ADR 0019).

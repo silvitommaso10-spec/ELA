@@ -39,6 +39,7 @@ EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0011-permission-guardian.md", None),
     (ADR_DIR / "0012-authorizations.md", EXTENDING),
     (ADR_DIR / "0020-provider-anthropic.md", EXTENDING),
+    (ADR_DIR / "0021-started-protocol-and-model-complete.md", EXTENDING),
 )
 REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),

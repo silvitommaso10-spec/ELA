@@ -640,6 +640,22 @@ VIOLATIONS: tuple[Case, ...] = (
         "from anthropic import AsyncAnthropic\n",
         "anthropic.AsyncAnthropic",
     ),
+    Case(
+        "provider-called-outside-the-model-tool",
+        "provider-complete-callers",
+        "executive/summarise.py",
+        "async def ask(provider, request):\n    return await provider.complete(request)\n",
+        ".complete(",
+    ),
+    Case(
+        "provider-called-by-a-second-tool",
+        "provider-complete-callers",
+        "tools/draft.py",
+        "class D:\n"
+        "    async def _run(self, arguments):\n"
+        "        return await self._provider.complete(arguments)\n",
+        ".complete(",
+    ),
 )
 
 ALLOWED: tuple[Case, ...] = (
@@ -685,6 +701,22 @@ ALLOWED: tuple[Case, ...] = (
         "anthropic-import-isolation",
         "providers/registry.py",
         "from ela.providers.anthropic import AnthropicProvider\n",
+        "",
+    ),
+    Case(
+        "engine-complete-is-not-a-provider",
+        "provider-complete-callers",
+        "executive/closer.py",
+        "class R:\n"
+        "    async def close(self, t, r):\n"
+        "        return await self._engine.complete(t, r)\n",
+        "",
+    ),
+    Case(
+        "defining-complete-is-not-calling-it",
+        "provider-complete-callers",
+        "providers/echo.py",
+        "class P:\n    async def complete(self, request):\n        return request\n",
         "",
     ),
     Case(

@@ -18,7 +18,12 @@ from ela.permissions import catalogue_v01
 from ela.tasks.engine import OPERATIONS, STEP_OPERATIONS
 from ela.tools import COMMON_FAILURE_CODES, PATH_CODES, Verifier, verifiers_v01
 
-ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0014-verification.md"
+ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
+ADR_PATH = ADR_DIR / "0014-verification.md"
+ADDING_VERIFIERS = "Verifier aggiunti:"
+ADDING_ADRS = ((ADR_DIR / "0021-started-protocol-and-model-complete.md", ADDING_VERIFIERS),)
+"""ADRs that add a verifier after ADR 0014 (ADR 0021 §10). An ADR is immutable: a verifier that
+arrives later is documented by its own ADR, under a label, as a port extended later is."""
 VERIFIER_ROW = re.compile(r"^\| `([a-z_.]+)` \| `(\w+)` \| `([\w-]+)` \| (.+?) \| (.+?) \|$")
 OUTCOME_ROW = re.compile(
     r"^\| (SUCCEEDED|non SUCCEEDED) \| (.+?) \| (.+?) \| (.+?) \| "
@@ -74,13 +79,52 @@ def documented_outcomes(text: str) -> list[tuple[str, str, list[str], set[str], 
     return rows
 
 
+def section(path: Path, label: str) -> str:
+    """The text after ``label`` in ``path``, up to the next heading: the table it introduces."""
+    text = path.read_text(encoding="utf-8")
+    assert label in text, f"{path.name} must carry the label {label!r}"
+    return text.split(label, 1)[1].split("\n#", 1)[0]
+
+
+def all_documented_verifiers() -> dict[str, tuple[str, str, frozenset[str], frozenset[str]]]:
+    """ADR 0014's verifiers plus the ones later ADRs add, in the order they were introduced."""
+    union = documented_verifiers(ADR_PATH.read_text(encoding="utf-8"))
+    for path, label in ADDING_ADRS:
+        for cid, row in documented_verifiers(section(path, label)).items():
+            assert cid not in union, f"{cid} is documented in more than one ADR ({path.name})"
+            union[cid] = row
+    return union
+
+
 def test_verifiers_table_matches_the_code() -> None:
-    documented = documented_verifiers(ADR_PATH.read_text(encoding="utf-8"))
+    documented = all_documented_verifiers()
     coded = coded_verifiers()
     assert list(documented) == list(coded)
     for cid, row in documented.items():
         assert row == coded[cid], cid
-    assert set(documented) < {spec.id for spec in catalogue_v01().specs()}
+    assert set(documented) == {spec.id for spec in catalogue_v01().specs()}
+
+
+def test_adr_0014_documents_the_two_verifiers_that_predate_the_provider() -> None:
+    assert set(documented_verifiers(ADR_PATH.read_text(encoding="utf-8"))) == {
+        "core.echo",
+        "workspace.write_note",
+    }
+    assert set(documented_verifiers(section(*ADDING_ADRS[0]))) == {"model.complete"}
+
+
+def test_a_drifted_added_table_is_detected() -> None:
+    """The later table is held to account like the first one, or it would be decoration."""
+    text = section(*ADDING_ADRS[0])
+    coded = coded_verifiers()
+    for before, after in (
+        ("| `model-complete-verifier` |", "| `model-complete-check` |"),
+        ("`model.unaccounted`", "`model.uncounted`"),
+        ("comuni, `model.no_answer`", "`model.no_answer`"),
+    ):
+        drifted = text.replace(before, after, 1)
+        assert drifted != text, before
+        assert documented_verifiers(drifted)["model.complete"] != coded["model.complete"], before
 
 
 def test_every_outcome_row_names_engine_operations_and_known_codes() -> None:

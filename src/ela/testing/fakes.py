@@ -525,16 +525,18 @@ class FakeTool:
         output: JsonMapping | None = None,
         status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
         idempotent: bool = True,
+        usage: ProviderUsage | None = None,
     ) -> None:
         self._capability_id = capability_id
         self._clock = clock
         self._ids = ids
         self._name = name
         self.idempotent = idempotent
-        """Whether twice is once (ADR 0015 §8): ``False`` is how a test builds the tool
-        ``ToolRegistry`` must refuse."""
+        """Whether twice is once (ADR 0015 §8, ADR 0021 §1): ``False`` is how a test builds a
+        tool the executor must run under the STARTED protocol."""
         self._output: JsonMapping = {} if output is None else output
         self._status = status
+        self._usage = usage
         self.calls: tuple[ToolCall, ...] = ()
 
     @property
@@ -566,6 +568,7 @@ class FakeTool:
             step_id=decision.step_id,
             tool_name=self._name,
             output=self._output,
+            usage=self._usage,
             duration_ms=0,
         )
 

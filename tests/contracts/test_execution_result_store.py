@@ -3,6 +3,7 @@ read back whole, found by step."""
 
 from __future__ import annotations
 
+from decimal import Decimal
 from uuid import UUID
 
 import pytest
@@ -42,10 +43,24 @@ BARE = RESULT.model_copy(
         "authorization_id": None,
         "output": {},
         "error": None,
+        "usage": None,
         "duration_ms": None,
         "metadata": {},
     }
 )
+STARTED = RESULT.model_copy(
+    update={
+        "id": ExecutionId(UUID("00000000-0000-4000-8000-000000000607")),
+        "status": ExecutionStatus.STARTED,
+        "output": {},
+        "error": None,
+        "usage": None,
+        "duration_ms": None,
+        "metadata": {},
+    }
+)
+"""The record a non-idempotent tool leaves before it acts (ADR 0021 §1): a status, a decision,
+a node, and nothing about an outcome."""
 
 
 async def test_add_then_get(execution_result_store: ExecutionResultStore) -> None:
@@ -70,13 +85,39 @@ async def test_get_unknown_is_not_found(execution_result_store: ExecutionResultS
 async def test_every_field_survives_the_round_trip(
     execution_result_store: ExecutionResultStore,
 ) -> None:
-    """Output, error, decision, grant, duration, metadata: the mapper forgets nothing."""
+    """Output, error, usage, decision, grant, duration, metadata: the mapper forgets nothing.
+
+    ``usage`` holds a ``Decimal`` (ADR 0021 §3), which is the field most likely to come back as
+    something else: a cost that went through a float would stop adding up.
+    """
     assert RESULT.error is not None and RESULT.decision_id is not None
     assert RESULT.authorization_id is not None and RESULT.duration_ms is not None
+    assert RESULT.usage is not None and RESULT.usage.cost is not None
     await execution_result_store.add(RESULT)
     await execution_result_store.add(BARE)
-    assert await execution_result_store.get(RESULT.id) == RESULT
+    stored = await execution_result_store.get(RESULT.id)
+    assert stored == RESULT
+    assert stored.usage is not None
+    assert stored.usage.cost == RESULT.usage.cost
+    assert isinstance(stored.usage.cost, Decimal)
     assert await execution_result_store.get(BARE.id) == BARE
+
+
+async def test_a_started_record_and_its_outcome_are_two_rows_of_one_step(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    """ADR 0021 §1: the store stays insert-only and a step keeps at most two rows — the record
+    written before a non-idempotent tool acted, and the outcome that settles it."""
+    outcome = RESULT.model_copy(update={"metadata": {"started_id": str(STARTED.id)}})
+    await execution_result_store.add(STARTED)
+    await execution_result_store.add(outcome)
+    assert STARTED.task_id is not None and STARTED.step_id is not None
+
+    stored = await execution_result_store.for_step(STARTED.task_id, STARTED.step_id)
+
+    assert stored == (STARTED, outcome)
+    assert stored[0].status is ExecutionStatus.STARTED
+    assert stored[1].metadata["started_id"] == str(STARTED.id)
 
 
 async def test_for_step_filters_by_task_and_step_in_insertion_order(

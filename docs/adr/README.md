@@ -28,6 +28,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0018](0018-step-arguments.md) | Gli `arguments` di uno step stanno nel piano (`TaskStep.arguments`): ciò che è autorizzato è ciò che è eseguito, anche dopo un crash; regola 23 | Accettata |
 | [0019](0019-task-runner.md) | Task Runner: un ciclo ri-entrante che non scrive nulla di suo, `device_id` fino all'executor e all'audit, finestre R1–R9 | Accettata |
 | [0020](0020-provider-anthropic.md) | Provider Anthropic: `ProviderStatus` dichiarato, chiave solo da `ELA_ANTHROPIC_API_KEY`, retry di ELA con backoff, costo stimato in `Decimal`, vocabolario chiuso degli errori nel port, regola 24 | Accettata |
+| [0021](0021-started-protocol-and-model-complete.md) | Protocollo STARTED per i tool che non si possono rifare, `ProviderUsage` da `Outcome` all'audit, `Outcome.retryable`, tool e verifier di `model.complete`, regola 25 | Accettata |
 
 ## Template
 

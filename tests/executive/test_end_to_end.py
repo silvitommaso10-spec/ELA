@@ -24,6 +24,9 @@ from ela.domain import (
     ApprovalStatus,
     AuditEventType,
     CapabilityId,
+    ExecutionId,
+    ExecutionResult,
+    ExecutionStatus,
     IntentId,
     JsonMapping,
     PlanId,
@@ -36,6 +39,7 @@ from ela.domain import (
     TaskStep,
 )
 from ela.executive import (
+    EXECUTION_INTERRUPTED,
     VERIFICATION_FAILED,
     Execution,
     Executor,
@@ -60,10 +64,12 @@ from ela.testing.fakes import (
     FakeDeviceRegistry,
     FakeExecutionResultStore,
     FakeIdGenerator,
+    FakeModelProvider,
     FakeTaskRepository,
 )
 from ela.tools import (
     ECHO_MESSAGE_MATCHES,
+    MODEL_ANSWERED,
     NOTE_CONTENT_MATCHES,
     NOTE_CONTENT_MISMATCH,
     NOTE_EXISTS,
@@ -71,7 +77,6 @@ from ela.tools import (
     NOTES_VERIFIER_NAME,
     PATH_MISSING,
     Outcome,
-    ToolNotFound,
     ToolRegistry,
     WriteNoteTool,
     tools_v01,
@@ -88,6 +93,7 @@ BODY = "# Briefing\n\nSECRET-BODY\n"
 CONDITIONS: dict[CapabilityId, tuple[str, ...]] = {
     CORE_ECHO: (ECHO_MESSAGE_MATCHES,),
     WORKSPACE_WRITE_NOTE: (NOTE_EXISTS, NOTE_CONTENT_MATCHES),
+    MODEL_COMPLETE: (MODEL_ANSWERED,),
 }
 """What a plan of v0.1 asks of each capability: the whole vocabulary of its verifier."""
 ARGUMENTS: dict[CapabilityId, JsonMapping] = {
@@ -121,8 +127,11 @@ class Pipeline:
         self.approvals, self.results = FakeApprovalStore(), FakeExecutionResultStore()
         self.registry = catalogue_v01()
         self.guardian = PermissionGuardian(self.registry, self.clock, self.ids, self.audit)
+        self.provider = FakeModelProvider(self.clock, self.ids)
         self.tools = (
-            tools_v01(root=workspace, clock=self.clock, ids=self.ids) if tools is None else tools
+            tools_v01(root=workspace, clock=self.clock, ids=self.ids, provider=self.provider)
+            if tools is None
+            else tools
         )
         self.verifiers = verifiers_v01(root=workspace)
         self.device = local_device(created_at=self.clock.now()).model_copy(
@@ -409,11 +418,102 @@ async def test_a_step_that_requires_authorization_is_approved_granted_and_run_on
     assert again.authorization is None  # bound to the first task and step: not even a candidate
 
 
-async def test_model_complete_has_no_tool_yet(p: Pipeline) -> None:
+async def test_model_complete_goes_out_through_the_guardian_and_comes_back_accounted_for(
+    p: Pipeline,
+) -> None:
+    """The claim of M7.2, end to end (§27, §29, §32).
+
+    ``model.complete`` is MEDIUM and always needs an authorization, so the first call asks; the
+    second, with the grant, calls the provider **once**, writes a STARTED record before the call
+    and its outcome after, and puts what the call consumed in the ``TOOL_EXECUTED``. The text of
+    the answer is in the result and in no audit event (§57).
+    """
     step, task_id = await p.planned_and_running(MODEL_COMPLETE)
-    with pytest.raises(ToolNotFound):
+    asked = await p.execute(task_id, step.id)
+    assert asked.task.state is TaskState.WAITING_APPROVAL
+    assert asked.approval is not None
+    assert p.provider.requests == ()  # nothing left the machine before the answer
+
+    approval = await p.approvals.respond(
+        asked.approval.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=p.clock.now()
+    )
+    await p.engine.approve(task_id, approval)
+    await p.engine.start(task_id)
+    execution = await p.execute(task_id, step.id)
+
+    assert execution.graph.states[step.id] is StepState.COMPLETED
+    assert len(p.provider.requests) == 1
+    assert p.provider.requests[0].input == ARGUMENTS[MODEL_COMPLETE]["input"]
+    assert execution.result is not None
+    assert execution.result.output["output"] == "ok"
+    assert execution.result.usage is not None
+
+    stored = await p.results.for_step(task_id, step.id)
+    started, outcome = stored
+    assert started.status is ExecutionStatus.STARTED
+    assert started.created_at <= outcome.created_at
+    assert outcome.metadata["started_id"] == str(started.id)
+
+    executed = next(
+        e for e in await p.audit.read(task_id=task_id) if e.event_type is E.TOOL_EXECUTED
+    )
+    assert executed.usage == execution.result.usage
+    assert "Riassumi" not in json.dumps([e.model_dump(mode="json") for e in await p.audit.read()])
+
+
+async def test_an_interrupted_model_call_is_never_made_twice(p: Pipeline) -> None:
+    """The reason the STARTED record exists (ADR 0021 §2): a crash before the outcome leaves a
+    record, and the retry fails the step instead of calling — and charging — again."""
+    step, task_id = await p.planned_and_running(MODEL_COMPLETE)
+    asked = await p.execute(task_id, step.id)
+    assert asked.approval is not None
+    approval = await p.approvals.respond(
+        asked.approval.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=p.clock.now()
+    )
+    await p.engine.approve(task_id, approval)
+    await p.engine.start(task_id)
+
+    # the crash: the STARTED record is written, the outcome never is
+    stopped = _StoppingStore(p.results)
+    p.executor._results = stopped  # noqa: SLF001
+    with pytest.raises(_Crash):
         await p.execute(task_id, step.id)
-    assert await p.types(task_id) == LIFE_CYCLE
+    assert len(p.provider.requests) == 1
+    p.executor._results = p.results  # noqa: SLF001
+
+    execution = await p.execute(task_id, step.id)
+    assert len(p.provider.requests) == 1  # the model is not asked again
+    assert execution.graph.states[step.id] is StepState.FAILED
+    assert execution.task.state is TaskState.EXECUTING
+    executed = next(
+        e for e in await p.audit.read(task_id=task_id) if e.event_type is E.TOOL_EXECUTED
+    )
+    assert executed.error is not None
+    assert executed.error.code == EXECUTION_INTERRUPTED
+    assert executed.error.retryable is True
+    assert executed.payload["status"] == ExecutionStatus.STARTED.value
+
+
+class _Crash(Exception):
+    """The process dying between the tool's call and the insert of its outcome."""
+
+
+class _StoppingStore:
+    """The result store that accepts the STARTED record and dies on the outcome."""
+
+    def __init__(self, inner: FakeExecutionResultStore) -> None:
+        self._inner = inner
+
+    async def add(self, result: ExecutionResult) -> None:
+        if result.status is not ExecutionStatus.STARTED:
+            raise _Crash
+        await self._inner.add(result)
+
+    async def get(self, result_id: ExecutionId) -> ExecutionResult:
+        return await self._inner.get(result_id)
+
+    async def for_step(self, task_id: TaskId, step_id: StepId) -> tuple[ExecutionResult, ...]:
+        return await self._inner.for_step(task_id, step_id)
 
 
 async def test_a_capability_outside_the_catalogue_is_refused_by_name(p: Pipeline) -> None:
