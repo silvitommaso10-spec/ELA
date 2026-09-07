@@ -20,6 +20,7 @@ from ela.api.deps import ElaDep
 from ela.api.schemas import AnswerIn, ApprovalOut, TaskOut
 from ela.domain import Approval, ApprovalId, ApprovalStatus, Task, TaskId, TaskState
 from ela.ports import ApprovalAlreadyAnsweredError, NotFoundError
+from ela.tasks.errors import TaskEngineError
 
 __all__ = ["router"]
 
@@ -34,9 +35,18 @@ async def pending_approvals(
 
     ``now`` is always passed: an expired request could no longer be answered — ``respond``
     refuses it — and showing it would be asking the user for something they cannot give (§33).
+
+    A request whose **task has moved on** is left out for the same reason (review of M8.1): the
+    user stopped it (§65), or it expired, and an answer would no longer do anything. The store
+    cannot know that — it keeps requests, not tasks — so the check is here, where the task is a
+    read away.
     """
-    waiting = await ela.approvals.pending(now=ela.clock.now(), limit=limit)
-    return tuple(ApprovalOut.of(one) for one in waiting)
+    answerable = []
+    for one in await ela.approvals.pending(now=ela.clock.now(), limit=limit):
+        task = await ela.repository.get(one.task_id)
+        if task.state is TaskState.WAITING_APPROVAL:
+            answerable.append(ApprovalOut.of(one))
+    return tuple(answerable)
 
 
 @router.post("/tasks/{task_id}/approve")
@@ -56,6 +66,9 @@ async def _answer(task_id: UUID, body: AnswerIn, ela: ElaDep, status: ApprovalSt
     approval = await ela.approvals.get(ApprovalId(body.approval_id))
     if approval.task_id != identifier:
         raise NotFoundError("approval", f"{body.approval_id} of task {task_id}")
+    task = await ela.repository.get(identifier)
+    if task.state is not TaskState.WAITING_APPROVAL:
+        return TaskOut.of(_settled(task, approval, status))
     try:
         answered = await ela.approvals.respond(
             approval.id,
@@ -64,27 +77,32 @@ async def _answer(task_id: UUID, body: AnswerIn, ela: ElaDep, status: ApprovalSt
             now=ela.clock.now(),
         )
     except ApprovalAlreadyAnsweredError:
-        return TaskOut.of(await _already_answered(identifier, approval.id, ela, status))
+        # Crash window 5c of ADR 0015 §8, repaired here because it opens here: the answer is in
+        # the store and the engine was never told. The same answer completes the move; a
+        # *different* one is a second answer to a question already answered, and is refused.
+        answered = await ela.approvals.get(approval.id)
+        if answered.status is not status:
+            raise
     return TaskOut.of(await _move(identifier, answered, ela, status))
 
 
-async def _already_answered(
-    task_id: TaskId, approval_id: ApprovalId, ela: ElaDep, status: ApprovalStatus
-) -> Task:
-    """Crash window 5c of ADR 0015 §8, repaired here because it opens here.
+def _settled(task: Task, approval: Approval, status: ApprovalStatus) -> Task:
+    """What to say about a task that is no longer waiting for this answer.
 
-    The answer is in the store and the engine was never told: whoever answers finds a
-    WAITING_APPROVAL task with a request already resolved, and calls ``approve``/``deny`` again.
-    A *different* answer is not that window — it is a second answer to a question already
-    answered — and it is refused with the store's own error.
+    Three cases, and only one of them is an answer at all: the same answer, already recorded and
+    already applied, which is idempotent and returns the task as it stands; a *different* answer,
+    which the store's own error refuses; and a request still PENDING on a task that has moved on
+    — stopped (§65) or expired — where the honest thing is to refuse **before writing**, because
+    an answer nobody could act on is a record of a decision that never took effect.
     """
-    stored = await ela.approvals.get(approval_id)
-    if stored.status is not status:
-        raise ApprovalAlreadyAnsweredError(approval_id, stored.status)
-    task = await ela.repository.get(task_id)
-    if task.state is not TaskState.WAITING_APPROVAL:
-        return task  # the answer was recorded *and* applied: nothing is left to do
-    return await _move(task_id, stored, ela, status)
+    if approval.status is status:
+        return task
+    if approval.status is not ApprovalStatus.PENDING:
+        raise ApprovalAlreadyAnsweredError(approval.id, approval.status)
+    raise TaskEngineError(
+        task.id,
+        f"task is {task.state.value}, not WAITING_APPROVAL: there is nothing left to answer",
+    )
 
 
 async def _move(task_id: TaskId, approval: Approval, ela: ElaDep, status: ApprovalStatus) -> Task:

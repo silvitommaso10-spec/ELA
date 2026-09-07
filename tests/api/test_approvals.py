@@ -176,6 +176,29 @@ async def test_an_answer_written_but_never_applied_is_completed_by_the_next_call
     assert repaired.json()["state"] == TaskState.QUEUED.value
 
 
+async def test_the_opposite_answer_does_not_overwrite_one_the_crash_left_unapplied(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """Window 5c with a change of mind: the "yes" is in the store and the engine was never told,
+    and now a "no" arrives. The first answer stands — one answer, ever (§30) — and the task is
+    left exactly where it was, for the next call to complete."""
+    task_id, approval_id = await waiting(client)
+    await ela.approvals.respond(
+        ApprovalId(uuid.UUID(approval_id)),
+        status=ApprovalStatus.GRANTED,
+        responded_by=ela.settings.core.user_name,
+        now=ela.clock.now(),
+    )
+
+    changed = await client.post(f"/tasks/{task_id}/deny", json={"approval_id": approval_id})
+
+    assert changed.status_code == 409
+    assert changed.json()["error"]["code"] == "not_answerable"
+    assert (await ela.repository.get(TaskId(uuid.UUID(task_id)))).state is (
+        TaskState.WAITING_APPROVAL
+    )
+
+
 async def test_repeating_an_answer_that_was_already_applied_says_the_same_thing(
     client: AsyncClient,
 ) -> None:
@@ -252,3 +275,36 @@ async def test_declaring_a_different_user_changes_who_signs(ela: Ela) -> None:
 
     stored = await ela.approvals.get(ApprovalId(uuid.UUID(approval_id)))
     assert stored.responded_by == "tommaso"
+
+
+# ----------------------------------------------------------------------------------------
+# A question that can no longer do anything (review of M8.1)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_request_of_a_task_that_was_stopped_is_not_in_the_inbox(
+    client: AsyncClient,
+) -> None:
+    """§65 and §33 together: the user stopped the task, so the question ELA had asked cannot do
+    anything any more. Leaving it in the inbox asks for something that no longer matters — the
+    same reason an expired request is not shown (ADR 0015 §1)."""
+    task_id, _ = await waiting(client)
+    await client.post(f"/tasks/{task_id}/cancel", json={"reason": "ci ho ripensato"})
+
+    assert (await client.get("/approvals")).json() == []
+
+
+async def test_answering_a_request_whose_task_cannot_move_writes_nothing(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """The refusal came anyway — the engine cannot take a CANCELLED task to QUEUED — but the
+    answer had already been written to the store, and nothing would ever act on it."""
+    task_id, approval_id = await waiting(client)
+    await client.post(f"/tasks/{task_id}/cancel", json={})
+
+    refused = await client.post(f"/tasks/{task_id}/approve", json={"approval_id": approval_id})
+
+    assert refused.status_code == 409
+    stored = await ela.approvals.get(ApprovalId(uuid.UUID(approval_id)))
+    assert stored.status is ApprovalStatus.PENDING
+    assert stored.responded_by is None and stored.responded_at is None

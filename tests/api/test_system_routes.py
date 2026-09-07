@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app
+from ela.api.tasks import PLAN_IS_TEMPORARY
 from ela.composition import Ela
 from ela.domain import Task, TaskState
 from ela.providers.anthropic import PROVIDER_NAME
@@ -96,3 +97,18 @@ async def test_no_secret_ever_reaches_a_response(
 
     assert TOKEN not in text
     assert "api_key" not in text and "token" not in text
+
+
+async def test_the_schema_warns_that_the_plan_endpoint_is_temporary(client: AsyncClient) -> None:
+    """The limit of ADR 0023 read by whoever *uses* the API, not only by whoever reads the ADR:
+    until the Planner exists (§13), the shape of a plan is not something to build on."""
+    schema = (await client.get("/openapi.json")).json()
+
+    description = schema["paths"]["/tasks/{task_id}/plan"]["post"]["description"]
+    assert description == PLAN_IS_TEMPORARY
+    assert "temporary" in description and "without a version bump" in description
+    assert "Planner" in description
+
+
+async def test_the_schema_needs_the_token_too(anonymous: AsyncClient) -> None:
+    assert (await anonymous.get("/openapi.json")).status_code == 401

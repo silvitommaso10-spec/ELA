@@ -1,6 +1,15 @@
 # 0023. Composition root, configurazione unificata e API locale: `ela.composition`, `ela.api`, token statico su loopback, regola 27
 
-- **Stato:** Accettata
+- **Stato:** Accettata. Review del 2026-09-07, tre punti applicati nel commit
+  `chore(m8.1): review fixes`: lo **schema OpenAPI è servito**, dietro il token, perché il limite
+  del piano sia leggibile da chi *usa* l'API e non solo da chi legge questo documento (§6, §7);
+  la risposta **identica** a un'approvazione già applicata è idempotente e non un conflitto
+  (§8, terza riga); il debito «`count` per stato nel `TaskRepository`» che `/diagnostics` porta
+  è scritto in `docs/milestones/M8.3.md` invece di restare in una nota (§6). Più un difetto
+  trovato scrivendo la tabella degli endpoint per la review: una richiesta il cui **task si è
+  mosso** — fermato (§65), scaduto — restava nell'inbox, e rispondere ci **scriveva** una
+  risposta che non muoveva niente. Corretto in §8: `/approvals` non la mostra, e `approve`/`deny`
+  la rifiutano **prima di scrivere**.
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §12, §27, §30, §32, §33, §46, §47, §48, §54, §57, §58, §62, §65
 - **Milestone:** M8.1 (decisioni dell'utente del 2026-09-07: divisione approvata con la CLI
@@ -177,6 +186,13 @@ rinnovato solo quando ELA fa qualcosa, ed è coerente con ciò che l'heartbeat s
 quel posto. Gli step arrivano con i loro id e le `dependencies` li citano; che formino un DAG lo
 verifica `TaskGraph.from_plan` dentro `engine.plan`, come per qualunque altro piano.
 
+**Il piano lo dice di sé stesso.** La `description` OpenAPI di `POST /tasks/{task_id}/plan` —
+`PLAN_IS_TEMPORARY`, una costante, non una frase in un docstring — dice che quella forma è
+temporanea, che esiste perché il Planner non esiste, e che il giorno in cui il Planner arriverà
+potrà cambiare **senza un cambio di versione**. Un test di documentazione la tiene lì finché il
+Planner non c'è, e fallisce apposta il giorno in cui c'è: quella frase va rivista allora, non
+lasciata a promettere un cambiamento già avvenuto.
+
 **I DTO sono espliciti**, mai `model_dump()` di un'entità del dominio: la forma sul filo è una
 decisione, e un campo aggiunto al dominio domani non deve uscire dall'API perché nessuno se n'è
 accorto.
@@ -188,7 +204,9 @@ l'impossibile (ADR 0015 §1, §33).
 **`GET /tasks/{id}` mostra gli argomenti degli step.** Sono contenuto dell'utente (§57) che torna
 **all'utente**, su loopback, dietro il suo token, e senza argomenti il dettaglio di un task non
 dice che cosa quel task fa. L'audit è un'altra cosa, e la regola 23 continua a tenerli fuori di
-lì. `/diagnostics` non ne mostra nessuno: dice com'è composta ELA, non che cosa sta facendo.
+lì. `/diagnostics` non ne mostra nessuno: dice com'è composta ELA, non che cosa sta facendo — e per
+contare i task per stato li **legge tutti**, che va bene per la v0.1 e non per sempre: il debito
+(`count` per stato nel `TaskRepository`) è scritto in `docs/milestones/M8.3.md`.
 L'`ExecutionResult` — l'output di un tool — **non** esce dall'API in questa milestone.
 
 **`/health` fa un giro vero al database** attraverso il port (`repository.tasks(limit=1)`): un
@@ -202,10 +220,17 @@ Si presenta come `Authorization: Bearer <token>` e si confronta con `secrets.com
 
 Il controllo è un **middleware**, non una dipendenza per rotta: una dipendenza si può dimenticare
 su una rotta nuova, un middleware no. Ne segue che anche un percorso inesistente risponde **401**
-e non 404 — chi non ha il token non impara nemmeno quali rotte esistono — e che le pagine di
-documentazione automatica di FastAPI restano **disattivate**: uno schema pubblico racconta la
-forma dell'API a chiunque scansioni la porta, e un browser non manda un header `Authorization`
-comunque.
+e non 404: chi non ha il token non impara nemmeno quali rotte esistono.
+
+Lo **schema** è servito, a `/openapi.json`, e il token lo protegge come ogni altro percorso.
+L'obiezione a pubblicarlo era che uno schema **senza credenziali** racconta la forma dell'API a
+chiunque scansioni la porta; dietro il middleware quel lettore non esiste. E ciò che il chiamante
+ci trova non è decorazione: è dove `POST /tasks/{task_id}/plan` dichiara che la **propria forma è
+temporanea e senza versione** (§6). Un limite che vive solo in un ADR è un limite che chi usa
+l'API non vede mai.
+
+Le **pagine HTML** (`/docs`, `/redoc`) restano spente: un browser non manda un header
+`Authorization`, quindi dietro il token risponderebbero 401 e nient'altro.
 
 Token assente e token sbagliato ricevono **lo stesso 401**: un 403 distinguerebbe «esisti ma no»
 da «non esisti».
@@ -244,6 +269,15 @@ il retry dell'executor la richiederebbe in un ciclo.
 * se lo stato memorizzato è quello chiesto ma il task **non** è più WAITING_APPROVAL, la risposta
   era già stata registrata *e* applicata: non c'è niente da completare, e l'endpoint ritorna 200
   con il task com'è. Ripetere una risposta identica non è un errore: è la stessa risposta.
+
+**Una richiesta il cui task si è mosso non è più una domanda** (review di M8.1). Se il task è
+stato fermato (§65) o è scaduto mentre aspettava, la sua richiesta resta PENDING nello store — il
+record è immutabile (ADR 0015 §6) — ma rispondere non farebbe più niente: l'engine rifiuterebbe
+il passaggio, e nello store resterebbe la traccia di una decisione senza effetto. Quindi
+`/approvals` **non la mostra** — la stessa ragione per cui non mostra una richiesta scaduta, e lo
+store non può saperlo perché tiene richieste, non task — e `approve`/`deny` la rifiutano **prima
+di scrivere**, con 409. Lo stato del task si legge una volta, all'inizio, ed è lo stesso controllo
+che governa le tre righe qui sopra.
 
 Il modulo che chiama `respond` — `ela/api/approvals.py` — è l'**unica esenzione** della regola di
 architettura 19, per percorso, come ADR 0015 §9 aveva promesso. Un secondo chiamante, ovunque,

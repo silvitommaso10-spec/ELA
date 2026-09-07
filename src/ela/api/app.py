@@ -1,9 +1,14 @@
 """The ELA application: the routes, the token, and the one shape every failure takes.
 
 ``create_app`` takes an :class:`~ela.composition.Ela` that somebody else built — this package
-never composes anything (architecture rule 27) — and serves it. The automatic documentation
-pages are **off**: an unauthenticated schema tells whoever scans the port what the API looks
-like, and a browser could not send the token anyway (ADR 0023 §7).
+never composes anything (architecture rule 27) — and serves it.
+
+The **schema** is served, at ``/openapi.json``, and the token guards it like every other path:
+the objection to publishing it was that an unauthenticated schema tells whoever scans the port
+what the API looks like, and behind the middleware there is no such reader. What a caller finds
+there is not decoration — it is where ``POST /tasks/{task_id}/plan`` says that its own shape is
+temporary and unversioned (review of M8.1). The **HTML pages** stay off: a browser cannot send
+an ``Authorization`` header, so ``/docs`` behind a token would answer 401 and nothing else.
 """
 
 from __future__ import annotations
@@ -112,7 +117,6 @@ def create_app(ela: Ela) -> FastAPI:
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
-        openapi_url=None,
     )
     app.state.ela = ela
     app.state.running = set()

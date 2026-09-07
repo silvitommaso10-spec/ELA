@@ -27,7 +27,22 @@ from ela.domain import (
 )
 from ela.tasks.graph import TaskGraph
 
-__all__ = ["router"]
+__all__ = ["PLAN_IS_TEMPORARY", "router"]
+
+PLAN_IS_TEMPORARY = (
+    "**The shape of this request is temporary and unversioned.** ELA has no Planner (spec §13) "
+    "yet, so a plan is written by hand and sent here; the day the Planner writes plans itself, "
+    "this endpoint's schema may change — or the endpoint may go — **without a version bump**. "
+    "Build nothing long-lived on it.\n\n"
+    "Attaches the plan and queues the task: CREATED to PLANNING to (plan) to QUEUED. A plan that "
+    "cannot be a graph — a cycle, a dependency on a step outside the plan, a duplicate id — is "
+    "refused before the task is moved, and nothing is written."
+)
+"""What the API says about itself where whoever uses it will read it (review of M8.1).
+
+The limit was declared in ADR 0023, and a limit that lives only in an ADR is one the caller
+never sees: it belongs in the description the schema carries, next to the request it is about.
+"""
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -65,7 +80,7 @@ async def read_task(task_id: UUID, ela: ElaDep) -> TaskDetail:
     return TaskDetail.of_graph(task, graph)
 
 
-@router.post("/{task_id}/plan")
+@router.post("/{task_id}/plan", description=PLAN_IS_TEMPORARY)
 async def attach_plan(task_id: UUID, body: PlanIn, ela: ElaDep) -> TaskOut:
     """Attach the plan and queue the task: CREATED → PLANNING → (plan) → QUEUED.
 

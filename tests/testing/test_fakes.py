@@ -17,9 +17,17 @@ from ela.domain import (
     ExecutionStatus,
     PermissionOutcome,
     ProviderRequest,
+    ProviderStatus,
     RiskLevel,
 )
-from ela.ports import VERIFICATION_NOT_SUCCEEDED, AlreadyExistsError, NotAllowedError
+from ela.ports import (
+    PROVIDER_UNAVAILABLE,
+    ROUTING_UNKNOWN_TASK_TYPE,
+    VERIFICATION_NOT_SUCCEEDED,
+    AlreadyExistsError,
+    NotAllowedError,
+    RoutingError,
+)
 from ela.testing.fakes import (
     DEFAULT_START,
     FAKE_CONDITION,
@@ -27,6 +35,7 @@ from ela.testing.fakes import (
     FakeClock,
     FakeIdGenerator,
     FakeModelProvider,
+    FakeModelRouter,
     FakePermissionGuardian,
     FakeTool,
     FakeVerifier,
@@ -275,3 +284,53 @@ async def test_provider_error_is_a_result_not_an_exception() -> None:
     assert result.output == ""
     assert result.finish_reason == "error"
     assert result.usage.output_tokens == 0
+
+
+async def test_a_provider_with_no_credentials_answers_without_working() -> None:
+    """ADR 0020 §2: an UNAVAILABLE provider says so — a result, not an exception — and records
+    no request, because nothing was ever asked of anyone."""
+    provider = FakeModelProvider(
+        FakeClock(), FakeIdGenerator(), name="dry", status=ProviderStatus.UNAVAILABLE
+    )
+
+    result = await provider.complete(PROVIDER_REQUEST)
+
+    assert result.error is not None and result.error.code == PROVIDER_UNAVAILABLE
+    assert result.error.retryable is False
+    assert result.output == "" and result.model == ""
+    assert result.provider == "dry"
+    assert result.request_id == PROVIDER_REQUEST.id
+    assert result.usage.input_tokens == result.usage.output_tokens == 0
+    assert provider.requests == ()
+
+
+# ----------------------------------------------------------------------------------------
+# FakeModelRouter
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_router_answers_with_the_route_it_was_given() -> None:
+    router = FakeModelRouter(provider="second", profile="cheap", skipped=("first",))
+
+    route = router.route("coding", None)
+
+    assert (route.provider, route.profile, route.skipped) == ("second", "cheap", ("first",))
+    assert router.calls == (("coding", None),)
+
+
+def test_an_explicit_hint_wins_over_the_profile_of_the_route() -> None:
+    """ADR 0022 §3, the way the real router does it: whoever wrote a hint has chosen."""
+    assert FakeModelRouter(profile="cheap").route("coding", "quality").profile == "quality"
+
+
+def test_a_router_that_cannot_route_raises_what_it_was_given() -> None:
+    """How a test reaches the branches where nothing is sent: the call is still recorded, so a
+    test can prove the tool asked before it gave up."""
+    refused = RoutingError(ROUTING_UNKNOWN_TASK_TYPE, "no route for 'dancing'")
+    router = FakeModelRouter(error=refused)
+
+    with pytest.raises(RoutingError) as raised:
+        router.route("dancing", None)
+
+    assert raised.value is refused
+    assert router.calls == (("dancing", None),)

@@ -17,8 +17,10 @@ import pytest
 
 from ela.api import approvals, audit, system, tasks
 from ela.api.app import FAILURES
+from ela.api.tasks import PLAN_IS_TEMPORARY
 from ela.composition.settings import ApiSettings, CoreSettings
 from tests.architecture.rules import RULES
+from tests.architecture.violations import PACKAGE_ROOT
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0023-composition-root-and-api.md"
 SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| `([^`]+)` \| (?:`([^`]+)`|\*\(([^)]+)\)\*) \|")
@@ -159,3 +161,52 @@ def test_the_table_reads_from_the_most_specific_to_the_least() -> None:
 def test_rule_27_is_registered_under_the_name_the_adr_gives_it() -> None:
     assert RULE_NAME in adr_text()
     assert any(rule for rule in RULES if rule == "concrete-names")
+
+
+# ----------------------------------------------------------------------------------------
+# The declared limit that a caller must be able to read (review of M8.1)
+# ----------------------------------------------------------------------------------------
+
+
+def planner_modules() -> list[Path]:
+    """Anything under ``src/ela`` that looks like the Planner of §13."""
+    named = [path for path in PACKAGE_ROOT.rglob("*.py") if "planner" in path.stem]
+    defines = [
+        path
+        for path in PACKAGE_ROOT.rglob("*.py")
+        if re.search(r"^class Planner\b", path.read_text(encoding="utf-8"), re.MULTILINE)
+    ]
+    return sorted(set(named + defines))
+
+
+def test_the_plan_endpoint_says_its_schema_is_temporary_while_it_is() -> None:
+    """ADR 0023 keeps this among the constraints to reopen; the caller reads it in the schema.
+
+    The day the Planner (§13) arrives, this test fails on purpose: the sentence has to be
+    revisited then — kept, reworded, or removed with the endpoint — and not quietly left behind
+    telling people to expect a change that already happened.
+    """
+    planner = planner_modules()
+    assert not planner, f"the Planner exists ({planner}): revisit PLAN_IS_TEMPORARY"
+
+    assert "Planner" in PLAN_IS_TEMPORARY
+    assert "temporary" in PLAN_IS_TEMPORARY
+    assert "without a version bump" in PLAN_IS_TEMPORARY
+
+
+def test_the_route_carries_that_sentence_as_its_description() -> None:
+    """``description=`` and not the docstring: what the schema says is a decision, and the
+    docstring is for whoever reads the code."""
+    plan = next(
+        route
+        for route in tasks.router.routes
+        if getattr(route, "path", None) == "/tasks/{task_id}/plan"
+    )
+
+    assert plan.description == PLAN_IS_TEMPORARY
+
+
+def test_the_adr_names_the_limit_too() -> None:
+    text = adr_text()
+    assert "Vincoli dichiarati" in text
+    assert "superficie pubblica dell'API" in text
