@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from tests.architecture import rules
-from tests.architecture.rules import CONSTANTS, EXEMPTION, RULES
+from tests.architecture.rules import CONSTANTS, EXEMPTION, RULES, SUBJECT
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0027-exemptions-withdrawn.md"
 ADR_0012 = ADR_PATH.with_name("0012-authorizations.md")
@@ -26,6 +26,8 @@ SQL_EXECUTORS_IN_PROSE = re.compile(r"`SQL_EXECUTORS = \{([^}]+)\}`")
 WITHDRAWN_ROW = re.compile(r"^\| (\d+) `([a-z-]+)` \| `([A-Z_]+)` \| `([^`|]+)` \| ([^|]+) \|$")
 #: ``| 15 | the rule | the exemptions before (ADR) | the exemptions now |``
 EXTENDED_ROW = re.compile(r"^\| (\d+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$")
+#: ``| `ROOT_PACKAGE` | `INEVITABLE` | why the question cannot be asked |``
+SUBJECT_ROW = re.compile(r"^ *\| `([A-Z_]+)` \| `([A-Z]+)` \| ([^|]+) \|$")
 
 
 def adr_text() -> str:
@@ -139,3 +141,15 @@ def test_the_packages_of_adr_0012_are_the_ones_left_plus_the_one_withdrawn() -> 
 
     documented = {rules.PERMISSIONS_DIR, rules.TESTING_DIR}
     assert rules.AUTHORIZATION_BUILDERS_EXEMPT | gone_from("authorization-builders") == documented
+
+
+def test_the_three_subjects_and_their_words_are_the_ones_in_the_table() -> None:
+    """The class without an assertion is the one the ADR spells out row by row (§5, review M9.3)."""
+    documented = {
+        match.group(1): match.group(2)
+        for line in adr_text().splitlines()
+        if (match := SUBJECT_ROW.match(line))
+    }
+    assert documented, "ADR 0027 §5 must list the subjects and the word each carries"
+
+    assert documented == {row.name: row.why.upper() for row in CONSTANTS if row.kind == SUBJECT}

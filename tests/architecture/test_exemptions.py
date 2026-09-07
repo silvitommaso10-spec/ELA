@@ -31,10 +31,12 @@ import pytest
 
 from tests.architecture import rules
 from tests.architecture.rules import (
+    ARTEFACT,
     CONSTANTS,
     DETECTOR,
     EACH,
     EXEMPTION,
+    INEVITABLE,
     RULES,
     SUBJECT,
     WHOLE,
@@ -48,6 +50,7 @@ RULES_SOURCE = Path(rules.__file__)
 NOWHERE = "__nowhere__"
 NO_ADR = "—"
 KINDS = frozenset({EXEMPTION, DETECTOR, SUBJECT})
+WHYS = frozenset({INEVITABLE, ARTEFACT})
 ALLOWED_BY_ID = {case.id: case for case in ALLOWED}
 
 
@@ -274,14 +277,24 @@ def test_every_row_is_filled_in_for_its_kind(row: Constant) -> None:
     else:
         assert row.by == WHOLE and not row.adr and not row.proof
         assert (row.kind == SUBJECT) == bool(row.reason), "a subject is the row that has a reason"
+        assert (row.kind == SUBJECT) == bool(row.why), "and the one that says why in one word"
+        assert not row.why or row.why in WHYS
 
 
-def test_the_subjects_are_the_three_declared_ones() -> None:
-    """The only class without an assertion, kept small and named on purpose (ADR 0027)."""
-    assert {row.name for row in CONSTANTS if row.kind == SUBJECT} == {
-        "ROOT_PACKAGE",
-        "SECURITY_MODULE",
-        "CLI_DIR",
+def test_the_subjects_are_the_three_declared_ones_and_say_why_in_one_word() -> None:
+    """The only class without an assertion: kept small, named, and each marked with its word.
+
+    ``INEVITABLE`` is the question that cannot be asked — restricting ``ROOT_PACKAGE`` removes the
+    subject of every rule. ``ARTEFACT`` is the question whose answer means nothing: restricted,
+    rule 31 raises instead of speaking and rule 28 reports itself. The word is there so a reader
+    sees a declared exception rather than a row somebody forgot to classify (review of M9.3).
+    """
+    subjects = {row.name: row.why for row in CONSTANTS if row.kind == SUBJECT}
+
+    assert subjects == {
+        "ROOT_PACKAGE": INEVITABLE,
+        "SECURITY_MODULE": ARTEFACT,
+        "CLI_DIR": ARTEFACT,
     }
 
 

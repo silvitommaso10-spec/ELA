@@ -1396,8 +1396,14 @@ EXEMPTION = "exemption"
 #: What the rule *looks for* or *looks at*: a library, a method name, a field, a file. Restricted,
 #: it can only make the rule quieter, never louder — so the rule must report nothing.
 DETECTOR = "detector"
-#: What the rule could not be asked about at all. Not asserted, and the row carries the reason.
+#: What the rule could not be asked about at all. Not asserted, and the row carries **why** in
+#: one word plus the reason in full — so a reader sees a declared exception and not an oversight.
 SUBJECT = "subject"
+#: There is no way to ask the question: restricting the constant removes the subject of the rule.
+INEVITABLE = "inevitable"
+#: Restricting it makes the rule raise, or speak about itself. What comes out is an artefact of
+#: the restriction, not a signal about a door.
+ARTEFACT = "artefact"
 
 #: Restrict the constant as a whole: to a path that exists nowhere, a name nobody has, an empty
 #: set, a pattern that matches nothing.
@@ -1430,6 +1436,8 @@ class Constant:
     by: str = WHOLE
     #: The ADR that opened the door, for an ``EXEMPTION``; ``"—"`` when no ADR documents it.
     adr: str = ""
+    #: Required for a ``SUBJECT``: ``INEVITABLE`` or ``ARTEFACT``, the reason in one word.
+    why: str = ""
     #: Required for a ``SUBJECT``, and for an ``EXEMPTION`` the real tree cannot prove.
     reason: str = ""
     #: The ``violations.ALLOWED`` case that stands in when the real tree is silent. An exemption
@@ -1447,7 +1455,13 @@ CONSTANTS: tuple[Constant, ...] = (
         adr="ADR 0020 §11",
     ),
     Constant("anthropic-import-isolation", "ANTHROPIC_LIBRARY", DETECTOR),
-    Constant("anthropic-import-isolation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "anthropic-import-isolation",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # approval-responders
     Constant(
         "approval-responders",
@@ -1457,16 +1471,22 @@ CONSTANTS: tuple[Constant, ...] = (
         adr="ADR 0015 §9; ADR 0023 §12",
     ),
     Constant("approval-responders", "RESPOND_METHOD", DETECTOR),
-    Constant("approval-responders", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "approval-responders", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # audit-append-only
     Constant("audit-append-only", "AUDIT_ADAPTER", DETECTOR),
     Constant("audit-append-only", "MUTATING_NAMES", DETECTOR),
     Constant("audit-append-only", "MUTATING_SQL", DETECTOR),
-    Constant("audit-append-only", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "audit-append-only", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # audit-arguments
     Constant("audit-arguments", "ARGUMENTS_NAME", DETECTOR),
     Constant("audit-arguments", "AUDIT_EVENT", DETECTOR),
-    Constant("audit-arguments", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "audit-arguments", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # authorization-builders
     Constant(
         "authorization-builders",
@@ -1480,12 +1500,19 @@ CONSTANTS: tuple[Constant, ...] = (
         "authorization-builders", "AUTHORIZATION_READER", EXEMPTION, by=WHOLE, adr="ADR 0012 §7"
     ),
     Constant("authorization-builders", "AUTHORIZATION_WIDENING_FIELDS", DETECTOR),
-    Constant("authorization-builders", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "authorization-builders",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # cli-over-the-api
     Constant(
         "cli-over-the-api",
         "CLI_DIR",
         SUBJECT,
+        why=ARTEFACT,
         reason="the package the rule is about, on both sides of it: restricted, every module "
         'becomes "outside the CLI" and the rule reports itself',
     ),
@@ -1493,20 +1520,25 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("cli-over-the-api", "CLI_PACKAGE", DETECTOR),
     Constant("cli-over-the-api", "CLI_SERVE", EXEMPTION, by=WHOLE, adr="ADR 0024 §7"),
     Constant("cli-over-the-api", "COMPOSED_NAMES", DETECTOR),
-    Constant("cli-over-the-api", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "cli-over-the-api", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # concrete-names
     Constant("concrete-names", "CONCRETE_ALLOWED", EXEMPTION, by=EACH, adr="ADR 0023 §12"),
     Constant("concrete-names", "CORE_FORBIDDEN", DETECTOR),
-    Constant("concrete-names", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("concrete-names", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF),
     # constant-time-token
     Constant(
         "constant-time-token", "CONSTANT_TIME_COMPARE", EXEMPTION, by=WHOLE, adr="ADR 0026 §6"
     ),
-    Constant("constant-time-token", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "constant-time-token", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     Constant(
         "constant-time-token",
         "SECURITY_MODULE",
         SUBJECT,
+        why=ARTEFACT,
         reason="the one file this rule reads: restricted, the rule has nothing to open and "
         "raises instead of speaking",
     ),
@@ -1514,18 +1546,20 @@ CONSTANTS: tuple[Constant, ...] = (
     # core-isolation
     Constant("core-isolation", "CORE_FORBIDDEN", DETECTOR),
     Constant("core-isolation", "CORE_PACKAGES", DETECTOR),
-    Constant("core-isolation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("core-isolation", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF),
     # decide-callers
     Constant("decide-callers", "DECIDE_METHOD", DETECTOR),
     Constant("decide-callers", "PERMISSIONS_DIR", EXEMPTION, by=WHOLE, adr="ADR 0011"),
-    Constant("decide-callers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("decide-callers", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF),
     # decision-builders
     Constant(
         "decision-builders", "DECISION_BUILDERS_EXEMPT", EXEMPTION, by=EACH, adr="ADR 0011 §11"
     ),
     Constant("decision-builders", "DECISION_MODEL", DETECTOR),
     Constant("decision-builders", "DENIED_OUTCOME", DETECTOR),
-    Constant("decision-builders", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "decision-builders", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # device-availability-readers
     Constant("device-availability-readers", "AVAILABILITY_FIELD", DETECTOR),
     Constant(
@@ -1538,7 +1572,13 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant(
         "device-availability-readers", "PERSISTENCE_MAPPERS", EXEMPTION, by=WHOLE, adr="ADR 0016 §3"
     ),
-    Constant("device-availability-readers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "device-availability-readers",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # device-port-readers
     Constant(
         "device-port-readers",
@@ -1548,23 +1588,29 @@ CONSTANTS: tuple[Constant, ...] = (
         adr="ADR 0017 §9; ADR 0027",
     ),
     Constant("device-port-readers", "DEVICE_REGISTRY_PORT", DETECTOR),
-    Constant("device-port-readers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "device-port-readers", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # devices-isolation
     Constant("devices-isolation", "DEVICES_DIR", DETECTOR),
     Constant("devices-isolation", "DEVICES_FORBIDDEN", DETECTOR),
-    Constant("devices-isolation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "devices-isolation", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # domain
     Constant("domain", "DOMAIN_ALLOWED_EXTERNAL", EXEMPTION, by=EACH, adr="ADR 0002 §1"),
-    Constant("domain", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("domain", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF),
     Constant("domain", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0002 §1"),
     # infra-libraries
     Constant("infra-libraries", "INFRA_LIBRARIES", DETECTOR),
     Constant("infra-libraries", "INFRA_PACKAGES", EXEMPTION, by=EACH, adr="ADR 0002 §3"),
-    Constant("infra-libraries", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "infra-libraries", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # orm-separation
     Constant("orm-separation", "DOMAIN_MODULE", DETECTOR),
     Constant("orm-separation", "ORM_PACKAGE", DETECTOR),
-    Constant("orm-separation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("orm-separation", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF),
     # permissions-imports
     Constant(
         "permissions-imports", "PERMISSIONS_ALLOWED_EXTERNAL", EXEMPTION, by=EACH, adr="ADR 0010"
@@ -1573,16 +1619,20 @@ CONSTANTS: tuple[Constant, ...] = (
         "permissions-imports", "PERMISSIONS_ALLOWED_INTERNAL", EXEMPTION, by=EACH, adr="ADR 0010"
     ),
     Constant("permissions-imports", "PERMISSIONS_DIR", DETECTOR),
-    Constant("permissions-imports", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "permissions-imports", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     Constant("permissions-imports", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0010"),
     # placement-builders
     Constant("placement-builders", "DEVICES_DIR", EXEMPTION, by=WHOLE, adr="ADR 0026 §5"),
     Constant("placement-builders", "PLACEMENT_DEVICE_FIELD", DETECTOR),
     Constant("placement-builders", "PLACEMENT_MODEL", DETECTOR),
-    Constant("placement-builders", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "placement-builders", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # ports
     Constant("ports", "PORTS_ALLOWED_INTERNAL", EXEMPTION, by=WHOLE, adr="ADR 0002 §2"),
-    Constant("ports", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("ports", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF),
     Constant("ports", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0002 §2"),
     # provider-complete-callers
     Constant("provider-complete-callers", "COMPLETE_METHOD", DETECTOR),
@@ -1592,21 +1642,33 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant(
         "provider-complete-callers", "MODEL_TOOL_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0021 §5"
     ),
-    Constant("provider-complete-callers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "provider-complete-callers",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # state-changes
     Constant("state-changes", "INITIAL_STATE", EXEMPTION, by=WHOLE, adr="ADR 0004"),
-    Constant("state-changes", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant("state-changes", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF),
     Constant("state-changes", "STATE_EXEMPT", EXEMPTION, by=EACH, adr="ADR 0004; ADR 0006"),
     # state-machine-callers
-    Constant("state-machine-callers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "state-machine-callers", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     Constant("state-machine-callers", "STATE_MACHINE_MODULE", DETECTOR),
     Constant("state-machine-callers", "TASKS_DIR", EXEMPTION, by=WHOLE, adr="ADR 0008"),
     # step-completers
     Constant("step-completers", "COMPLETE_STEP_METHOD", DETECTOR),
     Constant("step-completers", "EXECUTOR_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0014 §9"),
-    Constant("step-completers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "step-completers", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # step-event-writers
-    Constant("step-event-writers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "step-event-writers", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     Constant("step-event-writers", "STEP_EVENT_PREFIX", DETECTOR),
     Constant(
         "step-event-writers",
@@ -1620,7 +1682,9 @@ CONSTANTS: tuple[Constant, ...] = (
         "variable the name heuristic cannot see (ADR 0027)",
     ),
     # testing-imports
-    Constant("testing-imports", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "testing-imports", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     Constant("testing-imports", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0002 §7"),
     Constant(
         "testing-imports",
@@ -1631,14 +1695,18 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     Constant("testing-imports", "TESTING_DIR", DETECTOR),
     # testing-isolation
-    Constant("testing-isolation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "testing-isolation", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     Constant("testing-isolation", "TESTING_DIR", DETECTOR),
     Constant("testing-isolation", "TESTING_PACKAGE", DETECTOR),
     # tool-execute-callers
     Constant("tool-execute-callers", "EXECUTE_METHOD", DETECTOR),
     Constant("tool-execute-callers", "EXECUTOR_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0013 §9"),
     Constant("tool-execute-callers", "EXECUTOR_RECEIVERS", EXEMPTION, by=EACH, adr="ADR 0019 §3"),
-    Constant("tool-execute-callers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "tool-execute-callers", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     Constant("tool-execute-callers", "RUNNER_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0019 §3"),
     Constant(
         "tool-execute-callers", "SQL_EXECUTORS", EXEMPTION, by=EACH, adr="ADR 0013 §9; ADR 0027"
@@ -1648,15 +1716,25 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("tool-output-readers", "OUTPUT_MODEL", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),
     Constant("tool-output-readers", "OUTPUT_NAME", DETECTOR),
     Constant("tool-output-readers", "OUTPUT_SCHEMAS", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),
-    Constant("tool-output-readers", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "tool-output-readers", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # tools-routing-isolation
-    Constant("tools-routing-isolation", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "tools-routing-isolation",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     Constant("tools-routing-isolation", "ROUTING_PACKAGE", DETECTOR),
     Constant("tools-routing-isolation", "TOOLS_DIR", DETECTOR),
     # verifier-read-only
     Constant("verifier-read-only", "OPENERS", DETECTOR),
     Constant("verifier-read-only", "READ_ONLY_MODULES", DETECTOR),
-    Constant("verifier-read-only", "ROOT_PACKAGE", SUBJECT, reason=_THE_PACKAGE_ITSELF),
+    Constant(
+        "verifier-read-only", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     Constant("verifier-read-only", "SHUTIL", DETECTOR),
     Constant("verifier-read-only", "WRITING_CALLS", DETECTOR),
     Constant("verifier-read-only", "WRITING_OPEN_FLAGS", DETECTOR),

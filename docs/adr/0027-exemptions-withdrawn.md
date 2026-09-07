@@ -119,7 +119,7 @@ Tre classi, e le prime due hanno asserzioni **opposte**:
 |---|---|---|
 | `EXEMPTION` | una porta: chi è esentato dalla regola | ristretta, la sua regola riporta **almeno una** violazione |
 | `DETECTOR` | ciò che la regola cerca o guarda: una libreria, un nome di metodo, un campo, un file | ristretto per intero, la sua regola riporta **zero** violazioni: un rivelatore può solo far tacere |
-| `SUBJECT` | ciò senza cui la regola non ha soggetto | nessuna asserzione, **e la riga porta il motivo scritto** |
+| `SUBJECT` | ciò senza cui la regola non ha soggetto | nessuna asserzione, **e la riga porta il motivo in una parola più il motivo per esteso** |
 
 L'opposizione è ciò che rende la tabella verificabile invece che dichiarativa: **classificare una
 porta viva come rivelatore fallisce**, perché restringerla fa parlare la regola. `COMPOSED_NAMES`
@@ -141,11 +141,17 @@ l'elenco di ciò che v0.1 semplifica (M9.4).
 Tre cose, tutte scritte perché una lacuna dichiarata è una lacuna che qualcuno può chiudere:
 
 1. **Le righe `SUBJECT`** — `ROOT_PACKAGE` (letta da tutte e 31 le regole), `SECURITY_MODULE` e
-   `CLI_DIR`. Sono le costanti che restringere non significa niente: `ROOT_PACKAGE` toglie il
-   soggetto invece di aprire o chiudere una porta, `SECURITY_MODULE` è l'unico file che la
-   regola 31 legge e ristretto la fa sollevare invece che parlare, `CLI_DIR` è il package di cui
-   la regola 28 parla su entrambi i lati. Non sono asserite, portano il motivo, e sono il solo
-   posto dove una porta potrebbe ancora nascondersi.
+   `CLI_DIR`. Sono le costanti che restringere non significa niente, e ognuna dice **in una
+   parola** quale delle due cose è (review di M9.3, perché un'eccezione dichiarata si distingua a
+   colpo d'occhio da una dimenticanza):
+
+   | Costante | Parola | Perché |
+   |---|---|---|
+   | `ROOT_PACKAGE` | `INEVITABLE` | la domanda non si può porre: ristretta, toglie il soggetto di ogni regola invece di aprire o chiudere una porta |
+   | `SECURITY_MODULE` | `ARTEFACT` | è l'unico file che la regola 31 legge: ristretta, la regola solleva invece di parlare |
+   | `CLI_DIR` | `ARTEFACT` | è il package di cui la regola 28 parla su entrambi i lati: ristretta, ogni modulo diventa «fuori dalla CLI» e la regola riporta sé stessa |
+
+   Non sono asserite, e restano il solo posto della tabella dove una porta potrebbe nascondersi.
 2. **La riga `TASKS_DIR` della regola 11**, provata da un caso sintetico e non dall'albero vero
    (§3).
 3. **Il mondo chiuso è sulle costanti che una regola *legge*.** Una regola che aprisse una porta
@@ -179,10 +185,12 @@ Tre cose, tutte scritte perché una lacuna dichiarata è una lacuna che qualcuno
 ## Conseguenze
 
 - **`tests/architecture/rules.py`**: cinque voci in meno in quattro costanti; `EXEMPTION`,
-  `DETECTOR`, `SUBJECT`, `WHOLE`, `EACH`, la dataclass `Constant` e la tabella `CONSTANTS`, una
-  riga per coppia — alla stesura 116 righe: 36 porte, 47 rivelatori, 33 soggetti, di cui 31
-  `ROOT_PACKAGE`. I numeri crescono con le regole; a essere fisso è che la tabella e l'AST
-  coincidano.
+  `DETECTOR`, `SUBJECT`, `WHOLE`, `EACH`, `INEVITABLE`, `ARTEFACT`, la dataclass `Constant` e la
+  tabella `CONSTANTS`, una
+  riga per coppia. **Fotografia del 2026-09-07** (31 regole): 116 righe — 36 porte, 47
+  rivelatori, 33 soggetti, di cui 31 `ROOT_PACKAGE`. La data è lì perché sono numeri, non un
+  vincolo: crescono con le regole, e nessun test li fissa. A essere fisso è che la tabella e
+  l'AST coincidano.
 - **`tests/architecture/test_exemptions.py`**: il mondo chiuso derivato dall'AST, le due
   asserzioni opposte, il caso negativo di una costante nuova non classificata, e i cinque casi
   negativi che rimettono ognuna delle porte ritirate e mostrano che il gate le vedrebbe.
@@ -200,8 +208,9 @@ Tre cose, tutte scritte perché una lacuna dichiarata è una lacuna che qualcuno
 
 ### Vincoli dichiarati, da riaprire quando serviranno
 
-- **Le tre costanti `SUBJECT` non sono asserite** (§5, punto 1). Portano il motivo scritto, e sono
-  l'unico posto della tabella dove una porta potrebbe nascondersi.
+- **Le tre costanti `SUBJECT` non sono asserite** (§5, punto 1). Portano la parola — `INEVITABLE`
+  o `ARTEFACT` — e il motivo per esteso, e sono l'unico posto della tabella dove una porta
+  potrebbe nascondersi.
 - **La regola 11 è provata da un caso sintetico** (§5, punto 2). Il giorno in cui l'euristica di
   `_is_step_event` seguirà anche un `event_type` che arriva da una variabile, quella riga si
   proverà sull'albero vero come tutte le altre.
