@@ -128,12 +128,17 @@ def test_the_three_refusals_of_ensure_placed_are_the_three_the_adr_lists() -> No
     assert source.count("raise NotPlacedError") == 3
 
 
-def test_confirm_writes_no_audit_event() -> None:
-    """§4: confirming is not choosing, so no second ``DEVICE_SELECTED`` claims a choice."""
-    source = inspect.getsource(DeviceOrchestrator.confirm)
+def test_who_chooses_writes_and_who_only_looks_does_not() -> None:
+    """§4 and §10: the criterion, not the case — ``chi sceglie scrive, non chi tocca``.
 
-    assert "_audit" not in source
+    Both halves are asserted, because half of it is not a criterion: ``place`` decides and writes,
+    ``confirm`` answers "does it still hold?" and does not. The day ``confirm`` can replace the
+    node it will be choosing, and §10 already says what it must do then.
+    """
+    assert "_audit" not in inspect.getsource(DeviceOrchestrator.confirm)
+    assert "_audit" in inspect.getsource(DeviceOrchestrator.place)
     assert "non scrive un evento di audit" in adr_text().lower()
+    assert "chi sceglie scrive, non chi tocca" in adr_text().lower()
 
 
 # --------------------------------------------------------------------------------------
@@ -152,6 +157,15 @@ def test_the_declared_constraints_name_what_they_defer() -> None:
 
     for deferred in ("Fase 12", "in-process", "tamper-evidence", "authorization_uses", "M9.2"):
         assert deferred in constraints, deferred
+
+
+def test_the_review_addition_keeps_the_decision_and_adds_only_its_reason() -> None:
+    """§10 is an addition, not a rewrite: §4 still says what it said (as ADR 0006 §12–§13 do)."""
+    text = adr_text()
+
+    assert "## 10. Aggiunta in review" in text
+    assert text.index("## 4. La ripresa") < text.index("## 10. Aggiunta in review")
+    assert "La decisione del §4 non cambia" in text
 
 
 def test_a_drifted_table_is_detected() -> None:

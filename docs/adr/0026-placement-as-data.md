@@ -225,6 +225,27 @@ provenienza di `step.risk` andrà riesaminata, perché allora la differenza si v
 | 30 `placement-decisions-built-only-by-the-orchestrator` | fuori da `ela.devices` nessuno costruisce una `PlacementDecision` che nomina un nodo | tutto `ela` | nessuna esenzione |
 | 31 `token-compared-in-constant-time` | il token si confronta solo con `secrets.compare_digest` | `ela.api.security` | nessuna esenzione |
 
+## 10. Aggiunta in review M9.1 (2026-09-07): chi sceglie scrive, non chi tocca
+
+La decisione del §4 non cambia: `confirm` non scrive un evento di audit. Cambia la **ragione**
+scritta accanto, perché quella data — «la scelta che conferma è già nel log» — è vera e descrive
+il caso, non la regola.
+
+Il criterio è: **chi sceglie scrive, non chi tocca.** Un evento di audit registra una decisione,
+e `confirm` non ne prende nessuna di nuova: guarda il nodo che è già stato scelto e risponde sì o
+no alla domanda «vale ancora?». Un no non è una scelta diversa — è l'assenza di una scelta, e il
+run aspetta.
+
+Ne segue direttamente cosa dovrà fare il giorno in cui cambierà. Se `confirm` potesse **sostituire
+il nodo** — ripiazzare dopo una conferma fallita, che è la cosa naturale da volere con nodi remoti
+e uno step interrotto — allora starebbe scegliendo, e scriverebbe `DEVICE_SELECTED` come qualsiasi
+altra scelta. Non ci sarebbe niente da decidere di nuovo: la regola lo dice già.
+
+Scritto qui perché è la parte che si perde per prima. Il fatto — «`confirm` non scrive» — resta in
+una riga di tabella e in un test; il criterio che lo genera vive solo dove qualcuno lo scrive, e
+senza di esso la prossima persona deve ridecidere una questione che è già stata decisa, con una
+regola generale a disposizione ma non enunciata.
+
 ## Alternative considerate
 
 - **Il `DeviceRegistry` all'executor**, che rilegge il nodo e lo rigiudica. Scartata, per tre
