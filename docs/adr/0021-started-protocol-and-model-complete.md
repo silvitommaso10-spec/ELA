@@ -1,6 +1,10 @@
 # 0021. Protocollo STARTED, `ProviderUsage` fino all'audit, `Outcome.retryable`, tool e verifier di `model.complete`, regola 25
 
-- **Stato:** Accettata
+- **Stato:** Accettata. Review del 2026-09-07 applicata: la regola 25 resta in M7.2 (il confine
+  nasce con questo codice) e `M7.3.md` non la richiede più; `provider.no_output` entra nel
+  vocabolario chiuso di `ela.ports` come quattordicesimo codice, con la riga in ADR 0020 §7 (§5);
+  il contratto di `for_step` è un contract test e non solo una docstring, e una seconda `STARTED`
+  per lo stesso step è rifiutata in `add` (§1-bis).
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §26, §27, §28, §29, §32, §33, §57, §62, §63, §64
 - **Milestone:** M7.2 (decisioni dell'utente del 2026-09-07: **1a**, **2a**, **8a**, **9a**,
@@ -93,7 +97,7 @@ vale la pena indagare.
 
 `Outcome` guadagna `retryable: bool = False`, e `Tool.execute` lo riporta nell'`ErrorMetadata`.
 Il default è `False` perché un dubbio non è un sì (§33); il tool di `model.complete` ci mette il
-`retryable` che il provider ha dichiarato, così che i tredici codici di ADR 0020 §7 arrivino
+`retryable` che il provider ha dichiarato, così che i codici di ADR 0020 §7 arrivino
 nell'audit con la natura che avevano — che è la distinzione che il Memory Core (§64) dovrà fare
 fra «riprova più tardi» e «così non funzionerà mai».
 
@@ -105,10 +109,18 @@ Valida di nuovo i suoi argomenti (§28), costruisce la `ProviderRequest`, chiama
 `model_hint` degli argomenti o, in sua assenza, il default del provider (ADR 0020 §5). Scegliere
 è del Model Router (§25), che è M7.3.
 
-Un `ProviderResult` senza errore e **senza testo** è `provider.no_output` — non uno dei tredici
-codici di ADR 0020 §7, che descrivono un fallimento *riportato dal provider*, ma un risultato
-inutilizzabile: una risposta vuota che si dichiara riuscita arriverebbe al verifier come un
-successo senza niente dentro, e lo step fallirebbe uno strato più in là con meno da dire.
+Un `ProviderResult` senza errore e **senza testo** è `provider.no_output`: un risultato che chi
+lo riceve non può usare — una risposta vuota che si dichiara riuscita arriverebbe al verifier come
+un successo senza niente dentro, e lo step fallirebbe uno strato più in là con meno da dire.
+
+Il codice **sta nel vocabolario chiuso di `ela.ports`**, come quattordicesimo, e non accanto al
+tool che lo solleva (review di M7.2). Nella prima stesura era una costante di `ela.tools.model`,
+con la motivazione che i tredici di ADR 0020 §7 descrivono un fallimento *riportato dal provider*
+e questo no. La motivazione regge — ed è scritta in ADR 0020 §7, dove la riga è stata aggiunta —
+ma non giustifica la collocazione: un codice `provider.*` fuori dal vocabolario è esattamente ciò
+che il vocabolario vieta, perché chi lo riceve non potrebbe distinguerlo da un nome inventato da
+un chiamante, che è la dipendenza dal provider che §26 toglie. Chi ha bisogno di un nome che non
+c'è lo aggiunge lì, con un ADR.
 
 **Regola di architettura 25** (`provider-complete-callers`): fuori da `ela/tools/model.py` nessun
 modulo di `src/ela` chiama `.complete(` su un ricevente. La garanzia «il contenuto dell'utente

@@ -15,7 +15,10 @@ Choosing is the Model Router's job and arrives with M7.3.
 A provider failure is a failed :class:`~ela.tools.base.Outcome` carrying the provider's **own**
 code and its **own** ``retryable`` (ADR 0020 §7): a rate limit reaches the audit trail as
 temporary and a rejected argument as final, because that distinction is the one §64 needs and
-the tool is not entitled to flatten it.
+the tool is not entitled to flatten it. An answer with no text is the one failure this module
+*names* rather than relays — :data:`~ela.ports.PROVIDER_NO_OUTPUT` — and it is named from the
+shared vocabulary in ``ela.ports``, never from a constant of its own: a code outside the closed
+vocabulary is what the vocabulary exists to forbid (review of M7.2).
 
 What comes back from the model is the user's content. It goes in ``output["output"]``, which
 lives in the execution result and in the private database, and in no audit event (§57, rule 23).
@@ -33,10 +36,16 @@ from ela.domain import (
     ProviderRequestId,
     ProviderResult,
 )
-from ela.ports import PROVIDER_ERROR_CODES, Clock, IdGenerator, ModelProvider
+from ela.ports import (
+    PROVIDER_ERROR_CODES,
+    PROVIDER_NO_OUTPUT,
+    Clock,
+    IdGenerator,
+    ModelProvider,
+)
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 
-__all__ = ["MODEL_COMPLETE", "MODEL_TOOL_NAME", "PROVIDER_NO_OUTPUT", "ModelCompleteTool"]
+__all__ = ["MODEL_COMPLETE", "MODEL_TOOL_NAME", "ModelCompleteTool"]
 
 MODEL_COMPLETE: Final = CapabilityId("model.complete")
 MODEL_TOOL_NAME: Final = "model-complete"
@@ -45,12 +54,6 @@ DEFAULT_PURPOSE: Final = "model.complete"
 """``ProviderRequest.purpose`` when the arguments name none: the domain requires a purpose, the
 capability's schema makes it optional, and inventing a description of the *content* would be
 worse than naming the capability that asked."""
-
-PROVIDER_NO_OUTPUT: Final = "provider.no_output"
-"""The provider answered without an error and without a text. Not one of the thirteen codes of
-ADR 0020 §7 — those describe a failure the provider *reported* — but a result ELA cannot use:
-an empty answer that claimed to succeed would reach the verifier as a success with nothing in
-it, and the step would fail one layer later with less to say about why."""
 
 TEXT_ARGUMENTS: Final = ("input", "purpose", "instructions", "model_hint")
 """The arguments that must be strings when present; ``input`` must also be there."""
@@ -65,9 +68,9 @@ class ModelCompleteTool(Tool):
     property of the code and not of a habit.
     """
 
-    error_codes: ClassVar[frozenset[str]] = (
-        frozenset({ARGUMENTS_INVALID, PROVIDER_NO_OUTPUT}) | PROVIDER_ERROR_CODES
-    )
+    error_codes: ClassVar[frozenset[str]] = frozenset({ARGUMENTS_INVALID}) | PROVIDER_ERROR_CODES
+    """Its own argument check, plus the whole shared vocabulary of ``ela.ports`` — including
+    :data:`~ela.ports.PROVIDER_NO_OUTPUT`, which lives there and not here (review of M7.2)."""
     output_keys: ClassVar[frozenset[str]] = frozenset(
         {"output", "provider", "model", "finish_reason"}
     )

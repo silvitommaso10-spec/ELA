@@ -16,11 +16,15 @@ from pathlib import Path
 
 import pytest
 
+import ela.ports
+import ela.tools
+import ela.tools.model
 from ela.ports import (
     PROVIDER_AUTHENTICATION_ERROR,
     PROVIDER_BAD_REQUEST,
     PROVIDER_ERROR_CODES,
     PROVIDER_MALFORMED_RESPONSE,
+    PROVIDER_NO_OUTPUT,
     PROVIDER_RATE_LIMITED,
     PROVIDER_REFUSAL,
     PROVIDER_REJECTED,
@@ -207,7 +211,22 @@ def documented_errors(text: str) -> dict[str, bool]:
 
 def test_the_error_table_is_exactly_the_vocabulary_of_the_port() -> None:
     assert set(documented_errors(adr_text())) == set(PROVIDER_ERROR_CODES)
-    assert len(PROVIDER_ERROR_CODES) == 13
+    assert len(PROVIDER_ERROR_CODES) == 14
+
+
+def test_an_answer_with_no_text_is_in_the_vocabulary_and_not_beside_it() -> None:
+    """Review of M7.2: ``provider.no_output`` was a constant of ``ela.tools.model``.
+
+    A code that names a provider failure and lives outside the closed set is what the closed set
+    exists to forbid — a caller could not tell it from a code of its own making, which is the
+    dependency §26 removes. The odd thing about it stays true and is written in §7: it is the one
+    row that names a result nobody reported, an answer that arrived with nothing in it.
+    """
+    assert PROVIDER_NO_OUTPUT in PROVIDER_ERROR_CODES
+    assert documented_errors(adr_text())[PROVIDER_NO_OUTPUT] is False
+    assert "PROVIDER_NO_OUTPUT" in ela.ports.__all__
+    assert "PROVIDER_NO_OUTPUT" not in ela.tools.model.__all__
+    assert "PROVIDER_NO_OUTPUT" not in ela.tools.__all__
 
 
 def test_a_turned_down_request_and_an_unreadable_answer_are_two_different_things() -> None:
@@ -227,6 +246,7 @@ def test_what_the_table_calls_retryable() -> None:
         PROVIDER_UNREACHABLE,
     }
     assert not retryable & {
+        PROVIDER_NO_OUTPUT,
         PROVIDER_AUTHENTICATION_ERROR,
         PROVIDER_BAD_REQUEST,
         PROVIDER_UNKNOWN_MODEL,

@@ -23,6 +23,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -204,7 +205,20 @@ class ExecutionResultRow(Base):
     """
 
     __tablename__ = "execution_results"
-    __table_args__ = {"sqlite_autoincrement": True}
+    __table_args__ = (
+        Index(
+            "ux_execution_results_started_step",
+            "task_id",
+            "step_id",
+            unique=True,
+            sqlite_where=text("status = 'STARTED'"),
+        ),
+        {"sqlite_autoincrement": True},
+    )
+    """A **partial** unique index: one ``STARTED`` record per step (ADR 0021 §1-bis). It is a
+    constraint and not a check in the adapter because that is what makes it true for every
+    writer, present and future — the same reason ``id`` is UNIQUE. Outcomes are not constrained:
+    a UNIQUE on ``(task_id, step_id)`` was deliberately deferred (ADR 0015, alternatives)."""
 
     seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     id: Mapped[UUID] = mapped_column(Uuid, unique=True, nullable=False)

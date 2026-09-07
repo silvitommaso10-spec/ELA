@@ -382,7 +382,11 @@ class FakeApprovalStore:
 
 
 class FakeExecutionResultStore:
-    """Results by id, insert-only (port :class:`~ela.ports.ExecutionResultStore`)."""
+    """Results by id, insert-only (port :class:`~ela.ports.ExecutionResultStore`).
+
+    Two refusals, as the port describes: a repeated id, and a second ``STARTED`` record for a
+    step that already has one (ADR 0021 §1-bis).
+    """
 
     def __init__(self) -> None:
         self._results: dict[ExecutionId, ExecutionResult] = {}
@@ -390,6 +394,13 @@ class FakeExecutionResultStore:
     async def add(self, result: ExecutionResult) -> None:
         if result.id in self._results:
             raise AlreadyExistsError("execution result", result.id)
+        if result.status is ExecutionStatus.STARTED and any(
+            held.status is ExecutionStatus.STARTED
+            and held.task_id == result.task_id
+            and held.step_id == result.step_id
+            for held in self._results.values()
+        ):
+            raise AlreadyExistsError("started record for step", result.step_id)
         self._results[result.id] = result
 
     async def get(self, result_id: ExecutionId) -> ExecutionResult:

@@ -18,7 +18,7 @@ import pytest
 
 from ela.domain import ExecutionStatus
 from ela.executive import EXECUTION_INTERRUPTED
-from ela.tools import PROVIDER_NO_OUTPUT
+from ela.ports import PROVIDER_NO_OUTPUT
 from ela.tools.model import ModelCompleteTool
 from ela.tools.verifiers import ModelCompleteVerifier
 from tests.architecture.rules import RULES

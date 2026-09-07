@@ -27,18 +27,13 @@ from ela.domain import (
 )
 from ela.ports import (
     PROVIDER_ERROR_CODES,
+    PROVIDER_NO_OUTPUT,
     PROVIDER_RATE_LIMITED,
     PROVIDER_UNAVAILABLE,
     NotAllowedError,
 )
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
-from ela.tools import (
-    ARGUMENTS_INVALID,
-    MODEL_COMPLETE,
-    MODEL_TOOL_NAME,
-    PROVIDER_NO_OUTPUT,
-    ModelCompleteTool,
-)
+from ela.tools import ARGUMENTS_INVALID, MODEL_COMPLETE, MODEL_TOOL_NAME, ModelCompleteTool
 from tests.tools.support import allowed
 
 INPUT = "Riassumi le email della riunione."
@@ -260,7 +255,7 @@ async def test_an_empty_answer_is_refused_here_and_not_one_layer_later() -> None
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
     assert result.error.code == PROVIDER_NO_OUTPUT
-    assert result.error.code not in PROVIDER_ERROR_CODES  # not a failure the provider reported
+    assert result.error.code in PROVIDER_ERROR_CODES  # the closed vocabulary, not a code apart
     assert result.error.retryable is False
     assert result.usage == EmptyProvider.usage
     assert result.output["model"] == "empty-model"

@@ -11,12 +11,7 @@ classified once, in :mod:`ela.tools.paths`, for both.
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool, check_decision
 from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME, EchoTool
 from ela.tools.errors import NotIdempotentError, ToolNotFound, ToolsError, VerifierNotFound
-from ela.tools.model import (
-    MODEL_COMPLETE,
-    MODEL_TOOL_NAME,
-    PROVIDER_NO_OUTPUT,
-    ModelCompleteTool,
-)
+from ela.tools.model import MODEL_COMPLETE, MODEL_TOOL_NAME, ModelCompleteTool
 from ela.tools.notes import (
     DIRECTORY_MODE,
     FILE_MODE,
@@ -77,7 +72,6 @@ __all__ = [
     "MODEL_TOOL_NAME",
     "MODEL_UNACCOUNTED",
     "MODEL_VERIFIER_NAME",
-    "PROVIDER_NO_OUTPUT",
     "NOTES_TOOL_NAME",
     "NOTES_VERIFIER_NAME",
     "NOTE_CONTENT_MATCHES",
