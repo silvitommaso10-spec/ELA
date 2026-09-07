@@ -33,7 +33,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Final, NamedTuple
 
-from ela.devices.orchestrator import DeviceOrchestrator
+from ela.devices.orchestrator import DeviceOrchestrator, PlacementDecision
 from ela.domain import (
     AuditEventType,
     DeviceId,
@@ -189,16 +189,17 @@ class TaskRunner:
                 return Run(task, RunOutcome.COMPLETED, tuple(steps), tuple(executions))
 
             step_id = self._next(task_id, graph)
-            device_id = await self._node(task_id, step_id, graph, max_privacy)
-            if device_id is None:
+            placement = await self._node(task_id, step_id, graph, max_privacy)
+            if placement.device is None:
                 task = await self._wait(task)
                 return Run(task, RunOutcome.WAITING_DEVICE, tuple(steps), tuple(executions))
+            device_id = placement.device.id
             if task.state is TaskState.QUEUED:
                 task = await self._engine.start(task_id, device_id=device_id)
             if graph.states[step_id] is StepState.PENDING:
                 await self._engine.start_step(task_id, step_id, device_id=device_id)
 
-            execution = await self._executor.execute(task_id, step_id, device_id=device_id)
+            execution = await self._executor.execute(task_id, step_id, placement=placement)
             steps.append(step_id)
             executions.append(execution)
             task = execution.task
@@ -229,19 +230,28 @@ class TaskRunner:
 
     async def _node(
         self, task_id: TaskId, step_id: StepId, graph: GraphState, max_privacy: PrivacyLevel
-    ) -> DeviceId | None:
-        """The node ``step_id`` runs on, or ``None`` when no node is eligible (ADR 0019 §4).
+    ) -> PlacementDecision:
+        """The decision ``step_id`` runs under; it names no node when none is eligible (§4).
 
         A PENDING step is placed; a RUNNING one is **not placed again** — its node is read back
         from the audit, because a step that was started has already been given a node and asking
         a second time could name another one while a tool ran on the first.
+
+        Reading it back is not the same as trusting it (ADR 0026 §4). The id comes out of an
+        audit event, and ``confirm`` turns it into a decision only if that node is *still*
+        eligible: it judges, it does not choose, so it writes no second ``DEVICE_SELECTED``. A
+        node that has gone means the run waits — the answer ADR 0017 §6 already gives — instead
+        of resuming somewhere nobody would place it now.
         """
+        step = graph.graph.step(step_id)
         if graph.states[step_id] is StepState.RUNNING:
-            return await self._started_on(task_id, step_id)
-        placement = await self._orchestrator.place(
-            graph.graph.step(step_id), task_id=task_id, max_privacy=max_privacy
-        )
-        return None if placement.device is None else placement.device.id
+            return await self._orchestrator.confirm(
+                await self._started_on(task_id, step_id),
+                step,
+                task_id=task_id,
+                max_privacy=max_privacy,
+            )
+        return await self._orchestrator.place(step, task_id=task_id, max_privacy=max_privacy)
 
     async def _started_on(self, task_id: TaskId, step_id: StepId) -> DeviceId:
         """The node the last ``STEP_STARTED`` of this step names; a doubt is a failure (§33)."""

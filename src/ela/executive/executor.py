@@ -60,6 +60,7 @@ from datetime import datetime, timedelta
 from typing import Final, NamedTuple
 from uuid import UUID, uuid5
 
+from ela.devices import PlacementDecision, ensure_placed
 from ela.domain import (
     Actor,
     ActorKind,
@@ -350,15 +351,25 @@ class Executor:
         self._authorization_ttl = authorization_ttl
         self._approval_ttl = approval_ttl
 
-    async def execute(self, task_id: TaskId, step_id: StepId, *, device_id: DeviceId) -> Execution:
+    async def execute(
+        self, task_id: TaskId, step_id: StepId, *, placement: PlacementDecision
+    ) -> Execution:
         """Run and verify the one capability of a RUNNING step of an EXECUTING task (ADR 0013
         §1–§9, ADR 0014 §3–§4), or resume what an earlier call left unfinished (ADR 0015 §5–§7).
 
         The arguments are the step's (``TaskStep.arguments``, ADR 0018), not the caller's: a
         retry is the *same* call and must run on the *same* arguments, or the targets an audit
-        event records would not be the targets the tool acted on. ``device_id`` is the node the
-        orchestrator chose (ADR 0019 §4); it is mandatory because an execution without a node is
-        not a thing this system should be able to express.
+        event records would not be the targets the tool acted on.
+
+        ``placement`` is the orchestrator's decision about *this* step, and it is checked —
+        once the step is known executable, before anything runs — rather than believed
+        (:func:`~ela.devices.orchestrator.ensure_placed`,
+        :class:`~ela.devices.errors.NotPlacedError`), ADR 0026 §2. Until M9.1 this was a bare
+        ``device_id``, which said "here" without saying "for what": the executor had no way to
+        tell a node the orchestrator chose from a node the caller invented, and *which node may
+        see this content* (§57) was the one link in the permission chain guarded in a single
+        place. The node the audit and the results record is now the one the decision names, so
+        naming a node nobody chose has stopped being expressible.
 
         A retry is this same call again. The user's answer to a request this executor made is
         read from the :class:`~ela.ports.ApprovalStore`: the last GRANTED request of the step
@@ -407,6 +418,11 @@ class Executor:
                 f"{', '.join(unknown)}; an action that cannot be verified is not executed",
             )
         targets = targets_of(spec, arguments)
+        # Where, once it is settled that there is something to run and before anything runs.
+        # After the lookups, so a step with no tool still says so with its own error rather than
+        # as a node that cannot host it; before the first read of the results, so a caller with
+        # somebody else's placement leaves no trace (ADR 0026 §3).
+        device_id = ensure_placed(placement, task_id, step_id).id
 
         started, settled = _split(await self._results.for_step(task_id, step_id))
         if len(settled) > 1 or len(started) > 1:

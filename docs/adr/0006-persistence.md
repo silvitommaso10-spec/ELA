@@ -167,6 +167,38 @@ PRAGMA (`test_without_wal_the_append_waits_for_the_verification`) e il test sul 
 `test_engine.py`. Conseguenza: accanto al file `ela.db` vivono `ela.db-wal` e `ela.db-shm`, nella
 stessa directory a `0o700`; un backup copia tutti e tre (o usa l'API di backup di SQLite).
 
+### 13. Aggiunta in review M9.1 (2026-09-07): il caso negativo è un rifiuto, non un'attesa
+
+La promessa del §12 non cambia: WAL resta la modalità richiesta, e un `append` durante una
+verifica lunga va a buon fine. Cambia **come i due test la stabiliscono**, perché il modo
+precedente ha rotto la CI.
+
+Entrambi rallentavano la verifica con `time.sleep` e ne deducevano l'esito da un orologio. Il
+positivo — «l'append è tornato mentre la verifica era ancora in corso» — era vero solo finché
+l'append stava dentro il tempo residuo: margine misurato fra 1 e 61 ms su 500, e sui runner
+ubuntu si ribaltava. Il negativo era peggio ancora, perché era un negativo dedotto: «l'append non
+è tornato entro N millisecondi» non è un fatto osservato, è l'assenza di un'osservazione, e una
+macchina lenta la produce da sola.
+
+Ora la verifica si **ferma** su un evento dopo la prima finestra — lo snapshot è già aperto,
+quindi il listener è `after_cursor_execute` e non `before` — e riparte quando il test lo dice.
+Sotto WAL l'append passa mentre il lettore è fermo, e «ancora in corso» è vero per costruzione su
+qualunque macchina. Sotto rollback journal il motore del test esegue `PRAGMA busy_timeout=0`: il
+commit che non può prendere il lock esclusivo non aspetta cinque secondi, viene **rifiutato**
+subito con `database is locked`. Il negativo diventa così un fatto positivo che il test vede, più
+la riga che non è finita nel log.
+
+`Test rinominato:` `test_without_wal_the_append_waits_for_the_verification` →
+`test_without_wal_the_append_is_refused_while_the_verification_reads`. Il positivo conserva il
+nome, `test_a_long_verification_does_not_block_an_append`.
+
+Nota di implementazione, perché costa mezz'ora a chi non la sa: un listener di statement
+SQLAlchemy **non** gira sul thread della connessione, gira nel greenlet su quello dell'event
+loop. Bloccarlo blocca il loop — ed è anche il motivo per cui, nella versione a `sleep`, l'append
+misurava 330 ms invece di uno: la concorrenza che il test credeva di osservare era interleaving
+fra un loop bloccato e uno libero. L'attesa passa quindi per `sqlalchemy.util.await_only`.
+
+
 ## Alternative considerate
 
 - **Motore sincrono dentro `asyncio.to_thread`** — mescola thread e loop e urta il

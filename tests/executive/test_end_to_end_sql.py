@@ -18,7 +18,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.audit.chain import AuditChainError
-from ela.devices import DeviceOrchestrator, DeviceRegistry, local_device
+from ela.devices import (
+    DeviceOrchestrator,
+    DeviceRegistry,
+    PlacementDecision,
+    local_device,
+    score,
+)
 from ela.domain import (
     Actor,
     ActorKind,
@@ -173,8 +179,38 @@ class SqlPipeline:
             audit=self.audit,
         )
 
+    async def alive(self) -> None:
+        """A sign of life from the one node, as a running ELA sends before every walk.
+
+        ``POST /tasks/{id}/run`` reports the local node alive before it starts (ADR 0023 §5-bis).
+        A test that lets the clock run past the heartbeat TTL — because the user takes their time
+        over an approval — must do the same, or the placement the executor checks would name a
+        node nobody would place on today (ADR 0026 §3).
+        """
+        await self.devices.heartbeat(self.device.id)
+
     async def execute(self, task_id: TaskId, step_id: StepId) -> Execution:
-        return await self.executor.execute(task_id, step_id, device_id=self.device.id)
+        """The decision the executor wants, built as ``tests/executive/support.py`` builds it:
+        the real ``requirements`` and the node as the registry derives it, without ``place``'s
+        audit event, which these tests count (ADR 0026 §3)."""
+        graph = await self.engine.graph(task_id)
+        step = graph.graph.step(step_id)
+        requirements = self.orchestrator.requirements(step)
+        found = [n for n in await self.devices.devices() if n.id == self.device.id]
+        device = found[0] if found else None
+        return await self.executor.execute(
+            task_id,
+            step_id,
+            placement=PlacementDecision(
+                created_at=self.clock.now(),
+                task_id=task_id,
+                step_id=step_id,
+                requirements=requirements,
+                device=device,
+                scores=() if device is None else (score(device, requirements),),
+                reason=f"placed on {self.device.id} by the test pipeline",
+            ),
+        )
 
     async def running(
         self,
@@ -323,6 +359,8 @@ async def test_the_approval_flow_on_sqlite_consumes_the_grant_atomically_and_ver
     assert asked.task.state is TaskState.WAITING_APPROVAL
     assert asked.approval is not None
     p.clock.advance(timedelta(minutes=1))
+    # The user took their time; the node kept reporting itself meanwhile (see `alive`).
+    await p.alive()
     approval = await p.approvals.respond(
         asked.approval.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=p.clock.now()
     )
@@ -439,6 +477,8 @@ async def approved(cp: CrashingSqlPipeline) -> tuple[Any, Any]:
     asked = await cp.execute(task_id, step.id)
     assert asked.approval is not None
     cp.clock.advance(timedelta(minutes=1))
+    # The user took their time; the node kept reporting itself meanwhile (see `alive`).
+    await cp.alive()
     answer = await cp.approvals.respond(
         asked.approval.id, status=ApprovalStatus.GRANTED, responded_by="tommaso", now=cp.clock.now()
     )

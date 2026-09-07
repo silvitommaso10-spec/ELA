@@ -151,56 +151,58 @@ def test_device_round_trip(device: Device) -> None:
     assert row_to_device(device_to_row(device)) == device
 
 
-@settings(max_examples=100)
+# ``deadline=None`` as in the other property tests: Hypothesis fails an example that takes
+# longer than 200ms, and a runner under load is not a bug in the code under test.
+@settings(max_examples=100, deadline=None)
 @given(MODEL_STRATEGIES[Device])
 def test_any_device_round_trips(device: BaseModel) -> None:
     assert isinstance(device, Device)
     assert row_to_device(device_to_row(device)) == device
 
 
-@settings(max_examples=100)
+@settings(max_examples=100, deadline=None)
 @given(MODEL_STRATEGIES[Approval])
 def test_any_approval_round_trips(approval: BaseModel) -> None:
     assert isinstance(approval, Approval)
     assert row_to_approval(approval_to_row(approval)) == approval
 
 
-@settings(max_examples=100)
+@settings(max_examples=100, deadline=None)
 @given(MODEL_STRATEGIES[ExecutionResult])
 def test_any_result_round_trips(result: BaseModel) -> None:
     assert isinstance(result, ExecutionResult)
     assert row_to_result(result_to_row(result)) == result
 
 
-@settings(max_examples=100)
+@settings(max_examples=100, deadline=None)
 @given(MODEL_STRATEGIES[Task])
 def test_any_task_round_trips(task: BaseModel) -> None:
     assert isinstance(task, Task)
     assert row_to_task(task_to_row(task)) == task
 
 
-@settings(max_examples=100)
+@settings(max_examples=100, deadline=None)
 @given(MODEL_STRATEGIES[TaskEvent])
 def test_any_event_round_trips(event: BaseModel) -> None:
     assert isinstance(event, TaskEvent)
     assert row_to_event(event_to_row(event)) == event
 
 
-@settings(max_examples=100)
+@settings(max_examples=100, deadline=None)
 @given(MODEL_STRATEGIES[TaskPlan])
 def test_any_plan_round_trips(plan: BaseModel) -> None:
     assert isinstance(plan, TaskPlan)
     assert row_to_plan(plan_to_row(plan)) == plan
 
 
-@settings(max_examples=100)
+@settings(max_examples=100, deadline=None)
 @given(MODEL_STRATEGIES[Authorization])
 def test_any_authorization_round_trips(authorization: BaseModel) -> None:
     assert isinstance(authorization, Authorization)
     assert row_to_authorization(authorization_to_row(authorization)) == authorization
 
 
-@settings(max_examples=100)
+@settings(max_examples=100, deadline=None)
 @given(MODEL_STRATEGIES[AuditEvent])
 def test_any_audit_event_round_trips(event: BaseModel) -> None:
     assert isinstance(event, AuditEvent)

@@ -22,8 +22,17 @@ RULE_ROW = re.compile(r"^\| (\d+) `([a-z-]+)` \| ([^|]+?) \| ([^|]+?) \|$")
 """§5: the one architecture rule this ADR introduces, by number and by its key in ``RULES``."""
 
 
+LATER_ADR_PATH = ADR_PATH.parent / "0026-placement-as-data.md"
+"""ADR 0026 §9 replaces the signature row of §4: an ADR is immutable, a later one repeats the
+row under its label (``Firma aggiornata:``), and the test of that table reads both."""
+
+
 def adr_text() -> str:
     return ADR_PATH.read_text(encoding="utf-8")
+
+
+def later_adr_text() -> str:
+    return LATER_ADR_PATH.read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------------------
@@ -114,13 +123,23 @@ def test_the_plan_is_still_stored_as_one_json_column() -> None:
 
 
 def test_execute_takes_no_arguments_and_a_mandatory_node() -> None:
+    """The signature this ADR fixed, as ADR 0026 §9 later replaced it.
+
+    An ADR is immutable, so the row of §4 here still reads ``device_id: DeviceId`` and must keep
+    reading so; what the code has is the row ADR 0026 repeats under ``Firma aggiornata:``. The
+    claim of §1 that survives both is the one that matters — the arguments come from the plan and
+    the node is mandatory — and it is checked against the code, not against either row.
+    """
     parameters = inspect.signature(Executor.execute).parameters
     assert "arguments" not in parameters
     assert "approval" not in parameters
-    node = parameters["device_id"]
+    assert "device_id" not in parameters  # replaced, not dropped: see the placement below
+    node = parameters["placement"]
     assert node.kind is inspect.Parameter.KEYWORD_ONLY
     assert node.default is inspect.Parameter.empty
+    assert node.annotation == "PlacementDecision"
     assert "`execute(task_id, step_id, *, device_id: DeviceId)`" in adr_text()
+    assert "`execute(task_id, step_id, *, placement: PlacementDecision)`" in later_adr_text()
 
 
 def test_the_executor_reads_the_arguments_from_the_step() -> None:

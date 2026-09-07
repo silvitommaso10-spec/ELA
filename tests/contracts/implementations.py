@@ -20,7 +20,7 @@ from anthropic import AsyncAnthropic
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.composition import SystemClock, UuidGenerator
-from ela.domain import RiskLevel
+from ela.domain import CapabilityId, RiskLevel
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
     SqlAuditLog,
@@ -79,12 +79,12 @@ from ela.tools import (
     EchoVerifier,
     ToolRegistry,
     VerifierRegistry,
-    WriteNoteTool,
-    WriteNoteVerifier,
+    tools_v01,
+    verifiers_v01,
 )
 from tests.domain.examples import CAPABILITY_SPEC, MODEL_COMPLETE, WRITE_NOTE
 from tests.providers.support import FakeAnthropic, answer, settings
-from tests.routing.support import policy_for
+from tests.routing.support import policy_for, routing_for
 
 Hook = Callable[[object], Awaitable[None]]
 
@@ -216,25 +216,6 @@ def _echo_tool() -> EchoTool:
     return EchoTool(FakeClock(), FakeIdGenerator())
 
 
-class WriteNoteToolHarness:
-    """Builds ``WriteNoteTool`` instances on temporary workspaces and removes them afterwards."""
-
-    def __init__(self) -> None:
-        self._roots: WeakKeyDictionary[WriteNoteTool, Path] = WeakKeyDictionary()
-
-    def make(self) -> WriteNoteTool:
-        root = Path(tempfile.mkdtemp(prefix="ela-workspace-"))
-        tool = WriteNoteTool(root, FakeClock(), FakeIdGenerator())
-        self._roots[tool] = root
-        return tool
-
-    async def teardown(self, instance: object) -> None:
-        assert isinstance(instance, WriteNoteTool)
-        shutil.rmtree(self._roots.pop(instance), ignore_errors=True)
-
-
-_note_tools = WriteNoteToolHarness()
-
 REGISTRY_TOOLS = (FakeTool(WRITE_NOTE, FakeClock(), FakeIdGenerator()), _echo_tool())
 """What every ``ToolRegistryPort`` implementation under contract is built with (ADR 0013)."""
 
@@ -254,28 +235,6 @@ def _fake_verifier() -> FakeVerifier:
 def _echo_verifier() -> EchoVerifier:
     return EchoVerifier()
 
-
-class WriteNoteVerifierHarness:
-    """Builds ``WriteNoteVerifier`` instances on temporary workspaces, removed afterwards.
-
-    The verifier never creates its root (ADR 0014 §2), so the harness does, as the tool would.
-    """
-
-    def __init__(self) -> None:
-        self._roots: WeakKeyDictionary[WriteNoteVerifier, Path] = WeakKeyDictionary()
-
-    def make(self) -> WriteNoteVerifier:
-        root = Path(tempfile.mkdtemp(prefix="ela-workspace-"))
-        verifier = WriteNoteVerifier(root)
-        self._roots[verifier] = root
-        return verifier
-
-    async def teardown(self, instance: object) -> None:
-        assert isinstance(instance, WriteNoteVerifier)
-        shutil.rmtree(self._roots.pop(instance), ignore_errors=True)
-
-
-_note_verifiers = WriteNoteVerifierHarness()
 
 REGISTRY_VERIFIERS = (FakeVerifier(WRITE_NOTE), _echo_verifier())
 """What every ``VerifierRegistryPort`` implementation under contract is built with (ADR 0014)."""
@@ -325,6 +284,106 @@ def _anthropic_on_a_double() -> AnthropicProvider:
     )
 
 
+class ToolsV01Harness:
+    """One implementation per tool of ``tools_v01``, derived instead of listed (ADR 0026 §8).
+
+    Until M9.1 this table named ``EchoTool`` and ``WriteNoteTool`` by hand, and
+    ``ModelCompleteTool`` — the tool that carries the user's content off this machine (§57) — was
+    simply missing: the one tool whose "no execution without an ``ALLOWED`` decision" had never
+    been checked. Listing it too would have fixed today and left the fourth tool to be forgotten
+    the same way, so the list is now read from ``tools_v01``.
+
+    Each instance gets its own temporary workspace, as the hand-written harness did: the registry
+    builds all three tools at once, so a fresh registry per instance is the cheapest way to hand
+    out one tool that owns its root.
+    """
+
+    def __init__(self) -> None:
+        self._roots: WeakKeyDictionary[object, Path] = WeakKeyDictionary()
+
+    def _registry(self, root: Path) -> ToolRegistry:
+        router, providers = routing_for(_provider())
+        return tools_v01(
+            root=root,
+            clock=FakeClock(),
+            ids=FakeIdGenerator(),
+            router=router,
+            providers=providers,
+        )
+
+    def capabilities(self) -> tuple[CapabilityId, ...]:
+        root = Path(tempfile.mkdtemp(prefix="ela-workspace-"))
+        try:
+            return tuple(tool.capability_id for tool in self._registry(root).tools())
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def maker(self, capability_id: CapabilityId) -> Callable[[], object]:
+        def make() -> object:
+            root = Path(tempfile.mkdtemp(prefix="ela-workspace-"))
+            tool = self._registry(root).get(capability_id)
+            self._roots[tool] = root
+            return tool
+
+        return make
+
+    async def teardown(self, instance: object) -> None:
+        shutil.rmtree(self._roots.pop(instance, Path(tempfile.gettempdir())), ignore_errors=True)
+
+
+class VerifiersV01Harness:
+    """The mirror of :class:`ToolsV01Harness` for ``verifiers_v01`` (ADR 0026 §8).
+
+    A verifier never creates its root (ADR 0014 §2), so the harness does, as the tool would.
+    """
+
+    def __init__(self) -> None:
+        self._roots: WeakKeyDictionary[object, Path] = WeakKeyDictionary()
+
+    def capabilities(self) -> tuple[CapabilityId, ...]:
+        root = Path(tempfile.mkdtemp(prefix="ela-workspace-"))
+        try:
+            router, _ = routing_for(_provider())
+            return tuple(
+                v.capability_id for v in verifiers_v01(root=root, router=router).verifiers()
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def maker(self, capability_id: CapabilityId) -> Callable[[], object]:
+        def make() -> object:
+            root = Path(tempfile.mkdtemp(prefix="ela-workspace-"))
+            router, _ = routing_for(_provider())
+            verifier = verifiers_v01(root=root, router=router).get(capability_id)
+            self._roots[verifier] = root
+            return verifier
+
+        return make
+
+    async def teardown(self, instance: object) -> None:
+        shutil.rmtree(self._roots.pop(instance, Path(tempfile.gettempdir())), ignore_errors=True)
+
+
+_v01_tools = ToolsV01Harness()
+_v01_verifiers = VerifiersV01Harness()
+
+
+def _derived(harness: ToolsV01Harness | VerifiersV01Harness) -> tuple[Implementation, ...]:
+    """One :class:`Implementation` per member of the real v0.1 registry, named by its class."""
+    built: list[Implementation] = []
+    for capability_id in harness.capabilities():
+        make = harness.maker(capability_id)
+        probe = make()
+        built.append(Implementation(type(probe).__name__, make, None, harness.teardown))
+    return tuple(built)
+
+
+TOOLS_V01 = _derived(_v01_tools)
+"""Every tool of ``tools_v01`` under the ``ToolPort`` contract, derived from the registry."""
+VERIFIERS_V01 = _derived(_v01_verifiers)
+"""Every verifier of ``verifiers_v01`` under the ``VerifierPort`` contract."""
+
+
 IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     Clock: (
         Implementation("FakeClock", FakeClock),
@@ -369,20 +428,12 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("PermissionGuardian", _guardian),
     ),
     AuthorizingGuardianPort: (Implementation("PermissionGuardian", _guardian),),
-    ToolPort: (
-        Implementation("FakeTool", _tool),
-        Implementation("EchoTool", _echo_tool),
-        Implementation("WriteNoteTool", _note_tools.make, None, _note_tools.teardown),
-    ),
+    ToolPort: (Implementation("FakeTool", _tool), *TOOLS_V01),
     ToolRegistryPort: (
         Implementation("FakeToolRegistry", _fake_tool_registry),
         Implementation("ToolRegistry", _tool_registry),
     ),
-    VerifierPort: (
-        Implementation("FakeVerifier", _fake_verifier),
-        Implementation("EchoVerifier", _echo_verifier),
-        Implementation("WriteNoteVerifier", _note_verifiers.make, None, _note_verifiers.teardown),
-    ),
+    VerifierPort: (Implementation("FakeVerifier", _fake_verifier), *VERIFIERS_V01),
     VerifierRegistryPort: (
         Implementation("FakeVerifierRegistry", _fake_verifier_registry),
         Implementation("VerifierRegistry", _verifier_registry),

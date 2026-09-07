@@ -1,6 +1,7 @@
 """The architecture rules hold on the real source tree (CLAUDE.md "Architettura", spec §52)."""
 
 import importlib
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
@@ -30,6 +31,7 @@ from tests.architecture.rules import (
     PORTS_ALLOWED_INTERNAL,
     RESPOND_METHOD,
     RULES,
+    SECURITY_MODULE,
     STATE_MACHINE_MODULE,
     STEP_EVENT_PREFIX,
     TESTING_DIR,
@@ -37,7 +39,7 @@ from tests.architecture.rules import (
     Rule,
     imported_modules,
 )
-from tests.architecture.violations import PACKAGE_ROOT
+from tests.architecture.violations import PACKAGE_ROOT, copy_package
 
 ORCHESTRATOR_MODULE = "orchestrator.py"
 
@@ -223,3 +225,29 @@ def test_the_orchestrator_really_has_no_way_to_reach_the_task_engine() -> None:
     assert any(name.startswith("ela.ports") for name in imported)
     assert not any(name.startswith("ela.tasks") for name in imported)
     assert not any(name.startswith("ela.executive") for name in imported)
+
+
+def test_the_mutation_that_survived_is_now_reported(tmp_path: Path) -> None:
+    """Rule 31 against the exact mutation that passed 3551 tests (ADR 0026 §6).
+
+    ``secrets.compare_digest(presented.strip().encode(), token.encode())`` replaced by ``==`` on
+    the same two operands: functionally identical, and no assertion in the suite could see the
+    difference, because the difference is how long it takes. Here it is two violations — the safe
+    call is gone *and* the token is compared — and either one alone would be enough.
+    """
+    package = copy_package(tmp_path)
+    module = package / SECURITY_MODULE
+    source = module.read_text(encoding="utf-8")
+    mutated = source.replace(
+        "return secrets.compare_digest(presented.strip().encode(), token.encode())",
+        "return presented.strip().encode() == token.encode()",
+    )
+    assert mutated != source, "the line rule 31 defends is no longer in api/security.py"
+    module.write_text(mutated, encoding="utf-8")
+
+    reported = RULES["constant-time-token"](package)
+
+    assert [violation.imported for violation in reported] == [
+        "compare_digest(...)",
+        "== on the token",
+    ]

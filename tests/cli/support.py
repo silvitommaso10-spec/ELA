@@ -14,6 +14,7 @@ true — ``ASGITransport`` opens nothing, and this class is not one of the trans
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator
 
 import httpx
@@ -21,7 +22,7 @@ import pytest
 from click.testing import Result
 from fastapi import FastAPI
 from httpx import ASGITransport
-from typer import Typer
+from typer import Typer, rich_utils
 from typer.testing import CliRunner
 
 from ela.api import create_app
@@ -29,7 +30,53 @@ from ela.cli import client
 from ela.cli.app import app as ela_app
 from ela.composition import Ela
 
-__all__ = ["Cli", "LoopTransport", "cli", "refusing", "unreachable"]
+__all__ = [
+    "Cli",
+    "LoopTransport",
+    "_output_without_a_terminal",
+    "cli",
+    "plain",
+    "refusing",
+    "unreachable",
+]
+
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+"""The colour escape sequences: the only ones Rich puts in a command's output."""
+
+WIDTH = 100
+"""One width on every machine. A panel wrapped at a different column is a different string, and
+an assertion on the text would otherwise depend on the terminal the suite happens to run in."""
+
+
+def plain(text: str) -> str:
+    """``text`` with the colour taken out — the net under :func:`_output_without_a_terminal`.
+
+    The fixture is what makes the output plain; this is what makes an assertion hold even if one
+    day it does not, because a sequence between ``-`` and ``-approval`` breaks ``in`` silently and
+    breaks ``not in`` worse: the substring is absent and the test passes for the wrong reason.
+    """
+    return ANSI.sub("", text)
+
+
+@pytest.fixture(autouse=True)
+def _output_without_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No colour and a fixed width for every CLI test, here once rather than in each assertion.
+
+    Typer decides at **import** whether it is writing to a terminal: ``FORCE_TERMINAL`` is true
+    when ``GITHUB_ACTIONS``, ``FORCE_COLOR`` or ``PY_COLORS`` is set (``typer/rich_utils.py``). On
+    GitHub Actions it therefore colours a stream nobody is watching, and Rich's option highlighter
+    — whose ``switch`` pattern matches ``-approval`` inside ``--approval``, because the leading
+    ``-`` is a non-word character — writes the option as two styled spans. The literal
+    ``--approval`` is then nowhere in the output: that is why CI failed while the machine passed.
+
+    Unsetting the variables is not enough, since the decision was taken when the module was
+    imported; the constant is replaced too, and the width with it.
+    """
+    for name in ("GITHUB_ACTIONS", "FORCE_COLOR", "PY_COLORS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("COLUMNS", str(WIDTH))
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", False)
+    monkeypatch.setattr(rich_utils, "MAX_WIDTH", WIDTH)
 
 
 class LoopTransport(httpx.BaseTransport):

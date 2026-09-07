@@ -475,9 +475,16 @@ async def test_a_walk_resumed_after_the_user_took_their_time_needs_a_node_still_
     """The shape a long task really has (review of M6.3): the walk stops for a consent, the user
     thinks for longer than a heartbeat lasts, and the node has to still be there afterwards.
 
-    The step already RUNNING resumes on the node it was started on — that is a fact in the audit,
-    not a placement to retake — but the **next** step needs a placement, and there is nothing to
-    place it on until the node says it is alive.
+    **Changed in M9.1** (ADR 0026 §4). Until then the step already RUNNING resumed on the node it
+    was started on without asking anything — "a fact in the audit, not a placement to retake" —
+    and only the *next* step needed a node that was answering. So a walk could run a tool on a
+    machine that had stopped saying it was there, and the id came out of an audit event with
+    nobody to judge it.
+
+    Now the id is still read from the audit, and ``confirm`` turns it into a decision only if
+    that node is still eligible. A silent node means the resumed step does not run either: the
+    walk waits, and waiting is the answer ADR 0017 §6 already gives. Nothing fails, nothing is
+    lost — the step is still RUNNING and the same walk finishes it as soon as the node speaks.
     """
     task, steps = await w.queued(GUARDED_ECHO.id, ECHO.id)
     asked = await w.runner.run(task.id)
@@ -490,18 +497,20 @@ async def test_a_walk_resumed_after_the_user_took_their_time_needs_a_node_still_
     stalled = await w.runner.run(task.id)
 
     assert stalled.outcome is RunOutcome.WAITING_DEVICE
-    assert stalled.steps == (steps[0].id,)  # the RUNNING one finished on its own node
+    assert stalled.steps == ()  # not even the RUNNING one: its node is not answering
     assert stalled.task.state is TaskState.QUEUED
     graph = await w.engine.graph(task.id)
-    assert graph.states[steps[0].id] is StepState.COMPLETED
+    assert graph.states[steps[0].id] is StepState.RUNNING  # kept, not failed and not lost
     assert graph.states[steps[1].id] is StepState.PENDING
     assert E.TASK_FAILED not in await w.event_types(task.id)
+    # Confirming is not choosing: no second DEVICE_SELECTED claims a choice nobody made.
+    assert (await w.event_types(task.id)).count(E.DEVICE_SELECTED) == 1
 
     await w.alive()
     finished = await w.runner.run(task.id)
 
     assert finished.outcome is RunOutcome.COMPLETED
-    assert finished.steps == (steps[1].id,)
+    assert finished.steps == (steps[0].id, steps[1].id)
 
 
 async def test_a_node_that_keeps_beating_carries_a_walk_across_the_deadline(w: World) -> None:

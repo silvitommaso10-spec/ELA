@@ -13,7 +13,7 @@ import pytest
 from ela.api import server
 from ela.cli.errors import CONFIGURATION
 from ela.composition import Settings
-from tests.cli.support import Cli
+from tests.cli.support import Cli, plain
 
 
 async def test_serve_builds_ela_from_the_settings_and_serves_it(
@@ -40,5 +40,5 @@ async def test_a_configuration_ela_cannot_use_stops_before_anything_is_built(
     result = await cli("serve")
 
     assert result.exit_code == CONFIGURATION
-    assert "ELA_API_HOST" in result.stderr
+    assert "ELA_API_HOST" in plain(result.stderr)
     assert called == []

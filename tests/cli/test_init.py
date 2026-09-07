@@ -12,7 +12,7 @@ import pytest
 from ela.cli.errors import CONFIGURATION
 from ela.cli.setup import ENV_FILE, TOKEN_VARIABLE, VARIABLES, assigned, template
 from ela.composition import MIN_TOKEN_LENGTH, ApiSettings
-from tests.cli.support import Cli
+from tests.cli.support import Cli, plain
 
 
 def env_file(tmp_path: Path) -> Path:
@@ -35,7 +35,7 @@ async def test_the_token_it_generates_is_never_printed(cli: Cli, tmp_path: Path)
 
     token = assigned_token(env_file(tmp_path))
     assert token not in result.stdout
-    assert token not in result.stderr
+    assert token not in plain(result.stderr)
     assert "read it from the file" in result.stdout
 
 
@@ -100,8 +100,8 @@ async def test_an_env_without_a_token_is_a_configuration_failure(cli: Cli, tmp_p
     result = await cli("init")
 
     assert result.exit_code == CONFIGURATION
-    assert TOKEN_VARIABLE in result.stderr
-    assert "token_urlsafe" in result.stderr
+    assert TOKEN_VARIABLE in plain(result.stderr)
+    assert "token_urlsafe" in plain(result.stderr)
 
 
 async def test_an_env_that_sets_everything_reports_nothing_missing(

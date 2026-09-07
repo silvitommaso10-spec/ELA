@@ -391,6 +391,11 @@ async def approved_and_resumed(w: World, capability_id: CapabilityId, arguments:
     asked = await w.execute(task.id, step.id)
     assert asked.approval is not None
     w.clock.advance(timedelta(minutes=1))
+    # A minute is the whole heartbeat TTL, so the node is stale exactly when the user answers.
+    # In a running ELA the walk that resumes goes through the `run` route, which reports the
+    # local node alive before it starts (ADR 0023 §5-bis); without that, the placement the
+    # executor now checks would name a node nobody would place on today (ADR 0026 §3).
+    await w.alive()
     approval = await w.answered(asked.approval)  # respond first, then the engine (ADR 0015 §6)
     await w.engine.approve(task.id, approval)
     await w.engine.start(task.id)

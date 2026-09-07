@@ -11,7 +11,7 @@ from pydantic import SecretStr
 from ela.cli import client
 from ela.cli.errors import REFUSED, UNREACHABLE
 from ela.composition import ApiSettings, Ela
-from tests.cli.support import Cli, unreachable
+from tests.cli.support import Cli, plain, unreachable
 from tests.composition.support import TOKEN
 
 
@@ -76,7 +76,7 @@ async def test_a_wrong_token_is_a_refusal_and_not_a_crash(
     result = await cli("health")
 
     assert result.exit_code == REFUSED
-    assert "unauthorized" in result.stderr
+    assert "unauthorized" in plain(result.stderr)
 
 
 async def test_ela_not_running_has_an_exit_code_of_its_own(
@@ -91,4 +91,4 @@ async def test_ela_not_running_has_an_exit_code_of_its_own(
     result = await cli("health")
 
     assert result.exit_code == UNREACHABLE
-    assert "start it with `ela serve`" in result.stderr
+    assert "start it with `ela serve`" in plain(result.stderr)

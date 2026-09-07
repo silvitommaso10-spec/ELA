@@ -24,7 +24,7 @@ from ela.api import server
 from ela.cli import client
 from ela.cli.errors import CONFIGURATION, OK, REFUSED, UNREACHABLE, fail
 from ela.composition import ApiSettings, Ela
-from tests.cli.support import Cli, unreachable
+from tests.cli.support import Cli, plain, unreachable
 from tests.docs.test_adr_cli import documented_command_exits, documented_commands
 
 MISSING = "11111111-1111-4111-8111-111111111111"
@@ -118,7 +118,7 @@ async def test_a_token_ela_does_not_know_is_a_refusal_for_every_command(
     result = await cli(*INVOCATIONS[command])
 
     assert result.exit_code == REFUSED, result.output
-    assert "unauthorized" in result.stderr
+    assert "unauthorized" in plain(result.stderr)
     assert REFUSED in documented_command_exits()[command]
 
 
@@ -134,7 +134,7 @@ async def test_no_token_at_all_never_reaches_ela(
     result = await cli(*INVOCATIONS[command])
 
     assert result.exit_code == CONFIGURATION, result.output
-    assert "ELA_API_TOKEN" in result.stderr
+    assert "ELA_API_TOKEN" in plain(result.stderr)
 
 
 @pytest.mark.parametrize("command", ["init", "serve"], ids=["init", "serve"])
