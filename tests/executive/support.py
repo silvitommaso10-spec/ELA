@@ -101,20 +101,29 @@ class Crashing:
     """A port whose named methods can be made to die instead of writing.
 
     ``arm(method, when)`` makes the next calls of ``method`` for which ``when(*args, **kwargs)``
-    is true raise :class:`SimulatedCrash` before the inner port is touched; ``disarm()`` is the
-    restart. Every other member is the inner port's. Works on a fake and on a SQL adapter
+    is true raise :class:`SimulatedCrash` **before** the inner port is touched; ``disarm()`` is
+    the restart. Every other member is the inner port's. Works on a fake and on a SQL adapter
     alike, so the same crash can be simulated on both.
+
+    ``after=True`` moves the death to the other side of the same write: the inner port is
+    called, the write lands, and *then* the process is gone. Half the rows of ADR 0015 §8 are
+    written that way — "il processo muore **dopo** ``PERMISSION_DECIDED``" — and for window 3
+    there is no later write to arm instead, because what comes next depends on the decision that
+    never came back. A crash before a write and a crash after it leave different worlds behind,
+    and only one of the two was simulable until M9.4.
     """
 
     def __init__(self, inner: object, *methods: str) -> None:
         self._inner = inner
         self._methods = frozenset(methods)
-        self.armed: dict[str, Callable[..., bool]] = {}
+        self.armed: dict[str, tuple[Callable[..., bool], bool]] = {}
         self.refused = 0
 
-    def arm(self, method: str, when: Callable[..., bool] | None = None) -> None:
+    def arm(
+        self, method: str, when: Callable[..., bool] | None = None, *, after: bool = False
+    ) -> None:
         assert method in self._methods, method
-        self.armed[method] = (lambda *args, **kwargs: True) if when is None else when
+        self.armed[method] = ((lambda *args, **kwargs: True) if when is None else when, after)
 
     def disarm(self) -> None:
         self.armed = {}
@@ -125,11 +134,16 @@ class Crashing:
             return attribute
 
         async def guarded(*args: Any, **kwargs: Any) -> Any:
-            when = self.armed.get(name)
-            if when is not None and when(*args, **kwargs):
-                self.refused += 1
-                raise SimulatedCrash(f"{type(self._inner).__name__}.{name} never happened")
-            return await attribute(*args, **kwargs)
+            armed = self.armed.get(name)
+            if armed is None or not armed[0](*args, **kwargs):
+                return await attribute(*args, **kwargs)
+            if armed[1]:  # the write lands; what never happens is everything after it
+                await attribute(*args, **kwargs)
+            self.refused += 1
+            raise SimulatedCrash(
+                f"{type(self._inner).__name__}.{name} "
+                + ("happened and then the process died" if armed[1] else "never happened")
+            )
 
         return guarded
 
@@ -388,25 +402,43 @@ class Crashes:
     repository: Crashing
     results: Crashing
     approvals: Crashing
+    authorizations: Crashing
+    """The grant store joined the others in M9.4: window 6 dies between ``consume`` and the tool,
+    and ``consume`` is a write of this store and of no other."""
 
     def disarm(self) -> None:
-        for port in (self.audit, self.repository, self.results, self.approvals):
+        for port in (
+            self.audit,
+            self.repository,
+            self.results,
+            self.approvals,
+            self.authorizations,
+        ):
             port.disarm()
 
 
-def crashing_world(**options: Any) -> tuple[World, Crashes]:
-    """A world whose writes can be made to die one at a time."""
+def crashing_world(
+    *, grants: AuthorizationStore | None = None, **options: Any
+) -> tuple[World, Crashes]:
+    """A world whose writes can be made to die one at a time.
+
+    ``grants`` replaces the store the grants live in — the way window 10 gets one whose grant is
+    gone by the time it is consumed. It is a separate parameter and not ``store`` of
+    :func:`world` because that one is already taken: this world always wraps the grant store.
+    """
     crashes = Crashes(
         Crashing(FakeAuditLog(), "append"),
         Crashing(FakeTaskRepository(), "save", "append_event"),
         Crashing(FakeExecutionResultStore(), "add"),
         Crashing(FakeApprovalStore(), "add"),
+        Crashing(FakeAuthorizationStore() if grants is None else grants, "grant", "consume"),
     )
     w = world(
         audit=crashes.audit,  # type: ignore[arg-type]
         repository=crashes.repository,  # type: ignore[arg-type]
         results=crashes.results,  # type: ignore[arg-type]
         approvals=crashes.approvals,  # type: ignore[arg-type]
+        store=crashes.authorizations,  # type: ignore[arg-type]
         **options,
     )
     return w, crashes
@@ -422,6 +454,11 @@ def trail_of(event_type: TaskEventType) -> Any:
 
 def saved_as(state: TaskState) -> Any:
     return lambda task: task.state is state
+
+
+def moved_to(state: TaskState) -> Any:
+    """The trail event of *one* transition: ``STATE_CHANGED`` says which, ``trail_of`` does not."""
+    return lambda event: event.new_state is state
 
 
 async def count(w: World, task_id: Any, event_type: AuditEventType) -> int:

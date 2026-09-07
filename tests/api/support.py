@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.api import create_app
 from ela.composition import Ela
+from ela.domain import Task
 from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS
 from ela.permissions import CORE_ECHO, WORKSPACE_WRITE_NOTE
 from ela.tools import ECHO_MESSAGE_MATCHES, NOTE_CONTENT_MATCHES, NOTE_EXISTS
@@ -97,6 +98,13 @@ async def tamper_with_the_trail(ela: Ela) -> None:
         await connection.execute(
             text("UPDATE audit_events SET summary = 'rewritten' WHERE seq = 1")
         )
+
+
+class BrokenRepository:
+    """A repository whose disk is gone. Only ``tasks`` is needed: it is what health reads."""
+
+    async def tasks(self, **kwargs: Any) -> tuple[Task, ...]:
+        raise OSError("disk I/O error")
 
 
 def served_paths(app: FastAPI) -> list[tuple[str, str]]:

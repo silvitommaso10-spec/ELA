@@ -17,19 +17,12 @@ from httpx import ASGITransport, AsyncClient
 from ela.api import create_app
 from ela.api.tasks import PLAN_IS_TEMPORARY
 from ela.composition import Ela
-from ela.domain import Task, TaskState
+from ela.domain import TaskState
 from ela.ports import TaskRepository
 from ela.providers.anthropic import PROVIDER_NAME
 from ela.routing import DEFAULT_ROUTES
-from tests.api.support import AUTHORIZED, BASE, echo_plan, queued
+from tests.api.support import AUTHORIZED, BASE, BrokenRepository, echo_plan, queued
 from tests.composition.support import TOKEN
-
-
-class BrokenRepository:
-    """A repository whose disk is gone. Only ``tasks`` is needed: it is what health reads."""
-
-    async def tasks(self, **kwargs: Any) -> tuple[Task, ...]:
-        raise OSError("disk I/O error")
 
 
 async def test_health_says_the_database_answered(client: AsyncClient) -> None:
