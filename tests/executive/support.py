@@ -297,6 +297,14 @@ class World:
         await self.engine.queue(task.id)
         return await self.task(task.id), tuple(steps)
 
+    async def alive(self) -> Device:
+        """A sign of life from the one node (§16): the heartbeat a real node would send.
+
+        Needed by every test that moves the clock past :data:`HEARTBEAT_TTL` and still expects a
+        node to run on: availability is derived from the last heartbeat, not declared once.
+        """
+        return await self.devices.heartbeat(self.node.id)
+
     async def execute(
         self, task_id: TaskId, step_id: StepId, *, device_id: DeviceId | None = None
     ) -> Execution:
@@ -416,12 +424,13 @@ def fake_verifiers() -> dict[CapabilityId, FakeVerifier]:
     return {spec.id: fake_verifier(spec.id) for spec in TOOLED}
 
 
-HEARTBEAT_TTL = timedelta(days=30)
-"""Long on purpose: the one node of this world never goes quiet.
+HEARTBEAT_TTL = timedelta(seconds=60)
+"""The real default of ``ELA_DEVICE_HEARTBEAT_TTL_SECONDS`` (ADR 0016 §3), as ``tests/devices``.
 
-These tests are about the executor and the runner; whether a heartbeat expires is ADR 0016's
-question and has its own tests in ``tests/devices``. A short TTL here would make a test that
-advances the clock — an approval TTL, a grant TTL — lose its node for an unrelated reason.
+Deliberately short (review of M6.3). A long TTL would make the node of this world immortal and
+hide exactly the class of bug Fase 12 has to find: a node that goes quiet in the middle of a long
+task. So a test that moves the clock past a minute and then expects the walk to go on has to say
+so, with :meth:`World.alive` — because that is what would have to happen for real.
 """
 
 

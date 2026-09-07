@@ -21,7 +21,7 @@ from ela.domain import (
     TaskState,
 )
 from ela.executive import RunnerError, RunOutcome
-from tests.executive.support import BAD, OK, World, world
+from tests.executive.support import BAD, HEARTBEAT_TTL, OK, World, world
 from tests.permissions.support import CRITICAL, ECHO, GUARDED_ECHO, NOTE, grant
 from tests.tasks.support import result_for
 
@@ -379,26 +379,28 @@ async def test_a_completed_task_is_reported_and_nothing_is_written(w: World) -> 
     assert len(await w.events(task.id)) == before
 
 
-async def test_a_cancelled_task_is_terminal_and_a_run_touches_nothing(w: World) -> None:
+async def test_a_cancelled_task_says_cancelled_and_a_run_touches_nothing(w: World) -> None:
     task, _ = await w.queued(ECHO.id)
     await w.engine.cancel(task.id, reason="the user changed their mind")
     before = len(await w.events(task.id))
 
     run = await w.runner.run(task.id)
 
-    assert run.outcome is RunOutcome.TERMINAL
+    assert run.outcome is RunOutcome.CANCELLED
     assert run.task.state is TaskState.CANCELLED
     assert len(await w.events(task.id)) == before
 
 
-async def test_an_expired_task_is_terminal_too(w: World) -> None:
+async def test_an_expired_task_says_expired_and_not_cancelled(w: World) -> None:
+    """Two facts, two outcomes: somebody stopped this one, or time did (review of M6.3)."""
     task, _ = await w.queued(ECHO.id, deadline=w.now + timedelta(minutes=1))
     w.clock.advance(timedelta(minutes=2))
     await w.engine.expire(task.id)
 
     run = await w.runner.run(task.id)
 
-    assert run.outcome is RunOutcome.TERMINAL
+    assert run.outcome is RunOutcome.EXPIRED
+    assert run.outcome is not RunOutcome.CANCELLED
     assert run.task.state is TaskState.EXPIRED
 
 
@@ -460,3 +462,57 @@ async def test_a_completed_plan_whose_result_is_missing_cannot_close_the_task(w:
 
     with pytest.raises(RunnerError, match="0 stored results"):
         await w.runner.run(task.id)
+
+
+# --------------------------------------------------------------------------------------
+# Time passing: a node is available because it keeps saying so, not because it once did
+# --------------------------------------------------------------------------------------
+
+
+async def test_a_walk_resumed_after_the_user_took_their_time_needs_a_node_still_alive(
+    w: World,
+) -> None:
+    """The shape a long task really has (review of M6.3): the walk stops for a consent, the user
+    thinks for longer than a heartbeat lasts, and the node has to still be there afterwards.
+
+    The step already RUNNING resumes on the node it was started on — that is a fact in the audit,
+    not a placement to retake — but the **next** step needs a placement, and there is nothing to
+    place it on until the node says it is alive.
+    """
+    task, steps = await w.queued(GUARDED_ECHO.id, ECHO.id)
+    asked = await w.runner.run(task.id)
+    assert asked.outcome is RunOutcome.WAITING_APPROVAL
+
+    (request,) = await w.approvals.for_task(task.id)
+    w.clock.advance(HEARTBEAT_TTL * 5)  # the user thinks; the node says nothing
+    await w.engine.approve(task.id, await w.answered(request))
+
+    stalled = await w.runner.run(task.id)
+
+    assert stalled.outcome is RunOutcome.WAITING_DEVICE
+    assert stalled.steps == (steps[0].id,)  # the RUNNING one finished on its own node
+    assert stalled.task.state is TaskState.QUEUED
+    graph = await w.engine.graph(task.id)
+    assert graph.states[steps[0].id] is StepState.COMPLETED
+    assert graph.states[steps[1].id] is StepState.PENDING
+    assert E.TASK_FAILED not in await w.event_types(task.id)
+
+    await w.alive()
+    finished = await w.runner.run(task.id)
+
+    assert finished.outcome is RunOutcome.COMPLETED
+    assert finished.steps == (steps[1].id,)
+
+
+async def test_a_node_that_keeps_beating_carries_a_walk_across_the_deadline(w: World) -> None:
+    task, steps = await w.queued(GUARDED_ECHO.id, ECHO.id)
+    await w.runner.run(task.id)
+    (request,) = await w.approvals.for_task(task.id)
+    w.clock.advance(HEARTBEAT_TTL * 5)
+    await w.alive()  # what a real node does while a task is open
+    await w.engine.approve(task.id, await w.answered(request))
+
+    run = await w.runner.run(task.id)
+
+    assert run.outcome is RunOutcome.COMPLETED
+    assert run.steps == tuple(step.id for step in steps)

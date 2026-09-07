@@ -40,6 +40,7 @@ from ela.executive import (
     Execution,
     Executor,
     ExecutorError,
+    RunOutcome,
     TaskRunner,
 )
 from ela.permissions import (
@@ -420,3 +421,41 @@ async def test_a_capability_outside_the_catalogue_is_refused_by_name(p: Pipeline
     with pytest.raises(CapabilityNotFound):
         await p.execute(task_id, step.id)
     assert await p.types(task_id) == LIFE_CYCLE
+
+
+async def test_the_runner_walks_a_real_plan_end_to_end(p: Pipeline, workspace: Path) -> None:
+    """The whole stack in one call: the production catalogue, the production tool and verifier,
+    the orchestrator and the runner. Nobody starts the step or closes the task by hand."""
+    step, task_id = await p.planned_and_running(WORKSPACE_WRITE_NOTE, start=False)
+
+    run = await p.runner.run(task_id)
+
+    assert run.outcome is RunOutcome.COMPLETED
+    assert run.steps == (step.id,)
+    assert (workspace / NOTE_PATH).read_text(encoding="utf-8") == BODY
+    assert await p.types(task_id) == [
+        *LIFE_CYCLE[:4],
+        E.DEVICE_SELECTED,
+        E.TASK_STARTED,
+        E.STEP_STARTED,
+        E.PERMISSION_DECIDED,
+        E.TOOL_EXECUTED,
+        E.EXECUTION_VERIFIED,
+        E.STEP_COMPLETED,
+        E.TASK_COMPLETED,
+    ]
+
+
+async def test_a_node_gone_quiet_leaves_a_real_plan_queued(p: Pipeline) -> None:
+    """The Fase 12 case, on the production stack: the node stops answering and the task waits."""
+    _, task_id = await p.planned_and_running(CORE_ECHO, start=False)
+    p.clock.advance(HEARTBEAT_TTL * 2)
+
+    run = await p.runner.run(task_id)
+
+    assert run.outcome is RunOutcome.WAITING_DEVICE
+    assert run.task.state is TaskState.QUEUED
+    assert E.TASK_FAILED not in await p.types(task_id)
+
+    await p.devices.heartbeat(p.device.id)
+    assert (await p.runner.run(task_id)).outcome is RunOutcome.COMPLETED

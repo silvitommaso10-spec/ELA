@@ -114,6 +114,14 @@ Il runner è sequenziale, quindi di step `RUNNING` ce n'è al più uno: due sono
 trail e il ciclo solleva `RunnerError` (§33). Uno step `RUNNING` il cui `STEP_STARTED` non nomina
 un nodo è `RunnerError` anch'esso: il nodo non si inventa.
 
+**Limite dichiarato, a carico di M7.** Riprendere uno step `RUNNING` sul nodo del suo
+`STEP_STARTED` significa eseguirlo anche se il registro nel frattempo dà quel nodo per
+irraggiungibile — è successo davvero in `test_a_walk_resumed_after_the_user_took_their_time_…`,
+dove il nodo tace per cinque volte la durata di un heartbeat mentre l'utente decide. In v0.1
+l'esecuzione avviene comunque nel Core, quindi la cosa non ha conseguenze; con nodi remoti veri
+la scelta fra «riprendi sul nodo di prima» e «ripiazza e ricomincia» è una decisione che dipende
+da §15 (il trasferimento di un workload) e va presa allora, non indovinata adesso.
+
 Tutto il resto è riletto dagli store a ogni iterazione, quindi fra due iterazioni non sopravvive
 nulla in memoria — ed è per questo che un processo nuovo e un'iterazione nuova sono la stessa
 cosa (`test_window_r8_…`).
@@ -197,7 +205,13 @@ dichiara il nodo più permissivo che tollera, e una privacy non dichiarata non �
 | `DENIED` | il Guardian ha negato uno step; il task è DENIED e nulla è girato |
 | `WAITING_APPROVAL` | uno step aspetta il consenso dell'utente (§30) |
 | `WAITING_DEVICE` | nessun nodo idoneo: il task è QUEUED e **non** fallisce |
-| `TERMINAL` | il task era già chiuso da altri — CANCELLED o EXPIRED |
+| `CANCELLED` | qualcuno ha fermato il task (§65) |
+| `EXPIRED` | il task ha finito il tempo (§14) |
+
+**Uno stato, un esito.** `CANCELLED` ed `EXPIRED` sono due righe e non una: un task che qualcuno
+ha fermato e uno a cui è scaduto il tempo sono fatti diversi — il primo è una decisione con un
+attore dietro, il secondo è il tempo che passa — e un esito unico «terminale» butterebbe via una
+distinzione che dopo non si recupera più (review di M6.3).
 
 `Run(task, outcome, steps, executions)`: gli step eseguiti *da questa chiamata*, in ordine, e la
 parola dell'executor su ciascuno. Nulla di persistito. La stessa tabella (`OUTCOMES`) serve al

@@ -581,6 +581,15 @@ VIOLATIONS: tuple[Case, ...] = (
         "ela.tasks.graph",
     ),
     Case(
+        "executor-receiver-outside-the-runner",
+        "tool-execute-callers",
+        "executive/loop.py",
+        "class R:\n"
+        "    async def run(self, t, s, d):\n"
+        "        return await self._executor.execute(t, s, device_id=d)\n",
+        ".execute(",
+    ),
+    Case(
         "tool-executed-by-a-lookalike-receiver",
         "tool-execute-callers",
         "executive/loop.py",

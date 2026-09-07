@@ -23,7 +23,9 @@ RECOVERY_TESTS = Path(test_runner_recovery.__file__)
 
 WINDOW_ROW = re.compile(r"^\| (R\d) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \|$")
 """§8: the crash windows, named ``R<n>`` — the only table whose first cell is one."""
-OUTCOME_ROW = re.compile(r"^\| `(COMPLETED|FAILED|DENIED|WAITING_\w+|TERMINAL)` \| (.+?) \|$")
+OUTCOME_ROW = re.compile(
+    r"^\| `(COMPLETED|FAILED|DENIED|CANCELLED|EXPIRED|WAITING_\w+)` \| (.+?) \|$"
+)
 """§10: an outcome in backticks and one cell of prose; two columns, unlike every other table."""
 PROPERTY_ROW = re.compile(r"^\| (uno step .+?) \| (.+?) \| ((?:`test_\w+`(?:, )?)+) \|$")
 """§5: the two re-entrancy properties, each with the tests that fix it."""
@@ -65,10 +67,18 @@ def test_the_adr_lists_every_outcome_the_code_can_return() -> None:
 
 
 def test_the_outcome_table_is_the_one_the_code_maps_states_through() -> None:
-    """Every terminal or waiting state of ``OUTCOMES`` is an outcome the ADR names."""
+    """Every closed or waiting state of ``OUTCOMES`` is an outcome the ADR names."""
     assert {outcome.name for outcome in OUTCOMES.values()} <= {
         m.group(1) for m in rows(OUTCOME_ROW, section("10."))
     }
+
+
+def test_no_two_states_share_an_outcome() -> None:
+    """One state, one outcome (review of M6.3): a task somebody stopped and one whose deadline
+    passed are two facts, and an outcome that merged them could not be split later."""
+    assert len(set(OUTCOMES.values())) == len(OUTCOMES)
+    assert OUTCOMES[TaskState.CANCELLED] is not OUTCOMES[TaskState.EXPIRED]
+    assert "Uno stato, un esito" in section("10.")
 
 
 def test_the_states_a_plan_is_walked_from_are_the_two_the_adr_names() -> None:

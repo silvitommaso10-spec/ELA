@@ -41,6 +41,7 @@ from ela.executive import (
     Execution,
     Executor,
     ExecutorError,
+    RunOutcome,
     TaskRunner,
 )
 from ela.infrastructure.persistence import (
@@ -530,3 +531,21 @@ async def test_window_9_on_sqlite_is_the_engines_hole_and_the_chain_still_verifi
     types = await cp.types(task_id)
     assert E.STEP_COMPLETED not in types and types[-1] is E.EXECUTION_VERIFIED
     assert (await verify_chain(engine)).length == len(types)
+
+
+async def test_the_runner_walks_a_real_plan_and_the_node_reaches_the_row(
+    p: SqlPipeline, engine: AsyncEngine
+) -> None:
+    """The whole stack on SQLite: the runner closes the task, and the node the orchestrator chose
+    is on the persisted result, not only in memory. The chain still verifies."""
+    step, task_id = await p.running(WORKSPACE_WRITE_NOTE, start=False)
+
+    run = await p.runner.run(task_id)
+
+    assert run.outcome is RunOutcome.COMPLETED
+    assert (p.workspace / NOTE_PATH).read_text(encoding="utf-8") == "hi"
+    (stored,) = await p.results.for_step(task_id, step.id)
+    assert stored.device_id == p.device.id  # read back through the adapter, not from memory
+    executed = [e for e in await p.audit.read(task_id=task_id) if e.event_type is E.TOOL_EXECUTED]
+    assert [e.device_id for e in executed] == [p.device.id]
+    await verify_chain(engine)

@@ -112,8 +112,11 @@ AUTHORIZATION_READER = PERSISTENCE_MAPPERS
 EXECUTOR_MODULE = Path("executive") / "executor.py"
 EXECUTE_METHOD = "execute"
 #: Rule 16 (ADR 0019 §3): ``self._executor.execute(...)`` is the runner driving the executor, not
-#: a second place where a tool runs. One receiver name, as narrow as the SQLAlchemy exemption
-#: below: everything else called ``.execute(...)`` outside the executor is still reported.
+#: a second place where a tool runs. One receiver name **in one module**: the exemption belongs to
+#: the runner, not to the name, so an attribute called ``_executor`` anywhere else does not
+#: inherit it (review of M6.3). Everything else called ``.execute(...)`` outside the executor is
+#: still reported.
+RUNNER_MODULE = Path("executive") / "runner.py"
 EXECUTOR_RECEIVERS = frozenset({"_executor"})
 SQL_EXECUTORS = frozenset({"session", "connection", "cursor"})
 # Rule 17 (ADR 0014 §9): only the executor completes a step, and only after verification.
@@ -646,15 +649,18 @@ def check_tool_execute_callers(pkg_root: Path) -> list[Violation]:
     decision in hand; a second caller would be a second place to get that wrong. Reported: any
     call whose callee is an attribute named ``execute``, unless the receiver is a bare name in
     :data:`SQL_EXECUTORS` (``session.execute(...)`` of SQLAlchemy in the persistence adapters) or
-    an attribute in :data:`EXECUTOR_RECEIVERS` (``self._executor.execute(...)``: the runner
-    driving the executor, ADR 0019 §3 — one step still runs in one place, and this is that place
-    being *called*, not a second tool call).
+    an attribute in :data:`EXECUTOR_RECEIVERS` **inside** :data:`RUNNER_MODULE`
+    (``self._executor.execute(...)``: the runner driving the executor, ADR 0019 §3 — one step
+    still runs in one place, and this is that place being *called*, not a second tool call). The
+    second exemption is bound to the module and not to the name: a field called ``_executor`` in
+    any other module is reported like everything else (review of M6.3).
     A heuristic on names, like rules 5, 11, 12 and 15.
     """
     rule = "tool-execute-called-only-by-the-executor"
     found: list[Violation] = []
     for path in _source_files(pkg_root):
-        if path.relative_to(pkg_root) == EXECUTOR_MODULE:
+        relative = path.relative_to(pkg_root)
+        if relative == EXECUTOR_MODULE:
             continue
         name = module_name(path, pkg_root)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -665,7 +671,7 @@ def check_tool_execute_callers(pkg_root: Path) -> list[Violation]:
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == EXECUTE_METHOD
             and not _is_sql_executor(node.func.value)
-            and not _is_the_executor(node.func.value)
+            and not (relative == RUNNER_MODULE and _is_the_executor(node.func.value))
         )
     return found
 

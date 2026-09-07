@@ -66,8 +66,10 @@ class RunOutcome(StrEnum):
     """A step needs the user's consent (§30). The next run resumes it."""
     WAITING_DEVICE = "waiting_device"
     """No node was eligible: the task is QUEUED and does **not** fail (ADR 0017 §6)."""
-    TERMINAL = "terminal"
-    """The task was closed by someone else — CANCELLED or EXPIRED — and there is nothing to do."""
+    CANCELLED = "cancelled"
+    """Somebody stopped the task (§65). A decision, and the audit says whose."""
+    EXPIRED = "expired"
+    """The task ran out of time (§14). Nobody decided anything; a deadline passed."""
 
 
 OUTCOMES: Final[Mapping[TaskState, RunOutcome]] = MappingProxyType(
@@ -76,8 +78,8 @@ OUTCOMES: Final[Mapping[TaskState, RunOutcome]] = MappingProxyType(
         TaskState.FAILED: RunOutcome.FAILED,
         TaskState.DENIED: RunOutcome.DENIED,
         TaskState.WAITING_APPROVAL: RunOutcome.WAITING_APPROVAL,
-        TaskState.CANCELLED: RunOutcome.TERMINAL,
-        TaskState.EXPIRED: RunOutcome.TERMINAL,
+        TaskState.CANCELLED: RunOutcome.CANCELLED,
+        TaskState.EXPIRED: RunOutcome.EXPIRED,
     }
 )
 """The states in which the loop has nothing left to do, and the outcome each one is reported as.
@@ -85,6 +87,11 @@ OUTCOMES: Final[Mapping[TaskState, RunOutcome]] = MappingProxyType(
 One table for both the check at the door and the check between two iterations: a task already
 closed when ``run`` is called is reported exactly as one closed by the call itself, and the empty
 ``Run.steps`` is what says which of the two happened.
+
+One state, one outcome. A task somebody stopped and a task whose deadline passed are two
+different facts — one is a decision with an actor behind it, the other is time running out — and
+collapsing them into a single "terminal" would throw away a distinction that cannot be recovered
+later (review of M6.3).
 """
 
 RUNNABLE_STATES: Final[frozenset[TaskState]] = frozenset({TaskState.QUEUED, TaskState.EXECUTING})
