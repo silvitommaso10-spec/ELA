@@ -21,12 +21,14 @@ import pytest
 
 from ela.ports import (
     PROVIDER_UNAVAILABLE,
+    ROUTING_EMPTY_ROUTES,
     ROUTING_ERROR_CODES,
     ROUTING_UNKNOWN_PROVIDER,
     ROUTING_UNKNOWN_TASK_TYPE,
+    RoutingError,
 )
 from ela.providers.anthropic.settings import RETIRED_SETTINGS
-from ela.routing import DEFAULT_ROUTE, DEFAULT_ROUTES, RoutingSettings
+from ela.routing import DEFAULT_ROUTE, DEFAULT_ROUTES, RoutePolicy, RoutingSettings
 from tests.architecture.rules import RULES
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0022-model-router.md"
@@ -128,10 +130,10 @@ def test_the_table_says_when_it_was_written() -> None:
 # ----------------------------------------------------------------------------------------
 
 
-def documented_codes(text: str) -> dict[str, tuple[str, str]]:
-    """code → (when, network), from the §5 table."""
+def documented_codes(text: str) -> dict[str, tuple[str, str, str]]:
+    """code → (when, network, where it is born), from the §5 table."""
     rows = {
-        match.group(1): (match.group(2), match.group(3))
+        match.group(1): (match.group(2), match.group(3), match.group(4))
         for line in text.splitlines()
         if (match := CODE_ROW.match(line)) is not None
     }
@@ -145,20 +147,42 @@ def test_the_codes_table_is_exactly_the_routing_vocabulary() -> None:
     assert set(rows) == {
         ROUTING_UNKNOWN_TASK_TYPE,
         ROUTING_UNKNOWN_PROVIDER,
+        ROUTING_EMPTY_ROUTES,
         PROVIDER_UNAVAILABLE,
     }
 
 
 def test_no_routing_failure_touches_the_network() -> None:
     """The whole point of reading a declared status (§7): every row says "mai toccata"."""
-    assert all(network == "mai toccata" for _, network in documented_codes(adr_text()).values())
+    rows = documented_codes(adr_text())
+    assert all(network.strip() == "mai toccata" for _, network, _ in rows.values())
 
 
-def test_one_code_is_borrowed_and_two_are_new() -> None:
+def test_one_code_is_borrowed_and_three_are_new() -> None:
     """``provider.unavailable`` is ADR 0020's: one wall, one name (ADR 0022 §5)."""
     assert PROVIDER_UNAVAILABLE in ROUTING_ERROR_CODES
-    assert "Tre codici e uno è **preso in prestito**" in adr_text()
-    assert {ROUTING_UNKNOWN_TASK_TYPE, ROUTING_UNKNOWN_PROVIDER}.isdisjoint({PROVIDER_UNAVAILABLE})
+    assert "Quattro codici e uno è **preso in prestito**" in adr_text()
+    new = {ROUTING_UNKNOWN_TASK_TYPE, ROUTING_UNKNOWN_PROVIDER, ROUTING_EMPTY_ROUTES}
+    assert new.isdisjoint({PROVIDER_UNAVAILABLE})
+    assert new | {PROVIDER_UNAVAILABLE} == ROUTING_ERROR_CODES
+
+
+def test_two_codes_are_born_before_a_step_exists() -> None:
+    """The two configuration errors of §7 and §8 are caught where the composition root builds
+    the policy and the router, not on the step that happens to need them."""
+    rows = documented_codes(adr_text())
+    assert rows[ROUTING_UNKNOWN_PROVIDER][2].strip() == "costruzione del router"
+    assert rows[ROUTING_EMPTY_ROUTES][2].strip() == "costruzione della politica"
+
+
+def test_an_empty_table_is_refused_and_the_adr_says_where_to_look() -> None:
+    """The review of M7.3: replacing the table with one route is legitimate, with nothing is not
+    — and the refusal points back at the default table (ADR 0022 §8)."""
+    assert "`ELA_MODEL_ROUTES={}` è rifiutata con `routing.empty_routes`" in adr_text()
+    with pytest.raises(RoutingError) as raised:
+        RoutePolicy({}, DEFAULT_ROUTE)
+    assert raised.value.code == ROUTING_EMPTY_ROUTES
+    assert "ELA_MODEL_ROUTES" in raised.value.message
 
 
 def test_an_absent_provider_and_an_unavailable_one_are_not_the_same_code() -> None:

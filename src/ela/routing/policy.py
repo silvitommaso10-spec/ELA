@@ -14,7 +14,8 @@ a vendor's model would be the Core §26 forbids.
 The table is **closed**: a ``task_type`` nobody mapped is
 :data:`~ela.ports.ROUTING_UNKNOWN_TASK_TYPE` and no call is made (ADR 0022 §6). The default route
 is not a safety net for a wrong type; it is the route of a step that names **no** type at all,
-which is a different thing.
+which is a different thing. And the table is never **empty**: a policy with no route is refused
+where it is built, not one failed step at a time (ADR 0022 §8).
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from ela.ports import ROUTING_UNKNOWN_TASK_TYPE, RoutingError
+from ela.ports import ROUTING_EMPTY_ROUTES, ROUTING_UNKNOWN_TASK_TYPE, RoutingError
 
 __all__ = [
     "BALANCED",
@@ -121,6 +122,23 @@ class RoutePolicy:
         routes: Mapping[str, Route] = DEFAULT_ROUTES,
         default: Route = DEFAULT_ROUTE,
     ) -> None:
+        """The table, and the route of a call that names no ``task_type``.
+
+        :raises RoutingError: :data:`~ela.ports.ROUTING_EMPTY_ROUTES` if ``routes`` is empty.
+            Replacing the table in full is the operator's right (ADR 0022 §8); replacing it with
+            nothing is not a narrower policy but a policy that fails every step naming a task
+            type, one at a time, far from the file that caused it. ELA ships a default table so
+            that a machine nobody configured still routes, and the refusal says how to get it
+            back (review of M7.3).
+        """
+        if not routes:
+            raise RoutingError(
+                ROUTING_EMPTY_ROUTES,
+                "the routing table is empty: every task type would fail with "
+                f"{ROUTING_UNKNOWN_TASK_TYPE}. Name at least one route, or unset "
+                "ELA_MODEL_ROUTES to use the default table of spec §25 "
+                f"({', '.join(sorted(DEFAULT_ROUTES))})",
+            )
         self._routes: Mapping[str, Route] = MappingProxyType(dict(routes))
         self._default = default
 

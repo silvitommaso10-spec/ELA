@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from ela.ports import ROUTING_UNKNOWN_TASK_TYPE, RoutingError
+from ela.ports import ROUTING_EMPTY_ROUTES, ROUTING_UNKNOWN_TASK_TYPE, RoutingError
 from ela.providers.anthropic.models import PROFILES
 from ela.providers.anthropic.provider import PROVIDER_NAME
 from ela.routing import BALANCED, CHEAP, DEFAULT_ROUTE, DEFAULT_ROUTES, QUALITY, Route, RoutePolicy
@@ -112,6 +112,25 @@ def test_a_route_that_says_nothing_is_refused(providers: tuple[str, ...], profil
     (the status does not change in between), and a route with no profile is a choice not taken."""
     with pytest.raises(ValueError, match="route"):
         Route(providers=providers, profile=profile)
+
+
+def test_a_policy_with_no_route_at_all_is_refused() -> None:
+    """Review of M7.3: the invariant belongs to the table, so it holds for a policy built in code
+    as well as for one read from ``ELA_MODEL_ROUTES``. The message names the way back."""
+    with pytest.raises(RoutingError) as raised:
+        RoutePolicy({}, DEFAULT_ROUTE)
+
+    assert raised.value.code == ROUTING_EMPTY_ROUTES
+    assert "ELA_MODEL_ROUTES" in raised.value.message
+    assert ROUTING_UNKNOWN_TASK_TYPE in raised.value.message  # what every step would have hit
+
+
+def test_one_route_is_enough() -> None:
+    """Empty is refused; small is not. A policy may know exactly one kind of task."""
+    policy = RoutePolicy({"routine": Route(providers=("a",), profile=CHEAP)}, DEFAULT_ROUTE)
+
+    assert policy.task_types() == ("routine",)
+    assert policy.route_for(None) == DEFAULT_ROUTE
 
 
 def test_a_route_is_frozen() -> None:

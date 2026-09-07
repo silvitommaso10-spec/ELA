@@ -101,6 +101,7 @@ __all__ = [
     "PermissionGuardianPort",
     "PortError",
     "ProviderRegistryPort",
+    "ROUTING_EMPTY_ROUTES",
     "ROUTING_ERROR_CODES",
     "ROUTING_UNKNOWN_PROVIDER",
     "ROUTING_UNKNOWN_TASK_TYPE",
@@ -922,12 +923,27 @@ provider that is not registered at all is a typo in ``ELA_MODEL_ROUTES``, and a 
 before it works rather than divert a call in silence or fail a step hours later.
 """
 
+ROUTING_EMPTY_ROUTES: Final = "routing.empty_routes"
+"""The routing table has no route at all. Raised **when the policy is built** (ADR 0022 §8).
+
+An empty table is not a policy that routes nothing on purpose: it is a policy that can answer
+only calls naming no ``task_type``, and every step that names one fails — one at a time, at run
+time, for a reason nobody would connect back to a configuration file. ELA ships a default table
+precisely so that a machine where nobody configured anything still routes (§25), so the empty
+table is refused at start-up and the failure says how to get that default back.
+"""
+
 ROUTING_ERROR_CODES: Final = frozenset(
-    {ROUTING_UNKNOWN_TASK_TYPE, ROUTING_UNKNOWN_PROVIDER, PROVIDER_UNAVAILABLE}
+    {
+        ROUTING_UNKNOWN_TASK_TYPE,
+        ROUTING_UNKNOWN_PROVIDER,
+        ROUTING_EMPTY_ROUTES,
+        PROVIDER_UNAVAILABLE,
+    }
 )
 """What a :class:`RoutingError` may carry (ADR 0022 §5).
 
-Three codes and one of them is borrowed: a route whose providers are all unusable ends in
+Four codes and one of them is borrowed: a route whose providers are all unusable ends in
 :data:`PROVIDER_UNAVAILABLE`, the code ADR 0020 §7 already gave to "this provider cannot be
 called". Coining ``routing.no_provider_available`` beside it would give one fact two names, and
 whoever reads a failure would have to know both to recognise the same wall.

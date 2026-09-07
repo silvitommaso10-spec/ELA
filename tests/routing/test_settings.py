@@ -14,7 +14,7 @@ import pytest
 from pydantic import ValidationError
 from pydantic_settings.exceptions import SettingsError
 
-from ela.ports import ROUTING_UNKNOWN_TASK_TYPE, RoutingError
+from ela.ports import ROUTING_EMPTY_ROUTES, ROUTING_UNKNOWN_TASK_TYPE, RoutingError
 from ela.routing import BALANCED, CHEAP, DEFAULT_ROUTE, DEFAULT_ROUTES, QUALITY, RoutingSettings
 
 ROUTES = "ELA_MODEL_ROUTES"
@@ -61,16 +61,34 @@ def test_the_default_route_can_be_replaced(monkeypatch: pytest.MonkeyPatch) -> N
     assert policy.task_types() == tuple(sorted(DEFAULT_ROUTES))  # the table is untouched
 
 
-def test_an_empty_table_routes_only_what_declares_no_type(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Legal, and it means what it says: refusing it would deny an operator the right to say
-    "nothing but the default route" (ADR 0022 §8)."""
+def test_an_empty_table_is_refused_when_the_policy_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review of M7.3: a table with nothing in it is not a narrower policy, it is one that fails
+    every step naming a task type — one at a time, far from the file that caused it. It is
+    refused where a bad table can still be read as a bad table, and the message points back at
+    the default table (ADR 0022 §8)."""
     monkeypatch.setenv(ROUTES, "{}")
+    settings = RoutingSettings(_env_file=None)
+
+    with pytest.raises(RoutingError) as raised:
+        settings.policy()
+
+    assert raised.value.code == ROUTING_EMPTY_ROUTES
+    assert "ELA_MODEL_ROUTES" in raised.value.message
+    assert "coding" in raised.value.message  # what the default table would have given back
+
+
+def test_a_table_with_one_route_is_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The other half of the rule: replacing the table *in full* stays legitimate, down to a
+    single route. What is refused is the empty one, not the small one."""
+    monkeypatch.setenv(ROUTES, json.dumps({"routine": {"providers": ["local"], "profile": CHEAP}}))
+
     policy = RoutingSettings(_env_file=None).policy()
 
-    assert policy.task_types() == ()
+    assert policy.task_types() == ("routine",)
+    assert policy.route_for("routine").providers == ("local",)
     assert policy.route_for(None) == DEFAULT_ROUTE
-    with pytest.raises(RoutingError):
-        policy.route_for("coding")
 
 
 @pytest.mark.parametrize(

@@ -55,9 +55,14 @@ class RoutingSettings(BaseSettings):
     def policy(self) -> RoutePolicy:
         """The configured table as the :class:`~ela.routing.policy.RoutePolicy` the router takes.
 
-        An **empty** table is legal and means what it says: only calls that name no ``task_type``
-        are routed, and every explicit type fails with ``routing.unknown_task_type``. Refusing to
-        start on an empty table would be refusing an operator the right to say "route nothing but
-        the default".
+        :raises RoutingError: :data:`~ela.ports.ROUTING_EMPTY_ROUTES` when ``ELA_MODEL_ROUTES``
+            is ``{}``. Replacing the table with **one** route is legitimate — replacing it in
+            full is the whole point of the variable — but replacing it with nothing is not a
+            policy an operator can have meant: every step naming a task type would fail, one at a
+            time, far from the file that caused it (review of M7.3).
+
+        This is where a misconfigured table is caught, next to where a route naming an unknown
+        provider is caught (ADR 0022 §7): both when the composition root builds the policy and
+        the router, and neither on the step that happens to need them.
         """
         return RoutePolicy(self.model_routes, self.model_default_route)

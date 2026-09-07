@@ -1,6 +1,8 @@
 # 0022. Model Router: tabella di rotte, fallback sulla disponibilità, `task_type` come argomento
 
-- **Stato:** Accettata.
+- **Stato:** Accettata. §8 esteso dalla review di M7.3: una tabella di rotte **vuota** è
+  rifiutata quando la politica viene costruita, con `routing.empty_routes` — il quarto codice di
+  §5. Il resto dell'ADR non cambia.
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §25, §26, §29, §32, §33, §57
 - **Milestone:** M7.3 (decisioni dell'utente del 2026-09-07: **3a**, **4a**, **5a**, **6a**,
@@ -142,9 +144,10 @@ codice, quindi ciò che arriva nell'audit non cambia.
 |---|---|---|---|
 | `routing.unknown_task_type` | la politica non ha una rotta per quel `task_type` | mai toccata | `route` |
 | `routing.unknown_provider` | una rotta nomina un provider che il registro non ha | mai toccata | costruzione del router |
+| `routing.empty_routes` | la tabella di rotte non ha nessuna voce | mai toccata | costruzione della politica |
 | `provider.unavailable` | nessun provider della rotta è utilizzabile | mai toccata | `route` |
 
-Tre codici e uno è **preso in prestito**: una rotta i cui provider sono tutti inutilizzabili
+Quattro codici e uno è **preso in prestito**: una rotta i cui provider sono tutti inutilizzabili
 finisce in `provider.unavailable`, il codice che ADR 0020 §7 ha già dato a «questo provider non si
 può chiamare». Coniarne uno accanto darebbe due nomi a un fatto solo, e chi legge un fallimento
 dovrebbe conoscerli entrambi per riconoscere lo stesso muro. I due codici nuovi stanno in
@@ -187,9 +190,18 @@ fallire uno step ore più tardi, quando nessuno collegherà più le due cose.
 | `ELA_MODEL_DEFAULT_ROUTE` | JSON `{providers, profile}` | `anthropic`, `balanced` | la rotta di chi non dichiara un tipo, che §6 tiene distinta da un tipo sbagliato |
 
 Entrambe sostituiscono ciò che nominano **per intero**: una tabella metà opinione di ELA e metà
-dell'operatore non si leggerebbe da nessun documento solo. Una tabella **vuota** è legale e
-significa ciò che dice — si instrada solo ciò che non dichiara un tipo — perché rifiutarla
-sarebbe negare a un operatore il diritto di dire «nient'altro che la rotta di default».
+dell'operatore non si leggerebbe da nessun documento solo. Sostituirla con **una sola voce** è
+legittimo, ed è il senso della variabile.
+
+Sostituirla con **niente** no: `ELA_MODEL_ROUTES={}` è rifiutata con `routing.empty_routes` quando
+la politica viene costruita, e il messaggio rimanda alla tabella di default — «togli
+`ELA_MODEL_ROUTES` per usare la tabella di §25», con i sette tipi che conterrebbe. La prima
+stesura la accettava, leggendola come «nient'altro che la rotta di default»; la review di M7.3 ha
+osservato che nessun operatore può averlo *inteso* così: una tabella vuota non è una politica più
+stretta, è una politica che fa fallire ogni step che dichiara un `task_type` — uno alla volta, a
+runtime, lontano dal file che l'ha causato. ELA porta una tabella di default proprio perché una
+macchina non configurata instradi comunque (§25): il vuoto si rifiuta dove si costruisce, accanto
+al provider inesistente di §7, e non su un passo qualunque ore dopo.
 
 I due campi si chiamano `model_routes` e `model_default_route`, e `model_` è un namespace
 riservato di pydantic: `RoutingSettings` dichiara `protected_namespaces=()`. Rinominare le
@@ -230,7 +242,7 @@ Tool sostituiti:
 
 | Capability | Tool | Nome | Output | Codici di errore |
 |---|---|---|---|---|
-| `model.complete` | `ModelCompleteTool` | `model-complete` | `output`, `provider`, `model`, `finish_reason`, `profile`, `skipped` | `arguments.invalid`, `routing.unknown_task_type`, `routing.unknown_provider`, `provider.no_output`, `provider.unavailable`, `provider.unknown_model_hint`, `provider.unsupported_parameter`, `provider.authentication_error`, `provider.bad_request`, `provider.unknown_model`, `provider.rejected`, `provider.malformed_response`, `provider.rate_limited`, `provider.server_error`, `provider.unreachable`, `provider.timeout`, `provider.refusal` |
+| `model.complete` | `ModelCompleteTool` | `model-complete` | `output`, `provider`, `model`, `finish_reason`, `profile`, `skipped` | `arguments.invalid`, `routing.unknown_task_type`, `routing.unknown_provider`, `routing.empty_routes`, `provider.no_output`, `provider.unavailable`, `provider.unknown_model_hint`, `provider.unsupported_parameter`, `provider.authentication_error`, `provider.bad_request`, `provider.unknown_model`, `provider.rejected`, `provider.malformed_response`, `provider.rate_limited`, `provider.server_error`, `provider.unreachable`, `provider.timeout`, `provider.refusal` |
 
 `profile` e `skipped` sono la rotta che la chiamata ha preso. Stanno nell'`ExecutionResult` e in
 nessun evento di audit (§57, regola 23): un salto che nessuno può vedere dopo è una sostituzione
