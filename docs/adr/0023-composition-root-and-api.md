@@ -222,15 +222,23 @@ Il controllo è un **middleware**, non una dipendenza per rotta: una dipendenza 
 su una rotta nuova, un middleware no. Ne segue che anche un percorso inesistente risponde **401**
 e non 404: chi non ha il token non impara nemmeno quali rotte esistono.
 
-Lo **schema** è servito, a `/openapi.json`, e il token lo protegge come ogni altro percorso.
-L'obiezione a pubblicarlo era che uno schema **senza credenziali** racconta la forma dell'API a
-chiunque scansioni la porta; dietro il middleware quel lettore non esiste. E ciò che il chiamante
-ci trova non è decorazione: è dove `POST /tasks/{task_id}/plan` dichiara che la **propria forma è
-temporanea e senza versione** (§6). Un limite che vive solo in un ADR è un limite che chi usa
-l'API non vede mai.
+**Correzione della decisione 6a** (review del 2026-09-07, confermata dall'utente). La decisione
+approvata spegneva *tutta* la documentazione automatica di FastAPI, schema compreso, con due
+ragioni in una: che uno schema pubblico racconta la forma dell'API a chi scansiona la porta, e
+che un browser non può comunque autenticarsi. Sono due cose diverse, e valgono per due oggetti
+diversi.
 
-Le **pagine HTML** (`/docs`, `/redoc`) restano spente: un browser non manda un header
-`Authorization`, quindi dietro il token risponderebbero 401 e nient'altro.
+Lo **schema** è servito, a `/openapi.json`, ed è **protetto dal middleware come ogni altro
+percorso**: senza token risponde 401 esattamente come `/health` e come un percorso che non
+esiste. Il lettore contro cui la decisione difendeva — quello *senza credenziali* — dietro il
+middleware non esiste, e la prima ragione cade con lui. Restava un costo senza un beneficio: ciò
+che il chiamante trova nello schema non è decorazione, è dove `POST /tasks/{task_id}/plan`
+dichiara che la **propria forma è temporanea e senza versione** (§6), e un limite che vive solo
+in un ADR è un limite che chi usa l'API non vede mai.
+
+Le **pagine HTML** (`/docs`, `/redoc`) restano spente, e la seconda ragione basta da sola: un
+browser non manda un header `Authorization`, quindi dietro il token risponderebbero 401 e
+nient'altro — una pagina che non può funzionare non è una pagina da servire.
 
 Token assente e token sbagliato ricevono **lo stesso 401**: un 403 distinguerebbe «esisti ma no»
 da «non esisti».
