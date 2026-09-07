@@ -177,6 +177,20 @@ VIOLATIONS: tuple[Case, ...] = (
         "ela.providers.registry",
     ),
     Case(
+        "testing-imports-itself",
+        "testing-imports",
+        "testing/extra.py",
+        "from ela.testing import fakes\n",
+        "ela.testing.fakes",
+    ),
+    Case(
+        "testing-imports-itself-relatively",
+        "testing-imports",
+        "testing/extra.py",
+        "from . import fakes as again\n",
+        "ela.testing.fakes",
+    ),
+    Case(
         "testing-imports-pydantic",
         "testing-imports",
         "testing/extra.py",
@@ -397,6 +411,15 @@ VIOLATIONS: tuple[Case, ...] = (
         "model_copy(update={'step_id': ...})",
     ),
     Case(
+        "authorization-built-by-the-fake",
+        "authorization-builders",
+        "testing/extra.py",
+        "from ela.domain import Authorization\n"
+        "def grant(i, n, c):\n"
+        "    return Authorization(id=i, created_at=n, capability_id=c, granted_by='fake')\n",
+        "Authorization(...)",
+    ),
+    Case(
         "authorization-built-by-another-persistence-module",
         "authorization-builders",
         "infrastructure/persistence/rows.py",
@@ -423,6 +446,15 @@ VIOLATIONS: tuple[Case, ...] = (
         "tool-execute-callers",
         "executive/orchestrator.py",
         "class O:\n    async def run(self, d, a):\n        return await self._tool.execute(d, a)\n",
+        ".execute(",
+    ),
+    Case(
+        "sql-executed-on-a-connection",
+        "tool-execute-callers",
+        "infrastructure/persistence/repo.py",
+        "from sqlalchemy import select\n"
+        "async def head(connection):\n"
+        "    await connection.execute(select(1))\n",
         ".execute(",
     ),
     Case(
@@ -1005,8 +1037,7 @@ ALLOWED: tuple[Case, ...] = (
         "testing-imports-ports",
         "testing-imports",
         "testing/extra.py",
-        "import asyncio\nfrom ela.domain import Task\nfrom ela.ports import Clock\n"
-        "from ela.testing import fakes\nfrom . import fakes as again\n",
+        "import asyncio\nfrom ela.domain import Task\nfrom ela.ports import Clock\n",
         "",
     ),
     Case(
@@ -1146,15 +1177,6 @@ ALLOWED: tuple[Case, ...] = (
         "",
     ),
     Case(
-        "authorization-built-by-the-fake",
-        "authorization-builders",
-        "testing/extra.py",
-        "from ela.domain import Authorization\n"
-        "def grant(i, n, c):\n"
-        "    return Authorization(id=i, created_at=n, capability_id=c, granted_by='fake')\n",
-        "",
-    ),
-    Case(
         "authorization-copied-without-widening",
         "authorization-builders",
         "executive/loop.py",
@@ -1193,9 +1215,8 @@ ALLOWED: tuple[Case, ...] = (
         "tool-execute-callers",
         "infrastructure/persistence/repo.py",
         "from sqlalchemy import select\n"
-        "async def head(session, connection, cursor):\n"
+        "async def head(session, cursor):\n"
         "    await session.execute(select(1))\n"
-        "    await connection.execute(select(1))\n"
         "    cursor.execute('PRAGMA foreign_keys=ON')\n",
         "",
     ),

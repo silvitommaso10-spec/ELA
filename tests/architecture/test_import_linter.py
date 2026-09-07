@@ -33,6 +33,7 @@ from tests.architecture.rules import (
     PORTS_ALLOWED_INTERNAL,
     PROVIDERS_PACKAGE,
     ROUTING_PACKAGE,
+    RULES,
     STATE_MACHINE_MODULE,
     TESTING_ALLOWED_INTERNAL,
     TESTING_PACKAGE,
@@ -122,8 +123,13 @@ def test_contracts_cover_current_packages() -> None:
     assert set(isolation["source_modules"]) == top_level_modules(PACKAGE_ROOT) - {TESTING_PACKAGE}
 
     testing = _contract_for("testing-imports")
+    # ``ela.testing`` itself is not in the contract: a ``forbidden`` contract cannot say that a
+    # package may not import itself, and since ADR 0027 withdrew that exemption the pytest rule
+    # is the only one that can — see ``test_lint_imports_cannot_forbid_a_package_from_itself``.
     assert set(testing["forbidden_modules"]) >= (
-        (modules - set(TESTING_ALLOWED_INTERNAL)) | INFRA_LIBRARIES | {"pydantic"}
+        (modules - set(TESTING_ALLOWED_INTERNAL) - {TESTING_PACKAGE})
+        | INFRA_LIBRARIES
+        | {"pydantic"}
     )
 
     callers = _contract_for("state-machine-callers")
@@ -242,6 +248,22 @@ def test_lint_imports_breaks_contract(tmp_path: Path, package_copy: Path, case: 
     assert result.returncode == 1, result.stdout + result.stderr
     assert f"{contract['name']} BROKEN" in output
     assert case.module in output
+
+
+def test_lint_imports_cannot_forbid_a_package_from_itself(
+    tmp_path: Path, package_copy: Path
+) -> None:
+    """Since ADR 0027 the fakes may import the domain and the ports, and nothing else — not even
+    ``ela.testing``. import-linter cannot express it: a ``forbidden`` contract whose source and
+    whose forbidden module are the same package would ban the package from its own submodules,
+    which is what a package *is*. The pytest rule closes the world instead.
+    """
+    case = _BY_ID["testing-imports-itself"]
+    shutil.copy(PYPROJECT, tmp_path / "pyproject.toml")
+    apply(case, package_copy)
+
+    assert _run_lint_imports(tmp_path).returncode == 0
+    assert [v.imported for v in RULES["testing-imports"](package_copy)] == [case.imported]
 
 
 def test_lint_imports_cannot_close_the_world(tmp_path: Path, package_copy: Path) -> None:

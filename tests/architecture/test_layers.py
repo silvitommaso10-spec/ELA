@@ -152,12 +152,18 @@ def test_the_guardian_really_builds_decisions_and_calls_decide() -> None:
 
 def test_the_authorizations_module_really_builds_grants_and_the_mapper_really_reads_them() -> None:
     """Rule 15 would hold vacuously if nothing built an ``Authorization``; two places do, both
-    exempt: the factory in ``permissions`` and the persistence mapper (read side)."""
+    exempt: the factory in ``permissions`` and the persistence mapper (read side).
+
+    ``ela.testing`` was a third exemption and never used it — the fakes name ``Authorization`` as
+    a type and coin none — so ADR 0027 withdrew it, and this is where a fake that started coining
+    grants would be noticed."""
     factory = (PACKAGE_ROOT / PERMISSIONS_DIR / "authorizations.py").read_text(encoding="utf-8")
     assert f"{AUTHORIZATION_MODEL}(" in factory
     mapper = (PACKAGE_ROOT / AUTHORIZATION_READER).read_text(encoding="utf-8")
     assert f"{AUTHORIZATION_MODEL}(" in mapper
-    assert {PERMISSIONS_DIR, TESTING_DIR} == AUTHORIZATION_BUILDERS_EXEMPT
+    assert {PERMISSIONS_DIR} == AUTHORIZATION_BUILDERS_EXEMPT
+    fakes = (PACKAGE_ROOT / TESTING_DIR / "fakes.py").read_text(encoding="utf-8")
+    assert f"{AUTHORIZATION_MODEL}(" not in fakes
 
 
 def test_the_executor_really_calls_a_tool_and_never_imports_the_tools() -> None:
