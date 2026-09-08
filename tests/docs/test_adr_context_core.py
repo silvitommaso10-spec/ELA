@@ -146,7 +146,8 @@ def test_the_context_package_joined_the_gate_in_this_milestone() -> None:
 
 
 def test_the_port_gained_two_members_and_no_port_was_added() -> None:
-    assert len(tuple(port_protocols())) == 21
+    """M10.4 added no port. Monotonic since: M11.1 adds the twenty-second (dec. G)."""
+    assert len(tuple(port_protocols())) >= 21
 
 
 # ----------------------------------------------------------------------------------------
@@ -218,12 +219,15 @@ def test_the_conseguenze_count_the_rules_the_contracts_and_the_capabilities() ->
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**trentanove**" in conseguenze
-    assert len(RULES) == 39
+    # Monotonic, for the reason ADR 0026's test gives (``test_adr_placement.py``): an
+    # immutable document cannot keep counting a growing collection, and today's totals are
+    # pinned by the newest ADR that moved them — since M11.1, ``test_adr_voice.py``.
+    assert len(RULES) >= 39
     assert "**quattordici**" in conseguenze
     assert "**ventuno**" in conseguenze
-    assert len(tuple(port_protocols())) == 21
+    assert len(tuple(port_protocols())) >= 21
     assert "**cinque**" in conseguenze
-    assert len(production_catalogue().specs()) == 5
+    assert len(production_catalogue().specs()) >= 5
     assert "**tre**" in conseguenze
     assert len(catalogue_v01().specs()) == 3
 

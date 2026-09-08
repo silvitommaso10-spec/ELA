@@ -195,10 +195,10 @@ def test_the_conseguenze_count_the_rules_the_ports_the_capabilities_and_the_fami
     # And the direction is monotonic: a later ADR may add a rule, never silently remove one.
     assert len(RULES) >= 36
     assert "**ventuno**" in conseguenze
-    assert len(tuple(port_protocols())) == 21
+    assert len(tuple(port_protocols())) >= 21
     assert "**tredici**" in conseguenze
     assert "**cinque**" in conseguenze
-    assert len(production_catalogue().specs()) == 5
+    assert len(production_catalogue().specs()) >= 5
     assert "**tre**" in conseguenze
     assert len(catalogue_v01().specs()) == 3
     assert "**quattro**" in conseguenze
