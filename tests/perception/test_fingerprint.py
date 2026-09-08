@@ -98,3 +98,73 @@ def test_an_unread_session_field_reads_as_unknown_and_not_as_a_value(field: str)
 def test_the_fingerprint_cannot_be_mutated_by_whoever_receives_it() -> None:
     with pytest.raises(TypeError):
         fingerprint(interpret(FULL, at=AT))["microphone"] = "ACTIVE (OBSERVED)"  # type: ignore[index]
+
+
+# ----------------------------------------------------------------------------------------
+# The applications family: a sequence is compared, and compared readably (M10.3 dec. 4)
+# ----------------------------------------------------------------------------------------
+
+
+def test_a_sequence_is_flattened_sorted_and_joined_rather_than_repred() -> None:
+    """Two properties in one line, and both matter for a different reason.
+
+    **Sorted**, because the order in which macOS happens to list the running applications is not a
+    fact about the world: comparing on it would make the detector report itself. **Joined**, so
+    the resulting change is something a person can read instead of two Python literals.
+    """
+    observation = interpret(RawObservation(running_bundle_ids=("com.b", "com.a")), at=AT)
+
+    assert fingerprint(observation)["running_bundle_ids"] == "com.a,com.b"
+
+
+def test_the_same_applications_in_a_different_order_are_not_a_change() -> None:
+    before = interpret(RawObservation(running_bundle_ids=("com.a", "com.b")), at=AT)
+    after = interpret(RawObservation(running_bundle_ids=("com.b", "com.a")), at=AT)
+
+    assert detect(before, after) == ()
+
+
+def test_switching_application_is_a_change_and_says_which_way() -> None:
+    """``frontmost_bundle_id`` changes whenever the user switches window, and is compared anyway.
+
+    The criterion that excluded ``idle_seconds`` was about a *continuous* measurement. This one is
+    discrete, it has a before and an after, and "the user moved to Mail" is exactly the change
+    §44 exists to notice.
+    """
+    before = interpret(RawObservation(frontmost_bundle_id="com.apple.Terminal"), at=AT)
+    after = interpret(RawObservation(frontmost_bundle_id="com.apple.mail"), at=AT)
+
+    (change,) = detect(before, after)
+
+    assert (change.field, change.before, change.after) == (
+        "frontmost_bundle_id",
+        "com.apple.Terminal",
+        "com.apple.mail",
+    )
+
+
+def test_launching_an_application_is_a_change() -> None:
+    before = interpret(RawObservation(running_bundle_ids=("com.a",)), at=AT)
+    after = interpret(RawObservation(running_bundle_ids=("com.a", "com.b")), at=AT)
+
+    (change,) = detect(before, after)
+
+    assert (change.field, change.before, change.after) == (
+        "running_bundle_ids",
+        "com.a",
+        "com.a,com.b",
+    )
+
+
+def test_applications_never_read_is_unknown_and_not_an_empty_list() -> None:
+    """``None`` means *not read* and must not render as "no applications are running": the two are
+    different facts, and only one of them is an observation (M10.3 dec. 8, ADR 0028 §3)."""
+    keys = fingerprint(interpret(RawObservation(), at=AT))
+
+    assert keys["running_bundle_ids"] == UNKNOWN
+    assert keys["frontmost_bundle_id"] == UNKNOWN
+    assert keys["window_count"] == UNKNOWN
+    assert (
+        fingerprint(interpret(RawObservation(running_bundle_ids=()), at=AT))["running_bundle_ids"]
+        == ""
+    )

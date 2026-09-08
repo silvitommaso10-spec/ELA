@@ -35,21 +35,45 @@ def adr_text() -> str:
 # ----------------------------------------------------------------------------------------
 
 
+RENAMED_BY_LATER_ADRS = {
+    "perception-probe-imports-only-stdlib": "perception-children-import-only-stdlib"
+}
+"""A rule this ADR named, renamed by a later one, with the later ADR as the source of the new name.
+
+An ADR is immutable, so ADR 0028's table keeps saying what it said. ADR 0030 §15 renames rule 33
+under ``Regole estese:`` because its subject stopped being one named file and became a derived
+set — and the rename is read from that document rather than written here, so this mapping cannot
+claim a rename no ADR made.
+"""
+
+
+def renamed() -> dict[str, str]:
+    """The renames a later ADR documents, keyed by the old name."""
+    later = (ADR_PATH.with_name("0030-screen-text.md")).read_text(encoding="utf-8")
+    return {
+        old: new
+        for old, new in RENAMED_BY_LATER_ADRS.items()
+        if f"`{new}`" in later and "rule 33" not in old
+    }
+
+
 def test_the_three_rules_are_registered_under_the_names_the_adr_gives_them() -> None:
+    """Each rule this ADR introduced is still in ``RULES``, by its name or a documented rename."""
     documented = [
         match.groups() for line in adr_text().splitlines() if (match := RULE_ROW.match(line))
     ]
+    renames = renamed()
 
     assert [number for number, *_ in documented] == ["32", "33", "34"]
     for _, name, *_ in documented:
-        assert name in RULES, name
+        assert renames.get(name, name) in RULES, name
 
 
 @pytest.mark.parametrize(
     "key",
     [
         "machine-access-in-one-place",
-        "perception-probe-imports-only-stdlib",
+        "perception-children-import-only-stdlib",
         "perception-adapter-decides-nothing",
     ],
 )

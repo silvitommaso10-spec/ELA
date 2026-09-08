@@ -92,6 +92,8 @@ __all__ = [
     "ProviderUsage",
     "RawCapture",
     "RawObservation",
+    "RawRecognition",
+    "RawTextLine",
     "RiskLevel",
     "SensorCause",
     "SensorState",
@@ -1050,12 +1052,25 @@ class PermissionState(StrEnum):
 class ProbeFamily(StrEnum):
     """A group of readings that share a cadence (M10.1, decision 6).
 
-    The three families are not a taxonomy, they are three measured cost classes and three
-    frequencies of change: the microphone goes on while you watch, a permission changes when a
-    human clicks in System Settings. Each has its own ``ELA_PERCEPTION_*_INTERVAL_SECONDS``.
+    The families are not a taxonomy, they are measured cost classes and frequencies of change: the
+    microphone goes on while you watch, a permission changes when a human clicks in System
+    Settings. Each has its own ``ELA_PERCEPTION_*_INTERVAL_SECONDS``.
+
+    The declaration order is the measurement, cheapest and fastest first, and a test asserts that
+    the default intervals ascend along it — so a family added tomorrow has to say where it belongs
+    rather than landing at the end by accident.
+
+    ``APPLICATIONS`` joined in M10.3 and is the cheapest of the four — 0,26 ms for the window
+    list, 0,001 ms for the frontmost application — and, like the rest of this ring, it costs **no
+    permission at all**: measured from a process that was its own TCC responsible process, the
+    owners, PIDs and geometry of every on-screen window come back in full. What does *not* come
+    back there is the window **title**, which needs the same Screen Recording grant a screenshot
+    needs and is content rather than state — so it is not here, and architecture rule 36 keeps it
+    out.
     """
 
     SENSORS = "SENSORS"
+    APPLICATIONS = "APPLICATIONS"
     SESSION = "SESSION"
     PERMISSIONS = "PERMISSIONS"
 
@@ -1097,8 +1112,21 @@ class RawObservation(_DomainModel):
     screen_locked: bool | None = None
     on_console: bool | None = None
     idle_seconds: Annotated[float, Field(ge=0)] | None = None
+    running_bundle_ids: tuple[str, ...] | None = None
+    """Bundle identifiers of the applications with a user interface, sorted.
+
+    The identifier and not ``localizedName``, which is a string to *show*: on an Italian system it
+    answers ``Terminale`` and ``Impostazioni di Sistema``, so comparing two observations on it
+    would mean a change detector that fires when the system language changes. An application with
+    no bundle identifier — it happens, the property is nullable — is not carried, because there is
+    nothing to name it by.
+    """
+    frontmost_bundle_id: str | None = None
+    window_count: Annotated[int, Field(ge=0)] | None = None
+    """How many windows are on screen. A count, and nothing about any one of them: no title (rule
+    36), and no geometry, because nothing in this milestone reads one."""
     camera_permission: int | None = None
-    """``AVAuthorizationStatus``: 0 not determined, 1 restricted, 2 denied, 3 authorized. Kept as
+    """``AVAuthorizationStatus`': 0 not determined, 1 restricted, 2 denied, 3 authorized. Kept as
     the integer the framework returned — naming it is the core's job, and an integer this version
     does not know becomes :attr:`PermissionState.NOT_OBSERVABLE` rather than a guess."""
     microphone_permission: int | None = None
@@ -1119,6 +1147,11 @@ FAMILY_FIELDS: Final[Mapping[ProbeFamily, tuple[str, ...]]] = MappingProxyType(
             "camera_permission",
             "microphone_permission",
             "screen_recording_permission",
+        ),
+        ProbeFamily.APPLICATIONS: (
+            "running_bundle_ids",
+            "frontmost_bundle_id",
+            "window_count",
         ),
     }
 )
@@ -1157,8 +1190,14 @@ class Observation(_DomainModel):
     """What ELA believes about this machine at one instant (§10, first ring; M10.1).
 
     Not a snapshot of the user's world: no screen content, no window titles, no audio, no image.
-    Device states, operating-system permissions, and the shape of the session — the things §10
-    calls "local detection", and nothing that a later milestone will have to ask permission for.
+    Device states, operating-system permissions, the shape of the session and which applications
+    are running — the things §10 calls "local detection", and nothing that needs a permission.
+
+    **Why the window titles are still not here, now that the windows are counted** (M10.3): a
+    title is content — a browser title carries a URL or an email subject — and it costs the same
+    Screen Recording grant a screenshot costs, measured. So the count is state and comes free, the
+    title is content and goes through the Guardian; architecture rule 36 is what keeps the line
+    from being an intention.
 
     ``idle_seconds`` is the one behavioural datum, and it is carried **as a number**: turning it
     into "present" or "away" is a threshold, and a threshold is a decision that belongs to whoever
@@ -1177,6 +1216,14 @@ class Observation(_DomainModel):
     screen_locked: bool | None = None
     on_console: bool | None = None
     idle_seconds: Annotated[float, Field(ge=0)] | None = None
+    running_bundle_ids: tuple[str, ...] | None = None
+    """Which applications with a user interface are running, by bundle identifier (M10.3).
+
+    State, not content: it says *that* Mail is open, never what is in it. It costs no permission,
+    it does not leave the machine, and — like the rest of this model — it is not memory: ELA holds
+    this observation and the previous one, so a restart forgets it (ADR 0028 §10)."""
+    frontmost_bundle_id: str | None = None
+    window_count: Annotated[int, Field(ge=0)] | None = None
 
 
 class PerceptionChange(_DomainModel):
@@ -1192,6 +1239,43 @@ class PerceptionChange(_DomainModel):
     """The fingerprint key, e.g. ``microphone`` or ``permissions.CAMERA``."""
     before: str
     after: str
+
+
+class RawTextLine(_DomainModel):
+    """One line the recognition helper read, and how sure it was (M10.3, ADR 0030).
+
+    Primitives, like everything that crosses out of ELA's process: a string and a number. What a
+    confidence of 0,5 *means* is not the adapter's to say — nothing is filtered on it, because a
+    threshold is a decision and belongs to whoever decides (§45).
+    """
+
+    text: str
+    confidence: Annotated[float, Field(ge=0, le=1)]
+
+
+class RawRecognition(_DomainModel):
+    """What the text-recognition helper did, in primitives — no verdict (M10.3, ADR 0030).
+
+    The sibling of :class:`RawCapture` on the reading side, with one difference that was argued
+    rather than assumed: **the payload travels here**, where the image's never did.
+
+    ADR 0029 §4 kept the pixels out of the pipe because a helper killed at the timeout leaves a
+    truncated base64 string that *decodes into a partial image* — a shorter answer shaped like an
+    answer. JSON Lines is self-delimiting, so the same truncation is a parse error instead, and
+    the failure mode that decided the image's direction does not exist here. The direction also
+    gains something the image had to declare as a limit: the parent writes the file itself, so it
+    is ``0o600`` from its first byte and never briefly carries the process umask.
+
+    ``unsupported_languages`` is the reason a caller can tell "this screen has no text" from "ELA
+    was configured with a language that does not exist" — measured, those two are the same answer
+    from Vision, and a reading that can mean both must be split before it is handed on (ADR 0030
+    §8).
+    """
+
+    exit_code: int | None = None
+    killed: bool = False
+    lines: tuple[RawTextLine, ...] = ()
+    unsupported_languages: tuple[str, ...] = ()
 
 
 class RawCapture(_DomainModel):

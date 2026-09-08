@@ -8,7 +8,9 @@ verification passed or failed. A verifier that changed the world would be a tool
 
 from __future__ import annotations
 
+import ast
 import hashlib
+import inspect as inspect_module
 import json
 import os
 import re
@@ -62,6 +64,7 @@ from ela.tools import (
     PATH_SYMLINK,
     PATH_UNREACHABLE,
     PERCEPTION_CAPTURE_SCREEN,
+    PERCEPTION_READ_SCREEN_TEXT,
     SCREEN_TOOL_NAME,
     VERIFICATION_ARGUMENTS_INVALID,
     WORKSPACE_WRITE_NOTE,
@@ -69,10 +72,13 @@ from ela.tools import (
     EchoTool,
     EchoVerifier,
     ModelCompleteVerifier,
+    ReadScreenTextVerifier,
     Verifier,
     WriteNoteTool,
     WriteNoteVerifier,
 )
+from ela.tools.captures import ALREADY_EXPIRED, TEXT_MALFORMED, CaptureProblem, inspect_text
+from ela.tools.verifiers import TEXT_DECLARED_MISMATCH, TEXT_EXISTS, TEXT_MATCHES
 from tests.domain.examples import EXECUTION_RESULT
 from tests.routing.support import routing_for
 from tests.tools.support import allowed
@@ -835,3 +841,125 @@ async def test_an_unknown_condition_is_refused_by_the_capture_verifier(
         (CAPTURE_EXISTS, "capture.is_beautiful"), {}, captured(Path("/nowhere"))
     )
     assert codes(failures) == [VERIFICATION_UNKNOWN_CONDITION]
+
+
+# ----------------------------------------------------------------------------------------
+# ``perception.read_screen_text``: the disk against the declaration (ADR 0030 §14)
+# ----------------------------------------------------------------------------------------
+
+
+def jsonl_bytes(*lines: tuple[str, float]) -> bytes:
+    return "".join(
+        json.dumps({"text": text, "confidence": confidence}) + "\n" for text, confidence in lines
+    ).encode("utf-8")
+
+
+TEXT_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+
+
+def text_result(tmp_path: Path, data: bytes, **override: object) -> ExecutionResult:
+    """A capture, its recognition, and the result the tool would have reported for it.
+
+    Built from the disk, so the happy case is genuinely consistent and every failure below is one
+    field deliberately made to disagree with the file.
+    """
+    (tmp_path / f"{TEXT_ID}.png").write_bytes(png())
+    (tmp_path / f"{TEXT_ID}.jsonl").write_bytes(data)
+    parsed = [json.loads(line) for line in data.decode().splitlines()]
+    output: dict[str, object] = {
+        "capture_id": TEXT_ID,
+        "path": f"{TEXT_ID}.jsonl",
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "lines": len(parsed),
+        "characters": sum(len(one["text"]) for one in parsed),
+        **override,
+    }
+    return succeeded(PERCEPTION_READ_SCREEN_TEXT, output=output)
+
+
+@pytest.mark.parametrize("condition", [TEXT_EXISTS, TEXT_MATCHES])
+async def test_a_recognition_the_tool_wrote_verifies(tmp_path: Path, condition: str) -> None:
+    data = jsonl_bytes(("Riunione trimestrale", 1.0), ("Budget", 0.9))
+    verifier = ReadScreenTextVerifier(tmp_path, timedelta(seconds=300))
+
+    assert await verifier.verify((condition,), {}, text_result(tmp_path, data)) == ()
+
+
+@pytest.mark.parametrize(
+    "override,differing",
+    [
+        ({"bytes": 1}, "bytes"),
+        ({"sha256": "0" * 64}, "sha256"),
+        ({"lines": 99}, "lines"),
+        ({"characters": 99}, "characters"),
+    ],
+    ids=["bytes", "sha256", "lines", "characters"],
+)
+async def test_a_declaration_the_disk_contradicts_is_caught(
+    tmp_path: Path, override: dict[str, object], differing: str
+) -> None:
+    """The comparison is against the **output** and not the arguments, and that is not the
+    "trusting the tool's word" mistake: ``purpose`` and ``region`` determine no character, so
+    there is no intent to compare with. What is under test *is* the claim."""
+    data = jsonl_bytes(("Riunione", 1.0))
+    verifier = ReadScreenTextVerifier(tmp_path, timedelta(seconds=300))
+
+    (failure,) = await verifier.verify((TEXT_MATCHES,), {}, text_result(tmp_path, data, **override))
+
+    assert failure.code == TEXT_DECLARED_MISMATCH
+    assert differing in failure.message
+    assert "Riunione" not in failure.message  # names what differs, never the values
+
+
+async def test_a_recognition_that_is_not_json_lines_is_malformed(tmp_path: Path) -> None:
+    verifier = ReadScreenTextVerifier(tmp_path, timedelta(seconds=300))
+    result = text_result(tmp_path, jsonl_bytes(("x", 1.0)))
+    (tmp_path / f"{TEXT_ID}.jsonl").write_bytes(b"half an ans")
+
+    (failure,) = await verifier.verify((TEXT_EXISTS,), {}, result)
+
+    assert failure.code == TEXT_MALFORMED
+
+
+async def test_a_recognition_whose_capture_is_gone_has_already_expired(tmp_path: Path) -> None:
+    """The shared lifetime, seen from the verifier: no image, no expiry to inherit, and the
+    artefact reads as gone rather than as merely old."""
+    verifier = ReadScreenTextVerifier(tmp_path, timedelta(seconds=300))
+    result = text_result(tmp_path, jsonl_bytes(("x", 1.0)))
+    (tmp_path / f"{TEXT_ID}.png").unlink()
+
+    found = inspect_text(tmp_path, f"{TEXT_ID}.jsonl", timedelta(seconds=300))
+
+    assert not isinstance(found, CaptureProblem)
+    assert found.expires_at == ALREADY_EXPIRED
+    assert await verifier.verify((TEXT_EXISTS,), {}, result) == ()  # readable, and already expired
+
+
+async def test_a_path_that_is_not_a_string_is_refused_before_the_disk(tmp_path: Path) -> None:
+    verifier = ReadScreenTextVerifier(tmp_path, timedelta(seconds=300))
+
+    (failure,) = await verifier.verify(
+        (TEXT_EXISTS,), {}, succeeded(PERCEPTION_READ_SCREEN_TEXT, output={"path": 7})
+    )
+
+    assert failure.code == VERIFICATION_ARGUMENTS_INVALID
+
+
+def test_the_verifier_cannot_recognise_anything_even_if_it_wanted_to() -> None:
+    """Verifying is not redoing, and here that is structural rather than disciplined.
+
+    What the verifier cannot say — that the text is what was on the screen — is a declared limit,
+    and the reason it cannot drift into saying it is that **it is never given a recogniser**: its
+    constructor takes a directory and a retention, so there is nothing to call. Asserted on the
+    signature rather than on the source text, because a docstring that mentions recognising is
+    exactly what this class should be allowed to have.
+    """
+    parameters = inspect_module.signature(ReadScreenTextVerifier.__init__).parameters
+
+    assert set(parameters) == {"self", "directory", "ttl", "name"}
+    assert not [
+        node
+        for node in ast.walk(ast.parse(inspect_module.getsource(ReadScreenTextVerifier)))
+        if isinstance(node, ast.Attribute) and node.attr == "recognise"
+    ]

@@ -22,7 +22,10 @@ ADDING = "Capability aggiunte:"
 EXTENDING_ADRS = ((ADR_DIR / "0022-model-router.md", EXTENDING),)
 """ADRs that give a capability a new argument (ADR 0022 §2: ``task_type`` on ``model.complete``),
 under a label, with the whole row rewritten."""
-ADDING_ADRS = ((ADR_DIR / "0029-screen-capture.md", ADDING),)
+ADDING_ADRS = (
+    (ADR_DIR / "0029-screen-capture.md", ADDING),
+    (ADR_DIR / "0030-screen-text.md", ADDING),
+)
 """ADRs that add a capability the catalogue did not have (ADR 0029 §6: ``perception.capture_
 screen``), under a label of their own. An addition must be new, the way an extension must not be:
 the shape ADR 0005's port tables already use, applied to the catalogue."""

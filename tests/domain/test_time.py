@@ -86,6 +86,11 @@ VALUE_OBJECTS = frozenset(
         # has a birth date, and it is the artefact's ``mtime`` — read from the file, so that the
         # expiry ELA reports is the expiry the purge applies.
         "RawCapture",
+        # And the recognition (M10.3): lines and confidences are a reading, not an entity. What
+        # the recognition *is* expires with the capture it came from, whose ``mtime`` is the only
+        # clock either artefact consults.
+        "RawRecognition",
+        "RawTextLine",
     }
 )
 

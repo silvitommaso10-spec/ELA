@@ -27,6 +27,7 @@ from ela.ports import (
     PerceptionProbe,
     ProviderRegistryPort,
     ScreenCapturePort,
+    TextRecognitionPort,
     ToolPort,
     VerifierPort,
 )
@@ -35,10 +36,12 @@ from ela.tools.errors import NotIdempotentError, ToolNotFound, VerifierNotFound
 from ela.tools.model import ModelCompleteTool
 from ela.tools.notes import WriteNoteTool
 from ela.tools.screen import CaptureScreenTool, CaptureStore
+from ela.tools.screen_text import ReadScreenTextTool
 from ela.tools.verifiers import (
     CaptureScreenVerifier,
     EchoVerifier,
     ModelCompleteVerifier,
+    ReadScreenTextVerifier,
     WriteNoteVerifier,
 )
 
@@ -151,6 +154,8 @@ def production_tools(
     captures: CaptureStore,
     screen: ScreenCapturePort,
     probe: PerceptionProbe,
+    recognition: TextRecognitionPort,
+    languages: tuple[str, ...],
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -163,6 +168,7 @@ def production_tools(
         (
             *tools_v01(root=root, clock=clock, ids=ids, router=router, providers=providers).tools(),
             CaptureScreenTool(captures, screen, probe, clock, ids),
+            ReadScreenTextTool(captures, recognition, clock, ids, languages=languages),
         )
     )
 
@@ -195,5 +201,6 @@ def production_verifiers(
         (
             *verifiers_v01(root=root, router=router).verifiers(),
             CaptureScreenVerifier(captures.directory, captures.settings.capture_ttl),
+            ReadScreenTextVerifier(captures.directory, captures.settings.capture_ttl),
         )
     )

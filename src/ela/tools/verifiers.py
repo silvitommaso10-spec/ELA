@@ -35,12 +35,20 @@ from typing import ClassVar, Final
 
 from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping
 from ela.ports import ModelRouterPort, RoutingError
-from ela.tools.captures import CAPTURE_CODES, Capture, CaptureProblem, inspect
+from ela.tools.captures import (
+    CAPTURE_CODES,
+    Capture,
+    CaptureProblem,
+    TextArtefact,
+    inspect,
+    inspect_text,
+)
 from ela.tools.echo import CORE_ECHO
 from ela.tools.model import MODEL_COMPLETE, routing_arguments
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
 from ela.tools.paths import PATH_CODES, classify, resolve_workspace
 from ela.tools.screen import PERCEPTION_CAPTURE_SCREEN
+from ela.tools.screen_text import PERCEPTION_READ_SCREEN_TEXT
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
 
 __all__ = [
@@ -48,6 +56,11 @@ __all__ = [
     "CAPTURE_EXISTS",
     "CAPTURE_MATCHES",
     "CAPTURE_VERIFIER_NAME",
+    "TEXT_DECLARED_MISMATCH",
+    "TEXT_EXISTS",
+    "TEXT_MATCHES",
+    "TEXT_VERIFIER_NAME",
+    "ReadScreenTextVerifier",
     "ECHO_MESSAGE_MATCHES",
     "ECHO_MESSAGE_MISMATCH",
     "ECHO_VERIFIER_NAME",
@@ -72,6 +85,7 @@ ECHO_VERIFIER_NAME: Final = "core-echo-verifier"
 NOTES_VERIFIER_NAME: Final = "workspace-notes-verifier"
 MODEL_VERIFIER_NAME: Final = "model-complete-verifier"
 CAPTURE_VERIFIER_NAME: Final = "perception-screen-verifier"
+TEXT_VERIFIER_NAME: Final = "perception-screen-text-verifier"
 
 CAPTURE_EXISTS: Final = "capture.exists"
 """The name the tool reported leads to a regular file, through no link, inside the capture store,
@@ -86,6 +100,21 @@ comparison here is against the **output** and not against the arguments, and tha
 so there is no intent to compare with. What is under test *is* the claim — "I wrote a PNG of this
 size with this digest" — and the source of truth is the disk. That is precisely §20's "non deve
 assumere che un click sia riuscito solo perché è stato inviato"."""
+
+TEXT_EXISTS: Final = "text.exists"
+"""The name the tool reported leads to a regular file, through no link, inside the capture store,
+and its bytes are the JSON Lines this store writes."""
+TEXT_MATCHES: Final = "text.matches"
+"""What the disk says — size in bytes, SHA-256, how many lines and how many characters — is what
+the result declared."""
+TEXT_DECLARED_MISMATCH: Final = "text.declared_mismatch"
+"""The recognition is there and is not the one the tool described.
+
+Same shape as :data:`CAPTURE_DECLARED_MISMATCH` and the same limit, stated so nobody reads more
+into it: this can say the artefact exists, that it is well formed, and that it is exactly what the
+tool declared. It **cannot** say the text is what was on the screen — that would need a second
+recognition to compare against, which is redoing the work and not verifying it (§20 asks that
+execution not be taken as proof of success; it does not ask for an oracle)."""
 
 MODEL_ANSWERED: Final = "model.answered"
 """The result carries a non-empty text, the provider and the model that produced it, and the
@@ -407,5 +436,77 @@ class CaptureScreenVerifier(Verifier):
             ("sha256", found.sha256),
             ("width", found.size.width),
             ("height", found.size.height),
+        )
+        return tuple(key for key, actual in checks if declared.get(key) != actual)
+
+
+class ReadScreenTextVerifier(Verifier):
+    """``perception.read_screen_text`` verified from the disk (§20, §63; ADR 0030 §14).
+
+    The sibling of :class:`CaptureScreenVerifier`, reading the other artefact of the same store
+    with the same read-only classification the tool wrote through — so a recognition the tool
+    accepted is one this finds, and the two cannot disagree about what a readable artefact is.
+
+    It **re-reads and does not re-recognise**: verifying is not redoing. It parses the JSON Lines
+    back and counts them, which is how ``lines`` and ``characters`` are re-derived rather than
+    believed.
+
+    Two declared limits, and they are different sizes. The small one is the capture's: this must
+    run inside the TTL. The large one is that it cannot say the text is what was on the screen —
+    only that it is what the tool said it wrote.
+    """
+
+    conditions: ClassVar[frozenset[str]] = frozenset({TEXT_EXISTS, TEXT_MATCHES})
+    failure_codes: ClassVar[frozenset[str]] = (
+        COMMON_FAILURE_CODES | CAPTURE_CODES | {TEXT_DECLARED_MISMATCH}
+    )
+
+    def __init__(
+        self, directory: Path | str, ttl: timedelta, *, name: str = TEXT_VERIFIER_NAME
+    ) -> None:
+        super().__init__(PERCEPTION_READ_SCREEN_TEXT, name=name)
+        self._directory = Path(directory).expanduser().absolute()
+        self._ttl = ttl
+
+    async def _check(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        del arguments  # ``purpose`` and ``region`` determine no character; the claim is under test
+        name = result.output.get("path")
+        if not isinstance(name, str):
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "output.path must be a string",
+                retryable=False,
+            )
+        found = inspect_text(self._directory, name, self._ttl)
+        if isinstance(found, CaptureProblem):
+            return self._failure(condition, found.code, found.message(name), retryable=False)
+        if condition == TEXT_EXISTS:
+            return None
+        differs = self._differences(found, result.output)
+        if not differs:
+            return None
+        return self._failure(
+            condition,
+            TEXT_DECLARED_MISMATCH,
+            f"{name!r} is not the recognition the result describes: {', '.join(differs)}",
+            retryable=False,
+        )
+
+    @staticmethod
+    def _differences(found: TextArtefact, declared: JsonMapping) -> tuple[str, ...]:
+        """Which declared facts the disk contradicts, named and never quantified.
+
+        The names of what differs, never the values: a digest printed beside another is two
+        fingerprints of the user's screen in the audit trail, and a character count is harmless
+        while the text it counts is not (§57).
+        """
+        checks = (
+            ("bytes", found.bytes),
+            ("sha256", found.sha256),
+            ("lines", found.lines),
+            ("characters", found.characters),
         )
         return tuple(key for key, actual in checks if declared.get(key) != actual)

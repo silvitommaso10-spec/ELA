@@ -92,7 +92,9 @@ async def test_a_tick_asks_only_for_the_families_that_are_due() -> None:
     clock.advance(timedelta(seconds=2))
     await watcher.tick()
 
-    assert probe.calls[1] == frozenset({ProbeFamily.SENSORS})
+    # Two families, because two of them share the two-second cadence: what is due is due
+    # together, and the tick asks for them in one spawn rather than one each.
+    assert probe.calls[1] == frozenset({ProbeFamily.SENSORS, ProbeFamily.APPLICATIONS})
 
 
 async def test_a_refresh_of_one_family_does_not_erase_the_others() -> None:

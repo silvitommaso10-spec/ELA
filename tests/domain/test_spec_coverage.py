@@ -48,6 +48,8 @@ LATER_ADDITIONS = frozenset(
         "Observation",
         "PerceptionChange",
         "RawCapture",
+        "RawRecognition",
+        "RawTextLine",
     }
 )
 """Models a later milestone added, each argued in its own ADR.
@@ -65,6 +67,14 @@ nothing but :mod:`ela.domain` (rule 2). That is the same criterion ADR 0026 §2 
 :class:`~ela.ports.ScreenCapturePort` answers with. It carries how the helper ended and nothing
 about the image — no bytes, no path — because what the capture *is* is read from the artefact,
 never from a report (§20).
+
+``RawRecognition`` and ``RawTextLine`` (M10.3, ADR 0030 §11) are the same, with one difference
+argued rather than assumed: **the payload is in them**, where the capture's never was. The image
+stayed out of the pipe because a truncated base64 string decodes into a partial image — a shorter
+answer shaped like an answer — and JSON Lines is self-delimiting, so the same truncation is a
+parse error instead. The text therefore crosses the port, and the discipline that comes with it is
+that it goes into the caller's file and nowhere else: never a log line, never an error message,
+never an ``ExecutionResult`` (§57).
 """
 
 

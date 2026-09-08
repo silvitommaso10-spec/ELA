@@ -61,6 +61,8 @@ from ela.domain import (
     ProviderUsage,
     RawCapture,
     RawObservation,
+    RawRecognition,
+    RawTextLine,
     RiskLevel,
     SensorCause,
     SensorState,
@@ -390,6 +392,15 @@ RAW_OBSERVATION: Final = RawObservation(
 # the ordinary one, as every example here is.
 RAW_CAPTURE: Final = RawCapture(exit_code=0)
 
+# One line of Italian read perfectly, which is what the accurate level does: measured on a known
+# image, every line correct down to nine-point type, confidence 1,00.
+RAW_TEXT_LINE: Final = RawTextLine(text="Riunione trimestrale", confidence=1.0)
+
+# The helper read one line and had every language it was asked for. ``unsupported_languages`` is
+# the interesting value and the tool's tests exercise it: it is what keeps "this screen has no
+# text" apart from "ELA was configured with a language macOS does not have" (ADR 0030 §8).
+RAW_RECOGNITION: Final = RawRecognition(exit_code=0, lines=(RAW_TEXT_LINE,))
+
 OBSERVATION: Final = Observation(
     observed_at=datetime(2026, 9, 8, 15, 0, tzinfo=UTC),
     microphone=SENSOR_STATUS,
@@ -438,6 +449,8 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         RAW_CAPTURE,
         OBSERVATION,
         PERCEPTION_CHANGE,
+        RAW_TEXT_LINE,
+        RAW_RECOGNITION,
     )
 }
 """One example per model, keyed by class: the parametrisation used by most tests."""

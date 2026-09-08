@@ -111,6 +111,9 @@ def perception(as_json: Json = False) -> None:
             ("screen locked", payload["screen_locked"]),
             ("on console", payload["on_console"]),
             ("idle seconds", payload["idle_seconds"]),
+            ("frontmost", payload["frontmost_bundle_id"]),
+            ("windows", payload["window_count"]),
+            ("running", ", ".join(payload["running_bundle_ids"] or ()) or None),
             ("watching", payload["watching"]),
             (
                 "changed",

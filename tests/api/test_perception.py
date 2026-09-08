@@ -75,7 +75,17 @@ async def test_idle_seconds_arrives_as_a_number_or_not_at_all(client: AsyncClien
 
 
 async def test_the_answer_carries_no_content_of_any_kind(client: AsyncClient) -> None:
-    """§57 on the wire: state, never content. The fields are exactly these and nothing else."""
+    """§57 on the wire: state, never content. The fields are exactly these and nothing else.
+
+    A closed list rather than a "no forbidden word appears" check, because the failure this
+    guards against is a field somebody *adds*, and only a closed list notices an addition. M10.3
+    added three and had to come here to say so, which is the mechanism working.
+
+    The three are state: *that* an application is running, *which* one is in front, *how many*
+    windows there are. What is deliberately absent is the window title — it costs the same Screen
+    Recording grant a screenshot costs (measured) and it carries a URL or a document name, so it
+    is content and does not travel this route (architecture rule 36).
+    """
     assert set(await perception(client)) == {
         "enabled",
         "watching",
@@ -88,6 +98,9 @@ async def test_the_answer_carries_no_content_of_any_kind(client: AsyncClient) ->
         "screen_locked",
         "on_console",
         "idle_seconds",
+        "running_bundle_ids",
+        "frontmost_bundle_id",
+        "window_count",
         "changes",
     }
 

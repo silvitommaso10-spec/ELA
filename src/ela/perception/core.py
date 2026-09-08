@@ -64,6 +64,11 @@ UNCOMPARED: Final[frozenset[str]] = frozenset({"observed_at", "idle_seconds"})
 continuous measurement: quantising it into "present" and "away" would be a threshold, and a
 threshold is a decision that belongs to whoever decides (§45), not to whoever observes.
 
+Note what is **not** here: ``frontmost_bundle_id`` changes every time the user switches window,
+and it is compared anyway. The criterion that excluded ``idle_seconds`` was about a *continuous*
+measurement, not a frequently-changing discrete one — "the user moved to Mail" has a before and an
+after, and a detector that reports it is saying something (M10.3 dec. 4).
+
 Everything else is compared, and a field added tomorrow is compared **unless somebody puts it
 here on purpose** — the fail-safe direction, and a test asserts it.
 """
@@ -146,6 +151,9 @@ def interpret(raw: RawObservation, *, at: datetime) -> Observation:
         screen_locked=raw.screen_locked,
         on_console=raw.on_console,
         idle_seconds=raw.idle_seconds,
+        running_bundle_ids=raw.running_bundle_ids,
+        frontmost_bundle_id=raw.frontmost_bundle_id,
+        window_count=raw.window_count,
     )
 
 
@@ -187,6 +195,12 @@ def fingerprint(observation: Observation) -> Mapping[str, str]:
     model. A sensor renders with its cause (``AVAILABLE (OBSERVED)``) because the two are one
     fact: a webcam that stops being observable *is* a change worth reporting, even though the
     state either side of it reads ``AVAILABLE``.
+
+    A sequence renders **sorted and joined**, not as its ``repr`` (M10.3): the order in which
+    macOS happens to list the running applications is not a fact about the world, and a change
+    detector that reported it would be reporting itself. Sorting is what makes the comparison say
+    something; joining is what makes the resulting :class:`~ela.domain.PerceptionChange` readable
+    rather than two Python literals side by side.
     """
     keys: dict[str, str] = {}
     for name in observation.__class__.model_fields:
@@ -198,6 +212,8 @@ def fingerprint(observation: Observation) -> Mapping[str, str]:
         elif isinstance(value, Mapping):
             for permission, state in value.items():
                 keys[f"{name}.{permission.value}"] = state.value
+        elif isinstance(value, tuple):
+            keys[name] = ",".join(sorted(value))
         else:
             keys[name] = UNKNOWN if value is None else str(value)
     return MappingProxyType(keys)

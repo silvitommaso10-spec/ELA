@@ -49,6 +49,8 @@ from ela.domain import (
     ProviderUsage,
     RawCapture,
     RawObservation,
+    RawRecognition,
+    RawTextLine,
     RiskLevel,
     SensorCause,
     SensorState,
@@ -412,6 +414,23 @@ raw_captures = st.builds(
 """Negative exit codes are generated on purpose: a child killed by a signal reports one, and
 :data:`~ela.infrastructure.perception.darwin.TIMED_OUT` is itself ``-1``."""
 
+raw_text_lines = st.builds(
+    RawTextLine,
+    text=st.text(max_size=120),
+    confidence=st.floats(min_value=0, max_value=1, allow_nan=False),
+)
+"""Empty text is generated: a recognised region with nothing readable in it is a real answer."""
+
+raw_recognitions = st.builds(
+    RawRecognition,
+    exit_code=_optional(st.integers(min_value=-8, max_value=8)),
+    killed=st.booleans(),
+    lines=st.lists(raw_text_lines, max_size=4).map(tuple),
+    unsupported_languages=st.lists(st.text(min_size=1, max_size=8), max_size=3).map(tuple),
+)
+"""Both empty ``lines`` and non-empty ``unsupported_languages`` are generated, including
+together: that pair is exactly the ambiguity the tool has to split, so it must be reachable."""
+
 observations = st.builds(
     Observation,
     observed_at=utc_datetimes,
@@ -453,6 +472,8 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.SensorStatus: sensor_statuses,
     domain.RawObservation: raw_observations,
     domain.RawCapture: raw_captures,
+    domain.RawRecognition: raw_recognitions,
+    domain.RawTextLine: raw_text_lines,
     domain.Observation: observations,
     domain.PerceptionChange: perception_changes,
 }

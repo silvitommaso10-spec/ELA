@@ -281,18 +281,21 @@ def test_every_row_is_filled_in_for_its_kind(row: Constant) -> None:
         assert not row.why or row.why in WHYS
 
 
-def test_the_subjects_are_the_four_declared_ones_and_say_why_in_one_word() -> None:
+def test_the_subjects_are_the_three_declared_ones_and_say_why_in_one_word() -> None:
     """The only class without an assertion: kept small, named, and each marked with its word.
 
     ``INEVITABLE`` is the question that cannot be asked — restricting ``ROOT_PACKAGE`` removes the
     subject of every rule. ``ARTEFACT`` is the question whose answer means nothing: restricted,
-    rules 31 and 33 raise instead of speaking, and rule 28 reports itself. The word is there so a
-    reader sees a declared exception rather than a row somebody forgot to classify (review of
-    M9.3).
+    rule 31 raises instead of speaking, and rule 28 reports itself. The word is there so a reader
+    sees a declared exception rather than a row somebody forgot to classify (review of M9.3).
 
-    ``PERCEPTION_PROBE`` joined in M10.1 and is the same shape as ``SECURITY_MODULE``: the single
-    file its rule opens. Three of the four are that shape, which is worth noticing — a rule that
-    reads one named file can never have its subject restricted, only removed.
+    **``PERCEPTION_PROBE`` left in M10.3, and its leaving is the interesting part.** It joined in
+    M10.1 as "the one file rule 33 opens", the same shape as ``SECURITY_MODULE``. When a second
+    helper child arrived, the obvious move was to make it a tuple of two — and a tuple is a list
+    somebody forgets to add to, which would have let rule 33 go quietly mute on the next child.
+    So the subject was **derived** instead (a module in the adapter with a ``__main__`` guard),
+    and the named constant stopped existing. A subject that can be derived is worth more than a
+    subject that is declared, because only the declared kind can fall behind the tree.
     """
     subjects = {row.name: row.why for row in CONSTANTS if row.kind == SUBJECT}
 
@@ -300,7 +303,6 @@ def test_the_subjects_are_the_four_declared_ones_and_say_why_in_one_word() -> No
         "ROOT_PACKAGE": INEVITABLE,
         "SECURITY_MODULE": ARTEFACT,
         "CLI_DIR": ARTEFACT,
-        "PERCEPTION_PROBE": ARTEFACT,
     }
 
 

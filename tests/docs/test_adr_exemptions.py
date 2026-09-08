@@ -144,6 +144,14 @@ def test_the_packages_of_adr_0012_are_the_ones_left_plus_the_one_withdrawn() -> 
 
 
 SUBJECT_ADRS = (ADR_PATH, ADR_PATH.with_name("0028-perception-core.md"))
+REMOVING_ADRS = (ADR_PATH.with_name("0030-screen-text.md"),)
+"""ADRs that take a subject away, under ``Soggetti rimossi:``.
+
+The table describes a collection that grows **and shrinks**, and neither can be an edit to an
+older document. M10.3 is the first shrink: rule 33 stopped naming a file and derived its subject
+instead, so ``PERCEPTION_PROBE`` ceased to exist rather than being restricted. A subject that can
+be derived is worth more than one that is declared, because only the declared kind can fall
+behind the tree."""
 """ADR 0027 §5 opened the table; a later ADR that adds a subject repeats a row here.
 
 An ADR is immutable, so a table describing a growing collection cannot live in one document —
@@ -161,5 +169,13 @@ def test_the_subjects_and_their_words_are_the_ones_in_the_tables() -> None:
         if (match := SUBJECT_ROW.match(line))
     }
     assert documented, "ADR 0027 §5 must list the subjects and the word each carries"
+    removed = {
+        match.group(1)
+        for path in REMOVING_ADRS
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if (match := SUBJECT_ROW.match(line))
+    }
+    assert removed, "ADR 0030 §15 must list the subject it removes"
+    documented = {name: word for name, word in documented.items() if name not in removed}
 
     assert documented == {row.name: row.why.upper() for row in CONSTANTS if row.kind == SUBJECT}

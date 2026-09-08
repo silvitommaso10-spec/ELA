@@ -63,22 +63,25 @@ def test_the_new_rule_holds_on_the_real_tree() -> None:
     assert RULES["capture-stays-on-the-machine"](PACKAGE_ROOT) == []
 
 
-def test_the_conseguenze_count_the_rules_the_ports_and_the_capabilities() -> None:
-    """The current totals, pinned by the ADR that changed them.
+def test_the_conseguenze_still_describe_the_tree_this_adr_left_behind() -> None:
+    """The totals this document pinned, kept as history rather than as today's count.
 
-    ADR 0028 counted thirty-four and still can, as a number about the tree it left behind; this
-    is the document that owns today's total, and the next one to add a rule takes the pin over.
+    ADR 0028 counted thirty-four and still can; this one counted thirty-five and still can. The
+    pin on **today's** numbers moved to ADR 0030 (``tests/docs/test_adr_context.py``) the moment
+    it added a rule, a port and a capability — which is the arrangement that lets an ADR stay
+    immutable while the tree keeps growing.
     """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**trentacinque**" in conseguenze
-    assert len(RULES) == 35
     assert "**venti**" in conseguenze
-    assert len(tuple(port_protocols())) == 20
     assert "**tredici**" in conseguenze
     assert "**quattro**" in conseguenze
-    assert len(production_catalogue().specs()) == 4
     assert "**tre**" in conseguenze
+    # And the direction is monotonic: a later ADR may add, never silently remove.
+    assert len(RULES) >= 35
+    assert len(tuple(port_protocols())) >= 20
+    assert len(production_catalogue().specs()) >= 4
     assert len(catalogue_v01().specs()) == 3
 
 
@@ -171,9 +174,19 @@ def test_the_capture_tool_writes_no_audit_of_its_own() -> None:
 
 
 def test_the_perception_core_did_not_learn_about_the_capture() -> None:
-    """§5: the capture is an **action**. The first ring observes, the second acts, and the
-    observation model is untouched — no fourth family, no widened ``RawObservation``."""
-    assert [family.value for family in ProbeFamily] == ["SENSORS", "SESSION", "PERMISSIONS"]
+    """§5: the capture is an **action**. The first ring observes, the second acts.
+
+    M10.1 left three families and M10.3 added a fourth, so this cannot be a frozen list any more
+    — but the property ADR 0029 §5 asserted was never about the *number*. It was that **the
+    capture** is not one of them: a family would give a photograph a cadence, a ``merge`` and a
+    freshness it does not have. So the assertion is the property, stated so that a family added
+    later for an honest reason passes and a family added for the capture does not.
+    """
+    families = [family.value for family in ProbeFamily]
+    assert not [name for name in families if "CAPTURE" in name or "SCREEN" in name]
+    assert not [
+        field for field in RawObservation.model_fields if "capture" in field or "image" in field
+    ]
     partition = [field for family in ProbeFamily for field in FAMILY_FIELDS[family]]
     assert sorted(partition) == sorted(RawObservation.model_fields)
 

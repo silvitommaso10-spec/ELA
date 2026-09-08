@@ -39,9 +39,25 @@ from typing import Any
 SENSORS = "SENSORS"
 SESSION = "SESSION"
 PERMISSIONS = "PERMISSIONS"
+APPLICATIONS = "APPLICATIONS"
 
 AV_VIDEO = b"vide"
 AV_AUDIO = b"soun"
+
+_UTF8 = 0x08000100
+"""``kCFStringEncodingUTF8``."""
+
+_ON_SCREEN_ONLY = 1
+"""``kCGWindowListOptionOnScreenOnly``."""
+_EXCLUDE_DESKTOP = 16
+"""``kCGWindowListExcludeDesktopElements``."""
+
+_REGULAR_APPLICATION = 0
+"""``NSApplicationActivationPolicyRegular``: has a Dock icon, i.e. the user can see it.
+
+Of the 123 processes ``runningApplications`` returned when this was measured, 15 were regular.
+The other 108 are agents and helpers, which are facts about macOS and not about what the user is
+doing (§44)."""
 
 _HID_STATE = 1
 """``kCGEventSourceStateHIDSystemState``."""
@@ -67,6 +83,7 @@ class _Objc:
     def __init__(self) -> None:
         self._objc = _library("objc")
         _library("AVFoundation")
+        _library("AppKit")
         self._objc.objc_getClass.restype = ctypes.c_void_p
         self._objc.objc_getClass.argtypes = [ctypes.c_char_p]
         self._objc.sel_registerName.restype = ctypes.c_void_p
@@ -113,6 +130,69 @@ class _Objc:
                 self._media[media],
             )
         )
+
+    def _workspace(self) -> Any:
+        return self._object_of(self._objc.objc_getClass(b"NSWorkspace"), b"sharedWorkspace")
+
+    def _object_of(self, receiver: Any, selector: bytes) -> Any:
+        send = ctypes.cast(
+            self._objc.objc_msgSend,
+            ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p),
+        )
+        return send(receiver, self._objc.sel_registerName(selector))
+
+    def _utf8(self, string: Any) -> str | None:
+        if not string:
+            return None
+        send = ctypes.cast(
+            self._objc.objc_msgSend,
+            ctypes.CFUNCTYPE(ctypes.c_char_p, ctypes.c_void_p, ctypes.c_void_p),
+        )
+        raw = send(string, self._objc.sel_registerName(b"UTF8String"))
+        return raw.decode("utf-8", "replace") if raw else None
+
+    def frontmost_bundle_id(self) -> str | None:
+        """The bundle identifier of the application in front. No permission, 0,001 ms warm."""
+        application = self._object_of(self._workspace(), b"frontmostApplication")
+        if not application:
+            return None
+        return self._utf8(self._object_of(application, b"bundleIdentifier"))
+
+    def running_bundle_ids(self) -> list[str]:
+        """Bundle identifiers of the applications the user can see, sorted and deduplicated.
+
+        Reads the identifier and never ``localizedName``: the name is a string to show, it is
+        localised, and comparing observations on it would make a change detector fire when the
+        system language changes.
+        """
+        applications = self._object_of(self._workspace(), b"runningApplications")
+        count = int(
+            ctypes.cast(
+                self._objc.objc_msgSend,
+                ctypes.CFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p),
+            )(applications, self._objc.sel_registerName(b"count"))
+        )
+        at_index = ctypes.cast(
+            self._objc.objc_msgSend,
+            ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long),
+        )
+        policy_of = ctypes.cast(
+            self._objc.objc_msgSend,
+            ctypes.CFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p),
+        )
+        found = set()
+        for index in range(count):
+            application = at_index(
+                applications, self._objc.sel_registerName(b"objectAtIndex:"), index
+            )
+            if policy_of(application, self._objc.sel_registerName(b"activationPolicy")) != (
+                _REGULAR_APPLICATION
+            ):
+                continue
+            identifier = self._utf8(self._object_of(application, b"bundleIdentifier"))
+            if identifier:  # nullable, and an application without one has nothing to name it by
+                found.add(identifier)
+        return sorted(found)
 
 
 def _four_char(code: str) -> int:
@@ -188,6 +268,32 @@ def _session_flag(core_graphics: ctypes.CDLL, core_foundation: ctypes.CDLL, key:
         core_foundation.CFRelease(ctypes.c_void_p(session))
 
 
+def _window_count(core_graphics: ctypes.CDLL, core_foundation: ctypes.CDLL) -> int:
+    """How many windows are on screen, and **nothing about any one of them**.
+
+    The dictionaries this returns carry the owner, the PID, the geometry — all of which come with
+    no permission at all — and the window title, which does not: measured from a process that was
+    its own TCC responsible process, the owners came back and the titles did not. The title is
+    content and stays out of the perception ring; architecture rule 36 is what keeps that from
+    being a good intention, because reading one is a single string literal away from here.
+
+    So this reaches into the array for its length and never into a dictionary for a value. It is
+    the same discipline as :func:`_session_flag`, which reads named keys instead of copying the
+    session dictionary (ADR 0028 §11) — one step further, because here nothing is read at all.
+    """
+    core_graphics.CGWindowListCopyWindowInfo.restype = ctypes.c_void_p
+    core_graphics.CGWindowListCopyWindowInfo.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+    windows = core_graphics.CGWindowListCopyWindowInfo(_ON_SCREEN_ONLY | _EXCLUDE_DESKTOP, 0)
+    if not windows:
+        raise OSError("no window list")
+    try:
+        core_foundation.CFArrayGetCount.restype = ctypes.c_long
+        core_foundation.CFArrayGetCount.argtypes = [ctypes.c_void_p]
+        return int(core_foundation.CFArrayGetCount(ctypes.c_void_p(windows)))
+    finally:
+        core_foundation.CFRelease(ctypes.c_void_p(windows))
+
+
 def _displays(core_graphics: ctypes.CDLL) -> int:
     count = ctypes.c_uint32(0)
     identifiers = (ctypes.c_uint32 * 32)()
@@ -222,6 +328,19 @@ def observe(families: frozenset[str]) -> dict[str, Any]:
         )
         readings["microphone_in_use"] = _read(
             "microphone_in_use", lambda: _microphone_in_use(core_audio)
+        )
+    if APPLICATIONS in families:
+        objc = _Objc()
+        core_graphics = _library("CoreGraphics")
+        core_foundation = _library("CoreFoundation")
+        readings["running_bundle_ids"] = _read(
+            "running_bundle_ids", lambda: objc.running_bundle_ids()
+        )
+        readings["frontmost_bundle_id"] = _read(
+            "frontmost_bundle_id", lambda: objc.frontmost_bundle_id()
+        )
+        readings["window_count"] = _read(
+            "window_count", lambda: _window_count(core_graphics, core_foundation)
         )
     if SESSION in families:
         core_graphics = _library("CoreGraphics")

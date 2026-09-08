@@ -27,6 +27,8 @@ from ela.infrastructure.perception import (
     ScreenCaptureCommand,
     UnsupportedProbe,
     UnsupportedScreenCapture,
+    UnsupportedTextRecognition,
+    VisionTextRecognition,
 )
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
@@ -56,6 +58,7 @@ from ela.ports import (
     ProviderRegistryPort,
     ScreenCapturePort,
     TaskRepository,
+    TextRecognitionPort,
     ToolPort,
     ToolRegistryPort,
     VerifierPort,
@@ -80,6 +83,7 @@ from ela.testing.fakes import (
     FakeProviderRegistry,
     FakeScreenCapture,
     FakeTaskRepository,
+    FakeTextRecognition,
     FakeTool,
     FakeToolRegistry,
     FakeVerifier,
@@ -411,6 +415,16 @@ async def _no_helper(argv: Sequence[str], timeout: float) -> tuple[int, str]:
     return 0, "{}"
 
 
+def _text_recognition() -> VisionTextRecognition:
+    """The real Vision adapter, with a spawn that answers instead of starting anything.
+
+    Registered on every runner for the same reason as the other two: the contract is that it
+    reports instead of failing, and reporting costs no framework, no image and — Vision needing
+    no TCC grant at all — no permission either.
+    """
+    return VisionTextRecognition(timeout=timedelta(seconds=1), runner=_no_helper)
+
+
 def _screen_capture() -> ScreenCaptureCommand:
     """The real macOS capture adapter, with a spawn that answers instead of starting anything.
 
@@ -492,6 +506,11 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("FakeScreenCapture", FakeScreenCapture),
         Implementation("UnsupportedScreenCapture", UnsupportedScreenCapture),
         Implementation("ScreenCaptureCommand", _screen_capture),
+    ),
+    TextRecognitionPort: (
+        Implementation("FakeTextRecognition", FakeTextRecognition),
+        Implementation("UnsupportedTextRecognition", UnsupportedTextRecognition),
+        Implementation("VisionTextRecognition", _text_recognition),
     ),
     ModelRouterPort: (
         Implementation("FakeModelRouter", _fake_router),

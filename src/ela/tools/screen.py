@@ -41,25 +41,32 @@ anything that sends it anywhere is M10.3, with a privacy decision of its own.
 
 from __future__ import annotations
 
+import json
 import os
+from collections.abc import Sequence
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, Final
 
-from ela.domain import CapabilityId, JsonMapping, ProbeFamily
+from ela.domain import CapabilityId, JsonMapping, ProbeFamily, RawTextLine
 from ela.ports import Clock, IdGenerator, PerceptionProbe, ScreenCapturePort
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.captures import (
+    ALREADY_EXPIRED,
     CAPTURE_CODES,
+    CAPTURE_UNREADABLE,
     Capture,
     CaptureProblem,
     Retained,
+    TextArtefact,
     inspect,
     measure,
+    measure_text,
     name_for,
     retained,
     room,
+    text_name_for,
 )
 from ela.tools.notes import DIRECTORY_MODE, FILE_MODE
 from ela.tools.settings import CaptureSettings
@@ -176,9 +183,20 @@ class CaptureStore:
                 gone += 1
         return gone
 
+    def path_of(self, capture_id: str) -> Path:
+        """Where the capture with this id lives. Creates nothing, reads nothing.
+
+        Two callers with two intents, and two names for the same answer: the capture tool calls
+        :meth:`reserve` for a path it is about to write, the reading tool asks where an existing
+        one *is*. One computation, because a second way to build the path is a second thing that
+        could disagree about it — but a method that says "will be written" has no business
+        answering "where is it", and a reader should not have to work that out.
+        """
+        return self._directory / name_for(capture_id)
+
     def reserve(self, capture_id: str) -> Path:
         """Where a capture with this id will be written. Creates nothing."""
-        return self._directory / name_for(capture_id)
+        return self.path_of(capture_id)
 
     def settle(self, path: Path) -> Capture | CaptureProblem:
         """Tighten the mode of what the helper left, then measure it.
@@ -193,6 +211,50 @@ class CaptureStore:
         with suppress(OSError):
             os.chmod(path, FILE_MODE)  # noqa: PTH101 - a mode change, not a path construction
         return measure(path, self._settings.capture_ttl)
+
+    def write_text(
+        self, capture_id: str, lines: Sequence[RawTextLine]
+    ) -> TextArtefact | CaptureProblem:
+        """Write the recognition of ``capture_id`` beside its image, then measure it back.
+
+        The parent writes, which is the direction ADR 0029 §4 could not take for the pixels and
+        M10.3 dec. 7 argued for here. It buys one thing that milestone had to declare as a limit:
+        the file is created by this process at :data:`FILE_MODE`, so it never briefly carries the
+        process umask the way a file created by a helper does.
+
+        Written with ``O_EXCL`` on a fresh temporary name and then renamed into place, so a reader
+        never sees half a recognition — and measured back from the disk rather than reported from
+        memory, because what the tool declares must be what the file says (§20).
+        """
+        target = self._directory / text_name_for(capture_id)
+        payload = b"".join(
+            json.dumps({"text": line.text, "confidence": line.confidence}).encode("utf-8") + b"\n"
+            for line in lines
+        )
+        try:
+            self._write(target, payload)
+        except OSError as error:
+            return CaptureProblem(
+                CAPTURE_UNREADABLE, f"could not be written: {type(error).__name__}"
+            )
+        return measure_text(target, self._group_expiry(capture_id))
+
+    def _write(self, target: Path, payload: bytes) -> None:
+        """Create, fill, and move into place — never leaving a partial file at the real name."""
+        scratch = target.with_name(f"{target.name}.{os.getpid()}.part")
+        descriptor = os.open(scratch, os.O_WRONLY | os.O_CREAT | os.O_EXCL, FILE_MODE)
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(payload)
+            os.replace(scratch, target)
+        finally:
+            with suppress(OSError):
+                scratch.unlink(missing_ok=True)
+
+    def _group_expiry(self, capture_id: str) -> datetime:
+        """When everything belonging to this capture stops being held. The image's clock."""
+        held = {one.name: one.expires_at for one in self.retained()}
+        return held.get(name_for(capture_id), ALREADY_EXPIRED)
 
     def discard(self, path: Path) -> None:
         """Remove what a failed capture left, whatever it was. Never raises.

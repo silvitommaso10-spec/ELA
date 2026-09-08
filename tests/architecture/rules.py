@@ -115,10 +115,24 @@ SPAWNING_CALLS = frozenset(
     }
 )
 
-#: Rule 33 (ADR 0028 §2): the helper process imports only the standard library, never ``ela``.
-#: What has to be able to die on its own must not carry the Core's import graph with it, and the
-#: Core must not be able to reach into it: the two sides agree on a JSON object and nothing else.
-PERCEPTION_PROBE = PERCEPTION_ADAPTER_DIR / "probe.py"
+#: Rule 33 (ADR 0028 §2, extended in M10.3): every helper *child* under the perception adapter
+#: imports only the standard library, never ``ela``. What has to be able to die on its own must
+#: not carry the Core's import graph with it, and the Core must not be able to reach into it: the
+#: two sides agree on a JSON object and nothing else.
+#:
+#: M10.1 named one file. M10.2 needed no second one — its child is ``screencapture(1)``, Apple's.
+#: M10.3 brings a second child of ours (Vision has no Apple CLI), so the rule had to grow, and a
+#: hand-written tuple was the wrong way to grow it: a list is a thing somebody forgets to add to,
+#: and the rule would go quietly mute on exactly the file that needed it. So the subject is
+#: **derived** — a child is a module in this directory that is executable as a script, which is
+#: what :data:`MAIN_GUARD` finds.
+#:
+#: The derivation is self-enforcing, which is why it is trustworthy: the property that makes the
+#: rule apply is the same property that makes the child *work*. ``python -m <module>`` runs the
+#: body with ``__name__ == "__main__"``, so a child that lost its guard would print nothing, and
+#: its adapter would read an empty stdout and report "not observable". You cannot quietly step out
+#: of this rule and still have a working helper.
+MAIN_GUARD = "__main__"
 
 #: Rule 34 (ADR 0028 §1): the perception adapter reports primitives and never names a domain
 #: state. This is what makes the coverage exemption honest instead of promised — no runner has a
@@ -132,7 +146,36 @@ PERCEPTION_VOCABULARY = frozenset({"SensorState", "SensorCause", "PermissionStat
 #: is worth having: ``ela.tools.model`` really does import the router, so "a tool imports the
 #: router" is legal code in this repository, and writing it in ``screen.py`` is exactly what M10.3
 #: will be tempted to do (ADR 0026 §7: a defence that cannot fire is worse than none).
-CAPTURE_MODULES = (Path("tools") / "screen.py", Path("tools") / "captures.py")
+#: M10.3 extends it to the modules that hold the *text* of a capture, and extends it **before**
+#: the code that produces that text exists (M10.3 dec. 15). The order is part of the decision: a
+#: defence written after the thing it defends has a window in which the thing exists and the
+#: defence does not, and in that window review looks at the new code and not at the missing rule.
+#: The reason the extension is not optional is the sentence the milestone is built on — *text is
+#: easier to send away than a PNG*: an OCR is a few kilobytes of searchable text that fits in a
+#: prompt, where the image was an awkward megabyte.
+CAPTURE_MODULES = (
+    Path("tools") / "screen.py",
+    Path("tools") / "captures.py",
+    Path("tools") / "screen_text.py",
+    PERCEPTION_ADAPTER_DIR / "textrecognition.py",
+    PERCEPTION_ADAPTER_DIR / "vision.py",
+)
+
+#: Rule 36 (M10.3 dec. 3): ELA never reads a window title. ``kCGWindowOwnerName`` and the geometry
+#: come free and are *state*; ``kCGWindowName`` costs the same TCC grant as a screenshot and is
+#: *content* — a Chrome title carries a URL or an email subject, a TextEdit title a document name.
+#:
+#: The precedent is ADR 0028 §11, where the probe reads ``CGSessionCopyCurrentDictionary`` **by
+#: named key** so the user's full name is never copied along. That discipline stayed a comment,
+#: and the ADR itself calls it "one line of code". Here it becomes a rule for the reason ADR 0029
+#: §12 gives for rule 35: it *can* fire. The dictionary-reading code now exists in the probe, so
+#: reading titles is one string literal away, and it is precisely what the next milestone will be
+#: tempted to do.
+#:
+#: It reads a **literal**, not an import: a CoreFoundation key is not a symbol, it is a string
+#: handed to ``CFStringCreateWithCString``, so a rule reading imports would have been silent on
+#: the only code that could break it.
+WINDOW_TITLE_KEYS = frozenset({"kCGWindowName"})
 CAPTURE_FORBIDDEN = frozenset(
     {"ModelRouter", "ModelRouterPort", "ProviderRegistry", "ProviderRegistryPort", "httpx"}
 )
@@ -1450,21 +1493,80 @@ def _dotted(function: ast.expr) -> str:
     return ""
 
 
-def check_probe_is_standalone(pkg_root: Path) -> list[Violation]:
-    """Rule 33: the perception helper imports only the standard library (ADR 0028 §2).
+def _is_child(path: Path) -> bool:
+    """Whether this module is a helper child: executable as a script (M10.3).
 
-    The child process exists to be allowed to die: a mistaken Objective-C message kills it, and
-    that is the containment working rather than failing. A child that imported ``ela`` would drag
-    the Core's import graph into the thing designed to crash, and would give the Core a path into
-    the one module no runner can cover. The contract between the two sides is a JSON object.
+    Derived rather than listed, so a child added tomorrow is covered by rule 33 **by default**
+    instead of when somebody remembers to add it — the same fail-safe direction as
+    ``fingerprint()`` deriving its keys from the model's fields (ADR 0028 §5).
     """
-    path = pkg_root / PERCEPTION_PROBE
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return any(
+        isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare)
+        and any(
+            isinstance(operand, ast.Constant) and operand.value == MAIN_GUARD
+            for operand in [node.test.left, *node.test.comparators]
+        )
+        for node in ast.walk(tree)
+    )
+
+
+def perception_children(pkg_root: Path) -> list[Path]:
+    """Every helper child under the perception adapter, in path order."""
+    return [path for path in _source_files(pkg_root / PERCEPTION_ADAPTER_DIR) if _is_child(path)]
+
+
+def check_children_are_standalone(pkg_root: Path) -> list[Violation]:
+    """Rule 33: every perception helper child imports only the standard library (ADR 0028 §2).
+
+    A child process exists to be allowed to die: a mistaken Objective-C message kills it, and that
+    is the containment working rather than failing — M10.3 saw it again, a first attempt at Vision
+    through ``ctypes`` ending in SIGSEGV. A child that imported ``ela`` would drag the Core's
+    import graph into the thing designed to crash, and would give the Core a path into the modules
+    no runner can cover. The contract between the two sides is a JSON object.
+
+    The subject is derived (:func:`perception_children`) and not listed, so the rule cannot go
+    mute on a child somebody forgot to declare.
+    """
     return _violations(
-        "perception-probe-imports-only-stdlib",
-        iter([path]),
+        "perception-children-import-only-stdlib",
+        iter(perception_children(pkg_root)),
         pkg_root,
         lambda imported: _is_within(imported, ROOT_PACKAGE),
     )
+
+
+def check_no_window_titles(pkg_root: Path) -> list[Violation]:
+    """Rule 36: nothing under the perception adapter ever names a window-title key (M10.3 dec. 3).
+
+    Window owners, PIDs and geometry come with no permission at all and are *state*. A window
+    **title** needs the same Screen Recording grant a screenshot needs — measured, from a process
+    that was its own TCC responsible process: owners present, titles absent — and it is *content*.
+    So it does not enter the perception ring, and "it does not" is a rule rather than a habit.
+
+    Scoped to the adapter because that is where ``ctypes`` is allowed to be (rule 32): the key
+    cannot be used anywhere else, so this is the whole surface, derived rather than named.
+    """
+    rule = "perception-reads-no-window-titles"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root / PERCEPTION_ADAPTER_DIR):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant):
+                continue
+            text = node.value if isinstance(node.value, str) else None
+            if isinstance(node.value, bytes):
+                text = node.value.decode("utf-8", "replace")
+            if text is None:
+                continue
+            found.extend(
+                Violation(rule, name, key, node.lineno)
+                for key in sorted(WINDOW_TITLE_KEYS)
+                if key in text
+            )
+    return found
 
 
 def check_adapter_names_no_state(pkg_root: Path) -> list[Violation]:
@@ -1563,7 +1665,8 @@ RULES: dict[str, Rule] = {
     "constant-time-token": check_constant_time_token,
     "machine-access-in-one-place": check_machine_access,
     "capture-stays-on-the-machine": check_capture_stays_on_the_machine,
-    "perception-probe-imports-only-stdlib": check_probe_is_standalone,
+    "perception-children-import-only-stdlib": check_children_are_standalone,
+    "perception-reads-no-window-titles": check_no_window_titles,
     "perception-adapter-decides-nothing": check_adapter_names_no_state,
 }
 
@@ -1932,16 +2035,20 @@ CONSTANTS: tuple[Constant, ...] = (
         why=INEVITABLE,
         reason=_THE_PACKAGE_ITSELF,
     ),
-    # perception-probe-imports-only-stdlib (rule 33, ADR 0028 §2)
+    # perception-children-import-only-stdlib (rule 33, ADR 0028 §2; M10.3 dec. 6)
+    Constant("perception-children-import-only-stdlib", "MAIN_GUARD", DETECTOR),
+    Constant("perception-children-import-only-stdlib", "PERCEPTION_ADAPTER_DIR", DETECTOR),
+    Constant("perception-children-import-only-stdlib", "ROOT_PACKAGE", DETECTOR),
+    # perception-reads-no-window-titles (rule 36, M10.3 dec. 3)
+    Constant("perception-reads-no-window-titles", "PERCEPTION_ADAPTER_DIR", DETECTOR),
     Constant(
-        "perception-probe-imports-only-stdlib",
-        "PERCEPTION_PROBE",
+        "perception-reads-no-window-titles",
+        "ROOT_PACKAGE",
         SUBJECT,
-        why=ARTEFACT,
-        reason="the one file this rule reads: restricted, the rule has nothing to open and "
-        "raises instead of speaking",
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
     ),
-    Constant("perception-probe-imports-only-stdlib", "ROOT_PACKAGE", DETECTOR),
+    Constant("perception-reads-no-window-titles", "WINDOW_TITLE_KEYS", DETECTOR),
     # tool-output-readers
     Constant("tool-output-readers", "API_DIR", DETECTOR),
     Constant("tool-output-readers", "OUTPUT_MODEL", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),

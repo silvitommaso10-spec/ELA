@@ -52,7 +52,7 @@ def test_example_is_valid(model: type[BaseModel]) -> None:
     assert example == model.model_validate(example.model_dump())
 
 
-NOTHING_REQUIRED = frozenset({"RawObservation", "RawCapture"})
+NOTHING_REQUIRED = frozenset({"RawObservation", "RawCapture", "RawRecognition"})
 """The two models that are legally empty, and why (M10.1, ADR 0028 §1; M10.2, ADR 0029 §11).
 
 ``RawObservation()`` — every field ``None`` — is not a partial entity, it is *the* value for "the
