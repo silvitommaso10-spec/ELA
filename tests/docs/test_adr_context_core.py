@@ -187,6 +187,11 @@ def test_the_absences_of_the_adr_are_the_absences_of_the_code() -> None:
         "Un elenco troncato dichiara il proprio troncamento.",
         "Una regola che costringe il codice corretto a contorcersi insegna ad aggirare le regole.",
         "la memoria sarà una fonte del contesto, mai il contrario",
+        "Non è il riuso a essere concesso, è il riuso *più* il test sulle chiavi.",
+        (
+            "Un test di una milestone chiusa che asserisce un totale del repository non sta "
+            "verificando quella milestone: sta verificando il repository."
+        ),
     ],
 )
 def test_the_general_criteria_are_written_and_not_only_applied(sentence: str) -> None:

@@ -397,6 +397,18 @@ garanzia resta, derivata invece che copiata: `tests/api/test_context.py` asseris
 delle chiavi di ogni sezione, quindi un campo aggiunto al dominio fa fallire quel test finché
 qualcuno non decide che può uscire.
 
+**E la deviazione vale esattamente finché vale quel test**, che è la condizione e non un contorno:
+
+> **Non è il riuso a essere concesso, è il riuso *più* il test sulle chiavi.** Il giorno in cui una
+> sezione avesse bisogno di una forma diversa sul filo — un campo rinominato, uno omesso, uno
+> aggiunto solo per l'API — **si trascrive quella sezione**, e solo quella. Non si allenta il test:
+> allentarlo toglierebbe la garanzia lasciando in piedi la deviazione che quella garanzia
+> giustificava, cioè esattamente lo scambio che nessuno accetterebbe se fosse proposto per intero.
+
+Il verso è quello di ADR 0026 §7 letto sulle prove invece che sulle difese: un test che non può più
+fallire per la ragione per cui è stato scritto è peggio di nessun test, perché la deviazione che
+copriva continua a leggersi come approvata.
+
 ## 14. Niente capability, niente tool, niente audit, niente cadenza
 
 - **Nessuna capability.** Non c'è niente da decidere: il compositore non esegue e non legge
@@ -431,6 +443,29 @@ Port estesi:
 | Port | Spec | Modo | Membri |
 |------|------|------|--------|
 | `TaskRepository` | §14 | async | `due`, `due_count` |
+
+## 17. Un test di una milestone chiusa non asserisce un totale del repository
+
+Trovato applicando la milestone, e scritto qui perché è generale.
+
+`test_no_command_was_added` di ADR 0029 asseriva **il conteggio globale dei comandi della CLI**.
+`ela context` lo ha fatto fallire — e ADR 0029 non ha fatto niente di sbagliato: la milestone che
+ha rotto quel test non è la milestone che quel test descrive.
+
+> **Un test di una milestone chiusa che asserisce un totale del repository non sta verificando
+> quella milestone: sta verificando il repository.** Se drifta, si corregge — facendogli leggere
+> **il proprio documento** invece del totale — e non si congela.
+
+Le due uscite sbagliate sono simmetriche e vanno nominate perché sono entrambe tentanti: alzare il
+numero a ogni milestone trasforma un'asserzione in una manutenzione, e togliere il test perché
+«non è più suo» perde la cosa che affermava davvero. Ciò che ADR 0029 afferma è che **ADR 0029**
+non ha aggiunto comandi, ed è controllabile su ADR 0029 da sola.
+
+È anche la forma che il **pin sui totali** già usava senza che nessuno l'avesse generalizzata: chi
+possiede i numeri di oggi è l'ADR che li ha cambiati per ultimo, e gli altri tengono i propri come
+storia (`>=` invece di `==`). Questa milestone sposta il pin da `test_adr_gate.py` (ADR 0031) a
+`tests/docs/test_adr_context_core.py`, e la regola sopra è la stessa cosa detta per i test che un
+totale non lo possiedono affatto.
 
 ## Alternative considerate
 
@@ -498,3 +533,8 @@ Port estesi:
   Si riapre col Proactive Core, §34.
 - **`Task.goal` e `UserIntent.text` sono l'unico contenuto dello snapshot** (ADR 0032).
 - **Un elenco troncato dichiara il proprio troncamento** (ADR 0032). Criterio generale.
+- **Il riuso dei modelli di dominio nello schema dell'API vale finché vale il test sulle chiavi**
+  (ADR 0032): una sezione che avesse bisogno di una forma diversa sul filo si trascrive, e il test
+  non si allenta.
+- **Un test di una milestone chiusa non asserisce un totale del repository** (ADR 0032). Criterio
+  generale.
