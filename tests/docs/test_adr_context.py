@@ -184,10 +184,16 @@ def test_the_reading_module_reaches_no_router_no_registry_and_no_client() -> Non
 
 
 def test_the_conseguenze_count_the_rules_the_ports_the_capabilities_and_the_families() -> None:
+    """The totals this document pinned, kept as history the moment ADR 0031 added a rule.
+
+    The pin on **today's** rule count moved to ``tests/docs/test_adr_gate.py``; everything ADR
+    0031 did not touch is still counted exactly here, because nothing else moved.
+    """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**trentasei**" in conseguenze
-    assert len(RULES) == 36
+    # And the direction is monotonic: a later ADR may add a rule, never silently remove one.
+    assert len(RULES) >= 36
     assert "**ventuno**" in conseguenze
     assert len(tuple(port_protocols())) == 21
     assert "**tredici**" in conseguenze

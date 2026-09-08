@@ -908,6 +908,32 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela import domain\ndef off():\n    return domain.SensorCause\n",
         "SensorCause",
     ),
+    # --- platform-choice-is-a-statement (rule 37, ADR 0031) ---
+    Case(
+        # The exact line M10.3 shipped, and the reason the rule exists: the gate reports nothing
+        # here — the arm that does not run is not a missing arc — and fails one frame lower, in
+        # ela.tools, on the runner that does not take it.
+        "the-wiring-chooses-an-adapter-in-an-expression",
+        "platform-choice-is-a-statement",
+        "composition/wiring.py",
+        "import platform\n"
+        "from ela.infrastructure.perception import DarwinProbe, UnsupportedProbe\n"
+        "def probe():\n"
+        '    return DarwinProbe() if platform.system() == "Darwin" else UnsupportedProbe()\n',
+        "platform.system() == 'Darwin'",
+    ),
+    Case(
+        # Not a rule about the composition root: the next one will be written somewhere else, by
+        # somebody wiring a Windows node in Fase 12, and it is the same hole there.
+        "a-tool-picks-a-timeout-by-the-platform",
+        "platform-choice-is-a-statement",
+        "tools/patience.py",
+        "import sys\n"
+        "SLOW = 30.0\n"
+        "FAST = 5.0\n"
+        'TIMEOUT = SLOW if sys.platform == "win32" else FAST\n',
+        "sys.platform == 'win32'",
+    ),
     # --- capture-stays-on-the-machine (rule 35, ADR 0029 §12) ---
     Case(
         # Exactly what M10.3 will be tempted to write, and the whole promise of M10.2 is that it
@@ -1421,6 +1447,32 @@ ALLOWED: tuple[Case, ...] = (
         "infrastructure/perception/probe.py",
         "import ctypes\nimport json\n"
         + "import sys\nif __name__ == '__main__':\n    sys.exit(0)\n",
+        "",
+    ),
+    Case(
+        # The same choice as a statement: two arcs the gate measures, and a direction nobody
+        # proves is a direction the gate refuses. This is the shape the rule pushes you into.
+        "the-wiring-may-choose-in-an-if",
+        "platform-choice-is-a-statement",
+        "composition/wiring.py",
+        "import platform\n"
+        "from ela.infrastructure.perception import DarwinProbe, UnsupportedProbe\n"
+        "def probe():\n"
+        '    if platform.system() == "Darwin":\n'
+        "        return DarwinProbe()\n"
+        "    return UnsupportedProbe()\n",
+        "",
+    ),
+    Case(
+        # The rule reads the *condition*, not the branches: this ternary answers "was an argument
+        # given", which every runner takes both ways, and it is what ela.devices.local really
+        # writes. A rule that flagged it would be a rule about ternaries.
+        "a-default-that-happens-to-be-the-platform-is-not-a-platform-choice",
+        "platform-choice-is-a-statement",
+        "devices/defaulting.py",
+        "import platform\n"
+        "def system(given: str | None) -> str:\n"
+        "    return platform.system() if given is None else given\n",
         "",
     ),
     Case(

@@ -16,6 +16,8 @@ from ela.tools import CaptureSettings, WorkspaceSettings, default_workspace_dir
 from ela.tools.settings import (
     CAPTURE_TIMEOUT_IS_MEASURED,
     DEFAULT_CAPTURE_TIMEOUT_SECONDS,
+    DEFAULT_OCR_LANGUAGES,
+    DEFAULT_OCR_TIMEOUT_SECONDS,
     MAX_CAPTURE_TTL,
     default_capture_dir,
 )
@@ -83,6 +85,26 @@ def test_the_defaults_are_the_ones_the_milestone_approved(
     assert settings.capture_max_count == 20
     assert settings.capture_max_bytes == 200 * 1024 * 1024
     assert settings.capture_timeout == timedelta(seconds=5)
+    assert settings.ocr_timeout == timedelta(seconds=DEFAULT_OCR_TIMEOUT_SECONDS)
+    assert settings.ocr_languages == DEFAULT_OCR_LANGUAGES
+
+
+def test_every_duration_has_a_test_of_its_own_and_none_of_them_needs_a_mac() -> None:
+    """Each property called here, by name, on any runner (ADR 0031).
+
+    ``ocr_timeout`` had no test of its own: its only caller was the Darwin arm of the composition
+    root, so on a Mac it was covered *by rebound* and on a Linux runner ``cov-critical`` failed on
+    that single line — a pure line, in a package the gate covers, that nothing on that machine
+    happened to call. Covered by whoever happens to call you is not covered, and the seconds →
+    ``timedelta`` conversion is exactly the kind of thing whose test costs one line.
+    """
+    settings = CaptureSettings(
+        capture_ttl_seconds=61, capture_timeout_seconds=2, ocr_timeout_seconds=3
+    )
+
+    assert settings.capture_ttl == timedelta(seconds=61)
+    assert settings.capture_timeout == timedelta(seconds=2)
+    assert settings.ocr_timeout == timedelta(seconds=3)
 
 
 def test_a_retention_above_the_ceiling_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:

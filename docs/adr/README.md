@@ -35,6 +35,10 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0025](0025-phase-8-debts.md) | I debiti di Fase 8: `TaskRepository.count`, `AuditLog.read(newest_first=)`, `ExecutionResultStore.for_task` con `GET /tasks/{id}/results` e `ela task results`, `ELA_NOTES_SCOPE` e `ELA_DECISION_TTL_SECONDS`, regola 29 | Accettata |
 | [0026](0026-placement-as-data.md) | Il piazzamento come dato: `PlacementDecision`, `ensure_placed` e `confirm`; il confronto del token a tempo costante; regole 30 e 31 | Accettata |
 | [0027](0027-exemptions-withdrawn.md) | Le esenzioni senza codice dietro, ritirate (regole 6, 15, 16, 21); la tabella `CONSTANTS` che se ne accorge, e il criterio dell'attore legittimo | Accettata |
+| [0028](0028-perception-core.md) | Il primo contatto con l'hardware: la sonda isolata, lo stato con la sua causa, e il criterio dell'audit (regole 32–34) | Accettata |
+| [0029](0029-screen-capture.md) | La prima lettura di contenuto: l'artefatto che si può verificare, il figlio che non è nostro, e la credenza che non decide (regola 35) | Accettata |
+| [0030](0030-screen-text.md) | Comprendere ciò che si vede: il contesto che non costa un permesso, il figlio che torna nostro, e l'artefatto che eredita (regola 36) | Accettata |
+| [0031](0031-runner-parity.md) | La copertura non dipende dal runner: una scelta di piattaforma è un'istruzione, non un'espressione (regola 37) | Accettata |
 
 ## Template
 
