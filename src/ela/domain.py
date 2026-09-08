@@ -92,6 +92,8 @@ __all__ = [
     "ProviderUsage",
     "RawCapture",
     "RawObservation",
+    "RawRecognition",
+    "RawTextLine",
     "RiskLevel",
     "SensorCause",
     "SensorState",
@@ -1237,6 +1239,43 @@ class PerceptionChange(_DomainModel):
     """The fingerprint key, e.g. ``microphone`` or ``permissions.CAMERA``."""
     before: str
     after: str
+
+
+class RawTextLine(_DomainModel):
+    """One line the recognition helper read, and how sure it was (M10.3, ADR 0030).
+
+    Primitives, like everything that crosses out of ELA's process: a string and a number. What a
+    confidence of 0,5 *means* is not the adapter's to say — nothing is filtered on it, because a
+    threshold is a decision and belongs to whoever decides (§45).
+    """
+
+    text: str
+    confidence: Annotated[float, Field(ge=0, le=1)]
+
+
+class RawRecognition(_DomainModel):
+    """What the text-recognition helper did, in primitives — no verdict (M10.3, ADR 0030).
+
+    The sibling of :class:`RawCapture` on the reading side, with one difference that was argued
+    rather than assumed: **the payload travels here**, where the image's never did.
+
+    ADR 0029 §4 kept the pixels out of the pipe because a helper killed at the timeout leaves a
+    truncated base64 string that *decodes into a partial image* — a shorter answer shaped like an
+    answer. JSON Lines is self-delimiting, so the same truncation is a parse error instead, and
+    the failure mode that decided the image's direction does not exist here. The direction also
+    gains something the image had to declare as a limit: the parent writes the file itself, so it
+    is ``0o600`` from its first byte and never briefly carries the process umask.
+
+    ``unsupported_languages`` is the reason a caller can tell "this screen has no text" from "ELA
+    was configured with a language that does not exist" — measured, those two are the same answer
+    from Vision, and a reading that can mean both must be split before it is handed on (ADR 0030
+    §8).
+    """
+
+    exit_code: int | None = None
+    killed: bool = False
+    lines: tuple[RawTextLine, ...] = ()
+    unsupported_languages: tuple[str, ...] = ()
 
 
 class RawCapture(_DomainModel):

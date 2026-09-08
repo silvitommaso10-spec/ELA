@@ -89,6 +89,40 @@ needs a machine before it can be honest.
 """
 
 
+DEFAULT_OCR_TIMEOUT_SECONDS: Final = 10.0
+"""How long the recognition helper may take before ELA calls the reading failed.
+
+**Measured on 2026-09-08 on this machine** — 10 cores, macOS 26.6 (25G72), display 2940 x 1912 —
+and where it was measured is part of the number, not a footnote:
+
+===============================================  ========
+a real screen                                    232 ms
+a pathological, text-dense image                 1003 ms
+**the same, with 20 processes burning CPU**      **2727 ms**, 2959 at worst
+===============================================  ========
+
+**The ~57x ratio of ADR 0028 §6 and ADR 0029 §14 is deliberately not inherited**, and this
+milestone is what showed it is not a law. That ratio was chosen twice over readings that do *not*
+degrade under load — a 35 ms probe, and a capture whose work belongs to ``WindowServer`` — so a
+median at rest described the loaded case too. Here the work is in ELA's own process, load reaches
+it, and 57x of a median at rest would be a number borrowed from a measurement of something else.
+
+> A ratio between a timeout and a median is not a constant of this project: it depends on **who
+> does the work**. Every new timeout is measured against its own work, under the load that work
+> will meet.
+
+So the base is the worst case *under load*, 2,96 s, and 10 s leaves 3,4x for a display larger
+than this one, where the pixels can be 2,5 times as many. Like the capture's, it is not a
+performance budget: it is the line past which a Vision that does not answer stops being ELA's
+problem.
+"""
+
+DEFAULT_OCR_LANGUAGES: Final = ("it-IT", "en-US")
+"""Which languages the recognition is asked for. Both verified present among the thirty this
+macOS supports — and the helper checks, every time, because an unsupported language does not
+fail: it answers "this screen has no text" (ADR 0030 §8)."""
+
+
 def default_capture_dir() -> Path:
     """``<home>/.ela/captures``: a sibling of the database, never inside the workspace.
 
@@ -116,6 +150,10 @@ class CaptureSettings(BaseSettings):
     still be using in order to make room is acting on something else, which is not the fail-safe
     of §33."""
     capture_timeout_seconds: Annotated[float, Field(gt=0)] = DEFAULT_CAPTURE_TIMEOUT_SECONDS
+    ocr_timeout_seconds: Annotated[float, Field(gt=0)] = DEFAULT_OCR_TIMEOUT_SECONDS
+    ocr_languages: tuple[str, ...] = DEFAULT_OCR_LANGUAGES
+    """``ELA_OCR_LANGUAGES``, comma-separated. There is no recognition **level**: ``fast`` was
+    measured and does not ship (ADR 0030 §9), and a knob with one good value is not a knob."""
 
     @property
     def capture_ttl(self) -> timedelta:
@@ -126,3 +164,8 @@ class CaptureSettings(BaseSettings):
     def capture_timeout(self) -> timedelta:
         """How long the capture helper may run."""
         return timedelta(seconds=self.capture_timeout_seconds)
+
+    @property
+    def ocr_timeout(self) -> timedelta:
+        """How long the recognition helper may run."""
+        return timedelta(seconds=self.ocr_timeout_seconds)

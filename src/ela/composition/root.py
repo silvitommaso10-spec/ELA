@@ -29,6 +29,8 @@ from ela.infrastructure.perception import (
     ScreenCaptureCommand,
     UnsupportedProbe,
     UnsupportedScreenCapture,
+    UnsupportedTextRecognition,
+    VisionTextRecognition,
 )
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
@@ -216,6 +218,14 @@ async def build(settings: Settings) -> Ela:
             if darwin
             else UnsupportedScreenCapture()
         )
+        # Its own timeout, measured against its own work: unlike the capture, recognition runs in
+        # ELA's process and does degrade under load (2,7x measured), so it does not inherit the
+        # capture's number or the ratio that produced it (ADR 0030 §14).
+        recognition = (
+            VisionTextRecognition(timeout=settings.captures.ocr_timeout)
+            if darwin
+            else UnsupportedTextRecognition()
+        )
         tools = production_tools(
             root=root,
             clock=clock,
@@ -225,6 +235,8 @@ async def build(settings: Settings) -> Ela:
             captures=captures,
             screen=screen,
             probe=probe,
+            recognition=recognition,
+            languages=settings.captures.ocr_languages,
         )
         verifiers = production_verifiers(root=root, router=router, captures=captures)
 

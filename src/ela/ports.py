@@ -55,6 +55,7 @@ from ela.domain import (
     ProviderStatus,
     RawCapture,
     RawObservation,
+    RawRecognition,
     StepId,
     Task,
     TaskEvent,
@@ -112,6 +113,7 @@ __all__ = [
     "RoutingError",
     "ScreenCapturePort",
     "TaskRepository",
+    "TextRecognitionPort",
     "ToolPort",
     "ToolRegistryPort",
     "VERIFICATION_NOT_SUCCEEDED",
@@ -1075,6 +1077,49 @@ class PerceptionProbe(Protocol):
 
         ``families`` empty is a legal call that reads nothing and answers with an empty
         observation: the scheduler asks for what is due, and nothing being due is normal.
+        """
+
+
+@runtime_checkable
+class TextRecognitionPort(Protocol):
+    """Where ELA reads the text out of an image it already has (§10, §44, §57; M10.3, ADR 0030).
+
+    The shape of :class:`ScreenCapturePort`, and the same three refusals, but the reason it is a
+    port at all is different and worth naming: **this one needs no permission.** Measured from a
+    process that was its own TCC responsible process, macOS's Vision recognises text with no grant
+    of any kind, and with the network denied it answers in the same time — so nothing here reads a
+    permission, preflights one, or can cause one to be recorded as denied. The permission was
+    spent when the capture was taken, by the capability that took it.
+
+    * **It does not choose what it reads.** The caller hands over a path inside a store it owns.
+    * **It does not choose where the answer goes.** The lines come back; the file is the caller's
+      to write, at the caller's mode, under the caller's expiry.
+    * **It does not fail — it reports.** A timeout, a helper killed by a signal, an operating
+      system with no such framework: all come back as a :class:`~ela.domain.RawRecognition` that
+      says how it ended.
+    * **It decides nothing** (architecture rule 34). It carries lines, confidences and the
+      languages it could not use; what "no lines" *means* is the caller's to work out, and it
+      cannot be worked out without those languages.
+    """
+
+    async def available(self) -> bool:
+        """Whether this machine can recognise text at all — no permission, no side effect.
+
+        Its own member for the reason ADR 0028 gave ``UnsupportedProbe`` and ADR 0029 gave
+        ``available``: "ELA on Linux reads nothing" deserves to be an answer with a name and a
+        test rather than a gap somebody discovers.
+        """
+
+    async def recognise(
+        self, source: str, *, languages: tuple[str, ...], region: tuple[float, ...] | None
+    ) -> RawRecognition:
+        """Read the text in the image at ``source``, and answer with how it ended.
+
+        ``source`` is an absolute path in a directory the caller owns. ``region``, when given, is
+        ``(x, y, width, height)`` normalised to the image **with the origin at the bottom left**,
+        which is the framework's convention: the caller converts, in code a runner can cover,
+        because a flipped rectangle is the kind of mistake that returns a plausible answer instead
+        of an error (ADR 0030 §12).
         """
 
 

@@ -52,6 +52,7 @@ from ela.domain import (
     ProviderUsage,
     RawCapture,
     RawObservation,
+    RawRecognition,
     StepId,
     Task,
     TaskEvent,
@@ -98,6 +99,7 @@ __all__ = [
     "FakeProbe",
     "FakeProviderRegistry",
     "FakeScreenCapture",
+    "FakeTextRecognition",
     "FakeTaskRepository",
     "FakeTool",
     "FakeToolRegistry",
@@ -929,4 +931,35 @@ class FakeScreenCapture:
         self.calls = (*self.calls, (destination, display))
         if self._payload is not None:
             Path(destination).write_bytes(self._payload)
+        return self._report
+
+
+class FakeTextRecognition:
+    """A :class:`~ela.ports.TextRecognitionPort` that reports whatever the test wrote down.
+
+    ``calls`` records every ``(source, languages, region)``, and it is what proves the two
+    properties this tool rests on: that **nothing is recognised when the image is not whole** — a
+    truncated PNG makes the real framework answer successfully with zero lines, so refusing before
+    the call is the behaviour, and a behaviour is only tested by watching for it — and that the
+    region reaching the framework is the *flipped* one, since a rectangle that is upside down does
+    not raise, it reads the wrong half of the screen.
+
+    Honours the port's promise not to raise: a helper that dies reports how, it does not throw.
+    """
+
+    __slots__ = ("_report", "calls", "there")
+
+    def __init__(self, *, report: RawRecognition | None = None, there: bool = True) -> None:
+        self._report = report if report is not None else RawRecognition(exit_code=0)
+        self.there = there
+        self.calls: tuple[tuple[str, tuple[str, ...], tuple[float, ...] | None], ...] = ()
+
+    async def available(self) -> bool:
+        return self.there
+
+    async def recognise(
+        self, source: str, *, languages: tuple[str, ...], region: tuple[float, ...] | None
+    ) -> RawRecognition:
+        """Record the call and report."""
+        self.calls = (*self.calls, (source, languages, region))
         return self._report

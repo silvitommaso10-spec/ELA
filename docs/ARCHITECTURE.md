@@ -24,7 +24,7 @@ uv run python scripts/generate_architecture.py
 ## 1. Il grafo dei package (generato)
 
 Ogni package di `src/ela` e i package di `ela` che importa. Le direzioni che si vedono qui non
-sono un'intenzione: sono gli import veri, e sono le direzioni che le 35 regole di architettura
+sono un'intenzione: sono gli import veri, e sono le direzioni che le 36 regole di architettura
 (`tests/architecture/rules.py`, ADR 0002) impongono. Si legge dall'alto: `api` e `cli` sono i
 bordi, `composition` è l'unico che nomina i concreti (regola 27, ADR 0023 §12), `domain` e `ports`
 non importano nessuno — `domain` non importa nemmeno `ports` — e i quattro package ancora vuoti
@@ -181,7 +181,7 @@ test si accorgerebbe di un passaggio dimenticato. È il prezzo dichiarato del te
 ## Dove sta il resto
 
 - **Le decisioni**: `docs/adr/` — 27 ADR, dal primo sullo stack all'ultimo sulle esenzioni ritirate.
-- **Le regole**, in codice: `tests/architecture/rules.py` (35 regole, ognuna con il suo caso
+- **Le regole**, in codice: `tests/architecture/rules.py` (36 regole, ognuna con il suo caso
   negativo in `violations.py`) e i 13 contratti `import-linter` di `pyproject.toml`.
 - **Che cosa v0.1 semplifica**: `docs/milestones/M9.4.md`, sezione «L'elenco di ciò che in v0.1 è
   semplificato». È l'elenco completo dei limiti dichiarati, con il rimando per ognuno.

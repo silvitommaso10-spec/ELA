@@ -47,6 +47,7 @@ __all__ = [
     "MAX_RISK",
     "MODEL_COMPLETE",
     "PERCEPTION_CAPTURE_SCREEN",
+    "PERCEPTION_READ_SCREEN_TEXT",
     "PHASE_10_INTRODUCED_AT",
     "SCHEMA_VALIDATOR",
     "V01_INTRODUCED_AT",
@@ -58,6 +59,7 @@ __all__ = [
     "is_valid_scope_entry",
     "model_complete",
     "perception_capture_screen",
+    "perception_read_screen_text",
     "production_catalogue",
     "validate_arguments",
     "workspace_write_note",
@@ -207,6 +209,7 @@ CORE_ECHO: Final = CapabilityId("core.echo")
 WORKSPACE_WRITE_NOTE: Final = CapabilityId("workspace.write_note")
 MODEL_COMPLETE: Final = CapabilityId("model.complete")
 PERCEPTION_CAPTURE_SCREEN: Final = CapabilityId("perception.capture_screen")
+PERCEPTION_READ_SCREEN_TEXT: Final = CapabilityId("perception.read_screen_text")
 
 DEFAULT_NOTES_SCOPE: Final = "workspace/notes"
 """Where ``workspace.write_note`` may write unless the caller says otherwise (ADR 0010 §5).
@@ -349,6 +352,59 @@ def perception_capture_screen() -> CapabilitySpec:
     )
 
 
+def perception_read_screen_text() -> CapabilitySpec:
+    """``perception.read_screen_text``, MEDIUM: reads the text in a capture ELA already has.
+
+    MEDIUM for the reason ADR 0029 §6 gave the capture, read one step further on. There the
+    content was *born*; here it is made **legible**. A PNG in a directory with five minutes of
+    life and a searchable text file in the same directory are not the same risk, and the second
+    is not the smaller one: text is what fits in a prompt, in a paste, in a grep.
+
+    **It reads no permission and takes none.** macOS's Vision framework recognises text with no
+    TCC grant at all — measured from a process that was its own responsible process — and answers
+    identically with the network denied. The Screen Recording grant was spent by
+    ``perception.capture_screen``; this capability adds no new one.
+
+    **No scope**, for ADR 0029 §6's reason: a capture id is a UUID and the Guardian's scope is
+    path-shaped. The protection is the authorization.
+
+    **A second ``purpose``, and it is not a doubled question.** The capture had one, and the
+    tempting shortcut is to say whoever approved the photograph approved the reading. §30
+    generalised says otherwise — *a "yes" is only worth something if the question was complete* —
+    and "I photograph the screen to attach it to a ticket" and "I read the text of that screen to
+    find a code in it" are two acts with two consequences. §57 asks *why* for both.
+    """
+    return CapabilitySpec(
+        id=PERCEPTION_READ_SCREEN_TEXT,
+        created_at=PHASE_10_INTRODUCED_AT,
+        description="Reads the text in a capture ELA holds, on this machine, without sending it.",
+        risk=RiskLevel.MEDIUM,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "capture_id": {"type": "string", "minLength": 1},
+                "purpose": {"type": "string", "minLength": 1},
+                "region": {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "number", "minimum": 0, "maximum": 1},
+                        "y": {"type": "number", "minimum": 0, "maximum": 1},
+                        "width": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+                        "height": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+                    },
+                    "required": ["x", "y", "width", "height"],
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["capture_id", "purpose"],
+            "additionalProperties": False,
+        },
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
 def catalogue_v01(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> CapabilityRegistry:
     """The catalogue **of v0.1**: exactly the three capabilities of §29, in its order.
 
@@ -369,5 +425,9 @@ def production_catalogue(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> Capabilit
     rather than quietly folded into it.
     """
     return CapabilityRegistry(
-        (*catalogue_v01(notes_scope=notes_scope).specs(), perception_capture_screen())
+        (
+            *catalogue_v01(notes_scope=notes_scope).specs(),
+            perception_capture_screen(),
+            perception_read_screen_text(),
+        )
     )

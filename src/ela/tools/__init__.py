@@ -68,6 +68,15 @@ from ela.tools.screen import (
     CaptureScreenTool,
     CaptureStore,
 )
+from ela.tools.screen_text import (
+    PERCEPTION_READ_SCREEN_TEXT,
+    TEXT_LANGUAGE_UNSUPPORTED,
+    TEXT_RECOGNITION_FAILED,
+    TEXT_TIMEOUT,
+    TEXT_TOOL_NAME,
+    TEXT_UNSUPPORTED,
+    ReadScreenTextTool,
+)
 from ela.tools.settings import CaptureSettings, WorkspaceSettings, default_workspace_dir
 from ela.tools.verifiers import (
     CAPTURE_DECLARED_MISMATCH,
@@ -91,6 +100,7 @@ from ela.tools.verifiers import (
     CaptureScreenVerifier,
     EchoVerifier,
     ModelCompleteVerifier,
+    ReadScreenTextVerifier,
     WriteNoteVerifier,
 )
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
@@ -139,6 +149,14 @@ __all__ = [
     "PATH_SYMLINK",
     "PATH_UNREACHABLE",
     "PERCEPTION_CAPTURE_SCREEN",
+    "PERCEPTION_READ_SCREEN_TEXT",
+    "TEXT_LANGUAGE_UNSUPPORTED",
+    "TEXT_RECOGNITION_FAILED",
+    "TEXT_TIMEOUT",
+    "TEXT_TOOL_NAME",
+    "TEXT_UNSUPPORTED",
+    "ReadScreenTextTool",
+    "ReadScreenTextVerifier",
     "SCREEN_CAPTURE_FAILED",
     "SCREEN_NOT_OBSERVABLE",
     "SCREEN_PERMISSION_DENIED",

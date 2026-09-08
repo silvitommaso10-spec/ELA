@@ -68,7 +68,13 @@ async def test_every_piece_of_the_pipeline_is_there(ela: Ela) -> None:
     assert [spec.id for spec in catalogue_v01().specs()] == [
         spec.id for spec in production_catalogue().specs()
     ][:3]
-    assert len(ela.tools.tools()) == len(ela.verifiers.verifiers()) == 4
+    # Derived from the catalogue rather than written down: a capability added with a tool but no
+    # verifier is the drift this catches, and a hard-coded count would only catch it by accident.
+    assert (
+        len(ela.tools.tools())
+        == len(ela.verifiers.verifiers())
+        == len(production_catalogue().specs())
+    )
     assert ela.providers.names() == (PROVIDER_NAME,)
     assert ela.runner is not None and ela.executor is not None
 

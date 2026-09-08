@@ -69,6 +69,8 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_CAPTURE_MAX_COUNT", "20"),
     ("ELA_CAPTURE_MAX_BYTES", "209715200"),
     ("ELA_CAPTURE_TIMEOUT_SECONDS", "5.0"),
+    ("ELA_OCR_TIMEOUT_SECONDS", "10.0"),
+    ("ELA_OCR_LANGUAGES", "it-IT,en-US"),
 )
 """Every optional variable, with ELA's own default beside it.
 

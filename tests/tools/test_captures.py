@@ -7,6 +7,8 @@ a PNG is twenty-four bytes of header, and every failure mode is a file a test ca
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import stat
 from datetime import UTC, datetime, timedelta
@@ -15,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from ela.tools.captures import (
+    ALREADY_EXPIRED,
     CAPTURE_MALFORMED,
     CAPTURE_MISSING,
     CAPTURE_NAME_INVALID,
@@ -22,10 +25,14 @@ from ela.tools.captures import (
     CAPTURE_UNREADABLE,
     HEADER_BYTES,
     PNG_SIGNATURE,
+    TEXT_MALFORMED,
     CaptureProblem,
     Size,
+    TextArtefact,
     _read,
+    capture_id_of,
     inspect,
+    inspect_text,
     is_capture_name,
     measure,
     name_for,
@@ -33,6 +40,7 @@ from ela.tools.captures import (
     png_size,
     retained,
     room,
+    text_name_for,
 )
 
 TTL = timedelta(seconds=300)
@@ -390,3 +398,224 @@ def test_the_mode_of_a_capture_is_not_the_classifications_business(tmp_path: Pat
 
     assert not isinstance(measure(target, TTL), CaptureProblem)
     assert stat.S_IMODE(target.stat().st_mode) == 0o644
+
+
+# ----------------------------------------------------------------------------------------
+# The derived artefact: it inherits, it never has a clock of its own (M10.3 dec. 10)
+# ----------------------------------------------------------------------------------------
+
+TEXT = "3f2504e0-4f89-41d3-9a0c-0305e82c3301.jsonl"
+OTHER_TEXT = "9c858901-8a57-4791-81fe-4c455b099bc9.jsonl"
+
+
+def jsonl(*lines: tuple[str, float]) -> bytes:
+    return "".join(
+        json.dumps({"text": text, "confidence": confidence}) + "\n" for text, confidence in lines
+    ).encode("utf-8")
+
+
+def test_the_two_artefacts_of_one_capture_share_a_stem() -> None:
+    """The name *is* the link: no index says which text belongs to which image, so there is no
+    index to fall out of step with the disk."""
+    capture_id = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+
+    assert name_for(capture_id) == NAME
+    assert text_name_for(capture_id) == TEXT
+    assert capture_id_of(NAME) == capture_id_of(TEXT) == capture_id
+
+
+def test_a_name_the_store_did_not_issue_belongs_to_no_capture() -> None:
+    assert capture_id_of("notes.jsonl") is None
+    assert capture_id_of("../../etc/passwd") is None
+
+
+def test_a_recognition_inherits_the_expiry_of_its_image_and_not_its_own(tmp_path: Path) -> None:
+    """The image is five minutes old and the text was written now; they expire together.
+
+    Read on its own ``mtime`` the text would get five extra minutes of life — which is the one
+    way this milestone could leave the text of somebody's screen on the disk after the picture of
+    it had gone.
+    """
+    write(tmp_path, NAME, png(), age=timedelta(seconds=240))
+    write(tmp_path, TEXT, jsonl(("ciao", 1.0)))
+
+    held = {one.name: one.expires_at for one in retained(tmp_path, TTL)}
+
+    assert held[TEXT] == held[NAME]
+    assert held[TEXT] < datetime.now(tz=UTC) + timedelta(seconds=61)
+
+
+def test_a_recognition_whose_image_is_gone_is_already_expired(tmp_path: Path) -> None:
+    """**The worst case, and it is asserted on the classification with no purge in sight.**
+
+    Proving this by running the purge and watching both files go would prove that *this* purge, in
+    *this* order, behaves. A reordering would break it silently. What is proven instead is that
+    ``retained`` answers ``ALREADY_EXPIRED`` — a pure function of the directory — after which the
+    purge cannot fail to take it, because its only comparison is ``expires_at <= now`` and this
+    value is in the past for every ``now`` there is.
+    """
+    write(tmp_path, TEXT, jsonl(("orfano", 1.0)))  # no ``.png`` beside it, ever
+
+    (orphan,) = retained(tmp_path, TTL)
+
+    assert orphan.name == TEXT
+    assert orphan.expires_at == ALREADY_EXPIRED
+    assert orphan.expires_at <= datetime.min.replace(tzinfo=UTC)
+
+
+@pytest.mark.parametrize("ttl", [timedelta(seconds=1), timedelta(hours=1), timedelta(days=3650)])
+def test_an_orphan_is_already_expired_whatever_the_ttl(tmp_path: Path, ttl: timedelta) -> None:
+    """No lifetime to inherit means no lifetime, and a longer TTL cannot give it one."""
+    write(tmp_path, TEXT, jsonl(("orfano", 1.0)))
+
+    assert retained(tmp_path, ttl)[0].expires_at == ALREADY_EXPIRED
+
+
+def test_a_directory_where_the_image_should_be_leaves_the_text_an_orphan(tmp_path: Path) -> None:
+    """Not a regular file is not an origin: the fail-safe direction of §33 on content."""
+    (tmp_path / NAME).mkdir()
+    write(tmp_path, TEXT, jsonl(("orfano", 1.0)))
+
+    held = {one.name: one.expires_at for one in retained(tmp_path, TTL)}
+
+    assert held[TEXT] == ALREADY_EXPIRED
+
+
+def test_the_byte_ceiling_counts_the_text_and_the_count_ceiling_does_not(tmp_path: Path) -> None:
+    """The two ceilings ask different questions, so they count different things.
+
+    ``max_count`` asks how many screens ELA is holding, and reading one does not make it two.
+    ``max_bytes`` asks about the disk, where every byte is a byte.
+    """
+    write(tmp_path, NAME, png())
+    write(tmp_path, TEXT, jsonl(("ciao", 1.0)))
+
+    assert room(tmp_path, TTL, max_count=1, max_bytes=10**9) is not None
+    assert room(tmp_path, TTL, max_count=2, max_bytes=10**9) is None
+    total = sum(one.bytes for one in retained(tmp_path, TTL))
+    assert room(tmp_path, TTL, max_count=9, max_bytes=total) is not None
+
+
+def test_a_recognition_is_measured_from_the_disk(tmp_path: Path) -> None:
+    data = jsonl(("prima riga", 1.0), ("seconda", 0.5))
+    write(tmp_path, NAME, png())
+    write(tmp_path, TEXT, data)
+
+    found = inspect_text(tmp_path, TEXT, TTL)
+
+    assert isinstance(found, TextArtefact)
+    assert (found.name, found.bytes, found.lines) == (TEXT, len(data), 2)
+    assert found.characters == len("prima riga") + len("seconda")
+    assert found.sha256 == hashlib.sha256(data).hexdigest()
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"not json at all\n",
+        b'{"text": "x"}\n',  # a missing confidence
+        b'{"text": "x", "confidence": 1.0, "extra": 1}\n',
+        b'{"text": 1, "confidence": 1.0}\n',
+        b'{"text": "x", "confidence": true}\n',  # a bool is an int, and is not a confidence
+        b'["x", 1.0]\n',
+        b'{"text": "x", "confidence": 1.0}\n{"truncat',  # a helper killed mid-write
+        b"\xff\xfe not utf-8\n",
+    ],
+    ids=[
+        "not-json",
+        "missing-confidence",
+        "an-extra-field",
+        "text-is-not-a-string",
+        "confidence-is-a-bool",
+        "a-list-not-an-object",
+        "truncated-halfway",
+        "not-utf-8",
+    ],
+)
+def test_bytes_that_are_not_the_json_lines_ela_writes_are_malformed(
+    tmp_path: Path, data: bytes
+) -> None:
+    """The self-delimiting property, exercised: a truncated file **fails to parse**.
+
+    That is what base64 could not do (ADR 0029 §4) — a truncated image decodes into a partial
+    image, a shorter answer shaped like an answer — and it is why the text may cross a pipe where
+    the pixels could not (M10.3 dec. 7).
+    """
+    write(tmp_path, NAME, png())
+    write(tmp_path, TEXT, data)
+
+    problem = inspect_text(tmp_path, TEXT, TTL)
+
+    assert isinstance(problem, CaptureProblem)
+    assert problem.code == TEXT_MALFORMED
+    assert "byte" in problem.reason
+    assert data.decode("utf-8", "replace")[:8] not in problem.reason  # a size, never a byte
+
+
+def test_an_empty_recognition_is_a_recognition_of_nothing_not_a_malformed_one(
+    tmp_path: Path,
+) -> None:
+    """A screen with no text on it is an answer. It is *only* an answer because the language was
+    validated first (dec. 8): otherwise this and "ELA was misconfigured" would be the same file.
+    """
+    write(tmp_path, NAME, png())
+    write(tmp_path, TEXT, b"")
+
+    found = inspect_text(tmp_path, TEXT, TTL)
+
+    assert isinstance(found, TextArtefact)
+    assert (found.lines, found.characters) == (0, 0)
+
+
+def test_inspect_text_refuses_a_png_name_and_inspect_refuses_a_jsonl_one(tmp_path: Path) -> None:
+    """Each artefact has one reader, and neither will read the other's file as if it were its
+    own — the way a PNG would otherwise arrive at the text verifier as "malformed JSON"."""
+    assert inspect_text(tmp_path, NAME, TTL) == CaptureProblem(
+        CAPTURE_NAME_INVALID, "is not a name this store issues"
+    )
+    assert inspect(tmp_path, TEXT, TTL) == CaptureProblem(
+        CAPTURE_NAME_INVALID, "is not a name this store issues"
+    )
+
+
+def test_a_recognition_that_was_never_written_is_missing(tmp_path: Path) -> None:
+    write(tmp_path, NAME, png())
+
+    problem = inspect_text(tmp_path, TEXT, TTL)
+
+    assert problem == CaptureProblem(CAPTURE_MISSING, "was not written")
+
+
+def test_a_directory_at_the_recognition_name_is_not_a_regular_file(tmp_path: Path) -> None:
+    write(tmp_path, NAME, png())
+    (tmp_path / TEXT).mkdir()
+
+    problem = inspect_text(tmp_path, TEXT, TTL)
+
+    assert problem == CaptureProblem(CAPTURE_NOT_REGULAR, "is not a regular file")
+
+
+def test_a_capture_whose_mtime_vanishes_between_the_read_and_the_stat_is_unreadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The one line between reading the bytes and reading the clock they expire on.
+
+    Produced rather than skipped: the file really can go in that window, and a capture ELA cannot
+    date is a capture ELA cannot say when it will purge.
+    """
+    write(tmp_path, NAME, png())
+    original = Path.lstat
+    calls = {"n": 0}
+
+    def flaky(self: Path) -> object:
+        calls["n"] += 1
+        if calls["n"] > 1:  # the first is the regular-file check, the second the expiry
+            raise OSError("vanished")
+        return original(self)
+
+    monkeypatch.setattr(Path, "lstat", flaky)
+
+    problem = measure(tmp_path / NAME, TTL)
+
+    assert isinstance(problem, CaptureProblem)
+    assert problem.code == CAPTURE_UNREADABLE

@@ -18,11 +18,13 @@ from ela.testing.fakes import (
     FakeProbe,
     FakeProviderRegistry,
     FakeScreenCapture,
+    FakeTextRecognition,
     FakeTool,
 )
 from ela.tools import (
     CORE_ECHO,
     PERCEPTION_CAPTURE_SCREEN,
+    PERCEPTION_READ_SCREEN_TEXT,
     CaptureSettings,
     CaptureStore,
     EchoTool,
@@ -212,15 +214,18 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         captures=captures,
         screen=FakeScreenCapture(),
         probe=FakeProbe(),
+        recognition=FakeTextRecognition(),
+        languages=("it-IT",),
     )
     return tools, production_verifiers(root=tmp_path, router=router, captures=captures), captures
 
 
-def test_the_production_registries_are_v01_plus_the_capture(tmp_path: Path) -> None:
+def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) -> None:
     """``production_`` says when it is used; ``_v01`` says what it contains, and keeps saying it.
 
     v0.1 does not get folded into, it gets stood beside — the same handling M10.1 gave the
-    ``/perception`` route, which stayed out of the v0.1 route count.
+    ``/perception`` route, which stayed out of the v0.1 route count. The list after the baseline
+    grows with each milestone and the baseline does not, which is the whole property.
     """
     tools, verifiers, _ = _production(tmp_path)
     baseline = registry_of(tmp_path)
@@ -228,17 +233,23 @@ def test_the_production_registries_are_v01_plus_the_capture(tmp_path: Path) -> N
     assert [t.capability_id for t in tools.tools()][:3] == [
         t.capability_id for t in baseline.tools()
     ]
-    assert [t.capability_id for t in tools.tools()][3] == PERCEPTION_CAPTURE_SCREEN
+    assert [t.capability_id for t in tools.tools()][3:] == [
+        PERCEPTION_CAPTURE_SCREEN,
+        PERCEPTION_READ_SCREEN_TEXT,
+    ]
     assert {v.capability_id for v in verifiers.verifiers()} == {
         t.capability_id for t in tools.tools()
     }
 
 
-def test_the_capture_verifier_reads_the_store_the_tool_writes_into(tmp_path: Path) -> None:
-    """One directory and one retention, or the verifier would look for a capture somewhere else
-    — or think one still there had expired."""
+@pytest.mark.parametrize("capability", [PERCEPTION_CAPTURE_SCREEN, PERCEPTION_READ_SCREEN_TEXT])
+def test_both_store_verifiers_read_the_store_the_tools_write_into(
+    tmp_path: Path, capability: CapabilityId
+) -> None:
+    """One directory and one retention, or a verifier would look somewhere else — or think an
+    artefact still there had expired. Both artefacts of the store, and the same answer."""
     _, verifiers, captures = _production(tmp_path)
-    verifier = verifiers.get(PERCEPTION_CAPTURE_SCREEN)
+    verifier = verifiers.get(capability)
 
     assert verifier._directory == captures.directory  # noqa: SLF001
     assert verifier._ttl == captures.settings.capture_ttl  # noqa: SLF001

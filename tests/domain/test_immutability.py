@@ -73,6 +73,8 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
         "ProviderUsage",
         "RawCapture",
         "RawObservation",
+        "RawRecognition",
+        "RawTextLine",
         "SensorStatus",
     ]
 
