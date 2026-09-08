@@ -266,6 +266,13 @@ processo responsabile** (§16), quindi TCC dà a entrambi la stessa risposta. Se
 più vero, ciò che resta è una corsa di millisecondi che atterra su `screen.capture_failed` e non su
 un prompt.
 
+**Il criterio è stato messo alla prova dal caso che lo mette alla prova**, e non era previsto come
+test. Durante la verifica di M10.2 il permesso è stato concesso e revocato nel giro di pochi
+minuti — cioè **dentro la finestra dei trenta secondi** con cui il Perception Core rinfresca la
+famiglia `PERMISSIONS`. Un tool che si fosse fidato di quella credenza avrebbe potuto tentare una
+cattura con un permesso appena revocato, e quel tentativo è precisamente la cosa che questa
+milestone esiste per non fare. Il tool ha riletto, e ha visto subito il no.
+
 ## 8. Nessun trigger automatico
 
 «Quando il primo anello segnala un cambiamento, ELA **può** guardare» è una possibilità, non un
