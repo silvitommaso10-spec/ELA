@@ -126,6 +126,17 @@ PERCEPTION_PROBE = PERCEPTION_ADAPTER_DIR / "probe.py"
 #: An adapter that does not know the words cannot use them wrongly.
 PERCEPTION_VOCABULARY = frozenset({"SensorState", "SensorCause", "PermissionState"})
 
+#: Rule 35 (M10.2, ADR 0029 §12): the captured image does not leave the machine. The modules that
+#: hold a screen capture name no router, no provider registry and no HTTP client — the sentence
+#: this milestone is built on, made a rule instead of a promise. It *can* fire, which is why it
+#: is worth having: ``ela.tools.model`` really does import the router, so "a tool imports the
+#: router" is legal code in this repository, and writing it in ``screen.py`` is exactly what M10.3
+#: will be tempted to do (ADR 0026 §7: a defence that cannot fire is worse than none).
+CAPTURE_MODULES = (Path("tools") / "screen.py", Path("tools") / "captures.py")
+CAPTURE_FORBIDDEN = frozenset(
+    {"ModelRouter", "ModelRouterPort", "ProviderRegistry", "ProviderRegistryPort", "httpx"}
+)
+
 #: Rule 31 (ADR 0026 §6): the API's token is compared only with ``secrets.compare_digest``.
 #: The one mutation of eight the suite did not notice: ``compare_digest`` swapped for ``==``
 #: leaves 3551 tests green, because 100% branch coverage proves the line runs and says nothing
@@ -1485,6 +1496,39 @@ def check_adapter_names_no_state(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_capture_stays_on_the_machine(pkg_root: Path) -> list[Violation]:
+    """Rule 35: nothing that holds a screen capture can send one anywhere (ADR 0029 §12).
+
+    M10.2's whole promise is that the image does not leave this machine: no OCR, no provider, no
+    network. A promise like that is worth what the thing that holds it is worth, so it is held by
+    the shape of the code — :mod:`ela.tools.screen` and :mod:`ela.tools.captures` do not name a
+    router, a provider registry or an HTTP client, by import or by attribute.
+
+    Not a rule about tools in general: ``ela.tools.model`` names the router on purpose and must.
+    It is a rule about the two modules that have the user's screen in their hands, and it stands
+    until M10.3 decides, with its own privacy decision, what may go out and under which policy.
+    """
+    rule = "capture-stays-on-the-machine"
+    paths = [pkg_root / relative for relative in CAPTURE_MODULES]
+    found = _violations(
+        rule,
+        [path for path in paths if path.is_file()],
+        pkg_root,
+        lambda imported: imported.rpartition(".")[2] in CAPTURE_FORBIDDEN,
+    )
+    for path in paths:
+        if not path.is_file():
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, node.attr, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute) and node.attr in CAPTURE_FORBIDDEN
+        )
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -1518,6 +1562,7 @@ RULES: dict[str, Rule] = {
     "placement-builders": check_placement_builders,
     "constant-time-token": check_constant_time_token,
     "machine-access-in-one-place": check_machine_access,
+    "capture-stays-on-the-machine": check_capture_stays_on_the_machine,
     "perception-probe-imports-only-stdlib": check_probe_is_standalone,
     "perception-adapter-decides-nothing": check_adapter_names_no_state,
 }
@@ -1848,6 +1893,16 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("tool-execute-callers", "RUNNER_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0019 §3"),
     Constant(
         "tool-execute-callers", "SQL_EXECUTORS", EXEMPTION, by=EACH, adr="ADR 0013 §9; ADR 0027"
+    ),
+    # capture-stays-on-the-machine (rule 35, ADR 0029 §12)
+    Constant("capture-stays-on-the-machine", "CAPTURE_FORBIDDEN", DETECTOR),
+    Constant("capture-stays-on-the-machine", "CAPTURE_MODULES", DETECTOR),
+    Constant(
+        "capture-stays-on-the-machine",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
     ),
     # machine-access-in-one-place (rule 32, ADR 0028 §1)
     Constant("machine-access-in-one-place", "MACHINE_LIBRARIES", DETECTOR),

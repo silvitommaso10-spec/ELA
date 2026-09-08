@@ -9,6 +9,20 @@ classified once, in :mod:`ela.tools.paths`, for both.
 """
 
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool, check_decision
+from ela.tools.captures import (
+    CAPTURE_CODES,
+    CAPTURE_MALFORMED,
+    CAPTURE_MISSING,
+    CAPTURE_NAME_INVALID,
+    CAPTURE_NOT_REGULAR,
+    CAPTURE_UNREADABLE,
+    Capture,
+    CaptureProblem,
+    Retained,
+    Size,
+    is_capture_name,
+    png_size,
+)
 from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME, EchoTool
 from ela.tools.errors import NotIdempotentError, ToolNotFound, ToolsError, VerifierNotFound
 from ela.tools.model import MODEL_COMPLETE, MODEL_TOOL_NAME, ModelCompleteTool
@@ -34,9 +48,32 @@ from ela.tools.paths import (
     is_relative_note_path,
     resolve_workspace,
 )
-from ela.tools.registry import ToolRegistry, VerifierRegistry, tools_v01, verifiers_v01
-from ela.tools.settings import WorkspaceSettings, default_workspace_dir
+from ela.tools.registry import (
+    ToolRegistry,
+    VerifierRegistry,
+    production_tools,
+    production_verifiers,
+    tools_v01,
+    verifiers_v01,
+)
+from ela.tools.screen import (
+    PERCEPTION_CAPTURE_SCREEN,
+    SCREEN_CAPTURE_FAILED,
+    SCREEN_NOT_OBSERVABLE,
+    SCREEN_PERMISSION_DENIED,
+    SCREEN_STORE_FULL,
+    SCREEN_TIMEOUT,
+    SCREEN_TOOL_NAME,
+    SCREEN_UNSUPPORTED,
+    CaptureScreenTool,
+    CaptureStore,
+)
+from ela.tools.settings import CaptureSettings, WorkspaceSettings, default_workspace_dir
 from ela.tools.verifiers import (
+    CAPTURE_DECLARED_MISMATCH,
+    CAPTURE_EXISTS,
+    CAPTURE_MATCHES,
+    CAPTURE_VERIFIER_NAME,
     ECHO_MESSAGE_MATCHES,
     ECHO_MESSAGE_MISMATCH,
     ECHO_VERIFIER_NAME,
@@ -51,6 +88,7 @@ from ela.tools.verifiers import (
     NOTE_EXISTS,
     NOTE_UNREADABLE,
     NOTES_VERIFIER_NAME,
+    CaptureScreenVerifier,
     EchoVerifier,
     ModelCompleteVerifier,
     WriteNoteVerifier,
@@ -59,6 +97,16 @@ from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALI
 
 __all__ = [
     "ARGUMENTS_INVALID",
+    "CAPTURE_CODES",
+    "CAPTURE_DECLARED_MISMATCH",
+    "CAPTURE_EXISTS",
+    "CAPTURE_MALFORMED",
+    "CAPTURE_MATCHES",
+    "CAPTURE_MISSING",
+    "CAPTURE_NAME_INVALID",
+    "CAPTURE_NOT_REGULAR",
+    "CAPTURE_UNREADABLE",
+    "CAPTURE_VERIFIER_NAME",
     "COMMON_FAILURE_CODES",
     "CORE_ECHO",
     "DIRECTORY_MODE",
@@ -90,8 +138,22 @@ __all__ = [
     "PATH_OUTSIDE_WORKSPACE",
     "PATH_SYMLINK",
     "PATH_UNREACHABLE",
+    "PERCEPTION_CAPTURE_SCREEN",
+    "SCREEN_CAPTURE_FAILED",
+    "SCREEN_NOT_OBSERVABLE",
+    "SCREEN_PERMISSION_DENIED",
+    "SCREEN_STORE_FULL",
+    "SCREEN_TIMEOUT",
+    "SCREEN_TOOL_NAME",
+    "SCREEN_UNSUPPORTED",
     "VERIFICATION_ARGUMENTS_INVALID",
     "WORKSPACE_WRITE_NOTE",
+    "Capture",
+    "CaptureProblem",
+    "CaptureScreenTool",
+    "CaptureScreenVerifier",
+    "CaptureSettings",
+    "CaptureStore",
     "EchoTool",
     "EchoVerifier",
     "ModelCompleteTool",
@@ -99,6 +161,8 @@ __all__ = [
     "NotIdempotentError",
     "Outcome",
     "PathProblem",
+    "Retained",
+    "Size",
     "Tool",
     "ToolNotFound",
     "ToolRegistry",
@@ -112,7 +176,11 @@ __all__ = [
     "check_decision",
     "classify",
     "default_workspace_dir",
+    "is_capture_name",
     "is_relative_note_path",
+    "png_size",
+    "production_tools",
+    "production_verifiers",
     "resolve_workspace",
     "tools_v01",
     "verifiers_v01",

@@ -7,12 +7,17 @@ next to ``providers`` and ``tools``; the state of the microphone is *the world* 
 
 from __future__ import annotations
 
+import os
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
+from ela.api import create_app
+from ela.composition import Ela
 from ela.domain import SensorCause, SensorState, SystemPermission
+from tests.api.support import AUTHORIZED, BASE
 
 pytestmark = pytest.mark.usefixtures("_perception_on")
 
@@ -98,8 +103,19 @@ async def test_diagnostics_carries_the_permissions_and_not_the_sensors(
     answer = await client.get("/diagnostics")
     block = answer.json()["perception"]
 
-    assert set(block) == {"enabled", "watching", "observed_at", "permissions"}
+    assert set(block) == {"enabled", "watching", "observed_at", "permissions", "captures"}
     assert set(block["permissions"]) == {p.value for p in SystemPermission}
+    # What ELA is holding of the user's, right now (M10.2, ADR 0029 §15): §57 makes it a question
+    # that must be answerable, and a store of screenshots only the filesystem knows about is
+    # exactly what must not exist. Still not the world — this reads ELA's own state.
+    assert set(block["captures"]) == {
+        "retained",
+        "bytes",
+        "ttl_seconds",
+        "max_count",
+        "max_bytes",
+    }
+    assert block["captures"]["retained"] == 0
 
 
 async def test_diagnostics_does_not_look(client: AsyncClient) -> None:
@@ -111,3 +127,70 @@ async def test_diagnostics_does_not_look(client: AsyncClient) -> None:
     second = (await client.get("/diagnostics")).json()["perception"]["observed_at"]
 
     assert first == second
+
+
+# --------------------------------------------------------------------------------------
+# The capture store in /diagnostics, and the purge at start-up (M10.2, ADR 0029 §1, §15)
+# --------------------------------------------------------------------------------------
+
+
+CAPTURE = "3f2504e0-4f89-41d3-9a0c-0305e82c3301.png"
+
+
+def _png() -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + (13).to_bytes(4, "big")
+        + b"IHDR"
+        + (16).to_bytes(4, "big")
+        + (9).to_bytes(4, "big")
+        + b"\x00" * 16
+    )
+
+
+async def test_diagnostics_says_what_ela_is_holding_of_the_users(ela: Ela) -> None:
+    """§57 makes "what content are you keeping of mine, right now" a question that must be
+    answerable, and a store of screenshots only the filesystem knows about is what must not
+    exist. It reads ELA's own state, so ``/diagnostics`` still does not observe the world."""
+    data = _png()
+    (ela.captures.directory / CAPTURE).write_bytes(data)
+
+    app = create_app(ela)
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url=BASE, headers=AUTHORIZED) as client,
+    ):
+        block = (await client.get("/diagnostics")).json()["perception"]["captures"]
+
+    assert block["retained"] == 1
+    assert block["bytes"] == len(data)
+    assert block["ttl_seconds"] == ela.settings.captures.capture_ttl_seconds
+    assert block["max_count"] == ela.settings.captures.capture_max_count
+    assert block["max_bytes"] == ela.settings.captures.capture_max_bytes
+
+
+async def test_a_start_up_purges_what_expired(ela: Ela) -> None:
+    """The only moment ELA is certain to reach (ADR 0029 §1): a capture also purges before it
+    writes, but a retention that only ran when somebody took a screenshot would keep the last one
+    for as long as ELA is left alone."""
+    old = ela.captures.directory / CAPTURE
+    old.write_bytes(_png())
+    stamp = (datetime.now(tz=UTC) - timedelta(hours=1)).timestamp()
+    os.utime(old, (stamp, stamp))
+
+    app = create_app(ela)
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert not old.exists()
+
+
+async def test_a_start_up_keeps_what_has_not_expired(ela: Ela) -> None:
+    fresh = ela.captures.directory / CAPTURE
+    fresh.write_bytes(_png())
+
+    app = create_app(ela)
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert fresh.is_file()

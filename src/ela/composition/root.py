@@ -24,7 +24,12 @@ from ela.devices import DeviceOrchestrator, DeviceRegistry
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import Actor, ActorKind
 from ela.executive import Executor, TaskRunner
-from ela.infrastructure.perception import DarwinProbe, UnsupportedProbe
+from ela.infrastructure.perception import (
+    DarwinProbe,
+    ScreenCaptureCommand,
+    UnsupportedProbe,
+    UnsupportedScreenCapture,
+)
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
     SqlAuditLog,
@@ -36,7 +41,7 @@ from ela.infrastructure.persistence import (
     missing_tables,
 )
 from ela.perception import PerceptionCore
-from ela.permissions import PermissionGuardian, catalogue_v01
+from ela.permissions import PermissionGuardian, production_catalogue
 from ela.ports import (
     ApprovalStore,
     AuditLog,
@@ -52,7 +57,13 @@ from ela.providers.anthropic import anthropic_provider
 from ela.providers.registry import ProviderRegistry
 from ela.routing import ModelRouter
 from ela.tasks.engine import TaskEngine
-from ela.tools import ToolRegistry, VerifierRegistry, tools_v01, verifiers_v01
+from ela.tools import (
+    CaptureStore,
+    ToolRegistry,
+    VerifierRegistry,
+    production_tools,
+    production_verifiers,
+)
 
 __all__ = ["ELA_ACTOR", "WORKSPACE_MODE", "Database", "Ela", "build"]
 
@@ -109,6 +120,13 @@ class Ela:
     orchestrator: DeviceOrchestrator
     executor: Executor
     runner: TaskRunner
+    captures: CaptureStore
+    """Where screen captures are kept, and for how long (M10.2, ADR 0029 §1).
+
+    Exposed on ``Ela`` because three places must agree about it and none of them is the tool: the
+    start-up purge in the ``lifespan``, ``/diagnostics``, and the tool itself. A retention nobody
+    outside the tool can see is a promise that cannot be checked (§57).
+    """
     perception: PerceptionCore
     """What ELA believes about the machine it runs on (§10, §11; M10.1, ADR 0028).
 
@@ -160,7 +178,7 @@ async def build(settings: Settings) -> Ela:
         # The scope of ``workspace.write_note`` and the life of a decision are configuration
         # since M8.3 (ADR 0025 §5, §6): the catalogue and the Guardian have always accepted them,
         # and until now this line was the reason they were constants.
-        capabilities = catalogue_v01(notes_scope=settings.core.notes_scope)
+        capabilities = production_catalogue(notes_scope=settings.core.notes_scope)
         guardian = PermissionGuardian(
             capabilities, clock, ids, audit, decision_ttl=settings.core.decision_ttl
         )
@@ -180,8 +198,35 @@ async def build(settings: Settings) -> Ela:
         # recomputes the route, and a second policy would fail every verification.
         root = settings.workspace.workspace_dir
         root.mkdir(mode=WORKSPACE_MODE, parents=True, exist_ok=True)
-        tools = tools_v01(root=root, clock=clock, ids=ids, router=router, providers=providers)
-        verifiers = verifiers_v01(root=root, router=router)
+
+        # The one place that knows which operating system this is (architecture rule 27), for the
+        # capture as for the probe: on anything but macOS ELA photographs nothing, and that is a
+        # named object with a test rather than a branch buried in an adapter (ADR 0028, ADR 0029).
+        darwin = platform.system() == "Darwin"
+        probe = (
+            DarwinProbe(timeout=settings.perception.probe_timeout) if darwin else UnsupportedProbe()
+        )
+        # Beside the database and never inside the workspace, and that is a permanent constraint
+        # rather than this milestone's convenience (ADR 0029 §1): the workspace is what §23 calls
+        # synchronised, and content in a folder something may one day sync leaves the machine
+        # without anybody having decided it.
+        captures = CaptureStore(settings.captures)
+        screen = (
+            ScreenCaptureCommand(timeout=settings.captures.capture_timeout)
+            if darwin
+            else UnsupportedScreenCapture()
+        )
+        tools = production_tools(
+            root=root,
+            clock=clock,
+            ids=ids,
+            router=router,
+            providers=providers,
+            captures=captures,
+            screen=screen,
+            probe=probe,
+        )
+        verifiers = production_verifiers(root=root, router=router, captures=captures)
 
         # Which tools this machine has is not something the registry can know (ADR 0016 §4), and
         # without the names no node is ever eligible and every task waits.
@@ -229,16 +274,11 @@ async def build(settings: Settings) -> Ela:
             audit=audit,
         )
 
-        # The one place that knows which operating system this is (architecture rule 27). Not a
-        # capability of the local node and not a branch inside the adapter: on anything but macOS
-        # ELA perceives nothing, and that is a named object with a test rather than a gap.
-        perception = PerceptionCore(
-            DarwinProbe(timeout=settings.perception.probe_timeout)
-            if platform.system() == "Darwin"
-            else UnsupportedProbe(),
-            clock,
-            settings.perception,
-        )
+        # The same probe object the capture tool preflights with: one reader of this machine, so
+        # "what ELA believes" and "what ELA checks before acting" cannot come from two places
+        # that disagree. They are still two *reads* — a periodic belief never decides an action
+        # (ADR 0029 §7).
+        perception = PerceptionCore(probe, clock, settings.perception)
     except BaseException:
         await database.dispose()
         raise
@@ -265,5 +305,6 @@ async def build(settings: Settings) -> Ela:
         orchestrator=orchestrator,
         executor=executor,
         runner=runner,
+        captures=captures,
         perception=perception,
     )

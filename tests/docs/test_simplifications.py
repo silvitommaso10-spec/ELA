@@ -17,7 +17,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MILESTONE = ROOT / "docs" / "milestones" / "M9.4.md"
-CONTINUATION = ROOT / "docs" / "milestones" / "M10.1.md"
+CONTINUATIONS = (
+    ROOT / "docs" / "milestones" / "M10.1.md",
+    ROOT / "docs" / "milestones" / "M10.2.md",
+)
 ADRS = ROOT / "docs" / "adr"
 ARCHITECTURE = ROOT / "docs" / "ARCHITECTURE.md"
 CHANGELOG = ROOT / "docs" / "CHANGELOG.md"
@@ -39,14 +42,22 @@ def section() -> str:
 
 
 def continuation() -> str:
-    """The same list, continued by the milestone after v0.1 (M10.1).
+    """The same list, continued by every milestone after v0.1 (M10.1, M10.2, …).
 
     ``M9.4.md`` is a document of v0.1 and its counts are v0.1's: it is continued, never rewritten
     — the shape ADR 0025 and ADR 0028 already use to extend the tables of ADR 0023 and ADR 0024.
-    What must stay true is that no ADR declares a constraint that appears in neither.
+    A milestone that declares constraints adds a section of its own here rather than editing the
+    previous one, so the continuations are read as a **list** and not as one file: the day M10.3
+    declares something, the failure is "add your section", not "somebody rewrote M10.1".
+
+    What must stay true is that no ADR declares a constraint that appears in none of them.
     """
-    text = CONTINUATION.read_text(encoding="utf-8")
-    return text[text.index(CONTINUED) : text.index(AFTER_CONTINUED)]
+    found = []
+    for path in CONTINUATIONS:
+        text = path.read_text(encoding="utf-8")
+        start = text.index(CONTINUED)
+        found.append(text[start : text.index(AFTER_CONTINUED, start)])
+    return "".join(found)
 
 
 def subsections() -> list[tuple[int, list[str]]]:
@@ -94,7 +105,7 @@ def test_every_constraint_an_adr_declares_is_in_the_list() -> None:
 
     Decisione 10a — the sections are found on the filesystem, not read off a list of seven ADRs,
     which is what the proposal said before ADR 0027 was written and made it eight. ADR 0028 made
-    it nine, and it landed in the continuation rather than in v0.1's own counts.
+    it nine and ADR 0029 ten, and both landed in a continuation rather than in v0.1's own counts.
     """
     text = section() + continuation()
     missing = {
@@ -103,11 +114,11 @@ def test_every_constraint_an_adr_declares_is_in_the_list() -> None:
         if f"- **{title}** (ADR {number})" not in text
     }
     assert not missing, missing
-    assert len(declared_constraints()) == 50
+    assert len(declared_constraints()) == 61
 
 
-def test_the_list_names_the_nine_adrs_that_declare_constraints() -> None:
-    assert set(declared_constraints().values()) == {f"00{n}" for n in range(20, 29)}
+def test_the_list_names_the_ten_adrs_that_declare_constraints() -> None:
+    assert set(declared_constraints().values()) == {f"00{n}" for n in range(20, 30)}
 
 
 def test_every_crash_window_nobody_repaired_is_named_or_declared_harmless() -> None:

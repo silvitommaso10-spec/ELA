@@ -18,7 +18,7 @@ from fastapi import APIRouter, Request
 
 from ela.api.deps import ElaDep
 from ela.api.errors import DatabaseUnavailableError
-from ela.api.schemas import DiagnosticsOut, HealthOut, PerceptionSummaryOut
+from ela.api.schemas import CaptureStoreOut, DiagnosticsOut, HealthOut, PerceptionSummaryOut
 from ela.tasks.engine import RecoverySummary
 
 __all__ = ["router"]
@@ -52,6 +52,7 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
     # The last observation, never a fresh one: ``/diagnostics`` says what ELA is wired to and is
     # called by whatever watches ELA, so it must stay free. Looking is ``/perception``'s job.
     seen = ela.perception.view.observation
+    held = ela.captures.retained()
 
     recovered: RecoverySummary = request.app.state.recovery
     return DiagnosticsOut(
@@ -77,5 +78,12 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
             watching=ela.settings.perception.loop_enabled,
             observed_at=seen.observed_at,
             permissions=dict(seen.permissions),
+            captures=CaptureStoreOut(
+                retained=len(held),
+                bytes=sum(one.bytes for one in held),
+                ttl_seconds=ela.settings.captures.capture_ttl_seconds,
+                max_count=ela.settings.captures.capture_max_count,
+                max_bytes=ela.settings.captures.capture_max_bytes,
+            ),
         ),
     )

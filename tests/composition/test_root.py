@@ -9,6 +9,7 @@ a configuration ELA cannot honour stops it with a message instead of a stack tra
 from __future__ import annotations
 
 import json
+import platform
 import stat
 from datetime import timedelta
 from pathlib import Path
@@ -18,13 +19,16 @@ import pytest
 from ela.composition import ELA_ACTOR, ConfigurationError, Ela, Settings, build
 from ela.devices.local import LOCAL_DEVICE_ID, LOCAL_DEVICE_NAME
 from ela.domain import ActorKind, PermissionOutcome, ProviderStatus
+from ela.infrastructure.perception import UnsupportedScreenCapture
 from ela.permissions import (
     CORE_ECHO,
     DEFAULT_DECISION_TTL,
     DEFAULT_NOTES_SCOPE,
     MODEL_COMPLETE,
+    PERCEPTION_CAPTURE_SCREEN,
     WORKSPACE_WRITE_NOTE,
     catalogue_v01,
+    production_catalogue,
 )
 from ela.ports import ROUTING_EMPTY_ROUTES, ROUTING_UNKNOWN_PROVIDER
 from ela.providers.anthropic import PROVIDER_NAME
@@ -52,10 +56,19 @@ async def built(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -
 
 
 async def test_every_piece_of_the_pipeline_is_there(ela: Ela) -> None:
+    """The root builds the **production** catalogue, not v0.1's (ADR 0029 §13).
+
+    ``catalogue_v01()`` says what it contains and keeps containing it; ``production_catalogue()``
+    says when it is used. The root uses the second, and this is the test that would catch the two
+    drifting apart — a fourth capability with no tool, or a tool with no verifier.
+    """
     assert [spec.id for spec in ela.capabilities.specs()] == [
-        spec.id for spec in catalogue_v01().specs()
+        spec.id for spec in production_catalogue().specs()
     ]
-    assert len(ela.tools.tools()) == len(ela.verifiers.verifiers()) == 3
+    assert [spec.id for spec in catalogue_v01().specs()] == [
+        spec.id for spec in production_catalogue().specs()
+    ][:3]
+    assert len(ela.tools.tools()) == len(ela.verifiers.verifiers()) == 4
     assert ela.providers.names() == (PROVIDER_NAME,)
     assert ela.runner is not None and ela.executor is not None
 
@@ -241,5 +254,84 @@ async def test_a_refused_configuration_leaves_no_connection_open(
     ela = await build(Settings.load())
     try:
         assert await ela.repository.tasks() == ()
+    finally:
+        await ela.aclose()
+
+
+# --------------------------------------------------------------------------------------
+# The capture store (M10.2, ADR 0029 §1)
+# --------------------------------------------------------------------------------------
+
+
+async def test_the_capture_store_is_built_beside_the_database_and_never_in_the_workspace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A permanent constraint, not this milestone's convenience: the workspace is what §23 calls
+    synchronised, and content in a folder something may one day sync leaves the machine without
+    anybody having decided it."""
+    ela = await built(monkeypatch, tmp_path)
+    try:
+        assert ela.captures.directory == (tmp_path / "captures").resolve()
+        assert not ela.captures.directory.is_relative_to(
+            ela.settings.workspace.workspace_dir.resolve()
+        )
+    finally:
+        await ela.aclose()
+
+
+async def test_the_capture_store_is_created_private(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ela = await built(monkeypatch, tmp_path)
+    try:
+        assert stat.S_IMODE(ela.captures.directory.stat().st_mode) == 0o700
+    finally:
+        await ela.aclose()
+
+
+async def test_the_capture_tool_and_its_verifier_share_the_one_store(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One directory and one retention: two would mean a verifier looking for a capture
+    somewhere else, or thinking one still there had expired."""
+    ela = await built(monkeypatch, tmp_path)
+    try:
+        tool = ela.tools.get(PERCEPTION_CAPTURE_SCREEN)
+        verifier = ela.verifiers.get(PERCEPTION_CAPTURE_SCREEN)
+
+        assert getattr(tool, "_store") is ela.captures  # noqa: B009
+        assert getattr(verifier, "_directory") == ela.captures.directory  # noqa: B009
+    finally:
+        await ela.aclose()
+
+
+async def test_the_capture_tool_preflights_with_the_probe_the_perception_core_uses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One reader of this machine, so "what ELA believes" and "what ELA checks before acting"
+    cannot come from two places that disagree. They stay two *reads*: a periodic belief never
+    decides an action (ADR 0029 §7)."""
+    ela = await built(monkeypatch, tmp_path)
+    try:
+        tool = ela.tools.get(PERCEPTION_CAPTURE_SCREEN)
+
+        assert getattr(tool, "_probe") is getattr(ela.perception, "_probe")  # noqa: B009
+    finally:
+        await ela.aclose()
+
+
+async def test_on_a_machine_without_a_capture_helper_ela_still_starts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Linux in CI, Windows nodes later (§4): the capability exists, and the tool says why it
+    cannot be used, rather than the composition failing or the capability vanishing."""
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    ela = await built(monkeypatch, tmp_path)
+    try:
+        assert PERCEPTION_CAPTURE_SCREEN in {spec.id for spec in ela.capabilities.specs()}
+        assert isinstance(
+            getattr(ela.tools.get(PERCEPTION_CAPTURE_SCREEN), "_capture"),  # noqa: B009
+            UnsupportedScreenCapture,
+        )
     finally:
         await ela.aclose()

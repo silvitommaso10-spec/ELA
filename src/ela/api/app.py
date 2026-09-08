@@ -114,9 +114,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     The loop, when it is on, is a task this context manager owns: started after the first tick and
     cancelled before the process leaves, so ELA never outlives its own observer.
+
+    The purge of expired screen captures is here for a third reason of its own (M10.2,
+    ADR 0029 §1): it is the **only** moment ELA is certain to reach. A capture also purges before
+    it writes, but a retention that only ran when somebody took a screenshot would keep the last
+    one for as long as ELA is left alone — and a photograph of somebody's screen outliving its
+    five minutes because nothing happened is exactly the accumulation §57 forbids.
     """
     ela: Ela = app.state.ela
     app.state.recovery = await ela.engine.recover()
+    ela.captures.purge(ela.clock.now())
     await ela.perception.tick()
     watching = asyncio.create_task(ela.perception.run())
     try:

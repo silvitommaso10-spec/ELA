@@ -63,6 +63,11 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_PERCEPTION_SESSION_INTERVAL_SECONDS", "5"),
     ("ELA_PERCEPTION_PERMISSIONS_INTERVAL_SECONDS", "30"),
     ("ELA_PERCEPTION_PROBE_TIMEOUT_SECONDS", "2.0"),
+    ("ELA_CAPTURE_DIR", "<home>/.ela/captures"),
+    ("ELA_CAPTURE_TTL_SECONDS", "300"),
+    ("ELA_CAPTURE_MAX_COUNT", "20"),
+    ("ELA_CAPTURE_MAX_BYTES", "209715200"),
+    ("ELA_CAPTURE_TIMEOUT_SECONDS", "10.0"),
 )
 """Every optional variable, with ELA's own default beside it.
 

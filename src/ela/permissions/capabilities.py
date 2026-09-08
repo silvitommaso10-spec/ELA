@@ -3,8 +3,9 @@
 A capability is a specification the Guardian reasons about; a tool is its implementation
 (§28). This module holds the specifications: a :class:`CapabilityRegistry` that validates and
 freezes them when it is built, :func:`validate_arguments` that checks a call's arguments
-against a capability's JSON Schema, and :func:`catalogue_v01`, the three capabilities of §29
-and nothing else.
+against a capability's JSON Schema, :func:`catalogue_v01` — the three capabilities of §29 and
+nothing else — and :func:`production_catalogue`, which is those plus what the phases after v0.1
+added. The two names answer different questions and both stay (ADR 0029 §13).
 
 Two properties of the registry are security properties, not conveniences:
 
@@ -45,6 +46,8 @@ __all__ = [
     "DEFAULT_NOTES_SCOPE",
     "MAX_RISK",
     "MODEL_COMPLETE",
+    "PERCEPTION_CAPTURE_SCREEN",
+    "PHASE_10_INTRODUCED_AT",
     "SCHEMA_VALIDATOR",
     "V01_INTRODUCED_AT",
     "WORKSPACE_WRITE_NOTE",
@@ -54,6 +57,8 @@ __all__ = [
     "core_echo",
     "is_valid_scope_entry",
     "model_complete",
+    "perception_capture_screen",
+    "production_catalogue",
     "validate_arguments",
     "workspace_write_note",
 ]
@@ -100,8 +105,14 @@ def check_capability(spec: CapabilitySpec) -> None:
     In order: risk within :data:`MAX_RISK` (:class:`RiskNotAllowedError`); ``input_schema`` a
     valid schema of the draft; every scope entry well-formed; every scoped argument a ``string``
     property of the schema; scope and scoped arguments both present or both absent — a scope
-    that constrains no argument, or a scoped argument with no scope, is a doubt (§33). Each of
-    the last four is an :class:`InvalidCapabilityError` naming the capability and the reason.
+    that constrains no argument, or a scoped argument with no scope, is a doubt (§33); every
+    prompt argument a ``string`` property **and required**. Each of the last five is an
+    :class:`InvalidCapabilityError` naming the capability and the reason.
+
+    Why a prompt argument must be required (M10.2, ADR 0029 §6): its value goes into the question
+    the user is asked, and a question that may be missing half its words is not a question. §30
+    is about exactly this — a "yes" out of context authorises nothing — so a capability that
+    declared an optional argument here would be building a defence that sometimes says nothing.
     """
     if spec.risk > MAX_RISK:
         raise RiskNotAllowedError(spec.id, spec.risk, MAX_RISK)
@@ -128,6 +139,17 @@ def check_capability(spec: CapabilitySpec) -> None:
         raise InvalidCapabilityError(
             spec.id, "scope and scoped_arguments must be both present or both absent"
         )
+    required = schema.get("required", [])
+    for name in spec.prompt_arguments:
+        declared = properties.get(name)
+        if not isinstance(declared, dict) or declared.get("type") != "string":
+            raise InvalidCapabilityError(
+                spec.id, f"prompt argument {name!r} is not a string property of input_schema"
+            )
+        if name not in required:
+            raise InvalidCapabilityError(
+                spec.id, f"prompt argument {name!r} is not required by input_schema"
+            )
 
 
 def validate_arguments(spec: CapabilitySpec, arguments: Mapping[str, object]) -> None:
@@ -184,6 +206,7 @@ class CapabilityRegistry:
 CORE_ECHO: Final = CapabilityId("core.echo")
 WORKSPACE_WRITE_NOTE: Final = CapabilityId("workspace.write_note")
 MODEL_COMPLETE: Final = CapabilityId("model.complete")
+PERCEPTION_CAPTURE_SCREEN: Final = CapabilityId("perception.capture_screen")
 
 DEFAULT_NOTES_SCOPE: Final = "workspace/notes"
 """Where ``workspace.write_note`` may write unless the caller says otherwise (ADR 0010 §5).
@@ -195,6 +218,10 @@ The **default**, and no longer a convention: since M8.3 the composition root pas
 V01_INTRODUCED_AT: Final = datetime(2026, 9, 5, tzinfo=UTC)
 """``created_at`` of the three specifications: the catalogue is declared, it is not born at
 runtime, so it has no clock."""
+
+PHASE_10_INTRODUCED_AT: Final = datetime(2026, 9, 8, tzinfo=UTC)
+"""``created_at`` of what phase 10 adds. A date of its own, and not :data:`V01_INTRODUCED_AT`,
+for the reason of ADR 0029 §13: v0.1 does not get folded into, it gets stood beside."""
 
 
 def core_echo() -> CapabilitySpec:
@@ -277,6 +304,70 @@ def model_complete() -> CapabilitySpec:
     )
 
 
+def perception_capture_screen() -> CapabilitySpec:
+    """``perception.capture_screen``, MEDIUM: photographs one display of this Mac (M10.2).
+
+    The first capability that reads **content**, and the one ADR 0028 §9 registered as a
+    constraint rather than shipping early: "la prima lettura di contenuto nasce con la propria
+    capability MEDIUM, nella milestone che la introduce e non prima".
+
+    MEDIUM for the reason §29 gives ``model.complete`` — "perché il contenuto dell'utente può
+    essere inviato a un provider AI esterno" — read one step earlier: here the content does not
+    leave, but it is *born*, and nobody dictated it. It always requires an authorization: the
+    protection is the grant, not a scope.
+
+    **No scope, and that is a decision** (ADR 0029 §6). The Guardian's scope is path-shaped —
+    relative POSIX segments, compared with a call's targets — and the natural scope of a screen
+    capture is *which display*, which is not a path. Forcing it in would produce a scope
+    pretending to be one.
+
+    ``purpose`` is **required** and is the only ``prompt_arguments`` entry in ELA: it is what the
+    user reads when asked (§30). "ELA wants to photograph your screen" is not a question anybody
+    can answer; the reason is what makes the yes worth something.
+
+    ``display`` is the 1-based index ``screencapture -D`` takes. It is **not** correlated with
+    the ``display_count`` of M10.1 beyond the count — two enumerations of the same hardware, and
+    promising they line up is a promise ELA cannot keep.
+    """
+    return CapabilitySpec(
+        id=PERCEPTION_CAPTURE_SCREEN,
+        created_at=PHASE_10_INTRODUCED_AT,
+        description="Captures one display of this machine to a private file that expires.",
+        risk=RiskLevel.MEDIUM,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "purpose": {"type": "string", "minLength": 1},
+                "display": {"type": "integer", "minimum": 1},
+            },
+            "required": ["purpose"],
+            "additionalProperties": False,
+        },
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
 def catalogue_v01(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> CapabilityRegistry:
-    """The production catalogue of v0.1: exactly the three capabilities of §29, in its order."""
+    """The catalogue **of v0.1**: exactly the three capabilities of §29, in its order.
+
+    This says *what it contains*, and it will keep containing those three: §29 enumerates them,
+    ADR 0010 tabulates them, and ``tests/docs/test_v01_surface.py`` counts them. It is not the
+    older version of :func:`production_catalogue` — see there for why both exist.
+    """
     return CapabilityRegistry((core_echo(), workspace_write_note(notes_scope), model_complete()))
+
+
+def production_catalogue(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> CapabilityRegistry:
+    """What the composition root builds: v0.1's three, plus what the phases after it added.
+
+    This says *when it is used*; :func:`catalogue_v01` says *what it contains*. Both exist and
+    neither is redundant, for the reason of ADR 0029 §13: **v0.1 does not get folded into, it
+    gets stood beside.** A ``catalogue_v01`` that answered four would be a function that lies,
+    and the precedent is M10.1's, where ``/perception`` was left out of the v0.1 route count
+    rather than quietly folded into it.
+    """
+    return CapabilityRegistry(
+        (*catalogue_v01(notes_scope=notes_scope).specs(), perception_capture_screen())
+    )

@@ -25,6 +25,7 @@ DB = "ELA_DB_URL"
 WORKSPACE = "ELA_WORKSPACE_DIR"
 API_TOKEN = "ELA_API_TOKEN"
 PERCEPTION = "ELA_PERCEPTION_ENABLED"
+CAPTURES = "ELA_CAPTURE_DIR"
 
 
 def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> None:
@@ -37,6 +38,9 @@ def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> No
     """
     monkeypatch.setenv(DB, database_url(tmp_path))
     monkeypatch.setenv(WORKSPACE, str(tmp_path / "workspace"))
+    # Beside the temporary database, for the same reason it is beside the real one — and because
+    # a test that left the default alone would create ``~/.ela/captures`` on whoever ran it.
+    monkeypatch.setenv(CAPTURES, str(tmp_path / "captures"))
     monkeypatch.setenv(API_TOKEN, TOKEN)
     # Off by default, but a fixture that turned it on before this ran keeps it on: the
     # environment has already been emptied of ``ELA_`` by ``_only_the_declared_environment``,

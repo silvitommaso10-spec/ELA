@@ -41,7 +41,14 @@ and a string cannot say whether "ela" is ELA, a user or a node.
 """
 
 LATER_ADDITIONS = frozenset(
-    {"ModelRoute", "SensorStatus", "RawObservation", "Observation", "PerceptionChange"}
+    {
+        "ModelRoute",
+        "SensorStatus",
+        "RawObservation",
+        "Observation",
+        "PerceptionChange",
+        "RawCapture",
+    }
 )
 """Models a later milestone added, each argued in its own ADR.
 
@@ -53,6 +60,11 @@ The four of perception (M10.1, ADR 0028) are values, not entities, and they are 
 one reason: :class:`~ela.ports.PerceptionProbe` names ``RawObservation``, and a port may import
 nothing but :mod:`ela.domain` (rule 2). That is the same criterion ADR 0026 §2 used to keep
 ``PlacementDecision`` *out* — it crosses no port — applied in the other direction.
+
+``RawCapture`` (M10.2, ADR 0029 §11) is there for exactly that reason and no other: it is what
+:class:`~ela.ports.ScreenCapturePort` answers with. It carries how the helper ended and nothing
+about the image — no bytes, no path — because what the capture *is* is read from the artefact,
+never from a report (§20).
 """
 
 

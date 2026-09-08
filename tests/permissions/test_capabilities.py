@@ -207,12 +207,61 @@ def test_scope_and_scoped_arguments_come_together() -> None:
     assert CapabilityRegistry([spec(scope=(), scoped_arguments=())]).specs()[0].scope == ()
 
 
+# --------------------------------------------------------------------------------------
+# prompt_arguments: what the question the user reads may carry (M10.2, ADR 0029 §6, §30)
+# --------------------------------------------------------------------------------------
+
+
+def test_a_prompt_argument_must_be_a_declared_string_property() -> None:
+    with pytest.raises(InvalidCapabilityError, match="prompt argument 'missing'"):
+        CapabilityRegistry([spec(prompt_arguments=("missing",))])
+    numeric = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}, "loud": {"type": "integer"}},
+        "required": ["path", "loud"],
+    }
+    with pytest.raises(InvalidCapabilityError, match="prompt argument 'loud'"):
+        CapabilityRegistry([spec(input_schema=numeric, prompt_arguments=("loud",))])
+
+
+def test_a_prompt_argument_must_be_required_by_the_schema() -> None:
+    """§30 generalised: a "yes" is only worth something if the question was complete, so a
+    question that may be missing half its words is not a question."""
+    optional = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}, "why": {"type": "string"}},
+        "required": ["path"],
+    }
+    with pytest.raises(InvalidCapabilityError, match="prompt argument 'why' is not required"):
+        CapabilityRegistry([spec(input_schema=optional, prompt_arguments=("why",))])
+
+
+def test_a_required_string_may_be_shown_in_the_question() -> None:
+    declared = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}, "why": {"type": "string"}},
+        "required": ["path", "why"],
+    }
+    registered = CapabilityRegistry(
+        [spec(input_schema=declared, prompt_arguments=("why",))]
+    ).specs()[0]
+
+    assert registered.prompt_arguments == ("why",)
+
+
+def test_declaring_nothing_is_the_default_and_the_defence() -> None:
+    """``model.complete`` takes ``input``, which is the user's content: a prompt that rendered
+    every argument would write it into a stored ``Approval`` (§57). Silence shows nothing."""
+    assert CAPABILITY_SPEC.prompt_arguments == ()
+    assert check_capability(spec(prompt_arguments=())) is None
+
+
 def test_check_capability_returns_none_for_a_valid_spec() -> None:
     assert check_capability(CAPABILITY_SPEC) is None
 
 
 def test_checks_run_in_the_documented_order() -> None:
-    """Risk first, then schema, then scope, then scoped arguments, then consistency."""
+    """Risk, schema, scope, scoped arguments, consistency, then the prompt arguments."""
     everything_wrong = spec(
         risk=RiskLevel.CRITICAL, input_schema={"type": "nope"}, scope=("../x",), scoped_arguments=()
     )
@@ -227,6 +276,9 @@ def test_checks_run_in_the_documented_order() -> None:
         check_capability(schema_ok)
     with pytest.raises(InvalidCapabilityError, match="both present"):
         check_capability(schema_ok.model_copy(update={"scope": ("x",)}))
+    consistent = schema_ok.model_copy(update={"scope": ("x",), "scoped_arguments": ("path",)})
+    with pytest.raises(InvalidCapabilityError, match="prompt argument"):
+        check_capability(consistent.model_copy(update={"prompt_arguments": ("nobody",)}))
 
 
 # --------------------------------------------------------------------------------------

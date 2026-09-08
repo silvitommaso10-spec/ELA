@@ -13,6 +13,7 @@ import json
 import os
 import re
 import stat
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,13 @@ from ela.ports import ROUTING_UNKNOWN_TASK_TYPE, VERIFICATION_UNKNOWN_CONDITION
 from ela.routing import BALANCED, QUALITY, ModelRouter
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
 from ela.tools import (
+    CAPTURE_CODES,
+    CAPTURE_DECLARED_MISMATCH,
+    CAPTURE_EXISTS,
+    CAPTURE_MATCHES,
+    CAPTURE_MISSING,
+    CAPTURE_NAME_INVALID,
+    CAPTURE_NOT_REGULAR,
     COMMON_FAILURE_CODES,
     CORE_ECHO,
     ECHO_MESSAGE_MATCHES,
@@ -53,8 +61,11 @@ from ela.tools import (
     PATH_OUTSIDE_WORKSPACE,
     PATH_SYMLINK,
     PATH_UNREACHABLE,
+    PERCEPTION_CAPTURE_SCREEN,
+    SCREEN_TOOL_NAME,
     VERIFICATION_ARGUMENTS_INVALID,
     WORKSPACE_WRITE_NOTE,
+    CaptureScreenVerifier,
     EchoTool,
     EchoVerifier,
     ModelCompleteVerifier,
@@ -65,6 +76,7 @@ from ela.tools import (
 from tests.domain.examples import EXECUTION_RESULT
 from tests.routing.support import routing_for
 from tests.tools.support import allowed
+from tests.tools.test_captures import png
 
 NOTE = "workspace/notes/briefing.md"
 BODY = "# Briefing\n\nSECRET-BODY con caratteri multibyte: àèìòù €\n"
@@ -659,3 +671,167 @@ async def test_an_unknown_condition_is_refused(model_verifier: ModelCompleteVeri
         MODEL_MISROUTED,
     }
     assert ModelCompleteVerifier.conditions == {MODEL_ANSWERED, MODEL_ROUTED_AS_ASKED}
+
+
+# --------------------------------------------------------------------------------------
+# CaptureScreenVerifier (M10.2, ADR 0029 §9)
+# --------------------------------------------------------------------------------------
+
+
+CAPTURE_NAME = "3f2504e0-4f89-41d3-9a0c-0305e82c3301.png"
+CAPTURE_TTL = timedelta(seconds=300)
+CAPTURE_BOTH = (CAPTURE_EXISTS, CAPTURE_MATCHES)
+
+
+def captured(directory: Path, name: str = CAPTURE_NAME, **update: object) -> ExecutionResult:
+    """A SUCCEEDED ``perception.capture_screen`` result describing what is in ``directory``.
+
+    Built from the disk, so the happy case is genuinely consistent and every failure below is one
+    field deliberately made to disagree with the file.
+    """
+    data = (directory / name).read_bytes() if (directory / name).is_file() else b""
+    output: dict[str, object] = {
+        "capture_id": name.removesuffix(".png"),
+        "path": name,
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "width": 2560,
+        "height": 1664,
+        "display": 1,
+        "expires_at": "2026-09-08T15:05:00+00:00",
+    }
+    return succeeded(
+        PERCEPTION_CAPTURE_SCREEN,
+        tool_name=SCREEN_TOOL_NAME,
+        output={**output, **update},
+    )
+
+
+@pytest.fixture
+def captures(tmp_path: Path) -> Path:
+    directory = tmp_path / "captures"
+    directory.mkdir()
+    return directory
+
+
+@pytest.fixture
+def capture_verifier(captures: Path) -> CaptureScreenVerifier:
+    return CaptureScreenVerifier(captures, CAPTURE_TTL)
+
+
+def test_capture_verifier_declares_itself(capture_verifier: CaptureScreenVerifier) -> None:
+    assert capture_verifier.capability_id == PERCEPTION_CAPTURE_SCREEN
+    assert capture_verifier.conditions == {CAPTURE_EXISTS, CAPTURE_MATCHES}
+    assert capture_verifier.failure_codes == (
+        COMMON_FAILURE_CODES | CAPTURE_CODES | {CAPTURE_DECLARED_MISMATCH}
+    )
+
+
+async def test_a_captured_screen_passes_both_conditions(
+    captures: Path, capture_verifier: CaptureScreenVerifier
+) -> None:
+    (captures / CAPTURE_NAME).write_bytes(png())
+
+    assert await capture_verifier.verify(CAPTURE_BOTH, {}, captured(captures)) == ()
+
+
+async def test_a_capture_that_was_purged_fails_both_conditions(
+    captures: Path, capture_verifier: CaptureScreenVerifier
+) -> None:
+    """The declared limit of ADR 0029 §9, made visible: verify inside the TTL or find nothing."""
+    result = captured(captures)
+
+    assert codes(await capture_verifier.verify(CAPTURE_BOTH, {}, result)) == [
+        CAPTURE_MISSING,
+        CAPTURE_MISSING,
+    ]
+
+
+async def test_a_name_the_store_never_issued_is_refused_before_the_disk(
+    capture_verifier: CaptureScreenVerifier,
+) -> None:
+    """The name arrives from a persisted result, so it is checked as a name and not as a path."""
+    result = captured(Path("/nowhere"), path="../ela.db")
+
+    assert codes(await capture_verifier.verify((CAPTURE_EXISTS,), {}, result)) == [
+        CAPTURE_NAME_INVALID
+    ]
+
+
+async def test_a_link_where_the_capture_should_be_is_not_the_capture(
+    captures: Path, capture_verifier: CaptureScreenVerifier
+) -> None:
+    real = captures / "9c858901-8a57-4791-81fe-4c455b099bc9.png"
+    real.write_bytes(png())
+    (captures / CAPTURE_NAME).symlink_to(real)
+
+    assert codes(await capture_verifier.verify((CAPTURE_EXISTS,), {}, captured(captures))) == [
+        CAPTURE_NOT_REGULAR
+    ]
+
+
+async def test_an_output_without_a_name_is_refused(
+    capture_verifier: CaptureScreenVerifier,
+) -> None:
+    result = captured(Path("/nowhere"), path=42)
+
+    assert codes(await capture_verifier.verify(CAPTURE_BOTH, {}, result)) == [
+        VERIFICATION_ARGUMENTS_INVALID,
+        VERIFICATION_ARGUMENTS_INVALID,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "wrong"),
+    [("bytes", 1), ("sha256", "0" * 64), ("width", 1024), ("height", 768)],
+)
+async def test_a_capture_that_is_not_what_the_result_describes_fails_the_match(
+    captures: Path, capture_verifier: CaptureScreenVerifier, field: str, wrong: object
+) -> None:
+    """The comparison is against the **output**, and that is not "trusting the tool's word":
+    ``purpose`` and ``display`` determine no pixel, so the claim *is* what is under test and the
+    disk is the source of truth (§20, ADR 0029 §9)."""
+    (captures / CAPTURE_NAME).write_bytes(png())
+    result = captured(captures, **{field: wrong})
+
+    failures = await capture_verifier.verify((CAPTURE_MATCHES,), {}, result)
+
+    assert codes(failures) == [CAPTURE_DECLARED_MISMATCH]
+    assert field in failures[0].message
+
+
+async def test_the_mismatch_names_the_fields_and_never_prints_two_digests(
+    captures: Path, capture_verifier: CaptureScreenVerifier
+) -> None:
+    """Two hashes in a message are two fingerprints of the user's screen in the trail (§57)."""
+    data = png()
+    (captures / CAPTURE_NAME).write_bytes(data)
+    result = captured(captures, sha256="0" * 64)
+
+    failures = await capture_verifier.verify((CAPTURE_MATCHES,), {}, result)
+
+    assert hashlib.sha256(data).hexdigest() not in failures[0].message
+    assert "0" * 64 not in failures[0].message
+
+
+async def test_the_verifier_writes_nothing_and_leaves_the_mode_alone(
+    captures: Path, capture_verifier: CaptureScreenVerifier
+) -> None:
+    """Rule 18 reads the AST; this reads the disk before and after."""
+    (captures / CAPTURE_NAME).write_bytes(png())
+    (captures / CAPTURE_NAME).chmod(0o644)
+    before = snapshot(captures)
+
+    await capture_verifier.verify(CAPTURE_BOTH, {}, captured(captures))
+
+    assert snapshot(captures) == before
+    assert stat.S_IMODE((captures / CAPTURE_NAME).stat().st_mode) == 0o644
+
+
+async def test_an_unknown_condition_is_refused_by_the_capture_verifier(
+    capture_verifier: CaptureScreenVerifier,
+) -> None:
+    failures = await capture_verifier.verify(
+        (CAPTURE_EXISTS, "capture.is_beautiful"), {}, captured(Path("/nowhere"))
+    )
+    assert codes(failures) == [VERIFICATION_UNKNOWN_CONDITION]

@@ -57,19 +57,21 @@ def test_each_new_rule_holds_on_the_real_tree(key: str) -> None:
     assert RULES[key](PACKAGE_ROOT) == []
 
 
-def test_the_conseguenze_count_the_rules_and_the_ports_the_code_has() -> None:
-    """The current totals, pinned by the ADR that changed them.
+def test_the_conseguenze_count_the_rules_and_the_ports_this_adr_left_behind() -> None:
+    """What ADR 0028 counted, still counted — as a **number**, not as today's total.
 
-    ADR 0026 counted thirty-one and still can, by number (``test_adr_placement.py``); this is the
-    document that owns today's total, and the next one to add a rule takes the pin over.
+    An ADR is immutable, so this document keeps saying thirty-four rules and nineteen ports, and
+    that stays true about the tree it left behind: thirty-one before it (ADR 0026), plus its three.
+    Today's totals moved on, and the ADR that moved them owns the pin — ADR 0029, checked in
+    ``test_adr_screen.py``. That is the same handover ADR 0026 made to this one.
     """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**trentaquattro**" in conseguenze
-    assert len(RULES) == 34
     assert "**diciannove**" in conseguenze
-    assert len(tuple(port_protocols())) == 19
     assert "**tredici**" in conseguenze
+    assert len(RULES) >= 34
+    assert len(tuple(port_protocols())) >= 19
 
 
 # ----------------------------------------------------------------------------------------

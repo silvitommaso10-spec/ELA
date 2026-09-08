@@ -40,7 +40,7 @@ from ela.permissions import (
 )
 from ela.providers.anthropic import AnthropicSettings
 from ela.routing import RoutingSettings
-from ela.tools.settings import WorkspaceSettings
+from ela.tools.settings import CaptureSettings, WorkspaceSettings
 
 __all__ = [
     "DEFAULT_API_HOST",
@@ -246,12 +246,13 @@ class Settings(BaseModel):
     api: ApiSettings
     core: CoreSettings
     perception: PerceptionSettings
+    captures: CaptureSettings
 
     @classmethod
     def load(cls) -> Settings:
         """Read the environment (and ``.env``) once; :class:`ConfigurationError` if it is wrong.
 
-        The eight are built here and nowhere else. A failure names the variable and what to do
+        The nine are built here and nowhere else. A failure names the variable and what to do
         with it: whoever reads this message wrote the ``.env``, and a ``ValidationError`` dumped
         on a terminal is not an answer to them.
 
@@ -268,6 +269,7 @@ class Settings(BaseModel):
                 api=ApiSettings(),
                 core=CoreSettings(),
                 perception=PerceptionSettings(),
+                captures=CaptureSettings(),
             )
         except ValidationError as invalid:
             raise ConfigurationError(explain(invalid)) from invalid

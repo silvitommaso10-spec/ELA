@@ -8,6 +8,21 @@ adapter reports primitives and the core decides what they mean (ADR 0028 §1).
 """
 
 from ela.infrastructure.perception.darwin import PROBE_MODULE, TIMED_OUT, DarwinProbe, Spawn, spawn
+from ela.infrastructure.perception.screencapture import (
+    SCREENCAPTURE,
+    ScreenCaptureCommand,
+    UnsupportedScreenCapture,
+)
 from ela.infrastructure.perception.unsupported import UnsupportedProbe
 
-__all__ = ["PROBE_MODULE", "TIMED_OUT", "DarwinProbe", "Spawn", "UnsupportedProbe", "spawn"]
+__all__ = [
+    "PROBE_MODULE",
+    "SCREENCAPTURE",
+    "TIMED_OUT",
+    "DarwinProbe",
+    "ScreenCaptureCommand",
+    "Spawn",
+    "UnsupportedProbe",
+    "UnsupportedScreenCapture",
+    "spawn",
+]

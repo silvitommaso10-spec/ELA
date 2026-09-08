@@ -67,6 +67,7 @@ __all__ = [
     "DiagnosticsOut",
     "ExecutionResultOut",
     "HealthOut",
+    "CaptureStoreOut",
     "PerceptionOut",
     "PerceptionSummaryOut",
     "PlanIn",
@@ -463,6 +464,26 @@ class ExecutionResultOut(BaseModel):
         )
 
 
+class CaptureStoreOut(BaseModel):
+    """What content ELA is holding right now, and under which limits (M10.2, ADR 0029 §15).
+
+    In ``/diagnostics`` because §57 makes "what are you keeping of mine, at this moment" a
+    question the user must be able to ask, and a store of screenshots that only the filesystem
+    knows about is exactly what must not exist. It is ELA's own state and not the world, which is
+    why it is here and not on ``/perception`` — the line of ADR 0028 §8.
+
+    ``retained`` and ``bytes`` are a listing of at most ``max_count`` entries, so ``/diagnostics``
+    keeps its promise of not observing the world: it reads what ELA holds, the way it already
+    counts providers and tasks.
+    """
+
+    retained: int
+    bytes: int
+    ttl_seconds: float
+    max_count: int
+    max_bytes: int
+
+
 class PerceptionSummaryOut(BaseModel):
     """The composition-shaped half of perception: what ELA *can* see on this machine (§10, §57).
 
@@ -481,6 +502,7 @@ class PerceptionSummaryOut(BaseModel):
     observe on its own until somebody turns it on (ADR 0028 §7)."""
     observed_at: datetime
     permissions: dict[SystemPermission, PermissionState]
+    captures: CaptureStoreOut
 
 
 class PerceptionOut(BaseModel):

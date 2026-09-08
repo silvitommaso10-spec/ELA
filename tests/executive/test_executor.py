@@ -72,6 +72,7 @@ from tests.permissions.support import (
     HIGH,
     NOTE,
     NOTE_ARGS,
+    STATED_ECHO,
 )
 from tests.tasks.support import result_for
 
@@ -368,6 +369,39 @@ async def test_requires_approval_builds_the_request_and_lets_the_task_wait(w: Wo
     assert await w.approvals.get(approval.id) == approval
     assert await w.approvals.for_task(task.id) == (approval,)
     assert await w.approvals.pending() == (approval,)
+
+
+async def test_the_question_carries_the_arguments_the_capability_declares(w: World) -> None:
+    """§30, ADR 0029 §6: a "yes" is only worth something if the question was complete.
+
+    ``core.echo_stated`` declares ``purpose``, so the request the user reads says what for. The
+    value comes from the step's arguments — the same ones the tool will run on — so the question
+    and the action cannot describe two different things.
+    """
+    task, step = await w.running(STATED_ECHO.id)
+
+    execution = await w.execute(task.id, step.id)
+
+    assert execution.approval is not None
+    assert "purpose: showing the reviewer the failing test" in execution.approval.prompt
+    assert execution.approval.prompt == (
+        f"core.echo_stated for step {step.id} ({step.goal}) — "
+        f"purpose: showing the reviewer the failing test: {execution.decision.reason}"
+    )
+
+
+async def test_an_argument_the_capability_does_not_declare_stays_out_of_the_question(
+    w: World,
+) -> None:
+    """The default is the defence (§57): ``model.complete`` takes ``input``, the user's content,
+    and an ``Approval`` is stored. Nothing is shown unless the capability declared it."""
+    task, step = await w.running(GUARDED_NOTE.id)
+
+    execution = await w.execute(task.id, step.id)
+
+    assert execution.approval is not None
+    assert "—" not in execution.approval.prompt
+    assert "body" not in execution.approval.prompt
 
 
 async def test_the_approval_ttl_is_the_executors(w: World) -> None:

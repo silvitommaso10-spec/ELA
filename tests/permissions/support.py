@@ -59,6 +59,24 @@ LOOSE_NOTE: Final = NOTE.model_copy(
 )
 """A LOW capability whose schema lets ``path`` be missing or anything: the scope check must
 catch what the schema does not (the real catalogue would refuse this specification)."""
+STATED_ECHO: Final = ECHO.model_copy(
+    update={
+        "id": CapabilityId("core.echo_stated"),
+        "requires_authorization": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {"message": {"type": "string"}, "purpose": {"type": "string"}},
+            "required": ["message", "purpose"],
+        },
+        "prompt_arguments": ("purpose",),
+    }
+)
+"""A capability that declares what the question the user reads must carry (M10.2, ADR 0029 §6).
+
+MEDIUM-shaped in the one way that matters here: it always asks. ``perception.capture_screen`` is
+the only real one, and this stands in for it wherever the executor is exercised without a capture
+store — the mechanism is the catalogue's and the executor's, not the screen's.
+"""
 UNCONSTRAINED_SCOPE: Final = ECHO.model_copy(
     update={"id": CapabilityId("broken.scope"), "risk": RiskLevel.LOW, "scope": ("workspace",)}
 )
@@ -70,6 +88,7 @@ CATALOGUE: Final = (
     NOTE,
     COMPLETE,
     GUARDED_ECHO,
+    STATED_ECHO,
     GUARDED_NOTE,
     HIGH,
     CRITICAL,
@@ -78,6 +97,7 @@ CATALOGUE: Final = (
 )
 
 ECHO_ARGS: Final = {"message": "hello"}
+STATED_ARGS: Final = {"message": "hello", "purpose": "showing the reviewer the failing test"}
 NOTE_ARGS: Final = {"path": "workspace/notes/briefing.md", "body": "..."}
 COMPLETE_ARGS: Final = {"input": "Riassumi le email della riunione."}
 
@@ -85,6 +105,7 @@ ARGUMENTS: Final[Mapping[CapabilityId, JsonMapping]] = MappingProxyType(
     {
         ECHO.id: ECHO_ARGS,
         GUARDED_ECHO.id: ECHO_ARGS,
+        STATED_ECHO.id: STATED_ARGS,
         HIGH.id: ECHO_ARGS,
         CRITICAL.id: ECHO_ARGS,
         UNCONSTRAINED_SCOPE.id: ECHO_ARGS,
