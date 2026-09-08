@@ -515,6 +515,12 @@ class PerceptionOut(BaseModel):
 
     ``changes`` is the last look only. There is no history here on purpose — the perception is
     not the memory, and structured memory is §21, with rules this route does not have.
+
+    The application fields (M10.3) are **state and not content**: which applications are running
+    and which is in front, by bundle identifier, and how many windows there are. No window title
+    appears here or anywhere else in ELA — a title costs the same permission a screenshot costs
+    and carries a URL or a document name, so it goes through the Guardian if it ever goes
+    anywhere (architecture rule 36).
     """
 
     enabled: bool
@@ -528,6 +534,9 @@ class PerceptionOut(BaseModel):
     screen_locked: bool | None
     on_console: bool | None
     idle_seconds: float | None
+    running_bundle_ids: tuple[str, ...] | None
+    frontmost_bundle_id: str | None
+    window_count: int | None
     changes: tuple[PerceptionChange, ...]
 
 

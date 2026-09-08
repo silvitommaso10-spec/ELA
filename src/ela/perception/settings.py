@@ -31,13 +31,23 @@ __all__ = [
 ]
 
 DEFAULT_INTERVALS: Final[Mapping[ProbeFamily, float]] = MappingProxyType(
-    {ProbeFamily.SENSORS: 2.0, ProbeFamily.SESSION: 5.0, ProbeFamily.PERMISSIONS: 30.0}
+    {
+        ProbeFamily.SENSORS: 2.0,
+        ProbeFamily.SESSION: 5.0,
+        ProbeFamily.PERMISSIONS: 30.0,
+        ProbeFamily.APPLICATIONS: 2.0,
+    }
 )
 """Seconds between two readings of a family, by default.
 
 Measured, not guessed (M10.1, "La ricognizione"): the microphone's "in use by anyone" costs
 0,03 ms and changes while you watch; a TCC status costs 3,2 ms — it is an XPC call to ``tccd`` —
 and changes when a human clicks in System Settings.
+
+``APPLICATIONS`` shares the sensors' cadence for the same reason: which window is in front is
+something that changes while you watch. It is also the cheapest family measured — 0,26 ms for the
+window list, 0,001 ms for the frontmost application (M10.3) — which is noise next to the 35 ms of
+spawning the child, so it rides the tick that is already happening.
 """
 
 DEFAULT_PROBE_TIMEOUT_SECONDS: Final = 2.0
@@ -66,6 +76,9 @@ class PerceptionSettings(BaseSettings):
     perception_permissions_interval_seconds: Annotated[float, Field(ge=0)] = DEFAULT_INTERVALS[
         ProbeFamily.PERMISSIONS
     ]
+    perception_applications_interval_seconds: Annotated[float, Field(ge=0)] = DEFAULT_INTERVALS[
+        ProbeFamily.APPLICATIONS
+    ]
     """Seconds, and fractional ones are allowed: a cadence of half a second is a legitimate way
     to run this, and the whole point of §6 is that these are configuration. Zero is legal too and
     means *always due*: a read observes rather than repeating what it knew."""
@@ -82,6 +95,7 @@ class PerceptionSettings(BaseSettings):
             ProbeFamily.SENSORS: self.perception_sensors_interval_seconds,
             ProbeFamily.SESSION: self.perception_session_interval_seconds,
             ProbeFamily.PERMISSIONS: self.perception_permissions_interval_seconds,
+            ProbeFamily.APPLICATIONS: self.perception_applications_interval_seconds,
         }[family]
         return timedelta(seconds=seconds)
 

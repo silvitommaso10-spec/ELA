@@ -171,9 +171,19 @@ def test_the_capture_tool_writes_no_audit_of_its_own() -> None:
 
 
 def test_the_perception_core_did_not_learn_about_the_capture() -> None:
-    """§5: the capture is an **action**. The first ring observes, the second acts, and the
-    observation model is untouched — no fourth family, no widened ``RawObservation``."""
-    assert [family.value for family in ProbeFamily] == ["SENSORS", "SESSION", "PERMISSIONS"]
+    """§5: the capture is an **action**. The first ring observes, the second acts.
+
+    M10.1 left three families and M10.3 added a fourth, so this cannot be a frozen list any more
+    — but the property ADR 0029 §5 asserted was never about the *number*. It was that **the
+    capture** is not one of them: a family would give a photograph a cadence, a ``merge`` and a
+    freshness it does not have. So the assertion is the property, stated so that a family added
+    later for an honest reason passes and a family added for the capture does not.
+    """
+    families = [family.value for family in ProbeFamily]
+    assert not [name for name in families if "CAPTURE" in name or "SCREEN" in name]
+    assert not [
+        field for field in RawObservation.model_fields if "capture" in field or "image" in field
+    ]
     partition = [field for family in ProbeFamily for field in FAMILY_FIELDS[family]]
     assert sorted(partition) == sorted(RawObservation.model_fields)
 

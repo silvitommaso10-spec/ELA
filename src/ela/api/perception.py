@@ -40,5 +40,8 @@ async def perception(ela: ElaDep) -> PerceptionOut:
         screen_locked=observation.screen_locked,
         on_console=observation.on_console,
         idle_seconds=observation.idle_seconds,
+        running_bundle_ids=observation.running_bundle_ids,
+        frontmost_bundle_id=observation.frontmost_bundle_id,
+        window_count=observation.window_count,
         changes=changes,
     )

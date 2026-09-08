@@ -35,8 +35,9 @@ def test_the_loop_needs_both_the_switch_and_an_interval() -> None:
 
 @pytest.mark.parametrize("family", list(ProbeFamily))
 def test_each_family_has_its_own_interval(family: ProbeFamily) -> None:
-    """Three cadences because the three readings differ by two orders of magnitude in cost and
-    far more in how often they change (ADR 0028 §6)."""
+    """A cadence each, because the readings differ by orders of magnitude in cost and far more in
+    how often they change (ADR 0028 §6). Two families may still share a number: ``SENSORS`` and
+    ``APPLICATIONS`` both change while you watch."""
     assert PerceptionSettings().interval(family) == timedelta(seconds=DEFAULT_INTERVALS[family])
 
 
