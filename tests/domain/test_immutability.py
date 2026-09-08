@@ -64,10 +64,25 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
     ``Observation`` is **not** here, and that is the point rather than an exception: its
     ``permissions`` is a mapping, so it is checked by the test above like every other
     payload — which is how the frozen permissions map gets proved instead of assumed.
+
+    The context models joined in M10.4, all eleven of them, and for the same §57 reason: a
+    free-form bag on a snapshot is where a window title or a fragment of recognised text would
+    be put "just for context". ``ContextActivity`` and ``ContextWork`` are **not** in this list
+    and that is again the point — their ``permissions`` and ``states`` are mappings, so both are
+    proved frozen by the test above rather than promised to be.
     """
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
     assert without == [
         "Actor",
+        "ContextApproval",
+        "ContextDeadline",
+        "ContextDeadlines",
+        "ContextDevice",
+        "ContextEvent",
+        "ContextQuestionStatus",
+        "ContextRecent",
+        "ContextSnapshot",
+        "ContextTask",
         "ModelRoute",
         "PerceptionChange",
         "ProviderUsage",

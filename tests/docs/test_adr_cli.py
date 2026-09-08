@@ -28,6 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = REPO_ROOT / "docs" / "adr" / "0024-cli.md"
 DEBTS_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0025-phase-8-debts.md"
 PERCEPTION_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0028-perception-core.md"
+CONTEXT_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0032-context-core.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMMAND_ROW = re.compile(
@@ -43,14 +44,15 @@ RETIRED = "ELA_ANTHROPIC_MODEL"
 
 
 def adr_text() -> str:
-    """ADR 0024, ADR 0025 and ADR 0028, read together.
+    """ADR 0024, ADR 0025, ADR 0028 and ADR 0032, read together.
 
     An ADR is immutable, so a command a later milestone adds is documented in *its* ADR, in the
     row shape of this table (ADR 0025 §10, ADR 0028 §12). The table of commands is therefore the
     union of the documents, exactly as the table of ports is (``test_adr_ports.py``).
     """
     return "\n".join(
-        path.read_text(encoding="utf-8") for path in (ADR_PATH, DEBTS_ADR_PATH, PERCEPTION_ADR_PATH)
+        path.read_text(encoding="utf-8")
+        for path in (ADR_PATH, DEBTS_ADR_PATH, PERCEPTION_ADR_PATH, CONTEXT_ADR_PATH)
     )
 
 
@@ -108,19 +110,19 @@ def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:
     assert set(documented_commands()) == coded_commands()
 
 
-def test_there_are_nineteen_of_them() -> None:
-    assert len(coded_commands()) == 19
+def test_there_are_twenty_of_them() -> None:
+    assert len(coded_commands()) == 20
 
 
 def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
-    """``ela task results`` (ADR 0025 §4) and ``ela perception`` (ADR 0028 §12), and nothing else.
+    """``task results`` (ADR 0025 §4), ``perception`` (ADR 0028 §12), ``context`` (ADR 0032 §13).
 
     Each is the client of the one route its milestone introduced, and each is documented in the
     ADR that introduced it rather than back-written into ADR 0024.
     """
     added = set(documented_commands()) - set(documented_commands_of(cli_adr_text()))
 
-    assert added == {"task results", "perception"}
+    assert added == {"task results", "perception", "context"}
 
 
 def test_only_two_commands_are_local_and_they_are_the_two_that_cannot_be_calls() -> None:

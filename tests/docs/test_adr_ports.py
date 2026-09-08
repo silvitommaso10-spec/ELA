@@ -41,6 +41,7 @@ EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0020-provider-anthropic.md", EXTENDING),
     (ADR_DIR / "0021-started-protocol-and-model-complete.md", EXTENDING),
     (ADR_DIR / "0025-phase-8-debts.md", EXTENDING),
+    (ADR_DIR / "0032-context-core.md", EXTENDING),
 )
 REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),
@@ -269,12 +270,25 @@ def test_the_debts_adr_adds_one_member_to_two_ports_and_none_to_the_audit_log() 
     ``read``, not a member — so the log still has the two members ADR 0007 promised, and this
     test is where that promise is read from the documents instead of remembered.
     """
-    extension = documented_ports(_text(EXTENDING_ADRS[-1]))
+    extension = documented_ports(_text(EXTENDING_ADRS[5]))
     assert extension == {
         "TaskRepository": ("async", frozenset({"count"})),
         "ExecutionResultStore": ("async", frozenset({"for_task"})),
     }
     assert documented()["AuditLog"][1] == frozenset({"append", "read"})
+
+
+def test_the_context_adr_adds_the_two_deadline_members_and_no_port() -> None:
+    """ADR 0032 §16: ``due`` and ``due_count`` on a port that exists; no port is introduced.
+
+    The two go together and are two members rather than one for the reason ``count`` exists
+    beside ``tasks`` (ADR 0025 §2): counting the first N of something is not a count, and a
+    section that shows twenty of a hundred and thirty-seven must be able to say the hundred and
+    thirty-seven without loading it.
+    """
+    extension = documented_ports(_text(EXTENDING_ADRS[-1]))
+    assert extension == {"TaskRepository": ("async", frozenset({"due", "due_count"}))}
+    assert "Port introdotti:" not in (ADR_DIR / "0032-context-core.md").read_text("utf-8")
 
 
 def test_the_executor_adr_introduces_two_ports_the_base_does_not_have() -> None:

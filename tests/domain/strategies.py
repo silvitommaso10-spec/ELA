@@ -23,6 +23,19 @@ from ela.domain import (
     Authorization,
     CapabilityId,
     CapabilitySpec,
+    ContextActivity,
+    ContextApproval,
+    ContextDeadline,
+    ContextDeadlines,
+    ContextDevice,
+    ContextEvent,
+    ContextQuestion,
+    ContextQuestionStatus,
+    ContextRecent,
+    ContextSnapshot,
+    ContextSource,
+    ContextTask,
+    ContextWork,
     Device,
     DeviceAvailability,
     DeviceCapability,
@@ -448,6 +461,131 @@ observations = st.builds(
 
 perception_changes = st.builds(PerceptionChange, field=texts, before=texts, after=texts)
 
+# --- Context (M10.4, ADR 0032) -------------------------------------------------------------
+
+context_activities = st.builds(
+    ContextActivity,
+    observed_at=utc_datetimes,
+    microphone=sensor_statuses,
+    camera=sensor_statuses,
+    permissions=st.dictionaries(
+        st.sampled_from(SystemPermission), st.sampled_from(PermissionState)
+    ),
+    display_count=_optional(st.integers(min_value=0, max_value=8)),
+    display_asleep=_optional(st.booleans()),
+    screen_locked=_optional(st.booleans()),
+    on_console=_optional(st.booleans()),
+    idle_seconds=_optional(st.floats(min_value=0, max_value=86400, allow_nan=False)),
+    running_bundle_ids=_optional(st.lists(texts, max_size=4).map(tuple)),
+    frontmost_bundle_id=_optional(texts),
+    window_count=_optional(st.integers(min_value=0, max_value=64)),
+)
+
+context_devices = st.builds(
+    ContextDevice,
+    device_id=uuids,
+    name=texts,
+    os=st.sampled_from(OperatingSystem),
+    available=st.booleans(),
+    status=st.sampled_from(DeviceStatus),
+    is_local=st.booleans(),
+    last_seen_at=_optional(utc_datetimes),
+)
+
+context_tasks_ = st.builds(
+    ContextTask,
+    task_id=uuids,
+    goal=texts,
+    state=st.sampled_from(TaskState),
+    deadline=_optional(utc_datetimes),
+    current_step_id=_optional(uuids),
+    current_step_goal=_optional(texts),
+)
+
+context_approvals = st.builds(
+    ContextApproval,
+    approval_id=uuids,
+    task_id=uuids,
+    capability_id=capability_ids,
+    expires_at=_optional(utc_datetimes),
+)
+
+
+@st.composite
+def _context_works(draw: st.DrawFn) -> ContextWork:
+    """``shown`` is never drawn: it is what is shown, and ``total`` is never below it.
+
+    Generating the three independently would generate mostly invalid work — the model refuses a
+    ``shown`` that is not the length of ``tasks`` — so the strategy builds the relationship the
+    model states rather than fighting it.
+    """
+    drawn = draw(st.lists(context_tasks_, max_size=3))
+    return ContextWork(
+        tasks=tuple(drawn),
+        shown=len(drawn),
+        total=len(drawn) + draw(st.integers(min_value=0, max_value=20)),
+        states=draw(st.dictionaries(st.sampled_from(TaskState), st.integers(min_value=1))),
+        pending_approvals=tuple(draw(st.lists(context_approvals, max_size=2))),
+    )
+
+
+context_works = _context_works()
+
+context_deadline_rows = st.builds(
+    ContextDeadline,
+    task_id=uuids,
+    goal=texts,
+    state=st.sampled_from(TaskState),
+    deadline=utc_datetimes,
+)
+
+
+@st.composite
+def _context_deadlines(draw: st.DrawFn) -> ContextDeadlines:
+    drawn = draw(st.lists(context_deadline_rows, max_size=3))
+    return ContextDeadlines(
+        deadlines=tuple(drawn),
+        shown=len(drawn),
+        total=len(drawn) + draw(st.integers(min_value=0, max_value=20)),
+    )
+
+
+context_deadlines = _context_deadlines()
+
+context_events = st.builds(
+    ContextEvent,
+    task_id=uuids,
+    event_type=st.sampled_from(TaskEventType),
+    at=utc_datetimes,
+    previous_state=_optional(st.sampled_from(TaskState)),
+    new_state=_optional(st.sampled_from(TaskState)),
+)
+
+context_recents = st.builds(
+    ContextRecent,
+    since=utc_datetimes,
+    changes=st.lists(perception_changes, max_size=3).map(tuple),
+    events=st.lists(context_events, max_size=3).map(tuple),
+)
+
+context_question_statuses = st.builds(
+    ContextQuestionStatus,
+    question=st.sampled_from(ContextQuestion),
+    answered_by=st.lists(st.sampled_from(ContextSource), max_size=3, unique=True).map(tuple),
+    missing=st.lists(st.sampled_from(ContextSource), max_size=3, unique=True).map(tuple),
+)
+
+context_snapshots = st.builds(
+    ContextSnapshot,
+    at=utc_datetimes,
+    activity=context_activities,
+    device=st.none() | context_devices,
+    work=context_works,
+    deadlines=context_deadlines,
+    recent=context_recents,
+    questions=st.lists(context_question_statuses, max_size=3).map(tuple),
+)
+
 MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.Actor: actors,
     domain.DeviceCapability: device_capabilities,
@@ -476,5 +614,16 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.RawTextLine: raw_text_lines,
     domain.Observation: observations,
     domain.PerceptionChange: perception_changes,
+    domain.ContextActivity: context_activities,
+    domain.ContextDevice: context_devices,
+    domain.ContextTask: context_tasks_,
+    domain.ContextApproval: context_approvals,
+    domain.ContextWork: context_works,
+    domain.ContextDeadline: context_deadline_rows,
+    domain.ContextDeadlines: context_deadlines,
+    domain.ContextEvent: context_events,
+    domain.ContextRecent: context_recents,
+    domain.ContextQuestionStatus: context_question_statuses,
+    domain.ContextSnapshot: context_snapshots,
 }
 """One strategy per model, keyed by class."""

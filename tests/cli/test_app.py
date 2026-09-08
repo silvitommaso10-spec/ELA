@@ -36,6 +36,7 @@ def test_every_command_of_the_milestone_is_there() -> None:
         "diagnostics",
         "approvals",
         "perception",
+        "context",
         "task create",
         "task list",
         "task show",

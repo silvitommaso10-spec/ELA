@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -276,3 +277,100 @@ async def test_plans_belong_to_their_task(task_repository: TaskRepository) -> No
     await task_repository.add_plan(OTHER_PLAN)
     assert await task_repository.plan(TASK.id) == TASK_PLAN
     assert await task_repository.plan(OTHER_ID) == OTHER_PLAN
+
+
+# ----------------------------------------------------------------------------------------
+# ``due`` and ``due_count`` (M10.4, ADR 0032 §9): the question ``tasks`` cannot answer
+# ----------------------------------------------------------------------------------------
+
+LATER = TASK.model_copy(
+    update={
+        "id": TaskId(UUID("00000000-0000-4000-8000-000000000201")),
+        "state": TaskState.QUEUED,
+        "deadline": datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
+    }
+)
+SOONER = TASK.model_copy(
+    update={
+        "id": TaskId(UUID("00000000-0000-4000-8000-000000000202")),
+        "state": TaskState.QUEUED,
+        "deadline": datetime(2026, 9, 9, 9, 0, tzinfo=UTC),
+    }
+)
+UNDATED = TASK.model_copy(
+    update={"id": TaskId(UUID("00000000-0000-4000-8000-000000000203")), "deadline": None}
+)
+
+
+async def test_due_orders_by_deadline_and_not_by_insertion(
+    task_repository: TaskRepository,
+) -> None:
+    """The one order that is not insertion order, which is why it is a member of its own."""
+    await task_repository.add(LATER)
+    await task_repository.add(SOONER)
+
+    assert [task.id for task in await task_repository.due()] == [SOONER.id, LATER.id]
+    assert [task.id for task in await task_repository.tasks()] == [LATER.id, SOONER.id]
+
+
+async def test_due_leaves_out_a_task_with_no_deadline(task_repository: TaskRepository) -> None:
+    """Not sorted to the end: a task with no deadline is not a late one (ADR 0032 §9)."""
+    await task_repository.add(SOONER)
+    await task_repository.add(UNDATED)
+
+    assert [task.id for task in await task_repository.due()] == [SOONER.id]
+    assert await task_repository.due_count() == 1
+
+
+async def test_due_ties_fall_back_to_insertion_order(task_repository: TaskRepository) -> None:
+    """Two tasks due at the same instant come back stably, never in whatever order the rows are."""
+    first = LATER.model_copy(update={"deadline": SOONER.deadline})
+    await task_repository.add(first)
+    await task_repository.add(SOONER)
+
+    assert [task.id for task in await task_repository.due()] == [first.id, SOONER.id]
+
+
+async def test_due_filters_by_state_and_limits_after_filtering(
+    task_repository: TaskRepository,
+) -> None:
+    await task_repository.add(SOONER)
+    await task_repository.add(LATER.model_copy(update={"state": TaskState.COMPLETED}))
+
+    live = frozenset({TaskState.QUEUED})
+    assert [task.id for task in await task_repository.due(states=live)] == [SOONER.id]
+    assert await task_repository.due_count(states=live) == 1
+    assert len(await task_repository.due(limit=1)) == 1
+
+
+async def test_due_of_an_empty_frozenset_asks_about_no_state_at_all(
+    task_repository: TaskRepository,
+) -> None:
+    """The one case where ``frozenset()`` and ``None`` differ, as for ``tasks`` and ``count``."""
+    await task_repository.add(SOONER)
+
+    assert await task_repository.due(states=frozenset()) == ()
+    assert await task_repository.due_count(states=frozenset()) == 0
+    assert await task_repository.due(states=None) != ()
+
+
+async def test_due_rejects_a_non_positive_limit(task_repository: TaskRepository) -> None:
+    with pytest.raises(ValueError):
+        await task_repository.due(limit=0)
+    with pytest.raises(ValueError):
+        await task_repository.due(limit=-1)
+
+
+async def test_due_count_counts_without_the_limit_that_due_applies(
+    task_repository: TaskRepository,
+) -> None:
+    """The whole reason ``due_count`` exists: twenty of a hundred must be able to say a hundred."""
+    await task_repository.add(SOONER)
+    await task_repository.add(LATER)
+
+    assert len(await task_repository.due(limit=1)) == 1
+    assert await task_repository.due_count() == 2
+
+
+async def test_due_count_of_an_empty_repository_is_zero(task_repository: TaskRepository) -> None:
+    assert await task_repository.due_count() == 0

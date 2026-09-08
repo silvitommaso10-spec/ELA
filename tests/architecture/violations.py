@@ -908,6 +908,51 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela import domain\ndef off():\n    return domain.SensorCause\n",
         "SensorCause",
     ),
+    # --- context-writes-nothing (rule 38, ADR 0032 §6) ---
+    Case(
+        # The shape the rule exists for: a port arrives through the constructor, so there is no
+        # import to see and every contract in pyproject.toml would let this through.
+        "the-composer-saves-a-task",
+        "context-writes-nothing",
+        "context/writer.py",
+        "class Composer:\n"
+        "    def __init__(self, repository):\n"
+        "        self._repository = repository\n"
+        "    async def assemble(self, task):\n"
+        "        await self._repository.save(task)\n",
+        "save",
+    ),
+    Case(
+        # The other half of "context is not action": appending to the audit is a decision, and
+        # composing is not deciding (ADR 0028 §10).
+        "the-composer-appends-to-the-audit",
+        "context-writes-nothing",
+        "context/recorder.py",
+        "class Composer:\n"
+        "    def __init__(self, audit):\n"
+        "        self._audit = audit\n"
+        "    async def assemble(self, event):\n"
+        "        await self._audit.append(event)\n",
+        "append",
+    ),
+    # --- context-is-not-recorded (rule 39, ADR 0032 §7) ---
+    Case(
+        "a-snapshot-reaches-a-provider",
+        "context-is-not-recorded",
+        "context/prompting.py",
+        "from ela.domain import ContextSnapshot, ProviderRequest\n"
+        "def prompt(snapshot: ContextSnapshot) -> ProviderRequest: ...\n",
+        "ProviderRequest",
+    ),
+    Case(
+        "a-snapshot-reaches-the-audit",
+        "context-is-not-recorded",
+        "context/recording.py",
+        "from ela import domain\n"
+        "def record(snapshot: domain.ContextSnapshot):\n"
+        "    return domain.AuditEvent\n",
+        "AuditEvent",
+    ),
     # --- platform-choice-is-a-statement (rule 37, ADR 0031) ---
     Case(
         # The exact line M10.3 shipped, and the reason the rule exists: the gate reports nothing

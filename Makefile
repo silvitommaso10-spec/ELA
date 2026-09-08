@@ -38,7 +38,7 @@ test:
 # renderlo vero invece che promesso.
 CRITICAL_PACKAGES = ela.tasks ela.infrastructure.persistence ela.audit ela.permissions \
 	ela.executive ela.tools ela.devices ela.providers ela.routing ela.api ela.composition \
-	ela.cli ela.perception
+	ela.cli ela.perception ela.context
 
 cov-critical:
 	$(UV) run pytest -o addopts="" -q $(foreach p,$(CRITICAL_PACKAGES),--cov=$(p)) \

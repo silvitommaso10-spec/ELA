@@ -81,6 +81,8 @@ def test_the_domain_declares_exactly_these_enums() -> None:
         "ActorKind",
         "ApprovalStatus",
         "AuditEventType",
+        "ContextQuestion",
+        "ContextSource",
         "DeviceAvailability",
         "DeviceStatus",
         "ExecutionStatus",

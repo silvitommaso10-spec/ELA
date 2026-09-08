@@ -401,6 +401,27 @@ source_modules = [
 forbidden_modules = ["ela.providers", "ela.infrastructure"]
 
 [[tool.importlinter.contracts]]
+name = "14. ela.context non raggiunge chi decide né chi esegue: comporre non è agire (ADR 0032 §6)"
+type = "forbidden"
+# La metà "porta" della regola 38. L'altra metà — le *chiamate* di scrittura — è un walk
+# dell'AST, perché un port arriva dal costruttore e non lascia nessun import da vedere.
+# ela.perception non è vietata: è pura, sta nel gate, e osservare non è agire (ADR 0029 §5).
+# ela.devices nemmeno: il registro deriva la disponibilità e nessun altro può farlo (regola 20),
+# quindi la risposta va chiesta a lui.
+source_modules = ["ela.context"]
+forbidden_modules = [
+    "ela.api",
+    "ela.cli",
+    "ela.composition",
+    "ela.executive",
+    "ela.infrastructure",
+    "ela.permissions",
+    "ela.providers",
+    "ela.routing",
+    "ela.tools",
+]
+
+[[tool.importlinter.contracts]]
 name = "13. nessuno importa ela.cli: la CLI è un client, non una libreria (ADR 0024 §7)"
 type = "forbidden"
 # La seconda clausola della regola 28. Una CLI che qualcuno importa è una CLI diventata libreria

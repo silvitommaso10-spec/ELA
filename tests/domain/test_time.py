@@ -91,6 +91,22 @@ VALUE_OBJECTS = frozenset(
         # clock either artefact consults.
         "RawRecognition",
         "RawTextLine",
+        # And the whole of the context (M10.4): a snapshot is composed on read and never stored,
+        # so nothing in it has a birth date. What each part carries instead is the instant of the
+        # fact — ``ContextSnapshot.at``, ``ContextActivity.observed_at``, ``ContextEvent.at`` —
+        # which is the value, not a life cycle. That is the line with §21 made structural: what
+        # can be recomputed is context, what would lose information if dropped is memory.
+        "ContextSnapshot",
+        "ContextActivity",
+        "ContextDevice",
+        "ContextTask",
+        "ContextApproval",
+        "ContextWork",
+        "ContextDeadline",
+        "ContextDeadlines",
+        "ContextEvent",
+        "ContextRecent",
+        "ContextQuestionStatus",
     }
 )
 

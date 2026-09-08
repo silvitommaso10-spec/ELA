@@ -180,6 +180,55 @@ CAPTURE_FORBIDDEN = frozenset(
     {"ModelRouter", "ModelRouterPort", "ProviderRegistry", "ProviderRegistryPort", "httpx"}
 )
 
+#: Rule 38 (M10.4, ADR 0032 §6): *if answering a context question requires a capability, that
+#: answer is not context — it is an action*, and it goes through the Executor. The half that
+#: reads names lives here; the half that reads imports is import-linter contract 14, because
+#: "the composer cannot reach the Guardian" is exactly a forbidden import and does not need an
+#: AST walk. This half exists because the other one is not enough: a port arrives through a
+#: constructor, so a module can call ``save`` on something it never imported. The import is the
+#: door, the call is the handle, and a rule holding only the door would be silent on the code
+#: that can really break it — the same reason rule 32 had to read calls and not only imports.
+CONTEXT_DIR = "context"
+CONTEXT_WRITE_MEMBERS = frozenset(
+    {
+        "add",
+        "add_plan",
+        "append",
+        "append_event",
+        "authorize",
+        "consume",
+        "decide",
+        "execute",
+        "grant",
+        "register",
+        "respond",
+        "save",
+        "transition",
+        "update",
+        "verify",
+    }
+)
+"""Every writing member of the closed port vocabulary. Closed because the ports are closed.
+
+Matched **on the receiver too**, and only on ``self.<port>.<member>()``. Three of these names —
+``add``, ``append``, ``update`` — are also list, set and dict methods, so a rule that read the
+name alone would fire on ``answered.append(source)`` and the only way to satisfy it would be to
+write the composer oddly instead of correctly. A rule that makes correct code contort itself
+teaches people to work around rules. The receiver is not a loophole either: a composer holds what
+it was given as instance attributes, which is the one shape in which it could write at all.
+"""
+
+#: Rule 39 (M10.4, ADR 0032 §7): a snapshot is neither recorded nor sent. Two errors, one shape:
+#: an ``AuditEvent`` built from a snapshot would fill the chain of §32 with things ELA did not
+#: decide (ADR 0028 §10) and would carry ``Task.goal`` into it, which rule 23 keeps out; a
+#: ``ProviderRequest`` built from one is the day the context leaves the machine, and that day
+#: needs the four answers of §57 written first (ADR 0030 §17) — a closed door, not a note.
+#: Read as names and attributes, like rules 34, 35 and 36, so it costs no import-linter contract.
+#: It is silent on today's tree, and that silence is asserted: the rule guards a door nobody has
+#: walked through yet, which is the only moment at which such a door can still be shut.
+CONTEXT_SNAPSHOT = "ContextSnapshot"
+CONTEXT_NOT_RECORDED = frozenset({"AuditEvent", "ProviderRequest"})
+
 #: Rule 31 (ADR 0026 §6): the API's token is compared only with ``secrets.compare_digest``.
 #: The one mutation of eight the suite did not notice: ``compare_digest`` swapped for ``==``
 #: leaves 3551 tests green, because 100% branch coverage proves the line runs and says nothing
@@ -1699,6 +1748,77 @@ def check_platform_choice_is_a_statement(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def _named(path: Path) -> set[str]:
+    """Every name and attribute a module mentions, however it reached for it."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            found.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            found.add(node.attr)
+        elif isinstance(node, ast.alias):
+            found.add(node.asname or node.name.rpartition(".")[2])
+    return found
+
+
+def _writes_through_self(func: ast.expr) -> bool:
+    """``self.<something>.<writing member>`` — the one shape in which a composer could write."""
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr in CONTEXT_WRITE_MEMBERS
+        and isinstance(func.value, ast.Attribute)
+        and isinstance(func.value.value, ast.Name)
+        and func.value.value.id == "self"
+    )
+
+
+def check_context_writes_nothing(pkg_root: Path) -> list[Violation]:
+    """Rule 38: the Context Core reads, and calls nothing that writes (ADR 0032 §6).
+
+    The rule that makes the content/state line automatic instead of case-by-case: everything
+    that costs a ``PermissionDecision`` is out by construction, because a composer that cannot
+    reach the Guardian cannot ask it for one and a composer that cannot call a writing member
+    cannot change anything it was handed.
+
+    Reads **calls**, where contract 14 reads imports. A port comes through a constructor, so
+    ``self._repository.save(...)`` names no module and would pass every import contract there is.
+    """
+    rule = "context-writes-nothing"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root / CONTEXT_DIR):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, node.func.attr, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and _writes_through_self(node.func)
+        )
+    return found
+
+
+def check_context_is_not_recorded(pkg_root: Path) -> list[Violation]:
+    """Rule 39: whatever names a snapshot names no audit event and no provider request.
+
+    Symmetric on purpose, and per module rather than per package: the day somebody writes the
+    line that puts the context into a prompt, that line is in a module that already holds the
+    snapshot, and this is what it meets. ADR 0032 §7 says what has to happen before the door
+    reopens — the four questions of §57, answered, not the four questions of §57, remembered.
+    """
+    rule = "context-is-not-recorded"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        named = _named(path)
+        if CONTEXT_SNAPSHOT not in named:
+            continue
+        name = module_name(path, pkg_root)
+        found.extend(
+            Violation(rule, name, forbidden, 0)
+            for forbidden in sorted(named & CONTEXT_NOT_RECORDED)
+        )
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -1737,6 +1857,8 @@ RULES: dict[str, Rule] = {
     "perception-reads-no-window-titles": check_no_window_titles,
     "perception-adapter-decides-nothing": check_adapter_names_no_state,
     "platform-choice-is-a-statement": check_platform_choice_is_a_statement,
+    "context-writes-nothing": check_context_writes_nothing,
+    "context-is-not-recorded": check_context_is_not_recorded,
 }
 
 
@@ -2071,6 +2193,26 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("capture-stays-on-the-machine", "CAPTURE_MODULES", DETECTOR),
     Constant(
         "capture-stays-on-the-machine",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # context-is-not-recorded (rule 39, ADR 0032 §7)
+    Constant("context-is-not-recorded", "CONTEXT_NOT_RECORDED", DETECTOR),
+    Constant("context-is-not-recorded", "CONTEXT_SNAPSHOT", DETECTOR),
+    Constant(
+        "context-is-not-recorded",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # context-writes-nothing (rule 38, ADR 0032 §6)
+    Constant("context-writes-nothing", "CONTEXT_DIR", DETECTOR),
+    Constant("context-writes-nothing", "CONTEXT_WRITE_MEMBERS", DETECTOR),
+    Constant(
+        "context-writes-nothing",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

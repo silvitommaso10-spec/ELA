@@ -35,6 +35,7 @@ INVOCATIONS: dict[str, tuple[str, ...]] = {
     "diagnostics": ("diagnostics",),
     "approvals": ("approvals",),
     "perception": ("perception",),
+    "context": ("context",),
     "task create": ("task", "create", "una cosa"),
     "task list": ("task", "list"),
     "task show": ("task", "show", MISSING),
