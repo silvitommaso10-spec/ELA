@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import platform
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from ela.audit.verifier import AuditVerifier
@@ -23,17 +24,22 @@ from ela.composition.system import SystemClock, UuidGenerator
 from ela.context import ContextCore
 from ela.devices import DeviceOrchestrator, DeviceRegistry
 from ela.devices.local import LOCAL_DEVICE_ID
-from ela.domain import Actor, ActorKind
+from ela.domain import Actor, ActorKind, RawSpeech
 from ela.executive import Executor, TaskRunner
 from ela.infrastructure.perception import (
+    Audition,
     DarwinProbe,
+    OnlineSpeechCommand,
+    Play,
     SaySpeechCommand,
     ScreenCaptureCommand,
+    Speak,
     UnsupportedProbe,
     UnsupportedScreenCapture,
     UnsupportedSpeech,
     UnsupportedTextRecognition,
     VisionTextRecognition,
+    sweep_speech_files,
 )
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
@@ -48,6 +54,8 @@ from ela.infrastructure.persistence import (
 from ela.perception import PerceptionCore
 from ela.permissions import PermissionGuardian, production_catalogue
 from ela.ports import (
+    SPEECH_NO_KEY,
+    SPEECH_NO_PLAYER,
     ApprovalStore,
     AuditLog,
     AuthorizationStore,
@@ -63,16 +71,19 @@ from ela.ports import (
     TextRecognitionPort,
 )
 from ela.providers.anthropic import anthropic_provider
+from ela.providers.elevenlabs import ElevenLabsVoice
 from ela.providers.registry import ProviderRegistry
 from ela.routing import ModelRouter
 from ela.tasks.engine import LIVE_STATES, TaskEngine
 from ela.tools import (
+    DIRECTORY_MODE,
     CaptureStore,
     ToolRegistry,
     VerifierRegistry,
     production_tools,
     production_verifiers,
 )
+from ela.tools.settings import speech_dir_beside
 
 __all__ = ["ELA_ACTOR", "WORKSPACE_MODE", "Database", "Ela", "build"]
 
@@ -151,6 +162,22 @@ class Ela:
     to be able to ask *whether ELA has a voice here* without going through a capability, an
     approval and a step. Asking is free and silent — two syscalls, no permission, no sound.
     """
+    speech_online: SpeechPort
+    """How ELA speaks in the voice of §9 — and the only path on which what ELA says leaves this
+    machine (M11.3, ADR 0034).
+
+    A second field and not a replacement: the local voice does not go away. It is what speaks when
+    there is no network, when the provider is unusable, and for the sentences that must not leave
+    — and nothing chooses between the two by itself, because the two are different permissions
+    (ADR 0034 §5).
+    """
+    audition: Audition
+    """Hearing a voice before choosing it, without a task per attempt (ADR 0034 §9).
+
+    On ``Ela`` because the routes need it and the CLI may not build it: architecture rule 27 keeps
+    adapters out of everything but the composition root, and rule 28 keeps the CLI a client. What
+    it can say is fixed in its own module — two sentences from §9, written in the repository.
+    """
     perception: PerceptionCore
     """What ELA believes about the machine it runs on (§10, §11; M10.1, ADR 0028).
 
@@ -159,9 +186,75 @@ class Ela:
     continuous loop is off by default: an observer nobody reads should not be watching.
     """
 
+    speech_dir: Path
+    """Where the audio of a sentence exists while it plays, and where nothing should ever be.
+
+    On ``Ela`` for the reason ``captures`` is: the start-up sweep lives in the ``lifespan``, and
+    ``ela.api`` may not name an adapter (architecture rule 27) — so what the API reaches is this
+    object and :meth:`sweep_speech`, not :mod:`ela.infrastructure.perception`.
+    """
+
+    def sweep_speech(self) -> int:
+        """Delete what a crash between making the audio's file and unlinking it would leave.
+
+        Normally zero (ADR 0034 §7). It is not a retention policy — there is nothing kept to
+        retain — it is a floor being swept at the one moment ELA is certain to reach.
+        """
+        return sweep_speech_files(self.speech_dir)
+
     async def aclose(self) -> None:
         """Release the database connections. Idempotent, as ``dispose`` is."""
         await self.database.dispose()
+
+
+def _audition_speaker(online: ElevenLabsVoice, player: OnlineSpeechCommand | None) -> Speak:
+    """Say one repository phrase with one voice on one model, and report (ADR 0034 §9).
+
+    The audition is the only caller that chooses a voice, because choosing is what it is for. It
+    reaches the provider directly rather than through ``voice.speak_online``: the capability
+    requires an authorization, and six voices would be six approvals — which is exactly the cost
+    the user refused. What makes that safe is not this function, it is that nothing on this path
+    can carry a sentence of the user's: the words are literals in
+    :mod:`ela.infrastructure.perception.audition`, and architecture rule 43 keeps them so.
+    """
+
+    async def speak(phrase: str, voice_id: str, model: str) -> RawSpeech:
+        if player is None:
+            return RawSpeech(error=SPEECH_NO_PLAYER)
+        if online.api_key_missing:
+            return RawSpeech(error=SPEECH_NO_KEY)
+        said = await online.synthesise(phrase, voice_id=voice_id, model=model)
+        if said.failure is not None:
+            return RawSpeech(
+                error=said.failure.code,
+                retryable=said.failure.retryable,
+                synthesis_seconds=said.seconds,
+            )
+        return await player.play(said)
+
+    return speak
+
+
+def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand | None) -> Play:
+    """Play the sample the provider already holds — **nothing of ELA's is sent** (ADR 0034 §9).
+
+    Two downloads and no synthesis: no characters, no credits, and no sentence on the wire. It is
+    the step that lets somebody hear twenty voices before spending anything, and it is best effort
+    — a library voice's metadata answers ``voice_not_found`` sometimes and ``200`` other times,
+    measured on the same voice minutes apart.
+    """
+
+    async def play(voice_id: str) -> RawSpeech:
+        if player is None:
+            return RawSpeech(error=SPEECH_NO_PLAYER)
+        if online.api_key_missing:
+            return RawSpeech(error=SPEECH_NO_KEY)
+        said = await online.preview(voice_id)
+        if said.failure is not None:
+            return RawSpeech(error=said.failure.code, retryable=said.failure.retryable)
+        return await player.play(said)
+
+    return play
 
 
 async def build(settings: Settings) -> Ela:
@@ -245,6 +338,17 @@ async def build(settings: Settings) -> Ela:
         screen: ScreenCapturePort
         recognition: TextRecognitionPort
         speech: SpeechPort
+        speech_online: SpeechPort
+        playing: OnlineSpeechCommand | None = None
+        # The provider is built on every platform and answers everywhere: without a key or
+        # without a voice it reports which of the two is missing and touches no network
+        # (ADR 0020 §2's shape, ADR 0034 §5's two codes). What is macOS-only is the *playing*.
+        online = ElevenLabsVoice(settings.elevenlabs)
+        scratch = speech_dir_beside(settings.captures.capture_dir)
+        # Created here, with the mode every private directory of ELA has, because ``mkstemp`` on
+        # a directory that is not there raises — and the adapter would report that as a player
+        # that ended badly, for a player that was never started (found on the machine, M11.3).
+        scratch.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
         if darwin:
             probe = DarwinProbe(timeout=settings.perception.probe_timeout)
             screen = ScreenCaptureCommand(timeout=settings.captures.capture_timeout)
@@ -252,11 +356,18 @@ async def build(settings: Settings) -> Ela:
             speech = SaySpeechCommand(
                 timeout=settings.voice.voice_timeout, voice=settings.voice.voice_name
             )
+            playing = OnlineSpeechCommand(
+                synthesise=online.synthesise,
+                unconfigured=online.unconfigured,
+                directory=scratch,
+            )
+            speech_online = playing
         else:
             probe = UnsupportedProbe()
             screen = UnsupportedScreenCapture()
             recognition = UnsupportedTextRecognition()
             speech = UnsupportedSpeech()
+            speech_online = UnsupportedSpeech()
         tools = production_tools(
             root=root,
             clock=clock,
@@ -271,6 +382,9 @@ async def build(settings: Settings) -> Ela:
             speech=speech,
             voice=settings.voice.voice_name,
             voice_enabled=settings.voice.voice_enabled,
+            speech_online=speech_online,
+            voice_id=settings.elevenlabs.elevenlabs_voice_id,
+            model=settings.elevenlabs.elevenlabs_model,
         )
         verifiers = production_verifiers(root=root, router=router, captures=captures)
 
@@ -368,5 +482,8 @@ async def build(settings: Settings) -> Ela:
         captures=captures,
         context=context,
         speech=speech,
+        speech_dir=scratch,
+        speech_online=speech_online,
+        audition=Audition(speak=_audition_speaker(online, playing), play=_sample(online, playing)),
         perception=perception,
     )

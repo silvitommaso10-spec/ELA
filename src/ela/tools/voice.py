@@ -55,6 +55,7 @@ __all__ = [
     "VOICE_UNSUPPORTED",
     "SpeakTool",
     "digest_of",
+    "sentence_of",
 ]
 
 VOICE_SPEAK: Final = CapabilityId("voice.speak")
@@ -79,6 +80,32 @@ VOICE_FAILED: Final = "voice.failed"
 """The helper ran and ended badly. The exit status is in the message; what it *means* is not
 ELA's to guess — a voice that is not installed, an audio device that went away, and a system that
 refused all land here, and none of them is a claim about the machine."""
+
+
+def sentence_of(arguments: JsonMapping) -> str | Outcome:
+    """The sentence to say, or the refusal that says why there is not one.
+
+    Shared by both voices (M11.3), and shared rather than copied because the two tools must agree
+    on the ceiling to the character: ``voice.speak`` and ``voice.speak_online`` are two
+    permissions over the *same* limit, and a second spelling of it is the first place they would
+    drift apart.
+
+    The Guardian validated the schema already (ADR 0011 §3); a tool checks again because it never
+    trusts its caller (§28).
+    """
+    text = arguments.get("text")
+    purpose = arguments.get("purpose")
+    if not isinstance(text, str) or not text:
+        return Outcome({}, ARGUMENTS_INVALID, "text must be a non-empty string")
+    if len(text) > MAX_SPOKEN_CHARACTERS:
+        return Outcome(
+            {},
+            ARGUMENTS_INVALID,
+            f"text must be at most {MAX_SPOKEN_CHARACTERS} characters, not {len(text)}",
+        )
+    if not isinstance(purpose, str) or not purpose:
+        return Outcome({}, ARGUMENTS_INVALID, "purpose must be a non-empty string")
+    return text
 
 
 def digest_of(text: str) -> str:
@@ -130,18 +157,10 @@ class SpeakTool(Tool):
         self._enabled = enabled
 
     async def _run(self, arguments: JsonMapping) -> Outcome:
-        text = arguments.get("text")
-        purpose = arguments.get("purpose")
-        if not isinstance(text, str) or not text:
-            return Outcome({}, ARGUMENTS_INVALID, "text must be a non-empty string")
-        if len(text) > MAX_SPOKEN_CHARACTERS:
-            return Outcome(
-                {},
-                ARGUMENTS_INVALID,
-                f"text must be at most {MAX_SPOKEN_CHARACTERS} characters, not {len(text)}",
-            )
-        if not isinstance(purpose, str) or not purpose:
-            return Outcome({}, ARGUMENTS_INVALID, "purpose must be a non-empty string")
+        asked = sentence_of(arguments)
+        if isinstance(asked, Outcome):
+            return asked
+        text = asked
         # The user's switch first, the machine's answer second: both are refusals, and the one
         # the user can undo is the one worth hearing when both are true.
         if not self._enabled:

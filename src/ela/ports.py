@@ -112,6 +112,23 @@ __all__ = [
     "ROUTING_UNKNOWN_PROVIDER",
     "ROUTING_UNKNOWN_TASK_TYPE",
     "RoutingError",
+    "SPEECH_AUTHENTICATION_ERROR",
+    "SPEECH_ERROR_CODES",
+    "SPEECH_MALFORMED_RESPONSE",
+    "SPEECH_NO_KEY",
+    "SPEECH_NO_PLAYER",
+    "SPEECH_NO_VOICE",
+    "SPEECH_PLAYBACK_FAILED",
+    "SPEECH_PLAYBACK_TIMEOUT",
+    "SPEECH_QUOTA_EXCEEDED",
+    "SPEECH_RATE_LIMITED",
+    "SPEECH_REJECTED",
+    "SPEECH_SERVER_ERROR",
+    "SPEECH_TIMEOUT",
+    "SPEECH_TOO_MUCH_AUDIO",
+    "SPEECH_UNKNOWN_MODEL",
+    "SPEECH_UNKNOWN_VOICE",
+    "SPEECH_UNREACHABLE",
     "ScreenCapturePort",
     "SpeechPort",
     "TaskRepository",
@@ -1195,6 +1212,97 @@ class SpeechPort(Protocol):
         Returns when the speaking is over: the duration of the call *is* the duration of the
         sentence, which is why the caller's timeout has to allow for a whole one.
         """
+
+
+SPEECH_NO_KEY: Final = "speech.no_key"
+"""No API key was configured for the online voice: ``ELA_ELEVENLABS_API_KEY`` is not set.
+
+**Its own code, and not one shared with the missing voice**, because the two are different facts
+with different answers — one is a credential nobody supplied, the other a choice nobody has made
+— and the user's own words settled it: *«non hai messo la chiave» e «la chiave non è valida» sono
+due fatti diversi con due azioni diverse.* It is ADR 0030 §8 applied to an error instead of to a
+reading, and it is the third refusal in a row (``voice.disabled`` / ``voice.unsupported``,
+ADR 0033 §9) that exists because collapsing refusals loses the only part that is actionable.
+
+No network is touched: the failure is known before there is anything to send (ADR 0020 §2)."""
+SPEECH_NO_VOICE: Final = "speech.no_voice"
+"""No voice was chosen: ``ELA_ELEVENLABS_VOICE_ID`` is not set. Nothing is sent, and the answer
+is an audition away — which is a different sentence from "your key was refused"."""
+SPEECH_AUTHENTICATION_ERROR: Final = "speech.authentication_error"
+"""The credential was refused. **Arrives as a 400 and not a 401** on this provider (measured,
+ADR 0034 §1.3), which is why the vocabulary is mapped on the body's ``type`` and not on the
+status code."""
+SPEECH_UNKNOWN_VOICE: Final = "speech.unknown_voice"
+"""The provider does not know that voice — for this account, or at all."""
+SPEECH_UNKNOWN_MODEL: Final = "speech.unknown_model"
+"""The provider does not know that model. Not reachable through configuration, which is checked
+at start-up against the models ELA has measured; reachable by a provider retiring one."""
+SPEECH_QUOTA_EXCEEDED: Final = "speech.quota_exceeded"
+"""The account is out of credits. Not retryable by ELA: what fixes it is a human, next month or
+on a different plan."""
+SPEECH_RATE_LIMITED: Final = "speech.rate_limited"
+"""Too many requests, or too many at once — the measured ceiling of this plan is ten concurrent."""
+SPEECH_SERVER_ERROR: Final = "speech.server_error"
+"""The provider failed on its own side."""
+SPEECH_UNREACHABLE: Final = "speech.unreachable"
+"""The provider could not be reached: no network, no DNS, no route."""
+SPEECH_TIMEOUT: Final = "speech.timeout"
+"""The audio did not arrive in time. **Nothing was said** — which is the difference from
+``voice.timeout`` of ADR 0033 §9, where the sentence had already started."""
+SPEECH_REJECTED: Final = "speech.rejected"
+"""The request was turned down for a reason that is not one of the above."""
+SPEECH_MALFORMED_RESPONSE: Final = "speech.malformed_response"
+"""An answer arrived and is unusable: no audio, or not the audio that was asked for. Kept apart
+from :data:`SPEECH_REJECTED` for the reason of ADR 0020 §7 — a broken channel and a refused
+request send whoever is investigating in opposite directions."""
+SPEECH_TOO_MUCH_AUDIO: Final = "speech.too_much_audio"
+"""The answer went past the ceiling **while it was being read**, and reading stopped there. A
+body that does not end is not a sentence, and it is not ELA's to hold in memory (§33)."""
+SPEECH_NO_PLAYER: Final = "speech.no_player"
+"""This operating system has no audio player ELA knows about.
+
+Distinct from ``voice.unsupported`` (ADR 0033 §9) and not a duplicate of it: that one is "there
+is no **voice** here", this one is "there is nothing here that can play a file somebody else
+synthesised". On Linux both are true and they are still two different missing things, and ELA
+says which one it looked for."""
+SPEECH_PLAYBACK_FAILED: Final = "speech.playback_failed"
+"""The audio arrived and the player ended badly: no output device, a format it refused, a signal.
+What it *means* is not ELA's to guess (ADR 0033 §9)."""
+SPEECH_PLAYBACK_TIMEOUT: Final = "speech.playback_timeout"
+"""The player outstayed the length of its own audio and was stopped. Like ``voice.timeout``, this
+does **not** mean nothing happened: it means ELA stopped mid-word, and for whoever heard it those
+are two different things."""
+
+SPEECH_ERROR_CODES: Final = frozenset(
+    {
+        SPEECH_NO_KEY,
+        SPEECH_NO_PLAYER,
+        SPEECH_NO_VOICE,
+        SPEECH_AUTHENTICATION_ERROR,
+        SPEECH_UNKNOWN_VOICE,
+        SPEECH_UNKNOWN_MODEL,
+        SPEECH_QUOTA_EXCEEDED,
+        SPEECH_RATE_LIMITED,
+        SPEECH_SERVER_ERROR,
+        SPEECH_UNREACHABLE,
+        SPEECH_TIMEOUT,
+        SPEECH_REJECTED,
+        SPEECH_MALFORMED_RESPONSE,
+        SPEECH_TOO_MUCH_AUDIO,
+        SPEECH_PLAYBACK_FAILED,
+        SPEECH_PLAYBACK_TIMEOUT,
+    }
+)
+"""The closed vocabulary of :attr:`~ela.domain.RawSpeech.error` (ADR 0034 §5).
+
+Here and not in the adapter, for the reason ADR 0020 §7 put the model provider's codes here: a
+caller must be able to tell "the network is gone" from "the key was refused" **without importing
+— or knowing — who produced it**. A second speech provider reports these sixteen or it is not
+interchangeable with the first.
+
+Which of them are worth trying again is not written into the name: it travels with the failure,
+because ``retryable`` describes the nature of a failure and not the attempts left (ADR 0020 §7).
+"""
 
 
 @runtime_checkable

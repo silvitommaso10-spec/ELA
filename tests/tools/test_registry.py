@@ -27,6 +27,7 @@ from ela.tools import (
     PERCEPTION_CAPTURE_SCREEN,
     PERCEPTION_READ_SCREEN_TEXT,
     VOICE_SPEAK,
+    VOICE_SPEAK_ONLINE,
     CaptureSettings,
     CaptureStore,
     EchoTool,
@@ -221,6 +222,9 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         speech=FakeSpeech(),
         voice="Alice",
         voice_enabled=True,
+        speech_online=FakeSpeech(),
+        voice_id="VZOd9FMXDnXRZpGn0thg",
+        model="eleven_flash_v2_5",
     )
     return tools, production_verifiers(root=tmp_path, router=router, captures=captures), captures
 
@@ -242,6 +246,7 @@ def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) 
         PERCEPTION_CAPTURE_SCREEN,
         PERCEPTION_READ_SCREEN_TEXT,
         VOICE_SPEAK,
+        VOICE_SPEAK_ONLINE,
     ]
     assert {v.capability_id for v in verifiers.verifiers()} == {
         t.capability_id for t in tools.tools()

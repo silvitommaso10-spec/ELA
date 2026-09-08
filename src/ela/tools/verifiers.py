@@ -33,7 +33,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar, Final
 
-from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping
+from ela.domain import CapabilityId, ErrorMetadata, ExecutionResult, JsonMapping
 from ela.ports import ModelRouterPort, RoutingError
 from ela.tools.captures import (
     CAPTURE_CODES,
@@ -58,6 +58,7 @@ __all__ = [
     "CAPTURE_MATCHES",
     "CAPTURE_VERIFIER_NAME",
     "SpeakVerifier",
+    "ONLINE_SPEECH_VERIFIER_NAME",
     "SPEECH_VERIFIER_NAME",
     "SPEECH_TOO_FAST",
     "SPEECH_TOOK_REAL_TIME",
@@ -95,6 +96,9 @@ MODEL_VERIFIER_NAME: Final = "model-complete-verifier"
 CAPTURE_VERIFIER_NAME: Final = "perception-screen-verifier"
 TEXT_VERIFIER_NAME: Final = "perception-screen-text-verifier"
 SPEECH_VERIFIER_NAME: Final = "voice-speak-verifier"
+ONLINE_SPEECH_VERIFIER_NAME: Final = "voice-speak-online-verifier"
+"""The same verifier, registered for the online capability: one class, two names, because a name
+is what appears in a result and two capabilities must not report the same one (M11.3)."""
 
 CAPTURE_EXISTS: Final = "capture.exists"
 """The name the tool reported leads to a regular file, through no link, inside the capture store,
@@ -559,6 +563,13 @@ class SpeakVerifier(Verifier):
     by the only witness available — the clock. A ``say`` that returned in a tenth of the time the
     words take did not play them.
 
+    **One class, two capabilities** (M11.3). ``voice.speak`` and ``voice.speak_online`` are two
+    permissions over the same act, and the two conditions hold for both without a line changing:
+    the digest proves ELA asked for the words it was given, and the clock proves the sound took
+    the time those words take. The only care needed was on the other side — the online tool
+    reports **playback** in ``spoken_seconds`` and the round-trip apart, because a duration that
+    included the network would inflate exactly the number this verifier leans on.
+
     **What it deliberately does not check: that an audio output device existed.** Reading that
     would need a new perception family and a new field on ``RawObservation``, which M11.1 declared
     out of scope; and :data:`MIN_SECONDS_PER_CHARACTER` catches the case that reading was wanted
@@ -572,8 +583,10 @@ class SpeakVerifier(Verifier):
         SPEECH_TEXT_MISMATCH,
     }
 
-    def __init__(self, *, name: str = SPEECH_VERIFIER_NAME) -> None:
-        super().__init__(VOICE_SPEAK, name=name)
+    def __init__(
+        self, capability_id: CapabilityId = VOICE_SPEAK, *, name: str = SPEECH_VERIFIER_NAME
+    ) -> None:
+        super().__init__(capability_id, name=name)
 
     async def _check(
         self, condition: str, arguments: JsonMapping, result: ExecutionResult

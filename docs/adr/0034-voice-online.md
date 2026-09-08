@@ -123,6 +123,17 @@ E la legge letteralmente. Il prompt di un `Approval` è
 capability non compare. Il nome della capability *è* la superficie del consenso — l'unico posto in
 cui la parola giusta arriva a chi decide.
 
+Capability aggiunte:
+
+| Capability | Rischio | Scope | Argomenti scoped | Autorizzazione | Argomenti obbligatori | Argomenti opzionali |
+|---|---|---|---|---|---|---|
+| `voice.speak_online` | MEDIUM | — | — | sì | `text: string`, `purpose: string` | — |
+
+La riga è identica a quella di `voice.speak` (ADR 0033 §3) tranne che nell'id, ed è esattamente il
+punto: **lo stesso atto, con lo stesso schema e lo stesso rischio, sotto un permesso diverso.**
+Nessuno scope, per la stessa ragione di allora — lo scope del Guardian è a forma di percorso, e lo
+scope naturale del parlare è *a chi* e *quando*.
+
 Perché due e non una con un provider intercambiabile: la protezione di questa capability non è
 uno scope — non esiste a forma di percorso, ADR 0033 §3 — ma **il grant**. Con una capability
 sola, un grant «puoi parlare» diventerebbe «puoi mandare le mie parole a ElevenLabs» il giorno in
@@ -249,6 +260,29 @@ un'approvazione per prova. Quindi due gradini:
 Ciò che esce durante un'audizione è **un letterale del repository**, e la forma che lo rende vero
 non è un commento ma un'assenza: **nessuna funzione dell'audizione accetta testo** (regola 43).
 
+Rotte aggiunte, nella forma della tabella di ADR 0023 §6:
+
+| Metodo | Rotta | Cosa risponde |
+|---|---|---|
+| `GET` | `/voice` | quali voci ELA ha, quale sta usando, e che cosa il fornitore conserva |
+| `POST` | `/voice/audition` | fa dire a una voce le due frasi di §9, e riporta che cosa è costato |
+| `POST` | `/voice/preview` | riproduce il campione che il fornitore ha già — non esce niente di ELA |
+
+Nessuna delle tre ha **un campo per il testo**, ed è la stessa decisione della regola 43 scritta
+una seconda volta: l'assenza sta nello schema prima che in una regola.
+
+Comandi aggiunti, nella forma della tabella di ADR 0024 §3:
+
+| Comando | Rotta | Uscite |
+|---|---|---|
+| `ela voice` | `GET /voice` | `0` `1` `2` `3` |
+| `ela voice preview` | `POST /voice/preview` | `0` `1` `2` `3` |
+| `ela voice audition` | `POST /voice/audition` | `0` `1` `2` `3` |
+
+`ela voice` è il **callback del gruppo** e non un sottocomando, perché `ela voice` scritto da solo
+deve rispondere e non stampare un aiuto: è il posto in cui si guarda quale voce ELA sta usando, ed
+è quindi il posto in cui la ritenzione va scritta (§11).
+
 **E l'audizione non sta nella CLI, per la regola 27**: solo `ela.composition` può nominare
 `ela.providers` e `ela.infrastructure`, quindi il lavoro sta dietro l'API locale e la CLI resta
 un client (regola 28). È una deviazione dalla spec, imposta dall'architettura e non scelta, ed è
@@ -343,4 +377,12 @@ la CLI, e un test lega le due cose: se il booleano è vero e la frase manca, il 
 - **La memoria della conversazione** resta di §21, **§8** resta non implementato, e **il grant
   riusabile di §59** resta una strada registrata: tutti e tre dove ADR 0033 li ha lasciati.
 - **Il debito di nome cresce a tre teste** e resta di M11.2 (§Alternative).
-- **Il preview è best effort**: i metadati di una voce di libreria non sono affidabili, misurato.
+- **Il preview è best effort**: i metadati di una voce di libreria non sono affidabili, misurato —
+  e verificato dal vivo nei due versi: un campione riprodotto, e `speech.unknown_voice` su una
+  voce che il fornitore non descrive.
+- **Una capability nuova non è eseguibile su un nodo registrato prima di lei.** Scoperto qui, e
+  non è di qui: `DeviceRegistry.ensure_local` (ADR 0016) registra la lista dei tool **la prima
+  volta** e poi restituisce il nodo così com'è, quindi un'ELA che girava già risponde
+  `waiting_device` a uno step di `voice.speak_online` finché la riga del nodo non viene rifatta.
+  Vale per ogni capability aggiunta dopo il primo avvio — M10.2 e M10.3 avevano lo stesso buco e
+  nessuno ci era passato. Non si ripara qui: è una decisione di ADR 0016 e merita la sua.

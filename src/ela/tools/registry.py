@@ -39,6 +39,7 @@ from ela.tools.notes import WriteNoteTool
 from ela.tools.screen import CaptureScreenTool, CaptureStore
 from ela.tools.screen_text import ReadScreenTextTool
 from ela.tools.verifiers import (
+    ONLINE_SPEECH_VERIFIER_NAME,
     CaptureScreenVerifier,
     EchoVerifier,
     ModelCompleteVerifier,
@@ -47,6 +48,7 @@ from ela.tools.verifiers import (
     WriteNoteVerifier,
 )
 from ela.tools.voice import SpeakTool
+from ela.tools.voice_online import VOICE_SPEAK_ONLINE, SpeakOnlineTool
 
 __all__ = [
     "ToolRegistry",
@@ -162,6 +164,9 @@ def production_tools(
     speech: SpeechPort,
     voice: str,
     voice_enabled: bool,
+    speech_online: SpeechPort,
+    voice_id: str | None,
+    model: str,
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -176,6 +181,9 @@ def production_tools(
             CaptureScreenTool(captures, screen, probe, clock, ids),
             ReadScreenTextTool(captures, recognition, clock, ids, languages=languages),
             SpeakTool(speech, clock, ids, voice=voice, enabled=voice_enabled),
+            SpeakOnlineTool(
+                speech_online, clock, ids, voice_id=voice_id, model=model, enabled=voice_enabled
+            ),
         )
     )
 
@@ -210,5 +218,8 @@ def production_verifiers(
             CaptureScreenVerifier(captures.directory, captures.settings.capture_ttl),
             ReadScreenTextVerifier(captures.directory, captures.settings.capture_ttl),
             SpeakVerifier(),
+            # The same class, a second capability: two permissions over one act, verified by the
+            # same two conditions (ADR 0034 §6). What differs is which grant was spent.
+            SpeakVerifier(VOICE_SPEAK_ONLINE, name=ONLINE_SPEECH_VERIFIER_NAME),
         )
     )

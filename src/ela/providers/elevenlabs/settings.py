@@ -38,6 +38,7 @@ __all__ = [
     "MAX_TIMEOUT_SECONDS",
     "MODELS",
     "PLAYBACK_SLACK_SECONDS",
+    "TEXT_IS_RETAINED",
     "ElevenLabsSettings",
 ]
 
@@ -112,6 +113,27 @@ MAX_TIMEOUT_SECONDS: Final = 120.0
 """A ceiling on the knob, in the shape of every other ceiling in ELA: a timeout nobody bounded is
 a way to make one sentence hold a step open for an afternoon."""
 
+TEXT_IS_RETAINED: Final = True
+"""**What ELA says is kept by this provider, and can be read back in the account's dashboard.**
+
+Not a doubt and not a policy quotation — measured on 2026-09-08, twice over:
+
+* ``enable_logging=false``, the flag that would turn retention off, answers **200 and returns a
+  ``history-item-id`` anyway** on this plan. Zero Retention Mode is an enterprise feature; asking
+  for it here changes nothing, so ELA does not ask and does not pretend.
+* ``GET /v1/history`` gave back the reconnaissance sentences **verbatim**.
+
+The user accepted this cost knowingly, and the decision was that **the choice must stay visible**:
+this constant is what ``/diagnostics`` and ``ela voice`` say out loud wherever somebody looks at
+which voice ELA is using (ADR 0034 §11). Not a warning before every sentence — a warning that
+repeats is a warning people learn to skip, and this is a fact about the configuration, not an
+event.
+
+The receipt is the other half: every result carries the ``history_item_id`` of the copy that was
+kept, so the retention is something a person can go and look at rather than something they were
+told about (ADR 0034 §10).
+"""
+
 DEFAULT_MAX_RETRIES: Final = 1
 """Half of what the model provider allows (ADR 0020 §8), for a reason that belongs to this
 provider only: **every retry is one more copy of the text kept by ElevenLabs**, and one more
@@ -148,6 +170,32 @@ class ElevenLabsSettings(BaseSettings):
     elevenlabs_max_retries: Annotated[int, Field(ge=0, le=MAX_RETRIES_CEILING)] = (
         DEFAULT_MAX_RETRIES
     )
+
+    @property
+    def configured(self) -> bool:
+        """Whether the online voice has both of the things it needs."""
+        return self.elevenlabs_api_key is not None and self.elevenlabs_voice_id is not None
+
+    @property
+    def text_is_retained(self) -> bool:
+        """Whether this provider keeps what ELA says. Read :data:`TEXT_IS_RETAINED`.
+
+        A property, and on the settings object, so that ``/diagnostics`` and ``ela voice`` can
+        state the fact **without naming the adapter** — architecture rule 27 keeps concrete
+        implementations out of ``ela.api``, and a fact the user has to be shown must not depend
+        on a module the API is not allowed to import.
+        """
+        return TEXT_IS_RETAINED
+
+    @property
+    def both_models(self) -> tuple[str, ...]:
+        """Every measured model, the configured one first (ADR 0034 §9).
+
+        The order is the decision: an audition that plays the other model first would be asking
+        "which of these two", when the question is "is the other one worth 4,4 seconds more
+        silence than the one you already have".
+        """
+        return (self.elevenlabs_model, *sorted(MODELS - {self.elevenlabs_model}))
 
     @field_validator("elevenlabs_api_key")
     @classmethod

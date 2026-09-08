@@ -231,6 +231,8 @@ VOICE_WRITE_MODES = frozenset({"w", "a", "x", "+"})
 #: that is allowed to send the user's words out cannot also be the module that decides where
 #: they go.
 ELEVENLABS_ENDPOINT = "https://api.elevenlabs.io"
+#: What makes a string an address rather than a word: the scheme separator.
+SCHEME_SEPARATOR = "://"
 #: Names that turn an endpoint into a setting. Class-level annotations only: a local ``url`` built
 #: from the constant is the ordinary way to write a request.
 VOICE_ENDPOINT_FIELDS = frozenset({"base_url", "api_base", "endpoint", "host"})
@@ -1836,7 +1838,11 @@ def check_the_voice_goes_only_where_it_is_declared(pkg_root: Path) -> list[Viola
     ``httpx`` towards ``api.elevenlabs.io``. Three ways that opening could quietly become
     something else, and each is reported:
 
-    * **another host** — any string literal starting with ``http`` that is not the constant;
+    * **another address** — any string literal carrying a scheme separator that is not the
+      constant. Not "starting with ``http``", which was the first spelling and was wrong in a way
+      worth keeping: it also caught the word ``"https"`` used to *check* a scheme, so the adapter
+      would have had to weaken the rule in order to validate a URL. An address is the thing with
+      a ``://`` in it;
     * **a configurable host** — a field called ``base_url``, ``endpoint``, ``host``…, which would
       put the destination of ELA's words in an environment variable, where no diff shows it;
     * **the environment read directly** — the same move, one layer down.
@@ -1856,7 +1862,7 @@ def check_the_voice_goes_only_where_it_is_declared(pkg_root: Path) -> list[Viola
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if node.value.startswith("http") and node.value != ELEVENLABS_ENDPOINT:
+                if SCHEME_SEPARATOR in node.value and node.value != ELEVENLABS_ENDPOINT:
                     found.append(Violation(rule, name, node.value, node.lineno))
             elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 if node.target.id in VOICE_ENDPOINT_FIELDS:
@@ -2521,6 +2527,7 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     # the-voice-goes-only-where-it-is-declared (rule 42, M11.3 dec. H)
     Constant("the-voice-goes-only-where-it-is-declared", "ELEVENLABS_ADAPTER_DIR", DETECTOR),
+    Constant("the-voice-goes-only-where-it-is-declared", "SCHEME_SEPARATOR", DETECTOR),
     Constant("the-voice-goes-only-where-it-is-declared", "VOICE_ENDPOINT_FIELDS", DETECTOR),
     Constant("the-voice-goes-only-where-it-is-declared", "VOICE_ENVIRONMENT_READS", DETECTOR),
     Constant("the-voice-goes-only-where-it-is-declared", "VOICE_PROVIDER_FORBIDDEN", DETECTOR),

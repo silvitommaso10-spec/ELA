@@ -29,6 +29,7 @@ ADR_PATH = REPO_ROOT / "docs" / "adr" / "0024-cli.md"
 DEBTS_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0025-phase-8-debts.md"
 PERCEPTION_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0028-perception-core.md"
 CONTEXT_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0032-context-core.md"
+VOICE_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0034-voice-online.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMMAND_ROW = re.compile(
@@ -52,7 +53,13 @@ def adr_text() -> str:
     """
     return "\n".join(
         path.read_text(encoding="utf-8")
-        for path in (ADR_PATH, DEBTS_ADR_PATH, PERCEPTION_ADR_PATH, CONTEXT_ADR_PATH)
+        for path in (
+            ADR_PATH,
+            DEBTS_ADR_PATH,
+            PERCEPTION_ADR_PATH,
+            CONTEXT_ADR_PATH,
+            VOICE_ADR_PATH,
+        )
     )
 
 
@@ -94,15 +101,22 @@ def documented_command_exits() -> dict[str, frozenset[int]]:
 
 
 def coded_commands() -> set[str]:
-    """Every command the app serves, a sub-command written as its group and its name."""
+    """Every command the app serves, a sub-command written as its group and its name.
+
+    A **group that answers on its own** counts as one of them (M11.3): ``ela voice`` is a group
+    with a callback and ``invoke_without_command``, so it is something a person types and gets an
+    answer from, not a help screen — and the table of ADR 0024 §3 is about what can be typed.
+    """
     found = {command.name for command in app.registered_commands if command.name}
     for group in app.registered_groups:
-        assert group.typer_instance is not None
+        assert group.typer_instance is not None and group.name is not None
         found |= {
             f"{group.name} {command.name}"
             for command in group.typer_instance.registered_commands
             if command.name
         }
+        if group.typer_instance.info.invoke_without_command is True:
+            found.add(group.name)
     return found
 
 
@@ -110,8 +124,8 @@ def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:
     assert set(documented_commands()) == coded_commands()
 
 
-def test_there_are_twenty_of_them() -> None:
-    assert len(coded_commands()) == 20
+def test_there_are_twenty_three_of_them() -> None:
+    assert len(coded_commands()) == 23
 
 
 def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
@@ -122,7 +136,14 @@ def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
     """
     added = set(documented_commands()) - set(documented_commands_of(cli_adr_text()))
 
-    assert added == {"task results", "perception", "context"}
+    assert added == {
+        "task results",
+        "perception",
+        "context",
+        "voice",
+        "voice preview",
+        "voice audition",
+    }
 
 
 def test_only_two_commands_are_local_and_they_are_the_two_that_cannot_be_calls() -> None:

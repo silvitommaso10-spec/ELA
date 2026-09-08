@@ -12,6 +12,7 @@ it is readable in the account's own history, and no flag on this plan changes th
 
 from __future__ import annotations
 
+from ela.providers.elevenlabs.provider import PROVIDER_NAME, ElevenLabsVoice, Synthesis
 from ela.providers.elevenlabs.settings import (
     AUDIO_BYTES_PER_SECOND,
     AUDIO_FORMAT,
@@ -20,6 +21,7 @@ from ela.providers.elevenlabs.settings import (
     MAX_AUDIO_BYTES,
     MODELS,
     PLAYBACK_SLACK_SECONDS,
+    TEXT_IS_RETAINED,
     ElevenLabsSettings,
 )
 
@@ -31,5 +33,9 @@ __all__ = [
     "MAX_AUDIO_BYTES",
     "MODELS",
     "PLAYBACK_SLACK_SECONDS",
+    "PROVIDER_NAME",
+    "TEXT_IS_RETAINED",
     "ElevenLabsSettings",
+    "ElevenLabsVoice",
+    "Synthesis",
 ]
