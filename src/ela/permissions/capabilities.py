@@ -210,6 +210,7 @@ WORKSPACE_WRITE_NOTE: Final = CapabilityId("workspace.write_note")
 MODEL_COMPLETE: Final = CapabilityId("model.complete")
 PERCEPTION_CAPTURE_SCREEN: Final = CapabilityId("perception.capture_screen")
 PERCEPTION_READ_SCREEN_TEXT: Final = CapabilityId("perception.read_screen_text")
+VOICE_SPEAK: Final = CapabilityId("voice.speak")
 
 DEFAULT_NOTES_SCOPE: Final = "workspace/notes"
 """Where ``workspace.write_note`` may write unless the caller says otherwise (ADR 0010 §5).
@@ -415,6 +416,78 @@ def catalogue_v01(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> CapabilityRegist
     return CapabilityRegistry((core_echo(), workspace_write_note(notes_scope), model_complete()))
 
 
+MAX_SPOKEN_CHARACTERS: Final = 600
+"""The longest sentence ``voice.speak`` accepts (M11.1 dec. E).
+
+Restated here rather than imported: ``ela.permissions`` may import nothing but the standard
+library and the domain (architecture rule: ``permissions-imports``), and the catalogue is a
+constant that must not depend on a settings module. ``tests/tools/test_voice.py`` asserts the two
+agree, so a divergence is a failing test and not a silent disagreement about how long ELA may
+talk.
+"""
+
+PHASE_11_INTRODUCED_AT: Final = datetime(2026, 9, 8, tzinfo=UTC)
+"""``created_at`` of what phase 11 adds. A date of its own, and not
+:data:`PHASE_10_INTRODUCED_AT`, for the reason ADR 0029 §13 gave for that one: a phase does not
+get folded into the one before it."""
+
+
+def voice_speak() -> CapabilitySpec:
+    """``voice.speak``, MEDIUM: ELA says a sentence out loud on this machine (M11.1 dec. A).
+
+    The first capability whose effect is **outside the screen**. Everything before it landed
+    somewhere a person could go and look — a row, a file that expires, an HTTP response. A spoken
+    sentence is heard, once, by whoever happens to be in the room.
+
+    **MEDIUM**, and the argument is ADR 0029 §6's applied to a different direction. There the
+    reasoning about ``perception.capture_screen`` was that §29 calls ``model.complete`` MEDIUM
+    "perché il contenuto dell'utente può essere inviato a un provider AI esterno", read one step
+    earlier: the content does not leave, it is *born*. Here it leaves, just not over a network —
+    **it leaves into the room**, and the audience is not something ELA chooses or can even
+    observe. A colleague at the next desk is a recipient ELA never decided on.
+
+    **Always requires an authorization**, because the protection cannot be a scope. The Guardian's
+    scope is path-shaped, and the natural scope of speaking is *to whom* and *when*, which is not
+    a path — the same reason the capture has none (ADR 0029 §6). Forcing one in would produce a
+    scope pretending to be one.
+
+    That means, today, an approval for every sentence, and that cost is real. **The answer is not
+    a lower risk level**: it is that "you may speak freely while I am at the Mac" is an
+    ``Authorization`` of §59 with a TTL and a condition — a reusable grant under
+    ``Rule.APPROVAL_UNLESS_AUTHORIZED``, which is already how ``model.complete`` and
+    ``perception.capture_screen`` work. Registered as the road, and deliberately not built here:
+    a grant written before anybody has had reason to ask for it is what ADR 0028 §4 refused.
+
+    ``purpose`` is **required** and is what the user reads when asked (§30, ADR 0029 §6). ``text``
+    is **not** in ``prompt_arguments``, and that is a decision (M11.1 dec. B): the sentence is
+    ELA's words, and a prompt carrying it would write them into a persisted ``Approval``. The
+    oddity of approving without reading is smaller here than anywhere else — **you hear the words
+    a second later** — because the question is about ELA making a sound, not about the sound.
+    """
+    return CapabilitySpec(
+        id=VOICE_SPEAK,
+        created_at=PHASE_11_INTRODUCED_AT,
+        description="Says a sentence out loud on this machine, through its own speakers.",
+        risk=RiskLevel.MEDIUM,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": MAX_SPOKEN_CHARACTERS,
+                },
+                "purpose": {"type": "string", "minLength": 1},
+            },
+            "required": ["text", "purpose"],
+            "additionalProperties": False,
+        },
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
 def production_catalogue(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> CapabilityRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -429,5 +502,6 @@ def production_catalogue(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> Capabilit
             *catalogue_v01(notes_scope=notes_scope).specs(),
             perception_capture_screen(),
             perception_read_screen_text(),
+            voice_speak(),
         )
     )

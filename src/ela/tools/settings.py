@@ -21,10 +21,15 @@ __all__ = [
     "DEFAULT_CAPTURE_MAX_COUNT",
     "DEFAULT_CAPTURE_TIMEOUT_SECONDS",
     "DEFAULT_CAPTURE_TTL_SECONDS",
+    "DEFAULT_VOICE_NAME",
+    "DEFAULT_VOICE_TIMEOUT_SECONDS",
     "MAX_CAPTURE_TTL",
+    "MAX_SPOKEN_CHARACTERS",
     "CaptureSettings",
+    "VoiceSettings",
     "WorkspaceSettings",
     "default_capture_dir",
+    "default_voice_enabled",
     "default_workspace_dir",
 ]
 
@@ -169,3 +174,82 @@ class CaptureSettings(BaseSettings):
     def ocr_timeout(self) -> timedelta:
         """How long the recognition helper may run."""
         return timedelta(seconds=self.ocr_timeout_seconds)
+
+
+MAX_SPOKEN_CHARACTERS: Final = 600
+"""The longest sentence ELA may say in one call (M11.1 dec. E).
+
+**Measured on 2026-09-08 on this machine** (macOS 26.6, voice ``Alice``), speaking exactly 600
+characters of ordinary Italian prose:
+
+=========================  ===========  ===============
+rate                       spoken       characters/s
+=========================  ===========  ===============
+default                    **31,5 s**   19,1
+``-r 150``                 34,6 s       17,3
+``-r 100`` (slow)          37,8 s       15,9
+=========================  ===========  ===============
+
+Half a minute is already a long time to be talked at, and the ceiling is not about politeness:
+**until the barge-in exists there is no way to stop ELA in the middle** (dec. F). A cap is what
+stands in for an interrupt that has not been built, so it is chosen against the worst thing that
+can happen with no interrupt — not against how much a model might want to say.
+
+Refused by the capability's own schema, before the Guardian and before the child: a sentence too
+long is an argument that is wrong, not an action that fails.
+"""
+
+DEFAULT_VOICE_NAME: Final = "Alice"
+"""Which voice, when nothing says otherwise.
+
+The only female Italian voice ``say`` offers on this machine — 9 Italian of 184, one of them
+female — and it is **not the voice §9 describes**. §9 asks for a *presenza femminile e
+professionale*; Alice is dated concatenative synthesis. M11.1 delivers *that ELA speaks*, not
+*that ELA sounds like §9* (dec. D), and M11.3 is where that is reopened along with the four
+answers of §57 that sending ELA's words anywhere would require.
+"""
+
+DEFAULT_VOICE_TIMEOUT_SECONDS: Final = 60.0
+"""How long the speech helper may run before ELA calls the sentence failed.
+
+**This timeout does not inherit a ratio, and the reason is the one ADR 0030 §14 wrote down**:
+*a ratio between a timeout and a median is not a constant of this project — it depends on who
+does the work.* Here the work is not computation at all. The call lasts as long as the **speech**
+lasts, so the wait is the deliverable and not overhead, and a multiple of a median would be a
+number about the wrong thing.
+
+It is derived instead: the longest legal sentence is :data:`MAX_SPOKEN_CHARACTERS`, which was
+measured at **31,5 s** at the default rate and 37,8 s at the slowest rate ``say`` offers. Sixty
+seconds is 1,9x the first and 1,6x the second. Past it, a ``say`` that is not finishing has
+stopped being about speech.
+
+**There is no rate knob**, and that is what makes the number above derivable rather than a guess:
+a configurable rate would make the longest legal sentence a function of a setting, and the
+timeout would then be guarding a duration nobody had measured.
+"""
+
+
+def default_voice_enabled() -> bool:
+    """``ELA_VOICE_ENABLED``, default ``True`` (M11.1 dec. J).
+
+    The precedent is ADR 0028 §7 — perception enabled, loop off — read for a milestone that has
+    no loop: **ELA never speaks of its own accord.** A sentence happens only when a step asks for
+    it and the Guardian allows it, so the knob that matters is already the Guardian, and a second
+    one defaulting to off would be a switch that hides a door rather than locking it.
+    """
+    return True
+
+
+class VoiceSettings(BaseSettings):
+    """Whether ELA may speak, with which voice, and for how long, from ``ELA_VOICE_*`` (M11.1)."""
+
+    model_config = SettingsConfigDict(env_prefix="ELA_", env_file=".env", extra="ignore")
+
+    voice_enabled: bool = Field(default_factory=default_voice_enabled)
+    voice_name: Annotated[str, Field(min_length=1)] = DEFAULT_VOICE_NAME
+    voice_timeout_seconds: Annotated[float, Field(gt=0)] = DEFAULT_VOICE_TIMEOUT_SECONDS
+
+    @property
+    def voice_timeout(self) -> timedelta:
+        """How long the speech helper may run."""
+        return timedelta(seconds=self.voice_timeout_seconds)

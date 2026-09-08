@@ -18,8 +18,15 @@ from fastapi import APIRouter, Request
 
 from ela.api.deps import ElaDep
 from ela.api.errors import DatabaseUnavailableError
-from ela.api.schemas import CaptureStoreOut, DiagnosticsOut, HealthOut, PerceptionSummaryOut
+from ela.api.schemas import (
+    CaptureStoreOut,
+    DiagnosticsOut,
+    HealthOut,
+    PerceptionSummaryOut,
+    VoiceOut,
+)
 from ela.tasks.engine import RecoverySummary
+from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 
 __all__ = ["router"]
 
@@ -85,5 +92,14 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
                 max_count=ela.settings.captures.capture_max_count,
                 max_bytes=ela.settings.captures.capture_max_bytes,
             ),
+        ),
+        # Asked here, not remembered: ``available`` is two syscalls and makes no sound, so the
+        # honest answer is the one from this instant rather than a belief with an age.
+        voice=VoiceOut(
+            enabled=ela.settings.voice.voice_enabled,
+            available=await ela.speech.available(),
+            voice=ela.settings.voice.voice_name,
+            max_characters=MAX_SPOKEN_CHARACTERS,
+            timeout_seconds=ela.settings.voice.voice_timeout_seconds,
         ),
     )

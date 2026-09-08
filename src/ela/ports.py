@@ -56,6 +56,7 @@ from ela.domain import (
     RawCapture,
     RawObservation,
     RawRecognition,
+    RawSpeech,
     StepId,
     Task,
     TaskEvent,
@@ -112,6 +113,7 @@ __all__ = [
     "ROUTING_UNKNOWN_TASK_TYPE",
     "RoutingError",
     "ScreenCapturePort",
+    "SpeechPort",
     "TaskRepository",
     "TextRecognitionPort",
     "ToolPort",
@@ -1150,6 +1152,48 @@ class TextRecognitionPort(Protocol):
         which is the framework's convention: the caller converts, in code a runner can cover,
         because a flipped rectangle is the kind of mistake that returns a plausible answer instead
         of an error (ADR 0030 §12).
+        """
+
+
+@runtime_checkable
+class SpeechPort(Protocol):
+    """Where ELA says something out loud (§8, §9; M11.1, ADR 0033).
+
+    The first port whose effect is **outside the screen**. Everything ELA did until now landed in
+    a database, a file that expires, or an HTTP response — things you read if you go and look. A
+    spoken sentence is heard, by whoever is in the room, and it leaves nothing behind to inspect.
+
+    Three things it must not do, and each is half the contract:
+
+    * **It writes nothing.** Not a file, not a buffer, not a return value carrying the sentence.
+      ``say`` takes ``-o`` and would render to disk instead of speaking; architecture rule 40
+      makes "it does not" checkable rather than promised (M11.1 dec. 7).
+    * **It does not choose the voice.** Which voice ELA has is configuration of this machine, and
+      a caller that could pick one could change who appears to be speaking.
+    * **It does not fail — it reports.** A timeout, a helper killed by a signal, an operating
+      system with no such notion: all come back as a :class:`~ela.domain.RawSpeech` that says how
+      it ended, never as an exception.
+
+    And one it **must** do, which no other port here needs: **a cancelled call stops the sound.**
+    Awaiting :meth:`speak` to the end is what the caller does; cancelling that await is what a
+    caller does when it has changed its mind, and the sentence has to stop. It is not the barge-in
+    of §9 — that arrives with the listening, and needs a listener — but it is the primitive the
+    barge-in will stand on, and a port that leaked an orphaned child here could not grow one.
+    """
+
+    async def available(self) -> bool:
+        """Whether this machine can speak at all — no permission, no side effect.
+
+        Its own member for the reason ADR 0028 gave ``UnsupportedProbe`` and ADR 0029 gave
+        ``available``: "ELA on Linux says nothing" deserves to be an answer with a name and a
+        test rather than a gap somebody discovers.
+        """
+
+    async def speak(self, text: str) -> RawSpeech:
+        """Say ``text`` out loud, and answer with how it ended.
+
+        Returns when the speaking is over: the duration of the call *is* the duration of the
+        sentence, which is why the caller's timeout has to allow for a whole one.
         """
 
 

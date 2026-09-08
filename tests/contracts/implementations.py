@@ -24,9 +24,11 @@ from ela.composition import SystemClock, UuidGenerator
 from ela.domain import CapabilityId, RiskLevel
 from ela.infrastructure.perception import (
     DarwinProbe,
+    SaySpeechCommand,
     ScreenCaptureCommand,
     UnsupportedProbe,
     UnsupportedScreenCapture,
+    UnsupportedSpeech,
     UnsupportedTextRecognition,
     VisionTextRecognition,
 )
@@ -57,6 +59,7 @@ from ela.ports import (
     PermissionGuardianPort,
     ProviderRegistryPort,
     ScreenCapturePort,
+    SpeechPort,
     TaskRepository,
     TextRecognitionPort,
     ToolPort,
@@ -82,6 +85,7 @@ from ela.testing.fakes import (
     FakeProbe,
     FakeProviderRegistry,
     FakeScreenCapture,
+    FakeSpeech,
     FakeTaskRepository,
     FakeTextRecognition,
     FakeTool,
@@ -425,6 +429,15 @@ def _text_recognition() -> VisionTextRecognition:
     return VisionTextRecognition(timeout=timedelta(seconds=1), runner=_no_helper)
 
 
+def _speech() -> SaySpeechCommand:
+    """The real macOS speech adapter, with a spawn that answers instead of starting anything.
+
+    Registered on every runner for the same reason as :func:`_screen_capture`: the contract is
+    that it reports instead of failing, and reporting costs no permission and makes no sound.
+    """
+    return SaySpeechCommand(timeout=timedelta(seconds=1), voice="Alice", runner=_no_helper)
+
+
 def _screen_capture() -> ScreenCaptureCommand:
     """The real macOS capture adapter, with a spawn that answers instead of starting anything.
 
@@ -506,6 +519,11 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("FakeScreenCapture", FakeScreenCapture),
         Implementation("UnsupportedScreenCapture", UnsupportedScreenCapture),
         Implementation("ScreenCaptureCommand", _screen_capture),
+    ),
+    SpeechPort: (
+        Implementation("FakeSpeech", FakeSpeech),
+        Implementation("UnsupportedSpeech", UnsupportedSpeech),
+        Implementation("SaySpeechCommand", _speech),
     ),
     TextRecognitionPort: (
         Implementation("FakeTextRecognition", FakeTextRecognition),

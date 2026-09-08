@@ -62,6 +62,7 @@ graph TD
     api --> executive
     api --> ports
     api --> tasks
+    api --> tools
     cli --> api
     cli --> composition
     composition --> audit

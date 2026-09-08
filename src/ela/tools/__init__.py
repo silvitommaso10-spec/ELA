@@ -101,9 +101,20 @@ from ela.tools.verifiers import (
     EchoVerifier,
     ModelCompleteVerifier,
     ReadScreenTextVerifier,
+    SpeakVerifier,
     WriteNoteVerifier,
 )
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
+from ela.tools.voice import (
+    VOICE_DISABLED,
+    VOICE_FAILED,
+    VOICE_SPEAK,
+    VOICE_TIMEOUT,
+    VOICE_TOOL_NAME,
+    VOICE_UNSUPPORTED,
+    SpeakTool,
+    digest_of,
+)
 
 __all__ = [
     "ARGUMENTS_INVALID",
@@ -150,6 +161,15 @@ __all__ = [
     "PATH_UNREACHABLE",
     "PERCEPTION_CAPTURE_SCREEN",
     "PERCEPTION_READ_SCREEN_TEXT",
+    "digest_of",
+    "SpeakVerifier",
+    "SpeakTool",
+    "VOICE_UNSUPPORTED",
+    "VOICE_TOOL_NAME",
+    "VOICE_TIMEOUT",
+    "VOICE_SPEAK",
+    "VOICE_FAILED",
+    "VOICE_DISABLED",
     "TEXT_LANGUAGE_UNSUPPORTED",
     "TEXT_RECOGNITION_FAILED",
     "TEXT_TIMEOUT",

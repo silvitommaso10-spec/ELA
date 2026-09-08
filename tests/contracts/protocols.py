@@ -34,6 +34,7 @@ REQUIRED_PORTS = frozenset(
         "IdGenerator",
         "PerceptionProbe",
         "ScreenCapturePort",
+        "SpeechPort",
         "TextRecognitionPort",
     }
 )
@@ -42,8 +43,9 @@ two of M5.2 (ADR 0014: the verifiers), the two of M5.3 (ADR 0015: the requests f
 the results), ``ModelRouterPort`` from M7.3 (ADR 0022 §5: who chooses the model) and
 ``PerceptionProbe`` from M10.1 (ADR 0028: where ELA reads the machine it runs on) and
 ``ScreenCapturePort`` from M10.2 (ADR 0029 §11: where ELA photographs it) and
-``TextRecognitionPort`` from M10.3 (ADR 0030 §11: where ELA reads what it photographed), by
-name."""
+``TextRecognitionPort`` from M10.3 (ADR 0030 §11: where ELA reads what it photographed) and
+``SpeechPort`` from M11.1 (ADR 0033: where ELA says something out loud — the first whose
+effect is outside the screen), by name."""
 
 
 def is_protocol(obj: object) -> bool:

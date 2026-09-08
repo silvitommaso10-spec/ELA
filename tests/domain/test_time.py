@@ -91,6 +91,11 @@ VALUE_OBJECTS = frozenset(
         # clock either artefact consults.
         "RawRecognition",
         "RawTextLine",
+        # And the voice (M11.1): an exit status and a duration are not an entity, and here there
+        # is no artefact with an ``mtime`` either — a sentence that has been said leaves nothing
+        # behind at all. What it *was* is a length and a digest in the result, and the result has
+        # the birth date.
+        "RawSpeech",
         # And the whole of the context (M10.4): a snapshot is composed on read and never stored,
         # so nothing in it has a birth date. What each part carries instead is the instant of the
         # fact — ``ContextSnapshot.at``, ``ContextActivity.observed_at``, ``ContextEvent.at`` —

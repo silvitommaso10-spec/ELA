@@ -161,6 +161,40 @@ CAPTURE_MODULES = (
     PERCEPTION_ADAPTER_DIR / "vision.py",
 )
 
+#: M11.1 dec. H: the same rule, over the modules that hold **what ELA says**. The text of a
+#: spoken answer is composed from the context of §44 and from the user's own ``Task.goal`` — the
+#: very words rule 39 keeps out of an ``AuditEvent`` and a ``ProviderRequest`` — so a module that
+#: holds it must not be able to reach a router, a provider registry or an HTTP client either.
+#:
+#: Extended **before** the code that speaks exists, which is M10.3 dec. 15 applied a second time:
+#: a defence written after the thing it defends has a window in which the thing exists and the
+#: defence does not.
+#:
+#: **A separate tuple, and that is the decision.** M11.3 will send ELA's words to a speech
+#: provider, and that milestone has to be able to reopen *this* half — with the four answers of
+#: §57 in the shape of ADR 0030 §17 — without touching the capture's half by accident. One
+#: constant for both would have made relaxing the voice a relaxation of the screen, silently.
+#:
+#: The name of the rule is now narrower than the rule: it says "capture" and it also holds the
+#: voice. Renaming it would touch three ADRs that are immutable, so the name stays and the
+#: mismatch is written down instead — the same discipline as M11.1 dec. G, and the same third
+#: time that will settle it.
+VOICE_MODULES = (
+    Path("tools") / "voice.py",
+    PERCEPTION_ADAPTER_DIR / "speech.py",
+)
+
+#: Rule 40 (M11.1 dec. 7, approved by the user): **the voice writes no file.** ``say`` takes
+#: ``-o`` and will happily render to AIFF instead of speaking, so "nothing of what ELA says is
+#: kept" is one character away from being false. The decision was the user's — *mai su disco per
+#: la voce in uscita* — and a decision that lives only in a document is a decision somebody
+#: undoes without noticing.
+#:
+#: Reads **literals**, not imports, for the reason rule 36 does: a command-line flag is not a
+#: symbol, it is a string in an ``argv`` list, and a rule reading imports would be silent on the
+#: only code that could break it.
+VOICE_OUTPUT_FLAGS = frozenset({"-o", "--output-file", "--file-format", "--data-format"})
+
 #: Rule 36 (M10.3 dec. 3): ELA never reads a window title. ``kCGWindowOwnerName`` and the geometry
 #: come free and are *state*; ``kCGWindowName`` costs the same TCC grant as a screenshot and is
 #: *content* — a Chrome title carries a URL or an email subject, a TextEdit title a document name.
@@ -1618,6 +1652,41 @@ def check_no_window_titles(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_the_voice_writes_no_file(pkg_root: Path) -> list[Violation]:
+    """Rule 40: nothing of what ELA says is ever written to a file (M11.1 dec. 7).
+
+    The user's decision, in their words: *mai su disco per la voce in uscita*. What makes it a
+    rule rather than a note is that ``say`` makes the opposite trivial — ``say -o out.aiff`` is
+    a supported, documented flag, and one character stands between "ELA spoke" and "ELA kept a
+    recording of everything it told you".
+
+    A recording of what ELA said is a record of what ELA knew: the answers are composed from the
+    context of §44 and from the user's own goal, so a directory of them is the accumulation §57
+    exists to forbid — and unlike a capture it would have no TTL, no ceiling and no store, because
+    nobody designed one.
+
+    Reads the **literals** in the voice modules, the way rule 36 reads a CoreFoundation key: a
+    flag is a string in an ``argv`` list, never an import, so a rule that read imports would be
+    mute on the only line that could break it.
+    """
+    rule = "the-voice-writes-no-file"
+    found: list[Violation] = []
+    for relative in VOICE_MODULES:
+        path = pkg_root / relative
+        if not path.is_file():
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, node.value, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value in VOICE_OUTPUT_FLAGS
+        )
+    return found
+
+
 def check_adapter_names_no_state(pkg_root: Path) -> list[Violation]:
     """Rule 34: the perception adapter never names a domain state (ADR 0028 §1).
 
@@ -1656,11 +1725,16 @@ def check_capture_stays_on_the_machine(pkg_root: Path) -> list[Violation]:
     router, a provider registry or an HTTP client, by import or by attribute.
 
     Not a rule about tools in general: ``ela.tools.model`` names the router on purpose and must.
-    It is a rule about the two modules that have the user's screen in their hands, and it stands
-    until M10.3 decides, with its own privacy decision, what may go out and under which policy.
+    It is a rule about the modules that have the user's content in their hands.
+
+    M10.3 reopened it, examined it and **confirmed** it: nothing goes out. M11.1 extends it in a
+    direction the name does not describe — :data:`VOICE_MODULES`, which hold **what ELA says**,
+    and whose words come from the same places the capture's text does. The two subjects are two
+    constants on purpose: M11.3 has to be able to open the voice's half without opening the
+    screen's, and one list would have made that a single careless edit.
     """
     rule = "capture-stays-on-the-machine"
-    paths = [pkg_root / relative for relative in CAPTURE_MODULES]
+    paths = [pkg_root / relative for relative in (*CAPTURE_MODULES, *VOICE_MODULES)]
     found = _violations(
         rule,
         [path for path in paths if path.is_file()],
@@ -1859,6 +1933,7 @@ RULES: dict[str, Rule] = {
     "platform-choice-is-a-statement": check_platform_choice_is_a_statement,
     "context-writes-nothing": check_context_writes_nothing,
     "context-is-not-recorded": check_context_is_not_recorded,
+    "the-voice-writes-no-file": check_the_voice_writes_no_file,
 }
 
 
@@ -2188,11 +2263,22 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant(
         "tool-execute-callers", "SQL_EXECUTORS", EXEMPTION, by=EACH, adr="ADR 0013 §9; ADR 0027"
     ),
-    # capture-stays-on-the-machine (rule 35, ADR 0029 §12)
+    # capture-stays-on-the-machine (rule 35, ADR 0029 §12; extended M11.1 dec. H)
     Constant("capture-stays-on-the-machine", "CAPTURE_FORBIDDEN", DETECTOR),
     Constant("capture-stays-on-the-machine", "CAPTURE_MODULES", DETECTOR),
+    Constant("capture-stays-on-the-machine", "VOICE_MODULES", DETECTOR),
     Constant(
         "capture-stays-on-the-machine",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-voice-writes-no-file (rule 40, M11.1 dec. 7)
+    Constant("the-voice-writes-no-file", "VOICE_MODULES", DETECTOR),
+    Constant("the-voice-writes-no-file", "VOICE_OUTPUT_FLAGS", DETECTOR),
+    Constant(
+        "the-voice-writes-no-file",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

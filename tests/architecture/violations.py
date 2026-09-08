@@ -1020,6 +1020,53 @@ VIOLATIONS: tuple[Case, ...] = (
         "import httpx\n",
         "httpx",
     ),
+    # --- capture-stays-on-the-machine extended to the voice (rule 35, M11.1 dec. H) ---
+    Case(
+        # The line M11.3 will want to write. It must find a closed door and not a note.
+        "the-voice-tool-reaches-a-router",
+        "capture-stays-on-the-machine",
+        "tools/voice.py",
+        "from ela.routing import ModelRouter\n",
+        "ela.routing.ModelRouter",
+    ),
+    Case(
+        "the-speech-adapter-reaches-an-http-client",
+        "capture-stays-on-the-machine",
+        "infrastructure/perception/speech.py",
+        "import httpx\n",
+        "httpx",
+    ),
+    Case(
+        # No import to see: the same reach, the long way round.
+        "the-voice-tool-names-a-registry-by-attribute",
+        "capture-stays-on-the-machine",
+        "tools/voice.py",
+        "from ela import providers\ndef go():\n    return providers.ProviderRegistry\n",
+        "ProviderRegistry",
+    ),
+    # --- the-voice-writes-no-file (rule 40, M11.1 dec. 7) ---
+    Case(
+        # One flag away, which is exactly why it is a rule: `say -o` renders instead of speaking.
+        "the-speech-adapter-renders-to-a-file",
+        "the-voice-writes-no-file",
+        "infrastructure/perception/speech.py",
+        'SAY = "/usr/bin/say"\ndef argv(text, path):\n    return [SAY, "-o", path, text]\n',
+        "-o",
+    ),
+    Case(
+        "the-speech-adapter-names-a-file-format",
+        "the-voice-writes-no-file",
+        "infrastructure/perception/speech.py",
+        'FLAGS = ["--file-format", "AIFF"]\n',
+        "--file-format",
+    ),
+    Case(
+        "the-voice-tool-asks-for-an-output-file",
+        "the-voice-writes-no-file",
+        "tools/voice.py",
+        'def extra() -> list[str]:\n    return ["--output-file"]\n',
+        "--output-file",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
     Case(

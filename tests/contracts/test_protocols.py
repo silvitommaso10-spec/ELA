@@ -67,11 +67,12 @@ def test_every_port_has_an_implementation() -> None:
     assert without == []
 
 
-def test_ports_are_exactly_the_twenty_required() -> None:
+def test_ports_are_exactly_the_twenty_two_required() -> None:
     """Eleven from M1.3 (ADR 0005), ``AuthorizingGuardianPort`` and ``ToolRegistryPort`` from M5.1
     (ADR 0013 §10), ``VerifierPort`` and ``VerifierRegistryPort`` from M5.2 (ADR 0014 §1),
     ``ApprovalStore`` and ``ExecutionResultStore`` from M5.3 (ADR 0015 §1), ``ModelRouterPort``
-    from M7.3 (ADR 0022 §5): a port is added with an ADR and a row here, never by accident."""
+    from M7.3 (ADR 0022 §5), the three of phase 10 (ADR 0028, 0029, 0030) and ``SpeechPort`` from
+    M11.1 (ADR 0033): a port is added with an ADR and a row here, never by accident."""
     assert {port.__name__ for port in PORTS} == REQUIRED_PORTS
     assert set(IMPLEMENTATIONS) == set(PORTS)
 

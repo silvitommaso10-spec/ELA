@@ -50,12 +50,20 @@ from ela.tools.paths import PATH_CODES, classify, resolve_workspace
 from ela.tools.screen import PERCEPTION_CAPTURE_SCREEN
 from ela.tools.screen_text import PERCEPTION_READ_SCREEN_TEXT
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
+from ela.tools.voice import VOICE_SPEAK, digest_of
 
 __all__ = [
     "CAPTURE_DECLARED_MISMATCH",
     "CAPTURE_EXISTS",
     "CAPTURE_MATCHES",
     "CAPTURE_VERIFIER_NAME",
+    "SpeakVerifier",
+    "SPEECH_VERIFIER_NAME",
+    "SPEECH_TOO_FAST",
+    "SPEECH_TOOK_REAL_TIME",
+    "SPEECH_TEXT_MISMATCH",
+    "SPEECH_TEXT_MATCHES",
+    "MIN_SECONDS_PER_CHARACTER",
     "TEXT_DECLARED_MISMATCH",
     "TEXT_EXISTS",
     "TEXT_MATCHES",
@@ -86,6 +94,7 @@ NOTES_VERIFIER_NAME: Final = "workspace-notes-verifier"
 MODEL_VERIFIER_NAME: Final = "model-complete-verifier"
 CAPTURE_VERIFIER_NAME: Final = "perception-screen-verifier"
 TEXT_VERIFIER_NAME: Final = "perception-screen-text-verifier"
+SPEECH_VERIFIER_NAME: Final = "voice-speak-verifier"
 
 CAPTURE_EXISTS: Final = "capture.exists"
 """The name the tool reported leads to a regular file, through no link, inside the capture store,
@@ -510,3 +519,114 @@ class ReadScreenTextVerifier(Verifier):
             ("characters", found.characters),
         )
         return tuple(key for key, actual in checks if declared.get(key) != actual)
+
+
+SPEECH_TOOK_REAL_TIME: Final = "speech.took_real_time"
+"""The helper was alive long enough for those words to have been spoken at the speed of speech."""
+SPEECH_TEXT_MATCHES: Final = "speech.text_matches"
+"""What the result says was said hashes to the text that was asked for."""
+SPEECH_TOO_FAST: Final = "speech.too_fast"
+SPEECH_TEXT_MISMATCH: Final = "speech.text_mismatch"
+
+MIN_SECONDS_PER_CHARACTER: Final = 0.005
+"""The floor below which a "spoken" sentence was not spoken (M11.1 dec. C).
+
+**Measured on 2026-09-08 on this machine**: 600 characters took 31,5 s at ``say``'s default rate
+and 37,8 s at its slowest — 52 and 63 ms per character. The floor is 5 ms, roughly **ten times
+below** the fastest reading, because it is not a performance budget: it is the line under which
+the only explanation is that no sound was produced.
+
+It works at all because speech is played in real time. There is no faster machine that speaks
+faster; a ``say`` that returned early returned without playing, which is exactly the failure this
+condition exists to catch — an exit status of zero that means nothing came out.
+"""
+
+
+class SpeakVerifier(Verifier):
+    """``voice.speak`` verified against the clock and the argument (§20, §63; M11.1 dec. C).
+
+    **What no verifier of a voice can do, said plainly, because saying it is the point.** Sound
+    leaves no artefact. There is no file to re-read the way the note and the capture are re-read,
+    and no runner has ears. So this verifier is built to be honest about its reach rather than to
+    look as strong as its siblings:
+
+    > It proves that ELA asked macOS to speak the words it was given, and that macOS spent the
+    > time speaking them. **It does not prove that anybody heard anything.**
+
+    That distinction is ADR 0030 §8 applied to a write instead of a read: *a reading that can mean
+    two things must be split before it is handed on*. "The helper exited zero" can mean the
+    sentence was spoken or that it was rendered to nothing at all, and the two are separated here
+    by the only witness available — the clock. A ``say`` that returned in a tenth of the time the
+    words take did not play them.
+
+    **What it deliberately does not check: that an audio output device existed.** Reading that
+    would need a new perception family and a new field on ``RawObservation``, which M11.1 declared
+    out of scope; and :data:`MIN_SECONDS_PER_CHARACTER` catches the case that reading was wanted
+    for — a helper that succeeds without producing sound — from the outside, with no new port.
+    Recorded so that whoever wants the device itself knows it was considered and why it is absent.
+    """
+
+    conditions: ClassVar[frozenset[str]] = frozenset({SPEECH_TOOK_REAL_TIME, SPEECH_TEXT_MATCHES})
+    failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
+        SPEECH_TOO_FAST,
+        SPEECH_TEXT_MISMATCH,
+    }
+
+    def __init__(self, *, name: str = SPEECH_VERIFIER_NAME) -> None:
+        super().__init__(VOICE_SPEAK, name=name)
+
+    async def _check(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        text = arguments.get("text")
+        if not isinstance(text, str) or not text:
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "text must be a non-empty string",
+                retryable=False,
+            )
+        if condition == SPEECH_TEXT_MATCHES:
+            return self._matches(condition, text, result)
+        return self._took_real_time(condition, text, result)
+
+    def _matches(self, condition: str, text: str, result: ExecutionResult) -> ErrorMetadata | None:
+        """The digest the tool reported against the digest of the argument.
+
+        Never the words, on either side of the comparison or in the failure: a message carrying
+        what ELA said would put it in the audit trail, which is the thing the tool went out of its
+        way not to do (§57).
+        """
+        declared = result.output.get("sha256")
+        if declared == digest_of(text):
+            return None
+        return self._failure(
+            condition,
+            SPEECH_TEXT_MISMATCH,
+            "the result does not describe the text that was asked for",
+            retryable=False,
+            details={"expected_characters": len(text), "declared": result.output.get("characters")},
+        )
+
+    def _took_real_time(
+        self, condition: str, text: str, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        """Whether the helper lived long enough for those words to have been said aloud."""
+        spoken = result.output.get("spoken_seconds")
+        if not isinstance(spoken, int | float) or isinstance(spoken, bool):
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "output.spoken_seconds must be a number",
+                retryable=False,
+            )
+        floor = len(text) * MIN_SECONDS_PER_CHARACTER
+        if spoken >= floor:
+            return None
+        return self._failure(
+            condition,
+            SPEECH_TOO_FAST,
+            "the helper finished too quickly for the words to have been spoken aloud",
+            retryable=True,
+            details={"spoken_seconds": spoken, "at_least": round(floor, 3)},
+        )

@@ -11,6 +11,13 @@ Two of the three helpers are ours (``probe.py``, ``vision.py``) and one is Apple
 (``screencapture(1)``), which is not an inconsistency but the answer to a question asked twice:
 when macOS ships a binary that does the job, using it makes rule 33 true by construction; when it
 does not — and it does not for OCR — the child is ours and the rule earns its keep.
+
+M11.1 adds a fourth, and it is Apple's again (``say(1)``) — and the first that **acts outside
+the screen** rather than reading the machine. It lives here because rule 32's content is *ELA
+touches the operating system in one place*: the door, not the word "perception". That makes
+this package's name narrower than its contents for the second time (ADR 0029 put the capture
+here first); the third time it gets renamed. Rule 40 keeps that helper from ever being asked
+to write a file instead of speaking.
 """
 
 from ela.infrastructure.perception.darwin import PROBE_MODULE, TIMED_OUT, DarwinProbe, Spawn, spawn
@@ -19,6 +26,7 @@ from ela.infrastructure.perception.screencapture import (
     ScreenCaptureCommand,
     UnsupportedScreenCapture,
 )
+from ela.infrastructure.perception.speech import SAY, SaySpeechCommand, UnsupportedSpeech
 from ela.infrastructure.perception.textrecognition import (
     VISION_MODULE,
     UnsupportedTextRecognition,
@@ -28,14 +36,17 @@ from ela.infrastructure.perception.unsupported import UnsupportedProbe
 
 __all__ = [
     "PROBE_MODULE",
+    "SAY",
     "SCREENCAPTURE",
     "TIMED_OUT",
     "VISION_MODULE",
     "DarwinProbe",
+    "SaySpeechCommand",
     "ScreenCaptureCommand",
     "Spawn",
     "UnsupportedProbe",
     "UnsupportedScreenCapture",
+    "UnsupportedSpeech",
     "UnsupportedTextRecognition",
     "VisionTextRecognition",
     "spawn",

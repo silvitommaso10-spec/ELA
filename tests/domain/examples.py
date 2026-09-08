@@ -75,6 +75,7 @@ from ela.domain import (
     RawCapture,
     RawObservation,
     RawRecognition,
+    RawSpeech,
     RawTextLine,
     RiskLevel,
     SensorCause,
@@ -405,6 +406,11 @@ RAW_OBSERVATION: Final = RawObservation(
 # the ordinary one, as every example here is.
 RAW_CAPTURE: Final = RawCapture(exit_code=0)
 
+# The helper spoke and came back cleanly. ``spoken_seconds`` is the measured duration of an
+# ordinary sentence at ``say``'s default rate on this machine — 1,65 s for 33 characters, and the
+# ratio is what the verifier's floor is set ten times below (M11.1 dec. C).
+RAW_SPEECH: Final = RawSpeech(exit_code=0, spoken_seconds=1.65)
+
 # One line of Italian read perfectly, which is what the accurate level does: measured on a known
 # image, every line correct down to nine-point type, confidence 1,00.
 RAW_TEXT_LINE: Final = RawTextLine(text="Riunione trimestrale", confidence=1.0)
@@ -558,6 +564,7 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         SENSOR_STATUS,
         RAW_OBSERVATION,
         RAW_CAPTURE,
+        RAW_SPEECH,
         OBSERVATION,
         PERCEPTION_CHANGE,
         RAW_TEXT_LINE,

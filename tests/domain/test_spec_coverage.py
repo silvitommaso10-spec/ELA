@@ -49,6 +49,7 @@ LATER_ADDITIONS = frozenset(
         "PerceptionChange",
         "RawCapture",
         "RawRecognition",
+        "RawSpeech",
         "RawTextLine",
         "ContextSnapshot",
         "ContextActivity",
@@ -73,6 +74,12 @@ The four of perception (M10.1, ADR 0028) are values, not entities, and they are 
 one reason: :class:`~ela.ports.PerceptionProbe` names ``RawObservation``, and a port may import
 nothing but :mod:`ela.domain` (rule 2). That is the same criterion ADR 0026 §2 used to keep
 ``PlacementDecision`` *out* — it crosses no port — applied in the other direction.
+
+``RawSpeech`` (M11.1, ADR 0033) is the same criterion once more, and the first on the *acting*
+side that leaves no artefact at all: :class:`~ela.ports.SpeechPort` answers with it. It carries
+how the helper ended and **not the sentence** — a spoken word is not a thing there is anything to
+read back, and a model that carried the text would put it into a persisted ``ExecutionResult``,
+which is the accumulation §57 forbids by another route (M11.1 dec. 7).
 
 ``RawCapture`` (M10.2, ADR 0029 §11) is there for exactly that reason and no other: it is what
 :class:`~ela.ports.ScreenCapturePort` answers with. It carries how the helper ended and nothing

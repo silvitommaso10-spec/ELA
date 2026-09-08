@@ -18,6 +18,7 @@ from ela.testing.fakes import (
     FakeProbe,
     FakeProviderRegistry,
     FakeScreenCapture,
+    FakeSpeech,
     FakeTextRecognition,
     FakeTool,
 )
@@ -25,6 +26,7 @@ from ela.tools import (
     CORE_ECHO,
     PERCEPTION_CAPTURE_SCREEN,
     PERCEPTION_READ_SCREEN_TEXT,
+    VOICE_SPEAK,
     CaptureSettings,
     CaptureStore,
     EchoTool,
@@ -216,6 +218,9 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         probe=FakeProbe(),
         recognition=FakeTextRecognition(),
         languages=("it-IT",),
+        speech=FakeSpeech(),
+        voice="Alice",
+        voice_enabled=True,
     )
     return tools, production_verifiers(root=tmp_path, router=router, captures=captures), captures
 
@@ -236,6 +241,7 @@ def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) 
     assert [t.capability_id for t in tools.tools()][3:] == [
         PERCEPTION_CAPTURE_SCREEN,
         PERCEPTION_READ_SCREEN_TEXT,
+        VOICE_SPEAK,
     ]
     assert {v.capability_id for v in verifiers.verifiers()} == {
         t.capability_id for t in tools.tools()
