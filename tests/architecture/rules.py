@@ -181,8 +181,70 @@ CAPTURE_MODULES = (
 #: time that will settle it.
 VOICE_MODULES = (
     Path("tools") / "voice.py",
+    Path("tools") / "voice_online.py",
     PERCEPTION_ADAPTER_DIR / "speech.py",
+    PERCEPTION_ADAPTER_DIR / "audition.py",
 )
+
+
+#: Rule 41 (M11.3 dec. F and G): **nothing ELA says survives with a name.** Rule 40 keeps the
+#: local voice off the disk by forbidding ``say -o``; the online voice cannot be held that way,
+#: because ``afplay`` refuses a pipe and a FIFO (measured: ``AudioFileOpen -40``) and the audio
+#: must therefore be a *file* for as long as it takes to play it. What makes that acceptable is
+#: that the file has **no name**: ``mkstemp`` then ``unlink`` at once, and the child receives
+#: ``/dev/fd/N``. The rule is the difference between that and a directory of everything ELA has
+#: ever said, which is one forgotten ``unlink`` away.
+#:
+#: Reads calls, not imports, for the reason rules 36 and 40 do: ``tempfile`` is a perfectly
+#: ordinary import and the whole question is what happens on the next line.
+#:
+#: **No exception, and that is why the file lives elsewhere.** The nameless file is made by
+#: ``spawn_with_audio`` in :mod:`ela.infrastructure.perception.darwin`, which is where the door
+#: to the operating system already is (rule 32) and which holds no words of ELA's — so the
+#: modules that *do* hold them can be told, with no allowance to remember, that they never touch
+#: a filesystem. A rule with an exemption is a rule somebody widens; this one has none.
+VOICE_FILE_WRITERS = frozenset(
+    {
+        "write_bytes",
+        "write_text",
+        "mkstemp",
+        "mkdtemp",
+        "NamedTemporaryFile",
+        "TemporaryFile",
+        "copyfile",
+        "copy",
+        "copy2",
+    }
+)
+#: ``open(path, "w")`` and its relatives. ``open`` for reading is not the rule's business.
+VOICE_WRITE_MODES = frozenset({"w", "a", "x", "+"})
+
+#: Rule 42 (M11.3 dec. H): **the voice goes only where it is declared.** One host, written as a
+#: constant in the adapter, and no way to point it somewhere else without editing the file — a
+#: base URL that came from configuration would be a way to redirect what ELA says to another
+#: server with nobody able to see it in a diff. The same sentence as ADR 0029 §3 about the
+#: absolute path of ``say``: *what speaks for the user must not be decided by an environment
+#: variable.*
+#:
+#: The rule also keeps the reach of the adapter inside itself: it may hold ``httpx`` — that is
+#: what it is for — and it may not hold a router or a provider registry, so the one module of ELA
+#: that is allowed to send the user's words out cannot also be the module that decides where
+#: they go.
+ELEVENLABS_ENDPOINT = "https://api.elevenlabs.io"
+#: Names that turn an endpoint into a setting. Class-level annotations only: a local ``url`` built
+#: from the constant is the ordinary way to write a request.
+VOICE_ENDPOINT_FIELDS = frozenset({"base_url", "api_base", "endpoint", "host"})
+#: Reading the environment directly is the other way to make the host configurable — and the
+#: settings of ELA go through pydantic, never through ``os.environ`` (ADR 0001).
+VOICE_ENVIRONMENT_READS = frozenset({"environ", "getenv"})
+
+#: Rule 43 (M11.3 dec. I and J): **the audition says only what the repository says.** Hearing six
+#: voices must not become a way to speak arbitrary text without a capability: what leaves the
+#: machine during an audition is a literal anybody can read in ``git``, and the shape that keeps
+#: it true is that no function on that path accepts text at all. It can fire, which is the only
+#: reason to have it (ADR 0026 §7): ``--text`` is the obvious feature of tomorrow.
+AUDITION_MODULE = PERCEPTION_ADAPTER_DIR / "audition.py"
+AUDITION_TEXT_PARAMETERS = frozenset({"text", "phrase", "phrases", "message", "say", "words"})
 
 #: Rule 40 (M11.1 dec. 7, approved by the user): **the voice writes no file.** ``say`` takes
 #: ``-o`` and will happily render to AIFF instead of speaking, so "nothing of what ELA says is
@@ -210,9 +272,18 @@ VOICE_OUTPUT_FLAGS = frozenset({"-o", "--output-file", "--file-format", "--data-
 #: handed to ``CFStringCreateWithCString``, so a rule reading imports would have been silent on
 #: the only code that could break it.
 WINDOW_TITLE_KEYS = frozenset({"kCGWindowName"})
+#: Written once because rule 42 subtracts it: the voice adapter of M11.3 is the single module
+#: allowed to hold an HTTP client, and "allowed to hold *this*" has to name the same string the
+#: ban names, or the exception drifts away from the rule it is an exception to.
+HTTP_CLIENT = "httpx"
 CAPTURE_FORBIDDEN = frozenset(
-    {"ModelRouter", "ModelRouterPort", "ProviderRegistry", "ProviderRegistryPort", "httpx"}
+    {"ModelRouter", "ModelRouterPort", "ProviderRegistry", "ProviderRegistryPort", HTTP_CLIENT}
 )
+#: Rule 42's half of the same ban: what rule 35 forbids everywhere else, minus the one thing the
+#: voice adapter exists to hold. Written as its own constant rather than subtracted inside the
+#: rule, so the door is something a reader looks at and not an expression in a function body
+#: (ADR 0027).
+VOICE_PROVIDER_FORBIDDEN = CAPTURE_FORBIDDEN - {HTTP_CLIENT}
 
 #: Rule 38 (M10.4, ADR 0032 §6): *if answering a context question requires a capability, that
 #: answer is not context — it is an action*, and it goes through the Executor. The half that
@@ -299,6 +370,12 @@ PROVIDERS_DIR = "providers"
 PROVIDERS_PACKAGE = f"{ROOT_PACKAGE}.{PROVIDERS_DIR}"
 ANTHROPIC_ADAPTER_DIR = Path(PROVIDERS_DIR) / ANTHROPIC_LIBRARY
 ANTHROPIC_ADAPTER_MODULE = f"{PROVIDERS_PACKAGE}.{ANTHROPIC_LIBRARY}"
+
+#: M11.3: where the words of ELA are put on the wire. Separate from :data:`VOICE_MODULES` because
+#: this is the half ADR 0033 §7 promised M11.3 could reopen — **and only this half**: here
+#: ``httpx`` is the job, so rule 35 cannot hold, and what holds instead is rule 42, which is
+#: narrower and says where those words may go.
+ELEVENLABS_ADAPTER_DIR = Path(PROVIDERS_DIR) / "elevenlabs"
 
 #: Rule 27 (ADR 0023 §12): the concrete implementations are named by the composition root and by
 #: nobody else. Rule 4 asks the same question of five packages, because they were the only ones it
@@ -1687,6 +1764,147 @@ def check_the_voice_writes_no_file(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def _voice_paths(pkg_root: Path) -> list[Path]:
+    """Every module that holds what ELA says, on either side of the wire (rules 41 and 42)."""
+    named = [pkg_root / relative for relative in VOICE_MODULES]
+    return [path for path in named if path.is_file()] + list(
+        _source_files(pkg_root / ELEVENLABS_ADAPTER_DIR)
+    )
+
+
+def _writes_a_named_file(node: ast.AST) -> str | None:
+    """The name of the file-writing call ``node`` is, or ``None``.
+
+    ``open`` counts only with a writing mode: reading a file is nobody's business here, and a
+    rule that reported every ``open`` would be turned off by the first person who needed one.
+    """
+    if not isinstance(node, ast.Call):
+        return None
+    called = node.func.attr if isinstance(node.func, ast.Attribute) else None
+    called = called or (node.func.id if isinstance(node.func, ast.Name) else None)
+    if called in VOICE_FILE_WRITERS:
+        return called
+    if called != "open":
+        return None
+    modes = [arg.value for arg in node.args[1:2] if isinstance(arg, ast.Constant)]
+    modes += [
+        kw.value.value
+        for kw in node.keywords
+        if kw.arg == "mode" and isinstance(kw.value, ast.Constant)
+    ]
+    if any(isinstance(mode, str) and set(mode) & VOICE_WRITE_MODES for mode in modes):
+        return "open"
+    return None
+
+
+def check_the_voice_leaves_no_named_file(pkg_root: Path) -> list[Violation]:
+    """Rule 41: nothing ELA says survives with a name (M11.3 dec. F, G).
+
+    Rule 40 could say it in one word — the local voice never writes, because ``say`` speaks by
+    itself and only ``-o`` would make it write. The online voice has no such luck: the audio
+    arrives as bytes, and ``afplay`` cannot read a pipe or a FIFO. Measured, both of them:
+    ``AudioFileOpen failed (-40)``. So there **is** a file, and what makes that acceptable is
+    that it has no name — ``mkstemp`` and then ``unlink`` immediately, with the child given
+    ``/dev/fd/N``. An inode nobody can open by path, freed when the descriptor closes, and freed
+    even if ELA dies mid-sentence.
+
+    Between that and a directory holding everything ELA has ever said there is one missing
+    ``unlink``, and the rule does not try to check that pairing by reading: it puts the pairing
+    somewhere else entirely. ``spawn_with_audio`` in
+    :mod:`ela.infrastructure.perception.darwin` makes the nameless file, spawns the player and
+    closes the descriptor in a ``finally`` — one function, in the module that already owns the
+    door to the operating system (rule 32), holding no words of ELA's. Everything that *does*
+    hold them may not touch a filesystem at all, which is a rule with no allowance to widen.
+    """
+    rule = "the-voice-leaves-no-named-file"
+    found: list[Violation] = []
+    for path in _voice_paths(pkg_root):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, written, node.lineno)
+            for node in ast.walk(tree)
+            if (written := _writes_a_named_file(node)) is not None
+        )
+    return found
+
+
+def check_the_voice_goes_only_where_it_is_declared(pkg_root: Path) -> list[Violation]:
+    """Rule 42: the adapter talks to one host, and it is written here (M11.3 dec. H).
+
+    This is the module M11.3 opened in rule 35's fence, and it is opened for exactly one thing:
+    ``httpx`` towards ``api.elevenlabs.io``. Three ways that opening could quietly become
+    something else, and each is reported:
+
+    * **another host** — any string literal starting with ``http`` that is not the constant;
+    * **a configurable host** — a field called ``base_url``, ``endpoint``, ``host``…, which would
+      put the destination of ELA's words in an environment variable, where no diff shows it;
+    * **the environment read directly** — the same move, one layer down.
+
+    And the reach stays narrow: the one module allowed to send the user's words out must not also
+    be the module that chooses where they go, so a router and a provider registry are as
+    forbidden here as they are in :data:`VOICE_MODULES`.
+    """
+    rule = "the-voice-goes-only-where-it-is-declared"
+    forbidden = VOICE_PROVIDER_FORBIDDEN
+    files = list(_source_files(pkg_root / ELEVENLABS_ADAPTER_DIR))
+    found = _violations(
+        rule, files, pkg_root, lambda imported: imported.rpartition(".")[2] in forbidden
+    )
+    for path in files:
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                if node.value.startswith("http") and node.value != ELEVENLABS_ENDPOINT:
+                    found.append(Violation(rule, name, node.value, node.lineno))
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                if node.target.id in VOICE_ENDPOINT_FIELDS:
+                    found.append(Violation(rule, name, node.target.id, node.lineno))
+            elif isinstance(node, ast.Attribute) and node.attr in (
+                VOICE_ENVIRONMENT_READS | forbidden
+            ):
+                found.append(Violation(rule, name, node.attr, node.lineno))
+    return found
+
+
+def check_the_audition_speaks_only_the_repositorys_words(pkg_root: Path) -> list[Violation]:
+    """Rule 43: an audition says the two sentences of §9 and nothing anybody typed (M11.3 dec. I).
+
+    Hearing six voices cannot be allowed to become a way of saying arbitrary things out loud,
+    and over the network, without a capability. What leaves the machine during an audition is a
+    literal that is in the repository and in nobody's private context — and the shape that keeps
+    that true is not a comment but an absence: **no function on the audition path takes text.**
+
+    Reported: a parameter that would carry words. The audition chooses a voice and a model, which
+    are names, and never a sentence.
+    """
+    rule = "the-audition-speaks-only-the-repositorys-words"
+    path = pkg_root / AUDITION_MODULE
+    if not path.is_file():
+        return []
+    name = module_name(path, pkg_root)
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found: list[Violation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        arguments = node.args
+        every = [
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+            arguments.vararg,
+            arguments.kwarg,
+        ]
+        found.extend(
+            Violation(rule, name, argument.arg, argument.lineno)
+            for argument in every
+            if argument is not None and argument.arg in AUDITION_TEXT_PARAMETERS
+        )
+    return found
+
+
 def check_adapter_names_no_state(pkg_root: Path) -> list[Violation]:
     """Rule 34: the perception adapter never names a domain state (ADR 0028 §1).
 
@@ -1934,6 +2152,11 @@ RULES: dict[str, Rule] = {
     "context-writes-nothing": check_context_writes_nothing,
     "context-is-not-recorded": check_context_is_not_recorded,
     "the-voice-writes-no-file": check_the_voice_writes_no_file,
+    "the-voice-leaves-no-named-file": check_the_voice_leaves_no_named_file,
+    "the-voice-goes-only-where-it-is-declared": check_the_voice_goes_only_where_it_is_declared,
+    "the-audition-speaks-only-the-repositorys-words": (
+        check_the_audition_speaks_only_the_repositorys_words
+    ),
 }
 
 
@@ -2279,6 +2502,51 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("the-voice-writes-no-file", "VOICE_OUTPUT_FLAGS", DETECTOR),
     Constant(
         "the-voice-writes-no-file",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-voice-leaves-no-named-file (rule 41, M11.3 dec. F, G)
+    Constant("the-voice-leaves-no-named-file", "ELEVENLABS_ADAPTER_DIR", DETECTOR),
+    Constant("the-voice-leaves-no-named-file", "VOICE_FILE_WRITERS", DETECTOR),
+    Constant("the-voice-leaves-no-named-file", "VOICE_MODULES", DETECTOR),
+    Constant("the-voice-leaves-no-named-file", "VOICE_WRITE_MODES", DETECTOR),
+    Constant(
+        "the-voice-leaves-no-named-file",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-voice-goes-only-where-it-is-declared (rule 42, M11.3 dec. H)
+    Constant("the-voice-goes-only-where-it-is-declared", "ELEVENLABS_ADAPTER_DIR", DETECTOR),
+    Constant("the-voice-goes-only-where-it-is-declared", "VOICE_ENDPOINT_FIELDS", DETECTOR),
+    Constant("the-voice-goes-only-where-it-is-declared", "VOICE_ENVIRONMENT_READS", DETECTOR),
+    Constant("the-voice-goes-only-where-it-is-declared", "VOICE_PROVIDER_FORBIDDEN", DETECTOR),
+    Constant(
+        "the-voice-goes-only-where-it-is-declared",
+        "ELEVENLABS_ENDPOINT",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0034 §5",
+        reason="the single address that is allowed: restricted to something nobody writes, the "
+        "real endpoint becomes another host and the rule reports it",
+    ),
+    Constant(
+        "the-voice-goes-only-where-it-is-declared",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-audition-speaks-only-the-repositorys-words (rule 43, M11.3 dec. I, J)
+    Constant(
+        "the-audition-speaks-only-the-repositorys-words", "AUDITION_TEXT_PARAMETERS", DETECTOR
+    ),
+    Constant("the-audition-speaks-only-the-repositorys-words", "AUDITION_MODULE", DETECTOR),
+    Constant(
+        "the-audition-speaks-only-the-repositorys-words",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

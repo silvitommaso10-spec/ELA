@@ -350,6 +350,7 @@ source_modules = [
     "ela.memory",
     "ela.perception",
     "ela.permissions",
+    "ela.providers.elevenlabs",
     "ela.providers.registry",
     "ela.routing",
     "ela.tasks",
