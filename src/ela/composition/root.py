@@ -52,8 +52,11 @@ from ela.ports import (
     Clock,
     ExecutionResultStore,
     IdGenerator,
+    PerceptionProbe,
     RoutingError,
+    ScreenCapturePort,
     TaskRepository,
+    TextRecognitionPort,
 )
 from ela.providers.anthropic import anthropic_provider
 from ela.providers.registry import ProviderRegistry
@@ -201,31 +204,35 @@ async def build(settings: Settings) -> Ela:
         root = settings.workspace.workspace_dir
         root.mkdir(mode=WORKSPACE_MODE, parents=True, exist_ok=True)
 
-        # The one place that knows which operating system this is (architecture rule 27), for the
-        # capture as for the probe: on anything but macOS ELA photographs nothing, and that is a
-        # named object with a test rather than a branch buried in an adapter (ADR 0028, ADR 0029).
-        darwin = platform.system() == "Darwin"
-        probe = (
-            DarwinProbe(timeout=settings.perception.probe_timeout) if darwin else UnsupportedProbe()
-        )
         # Beside the database and never inside the workspace, and that is a permanent constraint
         # rather than this milestone's convenience (ADR 0029 §1): the workspace is what §23 calls
         # synchronised, and content in a folder something may one day sync leaves the machine
         # without anybody having decided it.
         captures = CaptureStore(settings.captures)
-        screen = (
-            ScreenCaptureCommand(timeout=settings.captures.capture_timeout)
-            if darwin
-            else UnsupportedScreenCapture()
-        )
-        # Its own timeout, measured against its own work: unlike the capture, recognition runs in
-        # ELA's process and does degrade under load (2,7x measured), so it does not inherit the
-        # capture's number or the ratio that produced it (ADR 0030 §14).
-        recognition = (
-            VisionTextRecognition(timeout=settings.captures.ocr_timeout)
-            if darwin
-            else UnsupportedTextRecognition()
-        )
+
+        # The one place that knows which operating system this is (architecture rule 27), for the
+        # capture as for the probe: on anything but macOS ELA photographs nothing, and that is a
+        # named object with a test rather than a branch buried in an adapter (ADR 0028, ADR 0029).
+        #
+        # An ``if``, never ``X if darwin else Y`` (ADR 0031, architecture rule 37): the side a
+        # conditional *expression* does not take costs the 100% branch gate nothing — no missing
+        # line, no missing arc — so a wiring written that way is proved on the runner it happens
+        # to run on and nowhere else. As a statement the gate measures both arcs and refuses the
+        # direction no test names. Recognition has its own timeout, measured against its own work:
+        # unlike the capture it runs inside ELA's process and does degrade under load (2,7x
+        # measured), so it does not inherit the capture's number (ADR 0030 §14).
+        darwin = platform.system() == "Darwin"
+        probe: PerceptionProbe
+        screen: ScreenCapturePort
+        recognition: TextRecognitionPort
+        if darwin:
+            probe = DarwinProbe(timeout=settings.perception.probe_timeout)
+            screen = ScreenCaptureCommand(timeout=settings.captures.capture_timeout)
+            recognition = VisionTextRecognition(timeout=settings.captures.ocr_timeout)
+        else:
+            probe = UnsupportedProbe()
+            screen = UnsupportedScreenCapture()
+            recognition = UnsupportedTextRecognition()
         tools = production_tools(
             root=root,
             clock=clock,

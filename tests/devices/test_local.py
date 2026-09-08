@@ -82,9 +82,19 @@ def test_an_unknown_operating_system_is_refused() -> None:
         local_device(MUCH_LATER, system="FreeBSD")
 
 
-def test_the_system_defaults_to_the_running_one() -> None:
-    """No ``system`` given: ``platform.system()``, which this test suite runs on."""
-    assert local_device(MUCH_LATER).os is SYSTEMS[platform.system()]
+@pytest.mark.parametrize("system", sorted(SYSTEMS))
+def test_the_system_defaults_to_the_running_one(
+    monkeypatch: pytest.MonkeyPatch, system: str
+) -> None:
+    """No ``system`` given: ``platform.system()`` — asserted by naming it, not by being it.
+
+    ``SYSTEMS[platform.system()]`` on both sides would have been a test that verifies one entry
+    per machine and never fails on any: a default hard-coded to ``"Darwin"`` passes on a Mac and
+    is caught only by the runner (ADR 0031). Named, every entry is checked everywhere.
+    """
+    monkeypatch.setattr(platform, "system", lambda: system)
+
+    assert local_device(MUCH_LATER).os is SYSTEMS[system]
 
 
 def test_local_declares_only_what_can_be_known() -> None:

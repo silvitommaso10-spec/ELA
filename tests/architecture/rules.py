@@ -1631,6 +1631,74 @@ def check_capture_stays_on_the_machine(pkg_root: Path) -> list[Violation]:
     return found
 
 
+PLATFORM_WORDS = frozenset(
+    {
+        "platform",  # ``platform.system()``, ``sys.platform``, ``platform.machine()``
+        "uname",
+        "darwin",
+        "linux",
+        "windows",
+        "macos",
+        "win32",
+        "cygwin",
+        "posix",
+        "nt",
+    }
+)
+"""The words that make a condition a question about *which machine this is* (ADR 0031).
+
+Matched as whole identifiers and whole string constants, never as substrings: ``nt`` is a word in
+``os.name != "nt"`` and a coincidence in ``count``. ``os.name`` needs no entry of its own — the
+value it is compared against is always one of these.
+"""
+
+
+def _condition_words(test: ast.expr) -> set[str]:
+    """Every identifier, attribute name and string constant in a condition, lowercased."""
+    words: set[str] = set()
+    for node in ast.walk(test):
+        if isinstance(node, ast.Name):
+            words.add(node.id.lower())
+        elif isinstance(node, ast.Attribute):
+            words.add(node.attr.lower())
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            words.add(node.value.lower())
+    return words
+
+
+def check_platform_choice_is_a_statement(pkg_root: Path) -> list[Violation]:
+    """Rule 37: a choice made on which machine this is is an ``if``, never ``X if p else Y``.
+
+    This is a rule about the *measuring instrument*, and it is why it is worth a rule. The
+    ``cov-critical`` gate at 100% branch is what proves that no decision goes unproved — but the
+    side a conditional **expression** does not take costs it nothing: no missing line and no
+    missing arc, because a ternary is a single statement (measured, ADR 0031 §1). So a platform
+    choice written as an expression is invisible exactly where the invisibility is dangerous, and
+    the only trace it leaves surfaces one frame lower, in whatever pure function the arm that did
+    not run would have called — a line that has nothing to do with the platform, in another
+    package, on the other runner. That is how ``ela.tools.settings.ocr_timeout`` came to be the
+    single uncovered line of a green macOS build (M10.3).
+
+    Written as a statement, the same choice becomes two arcs the gate measures and refuses to
+    leave unproved, so the test that names the other system stops being optional.
+
+    Scoped to all of ``src/ela`` and not to the composition root: the root is where the choice
+    belongs today (rule 27), and this rule is what the *next* one — a Windows node in Fase 12 —
+    runs into wherever it is written.
+    """
+    rule = "platform-choice-is-a-statement"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, ast.unparse(node.test), node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.IfExp) and _condition_words(node.test) & PLATFORM_WORDS
+        )
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -1668,6 +1736,7 @@ RULES: dict[str, Rule] = {
     "perception-children-import-only-stdlib": check_children_are_standalone,
     "perception-reads-no-window-titles": check_no_window_titles,
     "perception-adapter-decides-nothing": check_adapter_names_no_state,
+    "platform-choice-is-a-statement": check_platform_choice_is_a_statement,
 }
 
 
@@ -2049,6 +2118,15 @@ CONSTANTS: tuple[Constant, ...] = (
         reason=_THE_PACKAGE_ITSELF,
     ),
     Constant("perception-reads-no-window-titles", "WINDOW_TITLE_KEYS", DETECTOR),
+    # platform-choice-is-a-statement (rule 37, ADR 0031)
+    Constant("platform-choice-is-a-statement", "PLATFORM_WORDS", DETECTOR),
+    Constant(
+        "platform-choice-is-a-statement",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # tool-output-readers
     Constant("tool-output-readers", "API_DIR", DETECTOR),
     Constant("tool-output-readers", "OUTPUT_MODEL", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),

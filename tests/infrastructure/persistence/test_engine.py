@@ -71,12 +71,24 @@ def test_a_file_url_is_not_memory() -> None:
 # ----------------------------------------------------------------------------------------
 
 
-def test_ensure_directory_creates_the_parent_privately(tmp_path: Path) -> None:
+def test_ensure_directory_creates_the_parent(tmp_path: Path) -> None:
     directory = tmp_path / "nested" / ".ela"
     ensure_directory(sync_url(f"sqlite:///{(directory / 'ela.db').as_posix()}"))
     assert directory.is_dir()
-    if os.name != "nt":
-        assert directory.stat().st_mode & 0o777 == DIRECTORY_MODE
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits: Windows has no 0o700")
+def test_ensure_directory_creates_the_parent_privately(tmp_path: Path) -> None:
+    """The mode is asserted where the mode exists, and *skipped out loud* where it does not.
+
+    It used to be an ``if os.name != "nt"`` inside the test above: on the platform the ``if``
+    excludes, the test still passed while asserting nothing about privacy — half a test, silent
+    (ADR 0031). Fase 12 brings Windows nodes, and a skip says which half ran.
+    """
+    directory = tmp_path / "nested" / ".ela"
+    ensure_directory(sync_url(f"sqlite:///{(directory / 'ela.db').as_posix()}"))
+
+    assert directory.stat().st_mode & 0o777 == DIRECTORY_MODE
 
 
 def test_ensure_directory_does_nothing_for_memory(
