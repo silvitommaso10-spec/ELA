@@ -854,13 +854,43 @@ VIOLATIONS: tuple[Case, ...] = (
         "import asyncio\nasync def go() -> None:\n    await asyncio.create_subprocess_exec('ls')\n",
         "asyncio.create_subprocess_exec(...)",
     ),
-    # --- perception-probe-imports-only-stdlib (rule 33, ADR 0028 §2) ---
+    # --- perception-children-import-only-stdlib (rule 33, ADR 0028 §2; M10.3 dec. 6) ---
     Case(
         "probe-imports-the-domain",
-        "perception-probe-imports-only-stdlib",
+        "perception-children-import-only-stdlib",
         "infrastructure/perception/probe.py",
-        "from ela.domain import RawObservation\n",
+        "from ela.domain import RawObservation\n"
+        + "import sys\nif __name__ == '__main__':\n    sys.exit(0)\n",
         "ela.domain.RawObservation",
+    ),
+    Case(
+        # The second child, and the reason the rule stopped naming one file. The subject is
+        # derived from the ``__main__`` guard, so this file is covered without anybody adding it
+        # to a list — which is the failure a hand-written tuple would have had.
+        "the-vision-child-imports-the-domain",
+        "perception-children-import-only-stdlib",
+        "infrastructure/perception/vision.py",
+        "from ela.domain import RawRecognition\n"
+        "import sys\n"
+        "if __name__ == '__main__':\n"
+        "    sys.exit(0)\n",
+        "ela.domain.RawRecognition",
+    ),
+    # --- perception-reads-no-window-titles (rule 36, M10.3 dec. 3) ---
+    Case(
+        # One string literal away, which is exactly why it is a rule.
+        "the-probe-reaches-for-a-window-title",
+        "perception-reads-no-window-titles",
+        "infrastructure/perception/probe.py",
+        'KEY = b"kCGWindowName"\n',
+        "kCGWindowName",
+    ),
+    Case(
+        "an-adapter-reaches-for-a-window-title-as-text",
+        "perception-reads-no-window-titles",
+        "infrastructure/perception/titles.py",
+        'def key() -> str:\n    return "kCGWindowName"\n',
+        "kCGWindowName",
     ),
     # --- perception-adapter-decides-nothing (rule 34, ADR 0028 §1) ---
     Case(
@@ -902,6 +932,22 @@ VIOLATIONS: tuple[Case, ...] = (
         "tools/screen.py",
         "from ela import providers\ndef go():\n    return providers.ProviderRegistry\n",
         "ProviderRegistry",
+    ),
+    Case(
+        # M10.3: the text is the easier thing to send away, so the rule reaches it too — and it
+        # reached it one commit *before* this module existed (dec. 15).
+        "the-ocr-tool-reaches-a-router",
+        "capture-stays-on-the-machine",
+        "tools/screen_text.py",
+        "from ela.routing import ModelRouter\n",
+        "ela.routing.ModelRouter",
+    ),
+    Case(
+        "the-vision-child-reaches-an-http-client",
+        "capture-stays-on-the-machine",
+        "infrastructure/perception/vision.py",
+        "import httpx\n",
+        "httpx",
     ),
 )
 ALLOWED: tuple[Case, ...] = (
@@ -1368,10 +1414,13 @@ ALLOWED: tuple[Case, ...] = (
         "",
     ),
     Case(
+        # The guard is not decoration: it is what makes this file a *child*, so without it the
+        # rule would have nothing to read and this case would pass for the wrong reason.
         "the-probe-may-use-the-standard-library",
-        "perception-probe-imports-only-stdlib",
+        "perception-children-import-only-stdlib",
         "infrastructure/perception/probe.py",
-        "import ctypes\nimport json\nimport sys\n",
+        "import ctypes\nimport json\n"
+        + "import sys\nif __name__ == '__main__':\n    sys.exit(0)\n",
         "",
     ),
     Case(
