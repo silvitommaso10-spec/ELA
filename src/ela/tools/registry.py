@@ -27,6 +27,7 @@ from ela.ports import (
     PerceptionProbe,
     ProviderRegistryPort,
     ScreenCapturePort,
+    SpeechPort,
     TextRecognitionPort,
     ToolPort,
     VerifierPort,
@@ -42,8 +43,10 @@ from ela.tools.verifiers import (
     EchoVerifier,
     ModelCompleteVerifier,
     ReadScreenTextVerifier,
+    SpeakVerifier,
     WriteNoteVerifier,
 )
+from ela.tools.voice import SpeakTool
 
 __all__ = [
     "ToolRegistry",
@@ -156,6 +159,9 @@ def production_tools(
     probe: PerceptionProbe,
     recognition: TextRecognitionPort,
     languages: tuple[str, ...],
+    speech: SpeechPort,
+    voice: str,
+    voice_enabled: bool,
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -169,6 +175,7 @@ def production_tools(
             *tools_v01(root=root, clock=clock, ids=ids, router=router, providers=providers).tools(),
             CaptureScreenTool(captures, screen, probe, clock, ids),
             ReadScreenTextTool(captures, recognition, clock, ids, languages=languages),
+            SpeakTool(speech, clock, ids, voice=voice, enabled=voice_enabled),
         )
     )
 
@@ -202,5 +209,6 @@ def production_verifiers(
             *verifiers_v01(root=root, router=router).verifiers(),
             CaptureScreenVerifier(captures.directory, captures.settings.capture_ttl),
             ReadScreenTextVerifier(captures.directory, captures.settings.capture_ttl),
+            SpeakVerifier(),
         )
     )

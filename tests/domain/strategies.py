@@ -63,6 +63,7 @@ from ela.domain import (
     RawCapture,
     RawObservation,
     RawRecognition,
+    RawSpeech,
     RawTextLine,
     RiskLevel,
     SensorCause,
@@ -427,6 +428,15 @@ raw_captures = st.builds(
 """Negative exit codes are generated on purpose: a child killed by a signal reports one, and
 :data:`~ela.infrastructure.perception.darwin.TIMED_OUT` is itself ``-1``."""
 
+raw_speeches = st.builds(
+    RawSpeech,
+    exit_code=_optional(st.integers(min_value=-8, max_value=8)),
+    timed_out=st.booleans(),
+    spoken_seconds=_optional(st.floats(min_value=0, max_value=120, allow_nan=False)),
+)
+"""Zero seconds is generated on purpose: it is what a helper that never spoke reports, and it is
+the case the verifier's floor exists to catch."""
+
 raw_text_lines = st.builds(
     RawTextLine,
     text=st.text(max_size=120),
@@ -610,6 +620,7 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.SensorStatus: sensor_statuses,
     domain.RawObservation: raw_observations,
     domain.RawCapture: raw_captures,
+    domain.RawSpeech: raw_speeches,
     domain.RawRecognition: raw_recognitions,
     domain.RawTextLine: raw_text_lines,
     domain.Observation: observations,

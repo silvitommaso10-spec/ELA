@@ -53,6 +53,7 @@ from ela.domain import (
     RawCapture,
     RawObservation,
     RawRecognition,
+    RawSpeech,
     StepId,
     Task,
     TaskEvent,
@@ -99,8 +100,9 @@ __all__ = [
     "FakeProbe",
     "FakeProviderRegistry",
     "FakeScreenCapture",
-    "FakeTextRecognition",
+    "FakeSpeech",
     "FakeTaskRepository",
+    "FakeTextRecognition",
     "FakeTool",
     "FakeToolRegistry",
     "FakeVerifier",
@@ -911,6 +913,40 @@ class FakeProbe:
         if self.fails:
             raise RuntimeError("the probe broke its contract")
         return self._answers.pop(0) if len(self._answers) > 1 else self._answers[0]
+
+
+class FakeSpeech:
+    """A :class:`~ela.ports.SpeechPort` that says nothing and reports what the test wrote down.
+
+    ``report`` is how the helper ended; ``there`` is whether this machine has a voice at all.
+
+    ``said`` records every sentence it was asked for, and it is what proves the two properties
+    the milestone rests on: **when the voice is switched off, this is never called**, and when it
+    is called it is called with the text that was asked for and nothing else. A test asserts an
+    empty ``said``, not the absence of a sound — no runner has ears, so not attempting to speak
+    is the behaviour, and behaviour is only tested by watching for it.
+
+    ``spoken_seconds`` defaults to a duration long enough for any text a test uses, because the
+    verifier's floor is a real check and a fake that reported zero would fail it for the wrong
+    reason. A test that wants that failure passes its own ``report``.
+
+    Honours the port's promise not to raise: a helper that dies reports how, it does not throw.
+    """
+
+    __slots__ = ("_report", "said", "there")
+
+    def __init__(self, *, report: RawSpeech | None = None, there: bool = True) -> None:
+        self._report = report if report is not None else RawSpeech(exit_code=0, spoken_seconds=60.0)
+        self.there = there
+        self.said: tuple[str, ...] = ()
+
+    async def available(self) -> bool:
+        return self.there
+
+    async def speak(self, text: str) -> RawSpeech:
+        """Record what was asked, make no sound, and report."""
+        self.said = (*self.said, text)
+        return self._report
 
 
 class FakeScreenCapture:

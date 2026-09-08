@@ -25,6 +25,7 @@ under a label, with the whole row rewritten."""
 ADDING_ADRS = (
     (ADR_DIR / "0029-screen-capture.md", ADDING),
     (ADR_DIR / "0030-screen-text.md", ADDING),
+    (ADR_DIR / "0033-voice-out.md", ADDING),
 )
 """ADRs that add a capability the catalogue did not have (ADR 0029 §6: ``perception.capture_
 screen``), under a label of their own. An addition must be new, the way an extension must not be:

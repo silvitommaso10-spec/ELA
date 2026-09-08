@@ -7,7 +7,12 @@ what is left unexercisable shrinks to one file.
 
 from __future__ import annotations
 
+import asyncio
 import sys
+import tempfile
+from pathlib import Path
+
+import pytest
 
 from ela.infrastructure.perception import TIMED_OUT, spawn
 
@@ -41,3 +46,32 @@ async def test_output_that_is_not_utf8_does_not_raise() -> None:
 
     assert code == 0
     assert output
+
+
+async def test_a_cancelled_wait_kills_the_child_instead_of_orphaning_it() -> None:
+    """Cancelling the caller must not leave the helper running (M11.1, criterio 9).
+
+    ``asyncio.wait_for`` cancels the coroutine that reads the child's pipes; it does not touch
+    the child, so the natural spelling leaves a process that keeps going after the caller gave
+    up. For the probe that is a stray reader; for the voice it is **ELA that does not stop
+    talking when it has been told to stop**, which is the worse half of the problem decision F
+    postponed to the barge-in.
+
+    Written as a marker file the child creates *after* the moment it should already be dead: if
+    the kill happened, the file never appears.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        marker = Path(directory) / "still-alive"
+        child = (
+            "import pathlib, time\n"
+            "time.sleep(0.6)\n"
+            f"pathlib.Path({str(marker)!r}).write_text('x')\n"
+        )
+        task = asyncio.create_task(spawn([sys.executable, "-c", child], 30))
+        await asyncio.sleep(0.15)  # long enough for the child to exist, short enough to be early
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.sleep(0.9)  # past the instant the child would have written
+
+        assert not marker.exists(), "the child outlived the cancelled call"

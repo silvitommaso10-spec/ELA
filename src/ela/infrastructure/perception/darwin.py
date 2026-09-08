@@ -24,6 +24,7 @@ import asyncio
 import json
 import sys
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import suppress
 from datetime import timedelta
 from typing import Final
 
@@ -48,6 +49,18 @@ async def spawn(argv: Sequence[str], timeout: float) -> tuple[int, str]:
     ``stderr`` is discarded on purpose: a child that dies of an Objective-C exception writes a
     stack trace to it, and that trace is neither ELA's to interpret nor something to carry into a
     perception snapshot. What matters is that it did not answer.
+
+    **Two ways of giving up, and both kill the child.** A timeout is ELA deciding the helper took
+    too long, and it answers :data:`TIMED_OUT`. A *cancellation* is the caller itself going away,
+    and it re-raises — but not before killing, because ``asyncio.wait_for`` cancels the coroutine
+    reading the child's pipes and never touches the child. Without that branch the natural
+    spelling leaves a process running after the caller gave up.
+
+    It was a latent fault for the probe and for the capture, where the residue is a stray reader.
+    It is not latent for the voice (M11.1, criterio 9): an orphaned ``say`` is **ELA that keeps
+    talking after being told to stop**, which is the worse half of what decision F postponed to
+    the barge-in. Fixed here, once, for all three — a shared helper with a hole in it is not
+    three problems.
     """
     process = await asyncio.create_subprocess_exec(
         *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
@@ -55,11 +68,25 @@ async def spawn(argv: Sequence[str], timeout: float) -> tuple[int, str]:
     try:
         stdout, _ = await asyncio.wait_for(process.communicate(), timeout)
     except TimeoutError:
-        process.kill()
-        await process.wait()
+        await _kill(process)
         return TIMED_OUT, ""
+    except asyncio.CancelledError:
+        await _kill(process)
+        raise
     code = TIMED_OUT if process.returncode is None else process.returncode
     return code, stdout.decode(errors="replace")
+
+
+async def _kill(process: asyncio.subprocess.Process) -> None:
+    """Kill a child and reap it; a child that already exited is the outcome that was wanted.
+
+    ``ProcessLookupError`` is the race between the check and the signal, and it is suppressed
+    rather than branched on: whether the child was still there is not something this line can
+    know without asking, and asking is the same race one line earlier.
+    """
+    with suppress(ProcessLookupError):
+        process.kill()
+    await process.wait()
 
 
 class DarwinProbe:

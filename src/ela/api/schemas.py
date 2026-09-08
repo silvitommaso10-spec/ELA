@@ -512,6 +512,30 @@ class PerceptionSummaryOut(BaseModel):
     captures: CaptureStoreOut
 
 
+class VoiceOut(BaseModel):
+    """Whether ELA has a voice on this machine, and which one (§9; M11.1).
+
+    In ``/diagnostics`` and nowhere else, for the line ADR 0028 §8 drew: this route says *what
+    ELA is connected to*, not *what ELA is doing*. Whether ELA can speak here is composition — it
+    sits next to ``providers`` and ``tools``. There is no route that says whether ELA **is**
+    speaking, and there is not meant to be one in M11.1: a sentence lasts as long as a sentence,
+    and a status that is true for thirty seconds is a status nobody can act on.
+
+    ``max_characters`` is here because it is the only thing a caller can get wrong before the
+    Guardian ever sees the step, and a limit nobody can read is a limit somebody discovers.
+    """
+
+    enabled: bool
+    """The user's switch, ``ELA_VOICE_ENABLED``. Separate from ``available`` because "you turned
+    it off" and "this machine has no voice" are different facts (M10.3's lesson, ADR 0030 §8)."""
+    available: bool
+    """Whether this operating system has a speech helper ELA knows about."""
+    voice: str
+    """Which voice ELA speaks with. **Not the voice §9 asks for** — see M11.1 dec. D."""
+    max_characters: int
+    timeout_seconds: float
+
+
 class ContextOut(BaseModel):
     """The answer to §44 at one instant — and what this ELA cannot answer (M10.4, ADR 0032).
 
@@ -591,3 +615,4 @@ class DiagnosticsOut(BaseModel):
     pending_approvals: int
     recovered: dict[str, int]
     perception: PerceptionSummaryOut
+    voice: VoiceOut

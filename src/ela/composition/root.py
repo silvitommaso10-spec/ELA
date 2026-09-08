@@ -27,9 +27,11 @@ from ela.domain import Actor, ActorKind
 from ela.executive import Executor, TaskRunner
 from ela.infrastructure.perception import (
     DarwinProbe,
+    SaySpeechCommand,
     ScreenCaptureCommand,
     UnsupportedProbe,
     UnsupportedScreenCapture,
+    UnsupportedSpeech,
     UnsupportedTextRecognition,
     VisionTextRecognition,
 )
@@ -56,6 +58,7 @@ from ela.ports import (
     PerceptionProbe,
     RoutingError,
     ScreenCapturePort,
+    SpeechPort,
     TaskRepository,
     TextRecognitionPort,
 )
@@ -140,6 +143,13 @@ class Ela:
     itself — the perception view is handed to ``assemble`` by whoever decided to look. Which
     states count as live is given to it here rather than derived by it: that knowledge is the
     state machine's (ADR 0004) and a second copy of the list is how two lists drift apart.
+    """
+    speech: SpeechPort
+    """How ELA speaks on this machine (§9; M11.1).
+
+    Held here, and not only inside the tool, for the reason ``captures`` is: ``/diagnostics`` has
+    to be able to ask *whether ELA has a voice here* without going through a capability, an
+    approval and a step. Asking is free and silent — two syscalls, no permission, no sound.
     """
     perception: PerceptionCore
     """What ELA believes about the machine it runs on (§10, §11; M10.1, ADR 0028).
@@ -234,14 +244,19 @@ async def build(settings: Settings) -> Ela:
         probe: PerceptionProbe
         screen: ScreenCapturePort
         recognition: TextRecognitionPort
+        speech: SpeechPort
         if darwin:
             probe = DarwinProbe(timeout=settings.perception.probe_timeout)
             screen = ScreenCaptureCommand(timeout=settings.captures.capture_timeout)
             recognition = VisionTextRecognition(timeout=settings.captures.ocr_timeout)
+            speech = SaySpeechCommand(
+                timeout=settings.voice.voice_timeout, voice=settings.voice.voice_name
+            )
         else:
             probe = UnsupportedProbe()
             screen = UnsupportedScreenCapture()
             recognition = UnsupportedTextRecognition()
+            speech = UnsupportedSpeech()
         tools = production_tools(
             root=root,
             clock=clock,
@@ -253,6 +268,9 @@ async def build(settings: Settings) -> Ela:
             probe=probe,
             recognition=recognition,
             languages=settings.captures.ocr_languages,
+            speech=speech,
+            voice=settings.voice.voice_name,
+            voice_enabled=settings.voice.voice_enabled,
         )
         verifiers = production_verifiers(root=root, router=router, captures=captures)
 
@@ -349,5 +367,6 @@ async def build(settings: Settings) -> Ela:
         runner=runner,
         captures=captures,
         context=context,
+        speech=speech,
         perception=perception,
     )

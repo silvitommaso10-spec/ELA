@@ -107,6 +107,7 @@ __all__ = [
     "RawCapture",
     "RawObservation",
     "RawRecognition",
+    "RawSpeech",
     "RawTextLine",
     "RiskLevel",
     "SOURCE_FIELDS",
@@ -1313,6 +1314,34 @@ class RawCapture(_DomainModel):
     """Whether the helper was killed for overstaying. Separate from ``exit_code`` because "it did
     not answer" and "it answered badly" are different facts, and only the first says nothing at
     all about the machine."""
+
+
+class RawSpeech(_DomainModel):
+    """What the speech helper did, in primitives — no verdict (M11.1, ADR 0033).
+
+    The third of its kind, after :class:`RawCapture` and :class:`RawRecognition`, and the first
+    on a channel that leaves no artefact at all: a spoken sentence is not a file, not a record and
+    not a thing anybody can go back and look at. What comes back is only how the helper ended.
+
+    **No text field, and that is the decision.** Architecture rule 40 keeps what ELA says off the
+    disk; a model that carried the sentence back would put it into an ``ExecutionResult`` that is
+    persisted, which is the same accumulation by another route (M11.1 dec. 7). What the tool
+    reports about the words is their length and their digest, never the words.
+
+    ``spoken_seconds`` is how long the helper ran. It is a **measurement and not a verdict**: it
+    says the process was alive that long, never that a human heard anything — the distinction the
+    verifier is built to state out loud (M11.1 dec. C).
+    """
+
+    exit_code: int | None = None
+    """The helper's exit status; ``None`` when it never ran — no such operating system, or the
+    process could not be started at all."""
+    timed_out: bool = False
+    """Whether the helper was killed for overstaying. Separate from ``exit_code`` for the reason
+    :class:`RawCapture` separates them: "it did not answer" and "it answered badly" are different
+    facts."""
+    spoken_seconds: float | None = None
+    """Wall-clock time the helper was alive; ``None`` when it never ran."""
 
 
 # --------------------------------------------------------------------------------------

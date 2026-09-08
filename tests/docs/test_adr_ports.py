@@ -55,6 +55,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0028-perception-core.md", INTRODUCING),
     (ADR_DIR / "0029-screen-capture.md", INTRODUCING),
     (ADR_DIR / "0030-screen-text.md", INTRODUCING),
+    (ADR_DIR / "0033-voice-out.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
@@ -72,6 +73,7 @@ INTRODUCED_PORTS = frozenset(
         "PerceptionProbe",
         "ScreenCapturePort",
         "TextRecognitionPort",
+        "SpeechPort",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")
