@@ -16,6 +16,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = [
+    "CAPTURE_TIMEOUT_IS_MEASURED",
     "DEFAULT_CAPTURE_MAX_BYTES",
     "DEFAULT_CAPTURE_MAX_COUNT",
     "DEFAULT_CAPTURE_TIMEOUT_SECONDS",
@@ -60,9 +61,24 @@ DEFAULT_CAPTURE_TIMEOUT_SECONDS: Final = 10.0
 
 **A declared placeholder, not a measured default** (M10.2, ADR 0029 §14): at the time this was
 written the Screen Recording permission was denied on the development machine, so no capture had
-ever run and no honest number existed. It is replaced by a measured one in the commit in which
-the permission is granted. A provisional default nobody re-measures is a threshold put in "for
-now", and this project knows how that ends.
+ever run and no honest number existed. A provisional default nobody re-measures is a threshold
+put in "for now", and this project knows how that ends — so the reminder is not a comment, it is
+:data:`CAPTURE_TIMEOUT_IS_MEASURED` and the test that reads it.
+"""
+
+CAPTURE_TIMEOUT_IS_MEASURED: Final = False
+"""Whether the number above was measured or is still the placeholder (M10.2, ADR 0029 §14).
+
+Flipped to ``True`` **in the same edit that replaces the number**, and never on its own. What
+makes it more than a note to self is that a test turns it into a failure the moment the
+measurement becomes possible: on a machine where ELA can read that Screen Recording is granted, a
+placeholder that is still a placeholder is a red test. Where the permission is missing — a Linux
+runner, a Mac nobody granted — there is nothing to measure and nothing to report, so the check
+says "not applicable" instead of passing quietly.
+
+The shape is the one this project uses for a budget: **the condition is an observable fact, not a
+date**. A reminder that fires on a calendar goes off when nobody can act on it; this one fires
+exactly when somebody can.
 """
 
 

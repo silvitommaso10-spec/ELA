@@ -201,16 +201,42 @@ def test_the_criteria_are_written_down_and_not_only_applied(sentence: str) -> No
     assert sentence in adr_text().lower()
 
 
-def test_the_placeholder_declares_itself_a_placeholder() -> None:
+def test_the_placeholder_is_watched_by_a_fact_and_not_by_a_note() -> None:
     """§14: a provisional default nobody re-measures is a threshold put in "for now".
 
-    While this assertion passes with the word "segnaposto" present, the timeout has not been
-    measured — and the sentence saying so is the thing that makes the next reader look.
+    What makes this more than a note is that the ADR commits to a **condition**, and the
+    condition has a test: the day ELA can read that Screen Recording is granted here, a
+    placeholder that is still a placeholder fails (``test_screencapture_smoke.py``, with its
+    negative case in ``tests/tools/test_settings.py``). This checks that the document and the
+    code still say the same thing about where that number stands.
     """
-    from ela.tools.settings import DEFAULT_CAPTURE_TIMEOUT_SECONDS
+    from ela.tools.settings import CAPTURE_TIMEOUT_IS_MEASURED, DEFAULT_CAPTURE_TIMEOUT_SECONDS
 
     assert DEFAULT_CAPTURE_TIMEOUT_SECONDS == 10.0
+    assert CAPTURE_TIMEOUT_IS_MEASURED is False
     assert "segnaposto" in adr_text()
+    assert "la condizione è un fatto osservabile, non una data" in adr_text().lower()
+
+
+def test_the_reason_the_question_may_carry_an_argument_is_written_down() -> None:
+    """§6: ``prompt_arguments`` is not an exception made for the screen.
+
+    Every informed consent ELA will ask for needs it — a call (§7) is *to whom* and *to say what*,
+    an email (§39) is *to whom* and *about what*, an order (§30) is *what* and *for how much* —
+    and the criterion that produced the field has to be in the document, or the next capability
+    invents its own way of saying the same thing.
+    """
+    assert "non soltanto quale" in adr_text().lower()
+    assert "consenso informato" in adr_text().lower()
+
+
+def test_the_limit_of_the_verifier_is_written_down() -> None:
+    """§9: it cannot say the image depicts the screen, only that it exists and is the one
+    declared. Admitting that is worth more than a verifier that seems to say more."""
+    text = " ".join(adr_text().split())
+
+    assert "non può dire che l'immagine ritrae lo schermo" in text
+    assert "byte, digest, larghezza, altezza" in text
 
 
 def test_the_tool_declares_every_code_the_adr_relies_on() -> None:

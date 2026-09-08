@@ -228,6 +228,20 @@ Il default vuoto è il verso fail-safe e non una comodità: `model.complete` ha 
 **Un argomento non si mostra a meno che la capability non lo dichiari.** Nessuna delle tre di v0.1
 lo fa, e per loro il prompt è identico byte per byte.
 
+**Perché il campo è generale, e non un'eccezione per la cattura.** Prima di M10.2 la domanda posta
+all'utente diceva *quale capability* stava per essere eseguita e non *che cosa* stava approvando —
+sono due informazioni diverse, e §30 chiede la seconda. Il campo esiste perché:
+
+> **La domanda posta all'utente deve poter dire che cosa sta approvando, non soltanto quale
+> capability sta per essere eseguita.**
+
+Non è un requisito dello schermo: è il requisito di ogni consenso informato che ELA chiederà.
+Telefonare a qualcuno (§7) non è «`comms.call` ha chiesto il permesso», è *a chi* e *per dire
+cosa*; mandare una email (§39) è *a chi* e *su cosa*; un ordine (§30) è *che cosa* e *per quanto*.
+Ognuna di quelle capability avrà il suo `prompt_arguments`, e il meccanismo che oggi porta un
+`purpose` è lo stesso che porterà quei campi — dichiarati uno a uno, mai tutti, perché il default
+vuoto è ciò che tiene il contenuto dell'utente fuori da un `Approval` persistito.
+
 ## 7. Una credenza periodica non decide mai un'azione
 
 La sonda **legge già** `screen_recording_permission`, nella famiglia `PERMISSIONS`, a 30 s di
@@ -275,8 +289,22 @@ scritto un PNG di questa dimensione con questo digest» — e la fonte di verit�
 letteralmente §20.
 
 Il verifier rilegge **con lo stesso codice** che ha scritto (§5) e non ricattura nulla: verificare
-non è rifare. **Limite dichiarato:** deve girare entro la TTL. Nella pipeline gira nello stesso
-step, a millisecondi di distanza; è scritto per chi un giorno verificherà in differita.
+non è rifare.
+
+**Il limite, dichiarato perché nessuno lo legga per più di quello che è.** Il verifier **non può
+dire che l'immagine ritrae lo schermo**. Può dire che esiste, che è un PNG, e che è esattamente
+quella che il tool ha dichiarato — byte, digest, larghezza, altezza. Che quei pixel siano il
+desktop dell'utente e non una schermata nera, o la finestra sbagliata, o un display addormentato,
+è fuori dalla sua portata: servirebbe capire l'immagine, che è visione e non verifica.
+
+Quello che copre è precisamente §63: *«non deve assumere che un click sia riuscito solo perché è
+stato inviato»* — l'esecuzione non è la prova del successo, e ciò che il verifier confronta è la
+**dichiarazione del tool contro il disco**. Un tool che riportasse successo senza aver scritto
+niente, o che avesse scritto qualcos'altro, viene preso. Un tool che ha fotografato uno schermo
+spento no, e ammetterlo è più utile che un verifier che sembra dire di più.
+
+E il secondo limite: **deve girare entro la TTL.** Nella pipeline gira nello stesso step, a
+millisecondi di distanza; è scritto per chi un giorno verificherà in differita.
 
 ## 10. Nessun evento di audit nuovo
 
@@ -363,10 +391,23 @@ la manopola sarebbe condividere un budget che descrive un'altra cosa.
 
 `ELA_CAPTURE_TIMEOUT_SECONDS` è la manopola. **10 s è un segnaposto dichiarato, non un default**:
 al momento della scrittura il permesso era negato, nessuna cattura era mai girata e nessun numero
-onesto esisteva. La regola è esplicita e sta nel codice accanto alla costante — il numero misurato
-entra nella spec di M10.2 e qui **prima** del codice che lo usa, cioè nel commit in cui il permesso
-c'è. Un default provvisorio che nessuno rimisura è una soglia messa «per ora», e questo progetto sa
-come finisce.
+onesto esisteva. Il numero misurato entra nella spec di M10.2 e qui **prima** del codice che lo
+usa, cioè nel commit in cui il permesso c'è.
+
+Un default provvisorio che nessuno rimisura è una soglia messa «per ora», e questo progetto sa come
+finisce — quindi il promemoria non è un commento. È `CAPTURE_TIMEOUT_IS_MEASURED`, e il test che lo
+legge:
+
+> **La condizione è un fatto osservabile, non una data.** Su una macchina dove ELA legge che
+> Screen Recording è **concesso**, un segnaposto ancora segnaposto è un test rosso. Dove il
+> permesso manca — un runner Linux, un Mac che nessuno ha autorizzato — non c'è niente da misurare
+> e il test dice «non applicabile» invece di passare in silenzio.
+
+È la stessa forma di un budget: un promemoria che scatta su un calendario scatta quando nessuno può
+farci niente; questo scatta esattamente quando qualcuno può. La decisione è una funzione pura con
+il suo caso negativo (`overdue`), perché la combinazione che conta — *concesso, e ancora
+segnaposto* — deve poter essere provata su qualunque runner e non solo sulla macchina dove capita
+di essere vera. Il flag si gira **nella stessa modifica** che sostituisce il numero, mai da solo.
 
 ## 15. Il tetto rifiuta, non sfratta
 

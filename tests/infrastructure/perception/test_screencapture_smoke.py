@@ -19,7 +19,10 @@ from pathlib import Path
 
 import pytest
 
-from ela.infrastructure.perception import SCREENCAPTURE, ScreenCaptureCommand
+from ela.domain import ProbeFamily
+from ela.infrastructure.perception import SCREENCAPTURE, DarwinProbe, ScreenCaptureCommand
+from ela.tools.settings import CAPTURE_TIMEOUT_IS_MEASURED
+from tests.tools.test_settings import overdue
 
 pytestmark = pytest.mark.skipif(
     platform.system() != "Darwin", reason="the capture helper is macOS's"
@@ -37,3 +40,32 @@ async def test_the_adapter_agrees_that_this_machine_can_capture() -> None:
     capture = ScreenCaptureCommand(timeout=timedelta(seconds=1))
 
     assert await capture.available()
+
+
+async def test_the_placeholder_timeout_is_gone_once_this_machine_could_measure_it() -> None:
+    """ADR 0029 §14: the reminder is an **observable fact**, not a date.
+
+    ``ELA_CAPTURE_TIMEOUT_SECONDS`` was written as a declared placeholder because the permission
+    was denied and no capture had ever run. The failure mode of a placeholder is that nobody comes
+    back to it, and a note in a docstring does not come back on its own — so what is checked is
+    the condition under which it *becomes* wrong: **the moment ELA can read that Screen Recording
+    is granted on this machine, a number that is still a placeholder is a red test.**
+
+    Where the permission is missing there is nothing to measure, and this says so out loud rather
+    than passing quietly: a check that is vacuously true is the shape this project spends its
+    milestones removing. The permission is read the way ELA reads it — the real probe, which asks
+    and never prompts (ADR 0028 §2) — so what fires the test is the same fact the tool acts on,
+    not a second opinion about the machine. The decision itself is
+    :func:`~tests.tools.test_settings.overdue`, which is pure and has its negative case there.
+    """
+    observed = await DarwinProbe(timeout=timedelta(seconds=5)).read(
+        frozenset({ProbeFamily.PERMISSIONS})
+    )
+    granted = observed.screen_recording_permission
+    if granted is not True:
+        pytest.skip(
+            "Screen Recording is not granted here (or could not be read): nothing can be timed"
+        )
+
+    reason = overdue(granted=granted, measured=CAPTURE_TIMEOUT_IS_MEASURED)
+    assert reason is None, reason

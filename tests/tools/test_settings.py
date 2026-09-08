@@ -13,7 +13,12 @@ import pytest
 from pydantic import ValidationError
 
 from ela.tools import CaptureSettings, WorkspaceSettings, default_workspace_dir
-from ela.tools.settings import MAX_CAPTURE_TTL, default_capture_dir
+from ela.tools.settings import (
+    CAPTURE_TIMEOUT_IS_MEASURED,
+    DEFAULT_CAPTURE_TIMEOUT_SECONDS,
+    MAX_CAPTURE_TTL,
+    default_capture_dir,
+)
 
 
 def test_default_is_a_folder_under_the_home_directory(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -114,3 +119,57 @@ def test_a_knob_that_would_switch_the_feature_off_by_accident_is_refused(
 
     with pytest.raises(ValidationError):
         CaptureSettings()
+
+
+# --------------------------------------------------------------------------------------
+# The placeholder, and the fact that makes it overdue (ADR 0029 §14)
+# --------------------------------------------------------------------------------------
+
+
+def overdue(granted: bool | None, measured: bool) -> str | None:
+    """Why ``ELA_CAPTURE_TIMEOUT_SECONDS`` is overdue, or ``None`` if it is not yet.
+
+    The whole decision, pure and total, so the case that matters — *granted, and still a
+    placeholder* — can be exercised on any runner instead of only on the one machine where it
+    happens to be true. The Darwin smoke test supplies the real ``granted`` and this supplies the
+    negative case, which is the rule CLAUDE.md states: everything in ``make check`` has a test
+    that shows it failing.
+
+    ``granted`` is ``None`` when the permission could not be read and ``False`` when it is
+    missing; in both, a capture cannot be timed and there is nothing to report.
+    """
+    if granted is not True or measured:
+        return None
+    return (
+        "Screen Recording is granted on this machine, so a capture can finally be timed and "
+        f"ELA_CAPTURE_TIMEOUT_SECONDS must stop being a placeholder. Measure a capture, put the "
+        f"number in ela/tools/settings.py in place of {DEFAULT_CAPTURE_TIMEOUT_SECONDS}, record "
+        "the measurement in docs/milestones/M10.2.md and ADR 0029 §14, and set "
+        "CAPTURE_TIMEOUT_IS_MEASURED to True in the same edit."
+    )
+
+
+def test_a_placeholder_on_a_machine_that_can_measure_is_overdue() -> None:
+    """The negative case, and the reason this check is worth having: it is the only combination
+    that is a failure, and it is exactly the one that arrives the day the permission is granted."""
+    reason = overdue(granted=True, measured=False)
+
+    assert reason is not None
+    assert "CAPTURE_TIMEOUT_IS_MEASURED" in reason
+    assert str(DEFAULT_CAPTURE_TIMEOUT_SECONDS) in reason
+
+
+@pytest.mark.parametrize(
+    ("granted", "measured"),
+    [(True, True), (False, False), (False, True), (None, False), (None, True)],
+)
+def test_nothing_else_is_overdue(granted: bool | None, measured: bool) -> None:
+    """A measured number is never overdue, and a machine that cannot capture cannot measure —
+    on a Linux runner or an ungranted Mac there is nothing to report, and reporting nothing is
+    not the same as passing quietly (the smoke test says "not applicable" out loud)."""
+    assert overdue(granted=granted, measured=measured) is None
+
+
+def test_the_flag_says_what_the_number_is_today() -> None:
+    """Flipped in the same edit that replaces the number, and never on its own."""
+    assert CAPTURE_TIMEOUT_IS_MEASURED is False
