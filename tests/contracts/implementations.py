@@ -22,7 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.composition import SystemClock, UuidGenerator
 from ela.domain import CapabilityId, RiskLevel
-from ela.infrastructure.perception import DarwinProbe, UnsupportedProbe
+from ela.infrastructure.perception import (
+    DarwinProbe,
+    ScreenCaptureCommand,
+    UnsupportedProbe,
+    UnsupportedScreenCapture,
+)
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
     SqlAuditLog,
@@ -49,6 +54,7 @@ from ela.ports import (
     PerceptionProbe,
     PermissionGuardianPort,
     ProviderRegistryPort,
+    ScreenCapturePort,
     TaskRepository,
     ToolPort,
     ToolRegistryPort,
@@ -72,6 +78,7 @@ from ela.testing.fakes import (
     FakePermissionGuardian,
     FakeProbe,
     FakeProviderRegistry,
+    FakeScreenCapture,
     FakeTaskRepository,
     FakeTool,
     FakeToolRegistry,
@@ -404,6 +411,15 @@ async def _no_helper(argv: Sequence[str], timeout: float) -> tuple[int, str]:
     return 0, "{}"
 
 
+def _screen_capture() -> ScreenCaptureCommand:
+    """The real macOS capture adapter, with a spawn that answers instead of starting anything.
+
+    Registered on every runner for the same reason as :func:`_darwin_probe`: the contract is that
+    it reports instead of failing, and reporting costs no permission and no screen.
+    """
+    return ScreenCaptureCommand(timeout=timedelta(seconds=1), runner=_no_helper)
+
+
 IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     Clock: (
         Implementation("FakeClock", FakeClock),
@@ -471,6 +487,11 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("FakeProbe", FakeProbe),
         Implementation("UnsupportedProbe", UnsupportedProbe),
         Implementation("DarwinProbe", _darwin_probe),
+    ),
+    ScreenCapturePort: (
+        Implementation("FakeScreenCapture", FakeScreenCapture),
+        Implementation("UnsupportedScreenCapture", UnsupportedScreenCapture),
+        Implementation("ScreenCaptureCommand", _screen_capture),
     ),
     ModelRouterPort: (
         Implementation("FakeModelRouter", _fake_router),

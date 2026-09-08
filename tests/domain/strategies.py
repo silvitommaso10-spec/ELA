@@ -47,6 +47,7 @@ from ela.domain import (
     ProviderRequest,
     ProviderResult,
     ProviderUsage,
+    RawCapture,
     RawObservation,
     RiskLevel,
     SensorCause,
@@ -403,6 +404,14 @@ raw_observations = st.builds(
 """The permission integers deliberately range outside 0-3: a value this version does not
 understand must map to ``NOT_OBSERVABLE`` and never to ``GRANTED`` (§33)."""
 
+raw_captures = st.builds(
+    RawCapture,
+    exit_code=_optional(st.integers(min_value=-8, max_value=8)),
+    timed_out=st.booleans(),
+)
+"""Negative exit codes are generated on purpose: a child killed by a signal reports one, and
+:data:`~ela.infrastructure.perception.darwin.TIMED_OUT` is itself ``-1``."""
+
 observations = st.builds(
     Observation,
     observed_at=utc_datetimes,
@@ -443,6 +452,7 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.ExecutionResult: execution_results,
     domain.SensorStatus: sensor_statuses,
     domain.RawObservation: raw_observations,
+    domain.RawCapture: raw_captures,
     domain.Observation: observations,
     domain.PerceptionChange: perception_changes,
 }

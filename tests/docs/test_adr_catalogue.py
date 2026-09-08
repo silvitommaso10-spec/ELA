@@ -13,14 +13,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ela.domain import CapabilitySpec, RiskLevel
-from ela.permissions import catalogue_v01
+from ela.permissions import catalogue_v01, production_catalogue
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0010-capability-catalogue.md"
 EXTENDING = "Capability estese:"
+ADDING = "Capability aggiunte:"
 EXTENDING_ADRS = ((ADR_DIR / "0022-model-router.md", EXTENDING),)
 """ADRs that give a capability a new argument (ADR 0022 §2: ``task_type`` on ``model.complete``),
 under a label, with the whole row rewritten."""
+ADDING_ADRS = ((ADR_DIR / "0029-screen-capture.md", ADDING),)
+"""ADRs that add a capability the catalogue did not have (ADR 0029 §6: ``perception.capture_
+screen``), under a label of their own. An addition must be new, the way an extension must not be:
+the shape ADR 0005's port tables already use, applied to the catalogue."""
 ROW = re.compile(
     r"^\| `([a-z_.]+)` \| (SAFE|LOW|MEDIUM|HIGH|CRITICAL) \| (.+?) \| (.+?) \| (sì|no) "
     r"\| (.+?) \| (.+?) \|$"
@@ -56,16 +61,21 @@ def section(path: Path, label: str) -> str:
 
 
 def all_documented_capabilities() -> dict[str, Row]:
-    """ADR 0010's catalogue, then the rows later ADRs replace (ADR 0022 §2: ``task_type``).
+    """ADR 0010's catalogue, the rows later ADRs replace, and the capabilities they add.
 
     An ADR is immutable and the catalogue is one table, so a capability that gains an argument
     later is documented again, in full, by the ADR that gave it: the last row wins, and a row
-    that replaces a capability nobody declared is a drift.
+    that replaces a capability nobody declared is a drift. A capability *added* later is the
+    mirror: it must not exist already, or the ADR is redeclaring somebody else's row.
     """
     union = documented_catalogue(ADR_PATH.read_text(encoding="utf-8"))
     for path, label in EXTENDING_ADRS:
         for cid, row in documented_catalogue(section(path, label)).items():
             assert cid in union, f"{cid} is extended before being declared ({path.name})"
+            union[cid] = row
+    for path, label in ADDING_ADRS:
+        for cid, row in documented_catalogue(section(path, label)).items():
+            assert cid not in union, f"{cid} is added twice ({path.name})"
             union[cid] = row
     return union
 
@@ -106,8 +116,13 @@ def coded_row(spec: CapabilitySpec) -> Row:
 
 
 def test_table_matches_the_code() -> None:
+    """Against the **production** catalogue: the documents describe what ELA runs (ADR 0029 §13).
+
+    ``catalogue_v01()`` is checked separately and stays three; the union of the ADR tables is the
+    four the composition root builds.
+    """
     documented = all_documented_capabilities()
-    coded = {spec.id: coded_row(spec) for spec in catalogue_v01().specs()}
+    coded = {spec.id: coded_row(spec) for spec in production_catalogue().specs()}
     assert list(documented) == list(coded)
     for cid, row in documented.items():
         assert row == coded[cid], cid

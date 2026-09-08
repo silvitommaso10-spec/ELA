@@ -59,6 +59,7 @@ from ela.domain import (
     ProviderResult,
     ProviderResultId,
     ProviderUsage,
+    RawCapture,
     RawObservation,
     RiskLevel,
     SensorCause,
@@ -384,6 +385,11 @@ RAW_OBSERVATION: Final = RawObservation(
     screen_recording_permission=False,
 )
 
+# The helper ran and came back cleanly. The interesting values of this model are the other two —
+# a non-zero code and ``timed_out`` — and they are what the tool's tests exercise; the example is
+# the ordinary one, as every example here is.
+RAW_CAPTURE: Final = RawCapture(exit_code=0)
+
 OBSERVATION: Final = Observation(
     observed_at=datetime(2026, 9, 8, 15, 0, tzinfo=UTC),
     microphone=SENSOR_STATUS,
@@ -429,6 +435,7 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         EXECUTION_RESULT,
         SENSOR_STATUS,
         RAW_OBSERVATION,
+        RAW_CAPTURE,
         OBSERVATION,
         PERCEPTION_CHANGE,
     )

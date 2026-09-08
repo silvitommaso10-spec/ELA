@@ -53,6 +53,7 @@ from ela.domain import (
     ProviderRequest,
     ProviderResult,
     ProviderStatus,
+    RawCapture,
     RawObservation,
     StepId,
     Task,
@@ -109,6 +110,7 @@ __all__ = [
     "ROUTING_UNKNOWN_PROVIDER",
     "ROUTING_UNKNOWN_TASK_TYPE",
     "RoutingError",
+    "ScreenCapturePort",
     "TaskRepository",
     "ToolPort",
     "ToolRegistryPort",
@@ -1073,4 +1075,48 @@ class PerceptionProbe(Protocol):
 
         ``families`` empty is a legal call that reads nothing and answers with an empty
         observation: the scheduler asks for what is due, and nothing being due is normal.
+        """
+
+
+@runtime_checkable
+class ScreenCapturePort(Protocol):
+    """Where ELA photographs the screen it runs in front of (§10, §20, §57; M10.2, ADR 0029).
+
+    A separate port from :class:`PerceptionProbe`, and separate because the probe's contract says
+    three things a capture breaks two of: it answers with primitives *and takes none*; it does not
+    fail, it reports; and it **reads state, never content**. A screen capture needs a destination,
+    it produces the user's content, and "the permission is missing" is not "not observable" here —
+    it is a refusal the user has to be told about, with what to do.
+
+    What this port must **not** do is again half the contract:
+
+    * **It does not choose where the image lands.** The caller creates and owns the destination,
+      its mode and its lifetime, and hands it over (ADR 0029 §4). A port that picked the path
+      would be a port that decides where the user's screen is kept.
+    * **It carries no pixels.** The image goes to ``destination`` and nowhere else — never through
+      a pipe, never through a return value, never through this process's memory.
+    * **It never asks for the permission.** Preflighting is the caller's, and a caller that knows
+      the permission is missing must not call this at all: attempting a capture from a denied
+      state is how a *permanent* denial gets recorded (ADR 0029 §7).
+    * **It does not fail — it reports.** A timeout, a helper killed by a signal, an operating
+      system with no such notion: all of them come back as a :class:`~ela.domain.RawCapture` that
+      says how it ended, never as an exception.
+    """
+
+    async def available(self) -> bool:
+        """Whether this machine has a capture helper at all — no permission, no side effect.
+
+        Its own member rather than a failure of :meth:`capture`, for the reason ADR 0028 gave
+        ``UnsupportedProbe``: "ELA on Linux captures nothing" is worth being a named answer with
+        a test instead of a gap somebody discovers. It also lets the caller settle the question
+        **before** the permission, so a machine that could never capture never reads a
+        permission it has no use for.
+        """
+
+    async def capture(self, destination: str, display: int) -> RawCapture:
+        """Write a PNG of ``display`` to ``destination``, and answer with how it ended.
+
+        ``destination`` is an absolute path in a directory the caller already owns; ``display`` is
+        1-based. Whether anything was actually written is the caller's to check — an implementation
+        that reported success without looking would be the assumption §20 forbids.
         """

@@ -878,6 +878,31 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela import domain\ndef off():\n    return domain.SensorCause\n",
         "SensorCause",
     ),
+    # --- capture-stays-on-the-machine (rule 35, ADR 0029 §12) ---
+    Case(
+        # Exactly what M10.3 will be tempted to write, and the whole promise of M10.2 is that it
+        # cannot be written here without somebody deciding it out loud.
+        "the-capture-tool-reaches-a-router",
+        "capture-stays-on-the-machine",
+        "tools/screen.py",
+        "from ela.routing import ModelRouter\n",
+        "ela.routing.ModelRouter",
+    ),
+    Case(
+        "the-classification-reaches-an-http-client",
+        "capture-stays-on-the-machine",
+        "tools/captures.py",
+        "import httpx\n",
+        "httpx",
+    ),
+    Case(
+        # No import to see: the same reach, the long way round.
+        "the-capture-tool-names-a-registry-by-attribute",
+        "capture-stays-on-the-machine",
+        "tools/screen.py",
+        "from ela import providers\ndef go():\n    return providers.ProviderRegistry\n",
+        "ProviderRegistry",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
     Case(
@@ -1354,6 +1379,15 @@ ALLOWED: tuple[Case, ...] = (
         "perception-adapter-decides-nothing",
         "infrastructure/perception/plain.py",
         "from ela.domain import ProbeFamily, RawObservation\n",
+        "",
+    ),
+    Case(
+        # Rule 35 is not a rule about tools: ``ela.tools.model`` names the router on purpose and
+        # must. It is a rule about the two modules that have the user's screen in their hands.
+        "another-tool-may-still-reach-the-router",
+        "capture-stays-on-the-machine",
+        "tools/model.py",
+        "from ela.routing import ModelRouter\n",
         "",
     ),
 )

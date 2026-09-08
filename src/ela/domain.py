@@ -90,6 +90,7 @@ __all__ = [
     "ProviderResultId",
     "ProviderStatus",
     "ProviderUsage",
+    "RawCapture",
     "RawObservation",
     "RiskLevel",
     "SensorCause",
@@ -734,6 +735,22 @@ class CapabilitySpec(_DomainModel):
     Data, like ``scope``: that each name is a string property of ``input_schema`` and that scope
     and scoped arguments come together is the catalogue's check (ADR 0010), not the model's.
     """
+    prompt_arguments: tuple[str, ...] = ()
+    """Names of the arguments whose values belong in the question the user is asked (M10.2, §30).
+
+    Empty by default, and the default is the defence: ``model.complete`` takes ``input``, which is
+    the user's content, and a prompt that showed it would write it into a stored
+    :class:`Approval`. **An argument is not shown unless the capability declares it.**
+
+    What the declaration is for is the other half of §30: "un semplice 'Sì' fuori contesto non
+    deve automaticamente autorizzare" — generalised, *a yes is only worth something if the
+    question was complete*. ``perception.capture_screen`` declares ``purpose`` because "ELA wants
+    to photograph your screen" is not a question anybody can answer; "…in order to read the
+    failing test output" is.
+
+    Data, like ``scope``: that each name is a **required** ``string`` property of ``input_schema``
+    is the catalogue's check (ADR 0010, ADR 0029 §6), not the model's.
+    """
     requires_authorization: bool
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 
@@ -1175,3 +1192,25 @@ class PerceptionChange(_DomainModel):
     """The fingerprint key, e.g. ``microphone`` or ``permissions.CAMERA``."""
     before: str
     after: str
+
+
+class RawCapture(_DomainModel):
+    """What the screen-capture helper did, in primitives — no verdict (M10.2, ADR 0029 §11).
+
+    The mirror of :class:`RawObservation` on the acting side: it crosses the boundary out of ELA's
+    process and carries **no decision**. Whether "exit code 1" means the permission is gone or the
+    disk is full is not something the adapter may answer, and whether an answer is a success is
+    read from the artefact, never from this.
+
+    Deliberately without a ``bytes`` field, and without a path: the image never travels through
+    this model, because the caller already owns the destination it asked the helper to write
+    (ADR 0029 §4). What comes back is only how the helper ended.
+    """
+
+    exit_code: int | None = None
+    """The helper's exit status; ``None`` when it never ran — no such operating system, or the
+    process could not be started at all."""
+    timed_out: bool = False
+    """Whether the helper was killed for overstaying. Separate from ``exit_code`` because "it did
+    not answer" and "it answered badly" are different facts, and only the first says nothing at
+    all about the machine."""

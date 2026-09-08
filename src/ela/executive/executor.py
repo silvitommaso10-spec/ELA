@@ -292,6 +292,31 @@ def _json_targets(targets: Sequence[object]) -> list[JsonValue]:
     return [target if isinstance(target, str) else None for target in targets]
 
 
+def _stated(spec: CapabilitySpec, arguments: JsonMapping) -> str:
+    """The declared arguments of ``spec``, rendered into the question the user reads (§30).
+
+    Empty unless the capability declares ``prompt_arguments``, and none of v0.1's three does — so
+    for them the prompt is byte for byte what it was. The declaration is the whole defence: a
+    prompt that rendered *every* argument would put ``model.complete``'s ``input`` — the user's
+    content — into a stored :class:`~ela.domain.Approval` (§57, ADR 0029 §6).
+
+    Why the values are there at all is the other half of §30: "un semplice 'Sì' fuori contesto non
+    deve automaticamente autorizzare". A yes is only worth something if the question was complete,
+    and "ELA wants to photograph your screen" is not a question anybody can answer.
+
+    A declared argument that is missing renders nothing rather than ``None``: the Guardian has
+    already refused the call for it (the catalogue requires every prompt argument to be required),
+    so this cannot happen through the executor — and if it ever did, a question with a hole in it
+    must not read as a question with the word "None" in it.
+    """
+    stated = [
+        f"{name}: {value}"
+        for name in spec.prompt_arguments
+        if isinstance(value := arguments.get(name), str)
+    ]
+    return f" — {'; '.join(stated)}" if stated else ""
+
+
 def approved_targets(decision: PermissionDecision) -> tuple[str, ...]:
     """The targets of a decision as an approval carries them: the strings of
     ``metadata["targets"]`` (ADR 0011 §10), nothing if the decision has none."""
@@ -471,7 +496,9 @@ class Executor:
             task = await self._engine.deny(task_id, decision=decision)
             return Execution(task, step_id, graph, decision, authorization, None, None, None)
         if decision.outcome is PermissionOutcome.REQUIRES_APPROVAL:
-            return await self._ask(graph, step, spec, decision, authorization, decision.reason)
+            return await self._ask(
+                graph, step, spec, arguments, decision, authorization, decision.reason
+            )
 
         consumed: int | None = None
         if authorization is not None and decision.metadata.get("rule") in _CONSUMING_RULE_VALUES:
@@ -480,7 +507,9 @@ class Executor:
                     authorization.id, now=decision.created_at
                 )
             except AuthorizationNotUsableError as unusable:
-                return await self._ask(graph, step, spec, decision, authorization, unusable.reason)
+                return await self._ask(
+                    graph, step, spec, arguments, decision, authorization, unusable.reason
+                )
             except NotFoundError:
                 vanished = ErrorMetadata(
                     code=GRANT_VANISHED,
@@ -721,6 +750,7 @@ class Executor:
         graph: GraphState,
         step: TaskStep,
         spec: CapabilitySpec,
+        arguments: JsonMapping,
         decision: PermissionDecision,
         authorization: Authorization | None,
         reason: str,
@@ -736,7 +766,8 @@ class Executor:
             step_id=decision.step_id,
             capability_id=spec.id,
             targets=targets,
-            prompt=f"{spec.id}{where} for step {step.id} ({step.goal}): {reason}",
+            prompt=f"{spec.id}{where} for step {step.id} ({step.goal}){_stated(spec, arguments)}"
+            f": {reason}",
             status=ApprovalStatus.PENDING,
             decision_id=decision.id,
             expires_at=decision.created_at + self._approval_ttl,

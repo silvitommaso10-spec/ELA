@@ -15,10 +15,16 @@ from ela.testing.fakes import (
     FakeIdGenerator,
     FakeModelProvider,
     FakeModelRouter,
+    FakeProbe,
+    FakeProviderRegistry,
+    FakeScreenCapture,
     FakeTool,
 )
 from ela.tools import (
     CORE_ECHO,
+    PERCEPTION_CAPTURE_SCREEN,
+    CaptureSettings,
+    CaptureStore,
     EchoTool,
     EchoVerifier,
     ModelCompleteTool,
@@ -31,6 +37,8 @@ from ela.tools import (
     VerifierRegistry,
     WriteNoteTool,
     WriteNoteVerifier,
+    production_tools,
+    production_verifiers,
     tools_v01,
     verifiers_v01,
 )
@@ -185,3 +193,52 @@ def test_the_refusal_comes_before_the_duplicate_check() -> None:
         ToolRegistry((echo, _Silent()))  # type: ignore[arg-type]
     with pytest.raises(AlreadyExistsError):
         ToolRegistry((echo, EchoTool(FakeClock(), FakeIdGenerator())))
+
+
+# --------------------------------------------------------------------------------------
+# The production registries: v0.1's, plus what the phases after it added (ADR 0029 §13)
+# --------------------------------------------------------------------------------------
+
+
+def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, CaptureStore]:
+    captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
+    router = FakeModelRouter()
+    tools = production_tools(
+        root=tmp_path,
+        clock=FakeClock(),
+        ids=FakeIdGenerator(),
+        router=router,
+        providers=FakeProviderRegistry(),
+        captures=captures,
+        screen=FakeScreenCapture(),
+        probe=FakeProbe(),
+    )
+    return tools, production_verifiers(root=tmp_path, router=router, captures=captures), captures
+
+
+def test_the_production_registries_are_v01_plus_the_capture(tmp_path: Path) -> None:
+    """``production_`` says when it is used; ``_v01`` says what it contains, and keeps saying it.
+
+    v0.1 does not get folded into, it gets stood beside — the same handling M10.1 gave the
+    ``/perception`` route, which stayed out of the v0.1 route count.
+    """
+    tools, verifiers, _ = _production(tmp_path)
+    baseline = registry_of(tmp_path)
+
+    assert [t.capability_id for t in tools.tools()][:3] == [
+        t.capability_id for t in baseline.tools()
+    ]
+    assert [t.capability_id for t in tools.tools()][3] == PERCEPTION_CAPTURE_SCREEN
+    assert {v.capability_id for v in verifiers.verifiers()} == {
+        t.capability_id for t in tools.tools()
+    }
+
+
+def test_the_capture_verifier_reads_the_store_the_tool_writes_into(tmp_path: Path) -> None:
+    """One directory and one retention, or the verifier would look for a capture somewhere else
+    — or think one still there had expired."""
+    _, verifiers, captures = _production(tmp_path)
+    verifier = verifiers.get(PERCEPTION_CAPTURE_SCREEN)
+
+    assert verifier._directory == captures.directory  # noqa: SLF001
+    assert verifier._ttl == captures.settings.capture_ttl  # noqa: SLF001

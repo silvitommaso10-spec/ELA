@@ -67,7 +67,7 @@ def test_every_port_has_an_implementation() -> None:
     assert without == []
 
 
-def test_ports_are_exactly_the_nineteen_required() -> None:
+def test_ports_are_exactly_the_twenty_required() -> None:
     """Eleven from M1.3 (ADR 0005), ``AuthorizingGuardianPort`` and ``ToolRegistryPort`` from M5.1
     (ADR 0013 §10), ``VerifierPort`` and ``VerifierRegistryPort`` from M5.2 (ADR 0014 §1),
     ``ApprovalStore`` and ``ExecutionResultStore`` from M5.3 (ADR 0015 §1), ``ModelRouterPort``

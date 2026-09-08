@@ -82,6 +82,10 @@ VALUE_OBJECTS = frozenset(
         "RawObservation",
         "Observation",
         "PerceptionChange",
+        # And the capture (M10.2): an exit status is not an entity either. What the capture *is*
+        # has a birth date, and it is the artefact's ``mtime`` — read from the file, so that the
+        # expiry ELA reports is the expiry the purge applies.
+        "RawCapture",
     }
 )
 

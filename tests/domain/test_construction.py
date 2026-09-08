@@ -52,15 +52,20 @@ def test_example_is_valid(model: type[BaseModel]) -> None:
     assert example == model.model_validate(example.model_dump())
 
 
-NOTHING_REQUIRED = frozenset({"RawObservation"})
-"""The one model that is legally empty, and why (M10.1, ADR 0028 §1).
+NOTHING_REQUIRED = frozenset({"RawObservation", "RawCapture"})
+"""The two models that are legally empty, and why (M10.1, ADR 0028 §1; M10.2, ADR 0029 §11).
 
 ``RawObservation()`` — every field ``None`` — is not a partial entity, it is *the* value for "the
 operating system was not asked, or could not answer". It is what a timeout returns, what a dead
 helper returns, and what ELA reads on Linux. Requiring a field would mean inventing a reading in
 order to say that there was none.
 
-It is a one-member list on purpose: a second model that needs nothing should have to argue here.
+``RawCapture()`` is the same shape on the acting side: no exit code and not timed out is "nothing
+ran", which is what an operating system with no capture helper answers. Both are the fail-safe
+value of a port that promises never to raise, and in both cases requiring a field would force an
+adapter to invent one in order to report that there was none.
+
+The list is short on purpose: a third model that needs nothing has to argue here.
 """
 
 

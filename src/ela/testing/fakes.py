@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import MappingProxyType
 from typing import Final, NamedTuple
 from uuid import UUID
@@ -49,6 +50,7 @@ from ela.domain import (
     ProviderResultId,
     ProviderStatus,
     ProviderUsage,
+    RawCapture,
     RawObservation,
     StepId,
     Task,
@@ -95,6 +97,7 @@ __all__ = [
     "FakePermissionGuardian",
     "FakeProbe",
     "FakeProviderRegistry",
+    "FakeScreenCapture",
     "FakeTaskRepository",
     "FakeTool",
     "FakeToolRegistry",
@@ -886,3 +889,44 @@ class FakeProbe:
         if self.fails:
             raise RuntimeError("the probe broke its contract")
         return self._answers.pop(0) if len(self._answers) > 1 else self._answers[0]
+
+
+class FakeScreenCapture:
+    """A :class:`~ela.ports.ScreenCapturePort` that writes whatever the test wrote down.
+
+    ``payload`` is the bytes the helper "captures" — a valid PNG header for a success, junk or
+    ``None`` for the failures a real helper produces: exited zero and wrote nothing, exited zero
+    and wrote something that is not an image. ``report`` is how it ended.
+
+    ``calls`` records every ``(destination, display)`` it was asked for, and that is what proves
+    the property the milestone rests on: **when the permission is missing, this is never called.**
+    A test asserts an empty ``calls``, not the absence of a file — attempting the capture is what
+    records a permanent denial in the operating system, so not attempting it is the behaviour, and
+    behaviour is only tested by watching for it.
+
+    Honours the port's promise not to raise: a helper that dies reports how, it does not throw.
+    """
+
+    __slots__ = ("_payload", "_report", "calls", "there")
+
+    def __init__(
+        self,
+        *,
+        payload: bytes | None = None,
+        report: RawCapture | None = None,
+        there: bool = True,
+    ) -> None:
+        self._payload = payload
+        self._report = report if report is not None else RawCapture(exit_code=0)
+        self.there = there
+        self.calls: tuple[tuple[str, int], ...] = ()
+
+    async def available(self) -> bool:
+        return self.there
+
+    async def capture(self, destination: str, display: int) -> RawCapture:
+        """Record the call, write ``payload`` if there is one, and report."""
+        self.calls = (*self.calls, (destination, display))
+        if self._payload is not None:
+            Path(destination).write_bytes(self._payload)
+        return self._report

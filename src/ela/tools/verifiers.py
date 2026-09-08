@@ -29,18 +29,25 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar, Final
 
 from ela.domain import ErrorMetadata, ExecutionResult, JsonMapping
 from ela.ports import ModelRouterPort, RoutingError
+from ela.tools.captures import CAPTURE_CODES, Capture, CaptureProblem, inspect
 from ela.tools.echo import CORE_ECHO
 from ela.tools.model import MODEL_COMPLETE, routing_arguments
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
 from ela.tools.paths import PATH_CODES, classify, resolve_workspace
+from ela.tools.screen import PERCEPTION_CAPTURE_SCREEN
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
 
 __all__ = [
+    "CAPTURE_DECLARED_MISMATCH",
+    "CAPTURE_EXISTS",
+    "CAPTURE_MATCHES",
+    "CAPTURE_VERIFIER_NAME",
     "ECHO_MESSAGE_MATCHES",
     "ECHO_MESSAGE_MISMATCH",
     "ECHO_VERIFIER_NAME",
@@ -55,6 +62,7 @@ __all__ = [
     "NOTE_CONTENT_MISMATCH",
     "NOTE_EXISTS",
     "NOTE_UNREADABLE",
+    "CaptureScreenVerifier",
     "EchoVerifier",
     "ModelCompleteVerifier",
     "WriteNoteVerifier",
@@ -63,6 +71,21 @@ __all__ = [
 ECHO_VERIFIER_NAME: Final = "core-echo-verifier"
 NOTES_VERIFIER_NAME: Final = "workspace-notes-verifier"
 MODEL_VERIFIER_NAME: Final = "model-complete-verifier"
+CAPTURE_VERIFIER_NAME: Final = "perception-screen-verifier"
+
+CAPTURE_EXISTS: Final = "capture.exists"
+"""The name the tool reported leads to a regular file, through no link, inside the capture store,
+and its bytes are a PNG with a usable IHDR: :func:`~ela.tools.captures.inspect` answers a
+:class:`~ela.tools.captures.Capture`, else its code is the failure's."""
+CAPTURE_MATCHES: Final = "capture.matches"
+"""What the disk says — size in bytes, SHA-256, width and height — is what the result declared."""
+CAPTURE_DECLARED_MISMATCH: Final = "capture.declared_mismatch"
+"""The artefact is there and is not the one the tool described. Unlike the other verifiers, the
+comparison here is against the **output** and not against the arguments, and that is not the
+"trusting the tool's word" mistake: ``purpose`` and ``display`` do not determine a single pixel,
+so there is no intent to compare with. What is under test *is* the claim — "I wrote a PNG of this
+size with this digest" — and the source of truth is the disk. That is precisely §20's "non deve
+assumere che un click sia riuscito solo perché è stato inviato"."""
 
 MODEL_ANSWERED: Final = "model.answered"
 """The result carries a non-empty text, the provider and the model that produced it, and the
@@ -318,3 +341,71 @@ class ModelCompleteVerifier(Verifier):
         verifier reports that something is missing, never what was there (§57)."""
         value = result.output.get(key)
         return isinstance(value, str) and value != ""
+
+
+class CaptureScreenVerifier(Verifier):
+    """``perception.capture_screen`` verified from the disk, not from the tool's word (§20, §63).
+
+    ``directory`` is the capture store's, and ``ttl`` its retention: both are read, neither is
+    created — a store that does not exist holds no capture. Every number the tool reported is
+    re-derived here by reading the file again through the same read-only classification the tool
+    used, so a capture the tool accepted is one this finds, with the same code when it is not.
+
+    **A declared limit**: this must run inside the capture's TTL, or it will not find an artefact
+    that expired in the meantime. In the pipeline it runs in the same step, milliseconds later; it
+    is written down for whoever one day verifies in arrears.
+    """
+
+    conditions: ClassVar[frozenset[str]] = frozenset({CAPTURE_EXISTS, CAPTURE_MATCHES})
+    failure_codes: ClassVar[frozenset[str]] = (
+        COMMON_FAILURE_CODES | CAPTURE_CODES | {CAPTURE_DECLARED_MISMATCH}
+    )
+
+    def __init__(
+        self, directory: Path | str, ttl: timedelta, *, name: str = CAPTURE_VERIFIER_NAME
+    ) -> None:
+        super().__init__(PERCEPTION_CAPTURE_SCREEN, name=name)
+        self._directory = Path(directory).expanduser().absolute()
+        self._ttl = ttl
+
+    async def _check(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        del arguments  # the intent determines no pixel; what is under test is the claim
+        name = result.output.get("path")
+        if not isinstance(name, str):
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "output.path must be a string",
+                retryable=False,
+            )
+        found = inspect(self._directory, name, self._ttl)
+        if isinstance(found, CaptureProblem):
+            return self._failure(condition, found.code, found.message(name), retryable=False)
+        if condition == CAPTURE_EXISTS:
+            return None
+        differs = self._differences(found, result.output)
+        if not differs:
+            return None
+        return self._failure(
+            condition,
+            CAPTURE_DECLARED_MISMATCH,
+            f"{name!r} is not the capture the result describes: {', '.join(differs)}",
+            retryable=False,
+        )
+
+    @staticmethod
+    def _differences(found: Capture, declared: JsonMapping) -> tuple[str, ...]:
+        """Which of the four declared facts the disk contradicts, named and never quantified.
+
+        A digest is reported as differing and never printed beside the other: two hashes in a
+        message are two fingerprints of the user's screen in the audit trail (§57).
+        """
+        checks = (
+            ("bytes", found.bytes),
+            ("sha256", found.sha256),
+            ("width", found.size.width),
+            ("height", found.size.height),
+        )
+        return tuple(key for key, actual in checks if declared.get(key) != actual)

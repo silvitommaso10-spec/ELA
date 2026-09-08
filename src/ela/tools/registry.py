@@ -6,8 +6,10 @@ capability, fixed at construction. Like the capability catalogue (ADR 0010 §1) 
 way to change after it is built: what ELA can *execute* and what it can *verify* are decided
 when the registries are, and every entry is keyed by its own ``capability_id`` — there is no
 argument through which a tool or a verifier could claim another capability.
-:func:`tools_v01` and :func:`verifiers_v01` build the pairs of this version, mirrors of
-``catalogue_v01``: every tool has its verifier, and a capability without both is not executable.
+:func:`tools_v01` and :func:`verifiers_v01` build the pairs of v0.1, mirrors of
+``catalogue_v01``; :func:`production_tools` and :func:`production_verifiers` build what the
+composition root runs, mirrors of ``production_catalogue``. Every tool has its verifier, and a
+capability without both is not executable.
 """
 
 from __future__ import annotations
@@ -22,7 +24,9 @@ from ela.ports import (
     Clock,
     IdGenerator,
     ModelRouterPort,
+    PerceptionProbe,
     ProviderRegistryPort,
+    ScreenCapturePort,
     ToolPort,
     VerifierPort,
 )
@@ -30,9 +34,22 @@ from ela.tools.echo import EchoTool
 from ela.tools.errors import NotIdempotentError, ToolNotFound, VerifierNotFound
 from ela.tools.model import ModelCompleteTool
 from ela.tools.notes import WriteNoteTool
-from ela.tools.verifiers import EchoVerifier, ModelCompleteVerifier, WriteNoteVerifier
+from ela.tools.screen import CaptureScreenTool, CaptureStore
+from ela.tools.verifiers import (
+    CaptureScreenVerifier,
+    EchoVerifier,
+    ModelCompleteVerifier,
+    WriteNoteVerifier,
+)
 
-__all__ = ["ToolRegistry", "VerifierRegistry", "tools_v01", "verifiers_v01"]
+__all__ = [
+    "ToolRegistry",
+    "VerifierRegistry",
+    "production_tools",
+    "production_verifiers",
+    "tools_v01",
+    "verifiers_v01",
+]
 
 
 class ToolRegistry:
@@ -124,6 +141,32 @@ def tools_v01(
     )
 
 
+def production_tools(
+    *,
+    root: Path | str,
+    clock: Clock,
+    ids: IdGenerator,
+    router: ModelRouterPort,
+    providers: ProviderRegistryPort,
+    captures: CaptureStore,
+    screen: ScreenCapturePort,
+    probe: PerceptionProbe,
+) -> ToolRegistry:
+    """What the composition root builds: v0.1's three, plus what the phases after it added.
+
+    ``production_`` says **when** it is used; :func:`tools_v01` says **what it contains**. Both
+    exist and neither is redundant — ADR 0029 §13: *v0.1 does not get folded into, it gets stood
+    beside*, and the precedent is M10.1's, where ``/perception`` was left out of the v0.1 route
+    count rather than quietly folded in.
+    """
+    return ToolRegistry(
+        (
+            *tools_v01(root=root, clock=clock, ids=ids, router=router, providers=providers).tools(),
+            CaptureScreenTool(captures, screen, probe, clock, ids),
+        )
+    )
+
+
 def verifiers_v01(*, root: Path | str, router: ModelRouterPort) -> VerifierRegistry:
     """The verifiers of the tools of :func:`tools_v01`, on the same workspace ``root``.
 
@@ -135,4 +178,22 @@ def verifiers_v01(*, root: Path | str, router: ModelRouterPort) -> VerifierRegis
     """
     return VerifierRegistry(
         (EchoVerifier(), WriteNoteVerifier(root), ModelCompleteVerifier(router))
+    )
+
+
+def production_verifiers(
+    *, root: Path | str, router: ModelRouterPort, captures: CaptureStore
+) -> VerifierRegistry:
+    """The verifiers of :func:`production_tools`, one per capability.
+
+    ``captures`` is the same store the tool writes into, and only its *directory* and its TTL are
+    taken: the verifier reaches the read-only classification of :mod:`ela.tools.captures` and
+    never the store's writing side (architecture rule 18). See :func:`production_tools` for why
+    this and :func:`verifiers_v01` both exist.
+    """
+    return VerifierRegistry(
+        (
+            *verifiers_v01(root=root, router=router).verifiers(),
+            CaptureScreenVerifier(captures.directory, captures.settings.capture_ttl),
+        )
     )
