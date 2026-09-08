@@ -39,6 +39,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0029](0029-screen-capture.md) | La prima lettura di contenuto: l'artefatto che si può verificare, il figlio che non è nostro, e la credenza che non decide (regola 35) | Accettata |
 | [0030](0030-screen-text.md) | Comprendere ciò che si vede: il contesto che non costa un permesso, il figlio che torna nostro, e l'artefatto che eredita (regola 36) | Accettata |
 | [0031](0031-runner-parity.md) | La copertura non dipende dal runner: una scelta di piattaforma è un'istruzione, non un'espressione (regola 37) | Accettata |
+| [0032](0032-context-core.md) | Il contesto che si ricalcola: le assenze derivate, il confine con la memoria, e le due porte chiuse (regole 38 e 39) | Accettata |
 
 ## Template
 

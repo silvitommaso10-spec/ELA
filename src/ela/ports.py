@@ -415,6 +415,36 @@ class TaskRepository(Protocol):
         ten thousand (review of M8.1).
         """
 
+    async def due(
+        self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
+    ) -> tuple[Task, ...]:
+        """Stored tasks that **have** a deadline, soonest first, then ``limit`` (M10.4).
+
+        The one question ``tasks()`` cannot answer, and the reason it is a member of its own:
+        ``tasks()`` declares that its order is always insertion order, and that sentence is an
+        invariant every implementation keeps. A different order is a different question, and a
+        different question gets a name.
+
+        Tasks **without** a deadline are not returned at all — not sorted to the end. The
+        question is "which deadlines exist", and a task with no deadline is not a late one.
+
+        ``states`` restricts the question as in ``tasks`` (``None`` asks about all of them, an
+        empty ``frozenset`` about none). Ties on the same instant fall back to insertion order,
+        so the answer is stable. ``limit`` is ``None`` or at least 1, else ``ValueError``, and
+        applies after the filter — composing the answer by loading every live task and sorting
+        it in the caller is what the review of M8.1 took out of ``/diagnostics``.
+        """
+
+    async def due_count(self, *, states: frozenset[TaskState] | None = None) -> int:
+        """How many tasks have a deadline, without bringing any of them back (M10.4).
+
+        The companion of ``due`` for the same reason ``count`` is the companion of ``tasks``:
+        counting the first N of something is not a count, and a section that shows twenty of a
+        hundred and thirty-seven must be able to say the hundred and thirty-seven without loading
+        it (ADR 0032 §9-bis). Same ``states`` semantics as ``count``; an empty ``frozenset`` is a
+        question about no state at all and answers ``0``.
+        """
+
     async def append_event(self, event: TaskEvent) -> None:
         """Record an event of a stored task.
 

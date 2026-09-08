@@ -65,6 +65,7 @@ graph TD
     cli --> api
     cli --> composition
     composition --> audit
+    composition --> context
     composition --> devices
     composition --> domain
     composition --> executive
@@ -76,6 +77,10 @@ graph TD
     composition --> routing
     composition --> tasks
     composition --> tools
+    context --> devices
+    context --> domain
+    context --> perception
+    context --> ports
     devices --> domain
     devices --> ports
     executive --> devices

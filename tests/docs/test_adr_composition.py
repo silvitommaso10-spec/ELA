@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from ela.api import approvals, audit, devices, perception, results, system, tasks
+from ela.api import approvals, audit, context, devices, perception, results, system, tasks
 from ela.api.app import FAILURES
 from ela.api.tasks import PLAN_IS_TEMPORARY
 from ela.composition.settings import ApiSettings, CoreSettings
@@ -32,6 +32,7 @@ ADR_PATH = ADR_DIR / "0023-composition-root-and-api.md"
 CLI_ADR_PATH = ADR_DIR / "0024-cli.md"
 DEBTS_ADR_PATH = ADR_DIR / "0025-phase-8-debts.md"
 PERCEPTION_ADR_PATH = ADR_DIR / "0028-perception-core.md"
+CONTEXT_ADR_PATH = ADR_DIR / "0032-context-core.md"
 SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| `([^`]+)` \| (?:`([^`]+)`|\*\(([^)]+)\)\*) \|")
 ROUTE_ROW = re.compile(r"^\| `(GET|POST)` \| `(/[\w{}/]*)` \| ([^|]+) \|$")
 ERROR_ROW = re.compile(r"^\| ([^|]+) \| (?:`(\w+)`|\*\(([^)]+)\)\*) \| `(\d{3})` \|$")
@@ -43,6 +44,7 @@ ROUTERS = (
     audit.router,
     devices.router,
     perception.router,
+    context.router,
     results.router,
 )
 
@@ -64,6 +66,11 @@ def debts_adr_text() -> str:
 def perception_adr_text() -> str:
     """ADR 0028, read the same way: one route added (§12)."""
     return PERCEPTION_ADR_PATH.read_text(encoding="utf-8")
+
+
+def context_adr_text() -> str:
+    """ADR 0032, read the same way: one route added (§13)."""
+    return CONTEXT_ADR_PATH.read_text(encoding="utf-8")
 
 
 # ----------------------------------------------------------------------------------------
@@ -153,6 +160,7 @@ def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
         | documented_routes(cli_adr_text())
         | documented_routes(debts_adr_text())
         | documented_routes(perception_adr_text())
+        | documented_routes(context_adr_text())
     )
     assert documented == coded_routes()
 
@@ -173,10 +181,10 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_sixteen_of_them() -> None:
+def test_there_are_seventeen_of_them() -> None:
     """The number is in the prose of ADR 0028 §12 and in ``tests/api/test_security.py``, which
     proves that every one of them is behind the token."""
-    assert len(coded_routes()) == 16
+    assert len(coded_routes()) == 17
 
 
 # ----------------------------------------------------------------------------------------

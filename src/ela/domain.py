@@ -51,6 +51,19 @@ __all__ = [
     "CAPABILITY_ID_PATTERN",
     "CapabilityId",
     "CapabilitySpec",
+    "ContextActivity",
+    "ContextApproval",
+    "ContextDeadline",
+    "ContextDeadlines",
+    "ContextDevice",
+    "ContextEvent",
+    "ContextQuestion",
+    "ContextQuestionStatus",
+    "ContextRecent",
+    "ContextSnapshot",
+    "ContextSource",
+    "ContextTask",
+    "ContextWork",
     "DEVICE_CAPABILITY_NAME_PATTERN",
     "DecisionId",
     "Device",
@@ -90,11 +103,13 @@ __all__ = [
     "ProviderResultId",
     "ProviderStatus",
     "ProviderUsage",
+    "QUESTION_SOURCES",
     "RawCapture",
     "RawObservation",
     "RawRecognition",
     "RawTextLine",
     "RiskLevel",
+    "SOURCE_FIELDS",
     "SensorCause",
     "SensorState",
     "SensorStatus",
@@ -1298,3 +1313,338 @@ class RawCapture(_DomainModel):
     """Whether the helper was killed for overstaying. Separate from ``exit_code`` because "it did
     not answer" and "it answered badly" are different facts, and only the first says nothing at
     all about the machine."""
+
+
+# --------------------------------------------------------------------------------------
+# Context (§44, §45; M10.4, ADR 0032)
+# --------------------------------------------------------------------------------------
+
+
+class ContextQuestion(StrEnum):
+    """The seven things §44 says ELA must try to understand, one member each, in §44's order.
+
+    They are an enum and not a docstring because the snapshot carries **all seven, always** —
+    including the ones this ELA cannot answer. A question that does not appear is a question
+    nobody notices ELA is not answering, and §44 is a list of what must be understood, not of
+    what happens to be available.
+
+    ``tests/docs/test_spec_context.py`` reads §44 out of the specification and binds it to this
+    enum: a bullet added there fails until a member is added here, and the other way round.
+    """
+
+    CURRENT_ACTIVITY = "CURRENT_ACTIVITY"
+    """"cosa sta facendo l'utente"."""
+    PREVIOUS_ACTIVITY = "PREVIOUS_ACTIVITY"
+    """"cosa stava facendo prima"."""
+    TASKS_IN_FLIGHT = "TASKS_IN_FLIGHT"
+    """"quali task sono in corso"."""
+    DEADLINES = "DEADLINES"
+    """"quali scadenze esistono"."""
+    DEVICE_IN_USE = "DEVICE_IN_USE"
+    """"quale dispositivo sta usando"."""
+    RELEVANT_INFORMATION = "RELEVANT_INFORMATION"
+    """"quali informazioni sono rilevanti"."""
+    PROJECT_ACTIVITY = "PROJECT_ACTIVITY"
+    """"cosa sta accadendo nei progetti"."""
+
+
+class ContextSource(StrEnum):
+    """A place a context answer could come from — the ones ELA has, and the ones it has not.
+
+    The five that do not exist are members with the same standing as the five that do, because
+    naming an absence is the only way it can be reported. Which is which is **never written
+    down**: it is derived from :data:`SOURCE_FIELDS` against the fields
+    :class:`ContextSnapshot` actually has (ADR 0032 §3), so a source whose field arrives stops
+    being missing in the same commit that adds it.
+    """
+
+    PERCEPTION = "PERCEPTION"
+    """What ELA sees of this machine (§10, §11): the first ring."""
+    CHANGES = "CHANGES"
+    """What changed since the previous observation, and how far back that reaches."""
+    TASKS = "TASKS"
+    """The tasks ELA owns (§14, §15), their state and the step under way."""
+    TASK_DEADLINES = "TASK_DEADLINES"
+    """The deadlines of those tasks — the ones ELA holds, never every deadline there is."""
+    DEVICES = "DEVICES"
+    """The registry of nodes (§16)."""
+    CALENDAR = "CALENDAR"
+    """**Absent.** §44's own worked example starts here. Belongs with §39."""
+    MAIL = "MAIL"
+    """**Absent.** §39."""
+    DOCUMENTS = "DOCUMENTS"
+    """**Absent.** §23."""
+    PROJECTS = "PROJECTS"
+    """**Absent.** No Project entity exists; §21 lists projects among the kinds of memory."""
+    RELEVANCE = "RELEVANCE"
+    """**Absent.** Relevance is a judgement: §45, or §21's importance. Not composable."""
+
+
+SOURCE_FIELDS: Final[Mapping[ContextSource, str]] = MappingProxyType(
+    {
+        ContextSource.PERCEPTION: "activity",
+        ContextSource.CHANGES: "recent",
+        ContextSource.TASKS: "work",
+        ContextSource.TASK_DEADLINES: "deadlines",
+        ContextSource.DEVICES: "device",
+        ContextSource.CALENDAR: "calendar",
+        ContextSource.MAIL: "mail",
+        ContextSource.DOCUMENTS: "documents",
+        ContextSource.PROJECTS: "projects",
+        ContextSource.RELEVANCE: "relevance",
+    }
+)
+"""Which field of :class:`ContextSnapshot` carries each source — including the ones with none.
+
+This is the whole mechanism of ADR 0032 §3. A source is *held* exactly when the field it names
+is a field of the snapshot, so the day somebody adds ``calendar`` the absence disappears by
+construction and there is no second list to remember. The direction is the fail-safe one: a
+source whose field does not exist is **missing**, never quietly answered.
+"""
+
+QUESTION_SOURCES: Final[Mapping[ContextQuestion, tuple[ContextSource, ...]]] = MappingProxyType(
+    {
+        ContextQuestion.CURRENT_ACTIVITY: (ContextSource.PERCEPTION,),
+        ContextQuestion.PREVIOUS_ACTIVITY: (ContextSource.CHANGES,),
+        ContextQuestion.TASKS_IN_FLIGHT: (ContextSource.TASKS,),
+        ContextQuestion.DEADLINES: (ContextSource.TASK_DEADLINES, ContextSource.CALENDAR),
+        ContextQuestion.DEVICE_IN_USE: (ContextSource.DEVICES,),
+        ContextQuestion.RELEVANT_INFORMATION: (
+            ContextSource.RELEVANCE,
+            ContextSource.MAIL,
+            ContextSource.DOCUMENTS,
+        ),
+        ContextQuestion.PROJECT_ACTIVITY: (
+            ContextSource.PROJECTS,
+            ContextSource.MAIL,
+            ContextSource.DOCUMENTS,
+        ),
+    }
+)
+"""What would answer each question of §44 — everything, not only what exists.
+
+``DEADLINES`` is the row that decided the shape: ELA knows the deadlines of its own tasks and
+not the ones in a calendar, so the question is answered *and* incomplete at once. A partition
+into answered/unanswered would have had to pick one, and either pick is a lie.
+"""
+
+
+def _freeze_state_counts(value: Mapping[TaskState, int]) -> Mapping[TaskState, int]:
+    return MappingProxyType(dict(value))
+
+
+def _thaw_state_counts(value: Mapping[TaskState, int]) -> dict[str, int]:
+    return {state.value: total for state, total in value.items()}
+
+
+_StateCounts = Annotated[
+    Mapping[TaskState, int],
+    AfterValidator(_freeze_state_counts),
+    PlainSerializer(_thaw_state_counts, return_type=dict[str, int]),
+]
+"""How many live tasks are in each state — frozen like every mapping in the domain."""
+
+
+class ContextQuestionStatus(_DomainModel):
+    """One question of §44, what answers it here, and what is missing from the answer.
+
+    Both lists can be empty; never both at once, and never overlapping — the two are the halves
+    of one partition computed by ``ela.context.held``. A question with sources and missing
+    sources at the same time is not a defect: it is ``DEADLINES``.
+    """
+
+    question: ContextQuestion
+    answered_by: tuple[ContextSource, ...] = ()
+    missing: tuple[ContextSource, ...] = ()
+
+
+class ContextActivity(_DomainModel):
+    """What the user is doing, as far as state can say it (§44, first line).
+
+    Straight from :class:`Observation`, and stopping exactly where it stops: which applications
+    are running, which is frontmost, how many windows, how long since an input. No window title
+    (rule 36), no screen text, no pixel — answering "what is the user doing" by reading the
+    screen costs a capability, and what costs a capability is not context (rule 38).
+
+    ``observed_at`` is the one age that differs from the snapshot's ``at``: the cadence means a
+    family inside its interval answers with what it last saw (ADR 0028 §6).
+    """
+
+    observed_at: UtcDatetime
+    microphone: SensorStatus
+    camera: SensorStatus
+    permissions: _PermissionMap
+    display_count: Annotated[int, Field(ge=0)] | None = None
+    display_asleep: bool | None = None
+    screen_locked: bool | None = None
+    on_console: bool | None = None
+    idle_seconds: Annotated[float, Field(ge=0)] | None = None
+    running_bundle_ids: tuple[str, ...] | None = None
+    frontmost_bundle_id: str | None = None
+    window_count: Annotated[int, Field(ge=0)] | None = None
+
+
+class ContextDevice(_DomainModel):
+    """The node ELA is running on (§44, "quale dispositivo sta usando").
+
+    One node in v0.1, and ``is_local`` says which one rather than leaving it implied.
+
+    ``available`` is a **boolean and not a** :class:`DeviceAvailability`, and that is architecture
+    rule 20 rather than a preference: availability is derived from the heartbeat by the registry,
+    and nobody outside ``ela.devices`` may read the field. What a composer is entitled to is the
+    registry's answer, which is what this carries — the same shape ``/diagnostics`` already uses.
+    """
+
+    device_id: DeviceId
+    name: str
+    os: OperatingSystem
+    available: bool
+    status: DeviceStatus
+    is_local: bool
+    last_seen_at: UtcDatetime | None = None
+
+
+class ContextTask(_DomainModel):
+    """One live task, and the step under way if there is one (§44, "quali task sono in corso").
+
+    ``goal`` is the user's own words, and it is here by decision (ADR 0032 §5): ``GET /tasks``
+    already returns it to the same reader under the same token, and "three tasks" without saying
+    which does not answer §44. It is the only user content in the whole snapshot, and rule 39 is
+    what keeps it out of an audit event and out of a provider request.
+    """
+
+    task_id: TaskId
+    goal: str
+    state: TaskState
+    deadline: UtcDatetime | None = None
+    current_step_id: StepId | None = None
+    current_step_goal: str | None = None
+
+
+class ContextApproval(_DomainModel):
+    """A request waiting for the user's answer (§30) — that it waits, and for what.
+
+    No ``prompt``: it may carry a declared ``purpose`` (ADR 0029 §6), and an argument is shown
+    where the capability declares it, for the question it declares it for. A composed picture is
+    not that question.
+    """
+
+    approval_id: ApprovalId
+    task_id: TaskId
+    capability_id: _CapabilityIdField
+    expires_at: UtcDatetime | None = None
+
+
+class ContextWork(_DomainModel):
+    """What ELA has under way (§44, third line), and how much of it is being shown.
+
+    ``shown`` and ``total`` are the criterion of ADR 0032 §9-bis: a live task outside the limit
+    must not vanish quietly, because "there are no more" and "I am not showing you the rest" are
+    different facts. ``total`` comes from ``TaskRepository.count``, never from loading.
+    """
+
+    shown: Annotated[int, Field(ge=0)]
+    """How many live tasks this section carries."""
+    total: Annotated[int, Field(ge=0)]
+    """How many there are. ``shown < total`` is a truncation, and it is said out loud."""
+    tasks: tuple[ContextTask, ...] = ()
+    states: _StateCounts = Field(default_factory=dict)
+    pending_approvals: tuple[ContextApproval, ...] = ()
+
+    @model_validator(mode="after")
+    def _shown_is_what_is_shown(self) -> ContextWork:
+        if self.shown != len(self.tasks):
+            raise ValueError("shown must be the number of tasks carried")
+        if self.total < self.shown:
+            raise ValueError("total cannot be smaller than what is shown")
+        return self
+
+
+class ContextDeadline(_DomainModel):
+    """One deadline ELA holds — the instant, and nothing derived from it.
+
+    No ``overdue``: comparing the instant with the snapshot's ``at`` is the reader's, and a
+    derived judgement here would be deciding for whoever decides (§45; ADR 0028 §5 did the same
+    for ``idle_seconds``).
+    """
+
+    task_id: TaskId
+    goal: str
+    state: TaskState
+    deadline: UtcDatetime
+
+
+class ContextDeadlines(_DomainModel):
+    """The deadlines ELA holds, and how many of them are being shown (ADR 0032 §9-bis)."""
+
+    shown: Annotated[int, Field(ge=0)]
+    total: Annotated[int, Field(ge=0)]
+    deadlines: tuple[ContextDeadline, ...] = ()
+
+    @model_validator(mode="after")
+    def _shown_is_what_is_shown(self) -> ContextDeadlines:
+        if self.shown != len(self.deadlines):
+            raise ValueError("shown must be the number of deadlines carried")
+        if self.total < self.shown:
+            raise ValueError("total cannot be smaller than what is shown")
+        return self
+
+
+class ContextEvent(_DomainModel):
+    """One state change of a live task, for "cosa stava facendo prima" (§44, second line).
+
+    A task event and never an audit event: the audit is the trail of what **ELA decided** (§32),
+    and reading it back into a composed picture is a second use of the log that deserves its own
+    decision rather than a side effect (ADR 0032 §11). Rule 39 makes that structural.
+    """
+
+    task_id: TaskId
+    event_type: TaskEventType
+    at: UtcDatetime
+    previous_state: TaskState | None = None
+    new_state: TaskState | None = None
+
+
+class ContextRecent(_DomainModel):
+    """How far back ELA can see, and what changed in that window (§44, second line).
+
+    ``since`` is not decoration. Without it "what was the user doing before" means two things at
+    once — *little happened* and *I have not been looking long* — which is the ambiguity ADR 0030
+    §8 says to split before handing a reading on. With it, the horizon is a fact: here it is
+    seconds, because ELA keeps the current observation and the previous one and nothing else
+    (ADR 0028 §10). On the very first tick ``since`` equals the observation's own instant and
+    ``changes`` is empty, which is a true answer and not a missing one.
+    """
+
+    since: UtcDatetime
+    changes: tuple[PerceptionChange, ...] = ()
+    events: tuple[ContextEvent, ...] = ()
+
+
+class ContextSnapshot(_DomainModel):
+    """The answer to §44 at one instant: what ELA can say, and what it cannot (M10.4, ADR 0032).
+
+    Composed on read and never stored. It is context and not memory, and the line is the test of
+    ADR 0032 §4: **if the fact can be recomputed it is context; if losing it loses information it
+    is memory.** So there is no importance here, no confidence, no expiry and no privacy level —
+    those four fields of §21 govern something that is *kept*, and this keeps nothing. A restart
+    loses nothing because there was nothing to lose.
+
+    No ``JsonMapping`` on this model or on any of its sections, for the reason ADR 0028 §11 gives
+    the perception models: a free-form bag is exactly where a window title, a file name or a
+    fragment of recognised text would end up "just for context".
+
+    ``questions`` carries all seven of §44 — see :class:`ContextQuestion`.
+    """
+
+    at: UtcDatetime
+    """The one instant. Every age in the snapshot is relative to this; four routes joined by a
+    caller would be four instants, which is one of the four things this model adds."""
+    activity: ContextActivity
+    device: ContextDevice | None = None
+    """``None`` only when the registry does not hold the local node — a composition ELA can be
+    in, and one that must be visible rather than guessed at."""
+    work: ContextWork
+    deadlines: ContextDeadlines
+    recent: ContextRecent
+    questions: tuple[ContextQuestionStatus, ...] = ()

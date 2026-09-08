@@ -23,7 +23,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from ela.api import approvals, audit, devices, perception, results, system, tasks
+from ela.api import approvals, audit, context, devices, perception, results, system, tasks
 from ela.api.errors import DatabaseUnavailableError, TaskAlreadyRunningError
 from ela.api.problems import problem
 from ela.api.security import token_middleware
@@ -155,6 +155,7 @@ def create_app(ela: Ela) -> FastAPI:
         approvals.router,
         audit.router,
         devices.router,
+        context.router,
         perception.router,
         results.router,
     ):

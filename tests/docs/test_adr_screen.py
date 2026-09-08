@@ -25,7 +25,7 @@ from ela.tools import CaptureScreenTool
 from tests.architecture.rules import RULES
 from tests.architecture.violations import PACKAGE_ROOT
 from tests.contracts.protocols import port_protocols
-from tests.docs.test_adr_cli import coded_commands
+from tests.docs.test_adr_cli import COMMAND_ROW
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0029-screen-capture.md"
 RULE_ROW = re.compile(r"^\| (\d+) `([a-z-]+)` \| ([^|]+?) \| ([^|]+?) \| ([^|]+?) \|$")
@@ -144,8 +144,16 @@ def test_no_route_was_added() -> None:
 
 
 def test_no_command_was_added() -> None:
-    """Nineteen, the same nineteen ``ela perception`` made it in M10.1."""
-    assert len(coded_commands()) == 19
+    """M10.2 added none, and the claim is read from this document rather than from a total.
+
+    It used to assert the global command count, which is a number every later milestone moves:
+    ``ela context`` (M10.4) made it drift, and a test that fails because *another* milestone did
+    something is a test about the wrong thing. What ADR 0029 claims is that **it** added no
+    command, and that is checkable against ADR 0029 alone — the shape the pin on the totals
+    already uses (``test_adr_gate.py``).
+    """
+    assert COMMAND_ROW.search(adr_text()) is None
+    assert "Nessuna rotta nuova e nessun comando nuovo" in adr_text()
 
 
 def test_no_audit_event_type_was_added() -> None:

@@ -75,11 +75,17 @@ def test_the_edges_that_may_name_a_library_are_exactly_the_allowlist(
 
 
 def test_every_package_of_ela_is_a_node_even_the_empty_ones(generator: ModuleType) -> None:
-    """An empty package is a node with no edges, not an absence: §48 promised those folders."""
+    """An empty package is a node with no edges, not an absence: §48 promised those folders.
+
+    ``context`` left this set in M10.4, which is what the set is for: a package that receives
+    code stops being an empty promise, and the day it does the change is visible here rather than
+    silent. Three remain, and each is a milestone that has not happened.
+    """
     graph = generator.package_graph(PACKAGE_ROOT)
-    empty = {"context", "evolution", "identity", "memory"}
+    empty = {"evolution", "identity", "memory"}
     assert empty <= set(graph)
     assert all(graph[package] == set() for package in empty)
+    assert graph["context"] == {"devices", "domain", "perception", "ports"}
     assert graph["domain"] == set()  # not even ports
     assert graph["ports"] == {"domain"}
 

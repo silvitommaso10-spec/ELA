@@ -50,6 +50,17 @@ LATER_ADDITIONS = frozenset(
         "RawCapture",
         "RawRecognition",
         "RawTextLine",
+        "ContextSnapshot",
+        "ContextActivity",
+        "ContextDevice",
+        "ContextTask",
+        "ContextApproval",
+        "ContextWork",
+        "ContextDeadline",
+        "ContextDeadlines",
+        "ContextEvent",
+        "ContextRecent",
+        "ContextQuestionStatus",
     }
 )
 """Models a later milestone added, each argued in its own ADR.
@@ -75,6 +86,15 @@ answer shaped like an answer — and JSON Lines is self-delimiting, so the same 
 parse error instead. The text therefore crosses the port, and the discipline that comes with it is
 that it goes into the caller's file and nowhere else: never a log line, never an error message,
 never an ``ExecutionResult`` (§57).
+
+The eleven of the context (M10.4, ADR 0032) are **values and never entities**, and the difference
+is the whole boundary with §21: a snapshot is composed on read and never stored, so nothing in it
+has a life cycle to date. They quote the ids of entities — ``task_id``, ``device_id`` — instead of
+carrying one, because a projection that called its reference ``id`` would be claiming an identity
+it does not have. They are in the domain rather than in ``ela.context`` for the reason ADR 0026 §2
+gives: :class:`~ela.domain.ContextSnapshot` is what the API returns, so it is vocabulary and not
+an internal shape — and being here is also what puts them under architecture rule 39, which is
+what keeps a snapshot out of an audit event and out of a provider request.
 """
 
 

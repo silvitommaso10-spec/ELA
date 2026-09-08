@@ -25,6 +25,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings.exceptions import SettingsError
 
 from ela.composition.errors import ConfigurationError
+from ela.context import ContextSettings
 from ela.devices.settings import DeviceSettings
 from ela.domain import NAME_MAX_LENGTH
 from ela.executive import DEFAULT_APPROVAL_TTL, MAX_APPROVAL_TTL
@@ -247,6 +248,7 @@ class Settings(BaseModel):
     core: CoreSettings
     perception: PerceptionSettings
     captures: CaptureSettings
+    context: ContextSettings
 
     @classmethod
     def load(cls) -> Settings:
@@ -270,6 +272,7 @@ class Settings(BaseModel):
                 core=CoreSettings(),
                 perception=PerceptionSettings(),
                 captures=CaptureSettings(),
+                context=ContextSettings(),
             )
         except ValidationError as invalid:
             raise ConfigurationError(explain(invalid)) from invalid

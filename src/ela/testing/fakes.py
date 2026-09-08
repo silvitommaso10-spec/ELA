@@ -20,7 +20,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
-from typing import Final, NamedTuple
+from typing import Final, NamedTuple, cast
 from uuid import UUID
 
 from ela.domain import (
@@ -207,6 +207,26 @@ class FakeTaskRepository:
             if states is None or task.state in states:
                 counted[task.state] = counted.get(task.state, 0) + 1
         return counted
+
+    async def due(
+        self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
+    ) -> tuple[Task, ...]:
+        check_limit(limit)
+        selected = [
+            task
+            for task in self._tasks.values()
+            if task.deadline is not None and (states is None or task.state in states)
+        ]
+        # ``sorted`` is stable, so insertion order breaks ties exactly as ``seq`` does in SQL.
+        selected.sort(key=lambda task: cast(datetime, task.deadline))
+        return tuple(selected)[:limit]
+
+    async def due_count(self, *, states: frozenset[TaskState] | None = None) -> int:
+        return sum(
+            1
+            for task in self._tasks.values()
+            if task.deadline is not None and (states is None or task.state in states)
+        )
 
     async def append_event(self, event: TaskEvent) -> None:
         if event.task_id not in self._tasks:

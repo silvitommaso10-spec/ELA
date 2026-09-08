@@ -20,6 +20,7 @@ from ela.audit.verifier import AuditVerifier
 from ela.composition.errors import ConfigurationError
 from ela.composition.settings import Settings
 from ela.composition.system import SystemClock, UuidGenerator
+from ela.context import ContextCore
 from ela.devices import DeviceOrchestrator, DeviceRegistry
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import Actor, ActorKind
@@ -61,7 +62,7 @@ from ela.ports import (
 from ela.providers.anthropic import anthropic_provider
 from ela.providers.registry import ProviderRegistry
 from ela.routing import ModelRouter
-from ela.tasks.engine import TaskEngine
+from ela.tasks.engine import LIVE_STATES, TaskEngine
 from ela.tools import (
     CaptureStore,
     ToolRegistry,
@@ -131,6 +132,14 @@ class Ela:
     Exposed on ``Ela`` because three places must agree about it and none of them is the tool: the
     start-up purge in the ``lifespan``, ``/diagnostics``, and the tool itself. A retention nobody
     outside the tool can see is a promise that cannot be checked (§57).
+    """
+    context: ContextCore
+    """The answer to §44, composed on read and never stored (M10.4, ADR 0032).
+
+    It holds ports and reads them; it writes nothing, executes nothing and observes nothing by
+    itself — the perception view is handed to ``assemble`` by whoever decided to look. Which
+    states count as live is given to it here rather than derived by it: that knowledge is the
+    state machine's (ADR 0004) and a second copy of the list is how two lists drift apart.
     """
     perception: PerceptionCore
     """What ELA believes about the machine it runs on (§10, §11; M10.1, ADR 0028).
@@ -298,6 +307,20 @@ async def build(settings: Settings) -> Ela:
         # that disagree. They are still two *reads* — a periodic belief never decides an action
         # (ADR 0029 §7).
         perception = PerceptionCore(probe, clock, settings.perception)
+
+        # ``live_states`` is data the root supplies, not a judgement the composer makes: the
+        # composer may not import the state machine (rule 10, import-linter contract 7), and
+        # inventing a second copy of "which states are still alive" is how two lists drift apart.
+        # ``LIVE_STATES`` is the engine's own, derived from the terminal set it already owns.
+        context = ContextCore(
+            repository=repository,
+            approvals=approvals,
+            devices=devices,
+            clock=clock,
+            settings=settings.context,
+            live_states=LIVE_STATES,
+            local_device_id=LOCAL_DEVICE_ID,
+        )
     except BaseException:
         await database.dispose()
         raise
@@ -325,5 +348,6 @@ async def build(settings: Settings) -> Ela:
         executor=executor,
         runner=runner,
         captures=captures,
+        context=context,
         perception=perception,
     )

@@ -122,6 +122,41 @@ class SqlTaskRepository:
             rows = await session.execute(query)
             return {TaskState(state): total for state, total in rows.all()}
 
+    async def due(
+        self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
+    ) -> tuple[Task, ...]:
+        """``WHERE deadline IS NOT NULL ORDER BY deadline, seq``: the database sorts (M10.4).
+
+        ``seq`` breaks ties so two tasks due at the same instant come back in a stable order,
+        and the ``IS NOT NULL`` is the contract and not an optimisation: a task with no deadline
+        is not a late one.
+        """
+        check_limit(limit)
+        if states is not None and not states:
+            return ()
+        query = (
+            select(TaskRow)
+            .where(TaskRow.deadline.is_not(None))
+            .order_by(TaskRow.deadline, TaskRow.seq)
+        )
+        if states is not None:
+            query = query.where(TaskRow.state.in_([state.value for state in states]))
+        if limit is not None:
+            query = query.limit(limit)
+        async with self._sessions() as session:
+            rows = await session.scalars(query)
+            return tuple(row_to_task(row) for row in rows)
+
+    async def due_count(self, *, states: frozenset[TaskState] | None = None) -> int:
+        """``COUNT(*)`` over the same filter as ``due``: no row travels (M10.4)."""
+        if states is not None and not states:
+            return 0
+        query = select(func.count()).select_from(TaskRow).where(TaskRow.deadline.is_not(None))
+        if states is not None:
+            query = query.where(TaskRow.state.in_([state.value for state in states]))
+        async with self._sessions() as session:
+            return int(await session.scalar(query) or 0)
+
     async def append_event(self, event: TaskEvent) -> None:
         async with self._sessions() as session, session.begin():
             await _require_task(session, event.task_id)

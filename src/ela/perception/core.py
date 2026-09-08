@@ -93,14 +93,22 @@ Anything outside this table is :attr:`~ela.domain.PermissionState.NOT_OBSERVABLE
 
 
 class PerceptionView(NamedTuple):
-    """What ELA currently believes, and what changed when it last looked.
+    """What ELA currently believes, what changed when it last looked, and since when.
 
     Not a domain entity — it is not persisted and crosses no port, so it stays a value of
     :mod:`ela.perception` (the criterion of ADR 0026 §2).
+
+    ``since`` is the instant of the observation ``changes`` are measured **from** (M10.4). It is
+    produced here because this is what knows it, and it exists because "nothing changed" and "I
+    have only just started looking" are different facts: a reader given the changes without the
+    horizon cannot tell them apart, which is the reading ADR 0030 §8 says to split before handing
+    it on. On the very first belief it equals ``observation.observed_at`` and ``changes`` is
+    empty — a true answer, not a missing one.
     """
 
     observation: Observation
     changes: tuple[PerceptionChange, ...]
+    since: datetime
 
 
 def _sensor(count: int | None, in_use: bool | None) -> SensorStatus:
@@ -267,8 +275,8 @@ class PerceptionCore:
 
     @property
     def view(self) -> PerceptionView:
-        """What ELA believes now, with the changes its last look produced."""
-        return PerceptionView(self._current, self._changes)
+        """What ELA believes now, with the changes its last look produced and their horizon."""
+        return PerceptionView(self._current, self._changes, self._previous.observed_at)
 
     async def tick(self) -> tuple[PerceptionChange, ...]:
         """Look at whatever is due, and answer with what changed.

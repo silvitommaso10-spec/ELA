@@ -234,10 +234,16 @@ def test_the_extended_criterion_quotes_the_one_it_extends() -> None:
 
 
 def test_the_conseguenze_count_the_rules_the_ports_and_the_capabilities() -> None:
+    """The totals this document pinned, kept as history rather than as today's count.
+
+    The pin on **today's** numbers moved to ADR 0032 (``tests/docs/test_adr_context_core.py``)
+    the moment M10.4 added two rules and a contract. What ADR 0031 wrote stays what it wrote — an
+    ADR is immutable — and what stays asserted here is that the tree only ever grew past it.
+    """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**trentasette**" in conseguenze
-    assert len(RULES) == 37
+    assert len(RULES) >= 37
     assert "**tredici**" in conseguenze
     assert "**ventuno**" in conseguenze
     assert len(tuple(port_protocols())) == 21

@@ -27,6 +27,19 @@ from ela.domain import (
     AuthorizationId,
     CapabilityId,
     CapabilitySpec,
+    ContextActivity,
+    ContextApproval,
+    ContextDeadline,
+    ContextDeadlines,
+    ContextDevice,
+    ContextEvent,
+    ContextQuestion,
+    ContextQuestionStatus,
+    ContextRecent,
+    ContextSnapshot,
+    ContextSource,
+    ContextTask,
+    ContextWork,
     DecisionId,
     Device,
     DeviceAvailability,
@@ -421,6 +434,104 @@ PERCEPTION_CHANGE: Final = PerceptionChange(
     field="microphone", before="AVAILABLE (OBSERVED)", after="ACTIVE (OBSERVED)"
 )
 
+# --- Context (M10.4, ADR 0032) -------------------------------------------------------------
+# One snapshot, of the kind ``GET /context`` really answers with: a machine somebody is using,
+# one live task with a step under way, one deadline, and the two questions §44 asks that this
+# ELA has no source for at all.
+
+CONTEXT_ACTIVITY: Final = ContextActivity(
+    observed_at=datetime(2026, 9, 8, 15, 0, tzinfo=UTC),
+    microphone=SENSOR_STATUS,
+    camera=SensorStatus(state=SensorState.AVAILABLE, cause=SensorCause.NOT_OBSERVABLE),
+    permissions={
+        SystemPermission.CAMERA: PermissionState.NOT_DETERMINED,
+        SystemPermission.MICROPHONE: PermissionState.NOT_DETERMINED,
+        SystemPermission.SCREEN_RECORDING: PermissionState.DENIED,
+    },
+    display_count=1,
+    display_asleep=False,
+    screen_locked=False,
+    on_console=True,
+    idle_seconds=0.2,
+    running_bundle_ids=("com.apple.Terminal", "com.apple.mail"),
+    frontmost_bundle_id="com.apple.Terminal",
+    window_count=4,
+)
+
+CONTEXT_DEVICE: Final = ContextDevice(
+    device_id=DEVICE.id,
+    name=DEVICE.name,
+    os=DEVICE.os,
+    available=True,
+    status=DeviceStatus.IDLE,
+    is_local=True,
+    last_seen_at=datetime(2026, 9, 8, 14, 59, tzinfo=UTC),
+)
+
+CONTEXT_TASK: Final = ContextTask(
+    task_id=TASK.id,
+    goal=TASK.goal,
+    state=TaskState.EXECUTING,
+    deadline=datetime(2026, 9, 9, 9, 0, tzinfo=UTC),
+    current_step_id=TASK_STEP.id,
+    current_step_goal=TASK_STEP.goal,
+)
+
+CONTEXT_APPROVAL: Final = ContextApproval(
+    approval_id=APPROVAL.id,
+    task_id=APPROVAL.task_id,
+    capability_id=APPROVAL.capability_id,
+    expires_at=datetime(2026, 9, 8, 15, 30, tzinfo=UTC),
+)
+
+CONTEXT_WORK: Final = ContextWork(
+    tasks=(CONTEXT_TASK,),
+    shown=1,
+    total=1,
+    states={TaskState.EXECUTING: 1},
+    pending_approvals=(CONTEXT_APPROVAL,),
+)
+
+CONTEXT_DEADLINE: Final = ContextDeadline(
+    task_id=TASK.id,
+    goal=TASK.goal,
+    state=TaskState.EXECUTING,
+    deadline=datetime(2026, 9, 9, 9, 0, tzinfo=UTC),
+)
+
+CONTEXT_DEADLINES: Final = ContextDeadlines(deadlines=(CONTEXT_DEADLINE,), shown=1, total=1)
+
+CONTEXT_EVENT: Final = ContextEvent(
+    task_id=TASK.id,
+    event_type=TaskEventType.STATE_CHANGED,
+    at=datetime(2026, 9, 8, 14, 58, tzinfo=UTC),
+    previous_state=TaskState.QUEUED,
+    new_state=TaskState.EXECUTING,
+)
+
+CONTEXT_RECENT: Final = ContextRecent(
+    since=datetime(2026, 9, 8, 14, 59, 58, tzinfo=UTC),
+    changes=(PERCEPTION_CHANGE,),
+    events=(CONTEXT_EVENT,),
+)
+
+CONTEXT_QUESTION_STATUS: Final = ContextQuestionStatus(
+    question=ContextQuestion.DEADLINES,
+    answered_by=(ContextSource.TASK_DEADLINES,),
+    missing=(ContextSource.CALENDAR,),
+)
+"""The row that decided the shape: answered **and** incomplete at the same time (ADR 0032 §3)."""
+
+CONTEXT_SNAPSHOT: Final = ContextSnapshot(
+    at=datetime(2026, 9, 8, 15, 0, tzinfo=UTC),
+    activity=CONTEXT_ACTIVITY,
+    device=CONTEXT_DEVICE,
+    work=CONTEXT_WORK,
+    deadlines=CONTEXT_DEADLINES,
+    recent=CONTEXT_RECENT,
+    questions=(CONTEXT_QUESTION_STATUS,),
+)
+
 EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
     type(example): example
     for example in (
@@ -451,6 +562,17 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         PERCEPTION_CHANGE,
         RAW_TEXT_LINE,
         RAW_RECOGNITION,
+        CONTEXT_ACTIVITY,
+        CONTEXT_DEVICE,
+        CONTEXT_TASK,
+        CONTEXT_APPROVAL,
+        CONTEXT_WORK,
+        CONTEXT_DEADLINE,
+        CONTEXT_DEADLINES,
+        CONTEXT_EVENT,
+        CONTEXT_RECENT,
+        CONTEXT_QUESTION_STATUS,
+        CONTEXT_SNAPSHOT,
     )
 }
 """One example per model, keyed by class: the parametrisation used by most tests."""

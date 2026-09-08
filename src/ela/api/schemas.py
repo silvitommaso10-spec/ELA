@@ -26,6 +26,12 @@ from ela.domain import (
     AuditEvent,
     AuditEventType,
     CapabilityId,
+    ContextActivity,
+    ContextDeadlines,
+    ContextDevice,
+    ContextQuestionStatus,
+    ContextRecent,
+    ContextWork,
     Device,
     DeviceCapability,
     DeviceCapabilityName,
@@ -62,12 +68,13 @@ __all__ = [
     "ApprovalOut",
     "AuditEventOut",
     "CancelIn",
+    "CaptureStoreOut",
     "ChainOut",
+    "ContextOut",
     "DeviceOut",
     "DiagnosticsOut",
     "ExecutionResultOut",
     "HealthOut",
-    "CaptureStoreOut",
     "PerceptionOut",
     "PerceptionSummaryOut",
     "PlanIn",
@@ -503,6 +510,33 @@ class PerceptionSummaryOut(BaseModel):
     observed_at: datetime
     permissions: dict[SystemPermission, PermissionState]
     captures: CaptureStoreOut
+
+
+class ContextOut(BaseModel):
+    """The answer to §44 at one instant — and what this ELA cannot answer (M10.4, ADR 0032).
+
+    The sections are the domain's own values and are **not** transcribed into a second set of
+    models here, which is a deliberate exception to this module's rule and not an oversight. The
+    rule exists so that a field added to the domain cannot leave the machine because nobody
+    noticed; this model has exactly one reader and the domain shape *is* the wire shape, so a
+    transcription would be the translation table this file's docstring warns about — two places
+    to keep in step. The guarantee is kept by ``tests/api/test_context.py``, which asserts the
+    exact key set of every section: a field added to the domain fails that test until somebody
+    decides it may leave. Derived, rather than copied.
+
+    ``questions`` carries **all seven** questions of §44, including the ones with no source at
+    all: each says what answers it here and what is missing by name. A question that vanished
+    when ELA could not answer it would be a question nobody notices ELA is not answering.
+    """
+
+    at: datetime
+    """The one instant every age in this response is relative to."""
+    activity: ContextActivity
+    device: ContextDevice | None
+    work: ContextWork
+    deadlines: ContextDeadlines
+    recent: ContextRecent
+    questions: tuple[ContextQuestionStatus, ...]
 
 
 class PerceptionOut(BaseModel):
