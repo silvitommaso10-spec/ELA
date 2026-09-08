@@ -57,6 +57,12 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_TASK_ORPHAN_AFTER_SECONDS", "900"),
     ("ELA_DECISION_TTL_SECONDS", "300"),
     ("ELA_NOTES_SCOPE", "workspace/notes"),
+    ("ELA_PERCEPTION_ENABLED", "true"),
+    ("ELA_PERCEPTION_LOOP_INTERVAL_SECONDS", "0"),
+    ("ELA_PERCEPTION_SENSORS_INTERVAL_SECONDS", "2"),
+    ("ELA_PERCEPTION_SESSION_INTERVAL_SECONDS", "5"),
+    ("ELA_PERCEPTION_PERMISSIONS_INTERVAL_SECONDS", "30"),
+    ("ELA_PERCEPTION_PROBE_TIMEOUT_SECONDS", "2.0"),
 )
 """Every optional variable, with ELA's own default beside it.
 

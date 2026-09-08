@@ -52,12 +52,34 @@ def test_example_is_valid(model: type[BaseModel]) -> None:
     assert example == model.model_validate(example.model_dump())
 
 
+NOTHING_REQUIRED = frozenset({"RawObservation"})
+"""The one model that is legally empty, and why (M10.1, ADR 0028 §1).
+
+``RawObservation()`` — every field ``None`` — is not a partial entity, it is *the* value for "the
+operating system was not asked, or could not answer". It is what a timeout returns, what a dead
+helper returns, and what ELA reads on Linux. Requiring a field would mean inventing a reading in
+order to say that there was none.
+
+It is a one-member list on purpose: a second model that needs nothing should have to argue here.
+"""
+
+
+def test_the_only_model_with_nothing_required_is_the_declared_one() -> None:
+    """The list above is not a habit: no other model may quietly become fully optional."""
+    empty = sorted(
+        model.__name__
+        for model in MODELS
+        if not any(field.is_required() for field in model.model_fields.values())
+    )
+    assert empty == sorted(NOTHING_REQUIRED)
+
+
 @pytest.mark.parametrize("model", MODELS, ids=lambda model: model.__name__)
 def test_required_fields_are_enforced(model: type[BaseModel]) -> None:
     """Dropping any required field makes construction fail: no silent partial entity."""
     example = EXAMPLES[model]
     required = [name for name, field in model.model_fields.items() if field.is_required()]
-    assert required, f"{model.__name__} has no required field"
+    assert required or model.__name__ in NOTHING_REQUIRED, f"{model.__name__} has no required field"
     for name in required:
         payload = {key: value for key, value in example.model_dump().items() if key != name}
         with pytest.raises(ValidationError, match=name):

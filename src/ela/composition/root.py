@@ -12,6 +12,7 @@ code rather than a habit — there is exactly one file to read to know what ELA 
 
 from __future__ import annotations
 
+import platform
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -23,6 +24,7 @@ from ela.devices import DeviceOrchestrator, DeviceRegistry
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import Actor, ActorKind
 from ela.executive import Executor, TaskRunner
+from ela.infrastructure.perception import DarwinProbe, UnsupportedProbe
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
     SqlAuditLog,
@@ -33,6 +35,7 @@ from ela.infrastructure.persistence import (
     make_engine,
     missing_tables,
 )
+from ela.perception import PerceptionCore
 from ela.permissions import PermissionGuardian, catalogue_v01
 from ela.ports import (
     ApprovalStore,
@@ -106,6 +109,13 @@ class Ela:
     orchestrator: DeviceOrchestrator
     executor: Executor
     runner: TaskRunner
+    perception: PerceptionCore
+    """What ELA believes about the machine it runs on (§10, §11; M10.1, ADR 0028).
+
+    Built last and wired to nothing else: in v0.1 nobody consumes perception — no task reads it,
+    no decision depends on it. That is the milestone's shape, not an omission, and it is why the
+    continuous loop is off by default: an observer nobody reads should not be watching.
+    """
 
     async def aclose(self) -> None:
         """Release the database connections. Idempotent, as ``dispose`` is."""
@@ -218,6 +228,17 @@ async def build(settings: Settings) -> Ela:
             results=results,
             audit=audit,
         )
+
+        # The one place that knows which operating system this is (architecture rule 27). Not a
+        # capability of the local node and not a branch inside the adapter: on anything but macOS
+        # ELA perceives nothing, and that is a named object with a test rather than a gap.
+        perception = PerceptionCore(
+            DarwinProbe(timeout=settings.perception.probe_timeout)
+            if platform.system() == "Darwin"
+            else UnsupportedProbe(),
+            clock,
+            settings.perception,
+        )
     except BaseException:
         await database.dispose()
         raise
@@ -244,4 +265,5 @@ async def build(settings: Settings) -> Ela:
         orchestrator=orchestrator,
         executor=executor,
         runner=runner,
+        perception=perception,
     )

@@ -281,13 +281,18 @@ def test_every_row_is_filled_in_for_its_kind(row: Constant) -> None:
         assert not row.why or row.why in WHYS
 
 
-def test_the_subjects_are_the_three_declared_ones_and_say_why_in_one_word() -> None:
+def test_the_subjects_are_the_four_declared_ones_and_say_why_in_one_word() -> None:
     """The only class without an assertion: kept small, named, and each marked with its word.
 
     ``INEVITABLE`` is the question that cannot be asked — restricting ``ROOT_PACKAGE`` removes the
     subject of every rule. ``ARTEFACT`` is the question whose answer means nothing: restricted,
-    rule 31 raises instead of speaking and rule 28 reports itself. The word is there so a reader
-    sees a declared exception rather than a row somebody forgot to classify (review of M9.3).
+    rules 31 and 33 raise instead of speaking, and rule 28 reports itself. The word is there so a
+    reader sees a declared exception rather than a row somebody forgot to classify (review of
+    M9.3).
+
+    ``PERCEPTION_PROBE`` joined in M10.1 and is the same shape as ``SECURITY_MODULE``: the single
+    file its rule opens. Three of the four are that shape, which is worth noticing — a rule that
+    reads one named file can never have its subject restricted, only removed.
     """
     subjects = {row.name: row.why for row in CONSTANTS if row.kind == SUBJECT}
 
@@ -295,6 +300,7 @@ def test_the_subjects_are_the_three_declared_ones_and_say_why_in_one_word() -> N
         "ROOT_PACKAGE": INEVITABLE,
         "SECURITY_MODULE": ARTEFACT,
         "CLI_DIR": ARTEFACT,
+        "PERCEPTION_PROBE": ARTEFACT,
     }
 
 

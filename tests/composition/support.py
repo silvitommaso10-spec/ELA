@@ -24,13 +24,24 @@ the repository is how a secret scanner learns to ignore secrets (M5.3, the CI fi
 DB = "ELA_DB_URL"
 WORKSPACE = "ELA_WORKSPACE_DIR"
 API_TOKEN = "ELA_API_TOKEN"
+PERCEPTION = "ELA_PERCEPTION_ENABLED"
 
 
 def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> None:
-    """The minimum an ELA needs, plus whatever the test wants to say."""
+    """The minimum an ELA needs, plus whatever the test wants to say.
+
+    Perception is **off** unless a test asks for it, and for the same reason the database is a
+    temporary file: with it on, every application start-up spawns a helper and reads *this*
+    machine, so the suite would say one thing on a Mac and another on a runner. The tests that
+    are about perception turn it back on and say what the probe answers.
+    """
     monkeypatch.setenv(DB, database_url(tmp_path))
     monkeypatch.setenv(WORKSPACE, str(tmp_path / "workspace"))
     monkeypatch.setenv(API_TOKEN, TOKEN)
+    # Off by default, but a fixture that turned it on before this ran keeps it on: the
+    # environment has already been emptied of ``ELA_`` by ``_only_the_declared_environment``,
+    # so anything present here was put there by the test on purpose.
+    monkeypatch.setenv(PERCEPTION, os.environ.get(PERCEPTION, "false"))
     for name, value in extra.items():
         monkeypatch.setenv(name, value)
 

@@ -47,16 +47,33 @@ def test_json_payloads_cannot_be_mutated(model: type[BaseModel]) -> None:
 
 
 def test_models_without_a_json_payload_are_the_expected_ones() -> None:
-    """A payload is opt-in: Actor, ModelRoute and ProviderUsage are fully typed and need none.
+    """A payload is opt-in, and every model here is fully typed and needs none.
 
     ``TaskStep`` left this list in M6.3: ``arguments`` is a JSON payload (ADR 0018), and it is
-    frozen like every other one — a plan that could be edited in place after the Guardian read it
-    would be a plan nobody decided about. ``ModelRoute`` joined it in M7.3: a route is four
+    frozen like every other one — a plan that could be edited in place after the Guardian read
+    it would be a plan nobody decided about. ``ModelRoute`` joined it in M7.3: a route is four
     declared values, and a metadata bag on a routing decision would be a place to smuggle in a
     choice the policy did not make (ADR 0022 §2).
+
+    Three of the four perception models joined in M10.1, and for them it is a §57 property
+    rather than a preference: a free-form bag on an observation is exactly where a window
+    title, a filename or a transcript would eventually be put "just for context". What ELA
+    perceives is the declared fields and nothing else, and the milestone that first reads
+    content will have to add a typed field and argue for it.
+
+    ``Observation`` is **not** here, and that is the point rather than an exception: its
+    ``permissions`` is a mapping, so it is checked by the test above like every other
+    payload — which is how the frozen permissions map gets proved instead of assumed.
     """
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
-    assert without == ["Actor", "ModelRoute", "ProviderUsage"]
+    assert without == [
+        "Actor",
+        "ModelRoute",
+        "PerceptionChange",
+        "ProviderUsage",
+        "RawObservation",
+        "SensorStatus",
+    ]
 
 
 def test_nested_mapping_is_frozen_too() -> None:

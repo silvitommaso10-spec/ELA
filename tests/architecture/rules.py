@@ -43,7 +43,10 @@ INFRA_PACKAGES = frozenset({"providers", "infrastructure", "api", "cli"})
 #: Core packages that must stay independent from providers and infrastructure.
 #: ``routing`` joined them in M7.3 (ADR 0022 §2): the Model Router chooses *between* providers
 #: and must not import one — it reaches them through ``ProviderRegistryPort``.
-CORE_PACKAGES = ("executive", "tasks", "permissions", "audit", "routing")
+#: ``perception`` joined them in M10.1 (ADR 0028 §1): the Perception Core decides what a reading
+#: *means* and must not import the adapter that produces it — it reaches the machine through
+#: ``PerceptionProbe``, exactly as the router reaches a provider through a port.
+CORE_PACKAGES = ("executive", "tasks", "permissions", "perception", "audit", "routing")
 CORE_FORBIDDEN = tuple(f"{ROOT_PACKAGE}.{name}" for name in ("providers", "infrastructure"))
 #: Rule 26 (ADR 0022 §2): the tools receive a router, they never build one.
 TOOLS_PACKAGE = f"{ROOT_PACKAGE}.tools"
@@ -84,6 +87,44 @@ DEVICE_PORT_ALLOWED = (f"{ROOT_PACKAGE}.{DEVICES_DIR}",)
 #: before somebody knocks.
 PLACEMENT_MODEL = "PlacementDecision"
 PLACEMENT_DEVICE_FIELD = "device"
+
+#: Rule 32 (ADR 0028 §1): ELA touches the operating system in exactly one package. ``ctypes`` and
+#: process spawning are how a Python program reaches outside its own runtime, and perception is
+#: the first thing in ELA that reads the *machine* rather than the database — one door is easier
+#: to guard than a habit, and a second one would have no reason to be found.
+PERCEPTION_ADAPTER_DIR = Path("infrastructure") / "perception"
+MACHINE_LIBRARIES = frozenset({"ctypes"})
+#: Ways to start another process. Two spellings, because the rule is about *reaching outside* and
+#: neither spelling is more honest than the other: ``import subprocess`` shows up as an import,
+#: while ``asyncio.create_subprocess_exec(...)`` — the one this milestone actually uses — shows up
+#: only as a call. A rule that read imports alone would have been a defence that looks active and
+#: cannot fire, which is worse than none (ADR 0026 §7).
+SPAWNING_MODULES = frozenset({"subprocess"})
+SPAWNING_CALLS = frozenset(
+    {
+        "asyncio.create_subprocess_exec",
+        "asyncio.create_subprocess_shell",
+        "os.system",
+        "os.popen",
+        "os.spawnl",
+        "os.spawnv",
+        "os.execv",
+        "os.execvp",
+        "os.fork",
+        "os.posix_spawn",
+    }
+)
+
+#: Rule 33 (ADR 0028 §2): the helper process imports only the standard library, never ``ela``.
+#: What has to be able to die on its own must not carry the Core's import graph with it, and the
+#: Core must not be able to reach into it: the two sides agree on a JSON object and nothing else.
+PERCEPTION_PROBE = PERCEPTION_ADAPTER_DIR / "probe.py"
+
+#: Rule 34 (ADR 0028 §1): the perception adapter reports primitives and never names a domain
+#: state. This is what makes the coverage exemption honest instead of promised — no runner has a
+#: webcam, so the adapter cannot be covered, and a module that cannot be covered must not decide.
+#: An adapter that does not know the words cannot use them wrongly.
+PERCEPTION_VOCABULARY = frozenset({"SensorState", "SensorCause", "PermissionState"})
 
 #: Rule 31 (ADR 0026 §6): the API's token is compared only with ``secrets.compare_digest``.
 #: The one mutation of eight the suite did not notice: ``compare_digest`` swapped for ``==``
@@ -1350,6 +1391,100 @@ def _compares_the_token(node: ast.Compare) -> bool:
     return any(_names_the_token(operand) for operand in [node.left, *node.comparators])
 
 
+def check_machine_access(pkg_root: Path) -> list[Violation]:
+    """Rule 32: only ``ela.infrastructure.perception`` reaches the operating system (ADR 0028 §1).
+
+    ``ctypes`` and starting a process are the two ways a Python program leaves its own runtime.
+    Before M10.1 ``ela`` used neither, anywhere; perception is the first thing that needs them,
+    and the value of writing the rule the same day is that "ELA touches the machine in one place"
+    is a fact a reader can check instead of a claim they have to trust.
+
+    Everything else reaches the machine through :class:`~ela.ports.PerceptionProbe`, which is
+    also what lets the whole Core be tested with no hardware at all.
+    """
+    rule = "machine-access-in-one-place"
+    files = [
+        path
+        for path in _source_files(pkg_root)
+        if not path.is_relative_to(pkg_root / PERCEPTION_ADAPTER_DIR)
+    ]
+    found = _violations(
+        rule,
+        iter(files),
+        pkg_root,
+        lambda imported: (
+            _top_level(imported) in MACHINE_LIBRARIES
+            or _top_level(imported) in SPAWNING_MODULES
+            or imported in SPAWNING_CALLS
+        ),
+    )
+    for path in files:
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f"{_dotted(node.func)}(...)", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and _dotted(node.func) in SPAWNING_CALLS
+        )
+    return found
+
+
+def _dotted(function: ast.expr) -> str:
+    """``asyncio.create_subprocess_exec`` for an attribute chain, ``""`` for anything else."""
+    if isinstance(function, ast.Name):
+        return function.id
+    if isinstance(function, ast.Attribute):
+        base = _dotted(function.value)
+        return f"{base}.{function.attr}" if base else ""
+    return ""
+
+
+def check_probe_is_standalone(pkg_root: Path) -> list[Violation]:
+    """Rule 33: the perception helper imports only the standard library (ADR 0028 §2).
+
+    The child process exists to be allowed to die: a mistaken Objective-C message kills it, and
+    that is the containment working rather than failing. A child that imported ``ela`` would drag
+    the Core's import graph into the thing designed to crash, and would give the Core a path into
+    the one module no runner can cover. The contract between the two sides is a JSON object.
+    """
+    path = pkg_root / PERCEPTION_PROBE
+    return _violations(
+        "perception-probe-imports-only-stdlib",
+        iter([path]),
+        pkg_root,
+        lambda imported: _is_within(imported, ROOT_PACKAGE),
+    )
+
+
+def check_adapter_names_no_state(pkg_root: Path) -> list[Violation]:
+    """Rule 34: the perception adapter never names a domain state (ADR 0028 §1).
+
+    The coverage gate covers what can be run on a runner, and no runner has a webcam. The
+    adapter's exemption is therefore paid for structurally: it hands over primitives — an ``int``
+    for an ``AVAuthorizationStatus``, ``None`` for "not read" — and :func:`ela.perception.interpret`
+    decides what they mean, inside the package the gate does cover.
+
+    Reported as an *import* and as a *name*: a module that never imports ``SensorState`` cannot
+    build one, and one that mentions it by attribute is reaching for the same words the long way.
+    """
+    rule = "perception-adapter-decides-nothing"
+    found = _violations(
+        rule,
+        _source_files(pkg_root / PERCEPTION_ADAPTER_DIR),
+        pkg_root,
+        lambda imported: imported.rpartition(".")[2] in PERCEPTION_VOCABULARY,
+    )
+    for path in _source_files(pkg_root / PERCEPTION_ADAPTER_DIR):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, node.attr, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute) and node.attr in PERCEPTION_VOCABULARY
+        )
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -1382,6 +1517,9 @@ RULES: dict[str, Rule] = {
     "tool-output-readers": check_tool_output_readers,
     "placement-builders": check_placement_builders,
     "constant-time-token": check_constant_time_token,
+    "machine-access-in-one-place": check_machine_access,
+    "perception-probe-imports-only-stdlib": check_probe_is_standalone,
+    "perception-adapter-decides-nothing": check_adapter_names_no_state,
 }
 
 
@@ -1711,6 +1849,44 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant(
         "tool-execute-callers", "SQL_EXECUTORS", EXEMPTION, by=EACH, adr="ADR 0013 §9; ADR 0027"
     ),
+    # machine-access-in-one-place (rule 32, ADR 0028 §1)
+    Constant("machine-access-in-one-place", "MACHINE_LIBRARIES", DETECTOR),
+    Constant(
+        "machine-access-in-one-place",
+        "PERCEPTION_ADAPTER_DIR",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0028 §1",
+    ),
+    Constant(
+        "machine-access-in-one-place",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    Constant("machine-access-in-one-place", "SPAWNING_CALLS", DETECTOR),
+    Constant("machine-access-in-one-place", "SPAWNING_MODULES", DETECTOR),
+    # perception-adapter-decides-nothing (rule 34, ADR 0028 §1)
+    Constant("perception-adapter-decides-nothing", "PERCEPTION_ADAPTER_DIR", DETECTOR),
+    Constant("perception-adapter-decides-nothing", "PERCEPTION_VOCABULARY", DETECTOR),
+    Constant(
+        "perception-adapter-decides-nothing",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # perception-probe-imports-only-stdlib (rule 33, ADR 0028 §2)
+    Constant(
+        "perception-probe-imports-only-stdlib",
+        "PERCEPTION_PROBE",
+        SUBJECT,
+        why=ARTEFACT,
+        reason="the one file this rule reads: restricted, the rule has nothing to open and "
+        "raises instead of speaking",
+    ),
+    Constant("perception-probe-imports-only-stdlib", "ROOT_PACKAGE", DETECTOR),
     # tool-output-readers
     Constant("tool-output-readers", "API_DIR", DETECTOR),
     Constant("tool-output-readers", "OUTPUT_MODEL", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),

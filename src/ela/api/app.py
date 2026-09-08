@@ -13,8 +13,9 @@ an ``Authorization`` header, so ``/docs`` behind a token would answer 401 and no
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from importlib.metadata import version
 
@@ -22,7 +23,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from ela.api import approvals, audit, devices, results, system, tasks
+from ela.api import approvals, audit, devices, perception, results, system, tasks
 from ela.api.errors import DatabaseUnavailableError, TaskAlreadyRunningError
 from ela.api.problems import problem
 from ela.api.security import token_middleware
@@ -99,16 +100,31 @@ def _handler(failure: Failure) -> Callable[[Request, Exception], Awaitable[Respo
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """What a start-up does: close what a crash left open (ADR 0008 §6, ADR 0015 §6).
+    """What a start-up does: close what a crash left open, and look at the machine once.
 
-    Once, here, and not periodically: calling ``recover()`` on a schedule is the Proactive Core's
-    (§34). It **writes** — an EXECUTING task silent for longer than
+    ``recover()`` runs once, here, and not periodically: calling it on a schedule is the Proactive
+    Core's (§34). It **writes** — an EXECUTING task silent for longer than
     ``ELA_TASK_ORPHAN_AFTER_SECONDS`` is failed as an orphan — so starting ELA is not a read-only
     operation, and the default of fifteen minutes is chosen for that reason (ADR 0023 §3).
+
+    The first perception tick follows the same precedent, for the same reason: once, so that
+    ``/diagnostics`` has something true to say about this machine from the first request, and not
+    on a schedule, because watching continuously is a separate decision with its own knob
+    (``ELA_PERCEPTION_LOOP_INTERVAL_SECONDS``, off by default — M10.1, ADR 0028 §7).
+
+    The loop, when it is on, is a task this context manager owns: started after the first tick and
+    cancelled before the process leaves, so ELA never outlives its own observer.
     """
     ela: Ela = app.state.ela
     app.state.recovery = await ela.engine.recover()
-    yield
+    await ela.perception.tick()
+    watching = asyncio.create_task(ela.perception.run())
+    try:
+        yield
+    finally:
+        watching.cancel()
+        with suppress(asyncio.CancelledError):
+            await watching
 
 
 def create_app(ela: Ela) -> FastAPI:
@@ -132,6 +148,7 @@ def create_app(ela: Ela) -> FastAPI:
         approvals.router,
         audit.router,
         devices.router,
+        perception.router,
         results.router,
     ):
         app.include_router(router)

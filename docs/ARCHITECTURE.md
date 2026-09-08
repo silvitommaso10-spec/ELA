@@ -47,6 +47,7 @@ graph TD
     identity[ela.identity]
     infrastructure[ela.infrastructure]
     memory[ela.memory]
+    perception[ela.perception]
     permissions[ela.permissions]
     ports[ela.ports]
     providers[ela.providers]
@@ -68,6 +69,7 @@ graph TD
     composition --> domain
     composition --> executive
     composition --> infrastructure
+    composition --> perception
     composition --> permissions
     composition --> ports
     composition --> providers
@@ -84,6 +86,8 @@ graph TD
     infrastructure --> audit
     infrastructure --> domain
     infrastructure --> ports
+    perception --> domain
+    perception --> ports
     permissions --> domain
     permissions --> ports
     ports --> domain

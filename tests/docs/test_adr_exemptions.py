@@ -143,11 +143,21 @@ def test_the_packages_of_adr_0012_are_the_ones_left_plus_the_one_withdrawn() -> 
     assert rules.AUTHORIZATION_BUILDERS_EXEMPT | gone_from("authorization-builders") == documented
 
 
-def test_the_three_subjects_and_their_words_are_the_ones_in_the_table() -> None:
-    """The class without an assertion is the one the ADR spells out row by row (§5, review M9.3)."""
+SUBJECT_ADRS = (ADR_PATH, ADR_PATH.with_name("0028-perception-core.md"))
+"""ADR 0027 §5 opened the table; a later ADR that adds a subject repeats a row here.
+
+An ADR is immutable, so a table describing a growing collection cannot live in one document —
+the same shape ``test_adr_ports.py`` already uses for the ports. ADR 0028 §12 carries the row for
+``PERCEPTION_PROBE`` under ``Soggetti aggiunti:``, in the form ADR 0026 §9 established.
+"""
+
+
+def test_the_subjects_and_their_words_are_the_ones_in_the_tables() -> None:
+    """The class without an assertion is the one the ADRs spell out row by row (§5, review M9.3)."""
     documented = {
         match.group(1): match.group(2)
-        for line in adr_text().splitlines()
+        for path in SUBJECT_ADRS
+        for line in path.read_text(encoding="utf-8").splitlines()
         if (match := SUBJECT_ROW.match(line))
     }
     assert documented, "ADR 0027 §5 must list the subjects and the word each carries"

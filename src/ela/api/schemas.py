@@ -38,14 +38,18 @@ from ela.domain import (
     JsonMapping,
     NetworkKind,
     OperatingSystem,
+    PerceptionChange,
     PerformanceClass,
+    PermissionState,
     PlanId,
     PowerSource,
     PrivacyLevel,
     ProviderUsage,
     RiskLevel,
+    SensorStatus,
     StepId,
     StepState,
+    SystemPermission,
     Task,
     TaskPlan,
     TaskState,
@@ -63,6 +67,8 @@ __all__ = [
     "DiagnosticsOut",
     "ExecutionResultOut",
     "HealthOut",
+    "PerceptionOut",
+    "PerceptionSummaryOut",
     "PlanIn",
     "RunOut",
     "StepIn",
@@ -457,6 +463,52 @@ class ExecutionResultOut(BaseModel):
         )
 
 
+class PerceptionSummaryOut(BaseModel):
+    """The composition-shaped half of perception: what ELA *can* see on this machine (§10, §57).
+
+    In ``/diagnostics`` and not only in ``/perception`` because a missing permission is not the
+    world, it is the wiring: "Screen Recording denied" belongs next to ``providers`` and
+    ``tools`` — it says what ELA is able to do here. The state of the microphone is the world,
+    and lives on the other route.
+
+    ``observed_at`` travels with it because these permissions are as old as the last look, and a
+    reader who is not told the age of an answer will read it as current.
+    """
+
+    enabled: bool
+    watching: bool
+    """Whether the continuous loop is on. Off by default: ELA answers when asked, and does not
+    observe on its own until somebody turns it on (ADR 0028 §7)."""
+    observed_at: datetime
+    permissions: dict[SystemPermission, PermissionState]
+
+
+class PerceptionOut(BaseModel):
+    """What ELA believes about this machine, and what changed when it last looked (§10, §11).
+
+    Every sensor arrives as a :class:`~ela.domain.SensorStatus` — state **and** cause — because
+    the two are one fact: ``OFF`` alone would tell a reader something ELA does not know
+    (ADR 0028 §3). ``idle_seconds`` is a number and stays one: turning it into "present" or
+    "away" is a threshold, and a threshold belongs to whoever decides, not to whoever observes.
+
+    ``changes`` is the last look only. There is no history here on purpose — the perception is
+    not the memory, and structured memory is §21, with rules this route does not have.
+    """
+
+    enabled: bool
+    watching: bool
+    observed_at: datetime
+    microphone: SensorStatus
+    camera: SensorStatus
+    permissions: dict[SystemPermission, PermissionState]
+    display_count: int | None
+    display_asleep: bool | None
+    screen_locked: bool | None
+    on_console: bool | None
+    idle_seconds: float | None
+    changes: tuple[PerceptionChange, ...]
+
+
 class DiagnosticsOut(BaseModel):
     """How ELA is composed right now — never a secret, never the user's content (ADR 0023 §6)."""
 
@@ -473,3 +525,4 @@ class DiagnosticsOut(BaseModel):
     tasks: dict[str, int]
     pending_approvals: int
     recovered: dict[str, int]
+    perception: PerceptionSummaryOut

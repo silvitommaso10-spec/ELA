@@ -44,10 +44,13 @@ from ela.domain import (
     IntentId,
     ModelRoute,
     NetworkKind,
+    Observation,
     OperatingSystem,
+    PerceptionChange,
     PerformanceClass,
     PermissionDecision,
     PermissionOutcome,
+    PermissionState,
     PlanId,
     PowerSource,
     PrivacyLevel,
@@ -56,8 +59,13 @@ from ela.domain import (
     ProviderResult,
     ProviderResultId,
     ProviderUsage,
+    RawObservation,
     RiskLevel,
+    SensorCause,
+    SensorState,
+    SensorStatus,
     StepId,
+    SystemPermission,
     Task,
     TaskEvent,
     TaskEventId,
@@ -357,6 +365,45 @@ EXECUTION_RESULT: Final = ExecutionResult(
     metadata={"verified": False},
 )
 
+# Perception (M10.1): what this Mac looked like while M10.1 was written — a webcam present but
+# never observable as in use, a microphone observed idle, and Screen Recording denied. The
+# example of a milestone about missing permissions should show one missing.
+SENSOR_STATUS: Final = SensorStatus(state=SensorState.AVAILABLE, cause=SensorCause.OBSERVED)
+
+RAW_OBSERVATION: Final = RawObservation(
+    camera_count=2,
+    microphone_count=2,
+    microphone_in_use=False,
+    display_count=1,
+    display_asleep=False,
+    screen_locked=False,
+    on_console=True,
+    idle_seconds=0.2,
+    camera_permission=0,
+    microphone_permission=0,
+    screen_recording_permission=False,
+)
+
+OBSERVATION: Final = Observation(
+    observed_at=datetime(2026, 9, 8, 15, 0, tzinfo=UTC),
+    microphone=SENSOR_STATUS,
+    camera=SensorStatus(state=SensorState.AVAILABLE, cause=SensorCause.NOT_OBSERVABLE),
+    permissions={
+        SystemPermission.CAMERA: PermissionState.NOT_DETERMINED,
+        SystemPermission.MICROPHONE: PermissionState.NOT_DETERMINED,
+        SystemPermission.SCREEN_RECORDING: PermissionState.DENIED,
+    },
+    display_count=1,
+    display_asleep=False,
+    screen_locked=False,
+    on_console=True,
+    idle_seconds=0.2,
+)
+
+PERCEPTION_CHANGE: Final = PerceptionChange(
+    field="microphone", before="AVAILABLE (OBSERVED)", after="ACTIVE (OBSERVED)"
+)
+
 EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
     type(example): example
     for example in (
@@ -380,6 +427,10 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         PROVIDER_REQUEST,
         PROVIDER_RESULT,
         EXECUTION_RESULT,
+        SENSOR_STATUS,
+        RAW_OBSERVATION,
+        OBSERVATION,
+        PERCEPTION_CHANGE,
     )
 }
 """One example per model, keyed by class: the parametrisation used by most tests."""

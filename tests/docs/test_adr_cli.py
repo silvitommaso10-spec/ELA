@@ -27,6 +27,7 @@ from tests.contracts.protocols import method_names, port_protocols
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = REPO_ROOT / "docs" / "adr" / "0024-cli.md"
 DEBTS_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0025-phase-8-debts.md"
+PERCEPTION_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0028-perception-core.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMMAND_ROW = re.compile(
@@ -37,12 +38,20 @@ PROTOCOL_ROW = re.compile(r"^\| `(\w+)` \| `(\w+)\(\)` \| `([\w.]+)` \| ([^|]+) 
 RULE_ROW = re.compile(r"^\| (\d+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$")
 ENV_VARIABLE = re.compile(r"^#?\s*(ELA_\w+)\s*=", re.MULTILINE)
 RULE_NAME = "cli-talks-over-the-api"
+RETIRED = "ELA_ANTHROPIC_MODEL"
+"""Declared to be refused, never to be set (ADR 0022 §8): a field ELA reads only to say no."""
 
 
 def adr_text() -> str:
-    """ADR 0024 and ADR 0025, read together: an ADR is immutable, so the command M8.3 adds is
-    documented there in the row shape of this table (ADR 0025 §10)."""
-    return ADR_PATH.read_text(encoding="utf-8") + "\n" + DEBTS_ADR_PATH.read_text(encoding="utf-8")
+    """ADR 0024, ADR 0025 and ADR 0028, read together.
+
+    An ADR is immutable, so a command a later milestone adds is documented in *its* ADR, in the
+    row shape of this table (ADR 0025 §10, ADR 0028 §12). The table of commands is therefore the
+    union of the documents, exactly as the table of ports is (``test_adr_ports.py``).
+    """
+    return "\n".join(
+        path.read_text(encoding="utf-8") for path in (ADR_PATH, DEBTS_ADR_PATH, PERCEPTION_ADR_PATH)
+    )
 
 
 def cli_adr_text() -> str:
@@ -99,15 +108,19 @@ def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:
     assert set(documented_commands()) == coded_commands()
 
 
-def test_there_are_eighteen_of_them() -> None:
-    assert len(coded_commands()) == 18
+def test_there_are_nineteen_of_them() -> None:
+    assert len(coded_commands()) == 19
 
 
-def test_the_command_of_m8_3_is_the_one_adr_0025_adds() -> None:
-    """``ela task results``, the client of the one route that returns an output (ADR 0025 §4)."""
+def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
+    """``ela task results`` (ADR 0025 §4) and ``ela perception`` (ADR 0028 §12), and nothing else.
+
+    Each is the client of the one route its milestone introduced, and each is documented in the
+    ADR that introduced it rather than back-written into ADR 0024.
+    """
     added = set(documented_commands()) - set(documented_commands_of(cli_adr_text()))
 
-    assert added == {"task results"}
+    assert added == {"task results", "perception"}
 
 
 def test_only_two_commands_are_local_and_they_are_the_two_that_cannot_be_calls() -> None:
@@ -254,7 +267,30 @@ def test_init_writes_the_variables_the_example_documents() -> None:
     assert sorted(documented_variables()) == sorted([TOKEN_VARIABLE, *(n for n, _ in VARIABLES)])
 
 
+def test_the_list_of_variables_is_every_variable_ela_actually_reads() -> None:
+    """Derived, so "a variable nobody discovers" stops being a promise (M10.1).
+
+    ``VARIABLES`` and ``.env.example`` have always been kept in step with each other; what nobody
+    checked is that either of them is in step with the **settings**. A knob added to a
+    ``BaseSettings`` and to neither list works perfectly and is invisible, which is the quietest
+    way a configurable system stops being configurable.
+    """
+    from ela.composition.settings import Settings
+
+    declared = {
+        f"ELA_{field.upper()}"
+        for group in Settings.model_fields.values()
+        for field in group.annotation.model_fields  # type: ignore[union-attr]
+    }
+
+    assert declared - {RETIRED} == {TOKEN_VARIABLE, *(name for name, _ in VARIABLES)}
+
+
 def test_the_retired_variable_is_not_among_them() -> None:
-    """Suggesting it would stop ELA at start-up (ADR 0022 §8)."""
-    assert "ELA_ANTHROPIC_MODEL" not in documented_variables()
-    assert "ELA_ANTHROPIC_MODEL" not in {name for name, _ in VARIABLES}
+    """Suggesting it would stop ELA at start-up (ADR 0022 §8).
+
+    It is the one field the settings declare and the lists must not offer, which is why the
+    derivation above subtracts it by name instead of quietly allowing a difference.
+    """
+    assert RETIRED not in documented_variables()
+    assert RETIRED not in {name for name, _ in VARIABLES}
