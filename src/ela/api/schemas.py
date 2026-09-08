@@ -531,9 +531,95 @@ class VoiceOut(BaseModel):
     available: bool
     """Whether this operating system has a speech helper ELA knows about."""
     voice: str
-    """Which voice ELA speaks with. **Not the voice §9 asks for** — see M11.1 dec. D."""
+    """Which voice ELA speaks with locally. **Not the voice §9 asks for** — see M11.1 dec. D."""
     max_characters: int
     timeout_seconds: float
+    online: VoiceOnlineOut
+    """The voice of §9 and what it costs to have it (M11.3, ADR 0034 §11)."""
+
+
+class VoiceOnlineOut(BaseModel):
+    """The online voice: whether it is there, which one it is, and what the provider keeps.
+
+    ``text_retained_by_provider`` is here because the user chose this knowingly and **the choice
+    has to stay visible** (ADR 0034 §11). Not a warning before every sentence — one that repeats
+    is one people learn to skip — but a fact stated where somebody looks at which voice ELA is
+    using, which is here and in ``ela voice``.
+    """
+
+    configured: bool
+    """Whether there is both a key and a voice. Which of the two is missing is a question the
+    tool answers with two different codes; here what matters is whether ELA can use it at all."""
+    available: bool
+    """Whether this machine can play audio (``afplay``). Separate from ``configured`` for the
+    reason every pair in this file is separate: they are two facts and one of them is yours."""
+    voice_id: str | None
+    model: str
+    text_retained_by_provider: bool
+    """**What ELA says with this voice is kept by the provider**, and can be read back in the
+    account's own history. Measured, not quoted (ADR 0034 §1.2)."""
+    timeout_seconds: float
+
+
+class VoiceCandidateOut(BaseModel):
+    """One voice offered for listening (ADR 0034 §9)."""
+
+    voice_id: str
+    name: str
+    chosen: bool
+
+
+class HeardOut(BaseModel):
+    """One thing that was played during an audition, and what it cost.
+
+    ``phrase`` is echoed back because it is a **constant of the repository** — §9's own words —
+    and showing what was said is the point of an audition. It is not an argument: there is no
+    field anywhere in this route for a caller to put words in (ADR 0034 §9).
+    """
+
+    voice_id: str
+    model: str
+    phrase: str
+    spoken_seconds: float | None = None
+    synthesis_seconds: float | None = None
+    credits: int | None = None
+    history_item_id: str | None = None
+    error: str | None = None
+
+
+class AuditionOut(BaseModel):
+    """What an audition played, in order, and what the whole of it cost."""
+
+    heard: tuple[HeardOut, ...]
+    credits: int | None
+    """The sum of what the provider charged, or ``None`` when it charged nothing it stated."""
+
+
+class AuditionIn(BaseModel):
+    """Which voice to hear, and whether to hear it on both models. **No field for text.**
+
+    The absence is the design (ADR 0034 §9): an audition that accepted a sentence would be a way
+    to say anything out loud, and send it to a provider, with no capability anywhere in sight.
+    Architecture rule 43 says the same thing about the code; this says it about the wire.
+    """
+
+    voice_id: str = Field(min_length=1)
+    both_models: bool = False
+
+
+class PreviewIn(BaseModel):
+    """Which voice's own sample to play. Nothing is synthesised and nothing is sent."""
+
+    voice_id: str = Field(min_length=1)
+
+
+class VoiceStatusOut(BaseModel):
+    """What ``ela voice`` shows: the two voices, and the ones worth listening to."""
+
+    voice: VoiceOut
+    candidates: tuple[VoiceCandidateOut, ...]
+    phrases: tuple[str, ...]
+    """What an audition would say — the two sentences of §9, from the repository."""
 
 
 class ContextOut(BaseModel):

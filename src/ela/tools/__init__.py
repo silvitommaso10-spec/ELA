@@ -115,6 +115,11 @@ from ela.tools.voice import (
     SpeakTool,
     digest_of,
 )
+from ela.tools.voice_online import (
+    VOICE_ONLINE_TOOL_NAME,
+    VOICE_SPEAK_ONLINE,
+    SpeakOnlineTool,
+)
 
 __all__ = [
     "ARGUMENTS_INVALID",
@@ -163,11 +168,14 @@ __all__ = [
     "PERCEPTION_READ_SCREEN_TEXT",
     "digest_of",
     "SpeakVerifier",
+    "SpeakOnlineTool",
     "SpeakTool",
     "VOICE_UNSUPPORTED",
     "VOICE_TOOL_NAME",
     "VOICE_TIMEOUT",
+    "VOICE_ONLINE_TOOL_NAME",
     "VOICE_SPEAK",
+    "VOICE_SPEAK_ONLINE",
     "VOICE_FAILED",
     "VOICE_DISABLED",
     "TEXT_LANGUAGE_UNSUPPORTED",

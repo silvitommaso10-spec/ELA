@@ -211,6 +211,7 @@ MODEL_COMPLETE: Final = CapabilityId("model.complete")
 PERCEPTION_CAPTURE_SCREEN: Final = CapabilityId("perception.capture_screen")
 PERCEPTION_READ_SCREEN_TEXT: Final = CapabilityId("perception.read_screen_text")
 VOICE_SPEAK: Final = CapabilityId("voice.speak")
+VOICE_SPEAK_ONLINE: Final = CapabilityId("voice.speak_online")
 
 DEFAULT_NOTES_SCOPE: Final = "workspace/notes"
 """Where ``workspace.write_note`` may write unless the caller says otherwise (ADR 0010 §5).
@@ -488,6 +489,67 @@ def voice_speak() -> CapabilitySpec:
     )
 
 
+def voice_speak_online() -> CapabilitySpec:
+    """``voice.speak_online``, MEDIUM: ELA speaks in the voice of §9, and the words leave (M11.3).
+
+    The seventh capability, and the first outside ``model.complete`` whose execution **sends the
+    user's content off this machine**. It is deliberately *not* the same capability as
+    :func:`voice_speak` with a different provider behind it, and the name is deliberately not
+    "cloud" — both are decisions, and the user's own words are the reason for the second:
+
+        «cloud» dice dove sta il server, «online» dice cosa succede: **questa frase esce da questa
+        macchina.** È quella la cosa che l'utente deve leggere nell'approvazione.
+
+    And it is read literally: the prompt of an ``Approval`` is built from the capability **id**,
+    the step's goal and ``purpose`` (ADR 0013 §5) — the description below never reaches it. The
+    name of the capability *is* the sentence the person deciding reads, and it has to be the true
+    one.
+
+    **Two capabilities and not one, because a permission is not inherited.** The Guardian consumes
+    authorizations by ``capability_id``, and the protection here cannot be a scope — speaking has
+    no path-shaped scope (ADR 0033 §3). So a grant that says "you may speak" must not become "you
+    may send my words to a supplier" the day somebody sets a different environment variable. With
+    two ids, nobody can say yes to one by saying yes to the other.
+
+    **MEDIUM, like its local sister, and the level is not what separates them.** §29 calls
+    ``model.complete`` MEDIUM *«perché il contenuto dell'utente può essere inviato a un provider
+    AI esterno»*, which is literally this. And HIGH is not a stricter MEDIUM: in the Guardian's
+    policy HIGH is ``DENY``, so a HIGH capability is not watched more closely, it is unusable
+    (ADR 0034 §4).
+
+    ``text`` stays out of ``prompt_arguments`` for M11.1's reason (dec. B) — the words would be
+    written into a persisted ``Approval``, which is the accumulation §57 forbids reached by
+    another road — and the oddity of approving without reading is no larger here than there: the
+    sentence is heard a second later. What the person reads is the id, which says the words leave,
+    and ``purpose``, which says what for.
+    """
+    return CapabilitySpec(
+        id=VOICE_SPEAK_ONLINE,
+        created_at=PHASE_11_INTRODUCED_AT,
+        description=(
+            "Says a sentence out loud in ELA's own voice; the text is sent to a speech provider, "
+            "which keeps it."
+        ),
+        risk=RiskLevel.MEDIUM,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": MAX_SPOKEN_CHARACTERS,
+                },
+                "purpose": {"type": "string", "minLength": 1},
+            },
+            "required": ["text", "purpose"],
+            "additionalProperties": False,
+        },
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
 def production_catalogue(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> CapabilityRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -503,5 +565,6 @@ def production_catalogue(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> Capabilit
             perception_capture_screen(),
             perception_read_screen_text(),
             voice_speak(),
+            voice_speak_online(),
         )
     )

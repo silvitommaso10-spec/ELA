@@ -25,6 +25,11 @@ def command_paths() -> set[str]:
         assert group.typer_instance is not None
         for command in group.typer_instance.registered_commands:
             found.add(f"{group.name} {command.name}")
+        # A group that answers on its own is a command too (M11.3): ``ela voice`` prints the
+        # voices, not a help screen, because that is where somebody looks at what ELA is using.
+        if group.typer_instance.info.invoke_without_command is True:
+            assert group.name is not None
+            found.add(group.name)
     return found
 
 
@@ -50,6 +55,9 @@ def test_every_command_of_the_milestone_is_there() -> None:
         "audit verify",
         "device list",
         "provider list",
+        "voice",
+        "voice preview",
+        "voice audition",
     }
 
 

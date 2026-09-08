@@ -23,8 +23,10 @@ from ela.api.schemas import (
     DiagnosticsOut,
     HealthOut,
     PerceptionSummaryOut,
+    VoiceOnlineOut,
     VoiceOut,
 )
+from ela.composition import Ela
 from ela.tasks.engine import RecoverySummary
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 
@@ -95,11 +97,29 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
         ),
         # Asked here, not remembered: ``available`` is two syscalls and makes no sound, so the
         # honest answer is the one from this instant rather than a belief with an age.
-        voice=VoiceOut(
-            enabled=ela.settings.voice.voice_enabled,
-            available=await ela.speech.available(),
-            voice=ela.settings.voice.voice_name,
-            max_characters=MAX_SPOKEN_CHARACTERS,
-            timeout_seconds=ela.settings.voice.voice_timeout_seconds,
+        voice=await voice_of(ela),
+    )
+
+
+async def voice_of(ela: Ela) -> VoiceOut:
+    """Both voices as they are right now — and, for the online one, what it costs to have it.
+
+    Shared with ``GET /voice`` rather than written twice: the retention is the kind of fact that
+    stops being told the moment there are two places to tell it in (ADR 0034 §11).
+    """
+    online = ela.settings.elevenlabs
+    return VoiceOut(
+        enabled=ela.settings.voice.voice_enabled,
+        available=await ela.speech.available(),
+        voice=ela.settings.voice.voice_name,
+        max_characters=MAX_SPOKEN_CHARACTERS,
+        timeout_seconds=ela.settings.voice.voice_timeout_seconds,
+        online=VoiceOnlineOut(
+            configured=online.configured,
+            available=await ela.speech_online.available(),
+            voice_id=online.elevenlabs_voice_id,
+            model=online.elevenlabs_model,
+            text_retained_by_provider=online.text_is_retained,
+            timeout_seconds=online.elevenlabs_timeout_seconds,
         ),
     )

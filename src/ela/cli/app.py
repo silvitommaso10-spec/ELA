@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import typer
 
-from ela.cli import audit, context, nodes, serve, setup, system, tasks
+from ela.cli import audit, context, nodes, serve, setup, system, tasks, voice
 
 __all__ = ["app", "main"]
 
@@ -24,6 +24,7 @@ app.add_typer(tasks.app, name="task")
 app.add_typer(audit.app, name="audit")
 app.add_typer(nodes.devices, name="device")
 app.add_typer(nodes.providers, name="provider")
+app.add_typer(voice.app, name="voice")
 
 app.command("health")(system.health)
 app.command("diagnostics")(system.diagnostics)

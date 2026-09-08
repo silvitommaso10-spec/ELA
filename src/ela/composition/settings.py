@@ -40,6 +40,7 @@ from ela.permissions import (
     is_valid_scope_entry,
 )
 from ela.providers.anthropic import AnthropicSettings
+from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
 from ela.tools.settings import CaptureSettings, VoiceSettings, WorkspaceSettings
 
@@ -249,6 +250,9 @@ class Settings(BaseModel):
     perception: PerceptionSettings
     captures: CaptureSettings
     voice: VoiceSettings
+    elevenlabs: ElevenLabsSettings
+    """The online voice (M11.3). A section of its own and not part of ``voice``: one is a switch
+    and a helper on this machine, the other is a credential, a supplier and a bill."""
     context: ContextSettings
 
     @classmethod
@@ -274,6 +278,7 @@ class Settings(BaseModel):
                 perception=PerceptionSettings(),
                 captures=CaptureSettings(),
                 voice=VoiceSettings(),
+                elevenlabs=ElevenLabsSettings(),
                 context=ContextSettings(),
             )
         except ValidationError as invalid:

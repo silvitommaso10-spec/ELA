@@ -23,7 +23,17 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from ela.api import approvals, audit, context, devices, perception, results, system, tasks
+from ela.api import (
+    approvals,
+    audit,
+    context,
+    devices,
+    perception,
+    results,
+    system,
+    tasks,
+    voice,
+)
 from ela.api.errors import DatabaseUnavailableError, TaskAlreadyRunningError
 from ela.api.problems import problem
 from ela.api.security import token_middleware
@@ -115,6 +125,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     The loop, when it is on, is a task this context manager owns: started after the first tick and
     cancelled before the process leaves, so ELA never outlives its own observer.
 
+    The sweep of the voice's scratch directory is here for the same reason as the purge below it,
+    and it normally finds nothing at all: a spoken sentence's audio has no name from one syscall
+    after it exists (ADR 0034 §7).
+
     The purge of expired screen captures is here for a third reason of its own (M10.2,
     ADR 0029 §1): it is the **only** moment ELA is certain to reach. A capture also purges before
     it writes, but a retention that only ran when somebody took a screenshot would keep the last
@@ -124,6 +138,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ela: Ela = app.state.ela
     app.state.recovery = await ela.engine.recover()
     ela.captures.purge(ela.clock.now())
+    # And the voice's floor, for the same reason and a smaller one: what it collects is the crash
+    # that landed between making the audio's file and unlinking it — one syscall wide, and exactly
+    # the kind of rare leftover that would otherwise sit on a disk for a year (ADR 0034 §7).
+    app.state.swept = ela.sweep_speech()
     await ela.perception.tick()
     watching = asyncio.create_task(ela.perception.run())
     try:
@@ -158,6 +176,7 @@ def create_app(ela: Ela) -> FastAPI:
         context.router,
         perception.router,
         results.router,
+        voice.router,
     ):
         app.include_router(router)
     return app

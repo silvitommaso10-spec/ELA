@@ -1341,7 +1341,47 @@ class RawSpeech(_DomainModel):
     :class:`RawCapture` separates them: "it did not answer" and "it answered badly" are different
     facts."""
     spoken_seconds: float | None = None
-    """Wall-clock time the helper was alive; ``None`` when it never ran."""
+    """Wall-clock time the **sound** was being made; ``None`` when nothing was ever played.
+
+    For the local voice that is the whole of the helper's life. For the online voice it is the
+    playback alone, and never the synthesis (:attr:`synthesis_seconds`) — the verifier compares
+    it against the time those words take to say, and a number that included a round-trip would
+    make a sentence that was never played look like one that was (ADR 0034 §6).
+    """
+    synthesis_seconds: float | None = None
+    """How long the audio took to arrive, when it came from somewhere. ``None`` for a voice that
+    is this machine's own: there is nothing to wait for and nothing to report."""
+    error: str | None = None
+    """Which of :data:`~ela.ports.SPEECH_ERROR_CODES` this was, when the sound did not happen.
+
+    The adapter names the failure and never decides what it means for the task — the same split
+    ADR 0020 §7 made for the model provider, and for the same reason: whoever receives a failure
+    must be able to tell a refused credential from an overload **without knowing who produced
+    it**. A second implementation of :class:`~ela.ports.SpeechPort` reports these codes or it is
+    not interchangeable with the first.
+    """
+    credits: int | None = None
+    """What the provider says the sentence cost, from its own header — never an estimate.
+
+    ADR 0020 §6 had to estimate a call's cost from a dated table, with a test that expires after
+    180 days because no test notices a vendor changing its prices. This provider states the cost
+    of every request, so ELA reports the number it was given (ADR 0034 §10). In credits, which
+    the provider asserts; never in currency, which would depend on a plan ELA would have to keep
+    up with.
+    """
+    history_item_id: str | None = None
+    """The receipt: where the copy the provider kept can be found (ADR 0034 §10).
+
+    Not the text and not content — an address. The retention is a cost the user accepted, and a
+    cost accepted that nobody can then find again is a cost that was described rather than shown.
+    """
+    retryable: bool = False
+    """Whether :attr:`error` is worth trying again. The **nature** of the failure and not the
+    attempts left (ADR 0020 §7): a rate limit can succeed a minute later, a refused key cannot.
+    ``False`` by default because a doubt is not a yes (§33)."""
+    audio_bytes: int | None = None
+    """How much audio arrived. ``None`` when none did, or when there was never a file to count —
+    the local voice plays as it synthesises and no byte is ever ELA's to hold."""
 
 
 # --------------------------------------------------------------------------------------

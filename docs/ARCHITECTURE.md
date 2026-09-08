@@ -92,6 +92,7 @@ graph TD
     infrastructure --> audit
     infrastructure --> domain
     infrastructure --> ports
+    infrastructure --> providers
     perception --> domain
     perception --> ports
     permissions --> domain
@@ -131,7 +132,7 @@ due cose: prima ciò che è vero, poi ciò che era permesso.
 | `ela.api` | `fastapi`, `uvicorn` |
 | `ela.cli` | `httpx`, `typer` |
 | `ela.infrastructure` | `sqlalchemy` |
-| `ela.providers` | `anthropic` |
+| `ela.providers` | `anthropic`, `httpx` |
 
 <!-- fine del blocco generato: i bordi che nominano una libreria di infrastruttura -->
 

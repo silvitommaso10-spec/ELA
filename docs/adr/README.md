@@ -41,6 +41,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0031](0031-runner-parity.md) | La copertura non dipende dal runner: una scelta di piattaforma è un'istruzione, non un'espressione (regola 37) | Accettata |
 | [0032](0032-context-core.md) | Il contesto che si ricalcola: le assenze derivate, il confine con la memoria, e le due porte chiuse (regole 38 e 39) | Accettata |
 | [0033](0033-voice-out.md) | La prima uscita verso il mondo fisico: la meccanica non si compra separata dal cervello, la porta chiusa prima della stanza, e un verifier che dichiara cosa non prova (regola 40) | Accettata |
+| [0034](0034-voice-online.md) | La voce di §9: due capability perché un consenso non si eredita, un audio che non ha un nome, e la ricevuta di ciò che il fornitore conserva (regole 41–43) | Accettata |
 
 ## Template
 

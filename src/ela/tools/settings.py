@@ -29,6 +29,7 @@ __all__ = [
     "VoiceSettings",
     "WorkspaceSettings",
     "default_capture_dir",
+    "speech_dir_beside",
     "default_voice_enabled",
     "default_workspace_dir",
 ]
@@ -37,6 +38,27 @@ __all__ = [
 def default_workspace_dir() -> Path:
     """``<home>/.ela/workspace``: absolute, computed when asked, never at import time."""
     return Path.home() / ".ela" / "workspace"
+
+
+def speech_dir_beside(captures: Path) -> Path:
+    """``<the capture store's parent>/speech``: where a sentence's audio exists while it plays.
+
+    **A directory meant to stay empty**, and that is the point of it. The audio a provider returns
+    loses its name one syscall after it is made (ADR 0034 §7); what this folder is for is the
+    crash that lands *inside* that syscall, so the one thing that can survive is somewhere ELA
+    sweeps at start-up instead of somewhere nobody looks.
+
+    **Derived from the capture store rather than from the home directory**, and that is not a
+    detail: it means a test that redirects ``ELA_CAPTURE_DIR`` redirects this too, instead of
+    writing into the home of whoever ran the suite — which is the very trap ``ELA_CAPTURE_DIR``
+    was introduced to avoid. The two are the same kind of place, so they move together: private
+    working files of ELA, beside the database, **never inside the workspace**, which is the folder
+    §23 describes as synchronised (ADR 0029 §1).
+
+    No variable of its own, because there is nothing here to configure: it is not a store, it
+    keeps nothing, and a knob would suggest otherwise.
+    """
+    return captures.parent / "speech"
 
 
 class WorkspaceSettings(BaseSettings):

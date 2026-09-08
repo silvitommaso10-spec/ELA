@@ -1044,6 +1044,81 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela import providers\ndef go():\n    return providers.ProviderRegistry\n",
         "ProviderRegistry",
     ),
+    # --- the-voice-leaves-no-named-file (rule 41, M11.3 dec. F, G) ---
+    Case(
+        # The line that turns "ELA spoke" into "ELA kept a copy of everything it said" — and this
+        # time it is not a flag, it is a forgotten deletion.
+        "the-online-voice-keeps-the-audio",
+        "the-voice-leaves-no-named-file",
+        "infrastructure/perception/speech.py",
+        "from pathlib import Path\n"
+        "def keep(audio: bytes) -> None:\n"
+        '    Path("/tmp/said.mp3").write_bytes(audio)\n',
+        "write_bytes",
+    ),
+    Case(
+        # The nameless file belongs to ``darwin.py``, with the rest of the door to the machine.
+        # Here it would be a second place making one, and the second one is where the ``unlink``
+        # goes missing.
+        "the-adapter-makes-its-own-temporary-file",
+        "the-voice-leaves-no-named-file",
+        "providers/elevenlabs/provider.py",
+        "import tempfile\n"
+        "def render(audio: bytes) -> str:\n"
+        "    fd, path = tempfile.mkstemp()\n"
+        "    return path\n",
+        "mkstemp",
+    ),
+    Case(
+        "the-online-tool-opens-a-file-for-writing",
+        "the-voice-leaves-no-named-file",
+        "tools/voice_online.py",
+        "def save(audio: bytes) -> None:\n"
+        '    with open("said.mp3", "wb") as handle:\n'
+        "        handle.write(audio)\n",
+        "open",
+    ),
+    # --- the-voice-goes-only-where-it-is-declared (rule 42, M11.3 dec. H) ---
+    Case(
+        "the-voice-adapter-talks-to-another-host",
+        "the-voice-goes-only-where-it-is-declared",
+        "providers/elevenlabs/provider.py",
+        'MIRROR = "https://tts.example.com"\n',
+        "https://tts.example.com",
+    ),
+    Case(
+        # The same move, made respectable: an environment variable nobody reads in a diff.
+        "the-voice-endpoint-becomes-a-setting",
+        "the-voice-goes-only-where-it-is-declared",
+        "providers/elevenlabs/settings.py",
+        "class Settings:\n    base_url: str\n",
+        "base_url",
+    ),
+    Case(
+        "the-voice-adapter-reads-the-environment",
+        "the-voice-goes-only-where-it-is-declared",
+        "providers/elevenlabs/provider.py",
+        'import os\ndef host() -> str:\n    return os.environ["ELEVEN"]\n',
+        "environ",
+    ),
+    Case(
+        # It may reach the network; it may not reach the thing that decides where words go.
+        "the-voice-adapter-reaches-a-router",
+        "the-voice-goes-only-where-it-is-declared",
+        "providers/elevenlabs/provider.py",
+        "from ela.routing import ModelRouter\n",
+        "ela.routing.ModelRouter",
+    ),
+    # --- the-audition-speaks-only-the-repositorys-words (rule 43, M11.3 dec. I, J) ---
+    Case(
+        # The feature of tomorrow: "let me try my own sentence". It would be a way to say anything
+        # aloud, and send it out, with no capability anywhere in sight.
+        "the-audition-accepts-a-sentence",
+        "the-audition-speaks-only-the-repositorys-words",
+        "infrastructure/perception/audition.py",
+        "async def run(voice_id: str, text: str) -> None:\n    return None\n",
+        "text",
+    ),
     # --- the-voice-writes-no-file (rule 40, M11.1 dec. 7) ---
     Case(
         # One flag away, which is exactly why it is a rule: `say -o` renders instead of speaking.
@@ -1069,6 +1144,49 @@ VIOLATIONS: tuple[Case, ...] = (
     ),
 )
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        # The shape M11.3 actually uses: the voice holds the bytes for as long as it takes to hand
+        # them over, and the file — the one with no name — is made on the other side of the door.
+        "the-voice-hands-the-audio-to-the-spawner",
+        "the-voice-leaves-no-named-file",
+        "infrastructure/perception/speech.py",
+        "from ela.infrastructure.perception.darwin import spawn_with_audio\n"
+        "async def play(audio: bytes) -> int:\n"
+        '    code, _ = await spawn_with_audio(["/usr/bin/afplay"], audio, 60.0)\n'
+        "    return code\n",
+        "",
+    ),
+    Case(
+        "the-voice-may-read-a-file",
+        "the-voice-leaves-no-named-file",
+        "tools/voice_online.py",
+        'def read() -> bytes:\n    with open("/etc/hostname", "rb") as handle:\n'
+        "        return handle.read()\n",
+        "",
+    ),
+    Case(
+        # The door, open exactly as wide as it was opened: an HTTP client aimed at the one host
+        # that was declared. Anything else about this module is still shut.
+        "the-voice-adapter-may-hold-an-http-client",
+        "the-voice-goes-only-where-it-is-declared",
+        "providers/elevenlabs/provider.py",
+        "import httpx\n"
+        'ELEVENLABS_API = "https://api.elevenlabs.io"\n'
+        "async def speak(voice_id: str) -> bytes:\n"
+        "    async with httpx.AsyncClient() as client:\n"
+        '        answer = await client.post(f"{ELEVENLABS_API}/v1/text-to-speech/{voice_id}")\n'
+        "    return answer.content\n",
+        "",
+    ),
+    Case(
+        "the-audition-chooses-a-voice-and-a-model",
+        "the-audition-speaks-only-the-repositorys-words",
+        "infrastructure/perception/audition.py",
+        'PHRASES = ("No, questa non è una buona idea.",)\n'
+        "async def run(voice_id: str, model: str) -> tuple[str, ...]:\n"
+        "    return PHRASES\n",
+        "",
+    ),
     Case(
         "a-placement-that-names-nobody",
         "placement-builders",
