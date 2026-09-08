@@ -201,21 +201,21 @@ def test_the_criteria_are_written_down_and_not_only_applied(sentence: str) -> No
     assert sentence in adr_text().lower()
 
 
-def test_the_placeholder_is_watched_by_a_fact_and_not_by_a_note() -> None:
-    """§14: a provisional default nobody re-measures is a threshold put in "for now".
+def test_the_measured_timeout_and_the_adr_say_the_same_number() -> None:
+    """§14: the placeholder was replaced, and the document carries the measurement.
 
-    What makes this more than a note is that the ADR commits to a **condition**, and the
-    condition has a test: the day ELA can read that Screen Recording is granted here, a
-    placeholder that is still a placeholder fails (``test_screencapture_smoke.py``, with its
-    negative case in ``tests/tools/test_settings.py``). This checks that the document and the
-    code still say the same thing about where that number stands.
+    The condition that watched it is still armed (``test_screencapture_smoke.py``, negative case
+    in ``tests/tools/test_settings.py``); what this checks is that the number in the code and the
+    number in the ADR did not drift the moment one of them was edited.
     """
     from ela.tools.settings import CAPTURE_TIMEOUT_IS_MEASURED, DEFAULT_CAPTURE_TIMEOUT_SECONDS
 
-    assert DEFAULT_CAPTURE_TIMEOUT_SECONDS == 10.0
-    assert CAPTURE_TIMEOUT_IS_MEASURED is False
-    assert "segnaposto" in adr_text()
-    assert "la condizione è un fatto osservabile, non una data" in adr_text().lower()
+    assert DEFAULT_CAPTURE_TIMEOUT_SECONDS == 5.0
+    assert CAPTURE_TIMEOUT_IS_MEASURED is True
+    text = " ".join(adr_text().split())
+    assert f"{DEFAULT_CAPTURE_TIMEOUT_SECONDS:g} s" in text or "cinque secondi" in text
+    assert "88 ms" in text
+    assert "la condizione è un fatto osservabile, non una data" in text.lower()
 
 
 def test_the_reason_the_question_may_carry_an_argument_is_written_down() -> None:

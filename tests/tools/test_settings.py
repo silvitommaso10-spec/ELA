@@ -82,7 +82,7 @@ def test_the_defaults_are_the_ones_the_milestone_approved(
     assert settings.capture_ttl == timedelta(seconds=300)
     assert settings.capture_max_count == 20
     assert settings.capture_max_bytes == 200 * 1024 * 1024
-    assert settings.capture_timeout == timedelta(seconds=10)
+    assert settings.capture_timeout == timedelta(seconds=5)
 
 
 def test_a_retention_above_the_ceiling_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,5 +171,10 @@ def test_nothing_else_is_overdue(granted: bool | None, measured: bool) -> None:
 
 
 def test_the_flag_says_what_the_number_is_today() -> None:
-    """Flipped in the same edit that replaces the number, and never on its own."""
-    assert CAPTURE_TIMEOUT_IS_MEASURED is False
+    """Flipped in the same edit that replaced the number, and never on its own.
+
+    The timeout was measured on a granted machine after M10.2's review: 88 ms median over fifteen
+    captures, 138 ms cold, unchanged under CPU load. The check stays armed for the next number
+    that needs a machine before it can be honest."""
+    assert CAPTURE_TIMEOUT_IS_MEASURED is True
+    assert DEFAULT_CAPTURE_TIMEOUT_SECONDS == 5.0

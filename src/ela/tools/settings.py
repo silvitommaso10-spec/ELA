@@ -56,29 +56,36 @@ one kind of thing into another.
 DEFAULT_CAPTURE_TTL_SECONDS: Final = 300.0
 DEFAULT_CAPTURE_MAX_COUNT: Final = 20
 DEFAULT_CAPTURE_MAX_BYTES: Final = 200 * 1024 * 1024
-DEFAULT_CAPTURE_TIMEOUT_SECONDS: Final = 10.0
+DEFAULT_CAPTURE_TIMEOUT_SECONDS: Final = 5.0
 """How long the capture helper may take before ELA calls the capture failed.
 
-**A declared placeholder, not a measured default** (M10.2, ADR 0029 §14): at the time this was
-written the Screen Recording permission was denied on the development machine, so no capture had
-ever run and no honest number existed. A provisional default nobody re-measures is a threshold
-put in "for now", and this project knows how that ends — so the reminder is not a comment, it is
-:data:`CAPTURE_TIMEOUT_IS_MEASURED` and the test that reads it.
+**Measured**, on a granted machine, after M10.2's review (ADR 0029 §14). Fifteen captures of a
+2940x1912 display: 88 ms median, 138 ms on the first one (cold), 96 ms at the 95th percentile;
+the PNG was 0.8-1.4 MB there and 4.0 MB on a screen full of text — its size follows the content,
+not the display. Repeated with twice as many CPU-burning processes as the machine has
+cores, it did not move — 81 ms median, 99 ms worst — because the work is ``WindowServer``'s and
+userland load does not reach it. That stability is itself part of the answer: the number is not
+sitting on a noisy measurement.
+
+Five seconds is **fifty-seven times the median**, which is the ratio ADR 0028 §6 chose for the
+probe (2 s over 35 ms) applied to the number this milestone measured, and thirty-six times the
+worst case ever observed. It is deliberately not a performance budget: it is the line past which a
+``WindowServer`` that is not answering stops being ELA's problem, and past which a step that hangs
+would keep a task waiting for no reason.
 """
 
-CAPTURE_TIMEOUT_IS_MEASURED: Final = False
-"""Whether the number above was measured or is still the placeholder (M10.2, ADR 0029 §14).
+CAPTURE_TIMEOUT_IS_MEASURED: Final = True
+"""Whether the number above was measured or is still a placeholder (M10.2, ADR 0029 §14).
 
-Flipped to ``True`` **in the same edit that replaces the number**, and never on its own. What
-makes it more than a note to self is that a test turns it into a failure the moment the
-measurement becomes possible: on a machine where ELA can read that Screen Recording is granted, a
-placeholder that is still a placeholder is a red test. Where the permission is missing — a Linux
-runner, a Mac nobody granted — there is nothing to measure and nothing to report, so the check
-says "not applicable" instead of passing quietly.
+``True`` since the permission was granted and the capture was timed; it was flipped **in the same
+edit that replaced the number**, which is the only way it is allowed to move.
 
-The shape is the one this project uses for a budget: **the condition is an observable fact, not a
-date**. A reminder that fires on a calendar goes off when nobody can act on it; this one fires
-exactly when somebody can.
+It stays here rather than being deleted because it is what a test reads: on a machine where ELA
+can see that Screen Recording is granted, a number still declaring itself unmeasured is a red
+test; where the permission is missing there is nothing to measure, and the check says "not
+applicable" instead of passing quietly. The shape is the one this project uses for a budget —
+**the condition is an observable fact, not a date** — and it stays armed for the next number that
+needs a machine before it can be honest.
 """
 
 

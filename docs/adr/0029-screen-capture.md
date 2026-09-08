@@ -389,14 +389,41 @@ lettura da 35 ms, e la loro ragione è *un `tccd` che non risponde*. Una cattura
 orologio: risveglio del display, compositor sotto carico, codifica PNG di 4,26 Mpixel. Condividere
 la manopola sarebbe condividere un budget che descrive un'altra cosa.
 
-`ELA_CAPTURE_TIMEOUT_SECONDS` è la manopola. **10 s è un segnaposto dichiarato, non un default**:
-al momento della scrittura il permesso era negato, nessuna cattura era mai girata e nessun numero
-onesto esisteva. Il numero misurato entra nella spec di M10.2 e qui **prima** del codice che lo
-usa, cioè nel commit in cui il permesso c'è.
+`ELA_CAPTURE_TIMEOUT_SECONDS` è la manopola. È nata come **segnaposto dichiarato a 10 s** — al
+momento della scrittura il permesso era negato, nessuna cattura era mai girata e nessun numero
+onesto esisteva — ed è stata sostituita da un numero misurato appena il permesso è arrivato.
+
+**La misura**, su questa macchina con il permesso concesso, quindici catture di un display
+2940 × 1912:
+
+| | valore |
+|---|---|
+| mediana | **88 ms** |
+| a freddo (prima cattura) | 138 ms |
+| p95 | 96 ms |
+| PNG | 0,81 – 1,36 MB su quella schermata; **4,0 MB** su una densa di testo |
+| mediana con 20 processi che bruciano CPU su 10 core | **81 ms**, massimo 99 ms |
+
+Due righe contano più delle altre. **Sotto carico la cattura non degrada**, perché il lavoro è di
+`WindowServer` e il carico dello userland non lo raggiunge: il numero non poggia quindi su una
+misura rumorosa, ed è una cosa che si poteva sapere solo misurandola. E **la dimensione del PNG
+dipende da cosa c'è sullo schermo, non dal display**: 0,8 MB su una schermata quasi vuota, 4 MB su
+una piena di testo, cinque volte tanto a parità di pixel.
+
+Il secondo fatto si legge sui tetti di §1, e li conferma senza cambiarli: a 4 MB per cattura, venti
+catture sono 80 MB, quindi **è il tetto sul numero a mordere per primo** e quello sui byte è la
+seconda cintura per il caso peggiore. Erano stati scelti prima di poter misurare; misurati, stanno
+in piedi.
+
+**Il valore è 5 s**: cinquantasette volte la mediana — lo stesso rapporto che ADR 0028 §6 scelse
+per la sonda (2 s su 35 ms), applicato al numero che questa milestone ha misurato — e trentasei
+volte il caso peggiore mai osservato. Non è un budget di prestazioni: è la linea oltre la quale un
+`WindowServer` che non risponde smette di essere un problema di ELA, e oltre la quale uno step
+appeso terrebbe un task fermo per niente.
 
 Un default provvisorio che nessuno rimisura è una soglia messa «per ora», e questo progetto sa come
-finisce — quindi il promemoria non è un commento. È `CAPTURE_TIMEOUT_IS_MEASURED`, e il test che lo
-legge:
+finisce — quindi il promemoria non era un commento. È `CAPTURE_TIMEOUT_IS_MEASURED`, e il test che
+lo legge:
 
 > **La condizione è un fatto osservabile, non una data.** Su una macchina dove ELA legge che
 > Screen Recording è **concesso**, un segnaposto ancora segnaposto è un test rosso. Dove il
@@ -408,6 +435,11 @@ farci niente; questo scatta esattamente quando qualcuno può. La decisione è un
 il suo caso negativo (`overdue`), perché la combinazione che conta — *concesso, e ancora
 segnaposto* — deve poter essere provata su qualunque runner e non solo sulla macchina dove capita
 di essere vera. Il flag si gira **nella stessa modifica** che sostituisce il numero, mai da solo.
+
+**E ha funzionato:** concesso il permesso, il test è diventato rosso col messaggio che diceva cosa
+misurare e dove scriverlo, prima che qualcuno se ne ricordasse. Il controllo resta armato — non si
+cancella dopo l'uso — perché il prossimo numero che ha bisogno di una macchina per essere onesto
+troverà il meccanismo già lì.
 
 ## 15. Il tetto rifiuta, non sfratta
 
