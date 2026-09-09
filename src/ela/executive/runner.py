@@ -115,6 +115,17 @@ class Run(NamedTuple):
     outcome: RunOutcome
     steps: tuple[StepId, ...]
     executions: tuple[Execution, ...]
+    reason: str | None = None
+    """Why the run stopped, when the answer alone does not say (M6.1b dec. F).
+
+    ``WAITING_DEVICE`` used to travel as a bare word while the orchestrator had already written a
+    precise sentence in the audit — every candidate, every refusal, and for a missing tool its
+    name — which the person waiting never saw. This is that sentence, carried out with the result
+    instead of left behind in the log.
+
+    ``None`` for every other outcome: those say what happened. The runner still writes nothing of
+    its own (ADR 0019) — the reason is the placement's, passed on rather than composed here.
+    """
 
 
 class TaskRunner:
@@ -192,7 +203,13 @@ class TaskRunner:
             placement = await self._node(task_id, step_id, graph, max_privacy)
             if placement.device is None:
                 task = await self._wait(task)
-                return Run(task, RunOutcome.WAITING_DEVICE, tuple(steps), tuple(executions))
+                return Run(
+                    task,
+                    RunOutcome.WAITING_DEVICE,
+                    tuple(steps),
+                    tuple(executions),
+                    placement.reason,
+                )
             device_id = placement.device.id
             if task.state is TaskState.QUEUED:
                 task = await self._engine.start(task_id, device_id=device_id)

@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from ela.cli.errors import CONFIGURATION, REFUSED
+from ela.cli.output import EMPTY
+from ela.composition import Ela
+from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import TaskState
 from tests.api.support import ECHO_MESSAGE, echo_plan, note_plan
 from tests.cli.support import Cli, plain
@@ -189,6 +192,58 @@ async def test_run_walks_the_plan_and_says_where_it_stopped(cli: Cli, tmp_path: 
     assert result.exit_code == 0
     assert "completed" in result.stdout
     assert TaskState.COMPLETED.value in result.stdout
+
+
+async def test_run_prints_why_it_is_waiting_for_a_node(cli: Cli, tmp_path: Path) -> None:
+    """Criterion 6, on the screen: ``waiting_device`` with the sentence that explains it.
+
+    What the user saw before M6.1b was the outcome, the state and an empty list of steps, while
+    the diagnosis sat in an audit event nobody had a reason to open.
+    """
+    plan = echo_plan()
+    plan["steps"][0]["required_capabilities"] = ["core.rm_rf"]
+    task_id = await created(cli)
+    await cli("task", "plan", task_id, "--file", written(tmp_path, plan))
+
+    result = await cli("task", "run", task_id)
+
+    assert result.exit_code == 0
+    assert "waiting_device" in result.stdout
+    assert "reason" in plain(result.stdout)
+    assert "UNKNOWN_CAPABILITY" in result.stdout
+
+
+async def test_run_prints_which_tool_the_node_does_not_have(
+    cli: Cli, ela: Ela, tmp_path: Path
+) -> None:
+    """And the other half of criterion 6: for ``MISSING_TOOL``, *which* tool.
+
+    The row of ``local`` is put back to what it looked like before the capability existed — the
+    state M6.1b repairs at start-up — and the command names what is missing.
+    """
+    node = await ela.devices.get(LOCAL_DEVICE_ID)
+    await ela.devices.update(node.model_copy(update={"available_tools": ()}))
+    task_id = await created(cli)
+    await cli("task", "plan", task_id, "--file", written(tmp_path, echo_plan()))
+
+    result = await cli("task", "run", task_id)
+
+    assert result.exit_code == 0
+    assert "MISSING_TOOL (core-echo)" in result.stdout
+
+
+async def test_a_run_that_is_not_waiting_prints_no_reason(cli: Cli, tmp_path: Path) -> None:
+    """An outcome that explains itself gets a visibly empty cell, not an invented sentence."""
+    task_id = await created(cli)
+    await cli("task", "plan", task_id, "--file", written(tmp_path, echo_plan()))
+
+    result = await cli("task", "run", task_id)
+
+    assert "completed" in result.stdout
+    printed = plain(result.stdout).splitlines()
+    assert [line for line in printed if line.startswith("reason")] == [
+        "reason".ljust(len("steps executed")) + "  " + EMPTY
+    ]
 
 
 async def test_run_of_a_task_with_no_plan_is_a_refusal(cli: Cli) -> None:

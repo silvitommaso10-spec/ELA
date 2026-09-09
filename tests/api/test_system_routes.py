@@ -8,6 +8,7 @@ the user's content, which is the half of it that has a test of its own.
 from __future__ import annotations
 
 import dataclasses
+import uuid
 from typing import Any
 
 import pytest
@@ -17,7 +18,8 @@ from httpx import ASGITransport, AsyncClient
 from ela.api import create_app
 from ela.api.tasks import PLAN_IS_TEMPORARY
 from ela.composition import Ela
-from ela.domain import TaskState
+from ela.devices.local import LOCAL_DEVICE_ID
+from ela.domain import DeviceId, TaskState
 from ela.ports import TaskRepository
 from ela.providers.anthropic import PROVIDER_NAME
 from ela.routing import DEFAULT_ROUTES
@@ -59,6 +61,58 @@ async def test_diagnostics_says_how_ela_is_composed(client: AsyncClient, ela: El
     assert body["devices"] == {"local": "available"}
     assert body["user_name"] == "user"
     assert body["version"]
+
+
+async def test_diagnostics_says_nothing_is_missing_from_the_row_of_local(
+    client: AsyncClient,
+) -> None:
+    """Dec. G, the ordinary direction: after a start-up the row cannot be behind, so it is empty.
+
+    Empty is the answer almost always, which is exactly why the other direction has to be tested
+    too — a comparison that can never fire is a comparison nobody should have written
+    (ADR 0026 §7).
+    """
+    body = (await client.get("/diagnostics")).json()
+
+    assert body["undeclared_tools"] == []
+
+
+async def test_diagnostics_names_what_this_process_has_and_the_row_does_not(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """And the direction that matters: the row put back to what M6.1b repairs.
+
+    A read-only database, or two ELAs with different code on one database, can still leave the
+    row behind — and then this says exactly which capability the orchestrator will refuse to
+    place, instead of leaving somebody to read an audit event to find out.
+    """
+    node = await ela.devices.get(LOCAL_DEVICE_ID)
+    await ela.devices.update(node.model_copy(update={"available_tools": ("core-echo",)}))
+
+    body = (await client.get("/diagnostics")).json()
+
+    assert body["undeclared_tools"] == sorted(
+        {tool.name for tool in ela.tools.tools()} - {"core-echo"}
+    )
+
+
+async def test_diagnostics_compares_against_the_row_of_local_and_no_other(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """Another node's tools are that node's business, and this process is not that node."""
+    stranger = (await ela.devices.get(LOCAL_DEVICE_ID)).model_copy(
+        update={
+            "id": DeviceId(uuid.UUID("00000000-0000-4000-8000-0000000006b1")),
+            "name": "somebody-else",
+            "available_tools": ("a-tool-nobody-here-has",),
+        }
+    )
+    await ela.devices.register(stranger)
+
+    body = (await client.get("/diagnostics")).json()
+
+    assert body["undeclared_tools"] == []
+    assert set(body["devices"]) == {"local", "somebody-else"}
 
 
 async def test_diagnostics_counts_what_ela_is_holding(client: AsyncClient) -> None:

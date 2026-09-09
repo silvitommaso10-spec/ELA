@@ -370,13 +370,42 @@ def _strings(values: Iterable[str]) -> list[JsonValue]:
     return list(values)
 
 
-def _summary(scores: Iterable[Score]) -> str:
-    """How many nodes each refusal took out, in the declaration order of :class:`Refusal`."""
+def _missing(devices: Iterable[Device], requirements: Requirements) -> tuple[str, ...]:
+    """Every required tool at least one of ``devices`` does not have, sorted (M6.1b dec. F).
+
+    ``MISSING_TOOL`` on its own says a node lacks something and not *what*, and with seven tools
+    "what" is the whole of the diagnosis. The names are computed here, where the requirements and
+    the nodes are both in hand: it is the only place that holds the two halves.
+    """
+    lacking: set[str] = set()
+    for device in devices:
+        lacking |= requirements.tools - set(device.available_tools)
+    return tuple(sorted(lacking))
+
+
+def _named(found: Iterable[Refusal], missing: tuple[str, ...]) -> str:
+    """Refusals as words, with the tools named on the one refusal that has names to give."""
+    return ", ".join(
+        refusal.value + (f" ({', '.join(missing)})" if refusal is Refusal.MISSING_TOOL else "")
+        for refusal in found
+    )
+
+
+def _summary(scores: Iterable[Score], devices: Iterable[Device], requirements: Requirements) -> str:
+    """How many nodes each refusal took out, in the declaration order of :class:`Refusal`.
+
+    Every member of the enum is asked, so a refusal of any kind reaches whoever is waiting — and
+    a member added tomorrow is rendered without anybody remembering to render it. What one member
+    adds is the names: ``MISSING_TOOL`` carries the tools nobody had.
+    """
+    missing = _missing(devices, requirements)
     counted = {
-        refusal.value: sum(1 for candidate in scores if refusal in candidate.refusals)
+        refusal: sum(1 for candidate in scores if refusal in candidate.refusals)
         for refusal in Refusal
     }
-    return ", ".join(f"{count} {name}" for name, count in counted.items() if count)
+    return ", ".join(
+        f"{count} {_named((refusal,), missing)}" for refusal, count in counted.items() if count
+    )
 
 
 def choose(devices: Iterable[Device], requirements: Requirements) -> Placement:
@@ -394,7 +423,7 @@ def choose(devices: Iterable[Device], requirements: Requirements) -> Placement:
         if candidate.eligible
     ]
     if not eligible:
-        found = _summary(scores)
+        found = _summary(scores, candidates, requirements)
         return Placement(
             device=None,
             scores=scores,
@@ -521,7 +550,7 @@ class DeviceOrchestrator:
             )
         judged = score(found[0], requirements)
         if not judged.eligible:
-            named = ", ".join(refusal.value for refusal in judged.refusals)
+            named = _named(judged.refusals, _missing((found[0],), requirements))
             return self._confirmation(
                 task_id,
                 step,
