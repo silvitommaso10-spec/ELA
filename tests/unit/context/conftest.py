@@ -19,8 +19,10 @@ from ela.perception import PerceptionView, unobserved
 from ela.tasks.engine import LIVE_STATES
 from ela.testing.fakes import (
     FakeApprovalStore,
+    FakeAuditLog,
     FakeClock,
     FakeDeviceRegistry,
+    FakeIdGenerator,
     FakeTaskRepository,
 )
 
@@ -50,7 +52,9 @@ def registry() -> FakeDeviceRegistry:
 
 @pytest.fixture
 def devices(registry: FakeDeviceRegistry, clock: FakeClock) -> DeviceRegistry:
-    return DeviceRegistry(registry, clock, heartbeat_ttl=timedelta(minutes=1))
+    return DeviceRegistry(
+        registry, clock, FakeAuditLog(), FakeIdGenerator(), heartbeat_ttl=timedelta(minutes=1)
+    )
 
 
 @pytest.fixture

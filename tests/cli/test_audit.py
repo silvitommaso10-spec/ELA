@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
@@ -98,7 +99,13 @@ async def test_tail_filters_by_task_and_by_instant(cli: Cli, tmp_path: Path) -> 
 
 
 async def test_tail_of_an_empty_trail_says_so(cli: Cli) -> None:
-    result = await cli("audit", "tail")
+    """A trail with nothing in it is a sentence, not a bare header.
+
+    Asked of a task nobody created, because since M6.1b the whole trail is never empty: building
+    ELA writes down the node it runs on (ADR 0035 §3), so the emptiness that has to be rendered
+    is the emptiness of a filter.
+    """
+    result = await cli("audit", "tail", "--task", str(uuid.uuid4()))
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "nothing to show"
@@ -115,9 +122,16 @@ async def test_verify_says_how_long_the_chain_is(cli: Cli, tmp_path: Path) -> No
 
 
 async def test_verify_in_json_is_the_summary_to_anchor(cli: Cli) -> None:
+    """The two numbers an external anchor needs, on the chain a fresh ELA already has.
+
+    One entry and not zero since M6.1b: the registration of ``local`` is the first thing every
+    database holds (ADR 0035 §3). The genesis of a chain with nothing in it is
+    ``tests/audit/test_chain.py``'s.
+    """
     summary = json.loads((await cli("audit", "verify", "--json")).stdout)
 
-    assert summary == {"length": 0, "head_hash": "0" * 64}
+    assert summary["length"] == 1
+    assert len(summary["head_hash"]) == 64 and summary["head_hash"] != "0" * 64
 
 
 async def test_a_tampered_trail_is_a_refusal_with_a_position(

@@ -133,7 +133,11 @@ class SqlPipeline:
             }
         )
         self.devices = DeviceRegistry(
-            FakeDeviceRegistry((self.device,)), self.clock, heartbeat_ttl=HEARTBEAT_TTL
+            FakeDeviceRegistry((self.device,)),
+            self.clock,
+            self.audit,
+            self.ids,
+            heartbeat_ttl=HEARTBEAT_TTL,
         )
         self.engine = TaskEngine(
             self.repository,

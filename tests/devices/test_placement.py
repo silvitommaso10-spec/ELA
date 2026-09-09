@@ -142,7 +142,7 @@ def orchestrator(
     port: FakeDeviceRegistry, audit: FakeAuditLog, clock: FakeClock
 ) -> DeviceOrchestrator:
     tools = FakeToolRegistry([FakeTool(WRITE_NOTE, clock, FakeIdGenerator(), name=NOTES)])
-    registry = DeviceRegistry(port, clock, heartbeat_ttl=TTL)
+    registry = DeviceRegistry(port, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL)
     return DeviceOrchestrator(registry, tools, audit, FakeIdGenerator(), clock)
 
 

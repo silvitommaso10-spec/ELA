@@ -166,7 +166,11 @@ class Pipeline:
             }
         )
         self.devices = DeviceRegistry(
-            FakeDeviceRegistry((self.device,)), self.clock, heartbeat_ttl=HEARTBEAT_TTL
+            FakeDeviceRegistry((self.device,)),
+            self.clock,
+            self.audit,
+            self.ids,
+            heartbeat_ttl=HEARTBEAT_TTL,
         )
         self.orchestrator = DeviceOrchestrator(
             self.devices, self.tools, self.audit, self.ids, self.clock

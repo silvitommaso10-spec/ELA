@@ -15,7 +15,7 @@ from ela.devices import DeviceRegistry
 from ela.infrastructure.persistence import SqlDeviceRegistry, make_engine
 from ela.infrastructure.persistence.orm import Base
 from ela.ports import DeviceRegistryPort
-from ela.testing.fakes import FakeClock, FakeDeviceRegistry
+from ela.testing.fakes import FakeAuditLog, FakeClock, FakeDeviceRegistry, FakeIdGenerator
 from tests.contracts.implementations import MEMORY_URL
 from tests.domain.examples import MUCH_LATER
 
@@ -44,5 +44,11 @@ def clock() -> FakeClock:
 
 
 @pytest.fixture
-def registry(port: DeviceRegistryPort, clock: FakeClock) -> DeviceRegistry:
-    return DeviceRegistry(port, clock, heartbeat_ttl=TTL)
+def audit() -> FakeAuditLog:
+    """The registry writes now (ADR 0035 §3), so every one of them is handed a log."""
+    return FakeAuditLog()
+
+
+@pytest.fixture
+def registry(port: DeviceRegistryPort, clock: FakeClock, audit: FakeAuditLog) -> DeviceRegistry:
+    return DeviceRegistry(port, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL)

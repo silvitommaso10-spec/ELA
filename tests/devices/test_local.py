@@ -30,6 +30,7 @@ from ela.domain import (
 )
 from ela.ports import AlreadyExistsError, DeviceRegistryPort
 from ela.testing.fakes import (
+    FakeAuditLog,
     FakeClock,
     FakeDeviceRegistry,
     FakeIdGenerator,
@@ -139,13 +140,16 @@ async def test_local_starts_unavailable(registry: DeviceRegistry) -> None:
     assert beaten.availability is not UNAVAILABLE
 
 
-async def test_ensure_local_keeps_the_node_that_was_already_there(
-    registry: DeviceRegistry,
-) -> None:
-    """A second call does not re-register: the ``available_tools`` of the first call survive."""
+async def test_ensure_local_does_not_register_a_second_node(registry: DeviceRegistry) -> None:
+    """A second call reconciles the row the first one wrote; it never adds a node beside it.
+
+    *What* it reconciles is ``test_registry.py``'s business: here the claim is only that the
+    deterministic id keeps the registry at one node, which is what §54 asks for.
+    """
     await registry.ensure_local(system="Darwin", available_tools=V01_TOOL_NAMES)
-    again = await registry.ensure_local(system="Darwin", available_tools=())
-    assert again.available_tools == V01_TOOL_NAMES
+    await registry.ensure_local(system="Darwin", available_tools=())
+
+    assert len(await registry.devices()) == 1
 
 
 class RacingRegistry(FakeDeviceRegistry):
@@ -161,10 +165,19 @@ class RacingRegistry(FakeDeviceRegistry):
 
 
 async def test_ensure_local_survives_a_race(clock: FakeClock) -> None:
-    """Two callers between the read and the insert: both get the node, nobody gets an error."""
+    """Two callers between the read and the insert: both get the node, nobody gets an error.
+
+    The loser does not walk away with the row as the winner left it — it **reconciles** it, like
+    any other call that finds a node already there (ADR 0035 §2). Which is the right answer and
+    not a lucky one: the row of ``local`` describes the machine this process is running on, and
+    the loser is a process on that machine too.
+    """
     winner = local_device(MUCH_LATER, system="Windows", available_tools=("browser",))
     port: DeviceRegistryPort = RacingRegistry(winner)
-    registry = DeviceRegistry(port, clock, heartbeat_ttl=TTL)
+    registry = DeviceRegistry(port, clock, FakeAuditLog(), FakeIdGenerator(), heartbeat_ttl=TTL)
+
     device = await registry.ensure_local(system="Darwin")
+
     assert device.id == LOCAL_DEVICE_ID
-    assert device.os is OperatingSystem.WINDOWS  # the winner's node, not the loser's
+    assert device.os is OperatingSystem.MACOS
+    assert device.available_tools == ()
