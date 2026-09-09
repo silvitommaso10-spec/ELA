@@ -44,6 +44,9 @@ e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.
 - Ogni bug trovato → prima un test che fallisce, poi il fix.
 - Tutto ciò che gira in `make check` ha un test che ne dimostra il fallimento nel caso
   negativo.
+- **`make check` si lancia in primo piano, una volta, e si aspetta lì.** Non in background, non
+  sorvegliato da un monitor, non interrogato a intervalli: il ciclo dura tre minuti e il polling
+  costa più del lavoro che sorveglia. Una volta è costato sei ore.
 - **`make check-linux` prima di ogni push.** `make check` gira su una macchina sola, e una suite
   che eredita da quella macchina passa lì e fallisce sull'altra — è successo il 2026-09-08, e la
   CI se n'è accorta undici minuti dopo il merge. Questo target rifà la suite e il gate della
