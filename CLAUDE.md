@@ -44,6 +44,18 @@ e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.
 - Ogni bug trovato → prima un test che fallisce, poi il fix.
 - Tutto ciò che gira in `make check` ha un test che ne dimostra il fallimento nel caso
   negativo.
+- **`make check-linux` prima di ogni push.** `make check` gira su una macchina sola, e una suite
+  che eredita da quella macchina passa lì e fallisce sull'altra — è successo il 2026-09-08, e la
+  CI se n'è accorta undici minuti dopo il merge. Questo target rifà la suite e il gate della
+  copertura fingendo l'altra metà della matrice. **Ha dei limiti e sono scritti in
+  `tests/foreign_machine.py`**: finge `platform.system()` e i tre binari di Apple, e nient'altro
+  — resta CPython su macOS, non dimostra che Linux funzioni, e non dice niente su tempi e
+  installazione. Verde lì significa che la suite non sta ereditando la macchina; verde sul runner
+  vero resta l'unica cosa che conta.
+- **Un test afferma solo ciò di cui ha costruito le precondizioni.** Se gli serve una macchina
+  vera, la dichiara con uno `skipif`, che compare nel riepilogo — un `if` dentro il test no
+  (ADR 0031 §6). Una precondizione che non si può costruire dichiarando il sistema si costruisce
+  iniettando la dipendenza: `available()` legge il filesystem, non `platform.system()`.
 
 ## Fine sessione
 Produci un riepilogo con: file toccati, test aggiunti, output di `pytest -q --cov`,
