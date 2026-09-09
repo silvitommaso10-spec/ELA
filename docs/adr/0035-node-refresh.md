@@ -169,6 +169,36 @@ ha. Dopo la §2 il nodo non può essere indietro — *quasi* mai: può esserlo s
 confronto ha qualcuno dietro (ADR 0026 §7) e vale la pena averlo: vuoto quasi sempre, e quando non
 lo è dice esattamente cosa manca.
 
+### 7. Un debito datato: i numeri in coda a `CONSTANTS` non contano più niente
+
+Trovato lavorando qui, e non riparato qui. Il docstring in coda a
+`CONSTANTS` (`tests/architecture/rules.py`) dice:
+
+> Thirty-six doors, forty-seven detectors, thirty-three subjects — of which thirty-one are
+> `ROOT_PACKAGE`, read by every rule.
+
+Le righe reali — con la regola 44 di questa milestone già dentro — sono **38 esenzioni, 81
+detector, 45 soggetti** (32, 74 e 3 contando i nomi distinti invece delle coppie). Nessuna delle due letture dà i numeri scritti: erano veri quando
+sono stati scritti e nessun test se n'è accorto quando hanno smesso di esserlo. È esattamente il
+criterio di ADR 0025 §1 — *entra un rinvio se oggi c'è codice che fa la cosa nel modo sbagliato* —
+e la sua forma peggiore, perché sta dentro il file che tiene le liste che devono accorgersi di
+essere false.
+
+Non si ripara qui: sarebbe scope di questa milestone speso su un file che questa milestone tocca
+per un'altra ragione, e servirebbe decidere quale delle due letture il docstring intendesse, che è
+una decisione di chi scrisse ADR 0027 e non di chi legge oggi.
+
+**Debito a carico della milestone sulla disciplina della suite**, dichiarato il **2026-09-09**, e
+va insieme alla **regola 45**. In quella milestone quei numeri **devono** diventare derivati —
+contati dal codice, come `test_the_whole_list_is_the_sum_of_its_parts` conta le voci di M9.4 — o
+sparire: un conteggio scritto a mano dentro il file delle liste auto-verificanti è la cosa che
+quel file esiste per rendere impossibile altrove.
+
+Fino ad allora il debito ha una sola difesa, ed è la più piccola possibile:
+`tests/docs/test_adr_devices.py` verifica che la frase citata qui sopra sia ancora nel file. Il
+giorno in cui qualcuno la deriva o la cancella, quel test fallisce e questa sezione esce con lei —
+un debito che non sa di essere stato pagato è la stessa specie di bugia dei numeri che descrive.
+
 ## Alternative considerate
 
 - **Riparare sotto M11.1b**, dove il difetto è stato trovato — scartata: archivierebbe sotto la voce

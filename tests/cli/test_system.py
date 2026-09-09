@@ -10,7 +10,9 @@ from pydantic import SecretStr
 
 from ela.cli import client
 from ela.cli.errors import REFUSED, UNREACHABLE
+from ela.cli.output import EMPTY
 from ela.composition import ApiSettings, Ela
+from ela.devices.local import LOCAL_DEVICE_ID
 from tests.cli.support import Cli, plain, unreachable
 from tests.composition.support import TOKEN
 
@@ -41,6 +43,31 @@ async def test_diagnostics_says_how_ela_is_composed(cli: Cli, ela: Ela) -> None:
     assert "local: available" in result.stdout
     assert str(ela.settings.workspace.workspace_dir) in result.stdout
     assert "recovered at start-up" in result.stdout
+
+
+async def test_diagnostics_says_nothing_is_missing_from_the_row(cli: Cli) -> None:
+    """Empty almost always — after a start-up the row of ``local`` cannot be behind."""
+    result = await cli("diagnostics")
+
+    printed = plain(result.stdout).splitlines()
+    (row,) = [line for line in printed if line.startswith("tools missing from the row")]
+    assert row.endswith(EMPTY)
+
+
+async def test_diagnostics_names_the_tools_the_row_does_not_declare(cli: Cli, ela: Ela) -> None:
+    """And the direction that matters, on the surface a person actually opens (M6.1b, punto 2).
+
+    A field that lives only in the JSON is a field nobody reads: when a task answers
+    ``waiting_device`` what gets opened is a terminal, not a ``curl``. The CLI is a client of the
+    API and not a second world (ADR 0024, M8.3), so it says everything the route says.
+    """
+    node = await ela.devices.get(LOCAL_DEVICE_ID)
+    await ela.devices.update(node.model_copy(update={"available_tools": ("core-echo",)}))
+
+    result = await cli("diagnostics")
+
+    assert result.exit_code == 0
+    assert "workspace-notes" in plain(result.stdout).split("tools missing from the row")[1]
 
 
 async def test_diagnostics_never_prints_a_secret(cli: Cli) -> None:
