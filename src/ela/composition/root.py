@@ -291,7 +291,11 @@ async def build(settings: Settings) -> Ela:
         approvals = SqlApprovalStore(database)
         results = SqlExecutionResultStore(database)
         devices = DeviceRegistry(
-            SqlDeviceRegistry(database), clock, heartbeat_ttl=settings.devices.heartbeat_ttl
+            SqlDeviceRegistry(database),
+            clock,
+            audit,
+            ids,
+            heartbeat_ttl=settings.devices.heartbeat_ttl,
         )
 
         # The scope of ``workspace.write_note`` and the life of a decision are configuration
@@ -391,7 +395,11 @@ async def build(settings: Settings) -> Ela:
         verifiers = production_verifiers(root=root, router=router, captures=captures)
 
         # Which tools this machine has is not something the registry can know (ADR 0016 §4), and
-        # without the names no node is ever eligible and every task waits.
+        # without the names no node is ever eligible and every task waits. Since M6.1b this also
+        # *reconciles*: a capability added since the last start is written into the row here, and
+        # one withdrawn disappears from it (ADR 0035 §2). It comes **before** the heartbeat on
+        # purpose — the reconciliation writes the row it read, so it must not be able to lose the
+        # sign of life ELA is about to write two lines below.
         await devices.ensure_local(available_tools=tuple(tool.name for tool in tools.tools()))
         # And it is alive: the local node *is* this process, so ELA can say so about itself
         # without claiming anything it does not know (§16). A node registered and never heard

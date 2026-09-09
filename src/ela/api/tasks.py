@@ -122,7 +122,12 @@ async def run_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> RunOut:
         run = await ela.runner.run(identifier)
     finally:
         running.discard(identifier)
-    return RunOut(task=TaskOut.of(run.task), outcome=run.outcome.value, steps=tuple(run.steps))
+    return RunOut(
+        task=TaskOut.of(run.task),
+        outcome=run.outcome.value,
+        steps=tuple(run.steps),
+        reason=run.reason,
+    )
 
 
 @router.post("/{task_id}/cancel")

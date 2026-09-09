@@ -142,7 +142,7 @@ def orchestrator(
     port: FakeDeviceRegistry, audit: FakeAuditLog, clock: FakeClock
 ) -> DeviceOrchestrator:
     tools = FakeToolRegistry([FakeTool(WRITE_NOTE, clock, FakeIdGenerator(), name=NOTES)])
-    registry = DeviceRegistry(port, clock, heartbeat_ttl=TTL)
+    registry = DeviceRegistry(port, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL)
     return DeviceOrchestrator(registry, tools, audit, FakeIdGenerator(), clock)
 
 
@@ -195,6 +195,25 @@ async def test_confirm_refuses_a_node_that_stopped_answering(
     assert confirmed.scores  # why it lost is recorded, as a placement records it
     with pytest.raises(NotPlacedError):
         ensure_placed(confirmed, TASK_ID, STEP.id)
+
+
+async def test_confirm_names_the_tool_the_node_no_longer_has(
+    orchestrator: DeviceOrchestrator, port: FakeDeviceRegistry, clock: FakeClock
+) -> None:
+    """A step resumed after its node lost a capability: the reason says which one (dec. F).
+
+    Not a second path for the same sentence — the names are computed where the reason is born,
+    and ``confirm`` is a second place a reason is born. The node is still there and still
+    answering; what it cannot do any more is the thing the step needs.
+    """
+    await register(port, [node("local")], clock)
+
+    confirmed = await orchestrator.confirm(
+        device_id("local"), step(capabilities=(str(WRITE_NOTE),)), task_id=TASK_ID
+    )
+
+    assert confirmed.waits
+    assert f"{Refusal.MISSING_TOOL.value} ({NOTES})" in confirmed.reason
 
 
 async def test_confirm_refuses_a_node_that_is_no_longer_registered(

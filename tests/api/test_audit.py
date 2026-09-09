@@ -141,11 +141,22 @@ async def test_the_chain_verifies_and_reports_what_to_anchor(client: AsyncClient
     assert len(summary["head_hash"]) == 64
 
 
-async def test_an_empty_log_verifies_to_the_genesis(client: AsyncClient) -> None:
-    """Nothing to verify is not a failure: it is a chain of length zero."""
+async def test_a_fresh_log_holds_the_registration_of_the_node_ela_runs_on(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """No longer a chain of length zero, and M6.1b is why (ADR 0035 §3).
+
+    Building ELA writes down the machine it is running on, so the first entry of every database
+    is a ``DEVICE_REGISTERED`` — which is what §32 asks for: whoever investigates an action must
+    be able to reconstruct which nodes could do what then, and the first answer is the moment
+    there was a node at all. The genesis of an actually empty chain is
+    ``tests/audit/test_chain.py``'s, where it can be asked without building a world first.
+    """
     summary = (await client.get("/audit/verify")).json()
 
-    assert summary == {"length": 0, "head_hash": "0" * 64}
+    assert summary["length"] == 1
+    (event,) = await ela.audit.read()
+    assert event.event_type is AuditEventType.DEVICE_REGISTERED
 
 
 async def test_a_rewritten_entry_is_reported_with_its_position(

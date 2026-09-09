@@ -1142,8 +1142,59 @@ VIOLATIONS: tuple[Case, ...] = (
         'def extra() -> list[str]:\n    return ["--output-file"]\n',
         "--output-file",
     ),
+    # --- a-refresh-touches-only-what-is-declared (rule 44, M6.1b dec. H) ---
+    Case(
+        # The one somebody will really write: ``local_device`` already builds a row from a
+        # declaration, so reusing it looks like reuse. It is a **birth** — ``UNKNOWN`` status,
+        # ``None`` last_seen_at — and using it here would make the node unavailable until the
+        # next heartbeat, at the start-up whose whole point was to keep it usable.
+        "the-refresh-rebuilds-the-row-from-a-birth",
+        "a-refresh-touches-only-what-is-declared",
+        "devices/refresh.py",
+        "from ela.devices.local import local_device\n"
+        "def refreshed(now, tools):\n"
+        "    return local_device(now, available_tools=tools)\n",
+        "local_device",
+    ),
+    Case(
+        # The same reset written by hand, one field at a time: a payload key.
+        "the-refresh-writes-the-availability",
+        "a-refresh-touches-only-what-is-declared",
+        "devices/refresh.py",
+        "def refreshed(current):\n"
+        '    return current.model_copy(update={"availability": "UNKNOWN"})\n',
+        "availability",
+    ),
+    Case(
+        "the-refresh-passes-the-workload-along",
+        "a-refresh-touches-only-what-is-declared",
+        "devices/refresh.py",
+        "def refreshed(current):\n    return current.model_copy(current_workload=0.0)\n",
+        "current_workload",
+    ),
+    Case(
+        # Reading it is banned too, and deliberately: the moment this module *looks* at the
+        # heartbeat's half is the moment somebody decides the refresh should depend on it.
+        "the-refresh-reads-the-last-sign-of-life",
+        "a-refresh-touches-only-what-is-declared",
+        "devices/refresh.py",
+        "def stale(current) -> bool:\n    return current.last_seen_at is None\n",
+        "last_seen_at",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        # The shape M6.1b actually uses: the stored row, with the declared half replaced and
+        # nothing else named — so the four fields the heartbeat owns travel through untouched
+        # without this module ever mentioning one of them.
+        "the-refresh-replaces-only-the-declared-half",
+        "a-refresh-touches-only-what-is-declared",
+        "devices/refresh.py",
+        "from ela.domain import Device\n"
+        "def refreshed(current: Device, change: dict[str, object]) -> Device:\n"
+        "    return Device.model_validate({**current.model_dump(), **change})\n",
+        "",
+    ),
     Case(
         # The shape M11.3 actually uses: the voice holds the bytes for as long as it takes to hand
         # them over, and the file — the one with no name — is made on the other side of the door.

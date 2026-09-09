@@ -211,11 +211,26 @@ def test_the_event_table_names_the_two_new_types() -> None:
     ]
 
 
-def test_the_two_types_are_the_only_device_events_in_the_domain() -> None:
-    assert {t.value for t in AuditEventType if t.name.startswith("DEVICE_")} == {
+def test_the_device_events_are_this_adrs_two_plus_the_registrys_two() -> None:
+    """M6.1b added two, and they belong to the registry rather than to this document.
+
+    What ADR 0017 claims is that **it** named these two, and that stays checkable against ADR
+    0017 alone — the shape ``test_adr_screen.py`` uses for the same reason: a test that fails
+    because another milestone did something is a test about the wrong thing.
+    """
+    orchestrator = {
         AuditEventType.DEVICE_SELECTED.value,
         AuditEventType.DEVICE_UNAVAILABLE.value,
     }
+    registry = {
+        AuditEventType.DEVICE_REGISTERED.value,
+        AuditEventType.DEVICE_REFRESHED.value,
+    }
+
+    assert not orchestrator & registry
+    assert {t.value for t in AuditEventType if t.name.startswith("DEVICE_")} == (
+        orchestrator | registry
+    )
 
 
 # ----------------------------------------------------------------------------------------

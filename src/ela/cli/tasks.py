@@ -161,6 +161,10 @@ def run(task_id: TaskId, as_json: Json = False) -> None:
 
     The answer comes back when the run stops: the task closed, your consent is needed, or no node
     was eligible. A long step keeps the command waiting, because the run is the request.
+
+    ``reason`` is filled in when the run is waiting for a node, and says which nodes were
+    considered, why each was refused and — for a tool that is not installed — which tool. Empty
+    otherwise: an outcome that explains itself does not need a sentence under it.
     """
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/run")
@@ -170,6 +174,7 @@ def run(task_id: TaskId, as_json: Json = False) -> None:
         fields(
             [
                 ("outcome", payload["outcome"]),
+                ("reason", payload["reason"]),
                 ("state", payload["task"]["state"]),
                 ("steps executed", payload["steps"]),
             ]

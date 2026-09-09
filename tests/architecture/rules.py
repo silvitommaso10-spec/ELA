@@ -248,6 +248,28 @@ VOICE_ENVIRONMENT_READS = frozenset({"environ", "getenv"})
 AUDITION_MODULE = PERCEPTION_ADAPTER_DIR / "audition.py"
 AUDITION_TEXT_PARAMETERS = frozenset({"text", "phrase", "phrases", "message", "say", "words"})
 
+#: Rule 44 (M6.1b dec. H, ADR 0035 §4): **a refresh touches only what is declared.** The row of a
+#: node has two halves — what whoever composes ELA knows without probing anything (the name, the
+#: system, the network, the privacy, the traits, the tools) and what only the heartbeat observes
+#: (availability, the last sign of life, the status, the workload). A re-registration rewrites the
+#: first and must not touch the second, or a node that was available becomes unavailable until the
+#: next heartbeat — a hole opened by an update whose whole point was to keep the node usable.
+#:
+#: The error has a shape, and it is the obvious one: rebuild the row with ``local_device(...)``,
+#: which is right for a **birth** — it sets ``UNKNOWN`` and ``None`` because nothing has been heard
+#: yet — and wrong for an **update**. So the rule bans, in the module that builds the reconciled
+#: row, both the four observed names and the birth constructor itself.
+#:
+#: Closed-world on names, like rules 5, 12, 15, 16, 20 and 23: a constant, an attribute, a keyword
+#: or a bare name, because a field can be written through any of the four and a rule that read only
+#: imports would be silent on all of them. It can fire — the shape it forbids is the shortest way to
+#: write the reconciliation, which is the reason ADR 0026 §7 asks of every rule.
+REFRESH_MODULE = Path(DEVICES_DIR) / "refresh.py"
+#: The half the heartbeat writes, and the only writer of it (ADR 0016 §5, ADR 0035 §2).
+OBSERVED_FIELDS = frozenset({"availability", "last_seen_at", "status", "current_workload"})
+#: The constructor of a *new* row: right for a birth, and a reset for everything else.
+BIRTH_CONSTRUCTOR = "local_device"
+
 #: Rule 40 (M11.1 dec. 7, approved by the user): **the voice writes no file.** ``say`` takes
 #: ``-o`` and will happily render to AIFF instead of speaking, so "nothing of what ELA says is
 #: kept" is one character away from being false. The decision was the user's — *mai su disco per
@@ -1911,6 +1933,47 @@ def check_the_audition_speaks_only_the_repositorys_words(pkg_root: Path) -> list
     return found
 
 
+def check_a_refresh_touches_only_what_is_declared(pkg_root: Path) -> list[Violation]:
+    """Rule 44: the row a re-registration writes names no field the heartbeat owns (M6.1b dec. H).
+
+    ``ensure_local`` stopped being "register it once" in M6.1b: it reads the row, compares the
+    declared half against what this process declares, and writes when they differ (ADR 0035 §2).
+    What it must never rewrite is the other half — ``availability``, ``last_seen_at``, ``status``,
+    ``current_workload`` — because those say what was *observed* of the node, and a start-up that
+    reset them would make the node unavailable until the next heartbeat: an update whose only
+    purpose is to keep the node usable would be the thing that stops it being used.
+
+    Reported, in the module that builds the reconciled row: any of the four names, however it is
+    written — a payload key, an attribute, a keyword, a bare name — and any mention of
+    :func:`~ela.devices.local.local_device`, which builds a birth and would reset all four at once.
+    That call is the shortest way to write this function and the reason the rule exists.
+    """
+    rule = "a-refresh-touches-only-what-is-declared"
+    path = pkg_root / REFRESH_MODULE
+    if not path.is_file():
+        return []
+    name = module_name(path, pkg_root)
+    found: list[Violation] = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path))):
+        named = _names_the_observed_half(node)
+        if named is not None:
+            found.append(Violation(rule, name, named, node.lineno))
+    return found
+
+
+def _names_the_observed_half(node: ast.AST) -> str | None:
+    """How ``node`` reaches the heartbeat's half of a row, or ``None`` if it does not."""
+    if isinstance(node, ast.Constant) and node.value in OBSERVED_FIELDS:
+        return str(node.value)
+    if isinstance(node, ast.Attribute) and node.attr in OBSERVED_FIELDS:
+        return node.attr
+    if isinstance(node, ast.keyword) and node.arg in OBSERVED_FIELDS:
+        return node.arg
+    if isinstance(node, ast.Name) and node.id in OBSERVED_FIELDS | {BIRTH_CONSTRUCTOR}:
+        return node.id
+    return None
+
+
 def check_adapter_names_no_state(pkg_root: Path) -> list[Violation]:
     """Rule 34: the perception adapter never names a domain state (ADR 0028 §1).
 
@@ -2163,6 +2226,7 @@ RULES: dict[str, Rule] = {
     "the-audition-speaks-only-the-repositorys-words": (
         check_the_audition_speaks_only_the_repositorys_words
     ),
+    "a-refresh-touches-only-what-is-declared": check_a_refresh_touches_only_what_is_declared,
 }
 
 
@@ -2227,6 +2291,17 @@ class Constant:
 
 
 CONSTANTS: tuple[Constant, ...] = (
+    # a-refresh-touches-only-what-is-declared (rule 44, M6.1b dec. H)
+    Constant("a-refresh-touches-only-what-is-declared", "BIRTH_CONSTRUCTOR", DETECTOR),
+    Constant("a-refresh-touches-only-what-is-declared", "OBSERVED_FIELDS", DETECTOR),
+    Constant("a-refresh-touches-only-what-is-declared", "REFRESH_MODULE", DETECTOR),
+    Constant(
+        "a-refresh-touches-only-what-is-declared",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # anthropic-import-isolation
     Constant(
         "anthropic-import-isolation",

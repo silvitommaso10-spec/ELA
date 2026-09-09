@@ -27,6 +27,7 @@ from ela.api.schemas import (
     VoiceOut,
 )
 from ela.composition import Ela
+from ela.devices.local import LOCAL_DEVICE_ID
 from ela.tasks.engine import RecoverySummary
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 
@@ -54,9 +55,18 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
 
     # Never ``device.availability`` from here: it is derived, and deriving it is the registry's
     # (architecture rule 20). What this asks for is the answer, not the column.
-    nodes = {device.name: "unavailable" for device in await ela.devices.devices()}
+    rows = await ela.devices.devices()
+    nodes = {device.name: "unavailable" for device in rows}
     for device in await ela.devices.available():
         nodes[device.name] = "available"
+
+    # What this process can do, minus what the row of ``local`` says it can (M6.1b dec. G). Empty
+    # almost always, because start-up reconciles the row — and when it is not, it names the
+    # capability no step will be placed for. Only ``local``'s row: another node's tools are that
+    # node's business, and this process is not it.
+    declared = {
+        name for device in rows if device.id == LOCAL_DEVICE_ID for name in device.available_tools
+    }
 
     # The last observation, never a fresh one: ``/diagnostics`` says what ELA is wired to and is
     # called by whatever watches ELA, so it must stay free. Looking is ``/perception``'s job.
@@ -75,6 +85,7 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
         capabilities=tuple(spec.id for spec in ela.capabilities.specs()),
         tools=tuple(tool.name for tool in ela.tools.tools()),
         devices=nodes,
+        undeclared_tools=tuple(sorted({tool.name for tool in ela.tools.tools()} - declared)),
         tasks=tasks,
         pending_approvals=len(await ela.approvals.pending(now=ela.clock.now())),
         recovered={

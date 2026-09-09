@@ -21,7 +21,7 @@ MILESTONES = ROOT / "docs" / "milestones"
 ADRS = ROOT / "docs" / "adr"
 TEMPLATE = MILESTONES / "TEMPLATE.md"
 
-ENTRY = re.compile(r"^- \*\*(M\d+\.\d+)\*\* — (.+?) \((ADR \d{4}|—)\)$")
+ENTRY = re.compile(r"^- \*\*(M\d+\.\d+[a-z]?)\*\* — (.+?) \((ADR \d{4}|—)\)$")
 STATE = re.compile(r"^- \*\*Stato:\*\*\s*(.+)$", re.MULTILINE)
 WORD = re.compile(r"[A-Za-zÀ-ÿ]+")
 CITED = re.compile(r"ADR\s*(\d{4})")
@@ -108,11 +108,34 @@ def test_the_dash_means_the_milestone_names_no_adr_at_all() -> None:
         assert (citation == "—") == (not cited), milestone
 
 
+NUMBER = re.compile(r"^M(\d+)\.(\d+)([a-z]*)$")
+
+
+def order_of(name: str) -> tuple[int, int, str]:
+    """A milestone id as something sortable: phase, number, and the letter of a repair.
+
+    M6.1b is the first id with a letter (M6.1b decisione A: the number says where the defect
+    lives, the letter says when it was repaired), and it belongs between M6.1 and M6.2 — where
+    somebody looking for the defect will look. The empty letter sorts first, which is what puts
+    the original ahead of its repair.
+    """
+    found = NUMBER.match(name)
+    assert found is not None, f"{name} is not a milestone id"
+    phase, number, letter = found.groups()
+    return int(phase), int(number), letter
+
+
 def test_the_history_runs_from_the_first_milestone_to_the_release() -> None:
     ordered = list(entries())
     assert ordered[0] == "M0.1"
-    assert ordered == sorted(ordered, key=lambda name: [int(n) for n in name[1:].split(".")])
+    assert ordered == sorted(ordered, key=order_of)
     assert "v0.1" in CHANGELOG.read_text(encoding="utf-8")
+
+
+def test_a_repair_is_ordered_after_the_milestone_whose_defect_it_repairs() -> None:
+    """The negative of the sort key: without the letter it would not be an id at all."""
+    assert order_of("M6.1") < order_of("M6.1b") < order_of("M6.2")
+    assert NUMBER.match("M6") is None
 
 
 def test_the_release_entry_points_at_the_list_of_what_v01_simplifies() -> None:

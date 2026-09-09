@@ -37,7 +37,13 @@ def health(as_json: Json = False) -> None:
 
 @handled
 def diagnostics(as_json: Json = False) -> None:
-    """How this ELA is composed right now: never a secret, never your content."""
+    """How this ELA is composed right now: never a secret, never your content.
+
+    ``tools missing from the row`` is empty almost always, and when it is not it names the
+    capabilities the node's row does not declare — the ones no step will be placed for. It is
+    here and not only in the JSON because a diagnostic that lives where nobody looks is not a
+    diagnostic: when a task says ``waiting_device`` what gets opened is a terminal.
+    """
     with client.connect() as api:
         payload = api.get("/diagnostics")
     emit(payload, as_json, fields(_composition(payload)))
@@ -56,6 +62,7 @@ def _composition(payload: dict[str, Any]) -> list[tuple[str, Any]]:
         ("capabilities", payload["capabilities"]),
         ("tools", payload["tools"]),
         ("devices", payload["devices"]),
+        ("tools missing from the row", payload["undeclared_tools"]),
         ("tasks", payload["tasks"]),
         ("approvals waiting", payload["pending_approvals"]),
         ("perception", _perception(payload["perception"])),

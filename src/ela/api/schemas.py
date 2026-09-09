@@ -265,11 +265,19 @@ class TaskDetail(TaskOut):
 
 
 class RunOut(BaseModel):
-    """What one call of ``run`` did: where the task is now, and which steps it executed."""
+    """What one call of ``run`` did: where the task is now, which steps it executed, and why it
+    stopped when the outcome alone does not say."""
 
     task: TaskOut
     outcome: str
     steps: tuple[UUID, ...]
+    reason: str | None = None
+    """Why the run is waiting. ``null`` unless it is: an outcome that explains itself needs none.
+
+    ``waiting_device`` used to arrive as a bare word while the audit already held the sentence —
+    which nodes were considered, why each was refused, and for a missing tool its name. That
+    sentence travels with the answer now (M6.1b dec. F).
+    """
 
 
 class ApprovalOut(BaseModel):
@@ -697,6 +705,14 @@ class DiagnosticsOut(BaseModel):
     capabilities: tuple[CapabilityId, ...]
     tools: tuple[str, ...]
     devices: dict[str, str]
+    undeclared_tools: tuple[str, ...]
+    """Tools this process has that the ``local`` row does not list — empty almost always.
+
+    After M6.1b the row cannot be behind, *almost*: it can if the write failed (a read-only
+    database) or if two ELAs with different code share one database. So the comparison has
+    somebody behind it and is worth making (ADR 0026 §7) — and when it is not empty it says
+    exactly which capability the orchestrator will refuse to place (ADR 0035 §6).
+    """
     tasks: dict[str, int]
     pending_approvals: int
     recovered: dict[str, int]

@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 from ela.composition import Ela
+from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import TaskId, TaskState
 from tests.api.support import ECHO_MESSAGE, echo_plan, note_plan, queued
 
@@ -159,6 +160,32 @@ async def test_a_step_naming_a_capability_nobody_implements_waits(client: AsyncC
 
     assert body["outcome"] == "waiting_device"
     assert body["task"]["state"] == TaskState.QUEUED.value
+    # And *why*, since M6.1b: a bare "waiting_device" is not something anybody can act on.
+    assert "UNKNOWN_CAPABILITY" in body["reason"]
+
+
+async def test_a_step_whose_tool_the_node_does_not_have_says_which_tool(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """Dec. F over HTTP: the reason names the tool, because ``MISSING_TOOL`` alone does not.
+
+    The row of ``local`` is put back to the state M6.1b repairs — a node registered before a
+    capability existed — and the answer says which capability nobody can run.
+    """
+    node = await ela.devices.get(LOCAL_DEVICE_ID)
+    await ela.devices.update(node.model_copy(update={"available_tools": ()}))
+    task_id = await queued(client, echo_plan())
+
+    body = (await client.post(f"/tasks/{task_id}/run")).json()
+
+    assert body["outcome"] == "waiting_device"
+    assert "MISSING_TOOL (core-echo)" in body["reason"]
+
+
+async def test_a_run_that_is_not_waiting_carries_no_reason(client: AsyncClient) -> None:
+    task_id = await queued(client, echo_plan())
+
+    assert (await client.post(f"/tasks/{task_id}/run")).json()["reason"] is None
 
 
 # ----------------------------------------------------------------------------------------

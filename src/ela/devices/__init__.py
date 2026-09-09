@@ -40,11 +40,19 @@ from ela.devices.orchestrator import (
     refusals,
     score,
 )
-from ela.devices.registry import AVAILABLE, UNAVAILABLE, DeviceRegistry, is_available
+from ela.devices.refresh import DECLARED_FIELDS, TOOLS_FIELD
+from ela.devices.registry import (
+    AVAILABLE,
+    REGISTRY_ACTOR,
+    UNAVAILABLE,
+    DeviceRegistry,
+    is_available,
+)
 from ela.devices.settings import DEFAULT_HEARTBEAT_TTL_SECONDS, DeviceSettings
 
 __all__ = [
     "AVAILABLE",
+    "DECLARED_FIELDS",
     "DEFAULT_HEARTBEAT_TTL_SECONDS",
     "DEVICE_NAMESPACE",
     "LOCAL_DEVICE_ID",
@@ -54,8 +62,10 @@ __all__ = [
     "PERFORMANCE_POINTS",
     "POWER_POINTS",
     "PRIVACY_ORDER",
+    "REGISTRY_ACTOR",
     "STATUS_POINTS",
     "SYSTEMS",
+    "TOOLS_FIELD",
     "TRAIT_POINTS",
     "UNAVAILABLE",
     "UNGUARDED_RISK",

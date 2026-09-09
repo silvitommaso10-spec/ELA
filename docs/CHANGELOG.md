@@ -59,6 +59,7 @@ semplificato» — sessantasei voci, ognuna con il suo rimando. Il disegno di co
 ### Fase 6 — I nodi
 
 - **M6.1** — Il Device Registry: la disponibilità di un nodo è derivata dal suo ultimo heartbeat, mai letta da una colonna. (ADR 0016)
+- **M6.1b** — Il nodo che non impara, riparato il 2026-09-09: `ensure_local` restituiva la riga che trovava e non guardava mai se ciò che il chiamante dichiara è ancora ciò che la riga dice, quindi una capability aggiunta dopo il primo avvio non diventava mai eseguibile — trovato verificando M11.3, e valeva identico per le due capability di percezione. La riga ha due metà: quella dichiarata la rifà una ri-registrazione, quella osservata la scrive solo l'heartbeat e la regola 44 tiene separate le due. Una capability aggiunta è eseguibile al riavvio successivo, una rimossa smette di esserlo allo stesso riavvio, e i due eventi nuovi dicono *quale* tool è comparso o sparito — il debito che ADR 0016 §6 aveva dichiarato nel 2026-09-07. E `waiting_device` smette di essere un valore nudo: la ragione arriva fino a `ela task run`, per ogni motivo e non per uno. La voce sta qui, sotto la Fase 6, perché è qui che il difetto vive. (ADR 0035)
 - **M6.2** — Il Device Orchestrator: filtri di idoneità, punteggio esplicito, e l'attesa invece di un ripiego. (ADR 0017)
 - **M6.3** — Il Task Runner: la camminata del grafo, ri-entrante, che non scrive nulla di suo. (ADR 0019)
 

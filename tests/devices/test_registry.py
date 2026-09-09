@@ -14,10 +14,10 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from ela.devices import AVAILABLE, UNAVAILABLE, DeviceRegistry, is_available
-from ela.domain import DeviceId, DeviceStatus
+from ela.devices import AVAILABLE, LOCAL_DEVICE_ID, UNAVAILABLE, DeviceRegistry, is_available
+from ela.domain import Device, DeviceId, DeviceStatus, OperatingSystem
 from ela.ports import DeviceRegistryPort, NotFoundError
-from ela.testing.fakes import FakeClock, FakeDeviceRegistry
+from ela.testing.fakes import FakeAuditLog, FakeClock, FakeDeviceRegistry, FakeIdGenerator
 from tests.devices.conftest import TTL
 from tests.domain.examples import DEVICE, MUCH_LATER
 
@@ -191,7 +191,13 @@ def test_a_non_positive_ttl_is_refused() -> None:
     """A TTL of zero would make every node unavailable the instant it reported."""
     for ttl in (timedelta(0), timedelta(seconds=-1)):
         with pytest.raises(ValueError, match="positive"):
-            DeviceRegistry(FakeDeviceRegistry(), FakeClock(), heartbeat_ttl=ttl)
+            DeviceRegistry(
+                FakeDeviceRegistry(),
+                FakeClock(),
+                FakeAuditLog(),
+                FakeIdGenerator(),
+                heartbeat_ttl=ttl,
+            )
 
 
 def test_the_ttl_is_readable(registry: DeviceRegistry) -> None:
@@ -214,7 +220,9 @@ async def test_twenty_concurrent_heartbeats_lose_nothing_but_last_seen_at(
     reported, and the node must be available: the only possible damage is keeping the older of
     two recent instants.
     """
-    registry = DeviceRegistry(port, TickingClock(), heartbeat_ttl=TTL)
+    registry = DeviceRegistry(
+        port, TickingClock(), FakeAuditLog(), FakeIdGenerator(), heartbeat_ttl=TTL
+    )
     await registry.register(DEVICE)
 
     beaten = await asyncio.gather(*(registry.heartbeat(DEVICE.id) for _ in range(20)))
@@ -225,3 +233,136 @@ async def test_twenty_concurrent_heartbeats_lose_nothing_but_last_seen_at(
     assert final.last_seen_at in reported
     assert final.availability is AVAILABLE
     assert final.model_copy(update={"last_seen_at": DEVICE.last_seen_at}) == DEVICE
+
+
+# ----------------------------------------------------------------------------------------
+# The reconciliation: a row that learns what this process declares (M6.1b, ADR 0035 §2)
+# ----------------------------------------------------------------------------------------
+
+FIRST = ("core-echo", "workspace-notes")
+"""What an ELA of an earlier day declared."""
+
+SECOND = ("core-echo", "voice-speak-online", "workspace-notes")
+"""The same ELA after a capability was added: one name more, and nothing else different."""
+
+
+class CountingRegistry:
+    """Every write counted, everything else passed through (port ``DeviceRegistryPort``).
+
+    Criterion 4 is about a write that must **not** happen, and a test that looked at the row
+    afterwards could not tell "nothing was written" from "the same thing was written again".
+    """
+
+    def __init__(self, inner: DeviceRegistryPort) -> None:
+        self._inner = inner
+        self.writes = 0
+
+    async def register(self, device: Device) -> None:
+        self.writes += 1
+        await self._inner.register(device)
+
+    async def update(self, device: Device) -> None:
+        self.writes += 1
+        await self._inner.update(device)
+
+    async def get(self, device_id: DeviceId) -> Device:
+        return await self._inner.get(device_id)
+
+    async def devices(self) -> tuple[Device, ...]:
+        return await self._inner.devices()
+
+
+async def test_a_node_that_is_not_there_is_registered_with_what_it_declares(
+    registry: DeviceRegistry,
+) -> None:
+    """The first of the four cases: nothing to reconcile, so the declaration *is* the row."""
+    node = await registry.ensure_local(system="Darwin", available_tools=FIRST)
+
+    assert node.id == LOCAL_DEVICE_ID
+    assert node.available_tools == FIRST
+    assert node.os is OperatingSystem.MACOS
+
+
+async def test_a_capability_added_after_the_first_start_reaches_the_row(
+    registry: DeviceRegistry,
+) -> None:
+    """The reproduction of 2026-09-08: an ELA that had been running learns a new tool.
+
+    Before M6.1b the second call returned the first row unchanged, so a step needing
+    ``voice-speak-online`` answered ``waiting_device`` for ever on a database that had been
+    written before the capability existed — and ran at once on a fresh one.
+    """
+    await registry.ensure_local(system="Darwin", available_tools=FIRST)
+
+    again = await registry.ensure_local(system="Darwin", available_tools=SECOND)
+
+    assert again.available_tools == SECOND
+    assert (await registry.get(LOCAL_DEVICE_ID)).available_tools == SECOND
+
+
+async def test_a_capability_withdrawn_leaves_the_row_at_the_same_start(
+    registry: DeviceRegistry,
+) -> None:
+    """The negative, and the interesting one: a shorter list is an answer too (dec. D).
+
+    A capability that was taken out of the code stops being runnable at the very next start. A
+    step that asks for it waits, and that is the behaviour wanted: deciding to withdraw a
+    capability belongs to whoever changed the code.
+    """
+    await registry.ensure_local(system="Darwin", available_tools=SECOND)
+
+    again = await registry.ensure_local(system="Darwin", available_tools=FIRST)
+
+    assert again.available_tools == FIRST
+    assert "voice-speak-online" not in (await registry.get(LOCAL_DEVICE_ID)).available_tools
+
+
+async def test_a_row_that_says_the_wrong_system_is_corrected(registry: DeviceRegistry) -> None:
+    """Not only the tools (dec. B): a database copied onto another machine says ``MACOS`` on it.
+
+    The row would be a lie the orchestrator decides on, which is the same defect wearing a
+    different field — and repairing one field only would mean coming back for the others.
+    """
+    await registry.ensure_local(system="Darwin", available_tools=FIRST)
+
+    again = await registry.ensure_local(system="Linux", available_tools=FIRST)
+
+    assert again.os is OperatingSystem.LINUX
+
+
+async def test_a_declaration_that_did_not_change_writes_nothing(
+    port: DeviceRegistryPort, clock: FakeClock, audit: FakeAuditLog
+) -> None:
+    """Criterion 4, counted rather than looked at: one write for the birth and no other."""
+    counting = CountingRegistry(port)
+    registry = DeviceRegistry(counting, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL)
+    await registry.ensure_local(system="Darwin", available_tools=FIRST)
+    assert counting.writes == 1
+
+    await registry.ensure_local(system="Darwin", available_tools=FIRST)
+
+    assert counting.writes == 1
+    assert len(await audit.read()) == 1
+
+
+async def test_the_observed_half_survives_a_reconciliation(
+    registry: DeviceRegistry, clock: FakeClock
+) -> None:
+    """Criterion 3, and the reason rule 44 exists: no window of unavailability is opened here.
+
+    The node is reconciled *after* it has reported, and what the heartbeat wrote comes out the
+    other side untouched — including the availability, so a node that was usable an instant
+    before the start-up write is still usable an instant after it.
+    """
+    await registry.ensure_local(system="Darwin", available_tools=FIRST)
+    beaten = await registry.heartbeat(
+        LOCAL_DEVICE_ID, status=DeviceStatus.IDLE, current_workload=0.25
+    )
+    assert beaten.availability is AVAILABLE
+
+    again = await registry.ensure_local(system="Darwin", available_tools=SECOND)
+
+    assert again.last_seen_at == beaten.last_seen_at == clock.now()
+    assert again.status is DeviceStatus.IDLE
+    assert again.current_workload == 0.25
+    assert again.availability is AVAILABLE

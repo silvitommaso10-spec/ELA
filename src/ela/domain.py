@@ -402,6 +402,22 @@ class AuditEventType(StrEnum):
     STEP_COMPLETED = "STEP_COMPLETED"
     STEP_FAILED = "STEP_FAILED"
     STEP_CANCELLED = "STEP_CANCELLED"
+    DEVICE_REGISTERED = "DEVICE_REGISTERED"
+    """A node ELA did not know is now in the registry (§16, §32; M6.1b, ADR 0035 §3).
+
+    The debt ADR 0016 §6 declared on 2026-09-07: registering a node is a configuration change —
+    which machines ELA may use, with which tools — and it had no event because in v0.1 the only
+    node was ``local``, written by the Core on its own machine, so the type would have had no real
+    writer. An automatic write at start-up is that writer.
+    """
+    DEVICE_REFRESHED = "DEVICE_REFRESHED"
+    """A node ELA already used can now do different things (§16, §32; M6.1b, ADR 0035 §3).
+
+    A distinct type and not a payload of :attr:`DEVICE_REGISTERED`, for the reason ADR 0008 gives
+    for the engine: "a machine entered ELA's world" and "a machine ELA was already using changed"
+    are two questions the log must answer by type. The summary carries the whole difference and
+    not a count — *which* capability was gained or lost is the diagnosis.
+    """
     DEVICE_SELECTED = "DEVICE_SELECTED"
     """The Device Orchestrator chose the node a step runs on (§17; M6.2, ADR 0017)."""
     DEVICE_UNAVAILABLE = "DEVICE_UNAVAILABLE"

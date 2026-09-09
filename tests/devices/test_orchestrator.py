@@ -352,7 +352,7 @@ def test_no_eligible_node_counts_the_refusals_in_the_reason() -> None:
 
     assert placement.waits
     assert placement.reason == (
-        "no eligible node among 3: 1 UNAVAILABLE, 1 PRIVACY, 3 MISSING_TOOL"
+        f"no eligible node among 3: 1 UNAVAILABLE, 1 PRIVACY, 3 MISSING_TOOL ({NOTES})"
     )
 
 
@@ -371,3 +371,67 @@ def test_the_reason_of_a_choice_names_the_node_and_the_field() -> None:
     placement = choose([mac, cloud], needs(tools=[NOTES]))
 
     assert placement.reason == f"mac ({mac.id}) with 20 points, 1 of 2 node(s) eligible"
+
+
+# ----------------------------------------------------------------------------------------
+# The reason, for every refusal there is (M6.1b dec. F)
+# ----------------------------------------------------------------------------------------
+
+REFUSED_BY = {
+    Refusal.UNAVAILABLE: (
+        node("stale", availability=DeviceAvailability.UNREACHABLE),
+        needs(),
+    ),
+    Refusal.PRIVACY: (node("cloud", privacy=PrivacyLevel.CLOUD_ALLOWED), needs()),
+    Refusal.UNKNOWN_CAPABILITY: (node("bare"), needs(unresolved=["core.rm_rf"])),
+    Refusal.MISSING_TOOL: (node("bare"), needs(tools=[NOTES])),
+    Refusal.DEGRADED: (
+        node("tired", status=DeviceStatus.DEGRADED),
+        needs(risk=UNGUARDED_RISK),
+    ),
+}
+"""One node and one requirement per member of :class:`Refusal`: the smallest thing that fires it.
+
+Written as a table keyed on the enum so the parametrisation below can iterate over ``Refusal``
+itself. A member added tomorrow has no row here and fails at the door, before the assertion — the
+discipline of the self-verifying lists, applied to an enum.
+"""
+
+
+@pytest.mark.parametrize("refusal", list(Refusal), ids=[r.value for r in Refusal])
+def test_every_refusal_produces_a_reason_that_names_it(refusal: Refusal) -> None:
+    """Criterion 5: a node discarded for *any* reason reaches whoever is waiting with that reason.
+
+    Nothing had to be built for this — ``_summary`` already iterates over the whole enum — and
+    that is exactly why it needs a test: what is guaranteed by nobody having thought about it is
+    guaranteed until somebody does. A member added without a rendering fails here.
+    """
+    assert refusal in REFUSED_BY, f"{refusal.value} has no row in REFUSED_BY"
+    candidate, requirements = REFUSED_BY[refusal]
+
+    placement = choose([candidate], requirements)
+
+    assert placement.waits
+    assert refusal.value in placement.reason
+    assert refusals(candidate, requirements) == (refusal,)
+
+
+def test_the_reason_names_the_tool_nobody_had() -> None:
+    """The one thing dec. F had to build: ``MISSING_TOOL`` alone does not say *which*.
+
+    With seven tools on a node, "a tool is missing" is not a diagnosis and "``voice-speak-online``
+    is missing" is the whole of one. The names come from where the reason is born — the
+    requirements minus what the node has — which is the only place holding both halves.
+    """
+    placement = choose([node("bare"), node("other")], needs(tools=[NOTES, GPU]))
+
+    assert placement.waits
+    assert f"MISSING_TOOL ({GPU}, {NOTES})" in placement.reason
+
+
+def test_a_tool_one_node_has_and_another_lacks_is_still_named() -> None:
+    """The union, not the intersection: what is missing is missing *somewhere*."""
+    placement = choose([node("half", tools=(NOTES,)), node("bare")], needs(tools=[NOTES, GPU]))
+
+    assert placement.waits
+    assert GPU in placement.reason and NOTES in placement.reason

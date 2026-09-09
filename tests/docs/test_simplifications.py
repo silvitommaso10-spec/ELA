@@ -24,6 +24,7 @@ CONTINUATIONS = (
     ROOT / "docs" / "milestones" / "M10.4.md",
     ROOT / "docs" / "milestones" / "M11.1.md",
     ROOT / "docs" / "milestones" / "M11.3.md",
+    ROOT / "docs" / "milestones" / "M6.1b.md",
 )
 ADRS = ROOT / "docs" / "adr"
 ARCHITECTURE = ROOT / "docs" / "ARCHITECTURE.md"
@@ -109,9 +110,11 @@ def test_every_constraint_an_adr_declares_is_in_the_list() -> None:
 
     Decisione 10a — the sections are found on the filesystem, not read off a list of seven ADRs,
     which is what the proposal said before ADR 0027 was written and made it eight. ADR 0028 made
-    it nine, ADR 0029 ten, ADR 0030 eleven, ADR 0032 twelve, ADR 0033 thirteen and ADR 0034
-    fourteen, each landing in a
-    continuation rather than in v0.1's own counts.
+    it nine, ADR 0029 ten, ADR 0030 eleven, ADR 0032 twelve, ADR 0033 thirteen, ADR 0034
+    fourteen and ADR 0035 fifteen, each landing in a continuation rather than in v0.1's own
+    counts. ``M6.1b.md`` is the first continuation that is not the newest milestone: the list is
+    read as a list and not as a sequence, so a repair of an earlier phase joins it like anything
+    else.
     """
     text = section() + continuation()
     missing = {
@@ -120,11 +123,11 @@ def test_every_constraint_an_adr_declares_is_in_the_list() -> None:
         if f"- **{title}** (ADR {number})" not in text
     }
     assert not missing, missing
-    assert len(declared_constraints()) == 104
+    assert len(declared_constraints()) == 109
 
 
-def test_the_list_names_the_fifteen_adrs_that_declare_constraints() -> None:
-    assert set(declared_constraints().values()) == {f"00{n}" for n in range(20, 35)}
+def test_the_list_names_the_sixteen_adrs_that_declare_constraints() -> None:
+    assert set(declared_constraints().values()) == {f"00{n}" for n in range(20, 36)}
 
 
 def test_every_crash_window_nobody_repaired_is_named_or_declared_harmless() -> None:

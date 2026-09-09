@@ -1,15 +1,21 @@
-"""The tables of ADR 0016 and ``ela.devices`` say the same thing.
+"""The tables of ADR 0016 and ADR 0035, and ``ela.devices``, say the same thing.
 
-Same pattern as the other ADR tests: §2 (the §16 vocabulary mapped onto ``DeviceAvailability``),
-§3 (the setting and its default) and §4 (what ``local`` declares, and how a system name becomes an
-``OperatingSystem``) are read from the document and checked against the code. Each table has a
-distinctive row shape, so no table is mistaken for another — and none of them has the two cells of
-a schema row, which is ``test_adr_persistence.py``'s business.
+Same pattern as the other ADR tests. From ADR 0016: §2 (the §16 vocabulary mapped onto
+``DeviceAvailability``), §3 (the setting and its default) and §4 (what ``local`` declares, and how
+a system name becomes an ``OperatingSystem``). From ADR 0035, which continues it (M6.1b): §2 (the
+two halves of a row), §3 (the two audit events) and §4 (the rule that keeps the halves apart) —
+plus §7, the dated debt, whose only defence is that the line it quotes has to be real.
+
+Each table has a distinctive row shape, so no table is mistaken for another — and none of them has
+the two cells of a schema row, which is ``test_adr_persistence.py``'s business. The two documents
+are read through two functions rather than one, so a table that moved between them fails instead
+of being found anyway.
 """
 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -17,14 +23,27 @@ import pytest
 
 from ela.devices import (
     AVAILABLE,
+    DECLARED_FIELDS,
     DEFAULT_HEARTBEAT_TTL_SECONDS,
     LOCAL_DEVICE_NAME,
+    REGISTRY_ACTOR,
     SYSTEMS,
     UNAVAILABLE,
     DeviceSettings,
     local_device,
 )
-from ela.domain import DeviceAvailability, OperatingSystem
+from ela.domain import AuditEventType, Device, DeviceAvailability, OperatingSystem
+from tests.architecture import rules
+from tests.architecture.rules import (
+    CONSTANTS,
+    DETECTOR,
+    EXEMPTION,
+    OBSERVED_FIELDS,
+    REFRESH_MODULE,
+    RULES,
+    SUBJECT,
+)
+from tests.architecture.violations import PACKAGE_ROOT
 from tests.domain.examples import MUCH_LATER
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0016-device-registry.md"
@@ -186,3 +205,151 @@ def test_ios_is_not_detected_locally() -> None:
     """ADR 0016 §4: no Core runs on an iPhone; that node registers itself over the network."""
     assert OperatingSystem.IOS.value not in documented_systems(adr_text()).values()
     assert OperatingSystem.IOS not in SYSTEMS.values()
+
+
+# ----------------------------------------------------------------------------------------
+# ADR 0035 — the two halves of a row, the two events, the rule (M6.1b)
+# ----------------------------------------------------------------------------------------
+
+REFRESH_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0035-node-refresh.md"
+HALF_ROW = re.compile(r"^\| (Dichiarato|Osservato) \| (`.+`) \| (.+?) \| (.+?) \|$")
+EVENT_ROW = re.compile(r"^\| `(DEVICE_\w+)` \| (.+?) \| `(\w+)` \|$")
+RULE_ROW = re.compile(r"^\| (\d+) \| `([a-z-]+)` \| `(devices/\w+\.py)` \|$")
+NAMED = re.compile(r"`(\w+)`")
+
+
+def refresh_text() -> str:
+    return REFRESH_PATH.read_text(encoding="utf-8")
+
+
+def documented_halves(text: str) -> dict[str, tuple[str, ...]]:
+    rows = {
+        match.group(1): tuple(NAMED.findall(match.group(2)))
+        for line in text.splitlines()
+        if (match := HALF_ROW.match(line)) is not None
+    }
+    assert rows, "ADR 0035 §2 must contain the table of the two halves"
+    return rows
+
+
+def test_the_declared_half_is_the_one_the_reconciliation_replaces() -> None:
+    assert documented_halves(refresh_text())["Dichiarato"] == DECLARED_FIELDS
+
+
+def test_the_observed_half_is_the_one_rule_44_forbids() -> None:
+    """The document and the rule say the same four names, or one of them is decoration."""
+    assert set(documented_halves(refresh_text())["Osservato"]) == OBSERVED_FIELDS
+
+
+def test_the_two_halves_are_disjoint_and_are_fields_of_a_device() -> None:
+    """A field in both halves would be a field two writers own, which is the defect itself."""
+    halves = documented_halves(refresh_text())
+    declared, observed = set(halves["Dichiarato"]), set(halves["Osservato"])
+
+    assert not declared & observed
+    assert declared | observed <= set(Device.model_fields)
+
+
+def test_a_drifted_half_is_detected() -> None:
+    """Negative case: the document promising that the availability is re-declared."""
+    drifted = refresh_text().replace("`privacy`, `capabilities`", "`privacy`, `availability`")
+    assert documented_halves(drifted)["Dichiarato"] != DECLARED_FIELDS
+
+
+def documented_events(text: str) -> dict[str, str]:
+    rows = {
+        match.group(1): match.group(3)
+        for line in text.splitlines()
+        if (match := EVENT_ROW.match(line)) is not None
+    }
+    assert rows, "ADR 0035 §3 must contain the table of the two events"
+    return rows
+
+
+def test_the_event_table_names_types_that_exist_and_an_actor_that_is_the_registrys() -> None:
+    documented = documented_events(refresh_text())
+
+    assert set(documented) == {
+        AuditEventType.DEVICE_REGISTERED.value,
+        AuditEventType.DEVICE_REFRESHED.value,
+    }
+    assert set(documented.values()) == {REGISTRY_ACTOR.kind.value}
+
+
+def test_a_drifted_event_row_is_detected() -> None:
+    """Negative case: the document claiming the actor is the node announcing itself."""
+    drifted = refresh_text().replace(
+        "| `DEVICE_REFRESHED` | la metà dichiarata è cambiata | `SYSTEM` |",
+        "| `DEVICE_REFRESHED` | la metà dichiarata è cambiata | `DEVICE` |",
+    )
+    assert set(documented_events(drifted).values()) != {REGISTRY_ACTOR.kind.value}
+
+
+def documented_rules(text: str) -> dict[str, str]:
+    rows = {
+        match.group(2): match.group(3)
+        for line in text.splitlines()
+        if (match := RULE_ROW.match(line)) is not None
+    }
+    assert rows, "ADR 0035 §4 must contain the rule table"
+    return rows
+
+
+def test_the_rule_table_names_a_rule_that_exists_and_the_module_it_reads() -> None:
+    ((name, module),) = documented_rules(refresh_text()).items()
+
+    assert name in RULES
+    assert Path(module) == REFRESH_MODULE
+    assert (PACKAGE_ROOT / module).is_file()
+
+
+def test_a_drifted_rule_row_is_detected() -> None:
+    drifted = refresh_text().replace("`devices/refresh.py`", "`devices/registry.py`")
+    assert Path(next(iter(documented_rules(drifted).values()))) != REFRESH_MODULE
+
+
+# ----------------------------------------------------------------------------------------
+# ADR 0035 §7 — the dated debt, and the smallest defence it has
+# ----------------------------------------------------------------------------------------
+
+STALE_COUNTS = "Thirty-six doors, forty-seven detectors, thirty-three subjects"
+"""The sentence ADR 0035 §7 quotes: a count written by hand that stopped counting anything."""
+
+
+def test_the_debt_declares_its_owner_and_the_day_it_was_declared() -> None:
+    """The form ADR 0016 §6 used: a debt with a date and a milestone that owns it.
+
+    A debt that lives only in a conversation does not exist. This one names the day it was
+    found, the milestone that must pay it, and the rule it travels with — so somebody arriving
+    later reads an obligation rather than an oddity.
+    """
+    text = refresh_text()
+
+    assert "2026-09-09" in text
+    assert "milestone sulla disciplina della suite" in text
+    assert "regola 45" in text
+
+
+def test_the_debt_is_still_open_and_says_so_by_quoting_the_line_it_is_about() -> None:
+    """The smallest defence a debt can have: the quotation has to be real.
+
+    Asserted in the direction that makes the declaration expire. The day the counts in
+    ``CONSTANTS`` become derived — or go — this fails, and ADR 0035 §7 comes out with them: a
+    debt that does not know it has been paid is the same kind of lie as the numbers it describes.
+    """
+    source = (Path(rules.__file__)).read_text(encoding="utf-8")
+
+    assert STALE_COUNTS in source, "the debt of ADR 0035 §7 is paid: remove the section with it"
+    assert STALE_COUNTS in refresh_text()
+
+
+def test_the_counts_the_debt_states_are_the_ones_the_rows_actually_have() -> None:
+    """And the numbers ADR 0035 §7 gives instead: read from the table, never transcribed."""
+    kinds = Counter(row.kind for row in CONSTANTS)
+    written = " ".join(refresh_text().split())  # the line wrap is the document's business
+
+    assert (kinds[EXEMPTION], kinds[DETECTOR], kinds[SUBJECT]) == (38, 81, 45)
+    assert (
+        f"{kinds[EXEMPTION]} esenzioni, {kinds[DETECTOR]} detector, "
+        f"{kinds[SUBJECT]} soggetti" in written
+    )

@@ -551,7 +551,9 @@ def world(
     device = node("core", tools=tuple(tool.name for tool in tool_registry.tools())).model_copy(
         update={"last_seen_at": clock.now()}
     )
-    devices = DeviceRegistry(FakeDeviceRegistry((device,)), clock, heartbeat_ttl=HEARTBEAT_TTL)
+    devices = DeviceRegistry(
+        FakeDeviceRegistry((device,)), clock, audit, ids, heartbeat_ttl=HEARTBEAT_TTL
+    )
     orchestrator = DeviceOrchestrator(devices, tool_registry, audit, ids, clock)
     executor = Executor(
         registry=registry,

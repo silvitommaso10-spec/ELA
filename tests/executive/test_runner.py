@@ -273,6 +273,44 @@ async def test_the_wait_records_why_every_candidate_lost(w: World) -> None:
     assert candidate["refusals"] == (Refusal.UNAVAILABLE.value,)
 
 
+async def test_the_wait_carries_its_reason_out_with_the_result(w: World) -> None:
+    """M6.1b dec. F: the sentence the audit already held travels with the answer.
+
+    ``waiting_device`` on its own tells whoever is waiting nothing they can act on. What the
+    orchestrator wrote — how many nodes were considered and why each lost — is what they needed,
+    and the runner passes it on rather than composing one of its own (ADR 0019).
+    """
+    task, _ = await w.queued(ECHO.id)
+    await unavailable(w)
+
+    run = await w.runner.run(task.id)
+
+    assert run.outcome is RunOutcome.WAITING_DEVICE
+    assert run.reason is not None
+    assert Refusal.UNAVAILABLE.value in run.reason
+    waited = next(e for e in await w.events(task.id) if e.event_type is E.DEVICE_UNAVAILABLE)
+    assert run.reason in waited.summary  # the same sentence, not a second one
+
+
+async def test_the_reason_names_the_tool_the_node_does_not_have(w: World) -> None:
+    """Criterion 6's half that had to be built: *which* tool, not that one is missing."""
+    await w.devices.update(w.node.model_copy(update={"available_tools": ()}))
+    task, _ = await w.queued(ECHO.id)
+
+    run = await w.runner.run(task.id)
+
+    assert run.outcome is RunOutcome.WAITING_DEVICE
+    assert run.reason is not None and Refusal.MISSING_TOOL.value in run.reason
+    assert w.tool(ECHO.id).name in run.reason
+
+
+async def test_a_run_that_is_not_waiting_carries_no_reason(w: World) -> None:
+    """``None`` for every other outcome: an answer that explains itself needs no sentence."""
+    task, _ = await w.queued(ECHO.id)
+
+    assert (await w.runner.run(task.id)).reason is None
+
+
 async def test_a_node_the_caller_will_not_tolerate_is_not_eligible(w: World) -> None:
     """``max_privacy`` is the runner's word and the default is the most restrictive level."""
     await w.devices.update(w.node.model_copy(update={"privacy": PrivacyLevel.CLOUD_ALLOWED}))
