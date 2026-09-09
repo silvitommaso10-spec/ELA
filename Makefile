@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test cov-critical milestones secrets check
+.PHONY: install lint typecheck test cov-critical check-linux milestones secrets check
 
 UV ?= uv
 
@@ -42,6 +42,17 @@ CRITICAL_PACKAGES = ela.tasks ela.infrastructure.persistence ela.audit ela.permi
 
 cov-critical:
 	$(UV) run pytest -o addopts="" -q $(foreach p,$(CRITICAL_PACKAGES),--cov=$(p)) \
+		--cov-branch --cov-fail-under=100 --cov-report=term-missing
+
+# La seconda macchina, prima del push (2026-09-09). `make check` gira su una macchina sola, e una
+# suite che eredita da quella macchina passa lì e fallisce sull'altra: è successo, e la CI se n'è
+# accorta undici minuti dopo il merge. Questo target esegue la suite e il gate della copertura
+# fingendo l'altra metà della matrice — `tests/foreign_machine.py` dice cosa finge e, soprattutto,
+# **cosa non può riprodurre**. Non entra in `make check`: è il controllo prima di un push, e
+# raddoppierebbe l'attesa di ogni ciclo.
+check-linux:
+	PYTHONPATH=. $(UV) run pytest -o addopts="" -q -p tests.foreign_machine \
+		$(foreach p,$(CRITICAL_PACKAGES),--cov=$(p)) \
 		--cov-branch --cov-fail-under=100 --cov-report=term-missing
 
 milestones:

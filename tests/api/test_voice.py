@@ -179,7 +179,14 @@ async def test_no_route_of_the_voice_has_a_field_for_words(app: FastAPI) -> None
 
 
 async def test_an_audition_with_no_key_says_so_and_sends_nothing(client: AsyncClient) -> None:
-    """The suite has no key — and this is the answer a person gets before they set one."""
+    """The suite has no key — and this is the answer a person gets before they set one.
+
+    **The precondition is built here and not inherited**: what makes this answer the same on
+    every machine is that the fixture empties every ``ELA_`` variable, and that the key is asked
+    about *before* the player (2026-09-09). Until that order was decided, this test asserted the
+    answer of a machine that happens to have ``afplay`` and failed on the Linux runner — the
+    third time this family showed up (ADR 0031 §6).
+    """
     body = (await client.post("/voice/audition", json={"voice_id": "abc"})).json()
 
     assert [one["error"] for one in body["heard"]] == [SPEECH_NO_KEY]
@@ -187,6 +194,7 @@ async def test_an_audition_with_no_key_says_so_and_sends_nothing(client: AsyncCl
 
 
 async def test_a_preview_with_no_key_says_so(client: AsyncClient) -> None:
+    """The same, and the same reason it no longer depends on which machine runs it."""
     body = (await client.post("/voice/preview", json={"voice_id": "abc"})).json()
 
     assert body["heard"][0]["error"] == SPEECH_NO_KEY
