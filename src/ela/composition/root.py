@@ -207,7 +207,7 @@ class Ela:
         await self.database.dispose()
 
 
-def _audition_speaker(online: ElevenLabsVoice, player: OnlineSpeechCommand | None) -> Speak:
+def _audition_speaker(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Speak:
     """Say one repository phrase with one voice on one model, and report (ADR 0034 §9).
 
     The audition is the only caller that chooses a voice, because choosing is what it is for. It
@@ -219,10 +219,12 @@ def _audition_speaker(online: ElevenLabsVoice, player: OnlineSpeechCommand | Non
     """
 
     async def speak(phrase: str, voice_id: str, model: str) -> RawSpeech:
-        if player is None:
-            return RawSpeech(error=SPEECH_NO_PLAYER)
+        # The key before the player, as everywhere else on this path: what a person can fix
+        # before what the machine happens to be (see ``OnlineSpeechCommand.speak``).
         if online.api_key_missing:
             return RawSpeech(error=SPEECH_NO_KEY)
+        if not await player.available():
+            return RawSpeech(error=SPEECH_NO_PLAYER)
         said = await online.synthesise(phrase, voice_id=voice_id, model=model)
         if said.failure is not None:
             return RawSpeech(
@@ -235,7 +237,7 @@ def _audition_speaker(online: ElevenLabsVoice, player: OnlineSpeechCommand | Non
     return speak
 
 
-def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand | None) -> Play:
+def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
     """Play the sample the provider already holds — **nothing of ELA's is sent** (ADR 0034 §9).
 
     Two downloads and no synthesis: no characters, no credits, and no sentence on the wire. It is
@@ -245,10 +247,10 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand | None) -> Play
     """
 
     async def play(voice_id: str) -> RawSpeech:
-        if player is None:
-            return RawSpeech(error=SPEECH_NO_PLAYER)
         if online.api_key_missing:
             return RawSpeech(error=SPEECH_NO_KEY)
+        if not await player.available():
+            return RawSpeech(error=SPEECH_NO_PLAYER)
         said = await online.preview(voice_id)
         if said.failure is not None:
             return RawSpeech(error=said.failure.code, retryable=said.failure.retryable)
@@ -338,13 +340,20 @@ async def build(settings: Settings) -> Ela:
         screen: ScreenCapturePort
         recognition: TextRecognitionPort
         speech: SpeechPort
-        speech_online: SpeechPort
-        playing: OnlineSpeechCommand | None = None
         # The provider is built on every platform and answers everywhere: without a key or
         # without a voice it reports which of the two is missing and touches no network
-        # (ADR 0020 §2's shape, ADR 0034 §5's two codes). What is macOS-only is the *playing*.
+        # (ADR 0020 §2's shape, ADR 0034 §5's two codes).
         online = ElevenLabsVoice(settings.elevenlabs)
         scratch = speech_dir_beside(settings.captures.capture_dir)
+        # **Not behind the platform branch, and this is the correction of 2026-09-09.** The online
+        # voice is not a macOS adapter: it holds a callable and a runner, and it answers
+        # ``available()`` by looking for the player. Wiring ``UnsupportedSpeech`` here on Linux put
+        # a port that reports *nothing at all* on the path — a silence the tool would have read as
+        # success — and it also forced the machine's question in front of the key's. One object,
+        # every platform, and it says which of the two things is missing.
+        playing = OnlineSpeechCommand(
+            synthesise=online.synthesise, unconfigured=online.unconfigured, directory=scratch
+        )
         # Created here, with the mode every private directory of ELA has, because ``mkstemp`` on
         # a directory that is not there raises — and the adapter would report that as a player
         # that ended badly, for a player that was never started (found on the machine, M11.3).
@@ -356,18 +365,11 @@ async def build(settings: Settings) -> Ela:
             speech = SaySpeechCommand(
                 timeout=settings.voice.voice_timeout, voice=settings.voice.voice_name
             )
-            playing = OnlineSpeechCommand(
-                synthesise=online.synthesise,
-                unconfigured=online.unconfigured,
-                directory=scratch,
-            )
-            speech_online = playing
         else:
             probe = UnsupportedProbe()
             screen = UnsupportedScreenCapture()
             recognition = UnsupportedTextRecognition()
             speech = UnsupportedSpeech()
-            speech_online = UnsupportedSpeech()
         tools = production_tools(
             root=root,
             clock=clock,
@@ -382,7 +384,7 @@ async def build(settings: Settings) -> Ela:
             speech=speech,
             voice=settings.voice.voice_name,
             voice_enabled=settings.voice.voice_enabled,
-            speech_online=speech_online,
+            speech_online=playing,
             voice_id=settings.elevenlabs.elevenlabs_voice_id,
             model=settings.elevenlabs.elevenlabs_model,
         )
@@ -483,7 +485,7 @@ async def build(settings: Settings) -> Ela:
         context=context,
         speech=speech,
         speech_dir=scratch,
-        speech_online=speech_online,
+        speech_online=playing,
         audition=Audition(speak=_audition_speaker(online, playing), play=_sample(online, playing)),
         perception=perception,
     )

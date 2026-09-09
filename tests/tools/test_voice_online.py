@@ -133,12 +133,32 @@ async def test_the_switch_covers_this_voice_too() -> None:
 
 
 async def test_a_machine_with_no_player_says_which_thing_it_lacks() -> None:
-    speech = FakeSpeech(report=SPOKEN, there=False)
+    """The tool passes the port's answer through, and does **not** ask the machine itself.
+
+    It used to ask — ``available()`` before ``speak()`` — and that put "this machine cannot play"
+    in front of "you have not given me a key", which is the wrong way round (2026-09-09). The
+    order lives in the one object that knows both facts, and this asserts the tool respects it
+    rather than re-deriving it.
+    """
+    speech = FakeSpeech(report=RawSpeech(error=SPEECH_NO_PLAYER))
 
     result = await tool(speech).execute(DECISION, ARGUMENTS)
 
     assert result.error is not None and result.error.code == SPEECH_NO_PLAYER
-    assert speech.said == ()
+    assert "no audio player" in result.error.message
+
+
+async def test_the_tool_does_not_reorder_the_two_absences() -> None:
+    """A port that reports the key gets the key reported, even on a machine that cannot play.
+
+    ``there=False`` is the machine saying no; the answer is still the port's, because the tool
+    stopped having an opinion about which question comes first.
+    """
+    speech = FakeSpeech(report=RawSpeech(error=SPEECH_NO_KEY), there=False)
+
+    result = await tool(speech).execute(DECISION, ARGUMENTS)
+
+    assert result.error is not None and result.error.code == SPEECH_NO_KEY
 
 
 @pytest.mark.parametrize("code", [SPEECH_NO_KEY, SPEECH_NO_VOICE])

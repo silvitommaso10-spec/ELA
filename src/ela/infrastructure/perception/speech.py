@@ -44,7 +44,7 @@ from ela.infrastructure.perception.darwin import (
     spawn,
     spawn_with_audio,
 )
-from ela.ports import SPEECH_PLAYBACK_FAILED, SPEECH_PLAYBACK_TIMEOUT
+from ela.ports import SPEECH_NO_PLAYER, SPEECH_PLAYBACK_FAILED, SPEECH_PLAYBACK_TIMEOUT
 from ela.providers.elevenlabs import Synthesis
 
 __all__ = [
@@ -216,10 +216,23 @@ class OnlineSpeechCommand:
         return os.access(self._binary, os.X_OK) and Path(self._binary).is_file()
 
     async def speak(self, text: str) -> RawSpeech:
-        """Say ``text`` in ELA's voice, and report how it went. Never raises (the port's rule)."""
+        """Say ``text`` in ELA's voice, and report how it went. Never raises (the port's rule).
+
+        **The order of the two refusals is a decision, not an accident** (M11.3, la correzione
+        della CI): the key comes before the player, because the key is *configuration* — something
+        the person reading the answer can go and fix — and the player is a property of the machine
+        they are on. It is ADR 0033 §9's own reason, applied to a pair it did not have yet: *the
+        refusal the user can undo is the one worth hearing when both are true.*
+
+        And it is decided **here**, in the one object that knows both facts, so that nobody
+        upstream has to ask them in the right order: the tool passes what this reports straight
+        through.
+        """
         missing = self._unconfigured()
         if missing is not None:
             return RawSpeech(error=missing)
+        if not await self.available():
+            return RawSpeech(error=SPEECH_NO_PLAYER)
         said = await self._synthesise(text)
         if said.failure is not None:
             return RawSpeech(

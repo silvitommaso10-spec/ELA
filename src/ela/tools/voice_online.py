@@ -47,6 +47,7 @@ WHAT_TO_DO: Final = {
     SPEECH_NO_VOICE: "no voice has been chosen; run `ela voice audition` and set "
     "ELA_ELEVENLABS_VOICE_ID",
     SPEECH_PLAYBACK_TIMEOUT: "the player was stopped and the sentence was cut off mid-word",
+    SPEECH_NO_PLAYER: "this operating system has no audio player ELA can use",
 }
 """The failures a person can do something about, in the words of what to do.
 
@@ -127,12 +128,11 @@ class SpeakOnlineTool(Tool):
                 VOICE_DISABLED,
                 "ELA's voice is switched off; set ELA_VOICE_ENABLED=true to turn it on",
             )
-        if not await self._speech.available():
-            return Outcome(
-                {},
-                SPEECH_NO_PLAYER,
-                "this operating system has no audio player ELA can use",
-            )
+        # **No availability check here, and that is the fix of 2026-09-09.** Asking the machine
+        # first would put "this Mac cannot play audio" in front of "you have not given me a key",
+        # which is the wrong way round: the key is configuration and the player is the machine.
+        # The port answers both, in the decided order, because it is the one object that knows
+        # them both (:class:`~ela.infrastructure.perception.speech.OnlineSpeechCommand`).
         return self._reported(asked, await self._speech.speak(asked))
 
     def _reported(self, text: str, said: RawSpeech) -> Outcome:

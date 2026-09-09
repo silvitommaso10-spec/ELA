@@ -15,6 +15,7 @@ from ela.domain import RawSpeech
 from ela.infrastructure.perception import TIMED_OUT, OnlineSpeechCommand
 from ela.ports import (
     SPEECH_NO_KEY,
+    SPEECH_NO_PLAYER,
     SPEECH_PLAYBACK_FAILED,
     SPEECH_PLAYBACK_TIMEOUT,
     SPEECH_RATE_LIMITED,
@@ -98,6 +99,43 @@ async def test_the_synthesis_is_never_counted_as_speaking() -> None:
 
     assert said.synthesis_seconds == 5.0
     assert said.spoken_seconds is not None and said.spoken_seconds < 1.0
+
+
+async def test_the_key_comes_before_the_player_when_both_are_missing() -> None:
+    """**The decision of 2026-09-09**, and the test that constructs both halves instead of
+    inheriting one from the runner.
+
+    A machine with no player and an ELA with no key are both true here — the binary is a path
+    nobody has — and the answer is the **key**: it is configuration, something the person reading
+    it can go and fix, while the player is a property of the machine they are on. ADR 0033 §9's
+    own reason for a pair it did not have yet.
+
+    Before this, the order came out differently on a Mac and on a Linux runner, and four tests
+    asserted the Mac's answer on both. Nothing here asks the machine anything.
+    """
+    absent = OnlineSpeechCommand(
+        synthesise=_never,
+        unconfigured=lambda: SPEECH_NO_KEY,
+        directory=Path("/tmp"),
+        binary="/usr/bin/definitely-not-here",
+    )
+
+    assert (await absent.speak(SENTENCE)).error == SPEECH_NO_KEY
+
+
+async def test_a_machine_that_cannot_play_says_so_once_the_key_is_there() -> None:
+    """The other half, constructed the same way: everything configured, no player."""
+    absent = OnlineSpeechCommand(
+        synthesise=_never,
+        unconfigured=lambda: None,
+        directory=Path("/tmp"),
+        binary="/usr/bin/definitely-not-here",
+    )
+
+    said = await absent.speak(SENTENCE)
+
+    assert said.error == SPEECH_NO_PLAYER
+    assert said.synthesis_seconds is None, "nothing was asked for, so nothing was paid for"
 
 
 async def test_the_two_absences_answer_before_anything_is_asked_for() -> None:

@@ -59,6 +59,11 @@ async def test_the_json_form_carries_the_fact_even_when_nothing_is_configured(cl
 
 
 async def test_an_audition_reports_what_was_said_and_what_went_wrong(cli: Cli) -> None:
+    """No key here — built by the fixture, not inherited from the machine.
+
+    The answer names the key and not the player because that order is decided in the port
+    (2026-09-09), so this reads the same on a Mac and on a runner with no audio at all.
+    """
     answered = await cli("voice", "audition", "VZOd9FMXDnXRZpGn0thg")
 
     assert answered.exit_code == OK
@@ -68,6 +73,7 @@ async def test_an_audition_reports_what_was_said_and_what_went_wrong(cli: Cli) -
 
 
 async def test_a_preview_reports_the_same_way(cli: Cli) -> None:
+    """Same precondition, same reason, same answer on every machine."""
     answered = await cli("voice", "preview", "VZOd9FMXDnXRZpGn0thg")
 
     assert answered.exit_code == OK

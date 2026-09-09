@@ -28,7 +28,7 @@ AUDIO = b"ID3\x04audio"
 class Player:
     """An :class:`OnlineSpeechCommand` whose child is a function: no process, no sound."""
 
-    def __init__(self, tmp_path: Path, code: int = 0) -> None:
+    def __init__(self, tmp_path: Path, code: int = 0, *, binary: str = "/bin/sh") -> None:
         self.played: list[bytes] = []
         self._code = code
 
@@ -41,7 +41,7 @@ class Player:
             unconfigured=lambda: None,
             directory=tmp_path,
             runner=run,  # type: ignore[arg-type]
-            binary="/bin/sh",  # something that exists, so ``available`` is true
+            binary=binary,  # ``/bin/sh`` exists, so ``available`` is true unless a test says not
         )
 
     async def _never(self, text: str) -> object:  # pragma: no cover - never called here
@@ -65,13 +65,31 @@ def provider(
     )
 
 
-async def test_a_machine_with_no_player_is_told_apart_from_a_machine_with_no_key() -> None:
-    """Two absences again, and the audition names them separately (ADR 0034 §5)."""
-    speak = _audition_speaker(provider(key=None), None)
-    play = _sample(provider(key=None), None)
+async def test_the_key_comes_before_the_player_here_too(tmp_path: Path) -> None:
+    """Two absences, one order, and the same one everywhere (2026-09-09).
 
-    assert (await speak(PHRASE, VOICE, "eleven_flash_v2_5")).error == SPEECH_NO_PLAYER
-    assert (await play(VOICE)).error == SPEECH_NO_PLAYER
+    Both halves are constructed: no key, and a player whose binary is a path nobody has. The
+    answer is the key, because it is the one the person reading it can do something about.
+    """
+    mute = Player(tmp_path, binary="/usr/bin/definitely-not-here")
+    speak = _audition_speaker(provider(key=None), mute.command)
+    play = _sample(provider(key=None), mute.command)
+
+    assert (await speak(PHRASE, VOICE, "eleven_flash_v2_5")).error == SPEECH_NO_KEY
+    assert (await play(VOICE)).error == SPEECH_NO_KEY
+
+
+async def test_a_machine_that_cannot_play_is_named_once_the_key_is_there(tmp_path: Path) -> None:
+    mute = Player(tmp_path, binary="/usr/bin/definitely-not-here")
+
+    said = await _audition_speaker(provider(key="sk_key"), mute.command)(
+        PHRASE, VOICE, "eleven_flash_v2_5"
+    )
+    sampled = await _sample(provider(key="sk_key"), mute.command)(VOICE)
+
+    assert said.error == SPEECH_NO_PLAYER
+    assert sampled.error == SPEECH_NO_PLAYER, "the preview answers the same way, or it is a hole"
+    assert mute.played == []
 
 
 async def test_without_a_key_nothing_is_sent(tmp_path: Path) -> None:
