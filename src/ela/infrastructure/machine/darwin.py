@@ -34,19 +34,27 @@ from typing import Final, Protocol
 from ela.domain import ProbeFamily, RawObservation
 
 __all__ = [
+    "MICROPHONE_MODULE",
     "PROBE_MODULE",
+    "HEARD_FILE_PREFIX",
     "SPEECH_FILE_PREFIX",
     "TIMED_OUT",
     "DarwinProbe",
     "Spawn",
+    "SpawnThroughNamelessAudio",
     "SpawnWithAudio",
+    "TranscribeArgv",
     "spawn",
+    "spawn_through_nameless_audio",
     "spawn_with_audio",
     "sweep_speech_files",
 ]
 
 PROBE_MODULE: Final = "ela.infrastructure.machine.probe"
 """The child, started with this interpreter so a virtual environment is inherited."""
+
+MICROPHONE_MODULE: Final = "ela.infrastructure.machine.microphone"
+"""The recorder, started the same way. Its own module because it must be able to die alone."""
 
 TIMED_OUT: Final = -1
 """The exit code :func:`spawn` reports for a child it had to kill. Any non-zero would do; a name
@@ -69,6 +77,15 @@ class SpawnWithAudio(Protocol):
     ) -> tuple[int, str]:
         """Run ``argv`` with ``audio`` as its last argument, and answer as :data:`Spawn` does."""
 
+
+HEARD_FILE_PREFIX: Final = "ela-heard-"
+"""What a leftover of :func:`spawn_through_nameless_audio` is called.
+
+The audio never wears a name at all. This is the transcriber's **report**, which does: a
+transcriber opens its output by path, so unlike the audio it cannot be handed a descriptor. It
+lives for the length of one transcription inside ELA's own ``0700`` directory and is unlinked in a
+``finally`` — and swept at start-up like the other, because the thing a ``finally`` cannot cover
+is the process being killed between the two."""
 
 SPEECH_FILE_PREFIX: Final = "ela-speech-"
 """What a leftover of :func:`spawn_with_audio` is called, so that :func:`sweep_speech_files` can
@@ -141,6 +158,115 @@ async def spawn_with_audio(
         os.close(fd)
 
 
+#: Given the audio's path and a prefix for the report, the command line that transcribes it.
+#: A callable rather than a list, because only the caller of the moment knows both paths — and
+#: because this module must not learn one transcriber's flags (rule 32 puts the door here, not the
+#: vocabulary of whatever is behind it).
+TranscribeArgv = Callable[[str, str], Sequence[str]]
+
+
+class SpawnThroughNamelessAudio(Protocol):
+    """How :func:`spawn_through_nameless_audio` is injected, so a test needs no microphone."""
+
+    async def __call__(
+        self,
+        record_argv: Sequence[str],
+        transcribe: TranscribeArgv,
+        should_transcribe: Callable[[str], bool],
+        record_timeout: float,
+        transcribe_timeout: float,
+        *,
+        directory: str | None = None,
+    ) -> tuple[tuple[int, str], tuple[int, str] | None]: ...
+
+
+async def spawn_through_nameless_audio(
+    record_argv: Sequence[str],
+    transcribe: TranscribeArgv,
+    should_transcribe: Callable[[str], bool],
+    record_timeout: float,
+    transcribe_timeout: float,
+    *,
+    directory: str | None = None,
+) -> tuple[tuple[int, str], tuple[int, str] | None]:
+    """Record into a file that **has no name**, transcribe it, and let the kernel take it back.
+
+    The mirror of :func:`spawn_with_audio`, in the direction it was not built for (M11.2 dec. E).
+    There the audio existed because ``afplay`` cannot read a pipe; here it exists because a
+    transcriber seeks. Both times the answer is the same, and it is the whole design:
+
+    * ``mkstemp`` then ``unlink`` at once, before a byte is written. From that instant the inode
+      has no name in any directory — it cannot be listed, opened by path, backed up or synced —
+      and the kernel frees it when the last descriptor closes, **including when ELA is killed
+      mid-recording**, which for a microphone is the case that matters.
+    * the recorder is handed the **descriptor number** and writes with ``os.write``. It never
+      learns a path, so ``microphone.py`` has nothing to name and rule 45 needs no exemption.
+    * the transcriber is handed ``/dev/fd/N``, which opens the very same file, seekable.
+
+    Two children and one file, in one function, because the file's whole life has to be somewhere
+    a ``finally`` can end it. And **the second child does not always run**: ``should_transcribe``
+    is asked, with the recorder's own answer, whether there is anything worth interpreting.
+
+    That gate is here and not after, and it is the whole of M11.2's measurement made structural: a
+    transcriber has no way to say *I heard nothing* — the absence of signal reaches it as signal
+    and it answers with language, so thirty seconds of zeros come back as a sentence nobody said.
+    Whether there was a signal is therefore decided **before** the thing that interprets it. This
+    module does not decide it: it asks the caller, and carries no vocabulary of its own (rule 34).
+    """
+    fd, path = tempfile.mkstemp(prefix=SPEECH_FILE_PREFIX, dir=directory)
+    try:
+        os.unlink(path)
+        os.set_inheritable(fd, True)
+        recorder = await asyncio.create_subprocess_exec(
+            *record_argv,
+            str(fd),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            pass_fds=(fd,),
+        )
+        recorded = await _wait(recorder, record_timeout)
+        if recorded[0] != 0 or not should_transcribe(recorded[1]):
+            return recorded, None
+        os.lseek(fd, 0, os.SEEK_SET)
+        return recorded, await _transcribe(transcribe, fd, transcribe_timeout, directory)
+    finally:
+        os.close(fd)
+
+
+async def _transcribe(
+    transcribe: TranscribeArgv, fd: int, timeout: float, directory: str | None
+) -> tuple[int, str]:
+    """Run the transcriber and answer with its **report**, not its stdout.
+
+    The report is a file because a transcriber writes one: it opens its output by path, so the
+    descriptor trick that keeps the audio nameless does not reach here. What reaches here instead
+    is the discipline around it — one prefix, one ``finally``, and a sweep at start-up for the
+    only thing a ``finally`` cannot cover.
+
+    ``pass_fds`` is not a detail: ``/dev/fd/N`` names *this process's* descriptor N, so without it
+    the transcriber opens nothing, and a transcriber that reads nothing does not fail loudly — it
+    exits zero with an empty report, which is the same shape as "you said nothing". Found by
+    running it.
+    """
+    report_fd, prefix = tempfile.mkstemp(prefix=HEARD_FILE_PREFIX, dir=directory)
+    os.close(report_fd)
+    report = Path(f"{prefix}.json")
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *transcribe(f"/dev/fd/{fd}", prefix),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            pass_fds=(fd,),
+        )
+        code, _ = await _wait(process, timeout)  # stdout is the pretty print; the report is
+        written = report.read_text(encoding="utf-8") if report.is_file() else ""
+        return code, written
+    finally:
+        for leftover in (Path(prefix), report):
+            with suppress(OSError):
+                leftover.unlink()
+
+
 def _write_all(fd: int, payload: bytes) -> None:
     """``os.write`` may write less than it was given; the audio has to be all of it.
 
@@ -163,7 +289,8 @@ def sweep_speech_files(directory: Path) -> int:
     if not directory.is_dir():
         return 0
     swept = 0
-    for leftover in directory.glob(f"{SPEECH_FILE_PREFIX}*"):
+    prefixes = (SPEECH_FILE_PREFIX, HEARD_FILE_PREFIX)
+    for leftover in (path for prefix in prefixes for path in directory.glob(f"{prefix}*")):
         with suppress(OSError):
             leftover.unlink()
             swept += 1

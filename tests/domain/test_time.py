@@ -96,6 +96,12 @@ VALUE_OBJECTS = frozenset(
         # behind at all. What it *was* is a length and a digest in the result, and the result has
         # the birth date.
         "RawSpeech",
+        # And the listening (M11.2): the audio is not kept, so there is no artefact
+        # with an ``mtime`` to date and nothing that outlives the call. The transcript
+        # is dated by the artefact the tool writes, and by the result that names it.
+        "RawHeardToken",
+        "RawHeardSegment",
+        "RawTranscript",
         # And the whole of the context (M10.4): a snapshot is composed on read and never stored,
         # so nothing in it has a birth date. What each part carries instead is the instant of the
         # fact — ``ContextSnapshot.at``, ``ContextActivity.observed_at``, ``ContextEvent.at`` —

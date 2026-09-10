@@ -45,6 +45,11 @@ from ela.infrastructure.machine.darwin import (
     spawn_with_audio,
     sweep_speech_files,
 )
+from ela.infrastructure.machine.listening import (
+    DarwinListening,
+    UnsupportedListening,
+    digest_of,
+)
 from ela.infrastructure.machine.screencapture import (
     SCREENCAPTURE,
     ScreenCaptureCommand,
@@ -82,14 +87,17 @@ __all__ = [
     "SCREENCAPTURE",
     "TIMED_OUT",
     "VISION_MODULE",
+    "DarwinListening",
     "DarwinProbe",
     "SaySpeechCommand",
     "ScreenCaptureCommand",
     "Spawn",
+    "UnsupportedListening",
     "UnsupportedProbe",
     "UnsupportedScreenCapture",
     "UnsupportedSpeech",
     "UnsupportedTextRecognition",
     "VisionTextRecognition",
+    "digest_of",
     "spawn",
 ]

@@ -43,6 +43,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0033](0033-voice-out.md) | La prima uscita verso il mondo fisico: la meccanica non si compra separata dal cervello, la porta chiusa prima della stanza, e un verifier che dichiara cosa non prova (regola 40) | Accettata |
 | [0034](0034-voice-online.md) | La voce di §9: due capability perché un consenso non si eredita, un audio che non ha un nome, e la ricevuta di ciò che il fornitore conserva (regole 41–43) | Accettata |
 | [0035](0035-node-refresh.md) | La riga di un nodo ha due metà: `ensure_local` riconcilia quella dichiarata e non tocca quella osservata, due eventi di audit col diff completo, la ragione di un'attesa fino all'utente (regola 44) | Accettata |
+| [0036](0036-listening.md) | L'ascolto: un trascrittore converte l'assenza di segnale in parole, quindi il picco decide prima di lui; l'audio non si tiene, un port solo, la regola 45 e il debito di ADR 0035 §7 saldato | Accettata |
 
 ## Template
 

@@ -105,10 +105,13 @@ __all__ = [
     "ProviderUsage",
     "QUESTION_SOURCES",
     "RawCapture",
+    "RawHeardSegment",
+    "RawHeardToken",
     "RawObservation",
     "RawRecognition",
     "RawSpeech",
     "RawTextLine",
+    "RawTranscript",
     "RiskLevel",
     "SOURCE_FIELDS",
     "SensorCause",
@@ -1398,6 +1401,86 @@ class RawSpeech(_DomainModel):
     audio_bytes: int | None = None
     """How much audio arrived. ``None`` when none did, or when there was never a file to count —
     the local voice plays as it synthesises and no byte is ever ELA's to hold."""
+
+
+class RawHeardToken(_DomainModel):
+    """One token the transcriber produced, and how sure its decoder was (M11.2, ADR 0036).
+
+    Primitives, like everything that crosses out of ELA's process. The probability is reported and
+    never acted on: **no threshold lives anywhere in the perception**, because a threshold is a
+    decision and belongs to whoever decides (§45) — the same line :class:`RawTextLine` holds for
+    the OCR's confidences.
+
+    Per **token** and not per segment, which is a fact about the engine and worth keeping: it says
+    *which word* it was unsure of. Measured on 2026-09-09, the low ones land exactly on the word
+    that is wrong or hard — ``Ela`` at 0,54 inside a sentence whose median is 0,998 — and a clean
+    utterance has none below 0,69.
+    """
+
+    text: str
+    probability: Annotated[float, Field(ge=0, le=1)]
+
+
+class RawHeardSegment(_DomainModel):
+    """One stretch of speech the transcriber returned, with where it sat in the audio."""
+
+    text: str
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: Annotated[int, Field(ge=0)]
+    tokens: tuple[RawHeardToken, ...] = ()
+
+
+class RawTranscript(_DomainModel):
+    """What the listening did, in primitives — no verdict (M11.2, ADR 0036).
+
+    The fourth of its kind, and the first that comes **in** from the room rather than out of ELA.
+    Like :class:`RawRecognition` it carries its payload, for the same reason: a transcript is
+    self-delimiting text, so a helper killed halfway is a parse error and not a shorter answer
+    shaped like an answer (ADR 0029 §4).
+
+    **No audio field, and no path to one.** The raw material is not kept (M11.2 dec. E): it lives
+    on an anonymous inode for as long as the transcriber needs it and the kernel frees it when the
+    descriptor closes, even if ELA dies mid-recording. What the caller gets is the derived datum.
+    """
+
+    exit_code: int | None = None
+    """The helper's exit status; ``None`` when it never ran."""
+    timed_out: bool = False
+    """Whether a helper was killed for overstaying — "it did not answer" against "it answered
+    badly", which :class:`RawCapture` separates for the same reason."""
+    recorded_seconds: float | None = None
+    """How long the microphone was actually open. A measurement, never a verdict: it does not say
+    anybody spoke."""
+    peak: int | None = None
+    """The loudest sample in the whole recording, or ``None`` if nothing was ever recorded.
+
+    **The one number that stands between a refused microphone and an invented sentence**, and it
+    is here because of a measurement rather than a worry (2026-09-09). With the permission denied,
+    opening the device *succeeds*: ``AudioQueueNewInput``, ``AudioQueueStart`` and every callback
+    return exactly what they return when it is granted, and the buffers are full of zeros. Handed
+    to a transcriber, thirty seconds of zeros come back as «Grazie a tutti.» — words nobody said,
+    inside a result shaped like a success.
+
+    A transcriber has no way to say "I heard nothing": the absence of signal reaches it *as*
+    signal, and it answers with language. So whether there was a signal is decided **before** the
+    thing that interprets it, and here is where that decision reads from. ``peak == 0`` is not a
+    threshold — it is the fact that no sample differed from silence.
+    """
+    language: str | None = None
+    """Which language the transcriber worked in. Reported so that "no words" can be told apart
+    from "ELA was configured with a language this engine does not have" (ADR 0030 §8)."""
+    segments: tuple[RawHeardSegment, ...] = ()
+    """What was heard. Empty is a true answer — *nobody spoke in those seconds* — but only once
+    :attr:`peak` and :attr:`error` have ruled out the other two ways of arriving empty."""
+    error: str | None = None
+    """Which of :data:`~ela.ports.LISTEN_ERROR_CODES` this was, when there is no transcript.
+
+    The adapter names the failure and never decides what it means for the task (ADR 0020 §7): a
+    second implementation reports these codes or it is not interchangeable with the first.
+    """
+    retryable: bool = False
+    """Whether :attr:`error` is worth trying again. ``False`` by default, because a doubt is not a
+    yes (§33)."""
 
 
 # --------------------------------------------------------------------------------------

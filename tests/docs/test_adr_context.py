@@ -91,7 +91,7 @@ def test_the_subject_of_rule_33_is_derived_and_finds_both_children() -> None:
     """
     found = {path.name for path in perception_children(PACKAGE_ROOT)}
 
-    assert found == {"probe.py", "vision.py"}
+    assert {"probe.py", "vision.py"} <= found
     assert all(
         "__main__" in path.read_text(encoding="utf-8") for path in perception_children(PACKAGE_ROOT)
     )
@@ -205,4 +205,6 @@ def test_the_conseguenze_count_the_rules_the_ports_the_capabilities_and_the_fami
     assert "**quattro**" in conseguenze
     assert len(tuple(ProbeFamily)) == 4
     assert "**due**" in conseguenze
-    assert len(perception_children(PACKAGE_ROOT)) == 2
+    # History, not today's count: M11.2 added a third child, and rule 33's derived subject found
+    # it without anybody adding a line — which is the property ADR 0030 §6 traded a list for.
+    assert len(perception_children(PACKAGE_ROOT)) >= 2

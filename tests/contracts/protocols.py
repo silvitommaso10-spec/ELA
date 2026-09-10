@@ -35,6 +35,7 @@ REQUIRED_PORTS = frozenset(
         "PerceptionProbe",
         "ScreenCapturePort",
         "SpeechPort",
+        "ListeningPort",
         "TextRecognitionPort",
     }
 )

@@ -23,9 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from ela.composition import SystemClock, UuidGenerator
 from ela.domain import CapabilityId, RiskLevel
 from ela.infrastructure.machine import (
+    DarwinListening,
     DarwinProbe,
     SaySpeechCommand,
     ScreenCaptureCommand,
+    UnsupportedListening,
     UnsupportedProbe,
     UnsupportedScreenCapture,
     UnsupportedSpeech,
@@ -53,6 +55,7 @@ from ela.ports import (
     DeviceRegistryPort,
     ExecutionResultStore,
     IdGenerator,
+    ListeningPort,
     ModelProvider,
     ModelRouterPort,
     PerceptionProbe,
@@ -79,6 +82,7 @@ from ela.testing.fakes import (
     FakeDeviceRegistry,
     FakeExecutionResultStore,
     FakeIdGenerator,
+    FakeListening,
     FakeModelProvider,
     FakeModelRouter,
     FakePermissionGuardian,
@@ -429,6 +433,17 @@ def _text_recognition() -> VisionTextRecognition:
     return VisionTextRecognition(timeout=timedelta(seconds=1), runner=_no_helper)
 
 
+def _listening() -> DarwinListening:
+    """Built with paths that do not exist: the contract is about shape, not about a microphone."""
+    return DarwinListening(
+        binary=Path("/nowhere/whisper-cli"),
+        model=Path("/nowhere/model.bin"),
+        expected=("", ""),
+        language="it",
+        transcribe_timeout=1.0,
+    )
+
+
 def _speech() -> SaySpeechCommand:
     """The real macOS speech adapter, with a spawn that answers instead of starting anything.
 
@@ -514,6 +529,11 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
         Implementation("FakeProbe", FakeProbe),
         Implementation("UnsupportedProbe", UnsupportedProbe),
         Implementation("DarwinProbe", _darwin_probe),
+    ),
+    ListeningPort: (
+        Implementation("FakeListening", FakeListening),
+        Implementation("UnsupportedListening", UnsupportedListening),
+        Implementation("DarwinListening", _listening),
     ),
     ScreenCapturePort: (
         Implementation("FakeScreenCapture", FakeScreenCapture),
