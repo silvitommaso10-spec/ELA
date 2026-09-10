@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.composition import SystemClock, UuidGenerator
 from ela.domain import CapabilityId, RiskLevel
-from ela.infrastructure.perception import (
+from ela.infrastructure.machine import (
     DarwinProbe,
     SaySpeechCommand,
     ScreenCaptureCommand,
@@ -409,7 +409,7 @@ def _darwin_probe() -> DarwinProbe:
     Registered on every runner, Ubuntu included, and that is the point: the contract this port
     must keep — *it does not fail, it reports* — is about what the adapter does with a bad answer,
     and a bad answer costs no hardware to produce. What the helper process reads on a real Mac is
-    the smoke test's business (``tests/infrastructure/perception/test_probe_smoke.py``).
+    the smoke test's business (``tests/infrastructure/machine/test_probe_smoke.py``).
     """
     return DarwinProbe(timeout=timedelta(seconds=1), runner=_no_helper)
 

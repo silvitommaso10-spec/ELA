@@ -21,7 +21,7 @@ import pytest
 from ela.domain import FAMILY_FIELDS, ProbeFamily, RawObservation
 from ela.permissions import catalogue_v01, production_catalogue
 from ela.tools import PERCEPTION_READ_SCREEN_TEXT, ReadScreenTextTool
-from tests.architecture.rules import RULES, perception_children
+from tests.architecture.rules import RULES, current_name, perception_children
 from tests.architecture.violations import PACKAGE_ROOT
 from tests.contracts.protocols import port_protocols
 
@@ -67,7 +67,7 @@ def test_the_rules_this_adr_extends_are_registered_under_their_new_names() -> No
 
     assert [number for number, *_ in documented] == ["33", "35"]
     for _, name, *_ in documented:
-        assert name in RULES, name
+        assert current_name(name) in RULES, name
 
 
 @pytest.mark.parametrize(
@@ -79,7 +79,8 @@ def test_the_rules_this_adr_extends_are_registered_under_their_new_names() -> No
     ],
 )
 def test_each_rule_holds_on_the_real_tree(key: str) -> None:
-    assert RULES[key](PACKAGE_ROOT) == []
+    """Keys are the names *this ADR* prints; :func:`current_name` resolves the renamed one."""
+    assert RULES[current_name(key)](PACKAGE_ROOT) == []
 
 
 def test_the_subject_of_rule_33_is_derived_and_finds_both_children() -> None:

@@ -13,9 +13,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import timedelta
 
-from ela.infrastructure.perception import SAY, SaySpeechCommand, UnsupportedSpeech
-from ela.infrastructure.perception.darwin import TIMED_OUT
-from ela.infrastructure.perception.speech import END_OF_OPTIONS
+from ela.infrastructure.machine import SAY, SaySpeechCommand, UnsupportedSpeech
+from ela.infrastructure.machine.darwin import TIMED_OUT
+from ela.infrastructure.machine.speech import END_OF_OPTIONS
 
 SENTENCE = "Ho spostato la riunione a giovedì."
 

@@ -26,7 +26,7 @@ from ela.devices import DeviceOrchestrator, DeviceRegistry
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import Actor, ActorKind, RawSpeech
 from ela.executive import Executor, TaskRunner
-from ela.infrastructure.perception import (
+from ela.infrastructure.machine import (
     Audition,
     DarwinProbe,
     OnlineSpeechCommand,
@@ -191,7 +191,7 @@ class Ela:
 
     On ``Ela`` for the reason ``captures`` is: the start-up sweep lives in the ``lifespan``, and
     ``ela.api`` may not name an adapter (architecture rule 27) — so what the API reaches is this
-    object and :meth:`sweep_speech`, not :mod:`ela.infrastructure.perception`.
+    object and :meth:`sweep_speech`, not :mod:`ela.infrastructure.machine`.
     """
 
     def sweep_speech(self) -> int:
@@ -215,7 +215,7 @@ def _audition_speaker(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> S
     requires an authorization, and six voices would be six approvals — which is exactly the cost
     the user refused. What makes that safe is not this function, it is that nothing on this path
     can carry a sentence of the user's: the words are literals in
-    :mod:`ela.infrastructure.perception.audition`, and architecture rule 43 keeps them so.
+    :mod:`ela.infrastructure.machine.audition`, and architecture rule 43 keeps them so.
     """
 
     async def speak(phrase: str, voice_id: str, model: str) -> RawSpeech:

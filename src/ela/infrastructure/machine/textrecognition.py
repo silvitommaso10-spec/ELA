@@ -3,7 +3,7 @@
 M10.2's child was Apple's — ``screencapture(1)`` — and that made architecture rule 33 true by
 construction. There is no such binary for recognition: nothing shipped with macOS does OCR from a
 command line, checked one by one. So the child is ours again
-(:mod:`~ela.infrastructure.perception.vision`), rule 33 goes back to being verified rather than
+(:mod:`~ela.infrastructure.machine.vision`), rule 33 goes back to being verified rather than
 free, and it now verifies a **derived** subject rather than a named file, so the next child is
 covered without anybody adding it to a list.
 
@@ -35,11 +35,11 @@ from datetime import timedelta
 from typing import Final
 
 from ela.domain import RawRecognition
-from ela.infrastructure.perception.darwin import TIMED_OUT, Spawn, spawn
+from ela.infrastructure.machine.darwin import TIMED_OUT, Spawn, spawn
 
 __all__ = ["VISION_MODULE", "UnsupportedTextRecognition", "VisionTextRecognition"]
 
-VISION_MODULE: Final = "ela.infrastructure.perception.vision"
+VISION_MODULE: Final = "ela.infrastructure.machine.vision"
 
 
 class VisionTextRecognition:
@@ -100,7 +100,7 @@ class UnsupportedTextRecognition:
     """Reads nothing, and says so (:class:`~ela.ports.TextRecognitionPort`).
 
     Beside :class:`VisionTextRecognition` rather than in ``unsupported.py``, following where
-    :class:`~ela.infrastructure.perception.screencapture.UnsupportedScreenCapture` lives: a port
+    :class:`~ela.infrastructure.machine.screencapture.UnsupportedScreenCapture` lives: a port
     and the answer "not on this operating system" are easier to keep in step when they are read
     together.
     """

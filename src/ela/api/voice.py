@@ -8,7 +8,7 @@ way to try voices that is not a task per attempt.
 
 What makes that safe is not this module's care: it is that **nothing on this path can carry a
 sentence of the user's.** ``AuditionIn`` has no field for text; the words are two literals in
-:mod:`ela.infrastructure.perception.audition`, written in §9 and readable in ``git``; and
+:mod:`ela.infrastructure.machine.audition`, written in §9 and readable in ``git``; and
 architecture rule 43 fails the build if a function on that path ever grows a parameter for words.
 
 And this is where the audition ended up rather than in the CLI, which is where a chooser would

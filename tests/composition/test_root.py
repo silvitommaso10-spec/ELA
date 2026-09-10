@@ -19,7 +19,7 @@ import pytest
 from ela.composition import ELA_ACTOR, ConfigurationError, Ela, Settings, build
 from ela.devices.local import LOCAL_DEVICE_ID, LOCAL_DEVICE_NAME
 from ela.domain import ActorKind, PermissionOutcome, ProviderStatus
-from ela.infrastructure.perception import UnsupportedScreenCapture
+from ela.infrastructure.machine import UnsupportedScreenCapture
 from ela.permissions import (
     CORE_ECHO,
     DEFAULT_DECISION_TTL,

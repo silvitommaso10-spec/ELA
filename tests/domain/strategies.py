@@ -426,7 +426,7 @@ raw_captures = st.builds(
     timed_out=st.booleans(),
 )
 """Negative exit codes are generated on purpose: a child killed by a signal reports one, and
-:data:`~ela.infrastructure.perception.darwin.TIMED_OUT` is itself ``-1``."""
+:data:`~ela.infrastructure.machine.darwin.TIMED_OUT` is itself ``-1``."""
 
 raw_speeches = st.builds(
     RawSpeech,

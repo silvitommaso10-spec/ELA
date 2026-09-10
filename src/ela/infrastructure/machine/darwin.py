@@ -9,7 +9,7 @@ Two pieces with very different jobs, and the split is the whole design:
   receives ``spawn`` as a dependency, so a timeout, a dead child and a mouthful of nonsense are
   all things a test can produce without any hardware at all.
 
-What is left that no runner can execute is one file, :mod:`ela.infrastructure.perception.probe`,
+What is left that no runner can execute is one file, :mod:`ela.infrastructure.machine.probe`,
 and even that one is *run* in CI on macOS to prove the contract it must keep (exit 0, JSON,
 known keys) without asserting anything about hardware nobody has.
 
@@ -45,7 +45,7 @@ __all__ = [
     "sweep_speech_files",
 ]
 
-PROBE_MODULE: Final = "ela.infrastructure.perception.probe"
+PROBE_MODULE: Final = "ela.infrastructure.machine.probe"
 """The child, started with this interpreter so a virtual environment is inherited."""
 
 TIMED_OUT: Final = -1

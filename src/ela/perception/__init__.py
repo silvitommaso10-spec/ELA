@@ -7,7 +7,7 @@ reading of *content* (a screenshot, an OCR, a second of audio) is born with its 
 capability rather than inheriting this one's silence (ADR 0028 §9).
 
 The package is pure: it decides, and it never touches the operating system. What touches the
-operating system is :mod:`ela.infrastructure.perception`, behind the
+operating system is :mod:`ela.infrastructure.machine`, behind the
 :class:`~ela.ports.PerceptionProbe` port.
 """
 

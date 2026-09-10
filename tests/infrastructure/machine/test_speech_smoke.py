@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from ela.infrastructure.perception import SAY, SaySpeechCommand
+from ela.infrastructure.machine import SAY, SaySpeechCommand
 
 pytestmark = pytest.mark.skipif(platform.system() != "Darwin", reason="say(1) is macOS's")
 

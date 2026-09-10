@@ -32,7 +32,7 @@ test:
 # (M8.2, ADR 0024 §7).
 # ela.perception decide che cosa ELA crede di sapere della macchina su cui gira, compreso quando
 # non sa: entra nel gate nella milestone che gli dà codice (M10.1, ADR 0028 §1).
-# ela.infrastructure.perception NON entra, e il criterio è scritto nell'ADR: un package entra nel
+# ela.infrastructure.machine NON entra, e il criterio è scritto nell'ADR: un package entra nel
 # gate quando ogni suo ramo può essere eseguito in CI, e nessun runner ha una webcam. Dove questo
 # è falso il package non deve contenere nessun ramo che decida qualcosa — ed è la regola 34 a
 # renderlo vero invece che promesso.

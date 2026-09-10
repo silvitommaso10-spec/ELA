@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from ela.domain import RawCapture
-from ela.infrastructure.perception import (
+from ela.infrastructure.machine import (
     SCREENCAPTURE,
     TIMED_OUT,
     ScreenCaptureCommand,

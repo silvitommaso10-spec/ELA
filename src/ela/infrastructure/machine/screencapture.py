@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Final
 
 from ela.domain import RawCapture
-from ela.infrastructure.perception.darwin import TIMED_OUT, Spawn, spawn
+from ela.infrastructure.machine.darwin import TIMED_OUT, Spawn, spawn
 
 __all__ = ["SCREENCAPTURE", "ScreenCaptureCommand", "UnsupportedScreenCapture"]
 
@@ -51,7 +51,7 @@ screen must not be decided by an environment variable."""
 class ScreenCaptureCommand:
     """Photographs a display with ``screencapture`` (:class:`~ela.ports.ScreenCapturePort`).
 
-    ``spawn`` arrives as a dependency — the same one :class:`~ela.infrastructure.perception.
+    ``spawn`` arrives as a dependency — the same one :class:`~ela.infrastructure.machine.
     darwin.DarwinProbe` uses, and the same reason: a timeout, a child killed by a signal and a
     non-zero exit are all things a test can produce with no hardware and no permission at all.
 

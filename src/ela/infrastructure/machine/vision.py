@@ -1,6 +1,6 @@
 """The second helper process: reads text out of an image, prints JSON, and may die (M10.3).
 
-Run as ``python -m ela.infrastructure.perception.vision <path> <lang,lang>`` — plus, optionally,
+Run as ``python -m ela.infrastructure.machine.vision <path> <lang,lang>`` — plus, optionally,
 four normalised numbers for a region — and it writes one JSON object on stdout: the lines macOS's
 Vision framework read, each with its confidence, and the requested languages it could not use.
 

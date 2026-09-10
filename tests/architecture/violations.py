@@ -858,7 +858,7 @@ VIOLATIONS: tuple[Case, ...] = (
     Case(
         "probe-imports-the-domain",
         "perception-children-import-only-stdlib",
-        "infrastructure/perception/probe.py",
+        "infrastructure/machine/probe.py",
         "from ela.domain import RawObservation\n"
         + "import sys\nif __name__ == '__main__':\n    sys.exit(0)\n",
         "ela.domain.RawObservation",
@@ -869,7 +869,7 @@ VIOLATIONS: tuple[Case, ...] = (
         # to a list — which is the failure a hand-written tuple would have had.
         "the-vision-child-imports-the-domain",
         "perception-children-import-only-stdlib",
-        "infrastructure/perception/vision.py",
+        "infrastructure/machine/vision.py",
         "from ela.domain import RawRecognition\n"
         "import sys\n"
         "if __name__ == '__main__':\n"
@@ -881,14 +881,14 @@ VIOLATIONS: tuple[Case, ...] = (
         # One string literal away, which is exactly why it is a rule.
         "the-probe-reaches-for-a-window-title",
         "perception-reads-no-window-titles",
-        "infrastructure/perception/probe.py",
+        "infrastructure/machine/probe.py",
         'KEY = b"kCGWindowName"\n',
         "kCGWindowName",
     ),
     Case(
         "an-adapter-reaches-for-a-window-title-as-text",
         "perception-reads-no-window-titles",
-        "infrastructure/perception/titles.py",
+        "infrastructure/machine/titles.py",
         'def key() -> str:\n    return "kCGWindowName"\n',
         "kCGWindowName",
     ),
@@ -896,7 +896,7 @@ VIOLATIONS: tuple[Case, ...] = (
     Case(
         "adapter-imports-a-state",
         "perception-adapter-decides-nothing",
-        "infrastructure/perception/naming.py",
+        "infrastructure/machine/naming.py",
         "from ela.domain import SensorState\n",
         "ela.domain.SensorState",
     ),
@@ -904,7 +904,7 @@ VIOLATIONS: tuple[Case, ...] = (
         # The long way round to the same words: no import to see, so the rule reads names too.
         "adapter-names-a-state-by-attribute",
         "perception-adapter-decides-nothing",
-        "infrastructure/perception/sideways.py",
+        "infrastructure/machine/sideways.py",
         "from ela import domain\ndef off():\n    return domain.SensorCause\n",
         "SensorCause",
     ),
@@ -962,7 +962,7 @@ VIOLATIONS: tuple[Case, ...] = (
         "platform-choice-is-a-statement",
         "composition/wiring.py",
         "import platform\n"
-        "from ela.infrastructure.perception import DarwinProbe, UnsupportedProbe\n"
+        "from ela.infrastructure.machine import DarwinProbe, UnsupportedProbe\n"
         "def probe():\n"
         '    return DarwinProbe() if platform.system() == "Darwin" else UnsupportedProbe()\n',
         "platform.system() == 'Darwin'",
@@ -979,19 +979,19 @@ VIOLATIONS: tuple[Case, ...] = (
         'TIMEOUT = SLOW if sys.platform == "win32" else FAST\n',
         "sys.platform == 'win32'",
     ),
-    # --- capture-stays-on-the-machine (rule 35, ADR 0029 §12) ---
+    # --- content-stays-on-the-machine (rule 35, ADR 0029 §12) ---
     Case(
         # Exactly what M10.3 will be tempted to write, and the whole promise of M10.2 is that it
         # cannot be written here without somebody deciding it out loud.
         "the-capture-tool-reaches-a-router",
-        "capture-stays-on-the-machine",
+        "content-stays-on-the-machine",
         "tools/screen.py",
         "from ela.routing import ModelRouter\n",
         "ela.routing.ModelRouter",
     ),
     Case(
         "the-classification-reaches-an-http-client",
-        "capture-stays-on-the-machine",
+        "content-stays-on-the-machine",
         "tools/captures.py",
         "import httpx\n",
         "httpx",
@@ -999,7 +999,7 @@ VIOLATIONS: tuple[Case, ...] = (
     Case(
         # No import to see: the same reach, the long way round.
         "the-capture-tool-names-a-registry-by-attribute",
-        "capture-stays-on-the-machine",
+        "content-stays-on-the-machine",
         "tools/screen.py",
         "from ela import providers\ndef go():\n    return providers.ProviderRegistry\n",
         "ProviderRegistry",
@@ -1008,38 +1008,38 @@ VIOLATIONS: tuple[Case, ...] = (
         # M10.3: the text is the easier thing to send away, so the rule reaches it too — and it
         # reached it one commit *before* this module existed (dec. 15).
         "the-ocr-tool-reaches-a-router",
-        "capture-stays-on-the-machine",
+        "content-stays-on-the-machine",
         "tools/screen_text.py",
         "from ela.routing import ModelRouter\n",
         "ela.routing.ModelRouter",
     ),
     Case(
         "the-vision-child-reaches-an-http-client",
-        "capture-stays-on-the-machine",
-        "infrastructure/perception/vision.py",
+        "content-stays-on-the-machine",
+        "infrastructure/machine/vision.py",
         "import httpx\n",
         "httpx",
     ),
-    # --- capture-stays-on-the-machine extended to the voice (rule 35, M11.1 dec. H) ---
+    # --- content-stays-on-the-machine extended to the voice (rule 35, M11.1 dec. H) ---
     Case(
         # The line M11.3 will want to write. It must find a closed door and not a note.
         "the-voice-tool-reaches-a-router",
-        "capture-stays-on-the-machine",
+        "content-stays-on-the-machine",
         "tools/voice.py",
         "from ela.routing import ModelRouter\n",
         "ela.routing.ModelRouter",
     ),
     Case(
         "the-speech-adapter-reaches-an-http-client",
-        "capture-stays-on-the-machine",
-        "infrastructure/perception/speech.py",
+        "content-stays-on-the-machine",
+        "infrastructure/machine/speech.py",
         "import httpx\n",
         "httpx",
     ),
     Case(
         # No import to see: the same reach, the long way round.
         "the-voice-tool-names-a-registry-by-attribute",
-        "capture-stays-on-the-machine",
+        "content-stays-on-the-machine",
         "tools/voice.py",
         "from ela import providers\ndef go():\n    return providers.ProviderRegistry\n",
         "ProviderRegistry",
@@ -1050,7 +1050,7 @@ VIOLATIONS: tuple[Case, ...] = (
         # time it is not a flag, it is a forgotten deletion.
         "the-online-voice-keeps-the-audio",
         "the-voice-leaves-no-named-file",
-        "infrastructure/perception/speech.py",
+        "infrastructure/machine/speech.py",
         "from pathlib import Path\n"
         "def keep(audio: bytes) -> None:\n"
         '    Path("/tmp/said.mp3").write_bytes(audio)\n',
@@ -1115,7 +1115,7 @@ VIOLATIONS: tuple[Case, ...] = (
         # aloud, and send it out, with no capability anywhere in sight.
         "the-audition-accepts-a-sentence",
         "the-audition-speaks-only-the-repositorys-words",
-        "infrastructure/perception/audition.py",
+        "infrastructure/machine/audition.py",
         "async def run(voice_id: str, text: str) -> None:\n    return None\n",
         "text",
     ),
@@ -1124,14 +1124,14 @@ VIOLATIONS: tuple[Case, ...] = (
         # One flag away, which is exactly why it is a rule: `say -o` renders instead of speaking.
         "the-speech-adapter-renders-to-a-file",
         "the-voice-writes-no-file",
-        "infrastructure/perception/speech.py",
+        "infrastructure/machine/speech.py",
         'SAY = "/usr/bin/say"\ndef argv(text, path):\n    return [SAY, "-o", path, text]\n',
         "-o",
     ),
     Case(
         "the-speech-adapter-names-a-file-format",
         "the-voice-writes-no-file",
-        "infrastructure/perception/speech.py",
+        "infrastructure/machine/speech.py",
         'FLAGS = ["--file-format", "AIFF"]\n',
         "--file-format",
     ),
@@ -1200,8 +1200,8 @@ ALLOWED: tuple[Case, ...] = (
         # them over, and the file — the one with no name — is made on the other side of the door.
         "the-voice-hands-the-audio-to-the-spawner",
         "the-voice-leaves-no-named-file",
-        "infrastructure/perception/speech.py",
-        "from ela.infrastructure.perception.darwin import spawn_with_audio\n"
+        "infrastructure/machine/speech.py",
+        "from ela.infrastructure.machine.darwin import spawn_with_audio\n"
         "async def play(audio: bytes) -> int:\n"
         '    code, _ = await spawn_with_audio(["/usr/bin/afplay"], audio, 60.0)\n'
         "    return code\n",
@@ -1232,7 +1232,7 @@ ALLOWED: tuple[Case, ...] = (
     Case(
         "the-audition-chooses-a-voice-and-a-model",
         "the-audition-speaks-only-the-repositorys-words",
-        "infrastructure/perception/audition.py",
+        "infrastructure/machine/audition.py",
         'PHRASES = ("No, questa non è una buona idea.",)\n'
         "async def run(voice_id: str, model: str) -> tuple[str, ...]:\n"
         "    return PHRASES\n",
@@ -1696,7 +1696,7 @@ ALLOWED: tuple[Case, ...] = (
     Case(
         "the-adapter-may-reach-the-machine",
         "machine-access-in-one-place",
-        "infrastructure/perception/extra.py",
+        "infrastructure/machine/extra.py",
         "import ctypes\n",
         "",
     ),
@@ -1705,7 +1705,7 @@ ALLOWED: tuple[Case, ...] = (
         # rule would have nothing to read and this case would pass for the wrong reason.
         "the-probe-may-use-the-standard-library",
         "perception-children-import-only-stdlib",
-        "infrastructure/perception/probe.py",
+        "infrastructure/machine/probe.py",
         "import ctypes\nimport json\n"
         + "import sys\nif __name__ == '__main__':\n    sys.exit(0)\n",
         "",
@@ -1717,7 +1717,7 @@ ALLOWED: tuple[Case, ...] = (
         "platform-choice-is-a-statement",
         "composition/wiring.py",
         "import platform\n"
-        "from ela.infrastructure.perception import DarwinProbe, UnsupportedProbe\n"
+        "from ela.infrastructure.machine import DarwinProbe, UnsupportedProbe\n"
         "def probe():\n"
         '    if platform.system() == "Darwin":\n'
         "        return DarwinProbe()\n"
@@ -1739,7 +1739,7 @@ ALLOWED: tuple[Case, ...] = (
     Case(
         "the-adapter-may-name-the-primitives",
         "perception-adapter-decides-nothing",
-        "infrastructure/perception/plain.py",
+        "infrastructure/machine/plain.py",
         "from ela.domain import ProbeFamily, RawObservation\n",
         "",
     ),
@@ -1747,7 +1747,7 @@ ALLOWED: tuple[Case, ...] = (
         # Rule 35 is not a rule about tools: ``ela.tools.model`` names the router on purpose and
         # must. It is a rule about the two modules that have the user's screen in their hands.
         "another-tool-may-still-reach-the-router",
-        "capture-stays-on-the-machine",
+        "content-stays-on-the-machine",
         "tools/model.py",
         "from ela.routing import ModelRouter\n",
         "",

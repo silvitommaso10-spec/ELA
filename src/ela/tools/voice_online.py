@@ -132,7 +132,7 @@ class SpeakOnlineTool(Tool):
         # first would put "this Mac cannot play audio" in front of "you have not given me a key",
         # which is the wrong way round: the key is configuration and the player is the machine.
         # The port answers both, in the decided order, because it is the one object that knows
-        # them both (:class:`~ela.infrastructure.perception.speech.OnlineSpeechCommand`).
+        # them both (:class:`~ela.infrastructure.machine.speech.OnlineSpeechCommand`).
         return self._reported(asked, await self._speech.speak(asked))
 
     def _reported(self, text: str, said: RawSpeech) -> Outcome:

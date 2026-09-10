@@ -17,7 +17,7 @@ import pytest
 from ela.domain import SensorCause, SensorState
 from ela.perception import PerceptionCore
 from ela.permissions import catalogue_v01
-from tests.architecture.rules import RULES
+from tests.architecture.rules import RULES, current_name
 from tests.architecture.violations import PACKAGE_ROOT
 from tests.contracts.protocols import port_protocols
 
@@ -35,38 +35,22 @@ def adr_text() -> str:
 # ----------------------------------------------------------------------------------------
 
 
-RENAMED_BY_LATER_ADRS = {
-    "perception-probe-imports-only-stdlib": "perception-children-import-only-stdlib"
-}
-"""A rule this ADR named, renamed by a later one, with the later ADR as the source of the new name.
-
-An ADR is immutable, so ADR 0028's table keeps saying what it said. ADR 0030 §15 renames rule 33
-under ``Regole estese:`` because its subject stopped being one named file and became a derived
-set — and the rename is read from that document rather than written here, so this mapping cannot
-claim a rename no ADR made.
-"""
-
-
-def renamed() -> dict[str, str]:
-    """The renames a later ADR documents, keyed by the old name."""
-    later = (ADR_PATH.with_name("0030-screen-text.md")).read_text(encoding="utf-8")
-    return {
-        old: new
-        for old, new in RENAMED_BY_LATER_ADRS.items()
-        if f"`{new}`" in later and "rule 33" not in old
-    }
-
-
 def test_the_three_rules_are_registered_under_the_names_the_adr_gives_them() -> None:
-    """Each rule this ADR introduced is still in ``RULES``, by its name or a documented rename."""
+    """Each rule this ADR introduced is still in ``RULES``, by its name or a documented rename.
+
+    An ADR is immutable, so ADR 0028's table keeps saying what it said, and rule 33 was renamed by
+    ADR 0030 §15. The mapping that resolves it used to live here; since M11.2 it lives in
+    :data:`~tests.architecture.rules.RENAMED_RULES`, with every other rename, because one register
+    is the whole point of a register — and ``tests/architecture/test_renamed_rules.py`` holds it to
+    what this test used to check on its own: no row may claim a rename that no ADR documents.
+    """
     documented = [
         match.groups() for line in adr_text().splitlines() if (match := RULE_ROW.match(line))
     ]
-    renames = renamed()
 
     assert [number for number, *_ in documented] == ["32", "33", "34"]
     for _, name, *_ in documented:
-        assert renames.get(name, name) in RULES, name
+        assert current_name(name) in RULES, name
 
 
 @pytest.mark.parametrize(
@@ -157,7 +141,7 @@ def test_the_adapter_imports_primitives_and_no_decision() -> None:
 
 
 def _adapter_sources() -> list[Path]:
-    return sorted((PACKAGE_ROOT / "infrastructure" / "perception").rglob("*.py"))
+    return sorted((PACKAGE_ROOT / "infrastructure" / "machine").rglob("*.py"))
 
 
 def _imported_names(path: Path) -> set[str]:
@@ -172,7 +156,7 @@ def _imported_names(path: Path) -> set[str]:
 
 def test_the_helper_carries_none_of_elas_import_graph() -> None:
     """§2: rule 33 in the same form. What must be able to die alone must be alone."""
-    source = (PACKAGE_ROOT / "infrastructure" / "perception" / "probe.py").read_text("utf-8")
+    source = (PACKAGE_ROOT / "infrastructure" / "machine" / "probe.py").read_text("utf-8")
     modules = {
         node.module or ""
         for node in ast.walk(ast.parse(source))
@@ -195,7 +179,7 @@ def test_the_helper_carries_none_of_elas_import_graph() -> None:
 def test_the_deprecated_api_the_adr_refuses_is_nowhere_in_the_code() -> None:
     """A declared constraint with a name: the webcam's "in use" stays unobservable rather than
     being guessed through ``isInUseByAnotherApplication``, deprecated since 10.14."""
-    sources = (PACKAGE_ROOT / "infrastructure" / "perception").rglob("*.py")
+    sources = (PACKAGE_ROOT / "infrastructure" / "machine").rglob("*.py")
 
     assert not [
         path for path in sources if "isInUseByAnotherApplication" in path.read_text("utf-8")

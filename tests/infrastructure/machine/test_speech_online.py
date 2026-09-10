@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ela.domain import RawSpeech
-from ela.infrastructure.perception import TIMED_OUT, OnlineSpeechCommand
+from ela.infrastructure.machine import TIMED_OUT, OnlineSpeechCommand
 from ela.ports import (
     SPEECH_NO_KEY,
     SPEECH_NO_PLAYER,

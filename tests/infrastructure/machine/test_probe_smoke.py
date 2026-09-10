@@ -21,7 +21,7 @@ import sys
 import pytest
 
 from ela.domain import FAMILY_FIELDS, ProbeFamily, RawObservation
-from ela.infrastructure.perception import PROBE_MODULE
+from ela.infrastructure.machine import PROBE_MODULE
 
 pytestmark = pytest.mark.skipif(
     platform.system() != "Darwin", reason="the helper reads macOS frameworks"

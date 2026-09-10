@@ -1,6 +1,6 @@
 """The helper process: reads macOS, prints JSON, and is allowed to die (M10.1, ADR 0028 §2).
 
-Run as ``python -m ela.infrastructure.perception.probe SENSORS,SESSION`` and it writes one JSON
+Run as ``python -m ela.infrastructure.machine.probe SENSORS,SESSION`` and it writes one JSON
 object on stdout — the fields of :class:`~ela.domain.RawObservation` belonging to the families it
 was asked for, and nothing else.
 
