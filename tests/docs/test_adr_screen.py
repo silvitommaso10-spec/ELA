@@ -18,27 +18,24 @@ from pathlib import Path
 
 import pytest
 
-from ela.api import approvals, audit, devices, perception, results, system, tasks
 from ela.domain import FAMILY_FIELDS, AuditEventType, ProbeFamily, RawObservation, RiskLevel
 from ela.permissions import PERCEPTION_CAPTURE_SCREEN, catalogue_v01, production_catalogue
 from ela.tools import CaptureScreenTool
+from tests.api.routers import api_routers, routes_of
 from tests.architecture.rules import RULES, current_name
 from tests.architecture.violations import PACKAGE_ROOT
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_cli import COMMAND_ROW
+from tests.docs.test_v01_surface import V01_ROUTERS
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0029-screen-capture.md"
 RULE_ROW = re.compile(r"^\| (\d+) `([a-z-]+)` \| ([^|]+?) \| ([^|]+?) \| ([^|]+?) \|$")
 
-ROUTERS = (
-    system.router,
-    tasks.router,
-    approvals.router,
-    audit.router,
-    devices.router,
-    results.router,
-    perception.router,
-)
+ROUTERS_OF_THIS_ADR = (*V01_ROUTERS, "perception")
+"""The router modules that existed when this ADR was written: v0.1's six and M10.1's
+``perception``. A selection, on purpose — this ADR pins its own moment, and the closed world over
+every router of the package lives in ``test_v01_surface.py`` — but a selection of modules that
+are **found**, so a name here that stops existing fails instead of being skipped."""
 
 
 def adr_text() -> str:
@@ -132,13 +129,8 @@ def test_no_capability_of_v01_shows_an_argument_in_the_question() -> None:
 
 def test_no_route_was_added() -> None:
     """§15: the capture is reached through ``POST /tasks``, ``/approvals`` and the results."""
-    coded = {
-        (method, route.path)
-        for router in ROUTERS
-        for route in router.routes
-        for method in getattr(route, "methods", set())
-        if method not in {"HEAD", "OPTIONS"}
-    }
+    routers = api_routers()
+    coded = routes_of(routers[name] for name in ROUTERS_OF_THIS_ADR)
 
     assert len(coded) == 16
     assert "Nessuna rotta nuova e nessun comando nuovo" in adr_text()

@@ -20,10 +20,10 @@ from pathlib import Path
 
 import pytest
 
-from ela.api import approvals, audit, context, devices, perception, results, system, tasks, voice
 from ela.api.app import FAILURES
 from ela.api.tasks import PLAN_IS_TEMPORARY
 from ela.composition.settings import ApiSettings, CoreSettings
+from tests.api.routers import api_routers, routes_of
 from tests.architecture.rules import RULES
 from tests.architecture.violations import PACKAGE_ROOT
 
@@ -38,17 +38,6 @@ SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| `([^`]+)` \| (?:`([^`]+)`|\*\(([^)
 ROUTE_ROW = re.compile(r"^\| `(GET|POST)` \| `(/[\w{}/]*)` \| ([^|]+) \|$")
 ERROR_ROW = re.compile(r"^\| ([^|]+) \| (?:`(\w+)`|\*\(([^)]+)\)\*) \| `(\d{3})` \|$")
 RULE_NAME = "concretes-named-only-by-the-composition-root"
-ROUTERS = (
-    system.router,
-    tasks.router,
-    approvals.router,
-    audit.router,
-    devices.router,
-    perception.router,
-    context.router,
-    results.router,
-    voice.router,
-)
 
 
 def adr_text() -> str:
@@ -152,13 +141,12 @@ def documented_routes(text: str) -> set[tuple[str, str]]:
 
 
 def coded_routes() -> set[tuple[str, str]]:
-    return {
-        (method, route.path)
-        for router in ROUTERS
-        for route in router.routes
-        for method in getattr(route, "methods", set())
-        if method not in {"HEAD", "OPTIONS"}
-    }
+    """Every route of every router module of ``ela.api``, **found** and not listed (M12.1).
+
+    This used to walk a tuple of nine imported routers, so a tenth module would have been
+    invisible both to the count below and to the comparison with the ADRs — green, and false.
+    """
+    return routes_of(api_routers().values())
 
 
 def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
@@ -291,7 +279,7 @@ def test_the_route_carries_that_sentence_as_its_description() -> None:
     docstring is for whoever reads the code."""
     plan = next(
         route
-        for route in tasks.router.routes
+        for route in api_routers()["tasks"].routes
         if getattr(route, "path", None) == "/tasks/{task_id}/plan"
     )
 

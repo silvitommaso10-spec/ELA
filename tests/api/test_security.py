@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 from ela.api.security import authorized
+from tests.api.routers import api_routers, routes_of
 from tests.api.support import served_paths
 from tests.composition.support import TOKEN
 
@@ -31,6 +32,17 @@ def test_the_application_serves_the_twenty_routes_of_the_adrs_and_its_schema(
     assert ("GET", "/tasks/{task_id}/results") in paths
     assert len(paths) == 21
     assert not {path for _, path in paths} & {"/docs", "/redoc"}
+
+
+def test_the_application_mounts_every_router_of_its_package_and_nothing_else(
+    app: FastAPI,
+) -> None:
+    """``create_app`` declares its routers in a tuple, as production code should: a module must
+    not be mounted because a file appeared. This is the census the tuple is held to — a router
+    module the app forgets to mount fails here, and so does a route served from nowhere."""
+    served = set(served_paths(app)) - {("GET", "/openapi.json")}
+
+    assert served == routes_of(api_routers().values())
 
 
 async def test_no_route_answers_without_the_token(app: FastAPI, anonymous: AsyncClient) -> None:

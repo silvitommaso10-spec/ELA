@@ -16,21 +16,20 @@ from pathlib import Path
 
 from typer import Typer
 
-from ela.api import approvals, audit, devices, results, system, tasks
 from ela.cli.app import app as cli_app
 from ela.permissions import catalogue_v01
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
 from ela.tools import tools_v01, verifiers_v01
+from tests.api.routers import api_routers, routes_of
 from tests.routing.support import routing_for
 
-ROUTERS = (
-    system.router,
-    tasks.router,
-    approvals.router,
-    audit.router,
-    devices.router,
-    results.router,
-)
+V01_ROUTERS = ("approvals", "audit", "devices", "results", "system", "tasks")
+"""The six modules of ``ela.api`` whose routes are v0.1's fifteen (ADR 0023 §6, ADR 0024 §5,
+ADR 0025 §4) — named, and found in the package rather than imported by hand."""
+
+LATER_ROUTERS = ("context", "perception", "voice")
+"""The router modules the phases after v0.1 added, kept beside the six rather than folded into
+them (ADR 0029 §13) — the shape ``LATER_COMMANDS`` already has below."""
 
 CAPABILITIES = ("core.echo", "workspace.write_note", "model.complete")
 TOOLS = ("core-echo", "workspace-notes", "model-complete")
@@ -70,17 +69,27 @@ def commands_of(app: Typer, prefix: str = "") -> list[str]:
     return sorted(found)
 
 
+def test_every_router_of_the_api_is_v01s_or_came_after() -> None:
+    """A closed world over the package, not over a list (M12.1, first commit).
+
+    The old tuple imported six modules and counted what it had imported, so a seventh module
+    stayed invisible and the count stayed green. Now the modules are found by walking
+    ``ela.api``: a router module that is neither v0.1's nor in ``LATER_ROUTERS`` fails here **by
+    name**, and so does a classified one that has disappeared.
+    """
+    found = set(api_routers())
+    classified = {*V01_ROUTERS, *LATER_ROUTERS}
+
+    assert found - classified == set(), "router modules nobody classified"
+    assert classified - found == set(), "classified router modules that no longer exist"
+
+
 def test_the_routers_carry_the_fifteen_routes_of_v01_and_no_others() -> None:
     """Fifteen written routes (ADR 0023 §6); ``/openapi.json`` is FastAPI's, and behind the token
-    like the rest (``tests/api/test_security.py`` counts the sixteen the app really serves)."""
-    coded = {
-        (method, route.path)
-        for router in ROUTERS
-        for route in router.routes
-        for method in getattr(route, "methods", set())
-        if method not in {"HEAD", "OPTIONS"}
-    }
-    assert len(coded) == 15
+    like the rest (``tests/api/test_security.py`` counts what the app really serves)."""
+    routers = api_routers()
+
+    assert len(routes_of(routers[name] for name in V01_ROUTERS)) == 15
 
 
 def test_the_catalogue_holds_the_three_capabilities_of_v01() -> None:

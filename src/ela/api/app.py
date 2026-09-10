@@ -153,7 +153,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(ela: Ela) -> FastAPI:
-    """The application serving ``ela``: token first, then the fifteen routes."""
+    """The application serving ``ela``: token first, then the routers.
+
+    The tuple below is a declaration, and stays one: a module is mounted because somebody wrote it
+    here, not because a file appeared in the package. It carried a count in this docstring once —
+    "the fifteen routes" — and the count outlived the truth by five; the census now lives in
+    ``tests/api/test_security.py``, which holds this tuple to every router of ``ela.api``.
+    """
     app = FastAPI(
         title="ELA",
         version=version("ela"),
