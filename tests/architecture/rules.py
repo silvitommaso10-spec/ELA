@@ -2064,7 +2064,7 @@ def check_adapter_names_no_state(pkg_root: Path) -> list[Violation]:
     Reported as an *import* and as a *name*: a module that never imports ``SensorState`` cannot
     build one, and one that mentions it by attribute is reaching for the same words the long way.
     """
-    rule = "perception-adapter-decides-nothing"
+    rule = "machine-adapter-decides-nothing"
     found = _violations(
         rule,
         _source_files(pkg_root / MACHINE_ADAPTER_DIR),
@@ -2303,7 +2303,7 @@ RULES: dict[str, Rule] = {
     "content-stays-on-the-machine": check_content_stays_on_the_machine,
     "perception-children-import-only-stdlib": check_children_are_standalone,
     "perception-reads-no-window-titles": check_no_window_titles,
-    "perception-adapter-decides-nothing": check_adapter_names_no_state,
+    "machine-adapter-decides-nothing": check_adapter_names_no_state,
     "platform-choice-is-a-statement": check_platform_choice_is_a_statement,
     "context-writes-nothing": check_context_writes_nothing,
     "context-is-not-recorded": check_context_is_not_recorded,
@@ -2323,6 +2323,9 @@ RENAMED_RULES: Final[Mapping[str, str]] = {
     # set, so its name went to the plural. Held in `tests/docs/test_adr_perception.py` until M11.2
     # moved it here — two alias tables for one purpose is the same defect one floor up.
     "perception-probe-imports-only-stdlib": "perception-children-import-only-stdlib",
+    # M11.2: the package the rule guards was renamed in this milestone's first commit, so the
+    # mismatch is this milestone's own — one line now rather than a debt somebody inherits.
+    "perception-adapter-decides-nothing": "machine-adapter-decides-nothing",
     # M11.2 (dec. A): rule 35 was born holding a screen capture, then took the text of one, then
     # what ELA says, and now what ELA hears. "capture" stopped describing it two milestones ago,
     # and this is the milestone where the mismatch became plain rather than merely wide.
@@ -2802,11 +2805,11 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     Constant("machine-access-in-one-place", "SPAWNING_CALLS", DETECTOR),
     Constant("machine-access-in-one-place", "SPAWNING_MODULES", DETECTOR),
-    # perception-adapter-decides-nothing (rule 34, ADR 0028 §1)
-    Constant("perception-adapter-decides-nothing", "MACHINE_ADAPTER_DIR", DETECTOR),
-    Constant("perception-adapter-decides-nothing", "PERCEPTION_VOCABULARY", DETECTOR),
+    # machine-adapter-decides-nothing (rule 34, ADR 0028 §1)
+    Constant("machine-adapter-decides-nothing", "MACHINE_ADAPTER_DIR", DETECTOR),
+    Constant("machine-adapter-decides-nothing", "PERCEPTION_VOCABULARY", DETECTOR),
     Constant(
-        "perception-adapter-decides-nothing",
+        "machine-adapter-decides-nothing",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

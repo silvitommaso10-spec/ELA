@@ -279,6 +279,12 @@ decisione e appartiene a chi decide (§45).
 | Regola | Da | A | Perché |
 |---|---|---|---|
 | 35 | `capture-stays-on-the-machine` | `content-stays-on-the-machine` | teneva già i pixel, il testo di una cattura e le parole di ELA; l'ascolto è il quarto genere, e «capture» è diventato sbagliato in modo evidente invece che per estensione |
+| 34 | `perception-adapter-decides-nothing` | `machine-adapter-decides-nothing` | il package che quella regola sorveglia è stato rinominato dal primo commit di questa milestone: il disallineamento è **suo**, quindi si paga qui e non si lascia in eredità |
+
+La 34 non era nel mandato — i rinomini decisi erano due — ed è entrata perché **l'ha creata questo
+lavoro**. Il criterio che la fa entrare è lo stesso che tiene la tabella onesta: una riga che oggi
+costa un rigo, e domani costa a qualcuno il tempo di capire perché una regola parla di un package
+che non esiste più.
 
 Il rinvio era stato preso due volte — ADR 0029 la prima, ADR 0033 §7 e la dec. G di M11.1 la
 seconda — ogni volta con la stessa formula: *alla terza si rinomina*. Il rinomino è stato **il
@@ -356,12 +362,13 @@ muore, e nell'audit non c'è traccia che sia mai stato aperto. La durata reale n
 `seconds_recorded` nel risultato. L'audit dice *ELA ha deciso di aprire il tuo microfono, per tanti
 secondi*; il risultato dice *ed è rimasto aperto per tanti*.
 
-**Chi lo scrive, e non è il tool.** Oggi nessun tool di ELA scrive nell'audit: scrivono il
-Guardian, l'engine e l'executor. Fare di un tool il quarto genere di scrittore sarebbe un fatto
-architetturale nuovo, e non serve: **la capability dichiara che cosa accende**
-(`CapabilitySpec.activates_sensor`) e l'executor scrive l'evento prima di chiamare il tool. È la
-forma che `prompt_arguments` ha già — la capability dice ciò che è vero di sé, un meccanismo
-generico agisce — e generalizza alla webcam, che §11 nomina accanto al microfono.
+**Chi lo scrive, e non è il tool — ed è ADR 0026 §10, non un fatto nuovo.** *Chi sceglie scrive,
+non chi tocca*: **l'executor sceglie di chiamare, il tool tocca il dispositivo.** Non nasce un
+quarto genere di scrittore dell'audit, si applica il criterio che già governa chi scrive: la
+capability dichiara che cosa accende (`CapabilitySpec.activates_sensor`) e l'executor scrive
+l'evento prima di chiamare il tool. È anche la forma che `prompt_arguments` ha già — la capability
+dice ciò che è vero di sé, un meccanismo generico agisce — e generalizza alla webcam, che §11
+nomina accanto al microfono.
 
 Ha anche una conseguenza sui test che ha confermato la scelta: **provare l'ordine non richiede un
 microfono.** Una capability finta che dichiara il sensore e non apre niente basta a dimostrare che
@@ -398,6 +405,33 @@ a mano di quali ADR ne portano una avrebbe fatto passare inosservato il terzo.
 | # | Il processo muore dopo… | …e prima di | Stato che resta | Retry |
 |---|---|---|---|---|
 | L1 | `SENSOR_ACTIVATED` | il ritorno del tool | un'apertura senza risoluzione nell'audit; il figlio può sopravvivere fino alla propria scadenza | `recover()` chiude lo step al prossimo avvio; il microfono lo chiude il figlio da solo. **Non riparabile per costruzione**, come la 7a. |
+
+## 12. Un debito datato: `PROVIDER_CALLED` non lo scrive nessuno
+
+Trovato lavorando qui, e non riparato qui. `AuditEventType.PROVIDER_CALLED` esiste nell'enum dal
+M7.2 e **nessun modulo di `src/ela` lo scrive**. È esattamente ciò che ADR 0026 §7 chiama peggio di
+una difesa assente: un valore che non può scattare, dentro l'enum che descrive tutto ciò che ELA
+sa di aver deciso. Chi legge la catena di §32 vede un tipo che promette una traccia che non esiste.
+
+C'è anche un candidato al posto suo, e va nominato perché la riparazione non è ovvia: la chiamata a
+un provider **è già** nell'audit, dentro `TOOL_EXECUTED`, che porta `usage` — «provider usage
+metadata» è una delle cose che §32 chiede al log di tenere, e il campo esiste e viene riempito
+(ADR 0020 §6). Quindi la domanda non è «chi lo scrive», è **«serve, o va tolto?»**, e la risposta
+dipende da che cosa vorrà distinguere chi avrà due fornitori accesi contemporaneamente.
+
+Non si ripara qui: sarebbe scope di questa milestone speso su una domanda che riguarda il Model
+Router e non l'ascolto, e sceglierne una delle due risposte in silenzio è precisamente la cosa che
+questo repository non fa.
+
+**Debito a carico di chi aggiungerà il prossimo `AuditEventType`**, dichiarato il **2026-09-10**.
+È lo stesso congegno con cui ADR 0035 §7 si è fatto pagare da chi ha aggiunto la regola 45, e ha
+funzionato: chi tocca l'enum si trova davanti l'unico membro che non scatta e decide, invece di
+aggiungerne un altro accanto.
+
+Fino ad allora il debito ha una sola difesa, ed è la più piccola possibile: un test verifica che
+`PROVIDER_CALLED` **continui a non avere uno scrittore**. Il giorno in cui qualcuno gliene dà uno —
+o lo toglie dall'enum — quel test fallisce e questa sezione esce con lui, perché un debito che non
+sa di essere stato pagato è la stessa specie di bugia dei valori che descrive.
 
 ## Alternative considerate
 

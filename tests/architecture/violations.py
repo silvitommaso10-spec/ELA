@@ -892,10 +892,10 @@ VIOLATIONS: tuple[Case, ...] = (
         'def key() -> str:\n    return "kCGWindowName"\n',
         "kCGWindowName",
     ),
-    # --- perception-adapter-decides-nothing (rule 34, ADR 0028 §1) ---
+    # --- machine-adapter-decides-nothing (rule 34, ADR 0028 §1) ---
     Case(
         "adapter-imports-a-state",
-        "perception-adapter-decides-nothing",
+        "machine-adapter-decides-nothing",
         "infrastructure/machine/naming.py",
         "from ela.domain import SensorState\n",
         "ela.domain.SensorState",
@@ -903,7 +903,7 @@ VIOLATIONS: tuple[Case, ...] = (
     Case(
         # The long way round to the same words: no import to see, so the rule reads names too.
         "adapter-names-a-state-by-attribute",
-        "perception-adapter-decides-nothing",
+        "machine-adapter-decides-nothing",
         "infrastructure/machine/sideways.py",
         "from ela import domain\ndef off():\n    return domain.SensorCause\n",
         "SensorCause",
@@ -1797,7 +1797,7 @@ ALLOWED: tuple[Case, ...] = (
     ),
     Case(
         "the-adapter-may-name-the-primitives",
-        "perception-adapter-decides-nothing",
+        "machine-adapter-decides-nothing",
         "infrastructure/machine/plain.py",
         "from ela.domain import ProbeFamily, RawObservation\n",
         "",

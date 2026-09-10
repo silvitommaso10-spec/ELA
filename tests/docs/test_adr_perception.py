@@ -58,7 +58,7 @@ def test_the_three_rules_are_registered_under_the_names_the_adr_gives_them() -> 
     [
         "machine-access-in-one-place",
         "perception-children-import-only-stdlib",
-        "perception-adapter-decides-nothing",
+        "machine-adapter-decides-nothing",
     ],
 )
 def test_each_new_rule_holds_on_the_real_tree(key: str) -> None:
