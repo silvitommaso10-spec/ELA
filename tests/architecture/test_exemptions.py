@@ -23,6 +23,7 @@ from __future__ import annotations
 import ast
 import re
 import sys
+from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -315,3 +316,29 @@ def test_the_standard_library_allowance_is_derived_and_not_written_by_hand() -> 
         "permissions-imports",
         "testing-imports",
     }
+
+
+def test_the_size_of_the_table_is_counted_and_not_written_down() -> None:
+    """The debt ADR 0035 §7 dated on 2026-09-09, paid by M11.2 with rule 45.
+
+    The sentence at the head of :data:`~tests.architecture.rules.CONSTANTS` used to give three
+    numbers by hand. They were true when they were written, stopped being true, and nothing
+    noticed — inside the very file whose job is to make that impossible everywhere else. It broke
+    again while this milestone was paying it: adding **one** row to an existing rule moved the
+    detector count, and the hand-written pin in ADR 0035 §7 itself went stale on the spot.
+
+    So the numbers are derived, and this is the shape of the proof: **the parts sum to the whole**,
+    every row is classified, and each number carries the unit it counts.
+    """
+    kinds = Counter(row.kind for row in CONSTANTS)
+    summary = rules.constants_summary()
+
+    assert kinds[EXEMPTION] + kinds[DETECTOR] + kinds[SUBJECT] == len(CONSTANTS)
+    assert set(kinds) == {EXEMPTION, DETECTOR, SUBJECT}
+    for count, unit in (
+        (kinds[EXEMPTION], "exemption rows"),
+        (kinds[DETECTOR], "detector rows"),
+        (kinds[SUBJECT], "subject rows"),
+        (len(CONSTANTS), "rows in all"),
+    ):
+        assert f"{count} {unit}" in summary

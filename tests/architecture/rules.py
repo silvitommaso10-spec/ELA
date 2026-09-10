@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import re
 import sys
+from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -187,7 +188,52 @@ VOICE_MODULES = (
     MACHINE_ADAPTER_DIR / "audition.py",
 )
 
+#: M11.2: the same rule again, over the modules that hold **what ELA hears** — and this is the
+#: fourth kind of the user's content to pass under it, after the pixels, the text of a capture and
+#: ELA's own words. It is also the first that contains **people who are not the user**: a screen
+#: capture photographs what the user chose to have in front of them, a recording takes whoever was
+#: in the room, including somebody who never consented and does not know.
+#:
+#: **A third tuple, and for the reason the second one exists** (ADR 0033 §7): the halves have to be
+#: reopenable one at a time. A milestone that one day sends ELA's words to a speech provider must
+#: not be able to open the microphone's half by editing one list, and the reverse holds too. One
+#: constant for all three would make every reopening a reopening of everything.
+#:
+#: Written **before** the modules exist, which is ADR 0030 §15 applied a fourth time: a defence
+#: written after the thing it defends has a window in which the thing exists and the defence does
+#: not, and in that window review looks at the new code and not at the missing rule.
+LISTENING_MODULES = (
+    Path("tools") / "listen.py",
+    MACHINE_ADAPTER_DIR / "listening.py",
+    MACHINE_ADAPTER_DIR / "microphone.py",
+)
 
+#: Rule 45 (M11.2 dec. E): **what ELA hears never gets a name.** The audio is the raw material and
+#: the transcript is the useful datum, and M11.2 decided the raw material is not kept: it lives on
+#: an anonymous inode — ``mkstemp`` then ``unlink`` at once, the transcriber given ``/dev/fd/N`` —
+#: which is ADR 0034 §7's mechanism, reused for the direction it was not built for. The kernel
+#: frees it when the descriptor closes, **even if ELA dies mid-recording**.
+#:
+#: Between that and a directory holding every conversation that ever happened near this machine
+#: there is one missing ``unlink``, and this audio is the first of ELA's data that contains
+#: **people who are not the user**.
+#:
+#: **Narrower than** :data:`LISTENING_MODULES` **on purpose:** ``tools/listen.py`` holds the
+#: transcript, not the audio, and hands it to the store that writes it — legitimately, with a name
+#: and an expiry. The rule is about the two modules the samples pass through, and so it needs no
+#: exemption: the nameless file is made in ``darwin.py``, where the door to the operating system
+#: already is (rule 32) and which is not a subject here. A rule with an exemption is a rule
+#: somebody widens.
+HEARD_AUDIO_MODULES = (
+    MACHINE_ADAPTER_DIR / "listening.py",
+    MACHINE_ADAPTER_DIR / "microphone.py",
+)
+
+
+#: Rules 41 and 45: **nothing that passes through this machine's speakers or microphone
+#: survives with a name.** Named for the voice until M11.2, when the listening began reading
+#: it too — one detector, two rules, and a name that describes what it detects.
+#:
 #: Rule 41 (M11.3 dec. F and G): **nothing ELA says survives with a name.** Rule 40 keeps the
 #: local voice off the disk by forbidding ``say -o``; the online voice cannot be held that way,
 #: because ``afplay`` refuses a pipe and a FIFO (measured: ``AudioFileOpen -40``) and the audio
@@ -204,7 +250,7 @@ VOICE_MODULES = (
 #: to the operating system already is (rule 32) and which holds no words of ELA's — so the
 #: modules that *do* hold them can be told, with no allowance to remember, that they never touch
 #: a filesystem. A rule with an exemption is a rule somebody widens; this one has none.
-VOICE_FILE_WRITERS = frozenset(
+NAMED_FILE_WRITERS = frozenset(
     {
         "write_bytes",
         "write_text",
@@ -218,7 +264,7 @@ VOICE_FILE_WRITERS = frozenset(
     }
 )
 #: ``open(path, "w")`` and its relatives. ``open`` for reading is not the rule's business.
-VOICE_WRITE_MODES = frozenset({"w", "a", "x", "+"})
+WRITE_MODES = frozenset({"w", "a", "x", "+"})
 
 #: Rule 42 (M11.3 dec. H): **the voice goes only where it is declared.** One host, written as a
 #: constant in the adapter, and no way to point it somewhere else without editing the file — a
@@ -1807,7 +1853,7 @@ def _writes_a_named_file(node: ast.AST) -> str | None:
         return None
     called = node.func.attr if isinstance(node.func, ast.Attribute) else None
     called = called or (node.func.id if isinstance(node.func, ast.Name) else None)
-    if called in VOICE_FILE_WRITERS:
+    if called in NAMED_FILE_WRITERS:
         return called
     if called != "open":
         return None
@@ -1817,7 +1863,7 @@ def _writes_a_named_file(node: ast.AST) -> str | None:
         for kw in node.keywords
         if kw.arg == "mode" and isinstance(kw.value, ast.Constant)
     ]
-    if any(isinstance(mode, str) and set(mode) & VOICE_WRITE_MODES for mode in modes):
+    if any(isinstance(mode, str) and set(mode) & WRITE_MODES for mode in modes):
         return "open"
     return None
 
@@ -1844,6 +1890,38 @@ def check_the_voice_leaves_no_named_file(pkg_root: Path) -> list[Violation]:
     rule = "the-voice-leaves-no-named-file"
     found: list[Violation] = []
     for path in _voice_paths(pkg_root):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, written, node.lineno)
+            for node in ast.walk(tree)
+            if (written := _writes_a_named_file(node)) is not None
+        )
+    return found
+
+
+def check_what_ela_hears_leaves_no_named_file(pkg_root: Path) -> list[Violation]:
+    """Rule 45: the audio of a recording never gets a name (M11.2 dec. E).
+
+    Rule 41 says it for what ELA *says*; this says it for what ELA *hears*, and it is a rule of
+    its own rather than an extension because ``the-voice-leaves-no-named-file`` would then be the
+    fourth name in this repository narrower than the thing it names — three commits after M11.2
+    paid off two of them.
+
+    The two are not symmetrical, either. What ELA says it composed itself; what ELA hears it took
+    from a room, and a room contains people who never agreed to be recorded and do not know they
+    were. That is the difference the rule is protecting, and it is why the subject is the modules
+    the **samples** pass through and not the module that holds the transcript.
+
+    Reads calls and not imports, for the reason rules 36, 40 and 41 do: ``tempfile`` is a
+    perfectly ordinary import and the whole question is what happens on the next line.
+    """
+    rule = "what-ela-hears-leaves-no-named-file"
+    found: list[Violation] = []
+    for relative in HEARD_AUDIO_MODULES:
+        path = pkg_root / relative
+        if not path.is_file():
+            continue
         name = module_name(path, pkg_root)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         found.extend(
@@ -2024,10 +2102,13 @@ def check_content_stays_on_the_machine(pkg_root: Path) -> list[Violation]:
     **Named ``capture-stays-on-the-machine`` until M11.2**, which is where a fourth kind of the
     user's content — what ELA *hears* — made the word "capture" plainly wrong instead of merely
     narrow. The ADRs that gave it the old name keep it; :data:`RENAMED_RULES` is how they still
-    resolve.
+    resolve. :data:`LISTENING_MODULES` is the third subject, separate for the reason the second
+    one is.
     """
     rule = "content-stays-on-the-machine"
-    paths = [pkg_root / relative for relative in (*CAPTURE_MODULES, *VOICE_MODULES)]
+    paths = [
+        pkg_root / relative for relative in (*CAPTURE_MODULES, *VOICE_MODULES, *LISTENING_MODULES)
+    ]
     found = _violations(
         rule,
         [path for path in paths if path.is_file()],
@@ -2233,6 +2314,7 @@ RULES: dict[str, Rule] = {
         check_the_audition_speaks_only_the_repositorys_words
     ),
     "a-refresh-touches-only-what-is-declared": check_a_refresh_touches_only_what_is_declared,
+    "what-ela-hears-leaves-no-named-file": check_what_ela_hears_leaves_no_named_file,
 }
 
 
@@ -2605,6 +2687,7 @@ CONSTANTS: tuple[Constant, ...] = (
     # content-stays-on-the-machine (rule 35, ADR 0029 §12; extended M11.1 dec. H)
     Constant("content-stays-on-the-machine", "CAPTURE_FORBIDDEN", DETECTOR),
     Constant("content-stays-on-the-machine", "CAPTURE_MODULES", DETECTOR),
+    Constant("content-stays-on-the-machine", "LISTENING_MODULES", DETECTOR),
     Constant("content-stays-on-the-machine", "VOICE_MODULES", DETECTOR),
     Constant(
         "content-stays-on-the-machine",
@@ -2625,9 +2708,10 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     # the-voice-leaves-no-named-file (rule 41, M11.3 dec. F, G)
     Constant("the-voice-leaves-no-named-file", "ELEVENLABS_ADAPTER_DIR", DETECTOR),
-    Constant("the-voice-leaves-no-named-file", "VOICE_FILE_WRITERS", DETECTOR),
+    Constant("the-voice-leaves-no-named-file", "NAMED_FILE_WRITERS", DETECTOR),
     Constant("the-voice-leaves-no-named-file", "VOICE_MODULES", DETECTOR),
-    Constant("the-voice-leaves-no-named-file", "VOICE_WRITE_MODES", DETECTOR),
+    # what-ela-hears-leaves-no-named-file (rule 45, M11.2 dec. E)
+    Constant("the-voice-leaves-no-named-file", "WRITE_MODES", DETECTOR),
     Constant(
         "the-voice-leaves-no-named-file",
         "ROOT_PACKAGE",
@@ -2660,6 +2744,17 @@ CONSTANTS: tuple[Constant, ...] = (
     # the-audition-speaks-only-the-repositorys-words (rule 43, M11.3 dec. I, J)
     Constant(
         "the-audition-speaks-only-the-repositorys-words", "AUDITION_TEXT_PARAMETERS", DETECTOR
+    ),
+    # what-ela-hears-leaves-no-named-file (rule 45, M11.2 dec. E)
+    Constant("what-ela-hears-leaves-no-named-file", "HEARD_AUDIO_MODULES", DETECTOR),
+    Constant("what-ela-hears-leaves-no-named-file", "NAMED_FILE_WRITERS", DETECTOR),
+    Constant("what-ela-hears-leaves-no-named-file", "WRITE_MODES", DETECTOR),
+    Constant(
+        "what-ela-hears-leaves-no-named-file",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
     ),
     Constant("the-audition-speaks-only-the-repositorys-words", "AUDITION_MODULE", DETECTOR),
     Constant(
@@ -2771,6 +2866,30 @@ CONSTANTS: tuple[Constant, ...] = (
 )
 """Every (rule, constant) pair the rules read, one row each (ADR 0027).
 
-Thirty-six doors, forty-seven detectors, thirty-three subjects — of which thirty-one are
-``ROOT_PACKAGE``, read by every rule.
+How big this table is, :func:`constants_summary` counts. It used to be written out here by hand,
+and it stopped being true without anything noticing — ADR 0035 §7 found it on 2026-09-09, dated
+the debt and handed it to whoever added rule 45. That is M11.2, and this is it paid: a count
+written by hand inside the file that holds the self-checking lists is the thing that file exists
+to make impossible everywhere else.
 """
+
+
+def constants_summary() -> str:
+    """How many rows of each kind this table holds, counted now and never transcribed.
+
+    **Rows, not distinct names**, and the reason is what the old sentence got wrong: a line at the
+    head of a table says how big the table is, not the cardinality of a set — "thirty-three
+    subjects" was read both ways, and neither reading matched. **And each number carries its
+    unit**, because leaving the unit out is what made the sentence ambiguous rather than merely
+    stale: a bare number invites the reader to guess what is being counted.
+
+    Deriving it, instead of writing today's correct values by hand, is the whole point (M11.2, and
+    the user's own reason): *a correct number written by hand is the same defect postponed by six
+    months.* Once the code counts them, "which reading did whoever wrote ADR 0027 intend" stops
+    being a question anybody has to answer.
+    """
+    kinds = Counter(row.kind for row in CONSTANTS)
+    return (
+        f"{kinds[EXEMPTION]} exemption rows, {kinds[DETECTOR]} detector rows, "
+        f"{kinds[SUBJECT]} subject rows, {len(CONSTANTS)} rows in all"
+    )

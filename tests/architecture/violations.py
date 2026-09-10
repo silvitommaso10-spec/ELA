@@ -1044,6 +1044,31 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela import providers\ndef go():\n    return providers.ProviderRegistry\n",
         "ProviderRegistry",
     ),
+    # --- content-stays-on-the-machine extended to the listening (rule 35, M11.2) ---
+    Case(
+        # The shortest road from "ELA heard you" to "a stranger's voice left this machine": the
+        # cloud STT that M11.2 refused, written into the tool that holds the words.
+        "the-listening-tool-reaches-an-http-client",
+        "content-stays-on-the-machine",
+        "tools/listen.py",
+        "import httpx\n",
+        "httpx",
+    ),
+    Case(
+        "the-listening-adapter-reaches-a-router",
+        "content-stays-on-the-machine",
+        "infrastructure/machine/listening.py",
+        "from ela.routing import ModelRouter\n",
+        "ela.routing.ModelRouter",
+    ),
+    Case(
+        # No import to see: the same reach, the long way round.
+        "the-microphone-child-names-a-registry-by-attribute",
+        "content-stays-on-the-machine",
+        "infrastructure/machine/microphone.py",
+        "from ela import providers\ndef go():\n    return providers.ProviderRegistry\n",
+        "ProviderRegistry",
+    ),
     # --- the-voice-leaves-no-named-file (rule 41, M11.3 dec. F, G) ---
     Case(
         # The line that turns "ELA spoke" into "ELA kept a copy of everything it said" — and this
@@ -1076,6 +1101,40 @@ VIOLATIONS: tuple[Case, ...] = (
         "def save(audio: bytes) -> None:\n"
         '    with open("said.mp3", "wb") as handle:\n'
         "        handle.write(audio)\n",
+        "open",
+    ),
+    # --- what-ela-hears-leaves-no-named-file (rule 45, M11.2 dec. E) ---
+    Case(
+        # The line that turns "ELA listened" into a directory of every conversation held near this
+        # machine — and unlike the voice's, this audio holds people who never agreed to be in it.
+        "the-listening-adapter-keeps-the-recording",
+        "what-ela-hears-leaves-no-named-file",
+        "infrastructure/machine/listening.py",
+        "from pathlib import Path\n"
+        "def keep(audio: bytes) -> None:\n"
+        '    Path("/tmp/heard.wav").write_bytes(audio)\n',
+        "write_bytes",
+    ),
+    Case(
+        # The nameless file belongs to ``darwin.py``. A second place making one is where the
+        # ``unlink`` goes missing — the same failure rule 41 was written against, one direction
+        # over.
+        "the-microphone-child-makes-its-own-temporary-file",
+        "what-ela-hears-leaves-no-named-file",
+        "infrastructure/machine/microphone.py",
+        "import tempfile\n"
+        "def record() -> str:\n"
+        "    fd, path = tempfile.mkstemp()\n"
+        "    return path\n",
+        "mkstemp",
+    ),
+    Case(
+        "the-microphone-child-opens-a-file-for-writing",
+        "what-ela-hears-leaves-no-named-file",
+        "infrastructure/machine/microphone.py",
+        "def save(samples: bytes) -> None:\n"
+        '    with open("heard.wav", "wb") as handle:\n'
+        "        handle.write(samples)\n",
         "open",
     ),
     # --- the-voice-goes-only-where-it-is-declared (rule 42, M11.3 dec. H) ---

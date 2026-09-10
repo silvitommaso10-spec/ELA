@@ -313,7 +313,16 @@ def test_a_drifted_rule_row_is_detected() -> None:
 # ----------------------------------------------------------------------------------------
 
 STALE_COUNTS = "Thirty-six doors, forty-seven detectors, thirty-three subjects"
-"""The sentence ADR 0035 §7 quotes: a count written by hand that stopped counting anything."""
+"""The sentence ADR 0035 §7 quotes: a count written by hand that stopped counting anything.
+
+Gone from ``rules.py`` since M11.2 paid the debt. Kept here as the thing the ADR quotes, so the
+tests below can say *that* it is gone rather than merely not look for it.
+"""
+
+DECISION_DIRS = (
+    Path(__file__).resolve().parents[2] / "docs" / "adr",
+    Path(__file__).resolve().parents[2] / "docs" / "milestones",
+)
 
 
 def test_the_debt_declares_its_owner_and_the_day_it_was_declared() -> None:
@@ -330,26 +339,47 @@ def test_the_debt_declares_its_owner_and_the_day_it_was_declared() -> None:
     assert "regola 45" in text
 
 
-def test_the_debt_is_still_open_and_says_so_by_quoting_the_line_it_is_about() -> None:
-    """The smallest defence a debt can have: the quotation has to be real.
+def test_the_debt_is_paid_and_the_payment_is_written_down_somewhere() -> None:
+    """ADR 0035 §7 said this test would flip, and this is it flipped (M11.2, rule 45).
 
-    Asserted in the direction that makes the declaration expire. The day the counts in
-    ``CONSTANTS`` become derived — or go — this fails, and ADR 0035 §7 comes out with them: a
-    debt that does not know it has been paid is the same kind of lie as the numbers it describes.
+    The declaration was asserted in the direction that makes it expire: *the day the counts in*
+    ``CONSTANTS`` *become derived — or go — this fails, and ADR 0035 §7 comes out with them.* They
+    are derived now, so the assertion turns over and asks the opposite question, plus the one that
+    keeps a payment from being silent: **some decision document has to say where the debt went**,
+    or a reader following the reference from ADR 0035 finds nothing at the other end.
+
+    ADR 0035 keeps quoting the stale sentence, because an ADR is immutable and that quotation is
+    what it found.
     """
     source = (Path(rules.__file__)).read_text(encoding="utf-8")
+    recorded = [
+        path.name
+        for directory in DECISION_DIRS
+        for path in sorted(directory.glob("*.md"))
+        if "ADR 0035 §7" in path.read_text(encoding="utf-8") and path != ADR_PATH
+    ]
 
-    assert STALE_COUNTS in source, "the debt of ADR 0035 §7 is paid: remove the section with it"
+    assert STALE_COUNTS not in source, "the hand-written counts are back in rules.py"
+    assert "constants_summary" in source
     assert STALE_COUNTS in refresh_text()
+    assert recorded, "nothing but ADR 0035 says where its debt went"
 
 
-def test_the_counts_the_debt_states_are_the_ones_the_rows_actually_have() -> None:
-    """And the numbers ADR 0035 §7 gives instead: read from the table, never transcribed."""
+def test_the_numbers_this_adr_gave_are_history_and_the_live_count_is_derived() -> None:
+    """ADR 0035's own figures were a hand-written pin too, and it took one row to break them.
+
+    The document says the real rows were *38 esenzioni, 81 detector, 45 soggetti* on 2026-09-09.
+    That was true then. M11.2 added a single ``Constant`` row to an existing rule and the detector
+    figure moved — inside the milestone that was paying the debt about hand-written counts, which
+    is as good a demonstration as the debt could have asked for.
+
+    So the ADR's numbers are read as history, the way ADR 0029's totals are (see
+    ``tests/docs/test_adr_screen.py``), and today's count is asked of the table itself.
+    """
     kinds = Counter(row.kind for row in CONSTANTS)
-    written = " ".join(refresh_text().split())  # the line wrap is the document's business
+    written = " ".join(refresh_text().split())
 
-    assert (kinds[EXEMPTION], kinds[DETECTOR], kinds[SUBJECT]) == (38, 81, 45)
-    assert (
-        f"{kinds[EXEMPTION]} esenzioni, {kinds[DETECTOR]} detector, "
-        f"{kinds[SUBJECT]} soggetti" in written
-    )
+    assert "38 esenzioni, 81 detector, 45 soggetti" in written
+    # And the direction is monotonic: rows are added, never silently dropped.
+    assert (kinds[EXEMPTION], kinds[DETECTOR], kinds[SUBJECT]) >= (38, 81, 45)
+    assert f"{kinds[DETECTOR]} detector rows" in rules.constants_summary()
