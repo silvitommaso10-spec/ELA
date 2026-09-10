@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Final
 
 from ela.domain import RawSpeech
-from ela.infrastructure.perception.darwin import (
+from ela.infrastructure.machine.darwin import (
     TIMED_OUT,
     Spawn,
     SpawnWithAudio,
@@ -79,7 +79,7 @@ class SaySpeechCommand:
     produce with no audio hardware at all, which is what every CI runner has.
 
     Keeps the port's hardest promise — **it does not fail, it reports** — and its second one: a
-    cancelled call kills the child, which :func:`~ela.infrastructure.perception.darwin.spawn` now
+    cancelled call kills the child, which :func:`~ela.infrastructure.machine.darwin.spawn` now
     does for every one of its callers.
     """
 

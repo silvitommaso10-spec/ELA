@@ -105,13 +105,17 @@ __all__ = [
     "ProviderUsage",
     "QUESTION_SOURCES",
     "RawCapture",
+    "RawHeardSegment",
+    "RawHeardToken",
     "RawObservation",
     "RawRecognition",
     "RawSpeech",
     "RawTextLine",
+    "RawTranscript",
     "RiskLevel",
     "SOURCE_FIELDS",
     "SensorCause",
+    "SensorName",
     "SensorState",
     "SensorStatus",
     "StepId",
@@ -425,6 +429,24 @@ class AuditEventType(StrEnum):
 
     A distinct type and not a payload of :attr:`DEVICE_SELECTED`: "every time ELA had nowhere to
     run something" is a question the log must answer by type, as ADR 0008 argues for the engine.
+    """
+    SENSOR_ACTIVATED = "SENSOR_ACTIVATED"
+    """ELA opened one of the sensors of §11 — today the microphone (M11.2, ADR 0036 §11).
+
+    The type ADR 0028 §10 promised: *the audit records what ELA decides, not what the world does*,
+    and turning a device on is a decision. Not ``DEVICE_*``: in this repository that prefix is the
+    vocabulary of the **nodes** of §16, and a ``DEVICE_ACTIVATED`` next to ``DEVICE_SELECTED``
+    would say something else entirely.
+
+    **Written when ELA opens the device, not when it has finished** — and it is the first event in
+    ELA written *before* the thing it records. An event written at the end would describe better
+    (it would know the real duration) and would be missing in exactly the worst case: ELA opens
+    the microphone, something dies, and nothing in the audit says it was ever opened. The real
+    duration is not lost — it is ``seconds_recorded`` in the result. The audit says *ELA decided
+    to open your microphone, for this long*; the result says *and it stayed open for this long*.
+
+    No second type when it closes: closing is not a decision, and an event written by the process
+    that is dying is precisely the event that would be missing in the case that matters.
     """
     PERMISSION_DECIDED = "PERMISSION_DECIDED"
     AUTHORIZATION_GRANTED = "AUTHORIZATION_GRANTED"
@@ -785,6 +807,20 @@ class CapabilitySpec(_DomainModel):
     Data, like ``scope``: that each name is a **required** ``string`` property of ``input_schema``
     is the catalogue's check (ADR 0010, ADR 0029 §6), not the model's.
     """
+    activates_sensor: SensorName | None = None
+    """Which sensor of §11 executing this capability turns on, if any (M11.2, ADR 0036 §11).
+
+    **Declared here so that the event is written by whoever runs the capability, and before it
+    runs.** The alternative was for the tool to append to the audit itself, which no tool in ELA
+    does: the audit is written by the Guardian, the engine and the executor, and making a tool the
+    fourth kind of writer is a structural fact that a capability declaring what it turns on does
+    not need. It is the shape ``prompt_arguments`` already has — the capability says what is true
+    of it, and a generic mechanism acts.
+
+    The event carries **which** sensor and never for how long: ``seconds`` is an argument, and
+    architecture rule 23 keeps arguments out of the audit. How long the microphone was really open
+    is in the result, which is where a measurement belongs.
+    """
     requires_authorization: bool
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 
@@ -1012,6 +1048,17 @@ class SensorState(StrEnum):
     """Present, and not in use. *Not* "ELA may use it": whether ELA may is a permission, and
     permissions are reported separately (:class:`SystemPermission`)."""
     ACTIVE = "ACTIVE"
+
+
+class SensorName(StrEnum):
+    """The sensors of §11 by name — what a capability can declare that it turns on.
+
+    Only what exists: §11 names the microphone and the webcam, and ELA can open one of them. A
+    member for the other would be a value nothing can produce, which is the thing ADR 0026 §7
+    calls worse than an absent defence; it arrives with the milestone that opens it.
+    """
+
+    MICROPHONE = "MICROPHONE"
 
 
 class SensorCause(StrEnum):
@@ -1398,6 +1445,86 @@ class RawSpeech(_DomainModel):
     audio_bytes: int | None = None
     """How much audio arrived. ``None`` when none did, or when there was never a file to count —
     the local voice plays as it synthesises and no byte is ever ELA's to hold."""
+
+
+class RawHeardToken(_DomainModel):
+    """One token the transcriber produced, and how sure its decoder was (M11.2, ADR 0036).
+
+    Primitives, like everything that crosses out of ELA's process. The probability is reported and
+    never acted on: **no threshold lives anywhere in the perception**, because a threshold is a
+    decision and belongs to whoever decides (§45) — the same line :class:`RawTextLine` holds for
+    the OCR's confidences.
+
+    Per **token** and not per segment, which is a fact about the engine and worth keeping: it says
+    *which word* it was unsure of. Measured on 2026-09-09, the low ones land exactly on the word
+    that is wrong or hard — ``Ela`` at 0,54 inside a sentence whose median is 0,998 — and a clean
+    utterance has none below 0,69.
+    """
+
+    text: str
+    probability: Annotated[float, Field(ge=0, le=1)]
+
+
+class RawHeardSegment(_DomainModel):
+    """One stretch of speech the transcriber returned, with where it sat in the audio."""
+
+    text: str
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: Annotated[int, Field(ge=0)]
+    tokens: tuple[RawHeardToken, ...] = ()
+
+
+class RawTranscript(_DomainModel):
+    """What the listening did, in primitives — no verdict (M11.2, ADR 0036).
+
+    The fourth of its kind, and the first that comes **in** from the room rather than out of ELA.
+    Like :class:`RawRecognition` it carries its payload, for the same reason: a transcript is
+    self-delimiting text, so a helper killed halfway is a parse error and not a shorter answer
+    shaped like an answer (ADR 0029 §4).
+
+    **No audio field, and no path to one.** The raw material is not kept (M11.2 dec. E): it lives
+    on an anonymous inode for as long as the transcriber needs it and the kernel frees it when the
+    descriptor closes, even if ELA dies mid-recording. What the caller gets is the derived datum.
+    """
+
+    exit_code: int | None = None
+    """The helper's exit status; ``None`` when it never ran."""
+    timed_out: bool = False
+    """Whether a helper was killed for overstaying — "it did not answer" against "it answered
+    badly", which :class:`RawCapture` separates for the same reason."""
+    recorded_seconds: float | None = None
+    """How long the microphone was actually open. A measurement, never a verdict: it does not say
+    anybody spoke."""
+    peak: int | None = None
+    """The loudest sample in the whole recording, or ``None`` if nothing was ever recorded.
+
+    **The one number that stands between a refused microphone and an invented sentence**, and it
+    is here because of a measurement rather than a worry (2026-09-09). With the permission denied,
+    opening the device *succeeds*: ``AudioQueueNewInput``, ``AudioQueueStart`` and every callback
+    return exactly what they return when it is granted, and the buffers are full of zeros. Handed
+    to a transcriber, thirty seconds of zeros come back as «Grazie a tutti.» — words nobody said,
+    inside a result shaped like a success.
+
+    A transcriber has no way to say "I heard nothing": the absence of signal reaches it *as*
+    signal, and it answers with language. So whether there was a signal is decided **before** the
+    thing that interprets it, and here is where that decision reads from. ``peak == 0`` is not a
+    threshold — it is the fact that no sample differed from silence.
+    """
+    language: str | None = None
+    """Which language the transcriber worked in. Reported so that "no words" can be told apart
+    from "ELA was configured with a language this engine does not have" (ADR 0030 §8)."""
+    segments: tuple[RawHeardSegment, ...] = ()
+    """What was heard. Empty is a true answer — *nobody spoke in those seconds* — but only once
+    :attr:`peak` and :attr:`error` have ruled out the other two ways of arriving empty."""
+    error: str | None = None
+    """Which of :data:`~ela.ports.LISTEN_ERROR_CODES` this was, when there is no transcript.
+
+    The adapter names the failure and never decides what it means for the task (ADR 0020 §7): a
+    second implementation reports these codes or it is not interchangeable with the first.
+    """
+    retryable: bool = False
+    """Whether :attr:`error` is worth trying again. ``False`` by default, because a doubt is not a
+    yes (§33)."""
 
 
 # --------------------------------------------------------------------------------------

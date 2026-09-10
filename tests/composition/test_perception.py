@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from ela.composition import Ela, Settings, build
-from ela.infrastructure.perception import (
+from ela.infrastructure.machine import (
     DarwinProbe,
     ScreenCaptureCommand,
     UnsupportedProbe,

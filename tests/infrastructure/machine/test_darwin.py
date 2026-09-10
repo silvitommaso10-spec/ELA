@@ -15,7 +15,7 @@ from datetime import timedelta
 import pytest
 
 from ela.domain import ProbeFamily, RawObservation
-from ela.infrastructure.perception import PROBE_MODULE, TIMED_OUT, DarwinProbe
+from ela.infrastructure.machine import PROBE_MODULE, TIMED_OUT, DarwinProbe
 
 ALL = frozenset(ProbeFamily)
 

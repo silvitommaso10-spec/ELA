@@ -61,10 +61,13 @@ from ela.domain import (
     ProviderResult,
     ProviderUsage,
     RawCapture,
+    RawHeardSegment,
+    RawHeardToken,
     RawObservation,
     RawRecognition,
     RawSpeech,
     RawTextLine,
+    RawTranscript,
     RiskLevel,
     SensorCause,
     SensorState,
@@ -426,7 +429,7 @@ raw_captures = st.builds(
     timed_out=st.booleans(),
 )
 """Negative exit codes are generated on purpose: a child killed by a signal reports one, and
-:data:`~ela.infrastructure.perception.darwin.TIMED_OUT` is itself ``-1``."""
+:data:`~ela.infrastructure.machine.darwin.TIMED_OUT` is itself ``-1``."""
 
 raw_speeches = st.builds(
     RawSpeech,
@@ -436,6 +439,32 @@ raw_speeches = st.builds(
 )
 """Zero seconds is generated on purpose: it is what a helper that never spoke reports, and it is
 the case the verifier's floor exists to catch."""
+
+raw_heard_tokens = st.builds(
+    RawHeardToken,
+    text=st.text(max_size=24),
+    probability=st.floats(min_value=0, max_value=1, allow_nan=False),
+)
+"""A probability of zero is generated: nothing is filtered on it, so nothing may assume a floor."""
+
+raw_heard_segments = st.builds(
+    RawHeardSegment,
+    text=st.text(max_size=120),
+    start_ms=st.integers(min_value=0, max_value=60_000),
+    end_ms=st.integers(min_value=0, max_value=60_000),
+    tokens=st.tuples(),
+)
+
+raw_transcripts = st.builds(
+    RawTranscript,
+    exit_code=_optional(st.integers(min_value=-8, max_value=8)),
+    timed_out=st.booleans(),
+    recorded_seconds=_optional(st.floats(min_value=0, max_value=60, allow_nan=False)),
+    peak=_optional(st.integers(min_value=0, max_value=32767)),
+    segments=st.tuples(),
+)
+"""A peak of zero is generated on purpose, and it is the case the whole milestone turns on: it is
+what a refused microphone produces, and what must never reach a transcriber."""
 
 raw_text_lines = st.builds(
     RawTextLine,
@@ -620,7 +649,10 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.SensorStatus: sensor_statuses,
     domain.RawObservation: raw_observations,
     domain.RawCapture: raw_captures,
+    domain.RawHeardSegment: raw_heard_segments,
+    domain.RawHeardToken: raw_heard_tokens,
     domain.RawSpeech: raw_speeches,
+    domain.RawTranscript: raw_transcripts,
     domain.RawRecognition: raw_recognitions,
     domain.RawTextLine: raw_text_lines,
     domain.Observation: observations,

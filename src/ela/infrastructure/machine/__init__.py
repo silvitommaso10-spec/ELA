@@ -26,7 +26,7 @@ here first); the third time it gets renamed. Rule 40 keeps that helper from ever
 to write a file instead of speaking.
 """
 
-from ela.infrastructure.perception.audition import (
+from ela.infrastructure.machine.audition import (
     AUDITION_PHRASES,
     CANDIDATES,
     Audition,
@@ -35,7 +35,7 @@ from ela.infrastructure.perception.audition import (
     Play,
     Speak,
 )
-from ela.infrastructure.perception.darwin import (
+from ela.infrastructure.machine.darwin import (
     PROBE_MODULE,
     SPEECH_FILE_PREFIX,
     TIMED_OUT,
@@ -45,24 +45,29 @@ from ela.infrastructure.perception.darwin import (
     spawn_with_audio,
     sweep_speech_files,
 )
-from ela.infrastructure.perception.screencapture import (
+from ela.infrastructure.machine.listening import (
+    DarwinListening,
+    UnsupportedListening,
+    digest_of,
+)
+from ela.infrastructure.machine.screencapture import (
     SCREENCAPTURE,
     ScreenCaptureCommand,
     UnsupportedScreenCapture,
 )
-from ela.infrastructure.perception.speech import (
+from ela.infrastructure.machine.speech import (
     AFPLAY,
     SAY,
     OnlineSpeechCommand,
     SaySpeechCommand,
     UnsupportedSpeech,
 )
-from ela.infrastructure.perception.textrecognition import (
+from ela.infrastructure.machine.textrecognition import (
     VISION_MODULE,
     UnsupportedTextRecognition,
     VisionTextRecognition,
 )
-from ela.infrastructure.perception.unsupported import UnsupportedProbe
+from ela.infrastructure.machine.unsupported import UnsupportedProbe
 
 __all__ = [
     "AFPLAY",
@@ -82,14 +87,17 @@ __all__ = [
     "SCREENCAPTURE",
     "TIMED_OUT",
     "VISION_MODULE",
+    "DarwinListening",
     "DarwinProbe",
     "SaySpeechCommand",
     "ScreenCaptureCommand",
     "Spawn",
+    "UnsupportedListening",
     "UnsupportedProbe",
     "UnsupportedScreenCapture",
     "UnsupportedSpeech",
     "UnsupportedTextRecognition",
     "VisionTextRecognition",
+    "digest_of",
     "spawn",
 ]

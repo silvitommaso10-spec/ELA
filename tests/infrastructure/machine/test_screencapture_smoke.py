@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from ela.domain import ProbeFamily
-from ela.infrastructure.perception import SCREENCAPTURE, DarwinProbe, ScreenCaptureCommand
+from ela.infrastructure.machine import SCREENCAPTURE, DarwinProbe, ScreenCaptureCommand
 from ela.tools.settings import CAPTURE_TIMEOUT_IS_MEASURED
 from tests.tools.test_settings import overdue
 

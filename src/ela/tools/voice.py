@@ -33,7 +33,7 @@ was asked to say, and it is not enough to reconstruct it.
 **A cancelled call stops the sound.** :meth:`_run` awaits the helper for the whole sentence, so
 cancelling the caller has to kill the child rather than orphan it — otherwise ELA keeps talking
 after being told to stop, which is the worse half of what dec. F postponed to the barge-in. That
-belongs to :func:`~ela.infrastructure.perception.darwin.spawn`, and is tested there.
+belongs to :func:`~ela.infrastructure.machine.darwin.spawn`, and is tested there.
 """
 
 from __future__ import annotations

@@ -15,7 +15,7 @@ from pydantic import SecretStr
 
 from ela.composition import Ela
 from ela.composition.root import _audition_speaker, _sample
-from ela.infrastructure.perception import OnlineSpeechCommand
+from ela.infrastructure.machine import OnlineSpeechCommand
 from ela.ports import SPEECH_NO_KEY, SPEECH_NO_PLAYER, SPEECH_UNKNOWN_VOICE
 from ela.providers.elevenlabs import ElevenLabsSettings, ElevenLabsVoice
 from ela.tools import DIRECTORY_MODE

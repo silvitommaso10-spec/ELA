@@ -57,6 +57,7 @@ from ela.domain import (
     RawObservation,
     RawRecognition,
     RawSpeech,
+    RawTranscript,
     StepId,
     Task,
     TaskEvent,
@@ -84,6 +85,19 @@ __all__ = [
     "DeviceRegistryPort",
     "ExecutionResultStore",
     "IdGenerator",
+    "LISTEN_DENIED_BY_SYSTEM",
+    "LISTEN_DISABLED",
+    "LISTEN_ERROR_CODES",
+    "LISTEN_FAILED",
+    "LISTEN_LANGUAGE_UNSUPPORTED",
+    "LISTEN_NO_INPUT_DEVICE",
+    "LISTEN_NO_SIGNAL",
+    "LISTEN_PERMISSION_UNREADABLE",
+    "LISTEN_TIMEOUT",
+    "LISTEN_TRANSCRIPTION_FAILED",
+    "LISTEN_TRANSCRIPTION_UNAVAILABLE",
+    "LISTEN_UNSUPPORTED",
+    "ListeningPort",
     "ModelProvider",
     "ModelRouterPort",
     "NotAllowedError",
@@ -1302,6 +1316,144 @@ interchangeable with the first.
 
 Which of them are worth trying again is not written into the name: it travels with the failure,
 because ``retryable`` describes the nature of a failure and not the attempts left (ADR 0020 §7).
+"""
+
+
+@runtime_checkable
+class ListeningPort(Protocol):
+    """Where ELA opens the microphone of the machine it runs on (§9, §10, §11; M11.2, ADR 0036).
+
+    The first port through which something comes **in from the room**. Everything ELA received
+    until now was digital — a database, a screen, an HTTP response — and everything it sent out
+    was words of its own. A microphone is of another kind:
+
+    **it is the first of ELA's data that contains people who are not the user.** A screen capture
+    photographs what the user chose to have in front of them; a recording takes whoever was in the
+    room, including somebody who never agreed and does not know.
+
+    Which is why the port hands back a transcript and never audio. The raw material is not kept
+    (M11.2 dec. E): recording and transcribing happen behind this one interface, the samples live
+    on an anonymous inode inside the adapter, and **no byte of audio crosses into the Core**. One
+    port rather than two is not economy — it is that decision made structural, the same shape
+    ADR 0034 §6 used when synthesis arrived as a typed callable instead of a port of its own.
+
+    Four clauses, and the last is the one no other port here needs:
+
+    * **It does not choose what to listen to.** The caller says *for how long*, and nothing else.
+    * **It decides nothing** (architecture rule 34): it carries segments, probabilities, the peak
+      of the signal and how it ended. What "no words" *means* is the caller's to work out, and it
+      cannot be worked out without the peak.
+    * **It does not fail — it reports.** A denied permission, a machine with no input device, an
+      operating system with no such notion: all come back as a
+      :class:`~ela.domain.RawTranscript` that says how it ended, never as an exception.
+    * **A cancelled call closes the microphone.** ADR 0033 §4's promise with the sign reversed,
+      and graver: an orphaned ``say`` is ELA still talking, an orphaned recorder is **ELA still
+      listening after being told to stop**. A child outlives its parent — ``launchd`` adopts it —
+      so the child carries its own deadline too, and that is why the longest an orphaned
+      microphone can live is the ceiling plus its margin rather than "until somebody notices".
+    """
+
+    async def available(self) -> bool:
+        """Whether this machine can listen at all — no permission asked, no side effect.
+
+        Its own member for the reason ADR 0028 gave ``UnsupportedProbe``: "ELA on Linux hears
+        nothing" deserves to be an answer with a name and a test rather than a gap somebody finds.
+        """
+
+    async def listen(self, seconds: int) -> RawTranscript:
+        """Open the microphone for ``seconds``, and answer with what was heard.
+
+        Returns when the recording and its transcription are both over. The duration of the call
+        is therefore longer than ``seconds``, and the caller's timeout has to allow for both.
+        """
+
+
+LISTEN_DISABLED: Final = "listen.disabled"
+"""The user switched listening off: ``ELA_LISTEN_ENABLED`` is false.
+
+Its own code and not one shared with the missing device, for the reason ADR 0033 §9 gives the
+voice: "you turned it off" must not arrive wearing the face of "this machine cannot hear". The
+switch is a convenience and **not the defence** (M11.2 dec. K) — the defence is the capability,
+the Guardian and the ceiling on how long the device stays open."""
+LISTEN_UNSUPPORTED: Final = "listen.unsupported"
+"""This operating system has no listening ELA knows about."""
+LISTEN_DENIED_BY_SYSTEM: Final = "listen.denied_by_system"
+"""macOS refuses the microphone to whoever is running ELA.
+
+Read **in the instant**, never from the periodic belief: a belief on a cadence is for telling, and
+when something must *happen* the fact is read again (ADR 0029 §7). And from a denied state ELA
+does not open the device at all — measured on 2026-09-09, opening it succeeds and delivers
+silence, which a transcriber turns into words nobody said.
+
+Not a :class:`~ela.domain.SensorCause`: with the permission denied the probe still sees the device
+and still reads whether anyone is using it, so no state of §11 changes and a cause for it could
+never fire (ADR 0028 §4, and M11.2 dec. I, which measured it)."""
+LISTEN_PERMISSION_UNREADABLE: Final = "listen.permission_unreadable"
+"""The microphone permission could not be read at all — the probe timed out, died, or spoke
+nonsense.
+
+**A doubt, and a doubt is not a yes** (§33). Its own code and not
+:data:`LISTEN_DENIED_BY_SYSTEM`, because "the system refuses me" and "I could not find out" are
+different facts with different answers, and collapsing them is the exact mistake this milestone
+exists to avoid — one step further back. The sibling of ``screen.not_observable`` (M10.2)."""
+LISTEN_NO_INPUT_DEVICE: Final = "listen.no_input_device"
+"""There is no input device at all — the case of every CI runner."""
+LISTEN_NO_SIGNAL: Final = "listen.no_signal"
+"""Every sample was silence, so nothing was handed to the transcriber.
+
+**Not a threshold: the peak was zero**, which is the fact that no sample differed from silence. It
+catches what the preflight cannot — a granted permission with a muted device, a hardware switch, a
+dead input — and it exists because a transcriber has no way to say "I heard nothing": the absence
+of signal reaches it as signal and it answers with language.
+
+The limit it does **not** cover, declared rather than solved: a quiet room has a small true
+signal, not a zero one, and there the transcriber can still invent. What stands there is the
+structural answer — an approval that names what ELA understood before acting — and it belongs to
+the milestone that first turns a transcript into a command (ADR 0018 §6)."""
+LISTEN_TIMEOUT: Final = "listen.timeout"
+"""A helper outstayed its deadline and was stopped."""
+LISTEN_FAILED: Final = "listen.failed"
+"""A helper ended badly. What it *means* is not ELA's to guess (ADR 0033 §9)."""
+LISTEN_TRANSCRIPTION_UNAVAILABLE: Final = "listen.transcription_unavailable"
+"""The transcriber or its model is missing, or its digest is not the one ELA was told to expect.
+
+Nothing is heard when ELA cannot check what would be doing the hearing: what decides what ELA
+believes was said is a file whose fingerprint is declared, never a name resolved through
+``PATH`` (ADR 0029 §3)."""
+LISTEN_TRANSCRIPTION_FAILED: Final = "listen.transcription_failed"
+"""The transcriber ran and ended badly."""
+LISTEN_LANGUAGE_UNSUPPORTED: Final = "listen.language_unsupported"
+"""The configured language is not one the transcriber has.
+
+ADR 0030 §8 literally: without this code, "you were configured wrongly" would arrive as "you said
+nothing", and the two send whoever is investigating in opposite directions."""
+
+LISTEN_ERROR_CODES: Final = frozenset(
+    {
+        LISTEN_DISABLED,
+        LISTEN_UNSUPPORTED,
+        LISTEN_DENIED_BY_SYSTEM,
+        LISTEN_NO_INPUT_DEVICE,
+        LISTEN_NO_SIGNAL,
+        LISTEN_PERMISSION_UNREADABLE,
+        LISTEN_TIMEOUT,
+        LISTEN_FAILED,
+        LISTEN_TRANSCRIPTION_UNAVAILABLE,
+        LISTEN_TRANSCRIPTION_FAILED,
+        LISTEN_LANGUAGE_UNSUPPORTED,
+    }
+)
+"""The closed vocabulary of :attr:`~ela.domain.RawTranscript.error` (M11.2 dec. J).
+
+Here and not in the adapter, for the reason ADR 0020 §7 put the model provider's codes here: a
+caller must tell "the microphone is refused" from "there is no microphone" **without knowing who
+produced the answer**.
+
+Eleven of them, and three exist only because the measurement of 2026-09-09 said a refusal is
+silent:
+:data:`LISTEN_DENIED_BY_SYSTEM`, :data:`LISTEN_NO_SIGNAL` and :data:`LISTEN_NO_INPUT_DEVICE` are
+what keep "you said nothing", "I was refused" and "there is nothing here to hear with" from
+arriving as the same empty answer.
 """
 
 

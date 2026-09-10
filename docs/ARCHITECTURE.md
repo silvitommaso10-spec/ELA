@@ -60,6 +60,7 @@ graph TD
     api --> devices
     api --> domain
     api --> executive
+    api --> permissions
     api --> ports
     api --> tasks
     api --> tools
@@ -107,6 +108,8 @@ graph TD
     testing --> domain
     testing --> ports
     tools --> domain
+    tools --> perception
+    tools --> permissions
     tools --> ports
 ```
 

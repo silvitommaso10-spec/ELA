@@ -72,6 +72,7 @@ from tests.permissions.support import (
     HIGH,
     NOTE,
     NOTE_ARGS,
+    SENSING_ECHO,
     STATED_ECHO,
 )
 from tests.tasks.support import result_for
@@ -388,6 +389,39 @@ async def test_the_question_carries_the_arguments_the_capability_declares(w: Wor
         f"core.echo_stated for step {step.id} ({step.goal}) — "
         f"purpose: showing the reviewer the failing test: {execution.decision.reason}"
     )
+
+
+async def test_a_capability_that_turns_a_sensor_on_says_so_before_it_runs(w: World) -> None:
+    """``SENSOR_ACTIVATED``, and the order is the decision (M11.2 dec. L, ADR 0036 §11).
+
+    Written **before** the tool. An event written afterwards would know the real duration and
+    would be missing in exactly the worst case — ELA opens the microphone, something dies, and
+    nothing says it was ever opened.
+
+    And it carries the sensor, never the arguments: how long is an argument, and architecture
+    rule 23 keeps those out of the audit.
+    """
+    task, step = await w.running(SENSING_ECHO.id)
+
+    await w.execute(task.id, step.id)
+
+    events = await w.audit.read()
+    kinds = [event.event_type for event in events]
+    activated = next(e for e in events if e.event_type is AuditEventType.SENSOR_ACTIVATED)
+    assert kinds.index(AuditEventType.SENSOR_ACTIVATED) < kinds.index(AuditEventType.TOOL_EXECUTED)
+    assert activated.summary == f"activate: MICROPHONE for {SENSING_ECHO.id}"
+    assert activated.step_id == step.id
+    assert "message" not in activated.summary
+
+
+async def test_a_capability_that_turns_nothing_on_writes_no_sensor_event(w: World) -> None:
+    """The declaration is what makes the event fire, so a capability without one is silent."""
+    task, step = await w.running(ECHO.id)
+
+    await w.execute(task.id, step.id)
+
+    events = await w.audit.read()
+    assert AuditEventType.SENSOR_ACTIVATED not in [e.event_type for e in events]
 
 
 async def test_an_argument_the_capability_does_not_declare_stays_out_of_the_question(

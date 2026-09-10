@@ -21,7 +21,7 @@ import pytest
 from ela.domain import FAMILY_FIELDS, ProbeFamily, RawObservation
 from ela.permissions import catalogue_v01, production_catalogue
 from ela.tools import PERCEPTION_READ_SCREEN_TEXT, ReadScreenTextTool
-from tests.architecture.rules import RULES, perception_children
+from tests.architecture.rules import RULES, current_name, perception_children
 from tests.architecture.violations import PACKAGE_ROOT
 from tests.contracts.protocols import port_protocols
 
@@ -67,7 +67,7 @@ def test_the_rules_this_adr_extends_are_registered_under_their_new_names() -> No
 
     assert [number for number, *_ in documented] == ["33", "35"]
     for _, name, *_ in documented:
-        assert name in RULES, name
+        assert current_name(name) in RULES, name
 
 
 @pytest.mark.parametrize(
@@ -79,7 +79,8 @@ def test_the_rules_this_adr_extends_are_registered_under_their_new_names() -> No
     ],
 )
 def test_each_rule_holds_on_the_real_tree(key: str) -> None:
-    assert RULES[key](PACKAGE_ROOT) == []
+    """Keys are the names *this ADR* prints; :func:`current_name` resolves the renamed one."""
+    assert RULES[current_name(key)](PACKAGE_ROOT) == []
 
 
 def test_the_subject_of_rule_33_is_derived_and_finds_both_children() -> None:
@@ -90,7 +91,7 @@ def test_the_subject_of_rule_33_is_derived_and_finds_both_children() -> None:
     """
     found = {path.name for path in perception_children(PACKAGE_ROOT)}
 
-    assert found == {"probe.py", "vision.py"}
+    assert {"probe.py", "vision.py"} <= found
     assert all(
         "__main__" in path.read_text(encoding="utf-8") for path in perception_children(PACKAGE_ROOT)
     )
@@ -204,4 +205,6 @@ def test_the_conseguenze_count_the_rules_the_ports_the_capabilities_and_the_fami
     assert "**quattro**" in conseguenze
     assert len(tuple(ProbeFamily)) == 4
     assert "**due**" in conseguenze
-    assert len(perception_children(PACKAGE_ROOT)) == 2
+    # History, not today's count: M11.2 added a third child, and rule 33's derived subject found
+    # it without anybody adding a line — which is the property ADR 0030 §6 traded a list for.
+    assert len(perception_children(PACKAGE_ROOT)) >= 2

@@ -9,7 +9,7 @@ to say something else.
 from __future__ import annotations
 
 from ela.domain import RawSpeech
-from ela.infrastructure.perception import AUDITION_PHRASES, CANDIDATES, Audition
+from ela.infrastructure.machine import AUDITION_PHRASES, CANDIDATES, Audition
 from ela.ports import SPEECH_RATE_LIMITED, SPEECH_UNKNOWN_VOICE
 
 VOICE = "VZOd9FMXDnXRZpGn0thg"

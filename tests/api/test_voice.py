@@ -19,7 +19,7 @@ from httpx import ASGITransport, AsyncClient
 from ela.api import create_app
 from ela.composition import Ela
 from ela.domain import RawSpeech
-from ela.infrastructure.perception import AUDITION_PHRASES, Audition
+from ela.infrastructure.machine import AUDITION_PHRASES, Audition
 from ela.ports import SPEECH_NO_KEY, SPEECH_RATE_LIMITED
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 from tests.api.support import AUTHORIZED, BASE

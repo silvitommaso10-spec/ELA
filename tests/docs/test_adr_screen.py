@@ -22,7 +22,7 @@ from ela.api import approvals, audit, devices, perception, results, system, task
 from ela.domain import FAMILY_FIELDS, AuditEventType, ProbeFamily, RawObservation, RiskLevel
 from ela.permissions import PERCEPTION_CAPTURE_SCREEN, catalogue_v01, production_catalogue
 from ela.tools import CaptureScreenTool
-from tests.architecture.rules import RULES
+from tests.architecture.rules import RULES, current_name
 from tests.architecture.violations import PACKAGE_ROOT
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_cli import COMMAND_ROW
@@ -56,11 +56,12 @@ def test_the_rule_is_registered_under_the_name_the_adr_gives_it() -> None:
     ]
 
     assert [number for number, *_ in documented] == ["35"]
-    assert documented[0][1] in RULES
+    assert current_name(documented[0][1]) in RULES
 
 
 def test_the_new_rule_holds_on_the_real_tree() -> None:
-    assert RULES["capture-stays-on-the-machine"](PACKAGE_ROOT) == []
+    """Under the name this ADR gave it, resolved through :data:`RENAMED_RULES` (M11.2 dec. A)."""
+    assert RULES[current_name("capture-stays-on-the-machine")](PACKAGE_ROOT) == []
 
 
 def test_the_conseguenze_still_describe_the_tree_this_adr_left_behind() -> None:

@@ -23,6 +23,7 @@ from ela.ports import (
     AlreadyExistsError,
     Clock,
     IdGenerator,
+    ListeningPort,
     ModelRouterPort,
     PerceptionProbe,
     ProviderRegistryPort,
@@ -34,6 +35,7 @@ from ela.ports import (
 )
 from ela.tools.echo import EchoTool
 from ela.tools.errors import NotIdempotentError, ToolNotFound, VerifierNotFound
+from ela.tools.listen import ListenTool
 from ela.tools.model import ModelCompleteTool
 from ela.tools.notes import WriteNoteTool
 from ela.tools.screen import CaptureScreenTool, CaptureStore
@@ -42,6 +44,7 @@ from ela.tools.verifiers import (
     ONLINE_SPEECH_VERIFIER_NAME,
     CaptureScreenVerifier,
     EchoVerifier,
+    ListenVerifier,
     ModelCompleteVerifier,
     ReadScreenTextVerifier,
     SpeakVerifier,
@@ -161,6 +164,8 @@ def production_tools(
     probe: PerceptionProbe,
     recognition: TextRecognitionPort,
     languages: tuple[str, ...],
+    listening: ListeningPort,
+    listen_enabled: bool,
     speech: SpeechPort,
     voice: str,
     voice_enabled: bool,
@@ -179,6 +184,7 @@ def production_tools(
         (
             *tools_v01(root=root, clock=clock, ids=ids, router=router, providers=providers).tools(),
             CaptureScreenTool(captures, screen, probe, clock, ids),
+            ListenTool(captures, listening, probe, clock, ids, enabled=listen_enabled),
             ReadScreenTextTool(captures, recognition, clock, ids, languages=languages),
             SpeakTool(speech, clock, ids, voice=voice, enabled=voice_enabled),
             SpeakOnlineTool(
@@ -216,6 +222,7 @@ def production_verifiers(
         (
             *verifiers_v01(root=root, router=router).verifiers(),
             CaptureScreenVerifier(captures.directory, captures.settings.capture_ttl),
+            ListenVerifier(captures.directory, captures.settings.capture_ttl),
             ReadScreenTextVerifier(captures.directory, captures.settings.capture_ttl),
             SpeakVerifier(),
             # The same class, a second capability: two permissions over one act, verified by the

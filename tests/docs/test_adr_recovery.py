@@ -23,20 +23,64 @@ from tests.routing.support import routing_for
 ADR_PATH = (
     Path(__file__).resolve().parents[2] / "docs" / "adr" / "0015-approval-and-result-persistence.md"
 )
-WINDOW_ROW = re.compile(r"^\| (\d+[a-c]?) \| (.+?) \| (.+?) \| (.+?) \| (.+) \|$")
+ADR_DIR = ADR_PATH.parent
+WINDOW_ROW = re.compile(r"^\| ([0-9A-Za-z]+) \| (.+?) \| (.+?) \| (.+?) \| (.+) \|$")
+TABLE_HEADER = "| # | Il processo muore dopo… | …e prima di | Stato che resta | Retry |"
+"""What a crash-window table is, structurally. **The tables are found and not listed** (M11.2
+dec. L): a hand-written list of which ADRs carry one would stop covering at the third document
+without failing, which is the exact shape of the defect the derivation exists against — the same
+lesson ADR 0030 §6 learnt for rule 33's subject."""
 REPAIRED_MARK = "**Riparato.**"
 MILESTONE = re.compile(r"M\d+\.\d+")
 
 
+def tables_in(text: str) -> list[list[str]]:
+    """Every crash-window table in ``text``: the rows under each header, until the table ends."""
+    tables: list[list[str]] = []
+    rows: list[str] | None = None
+    for line in text.splitlines():
+        if line.strip() == TABLE_HEADER:
+            rows = []
+            continue
+        if rows is None:
+            continue
+        if WINDOW_ROW.match(line):
+            rows.append(line)
+        elif not line.startswith("|"):
+            tables.append(rows)
+            rows = None
+    if rows is not None:
+        tables.append(rows)
+    return tables
+
+
+def documented_in(text: str) -> dict[str, str]:
+    """Window id -> the "Retry" cell, for one document."""
+    return {
+        match.group(1): match.group(5)
+        for rows in tables_in(text)
+        for line in rows
+        if (match := WINDOW_ROW.match(line)) is not None
+    }
+
+
+def every_documented_window() -> dict[tuple[str, str], str]:
+    """``(adr, window)`` -> the "Retry" cell, across **every** ADR that carries a table.
+
+    Keyed by the pair and not by the window alone: two documents using the same id would
+    overwrite each other in a dictionary, which is one more silent way to lose a row.
+    """
+    found: dict[tuple[str, str], str] = {}
+    for path in sorted(ADR_DIR.glob("0*.md")):
+        for window, retry in documented_in(path.read_text(encoding="utf-8")).items():
+            found[(path.stem[:4], window)] = retry
+    assert found, "some ADR must carry a crash-window table, or this derivation is vacuous"
+    return found
+
+
 def documented_windows(text: str) -> dict[str, str]:
     """Window id -> the "Retry" cell of the crash-window table."""
-    rows = {
-        window: retry
-        for line in text.splitlines()
-        for window, _, _, _, retry in [
-            m.groups() for m in [WINDOW_ROW.match(line)] if m is not None
-        ]
-    }
+    rows = documented_in(text)
     assert rows, "ADR 0015 must contain the crash-window table"
     return rows
 
@@ -208,3 +252,53 @@ def test_a_drifted_recovery_table_is_detected() -> None:
     assert AuditEventType.TASK_EXPIRED.value not in rules[TaskState.WAITING_APPROVAL.value]
     with pytest.raises(AssertionError, match="recovery-rules table"):
         documented_recovery_rules("nothing")
+
+
+# ----------------------------------------------------------------------------------------
+# The tables are found, not listed (M11.2 dec. L)
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_derivation_finds_the_table_of_adr_0015() -> None:
+    """The regression guard: if the header or the row shape drifts, this notices."""
+    found = every_documented_window()
+
+    assert {window for adr, window in found if adr == "0015"} == set(
+        documented_windows(ADR_PATH.read_text(encoding="utf-8"))
+    )
+
+
+def test_the_derivation_finds_the_table_m11_2_added() -> None:
+    """ADR 0036 §11 carries one of its own, and nothing had to be added here for it to count."""
+    found = every_documented_window()
+
+    assert ("0036", "L1") in found
+    assert "Non riparabile per costruzione" in found[("0036", "L1")]
+
+
+def test_a_table_in_a_document_nobody_named_is_found(tmp_path: Path) -> None:
+    """The negative case, and the whole point: the derivation finds a table it has never seen.
+
+    A hand-written list of documents would pass this file's other tests and quietly stop covering
+    at the next ADR — which is the failure it exists to prevent, so it is the failure that has to
+    be demonstrated (``CLAUDE.md``: everything in ``make check`` has a test of its negative case).
+    """
+    invented = tmp_path / "0099-something-nobody-listed.md"
+    invented.write_text(
+        f"# 0099. A document this test has never heard of\n\n{TABLE_HEADER}\n"
+        "|---|---|---|---|---|\n"
+        "| Z9 | one thing | another thing | what is left | **Riparato.** |\n\n"
+        "And prose after it, which ends the table.\n",
+        encoding="utf-8",
+    )
+
+    rows = documented_in(invented.read_text(encoding="utf-8"))
+
+    assert rows == {"Z9": "**Riparato.**"}
+
+
+def test_prose_that_looks_like_a_row_outside_a_table_is_not_one() -> None:
+    """The header is what opens a table, so a five-column line elsewhere is just a line."""
+    stray = "| 7 | a | b | c | d |\n"
+
+    assert documented_in(stray) == {}

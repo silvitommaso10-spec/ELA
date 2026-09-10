@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from ela.infrastructure.perception import VISION_MODULE
+from ela.infrastructure.machine import VISION_MODULE
 
 pytestmark = pytest.mark.skipif(
     platform.system() != "Darwin", reason="the helper reads the macOS Vision framework"

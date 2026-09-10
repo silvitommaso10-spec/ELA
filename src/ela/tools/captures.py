@@ -56,6 +56,10 @@ __all__ = [
     "CAPTURE_NAME_INVALID",
     "CAPTURE_NOT_REGULAR",
     "CAPTURE_SUFFIX",
+    "HeardSegment",
+    "TRANSCRIPT_NAME",
+    "TranscriptArtefact",
+    "TRANSCRIPT_SUFFIX",
     "CAPTURE_UNREADABLE",
     "HEADER_BYTES",
     "PNG_SIGNATURE",
@@ -117,6 +121,7 @@ CAPTURE_CODES: Final[frozenset[str]] = frozenset(
 
 CAPTURE_SUFFIX: Final = ".png"
 TEXT_SUFFIX: Final = ".jsonl"
+TRANSCRIPT_SUFFIX: Final = ".heard.jsonl"
 """What a recognition is called. The **stem is the capture's id**, which is the whole mechanism
 of the shared lifetime: there is no index saying which text belongs to which image, because the
 name *is* the link (M10.3 dec. 10)."""
@@ -127,8 +132,18 @@ CAPTURE_NAME: Final = re.compile(rf"^{_UUID}\.png$")
 anything that does not look like one it issued is not one it issued — and a name with a path
 separator in it stops being expressible rather than being filtered."""
 TEXT_NAME: Final = re.compile(rf"^{_UUID}\.jsonl$")
-ARTEFACT_NAME: Final = re.compile(rf"^({_UUID})\.(?:png|jsonl)$")
-"""Either artefact, with the capture id captured: one path segment, and the id is group 1."""
+TRANSCRIPT_NAME: Final = re.compile(rf"^{_UUID}\.heard\.jsonl$")
+"""A UUID and ``.heard.jsonl``: what ELA wrote down of what it heard (M11.2).
+
+A suffix of its own, and not ``.jsonl``, because a transcript is **not derived from anything this
+store holds**. The recognition of a capture inherits the image's clock; the audio a transcript
+came from was never an artefact at all — it lived on an anonymous inode and the kernel took it
+back. So a transcript is an origin, like a capture, and its own ``mtime`` is its clock."""
+ARTEFACT_NAME: Final = re.compile(rf"^({_UUID})\.(?:png|heard\.jsonl|jsonl)$")
+"""Any artefact, with the group id captured: one path segment, and the id is group 1.
+
+``heard.jsonl`` comes before ``jsonl`` because the alternation is ordered and the longer suffix
+would otherwise never be reached."""
 
 ALREADY_EXPIRED: Final = datetime.min.replace(tzinfo=UTC)
 """The expiry of a derived artefact whose capture is gone — in the past for every possible ``now``.
@@ -223,6 +238,33 @@ class TextArtefact:
 
 
 @dataclass(frozen=True, slots=True)
+class HeardSegment:
+    """One segment as read back from a transcript on disk."""
+
+    text: str
+    start_ms: int
+    end_ms: int
+    probabilities: tuple[float, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TranscriptArtefact:
+    """A transcript as read from the disk: what the tool reports and the verifier re-derives.
+
+    ``characters`` is the sum of the segment lengths and not the file size: the file carries JSON
+    punctuation and a probability for every token, and what a reader wants to know is how much of
+    a recording became words.
+    """
+
+    name: str
+    bytes: int
+    sha256: str
+    segments: int
+    characters: int
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class Retained:
     """One capture the store is holding right now, for ``/diagnostics`` and for the ceilings."""
 
@@ -239,6 +281,11 @@ def is_capture_name(name: str) -> bool:
 def is_text_name(name: str) -> bool:
     """Whether ``name`` is a recognition this store issues: a UUID and ``.jsonl``."""
     return TEXT_NAME.match(name) is not None
+
+
+def is_transcript_name(name: str) -> bool:
+    """Whether ``name`` is a transcript this store issues: a UUID and ``.heard.jsonl``."""
+    return TRANSCRIPT_NAME.match(name) is not None
 
 
 def is_artefact_name(name: str) -> bool:
@@ -264,6 +311,11 @@ def name_for(capture_id: str) -> str:
 def text_name_for(capture_id: str) -> str:
     """The file name the recognition of that capture gets. Same stem, by construction."""
     return f"{capture_id}{TEXT_SUFFIX}"
+
+
+def transcript_name_for(transcript_id: str) -> str:
+    """The file name a transcript gets. Its own stem: it belongs to no capture."""
+    return f"{transcript_id}{TRANSCRIPT_SUFFIX}"
 
 
 def path_for(directory: Path, name: str) -> Path | CaptureProblem:
@@ -338,6 +390,81 @@ def measure_text(path: Path, expires_at: datetime) -> TextArtefact | CaptureProb
     )
 
 
+def jsonl_segments(data: bytes) -> tuple[HeardSegment, ...] | None:
+    """The transcript these bytes carry, or ``None`` if they are not the JSON Lines ELA writes."""
+    try:
+        text = data.decode("utf-8", "strict")
+    except UnicodeDecodeError:
+        return None
+    segments: list[HeardSegment] = []
+    for raw in text.splitlines():
+        record = _segment(raw)
+        if record is None:
+            return None
+        segments.append(record)
+    return tuple(segments)
+
+
+def _segment(raw: str) -> HeardSegment | None:
+    """One line of a transcript, or ``None`` if it is not one this store writes."""
+    try:
+        loaded = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(loaded, dict):
+        return None
+    text, start, end, tokens = (
+        loaded.get("text"),
+        loaded.get("start_ms"),
+        loaded.get("end_ms"),
+        loaded.get("tokens"),
+    )
+    if not isinstance(text, str) or not isinstance(start, int) or not isinstance(end, int):
+        return None
+    if not isinstance(tokens, list):
+        return None
+    found = [one.get("p") for one in tokens if isinstance(one, dict)]
+    probabilities = [
+        float(one) for one in found if isinstance(one, float | int) and not isinstance(one, bool)
+    ]
+    if len(probabilities) != len(tokens):
+        return None
+    return HeardSegment(text=text, start_ms=start, end_ms=end, probabilities=tuple(probabilities))
+
+
+def measure_transcript(path: Path, expires_at: datetime) -> TranscriptArtefact | CaptureProblem:
+    """Read the transcript at ``path`` and say what it is, or why it is not one.
+
+    The words stay in memory for the length of one hash and one count, and never enter a
+    :class:`CaptureProblem`: a failure carries a size, never a byte (§57).
+    """
+    located = _regular_bytes(path)
+    if isinstance(located, CaptureProblem):
+        return located
+    segments = jsonl_segments(located)
+    if segments is None:
+        return CaptureProblem(TEXT_MALFORMED, f"is not JSON Lines ({len(located)} bytes)")
+    return TranscriptArtefact(
+        name=path.name,
+        bytes=len(located),
+        sha256=hashlib.sha256(located).hexdigest(),
+        segments=len(segments),
+        characters=sum(len(one.text) for one in segments),
+        expires_at=expires_at,
+    )
+
+
+def inspect_transcript(
+    directory: Path, name: str, ttl: timedelta
+) -> TranscriptArtefact | CaptureProblem:
+    """What is at ``name`` right now, re-derived from the disk — the listening verifier's door."""
+    if not is_transcript_name(name):
+        return CaptureProblem(CAPTURE_NAME_INVALID, "is not a name this store issues")
+    transcript_id = capture_id_of(name)
+    assert transcript_id is not None  # noqa: S101 — guaranteed by ``is_transcript_name`` above
+    return measure_transcript(directory / name, _group_expiry(directory, transcript_id, ttl))
+
+
 def inspect_text(directory: Path, name: str, ttl: timedelta) -> TextArtefact | CaptureProblem:
     """What is at ``name`` right now, re-derived from the disk — the text verifier's entry point.
 
@@ -354,20 +481,26 @@ def inspect_text(directory: Path, name: str, ttl: timedelta) -> TextArtefact | C
 def _group_expiry(directory: Path, capture_id: str, ttl: timedelta) -> datetime:
     """When every artefact of this capture stops being held (M10.3 dec. 10).
 
-    Read from the **image**, always: the capture is the origin, and everything derived from it
-    expires with it. A ``.jsonl`` written five minutes after its ``.png`` does not get five extra
-    minutes, because it never had a clock of its own to consult.
+    Read from the **origin**, always: for a capture that is the image, and everything derived from
+    it expires with it. A ``.jsonl`` written five minutes after its ``.png`` does not get five
+    extra minutes, because it never had a clock of its own to consult.
 
-    No image means no origin, and no origin means :data:`ALREADY_EXPIRED` — the fail-safe
-    direction of §33 applied to content: in doubt, discard rather than hold.
+    Since M11.2 a group can have a different origin: a transcript is one, because the audio it
+    came from was never an artefact — it had no name and the kernel freed it. Nothing is weakened
+    by that, because the rule it bends was about *derived* artefacts, and a transcript derives
+    from nothing this store holds.
+
+    No origin means :data:`ALREADY_EXPIRED` — the fail-safe direction of §33 applied to content:
+    in doubt, discard rather than hold.
     """
-    try:
-        origin = (directory / name_for(capture_id)).lstat()
-    except OSError:
-        return ALREADY_EXPIRED
-    if not stat.S_ISREG(origin.st_mode):
-        return ALREADY_EXPIRED
-    return _expiry(origin.st_mtime, ttl)
+    for candidate in (name_for(capture_id), transcript_name_for(capture_id)):
+        try:
+            origin = (directory / candidate).lstat()
+        except OSError:
+            continue
+        if stat.S_ISREG(origin.st_mode):
+            return _expiry(origin.st_mtime, ttl)
+    return ALREADY_EXPIRED
 
 
 def png_size(header: bytes) -> Size | None:

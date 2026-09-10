@@ -17,7 +17,7 @@ from datetime import timedelta
 
 import pytest
 
-from ela.infrastructure.perception import (
+from ela.infrastructure.machine import (
     TIMED_OUT,
     VISION_MODULE,
     UnsupportedTextRecognition,

@@ -21,6 +21,7 @@ from ela.domain import (
     CapabilitySpec,
     JsonMapping,
     RiskLevel,
+    SensorName,
     TaskId,
     TaskStep,
 )
@@ -77,6 +78,19 @@ MEDIUM-shaped in the one way that matters here: it always asks. ``perception.cap
 the only real one, and this stands in for it wherever the executor is exercised without a capture
 store — the mechanism is the catalogue's and the executor's, not the screen's.
 """
+SENSING_ECHO: Final = ECHO.model_copy(
+    update={
+        "id": CapabilityId("core.echo_sensing"),
+        "activates_sensor": SensorName.MICROPHONE,
+    }
+)
+"""A capability that declares it turns a sensor of §11 on (M11.2, ADR 0036 §11).
+
+``perception.listen`` is the only real one, and this stands in for it wherever the executor is
+exercised without a microphone: the mechanism is the catalogue's and the executor's, not the
+listening's. Which is the whole reason the declaration lives on the capability — a tool that wrote
+the event itself would have made every test of it need a tool that opens a device.
+"""
 UNCONSTRAINED_SCOPE: Final = ECHO.model_copy(
     update={"id": CapabilityId("broken.scope"), "risk": RiskLevel.LOW, "scope": ("workspace",)}
 )
@@ -89,6 +103,7 @@ CATALOGUE: Final = (
     COMPLETE,
     GUARDED_ECHO,
     STATED_ECHO,
+    SENSING_ECHO,
     GUARDED_NOTE,
     HIGH,
     CRITICAL,
@@ -106,6 +121,7 @@ ARGUMENTS: Final[Mapping[CapabilityId, JsonMapping]] = MappingProxyType(
         ECHO.id: ECHO_ARGS,
         GUARDED_ECHO.id: ECHO_ARGS,
         STATED_ECHO.id: STATED_ARGS,
+        SENSING_ECHO.id: ECHO_ARGS,
         HIGH.id: ECHO_ARGS,
         CRITICAL.id: ECHO_ARGS,
         UNCONSTRAINED_SCOPE.id: ECHO_ARGS,

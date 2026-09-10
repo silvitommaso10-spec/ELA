@@ -212,16 +212,34 @@ def test_scope_and_scoped_arguments_come_together() -> None:
 # --------------------------------------------------------------------------------------
 
 
-def test_a_prompt_argument_must_be_a_declared_string_property() -> None:
+def test_a_prompt_argument_must_be_a_declared_promptable_property() -> None:
     with pytest.raises(InvalidCapabilityError, match="prompt argument 'missing'"):
         CapabilityRegistry([spec(prompt_arguments=("missing",))])
+
+
+def test_an_integer_may_be_named_in_the_question_and_a_list_may_not() -> None:
+    """M11.2 dec. G2: how long the microphone stays open is half of what is being approved.
+
+    The narrow rule kept the user's **content** out of a stored ``Approval`` — ``model.complete``'s
+    ``input``, the words ELA is about to say. A number is not content, so the question can name it
+    without the defence losing anything. A list still cannot: rendered into a sentence it is a
+    dump, not a question, and the mechanism exists to produce something a person can read.
+    """
     numeric = {
         "type": "object",
-        "properties": {"path": {"type": "string"}, "loud": {"type": "integer"}},
-        "required": ["path", "loud"],
+        "properties": {"path": {"type": "string"}, "seconds": {"type": "integer"}},
+        "required": ["path", "seconds"],
     }
-    with pytest.raises(InvalidCapabilityError, match="prompt argument 'loud'"):
-        CapabilityRegistry([spec(input_schema=numeric, prompt_arguments=("loud",))])
+    registry = CapabilityRegistry([spec(input_schema=numeric, prompt_arguments=("seconds",))])
+    assert registry.specs()[0].prompt_arguments == ("seconds",)
+
+    listed = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}, "targets": {"type": "array"}},
+        "required": ["path", "targets"],
+    }
+    with pytest.raises(InvalidCapabilityError, match="prompt argument 'targets'"):
+        CapabilityRegistry([spec(input_schema=listed, prompt_arguments=("targets",))])
 
 
 def test_a_prompt_argument_must_be_required_by_the_schema() -> None:

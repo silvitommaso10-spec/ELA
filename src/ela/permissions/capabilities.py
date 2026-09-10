@@ -32,7 +32,7 @@ from typing import Any, Final
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
-from ela.domain import CapabilityId, CapabilitySpec, RiskLevel
+from ela.domain import CapabilityId, CapabilitySpec, RiskLevel, SensorName
 from ela.permissions.errors import (
     CapabilityNotFound,
     InvalidArgumentsError,
@@ -46,7 +46,9 @@ __all__ = [
     "DEFAULT_NOTES_SCOPE",
     "MAX_RISK",
     "MODEL_COMPLETE",
+    "MAX_LISTEN_SECONDS",
     "PERCEPTION_CAPTURE_SCREEN",
+    "PERCEPTION_LISTEN",
     "PERCEPTION_READ_SCREEN_TEXT",
     "PHASE_10_INTRODUCED_AT",
     "SCHEMA_VALIDATOR",
@@ -101,6 +103,19 @@ def is_valid_scope_entry(entry: str) -> bool:
     return not any(part in FORBIDDEN_SCOPE_PARTS for part in entry.split("/"))
 
 
+PROMPTABLE_TYPES: Final = ("string", "integer")
+"""The JSON types a ``prompt_argument`` may have (M10.2, ADR 0029 §6; M11.2 dec. G2).
+
+An allow-list rather than "anything", because the point of the mechanism is a question a person
+can read: an object or an array rendered into a sentence is not a question, it is a dump. And
+deliberately without ``number`` or ``boolean`` until something needs them — a type admitted before
+it has a caller is a door with nobody behind it (ADR 0026 §7)."""
+
+
+def _promptable() -> str:
+    return " or ".join(PROMPTABLE_TYPES)
+
+
 def check_capability(spec: CapabilitySpec) -> None:
     """Refuse a specification the catalogue must not hold; return ``None`` if it may.
 
@@ -108,13 +123,21 @@ def check_capability(spec: CapabilitySpec) -> None:
     valid schema of the draft; every scope entry well-formed; every scoped argument a ``string``
     property of the schema; scope and scoped arguments both present or both absent — a scope
     that constrains no argument, or a scoped argument with no scope, is a doubt (§33); every
-    prompt argument a ``string`` property **and required**. Each of the last five is an
-    :class:`InvalidCapabilityError` naming the capability and the reason.
+    prompt argument a property of a type in :data:`PROMPTABLE_TYPES` **and required**. Each of the
+    last five is an :class:`InvalidCapabilityError` naming the capability and the reason.
 
     Why a prompt argument must be required (M10.2, ADR 0029 §6): its value goes into the question
     the user is asked, and a question that may be missing half its words is not a question. §30
     is about exactly this — a "yes" out of context authorises nothing — so a capability that
     declared an optional argument here would be building a defence that sometimes says nothing.
+
+    Why the types are an allow-list and not just ``string`` (M11.2 dec. G2): a microphone is
+    opened **for a number of seconds**, and how long it stays open is half of what is being
+    approved — an approval that does not name it is not informed. What the narrow rule was
+    protecting is untouched: the default is still empty, and what must never appear is the user's
+    *content* (``model.complete``'s ``input``, the words ELA is about to say). An integer is not
+    content, so admitting one widens the question without widening what can leak into a stored
+    ``Approval``.
     """
     if spec.risk > MAX_RISK:
         raise RiskNotAllowedError(spec.id, spec.risk, MAX_RISK)
@@ -144,9 +167,10 @@ def check_capability(spec: CapabilitySpec) -> None:
     required = schema.get("required", [])
     for name in spec.prompt_arguments:
         declared = properties.get(name)
-        if not isinstance(declared, dict) or declared.get("type") != "string":
+        if not isinstance(declared, dict) or declared.get("type") not in PROMPTABLE_TYPES:
             raise InvalidCapabilityError(
-                spec.id, f"prompt argument {name!r} is not a string property of input_schema"
+                spec.id,
+                f"prompt argument {name!r} is not a {_promptable()} property of input_schema",
             )
         if name not in required:
             raise InvalidCapabilityError(
@@ -209,6 +233,7 @@ CORE_ECHO: Final = CapabilityId("core.echo")
 WORKSPACE_WRITE_NOTE: Final = CapabilityId("workspace.write_note")
 MODEL_COMPLETE: Final = CapabilityId("model.complete")
 PERCEPTION_CAPTURE_SCREEN: Final = CapabilityId("perception.capture_screen")
+PERCEPTION_LISTEN: Final = CapabilityId("perception.listen")
 PERCEPTION_READ_SCREEN_TEXT: Final = CapabilityId("perception.read_screen_text")
 VOICE_SPEAK: Final = CapabilityId("voice.speak")
 VOICE_SPEAK_ONLINE: Final = CapabilityId("voice.speak_online")
@@ -550,6 +575,62 @@ def voice_speak_online() -> CapabilitySpec:
     )
 
 
+MAX_LISTEN_SECONDS: Final = 30
+"""The longest the microphone may stay open in one call (M11.2).
+
+Not a round number chosen for looking sensible: it is the voice's ceiling read back. 600
+characters at the measured 18 characters a second is ≈ 33 seconds of speech (M11.1 dec. E), so
+**ELA does not listen for longer than it is allowed to speak.** At 16 kHz mono that is 960 KB,
+which fits in an anonymous inode without thinking about it.
+
+And it is what bounds the worst case that has no owner: a child outlives its parent, so if ELA is
+killed mid-recording the longest an orphaned microphone can live is this plus the child's margin
+— a number, rather than "until somebody notices"."""
+
+
+def perception_listen() -> CapabilitySpec:
+    """``perception.listen``, MEDIUM: opens this machine's microphone for a stated number of
+    seconds and writes down what was said.
+
+    **The name is the surface of the consent** (ADR 0034 §3): an ``Approval``'s prompt shows the
+    ``capability_id`` and never the description, so the id is the only place the right word
+    reaches whoever decides. ``perception.listen`` says the thing that happens.
+
+    MEDIUM and always authorised, for the reason ADR 0028 §9 registered: this is a reading of
+    **content**, and the first that is neither a screen nor a word of ELA's. HIGH is not an
+    option — in ``RISK_POLICY`` it means ``DENY``, so it would not make listening more careful, it
+    would make it impossible (ADR 0034 §4).
+
+    **No scope**, for the reason ADR 0029 §6 gave the capture: the Guardian's scope is
+    path-shaped, and the natural scope of listening is *when* and *who else is in the room*,
+    which are not paths.
+
+    ``seconds`` is **required, has no default, and is named in the question** (M11.2 dec. G2). A
+    capability that opened a microphone for a length written in a configuration file would be
+    hiding the very thing the person answering wants to know; and §30, in the form ADR 0029 §6
+    gave it, says a yes is only worth something if the question was complete.
+    """
+    return CapabilitySpec(
+        id=PERCEPTION_LISTEN,
+        created_at=PHASE_11_INTRODUCED_AT,
+        description="Opens this machine's microphone for a while and writes down what it heard.",
+        risk=RiskLevel.MEDIUM,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "purpose": {"type": "string", "minLength": 1},
+                "seconds": {"type": "integer", "minimum": 1, "maximum": MAX_LISTEN_SECONDS},
+            },
+            "required": ["purpose", "seconds"],
+            "additionalProperties": False,
+        },
+        prompt_arguments=("purpose", "seconds"),
+        activates_sensor=SensorName.MICROPHONE,
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
 def production_catalogue(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> CapabilityRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -566,5 +647,8 @@ def production_catalogue(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> Capabilit
             perception_read_screen_text(),
             voice_speak(),
             voice_speak_online(),
+            # In the order the ADRs added them, which is what the catalogue's table is checked
+            # against: a capability is added with an ADR and a row, never by accident.
+            perception_listen(),
         )
     )

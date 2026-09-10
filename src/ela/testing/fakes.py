@@ -51,9 +51,11 @@ from ela.domain import (
     ProviderStatus,
     ProviderUsage,
     RawCapture,
+    RawHeardSegment,
     RawObservation,
     RawRecognition,
     RawSpeech,
+    RawTranscript,
     StepId,
     Task,
     TaskEvent,
@@ -99,6 +101,7 @@ __all__ = [
     "FakePermissionGuardian",
     "FakeProbe",
     "FakeProviderRegistry",
+    "FakeListening",
     "FakeScreenCapture",
     "FakeSpeech",
     "FakeTaskRepository",
@@ -946,6 +949,57 @@ class FakeSpeech:
     async def speak(self, text: str) -> RawSpeech:
         """Record what was asked, make no sound, and report."""
         self.said = (*self.said, text)
+        return self._report
+
+
+class FakeListening:
+    """A :class:`~ela.ports.ListeningPort` that hears whatever the test wrote down.
+
+    ``report`` is the transcript it hands back; ``there`` is whether this machine can listen at
+    all.
+
+    ``asked`` records every duration it was called with, and that is what proves the property the
+    milestone rests on: **when the permission is denied, this is never called.** A test asserts an
+    empty ``asked``, not the absence of a recording — attempting from a denied state is how a
+    permanent refusal gets recorded in the operating system (ADR 0029 §7), and worse here, since
+    opening a refused microphone succeeds and hands back silence that a transcriber turns into
+    words nobody said. Not attempting is the behaviour, and behaviour is only tested by watching
+    for it.
+
+    The default report carries a peak above zero: a fake that reported silence would send every
+    test down the ``listen.no_signal`` path for the wrong reason. A test that wants that path
+    passes its own ``report``.
+
+    Honours the port's promise not to raise: a helper that dies reports how, it does not throw.
+    """
+
+    __slots__ = ("_report", "asked", "there")
+
+    def __init__(self, *, report: RawTranscript | None = None, there: bool = True) -> None:
+        self._report = (
+            report
+            if report is not None
+            else RawTranscript(
+                exit_code=0,
+                recorded_seconds=3.0,
+                peak=3330,
+                language="it",
+                segments=(
+                    RawHeardSegment(
+                        text=" Ela, sposta la call di domani.", start_ms=0, end_ms=1840
+                    ),
+                ),
+            )
+        )
+        self.there = there
+        self.asked: tuple[int, ...] = ()
+
+    async def available(self) -> bool:
+        return self.there
+
+    async def listen(self, seconds: int) -> RawTranscript:
+        """Record what was asked, open nothing, and report."""
+        self.asked = (*self.asked, seconds)
         return self._report
 
 

@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 import pytest
 
 from ela.domain import ProbeFamily, RawObservation, SensorCause
-from ela.infrastructure.perception import UnsupportedProbe
+from ela.infrastructure.machine import UnsupportedProbe
 from ela.perception import interpret, unobserved
 
 AT = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)

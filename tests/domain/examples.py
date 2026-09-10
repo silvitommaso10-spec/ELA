@@ -73,10 +73,13 @@ from ela.domain import (
     ProviderResultId,
     ProviderUsage,
     RawCapture,
+    RawHeardSegment,
+    RawHeardToken,
     RawObservation,
     RawRecognition,
     RawSpeech,
     RawTextLine,
+    RawTranscript,
     RiskLevel,
     SensorCause,
     SensorState,
@@ -411,6 +414,21 @@ RAW_CAPTURE: Final = RawCapture(exit_code=0)
 # ratio is what the verifier's floor is set ten times below (M11.1 dec. C).
 RAW_SPEECH: Final = RawSpeech(exit_code=0, spoken_seconds=1.65)
 
+RAW_HEARD_TOKEN: Final = RawHeardToken(text=" Ela", probability=0.543607)
+"""The measured one: the word the decoder was least sure of, inside a sentence it got right."""
+RAW_HEARD_SEGMENT: Final = RawHeardSegment(
+    text=" Ela, sposta la call di domani.", start_ms=0, end_ms=1840, tokens=(RAW_HEARD_TOKEN,)
+)
+RAW_TRANSCRIPT: Final = RawTranscript(
+    exit_code=0,
+    recorded_seconds=3.21,
+    peak=3330,
+    language="it",
+    segments=(RAW_HEARD_SEGMENT,),
+)
+"""A peak of 3330 is what a granted microphone measured on 2026-09-09; zero is what a refused one
+measured, with every return code saying success."""
+
 # One line of Italian read perfectly, which is what the accurate level does: measured on a known
 # image, every line correct down to nine-point type, confidence 1,00.
 RAW_TEXT_LINE: Final = RawTextLine(text="Riunione trimestrale", confidence=1.0)
@@ -565,6 +583,9 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         RAW_OBSERVATION,
         RAW_CAPTURE,
         RAW_SPEECH,
+        RAW_HEARD_TOKEN,
+        RAW_HEARD_SEGMENT,
+        RAW_TRANSCRIPT,
         OBSERVATION,
         PERCEPTION_CHANGE,
         RAW_TEXT_LINE,

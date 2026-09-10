@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from ela.infrastructure.perception import TIMED_OUT, spawn
-from ela.infrastructure.perception.darwin import (
+from ela.infrastructure.machine import TIMED_OUT, spawn
+from ela.infrastructure.machine.darwin import (
     SPEECH_FILE_PREFIX,
     spawn_with_audio,
     sweep_speech_files,
