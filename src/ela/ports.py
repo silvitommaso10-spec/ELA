@@ -92,6 +92,7 @@ __all__ = [
     "LISTEN_LANGUAGE_UNSUPPORTED",
     "LISTEN_NO_INPUT_DEVICE",
     "LISTEN_NO_SIGNAL",
+    "LISTEN_PERMISSION_UNREADABLE",
     "LISTEN_TIMEOUT",
     "LISTEN_TRANSCRIPTION_FAILED",
     "LISTEN_TRANSCRIPTION_UNAVAILABLE",
@@ -1387,6 +1388,14 @@ silence, which a transcriber turns into words nobody said.
 Not a :class:`~ela.domain.SensorCause`: with the permission denied the probe still sees the device
 and still reads whether anyone is using it, so no state of §11 changes and a cause for it could
 never fire (ADR 0028 §4, and M11.2 dec. I, which measured it)."""
+LISTEN_PERMISSION_UNREADABLE: Final = "listen.permission_unreadable"
+"""The microphone permission could not be read at all — the probe timed out, died, or spoke
+nonsense.
+
+**A doubt, and a doubt is not a yes** (§33). Its own code and not
+:data:`LISTEN_DENIED_BY_SYSTEM`, because "the system refuses me" and "I could not find out" are
+different facts with different answers, and collapsing them is the exact mistake this milestone
+exists to avoid — one step further back. The sibling of ``screen.not_observable`` (M10.2)."""
 LISTEN_NO_INPUT_DEVICE: Final = "listen.no_input_device"
 """There is no input device at all — the case of every CI runner."""
 LISTEN_NO_SIGNAL: Final = "listen.no_signal"
@@ -1426,6 +1435,7 @@ LISTEN_ERROR_CODES: Final = frozenset(
         LISTEN_DENIED_BY_SYSTEM,
         LISTEN_NO_INPUT_DEVICE,
         LISTEN_NO_SIGNAL,
+        LISTEN_PERMISSION_UNREADABLE,
         LISTEN_TIMEOUT,
         LISTEN_FAILED,
         LISTEN_TRANSCRIPTION_UNAVAILABLE,
@@ -1439,7 +1449,8 @@ Here and not in the adapter, for the reason ADR 0020 §7 put the model provider'
 caller must tell "the microphone is refused" from "there is no microphone" **without knowing who
 produced the answer**.
 
-Ten of them, and three exist only because the measurement of 2026-09-09 said a refusal is silent:
+Eleven of them, and three exist only because the measurement of 2026-09-09 said a refusal is
+silent:
 :data:`LISTEN_DENIED_BY_SYSTEM`, :data:`LISTEN_NO_SIGNAL` and :data:`LISTEN_NO_INPUT_DEVICE` are
 what keep "you said nothing", "I was refused" and "there is nothing here to hear with" from
 arriving as the same empty answer.

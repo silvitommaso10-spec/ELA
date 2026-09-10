@@ -22,12 +22,14 @@ from ela.api.schemas import (
     CaptureStoreOut,
     DiagnosticsOut,
     HealthOut,
+    ListeningOut,
     PerceptionSummaryOut,
     VoiceOnlineOut,
     VoiceOut,
 )
 from ela.composition import Ela
 from ela.devices.local import LOCAL_DEVICE_ID
+from ela.permissions import MAX_LISTEN_SECONDS
 from ela.tasks.engine import RecoverySummary
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 
@@ -109,6 +111,15 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
         # Asked here, not remembered: ``available`` is two syscalls and makes no sound, so the
         # honest answer is the one from this instant rather than a belief with an age.
         voice=await voice_of(ela),
+        # Asked here too, and for the same reason: ``available`` is a stat and a digest that is
+        # remembered against the file's size and mtime, so the honest answer is this instant's.
+        listening=ListeningOut(
+            enabled=ela.settings.listen.listen_enabled,
+            available=await ela.listening.available(),
+            language=ela.settings.listen.listen_language,
+            max_seconds=MAX_LISTEN_SECONDS,
+            timeout_seconds=ela.settings.listen.stt_timeout_seconds,
+        ),
     )
 
 

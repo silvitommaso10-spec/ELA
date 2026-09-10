@@ -40,10 +40,13 @@ from ela.tools.captures import (
     Capture,
     CaptureProblem,
     TextArtefact,
+    TranscriptArtefact,
     inspect,
     inspect_text,
+    inspect_transcript,
 )
 from ela.tools.echo import CORE_ECHO
+from ela.tools.listen import PERCEPTION_LISTEN
 from ela.tools.model import MODEL_COMPLETE, routing_arguments
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
 from ela.tools.paths import PATH_CODES, classify, resolve_workspace
@@ -65,7 +68,12 @@ __all__ = [
     "SPEECH_TEXT_MISMATCH",
     "SPEECH_TEXT_MATCHES",
     "MIN_SECONDS_PER_CHARACTER",
+    "LISTEN_VERIFIER_NAME",
+    "ListenVerifier",
     "TEXT_DECLARED_MISMATCH",
+    "TRANSCRIPT_DECLARED_MISMATCH",
+    "TRANSCRIPT_EXISTS",
+    "TRANSCRIPT_MATCHES",
     "TEXT_EXISTS",
     "TEXT_MATCHES",
     "TEXT_VERIFIER_NAME",
@@ -520,6 +528,83 @@ class ReadScreenTextVerifier(Verifier):
             ("bytes", found.bytes),
             ("sha256", found.sha256),
             ("lines", found.lines),
+            ("characters", found.characters),
+        )
+        return tuple(key for key, actual in checks if declared.get(key) != actual)
+
+
+TRANSCRIPT_EXISTS: Final = "transcript.exists"
+"""At the declared name there is a regular file inside the store, and it parses as JSON Lines."""
+TRANSCRIPT_MATCHES: Final = "transcript.matches"
+"""Bytes, digest, segments and characters read from the disk are the ones the result declares."""
+TRANSCRIPT_DECLARED_MISMATCH: Final = "transcript.declared_mismatch"
+"""The disk contradicts the result. Names what differs and never the values (§57)."""
+LISTEN_VERIFIER_NAME: Final = "perception-listen-verifier"
+
+
+class ListenVerifier(Verifier):
+    """``perception.listen`` verified from the disk (§20, §63; M11.2, ADR 0036).
+
+    It **re-reads and does not re-listen**: verifying is not redoing, and here it could not be —
+    the audio is gone by construction, and the room has moved on.
+
+    **What it proves, and the limit is bigger than the capture's.** It proves that ELA wrote what
+    it says it wrote: a transcript at the declared name, inside the store, with the byte count,
+    the digest, the segment count and the character count the result declares. It does **not**
+    prove that those are the words somebody said — nothing ELA has can prove that, because the
+    only thing that could is the recording, and the milestone decided not to keep it (dec. E).
+
+    Said plainly because a verifier that sounded stronger than it is would be worse than none
+    (M11.1 dec. C, applied to a reading instead of a sound): *this says ELA's transcript is on the
+    disk as described, not that the room said it.*
+    """
+
+    conditions: ClassVar[frozenset[str]] = frozenset({TRANSCRIPT_EXISTS, TRANSCRIPT_MATCHES})
+    failure_codes: ClassVar[frozenset[str]] = (
+        COMMON_FAILURE_CODES | CAPTURE_CODES | {TRANSCRIPT_DECLARED_MISMATCH}
+    )
+
+    def __init__(
+        self, directory: Path | str, ttl: timedelta, *, name: str = LISTEN_VERIFIER_NAME
+    ) -> None:
+        super().__init__(PERCEPTION_LISTEN, name=name)
+        self._directory = Path(directory).expanduser().absolute()
+        self._ttl = ttl
+
+    async def _check(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        del arguments  # ``purpose`` and ``seconds`` determine no word; the claim is under test
+        name = result.output.get("path")
+        if not isinstance(name, str):
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "output.path must be a string",
+                retryable=False,
+            )
+        found = inspect_transcript(self._directory, name, self._ttl)
+        if isinstance(found, CaptureProblem):
+            return self._failure(condition, found.code, found.message(name), retryable=False)
+        if condition == TRANSCRIPT_EXISTS:
+            return None
+        differs = self._differences(found, result.output)
+        if not differs:
+            return None
+        return self._failure(
+            condition,
+            TRANSCRIPT_DECLARED_MISMATCH,
+            f"{name!r} is not the transcript the result describes: {', '.join(differs)}",
+            retryable=False,
+        )
+
+    @staticmethod
+    def _differences(found: TranscriptArtefact, declared: JsonMapping) -> tuple[str, ...]:
+        """Which declared facts the disk contradicts, named and never quantified (§57)."""
+        checks = (
+            ("bytes", found.bytes),
+            ("sha256", found.sha256),
+            ("segments", found.segments),
             ("characters", found.characters),
         )
         return tuple(key for key, actual in checks if declared.get(key) != actual)

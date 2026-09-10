@@ -45,11 +45,17 @@ import json
 import os
 from collections.abc import Sequence
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar, Final
 
-from ela.domain import CapabilityId, JsonMapping, ProbeFamily, RawTextLine
+from ela.domain import (
+    CapabilityId,
+    JsonMapping,
+    ProbeFamily,
+    RawHeardSegment,
+    RawTextLine,
+)
 from ela.ports import Clock, IdGenerator, PerceptionProbe, ScreenCapturePort
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.captures import (
@@ -60,13 +66,16 @@ from ela.tools.captures import (
     CaptureProblem,
     Retained,
     TextArtefact,
+    TranscriptArtefact,
     inspect,
     measure,
     measure_text,
+    measure_transcript,
     name_for,
     retained,
     room,
     text_name_for,
+    transcript_name_for,
 )
 from ela.tools.notes import DIRECTORY_MODE, FILE_MODE
 from ela.tools.settings import CaptureSettings
@@ -238,6 +247,49 @@ class CaptureStore:
                 CAPTURE_UNREADABLE, f"could not be written: {type(error).__name__}"
             )
         return measure_text(target, self._group_expiry(capture_id))
+
+    def write_transcript(
+        self, transcript_id: str, segments: Sequence[RawHeardSegment]
+    ) -> TranscriptArtefact | CaptureProblem:
+        """Write what ELA heard, then measure it back (M11.2 dec. E).
+
+        The same shape as :meth:`write_text`, and one difference that is the milestone: there is
+        **no origin file beside this one**. A recognition sits next to the image it was read from;
+        a transcript sits alone, because the audio it came from had no name and the kernel took it
+        back the moment the descriptor closed. So this is an origin, and its own ``mtime`` is its
+        clock.
+
+        The probability of every token travels into the file and never into the result: what a
+        result carries is a summary, and dropping the per-token value would have meant choosing a
+        threshold, which belongs to whoever decides (§45).
+        """
+        target = self._directory / transcript_name_for(transcript_id)
+        payload = b"".join(
+            json.dumps(
+                {
+                    "text": segment.text,
+                    "start_ms": segment.start_ms,
+                    "end_ms": segment.end_ms,
+                    "tokens": [
+                        {"text": token.text, "p": token.probability} for token in segment.tokens
+                    ],
+                }
+            ).encode("utf-8")
+            + b"\n"
+            for segment in segments
+        )
+        try:
+            self._write(target, payload)
+        except OSError as error:
+            return CaptureProblem(
+                CAPTURE_UNREADABLE, f"could not be written: {type(error).__name__}"
+            )
+        return measure_transcript(target, self._own_expiry(target))
+
+    def _own_expiry(self, target: Path) -> datetime:
+        """When a transcript stops being held: its own clock, because it has no origin above it."""
+        stamp = datetime.fromtimestamp(target.stat().st_mtime, tz=UTC)
+        return stamp + self._settings.capture_ttl
 
     def _write(self, target: Path, payload: bytes) -> None:
         """Create, fill, and move into place — never leaving a partial file at the real name."""

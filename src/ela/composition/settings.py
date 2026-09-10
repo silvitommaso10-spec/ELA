@@ -42,7 +42,12 @@ from ela.permissions import (
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
-from ela.tools.settings import CaptureSettings, VoiceSettings, WorkspaceSettings
+from ela.tools.settings import (
+    CaptureSettings,
+    ListenSettings,
+    VoiceSettings,
+    WorkspaceSettings,
+)
 
 __all__ = [
     "DEFAULT_API_HOST",
@@ -250,6 +255,10 @@ class Settings(BaseModel):
     perception: PerceptionSettings
     captures: CaptureSettings
     voice: VoiceSettings
+    listen: ListenSettings
+    """What ELA hears (M11.2). A section of its own and not part of ``perception``: that one
+    watches the machine, this one opens a device and holds the fingerprint of what transcribes
+    it."""
     elevenlabs: ElevenLabsSettings
     """The online voice (M11.3). A section of its own and not part of ``voice``: one is a switch
     and a helper on this machine, the other is a credential, a supplier and a bill."""
@@ -259,7 +268,7 @@ class Settings(BaseModel):
     def load(cls) -> Settings:
         """Read the environment (and ``.env``) once; :class:`ConfigurationError` if it is wrong.
 
-        The ten are built here and nowhere else. A failure names the variable and what to do
+        The eleven are built here and nowhere else. A failure names the variable and what to do
         with it: whoever reads this message wrote the ``.env``, and a ``ValidationError`` dumped
         on a terminal is not an answer to them.
 
@@ -278,6 +287,7 @@ class Settings(BaseModel):
                 perception=PerceptionSettings(),
                 captures=CaptureSettings(),
                 voice=VoiceSettings(),
+                listen=ListenSettings(),
                 elevenlabs=ElevenLabsSettings(),
                 context=ContextSettings(),
             )

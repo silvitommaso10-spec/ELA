@@ -28,12 +28,14 @@ from ela.domain import Actor, ActorKind, RawSpeech
 from ela.executive import Executor, TaskRunner
 from ela.infrastructure.machine import (
     Audition,
+    DarwinListening,
     DarwinProbe,
     OnlineSpeechCommand,
     Play,
     SaySpeechCommand,
     ScreenCaptureCommand,
     Speak,
+    UnsupportedListening,
     UnsupportedProbe,
     UnsupportedScreenCapture,
     UnsupportedSpeech,
@@ -63,6 +65,7 @@ from ela.ports import (
     Clock,
     ExecutionResultStore,
     IdGenerator,
+    ListeningPort,
     PerceptionProbe,
     RoutingError,
     ScreenCapturePort,
@@ -161,6 +164,14 @@ class Ela:
     Held here, and not only inside the tool, for the reason ``captures`` is: ``/diagnostics`` has
     to be able to ask *whether ELA has a voice here* without going through a capability, an
     approval and a step. Asking is free and silent — two syscalls, no permission, no sound.
+    """
+    listening: ListeningPort
+    """What ELA hears with (M11.2, ADR 0036).
+
+    Held so that ``/diagnostics`` can ask it directly: whether the transcriber is there
+    **and is the one ELA was told to expect** is a question with an answer, and a limit
+    nobody can read is a limit somebody discovers. Asking is a stat and a digest remembered
+    against the file's size and mtime, so it is cheap enough to ask on every read.
     """
     speech_online: SpeechPort
     """How ELA speaks in the voice of §9 — and the only path on which what ELA says leaves this
@@ -344,6 +355,7 @@ async def build(settings: Settings) -> Ela:
         screen: ScreenCapturePort
         recognition: TextRecognitionPort
         speech: SpeechPort
+        listening: ListeningPort
         # The provider is built on every platform and answers everywhere: without a key or
         # without a voice it reports which of the two is missing and touches no network
         # (ADR 0020 §2's shape, ADR 0034 §5's two codes).
@@ -369,11 +381,22 @@ async def build(settings: Settings) -> Ela:
             speech = SaySpeechCommand(
                 timeout=settings.voice.voice_timeout, voice=settings.voice.voice_name
             )
+            # The transcriber is named by absolute path and checked against its digest, so an
+            # unconfigured install answers "I cannot listen" instead of trusting what is there.
+            listening = DarwinListening(
+                binary=settings.listen.stt_binary,
+                model=settings.listen.stt_model,
+                expected=(settings.listen.stt_binary_sha256, settings.listen.stt_model_sha256),
+                language=settings.listen.listen_language,
+                transcribe_timeout=settings.listen.stt_timeout.total_seconds(),
+                directory=scratch,
+            )
         else:
             probe = UnsupportedProbe()
             screen = UnsupportedScreenCapture()
             recognition = UnsupportedTextRecognition()
             speech = UnsupportedSpeech()
+            listening = UnsupportedListening()
         tools = production_tools(
             root=root,
             clock=clock,
@@ -385,6 +408,8 @@ async def build(settings: Settings) -> Ela:
             probe=probe,
             recognition=recognition,
             languages=settings.captures.ocr_languages,
+            listening=listening,
+            listen_enabled=settings.listen.listen_enabled,
             speech=speech,
             voice=settings.voice.voice_name,
             voice_enabled=settings.voice.voice_enabled,
@@ -494,6 +519,7 @@ async def build(settings: Settings) -> Ela:
         speech=speech,
         speech_dir=scratch,
         speech_online=playing,
+        listening=listening,
         audition=Audition(speak=_audition_speaker(online, playing), play=_sample(online, playing)),
         perception=perception,
     )

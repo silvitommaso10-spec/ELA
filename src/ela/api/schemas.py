@@ -621,6 +621,29 @@ class PreviewIn(BaseModel):
     voice_id: str = Field(min_length=1)
 
 
+class ListeningOut(BaseModel):
+    """What ELA can hear with, right now (M11.2, ADR 0036).
+
+    The line of ADR 0028 §8: it says *what ELA is connected to*, never *what ELA is doing*. There
+    is no field for "is the microphone open now" and there must not be — a recording lasts
+    seconds, and a status that is true for three of them is a status nobody can act on. That the
+    microphone was opened is in the audit, where a decision belongs.
+    """
+
+    enabled: bool
+    """The user's switch, ``ELA_LISTEN_ENABLED``. Separate from ``available`` because "you turned
+    it off" and "this machine cannot listen" are different facts (ADR 0030 §8)."""
+    available: bool
+    """Whether there is a transcriber where ELA was told, **and it is the one it was told to
+    expect**: an empty or wrong digest answers ``false``, because what decides what ELA believes
+    was said is not a name resolved at runtime (ADR 0029 §3)."""
+    language: str
+    max_seconds: int
+    """The ceiling on one recording, and the only thing a caller can get wrong before the Guardian
+    ever sees the step — a limit nobody can read is a limit somebody discovers."""
+    timeout_seconds: float
+
+
 class VoiceStatusOut(BaseModel):
     """What ``ela voice`` shows: the two voices, and the ones worth listening to."""
 
@@ -718,3 +741,4 @@ class DiagnosticsOut(BaseModel):
     recovered: dict[str, int]
     perception: PerceptionSummaryOut
     voice: VoiceOut
+    listening: ListeningOut

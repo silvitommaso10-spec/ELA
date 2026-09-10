@@ -181,6 +181,32 @@ chiude il microfono.** È la promessa di ADR 0033 §4 col segno invertito, ed è
 orfano è ELA che continua a parlare, un registratore orfano è **ELA che continua ad ascoltare dopo
 che le è stato detto di smettere**.
 
+## 5-bis. La capability
+
+Capability aggiunte:
+
+| Capability | Rischio | Scope | Argomenti scoped | Autorizzazione | Argomenti obbligatori | Argomenti opzionali |
+|---|---|---|---|---|---|---|
+| `perception.listen` | MEDIUM | — | — | sì | `purpose: string`, `seconds: integer` | — |
+
+**Il nome è la superficie del consenso** (ADR 0034 §3): il prompt di un `Approval` mostra il
+`capability_id` e mai la descrizione, quindi l'id è l'unico posto in cui la parola giusta arriva a
+chi decide.
+
+MEDIUM e sempre autorizzata, per la ragione che ADR 0028 §9 aveva registrato: è la prima lettura
+di **contenuto** che non è né uno schermo né una parola di ELA. HIGH non è un'opzione — in
+`RISK_POLICY` significa `DENY`, quindi non renderebbe l'ascolto più prudente, lo renderebbe
+impossibile (ADR 0034 §4).
+
+**Nessuno scope**, per la ragione di ADR 0029 §6: lo scope del Guardian è a forma di percorso, e
+lo scope naturale dell'ascolto è *quando* e *chi altro c'è nella stanza*.
+
+**`seconds` è obbligatorio, non ha un default, ed è nominato nella domanda** (dec. G2). Il
+meccanismo di `prompt_arguments` accetta ora anche un `integer`: ciò che la regola stretta
+proteggeva era il **contenuto** dell'utente dentro un `Approval` persistito, e un numero non è
+contenuto. Una capability che aprisse un microfono per una durata scritta in un file di
+configurazione nasconderebbe proprio la cosa che chi risponde vuole sapere.
+
 ## 6. Il figlio ha una scadenza sua, e non è ridondante
 
 Un sottoprocesso **sopravvive al genitore**: `launchd` lo adotta. Se ELA muore a metà
@@ -200,6 +226,12 @@ non è più una cortesia ereditata: è l'unica difesa fra un interruttore spento
 **non è una soglia, è un fatto**: nessun campione differiva dal silenzio. Prende il caso che il
 preflight non può prendere — permesso concesso, dispositivo muto, ingresso morto — e l'audio non
 raggiunge mai il trascrittore.
+
+**Un undicesimo codice, trovato scrivendo il preflight e non previsto da questa decisione:**
+`listen.permission_unreadable`. La sonda può non riuscire a leggere il permesso — scaduta, morta,
+o che stampa spazzatura — e *«il sistema mi rifiuta»* e *«non sono riuscita a sapere se mi
+rifiuta»* sono due fatti con due risposte. È il criterio di questa milestone un passo più
+indietro, ed è il gemello di `screen.not_observable` (M10.2). Un dubbio non è un sì (§33).
 
 **Il limite, dichiarato invece che risolto: una stanza silenziosa non ha picco zero.** Un ufficio
 vuoto con un condizionatore dà un segnale piccolo e vero, e lì il trascrittore può ancora
@@ -323,6 +355,21 @@ la durata reale — e mancherebbe **esattamente nel caso peggiore**: ELA apre il
 muore, e nell'audit non c'è traccia che sia mai stato aperto. La durata reale non si perde: sta in
 `seconds_recorded` nel risultato. L'audit dice *ELA ha deciso di aprire il tuo microfono, per tanti
 secondi*; il risultato dice *ed è rimasto aperto per tanti*.
+
+**Chi lo scrive, e non è il tool.** Oggi nessun tool di ELA scrive nell'audit: scrivono il
+Guardian, l'engine e l'executor. Fare di un tool il quarto genere di scrittore sarebbe un fatto
+architetturale nuovo, e non serve: **la capability dichiara che cosa accende**
+(`CapabilitySpec.activates_sensor`) e l'executor scrive l'evento prima di chiamare il tool. È la
+forma che `prompt_arguments` ha già — la capability dice ciò che è vero di sé, un meccanismo
+generico agisce — e generalizza alla webcam, che §11 nomina accanto al microfono.
+
+Ha anche una conseguenza sui test che ha confermato la scelta: **provare l'ordine non richiede un
+microfono.** Una capability finta che dichiara il sensore e non apre niente basta a dimostrare che
+l'evento precede il tool; se lo scrivesse il tool, ogni test di quell'ordine avrebbe avuto bisogno
+di un tool che apre un dispositivo.
+
+`SensorName` ha **un solo membro**: la webcam entra con la milestone che la apre, perché un valore
+che nessuno può produrre è ciò che ADR 0026 §7 chiama peggio di una difesa assente.
 
 E la distinzione decisa il 2026-09-08 resta: la sonda dice soltanto ciò che osserva. Mentre ELA
 registra, `/perception` dirà `ACTIVE` con causa `OBSERVED` — vero, e non sa che è ELA. «Acceso **da

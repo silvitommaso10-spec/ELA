@@ -13,6 +13,7 @@ from ela.ports import AlreadyExistsError
 from ela.testing.fakes import (
     FakeClock,
     FakeIdGenerator,
+    FakeListening,
     FakeModelProvider,
     FakeModelRouter,
     FakeProbe,
@@ -25,6 +26,7 @@ from ela.testing.fakes import (
 from ela.tools import (
     CORE_ECHO,
     PERCEPTION_CAPTURE_SCREEN,
+    PERCEPTION_LISTEN,
     PERCEPTION_READ_SCREEN_TEXT,
     VOICE_SPEAK,
     VOICE_SPEAK_ONLINE,
@@ -219,6 +221,8 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         probe=FakeProbe(),
         recognition=FakeTextRecognition(),
         languages=("it-IT",),
+        listening=FakeListening(),
+        listen_enabled=True,
         speech=FakeSpeech(),
         voice="Alice",
         voice_enabled=True,
@@ -244,6 +248,7 @@ def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) 
     ]
     assert [t.capability_id for t in tools.tools()][3:] == [
         PERCEPTION_CAPTURE_SCREEN,
+        PERCEPTION_LISTEN,
         PERCEPTION_READ_SCREEN_TEXT,
         VOICE_SPEAK,
         VOICE_SPEAK_ONLINE,
@@ -253,7 +258,10 @@ def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) 
     }
 
 
-@pytest.mark.parametrize("capability", [PERCEPTION_CAPTURE_SCREEN, PERCEPTION_READ_SCREEN_TEXT])
+@pytest.mark.parametrize(
+    "capability",
+    [PERCEPTION_CAPTURE_SCREEN, PERCEPTION_LISTEN, PERCEPTION_READ_SCREEN_TEXT],
+)
 def test_both_store_verifiers_read_the_store_the_tools_write_into(
     tmp_path: Path, capability: CapabilityId
 ) -> None:

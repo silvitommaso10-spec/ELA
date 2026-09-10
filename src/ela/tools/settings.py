@@ -262,6 +262,47 @@ def default_voice_enabled() -> bool:
     return True
 
 
+DEFAULT_LISTEN_LANGUAGE: Final = "it"
+DEFAULT_STT_TIMEOUT_SECONDS: Final = 30.0
+"""Thirty seconds, and the number covers something a steady-state measurement would miss: the
+**first** transcription on a machine costs 15,4 s of Metal shader compilation, once. A timeout
+chosen on the 2,3 s of the steady state would fail the first thing ELA ever hears. In regime it is
+about 13x the worst case measured (M11.2)."""
+
+
+class ListenSettings(BaseSettings):
+    """Whether ELA may listen, with what, and in which language.
+
+    From ``ELA_LISTEN_*`` and ``ELA_STT_*`` (M11.2).
+
+    ``listen_enabled`` defaults to **true**, like the voice's (M11.1 dec. J), and the reason it is
+    not the fail-safe direction is M11.2 dec. K: a default-off flag is a defence that looks active
+    and is not — it moves the protection onto an environment variable, the easiest thing to set
+    and forget, and its steady state is "on" anyway. The protection is the capability, the
+    Guardian and :data:`~ela.permissions.MAX_LISTEN_SECONDS`.
+
+    ``stt_binary`` and ``stt_model`` are **absolute paths with their digests declared**: what
+    decides what ELA believes was said is not resolved through ``PATH`` (ADR 0029 §3, applied to
+    what listens to the room). Empty digests mean "not configured", and the adapter then reports
+    that it cannot listen rather than trusting whatever is at the path.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="ELA_", env_file=".env", extra="ignore")
+
+    listen_enabled: bool = True
+    listen_language: Annotated[str, Field(min_length=2)] = DEFAULT_LISTEN_LANGUAGE
+    stt_binary: Path = Path()
+    stt_model: Path = Path()
+    stt_binary_sha256: str = ""
+    stt_model_sha256: str = ""
+    stt_timeout_seconds: Annotated[float, Field(gt=0)] = DEFAULT_STT_TIMEOUT_SECONDS
+
+    @property
+    def stt_timeout(self) -> timedelta:
+        """How long the transcriber may run."""
+        return timedelta(seconds=self.stt_timeout_seconds)
+
+
 class VoiceSettings(BaseSettings):
     """Whether ELA may speak, with which voice, and for how long, from ``ELA_VOICE_*`` (M11.1)."""
 

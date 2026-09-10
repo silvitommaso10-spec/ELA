@@ -308,11 +308,16 @@ def _stated(spec: CapabilitySpec, arguments: JsonMapping) -> str:
     already refused the call for it (the catalogue requires every prompt argument to be required),
     so this cannot happen through the executor — and if it ever did, a question with a hole in it
     must not read as a question with the word "None" in it.
+
+    Not filtered by type since M11.2 (dec. G2): the catalogue decides what may be named here, and
+    it admits an integer because *how long the microphone stays open* is half of what is being
+    approved. Filtering on ``str`` here as well would have been a second, silent rule — a
+    capability could declare ``seconds`` legally and the question would simply not mention it.
     """
     stated = [
         f"{name}: {value}"
         for name in spec.prompt_arguments
-        if isinstance(value := arguments.get(name), str)
+        if (value := arguments.get(name)) is not None
     ]
     return f" — {'; '.join(stated)}" if stated else ""
 
@@ -522,6 +527,7 @@ class Executor:
         record = (
             None if tool.idempotent else await self._start_record(tool, decision, device_id, spent)
         )
+        await self._sensor_activated(spec, decision, device_id)
         produced = await self._run_tool(tool, decision, arguments)
         if produced is None:
             refused = ErrorMetadata(
@@ -822,6 +828,37 @@ class Executor:
         )
         await self._results.add(record)
         return record
+
+    async def _sensor_activated(
+        self, spec: CapabilitySpec, decision: PermissionDecision, device_id: DeviceId
+    ) -> None:
+        """``SENSOR_ACTIVATED``, when the capability about to run turns on a sensor of §11.
+
+        **Written before the tool, and that is the decision** (M11.2 dec. L, ADR 0036 §11). An
+        event written afterwards would describe better — it would know how long the device was
+        really open — and would be missing in exactly the worst case: ELA opens the microphone,
+        something dies, and nothing says it was ever opened. The duration is not lost; it is in
+        the result, which is where a measurement belongs.
+
+        The summary names the sensor and never the arguments — how long is an argument, and
+        architecture rule 23 keeps those out of the audit.
+        """
+        if spec.activates_sensor is None:
+            return
+        await self._audit.append(
+            AuditEvent(
+                id=AuditEventId(self._ids.new_uuid()),
+                created_at=self._clock.now(),
+                event_type=AuditEventType.SENSOR_ACTIVATED,
+                actor=self._actor,
+                summary=f"activate: {spec.activates_sensor.value} for {spec.id}",
+                task_id=decision.task_id,
+                step_id=decision.step_id,
+                capability_id=spec.id,
+                device_id=device_id,
+                decision_id=decision.id,
+            )
+        )
 
     async def _run_tool(
         self, tool: ToolPort, decision: PermissionDecision, arguments: JsonMapping

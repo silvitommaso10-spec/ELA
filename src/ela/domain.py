@@ -115,6 +115,7 @@ __all__ = [
     "RiskLevel",
     "SOURCE_FIELDS",
     "SensorCause",
+    "SensorName",
     "SensorState",
     "SensorStatus",
     "StepId",
@@ -428,6 +429,24 @@ class AuditEventType(StrEnum):
 
     A distinct type and not a payload of :attr:`DEVICE_SELECTED`: "every time ELA had nowhere to
     run something" is a question the log must answer by type, as ADR 0008 argues for the engine.
+    """
+    SENSOR_ACTIVATED = "SENSOR_ACTIVATED"
+    """ELA opened one of the sensors of §11 — today the microphone (M11.2, ADR 0036 §11).
+
+    The type ADR 0028 §10 promised: *the audit records what ELA decides, not what the world does*,
+    and turning a device on is a decision. Not ``DEVICE_*``: in this repository that prefix is the
+    vocabulary of the **nodes** of §16, and a ``DEVICE_ACTIVATED`` next to ``DEVICE_SELECTED``
+    would say something else entirely.
+
+    **Written when ELA opens the device, not when it has finished** — and it is the first event in
+    ELA written *before* the thing it records. An event written at the end would describe better
+    (it would know the real duration) and would be missing in exactly the worst case: ELA opens
+    the microphone, something dies, and nothing in the audit says it was ever opened. The real
+    duration is not lost — it is ``seconds_recorded`` in the result. The audit says *ELA decided
+    to open your microphone, for this long*; the result says *and it stayed open for this long*.
+
+    No second type when it closes: closing is not a decision, and an event written by the process
+    that is dying is precisely the event that would be missing in the case that matters.
     """
     PERMISSION_DECIDED = "PERMISSION_DECIDED"
     AUTHORIZATION_GRANTED = "AUTHORIZATION_GRANTED"
@@ -788,6 +807,20 @@ class CapabilitySpec(_DomainModel):
     Data, like ``scope``: that each name is a **required** ``string`` property of ``input_schema``
     is the catalogue's check (ADR 0010, ADR 0029 §6), not the model's.
     """
+    activates_sensor: SensorName | None = None
+    """Which sensor of §11 executing this capability turns on, if any (M11.2, ADR 0036 §11).
+
+    **Declared here so that the event is written by whoever runs the capability, and before it
+    runs.** The alternative was for the tool to append to the audit itself, which no tool in ELA
+    does: the audit is written by the Guardian, the engine and the executor, and making a tool the
+    fourth kind of writer is a structural fact that a capability declaring what it turns on does
+    not need. It is the shape ``prompt_arguments`` already has — the capability says what is true
+    of it, and a generic mechanism acts.
+
+    The event carries **which** sensor and never for how long: ``seconds`` is an argument, and
+    architecture rule 23 keeps arguments out of the audit. How long the microphone was really open
+    is in the result, which is where a measurement belongs.
+    """
     requires_authorization: bool
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 
@@ -1015,6 +1048,17 @@ class SensorState(StrEnum):
     """Present, and not in use. *Not* "ELA may use it": whether ELA may is a permission, and
     permissions are reported separately (:class:`SystemPermission`)."""
     ACTIVE = "ACTIVE"
+
+
+class SensorName(StrEnum):
+    """The sensors of §11 by name — what a capability can declare that it turns on.
+
+    Only what exists: §11 names the microphone and the webcam, and ELA can open one of them. A
+    member for the other would be a value nothing can produce, which is the thing ADR 0026 §7
+    calls worse than an absent defence; it arrives with the milestone that opens it.
+    """
+
+    MICROPHONE = "MICROPHONE"
 
 
 class SensorCause(StrEnum):

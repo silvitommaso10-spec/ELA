@@ -98,6 +98,7 @@ def test_the_domain_declares_exactly_these_enums() -> None:
         "ProviderStatus",
         "RiskLevel",
         "SensorCause",
+        "SensorName",
         "SensorState",
         "StepState",
         "SystemPermission",
