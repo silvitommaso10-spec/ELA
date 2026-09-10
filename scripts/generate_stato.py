@@ -331,28 +331,31 @@ class Debt:
 
 
 def payments(root: Path) -> dict[tuple[str, str], str]:
-    """``(ADR, §)`` -> the document that declares that debt paid.
+    """``(ADR, §)`` -> the ADR section that declares that debt paid.
 
     A debt that does not know it has been paid is the same species of lie as the numbers it
-    describes (ADR 0035 §7), so the payment is read from whoever wrote it down: an ADR section
-    titled "Il debito di ADR NNNN §N, saldato", or the milestone that says it saldò it there.
+    describes (ADR 0035 §7), so the payment is read from whoever wrote it down — **and only an ADR
+    can write it down.** A milestone describes a payment before it happens: on 2026-09-11 the spec
+    of M12.1, still a ``Proposta``, named the section title its ADR *will* carry, and this document
+    said the debt was paid. An ADR records a decision that was taken; a proposal, one that might be.
     """
     found: dict[tuple[str, str], str] = {}
-    for path, text in documents(root):
+    for path in adrs(root):
+        text = path.read_text(encoding="utf-8")
         for match in PAID.finditer(text):
             adr, section = match.groups()
-            if path.parent.name != "adr" or path.stem[:4] != adr:
+            if path.stem[:4] != adr:
                 found.setdefault((adr, section), _name_of(path, text, match.start()))
     return found
 
 
 def _name_of(path: Path, text: str, at: int) -> str:
-    """Who paid, and where: ``ADR 0036 §10`` when the payment is a section, else the document.
+    """Who paid, and where: ``ADR 0036 §10`` when the payment is a section, else the ADR.
 
     A debt is paid in a section of its own — that is the shape ADR 0036 §10 used — so the section
     number is part of the answer: "saldato da ADR 0036" sends the reader to a whole document.
     """
-    name = f"ADR {path.stem[:4]}" if path.parent.name == "adr" else path.stem
+    name = f"ADR {path.stem[:4]}"
     line = text[text.rfind("\n", 0, at) + 1 :].split("\n", 1)[0]
     heading = re.match(r"#{2,3} (\d+)\.", line)
     return f"{name} §{heading.group(1)}" if heading else name

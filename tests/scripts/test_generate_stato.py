@@ -228,3 +228,25 @@ def test_a_document_without_the_markers_is_refused(generate_stato: ModuleType) -
 def test_the_repository_document_is_up_to_date(generate_stato: ModuleType) -> None:
     """``main --check`` is the form ``make check`` would use, exit code and all."""
     assert generate_stato.main(["generate_stato.py", "--check"]) == 0
+
+
+def test_a_milestone_that_promises_a_payment_does_not_close_the_debt(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """Only a decision record pays a debt; a proposal that describes the payment has promised it.
+
+    Found on 2026-09-11: ``STATO.md`` said «saldato da M12.1» of ADR 0036 §12 while M12.1 was still
+    a ``Proposta``, because its spec names the section title its ADR *will* carry. A restart point
+    that closes a debt nobody has paid is the lie this document exists to prevent.
+    """
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", DEBT)
+    milestone(
+        tmp_path,
+        "M2.1",
+        state="Proposta",
+        body="l'ADR di questa milestone avrà una sezione «Il debito di ADR 0001 §3, saldato»",
+    )
+
+    (debt,) = generate_stato.dated_debts(tmp_path)
+
+    assert debt.open
