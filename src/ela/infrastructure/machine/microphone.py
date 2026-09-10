@@ -48,6 +48,13 @@ SAMPLE_RATE: Final = 16000
 """What the transcriber wants, asked of the driver directly rather than resampled afterwards:
 a conversion is a second place for the audio to exist."""
 BITS_PER_SAMPLE: Final = 16
+LOUDEST: Final = 32767
+"""The largest magnitude a signed 16-bit sample can have.
+
+Signed 16-bit runs from −32768 to 32767, so the negative end has one more step than the positive
+one: taking a magnitude overflows the range by exactly one. It never mattered to the gate — above
+zero is a signal — but the peak is a number ELA *reports*, and 32768 would say the audio went past
+a ceiling that does not exist. Found by speaking into it (M11.2, criterio 3)."""
 CHANNELS: Final = 1
 BUFFER_BYTES: Final = 8192
 BUFFER_COUNT: Final = 3
@@ -151,7 +158,7 @@ class _Recorder:
         samples = memoryview(raw).cast("h")
         loudest = 0
         for sample in samples:
-            magnitude = -sample if sample < 0 else sample
+            magnitude = min(-sample if sample < 0 else sample, LOUDEST)
             if magnitude > loudest:
                 loudest = magnitude
         with self.lock:

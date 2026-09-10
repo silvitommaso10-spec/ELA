@@ -12,15 +12,18 @@ not the sound.
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import json
 import os
 import platform
+import struct
 import subprocess
 import sys
 import time
 
 import pytest
 
+from ela.infrastructure.machine import microphone
 from ela.infrastructure.machine.darwin import MICROPHONE_MODULE, spawn_through_nameless_audio
 
 darwin_only = pytest.mark.skipif(
@@ -121,3 +124,42 @@ def _recorders() -> tuple[int, ...]:
         for line in listing.stdout.splitlines()
         if MICROPHONE_MODULE in line and "ps -Ao" not in line
     )
+
+
+def test_the_loudest_possible_sample_does_not_report_a_peak_that_cannot_exist() -> None:
+    """A bug found by speaking into it: ``abs(-32768)`` is 32768, and no sample can be that.
+
+    Signed 16-bit runs from −32768 to 32767, so the negative end has one more step than the
+    positive one and taking its magnitude overflows the range by exactly one. It never mattered to
+    the gate — anything above zero is a signal — but it is a number ELA *reports*, in a result
+    somebody reads, and a peak of 32768 says the audio went past a ceiling that does not exist.
+
+    Found on the real machine at criterion 3: a voice at 85% input gain clipped, and the result
+    said 32768.
+    """
+    samples = struct.pack("<3h", 0, -32768, 100)
+    raw = ctypes.create_string_buffer(samples, len(samples))
+    buffer = microphone._AudioQueueBuffer(  # noqa: SLF001 — the callback's own state is the unit
+        capacity=len(samples),
+        audio_data=ctypes.cast(raw, ctypes.c_void_p).value,
+        byte_size=len(samples),
+    )
+    recorder = microphone._Recorder(os.open(os.devnull, os.O_WRONLY))  # noqa: SLF001
+    try:
+        recorder.take(buffer)
+    finally:
+        os.close(recorder.fd)
+
+    assert recorder.peak == 32767
+
+
+def test_a_buffer_with_nothing_in_it_is_not_a_signal() -> None:
+    """The other end of the same number: an empty buffer leaves the peak alone."""
+    recorder = microphone._Recorder(os.open(os.devnull, os.O_WRONLY))  # noqa: SLF001
+    try:
+        recorder.take(microphone._AudioQueueBuffer(capacity=0, byte_size=0))  # noqa: SLF001
+    finally:
+        os.close(recorder.fd)
+
+    assert recorder.peak == 0
+    assert recorder.bytes_written == 0

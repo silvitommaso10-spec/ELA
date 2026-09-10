@@ -475,6 +475,10 @@ sa di essere stato pagato è la stessa specie di bugia dei valori che descrive.
 - **L'audio non si tiene**, e con lui la possibilità di dimostrare a posteriori che cosa fu detto.
 - **Nessuna mezza memoria: il trascritto non sopravvive al task** — un trascritto durevole è
   memoria, e la memoria è Fase 15.
+- **Il guadagno d'ingresso non è di ELA**: a 33 su 100 una voce arriva al 5% della scala e il
+  trascrittore inventa, a 85 satura. ELA non regola il guadagno e non deve — ma un ascolto che
+  riesce o fallisce per un'impostazione di sistema è un fatto di chi installa (misurato al
+  criterio 3, 2026-09-10).
 - **Una stanza silenziosa non ha picco zero**: il gate prende il microfono negato e il dispositivo
   muto, non il sussurro lontano.
 - **`p` non è una confidenza calibrata.**

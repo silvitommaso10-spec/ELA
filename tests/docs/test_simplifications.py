@@ -124,7 +124,7 @@ def test_every_constraint_an_adr_declares_is_in_the_list() -> None:
         if f"- **{title}** (ADR {number})" not in text
     }
     assert not missing, missing
-    assert len(declared_constraints()) == 117
+    assert len(declared_constraints()) == 118
 
 
 def test_the_list_names_the_seventeen_adrs_that_declare_constraints() -> None:
