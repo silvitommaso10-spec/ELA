@@ -86,7 +86,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 10 — La percezione | `M10.3` | Implementata | Comprendere ciò che si vede: il contesto che non costa niente, e il testo che non esce |
 | 10 — La percezione | `M10.4` | Implementata | Il Context Core: comporre senza decidere, e dire ciò che non si sa |
 | 11 — La voce | `M11.1` | Implementata | La voce che esce: ELA dice qualcosa, e non lascia traccia |
-| 11 — La voce | `M11.2` | Proposta | L'ascolto: ELA apre il microfono, e tiene solo le parole |
+| 11 — La voce | `M11.2` | Implementata | L'ascolto: ELA apre il microfono, e tiene solo le parole |
 | 11 — La voce | `M11.3` | Implementata | La voce di §9: la prima frase che esce da questa macchina |
 
 <!-- fine del blocco generato: le milestone -->
@@ -101,7 +101,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **36** | `docs/adr/NNNN-*.md` |
-| Milestone | **37, di cui 35 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **37, di cui 36 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **45** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **23** | i `Protocol` di `src/ela/ports.py` |
@@ -126,17 +126,18 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
   perché un trascritto è memoria e la memoria è lì.
-- **Le altre fasi non hanno un contenuto scritto.** Nessun documento del repository ne nomina una:
-  il blocco qui sotto è l'elenco completo delle fasi future che qualcuno ha già nominato, e ciò che
-  non compare non è dimenticato, è **non ancora deciso**. Il posto dove deciderlo è una SPEC di
-  milestone, non questo file.
+- **Le altre fasi non hanno un contenuto scritto.** Il blocco qui sotto elenca le fasi **oltre
+  l'ultima che ha una milestone** che un documento del repository nomina, e ciò che non compare non
+  è dimenticato: è **non ancora deciso**, e il posto dove deciderlo è una SPEC di milestone, non
+  questo file. La Fase 12 è uscita da quell'elenco nel momento in cui ha avuto la sua prima
+  milestone — che è il modo in cui una lista derivata dice che una fase ha smesso di essere futura.
 
 <!-- generato da scripts/generate_stato.py: le fasi che un documento nomina -->
 
 | Fase | Documenti che la nominano |
 |---|---|
 | 12 | 12 |
-| 15 | 7 |
+| 15 | 8 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
 
