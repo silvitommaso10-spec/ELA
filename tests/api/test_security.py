@@ -9,6 +9,17 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import (
+    Awaitable,
+    Callable,
+)
+from datetime import (
+    UTC,
+    datetime,
+)
+from typing import (
+    Any,
+)
 
 import pytest
 from fastapi import FastAPI
@@ -17,17 +28,22 @@ from httpx import AsyncClient
 from ela.api.security import (
     CODE_ROUTES,
     NODE_ROUTES,
+    Anonymous,
     Identity,
     Kind,
     authorized,
 )
 from ela.devices import (
     LOCAL_USER,
+    NodeEnrollment,
 )
 from ela.domain import (
     Actor,
     ActorKind,
     DeviceId,
+)
+from ela.ports import (
+    EnrollmentExpiredError,
 )
 from tests.api.routers import api_routers, routes_of
 from tests.api.support import served_paths
@@ -202,3 +218,73 @@ async def test_a_node_shaped_credential_with_no_id_in_it_is_anonymous(
 
     assert response.status_code == 401
     assert (await client.get("/diagnostics")).json()["refused"] == {"unknown_credential": 1}
+
+
+# ----------------------------------------------------------------------------------------
+# Every anonymous reason has a request that produces it (ADR 0037 §13)
+# ----------------------------------------------------------------------------------------
+
+Producer = Callable[[AsyncClient, AsyncClient, pytest.MonkeyPatch], Awaitable[object]]
+
+
+async def _nothing_presented(client: AsyncClient, anonymous: AsyncClient, _: Any) -> object:
+    return await anonymous.get("/health")
+
+
+async def _a_credential_nobody_knows(client: AsyncClient, anonymous: AsyncClient, _: Any) -> object:
+    return await anonymous.get("/health", headers={"Authorization": f"Bearer {OTHER}"})
+
+
+async def _a_node_nobody_enrolled(client: AsyncClient, anonymous: AsyncClient, _: Any) -> object:
+    bearer = {"Authorization": f"Bearer {uuid.uuid4()}.anything"}
+    return await anonymous.post("/nodes/heartbeat", json={}, headers=bearer)
+
+
+async def _a_code_nobody_issued(client: AsyncClient, anonymous: AsyncClient, _: Any) -> object:
+    bearer = {"Authorization": "Bearer not-a-code"}
+    return await anonymous.post("/nodes/enroll", json=DECLARATION, headers=bearer)
+
+
+async def _a_code_past_its_expiry(
+    client: AsyncClient, anonymous: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> object:
+    """The expiry is moved in time below the route; here the store answers as it would then."""
+
+    async def expired(self: NodeEnrollment, code: str, **declared: Any) -> Any:
+        raise EnrollmentExpiredError(datetime.now(UTC))
+
+    monkeypatch.setattr(NodeEnrollment, "enroll", expired)
+    return await _a_code_nobody_issued(client, anonymous, monkeypatch)
+
+
+async def _the_core_on_a_node_route(client: AsyncClient, anonymous: AsyncClient, _: Any) -> object:
+    return await client.post("/nodes/heartbeat", json={})
+
+
+PRODUCED_BY: dict[Anonymous, Producer] = {
+    Anonymous.MISSING: _nothing_presented,
+    Anonymous.UNKNOWN_CREDENTIAL: _a_credential_nobody_knows,
+    Anonymous.UNKNOWN_NODE: _a_node_nobody_enrolled,
+    Anonymous.UNKNOWN_CODE: _a_code_nobody_issued,
+    Anonymous.EXPIRED_CODE: _a_code_past_its_expiry,
+    Anonymous.CORE_ON_A_NODE_ROUTE: _the_core_on_a_node_route,
+}
+"""One request per reason — the user's condition on the six (2026-09-11): a reason no request can
+produce does not enter."""
+
+
+def test_every_anonymous_reason_has_a_request_that_produces_it() -> None:
+    assert set(PRODUCED_BY) == set(Anonymous)
+
+
+@pytest.mark.parametrize("reason", list(Anonymous), ids=[reason.value for reason in Anonymous])
+async def test_each_anonymous_reason_is_counted_by_its_request_and_by_nothing_else(
+    reason: Anonymous,
+    client: AsyncClient,
+    anonymous: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = await PRODUCED_BY[reason](client, anonymous, monkeypatch)
+
+    assert getattr(response, "status_code", None) == 401
+    assert (await client.get("/diagnostics")).json()["refused"] == {reason.value: 1}

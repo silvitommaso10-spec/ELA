@@ -82,7 +82,7 @@ FAILURES: tuple[Failure, ...] = (
     Failure(ExecutorError, 409, "conflict"),
     Failure(RunnerError, 409, "conflict"),
     Failure(TaskAlreadyRunningError, 409, "already_running"),
-    Failure(IdentityConflictError, 409, "identity_conflict"),
+    Failure(IdentityConflictError, 412, "identity_conflict"),
     Failure(LocalDeviceNotRevocableError, 409, "not_revocable"),
     Failure(RevisionRequiredError, 428, "revision_required"),
     Failure(DatabaseUnavailableError, 503, "database_unavailable"),

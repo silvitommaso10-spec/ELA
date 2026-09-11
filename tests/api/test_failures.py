@@ -356,7 +356,7 @@ RAISED: tuple[Raised, ...] = (
         IdentityConflictError,
         "PUT",
         "/nodes/me",
-        409,
+        412,
         "identity_conflict",
         "two processes claim to be it",
         an_announcement_at_a_revision_the_row_left,

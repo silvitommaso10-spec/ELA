@@ -175,7 +175,7 @@ Errori aggiunti, nella forma della tabella di ADR 0023 §10:
 
 | Caso | Eccezione | Stato |
 |---|---|---|
-| un annuncio a una revisione che la riga ha lasciato | `IdentityConflictError` | `409` |
+| un annuncio a una revisione che la riga ha lasciato | `IdentityConflictError` | `412` |
 | la revoca di questa macchina | `LocalDeviceNotRevocableError` | `409` |
 | un annuncio senza `If-Match` | `RevisionRequiredError` | `428` |
 
@@ -366,17 +366,20 @@ heartbeat è invece una vera sovrascrittura» (ADR 0016 §5).
 
 Se l'`UPDATE` non tocca righe, una `SELECT` nella stessa transazione dice perché — nodo
 sconosciuto, revocato, revisione vecchia —: «La sicurezza sta nell'`UPDATE`, la `SELECT` serve solo
-al nome dell'errore.» (ADR 0012 §5). **Revisione vecchia ⇒ 409 al nodo e
+al nome dell'errore.» (ADR 0012 §5). **Revisione vecchia ⇒ 412 al nodo e
 `DEVICE_IDENTITY_CONFLICT`.** Il nodo riceve la revisione nuova a ogni annuncio riuscito; un
 secondo processo con la stessa credenziale e una revisione vecchia perde — non per ordine di
 arrivo, ma perché credeva una cosa falsa sulla riga. È ADR 0035 §5 reso istruzione. Il test usa due
 connessioni vere sullo stesso file, una barriera fra la lettura e la scrittura, e asserisce sul
 `rowcount` — uno e zero — non sulla riga finale.
 
-**Sul filo** (fissato dal commit che scrive le rotte, perché nessuna decisione lo fissava): la
+**Sul filo** (fissato dal commit che scrive le rotte e confermato dall'utente il 2026-09-11: è
+l'`UPDATE` condizionale di §9 portato sul filo, e M12.3–M12.5 lo ereditano come vincolo): la
 revisione viaggia come la condizione che HTTP ha già, **`If-Match`** in ingresso ed **`ETag`** in
-uscita; senza `If-Match` la risposta è **428** (Precondition Required), perché un annuncio che
-presumesse una revisione sarebbe proprio l'`UPDATE` incondizionato che questo protocollo rifiuta.
+uscita. Un `If-Match` che non combacia è **412** (Precondition Failed) — la precondizione è fallita;
+l'utente l'ha preferito il 2026-09-11 al 409 che la spec scriveva, e `DEVICE_IDENTITY_CONFLICT` si
+scrive lo stesso. Senza `If-Match` la risposta è **428** (Precondition Required), perché un annuncio
+che presumesse una revisione sarebbe proprio l'`UPDATE` incondizionato che questo protocollo rifiuta.
 Mai nel corpo: `revision` è un campo che il nodo non scrive, e un corpo che lo porta riceve 422.
 
 **I limiti, dichiarati.** Due cloni che mandano solo heartbeat non si vedono: la revisione sta

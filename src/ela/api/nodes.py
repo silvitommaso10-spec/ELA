@@ -7,8 +7,9 @@ paths of a node: the identity *is* the id, a node speaks only for itself, and "t
 is not the credential's" is a class of error that does not exist (ADR 0037 §4).
 
 The announcement is conditional on the revision the node last saw, and the revision travels as
-HTTP's own condition: ``If-Match`` in, ``ETag`` out, ``428`` when it is missing — never in the
-body, where ``revision`` is a field the node may not write (criterion 13; ADR 0037 §9).
+HTTP's own condition: ``If-Match`` in, ``ETag`` out, ``412`` when it does not match and ``428``
+when it is missing — never in the body, where ``revision`` is a field the node may not write
+(criterion 13; ADR 0037 §9).
 """
 
 from __future__ import annotations
@@ -105,8 +106,9 @@ async def announce(
 ) -> DeviceOut | JSONResponse:
     """The node rewrites the half it declares, at the revision it last saw (ADR 0037 §9).
 
-    ``409`` and ``DEVICE_IDENTITY_CONFLICT`` if the revision is stale; the new one comes back as
-    the ``ETag``. A node revoked after the middleware let it through gets the same ``401``.
+    ``412`` — the precondition of ``If-Match`` failed — and ``DEVICE_IDENTITY_CONFLICT`` if the
+    revision is stale; the new one comes back as the ``ETag``. A node revoked after the middleware
+    let it through gets the same ``401``.
     """
     expected = _revision(if_match)
     try:

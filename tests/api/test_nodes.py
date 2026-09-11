@@ -299,7 +299,8 @@ async def test_a_revocation_keeps_the_row_and_closes_the_door(
 async def test_a_stale_revision_is_refused_as_a_conflict_of_identity(
     client: AsyncClient, ela: Ela
 ) -> None:
-    """Criterion 11 at the route; the race itself is held with two real connections below it
+    """Criterion 11 at the route — ``412``, the precondition of ``If-Match`` failed (ADR 0037 §9);
+    the race itself is held with two real connections below it
     (``tests/infrastructure/persistence/test_device_registry.py``)."""
     device_id, node = await enrolled(client)
     first = await client.put(
@@ -311,7 +312,7 @@ async def test_a_stale_revision_is_refused_as_a_conflict_of_identity(
 
     assert first.status_code == 200
     assert first.headers["ETag"] == '"2"'
-    assert second.status_code == 409
+    assert second.status_code == 412
     assert second.json()["error"]["code"] == "identity_conflict"
     assert (await row(client, device_id))["name"] == "first"
     (conflict,) = await written(ela, AuditEventType.DEVICE_IDENTITY_CONFLICT)
