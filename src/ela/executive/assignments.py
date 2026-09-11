@@ -250,6 +250,16 @@ class Assignments:
             return Stand(Standing.LIVE, last)
         return Stand(Standing.LAPSED, last)
 
+    async def held(self, assignment_id: AssignmentId) -> Assignment:
+        """The row as the store has it, by id; ``NotFoundError`` for an id the Core never minted.
+
+        The one read the gate of a delivery needs (ADR 0038 §12): it asks its own questions with
+        one ``now``, and the replica of a delivery is told from a conflict by the digest the row
+        keeps — neither of which a derived standing could answer. Still the only reader of the
+        port (architecture rule 48).
+        """
+        return await self._store.get(assignment_id)
+
     async def describe(self, assignment: Assignment) -> str:
         """Why a run returned ``ASSIGNED``: what a person deciding whether to wait needs to read.
 

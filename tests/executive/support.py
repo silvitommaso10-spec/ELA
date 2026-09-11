@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ela.devices import DeviceOrchestrator, DeviceRegistry, PlacementDecision, score
+from ela.devices.local import LOCAL_DEVICE_NAME
 from ela.domain import (
     Approval,
     ApprovalStatus,
@@ -29,12 +30,16 @@ from ela.domain import (
     CapabilitySpec,
     Device,
     DeviceId,
+    DeviceStatus,
     ErrorMetadata,
     ExecutionResult,
     ExecutionStatus,
     IntentId,
     JsonMapping,
+    NetworkKind,
+    PerformanceClass,
     PlanId,
+    PowerSource,
     PrivacyLevel,
     RiskLevel,
     StepId,
@@ -46,10 +51,11 @@ from ela.domain import (
     TaskState,
     TaskStep,
 )
-from ela.executive import Execution, Executor, TaskRunner
+from ela.executive import Assignments, Execution, Executor, TaskRunner
 from ela.permissions import PermissionGuardian
 from ela.ports import (
     ApprovalStore,
+    AssignmentStore,
     AuditLog,
     AuthorizationStore,
     ExecutionResultStore,
@@ -60,6 +66,7 @@ from ela.ports import (
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
     FakeApprovalStore,
+    FakeAssignmentStore,
     FakeAuditLog,
     FakeAuthorizationStore,
     FakeCapabilityRegistry,
@@ -164,9 +171,18 @@ class World:
     engine: TaskEngine
     executor: Executor
     devices: DeviceRegistry
+    device_port: FakeDeviceRegistry
+    """The rows behind :attr:`devices`, so a test can add a node that is not this machine."""
     orchestrator: DeviceOrchestrator
     runner: TaskRunner
+    assignments: Assignments
     node: Device
+    """This machine, and deliberately so: its id **is** ``LOCAL_DEVICE_ID`` (M12.2, dec. A).
+
+    Every plan of this world therefore runs in this process, as every plan of it always did: the
+    remote branch is reached by an id that is not this one, and the tests that want it build their
+    own node. A world whose node were any other id would hand all of its work out and run none.
+    """
     fake_tools: dict[CapabilityId, FakeTool] = field(default_factory=dict)
     fake_verifiers: dict[CapabilityId, FakeVerifier] = field(default_factory=dict)
 
@@ -311,6 +327,33 @@ class World:
         )
         await self.engine.queue(task.id)
         return await self.task(task.id), tuple(steps)
+
+    async def remote(
+        self,
+        name: str = "pc-windows",
+        *,
+        privacy: PrivacyLevel = PrivacyLevel.TRUSTED,
+        tools: tuple[str, ...] | None = None,
+    ) -> Device:
+        """A node that is **not** this machine, registered and beating (M12.2, dec. A).
+
+        Built to win on points — ``HIGH``, ``AC``, ``IDLE``, on the tailnet — so that a test which
+        expects the work to go out does not also depend on a tie-break, and one which expects it to
+        stay here is showing a filter and not a score. Its tools are this world's unless a test
+        takes one away.
+        """
+        device = node(
+            name,
+            tools=tuple(tool.name for tool in self.tools.tools()) if tools is None else tools,
+            privacy=privacy,
+            status=DeviceStatus.IDLE,
+            performance=PerformanceClass.HIGH,
+            network=NetworkKind.REMOTE,
+            power_source=PowerSource.AC,
+            workload=0.0,
+        ).model_copy(update={"last_seen_at": self.clock.now()})
+        await self.device_port.register(device)
+        return device
 
     async def alive(self) -> Device:
         """A sign of life from the one node (§16): the heartbeat a real node would send.
@@ -524,6 +567,9 @@ def world(
     results: ExecutionResultStore | None = None,
     repository: TaskRepository | None = None,
     audit: AuditLog | None = None,
+    assignment_store: AssignmentStore | None = None,
+    ttl: timedelta | None = None,
+    cap: timedelta | None = None,
     failing: frozenset[CapabilityId] = frozenset(),
     **executor_options: Any,
 ) -> World:
@@ -548,14 +594,25 @@ def world(
         actor=ELA_ACTOR,
         orphan_after=ORPHAN_AFTER,
     )
-    device = node("core", tools=tuple(tool.name for tool in tool_registry.tools())).model_copy(
-        update={"last_seen_at": clock.now()}
-    )
-    devices = DeviceRegistry(
-        FakeDeviceRegistry((device,)), clock, audit, ids, heartbeat_ttl=HEARTBEAT_TTL
-    )
+    device = node(
+        LOCAL_DEVICE_NAME, tools=tuple(tool.name for tool in tool_registry.tools())
+    ).model_copy(update={"last_seen_at": clock.now()})
+    device_port = FakeDeviceRegistry((device,))
+    devices = DeviceRegistry(device_port, clock, audit, ids, heartbeat_ttl=HEARTBEAT_TTL)
     orchestrator = DeviceOrchestrator(
         devices, tool_registry, audit, ids, clock, verifiers=verifier_registry
+    )
+    assignments = Assignments(
+        FakeAssignmentStore() if assignment_store is None else assignment_store,
+        engine=engine,
+        repository=repository,
+        results=result_store,
+        devices=devices,
+        audit=audit,
+        clock=clock,
+        ids=ids,
+        **({} if ttl is None else {"ttl": ttl}),
+        **({} if cap is None else {"cap": cap}),
     )
     executor = Executor(
         registry=registry,
@@ -571,6 +628,7 @@ def world(
         clock=clock,
         ids=ids,
         actor=ELA_ACTOR,
+        assignments=assignments,
         **executor_options,
     )
     runner = TaskRunner(
@@ -580,6 +638,7 @@ def world(
         repository=repository,
         results=result_store,
         audit=audit,
+        assignments=assignments,
     )
     return World(
         repository,
@@ -596,8 +655,10 @@ def world(
         engine,
         executor,
         devices,
+        device_port,
         orchestrator,
         runner,
+        assignments,
         device,
         fakes,
         checkers,

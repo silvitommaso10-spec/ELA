@@ -48,6 +48,7 @@ from ela.domain import (
 from ela.executive import (
     EXECUTION_INTERRUPTED,
     VERIFICATION_FAILED,
+    Assignments,
     Execution,
     Executor,
     ExecutorError,
@@ -66,6 +67,7 @@ from ela.ports import ROUTING_UNKNOWN_TASK_TYPE
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
     FakeApprovalStore,
+    FakeAssignmentStore,
     FakeAuditLog,
     FakeAuthorizationStore,
     FakeClock,
@@ -184,6 +186,19 @@ class Pipeline:
             actor=ELA,
             orphan_after=ORPHAN_AFTER,
         )
+        self.assignments = Assignments(
+            FakeAssignmentStore(),
+            engine=self.engine,
+            repository=self.repository,
+            results=self.results,
+            devices=self.devices,
+            audit=self.audit,
+            clock=self.clock,
+            ids=self.ids,
+        )
+        """Built, and never used by these tests: the one node of this world is ``local``, so every
+        plan here runs in this process (M12.2, dec. A). A pipeline that could not be built without
+        it is the honest way to say that the remote branch exists beside this one, not above it."""
         self.executor = Executor(
             registry=self.registry,
             tools=self.tools,
@@ -198,6 +213,7 @@ class Pipeline:
             clock=self.clock,
             ids=self.ids,
             actor=ELA,
+            assignments=self.assignments,
         )
         self.runner = TaskRunner(
             engine=self.engine,
@@ -206,6 +222,7 @@ class Pipeline:
             repository=self.repository,
             results=self.results,
             audit=self.audit,
+            assignments=self.assignments,
         )
 
     async def alive(self) -> None:

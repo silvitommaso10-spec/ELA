@@ -44,6 +44,7 @@ from ela.domain import (
 )
 from ela.executive import (
     VERIFICATION_FAILED,
+    Assignments,
     Execution,
     Executor,
     ExecutorError,
@@ -52,6 +53,7 @@ from ela.executive import (
 )
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
+    SqlAssignmentStore,
     SqlAuditLog,
     SqlAuthorizationStore,
     SqlExecutionResultStore,
@@ -148,6 +150,16 @@ class SqlPipeline:
             actor=ELA,
             orphan_after=ORPHAN_AFTER,
         )
+        self.assignments = Assignments(
+            SqlAssignmentStore(self.engine_db),
+            engine=self.engine,
+            repository=self.repository,
+            results=self.results,
+            devices=self.devices,
+            audit=self.audit,
+            clock=self.clock,
+            ids=self.ids,
+        )
         self.executor = Executor(
             registry=self.registry,
             tools=self.tools,
@@ -162,6 +174,7 @@ class SqlPipeline:
             clock=self.clock,
             ids=self.ids,
             actor=ELA,
+            assignments=self.assignments,
         )
         self._wire_the_walk()
 
@@ -181,6 +194,7 @@ class SqlPipeline:
             repository=self.repository,
             results=self.results,
             audit=self.audit,
+            assignments=self.assignments,
         )
 
     async def alive(self) -> None:
@@ -342,6 +356,7 @@ async def test_a_failed_verification_fails_the_task_and_the_chain_still_verifies
         clock=p.clock,
         ids=p.ids,
         actor=ELA,
+        assignments=p.assignments,
     )
     step, task_id = await p.running(WORKSPACE_WRITE_NOTE)
     execution = await p.execute(task_id, step.id)
@@ -454,6 +469,16 @@ class CrashingSqlPipeline(SqlPipeline):
             actor=ELA,
             orphan_after=ORPHAN_AFTER,
         )
+        self.assignments = Assignments(
+            SqlAssignmentStore(self.engine_db),
+            engine=self.engine,
+            repository=self.repository,
+            results=self.results,
+            devices=self.devices,
+            audit=self.audit,
+            clock=self.clock,
+            ids=self.ids,
+        )
         self.executor = Executor(
             registry=self.registry,
             tools=self.tools,
@@ -468,6 +493,7 @@ class CrashingSqlPipeline(SqlPipeline):
             clock=self.clock,
             ids=self.ids,
             actor=ELA,
+            assignments=self.assignments,
         )
         self._wire_the_walk()
 

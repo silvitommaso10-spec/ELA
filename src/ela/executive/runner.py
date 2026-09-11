@@ -45,6 +45,7 @@ from ela.domain import (
     TaskId,
     TaskState,
 )
+from ela.executive.assignments import Assignments, Lapse, Stand, Standing
 from ela.executive.errors import RunnerError
 from ela.executive.executor import Execution, Executor
 from ela.ports import AuditLog, ExecutionResultStore, TaskRepository
@@ -71,6 +72,14 @@ class RunOutcome(StrEnum):
     """Somebody stopped the task (§65). A decision, and the audit says whose."""
     EXPIRED = "expired"
     """The task ran out of time (§14). Nobody decided anything; a deadline passed."""
+    ASSIGNED = "assigned"
+    """A step was handed to a remote node and has not come back (M12.2, ADR 0038 §10).
+
+    The task stays EXECUTING and the step RUNNING: the work is under way somewhere else. A later
+    run finds it still out, or closed by the node's delivery, or — once the assignment has expired
+    — applies the answer of M12.1, D14. Not a state: §14 fixes the ten, and this is the outcome of
+    **one call**, as ``WAITING_DEVICE`` is, which is why :data:`OUTCOMES` does not grow.
+    """
 
 
 OUTCOMES: Final[Mapping[TaskState, RunOutcome]] = MappingProxyType(
@@ -123,8 +132,12 @@ class Run(NamedTuple):
     name — which the person waiting never saw. This is that sentence, carried out with the result
     instead of left behind in the log.
 
+    ``ASSIGNED`` carries one too, and it is the assignment's: the node, the work and the deadline
+    by which it is due (M12.2, ADR 0038 §10). What a person deciding whether to wait has to read.
+
     ``None`` for every other outcome: those say what happened. The runner still writes nothing of
-    its own (ADR 0019) — the reason is the placement's, passed on rather than composed here.
+    its own (ADR 0019) — the reason is the placement's or the assignment's, passed on rather than
+    composed here.
     """
 
 
@@ -137,7 +150,15 @@ class TaskRunner:
     this class.
     """
 
-    __slots__ = ("_audit", "_engine", "_executor", "_orchestrator", "_repository", "_results")
+    __slots__ = (
+        "_assignments",
+        "_audit",
+        "_engine",
+        "_executor",
+        "_orchestrator",
+        "_repository",
+        "_results",
+    )
 
     def __init__(
         self,
@@ -148,6 +169,7 @@ class TaskRunner:
         repository: TaskRepository,
         results: ExecutionResultStore,
         audit: AuditLog,
+        assignments: Assignments,
     ) -> None:
         self._engine = engine
         self._orchestrator = orchestrator
@@ -155,6 +177,7 @@ class TaskRunner:
         self._repository = repository
         self._results = results
         self._audit = audit
+        self._assignments = assignments
 
     async def run(
         self, task_id: TaskId, *, max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY
@@ -169,10 +192,14 @@ class TaskRunner:
         cannot be walked: one still CREATED or PLANNING, or one whose plan has no steps.
 
         The loop terminates without a counter, and the reason is worth stating: every iteration
-        that does not return closes a step. ``execute`` refuses a step that is not RUNNING, and
-        each of its paths either moves the step out of RUNNING or leaves the task in a state of
-        :data:`OUTCOMES`, which the next iteration returns on. So at most one iteration per step
-        of the plan — asserted for real by ``test_a_run_executes_each_step_at_most_once``.
+        that does not return closes a step **or releases one**, and a release happens at most once
+        per step per call (M12.2, dec. F). ``execute`` refuses a step that is not RUNNING, and each
+        of its paths either moves the step out of RUNNING, hands it to a node — which returns
+        ``ASSIGNED`` — or leaves the task in a state of :data:`OUTCOMES`, which the next iteration
+        returns on. A released step is PENDING and is placed again at once: on a remote node the
+        new assignment returns the call, on ``local`` the iteration closes it. So at most two
+        iterations per step of the plan — asserted for real by
+        ``test_a_run_executes_each_step_at_most_once`` and by the release test of M12.2.
         """
         task = await self._repository.get(task_id)
         if task.state in OUTCOMES:
@@ -200,6 +227,26 @@ class TaskRunner:
                 return Run(task, RunOutcome.COMPLETED, tuple(steps), tuple(executions))
 
             step_id = self._next(task_id, graph)
+            stand = await self._stand(task_id, step_id, graph)
+            if stand.standing is Standing.LIVE:
+                assert stand.assignment is not None
+                return Run(
+                    task,
+                    RunOutcome.ASSIGNED,
+                    tuple(steps),
+                    tuple(executions),
+                    await self._assignments.describe(stand.assignment),
+                )
+            if stand.standing is not Standing.NONE:
+                execution = await self._left_behind(task_id, step_id, stand)
+                if execution is not None:
+                    steps.append(step_id)
+                    executions.append(execution)
+                    task = execution.task
+                    if task.state in OUTCOMES:
+                        return Run(task, OUTCOMES[task.state], tuple(steps), tuple(executions))
+                graph = await self._engine.graph(task_id)
+                continue
             placement = await self._node(task_id, step_id, graph, max_privacy)
             if placement.device is None:
                 task = await self._wait(task)
@@ -217,12 +264,59 @@ class TaskRunner:
                 await self._engine.start_step(task_id, step_id, device_id=device_id)
 
             execution = await self._executor.execute(task_id, step_id, placement=placement)
+            if execution.assignment is not None:
+                # The call handed the step to a node instead of running it (ADR 0038 §10). It is
+                # not among the steps this run executed, because this run executed nothing of it.
+                return Run(
+                    execution.task,
+                    RunOutcome.ASSIGNED,
+                    tuple(steps),
+                    tuple(executions),
+                    await self._assignments.describe(execution.assignment),
+                )
             steps.append(step_id)
             executions.append(execution)
             task = execution.task
             if task.state in OUTCOMES:
                 return Run(task, OUTCOMES[task.state], tuple(steps), tuple(executions))
             graph = await self._engine.graph(task_id)
+
+    # ----------------------------------------------------------------------------------
+    # A step that was handed to a node (M12.2, ADR 0038 §10)
+    # ----------------------------------------------------------------------------------
+
+    async def _stand(self, task_id: TaskId, step_id: StepId, graph: GraphState) -> Stand:
+        """Where the work of a RUNNING step stands now; nothing at all for a PENDING one.
+
+        A step with an assignment is **not** confirmed with ``confirm``, which judges the node by
+        the availability derived from its heartbeat: a node rendering for ten minutes without
+        reporting would read as unreachable, the run would return ``WAITING_DEVICE`` and the task
+        would go back to QUEUED **with live work in somebody's hands**. For D6 the instant a node
+        is gone is the expiry of the assignment, not a belief about the node — so the assignment is
+        read rather than the node judged (ADR 0038 §10).
+        """
+        if graph.states[step_id] is not StepState.RUNNING:
+            return Stand(Standing.NONE, None)
+        return await self._assignments.standing(task_id, step_id)
+
+    async def _left_behind(
+        self, task_id: TaskId, step_id: StepId, stand: Stand
+    ) -> Execution | None:
+        """What to do with work that expired or was delivered (dec. F): release it, or close it.
+
+        ``None`` when the expiry released the step: nothing can have acted, the step is PENDING
+        again, and the loop places it — which is the ordinary branch reached again, not a new one.
+        Otherwise the store holds a STARTED record or an outcome, and ``Executor.finish`` closes the
+        step from the first write that is missing. The service never calls the executor; this is
+        where the two meet (ADR 0038 §6).
+        """
+        assert stand.assignment is not None
+        if (
+            stand.standing is Standing.LAPSED
+            and await self._assignments.lapse(stand.assignment) is Lapse.RELEASED
+        ):
+            return None
+        return await self._executor.finish(task_id, step_id)
 
     # ----------------------------------------------------------------------------------
     # Which step, and on which node

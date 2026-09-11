@@ -18,7 +18,14 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-__all__ = ["AssignmentAtCapError", "AssignmentRefusedError", "ExecutorError", "RunnerError"]
+__all__ = [
+    "AssignmentAtCapError",
+    "AssignmentRefusedError",
+    "AssignmentVoidError",
+    "DeliveryConflictError",
+    "ExecutorError",
+    "RunnerError",
+]
 
 
 class ExecutorError(Exception):
@@ -51,6 +58,40 @@ class AssignmentRefusedError(Exception):
         self.decision_id = decision_id
         self.reason = reason
         super().__init__(f"decision {decision_id}: {reason}")
+
+
+class AssignmentVoidError(Exception):
+    """A delivery for work whose task closed while the node was doing it (ADR 0038 §12).
+
+    Refused like a late one, and for the same reason: what the node brings is about a step nobody
+    is waiting for any more. The audit keeps the status the node reported — its word, recorded as
+    a word — and the step is not reopened.
+    """
+
+    def __init__(self, assignment_id: UUID, state: str) -> None:
+        self.assignment_id = assignment_id
+        self.state = state
+        super().__init__(
+            f"assignment {assignment_id} is about a step of a task that is {state}: there is "
+            "nothing left to deliver into"
+        )
+
+
+class DeliveryConflictError(Exception):
+    """A second delivery of the same work carrying another envelope than the one accepted.
+
+    A network that retries sends the same bytes; two different envelopes for one assignment are
+    two different claims about what happened, and ELA keeps the first and says so (ADR 0038 §12).
+    Neither envelope is named in the message: a digest beside another is two fingerprints of the
+    user's content (§57).
+    """
+
+    def __init__(self, assignment_id: UUID) -> None:
+        self.assignment_id = assignment_id
+        super().__init__(
+            f"assignment {assignment_id} was already delivered with another envelope: the first "
+            "one stands"
+        )
 
 
 class AssignmentAtCapError(Exception):

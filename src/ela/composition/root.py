@@ -484,6 +484,7 @@ async def build(settings: Settings) -> Ela:
             clock=clock,
             ids=ids,
             actor=ELA_ACTOR,
+            assignments=assignments,
             authorization_ttl=settings.core.authorization_ttl,
             approval_ttl=settings.core.approval_ttl,
         )
@@ -494,6 +495,7 @@ async def build(settings: Settings) -> Ela:
             repository=repository,
             results=results,
             audit=audit,
+            assignments=assignments,
         )
 
         # The same probe object the capture tool preflights with: one reader of this machine, so

@@ -144,9 +144,16 @@ def test_execute_takes_no_arguments_and_a_mandatory_node() -> None:
 
 def test_the_executor_reads_the_arguments_from_the_step() -> None:
     """The property of §1 is structural or it is nothing: the arguments come from the plan the
-    retry rereads, not from whoever calls."""
-    source = inspect.getsource(Executor.execute)
-    assert "arguments = step.arguments" in source
+    retry rereads, not from whoever calls.
+
+    Two halves, since M12.2 split the pipeline across three calls (ADR 0038 §2): no public method
+    of the executor takes arguments at all, and the one place that reads them reads them off the
+    step. A node that sent its own would have nowhere to put them — which is why the order is
+    composed from the step too, and the assignment carries no arguments of its own.
+    """
+    for method in (Executor.execute, Executor.begin, Executor.deliver, Executor.finish):
+        assert "arguments" not in inspect.signature(method).parameters, method.__name__
+    assert "step.arguments" in inspect.getsource(Executor._prepared)
 
 
 # --------------------------------------------------------------------------------------

@@ -19,6 +19,9 @@ from ela.executive import OUTCOMES, RUNNABLE_STATES, RunOutcome
 from tests.executive import test_runner_recovery
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0019-task-runner.md"
+ADR_0038 = ADR_PATH.with_name("0038-work-protocol.md")
+"""ADR 0019 is immutable, so the outcome M12.2 adds lives in the ADR that added it, and §10 is
+read as the **union** of the two tables (:func:`documented_outcomes`)."""
 RECOVERY_TESTS = Path(test_runner_recovery.__file__)
 
 WINDOW_ROW = re.compile(r"^\| (R\d) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \|$")
@@ -27,6 +30,8 @@ OUTCOME_ROW = re.compile(
     r"^\| `(COMPLETED|FAILED|DENIED|CANCELLED|EXPIRED|WAITING_\w+)` \| (.+?) \|$"
 )
 """§10: an outcome in backticks and one cell of prose; two columns, unlike every other table."""
+WORK_OUTCOME_ROW = re.compile(r"^\| `([A-Z_]+)` \| ([^|]+?) \| ([^|]+?) \|$")
+"""ADR 0038 §10: the outcome M12.2 adds, with what it means for the task and the step beside it."""
 PROPERTY_ROW = re.compile(r"^\| (uno step .+?) \| (.+?) \| ((?:`test_\w+`(?:, )?)+) \|$")
 """§5: the two re-entrancy properties, each with the tests that fix it."""
 DEVICE_ROW = re.compile(r"^\| ([^|]+?) \| ((?:[^|]|\\\|)+?) \| ([^|]+?) \|$")
@@ -61,16 +66,44 @@ def rows(pattern: re.Pattern[str], body: str) -> list[re.Match[str]]:
 # --------------------------------------------------------------------------------------
 
 
+def work_section() -> str:
+    """ADR 0038 §10, the section that adds an outcome: up to the next heading."""
+    text = ADR_0038.read_text(encoding="utf-8")
+    rest = text[text.index("## 10. ") :]
+    end = rest.find("\n## ", 1)
+    return rest if end == -1 else rest[:end]
+
+
+def documented_outcomes() -> set[str]:
+    """Every outcome the two ADRs name, in union: ADR 0019 §10 and ADR 0038 §10.
+
+    The negative of the union is the one that matters and it is unchanged: an outcome with a row
+    in **neither** table fails the equality below, whichever table somebody forgot.
+    """
+    later = {m.group(1) for m in rows(WORK_OUTCOME_ROW, work_section())}
+    assert later, "ADR 0038 §10 must contain the row of the outcome it adds"
+    return {m.group(1) for m in rows(OUTCOME_ROW, section("10."))} | later
+
+
 def test_the_adr_lists_every_outcome_the_code_can_return() -> None:
-    documented = {m.group(1) for m in rows(OUTCOME_ROW, section("10."))}
-    assert documented == {outcome.name for outcome in RunOutcome}
+    assert documented_outcomes() == {outcome.name for outcome in RunOutcome}
+
+
+def test_adr_0019_still_lists_seven_and_adr_0038_adds_the_eighth() -> None:
+    """ADR 0019 as history: ``ASSIGNED`` is M12.2's, and the ADR that brought it says so alone."""
+    assert {m.group(1) for m in rows(OUTCOME_ROW, section("10."))} == {
+        outcome.name for outcome in RunOutcome
+    } - {RunOutcome.ASSIGNED.name}
+    assert {m.group(1) for m in rows(WORK_OUTCOME_ROW, work_section())} == {
+        RunOutcome.ASSIGNED.name
+    }
 
 
 def test_the_outcome_table_is_the_one_the_code_maps_states_through() -> None:
-    """Every closed or waiting state of ``OUTCOMES`` is an outcome the ADR names."""
-    assert {outcome.name for outcome in OUTCOMES.values()} <= {
-        m.group(1) for m in rows(OUTCOME_ROW, section("10."))
-    }
+    """Every closed or waiting state of ``OUTCOMES`` is an outcome the ADRs name — and the one
+    M12.2 adds comes from no state at all: ``ASSIGNED`` is the outcome of a call (ADR 0038 §10)."""
+    assert {outcome.name for outcome in OUTCOMES.values()} <= documented_outcomes()
+    assert RunOutcome.ASSIGNED not in set(OUTCOMES.values())
 
 
 def test_no_two_states_share_an_outcome() -> None:
@@ -196,9 +229,23 @@ def test_the_adr_lists_the_four_places_the_node_reaches() -> None:
     ]
 
 
-def test_the_local_device_placeholder_is_gone() -> None:
+def test_the_local_device_placeholder_is_gone_and_what_came_back_is_an_id() -> None:
+    """ADR 0019 §4 killed a placeholder *device*; M12.2 brings back an **id**, and only that.
+
+    The two are not the same thing and the difference is the decision: a constant standing in for
+    a node nobody chose was a lie the executor told itself, while ``LOCAL_DEVICE_ID`` is the one id
+    of the system that is deterministic *because it is this machine* (ADR 0016 §4) — and it is the
+    criterion of where a call runs (ADR 0038 §3, dec. A). So the placeholder must stay dead: every
+    mention in the executor is of the id, and none of a device.
+    """
     executor = (
         Path(__file__).resolve().parents[2] / "src" / "ela" / "executive" / "executor.py"
     ).read_text(encoding="utf-8")
-    assert "LOCAL_DEVICE" not in executor
     assert "La costante sparisce." in section("4.")
+    assert "LOCAL_DEVICE_ID" in executor
+    assert re.findall(r"LOCAL_DEVICE\w*", executor) == ["LOCAL_DEVICE_ID"] * executor.count(
+        "LOCAL_DEVICE_ID"
+    )
+    assert "in-process se e solo se il nodo scelto è `LOCAL_DEVICE_ID`" in ADR_0038.read_text(
+        encoding="utf-8"
+    )

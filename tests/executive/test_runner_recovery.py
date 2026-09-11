@@ -316,6 +316,7 @@ async def test_window_r8_a_run_resumes_a_waiting_task_in_a_process_that_never_sa
         repository=w.repository,
         results=w.results,
         audit=w.audit,
+        assignments=w.assignments,
     )
     run = await reborn.run(task.id)
 
