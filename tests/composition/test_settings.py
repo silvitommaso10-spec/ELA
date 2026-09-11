@@ -277,6 +277,30 @@ def test_an_assignment_ttl_longer_than_its_cap_stops_ela(
     assert "ELA_ASSIGNMENT_MAX_SECONDS (100)" in message
 
 
+def test_the_window_of_a_request_for_work_defaults_to_the_adr() -> None:
+    """ADR 0038 §11: twenty-five seconds, under the thirty of inactivity many intermediaries
+    tolerate. A reason and not a measurement — what *n* nodes cost is still to be measured.
+
+    Read off the class and not through :func:`loaded`, because the suite's own environment sets
+    this one to a second: a request for work that found nothing is held for the window, and the
+    tests of the routes would pay the real twenty-five seconds each. What a *default* is belongs
+    to the class.
+    """
+    assert CoreSettings(_env_file=None).node_poll == timedelta(seconds=25)
+
+
+def test_the_window_of_a_request_for_work_has_a_cap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No waiting without a cap (M4.2, M4.3): a held connection is the same resource as a
+    synchronous ``run``, and a minute is as long as one may be held."""
+    assert loaded(monkeypatch, tmp_path, ELA_NODE_POLL_SECONDS="60").core.node_poll == timedelta(
+        minutes=1
+    )
+    assert "ELA_NODE_POLL_SECONDS" in refused(monkeypatch, tmp_path, ELA_NODE_POLL_SECONDS="61")
+    assert "ELA_NODE_POLL_SECONDS" in refused(monkeypatch, tmp_path, ELA_NODE_POLL_SECONDS="0")
+
+
 def test_the_cap_of_a_piece_of_work_has_a_cap(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -401,6 +401,22 @@ l'executor non ha un lock suo. Con il lock occupato la presa salta quella rilett
 riceve **409** senza scrivere niente: un «non adesso», per cui il nodo tiene la busta (D7). Il
 rinnovo non lo prende: le sue scritture sono un `HEARTBEAT` e un `UPDATE` condizionale.
 
+Errori aggiunti, nella forma della tabella di ADR 0023 §10:
+
+| Caso | Eccezione | Stato |
+|---|---|---|
+| una consegna dopo la scadenza del lavoro | `AssignmentExpiredError` | `410` |
+| una consegna per un task che si è chiuso | `AssignmentVoidError` | `410` |
+| un lavoro che questo nodo non tiene: ignoto, di un altro, non più preso | `WorkNotYoursError` | `404` |
+| una mossa che la riga non ammette — un rinnovo di un'offerta | `AssignmentNotUsableError` | `404` |
+| un rinnovo al tetto | `AssignmentAtCapError` | `409` |
+| una seconda busta dove una è stata accettata | `DeliveryConflictError` | `409` |
+| un'assegnazione rifiutata prima di essere scritta | `AssignmentRefusedError` | `409` |
+
+I due `404` hanno **la stessa frase**, non solo lo stesso stato: un nodo che distinguesse «ignoto»
+da «di un altro» potrebbe mappare le assegnazioni degli altri, ed è la ragione per cui ADR 0023 §7
+risponde 401 e non 404 a un percorso inesistente. La differenza sta nell'audit, dove legge l'utente.
+
 **La sequenza della presa**: `claim` → la `STARTED`, se il tool non è ripetibile → `SENSOR_ACTIVATED`
 → l'ordine. La presa prima della `STARTED`: una morte fra le due lascia una presa senza `STARTED`,
 un ordine che non è uscito, e alla scadenza si rilascia (A4).
@@ -446,6 +462,7 @@ Variabili aggiunte, nella forma della tabella di ADR 0023 §3:
 |---|---|---|---|
 | `ELA_ASSIGNMENT_TTL_SECONDS` | `int` | `120` | `0 <` ttl `<= ELA_DECISION_TTL_SECONDS`; `<` `ELA_TASK_ORPHAN_AFTER_SECONDS`; `<=` `ELA_ASSIGNMENT_MAX_SECONDS` |
 | `ELA_ASSIGNMENT_MAX_SECONDS` | `int` | `3600` | `0 <` max `<= 86400`: il tetto di un lavoro preso |
+| `ELA_NODE_POLL_SECONDS` | `int` | `25` | `0 <` poll `<= 60`: quanto una richiesta di lavoro resta aperta |
 
 ## 14. La verifica di un effetto remoto, e le capability che non viaggiano
 

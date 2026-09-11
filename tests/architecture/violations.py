@@ -1993,6 +1993,15 @@ ALLOWED: tuple[Case, ...] = (
         "",
     ),
     Case(
+        # The other direction, since M12.2: the envelope a node delivers carries what its tool
+        # produced *in*, and the entity is still minted by the executor alone (rule 52).
+        "the-envelope-that-carries-it-in",
+        "tool-output-readers",
+        "api/schemas.py",
+        "from pydantic import BaseModel\nclass WorkResultIn(BaseModel):\n    output: dict\n",
+        "",
+    ),
+    Case(
         "the-one-model-that-carries-the-output",
         "tool-output-readers",
         "api/schemas.py",

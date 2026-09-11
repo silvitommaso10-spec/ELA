@@ -25,6 +25,7 @@ __all__ = [
     "DeliveryConflictError",
     "ExecutorError",
     "RunnerError",
+    "WorkNotYoursError",
 ]
 
 
@@ -75,6 +76,21 @@ class AssignmentVoidError(Exception):
             f"assignment {assignment_id} is about a step of a task that is {state}: there is "
             "nothing left to deliver into"
         )
+
+
+class WorkNotYoursError(Exception):
+    """A node asked about work it does not hold: unknown, another's, or no longer taken.
+
+    **One error for the three**, because they get one answer (ADR 0038 §12): an id the Core never
+    minted, an id that belongs to another node and one that is not taken any more must be
+    indistinguishable from outside, or a node could learn which assignments exist for the others by
+    reading the difference — the reason ADR 0023 §7 answers ``401`` and not ``404`` to a path that
+    does not exist. The audit tells them apart, where the user reads and nodes do not.
+    """
+
+    def __init__(self, assignment_id: UUID) -> None:
+        self.assignment_id = assignment_id
+        super().__init__(f"assignment {assignment_id} is not work this node holds")
 
 
 class DeliveryConflictError(Exception):

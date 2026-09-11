@@ -59,6 +59,7 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_DECISION_TTL_SECONDS", "300"),
     ("ELA_ASSIGNMENT_TTL_SECONDS", "120"),
     ("ELA_ASSIGNMENT_MAX_SECONDS", "3600"),
+    ("ELA_NODE_POLL_SECONDS", "25"),
     ("ELA_NOTES_SCOPE", "workspace/notes"),
     ("ELA_PERCEPTION_ENABLED", "true"),
     ("ELA_PERCEPTION_LOOP_INTERVAL_SECONDS", "0"),

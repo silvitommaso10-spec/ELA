@@ -118,6 +118,7 @@ from ela.executive.errors import (
     AssignmentVoidError,
     DeliveryConflictError,
     ExecutorError,
+    WorkNotYoursError,
 )
 from ela.permissions import (
     DEFAULT_AUTHORIZATION_TTL,
@@ -130,8 +131,6 @@ from ela.ports import (
     AlreadyExistsError,
     ApprovalStore,
     AssignmentExpiredError,
-    AssignmentHeldElsewhereError,
-    AssignmentStateError,
     AuditLog,
     AuthorizationNotUsableError,
     AuthorizationStore,
@@ -880,6 +879,10 @@ class Executor:
 
         A ``DELIVERED`` row comes back: whether it is the same envelope or another one is the
         caller's question, and the digest is the only thing that can answer it.
+
+        The three ways work is "not this node's" raise **one** error with one message — unknown,
+        another's, not taken any more — because a node told them apart could map which assignments
+        exist for the others. The audit keeps the difference (``assignment_known``).
         """
         try:
             assignment = await self._assignments.held(assignment_id)
@@ -890,17 +893,17 @@ class Executor:
                 assignment_id=assignment_id,
                 known=False,
             )
-            raise
+            raise WorkNotYoursError(assignment_id) from None
         if assignment.device_id != device_id:
             await self._assignments.reject(
                 device_id, WorkRejection.NOT_ASSIGNED, assignment_id=assignment_id, known=True
             )
-            raise AssignmentHeldElsewhereError(assignment_id, assignment.device_id)
+            raise WorkNotYoursError(assignment_id)
         if assignment.state is AssignmentState.DELIVERED:
             return assignment
         if assignment.state is not AssignmentState.CLAIMED:
             await self._refuse(assignment, device_id, WorkRejection.NOT_ASSIGNED)
-            raise AssignmentStateError(assignment_id, assignment.state)
+            raise WorkNotYoursError(assignment_id)
         if assignment.expires_at <= now:
             await self._refuse(assignment, device_id, WorkRejection.LATE, reported=envelope.status)
             raise AssignmentExpiredError(assignment_id, assignment.expires_at)

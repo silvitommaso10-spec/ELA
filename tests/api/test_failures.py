@@ -13,7 +13,10 @@ that no other exception writes. Where a scenario needs a state a caller cannot a
 prepared through ELA's own ports — the precedent is ``tamper_with_the_trail`` — never by mounting
 a route that exists only here: a route invented for a test would prove that the test works.
 
-The one row that cannot be reached is declared instead of faked, in :data:`ALREADY_EXISTS`.
+The rows that cannot be reached are declared instead of faked — :data:`ALREADY_EXISTS` since M9.4,
+and since M12.2 :data:`AT_CAP` and :data:`REFUSED_ASSIGNMENT`, both about a state a request cannot
+produce without waiting out real seconds. Every declaration says why today and what would open it,
+and :data:`DECLARED` is what keeps the census closed.
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ from fastapi.exceptions import RequestValidationError
 from httpx import ASGITransport, AsyncClient, Response
 
 from ela.api import create_app
-from ela.api.app import FAILURES
+from ela.api.app import FAILURES, NOT_YOUR_WORK
 from ela.api.errors import (
     DatabaseUnavailableError,
     RevisionRequiredError,
@@ -43,16 +46,27 @@ from ela.devices import (
 )
 from ela.domain import (
     CapabilityId,
+    DeviceId,
     ExecutionId,
     ExecutionResult,
     ExecutionStatus,
     StepId,
     TaskId,
 )
-from ela.executive import ExecutorError, RunnerError
+from ela.executive import (
+    AssignmentAtCapError,
+    AssignmentRefusedError,
+    AssignmentVoidError,
+    DeliveryConflictError,
+    ExecutorError,
+    RunnerError,
+    WorkNotYoursError,
+)
 from ela.ports import (
     AlreadyExistsError,
     ApprovalNotAnswerableError,
+    AssignmentExpiredError,
+    AssignmentNotUsableError,
     IdentityConflictError,
     NotFoundError,
 )
@@ -67,6 +81,7 @@ from tests.api.support import (
     served_paths,
     tamper_with_the_trail,
 )
+from tests.api.test_nodes_work import ENVELOPE, taken, work_for
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +137,40 @@ is idempotency over an unreliable network: whoever calls generates the id of the
 repeating it cannot duplicate the effect, and the second call is answered ``409 already_exists``
 instead of acting again. The day such a route exists, this row becomes observable and this
 deferral expires.
+"""
+
+
+AT_CAP = """
+``AssignmentAtCapError`` (409 ``assignment.at_cap``) is not reachable through a request of this
+suite, and the reason is time (M12.2, ADR 0038 §13).
+
+**Why not today.** The cap is reached when ``min(now + ttl, claimed_at + max)`` can no longer move
+the deadline, which with the defaults — a TTL of two minutes, a cap of an hour — takes an hour of
+real seconds. A suite that waited them would be the slowest in the repository; one that faked the
+clock would not be going through HTTP at all, because the clock ELA serves with is the real one. So
+the behaviour is tested where the cap is decided, with an injected clock:
+``tests/executive/test_assignments.py``.
+
+**What would open it.** A way to serve a request against an ELA whose settings a test chose — a
+second ``live`` fixture over a ``build`` with ``ELA_ASSIGNMENT_MAX_SECONDS`` equal to the TTL, where
+the first renewal is already at the cap. It is a fixture and not a product change, and the day it
+exists this row becomes observable.
+"""
+
+REFUSED_ASSIGNMENT = """
+``AssignmentRefusedError`` (409 ``conflict``) is not reachable through a request of this suite, and
+the reason is where it happens (M12.2, ADR 0038 §6).
+
+**Why not today.** It is raised by ``Assignments.assign`` — inside the walk, after the Guardian and
+the ``consume`` — when the decision the walk just obtained is not ``ALLOWED``, has expired at that
+very instant, or names ``local``. The walk reaches ``assign`` only with a fresh ``ALLOWED`` decision
+for a remote node, so a caller has nothing to send that produces it. It is in ``FAILURES`` for the
+fail-safe direction: if it ever escaped, a node would read ``409`` and not a traceback. The
+refusals themselves are tested where they are decided: ``tests/executive/test_assignments.py``.
+
+**What would open it.** A decision TTL short enough to expire between ``authorize`` and ``assign``
+— a setting a test could choose, like the cap above — or a second producer of assignments that a
+route could reach directly. Neither exists, and the second one is exactly what rule 48 forbids.
 """
 
 
@@ -252,6 +301,58 @@ async def a_revocation_of_this_machine(live: Live) -> Response:
     return await live.client.post(f"/nodes/{LOCAL_DEVICE_ID}/revoke")
 
 
+async def _delivery(
+    live: Live, assignment_id: str, headers: dict[str, str], **envelope: object
+) -> Response:
+    return await live.client.post(
+        "/nodes/work/result",
+        json={"assignment_id": assignment_id, **ENVELOPE, **envelope},
+        headers=headers,
+    )
+
+
+async def a_delivery_after_the_work_was_cut_short(live: Live) -> Response:
+    """The revocation brings the expiry to ``now`` (D17), so a late delivery needs no waiting."""
+    _, order, headers, device_id = await taken(live.client, live.ela)
+    await live.ela.assignments.cut_short(device_id)
+    return await _delivery(live, order["assignment_id"], headers)
+
+
+async def a_delivery_for_a_task_the_user_stopped(live: Live) -> Response:
+    """The node was working while the task closed: what it brings has nowhere to go (§12)."""
+    task_id, order, headers, _ = await taken(live.client, live.ela)
+    await live.client.post(f"/tasks/{task_id}/cancel", json={"reason": "non mi serve più"})
+    return await _delivery(live, order["assignment_id"], headers)
+
+
+async def a_delivery_of_work_the_core_never_minted(live: Live) -> Response:
+    """An id nobody handed out — answered exactly as another node's work is (``NOT_YOUR_WORK``)."""
+    _, _, headers, _ = await taken(live.client, live.ela)
+    return await _delivery(live, str(uuid.uuid4()), headers)
+
+
+async def a_renewal_of_work_that_was_only_offered(live: Live) -> Response:
+    """Renewing an offer is renewing something nobody took: the same answer as work of another's.
+
+    This is the row of the ports' family — ``AssignmentStateError`` under
+    ``AssignmentNotUsableError`` — and it reaches the same sentence as the executor's own refusal,
+    which is the point of both.
+    """
+    _, device_id, headers = await work_for(live.client, live.ela)
+    offer = await live.ela.assignments.next_for(DeviceId(uuid.UUID(device_id)))
+    assert offer is not None
+    return await live.client.post(
+        "/nodes/work/renew", json={"assignment_id": str(offer.id)}, headers=headers
+    )
+
+
+async def a_second_envelope_for_work_already_delivered(live: Live) -> Response:
+    """Two different claims about what happened: the first one stands (§12)."""
+    _, order, headers, _ = await taken(live.client, live.ela)
+    await _delivery(live, order["assignment_id"], headers)
+    return await _delivery(live, order["assignment_id"], headers, output={"message": "altro"})
+
+
 RAISED: tuple[Raised, ...] = (
     Raised(
         NotFoundError,
@@ -379,6 +480,51 @@ RAISED: tuple[Raised, ...] = (
         "If-Match",
         an_announcement_that_names_no_revision,
     ),
+    Raised(
+        AssignmentExpiredError,
+        "POST",
+        "/nodes/work/result",
+        410,
+        "assignment.expired",
+        "it expired at",
+        a_delivery_after_the_work_was_cut_short,
+    ),
+    Raised(
+        AssignmentVoidError,
+        "POST",
+        "/nodes/work/result",
+        410,
+        "assignment.void",
+        "nothing left to deliver into",
+        a_delivery_for_a_task_the_user_stopped,
+    ),
+    Raised(
+        WorkNotYoursError,
+        "POST",
+        "/nodes/work/result",
+        404,
+        "not_assigned",
+        NOT_YOUR_WORK,
+        a_delivery_of_work_the_core_never_minted,
+    ),
+    Raised(
+        AssignmentNotUsableError,
+        "POST",
+        "/nodes/work/renew",
+        404,
+        "not_assigned",
+        NOT_YOUR_WORK,
+        a_renewal_of_work_that_was_only_offered,
+    ),
+    Raised(
+        DeliveryConflictError,
+        "POST",
+        "/nodes/work/result",
+        409,
+        "delivery.conflict",
+        "already delivered with another envelope",
+        a_second_envelope_for_work_already_delivered,
+    ),
 )
 
 
@@ -409,16 +555,41 @@ async def test_every_failure_of_the_table_is_answered_that_way_by_the_applicatio
     assert row.message in body["error"]["message"], body["error"]["message"]
 
 
+DECLARED: dict[type[Exception], str] = {
+    AlreadyExistsError: ALREADY_EXISTS,
+    AssignmentAtCapError: AT_CAP,
+    AssignmentRefusedError: REFUSED_ASSIGNMENT,
+}
+"""The rows no request of this suite can reach, each with its own reason and its own expiry.
+
+One was here before M12.2; the two the work protocol adds are both about **time and place**: a cap
+that a request cannot reach without waiting out real seconds, and a refusal that happens inside the
+walk rather than at the edge of a route. Neither is faked with a mounted route or a patched clock —
+a scenario invented to satisfy a census proves that the census works.
+"""
+
+
 def test_every_row_of_failures_is_observed_or_declared() -> None:
-    """The closed world: a row added to ``FAILURES`` without a scenario fails here."""
+    """The closed world: a row added to ``FAILURES`` without a scenario or a reason fails here."""
     observed = {row.exception for row in RAISED}
-    assert observed | {AlreadyExistsError} == {failure.exception for failure in FAILURES}
-    assert len(RAISED) == len(FAILURES) - 1
+    assert observed | set(DECLARED) == {failure.exception for failure in FAILURES}
+    assert not observed & set(DECLARED)
+    assert len(RAISED) == len(FAILURES) - len(DECLARED)
 
 
-def test_the_unreachable_row_says_why_today_and_what_would_open_it_tomorrow() -> None:
-    """Declared, not faked (decision 3): the deferral carries its own expiry condition."""
-    assert "**Why not today.**" in ALREADY_EXISTS and "**What would open it.**" in ALREADY_EXISTS
+@pytest.mark.parametrize("declared", list(DECLARED), ids=lambda one: one.__name__)
+def test_every_unreachable_row_says_why_today_and_what_would_open_it_tomorrow(
+    declared: type[Exception],
+) -> None:
+    """Declared, not faked (decision 3): every deferral carries its own expiry condition, and
+    names where the behaviour *is* tested so the row is not an excuse for a hole."""
+    reason = DECLARED[declared]
+
+    assert "**Why not today.**" in reason and "**What would open it.**" in reason
+    assert "tests/" in reason or "IdGenerator" in reason
+
+
+def test_the_row_that_was_unreachable_before_the_work_protocol_still_says_its_own_why() -> None:
     assert "IdGenerator" in ALREADY_EXISTS
     assert "StepIn.id" in ALREADY_EXISTS  # the one id a caller chooses, and why it does not count
     assert "idempotency" in ALREADY_EXISTS
@@ -509,7 +680,19 @@ def test_every_route_the_two_tables_name_is_a_route_the_application_serves(app: 
     assert named <= served, named - served
 
 
-def test_the_two_shared_codes_are_told_apart_by_something_other_than_the_code() -> None:
+TOLD_APART = ("conflict", "invalid")
+"""The shared codes whose rows must be distinguishable by their message."""
+SAID_THE_SAME_WAY = ("not_assigned",)
+"""And the one whose rows must **not** be (M12.2, ADR 0038 §12).
+
+Work the Core never minted, work of another node and work no longer taken share the status *and the
+sentence*, because a node that could tell them apart could map the assignments of the others — the
+reason ADR 0023 §7 answers ``401`` and not ``404`` to a path that does not exist. The audit keeps
+the difference, where the user reads and nodes do not.
+"""
+
+
+def test_the_shared_codes_are_told_apart_by_something_other_than_the_code() -> None:
     """``conflict`` is three exceptions and ``invalid`` is three others (ADR 0023 §10).
 
     A caller branches on the code, and that is the point of the code — but a *test* that only
@@ -519,12 +702,24 @@ def test_the_two_shared_codes_are_told_apart_by_something_other_than_the_code() 
     quietly becoming the same string.
     """
     shared = [code for code in {row.code for row in RAISED} if _rows_with(code) > 1]
-    assert sorted(shared) == ["conflict", "invalid"]
-    for code in shared:
+    assert sorted(shared) == sorted(TOLD_APART + SAID_THE_SAME_WAY)
+    for code in TOLD_APART:
         fragments = [row.message for row in RAISED if row.code == code]
         assert len(set(fragments)) == len(fragments), code
         for one in fragments:
             assert sum(one in other for other in fragments) == 1, one
+
+
+def test_the_refusals_of_the_work_are_said_the_same_way_on_purpose() -> None:
+    """The exception to the rule above, and the only one: a node learns nothing from *which* way
+    the work is not its own. Both rows carry the overriding sentence of ``FAILURES`` itself, so the
+    day somebody gives one of them a message of its own, this fails."""
+    for code in SAID_THE_SAME_WAY:
+        rows = [row for row in RAISED if row.code == code]
+        assert len(rows) > 1
+        assert {row.message for row in rows} == {NOT_YOUR_WORK}
+        overriding = {failure.message for failure in FAILURES if failure.code == code}
+        assert overriding == {NOT_YOUR_WORK}
 
 
 def _rows_with(code: str) -> int:

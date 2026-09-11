@@ -32,6 +32,7 @@ from ela.executive.errors import (
     DeliveryConflictError,
     ExecutorError,
     RunnerError,
+    WorkNotYoursError,
 )
 from ela.executive.executor import (
     APPROVAL_NAMESPACE,
@@ -105,6 +106,7 @@ __all__ = [
     "RunnerError",
     "TaskRunner",
     "Verification",
+    "WorkNotYoursError",
     "approved_targets",
     "check_envelope",
     "select_authorization",

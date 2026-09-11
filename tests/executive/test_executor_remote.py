@@ -35,14 +35,13 @@ from ela.executive import (
     DeliveryConflictError,
     Envelope,
     RunOutcome,
+    WorkNotYoursError,
     WorkRejection,
     check_envelope,
 )
 from ela.ports import (
     AssignmentExpiredError,
     AssignmentHeldElsewhereError,
-    AssignmentStateError,
-    NotFoundError,
 )
 from tests.executive.support import OK, World, world
 from tests.permissions.support import ECHO
@@ -231,7 +230,7 @@ async def test_work_the_core_never_minted_is_not_assigned_and_says_so() -> None:
     _, remote, _ = await handed(w)
     unknown = UUID("00000000-0000-4000-8000-0000000009ff")
 
-    with pytest.raises(NotFoundError):
+    with pytest.raises(WorkNotYoursError):
         await w.executor.deliver(unknown, remote.id, answered())  # type: ignore[arg-type,attr-defined]
 
     (refusal,) = await rejections(w)
@@ -246,7 +245,7 @@ async def test_work_of_another_node_gets_the_same_answer_and_another_payload() -
     _, _, assignment = await handed(w)
     other = await w.remote("phone")
 
-    with pytest.raises(AssignmentHeldElsewhereError):
+    with pytest.raises(WorkNotYoursError):
         await w.executor.deliver(assignment.id, other.id, answered())  # type: ignore[attr-defined]
 
     (refusal,) = await rejections(w)
@@ -258,10 +257,35 @@ async def test_work_not_taken_cannot_be_delivered() -> None:
     w = world()
     _, remote, assignment = await handed(w)  # offered, never claimed
 
-    with pytest.raises(AssignmentStateError):
+    with pytest.raises(WorkNotYoursError):
         await w.executor.deliver(assignment.id, remote.id, answered())  # type: ignore[attr-defined]
 
     assert (await rejections(w))[0]["reason"] == WorkRejection.NOT_ASSIGNED.value
+
+
+async def test_the_three_ways_work_is_not_yours_are_told_one_thing() -> None:
+    """Unknown, another node's, no longer taken: **one** error with one message.
+
+    A node that could tell them apart could map which assignments exist for the others — the reason
+    ADR 0023 §7 answers ``401`` and not ``404`` to a path that does not exist. The audit keeps the
+    difference, where the user reads and nodes do not.
+    """
+    w = world()
+    _, remote, assignment = await handed(w)  # offered, and so not deliverable
+    other = await w.remote("phone")
+    said: list[str] = []
+
+    for when, who in (
+        (UUID("00000000-0000-4000-8000-0000000009ff"), remote.id),  # type: ignore[attr-defined]
+        (assignment.id, other.id),  # type: ignore[attr-defined]
+        (assignment.id, remote.id),  # type: ignore[attr-defined]
+    ):
+        with pytest.raises(WorkNotYoursError) as caught:
+            await w.executor.deliver(when, who, answered())  # type: ignore[arg-type]
+        said.append(str(caught.value).replace(str(when), "<id>"))
+
+    assert len(set(said)) == 1, said
+    assert [one["assignment_known"] for one in await rejections(w)] == [False, True, True]
 
 
 async def test_a_late_delivery_is_refused_and_the_audit_keeps_what_it_reported() -> None:

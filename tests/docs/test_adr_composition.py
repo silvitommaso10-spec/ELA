@@ -174,24 +174,33 @@ def work_adr_text() -> str:
     return ADR_PATH.with_name("0038-work-protocol.md").read_text(encoding="utf-8")
 
 
-def documented_node_routes() -> set[tuple[str, str]]:
+def documented_node_routes(text: str | None = None) -> set[tuple[str, str]]:
+    """The routes of a node, from the ADR that documents them — ADR 0037 §4 by default.
+
+    ADR 0038 §11 adds the three of the work in the same four-column shape, and the two are read in
+    union: ADR 0037 is immutable, so a route added later lives in the ADR that added it.
+    """
     rows = {
         (match.group(1), match.group(2))
-        for line in nodes_adr_text().splitlines()
+        for line in (nodes_adr_text() if text is None else text).splitlines()
         if (match := NODE_ROUTE_ROW.match(line)) is not None
     }
-    assert rows, "ADR 0037 §4 must contain the table of the routes of the nodes"
+    assert rows, "the ADR must contain the table of the routes of the nodes"
     return rows
 
 
 def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
-    documented = documented_node_routes() | (
-        documented_routes(adr_text())
-        | documented_routes(cli_adr_text())
-        | documented_routes(debts_adr_text())
-        | documented_routes(perception_adr_text())
-        | documented_routes(context_adr_text())
-        | documented_routes(voice_adr_text())
+    documented = (
+        documented_node_routes()
+        | documented_node_routes(work_adr_text())
+        | (
+            documented_routes(adr_text())
+            | documented_routes(cli_adr_text())
+            | documented_routes(debts_adr_text())
+            | documented_routes(perception_adr_text())
+            | documented_routes(context_adr_text())
+            | documented_routes(voice_adr_text())
+        )
     )
     assert documented == coded_routes()
 
@@ -212,10 +221,24 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_twenty_five_of_them() -> None:
-    """Twenty until ADR 0037 §4 added five; ``tests/api/test_security.py`` proves that every one
-    of them is behind the middleware, and which identity reaches which."""
-    assert len(coded_routes()) == 25
+def test_there_are_twenty_eight_of_them() -> None:
+    """Twenty until ADR 0037 §4 added five, and twenty-five until ADR 0038 §11 added the three of
+    the work; ``tests/api/test_security.py`` proves that every one of them is behind the
+    middleware, and which identity reaches which."""
+    assert len(coded_routes()) == 28
+
+
+def test_the_three_routes_of_the_work_are_the_ones_adr_0038_adds() -> None:
+    """Added, never replacing: the five of ADR 0037 §4 keep their rows there, and a node's routes
+    go from two to five (M12.2, I8)."""
+    added = documented_node_routes(work_adr_text())
+
+    assert added == {
+        ("POST", "/nodes/work"),
+        ("POST", "/nodes/work/result"),
+        ("POST", "/nodes/work/renew"),
+    }
+    assert not added & documented_node_routes()
 
 
 # ----------------------------------------------------------------------------------------
@@ -234,13 +257,34 @@ def documented_errors(text: str) -> dict[str, int]:
 
 
 def test_the_error_table_is_the_one_the_application_installs() -> None:
-    assert documented_errors(adr_text()) | documented_errors(cli_adr_text()) | documented_errors(
-        nodes_adr_text()
+    assert (
+        documented_errors(adr_text())
+        | documented_errors(cli_adr_text())
+        | documented_errors(nodes_adr_text())
+        | documented_errors(work_adr_text())
     ) == {failure.exception.__name__: failure.status for failure in FAILURES}
 
 
 def test_the_failure_m8_2_adds_is_the_one_adr_0024_documents() -> None:
     assert documented_errors(cli_adr_text()) == {"AuditChainError": 409}
+
+
+def test_the_failures_of_the_work_are_the_ones_adr_0038_documents() -> None:
+    """Added, never replacing (M12.2, ADR 0038 §12): the statuses of the way of the work, and the
+    two ``404`` that must also share their *sentence* — which ``tests/api/test_failures.py`` holds,
+    because a table cannot say what a body says."""
+    added = documented_errors(work_adr_text())
+
+    assert added == {
+        "AssignmentExpiredError": 410,
+        "AssignmentVoidError": 410,
+        "WorkNotYoursError": 404,
+        "AssignmentNotUsableError": 404,
+        "AssignmentAtCapError": 409,
+        "DeliveryConflictError": 409,
+        "AssignmentRefusedError": 409,
+    }
+    assert not set(added) & set(documented_errors(adr_text()))
 
 
 def test_the_token_row_belongs_to_no_exception() -> None:

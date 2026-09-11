@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import errno
 import runpy
+import signal
 import socket
 from collections.abc import (
     Iterator,
@@ -17,12 +18,15 @@ from collections.abc import (
 from typing import Any, cast
 
 import pytest
+import uvicorn
+from httpx import AsyncClient
 
 from ela.api import server
-from ela.composition import Settings
+from ela.composition import Ela, Settings
 from ela.composition.settings import (
     ApiSettings,
 )
+from tests.api.test_nodes import enrolled
 from tests.composition.support import create_schema
 
 
@@ -38,12 +42,24 @@ class Uvicorn:
         self.app = app
         return self
 
-    def Server(self, config: Uvicorn) -> Uvicorn:  # noqa: N802
+    def stopping(
+        self, config: Uvicorn, *, stopping: asyncio.Event, loop: asyncio.AbstractEventLoop
+    ) -> Uvicorn:
+        """What ``_serve`` builds since M12.2: the server that wakes the waiters (ADR 0038 §11)."""
+        self.woken = stopping
         return config
 
     async def serve(self, sockets: list[socket.socket]) -> None:
         self.sockets = list(sockets)
         self.served = True
+
+
+def fake_server(monkeypatch: pytest.MonkeyPatch) -> Uvicorn:
+    """Both halves of the seam: the module ``serve`` reads, and the server class it builds."""
+    fake = Uvicorn()
+    monkeypatch.setattr(server, "uvicorn", fake)
+    monkeypatch.setattr(server, "Stopping", fake.stopping)
+    return fake
 
 
 Asked = list[tuple[str, int, str | None]]
@@ -70,8 +86,7 @@ def test_serve_binds_what_the_settings_say(
     settings: Settings, monkeypatch: pytest.MonkeyPatch, asked: Asked
 ) -> None:
     asyncio.run(create_schema(settings.persistence.db_url))
-    uvicorn = Uvicorn()
-    monkeypatch.setattr(server, "uvicorn", uvicorn)
+    uvicorn = fake_server(monkeypatch)
 
     server.serve(settings)
 
@@ -83,6 +98,52 @@ def test_serve_binds_what_the_settings_say(
     (address,) = uvicorn.app.state.addresses
     assert address.startswith("127.0.0.1:")
     assert listener.fileno() == -1  # closed when the server stopped
+
+
+async def test_a_stop_wakes_the_node_that_waits(app: Any, client: AsyncClient, ela: Ela) -> None:
+    """Criterion 33 (dec. I): a node holding ``POST /nodes/work`` is answered at the instant of the
+    stop, not at the end of its window.
+
+    The measurement behind it: with the plain uvicorn server the lifespan fires **after** the
+    requests in flight are awaited, so the handler finished its own wait (3.56 s against a three
+    second handler) — the signal handler is the one place early enough. Here the event is raised
+    while a request is genuinely in flight, and what is asserted is the *timing*: the answer comes
+    back in a fraction of the window, which is the difference between being told and waiting it out.
+
+    What this cannot show in one process is the signal itself reaching uvicorn; that half is
+    ``test_the_signal_handler_raises_the_event_for_whoever_waits``, and the two together are the
+    criterion.
+    """
+    _, headers = await enrolled(client, "TRUSTED", available_tools=["core-echo"])
+    window = ela.settings.core.node_poll.total_seconds()
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    waiting = asyncio.create_task(client.post("/nodes/work", headers=headers))
+    await asyncio.sleep(0.05)
+    assert not waiting.done()  # it is holding the request, with nothing to hand out
+
+    app.state.stopping.set()
+    answered = await asyncio.wait_for(waiting, timeout=window * 5)
+
+    assert answered.status_code == 204
+    assert loop.time() - started < window / 2
+
+
+async def test_the_signal_handler_raises_the_event_for_whoever_waits(app: Any) -> None:
+    """``handle_exit`` is the method uvicorn installs with ``signal.signal``, so the event is raised
+    there — through ``call_soon_threadsafe``, because a signal handler is not the loop — and the
+    server's own stop still happens. A shutdown timeout was refused instead: interrupting a handler
+    that can be told is the wrong tool."""
+    stopping = asyncio.Event()
+    stopper = server.Stopping(
+        uvicorn.Config(app), stopping=stopping, loop=asyncio.get_running_loop()
+    )
+
+    stopper.handle_exit(signal.SIGINT, None)
+    await asyncio.sleep(0)
+
+    assert stopping.is_set()
+    assert stopper.should_exit
 
 
 def test_a_socket_is_bound_where_it_is_asked_and_refused_where_the_address_is_not_here() -> None:
@@ -184,7 +245,7 @@ def test_a_port_that_is_taken_stops_the_start_with_a_message_and_not_a_traceback
     """The docstring of ``api/server.py`` promised it and did not keep it: a configuration ELA
     cannot use is a message and exit code 2, never a traceback. A taken port is one."""
     asyncio.run(create_schema(settings.persistence.db_url))
-    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    fake_server(monkeypatch)
     monkeypatch.setattr(server.Settings, "load", lambda: on_port(settings, occupied))
 
     assert server.main() == 2
@@ -202,7 +263,7 @@ def test_the_message_names_who_holds_the_port_when_the_machine_can_say(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     asyncio.run(create_schema(settings.persistence.db_url))
-    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    fake_server(monkeypatch)
     monkeypatch.setattr(server.Settings, "load", lambda: on_port(settings, occupied))
     asked: list[int] = []
 
@@ -224,7 +285,7 @@ def test_a_holder_nobody_can_name_is_not_guessed(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     asyncio.run(create_schema(settings.persistence.db_url))
-    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    fake_server(monkeypatch)
     monkeypatch.setattr(server.Settings, "load", lambda: on_port(settings, occupied))
 
     async def nobody(port: int) -> None:
@@ -243,7 +304,7 @@ def test_a_loopback_this_machine_refuses_for_another_reason_says_what_to_change(
 ) -> None:
     """Not a taken port — a port below 1024 without the right, say — so nobody is looked up."""
     asyncio.run(create_schema(settings.persistence.db_url))
-    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    fake_server(monkeypatch)
     monkeypatch.setattr(server.Settings, "load", lambda: settings)
 
     def refused(api: ApiSettings) -> list[socket.socket]:
@@ -274,7 +335,7 @@ def test_main_returns_zero_when_the_server_stops(
     settings: Settings, monkeypatch: pytest.MonkeyPatch, asked: Asked
 ) -> None:
     asyncio.run(create_schema(settings.persistence.db_url))
-    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    fake_server(monkeypatch)
 
     assert server.main() == 0
 
@@ -283,7 +344,7 @@ def test_main_says_what_is_wrong_and_does_not_start(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """No ``ELA_API_TOKEN`` on this machine: ELA does not open an unauthenticated API."""
-    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    fake_server(monkeypatch)
 
     code = server.main()
 
@@ -297,7 +358,7 @@ def test_main_reports_a_configuration_that_only_build_can_see(
     settings: Settings, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The database nobody migrated is found by ``build``, after ``Settings.load`` was happy."""
-    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    fake_server(monkeypatch)
 
     assert server.main() == 2
     assert "alembic upgrade head" in capsys.readouterr().err

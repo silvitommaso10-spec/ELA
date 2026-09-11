@@ -520,6 +520,11 @@ API_DIR = "api"
 OUTPUT_NAME = "output"
 OUTPUT_MODEL = "ExecutionResultOut"
 OUTPUT_SCHEMAS = Path("api") / "schemas.py"
+#: And since M12.2 (ADR 0038 §4) one model carries it **in**: the envelope a node delivers holds
+#: what its tool produced, on its way to the store. Rule 29 is about the boundary the content
+#: crosses *outwards*; what keeps the envelope honest is rule 52 — no module of ``ela.api`` builds
+#: the entity — so the same word in the other direction is a declared exemption and not a hole.
+ENVELOPE_MODEL = "WorkResultIn"
 #: Rule 23 (ADR 0018 §5): the arguments of a step are the user's content (§57). They live in the
 #: plan and in the private database; the audit log records the *targets* of a call, never what was
 #: passed. With ADR 0018 the arguments became a persisted field read in three places, so the
@@ -1624,7 +1629,9 @@ def check_tool_output_readers(pkg_root: Path) -> list[Violation]:
     **enter** (an ``AuditEvent``), 29 says where it may **leave**. Two things are reported:
 
     * a class field named ``output`` in any module of ``ela.api``, unless the class is
-      :data:`OUTPUT_MODEL`;
+      :data:`OUTPUT_MODEL` — the one that carries it out — or :data:`ENVELOPE_MODEL`, the one that
+      carries it **in** since M12.2: a node's tool produced it, and it reaches the store through the
+      executor, which is the entity's one minter (rule 52);
     * the name ``output`` — as an attribute, a variable, a keyword or a string literal — in any
       module of ``ela.api`` other than :data:`OUTPUT_SCHEMAS`, which is where the one model
       reads it.
@@ -1638,7 +1645,7 @@ def check_tool_output_readers(pkg_root: Path) -> list[Violation]:
         name = module_name(path, pkg_root)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name != OUTPUT_MODEL:
+            if isinstance(node, ast.ClassDef) and node.name not in {OUTPUT_MODEL, ENVELOPE_MODEL}:
                 found.extend(
                     Violation(rule, name, f"{node.name}.{OUTPUT_NAME}", field.lineno)
                     for field in node.body
@@ -2631,8 +2638,8 @@ def check_a_work_order_goes_only_to_its_node(pkg_root: Path) -> list[Violation]:
       (``httpx``, ``urllib.request``, ``http.client``, ``socket``).
 
     The runtime half — the composer refuses an identity that is not the assignment's — is
-    criterion 21. Silent on today's tree, where no order exists: the composer is written after this
-    rule (ADR 0030 §15), and its exemption is proved by the allowed case until it is.
+    criterion 21, a test of ``api/nodes.py``. The composer exists since the commit of the work
+    routes, so the exemption is justified by the tree itself rather than by its allowed case.
     """
     rule = "a-work-order-goes-only-to-its-node"
     found: list[Violation] = []
@@ -3037,9 +3044,6 @@ CONSTANTS: tuple[Constant, ...] = (
         EXEMPTION,
         by=WHOLE,
         adr="ADR 0038",
-        proof="the-composer-builds-the-order",
-        reason="the composer is written after the rule that fences it (ADR 0030 §15): until "
-        "``api/nodes.py`` composes an order, the allowed case is what stands behind the door",
     ),
     Constant("a-work-order-goes-only-to-its-node", "WORK_ORDER_MODEL", DETECTOR),
     # results-are-minted-by-the-core (rule 52, M12.2)
@@ -3370,6 +3374,7 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     # tool-output-readers
     Constant("tool-output-readers", "API_DIR", DETECTOR),
+    Constant("tool-output-readers", "ENVELOPE_MODEL", EXEMPTION, by=WHOLE, adr="ADR 0038 §4"),
     Constant("tool-output-readers", "OUTPUT_MODEL", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),
     Constant("tool-output-readers", "OUTPUT_NAME", DETECTOR),
     Constant("tool-output-readers", "OUTPUT_SCHEMAS", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),

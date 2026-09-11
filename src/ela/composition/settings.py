@@ -102,6 +102,11 @@ _SECONDS_IN_APPROVAL_TTL: Final = int(MAX_APPROVAL_TTL.total_seconds())
 _SECONDS_IN_DECISION_TTL: Final = int(MAX_DECISION_TTL.total_seconds())
 _SECONDS_IN_ASSIGNMENT_CAP: Final = int(MAX_ASSIGNMENT_CAP.total_seconds())
 
+DEFAULT_NODE_POLL_SECONDS: Final = 25
+"""How long a node's request for work waits before answering "nothing" (ADR 0038 §11)."""
+MAX_NODE_POLL_SECONDS: Final = 60
+"""And its ceiling: no waiting without a cap, the rule of M4.2 applied to a held connection."""
+
 
 def _is_loopback(host: str) -> bool:
     """Whether ``host`` names this machine and nothing else.
@@ -277,6 +282,16 @@ class CoreSettings(BaseSettings):
     """``ELA_ASSIGNMENT_MAX_SECONDS``: the longest life of work a node took, however often it
     renews (ADR 0038 §13). Capped at a day: no TTL without a cap, and the cap has one too."""
 
+    node_poll_seconds: Annotated[int, Field(gt=0, le=MAX_NODE_POLL_SECONDS)] = (
+        DEFAULT_NODE_POLL_SECONDS
+    )
+    """``ELA_NODE_POLL_SECONDS``: how long ``POST /nodes/work`` holds a request that found nothing.
+
+    Twenty-five seconds, under the thirty of inactivity many intermediaries tolerate — a reason and
+    not a measurement (ADR 0038 §11). Capped at a minute: a held connection is the same resource as
+    a synchronous ``run``, and what *n* nodes cost a single-process uvicorn is to be measured.
+    """
+
     @property
     def authorization_ttl(self) -> timedelta:
         return timedelta(seconds=self.authorization_ttl_seconds)
@@ -296,6 +311,10 @@ class CoreSettings(BaseSettings):
     @property
     def assignment_ttl(self) -> timedelta:
         return timedelta(seconds=self.assignment_ttl_seconds)
+
+    @property
+    def node_poll(self) -> timedelta:
+        return timedelta(seconds=self.node_poll_seconds)
 
     @property
     def assignment_cap(self) -> timedelta:
