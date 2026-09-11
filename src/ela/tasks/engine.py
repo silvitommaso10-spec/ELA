@@ -61,6 +61,7 @@ from ela.domain import (
     ExecutionStatus,
     PermissionDecision,
     PermissionOutcome,
+    PrivacyLevel,
     StepId,
     StepState,
     Task,
@@ -293,6 +294,19 @@ Guard = Callable[[Task, tuple[TaskEvent, ...], datetime], Awaitable[None]]
 Payload = Mapping[str, JsonValue]
 
 
+def _declared(task: Task) -> str:
+    """What the summary of a created task says about where it may run (M12.2, ADR 0038 §16).
+
+    Nothing at the default: a task that stays on this machine is what every task was before M12.2,
+    and a default is not news. The payload carries the level either way, so the fact is queryable
+    without the sentence having to repeat it — and when somebody *did* declare something, whoever
+    reads the trail sees it without opening the payload.
+    """
+    if task.max_privacy is PrivacyLevel.LOCAL_ONLY:
+        return ""
+    return f", may run on a {task.max_privacy.value} node"
+
+
 def _last_seen(task: Task, events: tuple[TaskEvent, ...]) -> datetime:
     """The last instant anything was recorded for the task: its trail, or its birth."""
     return max([task.created_at, *(event.created_at for event in events)])
@@ -372,9 +386,21 @@ class TaskEngine:
     # ----------------------------------------------------------------------------------
 
     async def create(
-        self, intent: UserIntent, *, goal: str | None = None, deadline: datetime | None = None
+        self,
+        intent: UserIntent,
+        *,
+        goal: str | None = None,
+        deadline: datetime | None = None,
+        max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY,
     ) -> Task:
-        """The root task of ``intent``: created once, returned as stored on every retry."""
+        """The root task of ``intent``: created once, returned as stored on every retry.
+
+        ``max_privacy`` is how far the content of this task may travel (M12.2, D18, D20), declared
+        here and never again: the default is the strictest level, so whoever creates a task without
+        saying anything creates one that stays on this machine. Tasks ELA creates for itself — the
+        subtasks of a plan, the Proactive Core tomorrow — therefore come into the world at the
+        default, and cannot widen themselves.
+        """
         task_id = TaskId(uuid5(TASK_NAMESPACE, str(intent.id)))
         async with self._lock(task_id):
             now = self._clock.now()
@@ -385,6 +411,7 @@ class TaskEngine:
                 state=TaskState.CREATED,
                 intent_id=intent.id,
                 deadline=deadline,
+                max_privacy=max_privacy,
             )
             try:
                 await self._repository.add(task)
@@ -396,13 +423,14 @@ class TaskEngine:
                     created_at=now,
                     event_type=AuditEventType.TASK_CREATED,
                     actor=self._actor,
-                    summary=f"create: task {task_id} from intent {intent.id}",
+                    summary=f"create: task {task_id} from intent {intent.id}{_declared(task)}",
                     task_id=task_id,
                     payload={
                         "operation": "create",
                         "intent_id": str(intent.id),
                         "channel": intent.channel.value,
                         "goal": task.goal,
+                        "max_privacy": task.max_privacy.value,
                     },
                 )
             )

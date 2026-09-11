@@ -74,9 +74,24 @@ def note_plan(path: str = NOTE_PATH, body: str = NOTE_BODY) -> dict[str, Any]:
     }
 
 
-async def queued(client: AsyncClient, plan: dict[str, Any], text: str = "fai una cosa") -> str:
-    """A task with that plan attached, ready to run; returns its id."""
-    created = await client.post("/tasks", json={"text": text})
+async def queued(
+    client: AsyncClient,
+    plan: dict[str, Any],
+    text: str = "fai una cosa",
+    *,
+    privacy: str | None = None,
+) -> str:
+    """A task with that plan attached, ready to run; returns its id.
+
+    ``privacy`` is how far the task may travel (M12.2, D18): left out, the task stays on this
+    machine, which is both the default and what every task of this suite did before. A test that
+    wants a node to receive work declares it here, because declaring it at creation is the only way
+    there is — the level is the task's and immutable (D20).
+    """
+    body: dict[str, Any] = {"text": text}
+    if privacy is not None:
+        body["max_privacy"] = privacy
+    created = await client.post("/tasks", json=body)
     assert created.status_code == 201, created.text
     task_id: str = created.json()["id"]
     planned = await client.post(f"/tasks/{task_id}/plan", json=plan)

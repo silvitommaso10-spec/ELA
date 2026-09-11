@@ -58,8 +58,8 @@ async def handed(
 ) -> tuple[TaskStep, object, object]:
     """A step of an EXECUTING task handed to a node that is not this machine."""
     remote = await w.remote()
-    task, (step,) = await w.queued(ECHO.id, conditions=conditions)
-    run = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    task, (step,) = await w.queued(ECHO.id, conditions=conditions, max_privacy=PrivacyLevel.TRUSTED)
+    run = await w.runner.run(task.id)
     assert run.outcome is RunOutcome.ASSIGNED
     stand = await w.assignments.standing(task.id, step.id)
     assert stand.assignment is not None

@@ -50,8 +50,8 @@ async def delivered_but_unwritten(
     Built through the ports, so the state is the one a crash would leave and not a mock of it.
     """
     remote = await w.remote()
-    task, (step,) = await w.queued(ECHO.id, conditions=conditions)
-    run = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    task, (step,) = await w.queued(ECHO.id, conditions=conditions, max_privacy=PrivacyLevel.TRUSTED)
+    run = await w.runner.run(task.id)
     assert run.outcome is RunOutcome.ASSIGNED
     stand = await w.assignments.standing(task.id, step.id)
     assert stand.assignment is not None
@@ -104,7 +104,7 @@ async def test_window_a9_the_next_run_finishes_a_delivery_whose_audit_is_missing
     await w.assignments.deliver(assignment.id, assignment.device_id, digest="ab" * 32, now=w.now)
     assert (await w.assignments.standing(task.id, step.id)).standing is Standing.DELIVERED
 
-    run = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    run = await w.runner.run(task.id)
 
     assert run.outcome is RunOutcome.COMPLETED
     assert run.steps == (step.id,)
@@ -144,7 +144,7 @@ async def test_window_a9_a_resumed_delivery_whose_verification_fails_closes_the_
     task, step, assignment = await delivered_but_unwritten(w, conditions=(BAD,))
     await w.assignments.deliver(assignment.id, assignment.device_id, digest="cd" * 32, now=w.now)
 
-    run = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    run = await w.runner.run(task.id)
 
     assert run.outcome is RunOutcome.FAILED
     assert run.steps == (step.id,)

@@ -56,7 +56,9 @@ async def create_task(body: TaskCreate, ela: ElaDep) -> TaskOut:
         text=body.text,
         channel=IntentChannel.API,
     )
-    task = await ela.engine.create(intent, goal=body.goal, deadline=body.deadline)
+    task = await ela.engine.create(
+        intent, goal=body.goal, deadline=body.deadline, max_privacy=body.max_privacy
+    )
     return TaskOut.of(task)
 
 

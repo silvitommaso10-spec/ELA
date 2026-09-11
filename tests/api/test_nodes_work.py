@@ -28,7 +28,6 @@ from ela.domain import (
     AuditEventType,
     DeviceId,
     ExecutionStatus,
-    PrivacyLevel,
     TaskId,
 )
 from ela.executive import Claimed, RunOutcome, WorkRejection
@@ -59,13 +58,18 @@ async def a_node(client: AsyncClient, ela: Ela) -> tuple[str, dict[str, str]]:
 async def work_for(client: AsyncClient, ela: Ela) -> tuple[str, str, dict[str, str]]:
     """A task whose one step is handed to that node: the task id, the node id, its header.
 
-    The walk is the runner's, with the privacy a declared task will carry — the route that walks it
-    learns about sensitivity in the next commit.
+    Through ``POST /tasks/{id}/run``, as a person would: the task is **declared** ``TRUSTED`` at
+    creation (M12.2, D18), so the walk of production hands its step to the node that won it. Before
+    the sensitivity existed this could only be driven by calling the runner with an argument nobody
+    could send — which was the defect, not the default.
     """
     device_id, headers = await a_node(client, ela)
-    task_id = await queued(client, echo_plan())
-    run = await ela.runner.run(TaskId(UUID(task_id)), max_privacy=PrivacyLevel.TRUSTED)
-    assert run.outcome is RunOutcome.ASSIGNED, run.outcome
+    task_id = await queued(client, echo_plan(), privacy="TRUSTED")
+
+    walked = await client.post(f"/tasks/{task_id}/run")
+
+    assert walked.status_code == 200, walked.text
+    assert walked.json()["outcome"] == RunOutcome.ASSIGNED.value, walked.text
     return task_id, device_id, headers
 
 
@@ -128,10 +132,8 @@ async def test_a_second_request_while_the_work_is_in_hand_gets_nothing(
     """One assignment taken per node (D16): the offer of another task waits until this one is back,
     and the node is told "nothing" rather than handed a second piece of work."""
     _, _, headers, _ = await taken(client, ela)
-    second = await queued(client, echo_plan())
-    assert (
-        await ela.runner.run(TaskId(UUID(second)), max_privacy=PrivacyLevel.TRUSTED)
-    ).outcome is RunOutcome.ASSIGNED
+    second = await queued(client, echo_plan(), privacy="TRUSTED")
+    assert (await client.post(f"/tasks/{second}/run")).json()["outcome"] == "assigned"
 
     answered = await client.post("/nodes/work", headers=headers)
 

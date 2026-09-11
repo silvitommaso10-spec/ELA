@@ -44,6 +44,26 @@ async def test_create_takes_a_deadline(cli: Cli) -> None:
     assert json.loads(result.stdout)["deadline"].startswith("2027-01-01T10:00:00")
 
 
+async def test_create_declares_how_far_the_task_may_travel(cli: Cli) -> None:
+    """``--privacy`` is the one way a task is allowed to leave this machine (M12.2, D18): said once,
+    at creation, and shown wherever the task is shown. Without it the task stays here."""
+    declared = await cli("task", "create", "un render", "--privacy", "TRUSTED", "--json")
+    default = await cli("task", "create", "una nota", "--json")
+
+    assert json.loads(declared.stdout)["max_privacy"] == "TRUSTED"
+    assert json.loads(default.stdout)["max_privacy"] == "LOCAL_ONLY"
+    shown = await cli("task", "create", "un altro render", "--privacy", "CLOUD_ALLOWED")
+    assert "CLOUD_ALLOWED" in shown.stdout
+
+
+async def test_create_refuses_a_privacy_nobody_defined(cli: Cli) -> None:
+    """The API owns the vocabulary, and the command does not pretend to know better: what comes
+    back is the refusal of the route, not a guess made here."""
+    result = await cli("task", "create", "una cosa", "--privacy", "OVUNQUE")
+
+    assert result.exit_code != 0
+
+
 async def test_list_shows_the_tasks_in_a_table(cli: Cli) -> None:
     await created(cli, "prima")
     await created(cli, "seconda")

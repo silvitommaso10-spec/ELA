@@ -537,6 +537,12 @@ non poteva passarlo — un argomento che nessuno può fornire è un campo senza 
 famiglia di `PROVIDER_CALLED`.»** Il corpo di §8 resta vero alla lettera: `TaskStep` non ha un campo
 `privacy`, e `place` prende il valore come argomento. ADR 0017 non si riscrive.
 
+Colonne aggiunte:
+
+| Tabella | Colonne |
+|---|---|
+| `tasks` | `max_privacy` |
+
 **Le quattro risposte di §57**, nella forma di ADR 0030 §17 (il provider, qui, è un nodo):
 
 | Domanda | Risposta |

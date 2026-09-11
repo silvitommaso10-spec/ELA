@@ -101,6 +101,16 @@ class TaskRow(Base):
     parent_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("tasks.id"), nullable=True)
     deadline: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
+    max_privacy: Mapped[str] = mapped_column(String(32), nullable=False)
+    """How far this task's content may travel (M12.2, ADR 0038 §16).
+
+    Not nullable, and the migration gives it ``server_default='LOCAL_ONLY'``: the tasks written
+    before the column existed stay on this machine, which is what they were already doing.
+
+    **Declared last**, after ``metadata``, because that is where ``ALTER TABLE ADD COLUMN`` puts it:
+    a class whose field order disagreed with the database's would make the two descriptions of one
+    table differ for no reason anybody could act on (ADR 0006 §4).
+    """
 
 
 class TaskEventRow(Base):

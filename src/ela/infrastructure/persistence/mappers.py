@@ -140,6 +140,7 @@ def task_values(task: Task) -> dict[str, Any]:
         "plan_id": task.plan_id,
         "parent_id": task.parent_id,
         "deadline": task.deadline,
+        "max_privacy": task.max_privacy.value,
         "metadata_": _plain(task.metadata),
     }
 
@@ -158,6 +159,7 @@ def row_to_task(row: TaskRow) -> Task:
         plan_id=None if row.plan_id is None else PlanId(row.plan_id),
         parent_id=None if row.parent_id is None else TaskId(row.parent_id),
         deadline=row.deadline,
+        max_privacy=PrivacyLevel(row.max_privacy),
         metadata=row.metadata_,
     )
 

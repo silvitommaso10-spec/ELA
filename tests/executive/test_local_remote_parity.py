@@ -35,9 +35,9 @@ async def there() -> list[AuditEventType]:
     """The same plan, on a node that is not this machine: assigned, claimed, delivered, closed."""
     w = world()
     remote = await w.remote()
-    task, (step,) = await w.queued(ECHO.id)
+    task, (step,) = await w.queued(ECHO.id, max_privacy=PrivacyLevel.TRUSTED)
 
-    assigned = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    assigned = await w.runner.run(task.id)
     assert assigned.outcome is RunOutcome.ASSIGNED
     stand = await w.assignments.standing(task.id, step.id)
     assert stand.assignment is not None
@@ -54,7 +54,7 @@ async def there() -> list[AuditEventType]:
         ),
     )
     assert delivered.step_state is StepState.COMPLETED
-    closed = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    closed = await w.runner.run(task.id)
     assert closed.outcome is RunOutcome.COMPLETED
     return await w.event_types(task.id)
 
@@ -74,8 +74,8 @@ async def test_the_trail_of_a_remote_run_still_names_the_node_that_ran_it() -> N
     """
     w = world()
     remote = await w.remote()
-    task, (step,) = await w.queued(ECHO.id)
-    await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    task, (step,) = await w.queued(ECHO.id, max_privacy=PrivacyLevel.TRUSTED)
+    await w.runner.run(task.id)
     stand = await w.assignments.standing(task.id, step.id)
     assert stand.assignment is not None
     await w.executor.begin(stand.assignment.id, remote.id)

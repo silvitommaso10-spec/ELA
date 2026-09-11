@@ -48,6 +48,29 @@ async def test_a_goal_and_a_deadline_may_be_given(client: AsyncClient) -> None:
     assert response.json()["deadline"].startswith("2026-12-31T10:00:00")
 
 
+async def test_a_task_stays_on_this_machine_unless_it_says_otherwise(client: AsyncClient) -> None:
+    """Criterion 4 at the route (M12.2, D18): the level is declared at creation, shown where the
+    task is read, and the default is the strictest — a sensitivity nobody declared is not a
+    permission (§33, §57). Only the user's identity reaches this route, which is what makes the
+    field the user's policy; a node is refused here (``tests/api/test_security.py``)."""
+    default = await client.post("/tasks", json={"text": "una cosa qualunque"})
+    declared = await client.post(
+        "/tasks", json={"text": "una cosa per il pc", "max_privacy": "TRUSTED"}
+    )
+
+    assert default.json()["max_privacy"] == "LOCAL_ONLY"
+    assert declared.json()["max_privacy"] == "TRUSTED"
+    shown = await client.get(f"/tasks/{declared.json()['id']}")
+    assert shown.json()["max_privacy"] == "TRUSTED"
+
+
+async def test_a_privacy_level_nobody_defined_is_refused(client: AsyncClient) -> None:
+    """Not a string the route shrugs at: the vocabulary is ``PrivacyLevel`` and nothing else."""
+    refused = await client.post("/tasks", json={"text": "x", "max_privacy": "WHEREVER"})
+
+    assert refused.status_code == 422
+
+
 async def test_a_task_without_a_request_is_refused(client: AsyncClient) -> None:
     assert (await client.post("/tasks", json={"text": ""})).status_code == 422
     assert (await client.post("/tasks", json={})).status_code == 422

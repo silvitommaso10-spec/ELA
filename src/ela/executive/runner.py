@@ -179,14 +179,16 @@ class TaskRunner:
         self._audit = audit
         self._assignments = assignments
 
-    async def run(
-        self, task_id: TaskId, *, max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY
-    ) -> Run:
+    async def run(self, task_id: TaskId) -> Run:
         """Walk the plan of ``task_id`` as far as it goes, one step at a time (ADR 0019 §3).
 
-        ``max_privacy`` is the most permissive node the caller tolerates and defaults to the most
-        restrictive level, as ``place`` does: a privacy nobody declared is not a permission (§33,
-        §57; ADR 0017 §8).
+        **How far the content may travel is the task's** (M12.2, D18, D20): ``task.max_privacy``,
+        declared at creation and immutable, read here and handed to every placement of this walk.
+        It used to be an argument of this method, defaulting to the strictest level — which was the
+        safe default and the reason no remote node ever received work: the only caller that exists,
+        ``POST /tasks/{id}/run``, had nothing to pass and nobody *could* declare it. An argument
+        would also let two runs judge one task at two levels, and a step placed under ``TRUSTED``
+        would be confirmed under ``LOCAL_ONLY`` by a later call that passed nothing.
 
         :class:`~ela.executive.errors.RunnerError` before anything is written for a task that
         cannot be walked: one still CREATED or PLANNING, or one whose plan has no steps.
@@ -202,6 +204,7 @@ class TaskRunner:
         ``test_a_run_executes_each_step_at_most_once`` and by the release test of M12.2.
         """
         task = await self._repository.get(task_id)
+        max_privacy = task.max_privacy
         if task.state in OUTCOMES:
             return Run(task, OUTCOMES[task.state], (), ())
         if task.state not in RUNNABLE_STATES:

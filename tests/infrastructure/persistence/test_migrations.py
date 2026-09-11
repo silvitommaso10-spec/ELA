@@ -52,6 +52,7 @@ TABLES = {
     "assignments",
 }
 REVISIONS = [
+    "0010",
     "0009",
     "0008",
     "0007",
@@ -211,6 +212,41 @@ def test_a_missing_assignment_predicate_would_be_detected(db: Path, tmp_path: Pa
         engine.dispose()
     assert "state <> 'EXPIRED'" not in _indexes(other)[OPEN_STEP_INDEX]
     assert _indexes(other)[OPEN_STEP_INDEX] != _indexes(db)[OPEN_STEP_INDEX]
+
+
+def test_the_sensitivity_column_is_born_with_the_strictest_default(db: Path) -> None:
+    """``0010``: the tasks written before the column existed keep doing what they did — staying on
+    this machine. The ``server_default`` is what says so to anything that inserts a row without the
+    column, which is why it stays on the column instead of being dropped after a backfill."""
+    command.upgrade(config_for(db), "0009")
+    engine = create_engine(f"sqlite:///{db.as_posix()}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO tasks (id, created_at, goal, state, metadata)"
+                    " VALUES ('t1', '2026-01-01', 'g', 'CREATED', '{}')"
+                )
+            )
+        command.upgrade(config_for(db), "0010")
+        with engine.connect() as connection:
+            levels = [row[0] for row in connection.execute(text("SELECT max_privacy FROM tasks"))]
+    finally:
+        engine.dispose()
+
+    assert levels == ["LOCAL_ONLY"]
+
+
+def test_downgrade_of_the_sensitivity_column_takes_it_away(db: Path) -> None:
+    """Reversible, and what it reverses is a fact of the user's: every declared level goes with the
+    column, which is why it is a downgrade and not a repair."""
+    config = config_for(db)
+    command.upgrade(config, "head")
+    assert "max_privacy" in _tables(db)["tasks"]
+
+    command.downgrade(config, "0009")
+
+    assert "max_privacy" not in _tables(db)["tasks"]
 
 
 def test_downgrade_of_the_audit_migration_is_refused(db: Path) -> None:

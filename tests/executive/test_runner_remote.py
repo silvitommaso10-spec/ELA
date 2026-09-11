@@ -39,9 +39,9 @@ async def test_a_step_placed_on_a_remote_node_is_assigned_not_executed(w: World)
     """Criterion 2. The task stays EXECUTING, the step RUNNING, and the reason names the node,
     the work and the deadline — what a person deciding whether to wait has to read."""
     remote = await w.remote()
-    task, (step,) = await w.queued(ECHO.id)
+    task, (step,) = await w.queued(ECHO.id, max_privacy=PrivacyLevel.TRUSTED)
 
-    run = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    run = await w.runner.run(task.id)
 
     assert run.outcome is RunOutcome.ASSIGNED
     assert run.steps == () and run.executions == ()  # this call executed nothing
@@ -62,9 +62,9 @@ async def test_the_node_that_wins_is_the_node_that_works(w: World) -> None:
     handed to. Before M12.2 the two could differ in silence — the step ran here whatever was
     chosen."""
     remote = await w.remote()
-    task, (step,) = await w.queued(ECHO.id)
+    task, (step,) = await w.queued(ECHO.id, max_privacy=PrivacyLevel.TRUSTED)
 
-    await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    await w.runner.run(task.id)
 
     (selected,) = [e for e in await w.events(task.id) if e.event_type is E.DEVICE_SELECTED]
     stand = await w.assignments.standing(task.id, step.id)
@@ -77,8 +77,8 @@ async def test_a_second_run_finds_the_work_still_out_and_writes_nothing(w: World
     touches nothing — no trail event, no audit event, no second assignment. The deadline is closed,
     and this is the side of it where the Core keeps its hands off."""
     await w.remote()
-    task, (step,) = await w.queued(ECHO.id)
-    await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    task, (step,) = await w.queued(ECHO.id, max_privacy=PrivacyLevel.TRUSTED)
+    await w.runner.run(task.id)
     stand = await w.assignments.standing(task.id, step.id)
     assert stand.assignment is not None
     before = (
@@ -88,7 +88,7 @@ async def test_a_second_run_finds_the_work_still_out_and_writes_nothing(w: World
     )
     w.clock.advance(stand.assignment.expires_at - w.now - INSTANT)
 
-    again = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    again = await w.runner.run(task.id)
 
     assert again.outcome is RunOutcome.ASSIGNED
     assert again.reason == await w.assignments.describe(stand.assignment)

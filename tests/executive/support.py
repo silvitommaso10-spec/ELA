@@ -210,6 +210,7 @@ class World:
         goal: str = "run the capability",
         arguments: JsonMapping | None = None,
         start: bool = True,
+        max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY,
     ) -> tuple[Task, TaskStep]:
         """An EXECUTING task whose one-step plan declares ``capability_id``, the step RUNNING.
 
@@ -229,7 +230,7 @@ class World:
             requires_authorization=requires_authorization,
         )
         intent = USER_INTENT.model_copy(update={"id": IntentId(self.ids.new_uuid())})
-        task = await self.engine.create(intent)
+        task = await self.engine.create(intent, max_privacy=max_privacy)
         await self.engine.start_planning(task.id)
         plan = TaskPlan(
             id=PlanId(self.ids.new_uuid()),
@@ -291,11 +292,16 @@ class World:
         chain: bool = True,
         goal: str = "walk the plan",
         deadline: datetime | None = None,
+        max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY,
     ) -> tuple[Task, tuple[TaskStep, ...]]:
         """A QUEUED task with one PENDING step per capability: what a runner is handed.
 
         ``chain`` makes each step depend on the one before it, so the topological order is the
         order given; without it the steps are independent and any of them may go first.
+
+        ``max_privacy`` is declared here because since M12.2 that is the only place it can be
+        declared: the level is the task's, written at creation and immutable (D20), and a test that
+        wants its work to reach a node that is not this machine says so when it creates the task.
         """
         steps: list[TaskStep] = []
         for index, capability_id in enumerate(capabilities):
@@ -313,7 +319,7 @@ class World:
                     requires_authorization=False,
                 )
             )
-        task = await self.engine.create(self.intent(), deadline=deadline)
+        task = await self.engine.create(self.intent(), deadline=deadline, max_privacy=max_privacy)
         await self.engine.start_planning(task.id)
         await self.engine.plan(
             task.id,

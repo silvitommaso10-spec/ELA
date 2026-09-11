@@ -51,8 +51,8 @@ async def handed_to_a_node(w: World, *, repeatable: bool = True) -> tuple[Any, A
     w.tool(ECHO.id).idempotent = repeatable
     w.tool(ECHO.id).execute = _never  # type: ignore[method-assign]
     remote = await w.remote()
-    task, (step,) = await w.queued(ECHO.id)
-    run = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    task, (step,) = await w.queued(ECHO.id, max_privacy=PrivacyLevel.TRUSTED)
+    run = await w.runner.run(task.id)
     assert run.outcome is RunOutcome.ASSIGNED
     stand = await w.assignments.standing(task.id, step.id)
     assert stand.assignment is not None
@@ -87,7 +87,7 @@ async def test_an_unclaimed_assignment_is_placed_again_whatever_the_tool(
     await only_this_machine_is_alive(w)
     restored(w)
 
-    run = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    run = await w.runner.run(task.id)
 
     released = [e for e in await w.repository.events(task.id) if e.event_type is T.STEP_RELEASED]
     assert [e.metadata.get("assignment_id") for e in released] == [str(assignment.id)]
@@ -123,7 +123,7 @@ async def test_a_claimed_assignment_of_a_repeatable_tool_is_placed_again(w: Worl
     await only_this_machine_is_alive(w)
     restored(w)
 
-    run = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    run = await w.runner.run(task.id)
 
     assert run.outcome is RunOutcome.COMPLETED
     assert run.steps == (step.id,)
@@ -147,7 +147,7 @@ async def test_a_claimed_assignment_that_expired_closes_interrupted_even_if_the_
     w.clock.advance(assignment.expires_at - w.now)
     await only_this_machine_is_alive(w)
 
-    run = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    run = await w.runner.run(task.id)
 
     assert await w.step_state(task.id, step.id) is StepState.FAILED
     failed = [e for e in await w.events(task.id) if e.event_type is E.STEP_FAILED][-1]
@@ -173,10 +173,10 @@ async def test_a_released_step_is_released_once(w: World) -> None:
     w.clock.advance(assignment.expires_at - w.now)
     await only_this_machine_is_alive(w)
     restored(w)
-    await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    await w.runner.run(task.id)
     released = [e for e in await w.repository.events(task.id) if e.event_type is T.STEP_RELEASED]
 
-    again = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    again = await w.runner.run(task.id)
 
     assert again.outcome is RunOutcome.COMPLETED
     assert [e for e in await w.repository.events(task.id) if e.event_type is T.STEP_RELEASED] == (
@@ -208,7 +208,7 @@ async def test_a_revocation_expires_the_work_of_that_node_at_once(w: World) -> N
     w.clock.advance(timedelta(seconds=1))
     await only_this_machine_is_alive(w)
     restored(w)
-    run = await w.runner.run(task.id, max_privacy=PrivacyLevel.TRUSTED)
+    run = await w.runner.run(task.id)
 
     assert cut == 1
     assert w.now < assignment.expires_at  # a second later, and the TTL has not passed

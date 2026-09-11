@@ -791,6 +791,20 @@ class Task(_DomainModel):
     plan_id: PlanId | None = None
     parent_id: TaskId | None = None
     deadline: UtcDatetime | None = None
+    max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY
+    """How far the content of this task may travel (M12.2, D18, D20; ADR 0038 §16).
+
+    **Declared at creation and immutable**, like ``deadline``: one level, written by whoever creates
+    the task, read by every placement of it. The default is the strictest — a task whose sensitivity
+    nobody declared stays on this machine (§33, §57), which is what every task did before M12.2; the
+    defect was that nobody *could* declare it.
+
+    Not an argument of a call: the same task judged with two levels by two runs is what a caller's
+    argument allows, and a step placed under ``TRUSTED`` would be confirmed under ``LOCAL_ONLY``
+    by a later run that passed nothing. Not a field of the plan either: a plan will be written by
+    a model, and the policy of §57 is the user's. Widening a task that exists does not exist — a
+    new task does.
+    """
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 
 

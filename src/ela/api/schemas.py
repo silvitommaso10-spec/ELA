@@ -123,6 +123,14 @@ class TaskCreate(BaseModel):
     text: Annotated[str, Field(min_length=1)]
     goal: str | None = None
     deadline: datetime | None = None
+    max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY
+    """How far this task's content may travel (M12.2, D18; ADR 0038 §16).
+
+    The default is the strictest level, so a caller that says nothing creates a task that stays on
+    this machine. Only the user's own identity reaches this route (M12.1), which is what makes the
+    field the user's policy and not a client's preference; and it is **immutable** afterwards, so
+    there is no route that widens a task that already exists.
+    """
 
 
 class StepIn(BaseModel):
@@ -205,6 +213,9 @@ class TaskOut(BaseModel):
     plan_id: UUID | None
     parent_id: UUID | None
     deadline: datetime | None
+    max_privacy: PrivacyLevel
+    """What the user declared about where this task may run (ADR 0038 §16): shown, because a policy
+    that decides where content goes and cannot be read back is a policy nobody can check."""
 
     @classmethod
     def of(cls, task: Task) -> TaskOut:
@@ -217,6 +228,7 @@ class TaskOut(BaseModel):
             plan_id=task.plan_id,
             parent_id=task.parent_id,
             deadline=task.deadline,
+            max_privacy=task.max_privacy,
         )
 
 

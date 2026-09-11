@@ -105,6 +105,7 @@ from ela.domain import (
     JsonValue,
     PermissionDecision,
     PermissionOutcome,
+    PrivacyLevel,
     ProviderUsage,
     StepId,
     StepState,
@@ -521,6 +522,25 @@ def _stated(spec: CapabilitySpec, arguments: JsonMapping) -> str:
     return f" — {'; '.join(stated)}" if stated else ""
 
 
+def _may_travel(task: Task, stated: str) -> str:
+    """The clause that names where a task wider than this machine may run (ADR 0038 §16).
+
+    Empty at the default, and that is the point: ``LOCAL_ONLY`` is what every task was before M12.2,
+    so the question of such a task is the question of today byte for byte — a default is not news
+    (the same reason ``TASK_CREATED`` only names the level when it is not the default).
+
+    It names the **level and not the node**: the level is immutable, the placement is not — a
+    released step is placed again — and a question naming the node could be false before the grant
+    it asks for is spent. It depends only on the task, so for a step whose capability cannot travel
+    at all (D15) it says more than what will happen, which is the fail-safe direction: a question
+    that widens the place, never one that narrows it.
+    """
+    if task.max_privacy is PrivacyLevel.LOCAL_ONLY:
+        return ""
+    joined = "; " if stated else " — "
+    return f"{joined}this task may run on a {task.max_privacy.value} node"
+
+
 def approved_targets(decision: PermissionDecision) -> tuple[str, ...]:
     """The targets of a decision as an approval carries them: the strings of
     ``metadata["targets"]`` (ADR 0011 §10), nothing if the decision has none."""
@@ -666,7 +686,7 @@ class Executor:
             return Execution(task, step_id, graph, decision, authorization, None, None, None)
         if decision.outcome is PermissionOutcome.REQUIRES_APPROVAL:
             return await self._ask(
-                graph, step, spec, arguments, decision, authorization, decision.reason
+                task, graph, step, spec, arguments, decision, authorization, decision.reason
             )
 
         consumed: int | None = None
@@ -677,7 +697,7 @@ class Executor:
                 )
             except AuthorizationNotUsableError as unusable:
                 return await self._ask(
-                    graph, step, spec, arguments, decision, authorization, unusable.reason
+                    task, graph, step, spec, arguments, decision, authorization, unusable.reason
                 )
             except NotFoundError:
                 vanished = ErrorMetadata(
@@ -1329,6 +1349,7 @@ class Executor:
 
     async def _ask(
         self,
+        task: Task,
         graph: GraphState,
         step: TaskStep,
         spec: CapabilitySpec,
@@ -1337,10 +1358,19 @@ class Executor:
         authorization: Authorization | None,
         reason: str,
     ) -> Execution:
-        """Build the request for approval from the decision and let the task wait (ADR 0013 §5)."""
+        """Build the request for approval from the decision and let the task wait (ADR 0013 §5).
+
+        The question names **where this task may go** when that is wider than this machine (M12.2,
+        D20): dec. G2 of M11.2 with the place instead of the time — *how long the microphone stays
+        open is half of what is being approved* becomes *where the content may go is half of what is
+        being approved*. It comes from ``task.max_privacy`` and not from ``prompt_arguments``: the
+        sensitivity is the task's, while the declared arguments belong to the plan, and routing it
+        through them would mean putting the user's policy in a document a model writes.
+        """
         assert decision.task_id is not None and decision.step_id is not None
         targets = approved_targets(decision)
         where = f" on {', '.join(targets)}" if targets else ""
+        stated = _stated(spec, arguments)
         approval = Approval(
             id=ApprovalId(uuid5(APPROVAL_NAMESPACE, str(decision.id))),
             created_at=decision.created_at,
@@ -1348,8 +1378,8 @@ class Executor:
             step_id=decision.step_id,
             capability_id=spec.id,
             targets=targets,
-            prompt=f"{spec.id}{where} for step {step.id} ({step.goal}){_stated(spec, arguments)}"
-            f": {reason}",
+            prompt=f"{spec.id}{where} for step {step.id} ({step.goal}){stated}"
+            f"{_may_travel(task, stated)}: {reason}",
             status=ApprovalStatus.PENDING,
             decision_id=decision.id,
             expires_at=decision.created_at + self._approval_ttl,

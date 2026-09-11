@@ -215,14 +215,20 @@ async def test_a_heartbeat_makes_the_node_available_and_writes_nothing(
 # ----------------------------------------------------------------------------------------
 
 
-async def test_a_remote_node_built_to_win_never_receives_work(
+async def test_a_remote_node_receives_work_only_for_a_task_that_declared_it(
     client: AsyncClient, ela: Ela
 ) -> None:
-    """Criterion 8 (D18, ``PRIVACY``), which M12.2 retires in the commit that brings the
-    sensitivity of a task. Two remote nodes — ``TRUSTED`` and ``CLOUD_ALLOWED`` — built by the
-    routes to win on today's weights: every tool, ``HIGH``, on ``AC``, available. The run of
-    production names ``local``, with both among the candidates and ``PRIVACY`` among their
-    refusals."""
+    """**Criterion 8 of M12.1 is retired here** (dec. O), and this is what replaces it.
+
+    It said "a remote node never receives work", and it was true for a reason that has changed: not
+    because a node may not work, but because no task could declare that it was allowed to — the
+    default was, and is, the strictest level. Keeping the old test would have pinned the *absence of
+    a writer* as if it were a guarantee; ADR 0038 records the guarantee as paid.
+
+    So: the same two nodes built to win, and two tasks. The one nobody declared goes to ``local``
+    with ``PRIVACY`` among each candidate's refusals — the old assertion, unchanged, because that
+    half is still true. The one declared ``TRUSTED`` is handed to the node that won it.
+    """
     tools = [tool.name for tool in ela.tools.tools()]
     remote = []
     for privacy in ("TRUSTED", "CLOUD_ALLOWED"):
@@ -230,15 +236,22 @@ async def test_a_remote_node_built_to_win_never_receives_work(
         await client.post("/nodes/heartbeat", json={"power_source": "AC"}, headers=node)
         assert (await row(client, device_id))["available"] is True
         remote.append(device_id)
-    task_id = await queued(client, echo_plan())
+    undeclared = await queued(client, echo_plan())
+    declared = await queued(client, echo_plan(), text="per il pc", privacy="TRUSTED")
 
-    assert (await client.post(f"/tasks/{task_id}/run")).status_code == 200
+    assert (await client.post(f"/tasks/{undeclared}/run")).status_code == 200
+    walked = await client.post(f"/tasks/{declared}/run")
 
-    (selected,) = await written(ela, AuditEventType.DEVICE_SELECTED)
+    assert walked.json()["outcome"] == "assigned"
+    chosen = await written(ela, AuditEventType.DEVICE_SELECTED)
+    home = [one for one in chosen if one.task_id == uuid.UUID(undeclared)]
+    (selected,) = home
     assert selected.device_id == LOCAL_DEVICE_ID
     candidates = {candidate["device_id"]: candidate for candidate in selected.payload["candidates"]}
     for device_id in remote:
         assert "PRIVACY" in candidates[device_id]["refusals"]
+    (out,) = [one for one in chosen if one.task_id == uuid.UUID(declared)]
+    assert str(out.device_id) == remote[0]  # the TRUSTED one: the task allows that far and no more
 
 
 async def test_a_revoked_node_is_refused_with_its_own_diagnosis(

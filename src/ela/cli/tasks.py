@@ -37,6 +37,7 @@ def _task(payload: dict[str, Any]) -> str:
             ("goal", payload["goal"]),
             ("created", payload["created_at"]),
             ("deadline", payload["deadline"]),
+            ("privacy", payload["max_privacy"]),
             ("plan", payload["plan_id"]),
         ]
     )
@@ -48,11 +49,26 @@ def create(
     text: Annotated[str, typer.Argument(help="what you are asking ELA to do")],
     goal: Annotated[str | None, typer.Option("--goal", help="the goal, if not the text")] = None,
     deadline: Annotated[str | None, typer.Option("--deadline", help="ISO instant")] = None,
+    privacy: Annotated[
+        str | None,
+        typer.Option(
+            "--privacy", help="how far this task may travel: LOCAL_ONLY, TRUSTED, CLOUD_ALLOWED"
+        ),
+    ] = None,
     as_json: Json = False,
 ) -> None:
-    """Create a task from what you asked. It has no plan yet, so nothing runs."""
+    """Create a task from what you asked. It has no plan yet, so nothing runs.
+
+    ``--privacy`` is where this task's content may go (M12.2, D18): without it the task stays on
+    this machine, which is the strictest answer and the old behaviour. It is declared **once** —
+    widening a task later does not exist, you create a new one — and every placement of the task is
+    judged against it, beside the level each node was enrolled with.
+    """
+    body: dict[str, Any] = {"text": text, "goal": goal, "deadline": deadline}
+    if privacy is not None:
+        body["max_privacy"] = privacy
     with client.connect() as api:
-        payload = api.post("/tasks", {"text": text, "goal": goal, "deadline": deadline})
+        payload = api.post("/tasks", body)
     emit(payload, as_json, _task(payload))
 
 
