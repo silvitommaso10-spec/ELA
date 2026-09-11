@@ -120,3 +120,36 @@ async def test_an_env_that_sets_everything_reports_nothing_missing(
 def test_a_commented_variable_is_not_set() -> None:
     """What the template writes is commented out: reading it back must find only the token."""
     assert assigned(template("t" * 43)) == {TOKEN_VARIABLE}
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="M12.1 criterio 16: `ela init` scrive `.env` con il modo dell'umask e poi fa chmod — "
+    "riparato nel commit seguente, che toglie questo segno",
+)
+async def test_the_file_is_readable_by_nobody_else_not_even_for_an_instant(
+    cli: Cli, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``0o600`` from its first byte, not ``0o600`` after a ``chmod`` (M12.1, criterio 16).
+
+    Written with ``write_text`` and narrowed afterwards, the file carries the process umask for an
+    instant — with ``umask(0)``, ``0o666``: readable by anybody, with the token already inside. The
+    test widens the umask to make that instant visible, and records the file's mode at the moment
+    anybody narrows it: a file born private is never narrowed at all, or is narrowed from ``0o600``.
+    """
+    seen: list[int] = []
+    original = Path.chmod
+
+    def spying(self: Path, mode: int, *args: object, **kwargs: object) -> None:
+        seen.append(stat.S_IMODE(os.stat(self).st_mode))
+        original(self, mode, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "chmod", spying)
+    previous = os.umask(0)
+    try:
+        await cli("init")
+    finally:
+        os.umask(previous)
+
+    assert all(mode == 0o600 for mode in seen), [oct(mode) for mode in seen]
+    assert stat.S_IMODE(os.stat(env_file(tmp_path)).st_mode) == 0o600
