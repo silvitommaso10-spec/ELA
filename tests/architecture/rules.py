@@ -412,7 +412,31 @@ CONTEXT_NOT_RECORDED = frozenset({"AuditEvent", "ProviderRequest"})
 #: defended in the shape of the code instead.
 SECURITY_MODULE = Path("api") / "security.py"
 CONSTANT_TIME_COMPARE = "compare_digest"
-TOKEN_NAMES = frozenset({"token", "presented"})
+TOKEN_NAMES = frozenset({"token", "presented", "node_secret", "presented_hash", "secret_hash"})
+#: The secret of a node, in every name M12.1 gives it: what the node presents, its SHA-256, the hash
+#: the registry keeps, the enrollment code and its hash (M12.1 dec. D, E). Read by two rules. By
+#: rule 31, extended: compared **by value** only in :data:`SECURITY_MODULE`, like the token — ``is
+#: None`` stays allowed anywhere, because asking whether a hash exists says nothing about it. By
+#: rule 46: never inside an ``AuditEvent``, a wire shape of the API, or the entity every reader of
+#: the registry holds. The names do not exist yet: the rules are written before the code (ADR 0030
+#: §15), so the day it exists it is born inside the fence.
+NODE_SECRET_NAMES = frozenset(
+    {"node_secret", "presented_hash", "secret_hash", "enrollment_code", "code_hash"}
+)
+#: Rule 46 (M12.1): the three readable boundaries a node's secret must not cross. ``api/schemas.py``
+#: is where every wire shape of the API is declared; ``Device`` is the entity the registry hands to
+#: every reader — the orchestrator, ``/devices``, the context — so a hash on it would be read by
+#: all of them. The ORM row may hold the hash (M12.1 dec. G): it is not a boundary, it is the vault.
+#: A path, and so not :data:`DOMAIN_MODULE`, which is the dotted name rule 8 reads.
+WIRE_SHAPES = Path("api") / "schemas.py"
+ENTITIES_FILE = Path("domain.py")
+DEVICE_ENTITY = "Device"
+#: Rule 47 (M12.1): who is calling is decided in one place — the middleware of
+#: :data:`SECURITY_MODULE` — and every route reads the identity it resolved, never the header it
+#: came in. Silent on today's tree, and its silence is asserted: it guards a door nobody has opened
+#: yet, which D12 opens — the routes of approvals and cancellation will read the identity, and the
+#: shortest way to write that is to read it from the header.
+AUTHORIZATION_HEADER = "authorization"
 
 #: Rule 22 (ADR 0017 §6): the orchestrator advises and never commands. A package that cannot
 #: reach the Task Engine cannot fail a task because it found no node.
@@ -1634,6 +1658,12 @@ def check_constant_time_token(pkg_root: Path) -> list[Violation]:
     Why a rule and not a test: the property is *how long the comparison takes*, and a test that
     measured it would measure the runner instead — the mistake M9.1 spent its first commit
     undoing (ADR 0006 §13). The shape of the code is the only place this can be pinned.
+
+    **Extended by M12.1 (dec. E)** to the secret of a node, which is compared the same way and in
+    the same place: :data:`TOKEN_NAMES` learns its names, so inside the module a ``==`` on them is
+    reported like one on the token; and **outside** the module, any comparison *by value* — ``==``,
+    ``!=``, ``in``, ``not in`` — that names one of :data:`NODE_SECRET_NAMES` is reported too. A
+    second place that compares a secret is a second place that can compare it in variable time.
     """
     rule = "token-compared-in-constant-time"
     path = pkg_root / SECURITY_MODULE
@@ -1652,6 +1682,19 @@ def check_constant_time_token(pkg_root: Path) -> list[Violation]:
         for node in ast.walk(tree)
         if isinstance(node, ast.Compare) and _compares_the_token(node)
     )
+    for other in _source_files(pkg_root):
+        if other == path:
+            continue
+        found.extend(
+            Violation(
+                rule,
+                module_name(other, pkg_root),
+                f"{_operator(node)} on a node's secret",
+                node.lineno,
+            )
+            for node in ast.walk(ast.parse(other.read_text(encoding="utf-8"), filename=str(other)))
+            if isinstance(node, ast.Compare) and _compares_a_secret_by_value(node)
+        )
     return found
 
 
@@ -1674,6 +1717,32 @@ def _names_the_token(node: ast.expr) -> bool:
 
 def _compares_the_token(node: ast.Compare) -> bool:
     return any(_names_the_token(operand) for operand in [node.left, *node.comparators])
+
+
+def _compares_a_secret_by_value(node: ast.Compare) -> bool:
+    """A ``==``/``!=``/``in``/``not in`` with a node's secret on either side (rule 31, M12.1)."""
+    return isinstance(node.ops[0], (ast.Eq, ast.NotEq, ast.In, ast.NotIn)) and any(
+        _names_a_node_secret(operand) is not None for operand in [node.left, *node.comparators]
+    )
+
+
+def _names_a_node_secret(node: ast.AST) -> str | None:
+    """How ``node`` names a node's secret — a name, an attribute, a keyword, a string — or ``None``.
+
+    Through a call as well (``secret_hash.hex()``), the way :func:`_names_the_token` follows
+    ``token.encode()``: the secret does not stop being the secret because a method was called on it.
+    """
+    if isinstance(node, ast.Name) and node.id in NODE_SECRET_NAMES:
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr if node.attr in NODE_SECRET_NAMES else _names_a_node_secret(node.value)
+    if isinstance(node, ast.Call):
+        return _names_a_node_secret(node.func)
+    if isinstance(node, ast.keyword) and node.arg in NODE_SECRET_NAMES:
+        return node.arg
+    if isinstance(node, ast.Constant) and node.value in NODE_SECRET_NAMES:
+        return str(node.value)
+    return None
 
 
 def check_machine_access(pkg_root: Path) -> list[Violation]:
@@ -2267,6 +2336,91 @@ def check_context_is_not_recorded(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_a_nodes_secret_crosses_no_readable_boundary(pkg_root: Path) -> list[Violation]:
+    """Rule 46: a node's secret enters no audit event, no wire shape, and not the entity (M12.1).
+
+    The shape of rule 23, for a value worse than an argument: an argument is the user's content,
+    and a node's secret is the key to speaking to ELA as a machine the user trusted. Whoever reads
+    the audit, a response of the API, or a ``Device`` must not be able to read it — and the audit
+    is the worst of the three, because it is append-only: a secret written there is written for
+    ever, and revoking the node would not unwrite it.
+
+    Reported, for any of :data:`NODE_SECRET_NAMES` as a name, an attribute, a keyword or a string:
+    anywhere inside an ``AuditEvent(...)`` call in the package; anywhere in ``api/schemas.py``; and
+    as a field of ``Device`` in ``domain.py``. **No exemption today**: the two responses that hand
+    a node its code and its secret, once, do not exist yet, and a door is opened when there is code
+    behind it (ADR 0027 §3) — the commit that writes them opens it, with its proof.
+    """
+    rule = "a-nodes-secret-crosses-no-readable-boundary"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for call in ast.walk(tree):
+            if not (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == AUDIT_EVENT
+            ):
+                continue
+            found.extend(
+                Violation(rule, name, named, node.lineno)
+                for node in ast.walk(call)
+                if (named := _names_a_node_secret(node)) is not None
+            )
+    shapes = pkg_root / WIRE_SHAPES
+    if shapes.is_file():
+        found.extend(
+            Violation(rule, module_name(shapes, pkg_root), named, node.lineno)
+            for node in ast.walk(
+                ast.parse(shapes.read_text(encoding="utf-8"), filename=str(shapes))
+            )
+            if (named := _names_a_node_secret(node)) is not None
+        )
+    entities = pkg_root / ENTITIES_FILE
+    if not entities.is_file():
+        return found
+    for entity in ast.walk(ast.parse(entities.read_text(encoding="utf-8"), filename=str(entities))):
+        if isinstance(entity, ast.ClassDef) and entity.name == DEVICE_ENTITY:
+            found.extend(
+                Violation(rule, module_name(entities, pkg_root), field.target.id, field.lineno)
+                for field in entity.body
+                if isinstance(field, ast.AnnAssign)
+                and isinstance(field.target, ast.Name)
+                and field.target.id in NODE_SECRET_NAMES
+            )
+    return found
+
+
+def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
+    """Rule 47: no module of ``ela.api`` but the middleware reads the ``Authorization`` header.
+
+    M12.1 (D10, D12): the middleware of ``api/security.py`` recognises three identities — the
+    Core's token, a node's secret, an enrollment code on its own route — and hands the identity it
+    resolved to the route. A route that read the header itself would be a second place where
+    *who is calling* is decided, and the second place is the one that forgets the revocation.
+
+    Reported: the header's name, as a string in any case, in every module under ``api/`` except
+    the middleware. Silent on today's tree, where the middleware is the only reader
+    (``api/security.py``), and asserted silent: the rule is written before the routes that will
+    want to know who called (ADR 0030 §15).
+    """
+    rule = "identity-resolved-in-one-place"
+    found: list[Violation] = []
+    for path in sorted((pkg_root / API_DIR).rglob("*.py")):
+        if path == pkg_root / SECURITY_MODULE:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, module_name(path, pkg_root), AUTHORIZATION_HEADER, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.lower() == AUTHORIZATION_HEADER
+        )
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -2315,6 +2469,10 @@ RULES: dict[str, Rule] = {
     ),
     "a-refresh-touches-only-what-is-declared": check_a_refresh_touches_only_what_is_declared,
     "what-ela-hears-leaves-no-named-file": check_what_ela_hears_leaves_no_named_file,
+    "a-nodes-secret-crosses-no-readable-boundary": (
+        check_a_nodes_secret_crosses_no_readable_boundary
+    ),
+    "identity-resolved-in-one-place": check_identity_resolved_in_one_place,
 }
 
 
@@ -2411,6 +2569,19 @@ class Constant:
 
 
 CONSTANTS: tuple[Constant, ...] = (
+    # a-nodes-secret-crosses-no-readable-boundary (rule 46, M12.1)
+    Constant("a-nodes-secret-crosses-no-readable-boundary", "AUDIT_EVENT", DETECTOR),
+    Constant("a-nodes-secret-crosses-no-readable-boundary", "DEVICE_ENTITY", DETECTOR),
+    Constant("a-nodes-secret-crosses-no-readable-boundary", "ENTITIES_FILE", DETECTOR),
+    Constant("a-nodes-secret-crosses-no-readable-boundary", "NODE_SECRET_NAMES", DETECTOR),
+    Constant(
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    Constant("a-nodes-secret-crosses-no-readable-boundary", "WIRE_SHAPES", DETECTOR),
     # a-refresh-touches-only-what-is-declared (rule 44, M6.1b dec. H)
     Constant("a-refresh-touches-only-what-is-declared", "BIRTH_CONSTRUCTOR", DETECTOR),
     Constant("a-refresh-touches-only-what-is-declared", "OBSERVED_FIELDS", DETECTOR),
@@ -2518,11 +2689,25 @@ CONSTANTS: tuple[Constant, ...] = (
         reason="the one file this rule reads: restricted, the rule has nothing to open and "
         "raises instead of speaking",
     ),
+    Constant("constant-time-token", "NODE_SECRET_NAMES", DETECTOR),
     Constant("constant-time-token", "TOKEN_NAMES", DETECTOR),
     # core-isolation
     Constant("core-isolation", "CORE_FORBIDDEN", DETECTOR),
     Constant("core-isolation", "CORE_PACKAGES", DETECTOR),
     Constant("core-isolation", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF),
+    # identity-resolved-in-one-place (rule 47, M12.1)
+    Constant("identity-resolved-in-one-place", "API_DIR", DETECTOR),
+    Constant("identity-resolved-in-one-place", "AUTHORIZATION_HEADER", DETECTOR),
+    Constant(
+        "identity-resolved-in-one-place",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    Constant(
+        "identity-resolved-in-one-place", "SECURITY_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0023 §7"
+    ),
     # decide-callers
     Constant("decide-callers", "DECIDE_METHOD", DETECTOR),
     Constant("decide-callers", "PERMISSIONS_DIR", EXEMPTION, by=WHOLE, adr="ADR 0011"),

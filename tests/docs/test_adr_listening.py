@@ -19,6 +19,7 @@ from ela.permissions import production_catalogue
 from tests.architecture.rules import RULES
 from tests.architecture.violations import PACKAGE_ROOT
 from tests.contracts.protocols import port_protocols
+from tests.docs.test_adr_placement import _rules_up_to
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0036-listening.md"
 UNWRITTEN = AuditEventType.PROVIDER_CALLED
@@ -67,11 +68,19 @@ def test_the_event_this_milestone_added_does_have_a_writer() -> None:
 
 
 def test_the_conseguenze_count_the_rules_and_the_ports_of_today() -> None:
-    """The pin on **today's** totals, which moves to the ADR that last changed them."""
+    """The pin on today's totals, which moves to the ADR that last changed them.
+
+    The rules have moved on: M12.1 adds rules 46 and 47 before ADR 0037 is written (ADR 0030 §15,
+    the defence before the room). So ADR 0036's «quarantacinque» is read the way ADR 0026's
+    «trentuno» is (``test_adr_placement.py``): as a claim about the rules numbered up to 45, which
+    each rule declares in its own docstring — history that stays checkable, not a total. The pin on
+    today's number of rules moves to ADR 0037's test when that document exists. Ports and
+    capabilities have not moved yet, and stay pinned here until they do.
+    """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**quarantacinque**" in conseguenze
-    assert len(RULES) == 45
+    assert len(_rules_up_to(45)) == 45
     assert "**ventitré**" in conseguenze
     assert len(tuple(port_protocols())) == 23
     assert len(production_catalogue().specs()) == 8

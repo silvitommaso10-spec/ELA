@@ -1240,8 +1240,93 @@ VIOLATIONS: tuple[Case, ...] = (
         "def stale(current) -> bool:\n    return current.last_seen_at is None\n",
         "last_seen_at",
     ),
+    # --- constant-time-token, extended (rule 31, M12.1 dec. E) ---
+    Case(
+        # The second place that compares a secret: a helper beside the registry, which reads well
+        # and is exactly the variable-time comparison the rule exists for.
+        "a-node-secret-compared-outside-the-middleware",
+        "constant-time-token",
+        "devices/credentials.py",
+        "def valid(presented_hash, secret_hash):\n    return presented_hash == secret_hash\n",
+        "== on a node's secret",
+    ),
+    Case(
+        # Inside the middleware too: the node's secret is a token, and ``==`` on it is ``==``.
+        "a-node-secret-compared-with-equals-in-the-middleware",
+        "constant-time-token",
+        "api/security.py",
+        "import secrets\n"
+        "def token_ok(presented, token):\n"
+        "    return secrets.compare_digest(presented, token)\n"
+        "def node_ok(presented_hash, stored):\n"
+        "    return presented_hash == stored\n",
+        "== on the token",
+    ),
+    # --- a-nodes-secret-crosses-no-readable-boundary (rule 46, M12.1) ---
+    Case(
+        # The one somebody will write first: a readable summary of a failed attempt.
+        "the-secret-in-an-audit-event",
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "devices/enrollment.py",
+        "from ela.domain import AuditEvent\n"
+        "def rejected(node_secret):\n"
+        "    return AuditEvent(summary=node_secret)\n",
+        "node_secret",
+    ),
+    Case(
+        "the-hash-on-a-wire-shape",
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "api/schemas.py",
+        "class DeviceOut:\n    secret_hash: str\n",
+        "secret_hash",
+    ),
+    Case(
+        # On the entity, every reader of the registry would carry it: the orchestrator, /devices,
+        # the context. The row may keep it; the entity may not.
+        "the-hash-as-a-field-of-the-device",
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "domain.py",
+        "class Device:\n    secret_hash: str\n",
+        "secret_hash",
+    ),
+    # --- identity-resolved-in-one-place (rule 47, M12.1) ---
+    Case(
+        # The shortest way a route learns who called — and the second place that forgets a
+        # revocation.
+        "a-route-reads-the-header",
+        "identity-resolved-in-one-place",
+        "api/approvals.py",
+        "def responder(request):\n    return request.headers.get('Authorization')\n",
+        "authorization",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        # Asking whether a hash exists says nothing about it: ``is None`` is not a comparison by
+        # value, and the registry will need it for a node that was never enrolled.
+        "a-hash-asked-whether-it-exists",
+        "constant-time-token",
+        "devices/credentials.py",
+        "def enrolled(secret_hash):\n    return secret_hash is not None\n",
+        "",
+    ),
+    Case(
+        # The vault is not a boundary: the ORM row keeps the hash (M12.1 dec. G), and nobody reads
+        # the row but the adapter.
+        "the-hash-kept-by-the-row",
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "infrastructure/persistence/orm.py",
+        "class DeviceRow:\n    secret_hash: str\n",
+        "",
+    ),
+    Case(
+        # The one reader the rule allows, and the one that exists today.
+        "the-middleware-reads-the-header",
+        "identity-resolved-in-one-place",
+        "api/security.py",
+        "def guard(request):\n    return request.headers.get('authorization')\n",
+        "",
+    ),
     Case(
         # The shape M6.1b actually uses: the stored row, with the declared half replaced and
         # nothing else named — so the four fields the heartbeat owns travel through untouched
