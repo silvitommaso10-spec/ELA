@@ -10,6 +10,9 @@ from __future__ import annotations
 import asyncio
 import runpy
 import socket
+from collections.abc import (
+    Iterator,
+)
 from typing import Any, cast
 
 import pytest
@@ -152,6 +155,49 @@ def test_loopback_that_cannot_be_bound_stops_the_start(monkeypatch: pytest.Monke
 
     with pytest.raises(OSError):
         server.listening_sockets(api("100.76.0.1"))
+
+
+@pytest.fixture
+def occupied() -> Iterator[int]:
+    """A loopback port something else is already listening on — the live failure of 2026-09-11, a
+    ``python3`` left over from a trial holding 8351. An ephemeral port here, never 8351 itself."""
+    holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    holder.bind(("127.0.0.1", 0))
+    holder.listen()
+    try:
+        yield int(holder.getsockname()[1])
+    finally:
+        holder.close()
+
+
+def on_port(settings: Settings, port: int) -> Settings:
+    return settings.model_copy(update={"api": settings.api.model_copy(update={"api_port": port})})
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=OSError,
+    reason="un bind sul loopback che fallisce esce come traceback invece che come messaggio — "
+    "riparato nel commit seguente, che toglie questo segno",
+)
+def test_a_port_that_is_taken_stops_the_start_with_a_message_and_not_a_traceback(
+    settings: Settings,
+    occupied: int,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The docstring of ``api/server.py`` promised it and did not keep it: a configuration ELA
+    cannot use is a message and exit code 2, never a traceback. A taken port is one."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    monkeypatch.setattr(server.Settings, "load", lambda: on_port(settings, occupied))
+
+    assert server.main() == 2
+    error = capsys.readouterr().err
+    assert f"127.0.0.1:{occupied}" in error
+    assert "in use" in error
+    assert "ELA_API_PORT" in error
+    assert "Traceback" not in error
 
 
 def test_main_returns_zero_when_the_server_stops(
