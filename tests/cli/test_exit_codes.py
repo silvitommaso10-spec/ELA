@@ -51,6 +51,8 @@ INVOCATIONS: dict[str, tuple[str, ...]] = {
     "audit tail": ("audit", "tail"),
     "audit verify": ("audit", "verify"),
     "device list": ("device", "list"),
+    "node enroll": ("node", "enroll", "--privacy", "TRUSTED"),
+    "node revoke": ("node", "revoke", MISSING),
     "provider list": ("provider", "list"),
 }
 """One valid invocation per command that talks to ELA — valid, so that what is being tested is

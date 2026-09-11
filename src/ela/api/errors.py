@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from ela.domain import TaskId
 
-__all__ = ["ApiError", "DatabaseUnavailableError", "TaskAlreadyRunningError"]
+__all__ = [
+    "ApiError",
+    "DatabaseUnavailableError",
+    "RevisionRequiredError",
+    "TaskAlreadyRunningError",
+]
 
 
 class ApiError(Exception):
@@ -33,3 +38,16 @@ class DatabaseUnavailableError(ApiError):
 
     def __init__(self, reason: str) -> None:
         super().__init__(f"the database did not answer: {reason}")
+
+
+class RevisionRequiredError(ApiError):
+    """An announcement without the revision it is conditional on: ``If-Match`` is missing.
+
+    Not a default: a write that assumed a revision would be the unconditional update this protocol
+    exists to refuse (ADR 0037 §9). ``428 Precondition Required`` is the status HTTP has for it.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            'PUT /nodes/me is conditional: send the revision you last saw as If-Match: "<revision>"'
+        )

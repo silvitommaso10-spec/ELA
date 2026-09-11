@@ -22,7 +22,11 @@ from ela.composition.errors import ConfigurationError
 from ela.composition.settings import Settings
 from ela.composition.system import SystemClock, UuidGenerator
 from ela.context import ContextCore
-from ela.devices import DeviceOrchestrator, DeviceRegistry
+from ela.devices import (
+    DeviceOrchestrator,
+    DeviceRegistry,
+    NodeEnrollment,
+)
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import Actor, ActorKind, RawSpeech
 from ela.executive import Executor, TaskRunner
@@ -48,6 +52,7 @@ from ela.infrastructure.persistence import (
     SqlAuditLog,
     SqlAuthorizationStore,
     SqlDeviceRegistry,
+    SqlEnrollmentStore,
     SqlExecutionResultStore,
     SqlTaskRepository,
     make_engine,
@@ -139,6 +144,8 @@ class Ela:
     tools: ToolRegistry
     verifiers: VerifierRegistry
     devices: DeviceRegistry
+    enrollment: NodeEnrollment
+    """How a node gets an identity: codes issued, and spent by the nodes they create (M12.1)."""
     engine: TaskEngine
     orchestrator: DeviceOrchestrator
     executor: Executor
@@ -308,6 +315,7 @@ async def build(settings: Settings) -> Ela:
             ids,
             heartbeat_ttl=settings.devices.heartbeat_ttl,
         )
+        enrollment = NodeEnrollment(SqlEnrollmentStore(database), devices, clock, ids)
 
         # The scope of ``workspace.write_note`` and the life of a decision are configuration
         # since M8.3 (ADR 0025 §5, §6): the catalogue and the Guardian have always accepted them,
@@ -510,6 +518,7 @@ async def build(settings: Settings) -> Ela:
         tools=tools,
         verifiers=verifiers,
         devices=devices,
+        enrollment=enrollment,
         engine=engine,
         orchestrator=orchestrator,
         executor=executor,

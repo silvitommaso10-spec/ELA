@@ -171,6 +171,14 @@ Le cinque rotte (M12.1 dec. O):
 | `PUT` | `/nodes/me` | un nodo | la metà dichiarata, condizionale sulla revisione (§9); `DEVICE_ANNOUNCED` se cambia, `DEVICE_IDENTITY_CONFLICT` se la revisione è vecchia |
 | `POST` | `/nodes/{device_id}/revoke` | il Core | la revoca (§12); `DEVICE_REVOKED` |
 
+Errori aggiunti, nella forma della tabella di ADR 0023 §10:
+
+| Caso | Eccezione | Stato |
+|---|---|---|
+| un annuncio a una revisione che la riga ha lasciato | `IdentityConflictError` | `409` |
+| la revoca di questa macchina | `LocalDeviceNotRevocableError` | `409` |
+| un annuncio senza `If-Match` | `RevisionRequiredError` | `428` |
+
 Comandi aggiunti, nella forma della tabella di ADR 0024 §3:
 
 | Comando | Rotta | Uscite |
@@ -364,6 +372,12 @@ secondo processo con la stessa credenziale e una revisione vecchia perde — non
 arrivo, ma perché credeva una cosa falsa sulla riga. È ADR 0035 §5 reso istruzione. Il test usa due
 connessioni vere sullo stesso file, una barriera fra la lettura e la scrittura, e asserisce sul
 `rowcount` — uno e zero — non sulla riga finale.
+
+**Sul filo** (fissato dal commit che scrive le rotte, perché nessuna decisione lo fissava): la
+revisione viaggia come la condizione che HTTP ha già, **`If-Match`** in ingresso ed **`ETag`** in
+uscita; senza `If-Match` la risposta è **428** (Precondition Required), perché un annuncio che
+presumesse una revisione sarebbe proprio l'`UPDATE` incondizionato che questo protocollo rifiuta.
+Mai nel corpo: `revision` è un campo che il nodo non scrive, e un corpo che lo porta riceve 422.
 
 **I limiti, dichiarati.** Due cloni che mandano solo heartbeat non si vedono: la revisione sta
 sulla metà dichiarata. E `local` resta com'è: ADR 0035 §5 lo lascia oscillare e rende

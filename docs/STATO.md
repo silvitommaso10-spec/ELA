@@ -108,8 +108,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **24** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **8** | `production_catalogue()` |
-| Rotte dell'API | **20** | i `router` di `ela.api` |
-| Comandi della CLI | **22** | l'albero Typer di `ela.cli` |
+| Rotte dell'API | **25** | i `router` di `ela.api` |
+| Comandi della CLI | **24** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **134** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->

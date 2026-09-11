@@ -94,6 +94,7 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
             "skipped": len(recovered.skipped),
             "expired": len(recovered.expired),
         },
+        refused=dict(request.app.state.refused),
         perception=PerceptionSummaryOut(
             enabled=ela.settings.perception.perception_enabled,
             watching=ela.settings.perception.loop_enabled,

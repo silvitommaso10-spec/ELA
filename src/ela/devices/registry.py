@@ -293,6 +293,16 @@ class DeviceRegistry:
         )
         return self.seen(observed, now)
 
+    async def secret_hash(self, device_id: DeviceId) -> str | None:
+        """The hash a node proves itself against, ``None`` for ``local`` (ADR 0037 §6).
+
+        The one way the hash leaves the registry, and it goes to the comparison in
+        ``api/security.py``, the only module that compares a credential (architecture rule 31).
+
+        :raises NotFoundError: if the node is not registered.
+        """
+        return await self._devices.secret_hash(device_id)
+
     async def enroll(
         self,
         device_id: DeviceId,

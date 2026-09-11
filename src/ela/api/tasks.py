@@ -12,12 +12,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from ela.api.deps import ElaDep, RunningDep
+from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.errors import TaskAlreadyRunningError
 from ela.api.schemas import CancelIn, PlanIn, RunOut, TaskCreate, TaskDetail, TaskOut
 from ela.devices.local import (
     LOCAL_DEVICE_ID,
-    LOCAL_USER,
 )
 from ela.domain import (
     IntentChannel,
@@ -132,11 +131,11 @@ async def run_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> RunOut:
 
 
 @router.post("/{task_id}/cancel")
-async def cancel_task(task_id: UUID, body: CancelIn, ela: ElaDep) -> TaskOut:
+async def cancel_task(task_id: UUID, body: CancelIn, ela: ElaDep, identity: IdentityDep) -> TaskOut:
     """Stop the task (§65). The actor is the user: stopping ELA is the user's, always.
 
-    The user at this machine, :data:`~ela.devices.local.LOCAL_USER`: in M12.1 only the Core's token
-    reaches this route (ADR 0037 §4, §15), and ``ELA_USER_NAME`` is retired.
+    Whoever the middleware resolved for the call (D12; ADR 0037 §15) — in M12.1 only the Core's
+    token reaches this route, so it is the user at this machine.
     """
-    task = await ela.engine.cancel(TaskId(task_id), reason=body.reason, actor=LOCAL_USER)
+    task = await ela.engine.cancel(TaskId(task_id), reason=body.reason, actor=identity.actor)
     return TaskOut.of(task)

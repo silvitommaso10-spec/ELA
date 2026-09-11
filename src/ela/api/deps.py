@@ -11,10 +11,13 @@ from typing import Annotated, cast
 
 from fastapi import Depends, Request
 
+from ela.api.security import (
+    Identity,
+)
 from ela.composition import Ela
 from ela.domain import TaskId
 
-__all__ = ["ElaDep", "RunningDep", "ela_of", "running_of"]
+__all__ = ["ElaDep", "IdentityDep", "RunningDep", "ela_of", "identity_of", "running_of"]
 
 
 def ela_of(request: Request) -> Ela:
@@ -30,5 +33,12 @@ def running_of(request: Request) -> set[TaskId]:
     return cast("set[TaskId]", request.app.state.running)
 
 
+def identity_of(request: Request) -> Identity:
+    """Who the middleware resolved for this request (ADR 0037 §3) — never read from the header,
+    which only ``api/security.py`` reads (architecture rule 47)."""
+    return cast(Identity, request.state.identity)
+
+
 ElaDep = Annotated[Ela, Depends(ela_of)]
+IdentityDep = Annotated[Identity, Depends(identity_of)]
 RunningDep = Annotated[set[TaskId], Depends(running_of)]

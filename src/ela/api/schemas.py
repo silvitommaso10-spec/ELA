@@ -13,10 +13,10 @@ Two leaf values are reused as they are: :class:`~ela.domain.ProviderUsage` and
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, cast
+from typing import Annotated, TypedDict, cast
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ela.audit.chain import ChainSummary
 from ela.domain import (
@@ -393,6 +393,8 @@ class DeviceOut(BaseModel):
     privacy: PrivacyLevel
     current_workload: float | None
     last_seen_at: datetime | None
+    revoked_at: datetime | None
+    """When the user revoked the node, beside ``available``: two facts, two names (ADR 0037 §12)."""
 
     @classmethod
     def of(cls, device: Device, *, available: bool) -> DeviceOut:
@@ -411,7 +413,102 @@ class DeviceOut(BaseModel):
             privacy=device.privacy,
             current_workload=device.current_workload,
             last_seen_at=device.last_seen_at,
+            revoked_at=device.revoked_at,
         )
+
+
+NODE_BODY = ConfigDict(extra="forbid")
+"""What a node sends is refused, not trimmed, if it carries a field it may not write (dec. D §3).
+
+The DTOs of ``ela.api`` ignore unknown fields (the default of pydantic, and :data:`PLAN_EXTRA`);
+a node that tries to write ``privacy``, ``network``, ``revision`` or ``revoked_at`` is broken or
+hostile, and either way it must be seen: ``422``, and the row does not change (criterion 13).
+"""
+
+
+class EnrollmentIn(BaseModel):
+    """What the user imposes on the node a code will create: only its ``privacy`` (ADR 0037 §5)."""
+
+    model_config = NODE_BODY
+
+    privacy: PrivacyLevel
+
+    @field_validator("privacy")
+    @classmethod
+    def _a_remote_level(cls, value: PrivacyLevel) -> PrivacyLevel:
+        """``LOCAL_ONLY`` is refused here, in the server, and not only in the CLI (D18)."""
+        if value is PrivacyLevel.LOCAL_ONLY:
+            raise ValueError(
+                "LOCAL_ONLY is this machine's level: a remote node at it would receive every "
+                "task, including those whose sensitivity nobody declared (D18)"
+            )
+        return value
+
+
+class EnrollmentCodeOut(BaseModel):
+    """A code, handed out once, with what it will impose and until when (ADR 0037 §5).
+
+    One of the two answers of ELA allowed to carry a secret, and only once: kept as its hash, it
+    cannot be asked for again (architecture rule 46, ``ONCE_SECRET_SHAPES``).
+    """
+
+    code: str
+    privacy: PrivacyLevel
+    expires_at: datetime
+
+
+class Declared(TypedDict):
+    """The five fields of the declared half, by the names the registry takes (ADR 0037 §10)."""
+
+    name: str
+    os: OperatingSystem
+    capabilities: tuple[DeviceCapability, ...]
+    available_tools: tuple[str, ...]
+    performance: PerformanceClass
+
+
+class DeclarationIn(BaseModel):
+    """The half a node declares about itself, and nothing else (ADR 0037 §10)."""
+
+    model_config = NODE_BODY
+
+    name: Annotated[str, Field(min_length=1)]
+    os: OperatingSystem
+    capabilities: tuple[DeviceCapability, ...] = ()
+    available_tools: tuple[str, ...] = ()
+    performance: PerformanceClass = PerformanceClass.UNKNOWN
+
+    def declared(self) -> Declared:
+        """The five fields as the registry takes them: ``DECLARED_FIELDS``, by keyword."""
+        return {
+            "name": self.name,
+            "os": self.os,
+            "capabilities": self.capabilities,
+            "available_tools": self.available_tools,
+            "performance": self.performance,
+        }
+
+
+class EnrolledOut(BaseModel):
+    """The node a code gave birth to — its id, its secret, its revision — once (ADR 0037 §5).
+
+    The only answer of ELA that contains a node's secret (architecture rule 46,
+    ``ONCE_SECRET_SHAPES``): it goes from here into the node's keeping, and ELA keeps its hash.
+    """
+
+    device_id: DeviceId
+    secret: str
+    revision: int
+
+
+class HeartbeatIn(BaseModel):
+    """What a node reports of itself with a sign of life — observed, not guaranteed (§10)."""
+
+    model_config = NODE_BODY
+
+    status: DeviceStatus | None = None
+    current_workload: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
+    power_source: PowerSource | None = None
 
 
 class ChainOut(BaseModel):
@@ -741,6 +838,12 @@ class DiagnosticsOut(BaseModel):
     tasks: dict[str, int]
     pending_approvals: int
     recovered: dict[str, int]
+    refused: dict[str, int]
+    """Anonymous refusals since this process started, by reason (ADR 0037 §13).
+
+    Counted and not written: anyone on the tailnet could otherwise write into the chain of §32 at
+    will. In the memory of the process, reset at every start — a fact to see, not to engrave.
+    """
     perception: PerceptionSummaryOut
     voice: VoiceOut
     listening: ListeningOut

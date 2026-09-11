@@ -447,6 +447,10 @@ WIRE_SHAPES = Path("api") / "schemas.py"
 #: (ADR 0037 §5). Without them the two answers that carry them would be invisible to the rule that
 #: must open their door, and a third shape that carried one would pass in silence.
 WIRE_SECRET_NAMES = frozenset({"code", "secret"})
+#: Rule 46 (M12.1), the door: the two answers of :data:`WIRE_SHAPES` that hand out, once, the code
+#: and the secret (ADR 0037 §5) — and only for :data:`WIRE_SECRET_NAMES`. A hash on either of them
+#: is still reported: what they may carry is the value handed out, never what ELA keeps.
+ONCE_SECRET_SHAPES = frozenset({"EnrollmentCodeOut", "EnrolledOut"})
 ENTITIES_FILE = Path("domain.py")
 DEVICE_ENTITY = "Device"
 #: Rule 47 (M12.1): who is calling is decided in one place — the middleware of
@@ -2381,9 +2385,9 @@ def check_a_nodes_secret_crosses_no_readable_boundary(pkg_root: Path) -> list[Vi
     Reported, for any of :data:`NODE_SECRET_NAMES` as a name, an attribute, a keyword or a string:
     anywhere inside an ``AuditEvent(...)`` call in the package; anywhere in ``api/schemas.py`` —
     where :data:`WIRE_SECRET_NAMES`, the names the wire gives them, count too; and as a field of
-    ``Device`` in ``domain.py``. **No exemption today**: the two responses that hand
-    a node its code and its secret, once, do not exist yet, and a door is opened when there is code
-    behind it (ADR 0017 §9) — the commit that writes them opens it, with its proof.
+    ``Device`` in ``domain.py``. **One door**, :data:`ONCE_SECRET_SHAPES`: the two answers that hand
+    a node its code and its secret, once (ADR 0037 §5), opened by the commit that wrote them — and
+    only for the wire names, so a hash on either is still reported.
     """
     rule = "a-nodes-secret-crosses-no-readable-boundary"
     found: list[Violation] = []
@@ -2404,12 +2408,21 @@ def check_a_nodes_secret_crosses_no_readable_boundary(pkg_root: Path) -> list[Vi
             )
     shapes = pkg_root / WIRE_SHAPES
     if shapes.is_file():
+        tree = ast.parse(shapes.read_text(encoding="utf-8"), filename=str(shapes))
+        handed_out = {
+            id(node)
+            for shape in ast.walk(tree)
+            if isinstance(shape, ast.ClassDef) and shape.name in ONCE_SECRET_SHAPES
+            for node in ast.walk(shape)
+        }
         found.extend(
             Violation(rule, module_name(shapes, pkg_root), named, node.lineno)
-            for node in ast.walk(
-                ast.parse(shapes.read_text(encoding="utf-8"), filename=str(shapes))
+            for node in ast.walk(tree)
+            if (
+                named := _names_a_node_secret(node)
+                or (None if id(node) in handed_out else _names_a_wire_secret(node))
             )
-            if (named := _names_a_node_secret(node) or _names_a_wire_secret(node)) is not None
+            is not None
         )
     entities = pkg_root / ENTITIES_FILE
     if not entities.is_file():
@@ -2621,6 +2634,12 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-nodes-secret-crosses-no-readable-boundary", "DEVICE_ENTITY", DETECTOR),
     Constant("a-nodes-secret-crosses-no-readable-boundary", "ENTITIES_FILE", DETECTOR),
     Constant("a-nodes-secret-crosses-no-readable-boundary", "NODE_SECRET_NAMES", DETECTOR),
+    Constant(
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "ONCE_SECRET_SHAPES",
+        EXEMPTION,
+        adr="ADR 0037 §5",
+    ),
     Constant(
         "a-nodes-secret-crosses-no-readable-boundary",
         "ROOT_PACKAGE",

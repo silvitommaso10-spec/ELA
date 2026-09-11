@@ -27,7 +27,7 @@ V01_ROUTERS = ("approvals", "audit", "devices", "results", "system", "tasks")
 """The six modules of ``ela.api`` whose routes are v0.1's fifteen (ADR 0023 §6, ADR 0024 §5,
 ADR 0025 §4) — named, and found in the package rather than imported by hand."""
 
-LATER_ROUTERS = ("context", "perception", "voice")
+LATER_ROUTERS = ("context", "nodes", "perception", "voice")
 """The router modules the phases after v0.1 added, kept beside the six rather than folded into
 them (ADR 0029 §13) — the shape ``LATER_COMMANDS`` already has below."""
 
@@ -108,7 +108,7 @@ def test_the_registry_holds_one_tool_and_one_verifier_per_capability(tmp_path: P
     }
 
 
-LATER_COMMANDS = ("voice audition", "voice preview")
+LATER_COMMANDS = ("node enroll", "node revoke", "voice audition", "voice preview")
 """What the phases after v0.1 added, kept beside the twenty rather than folded into them
 (ADR 0029 §13). ``ela voice`` itself is the group's own callback and not a registered command,
 which is what makes the bare ``ela voice`` answer instead of printing help — ``tests/cli`` holds

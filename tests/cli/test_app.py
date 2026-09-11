@@ -54,6 +54,8 @@ def test_every_command_of_the_milestone_is_there() -> None:
         "audit tail",
         "audit verify",
         "device list",
+        "node enroll",
+        "node revoke",
         "provider list",
         "voice",
         "voice preview",
