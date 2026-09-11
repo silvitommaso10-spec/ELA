@@ -191,20 +191,17 @@ async def deliver_work(
     """
     assignment_id = AssignmentId(body.assignment_id)
     held = await _known(ela, assignment_id)
-    if held is not None:
-        if held.task_id in running:
-            raise TaskAlreadyRunningError(held.task_id)
-        running.add(held.task_id)
+    if held is None:
+        # An id the Core never minted: there is no task to lock, and the refusal — with its
+        # ``DEVICE_REJECTED`` — is the executor's (ADR 0038 §12).
+        return await _delivered(ela, assignment_id, identity.node, body)
+    if held.task_id in running:
+        raise TaskAlreadyRunningError(held.task_id)
+    running.add(held.task_id)
     try:
-        delivered = await ela.executor.deliver(assignment_id, identity.node, body.envelope())
+        return await _delivered(ela, assignment_id, identity.node, body)
     finally:
-        if held is not None:
-            running.discard(held.task_id)
-    return DeliveredOut(
-        assignment_id=delivered.assignment.id,
-        state=delivered.assignment.state.value,
-        step=delivered.step_state.value,
-    )
+        running.discard(held.task_id)
 
 
 @router.post("/work/renew")
@@ -233,6 +230,18 @@ async def revoke(device_id: UUID, ela: ElaDep, identity: IdentityDep) -> DeviceO
     device = await ela.devices.revoke(DeviceId(device_id), by=identity.actor)
     await ela.assignments.cut_short(device.id)
     return await _judged(ela, device)
+
+
+async def _delivered(
+    ela: Ela, assignment_id: AssignmentId, device_id: DeviceId, body: WorkResultIn
+) -> DeliveredOut:
+    """Hand the envelope to the executor and say where the work and the step stand."""
+    delivered = await ela.executor.deliver(assignment_id, device_id, body.envelope())
+    return DeliveredOut(
+        assignment_id=delivered.assignment.id,
+        state=delivered.assignment.state.value,
+        step=delivered.step_state.value,
+    )
 
 
 async def _known(ela: Ela, assignment_id: AssignmentId) -> Assignment | None:

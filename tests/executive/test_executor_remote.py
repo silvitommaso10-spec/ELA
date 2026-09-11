@@ -34,6 +34,7 @@ from ela.executive import (
     Delivery,
     DeliveryConflictError,
     Envelope,
+    ExecutorError,
     RunOutcome,
     WorkNotYoursError,
     WorkRejection,
@@ -214,6 +215,52 @@ async def test_a_tool_that_refused_the_decision_there_fails_the_step_here() -> N
     assert delivered.assignment.state is AssignmentState.DELIVERED
     failed = [e for e in await w.events(assignment.task_id) if e.event_type is E.STEP_FAILED]  # type: ignore[attr-defined]
     assert failed[-1].error is not None and failed[-1].error.code == TOOL_REFUSED
+
+
+async def test_the_outcome_of_a_tool_that_cannot_be_repeated_names_its_started_record() -> None:
+    """The two rows of one run are one run (ADR 0021 §1): the outcome carries the id of the STARTED
+    record the claim wrote, so a resume can tell "it was started and came back" from two runs."""
+    w = world()
+    w.tool(ECHO.id).idempotent = False
+    step, remote, assignment = await handed(w)
+    await w.executor.begin(assignment.id, remote.id)  # type: ignore[attr-defined]
+    (record,) = await w.results.for_step(assignment.task_id, step.id)  # type: ignore[attr-defined]
+
+    await w.executor.deliver(assignment.id, remote.id, answered())  # type: ignore[attr-defined]
+
+    settled = [
+        one
+        for one in await w.results.for_step(assignment.task_id, step.id)  # type: ignore[attr-defined]
+        if one.status is not ExecutionStatus.STARTED
+    ]
+    assert [one.metadata["started_id"] for one in settled] == [str(record.id)]
+
+
+# ----------------------------------------------------------------------------------------
+# Finishing what a node left behind (ADR 0038 §2)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_finishing_a_step_of_a_task_that_closed_is_refused() -> None:
+    """``finish`` writes the second half of a call; a task nobody is waiting for has no second half,
+    and a doubt is a failure (§33)."""
+    w = world()
+    step, _, assignment = await handed(w)
+    await w.engine.cancel(assignment.task_id, reason="basta")  # type: ignore[attr-defined]
+
+    with pytest.raises(ExecutorError, match="needs an EXECUTING task"):
+        await w.executor.finish(assignment.task_id, step.id)  # type: ignore[attr-defined]
+
+
+async def test_finishing_a_step_nothing_ran_on_is_refused() -> None:
+    """Nothing in the store means nobody can have acted: that step was to be **released**, and
+    finishing it would invent an outcome. The runner never asks — ``lapse`` releases it — so this is
+    the guard on a caller that would."""
+    w = world()
+    step, _, assignment = await handed(w)
+
+    with pytest.raises(ExecutorError, match="released and not finished"):
+        await w.executor.finish(assignment.task_id, step.id)  # type: ignore[attr-defined]
 
 
 # ----------------------------------------------------------------------------------------
