@@ -150,11 +150,6 @@ DATABASE_FILES = ("ela.db", "ela.db-journal", "ela.db-wal", "ela.db-shm")
 live in ``-wal`` and its index in ``-shm`` — the same content as the database, in two more files."""
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M12.1 criterio 15: `.gitignore` ignora *.db e *.db-journal ma non i file del WAL — "
-    "riparato nel commit seguente, che toglie questo segno",
-)
 def test_no_file_of_the_database_is_one_git_would_add(tmp_path: Path) -> None:
     """The repository's own ``.gitignore`` against every file of the database (M12.1, D5).
 
