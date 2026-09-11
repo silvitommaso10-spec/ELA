@@ -40,9 +40,11 @@ from tests.docs.test_adr_exemptions import withdrawn
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0017-device-orchestrator.md"
 ADR_0027 = ADR_PATH.with_name("0027-exemptions-withdrawn.md")
+ADR_0037 = ADR_PATH.with_name("0037-node-identity.md")
 
 FILTER_ROW = re.compile(r"^\| F(\d) \| ([^|]+?) \| ([^|]+?) \| `(\w+)` \| ([^|]+?) \|$")
-"""§4: the five hard filters, numbered — no other table in the ADR numbers its rows."""
+"""§4: the hard filters, numbered — no other table in the ADR numbers its rows. ADR 0037 §12 adds
+F6 in the same shape, and the two are read in union (:func:`filter_rows`)."""
 WEIGHT_ROW = re.compile(r"^\| `([a-z_]+)` \| ([^|]+?) \| ([^|]+?) \|$")
 """§5: a component name in backticks — lower case, unlike the event types of §7."""
 MISSING_ROW = re.compile(r"^\| ([^|`]+?) \| — \| non modellato: (.+?) \|$")
@@ -71,16 +73,34 @@ def rows(pattern: re.Pattern[str]) -> list[re.Match[str]]:
 # ----------------------------------------------------------------------------------------
 
 
+def filter_rows() -> list[re.Match[str]]:
+    """ADR 0017 §4, then ADR 0037 §12's F6: ADR 0017 is immutable, so the sixth row lives in the
+    ADR that added it, and the table the code must match is the union."""
+    later = [
+        match
+        for line in ADR_0037.read_text(encoding="utf-8").splitlines()
+        if (match := FILTER_ROW.match(line))
+    ]
+    assert later, "ADR 0037 §12 must contain the row of F6"
+    return [*rows(FILTER_ROW), *later]
+
+
 def test_the_filter_table_names_every_refusal_exactly_once() -> None:
-    documented = [match.group(4) for match in rows(FILTER_ROW)]
+    documented = [match.group(4) for match in filter_rows()]
     assert documented == [refusal.value for refusal in Refusal]
 
 
 def test_the_filters_are_numbered_from_one() -> None:
     """A gap in the numbering would mean a filter was removed from the table but not the code."""
-    assert [match.group(1) for match in rows(FILTER_ROW)] == [
+    assert [match.group(1) for match in filter_rows()] == [
         str(index) for index, _ in enumerate(Refusal, start=1)
     ]
+
+
+def test_adr_0017_still_says_five_and_adr_0037_says_the_sixth() -> None:
+    """ADR 0017 as history: its own table stops at F5, and the sixth is ADR 0037's alone."""
+    assert [match.group(4) for match in rows(FILTER_ROW)][-1] == Refusal.DEGRADED.value
+    assert [match.group(4) for match in filter_rows()][-1] == Refusal.REVOKED.value
 
 
 def test_the_risk_threshold_of_the_document_is_the_one_in_the_code() -> None:

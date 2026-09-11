@@ -121,6 +121,13 @@ class Refusal(StrEnum):
     """The tool that implements a required capability is not installed on the node (§16, §17)."""
     DEGRADED = "DEGRADED"
     """The node reports itself degraded and the step's risk is at least :data:`UNGUARDED_RISK`."""
+    REVOKED = "REVOKED"
+    """The user revoked the node (M12.1, D13; ADR 0037 §12): its row stays, and it gets no work.
+
+    Last, after ``DEGRADED``, because putting it earlier would renumber a filter that exists for
+    no reason. Judged from ``revoked_at`` and not from the availability: a revoked node with a
+    fresh heartbeat is revoked, not unreachable, and a diagnosis that said otherwise would be false.
+    """
 
 
 TRAIT_POINTS: Final = 40
@@ -323,6 +330,8 @@ def refusals(device: Device, requirements: Requirements) -> tuple[Refusal, ...]:
         found.append(Refusal.MISSING_TOOL)
     if requirements.risk >= UNGUARDED_RISK and device.status is DeviceStatus.DEGRADED:
         found.append(Refusal.DEGRADED)
+    if device.revoked_at is not None:
+        found.append(Refusal.REVOKED)
     return tuple(found)
 
 

@@ -35,6 +35,9 @@ from ela.domain import (
     RiskLevel,
 )
 from tests.devices.nodes import needs, node, trait
+from tests.domain.examples import (
+    LATER,
+)
 
 GPU = "gpu.cuda"
 NOTES = "workspace_notes"
@@ -389,6 +392,7 @@ REFUSED_BY = {
         node("tired", status=DeviceStatus.DEGRADED),
         needs(risk=UNGUARDED_RISK),
     ),
+    Refusal.REVOKED: (node("gone", revoked_at=LATER), needs()),
 }
 """One node and one requirement per member of :class:`Refusal`: the smallest thing that fires it.
 

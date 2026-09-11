@@ -9,6 +9,7 @@ every test, and the failure message says which one lost.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import datetime
 from uuid import uuid5
 
 from ela.devices import AVAILABLE, DEVICE_NAMESPACE, Requirements
@@ -52,6 +53,7 @@ def node(
     network: NetworkKind = NetworkKind.UNKNOWN,
     power_source: PowerSource = PowerSource.UNKNOWN,
     workload: float | None = None,
+    revoked_at: datetime | None = None,
 ) -> Device:
     """A node as :class:`~ela.devices.DeviceRegistry` would hand it over: availability judged."""
     return Device(
@@ -69,6 +71,7 @@ def node(
         privacy=privacy,
         current_workload=workload,
         last_seen_at=LATER,
+        revoked_at=revoked_at,
     )
 
 

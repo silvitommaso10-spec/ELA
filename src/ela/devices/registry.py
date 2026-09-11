@@ -184,8 +184,18 @@ class DeviceRegistry:
         derived (ADR 0016 §3): a caller that filtered on the field itself would be reading a
         column that keeps saying ``AVAILABLE`` after a node went quiet — which is what
         architecture rule 20 exists to prevent.
+
+        A revoked node is not among them, whatever its last heartbeat says (M12.1, ADR 0037 §12):
+        "posso usarlo adesso" has one answer for a node the user revoked. The condition is read here
+        and **not** in :meth:`seen`, whose ``availability`` stays the fact of the heartbeat — the
+        one the orchestrator's ``UNAVAILABLE`` speaks of — so a revoked node with a fresh heartbeat
+        is diagnosed ``REVOKED`` and not ``UNAVAILABLE``. Two facts, two names.
         """
-        return tuple(device for device in await self.devices() if device.availability is AVAILABLE)
+        return tuple(
+            device
+            for device in await self.devices()
+            if device.availability is AVAILABLE and device.revoked_at is None
+        )
 
     async def heartbeat(
         self,
