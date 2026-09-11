@@ -68,10 +68,17 @@ __all__ = [
     "ApiSettings",
     "CoreSettings",
     "Settings",
+    "TAILNET_RANGES",
 ]
 
 DEFAULT_API_HOST: Final = "127.0.0.1"
 """Loopback, and only loopback (ADR 0023 §7): ELA on the network is the story of the nodes."""
+TAILNET_RANGES: Final = (
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("fd7a:115c:a1e0::/48"),
+)
+"""The addresses of Tailscale, from its documentation — not from this repository — and verified on
+this machine with ``tailscale ip`` on 2026-09-11, before the validator was written (ADR 0037 §2)."""
 DEFAULT_API_PORT: Final = 8351
 """An uncommon port collides less with whatever else runs on a developer's machine."""
 MIN_TOKEN_LENGTH: Final = 32
@@ -119,6 +126,15 @@ class ApiSettings(BaseSettings):
     api_port: Annotated[int, Field(ge=1, le=65535)] = DEFAULT_API_PORT
     """``ELA_API_PORT``."""
 
+    api_tailnet_host: str | None = None
+    """``ELA_API_TAILNET_HOST``: the second address, on the tailnet, where the nodes reach ELA.
+
+    Optional (ADR 0037 §2): without it ELA listens on loopback alone, and local use does not depend
+    on a third party's daemon. With it, the same server serves the same application from both
+    addresses, on ``ELA_API_PORT``. The boundary is the identity, not the address — which is why
+    the address is still held to the tailnet: WireGuard is what keeps "no TLS" true there.
+    """
+
     @field_validator("api_token")
     @classmethod
     def _a_real_token(cls, value: SecretStr | None) -> SecretStr:
@@ -145,6 +161,34 @@ class ApiSettings(BaseSettings):
                 "(spec §56 — reaching ELA over the network is what the nodes are for)"
             )
         return value
+
+    @field_validator("api_tailnet_host")
+    @classmethod
+    def _tailnet_only(cls, value: str | None) -> str | None:
+        """An address of the tailnet, by number; anything else stops ELA at start-up (§33).
+
+        Not a name: what a name resolves to can change after the check. Not ``0.0.0.0``, and not
+        an address of another network: either would open ELA to more than the machines of the
+        user's tailnet. Blank is absent, as for an API key.
+        """
+        if value is None or not value.strip():
+            return None
+        host = value.strip()
+        ranges = " or ".join(str(network) for network in TAILNET_RANGES)
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            raise ValueError(
+                f"ELA_API_TAILNET_HOST must be an address of the tailnet ({ranges}), not {host!r}: "
+                "a name is not resolved, because what it resolves to can change after the check"
+            ) from None
+        if not any(address in network for network in TAILNET_RANGES):
+            raise ValueError(
+                f"ELA_API_TAILNET_HOST must be in the range of the tailnet ({ranges}), "
+                f"not {host!r}: any other address would open ELA beyond the machines of the "
+                "tailnet (ADR 0037 §2)"
+            )
+        return host
 
     @property
     def token(self) -> str:

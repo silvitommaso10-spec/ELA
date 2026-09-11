@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import runpy
-from typing import Any
+import socket
+from typing import Any, cast
 
 import pytest
 
 from ela.api import server
 from ela.composition import Settings
+from ela.composition.settings import (
+    ApiSettings,
+)
 from tests.composition.support import create_schema
 
 
@@ -22,24 +26,44 @@ class Uvicorn:
     """Enough of uvicorn to record what it was asked for, and to answer ``serve``."""
 
     def __init__(self) -> None:
-        self.host: str | None = None
-        self.port: int | None = None
         self.app: Any = None
+        self.sockets: list[socket.socket] = []
         self.served = False
 
-    def Config(self, app: Any, *, host: str, port: int, log_level: str) -> Uvicorn:  # noqa: N802
-        self.app, self.host, self.port = app, host, port
+    def Config(self, app: Any, *, log_level: str) -> Uvicorn:  # noqa: N802
+        self.app = app
         return self
 
     def Server(self, config: Uvicorn) -> Uvicorn:  # noqa: N802
         return config
 
-    async def serve(self) -> None:
+    async def serve(self, sockets: list[socket.socket]) -> None:
+        self.sockets = list(sockets)
         self.served = True
 
 
+Asked = list[tuple[str, int, str | None]]
+
+
+@pytest.fixture
+def asked(monkeypatch: pytest.MonkeyPatch) -> Asked:
+    """``listening_sockets`` on an ephemeral loopback port, recording what it was asked for.
+
+    Never the real ``ELA_API_PORT``: an ELA running on this machine already holds it, and a test
+    that bound it would be testing whether the developer had left ELA on.
+    """
+    seen: Asked = []
+
+    def listening(api: ApiSettings) -> list[socket.socket]:
+        seen.append((api.api_host, api.api_port, api.api_tailnet_host))
+        return [server.bound("127.0.0.1", 0)]
+
+    monkeypatch.setattr(server, "listening_sockets", listening)
+    return seen
+
+
 def test_serve_binds_what_the_settings_say(
-    settings: Settings, monkeypatch: pytest.MonkeyPatch
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, asked: Asked
 ) -> None:
     asyncio.run(create_schema(settings.persistence.db_url))
     uvicorn = Uvicorn()
@@ -47,14 +71,91 @@ def test_serve_binds_what_the_settings_say(
 
     server.serve(settings)
 
-    assert uvicorn.host == settings.api.api_host == "127.0.0.1"
-    assert uvicorn.port == settings.api.api_port
+    assert asked == [(settings.api.api_host, settings.api.api_port, None)]
+    assert settings.api.api_host == "127.0.0.1"
     assert uvicorn.served
     assert uvicorn.app is not None  # the application ELA serves
+    (listener,) = uvicorn.sockets
+    (address,) = uvicorn.app.state.addresses
+    assert address.startswith("127.0.0.1:")
+    assert listener.fileno() == -1  # closed when the server stopped
+
+
+def test_a_socket_is_bound_where_it_is_asked_and_refused_where_the_address_is_not_here() -> None:
+    listener = server.bound("127.0.0.1", 0)
+    try:
+        assert server.shown(listener).startswith("127.0.0.1:")
+    finally:
+        listener.close()
+    with pytest.raises(OSError):
+        server.bound("192.0.2.1", 0)  # TEST-NET-1: an address no machine has
+
+
+class Listener:
+    """Enough of a socket to be shown."""
+
+    def __init__(self, *name: object) -> None:
+        self._name = name
+
+    def getsockname(self) -> tuple[object, ...]:
+        return self._name
+
+
+def test_an_address_is_shown_as_a_url_writes_it() -> None:
+    v4 = cast(socket.socket, Listener("100.76.0.1", 8351))
+    v6 = cast(socket.socket, Listener("fd7a:115c:a1e0::1", 8351, 0, 0))
+
+    assert server.shown(v4) == "100.76.0.1:8351"
+    assert server.shown(v6) == "[fd7a:115c:a1e0::1]:8351"
+
+
+def api(tailnet: str | None) -> ApiSettings:
+    return ApiSettings(_env_file=None, api_token="t" * 40, api_tailnet_host=tailnet)
+
+
+def test_without_a_tailnet_only_loopback_is_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    binds: list[str] = []
+    monkeypatch.setattr(server, "bound", lambda host, port: binds.append(host) or host)
+
+    assert server.listening_sockets(api(None)) == ["127.0.0.1"]
+    assert binds == ["127.0.0.1"]
+
+
+def test_with_a_tailnet_both_addresses_are_bound_on_one_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binds: list[tuple[str, int]] = []
+    monkeypatch.setattr(server, "bound", lambda host, port: binds.append((host, port)) or host)
+
+    assert server.listening_sockets(api("100.76.0.1")) == ["127.0.0.1", "100.76.0.1"]
+    assert {port for _, port in binds} == {8351}
+
+
+def test_a_tailnet_that_is_down_leaves_loopback_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADR 0037 §2: ELA starts on loopback, and ``/diagnostics`` says so — it does not stay down."""
+
+    def bind(host: str, port: int) -> str:
+        if host != "127.0.0.1":
+            raise OSError(49, "Can't assign requested address")
+        return host
+
+    monkeypatch.setattr(server, "bound", bind)
+
+    assert server.listening_sockets(api("100.76.0.1")) == ["127.0.0.1"]
+
+
+def test_loopback_that_cannot_be_bound_stops_the_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    def bind(host: str, port: int) -> str:
+        raise OSError(48, "Address already in use")
+
+    monkeypatch.setattr(server, "bound", bind)
+
+    with pytest.raises(OSError):
+        server.listening_sockets(api("100.76.0.1"))
 
 
 def test_main_returns_zero_when_the_server_stops(
-    settings: Settings, monkeypatch: pytest.MonkeyPatch
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, asked: Asked
 ) -> None:
     asyncio.run(create_schema(settings.persistence.db_url))
     monkeypatch.setattr(server, "uvicorn", Uvicorn())

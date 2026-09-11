@@ -838,6 +838,9 @@ class DiagnosticsOut(BaseModel):
     tasks: dict[str, int]
     pending_approvals: int
     recovered: dict[str, int]
+    addresses: tuple[str, ...]
+    """Where this process listens: loopback, and the tailnet when it is declared and up
+    (ADR 0037 §2). Empty when nothing was bound — the in-process transport of a test."""
     refused: dict[str, int]
     """Anonymous refusals since this process started, by reason (ADR 0037 §13).
 

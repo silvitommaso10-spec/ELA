@@ -101,7 +101,11 @@ def coded_settings() -> dict[str, str | None]:
 def test_the_nine_variables_are_the_ones_the_settings_declare() -> None:
     """Every variable of the two tables is declared, with its default — except a retired one,
     which stays declared as a tombstone with no default (``ELA_USER_NAME``, ADR 0037 §15)."""
-    documented = documented_settings(adr_text()) | documented_settings(debts_adr_text())
+    documented = (
+        documented_settings(adr_text())
+        | documented_settings(debts_adr_text())
+        | documented_settings(nodes_adr_text())
+    )
     coded = coded_settings()
 
     assert documented.keys() == coded.keys()

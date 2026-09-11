@@ -349,3 +349,48 @@ def test_the_retired_user_name_is_refused_from_a_dotenv_file_and_from_an_argumen
         CoreSettings(_env_file=dotenv)
     with pytest.raises(ValidationError, match="retired"):
         CoreSettings(_env_file=None, user_name="tommaso")
+
+
+# ----------------------------------------------------------------------------------------
+# The second address, on the tailnet (ADR 0037 §2)
+# ----------------------------------------------------------------------------------------
+
+
+def test_no_tailnet_address_is_the_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Local use does not depend on a third party's daemon: loopback alone, unless declared."""
+    assert loaded(monkeypatch, tmp_path).api.api_tailnet_host is None
+    assert loaded(monkeypatch, tmp_path, ELA_API_TAILNET_HOST=" ").api.api_tailnet_host is None
+
+
+@pytest.mark.parametrize(
+    "address", ["100.64.0.1", "100.127.255.254", "fd7a:115c:a1e0::1", "fd7a:115c:a1e0:ffff::2"]
+)
+def test_an_address_of_the_tailnet_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, address: str
+) -> None:
+    assert loaded(monkeypatch, tmp_path, ELA_API_TAILNET_HOST=address).api.api_tailnet_host == (
+        address
+    )
+
+
+@pytest.mark.parametrize(
+    ("address", "why"),
+    [
+        ("0.0.0.0", "range of the tailnet"),
+        ("::", "range of the tailnet"),
+        ("192.168.1.10", "range of the tailnet"),
+        ("100.128.0.1", "range of the tailnet"),
+        ("100.63.255.255", "range of the tailnet"),
+        ("fd7a:115c:a1e1::1", "range of the tailnet"),
+        ("127.0.0.1", "range of the tailnet"),
+        ("mac.tail1234.ts.net", "a name is not resolved"),
+    ],
+)
+def test_anything_but_an_address_of_the_tailnet_stops_ela(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, address: str, why: str
+) -> None:
+    """``0.0.0.0``, another network, a neighbour of the range, a name: refused at start-up (§33)."""
+    message = refused(monkeypatch, tmp_path, ELA_API_TAILNET_HOST=address)
+
+    assert "ELA_API_TAILNET_HOST" in message
+    assert why in message

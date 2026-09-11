@@ -87,12 +87,27 @@ uguali — con un server solo non esiste. Se all'avvio l'indirizzo della tailnet
 tailnet è giù — ELA ascolta sul solo loopback, e `/diagnostics` dice su quali indirizzi ascolta. La
 CLI parla sempre al loopback (ADR 0024 §2, invariato).
 
-**Il nome della seconda variabile** la spec lo rimanda a questo documento, e nessuna decisione
-approvata lo fissa: resta aperto, e lo chiude il commit che scrive il validatore del bind.
+**La seconda variabile è `ELA_API_TAILNET_HOST`**, nome confermato dall'utente il 2026-09-11.
+Facoltativa: senza, ELA ascolta sul solo loopback. È un indirizzo per numero e non un nome, perché
+ciò a cui un nome risolve può cambiare dopo il controllo; `0.0.0.0` o un indirizzo di un'altra rete
+fermano l'avvio con un messaggio che dice perché, come per `ELA_API_HOST`. La porta è la stessa,
+`ELA_API_PORT`.
 
 **L'intervallo di Tailscale** (100.64.0.0/10 in IPv4, `fd7a:115c:a1e0::/48` in IPv6) viene dalla
-documentazione di Tailscale, non dal repository: prima di scrivere il validatore si verifica con
-`tailscale ip` su questa macchina. È uno dei numeri che la spec non decide a occhio.
+documentazione di Tailscale, non dal repository: prima di scrivere il validatore si è verificato con
+`tailscale ip` su questa macchina, il 2026-09-11 — i due indirizzi, IPv4 e IPv6, stanno nei due
+intervalli. È uno dei numeri che la spec non decide a occhio.
+
+Variabili aggiunte, nella forma della tabella di ADR 0023 §3:
+
+| Variabile | Tipo | Default | Vincolo |
+|---|---|---|---|
+| `ELA_API_TAILNET_HOST` | `str` | *(nessuno: facoltativo)* | un indirizzo della tailnet, `100.64.0.0/10` o `fd7a:115c:a1e0::/48`; niente nomi, niente `0.0.0.0` |
+
+**Le prese**: una per indirizzo, legate prima di servire e passate allo stesso server
+(`api/server.py`). Il loopback si lega sempre, e se non si lega l'avvio si ferma come prima; la
+tailnet si lega quando è dichiarata **e** presente, e se non lo è ELA parte sul solo loopback.
+`/diagnostics` porta `addresses`, gli indirizzi su cui questo processo ascolta davvero.
 
 **Ciò che reggeva «siamo su loopback», voce per voce.** Tutto ciò che ADR 0023 ha scritto
 poggiando su quel presupposto, e che cosa ne resta.

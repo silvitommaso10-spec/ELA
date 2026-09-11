@@ -190,6 +190,8 @@ def create_app(ela: Ela) -> FastAPI:
     app.state.running = set()
     app.state.recovery = RecoverySummary((), (), ())
     app.state.refused = Counter()
+    # What ``ela serve`` bound, filled in by ``api/server.py``; an in-process transport binds none.
+    app.state.addresses = ()
     app.middleware("http")(identity_middleware(ela))
     for failure in FAILURES:
         app.add_exception_handler(failure.exception, _handler(failure))
