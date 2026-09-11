@@ -54,17 +54,20 @@ TERMINAL_STEP_STATES: Final[frozenset[StepState]] = frozenset(
 STEP_TRANSITIONS: Final[Mapping[StepState, frozenset[StepState]]] = MappingProxyType(
     {
         _S.PENDING: frozenset({_S.RUNNING, _S.CANCELLED}),
-        _S.RUNNING: frozenset({_S.COMPLETED, _S.FAILED}),
+        _S.RUNNING: frozenset({_S.COMPLETED, _S.FAILED, _S.PENDING}),
         _S.COMPLETED: frozenset(),
         _S.FAILED: frozenset(),
         _S.CANCELLED: frozenset(),
     }
 )
-"""The legal moves of a step (ADR 0009), one row per state, total by construction.
+"""The legal moves of a step (ADR 0009, ADR 0038), one row per state, total by construction.
 
 PENDING → CANCELLED is the propagation of a failure; RUNNING → CANCELLED does not exist because
 a step only starts once its dependencies are COMPLETED, which is terminal: nothing a running step
-depends on can fail afterwards. The Mermaid diagram of ADR 0009 is checked against this table.
+depends on can fail afterwards. RUNNING → PENDING is the release of ADR 0038 §8 — the row ADR
+0009 §8 had named, «with an ADR»: a step handed to a node whose assignment expired with nothing
+in the store goes back in play. The Mermaid diagrams of ADR 0009 and ADR 0038, read together,
+are checked against this table.
 """
 
 STEP_EVENTS: Final[Mapping[TaskEventType, StepState]] = MappingProxyType(
@@ -73,6 +76,7 @@ STEP_EVENTS: Final[Mapping[TaskEventType, StepState]] = MappingProxyType(
         TaskEventType.STEP_COMPLETED: _S.COMPLETED,
         TaskEventType.STEP_FAILED: _S.FAILED,
         TaskEventType.STEP_CANCELLED: _S.CANCELLED,
+        TaskEventType.STEP_RELEASED: _S.PENDING,
     }
 )
 """Which trail event moves a step where: the fold of :meth:`TaskGraph.states` reads this."""

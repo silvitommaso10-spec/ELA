@@ -270,13 +270,23 @@ STEP_OPERATIONS: Final[Mapping[str, StepOperation]] = MappingProxyType(
                 AuditEventType.STEP_CANCELLED,
                 None,
             ),
+            StepOperation(
+                "release_step",
+                frozenset({_P.RUNNING}),
+                _P.PENDING,
+                TaskEventType.STEP_RELEASED,
+                AuditEventType.STEP_RELEASED,
+                "assignment_id",
+            ),
         )
     }
 )
-"""The moves of one step of the plan, as decided in ADR 0009, in the order of its table.
+"""The moves of one step of the plan: ADR 0009's table, in its order, then ADR 0038's row.
 
 ``cancel_step`` has no public method: it is the propagation of ``fail_step`` to the PENDING
 descendants of the failed step, written with the SYSTEM actor because nobody asked for it.
+``release_step`` has one caller, the service of the assignments (architecture rule 50): only it
+can see that the store holds nothing for the step.
 """
 
 Guard = Callable[[Task, tuple[TaskEvent, ...], datetime], Awaitable[None]]
@@ -757,6 +767,32 @@ class TaskEngine:
             cascade=error,
         )
 
+    async def release_step(
+        self, task_id: TaskId, step_id: StepId, *, key: UUID, device_id: DeviceId | None = None
+    ) -> GraphState:
+        """RUNNING → PENDING: work handed to a node expired, and the store has nothing for the
+        step (ADR 0038 §8). ``key`` is the id of that assignment; ``device_id`` the node it named.
+
+        **Idempotent by key, read in the trail and not in the state** (ADR 0008 §8). A released
+        step is placed again, so the next time anyone looks it may be RUNNING once more — on
+        another node, or here — and asking the state would release it a second time. So a
+        ``STEP_RELEASED`` of this step with this key is the answer: the call writes nothing and
+        returns the graph as it is. Any other call from a state that is not RUNNING is refused.
+
+        The engine does not know the tools nor the results, so it cannot tell whether a step may
+        go back in play: that guard lives in the one caller (architecture rule 50).
+        """
+        where = "" if device_id is None else f" on node {device_id}"
+        return await self._apply_step(
+            STEP_OPERATIONS["release_step"],
+            task_id,
+            step_id,
+            reason=f"assignment {key}{where} expired with nothing in the store",
+            key=key,
+            device_id=device_id,
+            once=True,
+        )
+
     # ----------------------------------------------------------------------------------
     # The one write path
     # ----------------------------------------------------------------------------------
@@ -928,6 +964,7 @@ class TaskEngine:
         device_id: DeviceId | None = None,
         must_be_ready: bool = False,
         cascade: ErrorMetadata | None = None,
+        once: bool = False,
     ) -> GraphState:
         async with self._lock(task_id):
             task = await self._repository.get(task_id)
@@ -939,7 +976,9 @@ class TaskEngine:
             graph, states = await self._graph(task_id, events)
             graph.step(step_id)
             current = states[step_id]
-            if current is op.target:
+            if once and _applied_with(events, op, step_id, key):
+                return GraphState(graph, states)
+            if current is op.target and not once:
                 self._step_already_applied(op, task_id, events, step_id, key)
             elif current not in op.sources:
                 raise IllegalStepTransitionError(step_id, current.value, op.target.value)
@@ -1074,6 +1113,18 @@ class TaskEngine:
             )
         )
         return (*events, event)
+
+
+def _applied_with(
+    events: tuple[TaskEvent, ...], op: StepOperation, step_id: StepId, key: UUID | None
+) -> bool:
+    """Whether ``op`` was already written for ``step_id`` with ``key`` — anywhere in the trail."""
+    return any(
+        event.step_id == step_id
+        and event.event_type is op.event_type
+        and event.metadata.get(op.key or "") == str(key)
+        for event in events
+    )
 
 
 def _user_actor(task_id: TaskId, approval: Approval) -> Actor:

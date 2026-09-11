@@ -3,6 +3,11 @@
 Two things are checked, as for ADR 0004 and ADR 0008: the Mermaid diagram of the step
 transitions against ``STEP_TRANSITIONS``, and the table of the step operations against
 ``STEP_OPERATIONS``. Neither may drift from the other without this test noticing.
+
+Since M12.2 both are read **in union** with ADR 0038, which adds the row ADR 0009 §8 had named —
+RUNNING → PENDING, ``release_step`` — without rewriting ADR 0009: an ADR is immutable, so the new
+edge and the new operation are documented by the ADR that decided them, as ADR 0037 did for the
+filters and the routes.
 """
 
 from __future__ import annotations
@@ -15,6 +20,8 @@ from ela.tasks.engine import STEP_OPERATIONS, StepOperation
 from ela.tasks.graph import STEP_TRANSITIONS
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0009-task-graph.md"
+RELEASE_ADR = ADR_PATH.with_name("0038-work-protocol.md")
+"""ADR 0038 §8: the release, RUNNING → PENDING, its edge and its row."""
 MERMAID_BLOCK = re.compile(r"```mermaid\n(.*?)```", re.DOTALL)
 EDGE = re.compile(r"^\s*(\S+)\s*-->\s*(\S+?)\s*(?::.*)?$")
 START_OR_END = "[*]"
@@ -23,7 +30,7 @@ ROW = re.compile(r"^\| `(\w+)` \| ([A-Z_, ]+) \| ([A-Z_]+) \| `(\w+)` \| `(\w+)`
 
 def mermaid_edges(text: str) -> set[tuple[str, str]]:
     blocks = MERMAID_BLOCK.findall(text)
-    assert len(blocks) == 1, "ADR 0009 must contain exactly one Mermaid diagram"
+    assert len(blocks) == 1, "each ADR read here must contain exactly one Mermaid diagram"
     edges: set[tuple[str, str]] = set()
     for line in blocks[0].splitlines():
         match = EDGE.match(line)
@@ -55,10 +62,21 @@ def coded_edges() -> set[tuple[str, str]]:
     return {(a.value, b.value) for a, targets in STEP_TRANSITIONS.items() for b in targets}
 
 
+def both_texts() -> tuple[str, str]:
+    """ADR 0009 and ADR 0038, each read whole: the second adds, it never replaces."""
+    return ADR_PATH.read_text(encoding="utf-8"), RELEASE_ADR.read_text(encoding="utf-8")
+
+
 def test_mermaid_matches_the_code() -> None:
-    edges = mermaid_edges(ADR_PATH.read_text(encoding="utf-8"))
+    edges = set().union(*(mermaid_edges(text) for text in both_texts()))
     documented = {(a, b) for a, b in edges if START_OR_END not in (a, b)}
     assert documented == coded_edges()
+
+
+def test_adr_0038_adds_the_release_and_nothing_else() -> None:
+    """The one edge ADR 0009 §8 named; every other move stays ADR 0009's."""
+    assert mermaid_edges(RELEASE_ADR.read_text(encoding="utf-8")) == {("RUNNING", "PENDING")}
+    assert list(documented_operations(RELEASE_ADR.read_text(encoding="utf-8"))) == ["release_step"]
 
 
 def test_mermaid_names_every_step_state() -> None:
@@ -72,7 +90,8 @@ def test_mermaid_names_every_step_state() -> None:
 
 
 def test_table_matches_the_code() -> None:
-    documented = documented_operations(ADR_PATH.read_text(encoding="utf-8"))
+    first, then = both_texts()
+    documented = documented_operations(first) | documented_operations(then)
     assert list(documented) == list(STEP_OPERATIONS)
     for name, row in documented.items():
         assert row == STEP_OPERATIONS[name], name

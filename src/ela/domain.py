@@ -404,6 +404,9 @@ class TaskEventType(StrEnum):
     STEP_FAILED = "STEP_FAILED"
     STEP_CANCELLED = "STEP_CANCELLED"
     """A step cancelled because a step it depends on failed (M3.2, ADR 0009)."""
+    STEP_RELEASED = "STEP_RELEASED"
+    """A RUNNING step put back to PENDING because the work handed to a node expired with nothing
+    in the store: without a STARTED record nothing ran (M12.1, D14; ADR 0038 §8)."""
     PLAN_ATTACHED = "PLAN_ATTACHED"
     HEARTBEAT = "HEARTBEAT"
     """A sign of life from whoever executes the task (M3.1): a trail entry, never an audit one."""
@@ -438,6 +441,9 @@ class AuditEventType(StrEnum):
     STEP_COMPLETED = "STEP_COMPLETED"
     STEP_FAILED = "STEP_FAILED"
     STEP_CANCELLED = "STEP_CANCELLED"
+    STEP_RELEASED = "STEP_RELEASED"
+    """A step handed to a node went back in play when its assignment expired untouched (ADR 0038
+    §8). The key and the node are in the reason; nothing of the arguments (rule 23)."""
     DEVICE_REGISTERED = "DEVICE_REGISTERED"
     """A node ELA did not know is now in the registry (§16, §32; M6.1b, ADR 0035 §3).
 
