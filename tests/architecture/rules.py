@@ -459,6 +459,24 @@ DEVICE_ENTITY = "Device"
 #: yet, which D12 opens — the routes of approvals and cancellation will read the identity, and the
 #: shortest way to write that is to read it from the header.
 AUTHORIZATION_HEADER = "authorization"
+#: Rule 48 (M12.2, ADR 0038): the port of the assignments returns the row *as written* — ``OFFERED``
+#: even when it has expired — and whoever decides goes through the service, which derives the
+#: expiry and writes the task's heartbeat before every expiry it sets (dec. G). The mirror of rule
+#: 21, for the same reason as ADR 0016 §3. Born with no exemption: nobody names the port yet, and a
+#: door opens with the code behind it (ADR 0027 §3).
+ASSIGNMENT_PORT = f"{ROOT_PACKAGE}.ports.AssignmentStore"
+#: Rule 49 (M12.2, ADR 0038): an assignment names a node and carries a bearer title, and one built
+#: by hand skips ``ensure_placed`` and every check on the decision. The mirror of rule 30: «a
+#: defence that can be bypassed by building by hand the object it defends is not a defence» (ADR
+#: 0026 §5).
+#: The class, and the constructors pydantic gives it besides the call.
+ASSIGNMENT_MODEL = "Assignment"
+ASSIGNMENT_CONSTRUCTORS = frozenset({"model_validate", "model_validate_json", "model_construct"})
+#: Rule 50 (M12.2, ADR 0038): the engine cannot know whether the store holds anything for a step,
+#: and releasing a step somebody may have run is the double execution the protocol exists to
+#: prevent. The guard lives in the caller, so the caller is one. The mirror of rule 10 (ADR 0008
+#: §12).
+RELEASE_METHOD = "release_step"
 
 #: Rule 22 (ADR 0017 §6): the orchestrator advises and never commands. A package that cannot
 #: reach the Task Engine cannot fail a task because it found no node.
@@ -2481,6 +2499,84 @@ def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_assignment_port_readers(pkg_root: Path) -> list[Violation]:
+    """Rule 48: no module imports ``AssignmentStore``; the assignments are reached through the
+    service that derives their expiry (M12.2, ADR 0038).
+
+    The port returns the row as it is written, and an ``OFFERED`` row may have expired an hour ago:
+    the reading that counts is the service's, which says what the row is *now* (ADR 0016 §3,
+    applied to a second deadline). And every expiry the service sets is preceded by a heartbeat of
+    the task, which is what keeps ``recover()`` from failing a task whose work is still out (dec.
+    G) — a route that wrote the row through the port would set an expiry with no sign of life in
+    front of it. The mirror of rule 21. Silent on today's tree, where nobody names the port.
+    """
+    return _violations(
+        "assignments-reached-only-through-the-service",
+        _source_files(pkg_root),
+        pkg_root,
+        lambda imported: _is_within(imported, ASSIGNMENT_PORT),
+    )
+
+
+def _builds_an_assignment(callee: ast.expr) -> str | None:
+    """How a call builds an :class:`~ela.domain.Assignment`, or ``None`` if it does not."""
+    if _is_named(callee, ASSIGNMENT_MODEL):
+        return f"{ASSIGNMENT_MODEL}(...)"
+    if (
+        isinstance(callee, ast.Attribute)
+        and callee.attr in ASSIGNMENT_CONSTRUCTORS
+        and _is_named(callee.value, ASSIGNMENT_MODEL)
+    ):
+        return f"{ASSIGNMENT_MODEL}.{callee.attr}(...)"
+    return None
+
+
+def check_assignment_builders(pkg_root: Path) -> list[Violation]:
+    """Rule 49: nobody builds an ``Assignment`` but the service that assigns (M12.2, ADR 0038).
+
+    An assignment names the node the work goes to and carries a ``PermissionDecision`` — a bearer
+    title (ADR 0011 §9). The service builds it after ``ensure_placed`` and after checking that the
+    decision is ``ALLOWED``, about that step and not expired; a module that built one by hand
+    would hand work to a node nobody placed, under a decision nobody checked. The mirror of rule
+    30 (ADR 0026 §5).
+
+    Reported: a call of the class, and a call of the constructors pydantic gives it
+    (``model_validate``, ``model_validate_json``, ``model_construct``). Silent on today's tree,
+    where the class does not exist yet: the rule is written before it (ADR 0030 §15), and the two
+    builders it will admit — the service and the mapper that reads a row back — open their door
+    in the commit that writes them.
+    """
+    rule = "assignments-built-only-by-the-assigner"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and (built := _builds_an_assignment(node.func)):
+                found.append(Violation(rule, module_name(path, pkg_root), built, node.lineno))
+    return found
+
+
+def check_release_step_callers(pkg_root: Path) -> list[Violation]:
+    """Rule 50: ``release_step`` has one caller, the service of the assignments (M12.2, ADR 0038).
+
+    RUNNING → PENDING puts a step back in play, and it is safe only for a step nobody can have
+    run: no STARTED record, no outcome in the store (M12.1, D14). The engine does not know the
+    tools or the results, so it cannot tell; the guard lives in the caller, and so the caller is
+    one. The mirror of rule 10 (ADR 0008 §12). Silent on today's tree, where the operation does not
+    exist yet, and its one caller opens its door in the commit that writes it.
+    """
+    rule = "release-step-has-one-caller"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, module_name(path, pkg_root), f".{RELEASE_METHOD}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and _is_named(node.func, RELEASE_METHOD)
+        )
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -2533,6 +2629,9 @@ RULES: dict[str, Rule] = {
         check_a_nodes_secret_crosses_no_readable_boundary
     ),
     "identity-resolved-in-one-place": check_identity_resolved_in_one_place,
+    "assignment-port-readers": check_assignment_port_readers,
+    "assignments-built-only-by-the-assigner": check_assignment_builders,
+    "release-step-has-one-caller": check_release_step_callers,
 }
 
 
@@ -2776,6 +2875,34 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     Constant(
         "identity-resolved-in-one-place", "SECURITY_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0023 §7"
+    ),
+    # assignment-port-readers (rule 48, M12.2)
+    Constant("assignment-port-readers", "ASSIGNMENT_PORT", DETECTOR),
+    Constant(
+        "assignment-port-readers",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # assignments-built-only-by-the-assigner (rule 49, M12.2)
+    Constant("assignments-built-only-by-the-assigner", "ASSIGNMENT_CONSTRUCTORS", DETECTOR),
+    Constant("assignments-built-only-by-the-assigner", "ASSIGNMENT_MODEL", DETECTOR),
+    Constant(
+        "assignments-built-only-by-the-assigner",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # release-step-has-one-caller (rule 50, M12.2)
+    Constant("release-step-has-one-caller", "RELEASE_METHOD", DETECTOR),
+    Constant(
+        "release-step-has-one-caller",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
     ),
     # decide-callers
     Constant("decide-callers", "DECIDE_METHOD", DETECTOR),
