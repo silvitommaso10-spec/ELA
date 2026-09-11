@@ -80,7 +80,6 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
         version=version("ela"),
         database=ela.settings.persistence.db_url,
         workspace=str(ela.settings.workspace.workspace_dir),
-        user_name=ela.settings.core.user_name,
         providers={name: ela.providers.get(name).status.value for name in ela.providers.names()},
         task_types=tuple(sorted(ela.settings.routing.model_routes)),
         default_profile=ela.settings.routing.model_default_route.profile,

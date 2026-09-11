@@ -23,6 +23,9 @@ import pytest
 from ela.api.app import FAILURES
 from ela.api.tasks import PLAN_IS_TEMPORARY
 from ela.composition.settings import ApiSettings, CoreSettings
+from ela.tombstones import (
+    RETIRED_SETTINGS,
+)
 from tests.api.routers import api_routers, routes_of
 from tests.architecture.rules import RULES
 from tests.architecture.violations import PACKAGE_ROOT
@@ -94,9 +97,14 @@ def coded_settings() -> dict[str, str | None]:
 
 
 def test_the_nine_variables_are_the_ones_the_settings_declare() -> None:
-    assert documented_settings(adr_text()) | documented_settings(debts_adr_text()) == (
-        coded_settings()
-    )
+    """Every variable of the two tables is declared, with its default — except a retired one,
+    which stays declared as a tombstone with no default (``ELA_USER_NAME``, ADR 0037 §15)."""
+    documented = documented_settings(adr_text()) | documented_settings(debts_adr_text())
+    coded = coded_settings()
+
+    assert documented.keys() == coded.keys()
+    for variable, default in documented.items():
+        assert coded[variable] == (None if variable in RETIRED_SETTINGS else default), variable
 
 
 def test_the_two_variables_of_m8_3_are_the_ones_adr_0025_adds() -> None:

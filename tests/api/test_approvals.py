@@ -16,6 +16,9 @@ from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app
 from ela.composition import Ela
+from ela.devices import (
+    LOCAL_USER,
+)
 from ela.domain import ApprovalId, ApprovalStatus, TaskId, TaskState
 from ela.testing.fakes import FakeClock
 from tests.api.support import AUTHORIZED, BASE, note_plan, queued
@@ -124,9 +127,9 @@ async def test_the_answer_is_signed_by_the_user_of_the_settings(
     await client.post(f"/tasks/{task_id}/approve", json={"approval_id": approval_id})
 
     stored = await ela.approvals.get(ApprovalId(uuid.UUID(approval_id)))
-    assert stored.responded_by == ela.settings.core.user_name
+    assert stored.responded_by == LOCAL_USER.id
     events = await ela.audit.read(task_id=TaskId(uuid.UUID(task_id)))
-    assert any(event.actor.id == ela.settings.core.user_name for event in events)
+    assert any(event.actor.id == LOCAL_USER.id for event in events)
 
 
 async def test_an_unknown_request_is_not_found(client: AsyncClient) -> None:
@@ -163,7 +166,7 @@ async def test_an_answer_written_but_never_applied_is_completed_by_the_next_call
     await ela.approvals.respond(
         ApprovalId(uuid.UUID(approval_id)),
         status=ApprovalStatus.GRANTED,
-        responded_by=ela.settings.core.user_name,
+        responded_by=LOCAL_USER.id,
         now=ela.clock.now(),
     )
     assert (await ela.repository.get(TaskId(uuid.UUID(task_id)))).state is (
@@ -186,7 +189,7 @@ async def test_the_opposite_answer_does_not_overwrite_one_the_crash_left_unappli
     await ela.approvals.respond(
         ApprovalId(uuid.UUID(approval_id)),
         status=ApprovalStatus.GRANTED,
-        responded_by=ela.settings.core.user_name,
+        responded_by=LOCAL_USER.id,
         now=ela.clock.now(),
     )
 
@@ -258,8 +261,10 @@ async def test_the_store_is_written_before_the_engine_moves(client: AsyncClient,
     assert order == ["respond", "approve"]
 
 
-async def test_declaring_a_different_user_changes_who_signs(ela: Ela) -> None:
-    """``ELA_USER_NAME`` is the identity of a single-user ELA on loopback (ADR 0023 §4)."""
+async def test_a_name_left_in_the_settings_signs_nothing(ela: Ela) -> None:
+    """Criterion 17: who answers is the identity the call resolved — with the Core's token, the
+    user at this machine — never a name in the configuration. The test puts one there, past the
+    validator that would refuse it, and looks for it in the audit."""
     named = dataclasses.replace(
         ela,
         settings=ela.settings.model_copy(
@@ -274,7 +279,9 @@ async def test_declaring_a_different_user_changes_who_signs(ela: Ela) -> None:
         await client.post(f"/tasks/{task_id}/approve", json={"approval_id": approval_id})
 
     stored = await ela.approvals.get(ApprovalId(uuid.UUID(approval_id)))
-    assert stored.responded_by == "tommaso"
+    assert stored.responded_by == LOCAL_USER.id
+    written = " ".join(event.model_dump_json() for event in await ela.audit.read())
+    assert "tommaso" not in written
 
 
 # ----------------------------------------------------------------------------------------

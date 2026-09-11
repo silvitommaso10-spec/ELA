@@ -9,8 +9,9 @@ is checked next to the code that uses it, by the ADR that decided it — but the
 reading**. :meth:`Settings.load` is now that point, and the only one.
 
 Two classes are new here, and hold what only a running ELA needs: :class:`ApiSettings` (the
-token, the address) and :class:`CoreSettings` (who the user is, and the three durations the
-Executive Core runs on). Both keep the ``ELA_`` prefix: one namespace, one ``.env``.
+token, the address) and :class:`CoreSettings` (the durations the Executive Core runs on; who the
+user is left it in M12.1, when the identity became the one the API resolves — ADR 0037 §15).
+Both keep the ``ELA_`` prefix: one namespace, one ``.env``.
 """
 
 from __future__ import annotations
@@ -20,14 +21,21 @@ import re
 from datetime import timedelta
 from typing import Annotated, Final
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings.exceptions import SettingsError
 
 from ela.composition.errors import ConfigurationError
 from ela.context import ContextSettings
 from ela.devices.settings import DeviceSettings
-from ela.domain import NAME_MAX_LENGTH
 from ela.executive import DEFAULT_APPROVAL_TTL, MAX_APPROVAL_TTL
 from ela.infrastructure.persistence import PersistenceSettings
 from ela.perception import PerceptionSettings
@@ -42,6 +50,9 @@ from ela.permissions import (
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
+from ela.tombstones import (
+    refuse_retired,
+)
 from ela.tools.settings import (
     CaptureSettings,
     ListenSettings,
@@ -53,7 +64,6 @@ __all__ = [
     "DEFAULT_API_HOST",
     "DEFAULT_API_PORT",
     "DEFAULT_ORPHAN_AFTER_SECONDS",
-    "DEFAULT_USER_NAME",
     "MIN_TOKEN_LENGTH",
     "ApiSettings",
     "CoreSettings",
@@ -66,7 +76,6 @@ DEFAULT_API_PORT: Final = 8351
 """An uncommon port collides less with whatever else runs on a developer's machine."""
 MIN_TOKEN_LENGTH: Final = 32
 """Short enough to type, long enough not to be guessed by whatever else runs on this machine."""
-DEFAULT_USER_NAME: Final = "user"
 DEFAULT_ORPHAN_AFTER_SECONDS: Final = 900
 """Fifteen minutes, and the reason is ``run`` being synchronous inside an HTTP request
 (ADR 0023 §9): an EXECUTING task may legitimately stay silent for as long as a model call takes,
@@ -145,7 +154,7 @@ class ApiSettings(BaseSettings):
 
 
 class CoreSettings(BaseSettings):
-    """Who the user is, the durations ELA runs on, and where a note may be written.
+    """The durations ELA runs on, and where a note may be written.
 
     Three durations in M8.1 (ADR 0023 §3), four in M8.3, plus ``notes_scope`` (ADR 0025 §5, §6).
 
@@ -161,12 +170,13 @@ class CoreSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="ELA_", env_file=".env", extra="ignore")
 
-    user_name: Annotated[str, Field(min_length=1, max_length=NAME_MAX_LENGTH)] = DEFAULT_USER_NAME
-    """``ELA_USER_NAME``: who signs an answer to a request for approval (§30, §62).
+    user_name: str | None = None
+    """``ELA_USER_NAME``, **retired** in M12.1: a tombstone, never a value (ADR 0037 §15).
 
-    One token, one identity (§2.1). It does **not** come from the request: a caller that named
-    itself would write that name into the audit trail, which is what "who said yes" is read from
-    later (§32). It goes away the day the nodes bring an authenticated identity (ADR 0023 §4)."""
+    It signed an answer to a request for approval while one token meant one identity, and ADR 0023
+    §4 said it would go the day the nodes brought an authenticated identity. Since M12.1 who answers
+    is the identity the API resolves for the call — with the Core's token, the user at this machine
+    — and setting this variable stops ELA at start-up, naming why."""
 
     authorization_ttl_seconds: Annotated[int, Field(gt=0, le=_SECONDS_IN_AUTHORIZATION_TTL)] = int(
         DEFAULT_AUTHORIZATION_TTL.total_seconds()
@@ -233,6 +243,12 @@ class CoreSettings(BaseSettings):
                 "workspace.write_note LOW)"
             )
         return value
+
+    @model_validator(mode="after")
+    def _no_retired_setting(self) -> CoreSettings:
+        """A retired variable stops ELA at start-up and says why (ADR 0037 §15)."""
+        refuse_retired(self, prefix="ELA_")
+        return self
 
 
 class Settings(BaseModel):

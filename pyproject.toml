@@ -98,6 +98,7 @@ forbidden_modules = [
     "ela.providers",
     "ela.routing",
     "ela.tasks",
+    "ela.tombstones",
     "ela.testing",
     "ela.tools",
     "anthropic",
@@ -134,6 +135,7 @@ forbidden_modules = [
     "ela.providers",
     "ela.routing",
     "ela.tasks",
+    "ela.tombstones",
     "ela.testing",
     "ela.tools",
     "pydantic",
@@ -170,6 +172,7 @@ source_modules = [
     "ela.permissions",
     "ela.routing",
     "ela.tasks",
+    "ela.tombstones",
     "ela.testing",
     "ela.tools",
 ]
@@ -220,6 +223,7 @@ source_modules = [
     "ela.providers",
     "ela.routing",
     "ela.tasks",
+    "ela.tombstones",
     "ela.tools",
 ]
 forbidden_modules = ["ela.testing"]
@@ -247,6 +251,7 @@ forbidden_modules = [
     "ela.providers",
     "ela.routing",
     "ela.tasks",
+    "ela.tombstones",
     "ela.tools",
     "pydantic",
     "anthropic",
@@ -286,6 +291,7 @@ source_modules = [
     "ela.routing",
     "ela.testing",
     "ela.tools",
+    "ela.tombstones",
 ]
 forbidden_modules = ["ela.tasks.state_machine"]
 
@@ -311,6 +317,7 @@ forbidden_modules = [
     "ela.providers",
     "ela.routing",
     "ela.tasks",
+    "ela.tombstones",
     "ela.testing",
     "ela.tools",
     "pydantic",
@@ -354,6 +361,7 @@ source_modules = [
     "ela.providers.registry",
     "ela.routing",
     "ela.tasks",
+    "ela.tombstones",
     "ela.testing",
     "ela.tools",
 ]
@@ -396,6 +404,7 @@ source_modules = [
     "ela.permissions",
     "ela.routing",
     "ela.tasks",
+    "ela.tombstones",
     "ela.testing",
     "ela.tools",
 ]
@@ -445,6 +454,7 @@ source_modules = [
     "ela.providers",
     "ela.routing",
     "ela.tasks",
+    "ela.tombstones",
     "ela.testing",
     "ela.tools",
 ]

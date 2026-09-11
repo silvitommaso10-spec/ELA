@@ -59,7 +59,7 @@ async def test_diagnostics_says_how_ela_is_composed(client: AsyncClient, ela: El
     assert body["task_types"] == sorted(DEFAULT_ROUTES)
     assert body["default_profile"] == ela.settings.routing.model_default_route.profile
     assert body["devices"] == {"local": "available"}
-    assert body["user_name"] == "user"
+    assert "user_name" not in body  # retired with ELA_USER_NAME (ADR 0037 §15)
     assert body["version"]
 
 

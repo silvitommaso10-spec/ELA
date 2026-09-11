@@ -175,7 +175,10 @@ class PlanIn(BaseModel):
 
 
 class AnswerIn(BaseModel):
-    """Which request is being answered. *Who* answers is ``ELA_USER_NAME`` (ADR 0023 §8)."""
+    """Which request is being answered. *Who* answers is never the body.
+
+    It is the identity the API resolved for the call (ADR 0023 §8, ADR 0037 §15).
+    """
 
     approval_id: UUID
 
@@ -721,7 +724,6 @@ class DiagnosticsOut(BaseModel):
     version: str
     database: str
     workspace: str
-    user_name: str
     providers: dict[str, str]
     task_types: tuple[str, ...]
     default_profile: str

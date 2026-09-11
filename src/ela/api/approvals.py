@@ -18,6 +18,9 @@ from fastapi import APIRouter, Query
 
 from ela.api.deps import ElaDep
 from ela.api.schemas import AnswerIn, ApprovalOut, TaskOut
+from ela.devices.local import (
+    LOCAL_USER,
+)
 from ela.domain import Approval, ApprovalId, ApprovalStatus, Task, TaskId, TaskState
 from ela.ports import ApprovalAlreadyAnsweredError, NotFoundError
 from ela.tasks.errors import TaskEngineError
@@ -73,7 +76,7 @@ async def _answer(task_id: UUID, body: AnswerIn, ela: ElaDep, status: ApprovalSt
         answered = await ela.approvals.respond(
             approval.id,
             status=status,
-            responded_by=ela.settings.core.user_name,
+            responded_by=LOCAL_USER.id,
             now=ela.clock.now(),
         )
     except ApprovalAlreadyAnsweredError:

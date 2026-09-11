@@ -43,7 +43,6 @@ ASSIGNED = re.compile(r"^\s*(ELA_\w+)\s*=", re.MULTILINE)
 VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_API_HOST", "127.0.0.1"),
     ("ELA_API_PORT", "8351"),
-    ("ELA_USER_NAME", "user"),
     ("ELA_DB_URL", "sqlite:///<home>/.ela/ela.db"),
     ("ELA_WORKSPACE_DIR", "<home>/.ela/workspace"),
     ("ELA_DEVICE_HEARTBEAT_TTL_SECONDS", "60"),

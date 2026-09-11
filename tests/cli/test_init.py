@@ -89,7 +89,7 @@ async def test_it_says_which_variables_the_file_does_not_set(cli: Cli, tmp_path:
     result = await cli("init")
 
     assert "ELA_API_PORT" not in result.stdout.partition("not set")[2]
-    assert "ELA_USER_NAME" in result.stdout
+    assert "ELA_API_HOST" in result.stdout
     assert "nothing required is missing" in result.stdout
 
 

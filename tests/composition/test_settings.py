@@ -12,12 +12,14 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from pydantic import (
+    ValidationError,
+)
 
 from ela.composition import (
     DEFAULT_API_HOST,
     DEFAULT_API_PORT,
     DEFAULT_ORPHAN_AFTER_SECONDS,
-    DEFAULT_USER_NAME,
     MIN_TOKEN_LENGTH,
     ApiSettings,
     ConfigurationError,
@@ -63,7 +65,7 @@ def test_the_defaults_are_the_ones_the_adr_documents(
     assert settings.api.api_host == DEFAULT_API_HOST == "127.0.0.1"
     assert settings.api.api_port == DEFAULT_API_PORT
     assert settings.api.token == TOKEN
-    assert settings.core.user_name == DEFAULT_USER_NAME
+    assert settings.core.user_name is None  # a tombstone, never a value (ADR 0037 §15)
     assert settings.core.authorization_ttl == DEFAULT_AUTHORIZATION_TTL
     assert settings.core.approval_ttl == DEFAULT_APPROVAL_TTL
     assert settings.core.orphan_after == timedelta(seconds=DEFAULT_ORPHAN_AFTER_SECONDS)
@@ -96,7 +98,6 @@ def test_the_environment_overrides_every_new_variable(
         tmp_path,
         ELA_API_HOST="::1",
         ELA_API_PORT="9000",
-        ELA_USER_NAME="tommaso",
         ELA_AUTHORIZATION_TTL_SECONDS="60",
         ELA_APPROVAL_TTL_SECONDS="120",
         ELA_TASK_ORPHAN_AFTER_SECONDS="30",
@@ -104,7 +105,6 @@ def test_the_environment_overrides_every_new_variable(
 
     assert settings.api.api_host == "::1"
     assert settings.api.api_port == 9000
-    assert settings.core.user_name == "tommaso"
     assert settings.core.authorization_ttl == timedelta(seconds=60)
     assert settings.core.approval_ttl == timedelta(seconds=120)
     assert settings.core.orphan_after == timedelta(seconds=30)
@@ -276,10 +276,9 @@ def test_a_scope_ela_cannot_compare_a_path_against_stops_the_start_up(
         ("ELA_APPROVAL_TTL_SECONDS", "0"),
         ("ELA_TASK_ORPHAN_AFTER_SECONDS", "0"),
         ("ELA_DECISION_TTL_SECONDS", "0"),
-        ("ELA_USER_NAME", ""),
     ],
 )
-def test_a_duration_of_zero_and_a_nameless_user_stop_ela(
+def test_a_duration_of_zero_stops_ela(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, variable: str, value: str
 ) -> None:
     assert variable in refused(monkeypatch, tmp_path, **{variable: value})
@@ -325,4 +324,28 @@ def test_the_settings_of_the_api_and_the_core_are_readable_on_their_own(
     declare(monkeypatch, tmp_path)
 
     assert ApiSettings().token == TOKEN
-    assert CoreSettings().user_name == DEFAULT_USER_NAME
+    assert CoreSettings().user_name is None
+
+
+@pytest.mark.parametrize("value", ["tommaso", ""])
+def test_the_retired_user_name_stops_ela_and_says_why(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, value: str
+) -> None:
+    """ADR 0037 §15, criterion 17: refused, not ignored — even empty, as it was set on purpose."""
+    message = refused(monkeypatch, tmp_path, ELA_USER_NAME=value)
+
+    assert "ELA_USER_NAME was retired in M12.1" in message
+    assert "identity the API resolves" in message
+
+
+def test_the_retired_user_name_is_refused_from_a_dotenv_file_and_from_an_argument(
+    tmp_path: Path,
+) -> None:
+    """Every source pydantic-settings reads: that is why the tombstone field stays declared."""
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("ELA_USER_NAME=tommaso\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="retired"):
+        CoreSettings(_env_file=dotenv)
+    with pytest.raises(ValidationError, match="retired"):
+        CoreSettings(_env_file=None, user_name="tommaso")
