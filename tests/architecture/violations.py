@@ -1240,6 +1240,33 @@ VIOLATIONS: tuple[Case, ...] = (
         "def stale(current) -> bool:\n    return current.last_seen_at is None\n",
         "last_seen_at",
     ),
+    Case(
+        # M12.1 (criterion 13): the level the user imposed, restated by the builder that is also
+        # the road of a remote announcement — a node that raised its own ceiling.
+        "the-refresh-writes-the-privacy",
+        "a-refresh-touches-only-what-is-declared",
+        "devices/refresh.py",
+        "def refreshed(current):\n"
+        '    return current.model_copy(update={"privacy": "LOCAL_ONLY"})\n',
+        "privacy",
+    ),
+    Case(
+        # The network is the registry's since M12.1: a node that declared ``LOCAL`` would take
+        # this machine's points (ADR 0037 §10).
+        "the-refresh-writes-the-network",
+        "a-refresh-touches-only-what-is-declared",
+        "devices/refresh.py",
+        'def refreshed(current):\n    return current.model_copy(update={"network": "LOCAL"})\n',
+        "network",
+    ),
+    Case(
+        # The revision is the identity's, moved only by the conditional announcement (§9).
+        "the-refresh-moves-the-revision",
+        "a-refresh-touches-only-what-is-declared",
+        "devices/refresh.py",
+        "def next_revision(current):\n    return current.revision + 1\n",
+        "revision",
+    ),
     # --- constant-time-token, extended (rule 31, M12.1 dec. E) ---
     Case(
         # The second place that compares a secret: a helper beside the registry, which reads well

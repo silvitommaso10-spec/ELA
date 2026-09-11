@@ -305,15 +305,22 @@ AUDITION_TEXT_PARAMETERS = frozenset({"text", "phrase", "phrases", "message", "s
 #: The error has a shape, and it is the obvious one: rebuild the row with ``local_device(...)``,
 #: which is right for a **birth** — it sets ``UNKNOWN`` and ``None`` because nothing has been heard
 #: yet — and wrong for an **update**. So the rule bans, in the module that builds the reconciled
-#: row, both the four observed names and the birth constructor itself.
+#: row, both every name that is not declared and the birth constructor itself.
 #:
 #: Closed-world on names, like rules 5, 12, 15, 16, 20 and 23: a constant, an attribute, a keyword
 #: or a bare name, because a field can be written through any of the four and a rule that read only
 #: imports would be silent on all of them. It can fire — the shape it forbids is the shortest way to
 #: write the reconciliation, which is the reason ADR 0026 §7 asks of every rule.
 REFRESH_MODULE = Path(DEVICES_DIR) / "refresh.py"
-#: The half the heartbeat writes, and the only writer of it (ADR 0016 §5, ADR 0035 §2).
-OBSERVED_FIELDS = frozenset({"availability", "last_seen_at", "status", "current_workload"})
+#: The half the registry writes and no node declares: the observed half of ADR 0037 §10, which
+#: M12.1 widened with ``network`` and ``power_source`` (ADR 0035 §2 had the first four).
+OBSERVED_FIELDS = frozenset(
+    {"availability", "last_seen_at", "status", "current_workload", "network", "power_source"}
+)
+#: Rule 44, extended by M12.1 (ADR 0037 §10, §16): what is not declared beyond the observed half —
+#: the level the user imposed at enrollment, and the state of the node's identity. The builder of
+#: the declared half is also the road of a remote announcement, so it must not name these either.
+NOT_DECLARED_FIELDS = frozenset({"privacy", "revoked_at", "revision"})
 #: The constructor of a *new* row: right for a birth, and a reset for everything else.
 BIRTH_CONSTRUCTOR = "local_device"
 
@@ -2102,10 +2109,19 @@ def check_a_refresh_touches_only_what_is_declared(pkg_root: Path) -> list[Violat
     reset them would make the node unavailable until the next heartbeat: an update whose only
     purpose is to keep the node usable would be the thing that stops it being used.
 
-    Reported, in the module that builds the reconciled row: any of the four names, however it is
-    written — a payload key, an attribute, a keyword, a bare name — and any mention of
-    :func:`~ela.devices.local.local_device`, which builds a birth and would reset all four at once.
-    That call is the shortest way to write this function and the reason the rule exists.
+    Reported, in the module that builds the reconciled row: any of the names of
+    :data:`OBSERVED_FIELDS` or :data:`NOT_DECLARED_FIELDS`, however it is written — a payload key,
+    an attribute, a keyword, a bare name — and any mention of
+    :func:`~ela.devices.local.local_device`, which builds a birth and would reset the observed half
+    at once. That call is the shortest way to write this function and the reason the rule exists.
+
+    **Extended by M12.1** (ADR 0037 §10, §16). The rule's name says "a refresh touches only what is
+    declared", but it forbade only the observed half. With the imposed half and the identity, what
+    is not declared grew — ``network`` and ``power_source`` joined the observed half, and
+    ``privacy``, ``revoked_at`` and ``revision`` are nobody's to restate — and the builder of the
+    declared half became the road of a remote announcement too. The extension entered with the
+    commit that took ``network`` and ``privacy`` out of ``DECLARED_FIELDS``: before it, the rule
+    would have been born red, and a rule born red defends nothing.
     """
     rule = "a-refresh-touches-only-what-is-declared"
     path = pkg_root / REFRESH_MODULE
@@ -2114,21 +2130,22 @@ def check_a_refresh_touches_only_what_is_declared(pkg_root: Path) -> list[Violat
     name = module_name(path, pkg_root)
     found: list[Violation] = []
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path))):
-        named = _names_the_observed_half(node)
+        named = _names_what_is_not_declared(node)
         if named is not None:
             found.append(Violation(rule, name, named, node.lineno))
     return found
 
 
-def _names_the_observed_half(node: ast.AST) -> str | None:
-    """How ``node`` reaches the heartbeat's half of a row, or ``None`` if it does not."""
-    if isinstance(node, ast.Constant) and node.value in OBSERVED_FIELDS:
+def _names_what_is_not_declared(node: ast.AST) -> str | None:
+    """How ``node`` reaches a field no node declares, or ``None`` if it does not."""
+    forbidden = OBSERVED_FIELDS | NOT_DECLARED_FIELDS
+    if isinstance(node, ast.Constant) and node.value in forbidden:
         return str(node.value)
-    if isinstance(node, ast.Attribute) and node.attr in OBSERVED_FIELDS:
+    if isinstance(node, ast.Attribute) and node.attr in forbidden:
         return node.attr
-    if isinstance(node, ast.keyword) and node.arg in OBSERVED_FIELDS:
+    if isinstance(node, ast.keyword) and node.arg in forbidden:
         return node.arg
-    if isinstance(node, ast.Name) and node.id in OBSERVED_FIELDS | {BIRTH_CONSTRUCTOR}:
+    if isinstance(node, ast.Name) and node.id in forbidden | {BIRTH_CONSTRUCTOR}:
         return node.id
     return None
 
@@ -2595,6 +2612,7 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-nodes-secret-crosses-no-readable-boundary", "WIRE_SHAPES", DETECTOR),
     # a-refresh-touches-only-what-is-declared (rule 44, M6.1b dec. H)
     Constant("a-refresh-touches-only-what-is-declared", "BIRTH_CONSTRUCTOR", DETECTOR),
+    Constant("a-refresh-touches-only-what-is-declared", "NOT_DECLARED_FIELDS", DETECTOR),
     Constant("a-refresh-touches-only-what-is-declared", "OBSERVED_FIELDS", DETECTOR),
     Constant("a-refresh-touches-only-what-is-declared", "REFRESH_MODULE", DETECTOR),
     Constant(

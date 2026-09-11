@@ -1,17 +1,19 @@
 """What a re-registration rewrites of a node's row, and what it must never touch (ADR 0035 §2).
 
-The row has two halves. The **declared** one — the name, the operating system, the network, the
-privacy level, the traits and the tools — is what whoever composes ELA knows without probing
-anything, and it is a statement about the code that is running: a capability added after the first
-start is a longer ``available_tools``, and a row that keeps the old list makes the node ineligible
-for a step nothing else can run (§16, §17). The **observed** one is the heartbeat's, and only the
-heartbeat's: it says what was seen of the node, not what ELA was built with.
+The row has three halves (ADR 0037 §10). The **declared** one — the name, the operating system,
+the traits, the tools and the performance class — is what the node states about itself (for
+``local``, what whoever composes ELA knows without probing anything), and it is a statement about
+the code that is running: a capability added after the first start is a longer
+``available_tools``, and a row that keeps the old list makes the node ineligible for a step nothing
+else can run (§16, §17). The **observed** one is the registry's — what the heartbeat reports, and
+the network the node came in by: it says what was seen of the node, not what ELA was built with.
+The **imposed** one, ``privacy``, is the user's.
 
-So a refresh replaces the first half and leaves the second exactly as it was read. That is not a
+So a refresh replaces the declared half and leaves the rest exactly as it was read. That is not a
 promise made here: :func:`refreshed` names no field at all — it carries the stored row through and
-overwrites the keys it was handed — and architecture rule 44 forbids this module the four names of
-the observed half and the constructor of a *new* row, which sets them to "nothing known yet" and
-would make an available node unavailable until the next heartbeat.
+overwrites the keys it was handed — and architecture rule 44 forbids this module every name that
+is not declared and the constructor of a *new* row, which sets the observed half to "nothing known
+yet" and would make an available node unavailable until the next heartbeat.
 """
 
 from __future__ import annotations
@@ -21,26 +23,25 @@ from types import MappingProxyType
 from typing import Any, Final
 
 from ela.domain import Device, DeviceCapability
+from ela.ports import (
+    ANNOUNCED_FIELDS,
+)
 
 __all__ = ["DECLARED_FIELDS", "TOOLS_FIELD", "changes", "difference", "refreshed", "tool_names"]
 
-DECLARED_FIELDS: Final[tuple[str, ...]] = (
-    "name",
-    "os",
-    "network",
-    "privacy",
-    "capabilities",
-    "available_tools",
-)
-"""The half whoever composes ELA can state without probing the machine (ADR 0035 §2).
+DECLARED_FIELDS: Final[tuple[str, ...]] = ANNOUNCED_FIELDS
+"""The half a node declares about itself (ADR 0037 §10): for ``local``, whoever composes ELA; for a
+remote node, the node, through :meth:`~ela.ports.DeviceRegistryPort.announce`.
 
-Not only the tools, and the reason is that the defect is not about tools: a database copied onto
-another machine says ``MACOS`` on a Linux box, and the orchestrator decides on a lie. It is the
-same defect with a different field, and repairing one of them would mean coming back for the rest.
+One tuple, owned by the port, so the reconciliation of ``local`` and the announcement of a remote
+node cannot come to disagree about what "declared" means. Not only the tools, and the reason is
+that the defect is not about tools: a database copied onto another machine says ``MACOS`` on a
+Linux box, and the orchestrator decides on a lie (ADR 0035 §2).
 
-``created_at`` is not here — a row is born once — and neither are ``performance`` nor
-``power_source``: nobody can state those without probing, so nobody restates them either. They
-stay whatever the row already says (ADR 0016 §4).
+Since M12.1 ``network`` and ``privacy`` are not here: the network is the registry's, fixed when the
+row is born, and the privacy is the user's, imposed at enrollment — both are born with the row, and
+a restart does not restate them (ADR 0016 §4). ``performance`` is: a node that describes itself can
+probe itself (ADR 0037 §10). ``created_at`` is not here either — a row is born once.
 """
 
 TOOLS_FIELD: Final = "available_tools"

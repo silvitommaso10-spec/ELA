@@ -40,6 +40,10 @@ ADDED_RULES = {
     46: "a-nodes-secret-crosses-no-readable-boundary",
     47: "identity-resolved-in-one-place",
 }
+EXTENDED_RULES = {
+    31: "constant-time-token",
+    44: "a-refresh-touches-only-what-is-declared",
+}
 
 
 def adr_text() -> str:
@@ -72,6 +76,17 @@ def test_the_rules_this_adr_adds_are_registered_under_the_names_it_gives_them() 
     for number, name in ADDED_RULES.items():
         assert name in RULES
         assert f"Rule {number}:" in (inspect.getdoc(RULES[name]) or ""), name
+
+
+def test_the_rules_this_adr_extends_exist_under_the_names_it_gives_them() -> None:
+    """`Regole estese:` names rules that exist, each declaring its number and its extension."""
+    documented = documented_rules(adr_text())
+
+    assert {number: documented.get(number) for number in EXTENDED_RULES} == EXTENDED_RULES
+    for number, name in EXTENDED_RULES.items():
+        doc = inspect.getdoc(RULES[name]) or ""
+        assert f"Rule {number}:" in doc, name
+        assert "M12.1" in doc, name
 
 
 def test_the_conseguenze_count_the_rules_the_ports_and_the_capabilities_of_today() -> None:
