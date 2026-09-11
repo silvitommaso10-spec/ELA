@@ -104,7 +104,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 |---|---|---|
 | ADR scritti | **37** | `docs/adr/NNNN-*.md` |
 | Milestone | **39, di cui 37 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **50** | `RULES` in `tests/architecture/` |
+| Regole di architettura | **52** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **24** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **8** | `production_catalogue()` |

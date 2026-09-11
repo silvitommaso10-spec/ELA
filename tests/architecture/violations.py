@@ -1392,6 +1392,42 @@ VIOLATIONS: tuple[Case, ...] = (
         "    await engine.release_step(task_id, step_id, key=key)\n",
         ".release_step(",
     ),
+    # --- a-work-order-goes-only-to-its-node (rule 51, M12.2) ---
+    Case(
+        # A second composer: an order built where nobody compares the node that asked with the
+        # node the assignment names.
+        "a-second-module-composes-an-order",
+        "a-work-order-goes-only-to-its-node",
+        "api/tasks.py",
+        "from ela.api.schemas import WorkOrderOut\n"
+        "def order(**fields):\n"
+        "    return WorkOrderOut(**fields)\n",
+        "WorkOrderOut(...)",
+    ),
+    Case(
+        # The composer with a way out other than the answer: the user's arguments could be sent
+        # to whoever it pleased.
+        "the-composer-reaches-the-network",
+        "a-work-order-goes-only-to-its-node",
+        "api/nodes.py",
+        "import httpx\n"
+        "from ela.api.schemas import WorkOrderOut\n"
+        "def order(**fields):\n"
+        "    return WorkOrderOut(**fields)\n",
+        "httpx",
+    ),
+    # --- results-are-minted-by-the-core (rule 52, M12.2) ---
+    Case(
+        # A route that turns the envelope into the entity: the node's id and the node's clock in
+        # the store, and the node's clock in the chain.
+        "a-route-mints-a-result",
+        "results-are-minted-by-the-core",
+        "api/nodes.py",
+        "from ela.domain import ExecutionResult\n"
+        "def mint(**fields):\n"
+        "    return ExecutionResult(**fields)\n",
+        "ExecutionResult(...)",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
     Case(
@@ -1437,6 +1473,26 @@ ALLOWED: tuple[Case, ...] = (
         "tasks/engine.py",
         "class Engine:\n    async def release_step(self, task_id, step_id, *, key):\n"
         "        return None\n",
+        "",
+    ),
+    Case(
+        # The one composer the rule admits, answering only its caller: the door rule 51 opens.
+        "the-composer-builds-the-order",
+        "a-work-order-goes-only-to-its-node",
+        "api/nodes.py",
+        "from ela.api.schemas import WorkOrderOut\n"
+        "def order(**fields):\n"
+        "    return WorkOrderOut(**fields)\n",
+        "",
+    ),
+    Case(
+        # The executor mints results, and rule 52 is about ``ela.api`` only.
+        "the-executor-mints-the-result",
+        "results-are-minted-by-the-core",
+        "executive/executor.py",
+        "from ela.domain import ExecutionResult\n"
+        "def mint(**fields):\n"
+        "    return ExecutionResult(**fields)\n",
         "",
     ),
     Case(
