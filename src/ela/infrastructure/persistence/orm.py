@@ -50,6 +50,7 @@ __all__ = [
     "TaskRow",
     "UtcDateTime",
     "EnrollmentRow",
+    "AssignmentRow",
 ]
 
 HASH_LENGTH: Final = 64
@@ -300,6 +301,47 @@ class EnrollmentRow(Base):
     privacy: Mapped[str] = mapped_column(String(32), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     device_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+
+
+class AssignmentRow(Base):
+    """An :class:`~ela.domain.Assignment`, as stored: work handed to a remote node (ADR 0038).
+
+    The decision is one JSON document, with its id inside, and **there is no column for the
+    arguments** of the call: they are the step's, read by reference when the node takes the work
+    (M12.1, D1), and a copy here would be one more place where the user's content lives (§57).
+    ``delivery_digest`` is the SHA-256 of the envelope a node delivered, and it lives here only:
+    the private database, never an audit event.
+    """
+
+    __tablename__ = "assignments"
+    __table_args__ = (
+        Index(
+            "ux_assignments_open_step",
+            "task_id",
+            "step_id",
+            unique=True,
+            sqlite_where=text("state <> 'EXPIRED'"),
+        ),
+        {"sqlite_autoincrement": True},
+    )
+    """A **partial** unique index: one assignment per step that is not ``EXPIRED`` (ADR 0038). An
+    index is right here because between an expiry and the next assignment of the same step there
+    is always the write of ``EXPIRED``. "One per node at a time" is **not** an index: an index does
+    not know the time (M12.1, D16), so it is a condition of the claim's ``UPDATE``."""
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[UUID] = mapped_column(Uuid, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    task_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    step_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    device_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    decision: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    authorization_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    delivery_digest: Mapped[str | None] = mapped_column(String(HASH_LENGTH), nullable=True)
 
 
 class AuditEventRow(Base):

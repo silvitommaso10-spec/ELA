@@ -470,6 +470,15 @@ ASSIGNMENT_PORT = f"{ROOT_PACKAGE}.ports.AssignmentStore"
 #: defence that can be bypassed by building by hand the object it defends is not a defence» (ADR
 #: 0026 §5).
 ASSIGNMENT_MODEL = "Assignment"
+#: Rule 49's doors, each opened by the commit that writes the code behind it (ADR 0027 §3): the
+#: mapper that rebuilds an assignment from its row, validated on every read, and the fake of
+#: ``ela.testing``, which keeps rows too and rebuilds the same way — so that it moves a row by its
+#: fields and never copies the entity past its validators (the reason rules 5 and 15 watch
+#: ``model_copy``). ``ela.testing`` never reaches production (rule 6).
+ASSIGNMENT_BUILDERS = (
+    Path("infrastructure") / "persistence" / "mappers.py",
+    Path("testing") / "fakes.py",
+)
 #: Rules 49, 51, 52 (M12.2): besides the call of the class, the doors pydantic leaves open to build
 #: a model — one of them, ``model_construct``, without even validating it.
 MODEL_CONSTRUCTORS = frozenset({"model_validate", "model_validate_json", "model_construct"})
@@ -2556,14 +2565,16 @@ def check_assignment_builders(pkg_root: Path) -> list[Violation]:
     30 (ADR 0026 §5).
 
     Reported: a call of the class, and a call of the constructors pydantic gives it
-    (``model_validate``, ``model_validate_json``, ``model_construct``). Silent on today's tree,
-    where the class does not exist yet: the rule is written before it (ADR 0030 §15), and the two
-    builders it will admit — the service and the mapper that reads a row back — open their door
-    in the commit that writes them.
+    (``model_validate``, ``model_validate_json``, ``model_construct``), in every module but the
+    builders of :data:`ASSIGNMENT_BUILDERS`. The rule was written before the class (ADR 0030 §15),
+    and each builder opens its door in the commit that writes it: the mapper that reads a row back,
+    then the service.
     """
     rule = "assignments-built-only-by-the-assigner"
     found: list[Violation] = []
     for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) in ASSIGNMENT_BUILDERS:
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and (built := _builds(node.func, ASSIGNMENT_MODEL)):
@@ -2966,6 +2977,13 @@ CONSTANTS: tuple[Constant, ...] = (
         reason=_THE_PACKAGE_ITSELF,
     ),
     # assignments-built-only-by-the-assigner (rule 49, M12.2)
+    Constant(
+        "assignments-built-only-by-the-assigner",
+        "ASSIGNMENT_BUILDERS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0038",
+    ),
     Constant("assignments-built-only-by-the-assigner", "ASSIGNMENT_MODEL", DETECTOR),
     Constant("assignments-built-only-by-the-assigner", "MODEL_CONSTRUCTORS", DETECTOR),
     Constant(

@@ -77,10 +77,18 @@ def test_the_event_this_milestone_added_does_have_a_writer() -> None:
     assert writers_of(AuditEventType.SENSOR_ACTIVATED) == ["executive/executor.py"]
 
 
-def ports_before(adr: Path) -> set[str]:
-    """Today's ports without the ones ``adr`` introduced: what an older total is a claim about."""
-    later = documented_ports(adr.read_text(encoding="utf-8"), INTRODUCING)
-    return {port.__name__ for port in port_protocols()} - set(later)
+def ports_before(*adrs: Path) -> set[str]:
+    """Today's ports without the ones ``adrs`` introduced: what an older total is a claim about.
+
+    Every later ADR that introduced a port is named, not only the next one: with M12.2's
+    twenty-fifth, «ventitré» is the ports before both ADR 0037 and ADR 0038.
+    """
+    later = {
+        port
+        for adr in adrs
+        for port in documented_ports(adr.read_text(encoding="utf-8"), INTRODUCING)
+    }
+    return {port.__name__ for port in port_protocols()} - later
 
 
 def test_the_conseguenze_count_the_rules_and_the_ports_up_to_this_adr() -> None:
@@ -99,7 +107,15 @@ def test_the_conseguenze_count_the_rules_and_the_ports_up_to_this_adr() -> None:
     assert "**quarantacinque**" in conseguenze
     assert len(_rules_up_to(45)) == 45
     assert "**ventitré**" in conseguenze
-    assert len(ports_before(ADR_PATH.with_name("0037-node-identity.md"))) == 23
+    assert (
+        len(
+            ports_before(
+                ADR_PATH.with_name("0037-node-identity.md"),
+                ADR_PATH.with_name("0038-work-protocol.md"),
+            )
+        )
+        == 23
+    )
 
 
 def test_the_adr_names_the_rules_it_renamed_and_they_resolve() -> None:

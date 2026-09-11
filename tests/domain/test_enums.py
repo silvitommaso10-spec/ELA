@@ -80,6 +80,7 @@ def test_the_domain_declares_exactly_these_enums() -> None:
     assert sorted(enum.__name__ for enum in _enums()) == [
         "ActorKind",
         "ApprovalStatus",
+        "AssignmentState",
         "AuditEventType",
         "ContextQuestion",
         "ContextSource",

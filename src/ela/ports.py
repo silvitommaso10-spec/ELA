@@ -35,6 +35,9 @@ from ela.domain import (
     Approval,
     ApprovalId,
     ApprovalStatus,
+    Assignment,
+    AssignmentId,
+    AssignmentState,
     AuditEvent,
     Authorization,
     AuthorizationId,
@@ -79,6 +82,13 @@ __all__ = [
     "ApprovalExpiredError",
     "ApprovalNotAnswerableError",
     "ApprovalStore",
+    "AssignmentExpiredError",
+    "AssignmentHeldElsewhereError",
+    "AssignmentNodeBusyError",
+    "AssignmentNotUsableError",
+    "AssignmentStateError",
+    "AssignmentStillLiveError",
+    "AssignmentStore",
     "AuditLog",
     "AuthorizationExhaustedError",
     "AuthorizationExpiredError",
@@ -406,6 +416,65 @@ class EnrollmentExpiredError(EnrollmentNotUsableError):
         super().__init__(f"the enrollment code expired at {expires_at.isoformat()}")
 
 
+class AssignmentNotUsableError(PortError):
+    """An assignment exists and a move asked of it did not happen; the subclasses say why.
+
+    Raised only after the conditional ``UPDATE`` of the move touched no row: the safety is in the
+    statement, and the read that follows it only names the reason (ADR 0012 §5; M12.2, ADR 0038).
+    No message names another node: an error can reach a response body, and a node is not told
+    which assignments exist for the others.
+    """
+
+    def __init__(self, assignment_id: AssignmentId, reason: str) -> None:
+        self.assignment_id = assignment_id
+        self.reason = reason
+        super().__init__(f"assignment {assignment_id} cannot be moved: {reason}")
+
+
+class AssignmentHeldElsewhereError(AssignmentNotUsableError):
+    """The assignment is another node's: whoever asked was never its assignee.
+
+    ``held_by`` is kept for the audit, which tells "unknown" from "another's"; the message does
+    not carry it.
+    """
+
+    def __init__(self, assignment_id: AssignmentId, held_by: DeviceId) -> None:
+        self.held_by = held_by
+        super().__init__(assignment_id, "it is assigned to another node")
+
+
+class AssignmentStateError(AssignmentNotUsableError):
+    """The assignment is not in the state the move starts from."""
+
+    def __init__(self, assignment_id: AssignmentId, state: AssignmentState) -> None:
+        self.state = state
+        super().__init__(assignment_id, f"it is {state.value}")
+
+
+class AssignmentExpiredError(AssignmentNotUsableError):
+    """Its ``expires_at`` is at or before the instant given (closed bound, ADR 0005 §2-bis)."""
+
+    def __init__(self, assignment_id: AssignmentId, expires_at: datetime) -> None:
+        self.expires_at = expires_at
+        super().__init__(assignment_id, f"it expired at {expires_at.isoformat()}")
+
+
+class AssignmentStillLiveError(AssignmentNotUsableError):
+    """An expiry asked of an assignment whose ``expires_at`` is ahead: time has not decided yet."""
+
+    def __init__(self, assignment_id: AssignmentId, expires_at: datetime) -> None:
+        self.expires_at = expires_at
+        super().__init__(assignment_id, f"it expires only at {expires_at.isoformat()}")
+
+
+class AssignmentNodeBusyError(AssignmentNotUsableError):
+    """A claim by a node that holds a claim not yet expired: one at a time (M12.1, D16)."""
+
+    def __init__(self, assignment_id: AssignmentId, device_id: DeviceId) -> None:
+        self.device_id = device_id
+        super().__init__(assignment_id, f"node {device_id} holds work that has not expired")
+
+
 class NotAllowedError(PortError):
     """A :class:`ToolPort` refused to execute: the decision does not allow it (§27, §33).
 
@@ -696,6 +765,80 @@ class EnrollmentStore(Protocol):
         :class:`EnrollmentConsumedError` or :class:`EnrollmentExpiredError` is raised. The check
         and the write are one atomic step: of two nodes presenting the same code exactly one is
         born (ADR 0012 §5, the shape of ``consume``)."""
+
+
+@runtime_checkable
+class AssignmentStore(Protocol):
+    """Where the work handed to remote nodes waits, is taken and comes back (§15; M12.2, ADR 0038).
+
+    The twenty-fifth port. It returns every row **as written** — ``OFFERED`` even when its expiry
+    passed an hour ago — and what a row is *now* is derived on read by the service that decides,
+    :mod:`ela.executive.assignments`, the one module that may name this port (architecture rule
+    48): ADR 0016 §3, applied to a second deadline. No sweeper writes ``EXPIRED``; whoever acts on
+    an expiry writes it, in the statement that checks it.
+
+    Every move is one conditional ``UPDATE`` whose predicate asks "has it expired?" of the one
+    ``expires_at``, with one meaning and closed (``expires_at <= now`` is expired). When it touches
+    no row nothing is written, and one read in the same transaction names the reason, in this
+    order: :class:`NotFoundError`, :class:`AssignmentHeldElsewhereError`,
+    :class:`AssignmentStateError`, then the expiry (ADR 0012 §5). ``now`` is always the caller's.
+    """
+
+    async def add(self, assignment: Assignment) -> None:
+        """Keep a new assignment. :class:`AlreadyExistsError` if its id is kept, or if its step
+        already has an assignment that is not ``EXPIRED`` — one per step, a partial unique index
+        (ADR 0038)."""
+
+    async def get(self, assignment_id: AssignmentId) -> Assignment:
+        """The assignment as written; :class:`NotFoundError` if unknown."""
+
+    async def for_step(self, task_id: TaskId, step_id: StepId) -> tuple[Assignment, ...]:
+        """Every assignment of one step, in insertion order: the last is the standing one."""
+
+    async def offered_to(self, device_id: DeviceId) -> tuple[Assignment, ...]:
+        """Every ``OFFERED`` assignment of one node, in insertion order, whatever its expiry."""
+
+    async def claim(
+        self,
+        assignment_id: AssignmentId,
+        *,
+        device_id: DeviceId,
+        now: datetime,
+        expires_at: datetime,
+    ) -> Assignment:
+        """``OFFERED → CLAIMED`` at ``now``, the expiry moved to ``expires_at`` — only if the offer
+        is ``device_id``'s, not expired at ``now``, **and the node holds no claim that is not
+        expired at ``now``** (M12.1, D16): a ``NOT EXISTS`` in the same statement, not an index,
+        because an index does not know the time. Its atomicity rests on SQLite's single writer,
+        declared (ADR 0038). The refusals are the port's, then :class:`AssignmentNodeBusyError`."""
+
+    async def deliver(
+        self, assignment_id: AssignmentId, *, device_id: DeviceId, now: datetime, digest: str
+    ) -> Assignment:
+        """``CLAIMED → DELIVERED`` at ``now`` with the SHA-256 of the envelope — only if the claim
+        is ``device_id``'s and not expired at ``now``."""
+
+    async def renew(
+        self,
+        assignment_id: AssignmentId,
+        *,
+        device_id: DeviceId,
+        now: datetime,
+        expires_at: datetime,
+    ) -> Assignment:
+        """The claim's expiry moved to ``expires_at`` — only if it is ``device_id``'s, ``CLAIMED``
+        and not expired at ``now``. The cap is the caller's to apply (ADR 0038)."""
+
+    async def expire(self, assignment_id: AssignmentId, *, now: datetime) -> Assignment:
+        """``OFFERED`` or ``CLAIMED`` → ``EXPIRED``, only if expired at ``now``. One already
+        ``EXPIRED`` is returned as it is: two callers acting on one expiry agree, and the second
+        writes nothing. :class:`AssignmentStateError` for a ``DELIVERED`` one,
+        :class:`AssignmentStillLiveError` for one whose expiry is still ahead."""
+
+    async def cut_short(self, device_id: DeviceId, *, now: datetime) -> int:
+        """The expiry of every assignment of the node that is ``OFFERED`` or ``CLAIMED`` and not
+        expired at ``now`` becomes ``now`` (M12.1, D17): how many were cut. No state changes —
+        the revocation makes an expiry, and whoever acts on it writes ``EXPIRED``."""
 
 
 @runtime_checkable

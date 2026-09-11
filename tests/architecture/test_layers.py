@@ -104,7 +104,7 @@ def test_orm_module_really_imports_sqlalchemy_orm() -> None:
 def test_mapped_rows_are_not_domain_models() -> None:
     """The static rule 8 at runtime: no ORM class is (or derives from) a pydantic model."""
     mapped = [mapper.class_ for mapper in Base.registry.mappers]
-    assert len(mapped) == 9
+    assert len(mapped) == 10
     assert not any(issubclass(cls, BaseModel) for cls in mapped)
 
 

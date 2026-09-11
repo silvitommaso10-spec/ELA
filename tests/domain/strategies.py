@@ -18,6 +18,8 @@ from ela.domain import (
     ActorKind,
     Approval,
     ApprovalStatus,
+    Assignment,
+    AssignmentState,
     AuditEvent,
     AuditEventType,
     Authorization,
@@ -303,6 +305,53 @@ permission_decisions = st.builds(
     expires_at=_optional(utc_datetimes),
     metadata=json_mappings,
 )
+
+_steps_of_time = st.timedeltas(min_value=timedelta(0), max_value=timedelta(days=1))
+
+
+@st.composite
+def _assignments(draw: st.DrawFn) -> Assignment:
+    """Work handed to a node: an ALLOWED decision about its step, and the fields of its state."""
+    created_at = draw(utc_datetimes)
+    task_id, step_id = draw(uuids), draw(uuids)
+    decision = draw(permission_decisions).model_copy(
+        update={
+            "outcome": PermissionOutcome.ALLOWED,
+            "task_id": task_id,
+            "step_id": step_id,
+            "expires_at": created_at + draw(_steps_of_time),
+        }
+    )
+    state = draw(st.sampled_from(AssignmentState))
+    claimed_at = None
+    if state in {AssignmentState.CLAIMED, AssignmentState.DELIVERED}:
+        claimed_at = created_at + draw(_steps_of_time)
+    elif state is AssignmentState.EXPIRED:
+        claimed_at = draw(_optional(st.just(created_at + draw(_steps_of_time))))
+    if state is AssignmentState.OFFERED:
+        expires_at = decision.expires_at - draw(_steps_of_time)
+    else:
+        expires_at = (claimed_at or created_at) + draw(_steps_of_time)
+    delivered = state is AssignmentState.DELIVERED
+    return Assignment(
+        id=draw(uuids),
+        created_at=created_at,
+        task_id=task_id,
+        step_id=step_id,
+        device_id=draw(uuids),
+        decision=decision,
+        authorization_id=draw(_optional(uuids)),
+        state=state,
+        expires_at=expires_at,
+        claimed_at=claimed_at,
+        delivered_at=(claimed_at or created_at) + draw(_steps_of_time) if delivered else None,
+        delivery_digest=(
+            draw(st.text("0123456789abcdef", min_size=64, max_size=64)) if delivered else None
+        ),
+    )
+
+
+assignments = _assignments()
 
 approvals = st.builds(
     Approval,
@@ -675,6 +724,7 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.ProviderRequest: provider_requests,
     domain.ProviderResult: provider_results,
     domain.ExecutionResult: execution_results,
+    domain.Assignment: assignments,
     domain.SensorStatus: sensor_statuses,
     domain.RawObservation: raw_observations,
     domain.RawCapture: raw_captures,

@@ -32,7 +32,7 @@ GUARDIAN_AND_STORE = (PermissionGuardianPort, AuthorizingGuardianPort, Authoriza
 
 def test_the_module_actually_has_ports() -> None:
     """A rule applied to an empty tuple would hold vacuously."""
-    assert len(PORTS) == 24
+    assert len(PORTS) == 25
 
 
 def test_every_port_is_runtime_checkable() -> None:

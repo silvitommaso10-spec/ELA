@@ -15,6 +15,8 @@ from ela.domain import (
     ActorKind,
     Approval,
     ApprovalStatus,
+    Assignment,
+    AssignmentState,
     AuditEvent,
     Authorization,
     CapabilityId,
@@ -28,6 +30,7 @@ from ela.domain import (
     NetworkKind,
     OperatingSystem,
     PerformanceClass,
+    PermissionOutcome,
     PowerSource,
     PrivacyLevel,
     ProviderUsage,
@@ -38,6 +41,8 @@ from ela.domain import (
 from tests.domain.examples import (
     CAPABILITY_SPEC,
     EXAMPLES,
+    LATER,
+    MUCH_LATER,
     NOW,
     POLICY_AUTHORIZATION,
     TASK_ID,
@@ -269,6 +274,100 @@ def test_a_code_is_consumed_by_a_node(missing: str) -> None:
 def test_the_code_hash_is_a_sha256_hex_digest(value: str) -> None:
     with pytest.raises(ValidationError):
         _enrollment(code_hash=value)
+
+
+DIGEST = "ab" * 32
+"""The SHA-256 of an envelope, as an assignment keeps it: the value, never the envelope."""
+
+
+def _assignment(**overrides: object) -> Assignment:
+    return Assignment.model_validate(EXAMPLES[Assignment].model_dump() | overrides)
+
+
+def _allowed(**overrides: object) -> dict[str, object]:
+    """The example's decision — ALLOWED, about its step, expiring at ``LATER`` — as data."""
+    return EXAMPLES[Assignment].decision.model_dump() | overrides
+
+
+@pytest.mark.parametrize(
+    "outcome", [PermissionOutcome.DENIED, PermissionOutcome.REQUIRES_APPROVAL], ids=str
+)
+def test_an_assignment_carries_only_an_allowed_decision(outcome: PermissionOutcome) -> None:
+    """Nothing the Guardian did not allow leaves the Core (M12.1, D1)."""
+    with pytest.raises(ValidationError, match="ALLOWED"):
+        _assignment(decision=_allowed(outcome=outcome))
+
+
+@pytest.mark.parametrize("field", ["task_id", "step_id"])
+def test_the_decision_is_about_the_assigned_step(field: str) -> None:
+    """A decision is not transferable: the one of another step cannot ride on this work."""
+    with pytest.raises(ValidationError, match="not transferable"):
+        _assignment(decision=_allowed(**{field: uuid4()}))
+
+
+def test_a_decision_that_never_expires_is_not_handed_to_a_node() -> None:
+    with pytest.raises(ValidationError, match="never expires"):
+        _assignment(decision=_allowed(expires_at=None))
+
+
+def test_an_offer_lives_at_most_as_long_as_its_decision() -> None:
+    """ADR 0038: the tool checks the decision when the call starts, so an offer nobody took
+    cannot outlive it — up to the instant itself, closed like every deadline."""
+    offered = {"state": AssignmentState.OFFERED, "claimed_at": None}
+
+    assert _assignment(**offered, expires_at=LATER).expires_at == LATER
+    with pytest.raises(ValidationError, match="outlive its decision"):
+        _assignment(**offered, expires_at=MUCH_LATER)
+
+
+def test_an_offer_was_not_claimed() -> None:
+    with pytest.raises(ValidationError, match="no claimed_at"):
+        _assignment(state=AssignmentState.OFFERED, expires_at=LATER)
+
+
+@pytest.mark.parametrize("state", [AssignmentState.CLAIMED, AssignmentState.DELIVERED], ids=str)
+def test_work_in_hand_was_claimed_at_some_instant(state: AssignmentState) -> None:
+    delivery = {"delivered_at": MUCH_LATER, "delivery_digest": DIGEST}
+    with pytest.raises(ValidationError, match="claimed at some instant"):
+        _assignment(state=state, claimed_at=None, **delivery)
+
+
+@pytest.mark.parametrize("claimed_at", [None, LATER])
+def test_an_expired_assignment_was_taken_or_not(claimed_at: datetime | None) -> None:
+    """An offer that nobody took expires, and so does work that was taken and never came back."""
+    expired = _assignment(state=AssignmentState.EXPIRED, claimed_at=claimed_at)
+    assert expired.claimed_at == claimed_at
+
+
+def test_a_delivered_assignment_has_its_instant_and_its_digest() -> None:
+    delivered = _assignment(
+        state=AssignmentState.DELIVERED, delivered_at=MUCH_LATER, delivery_digest=DIGEST
+    )
+    assert (delivered.delivered_at, delivered.delivery_digest) == (MUCH_LATER, DIGEST)
+
+
+@pytest.mark.parametrize("missing", ["delivered_at", "delivery_digest"])
+def test_a_delivery_is_an_instant_and_a_digest(missing: str) -> None:
+    delivery = {"delivered_at": MUCH_LATER, "delivery_digest": DIGEST} | {missing: None}
+    with pytest.raises(ValidationError, match="go together"):
+        _assignment(state=AssignmentState.DELIVERED, **delivery)
+
+
+@pytest.mark.parametrize("state", [AssignmentState.CLAIMED, AssignmentState.EXPIRED], ids=str)
+def test_only_a_delivered_assignment_carries_a_delivery(state: AssignmentState) -> None:
+    with pytest.raises(ValidationError, match="belong to a DELIVERED"):
+        _assignment(state=state, delivered_at=MUCH_LATER, delivery_digest=DIGEST)
+
+
+def test_a_delivered_assignment_without_its_delivery_is_refused() -> None:
+    with pytest.raises(ValidationError, match="belong to a DELIVERED"):
+        _assignment(state=AssignmentState.DELIVERED)
+
+
+@pytest.mark.parametrize("value", ["", "0" * 63, "0" * 65, "A" * 64, "g" * 64])
+def test_the_delivery_digest_is_a_sha256_hex_digest(value: str) -> None:
+    with pytest.raises(ValidationError):
+        _assignment(state=AssignmentState.DELIVERED, delivered_at=MUCH_LATER, delivery_digest=value)
 
 
 def _authorization(**overrides: object) -> Authorization:

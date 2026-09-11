@@ -43,6 +43,9 @@ __all__ = [
     "Approval",
     "ApprovalId",
     "ApprovalStatus",
+    "Assignment",
+    "AssignmentId",
+    "AssignmentState",
     "AuditEvent",
     "AuditEventId",
     "AuditEventType",
@@ -153,6 +156,7 @@ AuditEventId = NewType("AuditEventId", UUID)
 ProviderRequestId = NewType("ProviderRequestId", UUID)
 ProviderResultId = NewType("ProviderResultId", UUID)
 ExecutionId = NewType("ExecutionId", UUID)
+AssignmentId = NewType("AssignmentId", UUID)
 
 CAPABILITY_ID_PATTERN: Final = r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$"
 """Dotted capability name, at least two segments: ``core.echo``, ``workspace.write_note`` (§29)."""
@@ -369,6 +373,26 @@ class ExecutionStatus(StrEnum):
     TIMED_OUT = "TIMED_OUT"
     CANCELLED = "CANCELLED"
     SKIPPED = "SKIPPED"
+
+
+class AssignmentState(StrEnum):
+    """Where a piece of work handed to a remote node stands (M12.2, ADR 0038).
+
+    ``state`` and not ``status``: it is a machine of transitions, like :class:`TaskState` and
+    :class:`StepState`. ``OFFERED`` and not ``PENDING``, which is a step's word — releasing a step
+    puts "the step is PENDING again" and "the assignment expired" in one sentence, and two objects
+    in one sentence must not share a word. ``DELIVERED`` and not ``SETTLED``: in the executor, to
+    settle already means an outcome that settles a STARTED record.
+    """
+
+    OFFERED = "OFFERED"
+    """Handed to a node that has not taken it yet."""
+    CLAIMED = "CLAIMED"
+    """Taken: the order went out as the answer to the node's own request."""
+    DELIVERED = "DELIVERED"
+    """The node's envelope was accepted: its outcome is in the store, or the step is closed."""
+    EXPIRED = "EXPIRED"
+    """Its expiry passed and whoever acted on it said so: the step was released or closed."""
 
 
 class TaskEventType(StrEnum):
@@ -1122,6 +1146,85 @@ class ExecutionResult(_DomainModel):
 # --------------------------------------------------------------------------------------
 # Perception (§10, §11; M10.1, ADR 0028)
 # --------------------------------------------------------------------------------------
+
+
+class Assignment(_DomainModel):
+    """A call to ``Tool.execute`` handed to a node that is not this process (M12.2, ADR 0038).
+
+    The first entity of ELA that names a node and outlives the process that wrote it. It carries
+    the half of the call the Core decided — the :class:`PermissionDecision`, once, with its id
+    inside — and **not the arguments**: those are the step's (``TaskStep.arguments``, ADR 0018),
+    and the plan is immutable, so ``(decision, step.arguments)`` *is* the call, read by reference
+    when the node takes it (M12.1, D1). Copying them would add a place where the user's content
+    lives (§57) without adding a fact.
+
+    ``id`` is the key of a redelivery (M12.1, D7), minted by the Core and never derived: a step
+    placed again gets a new one, so a late delivery for the old one stays distinguishable.
+    ``device_id`` is the node the work was handed to — the fact, not the judgement: the placement
+    is not persisted (ADR 0026 §2). ``authorization_id`` is the grant ``consume`` **spent**, which
+    the STARTED record and the outcome will name.
+
+    ``expires_at`` is the one expiry, whatever the state: every statement that decides — the
+    claim, the expiry, "one per node", the gate of a delivery — asks "has it expired?" with one
+    meaning. The deadline is closed (ADR 0005 §2-bis). Until a node takes the work it cannot
+    outlive its decision, which the tool re-checks at the start of the call and not during it;
+    after the claim what counts is the expiry of the work, renewable up to a cap.
+
+    Built only by :mod:`ela.executive.assignments`, and rebuilt from a row by the mapper and by the
+    fake of ``ela.testing`` (architecture rule 49): an assignment names a node and carries a bearer
+    title, and one built by hand would skip every check that stands before it.
+    """
+
+    id: AssignmentId
+    created_at: UtcDatetime
+    task_id: TaskId
+    step_id: StepId
+    device_id: DeviceId
+    decision: PermissionDecision
+    authorization_id: AuthorizationId | None = None
+    state: AssignmentState
+    expires_at: UtcDatetime
+    claimed_at: UtcDatetime | None = None
+    delivered_at: UtcDatetime | None = None
+    delivery_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    """The SHA-256 of the envelope the node delivered: what tells an identical replay from a
+    conflict. In the private database only — never in an audit event, never in an error message:
+    two digests side by side are two fingerprints of the user's content."""
+
+    @model_validator(mode="after")
+    def _the_call_it_carries_and_where_it_stands(self) -> Assignment:
+        """An ALLOWED decision about this very step, with an expiry; the fields of each state."""
+        decision = self.decision
+        if decision.outcome is not PermissionOutcome.ALLOWED:
+            raise ValueError(
+                f"an assignment carries an ALLOWED decision, not {decision.outcome.value}: "
+                "nothing the Guardian did not allow leaves the Core"
+            )
+        if decision.task_id != self.task_id or decision.step_id != self.step_id:
+            raise ValueError("the decision is about another step: a decision is not transferable")
+        if decision.expires_at is None:
+            raise ValueError(
+                "the decision never expires: a bearer title with no expiry is not handed to a "
+                "node (ADR 0011 §9)"
+            )
+        if self.state is AssignmentState.OFFERED:
+            if self.claimed_at is not None:
+                raise ValueError("an offer nobody took has no claimed_at")
+            if self.expires_at > decision.expires_at:
+                raise ValueError(
+                    "an offer nobody took cannot outlive its decision: the tool checks the "
+                    "decision when the call starts, not during it"
+                )
+        elif self.claimed_at is None and self.state is not AssignmentState.EXPIRED:
+            raise ValueError(f"work that is {self.state.value} was claimed at some instant")
+        if (self.delivered_at is None) != (self.delivery_digest is None):
+            raise ValueError(
+                "a delivery is an instant and a digest: delivered_at and "
+                "delivery_digest go together"
+            )
+        if (self.state is AssignmentState.DELIVERED) != (self.delivered_at is not None):
+            raise ValueError("delivered_at and delivery_digest belong to a DELIVERED assignment")
+        return self
 
 
 class SensorState(StrEnum):

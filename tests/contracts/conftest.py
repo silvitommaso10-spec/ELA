@@ -15,6 +15,7 @@ import pytest
 
 from ela.ports import (
     ApprovalStore,
+    AssignmentStore,
     AuditLog,
     AuthorizationStore,
     AuthorizingGuardianPort,
@@ -82,6 +83,12 @@ async def device_registry(request: pytest.FixtureRequest) -> AsyncIterator[Devic
 async def enrollment_store(request: pytest.FixtureRequest) -> AsyncIterator[EnrollmentStore]:
     async for instance in _instance(request.param):
         yield cast(EnrollmentStore, instance)
+
+
+@pytest.fixture(params=implementations_of(AssignmentStore), ids=str)
+async def assignment_store(request: pytest.FixtureRequest) -> AsyncIterator[AssignmentStore]:
+    async for instance in _instance(request.param):
+        yield cast(AssignmentStore, instance)
 
 
 @pytest.fixture(params=implementations_of(CapabilityRegistryPort), ids=str)

@@ -59,6 +59,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0033-voice-out.md", INTRODUCING),
     (ADR_DIR / "0036-listening.md", INTRODUCING),
     (ADR_DIR / "0037-node-identity.md", INTRODUCING),
+    (ADR_DIR / "0038-work-protocol.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
@@ -79,6 +80,7 @@ INTRODUCED_PORTS = frozenset(
         "SpeechPort",
         "ListeningPort",
         "EnrollmentStore",
+        "AssignmentStore",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")

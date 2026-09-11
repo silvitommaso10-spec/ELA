@@ -21,6 +21,9 @@ from ela.domain import (
     Approval,
     ApprovalId,
     ApprovalStatus,
+    Assignment,
+    AssignmentId,
+    AssignmentState,
     AuditEvent,
     AuditEventId,
     AuditEventType,
@@ -296,6 +299,27 @@ PERMISSION_DECISION: Final = PermissionDecision(
     expires_at=LATER,
     metadata={"guardian": "v0"},
 )
+
+ALLOWED_DECISION: Final = PERMISSION_DECISION.model_copy(
+    update={"outcome": PermissionOutcome.ALLOWED, "approval_id": None, "reason": "permesso"}
+)
+"""What an assignment carries: ALLOWED, about its step, with an expiry (M12.2, ADR 0038)."""
+
+ASSIGNMENT_ID: Final = AssignmentId(_uuid(18))
+
+ASSIGNMENT: Final = Assignment(
+    id=ASSIGNMENT_ID,
+    created_at=NOW,
+    task_id=TASK_ID,
+    step_id=STEP_ID,
+    device_id=ENROLLED_DEVICE.id,
+    decision=ALLOWED_DECISION,
+    authorization_id=AUTHORIZATION_ID,
+    state=AssignmentState.CLAIMED,
+    expires_at=MUCH_LATER,
+    claimed_at=LATER,
+)
+"""Work a remote node has taken: claimed, with the grant the ``consume`` spent."""
 
 APPROVAL: Final = Approval(
     id=APPROVAL_ID,
@@ -600,6 +624,7 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         PROVIDER_REQUEST,
         PROVIDER_RESULT,
         EXECUTION_RESULT,
+        ASSIGNMENT,
         SENSOR_STATUS,
         RAW_OBSERVATION,
         RAW_CAPTURE,

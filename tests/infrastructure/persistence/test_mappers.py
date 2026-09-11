@@ -12,6 +12,7 @@ from sqlalchemy import Table
 
 from ela.domain import (
     Approval,
+    Assignment,
     AuditEvent,
     Authorization,
     Device,
@@ -24,6 +25,8 @@ from ela.domain import (
 from ela.infrastructure.persistence.mappers import (
     approval_to_row,
     approval_values,
+    assignment_to_row,
+    assignment_values,
     audit_event_to_row,
     audit_event_values,
     authorization_to_row,
@@ -37,6 +40,7 @@ from ela.infrastructure.persistence.mappers import (
     result_to_row,
     result_values,
     row_to_approval,
+    row_to_assignment,
     row_to_audit_event,
     row_to_authorization,
     row_to_device,
@@ -50,6 +54,7 @@ from ela.infrastructure.persistence.mappers import (
 )
 from ela.infrastructure.persistence.orm import (
     ApprovalRow,
+    AssignmentRow,
     AuditEventRow,
     AuthorizationRow,
     DeviceRow,
@@ -63,6 +68,7 @@ from tests.contracts.test_execution_result_store import BARE as BARE_RESULT
 from tests.contracts.test_task_repository import CHILD
 from tests.domain.examples import (
     APPROVAL,
+    ASSIGNMENT,
     AUDIT_EVENT,
     DEVICE,
     ENROLLMENT,
@@ -360,6 +366,36 @@ def test_a_new_domain_field_is_detected() -> None:
 def test_a_column_the_model_lacks_is_detected() -> None:
     values = {**task_values(TASK), "colour": "blue"}
     assert unmapped(Task, values, TaskRow.__table__) == {"colour"}
+
+
+@pytest.mark.parametrize(
+    "assignment",
+    [ASSIGNMENT, ASSIGNMENT.model_copy(update={"authorization_id": None})],
+    ids=["claimed", "without-a-grant"],
+)
+def test_assignment_round_trip(assignment: Assignment) -> None:
+    assert row_to_assignment(assignment_to_row(assignment)) == assignment
+
+
+@settings(max_examples=100, deadline=None)
+@given(MODEL_STRATEGIES[Assignment])
+def test_any_assignment_round_trips(assignment: BaseModel) -> None:
+    assert isinstance(assignment, Assignment)
+    assert row_to_assignment(assignment_to_row(assignment)) == assignment
+
+
+def test_assignment_mapper_covers_every_field() -> None:
+    assert unmapped(Assignment, assignment_values(ASSIGNMENT), AssignmentRow.__table__) == set()
+
+
+def test_an_assignment_row_keeps_the_decision_whole_and_no_arguments() -> None:
+    """ADR 0038: the decision is one JSON document with its id inside, and nothing of the step's
+    arguments reaches the row — they are read by reference when the node takes the work."""
+    values = assignment_values(ASSIGNMENT)
+
+    assert values["decision"] == ASSIGNMENT.decision.model_dump(mode="json")
+    assert "arguments" not in values
+    assert "arguments" not in {column.name for column in AssignmentRow.__table__.columns}
 
 
 @pytest.mark.parametrize("enrollment", [ENROLLMENT, WAITING_ENROLLMENT], ids=["spent", "waiting"])

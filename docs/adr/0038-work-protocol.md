@@ -210,6 +210,15 @@ Port introdotti:
 |---|---|---|---|
 | `AssignmentStore` | §15 | async | `add`, `get`, `for_step`, `offered_to`, `claim`, `deliver`, `renew`, `expire`, `cut_short` |
 
+**La migrazione `0009`** fa nascere la tabella, con l'indice unico parziale di §7; reversibile, con
+il suo test di downgrade. Nessuna colonna per gli argomenti.
+
+Tabella nuova:
+
+| Tabella | Colonne |
+|---|---|
+| `assignments` | `seq`, `id`, `created_at`, `task_id`, `step_id`, `device_id`, `decision`, `authorization_id`, `state`, `expires_at`, `claimed_at`, `delivered_at`, `delivery_digest` |
+
 ## 6. Il servizio, e perché si passa da lì
 
 **La scadenza si legge, e si scrive solo da chi agisce.** È ADR 0016 §3 applicato a una seconda
@@ -626,7 +635,7 @@ scrive il codice dietro (ADR 0027 §3).
 | Regola | Cosa dice | Su | Vale per |
 |---|---|---|---|
 | 48 `assignment-port-readers` | nessun modulo importa `AssignmentStore`: le assegnazioni si leggono dal servizio che ne deriva la scadenza | `ela` | il servizio |
-| 49 `assignments-built-only-by-the-assigner` | nessuno costruisce un `Assignment`, né chiamando la classe né con i costruttori di pydantic | `ela` | il servizio; il mapper che lo ricostruisce da una riga |
+| 49 `assignments-built-only-by-the-assigner` | nessuno costruisce un `Assignment`, né chiamando la classe né con i costruttori di pydantic | `ela` | il servizio; il mapper che lo ricostruisce da una riga; il fake di `ela.testing`, che tiene righe e ricostruisce allo stesso modo, invece di copiare l'entità oltre i suoi validatori |
 | 50 `release-step-has-one-caller` | `release_step` ha un chiamante | `ela` | il servizio |
 | 51 `a-work-order-goes-only-to-its-node` | l'ordine lo compone un solo modulo, e quel modulo non importa un client di rete | `ela` | il compositore di `api/nodes.py` |
 | 52 `results-are-minted-by-the-core` | nessun modulo di `ela.api` costruisce un `ExecutionResult` | `ela.api` | nessuna esenzione |

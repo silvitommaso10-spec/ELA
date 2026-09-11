@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ela.permissions import production_catalogue
 from tests.architecture.rules import RULES
+from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_nodes import documented_rules
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
@@ -54,12 +55,14 @@ def test_the_rules_this_adr_adds_are_registered_under_the_names_it_gives_them() 
 def test_the_conseguenze_count_the_rules_and_the_capabilities_of_today() -> None:
     """The pin on today's totals, taken over from ADR 0037 by the ADR that changed them.
 
-    The rules moved with the two commits that wrote rules 48 to 52 before their code; the
-    capabilities do not move — in M12.2 four of the eight travel and none is added. The ports join
-    this pin in the commit that writes the twenty-fifth.
+    The rules moved with the two commits that wrote rules 48 to 52 before their code, the ports
+    with the commit that wrote the twenty-fifth; the capabilities do not move — in M12.2 four of
+    the eight travel and none is added.
     """
     assert "**cinquantadue**" in conseguenze()
     assert len(RULES) == 52
+    assert "**venticinque**" in conseguenze()
+    assert len(tuple(port_protocols())) == 25
     assert "**restano otto**" in conseguenze()
     assert len(production_catalogue().specs()) == 8
 

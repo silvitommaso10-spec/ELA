@@ -66,6 +66,7 @@ LATER_ADDITIONS = frozenset(
         "ContextRecent",
         "ContextQuestionStatus",
         "Enrollment",
+        "Assignment",
     }
 )
 """Models a later milestone added, each argued in its own ADR.
@@ -111,6 +112,12 @@ what keeps a snapshot out of an audit event and out of a provider request.
 — issued, then consumed or expired — and a store of its own, :class:`~ela.ports.EnrollmentStore`.
 It is not a ``Device`` because until it is consumed no node exists, and a row that said otherwise
 would be a node nobody can reach. It keeps the hash of the code and never the code (D3).
+
+``Assignment`` (M12.2, ADR 0038) is the second: a call to ``Tool.execute`` handed to a node that
+is not this process, with a life — offered, claimed, delivered or expired — and a store of its own,
+:class:`~ela.ports.AssignmentStore`. It is not a ``PlacementDecision``, which stays the in-process
+value of ADR 0026 §2 (M12.1, D8), and it does not carry the arguments of the call: those are the
+step's, and the call is the decision it carries plus the step, read by reference (M12.1, D1).
 """
 
 
