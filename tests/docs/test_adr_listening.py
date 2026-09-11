@@ -16,11 +16,14 @@ import re
 from pathlib import Path
 
 from ela.domain import AuditEventType
-from ela.permissions import production_catalogue
 from tests.architecture.rules import RULES
 from tests.architecture.violations import PACKAGE_ROOT
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_placement import _rules_up_to
+from tests.docs.test_adr_ports import (
+    INTRODUCING,
+    documented_ports,
+)
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0036-listening.md"
 
@@ -74,23 +77,29 @@ def test_the_event_this_milestone_added_does_have_a_writer() -> None:
     assert writers_of(AuditEventType.SENSOR_ACTIVATED) == ["executive/executor.py"]
 
 
-def test_the_conseguenze_count_the_rules_and_the_ports_of_today() -> None:
+def ports_before(adr: Path) -> set[str]:
+    """Today's ports without the ones ``adr`` introduced: what an older total is a claim about."""
+    later = documented_ports(adr.read_text(encoding="utf-8"), INTRODUCING)
+    return {port.__name__ for port in port_protocols()} - set(later)
+
+
+def test_the_conseguenze_count_the_rules_and_the_ports_up_to_this_adr() -> None:
     """The pin on today's totals, which moves to the ADR that last changed them.
 
     The rules have moved on: M12.1 adds rules 46 and 47 before ADR 0037 is written (ADR 0030 §15,
     the defence before the room). So ADR 0036's «quarantacinque» is read the way ADR 0026's
     «trentuno» is (``test_adr_placement.py``): as a claim about the rules numbered up to 45, which
     each rule declares in its own docstring — history that stays checkable, not a total. The pin on
-    today's number of rules moves to ADR 0037's test when that document exists. Ports and
-    capabilities have not moved yet, and stay pinned here until they do.
+    today's number of rules moves to ADR 0037's test when that document exists. The ports moved
+    with M12.1's twenty-fourth: «ventitré» is read as the ports before ADR 0037's `Port
+    introdotti:`, and the pin on today's ports and capabilities is ADR 0037's test too.
     """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**quarantacinque**" in conseguenze
     assert len(_rules_up_to(45)) == 45
     assert "**ventitré**" in conseguenze
-    assert len(tuple(port_protocols())) == 23
-    assert len(production_catalogue().specs()) == 8
+    assert len(ports_before(ADR_PATH.with_name("0037-node-identity.md"))) == 23
 
 
 def test_the_adr_names_the_rules_it_renamed_and_they_resolve() -> None:

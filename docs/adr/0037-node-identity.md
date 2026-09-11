@@ -297,13 +297,44 @@ port, **il ventiquattresimo**: `EnrollmentStore`, async, con l'offerta e il cons
 guadagna `revoke(device_id, *, at)` (§12) e una scrittura per ogni metà (§9); se dopo le scritture
 per metà `update` non ha più chiamanti, esce dal port invece di restarci come porta aperta.
 
-I nomi dei membri, fuori da `revoke`, non li fissa nessuna decisione approvata: entrano con il
-commit che scrive il port, insieme alle tabelle `Port introdotti:` e `Port estesi:` che
-`tests/docs/test_adr_ports.py` legge.
+I nomi dei membri li fissa il commit che scrive il port, e sono questi; `tests/docs/test_adr_ports.py`
+legge le due tabelle.
+
+Port introdotti:
+
+| Port | Spec | Modalità | Membri |
+|---|---|---|---|
+| `EnrollmentStore` | §16 | async | `offer`, `consume` |
+
+Port estesi:
+
+| Port | Spec | Modalità | Membri |
+|---|---|---|---|
+| `DeviceRegistryPort` | §16 | async | `enroll`, `secret_hash`, `announce`, `observe`, `revoke` |
+
+`enroll` fa nascere la riga con l'hash, e `secret_hash` è l'unica strada dell'hash fuori dal port:
+porta al confronto di `api/security.py` (§6). `announce` e `observe` sono le scritture per metà di
+§9; la metà che `announce` scrive è `ANNOUNCED_FIELDS` di `ela.ports`, cioè la riga «Dichiarata»
+di §10, e un test tiene uguali le due. I rifiuti hanno un nome — `IdentityConflictError`,
+`DeviceRevokedError`, e per il codice `EnrollmentConsumedError`, che porta il nodo nato dal codice
+(`code_reused`, §13), ed `EnrollmentExpiredError` — e nessuno porta il codice o il suo hash.
+`update` resta finché ha un chiamante, per la regola detta sopra.
 
 **La migrazione `0008`**: `revision`, `revoked_at` e `secret_hash` su `devices` — l'ultimo nullo
 per `local`, che non si autentica dalla rete — e la tabella `enrollments`; reversibile, con il suo
 test di downgrade.
+
+Tabella nuova:
+
+| Tabella | Colonne |
+|---|---|
+| `enrollments` | `seq`, `code_hash`, `created_at`, `expires_at`, `privacy`, `consumed_at`, `device_id` |
+
+Colonne aggiunte:
+
+| Tabella | Colonne |
+|---|---|
+| `devices` | `revision`, `revoked_at`, `secret_hash` |
 
 ## 9. Una scrittura per ogni metà, e la revisione
 

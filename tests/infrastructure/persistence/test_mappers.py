@@ -15,6 +15,7 @@ from ela.domain import (
     AuditEvent,
     Authorization,
     Device,
+    Enrollment,
     ExecutionResult,
     Task,
     TaskEvent,
@@ -29,6 +30,7 @@ from ela.infrastructure.persistence.mappers import (
     authorization_values,
     device_to_row,
     device_values,
+    enrollment_to_row,
     event_to_row,
     plan_to_row,
     plan_values,
@@ -38,6 +40,7 @@ from ela.infrastructure.persistence.mappers import (
     row_to_audit_event,
     row_to_authorization,
     row_to_device,
+    row_to_enrollment,
     row_to_event,
     row_to_plan,
     row_to_result,
@@ -62,6 +65,7 @@ from tests.domain.examples import (
     APPROVAL,
     AUDIT_EVENT,
     DEVICE,
+    ENROLLMENT,
     ERROR_METADATA,
     EXECUTION_RESULT,
     POLICY_AUTHORIZATION,
@@ -69,6 +73,7 @@ from tests.domain.examples import (
     TASK,
     TASK_EVENT,
     TASK_PLAN,
+    WAITING_ENROLLMENT,
 )
 from tests.domain.strategies import MODEL_STRATEGIES
 
@@ -257,7 +262,9 @@ def test_a_new_audit_row_has_no_hashes_yet() -> None:
 # No forgotten field: model fields == columns the mapper writes (minus the store's own)
 # ----------------------------------------------------------------------------------------
 
-STORE_OWNED = {"seq", "uses", "prev_hash", "row_hash"}
+#: Columns the store keeps on its own behalf and no entity carries. ``secret_hash`` is the
+#: registry's (M12.1): a node's hash is a column, never a field of ``Device`` (rule 46).
+STORE_OWNED = {"seq", "uses", "prev_hash", "row_hash", "secret_hash"}
 #: A domain field stored as more than one column (the actor, ADR 0003: "who" stays queryable).
 SPLIT_FIELDS = {"actor": {"actor_kind", "actor_id"}}
 
@@ -353,3 +360,14 @@ def test_a_new_domain_field_is_detected() -> None:
 def test_a_column_the_model_lacks_is_detected() -> None:
     values = {**task_values(TASK), "colour": "blue"}
     assert unmapped(Task, values, TaskRow.__table__) == {"colour"}
+
+
+@pytest.mark.parametrize("enrollment", [ENROLLMENT, WAITING_ENROLLMENT], ids=["spent", "waiting"])
+def test_enrollment_round_trip(enrollment: Enrollment) -> None:
+    assert row_to_enrollment(enrollment_to_row(enrollment)) == enrollment
+
+
+@given(MODEL_STRATEGIES[Enrollment])
+def test_any_enrollment_round_trips(enrollment: BaseModel) -> None:
+    assert isinstance(enrollment, Enrollment)
+    assert row_to_enrollment(enrollment_to_row(enrollment)) == enrollment

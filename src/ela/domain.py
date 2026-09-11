@@ -73,6 +73,7 @@ __all__ = [
     "DeviceId",
     "DeviceStatus",
     "ELAIdentity",
+    "Enrollment",
     "ErrorMetadata",
     "ExecutionId",
     "ExecutionResult",
@@ -771,7 +772,65 @@ class Device(_DomainModel):
     privacy: PrivacyLevel
     current_workload: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     last_seen_at: UtcDatetime | None = None
+    revision: Annotated[int, Field(ge=0)] = 0
+    """How many times the node has announced its declared half (M12.1 dec. H; ADR 0037 §9).
+
+    The row's version, not a fact about the machine: an announcement is written only if the row is
+    still at the revision the node last saw, so two processes that claim to be the same node do not
+    overwrite each other by order of arrival — the second is told it believed something false about
+    the row (ADR 0035 §5). ``0`` for ``local``, which the Core writes for itself and which stays out
+    of the revision (ADR 0037 §9).
+    """
+    revoked_at: UtcDatetime | None = None
+    """When the user revoked the node, or ``None`` (M12.1 dec. K; ADR 0037 §12).
+
+    The row stays — whoever investigates an action must be able to tell which nodes existed then
+    (ADR 0016 §6) — and this is the mark every reader judges it by: the middleware refuses it, the
+    orchestrator diagnoses it ``REVOKED``, ``available()`` leaves it out. Never the hash of the
+    node's secret, which is not a field of this entity (architecture rule 46).
+    """
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
+
+
+class Enrollment(_DomainModel):
+    """A one-shot enrollment code, as ELA keeps it: the hash of the code, never the code (M12.1).
+
+    The user asks for it (``ela node enroll``), the node presents it once, and the node that is born
+    from it gets the ``privacy`` the user imposed here — never one it declares for itself (D3, D18;
+    ADR 0037 §5). The code is ``secrets.token_urlsafe(32)``: 256 bits, so its SHA-256 cannot be
+    inverted by a dictionary (ADR 0014, alternativa F), and the hash is all the store holds.
+
+    ``consumed_at`` and ``device_id`` are written together, by the conditional ``UPDATE`` that
+    spends the code: a code is consumed *by* a node, and a code presented again names the node it
+    gave birth to (``DEVICE_REJECTED`` ``code_reused``, ADR 0037 §13).
+    """
+
+    code_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    created_at: UtcDatetime
+    expires_at: UtcDatetime
+    privacy: PrivacyLevel
+    consumed_at: UtcDatetime | None = None
+    device_id: DeviceId | None = None
+
+    @model_validator(mode="after")
+    def _remote_consumed_by_one_node_and_short_lived(self) -> Enrollment:
+        """``LOCAL_ONLY`` stays ``local``'s; a code expires after issue; one node consumes it.
+
+        ``LOCAL_ONLY`` is refused by the type and not only by the route (D18): with today's
+        comparison (``devices/orchestrator.py``, F2) a node at that level receives every task,
+        including the ones whose sensitivity nobody declared — and «a task nobody declared stays at
+        home» is true only if no remote node can be ``LOCAL_ONLY``.
+        """
+        if self.privacy is PrivacyLevel.LOCAL_ONLY:
+            raise ValueError(
+                "LOCAL_ONLY is this machine's level: a remote node at it would receive every task, "
+                "including those whose sensitivity nobody declared (D18)"
+            )
+        if self.expires_at <= self.created_at:
+            raise ValueError("an enrollment code must expire after it is issued")
+        if (self.consumed_at is None) != (self.device_id is None):
+            raise ValueError("a code is consumed by a node: consumed_at and device_id go together")
+        return self
 
 
 class CapabilitySpec(_DomainModel):

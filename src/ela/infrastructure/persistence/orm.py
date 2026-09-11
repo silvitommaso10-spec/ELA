@@ -49,6 +49,7 @@ __all__ = [
     "TaskPlanRow",
     "TaskRow",
     "UtcDateTime",
+    "EnrollmentRow",
 ]
 
 HASH_LENGTH: Final = 64
@@ -247,6 +248,12 @@ class DeviceRow(Base):
     ``availability`` is indexed because the orchestrator (§17) will ask for the nodes that answer,
     but what a reader gets is not this column: ``DeviceRegistry`` answers availability from
     ``last_seen_at`` and the TTL (ADR 0016 §3). The column holds the last state observed.
+
+    Since M12.1 (ADR 0037 §8, §9) the row also keeps the state of the node's identity:
+    ``revision``, which an announcement moves; ``revoked_at``, which a revocation writes once; and
+    ``secret_hash``, the SHA-256 of the node's secret — ``NULL`` for ``local``, which does not
+    authenticate from the network. The hash is a column and never a field of the entity
+    (architecture rule 46): the row is the vault, not a boundary.
     """
 
     __tablename__ = "devices"
@@ -268,6 +275,31 @@ class DeviceRow(Base):
     current_workload: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
+    revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    secret_hash: Mapped[str | None] = mapped_column(String(HASH_LENGTH), nullable=True)
+
+
+class EnrollmentRow(Base):
+    """An :class:`~ela.domain.Enrollment`, as stored: the hash of a one-shot code (ADR 0037 §8).
+
+    ``code_hash`` is UNIQUE because it is the key the conditional ``UPDATE`` finds a code by
+    (ADR 0037 §5); the code itself is never stored. No foreign key to ``devices``: ``device_id`` is
+    written by the statement that spends the code, *before* the node's row is born.
+    """
+
+    __tablename__ = "enrollments"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code_hash: Mapped[str] = mapped_column(String(HASH_LENGTH), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    privacy: Mapped[str] = mapped_column(String(32), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    device_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
 
 
 class AuditEventRow(Base):

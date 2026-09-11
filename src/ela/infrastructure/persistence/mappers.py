@@ -34,6 +34,7 @@ from ela.domain import (
     DeviceCapability,
     DeviceId,
     DeviceStatus,
+    Enrollment,
     ErrorMetadata,
     ExecutionId,
     ExecutionResult,
@@ -62,6 +63,7 @@ from ela.infrastructure.persistence.orm import (
     AuditEventRow,
     AuthorizationRow,
     DeviceRow,
+    EnrollmentRow,
     ExecutionResultRow,
     TaskEventRow,
     TaskPlanRow,
@@ -77,6 +79,8 @@ __all__ = [
     "authorization_values",
     "device_to_row",
     "device_values",
+    "enrollment_to_row",
+    "enrollment_values",
     "event_to_row",
     "plan_to_row",
     "plan_values",
@@ -86,6 +90,7 @@ __all__ = [
     "row_to_audit_event",
     "row_to_authorization",
     "row_to_device",
+    "row_to_enrollment",
     "row_to_event",
     "row_to_plan",
     "row_to_result",
@@ -381,6 +386,8 @@ def device_values(device: Device) -> dict[str, Any]:
         "current_workload": device.current_workload,
         "last_seen_at": device.last_seen_at,
         "metadata_": _plain(device.metadata),
+        "revision": device.revision,
+        "revoked_at": device.revoked_at,
     }
 
 
@@ -407,6 +414,40 @@ def row_to_device(row: DeviceRow) -> Device:
         current_workload=row.current_workload,
         last_seen_at=row.last_seen_at,
         metadata=row.metadata_,
+        revision=row.revision,
+        revoked_at=row.revoked_at,
+    )
+
+
+# --------------------------------------------------------------------------------------
+# Enrollment
+# --------------------------------------------------------------------------------------
+
+
+def enrollment_values(enrollment: Enrollment) -> dict[str, Any]:
+    """Column values of a one-shot code: its hash, never the code (ADR 0037 §5)."""
+    return {
+        "code_hash": enrollment.code_hash,
+        "created_at": enrollment.created_at,
+        "expires_at": enrollment.expires_at,
+        "privacy": enrollment.privacy.value,
+        "consumed_at": enrollment.consumed_at,
+        "device_id": enrollment.device_id,
+    }
+
+
+def enrollment_to_row(enrollment: Enrollment) -> EnrollmentRow:
+    return EnrollmentRow(**enrollment_values(enrollment))
+
+
+def row_to_enrollment(row: EnrollmentRow) -> Enrollment:
+    return Enrollment(
+        code_hash=row.code_hash,
+        created_at=row.created_at,
+        expires_at=row.expires_at,
+        privacy=PrivacyLevel(row.privacy),
+        consumed_at=row.consumed_at,
+        device_id=None if row.device_id is None else DeviceId(row.device_id),
     )
 
 

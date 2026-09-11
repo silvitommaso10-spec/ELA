@@ -5,7 +5,8 @@ by an explicit mapper; schema owned by alembic (``migrations/``). Configuration 
 :class:`PersistenceSettings` (``ELA_DB_URL``). The audit log (§32) is append-only at every level
 and hash-chained; :func:`verify_chain` checks the chain (ADR 0007). Requests for consent and
 what tools produced live in ``approvals`` and ``execution_results`` (M5.3, ADR 0015),
-and the nodes of §16 in ``devices`` (M6.1, ADR 0016).
+the nodes of §16 in ``devices`` (M6.1, ADR 0016), and the one-shot codes that enroll a node
+in ``enrollments`` (M12.1, ADR 0037).
 """
 
 from ela.infrastructure.persistence.approval_store import SqlApprovalStore
@@ -19,6 +20,7 @@ from ela.infrastructure.persistence.engine import (
     make_session_factory,
     sync_url,
 )
+from ela.infrastructure.persistence.enrollment_store import SqlEnrollmentStore
 from ela.infrastructure.persistence.execution_result_store import SqlExecutionResultStore
 from ela.infrastructure.persistence.schema import missing_tables
 from ela.infrastructure.persistence.settings import PersistenceSettings, default_db_url
@@ -30,6 +32,7 @@ __all__ = [
     "SqlAuditLog",
     "SqlAuthorizationStore",
     "SqlDeviceRegistry",
+    "SqlEnrollmentStore",
     "SqlExecutionResultStore",
     "SqlTaskRepository",
     "async_url",

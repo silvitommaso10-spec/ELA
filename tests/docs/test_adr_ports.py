@@ -42,6 +42,7 @@ EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0021-started-protocol-and-model-complete.md", EXTENDING),
     (ADR_DIR / "0025-phase-8-debts.md", EXTENDING),
     (ADR_DIR / "0032-context-core.md", EXTENDING),
+    (ADR_DIR / "0037-node-identity.md", EXTENDING),
 )
 REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),
@@ -57,6 +58,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0030-screen-text.md", INTRODUCING),
     (ADR_DIR / "0033-voice-out.md", INTRODUCING),
     (ADR_DIR / "0036-listening.md", INTRODUCING),
+    (ADR_DIR / "0037-node-identity.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
@@ -76,6 +78,7 @@ INTRODUCED_PORTS = frozenset(
         "TextRecognitionPort",
         "SpeechPort",
         "ListeningPort",
+        "EnrollmentStore",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")
@@ -290,7 +293,7 @@ def test_the_context_adr_adds_the_two_deadline_members_and_no_port() -> None:
     section that shows twenty of a hundred and thirty-seven must be able to say the hundred and
     thirty-seven without loading it.
     """
-    extension = documented_ports(_text(EXTENDING_ADRS[-1]))
+    extension = documented_ports(_text((ADR_DIR / "0032-context-core.md", EXTENDING)))
     assert extension == {"TaskRepository": ("async", frozenset({"due", "due_count"}))}
     assert "Port introdotti:" not in (ADR_DIR / "0032-context-core.md").read_text("utf-8")
 

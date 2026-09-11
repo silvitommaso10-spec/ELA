@@ -6,7 +6,7 @@ it may look like. ``test_spec_coverage.py`` fails if a model has neither.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Final
 
 from hypothesis import strategies as st
@@ -40,8 +40,10 @@ from ela.domain import (
     DeviceAvailability,
     DeviceCapability,
     DeviceCapabilityName,
+    DeviceId,
     DeviceStatus,
     ELAIdentity,
+    Enrollment,
     ErrorMetadata,
     ExecutionResult,
     ExecutionStatus,
@@ -245,7 +247,33 @@ devices = st.builds(
     current_workload=_optional(st.floats(min_value=0.0, max_value=1.0, width=32)),
     last_seen_at=_optional(utc_datetimes),
     metadata=json_mappings,
+    revision=counts,
+    revoked_at=_optional(utc_datetimes),
 )
+
+
+@st.composite
+def _enrollments(draw: st.DrawFn) -> Enrollment:
+    """A code that expires after it is issued, at a remote level, consumed by one node or none."""
+    created_at = draw(utc_datetimes)
+    lifetime = draw(st.timedeltas(min_value=timedelta(seconds=1), max_value=timedelta(days=30)))
+    consumer = draw(_optional(st.tuples(utc_datetimes, uuids)))
+    return Enrollment(
+        code_hash=draw(st.text("0123456789abcdef", min_size=64, max_size=64)),
+        created_at=created_at,
+        expires_at=created_at + lifetime,
+        privacy=draw(st.sampled_from(REMOTE_PRIVACY_LEVELS)),
+        consumed_at=None if consumer is None else consumer[0],
+        device_id=None if consumer is None else DeviceId(consumer[1]),
+    )
+
+
+REMOTE_PRIVACY_LEVELS: Final = tuple(
+    level for level in PrivacyLevel if level is not PrivacyLevel.LOCAL_ONLY
+)
+"""The levels a user can impose on a remote node: ``LOCAL_ONLY`` stays this machine's (D18)."""
+
+enrollments = _enrollments()
 
 capability_specs = st.builds(
     CapabilitySpec,
@@ -637,6 +665,7 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.Task: tasks,
     domain.TaskEvent: task_events,
     domain.Device: devices,
+    domain.Enrollment: enrollments,
     domain.CapabilitySpec: capability_specs,
     domain.PermissionDecision: permission_decisions,
     domain.Approval: approvals,

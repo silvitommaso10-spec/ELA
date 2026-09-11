@@ -17,13 +17,25 @@ from sqlalchemy import Column, MetaData, String, Table, create_engine, inspect, 
 from ela.infrastructure.persistence import (
     SqlAuditLog,
     SqlAuthorizationStore,
+    SqlDeviceRegistry,
+    SqlEnrollmentStore,
     SqlTaskRepository,
     make_engine,
     verify_chain,
 )
 from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS, Base
 from tests.architecture.violations import REPO_ROOT
-from tests.domain.examples import AUDIT_EVENT, NOW, POLICY_AUTHORIZATION, TASK, TASK_PLAN
+from tests.domain.examples import (
+    AUDIT_EVENT,
+    DEVICE,
+    ENROLLED_DEVICE,
+    NOW,
+    POLICY_AUTHORIZATION,
+    SECRET_HASH,
+    TASK,
+    TASK_PLAN,
+    WAITING_ENROLLMENT,
+)
 
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 ALEMBIC = Path(sys.executable).parent / "alembic"
@@ -36,8 +48,10 @@ TABLES = {
     "approvals",
     "execution_results",
     "devices",
+    "enrollments",
 }
 REVISIONS = [
+    "0008",
     "0007",
     "0006",
     "0005",
@@ -185,7 +199,13 @@ def test_downgrade_of_the_audit_migration_is_refused(db: Path) -> None:
     with pytest.raises(NotImplementedError, match="no downgrade"):
         command.downgrade(config, "0001")
     assert "audit_events" in _tables(db)
-    assert set(_tables(db)) == TABLES - {"task_plans", "approvals", "execution_results", "devices"}
+    assert set(_tables(db)) == TABLES - {
+        "task_plans",
+        "approvals",
+        "execution_results",
+        "devices",
+        "enrollments",
+    }
     assert _triggers(db) == APPEND_ONLY_TRIGGERS
     assert _version(db) == "0002"
 
@@ -195,7 +215,13 @@ def test_downgrade_of_the_plans_migration_removes_the_table(db: Path) -> None:
     config = config_for(db)
     command.upgrade(config, "head")
     command.downgrade(config, "0002")
-    assert set(_tables(db)) == TABLES - {"task_plans", "approvals", "execution_results", "devices"}
+    assert set(_tables(db)) == TABLES - {
+        "task_plans",
+        "approvals",
+        "execution_results",
+        "devices",
+        "enrollments",
+    }
     assert _version(db) == "0002"
 
 
@@ -204,7 +230,7 @@ def test_downgrade_of_the_approvals_migration_removes_both_tables(db: Path) -> N
     config = config_for(db)
     command.upgrade(config, "head")
     command.downgrade(config, "0003")
-    assert set(_tables(db)) == TABLES - {"approvals", "execution_results", "devices"}
+    assert set(_tables(db)) == TABLES - {"approvals", "execution_results", "devices", "enrollments"}
     assert "task_plans" in _tables(db)
     assert _version(db) == "0003"
     command.upgrade(config, "head")
@@ -216,10 +242,45 @@ def test_downgrade_of_the_devices_migration_removes_the_table(db: Path) -> None:
     config = config_for(db)
     command.upgrade(config, "head")
     command.downgrade(config, "0004")
-    assert set(_tables(db)) == TABLES - {"devices"}
+    assert set(_tables(db)) == TABLES - {"devices", "enrollments"}
     assert _version(db) == "0004"
     command.upgrade(config, "head")
     assert _tables(db) == EXPECTED_COLUMNS
+
+
+def test_downgrade_of_the_identity_migration_removes_what_it_added(db: Path) -> None:
+    """``0008`` does not touch ``audit_events``: reversible down to ``0007`` (ADR 0037 §8)."""
+    config = config_for(db)
+    command.upgrade(config, "head")
+    command.downgrade(config, "0007")
+    tables = _tables(db)
+    assert set(tables) == TABLES - {"enrollments"}
+    assert {"revision", "revoked_at", "secret_hash"}.isdisjoint(tables["devices"])
+    assert _version(db) == "0007"
+    command.upgrade(config, "head")
+    assert _tables(db) == EXPECTED_COLUMNS
+
+
+async def test_a_node_kept_across_the_identity_migration_reads_as_revision_zero(db: Path) -> None:
+    """The row ``local`` has on every development database: ``0008`` gives it revision ``0``, no
+    revocation and no hash, without anyone rewriting it."""
+    config = config_for(db)
+    command.upgrade(config, "head")
+    before = DEVICE.model_copy(update={"revision": 3})
+    engine = make_engine(f"sqlite:///{db.as_posix()}")
+    try:
+        await SqlDeviceRegistry(engine).register(before)
+    finally:
+        await engine.dispose()
+    command.downgrade(config, "0007")
+    command.upgrade(config, "head")
+    engine = make_engine(f"sqlite:///{db.as_posix()}")
+    try:
+        registry = SqlDeviceRegistry(engine)
+        assert await registry.get(DEVICE.id) == DEVICE
+        assert await registry.secret_hash(DEVICE.id) is None
+    finally:
+        await engine.dispose()
 
 
 def test_downgrade_to_base_from_0001_removes_everything(db: Path) -> None:
@@ -270,6 +331,17 @@ async def test_the_adapters_work_on_the_migrated_database(db: Path) -> None:
         assert await store.consume(POLICY_AUTHORIZATION.id, now=NOW) == 1
         assert await log.read() == (AUDIT_EVENT,)
         assert (await verify_chain(engine)).length == 1
+        devices = SqlDeviceRegistry(engine)
+        enrollments = SqlEnrollmentStore(engine)
+        await enrollments.offer(WAITING_ENROLLMENT)
+        spent = await enrollments.consume(
+            WAITING_ENROLLMENT.code_hash, device_id=ENROLLED_DEVICE.id, now=NOW
+        )
+        await devices.enroll(ENROLLED_DEVICE, secret_hash=SECRET_HASH)
+        assert spent.device_id == ENROLLED_DEVICE.id
+        assert await devices.announce(ENROLLED_DEVICE, expected_revision=1) == 2
+        assert await devices.revoke(ENROLLED_DEVICE.id, at=NOW) is True
+        assert await devices.secret_hash(ENROLLED_DEVICE.id) == SECRET_HASH
     finally:
         await engine.dispose()
 

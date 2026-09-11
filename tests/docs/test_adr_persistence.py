@@ -4,9 +4,9 @@ Same pattern as ``test_adr_ports.py``: the ADR is the documented decision, the m
 running code, and neither may drift from the other without this test noticing. An ADR is
 immutable, so each ADR documents the tables it introduces (0006: tasks, task events,
 authorizations; 0007: audit events; 0008: task plans; 0015: approvals, execution results;
-0016: devices) and the union is what the metadata must match. A schema row has exactly two
-cells — the table and its columns — so that the other tables of an ADR (ports, operations) are
-never mistaken for one.
+0016: devices; 0037: enrollments) and the union is what the metadata must match. A schema row
+has exactly two cells — the table and its columns — so that the other tables of an ADR (ports,
+operations) are never mistaken for one.
 """
 
 from __future__ import annotations
@@ -25,13 +25,19 @@ ADR_PATHS = {
     "0008": ADR_DIR / "0008-task-engine.md",
     "0015": ADR_DIR / "0015-approval-and-result-persistence.md",
     "0016": ADR_DIR / "0016-device-registry.md",
+    "0037": ADR_DIR / "0037-node-identity.md",
 }
 ADDING_COLUMNS = "Colonne aggiunte:"
-COLUMN_ADRS = {"0021": ADR_DIR / "0021-started-protocol-and-model-complete.md"}
+COLUMN_ADRS = {
+    "0021": ADR_DIR / "0021-started-protocol-and-model-complete.md",
+    "0037": ADR_DIR / "0037-node-identity.md",
+}
 """ADRs that add a column to a table another ADR created (ADR 0021 §11: ``execution_results``
 gains ``usage``). An ADR is immutable, so the new column is documented by the ADR that decided
 it, under a label, and appended to the columns the creating ADR listed — the same mechanism that
-lets a later ADR extend a port."""
+lets a later ADR extend a port. ADR 0037 §8 is the first to do both — a table of its own and
+three columns on ``devices`` — so its creating text is read without the section under the label,
+which :func:`added_columns` reads instead."""
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \|$")
 COLUMN = re.compile(r"`(\w+)`")
 
@@ -75,8 +81,20 @@ def added_columns() -> dict[str, dict[str, tuple[str, ...]]]:
     }
 
 
+def without_added_columns(text: str) -> str:
+    """``text`` without the section under :data:`ADDING_COLUMNS`, up to the next heading."""
+    if ADDING_COLUMNS not in text:
+        return text
+    before, after = text.split(ADDING_COLUMNS, 1)
+    rest = after.split("\n#", 1)
+    return before + ("\n#" + rest[1] if len(rest) == 2 else "")
+
+
 def adr_texts() -> dict[str, str]:
-    return {adr: path.read_text(encoding="utf-8") for adr, path in ADR_PATHS.items()}
+    return {
+        adr: without_added_columns(path.read_text(encoding="utf-8"))
+        for adr, path in ADR_PATHS.items()
+    }
 
 
 def coded_tables() -> dict[str, tuple[str, ...]]:
@@ -101,7 +119,9 @@ def test_each_adr_documents_its_own_tables() -> None:
     assert set(documented_tables(texts["0008"])) == {"task_plans"}
     assert set(documented_tables(texts["0015"])) == {"approvals", "execution_results"}
     assert set(documented_tables(texts["0016"])) == {"devices"}
+    assert set(documented_tables(texts["0037"])) == {"enrollments"}
     assert added_columns()["0021"] == {"execution_results": ("usage",)}
+    assert added_columns()["0037"] == {"devices": ("revision", "revoked_at", "secret_hash")}
 
 
 @pytest.mark.parametrize(

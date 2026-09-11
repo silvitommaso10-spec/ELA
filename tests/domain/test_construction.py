@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -24,6 +24,7 @@ from ela.domain import (
     DeviceCapability,
     DeviceCapabilityName,
     DeviceStatus,
+    Enrollment,
     NetworkKind,
     OperatingSystem,
     PerformanceClass,
@@ -216,6 +217,58 @@ def test_device_state_enums_default_to_unknown() -> None:
 def test_device_privacy_has_no_default() -> None:
     """§33: an undeclared privacy level must never be mistaken for permission."""
     assert Device.model_fields["privacy"].is_required()
+
+
+def test_a_device_is_born_at_revision_zero_and_not_revoked() -> None:
+    device = _device()
+    assert device.revision == 0
+    assert device.revoked_at is None
+
+
+def test_a_device_revision_is_never_negative() -> None:
+    with pytest.raises(ValidationError):
+        _device(revision=-1)
+
+
+def _enrollment(**overrides: object) -> Enrollment:
+    return Enrollment.model_validate(EXAMPLES[Enrollment].model_dump() | overrides)
+
+
+def test_a_code_can_wait_unconsumed() -> None:
+    enrollment = _enrollment(consumed_at=None, device_id=None)
+    assert (enrollment.consumed_at, enrollment.device_id) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "level", [level for level in PrivacyLevel if level is not PrivacyLevel.LOCAL_ONLY]
+)
+def test_a_code_imposes_any_remote_level(level: PrivacyLevel) -> None:
+    assert _enrollment(privacy=level).privacy is level
+
+
+def test_a_code_cannot_impose_local_only() -> None:
+    """D18: a remote node at ``LOCAL_ONLY`` would receive the tasks nobody declared."""
+    with pytest.raises(ValidationError, match="LOCAL_ONLY"):
+        _enrollment(privacy=PrivacyLevel.LOCAL_ONLY)
+
+
+@pytest.mark.parametrize("lifetime", [timedelta(0), timedelta(seconds=-1)])
+def test_a_code_expires_after_it_is_issued(lifetime: timedelta) -> None:
+    with pytest.raises(ValidationError, match="expire after"):
+        _enrollment(created_at=NOW, expires_at=NOW + lifetime)
+
+
+@pytest.mark.parametrize("missing", ["consumed_at", "device_id"])
+def test_a_code_is_consumed_by_a_node(missing: str) -> None:
+    """``consumed_at`` without the node is a code that gave birth to nobody, and vice versa."""
+    with pytest.raises(ValidationError, match="go together"):
+        _enrollment(**{missing: None})
+
+
+@pytest.mark.parametrize("value", ["", "0" * 63, "0" * 65, "A" * 64, "g" * 64])
+def test_the_code_hash_is_a_sha256_hex_digest(value: str) -> None:
+    with pytest.raises(ValidationError):
+        _enrollment(code_hash=value)
 
 
 def _authorization(**overrides: object) -> Authorization:

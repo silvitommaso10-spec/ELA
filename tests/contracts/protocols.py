@@ -37,6 +37,7 @@ REQUIRED_PORTS = frozenset(
         "SpeechPort",
         "ListeningPort",
         "TextRecognitionPort",
+        "EnrollmentStore",
     }
 )
 """The eleven ports of M1.3, the two of M5.1 (ADR 0013: the audited Guardian, the tools), the
@@ -46,7 +47,9 @@ the results), ``ModelRouterPort`` from M7.3 (ADR 0022 §5: who chooses the model
 ``ScreenCapturePort`` from M10.2 (ADR 0029 §11: where ELA photographs it) and
 ``TextRecognitionPort`` from M10.3 (ADR 0030 §11: where ELA reads what it photographed) and
 ``SpeechPort`` from M11.1 (ADR 0033: where ELA says something out loud — the first whose
-effect is outside the screen), by name."""
+effect is outside the screen), ``ListeningPort`` from M11.2 (ADR 0036 §5: where ELA hears)
+and ``EnrollmentStore`` from M12.1 (ADR 0037 §8: the one-shot codes that enroll a node), by
+name."""
 
 
 def is_protocol(obj: object) -> bool:

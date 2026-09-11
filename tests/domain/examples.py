@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from hashlib import sha256
 from typing import Final
 from uuid import UUID
 
@@ -48,6 +49,7 @@ from ela.domain import (
     DeviceId,
     DeviceStatus,
     ELAIdentity,
+    Enrollment,
     ErrorMetadata,
     ExecutionId,
     ExecutionResult,
@@ -245,6 +247,24 @@ DEVICE: Final = Device(
     last_seen_at=LATER,
     metadata={"role": "work node"},
 )
+
+ENROLLMENT: Final = Enrollment(
+    code_hash=sha256(b"un codice d'esempio, mai un codice vero").hexdigest(),
+    created_at=NOW,
+    expires_at=MUCH_LATER,
+    privacy=PrivacyLevel.TRUSTED,
+    consumed_at=LATER,
+    device_id=DEVICE_ID,
+)
+
+WAITING_ENROLLMENT: Final = ENROLLMENT.model_copy(update={"consumed_at": None, "device_id": None})
+"""The same code before a node presents it: what ``ela node enroll`` leaves in the store."""
+
+ENROLLED_DEVICE: Final = DEVICE.model_copy(update={"id": DeviceId(_uuid(17)), "revision": 1})
+"""A node born from a code: revision 1, its first announcement (ADR 0037 §5)."""
+
+SECRET_HASH: Final = sha256(b"the secret of a node, never a real one").hexdigest()
+"""The SHA-256 of a node's secret, as the registry keeps it (ADR 0037 §6)."""
 
 CAPABILITY_SPEC: Final = CapabilitySpec(
     id=WRITE_NOTE,
@@ -570,6 +590,7 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         TASK,
         TASK_EVENT,
         DEVICE,
+        ENROLLMENT,
         CAPABILITY_SPEC,
         PERMISSION_DECISION,
         APPROVAL,

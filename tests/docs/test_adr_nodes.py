@@ -13,8 +13,22 @@ import re
 from pathlib import Path
 
 from ela.domain import AuditEventType
+from ela.permissions import (
+    production_catalogue,
+)
+from ela.ports import (
+    ANNOUNCED_FIELDS,
+)
 from tests.architecture.rules import RULES
+from tests.contracts.protocols import (
+    port_protocols,
+)
 from tests.docs.test_adr_listening import writers_of
+from tests.docs.test_adr_ports import (
+    EXTENDING,
+    INTRODUCING,
+    documented_ports,
+)
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0037-node-identity.md"
@@ -60,16 +74,49 @@ def test_the_rules_this_adr_adds_are_registered_under_the_names_it_gives_them() 
         assert f"Rule {number}:" in (inspect.getdoc(RULES[name]) or ""), name
 
 
-def test_the_conseguenze_count_the_rules_of_today() -> None:
-    """The pin on today's number of rules, taken over from ADR 0036 by the ADR that changed it.
+def test_the_conseguenze_count_the_rules_the_ports_and_the_capabilities_of_today() -> None:
+    """The pin on today's totals, taken over from ADR 0036 by the ADR that changed them.
 
-    Ports and capabilities stay pinned by ADR 0036 until M12.1's port exists: a pin moves with the
-    total it pins, not with the document that will one day change it.
+    The rules moved first, with the commit that wrote rules 46 and 47 before their code (ADR 0030
+    §15); the ports with the commit that wrote the twenty-fourth. The capabilities did not move —
+    in M12.1 no capability travels — and ADR 0037 says so, so their pin is here with the others.
     """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**quarantasette**" in conseguenze
     assert len(RULES) == 47
+    assert "**ventiquattro**" in conseguenze
+    assert len(tuple(port_protocols())) == 24
+    assert "restano otto" in conseguenze
+    assert len(production_catalogue().specs()) == 8
+
+
+# ----------------------------------------------------------------------------------------
+# The twenty-fourth port, and the half an announcement writes
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_adr_introduces_the_enrollment_store_and_extends_the_registry() -> None:
+    """ADR 0037 §8: the tables ``test_adr_ports.py`` composes, pinned to what M12.1 wrote."""
+    text = adr_text()
+
+    assert documented_ports(text, INTRODUCING) == {
+        "EnrollmentStore": ("async", frozenset({"offer", "consume"}))
+    }
+    assert documented_ports(text, EXTENDING) == {
+        "DeviceRegistryPort": (
+            "async",
+            frozenset({"enroll", "secret_hash", "announce", "observe", "revoke"}),
+        )
+    }
+
+
+def test_the_declared_half_of_the_table_is_what_an_announcement_writes() -> None:
+    """ADR 0037 §10's «Dichiarata» row and :data:`~ela.ports.ANNOUNCED_FIELDS`: the same five."""
+    row = re.search(r"^\| Dichiarata \| [^|]+ \| (.+) \|$", adr_text(), re.MULTILINE)
+
+    assert row is not None
+    assert tuple(re.findall(r"`(\w+)`", row.group(1))) == ANNOUNCED_FIELDS
 
 
 # ----------------------------------------------------------------------------------------
