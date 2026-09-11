@@ -1262,6 +1262,15 @@ VIOLATIONS: tuple[Case, ...] = (
         "    return presented_hash == stored\n",
         "== on the token",
     ),
+    Case(
+        # A node's hash found by value in SQL is the comparison in variable time moved into the
+        # database: a node is found by its id, and its hash is compared in the middleware.
+        "the-secret-hash-looked-up-in-sql",
+        "constant-time-token",
+        "infrastructure/persistence/device_registry.py",
+        "def by_secret(presented_hash):\n    return DeviceRow.secret_hash == presented_hash\n",
+        "== on a node's secret",
+    ),
     # --- a-nodes-secret-crosses-no-readable-boundary (rule 46, M12.1) ---
     Case(
         # The one somebody will write first: a readable summary of a failed attempt.
@@ -1301,6 +1310,16 @@ VIOLATIONS: tuple[Case, ...] = (
     ),
 )
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        # The enrollment code is found by its hash, in the conditional UPDATE that spends it
+        # (M12.1 dec. D; ADR 0037 §5): rule 31 is about the node's secret (ADR 0037 §16), and a
+        # lookup by the hash of a 256-bit value can leak at most the hash, which is not the code.
+        "the-code-looked-up-by-its-hash",
+        "constant-time-token",
+        "infrastructure/persistence/enrollment_store.py",
+        "def unspent(code_hash):\n    return EnrollmentRow.code_hash == code_hash\n",
+        "",
+    ),
     Case(
         # Asking whether a hash exists says nothing about it: ``is None`` is not a comparison by
         # value, and the registry will need it for a node that was never enrolled.

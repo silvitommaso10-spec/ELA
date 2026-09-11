@@ -415,14 +415,20 @@ CONSTANT_TIME_COMPARE = "compare_digest"
 TOKEN_NAMES = frozenset({"token", "presented", "node_secret", "presented_hash", "secret_hash"})
 #: The secret of a node, in every name M12.1 gives it: what the node presents, its SHA-256, the hash
 #: the registry keeps, the enrollment code and its hash (M12.1 dec. D, E). Read by two rules. By
-#: rule 31, extended: compared **by value** only in :data:`SECURITY_MODULE`, like the token — ``is
-#: None`` stays allowed anywhere, because asking whether a hash exists says nothing about it. By
+#: rule 31, extended, through :data:`COMPARED_SECRET_NAMES`. By
 #: rule 46: never inside an ``AuditEvent``, a wire shape of the API, or the entity every reader of
 #: the registry holds. The names do not exist yet: the rules are written before the code (ADR 0030
 #: §15), so the day it exists it is born inside the fence.
 NODE_SECRET_NAMES = frozenset(
     {"node_secret", "presented_hash", "secret_hash", "enrollment_code", "code_hash"}
 )
+#: Rule 31, extended (ADR 0037 §16): the names of a node's secret that no module but
+#: :data:`SECURITY_MODULE` compares **by value** — ``is None`` stays allowed anywhere, because
+#: asking whether a hash exists says nothing about it. Not the enrollment code's: dec. D finds a
+#: code by its hash, in the conditional ``UPDATE`` that spends it (``WHERE code_hash = :h``, ADR
+#: 0037 §5), and a lookup by the hash of a 256-bit value can leak at most the hash, which is not
+#: the code. A node is found by its id instead, and its hash is compared in the middleware.
+COMPARED_SECRET_NAMES = frozenset({"node_secret", "presented_hash", "secret_hash"})
 #: Rule 46 (M12.1): the three readable boundaries a node's secret must not cross. ``api/schemas.py``
 #: is where every wire shape of the API is declared; ``Device`` is the entity the registry hands to
 #: every reader — the orchestrator, ``/devices``, the context — so a hash on it would be read by
@@ -1662,7 +1668,7 @@ def check_constant_time_token(pkg_root: Path) -> list[Violation]:
     **Extended by M12.1 (dec. E)** to the secret of a node, which is compared the same way and in
     the same place: :data:`TOKEN_NAMES` learns its names, so inside the module a ``==`` on them is
     reported like one on the token; and **outside** the module, any comparison *by value* — ``==``,
-    ``!=``, ``in``, ``not in`` — that names one of :data:`NODE_SECRET_NAMES` is reported too. A
+    ``!=``, ``in``, ``not in`` — that names one of :data:`COMPARED_SECRET_NAMES` is reported too. A
     second place that compares a secret is a second place that can compare it in variable time.
     """
     rule = "token-compared-in-constant-time"
@@ -1720,9 +1726,14 @@ def _compares_the_token(node: ast.Compare) -> bool:
 
 
 def _compares_a_secret_by_value(node: ast.Compare) -> bool:
-    """A ``==``/``!=``/``in``/``not in`` with a node's secret on either side (rule 31, M12.1)."""
+    """A ``==``/``!=``/``in``/``not in`` with a node's secret on either side (rule 31, M12.1).
+
+    :data:`COMPARED_SECRET_NAMES` and not all of :data:`NODE_SECRET_NAMES`: the enrollment code is
+    looked up by its hash in SQL, which is what dec. D asks for (ADR 0037 §5, §16).
+    """
     return isinstance(node.ops[0], (ast.Eq, ast.NotEq, ast.In, ast.NotIn)) and any(
-        _names_a_node_secret(operand) is not None for operand in [node.left, *node.comparators]
+        _names_a_node_secret(operand) in COMPARED_SECRET_NAMES
+        for operand in [node.left, *node.comparators]
     )
 
 
@@ -2689,6 +2700,7 @@ CONSTANTS: tuple[Constant, ...] = (
         reason="the one file this rule reads: restricted, the rule has nothing to open and "
         "raises instead of speaking",
     ),
+    Constant("constant-time-token", "COMPARED_SECRET_NAMES", DETECTOR),
     Constant("constant-time-token", "NODE_SECRET_NAMES", DETECTOR),
     Constant("constant-time-token", "TOKEN_NAMES", DETECTOR),
     # core-isolation
