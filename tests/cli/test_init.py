@@ -122,11 +122,6 @@ def test_a_commented_variable_is_not_set() -> None:
     assert assigned(template("t" * 43)) == {TOKEN_VARIABLE}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M12.1 criterio 16: `ela init` scrive `.env` con il modo dell'umask e poi fa chmod — "
-    "riparato nel commit seguente, che toglie questo segno",
-)
 async def test_the_file_is_readable_by_nobody_else_not_even_for_an_instant(
     cli: Cli, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

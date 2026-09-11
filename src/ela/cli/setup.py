@@ -18,6 +18,7 @@ again. Two places that create the same directory is one place too many.
 
 from __future__ import annotations
 
+import os
 import re
 import secrets
 from pathlib import Path
@@ -118,6 +119,20 @@ def assigned(text: str) -> frozenset[str]:
     return frozenset(ASSIGNED.findall(text))
 
 
+ENV_MODE: Final = 0o600
+"""The only mode ``.env`` ever has — from its first byte, not after a ``chmod``.
+
+Created with this mode, the file can only be *narrower* than it (the umask removes bits, never
+adds them); ``fchmod`` on the descriptor then makes it exactly this, before a byte is written. The
+shape is ``tools/notes.py``'s. Written and then narrowed, the file would carry the process umask
+for an instant, with the token already inside (M12.1, criterio 16).
+"""
+
+ENV_FLAGS: Final = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+"""``O_EXCL`` closes the gap between the ``exists()`` check and the creation: a file that
+appeared in between is refused instead of overwritten."""
+
+
 @handled
 def init() -> None:
     """Write the ``.env`` ELA needs, with a token of its own, in this directory."""
@@ -125,8 +140,10 @@ def init() -> None:
     if env.exists():
         _report(env)
         return
-    env.write_text(template(secrets.token_urlsafe(TOKEN_BYTES)), encoding="utf-8")
-    env.chmod(0o600)
+    descriptor = os.open(env, ENV_FLAGS, ENV_MODE)
+    os.fchmod(descriptor, ENV_MODE)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(template(secrets.token_urlsafe(TOKEN_BYTES)))
     typer.echo(
         f"wrote {ENV_FILE} (mode 600) with a fresh {TOKEN_VARIABLE}. It is not printed here: "
         f"read it from the file.\n"
