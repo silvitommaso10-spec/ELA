@@ -105,7 +105,10 @@ Variabili aggiunte, nella forma della tabella di ADR 0023 §3:
 | `ELA_API_TAILNET_HOST` | `str` | *(nessuno: facoltativo)* | un indirizzo della tailnet, `100.64.0.0/10` o `fd7a:115c:a1e0::/48`; niente nomi, niente `0.0.0.0` |
 
 **Le prese**: una per indirizzo, legate prima di servire e passate allo stesso server
-(`api/server.py`). Il loopback si lega sempre, e se non si lega l'avvio si ferma come prima; la
+(`api/server.py`). Il loopback si lega sempre, e se non si lega l'avvio si ferma — con un messaggio
+che dice indirizzo, porta, il motivo del sistema e, per una porta occupata, chi la tiene quando la
+macchina lo sa dire (`lsof`, dal package della macchina: regola 32), ed exit code 2 come ogni
+configurazione che ELA non può usare; mai un traceback. La
 tailnet si lega quando è dichiarata **e** presente, e se non lo è ELA parte sul solo loopback.
 `/diagnostics` porta `addresses`, gli indirizzi su cui questo processo ascolta davvero.
 

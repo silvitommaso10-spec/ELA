@@ -50,6 +50,10 @@ from ela.infrastructure.machine.listening import (
     UnsupportedListening,
     digest_of,
 )
+from ela.infrastructure.machine.ports import (
+    LOOKUP_TIMEOUT_SECONDS,
+    port_holder,
+)
 from ela.infrastructure.machine.screencapture import (
     SCREENCAPTURE,
     ScreenCaptureCommand,
@@ -100,4 +104,6 @@ __all__ = [
     "VisionTextRecognition",
     "digest_of",
     "spawn",
+    "LOOKUP_TIMEOUT_SECONDS",
+    "port_holder",
 ]

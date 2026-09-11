@@ -18,6 +18,9 @@ from ela.composition.settings import (
     Settings,
 )
 from ela.composition.system import SystemClock, UuidGenerator
+from ela.infrastructure.machine import (
+    port_holder,
+)
 
 __all__ = [
     "DEFAULT_API_HOST",
@@ -33,4 +36,5 @@ __all__ = [
     "SystemClock",
     "UuidGenerator",
     "build",
+    "port_holder",
 ]

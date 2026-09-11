@@ -8,6 +8,7 @@ say, and that a configuration ELA cannot use is a sentence on stderr rather than
 from __future__ import annotations
 
 import asyncio
+import errno
 import runpy
 import socket
 from collections.abc import (
@@ -174,12 +175,6 @@ def on_port(settings: Settings, port: int) -> Settings:
     return settings.model_copy(update={"api": settings.api.model_copy(update={"api_port": port})})
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=OSError,
-    reason="un bind sul loopback che fallisce esce come traceback invece che come messaggio — "
-    "riparato nel commit seguente, che toglie questo segno",
-)
 def test_a_port_that_is_taken_stops_the_start_with_a_message_and_not_a_traceback(
     settings: Settings,
     occupied: int,
@@ -198,6 +193,81 @@ def test_a_port_that_is_taken_stops_the_start_with_a_message_and_not_a_traceback
     assert "in use" in error
     assert "ELA_API_PORT" in error
     assert "Traceback" not in error
+
+
+def test_the_message_names_who_holds_the_port_when_the_machine_can_say(
+    settings: Settings,
+    occupied: int,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    asyncio.run(create_schema(settings.persistence.db_url))
+    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    monkeypatch.setattr(server.Settings, "load", lambda: on_port(settings, occupied))
+    asked: list[int] = []
+
+    async def holder(port: int) -> str:
+        asked.append(port)
+        return "python3 (pid 4242)"
+
+    monkeypatch.setattr(server, "port_holder", holder)
+
+    assert server.main() == 2
+    assert asked == [occupied]
+    assert "it is held by python3 (pid 4242)" in capsys.readouterr().err
+
+
+def test_a_holder_nobody_can_name_is_not_guessed(
+    settings: Settings,
+    occupied: int,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    asyncio.run(create_schema(settings.persistence.db_url))
+    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    monkeypatch.setattr(server.Settings, "load", lambda: on_port(settings, occupied))
+
+    async def nobody(port: int) -> None:
+        return None
+
+    monkeypatch.setattr(server, "port_holder", nobody)
+
+    assert server.main() == 2
+    error = capsys.readouterr().err
+    assert "held by" not in error
+    assert "Stop what holds it, or set ELA_API_PORT" in error
+
+
+def test_a_loopback_this_machine_refuses_for_another_reason_says_what_to_change(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Not a taken port — a port below 1024 without the right, say — so nobody is looked up."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    monkeypatch.setattr(server, "uvicorn", Uvicorn())
+    monkeypatch.setattr(server.Settings, "load", lambda: settings)
+
+    def refused(api: ApiSettings) -> list[socket.socket]:
+        raise OSError(errno.EACCES, "Permission denied")
+
+    async def never(port: int) -> str:
+        raise AssertionError("nobody holds a port that was refused for another reason")
+
+    monkeypatch.setattr(server, "listening_sockets", refused)
+    monkeypatch.setattr(server, "port_holder", never)
+
+    assert server.main() == 2
+    error = capsys.readouterr().err
+    assert f"127.0.0.1:{settings.api.api_port}: Permission denied" in error
+    assert "Set ELA_API_HOST and ELA_API_PORT" in error
+    assert "Traceback" not in error
+
+
+def test_an_ipv6_loopback_is_written_as_a_url_writes_it() -> None:
+    api = ApiSettings(_env_file=None, api_token="t" * 40, api_host="::1", api_port=8351)
+
+    message = server.unavailable(api, OSError(errno.EADDRINUSE, "Address already in use"), None)
+
+    assert message.startswith("ELA cannot listen on [::1]:8351: Address already in use.")
 
 
 def test_main_returns_zero_when_the_server_stops(
