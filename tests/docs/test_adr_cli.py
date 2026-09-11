@@ -16,11 +16,18 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from ela.api.security import (
+    CODE_ROUTES,
+    NODE_ROUTES,
+)
 from ela.audit.verifier import AuditVerifier
 from ela.cli.app import app
 from ela.cli.errors import CONFIGURATION, OK, REFUSED, UNREACHABLE
 from ela.cli.setup import TOKEN_VARIABLE, VARIABLES
 from ela.infrastructure.persistence import SqlAuditLog
+from ela.tombstones import (
+    RETIRED_SETTINGS,
+)
 from tests.architecture.rules import INFRA_PACKAGES, RULES
 from tests.contracts.protocols import method_names, port_protocols
 
@@ -30,6 +37,7 @@ DEBTS_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0025-phase-8-debts.md"
 PERCEPTION_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0028-perception-core.md"
 CONTEXT_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0032-context-core.md"
 VOICE_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0034-voice-online.md"
+NODES_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0037-node-identity.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMMAND_ROW = re.compile(
@@ -40,7 +48,8 @@ PROTOCOL_ROW = re.compile(r"^\| `(\w+)` \| `(\w+)\(\)` \| `([\w.]+)` \| ([^|]+) 
 RULE_ROW = re.compile(r"^\| (\d+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$")
 ENV_VARIABLE = re.compile(r"^#?\s*(ELA_\w+)\s*=", re.MULTILINE)
 RULE_NAME = "cli-talks-over-the-api"
-RETIRED = "ELA_ANTHROPIC_MODEL"
+RETIRED = frozenset(RETIRED_SETTINGS)
+"""Every retired variable (ADR 0022 §8, ADR 0037 §15): declared as a tombstone, never offered."""
 """Declared to be refused, never to be set (ADR 0022 §8): a field ELA reads only to say no."""
 
 
@@ -59,6 +68,7 @@ def adr_text() -> str:
             PERCEPTION_ADR_PATH,
             CONTEXT_ADR_PATH,
             VOICE_ADR_PATH,
+            NODES_ADR_PATH,
         )
     )
 
@@ -124,8 +134,8 @@ def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:
     assert set(documented_commands()) == coded_commands()
 
 
-def test_there_are_twenty_three_of_them() -> None:
-    assert len(coded_commands()) == 23
+def test_there_are_twenty_five_of_them() -> None:
+    assert len(coded_commands()) == 25
 
 
 def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
@@ -138,6 +148,8 @@ def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
 
     assert added == {
         "task results",
+        "node enroll",
+        "node revoke",
         "perception",
         "context",
         "voice",
@@ -171,7 +183,12 @@ def test_every_route_is_reachable_from_the_command_line() -> None:
 
     called = {route for route in documented_commands().values() if route is not None}
 
-    assert called == coded_routes()
+    assert called == coded_routes() - NODE_CALLED
+
+
+NODE_CALLED = NODE_ROUTES | CODE_ROUTES
+"""The three routes a node calls and a person does not (ADR 0037 §4): classified by name, the way
+``LATER_ROUTERS`` classifies, so a fourth route without a command still fails above."""
 
 
 def test_a_command_that_talks_to_ela_can_end_in_any_of_the_four_ways() -> None:
@@ -306,7 +323,7 @@ def test_the_list_of_variables_is_every_variable_ela_actually_reads() -> None:
         for field in group.annotation.model_fields  # type: ignore[union-attr]
     }
 
-    assert declared - {RETIRED} == {TOKEN_VARIABLE, *(name for name, _ in VARIABLES)}
+    assert declared - RETIRED == {TOKEN_VARIABLE, *(name for name, _ in VARIABLES)}
 
 
 def test_the_retired_variable_is_not_among_them() -> None:
@@ -315,5 +332,5 @@ def test_the_retired_variable_is_not_among_them() -> None:
     It is the one field the settings declare and the lists must not offer, which is why the
     derivation above subtracts it by name instead of quietly allowing a difference.
     """
-    assert RETIRED not in documented_variables()
-    assert RETIRED not in {name for name, _ in VARIABLES}
+    assert not RETIRED & set(documented_variables())
+    assert not RETIRED & {name for name, _ in VARIABLES}

@@ -142,3 +142,29 @@ def test_ignored_files_are_not_scanned(tmp_path: Path) -> None:
     scanned = {path.name for path in tracked_files(tmp_path)}
     assert scanned == {".gitignore", "leak.txt"}
     assert {finding.path.name for finding in scan(tracked_files(tmp_path))} == {"leak.txt"}
+
+
+DATABASE_FILES = ("ela.db", "ela.db-journal", "ela.db-wal", "ela.db-shm")
+"""Every file SQLite writes beside the database: the engine runs in ``journal_mode=WAL``
+(``infrastructure/persistence/engine.py:39``, ADR 0006 §12), so the pages not yet checkpointed
+live in ``-wal`` and its index in ``-shm`` — the same content as the database, in two more files."""
+
+
+def test_no_file_of_the_database_is_one_git_would_add(tmp_path: Path) -> None:
+    """The repository's own ``.gitignore`` against every file of the database (M12.1, D5).
+
+    The default database is in ``~/.ela``, outside the tree; but ``ELA_DB_URL`` can point anywhere,
+    and from M12.1 on that file keeps the hashes of the nodes' secrets next to the audit and the
+    arguments of every task. What stops ``git add -A`` from taking it is this list and nothing else
+    — ``make secrets`` looks at files already tracked, which is after the fact.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text(
+        (REPO_ROOT / ".gitignore").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    for name in DATABASE_FILES:
+        (tmp_path / name).write_bytes(b"SQLite format 3\0")
+
+    added = {path.name for path in tracked_files(tmp_path)} & set(DATABASE_FILES)
+
+    assert added == set(), sorted(added)

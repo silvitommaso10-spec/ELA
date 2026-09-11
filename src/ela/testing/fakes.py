@@ -34,7 +34,10 @@ from ela.domain import (
     CapabilitySpec,
     DecisionId,
     Device,
+    DeviceAvailability,
     DeviceId,
+    DeviceStatus,
+    Enrollment,
     ErrorMetadata,
     ExecutionId,
     ExecutionResult,
@@ -44,6 +47,7 @@ from ela.domain import (
     PermissionDecision,
     PermissionOutcome,
     PlanId,
+    PowerSource,
     ProbeFamily,
     ProviderRequest,
     ProviderResult,
@@ -66,6 +70,7 @@ from ela.domain import (
     TaskStep,
 )
 from ela.ports import (
+    ANNOUNCED_FIELDS,
     PROVIDER_UNAVAILABLE,
     AlreadyExistsError,
     ApprovalAlreadyAnsweredError,
@@ -73,6 +78,10 @@ from ela.ports import (
     AuthorizationExhaustedError,
     AuthorizationExpiredError,
     Clock,
+    DeviceRevokedError,
+    EnrollmentConsumedError,
+    EnrollmentExpiredError,
+    IdentityConflictError,
     IdGenerator,
     ModelProvider,
     NotAllowedError,
@@ -113,6 +122,7 @@ __all__ = [
     "GuardianCall",
     "ToolCall",
     "VerifierCall",
+    "FakeEnrollmentStore",
 ]
 
 DEFAULT_START: Final = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -306,6 +316,7 @@ class FakeDeviceRegistry:
 
     def __init__(self, devices: Iterable[Device] = ()) -> None:
         self._devices: dict[DeviceId, Device] = {device.id: device for device in devices}
+        self._secret_hashes: dict[DeviceId, str] = {}
 
     async def register(self, device: Device) -> None:
         if device.id in self._devices:
@@ -325,6 +336,80 @@ class FakeDeviceRegistry:
 
     async def devices(self) -> tuple[Device, ...]:
         return tuple(self._devices.values())
+
+    async def enroll(self, device: Device, *, secret_hash: str) -> None:
+        await self.register(device)
+        self._secret_hashes[device.id] = secret_hash
+
+    async def secret_hash(self, device_id: DeviceId) -> str | None:
+        await self.get(device_id)
+        return self._secret_hashes.get(device_id)
+
+    async def announce(self, device: Device, *, expected_revision: int) -> int:
+        current = await self.get(device.id)
+        if current.revoked_at is not None:
+            raise DeviceRevokedError(device.id, current.revoked_at)
+        if current.revision != expected_revision:
+            raise IdentityConflictError(device.id, expected_revision, current.revision)
+        declared = {field: getattr(device, field) for field in ANNOUNCED_FIELDS}
+        revision = expected_revision + 1
+        self._devices[device.id] = current.model_copy(update={**declared, "revision": revision})
+        return revision
+
+    async def observe(
+        self,
+        device_id: DeviceId,
+        *,
+        seen_at: datetime,
+        availability: DeviceAvailability,
+        status: DeviceStatus | None = None,
+        current_workload: float | None = None,
+        power_source: PowerSource | None = None,
+    ) -> None:
+        current = await self.get(device_id)
+        observed: dict[str, object] = {"last_seen_at": seen_at, "availability": availability}
+        if status is not None:
+            observed["status"] = status
+        if current_workload is not None:
+            observed["current_workload"] = current_workload
+        if power_source is not None:
+            observed["power_source"] = power_source
+        self._devices[device_id] = current.model_copy(update=observed)
+
+    async def revoke(self, device_id: DeviceId, *, at: datetime) -> bool:
+        current = await self.get(device_id)
+        if current.revoked_at is not None:
+            return False
+        self._devices[device_id] = current.model_copy(update={"revoked_at": at})
+        return True
+
+
+class FakeEnrollmentStore:
+    """One-shot codes by hash (port :class:`~ela.ports.EnrollmentStore`).
+
+    Never a hash in an error: the same discipline as the adapter, so a test that passes on the
+    fake is not passing on something the adapter could not do.
+    """
+
+    def __init__(self) -> None:
+        self._codes: dict[str, Enrollment] = {}
+
+    async def offer(self, enrollment: Enrollment) -> None:
+        if self._codes.get(enrollment.code_hash) is not None:
+            raise AlreadyExistsError("enrollment", "code")
+        self._codes[enrollment.code_hash] = enrollment
+
+    async def consume(self, code_hash: str, *, device_id: DeviceId, now: datetime) -> Enrollment:
+        enrollment = self._codes.get(code_hash)
+        if enrollment is None:
+            raise NotFoundError("enrollment", "code")
+        if enrollment.device_id is not None:
+            raise EnrollmentConsumedError(enrollment.device_id)
+        if enrollment.expires_at <= now:
+            raise EnrollmentExpiredError(enrollment.expires_at)
+        spent = enrollment.model_copy(update={"consumed_at": now, "device_id": device_id})
+        self._codes[code_hash] = spent
+        return spent
 
 
 class FakeAuthorizationStore:

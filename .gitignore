@@ -23,6 +23,8 @@ htmlcov/
 # Local databases
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 
 # Editors and OS
 .idea/

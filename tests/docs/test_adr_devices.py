@@ -4,7 +4,9 @@ Same pattern as the other ADR tests. From ADR 0016: §2 (the §16 vocabulary map
 ``DeviceAvailability``), §3 (the setting and its default) and §4 (what ``local`` declares, and how
 a system name becomes an ``OperatingSystem``). From ADR 0035, which continues it (M6.1b): §2 (the
 two halves of a row), §3 (the two audit events) and §4 (the rule that keeps the halves apart) —
-plus §7, the dated debt, whose only defence is that the line it quotes has to be real.
+plus §7, the dated debt, whose only defence is that the line it quotes has to be real. From ADR
+0037 §10 (M12.1): the three halves, whose table replaces ADR 0035 §2's for whoever compares the
+halves with the code — ADR 0035 is not rewritten, and its table stays checkable as history.
 
 Each table has a distinctive row shape, so no table is mistaken for another — and none of them has
 the two cells of a schema row, which is ``test_adr_persistence.py``'s business. The two documents
@@ -38,6 +40,7 @@ from tests.architecture.rules import (
     CONSTANTS,
     DETECTOR,
     EXEMPTION,
+    NOT_DECLARED_FIELDS,
     OBSERVED_FIELDS,
     REFRESH_MODULE,
     RULES,
@@ -232,28 +235,73 @@ def documented_halves(text: str) -> dict[str, tuple[str, ...]]:
     return rows
 
 
+NODES_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0037-node-identity.md"
+THIRD_HALF_ROW = re.compile(r"^\| (Dichiarata|Osservata|Imposta) \| [^|]+ \| (`.+`) \|$")
+IDENTITY_FIELDS = frozenset({"revision", "revoked_at"})
+"""ADR 0037 §10: «`revision` e `revoked_at` stanno fuori dalle tre metà» — the identity's state."""
+UNHALVED = frozenset({"id", "created_at", "metadata"})
+"""The fields of a ``Device`` no half owns: who the row is, when it was born, and the free bag."""
+
+
+def nodes_text() -> str:
+    return NODES_PATH.read_text(encoding="utf-8")
+
+
+def documented_three_halves(text: str) -> dict[str, tuple[str, ...]]:
+    rows = {
+        match.group(1): tuple(NAMED.findall(match.group(2)))
+        for line in text.splitlines()
+        if (match := THIRD_HALF_ROW.match(line)) is not None
+    }
+    assert rows, "ADR 0037 §10 must contain the table of the three halves"
+    return rows
+
+
 def test_the_declared_half_is_the_one_the_reconciliation_replaces() -> None:
-    assert documented_halves(refresh_text())["Dichiarato"] == DECLARED_FIELDS
+    assert documented_three_halves(nodes_text())["Dichiarata"] == DECLARED_FIELDS
 
 
 def test_the_observed_half_is_the_one_rule_44_forbids() -> None:
-    """The document and the rule say the same four names, or one of them is decoration."""
-    assert set(documented_halves(refresh_text())["Osservato"]) == OBSERVED_FIELDS
+    """The document and the rule say the same names, or one of them is decoration."""
+    assert set(documented_three_halves(nodes_text())["Osservata"]) == OBSERVED_FIELDS
 
 
-def test_the_two_halves_are_disjoint_and_are_fields_of_a_device() -> None:
-    """A field in both halves would be a field two writers own, which is the defect itself."""
-    halves = documented_halves(refresh_text())
-    declared, observed = set(halves["Dichiarato"]), set(halves["Osservato"])
+def test_the_imposed_half_and_the_identity_are_the_rest_rule_44_forbids() -> None:
+    halves = documented_three_halves(nodes_text())
 
-    assert not declared & observed
-    assert declared | observed <= set(Device.model_fields)
+    assert set(halves["Imposta"]) | IDENTITY_FIELDS == NOT_DECLARED_FIELDS
+    assert "**`revision` e `revoked_at` stanno fuori dalle tre metà.**" in nodes_text()
+
+
+def test_every_field_of_a_device_has_exactly_one_owner() -> None:
+    """A field in two halves is a field two writers own, which is the defect itself; a field in
+    none is a field nobody decided — and the next one added to ``Device`` lands here first."""
+    halves = documented_three_halves(nodes_text())
+    owned = [*halves["Dichiarata"], *halves["Osservata"], *halves["Imposta"], *IDENTITY_FIELDS]
+
+    assert len(owned) == len(set(owned))
+    assert set(owned) | UNHALVED == set(Device.model_fields)
 
 
 def test_a_drifted_half_is_detected() -> None:
-    """Negative case: the document promising that the availability is re-declared."""
-    drifted = refresh_text().replace("`privacy`, `capabilities`", "`privacy`, `availability`")
-    assert documented_halves(drifted)["Dichiarato"] != DECLARED_FIELDS
+    """Negative case: the document promising that the node declares its own privacy."""
+    drifted = nodes_text().replace(
+        "`available_tools`, `performance` |", "`available_tools`, `privacy` |"
+    )
+    assert documented_three_halves(drifted)["Dichiarata"] != DECLARED_FIELDS
+
+
+def test_adr_0037_moves_exactly_the_fields_it_names_out_of_adr_0035s_halves() -> None:
+    """ADR 0035 §2 as history: what changed between the two tables is what ADR 0037 §10 says —
+    ``network`` and ``privacy`` out of the declared half, ``performance`` in, and the observed half
+    widened by ``network`` and ``power_source``."""
+    before = documented_halves(refresh_text())
+    after = documented_three_halves(nodes_text())
+
+    assert set(before["Dichiarato"]) - set(after["Dichiarata"]) == {"network", "privacy"}
+    assert set(after["Dichiarata"]) - set(before["Dichiarato"]) == {"performance"}
+    assert set(after["Osservata"]) - set(before["Osservato"]) == {"network", "power_source"}
+    assert set(before["Osservato"]) <= set(after["Osservata"])
 
 
 def documented_events(text: str) -> dict[str, str]:

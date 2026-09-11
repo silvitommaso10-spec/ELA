@@ -8,12 +8,22 @@ and the world is closed on that too: a ``—`` on a milestone that does name an 
 
 A fourth closed world comes free: the ``Stato`` of a milestone must be one of the words
 ``TEMPLATE.md`` offers, plus ``Completata``, which M9.1 introduced and M9.3 kept.
+
+And a fifth, added on 2026-09-10, closes the way out of all the others: **a milestone that is in
+``main`` may not call itself a ``Proposta``**. Until then a proposal owed nothing, so a milestone
+that was built, merged and never re-stated fell out of every list at once — which is what happened
+to M11.2. The evidence is read from the history of ``main``, not from a list of what is done: a
+list would go stale in exactly the way the ``Stato`` line did.
 """
 
 from __future__ import annotations
 
 import re
+import subprocess
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 CHANGELOG = ROOT / "docs" / "CHANGELOG.md"
@@ -163,3 +173,101 @@ def test_an_entry_for_a_milestone_that_does_not_exist_is_detected() -> None:
     assert not ({"M9.9"} <= known)
     assert "M9.9" not in entries()
     assert not (set(entries()) | {"M9.9"}) <= known
+
+
+# ----------------------------------------------------------------------------------------
+# The hole the exemption for proposals used to hide
+# ----------------------------------------------------------------------------------------
+#
+# A ``Proposta`` owes nothing: ``test_every_milestone_that_is_no_longer_a_proposal_has_an_entry``
+# asks it for no changelog entry, which is right for a milestone nobody has built. It stops being
+# right the moment the milestone *is* built and merged and its ``Stato`` line lags behind: the
+# document then falls out of **both** lists — no entry in the changelog, and no test asking for one
+# — and nothing in ``make check`` can notice. It happened to M11.2, merged on 2026-09-10 and still
+# calling itself a proposal.
+#
+# What closes it has to be a fact read from the repository and not a list somebody keeps: the list
+# would go stale exactly like the ``Stato`` line did. The fact is the history of ``main``. This
+# repository merges one branch per milestone and says so in the subject — ``Merge M11.2 listening —
+# Fase 11 chiusa``, ``Merge M6.1b device refresh``, ``Merge M0.1 + M0.2`` — for all thirty-six
+# merges it has. A merge that names no milestone (``Merge platform-choice fix and ADR index test``)
+# names nothing, which is what it should do.
+
+MERGE = re.compile(r"^Merge\b")
+MILESTONE_ID = re.compile(r"\bM\d+\.\d+[a-z]?\b")
+MAIN_REFS = ("main", "origin/main", "refs/remotes/origin/main")
+
+
+def merged_in(subjects: Iterable[str]) -> set[str]:
+    """The milestones the merge commits among ``subjects`` name."""
+    return {
+        name
+        for subject in subjects
+        if MERGE.match(subject)
+        for name in MILESTONE_ID.findall(subject)
+    }
+
+
+def merged_but_still_proposed(merged: Iterable[str], states: Mapping[str, str]) -> set[str]:
+    """The milestones that are in ``main`` and still call themselves a proposal."""
+    return {name for name in merged if states.get(name) == PROPOSED}
+
+
+def _history() -> tuple[list[str], str | None]:
+    """The subjects of every commit reachable from main, or the reason they cannot be read.
+
+    The reason is returned rather than swallowed: a shallow clone answers ``git log`` with a
+    success and a truncated history, so a test that simply ran would pass while seeing nothing.
+    CI checks out with ``fetch-depth: 0`` for this; anywhere else the skip says which precondition
+    is missing instead of pretending it was met (ADR 0031 §6).
+    """
+    shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=ROOT,
+        capture_output=True,
+    )
+    if shallow.returncode != 0:
+        return [], "not a git repository"
+    if shallow.stdout.decode().strip() == "true":
+        return [], "shallow clone: the history of main is not here (git fetch --unshallow)"
+    for ref in MAIN_REFS:
+        found = subprocess.run(["git", "log", "--format=%s", ref], cwd=ROOT, capture_output=True)
+        if found.returncode == 0:
+            return found.stdout.decode("utf-8").splitlines(), None
+    return [], f"no main to read: none of {', '.join(MAIN_REFS)} exists"
+
+
+SUBJECTS, NO_HISTORY = _history()
+
+
+@pytest.mark.skipif(NO_HISTORY is not None, reason=NO_HISTORY or "")
+def test_a_milestone_merged_into_main_cannot_still_call_itself_a_proposal() -> None:
+    """The fact is the history, not a list: a list would go stale the same way the line did."""
+    merged = merged_in(SUBJECTS)
+    assert merged, "no merge commit names a milestone: this test would be vacuous"
+
+    states = {path.stem: state_of(path) for path in milestones()}
+
+    assert merged_but_still_proposed(merged, states) == set()
+
+
+def test_a_proposal_that_is_already_merged_is_detected() -> None:
+    """The negative case, on subjects built here rather than on the history of the day."""
+    subjects = ["Merge M1.1 domain model", "feat(m1.1): il dominio"]
+    states = {"M1.1": PROPOSED, "M1.2": "Implementata"}
+
+    assert merged_in(subjects) == {"M1.1"}
+    assert merged_but_still_proposed(merged_in(subjects), states) == {"M1.1"}
+
+
+def test_a_merge_that_names_two_milestones_names_both() -> None:
+    """``Merge M0.1 + M0.2`` is one commit and two milestones, and the repository has it."""
+    assert merged_in(["Merge M0.1 + M0.2"]) == {"M0.1", "M0.2"}
+
+
+def test_what_is_not_a_merge_of_a_milestone_merges_nothing() -> None:
+    """Two independent reasons, and both are needed: a commit on a branch names its milestone in
+    lowercase and is not a merge; a merge can be of something that is not a milestone at all."""
+    assert merged_in(["docs(m11.2): la spec dell'ascolto"]) == set()
+    assert merged_in(["Merge platform-choice fix and ADR index test"]) == set()
+    assert merged_in(["Merge M11.2 listening — Fase 11 chiusa"]) == {"M11.2"}

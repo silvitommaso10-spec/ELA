@@ -2,7 +2,8 @@
 
 Two things live here rather than beside the feature they describe. The first is the dated debt of
 §12 — a value in the audit's enum that nobody writes — kept honest by the smallest defence a debt
-can have: an assertion that it is *still* unpaid, so that paying it takes this section out with it.
+can have: an assertion that it was *still* unpaid, which turned round the day M12.1 paid it and now
+asserts where the payment is written.
 
 The second is the pin on today's totals, which this ADR takes over because it is the one that last
 changed them.
@@ -15,13 +16,16 @@ import re
 from pathlib import Path
 
 from ela.domain import AuditEventType
-from ela.permissions import production_catalogue
 from tests.architecture.rules import RULES
 from tests.architecture.violations import PACKAGE_ROOT
 from tests.contracts.protocols import port_protocols
+from tests.docs.test_adr_placement import _rules_up_to
+from tests.docs.test_adr_ports import (
+    INTRODUCING,
+    documented_ports,
+)
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0036-listening.md"
-UNWRITTEN = AuditEventType.PROVIDER_CALLED
 
 
 def adr_text() -> str:
@@ -47,18 +51,25 @@ def writers_of(event: AuditEventType) -> list[str]:
     return found
 
 
-def test_the_debt_of_paragraph_12_is_still_open_and_says_who_owns_it() -> None:
-    """The form ADR 0035 §7 used, and the device that made it get paid: a date and an owner.
+def test_the_debt_of_paragraph_12_is_paid_and_a_decision_says_where() -> None:
+    """The defence §12 asked for, turned round the day it was paid — as ADR 0035 §7's was in M11.2.
 
-    Asserted in the direction that makes the declaration expire. The day ``PROVIDER_CALLED`` gets
-    a writer — or leaves the enum — this fails, and §12 comes out with it.
+    ``PROVIDER_CALLED`` left the enum, with ``ERROR_RECORDED``, in M12.1 (D11): the milestone that
+    added the next types of event, which is who §12 charged. §12 stays in this document — an ADR is
+    immutable — and what keeps it honest now is that another decision says where the debt went: a
+    debt that does not know it has been paid is the same species of lie as the value it described.
     """
     text = adr_text()
+    paid = [
+        path.name
+        for path in sorted(ADR_PATH.parent.glob("0*.md"))
+        if "Il debito di ADR 0036 §12, saldato" in path.read_text(encoding="utf-8")
+    ]
 
-    assert writers_of(UNWRITTEN) == [], "the debt of ADR 0036 §12 is paid: remove the section"
-    assert UNWRITTEN.name in text
+    assert "PROVIDER_CALLED" not in AuditEventType.__members__
     assert "2026-09-10" in text
     assert "a carico di chi aggiungerà il prossimo `AuditEventType`" in text
+    assert paid, "nothing but ADR 0036 says where its debt went"
 
 
 def test_the_event_this_milestone_added_does_have_a_writer() -> None:
@@ -66,15 +77,29 @@ def test_the_event_this_milestone_added_does_have_a_writer() -> None:
     assert writers_of(AuditEventType.SENSOR_ACTIVATED) == ["executive/executor.py"]
 
 
-def test_the_conseguenze_count_the_rules_and_the_ports_of_today() -> None:
-    """The pin on **today's** totals, which moves to the ADR that last changed them."""
+def ports_before(adr: Path) -> set[str]:
+    """Today's ports without the ones ``adr`` introduced: what an older total is a claim about."""
+    later = documented_ports(adr.read_text(encoding="utf-8"), INTRODUCING)
+    return {port.__name__ for port in port_protocols()} - set(later)
+
+
+def test_the_conseguenze_count_the_rules_and_the_ports_up_to_this_adr() -> None:
+    """The pin on today's totals, which moves to the ADR that last changed them.
+
+    The rules have moved on: M12.1 adds rules 46 and 47 before ADR 0037 is written (ADR 0030 §15,
+    the defence before the room). So ADR 0036's «quarantacinque» is read the way ADR 0026's
+    «trentuno» is (``test_adr_placement.py``): as a claim about the rules numbered up to 45, which
+    each rule declares in its own docstring — history that stays checkable, not a total. The pin on
+    today's number of rules moves to ADR 0037's test when that document exists. The ports moved
+    with M12.1's twenty-fourth: «ventitré» is read as the ports before ADR 0037's `Port
+    introdotti:`, and the pin on today's ports and capabilities is ADR 0037's test too.
+    """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**quarantacinque**" in conseguenze
-    assert len(RULES) == 45
+    assert len(_rules_up_to(45)) == 45
     assert "**ventitré**" in conseguenze
-    assert len(tuple(port_protocols())) == 23
-    assert len(production_catalogue().specs()) == 8
+    assert len(ports_before(ADR_PATH.with_name("0037-node-identity.md"))) == 23
 
 
 def test_the_adr_names_the_rules_it_renamed_and_they_resolve() -> None:

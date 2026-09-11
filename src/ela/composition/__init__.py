@@ -12,19 +12,20 @@ from ela.composition.settings import (
     DEFAULT_API_HOST,
     DEFAULT_API_PORT,
     DEFAULT_ORPHAN_AFTER_SECONDS,
-    DEFAULT_USER_NAME,
     MIN_TOKEN_LENGTH,
     ApiSettings,
     CoreSettings,
     Settings,
 )
 from ela.composition.system import SystemClock, UuidGenerator
+from ela.infrastructure.machine import (
+    port_holder,
+)
 
 __all__ = [
     "DEFAULT_API_HOST",
     "DEFAULT_API_PORT",
     "DEFAULT_ORPHAN_AFTER_SECONDS",
-    "DEFAULT_USER_NAME",
     "ELA_ACTOR",
     "MIN_TOKEN_LENGTH",
     "ApiSettings",
@@ -35,4 +36,5 @@ __all__ = [
     "SystemClock",
     "UuidGenerator",
     "build",
+    "port_holder",
 ]

@@ -1,11 +1,19 @@
-"""The failures of this package: registering a node (§16, ADR 0016) and running on one
-(ADR 0026 §3)."""
+"""The failures of this package: registering a node (§16, ADR 0016), running on one (ADR 0026 §3),
+and revoking the one that cannot be revoked (ADR 0037 §12)."""
 
 from __future__ import annotations
 
-from ela.domain import StepId, TaskId
+from ela.domain import (
+    DeviceId,
+    StepId,
+    TaskId,
+)
 
-__all__ = ["NotPlacedError", "UnsupportedOperatingSystemError"]
+__all__ = [
+    "LocalDeviceNotRevocableError",
+    "NotPlacedError",
+    "UnsupportedOperatingSystemError",
+]
 
 
 class UnsupportedOperatingSystemError(ValueError):
@@ -39,3 +47,15 @@ class NotPlacedError(Exception):
         self.step_id = step_id
         self.reason = reason
         super().__init__(f"step {step_id} of task {task_id} cannot run: {reason}")
+
+
+class LocalDeviceNotRevocableError(Exception):
+    """``local`` is refused a revocation (ADR 0037 §12).
+
+    It is this machine and has no secret, and revoking it would leave the Core with no node to run
+    on and no enrollment to recover with. Raised before anything is read or written.
+    """
+
+    def __init__(self, device_id: DeviceId) -> None:
+        self.device_id = device_id
+        super().__init__(f"node {device_id} is this machine: it cannot be revoked")

@@ -13,6 +13,9 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 from ela.composition import Ela
+from ela.devices import (
+    LOCAL_USER,
+)
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import TaskId, TaskState
 from tests.api.support import ECHO_MESSAGE, echo_plan, note_plan, queued
@@ -257,7 +260,7 @@ async def test_the_user_can_always_stop_a_task(client: AsyncClient, ela: Ela) ->
     assert body["state"] == TaskState.CANCELLED.value
     events = await ela.audit.read(task_id=TaskId(uuid.UUID(task_id)))
     assert events[-1].actor.kind.value == "USER"
-    assert events[-1].actor.id == ela.settings.core.user_name
+    assert events[-1].actor == LOCAL_USER
 
 
 async def test_a_cancelled_task_does_not_run(client: AsyncClient) -> None:

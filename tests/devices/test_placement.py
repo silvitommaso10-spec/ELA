@@ -264,3 +264,19 @@ async def test_a_placement_and_a_confirmation_of_the_same_node_agree(
     assert confirmed.requirements == placed.requirements
     types = [event.event_type for event in await audit.read()]
     assert types == [AuditEventType.DEVICE_SELECTED]  # one event, from ``place`` alone
+
+
+async def test_confirm_says_a_revoked_node_is_revoked_and_not_gone(
+    orchestrator: DeviceOrchestrator, port: FakeDeviceRegistry, clock: FakeClock
+) -> None:
+    """Criterion 9 (D13): the row of a revoked node stays, so ``confirm`` finds it and judges it —
+    "no longer eligible", naming ``REVOKED``, and never "no longer registered", which is false."""
+    await register(port, [node("local")], clock)
+    await port.revoke(device_id("local"), at=clock.now())
+
+    confirmed = await orchestrator.confirm(device_id("local"), STEP, task_id=TASK_ID)
+
+    assert confirmed.waits
+    assert "no longer eligible" in confirmed.reason
+    assert Refusal.REVOKED.value in confirmed.reason
+    assert "no longer registered" not in confirmed.reason

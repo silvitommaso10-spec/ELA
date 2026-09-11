@@ -19,9 +19,11 @@ from ela.providers.anthropic.settings import (
     DEFAULT_MAX_OUTPUT_TOKENS,
     DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
-    RETIRED_SETTINGS,
 )
 from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.tombstones import (
+    RETIRED_SETTINGS,
+)
 
 KEY = "ELA_ANTHROPIC_API_KEY"
 SDK_KEY = "ANTHROPIC_API_KEY"
@@ -121,8 +123,8 @@ def test_the_retired_variable_is_refused_from_a_dotenv_file_too(tmp_path: Path) 
 
 
 def test_what_the_retired_table_says_is_what_the_message_says() -> None:
-    assert set(RETIRED_SETTINGS) == {"ELA_ANTHROPIC_MODEL"}
-    assert "ELA_MODEL_ROUTES" in RETIRED_SETTINGS["ELA_ANTHROPIC_MODEL"]
+    assert "ELA_ANTHROPIC_MODEL" in RETIRED_SETTINGS
+    assert "ELA_MODEL_ROUTES" in RETIRED_SETTINGS["ELA_ANTHROPIC_MODEL"].instead
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "601"])

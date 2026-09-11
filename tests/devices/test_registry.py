@@ -14,12 +14,24 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from ela.devices import AVAILABLE, LOCAL_DEVICE_ID, UNAVAILABLE, DeviceRegistry, is_available
+from ela.devices import (
+    AVAILABLE,
+    LOCAL_DEVICE_ID,
+    UNAVAILABLE,
+    DeviceRegistry,
+    is_available,
+)
 from ela.domain import Device, DeviceId, DeviceStatus, OperatingSystem
-from ela.ports import DeviceRegistryPort, NotFoundError
+from ela.ports import (
+    DeviceRegistryPort,
+    NotFoundError,
+)
 from ela.testing.fakes import FakeAuditLog, FakeClock, FakeDeviceRegistry, FakeIdGenerator
 from tests.devices.conftest import TTL
-from tests.domain.examples import DEVICE, MUCH_LATER
+from tests.domain.examples import (
+    DEVICE,
+    MUCH_LATER,
+)
 
 OTHER_ID = DeviceId(UUID("00000000-0000-4000-8000-000000000301"))
 
@@ -214,6 +226,9 @@ async def test_twenty_concurrent_heartbeats_lose_nothing_but_last_seen_at(
 ) -> None:
     """The whole risk of not making the heartbeat one atomic statement, measured.
 
+    Since M12.1 it is one statement on the observed columns (ADR 0037 §9); the measure stays,
+    because it is what says the statement kept the promise the read-modify-write used to make.
+
     Twenty heartbeats race on one node, each carrying its own instant. Whichever write lands
     last, every field other than ``last_seen_at`` must come out identical to what was
     registered, the surviving ``last_seen_at`` must be one of the twenty instants actually
@@ -366,3 +381,19 @@ async def test_the_observed_half_survives_a_reconciliation(
     assert again.status is DeviceStatus.IDLE
     assert again.current_workload == 0.25
     assert again.availability is AVAILABLE
+
+
+async def test_a_revoked_node_is_not_available_whatever_its_heartbeat(
+    registry: DeviceRegistry, port: DeviceRegistryPort
+) -> None:
+    """ADR 0037 §12: ``available()`` reads the revocation and ``seen()`` does not — two facts, two
+    names. The node still reads ``ONLINE``, which is what its heartbeat said; it is not usable,
+    which is what the user said."""
+    await registry.register(DEVICE)
+    await registry.heartbeat(DEVICE.id)
+    await port.revoke(DEVICE.id, at=MUCH_LATER)
+
+    assert await registry.available() == ()
+    seen = await registry.get(DEVICE.id)
+    assert seen.availability is AVAILABLE
+    assert seen.revoked_at == MUCH_LATER

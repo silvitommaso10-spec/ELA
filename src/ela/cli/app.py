@@ -23,6 +23,7 @@ app = typer.Typer(
 app.add_typer(tasks.app, name="task")
 app.add_typer(audit.app, name="audit")
 app.add_typer(nodes.devices, name="device")
+app.add_typer(nodes.node, name="node")
 app.add_typer(nodes.providers, name="provider")
 app.add_typer(voice.app, name="voice")
 

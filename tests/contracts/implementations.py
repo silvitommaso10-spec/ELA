@@ -39,6 +39,7 @@ from ela.infrastructure.persistence import (
     SqlAuditLog,
     SqlAuthorizationStore,
     SqlDeviceRegistry,
+    SqlEnrollmentStore,
     SqlExecutionResultStore,
     SqlTaskRepository,
     make_engine,
@@ -53,6 +54,7 @@ from ela.ports import (
     CapabilityRegistryPort,
     Clock,
     DeviceRegistryPort,
+    EnrollmentStore,
     ExecutionResultStore,
     IdGenerator,
     ListeningPort,
@@ -80,6 +82,7 @@ from ela.testing.fakes import (
     FakeCapabilityRegistry,
     FakeClock,
     FakeDeviceRegistry,
+    FakeEnrollmentStore,
     FakeExecutionResultStore,
     FakeIdGenerator,
     FakeListening,
@@ -144,6 +147,10 @@ def _sql_device_registry() -> SqlDeviceRegistry:
     return SqlDeviceRegistry(make_engine(MEMORY_URL))
 
 
+def _sql_enrollment_store() -> SqlEnrollmentStore:
+    return SqlEnrollmentStore(make_engine(MEMORY_URL))
+
+
 def _sql_approval_store() -> SqlApprovalStore:
     return SqlApprovalStore(make_engine(MEMORY_URL))
 
@@ -158,6 +165,7 @@ SQL_STORES = (
     SqlApprovalStore,
     SqlExecutionResultStore,
     SqlDeviceRegistry,
+    SqlEnrollmentStore,
 )
 """The adapters that expose their engine, so the schema can be created and the engine disposed."""
 
@@ -482,6 +490,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     DeviceRegistryPort: (
         Implementation("FakeDeviceRegistry", FakeDeviceRegistry),
         Implementation("SqlDeviceRegistry", _sql_device_registry, _create_schema, _dispose),
+    ),
+    EnrollmentStore: (
+        Implementation("FakeEnrollmentStore", FakeEnrollmentStore),
+        Implementation("SqlEnrollmentStore", _sql_enrollment_store, _create_schema, _dispose),
     ),
     CapabilityRegistryPort: (
         Implementation("FakeCapabilityRegistry", _fake_registry),

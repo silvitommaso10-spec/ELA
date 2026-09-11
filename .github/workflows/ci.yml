@@ -17,7 +17,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
+      # The whole history, not the last commit: `tests/docs/test_changelog.py` asks `main`
+      # which milestones have been merged, and a shallow clone would answer "none" with a
+      # success — a test that passes while seeing nothing (ADR 0031 §6).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install uv (with cache)
         uses: astral-sh/setup-uv@v6

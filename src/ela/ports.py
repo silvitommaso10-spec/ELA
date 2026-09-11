@@ -41,7 +41,10 @@ from ela.domain import (
     CapabilityId,
     CapabilitySpec,
     Device,
+    DeviceAvailability,
     DeviceId,
+    DeviceStatus,
+    Enrollment,
     ErrorMetadata,
     ExecutionId,
     ExecutionResult,
@@ -49,6 +52,7 @@ from ela.domain import (
     JsonMapping,
     ModelRoute,
     PermissionDecision,
+    PowerSource,
     ProbeFamily,
     ProviderRequest,
     ProviderResult,
@@ -68,6 +72,7 @@ from ela.domain import (
 )
 
 __all__ = [
+    "ANNOUNCED_FIELDS",
     "ANSWERS",
     "AlreadyExistsError",
     "ApprovalAlreadyAnsweredError",
@@ -83,8 +88,14 @@ __all__ = [
     "CapabilityRegistryPort",
     "Clock",
     "DeviceRegistryPort",
+    "DeviceRevokedError",
+    "EnrollmentConsumedError",
+    "EnrollmentExpiredError",
+    "EnrollmentNotUsableError",
+    "EnrollmentStore",
     "ExecutionResultStore",
     "IdGenerator",
+    "IdentityConflictError",
     "LISTEN_DENIED_BY_SYSTEM",
     "LISTEN_DISABLED",
     "LISTEN_ERROR_CODES",
@@ -344,6 +355,57 @@ class ApprovalExpiredError(ApprovalNotAnswerableError):
         super().__init__(approval_id, f"it expired at {expires_at.isoformat()}")
 
 
+class IdentityConflictError(PortError):
+    """Two processes claim to be the same node: the row is not at the revision the caller saw.
+
+    Not a race resolved by order of arrival — a **conflict of identity** (ADR 0035 §5): the second
+    announcement believed something false about the row, and is told so instead of overwriting the
+    first. Detected, named and refused (M12.1 dec. H; ADR 0037 §9).
+    """
+
+    def __init__(self, device_id: DeviceId, expected: int, actual: int) -> None:
+        self.device_id = device_id
+        self.expected = expected
+        self.actual = actual
+        super().__init__(
+            f"device {device_id} is at revision {actual}, not {expected}: "
+            "two processes claim to be it"
+        )
+
+
+class DeviceRevokedError(PortError):
+    """The node was revoked: its row stays, and nothing it declares is written any more."""
+
+    def __init__(self, device_id: DeviceId, revoked_at: datetime) -> None:
+        self.device_id = device_id
+        self.revoked_at = revoked_at
+        super().__init__(f"device {device_id} was revoked at {revoked_at.isoformat()}")
+
+
+class EnrollmentNotUsableError(PortError):
+    """An enrollment code exists and cannot be spent; the subclasses say why (ADR 0037 §5).
+
+    The message never carries the code nor its hash: an error can reach a response body, and the
+    only response that carries a secret of the enrollment is the one that hands it out.
+    """
+
+
+class EnrollmentConsumedError(EnrollmentNotUsableError):
+    """The code was already spent — by the node it names, which is what ``code_reused`` reports."""
+
+    def __init__(self, device_id: DeviceId) -> None:
+        self.device_id = device_id
+        super().__init__(f"the enrollment code was already consumed by device {device_id}")
+
+
+class EnrollmentExpiredError(EnrollmentNotUsableError):
+    """The code's ``expires_at`` is at or before the instant given (closed bound, ADR 0005)."""
+
+    def __init__(self, expires_at: datetime) -> None:
+        self.expires_at = expires_at
+        super().__init__(f"the enrollment code expired at {expires_at.isoformat()}")
+
+
 class NotAllowedError(PortError):
     """A :class:`ToolPort` refused to execute: the decision does not allow it (§27, §33).
 
@@ -534,6 +596,22 @@ class AuditLog(Protocol):
         """
 
 
+ANNOUNCED_FIELDS: Final[tuple[str, ...]] = (
+    "name",
+    "os",
+    "capabilities",
+    "available_tools",
+    "performance",
+)
+"""The half of a node's row the node declares about itself, and all an announcement writes.
+
+ADR 0037 §10: ``privacy`` is imposed by the user at enrollment, ``network`` is the registry's,
+what a heartbeat carries is observed, and ``revision`` and ``revoked_at`` are the state of the
+identity. :meth:`DeviceRegistryPort.announce` writes these fields and no other, in every
+implementation; ``tests/docs/test_adr_nodes.py`` keeps them equal to the ADR's table.
+"""
+
+
 @runtime_checkable
 class DeviceRegistryPort(Protocol):
     """The registry of the nodes ELA can operate through (§16).
@@ -553,6 +631,71 @@ class DeviceRegistryPort(Protocol):
 
     async def devices(self) -> tuple[Device, ...]:
         """Every registered node, in registration order."""
+
+    async def enroll(self, device: Device, *, secret_hash: str) -> None:
+        """Add a node that proves itself from the network, with the SHA-256 of its secret.
+
+        :class:`AlreadyExistsError` if the id is taken. The hash is kept on the row and never on
+        the entity (M12.1 dec. G; architecture rule 46).
+        """
+
+    async def secret_hash(self, device_id: DeviceId) -> str | None:
+        """The hash a node proves itself against; ``None`` for a node that does not authenticate
+        from the network (``local``); :class:`NotFoundError` if the id is unknown."""
+
+    async def announce(self, device: Device, *, expected_revision: int) -> int:
+        """Write the node's declared half and return the new revision — only if the row is still at
+        ``expected_revision`` and not revoked (M12.1 dec. H).
+
+        The declared half is :data:`ANNOUNCED_FIELDS` (ADR 0037 §10): nothing observed,
+        nothing imposed. Otherwise nothing is
+        written and, in this order, :class:`NotFoundError`, :class:`DeviceRevokedError` or
+        :class:`IdentityConflictError` is raised. The check and the write are one atomic step: of
+        two announcements at the same revision exactly one is written.
+        """
+
+    async def observe(
+        self,
+        device_id: DeviceId,
+        *,
+        seen_at: datetime,
+        availability: DeviceAvailability,
+        status: DeviceStatus | None = None,
+        current_workload: float | None = None,
+        power_source: PowerSource | None = None,
+    ) -> None:
+        """Write the observed half of a node — ``last_seen_at``, ``availability``, and what the
+        heartbeat reports — and nothing else; :class:`NotFoundError` if unknown.
+
+        ``status``, ``current_workload`` and ``power_source`` are written only when given: a
+        heartbeat that says nothing about them must not erase what was known. Its own statement,
+        so that no announcement can be lost to a heartbeat that read the row before it (ADR 0016
+        §5; M12.1 dec. H).
+        """
+
+    async def revoke(self, device_id: DeviceId, *, at: datetime) -> bool:
+        """Mark the node revoked at ``at``, once: ``True`` if this call revoked it, ``False`` if it
+        already was; :class:`NotFoundError` if unknown. The row stays (ADR 0016 §6)."""
+
+
+@runtime_checkable
+class EnrollmentStore(Protocol):
+    """Where the one-shot enrollment codes wait for a node to present them (§16; M12.1 dec. D, G).
+
+    The twenty-fourth port. A code is not a device — until it is consumed no node exists — so it
+    has a store of its own (ADR 0037 §8). What is kept is the hash of the code, never the code.
+    """
+
+    async def offer(self, enrollment: Enrollment) -> None:
+        """Keep a new code; :class:`AlreadyExistsError` if a code with this hash is already kept."""
+
+    async def consume(self, code_hash: str, *, device_id: DeviceId, now: datetime) -> Enrollment:
+        """Spend the code for ``device_id`` and return it as stored — only if it exists, has not
+        been consumed and has not expired at ``now`` (``expires_at <= now`` is expired, closed
+        bound). Otherwise nothing is written and, in this order, :class:`NotFoundError`,
+        :class:`EnrollmentConsumedError` or :class:`EnrollmentExpiredError` is raised. The check
+        and the write are one atomic step: of two nodes presenting the same code exactly one is
+        born (ADR 0012 §5, the shape of ``consume``)."""
 
 
 @runtime_checkable

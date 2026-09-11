@@ -70,6 +70,11 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
     be put "just for context". ``ContextActivity`` and ``ContextWork`` are **not** in this list
     and that is again the point — their ``permissions`` and ``states`` are mappings, so both are
     proved frozen by the test above rather than promised to be.
+
+    ``Enrollment`` joined in M12.1 without a bag, and for the reason rule 46 exists: a free-form
+    mapping on the one entity that stands for a secret is where the code itself would one day be
+    kept "for debugging". What it holds is the hash, the level the user imposed, and the node it
+    gave birth to.
     """
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
     assert without == [
@@ -83,6 +88,7 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
         "ContextRecent",
         "ContextSnapshot",
         "ContextTask",
+        "Enrollment",
         "ModelRoute",
         "PerceptionChange",
         "ProviderUsage",

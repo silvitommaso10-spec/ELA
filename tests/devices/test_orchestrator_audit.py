@@ -288,3 +288,37 @@ async def test_the_event_is_timed_by_the_clock_and_carries_the_step(
     assert event.created_at == clock.now()
     assert event.created_at != LATER
     assert event.step_id == one.id
+
+
+async def test_a_revoked_node_is_a_candidate_with_its_reason(
+    orchestrator: DeviceOrchestrator,
+    port: FakeDeviceRegistry,
+    audit: FakeAuditLog,
+    clock: FakeClock,
+) -> None:
+    """D13: a revoked node is judged, not hidden — it is in ``DEVICE_SELECTED`` with ``REVOKED``,
+    beside the node that won. Taking it out of the candidates before the judgement would make it
+    vanish from the payload instead of appearing with its reason (ADR 0037 §12)."""
+    gone = beating(node("gone", tools=(NOTES,), revoked_at=LATER), clock)
+    local = beating(node("local", tools=(NOTES,)), clock)
+    await register(port, [gone, local])
+
+    placement = await orchestrator.place(step(capabilities=(WRITE_NOTE,)), task_id=TASK_ID)
+
+    assert placement.device is not None and placement.device.id == local.id
+    (event,) = await audit.read()
+    candidates = event.payload["candidates"]
+    assert isinstance(candidates, tuple)
+    assert [candidate["device_id"] for candidate in candidates] == [str(gone.id), str(local.id)]
+    assert candidates[0]["refusals"] == (Refusal.REVOKED.value,)
+
+
+async def test_a_wait_counts_the_revoked_node_by_name(
+    orchestrator: DeviceOrchestrator, port: FakeDeviceRegistry, clock: FakeClock
+) -> None:
+    await register(port, [beating(node("gone", tools=(NOTES,), revoked_at=LATER), clock)])
+
+    placement = await orchestrator.place(step(capabilities=(WRITE_NOTE,)), task_id=TASK_ID)
+
+    assert placement.waits
+    assert Refusal.REVOKED.value in placement.reason

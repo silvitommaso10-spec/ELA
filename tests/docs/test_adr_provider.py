@@ -44,8 +44,10 @@ from ela.providers.anthropic.settings import (
     DEFAULT_MAX_OUTPUT_TOKENS,
     DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
-    RETIRED_SETTINGS,
     AnthropicSettings,
+)
+from ela.tombstones import (
+    RETIRED_SETTINGS,
 )
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0020-provider-anthropic.md"
@@ -308,7 +310,8 @@ def test_the_settings_table_matches_the_defaults() -> None:
 def test_the_retired_variable_is_the_one_a_later_adr_retired() -> None:
     """The settings a live ``AnthropicSettings`` reads are §3's minus ``ELA_ANTHROPIC_MODEL``,
     which ADR 0022 §8 retired and which is refused rather than ignored."""
-    assert set(RETIRED_SETTINGS) == {"ELA_ANTHROPIC_MODEL"}
+    anthropic = {f"ELA_{name.upper()}" for name in AnthropicSettings.model_fields}
+    assert set(RETIRED_SETTINGS) & anthropic == {"ELA_ANTHROPIC_MODEL"}
     assert "ELA_ANTHROPIC_MODEL" in documented_settings(adr_text())
     with pytest.raises(ValidationError, match="retired"):
         AnthropicSettings(_env_file=None, anthropic_model=DEFAULT_MODEL)

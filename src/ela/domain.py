@@ -73,6 +73,7 @@ __all__ = [
     "DeviceId",
     "DeviceStatus",
     "ELAIdentity",
+    "Enrollment",
     "ErrorMetadata",
     "ExecutionId",
     "ExecutionResult",
@@ -390,6 +391,13 @@ class AuditEventType(StrEnum):
 
     One type per operation of the Task Engine (M3.1, ADR 0008): a log queried by type — every
     denial, every approval — is worth more than one filtered on its payload.
+
+    **Every member has a writer**, and ``tests/docs/test_adr_nodes.py`` asserts it for all of them.
+    ``PROVIDER_CALLED`` and ``ERROR_RECORDED`` were here until M12.1 and nothing ever wrote either:
+    a call to a provider is already in the audit, inside ``TOOL_EXECUTED`` with its ``usage``, and
+    an error inside ``TASK_FAILED`` and ``STEP_FAILED``. A type nothing can produce is worse than
+    an absent one (ADR 0026 §7), so they left (M12.1, D11) — the dated debt of ADR 0036 §12, charged
+    to whoever added the next type of event, and paid by the milestone that did (ADR 0037).
     """
 
     TASK_CREATED = "TASK_CREATED"
@@ -430,6 +438,34 @@ class AuditEventType(StrEnum):
     A distinct type and not a payload of :attr:`DEVICE_SELECTED`: "every time ELA had nowhere to
     run something" is a question the log must answer by type, as ADR 0008 argues for the engine.
     """
+    DEVICE_ENROLLED = "DEVICE_ENROLLED"
+    """A node entered ELA's world from the network, with a code the user issued (ADR 0037 §13).
+
+    Signed ``USER`` — the identity that issued the code (D12) — because the admission is the
+    user's: the code carries their decision, and the ``privacy`` it imposes is theirs. Not
+    :attr:`DEVICE_REGISTERED`, which the registry signs for the machine it runs on (ADR 0035 §3).
+    """
+    DEVICE_ANNOUNCED = "DEVICE_ANNOUNCED"
+    """A node rewrote the half it declares of itself, and something changed (ADR 0037 §13).
+
+    The first writer of ``ActorKind.DEVICE``: the node that announces itself signs its own row
+    (ADR 0035 §3). Nothing changed means nothing written, as for :attr:`DEVICE_REFRESHED`.
+    """
+    DEVICE_IDENTITY_CONFLICT = "DEVICE_IDENTITY_CONFLICT"
+    """An announcement at a revision the row is no longer at: two processes claim one node.
+
+    ADR 0035 §5, «rilevati, nominati e rifiutati», made an instruction by ADR 0037 §9. Signed
+    ``DEVICE``: whoever wrote holds the secret, and that is precisely the conflict.
+    """
+    DEVICE_REJECTED = "DEVICE_REJECTED"
+    """A request that named a node that exists was refused, and why (ADR 0037 §13).
+
+    Signed ``SYSTEM``: the Core decides the refusal, and an identity that did not prove itself does
+    not sign — the node the request named is in the payload, as its claim. Anonymous refusals are
+    not written: anyone on the tailnet could otherwise write into the chain of §32 at will.
+    """
+    DEVICE_REVOKED = "DEVICE_REVOKED"
+    """The user revoked a node: its row stays, and its secret opens nothing (ADR 0037 §12)."""
     SENSOR_ACTIVATED = "SENSOR_ACTIVATED"
     """ELA opened one of the sensors of §11 — today the microphone (M11.2, ADR 0036 §11).
 
@@ -456,8 +492,6 @@ class AuditEventType(StrEnum):
     EXECUTION_VERIFIED = "EXECUTION_VERIFIED"
     """The verifier checked a SUCCEEDED result against the step's success conditions (§63,
     M5.2, ADR 0014): written whether it passed or failed."""
-    PROVIDER_CALLED = "PROVIDER_CALLED"
-    ERROR_RECORDED = "ERROR_RECORDED"
 
 
 class ActorKind(StrEnum):
@@ -766,7 +800,65 @@ class Device(_DomainModel):
     privacy: PrivacyLevel
     current_workload: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     last_seen_at: UtcDatetime | None = None
+    revision: Annotated[int, Field(ge=0)] = 0
+    """How many times the node has announced its declared half (M12.1 dec. H; ADR 0037 §9).
+
+    The row's version, not a fact about the machine: an announcement is written only if the row is
+    still at the revision the node last saw, so two processes that claim to be the same node do not
+    overwrite each other by order of arrival — the second is told it believed something false about
+    the row (ADR 0035 §5). ``0`` for ``local``, which the Core writes for itself and which stays out
+    of the revision (ADR 0037 §9).
+    """
+    revoked_at: UtcDatetime | None = None
+    """When the user revoked the node, or ``None`` (M12.1 dec. K; ADR 0037 §12).
+
+    The row stays — whoever investigates an action must be able to tell which nodes existed then
+    (ADR 0016 §6) — and this is the mark every reader judges it by: the middleware refuses it, the
+    orchestrator diagnoses it ``REVOKED``, ``available()`` leaves it out. Never the hash of the
+    node's secret, which is not a field of this entity (architecture rule 46).
+    """
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
+
+
+class Enrollment(_DomainModel):
+    """A one-shot enrollment code, as ELA keeps it: the hash of the code, never the code (M12.1).
+
+    The user asks for it (``ela node enroll``), the node presents it once, and the node that is born
+    from it gets the ``privacy`` the user imposed here — never one it declares for itself (D3, D18;
+    ADR 0037 §5). The code is ``secrets.token_urlsafe(32)``: 256 bits, so its SHA-256 cannot be
+    inverted by a dictionary (ADR 0014, alternativa F), and the hash is all the store holds.
+
+    ``consumed_at`` and ``device_id`` are written together, by the conditional ``UPDATE`` that
+    spends the code: a code is consumed *by* a node, and a code presented again names the node it
+    gave birth to (``DEVICE_REJECTED`` ``code_reused``, ADR 0037 §13).
+    """
+
+    code_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    created_at: UtcDatetime
+    expires_at: UtcDatetime
+    privacy: PrivacyLevel
+    consumed_at: UtcDatetime | None = None
+    device_id: DeviceId | None = None
+
+    @model_validator(mode="after")
+    def _remote_consumed_by_one_node_and_short_lived(self) -> Enrollment:
+        """``LOCAL_ONLY`` stays ``local``'s; a code expires after issue; one node consumes it.
+
+        ``LOCAL_ONLY`` is refused by the type and not only by the route (D18): with today's
+        comparison (``devices/orchestrator.py``, F2) a node at that level receives every task,
+        including the ones whose sensitivity nobody declared — and «a task nobody declared stays at
+        home» is true only if no remote node can be ``LOCAL_ONLY``.
+        """
+        if self.privacy is PrivacyLevel.LOCAL_ONLY:
+            raise ValueError(
+                "LOCAL_ONLY is this machine's level: a remote node at it would receive every task, "
+                "including those whose sensitivity nobody declared (D18)"
+            )
+        if self.expires_at <= self.created_at:
+            raise ValueError("an enrollment code must expire after it is issued")
+        if (self.consumed_at is None) != (self.device_id is None):
+            raise ValueError("a code is consumed by a node: consumed_at and device_id go together")
+        return self
 
 
 class CapabilitySpec(_DomainModel):

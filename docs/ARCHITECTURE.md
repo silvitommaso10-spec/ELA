@@ -54,6 +54,7 @@ graph TD
     routing[ela.routing]
     tasks[ela.tasks]
     testing[ela.testing]
+    tombstones[ela.tombstones]
     tools[ela.tools]
     api --> audit
     api --> composition
@@ -78,6 +79,7 @@ graph TD
     composition --> providers
     composition --> routing
     composition --> tasks
+    composition --> tombstones
     composition --> tools
     context --> devices
     context --> domain
@@ -101,6 +103,7 @@ graph TD
     ports --> domain
     providers --> domain
     providers --> ports
+    providers --> tombstones
     routing --> domain
     routing --> ports
     tasks --> domain

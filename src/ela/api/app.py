@@ -14,6 +14,9 @@ an ``Authorization`` header, so ``/docs`` behind a token would answer 401 and no
 from __future__ import annotations
 
 import asyncio
+from collections import (
+    Counter,
+)
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -28,19 +31,32 @@ from ela.api import (
     audit,
     context,
     devices,
+    nodes,
     perception,
     results,
     system,
     tasks,
     voice,
 )
-from ela.api.errors import DatabaseUnavailableError, TaskAlreadyRunningError
+from ela.api.errors import (
+    DatabaseUnavailableError,
+    RevisionRequiredError,
+    TaskAlreadyRunningError,
+)
 from ela.api.problems import problem
-from ela.api.security import token_middleware
+from ela.api.security import identity_middleware
 from ela.audit.chain import AuditChainError
 from ela.composition import Ela
+from ela.devices import (
+    LocalDeviceNotRevocableError,
+)
 from ela.executive import ExecutorError, RunnerError
-from ela.ports import AlreadyExistsError, ApprovalNotAnswerableError, NotFoundError
+from ela.ports import (
+    AlreadyExistsError,
+    ApprovalNotAnswerableError,
+    IdentityConflictError,
+    NotFoundError,
+)
 from ela.tasks.engine import RecoverySummary
 from ela.tasks.errors import GraphError, TaskError
 
@@ -66,6 +82,9 @@ FAILURES: tuple[Failure, ...] = (
     Failure(ExecutorError, 409, "conflict"),
     Failure(RunnerError, 409, "conflict"),
     Failure(TaskAlreadyRunningError, 409, "already_running"),
+    Failure(IdentityConflictError, 412, "identity_conflict"),
+    Failure(LocalDeviceNotRevocableError, 409, "not_revocable"),
+    Failure(RevisionRequiredError, 428, "revision_required"),
     Failure(DatabaseUnavailableError, 503, "database_unavailable"),
     Failure(RequestValidationError, 422, "invalid"),
     Failure(ValueError, 422, "invalid"),
@@ -153,7 +172,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(ela: Ela) -> FastAPI:
-    """The application serving ``ela``: token first, then the fifteen routes."""
+    """The application serving ``ela``: identity first, then the routers.
+
+    The tuple below is a declaration, and stays one: a module is mounted because somebody wrote it
+    here, not because a file appeared in the package. It carried a count in this docstring once —
+    "the fifteen routes" — and the count outlived the truth by five; the census now lives in
+    ``tests/api/test_security.py``, which holds this tuple to every router of ``ela.api``.
+    """
     app = FastAPI(
         title="ELA",
         version=version("ela"),
@@ -164,7 +189,10 @@ def create_app(ela: Ela) -> FastAPI:
     app.state.ela = ela
     app.state.running = set()
     app.state.recovery = RecoverySummary((), (), ())
-    app.middleware("http")(token_middleware(ela.settings.api.token))
+    app.state.refused = Counter()
+    # What ``ela serve`` bound, filled in by ``api/server.py``; an in-process transport binds none.
+    app.state.addresses = ()
+    app.middleware("http")(identity_middleware(ela))
     for failure in FAILURES:
         app.add_exception_handler(failure.exception, _handler(failure))
     for router in (
@@ -173,6 +201,7 @@ def create_app(ela: Ela) -> FastAPI:
         approvals.router,
         audit.router,
         devices.router,
+        nodes.router,
         context.router,
         perception.router,
         results.router,

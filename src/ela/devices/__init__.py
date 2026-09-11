@@ -10,11 +10,24 @@ The package advises and does not command: it cannot import ``ela.tasks``, so no 
 move — or fail — a task (ADR 0017 §6, architecture rule 22).
 """
 
-from ela.devices.errors import NotPlacedError, UnsupportedOperatingSystemError
+from ela.devices.enrollment import (
+    ENROLLMENT_CODE_TTL,
+    RANDOM_BYTES,
+    EnrolledNode,
+    IssuedCode,
+    NodeEnrollment,
+    fingerprint,
+)
+from ela.devices.errors import (
+    LocalDeviceNotRevocableError,
+    NotPlacedError,
+    UnsupportedOperatingSystemError,
+)
 from ela.devices.local import (
     DEVICE_NAMESPACE,
     LOCAL_DEVICE_ID,
     LOCAL_DEVICE_NAME,
+    LOCAL_USER,
     SYSTEMS,
     local_device,
     operating_system,
@@ -46,6 +59,7 @@ from ela.devices.registry import (
     REGISTRY_ACTOR,
     UNAVAILABLE,
     DeviceRegistry,
+    Rejection,
     is_available,
 )
 from ela.devices.settings import DEFAULT_HEARTBEAT_TTL_SECONDS, DeviceSettings
@@ -87,4 +101,13 @@ __all__ = [
     "operating_system",
     "refusals",
     "score",
+    "ENROLLMENT_CODE_TTL",
+    "RANDOM_BYTES",
+    "EnrolledNode",
+    "IssuedCode",
+    "NodeEnrollment",
+    "fingerprint",
+    "LocalDeviceNotRevocableError",
+    "LOCAL_USER",
+    "Rejection",
 ]

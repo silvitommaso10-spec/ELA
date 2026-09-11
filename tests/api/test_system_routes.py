@@ -12,8 +12,13 @@ import uuid
 from typing import Any
 
 import pytest
-from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from fastapi import (
+    FastAPI,
+)
+from httpx import (
+    ASGITransport,
+    AsyncClient,
+)
 
 from ela.api import create_app
 from ela.api.tasks import PLAN_IS_TEMPORARY
@@ -59,7 +64,7 @@ async def test_diagnostics_says_how_ela_is_composed(client: AsyncClient, ela: El
     assert body["task_types"] == sorted(DEFAULT_ROUTES)
     assert body["default_profile"] == ela.settings.routing.model_default_route.profile
     assert body["devices"] == {"local": "available"}
-    assert body["user_name"] == "user"
+    assert "user_name" not in body  # retired with ELA_USER_NAME (ADR 0037 §15)
     assert body["version"]
 
 
@@ -194,3 +199,15 @@ async def test_the_schema_warns_that_the_plan_endpoint_is_temporary(client: Asyn
 
 async def test_the_schema_needs_the_token_too(anonymous: AsyncClient) -> None:
     assert (await anonymous.get("/openapi.json")).status_code == 401
+
+
+async def test_diagnostics_says_where_this_process_listens(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """ADR 0037 §2: what ``ela serve`` bound — here nothing, as the transport is in-process — and
+    then what a server that bound loopback alone, its tailnet down, would report."""
+    assert (await client.get("/diagnostics")).json()["addresses"] == []
+
+    app.state.addresses = ("127.0.0.1:8351",)
+
+    assert (await client.get("/diagnostics")).json()["addresses"] == ["127.0.0.1:8351"]

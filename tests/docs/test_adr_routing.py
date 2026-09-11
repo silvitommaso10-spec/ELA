@@ -27,8 +27,8 @@ from ela.ports import (
     ROUTING_UNKNOWN_TASK_TYPE,
     RoutingError,
 )
-from ela.providers.anthropic.settings import RETIRED_SETTINGS
 from ela.routing import DEFAULT_ROUTE, DEFAULT_ROUTES, RoutePolicy, RoutingSettings
+from ela.tombstones import RETIRED_SETTINGS
 from tests.architecture.rules import RULES
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0022-model-router.md"
@@ -230,12 +230,22 @@ def documented_retirements(text: str) -> dict[str, str]:
     }
 
 
-def test_the_retired_variable_of_the_adr_is_the_one_the_code_refuses() -> None:
-    rows = documented_retirements(adr_text())
-    assert set(rows) == set(RETIRED_SETTINGS) == {"ELA_ANTHROPIC_MODEL"}
+def test_the_retired_variables_of_the_adrs_are_the_ones_the_code_refuses() -> None:
+    """ADR 0022 §8 and ADR 0037 §15, read in union: one table in the code, two in the documents,
+    because an ADR is immutable and each retires what it retires (ADR 0037 §15)."""
+    later = ADR_PATH.with_name("0037-node-identity.md").read_text(encoding="utf-8")
+    rows = documented_retirements(adr_text()) | documented_retirements(later)
+    assert set(rows) == set(RETIRED_SETTINGS) == {"ELA_ANTHROPIC_MODEL", "ELA_USER_NAME"}
     for variable, replacement in rows.items():
         for name in re.findall(r"`(ELA_\w+)`", replacement):
-            assert name in RETIRED_SETTINGS[variable]
+            assert name in RETIRED_SETTINGS[variable].instead
+    milestones = {
+        match.group(1): match.group(2)
+        for text in (adr_text(), later)
+        for line in text.splitlines()
+        if (match := RETIRED_ROW.match(line)) is not None
+    }
+    assert milestones == {name: retired.milestone for name, retired in RETIRED_SETTINGS.items()}
 
 
 def test_the_migration_is_written_down() -> None:

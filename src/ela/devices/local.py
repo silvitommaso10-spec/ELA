@@ -20,6 +20,8 @@ from uuid import NAMESPACE_DNS, uuid5
 
 from ela.devices.errors import UnsupportedOperatingSystemError
 from ela.domain import (
+    Actor,
+    ActorKind,
     Device,
     DeviceAvailability,
     DeviceId,
@@ -35,6 +37,7 @@ __all__ = [
     "DEVICE_NAMESPACE",
     "LOCAL_DEVICE_ID",
     "LOCAL_DEVICE_NAME",
+    "LOCAL_USER",
     "SYSTEMS",
     "local_device",
     "operating_system",
@@ -47,6 +50,14 @@ LOCAL_DEVICE_NAME: Final = "local"
 
 LOCAL_DEVICE_ID: Final = DeviceId(uuid5(DEVICE_NAMESPACE, LOCAL_DEVICE_NAME))
 """Deterministic: the same id in every process, so ``ensure_local`` registers one node ever."""
+
+LOCAL_USER: Final = Actor(kind=ActorKind.USER, id=str(LOCAL_DEVICE_ID))
+"""The user at this machine: who the Core's token is, since M12.1 (D12; ADR 0037 §15).
+
+The id is ``local``'s because what the audit gains is *where* an act came from, resolved and not
+declared; the kind is ``USER`` because who approves, issues a code or revokes a node is a person,
+not a device. In M12.1 it is the only identity that can issue a code or revoke (ADR 0037 §4).
+"""
 
 SYSTEMS: Final[Mapping[str, OperatingSystem]] = MappingProxyType(
     {

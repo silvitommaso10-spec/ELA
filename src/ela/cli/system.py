@@ -55,7 +55,7 @@ def _composition(payload: dict[str, Any]) -> list[tuple[str, Any]]:
         ("version", payload["version"]),
         ("database", payload["database"]),
         ("workspace", payload["workspace"]),
-        ("user", payload["user_name"]),
+        ("addresses", payload["addresses"]),
         ("providers", payload["providers"]),
         ("task types", payload["task_types"]),
         ("default profile", payload["default_profile"]),

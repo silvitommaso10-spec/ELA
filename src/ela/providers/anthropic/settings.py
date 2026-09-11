@@ -3,7 +3,7 @@
 Four variables, all with the ``ELA_`` prefix, in the shape ``PersistenceSettings``,
 ``WorkspaceSettings`` and ``DeviceSettings`` already have; M8.1 will unify the four. A fifth,
 ``ELA_ANTHROPIC_MODEL``, was **retired** in M7.3 and is refused rather than ignored (see
-:data:`RETIRED_SETTINGS`).
+:data:`~ela.tombstones.RETIRED_SETTINGS`).
 
 The one that matters most is the key, and the reason is not obvious: the SDK, given no
 ``api_key``, finds credentials **by itself** — ``ANTHROPIC_API_KEY``, then
@@ -18,38 +18,23 @@ debugger — cannot print the secret.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from types import MappingProxyType
 from typing import Annotated, Final
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ela.providers.anthropic.models import LARGEST_OUTPUT_TOKENS
+from ela.tombstones import (
+    refuse_retired,
+)
 
 __all__ = [
     "DEFAULT_MAX_OUTPUT_TOKENS",
     "DEFAULT_MAX_RETRIES",
     "DEFAULT_TIMEOUT_SECONDS",
     "MAX_TIMEOUT_SECONDS",
-    "RETIRED_SETTINGS",
     "AnthropicSettings",
 ]
-
-RETIRED_SETTINGS: Final[Mapping[str, str]] = MappingProxyType(
-    {"ELA_ANTHROPIC_MODEL": "ELA_MODEL_ROUTES and ELA_MODEL_DEFAULT_ROUTE"}
-)
-"""Variables ELA used to read, and what replaces them (ADR 0022 §8).
-
-A retired variable is **refused**, not ignored: ``extra="ignore"`` would let a machine that still
-sets ``ELA_ANTHROPIC_MODEL=claude-opus-5`` start and quietly answer with whatever the routing
-table says, and the operator would have no way to learn that the knob stopped working. A setting
-that silently does nothing is worse than one that is gone, so it is gone *and* it says so — once,
-at start-up, naming the replacement (§33).
-
-The field stays declared below so the refusal covers every source pydantic-settings reads: the
-environment, a ``.env`` file, and a keyword argument.
-"""
 
 DEFAULT_TIMEOUT_SECONDS: Final = 60.0
 """A minute. The SDK waits ten by default, and an assistant that waits ten minutes for one
@@ -97,12 +82,7 @@ class AnthropicSettings(BaseSettings):
     @model_validator(mode="after")
     def _no_retired_setting(self) -> AnthropicSettings:
         """A retired variable stops ELA at start-up and names its replacement (ADR 0022 §8)."""
-        if self.anthropic_model is not None:
-            variable, replacement = next(iter(RETIRED_SETTINGS.items()))
-            raise ValueError(
-                f"{variable} was retired in M7.3: which model answers is decided by the routing "
-                f"table (spec §25, ADR 0022). Remove it and set {replacement} instead."
-            )
+        refuse_retired(self, prefix="ELA_")
         return self
 
     @model_validator(mode="after")

@@ -65,6 +65,7 @@ LATER_ADDITIONS = frozenset(
         "ContextEvent",
         "ContextRecent",
         "ContextQuestionStatus",
+        "Enrollment",
     }
 )
 """Models a later milestone added, each argued in its own ADR.
@@ -105,6 +106,11 @@ it does not have. They are in the domain rather than in ``ela.context`` for the 
 gives: :class:`~ela.domain.ContextSnapshot` is what the API returns, so it is vocabulary and not
 an internal shape — and being here is also what puts them under architecture rule 39, which is
 what keeps a snapshot out of an audit event and out of a provider request.
+
+``Enrollment`` (M12.1, ADR 0037) is an **entity**, the first a later milestone adds: it has a life
+— issued, then consumed or expired — and a store of its own, :class:`~ela.ports.EnrollmentStore`.
+It is not a ``Device`` because until it is consumed no node exists, and a row that said otherwise
+would be a node nobody can reach. It keeps the hash of the code and never the code (D3).
 """
 
 

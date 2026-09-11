@@ -104,7 +104,7 @@ def test_orm_module_really_imports_sqlalchemy_orm() -> None:
 def test_mapped_rows_are_not_domain_models() -> None:
     """The static rule 8 at runtime: no ORM class is (or derives from) a pydantic model."""
     mapped = [mapper.class_ for mapper in Base.registry.mappers]
-    assert len(mapped) == 8
+    assert len(mapped) == 9
     assert not any(issubclass(cls, BaseModel) for cls in mapped)
 
 
@@ -238,22 +238,29 @@ def test_the_mutation_that_survived_is_now_reported(tmp_path: Path) -> None:
 
     ``secrets.compare_digest(presented.strip().encode(), token.encode())`` replaced by ``==`` on
     the same two operands: functionally identical, and no assertion in the suite could see the
-    difference, because the difference is how long it takes. Here it is two violations — the safe
-    call is gone *and* the token is compared — and either one alone would be enough.
+    difference, because the difference is how long it takes. Since M12.1 the module compares two
+    credentials — the Core's token and a node's secret, as its hash (ADR 0037 §6) — so the
+    mutation replaces both: the safe call is gone *and* each is compared, three violations where
+    any one alone would be enough.
     """
     package = copy_package(tmp_path)
     module = package / SECURITY_MODULE
     source = module.read_text(encoding="utf-8")
     mutated = source.replace(
-        "return secrets.compare_digest(presented.strip().encode(), token.encode())",
-        "return presented.strip().encode() == token.encode()",
+        "return secrets.compare_digest(credential.encode(), token.encode())",
+        "return credential.encode() == token.encode()",
+    ).replace(
+        'secrets.compare_digest(presented_hash.encode(), (secret_hash or "").encode())',
+        'presented_hash.encode() == (secret_hash or "").encode()',
     )
-    assert mutated != source, "the line rule 31 defends is no longer in api/security.py"
+    assert source.count("secrets.compare_digest(") == 2
+    assert "secrets.compare_digest(" not in mutated, "a line rule 31 defends has moved"
     module.write_text(mutated, encoding="utf-8")
 
     reported = RULES["constant-time-token"](package)
 
     assert [violation.imported for violation in reported] == [
         "compare_digest(...)",
+        "== on the token",
         "== on the token",
     ]

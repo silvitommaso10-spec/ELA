@@ -16,8 +16,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from ela.api.deps import ElaDep
+from ela.api.deps import ElaDep, IdentityDep
 from ela.api.schemas import AnswerIn, ApprovalOut, TaskOut
+from ela.api.security import (
+    Identity,
+)
 from ela.domain import Approval, ApprovalId, ApprovalStatus, Task, TaskId, TaskState
 from ela.ports import ApprovalAlreadyAnsweredError, NotFoundError
 from ela.tasks.errors import TaskEngineError
@@ -50,18 +53,20 @@ async def pending_approvals(
 
 
 @router.post("/tasks/{task_id}/approve")
-async def approve(task_id: UUID, body: AnswerIn, ela: ElaDep) -> TaskOut:
+async def approve(task_id: UUID, body: AnswerIn, ela: ElaDep, identity: IdentityDep) -> TaskOut:
     """ "Yes": the request is granted and the task goes back in the queue."""
-    return await _answer(task_id, body, ela, ApprovalStatus.GRANTED)
+    return await _answer(task_id, body, ela, ApprovalStatus.GRANTED, identity)
 
 
 @router.post("/tasks/{task_id}/deny")
-async def deny(task_id: UUID, body: AnswerIn, ela: ElaDep) -> TaskOut:
+async def deny(task_id: UUID, body: AnswerIn, ela: ElaDep, identity: IdentityDep) -> TaskOut:
     """ "No": the request is rejected and the task is DENIED. A refusal is an answer (§62)."""
-    return await _answer(task_id, body, ela, ApprovalStatus.REJECTED)
+    return await _answer(task_id, body, ela, ApprovalStatus.REJECTED, identity)
 
 
-async def _answer(task_id: UUID, body: AnswerIn, ela: ElaDep, status: ApprovalStatus) -> TaskOut:
+async def _answer(
+    task_id: UUID, body: AnswerIn, ela: ElaDep, status: ApprovalStatus, identity: Identity
+) -> TaskOut:
     identifier = TaskId(task_id)
     approval = await ela.approvals.get(ApprovalId(body.approval_id))
     if approval.task_id != identifier:
@@ -73,7 +78,7 @@ async def _answer(task_id: UUID, body: AnswerIn, ela: ElaDep, status: ApprovalSt
         answered = await ela.approvals.respond(
             approval.id,
             status=status,
-            responded_by=ela.settings.core.user_name,
+            responded_by=identity.actor.id,
             now=ela.clock.now(),
         )
     except ApprovalAlreadyAnsweredError:

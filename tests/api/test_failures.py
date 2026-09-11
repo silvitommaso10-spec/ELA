@@ -30,9 +30,17 @@ from httpx import ASGITransport, AsyncClient, Response
 
 from ela.api import create_app
 from ela.api.app import FAILURES
-from ela.api.errors import DatabaseUnavailableError, TaskAlreadyRunningError
+from ela.api.errors import (
+    DatabaseUnavailableError,
+    RevisionRequiredError,
+    TaskAlreadyRunningError,
+)
 from ela.audit.chain import AuditChainError
 from ela.composition import Ela
+from ela.devices import (
+    LOCAL_DEVICE_ID,
+    LocalDeviceNotRevocableError,
+)
 from ela.domain import (
     CapabilityId,
     ExecutionId,
@@ -42,7 +50,12 @@ from ela.domain import (
     TaskId,
 )
 from ela.executive import ExecutorError, RunnerError
-from ela.ports import AlreadyExistsError, ApprovalNotAnswerableError, NotFoundError
+from ela.ports import (
+    AlreadyExistsError,
+    ApprovalNotAnswerableError,
+    IdentityConflictError,
+    NotFoundError,
+)
 from ela.tasks.errors import GraphError, TaskError
 from tests.api.support import (
     AUTHORIZED,
@@ -211,6 +224,34 @@ async def a_deadline_with_no_timezone_at_all(live: Live) -> Response:
     )
 
 
+DECLARATION = {"name": "pc", "os": "WINDOWS", "available_tools": ["core-echo"]}
+
+
+async def a_node_credential(live: Live) -> dict[str, str]:
+    """A node enrolled through the routes, as the header it speaks with (ADR 0037 §3)."""
+    code = (await live.client.post("/nodes/enrollments", json={"privacy": "TRUSTED"})).json()
+    born = (
+        await live.client.post(
+            "/nodes/enroll", json=DECLARATION, headers={"Authorization": f"Bearer {code['code']}"}
+        )
+    ).json()
+    return {"Authorization": f"Bearer {born['device_id']}.{born['secret']}"}
+
+
+async def an_announcement_at_a_revision_the_row_left(live: Live) -> Response:
+    node = await a_node_credential(live)
+    return await live.client.put("/nodes/me", json=DECLARATION, headers={**node, "If-Match": "0"})
+
+
+async def an_announcement_that_names_no_revision(live: Live) -> Response:
+    node = await a_node_credential(live)
+    return await live.client.put("/nodes/me", json=DECLARATION, headers=node)
+
+
+async def a_revocation_of_this_machine(live: Live) -> Response:
+    return await live.client.post(f"/nodes/{LOCAL_DEVICE_ID}/revoke")
+
+
 RAISED: tuple[Raised, ...] = (
     Raised(
         NotFoundError,
@@ -310,6 +351,33 @@ RAISED: tuple[Raised, ...] = (
         "invalid",
         "timezone-aware",
         a_deadline_with_no_timezone_at_all,
+    ),
+    Raised(
+        IdentityConflictError,
+        "PUT",
+        "/nodes/me",
+        412,
+        "identity_conflict",
+        "two processes claim to be it",
+        an_announcement_at_a_revision_the_row_left,
+    ),
+    Raised(
+        LocalDeviceNotRevocableError,
+        "POST",
+        "/nodes/{device_id}/revoke",
+        409,
+        "not_revocable",
+        "cannot be revoked",
+        a_revocation_of_this_machine,
+    ),
+    Raised(
+        RevisionRequiredError,
+        "PUT",
+        "/nodes/me",
+        428,
+        "revision_required",
+        "If-Match",
+        an_announcement_that_names_no_revision,
     ),
 )
 
