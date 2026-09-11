@@ -15,9 +15,10 @@ around (§33).
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-__all__ = ["ExecutorError", "RunnerError"]
+__all__ = ["AssignmentAtCapError", "AssignmentRefusedError", "ExecutorError", "RunnerError"]
 
 
 class ExecutorError(Exception):
@@ -36,3 +37,32 @@ class RunnerError(Exception):
         self.task_id = task_id
         self.reason = reason
         super().__init__(f"task {task_id}: {reason}")
+
+
+class AssignmentRefusedError(Exception):
+    """Work was not handed to a node, and nothing was written (ADR 0038 §6).
+
+    The decision is not ``ALLOWED``, has expired, or is about no step; or the node is ``local``,
+    which runs in this process and is never assigned. A placement that allows no node is the
+    orchestrator's own refusal, :class:`~ela.devices.errors.NotPlacedError`.
+    """
+
+    def __init__(self, decision_id: UUID, reason: str) -> None:
+        self.decision_id = decision_id
+        self.reason = reason
+        super().__init__(f"decision {decision_id}: {reason}")
+
+
+class AssignmentAtCapError(Exception):
+    """A renewal that cannot move the expiry any further: the work is at its cap (ADR 0038 §13).
+
+    Nothing is written; the work expires when it says, and a node stuck renewing for ever does
+    not hold a step for ever.
+    """
+
+    def __init__(self, assignment_id: UUID, expires_at: datetime) -> None:
+        self.assignment_id = assignment_id
+        self.expires_at = expires_at
+        super().__init__(
+            f"assignment {assignment_id} is at its cap: it expires at {expires_at.isoformat()}"
+        )

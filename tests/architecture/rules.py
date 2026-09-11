@@ -465,6 +465,9 @@ AUTHORIZATION_HEADER = "authorization"
 #: 21, for the same reason as ADR 0016 §3. Born with no exemption: nobody names the port yet, and a
 #: door opens with the code behind it (ADR 0027 §3).
 ASSIGNMENT_PORT = f"{ROOT_PACKAGE}.ports.AssignmentStore"
+#: Rule 48's door, opened by the commit that writes the service (ADR 0027 §3): the one module that
+#: derives the expiry and writes the heartbeat in front of it.
+ASSIGNMENT_PORT_READERS = (f"{ROOT_PACKAGE}.executive.assignments",)
 #: Rule 49 (M12.2, ADR 0038): an assignment names a node and carries a bearer title, and one built
 #: by hand skips ``ensure_placed`` and every check on the decision. The mirror of rule 30: «a
 #: defence that can be bypassed by building by hand the object it defends is not a defence» (ADR
@@ -476,6 +479,7 @@ ASSIGNMENT_MODEL = "Assignment"
 #: fields and never copies the entity past its validators (the reason rules 5 and 15 watch
 #: ``model_copy``). ``ela.testing`` never reaches production (rule 6).
 ASSIGNMENT_BUILDERS = (
+    Path("executive") / "assignments.py",
     Path("infrastructure") / "persistence" / "mappers.py",
     Path("testing") / "fakes.py",
 )
@@ -487,6 +491,9 @@ MODEL_CONSTRUCTORS = frozenset({"model_validate", "model_validate_json", "model_
 #: prevent. The guard lives in the caller, so the caller is one. The mirror of rule 10 (ADR 0008
 #: §12).
 RELEASE_METHOD = "release_step"
+#: Rule 50's door, opened by the commit that writes the service: the one caller that can see the
+#: store holds nothing for the step.
+RELEASE_CALLERS = (Path("executive") / "assignments.py",)
 #: Rule 51 (M12.2, ADR 0038, dec. N): an order carries the user's arguments to a node, and its one
 #: way out is the answer to the request of the node it was assigned to. The composer of
 #: :data:`WORK_ORDER_COMPOSER` builds it and no other module does, and the composer imports no
@@ -2532,11 +2539,17 @@ def check_assignment_port_readers(pkg_root: Path) -> list[Violation]:
     applied to a second deadline). And every expiry the service sets is preceded by a heartbeat of
     the task, which is what keeps ``recover()`` from failing a task whose work is still out (dec.
     G) — a route that wrote the row through the port would set an expiry with no sign of life in
-    front of it. The mirror of rule 21. Silent on today's tree, where nobody names the port.
+    front of it. The mirror of rule 21. The service of :data:`ASSIGNMENT_PORT_READERS` is the one
+    module that names it.
     """
+    files = (
+        path
+        for path in _source_files(pkg_root)
+        if module_name(path, pkg_root) not in ASSIGNMENT_PORT_READERS
+    )
     return _violations(
         "assignments-reached-only-through-the-service",
-        _source_files(pkg_root),
+        files,
         pkg_root,
         lambda imported: _is_within(imported, ASSIGNMENT_PORT),
     )
@@ -2588,12 +2601,14 @@ def check_release_step_callers(pkg_root: Path) -> list[Violation]:
     RUNNING → PENDING puts a step back in play, and it is safe only for a step nobody can have
     run: no STARTED record, no outcome in the store (M12.1, D14). The engine does not know the
     tools or the results, so it cannot tell; the guard lives in the caller, and so the caller is
-    one. The mirror of rule 10 (ADR 0008 §12). Silent on today's tree, where the operation does not
-    exist yet, and its one caller opens its door in the commit that writes it.
+    one. The mirror of rule 10 (ADR 0008 §12). The one caller is :data:`RELEASE_CALLERS`, the
+    service of the assignments, and the engine that defines the operation does not call it.
     """
     rule = "release-step-has-one-caller"
     found: list[Violation] = []
     for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) in RELEASE_CALLERS:
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         found.extend(
             Violation(rule, module_name(path, pkg_root), f".{RELEASE_METHOD}(", node.lineno)
@@ -2970,6 +2985,9 @@ CONSTANTS: tuple[Constant, ...] = (
     # assignment-port-readers (rule 48, M12.2)
     Constant("assignment-port-readers", "ASSIGNMENT_PORT", DETECTOR),
     Constant(
+        "assignment-port-readers", "ASSIGNMENT_PORT_READERS", EXEMPTION, by=EACH, adr="ADR 0038"
+    ),
+    Constant(
         "assignment-port-readers",
         "ROOT_PACKAGE",
         SUBJECT,
@@ -2994,6 +3012,7 @@ CONSTANTS: tuple[Constant, ...] = (
         reason=_THE_PACKAGE_ITSELF,
     ),
     # release-step-has-one-caller (rule 50, M12.2)
+    Constant("release-step-has-one-caller", "RELEASE_CALLERS", EXEMPTION, by=EACH, adr="ADR 0038"),
     Constant("release-step-has-one-caller", "RELEASE_METHOD", DETECTOR),
     Constant(
         "release-step-has-one-caller",

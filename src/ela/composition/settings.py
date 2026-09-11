@@ -36,7 +36,13 @@ from pydantic_settings.exceptions import SettingsError
 from ela.composition.errors import ConfigurationError
 from ela.context import ContextSettings
 from ela.devices.settings import DeviceSettings
-from ela.executive import DEFAULT_APPROVAL_TTL, MAX_APPROVAL_TTL
+from ela.executive import (
+    DEFAULT_APPROVAL_TTL,
+    DEFAULT_ASSIGNMENT_CAP,
+    DEFAULT_ASSIGNMENT_TTL,
+    MAX_APPROVAL_TTL,
+    MAX_ASSIGNMENT_CAP,
+)
 from ela.infrastructure.persistence import PersistenceSettings
 from ela.perception import PerceptionSettings
 from ela.permissions import (
@@ -94,6 +100,7 @@ _FIELD = re.compile(r'field "(\w+)"')
 _SECONDS_IN_AUTHORIZATION_TTL: Final = int(MAX_AUTHORIZATION_TTL.total_seconds())
 _SECONDS_IN_APPROVAL_TTL: Final = int(MAX_APPROVAL_TTL.total_seconds())
 _SECONDS_IN_DECISION_TTL: Final = int(MAX_DECISION_TTL.total_seconds())
+_SECONDS_IN_ASSIGNMENT_CAP: Final = int(MAX_ASSIGNMENT_CAP.total_seconds())
 
 
 def _is_loopback(host: str) -> bool:
@@ -254,6 +261,22 @@ class CoreSettings(BaseSettings):
     """``ELA_TASK_ORPHAN_AFTER_SECONDS``: how long an EXECUTING task may stay silent before
     ``recover()`` fails it as an orphan (ADR 0008 §6)."""
 
+    assignment_ttl_seconds: Annotated[int, Field(gt=0)] = int(
+        DEFAULT_ASSIGNMENT_TTL.total_seconds()
+    )
+    """``ELA_ASSIGNMENT_TTL_SECONDS``: how long the Core waits before deciding a node is gone — for
+    the claim of work offered to it, and for a sign of the work it took (ADR 0038 §5).
+
+    No ceiling of its own, because it has three, checked together at start-up by
+    :meth:`_the_silence_fits`: the decision's TTL, the orphan threshold, and the cap of a piece of
+    work."""
+
+    assignment_max_seconds: Annotated[int, Field(gt=0, le=_SECONDS_IN_ASSIGNMENT_CAP)] = int(
+        DEFAULT_ASSIGNMENT_CAP.total_seconds()
+    )
+    """``ELA_ASSIGNMENT_MAX_SECONDS``: the longest life of work a node took, however often it
+    renews (ADR 0038 §13). Capped at a day: no TTL without a cap, and the cap has one too."""
+
     @property
     def authorization_ttl(self) -> timedelta:
         return timedelta(seconds=self.authorization_ttl_seconds)
@@ -269,6 +292,14 @@ class CoreSettings(BaseSettings):
     @property
     def decision_ttl(self) -> timedelta:
         return timedelta(seconds=self.decision_ttl_seconds)
+
+    @property
+    def assignment_ttl(self) -> timedelta:
+        return timedelta(seconds=self.assignment_ttl_seconds)
+
+    @property
+    def assignment_cap(self) -> timedelta:
+        return timedelta(seconds=self.assignment_max_seconds)
 
     @field_validator("notes_scope")
     @classmethod
@@ -292,6 +323,34 @@ class CoreSettings(BaseSettings):
     def _no_retired_setting(self) -> CoreSettings:
         """A retired variable stops ELA at start-up and says why (ADR 0037 §15)."""
         refuse_retired(self, prefix="ELA_")
+        return self
+
+    @model_validator(mode="after")
+    def _the_silence_fits(self) -> CoreSettings:
+        """The TTL of an assignment fits the three durations it answers to (ADR 0038 §5, §9).
+
+        In the form of ADR 0023 §5: what would make a setting lie, or make ``recover()`` fail a
+        task whose work is still out, stops the start-up with the reason, naming both variables.
+        """
+        ttl = self.assignment_ttl_seconds
+        if ttl > self.decision_ttl_seconds:
+            raise ValueError(
+                f"ELA_ASSIGNMENT_TTL_SECONDS ({ttl}) must be at most ELA_DECISION_TTL_SECONDS "
+                f"({self.decision_ttl_seconds}): an offer never outlives its decision, so beyond "
+                "it the setting would never count — and a setting that does not count lies"
+            )
+        if ttl >= self.task_orphan_after_seconds:
+            raise ValueError(
+                f"ELA_ASSIGNMENT_TTL_SECONDS ({ttl}) must be below "
+                f"ELA_TASK_ORPHAN_AFTER_SECONDS ({self.task_orphan_after_seconds}): otherwise "
+                "recover() could fail as an orphan a task whose work is still out on a node"
+            )
+        if ttl > self.assignment_max_seconds:
+            raise ValueError(
+                f"ELA_ASSIGNMENT_TTL_SECONDS ({ttl}) must be at most ELA_ASSIGNMENT_MAX_SECONDS "
+                f"({self.assignment_max_seconds}): the cap of a piece of work cannot be shorter "
+                "than its first stretch"
+            )
         return self
 
 

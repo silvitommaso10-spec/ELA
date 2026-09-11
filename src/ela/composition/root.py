@@ -29,7 +29,7 @@ from ela.devices import (
 )
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import Actor, ActorKind, RawSpeech
-from ela.executive import Executor, TaskRunner
+from ela.executive import Assignments, Executor, TaskRunner
 from ela.infrastructure.machine import (
     Audition,
     DarwinListening,
@@ -49,6 +49,7 @@ from ela.infrastructure.machine import (
 )
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
+    SqlAssignmentStore,
     SqlAuditLog,
     SqlAuthorizationStore,
     SqlDeviceRegistry,
@@ -150,6 +151,12 @@ class Ela:
     orchestrator: DeviceOrchestrator
     executor: Executor
     runner: TaskRunner
+    assignments: Assignments
+    """The work handed to remote nodes, as it is now, and every write of it (M12.2, ADR 0038 §6).
+
+    The service and never the store: the store returns rows as written, and whoever decides reads
+    the expiry through the service, which also writes a heartbeat in front of every expiry it sets
+    (architecture rule 48)."""
     captures: CaptureStore
     """Where screen captures are kept, and for how long (M10.2, ADR 0029 §1).
 
@@ -451,6 +458,18 @@ async def build(settings: Settings) -> Ela:
             orphan_after=settings.core.orphan_after,
         )
         orchestrator = DeviceOrchestrator(devices, tools, audit, ids, clock)
+        assignments = Assignments(
+            SqlAssignmentStore(database),
+            engine=engine,
+            repository=repository,
+            results=results,
+            devices=devices,
+            audit=audit,
+            clock=clock,
+            ids=ids,
+            ttl=settings.core.assignment_ttl,
+            cap=settings.core.assignment_cap,
+        )
         executor = Executor(
             registry=capabilities,
             tools=tools,
@@ -523,6 +542,7 @@ async def build(settings: Settings) -> Ela:
         orchestrator=orchestrator,
         executor=executor,
         runner=runner,
+        assignments=assignments,
         captures=captures,
         context=context,
         speech=speech,

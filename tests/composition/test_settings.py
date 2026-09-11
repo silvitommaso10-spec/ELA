@@ -101,6 +101,8 @@ def test_the_environment_overrides_every_new_variable(
         ELA_AUTHORIZATION_TTL_SECONDS="60",
         ELA_APPROVAL_TTL_SECONDS="120",
         ELA_TASK_ORPHAN_AFTER_SECONDS="30",
+        # Below the orphan threshold, as ADR 0038 §9 requires of it since M12.2.
+        ELA_ASSIGNMENT_TTL_SECONDS="20",
     )
 
     assert settings.api.api_host == "::1"
@@ -108,6 +110,7 @@ def test_the_environment_overrides_every_new_variable(
     assert settings.core.authorization_ttl == timedelta(seconds=60)
     assert settings.core.approval_ttl == timedelta(seconds=120)
     assert settings.core.orphan_after == timedelta(seconds=30)
+    assert settings.core.assignment_ttl == timedelta(seconds=20)
 
 
 # ----------------------------------------------------------------------------------------
@@ -223,6 +226,64 @@ def test_a_decision_may_not_outlive_its_ceiling(
         loaded(monkeypatch, tmp_path, ELA_DECISION_TTL_SECONDS=str(over - 1)).core.decision_ttl
         == MAX_DECISION_TTL
     )
+
+
+def test_the_assignments_default_to_the_adr(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """ADR 0038 §5, §13: two minutes of silence, an hour for a piece of work in hand."""
+    core = loaded(monkeypatch, tmp_path).core
+
+    assert core.assignment_ttl == timedelta(seconds=120)
+    assert core.assignment_cap == timedelta(hours=1)
+
+
+def test_an_assignment_ttl_may_reach_the_decision_ttl(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The bound is closed: an offer may live exactly as long as its decision."""
+    core = loaded(monkeypatch, tmp_path, ELA_ASSIGNMENT_TTL_SECONDS="300").core
+
+    assert core.assignment_ttl == core.decision_ttl
+
+
+def test_an_assignment_ttl_beyond_the_decision_ttl_stops_ela(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Beyond it the setting would never count: the offer ends with its decision anyway."""
+    message = refused(monkeypatch, tmp_path, ELA_ASSIGNMENT_TTL_SECONDS="301")
+
+    assert "ELA_ASSIGNMENT_TTL_SECONDS (301)" in message
+    assert "ELA_DECISION_TTL_SECONDS (300)" in message
+
+
+def test_an_assignment_ttl_that_reaches_the_orphan_threshold_stops_ela(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Criterion 19, at start-up (ADR 0038 §9): not strictly below ``orphan_after``,
+    ``recover()`` could fail a task whose work is still out — and the message says so."""
+    message = refused(monkeypatch, tmp_path, ELA_TASK_ORPHAN_AFTER_SECONDS="120")
+
+    assert "ELA_ASSIGNMENT_TTL_SECONDS (120)" in message
+    assert "ELA_TASK_ORPHAN_AFTER_SECONDS (120)" in message
+    assert "recover()" in message
+
+
+def test_an_assignment_ttl_longer_than_its_cap_stops_ela(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    message = refused(monkeypatch, tmp_path, ELA_ASSIGNMENT_MAX_SECONDS="100")
+
+    assert "ELA_ASSIGNMENT_MAX_SECONDS (100)" in message
+
+
+def test_the_cap_of_a_piece_of_work_has_a_cap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No TTL without a cap (M4.2, M4.3), and the cap has one too: a day."""
+    message = refused(monkeypatch, tmp_path, ELA_ASSIGNMENT_MAX_SECONDS=str(24 * 3600 + 1))
+
+    assert "ELA_ASSIGNMENT_MAX_SECONDS" in message
 
 
 def test_the_decision_ttl_defaults_to_what_the_guardian_has_always_used(

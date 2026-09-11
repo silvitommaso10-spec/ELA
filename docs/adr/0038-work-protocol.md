@@ -446,7 +446,6 @@ Variabili aggiunte, nella forma della tabella di ADR 0023 §3:
 |---|---|---|---|
 | `ELA_ASSIGNMENT_TTL_SECONDS` | `int` | `120` | `0 <` ttl `<= ELA_DECISION_TTL_SECONDS`; `<` `ELA_TASK_ORPHAN_AFTER_SECONDS`; `<=` `ELA_ASSIGNMENT_MAX_SECONDS` |
 | `ELA_ASSIGNMENT_MAX_SECONDS` | `int` | `3600` | `0 <` max `<= 86400`: il tetto di un lavoro preso |
-| `ELA_NODE_POLL_SECONDS` | `int` | `25` | `0 <` poll `<= 60`: la finestra del long-poll |
 
 ## 14. La verifica di un effetto remoto, e le capability che non viaggiano
 

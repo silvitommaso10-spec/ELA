@@ -14,7 +14,23 @@ engine or of the executor. The Planner (§13) is still to come; M6.3 executes pl
 produce them.
 """
 
-from ela.executive.errors import ExecutorError, RunnerError
+from ela.executive.assignments import (
+    DEFAULT_ASSIGNMENT_CAP,
+    DEFAULT_ASSIGNMENT_TTL,
+    MAX_ASSIGNMENT_CAP,
+    WORK_ACTOR,
+    Assignments,
+    Lapse,
+    Stand,
+    Standing,
+    WorkRejection,
+)
+from ela.executive.errors import (
+    AssignmentAtCapError,
+    AssignmentRefusedError,
+    ExecutorError,
+    RunnerError,
+)
 from ela.executive.executor import (
     APPROVAL_NAMESPACE,
     AUTHORIZATION_NAMESPACE,
@@ -42,9 +58,20 @@ __all__ = [
     "AUTHORIZATION_NAMESPACE",
     "CONSUMING_RULES",
     "DEFAULT_APPROVAL_TTL",
+    "DEFAULT_ASSIGNMENT_CAP",
+    "DEFAULT_ASSIGNMENT_TTL",
     "EXECUTION_INTERRUPTED",
     "GRANT_VANISHED",
     "MAX_APPROVAL_TTL",
+    "MAX_ASSIGNMENT_CAP",
+    "WORK_ACTOR",
+    "AssignmentAtCapError",
+    "AssignmentRefusedError",
+    "Assignments",
+    "Lapse",
+    "Stand",
+    "Standing",
+    "WorkRejection",
     "OUTCOMES",
     "RUNNABLE_STATES",
     "RECOVERED",

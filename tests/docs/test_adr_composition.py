@@ -105,6 +105,7 @@ def test_the_nine_variables_are_the_ones_the_settings_declare() -> None:
         documented_settings(adr_text())
         | documented_settings(debts_adr_text())
         | documented_settings(nodes_adr_text())
+        | documented_settings(work_adr_text())
     )
     coded = coded_settings()
 
@@ -166,6 +167,11 @@ def coded_routes() -> set[tuple[str, str]]:
 def nodes_adr_text() -> str:
     """ADR 0037, which adds the routes of the nodes in a table with one more column."""
     return ADR_PATH.with_name("0037-node-identity.md").read_text(encoding="utf-8")
+
+
+def work_adr_text() -> str:
+    """ADR 0038, which adds the variables of the assignments, and later the routes of the work."""
+    return ADR_PATH.with_name("0038-work-protocol.md").read_text(encoding="utf-8")
 
 
 def documented_node_routes() -> set[tuple[str, str]]:
