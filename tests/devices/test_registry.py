@@ -226,6 +226,9 @@ async def test_twenty_concurrent_heartbeats_lose_nothing_but_last_seen_at(
 ) -> None:
     """The whole risk of not making the heartbeat one atomic statement, measured.
 
+    Since M12.1 it is one statement on the observed columns (ADR 0037 §9); the measure stays,
+    because it is what says the statement kept the promise the read-modify-write used to make.
+
     Twenty heartbeats race on one node, each carrying its own instant. Whichever write lands
     last, every field other than ``last_seen_at`` must come out identical to what was
     registered, the surviving ``last_seen_at`` must be one of the twenty instants actually

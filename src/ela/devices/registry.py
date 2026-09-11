@@ -21,15 +21,28 @@ a capability withdrawn stops being runnable at the same one. A registration and 
 configuration changes — which machines ELA may use, with which tools — and §32 wants them
 readable: whoever investigates an action must be able to reconstruct which nodes could do what
 *then*. The heartbeat stays out of the log, as ADR 0016 §6 decided: a sign of life is not an act.
+
+Since M12.1 a node can also enter from the network and speak for itself (ADR 0037). Each half of
+its row has its own write (§9, §10): the node announces its declared half at the revision it last
+saw, the heartbeat writes only what it observed, the user revokes. The registry audits all five
+facts of an identity — enrolled, announced, in conflict, rejected, revoked — and never a secret,
+a code or a hash (architecture rule 46).
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta
+from enum import StrEnum, auto
 from typing import Any, Final
 
-from ela.devices.local import LOCAL_DEVICE_ID, local_device
+from ela.devices.errors import (
+    LocalDeviceNotRevocableError,
+)
+from ela.devices.local import (
+    LOCAL_DEVICE_ID,
+    local_device,
+)
 from ela.devices.refresh import DECLARED_FIELDS, changes, difference, refreshed, tool_names
 from ela.domain import (
     Actor,
@@ -39,20 +52,34 @@ from ela.domain import (
     AuditEventType,
     Device,
     DeviceAvailability,
+    DeviceCapability,
     DeviceId,
     DeviceStatus,
     JsonValue,
+    NetworkKind,
+    OperatingSystem,
+    PerformanceClass,
+    PowerSource,
+    PrivacyLevel,
 )
 from ela.ports import (
     AlreadyExistsError,
     AuditLog,
     Clock,
     DeviceRegistryPort,
+    IdentityConflictError,
     IdGenerator,
     NotFoundError,
 )
 
-__all__ = ["AVAILABLE", "REGISTRY_ACTOR", "UNAVAILABLE", "DeviceRegistry", "is_available"]
+__all__ = [
+    "AVAILABLE",
+    "REGISTRY_ACTOR",
+    "UNAVAILABLE",
+    "DeviceRegistry",
+    "is_available",
+    "Rejection",
+]
 
 REGISTRY_ACTOR: Final = Actor(kind=ActorKind.SYSTEM, id="device-registry")
 """Who signs a registration: nobody asked for it, ELA writes down the machine it is running on.
@@ -66,6 +93,30 @@ AVAILABLE: Final = DeviceAvailability.ONLINE
 
 UNAVAILABLE: Final = DeviceAvailability.UNREACHABLE
 """§16 "non disponibile": no sign of life within the TTL. Not ``OFFLINE`` — see the module doc."""
+
+
+class Rejection(StrEnum):
+    """Why a request that named a node that exists was refused (ADR 0037 §13): what is written.
+
+    The four reasons ``DEVICE_REJECTED`` carries, each valued as its name in lower case — how ADR
+    0037 §13 writes them, and what ``StrEnum``'s ``auto`` gives. A request naming nothing — no
+    credential, an unknown id, an unknown or unspent-and-expired code — has no reason here: it is
+    anonymous, and the 401 already says all there is to say.
+    """
+
+    BAD_SECRET = auto()
+    """The secret presented is not the one kept for the id the request names."""
+    REVOKED = auto()
+    """The node was revoked: the same 401 as a wrong secret, and this reason in the audit."""
+    ROUTE_NOT_ALLOWED = auto()
+    """A node on a route outside its list (ADR 0037 §4)."""
+    CODE_REUSED = auto()
+    """A code already spent, presented again: it names the node it gave birth to."""
+
+
+def _node(device_id: DeviceId) -> Actor:
+    """The node as the signer of its own row (ADR 0035 §3): ``DEVICE``, with its own id."""
+    return Actor(kind=ActorKind.DEVICE, id=str(device_id))
 
 
 def is_available(device: Device, now: datetime, ttl: timedelta) -> bool:
@@ -203,30 +254,225 @@ class DeviceRegistry:
         *,
         status: DeviceStatus | None = None,
         current_workload: float | None = None,
+        power_source: PowerSource | None = None,
     ) -> Device:
-        """Record a sign of life from a node, optionally with what it is doing (§16).
+        """Record a sign of life from a node, optionally with what it reports of itself (§16).
 
-        ``status`` and ``current_workload`` are the node's own report and are written only when
-        given: a heartbeat that says nothing about them must not erase what was known.
+        ``status``, ``current_workload`` and ``power_source`` are the node's own report — written
+        by the registry, not guaranteed by it (ADR 0037 §10) — and are written only when given: a
+        heartbeat that says nothing about them must not erase what was known.
 
-        Read-modify-write, not one atomic statement (ADR 0016 §5). Two heartbeats racing on the
-        same node can only lose one ``last_seen_at``, leaving the older of two recent instants —
-        the node stays available, and no other field is at stake because a heartbeat writes no
-        other field on its own.
+        One statement on the observed columns (ADR 0037 §9), no longer a read-modify-write of the
+        whole row (ADR 0016 §5): an announcement racing with a heartbeat cannot be lost to it. The
+        row is read first only to hold what the node reported against the domain — a workload of
+        ``7.5`` is refused before anything is written — and nothing of what was read is written:
+        what comes back is this heartbeat's observation over the row as it was read.
 
         :raises NotFoundError: if the node is not registered. A heartbeat never registers one:
-            an unknown node announcing itself is M7's business, and it goes through the Guardian.
+            a node enters by an enrollment (ADR 0037 §5) or, for ``local``, by ``ensure_local``.
         """
         now = self._clock.now()
-        device = await self._devices.get(device_id)
-        changes: dict[str, Any] = {"last_seen_at": now, "availability": AVAILABLE}
+        reported: dict[str, Any] = {}
         if status is not None:
-            changes["status"] = status
+            reported["status"] = status
         if current_workload is not None:
-            changes["current_workload"] = current_workload
-        seen = _with(device, changes)
-        await self._devices.update(seen)
-        return seen
+            reported["current_workload"] = current_workload
+        if power_source is not None:
+            reported["power_source"] = power_source
+        observed = _with(
+            await self._devices.get(device_id),
+            {**reported, "last_seen_at": now, "availability": AVAILABLE},
+        )
+        await self._devices.observe(
+            device_id,
+            seen_at=now,
+            availability=AVAILABLE,
+            status=status,
+            current_workload=current_workload,
+            power_source=power_source,
+        )
+        return self.seen(observed, now)
+
+    async def enroll(
+        self,
+        device_id: DeviceId,
+        *,
+        name: str,
+        os: OperatingSystem,
+        capabilities: tuple[DeviceCapability, ...],
+        available_tools: tuple[str, ...],
+        performance: PerformanceClass,
+        privacy: PrivacyLevel,
+        secret_hash: str,
+        by: Actor,
+        issued_at: datetime,
+    ) -> Device:
+        """A node born from a code: the row, its hash, and ``DEVICE_ENROLLED`` (ADR 0037 §5).
+
+        The node gives the half it declares; the rest is not its to give. ``privacy`` is the code's
+        — the user imposed it — and ``network`` is the registry's, ``REMOTE`` for every node that
+        enters from the API (§10). Revision 1, never seen and therefore not available: enrolling a
+        node says that it exists, not that it answers (ADR 0016 §3).
+
+        Audited after the port answered, so a refused insert leaves no event about a node that was
+        not added; signed by ``by``, the identity that issued the code (D12). The summary says what
+        the node declared, the level imposed, and when the code was issued — never the code, the
+        secret or a hash.
+        """
+        device = Device(
+            id=device_id,
+            created_at=self._clock.now(),
+            name=name,
+            os=os,
+            availability=UNAVAILABLE,
+            status=DeviceStatus.UNKNOWN,
+            capabilities=capabilities,
+            available_tools=available_tools,
+            performance=performance,
+            network=NetworkKind.REMOTE,
+            power_source=PowerSource.UNKNOWN,
+            privacy=privacy,
+            revision=1,
+        )
+        await self._devices.enroll(device, secret_hash=secret_hash)
+        await self._audit.append(
+            self._event(
+                AuditEventType.DEVICE_ENROLLED,
+                device,
+                actor=by,
+                summary=(
+                    f"node {device.name} ({device.id}) enrolled on {device.os.value} with "
+                    f"{_listed(device.available_tools)}, privacy {device.privacy.value}, by a "
+                    f"code issued at {issued_at.isoformat()}"
+                ),
+                changed=DECLARED_FIELDS,
+                added=device.available_tools,
+                removed=(),
+            )
+        )
+        return self.seen(device, self._clock.now())
+
+    async def announce(
+        self,
+        device_id: DeviceId,
+        *,
+        name: str,
+        os: OperatingSystem,
+        capabilities: tuple[DeviceCapability, ...],
+        available_tools: tuple[str, ...],
+        performance: PerformanceClass,
+        expected_revision: int,
+    ) -> Device:
+        """A node rewrites the half it declares, at the revision it last saw (ADR 0037 §9, §10).
+
+        The five keywords are :data:`~ela.devices.refresh.DECLARED_FIELDS` and nothing else: what
+        is not declared cannot be passed, so it cannot be written. The write is the port's
+        conditional ``UPDATE``; the read before it only computes the difference for the audit,
+        and the difference is exact because the declared half moves only with the revision the
+        write checks.
+
+        ``DEVICE_ANNOUNCED``, signed by the node itself, if something changed; nothing otherwise —
+        the revision still moves, because the node is told the revision to use next.
+        ``DEVICE_IDENTITY_CONFLICT`` if the revision is stale, and the error is raised on.
+
+        :raises NotFoundError: if the node is not registered.
+        :raises IdentityConflictError: if the row is not at ``expected_revision``.
+        :raises DeviceRevokedError: if the node was revoked.
+        """
+        current = await self._devices.get(device_id)
+        declared = refreshed(
+            current,
+            {
+                "name": name,
+                "os": os,
+                "capabilities": capabilities,
+                "available_tools": available_tools,
+                "performance": performance,
+            },
+        )
+        change = changes(current, declared)
+        try:
+            revision = await self._devices.announce(declared, expected_revision=expected_revision)
+        except IdentityConflictError as conflict:
+            await self._audit.append(
+                self._fact(
+                    AuditEventType.DEVICE_IDENTITY_CONFLICT,
+                    device_id,
+                    actor=_node(device_id),
+                    summary=(
+                        f"node {current.name} ({device_id}) announced itself at revision "
+                        f"{conflict.expected}, but the row is at {conflict.actual}: two processes "
+                        "claim to be it"
+                    ),
+                    payload={
+                        "expected_revision": conflict.expected,
+                        "actual_revision": conflict.actual,
+                    },
+                )
+            )
+            raise
+        announced = declared.model_copy(update={"revision": revision})
+        if change:
+            added, removed = tool_names(current, declared)
+            await self._audit.append(
+                self._event(
+                    AuditEventType.DEVICE_ANNOUNCED,
+                    announced,
+                    actor=_node(device_id),
+                    summary=f"node {announced.name} ({device_id}) announced: "
+                    f"{difference(current, change)}",
+                    changed=tuple(change),
+                    added=added,
+                    removed=removed,
+                )
+            )
+        return self.seen(announced, self._clock.now())
+
+    async def revoke(self, device_id: DeviceId, *, by: Actor) -> Device:
+        """Revoke a node: the row stays, marked, and its secret opens nothing (ADR 0037 §12).
+
+        ``DEVICE_REVOKED``, signed by ``by``, the first time. Revoking it again answers the row as
+        it is and writes nothing: repeating an identical answer is not an error (ADR 0023 §8).
+
+        :raises LocalDeviceNotRevocableError: for ``local``, before anything is read or written.
+        :raises NotFoundError: if the node is not registered.
+        """
+        if device_id == LOCAL_DEVICE_ID:
+            raise LocalDeviceNotRevocableError(device_id)
+        now = self._clock.now()
+        revoked = await self._devices.revoke(device_id, at=now)
+        device = await self._devices.get(device_id)
+        if revoked:
+            await self._audit.append(
+                self._fact(
+                    AuditEventType.DEVICE_REVOKED,
+                    device_id,
+                    actor=by,
+                    summary=f"node {device.name} ({device_id}) revoked",
+                    payload={"revoked_at": now.isoformat()},
+                )
+            )
+        return self.seen(device, now)
+
+    async def reject(self, device_id: DeviceId, reason: Rejection) -> None:
+        """Write that a request naming ``device_id`` was refused, and why (ADR 0037 §13).
+
+        Only for a node that exists: the read raises :class:`NotFoundError` otherwise, so no caller
+        can put a row about a node nobody enrolled into the chain of §32. Signed ``SYSTEM`` — the
+        Core decided — with the node in the payload as what the request named, not as the actor.
+        """
+        device = await self._devices.get(device_id)
+        await self._audit.append(
+            self._fact(
+                AuditEventType.DEVICE_REJECTED,
+                None,
+                actor=REGISTRY_ACTOR,
+                summary=(
+                    f"a request naming node {device.name} ({device_id}) was refused: {reason.value}"
+                ),
+                payload={"reason": reason.value, "named_device_id": str(device_id)},
+            )
+        )
 
     async def ensure_local(
         self, *, system: str | None = None, available_tools: tuple[str, ...] = ()
@@ -303,18 +549,37 @@ class DeviceRegistry:
         changed: Iterable[str],
         added: Iterable[str],
         removed: Iterable[str],
+        actor: Actor = REGISTRY_ACTOR,
     ) -> AuditEvent:
-        """The one event a registration or a refresh writes, with the whole difference in it."""
-        return AuditEvent(
-            id=AuditEventId(self._ids.new_uuid()),
-            created_at=self._clock.now(),
-            event_type=event_type,
-            actor=REGISTRY_ACTOR,
+        """An event about the declared half, with the whole difference in it (ADR 0035 §3)."""
+        return self._fact(
+            event_type,
+            device.id,
+            actor=actor,
             summary=summary,
-            device_id=device.id,
             payload={
                 "changed": _strings(changed),
                 "tools_added": _strings(added),
                 "tools_removed": _strings(removed),
             },
+        )
+
+    def _fact(
+        self,
+        event_type: AuditEventType,
+        device_id: DeviceId | None,
+        *,
+        actor: Actor,
+        summary: str,
+        payload: dict[str, JsonValue],
+    ) -> AuditEvent:
+        """One event of the registry, signed by whoever the fact belongs to."""
+        return AuditEvent(
+            id=AuditEventId(self._ids.new_uuid()),
+            created_at=self._clock.now(),
+            event_type=event_type,
+            actor=actor,
+            summary=summary,
+            device_id=device_id,
+            payload=payload,
         )

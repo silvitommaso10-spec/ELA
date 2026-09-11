@@ -438,6 +438,34 @@ class AuditEventType(StrEnum):
     A distinct type and not a payload of :attr:`DEVICE_SELECTED`: "every time ELA had nowhere to
     run something" is a question the log must answer by type, as ADR 0008 argues for the engine.
     """
+    DEVICE_ENROLLED = "DEVICE_ENROLLED"
+    """A node entered ELA's world from the network, with a code the user issued (ADR 0037 §13).
+
+    Signed ``USER`` — the identity that issued the code (D12) — because the admission is the
+    user's: the code carries their decision, and the ``privacy`` it imposes is theirs. Not
+    :attr:`DEVICE_REGISTERED`, which the registry signs for the machine it runs on (ADR 0035 §3).
+    """
+    DEVICE_ANNOUNCED = "DEVICE_ANNOUNCED"
+    """A node rewrote the half it declares of itself, and something changed (ADR 0037 §13).
+
+    The first writer of ``ActorKind.DEVICE``: the node that announces itself signs its own row
+    (ADR 0035 §3). Nothing changed means nothing written, as for :attr:`DEVICE_REFRESHED`.
+    """
+    DEVICE_IDENTITY_CONFLICT = "DEVICE_IDENTITY_CONFLICT"
+    """An announcement at a revision the row is no longer at: two processes claim one node.
+
+    ADR 0035 §5, «rilevati, nominati e rifiutati», made an instruction by ADR 0037 §9. Signed
+    ``DEVICE``: whoever wrote holds the secret, and that is precisely the conflict.
+    """
+    DEVICE_REJECTED = "DEVICE_REJECTED"
+    """A request that named a node that exists was refused, and why (ADR 0037 §13).
+
+    Signed ``SYSTEM``: the Core decides the refusal, and an identity that did not prove itself does
+    not sign — the node the request named is in the payload, as its claim. Anonymous refusals are
+    not written: anyone on the tailnet could otherwise write into the chain of §32 at will.
+    """
+    DEVICE_REVOKED = "DEVICE_REVOKED"
+    """The user revoked a node: its row stays, and its secret opens nothing (ADR 0037 §12)."""
     SENSOR_ACTIVATED = "SENSOR_ACTIVATED"
     """ELA opened one of the sensors of §11 — today the microphone (M11.2, ADR 0036 §11).
 

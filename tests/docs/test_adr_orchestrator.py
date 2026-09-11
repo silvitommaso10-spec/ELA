@@ -247,9 +247,19 @@ def test_the_device_events_are_this_adrs_two_plus_the_registrys_two() -> None:
         AuditEventType.DEVICE_REFRESHED.value,
     }
 
+    nodes = {
+        AuditEventType.DEVICE_ENROLLED.value,
+        AuditEventType.DEVICE_ANNOUNCED.value,
+        AuditEventType.DEVICE_IDENTITY_CONFLICT.value,
+        AuditEventType.DEVICE_REJECTED.value,
+        AuditEventType.DEVICE_REVOKED.value,
+    }
+    """M12.1's five, the facts of a node's identity: ADR 0037 §13's, checked there."""
+
     assert not orchestrator & registry
+    assert not (orchestrator | registry) & nodes
     assert {t.value for t in AuditEventType if t.name.startswith("DEVICE_")} == (
-        orchestrator | registry
+        orchestrator | registry | nodes
     )
 
 

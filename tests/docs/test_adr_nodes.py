@@ -10,14 +10,43 @@ from __future__ import annotations
 
 import inspect
 import re
+from contextlib import (
+    suppress,
+)
+from datetime import (
+    timedelta,
+)
 from pathlib import Path
+from typing import (
+    Any,
+)
 
-from ela.domain import AuditEventType
+from ela.devices import (
+    LOCAL_USER,
+    DeviceRegistry,
+    NodeEnrollment,
+    Rejection,
+)
+from ela.domain import (
+    AuditEventType,
+    OperatingSystem,
+    PerformanceClass,
+    PrivacyLevel,
+)
 from ela.permissions import (
     production_catalogue,
 )
 from ela.ports import (
     ANNOUNCED_FIELDS,
+    EnrollmentConsumedError,
+    IdentityConflictError,
+)
+from ela.testing.fakes import (
+    FakeAuditLog,
+    FakeClock,
+    FakeDeviceRegistry,
+    FakeEnrollmentStore,
+    FakeIdGenerator,
 )
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import (
@@ -28,6 +57,9 @@ from tests.docs.test_adr_ports import (
     EXTENDING,
     INTRODUCING,
     documented_ports,
+)
+from tests.domain.examples import (
+    MUCH_LATER,
 )
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
@@ -175,3 +207,73 @@ def test_the_debt_of_adr_0036_is_paid_and_this_adr_says_by_whom() -> None:
     assert "## 12. Un debito datato: `PROVIDER_CALLED` non lo scrive nessuno" in ADR_0036.read_text(
         encoding="utf-8"
     )
+
+
+# ----------------------------------------------------------------------------------------
+# §13: the five events, and who signs each — read from the table, checked by running the flows
+# ----------------------------------------------------------------------------------------
+
+EVENT_ROW = re.compile(r"^\| `(DEVICE_\w+)` \| ([^|]+?) \| `(\w+)` \|$")
+DECLARED: dict[str, Any] = {
+    "name": "pc",
+    "os": OperatingSystem.WINDOWS,
+    "capabilities": (),
+    "available_tools": (),
+    "performance": PerformanceClass.HIGH,
+}
+
+
+def documented_events(text: str) -> dict[str, str]:
+    rows = {
+        match.group(1): match.group(3)
+        for line in text.splitlines()
+        if (match := EVENT_ROW.match(line)) is not None
+    }
+    assert rows, "ADR 0037 §13 must contain the table of the five events"
+    return rows
+
+
+async def signed_by() -> dict[str, str]:
+    """Every flow of an identity run once, on fakes, and who signed each event it wrote."""
+    ids, clock, audit = FakeIdGenerator(), FakeClock(MUCH_LATER), FakeAuditLog()
+    registry = DeviceRegistry(
+        FakeDeviceRegistry(), clock, audit, ids, heartbeat_ttl=timedelta(seconds=60)
+    )
+    enrollment = NodeEnrollment(FakeEnrollmentStore(), registry, clock, ids)
+    issued = await enrollment.issue(PrivacyLevel.TRUSTED)
+    node = (await enrollment.enroll(issued.code, **DECLARED)).device
+    with suppress(EnrollmentConsumedError):
+        await enrollment.enroll(issued.code, **DECLARED)
+    await registry.announce(node.id, **{**DECLARED, "name": "renamed"}, expected_revision=1)
+    with suppress(IdentityConflictError):
+        await registry.announce(node.id, **DECLARED, expected_revision=1)
+    await registry.revoke(node.id, by=LOCAL_USER)
+    return {event.event_type.value: event.actor.kind.value for event in await audit.read()}
+
+
+async def test_the_events_of_an_identity_are_signed_as_the_adr_says() -> None:
+    """The table of §13 against the code, by running it: five types, five actors, no other."""
+    documented = documented_events(adr_text())
+
+    assert set(documented) <= set(AuditEventType.__members__)
+    assert documented == await signed_by()
+
+
+def test_a_drifted_event_row_is_detected() -> None:
+    """Negative case: the table claiming a rejection is signed by the node that failed to prove
+    itself — the attribution ADR 0037 §13 refuses."""
+    drifted = adr_text().replace(
+        "| `DEVICE_REJECTED` | una richiesta che nomina un nodo esistente, rifiutata | `SYSTEM` |",
+        "| `DEVICE_REJECTED` | una richiesta che nomina un nodo esistente, rifiutata | `DEVICE` |",
+    )
+    assert documented_events(drifted)["DEVICE_REJECTED"] == "DEVICE"
+
+
+def test_the_reasons_of_a_rejection_are_the_four_the_adr_names() -> None:
+    """ADR 0037 §13 names four reasons, in backticks; ``Rejection`` derives its values from its
+    member names, so this is where the two are held to the same four words."""
+    text = adr_text()
+
+    assert len(Rejection) == 4
+    for reason in Rejection:
+        assert f"`{reason.value}`" in text, reason
