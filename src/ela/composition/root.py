@@ -457,7 +457,7 @@ async def build(settings: Settings) -> Ela:
             actor=ELA_ACTOR,
             orphan_after=settings.core.orphan_after,
         )
-        orchestrator = DeviceOrchestrator(devices, tools, audit, ids, clock)
+        orchestrator = DeviceOrchestrator(devices, tools, audit, ids, clock, verifiers=verifiers)
         assignments = Assignments(
             SqlAssignmentStore(database),
             engine=engine,

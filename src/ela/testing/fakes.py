@@ -926,10 +926,13 @@ class FakeVerifier:
         name: str = "fake-verifier",
         conditions: Iterable[str] = (FAKE_CONDITION,),
         failures: Mapping[str, ErrorMetadata] | None = None,
+        reads_the_machine: bool = False,
     ) -> None:
         self._capability_id = capability_id
         self._name = name
         self._conditions = frozenset(conditions)
+        self.reads_the_machine = reads_the_machine
+        """Declared like every verifier's (ADR 0038 §14); a fake reads nothing, unless told."""
         self._failures: Mapping[str, ErrorMetadata] = MappingProxyType(
             {} if failures is None else dict(failures)
         )

@@ -554,7 +554,9 @@ def world(
     devices = DeviceRegistry(
         FakeDeviceRegistry((device,)), clock, audit, ids, heartbeat_ttl=HEARTBEAT_TTL
     )
-    orchestrator = DeviceOrchestrator(devices, tool_registry, audit, ids, clock)
+    orchestrator = DeviceOrchestrator(
+        devices, tool_registry, audit, ids, clock, verifiers=verifier_registry
+    )
     executor = Executor(
         registry=registry,
         tools=tool_registry,

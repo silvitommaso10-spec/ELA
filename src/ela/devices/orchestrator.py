@@ -36,6 +36,7 @@ from types import MappingProxyType
 from typing import Final, NamedTuple
 
 from ela.devices.errors import NotPlacedError
+from ela.devices.local import LOCAL_DEVICE_ID
 from ela.devices.registry import AVAILABLE, DeviceRegistry
 from ela.domain import (
     Actor,
@@ -58,7 +59,14 @@ from ela.domain import (
     TaskId,
     TaskStep,
 )
-from ela.ports import AuditLog, Clock, IdGenerator, NotFoundError, ToolRegistryPort
+from ela.ports import (
+    AuditLog,
+    Clock,
+    IdGenerator,
+    NotFoundError,
+    ToolRegistryPort,
+    VerifierRegistryPort,
+)
 
 __all__ = [
     "NETWORK_POINTS",
@@ -128,6 +136,12 @@ class Refusal(StrEnum):
     no reason. Judged from ``revoked_at`` and not from the availability: a revoked node with a
     fresh heartbeat is revoked, not unreachable, and a diagnosis that said otherwise would be false.
     """
+    UNVERIFIABLE = "UNVERIFIABLE"
+    """The step needs a capability whose verifier reads this machine, and the node is not this
+    machine (M12.1, D15; ADR 0038 §14): «finché il verifier non gira dove l'effetto è avvenuto,
+    quella capability non viaggia». A refusal and not a candidate taken away in silence, so that
+    the reason reaches whoever waits (ADR 0035 §6); ADR 0014 §3 in the one form the repository
+    admits — an action that cannot be verified is not executed *there*."""
 
 
 TRAIT_POINTS: Final = 40
@@ -202,6 +216,10 @@ class Requirements(NamedTuple):
     """The most permissive node this step tolerates; ``LOCAL_ONLY`` unless the caller says more."""
     unresolved: tuple[CapabilityId, ...] = ()
     """Required capabilities no tool implements: every node is refused, and the task waits."""
+    verified_here: tuple[CapabilityId, ...] = ()
+    """Required capabilities whose verifier reads this machine (ADR 0038 §14): while there is one,
+    only ``local`` is eligible. Derived through the verifier registry, a port, as the tools are
+    (ADR 0017 §3): ``ela.devices`` knows no verifier."""
 
 
 class Score(NamedTuple):
@@ -332,6 +350,8 @@ def refusals(device: Device, requirements: Requirements) -> tuple[Refusal, ...]:
         found.append(Refusal.DEGRADED)
     if device.revoked_at is not None:
         found.append(Refusal.REVOKED)
+    if requirements.verified_here and device.id != LOCAL_DEVICE_ID:
+        found.append(Refusal.UNVERIFIABLE)
     return tuple(found)
 
 
@@ -392,12 +412,18 @@ def _missing(devices: Iterable[Device], requirements: Requirements) -> tuple[str
     return tuple(sorted(lacking))
 
 
-def _named(found: Iterable[Refusal], missing: tuple[str, ...]) -> str:
-    """Refusals as words, with the tools named on the one refusal that has names to give."""
-    return ", ".join(
-        refusal.value + (f" ({', '.join(missing)})" if refusal is Refusal.MISSING_TOOL else "")
-        for refusal in found
-    )
+def _named(found: Iterable[Refusal], missing: tuple[str, ...], requirements: Requirements) -> str:
+    """Refusals as words, with names on the two refusals that have names to give: the tools
+    nobody had, and the capabilities whose verifier reads this machine (ADR 0038 §14)."""
+    return ", ".join(refusal.value + _names_of(refusal, missing, requirements) for refusal in found)
+
+
+def _names_of(refusal: Refusal, missing: tuple[str, ...], requirements: Requirements) -> str:
+    if refusal is Refusal.MISSING_TOOL:
+        return f" ({', '.join(missing)})"
+    if refusal is Refusal.UNVERIFIABLE:
+        return f" ({', '.join(requirements.verified_here)}: its verifier reads this machine)"
+    return ""
 
 
 def _summary(scores: Iterable[Score], devices: Iterable[Device], requirements: Requirements) -> str:
@@ -413,7 +439,9 @@ def _summary(scores: Iterable[Score], devices: Iterable[Device], requirements: R
         for refusal in Refusal
     }
     return ", ".join(
-        f"{count} {_named((refusal,), missing)}" for refusal, count in counted.items() if count
+        f"{count} {_named((refusal,), missing, requirements)}"
+        for refusal, count in counted.items()
+        if count
     )
 
 
@@ -461,7 +489,7 @@ class DeviceOrchestrator:
     there is no path from here to a task that fails.
     """
 
-    __slots__ = ("_audit", "_clock", "_ids", "_registry", "_tools")
+    __slots__ = ("_audit", "_clock", "_ids", "_registry", "_tools", "_verifiers")
 
     def __init__(
         self,
@@ -470,12 +498,15 @@ class DeviceOrchestrator:
         audit: AuditLog,
         ids: IdGenerator,
         clock: Clock,
+        *,
+        verifiers: VerifierRegistryPort,
     ) -> None:
         self._registry = registry
         self._tools = tools
         self._audit = audit
         self._ids = ids
         self._clock = clock
+        self._verifiers = verifiers
 
     def requirements(
         self, step: TaskStep, *, max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY
@@ -483,22 +514,37 @@ class DeviceOrchestrator:
         """What ``step`` needs, with its capabilities resolved into the tools that implement them.
 
         A capability no tool implements is collected in ``unresolved`` instead of raising: the
-        answer to "nobody can run this" is that the task waits, not that it fails (§33).
+        answer to "nobody can run this" is that the task waits, not that it fails (§33). A
+        capability whose verifier reads this machine is collected in ``verified_here`` — and so is
+        one with a tool and no verifier: whether it may be verified elsewhere is unknown, and a
+        doubt keeps it here (§33), where the executor refuses it for its own reason.
         """
         tools: set[str] = set()
         unresolved: list[CapabilityId] = []
+        here: list[CapabilityId] = []
         for capability_id in step.required_capabilities:
             try:
                 tools.add(self._tools.get(capability_id).name)
             except NotFoundError:
                 unresolved.append(capability_id)
+                continue
+            if self._reads_this_machine(capability_id):
+                here.append(capability_id)
         return Requirements(
             tools=frozenset(tools),
             traits=step.preferred_device_traits,
             risk=step.risk,
             max_privacy=max_privacy,
             unresolved=tuple(unresolved),
+            verified_here=tuple(here),
         )
+
+    def _reads_this_machine(self, capability_id: CapabilityId) -> bool:
+        """Whether the verifier of ``capability_id`` reads this machine; no verifier is a yes."""
+        try:
+            return self._verifiers.get(capability_id).reads_the_machine
+        except NotFoundError:
+            return True
 
     async def place(
         self,
@@ -559,7 +605,7 @@ class DeviceOrchestrator:
             )
         judged = score(found[0], requirements)
         if not judged.eligible:
-            named = _named(judged.refusals, _missing((found[0],), requirements))
+            named = _named(judged.refusals, _missing((found[0],), requirements), requirements)
             return self._confirmation(
                 task_id,
                 step,

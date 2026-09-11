@@ -172,7 +172,7 @@ class SqlPipeline:
         orchestrator holding the audit log of before the swap would write outside the crash.
         """
         self.orchestrator = DeviceOrchestrator(
-            self.devices, self.tools, self.audit, self.ids, self.clock
+            self.devices, self.tools, self.audit, self.ids, self.clock, verifiers=self.verifiers
         )
         self.runner = TaskRunner(
             engine=self.engine,

@@ -1150,6 +1150,16 @@ class VerifierPort(Protocol):
     def conditions(self) -> frozenset[str]:
         """The success conditions this verifier can check: the vocabulary a plan may use."""
 
+    @property
+    def reads_the_machine(self) -> bool:
+        """Whether this verifier reads the disk of the machine it runs on (M12.2, ADR 0038 §14).
+
+        Declared, never defaulted — the form of ``ToolPort.idempotent``: forgetting it must not
+        read as a no. A verifier that reads the Core's disk proves an effect only if the effect
+        happened on the Core's disk, so its capability does not travel to a node that is not this
+        one (M12.1, D15), and the orchestrator refuses such a node with ``UNVERIFIABLE``.
+        """
+
     async def verify(
         self, conditions: Sequence[str], arguments: JsonMapping, result: ExecutionResult
     ) -> tuple[ErrorMetadata, ...]:

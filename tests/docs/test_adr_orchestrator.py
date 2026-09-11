@@ -41,10 +41,11 @@ from tests.docs.test_adr_exemptions import withdrawn
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0017-device-orchestrator.md"
 ADR_0027 = ADR_PATH.with_name("0027-exemptions-withdrawn.md")
 ADR_0037 = ADR_PATH.with_name("0037-node-identity.md")
+ADR_0038 = ADR_PATH.with_name("0038-work-protocol.md")
 
 FILTER_ROW = re.compile(r"^\| F(\d) \| ([^|]+?) \| ([^|]+?) \| `(\w+)` \| ([^|]+?) \|$")
 """§4: the hard filters, numbered — no other table in the ADR numbers its rows. ADR 0037 §12 adds
-F6 in the same shape, and the two are read in union (:func:`filter_rows`)."""
+F6 and ADR 0038 §14 F7 in the same shape, and the three are read in union (:func:`filter_rows`)."""
 WEIGHT_ROW = re.compile(r"^\| `([a-z_]+)` \| ([^|]+?) \| ([^|]+?) \|$")
 """§5: a component name in backticks — lower case, unlike the event types of §7."""
 MISSING_ROW = re.compile(r"^\| ([^|`]+?) \| — \| non modellato: (.+?) \|$")
@@ -73,16 +74,21 @@ def rows(pattern: re.Pattern[str]) -> list[re.Match[str]]:
 # ----------------------------------------------------------------------------------------
 
 
-def filter_rows() -> list[re.Match[str]]:
-    """ADR 0017 §4, then ADR 0037 §12's F6: ADR 0017 is immutable, so the sixth row lives in the
-    ADR that added it, and the table the code must match is the union."""
-    later = [
+def later_filter_rows(path: Path) -> list[re.Match[str]]:
+    """The filter rows of an ADR after 0017, which adds its own and rewrites none."""
+    found = [
         match
-        for line in ADR_0037.read_text(encoding="utf-8").splitlines()
+        for line in path.read_text(encoding="utf-8").splitlines()
         if (match := FILTER_ROW.match(line))
     ]
-    assert later, "ADR 0037 §12 must contain the row of F6"
-    return [*rows(FILTER_ROW), *later]
+    assert found, f"{path.name} must contain the row of the filter it adds"
+    return found
+
+
+def filter_rows() -> list[re.Match[str]]:
+    """ADR 0017 §4, then ADR 0037 §12's F6 and ADR 0038 §14's F7: ADR 0017 is immutable, so each
+    later row lives in the ADR that added it, and the table the code must match is the union."""
+    return [*rows(FILTER_ROW), *later_filter_rows(ADR_0037), *later_filter_rows(ADR_0038)]
 
 
 def test_the_filter_table_names_every_refusal_exactly_once() -> None:
@@ -97,10 +103,12 @@ def test_the_filters_are_numbered_from_one() -> None:
     ]
 
 
-def test_adr_0017_still_says_five_and_adr_0037_says_the_sixth() -> None:
-    """ADR 0017 as history: its own table stops at F5, and the sixth is ADR 0037's alone."""
+def test_adr_0017_still_says_five_adr_0037_the_sixth_and_adr_0038_the_seventh() -> None:
+    """ADR 0017 as history: its own table stops at F5; the sixth is ADR 0037's alone, and the
+    seventh ADR 0038's (D19: no row of ADR 0037 is withdrawn)."""
     assert [match.group(4) for match in rows(FILTER_ROW)][-1] == Refusal.DEGRADED.value
-    assert [match.group(4) for match in filter_rows()][-1] == Refusal.REVOKED.value
+    assert [match.group(4) for match in later_filter_rows(ADR_0037)] == [Refusal.REVOKED.value]
+    assert [match.group(4) for match in later_filter_rows(ADR_0038)] == [Refusal.UNVERIFIABLE.value]
 
 
 def test_the_risk_threshold_of_the_document_is_the_one_in_the_code() -> None:

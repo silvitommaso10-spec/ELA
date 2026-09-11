@@ -171,6 +171,9 @@ READ_FLAGS: Final = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_
 class EchoVerifier(Verifier):
     """``core.echo`` echoed: the output carries the very message that was asked (§29)."""
 
+    reads_the_machine: ClassVar[bool] = False
+    """The output against the arguments: nothing of any disk. From a node it proves what it proved
+    here, and the limit is the node's word (ADR 0038 §14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({ECHO_MESSAGE_MATCHES})
     failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {ECHO_MESSAGE_MISMATCH}
 
@@ -211,6 +214,9 @@ class WriteNoteVerifier(Verifier):
     holds no note.
     """
 
+    reads_the_machine: ClassVar[bool] = True
+    """The workspace of this machine: from a node it would read the Core's workspace, where a note
+    with the same path may exist — a false positive (ADR 0038 §14). It does not travel."""
     conditions: ClassVar[frozenset[str]] = frozenset({NOTE_EXISTS, NOTE_CONTENT_MATCHES})
     failure_codes: ClassVar[frozenset[str]] = (
         COMMON_FAILURE_CODES | PATH_CODES | {NOTE_CONTENT_MISMATCH, NOTE_UNREADABLE}
@@ -292,6 +298,9 @@ class ModelCompleteVerifier(Verifier):
     is a dependency, written down here and in ADR 0022, that a mutable status would break.
     """
 
+    reads_the_machine: ClassVar[bool] = False
+    """The output and the route recomputed by the Core's router: nothing of any disk. From a node,
+    that the call really went to that provider is the node's word (ADR 0038 §14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({MODEL_ANSWERED, MODEL_ROUTED_AS_ASKED})
     failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
         MODEL_NO_ANSWER,
@@ -406,6 +415,8 @@ class CaptureScreenVerifier(Verifier):
     is written down for whoever one day verifies in arrears.
     """
 
+    reads_the_machine: ClassVar[bool] = True
+    """The capture store of this machine: it does not travel (ADR 0038 §14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({CAPTURE_EXISTS, CAPTURE_MATCHES})
     failure_codes: ClassVar[frozenset[str]] = (
         COMMON_FAILURE_CODES | CAPTURE_CODES | {CAPTURE_DECLARED_MISMATCH}
@@ -477,6 +488,8 @@ class ReadScreenTextVerifier(Verifier):
     only that it is what the tool said it wrote.
     """
 
+    reads_the_machine: ClassVar[bool] = True
+    """The capture store of this machine: it does not travel (ADR 0038 §14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({TEXT_EXISTS, TEXT_MATCHES})
     failure_codes: ClassVar[frozenset[str]] = (
         COMMON_FAILURE_CODES | CAPTURE_CODES | {TEXT_DECLARED_MISMATCH}
@@ -559,6 +572,8 @@ class ListenVerifier(Verifier):
     disk as described, not that the room said it.*
     """
 
+    reads_the_machine: ClassVar[bool] = True
+    """The capture store of this machine: it does not travel (ADR 0038 §14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({TRANSCRIPT_EXISTS, TRANSCRIPT_MATCHES})
     failure_codes: ClassVar[frozenset[str]] = (
         COMMON_FAILURE_CODES | CAPTURE_CODES | {TRANSCRIPT_DECLARED_MISMATCH}
@@ -662,6 +677,9 @@ class SpeakVerifier(Verifier):
     Recorded so that whoever wants the device itself knows it was considered and why it is absent.
     """
 
+    reads_the_machine: ClassVar[bool] = False
+    """The text described and ``spoken_seconds``: nothing of any disk. From a node, that the time
+    is true is the node's word — its clock measured it (ADR 0038 §14)."""
     conditions: ClassVar[frozenset[str]] = frozenset({SPEECH_TOOK_REAL_TIME, SPEECH_TEXT_MATCHES})
     failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
         SPEECH_TOO_FAST,

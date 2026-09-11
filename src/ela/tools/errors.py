@@ -12,11 +12,36 @@ from __future__ import annotations
 from ela.domain import CapabilityId
 from ela.ports import NotFoundError
 
-__all__ = ["NotIdempotentError", "ToolNotFound", "ToolsError", "VerifierNotFound"]
+__all__ = [
+    "NotIdempotentError",
+    "SilentVerifierError",
+    "ToolNotFound",
+    "ToolsError",
+    "VerifierNotFound",
+]
 
 
 class ToolsError(Exception):
     """Base class of every error the tools package raises on its own."""
+
+
+class SilentVerifierError(ToolsError):
+    """A verifier that does not *say* whether it reads the machine it runs on (ADR 0038 §14).
+
+    Raised by :class:`~ela.tools.registry.VerifierRegistry` at construction, like
+    :class:`NotIdempotentError` for a tool: both answers are legal, and what is refused is
+    silence. The orchestrator reads the flag to decide whether a capability may travel to a node
+    that is not this one (M12.1, D15), and a doubt must not read as "it may".
+    """
+
+    def __init__(self, capability_id: CapabilityId, name: str, declared: object) -> None:
+        self.capability_id = capability_id
+        self.name = name
+        self.declared = declared
+        super().__init__(
+            f"verifier {name} of {capability_id} does not declare reads_the_machine as a bool "
+            f"(it says {declared!r}): whether it may verify an effect elsewhere is unknown"
+        )
 
 
 class NotIdempotentError(ToolsError):

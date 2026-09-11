@@ -9,9 +9,12 @@ nobody could act on. The pin on today's totals is here too, taken over from ADR 
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 
 from ela.permissions import production_catalogue
+from ela.testing.fakes import FakeModelRouter
+from ela.tools import CaptureSettings, CaptureStore, production_verifiers
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_nodes import documented_rules
@@ -27,6 +30,10 @@ ADDED_RULES = {
     52: "results-are-minted-by-the-core",
 }
 PAID_CONSTRAINT = "**Un nodo remoto non riceve lavoro fino a M12.2**"
+VERIFIER_ROW = re.compile(
+    r"^\| `([a-z_]+\.[a-z_]+)` \| [^|]+ \| [^|]+ \| [^|]+ \| `(True|False)` \|$"
+)
+"""§14: a capability, three cells of prose, and what its verifier declares."""
 
 
 def adr_text() -> str:
@@ -70,6 +77,24 @@ def test_the_conseguenze_count_the_rules_and_the_capabilities_of_today() -> None
 # ----------------------------------------------------------------------------------------
 # The guarantee of M12.1 that stops holding
 # ----------------------------------------------------------------------------------------
+
+
+def test_the_verifier_table_says_what_each_verifier_declares(tmp_path: Path) -> None:
+    """§14: one row per capability, and its last cell is the ``reads_the_machine`` the verifier of
+    the Core declares — the table the orchestrator's filter F7 is built on."""
+    captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
+    verifiers = production_verifiers(root=tmp_path, router=FakeModelRouter(), captures=captures)
+    documented = {
+        match.group(1): match.group(2) == "True"
+        for line in adr_text().splitlines()
+        if (match := VERIFIER_ROW.match(line))
+    }
+
+    assert documented == {
+        verifier.capability_id: verifier.reads_the_machine for verifier in verifiers.verifiers()
+    }
+    assert "**Quattro capability viaggiano, quattro no.**" in adr_text()
+    assert sorted(documented.values()) == [False] * 4 + [True] * 4
 
 
 def test_the_constraint_adr_0037_declared_is_paid_here_and_stays_there() -> None:

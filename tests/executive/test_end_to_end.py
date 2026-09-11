@@ -173,7 +173,7 @@ class Pipeline:
             heartbeat_ttl=HEARTBEAT_TTL,
         )
         self.orchestrator = DeviceOrchestrator(
-            self.devices, self.tools, self.audit, self.ids, self.clock
+            self.devices, self.tools, self.audit, self.ids, self.clock, verifiers=self.verifiers
         )
         self.engine = TaskEngine(
             self.repository,
