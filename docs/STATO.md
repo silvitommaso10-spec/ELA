@@ -102,7 +102,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **36** | `docs/adr/NNNN-*.md` |
+| ADR scritti | **37** | `docs/adr/NNNN-*.md` |
 | Milestone | **39, di cui 36 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **47** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
@@ -110,7 +110,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Capability di produzione | **8** | `production_catalogue()` |
 | Rotte dell'API | **20** | i `router` di `ela.api` |
 | Comandi della CLI | **22** | l'albero Typer di `ela.cli` |
-| Vincoli dichiarati negli ADR | **118** | le sezioni «Vincoli dichiarati» |
+| Vincoli dichiarati negli ADR | **134** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
 
@@ -241,8 +241,8 @@ pagato da chi doveva.
 
 | Debito | Dichiarato | A carico | Stato |
 |---|---|---|---|
-| ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
+| ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 
 <!-- fine del blocco generato: i debiti datati -->
 

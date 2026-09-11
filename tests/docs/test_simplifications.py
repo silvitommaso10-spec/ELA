@@ -26,6 +26,7 @@ CONTINUATIONS = (
     ROOT / "docs" / "milestones" / "M11.2.md",
     ROOT / "docs" / "milestones" / "M11.3.md",
     ROOT / "docs" / "milestones" / "M6.1b.md",
+    ROOT / "docs" / "milestones" / "M12.1.md",
 )
 ADRS = ROOT / "docs" / "adr"
 ARCHITECTURE = ROOT / "docs" / "ARCHITECTURE.md"
@@ -124,11 +125,11 @@ def test_every_constraint_an_adr_declares_is_in_the_list() -> None:
         if f"- **{title}** (ADR {number})" not in text
     }
     assert not missing, missing
-    assert len(declared_constraints()) == 118
+    assert len(declared_constraints()) == 134
 
 
-def test_the_list_names_the_seventeen_adrs_that_declare_constraints() -> None:
-    assert set(declared_constraints().values()) == {f"00{n}" for n in range(20, 37)}
+def test_the_list_names_the_eighteen_adrs_that_declare_constraints() -> None:
+    assert set(declared_constraints().values()) == {f"00{n}" for n in range(20, 38)}
 
 
 def test_every_crash_window_nobody_repaired_is_named_or_declared_harmless() -> None:

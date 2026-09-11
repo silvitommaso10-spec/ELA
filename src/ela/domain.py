@@ -390,6 +390,13 @@ class AuditEventType(StrEnum):
 
     One type per operation of the Task Engine (M3.1, ADR 0008): a log queried by type — every
     denial, every approval — is worth more than one filtered on its payload.
+
+    **Every member has a writer**, and ``tests/docs/test_adr_nodes.py`` asserts it for all of them.
+    ``PROVIDER_CALLED`` and ``ERROR_RECORDED`` were here until M12.1 and nothing ever wrote either:
+    a call to a provider is already in the audit, inside ``TOOL_EXECUTED`` with its ``usage``, and
+    an error inside ``TASK_FAILED`` and ``STEP_FAILED``. A type nothing can produce is worse than
+    an absent one (ADR 0026 §7), so they left (M12.1, D11) — the dated debt of ADR 0036 §12, charged
+    to whoever added the next type of event, and paid by the milestone that did (ADR 0037).
     """
 
     TASK_CREATED = "TASK_CREATED"
@@ -456,8 +463,6 @@ class AuditEventType(StrEnum):
     EXECUTION_VERIFIED = "EXECUTION_VERIFIED"
     """The verifier checked a SUCCEEDED result against the step's success conditions (§63,
     M5.2, ADR 0014): written whether it passed or failed."""
-    PROVIDER_CALLED = "PROVIDER_CALLED"
-    ERROR_RECORDED = "ERROR_RECORDED"
 
 
 class ActorKind(StrEnum):

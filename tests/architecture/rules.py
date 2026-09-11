@@ -2349,7 +2349,7 @@ def check_a_nodes_secret_crosses_no_readable_boundary(pkg_root: Path) -> list[Vi
     anywhere inside an ``AuditEvent(...)`` call in the package; anywhere in ``api/schemas.py``; and
     as a field of ``Device`` in ``domain.py``. **No exemption today**: the two responses that hand
     a node its code and its secret, once, do not exist yet, and a door is opened when there is code
-    behind it (ADR 0027 §3) — the commit that writes them opens it, with its proof.
+    behind it (ADR 0017 §9) — the commit that writes them opens it, with its proof.
     """
     rule = "a-nodes-secret-crosses-no-readable-boundary"
     found: list[Violation] = []
