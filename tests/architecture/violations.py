@@ -1317,6 +1317,22 @@ VIOLATIONS: tuple[Case, ...] = (
         "secret_hash",
     ),
     Case(
+        # The name the wire gives the node's secret (ADR 0037 §5), on a shape that is not one of
+        # the two answers allowed to carry it once.
+        "the-secret-on-a-wire-shape-by-its-wire-name",
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "api/schemas.py",
+        "class NodeOut:\n    secret: str\n",
+        "secret",
+    ),
+    Case(
+        "the-code-on-a-wire-shape-by-its-wire-name",
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "api/schemas.py",
+        "class DeviceOut:\n    code: str\n",
+        "code",
+    ),
+    Case(
         # On the entity, every reader of the registry would carry it: the orchestrator, /devices,
         # the context. The row may keep it; the entity may not.
         "the-hash-as-a-field-of-the-device",

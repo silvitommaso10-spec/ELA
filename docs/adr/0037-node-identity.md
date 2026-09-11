@@ -711,6 +711,11 @@ l'utente si fida — e l'audit è append-only, quindi un segreto scritto lì è 
 revocare il nodo non lo cancellerebbe. La 47 difende una porta che nessuno ha ancora aperto, e che
 D12 apre (§15).
 
+In `api/schemas.py` la 46 legge anche i nomi con cui §5 consegna le due cose una volta, `code` e
+`secret` (`WIRE_SECRET_NAMES`): senza, le due risposte che li portano sarebbero invisibili proprio
+alla regola che deve aprire loro la porta, e una terza forma che ne portasse uno passerebbe in
+silenzio. I nomi entrano nel commit prima delle risposte; la porta la apre il commit che le scrive.
+
 `Regole estese:`
 
 | Regola | Come cambia | Perché |

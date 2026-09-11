@@ -442,6 +442,11 @@ COMPARED_SECRET_NAMES = frozenset({"node_secret", "presented_hash", "secret_hash
 #: all of them. The ORM row may hold the hash (M12.1 dec. G): it is not a boundary, it is the vault.
 #: A path, and so not :data:`DOMAIN_MODULE`, which is the dotted name rule 8 reads.
 WIRE_SHAPES = Path("api") / "schemas.py"
+#: Rule 46 (M12.1), in :data:`WIRE_SHAPES` only: the names the wire gives the two things §5 hands
+#: out once — the enrollment code and the node's secret, ``{device_id, secret, revision}``
+#: (ADR 0037 §5). Without them the two answers that carry them would be invisible to the rule that
+#: must open their door, and a third shape that carried one would pass in silence.
+WIRE_SECRET_NAMES = frozenset({"code", "secret"})
 ENTITIES_FILE = Path("domain.py")
 DEVICE_ENTITY = "Device"
 #: Rule 47 (M12.1): who is calling is decided in one place — the middleware of
@@ -2374,8 +2379,9 @@ def check_a_nodes_secret_crosses_no_readable_boundary(pkg_root: Path) -> list[Vi
     ever, and revoking the node would not unwrite it.
 
     Reported, for any of :data:`NODE_SECRET_NAMES` as a name, an attribute, a keyword or a string:
-    anywhere inside an ``AuditEvent(...)`` call in the package; anywhere in ``api/schemas.py``; and
-    as a field of ``Device`` in ``domain.py``. **No exemption today**: the two responses that hand
+    anywhere inside an ``AuditEvent(...)`` call in the package; anywhere in ``api/schemas.py`` —
+    where :data:`WIRE_SECRET_NAMES`, the names the wire gives them, count too; and as a field of
+    ``Device`` in ``domain.py``. **No exemption today**: the two responses that hand
     a node its code and its secret, once, do not exist yet, and a door is opened when there is code
     behind it (ADR 0017 §9) — the commit that writes them opens it, with its proof.
     """
@@ -2403,7 +2409,7 @@ def check_a_nodes_secret_crosses_no_readable_boundary(pkg_root: Path) -> list[Vi
             for node in ast.walk(
                 ast.parse(shapes.read_text(encoding="utf-8"), filename=str(shapes))
             )
-            if (named := _names_a_node_secret(node)) is not None
+            if (named := _names_a_node_secret(node) or _names_a_wire_secret(node)) is not None
         )
     entities = pkg_root / ENTITIES_FILE
     if not entities.is_file():
@@ -2418,6 +2424,19 @@ def check_a_nodes_secret_crosses_no_readable_boundary(pkg_root: Path) -> list[Vi
                 and field.target.id in NODE_SECRET_NAMES
             )
     return found
+
+
+def _names_a_wire_secret(node: ast.AST) -> str | None:
+    """How ``node`` names a secret by its name on the wire (:data:`WIRE_SECRET_NAMES`)."""
+    if isinstance(node, ast.Name) and node.id in WIRE_SECRET_NAMES:
+        return node.id
+    if isinstance(node, ast.Attribute) and node.attr in WIRE_SECRET_NAMES:
+        return node.attr
+    if isinstance(node, ast.keyword) and node.arg in WIRE_SECRET_NAMES:
+        return node.arg
+    if isinstance(node, ast.Constant) and node.value in WIRE_SECRET_NAMES:
+        return str(node.value)
+    return None
 
 
 def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
@@ -2609,6 +2628,7 @@ CONSTANTS: tuple[Constant, ...] = (
         why=INEVITABLE,
         reason=_THE_PACKAGE_ITSELF,
     ),
+    Constant("a-nodes-secret-crosses-no-readable-boundary", "WIRE_SECRET_NAMES", DETECTOR),
     Constant("a-nodes-secret-crosses-no-readable-boundary", "WIRE_SHAPES", DETECTOR),
     # a-refresh-touches-only-what-is-declared (rule 44, M6.1b dec. H)
     Constant("a-refresh-touches-only-what-is-declared", "BIRTH_CONSTRUCTOR", DETECTOR),
