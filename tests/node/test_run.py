@@ -12,9 +12,16 @@ from pathlib import Path
 
 import pytest
 
-from ela.node import NodeError, NodeRevoked, NotEnrolled, read_identity, run
+from ela.node import (
+    CoreUnreachable,
+    NodeError,
+    NodeRevoked,
+    NotEnrolled,
+    read_identity,
+    run,
+)
 from ela.node.state import STATE_FILE
-from tests.node.support import CORE, config, ok, refused, replies, status, world
+from tests.node.support import dropped, ok, refused, replies, status, world
 
 BORN = {
     "device_id": "0b1d3c5e-0000-4000-8000-000000000003",
@@ -31,8 +38,7 @@ async def test_a_first_run_enrols_writes_the_identity_and_then_starts_asking(
         status(201, BORN),  # enroll
         ok({}, ETag='"1"'),  # GET /nodes/me
         ok({}, ETag='"2"'),  # PUT /nodes/me
-        ok({}),  # heartbeat, at start-up
-        ok({}),  # heartbeat, before the first ask — every pass says "I am here"
+        ok({}),  # heartbeat: every pass says "I am here" before it asks
         status(401),  # the first ask: revoked
     )
     built = world(tmp_path)
@@ -43,11 +49,13 @@ async def test_a_first_run_enrols_writes_the_identity_and_then_starts_asking(
     kept = read_identity(tmp_path)
     assert kept is not None
     assert kept.device_id == BORN["device_id"]
+    # The order is the property, not just the set: the revision is **read** before it is used
+    # (dec. L), and the node says it is here before it asks for anything. This is where the
+    # production start-up is pinned — the conformance kit builds its own and cannot pin this.
     assert [path for _, path in script.seen] == [
         "/nodes/enroll",
         "/nodes/me",
         "/nodes/me",
-        "/nodes/heartbeat",
         "/nodes/heartbeat",
         "/nodes/work",
     ]
@@ -86,7 +94,7 @@ async def test_a_node_that_already_has_an_identity_does_not_enrol_again(tmp_path
     (tmp_path / STATE_FILE).write_text(
         json.dumps({"device_id": BORN["device_id"], "secret": BORN["secret"]}), encoding="utf-8"
     )
-    script = replies(ok({}, ETag='"3"'), ok({}, ETag='"4"'), ok({}), ok({}), status(401))
+    script = replies(ok({}, ETag='"3"'), ok({}, ETag='"4"'), ok({}), status(401))
     built = world(tmp_path)
 
     with pytest.raises(NodeRevoked):
@@ -95,9 +103,58 @@ async def test_a_node_that_already_has_an_identity_does_not_enrol_again(tmp_path
     assert "/nodes/enroll" not in [path for _, path in script.seen]
 
 
-def test_the_core_s_address_is_the_node_s_own_variable(tmp_path: Path) -> None:
-    """Open question 1: on this machine loopback is the address, because the middleware classifies
-    by identity and never by address. A node on another machine sets the tailnet one, and then the
-    declared constraint of ADR 0037 §2 is about it."""
-    assert config(tmp_path).node.node_core_url == CORE
-    assert world(tmp_path).config.node.node_core_url == CORE
+async def test_a_node_started_before_the_core_waits_for_it_instead_of_dying_on_it(
+    tmp_path: Path,
+) -> None:
+    """Dec. D's second row, at the one moment it is most likely to happen.
+
+    A reboot brings both terminals back and nothing says which goes first, so "the Core is not
+    listening yet" is the ordinary way a node starts — not an edge case. Before the coming-up moved
+    inside the retry, ``httpx.ConnectError`` escaped ``run``, escaped the command's three
+    ``except`` clauses and escaped ``@handled``, and a person got a traceback and exit ``1`` where
+    dec. D says "wait and retry" and ADR 0039 §4 says exit ``3``.
+    """
+    (tmp_path / "node.json").write_text(
+        json.dumps({"device_id": BORN["device_id"], "secret": BORN["secret"]}), encoding="utf-8"
+    )
+    script = replies(dropped(), dropped(), dropped())
+    built = world(tmp_path, node_retry_ceiling=3, node_retry_seconds=0.001)
+
+    with pytest.raises(CoreUnreachable, match="3 tries"):
+        await run(
+            built.config,
+            world=built,
+            transport=script.transport(),
+        )
+
+
+async def test_enrolling_against_a_core_that_is_not_there_is_a_sentence_and_not_a_traceback(
+    tmp_path: Path,
+) -> None:
+    """The one act that is not retried in the background: a code is good once and for ten minutes,
+    and the person who pasted it is standing there. So it gets the sentence and exit ``3``."""
+    built = world(tmp_path)
+
+    with pytest.raises(CoreUnreachable, match="not running"):
+        await run(
+            built.config,
+            join="un-codice",
+            world=built,
+            transport=replies(dropped()).transport(),
+        )
+
+
+async def test_a_node_with_no_world_handed_to_it_builds_its_own(tmp_path: Path) -> None:
+    """The arm production takes, and the only test that takes it.
+
+    Everything else hands ``run`` a world already built, so without this the line that builds one
+    from the configuration would never run — and, until it stopped being a ternary, would have
+    been reported as covered anyway (rule 37's argument, one package over).
+    """
+    (tmp_path / "node.json").write_text(
+        json.dumps({"device_id": BORN["device_id"], "secret": BORN["secret"]}), encoding="utf-8"
+    )
+    built = world(tmp_path, node_retry_ceiling=1, node_retry_seconds=0.001)
+
+    with pytest.raises(CoreUnreachable):
+        await run(built.config, transport=replies(dropped()).transport())

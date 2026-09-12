@@ -160,7 +160,7 @@ async def a_node(client: AsyncClient) -> dict[str, str]:
     return {"Authorization": f"Bearer {born['device_id']}.{born['secret']}"}
 
 
-async def test_a_node_reaches_its_five_routes_and_gets_the_same_401_everywhere_else(
+async def test_a_node_reaches_its_six_routes_and_gets_the_same_401_everywhere_else(
     app: FastAPI, client: AsyncClient, anonymous: AsyncClient
 ) -> None:
     """Criterion 5 of M12.1 and criterion 23 of M12.2 (D10, I8; ADR 0037 §4, ADR 0038 §11), derived

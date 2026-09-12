@@ -90,12 +90,13 @@ def test_a_configuration_it_cannot_use_stops_before_anything_opens(
         raise ConfigurationError("ELA_MODEL_ROUTES cannot be used")
 
     monkeypatch.setattr(command.NodeConfig, "load", staticmethod(broken))
-    answering(monkeypatch)
+    seen = answering(monkeypatch)
 
     result = runner.invoke(app, ["node", "run"])
 
     assert result.exit_code == CONFIGURATION
     assert "ELA_MODEL_ROUTES" in result.output
+    assert seen == [], "nothing was sent to ELA: the configuration stopped it first"
 
 
 def test_the_enrollment_code_is_asked_for_and_never_echoed(
@@ -129,4 +130,7 @@ def test_join_takes_no_value_on_the_command_line() -> None:
     the mechanical half of the rule ADR 0037 §5 states in words."""
     result = runner.invoke(app, ["node", "run", "--join", "un-codice"])
 
-    assert result.exit_code != OK
+    # ``!= OK`` would have been satisfied by the real cycle failing for any other reason — and the
+    # code would have been in ``ps`` and in the shell's history anyway, which is the whole point.
+    # ``2`` is click's usage error: the parser refused it before anything ran.
+    assert result.exit_code == CONFIGURATION

@@ -20,7 +20,15 @@ import httpx
 from ela.composition.node import NodeWorld
 from ela.domain import CapabilityId, PermissionDecision
 from ela.node.client import NodeClient
-from ela.node.errors import REVOKED, TWIN, CoreUnreachable, NodeRevoked, TwinNode
+from ela.node.errors import (
+    REVOKED,
+    TWIN,
+    UNCONDITIONAL,
+    CoreUnreachable,
+    NodeError,
+    NodeRevoked,
+    TwinNode,
+)
 from ela.ports import NotAllowedError
 
 __all__ = ["Node", "declaration", "envelope_of"]
@@ -32,6 +40,16 @@ Half, so a renewal that is refused still leaves as much time again to finish or 
 cleanly. Asking at the very end would mean a slow network turns "renewed" into "expired", and
 asking immediately would mean asking constantly for work that is about to finish anyway.
 """
+
+DELIVERY_CONFLICT: Final = "delivery.conflict"
+"""``409`` on delivery, and the one that means **the Core has already decided** (ADR 0038 §12)."""
+
+IDLE: Final = "IDLE"
+BUSY: Final = "BUSY"
+"""What the node reports of itself, and the only two it can honestly tell apart."""
+
+DECIDED: Final = frozenset({httpx.codes.NOT_FOUND, httpx.codes.GONE})
+"""The statuses on which the Core has decided about this work, so the envelope is nobody's."""
 
 ALREADY_RUNNING: Final = "already_running"
 """``409`` on delivery, and the one the node **keeps the envelope** for (ADR 0038 §12).
@@ -81,8 +99,8 @@ async def envelope_of(world: NodeWorld, order: Mapping[str, Any]) -> dict[str, A
     it (M12.2 dec. L) — which makes it a defence at a new boundary rather than a refusal with no
     producer in the sense of ADR 0026 §7.
     """
-    decision = PermissionDecision.model_validate(dict(order["decision"]))
     try:
+        decision = PermissionDecision.model_validate(dict(order["decision"]))
         tool = world.tools.get(CapabilityId(str(order["capability_id"])))
         result = await tool.execute(decision, dict(order["arguments"]))
     except NotAllowedError:
@@ -144,9 +162,9 @@ class Node:
         answered = await self._client.whoami()
         if answered.status == httpx.codes.UNAUTHORIZED:
             raise NodeRevoked(REVOKED)
-        etag = answered.etag
-        if etag is not None:
-            self.saw(int(etag.strip('"')))
+        seen = answered.revision
+        if seen is not None:
+            self.saw(seen)
 
     async def announce(self) -> None:
         """Rewrite the declared half at the revision just read — and read once more on a ``412``.
@@ -164,13 +182,28 @@ class Node:
                 raise TwinNode(TWIN)
         if answered.status == httpx.codes.UNAUTHORIZED:
             raise NodeRevoked(REVOKED)
-        etag = answered.etag
-        if etag is not None:
-            self.saw(int(etag.strip('"')))
+        if answered.status == httpx.codes.PRECONDITION_REQUIRED:
+            # The node forgot its own ``If-Match``: a defect of this code, not of the Core, and it
+            # would otherwise walk on into the work loop as though it had announced (dec. D).
+            raise NodeError(UNCONDITIONAL)
+        seen = answered.revision
+        if seen is not None:
+            self.saw(seen)
 
-    async def report(self) -> None:
-        """A sign of life, so the registry finds this node available at all (ADR 0016 §3)."""
-        answered = await self._client.report(status="IDLE", power_source="AC")
+    async def report(self, status: str = IDLE) -> None:
+        """A sign of life, so the registry finds this node available at all (ADR 0016 §3).
+
+        **Only what it has observed.** The first version of this line sent ``power_source="AC"``,
+        and the orchestrator pays 10 points for that and 10 more for ``IDLE`` — so 20 of the 25
+        points this node scored in the measurement of dec. K.3 came from two things it had never
+        looked at, on a laptop that may well have been on battery. ``STATUS_POINTS``'s own
+        docstring says why that is wrong: "an unknown status must score zero … so that a fact
+        nobody observed is never mistaken for a good one". The power source is not sent at all —
+        reading it is a machine adapter, and a node has none yet — and the status is sent because
+        the node does know it: idle when it is about to ask, busy while a tool of its own is
+        running.
+        """
+        answered = await self._client.report(status=status)
         if answered.status == httpx.codes.UNAUTHORIZED:
             raise NodeRevoked(REVOKED)
 
@@ -216,8 +249,23 @@ class Node:
             done, _ = await asyncio.wait({running}, timeout=max(left * RENEW_AT, 0.0))
             if done:
                 return await running
+            # **A heartbeat here too, and it is not a courtesy.** Renewing keeps the *assignment*
+            # alive; it says nothing about the *node*, whose availability has a TTL of its own
+            # (``ELA_DEVICE_HEARTBEAT_TTL_SECONDS``, 60 s by default). Without this line a tool
+            # that runs longer than a minute would leave the node UNAVAILABLE **while it is
+            # working** — the work in hand survives, but placement and ``ela device list`` would
+            # both be wrong about it for the duration. It is the same defect the by-hand proof
+            # found at start-up, one floor down, and the comment that said a turn is bounded by
+            # the poll window was false exactly here: a turn that gets work lasts the window
+            # **plus** the tool.
+            await self.report(BUSY)
             renewed = await self._client.renew(assignment_id)
+            if renewed.status == httpx.codes.UNAUTHORIZED:
+                raise NodeRevoked(REVOKED)
             if renewed.status != httpx.codes.OK:
+                # The cap (``409``), or work that is no longer this node's (``404``, ``410``).
+                # Either way there is no more time to be had: finish, and let the delivery say
+                # what became of it.
                 return await running
             expires_at = datetime.fromisoformat(str(renewed.body["expires_at"]))
 
@@ -233,11 +281,36 @@ class Node:
         if held is None:  # pragma: no cover - turn() never calls this with nothing in hand
             return
         answered = await self._client.deliver(held)
-        if answered.status == httpx.codes.CONFLICT and answered.code == ALREADY_RUNNING:
-            return
         if answered.status == httpx.codes.UNAUTHORIZED:
             raise NodeRevoked(REVOKED)
-        self._held = None
+        if answered.status == httpx.codes.OK:
+            self._held = None  # the Core has it: a node keeps nothing it has been told about
+            return
+        decided = answered.status in DECIDED or answered.code == DELIVERY_CONFLICT
+        if decided:
+            self._held = None
+        # And on anything else the envelope **stays**. The first version let it go on every
+        # answer that was not ``409 already_running``, which quietly included the ``503`` of a
+        # database that was busy and the ``500`` of a Core having a bad day — cases where the Core
+        # wrote nothing at all, which is precisely the case D7 exists for. The rule is not "which
+        # status is it" but "did the Core decide": ``404`` and ``410`` say the work is not this
+        # node's or is too late, and ``delivery.conflict`` says another envelope won. Everything
+        # else is a Core that has not made up its mind, and a paid call thrown away for it would
+        # be the user's money.
+
+
+async def coming_up(node: Node) -> None:
+    """Read who this node is, say what it is, say it is here (dec. L, dec. D).
+
+    Three acts and not one, and they are here — inside what retries — rather than in
+    :func:`~ela.node.run`, because **the ordinary way to start a node is before the Core is up**:
+    a reboot brings both terminals back and nothing says which goes first. With these three above
+    the loop, a Core that is not listening yet made ``httpx.ConnectError`` escape ``run`` and the
+    command, past every ``except`` either of them has, and a person got a traceback and exit ``1``
+    where dec. D says "wait and retry" and ADR 0039 §4 says exit ``3``.
+    """
+    await node.refresh()
+    await node.announce()
 
 
 async def forever(node: Node, *, wait: float, ceiling: int) -> None:
@@ -252,8 +325,12 @@ async def forever(node: Node, *, wait: float, ceiling: int) -> None:
     the Core can infer from the asking: availability has a TTL of its own.
     """
     missed = 0
+    ready = False
     while True:
         try:
+            if not ready:
+                await coming_up(node)
+                ready = True
             # **Before every ask, and not only at start-up.** A node is available only as long as
             # the Core has heard from it inside ``ELA_DEVICE_HEARTBEAT_TTL_SECONDS`` (ADR 0016 §3),
             # and a node that reported once goes UNAVAILABLE a minute later — still running, still
@@ -266,7 +343,20 @@ async def forever(node: Node, *, wait: float, ceiling: int) -> None:
             # poll window: one heartbeat per cycle is one per window, and a window longer than the
             # TTL is a Core whose two settings disagree with each other.
             await node.report()
+            # **Here, and not in an ``else:`` after the whole pass.** The count is about "is
+            # anybody there", and an answered heartbeat has already answered that. Resetting only
+            # at the end of a clean pass meant a Core that answered every heartbeat but dropped
+            # every long poll — an intermediary cutting a held connection is the ordinary way that
+            # happens — would end the node with "nobody answered after 60 tries", which would have
+            # been false sixty times.
+            missed = 0
             await node.turn()
+            if node.held is not None:
+                # The Core said "not now" (``409 already_running``) and the envelope is still
+                # here. Coming straight back would be a loop as tight as the socket allows, for
+                # as long as the Core holds the task's lock. This is dec. K.2's interval of
+                # resumption, and it is the same number the retry uses.
+                await asyncio.sleep(wait)
         except httpx.TransportError:
             missed += 1
             if missed >= ceiling:
@@ -274,5 +364,3 @@ async def forever(node: Node, *, wait: float, ceiling: int) -> None:
                     f"nobody answered at the Core's address after {ceiling} tries."
                 ) from None
             await asyncio.sleep(wait)
-        else:
-            missed = 0

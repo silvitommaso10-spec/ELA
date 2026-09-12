@@ -20,7 +20,6 @@ from ela.routing import RoutingSettings
 from ela.routing.policy import Route
 from ela.testing.fakes import FakeClock, FakeSpeech
 from ela.tools.settings import VoiceSettings
-from ela.tools.voice import VOICE_TOOL_NAME
 
 
 def config(directory: Path, **sections: object) -> NodeConfig:
@@ -128,8 +127,11 @@ def test_the_voice_is_a_declared_parameter_too(tmp_path: Path) -> None:
 
     built = build_node(config(tmp_path), speech=speech)
 
-    spoken = built.tools.get(built.tools.tools()[2].capability_id)
-    assert spoken.name == VOICE_TOOL_NAME
+    # **What was wired, not what it is called.** The first version asserted only the tool's name,
+    # which is true whatever got wired — so a ``build_node`` that ignored this parameter passed,
+    # and the conformance suite would then have spoken out loud on this Mac, which is the one
+    # thing the parameter exists to prevent.
+    assert _speech_of(built) is speech
 
 
 def test_without_the_seam_the_voice_is_this_machine_s(

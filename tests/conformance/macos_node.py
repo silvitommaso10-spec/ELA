@@ -18,9 +18,16 @@ kit instead of a test):
   runner is a machine talking to an empty room. This is the seam dec. G added to ``build_node``,
   and the reason it is a declared parameter rather than a patch.
 
+And a **fourth**, which is the contract's and not this kit's: ``restart()`` means *reconnect
+keeping what you had in hand* (``driver.py``), not *a new operating-system process*. The envelope
+survives it here exactly as it does in the fake node, because this driver is in-process too — a
+real process restart loses it, and dec. I says so and says why the protocol does not care (the
+assignment expires, and M12.1 D6 decides). What this kit does prove about coming back is narrower
+and real: the **revision** is not remembered, it is asked for.
+
 What is real: the identity written to a file with ``O_EXCL`` and ``0o600``, the HTTP acts, the
-tools, the envelope, and the fact that a restart forgets the revision — which is the one thing the
-fake node could not show, because its "new process" was the same Python object.
+tools, the envelope's contents, and the fact that a restart forgets the revision — which is the
+one thing the fake node could not show, because its "new process" was the same Python object.
 """
 
 from __future__ import annotations
@@ -31,7 +38,7 @@ from typing import Any
 
 from httpx import ASGITransport
 
-from ela.composition import NodeConfig, build_node
+from ela.composition import NodeConfig, NodeSettings, build_node
 from ela.node import (
     Node,
     NodeClient,
@@ -42,7 +49,11 @@ from ela.node import (
     read_identity,
     write_identity,
 )
+from ela.providers.anthropic import AnthropicSettings
+from ela.providers.elevenlabs import ElevenLabsSettings
+from ela.routing import RoutingSettings
 from ela.testing.fakes import FakeClock, FakeSpeech
+from ela.tools.settings import VoiceSettings
 from tests.conformance.driver import Answered, Conformance, NodeDriver
 from tests.conformance.fake_node import ONE_HOUR_BEHIND
 
@@ -59,20 +70,25 @@ def _scratch(world: Conformance) -> Path:
 
 
 def _config(world: Conformance, directory: Path) -> NodeConfig:
-    """The node's five sections, pointed at this world and at a directory of its own.
+    """The node's five sections, built here and **not read from the machine**.
 
-    ``NodeConfig.load`` and not ``Settings.load``: a node reads five sections and not thirteen, and
-    ``ELA_API_TOKEN`` — which the Core's loader refuses to start without — is none of its business.
-    That is criterion 11, and it is worth having the kit go through the real loader so the claim is
-    exercised on every story rather than in one test.
+    The first draft called :meth:`NodeConfig.load`, and claimed that doing so exercised criterion
+    11 — a node starts without the Core's token — on every story. It did not: the conformance
+    conftest sets ``ELA_API_TOKEN`` for its world, so a ``NodeConfig`` that *required* it would
+    have loaded fine in all thirteen. Criterion 11 is proved where it is actually built, in
+    ``tests/composition/test_build_node.py``, by deleting the variable.
+
+    Worse, ``load()`` reads ``.env`` and the shell: the node's voice and provider sections would
+    have come from whoever ran the suite, so a machine with ``ELA_VOICE_ENABLED=false`` would have
+    recited the stories differently. That is exactly the property ``tests/foreign_machine.py``
+    exists to defend. Pinned here instead.
     """
-    loaded = NodeConfig.load()
-    return loaded.model_copy(
-        update={
-            "node": loaded.node.model_copy(
-                update={"node_state_dir": directory, "node_core_url": world.base_url}
-            )
-        }
+    return NodeConfig(
+        node=NodeSettings(node_state_dir=directory, node_core_url=world.base_url),
+        anthropic=AnthropicSettings(anthropic_api_key=None),
+        routing=RoutingSettings(),
+        voice=VoiceSettings(voice_enabled=True),
+        elevenlabs=ElevenLabsSettings(),
     )
 
 
@@ -178,6 +194,9 @@ class MacosNode:
     async def deliver(
         self, envelope: Mapping[str, Any], *, assignment_id: str | None = None
     ) -> Answered:
+        """The raw act. What to do about each answer is :meth:`~ela.node.Node.deliver`'s, and the
+        stories drive the acts — so this one keeps the envelope on every refusal rather than
+        applying the keep-or-drop rule, which has its own tests in ``tests/node/``."""
         held = self.held or {}
         body = {
             **dict(envelope),
@@ -215,10 +234,11 @@ class MacosNode:
     def clone(self) -> NodeDriver:
         """A second process claiming this identity (ADR 0035 §5): same id and secret, own client.
 
-        Its own directory, because the real one would refuse to write over a state file that is
-        already there — which is ``O_EXCL`` doing exactly what it is for, and not something to work
-        around here. The twin does not enroll: it is handed the identity, which is what makes it a
-        twin and not a second node.
+        Its own directory — not because anything would collide (the twin never enrols, so nothing
+        ever writes a state file for it) but so that the two are as separate here as two processes
+        would be. The twin does not enrol: it is handed the identity, which is what makes it a
+        twin and not a second node, and it is handed the revision too, because two processes that
+        start from the same belief is the whole shape of ADR 0035 §5.
         """
         twin = MacosNode(
             self._world,

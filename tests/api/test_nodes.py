@@ -431,7 +431,7 @@ async def test_a_node_revoked_after_the_middleware_let_it_in_cannot_read_its_row
 
     response = await client.get("/nodes/me", headers=node)
 
-    assert calls >= 2, "the middleware must have read first, or this proves nothing"
+    assert calls == 2, "the middleware reads, then the handler reads: exactly two"
     assert response.status_code == 401
     assert response.json() == (await anonymous.get("/health")).json()
 

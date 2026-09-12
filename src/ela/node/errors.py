@@ -52,6 +52,10 @@ TWIN: Final = (
     "this one read it. One of the two must stop, and this one is stopping (ADR 0035 §5)."
 )
 REVOKED: Final = "this node has been revoked: the Core no longer accepts its identity."
+UNCONDITIONAL: Final = (
+    "this node announced itself without the revision it last saw, and the Core refused the "
+    "announcement as unconditional (428). That is a defect in the node, not in the Core."
+)
 UNENROLLED: Final = (
     "this machine is not enrolled as a node. Issue a code on the Core with "
     "`ela node enroll --privacy TRUSTED`, then run `ela node run --join` and paste it."

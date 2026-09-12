@@ -53,12 +53,15 @@ class Script:
     def __init__(self, answers: Iterable[Callable[[httpx.Request], httpx.Response]]) -> None:
         self._answers = list(answers)
         self.seen: list[tuple[str, str]] = []
+        self.sent: list[str | None] = []
+        """The ``If-Match`` of each request, so a test can pin what the node announced against."""
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._answer)
 
     def _answer(self, request: httpx.Request) -> httpx.Response:
         self.seen.append((request.method, request.url.path))
+        self.sent.append(request.headers.get("If-Match"))
         if not self._answers:
             raise AssertionError(f"the script ran out at {request.method} {request.url.path}")
         return self._answers.pop(0)(request)

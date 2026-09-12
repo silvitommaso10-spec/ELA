@@ -100,18 +100,36 @@ async def run(
     long as the window — and it is payable because for the Core a closed window is a node that has
     gone quiet, which the protocol already handles as an assignment that expires.
 
-    ``world`` and ``transport`` are the seams: the conformance suite builds the node it drives and
-    hands it the transport that reaches the application in this process.
+    ``world`` and ``transport`` are the seams, and they are the **tests'**: the conformance kit
+    drives the acts one at a time and builds its own :class:`Node`, so the caller of this function
+    is the command — and, in ``tests/node/``, whatever is driving the whole cycle at once.
     """
-    built = build_node(config) if world is None else world
+    # An ``if`` and not ``build_node(config) if world is None else world``: a ternary carries no
+    # arc, so the arm **production** takes — building the world from the configuration — would be
+    # reported as covered by tests that all pass one in. It is rule 37's argument, one package
+    # over: the side that does not run costs the 100% branch gate nothing.
+    built: NodeWorld
+    if world is None:  # noqa: SIM108 — a ternary carries no arc; see above
+        built = build_node(config)
+    else:
+        built = world
     built.sweep_speech()
-    client = await join_or_read(built, code=join, transport=transport)
-    node = Node(built, client)
-    await node.refresh()
-    await node.announce()
-    await node.report()
+    try:
+        client = await join_or_read(built, code=join, transport=transport)
+    except httpx.TransportError as away:
+        # Enrolment is the one act that cannot simply be retried in the background: a code is good
+        # once and for ten minutes, and the person who pasted it is standing right there. So it
+        # gets the sentence and the exit code of "nobody is at that address" rather than a
+        # traceback — and an already-enrolled node never reaches here at all, because reading its
+        # own file touches no network.
+        raise CoreUnreachable(
+            f"nobody answered at {built.config.node.node_core_url}: the Core is not running "
+            "there. Start it first, then run this again with the same code."
+        ) from away
+    # Everything else that talks to the Core is inside ``forever``, coming-up included: a node
+    # started before the Core waits for it instead of dying on it (dec. D).
     await forever(
-        node,
+        Node(built, client),
         wait=config.node.node_retry_seconds,
         ceiling=config.node.node_retry_ceiling,
     )

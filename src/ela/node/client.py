@@ -51,6 +51,19 @@ class Reply:
     etag: str | None = None
 
     @property
+    def revision(self) -> int | None:
+        """The revision the ``ETag`` carries, or ``None`` if there was not one to read.
+
+        Parsed here rather than at each call site, and **never** raising: the tag is the Core's to
+        write, so a tag that is not a number is a Core that has changed its mind about the format
+        — a thing to ignore and ask again about, not a thing to die of.
+        """
+        if self.etag is None:
+            return None
+        digits = self.etag.strip().strip('"')
+        return int(digits) if digits.isdigit() else None
+
+    @property
     def code(self) -> str | None:
         """The ``error.code`` of a refusal (ADR 0023 §10), or ``None`` if this is not one.
 
@@ -67,11 +80,22 @@ class Reply:
 
 
 def _body(response: httpx.Response) -> Mapping[str, Any]:
-    """The JSON of an answer, or nothing for the ``204`` that says there was no work."""
+    """The JSON of an answer, or nothing at all — and **nothing** is not an error here.
+
+    A ``204`` carries no body by design. Everything else *should* be a JSON object, because every
+    route of ELA answers with a model or with ``problem()`` — but "should" is the Core's promise
+    and this runs on another machine, where the thing that answers may be an unhandled exception
+    rendered as ``text/plain`` by Starlette, or a proxy's error page. A node that let a decoder
+    error out of here would die of the Core's bad day, which is the opposite of what a node is
+    for: it is the process that is still there when the Core comes back.
+    """
     if response.status_code == httpx.codes.NO_CONTENT:
         return {}
-    parsed: Any = response.json()
-    return parsed if isinstance(parsed, Mapping) else {"body": parsed}
+    try:
+        parsed: Any = response.json()
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, Mapping) else {}
 
 
 class NodeClient:

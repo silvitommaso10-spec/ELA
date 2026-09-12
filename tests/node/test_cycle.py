@@ -9,15 +9,18 @@ asks for more before it passes, and at the cap stops asking instead of taking wh
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from ela.domain import CapabilityId
 from ela.node import (
     CoreUnreachable,
+    NodeError,
     NodeRevoked,
     Reply,
     TwinNode,
@@ -67,6 +70,10 @@ async def test_a_node_that_came_back_reads_the_revision_it_must_announce_against
     await node.announce()
     assert node.revision == 8
     assert script.seen == [("GET", "/nodes/me"), ("PUT", "/nodes/me")]
+    # The round trip, which is the only property the node actually depends on: what came out of
+    # the read goes back in as the condition of the write. Without this the node could read 7 and
+    # announce against anything at all.
+    assert script.sent[-1] == '"7"'
 
 
 async def test_a_412_is_read_again_once_and_the_second_one_is_a_twin(tmp_path: Path) -> None:
@@ -203,6 +210,7 @@ async def test_more_time_is_asked_for_before_the_deadline_and_read_back_from_the
     given = order(expires_at=NOW, decision=decision())
     script = replies(
         status(200, given),
+        ok({}),  # "sono qui, e sto lavorando": the beat that keeps it available while it works
         ok({"assignment_id": given["assignment_id"], "expires_at": SOON.isoformat()}),
         ok({"state": "DELIVERED", "step": "COMPLETED"}),
     )
@@ -210,7 +218,12 @@ async def test_more_time_is_asked_for_before_the_deadline_and_read_back_from_the
 
     await node.turn()
 
-    assert ("POST", "/nodes/work/renew") in script.seen
+    assert [path for _, path in script.seen] == [
+        "/nodes/work",
+        "/nodes/heartbeat",
+        "/nodes/work/renew",
+        "/nodes/work/result",
+    ]
     assert node.held is None
 
 
@@ -222,6 +235,7 @@ async def test_at_the_cap_the_node_stops_asking_instead_of_taking_the_time(
     given = order(expires_at=NOW, decision=decision())
     script = replies(
         status(200, given),
+        ok({}),  # the beat that goes with every renewal
         refused(409, "renewal.capped"),
         ok({"state": "DELIVERED", "step": "COMPLETED"}),
     )
@@ -306,14 +320,16 @@ async def test_a_dropped_connection_is_waited_out_and_the_count_resets_on_an_ans
     away is the point.
     """
     script = replies(
+        dropped(),  # the coming-up itself: the Core is not listening yet
+        dropped(),
+        ok({}, ETag='"1"'),  # it answers: read the revision, announce, say I am here
+        ok({}, ETag='"2"'),
+        ok({}),  # answered: the count goes back to zero
+        status(204),
         dropped(),
         dropped(),
-        ok({}),
-        status(204),  # answered: the count goes back to zero
-        dropped(),
-        dropped(),
-        ok({}),
-        status(204),  # answered again
+        ok({}),  # answered again
+        status(204),
         dropped(),
         ok({}),
         status(204),
@@ -327,7 +343,7 @@ async def test_a_dropped_connection_is_waited_out_and_the_count_resets_on_an_ans
     assert len([one for one in script.seen if one == ("POST", "/nodes/work")]) == 3
 
 
-async def _turns(node: Any, many: int, *, ceiling: int = 10) -> None:
+async def _turns(node: Any, many: int, *, ceiling: int = 10, sleeper: Any = None) -> None:
     """``many`` passes of the loop and then out: ``forever`` has no other way to end."""
     turns = 0
     original = node.turn
@@ -340,7 +356,24 @@ async def _turns(node: Any, many: int, *, ceiling: int = 10) -> None:
         return await original()
 
     node.turn = counted
-    await forever(node, wait=0, ceiling=ceiling)
+    if sleeper is None:
+        await forever(node, wait=0, ceiling=ceiling)
+        return
+    with patch_sleep(sleeper):
+        await forever(node, wait=0.5, ceiling=ceiling)
+
+
+@contextmanager
+def patch_sleep(sleeper: Any) -> Any:
+    """Replace the cycle's wait, so a test can read *how long* instead of waiting it out."""
+    import ela.node.runner as module
+
+    was = module.asyncio.sleep
+    module.asyncio.sleep = sleeper  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        module.asyncio.sleep = was  # type: ignore[assignment]
 
 
 async def test_a_ceiling_stops_a_node_whose_core_is_never_coming_back(tmp_path: Path) -> None:
@@ -408,12 +441,15 @@ async def test_an_answer_without_an_etag_leaves_the_revision_where_it_was(tmp_pa
     A node that defaulted to zero here would announce against a revision nobody gave it, which is
     the ``412``-for-ever this whole decision exists to avoid (dec. L).
     """
-    node, _ = node_of(world(tmp_path), replies(ok({}), ok({})))
+    node, _ = node_of(world(tmp_path), replies(ok({}, ETag='"7"'), ok({}), ok({})))
 
     await node.refresh()
-    await node.announce()
+    assert node.revision == 7  # it was told 7, so 7 is what a later silence must leave behind
 
-    assert node.revision == 0
+    await node.announce()
+    await node.refresh()
+
+    assert node.revision == 7
 
 
 def test_an_answer_that_is_not_a_refusal_has_no_error_code() -> None:
@@ -439,11 +475,137 @@ async def test_the_node_says_it_is_here_on_every_pass_and_not_only_at_start_up(
     The conformance suite could not catch it: its stories report once and act at once, on a clock
     that does not move by itself. This is the test that would have.
     """
-    script = replies(ok({}), status(204), ok({}), status(204), ok({}), status(204), ok({}))
+    script = replies(
+        ok({}, ETag='"1"'),  # the coming-up: read the revision, announce against it
+        ok({}, ETag='"2"'),
+        ok({}),
+        status(204),
+        ok({}),
+        status(204),
+        ok({}),
+        status(204),
+        ok({}),
+    )
     node, _ = node_of(world(tmp_path), script)
 
     with pytest.raises(TimeoutError):
         await _turns(node, 3)
 
-    beats = [path for _, path in script.seen].count("/nodes/heartbeat")
-    assert beats >= 3, script.seen
+    # The interleaving is the claim, not the count: a beat **before** each ask. A node that sent
+    # them all at start-up would satisfy a count and still go stale an hour later.
+    assert [path for _, path in script.seen] == [
+        "/nodes/me",
+        "/nodes/me",
+        "/nodes/heartbeat",
+        "/nodes/work",
+        "/nodes/heartbeat",
+        "/nodes/work",
+        "/nodes/heartbeat",
+        "/nodes/work",
+        "/nodes/heartbeat",
+    ]
+
+
+async def test_an_announcement_without_a_condition_is_the_node_s_own_defect(
+    tmp_path: Path,
+) -> None:
+    """``428``, dec. D's fifth row. The Core refuses an unconditional announcement, and a node
+    that walked on from here would enter the work loop believing it had announced.
+
+    Unreachable through the client, which always sends an ``If-Match`` — which is exactly why the
+    branch is worth having and worth naming: it is the shape of a future bug, not of today's.
+    """
+    node, _ = node_of(world(tmp_path), replies(status(428)))
+
+    with pytest.raises(NodeError, match="defect in the node"):
+        await node.announce()
+
+
+async def test_a_revocation_arriving_on_a_renewal_stops_the_node(tmp_path: Path) -> None:
+    """A ``401`` is a revocation wherever it lands (M12.1 D13), and the renewal is a place it can
+    land: the user revokes the node while its tool is running. The first version read every
+    non-``200`` here as "the cap", so a revoked node finished the work and only noticed at the
+    delivery."""
+    given = order(expires_at=NOW, decision=decision())
+    script = replies(status(200, given), ok({}), status(401))
+    node, _ = node_of(slowly(world(tmp_path, clock=FakeClock(NOW))), script)
+
+    with pytest.raises(NodeRevoked):
+        await node.turn()
+
+
+async def test_an_answer_the_core_did_not_decide_keeps_the_envelope(tmp_path: Path) -> None:
+    """D7 is about whether the Core **decided**, not about which status it is.
+
+    The first version let the envelope go on everything that was not ``409 already_running``,
+    which quietly included the ``503`` of a busy database and the ``500`` of a Core having a bad
+    day — cases where nothing was written at all. Throwing away a paid model call for one of those
+    would be the user's money.
+    """
+    given = order(expires_at=SOON, decision=decision())
+    node, _ = node_of(
+        world(tmp_path), replies(status(200, given), refused(503, "database_unavailable"))
+    )
+
+    await node.turn()
+
+    assert node.held is not None
+
+
+async def test_a_core_that_answers_with_something_that_is_not_json_does_not_kill_the_node(
+    tmp_path: Path,
+) -> None:
+    """An unhandled exception in the Core is ``text/plain`` by the time it reaches here.
+
+    A node that let a decoder error out of the client would die of the Core's bad day — the
+    opposite of what a node is for, which is to be the process still there when the Core is back.
+    """
+    node, _ = node_of(
+        world(tmp_path),
+        replies(lambda _: httpx.Response(500, text="Internal Server Error"), status(204)),
+    )
+
+    assert await node.turn() is False
+
+
+def test_a_tag_that_is_not_a_number_is_ignored_rather_than_died_of() -> None:
+    """The tag is the Core's to write, so one that is not a number is a Core that changed its mind
+    about the format — a thing to ignore and ask again about, not a thing to crash on."""
+    assert Reply(200, {}, etag='"12"').revision == 12
+    assert Reply(200, {}, etag="12").revision == 12
+    assert Reply(200, {}, etag='W/"abc"').revision is None
+    assert Reply(200, {}, etag=None).revision is None
+
+
+async def test_a_deferred_delivery_comes_back_but_not_at_the_speed_of_the_socket(
+    tmp_path: Path,
+) -> None:
+    """dec. K.2's interval of resumption, and the reason it has to exist.
+
+    On ``409 already_running`` the envelope stays and the pass ends with it still in hand. Coming
+    straight back would be a loop as tight as the socket allows, for as long as the Core holds the
+    task's lock — which is the whole of a synchronous ``ela task run`` by the user. So the node
+    waits the same interval it waits for a Core that is not answering.
+    """
+    given = order(expires_at=SOON, decision=decision())
+    script = replies(
+        ok({}, ETag='"1"'),
+        ok({}, ETag='"2"'),
+        ok({}),
+        status(200, given),
+        refused(409, "already_running"),  # the envelope stays here
+        ok({}),
+        ok({"state": "DELIVERED", "step": "COMPLETED"}),  # the pass that delivers it
+        ok({}),
+    )
+    node, _ = node_of(world(tmp_path), script)
+    waited: list[float] = []
+
+    async def counted(seconds: float) -> None:
+        waited.append(seconds)
+
+    with pytest.raises(TimeoutError):
+        await _turns(node, 2, sleeper=counted)
+
+    assert waited == [0.5], "one wait, between the refusal and the second attempt"
+    assert node.held is None
