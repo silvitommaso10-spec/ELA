@@ -46,6 +46,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0036](0036-listening.md) | L'ascolto: un trascrittore converte l'assenza di segnale in parole, quindi il picco decide prima di lui; l'audio non si tiene, un port solo, la regola 45 e il debito di ADR 0035 §7 saldato | Accettata |
 | [0037](0037-node-identity.md) | L'identità dei nodi: ELA sulla rete, un segreto per macchina, la revoca | Accettata |
 | [0038](0038-work-protocol.md) | Il protocollo del lavoro: la chiamata al tool fatta da lontano, la scadenza che decide per chi tace, la sensibilità del task, la suite di conformità; rivede ADR 0017 §8 per il task | Accettata |
+| [0039](0039-node-macos.md) | Il nodo macOS: dove vive il codice di un nodo, dove tiene il segreto (un file, non il portachiavi — misurato), la terza specie di comando, e che cosa fa quando il Core tace | Accettata |
 
 ## Template
 

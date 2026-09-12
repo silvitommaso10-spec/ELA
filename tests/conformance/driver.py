@@ -204,7 +204,14 @@ class NodeDriver(Protocol):
         """``POST /nodes/work/renew``: ask for more time on the work in hand."""
 
     async def restart(self) -> None:
-        """Come back as a new process that kept its identity — and whatever it had in hand."""
+        """Come back as a new process that kept its identity — and whatever it had in hand.
+
+        What a node keeps is what it wrote down: its id and its secret. Its **revision** is not one
+        of those — it is a fact of the Core's row, and a copy of it on a node is a cache nobody
+        resynchronises — so a driver that comes back here has to read it again, with
+        ``GET /nodes/me`` (M12.3 dec. L). A driver that remembered one instead announces against a
+        number nobody promised it and reads ``412`` for ever; story 11 is where that shows.
+        """
 
     def clone(self) -> NodeDriver:
         """A second process with **this** identity, for the story of two clones (ADR 0035 §5).

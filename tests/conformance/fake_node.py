@@ -211,9 +211,19 @@ class FakeNode:
         How much of that survives a real restart is the driver's business and nobody else's: here it
         is a simulation, and the suite says so among its limits. What is *not* simulated is the
         identity: the id and the secret are what the node kept on disk, as a real one does.
+
+        And the revision is **not** among them, which this object has to be told because a Python
+        object cannot forget by itself (M12.3 dec. L). A real process comes back holding its file
+        and nothing else, so it asks: ``GET /nodes/me``, and the answer carries the revision in the
+        ``ETag`` the next announcement will send straight back as ``If-Match``.
         """
         await self._client.aclose()
         self._client = self._world.node_client()
+        self._revision = 0
+        answered = await self._client.get("/nodes/me", headers=self._bearer)
+        etag = answered.headers.get("ETag")
+        if etag is not None:
+            self._revision = int(etag.strip('"'))
 
     def clone(self) -> NodeDriver:
         """A second process claiming this identity (ADR 0035 §5): same id and secret, own client."""

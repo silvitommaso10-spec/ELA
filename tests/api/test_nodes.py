@@ -355,6 +355,78 @@ async def test_a_node_cannot_write_what_it_does_not_declare(
 
 
 # ----------------------------------------------------------------------------------------
+# Reading its own row: the revision a node that restarted has no other way to learn (M12.3 dec. L)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_node_reads_its_row_and_the_revision_it_must_announce_against(
+    client: AsyncClient,
+) -> None:
+    """What a process that came back does first (M12.3, criterion 5).
+
+    It kept its id and its secret on disk and nothing else, so the revision is a thing it has to
+    ask for — and the answer puts it where the announcement already looks for it, the ``ETag``.
+    The round trip is the test: the tag that comes out of the read goes in as ``If-Match`` and is
+    accepted, which is the only property the node actually depends on.
+    """
+    device_id, node = await enrolled(client)
+    await client.put("/nodes/me", json=DECLARATION, headers={**node, "If-Match": '"1"'})
+
+    mine = await client.get("/nodes/me", headers=node)
+
+    assert mine.status_code == 200
+    assert mine.headers["ETag"] == '"2"'
+    assert mine.json()["id"] == device_id
+    assert mine.json() == await row(client, device_id)
+    announced = await client.put(
+        "/nodes/me", json=DECLARATION, headers={**node, "If-Match": mine.headers["ETag"]}
+    )
+    assert announced.status_code == 200
+
+
+async def test_reading_the_row_changes_nothing_and_writes_nothing(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """A read is not an event (ADR 0016 §6), and it does not move the revision it reports.
+
+    A ``GET`` that bumped the revision would give the node a number the Core no longer has, which
+    is the failure this route exists to prevent.
+    """
+    device_id, node = await enrolled(client)
+    before = await ela.audit.read()
+
+    first = await client.get("/nodes/me", headers=node)
+    second = await client.get("/nodes/me", headers=node)
+
+    assert first.headers["ETag"] == second.headers["ETag"] == '"1"'
+    assert await ela.audit.read() == before
+    assert (await row(client, device_id))["revoked_at"] is None
+
+
+async def test_a_node_revoked_after_the_middleware_let_it_in_cannot_read_its_row_either(
+    client: AsyncClient, anonymous: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same ``401`` the announcement gives, for the same reason and in the same race.
+
+    A revoked node that could still read its row would learn nothing it may act on, and would read
+    a different answer from the one every other route gives it: a door that is closed is closed the
+    same way everywhere (§33).
+    """
+    _, node = await enrolled(client)
+    reads = DeviceRegistry.get
+
+    async def revoked_meanwhile(self: DeviceRegistry, device_id: Any) -> Any:
+        return (await reads(self, device_id)).model_copy(update={"revoked_at": datetime.now(UTC)})
+
+    monkeypatch.setattr(DeviceRegistry, "get", revoked_meanwhile)
+
+    response = await client.get("/nodes/me", headers=node)
+
+    assert response.status_code == 401
+    assert response.json() == (await anonymous.get("/health")).json()
+
+
+# ----------------------------------------------------------------------------------------
 # What is written and what is counted (criterion 14)
 # ----------------------------------------------------------------------------------------
 

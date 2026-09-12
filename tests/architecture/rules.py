@@ -41,7 +41,10 @@ INFRA_LIBRARIES = frozenset(
 #: Top-level packages of ``ela`` allowed to import INFRA_LIBRARIES. ``cli`` joined them in M8.2
 #: (ADR 0024 §7): the command line speaks HTTP with ``httpx`` and is written with ``typer``, which
 #: makes it the fourth edge — and the rule is about *edges*, not about how many there are.
-INFRA_PACKAGES = frozenset({"providers", "infrastructure", "api", "cli"})
+#: ``node`` joined them in M12.3 (ADR 0039 §1), for the same reason and at the same kind of
+#: boundary: a node is a client, and a client speaks HTTP with ``httpx``. It is the fifth edge, and
+#: the rule is still about *edges* and not about how many there are.
+INFRA_PACKAGES = frozenset({"providers", "infrastructure", "api", "cli", "node"})
 #: Core packages that must stay independent from providers and infrastructure.
 #: ``routing`` joined them in M7.3 (ADR 0022 §2): the Model Router chooses *between* providers
 #: and must not import one — it reaches them through ``ProviderRegistryPort``.
@@ -567,7 +570,11 @@ APPROVAL_RESPONDER = Path("api") / "approvals.py"
 CLI_DIR = "cli"
 CLI_PACKAGE = f"{ROOT_PACKAGE}.{CLI_DIR}"
 CLI_SERVE = Path(CLI_DIR) / "serve.py"
-COMPOSED_NAMES = frozenset({"build", "Ela"})
+#: M12.3 (dec. C): ``build_node`` and ``NodeWorld`` join them the day the second way to compose a
+#: world exists. A fence with a new gate in it is not a fence, and ``ela node run`` composes
+#: nothing itself — ``cli/node.py`` calls ``ela.node.run(...)``, which is outside ``cli/``, exactly
+#: the shape ``serve.py`` already has.
+COMPOSED_NAMES = frozenset({"build", "Ela", "build_node", "NodeWorld"})
 CLI_FORBIDDEN_INTERNAL = (f"{ROOT_PACKAGE}.api", f"{COMPOSITION_PACKAGE}.root")
 
 #: Rule 25 (ADR 0021 §5): ``ModelProvider.complete`` is called from one module, the tool of
@@ -632,6 +639,24 @@ EXECUTE_METHOD = "execute"
 #: still reported.
 RUNNER_MODULE = Path("executive") / "runner.py"
 EXECUTOR_RECEIVERS = frozenset({"_executor"})
+#: Rule 16 (ADR 0039 §3, M12.3): the node's cycle runs the call the Core sent it, and it is the
+#: only other place a tool runs. **By path and by receiver**, not by package: one module of
+#: ``ela.node``, and in it only a local called ``tool`` — so a second module of the node, or a
+#: differently named receiver in this one, is reported like everything else. The reason is M12.1
+#: D1's and it is a reason about machines, not about code: the Core's executor stays the only
+#: thing that runs a tool **on this machine**, and this is the only thing that runs one on a
+#: machine the Core is not.
+NODE_RUNNER_MODULE = Path("node") / "runner.py"
+NODE_TOOL_RECEIVERS = frozenset({"tool"})
+#: Rule 53 (ADR 0039 §5, M12.3): the package a node's cycle lives in.
+NODE_DIR = "node"
+#: Rule 53: what minting a deadline looks like. ``timedelta(...)`` is how a duration becomes a
+#: point in time, and ``expires_at=`` is how one is handed to something that stores it. Reading the
+#: Core's own value back — ``datetime.fromisoformat(order["expires_at"])`` — is neither: it is a
+#: subscript of a mapping the Core sent, not a construction, and the rule is deliberately blind to
+#: it. Subtracting two instants to learn how long is left is not minting either, and stays legal.
+DEADLINE_BUILDERS = frozenset({"timedelta"})
+DEADLINE_FIELD = "expires_at"
 #: ``connection`` was in this set and no module ever used it: ADR 0013 §9 wrote three names and
 #: the persistence has always executed through ``session`` and ``cursor``. Withdrawn by ADR 0027,
 #: with its price written there: the day the persistence executes on a ``connection`` this rule
@@ -1225,6 +1250,7 @@ def check_tool_execute_callers(pkg_root: Path) -> list[Violation]:
             and node.func.attr == EXECUTE_METHOD
             and not _is_sql_executor(node.func.value)
             and not (relative == RUNNER_MODULE and _is_the_executor(node.func.value))
+            and not (relative == NODE_RUNNER_MODULE and _is_the_nodes_tool(node.func.value))
         )
     return found
 
@@ -1235,6 +1261,10 @@ def _is_sql_executor(receiver: ast.expr) -> bool:
 
 def _is_the_executor(receiver: ast.expr) -> bool:
     return isinstance(receiver, ast.Attribute) and receiver.attr in EXECUTOR_RECEIVERS
+
+
+def _is_the_nodes_tool(receiver: ast.expr) -> bool:
+    return isinstance(receiver, ast.Name) and receiver.id in NODE_TOOL_RECEIVERS
 
 
 def check_step_completers(pkg_root: Path) -> list[Violation]:
@@ -2688,6 +2718,41 @@ def check_results_are_minted_by_the_core(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_a_node_mints_no_deadline(pkg_root: Path) -> list[Violation]:
+    """Rule 53: no module of ``ela.node`` builds a deadline (M12.3, criterion 6; ADR 0039 §5).
+
+    **The time is the Core's** (M12.1 D6, D14). A node asks for more of it and is told; it never
+    decides when its own work dies, because the Core is the only place that can know whether a
+    piece of work may be replaced or has to be closed ``interrupted``, and that judgement rests on
+    a clock nobody else shares. A node that computed its own expiry would be a second opinion about
+    when something is over — and the two would disagree exactly when it matters, on a slow network.
+
+    So: no ``timedelta(...)`` and no ``expires_at=`` anywhere under ``ela.node``. Reading the value
+    the order carries is untouched, and that is the whole difference — one is being told, the other
+    is deciding. Without this rule "the Core decides the time" stays a sentence in a document; the
+    node's cycle does read a deadline, twice, and nothing but this would notice the day one of
+    those readings became an arithmetic.
+    """
+    rule = "a-node-mints-no-deadline"
+    found: list[Violation] = []
+    for path in sorted((pkg_root / NODE_DIR).rglob("*.py")):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                called = node.func
+                if isinstance(called, ast.Name) and called.id in DEADLINE_BUILDERS:
+                    found.append(Violation(rule, name, f"{called.id}(", node.lineno))
+                elif isinstance(called, ast.Attribute) and called.attr in DEADLINE_BUILDERS:
+                    found.append(Violation(rule, name, f"{called.attr}(", node.lineno))
+                found.extend(
+                    Violation(rule, name, f"{DEADLINE_FIELD}=", node.lineno)
+                    for word in node.keywords
+                    if word.arg == DEADLINE_FIELD
+                )
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -2745,6 +2810,7 @@ RULES: dict[str, Rule] = {
     "release-step-has-one-caller": check_release_step_callers,
     "a-work-order-goes-only-to-its-node": check_a_work_order_goes_only_to_its_node,
     "results-are-minted-by-the-core": check_results_are_minted_by_the_core,
+    "a-node-mints-no-deadline": check_a_node_mints_no_deadline,
 }
 
 
@@ -3210,6 +3276,17 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     Constant("testing-isolation", "TESTING_DIR", DETECTOR),
     Constant("testing-isolation", "TESTING_PACKAGE", DETECTOR),
+    # a-node-mints-no-deadline (rule 53, M12.3)
+    Constant("a-node-mints-no-deadline", "DEADLINE_BUILDERS", DETECTOR),
+    Constant("a-node-mints-no-deadline", "DEADLINE_FIELD", DETECTOR),
+    Constant("a-node-mints-no-deadline", "NODE_DIR", DETECTOR),
+    Constant(
+        "a-node-mints-no-deadline",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # tool-execute-callers
     Constant("tool-execute-callers", "EXECUTE_METHOD", DETECTOR),
     Constant("tool-execute-callers", "EXECUTOR_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0013 §9"),
@@ -3217,6 +3294,8 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant(
         "tool-execute-callers", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
     ),
+    Constant("tool-execute-callers", "NODE_RUNNER_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0039 §3"),
+    Constant("tool-execute-callers", "NODE_TOOL_RECEIVERS", EXEMPTION, by=EACH, adr="ADR 0039 §3"),
     Constant("tool-execute-callers", "RUNNER_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0019 §3"),
     Constant(
         "tool-execute-callers", "SQL_EXECUTORS", EXEMPTION, by=EACH, adr="ADR 0013 §9; ADR 0027"

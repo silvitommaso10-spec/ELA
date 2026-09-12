@@ -1,10 +1,12 @@
-"""The routes of the nodes: enrolled, heard from, announced, revoked (M12.1; ADR 0037 §4).
+"""The routes of the nodes: enrolled, heard from, announced, put to work, revoked (ADR 0037 §4).
 
-Five routes. Two are the Core's — issuing a code and revoking a node — and three are called by the
+Nine routes. Two are the Core's — issuing a code and revoking a node — and seven are called by the
 nodes themselves, each by the one identity the middleware lets through there: the code on
-``POST /nodes/enroll``, the node on ``POST /nodes/heartbeat`` and ``PUT /nodes/me``. No id in the
-paths of a node: the identity *is* the id, a node speaks only for itself, and "the id in the path
-is not the credential's" is a class of error that does not exist (ADR 0037 §4).
+``POST /nodes/enroll``, the node on the rest. No id in the paths of a node: the identity *is* the
+id, a node speaks only for itself, and "the id in the path is not the credential's" is a class of
+error that does not exist (ADR 0037 §4). M12.2 added the three of the work (ADR 0038 §11); M12.3
+added ``GET /nodes/me``, which is the only one that answers a question instead of changing
+something.
 
 The announcement is conditional on the revision the node last saw, and the revision travels as
 HTTP's own condition: ``If-Match`` in, ``ETag`` out, ``412`` when it does not match and ``428``
@@ -114,6 +116,29 @@ async def heartbeat(body: HeartbeatIn, ela: ElaDep, identity: IdentityDep) -> De
     return await _judged(ela, device)
 
 
+@router.get("/me", response_model=DeviceOut)
+async def whoami(
+    response: Response, ela: ElaDep, identity: IdentityDep
+) -> DeviceOut | JSONResponse:
+    """The node reads its own row, and the revision to announce against (M12.3 dec. L).
+
+    A process that comes back knows what it kept on disk — its id and its secret — and nothing
+    else. The revision is a fact of *this* row, and a copy on the node would be a cache nobody
+    resynchronises: it goes stale the first time the row moves for a reason the node was not part
+    of, and a node that believes a stale revision is a node in ``412`` with nothing able to take it
+    out of there. So it asks, at startup and after a ``412``, and the answer carries the revision
+    where the announcement already expects to read it: the ``ETag``.
+
+    It writes nothing and records nothing — a read is not an event (ADR 0016 §6) — and a node
+    revoked after the middleware let it through gets the same ``401`` the announcement gives it.
+    """
+    device = await ela.devices.get(identity.node)
+    if device.revoked_at is not None:
+        return unauthorized()
+    _tagged(response, device)
+    return await _judged(ela, device)
+
+
 @router.put("/me", response_model=DeviceOut)
 async def announce(
     body: DeclarationIn,
@@ -137,7 +162,7 @@ async def announce(
         )
     except DeviceRevokedError:
         return unauthorized()
-    response.headers["ETag"] = f'"{device.revision}"'
+    _tagged(response, device)
     return await _judged(ela, device)
 
 
@@ -294,6 +319,16 @@ def work_order(claimed: Claimed, device_id: DeviceId) -> WorkOrderOut:
         arguments=claimed.arguments,
         expires_at=claimed.assignment.expires_at,
     )
+
+
+def _tagged(response: Response, device: Device) -> None:
+    """The revision leaves as HTTP's own validator, written once for the two routes that carry it.
+
+    Two copies of this line would be two things to keep equal: the node reads the ``ETag`` of
+    ``GET /nodes/me`` and sends it back as the ``If-Match`` of ``PUT /nodes/me``, so a difference
+    between them would not be a style problem but a node that cannot announce.
+    """
+    response.headers["ETag"] = f'"{device.revision}"'
 
 
 async def _judged(ela: Ela, device: Device) -> DeviceOut:

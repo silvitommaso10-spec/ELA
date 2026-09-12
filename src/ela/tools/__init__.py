@@ -58,6 +58,7 @@ from ela.tools.paths import (
 from ela.tools.registry import (
     ToolRegistry,
     VerifierRegistry,
+    node_tools,
     production_tools,
     production_verifiers,
     tools_v01,
@@ -238,6 +239,7 @@ __all__ = [
     "is_capture_name",
     "is_relative_note_path",
     "png_size",
+    "node_tools",
     "production_tools",
     "production_verifiers",
     "resolve_workspace",

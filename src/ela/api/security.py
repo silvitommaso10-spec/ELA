@@ -67,6 +67,7 @@ SEPARATOR: Final = "."
 """Between a node's id and its secret: it is in neither a ``token_urlsafe`` nor a UUID."""
 NODE_ROUTES: Final = frozenset(
     {
+        ("GET", "/nodes/me"),
         ("POST", "/nodes/heartbeat"),
         ("PUT", "/nodes/me"),
         ("POST", "/nodes/work"),
@@ -74,9 +75,9 @@ NODE_ROUTES: Final = frozenset(
         ("POST", "/nodes/work/renew"),
     }
 )
-"""What an identity of a node may call (ADR 0037 §4, C3): a closed list, extended by M12.2.
+"""What an identity of a node may call (ADR 0037 §4, C3): a closed list, M12.2 and M12.3 extend it.
 
-Five, and every pair is **literal**: the middleware compares the concrete path of the request, so
+Six, and every pair is **literal**: the middleware compares the concrete path of the request, so
 the id of an assignment travels in the **body** (ADR 0038 §11, the user's decision of 2026-09-11).
 With ``/nodes/work/{assignment_id}/result`` a node would have been refused here — and the Core's
 token would not have been stopped — while two tests of M12.1 stayed green: teaching the middleware

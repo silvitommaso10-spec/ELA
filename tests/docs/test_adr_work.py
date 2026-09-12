@@ -34,6 +34,7 @@ from ela.tools import (
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_nodes import documented_rules
+from tests.docs.test_adr_placement import _rules_up_to
 from tests.executive import test_assignment_recovery as recovery
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
@@ -109,9 +110,14 @@ def test_the_conseguenze_count_the_rules_and_the_capabilities_of_today() -> None
     The rules moved with the two commits that wrote rules 48 to 52 before their code, the ports
     with the commit that wrote the twenty-fifth; the capabilities do not move — in M12.2 four of
     the eight travel and none is added.
+
+    **Rules up to 52 and not ``len(RULES)``** since M12.3: an ADR is immutable, so this one keeps
+    saying the total it saw, and the pin on *today's* total moves to the ADR that changed it
+    (``test_adr_nodes_macos.py``). Written as ``_rules_up_to`` rather than a smaller literal so
+    that a rule inserted below 52 still fails here.
     """
     assert "**cinquantadue**" in conseguenze()
-    assert len(RULES) == 52
+    assert len(_rules_up_to(52)) == 52
     assert "**venticinque**" in conseguenze()
     assert len(tuple(port_protocols())) == 25
     assert "**restano otto**" in conseguenze()
