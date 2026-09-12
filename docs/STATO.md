@@ -89,7 +89,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 11 — La voce | `M11.2` | Implementata | L'ascolto: ELA apre il microfono, e tiene solo le parole |
 | 11 — La voce | `M11.3` | Implementata | La voce di §9: la prima frase che esce da questa macchina |
 | 12 — I nodi sulla rete | `M12.1` | Implementata | L'identità: provare chi si è, e poter smettere di esserlo |
-| 12 — I nodi sulla rete | `M12.2` | Proposta | L'assegnazione e il protocollo del lavoro: la chiamata al tool fatta da lontano, e il tempo che decide per chi tace |
+| 12 — I nodi sulla rete | `M12.2` | Implementata | L'assegnazione e il protocollo del lavoro: la chiamata al tool fatta da lontano, e il tempo che decide per chi tace |
 
 <!-- fine del blocco generato: le milestone -->
 
@@ -103,7 +103,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **38** | `docs/adr/NNNN-*.md` |
-| Milestone | **39, di cui 37 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **39, di cui 38 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **52** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **25** | i `Protocol` di `src/ela/ports.py` |
