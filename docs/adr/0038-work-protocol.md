@@ -411,7 +411,12 @@ Errori aggiunti, nella forma della tabella di ADR 0023 §10:
 | una mossa che la riga non ammette — un rinnovo di un'offerta | `AssignmentNotUsableError` | `404` |
 | un rinnovo al tetto | `AssignmentAtCapError` | `409` |
 | una seconda busta dove una è stata accettata | `DeliveryConflictError` | `409` |
-| un'assegnazione rifiutata prima di essere scritta | `AssignmentRefusedError` | `409` |
+
+`AssignmentRefusedError` **non è in tabella**: `assign` rifiuta dentro il cammino — dopo il Guardian
+e il `consume` —, e nessuna richiesta che un chiamante possa fare lo produce, perché il cammino
+arriva a `assign` solo con una decisione `ALLOWED` appena fatta per un nodo che non è questa
+macchina. Una riga così sarebbe una mappatura che nessun test può attraversare, cioè una porta
+aperta e non una difesa; quei rifiuti si provano dove sono decisi.
 
 I due `404` hanno **la stessa frase**, non solo lo stesso stato: un nodo che distinguesse «ignoto»
 da «di un altro» potrebbe mappare le assegnazioni degli altri, ed è la ragione per cui ADR 0023 §7

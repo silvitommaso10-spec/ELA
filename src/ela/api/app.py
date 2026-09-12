@@ -52,7 +52,6 @@ from ela.devices import (
 )
 from ela.executive import (
     AssignmentAtCapError,
-    AssignmentRefusedError,
     AssignmentVoidError,
     DeliveryConflictError,
     ExecutorError,
@@ -113,7 +112,6 @@ FAILURES: tuple[Failure, ...] = (
     Failure(WorkNotYoursError, 404, "not_assigned", NOT_YOUR_WORK),
     Failure(AssignmentAtCapError, 409, "assignment.at_cap"),
     Failure(DeliveryConflictError, 409, "delivery.conflict"),
-    Failure(AssignmentRefusedError, 409, "conflict"),
     Failure(IdentityConflictError, 412, "identity_conflict"),
     Failure(LocalDeviceNotRevocableError, 409, "not_revocable"),
     Failure(RevisionRequiredError, 428, "revision_required"),
@@ -133,6 +131,13 @@ order is for whoever reads the table.
 says the plan that arrived cannot be a graph at all (422) — the caller has to change *what* they
 sent, not *when*. The base stays in the table because ``IllegalTransitionError`` lives in
 ``ela.tasks.state_machine``, which this package may not import (contract 7) and does not need to.
+
+``AssignmentRefusedError`` is deliberately **absent** (M12.2, ADR 0038 §12). It is raised inside the
+walk — after the Guardian and the ``consume``, by ``Assignments.assign`` — and no request a caller
+can make produces it: the walk reaches ``assign`` only with a fresh ``ALLOWED`` decision for a node
+that is not this machine. A row for it would be a mapping no test could ever walk through, which is
+an open door rather than a defence; those refusals are proved where they are decided, in
+``tests/executive/test_assignments.py``.
 """
 
 

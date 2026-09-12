@@ -284,8 +284,16 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
     return play
 
 
-async def build(settings: Settings) -> Ela:
+async def build(settings: Settings, *, clock: Clock | None = None) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
+
+    ``clock`` defaults to :class:`~ela.composition.system.SystemClock`, and whoever wants another
+    one **names it** — the shape of ``local_device(…, system=None)`` (ADR 0031 §4: a default, not a
+    choice about the machine). The conformance suite (M12.2, ADR 0038 §18) is the caller that needs
+    it: its stories turn on expiries, and an hour of waiting is not a test. A declared parameter
+    rather than a patched module, because a monkeypatch is invisible both to this text and to every
+    architecture rule — and because the same instance must survive a second ``build`` over the same
+    database, which is how "the Core dies halfway" is played.
 
     :raises ConfigurationError: for anything that makes this configuration unusable — a schema
         nobody migrated, a routing table naming a provider that is not registered, an empty one.
@@ -299,7 +307,8 @@ async def build(settings: Settings) -> Ela:
     readable in one place, and a reader who has to jump between helpers to know what ELA is bound
     to has lost exactly what this module exists to give.
     """
-    clock, ids = SystemClock(), UuidGenerator()
+    clock = SystemClock() if clock is None else clock
+    ids = UuidGenerator()
     database = make_engine(settings.persistence.db_url)
     try:
         absent = await missing_tables(database)

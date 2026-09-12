@@ -282,7 +282,6 @@ def test_the_failures_of_the_work_are_the_ones_adr_0038_documents() -> None:
         "AssignmentNotUsableError": 404,
         "AssignmentAtCapError": 409,
         "DeliveryConflictError": 409,
-        "AssignmentRefusedError": 409,
     }
     assert not set(added) & set(documented_errors(adr_text()))
 

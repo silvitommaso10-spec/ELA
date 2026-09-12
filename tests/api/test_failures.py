@@ -13,10 +13,14 @@ that no other exception writes. Where a scenario needs a state a caller cannot a
 prepared through ELA's own ports — the precedent is ``tamper_with_the_trail`` — never by mounting
 a route that exists only here: a route invented for a test would prove that the test works.
 
-The rows that cannot be reached are declared instead of faked — :data:`ALREADY_EXISTS` since M9.4,
-and since M12.2 :data:`AT_CAP` and :data:`REFUSED_ASSIGNMENT`, both about a state a request cannot
-produce without waiting out real seconds. Every declaration says why today and what would open it,
-and :data:`DECLARED` is what keeps the census closed.
+One row cannot be reached and is declared instead of faked (:data:`ALREADY_EXISTS`, since M9.4). It
+says why today and what would open it, and :data:`DECLARED` is what keeps the census closed.
+
+M12.2 briefly had two more, and neither survived review. The cap of a renewal turned out to be
+reachable with **settings a test chooses** rather than an hour of real seconds (below); and
+``AssignmentRefusedError`` left ``FAILURES`` altogether — a refusal raised inside the walk, which no
+request can produce, is a mapping nothing can walk through. A declared row is an open door until a
+test goes through it.
 """
 
 from __future__ import annotations
@@ -39,7 +43,7 @@ from ela.api.errors import (
     TaskAlreadyRunningError,
 )
 from ela.audit.chain import AuditChainError
-from ela.composition import Ela
+from ela.composition import Ela, build
 from ela.devices import (
     LOCAL_DEVICE_ID,
     LocalDeviceNotRevocableError,
@@ -55,7 +59,6 @@ from ela.domain import (
 )
 from ela.executive import (
     AssignmentAtCapError,
-    AssignmentRefusedError,
     AssignmentVoidError,
     DeliveryConflictError,
     ExecutorError,
@@ -81,6 +84,7 @@ from tests.api.support import (
     served_paths,
     tamper_with_the_trail,
 )
+from tests.api.test_nodes import enrolled
 from tests.api.test_nodes_work import ENVELOPE, taken, work_for
 
 
@@ -137,40 +141,6 @@ is idempotency over an unreliable network: whoever calls generates the id of the
 repeating it cannot duplicate the effect, and the second call is answered ``409 already_exists``
 instead of acting again. The day such a route exists, this row becomes observable and this
 deferral expires.
-"""
-
-
-AT_CAP = """
-``AssignmentAtCapError`` (409 ``assignment.at_cap``) is not reachable through a request of this
-suite, and the reason is time (M12.2, ADR 0038 §13).
-
-**Why not today.** The cap is reached when ``min(now + ttl, claimed_at + max)`` can no longer move
-the deadline, which with the defaults — a TTL of two minutes, a cap of an hour — takes an hour of
-real seconds. A suite that waited them would be the slowest in the repository; one that faked the
-clock would not be going through HTTP at all, because the clock ELA serves with is the real one. So
-the behaviour is tested where the cap is decided, with an injected clock:
-``tests/executive/test_assignments.py``.
-
-**What would open it.** A way to serve a request against an ELA whose settings a test chose — a
-second ``live`` fixture over a ``build`` with ``ELA_ASSIGNMENT_MAX_SECONDS`` equal to the TTL, where
-the first renewal is already at the cap. It is a fixture and not a product change, and the day it
-exists this row becomes observable.
-"""
-
-REFUSED_ASSIGNMENT = """
-``AssignmentRefusedError`` (409 ``conflict``) is not reachable through a request of this suite, and
-the reason is where it happens (M12.2, ADR 0038 §6).
-
-**Why not today.** It is raised by ``Assignments.assign`` — inside the walk, after the Guardian and
-the ``consume`` — when the decision the walk just obtained is not ``ALLOWED``, has expired at that
-very instant, or names ``local``. The walk reaches ``assign`` only with a fresh ``ALLOWED`` decision
-for a remote node, so a caller has nothing to send that produces it. It is in ``FAILURES`` for the
-fail-safe direction: if it ever escaped, a node would read ``409`` and not a traceback. The
-refusals themselves are tested where they are decided: ``tests/executive/test_assignments.py``.
-
-**What would open it.** A decision TTL short enough to expire between ``authorize`` and ``assign``
-— a setting a test could choose, like the cap above — or a second producer of assignments that a
-route could reach directly. Neither exists, and the second one is exactly what rule 48 forbids.
 """
 
 
@@ -344,6 +314,42 @@ async def a_renewal_of_work_that_was_only_offered(live: Live) -> Response:
     return await live.client.post(
         "/nodes/work/renew", json={"assignment_id": str(offer.id)}, headers=headers
     )
+
+
+async def a_renewal_of_work_already_at_its_cap(live: Live) -> Response:
+    """The cap of a renewal, reached by **settings this test chose** rather than by waiting an hour.
+
+    ``min(now + ttl, claimed_at + max)`` cannot move the deadline when the cap equals the TTL, so
+    the *first* renewal is already at it. The scenario builds a second ELA over the same database
+    with those settings — the thing M12.2 first declared unreachable and then found it was not. A
+    patched clock was the other road and the wrong one: the point of this file is that a real
+    request gets a real answer.
+    """
+    core = live.ela.settings.core.model_copy(
+        update={"assignment_ttl_seconds": 120, "assignment_max_seconds": 120}
+    )
+    capped = await build(live.ela.settings.model_copy(update={"core": core}))
+    try:
+        app = create_app(capped)
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url=BASE, headers=AUTHORIZED
+        ) as client:
+            tools = [tool.name for tool in capped.tools.tools()]
+            _, node = await enrolled(client, "TRUSTED", available_tools=tools)
+            await client.post(
+                "/nodes/heartbeat", json={"status": "IDLE", "power_source": "AC"}, headers=node
+            )
+            task_id = await queued(client, echo_plan(), privacy="TRUSTED")
+            walked = await client.post(f"/tasks/{task_id}/run")
+            assert walked.json()["outcome"] == "assigned", walked.text
+            order = (await client.post("/nodes/work", headers=node)).json()
+            return await client.post(
+                "/nodes/work/renew",
+                json={"assignment_id": order["assignment_id"]},
+                headers=node,
+            )
+    finally:
+        await capped.aclose()
 
 
 async def a_second_envelope_for_work_already_delivered(live: Live) -> Response:
@@ -525,6 +531,15 @@ RAISED: tuple[Raised, ...] = (
         "already delivered with another envelope",
         a_second_envelope_for_work_already_delivered,
     ),
+    Raised(
+        AssignmentAtCapError,
+        "POST",
+        "/nodes/work/renew",
+        409,
+        "assignment.at_cap",
+        "is at its cap",
+        a_renewal_of_work_already_at_its_cap,
+    ),
 )
 
 
@@ -555,17 +570,12 @@ async def test_every_failure_of_the_table_is_answered_that_way_by_the_applicatio
     assert row.message in body["error"]["message"], body["error"]["message"]
 
 
-DECLARED: dict[type[Exception], str] = {
-    AlreadyExistsError: ALREADY_EXISTS,
-    AssignmentAtCapError: AT_CAP,
-    AssignmentRefusedError: REFUSED_ASSIGNMENT,
-}
+DECLARED: dict[type[Exception], str] = {AlreadyExistsError: ALREADY_EXISTS}
 """The rows no request of this suite can reach, each with its own reason and its own expiry.
 
-One was here before M12.2; the two the work protocol adds are both about **time and place**: a cap
-that a request cannot reach without waiting out real seconds, and a refusal that happens inside the
-walk rather than at the edge of a route. Neither is faked with a mounted route or a patched clock —
-a scenario invented to satisfy a census proves that the census works.
+One, and it has been one since M9.4. M12.2 added two and then took them back: the cap of a renewal
+is observed below, against an ELA whose settings this file chooses, and the refusal of ``assign``
+left ``FAILURES`` instead of being declared — a row nothing can reach is not a defence.
 """
 
 
