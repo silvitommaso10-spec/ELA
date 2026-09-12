@@ -47,6 +47,7 @@ graph TD
     identity[ela.identity]
     infrastructure[ela.infrastructure]
     memory[ela.memory]
+    node[ela.node]
     perception[ela.perception]
     permissions[ela.permissions]
     ports[ela.ports]
@@ -67,6 +68,7 @@ graph TD
     api --> tools
     cli --> api
     cli --> composition
+    cli --> node
     composition --> audit
     composition --> context
     composition --> devices
@@ -96,6 +98,9 @@ graph TD
     infrastructure --> domain
     infrastructure --> ports
     infrastructure --> providers
+    node --> composition
+    node --> domain
+    node --> ports
     perception --> domain
     perception --> ports
     permissions --> domain
@@ -138,6 +143,7 @@ due cose: prima ciò che è vero, poi ciò che era permesso.
 | `ela.api` | `fastapi`, `uvicorn` |
 | `ela.cli` | `httpx`, `typer` |
 | `ela.infrastructure` | `sqlalchemy` |
+| `ela.node` | `httpx` |
 | `ela.providers` | `anthropic`, `httpx` |
 
 <!-- fine del blocco generato: i bordi che nominano una libreria di infrastruttura -->

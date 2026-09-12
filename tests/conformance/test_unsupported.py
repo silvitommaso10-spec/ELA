@@ -19,6 +19,7 @@ import pytest
 
 from tests.conformance.driver import STORIES, NodeKit, needs
 from tests.conformance.fake_node import FAKE
+from tests.conformance.macos_node import MACOS
 from tests.conformance.test_node_contract import KITS
 
 CONTRACT = Path(__file__).with_name("test_node_contract.py")
@@ -27,12 +28,14 @@ CONTRACT = Path(__file__).with_name("test_node_contract.py")
 :data:`~tests.conformance.test_node_contract.KITS` is imported from there for the same reason — two
 lists of drivers would be two places to forget one."""
 
-PINNED: dict[str, frozenset[str]] = {FAKE.name: frozenset()}
+PINNED: dict[str, frozenset[str]] = {FAKE.name: frozenset(), MACOS.name: frozenset()}
 """Driver → the stories it has declared it cannot recite, as they stand today.
 
-Empty for the node of this repository, and that is the claim of dec. P: the protocol is recitable in
-full by an implementation that exists. A real node's entry — "a Shortcut is not two processes" —
-says something about **that platform**, which is the only thing a declaration may ever say.
+Empty for both, and the second empty set is what M12.3 was for: a **real** node, a process with a
+secret on disk and a connection that can drop, recites the protocol whole. macOS can be two
+processes, can die and come back, can keep a file — it has nothing to declare. An entry like "a
+Shortcut is not two processes" says something about **that platform**, which is the only thing a
+declaration may ever say.
 """
 
 

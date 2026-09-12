@@ -174,6 +174,11 @@ def work_adr_text() -> str:
     return ADR_PATH.with_name("0038-work-protocol.md").read_text(encoding="utf-8")
 
 
+def node_macos_adr_text() -> str:
+    """ADR 0039, which adds the one route a node that restarted reads itself with."""
+    return ADR_PATH.with_name("0039-node-macos.md").read_text(encoding="utf-8")
+
+
 def documented_node_routes(text: str | None = None) -> set[tuple[str, str]]:
     """The routes of a node, from the ADR that documents them — ADR 0037 §4 by default.
 
@@ -193,6 +198,7 @@ def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
     documented = (
         documented_node_routes()
         | documented_node_routes(work_adr_text())
+        | documented_node_routes(node_macos_adr_text())
         | (
             documented_routes(adr_text())
             | documented_routes(cli_adr_text())
@@ -221,11 +227,21 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_twenty_eight_of_them() -> None:
-    """Twenty until ADR 0037 §4 added five, and twenty-five until ADR 0038 §11 added the three of
-    the work; ``tests/api/test_security.py`` proves that every one of them is behind the
-    middleware, and which identity reaches which."""
-    assert len(coded_routes()) == 28
+def test_there_are_twenty_nine_of_them() -> None:
+    """Twenty until ADR 0037 §4 added five, twenty-five until ADR 0038 §11 added the three of the
+    work, and twenty-eight until ADR 0039 §2 added the one a node that restarted reads itself
+    with; ``tests/api/test_security.py`` proves that every one of them is behind the middleware,
+    and which identity reaches which."""
+    assert len(coded_routes()) == 29
+
+
+def test_the_one_route_of_the_restart_is_the_one_adr_0039_adds() -> None:
+    """Added, never replacing (M12.3 dec. L): the five of ADR 0037 §4 and the three of ADR 0038 §11
+    keep their rows where they are, and a node's routes go from five to six."""
+    added = documented_node_routes(node_macos_adr_text())
+
+    assert added == {("GET", "/nodes/me")}
+    assert not added & (documented_node_routes() | documented_node_routes(work_adr_text()))
 
 
 def test_the_three_routes_of_the_work_are_the_ones_adr_0038_adds() -> None:

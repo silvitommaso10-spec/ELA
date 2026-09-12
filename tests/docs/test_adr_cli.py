@@ -38,6 +38,7 @@ PERCEPTION_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0028-perception-core.md"
 CONTEXT_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0032-context-core.md"
 VOICE_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0034-voice-online.md"
 NODES_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0037-node-identity.md"
+NODE_MACOS_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0039-node-macos.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMMAND_ROW = re.compile(
@@ -69,8 +70,14 @@ def adr_text() -> str:
             CONTEXT_ADR_PATH,
             VOICE_ADR_PATH,
             NODES_ADR_PATH,
+            NODE_MACOS_ADR_PATH,
         )
     )
+
+
+def node_macos_adr_text() -> str:
+    """ADR 0039 alone, for the table that is only its own: the fifth edge of rule 3."""
+    return NODE_MACOS_ADR_PATH.read_text(encoding="utf-8")
 
 
 def cli_adr_text() -> str:
@@ -83,9 +90,46 @@ def cli_adr_text() -> str:
 # ----------------------------------------------------------------------------------------
 
 
+CALLER = "chiamante"
+LOCAL = "locale"
+RESIDENT = "residente"
+SPECIES = frozenset({CALLER, LOCAL, RESIDENT})
+"""The three kinds of command (ADR 0024 §2, ADR 0039 §4), named in the middle column of the table.
+
+A **caller**'s life *is* one request and it names the route; a **local** opens no client at all; a
+**resident** opens one and then stays, because its life is not one request. Until M12.3 the second
+column had two shapes and the parenthetical's *text* was captured and read by nobody — so the third
+species cost a word and not a regex.
+"""
+
+
 def documented_commands() -> dict[str, tuple[str, str] | None]:
-    """command → the (method, path) it calls, or ``None`` for the two that are local."""
+    """command → the (method, path) it calls, or ``None`` for the ones that name no route."""
     return documented_commands_of(adr_text())
+
+
+def documented_species() -> dict[str, str]:
+    """command → which of the three kinds its row declares it to be.
+
+    A row that names a route is a caller; one with a parenthetical says its kind in the word before
+    the colon. Reading that word is what keeps ``local`` meaning what its reason says — "opens no
+    client" — instead of quietly becoming "has no route", which is not the same claim and stopped
+    being true the day a node arrived.
+    """
+    kinds: dict[str, str] = {}
+    for line in adr_text().splitlines():
+        if (match := COMMAND_ROW.match(line)) is None:
+            continue
+        parenthetical = match.group(4)
+        kinds[match.group(1)] = (
+            CALLER if parenthetical is None else parenthetical.split(":")[0].strip()
+        )
+    assert kinds, "ADR 0024 §3 must contain the table of the commands"
+    return kinds
+
+
+def commands_of_species(kind: str) -> set[str]:
+    return {name for name, declared in documented_species().items() if declared == kind}
 
 
 def documented_commands_of(text: str) -> dict[str, tuple[str, str] | None]:
@@ -134,8 +178,8 @@ def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:
     assert set(documented_commands()) == coded_commands()
 
 
-def test_there_are_twenty_five_of_them() -> None:
-    assert len(coded_commands()) == 25
+def test_there_are_twenty_six_of_them() -> None:
+    assert len(coded_commands()) == 26
 
 
 def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
@@ -155,14 +199,32 @@ def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
         "voice",
         "voice preview",
         "voice audition",
+        "node run",
     }
 
 
 def test_only_two_commands_are_local_and_they_are_the_two_that_cannot_be_calls() -> None:
-    """``serve`` starts the process, ``init`` runs before there is one (ADR 0024 §2)."""
-    local = {name for name, route in documented_commands().items() if route is None}
+    """``serve`` starts the process, ``init`` runs before there is one (ADR 0024 §2).
 
-    assert local == {"init", "serve"}
+    Still two, and that is the point of M12.3 having grown a species instead of widening this. The
+    reason in the line above is a claim about opening a client, and ``ela node run`` opens one —
+    letting it in here would have kept the assertion green and made it stop saying anything.
+    """
+    assert commands_of_species(LOCAL) == {"init", "serve"}
+
+
+def test_one_command_is_resident_and_it_is_the_one_whose_life_is_not_one_request() -> None:
+    """ADR 0039 §4: it opens a client, so it can be refused and can find nobody there — but no
+    answer makes it return, which is what neither of the other two kinds describes."""
+    assert commands_of_species(RESIDENT) == {"node run"}
+
+
+def test_every_command_declares_one_of_the_three_species() -> None:
+    """A parenthetical misspelled — ``*(nodo: …)*`` — would otherwise fall in with the locals in
+    silence, and inherit a promise of two exit codes that is false of it."""
+    declared = set(documented_species().values())
+
+    assert declared <= SPECIES, declared - SPECIES
 
 
 def test_every_other_command_names_a_route_the_application_serves() -> None:
@@ -204,9 +266,20 @@ def test_a_local_command_can_only_work_or_be_misconfigured() -> None:
     """``init`` and ``serve`` open no client, so nothing can refuse them and no port can be
     closed to them: the two codes that belong to a client are not theirs to produce."""
     exits = documented_command_exits()
-    local = [name for name, route in documented_commands().items() if route is None]
 
-    assert all(exits[name] == {OK, CONFIGURATION} for name in local)
+    assert all(exits[name] == {OK, CONFIGURATION} for name in commands_of_species(LOCAL))
+
+
+def test_a_resident_command_can_end_in_any_of_the_four_ways() -> None:
+    """It opens a client, so both codes that belong to one are its to produce: a revoked node is
+    refused (``1``) and a Core that is not there cannot be reached (``3``). A row promising two
+    would be a table that lies, and the table of exits is a contract for whoever writes a script
+    (ADR 0024 §6)."""
+    exits = documented_command_exits()
+    resident = commands_of_species(RESIDENT)
+
+    assert resident
+    assert all(exits[name] == {OK, REFUSED, CONFIGURATION, UNREACHABLE} for name in resident)
 
 
 # ----------------------------------------------------------------------------------------
@@ -286,7 +359,22 @@ def test_the_extended_rule_3_names_the_fourth_edge() -> None:
     assert len(rows) == 1
     assert rows[0].startswith("| 3 |")
     assert "`cli/`" in rows[0]
-    assert set(INFRA_PACKAGES) == {"providers", "infrastructure", "api", "cli"}
+
+
+def test_the_extended_rule_3_names_the_fifth_edge_in_the_adr_that_opened_it() -> None:
+    """M12.3: ``node`` is the fifth, and it is written down where it was added, not back here.
+
+    ADR 0024 is immutable and keeps naming four, which is what it saw. The list itself is pinned
+    against the ADR that last changed it — so widening it in silence fails, and widening it with a
+    reason is one row in one document.
+    """
+    rows = [line for line in node_macos_adr_text().splitlines() if RULE_ROW.match(line)]
+    rule_three = [row for row in rows if row.startswith("| 3 |")]
+
+    assert len(rule_three) == 1
+    assert "`node/`" in rule_three[0]
+    assert "`cli/`" in rule_three[0]
+    assert set(INFRA_PACKAGES) == {"providers", "infrastructure", "api", "cli", "node"}
 
 
 # ----------------------------------------------------------------------------------------

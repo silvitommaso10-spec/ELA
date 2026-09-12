@@ -55,6 +55,7 @@ from ela.tools.verifiers import SPEECH_TEXT_MATCHES, SPEECH_TOOK_REAL_TIME
 from tests.api.support import echo_plan, note_plan
 from tests.conformance.driver import Conformance, NodeDriver, NodeKit, needs
 from tests.conformance.fake_node import FAKE
+from tests.conformance.macos_node import MACOS
 
 E = AuditEventType
 T = TaskEventType
@@ -62,9 +63,14 @@ PAST_THE_TTL = timedelta(seconds=61)
 """One second past ``ELA_ASSIGNMENT_TTL_SECONDS`` of the suite: the work is over, and so is the
 Core's belief that the node is there (the heartbeat TTL is a minute too)."""
 
-KITS: tuple[NodeKit, ...] = (FAKE,)
-"""Every implementation that recites the contract. M12.3–M12.5 append theirs here, and the stories
-below do not change — which is the whole claim of dec. P."""
+KITS: tuple[NodeKit, ...] = (FAKE, MACOS)
+"""Every implementation that recites the contract. M12.4–M12.5 append theirs here, and the stories
+below do not change — which is the whole claim of dec. P.
+
+Two since M12.3, and the second is the one that matters: ``macos-node`` is the code ``ela node run``
+runs, not an implementation written for this file. The first thing it found was a hole — a process
+that comes back has no revision to announce against, and nothing in the protocol gave it one — and
+that is what ``GET /nodes/me`` and the two new lines of story 11 are (M12.3 dec. L)."""
 
 
 @pytest.fixture(params=KITS, ids=lambda kit: kit.name)
@@ -559,6 +565,18 @@ async def test_story_the_core_dies_halfway(world: Conformance, kit: NodeKit) -> 
     assert delivered.body["step"] == "COMPLETED"
     assert (await world.client.get(f"/tasks/{task_id}")).json()["state"] != "FAILED"
     assert (await world.walk(task_id)).body["outcome"] == "completed"
+    # And it can still speak about itself, which is not the same claim (M12.3 dec. L). A restart
+    # keeps what is on disk — the id and the secret — and the revision is on neither, so a process
+    # that came back has to ask for it. Measured by sabotage: a ``restart`` that skips the read
+    # fails here with ``412 identity_conflict``, "is at revision 1, not 0".
+    #
+    # What this does **not** pin, and it is worth knowing which half is which: a node that wrote
+    # the revision down would also pass. Only an announcement moves a revision (verified: the
+    # conditional UPDATE is the one writer), so nothing in one process's story can make a stored
+    # number go stale — that takes a second process, and it has a story of its own, the fifth.
+    # This one pins the half that a real node meets on every single start: having nothing.
+    announced = await node.announce(name="tornato")
+    assert announced.status == 200, announced.body
 
 
 # ----------------------------------------------------------------------------------------

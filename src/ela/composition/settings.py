@@ -17,8 +17,10 @@ Both keep the ``ELA_`` prefix: one namespace, one ``.env``.
 from __future__ import annotations
 
 import ipaddress
+import platform
 import re
 from datetime import timedelta
+from pathlib import Path
 from typing import Annotated, Final
 
 from pydantic import (
@@ -36,6 +38,7 @@ from pydantic_settings.exceptions import SettingsError
 from ela.composition.errors import ConfigurationError
 from ela.context import ContextSettings
 from ela.devices.settings import DeviceSettings
+from ela.domain import PerformanceClass
 from ela.executive import (
     DEFAULT_APPROVAL_TTL,
     DEFAULT_ASSIGNMENT_CAP,
@@ -373,6 +376,69 @@ class CoreSettings(BaseSettings):
         return self
 
 
+DEFAULT_NODE_CORE_URL: Final = "http://127.0.0.1:8351"
+"""Where a node looks for the Core when nobody said otherwise: this machine (M12.3, dec. C).
+
+ADR 0037 §2 gives ELA two addresses — loopback for the command line, the tailnet for the nodes —
+and declares that without a tailnet address "a node does not reach ELA". That is about a
+**remote** node: the middleware classifies by identity and never by address (``api/security.py``
+compares ``(method, path)``, and ``request.client`` does not appear in it), so a node on the same
+machine as the Core reaches it on loopback exactly as the command line does. A node on another
+machine sets this to the tailnet address, and then the constraint of ADR 0037 §2 is about it.
+"""
+
+DEFAULT_NODE_RETRY_SECONDS: Final = 5.0
+"""How long a node waits before asking again when nobody answered at the address.
+
+The CLI does not retry — ``Unreachable`` and exit 3 — and that is right for a command and wrong
+for a node: a command is a question a person asked and is waiting for, a node is a process whose
+whole job is to be there when the Core comes back. To be measured against a real node (dec. K.2).
+"""
+
+DEFAULT_NODE_RETRY_CEILING: Final = 60
+"""How many refused connections in a row before a node stops instead of waiting forever.
+
+A ceiling and not a flag, for the reason ADR 0023 §3 gives about TTLs: "a TTL without a ceiling is
+a door that can be left open forever by writing a big number". A node that never gives up on a
+Core that is never coming back is a process nobody will notice is useless.
+"""
+
+
+class NodeSettings(BaseSettings):
+    """What a node reads from the environment, from ``ELA_NODE_*`` (M12.3).
+
+    A section like every other, and it lives here rather than beside the node's code for the same
+    reason all of them do: ``ela init`` writes ``.env.example`` from one list, and a variable ELA
+    reads from somewhere else is a variable nobody documents. **The secret is not here** — it is in
+    the node's state file, because an environment variable is visible in ``ps`` and lands in the
+    shell's history, which is the reason ADR 0024 §2 gives for refusing ``--token``.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="ELA_", env_file=".env", extra="ignore")
+
+    node_core_url: Annotated[str, Field(min_length=1)] = DEFAULT_NODE_CORE_URL
+    node_state_dir: Path = Path.home() / ".ela"
+    """Where the node keeps its id and its secret: beside the database, never inside the workspace.
+
+    The workspace is what §23 calls synchronised, and a secret in a folder something may one day
+    sync leaves the machine without anybody having decided it (ADR 0029 §1, the same reason
+    ``ELA_CAPTURE_DIR`` has).
+    """
+    node_name: Annotated[str, Field(min_length=1)] = Field(default_factory=platform.node)
+    """What ``ela device list`` shows. The machine's own name by default, because a name a program
+    invented is a name nobody recognises in a list of three."""
+    node_performance: PerformanceClass = PerformanceClass.UNKNOWN
+    """What the node claims of its own power, and it claims nothing by default.
+
+    ``UNKNOWN`` is the only honest answer a node can give about itself without measuring: the fake
+    node says ``HIGH`` because it is built to win on points, which is right for a fake and would be
+    a pretension in a real one. A variable rather than a fixed ``UNKNOWN`` because dec. K.3 has to
+    make this node win *and* lose to measure the weights of §17.
+    """
+    node_retry_seconds: Annotated[float, Field(gt=0)] = DEFAULT_NODE_RETRY_SECONDS
+    node_retry_ceiling: Annotated[int, Field(gt=0)] = DEFAULT_NODE_RETRY_CEILING
+
+
 class Settings(BaseModel):
     """Everything ELA reads from the environment, in one immutable object (ADR 0023 §2).
 
@@ -401,6 +467,9 @@ class Settings(BaseModel):
     """The online voice (M11.3). A section of its own and not part of ``voice``: one is a switch
     and a helper on this machine, the other is a credential, a supplier and a bill."""
     context: ContextSettings
+    node: NodeSettings
+    """What a node on this machine reads (M12.3). Held here so that ``.env.example`` and
+    ``VARIABLES`` document it with everything else — the Core itself reads none of it."""
 
     @classmethod
     def load(cls) -> Settings:
@@ -428,6 +497,57 @@ class Settings(BaseModel):
                 listen=ListenSettings(),
                 elevenlabs=ElevenLabsSettings(),
                 context=ContextSettings(),
+                node=NodeSettings(),
+            )
+        except ValidationError as invalid:
+            raise ConfigurationError(explain(invalid)) from invalid
+        except SettingsError as unreadable:
+            raise ConfigurationError(cannot_read(unreadable)) from unreadable
+
+
+class NodeConfig(BaseModel):
+    """What a **node** reads from the environment: five sections, and not the Core's thirteen.
+
+    A node is not a small ELA. It opens no API, so ``ELA_API_TOKEN`` — which :meth:`Settings.load`
+    refuses to start without, because "ELA does not open an unauthenticated API" — is not its
+    business; it keeps no database, no workspace, no captures, and it places nothing, so none of
+    those sections say anything about it. A node that loaded the Core's ``Settings`` would be a
+    process stopped by a missing token it never uses, on a machine where nothing of the Core is
+    configured, which on a second machine is the normal case and not the exception.
+
+    The precedent is ``cli/client.py``'s, in its own words: *"``ela health`` must not refuse to
+    answer because ``ELA_MODEL_ROUTES`` has a typo in it, since that line is not about the question
+    being asked."* Here the question being asked is "run as a node", and the five sections below
+    are what that needs: its own cycle, and the credentials of the four tools that travel.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    node: NodeSettings
+    anthropic: AnthropicSettings
+    """The key is the **node's**: the order carries the call, never the credentials (M12.1 D1).
+
+    A key travelling inside a work order would be a secret of the Core's on a machine that is not
+    its own, which is §57 read backwards.
+    """
+    routing: RoutingSettings
+    """And it must agree with the Core's, or the verification of ``model.complete`` fails whatever
+    the node answered: the verifier recomputes the route with the **Core's** router and compares
+    the provider the node reports (M12.2 dec. L). On one machine the two are the same ``.env`` and
+    nobody notices; on two machines it is the first thing that breaks."""
+    voice: VoiceSettings
+    elevenlabs: ElevenLabsSettings
+
+    @classmethod
+    def load(cls) -> NodeConfig:
+        """Read the environment (and ``.env``) once; :class:`ConfigurationError` if it is wrong."""
+        try:
+            return cls(
+                node=NodeSettings(),
+                anthropic=AnthropicSettings(),
+                routing=RoutingSettings(),
+                voice=VoiceSettings(),
+                elevenlabs=ElevenLabsSettings(),
             )
         except ValidationError as invalid:
             raise ConfigurationError(explain(invalid)) from invalid

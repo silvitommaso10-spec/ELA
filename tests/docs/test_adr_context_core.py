@@ -142,7 +142,7 @@ def test_the_context_package_joined_the_gate_in_this_milestone() -> None:
     packages = assignment.split("\n\n", 1)[0].replace("\\\n", " ").split()
 
     assert "ela.context" in packages
-    assert len(packages) == 14
+    assert len(packages) == 15
 
 
 def test_the_port_gained_two_members_and_no_port_was_added() -> None:

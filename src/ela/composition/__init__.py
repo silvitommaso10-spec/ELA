@@ -7,6 +7,7 @@ package, because a module that knows about all of them cannot live inside one of
 """
 
 from ela.composition.errors import ConfigurationError
+from ela.composition.node import NodeWorld, build_node
 from ela.composition.root import ELA_ACTOR, Ela, build
 from ela.composition.settings import (
     DEFAULT_API_HOST,
@@ -15,6 +16,8 @@ from ela.composition.settings import (
     MIN_TOKEN_LENGTH,
     ApiSettings,
     CoreSettings,
+    NodeConfig,
+    NodeSettings,
     Settings,
 )
 from ela.composition.system import SystemClock, UuidGenerator
@@ -32,9 +35,13 @@ __all__ = [
     "ConfigurationError",
     "CoreSettings",
     "Ela",
+    "NodeConfig",
+    "NodeSettings",
+    "NodeWorld",
     "Settings",
     "SystemClock",
     "UuidGenerator",
     "build",
+    "build_node",
     "port_holder",
 ]

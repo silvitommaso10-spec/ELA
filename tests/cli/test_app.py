@@ -56,6 +56,7 @@ def test_every_command_of_the_milestone_is_there() -> None:
         "device list",
         "node enroll",
         "node revoke",
+        "node run",
         "provider list",
         "voice",
         "voice preview",

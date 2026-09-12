@@ -61,6 +61,7 @@ from ela.tools.voice_online import VOICE_SPEAK_ONLINE, SpeakOnlineTool
 __all__ = [
     "ToolRegistry",
     "VerifierRegistry",
+    "node_tools",
     "production_tools",
     "production_verifiers",
     "tools_v01",
@@ -219,6 +220,50 @@ def verifiers_v01(*, root: Path | str, router: ModelRouterPort) -> VerifierRegis
     """
     return VerifierRegistry(
         (EchoVerifier(), WriteNoteVerifier(root), ModelCompleteVerifier(router))
+    )
+
+
+def node_tools(
+    *,
+    clock: Clock,
+    ids: IdGenerator,
+    router: ModelRouterPort,
+    providers: ProviderRegistryPort,
+    speech: SpeechPort,
+    voice: str,
+    voice_enabled: bool,
+    speech_online: SpeechPort,
+    voice_id: str | None,
+    model: str,
+) -> ToolRegistry:
+    """What a node runs: the four capabilities that travel (M12.1 D15, M12.2 dec. L, M12.3 dec. F).
+
+    Three families — the echo, the model, the voice — and four classes, because the voice has two
+    implementations and both are a voice. Beside :func:`production_tools` and :func:`tools_v01`
+    rather than derived from either, for the reason ADR 0029 §13 gives and this milestone needs
+    twice over: a list is something a reader can see and a test can pin, and a subset computed at
+    run time would make **a capability added to the Core start travelling by itself** — which is
+    exactly the decision D15 reserves for a person.
+
+    What is missing is the point. ``workspace.write_note``, the screen and the microphone stay on
+    the Core because their verifiers read *this* machine, and the first of the three is the one
+    that matters: its verifier rereads the Core's workspace and its sha256, so a note written on a
+    node would be checked against a folder the node never touched — and could come back **true**,
+    for a note the Core had of its own. A false yes is worse than a failure, which is why the
+    filter refuses that node before the question is asked (M12.2 dec. L).
+
+    No workspace root and no capture store among the arguments, and that is the shape of the
+    claim: a node has nothing to write them to.
+    """
+    return ToolRegistry(
+        (
+            EchoTool(clock, ids),
+            ModelCompleteTool(router, providers, clock, ids),
+            SpeakTool(speech, clock, ids, voice=voice, enabled=voice_enabled),
+            SpeakOnlineTool(
+                speech_online, clock, ids, voice_id=voice_id, model=model, enabled=voice_enabled
+            ),
+        )
     )
 
 

@@ -1428,8 +1428,76 @@ VIOLATIONS: tuple[Case, ...] = (
         "    return ExecutionResult(**fields)\n",
         "ExecutionResult(...)",
     ),
+    Case(
+        # Rule 16's node exemption is by path **and** by receiver (ADR 0039 §3): a second module
+        # of the node running a tool is a second place a tool runs, which is the thing the rule
+        # is about — the exemption belongs to the cycle, not to the package.
+        "tool-executed-by-another-node-module",
+        "tool-execute-callers",
+        "node/worker.py",
+        "async def run(tool, d, a):\n    return await tool.execute(d, a)\n",
+        ".execute(",
+    ),
+    Case(
+        # And by receiver: an attribute called something else in the very module that is exempt
+        # is reported, so the door is one call and not one file (the shape of ``_executor``).
+        "a-lookalike-receiver-inside-the-nodes-runner",
+        "tool-execute-callers",
+        "node/runner.py",
+        "class R:\n    async def run(self, d, a):\n        return await self._tool.execute(d, a)\n",
+        ".execute(",
+    ),
+    Case(
+        # Rule 53 (M12.3, criterion 6): the Core decides the time. A node computing a deadline is
+        # a second opinion about when work is over, and the two disagree exactly when it matters.
+        "a-node-computing-its-own-deadline",
+        "a-node-mints-no-deadline",
+        "node/clock.py",
+        "from datetime import timedelta\n"
+        "def deadline(now):\n    return now + timedelta(seconds=1)\n",
+        "timedelta(",
+    ),
+    Case(
+        # The other half of minting: handing one to something that will store it.
+        "a-node-writing-an-expiry",
+        "a-node-mints-no-deadline",
+        "node/order.py",
+        "def hold(a, at):\n    return a.model_copy(expires_at=at)\n",
+        "expires_at=",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        # Rule 3 widened (M12.3, ADR 0039 §1): a node is a client and a client speaks HTTP. The
+        # widening is **by package and wholesale**, exactly as ``cli`` got it in M8.2 — what keeps
+        # a node away from a database is not this rule but contract 12, which forbids it
+        # ``ela.infrastructure`` and ``ela.providers``. Written down because an exemption whose
+        # real width is wider than its reason is the kind that surprises somebody later.
+        "a-node-speaking-http",
+        "infra-libraries",
+        "node/client.py",
+        "import httpx\n",
+        "",
+    ),
+    Case(
+        # The node's cycle runs the call the Core sent it, on a local called ``tool``: the one
+        # widening of rule 16 this milestone opened (ADR 0039 §3), proved here because the real
+        # tree proves it only as long as ``ela.node.runner`` keeps that exact shape.
+        "the-nodes-runner-runs-the-tool",
+        "tool-execute-callers",
+        "node/runner.py",
+        "async def go(tool, d, a):\n    return await tool.execute(d, a)\n",
+        "",
+    ),
+    Case(
+        # Reading back the deadline the order carries is being told, not deciding: rule 53 is
+        # deliberately blind to a subscript of what the Core sent, and this is why it can be.
+        "a-node-reading-the-deadline-it-was-given",
+        "a-node-mints-no-deadline",
+        "node/reader.py",
+        "from datetime import datetime\ndef until(o):\n    return datetime.fromisoformat(o['x'])\n",
+        "",
+    ),
     Case(
         # The enrollment code is found by its hash, in the conditional UPDATE that spends it
         # (M12.1 dec. D; ADR 0037 §5): rule 31 is about the node's secret (ADR 0037 §16), and a

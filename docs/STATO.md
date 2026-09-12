@@ -90,6 +90,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 11 — La voce | `M11.3` | Implementata | La voce di §9: la prima frase che esce da questa macchina |
 | 12 — I nodi sulla rete | `M12.1` | Implementata | L'identità: provare chi si è, e poter smettere di esserlo |
 | 12 — I nodi sulla rete | `M12.2` | Implementata | L'assegnazione e il protocollo del lavoro: la chiamata al tool fatta da lontano, e il tempo che decide per chi tace |
+| 12 — I nodi sulla rete | `M12.3` | Implementata | Il nodo macOS: questa macchina diventa un nodo, e il contratto si implementa invece di descriversi |
 
 <!-- fine del blocco generato: le milestone -->
 
@@ -102,15 +103,15 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **38** | `docs/adr/NNNN-*.md` |
-| Milestone | **39, di cui 38 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **52** | `RULES` in `tests/architecture/` |
+| ADR scritti | **39** | `docs/adr/NNNN-*.md` |
+| Milestone | **40, di cui 39 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **53** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **25** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **8** | `production_catalogue()` |
-| Rotte dell'API | **28** | i `router` di `ela.api` |
-| Comandi della CLI | **24** | l'albero Typer di `ela.cli` |
-| Vincoli dichiarati negli ADR | **150** | le sezioni «Vincoli dichiarati» |
+| Rotte dell'API | **29** | i `router` di `ela.api` |
+| Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
+| Vincoli dichiarati negli ADR | **160** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
 
@@ -118,12 +119,17 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 ### 4.1 Le fasi
 
-- **Fase 12 — i nodi.** È la fase che comincia adesso: ELA smette di essere un processo su una
-  macchina e diventa il sistema distribuito di §56, con un Core e nodi che si annunciano, si
-  autenticano, ricevono lavoro e riportano. La prima milestone è il **protocollo**, e tutto il
-  resto della fase — il nodo macOS, il Power Node Windows, il companion iPhone — sta su quel
-  contratto. È la fase a cui una dozzina di documenti hanno già rimandato qualcosa: `grep -rn
-  "Fase 12" docs/` è l'elenco di ciò che va onorato.
+- **Fase 12 — i nodi.** È la fase in corso, e tre quarti sono fatti: ELA ha smesso di essere un
+  processo su una macchina. M12.1 ha dato a un nodo un'identità provabile, M12.2 il protocollo del
+  lavoro con la sua suite di conformità, M12.3 il **primo nodo vero** — questo Mac, che è anche un
+  nodo: un processo separato che esegue le chiamate del Core e le riporta, e che recita le tredici
+  storie del contratto senza dichiararne nessuna irrecitabile. Restano il Power Node Windows
+  (M12.4) e il companion iPhone (M12.5), che stanno sullo stesso contratto — e la prova che regge
+  il peso di una seconda implementazione l'ha già data M12.3, trovandogli un buco: un processo che
+  riparte non aveva modo di sapere la propria revisione. È la fase a cui una dozzina di documenti
+  hanno rimandato qualcosa: `grep -rn "Fase 12" docs/` è l'elenco di ciò che va onorato, e
+  `launchd` con il portachiavi è ciò che resta murato finché ELA non avrà un eseguibile firmato
+  suo (ADR 0029 §16, ADR 0039 §6).
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task

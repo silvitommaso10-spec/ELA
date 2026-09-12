@@ -108,7 +108,7 @@ def test_the_registry_holds_one_tool_and_one_verifier_per_capability(tmp_path: P
     }
 
 
-LATER_COMMANDS = ("node enroll", "node revoke", "voice audition", "voice preview")
+LATER_COMMANDS = ("node enroll", "node revoke", "node run", "voice audition", "voice preview")
 """What the phases after v0.1 added, kept beside the twenty rather than folded into them
 (ADR 0029 §13). ``ela voice`` itself is the group's own callback and not a registered command,
 which is what makes the bare ``ela voice`` answer instead of printing help — ``tests/cli`` holds
