@@ -237,6 +237,8 @@ riceve il servizio e non l'adapter, e nessun modulo fuori dal servizio nomina il
 | `next_for` | la rotta della presa | niente: l'offerta viva più vecchia per quel nodo |
 | `claim` | `Executor.begin`, sotto il lock del task | heartbeat, poi `OFFERED → CLAIMED` condizionale |
 | `deliver` | `Executor.deliver` | `CLAIMED → DELIVERED` condizionale, con l'impronta |
+| `held` | `Executor.deliver`, il cancello | la riga per id, la sola lettura che il cancello chiede |
+| `describe` | il runner, per la ragione di `ASSIGNED` | la frase che nomina nodo, lavoro e scadenza |
 | `renew` | la rotta del rinnovo | heartbeat, poi la scadenza spostata, condizionale |
 | `lapse` | il runner, su un'assegnazione scaduta | `EXPIRED` condizionale; poi il rilascio, oppure niente e il runner chiama `Executor.finish` |
 | `cut_short` | la rotta della revoca | le scadenze vive del nodo portate a `now` |

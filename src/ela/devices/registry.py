@@ -98,10 +98,16 @@ UNAVAILABLE: Final = DeviceAvailability.UNREACHABLE
 class Rejection(StrEnum):
     """Why a request that named a node that exists was refused (ADR 0037 §13): what is written.
 
-    The four reasons ``DEVICE_REJECTED`` carries, each valued as its name in lower case — how ADR
-    0037 §13 writes them, and what ``StrEnum``'s ``auto`` gives. A request naming nothing — no
-    credential, an unknown id, an unknown or unspent-and-expired code — has no reason here: it is
-    anonymous, and the 401 already says all there is to say.
+    The four reasons **of identity** ``DEVICE_REJECTED`` carries, each valued as its name in lower
+    case — how ADR 0037 §13 writes them, and what ``StrEnum``'s ``auto`` gives. A request naming
+    nothing — no credential, an unknown id, an unknown or unspent-and-expired code — has no reason
+    here: it is anonymous, and the 401 already says all there is to say.
+
+    Since M12.2 the same event type has a **second writer** with a vocabulary of its own: the way of
+    the work refuses a delivery or a renewal for reasons that are not about identity — late, the
+    task closed, not this node's work, a second envelope — and those live beside their writer, in
+    :class:`~ela.executive.assignments.WorkRejection` (ADR 0038 §12). One type, two writers, and
+    this enum stays closed at the four it was born with.
     """
 
     BAD_SECRET = auto()

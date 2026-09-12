@@ -64,6 +64,42 @@ async def test_a_task_stays_on_this_machine_unless_it_says_otherwise(client: Asy
     assert shown.json()["max_privacy"] == "TRUSTED"
 
 
+async def test_a_run_that_handed_a_step_out_says_so_and_why(client: AsyncClient, ela: Ela) -> None:
+    """Criterion 26 at the DTO: ``RunOut`` carries ``assigned`` **with a reason**.
+
+    The reason is the assignment's, not the runner's: the node, the work, and the deadline it is due
+    by. Before M12.2 ``reason`` was ``null`` for everything but ``waiting_device``, and a caller
+    that read nothing here could not tell "somebody else is doing it" from "nothing happened".
+    """
+    code = (await client.post("/nodes/enrollments", json={"privacy": "TRUSTED"})).json()["code"]
+    born = await client.post(
+        "/nodes/enroll",
+        json={
+            "name": "pc",
+            "os": "WINDOWS",
+            "available_tools": [tool.name for tool in ela.tools.tools()],
+            "performance": "HIGH",
+        },
+        headers={"Authorization": f"Bearer {code}"},
+    )
+    node = born.json()
+    await client.post(
+        "/nodes/heartbeat",
+        json={"status": "IDLE", "power_source": "AC"},
+        headers={"Authorization": f"Bearer {node['device_id']}.{node['secret']}"},
+    )
+    task_id = await queued(client, echo_plan(), privacy="TRUSTED")
+
+    run = await client.post(f"/tasks/{task_id}/run")
+
+    assert run.json()["outcome"] == "assigned"
+    assert run.json()["task"]["state"] == "EXECUTING"
+    assert run.json()["steps"] == []  # this call executed nothing
+    reason = run.json()["reason"]
+    assert reason is not None
+    assert node["device_id"] in reason and "due by" in reason
+
+
 async def test_a_privacy_level_nobody_defined_is_refused(client: AsyncClient) -> None:
     """Not a string the route shrugs at: the vocabulary is ``PrivacyLevel`` and nothing else."""
     refused = await client.post("/tasks", json={"text": "x", "max_privacy": "WHEREVER"})

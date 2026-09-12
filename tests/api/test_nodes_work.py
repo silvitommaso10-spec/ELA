@@ -6,12 +6,12 @@ out of the audit. The id of the assignment travels in the **body** on purpose (d
 ``NODE_ROUTES`` is a set of literal pairs, so with the id in the path a node would have been
 refused by the middleware while the Core's token reached the handler.
 
-**What this file does not do yet**: reach the work through ``POST /tasks/{id}/run``. That route
-walks the plan at the strictest privacy, so a ``TRUSTED`` node is refused ``PRIVACY`` until the
-commit that brings the sensitivity of a task (criterion 32, dec. O) — here the walk is the
-runner's, with the privacy a declared task will carry, and the whole turn through HTTP is what
-``tests/conformance`` does. The ``409`` of the cap stays where the cap is decided
-(``tests/executive``): making it observable here would mean waiting real time.
+The work is reached the way a person reaches it: a task **declared** ``TRUSTED`` at creation and
+``POST /tasks/{id}/run``. Before the sensitivity of a task existed this could only be driven by
+calling the runner with an argument nobody could send — which was the defect, not the default
+(criterion 32, dec. O). The ``409`` of the renewal's cap is observed in
+``tests/api/test_failures.py``, against an ELA whose settings that file chooses; whether a whole
+turn works end to end is ``tests/conformance``.
 """
 
 from __future__ import annotations
@@ -294,6 +294,32 @@ async def test_a_delivery_for_a_task_the_user_stopped_is_void(
     assert void.status_code == 410
     assert void.json()["error"]["code"] == "assignment.void"
     assert (await rejections(ela))[-1]["reason"] == WorkRejection.TASK_CLOSED.value
+
+
+async def test_a_delivery_from_a_revoked_node_is_refused_before_the_work_path_sees_it(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """The seventh case of criterion 16: a revoked node delivering gets the ``401`` of nothing.
+
+    And **no second** ``DEVICE_REJECTED`` from the way of the work: the middleware refuses before
+    the handler, so the registry's ``revoked`` is the only refusal written — one fact, one row. The
+    assignment was already cut by the revocation (D17), which is why nothing of the step changes.
+    """
+    task_id, order, headers, device_id = await taken(client, ela)
+    await client.post(f"/nodes/{device_id}/revoke")
+    before = {one.payload["reason"] for one in await written(ela, AuditEventType.DEVICE_REJECTED)}
+
+    refused = await client.post(
+        "/nodes/work/result",
+        json={"assignment_id": order["assignment_id"], **ENVELOPE},
+        headers=headers,
+    )
+
+    assert refused.status_code == 401
+    reasons = [one.payload["reason"] for one in await written(ela, AuditEventType.DEVICE_REJECTED)]
+    assert reasons == ["revoked"]  # written by M12.1, and not once more by the work path
+    assert before <= {"revoked"}
+    assert (await client.get(f"/tasks/{task_id}")).json()["steps"][0]["state"] == "RUNNING"
 
 
 async def test_a_delivery_while_the_task_is_being_walked_is_not_now(

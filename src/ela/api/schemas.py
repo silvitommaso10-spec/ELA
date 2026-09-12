@@ -294,11 +294,15 @@ class RunOut(BaseModel):
     outcome: str
     steps: tuple[UUID, ...]
     reason: str | None = None
-    """Why the run is waiting. ``null`` unless it is: an outcome that explains itself needs none.
+    """Why the run stopped where it did, when the outcome alone does not say.
 
-    ``waiting_device`` used to arrive as a bare word while the audit already held the sentence —
-    which nodes were considered, why each was refused, and for a missing tool its name. That
-    sentence travels with the answer now (M6.1b dec. F).
+    Two outcomes carry one. ``waiting_device`` used to arrive as a bare word while the audit already
+    held the sentence — which nodes were considered, why each was refused, and for a missing tool
+    its name — and that sentence travels with the answer now (M6.1b dec. F). ``assigned`` carries
+    the assignment's own: the node, the work and the deadline it is due by (M12.2, ADR 0038 §10),
+    which is what a person deciding whether to wait has to read.
+
+    ``null`` for every other outcome: those explain themselves.
     """
 
 

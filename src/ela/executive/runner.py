@@ -201,7 +201,9 @@ class TaskRunner:
         returns on. A released step is PENDING and is placed again at once: on a remote node the
         new assignment returns the call, on ``local`` the iteration closes it. So at most two
         iterations per step of the plan — asserted for real by
-        ``test_a_run_executes_each_step_at_most_once`` and by the release test of M12.2.
+        ``test_a_run_executes_each_step_at_most_once`` for the half that runs, and by
+        ``test_a_plan_of_many_steps_releases_each_step_at_most_once_per_call`` for the half that
+        releases.
         """
         task = await self._repository.get(task_id)
         max_privacy = task.max_privacy

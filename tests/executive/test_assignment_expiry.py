@@ -164,25 +164,45 @@ async def test_a_claimed_assignment_that_expired_closes_interrupted_even_if_the_
     assert (await w.task(task.id)).state is TaskState.FAILED
 
 
-async def test_a_released_step_is_released_once(w: World) -> None:
-    """Criterion 27: the release is idempotent **by key**, read from the trail and not from the
-    state of the last assignment. A step released, placed here and left RUNNING by a crash has an
-    ``EXPIRED`` assignment behind it — and must not be released a second time, which would undo the
-    placement that followed the first release."""
-    task, step, assignment, remote = await handed_to_a_node(w)
-    w.clock.advance(assignment.expires_at - w.now)
-    await only_this_machine_is_alive(w)
-    restored(w)
-    await w.runner.run(task.id)
-    released = [e for e in await w.repository.events(task.id) if e.event_type is T.STEP_RELEASED]
+async def test_a_plan_of_many_steps_releases_each_step_at_most_once_per_call(w: World) -> None:
+    """The termination of the loop, rewritten and not loosened (ADR 0038 §10).
 
-    again = await w.runner.run(task.id)
+    «Every iteration that does not return closes a step **or releases one**, and a release happens
+    at most once per step per call.» A plan of three steps, each offered to a node that never
+    answers: every call is counted, and no call releases the same step twice — which is what bounds
+    the loop at two iterations per step instead of leaving it to a counter.
+    """
+    w.tool(ECHO.id).execute = _never  # type: ignore[method-assign]
+    remote = await w.remote()
+    task, steps = await w.queued(ECHO.id, ECHO.id, ECHO.id, max_privacy=PrivacyLevel.TRUSTED)
+    seen = 0
 
-    assert again.outcome is RunOutcome.COMPLETED
-    assert [e for e in await w.repository.events(task.id) if e.event_type is T.STEP_RELEASED] == (
-        released
-    )
-    assert (await w.assignments.standing(task.id, step.id)).standing is Standing.NONE
+    for _ in range(6):  # an upper bound, not an expectation: the assertion is the per-call count
+        await w.devices.heartbeat(remote.id)  # the node is there, and still never answers
+        before = await _releases_by_step(w, task.id)
+
+        run = await w.runner.run(task.id)
+
+        after = await _releases_by_step(w, task.id)
+        for step_id, count in after.items():
+            assert count - before.get(step_id, 0) <= 1, (step_id, count)
+        seen += sum(after.values()) - sum(before.values())
+        assert run.outcome is RunOutcome.ASSIGNED  # handed out again, never run here
+        assert w.tool(ECHO.id).calls == ()
+        stand = await w.assignments.standing(task.id, steps[0].id)
+        assert stand.assignment is not None
+        w.clock.advance(stand.assignment.expires_at - w.now)
+
+    assert seen >= 1  # a step did go round the release, or this test proves nothing
+
+
+async def _releases_by_step(w: World, task_id: Any) -> dict[str, int]:
+    """How many times each step has been released so far, by step id."""
+    counted: dict[str, int] = {}
+    for event in await w.repository.events(task_id):
+        if event.event_type is T.STEP_RELEASED:
+            counted[str(event.step_id)] = counted.get(str(event.step_id), 0) + 1
+    return counted
 
 
 # ----------------------------------------------------------------------------------------
@@ -190,7 +210,7 @@ async def test_a_released_step_is_released_once(w: World) -> None:
 # ----------------------------------------------------------------------------------------
 
 
-async def test_a_revocation_expires_the_work_of_that_node_at_once(w: World) -> None:
+async def test_a_revocation_expires_the_node_s_assignments_at_once(w: World) -> None:
     """Criterion 18. The Core does not push (D4): what the revocation does to work already taken is
     bring its expiry to **now**, so the next ``run`` applies dec. F a second later instead of
     waiting out the TTL. The offers the node can no longer take go with it.

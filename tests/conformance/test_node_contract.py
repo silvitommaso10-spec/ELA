@@ -42,7 +42,15 @@ from uuid import UUID
 
 import pytest
 
-from ela.domain import ActorKind, AuditEvent, AuditEventType, StepId, TaskEventType, TaskId
+from ela.domain import (
+    ActorKind,
+    AuditEvent,
+    AuditEventType,
+    ExecutionStatus,
+    StepId,
+    TaskEventType,
+    TaskId,
+)
 from ela.tools.verifiers import SPEECH_TEXT_MATCHES, SPEECH_TOOK_REAL_TIME
 from tests.api.support import echo_plan, note_plan
 from tests.conformance.driver import Conformance, NodeDriver, NodeKit, needs
@@ -187,6 +195,69 @@ async def test_story_enrolled_and_reports(world: Conformance, kit: NodeKit) -> N
     ] == [node.device_id]
     assert E.EXECUTION_VERIFIED in await types(world, task_id)
     assert ActorKind.DEVICE not in {one.actor.kind for one in await audit(world, task_id)}
+
+
+async def test_every_decision_of_the_story_is_written_by_the_core(
+    world: Conformance, kit: NodeKit
+) -> None:
+    """Criterion 7, named event by named event: **what decides is written by the Core.**
+
+    The plan is ``voice.speak``, so all five writes of the criterion exist — a tool that cannot be
+    repeated is the only way a STARTED record is one of them. The record must be the Core's too: it
+    is in the Core's store, stamped with the Core's instant, for a node that never touched it.
+
+    "The Core" is **its own components and never the node**: the executor and the engine sign as
+    ``ELA``, the Guardian signs its own decisions as ``SYSTEM/permission-guardian`` (ADR 0011), and
+    the way of the work signs as ``SYSTEM/assignments``. So what is asserted of each named event is
+    that it carries one of those and not the node's identity — the weaker form, "no event has a
+    DEVICE actor", would pass even if one of the five stopped being written at all.
+    """
+    needs(kit, "enrolled_and_reports")
+    task_id, node = await handed(world, kit, speak_plan())
+    asked = await node.ask()
+    claimed_at = world.clock.now()
+
+    await node.deliver(await node.run(asked.body))
+    await world.walk(task_id)
+
+    written = {one.event_type: one for one in await audit(world, task_id)}
+    for kind in (E.PERMISSION_DECIDED, E.TOOL_EXECUTED, E.EXECUTION_VERIFIED, E.STEP_COMPLETED):
+        assert kind in written, kind
+        actor = written[kind].actor
+        assert actor.kind in {ActorKind.ELA, ActorKind.SYSTEM}, kind
+        assert actor.id != node.device_id, kind  # never the node, whatever it delivered
+    records = [one for one in await stored(world, task_id) if one.status is ExecutionStatus.STARTED]  # type: ignore[attr-defined]
+    assert len(records) == 1  # the STARTED record of a tool that cannot be repeated (D14)
+    assert records[0].created_at == claimed_at  # the Core's clock, at the claim
+    assert records[0].device_id is not None and str(records[0].device_id) == node.device_id
+
+
+async def test_the_same_plan_leaves_the_same_trail_here_and_on_the_node(
+    world: Conformance, kit: NodeKit
+) -> None:
+    """Criterion 5, measured where the node is a real driver: the two trails are **equal**.
+
+    The same plan twice — once undeclared, so it runs on this machine, once declared ``TRUSTED``, so
+    it goes out to the node — and the sequence of audit event types is the same. The defect this
+    guards against is the one ADR 0031 was written about: two paths that should say the same thing
+    and drift in silence. That they are equal is a property of the design (the second half has one
+    implementation) and not a coincidence: the claim writes no audit event, and ``STEP_RELEASED``
+    appears only when work expires, which here it never does.
+
+    ``tests/executive/test_local_remote_parity.py`` asserts the same property against an in-process
+    node; this one asserts it against the driver a real node will implement.
+    """
+    needs(kit, "enrolled_and_reports")
+    node = await kit.node(world)
+    here = await world.task(echo_plan())
+    assert (await world.walk(here)).body["outcome"] == "completed"
+
+    there, _ = await handed(world, kit, echo_plan(), node=node)
+    asked = await node.ask()
+    await node.deliver(await node.run(asked.body))
+    assert (await world.walk(there)).body["outcome"] == "completed"
+
+    assert await types(world, there) == await types(world, here)
 
 
 # ----------------------------------------------------------------------------------------
@@ -420,12 +491,12 @@ async def test_story_revoked_halfway(world: Conformance, kit: NodeKit) -> None:
     walked = await world.walk(task_id)
 
     assert refused.status == 401
-    revoked = [
-        one
-        for one in await world.ela.audit.read()
-        if one.event_type is E.DEVICE_REJECTED and one.payload.get("reason") == "revoked"
+    rejections = [
+        one.payload for one in await world.ela.audit.read() if one.event_type is E.DEVICE_REJECTED
     ]
-    assert revoked  # written by M12.1's registry, and not written twice by the way of the work
+    # Written by M12.1's registry — and **not** a second time by the way of the work: the middleware
+    # refuses before the handler, so the work path never sees this delivery at all.
+    assert [one["reason"] for one in rejections] == ["revoked"]
     assert world.clock.now().isoformat() < str(order["expires_at"])  # the TTL had not passed
     assert walked.body["outcome"] == "completed"  # released, placed again, and run here
     assert len(await released(world, task_id)) == 1

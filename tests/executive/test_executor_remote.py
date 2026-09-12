@@ -40,6 +40,7 @@ from ela.executive import (
     WorkRejection,
     check_envelope,
 )
+from ela.infrastructure.persistence.mappers import assignment_values
 from ela.ports import (
     AssignmentExpiredError,
     AssignmentHeldElsewhereError,
@@ -234,6 +235,43 @@ async def test_the_outcome_of_a_tool_that_cannot_be_repeated_names_its_started_r
         if one.status is not ExecutionStatus.STARTED
     ]
     assert [one.metadata["started_id"] for one in settled] == [str(record.id)]
+
+
+SECRET = "SECRET-BODY, che è contenuto dell'utente e non un dato del protocollo"
+"""The shape of ``SECRET_ARGS`` (``tests/executive/test_executor_recovery.py``): a string that must
+appear in the plan and nowhere else."""
+
+
+async def test_the_assignment_never_carries_the_arguments_of_the_step() -> None:
+    """Criterion 24. The assignment carries the **call**, not the content of the call.
+
+    ``(decision, step.arguments)`` *is* the call (M12.1, D1): the plan is immutable, so the
+    arguments are read by reference when the node takes the work, and copying them would add a place
+    where the user's content lives (§57) without adding a fact. Asserted twice: the string is in no
+    field of the entity, and in no **column** the mapper writes — the JSON one of the decision too.
+
+    **The limit, declared:** this proves the assignments row and nothing else. What the node is told
+    is the order, and the order does carry the arguments — that is its purpose, and its own defence
+    is rule 51 plus the identity the composer compares.
+    """
+    w = world()
+    remote = await w.remote()
+    task, step = await w.running(ECHO.id, arguments={"message": SECRET})
+    placement = await w.placement(
+        task.id, step.id, device_id=remote.id, max_privacy=PrivacyLevel.TRUSTED
+    )
+
+    execution = await w.executor.execute(task.id, step.id, placement=placement)
+
+    assignment = execution.assignment
+    assert assignment is not None
+    assert SECRET in str(step.arguments)  # the precondition: the plan has it
+    assert SECRET not in str(assignment.model_dump(mode="json"))
+    assert SECRET not in str(assignment_values(assignment))  # no column, the JSON one included
+    # and the pair the executor would hand a tool is the pair the node is given
+    claimed = await w.executor.begin(assignment.id, remote.id)
+    assert claimed.arguments == step.arguments
+    assert assignment.decision == execution.decision
 
 
 # ----------------------------------------------------------------------------------------

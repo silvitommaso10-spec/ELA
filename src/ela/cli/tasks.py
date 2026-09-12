@@ -175,12 +175,15 @@ def plan(
 def run(task_id: TaskId, as_json: Json = False) -> None:
     """Walk the plan as far as it goes, and say where it stopped.
 
-    The answer comes back when the run stops: the task closed, your consent is needed, or no node
-    was eligible. A long step keeps the command waiting, because the run is the request.
+    The answer comes back when the run stops: the task closed, your consent is needed, no node was
+    eligible, or a step went out to a node and has not come back. A long step keeps the command
+    waiting, because the run is the request.
 
-    ``reason`` is filled in when the run is waiting for a node, and says which nodes were
-    considered, why each was refused and — for a tool that is not installed — which tool. Empty
-    otherwise: an outcome that explains itself does not need a sentence under it.
+    ``reason`` is filled in for the two outcomes that need it. Waiting for a node, it says which
+    nodes were considered, why each was refused and — for a tool that is not installed — which tool.
+    ``assigned``, it says which node is doing the work, under which assignment, and by when it is
+    due (M12.2): what you need in order to decide whether to wait. Empty otherwise: an outcome that
+    explains itself does not need a sentence under it.
     """
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/run")
