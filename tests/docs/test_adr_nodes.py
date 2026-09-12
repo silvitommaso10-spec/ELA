@@ -49,10 +49,8 @@ from ela.testing.fakes import (
     FakeIdGenerator,
 )
 from tests.architecture.rules import RULES
-from tests.contracts.protocols import (
-    port_protocols,
-)
-from tests.docs.test_adr_listening import writers_of
+from tests.docs.test_adr_listening import ports_before, writers_of
+from tests.docs.test_adr_placement import _rules_up_to
 from tests.docs.test_adr_ports import (
     EXTENDING,
     INTRODUCING,
@@ -127,13 +125,19 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_capabilities_of_today
     The rules moved first, with the commit that wrote rules 46 and 47 before their code (ADR 0030
     §15); the ports with the commit that wrote the twenty-fourth. The capabilities did not move —
     in M12.1 no capability travels — and ADR 0037 says so, so their pin is here with the others.
+
+    The rules have moved on: M12.2 writes rules 48 to 50 before ADR 0038 exists (ADR 0030 §15,
+    the defence before the room), so ADR 0037's «quarantasette» is read the way ADR 0036 read its
+    «quarantacinque» — as the rules numbered up to 47 — and the pin on today's total passes to the
+    test of ADR 0038 when it exists. The ports moved with M12.2's twenty-fifth: «ventiquattro» is
+    read as the ports before ADR 0038's `Port introdotti:`, and today's pin is ADR 0038's test.
     """
     conseguenze = adr_text().split("## Conseguenze", 1)[1]
 
     assert "**quarantasette**" in conseguenze
-    assert len(RULES) == 47
+    assert len(_rules_up_to(47)) == 47
     assert "**ventiquattro**" in conseguenze
-    assert len(tuple(port_protocols())) == 24
+    assert len(ports_before(ADR_DIR / "0038-work-protocol.md")) == 24
     assert "restano otto" in conseguenze
     assert len(production_catalogue().specs()) == 8
 

@@ -75,10 +75,17 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
     mapping on the one entity that stands for a secret is where the code itself would one day be
     kept "for debugging". What it holds is the hash, the level the user imposed, and the node it
     gave birth to.
+
+    ``Assignment`` joined in M12.2 without a bag, and for the reason its arguments are not copied
+    into it (ADR 0038): it is the first entity that crosses to a machine that is not this one, and
+    a free-form mapping on it is where the user's content would one day be put "for the node's
+    convenience". The call is the decision it carries and the step's arguments, read by reference.
+    The decision's own ``metadata`` is the Guardian's, and is checked where the decision is.
     """
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
     assert without == [
         "Actor",
+        "Assignment",
         "ContextApproval",
         "ContextDeadline",
         "ContextDeadlines",

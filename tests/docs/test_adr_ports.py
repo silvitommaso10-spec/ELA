@@ -43,6 +43,7 @@ EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0025-phase-8-debts.md", EXTENDING),
     (ADR_DIR / "0032-context-core.md", EXTENDING),
     (ADR_DIR / "0037-node-identity.md", EXTENDING),
+    (ADR_DIR / "0038-work-protocol.md", EXTENDING),
 )
 REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),
@@ -59,6 +60,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0033-voice-out.md", INTRODUCING),
     (ADR_DIR / "0036-listening.md", INTRODUCING),
     (ADR_DIR / "0037-node-identity.md", INTRODUCING),
+    (ADR_DIR / "0038-work-protocol.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
@@ -79,6 +81,7 @@ INTRODUCED_PORTS = frozenset(
         "SpeechPort",
         "ListeningPort",
         "EnrollmentStore",
+        "AssignmentStore",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")
@@ -296,6 +299,13 @@ def test_the_context_adr_adds_the_two_deadline_members_and_no_port() -> None:
     extension = documented_ports(_text((ADR_DIR / "0032-context-core.md", EXTENDING)))
     assert extension == {"TaskRepository": ("async", frozenset({"due", "due_count"}))}
     assert "Port introdotti:" not in (ADR_DIR / "0032-context-core.md").read_text("utf-8")
+
+
+def test_the_work_adr_adds_the_declaration_of_the_verifier_and_nothing_else() -> None:
+    """ADR 0038 §14: ``reads_the_machine`` on a port that exists, the one extension of M12.2 —
+    the port it introduces (``AssignmentStore``) is read with the introductions."""
+    extension = documented_ports(_text((ADR_DIR / "0038-work-protocol.md", EXTENDING)))
+    assert extension == {"VerifierPort": ("async", frozenset({"reads_the_machine"}))}
 
 
 def test_the_executor_adr_introduces_two_ports_the_base_does_not_have() -> None:

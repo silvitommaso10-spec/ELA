@@ -65,8 +65,24 @@ UNAUTHORIZED = "unauthorized"
 """The error code of every refusal here, whatever the reason was."""
 SEPARATOR: Final = "."
 """Between a node's id and its secret: it is in neither a ``token_urlsafe`` nor a UUID."""
-NODE_ROUTES: Final = frozenset({("POST", "/nodes/heartbeat"), ("PUT", "/nodes/me")})
-"""What an identity of a node may call (ADR 0037 §4, C3): a closed list, which M12.2 extends."""
+NODE_ROUTES: Final = frozenset(
+    {
+        ("POST", "/nodes/heartbeat"),
+        ("PUT", "/nodes/me"),
+        ("POST", "/nodes/work"),
+        ("POST", "/nodes/work/result"),
+        ("POST", "/nodes/work/renew"),
+    }
+)
+"""What an identity of a node may call (ADR 0037 §4, C3): a closed list, extended by M12.2.
+
+Five, and every pair is **literal**: the middleware compares the concrete path of the request, so
+the id of an assignment travels in the **body** (ADR 0038 §11, the user's decision of 2026-09-11).
+With ``/nodes/work/{assignment_id}/result`` a node would have been refused here — and the Core's
+token would not have been stopped — while two tests of M12.1 stayed green: teaching the middleware
+templates would have been "a defence that looks active". So ADR 0037 §4, «no id in a node's
+routes», stays literally true, and the middleware is untouched.
+"""
 CODE_ROUTES: Final = frozenset({("POST", "/nodes/enroll")})
 """The one route an enrollment code opens."""
 

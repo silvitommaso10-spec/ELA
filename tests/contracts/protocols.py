@@ -38,6 +38,7 @@ REQUIRED_PORTS = frozenset(
         "ListeningPort",
         "TextRecognitionPort",
         "EnrollmentStore",
+        "AssignmentStore",
     }
 )
 """The eleven ports of M1.3, the two of M5.1 (ADR 0013: the audited Guardian, the tools), the
@@ -48,7 +49,8 @@ the results), ``ModelRouterPort`` from M7.3 (ADR 0022 §5: who chooses the model
 ``TextRecognitionPort`` from M10.3 (ADR 0030 §11: where ELA reads what it photographed) and
 ``SpeechPort`` from M11.1 (ADR 0033: where ELA says something out loud — the first whose
 effect is outside the screen), ``ListeningPort`` from M11.2 (ADR 0036 §5: where ELA hears)
-and ``EnrollmentStore`` from M12.1 (ADR 0037 §8: the one-shot codes that enroll a node), by
+and ``EnrollmentStore`` from M12.1 (ADR 0037 §8: the one-shot codes that enroll a node) and
+``AssignmentStore`` from M12.2 (ADR 0038: the work handed to a node that is not this process), by
 name."""
 
 

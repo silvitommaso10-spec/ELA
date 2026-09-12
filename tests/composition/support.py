@@ -26,6 +26,7 @@ WORKSPACE = "ELA_WORKSPACE_DIR"
 API_TOKEN = "ELA_API_TOKEN"
 PERCEPTION = "ELA_PERCEPTION_ENABLED"
 CAPTURES = "ELA_CAPTURE_DIR"
+POLL = "ELA_NODE_POLL_SECONDS"
 
 
 def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> None:
@@ -46,6 +47,10 @@ def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> No
     # environment has already been emptied of ``ELA_`` by ``_only_the_declared_environment``,
     # so anything present here was put there by the test on purpose.
     monkeypatch.setenv(PERCEPTION, os.environ.get(PERCEPTION, "false"))
+    # A second, not the twenty-five of production: ``POST /nodes/work`` holds a request that found
+    # nothing for this long, and a suite that waited out the real window would pay it per test
+    # (M12.2, ADR 0038 §11). What the window *is* has its own test, in ``tests/composition``.
+    monkeypatch.setenv(POLL, os.environ.get(POLL, "1"))
     for name, value in extra.items():
         monkeypatch.setenv(name, value)
 

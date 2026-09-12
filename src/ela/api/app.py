@@ -50,10 +50,19 @@ from ela.composition import Ela
 from ela.devices import (
     LocalDeviceNotRevocableError,
 )
-from ela.executive import ExecutorError, RunnerError
+from ela.executive import (
+    AssignmentAtCapError,
+    AssignmentVoidError,
+    DeliveryConflictError,
+    ExecutorError,
+    RunnerError,
+    WorkNotYoursError,
+)
 from ela.ports import (
     AlreadyExistsError,
     ApprovalNotAnswerableError,
+    AssignmentExpiredError,
+    AssignmentNotUsableError,
     IdentityConflictError,
     NotFoundError,
 )
@@ -63,6 +72,14 @@ from ela.tasks.errors import GraphError, TaskError
 __all__ = ["FAILURES", "Failure", "create_app", "lifespan"]
 
 
+NOT_YOUR_WORK = "that assignment is not work this node holds"
+"""The one sentence for every way work is not a node's (ADR 0038 §12).
+
+Whatever the reason — never minted, another node's, no longer taken — the answer is this, so that
+nothing about the work of other nodes can be read off the difference.
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class Failure:
     """One exception, the status it becomes and the code the caller branches on."""
@@ -70,6 +87,13 @@ class Failure:
     exception: type[Exception]
     status: int
     code: str
+    message: str | None = None
+    """What to say instead of the exception's own words, when the caller must learn nothing from it.
+
+    Only the refusals of the way of the work use it (M12.2, ADR 0038 §12): unknown work, another
+    node's and work no longer taken share a status **and a sentence**, because a node that could
+    tell them apart could map the assignments of the others.
+    """
 
 
 FAILURES: tuple[Failure, ...] = (
@@ -82,6 +106,12 @@ FAILURES: tuple[Failure, ...] = (
     Failure(ExecutorError, 409, "conflict"),
     Failure(RunnerError, 409, "conflict"),
     Failure(TaskAlreadyRunningError, 409, "already_running"),
+    Failure(AssignmentExpiredError, 410, "assignment.expired"),
+    Failure(AssignmentVoidError, 410, "assignment.void"),
+    Failure(AssignmentNotUsableError, 404, "not_assigned", NOT_YOUR_WORK),
+    Failure(WorkNotYoursError, 404, "not_assigned", NOT_YOUR_WORK),
+    Failure(AssignmentAtCapError, 409, "assignment.at_cap"),
+    Failure(DeliveryConflictError, 409, "delivery.conflict"),
     Failure(IdentityConflictError, 412, "identity_conflict"),
     Failure(LocalDeviceNotRevocableError, 409, "not_revocable"),
     Failure(RevisionRequiredError, 428, "revision_required"),
@@ -101,6 +131,13 @@ order is for whoever reads the table.
 says the plan that arrived cannot be a graph at all (422) — the caller has to change *what* they
 sent, not *when*. The base stays in the table because ``IllegalTransitionError`` lives in
 ``ela.tasks.state_machine``, which this package may not import (contract 7) and does not need to.
+
+``AssignmentRefusedError`` is deliberately **absent** (M12.2, ADR 0038 §12). It is raised inside the
+walk — after the Guardian and the ``consume``, by ``Assignments.assign`` — and no request a caller
+can make produces it: the walk reaches ``assign`` only with a fresh ``ALLOWED`` decision for a node
+that is not this machine. A row for it would be a mapping no test could ever walk through, which is
+an open door rather than a defence; those refusals are proved where they are decided, in
+``tests/executive/test_assignments.py``.
 """
 
 
@@ -120,9 +157,8 @@ def _message(failed: Exception) -> str:
 
 def _handler(failure: Failure) -> Callable[[Request, Exception], Awaitable[Response]]:
     async def handle(request: Request, failed: Exception) -> Response:
-        return JSONResponse(
-            status_code=failure.status, content=problem(failure.code, _message(failed))
-        )
+        said = failure.message if failure.message is not None else _message(failed)
+        return JSONResponse(status_code=failure.status, content=problem(failure.code, said))
 
     return handle
 
@@ -190,6 +226,10 @@ def create_app(ela: Ela) -> FastAPI:
     app.state.running = set()
     app.state.recovery = RecoverySummary((), (), ())
     app.state.refused = Counter()
+    # Raised when the process is asked to stop, so that a node holding a long-poll is answered at
+    # the instant of the signal instead of at the end of its window (ADR 0038 §11). Who raises it is
+    # ``api/server.py``: measured, the lifespan arrives after the requests in flight are awaited.
+    app.state.stopping = asyncio.Event()
     # What ``ela serve`` bound, filled in by ``api/server.py``; an in-process transport binds none.
     app.state.addresses = ()
     app.middleware("http")(identity_middleware(ela))

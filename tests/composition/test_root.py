@@ -114,7 +114,13 @@ async def test_the_durations_of_the_settings_reach_the_engine_and_the_executor(
 ) -> None:
     """The proof that they are *used* is in the API tests, where an approval expires when the
     setting says; here it is that they are read at all."""
-    ela = await built(monkeypatch, tmp_path, ELA_TASK_ORPHAN_AFTER_SECONDS="60")
+    # The TTL of an assignment below the orphan threshold, as ADR 0038 §9 requires since M12.2.
+    ela = await built(
+        monkeypatch,
+        tmp_path,
+        ELA_TASK_ORPHAN_AFTER_SECONDS="60",
+        ELA_ASSIGNMENT_TTL_SECONDS="30",
+    )
     try:
         assert ela.settings.core.orphan_after.total_seconds() == 60
         assert await ela.engine.recover() == ((), (), ())  # an engine that works
@@ -154,7 +160,10 @@ async def test_the_decision_ttl_of_the_settings_reaches_the_guardian(
 ) -> None:
     """ADR 0025 §6, checked on a decision and not on a field: an ``ALLOWED`` expires when the
     variable says it does."""
-    ela = await built(monkeypatch, tmp_path, ELA_DECISION_TTL_SECONDS="60")
+    # An offer never outlives its decision, so its TTL comes down with it (ADR 0038 §5).
+    ela = await built(
+        monkeypatch, tmp_path, ELA_DECISION_TTL_SECONDS="60", ELA_ASSIGNMENT_TTL_SECONDS="60"
+    )
     try:
         spec = ela.capabilities.get(CORE_ECHO)
         decision = ela.guardian.decide(spec, {"message": "ciao"})

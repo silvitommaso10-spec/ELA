@@ -37,6 +37,8 @@ from ela.testing.fakes import (
     FakeIdGenerator,
     FakeTool,
     FakeToolRegistry,
+    FakeVerifier,
+    FakeVerifierRegistry,
 )
 from tests.devices.nodes import device_id, needs, node, step
 from tests.domain.examples import MUCH_LATER, OTHER_STEP_ID, TASK_ID
@@ -143,7 +145,8 @@ def orchestrator(
 ) -> DeviceOrchestrator:
     tools = FakeToolRegistry([FakeTool(WRITE_NOTE, clock, FakeIdGenerator(), name=NOTES)])
     registry = DeviceRegistry(port, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL)
-    return DeviceOrchestrator(registry, tools, audit, FakeIdGenerator(), clock)
+    verifiers = FakeVerifierRegistry([FakeVerifier(WRITE_NOTE)])
+    return DeviceOrchestrator(registry, tools, audit, FakeIdGenerator(), clock, verifiers=verifiers)
 
 
 async def register(port: FakeDeviceRegistry, nodes: Iterable[Device], clock: FakeClock) -> None:

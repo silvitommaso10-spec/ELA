@@ -393,6 +393,7 @@ REFUSED_BY = {
         needs(risk=UNGUARDED_RISK),
     ),
     Refusal.REVOKED: (node("gone", revoked_at=LATER), needs()),
+    Refusal.UNVERIFIABLE: (node("far"), needs(verified_here=["workspace.write_note"])),
 }
 """One node and one requirement per member of :class:`Refusal`: the smallest thing that fires it.
 

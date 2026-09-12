@@ -22,6 +22,9 @@ from ela.domain import (
     Approval,
     ApprovalId,
     ApprovalStatus,
+    Assignment,
+    AssignmentId,
+    AssignmentState,
     AuditEvent,
     AuditEventId,
     AuditEventType,
@@ -44,6 +47,7 @@ from ela.domain import (
     NetworkKind,
     OperatingSystem,
     PerformanceClass,
+    PermissionDecision,
     PlanId,
     PowerSource,
     PrivacyLevel,
@@ -60,6 +64,7 @@ from ela.domain import (
 )
 from ela.infrastructure.persistence.orm import (
     ApprovalRow,
+    AssignmentRow,
     AuditEventRow,
     AuthorizationRow,
     DeviceRow,
@@ -73,6 +78,8 @@ from ela.infrastructure.persistence.orm import (
 __all__ = [
     "approval_to_row",
     "approval_values",
+    "assignment_to_row",
+    "assignment_values",
     "audit_event_to_row",
     "audit_event_values",
     "authorization_to_row",
@@ -87,6 +94,7 @@ __all__ = [
     "result_to_row",
     "result_values",
     "row_to_approval",
+    "row_to_assignment",
     "row_to_audit_event",
     "row_to_authorization",
     "row_to_device",
@@ -132,6 +140,7 @@ def task_values(task: Task) -> dict[str, Any]:
         "plan_id": task.plan_id,
         "parent_id": task.parent_id,
         "deadline": task.deadline,
+        "max_privacy": task.max_privacy.value,
         "metadata_": _plain(task.metadata),
     }
 
@@ -150,6 +159,7 @@ def row_to_task(row: TaskRow) -> Task:
         plan_id=None if row.plan_id is None else PlanId(row.plan_id),
         parent_id=None if row.parent_id is None else TaskId(row.parent_id),
         deadline=row.deadline,
+        max_privacy=PrivacyLevel(row.max_privacy),
         metadata=row.metadata_,
     )
 
@@ -448,6 +458,54 @@ def row_to_enrollment(row: EnrollmentRow) -> Enrollment:
         privacy=PrivacyLevel(row.privacy),
         consumed_at=row.consumed_at,
         device_id=None if row.device_id is None else DeviceId(row.device_id),
+    )
+
+
+# --------------------------------------------------------------------------------------
+# Assignment
+# --------------------------------------------------------------------------------------
+
+
+def assignment_values(assignment: Assignment) -> dict[str, Any]:
+    """Column values of work handed to a node: the decision as one JSON document, and **no
+    arguments** — they are the step's, read by reference when the node takes it (ADR 0038)."""
+    return {
+        "id": assignment.id,
+        "created_at": assignment.created_at,
+        "task_id": assignment.task_id,
+        "step_id": assignment.step_id,
+        "device_id": assignment.device_id,
+        "decision": assignment.decision.model_dump(mode="json"),
+        "authorization_id": assignment.authorization_id,
+        "state": assignment.state.value,
+        "expires_at": assignment.expires_at,
+        "claimed_at": assignment.claimed_at,
+        "delivered_at": assignment.delivered_at,
+        "delivery_digest": assignment.delivery_digest,
+    }
+
+
+def assignment_to_row(assignment: Assignment) -> AssignmentRow:
+    return AssignmentRow(**assignment_values(assignment))
+
+
+def row_to_assignment(row: AssignmentRow) -> Assignment:
+    """Rebuilt and validated: a row that broke an invariant of the entity is refused on read."""
+    return Assignment(
+        id=AssignmentId(row.id),
+        created_at=row.created_at,
+        task_id=TaskId(row.task_id),
+        step_id=StepId(row.step_id),
+        device_id=DeviceId(row.device_id),
+        decision=PermissionDecision.model_validate(row.decision),
+        authorization_id=(
+            None if row.authorization_id is None else AuthorizationId(row.authorization_id)
+        ),
+        state=AssignmentState(row.state),
+        expires_at=row.expires_at,
+        claimed_at=row.claimed_at,
+        delivered_at=row.delivered_at,
+        delivery_digest=row.delivery_digest,
     )
 
 

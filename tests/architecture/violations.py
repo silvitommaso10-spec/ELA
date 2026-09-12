@@ -1351,6 +1351,83 @@ VIOLATIONS: tuple[Case, ...] = (
         "def responder(request):\n    return request.headers.get('Authorization')\n",
         "authorization",
     ),
+    # --- assignment-port-readers (rule 48, M12.2) ---
+    Case(
+        # The route that takes work, reading the row as written: an OFFERED row an hour past its
+        # expiry would still be handed out, and a claim written here has no heartbeat before it.
+        "the-work-route-reads-the-port",
+        "assignment-port-readers",
+        "api/nodes.py",
+        "from ela.ports import AssignmentStore\n",
+        "ela.ports.AssignmentStore",
+    ),
+    # --- assignments-built-only-by-the-assigner (rule 49, M12.2) ---
+    Case(
+        # A route that hands work to whoever asked: no placement, no check on the decision.
+        "an-assignment-forged-by-a-route",
+        "assignments-built-only-by-the-assigner",
+        "api/nodes.py",
+        "from ela.domain import Assignment\n"
+        "def forge(**fields):\n"
+        "    return Assignment(**fields)\n",
+        "Assignment(...)",
+    ),
+    Case(
+        # The same forgery through the door pydantic leaves open beside the call.
+        "an-assignment-validated-into-being",
+        "assignments-built-only-by-the-assigner",
+        "executive/runner.py",
+        "from ela.domain import Assignment\n"
+        "def forge(row):\n"
+        "    return Assignment.model_validate(row)\n",
+        "Assignment.model_validate(...)",
+    ),
+    # --- release-step-has-one-caller (rule 50, M12.2) ---
+    Case(
+        # The runner cannot see the store: it would release a step whose tool may have acted.
+        "the-runner-releases-a-step",
+        "release-step-has-one-caller",
+        "executive/runner.py",
+        "async def go(engine, task_id, step_id, key):\n"
+        "    await engine.release_step(task_id, step_id, key=key)\n",
+        ".release_step(",
+    ),
+    # --- a-work-order-goes-only-to-its-node (rule 51, M12.2) ---
+    Case(
+        # A second composer: an order built where nobody compares the node that asked with the
+        # node the assignment names.
+        "a-second-module-composes-an-order",
+        "a-work-order-goes-only-to-its-node",
+        "api/tasks.py",
+        "from ela.api.schemas import WorkOrderOut\n"
+        "def order(**fields):\n"
+        "    return WorkOrderOut(**fields)\n",
+        "WorkOrderOut(...)",
+    ),
+    Case(
+        # The composer with a way out other than the answer: the user's arguments could be sent
+        # to whoever it pleased.
+        "the-composer-reaches-the-network",
+        "a-work-order-goes-only-to-its-node",
+        "api/nodes.py",
+        "import httpx\n"
+        "from ela.api.schemas import WorkOrderOut\n"
+        "def order(**fields):\n"
+        "    return WorkOrderOut(**fields)\n",
+        "httpx",
+    ),
+    # --- results-are-minted-by-the-core (rule 52, M12.2) ---
+    Case(
+        # A route that turns the envelope into the entity: the node's id and the node's clock in
+        # the store, and the node's clock in the chain.
+        "a-route-mints-a-result",
+        "results-are-minted-by-the-core",
+        "api/nodes.py",
+        "from ela.domain import ExecutionResult\n"
+        "def mint(**fields):\n"
+        "    return ExecutionResult(**fields)\n",
+        "ExecutionResult(...)",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
     Case(
@@ -1387,6 +1464,44 @@ ALLOWED: tuple[Case, ...] = (
         "identity-resolved-in-one-place",
         "api/security.py",
         "def guard(request):\n    return request.headers.get('authorization')\n",
+        "",
+    ),
+    Case(
+        # Declaring the operation is not calling it: the engine owns the move, the service asks.
+        "the-engine-defines-the-release",
+        "release-step-has-one-caller",
+        "tasks/engine.py",
+        "class Engine:\n    async def release_step(self, task_id, step_id, *, key):\n"
+        "        return None\n",
+        "",
+    ),
+    Case(
+        # The one composer the rule admits, answering only its caller: the door rule 51 opens.
+        "the-composer-builds-the-order",
+        "a-work-order-goes-only-to-its-node",
+        "api/nodes.py",
+        "from ela.api.schemas import WorkOrderOut\n"
+        "def order(**fields):\n"
+        "    return WorkOrderOut(**fields)\n",
+        "",
+    ),
+    Case(
+        # The executor mints results, and rule 52 is about ``ela.api`` only.
+        "the-executor-mints-the-result",
+        "results-are-minted-by-the-core",
+        "executive/executor.py",
+        "from ela.domain import ExecutionResult\n"
+        "def mint(**fields):\n"
+        "    return ExecutionResult(**fields)\n",
+        "",
+    ),
+    Case(
+        # Naming the class is not building it: an annotation carries no assignment anywhere.
+        "an-assignment-only-named",
+        "assignments-built-only-by-the-assigner",
+        "executive/runner.py",
+        "from ela.domain import Assignment\ndef out(held: Assignment) -> Assignment:\n"
+        "    return held\n",
         "",
     ),
     Case(
@@ -1875,6 +1990,15 @@ ALLOWED: tuple[Case, ...] = (
         "verifier-read-only",
         "tools/extra.py",
         "import os\ndef w(p):\n    os.unlink(p)\n",
+        "",
+    ),
+    Case(
+        # The other direction, since M12.2: the envelope a node delivers carries what its tool
+        # produced *in*, and the entity is still minted by the executor alone (rule 52).
+        "the-envelope-that-carries-it-in",
+        "tool-output-readers",
+        "api/schemas.py",
+        "from pydantic import BaseModel\nclass WorkResultIn(BaseModel):\n    output: dict\n",
         "",
     ),
     Case(

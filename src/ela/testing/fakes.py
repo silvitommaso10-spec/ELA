@@ -20,13 +20,16 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
-from typing import Final, NamedTuple, cast
+from typing import Any, Final, NamedTuple, cast
 from uuid import UUID
 
 from ela.domain import (
     Approval,
     ApprovalId,
     ApprovalStatus,
+    Assignment,
+    AssignmentId,
+    AssignmentState,
     AuditEvent,
     Authorization,
     AuthorizationId,
@@ -75,6 +78,11 @@ from ela.ports import (
     AlreadyExistsError,
     ApprovalAlreadyAnsweredError,
     ApprovalExpiredError,
+    AssignmentExpiredError,
+    AssignmentHeldElsewhereError,
+    AssignmentNodeBusyError,
+    AssignmentStateError,
+    AssignmentStillLiveError,
     AuthorizationExhaustedError,
     AuthorizationExpiredError,
     Clock,
@@ -123,6 +131,7 @@ __all__ = [
     "ToolCall",
     "VerifierCall",
     "FakeEnrollmentStore",
+    "FakeAssignmentStore",
 ]
 
 DEFAULT_START: Final = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -410,6 +419,151 @@ class FakeEnrollmentStore:
         spent = enrollment.model_copy(update={"consumed_at": now, "device_id": device_id})
         self._codes[code_hash] = spent
         return spent
+
+
+class FakeAssignmentStore:
+    """Work handed to remote nodes, by id, in insertion order (port ``AssignmentStore``).
+
+    Kept as **rows** — the field values of each assignment — and every read rebuilds the entity,
+    validated, the way the adapter's mapper does. A move writes fields of the row and never copies
+    the entity: ``model_copy`` does not run the validators, which is why architecture rules 5 and
+    15 watch it, and a move the entity refuses must fail here as it fails on a real read.
+
+    Every move checks what the adapter's conditional ``UPDATE`` checks, in the port's order, and
+    writes only when everything holds: the same refusals for the same reasons, so a test that
+    passes on the fake is not passing on something the adapter could not do. The two constraints
+    the table holds — one id, one assignment per step that is not ``EXPIRED`` — are checked by
+    scanning, like the ``STARTED`` index of :class:`FakeExecutionResultStore`.
+    """
+
+    def __init__(self) -> None:
+        self._rows: dict[AssignmentId, dict[str, Any]] = {}
+
+    async def add(self, assignment: Assignment) -> None:
+        if assignment.id in self._rows:
+            raise AlreadyExistsError("assignment", assignment.id)
+        if any(
+            row["task_id"] == assignment.task_id
+            and row["step_id"] == assignment.step_id
+            and row["state"] is not AssignmentState.EXPIRED
+            for row in self._rows.values()
+        ):
+            raise AlreadyExistsError("open assignment for step", assignment.step_id)
+        self._rows[assignment.id] = assignment.model_dump()
+
+    async def get(self, assignment_id: AssignmentId) -> Assignment:
+        return Assignment.model_validate(self._row(assignment_id))
+
+    async def for_step(self, task_id: TaskId, step_id: StepId) -> tuple[Assignment, ...]:
+        return tuple(
+            Assignment.model_validate(row)
+            for row in self._rows.values()
+            if row["task_id"] == task_id and row["step_id"] == step_id
+        )
+
+    async def offered_to(self, device_id: DeviceId) -> tuple[Assignment, ...]:
+        return tuple(
+            Assignment.model_validate(row)
+            for row in self._rows.values()
+            if row["device_id"] == device_id and row["state"] is AssignmentState.OFFERED
+        )
+
+    async def claim(
+        self,
+        assignment_id: AssignmentId,
+        *,
+        device_id: DeviceId,
+        now: datetime,
+        expires_at: datetime,
+    ) -> Assignment:
+        row = self._movable(assignment_id, device_id, AssignmentState.OFFERED, now)
+        if any(
+            held["device_id"] == device_id
+            and held["state"] is AssignmentState.CLAIMED
+            and held["expires_at"] > now
+            for held in self._rows.values()
+        ):
+            raise AssignmentNodeBusyError(assignment_id, device_id)
+        return self._write(
+            assignment_id,
+            {**row, "state": AssignmentState.CLAIMED, "claimed_at": now, "expires_at": expires_at},
+        )
+
+    async def deliver(
+        self, assignment_id: AssignmentId, *, device_id: DeviceId, now: datetime, digest: str
+    ) -> Assignment:
+        row = self._movable(assignment_id, device_id, AssignmentState.CLAIMED, now)
+        return self._write(
+            assignment_id,
+            {
+                **row,
+                "state": AssignmentState.DELIVERED,
+                "delivered_at": now,
+                "delivery_digest": digest,
+            },
+        )
+
+    async def renew(
+        self,
+        assignment_id: AssignmentId,
+        *,
+        device_id: DeviceId,
+        now: datetime,
+        expires_at: datetime,
+    ) -> Assignment:
+        row = self._movable(assignment_id, device_id, AssignmentState.CLAIMED, now)
+        return self._write(assignment_id, {**row, "expires_at": expires_at})
+
+    async def expire(self, assignment_id: AssignmentId, *, now: datetime) -> Assignment:
+        row = self._row(assignment_id)
+        if row["state"] is AssignmentState.EXPIRED:
+            return Assignment.model_validate(row)
+        if row["state"] is AssignmentState.DELIVERED:
+            raise AssignmentStateError(assignment_id, row["state"])
+        if row["expires_at"] > now:
+            raise AssignmentStillLiveError(assignment_id, row["expires_at"])
+        return self._write(assignment_id, {**row, "state": AssignmentState.EXPIRED})
+
+    async def cut_short(self, device_id: DeviceId, *, now: datetime) -> int:
+        live = [
+            assignment_id
+            for assignment_id, row in self._rows.items()
+            if row["device_id"] == device_id
+            and row["state"] in {AssignmentState.OFFERED, AssignmentState.CLAIMED}
+            and row["expires_at"] > now
+        ]
+        for assignment_id in live:
+            self._write(assignment_id, {**self._rows[assignment_id], "expires_at": now})
+        return len(live)
+
+    def _row(self, assignment_id: AssignmentId) -> dict[str, Any]:
+        try:
+            return self._rows[assignment_id]
+        except KeyError:
+            raise NotFoundError("assignment", assignment_id) from None
+
+    def _movable(
+        self,
+        assignment_id: AssignmentId,
+        device_id: DeviceId,
+        state: AssignmentState,
+        now: datetime,
+    ) -> dict[str, Any]:
+        """What a move's ``UPDATE`` asks of the row, in the port's order."""
+        row = self._row(assignment_id)
+        if row["device_id"] != device_id:
+            raise AssignmentHeldElsewhereError(assignment_id, row["device_id"])
+        if row["state"] is not state:
+            raise AssignmentStateError(assignment_id, row["state"])
+        if row["expires_at"] <= now:
+            raise AssignmentExpiredError(assignment_id, row["expires_at"])
+        return row
+
+    def _write(self, assignment_id: AssignmentId, row: dict[str, Any]) -> Assignment:
+        """The row, validated as an entity before it is kept: a move the entity refuses is not."""
+        moved = Assignment.model_validate(row)
+        self._rows[assignment_id] = row
+        return moved
 
 
 class FakeAuthorizationStore:
@@ -772,10 +926,13 @@ class FakeVerifier:
         name: str = "fake-verifier",
         conditions: Iterable[str] = (FAKE_CONDITION,),
         failures: Mapping[str, ErrorMetadata] | None = None,
+        reads_the_machine: bool = False,
     ) -> None:
         self._capability_id = capability_id
         self._name = name
         self._conditions = frozenset(conditions)
+        self.reads_the_machine = reads_the_machine
+        """Declared like every verifier's (ADR 0038 §14); a fake reads nothing, unless told."""
         self._failures: Mapping[str, ErrorMetadata] = MappingProxyType(
             {} if failures is None else dict(failures)
         )

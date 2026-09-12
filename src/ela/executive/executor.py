@@ -43,6 +43,22 @@ missing — the audit, the verification, the closing of the step — without ask
 spending a grant or running the tool again. A step FAILED by a verification whose task is still
 EXECUTING is failed now (ADR 0015 §7).
 
+Since M12.2 a step may run on a node that is not this process (ADR 0038 §2). The pipeline is the
+same up to the ``consume``; there the path **divides by id** — ``local`` runs here as it always
+did, and for any other node ``execute`` writes an assignment and returns, with the work out and
+the step still RUNNING. The rest arrives in two later calls, each inside a request of the node:
+:meth:`Executor.begin` when it takes the work (the claim, the STARTED record of a tool that cannot
+be repeated, the sensor event) and :meth:`Executor.deliver` when it brings back an
+:class:`Envelope` (the gate, the result the Core mints from it, and the second half).
+:meth:`Executor.finish` is the second half alone, for a step whose work expired leaving something
+behind or whose delivery was written while the process died.
+
+**The second half has one implementation** (:meth:`Executor._settled`): the local path reaches it
+after the tool, the delivery after rebuilding the result, and neither has a branch of its own.
+Two paths that should say the same thing and drift in silence is the failure ADR 0031 was written
+about; here the defence is that there is one path, plus a parity test that runs the same plan here
+and on a node and compares the two trails.
+
 The instant between the tool's effect and the insert of its result — crash window 7a — was
 declared unrepairable while every tool was idempotent, because the repair was to run the tool
 again. Since M7.2 a tool may say it cannot be (``ToolPort.idempotent``), and for such a tool the
@@ -55,18 +71,25 @@ read. The audit trail of a run carries what the call consumed, ``AuditEvent.usag
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Sequence
 from datetime import datetime, timedelta
+from enum import StrEnum
+from types import MappingProxyType
 from typing import Final, NamedTuple
 from uuid import UUID, uuid5
 
-from ela.devices import PlacementDecision, ensure_placed
+from ela.devices import LOCAL_DEVICE_ID, PlacementDecision, ensure_placed
 from ela.domain import (
     Actor,
     ActorKind,
     Approval,
     ApprovalId,
     ApprovalStatus,
+    Assignment,
+    AssignmentId,
+    AssignmentState,
     AuditEvent,
     AuditEventId,
     AuditEventType,
@@ -82,6 +105,8 @@ from ela.domain import (
     JsonValue,
     PermissionDecision,
     PermissionOutcome,
+    PrivacyLevel,
+    ProviderUsage,
     StepId,
     StepState,
     Task,
@@ -89,7 +114,13 @@ from ela.domain import (
     TaskState,
     TaskStep,
 )
-from ela.executive.errors import ExecutorError
+from ela.executive.assignments import Assignments, WorkRejection
+from ela.executive.errors import (
+    AssignmentVoidError,
+    DeliveryConflictError,
+    ExecutorError,
+    WorkNotYoursError,
+)
 from ela.permissions import (
     DEFAULT_AUTHORIZATION_TTL,
     Rule,
@@ -100,6 +131,7 @@ from ela.permissions import (
 from ela.ports import (
     AlreadyExistsError,
     ApprovalStore,
+    AssignmentExpiredError,
     AuditLog,
     AuthorizationNotUsableError,
     AuthorizationStore,
@@ -124,19 +156,26 @@ __all__ = [
     "AUTHORIZATION_NAMESPACE",
     "CONSUMING_RULES",
     "DEFAULT_APPROVAL_TTL",
+    "DELIVERY_NAMESPACE",
     "EXECUTION_INTERRUPTED",
     "GRANT_VANISHED",
     "MAX_APPROVAL_TTL",
     "RECOVERED",
+    "REPORTABLE",
     "STARTED_ID",
     "TOOL_EXCEPTION",
     "TOOL_REFUSED",
     "VERIFICATION_EXCEPTION",
     "VERIFICATION_FAILED",
+    "Claimed",
+    "Delivered",
+    "Delivery",
+    "Envelope",
     "Execution",
     "Executor",
     "Verification",
     "approved_targets",
+    "check_envelope",
     "select_authorization",
 ]
 
@@ -152,6 +191,16 @@ APPROVAL_NAMESPACE: Final = UUID("7c3e1a58-2f6b-4d90-a1c4-9e8b5d2f6a71")
 
 Arbitrary and fixed forever: one ``REQUIRES_APPROVAL`` decision gives one request, and a second
 request for the same step is born only from a second decision of the Guardian (ADR 0015 §6).
+"""
+
+DELIVERY_NAMESPACE: Final = UUID("5f1c7e34-9a02-4b6d-8e17-3c5a2d4f6b98")
+"""The UUID namespace of a delivered outcome: ``uuid5(DELIVERY_NAMESPACE, str(assignment.id))``.
+
+Arbitrary and fixed forever, the form of :data:`AUTHORIZATION_NAMESPACE` (M12.2, dec. B). One
+assignment gives one outcome however many times the node delivers it, so a network that retries
+writes the same row instead of a second one — which is what makes a redelivery idempotent without
+a second key, and what repairs crash window ``A8`` by itself. An id the node chose could collide,
+or be chosen to collide.
 """
 
 RECOVERED: Final = "recovered"
@@ -201,6 +250,108 @@ could not answer has not verified, and a doubt is a failure (§33)."""
 
 _CONSUMING_RULE_VALUES: Final[frozenset[str]] = frozenset(rule.value for rule in CONSUMING_RULES)
 
+REPORTABLE: Final[frozenset[ExecutionStatus]] = frozenset(
+    {ExecutionStatus.SUCCEEDED, ExecutionStatus.FAILED}
+)
+"""The two statuses a node may report: the only ones ``Tool.execute`` produces (ADR 0038 §4).
+
+``STARTED`` is the Core's own — it writes it at the claim — and the others belong to nobody's
+tool, so a node that reported one would be reporting about a run that did not happen here.
+"""
+
+_NOTHING: Final[JsonMapping] = MappingProxyType({})
+
+
+class Delivery(StrEnum):
+    """The three forms of what a node brings back (ADR 0038 §4).
+
+    Three because ``_run_tool`` has three outcomes, and a protocol with two would confuse them:
+    a tool that answered, a tool that refused the decision before acting, and a tool that fell
+    over. What the Core does with each is the same thing it does here, in this process.
+    """
+
+    RESULT = "result"
+    """The tool answered, ``SUCCEEDED`` or ``FAILED``: the Core rebuilds the result."""
+    REFUSED = "refused"
+    """The tool refused the decision — expired at the node's clock, for one — and nothing ran."""
+    EXCEPTION = "exception"
+    """The tool raised: the type's name, never the message (§57)."""
+
+
+class Envelope(NamedTuple):
+    """What a node delivers: what the tool said, and nothing the Core knows already (ADR 0038 §4).
+
+    Not an :class:`~ela.domain.ExecutionResult`: ``id``, ``created_at`` and the whole stamp of the
+    chain are the Core's (D7), and a result arriving from outside would put the order of §32 in the
+    hands of another machine's clock. ``node`` is where the node's own instants live — reported
+    data, not an instant of the chain — and ``duration_ms`` is reported too: the Core cannot
+    measure the run, only the network.
+    """
+
+    form: Delivery
+    status: ExecutionStatus | None = None
+    output: JsonMapping = _NOTHING
+    error: ErrorMetadata | None = None
+    usage: ProviderUsage | None = None
+    duration_ms: int | None = None
+    exception: str | None = None
+    node: JsonMapping = _NOTHING
+
+    @property
+    def digest(self) -> str:
+        """The fingerprint of this envelope: what tells a retry from a second claim (ADR 0038 §12).
+
+        Canonical — sorted keys, no spacing — so that the same envelope gives the same digest
+        whatever order a node's JSON arrived in. It lives in the assignment's row and nowhere else:
+        never in an audit event, never in an error message (§57).
+        """
+        return hashlib.sha256(
+            json.dumps(
+                {
+                    "form": self.form.value,
+                    "status": None if self.status is None else self.status.value,
+                    "output": dict(self.output),
+                    "error": None if self.error is None else self.error.model_dump(mode="json"),
+                    "usage": None if self.usage is None else self.usage.model_dump(mode="json"),
+                    "duration_ms": self.duration_ms,
+                    "exception": self.exception,
+                    "node": dict(self.node),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+
+
+def check_envelope(envelope: Envelope) -> None:
+    """What a coherent envelope looks like (ADR 0038 §4); a ``ValueError`` is a ``422``.
+
+    The form says which fields mean anything, and a field the form has no room for is refused
+    rather than ignored: "the tool refused" plus an output is two different stories in one
+    message, and ELA does not choose between them (§33).
+    """
+    if envelope.form is Delivery.RESULT:
+        if envelope.status not in REPORTABLE:
+            raise ValueError(
+                f"a delivered result reports {', '.join(sorted(s.value for s in REPORTABLE))}, "
+                f"not {None if envelope.status is None else envelope.status.value}"
+            )
+    elif envelope.status is not None:
+        raise ValueError(f"an envelope of form {envelope.form.value} carries no status")
+    if envelope.form is Delivery.EXCEPTION:
+        if envelope.exception is None or not envelope.exception.isidentifier():
+            raise ValueError(
+                "an envelope of form exception carries the name of the exception's type, and a "
+                "name is an identifier"
+            )
+    elif envelope.exception is not None:
+        raise ValueError(f"an envelope of form {envelope.form.value} carries no exception")
+    if envelope.form is Delivery.REFUSED and (
+        envelope.output or envelope.error is not None or envelope.usage is not None
+    ):
+        raise ValueError("a tool that refused the decision produced nothing: the envelope is empty")
+
 
 class Verification(NamedTuple):
     """What the verifier said about one SUCCEEDED result (ADR 0014 §4, §8).
@@ -241,6 +392,55 @@ class Execution(NamedTuple):
     result: ExecutionResult | None
     approval: Approval | None
     verification: Verification | None
+    assignment: Assignment | None = None
+    """The work this call handed to a node instead of running (M12.2, ADR 0038 §2).
+
+    Set only by the remote branch, and it is what tells the runner that the call assigned: the
+    tool did not run here, the step stays RUNNING, and the run returns ``ASSIGNED``. ``None`` for
+    every call that ran something, which is every call of a plan that runs on this machine.
+    """
+
+
+class Prepared(NamedTuple):
+    """A step that can be acted on, and everything one call needs to act (ADR 0013 §2).
+
+    The rows before the node: the step, the registries' answers about its one capability, the
+    arguments of the plan and the targets they name. Built by :meth:`Executor._prepared`, which
+    both ``execute`` and ``finish`` go through — the second half of a remote call must ask exactly
+    what the first half asked, or the two paths would drift in silence (ADR 0031's lesson).
+    """
+
+    step: TaskStep
+    spec: CapabilitySpec
+    tool: ToolPort
+    verifier: VerifierPort
+    arguments: JsonMapping
+    targets: tuple[object, ...]
+
+
+class Claimed(NamedTuple):
+    """What a node's claim produced: the work, and the call it is about (ADR 0038 §11).
+
+    ``tool_name`` and ``arguments`` are read here and composed into the order elsewhere — the one
+    module that composes one (architecture rule 51) — because an executor that wrote the message
+    would be the transport.
+    """
+
+    assignment: Assignment
+    tool_name: str
+    arguments: JsonMapping
+
+
+class Delivered(NamedTuple):
+    """What a delivery did: the work as it stands, the step's state, and the call it closed.
+
+    ``execution`` is ``None`` for a replica that had nothing left to complete: a network that
+    retries is not an action (ADR 0016 §6), and the answer is the same as the first one.
+    """
+
+    assignment: Assignment
+    step_state: StepState
+    execution: Execution | None
 
 
 Candidate = tuple[Authorization, int]
@@ -322,6 +522,25 @@ def _stated(spec: CapabilitySpec, arguments: JsonMapping) -> str:
     return f" — {'; '.join(stated)}" if stated else ""
 
 
+def _may_travel(task: Task, stated: str) -> str:
+    """The clause that names where a task wider than this machine may run (ADR 0038 §16).
+
+    Empty at the default, and that is the point: ``LOCAL_ONLY`` is what every task was before M12.2,
+    so the question of such a task is the question of today byte for byte — a default is not news
+    (the same reason ``TASK_CREATED`` only names the level when it is not the default).
+
+    It names the **level and not the node**: the level is immutable, the placement is not — a
+    released step is placed again — and a question naming the node could be false before the grant
+    it asks for is spent. It depends only on the task, so for a step whose capability cannot travel
+    at all (D15) it says more than what will happen, which is the fail-safe direction: a question
+    that widens the place, never one that narrows it.
+    """
+    if task.max_privacy is PrivacyLevel.LOCAL_ONLY:
+        return ""
+    joined = "; " if stated else " — "
+    return f"{joined}this task may run on a {task.max_privacy.value} node"
+
+
 def approved_targets(decision: PermissionDecision) -> tuple[str, ...]:
     """The targets of a decision as an approval carries them: the strings of
     ``metadata["targets"]`` (ADR 0011 §10), nothing if the decision has none."""
@@ -358,6 +577,7 @@ class Executor:
         clock: Clock,
         ids: IdGenerator,
         actor: Actor,
+        assignments: Assignments,
         authorization_ttl: timedelta = DEFAULT_AUTHORIZATION_TTL,
         approval_ttl: timedelta = DEFAULT_APPROVAL_TTL,
     ) -> None:
@@ -378,6 +598,7 @@ class Executor:
         self._clock = clock
         self._ids = ids
         self._actor = actor
+        self._assignments = assignments
         self._authorization_ttl = authorization_ttl
         self._approval_ttl = approval_ttl
 
@@ -413,54 +634,17 @@ class Executor:
         if task.state is not TaskState.EXECUTING:
             raise ExecutorError(task_id, f"a tool needs an EXECUTING task, not {task.state.value}")
         graph = await self._engine.graph(task_id)
-        step = graph.graph.step(step_id)
-        state = graph.states[step_id]
-        if state is StepState.FAILED:
-            unfinished = await self._unfinished_verification_failure(task_id, step_id)
-            if unfinished is not None:  # ADR 0015 §7: the task was to be failed with it
-                task = await self._engine.fail(task_id, unfinished)
-                return Execution(task, step_id, graph, None, None, None, None, None)
-        if state is not StepState.RUNNING:
-            raise ExecutorError(
-                task_id, f"step {step_id} is {state.value}, not RUNNING: start the step first"
-            )
-        if len(step.required_capabilities) != 1:
-            raise ExecutorError(
-                task_id,
-                f"step {step_id} declares {len(step.required_capabilities)} capabilities; an "
-                "executable step declares exactly one",
-            )
-        if not step.success_conditions:
-            raise ExecutorError(
-                task_id,
-                f"step {step_id} declares no success condition; an action that cannot be "
-                "verified is not executed",
-            )
-        arguments = step.arguments
-        spec = self._registry.get(step.required_capabilities[0])
-        tool = self._tools.get(spec.id)
-        verifier = self._verifiers.get(spec.id)
-        unknown = [c for c in step.success_conditions if c not in verifier.conditions]
-        if unknown:
-            raise ExecutorError(
-                task_id,
-                f"step {step_id} names success conditions {verifier.name} cannot check: "
-                f"{', '.join(unknown)}; an action that cannot be verified is not executed",
-            )
-        targets = targets_of(spec, arguments)
+        closed = await self._closed_by_unfinished_verification(task, graph, step_id)
+        if closed is not None:
+            return closed
+        step, spec, tool, verifier, arguments, targets = self._prepared(task_id, graph, step_id)
         # Where, once it is settled that there is something to run and before anything runs.
         # After the lookups, so a step with no tool still says so with its own error rather than
         # as a node that cannot host it; before the first read of the results, so a caller with
         # somebody else's placement leaves no trace (ADR 0026 §3).
         device_id = ensure_placed(placement, task_id, step_id).id
 
-        started, settled = _split(await self._results.for_step(task_id, step_id))
-        if len(settled) > 1 or len(started) > 1:
-            raise ExecutorError(
-                task_id,
-                f"step {step_id} has {len(settled)} results and {len(started)} started records; "
-                "a step runs once",
-            )
+        started, settled = await self._stored(task_id, step_id)
         if settled:  # the tool ran in an earlier call: resume from the first missing write
             return await self._resume(
                 task, graph, step, tool, verifier, arguments, targets, settled[0]
@@ -502,7 +686,7 @@ class Executor:
             return Execution(task, step_id, graph, decision, authorization, None, None, None)
         if decision.outcome is PermissionOutcome.REQUIRES_APPROVAL:
             return await self._ask(
-                graph, step, spec, arguments, decision, authorization, decision.reason
+                task, graph, step, spec, arguments, decision, authorization, decision.reason
             )
 
         consumed: int | None = None
@@ -513,7 +697,7 @@ class Executor:
                 )
             except AuthorizationNotUsableError as unusable:
                 return await self._ask(
-                    graph, step, spec, arguments, decision, authorization, unusable.reason
+                    task, graph, step, spec, arguments, decision, authorization, unusable.reason
                 )
             except NotFoundError:
                 vanished = ErrorMetadata(
@@ -524,6 +708,14 @@ class Executor:
                 return await self._fail(task, graph, decision, authorization, vanished)
 
         spent = None if consumed is None or authorization is None else authorization.id
+        if device_id != LOCAL_DEVICE_ID:
+            # The line of D1: everything after this happens on another machine (ADR 0038 §2). The
+            # criterion is the id and not the network: ``local``'s is the one id of the system that
+            # is deterministic *because it is this machine*, and every other one the Core minted.
+            assignment = await self._assignments.assign(decision, placement, authorization_id=spent)
+            return Execution(
+                task, step_id, graph, decision, authorization, None, None, None, assignment
+            )
         record = (
             None if tool.idempotent else await self._start_record(tool, decision, device_id, spent)
         )
@@ -547,14 +739,418 @@ class Executor:
             }
         )
         await self._results.add(result)
-        await self._record_execution(tool, result, targets, consumed)
-        if result.status is not ExecutionStatus.SUCCEEDED:
-            graph = await self._engine.fail_step(task_id, step_id, _failure_of(result, tool))
-            return Execution(task, step_id, graph, decision, authorization, result, None, None)
+        return await self._settled(
+            task,
+            graph,
+            Prepared(step, spec, tool, verifier, arguments, targets),
+            decision,
+            authorization,
+            result,
+            consumed,
+        )
 
-        verification = await self._verify(verifier, tool, step, arguments, result)
-        await self._record_verification(tool, verifier, result, verification)
-        return await self._close(task, graph, step, decision, authorization, result, verification)
+    # ----------------------------------------------------------------------------------
+    # The three instants of a call that runs elsewhere (ADR 0038 §2)
+    # ----------------------------------------------------------------------------------
+
+    async def begin(self, assignment_id: AssignmentId, device_id: DeviceId) -> Claimed:
+        """The node takes the work: the claim, then the two writes of the claim (ADR 0038 §11).
+
+        The order is the claim **first**: a death between the two leaves work taken with no
+        STARTED record — an order that never went out — and the expiry releases the step (window
+        ``A4``). The other way round would leave a STARTED record with no claim, and the next claim
+        would write the step's second one, against the index of migration ``0007``.
+
+        The STARTED record is born **here and not in** ``run`` (M12.1, D14): until a node takes the
+        work nothing can have acted, so a step whose offer nobody claimed is placed again whatever
+        its tool. ``SENSOR_ACTIVATED`` is written for a capability that turns one on — none that
+        travels does today (D15), and the call is here so that the day one does, it is written
+        where the sensor is turned on.
+
+        Raises what the service raises for work that cannot be taken: unknown
+        (``NotFoundError``), another node's, not offered any more, expired, or a node whose hands
+        are already full (``AssignmentNodeBusyError``).
+        """
+        assignment = await self._assignments.claim(assignment_id, device_id)
+        decision = assignment.decision
+        graph = await self._engine.graph(assignment.task_id)
+        step, spec, tool, _, arguments, _ = self._prepared(
+            assignment.task_id, graph, assignment.step_id
+        )
+        if not tool.idempotent:
+            await self._start_record(tool, decision, device_id, assignment.authorization_id)
+        await self._sensor_activated(spec, decision, device_id)
+        return Claimed(assignment, tool.name, arguments)
+
+    async def deliver(
+        self, assignment_id: AssignmentId, device_id: DeviceId, envelope: Envelope
+    ) -> Delivered:
+        """The node brings the work back: the gate, the result the Core mints, the second half.
+
+        One instant serves the gate and the writes (ADR 0013 §6): ``now`` is read once, so a
+        delivery that passes is a delivery that was in time at the instant it was judged.
+
+        The gate refuses, writes a ``DEVICE_REJECTED`` of the work with its reason, and raises —
+        an unknown id or another node's (``not_assigned``, and the payload tells the two apart
+        while the node gets one answer for both), work no longer taken, a delivery after the expiry
+        (``late``), a task that closed while the node worked (``task_closed``), a second envelope
+        where one was accepted (``delivery_conflict``). A *repeated* envelope is none of those: it
+        is the same answer again, and what a death left unwritten is completed (window ``A9``).
+
+        The order of the writes is the one that makes ``DELIVERED`` mean something: the outcome
+        goes in the store first and the assignment is marked after, so *delivered implies the
+        outcome is stored, or the step is already closed*; for a refusal the step is failed first
+        and then marked. The reverse would leave a refusal a resume could not tell from an
+        interruption.
+        """
+        check_envelope(envelope)
+        now = self._clock.now()
+        assignment = await self._gate(assignment_id, device_id, envelope, now)
+        digest = envelope.digest
+        if assignment.state is AssignmentState.DELIVERED:
+            if assignment.delivery_digest != digest:
+                await self._refuse(assignment, device_id, WorkRejection.DELIVERY_CONFLICT)
+                raise DeliveryConflictError(assignment_id)
+            return await self._again(assignment)
+        task = await self._repository.get(assignment.task_id)
+        graph = await self._engine.graph(assignment.task_id)
+        if (
+            task.state is not TaskState.EXECUTING
+            or graph.states[assignment.step_id] is not StepState.RUNNING
+        ):
+            await self._refuse(
+                assignment, device_id, WorkRejection.TASK_CLOSED, reported=envelope.status
+            )
+            raise AssignmentVoidError(assignment_id, task.state.value)
+        ready = self._prepared(assignment.task_id, graph, assignment.step_id)
+        if envelope.form is Delivery.REFUSED:
+            return await self._refused_there(task, graph, ready, assignment, digest, now)
+        started, _ = await self._stored(assignment.task_id, assignment.step_id)
+        result = self._minted(
+            assignment, ready.tool, envelope, now, started[0] if started else None
+        )
+        fresh = await self._stored_once(result)
+        marked = await self._assignments.deliver(assignment_id, device_id, digest=digest, now=now)
+        if not fresh:  # window A8: the row was already there, so the writes after it may be missing
+            return await self._again(marked)
+        uses = (
+            None
+            if assignment.authorization_id is None
+            else await self._authorizations.uses(assignment.authorization_id)
+        )
+        execution = await self._settled(task, graph, ready, None, None, result, uses)
+        return Delivered(marked, execution.graph.states[assignment.step_id], execution)
+
+    async def finish(self, task_id: TaskId, step_id: StepId) -> Execution:
+        """The second half alone, for a step whose node left something behind (ADR 0038 §2).
+
+        The rows of ``execute`` up to the targets, and the resume — **without**
+        :func:`~ela.devices.ensure_placed`: that function guards *where a tool runs*, and here no
+        tool runs. Called by the runner when an expiry left a STARTED record or an outcome in the
+        store, and by a repeated delivery that has writes to complete.
+
+        Neither an outcome nor a STARTED record is an :class:`ExecutorError`: the step was to be
+        released, not finished, and a doubt is a failure (§33).
+        """
+        task = await self._repository.get(task_id)
+        if task.state is not TaskState.EXECUTING:
+            raise ExecutorError(
+                task_id, f"finishing a step needs an EXECUTING task, not {task.state.value}"
+            )
+        graph = await self._engine.graph(task_id)
+        closed = await self._closed_by_unfinished_verification(task, graph, step_id)
+        if closed is not None:
+            return closed
+        ready = self._prepared(task_id, graph, step_id)
+        started, settled = await self._stored(task_id, step_id)
+        if settled:
+            return await self._resume(
+                task,
+                graph,
+                ready.step,
+                ready.tool,
+                ready.verifier,
+                ready.arguments,
+                ready.targets,
+                settled[0],
+            )
+        if started:
+            return await self._interrupted(
+                task, graph, ready.step, ready.tool, ready.targets, started[0]
+            )
+        raise ExecutorError(
+            task_id,
+            f"step {step_id} has neither an outcome nor a started record: nothing ran on it, so "
+            "it was to be released and not finished",
+        )
+
+    # ----------------------------------------------------------------------------------
+    # The gate of a delivery, and what it refuses
+    # ----------------------------------------------------------------------------------
+
+    async def _gate(
+        self,
+        assignment_id: AssignmentId,
+        device_id: DeviceId,
+        envelope: Envelope,
+        now: datetime,
+    ) -> Assignment:
+        """The work this delivery is about, or the refusal that says why it is not (ADR 0038 §12).
+
+        A ``DELIVERED`` row comes back: whether it is the same envelope or another one is the
+        caller's question, and the digest is the only thing that can answer it.
+
+        The three ways work is "not this node's" raise **one** error with one message — unknown,
+        another's, not taken any more — because a node told them apart could map which assignments
+        exist for the others. The audit keeps the difference (``assignment_known``).
+        """
+        try:
+            assignment = await self._assignments.held(assignment_id)
+        except NotFoundError:
+            await self._assignments.reject(
+                device_id,
+                WorkRejection.NOT_ASSIGNED,
+                assignment_id=assignment_id,
+                known=False,
+            )
+            raise WorkNotYoursError(assignment_id) from None
+        if assignment.device_id != device_id:
+            await self._assignments.reject(
+                device_id, WorkRejection.NOT_ASSIGNED, assignment_id=assignment_id, known=True
+            )
+            raise WorkNotYoursError(assignment_id)
+        if assignment.state is AssignmentState.DELIVERED:
+            return assignment
+        if assignment.state is not AssignmentState.CLAIMED:
+            await self._refuse(assignment, device_id, WorkRejection.NOT_ASSIGNED)
+            raise WorkNotYoursError(assignment_id)
+        if assignment.expires_at <= now:
+            await self._refuse(assignment, device_id, WorkRejection.LATE, reported=envelope.status)
+            raise AssignmentExpiredError(assignment_id, assignment.expires_at)
+        return assignment
+
+    async def _refuse(
+        self,
+        assignment: Assignment,
+        device_id: DeviceId,
+        reason: WorkRejection,
+        *,
+        reported: ExecutionStatus | None = None,
+    ) -> None:
+        """A refusal on the way of the work, about an assignment the Core knows (ADR 0038 §12)."""
+        await self._assignments.reject(
+            device_id,
+            reason,
+            assignment_id=assignment.id,
+            task_id=assignment.task_id,
+            reported=reported,
+        )
+
+    async def _refused_there(
+        self,
+        task: Task,
+        graph: GraphState,
+        ready: Prepared,
+        assignment: Assignment,
+        digest: str,
+        now: datetime,
+    ) -> Delivered:
+        """The tool refused the decision on the node: the step fails as it fails here (row 16)."""
+        refused = ErrorMetadata(
+            code=TOOL_REFUSED,
+            message=f"{ready.tool.name} refused the decision {assignment.decision.id}",
+            tool_name=ready.tool.name,
+            device_id=assignment.device_id,
+        )
+        moved = await self._engine.fail_step(task.id, assignment.step_id, refused)
+        marked = await self._assignments.deliver(
+            assignment.id, assignment.device_id, digest=digest, now=now
+        )
+        return Delivered(
+            marked,
+            moved.states[assignment.step_id],
+            Execution(task, assignment.step_id, moved, None, None, None, None, None, marked),
+        )
+
+    async def _again(self, assignment: Assignment) -> Delivered:
+        """The same envelope a second time: the same answer, and nothing written twice.
+
+        A network that retries is not an action (ADR 0016 §6). What it may be is a first delivery
+        whose later writes a death swallowed (windows ``A8``, ``A9``): if the step is still RUNNING
+        there is something to complete, and :meth:`finish` completes it from the first write that is
+        missing. Otherwise nothing happens at all.
+        """
+        graph = await self._engine.graph(assignment.task_id)
+        state = graph.states[assignment.step_id]
+        if state is not StepState.RUNNING:
+            return Delivered(assignment, state, None)
+        execution = await self.finish(assignment.task_id, assignment.step_id)
+        return Delivered(assignment, execution.graph.states[assignment.step_id], execution)
+
+    def _minted(
+        self,
+        assignment: Assignment,
+        tool: ToolPort,
+        envelope: Envelope,
+        now: datetime,
+        record: ExecutionResult | None,
+    ) -> ExecutionResult:
+        """The result the Core builds from what a node said (ADR 0038 §4; dec. B).
+
+        The node's half is what its tool produced — the status, the output, the error, the usage,
+        and a duration it reports because the Core could only measure the network. Everything that
+        places the run in the chain of §32 is the Core's: a deterministic ``id`` per assignment,
+        ``created_at`` at the gate's instant, and the stamp of the call from the assignment itself.
+        The node's own instants travel in ``metadata["node"]``, as reported data and not as an
+        instant of the chain.
+        """
+        error = envelope.error
+        status = envelope.status
+        if envelope.form is Delivery.EXCEPTION:
+            # The form ``_run_tool`` gives an exception here, built here for the same reason: the
+            # type's name is information, its message is the user's content (§57).
+            error = ErrorMetadata(
+                code=TOOL_EXCEPTION, message=str(envelope.exception), tool_name=tool.name
+            )
+            status = ExecutionStatus.FAILED
+        assert status is not None  # check_envelope: a result reports one, an exception is FAILED
+        metadata: dict[str, JsonValue] = {"node": dict(envelope.node)}
+        if record is not None:
+            metadata[STARTED_ID] = str(record.id)
+        return ExecutionResult(
+            id=ExecutionId(uuid5(DELIVERY_NAMESPACE, str(assignment.id))),
+            created_at=now,
+            capability_id=assignment.decision.capability_id,
+            status=status,
+            task_id=assignment.task_id,
+            step_id=assignment.step_id,
+            tool_name=tool.name,
+            device_id=assignment.device_id,
+            decision_id=assignment.decision.id,
+            authorization_id=assignment.authorization_id,
+            output=envelope.output,
+            error=error,
+            usage=envelope.usage,
+            duration_ms=envelope.duration_ms,
+            metadata=metadata,
+        )
+
+    async def _stored_once(self, result: ExecutionResult) -> bool:
+        """Store ``result``; ``False`` if its deterministic id was already there (window ``A8``)."""
+        try:
+            await self._results.add(result)
+        except AlreadyExistsError:
+            return False
+        return True
+
+    # ----------------------------------------------------------------------------------
+    # What both halves share
+    # ----------------------------------------------------------------------------------
+
+    def _prepared(self, task_id: TaskId, graph: GraphState, step_id: StepId) -> Prepared:
+        """The step and what one call needs to act on it (rows 3–5 of the pipeline).
+
+        One implementation for the local path, the claim, the delivery and ``finish``: the half
+        that runs elsewhere must ask exactly what the half that runs here asked, and a second copy
+        of these checks is how the two would stop agreeing.
+        """
+        step = graph.graph.step(step_id)
+        state = graph.states[step_id]
+        if state is not StepState.RUNNING:
+            raise ExecutorError(
+                task_id, f"step {step_id} is {state.value}, not RUNNING: start the step first"
+            )
+        if len(step.required_capabilities) != 1:
+            raise ExecutorError(
+                task_id,
+                f"step {step_id} declares {len(step.required_capabilities)} capabilities; an "
+                "executable step declares exactly one",
+            )
+        if not step.success_conditions:
+            raise ExecutorError(
+                task_id,
+                f"step {step_id} declares no success condition; an action that cannot be "
+                "verified is not executed",
+            )
+        spec = self._registry.get(step.required_capabilities[0])
+        tool = self._tools.get(spec.id)
+        verifier = self._verifiers.get(spec.id)
+        unknown = [c for c in step.success_conditions if c not in verifier.conditions]
+        if unknown:
+            raise ExecutorError(
+                task_id,
+                f"step {step_id} names success conditions {verifier.name} cannot check: "
+                f"{', '.join(unknown)}; an action that cannot be verified is not executed",
+            )
+        return Prepared(
+            step, spec, tool, verifier, step.arguments, tuple(targets_of(spec, step.arguments))
+        )
+
+    async def _stored(
+        self, task_id: TaskId, step_id: StepId
+    ) -> tuple[tuple[ExecutionResult, ...], tuple[ExecutionResult, ...]]:
+        """The STARTED records and the outcomes of the step; more than one of either is a doubt."""
+        started, settled = _split(await self._results.for_step(task_id, step_id))
+        if len(settled) > 1 or len(started) > 1:
+            raise ExecutorError(
+                task_id,
+                f"step {step_id} has {len(settled)} results and {len(started)} started records; "
+                "a step runs once",
+            )
+        return started, settled
+
+    async def _closed_by_unfinished_verification(
+        self, task: Task, graph: GraphState, step_id: StepId
+    ) -> Execution | None:
+        """ADR 0015 §7: a step FAILED by a verification whose task was never failed with it."""
+        if graph.states[step_id] is not StepState.FAILED:
+            return None
+        unfinished = await self._unfinished_verification_failure(task.id, step_id)
+        if unfinished is None:
+            return None
+        return Execution(
+            await self._engine.fail(task.id, unfinished),
+            step_id,
+            graph,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+    async def _settled(
+        self,
+        task: Task,
+        graph: GraphState,
+        ready: Prepared,
+        decision: PermissionDecision | None,
+        authorization: Authorization | None,
+        result: ExecutionResult,
+        uses: int | None,
+    ) -> Execution:
+        """The second half, once the outcome is in the store: audit, verify, close (rows 19–22).
+
+        The **one** implementation of what happens after a tool ran, wherever it ran (ADR 0038 §2).
+        The insert of the result is the caller's and not this method's, because a delivery has to
+        mark the assignment between the two writes: *delivered* must imply *the outcome is stored*,
+        and a method that did both could not be asked to stop in the middle.
+        """
+        await self._record_execution(ready.tool, result, ready.targets, uses)
+        if result.status is not ExecutionStatus.SUCCEEDED:
+            moved = await self._engine.fail_step(
+                task.id, ready.step.id, _failure_of(result, ready.tool)
+            )
+            return Execution(
+                task, ready.step.id, moved, decision, authorization, result, None, None
+            )
+        verification = await self._verify(
+            ready.verifier, ready.tool, ready.step, ready.arguments, result
+        )
+        await self._record_verification(ready.tool, ready.verifier, result, verification)
+        return await self._close(
+            task, graph, ready.step, decision, authorization, result, verification
+        )
 
     # ----------------------------------------------------------------------------------
     # Resuming what an earlier call left unfinished (ADR 0015 §5, §7)
@@ -753,6 +1349,7 @@ class Executor:
 
     async def _ask(
         self,
+        task: Task,
         graph: GraphState,
         step: TaskStep,
         spec: CapabilitySpec,
@@ -761,10 +1358,19 @@ class Executor:
         authorization: Authorization | None,
         reason: str,
     ) -> Execution:
-        """Build the request for approval from the decision and let the task wait (ADR 0013 §5)."""
+        """Build the request for approval from the decision and let the task wait (ADR 0013 §5).
+
+        The question names **where this task may go** when that is wider than this machine (M12.2,
+        D20): dec. G2 of M11.2 with the place instead of the time — *how long the microphone stays
+        open is half of what is being approved* becomes *where the content may go is half of what is
+        being approved*. It comes from ``task.max_privacy`` and not from ``prompt_arguments``: the
+        sensitivity is the task's, while the declared arguments belong to the plan, and routing it
+        through them would mean putting the user's policy in a document a model writes.
+        """
         assert decision.task_id is not None and decision.step_id is not None
         targets = approved_targets(decision)
         where = f" on {', '.join(targets)}" if targets else ""
+        stated = _stated(spec, arguments)
         approval = Approval(
             id=ApprovalId(uuid5(APPROVAL_NAMESPACE, str(decision.id))),
             created_at=decision.created_at,
@@ -772,8 +1378,8 @@ class Executor:
             step_id=decision.step_id,
             capability_id=spec.id,
             targets=targets,
-            prompt=f"{spec.id}{where} for step {step.id} ({step.goal}){_stated(spec, arguments)}"
-            f": {reason}",
+            prompt=f"{spec.id}{where} for step {step.id} ({step.goal}){stated}"
+            f"{_may_travel(task, stated)}: {reason}",
             status=ApprovalStatus.PENDING,
             decision_id=decision.id,
             expires_at=decision.created_at + self._approval_ttl,

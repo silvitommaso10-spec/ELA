@@ -24,6 +24,7 @@ from ela.domain import (
     ExecutionStatus,
     PermissionDecision,
     PermissionOutcome,
+    PrivacyLevel,
     StepId,
     StepState,
     TaskState,
@@ -385,6 +386,49 @@ async def test_the_question_carries_the_arguments_the_capability_declares(w: Wor
 
     assert execution.approval is not None
     assert "purpose: showing the reviewer the failing test" in execution.approval.prompt
+    assert execution.approval.prompt == (
+        f"core.echo_stated for step {step.id} ({step.goal}) — "
+        f"purpose: showing the reviewer the failing test: {execution.decision.reason}"
+    )
+
+
+@pytest.mark.parametrize(
+    "level", [PrivacyLevel.TRUSTED, PrivacyLevel.CLOUD_ALLOWED], ids=lambda one: one.value
+)
+async def test_the_question_says_where_a_wider_task_may_go(w: World, level: PrivacyLevel) -> None:
+    """Criterion 31 (D20): dec. G2 of M11.2 with the place instead of the time.
+
+    *How long the microphone stays open is half of what is being approved* becomes *where the
+    content may go is half of what is being approved*: for a task declared wider than this machine,
+    the question of every approval of its steps names the level. The whole question is compared,
+    because a clause appended anywhere but there would be a different question.
+
+    It names the **level and not the node**: the level is immutable, the placement is not — a
+    released step is placed again — so a question naming the node could be false before the grant it
+    asks for is spent.
+    """
+    task, step = await w.running(STATED_ECHO.id, max_privacy=level)
+
+    execution = await w.execute(task.id, step.id)
+
+    assert execution.approval is not None
+    assert execution.approval.prompt == (
+        f"core.echo_stated for step {step.id} ({step.goal}) — "
+        f"purpose: showing the reviewer the failing test; "
+        f"this task may run on a {level.value} node: {execution.decision.reason}"
+    )
+
+
+async def test_the_question_of_a_task_nobody_declared_is_the_question_of_before(w: World) -> None:
+    """And at the default the clause is **absent**: ``LOCAL_ONLY`` is what every task was, so its
+    question is the one of before byte for byte — a default is not news. A clause that appeared here
+    too would make every stored question of every task say something nobody declared."""
+    task, step = await w.running(STATED_ECHO.id)
+
+    execution = await w.execute(task.id, step.id)
+
+    assert execution.approval is not None
+    assert "may run on" not in execution.approval.prompt
     assert execution.approval.prompt == (
         f"core.echo_stated for step {step.id} ({step.goal}) — "
         f"purpose: showing the reviewer the failing test: {execution.decision.reason}"

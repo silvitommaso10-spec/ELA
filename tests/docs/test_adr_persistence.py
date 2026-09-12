@@ -26,11 +26,13 @@ ADR_PATHS = {
     "0015": ADR_DIR / "0015-approval-and-result-persistence.md",
     "0016": ADR_DIR / "0016-device-registry.md",
     "0037": ADR_DIR / "0037-node-identity.md",
+    "0038": ADR_DIR / "0038-work-protocol.md",
 }
 ADDING_COLUMNS = "Colonne aggiunte:"
 COLUMN_ADRS = {
     "0021": ADR_DIR / "0021-started-protocol-and-model-complete.md",
     "0037": ADR_DIR / "0037-node-identity.md",
+    "0038": ADR_DIR / "0038-work-protocol.md",
 }
 """ADRs that add a column to a table another ADR created (ADR 0021 §11: ``execution_results``
 gains ``usage``). An ADR is immutable, so the new column is documented by the ADR that decided
@@ -120,6 +122,7 @@ def test_each_adr_documents_its_own_tables() -> None:
     assert set(documented_tables(texts["0015"])) == {"approvals", "execution_results"}
     assert set(documented_tables(texts["0016"])) == {"devices"}
     assert set(documented_tables(texts["0037"])) == {"enrollments"}
+    assert set(documented_tables(texts["0038"])) == {"assignments"}
     assert added_columns()["0021"] == {"execution_results": ("usage",)}
     assert added_columns()["0037"] == {"devices": ("revision", "revoked_at", "secret_hash")}
 

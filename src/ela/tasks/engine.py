@@ -61,6 +61,7 @@ from ela.domain import (
     ExecutionStatus,
     PermissionDecision,
     PermissionOutcome,
+    PrivacyLevel,
     StepId,
     StepState,
     Task,
@@ -270,17 +271,40 @@ STEP_OPERATIONS: Final[Mapping[str, StepOperation]] = MappingProxyType(
                 AuditEventType.STEP_CANCELLED,
                 None,
             ),
+            StepOperation(
+                "release_step",
+                frozenset({_P.RUNNING}),
+                _P.PENDING,
+                TaskEventType.STEP_RELEASED,
+                AuditEventType.STEP_RELEASED,
+                "assignment_id",
+            ),
         )
     }
 )
-"""The moves of one step of the plan, as decided in ADR 0009, in the order of its table.
+"""The moves of one step of the plan: ADR 0009's table, in its order, then ADR 0038's row.
 
 ``cancel_step`` has no public method: it is the propagation of ``fail_step`` to the PENDING
 descendants of the failed step, written with the SYSTEM actor because nobody asked for it.
+``release_step`` has one caller, the service of the assignments (architecture rule 50): only it
+can see that the store holds nothing for the step.
 """
 
 Guard = Callable[[Task, tuple[TaskEvent, ...], datetime], Awaitable[None]]
 Payload = Mapping[str, JsonValue]
+
+
+def _declared(task: Task) -> str:
+    """What the summary of a created task says about where it may run (M12.2, ADR 0038 §16).
+
+    Nothing at the default: a task that stays on this machine is what every task was before M12.2,
+    and a default is not news. The payload carries the level either way, so the fact is queryable
+    without the sentence having to repeat it — and when somebody *did* declare something, whoever
+    reads the trail sees it without opening the payload.
+    """
+    if task.max_privacy is PrivacyLevel.LOCAL_ONLY:
+        return ""
+    return f", may run on a {task.max_privacy.value} node"
 
 
 def _last_seen(task: Task, events: tuple[TaskEvent, ...]) -> datetime:
@@ -362,9 +386,21 @@ class TaskEngine:
     # ----------------------------------------------------------------------------------
 
     async def create(
-        self, intent: UserIntent, *, goal: str | None = None, deadline: datetime | None = None
+        self,
+        intent: UserIntent,
+        *,
+        goal: str | None = None,
+        deadline: datetime | None = None,
+        max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY,
     ) -> Task:
-        """The root task of ``intent``: created once, returned as stored on every retry."""
+        """The root task of ``intent``: created once, returned as stored on every retry.
+
+        ``max_privacy`` is how far the content of this task may travel (M12.2, D18, D20), declared
+        here and never again: the default is the strictest level, so whoever creates a task without
+        saying anything creates one that stays on this machine. Tasks ELA creates for itself — the
+        subtasks of a plan, the Proactive Core tomorrow — therefore come into the world at the
+        default, and cannot widen themselves.
+        """
         task_id = TaskId(uuid5(TASK_NAMESPACE, str(intent.id)))
         async with self._lock(task_id):
             now = self._clock.now()
@@ -375,6 +411,7 @@ class TaskEngine:
                 state=TaskState.CREATED,
                 intent_id=intent.id,
                 deadline=deadline,
+                max_privacy=max_privacy,
             )
             try:
                 await self._repository.add(task)
@@ -386,13 +423,14 @@ class TaskEngine:
                     created_at=now,
                     event_type=AuditEventType.TASK_CREATED,
                     actor=self._actor,
-                    summary=f"create: task {task_id} from intent {intent.id}",
+                    summary=f"create: task {task_id} from intent {intent.id}{_declared(task)}",
                     task_id=task_id,
                     payload={
                         "operation": "create",
                         "intent_id": str(intent.id),
                         "channel": intent.channel.value,
                         "goal": task.goal,
+                        "max_privacy": task.max_privacy.value,
                     },
                 )
             )
@@ -757,6 +795,32 @@ class TaskEngine:
             cascade=error,
         )
 
+    async def release_step(
+        self, task_id: TaskId, step_id: StepId, *, key: UUID, device_id: DeviceId | None = None
+    ) -> GraphState:
+        """RUNNING → PENDING: work handed to a node expired, and the store has nothing for the
+        step (ADR 0038 §8). ``key`` is the id of that assignment; ``device_id`` the node it named.
+
+        **Idempotent by key, read in the trail and not in the state** (ADR 0008 §8). A released
+        step is placed again, so the next time anyone looks it may be RUNNING once more — on
+        another node, or here — and asking the state would release it a second time. So a
+        ``STEP_RELEASED`` of this step with this key is the answer: the call writes nothing and
+        returns the graph as it is. Any other call from a state that is not RUNNING is refused.
+
+        The engine does not know the tools nor the results, so it cannot tell whether a step may
+        go back in play: that guard lives in the one caller (architecture rule 50).
+        """
+        where = "" if device_id is None else f" on node {device_id}"
+        return await self._apply_step(
+            STEP_OPERATIONS["release_step"],
+            task_id,
+            step_id,
+            reason=f"assignment {key}{where} expired with nothing in the store",
+            key=key,
+            device_id=device_id,
+            once=True,
+        )
+
     # ----------------------------------------------------------------------------------
     # The one write path
     # ----------------------------------------------------------------------------------
@@ -928,6 +992,7 @@ class TaskEngine:
         device_id: DeviceId | None = None,
         must_be_ready: bool = False,
         cascade: ErrorMetadata | None = None,
+        once: bool = False,
     ) -> GraphState:
         async with self._lock(task_id):
             task = await self._repository.get(task_id)
@@ -939,7 +1004,9 @@ class TaskEngine:
             graph, states = await self._graph(task_id, events)
             graph.step(step_id)
             current = states[step_id]
-            if current is op.target:
+            if once and _applied_with(events, op, step_id, key):
+                return GraphState(graph, states)
+            if current is op.target and not once:
                 self._step_already_applied(op, task_id, events, step_id, key)
             elif current not in op.sources:
                 raise IllegalStepTransitionError(step_id, current.value, op.target.value)
@@ -1074,6 +1141,18 @@ class TaskEngine:
             )
         )
         return (*events, event)
+
+
+def _applied_with(
+    events: tuple[TaskEvent, ...], op: StepOperation, step_id: StepId, key: UUID | None
+) -> bool:
+    """Whether ``op`` was already written for ``step_id`` with ``key`` — anywhere in the trail."""
+    return any(
+        event.step_id == step_id
+        and event.event_type is op.event_type
+        and event.metadata.get(op.key or "") == str(key)
+        for event in events
+    )
 
 
 def _user_actor(task_id: TaskId, approval: Approval) -> Actor:

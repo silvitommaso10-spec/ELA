@@ -132,6 +132,80 @@ async def test_complete_step_records_the_result_as_the_key(h: Harness) -> None:
     assert audit.payload["new_step_state"] == "COMPLETED"
 
 
+ASSIGNMENT_KEY = UUID("00000000-0000-4000-8000-00000000a551")
+"""The id of an assignment that expired untouched: the key of a release (ADR 0038 §8)."""
+OTHER_KEY = UUID("00000000-0000-4000-8000-00000000a552")
+
+
+async def test_release_step_puts_a_running_step_back_in_play(h: Harness) -> None:
+    """ADR 0038 §8: RUNNING → PENDING, the assignment as the key, the node in the reason."""
+    task = await executing_with(h, chain(2))
+    await h.engine.start_step(task.id, sid(0), device_id=DEVICE_ID)
+    state = await h.engine.release_step(task.id, sid(0), key=ASSIGNMENT_KEY, device_id=DEVICE_ID)
+
+    assert state.states == {sid(0): P.PENDING, sid(1): P.PENDING}
+    assert state.ready() == (sid(0),)
+    event = (await h.repository.events(task.id))[-1]
+    assert event.event_type is TaskEventType.STEP_RELEASED
+    assert event.metadata == {"operation": "release_step", "assignment_id": str(ASSIGNMENT_KEY)}
+    audit = (await h.audit.read())[-1]
+    assert audit.event_type is AuditEventType.STEP_RELEASED
+    assert audit.step_id == sid(0) and audit.device_id == DEVICE_ID
+    assert audit.payload["assignment_id"] == str(ASSIGNMENT_KEY)
+    assert audit.payload["previous_step_state"] == "RUNNING"
+    assert audit.payload["new_step_state"] == "PENDING"
+    assert str(ASSIGNMENT_KEY) in audit.summary and str(DEVICE_ID) in audit.summary
+
+
+async def test_a_released_step_starts_again_and_the_trail_says_both_times(h: Harness) -> None:
+    """The release is not a branch of the runner: the step is PENDING, and ``start_step`` writes a
+    second ``STEP_STARTED``, which is what the runner reads the node back from (ADR 0019 §5)."""
+    task = await executing_with(h, chain(1))
+    await h.engine.start_step(task.id, sid(0), device_id=DEVICE_ID)
+    await h.engine.release_step(task.id, sid(0), key=ASSIGNMENT_KEY)
+    state = await h.engine.start_step(task.id, sid(0))
+
+    assert state.states[sid(0)] is P.RUNNING
+    started = [e for e in await h.audit.read() if e.event_type is AuditEventType.STEP_STARTED]
+    assert [e.device_id for e in started] == [DEVICE_ID, None]
+
+
+async def test_a_release_is_written_once_per_key(h: Harness) -> None:
+    """Idempotent by key (ADR 0008 §8), the no-op read in the trail: right after the first
+    release, and — the case the state could not tell — after the step started again."""
+    task = await executing_with(h, chain(1))
+    await h.engine.start_step(task.id, sid(0), device_id=DEVICE_ID)
+    await h.engine.release_step(task.id, sid(0), key=ASSIGNMENT_KEY)
+    written = len(await h.repository.events(task.id)), len(await h.audit.read())
+
+    again = await h.engine.release_step(task.id, sid(0), key=ASSIGNMENT_KEY)
+    assert again.states[sid(0)] is P.PENDING
+    assert (len(await h.repository.events(task.id)), len(await h.audit.read())) == written
+
+    await h.engine.start_step(task.id, sid(0))
+    written = len(await h.repository.events(task.id)), len(await h.audit.read())
+    still = await h.engine.release_step(task.id, sid(0), key=ASSIGNMENT_KEY)
+    assert still.states[sid(0)] is P.RUNNING
+    assert (len(await h.repository.events(task.id)), len(await h.audit.read())) == written
+
+
+async def test_only_a_running_step_is_released(h: Harness) -> None:
+    """A step never started, a finished one, or one already released under another key."""
+    task = await executing_with(h, chain(2))
+    with pytest.raises(IllegalStepTransitionError):
+        await h.engine.release_step(task.id, sid(0), key=ASSIGNMENT_KEY)
+
+    await h.engine.start_step(task.id, sid(0))
+    await h.engine.complete_step(task.id, sid(0), step_result_for(task.id, sid(0)))
+    with pytest.raises(IllegalStepTransitionError):
+        await h.engine.release_step(task.id, sid(0), key=ASSIGNMENT_KEY)
+
+    await h.engine.start_step(task.id, sid(1))
+    await h.engine.release_step(task.id, sid(1), key=ASSIGNMENT_KEY)
+    with pytest.raises(IllegalStepTransitionError):
+        await h.engine.release_step(task.id, sid(1), key=OTHER_KEY)
+
+
 async def test_fail_step_cancels_every_pending_descendant_with_the_reason(h: Harness) -> None:
     task = await executing_with(h, diamond())
     await h.engine.start_step(task.id, sid(0))
@@ -222,7 +296,7 @@ async def test_the_whole_diamond_runs_to_completion(h: Harness) -> None:
 
 
 @pytest.mark.parametrize("state", [s for s in S if s is not S.EXECUTING], ids=str)
-@pytest.mark.parametrize("operation", ["start_step", "complete_step", "fail_step"])
+@pytest.mark.parametrize("operation", ["start_step", "complete_step", "fail_step", "release_step"])
 async def test_step_operations_need_an_executing_task(
     h: Harness, state: TaskState, operation: str
 ) -> None:
@@ -238,11 +312,13 @@ async def call(h: Harness, operation: str, task_id: TaskId, step_id: StepId) -> 
         return await h.engine.start_step(task_id, step_id)
     if operation == "complete_step":
         return await h.engine.complete_step(task_id, step_id, step_result_for(task_id, step_id))
+    if operation == "release_step":
+        return await h.engine.release_step(task_id, step_id, key=ASSIGNMENT_KEY)
     assert operation == "fail_step"
     return await h.engine.fail_step(task_id, step_id, ERROR)
 
 
-@pytest.mark.parametrize("operation", ["start_step", "complete_step", "fail_step"])
+@pytest.mark.parametrize("operation", ["start_step", "complete_step", "fail_step", "release_step"])
 async def test_an_unknown_step_is_refused(h: Harness, operation: str) -> None:
     task = await executing_with(h, diamond())
     before = await h.snapshot(task.id)
@@ -283,7 +359,7 @@ async def test_a_pending_step_cannot_end(
     assert await h.snapshot(task.id) == before
 
 
-@pytest.mark.parametrize("operation", ["start_step", "complete_step", "fail_step"])
+@pytest.mark.parametrize("operation", ["start_step", "complete_step", "fail_step", "release_step"])
 async def test_a_terminal_step_never_moves_again(h: Harness, operation: str) -> None:
     task = await executing_with(h, diamond())
     await h.engine.start_step(task.id, sid(0))

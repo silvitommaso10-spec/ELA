@@ -52,11 +52,12 @@ from tests.composition.support import TOKEN
 OTHER = "y" * 40
 
 
-def test_the_application_serves_the_twenty_five_routes_of_the_adrs_and_its_schema(
+def test_the_application_serves_the_twenty_eight_routes_of_the_adrs_and_its_schema(
     app: FastAPI,
 ) -> None:
     """Twelve routes (ADR 0023 §6), the two of ADR 0024 §5, the one of ADR 0025 §4, the one of
-    ADR 0028 §8, the one of ADR 0032 §13, the three of ADR 0034 §9 and the five of ADR 0037 §4,
+    ADR 0028 §8, the one of ADR 0032 §13, the three of ADR 0034 §9, the five of ADR 0037 §4 and
+    the three of ADR 0038 §11,
     plus ``/openapi.json``,
     which the loop below proves is behind the token like everything else — the HTML pages are
     off, a browser cannot send a header."""
@@ -64,7 +65,7 @@ def test_the_application_serves_the_twenty_five_routes_of_the_adrs_and_its_schem
 
     assert ("GET", "/openapi.json") in paths
     assert ("GET", "/tasks/{task_id}/results") in paths
-    assert len(paths) == 26
+    assert len(paths) == 29
     assert not {path for _, path in paths} & {"/docs", "/redoc"}
 
 
@@ -159,11 +160,13 @@ async def a_node(client: AsyncClient) -> dict[str, str]:
     return {"Authorization": f"Bearer {born['device_id']}.{born['secret']}"}
 
 
-async def test_a_node_reaches_its_two_routes_and_gets_the_same_401_everywhere_else(
+async def test_a_node_reaches_its_five_routes_and_gets_the_same_401_everywhere_else(
     app: FastAPI, client: AsyncClient, anonymous: AsyncClient
 ) -> None:
-    """Criterion 5 (D10, ADR 0037 §4), derived from the application and not listed: a route added
-    tomorrow without a thought answers a node exactly as a request with nothing does."""
+    """Criterion 5 of M12.1 and criterion 23 of M12.2 (D10, I8; ADR 0037 §4, ADR 0038 §11), derived
+    from the application and not listed: a route added tomorrow without a thought answers a node
+    exactly as a request with nothing does — and the three of the work answer it, which is what
+    extending ``NODE_ROUTES`` is for. Without the extension every node would read ``401`` there."""
     node = await a_node(client)
     nothing = (await anonymous.get("/health")).json()
 
@@ -176,6 +179,11 @@ async def test_a_node_reaches_its_two_routes_and_gets_the_same_401_everywhere_el
     assert (await client.post("/nodes/heartbeat", json={}, headers=node)).status_code == 200
     announced = await client.put("/nodes/me", json=DECLARATION, headers={**node, "If-Match": "1"})
     assert announced.status_code == 200
+    # The work routes: nothing is waiting for this node, so what they answer is not 401.
+    assert (await client.post("/nodes/work", headers=node)).status_code == 204
+    for path in ("/nodes/work/result", "/nodes/work/renew"):
+        asked = await client.post(path, json={"assignment_id": str(uuid.uuid4())}, headers=node)
+        assert asked.status_code in {404, 422}, path
 
 
 async def test_the_core_is_not_a_node(client: AsyncClient, anonymous: AsyncClient) -> None:

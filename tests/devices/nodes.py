@@ -102,6 +102,7 @@ def needs(
     risk: RiskLevel = RiskLevel.SAFE,
     max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY,
     unresolved: Iterable[str] = (),
+    verified_here: Iterable[str] = (),
 ) -> Requirements:
     """:class:`Requirements` as :meth:`DeviceOrchestrator.requirements` would have built them."""
     return Requirements(
@@ -110,4 +111,5 @@ def needs(
         risk=risk,
         max_privacy=max_privacy,
         unresolved=tuple(CapabilityId(name) for name in unresolved),
+        verified_here=tuple(CapabilityId(name) for name in verified_here),
     )

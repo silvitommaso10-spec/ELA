@@ -46,6 +46,7 @@ from ela.domain import (
     OperatingSystem,
     PerceptionChange,
     PerformanceClass,
+    PermissionDecision,
     PermissionState,
     PlanId,
     PowerSource,
@@ -61,6 +62,7 @@ from ela.domain import (
     TaskState,
     TaskStep,
 )
+from ela.executive import REPORTABLE, Delivery, Envelope, check_envelope
 from ela.tasks.graph import GraphState
 
 __all__ = [
@@ -71,6 +73,7 @@ __all__ = [
     "CaptureStoreOut",
     "ChainOut",
     "ContextOut",
+    "DeliveredOut",
     "DeviceOut",
     "DiagnosticsOut",
     "ExecutionResultOut",
@@ -78,6 +81,7 @@ __all__ = [
     "PerceptionOut",
     "PerceptionSummaryOut",
     "PlanIn",
+    "RenewedOut",
     "RunOut",
     "StepIn",
     "StepOut",
@@ -85,6 +89,9 @@ __all__ = [
     "TaskDetail",
     "TaskOut",
     "TraitOut",
+    "WorkOrderOut",
+    "WorkRenewIn",
+    "WorkResultIn",
 ]
 
 
@@ -116,6 +123,14 @@ class TaskCreate(BaseModel):
     text: Annotated[str, Field(min_length=1)]
     goal: str | None = None
     deadline: datetime | None = None
+    max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY
+    """How far this task's content may travel (M12.2, D18; ADR 0038 §16).
+
+    The default is the strictest level, so a caller that says nothing creates a task that stays on
+    this machine. Only the user's own identity reaches this route (M12.1), which is what makes the
+    field the user's policy and not a client's preference; and it is **immutable** afterwards, so
+    there is no route that widens a task that already exists.
+    """
 
 
 class StepIn(BaseModel):
@@ -198,6 +213,9 @@ class TaskOut(BaseModel):
     plan_id: UUID | None
     parent_id: UUID | None
     deadline: datetime | None
+    max_privacy: PrivacyLevel
+    """What the user declared about where this task may run (ADR 0038 §16): shown, because a policy
+    that decides where content goes and cannot be read back is a policy nobody can check."""
 
     @classmethod
     def of(cls, task: Task) -> TaskOut:
@@ -210,6 +228,7 @@ class TaskOut(BaseModel):
             plan_id=task.plan_id,
             parent_id=task.parent_id,
             deadline=task.deadline,
+            max_privacy=task.max_privacy,
         )
 
 
@@ -275,11 +294,15 @@ class RunOut(BaseModel):
     outcome: str
     steps: tuple[UUID, ...]
     reason: str | None = None
-    """Why the run is waiting. ``null`` unless it is: an outcome that explains itself needs none.
+    """Why the run stopped where it did, when the outcome alone does not say.
 
-    ``waiting_device`` used to arrive as a bare word while the audit already held the sentence —
-    which nodes were considered, why each was refused, and for a missing tool its name. That
-    sentence travels with the answer now (M6.1b dec. F).
+    Two outcomes carry one. ``waiting_device`` used to arrive as a bare word while the audit already
+    held the sentence — which nodes were considered, why each was refused, and for a missing tool
+    its name — and that sentence travels with the answer now (M6.1b dec. F). ``assigned`` carries
+    the assignment's own: the node, the work and the deadline it is due by (M12.2, ADR 0038 §10),
+    which is what a person deciding whether to wait has to read.
+
+    ``null`` for every other outcome: those explain themselves.
     """
 
 
@@ -509,6 +532,97 @@ class HeartbeatIn(BaseModel):
     status: DeviceStatus | None = None
     current_workload: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
     power_source: PowerSource | None = None
+
+
+class WorkOrderOut(BaseModel):
+    """The call a node is given, and nothing else (ADR 0038 §11; D1, «e nient'altro»).
+
+    Six keys. No success conditions and no verifier: what the node produced is verified **here**,
+    by the Core, and an order that carried the conditions would read as an invitation to check its
+    own work. No placement either — the node does not need to know it won.
+
+    ``decision`` is the :class:`~ela.domain.PermissionDecision` the Core made, whole, because that
+    is what a tool checks before acting (``check_decision``); ``arguments`` are the step's, read
+    from the plan. Composed in one place, which imports no network client: architecture rule 51.
+    """
+
+    assignment_id: UUID
+    capability_id: CapabilityId
+    tool_name: str
+    decision: PermissionDecision
+    arguments: JsonMapping
+    expires_at: datetime
+
+
+class WorkResultIn(BaseModel):
+    """The envelope a node delivers (ADR 0038 §4): what its tool said, and the id of the work.
+
+    ``extra="forbid"``, so a field the node may not write is a ``422`` and not something trimmed in
+    silence: the Core knows the task, the step, the capability, the tool and the node already, and a
+    node that sent them would be claiming to have decided something. A ``status`` no tool produces —
+    ``STARTED``, which is the Core's own — is refused here too.
+    """
+
+    model_config = NODE_BODY
+
+    assignment_id: UUID
+    form: Delivery
+    status: ExecutionStatus | None = None
+    output: JsonMapping = {}
+    error: ErrorMetadata | None = None
+    usage: ProviderUsage | None = None
+    duration_ms: Annotated[int, Field(ge=0)] | None = None
+    exception: str | None = None
+    node: JsonMapping = {}
+    """The node's own instants, by its own clock: reported data, never an instant of the chain."""
+
+    @field_validator("status")
+    @classmethod
+    def _only_what_a_tool_reports(cls, value: ExecutionStatus | None) -> ExecutionStatus | None:
+        if value is not None and value not in REPORTABLE:
+            raise ValueError(
+                f"a node reports {', '.join(sorted(s.value for s in REPORTABLE))}: "
+                f"{value.value} is not an outcome of a tool"
+            )
+        return value
+
+    def envelope(self) -> Envelope:
+        """The envelope the executor takes; coherence between form and fields is checked there."""
+        envelope = Envelope(
+            form=self.form,
+            status=self.status,
+            output=self.output,
+            error=self.error,
+            usage=self.usage,
+            duration_ms=self.duration_ms,
+            exception=self.exception,
+            node=self.node,
+        )
+        check_envelope(envelope)
+        return envelope
+
+
+class WorkRenewIn(BaseModel):
+    """A node asking for more time on the work it holds (ADR 0038 §13)."""
+
+    model_config = NODE_BODY
+
+    assignment_id: UUID
+
+
+class DeliveredOut(BaseModel):
+    """What the Core did with an envelope: where the work stands, and where the step does."""
+
+    assignment_id: UUID
+    state: str
+    step: str
+
+
+class RenewedOut(BaseModel):
+    """The new deadline of work in hand. At its cap the answer is ``409``, not a later date."""
+
+    assignment_id: UUID
+    expires_at: datetime
 
 
 class ChainOut(BaseModel):

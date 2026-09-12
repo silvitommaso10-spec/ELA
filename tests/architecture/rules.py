@@ -459,6 +459,55 @@ DEVICE_ENTITY = "Device"
 #: yet, which D12 opens — the routes of approvals and cancellation will read the identity, and the
 #: shortest way to write that is to read it from the header.
 AUTHORIZATION_HEADER = "authorization"
+#: Rule 48 (M12.2, ADR 0038): the port of the assignments returns the row *as written* — ``OFFERED``
+#: even when it has expired — and whoever decides goes through the service, which derives the
+#: expiry and writes the task's heartbeat before every expiry it sets (dec. G). The mirror of rule
+#: 21, for the same reason as ADR 0016 §3. Born with no exemption: nobody names the port yet, and a
+#: door opens with the code behind it (ADR 0027 §3).
+ASSIGNMENT_PORT = f"{ROOT_PACKAGE}.ports.AssignmentStore"
+#: Rule 48's door, opened by the commit that writes the service (ADR 0027 §3): the one module that
+#: derives the expiry and writes the heartbeat in front of it.
+ASSIGNMENT_PORT_READERS = (f"{ROOT_PACKAGE}.executive.assignments",)
+#: Rule 49 (M12.2, ADR 0038): an assignment names a node and carries a bearer title, and one built
+#: by hand skips ``ensure_placed`` and every check on the decision. The mirror of rule 30: «a
+#: defence that can be bypassed by building by hand the object it defends is not a defence» (ADR
+#: 0026 §5).
+ASSIGNMENT_MODEL = "Assignment"
+#: Rule 49's doors, each opened by the commit that writes the code behind it (ADR 0027 §3): the
+#: mapper that rebuilds an assignment from its row, validated on every read, and the fake of
+#: ``ela.testing``, which keeps rows too and rebuilds the same way — so that it moves a row by its
+#: fields and never copies the entity past its validators (the reason rules 5 and 15 watch
+#: ``model_copy``). ``ela.testing`` never reaches production (rule 6).
+ASSIGNMENT_BUILDERS = (
+    Path("executive") / "assignments.py",
+    Path("infrastructure") / "persistence" / "mappers.py",
+    Path("testing") / "fakes.py",
+)
+#: Rules 49, 51, 52 (M12.2): besides the call of the class, the doors pydantic leaves open to build
+#: a model — one of them, ``model_construct``, without even validating it.
+MODEL_CONSTRUCTORS = frozenset({"model_validate", "model_validate_json", "model_construct"})
+#: Rule 50 (M12.2, ADR 0038): the engine cannot know whether the store holds anything for a step,
+#: and releasing a step somebody may have run is the double execution the protocol exists to
+#: prevent. The guard lives in the caller, so the caller is one. The mirror of rule 10 (ADR 0008
+#: §12).
+RELEASE_METHOD = "release_step"
+#: Rule 50's door, opened by the commit that writes the service: the one caller that can see the
+#: store holds nothing for the step.
+RELEASE_CALLERS = (Path("executive") / "assignments.py",)
+#: Rule 51 (M12.2, ADR 0038, dec. N): an order carries the user's arguments to a node, and its one
+#: way out is the answer to the request of the node it was assigned to. The composer of
+#: :data:`WORK_ORDER_COMPOSER` builds it and no other module does, and the composer imports no
+#: network client: that is the half an AST can see. The other half — the two ids compared — is a
+#: test at runtime (criterion 21). Rule 35 does not look at ``ela.api``, and rule 3 lets it import
+#: network libraries: this rule is the difference.
+WORK_ORDER_MODEL = "WorkOrderOut"
+WORK_ORDER_COMPOSER = Path("api") / "nodes.py"
+NETWORK_CLIENTS = frozenset({"httpx", "urllib.request", "http.client", "socket"})
+#: Rule 52 (M12.2, ADR 0038, dec. B): the node delivers an envelope, a DTO, and the Core mints the
+#: result — an id derived from the assignment, a time from its own clock (M12.1, D1, D7). A route
+#: that built the entity from the envelope would pass every other test and put the node's id and
+#: the node's clock into the store and the chain of §32.
+RESULT_MODEL = "ExecutionResult"
 
 #: Rule 22 (ADR 0017 §6): the orchestrator advises and never commands. A package that cannot
 #: reach the Task Engine cannot fail a task because it found no node.
@@ -471,6 +520,11 @@ API_DIR = "api"
 OUTPUT_NAME = "output"
 OUTPUT_MODEL = "ExecutionResultOut"
 OUTPUT_SCHEMAS = Path("api") / "schemas.py"
+#: And since M12.2 (ADR 0038 §4) one model carries it **in**: the envelope a node delivers holds
+#: what its tool produced, on its way to the store. Rule 29 is about the boundary the content
+#: crosses *outwards*; what keeps the envelope honest is rule 52 — no module of ``ela.api`` builds
+#: the entity — so the same word in the other direction is a declared exemption and not a hole.
+ENVELOPE_MODEL = "WorkResultIn"
 #: Rule 23 (ADR 0018 §5): the arguments of a step are the user's content (§57). They live in the
 #: plan and in the private database; the audit log records the *targets* of a call, never what was
 #: passed. With ADR 0018 the arguments became a persisted field read in three places, so the
@@ -1575,7 +1629,9 @@ def check_tool_output_readers(pkg_root: Path) -> list[Violation]:
     **enter** (an ``AuditEvent``), 29 says where it may **leave**. Two things are reported:
 
     * a class field named ``output`` in any module of ``ela.api``, unless the class is
-      :data:`OUTPUT_MODEL`;
+      :data:`OUTPUT_MODEL` — the one that carries it out — or :data:`ENVELOPE_MODEL`, the one that
+      carries it **in** since M12.2: a node's tool produced it, and it reaches the store through the
+      executor, which is the entity's one minter (rule 52);
     * the name ``output`` — as an attribute, a variable, a keyword or a string literal — in any
       module of ``ela.api`` other than :data:`OUTPUT_SCHEMAS`, which is where the one model
       reads it.
@@ -1589,7 +1645,7 @@ def check_tool_output_readers(pkg_root: Path) -> list[Violation]:
         name = module_name(path, pkg_root)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name != OUTPUT_MODEL:
+            if isinstance(node, ast.ClassDef) and node.name not in {OUTPUT_MODEL, ENVELOPE_MODEL}:
                 found.extend(
                     Violation(rule, name, f"{node.name}.{OUTPUT_NAME}", field.lineno)
                     for field in node.body
@@ -2481,6 +2537,157 @@ def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_assignment_port_readers(pkg_root: Path) -> list[Violation]:
+    """Rule 48: no module imports ``AssignmentStore``; the assignments are reached through the
+    service that derives their expiry (M12.2, ADR 0038).
+
+    The port returns the row as it is written, and an ``OFFERED`` row may have expired an hour ago:
+    the reading that counts is the service's, which says what the row is *now* (ADR 0016 §3,
+    applied to a second deadline). And every expiry the service sets is preceded by a heartbeat of
+    the task, which is what keeps ``recover()`` from failing a task whose work is still out (dec.
+    G) — a route that wrote the row through the port would set an expiry with no sign of life in
+    front of it. The mirror of rule 21. The service of :data:`ASSIGNMENT_PORT_READERS` is the one
+    module that names it.
+    """
+    files = (
+        path
+        for path in _source_files(pkg_root)
+        if module_name(path, pkg_root) not in ASSIGNMENT_PORT_READERS
+    )
+    return _violations(
+        "assignments-reached-only-through-the-service",
+        files,
+        pkg_root,
+        lambda imported: _is_within(imported, ASSIGNMENT_PORT),
+    )
+
+
+def _builds(callee: ast.expr, model: str) -> str | None:
+    """How a call builds ``model`` — the class called, or a constructor pydantic gives it."""
+    if _is_named(callee, model):
+        return f"{model}(...)"
+    if (
+        isinstance(callee, ast.Attribute)
+        and callee.attr in MODEL_CONSTRUCTORS
+        and _is_named(callee.value, model)
+    ):
+        return f"{model}.{callee.attr}(...)"
+    return None
+
+
+def check_assignment_builders(pkg_root: Path) -> list[Violation]:
+    """Rule 49: nobody builds an ``Assignment`` but the service that assigns (M12.2, ADR 0038).
+
+    An assignment names the node the work goes to and carries a ``PermissionDecision`` — a bearer
+    title (ADR 0011 §9). The service builds it after ``ensure_placed`` and after checking that the
+    decision is ``ALLOWED``, about that step and not expired; a module that built one by hand
+    would hand work to a node nobody placed, under a decision nobody checked. The mirror of rule
+    30 (ADR 0026 §5).
+
+    Reported: a call of the class, and a call of the constructors pydantic gives it
+    (``model_validate``, ``model_validate_json``, ``model_construct``), in every module but the
+    builders of :data:`ASSIGNMENT_BUILDERS`. The rule was written before the class (ADR 0030 §15),
+    and each builder opens its door in the commit that writes it: the mapper that reads a row back,
+    then the service.
+    """
+    rule = "assignments-built-only-by-the-assigner"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) in ASSIGNMENT_BUILDERS:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and (built := _builds(node.func, ASSIGNMENT_MODEL)):
+                found.append(Violation(rule, module_name(path, pkg_root), built, node.lineno))
+    return found
+
+
+def check_release_step_callers(pkg_root: Path) -> list[Violation]:
+    """Rule 50: ``release_step`` has one caller, the service of the assignments (M12.2, ADR 0038).
+
+    RUNNING → PENDING puts a step back in play, and it is safe only for a step nobody can have
+    run: no STARTED record, no outcome in the store (M12.1, D14). The engine does not know the
+    tools or the results, so it cannot tell; the guard lives in the caller, and so the caller is
+    one. The mirror of rule 10 (ADR 0008 §12). The one caller is :data:`RELEASE_CALLERS`, the
+    service of the assignments, and the engine that defines the operation does not call it.
+    """
+    rule = "release-step-has-one-caller"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) in RELEASE_CALLERS:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, module_name(path, pkg_root), f".{RELEASE_METHOD}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and _is_named(node.func, RELEASE_METHOD)
+        )
+    return found
+
+
+def check_a_work_order_goes_only_to_its_node(pkg_root: Path) -> list[Violation]:
+    """Rule 51: the order is composed in one place, and that place cannot send it anywhere.
+
+    M12.2 (dec. N; §57, «quale nodo»): the order that goes to a node carries the arguments of a
+    step — the user's content — and its one way out is the answer to the request of the node the
+    assignment names. Two halves, because an AST cannot compare two ids:
+
+    * **built in one place**: outside the composer of ``api/nodes.py`` no module builds the order
+      (``WorkOrderOut``, by the call or by a constructor pydantic gives it);
+    * **with no way out but the answer**: the module that composes it imports no network client
+      (``httpx``, ``urllib.request``, ``http.client``, ``socket``).
+
+    The runtime half — the composer refuses an identity that is not the assignment's — is
+    criterion 21, a test of ``api/nodes.py``. The composer exists since the commit of the work
+    routes, so the exemption is justified by the tree itself rather than by its allowed case.
+    """
+    rule = "a-work-order-goes-only-to-its-node"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        built = [
+            (description, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and (description := _builds(node.func, WORK_ORDER_MODEL)) is not None
+        ]
+        if not built:
+            continue
+        name = module_name(path, pkg_root)
+        if path.relative_to(pkg_root) != WORK_ORDER_COMPOSER:
+            found.extend(Violation(rule, name, description, line) for description, line in built)
+            continue
+        found.extend(
+            Violation(rule, name, imported, line)
+            for imported, line in imported_modules(path, pkg_root)
+            if any(_is_within(imported, client) for client in NETWORK_CLIENTS)
+        )
+    return found
+
+
+def check_results_are_minted_by_the_core(pkg_root: Path) -> list[Violation]:
+    """Rule 52: no module of ``ela.api`` builds an ``ExecutionResult``.
+
+    M12.2 (dec. B; M12.1, D1, D7): a node does not deliver a result, it delivers an envelope, and
+    the Core rebuilds the result from it — the id derived from the assignment, the time from the
+    Core's clock, the decision and the grant stamped from the assignment. ``TOOL_EXECUTED`` takes
+    its instant from the result (``executor.py``), so a result built by a route from the envelope
+    would put the node's clock into the order of the chain of §32. The entity is minted by the
+    executor; ``ela.api`` holds only the envelope. Silent on today's tree.
+    """
+    rule = "results-are-minted-by-the-core"
+    found: list[Violation] = []
+    for path in sorted((pkg_root / API_DIR).rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, module_name(path, pkg_root), built, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and (built := _builds(node.func, RESULT_MODEL)) is not None
+        )
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -2533,6 +2740,11 @@ RULES: dict[str, Rule] = {
         check_a_nodes_secret_crosses_no_readable_boundary
     ),
     "identity-resolved-in-one-place": check_identity_resolved_in_one_place,
+    "assignment-port-readers": check_assignment_port_readers,
+    "assignments-built-only-by-the-assigner": check_assignment_builders,
+    "release-step-has-one-caller": check_release_step_callers,
+    "a-work-order-goes-only-to-its-node": check_a_work_order_goes_only_to_its_node,
+    "results-are-minted-by-the-core": check_results_are_minted_by_the_core,
 }
 
 
@@ -2776,6 +2988,74 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     Constant(
         "identity-resolved-in-one-place", "SECURITY_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0023 §7"
+    ),
+    # assignment-port-readers (rule 48, M12.2)
+    Constant("assignment-port-readers", "ASSIGNMENT_PORT", DETECTOR),
+    Constant(
+        "assignment-port-readers", "ASSIGNMENT_PORT_READERS", EXEMPTION, by=EACH, adr="ADR 0038"
+    ),
+    Constant(
+        "assignment-port-readers",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # assignments-built-only-by-the-assigner (rule 49, M12.2)
+    Constant(
+        "assignments-built-only-by-the-assigner",
+        "ASSIGNMENT_BUILDERS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0038",
+    ),
+    Constant("assignments-built-only-by-the-assigner", "ASSIGNMENT_MODEL", DETECTOR),
+    Constant("assignments-built-only-by-the-assigner", "MODEL_CONSTRUCTORS", DETECTOR),
+    Constant(
+        "assignments-built-only-by-the-assigner",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # release-step-has-one-caller (rule 50, M12.2)
+    Constant("release-step-has-one-caller", "RELEASE_CALLERS", EXEMPTION, by=EACH, adr="ADR 0038"),
+    Constant("release-step-has-one-caller", "RELEASE_METHOD", DETECTOR),
+    Constant(
+        "release-step-has-one-caller",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # a-work-order-goes-only-to-its-node (rule 51, M12.2)
+    Constant("a-work-order-goes-only-to-its-node", "MODEL_CONSTRUCTORS", DETECTOR),
+    Constant("a-work-order-goes-only-to-its-node", "NETWORK_CLIENTS", DETECTOR),
+    Constant(
+        "a-work-order-goes-only-to-its-node",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    Constant(
+        "a-work-order-goes-only-to-its-node",
+        "WORK_ORDER_COMPOSER",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0038",
+    ),
+    Constant("a-work-order-goes-only-to-its-node", "WORK_ORDER_MODEL", DETECTOR),
+    # results-are-minted-by-the-core (rule 52, M12.2)
+    Constant("results-are-minted-by-the-core", "API_DIR", DETECTOR),
+    Constant("results-are-minted-by-the-core", "MODEL_CONSTRUCTORS", DETECTOR),
+    Constant("results-are-minted-by-the-core", "RESULT_MODEL", DETECTOR),
+    Constant(
+        "results-are-minted-by-the-core",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
     ),
     # decide-callers
     Constant("decide-callers", "DECIDE_METHOD", DETECTOR),
@@ -3094,6 +3374,7 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     # tool-output-readers
     Constant("tool-output-readers", "API_DIR", DETECTOR),
+    Constant("tool-output-readers", "ENVELOPE_MODEL", EXEMPTION, by=WHOLE, adr="ADR 0038 §4"),
     Constant("tool-output-readers", "OUTPUT_MODEL", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),
     Constant("tool-output-readers", "OUTPUT_NAME", DETECTOR),
     Constant("tool-output-readers", "OUTPUT_SCHEMAS", EXEMPTION, by=WHOLE, adr="ADR 0025 §4"),

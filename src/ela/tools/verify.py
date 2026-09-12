@@ -54,10 +54,18 @@ class Verifier(ABC):
     ``conditions`` is the vocabulary — the success conditions this verifier can check — and
     ``failure_codes`` what it can report; ADR 0014 documents both per verifier and
     ``tests/docs/test_adr_verification.py`` compares.
+
+    ``reads_the_machine`` says whether the verifier reads the disk of the machine it runs on, and
+    it has **no default** — the form of ``Tool.idempotent``: a subclass declares it, because the
+    answer is the verifier's alone and forgetting it must not read as a no, and
+    :class:`~ela.tools.registry.VerifierRegistry` refuses a verifier that declares nothing. A
+    verifier that reads this machine proves an effect only if it happened here, so its capability
+    does not travel (M12.1, D15; ADR 0038 §14).
     """
 
     conditions: ClassVar[frozenset[str]] = frozenset()
     failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES
+    reads_the_machine: ClassVar[bool]
 
     def __init__(self, capability_id: CapabilityId, *, name: str) -> None:
         self._capability_id = capability_id

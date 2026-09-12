@@ -128,8 +128,9 @@ async def test_the_database_itself_refuses_an_unknown_parent(engine: AsyncEngine
         with pytest.raises(IntegrityError, match="FOREIGN KEY"):
             await connection.execute(
                 text(
-                    "INSERT INTO tasks (id, created_at, goal, state, parent_id, metadata)"
-                    " VALUES ('t1', '2026-01-01', 'g', 'CREATED', 'nobody', '{}')"
+                    "INSERT INTO tasks"
+                    " (id, created_at, goal, state, parent_id, max_privacy, metadata)"
+                    " VALUES ('t1', '2026-01-01', 'g', 'CREATED', 'nobody', 'LOCAL_ONLY', '{}')"
                 )
             )
 

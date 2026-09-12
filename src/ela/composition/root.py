@@ -29,7 +29,7 @@ from ela.devices import (
 )
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import Actor, ActorKind, RawSpeech
-from ela.executive import Executor, TaskRunner
+from ela.executive import Assignments, Executor, TaskRunner
 from ela.infrastructure.machine import (
     Audition,
     DarwinListening,
@@ -49,6 +49,7 @@ from ela.infrastructure.machine import (
 )
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
+    SqlAssignmentStore,
     SqlAuditLog,
     SqlAuthorizationStore,
     SqlDeviceRegistry,
@@ -150,6 +151,12 @@ class Ela:
     orchestrator: DeviceOrchestrator
     executor: Executor
     runner: TaskRunner
+    assignments: Assignments
+    """The work handed to remote nodes, as it is now, and every write of it (M12.2, ADR 0038 §6).
+
+    The service and never the store: the store returns rows as written, and whoever decides reads
+    the expiry through the service, which also writes a heartbeat in front of every expiry it sets
+    (architecture rule 48)."""
     captures: CaptureStore
     """Where screen captures are kept, and for how long (M10.2, ADR 0029 §1).
 
@@ -277,8 +284,16 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
     return play
 
 
-async def build(settings: Settings) -> Ela:
+async def build(settings: Settings, *, clock: Clock | None = None) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
+
+    ``clock`` defaults to :class:`~ela.composition.system.SystemClock`, and whoever wants another
+    one **names it** — the shape of ``local_device(…, system=None)`` (ADR 0031 §4: a default, not a
+    choice about the machine). The conformance suite (M12.2, ADR 0038 §18) is the caller that needs
+    it: its stories turn on expiries, and an hour of waiting is not a test. A declared parameter
+    rather than a patched module, because a monkeypatch is invisible both to this text and to every
+    architecture rule — and because the same instance must survive a second ``build`` over the same
+    database, which is how "the Core dies halfway" is played.
 
     :raises ConfigurationError: for anything that makes this configuration unusable — a schema
         nobody migrated, a routing table naming a provider that is not registered, an empty one.
@@ -292,7 +307,8 @@ async def build(settings: Settings) -> Ela:
     readable in one place, and a reader who has to jump between helpers to know what ELA is bound
     to has lost exactly what this module exists to give.
     """
-    clock, ids = SystemClock(), UuidGenerator()
+    clock = SystemClock() if clock is None else clock
+    ids = UuidGenerator()
     database = make_engine(settings.persistence.db_url)
     try:
         absent = await missing_tables(database)
@@ -450,7 +466,19 @@ async def build(settings: Settings) -> Ela:
             actor=ELA_ACTOR,
             orphan_after=settings.core.orphan_after,
         )
-        orchestrator = DeviceOrchestrator(devices, tools, audit, ids, clock)
+        orchestrator = DeviceOrchestrator(devices, tools, audit, ids, clock, verifiers=verifiers)
+        assignments = Assignments(
+            SqlAssignmentStore(database),
+            engine=engine,
+            repository=repository,
+            results=results,
+            devices=devices,
+            audit=audit,
+            clock=clock,
+            ids=ids,
+            ttl=settings.core.assignment_ttl,
+            cap=settings.core.assignment_cap,
+        )
         executor = Executor(
             registry=capabilities,
             tools=tools,
@@ -465,6 +493,7 @@ async def build(settings: Settings) -> Ela:
             clock=clock,
             ids=ids,
             actor=ELA_ACTOR,
+            assignments=assignments,
             authorization_ttl=settings.core.authorization_ttl,
             approval_ttl=settings.core.approval_ttl,
         )
@@ -475,6 +504,7 @@ async def build(settings: Settings) -> Ela:
             repository=repository,
             results=results,
             audit=audit,
+            assignments=assignments,
         )
 
         # The same probe object the capture tool preflights with: one reader of this machine, so
@@ -523,6 +553,7 @@ async def build(settings: Settings) -> Ela:
         orchestrator=orchestrator,
         executor=executor,
         runner=runner,
+        assignments=assignments,
         captures=captures,
         context=context,
         speech=speech,

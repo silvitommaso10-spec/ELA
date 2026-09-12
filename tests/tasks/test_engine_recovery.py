@@ -36,18 +36,23 @@ from ela.infrastructure.persistence.orm import Base
 from ela.tasks.engine import ORPHANED, SYSTEM_ACTOR, RecoverySummary, TaskEngine
 from ela.testing.fakes import (
     FakeApprovalStore,
+    FakeAssignmentStore,
     FakeAuditLog,
     FakeClock,
+    FakeExecutionResultStore,
     FakeIdGenerator,
     FakeTaskRepository,
 )
 from tests.domain.examples import ELA_ACTOR, USER_INTENT
+from tests.executive.test_assignments import NODE, World, build, decision, placement
+from tests.tasks.graphs import chain, sid
 from tests.tasks.support import (
     ERROR,
     ORPHAN_AFTER,
     Harness,
     approval_for,
     executing,
+    executing_with,
     h,
     make_harness,
     plan_for,
@@ -60,6 +65,43 @@ __all__ = ["h"]
 
 S = TaskState
 ONE_SECOND = timedelta(seconds=1)
+
+
+async def test_a_live_assignment_is_not_silence() -> None:
+    """Criterion 19 (ADR 0038 §9): ``recover()`` does not fail a task whose work is out.
+
+    ``orphan_after`` 900 s, the TTL 899 s, a ``STEP_STARTED`` at ``t0`` and the offer at ``t0 +
+    30 s``. An instant before the offer expires the task stays EXECUTING: the heartbeat ``assign``
+    wrote at ``t0 + 30 s`` is its last sign of life. The precondition is built so that "almost"
+    fails: a twin started at ``t0`` with nothing assigned is an orphan at that same instant, which
+    is what the first task would be if ``assign`` wrote no heartbeat — 929 s of silence, not 899.
+    Then the work is taken and renewed well past ``orphan_after`` from the ``STEP_STARTED``, and
+    ``recover()`` still leaves it alone: every renewal writes its heartbeat before its expiry.
+    """
+    h = make_harness(orphan_after=timedelta(seconds=900))
+    task = await executing_with(h, chain(1))
+    twin = await executing_with(h, chain(1))
+    for started in (task, twin):
+        await h.engine.start_step(started.id, sid(0), device_id=NODE.id)
+    store, results = FakeAssignmentStore(), FakeExecutionResultStore()
+    service = build(h, store, results, ttl=timedelta(seconds=899), cap=timedelta(hours=3))
+    w = World(h, store, results, service, task.id, sid(0))
+
+    h.clock.advance(timedelta(seconds=30))
+    later = decision(w, expires_at=h.clock.now() + timedelta(hours=1))
+    assignment = await service.assign(later, placement(w), authorization_id=None)
+    h.clock.advance(assignment.expires_at - h.clock.now() - timedelta(microseconds=1))
+    await h.engine.recover()
+
+    assert (await h.repository.get(task.id)).state is TaskState.EXECUTING
+    assert (await h.repository.get(twin.id)).state is TaskState.FAILED
+
+    await service.claim(assignment.id, NODE.id)
+    for _ in range(3):
+        h.clock.advance(timedelta(seconds=800))
+        await service.renew(assignment.id, NODE.id)
+        await h.engine.recover()
+        assert (await h.repository.get(task.id)).state is TaskState.EXECUTING
 
 
 async def test_a_silent_executing_task_is_failed_as_orphaned(h: Harness) -> None:

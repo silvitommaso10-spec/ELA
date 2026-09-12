@@ -36,6 +36,7 @@ from ela.infrastructure.machine import (
 )
 from ela.infrastructure.persistence import (
     SqlApprovalStore,
+    SqlAssignmentStore,
     SqlAuditLog,
     SqlAuthorizationStore,
     SqlDeviceRegistry,
@@ -48,6 +49,7 @@ from ela.infrastructure.persistence.orm import Base
 from ela.permissions import CapabilityRegistry, PermissionGuardian
 from ela.ports import (
     ApprovalStore,
+    AssignmentStore,
     AuditLog,
     AuthorizationStore,
     AuthorizingGuardianPort,
@@ -77,6 +79,7 @@ from ela.providers.anthropic import AnthropicProvider, AnthropicSettings, anthro
 from ela.routing import ModelRouter
 from ela.testing.fakes import (
     FakeApprovalStore,
+    FakeAssignmentStore,
     FakeAuditLog,
     FakeAuthorizationStore,
     FakeCapabilityRegistry,
@@ -155,6 +158,10 @@ def _sql_approval_store() -> SqlApprovalStore:
     return SqlApprovalStore(make_engine(MEMORY_URL))
 
 
+def _sql_assignment_store() -> SqlAssignmentStore:
+    return SqlAssignmentStore(make_engine(MEMORY_URL))
+
+
 def _sql_execution_result_store() -> SqlExecutionResultStore:
     return SqlExecutionResultStore(make_engine(MEMORY_URL))
 
@@ -166,6 +173,7 @@ SQL_STORES = (
     SqlExecutionResultStore,
     SqlDeviceRegistry,
     SqlEnrollmentStore,
+    SqlAssignmentStore,
 )
 """The adapters that expose their engine, so the schema can be created and the engine disposed."""
 
@@ -494,6 +502,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     EnrollmentStore: (
         Implementation("FakeEnrollmentStore", FakeEnrollmentStore),
         Implementation("SqlEnrollmentStore", _sql_enrollment_store, _create_schema, _dispose),
+    ),
+    AssignmentStore: (
+        Implementation("FakeAssignmentStore", FakeAssignmentStore),
+        Implementation("SqlAssignmentStore", _sql_assignment_store, _create_schema, _dispose),
     ),
     CapabilityRegistryPort: (
         Implementation("FakeCapabilityRegistry", _fake_registry),

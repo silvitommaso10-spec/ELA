@@ -34,7 +34,12 @@ from ela.ports import (
     VerifierPort,
 )
 from ela.tools.echo import EchoTool
-from ela.tools.errors import NotIdempotentError, ToolNotFound, VerifierNotFound
+from ela.tools.errors import (
+    NotIdempotentError,
+    SilentVerifierError,
+    ToolNotFound,
+    VerifierNotFound,
+)
 from ela.tools.listen import ListenTool
 from ela.tools.model import ModelCompleteTool
 from ela.tools.notes import WriteNoteTool
@@ -102,13 +107,22 @@ class ToolRegistry:
 
 
 class VerifierRegistry:
-    """Verifiers by capability id, frozen at construction (port ``VerifierRegistryPort``)."""
+    """Verifiers by capability id, frozen at construction (port ``VerifierRegistryPort``).
+
+    **Every verifier declares whether it reads the machine it runs on, and none may stay silent**
+    (M12.2, ADR 0038 §14) — the rule :class:`ToolRegistry` applies to ``idempotent``. The
+    orchestrator reads the flag to keep on this machine a capability whose verifier reads this
+    machine's disk, and a verifier that forgot to say must not read as one that may travel.
+    """
 
     __slots__ = ("_verifiers",)
 
     def __init__(self, verifiers: Iterable[VerifierPort]) -> None:
         table: dict[CapabilityId, VerifierPort] = {}
         for verifier in verifiers:
+            declared = getattr(verifier, "reads_the_machine", None)
+            if not isinstance(declared, bool):
+                raise SilentVerifierError(verifier.capability_id, verifier.name, declared)
             if verifier.capability_id in table:
                 raise AlreadyExistsError("verifier", verifier.capability_id)
             table[verifier.capability_id] = verifier

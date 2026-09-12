@@ -10,7 +10,13 @@ from ela.cli.errors import CONFIGURATION, REFUSED
 from ela.cli.output import EMPTY
 from ela.composition import Ela
 from ela.devices.local import LOCAL_DEVICE_ID
-from ela.domain import TaskState
+from ela.domain import (
+    DeviceStatus,
+    OperatingSystem,
+    PerformanceClass,
+    PrivacyLevel,
+    TaskState,
+)
 from tests.api.support import ECHO_MESSAGE, echo_plan, note_plan
 from tests.cli.support import Cli, plain
 
@@ -42,6 +48,56 @@ async def test_create_takes_a_deadline(cli: Cli) -> None:
     result = await cli("task", "create", "una cosa", "--deadline", "2027-01-01T10:00:00Z", "--json")
 
     assert json.loads(result.stdout)["deadline"].startswith("2027-01-01T10:00:00")
+
+
+async def test_create_declares_how_far_the_task_may_travel(cli: Cli) -> None:
+    """``--privacy`` is the one way a task is allowed to leave this machine (M12.2, D18): said once,
+    at creation, and shown wherever the task is shown. Without it the task stays here."""
+    declared = await cli("task", "create", "un render", "--privacy", "TRUSTED", "--json")
+    default = await cli("task", "create", "una nota", "--json")
+
+    assert json.loads(declared.stdout)["max_privacy"] == "TRUSTED"
+    assert json.loads(default.stdout)["max_privacy"] == "LOCAL_ONLY"
+    shown = await cli("task", "create", "un altro render", "--privacy", "CLOUD_ALLOWED")
+    assert "CLOUD_ALLOWED" in shown.stdout
+
+
+async def test_run_says_which_node_is_doing_the_work(cli: Cli, ela: Ela, tmp_path: Path) -> None:
+    """Criterion 26 at the command line: ``assigned`` is printed **with its reason**.
+
+    The reason is the assignment's — the node, the work, the deadline — and it is what a person
+    needs in order to decide whether to wait. The node is enrolled through ELA's own ports rather
+    than over HTTP because being a node is not something the command line can do: ``ela`` is a
+    client of the user's API (ADR 0024), and a node speaks from its own five routes.
+    """
+    issued = await ela.enrollment.issue(PrivacyLevel.TRUSTED)
+    enrolled = await ela.enrollment.enroll(
+        issued.code,
+        name="pc-windows",
+        os=OperatingSystem.WINDOWS,
+        capabilities=(),
+        available_tools=tuple(tool.name for tool in ela.tools.tools()),
+        performance=PerformanceClass.HIGH,
+    )
+    await ela.devices.heartbeat(enrolled.device.id, status=DeviceStatus.IDLE)
+    answer = await cli("task", "create", "un lavoro per il pc", "--privacy", "TRUSTED", "--json")
+    task_id = json.loads(answer.stdout)["id"]
+    await cli("task", "plan", task_id, "--file", written(tmp_path, echo_plan()))
+
+    result = await cli("task", "run", task_id)
+
+    assert result.exit_code == 0
+    assert "assigned" in result.stdout
+    assert str(enrolled.device.id) in result.stdout  # which node, in the reason
+    assert "due by" in result.stdout  # and by when
+
+
+async def test_create_refuses_a_privacy_nobody_defined(cli: Cli) -> None:
+    """The API owns the vocabulary, and the command does not pretend to know better: what comes
+    back is the refusal of the route, not a guess made here."""
+    result = await cli("task", "create", "una cosa", "--privacy", "OVUNQUE")
+
+    assert result.exit_code != 0
 
 
 async def test_list_shows_the_tasks_in_a_table(cli: Cli) -> None:

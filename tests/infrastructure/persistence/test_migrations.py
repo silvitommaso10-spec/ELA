@@ -49,8 +49,11 @@ TABLES = {
     "execution_results",
     "devices",
     "enrollments",
+    "assignments",
 }
 REVISIONS = [
+    "0010",
+    "0009",
     "0008",
     "0007",
     "0006",
@@ -63,6 +66,8 @@ REVISIONS = [
 TRIGGERS_SQL = "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' ORDER BY name"
 STARTED_INDEX = "ux_execution_results_started_step"
 """One ``STARTED`` record per step (ADR 0021 §1-bis), as a partial unique index."""
+OPEN_STEP_INDEX = "ux_assignments_open_step"
+"""One assignment per step that is not ``EXPIRED`` (ADR 0038 §7), as a partial unique index."""
 INDEXES_SQL = (
     "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL ORDER BY name"
 )
@@ -166,6 +171,7 @@ def test_upgrade_creates_the_same_indexes_as_the_orm(db: Path, tmp_path: Path) -
     migrated = _indexes(db)
     assert migrated == _indexes(built)
     assert "status = 'STARTED'" in migrated[STARTED_INDEX]
+    assert "state <> 'EXPIRED'" in migrated[OPEN_STEP_INDEX]
 
 
 def test_a_missing_predicate_would_be_detected(db: Path, tmp_path: Path) -> None:
@@ -188,6 +194,61 @@ def test_a_missing_predicate_would_be_detected(db: Path, tmp_path: Path) -> None
     assert _indexes(other)[STARTED_INDEX] != _indexes(db)[STARTED_INDEX]
 
 
+def test_a_missing_assignment_predicate_would_be_detected(db: Path, tmp_path: Path) -> None:
+    """The twin for ``0009``: without ``WHERE state <> 'EXPIRED'`` the index is total, and a step
+    released after an expiry could never be handed out again (ADR 0038 §7)."""
+    command.upgrade(config_for(db), "head")
+    other = tmp_path / "total-assignment-index.db"
+    engine = create_engine(f"sqlite:///{other.as_posix()}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("CREATE TABLE assignments (task_id TEXT, step_id TEXT, state TEXT); ")
+            )
+            connection.execute(
+                text(f"CREATE UNIQUE INDEX {OPEN_STEP_INDEX} ON assignments (task_id, step_id)")
+            )
+    finally:
+        engine.dispose()
+    assert "state <> 'EXPIRED'" not in _indexes(other)[OPEN_STEP_INDEX]
+    assert _indexes(other)[OPEN_STEP_INDEX] != _indexes(db)[OPEN_STEP_INDEX]
+
+
+def test_the_sensitivity_column_is_born_with_the_strictest_default(db: Path) -> None:
+    """``0010``: the tasks written before the column existed keep doing what they did — staying on
+    this machine. The ``server_default`` is what says so to anything that inserts a row without the
+    column, which is why it stays on the column instead of being dropped after a backfill."""
+    command.upgrade(config_for(db), "0009")
+    engine = create_engine(f"sqlite:///{db.as_posix()}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO tasks (id, created_at, goal, state, metadata)"
+                    " VALUES ('t1', '2026-01-01', 'g', 'CREATED', '{}')"
+                )
+            )
+        command.upgrade(config_for(db), "0010")
+        with engine.connect() as connection:
+            levels = [row[0] for row in connection.execute(text("SELECT max_privacy FROM tasks"))]
+    finally:
+        engine.dispose()
+
+    assert levels == ["LOCAL_ONLY"]
+
+
+def test_downgrade_of_the_sensitivity_column_takes_it_away(db: Path) -> None:
+    """Reversible, and what it reverses is a fact of the user's: every declared level goes with the
+    column, which is why it is a downgrade and not a repair."""
+    config = config_for(db)
+    command.upgrade(config, "head")
+    assert "max_privacy" in _tables(db)["tasks"]
+
+    command.downgrade(config, "0009")
+
+    assert "max_privacy" not in _tables(db)["tasks"]
+
+
 def test_downgrade_of_the_audit_migration_is_refused(db: Path) -> None:
     """Removing the audit log is never a tooling operation (ADR 0007 §7).
 
@@ -205,6 +266,7 @@ def test_downgrade_of_the_audit_migration_is_refused(db: Path) -> None:
         "execution_results",
         "devices",
         "enrollments",
+        "assignments",
     }
     assert _triggers(db) == APPEND_ONLY_TRIGGERS
     assert _version(db) == "0002"
@@ -221,6 +283,7 @@ def test_downgrade_of_the_plans_migration_removes_the_table(db: Path) -> None:
         "execution_results",
         "devices",
         "enrollments",
+        "assignments",
     }
     assert _version(db) == "0002"
 
@@ -230,7 +293,13 @@ def test_downgrade_of_the_approvals_migration_removes_both_tables(db: Path) -> N
     config = config_for(db)
     command.upgrade(config, "head")
     command.downgrade(config, "0003")
-    assert set(_tables(db)) == TABLES - {"approvals", "execution_results", "devices", "enrollments"}
+    assert set(_tables(db)) == TABLES - {
+        "approvals",
+        "execution_results",
+        "devices",
+        "enrollments",
+        "assignments",
+    }
     assert "task_plans" in _tables(db)
     assert _version(db) == "0003"
     command.upgrade(config, "head")
@@ -242,7 +311,7 @@ def test_downgrade_of_the_devices_migration_removes_the_table(db: Path) -> None:
     config = config_for(db)
     command.upgrade(config, "head")
     command.downgrade(config, "0004")
-    assert set(_tables(db)) == TABLES - {"devices", "enrollments"}
+    assert set(_tables(db)) == TABLES - {"devices", "enrollments", "assignments"}
     assert _version(db) == "0004"
     command.upgrade(config, "head")
     assert _tables(db) == EXPECTED_COLUMNS
@@ -254,9 +323,21 @@ def test_downgrade_of_the_identity_migration_removes_what_it_added(db: Path) -> 
     command.upgrade(config, "head")
     command.downgrade(config, "0007")
     tables = _tables(db)
-    assert set(tables) == TABLES - {"enrollments"}
+    assert set(tables) == TABLES - {"enrollments", "assignments"}
     assert {"revision", "revoked_at", "secret_hash"}.isdisjoint(tables["devices"])
     assert _version(db) == "0007"
+    command.upgrade(config, "head")
+    assert _tables(db) == EXPECTED_COLUMNS
+
+
+def test_downgrade_of_the_assignments_migration_removes_the_table(db: Path) -> None:
+    """``0009`` does not touch ``audit_events``: reversible down to ``0008`` (ADR 0038)."""
+    config = config_for(db)
+    command.upgrade(config, "head")
+    command.downgrade(config, "0008")
+    assert set(_tables(db)) == TABLES - {"assignments"}
+    assert OPEN_STEP_INDEX not in _indexes(db)
+    assert _version(db) == "0008"
     command.upgrade(config, "head")
     assert _tables(db) == EXPECTED_COLUMNS
 

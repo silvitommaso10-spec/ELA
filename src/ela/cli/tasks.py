@@ -37,6 +37,7 @@ def _task(payload: dict[str, Any]) -> str:
             ("goal", payload["goal"]),
             ("created", payload["created_at"]),
             ("deadline", payload["deadline"]),
+            ("privacy", payload["max_privacy"]),
             ("plan", payload["plan_id"]),
         ]
     )
@@ -48,11 +49,26 @@ def create(
     text: Annotated[str, typer.Argument(help="what you are asking ELA to do")],
     goal: Annotated[str | None, typer.Option("--goal", help="the goal, if not the text")] = None,
     deadline: Annotated[str | None, typer.Option("--deadline", help="ISO instant")] = None,
+    privacy: Annotated[
+        str | None,
+        typer.Option(
+            "--privacy", help="how far this task may travel: LOCAL_ONLY, TRUSTED, CLOUD_ALLOWED"
+        ),
+    ] = None,
     as_json: Json = False,
 ) -> None:
-    """Create a task from what you asked. It has no plan yet, so nothing runs."""
+    """Create a task from what you asked. It has no plan yet, so nothing runs.
+
+    ``--privacy`` is where this task's content may go (M12.2, D18): without it the task stays on
+    this machine, which is the strictest answer and the old behaviour. It is declared **once** —
+    widening a task later does not exist, you create a new one — and every placement of the task is
+    judged against it, beside the level each node was enrolled with.
+    """
+    body: dict[str, Any] = {"text": text, "goal": goal, "deadline": deadline}
+    if privacy is not None:
+        body["max_privacy"] = privacy
     with client.connect() as api:
-        payload = api.post("/tasks", {"text": text, "goal": goal, "deadline": deadline})
+        payload = api.post("/tasks", body)
     emit(payload, as_json, _task(payload))
 
 
@@ -159,12 +175,15 @@ def plan(
 def run(task_id: TaskId, as_json: Json = False) -> None:
     """Walk the plan as far as it goes, and say where it stopped.
 
-    The answer comes back when the run stops: the task closed, your consent is needed, or no node
-    was eligible. A long step keeps the command waiting, because the run is the request.
+    The answer comes back when the run stops: the task closed, your consent is needed, no node was
+    eligible, or a step went out to a node and has not come back. A long step keeps the command
+    waiting, because the run is the request.
 
-    ``reason`` is filled in when the run is waiting for a node, and says which nodes were
-    considered, why each was refused and — for a tool that is not installed — which tool. Empty
-    otherwise: an outcome that explains itself does not need a sentence under it.
+    ``reason`` is filled in for the two outcomes that need it. Waiting for a node, it says which
+    nodes were considered, why each was refused and — for a tool that is not installed — which tool.
+    ``assigned``, it says which node is doing the work, under which assignment, and by when it is
+    due (M12.2): what you need in order to decide whether to wait. Empty otherwise: an outcome that
+    explains itself does not need a sentence under it.
     """
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/run")

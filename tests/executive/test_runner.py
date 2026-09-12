@@ -232,7 +232,7 @@ async def test_no_eligible_node_leaves_the_task_queued_without_failing_it(w: Wor
 
 async def test_a_node_that_disappears_mid_plan_puts_the_task_back_to_queued(w: World) -> None:
     task, steps = await w.queued(ECHO.id, NOTE.id)
-    first = await w.runner.run(task.id, max_privacy=PrivacyLevel.LOCAL_ONLY)
+    first = await w.runner.run(task.id)
     assert first.outcome is RunOutcome.COMPLETED
 
     later, steps = await w.queued(ECHO.id, NOTE.id)
@@ -311,14 +311,23 @@ async def test_a_run_that_is_not_waiting_carries_no_reason(w: World) -> None:
     assert (await w.runner.run(task.id)).reason is None
 
 
-async def test_a_node_the_caller_will_not_tolerate_is_not_eligible(w: World) -> None:
-    """``max_privacy`` is the runner's word and the default is the most restrictive level."""
-    await w.devices.update(w.node.model_copy(update={"privacy": PrivacyLevel.CLOUD_ALLOWED}))
-    task, _ = await w.queued(ECHO.id)
+async def test_a_node_wider_than_the_task_declares_is_not_eligible(w: World) -> None:
+    """The level is the **task's**, declared at creation and immutable (M12.2, D18, D20).
 
-    assert (await w.runner.run(task.id)).outcome is RunOutcome.WAITING_DEVICE
-    allowed = await w.runner.run(task.id, max_privacy=PrivacyLevel.CLOUD_ALLOWED)
-    assert allowed.outcome is RunOutcome.COMPLETED
+    Until then it was an argument of ``run``, and the two halves of this test were two calls about
+    **one** task — which is what made an argument the wrong place: the same task judged at two
+    levels, and a step placed under one of them confirmed under the other. So the second half is now
+    a *second task*, because widening a task that exists does not exist.
+
+    The default is still the strictest, and that has not changed: a task nobody declared does not
+    reach a node that may send content further than this machine.
+    """
+    await w.devices.update(w.node.model_copy(update={"privacy": PrivacyLevel.CLOUD_ALLOWED}))
+    undeclared, _ = await w.queued(ECHO.id)
+    declared, _ = await w.queued(ECHO.id, max_privacy=PrivacyLevel.CLOUD_ALLOWED)
+
+    assert (await w.runner.run(undeclared.id)).outcome is RunOutcome.WAITING_DEVICE
+    assert (await w.runner.run(declared.id)).outcome is RunOutcome.COMPLETED
 
 
 async def test_a_node_that_comes_back_lets_the_next_run_finish_the_plan(w: World) -> None:
