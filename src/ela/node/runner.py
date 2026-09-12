@@ -73,10 +73,17 @@ async def envelope_of(world: NodeWorld, order: Mapping[str, Any]) -> dict[str, A
     No ``ExecutionResult`` is built here and none is sent: the Core rebuilds it from what this
     envelope reports (M12.1 D1). The node's own instants travel under ``node``, as reported data,
     and never as an instant of the chain.
+
+    **The lookup is inside the ``try``, and that is criterion 7.** An order for a capability this
+    node does not have comes back as an ``exception`` envelope instead of killing the cycle: a tool
+    never trusts its caller (§28), and since M12.3 the caller is on another machine. In production
+    it does not fire — the hard filter drops a node that lacks the tool before a step is placed on
+    it (M12.2 dec. L) — which makes it a defence at a new boundary rather than a refusal with no
+    producer in the sense of ADR 0026 §7.
     """
     decision = PermissionDecision.model_validate(dict(order["decision"]))
-    tool = world.tools.get(CapabilityId(str(order["capability_id"])))
     try:
+        tool = world.tools.get(CapabilityId(str(order["capability_id"])))
         result = await tool.execute(decision, dict(order["arguments"]))
     except NotAllowedError:
         return {"form": "refused"}
@@ -240,10 +247,25 @@ async def forever(node: Node, *, wait: float, ceiling: int) -> None:
     not there yet or not there any more, and the node's whole job is to be the one still waiting.
     It waits, tries again, and gives up only at the ceiling — the count resets on every answer, so
     a Core that comes back has a node that forgot it was ever away.
+
+    Every pass says "I am here" before it asks for anything, because being there is not something
+    the Core can infer from the asking: availability has a TTL of its own.
     """
     missed = 0
     while True:
         try:
+            # **Before every ask, and not only at start-up.** A node is available only as long as
+            # the Core has heard from it inside ``ELA_DEVICE_HEARTBEAT_TTL_SECONDS`` (ADR 0016 §3),
+            # and a node that reported once goes UNAVAILABLE a minute later — still running, still
+            # asking, and never chosen again. Found by hand with two real processes on 2026-09-12:
+            # the orchestrator picked this node and then refused it, "is no longer eligible:
+            # UNAVAILABLE". The conformance suite could not see it — its stories report once and
+            # act at once, on a clock that does not move on its own.
+            #
+            # Here rather than on a timer of its own, because a turn is bounded by the Core's own
+            # poll window: one heartbeat per cycle is one per window, and a window longer than the
+            # TTL is a Core whose two settings disagree with each other.
+            await node.report()
             await node.turn()
         except httpx.TransportError:
             missed += 1

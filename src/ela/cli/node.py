@@ -20,9 +20,9 @@ from typing import Annotated
 
 import typer
 
-from ela.cli.errors import REFUSED, handled
+from ela.cli.errors import REFUSED, UNREACHABLE, fail, handled
 from ela.composition import NodeConfig
-from ela.node import NodeError, run
+from ela.node import CoreUnreachable, NodeError, run
 
 __all__ = ["run_node"]
 
@@ -57,7 +57,14 @@ def run_node(
     code = typer.prompt(JOIN_PROMPT, hide_input=True) if join else None
     try:
         asyncio.run(run(NodeConfig.load(), join=code))
+    except CoreUnreachable as away:
+        # The one a script has to tell from the others: nobody answered at the address, which is
+        # exit 3 everywhere else in this CLI (ADR 0024 §6). A node that reported it as a refusal
+        # would have whoever wrote the script looking at the wrong end of the wire.
+        fail(UNREACHABLE, str(away))
     except NodeError as stopped:
-        raise typer.Exit(REFUSED) from stopped
-    except KeyboardInterrupt:  # pragma: no cover - the terminal's own way of ending this
+        fail(REFUSED, str(stopped))
+    except KeyboardInterrupt:
+        # `Ctrl-C` is how a resident command is *meant* to end, so it is a success: the price of
+        # dec. C, and for the Core a window that closed is a node that has gone quiet.
         typer.echo("")

@@ -306,3 +306,7 @@ sposta, non si esenta.
   di rotte, la stessa chiave. Su un secondo Mac sarebbero tre configurazioni da tenere allineate.
 - **Il timeout della richiesta di lavoro è un tetto e non una misura**: un nodo non può leggere
   `ELA_NODE_POLL_SECONDS` del Core, quindi aspetta molto più a lungo del necessario (§7).
+- **La finestra di long-poll del Core deve restare sotto il suo TTL di heartbeat**: un nodo manda
+  un battito per giro e un giro dura quanto la finestra, quindi con una finestra più lunga del TTL
+  un nodo vivo e in attesa risulterebbe `UNAVAILABLE`. Le due variabili sono entrambe del Core e
+  oggi nessuno le confronta (§7; misurato il 2026-09-12: 25 s contro 60 s).

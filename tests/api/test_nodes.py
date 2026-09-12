@@ -408,20 +408,30 @@ async def test_a_node_revoked_after_the_middleware_let_it_in_cannot_read_its_row
 ) -> None:
     """The same ``401`` the announcement gives, for the same reason and in the same race.
 
-    A revoked node that could still read its row would learn nothing it may act on, and would read
-    a different answer from the one every other route gives it: a door that is closed is closed the
-    same way everywhere (§33).
+    The race is narrow and has to be built exactly: the middleware reads the row too
+    (``api/security.py``), so a revocation that were already visible to *it* would never reach the
+    handler — and a test that patched the read outright would assert a ``401`` the middleware
+    produced, proving nothing about this route. The coverage gate is what found that, so: the
+    first read is the middleware's and answers honestly, the **second** is the handler's and finds
+    the node revoked in between.
     """
     _, node = await enrolled(client)
     reads = DeviceRegistry.get
+    calls = 0
 
-    async def revoked_meanwhile(self: DeviceRegistry, device_id: Any) -> Any:
-        return (await reads(self, device_id)).model_copy(update={"revoked_at": datetime.now(UTC)})
+    async def revoked_in_between(self: DeviceRegistry, device_id: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        row = await reads(self, device_id)
+        if calls == 1:
+            return row
+        return row.model_copy(update={"revoked_at": datetime.now(UTC)})
 
-    monkeypatch.setattr(DeviceRegistry, "get", revoked_meanwhile)
+    monkeypatch.setattr(DeviceRegistry, "get", revoked_in_between)
 
     response = await client.get("/nodes/me", headers=node)
 
+    assert calls >= 2, "the middleware must have read first, or this proves nothing"
     assert response.status_code == 401
     assert response.json() == (await anonymous.get("/health")).json()
 

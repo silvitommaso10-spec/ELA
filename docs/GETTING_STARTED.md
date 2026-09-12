@@ -17,6 +17,7 @@ comando precedente ha stampato:
 | `<questo repo>` | l'URL da cui cloni ELA | da dove hai preso il repository |
 | `<id>` | l'id di un task | `ela task create`, oppure `ela task list` |
 | `<approval-id>` | l'id di una richiesta di consenso | `ela approvals` |
+| `<codice>` | il codice di arruolamento di un nodo | `ela node enroll`, stampato una volta sola |
 
 ## 0. Che cosa serve
 
@@ -356,6 +357,87 @@ I codici di uscita sono un contratto (ADR 0024 §6):
 Un «no» di ELA e un'ELA spenta non escono mai con lo stesso codice: uno script che riprova al
 `3` non deve riprovare all'`1`.
 
+## 11. Questa macchina come nodo, e la prova che il lavoro è avvenuto altrove
+
+Da M12.3 questo Mac può essere **anche un nodo**: un secondo processo che prende le chiamate del
+Core, le esegue con i suoi tool e riporta l'esito. Serve un **terzo terminale** — il nodo è un
+comando in primo piano, come `ela serve`, e non c'è un servizio di sistema: finché ELA non ha un
+eseguibile firmato suo, il permesso resta del terminale (ADR 0029 §16). Il prezzo è dichiarato: il
+nodo vive quanto la finestra.
+
+Questa sezione non si può verificare da `pytest` — la suite non apre prese di rete, per scelta —
+ed è per questo che è scritta qui, comando per comando.
+
+Nel **secondo** terminale, quello dei comandi, si conia un codice:
+
+```
+uv run ela node enroll --privacy TRUSTED
+```
+
+```
+code                                            privacy   expires at
+<codice>                                        TRUSTED   ...
+```
+
+Il codice si stampa **una volta**. Nel **terzo** terminale si avvia il nodo e lo si incolla quando
+lo chiede — non si vede mentre lo si scrive, ed è voluto: un segreto sulla riga di comando finirebbe
+in `ps` e nella cronologia della shell.
+
+```
+uv run ela node run --join
+```
+
+```
+Enrollment code:
+```
+
+Da quel momento il nodo ha la sua identità in `~/.ela/node.json` — due campi, `0o600` — e non serve
+più `--join`: le volte successive basta `uv run ela node run`. Nel secondo terminale il nodo si
+vede:
+
+```
+uv run ela device list
+```
+
+Compare accanto a `local`, `available`, con i suoi **quattro** tool: `core-echo`, `model-complete`,
+`voice-speak`, `voice-speak-online`.
+
+**La prova.** Un task dichiarato `TRUSTED` con uno step `voice.speak`, e le tre cose da guardare:
+
+```
+uv run ela task create "dì una frase" --privacy TRUSTED
+uv run ela task plan <id> --file piano.json
+uv run ela task run <id>
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+L'ultimo `run` **non** è di troppo: la consegna del nodo chiude lo step, e il piano lo fa avanzare
+la chiamata successiva (ADR 0038 §11). La prima volta la risposta è `assigned` con l'id
+dell'assegnazione e la sua scadenza; la seconda, `completed`.
+
+1. **Si sente parlare** — e l'albero dei processi mostra `say` sotto il **nodo**, non sotto il
+   Core. È l'unica prova che l'esecuzione è avvenuta nell'altro processo. `uv run` lascia un
+   processo intermedio, quindi `say` è un **nipote** e non un figlio: si guarda con
+   `pstree -p <pid del nodo>`, oppure, senza installare niente,
+
+   ```
+   for k in $(pgrep -P <pid del nodo>); do pgrep -P $k -l; done
+   ```
+
+   Misurato il 2026-09-12 su questa macchina: `say` discendeva dal pid del nodo, e dal Core mai.
+2. `uv run ela audit tail` porta un `TOOL_EXECUTED` che **nomina il device_id del nodo**, e un
+   `DEVICE_SELECTED` che l'ha scelto.
+3. **Il Core spento a metà**: `Ctrl-C` sul primo terminale fra l'esecuzione e la consegna, poi
+   `uv run ela serve` di nuovo. Il nodo ritenta, consegna la busta che teneva, e `ela task show
+   <id>` dice `completed`. È la storia 11 del contratto, con due processi veri.
+
+**E la prova negativa**, che è quella che dice dove finisce tutto questo: uno step
+`workspace.write_note` sullo stesso task **non** va al nodo. Il piazzamento lo rifiuta nominando la
+ragione — `UNVERIFIABLE (workspace.write_note: its verifier reads this machine)` — perché il
+verifier di quella capability rileggerebbe la workspace del **Core**, e potrebbe rispondere «sì» per
+una nota che il nodo non ha mai scritto. Quattro capability su otto viaggiano; queste no.
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.
@@ -365,3 +447,5 @@ Un «no» di ELA e un'ELA spenta non escono mai con lo stesso codice: uno script
 - [`adr/0024-cli.md`](adr/0024-cli.md) — perché la CLI è un client e non un secondo ELA.
 - [`adr/0025-phase-8-debts.md`](adr/0025-phase-8-debts.md) — i debiti di Fase 8 pagati, e quelli
   che restano scritti.
+- [`adr/0039-node-macos.md`](adr/0039-node-macos.md) — perché il nodo è un comando in primo piano,
+  dove tiene il segreto e perché non nel portachiavi.

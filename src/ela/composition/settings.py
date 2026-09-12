@@ -438,11 +438,6 @@ class NodeSettings(BaseSettings):
     node_retry_seconds: Annotated[float, Field(gt=0)] = DEFAULT_NODE_RETRY_SECONDS
     node_retry_ceiling: Annotated[int, Field(gt=0)] = DEFAULT_NODE_RETRY_CEILING
 
-    @property
-    def node_retry_wait(self) -> timedelta:
-        """How long to wait before asking again."""
-        return timedelta(seconds=self.node_retry_seconds)
-
 
 class Settings(BaseModel):
     """Everything ELA reads from the environment, in one immutable object (ADR 0023 §2).
