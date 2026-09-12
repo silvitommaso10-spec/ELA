@@ -110,7 +110,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Capability di produzione | **8** | `production_catalogue()` |
 | Rotte dell'API | **28** | i `router` di `ela.api` |
 | Comandi della CLI | **24** | l'albero Typer di `ela.cli` |
-| Vincoli dichiarati negli ADR | **149** | le sezioni «Vincoli dichiarati» |
+| Vincoli dichiarati negli ADR | **150** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
 

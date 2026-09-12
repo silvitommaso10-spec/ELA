@@ -763,3 +763,13 @@ un port), la 23 (nessun argomento in un `DEVICE_REJECTED` né in `STEP_RELEASED`
   la scadenza chiude `interrupted` anche uno step che forse non ha agito (§19).
 - **La suite di conformità prova il contratto, non la macchina**: niente rete, niente TCC, niente
   orologi di nodo, e uno Shortcut non si guida da `pytest` (§18).
+- **Un test che eredita la macchina invece di costruire la precondizione**: trovato il 2026-09-12
+  verificando questa milestone. `tests/infrastructure/machine/test_microphone_smoke.py` afferma i
+  numeri di una registrazione **senza costruire la precondizione di un ingresso che si apre**: è
+  verde quando il microfono c'è e rosso quando l'iPhone della Continuity se ne va, e il package che
+  prova non è toccato da M12.2. È la **terza istanza della famiglia della regola 45** (l'utente,
+  2026-09-12) e di ADR 0031 §6: una precondizione che non si può costruire dichiarando il sistema si
+  costruisce **iniettando la dipendenza**, e finché non lo fa il test parla della macchina di chi lo
+  esegue invece del comportamento. Dichiarato qui e non riparato qui — M12.2 non tocca quel package
+  — e messo **a carico della milestone sulla disciplina della suite, insieme alla regola 45 stessa**,
+  con il congegno di ADR 0035 §7: chi scrive quella milestone paga questo debito.
