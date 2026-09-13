@@ -60,12 +60,21 @@ nobody's. The two are told apart by ``error.code`` and never by the status, whic
 """
 
 
-def declaration(world: NodeWorld) -> dict[str, Any]:
+async def declaration(world: NodeWorld) -> dict[str, Any]:
     """What this node says about itself: five fields, and four of them are derived (dec. F).
 
     ``available_tools`` comes from the objects that were actually built, the way the fake node's
     does, and for the same reason: a declaration written by hand is a promise, and the hard filter
     drops a node that lacks a tool it claimed only after a step has already been placed on it.
+    **And from what the machine answers** (M12.4 dec. F): a tool whose half of the machine says it
+    is not available is left out. Until M12.4 a node declared every tool it had built, so a machine
+    with no ``say`` or no player promised a voice anyway — the orchestrator filters by name, and a
+    step could be placed there only to be refused by the machine. On a Mac nothing changes, because
+    the Mac has both. The user's switch is not the machine's answer: a voice switched off is still
+    declared, and refuses with ``voice.disabled`` when it is asked (ADR 0033 §9).
+
+    ``os`` is the composition's, for the system the node was built for — until M12.4 it was the
+    literal ``"MACOS"`` here.
 
     ``capabilities`` is **empty and deliberately so**: a ``DeviceCapability`` is a trait, no step
     requires one today, and M12.1 D9 keeps ``MISSING_TRAIT`` out of production until some path can
@@ -73,11 +82,25 @@ def declaration(world: NodeWorld) -> dict[str, Any]:
     """
     return {
         "name": world.config.node.node_name,
-        "os": "MACOS",
+        "os": world.os.value,
         "capabilities": [],
-        "available_tools": [tool.name for tool in world.tools.tools()],
+        "available_tools": [
+            tool.name for tool in world.tools.tools() if await _usable(world, tool.name)
+        ],
         "performance": world.config.node.node_performance.value,
     }
+
+
+async def _usable(world: NodeWorld, name: str) -> bool:
+    """Whether this machine can run the tool called ``name``: asked of its half, if it has one.
+
+    Read once per declaration, which is at start-up and on a ``412``: a voice that disappears while
+    the node runs stays declared until the node announces again, and refuses when it is asked.
+    """
+    half = world.voices.get(name)
+    if half is None:
+        return True
+    return await half.available()
 
 
 async def envelope_of(world: NodeWorld, order: Mapping[str, Any]) -> dict[str, Any]:
@@ -174,10 +197,10 @@ class Node:
         story 5 asserts that the second of two announcements is a ``412``. An ``announce`` that
         swallowed it and returned the retry's ``200`` would be the one line that breaks that story.
         """
-        answered = await self._client.announce(declaration(self._world), self._revision)
+        answered = await self._client.announce(await declaration(self._world), self._revision)
         if answered.status == httpx.codes.PRECONDITION_FAILED:
             await self.refresh()
-            answered = await self._client.announce(declaration(self._world), self._revision)
+            answered = await self._client.announce(await declaration(self._world), self._revision)
             if answered.status == httpx.codes.PRECONDITION_FAILED:
                 raise TwinNode(TWIN)
         if answered.status == httpx.codes.UNAUTHORIZED:

@@ -25,9 +25,11 @@ kit instead of a test):
 * the **clock** is a ``FakeClock`` an hour behind the Core's, exactly as the fake node's is: a node
   on the system clock would find every decision of a Core stopped in 2026 expired, and would answer
   ``refused`` to the eight stories that run a tool;
-* the **voice** speaks into a ``FakeSpeech``, because a suite has no speakers and ``say`` on a test
-  runner is a machine talking to an empty room. This is the seam M12.3 dec. G added to
-  ``build_node``, and the reason it is a declared parameter rather than a patch.
+* the **voices** speak into a ``FakeSpeech`` each, because a suite has no speakers and ``say`` on a
+  test runner is a machine talking to an empty room. These are the seams M12.3 dec. G and M12.4
+  dec. F added to ``build_node``, and the reason they are declared parameters rather than patches.
+  Since M12.4 they also decide what the node declares, so a fake that says it is there is what
+  makes the declaration the same on every runner.
 
 And a **fourth**, which is the contract's and not this kit's: ``restart()`` means *reconnect
 keeping what you had in hand* (``driver.py``), not *a new operating-system process*. The envelope
@@ -123,8 +125,16 @@ class RealNode:
         self._declared_tools = tools
         self.speech = FakeSpeech()
         """The port the voice speaks through here: what it was asked to say is in ``said``."""
+        self.speech_online = FakeSpeech()
+        """And the online voice's, because since M12.4 its player decides what the node declares:
+        left to the machine, this kit would declare ``voice-speak-online`` on a Mac and not on the
+        Ubuntu job (dec. F)."""
         self._built = build_node(
-            _config(world, directory), clock=clock, speech=self.speech, system=system
+            _config(world, directory),
+            clock=clock,
+            speech=self.speech,
+            speech_online=self.speech_online,
+            system=system,
         )
         self._client = self._open(identity)
         self._node = Node(self._built, self._client)
@@ -153,11 +163,12 @@ class RealNode:
 
     @property
     def tool_names(self) -> tuple[str, ...]:
-        """What this node declares: the names of the tools that were actually built."""
+        """The names of the tools that were actually built. What the node **declares** also asks
+        the machine (M12.4 dec. F), and with this kit's fakes the two are the same."""
         return tuple(tool.name for tool in self._built.tools.tools())
 
-    def _declaration(self, declared: Mapping[str, Any]) -> dict[str, Any]:
-        body = declaration(self._built)
+    async def _declaration(self, declared: Mapping[str, Any]) -> dict[str, Any]:
+        body = await declaration(self._built)
         if self._declared_tools is not None:
             body["available_tools"] = list(self._declared_tools)
         return {**body, **dict(declared)}
@@ -168,7 +179,7 @@ class RealNode:
 
     async def enroll(self, code: str, **declared: Any) -> Answered:
         """Present the code, and write the identity down before anything else happens."""
-        answered = await self._client.enroll(code, self._declaration(declared))
+        answered = await self._client.enroll(code, await self._declaration(declared))
         identity = self._client.identity
         if answered.status == 201 and identity is not None:
             write_identity(self._directory, identity)
@@ -183,7 +194,9 @@ class RealNode:
         story 5 asserts that the second of two announcements is a ``412``. An act that swallowed it
         would be the one line that turns that story green while breaking what it proves.
         """
-        answered = await self._client.announce(self._declaration(declared), self._node.revision)
+        answered = await self._client.announce(
+            await self._declaration(declared), self._node.revision
+        )
         if answered.etag is not None:
             self._node.saw(int(answered.etag.strip('"')))
         return Answered(answered.status, answered.body, answered.etag)

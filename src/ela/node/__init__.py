@@ -74,7 +74,7 @@ async def join_or_read(
     if code is None:
         raise NotEnrolled(UNENROLLED)
     client = open_node_client(world.config.node.node_core_url, None, transport)
-    answered = await client.enroll(code, declaration(world))
+    answered = await client.enroll(code, await declaration(world))
     if answered.status != httpx.codes.CREATED:
         raise NodeError(
             f"this code did not enrol the node ({answered.code or answered.status}). A code is "

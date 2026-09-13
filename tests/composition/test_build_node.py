@@ -15,13 +15,14 @@ import pytest
 
 from ela.composition import ConfigurationError, NodeConfig, NodeSettings, build_node
 from ela.composition.node import NodeWorld
+from ela.domain import OperatingSystem
 from ela.infrastructure.machine import SaySpeechCommand, UnsupportedSpeech
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
 from ela.routing.policy import Route
 from ela.testing.fakes import FakeClock, FakeSpeech
-from ela.tools import DIRECTORY_MODE
+from ela.tools import DIRECTORY_MODE, VOICE_ONLINE_TOOL_NAME, VOICE_TOOL_NAME
 from ela.tools.settings import VoiceSettings
 
 
@@ -59,9 +60,11 @@ def test_it_builds_nothing_that_decides(tmp_path: Path) -> None:
 
     assert {field for field in NodeWorld.__dataclass_fields__} == {
         "config",
+        "os",
         "clock",
         "ids",
         "tools",
+        "voices",
         "speech_dir",
     }
     assert not hasattr(built, "database")
@@ -165,9 +168,67 @@ def test_the_system_it_is_not_told_is_the_one_this_machine_answers(
     assert isinstance(_speech_of(built), UnsupportedSpeech)
 
 
+@pytest.mark.parametrize(
+    ("system", "declared"),
+    [
+        ("Darwin", OperatingSystem.MACOS),
+        ("Windows", OperatingSystem.WINDOWS),
+        ("Linux", OperatingSystem.LINUX),
+    ],
+)
+def test_the_operating_system_is_the_one_the_node_was_built_for(
+    tmp_path: Path, system: str, declared: OperatingSystem
+) -> None:
+    """M12.4 dec. A. Until M12.4 a node declared ``"MACOS"`` as a literal wherever it ran. The value
+    comes from the map the Core's ``local`` is declared with (``ela.devices.local``), and not from a
+    second list here."""
+    built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+
+    assert built.os is declared
+
+
+def test_a_system_no_node_knows_stops_it_before_anything_is_built(tmp_path: Path) -> None:
+    """A node declares what it runs on, and on a system ELA has no value for it would have nothing
+    true to say: refused at start-up, with the system named, as a configuration it cannot use."""
+    state = tmp_path / "state"
+
+    with pytest.raises(ConfigurationError, match="Plan 9"):
+        build_node(config(state), speech=FakeSpeech(), system="Plan 9")
+
+    assert not state.exists()
+
+
+def test_the_online_voice_is_a_declared_parameter_too(tmp_path: Path) -> None:
+    """M12.4 dec. F: since a node declares only the voices its machine can use, the online voice's
+    player decides what a node promises, and a test must be able to name it as it names the local
+    one. What was wired into the tool is what the declaration asks."""
+    local, online = FakeSpeech(), FakeSpeech()
+
+    built = build_node(config(tmp_path), speech=local, speech_online=online)
+
+    assert _port_of(built, VOICE_ONLINE_TOOL_NAME) is online
+    assert built.voices == {VOICE_TOOL_NAME: local, VOICE_ONLINE_TOOL_NAME: online}
+
+
+def test_the_voices_the_declaration_asks_are_the_ones_the_tools_speak_through(
+    tmp_path: Path,
+) -> None:
+    """Without the seams too: a declaration that asked one port while the tool spoke through
+    another would promise what nobody checked."""
+    built = build_node(config(tmp_path), system="Darwin")
+
+    assert built.voices[VOICE_TOOL_NAME] is _port_of(built, VOICE_TOOL_NAME)
+    assert built.voices[VOICE_ONLINE_TOOL_NAME] is _port_of(built, VOICE_ONLINE_TOOL_NAME)
+
+
 def _speech_of(built: NodeWorld) -> object:
-    local = built.tools.get(built.tools.tools()[2].capability_id)
-    return local._speech  # noqa: SLF001 — what was wired is not on the public surface
+    return _port_of(built, VOICE_TOOL_NAME)
+
+
+def _port_of(built: NodeWorld, name: str) -> object:
+    """The port a voice tool was built with, found by the tool's name and not by its position."""
+    (tool,) = (one for one in built.tools.tools() if one.name == name)
+    return tool._speech  # type: ignore[attr-defined]  # noqa: SLF001 — not on the public surface
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits: Windows has no 0o700")

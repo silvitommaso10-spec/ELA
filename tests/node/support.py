@@ -44,7 +44,19 @@ def config(directory: Path, **node: Any) -> NodeConfig:
 
 
 def world(directory: Path, clock: FakeClock | None = None, **node: Any) -> NodeWorld:
-    return build_node(config(directory, **node), clock=clock or FakeClock(), speech=FakeSpeech())
+    """A node of a named system with both voices faked, so what it declares is the same everywhere.
+
+    Both, and the system named (M12.4 dec. F, G): a node declares only the voices its machine can
+    use, and the online voice's player is ``afplay`` — present on a Mac, absent on the Ubuntu job.
+    A world that left either to the machine would declare four tools here and three there.
+    """
+    return build_node(
+        config(directory, **node),
+        clock=clock or FakeClock(),
+        speech=FakeSpeech(),
+        speech_online=FakeSpeech(),
+        system="Darwin",
+    )
 
 
 class Script:

@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 import pytest
 
+from ela.composition import build_node
 from ela.domain import CapabilityId
 from ela.node import (
     CoreUnreachable,
@@ -28,8 +29,10 @@ from ela.node import (
     envelope_of,
     forever,
 )
-from ela.testing.fakes import FakeClock
+from ela.testing.fakes import FakeClock, FakeSpeech
+from ela.tools.settings import VoiceSettings
 from tests.node.support import (
+    config,
     costly,
     dropped,
     node_of,
@@ -390,17 +393,59 @@ async def test_a_ceiling_stops_a_node_whose_core_is_never_coming_back(tmp_path: 
 # ----------------------------------------------------------------------------------------
 
 
-def test_what_a_node_declares_comes_from_the_objects_it_actually_built(tmp_path: Path) -> None:
+async def test_what_a_node_declares_comes_from_the_objects_it_actually_built(
+    tmp_path: Path,
+) -> None:
     """Dec. F: a declaration written by hand is a promise. And ``capabilities`` is empty on
-    purpose — M12.1 D9 keeps ``MISSING_TRAIT`` out of production until some path can produce it."""
+    purpose — M12.1 D9 keeps ``MISSING_TRAIT`` out of production until some path can produce it.
+
+    ``MACOS`` because the world names Darwin, not because a literal says so: until M12.4 it did."""
     built = world(tmp_path, node_name="il-mac")
 
-    said = declaration(built)
+    said = await declaration(built)
 
     assert said["name"] == "il-mac"
     assert said["os"] == "MACOS"
     assert said["capabilities"] == []
     assert said["performance"] == "UNKNOWN"
+    assert set(said["available_tools"]) == {
+        "core-echo",
+        "model-complete",
+        "voice-speak",
+        "voice-speak-online",
+    }
+
+
+async def test_a_voice_this_machine_cannot_use_is_built_but_not_declared(tmp_path: Path) -> None:
+    """M12.4 dec. F. Until M12.4 a node declared every tool it had built, so a machine with no
+    ``say`` and no player promised both voices: the orchestrator filters by name, and a step could
+    be placed there only for the machine to refuse it. The tools are still built — an order that
+    reaches one answers as it always did — and what changes is what the node promises."""
+    built = build_node(
+        config(tmp_path),
+        clock=FakeClock(),
+        speech=FakeSpeech(there=False),
+        speech_online=FakeSpeech(there=False),
+        system="Darwin",
+    )
+
+    said = await declaration(built)
+
+    assert said["available_tools"] == ["core-echo", "model-complete"]
+    assert len(built.tools.tools()) == 4
+
+
+async def test_a_voice_the_user_switched_off_is_still_declared(tmp_path: Path) -> None:
+    """ "This machine cannot" and "you asked ELA not to" are two facts with two things to do
+    (ADR 0033 §9), and the second is heard only if the tool arrives: it refuses with
+    ``voice.disabled``. ``available()`` is about the machine, and the switch is not."""
+    off = config(tmp_path).model_copy(update={"voice": VoiceSettings(voice_enabled=False)})
+    built = build_node(
+        off, clock=FakeClock(), speech=FakeSpeech(), speech_online=FakeSpeech(), system="Darwin"
+    )
+
+    said = await declaration(built)
+
     assert set(said["available_tools"]) == {
         "core-echo",
         "model-complete",

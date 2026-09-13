@@ -17,12 +17,16 @@ composing **less**.
 from __future__ import annotations
 
 import platform
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 from ela.composition.errors import ConfigurationError
 from ela.composition.settings import NodeConfig
 from ela.composition.system import SystemClock, UuidGenerator
+from ela.devices import UnsupportedOperatingSystemError, operating_system
+from ela.domain import OperatingSystem
 from ela.infrastructure.machine import (
     OnlineSpeechCommand,
     SaySpeechCommand,
@@ -34,7 +38,13 @@ from ela.providers.anthropic import anthropic_provider
 from ela.providers.elevenlabs import ElevenLabsVoice
 from ela.providers.registry import ProviderRegistry
 from ela.routing import ModelRouter
-from ela.tools import DIRECTORY_MODE, ToolRegistry, node_tools
+from ela.tools import (
+    DIRECTORY_MODE,
+    VOICE_ONLINE_TOOL_NAME,
+    VOICE_TOOL_NAME,
+    ToolRegistry,
+    node_tools,
+)
 
 __all__ = ["NodeWorld", "build_node"]
 
@@ -49,6 +59,12 @@ class NodeWorld:
     """
 
     config: NodeConfig
+    os: OperatingSystem
+    """The system this node was built for, and what it declares (M12.4 dec. A).
+
+    The composition's answer and never the cycle's: until M12.4 the declaration said ``"MACOS"`` as
+    a literal, and a node on any other machine would have told the Core it was a Mac.
+    """
     clock: Clock
     """**The node's own, and it is a parameter** (M12.1 D1).
 
@@ -60,6 +76,14 @@ class NodeWorld:
     """
     ids: IdGenerator
     tools: ToolRegistry
+    voices: Mapping[str, SpeechPort]
+    """The machine's half of each tool that has one, by tool name (M12.4 dec. F).
+
+    What the declaration asks before it promises a tool. A voice whose port answers ``available()``
+    false is still built — an order that reaches it answers as it always did — but it is not
+    declared, because the orchestrator filters by name and would otherwise place a step on a
+    machine that cannot run it. Only the voices have a half that reads the machine.
+    """
     speech_dir: Path
 
     def sweep_speech(self) -> int:
@@ -76,9 +100,10 @@ def build_node(
     *,
     clock: Clock | None = None,
     speech: SpeechPort | None = None,
+    speech_online: SpeechPort | None = None,
     system: str | None = None,
 ) -> NodeWorld:
-    """Build a node from ``config``, in one function and with three seams that are declared.
+    """Build a node from ``config``, in one function and with four seams that are declared.
 
     ``system`` is what ``platform.system()`` answers, and it defaults to this machine's answer. It
     is a parameter so that a platform choice is proved by **naming** the system and never by being
@@ -95,6 +120,15 @@ def build_node(
     microphone, no screen, no keys"); this is how the real one gets the same thing without
     pretending to be something else.
 
+    ``speech_online`` is the fourth, for the reason the declaration gave it (M12.4 dec. F): a node
+    declares only the voices its machine can use, so the online voice's player — which looks for
+    ``afplay`` on the filesystem — decides what a node promises, and a test asserting a declaration
+    would otherwise say four tools on macOS and three on Ubuntu.
+
+    :raises ConfigurationError: for a system no node of ELA knows (``operating_system``), before
+        anything is built: a node declares what it runs on, and there it would have nothing true to
+        say.
+
     :raises ConfigurationError: if the routing table names a provider nobody registered, or is
         empty. A provider with **no key** is not that: it registers ``UNAVAILABLE``, the router
         skips it, and ``model.complete`` fails with ``provider.unavailable`` without touching the
@@ -107,6 +141,14 @@ def build_node(
     # because the arm a ternary does not take costs the 100% branch gate nothing.
     if system is None:
         system = platform.system()
+    # The same map the Core's ``local`` is declared with, and not a second list beside it.
+    try:
+        declared = operating_system(system)
+    except UnsupportedOperatingSystemError as unknown:
+        raise ConfigurationError(
+            f"ELA has no node for this operating system ({system}): a node declares what it runs "
+            "on, and here it would have nothing true to say."
+        ) from unknown
 
     # The order of ADR 0022 §7, and the same three objects the Core builds: a provider, a registry
     # that holds it, a router over the two. The key is the **node's** — the order carries the call,
@@ -139,10 +181,14 @@ def build_node(
     # Built on every platform and answering everywhere: without a key or without a voice it reports
     # which of the two is missing and touches no network (ADR 0034 §5). Not behind the platform
     # branch — it is not a macOS adapter — which is the correction of 2026-09-09.
-    online = ElevenLabsVoice(config.elevenlabs)
-    playing = OnlineSpeechCommand(
-        synthesise=online.synthesise, unconfigured=online.unconfigured, directory=scratch
-    )
+    playing: SpeechPort
+    if speech_online is not None:
+        playing = speech_online
+    else:
+        online = ElevenLabsVoice(config.elevenlabs)
+        playing = OnlineSpeechCommand(
+            synthesise=online.synthesise, unconfigured=online.unconfigured, directory=scratch
+        )
 
     # An ``if``, never ``X if darwin else Y`` (architecture rule 37): a ternary's untaken side costs
     # the 100% branch gate nothing, so a platform choice written that way is proved on the runner it
@@ -157,6 +203,7 @@ def build_node(
 
     return NodeWorld(
         config=config,
+        os=declared,
         clock=the_clock,
         ids=ids,
         tools=node_tools(
@@ -171,5 +218,6 @@ def build_node(
             voice_id=config.elevenlabs.elevenlabs_voice_id,
             model=config.elevenlabs.elevenlabs_model,
         ),
+        voices=MappingProxyType({VOICE_TOOL_NAME: local, VOICE_ONLINE_TOOL_NAME: playing}),
         speech_dir=scratch,
     )
