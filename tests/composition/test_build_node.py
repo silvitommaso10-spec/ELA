@@ -6,7 +6,9 @@ is absent here is something that *decides*, and a node decides nothing (M12.1 D1
 
 from __future__ import annotations
 
+import os
 import platform
+import stat
 from pathlib import Path
 
 import pytest
@@ -19,6 +21,7 @@ from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
 from ela.routing.policy import Route
 from ela.testing.fakes import FakeClock, FakeSpeech
+from ela.tools import DIRECTORY_MODE
 from ela.tools.settings import VoiceSettings
 
 
@@ -152,6 +155,30 @@ def test_without_the_seam_the_voice_is_this_machine_s(
 def _speech_of(built: NodeWorld) -> object:
     local = built.tools.get(built.tools.tools()[2].capability_id)
     return local._speech  # noqa: SLF001 — what was wired is not on the public surface
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits: Windows has no 0o700")
+def test_the_state_directory_is_born_0o700_where_no_core_made_it_first(tmp_path: Path) -> None:
+    """M12.3b. The directory that holds the node's secret is ``0o700`` from the moment it exists.
+
+    On this Mac ``~/.ela`` was always ``0o700``, and not because of the node: the Core had made it
+    first, as the parent of its database. On a machine that runs **only** a node nobody had, and
+    ``build_node`` made ``<state>/speech`` with ``parents=True`` — which makes every missing parent
+    with the default mode — so the state directory came out ``0o755`` and ``write_identity``'s own
+    ``mkdir(0o700)`` found it already there. ADR 0039 §6 says "in a ``0o700`` directory".
+
+    The ``umask`` is the test, as in ``tests/node/test_state.py``: with ``0o000`` a directory made
+    with the default mode shows up as ``0o777``, whatever this machine's umask is.
+    """
+    state = tmp_path / "a-machine-with-no-core" / ".ela"
+    was = os.umask(0o000)
+    try:
+        build_node(config(state), speech=FakeSpeech())
+    finally:
+        os.umask(was)
+
+    assert stat.S_IMODE(state.stat().st_mode) == DIRECTORY_MODE
+    assert stat.S_IMODE((state / "speech").stat().st_mode) == DIRECTORY_MODE
 
 
 def test_it_sweeps_the_audio_a_crash_would_have_left(tmp_path: Path) -> None:

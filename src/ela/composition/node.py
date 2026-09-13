@@ -117,8 +117,14 @@ def build_node(
     # ADR 0029 §1 gives about ``ELA_CAPTURE_DIR``: private working files of ELA go where nothing
     # syncs them. Not derived from a capture store as the Core's is, because a node has no capture
     # store either: what a test redirects here is ``ELA_NODE_STATE_DIR``.
+    #
+    # The state directory **first**, with its own mode (M12.3b). ``Path.mkdir(parents=True)`` makes
+    # every missing parent with the default mode, so making ``speech/`` first — as this did until
+    # M12.3b — left the directory that holds the node's secret ``0o755`` on any machine where the
+    # Core had not made it already; ``write_identity``'s ``mkdir(0o700)`` then found it there.
+    config.node.node_state_dir.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
     scratch = config.node.node_state_dir / "speech"
-    scratch.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
+    scratch.mkdir(mode=DIRECTORY_MODE, exist_ok=True)
 
     # Built on every platform and answering everywhere: without a key or without a voice it reports
     # which of the two is missing and touches no network (ADR 0034 §5). Not behind the platform
