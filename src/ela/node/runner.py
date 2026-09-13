@@ -29,7 +29,7 @@ from ela.node.errors import (
     NodeRevoked,
     TwinNode,
 )
-from ela.ports import NotAllowedError
+from ela.ports import NotAllowedError, WireCode
 
 __all__ = ["Node", "declaration", "envelope_of"]
 
@@ -41,22 +41,17 @@ cleanly. Asking at the very end would mean a slow network turns "renewed" into "
 asking immediately would mean asking constantly for work that is about to finish anyway.
 """
 
-DELIVERY_CONFLICT: Final = "delivery.conflict"
-"""``409`` on delivery, and the one that means **the Core has already decided** (ADR 0038 §12)."""
-
 IDLE: Final = "IDLE"
 BUSY: Final = "BUSY"
 """What the node reports of itself, and the only two it can honestly tell apart."""
 
 DECIDED: Final = frozenset({httpx.codes.NOT_FOUND, httpx.codes.GONE})
-"""The statuses on which the Core has decided about this work, so the envelope is nobody's."""
+"""The statuses on which the Core has decided about this work, so the envelope is nobody's.
 
-ALREADY_RUNNING: Final = "already_running"
-"""``409`` on delivery, and the one the node **keeps the envelope** for (ADR 0038 §12).
-
-The Core is busy with that task and has written nothing: this is a "not now". The other ``409``
-there — ``delivery.conflict`` — is the Core having already decided, and then the envelope is
-nobody's. The two are told apart by ``error.code`` and never by the status, which is the same.
+The two ``409`` of a delivery share a status and are told apart by ``error.code``, from the
+vocabulary of the wire (:class:`~ela.ports.WireCode`): ``delivery.conflict`` is the Core having
+decided, ``already_running`` is a "not now" the envelope is kept for (ADR 0038 §12). Until M12.4
+both were strings written again here, and the second was never read by anything.
 """
 
 
@@ -309,7 +304,7 @@ class Node:
         if answered.status == httpx.codes.OK:
             self._held = None  # the Core has it: a node keeps nothing it has been told about
             return
-        decided = answered.status in DECIDED or answered.code == DELIVERY_CONFLICT
+        decided = answered.status in DECIDED or answered.code == WireCode.DELIVERY_CONFLICT
         if decided:
             self._held = None
         # And on anything else the envelope **stays**. The first version let it go on every

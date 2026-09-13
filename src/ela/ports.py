@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from enum import StrEnum
 from typing import Final, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -176,11 +177,55 @@ __all__ = [
     "VERIFICATION_WRONG_CAPABILITY",
     "VerifierPort",
     "VerifierRegistryPort",
+    "WireCode",
     "check_answer",
     "check_limit",
     "check_verifiable",
     "named",
 ]
+
+
+# --------------------------------------------------------------------------------------
+# The vocabulary of the wire
+# --------------------------------------------------------------------------------------
+
+
+class WireCode(StrEnum):
+    """Every ``error.code`` the API answers with, and nothing else (ADR 0023 §10; M12.4).
+
+    A client branches on the code — a node tells the two ``409`` of a delivery apart by it, because
+    the status is the same — so the code is the one part of a refusal both ends must spell the same
+    way. Until M12.4 it was a string written wherever it was needed: in the API's table, in a node's
+    constants, in a node's tests. Nothing compared them, and the node's tests scripted three codes
+    no Core has ever sent (``renewal.capped``, ``too_late``, ``code_reused``).
+
+    **Here because it is the one place both ends may import**: ``ela.api`` and ``ela.node`` both
+    reach ``ela.ports``, and ``ela.ports`` reaches nothing but the domain (import contract 2). A
+    closed list, held in both directions by ``tests/api/test_wire_codes.py``: every code the API
+    emits is a member, and every member is emitted by someone.
+
+    The codes of a **tool** (``provider.*``, ``speech.*``, ``verification.*``) are not these: they
+    travel inside a result, as its word, and not as the answer to a request.
+    """
+
+    NOT_FOUND = "not_found"
+    ALREADY_EXISTS = "already_exists"
+    NOT_ANSWERABLE = "not_answerable"
+    TAMPERED = "tampered"
+    INVALID = "invalid"
+    CONFLICT = "conflict"
+    ALREADY_RUNNING = "already_running"
+    ASSIGNMENT_EXPIRED = "assignment.expired"
+    ASSIGNMENT_VOID = "assignment.void"
+    NOT_ASSIGNED = "not_assigned"
+    ASSIGNMENT_AT_CAP = "assignment.at_cap"
+    DELIVERY_CONFLICT = "delivery.conflict"
+    IDENTITY_CONFLICT = "identity_conflict"
+    NOT_REVOCABLE = "not_revocable"
+    REVISION_REQUIRED = "revision_required"
+    DATABASE_UNAVAILABLE = "database_unavailable"
+    UNAUTHORIZED = "unauthorized"
+    """Every refusal of the middleware, whatever the reason was (ADR 0023 §7, ADR 0037 §13)."""
 
 
 # --------------------------------------------------------------------------------------

@@ -29,9 +29,11 @@ from ela.node import (
     envelope_of,
     forever,
 )
+from ela.ports import WireCode
 from ela.testing.fakes import FakeClock, FakeSpeech
 from ela.tools.settings import VoiceSettings
 from tests.node.support import (
+    CORE,
     config,
     costly,
     dropped,
@@ -161,7 +163,7 @@ async def test_the_envelope_is_kept_when_the_core_says_not_now(tmp_path: Path) -
     given = order(expires_at=SOON, decision=decision())
     script = replies(
         status(200, given),
-        refused(409, "already_running"),
+        refused(WireCode.ALREADY_RUNNING),
         ok({"state": "DELIVERED", "step": "COMPLETED"}),
     )
     node, _ = node_of(world(tmp_path), script)
@@ -175,17 +177,27 @@ async def test_the_envelope_is_kept_when_the_core_says_not_now(tmp_path: Path) -
 
 
 @pytest.mark.parametrize(
-    ("code", "error"),
-    [(409, "delivery.conflict"), (404, "not_assigned"), (410, "too_late")],
+    "error",
+    [
+        WireCode.DELIVERY_CONFLICT,
+        WireCode.NOT_ASSIGNED,
+        WireCode.ASSIGNMENT_EXPIRED,
+        WireCode.ASSIGNMENT_VOID,
+    ],
+    ids=str,
 )
 async def test_the_envelope_is_let_go_when_the_core_has_already_decided(
-    tmp_path: Path, code: int, error: str
+    tmp_path: Path, error: WireCode
 ) -> None:
     """Holding it would be holding the user's content for no reason: the Core is not going to
     change its mind, and the two ``409`` are told apart by ``error.code`` and never by the status.
+
+    Every decision a delivery can be refused with, and not a sample of them: until M12.4 this list
+    had ``(410, "too_late")`` standing for the two ``410`` of ADR 0038 §12 — ``assignment.expired``
+    and ``assignment.void`` — and it was neither.
     """
     given = order(expires_at=SOON, decision=decision())
-    node, _ = node_of(world(tmp_path), replies(status(200, given), refused(code, error)))
+    node, _ = node_of(world(tmp_path), replies(status(200, given), refused(error)))
 
     await node.turn()
 
@@ -239,7 +251,7 @@ async def test_at_the_cap_the_node_stops_asking_instead_of_taking_the_time(
     script = replies(
         status(200, given),
         ok({}),  # the beat that goes with every renewal
-        refused(409, "assignment.at_cap"),  # the code the Core sends (``api/app.py``, FAILURES)
+        refused(WireCode.ASSIGNMENT_AT_CAP),
         ok({"state": "DELIVERED", "step": "COMPLETED"}),
     )
     node, _ = node_of(slowly(world(tmp_path, clock=FakeClock(NOW))), script)
@@ -503,7 +515,23 @@ def test_an_answer_that_is_not_a_refusal_has_no_error_code() -> None:
     assert Reply(200, {}).code is None
     assert Reply(200, {"error": "una stringa"}).code is None
     assert Reply(409, {"error": {"message": "senza codice"}}).code is None
-    assert Reply(409, {"error": {"code": "already_running"}}).code == "already_running"
+    running = WireCode.ALREADY_RUNNING
+    assert Reply(409, {"error": {"code": running.value}}).code == running
+
+
+def test_a_refusal_no_core_sends_cannot_be_scripted() -> None:
+    """M12.4. These tests once scripted ``renewal.capped`` and ``too_late``, and ``test_run.py``
+    ``code_reused``: three codes no Core has ever sent, and the node — which branches on the status
+    — passed on all three. A script now takes a member of the wire's vocabulary and the status the
+    API's own table gives it, so an invented code raises at the line that invents it, and a real one
+    cannot arrive with a status the Core never pairs it with."""
+    with pytest.raises(ValueError, match="too_late"):
+        refused("too_late")  # type: ignore[arg-type]
+
+    answered = refused(WireCode.NOT_ASSIGNED)(httpx.Request("POST", f"{CORE}/nodes/work/result"))
+
+    assert answered.status_code == 404
+    assert answered.json() == {"error": {"code": "not_assigned", "message": "not_assigned"}}
 
 
 async def test_the_node_says_it_is_here_on_every_pass_and_not_only_at_start_up(
@@ -589,7 +617,7 @@ async def test_an_answer_the_core_did_not_decide_keeps_the_envelope(tmp_path: Pa
     """
     given = order(expires_at=SOON, decision=decision())
     node, _ = node_of(
-        world(tmp_path), replies(status(200, given), refused(503, "database_unavailable"))
+        world(tmp_path), replies(status(200, given), refused(WireCode.DATABASE_UNAVAILABLE))
     )
 
     await node.turn()
@@ -638,7 +666,7 @@ async def test_a_deferred_delivery_comes_back_but_not_at_the_speed_of_the_socket
         ok({}, ETag='"2"'),
         ok({}),
         status(200, given),
-        refused(409, "already_running"),  # the envelope stays here
+        refused(WireCode.ALREADY_RUNNING),  # the envelope stays here
         ok({}),
         ok({"state": "DELIVERED", "step": "COMPLETED"}),  # the pass that delivers it
         ok({}),

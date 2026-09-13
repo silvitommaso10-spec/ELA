@@ -65,6 +65,7 @@ from ela.ports import (
     AssignmentNotUsableError,
     IdentityConflictError,
     NotFoundError,
+    WireCode,
 )
 from ela.tasks.engine import RecoverySummary
 from ela.tasks.errors import GraphError, TaskError
@@ -86,7 +87,9 @@ class Failure:
 
     exception: type[Exception]
     status: int
-    code: str
+    code: WireCode
+    """A member of the vocabulary of the wire, never a string written here (M12.4): the same member
+    a node branches on, so the two sides cannot spell a code two ways."""
     message: str | None = None
     """What to say instead of the exception's own words, when the caller must learn nothing from it.
 
@@ -97,27 +100,27 @@ class Failure:
 
 
 FAILURES: tuple[Failure, ...] = (
-    Failure(NotFoundError, 404, "not_found"),
-    Failure(AlreadyExistsError, 409, "already_exists"),
-    Failure(ApprovalNotAnswerableError, 409, "not_answerable"),
-    Failure(AuditChainError, 409, "tampered"),
-    Failure(GraphError, 422, "invalid"),
-    Failure(TaskError, 409, "conflict"),
-    Failure(ExecutorError, 409, "conflict"),
-    Failure(RunnerError, 409, "conflict"),
-    Failure(TaskAlreadyRunningError, 409, "already_running"),
-    Failure(AssignmentExpiredError, 410, "assignment.expired"),
-    Failure(AssignmentVoidError, 410, "assignment.void"),
-    Failure(AssignmentNotUsableError, 404, "not_assigned", NOT_YOUR_WORK),
-    Failure(WorkNotYoursError, 404, "not_assigned", NOT_YOUR_WORK),
-    Failure(AssignmentAtCapError, 409, "assignment.at_cap"),
-    Failure(DeliveryConflictError, 409, "delivery.conflict"),
-    Failure(IdentityConflictError, 412, "identity_conflict"),
-    Failure(LocalDeviceNotRevocableError, 409, "not_revocable"),
-    Failure(RevisionRequiredError, 428, "revision_required"),
-    Failure(DatabaseUnavailableError, 503, "database_unavailable"),
-    Failure(RequestValidationError, 422, "invalid"),
-    Failure(ValueError, 422, "invalid"),
+    Failure(NotFoundError, 404, WireCode.NOT_FOUND),
+    Failure(AlreadyExistsError, 409, WireCode.ALREADY_EXISTS),
+    Failure(ApprovalNotAnswerableError, 409, WireCode.NOT_ANSWERABLE),
+    Failure(AuditChainError, 409, WireCode.TAMPERED),
+    Failure(GraphError, 422, WireCode.INVALID),
+    Failure(TaskError, 409, WireCode.CONFLICT),
+    Failure(ExecutorError, 409, WireCode.CONFLICT),
+    Failure(RunnerError, 409, WireCode.CONFLICT),
+    Failure(TaskAlreadyRunningError, 409, WireCode.ALREADY_RUNNING),
+    Failure(AssignmentExpiredError, 410, WireCode.ASSIGNMENT_EXPIRED),
+    Failure(AssignmentVoidError, 410, WireCode.ASSIGNMENT_VOID),
+    Failure(AssignmentNotUsableError, 404, WireCode.NOT_ASSIGNED, NOT_YOUR_WORK),
+    Failure(WorkNotYoursError, 404, WireCode.NOT_ASSIGNED, NOT_YOUR_WORK),
+    Failure(AssignmentAtCapError, 409, WireCode.ASSIGNMENT_AT_CAP),
+    Failure(DeliveryConflictError, 409, WireCode.DELIVERY_CONFLICT),
+    Failure(IdentityConflictError, 412, WireCode.IDENTITY_CONFLICT),
+    Failure(LocalDeviceNotRevocableError, 409, WireCode.NOT_REVOCABLE),
+    Failure(RevisionRequiredError, 428, WireCode.REVISION_REQUIRED),
+    Failure(DatabaseUnavailableError, 503, WireCode.DATABASE_UNAVAILABLE),
+    Failure(RequestValidationError, 422, WireCode.INVALID),
+    Failure(ValueError, 422, WireCode.INVALID),
 )
 """The table of ADR 0023 §10, read from the most specific entry to the least.
 

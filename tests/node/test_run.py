@@ -21,6 +21,7 @@ from ela.node import (
     run,
 )
 from ela.node.state import STATE_FILE
+from ela.ports import WireCode
 from tests.node.support import dropped, ok, refused, replies, status, world
 
 BORN = {
@@ -82,7 +83,7 @@ async def test_a_code_that_does_not_work_says_so_and_writes_nothing(tmp_path: Pa
             built.config,
             join="vecchio",
             world=built,
-            transport=replies(refused(401, "code_reused")).transport(),
+            transport=replies(refused(WireCode.UNAUTHORIZED)).transport(),
         )
 
     assert read_identity(tmp_path) is None
