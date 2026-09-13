@@ -55,7 +55,7 @@ from ela.tools.verifiers import SPEECH_TEXT_MATCHES, SPEECH_TOOK_REAL_TIME
 from tests.api.support import echo_plan, note_plan
 from tests.conformance.driver import Conformance, NodeDriver, NodeKit, needs
 from tests.conformance.fake_node import FAKE
-from tests.conformance.macos_node import MACOS
+from tests.conformance.real_node import MACOS
 
 E = AuditEventType
 T = TaskEventType
@@ -70,7 +70,11 @@ below do not change — which is the whole claim of dec. P.
 Two since M12.3, and the second is the one that matters: ``macos-node`` is the code ``ela node run``
 runs, not an implementation written for this file. The first thing it found was a hole — a process
 that comes back has no revision to announce against, and nothing in the protocol gave it one — and
-that is what ``GET /nodes/me`` and the two new lines of story 11 are (M12.3 dec. L)."""
+that is what ``GET /nodes/me`` and the two new lines of story 11 are (M12.3 dec. L).
+
+Since M12.4 the second is :class:`~tests.conformance.real_node.RealNodeKit` naming ``Darwin``: the
+real node's driver takes the system it builds as a name, so the composition a kit recites does not
+depend on the runner the suite happens to run on (ADR 0031 §3)."""
 
 
 @pytest.fixture(params=KITS, ids=lambda kit: kit.name)

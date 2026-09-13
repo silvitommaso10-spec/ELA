@@ -1,10 +1,21 @@
-"""The macOS node of M12.3, driving the contract with the code production runs (dec. G).
+"""The real node, driving the contract with the code production runs, on the system it names.
 
 The second implementation of :class:`~tests.conformance.driver.NodeDriver`, and the first that is
 not written for the suite: every act below calls the same :class:`~ela.node.NodeClient` that
-``ela node run`` calls, over the same :func:`~ela.composition.build_node`, with the same four
-tools. What the kit adds is a transport and two seams, and nothing else — if this file ever grows a
-behaviour of its own, the suite stops proving the node and starts proving the file.
+``ela node run`` calls, over the same :func:`~ela.composition.build_node`, with the same tools. What
+the kit adds is a transport and the seams ``build_node`` declares, and nothing else — if this file
+ever grows a behaviour of its own, the suite stops proving the node and starts proving the file.
+
+**The system is named, not inherited** (M12.4 dec. G, ADR 0031 §3). Until M12.4 this file was
+``macos_node.py`` and built whatever composition the runner answered. On the Ubuntu job that was
+the Linux one, and it made no visible difference only because the one thing the system chose — the
+local voice — was replaced by the seam anyway. A kit now says which system it builds, so the
+composition it recites is the same on every runner by construction rather than by coincidence.
+
+What was a file per platform is one driver with a name and a system: the kits of two systems would
+be identical but for those two words, which is what M12.3 said the second node would show ("se il
+secondo nodo mostrerà che qualcosa andava condiviso, lo condividerà lui"). Today there is one kit,
+for Darwin.
 
 **Three things are not real, and all three are declared** (the shape of ADR 0031 §6, applied to a
 kit instead of a test):
@@ -15,15 +26,15 @@ kit instead of a test):
   on the system clock would find every decision of a Core stopped in 2026 expired, and would answer
   ``refused`` to the eight stories that run a tool;
 * the **voice** speaks into a ``FakeSpeech``, because a suite has no speakers and ``say`` on a test
-  runner is a machine talking to an empty room. This is the seam dec. G added to ``build_node``,
-  and the reason it is a declared parameter rather than a patch.
+  runner is a machine talking to an empty room. This is the seam M12.3 dec. G added to
+  ``build_node``, and the reason it is a declared parameter rather than a patch.
 
 And a **fourth**, which is the contract's and not this kit's: ``restart()`` means *reconnect
 keeping what you had in hand* (``driver.py``), not *a new operating-system process*. The envelope
 survives it here exactly as it does in the fake node, because this driver is in-process too — a
-real process restart loses it, and dec. I says so and says why the protocol does not care (the
-assignment expires, and M12.1 D6 decides). What this kit does prove about coming back is narrower
-and real: the **revision** is not remembered, it is asked for.
+real process restart loses it, and M12.3 dec. I says so and says why the protocol does not care
+(the assignment expires, and M12.1 D6 decides). What this kit does prove about coming back is
+narrower and real: the **revision** is not remembered, it is asked for.
 
 What is real: the identity written to a file with ``O_EXCL`` and ``0o600``, the HTTP acts, the
 tools, the envelope's contents, and the fact that a restart forgets the revision — which is the
@@ -92,25 +103,29 @@ def _config(world: Conformance, directory: Path) -> NodeConfig:
     )
 
 
-class MacosNode:
+class RealNode:
     """One real node, driven act by act: the production cycle, taken apart for the stories."""
 
     def __init__(
         self,
         world: Conformance,
         *,
+        system: str,
         directory: Path,
         clock: FakeClock,
         identity: NodeIdentity | None = None,
         tools: tuple[str, ...] | None = None,
     ) -> None:
         self._world = world
+        self._system = system
         self._directory = directory
         self._clock = clock
         self._declared_tools = tools
         self.speech = FakeSpeech()
         """The port the voice speaks through here: what it was asked to say is in ``said``."""
-        self._built = build_node(_config(world, directory), clock=clock, speech=self.speech)
+        self._built = build_node(
+            _config(world, directory), clock=clock, speech=self.speech, system=system
+        )
         self._client = self._open(identity)
         self._node = Node(self._built, self._client)
         self.held: dict[str, Any] | None = None
@@ -238,10 +253,12 @@ class MacosNode:
         ever writes a state file for it) but so that the two are as separate here as two processes
         would be. The twin does not enrol: it is handed the identity, which is what makes it a
         twin and not a second node, and it is handed the revision too, because two processes that
-        start from the same belief is the whole shape of ADR 0035 §5.
+        start from the same belief is the whole shape of ADR 0035 §5. Same system, because a twin
+        on another operating system is not a twin but a second machine with a stolen secret.
         """
-        twin = MacosNode(
+        twin = RealNode(
             self._world,
+            system=self._system,
             directory=self._directory / "twin",
             clock=FakeClock(self._clock.now()),
             identity=self._client.identity,
@@ -254,22 +271,24 @@ class MacosNode:
         await self._client.aclose()
 
 
-class MacosNodeKit:
-    """How the suite gets a node of this implementation. Recites every story of the contract."""
+class RealNodeKit:
+    """How the suite gets a real node of a named system. Recites every story of the contract."""
 
-    name = "macos-node"
-
-    def __init__(self) -> None:
+    def __init__(self, *, name: str, system: str) -> None:
+        self.name = name
+        self.system = system
+        """What ``platform.system()`` would answer on the machine this kit stands for."""
         self._made = 0
 
     @property
     def unsupported(self) -> Mapping[str, str]:
-        """**Empty**, and that is the claim of the milestone (dec. G, criterion 1).
+        """**Empty**, and that is the claim of M12.3 (dec. G, criterion 1).
 
         The map is where an implementation says what its platform cannot do. macOS can do all of
         it: it can be two processes, it can die and come back, it can keep a secret in a file. A
         node declaring a story unrecitable would be saying something about its platform, and this
-        one has nothing to say.
+        one has nothing to say. A kit of another system that had something to say would be a
+        different kit, with its own pinned map — not an ``if`` here.
         """
         return {}
 
@@ -279,15 +298,16 @@ class MacosNodeKit:
         *,
         privacy: str = "TRUSTED",
         tools: tuple[str, ...] | None = None,
-    ) -> MacosNode:
+    ) -> RealNode:
         """Enrolled through the routes of M12.1, reporting once so the registry finds it available.
 
         A directory per node, because two nodes on one machine would be two state files and
         ``O_EXCL`` is what says so.
         """
         self._made += 1
-        node = MacosNode(
+        node = RealNode(
             world,
+            system=self.system,
             directory=_scratch(world) / f"node-{self._made}",
             clock=FakeClock(ONE_HOUR_BEHIND),
             tools=tools,
@@ -302,5 +322,6 @@ class MacosNodeKit:
         return node
 
 
-MACOS = MacosNodeKit()
-"""The kit of M12.3, beside the fake node's. The stories do not change — dec. P."""
+MACOS = RealNodeKit(name="macos-node", system="Darwin")
+"""The kit of M12.3, beside the fake node's: the real node, naming Darwin. The stories do not
+change — dec. P."""

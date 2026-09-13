@@ -19,7 +19,7 @@ import pytest
 
 from tests.conformance.driver import STORIES, NodeKit, needs
 from tests.conformance.fake_node import FAKE
-from tests.conformance.macos_node import MACOS
+from tests.conformance.real_node import MACOS
 from tests.conformance.test_node_contract import KITS
 
 CONTRACT = Path(__file__).with_name("test_node_contract.py")

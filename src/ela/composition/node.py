@@ -76,8 +76,14 @@ def build_node(
     *,
     clock: Clock | None = None,
     speech: SpeechPort | None = None,
+    system: str | None = None,
 ) -> NodeWorld:
-    """Build a node from ``config``, in one function and with two seams that are declared.
+    """Build a node from ``config``, in one function and with three seams that are declared.
+
+    ``system`` is what ``platform.system()`` answers, and it defaults to this machine's answer. It
+    is a parameter so that a platform choice is proved by **naming** the system and never by being
+    it (ADR 0031 §3): the conformance kit names the system it recites, and the composition it builds
+    is then the same on every runner the suite happens to run on (M12.4 dec. G).
 
     ``clock`` and ``speech`` default to this machine's, and whoever wants another one **names it** —
     the shape :func:`~ela.composition.root.build` already has, and for the reason its docstring
@@ -97,6 +103,10 @@ def build_node(
     """
     the_clock = SystemClock() if clock is None else clock
     ids = UuidGenerator()
+    # A statement and not ``platform.system() if system is None else system``: architecture rule 37,
+    # because the arm a ternary does not take costs the 100% branch gate nothing.
+    if system is None:
+        system = platform.system()
 
     # The order of ADR 0022 §7, and the same three objects the Core builds: a provider, a registry
     # that holds it, a router over the two. The key is the **node's** — the order carries the call,
@@ -140,7 +150,7 @@ def build_node(
     local: SpeechPort
     if speech is not None:
         local = speech
-    elif platform.system() == "Darwin":
+    elif system == "Darwin":
         local = SaySpeechCommand(timeout=config.voice.voice_timeout, voice=config.voice.voice_name)
     else:
         local = UnsupportedSpeech()

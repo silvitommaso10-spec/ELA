@@ -137,19 +137,32 @@ def test_the_voice_is_a_declared_parameter_too(tmp_path: Path) -> None:
     assert _speech_of(built) is speech
 
 
-def test_without_the_seam_the_voice_is_this_machine_s(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_without_the_seam_the_voice_is_the_named_system_s(tmp_path: Path) -> None:
     """An ``if`` and never a ternary (architecture rule 37): both arms are measured, so the
-    platform this did *not* run on is proved too, and M12.4's Windows node arrives here."""
-    monkeypatch.setattr(platform, "system", lambda: "Darwin")
-    darwin = build_node(config(tmp_path))
+    platform this did *not* run on is proved too, and M12.4's Windows node arrives here.
 
-    monkeypatch.setattr(platform, "system", lambda: "Linux")
-    elsewhere = build_node(config(tmp_path))
+    **Named, not patched** (ADR 0031 §3, M12.4 dec. G): until M12.4 this test replaced
+    ``platform.system`` for the length of a call, which is the shape ``build_node``'s own docstring
+    argues against. The system is a parameter now, and each arm is asked for by name.
+    """
+    darwin = build_node(config(tmp_path), system="Darwin")
+    elsewhere = build_node(config(tmp_path), system="Linux")
 
     assert isinstance(_speech_of(darwin), SaySpeechCommand)
     assert isinstance(_speech_of(elsewhere), UnsupportedSpeech)
+
+
+def test_the_system_it_is_not_told_is_the_one_this_machine_answers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default, and the one place a patch is the test: what is proved is that an unnamed system
+    is read from ``platform.system()`` and not from a constant — which only an answer this machine
+    would not give can show."""
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+
+    built = build_node(config(tmp_path))
+
+    assert isinstance(_speech_of(built), UnsupportedSpeech)
 
 
 def _speech_of(built: NodeWorld) -> object:
