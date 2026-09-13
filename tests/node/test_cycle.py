@@ -236,7 +236,7 @@ async def test_at_the_cap_the_node_stops_asking_instead_of_taking_the_time(
     script = replies(
         status(200, given),
         ok({}),  # the beat that goes with every renewal
-        refused(409, "renewal.capped"),
+        refused(409, "assignment.at_cap"),  # the code the Core sends (``api/app.py``, FAILURES)
         ok({"state": "DELIVERED", "step": "COMPLETED"}),
     )
     node, _ = node_of(slowly(world(tmp_path, clock=FakeClock(NOW))), script)
