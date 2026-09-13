@@ -448,9 +448,12 @@ async def test_a_voice_this_machine_cannot_use_is_built_but_not_declared(tmp_pat
 
 
 async def test_a_voice_the_user_switched_off_is_still_declared(tmp_path: Path) -> None:
-    """ "This machine cannot" and "you asked ELA not to" are two facts with two things to do
-    (ADR 0033 §9), and the second is heard only if the tool arrives: it refuses with
-    ``voice.disabled``. ``available()`` is about the machine, and the switch is not."""
+    """A switch of the user is not a fact of the machine, so it does not change what is declared.
+
+    ``available()`` answers for the machine; ``ELA_VOICE_ENABLED=false`` is a choice. Declared, the
+    tool arrives and refuses with ``voice.disabled`` — an actionable diagnosis that names the switch
+    (ADR 0033 §9). Not declared, the step would get "no eligible node", which hides the switch
+    behind what reads like a machine that is missing."""
     off = config(tmp_path).model_copy(update={"voice": VoiceSettings(voice_enabled=False)})
     built = build_node(
         off, clock=FakeClock(), speech=FakeSpeech(), speech_online=FakeSpeech(), system="Darwin"

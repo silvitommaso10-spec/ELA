@@ -65,8 +65,14 @@ async def declaration(world: NodeWorld) -> dict[str, Any]:
     is not available is left out. Until M12.4 a node declared every tool it had built, so a machine
     with no ``say`` or no player promised a voice anyway — the orchestrator filters by name, and a
     step could be placed there only to be refused by the machine. On a Mac nothing changes, because
-    the Mac has both. The user's switch is not the machine's answer: a voice switched off is still
-    declared, and refuses with ``voice.disabled`` when it is asked (ADR 0033 §9).
+    the Mac has both.
+
+    **A voice the user switched off is still declared**, and that is deliberate. An ``available()``
+    is a fact of the machine; ``ELA_VOICE_ENABLED=false`` is a choice of the user, and a switch is
+    not a fact of the machine. Declared, the tool arrives and refuses with ``voice.disabled`` —
+    a diagnosis the user can act on, which names the switch and says how to turn it back on
+    (ADR 0033 §9). Left out of the declaration, the step would find no eligible node at all, and
+    "no eligible node" would hide the switch behind a placement that reads like a missing machine.
 
     ``os`` is the composition's, for the system the node was built for — until M12.4 it was the
     literal ``"MACOS"`` here.
