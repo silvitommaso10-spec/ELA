@@ -13,8 +13,9 @@ that no other exception writes. Where a scenario needs a state a caller cannot a
 prepared through ELA's own ports — the precedent is ``tamper_with_the_trail`` — never by mounting
 a route that exists only here: a route invented for a test would prove that the test works.
 
-One row cannot be reached and is declared instead of faked (:data:`ALREADY_EXISTS`, since M9.4). It
-says why today and what would open it, and :data:`DECLARED` is what keeps the census closed.
+Two rows cannot be reached and are declared instead of faked — :data:`ALREADY_EXISTS` since M9.4,
+and :data:`NOT_USABLE` since M12.2b, which only a race reaches. Each says why today and what would
+open it, and :data:`DECLARED` is what keeps the census closed.
 
 M12.2 briefly had two more, and neither survived review. The cap of a renewal turned out to be
 reachable with **settings a test chooses** rather than an hour of real seconds (below); and
@@ -50,7 +51,6 @@ from ela.devices import (
 )
 from ela.domain import (
     CapabilityId,
-    DeviceId,
     ExecutionId,
     ExecutionResult,
     ExecutionStatus,
@@ -85,7 +85,7 @@ from tests.api.support import (
     tamper_with_the_trail,
 )
 from tests.api.test_nodes import enrolled
-from tests.api.test_nodes_work import ENVELOPE, taken, work_for
+from tests.api.test_nodes_work import ENVELOPE, taken
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +141,25 @@ is idempotency over an unreliable network: whoever calls generates the id of the
 repeating it cannot duplicate the effect, and the second call is answered ``409 already_exists``
 instead of acting again. The day such a route exists, this row becomes observable and this
 deferral expires.
+"""
+
+NOT_USABLE = """
+``AssignmentNotUsableError`` (404 ``not_assigned``) is reached only by a race between two requests,
+and no single request of this suite can build one.
+
+**Why not today.** Until M12.2b its scenario was the renewal of an offer. Since M12.2b every way
+work is not a node's — an id never minted, another node's, one no longer taken — passes one door,
+``Assignments.mine``, which reads the row and refuses with ``WorkNotYoursError`` before anything is
+written, for a delivery and a renewal alike; the renewal of an offer is that error now. What is left
+for this row is the store's own refusal: the conditional ``UPDATE`` of a renewal touching no row
+because the row moved *between* the door's read and the statement — a delivery of the same work,
+which takes the task's lock that a renewal does not take (ADR 0038 §11). The answer is still the one
+code and the one sentence; what the race skips is the door's ``DEVICE_REJECTED``. The statement and
+the read that names the refusal are under contract in ``tests/contracts/test_assignment_store.py``.
+
+**What would open it.** A seam between the door's read and the store's statement — a store a test
+composes into a real ELA — or a renewal that takes the task's lock, which would turn the race into
+a ``409 already_running`` and retire this row instead of observing it.
 """
 
 
@@ -299,21 +318,6 @@ async def a_delivery_of_work_the_core_never_minted(live: Live) -> Response:
     """An id nobody handed out — answered exactly as another node's work is (``NOT_YOUR_WORK``)."""
     _, _, headers, _ = await taken(live.client, live.ela)
     return await _delivery(live, str(uuid.uuid4()), headers)
-
-
-async def a_renewal_of_work_that_was_only_offered(live: Live) -> Response:
-    """Renewing an offer is renewing something nobody took: the same answer as work of another's.
-
-    This is the row of the ports' family — ``AssignmentStateError`` under
-    ``AssignmentNotUsableError`` — and it reaches the same sentence as the executor's own refusal,
-    which is the point of both.
-    """
-    _, device_id, headers = await work_for(live.client, live.ela)
-    offer = await live.ela.assignments.next_for(DeviceId(uuid.UUID(device_id)))
-    assert offer is not None
-    return await live.client.post(
-        "/nodes/work/renew", json={"assignment_id": str(offer.id)}, headers=headers
-    )
 
 
 async def a_renewal_of_work_already_at_its_cap(live: Live) -> Response:
@@ -514,15 +518,6 @@ RAISED: tuple[Raised, ...] = (
         a_delivery_of_work_the_core_never_minted,
     ),
     Raised(
-        AssignmentNotUsableError,
-        "POST",
-        "/nodes/work/renew",
-        404,
-        "not_assigned",
-        NOT_YOUR_WORK,
-        a_renewal_of_work_that_was_only_offered,
-    ),
-    Raised(
         DeliveryConflictError,
         "POST",
         "/nodes/work/result",
@@ -570,12 +565,20 @@ async def test_every_failure_of_the_table_is_answered_that_way_by_the_applicatio
     assert row.message in body["error"]["message"], body["error"]["message"]
 
 
-DECLARED: dict[type[Exception], str] = {AlreadyExistsError: ALREADY_EXISTS}
+DECLARED: dict[type[Exception], str] = {
+    AlreadyExistsError: ALREADY_EXISTS,
+    AssignmentNotUsableError: NOT_USABLE,
+}
 """The rows no request of this suite can reach, each with its own reason and its own expiry.
 
-One, and it has been one since M9.4. M12.2 added two and then took them back: the cap of a renewal
-is observed below, against an ELA whose settings this file chooses, and the refusal of ``assign``
-left ``FAILURES`` instead of being declared — a row nothing can reach is not a defence.
+One from M9.4 to M12.2b. M12.2 added two and then took them back: the cap of a renewal is observed
+below, against an ELA whose settings this file chooses, and the refusal of ``assign`` left
+``FAILURES`` instead of being declared — a row **nothing** can reach is not a defence.
+
+M12.2b adds one, and it is not that case: a race reaches it in production — a renewal, which takes
+no lock, against a delivery of the same work — and without the row the answer to that race would
+not be the one sentence of work that is not yours. It is declared because one request cannot
+interleave with another, not because nothing can.
 """
 
 
@@ -603,6 +606,13 @@ def test_the_row_that_was_unreachable_before_the_work_protocol_still_says_its_ow
     assert "IdGenerator" in ALREADY_EXISTS
     assert "StepIn.id" in ALREADY_EXISTS  # the one id a caller chooses, and why it does not count
     assert "idempotency" in ALREADY_EXISTS
+
+
+def test_the_row_only_a_race_reaches_names_the_door_and_the_race() -> None:
+    """M12.2b: the reason stays true only while the door exists and the renewal takes no lock."""
+    assert "Assignments.mine" in NOT_USABLE
+    assert "lock" in NOT_USABLE
+    assert "tests/contracts/test_assignment_store.py" in NOT_USABLE
 
 
 # ----------------------------------------------------------------------------------------
@@ -710,11 +720,16 @@ def test_the_shared_codes_are_told_apart_by_something_other_than_the_code() -> N
     if two of the three stopped happening entirely. So every row of a shared code carries a
     fragment of the message that only it writes, and this is what keeps those fragments from
     quietly becoming the same string.
+
+    Counted on the table and not on the scenarios since M12.2b: a code is shared by the rows that
+    answer with it, observed or declared — ``not_assigned`` has one row a request reaches and one
+    only a race does. Every row of a code told apart must still be observed.
     """
-    shared = [code for code in {row.code for row in RAISED} if _rows_with(code) > 1]
+    shared = [code for code in {failure.code for failure in FAILURES} if _rows_with(code) > 1]
     assert sorted(shared) == sorted(TOLD_APART + SAID_THE_SAME_WAY)
     for code in TOLD_APART:
         fragments = [row.message for row in RAISED if row.code == code]
+        assert len(fragments) == _rows_with(code), code
         assert len(set(fragments)) == len(fragments), code
         for one in fragments:
             assert sum(one in other for other in fragments) == 1, one
@@ -723,14 +738,15 @@ def test_the_shared_codes_are_told_apart_by_something_other_than_the_code() -> N
 def test_the_refusals_of_the_work_are_said_the_same_way_on_purpose() -> None:
     """The exception to the rule above, and the only one: a node learns nothing from *which* way
     the work is not its own. Both rows carry the overriding sentence of ``FAILURES`` itself, so the
-    day somebody gives one of them a message of its own, this fails."""
+    day somebody gives one of them a message of its own, this fails. The row a request reaches is
+    observed saying it here; the three ways of a delivery and of a renewal are observed saying it
+    in ``tests/api/test_nodes_work.py`` (M12.2b)."""
     for code in SAID_THE_SAME_WAY:
-        rows = [row for row in RAISED if row.code == code]
-        assert len(rows) > 1
-        assert {row.message for row in rows} == {NOT_YOUR_WORK}
+        assert _rows_with(code) > 1
+        assert {row.message for row in RAISED if row.code == code} == {NOT_YOUR_WORK}
         overriding = {failure.message for failure in FAILURES if failure.code == code}
         assert overriding == {NOT_YOUR_WORK}
 
 
 def _rows_with(code: str) -> int:
-    return sum(row.code == code for row in RAISED)
+    return sum(failure.code == code for failure in FAILURES)

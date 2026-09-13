@@ -19,6 +19,7 @@ from ela.devices.errors import NotPlacedError
 from ela.devices.orchestrator import Requirements
 from ela.domain import (
     Assignment,
+    AssignmentId,
     AssignmentState,
     AuditEventType,
     CapabilityId,
@@ -47,6 +48,7 @@ from ela.executive import (
     Assignments,
     Lapse,
     Standing,
+    WorkNotYoursError,
     WorkRejection,
 )
 from ela.ports import AssignmentExpiredError, AssignmentHeldElsewhereError, AssignmentStateError
@@ -408,10 +410,32 @@ async def test_a_renewal_moves_the_expiry_up_to_the_cap(w: World) -> None:
     assert await w.written() == before
 
 
-async def test_an_offer_is_not_renewed(w: World) -> None:
-    assignment = await offered(w)
-    with pytest.raises(AssignmentStateError):
-        await w.service.renew(assignment.id, NODE.id)
+async def test_the_three_ways_work_is_not_yours_are_one_refusal_on_a_renewal_too(w: World) -> None:
+    """M12.2b: a renewal passes the delivery's door (ADR 0038 §12).
+
+    An id the Core never minted, another node's work and an offer nobody took get **one** error
+    with one sentence. Until M12.2b the first reached the caller as the store's own
+    ``NotFoundError`` — its own words, its own code — and a node could tell it from the other two by
+    reading the difference. The audit keeps the difference, where the user reads and nodes do not,
+    and nothing else is written: a refusal is not a sign of life.
+    """
+    assignment = await offered(w)  # offered, and so not work in hand
+    unknown = AssignmentId(UUID("00000000-0000-4000-8000-0000000009ff"))
+    trail = len(await w.h.repository.events(w.task_id))
+    said: list[str] = []
+    asked_by = ((unknown, NODE.id), (assignment.id, OTHER_NODE.id), (assignment.id, NODE.id))
+
+    for asked, who in asked_by:
+        with pytest.raises(WorkNotYoursError) as caught:
+            await w.service.renew(asked, who)
+        said.append(str(caught.value).replace(str(asked), "<id>"))
+
+    assert len(set(said)) == 1, said
+    refusals = [e for e in await w.h.audit.read() if e.event_type is AuditEventType.DEVICE_REJECTED]
+    assert [e.payload["reason"] for e in refusals] == ["not_assigned"] * 3
+    assert [e.payload["assignment_known"] for e in refusals] == [False, True, True]
+    assert [e.task_id for e in refusals] == [None, None, w.task_id]
+    assert len(await w.h.repository.events(w.task_id)) == trail  # no heartbeat for a refusal
 
 
 # ----------------------------------------------------------------------------------------

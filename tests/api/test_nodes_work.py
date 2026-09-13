@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 import pytest
 from httpx import AsyncClient
 
+from ela.api.app import NOT_YOUR_WORK
 from ela.api.nodes import work_order
 from ela.composition import Ela
 from ela.domain import (
@@ -438,6 +439,13 @@ async def test_a_renewal_moves_the_deadline_and_writes_no_event(
 async def test_renewing_work_that_is_not_yours_is_the_same_404(
     client: AsyncClient, ela: Ela
 ) -> None:
+    """M12.2b: the delivery's oracle, closed on the renewal too (ADR 0038 §12).
+
+    An id the Core never minted, another node's work and work already delivered get one status,
+    one code and **one sentence**. Until M12.2b the first came back ``not_found`` with its own
+    words, and the difference was the answer. This test asserted the status alone, which is the
+    weak assertion that let the divergence through — so it asserts the whole body now.
+    """
     _, order, headers, device_id = await taken(client, ela)
     _, other = await enrolled(client, "TRUSTED", available_tools=["core-echo"])
 
@@ -447,8 +455,21 @@ async def test_renewing_work_that_is_not_yours_is_the_same_404(
     not_mine = await client.post(
         "/nodes/work/renew", json={"assignment_id": order["assignment_id"]}, headers=other
     )
+    delivered = await client.post(
+        "/nodes/work/result",
+        json={"assignment_id": order["assignment_id"], **ENVELOPE},
+        headers=headers,
+    )
+    assert delivered.status_code == 200, delivered.text
+    no_longer = await client.post(
+        "/nodes/work/renew", json={"assignment_id": order["assignment_id"]}, headers=headers
+    )
 
-    assert unknown.status_code == not_mine.status_code == 404
+    for answered in (unknown, not_mine, no_longer):
+        assert answered.status_code == 404, answered.text
+        assert answered.json() == {"error": {"code": "not_assigned", "message": NOT_YOUR_WORK}}
+    reasons = [one for one in await rejections(ela) if one["reason"] == "not_assigned"]
+    assert [one["assignment_known"] for one in reasons] == [False, True, True]
 
 
 async def test_renewing_work_that_is_over_is_gone(client: AsyncClient, ela: Ela) -> None:
