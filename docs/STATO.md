@@ -93,6 +93,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.2b` | Implementata | Il rinnovo passa per la porta della consegna: una frase, un codice e un audit per ogni «non è tuo» |
 | 12 — I nodi sulla rete | `M12.3` | Implementata | Il nodo macOS: questa macchina diventa un nodo, e il contratto si implementa invece di descriversi |
 | 12 — I nodi sulla rete | `M12.3b` | Implementata | La cartella del segreto del nodo: `0o700` anche dove il Core non l'ha creata prima |
+| 12 — I nodi sulla rete | `M12.4` | Proposta | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
 
 <!-- fine del blocco generato: le milestone -->
 
@@ -106,7 +107,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **39** | `docs/adr/NNNN-*.md` |
-| Milestone | **42, di cui 41 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **43, di cui 41 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **53** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **25** | i `Protocol` di `src/ela/ports.py` |
