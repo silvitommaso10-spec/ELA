@@ -7,6 +7,11 @@ probing the hardware — the operating system, that the node is on the local net
 nothing can be known, ``UNKNOWN``. ``privacy`` has no ``UNKNOWN`` and is set to the most
 restrictive level: an undeclared privacy must never be read as permission to send data out
 (§33, §57).
+
+What a machine says of its **power** is mapped here too (M12.3c), beside what it says of its system
+and for the same reason: a node reads the same words and needs the same map, and the readers in
+``ela.infrastructure.machine`` hand over words and decide nothing (ADR 0028 §1). The power source is
+not a fact of the registration — ``local`` is born ``UNKNOWN`` — but of every heartbeat.
 """
 
 from __future__ import annotations
@@ -35,12 +40,16 @@ from ela.domain import (
 
 __all__ = [
     "DEVICE_NAMESPACE",
+    "DRAWING_FROM",
     "LOCAL_DEVICE_ID",
     "LOCAL_DEVICE_NAME",
     "LOCAL_USER",
+    "POWER_LINE",
     "SYSTEMS",
     "local_device",
     "operating_system",
+    "power_drawn_from",
+    "power_on_the_line",
 ]
 
 DEVICE_NAMESPACE: Final = uuid5(NAMESPACE_DNS, "devices.ela")
@@ -79,6 +88,49 @@ def operating_system(system: str) -> OperatingSystem:
         return SYSTEMS[system]
     except KeyError:
         raise UnsupportedOperatingSystemError(system) from None
+
+
+DRAWING_FROM: Final[Mapping[str, PowerSource]] = MappingProxyType(
+    {"AC Power": PowerSource.AC, "Battery Power": PowerSource.BATTERY}
+)
+"""What ``pmset -g batt`` names on its first line, mapped to the domain (M12.3c).
+
+The two words P6 measured on this Mac on 2026-09-15, plugged in and unplugged, and no others: a
+word nobody measured — ``UPS Power`` exists — is worth what a fact nobody observed is worth.
+"""
+
+POWER_LINE: Final[Mapping[str, PowerSource]] = MappingProxyType(
+    {"Online": PowerSource.AC, "Offline": PowerSource.BATTERY}
+)
+"""What ``SystemInformation.PowerStatus.PowerLineStatus`` answers, mapped to the domain (M12.3c).
+
+Its third value, ``Unknown``, is not here, for the same reason."""
+
+
+def power_drawn_from(source: str | None) -> PowerSource:
+    """The domain value for what a Mac says it draws from; ``UNKNOWN`` if it said nothing readable.
+
+    ``UNKNOWN`` scores zero, as ``BATTERY`` does (``POWER_POINTS``): a reading that failed can cost
+    a machine its points and never earn it any.
+    """
+    if source is None:
+        return PowerSource.UNKNOWN
+    return DRAWING_FROM.get(source, PowerSource.UNKNOWN)
+
+
+def power_on_the_line(status: tuple[str, int] | None) -> PowerSource:
+    """The domain value for what a PC says of its power line and of how many batteries it has.
+
+    **A machine with no battery is on AC** (decisione del 2026-09-15), whatever its line says: there
+    is nothing else it could be drawing from. The PC of P6 is that case — ``Online``, ``0``,
+    ``NoSystemBattery``.
+    """
+    if status is None:
+        return PowerSource.UNKNOWN
+    line, batteries = status
+    if batteries == 0:
+        return PowerSource.AC
+    return POWER_LINE.get(line, PowerSource.UNKNOWN)
 
 
 def local_device(

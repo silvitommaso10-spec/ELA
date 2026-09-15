@@ -35,6 +35,8 @@ from ela.domain import ProbeFamily, RawObservation
 
 __all__ = [
     "MICROPHONE_MODULE",
+    "PMSET",
+    "POWER_TIMEOUT_SECONDS",
     "PROBE_MODULE",
     "HEARD_FILE_PREFIX",
     "SPEECH_FILE_PREFIX",
@@ -44,6 +46,8 @@ __all__ = [
     "SpawnThroughNamelessAudio",
     "SpawnWithAudio",
     "TranscribeArgv",
+    "drawn_from",
+    "pmset_source",
     "spawn",
     "spawn_through_nameless_audio",
     "spawn_with_audio",
@@ -108,6 +112,51 @@ async def spawn(argv: Sequence[str], timeout: float) -> tuple[int, str]:
         *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
     )
     return await _wait(process, timeout)
+
+
+PMSET: Final = "/usr/bin/pmset"
+"""Apple's, at an absolute path, for the reason ``SAY`` gives: what reads the machine is not decided
+by ``PATH`` (ADR 0029 §3)."""
+
+POWER_TIMEOUT_SECONDS: Final = 5.0
+"""How long a reading of the power source may take before it is ``None`` (M12.3c).
+
+A heartbeat waits for the reading, so this is the most a beat can be late because of it. P6 measured
+9-15 ms for ``pmset`` and 0.25-0.36 s for ``powershell.exe``, and M12.3 measured a node's round at
+~33 s against a heartbeat TTL of 60 s: five seconds is fourteen times the slowest reading and a
+fifth of that margin. A reading that takes longer is ``None``, which costs a node its points and
+never its beat.
+"""
+
+DRAWING_FROM: Final = "Now drawing from '"
+"""How ``pmset -g batt`` begins, before the name of the source (P6, 2026-09-15)."""
+
+
+async def pmset_source(run: Spawn = spawn, binary: str = PMSET) -> str | None:
+    """What this Mac says it draws from — ``AC Power``, ``Battery Power`` — or ``None`` (M12.3c).
+
+    ``None`` for every way of not knowing: no ``pmset``, a child that failed or overstayed, a first
+    line of another shape. The words are handed over as the machine wrote them, and what they are
+    worth is decided in :mod:`ela.devices.local`, inside the coverage gate (ADR 0028 §1).
+    """
+    if not (os.access(binary, os.X_OK) and Path(binary).is_file()):
+        return None
+    try:
+        code, output = await run([binary, "-g", "batt"], POWER_TIMEOUT_SECONDS)
+    except OSError:  # the binary vanished between the check and here
+        return None
+    if code != 0:
+        return None
+    return drawn_from(output)
+
+
+def drawn_from(output: str) -> str | None:
+    """The source named on the first line of ``pmset -g batt``, between its quotes; ``None`` if the
+    line does not have that shape."""
+    first = output.partition("\n")[0]
+    if not first.startswith(DRAWING_FROM) or not first.endswith("'"):
+        return None
+    return first[len(DRAWING_FROM) : -1] or None
 
 
 async def spawn_with_audio(

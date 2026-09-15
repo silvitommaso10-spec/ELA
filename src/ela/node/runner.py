@@ -222,12 +222,17 @@ class Node:
         points this node scored in the measurement of dec. K.3 came from two things it had never
         looked at, on a laptop that may well have been on battery. ``STATUS_POINTS``'s own
         docstring says why that is wrong: "an unknown status must score zero … so that a fact
-        nobody observed is never mistaken for a good one". The power source is not sent at all —
-        reading it is a machine adapter, and a node has none yet — and the status is sent because
-        the node does know it: idle when it is about to ask, busy while a tool of its own is
-        running.
+        nobody observed is never mistaken for a good one". The status is sent because the node
+        does know it: idle when it is about to ask, busy while a tool of its own is running.
+
+        **And the power source, read from the machine on every beat** (M12.3c). Until then it was
+        not sent at all — a field the orchestrator weighed and nobody produced. It is sent even
+        when the reading is ``UNKNOWN``: a reading that failed is an observation of not knowing,
+        and leaving the field out would leave standing an ``AC`` that nobody has seen since, because
+        the registry writes only what a heartbeat gives.
         """
-        answered = await self._client.report(status=status)
+        power = await self._world.power()
+        answered = await self._client.report(status=status, power_source=power.value)
         if answered.status == httpx.codes.UNAUTHORIZED:
             raise NodeRevoked(REVOKED)
 

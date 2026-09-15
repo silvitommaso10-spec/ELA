@@ -119,6 +119,7 @@ __all__ = [
     "FakeProbe",
     "FakeProviderRegistry",
     "FakeListening",
+    "FakePower",
     "FakeScreenCapture",
     "FakeSpeech",
     "FakeTaskRepository",
@@ -1192,6 +1193,26 @@ class FakeSpeech:
         """Record what was asked, make no sound, and report."""
         self.said = (*self.said, text)
         return self._report
+
+
+class FakePower:
+    """What this machine runs on, as the test wrote it down (a ``PowerReading`` of the composition).
+
+    ``source`` is the answer, and a test changes it between two calls to unplug the machine;
+    ``asked`` counts the readings, which is what proves the property M12.3c rests on: the power
+    source is read at every heartbeat and never kept from an earlier one. ``UNKNOWN`` unless told
+    otherwise, which is what every node and ``local`` were before M12.3c.
+    """
+
+    __slots__ = ("asked", "source")
+
+    def __init__(self, source: PowerSource = PowerSource.UNKNOWN) -> None:
+        self.source = source
+        self.asked = 0
+
+    async def __call__(self) -> PowerSource:
+        self.asked += 1
+        return self.source
 
 
 class FakeListening:

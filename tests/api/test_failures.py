@@ -332,7 +332,7 @@ async def a_renewal_of_work_already_at_its_cap(live: Live) -> Response:
     core = live.ela.settings.core.model_copy(
         update={"assignment_ttl_seconds": 120, "assignment_max_seconds": 120}
     )
-    capped = await build(live.ela.settings.model_copy(update={"core": core}))
+    capped = await build(live.ela.settings.model_copy(update={"core": core}), power=live.ela.power)
     try:
         app = create_app(capped)
         async with AsyncClient(

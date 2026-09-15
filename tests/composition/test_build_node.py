@@ -65,6 +65,7 @@ def test_it_builds_nothing_that_decides(tmp_path: Path) -> None:
         "ids",
         "tools",
         "voices",
+        "power",
         "speech_dir",
     }
     assert not hasattr(built, "database")

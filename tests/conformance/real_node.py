@@ -29,7 +29,9 @@ kit instead of a test):
   test runner is a machine talking to an empty room. These are the seams M12.3 dec. G and M12.4
   dec. F added to ``build_node``, and the reason they are declared parameters rather than patches.
   Since M12.4 they also decide what the node declares, so a fake that says it is there is what
-  makes the declaration the same on every runner.
+  makes the declaration the same on every runner. The **power source** is a ``FakePower`` for the
+  same reason (M12.3c): it answers ``AC``, which is what this kit has reported of its nodes since
+  M12.3, and a beat that read this Mac would say something different plugged in and unplugged.
 
 And a **fourth**, which is the contract's and not this kit's: ``restart()`` means *reconnect
 keeping what you had in hand* (``driver.py``), not *a new operating-system process*. The envelope
@@ -52,6 +54,7 @@ from typing import Any
 from httpx import ASGITransport
 
 from ela.composition import NodeConfig, NodeSettings, build_node
+from ela.domain import PowerSource
 from ela.node import (
     Node,
     NodeClient,
@@ -65,7 +68,7 @@ from ela.node import (
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
-from ela.testing.fakes import FakeClock, FakeSpeech
+from ela.testing.fakes import FakeClock, FakePower, FakeSpeech
 from ela.tools.settings import VoiceSettings
 from tests.conformance.driver import Answered, Conformance, NodeDriver
 from tests.conformance.fake_node import ONE_HOUR_BEHIND
@@ -135,6 +138,7 @@ class RealNode:
             speech=self.speech,
             speech_online=self.speech_online,
             system=system,
+            power=FakePower(PowerSource.AC),
         )
         self._client = self._open(identity)
         self._node = Node(self._built, self._client)

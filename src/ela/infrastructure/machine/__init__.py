@@ -18,6 +18,10 @@ this package for the same reason as all the others — rule 32 — and it is in 
 than beside the voice so that architecture rule 41 can forbid the modules holding ELA's words to
 touch a filesystem at all, with no exception to remember.
 
+M12.3c adds two readings of the power source — ``pmset(1)``, Apple's, in ``darwin.py``, and
+``powershell.exe``, Microsoft's, in ``windows.py`` — which makes this the package of **two**
+systems. Both hand over the machine's own words; ``ela.devices.local`` decides what they are worth.
+
 M11.1 adds a fourth, and it is Apple's again (``say(1)``) — and the first that **acts outside
 the screen** rather than reading the machine. It lives here because rule 32's content is *ELA
 touches the operating system in one place*: the door, not the word "perception". That makes
@@ -36,11 +40,14 @@ from ela.infrastructure.machine.audition import (
     Speak,
 )
 from ela.infrastructure.machine.darwin import (
+    PMSET,
+    POWER_TIMEOUT_SECONDS,
     PROBE_MODULE,
     SPEECH_FILE_PREFIX,
     TIMED_OUT,
     DarwinProbe,
     Spawn,
+    pmset_source,
     spawn,
     spawn_with_audio,
     sweep_speech_files,
@@ -72,11 +79,15 @@ from ela.infrastructure.machine.textrecognition import (
     VisionTextRecognition,
 )
 from ela.infrastructure.machine.unsupported import UnsupportedProbe
+from ela.infrastructure.machine.windows import POWERSHELL, power_status
 
 __all__ = [
     "AFPLAY",
     "AUDITION_PHRASES",
     "CANDIDATES",
+    "PMSET",
+    "POWERSHELL",
+    "POWER_TIMEOUT_SECONDS",
     "PROBE_MODULE",
     "SAY",
     "SPEECH_FILE_PREFIX",
@@ -103,6 +114,8 @@ __all__ = [
     "UnsupportedTextRecognition",
     "VisionTextRecognition",
     "digest_of",
+    "pmset_source",
+    "power_status",
     "spawn",
     "LOOKUP_TIMEOUT_SECONDS",
     "port_holder",

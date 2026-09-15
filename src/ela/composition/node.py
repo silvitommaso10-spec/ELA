@@ -24,7 +24,7 @@ from types import MappingProxyType
 
 from ela.composition.errors import ConfigurationError
 from ela.composition.settings import NodeConfig
-from ela.composition.system import SystemClock, UuidGenerator
+from ela.composition.system import PowerReading, SystemClock, UuidGenerator, power_reading
 from ela.devices import UnsupportedOperatingSystemError, operating_system
 from ela.domain import OperatingSystem
 from ela.infrastructure.machine import (
@@ -84,6 +84,14 @@ class NodeWorld:
     declared, because the orchestrator filters by name and would otherwise place a step on a
     machine that cannot run it. Only the voices have a half that reads the machine.
     """
+    power: PowerReading
+    """What this machine runs on, read on every sign of life (M12.3c).
+
+    The composition's choice for the named system — ``pmset`` on Darwin, ``powershell.exe`` on
+    Windows, nobody elsewhere — and never the cycle's: the node asks and sends, and does not know
+    which machine answered. Until M12.3c no node sent a power source at all, and the orchestrator
+    weighed one nobody could produce.
+    """
     speech_dir: Path
 
     def sweep_speech(self) -> int:
@@ -102,8 +110,9 @@ def build_node(
     speech: SpeechPort | None = None,
     speech_online: SpeechPort | None = None,
     system: str | None = None,
+    power: PowerReading | None = None,
 ) -> NodeWorld:
-    """Build a node from ``config``, in one function and with four seams that are declared.
+    """Build a node from ``config``, in one function and with five seams that are declared.
 
     ``system`` is what ``platform.system()`` answers, and it defaults to this machine's answer. It
     is a parameter so that a platform choice is proved by **naming** the system and never by being
@@ -124,6 +133,10 @@ def build_node(
     declares only the voices its machine can use, so the online voice's player — which looks for
     ``afplay`` on the filesystem — decides what a node promises, and a test asserting a declaration
     would otherwise say four tools on macOS and three on Ubuntu.
+
+    ``power`` is the fifth, and it defaults to the reader of the named system (M12.3c). A test that
+    asserts what a heartbeat carries names it, for the reason ``speech`` is named: otherwise the
+    answer would depend on whether the machine running the suite is plugged in.
 
     :raises ConfigurationError: for a system no node of ELA knows (``operating_system``), before
         anything is built: a node declares what it runs on, and there it would have nothing true to
@@ -149,6 +162,8 @@ def build_node(
             f"ELA has no node for this operating system ({system}): a node declares what it runs "
             "on, and here it would have nothing true to say."
         ) from unknown
+    if power is None:
+        power = power_reading(system)
 
     # The order of ADR 0022 §7, and the same three objects the Core builds: a provider, a registry
     # that holds it, a router over the two. The key is the **node's** — the order carries the call,
@@ -219,5 +234,6 @@ def build_node(
             model=config.elevenlabs.elevenlabs_model,
         ),
         voices=MappingProxyType({VOICE_TOOL_NAME: local, VOICE_ONLINE_TOOL_NAME: playing}),
+        power=power,
         speech_dir=scratch,
     )

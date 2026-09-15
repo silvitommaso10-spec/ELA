@@ -16,6 +16,7 @@ import pytest
 from ela.composition import Ela, Settings, build
 from ela.infrastructure.persistence import make_engine
 from ela.infrastructure.persistence.orm import Base
+from ela.testing.fakes import FakePower
 
 TOKEN = "x" * 40
 """Long enough for ``ELA_API_TOKEN`` and empty of entropy: a plausible-looking token committed to
@@ -90,9 +91,15 @@ def settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Settings:
 
 @pytest.fixture
 async def ela(settings: Settings) -> AsyncIterator[Ela]:
-    """ELA as ``build`` makes it, on a migrated database, released at the end."""
+    """ELA as ``build`` makes it, on a migrated database, released at the end.
+
+    With a :class:`~ela.testing.fakes.FakePower` that answers ``UNKNOWN`` until a test says
+    otherwise (M12.3c): ``local``'s heartbeats read the power source, and a placement between
+    ``local`` and a node would otherwise depend on whether the machine running the suite is plugged
+    in — the same suite saying one thing at the desk and another on the train.
+    """
     await create_schema(settings.persistence.db_url)
-    built = await build(settings)
+    built = await build(settings, power=FakePower())
     try:
         yield built
     finally:

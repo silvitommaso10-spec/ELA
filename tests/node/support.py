@@ -26,7 +26,7 @@ from ela.ports import WireCode
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
-from ela.testing.fakes import FakeClock, FakeSpeech
+from ela.testing.fakes import FakeClock, FakePower, FakeSpeech
 from ela.tools import ToolRegistry
 from ela.tools.base import Outcome, Tool
 from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME
@@ -52,6 +52,9 @@ def world(directory: Path, clock: FakeClock | None = None, **node: Any) -> NodeW
     Both, and the system named (M12.4 dec. F, G): a node declares only the voices its machine can
     use, and the online voice's player is ``afplay`` — present on a Mac, absent on the Ubuntu job.
     A world that left either to the machine would declare four tools here and three there.
+
+    And the power source, which every heartbeat reads (M12.3c): left to the machine, a beat would
+    carry ``AC`` at the desk, ``BATTERY`` on the train and ``UNKNOWN`` on the Ubuntu job.
     """
     return build_node(
         config(directory, **node),
@@ -59,6 +62,7 @@ def world(directory: Path, clock: FakeClock | None = None, **node: Any) -> NodeW
         speech=FakeSpeech(),
         speech_online=FakeSpeech(),
         system="Darwin",
+        power=FakePower(),
     )
 
 
