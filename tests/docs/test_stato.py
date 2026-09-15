@@ -130,6 +130,9 @@ def test_the_closing_sections_of_the_spec_really_are_uncited(generator: ModuleTy
         "La ritenzione di ElevenLabs è accettata",
         "Lo sviluppo è in locale, sul Mac",
         "La wake word è rimandata a M15.1",
+        "Chi paga il lavoro agentico",
+        "Come si paga una sessione",
+        "Il tetto di spesa",
     ],
 )
 def test_every_decision_that_lives_in_no_adr_is_written_here(decision: str) -> None:
