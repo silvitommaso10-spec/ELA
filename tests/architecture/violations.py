@@ -908,6 +908,27 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela import domain\ndef off():\n    return domain.SensorCause\n",
         "SensorCause",
     ),
+    Case(
+        # M12.3c, review of 2026-09-16: a reader that decides between AC and BATTERY itself, where
+        # the maps of ``ela.devices.local`` should.
+        "a-reader-imports-the-power-source",
+        "machine-adapter-decides-nothing",
+        "infrastructure/machine/battery.py",
+        "from ela.domain import PowerSource\n"
+        "def source(output: str) -> PowerSource:\n"
+        "    return PowerSource.BATTERY if 'Battery Power' in output else PowerSource.AC\n",
+        "ela.domain.PowerSource",
+    ),
+    Case(
+        # The same choice reached the long way, with no import that names it.
+        "a-reader-decides-by-attribute",
+        "machine-adapter-decides-nothing",
+        "infrastructure/machine/battery_sideways.py",
+        "from ela import domain\n"
+        "def source(output: str):\n"
+        "    return domain.PowerSource['BATTERY' if 'Battery Power' in output else 'AC']\n",
+        "PowerSource",
+    ),
     # --- context-writes-nothing (rule 38, ADR 0032 §6) ---
     Case(
         # The shape the rule exists for: a port arrives through the constructor, so there is no

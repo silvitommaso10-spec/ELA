@@ -474,7 +474,9 @@ async def build(
         #
         # And what it runs on, read now (M12.3c): the machine's answer, ``UNKNOWN`` where nothing
         # reads it. Until M12.3c this line carried nothing, and ``local`` was ``UNKNOWN`` on a Mac
-        # plugged into the wall.
+        # plugged into the wall. ``UNKNOWN`` is sent when a reading fails, too: an old belief left
+        # standing would weigh in the next placement, and a periodic belief never decides an action
+        # (ADR 0029 §7; the review of M12.3c, 2026-09-16).
         await devices.heartbeat(LOCAL_DEVICE_ID, power_source=await power())
 
         engine = TaskEngine(

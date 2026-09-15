@@ -19,7 +19,7 @@ machine too, exactly as on the runner.
 **What it fakes, and it is only this:**
 
 * ``platform.system()`` answers ``Linux``;
-* the four binaries of Apple that ELA reaches for are reported absent (``pmset`` since M12.3c).
+* the binaries of Apple that ELA reaches for, as :data:`APPLE_BINARIES` lists them, are absent.
 
 **What it cannot reproduce — read this before trusting it:**
 

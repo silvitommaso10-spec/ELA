@@ -143,7 +143,15 @@ MAIN_GUARD = "__main__"
 #: state. This is what makes the coverage exemption honest instead of promised — no runner has a
 #: webcam, so the adapter cannot be covered, and a module that cannot be covered must not decide.
 #: An adapter that does not know the words cannot use them wrongly.
-PERCEPTION_VOCABULARY = frozenset({"SensorState", "SensorCause", "PermissionState"})
+#:
+#: M12.3c adds ``PowerSource`` (review of 2026-09-16). The readers of the power source hand over
+#: the machine's words — ``"AC Power"``, ``("Online", 0)`` — and the maps in ``ela.devices.local``
+#: decide what they are worth: a reader that imports ``PowerSource``, or reaches it by attribute to
+#: choose between ``AC`` and ``BATTERY``, is deciding where the gate cannot see. Listed by hand
+#: because this file reads the AST and imports nothing of ``ela``. **Its limit**: the rule reads
+#: names, so a reader returning the strings ``"AC"`` or ``"BATTERY"`` is not seen — a detector that
+#: saw it would read every string constant of the package.
+PERCEPTION_VOCABULARY = frozenset({"SensorState", "SensorCause", "PermissionState", "PowerSource"})
 
 #: Rule 35 (M10.2, ADR 0029 §12): the captured image does not leave the machine. The modules that
 #: hold a screen capture name no router, no provider registry and no HTTP client — the sentence
@@ -2252,6 +2260,9 @@ def check_adapter_names_no_state(pkg_root: Path) -> list[Violation]:
     adapter's exemption is therefore paid for structurally: it hands over primitives — an ``int``
     for an ``AVAuthorizationStatus``, ``None`` for "not read" — and :func:`ela.perception.interpret`
     decides what they mean, inside the package the gate does cover.
+
+    Since M12.3c the same holds for the power source: the readers hand over words, and
+    :mod:`ela.devices.local` decides whether they mean ``AC``.
 
     Reported as an *import* and as a *name*: a module that never imports ``SensorState`` cannot
     build one, and one that mentions it by attribute is reaching for the same words the long way.

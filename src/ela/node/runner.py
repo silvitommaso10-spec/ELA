@@ -226,10 +226,12 @@ class Node:
         does know it: idle when it is about to ask, busy while a tool of its own is running.
 
         **And the power source, read from the machine on every beat** (M12.3c). Until then it was
-        not sent at all — a field the orchestrator weighed and nobody produced. It is sent even
-        when the reading is ``UNKNOWN``: a reading that failed is an observation of not knowing,
-        and leaving the field out would leave standing an ``AC`` that nobody has seen since, because
-        the registry writes only what a heartbeat gives.
+        not sent at all — a field the orchestrator weighed and nobody produced. **It is sent even
+        when the reading is** ``UNKNOWN``, and that was decided (review of 2026-09-16): leaving the
+        field out would leave standing an old belief — an ``AC`` nobody has seen since, because the
+        registry writes only what a heartbeat gives — and a periodic belief never decides an action
+        (ADR 0029 §7). ``UNKNOWN`` scores zero, so a reading that failed can cost this node a
+        placement and never win it one.
         """
         power = await self._world.power()
         answered = await self._client.report(status=status, power_source=power.value)

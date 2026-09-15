@@ -126,6 +126,9 @@ A heartbeat waits for the reading, so this is the most a beat can be late becaus
 ~33 s against a heartbeat TTL of 60 s: five seconds is fourteen times the slowest reading and a
 fifth of that margin. A reading that takes longer is ``None``, which costs a node its points and
 never its beat.
+
+**Not a measurement: a ceiling**, and kept as one by the review of 2026-09-16. It is measured again
+if a beat ever overruns.
 """
 
 DRAWING_FROM: Final = "Now drawing from '"
