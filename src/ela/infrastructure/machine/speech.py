@@ -203,8 +203,15 @@ class OnlineSpeechCommand:
         unconfigured: Unconfigured,
         directory: Path,
         runner: SpawnWithAudio = spawn_with_audio,
-        binary: str = AFPLAY,
+        binary: str | None = AFPLAY,
     ) -> None:
+        """``binary`` is the player; ``None`` is a system ELA knows no player for (M12.4 dec. E).
+
+        Not a path that happens to be missing: a path is asked of the filesystem, and the answer
+        would depend on the machine running the code rather than on the system the node was built
+        for — ``afplay`` is there on the Mac that runs a test naming Windows. ``None`` answers *no*
+        everywhere, and the composition chooses it by naming the system.
+        """
         self._synthesise = synthesise
         self._unconfigured = unconfigured
         self._directory = directory
@@ -218,6 +225,8 @@ class OnlineSpeechCommand:
         configuration, and one boolean for both questions is the ambiguity ADR 0030 §8 exists to
         split. This one is about the machine, like its counterpart in :class:`SaySpeechCommand`.
         """
+        if self._binary is None:
+            return False
         return os.access(self._binary, os.X_OK) and Path(self._binary).is_file()
 
     async def speak(self, text: str) -> RawSpeech:
@@ -254,6 +263,8 @@ class OnlineSpeechCommand:
         (ADR 0034 §9), which :meth:`speak` cannot express and must not: the voice ELA speaks with
         is configuration, and a caller that could pick one could change who appears to be talking.
         """
+        if self._binary is None:
+            return RawSpeech(error=SPEECH_NO_PLAYER, synthesis_seconds=said.seconds)
         started = time.monotonic()
         try:
             code, _ = await self._spawn(

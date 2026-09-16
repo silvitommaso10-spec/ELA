@@ -447,6 +447,51 @@ async def test_a_voice_this_machine_cannot_use_is_built_but_not_declared(tmp_pat
     assert len(built.tools.tools()) == 4
 
 
+@pytest.mark.parametrize(
+    ("system", "local", "declared"),
+    [
+        ("Windows", FakeSpeech(), ["core-echo", "model-complete", "voice-speak"]),
+        ("Linux", None, ["core-echo", "model-complete"]),
+    ],
+    ids=["Windows", "Linux"],
+)
+async def test_a_node_declares_what_the_named_system_can_use_on_every_runner(
+    tmp_path: Path, system: str, local: FakeSpeech | None, declared: list[str]
+) -> None:
+    """M12.4 criterion 14, the table of dec. F. Windows with its local voice available: three
+    tools, because it has no player for the online voice (dec. E) — its local voice is a fake that
+    answers yes, since ``powershell.exe`` is not on the runner. Linux: two, with nothing faked — no
+    voice and no player.
+
+    **Without the online seam**, and that is the test: the player of a named system that is not
+    Darwin is nobody on every runner. Until M12.4 it read ``/usr/bin/afplay``, which this Mac has
+    and the Ubuntu job has not, so the same world declared a tool more here than there.
+    """
+    built = build_node(config(tmp_path), clock=FakeClock(), speech=local, system=system)
+
+    said = await declaration(built)
+
+    assert said["available_tools"] == declared
+    assert len(built.tools.tools()) == 4
+
+
+async def test_a_local_voice_that_says_no_is_not_declared_while_the_online_one_is(
+    tmp_path: Path,
+) -> None:
+    """M12.4 criterion 14: each voice answers for itself."""
+    built = build_node(
+        config(tmp_path),
+        clock=FakeClock(),
+        speech=FakeSpeech(there=False),
+        speech_online=FakeSpeech(),
+        system="Darwin",
+    )
+
+    said = await declaration(built)
+
+    assert said["available_tools"] == ["core-echo", "model-complete", "voice-speak-online"]
+
+
 async def test_a_voice_the_user_switched_off_is_still_declared(tmp_path: Path) -> None:
     """A switch of the user is not a fact of the machine, so it does not change what is declared.
 

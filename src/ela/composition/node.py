@@ -31,6 +31,7 @@ from ela.composition.system import PowerReading, SystemClock, UuidGenerator, pow
 from ela.devices import UnsupportedOperatingSystemError, operating_system
 from ela.domain import OperatingSystem
 from ela.infrastructure.machine import (
+    AFPLAY,
     OnlineSpeechCommand,
     SapiSpeechCommand,
     SaySpeechCommand,
@@ -266,13 +267,23 @@ def build_node(
     # Built on every platform and answering everywhere: without a key or without a voice it reports
     # which of the two is missing and touches no network (ADR 0034 §5). Not behind the platform
     # branch — it is not a macOS adapter — which is the correction of 2026-09-09.
+    #
+    # Its **player** is the named system's (M12.4 dec. E, F): ``afplay`` on Darwin, and nobody
+    # anywhere else — on every runner, because since dec. F the player decides what a node declares,
+    # and a path asked of the filesystem would make that depend on the machine running the code.
     playing: SpeechPort
     if speech_online is not None:
         playing = speech_online
     else:
+        player: str | None = None
+        if system == "Darwin":
+            player = AFPLAY
         online = ElevenLabsVoice(config.elevenlabs)
         playing = OnlineSpeechCommand(
-            synthesise=online.synthesise, unconfigured=online.unconfigured, directory=scratch
+            synthesise=online.synthesise,
+            unconfigured=online.unconfigured,
+            directory=scratch,
+            binary=player,
         )
 
     # An ``if``, never ``X if darwin else Y`` (architecture rule 37): a ternary's untaken side costs

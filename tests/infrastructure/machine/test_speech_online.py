@@ -200,6 +200,41 @@ async def test_a_machine_without_the_player_says_no() -> None:
     assert await absent.available() is False
 
 
+async def test_a_system_with_no_player_says_no_without_asking_the_filesystem() -> None:
+    """M12.4 dec. E and F: on a system ELA knows no player for, the answer is *no* on every runner.
+
+    ``binary=None`` is not a path that happens to be missing: a path is asked of the filesystem, and
+    ``/usr/bin/afplay`` is there on the Mac that runs a test naming Windows. The spawn records a
+    call if one is made, and none is.
+    """
+    spawned = Spawned()
+    nobody = OnlineSpeechCommand(
+        synthesise=_never,
+        unconfigured=lambda: None,
+        directory=Path("/tmp"),
+        runner=spawned,
+        binary=None,
+    )
+
+    assert await nobody.available() is False
+    said = await nobody.speak(SENTENCE)
+    assert said.error == SPEECH_NO_PLAYER
+    assert said.synthesis_seconds is None, "nothing was asked for, so nothing was paid for"
+    played = await nobody.play(Synthesis(audio=AUDIO, seconds=0.42, credits=16))
+    assert played.error == SPEECH_NO_PLAYER
+    assert spawned.calls == []
+
+
+async def test_with_no_player_the_key_still_comes_first() -> None:
+    """The decision of 2026-09-09 holds where there is no player at all: the key is configuration,
+    something the person reading can go and fix; the player is a property of the machine."""
+    nobody = OnlineSpeechCommand(
+        synthesise=_never, unconfigured=lambda: SPEECH_NO_KEY, directory=Path("/tmp"), binary=None
+    )
+
+    assert (await nobody.speak(SENTENCE)).error == SPEECH_NO_KEY
+
+
 async def _never(text: str) -> Synthesis:  # pragma: no cover - the guard of the test above
     raise AssertionError("nothing is synthesised when the machine cannot play")
 

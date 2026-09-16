@@ -16,7 +16,13 @@ import pytest
 from ela.composition import ConfigurationError, NodeConfig, NodeSettings, build_node
 from ela.composition.node import NodeWorld, PermissionMode, mkdir_applies_the_acl
 from ela.domain import OperatingSystem
-from ela.infrastructure.machine import SapiSpeechCommand, SaySpeechCommand, UnsupportedSpeech
+from ela.infrastructure.machine import (
+    AFPLAY,
+    SapiSpeechCommand,
+    SaySpeechCommand,
+    UnsupportedSpeech,
+)
+from ela.ports import SPEECH_NO_KEY
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
@@ -275,6 +281,34 @@ def test_the_online_voice_is_a_declared_parameter_too(tmp_path: Path) -> None:
 
     assert _port_of(built, VOICE_ONLINE_TOOL_NAME) is online
     assert built.voices == {VOICE_TOOL_NAME: local, VOICE_ONLINE_TOOL_NAME: online}
+
+
+async def test_the_online_voice_plays_through_afplay_on_darwin_and_through_nobody_elsewhere(
+    tmp_path: Path,
+) -> None:
+    """M12.4 dec. E and F. The online voice is **built** everywhere (the correction of 2026-09-09);
+    its player is ``afplay`` on Darwin and nobody on a system ELA knows no player for — on **every**
+    runner, which is what makes a declaration the same on this Mac and on the Ubuntu job. Asked of
+    the object and not of the filesystem: the Mac running this has ``afplay``."""
+    darwin = build_node(config(tmp_path), speech=FakeSpeech(), system="Darwin")
+
+    assert _port_of(darwin, VOICE_ONLINE_TOOL_NAME)._binary == AFPLAY  # type: ignore[attr-defined]  # noqa: SLF001
+    for system in ("Windows", "Linux"):
+        elsewhere = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+        nobody = _port_of(elsewhere, VOICE_ONLINE_TOOL_NAME)
+        assert nobody._binary is None, system  # type: ignore[attr-defined]  # noqa: SLF001
+        assert await elsewhere.voices[VOICE_ONLINE_TOOL_NAME].available() is False, system
+
+
+async def test_a_windows_node_without_a_key_still_says_the_key_is_missing(tmp_path: Path) -> None:
+    """The order of the two absences survives a system with no player: the key first (2026-09-09,
+    ADR 0034 §5). Nothing is sent: there is no key to send it with."""
+    unkeyed = ElevenLabsSettings(elevenlabs_api_key=None, _env_file=None)  # type: ignore[call-arg]
+    built = build_node(config(tmp_path, elevenlabs=unkeyed), speech=FakeSpeech(), system="Windows")
+
+    said = await built.voices[VOICE_ONLINE_TOOL_NAME].speak("una frase")
+
+    assert said.error == SPEECH_NO_KEY
 
 
 def test_the_voices_the_declaration_asks_are_the_ones_the_tools_speak_through(
