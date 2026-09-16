@@ -1222,6 +1222,25 @@ VIOLATIONS: tuple[Case, ...] = (
         'def extra() -> list[str]:\n    return ["--output-file"]\n',
         "--output-file",
     ),
+    Case(
+        # M12.4 dec. D: the shape of the real script, and the reason the rule reads substrings. On
+        # a PC the voice is a PowerShell script held as one constant, and ``SetOutputToWaveFile``
+        # is a line inside it — never a constant of its own, so a rule comparing whole constants
+        # would stay silent on the only code that could break it.
+        "the-windows-voice-renders-to-a-file",
+        "the-voice-writes-no-file",
+        "infrastructure/machine/windows.py",
+        'SPEAK = """$ProgressPreference = \'SilentlyContinue\'\n'
+        "try {\n"
+        "  Add-Type -AssemblyName System.Speech\n"
+        "  $s = New-Object System.Speech.Synthesis.SpeechSynthesizer\n"
+        "  $s.SetOutputToWaveFile($env:TEMP + '\\\\ela.wav')\n"
+        "  $s.Speak([Console]::In.ReadToEnd())\n"
+        "} catch {\n"
+        "  exit 1\n"
+        '}\n"""\n',
+        "SetOutputToWaveFile",
+    ),
     # --- a-refresh-touches-only-what-is-declared (rule 44, M6.1b dec. H) ---
     Case(
         # The one somebody will really write: ``local_device`` already builds a row from a

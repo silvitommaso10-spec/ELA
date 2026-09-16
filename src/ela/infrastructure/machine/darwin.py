@@ -45,12 +45,14 @@ __all__ = [
     "Spawn",
     "SpawnThroughNamelessAudio",
     "SpawnWithAudio",
+    "SpawnWithInput",
     "TranscribeArgv",
     "drawn_from",
     "pmset_source",
     "spawn",
     "spawn_through_nameless_audio",
     "spawn_with_audio",
+    "spawn_with_input",
     "sweep_speech_files",
 ]
 
@@ -66,6 +68,9 @@ is worth more than a magic number in the one place where "no answer" is the answ
 
 Spawn = Callable[[Sequence[str], float], Awaitable[tuple[int, str]]]
 """Start a command, wait at most ``timeout`` seconds, answer ``(exit code, stdout)``."""
+
+SpawnWithInput = Callable[[Sequence[str], bytes, float], Awaitable[tuple[int, str]]]
+"""The same, with bytes handed to the child on its stdin (M12.4 dec. D)."""
 
 
 class SpawnWithAudio(Protocol):
@@ -112,6 +117,28 @@ async def spawn(argv: Sequence[str], timeout: float) -> tuple[int, str]:
         *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
     )
     return await _wait(process, timeout)
+
+
+async def spawn_with_input(argv: Sequence[str], data: bytes, timeout: float) -> tuple[int, str]:
+    """Run ``argv`` with ``data`` on its stdin, kill it past ``timeout``, answer as :func:`spawn`.
+
+    The sister of :func:`spawn` for a child that must be *told* something without it passing through
+    the command line (M12.4 dec. D): on Windows every process of the user reads another's command
+    line (``Win32_Process.CommandLine``), as ``ps`` does on a Mac, so the voice of a PC receives its
+    sentence here. Ordinary ``asyncio`` again, and exercised on every runner with a Python child.
+
+    **stderr is inherited, not discarded and not returned** (decision of 2026-09-17). What a child
+    writes there lands in the terminal the node runs in — on a PC, the one line ``SelectVoice``
+    writes for a voice that is not installed — so the person at the machine can read it; and the
+    caller never receives it, so nothing can decide on it, keep it or send it to the Core. The exit
+    code decides.
+
+    Both ways of giving up kill the child, through the same :func:`_wait` as every other caller.
+    """
+    process = await asyncio.create_subprocess_exec(
+        *argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE
+    )
+    return await _wait(process, timeout, data)
 
 
 PMSET: Final = "/usr/bin/pmset"
@@ -349,8 +376,13 @@ def sweep_speech_files(directory: Path) -> int:
     return swept
 
 
-async def _wait(process: asyncio.subprocess.Process, timeout: float) -> tuple[int, str]:
+async def _wait(
+    process: asyncio.subprocess.Process, timeout: float, data: bytes | None = None
+) -> tuple[int, str]:
     """Wait for a child, and kill it whichever way the waiting ends badly.
+
+    ``data`` is what :func:`spawn_with_input` hands the child on stdin; ``None`` for everyone else,
+    whose stdin is not a pipe.
 
     **Two ways of giving up, and both kill the child.** A timeout is ELA deciding the helper took
     too long, and it answers :data:`TIMED_OUT`. A *cancellation* is the caller itself going away,
@@ -358,7 +390,7 @@ async def _wait(process: asyncio.subprocess.Process, timeout: float) -> tuple[in
     reading the child's pipes and never touches the child.
     """
     try:
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout)
+        stdout, _ = await asyncio.wait_for(process.communicate(data), timeout)
     except TimeoutError:
         await _kill(process)
         return TIMED_OUT, ""

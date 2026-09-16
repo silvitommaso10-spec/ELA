@@ -32,6 +32,7 @@ from ela.devices import UnsupportedOperatingSystemError, operating_system
 from ela.domain import OperatingSystem
 from ela.infrastructure.machine import (
     OnlineSpeechCommand,
+    SapiSpeechCommand,
     SaySpeechCommand,
     UnsupportedSpeech,
     sweep_speech_files,
@@ -276,12 +277,14 @@ def build_node(
 
     # An ``if``, never ``X if darwin else Y`` (architecture rule 37): a ternary's untaken side costs
     # the 100% branch gate nothing, so a platform choice written that way is proved on the runner it
-    # happens to run on and nowhere else. M12.4's Windows node arrives here.
+    # happens to run on and nowhere else. The Windows node's voice is System.Speech (M12.4 dec. D).
     local: SpeechPort
     if speech is not None:
         local = speech
     elif system == "Darwin":
         local = SaySpeechCommand(timeout=config.voice.voice_timeout, voice=config.voice.voice_name)
+    elif system == "Windows":
+        local = SapiSpeechCommand(timeout=config.voice.voice_timeout, voice=config.voice.voice_name)
     else:
         local = UnsupportedSpeech()
 

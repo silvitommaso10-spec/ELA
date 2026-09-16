@@ -16,7 +16,7 @@ import pytest
 from ela.composition import ConfigurationError, NodeConfig, NodeSettings, build_node
 from ela.composition.node import NodeWorld, PermissionMode, mkdir_applies_the_acl
 from ela.domain import OperatingSystem
-from ela.infrastructure.machine import SaySpeechCommand, UnsupportedSpeech
+from ela.infrastructure.machine import SapiSpeechCommand, SaySpeechCommand, UnsupportedSpeech
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
@@ -151,9 +151,11 @@ def test_without_the_seam_the_voice_is_the_named_system_s(tmp_path: Path) -> Non
     argues against. The system is a parameter now, and each arm is asked for by name.
     """
     darwin = build_node(config(tmp_path), system="Darwin")
+    windows = build_node(config(tmp_path), system="Windows")
     elsewhere = build_node(config(tmp_path), system="Linux")
 
     assert isinstance(_speech_of(darwin), SaySpeechCommand)
+    assert isinstance(_speech_of(windows), SapiSpeechCommand)
     assert isinstance(_speech_of(elsewhere), UnsupportedSpeech)
 
 

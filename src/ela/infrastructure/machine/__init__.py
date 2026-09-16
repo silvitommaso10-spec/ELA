@@ -21,6 +21,8 @@ touch a filesystem at all, with no exception to remember.
 M12.3c adds two readings of the power source — ``pmset(1)``, Apple's, in ``darwin.py``, and
 ``powershell.exe``, Microsoft's, in ``windows.py`` — which makes this the package of **two**
 systems. Both hand over the machine's own words; ``ela.devices.local`` decides what they are worth.
+M12.4 gives the second system a voice, System.Speech through the same ``powershell.exe``, and the
+first child that receives its words on stdin (``spawn_with_input``).
 
 M11.1 adds a fourth, and it is Apple's again (``say(1)``) — and the first that **acts outside
 the screen** rather than reading the machine. It lives here because rule 32's content is *ELA
@@ -50,6 +52,7 @@ from ela.infrastructure.machine.darwin import (
     pmset_source,
     spawn,
     spawn_with_audio,
+    spawn_with_input,
     sweep_speech_files,
 )
 from ela.infrastructure.machine.listening import (
@@ -79,7 +82,7 @@ from ela.infrastructure.machine.textrecognition import (
     VisionTextRecognition,
 )
 from ela.infrastructure.machine.unsupported import UnsupportedProbe
-from ela.infrastructure.machine.windows import POWERSHELL, power_status
+from ela.infrastructure.machine.windows import POWERSHELL, SapiSpeechCommand, power_status
 
 __all__ = [
     "AFPLAY",
@@ -104,6 +107,7 @@ __all__ = [
     "VISION_MODULE",
     "DarwinListening",
     "DarwinProbe",
+    "SapiSpeechCommand",
     "SaySpeechCommand",
     "ScreenCaptureCommand",
     "Spawn",
@@ -117,6 +121,7 @@ __all__ = [
     "pmset_source",
     "power_status",
     "spawn",
+    "spawn_with_input",
     "LOOKUP_TIMEOUT_SECONDS",
     "port_holder",
 ]

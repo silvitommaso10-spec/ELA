@@ -192,11 +192,16 @@ CAPTURE_MODULES = (
 #: paid that debt: the rule is ``content-stays-on-the-machine``, and the three ADRs that name the
 #: old id keep naming it, resolved through :data:`RENAMED_RULES`. The tuples stayed separate
 #: through the rename, which is the whole point of them.
+#:
+#: M12.4 dec. D adds the voice of a PC, which lives in the one module for Windows beside the reader
+#: of the power source — so the three rules that read this tuple read that reader too, and found
+#: nothing to say about it.
 VOICE_MODULES = (
     Path("tools") / "voice.py",
     Path("tools") / "voice_online.py",
     MACHINE_ADAPTER_DIR / "speech.py",
     MACHINE_ADAPTER_DIR / "audition.py",
+    MACHINE_ADAPTER_DIR / "windows.py",
 )
 
 #: M11.2: the same rule again, over the modules that hold **what ELA hears** — and this is the
@@ -345,6 +350,15 @@ BIRTH_CONSTRUCTOR = "local_device"
 #: symbol, it is a string in an ``argv`` list, and a rule reading imports would be silent on the
 #: only code that could break it.
 VOICE_OUTPUT_FLAGS = frozenset({"-o", "--output-file", "--file-format", "--data-format"})
+#: Rule 40, tightened by M12.4 dec. D: the same decision in the vocabulary of Windows. System.Speech
+#: has three ways of sending a sentence somewhere other than the speaker, and each one is a method
+#: called **inside** a PowerShell script — a line of a constant, never a constant of its own. So
+#: these are looked for as **substrings** of every string constant of the voice's modules, where the
+#: flags above are compared whole: a rule comparing whole constants would pass a negative case
+#: written as a lone literal and stay silent on the real script.
+SYSTEM_SPEECH_OUTPUTS = frozenset(
+    {"SetOutputToWaveFile", "SetOutputToWaveStream", "SetOutputToAudioStream"}
+)
 
 #: Rule 36 (M10.3 dec. 3): ELA never reads a window title. ``kCGWindowOwnerName`` and the geometry
 #: come free and are *state*; ``kCGWindowName`` costs the same TCC grant as a screenshot and is
@@ -2006,6 +2020,11 @@ def check_the_voice_writes_no_file(pkg_root: Path) -> list[Violation]:
     Reads the **literals** in the voice modules, the way rule 36 reads a CoreFoundation key: a
     flag is a string in an ``argv`` list, never an import, so a rule that read imports would be
     mute on the only line that could break it.
+
+    **Two shapes of literal since M12.4 dec. D.** A flag of ``say`` is a whole constant; a method
+    of System.Speech is a line inside a PowerShell script, so :data:`SYSTEM_SPEECH_OUTPUTS` is
+    looked for inside every string constant. Its limit, written: a script assembled at run time
+    from pieces that each lack the name — ``"SetOutputTo" + "WaveFile"`` — is not seen.
     """
     rule = "the-voice-writes-no-file"
     found: list[Violation] = []
@@ -2015,12 +2034,21 @@ def check_the_voice_writes_no_file(pkg_root: Path) -> list[Violation]:
             continue
         name = module_name(path, pkg_root)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        literals = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        ]
         found.extend(
             Violation(rule, name, node.value, node.lineno)
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-            and node.value in VOICE_OUTPUT_FLAGS
+            for node in literals
+            if node.value in VOICE_OUTPUT_FLAGS
+        )
+        found.extend(
+            Violation(rule, name, method, node.lineno)
+            for node in literals
+            for method in sorted(SYSTEM_SPEECH_OUTPUTS)
+            if method in node.value
         )
     return found
 
@@ -3326,6 +3354,7 @@ CONSTANTS: tuple[Constant, ...] = (
     # the-voice-writes-no-file (rule 40, M11.1 dec. 7)
     Constant("the-voice-writes-no-file", "VOICE_MODULES", DETECTOR),
     Constant("the-voice-writes-no-file", "VOICE_OUTPUT_FLAGS", DETECTOR),
+    Constant("the-voice-writes-no-file", "SYSTEM_SPEECH_OUTPUTS", DETECTOR),
     Constant(
         "the-voice-writes-no-file",
         "ROOT_PACKAGE",

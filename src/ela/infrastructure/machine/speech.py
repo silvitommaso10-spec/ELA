@@ -127,10 +127,11 @@ class SaySpeechCommand:
 class UnsupportedSpeech:
     """Says nothing, and says so (:class:`~ela.ports.SpeechPort`).
 
-    ELA runs on Linux in CI and will run on Windows nodes (§4), and neither has ``say``. Written
-    as a class rather than an ``if`` somewhere for the reason ADR 0028 gave ``UnsupportedProbe``:
-    "ELA on Linux says nothing" becomes a thing with a name, a test and an error code the user can
-    read, instead of a gap somebody discovers.
+    ELA runs on Linux in CI, which has no voice ELA can use (a PC has one since M12.4:
+    :class:`~ela.infrastructure.machine.windows.SapiSpeechCommand`). Written as a class rather than
+    an ``if`` somewhere for the reason ADR 0028 gave ``UnsupportedProbe``: "ELA on Linux says
+    nothing" becomes a thing with a name, a test and an error code the user can read, instead of a
+    gap somebody discovers.
     """
 
     __slots__ = ()

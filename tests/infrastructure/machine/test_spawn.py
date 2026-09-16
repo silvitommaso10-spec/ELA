@@ -19,6 +19,7 @@ from ela.infrastructure.machine import TIMED_OUT, spawn
 from ela.infrastructure.machine.darwin import (
     SPEECH_FILE_PREFIX,
     spawn_with_audio,
+    spawn_with_input,
     sweep_speech_files,
 )
 
@@ -81,6 +82,71 @@ async def test_a_cancelled_wait_kills_the_child_instead_of_orphaning_it() -> Non
         await asyncio.sleep(0.9)  # past the instant the child would have written
 
         assert not marker.exists(), "the child outlived the cancelled call"
+
+
+async def test_the_child_reads_the_bytes_on_its_stdin_whole() -> None:
+    """``spawn_with_input`` (M12.4 dec. D): the bytes arrive on stdin, all of them, as they were.
+
+    Accents, because the voice of a PC reads UTF-8 there and P3 checked the code points; and more
+    than a pipe holds at once, because ``communicate`` has to keep writing while the child reads.
+    """
+    data = ("È già l'una: questa frase la dice il PC.\n" * 5000).encode("utf-8")
+    child = (
+        "import hashlib, sys\n"
+        "read = sys.stdin.buffer.read()\n"
+        "print(len(read), hashlib.sha256(read).hexdigest())\n"
+    )
+
+    code, output = await spawn_with_input([sys.executable, "-c", child], data, 30)
+
+    assert code == 0
+    assert output.split() == [str(len(data)), hashlib.sha256(data).hexdigest()]
+
+
+async def test_a_child_fed_on_stdin_that_overstays_is_killed_and_reported_as_timed_out() -> None:
+    code, output = await spawn_with_input(
+        [sys.executable, "-c", "import time; time.sleep(30)"], b"x", 0.05
+    )
+
+    assert (code, output) == (TIMED_OUT, "")
+
+
+async def test_a_cancelled_wait_on_a_child_fed_on_stdin_kills_it() -> None:
+    """The same property as ``spawn``'s, and for the same reason: on a PC this child is the voice,
+    and a voice that outlives the call that asked for it is ELA not stopping when told to."""
+    with tempfile.TemporaryDirectory() as directory:
+        marker = Path(directory) / "still-alive"
+        child = (
+            "import pathlib, sys, time\n"
+            "sys.stdin.buffer.read()\n"
+            "time.sleep(0.6)\n"
+            f"pathlib.Path({str(marker)!r}).write_text('x')\n"
+        )
+        task = asyncio.create_task(spawn_with_input([sys.executable, "-c", child], b"x", 30))
+        await asyncio.sleep(0.15)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.sleep(0.9)
+
+        assert not marker.exists(), "the child outlived the cancelled call"
+
+
+async def test_the_stderr_of_a_child_fed_on_stdin_goes_to_the_terminal_and_never_back(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    """Decision of 2026-09-17 (M12.4 dec. D, criterion 11): a diagnosis for whoever is at the
+    machine, and nothing the caller receives — so nothing can decide on it, keep it or send it on.
+
+    The child inherits the node's stderr: on a PC the line ``SelectVoice`` writes for a voice that
+    is not installed shows up in the node's window. ``capfd`` is that window here.
+    """
+    child = "import sys\nsys.stderr.write('una diagnosi\\n')\nprint('detto')\n"
+
+    code, output = await spawn_with_input([sys.executable, "-c", child], b"", 10)
+
+    assert (code, output.strip()) == (0, "detto")
+    assert "una diagnosi" in capfd.readouterr().err
 
 
 async def test_the_child_receives_the_bytes_through_a_file_with_no_name() -> None:
