@@ -192,6 +192,17 @@ class OnlineSpeechCommand:
     **What is timed is the sound.** ``spoken_seconds`` covers the player and nothing else; the
     round-trip is reported apart. One number carrying both would let a sentence that never played
     look like one that did, to the one verifier that has no other witness (ADR 0033 §5).
+
+    **``binary=None`` is a value, not an omission** (M12.4 dec. E, F). The default is ``AFPLAY``;
+    ``None`` means *ELA knows no player for this system*, and it is the only value that can say
+    *nobody*. Not a path that happens to be missing: a path is asked of the filesystem, and the
+    answer would then depend on the machine running the code rather than on the system a node was
+    built for — ``afplay`` is there on the Mac that runs a test naming Windows. With ``None``,
+    :meth:`available` answers no everywhere, :meth:`speak` says ``speech.no_player`` after the key,
+    and :meth:`play` starts nothing; the composition chooses it by naming the system. **Not the
+    shape of M12.3c's interpretation 6**, where ``None`` was the default of a parameter — *not
+    said* — and a system nobody reads took a name of its own, ``power_nobody_reads``. Here nothing
+    is left unsaid, and a class for one value would be the abstraction that precedes the case.
     """
 
     __slots__ = ("_binary", "_directory", "_spawn", "_synthesise", "_unconfigured")
@@ -205,13 +216,6 @@ class OnlineSpeechCommand:
         runner: SpawnWithAudio = spawn_with_audio,
         binary: str | None = AFPLAY,
     ) -> None:
-        """``binary`` is the player; ``None`` is a system ELA knows no player for (M12.4 dec. E).
-
-        Not a path that happens to be missing: a path is asked of the filesystem, and the answer
-        would depend on the machine running the code rather than on the system the node was built
-        for — ``afplay`` is there on the Mac that runs a test naming Windows. ``None`` answers *no*
-        everywhere, and the composition chooses it by naming the system.
-        """
         self._synthesise = synthesise
         self._unconfigured = unconfigured
         self._directory = directory

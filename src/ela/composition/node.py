@@ -269,8 +269,8 @@ def build_node(
     # branch — it is not a macOS adapter — which is the correction of 2026-09-09.
     #
     # Its **player** is the named system's (M12.4 dec. E, F): ``afplay`` on Darwin, and nobody
-    # anywhere else — on every runner, because since dec. F the player decides what a node declares,
-    # and a path asked of the filesystem would make that depend on the machine running the code.
+    # anywhere else. What *nobody* is, and why it is ``None``, is said once, in the docstring of
+    # ``OnlineSpeechCommand``.
     playing: SpeechPort
     if speech_online is not None:
         playing = speech_online
