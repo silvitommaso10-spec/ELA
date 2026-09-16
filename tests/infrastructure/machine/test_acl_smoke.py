@@ -13,6 +13,10 @@ path on stdin, so nothing of Windows is loaded into this process (rule 32's reas
 **And the negative case, on the same machine**: a directory born as the parent of a
 ``mkdir(parents=True)`` — the road a node took until M12.3b, P2's variant «oggi» — has an ACL that
 is not that one. Without it, a predicate that answered yes to everything would pass here.
+
+**Every assertion carries the SDDL it read.** The shape asserted is deduced — from CPython's source
+and from P2's ``icacls`` — and has never met a PC: if it is wrong, what decides whether the
+assertion or the code is at fault is the text Windows really wrote, so a failure prints it.
 """
 
 from __future__ import annotations
@@ -57,8 +61,8 @@ BORN = {
 }
 
 
-def dacl(path: Path) -> tuple[str, list[str]]:
-    """The DACL's flags — ``P``: *protected*, nothing inherited from above — and its entries."""
+def sddl(path: Path) -> str:
+    """The security descriptor of ``path``, as Windows writes it."""
     done = subprocess.run(
         [POWERSHELL, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded(READ_SDDL)],
         input=str(path).encode("utf-8"),
@@ -67,15 +71,23 @@ def dacl(path: Path) -> tuple[str, list[str]]:
         check=False,
     )
     assert done.returncode == 0, done.stderr.decode("utf-8", errors="replace")
-    sddl = done.stdout.decode("utf-8").strip()
-    body = sddl.partition("D:")[2].partition("S:")[0]
-    flags = body.partition("(")[0]
-    return flags, re.findall(r"\([^)]*\)", body)
+    return done.stdout.decode("utf-8").strip()
 
 
-def protected(path: Path) -> bool:
-    flags, entries = dacl(path)
+def dacl(descriptor: str) -> tuple[str, list[str]]:
+    """The DACL's flags — ``P``: *protected*, nothing inherited from above — and its entries."""
+    body = descriptor.partition("D:")[2].partition("S:")[0]
+    return body.partition("(")[0], re.findall(r"\([^)]*\)", body)
+
+
+def protected(descriptor: str) -> bool:
+    flags, entries = dacl(descriptor)
     return "P" in flags and len(entries) == len(PROTECTED) and set(entries) == PROTECTED
+
+
+def inherited(descriptor: str) -> bool:
+    _, entries = dacl(descriptor)
+    return len(entries) == len(INHERITED) and set(entries) == INHERITED
 
 
 @pytest.mark.skipif(platform.system() != "Windows", reason="an ACL is Windows's")
@@ -89,10 +101,9 @@ async def test_the_secret_sits_under_the_protected_acl_on_the_road_a_node_takes(
 
     await join_or_read(built, code="un-codice", transport=replies(status(201, BORN)).transport())
 
-    assert protected(state)
-    _, entries = dacl(state / STATE_FILE)
-    assert len(entries) == len(INHERITED)
-    assert set(entries) == INHERITED
+    directory, secret = sddl(state), sddl(state / STATE_FILE)
+    assert protected(directory), directory
+    assert inherited(secret), secret
 
 
 @pytest.mark.skipif(platform.system() != "Windows", reason="an ACL is Windows's")
@@ -100,5 +111,6 @@ def test_a_directory_born_as_a_parent_does_not_carry_it(tmp_path: Path) -> None:
     today = tmp_path / "today"
     (today / "speech").mkdir(mode=0o700, parents=True)
 
-    assert protected(today / "speech")
-    assert not protected(today)
+    leaf, parent = sddl(today / "speech"), sddl(today)
+    assert protected(leaf), leaf
+    assert not protected(parent), parent
