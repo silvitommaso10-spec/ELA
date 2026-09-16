@@ -182,7 +182,14 @@ class SapiSpeechCommand:
         return os.access(self._binary, os.X_OK) and Path(self._binary).is_file()
 
     async def speak(self, text: str) -> RawSpeech:
-        """Say ``text`` with the configured voice, and answer with how the child ended."""
+        """Say ``text`` with the configured voice, and answer with how the child ended.
+
+        **An overstay carries no duration, and** ``say`` **does otherwise, on purpose** (review of
+        2026-09-17). :class:`~ela.infrastructure.machine.speech.SaySpeechCommand` reports the
+        child's life on a timeout too, because for ``say`` that life *is* the measure. Here the
+        measure is the script's stopwatch, which a killed script never writes — and ``timed_out`` is
+        a failure, so a duration beside it would be a number nobody can use well.
+        """
         argv = [self._binary, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded(SPEAK)]
         data = f"{self._voice}\n{text}".encode()
         try:

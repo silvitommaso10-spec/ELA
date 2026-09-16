@@ -111,6 +111,10 @@ class SaySpeechCommand:
 
         ``-v`` names the voice, which comes from configuration and never from the caller. The
         text goes after :data:`END_OF_OPTIONS` so that a sentence cannot become a flag.
+
+        A timeout still reports how long the child lived, which for ``say`` is the measure. The
+        voice of a PC does not (:class:`~ela.infrastructure.machine.windows.SapiSpeechCommand`): its
+        measure is a stopwatch a killed script never writes, and the difference is declared there.
         """
         argv = [self._binary, "-v", self._voice, END_OF_OPTIONS, text]
         started = time.monotonic()
