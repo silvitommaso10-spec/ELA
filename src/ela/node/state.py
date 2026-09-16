@@ -16,6 +16,15 @@ executable of ELA's own, together with ``launchd``.
 
 **Not an environment variable** either, for the reason ADR 0024 §2 gives about ``--token``: it would
 be visible in ``ps`` and land in the shell's history.
+
+**On Windows, still a file** (M12.4 dec. B), and for a reason that is not the Mac's. DPAPI and the
+Credential Manager do not recognise the binary — measured on the user's PC by P2 (2026-09-15): a
+copy of the interpreter and ``powershell.exe`` both read the blob back — so their boundary is the
+user, which is the boundary a file under the directory's ACL already has; what they would add is
+not D5's threat; they would cost ``ctypes`` in the node's process or a child at every start; and a
+password reset by an administrator would leave a secret nobody can read behind a file ``O_EXCL``
+will not replace. What changes is **how** the file is protected, and that is the composition's
+choice (:class:`~ela.composition.node.PermissionMode`), not a question this module asks ``os``.
 """
 
 from __future__ import annotations
@@ -25,6 +34,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
+
+from ela.composition.node import PermissionMode
 
 __all__ = [
     "DIRECTORY_MODE",
@@ -80,23 +91,39 @@ def read_identity(directory: Path) -> NodeIdentity | None:
     return NodeIdentity(device_id=str(kept["device_id"]), secret=str(kept["secret"]))
 
 
-def write_identity(directory: Path, identity: NodeIdentity) -> None:
-    """Write the identity once, ``0o600`` from the first byte, and refuse to overwrite one.
+def write_identity(directory: Path, identity: NodeIdentity, permissions: PermissionMode) -> None:
+    """Write the identity once, protected from the first byte, and refuse to overwrite one.
 
     ``O_EXCL`` is the whole point and not a precaution: a second enrollment over a file that is
     already there would throw away an identity the Core still has a row for, leaving a node nobody
     can revoke because nobody can name it. It fails with :class:`FileExistsError` instead.
 
-    The mode is exact **before a byte is written**, which is why the ``fchmod`` is there and not a
-    ``chmod`` afterwards: the creation mode can only be narrowed by the process umask, so a file
-    written and then narrowed carries that umask for an instant — which is the bug ADR 0037 §7
-    records ``ela init`` having had ("``ela init`` wrote ``.env`` and then changed its mode"). And
-    ``O_NOFOLLOW`` so the path cannot be pointed somewhere else by a symlink planted first.
+    **The protection is exact before a byte is written, by one of two roads** — ``permissions`` is
+    the composition's choice for the system the node was built for, and it has no default, because
+    a writer called without it is the line that died on the PC (M12.4, criterion 7):
+
+    * ``BITS`` — ``fchmod(0o600)`` on the descriptor, and not a ``chmod`` afterwards: the creation
+      mode can only be narrowed by the process umask, so a file written and then narrowed carries
+      that umask for an instant — the bug ADR 0037 §7 records ``ela init`` having had ("``ela init``
+      wrote ``.env`` and then changed its mode"). And ``O_NOFOLLOW`` so the path cannot be pointed
+      somewhere else by a symlink planted first.
+    * ``ACL`` — nothing on the file: it inherits the ACL of a directory that exists **before** it,
+      made first and ``0o700`` by ``build_node``. A planted link is refused by ``O_EXCL``, which
+      refuses any name that exists, and making a symbolic link on Windows needs a privilege or
+      developer mode. Who can read it: the user, SYSTEM and Administrators — the boundary ``0o600``
+      has on a Mac, where ``root`` reads it.
     """
     directory.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(state_path(directory), flags, STATE_MODE)
-    os.fchmod(descriptor, STATE_MODE)
+    descriptor = _create(state_path(directory), permissions)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         json.dump({"device_id": identity.device_id, "secret": identity.secret}, handle)
         handle.write("\n")
+
+
+def _create(path: Path, permissions: PermissionMode) -> int:
+    """Create ``path`` exclusively, protected the way ``permissions`` says, and hand back its fd."""
+    if permissions is PermissionMode.BITS:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, STATE_MODE)
+        os.fchmod(descriptor, STATE_MODE)
+        return descriptor
+    return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, STATE_MODE)

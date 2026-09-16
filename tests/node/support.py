@@ -46,12 +46,16 @@ def config(directory: Path, **node: Any) -> NodeConfig:
     )
 
 
-def world(directory: Path, clock: FakeClock | None = None, **node: Any) -> NodeWorld:
+def world(
+    directory: Path, clock: FakeClock | None = None, *, system: str = "Darwin", **node: Any
+) -> NodeWorld:
     """A node of a named system with both voices faked, so what it declares is the same everywhere.
 
     Both, and the system named (M12.4 dec. F, G): a node declares only the voices its machine can
     use, and the online voice's player is ``afplay`` — present on a Mac, absent on the Ubuntu job.
-    A world that left either to the machine would declare four tools here and three there.
+    A world that left either to the machine would declare four tools here and three there. Darwin
+    unless a test names another, and a test names Windows to take the writer that system's
+    composition chooses (M12.4 dec. B).
 
     And the power source, which every heartbeat reads (M12.3c): left to the machine, a beat would
     carry ``AC`` at the desk, ``BATTERY`` on the train and ``UNKNOWN`` on the Ubuntu job.
@@ -61,7 +65,7 @@ def world(directory: Path, clock: FakeClock | None = None, **node: Any) -> NodeW
         clock=clock or FakeClock(),
         speech=FakeSpeech(),
         speech_online=FakeSpeech(),
-        system="Darwin",
+        system=system,
         power=FakePower(),
     )
 

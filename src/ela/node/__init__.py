@@ -81,7 +81,7 @@ async def join_or_read(
             "good once and for ten minutes: ask the Core for another one."
         )
     assert client.identity is not None  # noqa: S101 — a 201 carries the identity or the DTO failed
-    write_identity(directory, client.identity)
+    write_identity(directory, client.identity, world.permissions)
     return client
 
 

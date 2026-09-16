@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from ela.composition import ConfigurationError, NodeConfig, NodeSettings, build_node
-from ela.composition.node import NodeWorld
+from ela.composition.node import NodeWorld, PermissionMode, mkdir_applies_the_acl
 from ela.domain import OperatingSystem
 from ela.infrastructure.machine import SaySpeechCommand, UnsupportedSpeech
 from ela.providers.anthropic import AnthropicSettings
@@ -66,6 +66,7 @@ def test_it_builds_nothing_that_decides(tmp_path: Path) -> None:
         "tools",
         "voices",
         "power",
+        "permissions",
         "speech_dir",
     }
     assert not hasattr(built, "database")
@@ -186,6 +187,69 @@ def test_the_operating_system_is_the_one_the_node_was_built_for(
     built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
 
     assert built.os is declared
+
+
+@pytest.mark.parametrize(
+    ("system", "permissions"),
+    [
+        ("Darwin", PermissionMode.BITS),
+        ("Windows", PermissionMode.ACL),
+        ("Linux", PermissionMode.BITS),
+    ],
+)
+def test_the_secret_is_protected_the_way_the_named_system_allows(
+    tmp_path: Path, system: str, permissions: PermissionMode
+) -> None:
+    """M12.4 dec. B, criterion 15. ``BITS`` where there are permission bits to narrow; ``ACL`` on
+    Windows, where ``os.fchmod`` does not exist on 3.12 and the protection is the directory's."""
+    built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+
+    assert built.permissions is permissions
+
+
+@pytest.mark.parametrize(("version", "applies"), [((3, 12, 3), False), ((3, 12, 4), True)])
+def test_before_3_12_4_mkdir_ignores_the_mode_on_windows(
+    version: tuple[int, int, int], applies: bool
+) -> None:
+    """M12.4 dec. B, criterion 8, the pure half. CVE-2024-4030 (gh-118486): from 3.12.4
+    ``os.mkdir(path, 0o700)`` on Windows applies a protected ACL; before it the mode is ignored,
+    **in silence**. The version is the whole question, so it is the whole argument."""
+    assert mkdir_applies_the_acl(version) is applies
+
+
+def test_a_windows_python_older_than_3_12_4_is_refused_before_anything_is_built(
+    tmp_path: Path,
+) -> None:
+    """M12.4 dec. B, criterion 8, the composition's half: **the only guarantee**, not a caution.
+
+    The project does not choose the PC's Python — ``uv`` uses the 3.12 it finds, and P0 found a
+    3.12.10 it had not installed —, so a 3.12.3 found the same way would be used the same way. And
+    refused **before the state directory exists**: made by an interpreter that ignores the mode, it
+    would carry the profile's inherited ACL, and a directory that already exists is left as it is.
+
+    The version is named, never patched into the interpreter: the seam ``system`` already has.
+    """
+    state = tmp_path / "state"
+
+    with pytest.raises(ConfigurationError, match=r"3\.12\.4"):
+        build_node(config(state), speech=FakeSpeech(), system="Windows", python_version=(3, 12, 3))
+
+    assert not state.exists()
+    assert (
+        build_node(
+            config(state), speech=FakeSpeech(), system="Windows", python_version=(3, 12, 4)
+        ).permissions
+        is PermissionMode.ACL
+    )
+
+
+def test_the_refusal_is_windows_s_and_a_mac_does_not_ask_the_version(tmp_path: Path) -> None:
+    """``BITS`` narrows the file itself, whatever ``mkdir`` does with its mode."""
+    built = build_node(
+        config(tmp_path), speech=FakeSpeech(), system="Darwin", python_version=(3, 12, 3)
+    )
+
+    assert built.permissions is PermissionMode.BITS
 
 
 def test_a_system_no_node_knows_stops_it_before_anything_is_built(tmp_path: Path) -> None:

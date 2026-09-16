@@ -17,10 +17,13 @@ composing **less**.
 from __future__ import annotations
 
 import platform
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
+from typing import Final
 
 from ela.composition.errors import ConfigurationError
 from ela.composition.settings import NodeConfig
@@ -46,7 +49,41 @@ from ela.tools import (
     node_tools,
 )
 
-__all__ = ["NodeWorld", "build_node"]
+__all__ = ["ACL_SINCE", "NodeWorld", "PermissionMode", "build_node", "mkdir_applies_the_acl"]
+
+
+class PermissionMode(StrEnum):
+    """How a node's secret is protected on the machine it was built for (M12.4 dec. B).
+
+    **Here, and not in** :mod:`ela.node.state` **which reads it**, for a reason of imports:
+    ``ela.node`` imports this module, and this package's ``__init__`` imports it too, so a
+    composition that imported ``ela.node.state`` would find one of the two half-initialised. The
+    direction stays one: ``ela.node`` reads from the composition, never the other way.
+    """
+
+    BITS = "bits"
+    """Permission bits: the file is narrowed to ``0o600`` with ``fchmod`` before its first byte, and
+    ``O_NOFOLLOW`` refuses a planted link. Darwin and Linux."""
+
+    ACL = "acl"
+    """The directory's ACL: made first with ``mkdir(0o700)``, which on Windows applies a protected
+    ACL — SYSTEM, Administrators, OWNER RIGHTS, nothing inherited — that the file inherits the
+    moment it exists. No ``fchmod``, which Windows has only from 3.13, and no ``O_NOFOLLOW``, which
+    it has not at all. Measured on the user's PC by P2 (2026-09-15)."""
+
+
+ACL_SINCE: Final = (3, 12, 4)
+"""The first Python whose ``os.mkdir(path, 0o700)`` protects a directory on Windows (CVE-2024-4030,
+gh-118486). Before it the mode is ignored **in silence**."""
+
+
+def mkdir_applies_the_acl(version: tuple[int, int, int]) -> bool:
+    """Whether a Windows Python of ``version`` gives a new ``0o700`` directory the protected ACL.
+
+    The part that decides, apart from what the world answers (ADR 0031 §5): the composition hands it
+    ``sys.version_info``, and a test hands it the two versions either side of the line.
+    """
+    return version >= ACL_SINCE
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +129,13 @@ class NodeWorld:
     which machine answered. Until M12.3c no node sent a power source at all, and the orchestrator
     weighed one nobody could produce.
     """
+    permissions: PermissionMode
+    """How the secret is written on this machine, chosen for the named system (M12.4 dec. B).
+
+    The composition's and never the writer's: until M12.4 ``write_identity`` asked ``os`` whether it
+    had ``O_NOFOLLOW`` and called ``fchmod`` unconditionally, and on the PC every first run died on
+    that line after ``O_EXCL`` had made the file and before its first byte.
+    """
     speech_dir: Path
 
     def sweep_speech(self) -> int:
@@ -111,8 +155,9 @@ def build_node(
     speech_online: SpeechPort | None = None,
     system: str | None = None,
     power: PowerReading | None = None,
+    python_version: tuple[int, int, int] | None = None,
 ) -> NodeWorld:
-    """Build a node from ``config``, in one function and with five seams that are declared.
+    """Build a node from ``config``, in one function and with six seams that are declared.
 
     ``system`` is what ``platform.system()`` answers, and it defaults to this machine's answer. It
     is a parameter so that a platform choice is proved by **naming** the system and never by being
@@ -138,9 +183,19 @@ def build_node(
     asserts what a heartbeat carries names it, for the reason ``speech`` is named: otherwise the
     answer would depend on whether the machine running the suite is plugged in.
 
+    ``python_version`` is the sixth, and it defaults to this interpreter's (M12.4 dec. B): on
+    Windows a Python older than 3.12.4 is refused, and the refusal is proved by **naming** a
+    version, never by patching the interpreter — the argument ``system`` already makes.
+
     :raises ConfigurationError: for a system no node of ELA knows (``operating_system``), before
         anything is built: a node declares what it runs on, and there it would have nothing true to
         say.
+
+    :raises ConfigurationError: on Windows, for a Python older than :data:`ACL_SINCE`, before the
+        state directory exists (M12.4 dec. B). **The only guarantee** of the directory that holds
+        the secret: the project does not choose the PC's Python — ``uv`` uses the 3.12 it finds —,
+        and a directory made by an interpreter that ignores the mode would keep the profile's
+        inherited ACL, because one that already exists is left as it is.
 
     :raises ConfigurationError: if the routing table names a provider nobody registered, or is
         empty. A provider with **no key** is not that: it registers ``UNAVAILABLE``, the router
@@ -162,6 +217,20 @@ def build_node(
             f"ELA has no node for this operating system ({system}): a node declares what it runs "
             "on, and here it would have nothing true to say."
         ) from unknown
+    if python_version is None:
+        python_version = sys.version_info[:3]
+    # One statement per system that protects the secret differently, and before anything is built:
+    # the refusal must come before the state directory exists (dec. B).
+    permissions = PermissionMode.BITS
+    if system == "Windows":
+        if not mkdir_applies_the_acl(python_version):
+            raise ConfigurationError(
+                f"this Python is {'.'.join(map(str, python_version))}, and a node on Windows needs "
+                f"{'.'.join(map(str, ACL_SINCE))} or later: before it, os.mkdir ignores the mode "
+                "without saying so, and the directory that holds the node's secret would keep the "
+                "ACL inherited from the profile. Install a later 3.12 and run the node again."
+            )
+        permissions = PermissionMode.ACL
     if power is None:
         power = power_reading(system)
 
@@ -235,5 +304,6 @@ def build_node(
         ),
         voices=MappingProxyType({VOICE_TOOL_NAME: local, VOICE_ONLINE_TOOL_NAME: playing}),
         power=power,
+        permissions=permissions,
         speech_dir=scratch,
     )

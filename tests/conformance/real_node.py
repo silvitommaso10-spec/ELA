@@ -186,7 +186,7 @@ class RealNode:
         answered = await self._client.enroll(code, await self._declaration(declared))
         identity = self._client.identity
         if answered.status == 201 and identity is not None:
-            write_identity(self._directory, identity)
+            write_identity(self._directory, identity, self._built.permissions)
             await self._node.refresh()
         return Answered(answered.status, answered.body)
 
