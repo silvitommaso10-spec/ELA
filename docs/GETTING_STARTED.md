@@ -9,8 +9,7 @@ Ogni output qui sotto è quello vero di una sessione reale — id e istanti a pa
 
 Quello che sta fra parentesi angolari è un **segnaposto**: al suo posto va un valore vero, e le
 parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed2ab5-…`, mai
-`ela task run <55ed2ab5-…>`. Ce ne sono tre in tutta la guida, e il valore è sempre quello che il
-comando precedente ha stampato:
+`ela task run <55ed2ab5-…>`. Sono tutti in questa tabella, con il posto da cui viene il valore:
 
 | Segnaposto | Che cosa ci va | Da dove viene |
 |---|---|---|
@@ -18,6 +17,9 @@ comando precedente ha stampato:
 | `<id>` | l'id di un task | `ela task create`, oppure `ela task list` |
 | `<approval-id>` | l'id di una richiesta di consenso | `ela approvals` |
 | `<codice>` | il codice di arruolamento di un nodo | `ela node enroll`, stampato una volta sola |
+| `<ip tailnet del Mac>` | l'indirizzo del Mac sulla tailnet | `tailscale ip -4`, sul Mac (§12) |
+| `<nome della voce>` | una voce SAPI 5 installata sul PC | l'elenco del passo 3 di §12: sul PC di M12.4, `Microsoft Elsa Desktop` |
+| `<chiave del modello del PC>` | la chiave Anthropic del nodo, mai quella del Core | la console Anthropic (§12, passo 4) |
 
 ## 0. Che cosa serve
 
@@ -437,6 +439,265 @@ dell'assegnazione e la sua scadenza; la seconda, `completed`.
 ragione — `UNVERIFIABLE (workspace.write_note: its verifier reads this machine)` — perché il
 verifier di quella capability rileggerebbe la workspace del **Core**, e potrebbe rispondere «sì» per
 una nota che il nodo non ha mai scritto. Quattro capability su otto viaggiano; queste no.
+
+## 12. Un PC Windows come nodo, con il Core su questo Mac
+
+Da M12.4 un PC Windows è un nodo come il Mac della §11, con lo stesso ciclo: il **Core** resta su
+questo Mac, il **nodo** gira sul PC, e i due si parlano attraverso la tailnet. Sul PC i comandi sono
+di **PowerShell**, in una finestra da utente normale; sul Mac, del terminale.
+
+**Questa sezione è scritta prima della prova a mano** (2026-09-17), e qui non vale ancora la regola
+della guida: ciò che «devi vedere» è quello che il codice stampa e che le misure sul PC hanno
+mostrato (`docs/milestones/M12.4.md`, «Gli esiti»), non l'output di una sessione vera. Dopo la
+prova, ogni blocco si sostituisce con l'output vero, e ciò che non torna si scrive.
+
+Sul PC servono Windows 10 o 11, Tailscale acceso sulla stessa tailnet del Mac, [uv](https://docs.astral.sh/uv/),
+il repository in `$HOME\ELA` con `uv sync --locked`, e un Python **3.12.4 o successivo**: su
+Windows il nodo rifiuta una 3.12 più vecchia, perché lì la cartella del segreto non sarebbe
+protetta (M12.4, dec. B).
+
+### 1. Sul Mac: il Core anche sulla tailnet
+
+```
+tailscale ip -4
+```
+
+Stampa l'indirizzo del Mac sulla tailnet, `100.x.y.z`. Aggiungilo al `.env` del Mac, poi avvia il
+Core nel primo terminale:
+
+```
+ELA_API_TAILNET_HOST=<ip tailnet del Mac>
+```
+
+```
+uv run ela serve
+```
+
+Devi vedere `Application startup complete.` Il Core ascolta sul loopback **e** sulla tailnet; ogni
+rotta resta dietro il token.
+
+### 2. Sul PC: il Mac risponde
+
+```powershell
+Test-NetConnection <ip tailnet del Mac> -Port 8351
+curl.exe -s -o NUL -w "%{http_code}`n" "http://<ip tailnet del Mac>:8351/health"
+```
+
+Devi vedere `InterfaceAlias : Tailscale`, `TcpTestSucceeded : True`, e poi `401`: il Core risponde
+e rifiuta una richiesta senza token, che è ciò che deve fare (P5, 2026-09-17).
+
+### 3. Sul PC: quale voce
+
+```powershell
+$list = @'
+Add-Type -AssemblyName System.Speech
+$s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$s.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name + ' | ' + $_.VoiceInfo.Culture.Name }
+$s.Dispose()
+'@
+& "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($list)))
+```
+
+Devi vedere almeno una voce `it-IT`: sul PC di M12.4, `Microsoft Elsa Desktop | it-IT` (P3,
+2026-09-15). Quel nome è il `<nome della voce>`. Le voci «OneCore» delle impostazioni di Windows
+non compaiono qui, e il nodo non le può usare.
+
+### 4. Sul PC: il `.env` del nodo — senza `ela init`
+
+`ela init` **non** si usa sul PC: scrive il `.env` con una funzione che Windows su Python 3.12 non
+ha, e un nodo non ha bisogno del token del Core. Il file si scrive così, e il modo conta:
+`[IO.File]::WriteAllText` scrive UTF-8 **senza BOM**, mentre `Set-Content` e `Out-File` di
+PowerShell 5.1 ne mettono uno, e con il BOM la prima variabile del file verrebbe ignorata **in
+silenzio**.
+
+```powershell
+$lines = @'
+ELA_NODE_CORE_URL=http://<ip tailnet del Mac>:8351
+ELA_VOICE_NAME="<nome della voce>"
+ELA_ANTHROPIC_API_KEY=<chiave del modello del PC>
+'@
+[IO.File]::WriteAllText("$HOME\ELA\.env", $lines)
+```
+
+Tre cose da sapere prima di andare avanti:
+
+- **`ELA_MODEL_ROUTES` deve essere uguale a quella del Mac.** Se il `.env` del Mac la imposta,
+  copia quella riga identica in questo file; se non la imposta, non scriverla. Con due tabelle
+  diverse ogni chiamata a un modello che il PC esegue fallisce la verifica sul Mac — il passo 8 lo
+  mostra apposta.
+- **Nessun `ELA_NODE_PERFORMANCE`** e nessun tratto: chi parla lo decide ciò che le macchine
+  leggono di sé, non una dichiarazione (passo 6).
+- **La chiave è del PC** e non viaggia mai con il lavoro: il Core manda la chiamata, il nodo usa la
+  sua. Il file sta in `$HOME\ELA` con i permessi della cartella del profilo — lo leggono i processi
+  del tuo utente, lo stesso confine del segreto del nodo.
+
+### 5. Il nodo: arruolato dal Mac, avviato sul PC
+
+Sul Mac, nel secondo terminale, un codice:
+
+```
+uv run ela node enroll --privacy TRUSTED
+```
+
+Il codice si stampa una volta e vale dieci minuti. Sul PC:
+
+```powershell
+Set-Location $HOME\ELA
+uv run ela node run --join
+```
+
+Incolla il codice quando compare `Enrollment code:` — non si vede mentre lo scrivi, ed è voluto.
+Da lì il nodo ha la sua identità in `$HOME\.ela\node.json`, in una cartella con i permessi ristretti
+a te, SYSTEM e Administrators; le volte dopo basta `uv run ela node run`. **Lascia aperta questa
+finestra**: il nodo vive quanto lei, e chiuderla con la X lo ferma senza chiudere niente.
+
+In una **seconda** finestra di PowerShell, il firewall:
+
+```powershell
+Get-NetFirewallApplicationFilter | Where-Object Program -like '*python*' | Get-NetFirewallRule | Select-Object DisplayName, Direction, Action, Enabled
+```
+
+Devi vedere nessuna riga, e non deve essere comparso nessun dialogo: il nodo chiama il Core, non
+ascolta niente.
+
+Sul Mac:
+
+```
+uv run ela device list
+```
+
+Devi vedere il PC accanto a `local`: sistema `WINDOWS`, disponibile, e **tre** tool — `core-echo`,
+`model-complete`, `voice-speak`. Non `voice-speak-online`: sul PC la voce online non ha un
+riproduttore, e il nodo non promette ciò che la macchina non sa fare.
+
+### 6. Il Mac a batteria, e il PC che parla
+
+**Stacca l'alimentatore del Mac**, e lascialo staccato fino alla fine della sezione. È ciò che
+manda il lavoro al PC, ed è letto, non dichiarato: il Mac a batteria vale 20 punti (la rete),
+il PC a corrente 25 (la rete 5, la corrente 10, libero 10). Con il Mac attaccato vincerebbe lui,
+30 a 25, e parlerebbe il Mac.
+
+```
+uv run ela task create "fai parlare il PC" --privacy TRUSTED
+uv run ela task plan <id> --file docs/examples/speak-on-a-node.json
+uv run ela task run <id>
+uv run ela approvals
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+Il primo `run` si ferma sul consenso; il secondo risponde `assigned`, con l'id dell'assegnazione:
+lo step è del PC. **Il PC parla** — una frase di tre quarti di minuto, lunga apposta per le prove
+di questo passo e del passo 7. Mentre parla:
+
+1. **L'albero dei processi, sul PC**, nella seconda finestra:
+
+   ```powershell
+   function Show-Tree($id, $depth = 0) {
+     Get-CimInstance Win32_Process -Filter "ParentProcessId=$id" | ForEach-Object {
+       ('  ' * $depth) + "$($_.ProcessId) $($_.Name)"; Show-Tree $_.ProcessId ($depth + 1)
+     }
+   }
+   Get-CimInstance Win32_Process -Filter "Name='uv.exe'" | ForEach-Object { "$($_.ProcessId) uv.exe"; Show-Tree $_.ProcessId 1 }
+   ```
+
+   Devi vedere `powershell.exe` in fondo alla catena che parte da `uv.exe`, passando per `ela.exe`
+   e per i `python.exe`: è la voce, figlia del nodo. Annota la catena così come esce.
+2. **Il Core spento a metà**: `Ctrl-C` sul primo terminale del Mac, poi `uv run ela serve` di
+   nuovo. Il nodo, quando ha finito di parlare, trova il Core spento o appena riacceso: aspetta,
+   riprova, e consegna la busta che teneva.
+
+Quando la frase è finita e il nodo ha consegnato, sul Mac:
+
+```
+uv run ela task run <id>
+uv run ela audit tail --task <id> -n 20
+```
+
+Il `run` risponde `completed`. Nel registro, un `DEVICE_SELECTED` nomina il PC «with 25 points».
+Con `--json` sullo stesso comando di `audit tail`, il `TOOL_EXECUTED` porta il `device_id` del PC —
+quello di `ela device list` —, e il `DEVICE_SELECTED` porta fra i candidati anche i 20 punti di
+`local`.
+
+### 7. `Ctrl-C` sul nodo, mentre parla
+
+Un secondo task, con lo stesso piano, fino a `assigned`:
+
+```
+uv run ela task create "fai parlare il PC, e interrompilo" --privacy TRUSTED
+uv run ela task plan <id> --file docs/examples/speak-on-a-node.json
+uv run ela task run <id>
+uv run ela approvals
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+Quando il PC comincia a parlare, `Ctrl-C` **nella finestra del nodo**, poi nella stessa finestra:
+
+```powershell
+"exit=$LASTEXITCODE"
+```
+
+Devi sentire la voce fermarsi subito, vedere `exit=0`, e **nessuna** riga `Exception ignored` prima
+del prompt. Il lavoro interrotto non si perde in silenzio: per il Core è un nodo che tace, e
+l'assegnazione scade. Poi riavvia il nodo con `uv run ela node run`, per il passo 8.
+
+### 8. Le prove negative
+
+**Una nota non va al nodo.** `docs/examples/first-task.json` ha due step: un `core.echo`, che
+viaggia, e un `workspace.write_note`, che no.
+
+```
+uv run ela task create "una nota" --privacy TRUSTED
+uv run ela task plan <id> --file docs/examples/first-task.json
+uv run ela task run <id>
+```
+
+Il primo `run` risponde `assigned`: l'echo è del PC. Aspetta qualche secondo che il nodo consegni,
+poi:
+
+```
+uv run ela task run <id>
+uv run ela audit tail --task <id> -n 10 --json
+```
+
+Il secondo `run` chiude l'echo e si ferma sul consenso della nota. Nel registro, il
+`DEVICE_SELECTED` della nota sceglie `local`, «1 of 2 node(s) eligible», e fra i suoi candidati il
+PC porta `"refusals": ["UNVERIFIABLE"]`: il verifier della nota rileggerebbe la workspace del Mac,
+dove il PC non ha scritto niente. Il consenso della nota puoi negarlo con `ela task deny`.
+
+**Una tabella di rotte diversa fa fallire la verifica.** Ferma il nodo con `Ctrl-C`, aggiungi al
+`.env` del PC una riga che il Mac non ha, e riavvialo:
+
+```powershell
+[IO.File]::AppendAllText("$HOME\ELA\.env", "`nELA_MODEL_ROUTES={""reasoning"": {""providers"": [""anthropic""], ""profile"": ""cheap""}}`n")
+uv run ela node run
+```
+
+Sul Mac, il piano con uno step `model.complete`:
+
+```
+uv run ela task create "una domanda" --privacy TRUSTED
+uv run ela task plan <id> --file docs/examples/ask-model.json
+uv run ela task run <id>
+uv run ela approvals
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+L'ultimo `run` risponde `assigned`. Quando il nodo ha consegnato — la risposta del modello, qualche
+secondo —:
+
+```
+uv run ela task run <id>
+uv run ela audit tail --task <id> -n 10 --json
+```
+
+Il PC ha risposto con la sua chiave e con il profilo della sua tabella, `cheap`; il Mac ricalcola la
+rotta con la sua, che per `reasoning` dice `quality`, e la verifica fallisce: nel registro,
+l'`EXECUTION_VERIFIED` porta `model.misrouted`, «the call did not go where the policy routes it».
+È il difetto di due `.env` diversi, visto con la sua ragione. **Poi togli quella riga**: riscrivi il
+`.env` del PC con il blocco del passo 4, e riavvia il nodo.
 
 ## Dove guardare dopo
 
