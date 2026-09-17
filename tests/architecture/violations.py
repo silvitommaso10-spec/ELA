@@ -1505,6 +1505,68 @@ VIOLATIONS: tuple[Case, ...] = (
         "def hold(a, at):\n    return a.model_copy(expires_at=at)\n",
         "expires_at=",
     ),
+    # --- a-node-does-not-ask-which-machine-it-is (rule 54, M12.4 dec. A; criterion 4) ---
+    Case(
+        # The shape ADR 0039 §1 wrote in prose: «mai un if platform.system() dentro il ciclo».
+        "a-node-asking-platform-which-system",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        'import platform\ndef mac():\n    return platform.system() == "Darwin"\n',
+        "platform",
+    ),
+    Case(
+        "a-node-importing-the-question",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        "from platform import system\n",
+        "platform.system",
+    ),
+    Case(
+        "a-node-reading-os-name",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        'import os\ndef windows():\n    return os.name == "nt"\n',
+        "os.name",
+    ),
+    Case(
+        "a-node-reading-sys-platform",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        'import sys\ndef windows():\n    return sys.platform == "win32"\n',
+        "sys.platform",
+    ),
+    Case(
+        "a-node-importing-sys-platform",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        "from sys import platform\n",
+        "sys.platform",
+    ),
+    Case(
+        # The check dec. B moved into the composition: on Windows, whether this Python protects a
+        # directory. A node deciding it for itself would be a second, unguarded copy of that line.
+        "a-node-reading-its-python-version",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        "import sys\ndef old():\n    return sys.version_info < (3, 12, 4)\n",
+        "sys.version_info",
+    ),
+    Case(
+        # **The likelier wrong shape**, and the one that existed: until M12.4 dec. B the secret's
+        # writer asked ``getattr(os, "O_NOFOLLOW", 0)`` — which system this is, asked of a module.
+        "a-node-asking-os-for-a-function",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/state.py",
+        'import os\ndef flags():\n    return os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)\n',
+        "getattr(os",
+    ),
+    Case(
+        "a-node-checking-os-has-a-function",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/state.py",
+        'import os\ndef narrow(fd):\n    if hasattr(os, "fchmod"):\n        os.fchmod(fd, 0o600)\n',
+        "hasattr(os",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
     Case(
@@ -1527,6 +1589,18 @@ ALLOWED: tuple[Case, ...] = (
         "tool-execute-callers",
         "node/runner.py",
         "async def go(tool, d, a):\n    return await tool.execute(d, a)\n",
+        "",
+    ),
+    Case(
+        # Rule 54 is about the module ``os`` and the questions that name a system: a node reads
+        # attributes of its own objects, and uses ``os`` for what ``os`` is for, and neither is
+        # asking the machine which machine it is.
+        "a-node-using-os-and-getattr-for-what-they-are-for",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/state.py",
+        "import os\n"
+        "def open_it(p, identity):\n"
+        '    return os.open(p, os.O_EXCL), getattr(identity, "secret")\n',
         "",
     ),
     Case(

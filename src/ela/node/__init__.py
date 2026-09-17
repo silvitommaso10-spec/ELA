@@ -8,8 +8,8 @@ time** (M12.1 D6, D14), and this package may not so much as mint an expiry (arch
 
 Where the code lives is a decision of its own (dec. A, ADR 0039 §1): inside ``src/ela`` and not in
 the ``nodes/macos/`` of spec §48, because out there it would be outside ``mypy --strict``, outside
-the coverage gate, outside the fourteen import contracts and outside all fifty-three architecture
-rules — the least verified code in ELA, holding a secret and executing tools. What is common to
+the coverage gate, outside the import contracts and outside the architecture rules — the least
+verified code in ELA, holding a secret and executing tools. What is common to
 macOS and Windows lives here; what is not goes behind a port, in the shape of
 ``infrastructure/machine/darwin.py``, so M12.4 adds a module and not a branch.
 """

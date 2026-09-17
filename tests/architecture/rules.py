@@ -670,7 +670,7 @@ EXECUTOR_RECEIVERS = frozenset({"_executor"})
 #: machine the Core is not.
 NODE_RUNNER_MODULE = Path("node") / "runner.py"
 NODE_TOOL_RECEIVERS = frozenset({"tool"})
-#: Rule 53 (ADR 0039 §5, M12.3): the package a node's cycle lives in.
+#: Rules 53 and 54 (ADR 0039 §5, M12.3; M12.4 dec. A): the package a node's cycle lives in.
 NODE_DIR = "node"
 #: Rule 53: what minting a deadline looks like. ``timedelta(...)`` is how a duration becomes a
 #: point in time, and ``expires_at=`` is how one is handed to something that stores it. Reading the
@@ -679,6 +679,15 @@ NODE_DIR = "node"
 #: it. Subtracting two instants to learn how long is left is not minting either, and stays legal.
 DEADLINE_BUILDERS = frozenset({"timedelta"})
 DEADLINE_FIELD = "expires_at"
+#: Rule 54 (M12.4 dec. A): the questions that name a system — by import (``import platform``,
+#: ``from sys import platform``) or by attribute (``os.name``, ``sys.platform``,
+#: ``sys.version_info``). A dotted name, matched as a prefix of what is imported and exactly against
+#: what is read, so ``import sys`` and ``os.open`` stay legal.
+MACHINE_QUESTIONS = frozenset({"platform", "sys.platform", "sys.version_info", "os.name"})
+#: Rule 54: the other way of asking, and the likelier one — whether ``os`` *has* something.
+#: ``getattr(os, "O_NOFOLLOW", 0)`` was in the secret's writer until M12.4 dec. B.
+MACHINE_PROBES = frozenset({"getattr", "hasattr"})
+PROBED_MODULE = "os"
 #: ``connection`` was in this set and no module ever used it: ADR 0013 §9 wrote three names and
 #: the persistence has always executed through ``session`` and ``cursor``. Withdrawn by ADR 0027,
 #: with its price written there: the day the persistence executes on a ``connection`` this rule
@@ -2792,6 +2801,53 @@ def check_a_node_mints_no_deadline(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_a_node_does_not_ask_which_machine_it_is(pkg_root: Path) -> list[Violation]:
+    """Rule 54: no module of ``ela.node`` asks the machine which machine it is (M12.4 dec. A).
+
+    ADR 0039 §1 wrote it in prose — «un modulo per sistema dietro una porta, mai un ``if
+    platform.system()`` dentro il ciclo» — and M12.4 found that the platform decides **three**
+    things about a node, not one: its voice, what it declares, and how its secret is written. All
+    three are chosen by the composition, naming the system (ADR 0031 §3), and handed to the node
+    already chosen; a node that asked again would be a second place where the choice is made, and
+    the one no test that names a system could reach.
+
+    So: under ``ela.node``, no import of ``platform``, no ``sys.platform``, ``os.name`` or
+    ``sys.version_info``, and no ``getattr`` or ``hasattr`` whose first argument is the module
+    ``os`` — the shape "does ``os`` have ``fchmod``", which is how the question is really asked, and
+    which the secret's writer asked until dec. B. **Born without exemptions.**
+
+    **Its limit, written**: a ``try: os.fchmod(...) except AttributeError`` asks the same question
+    and is not seen, and a detector that saw it would read every ``except AttributeError`` of the
+    package; nor is ``os`` imported under another name.
+    """
+    rule = "a-node-does-not-ask-which-machine-it-is"
+    files = list(_source_files(pkg_root / NODE_DIR))
+    found = _violations(
+        rule,
+        iter(files),
+        pkg_root,
+        lambda imported: any(_is_within(imported, asked) for asked in MACHINE_QUESTIONS),
+    )
+    for path in files:
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                read = f"{node.value.id}.{node.attr}"
+                if read in MACHINE_QUESTIONS:
+                    found.append(Violation(rule, name, read, node.lineno))
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in MACHINE_PROBES
+                and node.args
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id == PROBED_MODULE
+            ):
+                found.append(Violation(rule, name, f"{node.func.id}({PROBED_MODULE}", node.lineno))
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -2850,6 +2906,7 @@ RULES: dict[str, Rule] = {
     "a-work-order-goes-only-to-its-node": check_a_work_order_goes_only_to_its_node,
     "results-are-minted-by-the-core": check_results_are_minted_by_the_core,
     "a-node-mints-no-deadline": check_a_node_mints_no_deadline,
+    "a-node-does-not-ask-which-machine-it-is": check_a_node_does_not_ask_which_machine_it_is,
 }
 
 
@@ -3315,6 +3372,18 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     Constant("testing-isolation", "TESTING_DIR", DETECTOR),
     Constant("testing-isolation", "TESTING_PACKAGE", DETECTOR),
+    # a-node-does-not-ask-which-machine-it-is (rule 54, M12.4 dec. A)
+    Constant("a-node-does-not-ask-which-machine-it-is", "MACHINE_PROBES", DETECTOR),
+    Constant("a-node-does-not-ask-which-machine-it-is", "MACHINE_QUESTIONS", DETECTOR),
+    Constant("a-node-does-not-ask-which-machine-it-is", "NODE_DIR", DETECTOR),
+    Constant("a-node-does-not-ask-which-machine-it-is", "PROBED_MODULE", DETECTOR),
+    Constant(
+        "a-node-does-not-ask-which-machine-it-is",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # a-node-mints-no-deadline (rule 53, M12.3)
     Constant("a-node-mints-no-deadline", "DEADLINE_BUILDERS", DETECTOR),
     Constant("a-node-mints-no-deadline", "DEADLINE_FIELD", DETECTOR),
