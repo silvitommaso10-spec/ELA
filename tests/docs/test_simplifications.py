@@ -29,6 +29,7 @@ CONTINUATIONS = (
     ROOT / "docs" / "milestones" / "M12.1.md",
     ROOT / "docs" / "milestones" / "M12.2.md",
     ROOT / "docs" / "milestones" / "M12.3.md",
+    ROOT / "docs" / "milestones" / "M12.4.md",
 )
 ADRS = ROOT / "docs" / "adr"
 ARCHITECTURE = ROOT / "docs" / "ARCHITECTURE.md"
@@ -127,11 +128,13 @@ def test_every_constraint_an_adr_declares_is_in_the_list() -> None:
         if f"- **{title}** (ADR {number})" not in text
     }
     assert not missing, missing
-    assert len(declared_constraints()) == 160
+    assert len(declared_constraints()) == 181
 
 
-def test_the_list_names_the_twenty_adrs_that_declare_constraints() -> None:
-    assert set(declared_constraints().values()) == {f"00{n}" for n in range(20, 40)}
+def test_the_list_names_every_adr_from_0020_on_as_declaring_constraints() -> None:
+    """Named by the range and not by a count: the name said «twenty» and stopped being true with
+    ADR 0040, the shape of a number written beside a list."""
+    assert set(declared_constraints().values()) == {f"00{n}" for n in range(20, 41)}
 
 
 def test_every_crash_window_nobody_repaired_is_named_or_declared_harmless() -> None:

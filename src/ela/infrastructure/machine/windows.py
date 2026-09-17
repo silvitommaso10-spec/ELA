@@ -154,9 +154,10 @@ class SapiSpeechCommand:
     * **the sentence goes through stdin**, after the voice's name, and the command line is the same
       for every sentence;
     * **``spoken_seconds`` is the script's stopwatch**, and the life of the child is only what the
-      timeout watches. Starting ``powershell.exe`` cost 0.55 s and 1.43 s on the PC (P3, P3-bis),
-      above the verifier's floor for any sentence under a hundred characters: timed from outside, a
-      child that exited ``0`` without a sound would pass.
+      timeout watches. On the PC, on a sentence of 40 characters, the child outlived the script's
+      stopwatch by 0.55 s and 1.43 s (P3, P3-bis) — an overhead above the verifier's floor for any
+      sentence under a hundred characters: timed from outside, a child that exited ``0`` without a
+      sound would pass.
 
     Keeps the port's promise — **it does not fail, it reports**. ``exit 0`` with no number on stdout
     is reported as it is, with no duration, and the verifier refuses it (decision of 2026-09-17).

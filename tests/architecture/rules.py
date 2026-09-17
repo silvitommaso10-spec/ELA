@@ -2818,7 +2818,7 @@ def check_a_node_does_not_ask_which_machine_it_is(pkg_root: Path) -> list[Violat
 
     **Its limit, written**: a ``try: os.fchmod(...) except AttributeError`` asks the same question
     and is not seen, and a detector that saw it would read every ``except AttributeError`` of the
-    package; nor is ``os`` imported under another name.
+    package; nor are ``os`` or ``sys`` imported under another name.
     """
     rule = "a-node-does-not-ask-which-machine-it-is"
     files = list(_source_files(pkg_root / NODE_DIR))

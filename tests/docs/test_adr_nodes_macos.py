@@ -169,9 +169,8 @@ def test_the_conseguenze_count_what_this_adr_changed() -> None:
     """The totals this ADR moved, and it is the one that pins them until another moves them.
 
     **Rules up to 53 and not ``len(RULES)``** since M12.4 wrote rule 54: an ADR is immutable, so
-    this one keeps saying the total it saw. The pin on *today's* total moves to the ADR that
-    changed it, ADR 0040, whose test is written with it; until then today's total is the generated
-    block of ``docs/STATO.md``. The four beside it did not move, and stay pinned here.
+    this one keeps saying the total it saw. The pin on *today's* total moved to the ADR that
+    changed it, ADR 0040 (``test_adr_nodes_windows.py``), together with the four beside it.
     """
     text = conseguenze()
 

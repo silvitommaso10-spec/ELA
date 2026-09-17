@@ -125,7 +125,9 @@ async def spawn_with_input(argv: Sequence[str], data: bytes, timeout: float) -> 
     The sister of :func:`spawn` for a child that must be *told* something without it passing through
     the command line (M12.4 dec. D): on Windows every process of the user reads another's command
     line (``Win32_Process.CommandLine``), as ``ps`` does on a Mac, so the voice of a PC receives its
-    sentence here. Ordinary ``asyncio`` again, and exercised on every runner with a Python child.
+    sentence here. Ordinary ``asyncio`` again, exercised with a Python child on the runners of
+    ``make check``; the Windows job's list does not include its tests, so on the Proactor only the
+    proof by hand runs it.
 
     **stderr is inherited, not discarded and not returned** (decision of 2026-09-17). What a child
     writes there lands in the terminal the node runs in — on a PC, the one line ``SelectVoice``

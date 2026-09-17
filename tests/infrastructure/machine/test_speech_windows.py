@@ -7,9 +7,9 @@ esiti»): a script that times ``Speak`` and writes the seconds, in the invariant
 
 Two properties are worth the tests more than the rest. **The sentence never reaches the command
 line**, which on Windows every process of the user can read. And **what is timed is the sound**:
-``spoken_seconds`` is the script's stopwatch, never the life of the child — the start of
-``powershell.exe`` alone was worth 0.55-1.43 s on the PC, more than the verifier's floor for any
-sentence under a hundred characters.
+``spoken_seconds`` is the script's stopwatch, never the life of the child — on the PC, on a
+sentence of 40 characters, the child outlived the stopwatch by 0.55-1.43 s, more than the
+verifier's floor for any sentence under a hundred characters.
 """
 
 from __future__ import annotations

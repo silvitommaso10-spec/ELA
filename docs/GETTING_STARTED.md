@@ -747,3 +747,5 @@ il numero —, e vanno in `docs/milestones/M12.4.md`.
   che restano scritti.
 - [`adr/0039-node-macos.md`](adr/0039-node-macos.md) — perché il nodo è un comando in primo piano,
   dove tiene il segreto e perché non nel portachiavi.
+- [`adr/0040-node-windows.md`](adr/0040-node-windows.md) — il nodo su un PC: dove tiene il segreto,
+  con che cosa parla, e perché dichiara solo ciò che la sua macchina sa fare.
