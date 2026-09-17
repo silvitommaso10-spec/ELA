@@ -63,6 +63,7 @@ from typing import Any
 from httpx import ASGITransport
 
 from ela.composition import NodeConfig, NodeSettings, build_node
+from ela.composition.node import online_player
 from ela.domain import PowerSource
 from ela.node import (
     Node,
@@ -127,25 +128,28 @@ class RealNode:
         system: str,
         directory: Path,
         clock: FakeClock,
-        player: bool,
         identity: NodeIdentity | None = None,
         tools: tuple[str, ...] | None = None,
     ) -> None:
         self._world = world
         self._system = system
-        self._player = player
         self._directory = directory
         self._clock = clock
         self._declared_tools = tools
         self.speech = FakeSpeech()
         """The port the voice speaks through here: what it was asked to say is in ``said``."""
         self.speech_online: FakeSpeech | None = None
-        """And the online voice's, **where the named system has a player** (M12.4 dec. G). Darwin's
-        reads the filesystem, and left to the machine this kit would declare ``voice-speak-online``
-        on a Mac and not on the Ubuntu job (dec. F), so it is faked. A system with no player has
-        nothing to fake: the composition answers *nobody* on every runner, and a fake here would
-        make the kit declare a voice the system cannot play."""
-        if player:
+        """And the online voice's, **where the composition would choose a real player** (M12.4
+        dec. G). Darwin's reads the filesystem, and left to the machine this kit would declare
+        ``voice-speak-online`` on a Mac and not on the Ubuntu job (dec. F), so it is faked. Where
+        the composition chooses nobody there is nothing to fake, and a fake would make the kit
+        declare a voice the system cannot play.
+
+        **Asked of** :func:`~ela.composition.node.online_player`, **not written here** (review of
+        2026-09-17): the composition already chooses the player by the system's name, and a kit
+        that said «Windows: nobody» again would be a second list, able to go false unnoticed. If the
+        answer is wrong, ``tests/conformance/test_kits.py`` falls on its literals."""
+        if online_player(system) is not None:
             self.speech_online = FakeSpeech()
         self._built = build_node(
             _config(world, directory),
@@ -293,7 +297,6 @@ class RealNode:
             system=self._system,
             directory=self._directory / "twin",
             clock=FakeClock(self._clock.now()),
-            player=self._player,
             identity=self._client.identity,
             tools=self._declared_tools,
         )
@@ -307,13 +310,10 @@ class RealNode:
 class RealNodeKit:
     """How the suite gets a real node of a named system. Recites every story of the contract."""
 
-    def __init__(self, *, name: str, system: str, player: bool) -> None:
+    def __init__(self, *, name: str, system: str) -> None:
         self.name = name
         self.system = system
         """What ``platform.system()`` would answer on the machine this kit stands for."""
-        self.player = player
-        """Whether that system has a player for the online voice (M12.4 dec. E): the one half of the
-        machine the kit's composition does not choose by name alone, so the kit says it."""
         self._made = 0
 
     @property
@@ -323,10 +323,9 @@ class RealNodeKit:
 
         The map is where an implementation says what its platform cannot do. macOS can do all of
         it, and so can Windows: each can be two processes, can die and come back, can keep a secret
-        in a file. A
-        node declaring a story unrecitable would be saying something about its platform, and this
-        one has nothing to say. A kit of another system that had something to say would be a
-        different kit, with its own pinned map — not an ``if`` here.
+        in a file. A node declaring a story unrecitable would be saying something about its
+        platform, and this one has nothing to say. A kit of another system that had something to
+        say would be a different kit, with its own pinned map — not an ``if`` here.
         """
         return {}
 
@@ -348,7 +347,6 @@ class RealNodeKit:
             system=self.system,
             directory=_scratch(world) / f"node-{self._made}",
             clock=FakeClock(ONE_HOUR_BEHIND),
-            player=self.player,
             tools=tools,
         )
         born = await node.enroll(await world.issue(privacy))
@@ -361,10 +359,10 @@ class RealNodeKit:
         return node
 
 
-MACOS = RealNodeKit(name="macos-node", system="Darwin", player=True)
+MACOS = RealNodeKit(name="macos-node", system="Darwin")
 """The kit of M12.3, beside the fake node's: the real node, naming Darwin. The stories do not
 change — dec. P."""
 
-WINDOWS = RealNodeKit(name="windows-node", system="Windows", player=False)
+WINDOWS = RealNodeKit(name="windows-node", system="Windows")
 """The kit of M12.4 dec. G: the real node, naming Windows. The same driver and the same stories;
 what changes is the composition it builds, and that is the whole of what it proves."""

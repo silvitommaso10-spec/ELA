@@ -14,8 +14,11 @@ from uuid import UUID
 import pytest
 
 from ela.domain import DeviceId
+from ela.testing.fakes import FakeClock
+from ela.tools import VOICE_ONLINE_TOOL_NAME
 from tests.conformance.driver import Conformance
-from tests.conformance.real_node import WINDOWS
+from tests.conformance.fake_node import ONE_HOUR_BEHIND
+from tests.conformance.real_node import MACOS, WINDOWS, RealNode
 
 
 async def test_the_windows_kit_declares_windows_and_the_three_tools_of_a_pc(
@@ -30,6 +33,26 @@ async def test_the_windows_kit_declares_windows_and_the_three_tools_of_a_pc(
 
     assert row.os.value == "WINDOWS"
     assert list(row.available_tools) == ["core-echo", "model-complete", "voice-speak"]
+
+
+async def test_the_darwin_kit_fakes_the_player_its_composition_would_choose(
+    world: Conformance,
+) -> None:
+    """The other half of the derivation (review of 2026-09-17): the kit asks the composition whether
+    Darwin has a player, and fakes it. Without the fake, the declaration would read this runner —
+    ``afplay`` is on a Mac and not on the Ubuntu job — and on a Mac nothing would notice: the tools
+    declared would be the same four, from the machine. So this asserts what the online voice **is**,
+    on any runner. Built and not enrolled, so a Windows runner can build it too."""
+    node = RealNode(
+        world,
+        system=MACOS.system,
+        directory=world.ela.settings.captures.capture_dir.parent / "darwin-kit",
+        clock=FakeClock(ONE_HOUR_BEHIND),
+    )
+
+    assert node.speech_online is not None
+    assert node._built.voices[VOICE_ONLINE_TOOL_NAME] is node.speech_online  # noqa: SLF001
+    await node.aclose()
 
 
 async def test_the_windows_kit_enrols_with_the_mode_of_its_world(

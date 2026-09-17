@@ -51,7 +51,14 @@ from ela.tools import (
     node_tools,
 )
 
-__all__ = ["ACL_SINCE", "NodeWorld", "PermissionMode", "build_node", "mkdir_applies_the_acl"]
+__all__ = [
+    "ACL_SINCE",
+    "NodeWorld",
+    "PermissionMode",
+    "build_node",
+    "mkdir_applies_the_acl",
+    "online_player",
+]
 
 
 class PermissionMode(StrEnum):
@@ -86,6 +93,19 @@ def mkdir_applies_the_acl(version: tuple[int, int, int]) -> bool:
     ``sys.version_info``, and a test hands it the two versions either side of the line.
     """
     return version >= ACL_SINCE
+
+
+def online_player(system: str) -> str | None:
+    """The player of the online voice on the named system: ``afplay`` on Darwin, nobody elsewhere.
+
+    One place that chooses (M12.4 dec. E, F), asked by :func:`build_node` and by whoever needs to
+    know what it would build — the conformance kit, which fakes a player only where this names a
+    real one. What *nobody* is, and why it is ``None``, is said once, in the docstring of
+    ``OnlineSpeechCommand``.
+    """
+    if system == "Darwin":
+        return AFPLAY
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,22 +288,17 @@ def build_node(
     # which of the two is missing and touches no network (ADR 0034 §5). Not behind the platform
     # branch — it is not a macOS adapter — which is the correction of 2026-09-09.
     #
-    # Its **player** is the named system's (M12.4 dec. E, F): ``afplay`` on Darwin, and nobody
-    # anywhere else. What *nobody* is, and why it is ``None``, is said once, in the docstring of
-    # ``OnlineSpeechCommand``.
+    # Its **player** is the named system's, chosen in one place: :func:`online_player`.
     playing: SpeechPort
     if speech_online is not None:
         playing = speech_online
     else:
-        player: str | None = None
-        if system == "Darwin":
-            player = AFPLAY
         online = ElevenLabsVoice(config.elevenlabs)
         playing = OnlineSpeechCommand(
             synthesise=online.synthesise,
             unconfigured=online.unconfigured,
             directory=scratch,
-            binary=player,
+            binary=online_player(system),
         )
 
     # An ``if``, never ``X if darwin else Y`` (architecture rule 37): a ternary's untaken side costs

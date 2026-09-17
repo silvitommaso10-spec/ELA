@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from ela.composition import ConfigurationError, NodeConfig, NodeSettings, build_node
-from ela.composition.node import NodeWorld, PermissionMode, mkdir_applies_the_acl
+from ela.composition.node import NodeWorld, PermissionMode, mkdir_applies_the_acl, online_player
 from ela.domain import OperatingSystem
 from ela.infrastructure.machine import (
     AFPLAY,
@@ -289,15 +289,19 @@ async def test_the_online_voice_plays_through_afplay_on_darwin_and_through_nobod
     """M12.4 dec. E and F. The online voice is **built** everywhere (the correction of 2026-09-09);
     its player is ``afplay`` on Darwin and nobody on a system ELA knows no player for — on **every**
     runner, which is what makes a declaration the same on this Mac and on the Ubuntu job. Asked of
-    the object and not of the filesystem: the Mac running this has ``afplay``."""
-    darwin = build_node(config(tmp_path), speech=FakeSpeech(), system="Darwin")
+    the object and not of the filesystem: the Mac running this has ``afplay``.
 
-    assert _port_of(darwin, VOICE_ONLINE_TOOL_NAME)._binary == AFPLAY  # type: ignore[attr-defined]  # noqa: SLF001
-    for system in ("Windows", "Linux"):
-        elsewhere = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
-        nobody = _port_of(elsewhere, VOICE_ONLINE_TOOL_NAME)
-        assert nobody._binary is None, system  # type: ignore[attr-defined]  # noqa: SLF001
-        assert await elsewhere.voices[VOICE_ONLINE_TOOL_NAME].available() is False, system
+    Two halves: :func:`online_player` answers for the three systems, and ``build_node`` wires what
+    it answers — the conformance kit asks the same function whether to fake a player (dec. G)."""
+    assert online_player("Darwin") == AFPLAY
+    assert online_player("Windows") is None
+    assert online_player("Linux") is None
+    for system in ("Darwin", "Windows", "Linux"):
+        built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+        wired = _port_of(built, VOICE_ONLINE_TOOL_NAME)
+        assert wired._binary == online_player(system), system  # type: ignore[attr-defined]  # noqa: SLF001
+    elsewhere = build_node(config(tmp_path), speech=FakeSpeech(), system="Windows")
+    assert await elsewhere.voices[VOICE_ONLINE_TOOL_NAME].available() is False
 
 
 async def test_a_windows_node_without_a_key_still_says_the_key_is_missing(tmp_path: Path) -> None:
