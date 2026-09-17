@@ -33,10 +33,21 @@ BORN = {
 }
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX permission bits: a world named Darwin writes its secret with fchmod",
+)
 async def test_a_first_run_enrols_writes_the_identity_and_then_starts_asking(
     tmp_path: Path,
 ) -> None:
-    """The whole start-up in one pass, ending at the one answer that stops a node on purpose."""
+    """The whole start-up in one pass, ending at the one answer that stops a node on purpose.
+
+    **The world names Darwin, and so it declares the machine instead of pretending to be one**
+    (M12.4 dec. H; run 35237077806). Darwin writes its secret with the ``BITS`` mode — ``fchmod``
+    and ``O_NOFOLLOW`` —, which a Windows runner does not have: skipped there, in the summary, in
+    the form of ``tests/node/test_state.py``. The same road with a world named Windows is criterion
+    7, ``test_a_windows_node_enrols_with_the_writer_its_world_chose``, and it runs everywhere.
+    """
     script = replies(
         status(201, BORN),  # enroll
         ok({}, ETag='"1"'),  # GET /nodes/me
