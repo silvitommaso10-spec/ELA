@@ -59,10 +59,15 @@ async def test_the_windows_kit_enrols_with_the_mode_of_its_world(
     world: Conformance, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The kit enrols by a road of its own, and writes the identity with its world's mode as
-    ``join_or_read`` does (dec. G). ``os.fchmod`` taken away, which is what Windows on 3.12 is — the
-    one monkeypatch of dec. H, and ``tests/node/test_state.py`` says why. *Fails* on any runner if
-    the kit wrote with ``BITS``: on this Mac that line would otherwise pass, and only a PC would see
-    it."""
+    ``join_or_read`` does (dec. G). ``os.fchmod`` taken away, which is what Windows on 3.12 is.
+
+    **The one monkeypatch of dec. H, and why here.** The absence of a function of the standard
+    library is what Windows *is*, and it cannot be declared by parameter without handing the writer
+    a fake ``os`` module — which would prove the fake. ``raising=False`` because on Windows there is
+    nothing to take away.
+
+    *Fails* on any runner if the kit wrote with ``BITS``: on this Mac that line would otherwise
+    pass, and only a PC would see it."""
     monkeypatch.delattr(os, "fchmod", raising=False)
 
     node = await WINDOWS.node(world)
