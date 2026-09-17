@@ -47,7 +47,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0037](0037-node-identity.md) | L'identità dei nodi: ELA sulla rete, un segreto per macchina, la revoca | Accettata |
 | [0038](0038-work-protocol.md) | Il protocollo del lavoro: la chiamata al tool fatta da lontano, la scadenza che decide per chi tace, la sensibilità del task, la suite di conformità; rivede ADR 0017 §8 per il task | Accettata |
 | [0039](0039-node-macos.md) | Il nodo macOS: dove vive il codice di un nodo, dove tiene il segreto (un file, non il portachiavi — misurato), la terza specie di comando, e che cosa fa quando il Core tace | Accettata |
-| [0040](0040-node-windows.md) | Il nodo Windows: la piattaforma la sceglie la composizione, il segreto sotto l'ACL della cartella, la voce da stdin, e un nodo che dichiara solo ciò che la sua macchina sa fare (regola 54) | Accettata |
+| [0040](0040-node-windows.md) | Il nodo Windows: la piattaforma la sceglie la composizione, il segreto sotto l'ACL della cartella, la voce da stdin, un nodo che dichiara solo ciò che la sua macchina sa fare (regola 54), e il vocabolario chiuso dei codici sul filo | Proposta |
 
 ## Template
 

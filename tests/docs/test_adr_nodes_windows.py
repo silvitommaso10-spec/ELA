@@ -20,6 +20,7 @@ from ela.composition.node import ACL_SINCE, PermissionMode, online_player
 from ela.infrastructure.machine import AFPLAY, OnlineSpeechCommand
 from ela.infrastructure.machine.windows import POWERSHELL, SPEAK
 from ela.permissions import production_catalogue
+from ela.ports import WireCode
 from tests.architecture.rules import (
     INFRA_PACKAGES,
     MACHINE_ADAPTER_DIR,
@@ -173,6 +174,34 @@ def test_rule_40_reads_the_windows_module_and_the_three_methods() -> None:
     assert (
         frozenset({"SetOutputToWaveFile", "SetOutputToWaveStream", "SetOutputToAudioStream"})
         == SYSTEM_SPEECH_OUTPUTS
+    )
+
+
+# ----------------------------------------------------------------------------------------
+# §7 — the vocabulary of the wire
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_vocabulary_of_the_wire_is_the_closed_list_the_adr_counts() -> None:
+    """«diciassette membri», in ``ela.ports`` — the one place both ends may import."""
+    assert len(WireCode) == 17
+    assert WireCode.__module__ == "ela.ports"
+    assert "`ela.ports.WireCode`" in adr_text()
+    assert "diciassette membri" in adr_text()
+
+
+# ----------------------------------------------------------------------------------------
+# The state, until the proof by hand
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_adr_stays_proposed_until_the_proof_by_hand_has_passed() -> None:
+    """Decision of 2026-09-17: the end criterion of M12.4 is the proof on the PC, and an ADR
+    accepted before it would say something not yet true. When the proof passes, this test changes
+    with the state, in the commit that replaces the «devi vedere» of ``GETTING_STARTED.md`` §12."""
+    assert "- **Stato:** Proposta." in adr_text()
+    assert "scritta prima della prova a mano" in (ROOT / "docs" / "GETTING_STARTED.md").read_text(
+        encoding="utf-8"
     )
 
 

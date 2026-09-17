@@ -1,18 +1,23 @@
 # 0040. Il nodo Windows: la piattaforma la sceglie la composizione, il segreto sta sotto l'ACL della cartella, e un nodo dichiara solo ciò che la sua macchina sa fare
 
-- **Stato:** Accettata. SPEC di M12.4 approvata dall'utente il 2026-09-15, fatte M12.3c e le misure
+- **Stato:** Proposta. SPEC di M12.4 approvata dall'utente il 2026-09-15, fatte M12.3c e le misure
   sul PC (P0–P6, P1-bis, P3-bis, P6-bis); implementata il 2026-09-17 a blocchi, ciascuno approvato
-  da una review — dec. B, D, F, G, la regola 54, dec. H, dec. I. Le decisioni ereditate sono D1–D20
-  di M12.1, A–P di M12.2 e A–M di M12.3. **La prova a mano sul PC non è ancora fatta**: le decisioni
-  sono accettate, e ciò che la prova mostrerà — con le misure di dec. J — si registra in
-  `docs/milestones/M12.4.md`, non qui.
+  da una review — dec. B, D, F, G, la regola 54, dec. H, dec. I —, e il contenuto di questo ADR
+  approvato dalla review del 2026-09-17. Le decisioni ereditate sono D1–D20 di M12.1, A–P di M12.2 e
+  A–M di M12.3. **Resta «Proposta» finché la prova a mano sul PC non è passata** (decisione del
+  2026-09-17): è il criterio di fine di M12.4, e un ADR accettato prima di lui direbbe una cosa non
+  ancora vera. Dopo la prova lo stato passa ad «Accettata» con la data, nello stesso commit che
+  sostituisce i «devi vedere» di `GETTING_STARTED.md` §12 con l'output vero; se la prova smentisce
+  qualcosa, si corregge qui prima. Ciò che la prova mostra, con le misure di dec. J, si registra in
+  `docs/milestones/M12.4.md`.
 - **Data:** 2026-09-17
 - **Riferimenti spec:** §4, §9, §16, §17, §48, §56, §57
-- **Continua:** ADR 0028 §1; ADR 0029 §3, §16; ADR 0031 §3, §5, §6; ADR 0033 §9; ADR 0034 §5, §7;
-  ADR 0037 §2, §7; ADR 0038 §14; ADR 0039 §1, §6, §7.
+- **Continua:** ADR 0023 §10; ADR 0028 §1; ADR 0029 §3, §16; ADR 0031 §3, §5, §6; ADR 0033 §9;
+  ADR 0034 §5, §7; ADR 0037 §2, §7; ADR 0038 §11, §12, §14; ADR 0039 §1, §6, §7.
 - **Estende:** ADR 0002 (una regola nuova, la 54; una stretta, la 40), ADR 0037 §7 (dove un nodo
   Windows tiene il segreto, che lì restava in bianco), ADR 0039 §1 («un modulo e non un ramo», letto
-  per tre scelte e non per una).
+  per tre scelte e non per una), ADR 0023 §10 (i codici d'errore sul filo diventano un vocabolario
+  chiuso, §7).
 
 ## Contesto
 
@@ -28,6 +33,9 @@ erano vere per caso: lo scrittore del segreto chiamava `os.fchmod`, che Windows 
 il nodo dichiarava `"os": "MACOS"` come letterale; un nodo dichiarava tool che la sua macchina non
 sapeva eseguire; e l'audio senza nome della voce online è POSIX da cima a fondo. Nessuna delle quattro
 si vedeva da un runner, perché nessun runner era Windows.
+
+E una decisione presa prima del codice Windows, perché il secondo lato del filo la rendeva urgente: il
+vocabolario dei codici che l'API manda e il nodo legge (§7).
 
 ## 1. La piattaforma la sceglie la composizione, nominando il sistema
 
@@ -216,6 +224,29 @@ except AttributeError` fa la stessa domanda e non si vede, e un rivelatore che l
 ogni `except AttributeError` del package; e `os` o `sys` importati con un altro nome passano. La 40
 legge costanti: uno script composto a pezzi, `"SetOutputTo" + "WaveFile"`, passa.
 
+## 7. Il vocabolario dei codici sul filo
+
+Un client ramifica su `error.code` (ADR 0023 §10), e un nodo lo fa esattamente dove lo stato non
+distingue due risposte: i due `409` di una consegna (ADR 0038 §12). Fino a M12.4 il codice era una
+stringa scritta dove serviva — nella tabella dell'API, nelle costanti del nodo, nei test del nodo — e
+niente le confrontava: i test del nodo scriptavano tre codici che nessun Core ha mai mandato,
+`renewal.capped`, `too_late` e `code_reused`, e passavano. Tre codici falsi nello stesso file sono una
+lista che non sa di essere falsa, non tre sviste.
+
+**Una lista sola: `ela.ports.WireCode`**, uno `StrEnum` di diciassette membri. Sta in `ela.ports`
+perché è l'unico posto che i contratti fanno importare a entrambi i lati — `ela.api` ed `ela.node`
+raggiungono `ela.ports`, ed `ela.ports` non raggiunge altro che il dominio (contratto 2) —; le port
+restano venticinque, perché si contano i `Protocol` e non i codici.
+
+**Onesta nei due versi**, per test (`tests/api/test_wire_codes.py`) e non per regola: **ogni codice che
+l'API emette è un membro** — `problem()` accetta solo un `WireCode`, ed è chiamato in due posti soli,
+il gestore della tabella e il `401` del middleware —, e **ogni membro è emesso da qualcuno**, perché un
+membro che nessuno manda è un ramo che un client può scrivere e nessuna risposta può prendere. Il nodo
+confronta `WireCode.DELIVERY_CONFLICT`; i suoi test scriptano un rifiuto con un membro, e lo status lo
+ricavano dalla tabella stessa dell'API, così non esistono né un codice inventato né uno status che il
+Core non gli associa. I codici dei **tool** — `provider.*`, `speech.*`, `verification.*` — restano fuori:
+viaggiano dentro un risultato, come sua parola, e non come risposta a una richiesta.
+
 ## Alternative considerate
 
 - **DPAPI o Credential Manager.** Scartati (§2): non restringono il segreto ai processi di un binario —
@@ -239,6 +270,8 @@ legge costanti: uno script composto a pezzi, `"SetOutputTo" + "WaveFile"`, passa
   girare gli adapter su un filesystem POSIX, e proverebbe meno di quanto il suo nome dica.
 - **Il kit che dice da sé se il sistema ha un riproduttore.** Scartato dalla review del 2026-09-17
   (§1): una seconda lista scritta a mano.
+- **Il vocabolario del filo come regola di architettura**, o in `ela.api`. Una regola leggerebbe nomi
+  e non saprebbe che cosa l'API emette davvero; in `ela.api` il nodo non potrebbe importarlo (§7).
 
 ## Conseguenze
 
@@ -258,6 +291,8 @@ legge costanti: uno script composto a pezzi, `"SetOutputTo" + "WaveFile"`, passa
 - Il repository fissa i fine riga, `.gitattributes` con `eol=lf`: su un clone Windows con il default
   di Git ne sarebbero stati convertiti 598 su 629 (P0, 2026-09-15).
 - `nodes/windows/README.md` punta a `src/ela/node/`, come i due di ADR 0039 §1.
+- I codici d'errore sul filo sono un vocabolario chiuso, `ela.ports.WireCode`, che l'API e il nodo
+  importano tutti e due (§7).
 
 ### Vincoli dichiarati, da riaprire quando serviranno
 
@@ -312,3 +347,6 @@ legge costanti: uno script composto a pezzi, `"SetOutputTo" + "WaveFile"`, passa
 - **La regola 54 non vede tutte le domande**: un `try: os.fchmod(...) except AttributeError`, e `os` o
   `sys` importati con un altro nome, passano (§6).
 - **La regola 40 non vede uno script composto a pezzi**: `"SetOutputTo" + "WaveFile"` passa (§6).
+- **Il vocabolario del filo copre le risposte dell'API e non i codici dei tool**: un `provider.*` o uno
+  `speech.*` inventato in un test del nodo non lo ferma nessuna lista chiusa, perché viaggia dentro un
+  risultato (§7).
