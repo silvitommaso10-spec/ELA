@@ -404,11 +404,12 @@ uv run ela device list
 Compare accanto a `local`, `available`, con i suoi **quattro** tool: `core-echo`, `model-complete`,
 `voice-speak`, `voice-speak-online`.
 
-**La prova.** Un task dichiarato `TRUSTED` con uno step `voice.speak`, e le tre cose da guardare:
+**La prova, come è stata fatta in M12.3** (il 2026-09-12). Un task dichiarato `TRUSTED` con uno step
+`voice.speak`, e le tre cose da guardare:
 
 ```
 uv run ela task create "dì una frase" --privacy TRUSTED
-uv run ela task plan <id> --file piano.json
+uv run ela task plan <id> --file docs/examples/speak-on-a-node.json
 uv run ela task run <id>
 uv run ela task approve <id> --approval <approval-id>
 uv run ela task run <id>
@@ -435,10 +436,21 @@ dell'assegnazione e la sua scadenza; la seconda, `completed`.
    <id>` dice `completed`. È la storia 11 del contratto, con due processi veri.
 
 **E la prova negativa**, che è quella che dice dove finisce tutto questo: uno step
-`workspace.write_note` sullo stesso task **non** va al nodo. Il piazzamento lo rifiuta nominando la
-ragione — `UNVERIFIABLE (workspace.write_note: its verifier reads this machine)` — perché il
-verifier di quella capability rileggerebbe la workspace del **Core**, e potrebbe rispondere «sì» per
-una nota che il nodo non ha mai scritto. Quattro capability su otto viaggiano; queste no.
+`workspace.write_note` sullo stesso task **non** va al nodo. Il `DEVICE_SELECTED` della nota sceglie
+`local`, «1 of 2 node(s) eligible», e con `uv run ela audit tail --task <id> --json` fra i suoi
+candidati il nodo porta `"refusals": ["UNVERIFIABLE"]`: il verifier di quella capability
+rileggerebbe la workspace del **Core**, e potrebbe rispondere «sì» per una nota che il nodo non ha
+mai scritto. Quattro capability su otto viaggiano; queste no.
+
+**Riletta sul codice il 2026-09-17, e non rieseguita.** Due cose di questa sezione non sono più come
+la prova le ha viste. La prima è il testo del rifiuto: la frase
+`UNVERIFIABLE (workspace.write_note: its verifier reads this machine)` il codice la scrive soltanto
+quando **nessun** nodo è idoneo, e qui `local` lo è. La seconda pesa di più: **su una macchina sola
+lo step non va più al nodo.** Da M12.3c l'alimentazione si legge, e il nodo e `local` leggono la
+stessa: `local` vale 20 (la rete) più la corrente, il nodo 5 (la rete) più 10 (libero) più la stessa
+corrente — 30 a 25 con il Mac attaccato, 20 a 15 staccato. Il 2026-09-12 il nodo vinceva perché
+dichiarava una corrente che non aveva letto. **La prova con due macchine, che si riproduce, è la
+§12.**
 
 ## 12. Un PC Windows come nodo, con il Core su questo Mac
 
@@ -698,6 +710,31 @@ rotta con la sua, che per `reasoning` dice `quality`, e la verifica fallisce: ne
 l'`EXECUTION_VERIFIED` porta `model.misrouted`, «the call did not go where the policy routes it».
 È il difetto di due `.env` diversi, visto con la sua ragione. **Poi togli quella riga**: riscrivi il
 `.env` del PC con il blocco del passo 4, e riavvia il nodo.
+
+### 9. Che cosa annotare, per la spec (M12.4, dec. J)
+
+Quattro numeri, presi durante i passi qui sopra, e **nessuno con un cronometro a mano**: ciascuno ha
+già un registro che lo scrive. Si annotano nella forma di `.env.example` — la data, le due macchine,
+il numero —, e vanno in `docs/milestones/M12.4.md`.
+
+1. **Dal piazzamento alla consegna**, per `voice.speak` (passo 6) e per `core.echo` (la nota del
+   passo 8). Nel JSON di `uv run ela audit tail --task <id> -n 20 --json`, la differenza fra il
+   `created_at` del `DEVICE_SELECTED` e quello del `TOOL_EXECUTED` dello stesso step: tutti e due
+   sono ore del Core, e il secondo è l'istante in cui il Core ha ricevuto la consegna. **È il
+   piazzamento, non la presa**: il Core non scrive un evento quando il nodo prende il lavoro, quindi
+   il numero comprende anche l'attesa del nodo fino alla sua richiesta successiva.
+2. **Il long-poll attraverso la rete.** Nel primo terminale del Mac ogni richiesta del nodo stampa
+   una riga, `"GET /nodes/work HTTP/1.1" 204` quando non c'era lavoro: una richiesta tenuta aperta
+   per la finestra e chiusa dal Core, non dalla rete. Tiene se, a nodo fermo per qualche minuto, le
+   righe continuano ad arrivare con `204`, e il nodo sul PC **non** esce con `3`. Annota quante
+   richieste in quanti minuti, e se ne è caduta qualcuna.
+3. **Il giro del nodo contro il TTL del battito.** Il nodo manda un battito per giro, e il Core
+   scrive l'ora dell'ultimo in `last_seen_at`. `uv run ela device list --json` due volte, a qualche
+   minuto di distanza, contando le righe `GET /nodes/work` stampate in mezzo: la differenza fra i due
+   `last_seen_at` divisa per quel numero è il giro. Contro i 60 s di
+   `ELA_DEVICE_HEARTBEAT_TTL_SECONDS`: su una macchina sola, in M12.3, era ~33 s.
+4. **I punti di §17.** Nel `DEVICE_SELECTED` del passo 6: il PC «with 25 points» nel riassunto, e
+   nel JSON i `points` e i `components` di tutti e due i candidati — `local` e il PC.
 
 ## Dove guardare dopo
 
