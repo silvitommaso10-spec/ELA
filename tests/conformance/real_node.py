@@ -14,8 +14,16 @@ composition it recites is the same on every runner by construction rather than b
 
 What was a file per platform is one driver with a name and a system: the kits of two systems would
 be identical but for those two words, which is what M12.3 said the second node would show ("se il
-secondo nodo mostrerà che qualcosa andava condiviso, lo condividerà lui"). Today there is one kit,
-for Darwin.
+secondo nodo mostrerà che qualcosa andava condiviso, lo condividerà lui"). Two kits: Darwin, and
+Windows since M12.4 dec. G.
+
+**The Windows kit does not prove Windows**, and it runs on every runner, this Mac included. It
+proves that the *cycle*, under the composition of a PC — ``os`` ``WINDOWS``, the secret written
+with the ``ACL`` mode, the voice of dec. D replaced by a fake, no player for the online voice —,
+recites the whole contract against the same Core. On a Mac the ``ACL`` writer runs on a POSIX
+filesystem where no ACL applies, and ``powershell.exe`` does not exist. What proves Windows is the
+job of dec. H, on a Windows runner, and the proof by hand on the PC (ADR 0031 §6, and the risk M12.4
+names: a kit called Windows read as coverage of Windows).
 
 **Three things are not real, and all three are declared** (the shape of ADR 0031 §6, applied to a
 kit instead of a test):
@@ -40,7 +48,8 @@ real process restart loses it, and M12.3 dec. I says so and says why the protoco
 (the assignment expires, and M12.1 D6 decides). What this kit does prove about coming back is
 narrower and real: the **revision** is not remembered, it is asked for.
 
-What is real: the identity written to a file with ``O_EXCL`` and ``0o600``, the HTTP acts, the
+What is real: the identity written to a file with ``O_EXCL``, protected the way its world's mode
+says (``0o600`` for Darwin, the directory's ACL for Windows — on a PC), the HTTP acts, the
 tools, the envelope's contents, and the fact that a restart forgets the revision — which is the
 one thing the fake node could not show, because its "new process" was the same Python object.
 """
@@ -118,20 +127,26 @@ class RealNode:
         system: str,
         directory: Path,
         clock: FakeClock,
+        player: bool,
         identity: NodeIdentity | None = None,
         tools: tuple[str, ...] | None = None,
     ) -> None:
         self._world = world
         self._system = system
+        self._player = player
         self._directory = directory
         self._clock = clock
         self._declared_tools = tools
         self.speech = FakeSpeech()
         """The port the voice speaks through here: what it was asked to say is in ``said``."""
-        self.speech_online = FakeSpeech()
-        """And the online voice's, because since M12.4 its player decides what the node declares:
-        left to the machine, this kit would declare ``voice-speak-online`` on a Mac and not on the
-        Ubuntu job (dec. F)."""
+        self.speech_online: FakeSpeech | None = None
+        """And the online voice's, **where the named system has a player** (M12.4 dec. G). Darwin's
+        reads the filesystem, and left to the machine this kit would declare ``voice-speak-online``
+        on a Mac and not on the Ubuntu job (dec. F), so it is faked. A system with no player has
+        nothing to fake: the composition answers *nobody* on every runner, and a fake here would
+        make the kit declare a voice the system cannot play."""
+        if player:
+            self.speech_online = FakeSpeech()
         self._built = build_node(
             _config(world, directory),
             clock=clock,
@@ -278,6 +293,7 @@ class RealNode:
             system=self._system,
             directory=self._directory / "twin",
             clock=FakeClock(self._clock.now()),
+            player=self._player,
             identity=self._client.identity,
             tools=self._declared_tools,
         )
@@ -291,18 +307,23 @@ class RealNode:
 class RealNodeKit:
     """How the suite gets a real node of a named system. Recites every story of the contract."""
 
-    def __init__(self, *, name: str, system: str) -> None:
+    def __init__(self, *, name: str, system: str, player: bool) -> None:
         self.name = name
         self.system = system
         """What ``platform.system()`` would answer on the machine this kit stands for."""
+        self.player = player
+        """Whether that system has a player for the online voice (M12.4 dec. E): the one half of the
+        machine the kit's composition does not choose by name alone, so the kit says it."""
         self._made = 0
 
     @property
     def unsupported(self) -> Mapping[str, str]:
-        """**Empty**, and that is the claim of M12.3 (dec. G, criterion 1).
+        """**Empty**, and that is the claim of M12.3 (dec. G, criterion 1) and of M12.4 (criterion
+        1) for both systems.
 
         The map is where an implementation says what its platform cannot do. macOS can do all of
-        it: it can be two processes, it can die and come back, it can keep a secret in a file. A
+        it, and so can Windows: each can be two processes, can die and come back, can keep a secret
+        in a file. A
         node declaring a story unrecitable would be saying something about its platform, and this
         one has nothing to say. A kit of another system that had something to say would be a
         different kit, with its own pinned map — not an ``if`` here.
@@ -327,6 +348,7 @@ class RealNodeKit:
             system=self.system,
             directory=_scratch(world) / f"node-{self._made}",
             clock=FakeClock(ONE_HOUR_BEHIND),
+            player=self.player,
             tools=tools,
         )
         born = await node.enroll(await world.issue(privacy))
@@ -339,6 +361,10 @@ class RealNodeKit:
         return node
 
 
-MACOS = RealNodeKit(name="macos-node", system="Darwin")
+MACOS = RealNodeKit(name="macos-node", system="Darwin", player=True)
 """The kit of M12.3, beside the fake node's: the real node, naming Darwin. The stories do not
 change — dec. P."""
+
+WINDOWS = RealNodeKit(name="windows-node", system="Windows", player=False)
+"""The kit of M12.4 dec. G: the real node, naming Windows. The same driver and the same stories;
+what changes is the composition it builds, and that is the whole of what it proves."""
