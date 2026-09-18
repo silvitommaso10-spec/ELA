@@ -111,7 +111,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **41** | `docs/adr/NNNN-*.md` |
+| ADR scritti | **42** | `docs/adr/NNNN-*.md` |
 | Milestone | **47, di cui 43 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **54** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
@@ -119,7 +119,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Capability di produzione | **8** | `production_catalogue()` |
 | Rotte dell'API | **29** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
-| Vincoli dichiarati negli ADR | **184** | le sezioni «Vincoli dichiarati» |
+| Vincoli dichiarati negli ADR | **197** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
 
@@ -163,8 +163,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Fase | Documenti che la nominano |
 |---|---|
 | 13 | 2 |
-| 15 | 10 |
-| 17 | 3 |
+| 15 | 11 |
+| 17 | 4 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
 

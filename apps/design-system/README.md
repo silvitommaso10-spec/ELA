@@ -69,7 +69,7 @@ la difende; dove un test non può arrivare, lo dice.
 | Ciò che è scritto a mano legge token e non scrive valori: né un colore, né una lunghezza, né una durata, né un angolo, né una curva, né un gradiente. Ciò che resta ammesso è una lista chiusa, con una ragione per voce | `tests/design/test_tokens_only.py` |
 | Nessun token è orfano, e i campioni della pagina non contano come lettori | `tests/design/test_tokens_only.py` |
 | Gli stati sono i titoli di §6 del design, l'attenzione il blocco di §13 del design, il rischio l'enum `RiskLevel` — in ordine, letti dalla fonte; e nessun enum del dominio acquista uno stato di ELA | `tests/design/test_lists.py` |
-| Questo README e `apps/README.md` dicono ciò che c'è | `tests/design/test_documents.py` |
+| Questo README, `apps/README.md` e ADR 0042 dicono ciò che c'è | `tests/design/test_documents.py` |
 
 ### Niente da fuori, niente che gira, niente disegni
 
