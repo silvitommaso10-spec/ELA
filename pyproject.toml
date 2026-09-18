@@ -35,6 +35,7 @@ dev = [
     "pymupdf>=1.26",
     "pytest-asyncio>=1.0",
     "types-jsonschema>=4.26.0.20260518",
+    "pytest-xdist>=3.6",
 ]
 
 [build-system]
@@ -56,7 +57,7 @@ files = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --cov=ela --cov-branch --cov-report=term-missing"
+addopts = "-q -n auto --cov=ela --cov-branch --cov-report=term-missing"
 # Async ports (ADR 0005): every ``async def test_*`` runs on a fresh event loop, no marker needed.
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

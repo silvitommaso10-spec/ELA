@@ -19,6 +19,15 @@ typecheck:
 # tutto `ela` con i rami, quindi la suite gira qui, una volta, e lascia `.coverage`; i due gate di
 # `make check` — la suite verde, e il 100% di ramo sui package critici — leggono quel file. Stessa
 # severità: la prova è che il totale del gate non è cambiato di una riga (7490 stmt, 1324 branch).
+#
+# In parallelo, stessi gate (2026-09-18, ADR 0041). `addopts` ha `-n auto` (pytest-xdist): la suite
+# gira su tutti i core della macchina, qui e sul runner, e pytest-cov ricompone la misura dei
+# worker nello stesso `.coverage` che il gate critico legge. Misurato su questo Mac (10 core) con
+# l'alimentatore attaccato, un giro prima e due dopo: la suite da 279,9 s a 73–80 s, `make check`
+# da 294 s a 87–93 s di orologio. Stessa severità: stessi 6451 test e 4 skip, e il totale del gate
+# critico è identico prima e dopo — 8002 stmt e 1428 branch, 0 mancanti —, come quello di tutto
+# `ela` (10702 stmt, 1786 branch). Il tempo di CPU sale (user da 231 s a 550–573 s): ogni worker
+# importa e raccoglie la suite per conto suo, e il guadagno è di orologio, non di lavoro.
 test:
 	$(UV) run pytest
 
@@ -71,12 +80,13 @@ COVERAGE_CRITICAL = $(UV) run coverage report --include='$(CRITICAL_INCLUDE)' \
 cov-critical: test
 	$(COVERAGE_CRITICAL)
 
-# La seconda macchina, prima del push (2026-09-09). `make check` gira su una macchina sola, e una
-# suite che eredita da quella macchina passa lì e fallisce sull'altra: è successo, e la CI se n'è
-# accorta undici minuti dopo il merge. Questo target esegue la suite e il gate della copertura
-# fingendo l'altra metà della matrice — `tests/foreign_machine.py` dice cosa finge e, soprattutto,
-# **cosa non può riprodurre**. Non entra in `make check`: è il controllo prima di un push, e
-# raddoppierebbe l'attesa di ogni ciclo.
+# La seconda macchina, in locale (2026-09-09). `make check` gira su una macchina sola, e una suite
+# che eredita da quella macchina passa lì e fallisce sull'altra: è successo, e la CI se n'è accorta
+# undici minuti dopo il merge. Questo target esegue la suite e il gate della copertura fingendo
+# l'altra metà della matrice — `tests/foreign_machine.py` dice cosa finge e, soprattutto, **cosa
+# non può riprodurre**. Non entra in `make check`. Dal 2026-09-18 non è più il controllo prima di
+# un push: il controllo Linux è la CI sul branch, e il merge la vuole verde su entrambi i runner
+# all'ultimo commit. Serve a riprodurre qui una CI rossa su ubuntu.
 check-linux:
 	PYTHONPATH=. $(UV) run pytest -p tests.foreign_machine
 	$(COVERAGE_CRITICAL)

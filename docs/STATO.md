@@ -39,7 +39,8 @@ uv run python scripts/generate_stato.py
   solo. **È esattamente ciò che la Fase 12 cambia.**
 - **Il ciclo di lavoro** è quello di `CLAUDE.md`: una milestone alla volta, SPEC → IMPLEMENTATION →
   TEST → REVIEW → COMMIT, su un branch di lavoro; il merge su `main` lo fa l'utente dopo revisione
-  esterna. `make check` in primo piano, una volta; `make check-linux` prima di ogni push.
+  esterna. `make check` in primo piano, una volta, alla fine della milestone; il controllo Linux è
+  la CI sul branch, verde su entrambi i runner prima del merge.
 
 ## 2. Le milestone
 
@@ -110,7 +111,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **40** | `docs/adr/NNNN-*.md` |
+| ADR scritti | **41** | `docs/adr/NNNN-*.md` |
 | Milestone | **47, di cui 43 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **54** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
@@ -396,6 +397,7 @@ pagato da chi doveva.
 
 | Debito | Dichiarato | A carico | Stato |
 |---|---|---|---|
+| ADR 0041 §5 — i test che aspettano, e le difese che costano un terzo della suite | 2026-09-18 | della milestone sulla disciplina della suite | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 
@@ -410,10 +412,11 @@ pagato da chi doveva.
 3. **Scrivi la SPEC** della milestone in `docs/milestones/<id>.md`, con che cosa entra, che cosa
    **non** entra, i criteri di accettazione e i test previsti. **Fermati e mostrala** prima di
    implementare.
-4. **Fai girare la suite**: `make check` in primo piano, una volta sola — dura qualche minuto e
-   sorvegliarlo costa più del lavoro che sorveglia. Prima di ogni push, `make check-linux`, che
-   rifà suite e gate della copertura fingendo l'altra metà della matrice (i suoi limiti sono
-   scritti in `tests/foreign_machine.py`).
+4. **Fai girare la suite**: durante il lavoro, i test del pezzo che tocchi; `make check` in primo
+   piano, una volta sola, alla fine della milestone — sorvegliarlo costa più del lavoro che
+   sorveglia. Il controllo Linux è la CI sul branch, che il merge vuole verde su entrambi i runner;
+   `make check-linux` serve a riprodurre qui una CI rossa su ubuntu, fingendo l'altra metà della
+   matrice (i suoi limiti sono scritti in `tests/foreign_machine.py`).
 5. **Fai partire ELA**: [`GETTING_STARTED.md`](GETTING_STARTED.md), comando per comando.
 6. **Quando aggiungi una milestone, un ADR, una regola o una capability, rigenera questo file.**
    `make check` te lo ricorda fallendo.

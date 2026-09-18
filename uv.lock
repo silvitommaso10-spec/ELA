@@ -477,6 +477,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "types-jsonschema" },
 ]
@@ -507,8 +508,18 @@ dev = [
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-cov", specifier = ">=6.0" },
+    { name = "pytest-xdist", specifier = ">=3.6" },
     { name = "ruff", specifier = ">=0.12" },
     { name = "types-jsonschema", specifier = ">=4.26.0.20260518" },
+]
+
+[[package]]
+name = "execnet"
+version = "2.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/89/780e11f9588d9e7128a3f87788354c7946a9cbb1401ad38a48c4db9a4f07/execnet-2.1.2.tar.gz", hash = "sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd", size = 166622, upload-time = "2025-11-12T09:56:37.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec", size = 40708, upload-time = "2025-11-12T09:56:36.333Z" },
 ]
 
 [[package]]
@@ -639,6 +650,8 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/e1/211fa3ceac04b4ab9fb4c1c880717e9cb12080c5d9d226d867cde43015d9/grimp-3.16-cp313-cp313-win32.whl", hash = "sha256:9c144b81cf1d1699ecf9192f7997f71301a0ce730030b1c30fec5673796a0ccc", size = 1856024, upload-time = "2026-08-28T11:41:36.328Z" },
     { url = "https://files.pythonhosted.org/packages/ac/66/66db0aa202e638fce7929a78db1ecae2e059f22effc1925239f8ebe1b870/grimp-3.16-cp313-cp313-win_amd64.whl", hash = "sha256:8ceb54d891f879b4e5aa55ba9c95d37ac2af5c9bee5fcc7a07a909d03f3d9ade", size = 1982718, upload-time = "2026-08-28T11:41:20.854Z" },
     { url = "https://files.pythonhosted.org/packages/34/e8/6a7e0d68b6b24b79ffd4f274dc2d66751c3cdb6cfefe180201119c173f17/grimp-3.16-cp313-cp313-win_arm64.whl", hash = "sha256:86124a3dafb3184f34389c650db3ff2a27238773da2fbc840f51290552d83ca3", size = 1906377, upload-time = "2026-08-28T11:41:06.15Z" },
+    { url = "https://files.pythonhosted.org/packages/02/ed/a610e125d26dd4009a07d0926f597a7d2a7910ec376e1af63b8132aedf63/grimp-3.16-cp314-cp314-macosx_10_12_x86_64.whl", hash = "sha256:effd0823194230fb77335fd2b25cefedb08b5a66f1957b24551ede7000766532", size = 2145473, upload-time = "2026-09-11T10:36:44.183Z" },
+    { url = "https://files.pythonhosted.org/packages/71/13/7a6474d44b6815f30d6aa7862c464976ebf2c40b88f6abc1ecd65f5bd87c/grimp-3.16-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:c98876370f8d88c2a15cc76a1ebe3e7f1fb51a168eb84a58bf716f92292cc187", size = 2091978, upload-time = "2026-09-11T10:36:40.901Z" },
     { url = "https://files.pythonhosted.org/packages/bf/b1/676a33dee3897841d741028feae79930586ebbf092d9fc2c7942844a47f9/grimp-3.16-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:826ba2eacb67ba50f32ea2e8ec3c5503dca9a6159165a0b3e725f9a816eaff0f", size = 2259778, upload-time = "2026-08-28T11:38:34.608Z" },
     { url = "https://files.pythonhosted.org/packages/3d/83/042e97731f2e374bdbc64b40cf08910fafabc63904ade03e4d66dadf298f/grimp-3.16-cp314-cp314-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:38c148df96ef17f36521e45539eb3baa958098dc54e00fc901aba83e0d976429", size = 2206517, upload-time = "2026-08-28T11:38:46.218Z" },
     { url = "https://files.pythonhosted.org/packages/72/72/e8daaf975629c5ac16ee49c5d8a486d4492c74121124d2e88ca2dea8041f/grimp-3.16-cp314-cp314-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:6b94363624bd1e4959b5dfad67bbc20d80c1c62c4cd086ef0c268736995b3597", size = 2351283, upload-time = "2026-08-28T11:39:22.53Z" },
@@ -1459,6 +1472,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b1/51/a849f96e117386044471c8ec2bd6cfebacda285da9525c9106aeb28da671/pytest_cov-7.1.0.tar.gz", hash = "sha256:30674f2b5f6351aa09702a9c8c364f6a01c27aae0c1366ae8016160d1efc56b2", size = 55592, upload-time = "2026-03-21T20:11:16.284Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9d/7a/d968e294073affff457b041c2be9868a40c1c71f4a35fcc1e45e5493067b/pytest_cov-7.1.0-py3-none-any.whl", hash = "sha256:a0461110b7865f9a271aa1b51e516c9a95de9d696734a2f71e3e78f46e1d4678", size = 22876, upload-time = "2026-03-21T20:11:14.438Z" },
+]
+
+[[package]]
+name = "pytest-xdist"
+version = "3.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "execnet" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/b4/439b179d1ff526791eb921115fca8e44e596a13efeda518b9d845a619450/pytest_xdist-3.8.0.tar.gz", hash = "sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1", size = 88069, upload-time = "2025-07-01T13:30:59.346Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/31/d4e37e9e550c2b92a9cbc2e4d0b7420a27224968580b5a447f420847c975/pytest_xdist-3.8.0-py3-none-any.whl", hash = "sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88", size = 46396, upload-time = "2025-07-01T13:30:56.632Z" },
 ]
 
 [[package]]
