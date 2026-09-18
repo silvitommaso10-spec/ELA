@@ -458,24 +458,45 @@ Da M12.4 un PC Windows è un nodo come il Mac della §11, con lo stesso ciclo: i
 questo Mac, il **nodo** gira sul PC, e i due si parlano attraverso la tailnet. Sul PC i comandi sono
 di **PowerShell**, in una finestra da utente normale; sul Mac, del terminale.
 
-**Questa sezione è scritta prima della prova a mano** (2026-09-17), e qui non vale ancora la regola
-della guida: ciò che «devi vedere» è quello che il codice stampa e che le misure sul PC hanno
-mostrato (`docs/milestones/M12.4.md`, «Gli esiti»), non l'output di una sessione vera. Dopo la
-prova, ogni blocco si sostituisce con l'output vero, e ciò che non torna si scrive.
+Gli output qui sotto sono quelli della prova a mano del **2026-09-17**, con il Core su questo Mac
+(tailnet `100.76.92.39`) e il nodo sul PC `DESKTOP-QQ0GSE2` (tailnet `100.92.165.124`, Windows 11
+10.0.26200, Python 3.12.10). Dove un passo non è stato rieseguito perché una misura lo aveva già
+coperto, è detto lì. Il trascritto integrale sta in `.git/m12-reference/ela-prova-a-mano.txt`.
 
 Sul PC servono Windows 10 o 11, Tailscale acceso sulla stessa tailnet del Mac, [uv](https://docs.astral.sh/uv/),
 il repository in `$HOME\ELA` con `uv sync --locked`, e un Python **3.12.4 o successivo**: su
 Windows il nodo rifiuta una 3.12 più vecchia, perché lì la cartella del segreto non sarebbe
 protetta (M12.4, dec. B).
 
-### 1. Sul Mac: il Core anche sulla tailnet
+### 1. Sul Mac: il Core dal codice giusto, e anche sulla tailnet
+
+**Il Core deve girare dal codice del branch del nodo Windows**, o il piano d'esempio e la lettura
+dell'alimentazione non ci sono: nella prova il primo avvio è stato fatto da `main`, e `task plan` è
+morto con `No such file or directory` sul file del piano. Se il branch è già aperto in un worktree,
+`git checkout` lo rifiuta, e si va sul commit staccando la testa:
+
+```
+git fetch && git checkout --detach origin/m12.4-node-windows
+uv sync --locked && uv run alembic upgrade head
+```
+
+```
+HEAD is now at 2fd2def docs(m12.4): la review di ADR 0040 …
+```
+
+Poi l'indirizzo sulla tailnet:
 
 ```
 tailscale ip -4
 ```
 
-Stampa l'indirizzo del Mac sulla tailnet, `100.x.y.z`. Aggiungilo al `.env` del Mac, poi avvia il
-Core nel primo terminale:
+```
+100.76.92.39
+```
+
+(l'indirizzo è quello misurato il 2026-09-17; nella prova il `.env` del Mac lo aveva già, e il
+comando non è stato rieseguito.) Quell'indirizzo va nel `.env` del Mac, e il Core si avvia nel primo
+terminale:
 
 ```
 ELA_API_TAILNET_HOST=<ip tailnet del Mac>
@@ -485,8 +506,15 @@ ELA_API_TAILNET_HOST=<ip tailnet del Mac>
 uv run ela serve
 ```
 
-Devi vedere `Application startup complete.` Il Core ascolta sul loopback **e** sulla tailnet; ogni
-rotta resta dietro il token.
+```
+INFO:     Started server process [...]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+```
+
+(queste tre righe sono del primo avvio della prova, quello da `main`; dopo il checkout il trascritto
+riporta la sola `Application startup complete.`) Il Core ascolta sul loopback **e** sulla tailnet;
+ogni rotta resta dietro il token.
 
 ### 2. Sul PC: il Mac risponde
 
@@ -495,8 +523,15 @@ Test-NetConnection <ip tailnet del Mac> -Port 8351
 curl.exe -s -o NUL -w "%{http_code}`n" "http://<ip tailnet del Mac>:8351/health"
 ```
 
-Devi vedere `InterfaceAlias : Tailscale`, `TcpTestSucceeded : True`, e poi `401`: il Core risponde
-e rifiuta una richiesta senza token, che è ciò che deve fare (P5, 2026-09-17).
+```
+InterfaceAlias   : Tailscale
+SourceAddress    : 100.92.165.124
+TcpTestSucceeded : True
+401
+```
+
+Il Core risponde e rifiuta una richiesta senza token, che è ciò che deve fare. (Misurato il
+2026-09-17 con lo stesso Core sulla stessa tailnet, e per questo non ripetuto durante la prova.)
 
 ### 3. Sul PC: quale voce
 
@@ -510,9 +545,15 @@ $s.Dispose()
 & "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($list)))
 ```
 
-Devi vedere almeno una voce `it-IT`: sul PC di M12.4, `Microsoft Elsa Desktop | it-IT` (P3,
-2026-09-15). Quel nome è il `<nome della voce>`. Le voci «OneCore» delle impostazioni di Windows
-non compaiono qui, e il nodo non le può usare.
+```
+Microsoft Elsa Desktop | it-IT
+Microsoft Zira Desktop | en-US
+```
+
+(l'elenco è quello di P3, riscritto nella forma che stampa lo script di questa sezione: lì i campi
+erano quattro, con il genere e `enabled`.) Su questo PC l'unica voce `it-IT` che SAPI 5 elenca è `Microsoft Elsa Desktop`, ed è il
+`<nome della voce>`. Le voci «OneCore» delle impostazioni di Windows non compaiono qui, e il nodo non
+le può usare. (Misurato il 2026-09-15, non ripetuto durante la prova.)
 
 ### 4. Sul PC: il `.env` del nodo — senza `ela init`
 
@@ -529,14 +570,23 @@ ELA_VOICE_NAME="<nome della voce>"
 ELA_ANTHROPIC_API_KEY=<chiave del modello del PC>
 '@
 [IO.File]::WriteAllText("$HOME\ELA\.env", $lines)
+Get-Content "$HOME\ELA\.env"
+```
+
+Nella prova il file è stato scritto **senza** la terza riga, perché su nessuna delle due macchine c'è
+ancora una chiave del modello:
+
+```
+ELA_NODE_CORE_URL=http://100.76.92.39:8351
+ELA_VOICE_NAME="Microsoft Elsa Desktop"
 ```
 
 Tre cose da sapere prima di andare avanti:
 
 - **`ELA_MODEL_ROUTES` deve essere uguale a quella del Mac.** Se il `.env` del Mac la imposta,
-  copia quella riga identica in questo file; se non la imposta, non scriverla. Con due tabelle
-  diverse ogni chiamata a un modello che il PC esegue fallisce la verifica sul Mac — il passo 8 lo
-  mostra apposta.
+  copia quella riga identica in questo file; se non la imposta, non scriverla — nella prova il Mac
+  non la impostava. Con due tabelle diverse ogni chiamata a un modello che il PC esegue fallisce la
+  verifica sul Mac: è la seconda prova negativa del passo 8.
 - **Nessun `ELA_NODE_PERFORMANCE`** e nessun tratto: chi parla lo decide ciò che le macchine
   leggono di sé, non una dichiarazione (passo 6).
 - **La chiave è del PC** e non viaggia mai con il lavoro: il Core manda la chiamata, il nodo usa la
@@ -551,17 +601,34 @@ Sul Mac, nel secondo terminale, un codice:
 uv run ela node enroll --privacy TRUSTED
 ```
 
-Il codice si stampa una volta e vale dieci minuti. Sul PC:
+```
+kz5OC1S7mRM…
+```
+
+(il comando stampa una tabella — il codice, la privacy, la scadenza — come nella §11; il trascritto
+della prova ne ha tenuto il solo codice, e qui è troncato: vale una volta sola ed è scaduto.) Il
+codice si stampa una volta e vale dieci minuti. Sul PC:
 
 ```powershell
 Set-Location $HOME\ELA
 uv run ela node run --join
 ```
 
-Incolla il codice quando compare `Enrollment code:` — non si vede mentre lo scrivi, ed è voluto.
-Da lì il nodo ha la sua identità in `$HOME\.ela\node.json`, in una cartella con i permessi ristretti
-a te, SYSTEM e Administrators; le volte dopo basta `uv run ela node run`. **Lascia aperta questa
-finestra**: il nodo vive quanto lei, e chiuderla con la X lo ferma senza chiudere niente.
+```
+Enrollment code:
+```
+
+Incolla il codice quando compare — non si vede mentre lo scrivi, ed è voluto. Se lo incolli monco, il
+nodo lo dice e non parte:
+
+```
+ela: this code did not enrol the node (unauthorized). A code is good once and for ten minutes: ask the Core for another one.
+```
+
+Arruolato, il nodo ha la sua identità in `$HOME\.ela\node.json`, in una cartella con i permessi
+ristretti a te, SYSTEM e Administrators; le volte dopo basta `uv run ela node run`. **Lascia aperta
+questa finestra**: il nodo vive quanto lei, e chiuderla con la X lo ferma senza chiudere niente.
+Mentre gira non stampa niente.
 
 In una **seconda** finestra di PowerShell, il firewall:
 
@@ -569,8 +636,8 @@ In una **seconda** finestra di PowerShell, il firewall:
 Get-NetFirewallApplicationFilter | Where-Object Program -like '*python*' | Get-NetFirewallRule | Select-Object DisplayName, Direction, Action, Enabled
 ```
 
-Devi vedere nessuna riga, e non deve essere comparso nessun dialogo: il nodo chiama il Core, non
-ascolta niente.
+Nella prova non ha stampato **nessuna riga**, e non è comparso nessun dialogo: il nodo chiama il
+Core, non ascolta niente.
 
 Sul Mac:
 
@@ -578,9 +645,21 @@ Sul Mac:
 uv run ela device list
 ```
 
-Devi vedere il PC accanto a `local`: sistema `WINDOWS`, disponibile, e **tre** tool — `core-echo`,
-`model-complete`, `voice-speak`. Non `voice-speak-online`: sul PC la voce online non ha un
-riproduttore, e il nodo non promette ciò che la macchina non sa fare.
+```
+NAME             ID                                    OS       AVAILABLE  STATUS   LAST SEEN                    REVOKED  TOOLS
+local            6c38f1c5-6cda-5680-8a7a-4f061588deed  MACOS    yes        UNKNOWN  2026-09-17T20:42:51.528882Z  —        core-echo, workspace-notes, model-complete, perception-screen, listen, perception-screen-text, voice-speak, voice-speak-online
+DESKTOP-QQ0GSE2  5ddae87a-6eb1-4fb0-947c-f912fce6c026  WINDOWS  yes        IDLE     2026-09-17T20:42:56.806628Z  —        core-echo, model-complete, voice-speak
+```
+
+Il PC compare accanto a `local`, sistema `WINDOWS`, disponibile, e con **tre** tool. Non
+`voice-speak-online`: sul PC la voce online non ha un riproduttore, e il nodo non promette ciò che la
+macchina non sa fare.
+
+**`local` può comparire `no` / `UNKNOWN`**, ed è così che va oggi — nella prova è successo in altre
+due letture, alle 20:26 e alle 20:51: il Core manda il proprio battito solo all'avvio e a ogni
+`task run` (ADR 0023 §5-bis e §9; M12.3c ha lasciato fuori scope un battito periodico), quindi fra
+un run e l'altro la sua riga scade rispetto al TTL. Non tocca il piazzamento — che avviene subito dopo il battito di un `run` — ma la lista lo
+mostra come assente (osservato nella prova, ed è fra le cose da riesaminare di M12.4).
 
 ### 6. Il Mac a batteria, e il PC che parla
 
@@ -598,11 +677,27 @@ uv run ela task approve <id> --approval <approval-id>
 uv run ela task run <id>
 ```
 
-Il primo `run` si ferma sul consenso; il secondo risponde `assigned`, con l'id dell'assegnazione:
-lo step è del PC. **Il PC parla** — una frase di tre quarti di minuto, lunga apposta per le prove
-di questo passo e del passo 7. Mentre parla:
+Il primo `run` si ferma sul consenso; dopo l'approvazione il secondo risponde `assigned`, e lo step
+è del PC:
 
-1. **L'albero dei processi, sul PC**, nella seconda finestra:
+```
+outcome         waiting_approval
+state           WAITING_APPROVAL
+steps executed  5a1e0c3d-7b2f-4e8a-9c41-000000000001
+```
+
+```
+outcome         assigned
+reason          step 5a1e0c3d-7b2f-4e8a-9c41-000000000001 assigned to node DESKTOP-QQ0GSE2 (5ddae87a-6eb1-4fb0-947c-f912fce6c026) as assignment 0fa13927-593d-46f7-b5e2-744dde2c15aa, due by 2026-09-17T20:46:46.808533+00:00
+state           EXECUTING
+```
+
+**Il PC parla**, con la voce di Elsa — una frase di tre quarti di minuto, lunga apposta per le prove
+di questo passo e del passo 7. Nella prova l'albero dei processi e il Core spento a metà sono stati
+fatti su un **secondo** task con lo stesso piano: gli output dei due punti qui sotto sono di quello,
+il resto del passo è del primo task.
+
+1. **L'albero dei processi, sul PC**, nella seconda finestra, mentre parla:
 
    ```powershell
    function Show-Tree($id, $depth = 0) {
@@ -613,11 +708,20 @@ di questo passo e del passo 7. Mentre parla:
    Get-CimInstance Win32_Process -Filter "Name='uv.exe'" | ForEach-Object { "$($_.ProcessId) uv.exe"; Show-Tree $_.ProcessId 1 }
    ```
 
-   Devi vedere `powershell.exe` in fondo alla catena che parte da `uv.exe`, passando per `ela.exe`
-   e per i `python.exe`: è la voce, figlia del nodo. Annota la catena così come esce.
-2. **Il Core spento a metà**: `Ctrl-C` sul primo terminale del Mac, poi `uv run ela serve` di
-   nuovo. Il nodo, quando ha finito di parlare, trova il Core spento o appena riacceso: aspetta,
-   riprova, e consegna la busta che teneva.
+   ```
+   4428 uv.exe
+     32904 ela.exe
+       27772 python.exe
+         8748 python.exe
+           32832 powershell.exe
+   ```
+
+   `powershell.exe` è in fondo alla catena che parte da `uv.exe`: la voce è figlia del nodo, e i due
+   `python.exe` sono il lanciatore del venv e l'interprete vero (P4).
+2. **Il Core spento a metà**: `Ctrl-C` sul primo terminale del Mac mentre il PC parla, poi
+   `uv run ela serve` di nuovo. Il nodo, finita la frase, ha trovato il Core appena riacceso, e ha
+   consegnato la busta che teneva: nessun intervento sul PC. (Nella prova è successo due volte — al
+   cambio di commit del passo 1 e qui — e il nodo ha riagganciato da solo tutte e due.)
 
 Quando la frase è finita e il nodo ha consegnato, sul Mac:
 
@@ -626,33 +730,44 @@ uv run ela task run <id>
 uv run ela audit tail --task <id> -n 20
 ```
 
-Il `run` risponde `completed`. Nel registro, un `DEVICE_SELECTED` nomina il PC «with 25 points».
-Con `--json` sullo stesso comando di `audit tail`, il `TOOL_EXECUTED` porta il `device_id` del PC —
-quello di `ela device list` —, e il `DEVICE_SELECTED` porta fra i candidati anche i 20 punti di
-`local`.
+```
+outcome         completed
+state           COMPLETED
+```
+
+```
+2026-09-17T20:43:53.955644Z  DEVICE_SELECTED     SYSTEM:device-orchestrator  place step 5a1e0c3d-…: DESKTOP-QQ0GSE2 (5ddae87a-6eb1-4fb0-947c-f912fce6c026) with 25 points, 2 of 2 node(s) eligible
+2026-09-17T20:44:46.800192Z  TASK_STARTED        ELA:ela                     start: QUEUED -> EXECUTING (on device 5ddae87a-6eb1-4fb0-947c-f912fce6c026)
+2026-09-17T20:44:46.806755Z  PERMISSION_DECIDED  SYSTEM:permission-guardian  decide: ALLOWED voice.speak (MEDIUM): voice.speak is covered by authorization ed2d7872-…
+2026-09-17T20:45:27.463987Z  TOOL_EXECUTED       ELA:ela                     execute: SUCCEEDED voice.speak by voice-speak
+2026-09-17T20:45:27.479103Z  EXECUTION_VERIFIED  ELA:ela                     verify: passed voice.speak by voice-speak-verifier
+2026-09-17T20:45:54.306784Z  TASK_COMPLETED      ELA:ela                     complete: EXECUTING -> COMPLETED
+```
+
+Il `DEVICE_SELECTED` nomina il PC «with 25 points», e il `TOOL_EXECUTED` porta il `device_id` del PC
+— quello di `ela device list` — quando si legge con `--json`. I punti di **tutti e due** i candidati,
+con i loro componenti, si vedono nel JSON del passo 8: qui l'`audit tail` è stato letto senza.
 
 ### 7. `Ctrl-C` sul nodo, mentre parla
 
-Un secondo task, con lo stesso piano, fino a `assigned`:
-
-```
-uv run ela task create "fai parlare il PC, e interrompilo" --privacy TRUSTED
-uv run ela task plan <id> --file docs/examples/speak-on-a-node.json
-uv run ela task run <id>
-uv run ela approvals
-uv run ela task approve <id> --approval <approval-id>
-uv run ela task run <id>
-```
-
-Quando il PC comincia a parlare, `Ctrl-C` **nella finestra del nodo**, poi nella stessa finestra:
+Un terzo task, con lo stesso piano, fino a `assigned`; poi, quando il PC comincia a parlare, `Ctrl-C`
+**nella finestra del nodo**, e nella stessa finestra:
 
 ```powershell
 "exit=$LASTEXITCODE"
 ```
 
-Devi sentire la voce fermarsi subito, vedere `exit=0`, e **nessuna** riga `Exception ignored` prima
-del prompt. Il lavoro interrotto non si perde in silenzio: per il Core è un nodo che tace, e
-l'assegnazione scade. Poi riavvia il nodo con `uv run ela node run`, per il passo 8.
+```
+exit=0
+```
+
+Nella prova la voce si è fermata subito, l'uscita è stata `0`, e **non** è comparsa nessuna riga
+`Exception ignored`: è la traccia che la sonda di P4 lasciava e che il nodo non deve lasciare. Poi il
+nodo si riavvia con `uv run ela node run`.
+
+**Che cosa ne è stato del task interrotto non è stato letto** (2026-09-17): la lettura è stata
+saltata durante la prova. Per il Core è un nodo che ha taciuto, e l'assegnazione scade — ma qui non
+c'è l'output che lo mostra.
 
 ### 8. Le prove negative
 
@@ -665,21 +780,32 @@ uv run ela task plan <id> --file docs/examples/first-task.json
 uv run ela task run <id>
 ```
 
-Il primo `run` risponde `assigned`: l'echo è del PC. Aspetta qualche secondo che il nodo consegni,
-poi:
+Il primo `run` risponde `assigned`: l'echo è del PC. Dopo qualche secondo, il tempo che il nodo
+consegni:
 
 ```
 uv run ela task run <id>
 uv run ela audit tail --task <id> -n 10 --json
 ```
 
-Il secondo `run` chiude l'echo e si ferma sul consenso della nota. Nel registro, il
-`DEVICE_SELECTED` della nota sceglie `local`, «1 of 2 node(s) eligible», e fra i suoi candidati il
-PC porta `"refusals": ["UNVERIFIABLE"]`: il verifier della nota rileggerebbe la workspace del Mac,
-dove il PC non ha scritto niente. Il consenso della nota puoi negarlo con `ela task deny`.
+Il secondo `run` chiude l'echo e si ferma sul consenso della nota, e nel registro il
+`DEVICE_SELECTED` della nota sceglie `local`:
 
-**Una tabella di rotte diversa fa fallire la verifica.** Ferma il nodo con `Ctrl-C`, aggiungi al
-`.env` del PC una riga che il Mac non ha, e riavvialo:
+```
+20:56:11.722534Z DEVICE_SELECTED  place step 9c5b8f26-…-000000000002: local (6c38f1c5-…) with 20 points, 1 of 2 node(s) eligible
+    candidates:
+      6c38f1c5-…  points 20  components {traits 0, network 20, performance 0, power 0, workload 0, status 0}  refusals []
+      5ddae87a-…  points 25  components {traits 0, network 5, performance 0, power 10, workload 0, status 10}  refusals ["MISSING_TOOL", "UNVERIFIABLE"]
+```
+
+Il PC porta **due** rifiuti: `MISSING_TOOL`, perché non ha `workspace-notes`, e `UNVERIFIABLE`,
+perché il verifier della nota rileggerebbe la workspace del Mac, dove il PC non ha scritto niente.
+Aveva più punti del Mac e non è stato scelto. Il consenso della nota si nega con `ela task deny`.
+
+**Una tabella di rotte diversa fa fallire la verifica** — **non eseguita il 2026-09-17**, perché non
+c'è ancora una chiave del modello né sul Mac né sul PC, e senza chiave `model.complete` fallisce
+prima della verifica con `provider.unavailable`. Quando la chiave ci sarà: ferma il nodo con
+`Ctrl-C`, aggiungi al `.env` del PC una riga che il Mac non ha, e riavvialo:
 
 ```powershell
 [IO.File]::AppendAllText("$HOME\ELA\.env", "`nELA_MODEL_ROUTES={""reasoning"": {""providers"": [""anthropic""], ""profile"": ""cheap""}}`n")
@@ -695,46 +821,48 @@ uv run ela task run <id>
 uv run ela approvals
 uv run ela task approve <id> --approval <approval-id>
 uv run ela task run <id>
-```
-
-L'ultimo `run` risponde `assigned`. Quando il nodo ha consegnato — la risposta del modello, qualche
-secondo —:
-
-```
 uv run ela task run <id>
 uv run ela audit tail --task <id> -n 10 --json
 ```
 
-Il PC ha risposto con la sua chiave e con il profilo della sua tabella, `cheap`; il Mac ricalcola la
-rotta con la sua, che per `reasoning` dice `quality`, e la verifica fallisce: nel registro,
-l'`EXECUTION_VERIFIED` porta `model.misrouted`, «the call did not go where the policy routes it».
-È il difetto di due `.env` diversi, visto con la sua ragione. **Poi togli quella riga**: riscrivi il
-`.env` del PC con il blocco del passo 4, e riavvia il nodo.
+Atteso: il PC risponde con la sua chiave e con il profilo della sua tabella, `cheap`; il Mac
+ricalcola la rotta con la sua, che per `reasoning` dice `quality`, e la verifica fallisce —
+nell'`EXECUTION_VERIFIED`, `model.misrouted`, «the call did not go where the policy routes it». Poi
+si toglie quella riga, riscrivendo il `.env` con il blocco del passo 4, e si riavvia il nodo.
 
-### 9. Che cosa annotare, per la spec (M12.4, dec. J)
+### 9. I numeri della prova (M12.4, dec. J)
 
-Quattro numeri, presi durante i passi qui sopra, e **nessuno con un cronometro a mano**: ciascuno ha
-già un registro che lo scrive. Si annotano nella forma di `.env.example` — la data, le due macchine,
-il numero —, e vanno in `docs/milestones/M12.4.md`.
+Quattro numeri, **nessuno preso con un cronometro a mano**: ciascuno ha già un registro che lo
+scrive. Misurati il 2026-09-17, Core su questo MacBook Air, nodo sul PC `DESKTOP-QQ0GSE2`,
+attraverso la tailnet. **Il Mac era a batteria** per i numeri 1 e 4 e per la prima delle due letture
+del 2 e del 3: l'alimentatore è stato riattaccato alla fine del passo 8, e le due letture stanno a
+cavallo di quel momento.
 
-1. **Dal piazzamento alla consegna**, per `voice.speak` (passo 6) e per `core.echo` (la nota del
-   passo 8). Nel JSON di `uv run ela audit tail --task <id> -n 20 --json`, la differenza fra il
-   `created_at` del `DEVICE_SELECTED` e quello del `TOOL_EXECUTED` dello stesso step: tutti e due
-   sono ore del Core, e il secondo è l'istante in cui il Core ha ricevuto la consegna. **È il
-   piazzamento, non la presa**: il Core non scrive un evento quando il nodo prende il lavoro, quindi
-   il numero comprende anche l'attesa del nodo fino alla sua richiesta successiva.
-2. **Il long-poll attraverso la rete.** Nel primo terminale del Mac ogni richiesta del nodo stampa
-   una riga, `"GET /nodes/work HTTP/1.1" 204` quando non c'era lavoro: una richiesta tenuta aperta
-   per la finestra e chiusa dal Core, non dalla rete. Tiene se, a nodo fermo per qualche minuto, le
-   righe continuano ad arrivare con `204`, e il nodo sul PC **non** esce con `3`. Annota quante
-   richieste in quanti minuti, e se ne è caduta qualcuna.
-3. **Il giro del nodo contro il TTL del battito.** Il nodo manda un battito per giro, e il Core
-   scrive l'ora dell'ultimo in `last_seen_at`. `uv run ela device list --json` due volte, a qualche
-   minuto di distanza, contando le righe `GET /nodes/work` stampate in mezzo: la differenza fra i due
-   `last_seen_at` divisa per quel numero è il giro. Contro i 60 s di
-   `ELA_DEVICE_HEARTBEAT_TTL_SECONDS`: su una macchina sola, in M12.3, era ~33 s.
-4. **I punti di §17.** Nel `DEVICE_SELECTED` del passo 6: il PC «with 25 points» nel riassunto, e
-   nel JSON i `points` e i `components` di tutti e due i candidati — `local` e il PC.
+1. **Dal piazzamento alla consegna**, dalla differenza fra i `created_at` dell'audit — tutte e due
+   ore del Core, e il secondo è l'istante in cui il Core ha ricevuto la consegna:
+   - `voice.speak`, la frase di 571 caratteri: `TASK_STARTED` 20:44:46,800 → `TOOL_EXECUTED`
+     20:45:27,464 = **40,7 s**; sul task con il Core riavviato a metà, **40,4 s**. Quasi tutto è
+     parlato: al ritmo di P3-bis, 75 ms per carattere, 571 caratteri varrebbero 43,1 s — **più**
+     dell'intervallo intero —, quindi su questa frase Elsa ha parlato a non più di 71 ms per
+     carattere, e ciò che la rete e la presa aggiungono resta sotto quello che la misura distingue.
+   - `core.echo`: `STEP_STARTED` 20:55:32,270 → `TOOL_EXECUTED` 20:55:32,627 = **0,36 s**.
+   - **È il piazzamento, non la presa**: il Core non scrive un evento quando il nodo prende il
+     lavoro, e il numero comprende l'attesa del nodo fino alla sua richiesta successiva.
+2. **Il long-poll attraverso la rete.** Fra due letture di `ela device list --json` a 280 s di
+   distanza, il terminale del Core ha stampato **10 coppie**
+   `"POST /nodes/work HTTP/1.1" 204 No Content` e `"POST /nodes/heartbeat HTTP/1.1" 200 OK`: dieci
+   richieste tenute aperte per la finestra e chiuse dal Core, **nessuna caduta**, e il nodo non è mai
+   uscito. (Sono `POST`, non `GET`.) Al riavvio del nodo la porta sorgente cambia e compaiono
+   `GET /nodes/me` e `PUT /nodes/me`: il nodo rilegge la sua riga e si riannuncia.
+3. **Il giro del nodo contro il TTL del battito.** Il `last_seen_at` del PC è passato da
+   20:57:40,150 a 21:02:20,151 — 280,0 s — con 10 battiti in mezzo: **28,0 s per giro**, contro i
+   **60 s** di `ELA_DEVICE_HEARTBEAT_TTL_SECONDS`, un margine di 2,1×. Su una macchina sola, in
+   M12.3, erano ~33 s.
+4. **I punti di §17.** Il PC «with 25 points», `2 of 2 node(s) eligible`; nel JSON, `local` 20
+   (rete 20) e il PC 25 (rete 5, corrente 10, libero 10), con il Mac a batteria.
+
+Nessuno di questi numeri ha fatto ritarare niente: i pesi di §17, la finestra di long-poll e il TTL
+del battito restano quelli (M12.4, dec. J).
 
 ## Dove guardare dopo
 

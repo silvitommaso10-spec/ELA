@@ -191,18 +191,20 @@ def test_the_vocabulary_of_the_wire_is_the_closed_list_the_adr_counts() -> None:
 
 
 # ----------------------------------------------------------------------------------------
-# The state, until the proof by hand
+# The state, and the proof by hand it waited for
 # ----------------------------------------------------------------------------------------
 
 
-def test_the_adr_stays_proposed_until_the_proof_by_hand_has_passed() -> None:
-    """Decision of 2026-09-17: the end criterion of M12.4 is the proof on the PC, and an ADR
-    accepted before it would say something not yet true. When the proof passes, this test changes
-    with the state, in the commit that replaces the «devi vedere» of ``GETTING_STARTED.md`` §12."""
-    assert "- **Stato:** Proposta." in adr_text()
-    assert "scritta prima della prova a mano" in (ROOT / "docs" / "GETTING_STARTED.md").read_text(
-        encoding="utf-8"
-    )
+def test_the_adr_was_accepted_only_after_the_proof_by_hand(shown: str = "2026-09-18") -> None:
+    """It stayed «Proposta» until the end criterion of M12.4 was met — the proof on the PC — and was
+    accepted in the same commit that gave ``GETTING_STARTED.md`` §12 the real outputs (decisions of
+    2026-09-17 and 2026-09-18). The guide is read here because the two moved together: an ADR
+    accepted over a guide still written in the future tense would be the thing that was refused."""
+    guide = (ROOT / "docs" / "GETTING_STARTED.md").read_text(encoding="utf-8")
+
+    assert f"- **Stato:** Accettata il **{shown}**" in adr_text()
+    assert "scritta prima della prova" not in guide
+    assert "Gli output qui sotto sono quelli della prova a mano del **2026-09-17**" in guide
 
 
 # ----------------------------------------------------------------------------------------

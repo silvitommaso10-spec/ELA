@@ -1,16 +1,14 @@
 # 0040. Il nodo Windows: la piattaforma la sceglie la composizione, il segreto sta sotto l'ACL della cartella, e un nodo dichiara solo ciò che la sua macchina sa fare
 
-- **Stato:** Proposta. SPEC di M12.4 approvata dall'utente il 2026-09-15, fatte M12.3c e le misure
-  sul PC (P0–P6, P1-bis, P3-bis, P6-bis); implementata il 2026-09-17 a blocchi, ciascuno approvato
-  da una review — dec. B, D, F, G, la regola 54, dec. H, dec. I —, e il contenuto di questo ADR
-  approvato dalla review del 2026-09-17. Le decisioni ereditate sono D1–D20 di M12.1, A–P di M12.2 e
-  A–M di M12.3. **Resta «Proposta» finché la prova a mano sul PC non è passata** (decisione del
-  2026-09-17): è il criterio di fine di M12.4, e un ADR accettato prima di lui direbbe una cosa non
-  ancora vera. Dopo la prova lo stato passa ad «Accettata» con la data, nello stesso commit che
-  sostituisce i «devi vedere» di `GETTING_STARTED.md` §12 con l'output vero; se la prova smentisce
-  qualcosa, si corregge qui prima. Ciò che la prova mostra, con le misure di dec. J, si registra in
-  `docs/milestones/M12.4.md`.
-- **Data:** 2026-09-17
+- **Stato:** Accettata il **2026-09-18**, quando la prova a mano sul PC è passata — il criterio di
+  fine di M12.4 — e con lei `GETTING_STARTED.md` §12, che porta ora gli output veri. SPEC di M12.4
+  approvata dall'utente il 2026-09-15, fatte M12.3c e le misure sul PC (P0–P6, P1-bis, P3-bis,
+  P6-bis); implementata il 2026-09-17 a blocchi, ciascuno approvato da una review — dec. B, D, F, G,
+  la regola 54, dec. H, dec. I —, e il contenuto approvato dalla review dello stesso giorno. Le
+  decisioni ereditate sono D1–D20 di M12.1, A–P di M12.2 e A–M di M12.3. La prova non ha smentito
+  niente; due sue parti non sono state fatte, e sono qui fra i vincoli dichiarati. I numeri di dec. J
+  stanno in `docs/milestones/M12.4.md`.
+- **Data:** 2026-09-17 (accettata il 2026-09-18)
 - **Riferimenti spec:** §4, §9, §16, §17, §48, §56, §57
 - **Continua:** ADR 0023 §10; ADR 0028 §1; ADR 0029 §3, §16; ADR 0031 §3, §5, §6; ADR 0033 §9;
   ADR 0034 §5, §7; ADR 0037 §2, §7; ADR 0038 §11, §12, §14; ADR 0039 §1, §6, §7.
@@ -116,7 +114,7 @@ dell'avvio e uguale per ogni frase; il nome della voce e la frase arrivano su st
 script li legge come dati. La primitiva è `spawn_with_input`, sorella di `spawn`, con gli stessi
 `_wait` e `_kill`: `asyncio` ordinario, provato con un figlio Python sui runner di `make check`, Ubuntu
 e macOS. Sul job Windows non gira — `tests/infrastructure/machine/test_spawn.py` non è nell'elenco —,
-e con il Proactor la prova solo la prova a mano.
+e con il Proactor l'ha esercitato la prova a mano (§5).
 
 **Ciò che si cronometra è il suono.** `spoken_seconds` è il cronometro che lo script mette intorno a
 `Speak` e scrive su stdout nella cultura invariante, non la vita del figlio: sul PC, sulla frase di 40
@@ -179,9 +177,9 @@ non uccide l'interprete sotto di lui.
 
 **Le tracce della sonda.** La sonda di P4 uccideva il figlio senza aspettarlo, e in chiusura Python
 stampava due `Exception ignored` del transport. `_kill` aspetta il figlio dopo averlo ucciso, e in
-CPython 3.12.10 quell'attesa si sveglia dopo la chiusura del transport: il nodo **non dovrebbe**
-lasciarle. Sul Mac la forma della sonda lascia la traccia Unix analoga e quella di ELA nessuna; sul
-Proactor non è misurato, e lo prova la prova a mano. L'attesa non copre due casi: un figlio che esce da
+CPython 3.12.10 quell'attesa si sveglia dopo la chiusura del transport: il nodo **non le lascia**.
+Sul Mac la forma della sonda lascia la traccia Unix analoga e quella di ELA nessuna; sul Proactor
+l'ha misurato la prova a mano del 2026-09-17, con un `Ctrl-C` sul nodo mentre parlava (§5). L'attesa non copre due casi: un figlio che esce da
 solo nell'istante della cancellazione, che ha già il codice d'uscita prima che la sua pipe sia chiusa,
 e un secondo `Ctrl-C` durante la chiusura, che interrompe l'attesa stessa.
 
@@ -206,7 +204,11 @@ e un secondo `Ctrl-C` durante la chiusura, che interrompe l'attesa stessa.
    ciascuno con la sua ragione.
 
 **Una parte della prova non la fa nessuna suite**, ed è `docs/GETTING_STARTED.md` §12: il Core sul Mac,
-il nodo sul PC, la tailnet in mezzo, il PC che parla con il Mac staccato dalla corrente.
+il nodo sul PC, la tailnet in mezzo, il PC che parla con il Mac staccato dalla corrente. **Passata il
+2026-09-17**: il PC ha parlato con la voce di Elsa e `powershell.exe` è nato sotto il nodo, attraverso
+`uv.exe`, `ela.exe` e i due `python.exe`; il Core spento a metà frase non ha perso la busta; `Ctrl-C`
+sul nodo mentre parlava ha fermato la voce ed è uscito con `0`, senza tracce; e la nota è rimasta al
+Mac, con il PC che portava più punti e due rifiuti, `MISSING_TOOL` e `UNVERIFIABLE`.
 
 ## 6. Le regole
 
@@ -278,7 +280,7 @@ viaggiano dentro un risultato, come sua parola, e non come risposta a una richie
 - Un PC Windows può essere un nodo con lo stesso ciclo del Mac: si arruola, dichiara `WINDOWS`,
   protegge il segreto con l'ACL della cartella, e parla con System.Speech — e non decide niente. Le
   suite e gli smoke test sul PC ne provano le parti; il ciclo intero con due macchine lo prova
-  `GETTING_STARTED.md` §12, e non è ancora fatto.
+  `GETTING_STARTED.md` §12, passata il 2026-09-17 (§5).
 - Le tredici storie del contratto passano con **tre** kit, e le mappe `UNSUPPORTED` sono tutte vuote.
 - Le regole di architettura passano da cinquantatré a **cinquantaquattro**; una si stringe (40).
 - Le rotte dell'API **restano ventinove**, quelle che un nodo può chiamare **sei**; i comandi della CLI
@@ -347,6 +349,13 @@ viaggiano dentro un risultato, come sua parola, e non come risposta a una richie
 - **La regola 54 non vede tutte le domande**: un `try: os.fchmod(...) except AttributeError`, e `os` o
   `sys` importati con un altro nome, passano (§6).
 - **La regola 40 non vede uno script composto a pezzi**: `"SetOutputTo" + "WaveFile"` passa (§6).
+- **Che due tabelle di rotte diverse facciano fallire la verifica non è stato provato a mano**: la
+  prova negativa di `GETTING_STARTED.md` §12 chiede una chiave del modello, e il 2026-09-17 non ce
+  n'era una né sul Mac né sul PC. Il percorso è provato dalla suite, non dalle due macchine.
+- **Che cosa diventa un task il cui nodo tace a metà lavoro non è stato letto**: nella prova del
+  2026-09-17 il `Ctrl-C` sul nodo è stato dato e lo stato finale di quel task non è stato guardato.
+  Il protocollo lo tratta come un'assegnazione che scade (M12.1 D6), e nessuna riga della prova lo
+  mostra.
 - **Il vocabolario del filo copre le risposte dell'API e non i codici dei tool**: un `provider.*` o uno
   `speech.*` inventato in un test del nodo non lo ferma nessuna lista chiusa, perché viaggia dentro un
   risultato (§7).
