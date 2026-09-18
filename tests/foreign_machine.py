@@ -1,4 +1,4 @@
-"""L'altra macchina, prima del push: un pytest plugin che finge di non essere questo Mac.
+"""L'altra macchina, in locale: un pytest plugin che finge di non essere questo Mac.
 
 Loaded with ``-p tests.foreign_machine`` by ``make check-linux`` and **never** by an ordinary
 run. It exists because of a defect that reached ``main`` on 2026-09-08: four tests asserted an
@@ -10,8 +10,9 @@ the suite: *la suite dice la stessa cosa su due macchine*. Nothing in the text o
 was wrong; the platform dependence was three layers below them, behind the composition root, and
 no rule reading their AST could ever have seen it (ADR 0031 §6 searched for ``platform.system()``
 in the suite and could not have found them — they do not contain the words). The only faithful
-verifier of that property is a second machine, and the point of this file is to reach one
-**before** the push instead of eleven minutes after it.
+verifier of that property is a second machine. Since 2026-09-18 that machine is the CI on the
+branch, which the merge wants green on both runners at the last commit; the point of this file is
+to reproduce **here** what the ubuntu job saw when it goes red.
 
 It is imported before collection, so ``skipif(platform.system() != "Darwin")`` sees the other
 machine too, exactly as on the runner.

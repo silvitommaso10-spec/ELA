@@ -178,16 +178,25 @@ def test_a_red_coverage_gate_fails_check(tmp_path: Path) -> None:
 # ------------------------------------------------------------------------------------------
 
 SOURCE = 'def decide(flag):\n    if flag:\n        return "yes"\n    return "no"\n'
-TEST = """
+TESTS = {
+    "test_measured.py": """
 from app.measured.decide import decide
-from app.spare.decide import decide as spare
 
 
-def test_one_side_of_each():
+def test_both_sides():
     assert decide(True) == "yes"
     assert decide(False) == "no"
-    assert spare(True) == "yes"
-"""
+""",
+    "test_spare.py": """
+from app.spare.decide import decide
+
+
+def test_one_side():
+    assert decide(True) == "yes"
+""",
+}
+"""Two files, so that two workers can each measure a part and the gate reads what pytest-cov put
+back together — the mechanism ``-n auto`` in ``addopts`` brought on 2026-09-18."""
 
 
 @pytest.fixture(scope="module")
@@ -195,7 +204,9 @@ def shared_measurement(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A throwaway project measured **once**, exactly as ``make test`` measures ``ela``.
 
     ``app.measured`` has both sides of its branch taken and ``app.spare`` only one, so the same
-    data file answers the gate differently depending on what the filter points it at.
+    data file answers the gate differently depending on what the filter points it at. Since
+    2026-09-18 "exactly" includes the workers: ``make test`` runs under pytest-xdist, so this runs
+    under it too, and checks that it did rather than assuming it.
     """
     project = tmp_path_factory.mktemp("shared_measurement")
     for package in ("app", "app/measured", "app/spare"):
@@ -203,9 +214,14 @@ def shared_measurement(tmp_path_factory: pytest.TempPathFactory) -> Path:
         (project / package / "__init__.py").write_text("", encoding="utf-8")
     (project / "app/measured/decide.py").write_text(SOURCE, encoding="utf-8")
     (project / "app/spare/decide.py").write_text(SOURCE, encoding="utf-8")
-    (project / "test_decide.py").write_text(TEST, encoding="utf-8")
+    for name, text in TESTS.items():
+        (project / name).write_text(text, encoding="utf-8")
     (project / "pytest.ini").write_text("[pytest]\naddopts =\n", encoding="utf-8")
-    run_in(project, "pytest", "-q", "-p", "no:cacheprovider", "--cov=app", "--cov-branch")
+    run = run_in(
+        project, "pytest", "-n", "2", "-p", "no:cacheprovider", "--cov=app", "--cov-branch"
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert "2 workers [2 items]" in run.stdout, "the measurement must come from the workers"
     assert (project / ".coverage").is_file(), "the suite must leave the measurement behind"
     return project
 
