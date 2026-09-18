@@ -242,6 +242,58 @@ permanenza in attesa di una parola**, e quello non è nessuno dei tre stati che 
 quell'enum è una decisione che si prende con la milestone che la usa, non prima. Va con la Fase 15
 perché «ELA decide da sola di ascoltare» è §34, non §11.
 
+### 5.7 Chi paga il lavoro agentico
+
+Dalla **Fase 14** il lavoro agentico — coding, ricerca — **non lo fa ELA chiamando il modello**: lo fa
+una sessione di Claude Code che ELA lancia come programma.
+
+*Perché è accettabile:* per tre cose, e valgono solo insieme.
+
+- **La sessione si lancia come processo, mai guidandola a mouse e tastiera.** Da programma il
+  risultato è un dato leggibile — l'esito, il costo dichiarato, il diff —; a tastiera sarebbe pixel
+  da interpretare. E a tastiera ELA risponderebbe da sé alle richieste di permesso della sessione:
+  prenderebbe l'approvazione dell'utente senza che nessuno la registri.
+- **Il Guardian è l'host dei permessi della sessione.** Ogni azione che la sessione vuole compiere
+  passa dallo stesso punto di decisione di ogni altro effetto di ELA, e lascia la sua riga
+  nell'audit.
+- **Ciò che si approva è il diff, non la sessione.** La sessione gira in un worktree suo, e il suo
+  effetto è ispezionabile.
+
+### 5.8 Come si paga una sessione
+
+Il modo di pagamento **non è una variabile di configurazione: deriva dalla cartella su cui la
+sessione lavora.** La cartella dell'utente, con la sua configurazione invariata, va in modalità con
+abbonamento. Una cartella arrivata da fuori, o una configurazione cambiata rispetto a quella
+approvata, va in modalità pulita, con la chiave API.
+
+*Perché:* nella modalità con abbonamento la sessione carica gli hook, i server MCP e il `CLAUDE.md`
+della cartella in cui lavora **anche se nessuno l'ha dichiarata fidata**, quindi la protezione è
+sapere di chi è la cartella. Una riga di `.env` che dicesse «usa l'abbonamento» sarebbe una difesa
+che si spegne cambiando una riga.
+
+*Che cosa ne discende:* prima di lanciare, ELA rileva la configurazione della cartella e la
+confronta con quella approvata; **se è cambiata, chiede di nuovo**. E la ricevuta vale in tutti e
+due i modi: la sessione dichiara comunque il costo, quindi l'audit registra la spesa anche quando
+non è a consumo.
+
+### 5.9 Il tetto di spesa
+
+Il budget dell'utente sulla chiave API è **non più di ~50 EUR al mese**, più gli abbonamenti già in
+essere.
+
+Oggi **nessuno lo fa rispettare**. Fra i vincoli dichiarati di ADR 0021 c'è «**Nessun budget** (§3):
+l'usage si registra, non si somma e non si confronta con un tetto», e ADR 0022 lo ripete invariato.
+Quei due ADR hanno messo il tetto sotto §30 — che nella spec è «Pagamenti» —, e §30 non ha ancora né
+un ADR né una milestone.
+
+*Che cosa ne discende:* finché §30 non esiste, **il tetto lo mette il fornitore**: una workspace
+dedicata sulla console, con la sua chiave, un limite mensile e l'auto-reload spento. E **§30 prende
+la sua milestone prima della Fase 14, non dopo**.
+
+*Perché nessun ADR, per nessuna di queste tre voci:* ADR 0021 e ADR 0022 sono immutabili e dicono il
+vero, e non si toccano. Li rivedranno apertamente §30 e la capability della Fase 14, quando
+esisteranno, ciascuno con il proprio ADR.
+
 ## 6. I debiti datati
 
 Un debito datato è un difetto **trovato lavorando e non riparato lì**, scritto in un ADR con la
