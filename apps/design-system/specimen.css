@@ -1,0 +1,361 @@
+/* ELA design system — the layout of the specimen page, and of nothing else. Written by hand,
+ * and like components.css it may only read tokens. No surface of ELA links this file.
+ *
+ * What the page shows *as a sample of a token* — a swatch, a step of a scale, a text style —
+ * takes its value from a rule derived into specimen-switch.css (--_swatch, --_step, --_size…):
+ * a sample is not a reader of its token. What is written here is the page's own use of them. */
+
+.specimen {
+  margin: 0;
+  font-family: var(--ela-typography-family-sans);
+  font-size: var(--ela-typography-style-body-size);
+  font-weight: var(--ela-typography-style-body-weight);
+  line-height: var(--ela-typography-style-body-line);
+  color: var(--ela-color-text-primary);
+  background: var(--ela-color-surface-base);
+}
+
+.specimen code {
+  font-family: var(--ela-typography-family-mono);
+  font-size: var(--ela-typography-style-caption-size);
+  color: var(--ela-color-text-secondary);
+}
+
+.specimen-header,
+.specimen-section {
+  box-sizing: border-box;
+  max-inline-size: var(--ela-grid-max-width);
+  margin-inline: auto;
+  padding-inline: var(--ela-grid-margin);
+}
+
+.specimen-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--ela-layer-sticky);
+  display: grid;
+  gap: var(--ela-space-2);
+  padding-block: var(--ela-space-4);
+  border-block-end: var(--ela-border-width-hairline) solid var(--ela-color-border-subtle);
+  color: var(--ela-color-text-primary);
+  background: var(--ela-color-surface-base);
+}
+
+.specimen-header__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ela-space-4);
+  margin: 0;
+}
+
+.specimen-header__subtitle {
+  font-size: var(--ela-typography-style-caption-size);
+  font-weight: var(--ela-typography-style-caption-weight);
+  letter-spacing: var(--ela-typography-style-key-tracking);
+  text-transform: uppercase;
+  color: var(--ela-color-text-secondary);
+}
+
+/* The two interactive things the page owns. On an iPhone they are touched like the rest, so
+ * they take the same minimum target as a component. */
+
+.specimen-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ela-space-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.specimen-switch__legend {
+  padding: 0;
+  font-size: var(--ela-typography-style-key-size);
+  font-weight: var(--ela-typography-style-key-weight);
+  letter-spacing: var(--ela-typography-style-key-tracking);
+  text-transform: uppercase;
+  color: var(--ela-color-text-secondary);
+}
+
+.specimen-switch__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ela-space-1);
+}
+
+.specimen-switch__input {
+  min-block-size: var(--ela-target-min);
+  min-inline-size: var(--ela-target-min);
+  margin: 0;
+  accent-color: var(--ela-color-action-primary);
+}
+
+.specimen-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ela-space-1);
+}
+
+.specimen-nav__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--ela-target-min);
+  min-inline-size: var(--ela-target-min);
+  padding-inline: var(--ela-space-2);
+  border-radius: var(--ela-radius-sm);
+  font-size: var(--ela-typography-style-caption-size);
+  color: var(--ela-color-text-secondary);
+  text-decoration: none;
+  transition: background-color var(--ela-motion-duration-fast) var(--ela-motion-easing-standard);
+}
+
+.specimen-nav__link:hover {
+  background: var(--ela-color-action-secondary);
+}
+
+.specimen-nav__link:focus-visible,
+.specimen-switch__input:focus-visible {
+  outline: var(--ela-border-focus-width) solid var(--ela-color-focus-ring);
+  outline-offset: var(--ela-border-focus-offset);
+}
+
+.specimen-section {
+  padding-block: var(--ela-space-8);
+  border-block-end: var(--ela-border-width-hairline) solid var(--ela-color-border-subtle);
+  scroll-margin-block-start: var(--ela-space-12);
+}
+
+.specimen-title {
+  margin-block: 0 var(--ela-space-6);
+  font-size: var(--ela-typography-style-title-size);
+  font-weight: var(--ela-typography-style-title-weight);
+  line-height: var(--ela-typography-style-title-line);
+  letter-spacing: var(--ela-typography-style-title-tracking);
+}
+
+.specimen-heading {
+  margin-block: var(--ela-space-8) var(--ela-space-3);
+  font-size: var(--ela-typography-style-heading-size);
+  font-weight: var(--ela-typography-style-heading-weight);
+  line-height: var(--ela-typography-style-heading-line);
+  letter-spacing: var(--ela-typography-style-heading-tracking);
+}
+
+.specimen-lead {
+  max-inline-size: 100%;
+  margin-block: 0 var(--ela-space-4);
+  color: var(--ela-color-text-secondary);
+}
+
+/* Every component twice: a theme is one attribute on any ancestor. Stacked on a phone. */
+
+.specimen-pair {
+  display: grid;
+  gap: var(--ela-grid-gutter);
+}
+
+.specimen-pair__side,
+.specimen-theme {
+  display: grid;
+  align-content: start;
+  gap: var(--ela-space-3);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  padding: var(--ela-space-4);
+  border: var(--ela-border-width-hairline) solid var(--ela-color-border-subtle);
+  border-radius: var(--ela-radius-md);
+  color: var(--ela-color-text-primary);
+  background: var(--ela-color-surface-base);
+}
+
+.specimen-theme {
+  margin-block-end: var(--ela-space-4);
+}
+
+.specimen-pair__theme {
+  margin: 0;
+  font-size: var(--ela-typography-style-key-size);
+  font-weight: var(--ela-typography-style-key-weight);
+  letter-spacing: var(--ela-typography-style-key-tracking);
+  text-transform: uppercase;
+  color: var(--ela-color-text-secondary);
+}
+
+.specimen-pair__side p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ela-space-3);
+  margin: 0;
+}
+
+@media (min-width: 720px) {
+  .specimen-pair {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Samples: the value arrives in a private property from specimen-switch.css. */
+
+.specimen-swatches,
+.specimen-steps,
+.specimen-keylines {
+  display: grid;
+  gap: var(--ela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.specimen-swatch,
+.specimen-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ela-space-3);
+}
+
+.specimen-swatch__chip {
+  flex: none;
+  inline-size: var(--ela-space-8);
+  block-size: var(--ela-space-8);
+  border: var(--ela-border-width-hairline) solid var(--ela-color-border-subtle);
+  border-radius: var(--ela-radius-sm);
+  background: var(--_swatch);
+}
+
+.specimen-step__bar {
+  flex: none;
+  background: var(--ela-color-action-secondary-active);
+}
+
+.specimen-step--space .specimen-step__bar {
+  inline-size: var(--_step);
+  block-size: var(--ela-space-3);
+}
+
+.specimen-step--radius .specimen-step__bar {
+  inline-size: var(--ela-space-12);
+  block-size: var(--ela-space-8);
+  border-radius: var(--_step);
+}
+
+.specimen-type {
+  margin-block: 0 var(--ela-space-3);
+  font-size: var(--_size);
+  font-weight: var(--_weight);
+  line-height: var(--_line);
+  letter-spacing: var(--_tracking);
+}
+
+.specimen-table {
+  inline-size: 100%;
+  margin-block: var(--ela-space-4);
+  border-collapse: collapse;
+}
+
+.specimen-table th,
+.specimen-table td {
+  padding-block: var(--ela-space-1);
+  padding-inline-end: var(--ela-space-4);
+  border-block-end: var(--ela-border-width-hairline) solid var(--ela-color-border-subtle);
+  font-weight: var(--ela-typography-style-caption-weight);
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+/* Responsive: the band the page is in, and the grid of that band. */
+
+.specimen-bands {
+  margin: 0;
+}
+
+.specimen-band {
+  display: none;
+  font-size: var(--ela-typography-style-key-size);
+  font-weight: var(--ela-typography-style-key-weight);
+  letter-spacing: var(--ela-typography-style-key-tracking);
+  text-transform: uppercase;
+}
+
+.specimen-band--phone {
+  display: inline;
+}
+
+@media (min-width: 720px) {
+  .specimen-band--phone {
+    display: none;
+  }
+
+  .specimen-band--desktop-compact {
+    display: inline;
+  }
+}
+
+@media (min-width: 1200px) {
+  .specimen-band--desktop-compact {
+    display: none;
+  }
+
+  .specimen-band--desktop-extended {
+    display: inline;
+  }
+}
+
+.specimen-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--ela-grid-columns), 1fr);
+  gap: var(--ela-grid-gutter);
+  margin-block: var(--ela-space-4);
+}
+
+.specimen-grid__column {
+  block-size: var(--ela-space-8);
+  border-radius: var(--ela-radius-sm);
+  background: var(--ela-color-action-secondary);
+}
+
+/* Iconography, as rules: the grid with its live area, then one box per size. No icon. */
+
+.specimen-keylines {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--ela-space-4);
+}
+
+.specimen-keyline {
+  box-sizing: border-box;
+  inline-size: var(--ela-icon-grid);
+  block-size: var(--ela-icon-grid);
+  padding: var(--ela-icon-live);
+  border: var(--ela-border-width-hairline) dashed var(--ela-color-border-field);
+}
+
+.specimen-keyline--sm {
+  inline-size: var(--ela-icon-size-sm);
+  block-size: var(--ela-icon-size-sm);
+}
+
+.specimen-keyline--md {
+  inline-size: var(--ela-icon-size-md);
+  block-size: var(--ela-icon-size-md);
+}
+
+.specimen-keyline--lg {
+  inline-size: var(--ela-icon-size-lg);
+  block-size: var(--ela-icon-size-lg);
+}
+
+.specimen-keyline__live {
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: 100%;
+  border: var(--ela-icon-stroke) solid var(--ela-color-text-primary);
+  border-radius: var(--ela-radius-xs);
+}

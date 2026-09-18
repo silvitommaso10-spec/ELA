@@ -43,6 +43,9 @@ e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.
 - Il gate `cov-critical` del Makefile (`CRITICAL_PACKAGES`) si estende a `permissions/` e
   `audit/` nella stessa milestone in cui il package riceve codice, non dopo.
 - Ogni nuova regola architetturale → un architecture test in `tests/architecture/`.
+- Le regole di ciò che sta in `apps/` non camminano Python: vivono nei test della loro cartella
+  (`tests/design/` per il design system), e il README della cartella nomina ogni regola col test
+  che la difende.
 - Ogni bug trovato → prima un test che fallisce, poi il fix.
 - Tutto ciò che gira in `make check` ha un test che ne dimostra il fallimento nel caso
   negativo.

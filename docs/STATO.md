@@ -163,7 +163,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Fase | Documenti che la nominano |
 |---|---|
 | 13 | 2 |
-| 15 | 9 |
+| 15 | 10 |
 | 17 | 3 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
