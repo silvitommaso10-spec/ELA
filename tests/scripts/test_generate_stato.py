@@ -89,11 +89,11 @@ def test_a_phase_the_changelog_has_not_named_is_shown_as_such(
 
 
 # ----------------------------------------------------------------------------------------
-# The phases nobody has built yet
+# The phases nobody has started yet
 # ----------------------------------------------------------------------------------------
 
 
-def test_only_the_phases_past_the_last_milestone_are_counted(
+def test_a_phase_that_has_delivered_a_milestone_is_not_counted(
     tmp_path: Path, generate_stato: ModuleType
 ) -> None:
     milestone(tmp_path, "M1.1")
@@ -101,6 +101,36 @@ def test_only_the_phases_past_the_last_milestone_are_counted(
     write(tmp_path / "docs" / "CHANGELOG.md", "anche qui la Fase 2, e la Fase 5\n")
 
     assert generate_stato.future_phases(tmp_path) == [(2, 2), (5, 1)]
+
+
+def test_a_higher_phase_with_only_proposals_does_not_hide_a_lower_one(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """The number of a phase is not its order.
+
+    Found on 2026-09-18: Fase 17 was registered to start before M12.5, and the criterion of the day
+    — "past the last phase with a milestone" — made 17 the last one and emptied the block, with
+    Fase 13 and Fase 15 still named by documents and still not started.
+    """
+    milestone(tmp_path, "M12.4")
+    milestone(tmp_path, "M17.1", state="Proposta", body="la Fase 17 viene prima della Fase 13")
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", "rimandato alla Fase 15, dopo la Fase 12\n")
+
+    assert generate_stato.future_phases(tmp_path) == [(13, 1), (15, 1), (17, 1)]
+
+
+def test_a_phase_leaves_the_list_when_its_first_milestone_leaves_proposta(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """The same fact that gives a phase its name in the changelog, and not the file existing."""
+    write(tmp_path / "docs" / "adr" / "0001-uno.md", "la Fase 17\n")
+    milestone(tmp_path, "M17.1", state="Proposta")
+
+    assert generate_stato.future_phases(tmp_path) == [(17, 1)]
+
+    milestone(tmp_path, "M17.1", state="Implementata")
+
+    assert generate_stato.future_phases(tmp_path) == []
 
 
 def test_the_document_this_script_writes_is_not_evidence_about_itself(
@@ -212,6 +242,93 @@ def test_a_section_no_milestone_has_named_is_the_one_reported(
     milestone(tmp_path, "M1.1", body="questa milestone costruisce §1, e non nomina l'altra")
 
     assert generate_stato.unnamed_sections(tmp_path) == [(2, "Seconda")]
+
+
+SPEC_WITH_TWO_AND_TWENTY_FOUR = (
+    "# spec\n\n## 2. Filosofia\n\ntesto\n\n## 24. Agent System\n\ntesto\n"
+)
+
+
+def test_a_section_of_the_design_is_not_a_citation_of_the_spec(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """«§N del design» is ``ELA_design.md`` (``CLAUDE.md``), and the two numberings overlap.
+
+    §24 of the design is Motion Design; §24 of the spec is the Agent System, which no milestone has
+    named. Nor may the number be shortened to escape the suffix: ``§24 del design`` is not §2.
+    """
+    write(tmp_path / "docs" / "spec" / "ELA_spec.md", SPEC_WITH_TWO_AND_TWENTY_FOUR)
+    milestone(tmp_path, "M17.1", state="Proposta", body="il movimento di §24 del design")
+
+    assert generate_stato.unnamed_sections(tmp_path) == [(2, "Filosofia"), (24, "Agent System")]
+
+
+def test_the_suffix_of_the_design_belongs_to_the_one_section_it_follows(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """A bare «§N» next to it still cites the spec, and a line break does not split the suffix."""
+    write(tmp_path / "docs" / "spec" / "ELA_spec.md", SPEC_WITH_TWO_AND_TWENTY_FOUR)
+    milestone(tmp_path, "M17.1", state="Proposta", body="§24 del\n  design, accanto a §2")
+
+    assert generate_stato.unnamed_sections(tmp_path) == [(24, "Agent System")]
+
+
+SPEC_WITH_TWO_AND_THREE = "# spec\n\n## 2. Filosofia\n\ntesto\n\n## 3. Obiettivo\n\ntesto\n"
+
+
+def test_a_section_of_an_adr_is_not_a_citation_of_the_spec(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """«ADR NNNN §N» is that ADR (``CLAUDE.md``): §2 of ADR 0024 is the CLI as a client, and says
+    nothing about whether any milestone has named §2 of the spec."""
+    write(tmp_path / "docs" / "spec" / "ELA_spec.md", SPEC_WITH_TWO_AND_THREE)
+    milestone(tmp_path, "M8.2", body="la CLI è un client (ADR 0024 §2)")
+
+    assert generate_stato.unnamed_sections(tmp_path) == [(2, "Filosofia"), (3, "Obiettivo")]
+
+
+@pytest.mark.parametrize(
+    "citation",
+    [
+        "ADR 0024 §2, §3",
+        "ADR 0024 §2 e\n  §3",
+        "ADR\n  0024 §2–§3",
+        "ADR 0024 (§2, §3)",
+        "ADR 0024 §2.1, §3.4",
+    ],
+)
+def test_the_sections_listed_after_an_adr_belong_to_that_adr(
+    tmp_path: Path, generate_stato: ModuleType, citation: str
+) -> None:
+    """A list, a range, a subsection, a line break: the forms the milestones of this repository use
+    when they cite more than one section of the same ADR."""
+    write(tmp_path / "docs" / "spec" / "ELA_spec.md", SPEC_WITH_TWO_AND_THREE)
+    milestone(tmp_path, "M8.2", body=f"vedi {citation}.")
+
+    assert generate_stato.unnamed_sections(tmp_path) == [(2, "Filosofia"), (3, "Obiettivo")]
+
+
+def test_a_section_of_the_spec_after_an_adr_is_still_the_spec(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """The list ends where the words begin: «e la spec §3» is not a section of ADR 0024."""
+    write(tmp_path / "docs" / "spec" / "ELA_spec.md", SPEC_WITH_TWO_AND_THREE)
+    milestone(tmp_path, "M8.2", body="ADR 0024 §2 e la spec §3")
+
+    assert generate_stato.unnamed_sections(tmp_path) == [(2, "Filosofia")]
+
+
+def test_a_section_written_before_its_adr_is_read_as_the_spec(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """A declared limit, not a feature: the convention is «ADR NNNN §N», and the other order is not
+    recognised. On 2026-09-18 the milestones used it in «§13 di ADR 0006» (M9.1) and «§3 dell'ADR»
+    (M11.3), and both sections were cited elsewhere as well. The day the rule learns this order,
+    this fails and says so."""
+    write(tmp_path / "docs" / "spec" / "ELA_spec.md", SPEC_WITH_TWO_AND_THREE)
+    milestone(tmp_path, "M9.1", body="§3 di ADR 0006")
+
+    assert generate_stato.unnamed_sections(tmp_path) == [(2, "Filosofia")]
 
 
 # ----------------------------------------------------------------------------------------

@@ -95,6 +95,9 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.3b` | Implementata | La cartella del segreto del nodo: `0o700` anche dove il Core non l'ha creata prima |
 | 12 — I nodi sulla rete | `M12.3c` | Implementata | Chi legge l'alimentazione: un campo che l'orchestratore pesa e che nessuna macchina produceva |
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
+| 17 — *senza nome* | `M17.1` | Proposta | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
+| 17 — *senza nome* | `M17.2` | Proposta | Il Command Center v1: un client dell'API, e gli stati di ELA come proiezione |
+| 17 — *senza nome* | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
 
 <!-- fine del blocco generato: le milestone -->
 
@@ -108,7 +111,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **40** | `docs/adr/NNNN-*.md` |
-| Milestone | **44, di cui 43 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **47, di cui 43 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **54** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **25** | i `Protocol` di `src/ela/ports.py` |
@@ -129,28 +132,38 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
   nodo: un processo separato che esegue le chiamate del Core e le riporta, e che recita le tredici
   storie del contratto senza dichiararne nessuna irrecitabile, e M12.4 il **secondo sistema**: un PC
   Windows che prende le chiamate del Core attraverso la tailnet, protegge il suo segreto con l'ACL
-  della cartella e parla con la voce di Windows. Resta il companion iPhone (M12.5), sullo stesso
-  contratto — e la prova che regge
+  della cartella e parla con la voce di Windows. Resta il companion iPhone (M12.5), dopo M17.1 e
+  sullo stesso contratto — e la prova che regge
   il peso di una seconda implementazione l'ha già data M12.3, trovandogli un buco: un processo che
   riparte non aveva modo di sapere la propria revisione. È la fase a cui una dozzina di documenti
   hanno rimandato qualcosa: `grep -rn "Fase 12" docs/` è l'elenco di ciò che va onorato, e
   `launchd` con il portachiavi è ciò che resta murato finché ELA non avrà un eseguibile firmato
   suo (ADR 0029 §16, ADR 0039 §6).
+- **Fase 17 — il design.** Registrata il 2026-09-18: la fonte di verità è
+  [`spec/ELA_design.md`](spec/ELA_design.md), e le decisioni sono nella 5.10 — M17.1 il Design
+  System, M17.2 il Command Center v1, M17.3 la presenza desktop. **La prossima milestone è M17.1**,
+  e viene **prima di M12.5**, perché il companion usa l'identità che M17.1 definisce (§20 del
+  design). L'ordine è M17.1 → M12.5 → M17.2 → Fase 13, e M17.3 alla fine.
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
   perché un trascritto è memoria e la memoria è lì.
-- **Le altre fasi non hanno un contenuto scritto.** Il blocco qui sotto elenca le fasi **oltre
-  l'ultima che ha una milestone** che un documento del repository nomina, e ciò che non compare non
-  è dimenticato: è **non ancora deciso**, e il posto dove deciderlo è una SPEC di milestone, non
-  questo file. La Fase 12 è uscita da quell'elenco nel momento in cui ha avuto la sua prima
-  milestone — che è il modo in cui una lista derivata dice che una fase ha smesso di essere futura.
+- **Le altre fasi non hanno né una milestone né una SPEC.** Il blocco qui sotto elenca le fasi che
+  un documento del repository nomina e che **nessuna milestone ha ancora cominciato** — nessuna
+  delle loro è uscita da `Proposta` —, e ciò che non compare non è dimenticato: è **non ancora
+  deciso**, e il posto dove deciderlo è una SPEC di milestone, non questo file. La Fase 12 è uscita
+  da quell'elenco quando la sua prima milestone è uscita da `Proposta` — che è il modo in cui una
+  lista derivata dice che una fase ha smesso di essere futura, ed è lo stesso fatto con cui il
+  changelog le dà un nome. Il numero non conta: la 17 resta nell'elenco finché M17.1 non esce da
+  `Proposta`, anche se comincia prima della 13.
 
 <!-- generato da scripts/generate_stato.py: le fasi che un documento nomina -->
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 15 | 8 |
+| 13 | 2 |
+| 15 | 9 |
+| 17 | 3 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
 
@@ -293,6 +306,84 @@ la sua milestone prima della Fase 14, non dopo**.
 *Perché nessun ADR, per nessuna di queste tre voci:* ADR 0021 e ADR 0022 sono immutabili e dicono il
 vero, e non si toccano. Li rivedranno apertamente §30 e la capability della Fase 14, quando
 esisteranno, ciascuno con il proprio ADR.
+
+### 5.10 Il design è una fase, non una rifinitura
+
+La **Fase 17 si chiama Design**, e la sua fonte di verità è
+[`spec/ELA_design.md`](spec/ELA_design.md), «ELA — Design System & Command Center», accanto a
+`ELA_spec.md`, che una sezione di design visivo non ce l'ha. Le due numerazioni si sovrappongono —
+§6 della spec è l'iPhone, §6 del design sono gli stati di ELA —, quindi qui una sezione del design
+si scrive sempre «§N del design», e un «§N» da solo resta la spec.
+
+- **M17.1 — Design System.** Le voci 3, 4, 5, 6, 7, 8, 18 e 19 di §34 del design — typography,
+  colori, token, componenti, motion, stati d'interazione, comportamento responsive, regole di
+  accessibilità — e **l'identità visiva minima che servono** (§22 del design). E la voce 20, il
+  prototipo, in una forma sola: **una pagina-campionario** che rende token, componenti e stati
+  d'interazione, servita sulla tailnet e aperta in Safari. È ciò che l'utente prova a mano, e non è
+  uno stub: è il riferimento che M12.5 e M17.2 usano. La voce 17, il companion iPhone, la fa
+  **M12.5**, con l'identità di M17.1.
+- **M17.2 — Command Center v1.** Un **client dell'API come la CLI** (ADR 0024 §2), in
+  `apps/command-center/`. Gli stati di §6 del design sono **derivati da ciò che l'API espone, mai
+  memorizzati**. Da quel momento vale una regola fissa: **ogni milestone che aggiunge una capacità
+  aggiunge la sua vista.**
+- **M17.3 — Presenza desktop** (§19 del design), alla fine, dopo le altre fasi.
+
+L'ordine è **M17.1 → M12.5 → M17.2 → Fase 13**, e M17.3 dopo tutte. Il numero di una fase non dice
+quando si fa: M17.1 viene prima dell'ultima milestone della Fase 12.
+
+*Perché è una fase:* è il design stesso a chiederlo. §33 del design vieta di saltare da «ELA deve
+essere futuristica» a «scrivi il codice della dashboard», §22 del design vuole l'identità progettata
+prima della UI definitiva, e §34 del design fa cominciare l'implementazione completa della UI solo
+dopo i suoi deliverable. Una rifinitura arriva dopo il codice e si adatta a ciò che trova; una fase
+ha le sue milestone, e ciò che viene dopo le eredita.
+
+*Perché M17.1 prima di M12.5:* §20 del design dice che l'iPhone usa la stessa identità visiva, e il
+companion è la prima superficie di ELA che non è un terminale. Fatto prima del design system,
+nascerebbe senza identità e andrebbe rifatto.
+
+*Perché M17.2 dopo la Fase 12 e prima della Fase 13:* ciò che il Command Center mostra per primo
+sono i nodi (§11 del design e §12 del design), e prima che la Fase 12 li abbia tutti una vista di un
+nodo che non esiste ancora è uno stub, non un debito. E le prime capability HIGH della Fase 13
+vogliono l'Approval Center di §14 del design e §29 del design già in piedi, perché un'approvazione
+HIGH data da un terminale non nomina ciò che conta.
+
+*Perché il Command Center è un client:* per la ragione della CLI. `ela.api` è l'unica porta da cui
+un «sì» dell'utente entra nel sistema e l'unica che controlla il token; un'approvazione data dal
+Command Center passa da lì, come una data con `ela task approve`, e un Command Center che leggesse
+il database sarebbe un secondo ELA.
+
+*Perché gli stati sono derivati:* uno stato memorizzato è una seconda copia di ciò che il task,
+l'approvazione e il nodo già dicono, e si disallinea alla prima scrittura mancata — la ragione per
+cui lo stato di uno step è la piega della sua trail (ADR 0009 §2) e la disponibilità di un nodo è
+derivata dall'heartbeat (ADR 0016 §3). E un enum del dominio con gli stati di §6 del design
+porterebbe `EVOLVING` e `UPDATING` prima che qualcosa in ELA sappia evolvere o aggiornarsi: valori
+che nessun percorso di produzione può produrre, cioè gli stub «per dopo» che `CLAUDE.md` vieta.
+
+*Perché la regola della vista:* perché il Command Center non diventi un debito che cresce a ogni
+milestone. È la forma del gate della copertura: un package entra nel gate nella milestone che gli dà
+codice, non dopo; una vista entra nella milestone che dà la capacità.
+
+*Perché M17.3 per ultima:* il livello «Expanded» di §19 del design **è** il Command Center, quindi
+la presenza desktop viene dopo M17.2. E dopo le altre fasi per due ragioni: il livello Ambient non ha
+niente da mostrare finché ELA non decide da sola di dire qualcosa — §18 del design, che è la
+Fase 15 —, e una presenza che resta sullo schermo vuole il processo residente che è murato finché
+ELA non ha un eseguibile firmato suo (ADR 0029 §16, ADR 0039 §6).
+
+*Che cosa il design eredita, e non può contraddire:*
+
+- **Niente app iPhone nativa** (la 5.1, qui sopra). Il companion di §20 del design, e la voce 17
+  di §34 del design, si disegnano per ciò che la 5.1 lascia all'iPhone: Shortcuts, notifiche push,
+  Safari sulla rete privata.
+- **Gli stati di §6 del design non sono un enum del dominio: sono una proiezione.** `domain.py` non
+  riceve un valore per ciascuno; si calcolano da ciò che l'API espone.
+- **§10 del design non mostra mai il chain-of-thought.** L'execution summary si compone di ciò che
+  il sistema registra — l'obiettivo, il piano, lo step corrente, il nodo, il modello scelto —, mai
+  del ragionamento di un modello.
+
+*Perché nessun ADR:* sono scelte di prodotto e d'ordine — quale fase, quando, che cosa eredita — e
+nessuna riga di codice le contiene ancora. Le parti tecniche prendono il loro ADR con la milestone
+che le costruisce: la cartella, lo stack e il calcolo della proiezione con M17.2, come la cartella
+della CLI l'ha preso con M8.2 (ADR 0024 §1).
 
 ## 6. I debiti datati
 
