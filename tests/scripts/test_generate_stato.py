@@ -273,6 +273,64 @@ def test_the_suffix_of_the_design_belongs_to_the_one_section_it_follows(
     assert generate_stato.unnamed_sections(tmp_path) == [(24, "Agent System")]
 
 
+SPEC_WITH_TWO_AND_THREE = "# spec\n\n## 2. Filosofia\n\ntesto\n\n## 3. Obiettivo\n\ntesto\n"
+
+
+def test_a_section_of_an_adr_is_not_a_citation_of_the_spec(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """«ADR NNNN §N» is that ADR (``CLAUDE.md``): §2 of ADR 0024 is the CLI as a client, and says
+    nothing about whether any milestone has named §2 of the spec."""
+    write(tmp_path / "docs" / "spec" / "ELA_spec.md", SPEC_WITH_TWO_AND_THREE)
+    milestone(tmp_path, "M8.2", body="la CLI è un client (ADR 0024 §2)")
+
+    assert generate_stato.unnamed_sections(tmp_path) == [(2, "Filosofia"), (3, "Obiettivo")]
+
+
+@pytest.mark.parametrize(
+    "citation",
+    [
+        "ADR 0024 §2, §3",
+        "ADR 0024 §2 e\n  §3",
+        "ADR\n  0024 §2–§3",
+        "ADR 0024 (§2, §3)",
+        "ADR 0024 §2.1, §3.4",
+    ],
+)
+def test_the_sections_listed_after_an_adr_belong_to_that_adr(
+    tmp_path: Path, generate_stato: ModuleType, citation: str
+) -> None:
+    """A list, a range, a subsection, a line break: the forms the milestones of this repository use
+    when they cite more than one section of the same ADR."""
+    write(tmp_path / "docs" / "spec" / "ELA_spec.md", SPEC_WITH_TWO_AND_THREE)
+    milestone(tmp_path, "M8.2", body=f"vedi {citation}.")
+
+    assert generate_stato.unnamed_sections(tmp_path) == [(2, "Filosofia"), (3, "Obiettivo")]
+
+
+def test_a_section_of_the_spec_after_an_adr_is_still_the_spec(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """The list ends where the words begin: «e la spec §3» is not a section of ADR 0024."""
+    write(tmp_path / "docs" / "spec" / "ELA_spec.md", SPEC_WITH_TWO_AND_THREE)
+    milestone(tmp_path, "M8.2", body="ADR 0024 §2 e la spec §3")
+
+    assert generate_stato.unnamed_sections(tmp_path) == [(2, "Filosofia")]
+
+
+def test_a_section_written_before_its_adr_is_read_as_the_spec(
+    tmp_path: Path, generate_stato: ModuleType
+) -> None:
+    """A declared limit, not a feature: the convention is «ADR NNNN §N», and the other order is not
+    recognised. On 2026-09-18 the milestones used it in «§13 di ADR 0006» (M9.1) and «§3 dell'ADR»
+    (M11.3), and both sections were cited elsewhere as well. The day the rule learns this order,
+    this fails and says so."""
+    write(tmp_path / "docs" / "spec" / "ELA_spec.md", SPEC_WITH_TWO_AND_THREE)
+    milestone(tmp_path, "M9.1", body="§3 di ADR 0006")
+
+    assert generate_stato.unnamed_sections(tmp_path) == [(2, "Filosofia")]
+
+
 # ----------------------------------------------------------------------------------------
 # The markers, and the real document
 # ----------------------------------------------------------------------------------------

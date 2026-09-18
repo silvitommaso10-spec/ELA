@@ -109,8 +109,7 @@ def test_the_closing_sections_of_the_spec_really_are_uncited(generator: ModuleTy
     """
     cited: set[int] = set()
     for path in sorted(MILESTONES.glob("M*.md")):
-        text = path.read_text("utf-8")
-        cited |= {int(number) for number in generator.SECTION_MENTION.findall(text)}
+        cited |= generator.spec_citations(path.read_text("utf-8"))
 
     assert generator.CLOSING_SECTIONS & cited == set()
     assert frozenset(range(66, 71)) == generator.CLOSING_SECTIONS

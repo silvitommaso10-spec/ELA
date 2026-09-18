@@ -59,6 +59,21 @@ overlap: §24 of the design is Motion Design, §24 of the spec is the Agent Syst
 written in ``CLAUDE.md`` and read here, so that a milestone citing the design's motion does not take
 the Agent System off the list of what no milestone has named. The lookahead on a digit keeps the
 number whole: without it, «§24 del design» would shorten itself to a citation of §2.
+
+The sections of an ADR are the third numbering, and they are taken out before this is applied
+(:data:`ADR_CITATION`, :func:`spec_citations`).
+"""
+ADR_CITATION = re.compile(
+    r"\bADR\s+\d{4}\s*\(?\s*§\s?\d+(?:\.\d+)*"
+    r"(?:(?:\s*[–-]\s*§?\s?|\s*,\s*§\s?|\s+ed?\s+§\s?)\d+(?:\.\d+)*)*"
+)
+"""A section of an ADR: «ADR NNNN §N», and the sections listed after it.
+
+«ADR 0024 §2» is the CLI as a client, not §2 of the spec, and until 2026-09-18 it counted as both.
+A list continues the ADR — «ADR 0037 §2, §4», «ADR 0024 §2 e §8», «ADR 0015 §5–§7», «ADR 0017
+§6.3», «ADR 0009 (§7» — and ends where words begin: «ADR 0024 §2 e la spec §3» cites §3 of the spec.
+The other order, «§13 di ADR 0006», is not recognised: the convention of ``CLAUDE.md`` is the one
+written here, and the limit is declared in ``tests/scripts/test_generate_stato.py``.
 """
 DEBT_HEADING = re.compile(r"^#{2,3} (\d+)\. Un debito datato: (.+)$", re.MULTILINE)
 NEXT_SECTION = re.compile(r"^#{1,2} ", re.MULTILINE)
@@ -435,6 +450,16 @@ def render_debts(found: Iterable[Debt]) -> str:
 # ----------------------------------------------------------------------------------------
 
 
+def spec_citations(text: str) -> set[int]:
+    """The sections of ``ELA_spec.md`` a document cites, read by the convention of ``CLAUDE.md``.
+
+    «§N» is the spec, «§N del design» is ``ELA_design.md``, «ADR NNNN §N» is that ADR. The ADR
+    citations are blanked rather than deleted, so that no two pieces of text are joined into a
+    citation that was never written.
+    """
+    return {int(number) for number in SECTION_MENTION.findall(ADR_CITATION.sub(" ", text))}
+
+
 def unnamed_sections(root: Path) -> list[tuple[int, str]]:
     """The sections of the spec no milestone document has ever cited.
 
@@ -446,7 +471,7 @@ def unnamed_sections(root: Path) -> list[tuple[int, str]]:
     headings = {int(match.group(1)): match.group(2) for match in SECTION_HEADING.finditer(spec)}
     cited: set[int] = set()
     for path in sorted((root / "docs" / "milestones").glob("M*.md")):
-        cited |= {int(number) for number in SECTION_MENTION.findall(path.read_text("utf-8"))}
+        cited |= spec_citations(path.read_text("utf-8"))
     return [
         (number, title)
         for number, title in sorted(headings.items())
