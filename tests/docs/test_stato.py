@@ -29,7 +29,6 @@ DOCUMENT = ROOT / "docs" / "STATO.md"
 SCRIPT = ROOT / "scripts" / "generate_stato.py"
 SPEC = ROOT / "docs" / "spec" / "ELA_spec.md"
 MILESTONES = ROOT / "docs" / "milestones"
-SECTION_MENTION = re.compile(r"§\s?(\d+)")
 
 
 @pytest.fixture(scope="module")
@@ -110,7 +109,8 @@ def test_the_closing_sections_of_the_spec_really_are_uncited(generator: ModuleTy
     """
     cited: set[int] = set()
     for path in sorted(MILESTONES.glob("M*.md")):
-        cited |= {int(number) for number in SECTION_MENTION.findall(path.read_text("utf-8"))}
+        text = path.read_text("utf-8")
+        cited |= {int(number) for number in generator.SECTION_MENTION.findall(text)}
 
     assert generator.CLOSING_SECTIONS & cited == set()
     assert frozenset(range(66, 71)) == generator.CLOSING_SECTIONS
@@ -133,6 +133,7 @@ def test_the_closing_sections_of_the_spec_really_are_uncited(generator: ModuleTy
         "Chi paga il lavoro agentico",
         "Come si paga una sessione",
         "Il tetto di spesa",
+        "Il design è una fase, non una rifinitura",
     ],
 )
 def test_every_decision_that_lives_in_no_adr_is_written_here(decision: str) -> None:

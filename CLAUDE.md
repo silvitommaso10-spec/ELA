@@ -4,6 +4,7 @@
 ELA è un assistente personale AI distribuito (Core Python, nodi Mac/Windows/iPhone).
 La specifica completa è in `docs/spec/ELA_spec.md`. È la fonte di verità: in caso di
 dubbio leggila. Non inventare comportamenti non descritti lì.
+Nei documenti «§N» è la spec, «§N del design» è `docs/spec/ELA_design.md` (Fase 17).
 
 ## Regola fondamentale
 Lavori su UNA milestone alla volta, quella indicata nel prompt. Non anticipare

@@ -51,7 +51,15 @@ IDENTIFIER = re.compile(r"^M(\d+)\.(\d+)([a-z]*)$")
 PHASE_HEADING = re.compile(r"^### Fase (\d+) — (.+)$", re.MULTILINE)
 PHASE_MENTION = re.compile(r"\bFase (\d+)\b")
 SECTION_HEADING = re.compile(r"^## (\d+)\. (.+)$", re.MULTILINE)
-SECTION_MENTION = re.compile(r"§\s?(\d+)")
+SECTION_MENTION = re.compile(r"§\s?(\d+)(?!\d)(?!\s+del\s+design\b)")
+"""A citation of ``ELA_spec.md``: «§N», and not «§N del design».
+
+The design of Fase 17 (``docs/spec/ELA_design.md``) has a numbering of its own, and the two
+overlap: §24 of the design is Motion Design, §24 of the spec is the Agent System. The convention is
+written in ``CLAUDE.md`` and read here, so that a milestone citing the design's motion does not take
+the Agent System off the list of what no milestone has named. The lookahead on a digit keeps the
+number whole: without it, «§24 del design» would shorten itself to a citation of §2.
+"""
 DEBT_HEADING = re.compile(r"^#{2,3} (\d+)\. Un debito datato: (.+)$", re.MULTILINE)
 NEXT_SECTION = re.compile(r"^#{1,2} ", re.MULTILINE)
 CHARGED = re.compile(r"\*\*Debito a carico (.+?)\*\*, dichiarato il \*\*(\d{4}-\d{2}-\d{2})\*\*")
@@ -276,7 +284,7 @@ def render_figures(rows: Iterable[tuple[str, str, str]]) -> str:
 
 
 # ----------------------------------------------------------------------------------------
-# The phases nobody has built yet
+# The phases nobody has started yet
 # ----------------------------------------------------------------------------------------
 
 
@@ -289,16 +297,23 @@ def documents(root: Path) -> Iterator[tuple[Path, str]]:
 
 
 def future_phases(root: Path) -> list[tuple[int, int]]:
-    """Phases past the last one with a milestone -> how many documents name them.
+    """Phases not started yet -> how many documents name them.
 
-    A phase named by a document is a phase somebody has already written something about; a number
-    that appears here with no milestone is work that has been decided and not started. A number
-    that appears **nowhere** is the honest answer to "what comes after": nothing written yet.
+    A phase is future until one of its milestones leaves ``Proposta``: the same fact that gives it
+    a name in the changelog (:func:`phase_names`). A phase named by a document is a phase somebody
+    has already written something about; a number that appears here is work that has been decided
+    and not started. A number that appears **nowhere** is the honest answer to "what comes after":
+    nothing written yet.
+
+    Until 2026-09-18 the criterion was "past the last phase with a milestone", which read the number
+    of a phase as its order. That day Fase 17 was registered to start before M12.5; its proposals
+    made 17 the last phase with a milestone, and the block went empty while Fase 13 and Fase 15
+    were still named and still not started.
     """
-    last = max((milestone.phase for milestone in milestones(root)), default=-1)
+    started = {milestone.phase for milestone in milestones(root) if milestone.state != PROPOSED}
     counted: dict[int, int] = {}
     for _, text in documents(root):
-        for phase in {int(match) for match in PHASE_MENTION.findall(text) if int(match) > last}:
+        for phase in {int(match) for match in PHASE_MENTION.findall(text)} - started:
             counted[phase] = counted.get(phase, 0) + 1
     return sorted(counted.items())
 
