@@ -35,6 +35,7 @@ driver of a real node, on its machine, is what counts.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any
@@ -55,7 +56,7 @@ from ela.tools.verifiers import SPEECH_TEXT_MATCHES, SPEECH_TOOK_REAL_TIME
 from tests.api.support import echo_plan, note_plan
 from tests.conformance.driver import Conformance, NodeDriver, NodeKit, needs
 from tests.conformance.fake_node import FAKE
-from tests.conformance.macos_node import MACOS
+from tests.conformance.real_node import MACOS, WINDOWS
 
 E = AuditEventType
 T = TaskEventType
@@ -63,19 +64,36 @@ PAST_THE_TTL = timedelta(seconds=61)
 """One second past ``ELA_ASSIGNMENT_TTL_SECONDS`` of the suite: the work is over, and so is the
 Core's belief that the node is there (the heartbeat TTL is a minute too)."""
 
-KITS: tuple[NodeKit, ...] = (FAKE, MACOS)
-"""Every implementation that recites the contract. M12.4–M12.5 append theirs here, and the stories
+KITS: tuple[NodeKit, ...] = (FAKE, MACOS, WINDOWS)
+"""Every implementation that recites the contract. M12.5 appends its own here, and the stories
 below do not change — which is the whole claim of dec. P.
 
 Two since M12.3, and the second is the one that matters: ``macos-node`` is the code ``ela node run``
 runs, not an implementation written for this file. The first thing it found was a hole — a process
 that comes back has no revision to announce against, and nothing in the protocol gave it one — and
-that is what ``GET /nodes/me`` and the two new lines of story 11 are (M12.3 dec. L)."""
+that is what ``GET /nodes/me`` and the two new lines of story 11 are (M12.3 dec. L).
+
+Since M12.4 the second is :class:`~tests.conformance.real_node.RealNodeKit` naming ``Darwin``: the
+real node's driver takes the system it builds as a name, so the composition a kit recites does not
+depend on the runner the suite happens to run on (ADR 0031 §3). The third, ``windows-node``, is the
+same driver naming Windows (M12.4 dec. G)."""
 
 
 @pytest.fixture(params=KITS, ids=lambda kit: kit.name)
 def kit(request: pytest.FixtureRequest) -> NodeKit:
-    return request.param  # type: ignore[no-any-return]
+    """A kit, and the one kit a Windows runner cannot build, declared (M12.4 dec. G).
+
+    ``macos-node`` writes its secret with the ``BITS`` mode, and on a PC Python 3.12 has no
+    ``os.fchmod``: P1 saw its stories fall at that line. Skipped here, where the summary names it,
+    in the form of ``tests/infrastructure/persistence/test_engine.py:80`` — not as a
+    ``pytest.param`` in :data:`KITS`, which has no ``name`` for ``test_unsupported.py`` to read, and
+    not in the kit's ``unsupported`` map, which speaks of the protocol and not of the machine the
+    suite runs on.
+    """
+    chosen: NodeKit = request.param
+    if os.name == "nt" and chosen is MACOS:
+        pytest.skip("POSIX permission bits: the macos-node kit writes its secret with os.fchmod")
+    return chosen
 
 
 def speak_plan() -> dict[str, Any]:

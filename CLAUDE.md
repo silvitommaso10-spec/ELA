@@ -51,7 +51,7 @@ e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.
   che eredita da quella macchina passa lì e fallisce sull'altra — è successo il 2026-09-08, e la
   CI se n'è accorta undici minuti dopo il merge. Questo target rifà la suite e il gate della
   copertura fingendo l'altra metà della matrice. **Ha dei limiti e sono scritti in
-  `tests/foreign_machine.py`**: finge `platform.system()` e i tre binari di Apple, e nient'altro
+  `tests/foreign_machine.py`**: finge `platform.system()` e i binari di Apple che `tests/foreign_machine.py` elenca, e nient'altro
   — resta CPython su macOS, non dimostra che Linux funzioni, e non dice niente su tempi e
   installazione. Verde lì significa che la suite non sta ereditando la macchina; verde sul runner
   vero resta l'unica cosa che conta.

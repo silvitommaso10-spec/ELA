@@ -111,6 +111,10 @@ class SaySpeechCommand:
 
         ``-v`` names the voice, which comes from configuration and never from the caller. The
         text goes after :data:`END_OF_OPTIONS` so that a sentence cannot become a flag.
+
+        A timeout still reports how long the child lived, which for ``say`` is the measure. The
+        voice of a PC does not (:class:`~ela.infrastructure.machine.windows.SapiSpeechCommand`): its
+        measure is a stopwatch a killed script never writes, and the difference is declared there.
         """
         argv = [self._binary, "-v", self._voice, END_OF_OPTIONS, text]
         started = time.monotonic()
@@ -127,10 +131,11 @@ class SaySpeechCommand:
 class UnsupportedSpeech:
     """Says nothing, and says so (:class:`~ela.ports.SpeechPort`).
 
-    ELA runs on Linux in CI and will run on Windows nodes (§4), and neither has ``say``. Written
-    as a class rather than an ``if`` somewhere for the reason ADR 0028 gave ``UnsupportedProbe``:
-    "ELA on Linux says nothing" becomes a thing with a name, a test and an error code the user can
-    read, instead of a gap somebody discovers.
+    ELA runs on Linux in CI, which has no voice ELA can use (a PC has one since M12.4:
+    :class:`~ela.infrastructure.machine.windows.SapiSpeechCommand`). Written as a class rather than
+    an ``if`` somewhere for the reason ADR 0028 gave ``UnsupportedProbe``: "ELA on Linux says
+    nothing" becomes a thing with a name, a test and an error code the user can read, instead of a
+    gap somebody discovers.
     """
 
     __slots__ = ()
@@ -187,6 +192,17 @@ class OnlineSpeechCommand:
     **What is timed is the sound.** ``spoken_seconds`` covers the player and nothing else; the
     round-trip is reported apart. One number carrying both would let a sentence that never played
     look like one that did, to the one verifier that has no other witness (ADR 0033 §5).
+
+    **``binary=None`` is a value, not an omission** (M12.4 dec. E, F). The default is ``AFPLAY``;
+    ``None`` means *ELA knows no player for this system*, and it is the only value that can say
+    *nobody*. Not a path that happens to be missing: a path is asked of the filesystem, and the
+    answer would then depend on the machine running the code rather than on the system a node was
+    built for — ``afplay`` is there on the Mac that runs a test naming Windows. With ``None``,
+    :meth:`available` answers no everywhere, :meth:`speak` says ``speech.no_player`` after the key,
+    and :meth:`play` starts nothing; the composition chooses it by naming the system. **Not the
+    shape of M12.3c's interpretation 6**, where ``None`` was the default of a parameter — *not
+    said* — and a system nobody reads took a name of its own, ``power_nobody_reads``. Here nothing
+    is left unsaid, and a class for one value would be the abstraction that precedes the case.
     """
 
     __slots__ = ("_binary", "_directory", "_spawn", "_synthesise", "_unconfigured")
@@ -198,7 +214,7 @@ class OnlineSpeechCommand:
         unconfigured: Unconfigured,
         directory: Path,
         runner: SpawnWithAudio = spawn_with_audio,
-        binary: str = AFPLAY,
+        binary: str | None = AFPLAY,
     ) -> None:
         self._synthesise = synthesise
         self._unconfigured = unconfigured
@@ -213,6 +229,8 @@ class OnlineSpeechCommand:
         configuration, and one boolean for both questions is the ambiguity ADR 0030 §8 exists to
         split. This one is about the machine, like its counterpart in :class:`SaySpeechCommand`.
         """
+        if self._binary is None:
+            return False
         return os.access(self._binary, os.X_OK) and Path(self._binary).is_file()
 
     async def speak(self, text: str) -> RawSpeech:
@@ -249,6 +267,8 @@ class OnlineSpeechCommand:
         (ADR 0034 §9), which :meth:`speak` cannot express and must not: the voice ELA speaks with
         is configuration, and a caller that could pick one could change who appears to be talking.
         """
+        if self._binary is None:
+            return RawSpeech(error=SPEECH_NO_PLAYER, synthesis_seconds=said.seconds)
         started = time.monotonic()
         try:
             code, _ = await self._spawn(

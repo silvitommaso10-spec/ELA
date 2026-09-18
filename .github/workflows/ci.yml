@@ -38,3 +38,34 @@ jobs:
 
       - name: make check
         run: make check
+
+  # M12.4 dec. H: the node's suite on a real Windows machine, before the merge — the lesson of
+  # 2026-09-08 in CLAUDE.md, for the one package that runs on a PC. A named list and not the whole
+  # suite, with no coverage gate and no `make`: the Makefile is POSIX shell, and the rest of the suite
+  # does not run on Windows (M12.4, Out of scope 5).
+  node-windows:
+    name: node suite (windows-latest)
+    runs-on: windows-latest
+    steps:
+      # `core.autocrlf` is left to the runner's default, on purpose: the job runs as someone who
+      # clones without flags, which is what `.gitattributes` protects (M12.4, «Da portare
+      # all'utente» 7).
+      - uses: actions/checkout@v4
+
+      - name: Install uv (with cache)
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      # No `-q`: `addopts` has one, and with two pytest drops the line of counts criterion 17 reads.
+      # `-rs` names every skip with its reason — the Darwin kit's and the 0o600 bits' among them —
+      # because a skip the summary does not name is a defence that does not exist (review of dec. G).
+      - name: The node's suite
+        run: uv run pytest -p no:cacheprovider --no-cov -rs tests/node tests/conformance tests/composition/test_build_node.py

@@ -119,7 +119,6 @@ from ela.executive.errors import (
     AssignmentVoidError,
     DeliveryConflictError,
     ExecutorError,
-    WorkNotYoursError,
 )
 from ela.permissions import (
     DEFAULT_AUTHORIZATION_TTL,
@@ -900,30 +899,18 @@ class Executor:
         A ``DELIVERED`` row comes back: whether it is the same envelope or another one is the
         caller's question, and the digest is the only thing that can answer it.
 
-        The three ways work is "not this node's" raise **one** error with one message — unknown,
-        another's, not taken any more — because a node told them apart could map which assignments
-        exist for the others. The audit keeps the difference (``assignment_known``).
+        The three ways work is "not this node's" — unknown, another's, not taken any more — are
+        :meth:`~ela.executive.assignments.Assignments.mine`'s: one door for a delivery and a
+        renewal, one error with one message, and the difference kept in the audit
+        (``assignment_known``).
         """
-        try:
-            assignment = await self._assignments.held(assignment_id)
-        except NotFoundError:
-            await self._assignments.reject(
-                device_id,
-                WorkRejection.NOT_ASSIGNED,
-                assignment_id=assignment_id,
-                known=False,
-            )
-            raise WorkNotYoursError(assignment_id) from None
-        if assignment.device_id != device_id:
-            await self._assignments.reject(
-                device_id, WorkRejection.NOT_ASSIGNED, assignment_id=assignment_id, known=True
-            )
-            raise WorkNotYoursError(assignment_id)
+        assignment = await self._assignments.mine(
+            assignment_id,
+            device_id,
+            states=frozenset({AssignmentState.CLAIMED, AssignmentState.DELIVERED}),
+        )
         if assignment.state is AssignmentState.DELIVERED:
             return assignment
-        if assignment.state is not AssignmentState.CLAIMED:
-            await self._refuse(assignment, device_id, WorkRejection.NOT_ASSIGNED)
-            raise WorkNotYoursError(assignment_id)
         if assignment.expires_at <= now:
             await self._refuse(assignment, device_id, WorkRejection.LATE, reported=envelope.status)
             raise AssignmentExpiredError(assignment_id, assignment.expires_at)

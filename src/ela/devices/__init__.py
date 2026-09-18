@@ -25,12 +25,16 @@ from ela.devices.errors import (
 )
 from ela.devices.local import (
     DEVICE_NAMESPACE,
+    DRAWING_FROM,
     LOCAL_DEVICE_ID,
     LOCAL_DEVICE_NAME,
     LOCAL_USER,
+    POWER_LINE,
     SYSTEMS,
     local_device,
     operating_system,
+    power_drawn_from,
+    power_on_the_line,
 )
 from ela.devices.orchestrator import (
     NETWORK_POINTS,
@@ -110,4 +114,8 @@ __all__ = [
     "LocalDeviceNotRevocableError",
     "LOCAL_USER",
     "Rejection",
+    "DRAWING_FROM",
+    "POWER_LINE",
+    "power_drawn_from",
+    "power_on_the_line",
 ]

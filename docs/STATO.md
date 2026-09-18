@@ -90,7 +90,11 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 11 — La voce | `M11.3` | Implementata | La voce di §9: la prima frase che esce da questa macchina |
 | 12 — I nodi sulla rete | `M12.1` | Implementata | L'identità: provare chi si è, e poter smettere di esserlo |
 | 12 — I nodi sulla rete | `M12.2` | Implementata | L'assegnazione e il protocollo del lavoro: la chiamata al tool fatta da lontano, e il tempo che decide per chi tace |
+| 12 — I nodi sulla rete | `M12.2b` | Implementata | Il rinnovo passa per la porta della consegna: una frase, un codice e un audit per ogni «non è tuo» |
 | 12 — I nodi sulla rete | `M12.3` | Implementata | Il nodo macOS: questa macchina diventa un nodo, e il contratto si implementa invece di descriversi |
+| 12 — I nodi sulla rete | `M12.3b` | Implementata | La cartella del segreto del nodo: `0o700` anche dove il Core non l'ha creata prima |
+| 12 — I nodi sulla rete | `M12.3c` | Implementata | Chi legge l'alimentazione: un campo che l'orchestratore pesa e che nessuna macchina produceva |
+| 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
 
 <!-- fine del blocco generato: le milestone -->
 
@@ -103,15 +107,15 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **39** | `docs/adr/NNNN-*.md` |
-| Milestone | **40, di cui 39 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **53** | `RULES` in `tests/architecture/` |
+| ADR scritti | **40** | `docs/adr/NNNN-*.md` |
+| Milestone | **44, di cui 43 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **54** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **25** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **8** | `production_catalogue()` |
 | Rotte dell'API | **29** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
-| Vincoli dichiarati negli ADR | **160** | le sezioni «Vincoli dichiarati» |
+| Vincoli dichiarati negli ADR | **184** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
 
@@ -123,8 +127,10 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
   processo su una macchina. M12.1 ha dato a un nodo un'identità provabile, M12.2 il protocollo del
   lavoro con la sua suite di conformità, M12.3 il **primo nodo vero** — questo Mac, che è anche un
   nodo: un processo separato che esegue le chiamate del Core e le riporta, e che recita le tredici
-  storie del contratto senza dichiararne nessuna irrecitabile. Restano il Power Node Windows
-  (M12.4) e il companion iPhone (M12.5), che stanno sullo stesso contratto — e la prova che regge
+  storie del contratto senza dichiararne nessuna irrecitabile, e M12.4 il **secondo sistema**: un PC
+  Windows che prende le chiamate del Core attraverso la tailnet, protegge il suo segreto con l'ACL
+  della cartella e parla con la voce di Windows. Resta il companion iPhone (M12.5), sullo stesso
+  contratto — e la prova che regge
   il peso di una seconda implementazione l'ha già data M12.3, trovandogli un buco: un processo che
   riparte non aveva modo di sapere la propria revisione. È la fase a cui una dozzina di documenti
   hanno rimandato qualcosa: `grep -rn "Fase 12" docs/` è l'elenco di ciò che va onorato, e

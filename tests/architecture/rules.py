@@ -143,7 +143,15 @@ MAIN_GUARD = "__main__"
 #: state. This is what makes the coverage exemption honest instead of promised — no runner has a
 #: webcam, so the adapter cannot be covered, and a module that cannot be covered must not decide.
 #: An adapter that does not know the words cannot use them wrongly.
-PERCEPTION_VOCABULARY = frozenset({"SensorState", "SensorCause", "PermissionState"})
+#:
+#: M12.3c adds ``PowerSource`` (review of 2026-09-16). The readers of the power source hand over
+#: the machine's words — ``"AC Power"``, ``("Online", 0)`` — and the maps in ``ela.devices.local``
+#: decide what they are worth: a reader that imports ``PowerSource``, or reaches it by attribute to
+#: choose between ``AC`` and ``BATTERY``, is deciding where the gate cannot see. Listed by hand
+#: because this file reads the AST and imports nothing of ``ela``. **Its limit**: the rule reads
+#: names, so a reader returning the strings ``"AC"`` or ``"BATTERY"`` is not seen — a detector that
+#: saw it would read every string constant of the package.
+PERCEPTION_VOCABULARY = frozenset({"SensorState", "SensorCause", "PermissionState", "PowerSource"})
 
 #: Rule 35 (M10.2, ADR 0029 §12): the captured image does not leave the machine. The modules that
 #: hold a screen capture name no router, no provider registry and no HTTP client — the sentence
@@ -184,11 +192,16 @@ CAPTURE_MODULES = (
 #: paid that debt: the rule is ``content-stays-on-the-machine``, and the three ADRs that name the
 #: old id keep naming it, resolved through :data:`RENAMED_RULES`. The tuples stayed separate
 #: through the rename, which is the whole point of them.
+#:
+#: M12.4 dec. D adds the voice of a PC, which lives in the one module for Windows beside the reader
+#: of the power source — so the three rules that read this tuple read that reader too, and found
+#: nothing to say about it.
 VOICE_MODULES = (
     Path("tools") / "voice.py",
     Path("tools") / "voice_online.py",
     MACHINE_ADAPTER_DIR / "speech.py",
     MACHINE_ADAPTER_DIR / "audition.py",
+    MACHINE_ADAPTER_DIR / "windows.py",
 )
 
 #: M11.2: the same rule again, over the modules that hold **what ELA hears** — and this is the
@@ -337,6 +350,15 @@ BIRTH_CONSTRUCTOR = "local_device"
 #: symbol, it is a string in an ``argv`` list, and a rule reading imports would be silent on the
 #: only code that could break it.
 VOICE_OUTPUT_FLAGS = frozenset({"-o", "--output-file", "--file-format", "--data-format"})
+#: Rule 40, tightened by M12.4 dec. D: the same decision in the vocabulary of Windows. System.Speech
+#: has three ways of sending a sentence somewhere other than the speaker, and each one is a method
+#: called **inside** a PowerShell script — a line of a constant, never a constant of its own. So
+#: these are looked for as **substrings** of every string constant of the voice's modules, where the
+#: flags above are compared whole: a rule comparing whole constants would pass a negative case
+#: written as a lone literal and stay silent on the real script.
+SYSTEM_SPEECH_OUTPUTS = frozenset(
+    {"SetOutputToWaveFile", "SetOutputToWaveStream", "SetOutputToAudioStream"}
+)
 
 #: Rule 36 (M10.3 dec. 3): ELA never reads a window title. ``kCGWindowOwnerName`` and the geometry
 #: come free and are *state*; ``kCGWindowName`` costs the same TCC grant as a screenshot and is
@@ -648,7 +670,7 @@ EXECUTOR_RECEIVERS = frozenset({"_executor"})
 #: machine the Core is not.
 NODE_RUNNER_MODULE = Path("node") / "runner.py"
 NODE_TOOL_RECEIVERS = frozenset({"tool"})
-#: Rule 53 (ADR 0039 §5, M12.3): the package a node's cycle lives in.
+#: Rules 53 and 54 (ADR 0039 §5, M12.3; M12.4 dec. A): the package a node's cycle lives in.
 NODE_DIR = "node"
 #: Rule 53: what minting a deadline looks like. ``timedelta(...)`` is how a duration becomes a
 #: point in time, and ``expires_at=`` is how one is handed to something that stores it. Reading the
@@ -657,6 +679,15 @@ NODE_DIR = "node"
 #: it. Subtracting two instants to learn how long is left is not minting either, and stays legal.
 DEADLINE_BUILDERS = frozenset({"timedelta"})
 DEADLINE_FIELD = "expires_at"
+#: Rule 54 (M12.4 dec. A): the questions that name a system — by import (``import platform``,
+#: ``from sys import platform``) or by attribute (``os.name``, ``sys.platform``,
+#: ``sys.version_info``). A dotted name, matched as a prefix of what is imported and exactly against
+#: what is read, so ``import sys`` and ``os.open`` stay legal.
+MACHINE_QUESTIONS = frozenset({"platform", "sys.platform", "sys.version_info", "os.name"})
+#: Rule 54: the other way of asking, and the likelier one — whether ``os`` *has* something.
+#: ``getattr(os, "O_NOFOLLOW", 0)`` was in the secret's writer until M12.4 dec. B.
+MACHINE_PROBES = frozenset({"getattr", "hasattr"})
+PROBED_MODULE = "os"
 #: ``connection`` was in this set and no module ever used it: ADR 0013 §9 wrote three names and
 #: the persistence has always executed through ``session`` and ``cursor``. Withdrawn by ADR 0027,
 #: with its price written there: the day the persistence executes on a ``connection`` this rule
@@ -1998,6 +2029,11 @@ def check_the_voice_writes_no_file(pkg_root: Path) -> list[Violation]:
     Reads the **literals** in the voice modules, the way rule 36 reads a CoreFoundation key: a
     flag is a string in an ``argv`` list, never an import, so a rule that read imports would be
     mute on the only line that could break it.
+
+    **Two shapes of literal since M12.4 dec. D.** A flag of ``say`` is a whole constant; a method
+    of System.Speech is a line inside a PowerShell script, so :data:`SYSTEM_SPEECH_OUTPUTS` is
+    looked for inside every string constant. Its limit, written: a script assembled at run time
+    from pieces that each lack the name — ``"SetOutputTo" + "WaveFile"`` — is not seen.
     """
     rule = "the-voice-writes-no-file"
     found: list[Violation] = []
@@ -2007,12 +2043,21 @@ def check_the_voice_writes_no_file(pkg_root: Path) -> list[Violation]:
             continue
         name = module_name(path, pkg_root)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        literals = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        ]
         found.extend(
             Violation(rule, name, node.value, node.lineno)
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-            and node.value in VOICE_OUTPUT_FLAGS
+            for node in literals
+            if node.value in VOICE_OUTPUT_FLAGS
+        )
+        found.extend(
+            Violation(rule, name, method, node.lineno)
+            for node in literals
+            for method in sorted(SYSTEM_SPEECH_OUTPUTS)
+            if method in node.value
         )
     return found
 
@@ -2252,6 +2297,9 @@ def check_adapter_names_no_state(pkg_root: Path) -> list[Violation]:
     adapter's exemption is therefore paid for structurally: it hands over primitives — an ``int``
     for an ``AVAuthorizationStatus``, ``None`` for "not read" — and :func:`ela.perception.interpret`
     decides what they mean, inside the package the gate does cover.
+
+    Since M12.3c the same holds for the power source: the readers hand over words, and
+    :mod:`ela.devices.local` decides whether they mean ``AC``.
 
     Reported as an *import* and as a *name*: a module that never imports ``SensorState`` cannot
     build one, and one that mentions it by attribute is reaching for the same words the long way.
@@ -2753,6 +2801,53 @@ def check_a_node_mints_no_deadline(pkg_root: Path) -> list[Violation]:
     return found
 
 
+def check_a_node_does_not_ask_which_machine_it_is(pkg_root: Path) -> list[Violation]:
+    """Rule 54: no module of ``ela.node`` asks the machine which machine it is (M12.4 dec. A).
+
+    ADR 0039 §1 wrote it in prose — «un modulo per sistema dietro una porta, mai un ``if
+    platform.system()`` dentro il ciclo» — and M12.4 found that the platform decides **three**
+    things about a node, not one: its voice, what it declares, and how its secret is written. All
+    three are chosen by the composition, naming the system (ADR 0031 §3), and handed to the node
+    already chosen; a node that asked again would be a second place where the choice is made, and
+    the one no test that names a system could reach.
+
+    So: under ``ela.node``, no import of ``platform``, no ``sys.platform``, ``os.name`` or
+    ``sys.version_info``, and no ``getattr`` or ``hasattr`` whose first argument is the module
+    ``os`` — the shape "does ``os`` have ``fchmod``", which is how the question is really asked, and
+    which the secret's writer asked until dec. B. **Born without exemptions.**
+
+    **Its limit, written**: a ``try: os.fchmod(...) except AttributeError`` asks the same question
+    and is not seen, and a detector that saw it would read every ``except AttributeError`` of the
+    package; nor are ``os`` or ``sys`` imported under another name.
+    """
+    rule = "a-node-does-not-ask-which-machine-it-is"
+    files = list(_source_files(pkg_root / NODE_DIR))
+    found = _violations(
+        rule,
+        iter(files),
+        pkg_root,
+        lambda imported: any(_is_within(imported, asked) for asked in MACHINE_QUESTIONS),
+    )
+    for path in files:
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                read = f"{node.value.id}.{node.attr}"
+                if read in MACHINE_QUESTIONS:
+                    found.append(Violation(rule, name, read, node.lineno))
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in MACHINE_PROBES
+                and node.args
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id == PROBED_MODULE
+            ):
+                found.append(Violation(rule, name, f"{node.func.id}({PROBED_MODULE}", node.lineno))
+    return found
+
+
 RULES: dict[str, Rule] = {
     "domain": check_domain,
     "ports": check_ports,
@@ -2811,6 +2906,7 @@ RULES: dict[str, Rule] = {
     "a-work-order-goes-only-to-its-node": check_a_work_order_goes_only_to_its_node,
     "results-are-minted-by-the-core": check_results_are_minted_by_the_core,
     "a-node-mints-no-deadline": check_a_node_mints_no_deadline,
+    "a-node-does-not-ask-which-machine-it-is": check_a_node_does_not_ask_which_machine_it_is,
 }
 
 
@@ -3276,6 +3372,18 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     Constant("testing-isolation", "TESTING_DIR", DETECTOR),
     Constant("testing-isolation", "TESTING_PACKAGE", DETECTOR),
+    # a-node-does-not-ask-which-machine-it-is (rule 54, M12.4 dec. A)
+    Constant("a-node-does-not-ask-which-machine-it-is", "MACHINE_PROBES", DETECTOR),
+    Constant("a-node-does-not-ask-which-machine-it-is", "MACHINE_QUESTIONS", DETECTOR),
+    Constant("a-node-does-not-ask-which-machine-it-is", "NODE_DIR", DETECTOR),
+    Constant("a-node-does-not-ask-which-machine-it-is", "PROBED_MODULE", DETECTOR),
+    Constant(
+        "a-node-does-not-ask-which-machine-it-is",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # a-node-mints-no-deadline (rule 53, M12.3)
     Constant("a-node-mints-no-deadline", "DEADLINE_BUILDERS", DETECTOR),
     Constant("a-node-mints-no-deadline", "DEADLINE_FIELD", DETECTOR),
@@ -3315,6 +3423,7 @@ CONSTANTS: tuple[Constant, ...] = (
     # the-voice-writes-no-file (rule 40, M11.1 dec. 7)
     Constant("the-voice-writes-no-file", "VOICE_MODULES", DETECTOR),
     Constant("the-voice-writes-no-file", "VOICE_OUTPUT_FLAGS", DETECTOR),
+    Constant("the-voice-writes-no-file", "SYSTEM_SPEECH_OUTPUTS", DETECTOR),
     Constant(
         "the-voice-writes-no-file",
         "ROOT_PACKAGE",

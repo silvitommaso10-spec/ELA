@@ -118,7 +118,10 @@ async def run_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> RunOut:
     # The local node is this process: a request being served is proof it is alive, and without a
     # heartbeat within the TTL the orchestrator would find no eligible node and the task would
     # wait forever (ADR 0016 §3). A node that reports itself on a schedule is M8.3.
-    await ela.devices.heartbeat(LOCAL_DEVICE_ID)
+    #
+    # With what the machine runs on, read here and not remembered from start-up (M12.3c): a laptop
+    # is unplugged in the middle of a session, and the placement that follows weighs it.
+    await ela.devices.heartbeat(LOCAL_DEVICE_ID, power_source=await ela.power())
     running.add(identifier)
     try:
         run = await ela.runner.run(identifier)

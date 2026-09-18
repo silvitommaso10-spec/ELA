@@ -30,7 +30,7 @@ from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app
 from ela.composition import Settings, build
-from ela.testing.fakes import FakeClock
+from ela.testing.fakes import FakeClock, FakePower
 from tests.api.support import AUTHORIZED, BASE
 from tests.composition.support import create_schema, declare
 from tests.conformance.driver import Conformance
@@ -75,7 +75,9 @@ async def _started(
     The lifespan matters and is not decoration: ``recover()`` runs there, and "the Core dies
     halfway" is a story about what the **next** start-up does with what the last one left.
     """
-    ela = await build(settings, clock=clock)
+    # ``UNKNOWN``, as ``local`` was before M12.3c: the stories place work on a node that reports
+    # ``AC``, and whether this Mac is plugged in is not part of the contract.
+    ela = await build(settings, clock=clock, power=FakePower())
     stack.push_async_callback(ela.aclose)
     app = create_app(ela)
     await stack.enter_async_context(app.router.lifespan_context(app))

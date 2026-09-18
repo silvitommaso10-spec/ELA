@@ -29,7 +29,7 @@ from ela.node.errors import (
     NodeRevoked,
     TwinNode,
 )
-from ela.ports import NotAllowedError
+from ela.ports import NotAllowedError, WireCode
 
 __all__ = ["Node", "declaration", "envelope_of"]
 
@@ -41,31 +41,41 @@ cleanly. Asking at the very end would mean a slow network turns "renewed" into "
 asking immediately would mean asking constantly for work that is about to finish anyway.
 """
 
-DELIVERY_CONFLICT: Final = "delivery.conflict"
-"""``409`` on delivery, and the one that means **the Core has already decided** (ADR 0038 §12)."""
-
 IDLE: Final = "IDLE"
 BUSY: Final = "BUSY"
 """What the node reports of itself, and the only two it can honestly tell apart."""
 
 DECIDED: Final = frozenset({httpx.codes.NOT_FOUND, httpx.codes.GONE})
-"""The statuses on which the Core has decided about this work, so the envelope is nobody's."""
+"""The statuses on which the Core has decided about this work, so the envelope is nobody's.
 
-ALREADY_RUNNING: Final = "already_running"
-"""``409`` on delivery, and the one the node **keeps the envelope** for (ADR 0038 §12).
-
-The Core is busy with that task and has written nothing: this is a "not now". The other ``409``
-there — ``delivery.conflict`` — is the Core having already decided, and then the envelope is
-nobody's. The two are told apart by ``error.code`` and never by the status, which is the same.
+The two ``409`` of a delivery share a status and are told apart by ``error.code``, from the
+vocabulary of the wire (:class:`~ela.ports.WireCode`): ``delivery.conflict`` is the Core having
+decided, ``already_running`` is a "not now" the envelope is kept for (ADR 0038 §12). Until M12.4
+both were strings written again here, and the second was never read by anything.
 """
 
 
-def declaration(world: NodeWorld) -> dict[str, Any]:
+async def declaration(world: NodeWorld) -> dict[str, Any]:
     """What this node says about itself: five fields, and four of them are derived (dec. F).
 
     ``available_tools`` comes from the objects that were actually built, the way the fake node's
     does, and for the same reason: a declaration written by hand is a promise, and the hard filter
     drops a node that lacks a tool it claimed only after a step has already been placed on it.
+    **And from what the machine answers** (M12.4 dec. F): a tool whose half of the machine says it
+    is not available is left out. Until M12.4 a node declared every tool it had built, so a machine
+    with no ``say`` or no player promised a voice anyway — the orchestrator filters by name, and a
+    step could be placed there only to be refused by the machine. On a Mac nothing changes, because
+    the Mac has both.
+
+    **A voice the user switched off is still declared**, and that is deliberate. An ``available()``
+    is a fact of the machine; ``ELA_VOICE_ENABLED=false`` is a choice of the user, and a switch is
+    not a fact of the machine. Declared, the tool arrives and refuses with ``voice.disabled`` —
+    a diagnosis the user can act on, which names the switch and says how to turn it back on
+    (ADR 0033 §9). Left out of the declaration, the step would find no eligible node at all, and
+    "no eligible node" would hide the switch behind a placement that reads like a missing machine.
+
+    ``os`` is the composition's, for the system the node was built for — until M12.4 it was the
+    literal ``"MACOS"`` here.
 
     ``capabilities`` is **empty and deliberately so**: a ``DeviceCapability`` is a trait, no step
     requires one today, and M12.1 D9 keeps ``MISSING_TRAIT`` out of production until some path can
@@ -73,11 +83,25 @@ def declaration(world: NodeWorld) -> dict[str, Any]:
     """
     return {
         "name": world.config.node.node_name,
-        "os": "MACOS",
+        "os": world.os.value,
         "capabilities": [],
-        "available_tools": [tool.name for tool in world.tools.tools()],
+        "available_tools": [
+            tool.name for tool in world.tools.tools() if await _usable(world, tool.name)
+        ],
         "performance": world.config.node.node_performance.value,
     }
+
+
+async def _usable(world: NodeWorld, name: str) -> bool:
+    """Whether this machine can run the tool called ``name``: asked of its half, if it has one.
+
+    Read once per declaration, which is at start-up and on a ``412``: a voice that disappears while
+    the node runs stays declared until the node announces again, and refuses when it is asked.
+    """
+    half = world.voices.get(name)
+    if half is None:
+        return True
+    return await half.available()
 
 
 async def envelope_of(world: NodeWorld, order: Mapping[str, Any]) -> dict[str, Any]:
@@ -174,10 +198,10 @@ class Node:
         story 5 asserts that the second of two announcements is a ``412``. An ``announce`` that
         swallowed it and returned the retry's ``200`` would be the one line that breaks that story.
         """
-        answered = await self._client.announce(declaration(self._world), self._revision)
+        answered = await self._client.announce(await declaration(self._world), self._revision)
         if answered.status == httpx.codes.PRECONDITION_FAILED:
             await self.refresh()
-            answered = await self._client.announce(declaration(self._world), self._revision)
+            answered = await self._client.announce(await declaration(self._world), self._revision)
             if answered.status == httpx.codes.PRECONDITION_FAILED:
                 raise TwinNode(TWIN)
         if answered.status == httpx.codes.UNAUTHORIZED:
@@ -198,12 +222,19 @@ class Node:
         points this node scored in the measurement of dec. K.3 came from two things it had never
         looked at, on a laptop that may well have been on battery. ``STATUS_POINTS``'s own
         docstring says why that is wrong: "an unknown status must score zero … so that a fact
-        nobody observed is never mistaken for a good one". The power source is not sent at all —
-        reading it is a machine adapter, and a node has none yet — and the status is sent because
-        the node does know it: idle when it is about to ask, busy while a tool of its own is
-        running.
+        nobody observed is never mistaken for a good one". The status is sent because the node
+        does know it: idle when it is about to ask, busy while a tool of its own is running.
+
+        **And the power source, read from the machine on every beat** (M12.3c). Until then it was
+        not sent at all — a field the orchestrator weighed and nobody produced. **It is sent even
+        when the reading is** ``UNKNOWN``, and that was decided (review of 2026-09-16): leaving the
+        field out would leave standing an old belief — an ``AC`` nobody has seen since, because the
+        registry writes only what a heartbeat gives — and a periodic belief never decides an action
+        (ADR 0029 §7). ``UNKNOWN`` scores zero, so a reading that failed can cost this node a
+        placement and never win it one.
         """
-        answered = await self._client.report(status=status)
+        power = await self._world.power()
+        answered = await self._client.report(status=status, power_source=power.value)
         if answered.status == httpx.codes.UNAUTHORIZED:
             raise NodeRevoked(REVOKED)
 
@@ -286,7 +317,7 @@ class Node:
         if answered.status == httpx.codes.OK:
             self._held = None  # the Core has it: a node keeps nothing it has been told about
             return
-        decided = answered.status in DECIDED or answered.code == DELIVERY_CONFLICT
+        decided = answered.status in DECIDED or answered.code == WireCode.DELIVERY_CONFLICT
         if decided:
             self._held = None
         # And on anything else the envelope **stays**. The first version let it go on every

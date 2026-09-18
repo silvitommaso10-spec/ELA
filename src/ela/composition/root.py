@@ -20,7 +20,7 @@ from typing import Protocol
 from ela.audit.verifier import AuditVerifier
 from ela.composition.errors import ConfigurationError
 from ela.composition.settings import Settings
-from ela.composition.system import SystemClock, UuidGenerator
+from ela.composition.system import PowerReading, SystemClock, UuidGenerator, power_reading
 from ela.context import ContextCore
 from ela.devices import (
     DeviceOrchestrator,
@@ -147,6 +147,14 @@ class Ela:
     devices: DeviceRegistry
     enrollment: NodeEnrollment
     """How a node gets an identity: codes issued, and spent by the nodes they create (M12.1)."""
+    power: PowerReading
+    """What this machine runs on, read at every heartbeat of ``local`` (M12.3c).
+
+    On ``Ela`` because ``POST /tasks/{id}/run`` writes one of those heartbeats and ``ela.api`` may
+    not name an adapter (architecture rule 27): what the API reaches is this callable. Until M12.3c
+    ``local`` was ``UNKNOWN`` whatever the machine did, and ``POWER_POINTS`` weighed a field nobody
+    could produce.
+    """
     engine: TaskEngine
     orchestrator: DeviceOrchestrator
     executor: Executor
@@ -284,7 +292,9 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
     return play
 
 
-async def build(settings: Settings, *, clock: Clock | None = None) -> Ela:
+async def build(
+    settings: Settings, *, clock: Clock | None = None, power: PowerReading | None = None
+) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
 
     ``clock`` defaults to :class:`~ela.composition.system.SystemClock`, and whoever wants another
@@ -294,6 +304,10 @@ async def build(settings: Settings, *, clock: Clock | None = None) -> Ela:
     rather than a patched module, because a monkeypatch is invisible both to this text and to every
     architecture rule — and because the same instance must survive a second ``build`` over the same
     database, which is how "the Core dies halfway" is played.
+
+    ``power`` is the same shape (M12.3c): it defaults to the reader of the system this machine
+    answers, and a test that places a step between ``local`` and a node names it — otherwise the
+    placement would depend on whether the machine running the suite is plugged in.
 
     :raises ConfigurationError: for anything that makes this configuration unusable — a schema
         nobody migrated, a routing table naming a provider that is not registered, an empty one.
@@ -308,6 +322,8 @@ async def build(settings: Settings, *, clock: Clock | None = None) -> Ela:
     to has lost exactly what this module exists to give.
     """
     clock = SystemClock() if clock is None else clock
+    if power is None:
+        power = power_reading(platform.system())
     ids = UuidGenerator()
     database = make_engine(settings.persistence.db_url)
     try:
@@ -455,7 +471,13 @@ async def build(settings: Settings, *, clock: Clock | None = None) -> Ela:
         # from is UNAVAILABLE, and no step would ever be placed on it (ADR 0016 §3). Keeping it
         # alive over time is another matter: every run says so again (ADR 0023 §9), and the
         # periodic heartbeat of a node that reports itself is M8.3.
-        await devices.heartbeat(LOCAL_DEVICE_ID)
+        #
+        # And what it runs on, read now (M12.3c): the machine's answer, ``UNKNOWN`` where nothing
+        # reads it. Until M12.3c this line carried nothing, and ``local`` was ``UNKNOWN`` on a Mac
+        # plugged into the wall. ``UNKNOWN`` is sent when a reading fails, too: an old belief left
+        # standing would weigh in the next placement, and a periodic belief never decides an action
+        # (ADR 0029 §7; the review of M12.3c, 2026-09-16).
+        await devices.heartbeat(LOCAL_DEVICE_ID, power_source=await power())
 
         engine = TaskEngine(
             repository,
@@ -549,6 +571,7 @@ async def build(settings: Settings, *, clock: Clock | None = None) -> Ela:
         verifiers=verifiers,
         devices=devices,
         enrollment=enrollment,
+        power=power,
         engine=engine,
         orchestrator=orchestrator,
         executor=executor,

@@ -166,11 +166,16 @@ def test_build_node_declares_both_of_its_seams() -> None:
 
 
 def test_the_conseguenze_count_what_this_adr_changed() -> None:
-    """The totals this ADR moved, and it is the one that pins them until another moves them."""
+    """The totals this ADR moved, and it is the one that pins them until another moves them.
+
+    **Rules up to 53 and not ``len(RULES)``** since M12.4 wrote rule 54: an ADR is immutable, so
+    this one keeps saying the total it saw. The pin on *today's* total moved to the ADR that
+    changed it, ADR 0040 (``test_adr_nodes_windows.py``), together with the four beside it.
+    """
     text = conseguenze()
 
     assert "**cinquantatré**" in text
-    assert len(RULES) == 53
+    assert len(_rules_up_to(53)) == 53
     assert "**ventinove**" in text
     assert "**sei**" in text
     assert "**ventisei**" in text

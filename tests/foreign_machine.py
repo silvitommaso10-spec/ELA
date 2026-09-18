@@ -19,7 +19,7 @@ machine too, exactly as on the runner.
 **What it fakes, and it is only this:**
 
 * ``platform.system()`` answers ``Linux``;
-* the three binaries of Apple that ELA reaches for are reported absent.
+* the binaries of Apple that ELA reaches for, as :data:`APPLE_BINARIES` lists them, are absent.
 
 **What it cannot reproduce — read this before trusting it:**
 
@@ -45,7 +45,9 @@ import os
 import platform
 from typing import Any
 
-APPLE_BINARIES = frozenset({"/usr/bin/afplay", "/usr/bin/say", "/usr/bin/screencapture"})
+APPLE_BINARIES = frozenset(
+    {"/usr/bin/afplay", "/usr/bin/pmset", "/usr/bin/say", "/usr/bin/screencapture"}
+)
 """What ELA reaches for on a Mac. Absent here, as they are on a runner."""
 
 FOREIGN_SYSTEM = "Linux"

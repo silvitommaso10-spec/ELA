@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 import pytest
 
+from ela.composition import build_node
 from ela.domain import CapabilityId
 from ela.node import (
     CoreUnreachable,
@@ -28,8 +29,12 @@ from ela.node import (
     envelope_of,
     forever,
 )
-from ela.testing.fakes import FakeClock
+from ela.ports import WireCode
+from ela.testing.fakes import FakeClock, FakeSpeech
+from ela.tools.settings import VoiceSettings
 from tests.node.support import (
+    CORE,
+    config,
     costly,
     dropped,
     node_of,
@@ -158,7 +163,7 @@ async def test_the_envelope_is_kept_when_the_core_says_not_now(tmp_path: Path) -
     given = order(expires_at=SOON, decision=decision())
     script = replies(
         status(200, given),
-        refused(409, "already_running"),
+        refused(WireCode.ALREADY_RUNNING),
         ok({"state": "DELIVERED", "step": "COMPLETED"}),
     )
     node, _ = node_of(world(tmp_path), script)
@@ -172,17 +177,27 @@ async def test_the_envelope_is_kept_when_the_core_says_not_now(tmp_path: Path) -
 
 
 @pytest.mark.parametrize(
-    ("code", "error"),
-    [(409, "delivery.conflict"), (404, "not_assigned"), (410, "too_late")],
+    "error",
+    [
+        WireCode.DELIVERY_CONFLICT,
+        WireCode.NOT_ASSIGNED,
+        WireCode.ASSIGNMENT_EXPIRED,
+        WireCode.ASSIGNMENT_VOID,
+    ],
+    ids=str,
 )
 async def test_the_envelope_is_let_go_when_the_core_has_already_decided(
-    tmp_path: Path, code: int, error: str
+    tmp_path: Path, error: WireCode
 ) -> None:
     """Holding it would be holding the user's content for no reason: the Core is not going to
     change its mind, and the two ``409`` are told apart by ``error.code`` and never by the status.
+
+    Every decision a delivery can be refused with, and not a sample of them: until M12.4 this list
+    had ``(410, "too_late")`` standing for the two ``410`` of ADR 0038 §12 — ``assignment.expired``
+    and ``assignment.void`` — and it was neither.
     """
     given = order(expires_at=SOON, decision=decision())
-    node, _ = node_of(world(tmp_path), replies(status(200, given), refused(code, error)))
+    node, _ = node_of(world(tmp_path), replies(status(200, given), refused(error)))
 
     await node.turn()
 
@@ -236,7 +251,7 @@ async def test_at_the_cap_the_node_stops_asking_instead_of_taking_the_time(
     script = replies(
         status(200, given),
         ok({}),  # the beat that goes with every renewal
-        refused(409, "renewal.capped"),
+        refused(WireCode.ASSIGNMENT_AT_CAP),
         ok({"state": "DELIVERED", "step": "COMPLETED"}),
     )
     node, _ = node_of(slowly(world(tmp_path, clock=FakeClock(NOW))), script)
@@ -390,17 +405,107 @@ async def test_a_ceiling_stops_a_node_whose_core_is_never_coming_back(tmp_path: 
 # ----------------------------------------------------------------------------------------
 
 
-def test_what_a_node_declares_comes_from_the_objects_it_actually_built(tmp_path: Path) -> None:
+async def test_what_a_node_declares_comes_from_the_objects_it_actually_built(
+    tmp_path: Path,
+) -> None:
     """Dec. F: a declaration written by hand is a promise. And ``capabilities`` is empty on
-    purpose — M12.1 D9 keeps ``MISSING_TRAIT`` out of production until some path can produce it."""
+    purpose — M12.1 D9 keeps ``MISSING_TRAIT`` out of production until some path can produce it.
+
+    ``MACOS`` because the world names Darwin, not because a literal says so: until M12.4 it did."""
     built = world(tmp_path, node_name="il-mac")
 
-    said = declaration(built)
+    said = await declaration(built)
 
     assert said["name"] == "il-mac"
     assert said["os"] == "MACOS"
     assert said["capabilities"] == []
     assert said["performance"] == "UNKNOWN"
+    assert set(said["available_tools"]) == {
+        "core-echo",
+        "model-complete",
+        "voice-speak",
+        "voice-speak-online",
+    }
+
+
+async def test_a_voice_this_machine_cannot_use_is_built_but_not_declared(tmp_path: Path) -> None:
+    """M12.4 dec. F. Until M12.4 a node declared every tool it had built, so a machine with no
+    ``say`` and no player promised both voices: the orchestrator filters by name, and a step could
+    be placed there only for the machine to refuse it. The tools are still built — an order that
+    reaches one answers as it always did — and what changes is what the node promises."""
+    built = build_node(
+        config(tmp_path),
+        clock=FakeClock(),
+        speech=FakeSpeech(there=False),
+        speech_online=FakeSpeech(there=False),
+        system="Darwin",
+    )
+
+    said = await declaration(built)
+
+    assert said["available_tools"] == ["core-echo", "model-complete"]
+    assert len(built.tools.tools()) == 4
+
+
+@pytest.mark.parametrize(
+    ("system", "local", "declared"),
+    [
+        ("Windows", FakeSpeech(), ["core-echo", "model-complete", "voice-speak"]),
+        ("Linux", None, ["core-echo", "model-complete"]),
+    ],
+    ids=["Windows", "Linux"],
+)
+async def test_a_node_declares_what_the_named_system_can_use_on_every_runner(
+    tmp_path: Path, system: str, local: FakeSpeech | None, declared: list[str]
+) -> None:
+    """M12.4 criterion 14, the table of dec. F. Windows with its local voice available: three
+    tools, because it has no player for the online voice (dec. E) — its local voice is a fake that
+    answers yes, since ``powershell.exe`` is not on the runner. Linux: two, with nothing faked — no
+    voice and no player.
+
+    **Without the online seam**, and that is the test: the player of a named system that is not
+    Darwin is nobody on every runner. Until M12.4 it read ``/usr/bin/afplay``, which this Mac has
+    and the Ubuntu job has not, so the same world declared a tool more here than there.
+    """
+    built = build_node(config(tmp_path), clock=FakeClock(), speech=local, system=system)
+
+    said = await declaration(built)
+
+    assert said["available_tools"] == declared
+    assert len(built.tools.tools()) == 4
+
+
+async def test_a_local_voice_that_says_no_is_not_declared_while_the_online_one_is(
+    tmp_path: Path,
+) -> None:
+    """M12.4 criterion 14: each voice answers for itself."""
+    built = build_node(
+        config(tmp_path),
+        clock=FakeClock(),
+        speech=FakeSpeech(there=False),
+        speech_online=FakeSpeech(),
+        system="Darwin",
+    )
+
+    said = await declaration(built)
+
+    assert said["available_tools"] == ["core-echo", "model-complete", "voice-speak-online"]
+
+
+async def test_a_voice_the_user_switched_off_is_still_declared(tmp_path: Path) -> None:
+    """A switch of the user is not a fact of the machine, so it does not change what is declared.
+
+    ``available()`` answers for the machine; ``ELA_VOICE_ENABLED=false`` is a choice. Declared, the
+    tool arrives and refuses with ``voice.disabled`` — an actionable diagnosis that names the switch
+    (ADR 0033 §9). Not declared, the step would get "no eligible node", which hides the switch
+    behind what reads like a machine that is missing."""
+    off = config(tmp_path).model_copy(update={"voice": VoiceSettings(voice_enabled=False)})
+    built = build_node(
+        off, clock=FakeClock(), speech=FakeSpeech(), speech_online=FakeSpeech(), system="Darwin"
+    )
+
+    said = await declaration(built)
+
     assert set(said["available_tools"]) == {
         "core-echo",
         "model-complete",
@@ -458,7 +563,23 @@ def test_an_answer_that_is_not_a_refusal_has_no_error_code() -> None:
     assert Reply(200, {}).code is None
     assert Reply(200, {"error": "una stringa"}).code is None
     assert Reply(409, {"error": {"message": "senza codice"}}).code is None
-    assert Reply(409, {"error": {"code": "already_running"}}).code == "already_running"
+    running = WireCode.ALREADY_RUNNING
+    assert Reply(409, {"error": {"code": running.value}}).code == running
+
+
+def test_a_refusal_no_core_sends_cannot_be_scripted() -> None:
+    """M12.4. These tests once scripted ``renewal.capped`` and ``too_late``, and ``test_run.py``
+    ``code_reused``: three codes no Core has ever sent, and the node — which branches on the status
+    — passed on all three. A script now takes a member of the wire's vocabulary and the status the
+    API's own table gives it, so an invented code raises at the line that invents it, and a real one
+    cannot arrive with a status the Core never pairs it with."""
+    with pytest.raises(ValueError, match="too_late"):
+        refused("too_late")  # type: ignore[arg-type]
+
+    answered = refused(WireCode.NOT_ASSIGNED)(httpx.Request("POST", f"{CORE}/nodes/work/result"))
+
+    assert answered.status_code == 404
+    assert answered.json() == {"error": {"code": "not_assigned", "message": "not_assigned"}}
 
 
 async def test_the_node_says_it_is_here_on_every_pass_and_not_only_at_start_up(
@@ -544,7 +665,7 @@ async def test_an_answer_the_core_did_not_decide_keeps_the_envelope(tmp_path: Pa
     """
     given = order(expires_at=SOON, decision=decision())
     node, _ = node_of(
-        world(tmp_path), replies(status(200, given), refused(503, "database_unavailable"))
+        world(tmp_path), replies(status(200, given), refused(WireCode.DATABASE_UNAVAILABLE))
     )
 
     await node.turn()
@@ -593,7 +714,7 @@ async def test_a_deferred_delivery_comes_back_but_not_at_the_speed_of_the_socket
         ok({}, ETag='"2"'),
         ok({}),
         status(200, given),
-        refused(409, "already_running"),  # the envelope stays here
+        refused(WireCode.ALREADY_RUNNING),  # the envelope stays here
         ok({}),
         ok({"state": "DELIVERED", "step": "COMPLETED"}),  # the pass that delivers it
         ok({}),

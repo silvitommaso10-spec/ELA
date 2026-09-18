@@ -16,14 +16,17 @@ from typing import Any, ClassVar
 
 import httpx
 
+from ela.api.app import FAILURES
+from ela.api.security import unauthorized
 from ela.composition import NodeConfig, NodeSettings, build_node
 from ela.composition.node import NodeWorld
 from ela.domain import ProviderUsage
 from ela.node import Node, NodeClient, open_node_client
+from ela.ports import WireCode
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
-from ela.testing.fakes import FakeClock, FakeSpeech
+from ela.testing.fakes import FakeClock, FakePower, FakeSpeech
 from ela.tools import ToolRegistry
 from ela.tools.base import Outcome, Tool
 from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME
@@ -43,8 +46,28 @@ def config(directory: Path, **node: Any) -> NodeConfig:
     )
 
 
-def world(directory: Path, clock: FakeClock | None = None, **node: Any) -> NodeWorld:
-    return build_node(config(directory, **node), clock=clock or FakeClock(), speech=FakeSpeech())
+def world(
+    directory: Path, clock: FakeClock | None = None, *, system: str = "Darwin", **node: Any
+) -> NodeWorld:
+    """A node of a named system with both voices faked, so what it declares is the same everywhere.
+
+    Both, and the system named (M12.4 dec. F, G): a node declares only the voices its machine can
+    use, and the online voice's player is ``afplay`` — present on a Mac, absent on the Ubuntu job.
+    A world that left either to the machine would declare four tools here and three there. Darwin
+    unless a test names another, and a test names Windows to take the writer that system's
+    composition chooses (M12.4 dec. B).
+
+    And the power source, which every heartbeat reads (M12.3c): left to the machine, a beat would
+    carry ``AC`` at the desk, ``BATTERY`` on the train and ``UNKNOWN`` on the Ubuntu job.
+    """
+    return build_node(
+        config(directory, **node),
+        clock=clock or FakeClock(),
+        speech=FakeSpeech(),
+        speech_online=FakeSpeech(),
+        system=system,
+        power=FakePower(),
+    )
 
 
 class Script:
@@ -79,8 +102,27 @@ def status(code: int, body: Any = None) -> Callable[[httpx.Request], httpx.Respo
     return lambda _: httpx.Response(code, json=body if body is not None else {})
 
 
-def refused(code: int, error: str) -> Callable[[httpx.Request], httpx.Response]:
-    return lambda _: httpx.Response(code, json={"error": {"code": error, "message": error}})
+STATUS_OF: dict[WireCode, int] = {
+    **{failure.code: failure.status for failure in FAILURES},
+    WireCode.UNAUTHORIZED: unauthorized().status_code,
+}
+"""The status each code of the wire travels with, read off the API's own table and not written here.
+
+A code has one status on the wire (``not_assigned`` two rows, both ``404``), so a script that took
+both could pair them as no Core ever does."""
+
+
+def refused(error: WireCode) -> Callable[[httpx.Request], httpx.Response]:
+    """A refusal of the Core: a member of the wire's vocabulary, with the status the API gives it.
+
+    ``WireCode(error)``, checked here and not inside the answer: this file once scripted three codes
+    no Core sends — ``renewal.capped``, ``too_late``, ``code_reused`` — and the node, which branches
+    on the status, passed on all three. A list of codes nobody checks is a list that does not know
+    it is false; an invented one now raises at the line that invents it (M12.4).
+    """
+    wire = WireCode(error)
+    body = {"error": {"code": wire.value, "message": wire.value}}
+    return lambda _: httpx.Response(STATUS_OF[wire], json=body)
 
 
 def dropped() -> Callable[[httpx.Request], httpx.Response]:

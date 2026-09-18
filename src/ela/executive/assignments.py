@@ -44,7 +44,7 @@ from ela.domain import (
     TaskEventType,
     TaskId,
 )
-from ela.executive.errors import AssignmentAtCapError, AssignmentRefusedError
+from ela.executive.errors import AssignmentAtCapError, AssignmentRefusedError, WorkNotYoursError
 from ela.ports import (
     AssignmentExpiredError,
     AssignmentHeldElsewhereError,
@@ -54,6 +54,7 @@ from ela.ports import (
     Clock,
     ExecutionResultStore,
     IdGenerator,
+    NotFoundError,
     TaskRepository,
 )
 from ela.tasks.engine import TaskEngine
@@ -106,8 +107,9 @@ class WorkRejection(StrEnum):
     TASK_CLOSED = auto()
     """A delivery for a task that closed while the node was working on it."""
     NOT_ASSIGNED = auto()
-    """A delivery or a renewal of an assignment the node does not hold: unknown, or another's —
-    the node gets the same ``404`` for both, and the audit tells them apart."""
+    """A delivery or a renewal of an assignment the node does not hold: unknown, another's, or no
+    longer taken — the node gets the same ``404`` for all three, and the audit tells unknown from
+    known (:meth:`Assignments.mine`)."""
     DELIVERY_CONFLICT = auto()
     """A second delivery with another envelope than the one accepted."""
 
@@ -253,12 +255,53 @@ class Assignments:
     async def held(self, assignment_id: AssignmentId) -> Assignment:
         """The row as the store has it, by id; ``NotFoundError`` for an id the Core never minted.
 
-        The one read the gate of a delivery needs (ADR 0038 §12): it asks its own questions with
-        one ``now``, and the replica of a delivery is told from a conflict by the digest the row
-        keeps — neither of which a derived standing could answer. Still the only reader of the
-        port (architecture rule 48).
+        What the route of a delivery reads to know which task to lock, and nothing more: it refuses
+        nothing and writes nothing. Refusing work that is not a node's is :meth:`mine`'s.
         """
         return await self._store.get(assignment_id)
+
+    async def mine(
+        self,
+        assignment_id: AssignmentId,
+        device_id: DeviceId,
+        *,
+        states: frozenset[AssignmentState],
+    ) -> Assignment:
+        """The work ``device_id`` asks about, or the one refusal for every way it is not its own.
+
+        The door a delivery and a renewal both pass (ADR 0038 §12). Work is not a node's in three
+        ways — an id the Core never minted, another node's, one no longer in ``states`` — and the
+        three get **one** error with one sentence, because a node that could tell them apart could
+        map which assignments exist for the others. The audit keeps the difference
+        (``assignment_known``), where the user reads and nodes do not.
+
+        One door and not two (M12.2b): until then a renewal read the store on its own, and an id
+        never minted reached the node as the store's ``NotFoundError`` — its own code, its own words
+        — while the gate of a delivery answered it like the other two. Which states are still the
+        node's to speak about is the caller's: a delivery accepts work already delivered, because a
+        replica is answered and not refused; a renewal does not.
+        """
+        try:
+            assignment = await self._store.get(assignment_id)
+        except NotFoundError:
+            await self.reject(
+                device_id, WorkRejection.NOT_ASSIGNED, assignment_id=assignment_id, known=False
+            )
+            raise WorkNotYoursError(assignment_id) from None
+        if assignment.device_id != device_id:
+            await self.reject(
+                device_id, WorkRejection.NOT_ASSIGNED, assignment_id=assignment_id, known=True
+            )
+            raise WorkNotYoursError(assignment_id)
+        if assignment.state not in states:
+            await self.reject(
+                device_id,
+                WorkRejection.NOT_ASSIGNED,
+                assignment_id=assignment.id,
+                task_id=assignment.task_id,
+            )
+            raise WorkNotYoursError(assignment_id)
+        return assignment
 
     async def describe(self, assignment: Assignment) -> str:
         """Why a run returned ``ASSIGNED``: what a person deciding whether to wait needs to read.
@@ -305,12 +348,18 @@ class Assignments:
     async def renew(self, assignment_id: AssignmentId, device_id: DeviceId) -> Assignment:
         """The work in hand lives a TTL more, up to its cap: a heartbeat, then the new expiry.
 
-        No audit: a sign of life is not an action (ADR 0016 §6). At the cap nothing is written,
-        and :class:`~ela.executive.errors.AssignmentAtCapError` says when the work expires.
+        Through :meth:`mine`, as a delivery is: work that is not this node's is refused in one
+        sentence whichever way it is not, and written down as the refusal it is. A renewal that
+        happens is not audited — a sign of life is not an action (ADR 0016 §6). At the cap nothing
+        is written, and :class:`~ela.executive.errors.AssignmentAtCapError` says when the work
+        expires.
         """
         now = self._clock.now()
-        work = await self._store.get(assignment_id)
-        _movable(work, device_id, AssignmentState.CLAIMED, now)
+        work = await self.mine(
+            assignment_id, device_id, states=frozenset({AssignmentState.CLAIMED})
+        )
+        if work.expires_at <= now:
+            raise AssignmentExpiredError(assignment_id, work.expires_at)
         assert work.claimed_at is not None  # the entity's own invariant for work in hand
         expires_at = min(now + self._ttl, work.claimed_at + self._cap)
         if expires_at <= work.expires_at:

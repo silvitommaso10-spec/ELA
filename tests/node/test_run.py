@@ -8,6 +8,7 @@ nobody can revoke, because nobody can name it.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -15,12 +16,14 @@ import pytest
 from ela.node import (
     CoreUnreachable,
     NodeError,
+    NodeIdentity,
     NodeRevoked,
     NotEnrolled,
     read_identity,
     run,
 )
 from ela.node.state import STATE_FILE
+from ela.ports import WireCode
 from tests.node.support import dropped, ok, refused, replies, status, world
 
 BORN = {
@@ -30,10 +33,21 @@ BORN = {
 }
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX permission bits: a world named Darwin writes its secret with fchmod",
+)
 async def test_a_first_run_enrols_writes_the_identity_and_then_starts_asking(
     tmp_path: Path,
 ) -> None:
-    """The whole start-up in one pass, ending at the one answer that stops a node on purpose."""
+    """The whole start-up in one pass, ending at the one answer that stops a node on purpose.
+
+    **The world names Darwin, and so it declares the machine instead of pretending to be one**
+    (M12.4 dec. H; run 35237077806). Darwin writes its secret with the ``BITS`` mode — ``fchmod``
+    and ``O_NOFOLLOW`` —, which a Windows runner does not have: skipped there, in the summary, in
+    the form of ``tests/node/test_state.py``. The same road with a world named Windows is criterion
+    7, ``test_a_windows_node_enrols_with_the_writer_its_world_chose``, and it runs everywhere.
+    """
     script = replies(
         status(201, BORN),  # enroll
         ok({}, ETag='"1"'),  # GET /nodes/me
@@ -61,6 +75,36 @@ async def test_a_first_run_enrols_writes_the_identity_and_then_starts_asking(
     ]
 
 
+async def test_a_windows_node_enrols_with_the_writer_its_world_chose(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M12.4 criterion 7: the production caller of the writer, on a world built naming Windows.
+
+    ``os.fchmod`` is taken away, as Windows on 3.12 has it — the one monkeypatch of dec. H, and
+    ``tests/node/test_state.py`` says why. Until M12.4 ``join_or_read`` called the writer on its
+    own, and on the PC every first run died at ``state.py:99`` after ``O_EXCL`` had made the file
+    and before its first byte (M12.4, §«Che cosa esiste già», row 1): the Core had minted an
+    identity nobody wrote down, and every later start found an empty file. No kit sees that line,
+    because the conformance kit enrols by a road of its own.
+    """
+    monkeypatch.delattr(os, "fchmod", raising=False)
+    script = replies(
+        status(201, BORN),  # enroll
+        ok({}, ETag='"1"'),  # GET /nodes/me
+        ok({}, ETag='"2"'),  # PUT /nodes/me
+        ok({}),  # heartbeat
+        status(401),  # the first ask: revoked, which ends the run on purpose
+    )
+    built = world(tmp_path, system="Windows")
+
+    with pytest.raises(NodeRevoked):
+        await run(built.config, join="un-codice", world=built, transport=script.transport())
+
+    assert read_identity(tmp_path) == NodeIdentity(
+        device_id=str(BORN["device_id"]), secret=str(BORN["secret"])
+    )
+
+
 async def test_a_machine_that_never_enrolled_and_was_offered_no_code_says_what_to_do(
     tmp_path: Path,
 ) -> None:
@@ -82,7 +126,7 @@ async def test_a_code_that_does_not_work_says_so_and_writes_nothing(tmp_path: Pa
             built.config,
             join="vecchio",
             world=built,
-            transport=replies(refused(401, "code_reused")).transport(),
+            transport=replies(refused(WireCode.UNAUTHORIZED)).transport(),
         )
 
     assert read_identity(tmp_path) is None

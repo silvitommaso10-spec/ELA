@@ -31,6 +31,7 @@ from ela.infrastructure.machine import (
 from ela.perception import PerceptionCore
 from ela.permissions import PERCEPTION_CAPTURE_SCREEN
 from ela.ports import PerceptionProbe
+from ela.testing.fakes import FakePower
 from ela.tools import PERCEPTION_READ_SCREEN_TEXT
 from tests.composition.support import create_schema, declare
 
@@ -70,7 +71,9 @@ async def test_the_adapters_are_the_ones_the_named_system_can_answer(
     declare(monkeypatch, tmp_path)
     settings = Settings.load()
     await create_schema(settings.persistence.db_url)
-    built = await build(settings)
+    # The power source named too (M12.3c): with ``Darwin`` patched in, the default would start
+    # ``pmset`` on a Mac and read nothing on the runner — and nothing here is about power.
+    built = await build(settings, power=FakePower())
     probe_type, screen_type, recognition_type = expected
     try:
         capture_tool = built.tools.get(PERCEPTION_CAPTURE_SCREEN)

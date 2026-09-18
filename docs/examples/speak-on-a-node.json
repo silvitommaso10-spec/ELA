@@ -1,0 +1,32 @@
+{
+  "_nota": [
+    "Un solo step voice.speak, per la prova a mano di GETTING_STARTED §12: il Core sul Mac, il",
+    "nodo sul PC. La frase è lunga apposta — sotto i 600 caratteri che una frase può avere, e",
+    "sul PC di M12.4, con la voce Microsoft Elsa Desktop, circa tre quarti di minuto —: il",
+    "tempo per guardare l'albero dei processi, leggere il registro, e premere Ctrl-C sul nodo",
+    "mentre parla. Il consenso lo chiede la capability, e ogni volta.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti, e questo file viene",
+    "mandato a ELA byte per byte da un test, perché non marcisca."
+  ],
+  "goal": "far parlare il nodo",
+  "steps": [
+    {
+      "id": "5a1e0c3d-7b2f-4e8a-9c41-000000000001",
+      "goal": "dire una frase lunga sulla macchina del nodo",
+      "required_capabilities": [
+        "voice.speak"
+      ],
+      "arguments": {
+        "text": "Questa frase la dice il PC, e non il Mac: il Core l'ha affidata al nodo perché il Mac va a batteria e il PC è attaccato alla corrente. È lunga apposta, quasi un minuto, per lasciarti il tempo di guardare l'albero dei processi, di vedere il nodo nel registro del Core, e di premere Ctrl-C sulla finestra del nodo mentre parla: la voce deve fermarsi subito, il nodo deve uscire con zero, e in chiusura non deve comparire nessuna traccia. Se la senti fino in fondo, il lavoro è avvenuto sull'altra macchina, con la voce di quella macchina, e il Core ne ha soltanto la busta.",
+        "purpose": "la prova a mano del nodo Windows"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "la frase si sente dalla macchina del nodo",
+      "success_conditions": [
+        "speech.took_real_time",
+        "speech.text_matches"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

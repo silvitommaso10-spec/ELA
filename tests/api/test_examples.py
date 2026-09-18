@@ -7,6 +7,8 @@ not quoted in a test — it is **sent**, byte for byte, and then walked as far a
 ``first-task.json``: two steps, one SAFE and one that asks for consent, a note on disk with the
 text the file carries. ``ask-model.json`` (M8.3, ADR 0025 §8.4): one ``model.complete`` step,
 walked on a machine with **no key**, which is what everybody who clones this repository has.
+``speak-on-a-node.json`` (M12.4 dec. I): one ``voice.speak`` step with a long sentence, for the
+proof by hand of ``GETTING_STARTED.md`` §12, where it is spoken by a node on another machine.
 
 Both carry a ``_nota`` key that the API ignores (ADR 0025 §8.3), and the tests send it: a comment
 a file relies on has to survive the trip, or it is a trap instead of an explanation.
@@ -25,10 +27,12 @@ from httpx import AsyncClient
 from ela.composition import Ela
 from ela.domain import TaskState
 from ela.ports import PROVIDER_UNAVAILABLE
+from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
 EXAMPLE = EXAMPLES / "first-task.json"
 ASK_MODEL = EXAMPLES / "ask-model.json"
+SPEAK_ON_A_NODE = EXAMPLES / "speak-on-a-node.json"
 NOTE = "_nota"
 
 
@@ -224,3 +228,42 @@ async def test_without_a_key_it_fails_cleanly_and_never_reaches_the_network(
     assert [one["status"] for one in results] == ["STARTED", "FAILED"]
     assert results[-1]["error"]["code"] == PROVIDER_UNAVAILABLE
     assert results[-1]["error"]["retryable"] is False
+
+
+# ----------------------------------------------------------------------------------------
+# ``speak-on-a-node.json``: the proof by hand of a node on a PC (M12.4 dec. I)
+# ----------------------------------------------------------------------------------------
+
+
+def speak_on_a_node_plan() -> dict[str, Any]:
+    plan: dict[str, Any] = json.loads(SPEAK_ON_A_NODE.read_text(encoding="utf-8"))
+    return plan
+
+
+async def test_the_node_example_is_accepted_as_it_stands(client: AsyncClient) -> None:
+    task_id = (await client.post("/tasks", json={"text": "fai parlare il PC"})).json()["id"]
+
+    planned = await client.post(f"/tasks/{task_id}/plan", json=speak_on_a_node_plan())
+
+    assert planned.status_code == 200, planned.text
+    assert planned.json()["state"] == TaskState.QUEUED.value
+
+
+def test_its_sentence_is_long_and_still_one_ela_may_say() -> None:
+    """Long on purpose — the guide has somebody watch a process tree and press Ctrl-C while it
+    is spoken — and never past the ceiling, or the proof would stop at ``arguments.invalid``."""
+    text = speak_on_a_node_plan()["steps"][0]["arguments"]["text"]
+
+    assert 400 <= len(text) <= MAX_SPOKEN_CHARACTERS
+
+
+async def test_it_asks_for_consent_every_time(client: AsyncClient) -> None:
+    """The first ``run`` stops and asks: that is the step of the guide the approval answers."""
+    task_id = (await client.post("/tasks", json={"text": "fai parlare il PC"})).json()["id"]
+    await client.post(f"/tasks/{task_id}/plan", json=speak_on_a_node_plan())
+
+    run = (await client.post(f"/tasks/{task_id}/run")).json()
+
+    assert run["outcome"] == "waiting_approval"
+    approval = (await client.get("/approvals")).json()[0]
+    assert approval["capability_id"] == "voice.speak"

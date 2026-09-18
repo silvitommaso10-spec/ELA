@@ -106,6 +106,17 @@ async def test_a_duration_that_is_not_a_number_is_refused(verifier: SpeakVerifie
     assert [f.code for f in failures] == [VERIFICATION_ARGUMENTS_INVALID]
 
 
+async def test_a_duration_nobody_measured_is_refused(verifier: SpeakVerifier) -> None:
+    """What the voice of a PC reports when ``powershell.exe`` exits ``0`` and its stopwatch wrote
+    no number (M12.4 dec. D, decision of 2026-09-17): the failure is here, at verification, and
+    not invented as a number the helper never gave."""
+    failures = await verifier.verify(
+        (SPEECH_TOOK_REAL_TIME,), ARGUMENTS, spoken(spoken_seconds=None)
+    )
+
+    assert [f.code for f in failures] == [VERIFICATION_ARGUMENTS_INVALID]
+
+
 async def test_a_boolean_is_not_a_duration(verifier: SpeakVerifier) -> None:
     """``True`` is an ``int`` in Python, and a verifier that accepted it would be reading a flag
     as a number of seconds."""

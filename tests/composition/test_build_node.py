@@ -6,19 +6,29 @@ is absent here is something that *decides*, and a node decides nothing (M12.1 D1
 
 from __future__ import annotations
 
+import os
 import platform
+import stat
 from pathlib import Path
 
 import pytest
 
 from ela.composition import ConfigurationError, NodeConfig, NodeSettings, build_node
-from ela.composition.node import NodeWorld
-from ela.infrastructure.machine import SaySpeechCommand, UnsupportedSpeech
+from ela.composition.node import NodeWorld, PermissionMode, mkdir_applies_the_acl, online_player
+from ela.domain import OperatingSystem
+from ela.infrastructure.machine import (
+    AFPLAY,
+    SapiSpeechCommand,
+    SaySpeechCommand,
+    UnsupportedSpeech,
+)
+from ela.ports import SPEECH_NO_KEY
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
 from ela.routing.policy import Route
 from ela.testing.fakes import FakeClock, FakeSpeech
+from ela.tools import DIRECTORY_MODE, VOICE_ONLINE_TOOL_NAME, VOICE_TOOL_NAME
 from ela.tools.settings import VoiceSettings
 
 
@@ -56,9 +66,13 @@ def test_it_builds_nothing_that_decides(tmp_path: Path) -> None:
 
     assert {field for field in NodeWorld.__dataclass_fields__} == {
         "config",
+        "os",
         "clock",
         "ids",
         "tools",
+        "voices",
+        "power",
+        "permissions",
         "speech_dir",
     }
     assert not hasattr(built, "database")
@@ -134,24 +148,216 @@ def test_the_voice_is_a_declared_parameter_too(tmp_path: Path) -> None:
     assert _speech_of(built) is speech
 
 
-def test_without_the_seam_the_voice_is_this_machine_s(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_without_the_seam_the_voice_is_the_named_system_s(tmp_path: Path) -> None:
     """An ``if`` and never a ternary (architecture rule 37): both arms are measured, so the
-    platform this did *not* run on is proved too, and M12.4's Windows node arrives here."""
-    monkeypatch.setattr(platform, "system", lambda: "Darwin")
-    darwin = build_node(config(tmp_path))
+    platform this did *not* run on is proved too, and M12.4's Windows node arrives here.
 
-    monkeypatch.setattr(platform, "system", lambda: "Linux")
-    elsewhere = build_node(config(tmp_path))
+    **Named, not patched** (ADR 0031 §3, M12.4 dec. G): until M12.4 this test replaced
+    ``platform.system`` for the length of a call, which is the shape ``build_node``'s own docstring
+    argues against. The system is a parameter now, and each arm is asked for by name.
+    """
+    darwin = build_node(config(tmp_path), system="Darwin")
+    windows = build_node(config(tmp_path), system="Windows")
+    elsewhere = build_node(config(tmp_path), system="Linux")
 
     assert isinstance(_speech_of(darwin), SaySpeechCommand)
+    assert isinstance(_speech_of(windows), SapiSpeechCommand)
     assert isinstance(_speech_of(elsewhere), UnsupportedSpeech)
 
 
+def test_the_system_it_is_not_told_is_the_one_this_machine_answers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default, and the one place a patch is the test: what is proved is that an unnamed system
+    is read from ``platform.system()`` and not from a constant — which only an answer this machine
+    would not give can show."""
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+
+    built = build_node(config(tmp_path))
+
+    assert isinstance(_speech_of(built), UnsupportedSpeech)
+
+
+@pytest.mark.parametrize(
+    ("system", "declared"),
+    [
+        ("Darwin", OperatingSystem.MACOS),
+        ("Windows", OperatingSystem.WINDOWS),
+        ("Linux", OperatingSystem.LINUX),
+    ],
+)
+def test_the_operating_system_is_the_one_the_node_was_built_for(
+    tmp_path: Path, system: str, declared: OperatingSystem
+) -> None:
+    """M12.4 dec. A. Until M12.4 a node declared ``"MACOS"`` as a literal wherever it ran. The value
+    comes from the map the Core's ``local`` is declared with (``ela.devices.local``), and not from a
+    second list here."""
+    built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+
+    assert built.os is declared
+
+
+@pytest.mark.parametrize(
+    ("system", "permissions"),
+    [
+        ("Darwin", PermissionMode.BITS),
+        ("Windows", PermissionMode.ACL),
+        ("Linux", PermissionMode.BITS),
+    ],
+)
+def test_the_secret_is_protected_the_way_the_named_system_allows(
+    tmp_path: Path, system: str, permissions: PermissionMode
+) -> None:
+    """M12.4 dec. B, criterion 15. ``BITS`` where there are permission bits to narrow; ``ACL`` on
+    Windows, where ``os.fchmod`` does not exist on 3.12 and the protection is the directory's."""
+    built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+
+    assert built.permissions is permissions
+
+
+@pytest.mark.parametrize(("version", "applies"), [((3, 12, 3), False), ((3, 12, 4), True)])
+def test_before_3_12_4_mkdir_ignores_the_mode_on_windows(
+    version: tuple[int, int, int], applies: bool
+) -> None:
+    """M12.4 dec. B, criterion 8, the pure half. CVE-2024-4030 (gh-118486): from 3.12.4
+    ``os.mkdir(path, 0o700)`` on Windows applies a protected ACL; before it the mode is ignored,
+    **in silence**. The version is the whole question, so it is the whole argument."""
+    assert mkdir_applies_the_acl(version) is applies
+
+
+def test_a_windows_python_older_than_3_12_4_is_refused_before_anything_is_built(
+    tmp_path: Path,
+) -> None:
+    """M12.4 dec. B, criterion 8, the composition's half: **the only guarantee**, not a caution.
+
+    The project does not choose the PC's Python — ``uv`` uses the 3.12 it finds, and P0 found a
+    3.12.10 it had not installed —, so a 3.12.3 found the same way would be used the same way. And
+    refused **before the state directory exists**: made by an interpreter that ignores the mode, it
+    would carry the profile's inherited ACL, and a directory that already exists is left as it is.
+
+    The version is named, never patched into the interpreter: the seam ``system`` already has.
+    """
+    state = tmp_path / "state"
+
+    with pytest.raises(ConfigurationError, match=r"3\.12\.4"):
+        build_node(config(state), speech=FakeSpeech(), system="Windows", python_version=(3, 12, 3))
+
+    assert not state.exists()
+    assert (
+        build_node(
+            config(state), speech=FakeSpeech(), system="Windows", python_version=(3, 12, 4)
+        ).permissions
+        is PermissionMode.ACL
+    )
+
+
+def test_the_refusal_is_windows_s_and_a_mac_does_not_ask_the_version(tmp_path: Path) -> None:
+    """``BITS`` narrows the file itself, whatever ``mkdir`` does with its mode."""
+    built = build_node(
+        config(tmp_path), speech=FakeSpeech(), system="Darwin", python_version=(3, 12, 3)
+    )
+
+    assert built.permissions is PermissionMode.BITS
+
+
+def test_a_system_no_node_knows_stops_it_before_anything_is_built(tmp_path: Path) -> None:
+    """A node declares what it runs on, and on a system ELA has no value for it would have nothing
+    true to say: refused at start-up, with the system named, as a configuration it cannot use."""
+    state = tmp_path / "state"
+
+    with pytest.raises(ConfigurationError, match="Plan 9"):
+        build_node(config(state), speech=FakeSpeech(), system="Plan 9")
+
+    assert not state.exists()
+
+
+def test_the_online_voice_is_a_declared_parameter_too(tmp_path: Path) -> None:
+    """M12.4 dec. F: since a node declares only the voices its machine can use, the online voice's
+    player decides what a node promises, and a test must be able to name it as it names the local
+    one. What was wired into the tool is what the declaration asks."""
+    local, online = FakeSpeech(), FakeSpeech()
+
+    built = build_node(config(tmp_path), speech=local, speech_online=online)
+
+    assert _port_of(built, VOICE_ONLINE_TOOL_NAME) is online
+    assert built.voices == {VOICE_TOOL_NAME: local, VOICE_ONLINE_TOOL_NAME: online}
+
+
+async def test_the_online_voice_plays_through_afplay_on_darwin_and_through_nobody_elsewhere(
+    tmp_path: Path,
+) -> None:
+    """M12.4 dec. E and F. The online voice is **built** everywhere (the correction of 2026-09-09);
+    its player is ``afplay`` on Darwin and nobody on a system ELA knows no player for — on **every**
+    runner, which is what makes a declaration the same on this Mac and on the Ubuntu job. Asked of
+    the object and not of the filesystem: the Mac running this has ``afplay``.
+
+    Two halves: :func:`online_player` answers for the three systems, and ``build_node`` wires what
+    it answers — the conformance kit asks the same function whether to fake a player (dec. G)."""
+    assert online_player("Darwin") == AFPLAY
+    assert online_player("Windows") is None
+    assert online_player("Linux") is None
+    for system in ("Darwin", "Windows", "Linux"):
+        built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+        wired = _port_of(built, VOICE_ONLINE_TOOL_NAME)
+        assert wired._binary == online_player(system), system  # type: ignore[attr-defined]  # noqa: SLF001
+    elsewhere = build_node(config(tmp_path), speech=FakeSpeech(), system="Windows")
+    assert await elsewhere.voices[VOICE_ONLINE_TOOL_NAME].available() is False
+
+
+async def test_a_windows_node_without_a_key_still_says_the_key_is_missing(tmp_path: Path) -> None:
+    """The order of the two absences survives a system with no player: the key first (2026-09-09,
+    ADR 0034 §5). Nothing is sent: there is no key to send it with."""
+    unkeyed = ElevenLabsSettings(elevenlabs_api_key=None, _env_file=None)  # type: ignore[call-arg]
+    built = build_node(config(tmp_path, elevenlabs=unkeyed), speech=FakeSpeech(), system="Windows")
+
+    said = await built.voices[VOICE_ONLINE_TOOL_NAME].speak("una frase")
+
+    assert said.error == SPEECH_NO_KEY
+
+
+def test_the_voices_the_declaration_asks_are_the_ones_the_tools_speak_through(
+    tmp_path: Path,
+) -> None:
+    """Without the seams too: a declaration that asked one port while the tool spoke through
+    another would promise what nobody checked."""
+    built = build_node(config(tmp_path), system="Darwin")
+
+    assert built.voices[VOICE_TOOL_NAME] is _port_of(built, VOICE_TOOL_NAME)
+    assert built.voices[VOICE_ONLINE_TOOL_NAME] is _port_of(built, VOICE_ONLINE_TOOL_NAME)
+
+
 def _speech_of(built: NodeWorld) -> object:
-    local = built.tools.get(built.tools.tools()[2].capability_id)
-    return local._speech  # noqa: SLF001 — what was wired is not on the public surface
+    return _port_of(built, VOICE_TOOL_NAME)
+
+
+def _port_of(built: NodeWorld, name: str) -> object:
+    """The port a voice tool was built with, found by the tool's name and not by its position."""
+    (tool,) = (one for one in built.tools.tools() if one.name == name)
+    return tool._speech  # type: ignore[attr-defined]  # noqa: SLF001 — not on the public surface
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits: Windows has no 0o700")
+def test_the_state_directory_is_born_0o700_where_no_core_made_it_first(tmp_path: Path) -> None:
+    """M12.3b. The directory that holds the node's secret is ``0o700`` from the moment it exists.
+
+    On this Mac ``~/.ela`` was always ``0o700``, and not because of the node: the Core had made it
+    first, as the parent of its database. On a machine that runs **only** a node nobody had, and
+    ``build_node`` made ``<state>/speech`` with ``parents=True`` — which makes every missing parent
+    with the default mode — so the state directory came out ``0o755`` and ``write_identity``'s own
+    ``mkdir(0o700)`` found it already there. ADR 0039 §6 says "in a ``0o700`` directory".
+
+    The ``umask`` is the test, as in ``tests/node/test_state.py``: with ``0o000`` a directory made
+    with the default mode shows up as ``0o777``, whatever this machine's umask is.
+    """
+    state = tmp_path / "a-machine-with-no-core" / ".ela"
+    was = os.umask(0o000)
+    try:
+        build_node(config(state), speech=FakeSpeech())
+    finally:
+        os.umask(was)
+
+    assert stat.S_IMODE(state.stat().st_mode) == DIRECTORY_MODE
+    assert stat.S_IMODE((state / "speech").stat().st_mode) == DIRECTORY_MODE
 
 
 def test_it_sweeps_the_audio_a_crash_would_have_left(tmp_path: Path) -> None:

@@ -8,8 +8,8 @@ time** (M12.1 D6, D14), and this package may not so much as mint an expiry (arch
 
 Where the code lives is a decision of its own (dec. A, ADR 0039 §1): inside ``src/ela`` and not in
 the ``nodes/macos/`` of spec §48, because out there it would be outside ``mypy --strict``, outside
-the coverage gate, outside the fourteen import contracts and outside all fifty-three architecture
-rules — the least verified code in ELA, holding a secret and executing tools. What is common to
+the coverage gate, outside the import contracts and outside the architecture rules — the least
+verified code in ELA, holding a secret and executing tools. What is common to
 macOS and Windows lives here; what is not goes behind a port, in the shape of
 ``infrastructure/machine/darwin.py``, so M12.4 adds a module and not a branch.
 """
@@ -74,14 +74,14 @@ async def join_or_read(
     if code is None:
         raise NotEnrolled(UNENROLLED)
     client = open_node_client(world.config.node.node_core_url, None, transport)
-    answered = await client.enroll(code, declaration(world))
+    answered = await client.enroll(code, await declaration(world))
     if answered.status != httpx.codes.CREATED:
         raise NodeError(
             f"this code did not enrol the node ({answered.code or answered.status}). A code is "
             "good once and for ten minutes: ask the Core for another one."
         )
     assert client.identity is not None  # noqa: S101 — a 201 carries the identity or the DTO failed
-    write_identity(directory, client.identity)
+    write_identity(directory, client.identity, world.permissions)
     return client
 
 

@@ -42,14 +42,13 @@ from ela.api.problems import problem
 from ela.composition import Ela
 from ela.devices import LOCAL_USER, Rejection, fingerprint
 from ela.domain import Actor, ActorKind, DeviceId
-from ela.ports import NotFoundError
+from ela.ports import NotFoundError, WireCode
 
 __all__ = [
     "CODE_ROUTES",
     "NODE_ROUTES",
     "SCHEME",
     "SEPARATOR",
-    "UNAUTHORIZED",
     "Anonymous",
     "Identity",
     "Kind",
@@ -61,8 +60,6 @@ __all__ = [
 
 SCHEME = "bearer"
 """``Authorization: Bearer <credential>``."""
-UNAUTHORIZED = "unauthorized"
-"""The error code of every refusal here, whatever the reason was."""
 SEPARATOR: Final = "."
 """Between a node's id and its secret: it is in neither a ``token_urlsafe`` nor a UUID."""
 NODE_ROUTES: Final = frozenset(
@@ -164,7 +161,7 @@ def unauthorized() -> JSONResponse:
     """The one answer every refusal gets: the same status, the same body, the same header."""
     return JSONResponse(
         status_code=401,
-        content=problem(UNAUTHORIZED, "a valid bearer token is required"),
+        content=problem(WireCode.UNAUTHORIZED, "a valid bearer token is required"),
         headers={"WWW-Authenticate": "Bearer"},
     )
 

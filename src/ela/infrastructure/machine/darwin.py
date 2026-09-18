@@ -35,6 +35,8 @@ from ela.domain import ProbeFamily, RawObservation
 
 __all__ = [
     "MICROPHONE_MODULE",
+    "PMSET",
+    "POWER_TIMEOUT_SECONDS",
     "PROBE_MODULE",
     "HEARD_FILE_PREFIX",
     "SPEECH_FILE_PREFIX",
@@ -43,10 +45,14 @@ __all__ = [
     "Spawn",
     "SpawnThroughNamelessAudio",
     "SpawnWithAudio",
+    "SpawnWithInput",
     "TranscribeArgv",
+    "drawn_from",
+    "pmset_source",
     "spawn",
     "spawn_through_nameless_audio",
     "spawn_with_audio",
+    "spawn_with_input",
     "sweep_speech_files",
 ]
 
@@ -62,6 +68,9 @@ is worth more than a magic number in the one place where "no answer" is the answ
 
 Spawn = Callable[[Sequence[str], float], Awaitable[tuple[int, str]]]
 """Start a command, wait at most ``timeout`` seconds, answer ``(exit code, stdout)``."""
+
+SpawnWithInput = Callable[[Sequence[str], bytes, float], Awaitable[tuple[int, str]]]
+"""The same, with bytes handed to the child on its stdin (M12.4 dec. D)."""
 
 
 class SpawnWithAudio(Protocol):
@@ -108,6 +117,78 @@ async def spawn(argv: Sequence[str], timeout: float) -> tuple[int, str]:
         *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
     )
     return await _wait(process, timeout)
+
+
+async def spawn_with_input(argv: Sequence[str], data: bytes, timeout: float) -> tuple[int, str]:
+    """Run ``argv`` with ``data`` on its stdin, kill it past ``timeout``, answer as :func:`spawn`.
+
+    The sister of :func:`spawn` for a child that must be *told* something without it passing through
+    the command line (M12.4 dec. D): on Windows every process of the user reads another's command
+    line (``Win32_Process.CommandLine``), as ``ps`` does on a Mac, so the voice of a PC receives its
+    sentence here. Ordinary ``asyncio`` again, exercised with a Python child on the runners of
+    ``make check``; the Windows job's list does not include its tests, so on the Proactor only the
+    proof by hand runs it.
+
+    **stderr is inherited, not discarded and not returned** (decision of 2026-09-17). What a child
+    writes there lands in the terminal the node runs in — on a PC, the one line ``SelectVoice``
+    writes for a voice that is not installed — so the person at the machine can read it; and the
+    caller never receives it, so nothing can decide on it, keep it or send it to the Core. The exit
+    code decides.
+
+    Both ways of giving up kill the child, through the same :func:`_wait` as every other caller.
+    """
+    process = await asyncio.create_subprocess_exec(
+        *argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE
+    )
+    return await _wait(process, timeout, data)
+
+
+PMSET: Final = "/usr/bin/pmset"
+"""Apple's, at an absolute path, for the reason ``SAY`` gives: what reads the machine is not decided
+by ``PATH`` (ADR 0029 §3)."""
+
+POWER_TIMEOUT_SECONDS: Final = 5.0
+"""How long a reading of the power source may take before it is ``None`` (M12.3c).
+
+A heartbeat waits for the reading, so this is the most a beat can be late because of it. P6 measured
+9-15 ms for ``pmset`` and 0.25-0.36 s for ``powershell.exe``, and M12.3 measured a node's round at
+~33 s against a heartbeat TTL of 60 s: five seconds is fourteen times the slowest reading and a
+fifth of that margin. A reading that takes longer is ``None``, which costs a node its points and
+never its beat.
+
+**Not a measurement: a ceiling**, and kept as one by the review of 2026-09-16. It is measured again
+if a beat ever overruns.
+"""
+
+DRAWING_FROM: Final = "Now drawing from '"
+"""How ``pmset -g batt`` begins, before the name of the source (P6, 2026-09-15)."""
+
+
+async def pmset_source(run: Spawn = spawn, binary: str = PMSET) -> str | None:
+    """What this Mac says it draws from — ``AC Power``, ``Battery Power`` — or ``None`` (M12.3c).
+
+    ``None`` for every way of not knowing: no ``pmset``, a child that failed or overstayed, a first
+    line of another shape. The words are handed over as the machine wrote them, and what they are
+    worth is decided in :mod:`ela.devices.local`, inside the coverage gate (ADR 0028 §1).
+    """
+    if not (os.access(binary, os.X_OK) and Path(binary).is_file()):
+        return None
+    try:
+        code, output = await run([binary, "-g", "batt"], POWER_TIMEOUT_SECONDS)
+    except OSError:  # the binary vanished between the check and here
+        return None
+    if code != 0:
+        return None
+    return drawn_from(output)
+
+
+def drawn_from(output: str) -> str | None:
+    """The source named on the first line of ``pmset -g batt``, between its quotes; ``None`` if the
+    line does not have that shape."""
+    first = output.partition("\n")[0]
+    if not first.startswith(DRAWING_FROM) or not first.endswith("'"):
+        return None
+    return first[len(DRAWING_FROM) : -1] or None
 
 
 async def spawn_with_audio(
@@ -297,8 +378,13 @@ def sweep_speech_files(directory: Path) -> int:
     return swept
 
 
-async def _wait(process: asyncio.subprocess.Process, timeout: float) -> tuple[int, str]:
+async def _wait(
+    process: asyncio.subprocess.Process, timeout: float, data: bytes | None = None
+) -> tuple[int, str]:
     """Wait for a child, and kill it whichever way the waiting ends badly.
+
+    ``data`` is what :func:`spawn_with_input` hands the child on stdin; ``None`` for everyone else,
+    whose stdin is not a pipe.
 
     **Two ways of giving up, and both kill the child.** A timeout is ELA deciding the helper took
     too long, and it answers :data:`TIMED_OUT`. A *cancellation* is the caller itself going away,
@@ -306,7 +392,7 @@ async def _wait(process: asyncio.subprocess.Process, timeout: float) -> tuple[in
     reading the child's pipes and never touches the child.
     """
     try:
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout)
+        stdout, _ = await asyncio.wait_for(process.communicate(data), timeout)
     except TimeoutError:
         await _kill(process)
         return TIMED_OUT, ""

@@ -908,6 +908,27 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela import domain\ndef off():\n    return domain.SensorCause\n",
         "SensorCause",
     ),
+    Case(
+        # M12.3c, review of 2026-09-16: a reader that decides between AC and BATTERY itself, where
+        # the maps of ``ela.devices.local`` should.
+        "a-reader-imports-the-power-source",
+        "machine-adapter-decides-nothing",
+        "infrastructure/machine/battery.py",
+        "from ela.domain import PowerSource\n"
+        "def source(output: str) -> PowerSource:\n"
+        "    return PowerSource.BATTERY if 'Battery Power' in output else PowerSource.AC\n",
+        "ela.domain.PowerSource",
+    ),
+    Case(
+        # The same choice reached the long way, with no import that names it.
+        "a-reader-decides-by-attribute",
+        "machine-adapter-decides-nothing",
+        "infrastructure/machine/battery_sideways.py",
+        "from ela import domain\n"
+        "def source(output: str):\n"
+        "    return domain.PowerSource['BATTERY' if 'Battery Power' in output else 'AC']\n",
+        "PowerSource",
+    ),
     # --- context-writes-nothing (rule 38, ADR 0032 §6) ---
     Case(
         # The shape the rule exists for: a port arrives through the constructor, so there is no
@@ -1201,6 +1222,25 @@ VIOLATIONS: tuple[Case, ...] = (
         'def extra() -> list[str]:\n    return ["--output-file"]\n',
         "--output-file",
     ),
+    Case(
+        # M12.4 dec. D: the shape of the real script, and the reason the rule reads substrings. On
+        # a PC the voice is a PowerShell script held as one constant, and ``SetOutputToWaveFile``
+        # is a line inside it — never a constant of its own, so a rule comparing whole constants
+        # would stay silent on the only code that could break it.
+        "the-windows-voice-renders-to-a-file",
+        "the-voice-writes-no-file",
+        "infrastructure/machine/windows.py",
+        'SPEAK = """$ProgressPreference = \'SilentlyContinue\'\n'
+        "try {\n"
+        "  Add-Type -AssemblyName System.Speech\n"
+        "  $s = New-Object System.Speech.Synthesis.SpeechSynthesizer\n"
+        "  $s.SetOutputToWaveFile($env:TEMP + '\\\\ela.wav')\n"
+        "  $s.Speak([Console]::In.ReadToEnd())\n"
+        "} catch {\n"
+        "  exit 1\n"
+        '}\n"""\n',
+        "SetOutputToWaveFile",
+    ),
     # --- a-refresh-touches-only-what-is-declared (rule 44, M6.1b dec. H) ---
     Case(
         # The one somebody will really write: ``local_device`` already builds a row from a
@@ -1465,6 +1505,68 @@ VIOLATIONS: tuple[Case, ...] = (
         "def hold(a, at):\n    return a.model_copy(expires_at=at)\n",
         "expires_at=",
     ),
+    # --- a-node-does-not-ask-which-machine-it-is (rule 54, M12.4 dec. A; criterion 4) ---
+    Case(
+        # The shape ADR 0039 §1 wrote in prose: «mai un if platform.system() dentro il ciclo».
+        "a-node-asking-platform-which-system",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        'import platform\ndef mac():\n    return platform.system() == "Darwin"\n',
+        "platform",
+    ),
+    Case(
+        "a-node-importing-the-question",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        "from platform import system\n",
+        "platform.system",
+    ),
+    Case(
+        "a-node-reading-os-name",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        'import os\ndef windows():\n    return os.name == "nt"\n',
+        "os.name",
+    ),
+    Case(
+        "a-node-reading-sys-platform",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        'import sys\ndef windows():\n    return sys.platform == "win32"\n',
+        "sys.platform",
+    ),
+    Case(
+        "a-node-importing-sys-platform",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        "from sys import platform\n",
+        "sys.platform",
+    ),
+    Case(
+        # The check dec. B moved into the composition: on Windows, whether this Python protects a
+        # directory. A node deciding it for itself would be a second, unguarded copy of that line.
+        "a-node-reading-its-python-version",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/which.py",
+        "import sys\ndef old():\n    return sys.version_info < (3, 12, 4)\n",
+        "sys.version_info",
+    ),
+    Case(
+        # **The likelier wrong shape**, and the one that existed: until M12.4 dec. B the secret's
+        # writer asked ``getattr(os, "O_NOFOLLOW", 0)`` — which system this is, asked of a module.
+        "a-node-asking-os-for-a-function",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/state.py",
+        'import os\ndef flags():\n    return os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)\n',
+        "getattr(os",
+    ),
+    Case(
+        "a-node-checking-os-has-a-function",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/state.py",
+        'import os\ndef narrow(fd):\n    if hasattr(os, "fchmod"):\n        os.fchmod(fd, 0o600)\n',
+        "hasattr(os",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
     Case(
@@ -1487,6 +1589,18 @@ ALLOWED: tuple[Case, ...] = (
         "tool-execute-callers",
         "node/runner.py",
         "async def go(tool, d, a):\n    return await tool.execute(d, a)\n",
+        "",
+    ),
+    Case(
+        # Rule 54 is about the module ``os`` and the questions that name a system: a node reads
+        # attributes of its own objects, and uses ``os`` for what ``os`` is for, and neither is
+        # asking the machine which machine it is.
+        "a-node-using-os-and-getattr-for-what-they-are-for",
+        "a-node-does-not-ask-which-machine-it-is",
+        "node/state.py",
+        "import os\n"
+        "def open_it(p, identity):\n"
+        '    return os.open(p, os.O_EXCL), getattr(identity, "secret")\n',
         "",
     ),
     Case(
