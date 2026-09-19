@@ -119,7 +119,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Capability di produzione | **8** | `production_catalogue()` |
 | Rotte dell'API | **29** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
-| Vincoli dichiarati negli ADR | **197** | le sezioni «Vincoli dichiarati» |
+| Vincoli dichiarati negli ADR | **199** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
 
@@ -328,6 +328,10 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   memorizzati**. Da quel momento vale una regola fissa: **ogni milestone che aggiunge una capacità
   aggiunge la sua vista.**
 - **M17.3 — Presenza desktop** (§19 del design), alla fine, dopo le altre fasi.
+- **Com'è ELA sullo schermo** — deciso dall'utente il 2026-09-18, guardando la pagina-campionario
+  di M17.1, con le sue parole: «ELA deve sembrare una sfera, azzurra e bianca; una dashboard
+  futuristica stile JARVIS ma senza informazioni inutili; ELA deve apparire sul mio schermo come un
+  widget».
 
 L'ordine è **M17.1 → M12.5 → M17.2 → Fase 13**, e M17.3 dopo tutte. Il numero di una fase non dice
 quando si fa: M17.1 viene prima dell'ultima milestone della Fase 12.

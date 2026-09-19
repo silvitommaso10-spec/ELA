@@ -6,6 +6,13 @@ duration, an angle, a curve, a gradient, a bare number where a token exists, a `
 ``tokens.css`` does not define. What stays allowed is :data:`ALLOWED`, a closed list with a
 reason for every entry (review of 2026-09-18, point 11: past ten entries it goes back to review).
 
+Gradients live in three places and nowhere else — **the presence** (ELA's sphere), **the
+materials** (glass and the room), **the primary action** — and there every stop is a token: the
+checks on literals still run inside a gradient, so a colour or a percentage written by hand
+fails there as anywhere. ``filter``, ``backdrop-filter`` and ``mix-blend-mode`` live in the
+presence and in the materials only (the user's decisions of 2026-09-18 and 2026-09-19;
+ADR 0042).
+
 And no token is an orphan: a custom property of ``tokens.css`` is read by something written by
 hand, or by a derived rule of ``tokens.css`` itself. The samples of the specimen page do not
 count — they live in ``specimen-switch.css`` for that reason — or the rule would be true by
@@ -56,6 +63,16 @@ COLOUR_FUNCTIONS = {
     "light-dark",
 }
 CURVE_FUNCTIONS = {"cubic-bezier", "steps", "linear"}
+PRESENCE = (".ela-orb", ".ela-presence")
+"""The sphere, and the component that shows it with the key of the state."""
+MATERIALS = (".ela-room", ".ela-panel")
+"""The room, and glass."""
+GRADIENTS_LIVE_IN = (*PRESENCE, *MATERIALS, ".ela-button--primary")
+"""Where a rule may hold a gradient: **every** selector of the rule starts with one of these.
+A rule shared with anything else does not qualify."""
+EFFECTS = {"filter", "backdrop-filter", "-webkit-backdrop-filter", "mix-blend-mode"}
+EFFECTS_LIVE_IN = (*PRESENCE, *MATERIALS)
+"""Where a rule may blur, saturate or blend: light and glass, and nothing else."""
 CURVE_KEYWORDS = {"ease", "ease-in", "ease-out", "ease-in-out", "linear", "step-start", "step-end"}
 _NAMED_COLOURS = """
     aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet
@@ -86,7 +103,9 @@ HEX = re.compile(r"#[0-9A-Fa-f]{3,8}\b")
 FUNCTION = re.compile(r"([A-Za-z][A-Za-z0-9-]*)\(")
 NUMBER = re.compile(r"(?<![\w.#-])(-?\d*\.?\d+)([A-Za-z%]*)")
 WORD = re.compile(r"(?<![\w-])([A-Za-z][A-Za-z-]*)(?![\w(-])")
-TEXT_COLOUR = re.compile(r"^var\(--ela-color-text-[a-z0-9-]+\)$")
+TEXT_COLOUR = re.compile(r"^var\(--ela-(?:color-text-[a-z0-9-]+|state-text|level-text)\)$")
+"""What the ``color`` property may read: a text token, or the text colour a derived rule gives
+to the key of a state or of a level — which the generator refuses unless it is a text token."""
 FEATURE = re.compile(r"\(\s*([a-z-]+)\s*:\s*([^)]+?)\s*\)")
 
 UNITS = {
@@ -101,7 +120,13 @@ def kind_of(unit: str) -> str:
     return next((kind for kind, units in UNITS.items() if unit in units), "number")
 
 
-def faults_in_value(name: str, value: str, defined: set[str]) -> list[str]:
+def live_in(selectors: tuple[str, ...], homes: tuple[str, ...]) -> bool:
+    return bool(selectors) and all(selector.startswith(homes) for selector in selectors)
+
+
+def faults_in_value(
+    name: str, value: str, defined: set[str], selectors: tuple[str, ...] = ()
+) -> list[str]:
     found = []
     for custom in PROPERTY.findall(value):
         if custom.startswith("--ela-palette-"):
@@ -117,8 +142,8 @@ def faults_in_value(name: str, value: str, defined: set[str]) -> list[str]:
         lowered = function.lower()
         if lowered in COLOUR_FUNCTIONS:
             found.append(f"{function}(): a colour written by hand")
-        elif "gradient" in lowered:
-            found.append(f"{function}(): a gradient (dec. K)")
+        elif "gradient" in lowered and not live_in(selectors, GRADIENTS_LIVE_IN):
+            found.append(f"{function}(): a gradient outside the sphere, glass and the action")
         elif lowered in CURVE_FUNCTIONS:
             found.append(f"{function}(): a curve written by hand")
     for number, unit in NUMBER.findall(HEX.sub("", bare)):
@@ -134,6 +159,8 @@ def faults_in_value(name: str, value: str, defined: set[str]) -> list[str]:
         elif lowered in CURVE_KEYWORDS:
             found.append(f"{word}: a curve written by hand")
 
+    if name in EFFECTS and value != "none" and not live_in(selectors, EFFECTS_LIVE_IN):
+        found.append(f"{name}: light and glass only — the sphere and the materials")
     if name == "color" and value != "inherit" and not TEXT_COLOUR.match(value):
         found.append(f"color: {value}: the colour of text is a text token (dec. G)")
     return found
@@ -167,7 +194,7 @@ def faults_in_stylesheet(text: str, defined: set[str], breakpoints: set[str]) ->
         for name, value in rule.declarations:
             found += [
                 f"{', '.join(rule.selectors)} — {fault}"
-                for fault in faults_in_value(name, value, defined)
+                for fault in faults_in_value(name, value, defined, rule.selectors)
             ]
     return found
 
@@ -227,7 +254,13 @@ def test_every_allowed_literal_is_used() -> None:
 # One negative for every way of being wrong
 # ----------------------------------------------------------------------------------------
 
-DEFINED = {"--ela-space-1", "--ela-color-text-primary", "--ela-color-signal-fault"}
+DEFINED = {
+    "--ela-space-1",
+    "--ela-color-text-primary",
+    "--ela-color-signal-fault",
+    "--ela-state-text",
+    "--ela-level-text",
+}
 BREAKPOINTS = {"0px", "720px", "1200px"}
 
 WRONG = [
@@ -253,6 +286,30 @@ WRONG = [
     ("a { z-index: 10; }", "the number of z-index is a token"),
     ("a { flex: 2; }", "2: a number written by hand"),
     ("a { background: linear-gradient(var(--ela-space-1), var(--ela-space-1)); }", "a gradient"),
+    (
+        ".ela-button { background: radial-gradient(var(--ela-space-1), var(--ela-space-1)); }",
+        "a gradient outside the sphere, glass and the action",
+    ),
+    (
+        ".ela-orb__core, .ela-pill { background: radial-gradient(var(--ela-space-1)); }",
+        "a gradient outside the sphere, glass and the action",
+    ),
+    (
+        ".specimen-hero { background: conic-gradient(var(--ela-space-1), var(--ela-space-1)); }",
+        "a gradient outside the sphere, glass and the action",
+    ),
+    (
+        ".ela-orb__core { background: radial-gradient(#7CCBFF 0%, var(--ela-space-1)); }",
+        "a colour written by hand",
+    ),
+    (
+        ".ela-panel { background: linear-gradient(to bottom, var(--ela-space-1) 44%); }",
+        "44%: a length written by hand",
+    ),
+    (".ela-pill { backdrop-filter: blur(var(--ela-space-1)); }", "light and glass only"),
+    (".ela-button--primary { filter: blur(var(--ela-space-1)); }", "light and glass only"),
+    (".ela-orb__cloud, .ela-tile { mix-blend-mode: screen; }", "light and glass only"),
+    (".specimen-bar { -webkit-backdrop-filter: blur(var(--ela-space-1)); }", "light and glass"),
     ("a { padding: var(--ela-space-7); }", "tokens.css defines no such property"),
     ("a { background: var(--ela-palette-ink-900); }", "a primitive skips the theme"),
     ("a { padding: var(--gap); }", "a custom property is a token"),
@@ -284,6 +341,16 @@ RIGHT = [
     'a::after { content: "12px #fff ease"; }',
     "a { margin-inline-end: calc(var(--ela-space-1) * -1); grid-template-columns: 1fr 1fr; }",
     "@keyframes k { to { rotate: 1turn; } }",
+    ".ela-orb__core { background: radial-gradient(circle at var(--ela-space-1)"
+    " var(--ela-space-1), var(--ela-color-text-primary) var(--ela-space-1), transparent); }",
+    ".ela-room { background-image: linear-gradient(to bottom, var(--ela-space-1), transparent); }",
+    ".ela-button--primary:hover, .ela-button--primary.is-hover"
+    " { background-image: linear-gradient(to bottom, var(--ela-space-1), var(--ela-space-1)); }",
+    ".ela-panel { backdrop-filter: blur(var(--ela-space-1)) saturate(var(--ela-space-1)); }",
+    ".ela-panel--inset { backdrop-filter: none; }",
+    ".ela-orb__cloud { mix-blend-mode: screen; filter: blur(var(--ela-space-1)); }",
+    ".ela-state__key { color: var(--ela-state-text); }",
+    ".ela-level__key { color: var(--ela-level-text); }",
     "@media (min-width: 720px) { a { margin: 0; } }",
     "@media (prefers-reduced-motion: no-preference) and (pointer: coarse) { a { margin: 0; } }",
 ]
@@ -357,5 +424,5 @@ def test_a_token_only_a_derived_rule_reads_is_not_an_orphan() -> None:
 
 def test_a_primitive_no_semantic_colour_names_is_found() -> None:
     source = tokens()
-    source["palette"]["ink"]["950"] = {"$value": "#000000", "$type": "color"}
-    assert unaliased_palette(source) == {"{palette.ink.950}"}
+    source["palette"]["ink"]["1000"] = {"$value": "#000000", "$type": "color"}
+    assert unaliased_palette(source) == {"{palette.ink.1000}"}

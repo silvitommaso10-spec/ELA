@@ -1,8 +1,13 @@
 """What a component promises (M17.1, criteri 10, 11 e 15; dec. D, dec. H, dec. J).
 
 - **A key is always text.** It is what survives where no CSS arrives — the text of a push
-  notification — and what carries WCAG 1.4.1: never colour alone. Colour and shape group the
-  states; no two share both, compared on the **resolved** values in each theme.
+  notification — and what carries WCAG 1.4.1: never colour alone, and never motion alone. The
+  state is the light of the sphere — its colour, its rhythm, its intensity, its core — and no
+  two states have the same light, compared on the **resolved** values in each theme. With
+  reduced motion several states of ELA at work look alike, and that is declared: the word
+  beneath says which.
+- **The components are enough**: the compositions use classes of ``components.css`` and nothing
+  else, and the meter has as many segments as the longer of its two lists.
 - **Every interaction state exists, and its preview cannot drift**: a pseudo-class and its twin
   class live in the same selector list, so the specimen shows the real declarations.
 - **Native elements**, which a keyboard already operates; ids that are unique, labels that
@@ -14,11 +19,12 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from typing import Any
 
 from tests.design import markup, stylesheet
-from tests.design.tree import fragments, generator, read, tokens
+from tests.design.tree import compositions, fragments, generator, read, tokens
 
 LIST_ATTRIBUTES = {
     "data-ela-state": "state",
@@ -64,14 +70,19 @@ def faults_in_keys(page: markup.Element, source: Tokens) -> list[str]:
 
 
 def signature(source: Tokens, key: str, theme: str) -> tuple[object, ...]:
-    """What a state looks like when it stands still: its colour and the parameters of its shape."""
+    """The light of a state, resolved: everything its derived rule sets, but the colour of the
+    text — two states may well share that."""
     module = generator()
     entry = source["state"][key]
-    shape = module.group_at(source, entry["shape"]["$value"], theme, "shape")
-    parameters = tuple(
-        module.resolve(source, shape[name]["$value"], theme) for name in module.SHAPE_PARAMETERS
+    light = module.group_at(source, entry["light"]["$value"], theme, "light")
+    core = module.group_at(source, entry["core"]["$value"], theme, "core")
+    return (
+        *(module.colour_of(source, light[part]["$value"], theme) for part in module.LIGHT_PARTS),
+        *(module.resolve(source, entry[name]["$value"], theme) for name in ("spin", "turning")),
+        *(module.resolve(source, entry[name]["$value"], theme) for name in ("glow", "plasma")),
+        *(str(core[part]["$value"]) for part in module.CORE_PARTS),
+        str(entry["ambient"]["$value"]),
     )
-    return (module.resolve(source, entry["color"]["$value"], theme), *parameters)
 
 
 def states_that_look_the_same(source: Tokens) -> list[str]:
@@ -81,9 +92,7 @@ def states_that_look_the_same(source: Tokens) -> list[str]:
         for key in generator().entries(source["state"]):
             look = signature(source, key, theme)
             if look in seen:
-                found.append(
-                    f"{theme}: {seen[look]} and {key} have the same colour and the same shape"
-                )
+                found.append(f"{theme}: {seen[look]} and {key} have the same light")
             seen.setdefault(look, key)
     return found
 
@@ -92,7 +101,134 @@ def test_every_key_is_rendered_as_text() -> None:
     assert faults_in_keys(markup.parse(read("index.html")), tokens()) == []
 
 
-def test_no_two_states_share_colour_and_shape() -> None:
+SIZES = {"sm": "ela-presence--sm", "md": None, "lg": "ela-presence--lg"}
+"""The three sizes of the presence, and the class that says which: md is the one without."""
+PIXELS = {"sm": "24px", "md": "96px", "lg": "220px"}
+"""The user's decision of 2026-09-19: pinned here, not only in ``tokens.json``."""
+
+
+def sizes_shown(page: markup.Element, key: str) -> set[str]:
+    modifiers = {name for name in SIZES.values() if name is not None}
+    found = set()
+    for element in page.walk():
+        if "ela-presence" in element.classes and element.get("data-ela-state") == key:
+            said = set(element.classes) & modifiers
+            found |= {size for size, name in SIZES.items() if (name in said if name else not said)}
+    return found
+
+
+def test_every_state_shows_the_sphere_in_its_three_sizes_and_the_header_shows_it_at_rest() -> None:
+    """The user's decision of 2026-09-18: the presence of ELA is the sphere (dec. Q)."""
+    page = markup.parse(read("index.html"))
+    source = tokens()
+    sizes = generator().entries(source["presence"]["size"])
+    assert {name: leaf["$value"] for name, leaf in sizes.items()} == PIXELS
+    for key in generator().entries(source["state"]):
+        assert sizes_shown(page, key) == set(SIZES), key
+
+    (hero,) = [el for el in page.walk() if el.tag == "header"]
+    rest = source["presence"]["rest"]["$value"]
+    shown = [el for el in hero.walk() if "ela-presence" in el.classes]
+    assert [(el.get("data-ela-state"), "ela-presence--lg" in el.classes) for el in shown] == [
+        (rest, True)
+    ]
+    assert [el for el in hero.walk() if "ela-orb__core" in el.classes]
+    assert [el.text() for el in hero.walk() if "ela-wordmark" in el.classes] == ["ELA"]
+
+
+def test_the_state_of_a_row_is_the_small_sphere_with_its_key() -> None:
+    """«Il componente state diventa la sfera sm»: a sphere, and the key as text beside it."""
+    page = markup.parse(read("index.html"))
+    rows = [el for el in page.walk() if "ela-state" in el.classes]
+    assert rows, "there must be states to read, or this test is vacuous"
+    for row in rows:
+        assert [el for el in row.walk() if "ela-orb" in el.classes], row.get("data-ela-state")
+        assert row.get("data-ela-state") in row.text()
+    rules = stylesheet.parse(read("components.css"))
+    sized = [r.value("--_s") for r in rules if ".ela-state .ela-orb" in r.selectors]
+    assert sized == ["var(--ela-presence-size-sm)"]
+
+
+def rows_out_of_order(page: markup.Element) -> list[str]:
+    """A row reads left to right: the small sphere, what it is, and the key of ELA at the end."""
+    found = []
+    for row in page.walk():
+        if "ela-row" not in row.classes:
+            continue
+        parts = [
+            next(
+                (
+                    name
+                    for name in ("ela-orb", "ela-row__title", "ela-row__key")
+                    if name in el.classes
+                ),
+                None,
+            )
+            for el in row.children
+            if isinstance(el, markup.Element)
+        ]
+        if parts != ["ela-orb", "ela-row__title", "ela-row__key"]:
+            found.append(f"a row holds {parts}")
+        elif [el.text() for el in row.walk() if "ela-row__key" in el.classes] != [
+            row.get("data-ela-state")
+        ]:
+            found.append(f"the key of a row is not its state: {row.get('data-ela-state')}")
+    return found
+
+
+def test_a_row_is_the_sphere_what_it_is_and_the_key_at_the_end() -> None:
+    page = markup.parse(read("index.html"))
+    assert [el for el in page.walk() if "ela-row" in el.classes], "or this test is vacuous"
+    assert rows_out_of_order(page) == []
+    rules = stylesheet.parse(read("components.css"))
+    assert [r.value("--_s") for r in rules if ".ela-row .ela-orb" in r.selectors] == [
+        "var(--ela-presence-size-sm)"
+    ]
+
+    wrong = markup.parse(
+        '<div class="ela-row" data-ela-state="IDLE"><span class="ela-row__key">IDLE</span>'
+        '<span class="ela-orb"></span><p class="ela-row__title">iPhone</p></div>'
+        '<div class="ela-row" data-ela-state="IDLE"><span class="ela-orb"></span>'
+        '<p class="ela-row__title">iPhone</p><span class="ela-row__key">WORKING</span></div>'
+    )
+    assert len(rows_out_of_order(wrong)) == 2
+
+
+def fields_that_do_not_fill(components: str) -> list[str]:
+    """A field is as wide as what holds it — never the default width of an input, which cuts
+    the text — and how wide it may grow is a token."""
+    rules = {s: r for r in stylesheet.parse(components) if r.media is None for s in r.selectors}
+    found = []
+    for selector in (".ela-field", ".ela-field__input"):
+        if selector not in rules or rules[selector].value("inline-size") != "100%":
+            found.append(f"{selector} does not fill its container")
+    widest = rules[".ela-field"].value("max-inline-size") if ".ela-field" in rules else None
+    if widest is not None and not widest.startswith("var(--ela-"):
+        found.append(f"the widest a field grows is a token, found {widest}")
+    return found
+
+
+def test_a_field_fills_its_container() -> None:
+    assert fields_that_do_not_fill(read("components.css")) == []
+    assert fields_that_do_not_fill(
+        ".ela-field { margin: 0; } .ela-field__input { margin: 0; }"
+    ) == [
+        ".ela-field does not fill its container",
+        ".ela-field__input does not fill its container",
+    ]
+
+
+def test_a_size_that_is_not_shown_is_seen() -> None:
+    page = markup.parse(
+        '<div class="ela-presence ela-presence--lg" data-ela-state="IDLE">IDLE</div>'
+        '<div class="ela-presence" data-ela-state="IDLE">IDLE</div>'
+        '<div class="ela-presence ela-presence--sm" data-ela-state="ERROR">ERROR</div>'
+    )
+    assert sizes_shown(page, "IDLE") == {"md", "lg"}
+    assert sizes_shown(page, "ERROR") == {"sm"}
+
+
+def test_no_two_states_have_the_same_light() -> None:
     assert states_that_look_the_same(tokens()) == []
 
 
@@ -110,18 +246,15 @@ def test_a_key_without_its_text_and_a_key_of_no_list_are_found() -> None:
 
 def test_two_states_that_differ_only_by_name_are_found() -> None:
     source = tokens()
-    source["state"]["UPDATING"]["color"]["$value"] = "{color.signal.wait}"
-    source["state"]["UPDATING"]["shape"]["$value"] = "{shape.arc}"
+    source["state"]["PLANNING"] = dict(source["state"]["THINKING"])
     found = states_that_look_the_same(source)
-    assert found and all("RECOVERING and UPDATING" in line for line in found)
+    assert found and all("THINKING and PLANNING" in line for line in found)
 
     source = tokens()
-    for theme in generator().THEMES:
-        source[theme]["color"]["signal"]["change"]["$value"] = source[theme]["color"]["signal"][
-            "activity"
-        ]["$value"]
-    assert any("WORKING and UPDATING" in line for line in states_that_look_the_same(source)), (
-        "two roles that resolve to one colour are one colour: the comparison is on values"
+    source["state"]["EVOLVING"]["spin"]["$value"] = "{motion.duration.spin-updating}"
+    source["state"]["EVOLVING"]["glow"]["$value"] = source["state"]["UPDATING"]["glow"]["$value"]
+    assert any("UPDATING and EVOLVING" in line for line in states_that_look_the_same(source)), (
+        "the comparison is on what the sphere does, not on the name of the state"
     )
 
 
@@ -370,3 +503,68 @@ def test_a_wrong_target_token_is_found() -> None:
     assert faults_in_the_target_token(tokens(), derived) == [
         "--ela-target-min is not the touch size under (pointer: coarse)"
     ]
+
+
+# ----------------------------------------------------------------------------------------
+# The components are enough (the compositions), and the meter counts what its lists count
+# ----------------------------------------------------------------------------------------
+
+
+def classes_defined(components: str) -> set[str]:
+    found = set()
+    for rule in stylesheet.parse(components):
+        for selector in rule.selectors:
+            found |= set(re.findall(r"\.([A-Za-z][A-Za-z0-9_-]*)", selector))
+    return found
+
+
+def classes_of_nobody(found: dict[str, str], defined: set[str]) -> list[str]:
+    """Classes a composition uses and ``components.css`` does not define."""
+    unknown = []
+    for name, text in found.items():
+        for element in markup.parse(text).walk():
+            unknown += [f"{name}: .{used}" for used in element.classes if used not in defined]
+    return sorted(set(unknown))
+
+
+def meters_that_miscount(page: markup.Element, source: Tokens) -> list[str]:
+    longest = max(len(generator().entries(source[group])) for group in generator().LEVELS)
+    found = []
+    for element in page.walk():
+        if "ela-meter" in element.classes:
+            segments = [el for el in element.walk() if "ela-meter__segment" in el.classes]
+            if len(segments) != longest:
+                found.append(f"a meter has {len(segments)} segments, and the lists have {longest}")
+    return found
+
+
+def test_the_compositions_are_made_of_components_and_of_nothing_else() -> None:
+    """Not views: the proof that the components are enough to compose them."""
+    found = compositions()
+    assert {name.split("/")[-1] for name in found} == {
+        "home.html",
+        "approval.html",
+        "widget.html",
+        "phone.html",
+    }
+    assert classes_of_nobody(found, classes_defined(read("components.css"))) == []
+    page = markup.parse(read("index.html"))
+    assert len([el for el in page.walk() if (el.get("id") or "").startswith("composition-")]) == 4
+
+
+def test_every_meter_has_a_segment_for_every_level() -> None:
+    page = markup.parse(read("index.html"))
+    assert [el for el in page.walk() if "ela-meter" in el.classes], "or this test is vacuous"
+    assert meters_that_miscount(page, tokens()) == []
+
+
+def test_a_class_of_nobody_and_a_meter_that_miscounts_are_found() -> None:
+    defined = classes_defined(".ela-panel { margin: 0; } .ela-stack > .ela-tile { margin: 0; }")
+    assert defined == {"ela-panel", "ela-stack", "ela-tile"}
+    found = {
+        "x.html": '<div class="ela-panel home-hero"><p class="ela-tile specimen-x">a</p></div>'
+    }
+    assert classes_of_nobody(found, defined) == ["x.html: .home-hero", "x.html: .specimen-x"]
+
+    short = markup.parse('<span class="ela-meter"><i class="ela-meter__segment"></i></span>')
+    assert len(meters_that_miscount(short, tokens())) == 1

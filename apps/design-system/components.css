@@ -2,35 +2,106 @@
  * tests/design/test_tokens_only.py refuses a colour, a length, a duration, an angle or a curve
  * written here. Link tokens.css before this file.
  *
+ * Direction, in the user's words: «stile Apple, futuristico stile JARVIS, azzurro e bianco per
+ * tutto, premium». Glass, light, depth — all of it CSS, none of it a picture.
+ *
  * The lists — the states of ELA, the levels of risk and of attention — do not appear here: one
  * rule per key is derived into tokens.css, and a component reads the generic properties that
  * rule sets (--ela-state-*, --ela-level-*).
  *
+ * Gradients live in three places and nowhere else — the presence (the sphere), the materials
+ * (glass and the room), the primary action — and every stop is a token. filter, backdrop-filter
+ * and mix-blend-mode live in the presence and in the materials only (ADR 0042).
+ *
  * Every pseudo-class of an interaction state has a twin class in the same selector list
  * (:hover and .is-hover): the specimen page shows the state still, and it cannot drift. */
 
-.ela-wordmark,
-.ela-presence,
-.ela-state,
-.ela-level,
-.ela-button,
-.ela-field,
-.ela-panel,
-.ela-keyvalue,
-.ela-row,
-.ela-tag,
-.ela-notice {
-  box-sizing: border-box;
+/* ---------------------------------------------------------------------------------------
+ * type
+ * ------------------------------------------------------------------------------------- */
+
+.ela-display,
+.ela-title,
+.ela-body,
+.ela-caption,
+.ela-eyebrow,
+.ela-key,
+.ela-number {
+  margin: 0;
   font-family: var(--ela-typography-family-sans);
+  color: var(--ela-color-text-primary);
+}
+
+.ela-display {
+  font-size: var(--ela-typography-style-display-size);
+  font-weight: var(--ela-typography-style-display-weight);
+  line-height: var(--ela-typography-style-display-line);
+  letter-spacing: var(--ela-typography-style-display-tracking);
+}
+
+.ela-title {
+  font-size: var(--ela-typography-style-title-size);
+  font-weight: var(--ela-typography-style-title-weight);
+  line-height: var(--ela-typography-style-title-line);
+  letter-spacing: var(--ela-typography-style-title-tracking);
+}
+
+.ela-body {
   font-size: var(--ela-typography-style-body-size);
   font-weight: var(--ela-typography-style-body-weight);
   line-height: var(--ela-typography-style-body-line);
   letter-spacing: var(--ela-typography-style-body-tracking);
+  color: var(--ela-color-text-body);
+}
+
+.ela-caption {
+  font-size: var(--ela-typography-style-caption-size);
+  font-weight: var(--ela-typography-style-caption-weight);
+  line-height: var(--ela-typography-style-caption-line);
+  letter-spacing: var(--ela-typography-style-caption-tracking);
+  color: var(--ela-color-text-body);
+}
+
+.ela-eyebrow {
+  font-size: var(--ela-typography-style-eyebrow-size);
+  font-weight: var(--ela-typography-style-eyebrow-weight);
+  line-height: var(--ela-typography-style-eyebrow-line);
+  letter-spacing: var(--ela-typography-style-eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--ela-color-text-muted);
+}
+
+.ela-key {
+  font-size: var(--ela-typography-style-key-size);
+  font-weight: var(--ela-typography-style-key-weight);
+  line-height: var(--ela-typography-style-key-line);
+  letter-spacing: var(--ela-typography-style-key-tracking);
+  text-transform: uppercase;
+  color: var(--ela-color-text-key);
+}
+
+.ela-number {
+  font-size: var(--ela-typography-style-number-size);
+  font-weight: var(--ela-typography-style-number-weight);
+  line-height: var(--ela-typography-style-number-line);
+  letter-spacing: var(--ela-typography-style-number-tracking);
+}
+
+.ela-muted {
+  color: var(--ela-color-text-muted);
+}
+
+.ela-strong {
+  font-weight: var(--ela-typography-style-title-weight);
   color: var(--ela-color-text-primary);
 }
 
+.ela-data {
+  font-family: var(--ela-typography-family-mono);
+}
+
 /* ---------------------------------------------------------------------------------------
- * wordmark — «ELA» is type, not a drawing
+ * wordmark — «ELA» is type, not a drawing: widely tracked, with a light of azure behind it
  * ------------------------------------------------------------------------------------- */
 
 .ela-wordmark {
@@ -42,6 +113,12 @@
   line-height: var(--ela-typography-style-title-line);
   letter-spacing: var(--ela-wordmark-tracking);
   text-transform: uppercase;
+  color: var(--ela-color-text-primary);
+  text-shadow: 0 0 var(--ela-glow-wordmark) var(--ela-color-glow-wordmark);
+}
+
+.ela-wordmark--sm {
+  font-size: var(--ela-wordmark-size-sm);
 }
 
 .ela-wordmark--lg {
@@ -49,188 +126,608 @@
 }
 
 /* ---------------------------------------------------------------------------------------
- * indicator — the shape of a state. A shape is its parameters (tokens.json, "shape"):
- * radius, fill, border style, rotation, vertical scale, two sides that may be cut, a dot.
+ * material: the room — an almost black blue, with two cold lights and a glow at its centre
  * ------------------------------------------------------------------------------------- */
 
-.ela-indicator {
+.ela-room {
   position: relative;
-  display: inline-block;
-  flex: none;
-  box-sizing: border-box;
-  inline-size: var(--ela-space-3);
-  block-size: var(--ela-space-3);
-  border-width: var(--ela-border-width-strong);
-  border-style: var(--ela-state-border-style);
-  border-color: var(--ela-state-color);
-  border-block-start-color: var(--ela-state-cut-a);
-  border-inline-end-color: var(--ela-state-cut-b);
-  border-radius: var(--ela-state-radius);
-  background: var(--ela-state-fill);
-  transform: rotate(var(--ela-state-rotate)) scaleY(var(--ela-state-scale-y));
+  isolation: isolate;
+  font-family: var(--ela-typography-family-sans);
+  font-size: var(--ela-typography-style-body-size);
+  line-height: var(--ela-typography-style-body-line);
+  color: var(--ela-color-text-primary);
+  background-color: var(--ela-color-surface-base);
+  background-image:
+    radial-gradient(
+      var(--ela-material-room-high-width) var(--ela-material-room-high-height) at
+        var(--ela-material-room-high-x) var(--ela-material-room-high-y),
+      var(--ela-color-room-light-high),
+      transparent var(--ela-material-room-high-fade)
+    ),
+    radial-gradient(
+      var(--ela-material-room-low-width) var(--ela-material-room-low-height) at
+        var(--ela-material-room-low-x) var(--ela-material-room-low-y),
+      var(--ela-color-room-light-low),
+      transparent var(--ela-material-room-low-fade)
+    ),
+    linear-gradient(to bottom, var(--ela-color-room-top), var(--ela-color-room-bottom));
 }
 
-.ela-indicator::after {
+.ela-room::before {
   content: "";
   position: absolute;
-  inset: var(--ela-border-width-hairline);
-  border-radius: var(--ela-radius-full);
-  background: var(--ela-state-color);
-  opacity: var(--ela-state-dot);
+  inset: 0;
+  z-index: var(--ela-layer-behind);
+  pointer-events: none;
+  background-image: radial-gradient(
+    var(--ela-material-room-glow-width) var(--ela-material-room-glow-height) at
+      var(--ela-material-room-glow-x) var(--ela-material-room-glow-y),
+    var(--ela-color-room-glow),
+    transparent var(--ela-material-room-glow-fade)
+  );
+}
+
+/* ---------------------------------------------------------------------------------------
+ * material: glass — low-opacity white, a hairline of light, and what is behind it blurred
+ * ------------------------------------------------------------------------------------- */
+
+.ela-panel {
+  position: relative;
+  box-sizing: border-box;
+  padding: var(--ela-space-8);
+  border: var(--ela-border-width-hairline) solid var(--ela-color-line-soft);
+  border-radius: var(--ela-radius-panel);
+  background-image: linear-gradient(
+    to bottom,
+    var(--ela-color-glass-top),
+    var(--ela-color-glass-bottom)
+  );
+  box-shadow: var(--ela-shadow-glass);
+  -webkit-backdrop-filter: blur(var(--ela-material-blur)) saturate(var(--ela-material-saturate));
+  backdrop-filter: blur(var(--ela-material-blur)) saturate(var(--ela-material-saturate));
+}
+
+.ela-panel--soft {
+  padding: var(--ela-space-6);
+  background-color: var(--ela-color-glass-soft);
+  background-image: none;
+  box-shadow: var(--ela-shadow-glass-soft);
+}
+
+.ela-panel--warm {
+  border-color: var(--ela-color-line-warm);
+  box-shadow: var(--ela-shadow-glass-warm);
+}
+
+.ela-panel--inset {
+  padding: var(--ela-space-4);
+  border-radius: var(--ela-radius-inset);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.ela-panel--pill {
+  padding-block: var(--ela-space-3);
+  padding-inline: var(--ela-space-3) var(--ela-space-5);
+  border-radius: var(--ela-radius-pill);
+}
+
+.ela-hairline {
+  block-size: var(--ela-border-width-hairline);
+  margin: 0;
+  border: 0;
+  background-color: var(--ela-color-line-soft);
+}
+
+/* ---------------------------------------------------------------------------------------
+ * presence: the sphere — light held in glass. Geometry, not a picture.
+ *
+ *   ambient   a wide, soft halo in the colour of the light
+ *   shell     the dark glass, with an edge of light, a shade, a sheen, and its shadow
+ *   plasma    the light inside: two clouds and a vortex, very blurred, turning at three speeds
+ *   core      the white heart
+ *   rim       a light at the bottom edge;   spec  the specular reflection at the top
+ *   stars     a few particles outside the glass
+ *
+ * The state is the light, and it arrives from the derived rule of the state: its colour
+ * (--ela-state-light, -soft, -veil), its rhythm (--ela-state-spin, and -play when it stands
+ * still), its intensity (--ela-state-glow), its core. And ALWAYS the key, as text.
+ * ------------------------------------------------------------------------------------- */
+
+.ela-orb {
+  --_s: var(--ela-presence-size-md);
+  position: relative;
+  display: block;
+  flex: none;
+  isolation: isolate;
+  inline-size: var(--_s);
+  block-size: var(--_s);
+}
+
+.ela-orb > *,
+.ela-orb__cloud {
+  position: absolute;
+  display: block;
+  border-radius: var(--ela-radius-pill);
+  pointer-events: none;
+}
+
+.ela-orb__ambient {
+  inset: var(--ela-presence-ambient-inset);
+  background-image: radial-gradient(
+    circle,
+    var(--ela-state-light) var(--ela-presence-ambient-stop-core),
+    var(--ela-state-light-veil) var(--ela-presence-ambient-stop-mid),
+    transparent var(--ela-presence-ambient-stop-edge)
+  );
+  opacity: calc(var(--ela-state-glow) * var(--ela-presence-ambient-strength));
+  filter: blur(calc(var(--_s) * var(--ela-presence-ambient-blur)));
+}
+
+.ela-orb__shell {
+  inset: 0;
+  background-image: radial-gradient(
+    circle,
+    var(--ela-color-orb-shell-core) var(--ela-presence-shell-stop-core),
+    var(--ela-color-orb-shell-mid) var(--ela-presence-shell-stop-mid),
+    var(--ela-color-orb-shell-edge) var(--ela-presence-shell-stop-edge),
+    var(--ela-color-orb-shell-rim) var(--ela-presence-shell-stop-rim),
+    transparent var(--ela-presence-shell-stop-end)
+  );
+  box-shadow:
+    inset 0 0 0 var(--ela-border-width-hairline) var(--ela-color-orb-line),
+    inset 0 calc(var(--_s) * var(--ela-presence-shell-shade-y))
+      calc(var(--_s) * var(--ela-presence-shell-shade-blur)) var(--ela-color-orb-shade),
+    inset 0 calc(var(--_s) * var(--ela-presence-shell-sheen-y))
+      calc(var(--_s) * var(--ela-presence-shell-sheen-blur)) var(--ela-color-orb-sheen),
+    0 calc(var(--_s) * var(--ela-presence-shell-drop-y))
+      calc(var(--_s) * var(--ela-presence-shell-drop-blur)) var(--ela-color-orb-drop);
+}
+
+.ela-orb__plasma {
+  inset: var(--ela-presence-plasma-inset);
+  overflow: hidden;
+  opacity: var(--ela-state-plasma);
+  filter: blur(calc(var(--_s) * var(--ela-presence-plasma-blur)))
+    saturate(var(--ela-presence-plasma-saturate));
+}
+
+.ela-orb__cloud {
+  inset: var(--ela-presence-cloud-inset);
+  mix-blend-mode: screen;
+}
+
+.ela-orb__cloud--one {
+  background-image: radial-gradient(
+    var(--ela-presence-cloud-one-size) var(--ela-presence-cloud-one-size) at
+      var(--ela-presence-cloud-one-x) var(--ela-presence-cloud-one-y),
+    var(--ela-state-light-soft),
+    var(--ela-state-light) var(--ela-presence-cloud-one-mid),
+    transparent var(--ela-presence-cloud-one-edge)
+  );
+  opacity: var(--ela-presence-cloud-one-opacity);
+}
+
+.ela-orb__cloud--two {
+  background-image: radial-gradient(
+    var(--ela-presence-cloud-two-size) var(--ela-presence-cloud-two-size) at
+      var(--ela-presence-cloud-two-x) var(--ela-presence-cloud-two-y),
+    var(--ela-state-light),
+    var(--ela-state-light-veil) var(--ela-presence-cloud-two-mid),
+    transparent var(--ela-presence-cloud-two-edge)
+  );
+  opacity: var(--ela-presence-cloud-two-opacity);
+}
+
+.ela-orb__cloud--vortex {
+  background-image: conic-gradient(
+    from var(--ela-presence-cloud-vortex-from),
+    transparent,
+    var(--ela-state-light-veil) var(--ela-presence-cloud-vortex-rise),
+    transparent var(--ela-presence-cloud-vortex-fall),
+    var(--ela-state-light-veil) var(--ela-presence-cloud-vortex-second),
+    transparent var(--ela-presence-cloud-vortex-end)
+  );
+  opacity: var(--ela-presence-cloud-vortex-opacity);
+}
+
+.ela-orb__core {
+  inset: var(--ela-state-core-inset);
+  background-image: radial-gradient(
+    circle,
+    var(--ela-color-orb-core) var(--ela-presence-core-stop-heart),
+    var(--ela-state-light-soft) var(--ela-presence-core-stop-soft),
+    var(--ela-state-light-veil) var(--ela-presence-core-stop-veil),
+    transparent var(--ela-presence-core-stop-edge)
+  );
+  opacity: var(--ela-state-core-opacity);
+  filter: blur(calc(var(--_s) * var(--ela-presence-core-blur)));
+}
+
+.ela-orb__rim {
+  inset: 0;
+  background-image: radial-gradient(
+    var(--ela-presence-rim-width) var(--ela-presence-rim-height) at var(--ela-presence-rim-x)
+      var(--ela-presence-rim-y),
+    var(--ela-state-light-soft),
+    transparent var(--ela-presence-rim-edge)
+  );
+  opacity: var(--ela-presence-rim-opacity);
+  mix-blend-mode: screen;
+}
+
+.ela-orb__spec {
+  inset: 0;
+  background-image: radial-gradient(
+    var(--ela-presence-spec-width) var(--ela-presence-spec-height) at var(--ela-presence-spec-x)
+      var(--ela-presence-spec-y),
+    var(--ela-color-orb-spec),
+    var(--ela-color-orb-spec-soft) var(--ela-presence-spec-mid),
+    transparent var(--ela-presence-spec-edge)
+  );
+}
+
+.ela-orb__stars {
+  inset: var(--ela-presence-stars-inset);
+  opacity: calc(var(--ela-state-glow) * var(--ela-presence-stars-opacity));
+  background-image:
+    radial-gradient(
+      circle at var(--ela-presence-stars-one-x) var(--ela-presence-stars-one-y),
+      var(--ela-state-light-soft) var(--ela-presence-stars-dot),
+      transparent var(--ela-presence-stars-fade)
+    ),
+    radial-gradient(
+      circle at var(--ela-presence-stars-two-x) var(--ela-presence-stars-two-y),
+      var(--ela-state-light-soft) var(--ela-presence-stars-dot),
+      transparent var(--ela-presence-stars-fade)
+    ),
+    radial-gradient(
+      circle at var(--ela-presence-stars-three-x) var(--ela-presence-stars-three-y),
+      var(--ela-state-light-soft) var(--ela-presence-stars-dot),
+      transparent var(--ela-presence-stars-fade)
+    ),
+    radial-gradient(
+      circle at var(--ela-presence-stars-four-x) var(--ela-presence-stars-four-y),
+      var(--ela-state-light-soft) var(--ela-presence-stars-dot),
+      transparent var(--ela-presence-stars-fade)
+    );
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .ela-indicator {
-    animation-name: var(--ela-state-motion);
-    animation-duration: var(--ela-state-motion-duration);
-    animation-timing-function: var(--ela-state-motion-easing);
-    animation-iteration-count: var(--ela-state-motion-iterations);
-    animation-direction: var(--ela-state-motion-direction);
+  .ela-orb__cloud,
+  .ela-orb__stars {
+    animation-name: ela-orb-swirl;
+    animation-timing-function: var(--ela-motion-easing-linear);
+    animation-iteration-count: infinite;
+    animation-play-state: var(--ela-state-play);
+  }
+
+  .ela-orb__cloud--one {
+    animation-duration: calc(var(--ela-state-spin) * var(--ela-presence-cloud-one-spin));
+  }
+
+  .ela-orb__cloud--two {
+    animation-duration: calc(var(--ela-state-spin) * var(--ela-presence-cloud-two-spin));
+    animation-direction: reverse;
+  }
+
+  .ela-orb__cloud--vortex {
+    animation-duration: calc(var(--ela-state-spin) * var(--ela-presence-cloud-vortex-spin));
+  }
+
+  .ela-orb__stars {
+    animation-duration: calc(var(--ela-state-spin) * var(--ela-presence-stars-spin));
+  }
+
+  .ela-orb__core {
+    animation-name: var(--ela-state-core-motion);
+    animation-duration: var(--ela-state-core-motion-duration);
+    animation-timing-function: var(--ela-state-core-motion-easing);
+    animation-iteration-count: var(--ela-state-core-motion-iterations);
+    animation-direction: var(--ela-state-core-motion-direction);
+  }
+
+  .ela-orb__ambient {
+    animation-name: var(--ela-state-ambient-motion);
+    animation-duration: var(--ela-state-ambient-motion-duration);
+    animation-timing-function: var(--ela-state-ambient-motion-easing);
+    animation-iteration-count: var(--ela-state-ambient-motion-iterations);
+    animation-direction: var(--ela-state-ambient-motion-direction);
   }
 }
 
-@keyframes ela-breathe {
-  from {
-    opacity: var(--ela-opacity-full);
-  }
-  to {
-    opacity: var(--ela-opacity-dim);
-  }
-}
-
-@keyframes ela-beat {
-  0% {
-    opacity: var(--ela-opacity-full);
-  }
-  20% {
-    opacity: var(--ela-opacity-dim);
-  }
-  35% {
-    opacity: var(--ela-opacity-full);
-  }
-  55% {
-    opacity: var(--ela-opacity-dim);
-  }
-  100% {
-    opacity: var(--ela-opacity-full);
-  }
-}
-
-@keyframes ela-orbit {
+@keyframes ela-orb-swirl {
   to {
     rotate: 1turn;
   }
 }
 
-@keyframes ela-settle {
+@keyframes ela-orb-breathe {
   from {
-    scale: var(--ela-motion-scale-emphasis);
+    opacity: var(--ela-presence-core-breathe-low);
+    scale: var(--ela-presence-core-breathe-small);
   }
   to {
+    opacity: var(--ela-opacity-full);
+    scale: var(--ela-presence-core-breathe-large);
+  }
+}
+
+@keyframes ela-orb-pulse {
+  0% {
+    scale: 1;
+  }
+  50% {
+    scale: var(--ela-presence-core-pulse);
+  }
+  100% {
     scale: 1;
   }
 }
 
-@keyframes ela-signal {
-  0% {
-    opacity: var(--ela-opacity-full);
-  }
-  50% {
-    opacity: var(--ela-opacity-dim);
-  }
-  100% {
-    opacity: var(--ela-opacity-full);
-  }
-}
-
-@keyframes ela-arrive {
+@keyframes ela-orb-signal {
   from {
-    opacity: var(--ela-opacity-dim);
-    translate: 0 var(--ela-space-1);
+    opacity: var(--ela-presence-ambient-signal-low);
   }
   to {
     opacity: var(--ela-opacity-full);
-    translate: 0 0;
   }
 }
 
-/* ---------------------------------------------------------------------------------------
- * presence, state — the key is always text: it is what survives where no CSS arrives
- * ------------------------------------------------------------------------------------- */
+/* presence: the sphere with the key of the state. lg is the home of the Command Center, md
+ * the iPhone and a focused approval, sm the desktop widget: the sphere and one line. */
 
 .ela-presence {
   display: grid;
   justify-items: center;
-  gap: var(--ela-space-2);
-  padding: var(--ela-space-6);
+  gap: var(--ela-space-5);
+  font-family: var(--ela-typography-family-sans);
 }
 
-.ela-presence__status,
+.ela-presence__text {
+  display: grid;
+  justify-items: center;
+  gap: var(--ela-space-2);
+}
+
+.ela-presence--lg {
+  gap: var(--ela-space-8);
+}
+
+.ela-presence--lg .ela-orb {
+  --_s: var(--ela-presence-size-lg);
+}
+
+.ela-presence--sm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ela-space-3);
+}
+
+.ela-presence--sm .ela-presence__text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ela-space-2);
+}
+
+.ela-presence--sm .ela-orb,
+.ela-state .ela-orb,
+.ela-row .ela-orb {
+  --_s: var(--ela-presence-size-sm);
+}
+
+/* state: the sphere of a row — small, with the key beside it */
+
 .ela-state {
   display: inline-flex;
   align-items: center;
-  gap: var(--ela-space-2);
+  gap: var(--ela-space-3);
+  font-family: var(--ela-typography-family-sans);
 }
 
 .ela-presence__key,
-.ela-state__key,
-.ela-level__key {
+.ela-state__key {
   font-size: var(--ela-typography-style-key-size);
   font-weight: var(--ela-typography-style-key-weight);
   line-height: var(--ela-typography-style-key-line);
   letter-spacing: var(--ela-typography-style-key-tracking);
+  text-transform: uppercase;
+  color: var(--ela-state-text);
 }
 
 /* ---------------------------------------------------------------------------------------
- * level — risk and attention: the key as text, and a meter that grows with the position of
- * the key in its list (--ela-level-step of --ela-level-steps, written by the generator)
+ * level and meter — risk and attention: the key as text, and as many segments lit as the
+ * position of the key in its list (--ela-level-step, written by the generator; the index of
+ * a segment too, because CSS cannot count)
  * ------------------------------------------------------------------------------------- */
 
 .ela-level {
   display: inline-flex;
   align-items: center;
-  gap: var(--ela-space-2);
+  gap: var(--ela-space-3);
+  font-family: var(--ela-typography-family-sans);
 }
 
-.ela-level__meter {
+.ela-level__key {
+  font-size: var(--ela-typography-style-key-size);
+  font-weight: var(--ela-typography-style-key-weight);
+  line-height: var(--ela-typography-style-key-line);
+  letter-spacing: var(--ela-typography-style-key-tracking);
+  text-transform: uppercase;
+  color: var(--ela-level-text);
+}
+
+.ela-meter {
+  display: inline-flex;
+  gap: var(--ela-space-1);
+}
+
+.ela-meter__segment {
   position: relative;
-  flex: none;
-  overflow: hidden;
-  inline-size: var(--ela-space-12);
-  block-size: var(--ela-space-1);
-  border-radius: var(--ela-radius-full);
-  background: var(--ela-color-border-subtle);
+  display: block;
+  inline-size: var(--ela-control-segment-width);
+  block-size: var(--ela-control-segment-height);
+  border-radius: var(--ela-radius-mark);
+  background-color: var(--ela-color-glass-track);
 }
 
-.ela-level__meter::before {
+.ela-meter__segment::after {
   content: "";
   position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  inline-size: calc(100% * var(--ela-level-step) / var(--ela-level-steps));
+  inset: 0;
   border-radius: inherit;
-  background: var(--ela-level-color);
+  background-color: var(--ela-level-color);
+  box-shadow: 0 0 var(--ela-glow-dot) var(--ela-level-color);
+  /* lit when the step of the level reaches the index of the segment: 0 and 1 are the bounds
+   * of a comparison here, not a design decision, which is why they are not tokens */
+  --_lit: clamp(0, calc(var(--ela-level-step) - var(--ela-meter-index) + 1), 1);
+  opacity: var(--_lit);
 }
 
 /* ---------------------------------------------------------------------------------------
- * button
+ * pill — a short status, with a luminous dot
+ * ------------------------------------------------------------------------------------- */
+
+.ela-pill {
+  --_tone: var(--ela-color-signal-identity);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ela-space-2);
+  box-sizing: border-box;
+  padding-block: var(--ela-space-1);
+  padding-inline: var(--ela-space-3);
+  border: var(--ela-border-width-hairline) solid var(--ela-color-line-soft);
+  border-radius: var(--ela-radius-pill);
+  font-family: var(--ela-typography-family-sans);
+  font-size: var(--ela-typography-style-key-size);
+  line-height: var(--ela-typography-style-body-line);
+  color: var(--ela-color-text-body);
+  background-color: var(--ela-color-surface-glass);
+}
+
+.ela-pill--wait {
+  --_tone: var(--ela-color-signal-wait);
+}
+
+.ela-pill--alert {
+  --_tone: var(--ela-color-signal-alert);
+}
+
+.ela-pill--fault {
+  --_tone: var(--ela-color-signal-fault);
+}
+
+.ela-pill--off {
+  --_tone: var(--ela-color-signal-off);
+}
+
+.ela-pill__dot {
+  flex: none;
+  inline-size: var(--ela-control-dot);
+  block-size: var(--ela-control-dot);
+  border-radius: var(--ela-radius-pill);
+  background-color: var(--_tone);
+  box-shadow: 0 0 var(--ela-glow-dot) var(--_tone);
+}
+
+/* ---------------------------------------------------------------------------------------
+ * step — a line of the plan: done, now, to do. The mark says it without colour: a ring with
+ * a dot, a full disc that glows, an empty ring.
+ * ------------------------------------------------------------------------------------- */
+
+.ela-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ela-space-3) var(--ela-space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ela-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ela-space-2);
+  font-family: var(--ela-typography-family-sans);
+  font-size: var(--ela-typography-style-caption-size);
+  line-height: var(--ela-typography-style-caption-line);
+  color: var(--ela-color-text-muted);
+}
+
+.ela-step--done {
+  color: var(--ela-color-text-body);
+}
+
+.ela-step--now {
+  color: var(--ela-color-text-primary);
+}
+
+.ela-step__mark {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  inline-size: var(--ela-control-mark);
+  block-size: var(--ela-control-mark);
+  border: var(--ela-border-width-mark) solid var(--ela-color-line-mark);
+  border-radius: var(--ela-radius-pill);
+}
+
+.ela-step--done .ela-step__mark {
+  border-color: var(--ela-color-signal-identity);
+  background-color: var(--ela-color-glass-tint);
+}
+
+.ela-step--done .ela-step__mark::after {
+  content: "";
+  position: absolute;
+  inset: var(--ela-space-1);
+  border-radius: inherit;
+  background-color: var(--ela-color-signal-identity);
+}
+
+.ela-step--now .ela-step__mark {
+  border-color: var(--ela-color-signal-identity);
+  background-color: var(--ela-color-signal-identity);
+  box-shadow: 0 0 var(--ela-glow-mark) var(--ela-color-signal-identity);
+}
+
+/* ---------------------------------------------------------------------------------------
+ * button — glass by default; the primary action is the azure of ELA, with its own light
  * ------------------------------------------------------------------------------------- */
 
 .ela-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   min-block-size: var(--ela-target-min);
   min-inline-size: var(--ela-target-min);
-  padding-block: var(--ela-space-1);
-  padding-inline: var(--ela-space-4);
-  border: var(--ela-border-width-hairline) solid transparent;
-  border-radius: var(--ela-radius-md);
-  font-weight: var(--ela-typography-style-heading-weight);
+  padding-block: var(--ela-space-3);
+  padding-inline: var(--ela-space-6);
+  border: var(--ela-border-width-hairline) solid var(--ela-color-line-control);
+  border-radius: var(--ela-radius-control);
+  font-family: var(--ela-typography-family-sans);
+  font-size: var(--ela-typography-style-control-size);
+  font-weight: var(--ela-typography-style-control-weight);
+  line-height: var(--ela-typography-style-control-line);
+  letter-spacing: var(--ela-typography-style-control-tracking);
+  color: var(--ela-color-text-primary);
+  background-color: var(--ela-color-fill-control);
+  box-shadow: var(--ela-shadow-control);
   cursor: pointer;
   transition:
     background-color var(--ela-motion-duration-fast) var(--ela-motion-easing-standard),
     border-color var(--ela-motion-duration-fast) var(--ela-motion-easing-standard);
+}
+
+.ela-button:hover,
+.ela-button.is-hover {
+  background-color: var(--ela-color-fill-control-hover);
+}
+
+.ela-button:active,
+.ela-button.is-active {
+  background-color: var(--ela-color-fill-control-active);
 }
 
 .ela-button:focus-visible,
@@ -245,57 +742,52 @@
 }
 
 .ela-button--primary {
+  border-color: var(--ela-color-line-primary);
   color: var(--ela-color-text-on-action);
-  background: var(--ela-color-action-primary);
+  background-image: linear-gradient(
+    to bottom,
+    var(--ela-color-fill-primary-top),
+    var(--ela-color-fill-primary-bottom)
+  );
+  box-shadow: var(--ela-shadow-action);
 }
 
 .ela-button--primary:hover,
 .ela-button--primary.is-hover {
-  background: var(--ela-color-action-primary-hover);
+  background-image: linear-gradient(
+    to bottom,
+    var(--ela-color-fill-primary-top-hover),
+    var(--ela-color-fill-primary-bottom-hover)
+  );
 }
 
 .ela-button--primary:active,
 .ela-button--primary.is-active {
-  background: var(--ela-color-action-primary-active);
-}
-
-.ela-button--secondary {
-  color: var(--ela-color-text-primary);
-  background: var(--ela-color-action-secondary);
-}
-
-.ela-button--secondary:hover,
-.ela-button--secondary.is-hover,
-.ela-button--quiet:hover,
-.ela-button--quiet.is-hover {
-  background: var(--ela-color-action-secondary-hover);
-}
-
-.ela-button--secondary:active,
-.ela-button--secondary.is-active,
-.ela-button--quiet:active,
-.ela-button--quiet.is-active {
-  background: var(--ela-color-action-secondary-active);
-}
-
-.ela-button--quiet {
-  border-color: var(--ela-color-border-field);
-  background: transparent;
+  background-image: linear-gradient(
+    to bottom,
+    var(--ela-color-fill-primary-top-active),
+    var(--ela-color-fill-primary-bottom-active)
+  );
 }
 
 .ela-button--danger {
+  border-color: var(--ela-color-line-danger);
   color: var(--ela-color-text-on-danger);
-  background: var(--ela-color-action-danger);
+  background-color: var(--ela-color-fill-danger);
 }
 
 .ela-button--danger:hover,
 .ela-button--danger.is-hover {
-  background: var(--ela-color-action-danger-hover);
+  background-color: var(--ela-color-fill-danger-hover);
 }
 
 .ela-button--danger:active,
 .ela-button--danger.is-active {
-  background: var(--ela-color-action-danger-active);
+  background-color: var(--ela-color-fill-danger-active);
+}
+
+.ela-button--block {
+  inline-size: 100%;
 }
 
 /* ---------------------------------------------------------------------------------------
@@ -304,22 +796,32 @@
 
 .ela-field {
   display: grid;
-  gap: var(--ela-space-1);
+  gap: var(--ela-space-2);
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--ela-frame-field);
+  min-inline-size: 0;
+  font-family: var(--ela-typography-family-sans);
 }
 
-.ela-field__label,
+.ela-field__label {
+  font-size: var(--ela-typography-style-eyebrow-size);
+  font-weight: var(--ela-typography-style-eyebrow-weight);
+  letter-spacing: var(--ela-typography-style-eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--ela-color-text-muted);
+}
+
 .ela-field__help,
 .ela-field__error {
   margin: 0;
   font-size: var(--ela-typography-style-caption-size);
-  font-weight: var(--ela-typography-style-caption-weight);
   line-height: var(--ela-typography-style-caption-line);
-  letter-spacing: var(--ela-typography-style-caption-tracking);
-  color: var(--ela-color-text-secondary);
+  color: var(--ela-color-text-muted);
 }
 
 .ela-field__error {
-  color: var(--ela-color-text-error);
+  color: var(--ela-color-text-fault);
 }
 
 .ela-field__input {
@@ -327,21 +829,30 @@
   min-block-size: var(--ela-target-min);
   min-inline-size: var(--ela-target-min);
   inline-size: 100%;
-  padding-block: var(--ela-space-2);
-  padding-inline: var(--ela-space-3);
-  border: var(--ela-border-width-hairline) solid var(--ela-color-border-field);
-  border-radius: var(--ela-radius-sm);
+  padding-block: var(--ela-space-3);
+  padding-inline: var(--ela-space-4);
+  border: var(--ela-border-width-hairline) solid var(--ela-color-field-border);
+  border-radius: var(--ela-radius-control);
   font-family: inherit;
   font-size: var(--ela-typography-style-body-size);
   line-height: var(--ela-typography-style-body-line);
   color: var(--ela-color-text-primary);
-  background: var(--ela-color-surface-base);
+  background-color: var(--ela-color-fill-field);
   transition: border-color var(--ela-motion-duration-fast) var(--ela-motion-easing-standard);
+}
+
+.ela-field__input::placeholder {
+  color: var(--ela-color-text-muted);
+}
+
+.ela-field__input--pill {
+  padding-inline: var(--ela-space-5);
+  border-radius: var(--ela-radius-pill);
 }
 
 .ela-field__input:hover,
 .ela-field__input.is-hover {
-  border-color: var(--ela-color-text-secondary);
+  border-color: var(--ela-color-text-body);
 }
 
 .ela-field__input:active,
@@ -360,121 +871,98 @@
 }
 
 .ela-field__input:disabled {
-  border-color: var(--ela-color-border-subtle);
+  border-color: var(--ela-color-line-soft);
   color: var(--ela-color-text-disabled);
   cursor: not-allowed;
 }
 
 /* ---------------------------------------------------------------------------------------
- * panel, keyvalue, row, tag, notice
+ * tile, keyvalue, row, notice
  * ------------------------------------------------------------------------------------- */
 
-.ela-panel {
-  padding: var(--ela-space-6);
-  border: var(--ela-border-width-hairline) solid var(--ela-color-border-subtle);
-  border-radius: var(--ela-radius-md);
-  background: var(--ela-elevation-flat-surface);
-  box-shadow: var(--ela-elevation-flat-shadow);
-}
-
-.ela-panel--raised {
-  background: var(--ela-elevation-raised-surface);
-  box-shadow: var(--ela-elevation-raised-shadow);
-}
-
-.ela-panel__title {
-  margin-block: 0 var(--ela-space-4);
-  font-size: var(--ela-typography-style-heading-size);
-  font-weight: var(--ela-typography-style-heading-weight);
-  line-height: var(--ela-typography-style-heading-line);
-  letter-spacing: var(--ela-typography-style-heading-tracking);
+.ela-tile {
+  display: grid;
+  align-content: start;
+  gap: var(--ela-space-2);
 }
 
 .ela-keyvalue {
   display: grid;
-  gap: var(--ela-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(var(--ela-grid-min), 1fr));
+  gap: var(--ela-space-5) var(--ela-space-8);
   margin: 0;
+  font-family: var(--ela-typography-family-sans);
 }
 
 .ela-keyvalue__pair {
   display: grid;
+  align-content: start;
   gap: var(--ela-space-1);
 }
 
 .ela-keyvalue__key {
-  font-size: var(--ela-typography-style-key-size);
-  font-weight: var(--ela-typography-style-key-weight);
-  line-height: var(--ela-typography-style-key-line);
-  letter-spacing: var(--ela-typography-style-key-tracking);
+  font-size: var(--ela-typography-style-eyebrow-size);
+  font-weight: var(--ela-typography-style-eyebrow-weight);
+  line-height: var(--ela-typography-style-eyebrow-line);
+  letter-spacing: var(--ela-typography-style-eyebrow-tracking);
   text-transform: uppercase;
-  color: var(--ela-color-text-secondary);
+  color: var(--ela-color-text-muted);
 }
 
 .ela-keyvalue__value {
   margin: 0;
+  font-size: var(--ela-typography-style-control-size);
+  color: var(--ela-color-text-primary);
 }
 
-.ela-keyvalue__value--data {
-  font-family: var(--ela-typography-family-mono);
-  font-size: var(--ela-typography-style-caption-size);
-  line-height: var(--ela-typography-style-caption-line);
-}
+/* row — one line for a task or a node: the small sphere, what it is and how it is, and at
+ * the end of the line the key of the state of ELA, in small capitals */
 
 .ela-row {
-  display: grid;
-  gap: var(--ela-space-2);
-  padding-block: var(--ela-space-3);
-  border-block-end: var(--ela-border-width-hairline) solid var(--ela-color-border-subtle);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ela-space-3);
+  box-sizing: border-box;
+  inline-size: 100%;
+  font-family: var(--ela-typography-family-sans);
+  font-size: var(--ela-typography-style-control-size);
+  color: var(--ela-color-text-primary);
 }
 
 .ela-row__title {
+  flex: 1;
+  min-inline-size: 0;
   margin: 0;
 }
 
 .ela-row__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--ela-space-2);
-  margin: 0;
-  font-size: var(--ela-typography-style-caption-size);
-  line-height: var(--ela-typography-style-caption-line);
-  color: var(--ela-color-text-secondary);
+  color: var(--ela-color-text-muted);
 }
 
-@media (min-width: 720px) {
-  .ela-row {
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: var(--ela-space-4);
-  }
-}
-
-.ela-tag {
-  display: inline-flex;
-  align-items: center;
-  padding-block: var(--ela-space-1);
-  padding-inline: var(--ela-space-2);
-  border-radius: var(--ela-radius-sm);
-  font-size: var(--ela-typography-style-caption-size);
-  line-height: var(--ela-typography-style-caption-line);
-  color: var(--ela-color-text-secondary);
-  background: var(--ela-color-action-secondary);
+.ela-row__key {
+  margin-inline-start: auto;
+  font-size: var(--ela-typography-style-eyebrow-size);
+  font-weight: var(--ela-typography-style-eyebrow-weight);
+  line-height: var(--ela-typography-style-eyebrow-line);
+  letter-spacing: var(--ela-typography-style-eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--ela-state-text);
 }
 
 .ela-notice {
-  --_tone: var(--ela-color-signal-activity);
+  --_tone: var(--ela-color-signal-identity);
   padding-block: var(--ela-space-3);
   padding-inline: var(--ela-space-4);
-  border: var(--ela-border-width-hairline) solid var(--ela-color-border-subtle);
-  border-inline-start: var(--ela-border-width-strong) solid var(--_tone);
-  border-radius: var(--ela-radius-sm);
-  background: var(--ela-elevation-raised-surface);
-  box-shadow: var(--ela-elevation-raised-shadow);
+  border-inline-start: var(--ela-border-focus-width) solid var(--_tone);
+  border-radius: var(--ela-radius-mark);
+  font-family: var(--ela-typography-family-sans);
+  color: var(--ela-color-text-body);
+  background-color: var(--ela-color-surface-glass);
 }
 
 .ela-notice--success {
-  --_tone: var(--ela-color-signal-normal);
+  --_tone: var(--ela-color-signal-identity);
 }
 
 .ela-notice--error {
@@ -490,5 +978,97 @@
     animation-name: ela-arrive;
     animation-duration: var(--ela-motion-duration-base);
     animation-timing-function: var(--ela-motion-easing-standard);
+  }
+}
+
+@keyframes ela-arrive {
+  from {
+    opacity: var(--ela-opacity-dim);
+    translate: 0 var(--ela-space-1);
+  }
+  to {
+    opacity: var(--ela-opacity-full);
+    translate: 0 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------------------
+ * layout — what a surface arranges the components with
+ * ------------------------------------------------------------------------------------- */
+
+.ela-stack {
+  display: grid;
+  align-content: start;
+  gap: var(--ela-space-4);
+}
+
+.ela-stack--tight {
+  gap: var(--ela-space-2);
+}
+
+.ela-stack--loose {
+  gap: var(--ela-space-10);
+}
+
+.ela-stack--center {
+  justify-items: center;
+  text-align: center;
+}
+
+.ela-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ela-space-3);
+}
+
+.ela-split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ela-space-4);
+}
+
+.ela-grow {
+  flex: 1;
+}
+
+.ela-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--ela-grid-min), 1fr));
+  gap: var(--ela-grid-gutter);
+}
+
+.ela-grid--thirds {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.ela-frame {
+  box-sizing: border-box;
+  inline-size: 100%;
+  margin-inline: auto;
+  padding-block: var(--ela-space-10);
+  padding-inline: var(--ela-grid-margin);
+}
+
+.ela-frame--phone {
+  max-inline-size: var(--ela-frame-phone);
+  padding-block: var(--ela-space-16) var(--ela-space-8);
+}
+
+.ela-frame--card {
+  max-inline-size: var(--ela-frame-card);
+  padding: 0;
+}
+
+.ela-frame--widget {
+  max-inline-size: var(--ela-frame-widget);
+  padding: 0;
+}
+
+@media (min-width: 720px) {
+  .ela-grid__wide {
+    grid-column: span var(--ela-grid-wide);
   }
 }

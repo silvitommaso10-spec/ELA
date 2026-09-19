@@ -1,20 +1,17 @@
-<div class="ela-row">
-  <p class="ela-row__title">Preparing tomorrow's meeting briefing</p>
-  <p class="ela-row__meta">
-    <span class="ela-tag">MacBook</span>
-    <span class="ela-state" data-ela-state="WORKING">
-      <span class="ela-indicator" aria-hidden="true"></span>
-      <span class="ela-state__key">WORKING</span>
-    </span>
-  </p>
-</div>
-<div class="ela-row">
-  <p class="ela-row__title">Send email to client</p>
-  <p class="ela-row__meta">
-    <span class="ela-tag">MacBook</span>
-    <span class="ela-state" data-ela-state="WAITING APPROVAL">
-      <span class="ela-indicator" aria-hidden="true"></span>
-      <span class="ela-state__key">WAITING APPROVAL</span>
-    </span>
-  </p>
+<div class="ela-stack ela-stack--tight">
+  <div class="ela-row" data-ela-state="WORKING">
+    {include:_orb}
+    <p class="ela-row__title">MacBook <span class="ela-row__meta">· Active</span></p>
+    <span class="ela-row__key">WORKING</span>
+  </div>
+  <div class="ela-row" data-ela-state="WAITING">
+    {include:_orb}
+    <p class="ela-row__title">Windows <span class="ela-row__meta">· Ready</span></p>
+    <span class="ela-row__key">WAITING</span>
+  </div>
+  <div class="ela-row" data-ela-state="IDLE">
+    {include:_orb}
+    <p class="ela-row__title">iPhone <span class="ela-row__meta">· Online</span></p>
+    <span class="ela-row__key">IDLE</span>
+  </div>
 </div>

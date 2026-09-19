@@ -51,9 +51,20 @@ def handwritten_stylesheets() -> dict[str, str]:
 
 
 def fragments() -> dict[str, str]:
+    """Every fragment as it is written — the components, the partials, the compositions."""
     folder = DESIGN_SYSTEM / generator().FRAGMENTS
-    found = {path.name: path.read_text(encoding="utf-8") for path in sorted(folder.glob("*.html"))}
+    found = {
+        path.relative_to(folder).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(folder.rglob("*.html"))
+    }
     assert found, "the design system must have fragments, or these tests are vacuous"
+    return found
+
+
+def compositions() -> dict[str, str]:
+    prefix = generator().COMPOSITIONS + "/"
+    found = {name: text for name, text in fragments().items() if name.startswith(prefix)}
+    assert found, "there must be compositions, or the tests on them are vacuous"
     return found
 
 

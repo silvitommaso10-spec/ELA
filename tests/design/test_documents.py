@@ -27,8 +27,7 @@ CRITERION = (
     "Un package entra in `cov-critical` quando ogni suo ramo può essere eseguito in CI. Dove "
     "questo è falso, il package non deve contenere nessun ramo che decida qualcosa."
 )
-PENDING = "*Vuota finché la prova non è fatta.*"
-BLANK = "*In bianco finché la prova a mano non è fatta.*"
+PENDING = "*La prova a mano non è finita.*"
 
 
 def files_of_the_folder() -> set[str]:
@@ -121,7 +120,21 @@ def test_the_adr_is_a_proposal_exactly_as_long_as_the_proof_by_hand_is_not_writt
     proposed = found.group(1) == "Proposta"
     assert found.group(1) in {"Proposta", "Accettata"}
     assert (PENDING in MILESTONE.read_text(encoding="utf-8")) == proposed
-    assert (BLANK in adr()) == proposed, "section 9 names the font once the user has chosen it"
+
+
+def test_the_adr_names_the_font_and_it_is_the_one_of_the_tokens() -> None:
+    """The user's decision of 2026-09-19: the system stack. The ADR quotes the token itself."""
+    family = tokens()["typography"]["family"]["sans"]["$value"]
+    chosen = section_of(adr(), 9)
+    assert f"`{family}`" in chosen
+    assert "San Francisco" in chosen and "Segoe UI" in chosen
+    assert "In bianco" not in chosen
+
+
+def test_the_adr_and_the_readme_record_the_direction_in_the_words_of_the_user() -> None:
+    words = "«stile Apple, futuristico stile JARVIS, azzurro e bianco per tutto, premium»"
+    assert words in flat(adr())
+    assert words in flat(readme())
 
 
 def test_a_derived_file_the_adr_forgets_is_seen() -> None:

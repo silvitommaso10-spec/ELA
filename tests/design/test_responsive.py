@@ -57,6 +57,35 @@ def field_text_size(source: dict[str, Any], components: str) -> float:
     return float(found.group(1))
 
 
+def faults_in_the_bar(specimen: str) -> list[str]:
+    """The bar of the page stays on top: a section a link leads to must stop below it.
+
+    Its height is known only because neither of its rows wraps, and each is as tall as a target.
+    """
+    rules = {s: r for r in stylesheet.parse(specimen) if r.media is None for s in r.selectors}
+    found = []
+    height = rules[".specimen"].value("--_bar") if ".specimen" in rules else None
+    if height is None or height.count("var(--ela-target-min)") != 2:
+        found.append("the height of the bar is its two rows, each as tall as a target")
+    margin = rules.get(".specimen-section")
+    if margin is None or "var(--_bar)" not in (margin.value("scroll-margin-block-start") or ""):
+        found.append("a section does not stop below the bar")
+    for row in (".specimen-switch", ".specimen-nav"):
+        if row not in rules or rules[row].value("flex-wrap") != "nowrap":
+            found.append(f"{row} may wrap, and then nobody knows how tall the bar is")
+    return found
+
+
+def test_a_section_a_link_leads_to_stops_below_the_bar() -> None:
+    assert faults_in_the_bar(read("specimen.css")) == []
+    wrapped = read("specimen.css").replace("flex-wrap: nowrap", "flex-wrap: wrap")
+    assert len(faults_in_the_bar(wrapped)) == 2
+    assert faults_in_the_bar(".specimen { margin: 0; }")[:2] == [
+        "the height of the bar is its two rows, each as tall as a target",
+        "a section does not stop below the bar",
+    ]
+
+
 def test_the_breakpoints_are_the_three_the_decision_names() -> None:
     assert faults_in_breakpoints(tokens()) == []
 
