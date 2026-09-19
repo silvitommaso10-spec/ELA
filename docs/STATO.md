@@ -133,18 +133,20 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
   nodo: un processo separato che esegue le chiamate del Core e le riporta, e che recita le tredici
   storie del contratto senza dichiararne nessuna irrecitabile, e M12.4 il **secondo sistema**: un PC
   Windows che prende le chiamate del Core attraverso la tailnet, protegge il suo segreto con l'ACL
-  della cartella e parla con la voce di Windows. Resta il companion iPhone (M12.5), dopo M17.1 e
-  sullo stesso contratto — e la prova che regge
+  della cartella e parla con la voce di Windows. Resta il companion iPhone (M12.5), sullo stesso
+  contratto e con l'identità di M17.1 — e la prova che regge
   il peso di una seconda implementazione l'ha già data M12.3, trovandogli un buco: un processo che
   riparte non aveva modo di sapere la propria revisione. È la fase a cui una dozzina di documenti
   hanno rimandato qualcosa: `grep -rn "Fase 12" docs/` è l'elenco di ciò che va onorato, e
   `launchd` con il portachiavi è ciò che resta murato finché ELA non avrà un eseguibile firmato
   suo (ADR 0029 §16, ADR 0039 §6).
 - **Fase 17 — il design.** Registrata il 2026-09-18: la fonte di verità è
-  [`spec/ELA_design.md`](spec/ELA_design.md), e le decisioni sono nella 5.10 — M17.1 il Design
-  System, M17.2 il Command Center v1, M17.3 la presenza desktop. **La prossima milestone è M17.1**,
-  e viene **prima di M12.5**, perché il companion usa l'identità che M17.1 definisce (§20 del
-  design). L'ordine è M17.1 → M12.5 → M17.2 → Fase 13, e M17.3 alla fine.
+  [`spec/ELA_design.md`](spec/ELA_design.md), e le decisioni sono nella 5.10. **M17.1, il Design
+  System, è fatta** (2026-09-19, ADR 0042): ELA ha un aspetto — una sfera di luce nel vetro, azzurra
+  e bianca, «stile Apple, futuristico stile JARVIS» — e `apps/design-system/` è ciò che ogni
+  superficie eredita. **La prossima milestone è M12.5**, il companion iPhone, che nasce con
+  quell'identità (§20 del design). Poi M17.2, il Command Center v1, prima della Fase 13; M17.3, la
+  presenza desktop, alla fine.
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
