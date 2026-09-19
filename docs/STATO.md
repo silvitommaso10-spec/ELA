@@ -96,9 +96,9 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.3b` | Implementata | La cartella del segreto del nodo: `0o700` anche dove il Core non l'ha creata prima |
 | 12 — I nodi sulla rete | `M12.3c` | Implementata | Chi legge l'alimentazione: un campo che l'orchestratore pesa e che nessuna macchina produceva |
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
-| 17 — *senza nome* | `M17.1` | Proposta | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
-| 17 — *senza nome* | `M17.2` | Proposta | Il Command Center v1: un client dell'API, e gli stati di ELA come proiezione |
-| 17 — *senza nome* | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
+| 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
+| 17 — Design | `M17.2` | Proposta | Il Command Center v1: un client dell'API, e gli stati di ELA come proiezione |
+| 17 — Design | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
 
 <!-- fine del blocco generato: le milestone -->
 
@@ -111,15 +111,15 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **41** | `docs/adr/NNNN-*.md` |
-| Milestone | **47, di cui 43 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **42** | `docs/adr/NNNN-*.md` |
+| Milestone | **47, di cui 44 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **54** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **25** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **8** | `production_catalogue()` |
 | Rotte dell'API | **29** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
-| Vincoli dichiarati negli ADR | **184** | le sezioni «Vincoli dichiarati» |
+| Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
 
@@ -133,18 +133,20 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
   nodo: un processo separato che esegue le chiamate del Core e le riporta, e che recita le tredici
   storie del contratto senza dichiararne nessuna irrecitabile, e M12.4 il **secondo sistema**: un PC
   Windows che prende le chiamate del Core attraverso la tailnet, protegge il suo segreto con l'ACL
-  della cartella e parla con la voce di Windows. Resta il companion iPhone (M12.5), dopo M17.1 e
-  sullo stesso contratto — e la prova che regge
+  della cartella e parla con la voce di Windows. Resta il companion iPhone (M12.5), sullo stesso
+  contratto e con l'identità di M17.1 — e la prova che regge
   il peso di una seconda implementazione l'ha già data M12.3, trovandogli un buco: un processo che
   riparte non aveva modo di sapere la propria revisione. È la fase a cui una dozzina di documenti
   hanno rimandato qualcosa: `grep -rn "Fase 12" docs/` è l'elenco di ciò che va onorato, e
   `launchd` con il portachiavi è ciò che resta murato finché ELA non avrà un eseguibile firmato
   suo (ADR 0029 §16, ADR 0039 §6).
 - **Fase 17 — il design.** Registrata il 2026-09-18: la fonte di verità è
-  [`spec/ELA_design.md`](spec/ELA_design.md), e le decisioni sono nella 5.10 — M17.1 il Design
-  System, M17.2 il Command Center v1, M17.3 la presenza desktop. **La prossima milestone è M17.1**,
-  e viene **prima di M12.5**, perché il companion usa l'identità che M17.1 definisce (§20 del
-  design). L'ordine è M17.1 → M12.5 → M17.2 → Fase 13, e M17.3 alla fine.
+  [`spec/ELA_design.md`](spec/ELA_design.md), e le decisioni sono nella 5.10. **M17.1, il Design
+  System, è fatta** (2026-09-19, ADR 0042): ELA ha un aspetto — una sfera di luce nel vetro, azzurra
+  e bianca, «stile Apple, futuristico stile JARVIS» — e `apps/design-system/` è ciò che ogni
+  superficie eredita. **La prossima milestone è M12.5**, il companion iPhone, che nasce con
+  quell'identità (§20 del design). Poi M17.2, il Command Center v1, prima della Fase 13; M17.3, la
+  presenza desktop, alla fine.
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
@@ -163,8 +165,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Fase | Documenti che la nominano |
 |---|---|
 | 13 | 2 |
-| 15 | 9 |
-| 17 | 3 |
+| 15 | 11 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
 
@@ -328,6 +329,10 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   memorizzati**. Da quel momento vale una regola fissa: **ogni milestone che aggiunge una capacità
   aggiunge la sua vista.**
 - **M17.3 — Presenza desktop** (§19 del design), alla fine, dopo le altre fasi.
+- **Com'è ELA sullo schermo** — deciso dall'utente il 2026-09-18, guardando la pagina-campionario
+  di M17.1, con le sue parole: «ELA deve sembrare una sfera, azzurra e bianca; una dashboard
+  futuristica stile JARVIS ma senza informazioni inutili; ELA deve apparire sul mio schermo come un
+  widget».
 
 L'ordine è **M17.1 → M12.5 → M17.2 → Fase 13**, e M17.3 dopo tutte. Il numero di una fase non dice
 quando si fa: M17.1 viene prima dell'ultima milestone della Fase 12.

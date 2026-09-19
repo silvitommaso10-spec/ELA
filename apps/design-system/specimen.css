@@ -1,0 +1,379 @@
+/* ELA design system — the layout of the specimen page, and of nothing else. Written by hand,
+ * and like components.css it may only read tokens. No surface of ELA links this file.
+ *
+ * The page is made of the design system itself: the body is a room, every section sits on a
+ * pane of glass, its words are the type classes of components.css. What is left here is where
+ * things go.
+ *
+ * What the page shows *as a sample of a token* — a swatch, a step of a scale, a text style —
+ * takes its value from a rule derived into specimen-switch.css (--_swatch, --_step, --_size…):
+ * a sample is not a reader of its token. What is written here is the page's own use of them. */
+
+.specimen {
+  /* How tall the bar that stays is: its distance from the top, its padding above and below,
+   * its two rows — each as tall as a target, and neither wraps — and the gap between them.
+   * A section a link leads to stops below it (scroll-margin), with some air. */
+  --_bar: calc(
+    var(--ela-space-2) + var(--ela-space-3) + var(--ela-target-min) + var(--ela-space-2) +
+      var(--ela-target-min) + var(--ela-space-3)
+  );
+  margin: 0;
+  min-block-size: 100%;
+}
+
+.specimen code {
+  font-family: var(--ela-typography-family-mono);
+  font-size: var(--ela-typography-style-caption-size);
+  color: var(--ela-color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.specimen-hero,
+.specimen-bar,
+.specimen-section {
+  box-sizing: border-box;
+  max-inline-size: var(--ela-grid-max-width);
+  margin-inline: auto;
+}
+
+.specimen-hero {
+  display: grid;
+  justify-items: center;
+  gap: var(--ela-space-6);
+  padding-block: var(--ela-space-16) var(--ela-space-10);
+  padding-inline: var(--ela-grid-margin);
+}
+
+.specimen-hero__title {
+  margin: 0;
+}
+
+/* The bar that stays: a pane of glass with the two things the page owns. On an iPhone they
+ * are touched like the rest, so they take the same minimum target as a component. */
+
+.specimen-bar {
+  position: sticky;
+  inset-block-start: var(--ela-space-2);
+  z-index: var(--ela-layer-sticky);
+  display: grid;
+  gap: var(--ela-space-2);
+  inline-size: calc(100% - var(--ela-grid-margin) - var(--ela-grid-margin));
+  padding-block: var(--ela-space-3);
+  padding-inline: var(--ela-space-5);
+}
+
+.specimen-switch {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--ela-space-4);
+  min-block-size: var(--ela-target-min);
+}
+
+.specimen-switch__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ela-space-1);
+}
+
+.specimen-switch__input {
+  min-block-size: var(--ela-target-min);
+  min-inline-size: var(--ela-target-min);
+  margin: 0;
+  accent-color: var(--ela-color-signal-identity);
+}
+
+.specimen-nav {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--ela-space-1);
+  min-inline-size: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.specimen-nav__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-block-size: var(--ela-target-min);
+  min-inline-size: var(--ela-target-min);
+  padding-inline: var(--ela-space-3);
+  border-radius: var(--ela-radius-pill);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--ela-motion-duration-fast) var(--ela-motion-easing-standard);
+}
+
+.specimen-nav__link:hover {
+  color: var(--ela-color-text-link);
+  background-color: var(--ela-color-fill-control);
+}
+
+.specimen-nav__link:focus-visible,
+.specimen-switch__input:focus-visible {
+  outline: var(--ela-border-focus-width) solid var(--ela-color-focus-ring);
+  outline-offset: var(--ela-border-focus-offset);
+}
+
+/* A section is rendered when it comes near the screen: the page holds many spheres, and each
+ * is seven layers of light. */
+
+.specimen-section {
+  display: grid;
+  gap: var(--ela-space-3);
+  padding-block: var(--ela-space-10);
+  padding-inline: var(--ela-grid-margin);
+  scroll-margin-block-start: calc(var(--_bar) + var(--ela-space-6));
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto var(--ela-frame-section);
+}
+
+.specimen-title {
+  margin-block-end: var(--ela-space-4);
+}
+
+.specimen-pane {
+  display: grid;
+  gap: var(--ela-space-4);
+  min-inline-size: 0;
+}
+
+.specimen-heading {
+  margin-block: var(--ela-space-8) 0;
+}
+
+.specimen-lead {
+  max-inline-size: var(--ela-frame-card);
+}
+
+/* Everything twice: a theme is one attribute on any ancestor, and each side is a room of its
+ * own. Side by side from the compact desktop up; one above the other on a phone, and always
+ * for a composition, which wants the whole width. */
+
+.specimen-pair {
+  display: grid;
+  gap: var(--ela-grid-gutter);
+}
+
+.specimen-pair__side,
+.specimen-theme {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: var(--ela-space-5);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  padding: var(--ela-space-6);
+  border: var(--ela-border-width-hairline) solid var(--ela-color-line-soft);
+  border-radius: var(--ela-radius-panel);
+  overflow: hidden;
+}
+
+.specimen-pair__side > *,
+.specimen-theme > * {
+  max-inline-size: 100%;
+}
+
+.specimen-pair--stacked .specimen-pair__side {
+  justify-items: stretch;
+  padding: 0;
+}
+
+.specimen-pair--stacked .specimen-pair__theme {
+  padding-block-start: var(--ela-space-6);
+  padding-inline: var(--ela-space-6);
+}
+
+.specimen-pair__theme {
+  margin: 0;
+}
+
+@media (min-width: 720px) {
+  .specimen-pair {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .specimen-pair--stacked {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The sphere: every state once, in one size; every size once, at rest. */
+
+.specimen-states {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--ela-frame-cell), 1fr));
+  gap: var(--ela-space-10) var(--ela-grid-gutter);
+  justify-items: center;
+  inline-size: 100%;
+  padding-block: var(--ela-space-6);
+}
+
+.specimen-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ela-space-10);
+  padding-block: var(--ela-space-8);
+}
+
+/* Samples: the value arrives in a private property from specimen-switch.css. */
+
+.specimen-swatches,
+.specimen-steps,
+.specimen-keylines {
+  display: grid;
+  gap: var(--ela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.specimen-swatches {
+  grid-template-columns: repeat(auto-fill, minmax(var(--ela-grid-min), 1fr));
+}
+
+.specimen-swatch,
+.specimen-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ela-space-3);
+}
+
+.specimen-swatch__chip {
+  flex: none;
+  inline-size: var(--ela-space-8);
+  block-size: var(--ela-space-8);
+  border: var(--ela-border-width-hairline) solid var(--ela-color-line-soft);
+  border-radius: var(--ela-radius-control);
+  background-color: var(--_swatch);
+}
+
+.specimen-step__bar {
+  flex: none;
+  background-color: var(--ela-color-signal-identity);
+}
+
+.specimen-step--space .specimen-step__bar {
+  inline-size: var(--_step);
+  block-size: var(--ela-space-3);
+  border-radius: var(--ela-radius-mark);
+}
+
+.specimen-step--radius .specimen-step__bar {
+  inline-size: var(--ela-space-16);
+  block-size: var(--ela-space-10);
+  border-radius: var(--_step);
+}
+
+.specimen-type {
+  margin: 0;
+  font-size: var(--_size);
+  font-weight: var(--_weight);
+  line-height: var(--_line);
+  letter-spacing: var(--_tracking);
+}
+
+.specimen-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+.specimen-table th,
+.specimen-table td {
+  padding-block: var(--ela-space-1);
+  padding-inline-end: var(--ela-space-4);
+  border-block-end: var(--ela-border-width-hairline) solid var(--ela-color-line-soft);
+  text-align: start;
+  vertical-align: top;
+}
+
+/* Responsive: the band the page is in, and the grid of that band. */
+
+.specimen-bands {
+  margin: 0;
+}
+
+.specimen-band {
+  display: none;
+}
+
+.specimen-band--phone {
+  display: inline;
+}
+
+@media (min-width: 720px) {
+  .specimen-band--phone {
+    display: none;
+  }
+
+  .specimen-band--desktop-compact {
+    display: inline;
+  }
+}
+
+@media (min-width: 1200px) {
+  .specimen-band--desktop-compact {
+    display: none;
+  }
+
+  .specimen-band--desktop-extended {
+    display: inline;
+  }
+}
+
+.specimen-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--ela-grid-columns), 1fr);
+  gap: var(--ela-grid-gutter);
+}
+
+.specimen-grid__column {
+  block-size: var(--ela-space-8);
+  border-radius: var(--ela-radius-mark);
+  background-color: var(--ela-color-fill-control-active);
+}
+
+/* Iconography, as rules: the grid with its live area, then one box per size. No icon. */
+
+.specimen-keylines {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--ela-space-4);
+}
+
+.specimen-keyline {
+  box-sizing: border-box;
+  inline-size: var(--ela-icon-grid);
+  block-size: var(--ela-icon-grid);
+  padding: var(--ela-icon-live);
+  border: var(--ela-border-width-hairline) dashed var(--ela-color-field-border);
+}
+
+.specimen-keyline--sm {
+  inline-size: var(--ela-icon-size-sm);
+  block-size: var(--ela-icon-size-sm);
+}
+
+.specimen-keyline--md {
+  inline-size: var(--ela-icon-size-md);
+  block-size: var(--ela-icon-size-md);
+}
+
+.specimen-keyline--lg {
+  inline-size: var(--ela-icon-size-lg);
+  block-size: var(--ela-icon-size-lg);
+}
+
+.specimen-keyline__live {
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: 100%;
+  border: var(--ela-icon-stroke) solid var(--ela-color-text-primary);
+  border-radius: var(--ela-radius-mark);
+}
