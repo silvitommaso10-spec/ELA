@@ -1,17 +1,14 @@
 # 0042. Il design system: una cartella che non è Python, un file di token da cui il resto deriva per intero, tre liste lette dalla loro fonte, e i nomi dei livelli di attenzione
 
-- **Stato:** Proposta il **2026-09-18**, scritta **prima** della prova a mano di M17.1 (review
-  dell'utente del 2026-09-18, punto 16: un commit con l'ADR in «Proposta», prima dei candidati del
-  font). Diventa «Accettata» quando la prova a mano è passata — il percorso di ADR 0040 con la sua.
-  SPEC di M17.1 approvata dall'utente il 2026-09-18. **Rivisto due volte, ancora in «Proposta»**:
-  il 2026-09-18, quando al passo 2 della prova l'utente ha deciso che ELA è una sfera; e il
-  2026-09-19, con la direzione visiva definitiva, il font e le tre revisioni aperte di
-  §22 del design (§7, §8, §9), con ciò che il revisore ha corretto guardando la pagina nei due temi
-  (§6), con l'esito del passo 2 della prova: una sfera più tridimensionale e un tema chiaro rifatto
-  come materiale (§6, §7); con le cinque correzioni del revisore perché la sfera legga come luce
-  dentro un vetro e non come una bolla di vetro (§7); e con la regola dei due temi, quando il
-  revisore ha approvato la sfera scura e rifatto la chiara (§6).
-- **Data:** 2026-09-18
+- **Stato:** Accettata il **2026-09-19**, quando la prova a mano di M17.1 è passata — sul Mac nei
+  due temi, e sull'iPhone attraverso la tailnet —: il percorso di ADR 0040 con la sua. Proposta il
+  2026-09-18, scritta **prima** della prova (review dell'utente del 2026-09-18, punto 16), e rivista
+  in «Proposta» a ogni giro della prova: quando al passo 2 l'utente ha deciso che ELA è una sfera;
+  con la direzione visiva definitiva, il font e le tre revisioni aperte di §22 del design (§7, §8,
+  §9); con le correzioni del revisore nei due temi (§6); con una sfera più tridimensionale e un
+  tema chiaro rifatto come materiale (§6, §7); con la sfera come luce dentro un vetro (§7); e con
+  la regola dei due temi, quando il revisore ha approvato la sfera del tema scuro (§6).
+- **Data:** 2026-09-18 (accettata il 2026-09-19)
 - **Riferimenti spec:** §6, §7, §29, §48
 - **Riferimenti design:** `docs/spec/ELA_design.md` — §6 del design, §13 del design,
   §19 del design, §21 del design, §22 del design, §23 del design, §24 del design,
