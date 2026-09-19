@@ -24,12 +24,11 @@ uv run python scripts/generate_architecture.py
 ## 1. Il grafo dei package (generato)
 
 Ogni package di `src/ela` e i package di `ela` che importa. Le direzioni che si vedono qui non
-sono un'intenzione: sono gli import veri, e sono le direzioni che le 36 regole di architettura
+sono un'intenzione: sono gli import veri, e sono le direzioni che le regole di architettura
 (`tests/architecture/rules.py`, ADR 0002) impongono. Si legge dall'alto: `api` e `cli` sono i
 bordi, `composition` è l'unico che nomina i concreti (regola 27, ADR 0023 §12), `domain` e `ports`
-non importano nessuno — `domain` non importa nemmeno `ports` — e i quattro package ancora vuoti
-(`context`, `evolution`, `identity`, `memory`) compaiono come nodi isolati, che è ciò che sono:
-cartelle previste da §48 che v0.1 non ha riempito.
+non importano nessuno — `domain` non importa nemmeno `ports` — e i package ancora vuoti compaiono
+come nodi isolati, che è ciò che sono: cartelle previste da §48 che v0.1 non ha riempito.
 
 <!-- generato da scripts/generate_architecture.py: il grafo dei package -->
 
@@ -126,13 +125,12 @@ graph TD
 ## 2. I bordi che nominano una libreria di infrastruttura (generato)
 
 Regola 3 (ADR 0002 §3): il Core non importa mai `anthropic`, `openai`, `httpx`, `sqlalchemy`,
-`alembic`, `aiosqlite`, `fastapi`, `typer`, `uvicorn`. Quattro package possono, e sono i quattro
-bordi del sistema: chi parla con un modello, chi parla con il disco, chi risponde a HTTP e chi
-scrive sul terminale.
+`alembic`, `aiosqlite`, `fastapi`, `typer`, `uvicorn`. Possono soltanto i package di
+`INFRA_PACKAGES`, i bordi del sistema: quali e che cosa nominano lo dice la tabella qui sotto.
 
 Questa tabella è **letta dal codice** — chi *nomina davvero* una di quelle librerie — e non
 stampata da un elenco: `tests/docs/test_architecture.py` verifica poi che l'insieme così misurato
-sia esattamente `INFRA_PACKAGES`, l'allowlist che la regola dichiara. Un quinto package che
+sia esattamente `INFRA_PACKAGES`, l'allowlist che la regola dichiara. Un package in più che
 importasse `httpx` comparirebbe qui e farebbe fallire quel confronto, che è l'ordine giusto delle
 due cose: prima ciò che è vero, poi ciò che era permesso.
 
@@ -199,9 +197,11 @@ test si accorgerebbe di un passaggio dimenticato. È il prezzo dichiarato del te
 
 ## Dove sta il resto
 
-- **Le decisioni**: `docs/adr/` — 27 ADR, dal primo sullo stack all'ultimo sulle esenzioni ritirate.
-- **Le regole**, in codice: `tests/architecture/rules.py` (36 regole, ognuna con il suo caso
-  negativo in `violations.py`) e i 13 contratti `import-linter` di `pyproject.toml`.
+- **Le decisioni**: `docs/adr/`, con l'indice in `docs/adr/README.md`.
+- **Le regole**, in codice: `tests/architecture/rules.py` (ognuna con il suo caso negativo in
+  `violations.py`) e i contratti `import-linter` di `pyproject.toml`.
+- **Quanti sono** gli ADR, le regole, i contratti e il resto: il blocco generato di `docs/STATO.md`
+  §3, «I numeri». È l'unico posto dove un conteggio è scritto, e lo scrive uno script.
 - **Che cosa v0.1 semplifica**: `docs/milestones/M9.4.md`, sezione «L'elenco di ciò che in v0.1 è
   semplificato». È l'elenco completo dei limiti dichiarati, con il rimando per ognuno.
 - **La storia**: `docs/CHANGELOG.md`, una voce per milestone.
