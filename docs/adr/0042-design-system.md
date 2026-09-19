@@ -7,8 +7,9 @@
   il 2026-09-18, quando al passo 2 della prova l'utente ha deciso che ELA è una sfera; e il
   2026-09-19, con la direzione visiva definitiva, il font e le tre revisioni aperte di
   §22 del design (§7, §8, §9), con ciò che il revisore ha corretto guardando la pagina nei due temi
-  (§6), e con l'esito del passo 2 della prova: una sfera più tridimensionale e un tema chiaro
-  rifatto come materiale (§6, §7).
+  (§6), con l'esito del passo 2 della prova: una sfera più tridimensionale e un tema chiaro rifatto
+  come materiale (§6, §7); e con le cinque correzioni del revisore perché la sfera legga come luce
+  dentro un vetro e non come una bolla di vetro (§7).
 - **Data:** 2026-09-18
 - **Riferimenti spec:** §6, §7, §29, §48
 - **Riferimenti design:** `docs/spec/ELA_design.md` — §6 del design, §13 del design,
@@ -232,16 +233,22 @@ colori che non è né misurato né esentato per nome fa fallire il test.
 
 **La presenza di ELA è una sfera di luce tenuta nel vetro**, e la sua profondità è disegnata a
 strati, dal fondo: un'ombra di contatto che la posa sul piano; un alone morbido; la metà lontana di
-un'orbita di particelle e di un anello sottile, dietro il vetro; il guscio; la luce dentro, a due
-profondità — lontana (più grande, più sfocata, più lenta, più scura) e vicina (più piccola, più
-nitida, più veloce) — che girano in versi opposti; un nucleo bianco che respira e deriva
-lentamente su un'orbita piccola; un'ombra che scurisce il vetro verso il basso a sinistra, lontano
-dalla luce; una banda chiara che ogni tanto attraversa il vetro; una seconda luce in basso a
-destra, del colore dello stato; un bordo di Fresnel lungo tutta la silhouette, più forte in basso;
-un riflesso speculare piccolo e netto in alto a sinistra, **fermo** mentre tutto l'interno ruota —
-è la luce della stanza, ed è ciò che rende leggibile la rotazione —; e la metà vicina delle
-orbite, davanti al vetro. Ombra, occlusione, le due luci e il Fresnel **non si muovono**: col
-movimento ridotto la sfera resta tridimensionale. È **geometria CSS**: nessun file d'immagine,
+un'orbita di particelle e di un anello sottile, dietro il vetro; il guscio, con **un solo bordo
+interno**, più scuro in alto a destra e quasi assente dove batte la luce; la luce dentro, **un
+volume continuo** a due profondità — lontana (più grande, molto sfocata, più lenta, più scura) e
+vicina (più piccola, più veloce) — che girano in versi opposti sopra un letto di luce, e sfumano
+nel vetro senza un bordo; un nucleo bianco che respira e deriva lentamente su un'orbita piccola;
+un'ombra che scurisce il vetro verso il basso a sinistra, lontano dalla luce; una banda chiara che
+ogni tanto attraversa il vetro; una seconda luce in basso a destra, del colore dello stato; un
+bordo di Fresnel sulla metà bassa della silhouette, più forte in basso; **il riflesso della
+stanza**, in due: uno sheen largo e tenue, tangente alla curva del vetro, e un hot spot piccolo e
+netto — entrambi **fermi** mentre tutto l'interno ruota, perché sono la luce della stanza ed è ciò
+che rende leggibile la rotazione —; e la metà vicina delle orbite, davanti al vetro, con le
+particelle come punti rotondi. Ombra, occlusione, le due luci, il Fresnel e il riflesso **non si
+muovono**: col movimento ridotto la sfera resta tridimensionale. **Perché luce dentro un vetro e
+non una bolla di vetro** — il giudizio del revisore sulla stesura precedente —: il riflesso era un
+ovale bianco grande e opaco col bordo netto, e la luce interna due macchie; ora il riflesso è quasi
+tutto sheen, e la luce un volume. È **geometria CSS**: nessun file d'immagine,
 nessun SVG, e ogni colore, fermata, dimensione, durata e curva è un token. Tre misure: `sm` 24 px nelle righe e nel widget di M17.3, `md` 96 px, `lg` 220 px
 nella home del Command Center. Il componente `presence` la rende con la chiave a testo; il
 componente `state`, quello delle righe, **è la sfera `sm`** con la chiave accanto, e lì le orbite e
@@ -252,7 +259,11 @@ stessa orbita è disegnata due volte: la metà lontana in uno strato dipinto pri
 vicina in uno dopo, con due ritagli complementari fatti nel piano dell'orbita prima
 dell'inclinazione. Così una particella sparisce dietro la sfera e riappare davanti. L'ordinamento 3D
 del browser avrebbe fatto lo stesso con meno markup, ma un solo `filter`, `opacity` o `isolation`
-su un antenato lo spegne in silenzio, e la sfera li usa tutti.
+su un antenato lo spegne in silenzio, e la sfera li usa tutti. L'inclinazione schiaccia tutto ciò
+che l'orbita porta, e un punto uscirebbe come un trattino: ogni particella è un elemento rotondo
+riallungato di `1 / cos(inclinazione)` — con la funzione trigonometrica di CSS, in Safari dalla
+15.4 come `:has()` — che gira contro l'orbita alla sua stessa velocità, così l'allungamento resta
+verticale nel piano dell'orbita e l'inclinazione lo riporta a un punto.
 
 Il ritmo della sfera — la sua rotazione — è `spin`; l'anello sottile compare dove ELA lavora
 (LISTENING, THINKING, PLANNING, WORKING, UPDATING, EVOLVING) e dove chiede l'utente (WAITING

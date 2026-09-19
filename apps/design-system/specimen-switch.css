@@ -56,16 +56,16 @@
   --ela-color-orb-shell-core: #FFFFFF1F;
   --ela-color-orb-shell-mid: #FFFFFF29;
   --ela-color-orb-shell-edge: #7CCBFF1A;
-  --ela-color-orb-shell-rim: #5B6C8647;
-  --ela-color-orb-line: #5B6C8666;
+  --ela-color-orb-line: #5B6C8659;
   --ela-color-orb-shade: #5B6C8629;
-  --ela-color-orb-sheen: #FFFFFFCC;
+  --ela-color-orb-sheen: #FFFFFF1F;
   --ela-color-orb-drop: #5B6C861F;
   --ela-color-orb-core: var(--ela-palette-frost-0);
-  --ela-color-orb-spec: #FFFFFFF2;
   --ela-color-orb-occlusion: #5B6C862E;
   --ela-color-orb-ground: #5B6C864C;
   --ela-color-orb-sweep: #FFFFFF8C;
+  --ela-color-orb-hotspot: #FFFFFF99;
+  --ela-color-orb-mask: var(--ela-palette-frost-0);
   --ela-color-light-azure-c: var(--ela-palette-azure-500);
   --ela-color-light-azure-c2: var(--ela-palette-azure-220);
   --ela-color-light-azure-veil: #009AFF66;
@@ -96,6 +96,8 @@
   --ela-shadow-control: inset 0 1px 0 rgb(255 255 255 / 0.7);
   --ela-shadow-action: 0 10px 26px rgb(0 120 220 / 0.28), inset 0 1px 0 rgb(255 255 255 / 0.6);
   --ela-tone-ambient: 0.3;
+  --ela-tone-hotspot-width: 2.6%;
+  --ela-tone-hotspot-height: 1.8%;
 }
 
 .specimen-swatch--palette-night-950 {
@@ -148,10 +150,6 @@
 
 .specimen-swatch--palette-azure-150 {
   --_swatch: var(--ela-palette-azure-150);
-}
-
-.specimen-swatch--palette-azure-200 {
-  --_swatch: var(--ela-palette-azure-200);
 }
 
 .specimen-swatch--palette-azure-220 {
@@ -502,10 +500,6 @@
   --_swatch: var(--ela-color-orb-shell-edge);
 }
 
-.specimen-swatch--color-orb-shell-rim {
-  --_swatch: var(--ela-color-orb-shell-rim);
-}
-
 .specimen-swatch--color-orb-line {
   --_swatch: var(--ela-color-orb-line);
 }
@@ -526,10 +520,6 @@
   --_swatch: var(--ela-color-orb-core);
 }
 
-.specimen-swatch--color-orb-spec {
-  --_swatch: var(--ela-color-orb-spec);
-}
-
 .specimen-swatch--color-orb-occlusion {
   --_swatch: var(--ela-color-orb-occlusion);
 }
@@ -540,6 +530,14 @@
 
 .specimen-swatch--color-orb-sweep {
   --_swatch: var(--ela-color-orb-sweep);
+}
+
+.specimen-swatch--color-orb-hotspot {
+  --_swatch: var(--ela-color-orb-hotspot);
+}
+
+.specimen-swatch--color-orb-mask {
+  --_swatch: var(--ela-color-orb-mask);
 }
 
 .specimen-swatch--color-light-azure-c {

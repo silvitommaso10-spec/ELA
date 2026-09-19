@@ -230,18 +230,22 @@
  *   ground     the contact shadow that sets it on the plane
  *   ambient    a wide, soft halo in the colour of the light
  *   orbit      the far half of the orbits: particles, blurred, and a thin ring
- *   shell      the glass, with an edge of light, a shade, a sheen, and its shadow
- *   plasma     the light inside, at two depths: far (large, blurred, slow, darker) and near
- *              (small, sharp, fast), turning against each other
+ *   shell      the glass, with ONE inner edge — darkest at the top right, nothing where the
+ *              light falls —, a shade at the bottom, and its shadow
+ *   plasma     the light inside, one continuous volume at two depths over a bed of light: far
+ *              (large, very blurred, slow, darker) and near (smaller, faster), turning against
+ *              each other, fading into the glass with no edge
  *   drift      carries the white core on a small, slow orbit; the core breathes or pulses
  *   occlusion  the glass darkens away from the light, toward the bottom left
  *   sweep      a faint band of light that crosses the glass now and then
  *   rim        the second light, at the bottom right, in the colour of the state
- *   fresnel    a thin luminous edge along the silhouette, stronger at the bottom
- *   spec       the light of the room: small, sharp and FIXED while everything inside turns
+ *   fresnel    a thin luminous edge on the lower half of the silhouette, strongest at the bottom
+ *   sheen      the broad, faint reflection of the room, tangent to the curve of the glass
+ *   hotspot    the small, sharp reflection of the room. Sheen and hot spot are FIXED while
+ *              everything inside turns: they are what makes the turning readable
  *   orbit      the near half of the orbits, in front of the glass
  *
- * Ground, occlusion, rim, Fresnel and spec never move: with reduced motion the sphere is still
+ * Ground, occlusion, rim, Fresnel, sheen and hot spot never move: with reduced motion the sphere is still
  * round. The state is the light, and it arrives from the derived rule of the state: its colour
  * (--ela-state-light, -soft, -veil), its rhythm (--ela-state-spin, and -play when it stands
  * still), its intensity (--ela-state-glow), its core, its ring. And ALWAYS the key, as text.
@@ -259,9 +263,11 @@
 
 .ela-orb > *,
 .ela-orb__depth,
+.ela-orb__bed,
 .ela-orb__cloud,
 .ela-orb__core,
-.ela-orb__spin {
+.ela-orb__spin,
+.ela-orb__particle {
   position: absolute;
   display: block;
   border-radius: var(--ela-radius-pill);
@@ -291,19 +297,17 @@
 .ela-orb__shell {
   inset: 0;
   background-image: radial-gradient(
-    circle,
+    closest-side,
     var(--ela-color-orb-shell-core) var(--ela-presence-shell-stop-core),
     var(--ela-color-orb-shell-mid) var(--ela-presence-shell-stop-mid),
-    var(--ela-color-orb-shell-edge) var(--ela-presence-shell-stop-edge),
-    var(--ela-color-orb-shell-rim) var(--ela-presence-shell-stop-rim),
-    transparent var(--ela-presence-shell-stop-end)
+    var(--ela-color-orb-shell-edge) var(--ela-presence-shell-stop-edge)
   );
   box-shadow:
-    inset 0 0 0 var(--ela-border-width-hairline) var(--ela-color-orb-line),
+    inset calc(var(--_s) * var(--ela-presence-shell-border-x) * -1)
+      calc(var(--_s) * var(--ela-presence-shell-border-y))
+      calc(var(--_s) * var(--ela-presence-shell-border-blur)) var(--ela-color-orb-line),
     inset 0 calc(var(--_s) * var(--ela-presence-shell-shade-y))
       calc(var(--_s) * var(--ela-presence-shell-shade-blur)) var(--ela-color-orb-shade),
-    inset 0 calc(var(--_s) * var(--ela-presence-shell-sheen-y))
-      calc(var(--_s) * var(--ela-presence-shell-sheen-blur)) var(--ela-color-orb-sheen),
     0 calc(var(--_s) * var(--ela-presence-shell-drop-y))
       calc(var(--_s) * var(--ela-presence-shell-drop-blur)) var(--ela-color-orb-drop);
 }
@@ -314,6 +318,16 @@
   inset: var(--ela-presence-plasma-inset);
   overflow: hidden;
   opacity: var(--ela-state-plasma);
+  -webkit-mask-image: radial-gradient(
+    closest-side,
+    var(--ela-color-orb-mask) var(--ela-presence-plasma-fade),
+    transparent
+  );
+  mask-image: radial-gradient(
+    closest-side,
+    var(--ela-color-orb-mask) var(--ela-presence-plasma-fade),
+    transparent
+  );
 }
 
 .ela-orb__depth {
@@ -331,6 +345,16 @@
     saturate(var(--ela-presence-plasma-saturate));
 }
 
+.ela-orb__bed {
+  inset: 0;
+  background-image: radial-gradient(
+    closest-side,
+    var(--ela-state-light-veil) var(--ela-presence-far-bed-hold),
+    transparent
+  );
+  opacity: var(--ela-presence-far-bed-opacity);
+}
+
 .ela-orb__cloud {
   mix-blend-mode: screen;
 }
@@ -345,22 +369,22 @@
 
 .ela-orb__cloud--far-one {
   background-image: radial-gradient(
-    var(--ela-presence-far-one-size) var(--ela-presence-far-one-size) at
-      var(--ela-presence-far-one-x) var(--ela-presence-far-one-y),
+    var(--ela-presence-far-one-size) var(--ela-presence-far-one-size) at var(--ela-presence-far-one-x) var(--ela-presence-far-one-y),
     var(--ela-state-light-soft),
     var(--ela-state-light) var(--ela-presence-far-one-mid),
-    transparent var(--ela-presence-far-one-edge)
+    var(--ela-state-light-veil) var(--ela-presence-far-one-edge),
+    transparent 100%
   );
   opacity: var(--ela-presence-far-one-opacity);
 }
 
 .ela-orb__cloud--far-two {
   background-image: radial-gradient(
-    var(--ela-presence-far-two-size) var(--ela-presence-far-two-size) at
-      var(--ela-presence-far-two-x) var(--ela-presence-far-two-y),
+    var(--ela-presence-far-two-size) var(--ela-presence-far-two-size) at var(--ela-presence-far-two-x) var(--ela-presence-far-two-y),
     var(--ela-state-light),
     var(--ela-state-light-veil) var(--ela-presence-far-two-mid),
-    transparent var(--ela-presence-far-two-edge)
+    var(--ela-state-light-veil) var(--ela-presence-far-two-edge),
+    transparent 100%
   );
   opacity: var(--ela-presence-far-two-opacity);
 }
@@ -379,22 +403,22 @@
 
 .ela-orb__cloud--near-one {
   background-image: radial-gradient(
-    var(--ela-presence-near-one-size) var(--ela-presence-near-one-size) at
-      var(--ela-presence-near-one-x) var(--ela-presence-near-one-y),
+    var(--ela-presence-near-one-size) var(--ela-presence-near-one-size) at var(--ela-presence-near-one-x) var(--ela-presence-near-one-y),
     var(--ela-state-light-soft),
     var(--ela-state-light) var(--ela-presence-near-one-mid),
-    transparent var(--ela-presence-near-one-edge)
+    var(--ela-state-light-veil) var(--ela-presence-near-one-edge),
+    transparent 100%
   );
   opacity: var(--ela-presence-near-one-opacity);
 }
 
 .ela-orb__cloud--near-two {
   background-image: radial-gradient(
-    var(--ela-presence-near-two-size) var(--ela-presence-near-two-size) at
-      var(--ela-presence-near-two-x) var(--ela-presence-near-two-y),
+    var(--ela-presence-near-two-size) var(--ela-presence-near-two-size) at var(--ela-presence-near-two-x) var(--ela-presence-near-two-y),
     var(--ela-state-light-soft),
     var(--ela-state-light-veil) var(--ela-presence-near-two-mid),
-    transparent var(--ela-presence-near-two-edge)
+    var(--ela-state-light-veil) var(--ela-presence-near-two-edge),
+    transparent 100%
   );
   opacity: var(--ela-presence-near-two-opacity);
 }
@@ -408,11 +432,11 @@
 .ela-orb__core {
   inset: var(--ela-state-core-inset);
   background-image: radial-gradient(
-    circle,
+    closest-side,
     var(--ela-color-orb-core) var(--ela-presence-core-stop-heart),
     var(--ela-state-light-soft) var(--ela-presence-core-stop-soft),
     var(--ela-state-light-veil) var(--ela-presence-core-stop-veil),
-    transparent var(--ela-presence-core-stop-edge)
+    transparent 100%
   );
   opacity: var(--ela-state-core-opacity);
   filter: blur(calc(var(--_s) * var(--ela-presence-core-blur)));
@@ -467,28 +491,53 @@
 .ela-orb__fresnel {
   inset: 0;
   box-shadow:
-    inset 0 0 0 var(--ela-presence-fresnel-width) var(--ela-state-light-veil),
     inset 0 calc(var(--ela-presence-fresnel-lift) * -1) 0 0 var(--ela-state-light),
     inset 0 calc(var(--_s) * var(--ela-presence-fresnel-rise) * -1)
       calc(var(--_s) * var(--ela-presence-fresnel-blur)) var(--ela-state-light-veil);
   opacity: var(--ela-presence-fresnel-opacity);
 }
 
-.ela-orb__spec {
+.ela-orb__sheen {
+  inset: 0;
+  rotate: var(--ela-presence-sheen-angle);
+  background-image: radial-gradient(
+    var(--ela-presence-sheen-width) var(--ela-presence-sheen-height) at
+      var(--ela-presence-sheen-x) var(--ela-presence-sheen-y),
+    var(--ela-color-orb-sheen),
+    transparent
+  );
+  -webkit-mask-image: radial-gradient(
+    closest-side,
+    var(--ela-color-orb-mask) var(--ela-presence-sheen-fade),
+    transparent
+  );
+  mask-image: radial-gradient(
+    closest-side,
+    var(--ela-color-orb-mask) var(--ela-presence-sheen-fade),
+    transparent
+  );
+}
+
+.ela-orb__hotspot {
   inset: 0;
   background-image: radial-gradient(
-    var(--ela-presence-spec-width) var(--ela-presence-spec-height) at var(--ela-presence-spec-x)
-      var(--ela-presence-spec-y),
-    var(--ela-color-orb-spec),
-    var(--ela-color-orb-spec) var(--ela-presence-spec-hold),
-    transparent var(--ela-presence-spec-edge)
+    var(--ela-tone-hotspot-width) var(--ela-tone-hotspot-height) at var(--ela-presence-hotspot-x)
+      var(--ela-presence-hotspot-y),
+    var(--ela-color-orb-hotspot),
+    var(--ela-color-orb-hotspot) var(--ela-presence-hotspot-hold),
+    transparent
   );
 }
 
 /* the orbits: a circle tilted into an ellipse. The same orbit is drawn twice — its far half
  * behind the glass, its near half in front — so a particle disappears behind the sphere and
  * comes back in front. The clip is in the plane of the orbit, before the tilt: its top half is
- * the half that recedes. */
+ * the half that recedes.
+ *
+ * The tilt squashes whatever the orbit carries, and a point would come out as a dash. So each
+ * particle is a round element stretched back by 1 / cos(tilt) — scale is applied before rotate —
+ * and turns against the orbit at the orbit's speed: the stretch stays upright in the plane, the
+ * tilt takes it back, and on screen the particle is a point. */
 
 .ela-orb__orbit {
   border-radius: 0;
@@ -522,28 +571,42 @@
   inset: 0;
 }
 
-.ela-orb__orbit--particles .ela-orb__spin {
-  background-image:
-    radial-gradient(
-      circle at var(--ela-presence-particles-one-x) var(--ela-presence-particles-one-y),
-      var(--ela-state-light-soft) var(--ela-presence-particles-one-dot),
-      transparent var(--ela-presence-particles-one-fade)
-    ),
-    radial-gradient(
-      circle at var(--ela-presence-particles-two-x) var(--ela-presence-particles-two-y),
-      var(--ela-state-light-soft) var(--ela-presence-particles-two-dot),
-      transparent var(--ela-presence-particles-two-fade)
-    ),
-    radial-gradient(
-      circle at var(--ela-presence-particles-three-x) var(--ela-presence-particles-three-y),
-      var(--ela-state-light-soft) var(--ela-presence-particles-three-dot),
-      transparent var(--ela-presence-particles-three-fade)
-    ),
-    radial-gradient(
-      circle at var(--ela-presence-particles-four-x) var(--ela-presence-particles-four-y),
-      var(--ela-state-light-soft) var(--ela-presence-particles-four-dot),
-      transparent var(--ela-presence-particles-four-fade)
-    );
+.ela-orb__particle {
+  --_dot: calc(var(--_s) * var(--_size));
+  inline-size: var(--_dot);
+  block-size: var(--_dot);
+  translate: var(--ela-presence-particles-center) var(--ela-presence-particles-center);
+  scale: 1 calc(1 / cos(var(--ela-presence-orbit-tilt)));
+  background-color: var(--ela-state-light-soft);
+  box-shadow: 0 0 calc(var(--_s) * var(--ela-presence-particles-glow)) var(--ela-state-light);
+}
+
+.ela-orb__orbit--back .ela-orb__particle {
+  filter: blur(calc(var(--_s) * var(--ela-presence-particles-far-blur)));
+}
+
+.ela-orb__particle--one {
+  --_size: var(--ela-presence-particles-one-size);
+  inset-inline-start: var(--ela-presence-particles-one-x);
+  inset-block-start: var(--ela-presence-particles-one-y);
+}
+
+.ela-orb__particle--two {
+  --_size: var(--ela-presence-particles-two-size);
+  inset-inline-start: var(--ela-presence-particles-two-x);
+  inset-block-start: var(--ela-presence-particles-two-y);
+}
+
+.ela-orb__particle--three {
+  --_size: var(--ela-presence-particles-three-size);
+  inset-inline-start: var(--ela-presence-particles-three-x);
+  inset-block-start: var(--ela-presence-particles-three-y);
+}
+
+.ela-orb__particle--four {
+  --_size: var(--ela-presence-particles-four-size);
+  inset-inline-start: var(--ela-presence-particles-four-x);
+  inset-block-start: var(--ela-presence-particles-four-y);
 }
 
 .ela-orb__orbit--ring .ela-orb__spin {
@@ -567,6 +630,7 @@
 @media (prefers-reduced-motion: no-preference) {
   .ela-orb__cloud,
   .ela-orb__spin,
+  .ela-orb__particle,
   .ela-orb__drift {
     animation-name: ela-orb-swirl;
     animation-timing-function: var(--ela-motion-easing-linear);
@@ -598,8 +662,13 @@
     animation-duration: calc(var(--ela-state-spin) * var(--ela-presence-near-two-spin));
   }
 
-  .ela-orb__orbit--particles .ela-orb__spin {
+  .ela-orb__orbit--particles .ela-orb__spin,
+  .ela-orb__particle {
     animation-duration: calc(var(--ela-state-spin) * var(--ela-presence-particles-spin));
+  }
+
+  .ela-orb__particle {
+    animation-direction: reverse;
   }
 
   .ela-orb__orbit--ring .ela-orb__spin {

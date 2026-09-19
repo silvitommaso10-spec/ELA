@@ -113,7 +113,8 @@ STILL = (
     ".ela-orb__occlusion",
     ".ela-orb__rim",
     ".ela-orb__fresnel",
-    ".ela-orb__spec",
+    ".ela-orb__sheen",
+    ".ela-orb__hotspot",
     ".ela-orb__shell",
 )
 """What makes the sphere round, and never moves: with reduced motion it is still a sphere. The
@@ -193,10 +194,49 @@ def test_the_lights_of_the_room_and_the_shape_of_the_sphere_never_move() -> None
     assert layers_that_move(read("components.css"), STILL) == []
     moved = layers_that_move(
         "@media (prefers-reduced-motion: no-preference) {"
-        " .ela-orb__spec { animation-name: ela-orb-swirl; } }",
+        " .ela-orb__hotspot { animation-name: ela-orb-swirl; } }",
         STILL,
     )
-    assert moved == [".ela-orb__spec: animation-name"]
+    assert moved == [".ela-orb__hotspot: animation-name"]
+
+
+def test_a_particle_is_a_round_point_on_a_tilted_orbit() -> None:
+    """The tilt squashes what the orbit carries (review of 2026-09-19: the particles came out
+    as dashes). A particle is stretched back by 1 / cos(tilt), and turns against its orbit at
+    the orbit's speed, so the stretch stays upright in the plane of the orbit."""
+    rules = {
+        s: r
+        for r in stylesheet.parse(read("components.css"))
+        if r.media is None
+        for s in r.selectors
+    }
+    assert rules[".ela-orb__particle"].value("scale") == (
+        "1 calc(1 / cos(var(--ela-presence-orbit-tilt)))"
+    )
+    assert (rules[".ela-orb__orbit"].value("transform") or "").endswith(
+        "rotateX(var(--ela-presence-orbit-tilt))"
+    ), "the particle undoes the same tilt the orbit makes"
+    timed = [
+        rule
+        for rule in stylesheet.parse(read("components.css"))
+        if rule.media == NO_PREFERENCE
+        and rule.value("animation-duration") is not None
+        and ".ela-orb__particle" in rule.selectors
+    ]
+    assert [rule.selectors for rule in timed] == [
+        (".ela-orb__orbit--particles .ela-orb__spin", ".ela-orb__particle")
+    ], "one rule gives the particle and its orbit the same duration"
+    assert timed[0].value("animation-duration") == (
+        "calc(var(--ela-state-spin) * var(--ela-presence-particles-spin))"
+    )
+    moved = moving(read("components.css"))
+    reversed_ = [
+        rule
+        for rule in stylesheet.parse(read("components.css"))
+        if rule.media == NO_PREFERENCE and rule.selectors == (".ela-orb__particle",)
+    ]
+    assert [rule.value("animation-direction") for rule in reversed_] == ["reverse"]
+    assert ".ela-orb__particle" in moved[".ela-orb__cloud"].selectors, "and it pauses with them"
 
 
 def test_the_sweep_crosses_in_its_share_of_the_cycle_and_its_keyframes_are_derived() -> None:

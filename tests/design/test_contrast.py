@@ -297,6 +297,31 @@ def test_the_light_of_the_sphere_keeps_its_hue_and_its_shell_does_not_keep_its_g
     assert azure["dark"] != azure["light"], "the same hex would vanish on the white room"
 
 
+def test_the_reflection_of_the_room_is_a_small_hot_spot_and_a_faint_sheen() -> None:
+    """Review of 2026-09-19: one large opaque white oval read as a sticker. Now a hot spot of
+    about 7% by 5%, opaque at 0.9, and a broad sheen at 10–14%; on the white room the hot spot is
+    smaller and fainter, because white on azure shows more there."""
+    source = tokens()
+    module = generator()
+    alpha = {
+        (part, theme): module.colour_of(source, "{color.orb." + part + "}", theme)[1]
+        for part in ("hotspot", "sheen")
+        for theme in THEMES
+    }
+    assert alpha[("hotspot", "dark")] == pytest.approx(0.9)
+    assert alpha[("hotspot", "light")] < alpha[("hotspot", "dark")]
+    assert all(0.10 <= alpha[("sheen", theme)] <= 0.14 for theme in THEMES)
+
+    def radius(theme: str, name: str) -> float:
+        return float(source[theme]["tone"]["hotspot"][name]["$value"].removesuffix("%"))
+
+    assert (radius("dark", "width") * 2, radius("dark", "height") * 2) == (7.0, 5.0)
+    assert radius("light", "width") < radius("dark", "width")
+    assert radius("light", "height") < radius("dark", "height")
+    sheen = source["presence"]["sheen"]
+    assert float(sheen["width"]["$value"].removesuffix("%")) > 4 * radius("dark", "width")
+
+
 def test_the_hue_of_known_colours() -> None:
     assert hue_and_chroma("#FF0000") == pytest.approx((0.0, 1.0))
     assert hue_and_chroma("#7CCBFF")[0] == pytest.approx(203.8, abs=0.1)

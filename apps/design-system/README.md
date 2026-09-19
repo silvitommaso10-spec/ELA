@@ -11,12 +11,13 @@ premium»**. E, il giorno prima: «ELA deve sembrare una sfera, azzurra e bianca
 futuristica stile JARVIS ma senza informazioni inutili; ELA deve apparire sul mio schermo come un
 widget».
 
-- **ELA è una sfera di luce tenuta nel vetro**, e la sua profondità è disegnata a strati: un'ombra
-  di contatto, un alone, il guscio, la luce a due profondità che gira in versi opposti, un nucleo
-  che respira e deriva, un'occlusione lontano dalla luce, una banda che ogni tanto spazza il vetro,
-  due luci — il riflesso della stanza in alto a sinistra, **fermo**, e una luce dello stato in basso
-  a destra —, un bordo di Fresnel, e particelle e un anello su un'orbita inclinata che passano
-  dietro il vetro e davanti. Geometria CSS, non un'immagine; l'ordine degli strati è in
+- **ELA è luce dentro un vetro, non una bolla di vetro**, e la sua profondità è disegnata a
+  strati: un'ombra di contatto, un alone, il guscio con un solo bordo interno, la luce come un
+  volume continuo a due profondità che gira in versi opposti sopra un letto di luce, un nucleo che
+  respira e deriva, un'occlusione lontano dalla luce, una banda che ogni tanto spazza il vetro, una
+  luce dello stato in basso a destra, un bordo di Fresnel in basso, il riflesso della stanza — uno
+  sheen largo e tenue e un hot spot piccolo e netto, **fermi** —, e particelle rotonde e un anello
+  su un'orbita inclinata che passano dietro il vetro e davanti. Geometria CSS, non un'immagine; l'ordine degli strati è in
   `components/_orb.html`, dal fondo.
 - **Lo stato è la luce**: il suo colore, il suo ritmo, la sua intensità — e **sempre la chiave, a
   testo**. Azzurro per tutto ciò che ELA fa, più rapido quanto più lavora; grigio quando è ferma o
@@ -135,8 +136,10 @@ la difende; dove un test non può arrivare, lo dice.
 | Mai il solo colore, mai il solo movimento (criterio 1.4.1): la chiave di uno stato, di un rischio, di un livello è sempre testo; due stati non hanno la stessa luce, sui valori risolti; ogni stato mostra la sfera nelle tre misure | `tests/design/test_components.py` |
 | Ogni stato d'interazione esiste, l'anteprima non può divergere, il focus si vede; elementi nativi; `id` unici, ogni `for` al suo campo; **un campo riempie il suo contenitore**, e quanto può allargarsi è un token; una riga si legge da sinistra: la sfera, che cos'è, e in coda la chiave di ELA | `tests/design/test_components.py` |
 | Il movimento si ferma: ogni `animation` sta dentro `prefers-reduced-motion: no-preference`, e sotto `reduce` ogni durata è zero — anche il ritmo della sfera, che è una durata. La luce sta ferma, e il colore e la parola sotto dicono ancora tutto | `tests/design/test_motion.py` |
-| Ciò che fa la sfera rotonda **non si muove mai**: l'ombra di contatto, l'occlusione, le due luci, il Fresnel, il guscio — col movimento ridotto la sfera resta tridimensionale. La luce vicina gira più in fretta della lontana, e in verso opposto; la banda passa in una parte del ciclo che due durate decidono | `tests/design/test_motion.py` |
-| Gli strati della sfera sono in ordine di profondità: la metà lontana delle orbite prima del vetro, quella vicina dopo | `tests/design/test_components.py` |
+| Ciò che fa la sfera rotonda **non si muove mai**: l'ombra di contatto, l'occlusione, la luce dello stato, il Fresnel, lo sheen, l'hot spot, il guscio — col movimento ridotto la sfera resta tridimensionale. La luce vicina gira più in fretta della lontana, e in verso opposto; la banda passa in una parte del ciclo che due durate decidono | `tests/design/test_motion.py` |
+| Gli strati della sfera sono in ordine di profondità: la metà lontana delle orbite prima del vetro, quella vicina dopo. La luce dentro è un volume: le nubi di ogni profondità si sovrappongono qualunque sia l'angolo fra loro, sopra un letto di luce, e sfumano nel vetro | `tests/design/test_components.py` |
+| Una particella è un punto rotondo, non un trattino: riallungata di `1 / cos(inclinazione)` e girata contro l'orbita alla sua velocità | `tests/design/test_motion.py` |
+| Il riflesso della stanza è un hot spot di circa 7% per 5%, opaco a 0,9, e uno sheen al 10–14%; nel tema chiaro l'hot spot è più piccolo e più tenue | `tests/design/test_contrast.py` |
 | Il testo è in `rem`, e quello di un campo non scende sotto `1rem` | `tests/design/test_responsive.py` |
 | Con il movimento ridotto più stati di ELA al lavoro si somigliano, e li distingue la parola; un colore ereditato da una regola sopra uno sfondo impostato da un'altra; nessuno scorrimento orizzontale a 320 px; il testo al 200%; l'ordine del focus; un lettore di schermo | **solo la prova a mano** |
 

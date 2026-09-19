@@ -126,7 +126,8 @@ LAYERS = [
     "ela-orb__sweep",
     "ela-orb__rim",
     "ela-orb__fresnel",
-    "ela-orb__spec",
+    "ela-orb__sheen",
+    "ela-orb__hotspot",
     "ela-orb__orbit--ring ela-orb__orbit--front",
     "ela-orb__orbit--particles ela-orb__orbit--front",
 ]
@@ -217,6 +218,58 @@ def test_the_sphere_is_its_layers_in_the_order_of_depth() -> None:
     assert depths == ["ela-orb__depth--far", "ela-orb__depth--near"]
     drift = next(el for el in orb.walk() if "ela-orb__drift" in el.classes)
     assert [el for el in drift.walk() if "ela-orb__core" in el.classes]
+
+
+def test_the_light_inside_is_one_volume_over_a_bed_and_fades_into_the_glass() -> None:
+    """Not two balls of light (review of 2026-09-19): within each depth the clouds overlap
+    whatever the angle between them — the worst case is when they stand on opposite sides of the
+    centre they turn around — and a bed of light lies under them."""
+    module = generator()
+    presence = tokens()["presence"]
+    assert overlap_faults(presence) == []
+    partial = markup.parse(read("components/_orb.html"))
+    far = next(el for el in partial.walk() if "ela-orb__depth--far" in el.classes)
+    assert [el for el in far.walk() if "ela-orb__bed" in el.classes]
+    rules = {
+        s: r
+        for r in stylesheet.parse(read("components.css"))
+        if r.media is None
+        for s in r.selectors
+    }
+    for prefixed in ("mask-image", "-webkit-mask-image"):
+        assert "transparent" in (rules[".ela-orb__plasma"].value(prefixed) or ""), prefixed
+    assert (rules[".ela-orb__core"].value("background-image") or "").startswith(
+        "radial-gradient( closest-side"
+    ), "the core ends at its own edge, or its circle cuts the light"
+    assert module.entries(presence["near"])["blur"]["$value"] < presence["far"]["blur"]["$value"]
+
+
+def percent(leaf: dict[str, Any]) -> float:
+    return float(str(leaf["$value"]).removesuffix("%"))
+
+
+def overlap_faults(presence: dict[str, Any]) -> list[str]:
+    found = []
+    for depth, names in (("far", ("one", "two")), ("near", ("one", "two"))):
+        clouds = [presence[depth][name] for name in names]
+        reach = sum(percent(cloud["size"]) * percent(cloud["mid"]) / 100 for cloud in clouds)
+        apart = sum(
+            ((percent(cloud["x"]) - 50) ** 2 + (percent(cloud["y"]) - 50) ** 2) ** 0.5
+            for cloud in clouds
+        )
+        if apart >= reach:
+            found.append(
+                f"{depth}: {apart:.1f}% apart at worst, and their light reaches {reach:.1f}%"
+            )
+    return found
+
+
+def test_two_clouds_that_can_part_are_seen() -> None:
+    presence = tokens()["presence"]
+    presence["near"]["one"]["x"]["$value"] = "20%"
+    presence["near"]["two"]["x"]["$value"] = "84%"
+    (found,) = overlap_faults(presence)
+    assert found.startswith("near:")
 
 
 def test_a_layer_out_of_its_depth_is_seen() -> None:
