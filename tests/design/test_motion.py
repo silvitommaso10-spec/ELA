@@ -98,6 +98,40 @@ def kinds_of_core_nobody_has(source: dict[str, Any]) -> set[str]:
     }
 
 
+def moving(text: str) -> dict[str, stylesheet.Rule]:
+    """Selector -> the rule that animates it, when motion is allowed."""
+    return {
+        selector: rule
+        for rule in stylesheet.parse(text)
+        if rule.media == NO_PREFERENCE
+        for selector in rule.selectors
+    }
+
+
+STILL = (
+    ".ela-orb__ground",
+    ".ela-orb__occlusion",
+    ".ela-orb__rim",
+    ".ela-orb__fresnel",
+    ".ela-orb__spec",
+    ".ela-orb__shell",
+)
+"""What makes the sphere round, and never moves: with reduced motion it is still a sphere. The
+specular reflection above all — it is the light of the room, and what makes the turning inside
+readable."""
+
+
+def layers_that_move(text: str, still: tuple[str, ...]) -> list[str]:
+    return [
+        f"{selector}: {name}"
+        for rule in stylesheet.parse(text)
+        for selector in rule.selectors
+        if selector in still
+        for name, _ in rule.declarations
+        if name.startswith(("animation", "transition"))
+    ]
+
+
 def test_every_handwritten_animation_stops_under_reduced_motion() -> None:
     declared = 0
     for name, text in handwritten_stylesheets().items():
@@ -122,26 +156,60 @@ def test_reduced_motion_takes_every_duration_to_zero_and_the_spin_is_a_duration(
 def test_every_motion_is_defined_and_nothing_is_an_orphan() -> None:
     components = read("components.css")
     assert keyframes_named(tokens(), components) == keyframes_defined(components)
+    assert generator().SWEEP in keyframes_defined(read("tokens.css"))
     assert patterns_nobody_uses(tokens()) == set()
     assert kinds_of_core_nobody_has(tokens()) == set()
 
 
 def test_the_light_of_a_state_reaches_the_sphere_through_the_derived_rule() -> None:
     """The list of states is not in components.css: what a state is arrives in properties."""
-    rules = stylesheet.parse(read("components.css"))
-    moved = {
-        selector: rule
-        for rule in rules
-        if rule.media == NO_PREFERENCE
-        for selector in rule.selectors
-    }
+    moved = moving(read("components.css"))
     assert moved[".ela-orb__core"].value("animation-name") == "var(--ela-state-core-motion)"
     assert moved[".ela-orb__ambient"].value("animation-name") == ("var(--ela-state-ambient-motion)")
-    assert moved[".ela-orb__cloud"].value("animation-play-state") == "var(--ela-state-play)"
-    for cloud in ("one", "two", "vortex"):
-        duration = moved[f".ela-orb__cloud--{cloud}"].value("animation-duration") or ""
-        assert "var(--ela-state-spin)" in duration, cloud
+    assert moved[".ela-orb__sweep::before"].value("animation-name") == "var(--ela-state-sweep)"
+    turning = moved[".ela-orb__cloud"]
+    assert turning.value("animation-play-state") == "var(--ela-state-play)"
+    assert {".ela-orb__spin", ".ela-orb__drift"} <= set(turning.selectors)
+    for layer in ("far-one", "far-two", "vortex", "near-one", "near-two"):
+        duration = moved[f".ela-orb__cloud--{layer}"].value("animation-duration") or ""
+        assert "var(--ela-state-spin)" in duration, layer
+    for orbit in ("particles", "ring"):
+        duration = moved[f".ela-orb__orbit--{orbit} .ela-orb__spin"].value("animation-duration")
+        assert "var(--ela-state-spin)" in (duration or ""), orbit
     assert 'data-ela-state="' not in read("components.css")
+
+
+def test_the_near_and_the_far_light_turn_against_each_other_at_their_own_speeds() -> None:
+    moved = moving(read("components.css"))
+    assert moved[".ela-orb__depth--far .ela-orb__cloud"].value("animation-direction") == "reverse"
+    near = generator().entries(tokens()["presence"]["near"])
+    far = generator().entries(tokens()["presence"]["far"])
+    fastest_far = min(far[name]["spin"]["$value"] for name in ("one", "two", "vortex"))
+    slowest_near = max(near[name]["spin"]["$value"] for name in ("one", "two"))
+    assert slowest_near < fastest_far, "the near light turns faster than the far one"
+
+
+def test_the_lights_of_the_room_and_the_shape_of_the_sphere_never_move() -> None:
+    assert layers_that_move(read("components.css"), STILL) == []
+    moved = layers_that_move(
+        "@media (prefers-reduced-motion: no-preference) {"
+        " .ela-orb__spec { animation-name: ela-orb-swirl; } }",
+        STILL,
+    )
+    assert moved == [".ela-orb__spec: animation-name"]
+
+
+def test_the_sweep_crosses_in_its_share_of_the_cycle_and_its_keyframes_are_derived() -> None:
+    derived = read("tokens.css")
+    module = generator()
+    passing, resting = module.sweep_timing(tokens())
+    share = passing / (passing + resting) * 100
+    assert 10_000 <= passing + resting <= 20_000, "the user's decision: every 10 to 20 seconds"
+    frames = [
+        rule.selectors[0] for rule in stylesheet.parse(derived) if rule.keyframes == module.SWEEP
+    ]
+    assert frames == ["0%", f"{share:.4g}%", "100%"]
+    assert module.SWEEP not in keyframes_defined(read("components.css"))
 
 
 def test_a_state_that_stands_still_is_paused_and_the_others_turn() -> None:

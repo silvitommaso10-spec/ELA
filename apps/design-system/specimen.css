@@ -200,6 +200,25 @@
   }
 }
 
+/* The sphere: every state once, in one size; every size once, at rest. */
+
+.specimen-states {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--ela-frame-cell), 1fr));
+  gap: var(--ela-space-10) var(--ela-grid-gutter);
+  justify-items: center;
+  inline-size: 100%;
+  padding-block: var(--ela-space-6);
+}
+
+.specimen-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ela-space-10);
+  padding-block: var(--ela-space-8);
+}
+
 /* Samples: the value arrives in a private property from specimen-switch.css. */
 
 .specimen-swatches,

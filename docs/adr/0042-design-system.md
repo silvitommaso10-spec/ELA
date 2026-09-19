@@ -6,8 +6,9 @@
   SPEC di M17.1 approvata dall'utente il 2026-09-18. **Rivisto due volte, ancora in «Proposta»**:
   il 2026-09-18, quando al passo 2 della prova l'utente ha deciso che ELA è una sfera; e il
   2026-09-19, con la direzione visiva definitiva, il font e le tre revisioni aperte di
-  §22 del design (§7, §8, §9), e con ciò che il revisore ha corretto guardando la pagina nei due
-  temi (§6).
+  §22 del design (§7, §8, §9), con ciò che il revisore ha corretto guardando la pagina nei due temi
+  (§6), e con l'esito del passo 2 della prova: una sfera più tridimensionale e un tema chiaro
+  rifatto come materiale (§6, §7).
 - **Data:** 2026-09-18
 - **Riferimenti spec:** §6, §7, §29, §48
 - **Riferimenti design:** `docs/spec/ELA_design.md` — §6 del design, §13 del design,
@@ -96,9 +97,11 @@ e non una persona:
    raggiungere quei blocchi, e un selettore con l'`id` di un controllo della pagina non ha posto nel
    file che le superfici collegano. Da qui `specimen-switch.css`.
 
-E una quarta, che CSS non sa fare e che qui serve alla barra del rischio: **contare**. L'indice di
-un segmento del `meter` lo scrive il generatore, e il segmento si accende confrontandolo con la
-posizione del livello nella sua lista.
+E altre due, che CSS non sa fare. **Contare**: l'indice di un segmento del `meter` lo scrive il
+generatore, e il segmento si accende confrontandolo con la posizione del livello nella sua lista. E
+**leggere un token in un fotogramma chiave**: la banda di luce che attraversa la sfera passa in una
+parte del suo ciclo che due durate decidono — il passaggio e la pausa —, e il suo `@keyframes` lo
+deriva il generatore.
 
 **La forma delle foglie.** `{"$value": …, "$type": …}`, e un alias si scrive `"{gruppo.nome}"`:
 l'involucro e la sintassi degli alias vengono dal formato Design Tokens del W3C Community Group; i
@@ -192,12 +195,17 @@ oltre a leggerli dal documento, così che una modifica a §13 del design non li 
 
 Scuro in `:root`, chiaro con `data-theme="light"` su qualunque antenato: **lo accende solo
 l'attributo**. Seguire `prefers-color-scheme` è una riga di ogni superficie, non del design system.
-Il tema chiaro esiste — Apple ha entrambi —, e la sua stanza è un bianco freddo. **La luce della
-sfera non cambia**: resta azzurra e bianca, niente blu scuro, e un test verifica che i token della
-luce si risolvano uguali nei due temi. **Il guscio sì**: un guscio scuro sopra il bianco perde la
-trasparenza e fa della sfera una biglia grigia — l'ha visto il revisore sulla pagina, il
-2026-09-19 —, quindi nel tema chiaro il guscio è vetro chiaro, bianco-azzurro a bassa opacità, con
-un bordo di luce più scuro dello sfondo e un'ombra più leggera, e ha i suoi token sotto `light`.
+Il tema chiaro esiste — Apple ha entrambi —, e la sua stanza è un bianco freddo. **Il tema chiaro è un
+materiale, non un'inversione** — la prima stesura lo trattava come un'inversione, e l'utente l'ha
+giudicato alla prova: «il tema chiaro non regge». La stanza chiara è un bianco freddo con la luce
+dall'alto e una vignetta azzurra leggerissima; il testo è blu-notte, non nero; i pannelli sono vetro
+bianco con un bordo e un'ombra grigio-blu, mai nera, come le finestre di macOS chiaro. **La
+sfera**: il guscio è quasi trasparente, bianco al 12–16% con un bordo grigio-blu — un guscio scuro
+sopra il bianco perde la trasparenza e fa della sfera una biglia grigia —; l'alone è la metà,
+perché un alone su bianco sporca; l'ombra di contatto è grigio-blu. **La luce è la stessa tinta,
+non lo stesso colore**: sul bianco è più satura e più scura, o sparirebbe. Un test verifica che ogni
+parte della luce tenga la sua tinta da un tema all'altro entro sei gradi, e che nel chiaro non sia
+mai più chiara; il guscio ha i suoi token sotto `light`, e nessun test lo confronta.
 
 WCAG 2.1 AA è la regola. Le coppie primo piano–sfondo sono dichiarate in `tokens.json`, e
 `tests/design/test_contrast.py` le calcola **nei due temi**. **La soglia non si dichiara: deriva dal
@@ -222,13 +230,34 @@ colori che non è né misurato né esentato per nome fa fallire il test.
 
 ## 7. La sfera, gli stati, il movimento, i bersagli, le fasce
 
-**La presenza di ELA è una sfera di luce tenuta nel vetro.** Un guscio di vetro scuro con un bordo
-di luce e un riflesso speculare, un nucleo bianco, tre strati di luce azzurra che girano a velocità
-diverse — il terzo è un vortice —, un alone ambientale morbido, poche particelle fuori dal vetro. È
-**geometria CSS**: nessun file d'immagine, nessun SVG, e ogni colore, fermata, dimensione, durata e
-curva è un token. Tre misure: `sm` 24 px nelle righe e nel widget di M17.3, `md` 96 px, `lg` 220 px
+**La presenza di ELA è una sfera di luce tenuta nel vetro**, e la sua profondità è disegnata a
+strati, dal fondo: un'ombra di contatto che la posa sul piano; un alone morbido; la metà lontana di
+un'orbita di particelle e di un anello sottile, dietro il vetro; il guscio; la luce dentro, a due
+profondità — lontana (più grande, più sfocata, più lenta, più scura) e vicina (più piccola, più
+nitida, più veloce) — che girano in versi opposti; un nucleo bianco che respira e deriva
+lentamente su un'orbita piccola; un'ombra che scurisce il vetro verso il basso a sinistra, lontano
+dalla luce; una banda chiara che ogni tanto attraversa il vetro; una seconda luce in basso a
+destra, del colore dello stato; un bordo di Fresnel lungo tutta la silhouette, più forte in basso;
+un riflesso speculare piccolo e netto in alto a sinistra, **fermo** mentre tutto l'interno ruota —
+è la luce della stanza, ed è ciò che rende leggibile la rotazione —; e la metà vicina delle
+orbite, davanti al vetro. Ombra, occlusione, le due luci e il Fresnel **non si muovono**: col
+movimento ridotto la sfera resta tridimensionale. È **geometria CSS**: nessun file d'immagine,
+nessun SVG, e ogni colore, fermata, dimensione, durata e curva è un token. Tre misure: `sm` 24 px nelle righe e nel widget di M17.3, `md` 96 px, `lg` 220 px
 nella home del Command Center. Il componente `presence` la rende con la chiave a testo; il
-componente `state`, quello delle righe, **è la sfera `sm`** con la chiave accanto.
+componente `state`, quello delle righe, **è la sfera `sm`** con la chiave accanto, e lì le orbite e
+la banda, sotto il pixel, non si disegnano.
+
+**La profondità è disegnata, non calcolata.** Un'orbita è un cerchio inclinato in un'ellisse, e la
+stessa orbita è disegnata due volte: la metà lontana in uno strato dipinto prima del vetro, la metà
+vicina in uno dopo, con due ritagli complementari fatti nel piano dell'orbita prima
+dell'inclinazione. Così una particella sparisce dietro la sfera e riappare davanti. L'ordinamento 3D
+del browser avrebbe fatto lo stesso con meno markup, ma un solo `filter`, `opacity` o `isolation`
+su un antenato lo spegne in silenzio, e la sfera li usa tutti.
+
+Il ritmo della sfera — la sua rotazione — è `spin`; l'anello sottile compare dove ELA lavora
+(LISTENING, THINKING, PLANNING, WORKING, UPDATING, EVOLVING) e dove chiede l'utente (WAITING
+APPROVAL, ATTENTION REQUIRED), dove sta fermo come il resto della luce; negli altri stati non c'è.
+La banda di luce passa solo dove la luce gira.
 
 **Lo stato è la luce**: il suo colore, il suo ritmo, la sua intensità — e il nucleo, e se la luce
 gira o sta ferma. Tutto arriva nella regola derivata dello stato; `components.css` non nomina
@@ -411,6 +440,10 @@ domanda del gate si riapre, e la riapre un ADR nuovo.
   sopra uno sfondo impostato da un'altra un test statico non lo vede (§6).
 - **La sfera e i materiali sono esentati dal contrasto**: il vetro, la luce e l'alone non sono
   controlli, e il significato lo porta la chiave a testo, che è misurata (§6).
+- **La profondità della sfera è disegnata, non calcolata**: la metà lontana di un'orbita è uno strato
+  dipinto prima del vetro e la metà vicina uno dopo, con due ritagli complementari; nessun
+  ordinamento 3D del browser, che un `filter`, un'`opacity` o un'`isolation` su un antenato
+  spegnerebbero in silenzio (§7).
 - **Con il movimento ridotto più stati di ELA al lavoro si somigliano**: IDLE, LISTENING, THINKING
   e PLANNING hanno la stessa luce azzurra e si distinguono dal ritmo; a luce ferma li distingue la
   parola sotto (§7).

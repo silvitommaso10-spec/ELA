@@ -11,17 +11,23 @@ premium»**. E, il giorno prima: «ELA deve sembrare una sfera, azzurra e bianca
 futuristica stile JARVIS ma senza informazioni inutili; ELA deve apparire sul mio schermo come un
 widget».
 
-- **ELA è una sfera di luce tenuta nel vetro.** Un guscio di vetro scuro con un bordo di luce e un
-  riflesso, un nucleo bianco, tre strati di luce azzurra che girano a velocità diverse, un alone
-  morbido, poche particelle fuori dal vetro. Geometria CSS, non un'immagine.
+- **ELA è una sfera di luce tenuta nel vetro**, e la sua profondità è disegnata a strati: un'ombra
+  di contatto, un alone, il guscio, la luce a due profondità che gira in versi opposti, un nucleo
+  che respira e deriva, un'occlusione lontano dalla luce, una banda che ogni tanto spazza il vetro,
+  due luci — il riflesso della stanza in alto a sinistra, **fermo**, e una luce dello stato in basso
+  a destra —, un bordo di Fresnel, e particelle e un anello su un'orbita inclinata che passano
+  dietro il vetro e davanti. Geometria CSS, non un'immagine; l'ordine degli strati è in
+  `components/_orb.html`, dal fondo.
 - **Lo stato è la luce**: il suo colore, il suo ritmo, la sua intensità — e **sempre la chiave, a
   testo**. Azzurro per tutto ciò che ELA fa, più rapido quanto più lavora; grigio quando è ferma o
   assente; quasi bianca quando cambia sé stessa. Ambra, arancio e rosso **solo** quando ELA ha
   bisogno di te o qualcosa si è rotto — e lì la luce si ferma.
 - **I materiali sono due**: il vetro (bianco a bassa opacità, un filo di luce in alto, ciò che sta
-  dietro sfocato) e la stanza (quasi nero blu, con due luci fredde). Il tema chiaro esiste, ed è un
-  bianco freddo; **la luce della sfera non cambia**, azzurra e bianca, e il suo guscio lì è vetro
-  chiaro — un guscio scuro sopra il bianco farebbe della sfera una biglia grigia.
+  dietro sfocato) e la stanza (quasi nero blu, con due luci fredde). **Il tema chiaro è un
+  materiale, non un'inversione**: una stanza di bianco freddo con la luce dall'alto, il testo
+  blu-notte, il vetro bianco con bordo e ombra grigio-blu. La sfera lì ha un guscio quasi
+  trasparente e metà alone, e la sua luce è **la stessa tinta**, più satura e più scura — sul
+  bianco, l'azzurro del tema scuro sparirebbe.
 - **Il font è lo stack di sistema**: San Francisco su Mac e iPhone — è l'unico modo lecito di
   averlo —, Segoe UI su Windows.
 
@@ -124,11 +130,13 @@ la difende; dove un test non può arrivare, lo dice.
 | Regola | La difende |
 |---|---|
 | Ogni coppia dichiarata regge la sua soglia **nei due temi**: 4,5 per un colore di testo (criterio 1.4.3), 3 per tutto il resto (criterio 1.4.11). La soglia deriva dal gruppo del colore, non si dichiara. **Un colore con l'alpha si compone sopra ciò che ha dietro prima di misurarlo.** Sono dichiarate tutte le combinazioni con le superfici; **le esenzioni hanno un nome e una ragione nel test** — la sfera e il suo alone non sono controlli, e il significato lo porta la chiave a testo; la stanza, il vetro e i fili di luce sono decorazione | `tests/design/test_contrast.py` |
-| La luce della sfera non cambia col tema: resta azzurra e bianca. Il guscio sì: vetro scuro nel tema scuro, vetro chiaro nel chiaro | `tests/design/test_contrast.py` |
+| La luce della sfera tiene la sua tinta da un tema all'altro, entro sei gradi, e nel chiaro non è mai più chiara; il guscio ha i suoi token per tema, e nessun test lo confronta | `tests/design/test_contrast.py` |
 | La proprietà `color` riceve solo colori di testo | `tests/design/test_tokens_only.py` |
 | Mai il solo colore, mai il solo movimento (criterio 1.4.1): la chiave di uno stato, di un rischio, di un livello è sempre testo; due stati non hanno la stessa luce, sui valori risolti; ogni stato mostra la sfera nelle tre misure | `tests/design/test_components.py` |
 | Ogni stato d'interazione esiste, l'anteprima non può divergere, il focus si vede; elementi nativi; `id` unici, ogni `for` al suo campo; **un campo riempie il suo contenitore**, e quanto può allargarsi è un token; una riga si legge da sinistra: la sfera, che cos'è, e in coda la chiave di ELA | `tests/design/test_components.py` |
 | Il movimento si ferma: ogni `animation` sta dentro `prefers-reduced-motion: no-preference`, e sotto `reduce` ogni durata è zero — anche il ritmo della sfera, che è una durata. La luce sta ferma, e il colore e la parola sotto dicono ancora tutto | `tests/design/test_motion.py` |
+| Ciò che fa la sfera rotonda **non si muove mai**: l'ombra di contatto, l'occlusione, le due luci, il Fresnel, il guscio — col movimento ridotto la sfera resta tridimensionale. La luce vicina gira più in fretta della lontana, e in verso opposto; la banda passa in una parte del ciclo che due durate decidono | `tests/design/test_motion.py` |
+| Gli strati della sfera sono in ordine di profondità: la metà lontana delle orbite prima del vetro, quella vicina dopo | `tests/design/test_components.py` |
 | Il testo è in `rem`, e quello di un campo non scende sotto `1rem` | `tests/design/test_responsive.py` |
 | Con il movimento ridotto più stati di ELA al lavoro si somigliano, e li distingue la parola; un colore ereditato da una regola sopra uno sfondo impostato da un'altra; nessuno scorrimento orizzontale a 320 px; il testo al 200%; l'ordine del focus; un lettore di schermo | **solo la prova a mano** |
 
@@ -141,6 +149,7 @@ la difende; dove un test non può arrivare, lo dice.
 | La barra della pagina resta in alto, e una sezione a cui porta un link si ferma sotto di lei: l'altezza della barra è nota perché nessuna delle sue due righe va a capo | `tests/design/test_responsive.py` |
 | Ogni elemento interattivo prende la dimensione minima da `--ela-target-min`: 32 px col puntatore fine, **44 px dove il puntatore è un dito** (`pointer: coarse`) — il criterio è il dito, non la larghezza | `tests/design/test_components.py` |
 | **I componenti bastano**: una composizione non usa nessuna classe che `components.css` non definisca; un `meter` ha un segmento per ogni livello | `tests/design/test_components.py` |
+| La pagina mostra ogni stato una volta, in `md`, e ogni misura una volta, a riposo; e non tiene più sfere di quante un iPhone ne faccia girare | `tests/design/test_components.py` |
 | Come la pagina appare, su quale schermo, e se scorre senza scatti con tutte le sue sfere | **solo la prova a mano**: nessun browser gira in CI |
 
 Le fasce corrispondono ai livelli di §19 del design senza costruirli: «desktop compatto» è la

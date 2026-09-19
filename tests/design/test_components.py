@@ -79,7 +79,10 @@ def signature(source: Tokens, key: str, theme: str) -> tuple[object, ...]:
     return (
         *(module.colour_of(source, light[part]["$value"], theme) for part in module.LIGHT_PARTS),
         *(module.resolve(source, entry[name]["$value"], theme) for name in ("spin", "turning")),
-        *(module.resolve(source, entry[name]["$value"], theme) for name in ("glow", "plasma")),
+        *(
+            module.resolve(source, entry[name]["$value"], theme)
+            for name in ("glow", "plasma", "ring")
+        ),
         *(str(core[part]["$value"]) for part in module.CORE_PARTS),
         str(entry["ambient"]["$value"]),
     )
@@ -106,6 +109,62 @@ SIZES = {"sm": "ela-presence--sm", "md": None, "lg": "ela-presence--lg"}
 PIXELS = {"sm": "24px", "md": "96px", "lg": "220px"}
 """The user's decision of 2026-09-19: pinned here, not only in ``tokens.json``."""
 
+SPHERE_BUDGET = 64
+"""How many spheres the specimen page may hold. Each is some twenty layers of light, most of
+them animated; 129 did not scroll on an iPhone (review of 2026-09-19). The page shows every
+state once, in one size, and every size once, at rest."""
+
+LAYERS = [
+    "ela-orb__ground",
+    "ela-orb__ambient",
+    "ela-orb__orbit--particles ela-orb__orbit--back",
+    "ela-orb__orbit--ring ela-orb__orbit--back",
+    "ela-orb__shell",
+    "ela-orb__plasma",
+    "ela-orb__drift",
+    "ela-orb__occlusion",
+    "ela-orb__sweep",
+    "ela-orb__rim",
+    "ela-orb__fresnel",
+    "ela-orb__spec",
+    "ela-orb__orbit--ring ela-orb__orbit--front",
+    "ela-orb__orbit--particles ela-orb__orbit--front",
+]
+"""The layers of the sphere, from the back: what is behind the glass is painted before it."""
+
+
+def layers_of(orb: markup.Element) -> list[str]:
+    found = []
+    for child in orb.children:
+        if isinstance(child, markup.Element):
+            named = [name for name in child.classes if name != "ela-orb__orbit"]
+            found.append(" ".join(named))
+    return found
+
+
+def section_of_page(page: markup.Element, identifier: str) -> markup.Element:
+    (found,) = [el for el in page.walk() if el.tag == "section" and el.get("id") == identifier]
+    return found
+
+
+def sizes_shown_all(element: markup.Element, key: str) -> list[str]:
+    """Every presence of ``key`` under ``element``, by size, with repetitions."""
+    modifiers = {name for name in SIZES.values() if name is not None}
+    found = []
+    for el in element.walk():
+        if "ela-presence" in el.classes and el.get("data-ela-state") == key:
+            said = set(el.classes) & modifiers
+            found += [size for size, name in SIZES.items() if (name in said if name else not said)]
+    return sorted(found)
+
+
+def sizes_by_state(element: markup.Element) -> dict[str, list[str]]:
+    shown: dict[str, list[str]] = {}
+    for key in generator().entries(tokens()["state"]):
+        if sizes := sizes_shown_all(element, key):
+            shown[key] = sizes
+    return shown
+
 
 def sizes_shown(page: markup.Element, key: str) -> set[str]:
     modifiers = {name for name in SIZES.values() if name is not None}
@@ -117,23 +176,57 @@ def sizes_shown(page: markup.Element, key: str) -> set[str]:
     return found
 
 
-def test_every_state_shows_the_sphere_in_its_three_sizes_and_the_header_shows_it_at_rest() -> None:
-    """The user's decision of 2026-09-18: the presence of ELA is the sphere (dec. Q)."""
+def test_every_state_is_shown_once_per_theme_in_one_size_and_every_size_once_at_rest() -> None:
+    """The user's decisions of 2026-09-18 and 2026-09-19: the presence of ELA is the sphere,
+    in three sizes; and the page shows every state in md, and sm and lg once, at rest."""
     page = markup.parse(read("index.html"))
     source = tokens()
     sizes = generator().entries(source["presence"]["size"])
     assert {name: leaf["$value"] for name, leaf in sizes.items()} == PIXELS
-    for key in generator().entries(source["state"]):
-        assert sizes_shown(page, key) == set(SIZES), key
+    rest = source["presence"]["rest"]["$value"]
+
+    states = sizes_by_state(section_of_page(page, "states"))
+    assert states == {key: ["md", "md"] for key in generator().entries(source["state"])}
+
+    sphere = sizes_by_state(section_of_page(page, "presence"))
+    assert sphere == {rest: ["lg", "lg", "md", "md", "sm", "sm"]}
 
     (hero,) = [el for el in page.walk() if el.tag == "header"]
-    rest = source["presence"]["rest"]["$value"]
     shown = [el for el in hero.walk() if "ela-presence" in el.classes]
     assert [(el.get("data-ela-state"), "ela-presence--lg" in el.classes) for el in shown] == [
         (rest, True)
     ]
     assert [el for el in hero.walk() if "ela-orb__core" in el.classes]
     assert [el.text() for el in hero.walk() if "ela-wordmark" in el.classes] == ["ELA"]
+
+
+def test_the_page_holds_no_more_spheres_than_an_iphone_can_turn() -> None:
+    page = markup.parse(read("index.html"))
+    spheres = [el for el in page.walk() if "ela-orb" in el.classes]
+    assert spheres, "or this test is vacuous"
+    assert len(spheres) <= SPHERE_BUDGET, len(spheres)
+
+
+def test_the_sphere_is_its_layers_in_the_order_of_depth() -> None:
+    """The far half of an orbit before the glass, the near half after it: depth is the order."""
+    partial = markup.parse(read("components/_orb.html"))
+    (orb,) = [el for el in partial.walk() if "ela-orb" in el.classes]
+    assert layers_of(orb) == LAYERS
+    plasma = next(el for el in orb.walk() if "ela-orb__plasma" in el.classes)
+    depths = [el.classes[-1] for el in plasma.children if isinstance(el, markup.Element)]
+    assert depths == ["ela-orb__depth--far", "ela-orb__depth--near"]
+    drift = next(el for el in orb.walk() if "ela-orb__drift" in el.classes)
+    assert [el for el in drift.walk() if "ela-orb__core" in el.classes]
+
+
+def test_a_layer_out_of_its_depth_is_seen() -> None:
+    swapped = markup.parse(
+        '<span class="ela-orb"><span class="ela-orb__shell"></span>'
+        '<span class="ela-orb__orbit ela-orb__orbit--ring ela-orb__orbit--back"></span></span>'
+    )
+    (orb,) = [el for el in swapped.walk() if "ela-orb" in el.classes]
+    assert layers_of(orb) == ["ela-orb__shell", "ela-orb__orbit--ring ela-orb__orbit--back"]
+    assert layers_of(orb) != LAYERS
 
 
 def test_the_state_of_a_row_is_the_small_sphere_with_its_key() -> None:
@@ -226,6 +319,7 @@ def test_a_size_that_is_not_shown_is_seen() -> None:
     )
     assert sizes_shown(page, "IDLE") == {"md", "lg"}
     assert sizes_shown(page, "ERROR") == {"sm"}
+    assert sizes_by_state(page) == {"IDLE": ["lg", "md"], "ERROR": ["sm"]}
 
 
 def test_no_two_states_have_the_same_light() -> None:

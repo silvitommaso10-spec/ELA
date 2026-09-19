@@ -25,6 +25,7 @@ another is not seen by a static check.
 
 from __future__ import annotations
 
+import colorsys
 from typing import Any
 
 import pytest
@@ -175,20 +176,55 @@ def rule_pairs_not_declared(text: str, pairs: set[tuple[str, str]]) -> list[str]
     return found
 
 
-def light_that_changes_with_the_theme(source: Tokens) -> list[str]:
-    """The light of the sphere stays azure and white in the light theme: no dark blue.
+HUE_TOLERANCE = 6.0
+"""Degrees of hue a part of the light may move between the themes.
 
-    The **light**, not the shell (review of 2026-09-19): a dark shell over white loses its
-    transparency and turns the sphere into a grey marble, so in the light theme the shell is
-    pale glass, with tokens of its own under ``light``.
+The light of the sphere is the same colour in both themes — azure is azure, amber is amber —
+but on the white room it is darker and more saturated, or it would vanish (review of
+2026-09-19). A darker, more saturated version of a colour picked by eye, then rounded to sRGB,
+moves a few degrees; past six a blue starts to read as another blue, toward cyan or toward
+indigo, and that would be a different light, not the same one in another room."""
+
+ACHROMATIC = 0.08
+"""Chroma — the widest channel minus the narrowest — under which a colour has no hue to keep:
+white, and the greys of a sphere that is off or waiting."""
+
+
+def hue_and_chroma(colour: str) -> tuple[float, float]:
+    red, green, blue = channels(colour)
+    hue, _, _ = colorsys.rgb_to_hls(red, green, blue)
+    return hue * 360, max(red, green, blue) - min(red, green, blue)
+
+
+def hue_distance(one: float, other: float) -> float:
+    return min(abs(one - other), 360 - abs(one - other))
+
+
+def light_that_changes_hue(source: Tokens) -> list[str]:
+    """Every part of the light of the sphere keeps its hue from the dark theme to the light
+    one, and is not lighter there: on white it is darker and more saturated, never paler.
+
+    The shell is another matter (review of 2026-09-19): a dark shell over white loses its
+    transparency and turns the sphere into a grey marble, so in the light theme it is pale glass
+    with tokens of its own, and nothing here compares it.
     """
     module = generator()
     found = []
     for path, _ in module.leaves(source[THEMES[0]]["color"]["light"], ("color", "light")):
         alias = "{" + ".".join(path) + "}"
-        looks = {theme: module.colour_of(source, alias, theme) for theme in THEMES}
-        if len(set(looks.values())) != 1:
-            found.append(f"{'.'.join(path)}: {looks}")
+        dark, light = (str(module.colour_of(source, alias, theme)[0]) for theme in THEMES)
+        (dark_hue, dark_chroma), (light_hue, light_chroma) = map(hue_and_chroma, (dark, light))
+        name = ".".join(path)
+        if (dark_chroma < ACHROMATIC) != (light_chroma < ACHROMATIC):
+            found.append(f"{name}: a hue in one theme and none in the other ({dark}, {light})")
+        elif dark_chroma >= ACHROMATIC and hue_distance(dark_hue, light_hue) > HUE_TOLERANCE:
+            found.append(
+                f"{name}: {dark} and {light} are {hue_distance(dark_hue, light_hue):.1f}° apart"
+            )
+        if luminance(channels(light)) > luminance(channels(dark)):
+            found.append(
+                f"{name}: {light} is lighter on the white room than {dark} on the dark one"
+            )
     return found
 
 
@@ -248,13 +284,26 @@ def test_a_rule_that_sets_text_on_a_background_is_a_declared_pair() -> None:
         assert rule_pairs_not_declared(text, declared(tokens())) == [], name
 
 
-def test_the_light_of_the_sphere_does_not_change_with_the_theme_and_its_shell_does() -> None:
+def test_the_light_of_the_sphere_keeps_its_hue_and_its_shell_does_not_keep_its_glass() -> None:
     source = tokens()
-    assert light_that_changes_with_the_theme(source) == []
+    assert light_that_changes_hue(source) == []
     shell = {
         theme: generator().colour_of(source, "{color.orb.shell-core}", theme) for theme in THEMES
     }
     assert shell["dark"] != shell["light"], "pale glass in the light theme, or a grey marble"
+    azure = {
+        theme: generator().colour_of(source, "{color.light.azure.c}", theme) for theme in THEMES
+    }
+    assert azure["dark"] != azure["light"], "the same hex would vanish on the white room"
+
+
+def test_the_hue_of_known_colours() -> None:
+    assert hue_and_chroma("#FF0000") == pytest.approx((0.0, 1.0))
+    assert hue_and_chroma("#7CCBFF")[0] == pytest.approx(203.8, abs=0.1)
+    assert hue_and_chroma("#009AFF")[0] == pytest.approx(203.8, abs=0.1)
+    assert hue_and_chroma("#FFFFFF")[1] == 0
+    assert hue_distance(355, 5) == 10
+    assert hue_distance(10, 200) == 170
 
 
 # ----------------------------------------------------------------------------------------
@@ -330,13 +379,19 @@ def test_a_rule_with_an_undeclared_pair_is_found() -> None:
     assert rule_pairs_not_declared(fine, declared(tokens())) == []
 
 
-def test_a_light_that_changes_with_the_theme_is_found_and_a_shell_that_does_is_not() -> None:
+def test_a_light_that_changes_hue_or_turns_paler_is_found_and_a_shell_that_changes_is_not() -> None:
     source = tokens()
-    source["light"]["color"]["light"]["azure"]["c"]["$value"] = "{palette.azure.800}"
-    source["light"]["color"]["light"]["amber"]["veil"]["$alpha"] = 0.9
+    light = source["light"]["color"]["light"]
+    light["azure"]["c"]["$value"] = "{palette.orange.500}"
+    light["amber"]["c2"]["$value"] = "{palette.frost.0}"
+    light["red"]["c"]["$value"] = "{palette.red.100}"
     source["light"]["color"]["orb"]["drop"]["$alpha"] = 0.05
-    found = light_that_changes_with_the_theme(source)
+    found = light_that_changes_hue(source)
     assert [line.split(":")[0] for line in found] == [
         "color.light.azure.c",
-        "color.light.amber.veil",
+        "color.light.amber.c2",
+        "color.light.amber.c2",
+        "color.light.red.c",
     ]
+    assert "° apart" in found[0] and "none in the other" in found[1]
+    assert "lighter" in found[2] and "lighter" in found[3]

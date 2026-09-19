@@ -137,6 +137,22 @@ def grid_without_a_band(source: Tokens) -> None:
     del source["grid"]["columns"]["desktop-extended"]
 
 
+def sweep_that_never_passes(source: Tokens) -> None:
+    source["motion"]["duration"]["sweep-pass"]["$value"] = "0ms"
+
+
+def sweep_with_a_duration_that_is_not_one(source: Tokens) -> None:
+    source["motion"]["duration"]["sweep-rest"]["$value"] = "soon"
+
+
+def state_without_its_ring(source: Tokens) -> None:
+    del source["state"]["WORKING"]["ring"]
+
+
+def tone_in_one_theme_only(source: Tokens) -> None:
+    del source["light"]["tone"]["ambient"]
+
+
 def list_of_font_files(source: Tokens) -> None:
     """The family is the system stack (ADR 0042): the source has no place for a font file."""
     source["typography"]["fonts"] = [{"family": "Inter", "file": "fonts/inter/Inter.woff2"}]
@@ -171,6 +187,10 @@ REFUSALS: list[tuple[Callable[[Tokens], None], str]] = [
     (resting_state_that_is_no_state, "is not a state"),
     (pair_that_names_nothing, "names nothing"),
     (grid_without_a_band, "one value per breakpoint"),
+    (sweep_that_never_passes, "the sweep needs a pass longer than zero"),
+    (sweep_with_a_duration_that_is_not_one, "not a duration"),
+    (state_without_its_ring, "lacks ['ring']"),
+    (tone_in_one_theme_only, "differ in their keys"),
     (list_of_font_files, "a group must be an object"),
 ]
 
@@ -300,6 +320,12 @@ def test_a_state_is_the_light_of_the_sphere_its_rhythm_and_its_intensity() -> No
     assert approval["--ela-state-light"] == "var(--ela-color-light-amber-c)"
     assert approval["--ela-state-play"] == "paused"
     assert approval["--ela-state-text"] == "var(--ela-color-text-warn)"
+
+    assert working["--ela-state-ring"] == "var(--ela-presence-ring-visible)"
+    assert working["--ela-state-sweep"] == generator().SWEEP
+    assert approval["--ela-state-ring"] == "var(--ela-presence-ring-visible)"
+    assert approval["--ela-state-sweep"] == "none"
+    assert offline["--ela-state-ring"] == "var(--ela-presence-ring-hidden)"
 
     assert offline["--ela-state-core-opacity"] == "0.25"
     assert offline["--ela-state-core-motion"] == "none"

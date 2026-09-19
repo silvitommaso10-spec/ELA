@@ -18,7 +18,10 @@ a custom property holding ``var()`` resolves where it is declared (so every them
 everything themed); and ``:has()`` reads a control but cannot set an attribute (so the specimen's
 whole-page theme switch needs the light tokens under a selector of its own).
 
-A fourth thing is a decision and not a limit: **the three lists exist only in the source**. One
+A fourth: a keyframe cannot read a custom property. The band of light that sweeps the sphere
+passes in a share of its cycle that two duration tokens decide, so its ``@keyframes`` is derived.
+
+A fifth thing is a decision and not a limit: **the three lists exist only in the source**. One
 rule per key of ``state``, ``risk`` and ``attention`` is derived, and ``components.css`` reads the
 generic properties that rule sets. For a state those properties are the light of ELA's sphere —
 its colour, its rhythm, its intensity, its core.
@@ -56,7 +59,7 @@ PARTIAL = "_"
 PREFIX = "--ela-"
 THEMES = ("dark", "light")
 """The first is the default: it is the one ``:root`` carries."""
-THEMED = ("color", "shadow")
+THEMED = ("color", "shadow", "tone")
 """What depends on the theme, and therefore lives under each theme with the same keys."""
 LISTS = {"state": "data-ela-state", "risk": "data-ela-risk", "attention": "data-ela-attention"}
 """The three lists that exist only in ``tokens.json``, and the attribute that carries a key."""
@@ -102,11 +105,19 @@ TYPES = {
 }
 GROUPS = {"core", "light", "pattern"}
 """Types whose value is the alias of a *group* — a kind of core, a role of light, a pattern."""
-STATE_LEAVES = ("light", "text", "spin", "turning", "glow", "plasma", "core", "ambient")
+STATE_LEAVES = ("light", "text", "spin", "turning", "glow", "plasma", "core", "ambient", "ring")
 LEVEL_LEAVES = ("color", "text")
 LIGHT_PARTS = ("c", "c2", "veil")
 CORE_PARTS = ("opacity", "inset", "motion")
 PATTERN_PARAMETERS = ("keyframes", "duration", "easing", "iterations", "direction")
+SWEEP = "ela-orb-sweep"
+"""The keyframes of the band of light that sweeps the glass: derived, because its offset is a
+share of the cycle — the pass over the pass and the rest — and a keyframe cannot read a token."""
+SWEEP_DURATIONS = ("sweep-pass", "sweep-rest")
+EVERY_STATE = "presence-md"
+"""The one rendering of the presence that the specimen repeats for every state. The other sizes
+are shown once, at rest: a page of 129 animated spheres did not scroll on an iPhone."""
+DURATION = re.compile(r"^(\d*\.?\d+)(ms|s)$")
 
 ALIAS = re.compile(r"^\{([^{}]+)\}$")
 OPAQUE = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -334,6 +345,24 @@ def validate(tokens: Tokens) -> None:
         if not is_leaf(per_band) and list(entries(per_band)) != bands:
             raise ValueError(f"grid.{prop}: one value per breakpoint, in order: {bands}")
 
+    passing, resting = sweep_timing(tokens)
+    if passing <= 0 or resting < 0:
+        raise ValueError("the sweep needs a pass longer than zero and a rest that is not negative")
+
+
+def milliseconds(value: object) -> float:
+    found = DURATION.match(str(value))
+    if found is None:
+        raise ValueError(f"not a duration in ms or s: {value!r}")
+    return float(found.group(1)) * (1 if found.group(2) == "ms" else 1000)
+
+
+def sweep_timing(tokens: Tokens) -> tuple[float, float]:
+    """How long the band takes to cross the glass, and how long the glass then stays clear."""
+    durations = tokens["motion"]["duration"]
+    passing, resting = (milliseconds(durations[name]["$value"]) for name in SWEEP_DURATIONS)
+    return passing, resting
+
 
 # ----------------------------------------------------------------------------------------
 # tokens.css
@@ -418,6 +447,8 @@ def state_declarations(tokens: Tokens, entry: dict) -> list[tuple[str, str]]:
         (f"{PREFIX}state-plasma", css_value(tokens, entry["plasma"], THEMES[0])),
         (f"{PREFIX}state-core-opacity", str(core["opacity"]["$value"])),
         (f"{PREFIX}state-core-inset", str(core["inset"]["$value"])),
+        (f"{PREFIX}state-ring", css_value(tokens, entry["ring"], THEMES[0])),
+        (f"{PREFIX}state-sweep", SWEEP if entry["turning"]["$value"] else "none"),
     ]
     declarations += motion_declarations(
         tokens, core["motion"]["$value"], f"{PREFIX}state-core-motion"
@@ -481,8 +512,20 @@ def render_tokens_css(tokens: Tokens) -> str:
     parts.append(f"@media (pointer: coarse) {{\n{touch}}}\n")
     still = block(":root", durations, indent="  ")
     parts.append(f"@media (prefers-reduced-motion: reduce) {{\n{still}}}\n")
+    parts.append(sweep_keyframes(tokens))
     parts.append(list_rules(tokens))
     return "\n".join(parts)
+
+
+def sweep_keyframes(tokens: Tokens) -> str:
+    """The band crosses the glass in the first share of the cycle, then waits out of sight."""
+    passing, resting = sweep_timing(tokens)
+    share = f"{passing / (passing + resting) * 100:.4g}%"
+    start = f"var({css_name(('presence', 'sweep', 'from'))}) 0"
+    end = f"var({css_name(('presence', 'sweep', 'to'))}) 0"
+    frames = [("0%", start), (share, end), ("100%", end)]
+    inner = "".join(block(offset, [("translate", value)], indent="  ") for offset, value in frames)
+    return f"@keyframes {SWEEP} {{\n{inner}}}\n"
 
 
 # ----------------------------------------------------------------------------------------
@@ -638,9 +681,9 @@ def heading(text: str) -> str:
 def component_sections(tokens: Tokens, found: Mapping[str, str]) -> dict[str, str]:
     """The fragments, sorted into the sections of the page by the list they repeat.
 
-    A list that more than one fragment repeats is shown **key by key** — for a state, the
-    sphere in its three sizes and the small one of a row, together — because what is compared
-    there is one key across its renderings. A list one fragment repeats is shown whole.
+    The states are :func:`state_section` and :func:`sphere_section`: every state once, in the
+    size of :data:`EVERY_STATE`, and every size once, at rest. A list one fragment repeats —
+    risk, attention — is shown whole, in both themes.
     """
     by_section: dict[str, dict[str, str]] = {"components": {}, **{group: {} for group in LISTS}}
     for name, markup in found.items():
@@ -650,32 +693,51 @@ def component_sections(tokens: Tokens, found: Mapping[str, str]) -> dict[str, st
             raise ValueError(f'{name}.html: data-ela-each="{section}" names no list')
         by_section[section][name] = markup
 
-    sections = {}
+    sections = {"state": state_section(tokens, by_section["state"])}
     for section, fragments_of in by_section.items():
+        if section == "state":
+            continue
         out = []
-        if section in LISTS and len(fragments_of) > 1:
-            for index, key in enumerate(entries(tokens[section]), start=1):
+        for name, markup in fragments_of.items():
 
-                def one_key(
-                    suffix: str, key: str = key, fragments_of: dict[str, str] = fragments_of
-                ) -> str:
-                    return "".join(
-                        instances(tokens, markup, f"{suffix}-{name}", only=key)
-                        for name, markup in fragments_of.items()
-                    )
+            def whole(suffix: str, markup: str = markup) -> str:
+                return instances(tokens, markup, suffix)
 
-                out.append(heading(key))
-                out.append(themed_panels(f"{section}-{index}", one_key))
-        else:
-            for name, markup in fragments_of.items():
-
-                def whole(suffix: str, markup: str = markup) -> str:
-                    return instances(tokens, markup, suffix)
-
-                out.append(heading(name))
-                out.append(themed_panels(f"component-{name}", whole))
+            out.append(heading(name))
+            out.append(themed_panels(f"component-{name}", whole))
         sections[section] = "".join(out)
     return sections
+
+
+def state_section(tokens: Tokens, found: Mapping[str, str]) -> str:
+    """Every state once, in one size, in both themes."""
+    if EVERY_STATE not in found:
+        raise ValueError(f"{EVERY_STATE}.html: the presence the page repeats for every state")
+
+    def every(suffix: str) -> str:
+        grid = indent(instances(tokens, found[EVERY_STATE], suffix), 2)
+        return f'<div class="specimen-states">\n{grid}</div>\n'
+
+    return heading(EVERY_STATE) + themed_panels("states-every", every)
+
+
+def sphere_section(tokens: Tokens, found: Mapping[str, str]) -> str:
+    """Every rendering of a state — the sizes of the presence, the state of a row — once, at
+    rest, in both themes."""
+    rest = str(tokens["presence"]["rest"]["$value"])
+    names = [
+        name
+        for name, markup in found.items()
+        if (each := EACH.search(markup)) is not None and each.group(1) == "state"
+    ]
+
+    def at_rest(suffix: str) -> str:
+        sizes = "".join(
+            instances(tokens, found[name], f"{suffix}-{name}", only=rest) for name in names
+        )
+        return f'<div class="specimen-sizes">\n{indent(sizes, 2)}</div>\n'
+
+    return heading(f"every size, {rest}") + themed_panels("sphere-sizes", at_rest)
 
 
 def composition_section(tokens: Tokens, found: Mapping[str, str]) -> str:
@@ -868,9 +930,18 @@ def render_index_html(
         ),
         (
             "presence",
-            "Tokens",
+            "Identity",
             "The sphere",
-            token_rows(tokens, tokens["presence"], ("presence",), named=False),
+            lead(
+                "Light held in glass. Two lights: the room's, fixed at the top left — it is what"
+                " makes the turning readable — and the state's, soft, at the bottom right. A"
+                " Fresnel edge, a shade away from the light, a shadow that sets it on the plane:"
+                " none of them moves, and with “reduce motion” the sphere stays round. Inside, a"
+                " near light and a far one turn against each other; around it, particles and a"
+                " thin ring pass behind the glass and in front of it."
+            )
+            + sphere_section(tokens, found)
+            + token_rows(tokens, tokens["presence"], ("presence",), named=False),
         ),
         ("components", "Components", "Components", parts["components"]),
         ("states", "The three lists", "States of ELA", parts["state"]),

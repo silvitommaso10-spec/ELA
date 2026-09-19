@@ -2,7 +2,7 @@
 
 :root:has(#specimen-theme-light:checked) {
   color-scheme: light;
-  --ela-color-surface-base: var(--ela-palette-frost-100);
+  --ela-color-surface-base: var(--ela-palette-frost-75);
   --ela-color-surface-glass: #FFFFFFB8;
   --ela-color-text-primary: var(--ela-palette-ink-900);
   --ela-color-text-body: #0B1220CC;
@@ -35,63 +35,67 @@
   --ela-color-fill-danger-hover: #C02B2B21;
   --ela-color-fill-danger-active: #C02B2B2E;
   --ela-color-fill-field: #FFFFFF99;
-  --ela-color-line-soft: #0B12201A;
+  --ela-color-line-soft: #5B6C861A;
   --ela-color-line-control: #0B122024;
   --ela-color-line-primary: #FFFFFF99;
   --ela-color-line-danger: #C02B2B66;
   --ela-color-line-warm: #8A5A0066;
   --ela-color-line-mark: #0B12204C;
-  --ela-color-glass-top: #FFFFFFC7;
-  --ela-color-glass-bottom: #FFFFFF99;
-  --ela-color-glass-soft: #FFFFFF8C;
+  --ela-color-glass-top: #FFFFFFBF;
+  --ela-color-glass-bottom: #FFFFFFA6;
+  --ela-color-glass-soft: #FFFFFFB2;
   --ela-color-glass-track: #0B12201F;
   --ela-color-glass-tint: #1269C224;
   --ela-color-room-top: var(--ela-palette-frost-0);
   --ela-color-room-bottom: var(--ela-palette-frost-100);
-  --ela-color-room-light-high: #408CFF1F;
-  --ela-color-room-light-low: #7CCBFF1F;
-  --ela-color-room-glow: #7CCBFF24;
+  --ela-color-room-light-high: #FFFFFFE6;
+  --ela-color-room-light-low: #7CCBFF14;
+  --ela-color-room-glow: #FFFFFF80;
+  --ela-color-room-vignette: #7CCBFF1A;
   --ela-color-glow-wordmark: #7CCBFF80;
-  --ela-color-orb-shell-core: #FFFFFF47;
-  --ela-color-orb-shell-mid: #DFF4FF57;
-  --ela-color-orb-shell-edge: #7CCBFF38;
-  --ela-color-orb-shell-rim: #1269C261;
-  --ela-color-orb-line: #1269C252;
-  --ela-color-orb-shade: #1E468C33;
-  --ela-color-orb-sheen: #FFFFFFB2;
-  --ela-color-orb-drop: #1E468C3D;
+  --ela-color-orb-shell-core: #FFFFFF1F;
+  --ela-color-orb-shell-mid: #FFFFFF29;
+  --ela-color-orb-shell-edge: #7CCBFF1A;
+  --ela-color-orb-shell-rim: #5B6C8647;
+  --ela-color-orb-line: #5B6C8666;
+  --ela-color-orb-shade: #5B6C8629;
+  --ela-color-orb-sheen: #FFFFFFCC;
+  --ela-color-orb-drop: #5B6C861F;
   --ela-color-orb-core: var(--ela-palette-frost-0);
-  --ela-color-orb-spec: #FFFFFFD9;
-  --ela-color-orb-spec-soft: #FFFFFF4C;
-  --ela-color-light-azure-c: var(--ela-palette-azure-300);
-  --ela-color-light-azure-c2: var(--ela-palette-azure-100);
-  --ela-color-light-azure-veil: #7CCBFF66;
-  --ela-color-light-full-c: var(--ela-palette-azure-300);
+  --ela-color-orb-spec: #FFFFFFF2;
+  --ela-color-orb-occlusion: #5B6C862E;
+  --ela-color-orb-ground: #5B6C864C;
+  --ela-color-orb-sweep: #FFFFFF8C;
+  --ela-color-light-azure-c: var(--ela-palette-azure-500);
+  --ela-color-light-azure-c2: var(--ela-palette-azure-220);
+  --ela-color-light-azure-veil: #009AFF66;
+  --ela-color-light-full-c: var(--ela-palette-azure-500);
   --ela-color-light-full-c2: var(--ela-palette-frost-0);
-  --ela-color-light-full-veil: #7CCBFF80;
-  --ela-color-light-bright-c: var(--ela-palette-azure-150);
+  --ela-color-light-full-veil: #009AFF80;
+  --ela-color-light-bright-c: var(--ela-palette-azure-330);
   --ela-color-light-bright-c2: var(--ela-palette-frost-0);
-  --ela-color-light-bright-veil: #C4EBFF73;
+  --ela-color-light-bright-veil: #3DBCFF73;
   --ela-color-light-grey-c: var(--ela-palette-grey-500);
   --ela-color-light-grey-c2: var(--ela-palette-grey-300);
   --ela-color-light-grey-veil: #6B778566;
   --ela-color-light-off-c: var(--ela-palette-grey-700);
   --ela-color-light-off-c2: var(--ela-palette-grey-400);
   --ela-color-light-off-veil: #3A455266;
-  --ela-color-light-amber-c: var(--ela-palette-amber-300);
-  --ela-color-light-amber-c2: var(--ela-palette-amber-100);
-  --ela-color-light-amber-veil: #F6B84A66;
-  --ela-color-light-orange-c: var(--ela-palette-orange-300);
-  --ela-color-light-orange-c2: var(--ela-palette-orange-100);
-  --ela-color-light-orange-veil: #FF8A4C66;
-  --ela-color-light-red-c: var(--ela-palette-red-300);
-  --ela-color-light-red-c2: var(--ela-palette-red-100);
-  --ela-color-light-red-veil: #FF5D5D66;
-  --ela-shadow-glass: 0 24px 48px rgb(16 32 64 / 0.14), inset 0 1px 0 rgb(255 255 255 / 0.9);
-  --ela-shadow-glass-soft: 0 14px 30px rgb(16 32 64 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.8);
-  --ela-shadow-glass-warm: 0 24px 48px rgb(16 32 64 / 0.14), inset 0 1px 0 rgb(255 255 255 / 0.9), 0 0 60px rgb(246 184 74 / 0.18);
+  --ela-color-light-amber-c: var(--ela-palette-amber-500);
+  --ela-color-light-amber-c2: var(--ela-palette-amber-200);
+  --ela-color-light-amber-veil: #E6970A66;
+  --ela-color-light-orange-c: var(--ela-palette-orange-500);
+  --ela-color-light-orange-c2: var(--ela-palette-orange-200);
+  --ela-color-light-orange-veil: #FF661466;
+  --ela-color-light-red-c: var(--ela-palette-red-500);
+  --ela-color-light-red-c2: var(--ela-palette-red-150);
+  --ela-color-light-red-veil: #F4252566;
+  --ela-shadow-glass: 0 24px 48px rgb(46 64 96 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.9);
+  --ela-shadow-glass-soft: 0 14px 30px rgb(46 64 96 / 0.09), inset 0 1px 0 rgb(255 255 255 / 0.8);
+  --ela-shadow-glass-warm: 0 24px 48px rgb(46 64 96 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.9), 0 0 60px rgb(230 151 10 / 0.16);
   --ela-shadow-control: inset 0 1px 0 rgb(255 255 255 / 0.7);
-  --ela-shadow-action: 0 10px 26px rgb(95 185 255 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.6);
+  --ela-shadow-action: 0 10px 26px rgb(0 120 220 / 0.28), inset 0 1px 0 rgb(255 255 255 / 0.6);
+  --ela-tone-ambient: 0.3;
 }
 
 .specimen-swatch--palette-night-950 {
@@ -122,6 +126,10 @@
   --_swatch: var(--ela-palette-frost-50);
 }
 
+.specimen-swatch--palette-frost-75 {
+  --_swatch: var(--ela-palette-frost-75);
+}
+
 .specimen-swatch--palette-frost-100 {
   --_swatch: var(--ela-palette-frost-100);
 }
@@ -146,12 +154,20 @@
   --_swatch: var(--ela-palette-azure-200);
 }
 
+.specimen-swatch--palette-azure-220 {
+  --_swatch: var(--ela-palette-azure-220);
+}
+
 .specimen-swatch--palette-azure-250 {
   --_swatch: var(--ela-palette-azure-250);
 }
 
 .specimen-swatch--palette-azure-300 {
   --_swatch: var(--ela-palette-azure-300);
+}
+
+.specimen-swatch--palette-azure-330 {
+  --_swatch: var(--ela-palette-azure-330);
 }
 
 .specimen-swatch--palette-azure-350 {
@@ -164,6 +180,10 @@
 
 .specimen-swatch--palette-azure-450 {
   --_swatch: var(--ela-palette-azure-450);
+}
+
+.specimen-swatch--palette-azure-500 {
+  --_swatch: var(--ela-palette-azure-500);
 }
 
 .specimen-swatch--palette-azure-600 {
@@ -194,12 +214,24 @@
   --_swatch: var(--ela-palette-grey-700);
 }
 
+.specimen-swatch--palette-slate-500 {
+  --_swatch: var(--ela-palette-slate-500);
+}
+
 .specimen-swatch--palette-amber-100 {
   --_swatch: var(--ela-palette-amber-100);
 }
 
+.specimen-swatch--palette-amber-200 {
+  --_swatch: var(--ela-palette-amber-200);
+}
+
 .specimen-swatch--palette-amber-300 {
   --_swatch: var(--ela-palette-amber-300);
+}
+
+.specimen-swatch--palette-amber-500 {
+  --_swatch: var(--ela-palette-amber-500);
 }
 
 .specimen-swatch--palette-amber-800 {
@@ -210,8 +242,16 @@
   --_swatch: var(--ela-palette-orange-100);
 }
 
+.specimen-swatch--palette-orange-200 {
+  --_swatch: var(--ela-palette-orange-200);
+}
+
 .specimen-swatch--palette-orange-300 {
   --_swatch: var(--ela-palette-orange-300);
+}
+
+.specimen-swatch--palette-orange-500 {
+  --_swatch: var(--ela-palette-orange-500);
 }
 
 .specimen-swatch--palette-orange-700 {
@@ -222,12 +262,20 @@
   --_swatch: var(--ela-palette-red-100);
 }
 
+.specimen-swatch--palette-red-150 {
+  --_swatch: var(--ela-palette-red-150);
+}
+
 .specimen-swatch--palette-red-200 {
   --_swatch: var(--ela-palette-red-200);
 }
 
 .specimen-swatch--palette-red-300 {
   --_swatch: var(--ela-palette-red-300);
+}
+
+.specimen-swatch--palette-red-500 {
+  --_swatch: var(--ela-palette-red-500);
 }
 
 .specimen-swatch--palette-red-700 {
@@ -434,6 +482,10 @@
   --_swatch: var(--ela-color-room-glow);
 }
 
+.specimen-swatch--color-room-vignette {
+  --_swatch: var(--ela-color-room-vignette);
+}
+
 .specimen-swatch--color-glow-wordmark {
   --_swatch: var(--ela-color-glow-wordmark);
 }
@@ -478,8 +530,16 @@
   --_swatch: var(--ela-color-orb-spec);
 }
 
-.specimen-swatch--color-orb-spec-soft {
-  --_swatch: var(--ela-color-orb-spec-soft);
+.specimen-swatch--color-orb-occlusion {
+  --_swatch: var(--ela-color-orb-occlusion);
+}
+
+.specimen-swatch--color-orb-ground {
+  --_swatch: var(--ela-color-orb-ground);
+}
+
+.specimen-swatch--color-orb-sweep {
+  --_swatch: var(--ela-color-orb-sweep);
 }
 
 .specimen-swatch--color-light-azure-c {
