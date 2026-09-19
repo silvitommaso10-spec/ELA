@@ -131,6 +131,15 @@ def test_the_adr_names_the_font_and_it_is_the_one_of_the_tokens() -> None:
     assert "In bianco" not in chosen
 
 
+def test_the_adr_writes_the_rule_of_the_two_themes() -> None:
+    """Review of 2026-09-19: the same hue, another material — and the same tests."""
+    rule = (
+        "nel tema scuro la sfera è luce che emerge dal buio;"
+        " nel tema chiaro è un oggetto di vetro che contiene luce"
+    )
+    assert rule in flat(adr())
+
+
 def test_the_adr_and_the_readme_record_the_direction_in_the_words_of_the_user() -> None:
     words = "«stile Apple, futuristico stile JARVIS, azzurro e bianco per tutto, premium»"
     assert words in flat(adr())

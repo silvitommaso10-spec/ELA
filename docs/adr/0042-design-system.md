@@ -8,8 +8,9 @@
   2026-09-19, con la direzione visiva definitiva, il font e le tre revisioni aperte di
   §22 del design (§7, §8, §9), con ciò che il revisore ha corretto guardando la pagina nei due temi
   (§6), con l'esito del passo 2 della prova: una sfera più tridimensionale e un tema chiaro rifatto
-  come materiale (§6, §7); e con le cinque correzioni del revisore perché la sfera legga come luce
-  dentro un vetro e non come una bolla di vetro (§7).
+  come materiale (§6, §7); con le cinque correzioni del revisore perché la sfera legga come luce
+  dentro un vetro e non come una bolla di vetro (§7); e con la regola dei due temi, quando il
+  revisore ha approvato la sfera scura e rifatto la chiara (§6).
 - **Data:** 2026-09-18
 - **Riferimenti spec:** §6, §7, §29, §48
 - **Riferimenti design:** `docs/spec/ELA_design.md` — §6 del design, §13 del design,
@@ -196,7 +197,13 @@ oltre a leggerli dal documento, così che una modifica a §13 del design non li 
 
 Scuro in `:root`, chiaro con `data-theme="light"` su qualunque antenato: **lo accende solo
 l'attributo**. Seguire `prefers-color-scheme` è una riga di ogni superficie, non del design system.
-Il tema chiaro esiste — Apple ha entrambi —, e la sua stanza è un bianco freddo. **Il tema chiaro è un
+Il tema chiaro esiste — Apple ha entrambi —, e la sua stanza è un bianco freddo. **La regola dei due temi**: nel tema scuro la sfera è luce che emerge dal buio; nel tema chiaro è un oggetto di vetro che contiene luce. **Stessa tinta, materiale diverso**, e i test del
+contrasto e della tinta restano quelli. Dopo `520eb3f` il revisore ha approvato la sfera del tema
+scuro — «è quella giusta e non si tocca più» — e un test ne tiene l'impronta: ogni token che la
+sfera legge, risolto nel tema scuro fino alla palette. Ciò che il tema chiaro ha chiesto dopo è un
+token di ogni tema, neutro nel tema scuro: un moltiplicatore 1, uno scarto 0, un colore senza alpha.
+
+**Il tema chiaro è un
 materiale, non un'inversione** — la prima stesura lo trattava come un'inversione, e l'utente l'ha
 giudicato alla prova: «il tema chiaro non regge». La stanza chiara è un bianco freddo con la luce
 dall'alto e una vignetta azzurra leggerissima; il testo è blu-notte, non nero; i pannelli sono vetro
@@ -206,7 +213,14 @@ sopra il bianco perde la trasparenza e fa della sfera una biglia grigia —; l'a
 perché un alone su bianco sporca; l'ombra di contatto è grigio-blu. **La luce è la stessa tinta,
 non lo stesso colore**: sul bianco è più satura e più scura, o sparirebbe. Un test verifica che ogni
 parte della luce tenga la sua tinta da un tema all'altro entro sei gradi, e che nel chiaro non sia
-mai più chiara; il guscio ha i suoi token sotto `light`, e nessun test lo confronta.
+mai più chiara; il guscio ha i suoi token sotto `light`, e nessun test lo confronta. Sul bianco la sfera
+è **un oggetto di vetro**: fra la luce e il bordo resta un anello di vetro di circa il 15% del raggio;
+il bordo interno del guscio è grigio-blu e marcato, più scuro in alto a destra, e un filo grigio-blu
+chiaro, appena percettibile, corre lungo tutta la silhouette, così la sfera ha un contorno anche dove
+la luce è chiara; la luce è un terzo meno satura e si scurisce appena verso il suo bordo, così si
+legge un volume; l'alone quasi non c'è, e resta un bagliore stretto intorno al bordo; l'ombra di
+contatto è grigio-blu, più stretta e più definita, e si vede; il nucleo si sposta un poco verso la
+luce della stanza e si allarga, perché sia il cuore della luce e non il riflesso di una lente.
 
 WCAG 2.1 AA è la regola. Le coppie primo piano–sfondo sono dichiarate in `tokens.json`, e
 `tests/design/test_contrast.py` le calcola **nei due temi**. **La soglia non si dichiara: deriva dal

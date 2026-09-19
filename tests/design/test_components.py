@@ -215,7 +215,7 @@ def test_the_sphere_is_its_layers_in_the_order_of_depth() -> None:
     assert layers_of(orb) == LAYERS
     plasma = next(el for el in orb.walk() if "ela-orb__plasma" in el.classes)
     depths = [el.classes[-1] for el in plasma.children if isinstance(el, markup.Element)]
-    assert depths == ["ela-orb__depth--far", "ela-orb__depth--near"]
+    assert depths == ["ela-orb__depth--far", "ela-orb__depth--near", "ela-orb__limb"]
     drift = next(el for el in orb.walk() if "ela-orb__drift" in el.classes)
     assert [el for el in drift.walk() if "ela-orb__core" in el.classes]
 

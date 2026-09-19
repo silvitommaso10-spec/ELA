@@ -245,6 +245,10 @@
  *              everything inside turns: they are what makes the turning readable
  *   orbit      the near half of the orbits, in front of the glass
  *
+ * In the dark theme the sphere is light emerging from the dark; in the light theme it is an
+ * object of glass that holds light — the same hue, another material. What differs is a token
+ * of each theme (tone.*, color.orb.*, color.light.*), neutral in the dark theme where it is new.
+ *
  * Ground, occlusion, rim, Fresnel, sheen and hot spot never move: with reduced motion the sphere is still
  * round. The state is the light, and it arrives from the derived rule of the state: its colour
  * (--ela-state-light, -soft, -veil), its rhythm (--ela-state-spin, and -play when it stands
@@ -264,6 +268,7 @@
 .ela-orb > *,
 .ela-orb__depth,
 .ela-orb__bed,
+.ela-orb__limb,
 .ela-orb__cloud,
 .ela-orb__core,
 .ela-orb__spin,
@@ -276,10 +281,16 @@
 
 .ela-orb__ground {
   inset-block-start: var(--ela-presence-ground-top);
-  inset-inline: var(--ela-presence-ground-inset);
-  block-size: var(--ela-presence-ground-height);
-  background-image: radial-gradient(closest-side, var(--ela-color-orb-ground), transparent);
-  filter: blur(calc(var(--_s) * var(--ela-presence-ground-blur)));
+  inset-inline: calc(var(--ela-presence-ground-inset) + var(--ela-tone-ground-narrow));
+  block-size: calc(var(--ela-presence-ground-height) * var(--ela-tone-ground-flat));
+  background-image: radial-gradient(
+    closest-side,
+    var(--ela-color-orb-ground) var(--ela-tone-ground-hold),
+    transparent
+  );
+  filter: blur(
+    calc(var(--_s) * var(--ela-presence-ground-blur) * var(--ela-tone-ground-sharp))
+  );
 }
 
 .ela-orb__ambient {
@@ -303,19 +314,21 @@
     var(--ela-color-orb-shell-edge) var(--ela-presence-shell-stop-edge)
   );
   box-shadow:
-    inset calc(var(--_s) * var(--ela-presence-shell-border-x) * -1)
-      calc(var(--_s) * var(--ela-presence-shell-border-y))
+    inset 0 0 0 var(--ela-tone-silhouette) var(--ela-color-orb-silhouette),
+    inset calc(var(--_s) * var(--ela-presence-shell-border-x) * var(--ela-tone-border) * -1)
+      calc(var(--_s) * var(--ela-presence-shell-border-y) * var(--ela-tone-border))
       calc(var(--_s) * var(--ela-presence-shell-border-blur)) var(--ela-color-orb-line),
     inset 0 calc(var(--_s) * var(--ela-presence-shell-shade-y))
       calc(var(--_s) * var(--ela-presence-shell-shade-blur)) var(--ela-color-orb-shade),
     0 calc(var(--_s) * var(--ela-presence-shell-drop-y))
-      calc(var(--_s) * var(--ela-presence-shell-drop-blur)) var(--ela-color-orb-drop);
+      calc(var(--_s) * var(--ela-presence-shell-drop-blur)) var(--ela-color-orb-drop),
+    0 0 calc(var(--_s) * var(--ela-tone-halo)) var(--ela-state-light-veil);
 }
 
 /* the light inside, at two depths */
 
 .ela-orb__plasma {
-  inset: var(--ela-presence-plasma-inset);
+  inset: calc(var(--ela-presence-plasma-inset) + var(--ela-tone-plasma-shrink));
   overflow: hidden;
   opacity: var(--ela-state-plasma);
   -webkit-mask-image: radial-gradient(
@@ -357,6 +370,15 @@
 
 .ela-orb__cloud {
   mix-blend-mode: screen;
+}
+
+.ela-orb__limb {
+  inset: 0;
+  background-image: radial-gradient(
+    closest-side,
+    transparent var(--ela-presence-plasma-limb),
+    var(--ela-color-orb-limb)
+  );
 }
 
 .ela-orb__depth--far .ela-orb__cloud {
@@ -430,7 +452,8 @@
 }
 
 .ela-orb__core {
-  inset: var(--ela-state-core-inset);
+  inset: calc(var(--ela-state-core-inset) - var(--ela-tone-core-grow));
+  translate: calc(var(--_s) * var(--ela-tone-core-x)) calc(var(--_s) * var(--ela-tone-core-y));
   background-image: radial-gradient(
     closest-side,
     var(--ela-color-orb-core) var(--ela-presence-core-stop-heart),

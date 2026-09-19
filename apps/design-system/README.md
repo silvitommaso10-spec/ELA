@@ -28,7 +28,9 @@ widget».
   materiale, non un'inversione**: una stanza di bianco freddo con la luce dall'alto, il testo
   blu-notte, il vetro bianco con bordo e ombra grigio-blu. La sfera lì ha un guscio quasi
   trasparente e metà alone, e la sua luce è **la stessa tinta**, più satura e più scura — sul
-  bianco, l'azzurro del tema scuro sparirebbe.
+  bianco, l'azzurro del tema scuro sparirebbe. **Nel tema scuro la sfera è luce che emerge dal
+  buio; nel tema chiaro è un oggetto di vetro che contiene luce**: stessa tinta, materiale diverso.
+  La sfera del tema scuro è approvata e non si tocca più.
 - **Il font è lo stack di sistema**: San Francisco su Mac e iPhone — è l'unico modo lecito di
   averlo —, Segoe UI su Windows.
 
@@ -132,6 +134,7 @@ la difende; dove un test non può arrivare, lo dice.
 |---|---|
 | Ogni coppia dichiarata regge la sua soglia **nei due temi**: 4,5 per un colore di testo (criterio 1.4.3), 3 per tutto il resto (criterio 1.4.11). La soglia deriva dal gruppo del colore, non si dichiara. **Un colore con l'alpha si compone sopra ciò che ha dietro prima di misurarlo.** Sono dichiarate tutte le combinazioni con le superfici; **le esenzioni hanno un nome e una ragione nel test** — la sfera e il suo alone non sono controlli, e il significato lo porta la chiave a testo; la stanza, il vetro e i fili di luce sono decorazione | `tests/design/test_contrast.py` |
 | La luce della sfera tiene la sua tinta da un tema all'altro, entro sei gradi, e nel chiaro non è mai più chiara; il guscio ha i suoi token per tema, e nessun test lo confronta | `tests/design/test_contrast.py` |
+| La sfera del tema scuro è approvata: un test ne tiene l'impronta, fino alla palette. Nel tema chiaro la sfera è un oggetto di vetro — un anello di vetro fra la luce e il bordo, un bordo marcato e un filo lungo la silhouette, una luce meno satura che si scurisce verso il bordo, quasi niente alone, un'ombra di contatto che si vede | `tests/design/test_contrast.py` |
 | La proprietà `color` riceve solo colori di testo | `tests/design/test_tokens_only.py` |
 | Mai il solo colore, mai il solo movimento (criterio 1.4.1): la chiave di uno stato, di un rischio, di un livello è sempre testo; due stati non hanno la stessa luce, sui valori risolti; ogni stato mostra la sfera nelle tre misure | `tests/design/test_components.py` |
 | Ogni stato d'interazione esiste, l'anteprima non può divergere, il focus si vede; elementi nativi; `id` unici, ogni `for` al suo campo; **un campo riempie il suo contenitore**, e quanto può allargarsi è un token; una riga si legge da sinistra: la sfera, che cos'è, e in coda la chiave di ELA | `tests/design/test_components.py` |

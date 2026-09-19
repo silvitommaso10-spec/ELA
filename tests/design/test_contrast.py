@@ -26,6 +26,7 @@ another is not seen by a static check.
 from __future__ import annotations
 
 import colorsys
+import hashlib
 from typing import Any
 
 import pytest
@@ -320,6 +321,94 @@ def test_the_reflection_of_the_room_is_a_small_hot_spot_and_a_faint_sheen() -> N
     assert radius("light", "height") < radius("dark", "height")
     sheen = source["presence"]["sheen"]
     assert float(sheen["width"]["$value"].removesuffix("%")) > 4 * radius("dark", "width")
+
+
+DARK_SPHERE = (
+    "e0cebb24a6fdbb076d982e810bb3849edb4fad8add1bb3b31a9788fbbb20770f"  # pragma: allowlist secret
+)
+"""The fingerprint of the sphere of the dark theme, approved by the reviewer on 2026-09-19 at
+520eb3f: «la sfera è quella giusta e non si tocca più». It changes only with a new review.
+
+Taken when the light theme got its glass: every token the sphere read at 520eb3f resolves in
+the dark theme to the same value as then, and what came in is neutral there — a
+multiplier of 1, an offset of 0, a colour with no alpha."""
+
+
+def dark_sphere(source: Tokens) -> str:
+    """Every token the sphere reads, as the dark theme resolves it: colours down to the palette,
+    everything else as it is written. The CSS keeps its side by construction: what the light
+    theme needed is a token of each theme, neutral in the dark one."""
+    module = generator()
+    trees: dict[tuple[str, ...], Any] = {
+        ("presence",): source["presence"],
+        ("motion",): source["motion"],
+        ("state",): source["state"],
+        ("color", "orb"): source["dark"]["color"]["orb"],
+        ("color", "light"): source["dark"]["color"]["light"],
+        ("tone",): source["dark"]["tone"],
+    }
+    lines = []
+    for prefix, node in trees.items():
+        for path, leaf in module.leaves(node, prefix):
+            value: object = leaf["$value"]
+            if leaf.get("$type") == "color":
+                value = module.colour_of(source, "{" + ".".join(path) + "}", "dark")
+            lines.append(f"{'.'.join(path)}={value!r}")
+    return hashlib.sha256("\n".join(sorted(lines)).encode()).hexdigest()
+
+
+def test_the_dark_sphere_is_approved_and_does_not_move() -> None:
+    assert dark_sphere(tokens()) == DARK_SPHERE, (
+        "the sphere of the dark theme changed: it was approved on 2026-09-19, and a change is a"
+        " new review — if it has had one, write its fingerprint here"
+    )
+
+
+def test_a_change_to_the_dark_sphere_is_seen_and_one_to_the_light_theme_is_not() -> None:
+    source = tokens()
+    source["light"]["tone"]["halo"]["$value"] = 0.2
+    source["light"]["color"]["orb"]["ground"]["$alpha"] = 0.9
+    assert dark_sphere(source) == dark_sphere(tokens())
+    source["presence"]["far"]["blur"]["$value"] = 0.2
+    assert dark_sphere(source) != dark_sphere(tokens())
+    source = tokens()
+    source["palette"]["azure"]["300"]["$value"] = "#7CCBFE"
+    assert dark_sphere(source) != dark_sphere(tokens()), "a colour is read down to the palette"
+
+
+def test_in_the_light_theme_the_sphere_is_an_object_of_glass_that_holds_light() -> None:
+    """Review of 2026-09-19 after 520eb3f: on white the sphere was a flat, saturated ball with a
+    whitish halo, no glass and no shadow — a soap bubble. In the light theme it is glass that
+    holds light: a ring of glass between the light and the rim, a marked edge and a thread
+    along the silhouette, a light a third less saturated that darkens toward its edge, almost no
+    halo, a contact shadow that shows, and a heart moved toward the light of the room."""
+    module = generator()
+    source = tokens()
+    tone = source["light"]["tone"]
+
+    def percent(leaf: dict[str, Any]) -> float:
+        return float(str(leaf["$value"]).removesuffix("%").removesuffix("px"))
+
+    inset = percent(source["presence"]["plasma"]["inset"]) + percent(tone["plasma"]["shrink"])
+    assert inset / 50 == pytest.approx(0.15, abs=0.01), "a ring of glass, 15% of the radius"
+    assert tone["border"]["$value"] > 1 and percent(tone["silhouette"]) >= 1
+    assert module.colour_of(source, "{color.orb.silhouette}", "light")[1] > 0
+    assert module.colour_of(source, "{color.orb.limb}", "light")[1] > 0
+    assert tone["ambient"]["$value"] <= 0.05 < 0.3, "almost nothing: a halo on white dirties it"
+    assert tone["halo"]["$value"] > 0
+    ground = tone["ground"]
+    assert percent(ground["narrow"]) > 0 and ground["flat"]["$value"] < 1
+    assert ground["sharp"]["$value"] < 1 and percent(ground["hold"]) > 0
+    assert module.colour_of(source, "{color.orb.ground}", "light")[1] >= 0.4
+    core = tone["core"]
+    assert core["x"]["$value"] < 0 and core["y"]["$value"] < 0, "toward the light, top left"
+    assert percent(core["grow"]) > 0
+    for path, _ in module.leaves(source["light"]["color"]["light"], ("color", "light")):
+        colour = str(module.colour_of(source, "{" + ".".join(path) + "}", "light")[0])
+        red, green, blue = channels(colour)
+        _, lightness, saturation = colorsys.rgb_to_hls(red, green, blue)
+        if max(red, green, blue) - min(red, green, blue) >= ACHROMATIC:
+            assert saturation <= 0.7, f"{'.'.join(path)}: {colour} is too saturated for white"
 
 
 def test_the_hue_of_known_colours() -> None:
