@@ -25,10 +25,23 @@ from tests.architecture.rules import INFRA_LIBRARIES, INFRA_PACKAGES
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCUMENT = ROOT / "docs" / "ARCHITECTURE.md"
+STATO = ROOT / "docs" / "STATO.md"
 SCRIPT = ROOT / "scripts" / "generate_architecture.py"
 PACKAGE_ROOT = ROOT / "src" / "ela"
 ARROW = re.compile(r"^\| `(ela[\w.]+)` \| `(ela[\w.]+)` \| (.+?) \|$")
 PORT = re.compile(r"^port `(\w+)`$")
+COUNT = re.compile(
+    r"\b\d+\*{0,2}\s+"
+    r"(?:adr|milestone|regol[ae]|contratt[io]|port|capability|rott[ae]|comand[io]|vincol[io])\b",
+    re.IGNORECASE,
+)
+FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
+NUMBERS = re.compile(
+    r"<!-- generato da scripts/generate_stato.py: i numeri -->\n(.*?)"
+    r"<!-- fine del blocco generato: i numeri -->",
+    re.DOTALL,
+)
+COUNTED = re.compile(r"^\| ([^|]+?) \| \*\*", re.MULTILINE)
 
 
 @pytest.fixture(scope="module")
@@ -185,3 +198,82 @@ def test_the_document_says_what_it_does_not_verify() -> None:
     assert "Ciò che **non** è verificato" in text
     assert "un passaggio dimenticato" in text
     assert "il prezzo dichiarato del terzo blocco" in text
+
+
+# ----------------------------------------------------------------------------------------
+# The counts, which live somewhere else
+# ----------------------------------------------------------------------------------------
+
+
+def counts_written_by_hand(text: str) -> list[str]:
+    """Every figure the prose puts in front of something ``docs/STATO.md`` §3 counts.
+
+    A digit, bold or not, followed by the first word of a row of that table, in any case: the
+    two are held together by ``test_every_row_of_the_numbers_is_a_noun_the_check_knows``. «36
+    regole», «27 ADR» and «13 contratti» were written here by hand and had all expired when they
+    were taken out: the number lives in the generated block, and this document sends the reader
+    there. Code blocks are not prose and are left out. The limit, declared: a number written in
+    words is not seen.
+    """
+    return COUNT.findall(FENCE.sub("", text))
+
+
+def test_the_prose_writes_no_count_by_hand() -> None:
+    assert counts_written_by_hand(document()) == []
+
+
+@pytest.mark.parametrize(
+    ("prose", "count"),
+    [
+        ("le direzioni che le 36 regole di architettura impongono", "36 regole"),
+        ("una regola sola: 1 regola", "1 regola"),
+        ("`docs/adr/` — 27 ADR, dal primo sullo stack", "27 ADR"),
+        ("47 milestone, di cui 44 non più `Proposta`", "47 milestone"),
+        ("i 13 contratti `import-linter`", "13 contratti"),
+        ("1 contratto", "1 contratto"),
+        ("i 25 port di `ela.ports`", "25 port"),
+        ("8 capability di produzione", "8 capability"),
+        ("29 rotte dell'API", "29 rotte"),
+        ("1 rotta", "1 rotta"),
+        ("25 comandi della CLI", "25 comandi"),
+        ("1 comando", "1 comando"),
+        ("200 vincoli dichiarati negli ADR", "200 vincoli"),
+        ("1 vincolo", "1 vincolo"),
+        ("le **54** regole", "54** regole"),
+    ],
+)
+def test_a_count_written_by_hand_is_caught(prose: str, count: str) -> None:
+    """The negative case: a defence that cannot fire is worse than none."""
+    assert counts_written_by_hand(prose) == [count]
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "`composition` è l'unico che nomina i concreti (regola 27, ADR 0023 §12)",
+        "Regola 3 (ADR 0002 §3): il Core non importa mai `anthropic`",
+        "le porte e le rotte, senza cifre",
+        "```\n36 regole\n```",
+    ],
+)
+def test_what_is_not_a_count_is_left_alone(prose: str) -> None:
+    """A rule is cited by its number, which comes after the noun; a code block is not prose."""
+    assert counts_written_by_hand(prose) == []
+
+
+def test_every_row_of_the_numbers_is_a_noun_the_check_knows() -> None:
+    """A row added to ``docs/STATO.md`` §3 fails here until ``COUNT`` learns its noun.
+
+    The first word of each label, in lower case, after «2 ». Without this the docstring above
+    could become false the way the counts did: by a line added somewhere else.
+    """
+    block = NUMBERS.search(STATO.read_text(encoding="utf-8"))
+    assert block is not None, "docs/STATO.md must keep its generated block «i numeri»"
+    nouns = [label.split()[0].lower() for label in COUNTED.findall(block.group(1))]
+    assert nouns, "the block «i numeri» must list its rows"
+    assert [noun for noun in nouns if counts_written_by_hand(f"2 {noun}") != [f"2 {noun}"]] == []
+
+
+def test_the_document_sends_the_reader_to_the_one_place_that_counts() -> None:
+    assert "`docs/STATO.md` §3" in " ".join(document().split())
+    assert "\n## 3. I numeri\n" in STATO.read_text(encoding="utf-8")
