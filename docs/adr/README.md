@@ -50,7 +50,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0040](0040-node-windows.md) | Il nodo Windows: la piattaforma la sceglie la composizione, il segreto sotto l'ACL della cartella, la voce da stdin, un nodo che dichiara solo ciò che la sua macchina sa fare (regola 54), e il vocabolario chiuso dei codici sul filo | Accettata |
 | [0041](0041-parallel-suite.md) | La suite in parallelo: `-n auto` con gli stessi gate, un test che non condivide niente con un altro, il controllo Linux sulla CI, e il debito della suite che aspetta | Accettata |
 | [0042](0042-design-system.md) | Il design system: una cartella che non è Python, un file di token da cui il resto deriva per intero, tre liste lette dalla loro fonte, e i nomi dei livelli di attenzione | Accettata |
-| [0043](0043-companion.md) | Il companion iPhone: un ruolo imposto nel registro, un cookie come portatore, pagine servite dal Core, e un campanello che suona un metodo | Proposta |
+| [0043](0043-companion.md) | Il companion iPhone: un ruolo imposto nel registro, un cookie come portatore, pagine servite dal Core, e un campanello che suona un metodo | Accettata |
 
 ## Template
 

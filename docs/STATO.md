@@ -96,7 +96,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.3b` | Implementata | La cartella del segreto del nodo: `0o700` anche dove il Core non l'ha creata prima |
 | 12 — I nodi sulla rete | `M12.3c` | Implementata | Chi legge l'alimentazione: un campo che l'orchestratore pesa e che nessuna macchina produceva |
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
-| 12 — I nodi sulla rete | `M12.5` | Proposta | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
+| 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Proposta | Il Command Center v1: un client dell'API, e gli stati di ELA come proiezione |
 | 17 — Design | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
@@ -113,7 +113,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **43** | `docs/adr/NNNN-*.md` |
-| Milestone | **48, di cui 44 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **48, di cui 45 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **26** | i `Protocol` di `src/ela/ports.py` |
@@ -128,26 +128,36 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 ### 4.1 Le fasi
 
-- **Fase 12 — i nodi.** È la fase in corso, e tre quarti sono fatti: ELA ha smesso di essere un
-  processo su una macchina. M12.1 ha dato a un nodo un'identità provabile, M12.2 il protocollo del
-  lavoro con la sua suite di conformità, M12.3 il **primo nodo vero** — questo Mac, che è anche un
-  nodo: un processo separato che esegue le chiamate del Core e le riporta, e che recita le tredici
-  storie del contratto senza dichiararne nessuna irrecitabile, e M12.4 il **secondo sistema**: un PC
-  Windows che prende le chiamate del Core attraverso la tailnet, protegge il suo segreto con l'ACL
-  della cartella e parla con la voce di Windows. Resta il companion iPhone (M12.5), sullo stesso
-  contratto e con l'identità di M17.1 — e la prova che regge
-  il peso di una seconda implementazione l'ha già data M12.3, trovandogli un buco: un processo che
-  riparte non aveva modo di sapere la propria revisione. È la fase a cui una dozzina di documenti
-  hanno rimandato qualcosa: `grep -rn "Fase 12" docs/` è l'elenco di ciò che va onorato, e
-  `launchd` con il portachiavi è ciò che resta murato finché ELA non avrà un eseguibile firmato
-  suo (ADR 0029 §16, ADR 0039 §6).
+La prima voce è una fase **chiusa**, e resta qui finché la prossima non comincia: è il posto dove si
+legge da dove si riparte, e una fase che sparisce il giorno in cui finisce lascia il lettore senza
+il filo.
+
+- **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5): ELA ha smesso di essere un processo su
+  una macchina, e ha smesso di essere usabile solo davanti a quella macchina. M12.1 ha dato a un
+  nodo un'identità provabile, M12.2 il protocollo del lavoro con la sua suite di conformità, M12.3
+  il **primo nodo vero** — questo Mac, che è anche un nodo: un processo separato che esegue le
+  chiamate del Core e le riporta, e che recita le tredici storie del contratto senza dichiararne
+  nessuna irrecitabile —, M12.4 il **secondo sistema**: un PC Windows che prende le chiamate del
+  Core attraverso la tailnet, protegge il suo segreto con l'ACL della cartella e parla con la voce
+  di Windows. E M12.5 ha aggiunto ciò che non è un nodo: **il companion iPhone**, un'identità con un
+  ruolo imposto che guarda e risponde e non prende lavoro, con l'identità visiva di M17.1. La prova
+  che il contratto regge il peso di una seconda implementazione l'aveva già data M12.3, trovandogli
+  un buco — un processo che riparte non sapeva la propria revisione —; M12.5 ha trovato il limite
+  opposto, e l'ha detto invece di aggirarlo: **le tredici storie sono le storie del lavoro**, e
+  un'identità che non ne prende non ne recita dodici, quindi ha un contratto suo (ADR 0043 §9).
+  Era la fase a cui una dozzina di documenti avevano rimandato qualcosa: il censimento di che cosa
+  è stato onorato, che cosa non si applica e che cosa si sposta con una casa nuova è in ADR 0043
+  §9, e `launchd` con il portachiavi resta murato finché ELA non avrà un eseguibile firmato suo
+  (ADR 0029 §16, ADR 0039 §6).
 - **Fase 17 — il design.** Registrata il 2026-09-18: la fonte di verità è
   [`spec/ELA_design.md`](spec/ELA_design.md), e le decisioni sono nella 5.10. **M17.1, il Design
   System, è fatta** (2026-09-19, ADR 0042): ELA ha un aspetto — una sfera di luce nel vetro, azzurra
   e bianca, «stile Apple, futuristico stile JARVIS» — e `apps/design-system/` è ciò che ogni
-  superficie eredita. **La prossima milestone è M12.5**, il companion iPhone, che nasce con
-  quell'identità (§20 del design). Poi M17.2, il Command Center v1, prima della Fase 13; M17.3, la
-  presenza desktop, alla fine.
+  superficie eredita — e M12.5 è la prima che l'ha ereditata davvero, sull'iPhone (§20 del design).
+  **La prossima milestone è M17.2**, il Command Center v1, prima della Fase 13: eredita da M12.5 la
+  forma del client web (voce 5.10), e le resta da decidere le sue viste, l'identità del browser del
+  Mac, il tema e gli stati che la proiezione di M12.5 non copre. M17.3, la presenza desktop, alla
+  fine.
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
@@ -213,6 +223,16 @@ informazioni rapide — cose che un Shortcut sa fare oggi.
 esprimibile in uno Shortcut** — una richiesta HTTP con un header e una risposta JSON — e in una
 notifica push. Qualunque trasporto che chieda al nodo di tenere aperta una connessione, di
 presentare un certificato client o di far girare un processo suo taglia fuori l'iPhone.
+
+*Come è finita, il 2026-09-20 (M12.5, ADR 0043):* la decisione regge, e il vincolo è stato onorato
+in un modo che il 2026-09-07 non era ovvio. La frase resta vera **delle rotte dei nodi**, che la
+suite di M12.2 prova proprio in quella forma. Il companion però **non le usa**: parla dal browser
+del telefono, con un **cookie** invece di un header, e le pagine gliele serve `ela.api`. Nessuno dei
+tre trasporti esclusi qui gli serve — niente connessione tenuta aperta, niente certificato client,
+nessun processo suo sull'iPhone —, e la notifica push è quella di §6 (ntfy, con il tocco che apre la
+pagina). Uno Shortcut c'è, e non tiene segreti: apre un indirizzo. Se un giorno uno Shortcut
+**parlerà** a ELA presentando una credenziale, sarà la milestone che darà voce all'iPhone a dire
+dove la tiene, con la sua misura.
 
 ### 5.2 La rete è Tailscale
 
@@ -323,12 +343,36 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   accessibilità — e **l'identità visiva minima che servono** (§22 del design). E la voce 20, il
   prototipo, in una forma sola: **una pagina-campionario** che rende token, componenti e stati
   d'interazione, servita sulla tailnet e aperta in Safari. È ciò che l'utente prova a mano, e non è
-  uno stub: è il riferimento che M12.5 e M17.2 usano. La voce 17, il companion iPhone, la fa
-  **M12.5**, con l'identità di M17.1.
+  uno stub: è il riferimento che M12.5 ha usato e che M17.2 userà. La voce 17, il companion iPhone,
+  **l'ha fatta M12.5** il 2026-09-20, con l'identità di M17.1: le pagine del telefono usano i
+  `tokens.css` e i `components.css` della cartella, e la sfera la **includono** invece di
+  ricopiarla.
 - **M17.2 — Command Center v1.** Un **client dell'API come la CLI** (ADR 0024 §2), in
   `apps/command-center/`. Gli stati di §6 del design sono **derivati da ciò che l'API espone, mai
   memorizzati**. Da quel momento vale una regola fissa: **ogni milestone che aggiunge una capacità
   aggiunge la sua vista.**
+- **La forma del client web l'ha decisa M12.5, con ADR 0043, e M17.2 la eredita** (deciso il
+  2026-09-19, fatto il 2026-09-20). Le pagine le **compone `ela.api`**, dietro lo stesso middleware
+  e leggendo le sue stesse rotte, e **il browser è il client**: non c'è un secondo processo che
+  tenga e inoltri la credenziale del telefono, che sarebbe il reverse proxy che la 5.2 esclude con
+  un altro nome. L'identità di un browser viaggia in un **cookie**, perché un browser non può
+  mandare un header. **Niente JavaScript nostro**, e una `Content-Security-Policy` che lo vieta
+  comunque, composta nell'unico posto dove nasce una pagina. I modelli stanno in
+  `apps/<superficie>/`, con le loro regole nei test della cartella.
+
+  *Ciò che tiene vera la frase «client dell'API come la CLI» è una regola, non una promessa*: la
+  **regola 55** — *le pagine leggono le rotte* — dice che `api/companion.py` chiama le funzioni
+  delle rotte e non raggiunge mai un port, uno store, il catalogo o l'executor attraverso `Ela`, e
+  ha il suo caso negativo. Ne discende la disciplina che M17.2 eredita: **ciò che una vista mostra
+  deve già stare in una rotta**, e se non ci sta è la rotta che cresce — è così che `ApprovalOut`
+  ha guadagnato i pezzi della domanda invece di lasciare alla pagina una seconda copia.
+
+  M17.2 decide ancora **le sue viste**, l'**identità del browser del Mac** (il cookie di M12.5 è
+  del telefono), il **tema** — le pagine del companion stanno nel tema scuro sempre, perché seguire
+  il sistema vuole una regola derivata che è del generatore di M17.1 — e gli **stati che la
+  proiezione di M12.5 non copre**: il companion ne deriva tre, `WAITING APPROVAL`, `WORKING` e
+  `IDLE`, e gli altri di §6 del design aspettano una fonte che non faccia dire alla sfera una cosa
+  che ELA non sa.
 - **M17.3 — Presenza desktop** (§19 del design), alla fine, dopo le altre fasi.
 - **Com'è ELA sullo schermo** — deciso dall'utente il 2026-09-18, guardando la pagina-campionario
   di M17.1, con le sue parole: «ELA deve sembrare una sfera, azzurra e bianca; una dashboard
@@ -336,7 +380,8 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   widget».
 
 L'ordine è **M17.1 → M12.5 → M17.2 → Fase 13**, e M17.3 dopo tutte. Il numero di una fase non dice
-quando si fa: M17.1 viene prima dell'ultima milestone della Fase 12.
+quando si fa: M17.1 è venuta prima dell'ultima milestone della Fase 12. Le prime due sono fatte
+(2026-09-19 e 2026-09-20); la prossima è M17.2.
 
 *Perché è una fase:* è il design stesso a chiederlo. §33 del design vieta di saltare da «ELA deve
 essere futuristica» a «scrivi il codice della dashboard», §22 del design vuole l'identità progettata
@@ -350,14 +395,20 @@ nascerebbe senza identità e andrebbe rifatto.
 
 *Perché M17.2 dopo la Fase 12 e prima della Fase 13:* ciò che il Command Center mostra per primo
 sono i nodi (§11 del design e §12 del design), e prima che la Fase 12 li abbia tutti una vista di un
-nodo che non esiste ancora è uno stub, non un debito. E le prime capability HIGH della Fase 13
+nodo che non esiste ancora è uno stub, non un debito. **La condizione è soddisfatta dal
+2026-09-20**: i nodi ci sono tutti — il Mac, il PC, e il telefono che nodo non è — e il Device
+Center ha righe vere da mostrare, companion compreso, con la disponibilità derivata e l'ultimo
+contatto come due fatti separati. E le prime capability HIGH della Fase 13
 vogliono l'Approval Center di §14 del design e §29 del design già in piedi, perché un'approvazione
 HIGH data da un terminale non nomina ciò che conta.
 
 *Perché il Command Center è un client:* per la ragione della CLI. `ela.api` è l'unica porta da cui
-un «sì» dell'utente entra nel sistema e l'unica che controlla il token; un'approvazione data dal
-Command Center passa da lì, come una data con `ela task approve`, e un Command Center che leggesse
-il database sarebbe un secondo ELA.
+un «sì» dell'utente entra nel sistema e l'unica che controlla l'identità di chi chiama;
+un'approvazione data dal Command Center passa da lì, come una data con `ela task approve`, e un
+Command Center che leggesse il database sarebbe un secondo ELA. Dal 2026-09-20 non è più soltanto
+una ragione: è **la regola 55**, con il suo caso negativo — e «l'unica che controlla il token» si
+legge oggi come «l'unica che risolve un'identità», perché un browser porta un cookie e non un
+token.
 
 *Perché gli stati sono derivati:* uno stato memorizzato è una seconda copia di ciò che il task,
 l'approvazione e il nodo già dicono, e si disallinea alla prima scrittura mancata — la ragione per
