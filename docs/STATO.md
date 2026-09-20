@@ -98,7 +98,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
-| 17 — Design | `M17.2` | Proposta | Il Command Center v1: un client dell'API, e gli stati di ELA come proiezione |
+| 17 — Design | `M17.2` | Proposta | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
 
 <!-- fine del blocco generato: le milestone -->
@@ -176,7 +176,7 @@ il filo.
 | Fase | Documenti che la nominano |
 |---|---|
 | 13 | 4 |
-| 15 | 13 |
+| 15 | 14 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
 
