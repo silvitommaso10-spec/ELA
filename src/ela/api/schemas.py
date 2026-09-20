@@ -36,6 +36,7 @@ from ela.domain import (
     DeviceCapability,
     DeviceCapabilityName,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     ErrorMetadata,
     ExecutionId,
@@ -62,7 +63,7 @@ from ela.domain import (
     TaskState,
     TaskStep,
 )
-from ela.executive import REPORTABLE, Delivery, Envelope, check_envelope
+from ela.executive import ASKED, REPORTABLE, Delivery, Envelope, check_envelope
 from ela.tasks.graph import GraphState
 
 __all__ = [
@@ -306,8 +307,43 @@ class RunOut(BaseModel):
     """
 
 
+class Asked(BaseModel):
+    """The facts of a question, as the executor wrote them beside it (M12.5 dec. F; ``ASKED``).
+
+    Read from ``Approval.metadata`` and **never recomposed**: the risk is the catalogue's at the
+    moment of asking, the ceiling is the task's, the terms are the ones a "yes" will mint. Every
+    field has a default because a question asked before M12.5 has no bag, and a page shows what
+    it has rather than refusing to open.
+
+    ``extra="ignore"``: whoever writes the bag may keep something of their own there, and a key
+    this shape does not know is not a reason to fail a page. That the two lists **do** match is a
+    test of its own (``tests/api/test_approvals.py``).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    description: str = ""
+    """What the capability does, in the catalogue's words."""
+    risk: RiskLevel | None = None
+    """The risk of the catalogue — the one the Guardian used, not the one a plan declares."""
+    max_privacy: PrivacyLevel | None = None
+    """How far this task's content may travel: a level, never a node (ADR 0038 §16)."""
+    goal: str = ""
+    """The goal of the step that asked."""
+    stated: tuple[str, ...] = ()
+    """The declared arguments, as pairs — the same ones the phrase already carries."""
+    grant_uses: int | None = None
+    grant_seconds: int | None = None
+    """The terms of the grant a "yes" mints: how many uses, and for how long."""
+
+
 class ApprovalOut(BaseModel):
-    """A request for the user's consent (§30). ``prompt`` is what the user is asked."""
+    """A request for the user's consent (§30). ``prompt`` is what the user is asked.
+
+    Since M12.5 it also carries the **parts** of that question (dec. F): the phrase is one
+    sentence, and a page has to show what it is made of. One route, two surfaces, nothing
+    recomposed on either.
+    """
 
     id: UUID
     created_at: datetime
@@ -320,9 +356,17 @@ class ApprovalOut(BaseModel):
     expires_at: datetime | None
     responded_at: datetime | None
     responded_by: str | None
+    description: str
+    risk: RiskLevel | None
+    max_privacy: PrivacyLevel | None
+    goal: str
+    stated: tuple[str, ...]
+    grant_uses: int | None
+    grant_seconds: int | None
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:
+        asked = Asked.model_validate(approval.metadata.get(ASKED) or {})
         return cls(
             id=approval.id,
             created_at=approval.created_at,
@@ -335,6 +379,7 @@ class ApprovalOut(BaseModel):
             expires_at=approval.expires_at,
             responded_at=approval.responded_at,
             responded_by=approval.responded_by,
+            **asked.model_dump(),
         )
 
 
@@ -406,6 +451,9 @@ class DeviceOut(BaseModel):
     created_at: datetime
     name: str
     os: OperatingSystem
+    role: DeviceRole
+    """What this identity is (M12.5 dec. A): beside ``available``, which for a ``COMPANION`` is
+    always ``false`` — it answers pages, it does not send heartbeats (dec. B)."""
     available: bool
     status: DeviceStatus
     capabilities: tuple[TraitOut, ...]
@@ -426,6 +474,7 @@ class DeviceOut(BaseModel):
             created_at=device.created_at,
             name=device.name,
             os=device.os,
+            role=device.role,
             available=available,
             status=device.status,
             capabilities=tuple(TraitOut.of(trait) for trait in device.capabilities),
@@ -450,11 +499,17 @@ hostile, and either way it must be seen: ``422``, and the row does not change (c
 
 
 class EnrollmentIn(BaseModel):
-    """What the user imposes on the node a code will create: only its ``privacy`` (ADR 0037 §5)."""
+    """What the user imposes on the identity a code will create: ``privacy`` and ``role``.
+
+    The two halves nobody may declare about themselves (ADR 0037 §5; M12.5 dec. A). ``role``
+    defaults to ``WORKER``, which is what this route created before roles existed and what every
+    caller that does not know about them still means.
+    """
 
     model_config = NODE_BODY
 
     privacy: PrivacyLevel
+    role: DeviceRole = DeviceRole.WORKER
 
     @field_validator("privacy")
     @classmethod
@@ -477,6 +532,7 @@ class EnrollmentCodeOut(BaseModel):
 
     code: str
     privacy: PrivacyLevel
+    role: DeviceRole
     expires_at: datetime
 
 
@@ -835,6 +891,22 @@ class PreviewIn(BaseModel):
     voice_id: str = Field(min_length=1)
 
 
+class BellOut(BaseModel):
+    """Whether ELA can ring the user's phone, and through whom (M12.5 dec. E; ADR 0043 §8).
+
+    Two facts and not one, for the reason ADR 0030 §8 gives: a topic nobody configured and an ELA
+    that never bound an address a phone can open are different things with different answers, and
+    a single ``false`` would send somebody looking in the wrong place.
+    """
+
+    configured: bool
+    """A topic is set: without it ELA is silent, and that is a configuration, not a failure."""
+    ready: bool
+    """And an address a phone can open was bound — the tailnet's, not loopback (ADR 0037 §2)."""
+    provider: str
+    """Who would ring. Never the topic, which is the credential on this provider."""
+
+
 class ListeningOut(BaseModel):
     """What ELA can hear with, right now (M11.2, ADR 0036).
 
@@ -961,6 +1033,8 @@ class DiagnosticsOut(BaseModel):
     Counted and not written: anyone on the tailnet could otherwise write into the chain of §32 at
     will. In the memory of the process, reset at every start — a fact to see, not to engrave.
     """
+    bell: BellOut
+    """Whether ELA can reach the user on their phone, and through whom (M12.5 dec. E)."""
     perception: PerceptionSummaryOut
     voice: VoiceOut
     listening: ListeningOut

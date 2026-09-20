@@ -107,6 +107,7 @@ from ela.domain import (
     PermissionOutcome,
     PrivacyLevel,
     ProviderUsage,
+    RiskLevel,
     StepId,
     StepState,
     Task,
@@ -122,6 +123,7 @@ from ela.executive.errors import (
 )
 from ela.permissions import (
     DEFAULT_AUTHORIZATION_TTL,
+    SINGLE_USE,
     Rule,
     authorization_from_approval,
     scope_covers,
@@ -135,6 +137,7 @@ from ela.ports import (
     AuthorizationNotUsableError,
     AuthorizationStore,
     AuthorizingGuardianPort,
+    Bell,
     CapabilityRegistryPort,
     Clock,
     ExecutionResultStore,
@@ -152,6 +155,7 @@ from ela.tasks.graph import GraphState
 
 __all__ = [
     "APPROVAL_NAMESPACE",
+    "ASKED",
     "AUTHORIZATION_NAMESPACE",
     "CONSUMING_RULES",
     "DEFAULT_APPROVAL_TTL",
@@ -206,6 +210,20 @@ RECOVERED: Final = "recovered"
 """The payload key an audit event written on a resumed run carries, set to ``True`` (ADR 0015 §5,
 decision E): the numbers it holds were read at the retry, not at the run. Absent otherwise."""
 
+BELL_ACTOR: Final = Actor(kind=ActorKind.SYSTEM, id="bell")
+"""Who rings: nobody asked for a notification, ELA decided the user should know (dec. E).
+
+``SYSTEM`` and not the executor's own actor, for the reason ``REGISTRY_ACTOR`` exists: what this
+records is not a step being run, it is ELA reaching for the user's attention.
+"""
+
+ASKED: Final = "asked"
+"""The key under which an :class:`~ela.domain.Approval` keeps the facts of its own question.
+
+M12.5 dec. F: one bag, written when the question is composed (:meth:`Executor._asked`) and read by
+the shape that answers ``GET /approvals`` — so the terminal and a page show the same facts and
+neither recomposes them. Namespaced because ``metadata`` belongs to whoever writes it.
+"""
 DEFAULT_APPROVAL_TTL: Final = timedelta(hours=24)
 """How long a request for approval stays answerable (ADR 0013 §5, decision E).
 
@@ -491,6 +509,20 @@ def _json_targets(targets: Sequence[object]) -> list[JsonValue]:
     return [target if isinstance(target, str) else None for target in targets]
 
 
+def _declared(spec: CapabilitySpec, arguments: JsonMapping) -> tuple[str, ...]:
+    """The declared arguments as pairs — what :func:`_stated` renders into the question.
+
+    Split out in M12.5 (dec. F): the phrase is what the user reads at the terminal, and the pairs
+    are what a page shows in a list of their own. One source, two renderings, so the two cannot
+    say different things.
+    """
+    return tuple(
+        f"{name}: {value}"
+        for name in spec.prompt_arguments
+        if (value := arguments.get(name)) is not None
+    )
+
+
 def _stated(spec: CapabilitySpec, arguments: JsonMapping) -> str:
     """The declared arguments of ``spec``, rendered into the question the user reads (§30).
 
@@ -513,12 +545,8 @@ def _stated(spec: CapabilitySpec, arguments: JsonMapping) -> str:
     approved. Filtering on ``str`` here as well would have been a second, silent rule — a
     capability could declare ``seconds`` legally and the question would simply not mention it.
     """
-    stated = [
-        f"{name}: {value}"
-        for name in spec.prompt_arguments
-        if (value := arguments.get(name)) is not None
-    ]
-    return f" — {'; '.join(stated)}" if stated else ""
+    pairs = _declared(spec, arguments)
+    return f" — {'; '.join(pairs)}" if pairs else ""
 
 
 def _may_travel(task: Task, stated: str) -> str:
@@ -577,6 +605,7 @@ class Executor:
         ids: IdGenerator,
         actor: Actor,
         assignments: Assignments,
+        bell: Bell,
         authorization_ttl: timedelta = DEFAULT_AUTHORIZATION_TTL,
         approval_ttl: timedelta = DEFAULT_APPROVAL_TTL,
     ) -> None:
@@ -598,6 +627,7 @@ class Executor:
         self._ids = ids
         self._actor = actor
         self._assignments = assignments
+        self._bell = bell
         self._authorization_ttl = authorization_ttl
         self._approval_ttl = approval_ttl
 
@@ -1370,10 +1400,77 @@ class Executor:
             status=ApprovalStatus.PENDING,
             decision_id=decision.id,
             expires_at=decision.created_at + self._approval_ttl,
+            metadata={ASKED: self._asked(task, step, spec, arguments)},
         )
         await self._approvals.add(approval)  # stored before the task waits on it (ADR 0015 §6)
         task = await self._engine.request_approval(decision.task_id, approval)
+        await self._ring(approval, spec.risk)
         return Execution(task, step.id, graph, decision, authorization, None, approval, None)
+
+    async def _ring(self, approval: Approval, risk: RiskLevel) -> None:
+        """Tell the user, on a device of theirs, that a question is waiting (M12.5 dec. E).
+
+        **Here**, and that is the decision: the bell rings where the question is born, after it is
+        stored and after the task waits on it — so a bell never announces a question that is not
+        there. It is therefore **on the path of the run**, and the adapter's timeout is what bounds
+        what the user waits for (``BELL_TIMEOUT_SECONDS``, measured).
+
+        A bell that does not ring changes nothing: the question waits on the page and in the CLI
+        all the same, and this writes what happened either way (§57). A death between the stored
+        question and the bell leaves a question with no bell — declared, and cheap: the page shows
+        it the next time the user looks.
+        """
+        if not self._bell.ready:
+            return
+        rang = await self._bell.approval_waiting(risk)
+        await self._audit.append(
+            AuditEvent(
+                id=AuditEventId(self._ids.new_uuid()),
+                created_at=self._clock.now(),
+                event_type=AuditEventType.BELL_RUNG,
+                actor=BELL_ACTOR,
+                summary=(
+                    f"bell: {'delivered' if rang else 'not delivered'} by {self._bell.name} "
+                    f"for approval {approval.id} at {risk.value}"
+                ),
+                task_id=approval.task_id,
+                step_id=approval.step_id,
+                capability_id=approval.capability_id,
+                payload={
+                    "provider": self._bell.name,
+                    "risk": risk.value,
+                    "approval_id": str(approval.id),
+                    "delivered": rang,
+                },
+            )
+        )
+
+    def _asked(
+        self, task: Task, step: TaskStep, spec: CapabilitySpec, arguments: JsonMapping
+    ) -> dict[str, JsonValue]:
+        """The facts of the question, kept beside it: what a surface shows without recomposing it.
+
+        M12.5 dec. F: the phrase the user reads is one sentence, and a page has to show its parts —
+        what the capability does, the risk **the catalogue** carries (the one the Guardian used,
+        not the one a plan declares), how far this task's content may go, the step's goal, the
+        declared arguments, and the terms of the grant a "yes" mints. Written **here**, where the
+        question is composed, and for the reason a stored question exists at all: they are the
+        facts *at the moment of asking*, and a catalogue edited tomorrow must not change what was
+        asked yesterday. Nothing new leaves the machine — the goal and the declared arguments are
+        already inside ``prompt``, and ``prompt`` is already in the audit.
+
+        ``tests/api/test_approvals.py`` pins these keys against the fields that read them: a name
+        written on one side only would be a page that quietly shows nothing.
+        """
+        return {
+            "description": spec.description,
+            "risk": spec.risk.value,
+            "max_privacy": task.max_privacy.value,
+            "goal": step.goal,
+            "stated": list(_declared(spec, arguments)),
+            "grant_uses": SINGLE_USE,
+            "grant_seconds": int(self._authorization_ttl.total_seconds()),
+        }
 
     async def _fail(
         self,

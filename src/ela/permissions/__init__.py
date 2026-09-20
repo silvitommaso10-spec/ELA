@@ -5,6 +5,7 @@ from ela.permissions.authorizations import (
     CHECKS,
     DEFAULT_AUTHORIZATION_TTL,
     MAX_AUTHORIZATION_TTL,
+    SINGLE_USE,
     Check,
     authorization_from_approval,
 )
@@ -81,6 +82,7 @@ __all__ = [
     "PermissionsError",
     "RiskNotAllowedError",
     "Rule",
+    "SINGLE_USE",
     "authorization_from_approval",
     "catalogue_v01",
     "check_capability",

@@ -96,6 +96,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.3b` | Implementata | La cartella del segreto del nodo: `0o700` anche dove il Core non l'ha creata prima |
 | 12 — I nodi sulla rete | `M12.3c` | Implementata | Chi legge l'alimentazione: un campo che l'orchestratore pesa e che nessuna macchina produceva |
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
+| 12 — I nodi sulla rete | `M12.5` | Proposta | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Proposta | Il Command Center v1: un client dell'API, e gli stati di ELA come proiezione |
 | 17 — Design | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
@@ -111,13 +112,13 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **42** | `docs/adr/NNNN-*.md` |
-| Milestone | **47, di cui 44 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **54** | `RULES` in `tests/architecture/` |
+| ADR scritti | **43** | `docs/adr/NNNN-*.md` |
+| Milestone | **48, di cui 44 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
-| Port | **25** | i `Protocol` di `src/ela/ports.py` |
+| Port | **26** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **8** | `production_catalogue()` |
-| Rotte dell'API | **29** | i `router` di `ela.api` |
+| Rotte dell'API | **37** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
 
@@ -164,8 +165,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 13 | 2 |
-| 15 | 11 |
+| 13 | 4 |
+| 15 | 13 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
 

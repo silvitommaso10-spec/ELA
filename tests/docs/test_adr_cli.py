@@ -18,6 +18,8 @@ from pathlib import Path
 
 from ela.api.security import (
     CODE_ROUTES,
+    COMPANION_CODE_ROUTES,
+    COMPANION_ROUTES,
     NODE_ROUTES,
 )
 from ela.audit.verifier import AuditVerifier
@@ -248,9 +250,15 @@ def test_every_route_is_reachable_from_the_command_line() -> None:
     assert called == coded_routes() - NODE_CALLED
 
 
-NODE_CALLED = NODE_ROUTES | CODE_ROUTES
-"""The three routes a node calls and a person does not (ADR 0037 §4): classified by name, the way
-``LATER_ROUTERS`` classifies, so a fourth route without a command still fails above."""
+NODE_CALLED = NODE_ROUTES | CODE_ROUTES | COMPANION_ROUTES | COMPANION_CODE_ROUTES
+"""The routes no command calls, classified by name the way ``LATER_ROUTERS`` classifies, so a route
+added tomorrow without a command still fails above.
+
+The node's (ADR 0037 §4) are called by a node; the companion's (ADR 0043 §5) are called by a
+browser, and a browser is not a terminal: there is no ``ela`` command for a page, and there is no
+page for a command. The perimeter of ADR 0024 §2 — a whole turn of ELA without ``curl`` — is about
+what a **person at this machine** can do, and it is untouched: everything the pages do,
+``ela task approve``, ``ela task run`` and ``ela task cancel`` already did."""
 
 
 def test_a_command_that_talks_to_ela_can_end_in_any_of_the_four_ways() -> None:

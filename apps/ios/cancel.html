@@ -1,0 +1,12 @@
+<div class="ela-panel ela-panel--soft">
+  <div class="ela-stack">
+    <p class="ela-eyebrow">Fermare questo task</p>
+    <p class="ela-title">{what}</p>
+    <p class="ela-body">Adesso è {state}. Fermarlo non si può annullare: il task non farà più niente.</p>
+    <form method="post" action="/companion/cancel">
+      <input type="hidden" name="id" value="{id}">
+      <button class="ela-button ela-button--danger ela-button--block" type="submit">Ferma il task</button>
+    </form>
+    <p class="ela-caption"><a href="/companion/">Lascia perdere</a></p>
+  </div>
+</div>

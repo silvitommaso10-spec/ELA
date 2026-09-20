@@ -20,6 +20,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<ip tailnet del Mac>` | l'indirizzo del Mac sulla tailnet | `tailscale ip -4`, sul Mac (§12) |
 | `<nome della voce>` | una voce SAPI 5 installata sul PC | l'elenco del passo 3 di §12: sul PC di M12.4, `Microsoft Elsa Desktop` |
 | `<chiave del modello del PC>` | la chiave Anthropic del nodo, mai quella del Core | la console Anthropic (§12, passo 4) |
+| `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 
 ## 0. Che cosa serve
 
@@ -864,6 +865,80 @@ cavallo di quel momento.
 Nessuno di questi numeri ha fatto ritarare niente: i pesi di §17, la finestra di long-poll e il TTL
 del battito restano quelli (M12.4, dec. J).
 
+## 13. L'iPhone come companion: vedere e rispondere da lontano
+
+L'iPhone **non è un nodo**: non prende lavoro, non esegue tool, non manda battiti. È l'unica
+identità che *guarda e risponde* — le domande che aspettano, i task vivi, il sì, il no, e fermare un
+task —, e lo fa da una pagina che ELA serve, nel browser del telefono (M12.5, ADR 0043).
+
+Serve la tailnet del §12: l'iPhone con Tailscale, sulla stessa rete del Mac.
+
+**1. Conia il codice del companion, al Mac.** È lo stesso comando dei nodi, con il ruolo:
+
+```
+uv run ela node enroll --privacy TRUSTED --role companion
+```
+
+Il codice dura dieci minuti e si usa una volta sola. Si copia con un **doppio clic** sulla cella
+`CODE` (misurato: il doppio clic prende il codice intero) e arriva sull'iPhone con gli **Appunti
+universali** — copiato sul Mac, incollato sul telefono, senza passare da nessun'altra parte.
+
+`--privacy TRUSTED` non è un dettaglio: è **il tetto di ciò che il telefono può vedere**. Un task
+`LOCAL_ONLY` — il default di ogni task — resta sul Mac: la pagina ne mostra l'id, lo stato, la
+capability e il rischio, e dice di rispondere dal Mac.
+
+**2. Arruola il browser, sull'iPhone.** Apri
+
+```
+http://<ip tailnet del Mac>:8130/companion/
+```
+
+**nel browser predefinito del telefono** — quello che si apre quando tocchi un collegamento. La
+pagina chiede un codice: incollalo, lascia `IOS` nel campo Sistema, dai un nome, invia. Da lì in poi
+il browser porta la sua credenziale in un cookie, e la pagina si apre da sola.
+
+Perché proprio il predefinito: lo Shortcut e il tocco di una notifica aprono **quello**, e un cookie
+messo in un altro browser lì non si vede. Cambiare browser predefinito vuol dire riarruolarsi.
+
+**3. Il campanello (facoltativo).** Senza, il telefono vede ogni domanda quando apri la pagina; con,
+te lo dice. Conia l'argomento di ntfy **senza stamparlo** — è una credenziale durevole: chi lo
+conosce legge i campanelli e può suonarne di falsi —, scrivendolo in coda al `.env` e mettendolo
+negli appunti:
+
+```
+uv run python -c "import secrets,pathlib,subprocess; t=secrets.token_urlsafe(16); pathlib.Path('.env').open('a').write(f'\nELA_NTFY_TOPIC={t}\n'); subprocess.run('pbcopy', input=t, text=True)"
+```
+
+Poi installa **ntfy** dall'App Store, tocca «Subscribe to topic» e **incolla** l'argomento: è negli
+appunti del telefono, con gli Appunti universali. Riavvia `ela serve`.
+
+Che cosa esce da ELA, per intero: il titolo `ELA` e una riga come `WAITING APPROVAL · MEDIUM`.
+Niente dello scopo, niente degli argomenti, niente del contenuto — il campanello è un campanello, non
+una lettera. Il tocco apre la pagina della domanda, con un tocco solo.
+
+**4. Lo Shortcut, per aprire la pagina senza digitare.** In Comandi: un'azione sola, **«Apri URL»**,
+con l'indirizzo del passo 2. Chiamalo **«Cruscotto»**: è il nome che Siri riconosce anche a telefono
+bloccato (chiede il codice di sblocco e poi apre). «ELA» da solo Siri non lo capisce. Lo Shortcut non
+contiene nessun segreto: apre un indirizzo, e la credenziale è quella del browser.
+
+**5. Che cosa fa la pagina.** La sfera dice se una domanda aspetta (`WAITING APPROVAL`), se ELA sta
+lavorando (`WORKING`) o se è ferma (`IDLE`). Sotto, le domande che aspettano e i task vivi. Toccare
+una domanda apre la pagina della domanda: che cosa ELA vuole fare, con che rischio, fin dove può
+andare il contenuto, per quanto vale il sì. **Il sì risponde e fa ripartire il task nella stessa
+richiesta** — le stesse due cose che al Mac sono `ela task approve` e `ela task run` —, e la pagina
+torna con l'esito vero. Toccare un task vivo porta alla conferma per fermarlo, su una seconda pagina:
+fermare non si annulla.
+
+**6. Revocare il telefono.** Come per un nodo, e vale subito:
+
+```
+uv run ela device list
+uv run ela node revoke <id del companion>
+```
+
+Alla richiesta successiva la pagina torna a chiedere un codice, il cookie sparisce dal browser, e
+nell'audit c'è `DEVICE_REJECTED` con `revoked`. Un codice nuovo riarruola lo stesso browser.
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.
@@ -877,3 +952,5 @@ del battito restano quelli (M12.4, dec. J).
   dove tiene il segreto e perché non nel portachiavi.
 - [`adr/0040-node-windows.md`](adr/0040-node-windows.md) — il nodo su un PC: dove tiene il segreto,
   con che cosa parla, e perché dichiara solo ciò che la sua macchina sa fare.
+- [`adr/0043-companion.md`](adr/0043-companion.md) — l'iPhone che guarda e risponde: il ruolo, il
+  cookie, le pagine e il campanello.

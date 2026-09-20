@@ -1,10 +1,12 @@
 """The contract a node implements, and the world it talks to (M12.2, dec. P; ADR 0038 §18).
 
-**This file is the artefact M12.3–M12.5 inherit.** They write a :class:`NodeDriver` for their
-platform — the macOS node, the Windows Power Node, the iPhone companion — and recite the stories of
-``test_node_contract.py`` unchanged. A driver that needed the stories bent to fit it would have
-turned the contract into a description of whatever was built, which is the one thing a conformance
-suite must not become.
+**This file is the artefact every node inherits.** M12.3 and M12.4 wrote a :class:`NodeDriver`
+for their platform — the macOS node, the Windows Power Node — and recite the stories of
+``test_node_contract.py`` unchanged. The iPhone companion of M12.5 does **not**: it takes no work,
+so twelve of the thirteen stories have nothing to play, and it has a contract of its own
+(``test_companion_contract.py``; ADR 0043). A driver that needed the stories bent to fit it would
+have turned the contract into a description of whatever was built, which is the one thing a
+conformance suite must not become.
 
 Three decisions are worth saying out loud, because every driver inherits them:
 
@@ -113,9 +115,15 @@ class Conformance:
         """
         return AsyncClient(transport=ASGITransport(app=self.app), base_url=self.base_url)
 
-    async def issue(self, privacy: str = "TRUSTED") -> str:
-        """``ela node enroll``: a one-shot code, with the level the user imposes (ADR 0037 §5)."""
-        answered = await self.client.post("/nodes/enrollments", json={"privacy": privacy})
+    async def issue(self, privacy: str = "TRUSTED", role: str = "WORKER") -> str:
+        """``ela node enroll``: a one-shot code, with what the user imposes (ADR 0037 §5).
+
+        ``role`` since M12.5: the same command mints the code of a node and the code of the
+        iPhone, and which of the two it is decided here, by the user (dec. A).
+        """
+        answered = await self.client.post(
+            "/nodes/enrollments", json={"privacy": privacy, "role": role}
+        )
         assert answered.status_code == 201, answered.text
         return str(answered.json()["code"])
 

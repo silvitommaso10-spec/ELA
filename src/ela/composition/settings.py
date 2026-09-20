@@ -58,6 +58,7 @@ from ela.permissions import (
 )
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
+from ela.providers.ntfy import NtfySettings
 from ela.routing import RoutingSettings
 from ela.tombstones import (
     refuse_retired,
@@ -466,6 +467,11 @@ class Settings(BaseModel):
     elevenlabs: ElevenLabsSettings
     """The online voice (M11.3). A section of its own and not part of ``voice``: one is a switch
     and a helper on this machine, the other is a credential, a supplier and a bill."""
+    ntfy: NtfySettings
+    """The bell of the companion (M12.5 dec. E): a topic, which is a credential, and an address.
+
+    Without a topic ELA is silent — that is a configuration and not a failure — and the iPhone
+    still sees every question when the user opens the page."""
     context: ContextSettings
     node: NodeSettings
     """What a node on this machine reads (M12.3). Held here so that ``.env.example`` and
@@ -496,6 +502,7 @@ class Settings(BaseModel):
                 voice=VoiceSettings(),
                 listen=ListenSettings(),
                 elevenlabs=ElevenLabsSettings(),
+                ntfy=NtfySettings(),
                 context=ContextSettings(),
                 node=NodeSettings(),
             )

@@ -70,6 +70,7 @@ from ela.testing.fakes import (
     FakeAssignmentStore,
     FakeAuditLog,
     FakeAuthorizationStore,
+    FakeBell,
     FakeClock,
     FakeDeviceRegistry,
     FakeExecutionResultStore,
@@ -214,6 +215,7 @@ class Pipeline:
             ids=self.ids,
             actor=ELA,
             assignments=self.assignments,
+            bell=FakeBell(),
         )
         self.runner = TaskRunner(
             engine=self.engine,
@@ -492,6 +494,9 @@ async def test_a_step_that_requires_authorization_is_approved_granted_and_run_on
         *LIFE_CYCLE,
         E.PERMISSION_DECIDED,
         E.APPROVAL_REQUESTED,
+        # The bell rings where the question is born, after it is stored and after the task waits
+        # on it: a bell never announces a question that is not there (M12.5 dec. E).
+        E.BELL_RUNG,
         E.APPROVAL_RESOLVED,
         E.TASK_STARTED,
         E.AUTHORIZATION_GRANTED,

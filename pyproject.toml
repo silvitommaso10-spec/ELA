@@ -366,6 +366,7 @@ source_modules = [
     "ela.perception",
     "ela.permissions",
     "ela.providers.elevenlabs",
+    "ela.providers.ntfy",
     "ela.providers.registry",
     "ela.routing",
     "ela.tasks",

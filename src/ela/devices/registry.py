@@ -54,6 +54,7 @@ from ela.domain import (
     DeviceAvailability,
     DeviceCapability,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     JsonValue,
     NetworkKind,
@@ -131,8 +132,20 @@ def is_available(device: Device, now: datetime, ttl: timedelta) -> bool:
     A node never seen (``last_seen_at is None``) is **not** available: registering a node is a
     statement that it exists, not that it answers (§33). The deadline is closed, like every
     deadline in the system (ADR 0005 §2-bis): at exactly ``last_seen_at + ttl`` it has passed.
+
+    Availability is the fact of the **heartbeat**, and only a ``WORKER`` sends one (M12.5 dec. B):
+    a companion that opened a page a second ago is not available, because what it did is contact,
+    not a sign that it can take work. The condition is here, in the derivation, and not only in
+    :meth:`DeviceRegistry.available`: with it in one place a companion cannot become eligible for
+    a step for the minute after every page — and a step with no required capability has an empty
+    set of tools, so ``MISSING_TOOL`` would not fire and the runner would open task and step in
+    its name (M12.5 dec. A).
     """
-    return device.last_seen_at is not None and now < device.last_seen_at + ttl
+    return (
+        device.role is DeviceRole.WORKER
+        and device.last_seen_at is not None
+        and now < device.last_seen_at + ttl
+    )
 
 
 def _with(device: Device, changes: Mapping[str, Any]) -> Device:
@@ -299,6 +312,19 @@ class DeviceRegistry:
         )
         return self.seen(observed, now)
 
+    async def contacted(self, device_id: DeviceId) -> None:
+        """Record that an identity spoke to ELA, without claiming it can work (M12.5 dec. B).
+
+        For a node, speaking is a heartbeat; for a companion it is a page. Both write
+        ``last_seen_at`` and neither is audited (ADR 0016 §6: a sign of life is not an act) — but
+        what is written in ``availability`` here is ``UNAVAILABLE``, because the column holds the
+        last state *observed* and what was observed is an identity that sends no heartbeat. Every
+        reader gets the same answer from :meth:`seen` anyway: two facts, two names.
+
+        :raises NotFoundError: if the identity is not registered.
+        """
+        await self._devices.observe(device_id, seen_at=self._clock.now(), availability=UNAVAILABLE)
+
     async def secret_hash(self, device_id: DeviceId) -> str | None:
         """The hash a node proves itself against, ``None`` for ``local`` (ADR 0037 §6).
 
@@ -319,16 +345,17 @@ class DeviceRegistry:
         available_tools: tuple[str, ...],
         performance: PerformanceClass,
         privacy: PrivacyLevel,
+        role: DeviceRole,
         secret_hash: str,
         by: Actor,
         issued_at: datetime,
     ) -> Device:
         """A node born from a code: the row, its hash, and ``DEVICE_ENROLLED`` (ADR 0037 §5).
 
-        The node gives the half it declares; the rest is not its to give. ``privacy`` is the code's
-        — the user imposed it — and ``network`` is the registry's, ``REMOTE`` for every node that
-        enters from the API (§10). Revision 1, never seen and therefore not available: enrolling a
-        node says that it exists, not that it answers (ADR 0016 §3).
+        The node gives the half it declares; the rest is not its to give. ``privacy`` and ``role``
+        are the code's — the user imposed both — and ``network`` is the registry's, ``REMOTE`` for
+        every node that enters from the API (§10). Revision 1, never seen and therefore not
+        available: enrolling a node says that it exists, not that it answers (ADR 0016 §3).
 
         Audited after the port answered, so a refused insert leaves no event about a node that was
         not added; signed by ``by``, the identity that issued the code (D12). The summary says what
@@ -348,6 +375,7 @@ class DeviceRegistry:
             network=NetworkKind.REMOTE,
             power_source=PowerSource.UNKNOWN,
             privacy=privacy,
+            role=role,
             revision=1,
         )
         await self._devices.enroll(device, secret_hash=secret_hash)
@@ -358,8 +386,8 @@ class DeviceRegistry:
                 actor=by,
                 summary=(
                     f"node {device.name} ({device.id}) enrolled on {device.os.value} with "
-                    f"{_listed(device.available_tools)}, privacy {device.privacy.value}, by a "
-                    f"code issued at {issued_at.isoformat()}"
+                    f"{_listed(device.available_tools)}, privacy {device.privacy.value}, role "
+                    f"{device.role.value}, by a code issued at {issued_at.isoformat()}"
                 ),
                 changed=DECLARED_FIELDS,
                 added=device.available_tools,

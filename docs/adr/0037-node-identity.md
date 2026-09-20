@@ -416,7 +416,13 @@ colloca i campi che D3 lasciava alla spec (M12.1 dec. I):
 |---|---|---|
 | Dichiarata | il nodo, su sé stesso | `name`, `os`, `capabilities`, `available_tools`, `performance` |
 | Osservata | il registro | `availability`, `last_seen_at`, `status`, `current_workload`, `network`, `power_source` |
-| Imposta | l'utente, all'enrollment | `privacy` |
+| Imposta | l'utente, all'enrollment | `privacy`, `role` |
+
+**`role`, imposta (M12.5 dec. A; ADR 0043).** La riga la scrive M12.5, in questa tabella e non in
+un'altra: il ruolo — `WORKER` o `COMPANION` — dice che cosa *è* quell'identità, quindi da quale
+portatore il middleware accetta la sua credenziale e quali rotte raggiunge. Lo sceglie l'utente
+quando conia il codice, come `privacy`, e il nodo non lo riscrive mai: `PUT /nodes/me` scrive la
+metà dichiarata, e questo non ci sta. La regola 44 lo impara per nome, insieme agli altri.
 
 La tabella sostituisce quella di ADR 0035 §2 per chi confronta le metà con il codice; ADR 0035 non
 si riscrive. Per `local` il nodo è questo processo, e la sua metà dichiarata la scrive

@@ -19,6 +19,7 @@ from fastapi import APIRouter, Request
 from ela.api.deps import ElaDep
 from ela.api.errors import DatabaseUnavailableError
 from ela.api.schemas import (
+    BellOut,
     CaptureStoreOut,
     DiagnosticsOut,
     HealthOut,
@@ -96,6 +97,11 @@ async def diagnostics(request: Request, ela: ElaDep) -> DiagnosticsOut:
         },
         addresses=tuple(request.app.state.addresses),
         refused=dict(request.app.state.refused),
+        bell=BellOut(
+            configured=ela.settings.ntfy.configured,
+            ready=ela.bell.ready,
+            provider=ela.bell.name,
+        ),
         perception=PerceptionSummaryOut(
             enabled=ela.settings.perception.perception_enabled,
             watching=ela.settings.perception.loop_enabled,

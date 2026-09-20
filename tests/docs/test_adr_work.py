@@ -32,7 +32,7 @@ from ela.tools import (
     production_verifiers,
 )
 from tests.architecture.rules import RULES
-from tests.contracts.protocols import port_protocols
+from tests.docs.test_adr_listening import ports_before
 from tests.docs.test_adr_nodes import documented_rules
 from tests.docs.test_adr_placement import _rules_up_to
 from tests.executive import test_assignment_recovery as recovery
@@ -119,7 +119,7 @@ def test_the_conseguenze_count_the_rules_and_the_capabilities_of_today() -> None
     assert "**cinquantadue**" in conseguenze()
     assert len(_rules_up_to(52)) == 52
     assert "**venticinque**" in conseguenze()
-    assert len(tuple(port_protocols())) == 25
+    assert len(ports_before(ADR_PATH.with_name("0043-companion.md"))) == 25
     assert "**restano otto**" in conseguenze()
     assert len(production_catalogue().specs()) == 8
 

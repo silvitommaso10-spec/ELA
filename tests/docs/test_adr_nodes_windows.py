@@ -14,7 +14,7 @@ import re
 import tomllib
 from pathlib import Path
 
-from ela.api.security import NODE_ROUTES
+from ela.api.security import COMPANION_CODE_ROUTES, COMPANION_ROUTES, NODE_ROUTES
 from ela.composition import build_node
 from ela.composition.node import ACL_SINCE, PermissionMode, online_player
 from ela.infrastructure.machine import AFPLAY, OnlineSpeechCommand
@@ -30,9 +30,9 @@ from tests.architecture.rules import (
 )
 from tests.conformance.test_node_contract import KITS
 from tests.conformance.test_unsupported import PINNED
-from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_cli import SPECIES, coded_commands, documented_species
 from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_listening import ports_before
 from tests.docs.test_adr_placement import _rules_up_to
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -214,13 +214,19 @@ def test_the_adr_was_accepted_only_after_the_proof_by_hand(shown: str = "2026-09
 
 def test_the_conseguenze_count_what_the_tree_has_today() -> None:
     """Taken over from ADR 0039 by the ADR that moved the rules; the rest did not move, and is
-    pinned here because this is now the newest ADR that states them."""
+    pinned here because this was the newest ADR that states them.
+
+    **Rules up to 54 and not ``len(RULES)``** since M12.5 wrote rule 55, and the routes **without
+    the companion's** since ADR 0043 §5 added six: an ADR is immutable, so this one keeps saying
+    the totals it saw, the way ADR 0039 does for fifty-three (``test_adr_nodes_macos.py``). The
+    pin on *today's* totals moves to the ADR that changes them.
+    """
     text = conseguenze()
 
     assert "**cinquantaquattro**" in text
-    assert len(RULES) == 54
+    assert len(_rules_up_to(54)) == 54
     assert "**restano ventinove**" in text
-    assert len(coded_routes()) == 29
+    assert len(coded_routes() - COMPANION_ROUTES - COMPANION_CODE_ROUTES) == 29
     assert "quelle che un nodo può chiamare **sei**" in text
     assert len(NODE_ROUTES) == 6
     assert "**ventisei**" in text
@@ -240,5 +246,5 @@ def test_the_conseguenze_count_what_the_tree_has_today() -> None:
     assert "**restano otto**" in text
     assert len(production_catalogue().specs()) == 8
     assert "**venticinque**" in text
-    assert len(tuple(port_protocols())) == 25
+    assert len(ports_before(ADR_PATH.with_name("0043-companion.md"))) == 25
     assert set(INFRA_PACKAGES) == {"providers", "infrastructure", "api", "cli", "node"}

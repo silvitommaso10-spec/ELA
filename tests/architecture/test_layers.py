@@ -242,6 +242,10 @@ def test_the_mutation_that_survived_is_now_reported(tmp_path: Path) -> None:
     credentials — the Core's token and a node's secret, as its hash (ADR 0037 §6) — so the
     mutation replaces both: the safe call is gone *and* each is compared, three violations where
     any one alone would be enough.
+
+    Two comparisons and not three since M12.5: the cookie of the companion carries the same
+    credential in another envelope, and it is proved by the same helper — so the surface rule 31
+    watches did not grow with the bearer.
     """
     package = copy_package(tmp_path)
     module = package / SECURITY_MODULE

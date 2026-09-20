@@ -1,0 +1,46 @@
+{
+  "_nota": [
+    "Il piano della prova a mano del companion iPhone (M12.5, ADR 0043): due step, e tutti e",
+    "due chiedono il consenso — il primo perché lo step lo chiede, il secondo perché",
+    "voice.speak lo chiede sempre (§29: è MEDIUM). Nessuno dei due ha bisogno di una chiave",
+    "del modello: la prova si fa su una macchina sola, senza rete verso un fornitore.",
+    "Il task va creato TRUSTED, perché è il tetto che decide che cosa l'iPhone può vedere",
+    "(M12.5 dec. F.2): a LOCAL_ONLY la pagina mostra la capability e il rischio, e dice di",
+    "rispondere dal Mac.",
+    "La frase del secondo step è corta apposta: qui la prova non è la voce — è che il sì dato",
+    "dal telefono fa ripartire il task nella stessa richiesta, e che il Mac parla in una stanza",
+    "dove tu non sei (dec. F.4: la pagina lo dice, e le parole non stanno nella domanda).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti, e questo file viene",
+    "mandato a ELA byte per byte da un test, perché non marcisca."
+  ],
+  "goal": "rispondere dall'iPhone, due volte",
+  "steps": [
+    {
+      "id": "c0a9d5e1-4f3b-4a76-9d20-000000000001",
+      "goal": "lasciare una nota, chiedendo il permesso",
+      "required_capabilities": ["workspace.write_note"],
+      "arguments": {
+        "path": "workspace/notes/companion.md",
+        "body": "questa nota l'ha approvata l'iPhone"
+      },
+      "risk": "LOW",
+      "expected_result": "la nota è sul disco del Mac",
+      "success_conditions": ["note.exists", "note.content_matches"],
+      "requires_authorization": true
+    },
+    {
+      "id": "c0a9d5e1-4f3b-4a76-9d20-000000000002",
+      "goal": "dire ad alta voce che la nota c'è",
+      "required_capabilities": ["voice.speak"],
+      "arguments": {
+        "text": "La nota è scritta. Questo l'hai approvato dal telefono.",
+        "purpose": "la prova a mano del companion"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "la frase si sente dal Mac",
+      "success_conditions": ["speech.took_real_time", "speech.text_matches"],
+      "depends_on": ["c0a9d5e1-4f3b-4a76-9d20-000000000001"],
+      "requires_authorization": false
+    }
+  ]
+}

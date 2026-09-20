@@ -336,7 +336,9 @@ OBSERVED_FIELDS = frozenset(
 #: Rule 44, extended by M12.1 (ADR 0037 §10, §16): what is not declared beyond the observed half —
 #: the level the user imposed at enrollment, and the state of the node's identity. The builder of
 #: the declared half is also the road of a remote announcement, so it must not name these either.
-NOT_DECLARED_FIELDS = frozenset({"privacy", "revoked_at", "revision"})
+#: M12.5 adds ``role`` to the imposed half (dec. A): what an identity *is* is not a thing it may
+#: restate about itself, and a reconciliation that wrote it would be the road that does.
+NOT_DECLARED_FIELDS = frozenset({"privacy", "revoked_at", "revision", "role"})
 #: The constructor of a *new* row: right for a birth, and a reset for everything else.
 BIRTH_CONSTRUCTOR = "local_device"
 
@@ -451,8 +453,19 @@ TOKEN_NAMES = frozenset({"token", "presented", "node_secret", "presented_hash", 
 #: rule 46: never inside an ``AuditEvent``, a wire shape of the API, or the entity every reader of
 #: the registry holds. The names do not exist yet: the rules are written before the code (ADR 0030
 #: §15), so the day it exists it is born inside the fence.
+#: M12.5 adds two secrets of the same family and puts them behind the same fence (dec. C.1, E):
+#: ``companion_cookie``, the credential a browser carries, and ``bell_topic``, the name of the ntfy
+#: topic — which on the public server *is* the password of that topic.
 NODE_SECRET_NAMES = frozenset(
-    {"node_secret", "presented_hash", "secret_hash", "enrollment_code", "code_hash"}
+    {
+        "node_secret",
+        "presented_hash",
+        "secret_hash",
+        "enrollment_code",
+        "code_hash",
+        "companion_cookie",
+        "bell_topic",
+    }
 )
 #: Rule 31, extended (ADR 0037 §16): the names of a node's secret that no module but
 #: :data:`SECURITY_MODULE` compares **by value** — ``is None`` stays allowed anywhere, because
@@ -484,6 +497,39 @@ DEVICE_ENTITY = "Device"
 #: yet, which D12 opens — the routes of approvals and cancellation will read the identity, and the
 #: shortest way to write that is to read it from the header.
 AUTHORIZATION_HEADER = "authorization"
+#: Rule 47, extended (M12.5 dec. C.1): a browser cannot set a header, so the companion's credential
+#: travels in a cookie — and a second place that read *or wrote* it would be a second place where
+#: who is calling is decided, and the one that forgets the revocation. The name is a detector: the
+#: middleware is the only module of ``ela.api`` allowed to write it.
+COMPANION_COOKIE = "ela_companion"
+#: Rule 55 (M12.5 dec. D; ADR 0043): the pages of the companion are another representation of the
+#: routes, not a second way into the world. ``api/companion.py`` may call the route functions of
+#: ``ela.api`` — handing them the world it was given — and must not reach a port, a store, the
+#: catalogue or the executor *through* it: «un Command Center che leggesse il database sarebbe un
+#: secondo ELA» (``docs/STATO.md``, 5.10). The shape of rule 28 for the CLI, at the other end of
+#: the same boundary, and with no door: there is no attribute of ``Ela`` a page needs, because what
+#: a page shows has to exist in a route first — which is why ``ApprovalOut`` grew (dec. F).
+PAGES_MODULE = Path("api") / "companion.py"
+COMPOSED_WORLD = "ela"
+#: Rule 56 (M12.5 dec. E; ADR 0043 §8): the bell's vocabulary is closed **by the shape of the
+#: port** — one method per thing that can ring, and one caller for each. The voices are read from
+#: the port itself (its ``async def``s), not listed here: a second voice added tomorrow is walked
+#: by this rule the day it is written, and it has to arrive with its caller.
+PORTS_FILE = Path("ports.py")
+BELL_PORT = "Bell"
+BELL_CALLER = Path("executive") / "executor.py"
+#: And no parameter of a voice is a ``str``: what the user is told is composed by the adapter from
+#: a table of its own, so «niente dell'utente nel testo» is a property of the types and not of
+#: everybody's attention (dec. E).
+FORBIDDEN_VOICE_PARAMETER = "str"
+#: Rule 57 (M12.5 dec. D; ADR 0043 §5): every page of ``ela.api`` — the answers, the ``401`` that
+#: is the enrolment form, the ``404`` «non esiste», the errors under the prefix — is composed by
+#: :data:`HTML_COMPOSER`, which is where the ``Content-Security-Policy`` is put on it. A response
+#: built beside it would be a page without the header that makes «niente JavaScript» true in the
+#: browser and not only in the templates.
+HTML_COMPOSER = Path("api") / "pages.py"
+HTML_RESPONSE = "HTMLResponse"
+HTML_MEDIA_TYPE = "text/html"
 #: Rule 48 (M12.2, ADR 0038): the port of the assignments returns the row *as written* — ``OFFERED``
 #: even when it has expired — and whoever decides goes through the service, which derives the
 #: expiry and writes the task's heartbeat before every expiry it sets (dec. G). The mirror of rule
@@ -2598,6 +2644,12 @@ def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
     the middleware. Silent on today's tree, where the middleware is the only reader
     (``api/security.py``), and asserted silent: the rule is written before the routes that will
     want to know who called (ADR 0030 §15).
+
+    **Extended in M12.5** (dec. C.1): a browser cannot send a header, so the companion's credential
+    arrives in a cookie, :data:`COMPANION_COOKIE`. Its name is reported the same way, and for the
+    same reason — one place decides who is calling — with one addition: the middleware is also the
+    only module that *writes* it, so the ``Set-Cookie`` that hands out the credential and the one
+    that clears it are composed where the credential is understood.
     """
     rule = "identity-resolved-in-one-place"
     found: list[Violation] = []
@@ -2606,13 +2658,149 @@ def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         found.extend(
-            Violation(rule, module_name(path, pkg_root), AUTHORIZATION_HEADER, node.lineno)
+            Violation(rule, module_name(path, pkg_root), named, node.lineno)
             for node in ast.walk(tree)
             if isinstance(node, ast.Constant)
             and isinstance(node.value, str)
-            and node.value.lower() == AUTHORIZATION_HEADER
+            and (named := _names_an_identity(node.value)) is not None
         )
     return found
+
+
+def _names_an_identity(value: str) -> str | None:
+    """The header or the cookie that carries an identity, or ``None`` (rule 47, M12.1 and M12.5)."""
+    if value.lower() == AUTHORIZATION_HEADER:
+        return AUTHORIZATION_HEADER
+    return COMPANION_COOKIE if value == COMPANION_COOKIE else None
+
+
+def check_the_bell_rings_a_method(pkg_root: Path) -> list[Violation]:
+    """Rule 56: one caller per voice of the bell, and no voice takes a string (M12.5 dec. E).
+
+    The vocabulary of the bell is not an enum but **a method per voice**: an enum with one member
+    invites a second voice with no writer, a method obliges every future event to arrive with its
+    own caller and its own decision (the review of 2026-09-19). This rule is what makes that shape
+    hold — the voices are read from the port, so a second one is walked the day it is written.
+
+    Two things are reported:
+
+    * a call ``<x>.<voice>(...)`` outside :data:`BELL_CALLER` — the executor, where the request for
+      consent is born. A second place that rang would be a second decision about when ELA disturbs
+      the user, taken where nobody decided it. The definitions — in ``ports.py``, in the adapter,
+      in the fake — are ``def``s, not calls, and are not reported (the heuristic of rules 16, 17
+      and 19);
+    * a parameter of a voice annotated :data:`FORBIDDEN_VOICE_PARAMETER`. The one thing a bell
+      must never carry is a sentence of the user's, and a port that took a ``str`` would make that
+      a matter of who is writing the call.
+
+    Silent on a tree with no such port, and written with it (ADR 0030 §15).
+    """
+    rule = "the-bell-rings-a-method"
+    ports = pkg_root / PORTS_FILE
+    if not ports.is_file():
+        return []
+    voices: dict[str, ast.AsyncFunctionDef] = {}
+    for node in ast.walk(ast.parse(ports.read_text(encoding="utf-8"), filename=str(ports))):
+        if isinstance(node, ast.ClassDef) and node.name == BELL_PORT:
+            voices = {
+                member.name: member
+                for member in node.body
+                if isinstance(member, ast.AsyncFunctionDef)
+            }
+    if not voices:
+        return []
+    name = module_name(ports, pkg_root)
+    found = [
+        Violation(rule, name, f"{voice}({argument.arg}: {FORBIDDEN_VOICE_PARAMETER})", node.lineno)
+        for voice, node in voices.items()
+        for argument in node.args.args
+        if isinstance(argument.annotation, ast.Name)
+        and argument.annotation.id == FORBIDDEN_VOICE_PARAMETER
+    ]
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) in {BELL_CALLER, PORTS_FILE}:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, module_name(path, pkg_root), f".{node.func.attr}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in voices
+        )
+    return found
+
+
+def check_one_composer_for_a_page(pkg_root: Path) -> list[Violation]:
+    """Rule 57: every HTML answer of ``ela.api`` is composed in one module (M12.5 dec. D).
+
+    «Niente JavaScript» is defended twice, and deliberately not by the same defence twice: the
+    templates carry no script, and a ``Content-Security-Policy`` forbids one anyway — so a value
+    that one day escaped the escaping would be refused by the browser instead of run by it. The
+    second half is only as true as the number of places that build a page, and this rule is that
+    number: one.
+
+    Reported, in every module under ``api/`` but the composer: the name :data:`HTML_RESPONSE`,
+    however it is written — an import, a call, an attribute — and the string
+    :data:`HTML_MEDIA_TYPE`, which is the other way to say the same thing.
+    """
+    rule = "one-composer-for-a-page"
+    found: list[Violation] = []
+    for path in sorted((pkg_root / API_DIR).rglob("*.py")):
+        if path == pkg_root / HTML_COMPOSER:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if _names_the_html_response(node):
+                found.append(Violation(rule, name, HTML_RESPONSE, getattr(node, "lineno", 0)))
+            elif (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and HTML_MEDIA_TYPE in node.value
+            ):
+                found.append(Violation(rule, name, HTML_MEDIA_TYPE, node.lineno))
+    return found
+
+
+def _names_the_html_response(node: ast.AST) -> bool:
+    """``HTMLResponse``, however it is written: imported, called, or reached as an attribute."""
+    if isinstance(node, ast.alias):
+        return node.name == HTML_RESPONSE
+    if isinstance(node, ast.Name):
+        return node.id == HTML_RESPONSE
+    return isinstance(node, ast.Attribute) and node.attr == HTML_RESPONSE
+
+
+def check_pages_read_the_routes(pkg_root: Path) -> list[Violation]:
+    """Rule 55: the companion's pages call the routes and reach nothing through ``Ela`` (M12.5).
+
+    Dec. D chose to let ``ela.api`` itself serve the pages — the browser is the client — and that
+    is only «client dell'API come la CLI» if a page is *another representation of the same routes*.
+    What would quietly make it a second ELA is a page reading a store, the catalogue or the
+    executor off the composed world and deciding for itself: the same defect rule 28 exists for,
+    one layer in.
+
+    Reported: any attribute read on the name :data:`COMPOSED_WORLD` inside :data:`PAGES_MODULE`.
+    Passing ``ela`` on to a route function is a *name*, not an attribute, and is not reported —
+    that is exactly how a route is called. No exemption: a page that needs a fact the routes do not
+    give is a route that needs a field.
+
+    Written before the module it defends, and silent on a tree without it (ADR 0030 §15).
+    """
+    rule = "pages-read-the-routes"
+    path = pkg_root / PAGES_MODULE
+    if not path.is_file():
+        return []
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    name = module_name(path, pkg_root)
+    return [
+        Violation(rule, name, f"{COMPOSED_WORLD}.{node.attr}", node.lineno)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == COMPOSED_WORLD
+    ]
 
 
 def check_assignment_port_readers(pkg_root: Path) -> list[Violation]:
@@ -2907,6 +3095,9 @@ RULES: dict[str, Rule] = {
     "results-are-minted-by-the-core": check_results_are_minted_by_the_core,
     "a-node-mints-no-deadline": check_a_node_mints_no_deadline,
     "a-node-does-not-ask-which-machine-it-is": check_a_node_does_not_ask_which_machine_it_is,
+    "pages-read-the-routes": check_pages_read_the_routes,
+    "one-composer-for-a-page": check_one_composer_for_a_page,
+    "the-bell-rings-a-method": check_the_bell_rings_a_method,
 }
 
 
@@ -3141,6 +3332,7 @@ CONSTANTS: tuple[Constant, ...] = (
     # identity-resolved-in-one-place (rule 47, M12.1)
     Constant("identity-resolved-in-one-place", "API_DIR", DETECTOR),
     Constant("identity-resolved-in-one-place", "AUTHORIZATION_HEADER", DETECTOR),
+    Constant("identity-resolved-in-one-place", "COMPANION_COOKIE", DETECTOR),
     Constant(
         "identity-resolved-in-one-place",
         "ROOT_PACKAGE",
@@ -3295,6 +3487,36 @@ CONSTANTS: tuple[Constant, ...] = (
         "permissions-imports", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
     ),
     Constant("permissions-imports", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0010"),
+    # one-composer-for-a-page (rule 57, M12.5 dec. D)
+    Constant("one-composer-for-a-page", "API_DIR", DETECTOR),
+    Constant("one-composer-for-a-page", "HTML_COMPOSER", EXEMPTION, by=WHOLE, adr="ADR 0043 §5"),
+    Constant("one-composer-for-a-page", "HTML_MEDIA_TYPE", DETECTOR),
+    Constant("one-composer-for-a-page", "HTML_RESPONSE", DETECTOR),
+    Constant(
+        "one-composer-for-a-page",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-bell-rings-a-method (rule 56, M12.5 dec. E)
+    Constant("the-bell-rings-a-method", "BELL_CALLER", EXEMPTION, by=WHOLE, adr="ADR 0043 §8"),
+    Constant("the-bell-rings-a-method", "BELL_PORT", DETECTOR),
+    Constant("the-bell-rings-a-method", "FORBIDDEN_VOICE_PARAMETER", DETECTOR),
+    Constant("the-bell-rings-a-method", "PORTS_FILE", DETECTOR),
+    Constant(
+        "the-bell-rings-a-method",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # pages-read-the-routes (rule 55, M12.5 dec. D)
+    Constant("pages-read-the-routes", "COMPOSED_WORLD", DETECTOR),
+    Constant("pages-read-the-routes", "PAGES_MODULE", DETECTOR),
+    Constant(
+        "pages-read-the-routes", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # placement-builders
     Constant("placement-builders", "DEVICES_DIR", EXEMPTION, by=WHOLE, adr="ADR 0026 §5"),
     Constant("placement-builders", "PLACEMENT_DEVICE_FIELD", DETECTOR),

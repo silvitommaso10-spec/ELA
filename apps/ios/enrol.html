@@ -1,0 +1,9 @@
+<h1>ELA</h1>
+<p>{message}</p>
+<form method="post" action="/companion/enroll">
+  <p><label>Codice<br><input name="code" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" size="45"></label></p>
+  <p><label>Nome<br><input name="name" value="iPhone"></label></p>
+  <p><label>Sistema<br><input name="os" value="IOS" readonly></label></p>
+  <p><button type="submit">Arruola questo browser</button></p>
+</form>
+<p>Il codice si conia al Mac, con <code>ela node enroll --privacy TRUSTED --role companion</code>, e vale dieci minuti.</p>

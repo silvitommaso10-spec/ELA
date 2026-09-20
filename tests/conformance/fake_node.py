@@ -1,6 +1,6 @@
 """A node of this repository: in-process, over ASGI, with real tools (M12.2, dec. P).
 
-The first implementation of :class:`~tests.conformance.driver.NodeDriver`, and the one M12.3–M12.5
+The first implementation of :class:`~tests.conformance.driver.NodeDriver`, and the one M12.3 and
 are measured against. It is **not** a mock of the protocol: it enrolls with a code the user issued,
 announces at the revision it last saw, asks for work over HTTP, and runs the real tool of the
 capability it was given — ``core.echo`` as it is, because nothing of it touches the world, and
@@ -281,5 +281,6 @@ class FakeNodeKit:
 
 
 FAKE = FakeNodeKit()
-"""The one kit of this milestone. M12.3–M12.5 each add theirs beside it, and the stories do not
-change — which is the whole claim of dec. P."""
+"""The one kit of this milestone. M12.3 and M12.4 each added theirs beside it, and the stories did
+not change — which is the whole claim of dec. P. M12.5 adds none: a companion takes no work, and
+its contract is its own (``test_companion_contract.py``)."""

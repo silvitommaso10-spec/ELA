@@ -36,7 +36,9 @@ PINNED: dict[str, frozenset[str]] = {
 """Driver → the stories it has declared it cannot recite, as they stand today.
 
 Empty for all three, and the second empty set is what M12.3 was for: a **real** node, a process with
-a secret on disk and a connection that can drop, recites the protocol whole. macOS can be two
+a secret on disk and a connection that can drop, recites the protocol whole. The map stays a map of
+**nodes**: the companion of M12.5 is not one of them, because a driver with thirteen declarations
+would be a driver that recites nothing (ADR 0043). macOS can be two
 processes, can die and come back, can keep a file — it has nothing to declare, and neither has
 Windows (M12.4, criterion 1). An entry like "a
 Shortcut is not two processes" says something about **that platform**, which is the only thing a

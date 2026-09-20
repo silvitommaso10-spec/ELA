@@ -33,6 +33,7 @@ EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
 EXAMPLE = EXAMPLES / "first-task.json"
 ASK_MODEL = EXAMPLES / "ask-model.json"
 SPEAK_ON_A_NODE = EXAMPLES / "speak-on-a-node.json"
+COMPANION = EXAMPLES / "companion.json"
 NOTE = "_nota"
 
 
@@ -125,11 +126,38 @@ def test_the_step_that_asks_for_consent_asks_for_it_itself(ela: Ela) -> None:
     assert note_step["requires_authorization"] is True
 
 
-def test_both_files_explain_themselves() -> None:
-    """An example that cannot say why it is the way it is teaches the wrong thing by omission."""
-    for plan in (example_plan(), ask_model_plan()):
-        assert NOTE in plan
+def test_every_example_explains_itself() -> None:
+    """An example that cannot say why it is the way it is teaches the wrong thing by omission.
+
+    Closed over the folder since M12.5: a fourth file arrived, and a list of three would have let
+    a fifth arrive unexplained.
+    """
+    found = sorted(EXAMPLES.glob("*.json"))
+    assert len(found) == 4, [path.name for path in found]
+    for path in found:
+        plan = json.loads(path.read_text(encoding="utf-8"))
+        assert NOTE in plan, path.name
         assert plan[NOTE], "an empty explanation is not one"
+
+
+async def test_the_plan_of_the_companion_is_accepted_and_asks_twice(client: AsyncClient) -> None:
+    """The plan of the hand test of M12.5, sent byte for byte: two steps that both ask, and no
+    model key anywhere — the proof is made on one machine, with the iPhone answering."""
+    plan = json.loads(COMPANION.read_text(encoding="utf-8"))
+    created = await client.post(
+        "/tasks", json={"text": "la prova del companion", "max_privacy": "TRUSTED"}
+    )
+    task_id = created.json()["id"]
+
+    planned = await client.post(f"/tasks/{task_id}/plan", json=plan)
+
+    assert planned.status_code == 200, planned.text
+    ran = await client.post(f"/tasks/{task_id}/run")
+    assert ran.status_code == 200, ran.text
+    assert ran.json()["task"]["state"] == TaskState.WAITING_APPROVAL.value
+    waiting = (await client.get("/approvals")).json()
+    assert len(waiting) == 1
+    assert waiting[0]["capability_id"] == "workspace.write_note"
 
 
 async def test_a_plan_with_a_note_is_accepted_and_the_note_changes_nothing(

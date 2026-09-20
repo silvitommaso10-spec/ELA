@@ -29,6 +29,7 @@ from ela.devices import (
 )
 from ela.domain import (
     AuditEventType,
+    DeviceRole,
     OperatingSystem,
     PerformanceClass,
     PrivacyLevel,
@@ -137,7 +138,7 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_capabilities_of_today
     assert "**quarantasette**" in conseguenze
     assert len(_rules_up_to(47)) == 47
     assert "**ventiquattro**" in conseguenze
-    assert len(ports_before(ADR_DIR / "0038-work-protocol.md")) == 24
+    assert len(ports_before(ADR_DIR / "0038-work-protocol.md", ADR_DIR / "0043-companion.md")) == 24
     assert "restano otto" in conseguenze
     assert len(production_catalogue().specs()) == 8
 
@@ -244,10 +245,10 @@ async def signed_by() -> dict[str, str]:
         FakeDeviceRegistry(), clock, audit, ids, heartbeat_ttl=timedelta(seconds=60)
     )
     enrollment = NodeEnrollment(FakeEnrollmentStore(), registry, clock, ids)
-    issued = await enrollment.issue(PrivacyLevel.TRUSTED)
-    node = (await enrollment.enroll(issued.code, **DECLARED)).device
+    issued = await enrollment.issue(PrivacyLevel.TRUSTED, DeviceRole.WORKER)
+    node = (await enrollment.enroll(issued.code, role=DeviceRole.WORKER, **DECLARED)).device
     with suppress(EnrollmentConsumedError):
-        await enrollment.enroll(issued.code, **DECLARED)
+        await enrollment.enroll(issued.code, role=DeviceRole.WORKER, **DECLARED)
     await registry.announce(node.id, **{**DECLARED, "name": "renamed"}, expected_revision=1)
     with suppress(IdentityConflictError):
         await registry.announce(node.id, **DECLARED, expected_revision=1)

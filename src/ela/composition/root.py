@@ -13,6 +13,7 @@ code rather than a habit — there is exactly one file to read to know what ELA 
 from __future__ import annotations
 
 import platform
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -67,6 +68,7 @@ from ela.ports import (
     ApprovalStore,
     AuditLog,
     AuthorizationStore,
+    Bell,
     CapabilityRegistryPort,
     Clock,
     ExecutionResultStore,
@@ -81,6 +83,7 @@ from ela.ports import (
 )
 from ela.providers.anthropic import anthropic_provider
 from ela.providers.elevenlabs import ElevenLabsVoice
+from ela.providers.ntfy import NtfyBell
 from ela.providers.registry import ProviderRegistry
 from ela.routing import ModelRouter
 from ela.tasks.engine import LIVE_STATES, TaskEngine
@@ -111,6 +114,19 @@ class Database(Protocol):
     """
 
     async def dispose(self) -> None: ...
+
+
+class Ringing(Bell, Protocol):
+    """A bell that can also be told where this ELA is listening (M12.5 dec. E).
+
+    Two things and not one port: what a bell **does** is ring, and every reader of ``Ela.bell``
+    needs only that; what it has to be *told* is where the page it opens lives, and that is a fact
+    of the composition — told once by ``api/server.py`` after the bind, through the callable on
+    ``Ela``. Keeping it out of :class:`~ela.ports.Bell` keeps the port all-async, which is the
+    shape ADR 0005's table asks of every port.
+    """
+
+    def serving_at(self, addresses: Sequence[str]) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +181,22 @@ class Ela:
     The service and never the store: the store returns rows as written, and whoever decides reads
     the expiry through the service, which also writes a heartbeat in front of every expiry it sets
     (architecture rule 48)."""
+    serving_at: Callable[[Sequence[str]], None]
+    """Where this process ended up listening, told once to whoever composes a link to it.
+
+    The shape of ``sweep_speech`` and ``power``: what ``ela.api`` reaches is a callable, never an
+    adapter (architecture rule 27). Called by ``api/server.py`` after the bind and before serving,
+    because the address a notification opens cannot be known before the sockets exist — and an ELA
+    that never serves never rings (M12.5 dec. E).
+    """
+    bell: Bell
+    """How ELA reaches the user when they are not at the Mac (M12.5 dec. E; ADR 0043 §8).
+
+    Held here for two reasons beside the executor's: ``/diagnostics`` has to be able to say
+    whether a bell can ring at all — a topic configured, an address a phone can open — and
+    ``api/server.py`` has to tell it, once, where this process ended up listening. Before the bind
+    nobody knows that address, and an ELA that never serves never rings, which is the truth.
+    """
     captures: CaptureStore
     """Where screen captures are kept, and for how long (M10.2, ADR 0029 §1).
 
@@ -293,7 +325,11 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
 
 
 async def build(
-    settings: Settings, *, clock: Clock | None = None, power: PowerReading | None = None
+    settings: Settings,
+    *,
+    clock: Clock | None = None,
+    power: PowerReading | None = None,
+    bell: Ringing | None = None,
 ) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
 
@@ -308,6 +344,11 @@ async def build(
     ``power`` is the same shape (M12.3c): it defaults to the reader of the system this machine
     answers, and a test that places a step between ``local`` and a node names it — otherwise the
     placement would depend on whether the machine running the suite is plugged in.
+
+    ``bell`` is the third, and the last (M12.5 dec. E): it defaults to the adapter built from the
+    settings, and the conformance suite names one that touches no network — because the story «the
+    bell says nothing of yours» has to *see* what a provider receives, and a story that could not
+    be recited would be a hole where a claim is.
 
     :raises ConfigurationError: for anything that makes this configuration unusable — a schema
         nobody migrated, a routing table naming a provider that is not registered, an empty one.
@@ -501,6 +542,14 @@ async def build(
             ttl=settings.core.assignment_ttl,
             cap=settings.core.assignment_cap,
         )
+        # The bell of the companion: built always, ready only when a topic is configured **and**
+        # the process has bound an address a phone can open (dec. E). Not behind a branch, so that
+        # ``/diagnostics`` can say which of the two is missing.
+        rings: Ringing = bell or NtfyBell(
+            topic=settings.ntfy.ntfy_topic,
+            url=settings.ntfy.ntfy_url,
+            timeout=settings.ntfy.ntfy_timeout_seconds,
+        )
         executor = Executor(
             registry=capabilities,
             tools=tools,
@@ -516,6 +565,7 @@ async def build(
             ids=ids,
             actor=ELA_ACTOR,
             assignments=assignments,
+            bell=rings,
             authorization_ttl=settings.core.authorization_ttl,
             approval_ttl=settings.core.approval_ttl,
         )
@@ -577,6 +627,8 @@ async def build(
         executor=executor,
         runner=runner,
         assignments=assignments,
+        bell=rings,
+        serving_at=rings.serving_at,
         captures=captures,
         context=context,
         speech=speech,

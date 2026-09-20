@@ -3,7 +3,8 @@
 Each story is a property of the **protocol**, not of an implementation: a node enrolls, announces,
 asks, runs, reports back, goes quiet, comes back late, comes back twice, is revoked halfway. They
 are written against :class:`~tests.conformance.driver.NodeDriver` and parametrised over the drivers,
-so M12.3–M12.5 recite these and do not copy them.
+so M12.3 and M12.4 recite these and do not copy them. **The companion of M12.5 does not**: it takes
+no work, and its own nine stories are in ``test_companion_contract.py`` (ADR 0043).
 
 **What this suite cannot prove — read this before trusting it**, in the form of
 ``tests/foreign_machine.py:24``. The property this repository's suite claims of itself is *"the
@@ -22,10 +23,10 @@ implementations, and its limits are:
   wall of ADR 0029 §16 — the grant of Terminal.app, a signed executable — is not here.
 * **The envelope survives a restart only as far as the driver makes it.** In the fake node that is a
   simulation; a real node proves it with its own driver.
-* **Where a node keeps its secret never travels over HTTP**, so this suite cannot see it. Each of
-  M12.3–M12.5 measures that on its own machine.
-* **A Shortcut cannot be driven from pytest.** For the companion the suite proves that the subset of
-  the protocol a Shortcut speaks is enough — one request, one header, one JSON — not the Shortcut.
+* **Where a node keeps its secret never travels over HTTP**, so this suite cannot see it. M12.3 and
+  M12.4 measured that on their own machines, and M12.5 measured the browser's cookie on the iPhone.
+* **No browser and no Shortcut.** What the companion recites is in ``test_companion_contract.py``,
+  and what only the iPhone could say was measured by hand (M12.5, P1–P4).
 * It proves that **the Core honours the contract in front of these stories**. It does not prove that
   an implementation is right beyond the stories its driver can recite.
 
@@ -65,7 +66,7 @@ PAST_THE_TTL = timedelta(seconds=61)
 Core's belief that the node is there (the heartbeat TTL is a minute too)."""
 
 KITS: tuple[NodeKit, ...] = (FAKE, MACOS, WINDOWS)
-"""Every implementation that recites the contract. M12.5 appends its own here, and the stories
+"""Every implementation that recites the contract of the **work**: the stories
 below do not change — which is the whole claim of dec. P.
 
 Two since M12.3, and the second is the one that matters: ``macos-node`` is the code ``ela node run``

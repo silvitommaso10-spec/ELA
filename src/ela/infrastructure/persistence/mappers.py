@@ -36,6 +36,7 @@ from ela.domain import (
     DeviceAvailability,
     DeviceCapability,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     Enrollment,
     ErrorMetadata,
@@ -385,6 +386,7 @@ def device_values(device: Device) -> dict[str, Any]:
         "created_at": device.created_at,
         "name": device.name,
         "os": device.os.value,
+        "role": device.role.value,
         "availability": device.availability.value,
         "status": device.status.value,
         "capabilities": [capability.model_dump(mode="json") for capability in device.capabilities],
@@ -411,6 +413,7 @@ def row_to_device(row: DeviceRow) -> Device:
         created_at=row.created_at,
         name=row.name,
         os=OperatingSystem(row.os),
+        role=DeviceRole(row.role),
         availability=DeviceAvailability(row.availability),
         status=DeviceStatus(row.status),
         capabilities=tuple(
@@ -441,6 +444,7 @@ def enrollment_values(enrollment: Enrollment) -> dict[str, Any]:
         "created_at": enrollment.created_at,
         "expires_at": enrollment.expires_at,
         "privacy": enrollment.privacy.value,
+        "role": enrollment.role.value,
         "consumed_at": enrollment.consumed_at,
         "device_id": enrollment.device_id,
     }
@@ -456,6 +460,7 @@ def row_to_enrollment(row: EnrollmentRow) -> Enrollment:
         created_at=row.created_at,
         expires_at=row.expires_at,
         privacy=PrivacyLevel(row.privacy),
+        role=DeviceRole(row.role),
         consumed_at=row.consumed_at,
         device_id=None if row.device_id is None else DeviceId(row.device_id),
     )

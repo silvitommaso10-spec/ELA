@@ -52,6 +52,7 @@ TABLES = {
     "assignments",
 }
 REVISIONS = [
+    "0011",
     "0010",
     "0009",
     "0008",
@@ -416,7 +417,10 @@ async def test_the_adapters_work_on_the_migrated_database(db: Path) -> None:
         enrollments = SqlEnrollmentStore(engine)
         await enrollments.offer(WAITING_ENROLLMENT)
         spent = await enrollments.consume(
-            WAITING_ENROLLMENT.code_hash, device_id=ENROLLED_DEVICE.id, now=NOW
+            WAITING_ENROLLMENT.code_hash,
+            device_id=ENROLLED_DEVICE.id,
+            now=NOW,
+            role=WAITING_ENROLLMENT.role,
         )
         await devices.enroll(ENROLLED_DEVICE, secret_hash=SECRET_HASH)
         assert spent.device_id == ENROLLED_DEVICE.id

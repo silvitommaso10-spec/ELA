@@ -53,6 +53,7 @@ from ela.ports import (
     AuditLog,
     AuthorizationStore,
     AuthorizingGuardianPort,
+    Bell,
     CapabilityRegistryPort,
     Clock,
     DeviceRegistryPort,
@@ -76,12 +77,14 @@ from ela.ports import (
 )
 from ela.providers import ProviderRegistry
 from ela.providers.anthropic import AnthropicProvider, AnthropicSettings, anthropic_provider
+from ela.providers.ntfy import BELL_TIMEOUT_SECONDS, DEFAULT_NTFY_URL, NtfyBell
 from ela.routing import ModelRouter
 from ela.testing.fakes import (
     FakeApprovalStore,
     FakeAssignmentStore,
     FakeAuditLog,
     FakeAuthorizationStore,
+    FakeBell,
     FakeCapabilityRegistry,
     FakeClock,
     FakeDeviceRegistry,
@@ -182,6 +185,11 @@ async def _create_all(engine: AsyncEngine) -> None:
     """``create_all`` on the in-memory engine; ``test_migrations.py`` proves it equals ``head``."""
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+
+
+def _ntfy_bell() -> NtfyBell:
+    """The real adapter, unconfigured: it touches no network until a topic and an address exist."""
+    return NtfyBell(topic=None, url=DEFAULT_NTFY_URL, timeout=BELL_TIMEOUT_SECONDS)
 
 
 async def _create_schema(instance: object) -> None:
@@ -506,6 +514,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     AssignmentStore: (
         Implementation("FakeAssignmentStore", FakeAssignmentStore),
         Implementation("SqlAssignmentStore", _sql_assignment_store, _create_schema, _dispose),
+    ),
+    Bell: (
+        Implementation("FakeBell", FakeBell),
+        Implementation("NtfyBell", _ntfy_bell),
     ),
     CapabilityRegistryPort: (
         Implementation("FakeCapabilityRegistry", _fake_registry),

@@ -1307,6 +1307,15 @@ VIOLATIONS: tuple[Case, ...] = (
         "def next_revision(current):\n    return current.revision + 1\n",
         "revision",
     ),
+    Case(
+        # M12.5 dec. A: the role is imposed at enrolment, like the privacy. A reconciliation that
+        # restated it would let a node that announces itself become a worker — or stop being one.
+        "the-refresh-writes-the-role",
+        "a-refresh-touches-only-what-is-declared",
+        "devices/refresh.py",
+        'def refreshed(current):\n    return current.model_copy(update={"role": "WORKER"})\n',
+        "role",
+    ),
     # --- constant-time-token, extended (rule 31, M12.1 dec. E) ---
     Case(
         # The second place that compares a secret: a helper beside the registry, which reads well
@@ -1381,7 +1390,26 @@ VIOLATIONS: tuple[Case, ...] = (
         "class Device:\n    secret_hash: str\n",
         "secret_hash",
     ),
-    # --- identity-resolved-in-one-place (rule 47, M12.1) ---
+    Case(
+        # M12.5 dec. E: on a public server the topic *is* the password of the topic, and the audit
+        # is append-only — the bell's own event is the first place somebody will write it.
+        "the-bell-topic-in-an-audit-event",
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "executive/executor.py",
+        "from ela.domain import AuditEvent\n"
+        "def rang(bell_topic):\n"
+        "    return AuditEvent(summary=bell_topic)\n",
+        "bell_topic",
+    ),
+    Case(
+        # M12.5 dec. C.1: the companion's credential, on the shape a page would answer with.
+        "the-companion-cookie-on-a-wire-shape",
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "api/schemas.py",
+        "class CompanionOut:\n    companion_cookie: str\n",
+        "companion_cookie",
+    ),
+    # --- identity-resolved-in-one-place (rule 47, M12.1, extended in M12.5) ---
     Case(
         # The shortest way a route learns who called — and the second place that forgets a
         # revocation.
@@ -1390,6 +1418,62 @@ VIOLATIONS: tuple[Case, ...] = (
         "api/approvals.py",
         "def responder(request):\n    return request.headers.get('Authorization')\n",
         "authorization",
+    ),
+    Case(
+        # M12.5 dec. C.1: the browser's half of the credential, read where the revocation is not
+        # known — the header's case, for the carrier a browser can actually send.
+        "a-page-reads-the-companion-cookie",
+        "identity-resolved-in-one-place",
+        "api/companion.py",
+        "def who(request):\n    return request.cookies.get('ela_companion')\n",
+        "ela_companion",
+    ),
+    Case(
+        # And the other half: a page that hands out or clears the credential itself would decide
+        # an enrolment, or a revocation, away from where the credential is understood.
+        "a-page-writes-the-companion-cookie",
+        "identity-resolved-in-one-place",
+        "api/pages.py",
+        "def welcome(response):\n    return response.set_cookie('ela_companion', '')\n",
+        "ela_companion",
+    ),
+    # --- the-bell-rings-a-method (rule 56, M12.5 dec. E) ---
+    Case(
+        # A second place that rings: the runner, when a task ends. It reads well, and it is a
+        # decision about when ELA disturbs the user taken where nobody decided it.
+        "a-second-place-rings-the-bell",
+        "the-bell-rings-a-method",
+        "executive/runner.py",
+        "async def done(bell, risk):\n    return await bell.approval_waiting(risk)\n",
+        ".approval_waiting(",
+    ),
+    # --- one-composer-for-a-page (rule 57, M12.5 dec. D) ---
+    Case(
+        # The shortest way to answer a browser from a route — and a page with no
+        # Content-Security-Policy, which is half of «niente JavaScript».
+        "a-route-composes-its-own-page",
+        "one-composer-for-a-page",
+        "api/companion.py",
+        "from fastapi.responses import HTMLResponse\n\nasync def home():\n    return None\n",
+        "HTMLResponse",
+    ),
+    Case(
+        # And the other way to say it, for whoever reaches for the plain Response.
+        "a-route-answers-with-the-media-type",
+        "one-composer-for-a-page",
+        "api/companion.py",
+        "async def home():\n    return Response('<b>ELA</b>', media_type='text/html')\n",
+        "text/html",
+    ),
+    # --- pages-read-the-routes (rule 55, M12.5 dec. D) ---
+    Case(
+        # The shortest way to put a number on a page — and the moment the page stops being a
+        # representation of the routes and becomes a second ELA.
+        "a-page-reads-the-world",
+        "pages-read-the-routes",
+        "api/companion.py",
+        "async def home(ela):\n    return await ela.approvals.pending()\n",
+        "ela.approvals",
     ),
     # --- assignment-port-readers (rule 48, M12.2) ---
     Case(

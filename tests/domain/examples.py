@@ -50,6 +50,7 @@ from ela.domain import (
     DeviceCapability,
     DeviceCapabilityName,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     ELAIdentity,
     Enrollment,
@@ -238,6 +239,7 @@ DEVICE: Final = Device(
     created_at=NOW,
     name="MacBook",
     os=OperatingSystem.MACOS,
+    role=DeviceRole.WORKER,
     availability=DeviceAvailability.ONLINE,
     status=DeviceStatus.BUSY,
     capabilities=(DEVICE_CAPABILITY,),
@@ -256,6 +258,7 @@ ENROLLMENT: Final = Enrollment(
     created_at=NOW,
     expires_at=MUCH_LATER,
     privacy=PrivacyLevel.TRUSTED,
+    role=DeviceRole.WORKER,
     consumed_at=LATER,
     device_id=DEVICE_ID,
 )

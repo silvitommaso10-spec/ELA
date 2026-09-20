@@ -36,6 +36,7 @@ __all__ = [
     "CHECKS",
     "DEFAULT_AUTHORIZATION_TTL",
     "MAX_AUTHORIZATION_TTL",
+    "SINGLE_USE",
     "Check",
     "authorization_from_approval",
 ]
@@ -48,6 +49,11 @@ open for days. A setting with this default in M8.1, capped by :data:`MAX_AUTHORI
 """
 MAX_AUTHORIZATION_TTL: Final = timedelta(hours=24)
 """The longest ``ttl`` this function accepts (decision C): above it is a configuration error."""
+SINGLE_USE: Final = 1
+"""How many times a grant born from a "yes" may be spent (ADR 0012 §2).
+
+A constant since M12.5 (dec. F) because the question now **promises** it — «un uso, entro un'ora
+dal tuo sì» — and a promise and a grant that come from two places drift in one edit."""
 
 
 class Check(StrEnum):
@@ -187,7 +193,7 @@ def authorization_from_approval(
         task_id=task.id,
         step_id=step.id,
         expires_at=now + ttl,
-        max_uses=1,
+        max_uses=SINGLE_USE,
         metadata={
             "origin": "approval",
             "decision_id": None if approval.decision_id is None else str(approval.decision_id),

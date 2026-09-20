@@ -29,9 +29,11 @@ from fastapi.responses import JSONResponse
 from ela.api import (
     approvals,
     audit,
+    companion,
     context,
     devices,
     nodes,
+    pages,
     perception,
     results,
     system,
@@ -44,7 +46,7 @@ from ela.api.errors import (
     TaskAlreadyRunningError,
 )
 from ela.api.problems import problem
-from ela.api.security import identity_middleware
+from ela.api.security import identity_middleware, under_the_prefix
 from ela.audit.chain import AuditChainError
 from ela.composition import Ela
 from ela.devices import (
@@ -63,6 +65,7 @@ from ela.ports import (
     ApprovalNotAnswerableError,
     AssignmentExpiredError,
     AssignmentNotUsableError,
+    EnrollmentRoleError,
     IdentityConflictError,
     NotFoundError,
     WireCode,
@@ -104,6 +107,7 @@ FAILURES: tuple[Failure, ...] = (
     Failure(AlreadyExistsError, 409, WireCode.ALREADY_EXISTS),
     Failure(ApprovalNotAnswerableError, 409, WireCode.NOT_ANSWERABLE),
     Failure(AuditChainError, 409, WireCode.TAMPERED),
+    Failure(EnrollmentRoleError, 422, WireCode.INVALID),
     Failure(GraphError, 422, WireCode.INVALID),
     Failure(TaskError, 409, WireCode.CONFLICT),
     Failure(ExecutorError, 409, WireCode.CONFLICT),
@@ -135,6 +139,11 @@ says the plan that arrived cannot be a graph at all (422) — the caller has to 
 sent, not *when*. The base stays in the table because ``IllegalTransitionError`` lives in
 ``ela.tasks.state_machine``, which this package may not import (contract 7) and does not need to.
 
+``EnrollmentRoleError`` is the one refusal of an enrolment code that is **not** the same ``401`` as
+a credential nobody knows (M12.5 dec. C.5): whoever presents a code that exists, on the route of the
+other role, already holds it — there is nothing to hide from them — and what they need to be told is
+the one thing they can act on. Unknown, expired and already spent keep the answers of ADR 0037 §13.
+
 ``AssignmentRefusedError`` is deliberately **absent** (M12.2, ADR 0038 §12). It is raised inside the
 walk — after the Guardian and the ``consume``, by ``Assignments.assign`` — and no request a caller
 can make produces it: the walk reaches ``assign`` only with a fresh ``ALLOWED`` decision for a node
@@ -159,8 +168,18 @@ def _message(failed: Exception) -> str:
 
 
 def _handler(failure: Failure) -> Callable[[Request, Exception], Awaitable[Response]]:
+    """The one answer a failure becomes — JSON, or **a page** under the companion's prefix.
+
+    Dec. D: the handlers answer JSON, and in a browser raw JSON is what the user would see. Under
+    ``/companion/`` the same failure, with the same status and the same sentence, is composed by
+    the same composer that puts the ``Content-Security-Policy`` on every other page — so an error
+    is a page of ELA and not a hole in it. One place, so no route has to remember.
+    """
+
     async def handle(request: Request, failed: Exception) -> Response:
         said = failure.message if failure.message is not None else _message(failed)
+        if under_the_prefix(request.url.path):
+            return pages.page("refused", status=failure.status, title=failure.code.value, text=said)
         return JSONResponse(status_code=failure.status, content=problem(failure.code, said))
 
     return handle
@@ -225,6 +244,7 @@ def create_app(ela: Ela) -> FastAPI:
         docs_url=None,
         redoc_url=None,
     )
+    pages.ensure_readable()
     app.state.ela = ela
     app.state.running = set()
     app.state.recovery = RecoverySummary((), (), ())
@@ -243,6 +263,7 @@ def create_app(ela: Ela) -> FastAPI:
         tasks.router,
         approvals.router,
         audit.router,
+        companion.router,
         devices.router,
         nodes.router,
         context.router,

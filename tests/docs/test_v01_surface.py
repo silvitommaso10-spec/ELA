@@ -27,7 +27,7 @@ V01_ROUTERS = ("approvals", "audit", "devices", "results", "system", "tasks")
 """The six modules of ``ela.api`` whose routes are v0.1's fifteen (ADR 0023 §6, ADR 0024 §5,
 ADR 0025 §4) — named, and found in the package rather than imported by hand."""
 
-LATER_ROUTERS = ("context", "nodes", "perception", "voice")
+LATER_ROUTERS = ("companion", "context", "nodes", "perception", "voice")
 """The router modules the phases after v0.1 added, kept beside the six rather than folded into
 them (ADR 0029 §13) — the shape ``LATER_COMMANDS`` already has below."""
 

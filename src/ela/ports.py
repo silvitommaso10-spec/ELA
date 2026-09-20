@@ -47,6 +47,7 @@ from ela.domain import (
     Device,
     DeviceAvailability,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     Enrollment,
     ErrorMetadata,
@@ -66,6 +67,7 @@ from ela.domain import (
     RawRecognition,
     RawSpeech,
     RawTranscript,
+    RiskLevel,
     StepId,
     Task,
     TaskEvent,
@@ -82,6 +84,7 @@ __all__ = [
     "ApprovalAlreadyAnsweredError",
     "ApprovalExpiredError",
     "ApprovalNotAnswerableError",
+    "ApprovalOutOfReachError",
     "ApprovalStore",
     "AssignmentExpiredError",
     "AssignmentHeldElsewhereError",
@@ -96,6 +99,7 @@ __all__ = [
     "AuthorizationNotUsableError",
     "AuthorizationStore",
     "AuthorizingGuardianPort",
+    "Bell",
     "CapabilityRegistryPort",
     "Clock",
     "DeviceRegistryPort",
@@ -103,6 +107,7 @@ __all__ = [
     "EnrollmentConsumedError",
     "EnrollmentExpiredError",
     "EnrollmentNotUsableError",
+    "EnrollmentRoleError",
     "EnrollmentStore",
     "ExecutionResultStore",
     "IdGenerator",
@@ -410,6 +415,19 @@ class ApprovalExpiredError(ApprovalNotAnswerableError):
         super().__init__(approval_id, f"it expired at {expires_at.isoformat()}")
 
 
+class ApprovalOutOfReachError(ApprovalNotAnswerableError):
+    """The identity answering may not be shown what it would be approving (M12.5 dec. F.2).
+
+    The third way a request that exists cannot be answered *now*, beside "already answered" and
+    "too late": the content of the task is above what the user allowed this identity to receive,
+    so the page did not show it — and one does not approve what one cannot see (§30). The answer
+    is not refused to the **user**, who has it at the Mac: it is refused to this bearer.
+    """
+
+    def __init__(self, approval_id: ApprovalId) -> None:
+        super().__init__(approval_id, "its content stays on the Mac: answer it from there")
+
+
 class IdentityConflictError(PortError):
     """Two processes claim to be the same node: the row is not at the revision the caller saw.
 
@@ -459,6 +477,23 @@ class EnrollmentExpiredError(EnrollmentNotUsableError):
     def __init__(self, expires_at: datetime) -> None:
         self.expires_at = expires_at
         super().__init__(f"the enrollment code expired at {expires_at.isoformat()}")
+
+
+class EnrollmentRoleError(EnrollmentNotUsableError):
+    """The code was minted for one role and presented on the enrolment route of another (M12.5).
+
+    Nothing is written: the role is a condition **of the statement** that spends the code, so a
+    code refused here is still spendable where it belongs (dec. C.5). The message names the two
+    roles and never the code — an error reaches a response body, and a companion's is a page.
+    """
+
+    def __init__(self, carried: DeviceRole, expected: DeviceRole) -> None:
+        self.carried = carried
+        self.expected = expected
+        super().__init__(
+            f"the enrollment code was issued for a {carried.value} "
+            f"and this route enrolls a {expected.value}"
+        )
 
 
 class AssignmentNotUsableError(PortError):
@@ -803,13 +838,56 @@ class EnrollmentStore(Protocol):
     async def offer(self, enrollment: Enrollment) -> None:
         """Keep a new code; :class:`AlreadyExistsError` if a code with this hash is already kept."""
 
-    async def consume(self, code_hash: str, *, device_id: DeviceId, now: datetime) -> Enrollment:
+    async def consume(
+        self, code_hash: str, *, device_id: DeviceId, now: datetime, role: DeviceRole
+    ) -> Enrollment:
         """Spend the code for ``device_id`` and return it as stored — only if it exists, has not
-        been consumed and has not expired at ``now`` (``expires_at <= now`` is expired, closed
-        bound). Otherwise nothing is written and, in this order, :class:`NotFoundError`,
-        :class:`EnrollmentConsumedError` or :class:`EnrollmentExpiredError` is raised. The check
-        and the write are one atomic step: of two nodes presenting the same code exactly one is
-        born (ADR 0012 §5, the shape of ``consume``)."""
+        been consumed, has not expired at ``now`` (``expires_at <= now`` is expired, closed bound)
+        and carries ``role``, the role of the enrolment route presenting it (M12.5 dec. C.5).
+        Otherwise nothing is written and, in this order, :class:`NotFoundError`,
+        :class:`EnrollmentConsumedError`, :class:`EnrollmentRoleError` or
+        :class:`EnrollmentExpiredError` is raised. The check and the write are one atomic step: of
+        two nodes presenting the same code exactly one is born (ADR 0012 §5, the shape of
+        ``consume``)."""
+
+
+@runtime_checkable
+class Bell(Protocol):
+    """How ELA gets the user's attention when it needs them and they are not here (M12.5 dec. E).
+
+    The twenty-sixth port, and the only one whose effect is **on a phone**: everything else ELA
+    does lands where somebody has to go and look. A bell is not a letter — it says that something
+    waits, never what it is — and the vocabulary is closed **by the shape of this port**: one
+    method per thing that can ring, and today one method. An enum with a single member would
+    invite a second voice with no writer; a method obliges every future event to arrive with its
+    own caller and its own decision (the review of 2026-09-19).
+
+    **No parameter is a string**, and that is the guarantee rather than a promise: ``risk`` comes
+    from the catalogue, so nothing of the user's content can be passed in, and ``mypy --strict``
+    refuses a sentence where the method wants a :class:`~ela.domain.RiskLevel`. What the user is
+    shown is composed by the adapter, from a table of its own.
+
+    **It does not fail — it reports.** A bell that does not ring must not fail a run: the question
+    waits on the page and in the CLI all the same, and the outcome is written either way. Whoever
+    calls it writes ``BELL_RUNG`` with what came back (§57: which provider, which data, why).
+    """
+
+    @property
+    def name(self) -> str:
+        """Which provider would ring: what the audit records, never the topic or the URL."""
+        ...
+
+    @property
+    def ready(self) -> bool:
+        """Whether a bell can ring at all: a topic configured, and an address to open."""
+        ...
+
+    async def approval_waiting(self, risk: RiskLevel) -> bool:
+        """Ring for a request for consent that is waiting; ``True`` if it was delivered.
+
+        Never raises: a network that is not there, a provider that says no and a timeout all come
+        back as ``False``.
+        """
 
 
 @runtime_checkable

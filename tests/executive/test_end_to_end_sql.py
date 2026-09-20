@@ -65,6 +65,7 @@ from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS
 from ela.permissions import CORE_ECHO, WORKSPACE_WRITE_NOTE, PermissionGuardian, catalogue_v01
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
+    FakeBell,
     FakeClock,
     FakeDeviceRegistry,
     FakeIdGenerator,
@@ -175,6 +176,7 @@ class SqlPipeline:
             ids=self.ids,
             actor=ELA,
             assignments=self.assignments,
+            bell=FakeBell(),
         )
         self._wire_the_walk()
 
@@ -357,6 +359,7 @@ async def test_a_failed_verification_fails_the_task_and_the_chain_still_verifies
         ids=p.ids,
         actor=ELA,
         assignments=p.assignments,
+        bell=FakeBell(),
     )
     step, task_id = await p.running(WORKSPACE_WRITE_NOTE)
     execution = await p.execute(task_id, step.id)
@@ -494,6 +497,7 @@ class CrashingSqlPipeline(SqlPipeline):
             ids=self.ids,
             actor=ELA,
             assignments=self.assignments,
+            bell=FakeBell(),
         )
         self._wire_the_walk()
 

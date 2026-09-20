@@ -39,6 +39,7 @@ from ela.domain import (
     Device,
     DeviceAvailability,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     Enrollment,
     ErrorMetadata,
@@ -63,6 +64,7 @@ from ela.domain import (
     RawRecognition,
     RawSpeech,
     RawTranscript,
+    RiskLevel,
     StepId,
     Task,
     TaskEvent,
@@ -89,6 +91,7 @@ from ela.ports import (
     DeviceRevokedError,
     EnrollmentConsumedError,
     EnrollmentExpiredError,
+    EnrollmentRoleError,
     IdentityConflictError,
     IdGenerator,
     ModelProvider,
@@ -108,6 +111,7 @@ __all__ = [
     "FakeApprovalStore",
     "FakeAuditLog",
     "FakeAuthorizationStore",
+    "FakeBell",
     "FakeCapabilityRegistry",
     "FakeClock",
     "FakeDeviceRegistry",
@@ -284,6 +288,38 @@ class FakeTaskRepository:
             raise NotFoundError("task plan", task_id) from None
 
 
+class FakeBell:
+    """A bell that remembers what it rang and never touches a network (port ``Bell``).
+
+    ``ready`` is a flag and not a deduction: a test that wants the silent case — no topic, or no
+    address to open — turns it off, and one that wants the bell to fail turns ``delivers`` off.
+    """
+
+    def __init__(self, *, ready: bool = True, delivers: bool = True, name: str = "fake") -> None:
+        self.rung: list[RiskLevel] = []
+        self.serving: tuple[str, ...] = ()
+        self.delivers = delivers
+        self._ready = ready
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def ready(self) -> bool:
+        return self._ready
+
+    def serving_at(self, addresses: Sequence[str]) -> None:
+        """Not a member of the port: the composition hands this over as a callable (ADR 0043 §8),
+        and the fake keeps it so a test can wire one the same way production does."""
+        self.serving = tuple(addresses)
+
+    async def approval_waiting(self, risk: RiskLevel) -> bool:
+        self.rung.append(risk)
+        return self.delivers
+
+
 class FakeAuditLog:
     """An append-only trail kept as a tuple (port :class:`~ela.ports.AuditLog`).
 
@@ -409,12 +445,17 @@ class FakeEnrollmentStore:
             raise AlreadyExistsError("enrollment", "code")
         self._codes[enrollment.code_hash] = enrollment
 
-    async def consume(self, code_hash: str, *, device_id: DeviceId, now: datetime) -> Enrollment:
+    async def consume(
+        self, code_hash: str, *, device_id: DeviceId, now: datetime, role: DeviceRole
+    ) -> Enrollment:
+        """The order of the port: unknown, spent, the wrong role, expired (M12.5 dec. C.5)."""
         enrollment = self._codes.get(code_hash)
         if enrollment is None:
             raise NotFoundError("enrollment", "code")
         if enrollment.device_id is not None:
             raise EnrollmentConsumedError(enrollment.device_id)
+        if enrollment.role is not role:
+            raise EnrollmentRoleError(enrollment.role, role)
         if enrollment.expires_at <= now:
             raise EnrollmentExpiredError(enrollment.expires_at)
         spent = enrollment.model_copy(update={"consumed_at": now, "device_id": device_id})
