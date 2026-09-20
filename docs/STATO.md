@@ -100,6 +100,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
+| 17 — Design | `M17.4` | Proposta | Il passaggio di design del Command Center: le viste tutte insieme, quando guardarle non basta più |
 
 <!-- fine del blocco generato: le milestone -->
 
@@ -113,7 +114,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **44** | `docs/adr/NNNN-*.md` |
-| Milestone | **48, di cui 46 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **49, di cui 46 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **26** | i `Protocol` di `src/ela/ports.py` |
@@ -175,8 +176,9 @@ il filo.
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 13 | 5 |
+| 13 | 6 |
 | 15 | 14 |
+| 16 | 1 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
 
@@ -387,13 +389,26 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   `make check`: una capability nuova ferma la suite, e la risposta si scrive nel documento della
   milestone che l'ha fatta fermare.
 
+- **M17.4 — Il passaggio di design del Command Center** (registrata il 2026-09-21, alla fine di
+  M17.2). M17.2 ha costruito il Command Center perché ELA si potesse **guardare**; il passaggio di
+  §23 del design e §24 del design — ritmo, gerarchia, movimento, l'interfaccia che cambia con ciò
+  che sta succedendo (§27 del design) — si fa su **tutte** le viste insieme, e le viste non ci sono
+  ancora tutte. **Condizione d'ingresso**, la prima che arriva: dopo la Fase 16, oppure quando il
+  Command Center smette di bastare a guardarlo — quando per capire che cosa succede si apre il
+  terminale invece della pagina. **Costo dichiarato:** le viste che le milestone aggiungeranno da
+  qui in poi nascono con l'aspetto di M17.2, e M17.4 le ritroverà tutte insieme; è il prezzo di
+  aver messo il Command Center prima della Fase 13 invece che dopo la Fase 16, ed è voluto.
+  **Nessuna riparazione estetica nel frattempo**: una vista si ripara quando *mente* — un'assenza
+  che non si nomina, una vista che non si raggiunge —, non quando è spoglia, e le due riparazioni
+  che la prova a mano di M17.2 ha chiesto sono di quella specie.
 - **M17.3 — Presenza desktop** (§19 del design), alla fine, dopo le altre fasi.
 - **Com'è ELA sullo schermo** — deciso dall'utente il 2026-09-18, guardando la pagina-campionario
   di M17.1, con le sue parole: «ELA deve sembrare una sfera, azzurra e bianca; una dashboard
   futuristica stile JARVIS ma senza informazioni inutili; ELA deve apparire sul mio schermo come un
   widget».
 
-L'ordine è **M17.1 → M12.5 → M17.2 → Fase 13**, e M17.3 dopo tutte. Il numero di una fase non dice
+L'ordine è **M17.1 → M12.5 → M17.2 → Fase 13**, con M17.4 dopo la Fase 16 (o prima, se la sua
+condizione scatta) e M17.3 dopo tutte. Il numero di una fase non dice
 quando si fa: M17.1 è venuta prima dell'ultima milestone della Fase 12. Le prime due sono fatte
 (2026-09-19 e 2026-09-20); la prossima è M17.2.
 
@@ -469,6 +484,7 @@ pagato da chi doveva.
 | Debito | Dichiarato | A carico | Stato |
 |---|---|---|---|
 | ADR 0041 §5 — i test che aspettano, e le difese che costano un terzo della suite | 2026-09-18 | della milestone sulla disciplina della suite | **aperto** |
+| ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 

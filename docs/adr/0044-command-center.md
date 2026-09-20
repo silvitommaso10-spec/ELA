@@ -1,8 +1,10 @@
 # 0044. Il Command Center: una terza identità nel registro, un tetto derivato dal socket, due regole che smettono di nominare un file, e un'impronta che suona
 
-- **Stato:** **Proposta**. Scritta con il codice di M17.2, e cresce a ogni commit come ADR 0043:
-  ogni sezione entra con ciò che la difende. Diventa **Accettata** quando la prova a mano di
-  `docs/milestones/M17.2.md` è passata sul Mac vero, ai due indirizzi.
+- **Stato:** **Accettata il 2026-09-20**, quando la prova a mano di M17.2 è passata — dieci passi
+  su undici sul Mac vero, ai due indirizzi, con il quarto per metà non eseguibile e la sua ragione
+  scritta. Scritta con il codice della milestone, e cresciuta a ogni commit come ADR 0043: ogni
+  sezione è entrata con ciò che la difende, e le ultime due — il debito di §8 e il vincolo della
+  direzione degli import — sono entrate con ciò che la prova a mano ha trovato.
 - **Data:** 2026-09-20
 - **Riferimenti spec:** §6, §16, §46, §48, §57, §58, §65
 - **Riferimenti design:** `docs/spec/ELA_design.md` — §2, §3, §6, §7, §8, §10, §11, §12, §14, §26,
@@ -213,6 +215,16 @@ Ciò che non si mostra, con la ragione, perché un'assenza taciuta è indistingu
   ADR 0043 §9 ha già dato quella casa alla Fase 13. Di §12 la console mostra i due fatti separati —
   la disponibilità derivata e l'ultimo contatto.
 
+**Ogni assenza si nomina**, e non solo quella del contenuto di un risultato. La prova a mano ha
+trovato un task senza piano che mostrava un elenco vuoto — «1.» e niente —, che è il modo di dire
+«non ho niente da dirti» indistinguibile da un difetto. Tutti i casi vuoti delle quattro viste sono
+stati passati in rassegna, ognuno ha la sua frase e il suo test, e uno solo è stato lasciato senza:
+gli argomenti dichiarati di una domanda, perché un elenco vuoto lì è una capability che non ne
+dichiara, non un fatto che manca. E **una vista si raggiunge**: il dettaglio di un task si apriva
+solo scrivendone l'indirizzo, e adesso ci portano il pannello «Ora» e la pagina di una domanda —
+un task finito e senza domanda resta raggiungibile solo dal suo id, che è il Task Center e non
+questa milestone.
+
 Le tre etichette di §11 del design — WORK NODE, **POWER NODE**, COMPANION NODE — **non** sono i tre
 ruoli: il Mac e il PC sono tutti e due `WORKER`, e ciò che li distingue là è la potenza, che il
 registro tiene in `performance`. La vista mostra il ruolo *e* quella, e non inventa un'etichetta
@@ -289,6 +301,42 @@ Ciò che M17.2 **non** fa, o fa a un prezzo, detto una volta e per intero:
 - **ELA gira dal repository**: il percorso di `apps/` si deriva dal package.
 - **`apps/command-center/` non entra in `CRITICAL_PACKAGES`**: non è Python, e le sue regole vivono
   nei test della sua cartella (ADR 0042 §10).
+- **`api/console.py` importa da `api/companion.py`** — `presence`, `may_see`, `when`, `terms` —,
+  e la direzione è sbagliata: la seconda superficie dipende dalla prima per ciò che non è di
+  nessuna delle due. È stato scelto a occhi aperti, perché quei due moduli sono gli unici che la
+  regola 55 cammina, e un modulo senza router dove spostarle sarebbe un posto che la regola non
+  guarda — cioè il posto dove domani qualcuno legge il mondo. **La riparazione è già scritta**: la
+  derivazione di §3 prende una seconda clausola — la regola 55 cammina anche i moduli di `api/`
+  **senza router che un modulo di pagine importa** — e allora quelle funzioni si spostano in un
+  modulo loro, che la regola cammina come gli altri. **Casa: la milestone che aggiunge la terza
+  superficie**, che è quando il difetto costerebbe davvero — con due superfici è un import da
+  leggere storto, con tre è una scelta di quale delle due fa da libreria all'altra.
+
+## 8. Un debito datato: il battito di `local`, e la prima vista che l'ha reso visibile
+
+**Debito a carico della Fase 13**, dichiarato il **2026-09-20**.
+
+Il Mac risulta `available: false` mentre ELA gira. `local` scrive un heartbeat all'avvio
+(ADR 0023 §5-bis) e all'inizio di ogni `run` (`api/tasks.py`), e non ne ha uno periodico: passato
+`ELA_DEVICE_HEARTBEAT_TTL_SECONDS` il registro dice — correttamente, secondo ADR 0016 §3 — che da
+quella identità non arrivano segni di vita, mentre il processo è vivo e sta servendo la pagina che
+lo dice.
+
+**Non si ripara qui, e la ragione non è la fretta.** La disponibilità è derivata dal battito, e
+chi deve batterne uno periodico è il Core — un demone, o il tick della percezione che già esiste —,
+non una vista: una pagina che "sapesse" che il processo è vivo perché sta rispondendo starebbe
+affermando qualcosa sul registro dal posto sbagliato, che è esattamente ciò che la regola 20
+vieta. E finché il piazzamento è su una macchina sola, un `local` scaduto non ha ancora tolto
+niente a nessuno: il `run` batte prima di piazzare, quindi il task parte comunque.
+
+**La casa è la Fase 13**, dove la disponibilità deciderà davvero fra due nodi che competono, e dove
+un `local` scaduto smetterebbe di essere un'etichetta storta e diventerebbe un lavoro mandato
+altrove.
+
+**E vale la pena dire come si è visto.** Il fatto è vero da M6.1 e nessuno l'aveva notato, perché
+nessuno lo guardava: la CLI lo diceva a chi lo chiedeva, una pagina lo dice a chi passa. È la
+regola di §6 — *ogni milestone aggiunge la sua vista* — che dimostra da sé perché esiste: una
+capacità senza la sua vista è una capacità di cui nessuno si accorge quando mente.
 
 ## Conseguenze
 

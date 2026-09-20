@@ -98,6 +98,15 @@ RESULTS_ARE_ELSEWHERE: Final = (
 )
 """Dec. K.2: the summary **names** what it does not show, instead of ending at «completato»."""
 NO_RESULTS: Final = "Nessun risultato: questo task non ha ancora prodotto niente."
+NO_PLAN: Final = "Nessun piano: questo task non ne ha ancora uno, e nessuno step da percorrere."
+"""Dec. K.2 where nobody had looked (the hand test of 2026-09-20, dec. 21 of the review).
+
+An empty list renders as an empty list, and an empty ``<ol>`` reads as «1.» and nothing — which
+says «there is nothing to say» in the one way that is indistinguishable from a bug. Every empty
+case of the four views names itself, and each has its test.
+"""
+NO_DEVICES: Final = "Nessuna identità nel registro."
+NO_TOOLS: Final = "nessuno"
 TWO_FACTS: Final = (
     "La disponibilità è il fatto dell'heartbeat; l'ultimo contatto dice quando quell'identità "
     "ha parlato con ELA. Sono due fatti, e due colonne."
@@ -174,6 +183,7 @@ def _now(detail: TaskDetail | None, identity: Identity) -> pages.Markup:
     return pages.fragment(
         HERE,
         "now",
+        id=detail.id,
         what=_title(detail.goal, detail.id, identity, detail.max_privacy),
         steps=_steps(detail.steps, identity, detail.max_privacy),
     )
@@ -188,6 +198,8 @@ def _steps(
     what is shown instead is the capability the step asks for, which is the catalogue's word and
     not the user's.
     """
+    if not steps:
+        return pages.fragment(HERE, "empty", text=NO_PLAN)
     return pages.fragment(
         HERE,
         "steps",
@@ -319,6 +331,7 @@ async def approval(ela: ElaDep, identity: IdentityDep, id: Annotated[UUID, Query
         if seen
         else pages.fragment(HERE, "notice", text=STAYS_ON_THE_MAC),
         after=AFTER_YES if seen else "",
+        task=pages.fragment(HERE, "open-task", id=found.task_id),
         ceiling=_ceiling(identity),
     )
 
@@ -416,7 +429,9 @@ async def devices(ela: ElaDep, identity: IdentityDep) -> Response:
         "devices",
         sheets=WHERE,
         nav=_nav(),
-        rows=pages.joined(_device(one) for one in rows),
+        rows=pages.joined(_device(one) for one in rows)
+        if rows
+        else pages.fragment(HERE, "empty", text=NO_DEVICES),
         note=TWO_FACTS,
     )
 
@@ -429,7 +444,7 @@ def _device(one: DeviceOut) -> pages.Markup:
         pages.fragment(HERE, "pair", key="Sistema", value=one.os.value),
         pages.fragment(HERE, "pair", key="Potenza", value=one.performance.value),
         pages.fragment(HERE, "pair", key="Privacy", value=one.privacy.value),
-        pages.fragment(HERE, "pair", key="Tool", value=", ".join(one.available_tools) or "nessuno"),
+        pages.fragment(HERE, "pair", key="Tool", value=", ".join(one.available_tools) or NO_TOOLS),
     ]
     if one.revoked_at is not None:
         pairs.append(pages.fragment(HERE, "pair", key="Revocato", value=when(one.revoked_at)))

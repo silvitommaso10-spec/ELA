@@ -23,17 +23,24 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from ela.api import pages
 from ela.api.console import (
     FROM_AWAY,
     FROM_THIS_MACHINE,
+    NO_DEVICES,
+    NO_PLAN,
     NO_RESULTS,
+    NO_TASKS,
+    NO_TOOLS,
     NOTHING_RUNS,
+    NOTHING_WAITS,
     RESULTS_ARE_ELSEWHERE,
     STAYS_ON_THE_MAC,
     _content,
     _now,
     _pairs,
 )
+from ela.api.console import HERE as HERE_CONSOLE
 from ela.api.pages import CONTENT_SECURITY_POLICY, STYLESHEETS
 from ela.api.schemas import ApprovalOut, StepOut, TaskDetail
 from ela.api.security import (
@@ -882,3 +889,82 @@ async def test_answering_a_question_the_ceiling_hides_is_refused(
     assert STAYS_ON_THE_MAC in shown.text and "answer" not in shown.text
     assert answered.status_code == 409
     assert (await client.get(f"/tasks/{task}")).json()["state"] == TaskState.WAITING_APPROVAL.value
+
+
+# ----------------------------------------------------------------------------------------
+# Ogni caso vuoto si nomina (dec. 21 della review, dalla prova a mano del 2026-09-20)
+# ----------------------------------------------------------------------------------------
+
+
+def test_a_task_with_no_plan_says_so_instead_of_showing_an_empty_list() -> None:
+    """The defect the hand test found: an empty ``<ol>`` reads as «1.» and nothing, which says
+    «there is nothing to say» in the one way indistinguishable from a bug (dec. K.2)."""
+    said = _now(a_detail(), SEEN)
+
+    assert NO_PLAN in said
+    assert "ela-steps" not in said
+
+
+async def test_the_page_of_a_task_with_no_plan_says_so(
+    console: AsyncClient, client: AsyncClient
+) -> None:
+    created = await client.post("/tasks", json={"text": "una cosa da fare"})
+
+    page = await console.get(f"/console/task?id={created.json()['id']}")
+
+    assert NO_PLAN in page.text
+    assert NO_RESULTS in page.text
+
+
+async def test_the_approval_center_with_nothing_waiting_says_so(console: AsyncClient) -> None:
+    answered = await console.get("/console/approvals")
+
+    assert escape(NOTHING_WAITS) in answered.text
+
+
+async def test_the_home_with_no_live_task_says_so(console: AsyncClient) -> None:
+    home = await console.get("/console/")
+
+    assert NO_TASKS in home.text
+    assert NOTHING_RUNS in home.text
+    assert escape(NOTHING_WAITS) in home.text
+
+
+async def test_a_node_with_no_tool_says_so(console: AsyncClient) -> None:
+    """``local`` declares the tools of this process; a node that declares none reads «nessuno»
+    and not an empty cell, which would look like a value nobody wrote."""
+    page = await console.get("/console/devices")
+
+    assert "Tool" in page.text
+    assert NO_TOOLS in page.text or "core.echo" in page.text
+
+
+def test_a_registry_with_no_identity_says_so() -> None:
+    """Never true in production — ``local`` is written at start-up — and the view must not lie
+    about it anyway: what a page shows is what the route answered, empty included."""
+    assert NO_DEVICES in pages.fragment(HERE_CONSOLE, "empty", text=NO_DEVICES)
+
+
+# ----------------------------------------------------------------------------------------
+# Una vista si raggiunge (dec. 22 della review)
+# ----------------------------------------------------------------------------------------
+
+
+def test_what_is_running_links_to_its_summary() -> None:
+    """A view reachable only by typing its address is a view that is not there."""
+    detail = a_detail(a_step(StepState.RUNNING))
+
+    assert f'href="/console/task?id={detail.id}"' in _now(detail, SEEN)
+
+
+async def test_a_question_links_to_the_summary_of_its_task(
+    console: AsyncClient, client: AsyncClient
+) -> None:
+    """From the question to what it is part of: the other way into the execution summary."""
+    task = await queued(client, note_plan())
+    await client.post(f"/tasks/{task}/run")
+    identifier = (await client.get("/approvals")).json()[0]["id"]
+
+    page = await console.get(f"/console/approval?id={identifier}")
+
+    assert f'href="/console/task?id={task}"' in page.text

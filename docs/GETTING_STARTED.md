@@ -957,11 +957,17 @@ uv run ela node enroll --privacy TRUSTED --role console
 Dura dieci minuti, si usa una volta sola, e presentato su un'altra rotta di arruolamento è
 rifiutato **senza consumarsi**: se lo incolli nel posto sbagliato non hai perso niente.
 
-**2. Apri la pagina, e da quale indirizzo.** Sul Mac:
+**2. Apri la pagina, e da quale indirizzo.** Sul Mac, `http://127.0.0.1:<porta>/console`.
+
+**La porta la decide il tuo `.env`** (`ELA_API_PORT`), e il modo di sapere quale sia davvero è
+chiederlo al processo:
 
 ```
-http://127.0.0.1:8130/console
+uv run ela diagnostics
 ```
+
+La riga `addresses` porta gli indirizzi su cui ELA **ha legato**, non quelli che l'impostazione
+chiede: se la tailnet non c'era all'avvio, lì c'è solo il loopback.
 
 Incolla il codice, dai un nome, invia. Da lì in poi il browser porta la sua credenziale in un
 cookie e la pagina si apre da sola.
