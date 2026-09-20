@@ -48,7 +48,7 @@ from ela.ports import (
 )
 from ela.tasks.engine import LIVE_STATES
 
-__all__ = ["HOME", "SPOKEN_ALOUD", "may_see", "presence", "router"]
+__all__ = ["HOME", "SPOKEN_ALOUD", "counted", "how_long", "may_see", "presence", "router", "terms"]
 
 router = APIRouter(prefix="/companion", tags=["companion"])
 
@@ -133,6 +133,44 @@ def form(body: bytes) -> dict[str, str]:
     return dict(parse_qsl(body.decode("utf-8", "replace")))
 
 
+def counted(how_many: int, one: str, many: str) -> str:
+    """``how_many`` in words: nothing at all, the singular, or the number and the plural."""
+    if how_many == 0:
+        return ""
+    return one if how_many == 1 else f"{how_many} {many}"
+
+
+def how_long(seconds: int) -> str:
+    """A number of seconds as the page says it: the units it really is, and no rounding.
+
+    Derived and never written by hand, because ``ELA_AUTHORIZATION_TTL_SECONDS`` is the **user's**
+    setting: at 1800 a phrase with the hours divided out said «entro 0 ora», and at 7200 «2 ora».
+    This is the page where consent is given, and what is approved has to name what it is.
+    """
+    hours, rest = divmod(seconds, 3600)
+    minutes, moments = divmod(rest, 60)
+    said = [
+        part
+        for part in (
+            counted(hours, "un'ora", "ore"),
+            counted(minutes, "un minuto", "minuti"),
+            counted(moments, "un secondo", "secondi"),
+        )
+        if part
+    ]
+    return " e ".join(said) if said else "nessun tempo"
+
+
+def terms(uses: int, seconds: int) -> str:
+    """What a "yes" grants, in one line: how many times it may be spent, and until when.
+
+    ``ADR 0012 §2``: a grant born from an approval is single use and lives for the configured TTL.
+    Both numbers come from the question (dec. F), and both are said as they are — a promise that
+    rounded itself would be a promise about something else.
+    """
+    return f"{counted(uses, 'un uso', 'usi')}, entro {how_long(seconds)} dal tuo sì"
+
+
 def _when(moment: datetime | None) -> str:
     """An instant as a phone shows it: the time, and nothing that says what it is about."""
     return "" if moment is None else moment.astimezone().strftime("%H:%M")
@@ -191,14 +229,19 @@ def _tasks(
     """The answered one first, then the live ones, newest first and no more than :data:`SHOWN`.
 
     A phone is not a dashboard: a list that grows without a bound stops being readable on the
-    screen it was made for, and what the user opens the page for is what is happening now.
+    screen it was made for, and what the user opens the page for is what is happening now. What it
+    does **not** do is let the cut pass in silence — the title carries it, because a page that
+    showed six of nine under a title saying «the tasks» would be a page that lies quietly.
     """
-    recent = tuple(one for one in reversed(alive) if one not in answered)[:SHOWN]
+    live = tuple(one for one in reversed(alive) if one not in answered)
+    recent = live[:SHOWN]
     if not answered and not recent:
         return pages.Markup("")
     return pages.fragment(
         "tasks",
-        title="I task",
+        # A list that stops at six and calls itself «I task» says something false the day there
+        # are nine (the review of 2026-09-20): when it cuts, it says how much it is showing.
+        title="I task" if len(recent) == len(live) else f"I task · {len(recent)} di {len(live)}",
         rows=pages.joined(
             [
                 # The one just answered is shown as it *is*, and it is not offered a "stop": it may
@@ -368,11 +411,7 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
         )
     if found.grant_uses is not None and found.grant_seconds is not None:
         pairs.append(
-            pages.fragment(
-                "pair",
-                key="Durata",
-                value=f"{found.grant_uses} uso, entro {found.grant_seconds // 3600} ora dal tuo sì",
-            )
+            pages.fragment("pair", key="Durata", value=terms(found.grant_uses, found.grant_seconds))
         )
     if found.expires_at is not None:
         pairs.append(pages.fragment("pair", key="Scade", value=f"alle {_when(found.expires_at)}"))

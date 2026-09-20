@@ -49,6 +49,7 @@ from ela.ports import NotFoundError, WireCode
 __all__ = [
     "CODE_ROUTES",
     "COMPANION_CODE_ROUTES",
+    "COMPANION_HOME",
     "COMPANION_PREFIX",
     "COMPANION_ROUTES",
     "COOKIE_MAX_AGE",
@@ -64,6 +65,7 @@ __all__ = [
     "identity_middleware",
     "note",
     "same_origin",
+    "under_the_prefix",
     "unauthorized",
     "welcome",
 ]
@@ -98,6 +100,14 @@ CODE_ROUTES: Final = frozenset({("POST", "/nodes/enroll")})
 
 COMPANION_PREFIX: Final = "/companion/"
 """Where the pages live, and the one prefix whose refusals are pages (M12.5 dec. C.3, D)."""
+COMPANION_HOME: Final = "/companion"
+"""The prefix without its slash: **the address a person types**, and therefore ground of the
+companion like everything under it (the review of 2026-09-20).
+
+Two things hung on the difference: a browser with no cookie got the JSON ``401`` instead of the
+enrolment form, and one with a good cookie got «non esiste» for the address written on the phone.
+It is let through to the router, which redirects it to the page — the redirect is the router's job
+and not the middleware's."""
 COMPANION_ROUTES: Final = frozenset(
     {
         ("GET", "/companion/"),
@@ -290,7 +300,7 @@ def forgotten(response: Response) -> Response:
     there — so clearing on nothing would destroy a credential that works and send the user back
     to the Mac to enrol again.
     """
-    response.headers.append(SET_COOKIE, f"{COMPANION_COOKIE}=; Max-Age=0; Path={COMPANION_PREFIX}")
+    response.headers.append(SET_COOKIE, f"{COMPANION_COOKIE}=; Max-Age=0; Path={COMPANION_HOME}")
     return response
 
 
@@ -302,7 +312,11 @@ def welcome(device_id: DeviceId, secret: str) -> Response:
     held back in the two ways the page is actually opened, the notification's tap and the
     Shortcut, while ``Lax`` arrived every time (dec. C.1). No ``Secure``: the tailnet is the
     encryption (ADR 0037 §2), and Safari accepts ``Secure`` on ``http`` only for the loopback.
-    ``Path`` keeps it off the icons the browser asks for by itself, which P1 also measured.
+    ``Path`` keeps it off the icons the browser asks for by itself, which P1 also measured — and
+    it is written **without** the trailing slash, as dec. C.1 says: a cookie at ``/companion/``
+    would not be sent to ``/companion``, which is the address a person types, and the page would
+    ask them to enrol again. Without the slash it is sent to the prefix and to everything under
+    it, and to nothing else — ``/companionqualcosa`` is not a path match (RFC 6265 §5.1.4).
     """
     return Response(
         status_code=303,
@@ -310,7 +324,7 @@ def welcome(device_id: DeviceId, secret: str) -> Response:
             "Location": COMPANION_PREFIX,
             SET_COOKIE: (
                 f"{COMPANION_COOKIE}={device_id}{SEPARATOR}{secret}; HttpOnly; SameSite=Lax; "
-                f"Path={COMPANION_PREFIX}; Max-Age={COOKIE_MAX_AGE}"
+                f"Path={COMPANION_HOME}; Max-Age={COOKIE_MAX_AGE}"
             ),
         },
     )
@@ -344,12 +358,12 @@ def identity_middleware(ela: Ela) -> Callable[[Request, Call], Awaitable[Respons
             return await _from_the_form(request, call_next)
         header = request.headers.get(AUTHORIZATION_HEADER)
         credential = _credential(header)
-        if credential is None and request.url.path.startswith(COMPANION_PREFIX):
+        if credential is None and under_the_prefix(request.url.path):
             return await _from_the_cookie(ela, request, route, call_next)
         if credential is None:
             return count(request, Anonymous.MISSING)
         if authorized(header, token):
-            if route in COMPANION_ROUTES | COMPANION_CODE_ROUTES:
+            if _a_page_of_the_companion(route) or route in COMPANION_CODE_ROUTES:
                 return count(request, Anonymous.CORE_ON_A_COMPANION_ROUTE)
             if route in NODE_ROUTES | CODE_ROUTES:
                 return count(request, Anonymous.CORE_ON_A_NODE_ROUTE)
@@ -433,7 +447,7 @@ async def _from_the_cookie(
     if device.role is not DeviceRole.COMPANION:
         await ela.devices.reject(device_id, Rejection.ROUTE_NOT_ALLOWED)
         return forgotten(_page_401(request))
-    if route not in COMPANION_ROUTES:
+    if not _a_page_of_the_companion(route):
         await ela.devices.reject(device_id, Rejection.ROUTE_NOT_ALLOWED)
         return pages.page("missing", status=404)
     request.state.identity = Identity(
@@ -441,6 +455,26 @@ async def _from_the_cookie(
     )
     await ela.devices.contacted(device_id)
     return await call_next(request)
+
+
+def under_the_prefix(path: str) -> bool:
+    """Whether ``path`` is the companion's ground: everything under the prefix, and the prefix.
+
+    Read in two places — here, to decide that a cookie is the bearer, and in ``api/app.py``, to
+    decide that a failure is a **page** and not JSON — so that the address a person types behaves
+    like the pages it leads to (the review of 2026-09-20).
+    """
+    return path == COMPANION_HOME or path.startswith(COMPANION_PREFIX)
+
+
+def _a_page_of_the_companion(route: tuple[str, str]) -> bool:
+    """What a companion may be let through to: its pages, and the address a person types.
+
+    :data:`COMPANION_ROUTES` stays exactly the pairs the router serves — a test holds it to the
+    application — and the slash-less address is not one of them: it is let through so that the
+    router can answer it with the redirect it already knows how to make.
+    """
+    return route in COMPANION_ROUTES or route == ("GET", COMPANION_HOME)
 
 
 def _page_401(request: Request) -> Response:

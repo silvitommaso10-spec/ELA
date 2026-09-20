@@ -8,6 +8,7 @@ something the user did not agree to. The browser itself is not here (ADR 0038 §
 
 from __future__ import annotations
 
+import html
 import re
 import uuid
 from collections.abc import AsyncIterator
@@ -18,10 +19,20 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from ela.api.companion import IDLE, WAITING_APPROVAL, WORKING, _pairs, may_see, presence
+from ela.api.companion import (
+    IDLE,
+    SHOWN,
+    WAITING_APPROVAL,
+    WORKING,
+    _pairs,
+    may_see,
+    presence,
+    terms,
+)
 from ela.api.pages import CONTENT_SECURITY_POLICY, STYLESHEETS
 from ela.api.schemas import ApprovalOut
-from ela.api.security import COMPANION_COOKIE, COMPANION_ROUTES, Identity, Kind
+from ela.api.security import COMPANION_COOKIE, COMPANION_HOME, COMPANION_ROUTES, Identity, Kind
+from ela.composition import Ela
 from ela.devices import NodeEnrollment
 from ela.domain import (
     Approval,
@@ -34,6 +45,7 @@ from ela.domain import (
     TaskId,
     TaskState,
 )
+from ela.permissions import SINGLE_USE
 from ela.ports import EnrollmentExpiredError
 from tests.api.support import BASE, echo_plan, note_plan, queued
 
@@ -90,7 +102,8 @@ async def test_the_browser_enrols_and_leaves_with_a_cookie_that_says_lax(
     assert cookie.startswith(f"{COMPANION_COOKIE}=")
     assert "SameSite=Lax" in cookie and "Strict" not in cookie
     assert "HttpOnly" in cookie and "Secure" not in cookie
-    assert "Path=/companion" in cookie and "Max-Age=34560000" in cookie
+    assert "Path=/companion;" in cookie and "Max-Age=34560000" in cookie
+    assert "Path=/companion/" not in cookie, "a cookie at /companion/ never reaches /companion"
 
 
 async def test_the_row_of_a_companion_says_what_it_is_and_declares_nothing_else(
@@ -616,6 +629,31 @@ async def test_a_question_that_is_not_waiting_is_not_a_page(
 # ----------------------------------------------------------------------------------------
 
 
+async def test_a_list_that_cuts_says_how_much_it_is_showing(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    """A phone is not a dashboard, so the list stops at :data:`SHOWN` — and the title carries the
+    cut, because six rows under «I task» with nine alive is a page that lies quietly."""
+    for number in range(SHOWN + 2):
+        await queued(client, echo_plan(), text=f"task {number}", privacy="TRUSTED")
+
+    answered = await phone.get("/companion/")
+
+    assert f"I task · {SHOWN} di {SHOWN + 2}" in answered.text
+    assert answered.text.count('class="ela-row"') == SHOWN
+
+
+async def test_a_list_that_fits_says_nothing_about_a_cut(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    await queued(client, echo_plan(), privacy="TRUSTED")
+
+    answered = await phone.get("/companion/")
+
+    assert "I task</p>" in answered.text or ">I task<" in answered.text
+    assert " di " not in answered.text.split("ela-eyebrow")[-1][:60]
+
+
 async def test_the_home_page_offers_to_stop_a_live_task(
     phone: AsyncClient, client: AsyncClient
 ) -> None:
@@ -717,6 +755,77 @@ def test_a_question_asked_before_m12_5_shows_what_it_has() -> None:
     assert "Dove può andare" not in pairs
     assert "Durata" not in pairs
     assert "Scade" not in pairs
+
+
+@pytest.mark.parametrize(
+    ("uses", "seconds", "said"),
+    [
+        (1, 1800, "un uso, entro 30 minuti dal tuo sì"),
+        (1, 3600, "un uso, entro un'ora dal tuo sì"),
+        (1, 7200, "un uso, entro 2 ore dal tuo sì"),
+        (1, 5400, "un uso, entro un'ora e 30 minuti dal tuo sì"),
+        (3, 3600, "3 usi, entro un'ora dal tuo sì"),
+        (1, 45, "un uso, entro 45 secondi dal tuo sì"),
+    ],
+    ids=["half an hour", "an hour", "two hours", "an hour and a half", "three uses", "seconds"],
+)
+def test_the_terms_of_the_grant_are_derived_from_the_numbers(
+    uses: int, seconds: int, said: str
+) -> None:
+    """``ELA_AUTHORIZATION_TTL_SECONDS`` is the user's setting, so the phrase is derived and not
+    written: with the hours divided out, half an hour read «entro 0 ora» and two hours «2 ora».
+
+    The assertion is the sentence and not the presence of the row: this is the page where consent
+    is given, and what is approved has to name what it is.
+    """
+    assert terms(uses, seconds) == said
+
+
+async def test_the_page_of_a_question_says_the_terms_it_was_asked_with(
+    phone: AsyncClient, client: AsyncClient, ela: Ela
+) -> None:
+    """And the page shows exactly that sentence, for the TTL this ELA is configured with."""
+    _, approval_id = await waiting_question(client, privacy="TRUSTED")
+    said = terms(SINGLE_USE, int(ela.settings.core.authorization_ttl.total_seconds()))
+
+    answered = await phone.get(f"/companion/approval?id={approval_id}")
+
+    assert html.escape(said) in answered.text
+
+
+# ----------------------------------------------------------------------------------------
+# The address a person types
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_prefix_without_its_slash_is_the_companions_ground(browser: AsyncClient) -> None:
+    """The review of 2026-09-20: ``/companion`` is what a person types, and before this it fell
+    outside the prefix — so a browser with no cookie got JSON instead of the form."""
+    answered = await browser.get(COMPANION_HOME)
+
+    assert answered.status_code == 401
+    assert "<form" in answered.text
+    assert "set-cookie" not in answered.headers
+
+
+async def test_the_address_a_person_types_lands_on_the_page(phone: AsyncClient) -> None:
+    """With a credential that works it is let through to the router, which redirects it to the
+    page: the redirect is the router's job, and the middleware only decides who may be there."""
+    answered = await phone.get(COMPANION_HOME)
+
+    assert answered.status_code in {307, 308}
+    assert answered.headers["Location"].endswith("/companion/")
+    landed = await phone.get(COMPANION_HOME, follow_redirects=True)
+    assert landed.status_code == 200
+    assert IDLE in landed.text
+
+
+async def test_an_address_that_is_really_wrong_still_says_it_does_not_exist(
+    phone: AsyncClient,
+) -> None:
+    """The third case of rule 3 is untouched: what is let through is **that one** address."""
+    assert (await phone.get("/companionqualcosa")).status_code == 401
+    assert (await phone.get("/companion/qualcosa")).status_code == 404
 
 
 # ----------------------------------------------------------------------------------------

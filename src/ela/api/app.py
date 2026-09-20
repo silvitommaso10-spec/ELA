@@ -46,7 +46,7 @@ from ela.api.errors import (
     TaskAlreadyRunningError,
 )
 from ela.api.problems import problem
-from ela.api.security import COMPANION_PREFIX, identity_middleware
+from ela.api.security import identity_middleware, under_the_prefix
 from ela.audit.chain import AuditChainError
 from ela.composition import Ela
 from ela.devices import (
@@ -178,7 +178,7 @@ def _handler(failure: Failure) -> Callable[[Request, Exception], Awaitable[Respo
 
     async def handle(request: Request, failed: Exception) -> Response:
         said = failure.message if failure.message is not None else _message(failed)
-        if request.url.path.startswith(COMPANION_PREFIX):
+        if under_the_prefix(request.url.path):
             return pages.page("refused", status=failure.status, title=failure.code.value, text=said)
         return JSONResponse(status_code=failure.status, content=problem(failure.code, said))
 

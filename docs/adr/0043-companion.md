@@ -142,6 +142,17 @@ repository. Solo la libreria standard: niente Jinja2, `uv.lock` non si muove.
 stessa frase, composti dal compositore: in un browser il JSON crudo è un vicolo cieco. Un posto solo,
 così nessuna rotta deve ricordarsene.
 
+**Il terreno del companion è il prefisso, e anche l'indirizzo senza la barra.** `/companion` è ciò
+che una persona digita, e prima della review del 2026-09-20 cadeva fuori: chi lo scriveva senza
+cookie riceveva il `401` JSON invece del modulo, e chi ce l'aveva riceveva «non esiste». Due cose lo
+tengono insieme: il middleware considera `/companion` terreno del companion come tutto ciò che gli
+sta sotto, e **il `Path` del cookie si scrive senza la barra finale** — `Path=/companion`, come dice
+la dec. C.1 —, perché un cookie a `/companion/` a `/companion` non arriva (RFC 6265 §5.1.4), e senza
+la barra arriva al prefisso e a tutto ciò che gli sta sotto, e a nient'altro: `/companionqualcosa`
+non è una corrispondenza di percorso. L'indirizzo così com'è viene **lasciato passare al router**,
+che lo reindirizza alla pagina: il reindirizzamento è mestiere del router, non del middleware, e
+`COMPANION_ROUTES` resta esattamente le coppie che il router serve.
+
 **Il tema è quello scuro, sempre**, e la pagina di arruolamento è **senza stile**: i fogli stanno
 dietro il middleware come tutto il resto, e chi non è ancora nessuno non li carica. Servirli a
 chiunque sarebbe la prima rotta anonima di ELA.
@@ -316,6 +327,26 @@ presa con gli occhi aperti, non una svista che qualcuno troverà:
   altro nodo aspetta un `run` (dec. H).
 - **Il browser può smettere di aspettare un `run` lungo**: il `run` continua, e la pagina successiva
   mostra lo stato vero (dec. H).
+
+## 11. Quando una regola può entrare prima del codice che difende
+
+ADR 0030 §15 dice di scrivere la regola prima del codice; ADR 0017 §9 dice che un'esenzione senza
+nessuno dietro è una porta aperta prima che qualcuno bussi. In M12.5 le due cose si sono scontrate,
+e il criterio che ne esce vale per chiunque scriva la prossima regola:
+
+- **una regola senza esenzioni entra prima del codice che difende.** È silenziosa sull'albero di
+  oggi, e `tests/architecture/test_exemptions.py` non ha niente da chiederle. Così è entrata la
+  regola 55, un commit prima di `api/companion.py`;
+- **una regola con un'esenzione entra nel commit che crea la sua casa.** `test_exemptions` esige
+  che dietro ogni porta ci sia qualcuno sull'albero vero, e una regola scritta prima avrebbe
+  un'esenzione verso un file che non esiste — cioè un permesso concesso a nessuno, che il prossimo
+  legge come già dato. Così sono entrate la 56 (il chiamante nell'executor) e la 57 (il
+  compositore), insieme al modulo che le esenta e **prima** del codice che vincolano.
+
+La scelta non è fra rigore e comodità: è fra due rigori, e vince quello che non lascia una porta
+aperta. Chi si trovasse nel mezzo — una regola con un'esenzione e nessun modo di crearla nello
+stesso commit — ha una terza strada, il campo `proof` di `CONSTANTS`, che fa provare la porta da un
+caso sintetico e obbliga a scrivere accanto perché l'albero non basta.
 
 ## Conseguenze
 
