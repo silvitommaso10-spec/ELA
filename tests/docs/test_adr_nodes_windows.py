@@ -14,7 +14,7 @@ import re
 import tomllib
 from pathlib import Path
 
-from ela.api.security import NODE_ROUTES
+from ela.api.security import COMPANION_CODE_ROUTES, COMPANION_ROUTES, NODE_ROUTES
 from ela.composition import build_node
 from ela.composition.node import ACL_SINCE, PermissionMode, online_player
 from ela.infrastructure.machine import AFPLAY, OnlineSpeechCommand
@@ -216,16 +216,17 @@ def test_the_conseguenze_count_what_the_tree_has_today() -> None:
     """Taken over from ADR 0039 by the ADR that moved the rules; the rest did not move, and is
     pinned here because this was the newest ADR that states them.
 
-    **Rules up to 54 and not ``len(RULES)``** since M12.5 wrote rule 55: an ADR is immutable, so
-    this one keeps saying the total it saw, the way ADR 0039 does for fifty-three
-    (``test_adr_nodes_macos.py``). The pin on *today's* total moves to the ADR that changes it.
+    **Rules up to 54 and not ``len(RULES)``** since M12.5 wrote rule 55, and the routes **without
+    the companion's** since ADR 0043 §5 added six: an ADR is immutable, so this one keeps saying
+    the totals it saw, the way ADR 0039 does for fifty-three (``test_adr_nodes_macos.py``). The
+    pin on *today's* totals moves to the ADR that changes them.
     """
     text = conseguenze()
 
     assert "**cinquantaquattro**" in text
     assert len(_rules_up_to(54)) == 54
     assert "**restano ventinove**" in text
-    assert len(coded_routes()) == 29
+    assert len(coded_routes() - COMPANION_ROUTES - COMPANION_CODE_ROUTES) == 29
     assert "quelle che un nodo può chiamare **sei**" in text
     assert len(NODE_ROUTES) == 6
     assert "**ventisei**" in text

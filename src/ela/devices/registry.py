@@ -312,6 +312,19 @@ class DeviceRegistry:
         )
         return self.seen(observed, now)
 
+    async def contacted(self, device_id: DeviceId) -> None:
+        """Record that an identity spoke to ELA, without claiming it can work (M12.5 dec. B).
+
+        For a node, speaking is a heartbeat; for a companion it is a page. Both write
+        ``last_seen_at`` and neither is audited (ADR 0016 §6: a sign of life is not an act) — but
+        what is written in ``availability`` here is ``UNAVAILABLE``, because the column holds the
+        last state *observed* and what was observed is an identity that sends no heartbeat. Every
+        reader gets the same answer from :meth:`seen` anyway: two facts, two names.
+
+        :raises NotFoundError: if the identity is not registered.
+        """
+        await self._devices.observe(device_id, seen_at=self._clock.now(), availability=UNAVAILABLE)
+
     async def secret_hash(self, device_id: DeviceId) -> str | None:
         """The hash a node proves itself against, ``None`` for ``local`` (ADR 0037 §6).
 

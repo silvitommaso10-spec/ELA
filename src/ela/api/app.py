@@ -29,9 +29,11 @@ from fastapi.responses import JSONResponse
 from ela.api import (
     approvals,
     audit,
+    companion,
     context,
     devices,
     nodes,
+    pages,
     perception,
     results,
     system,
@@ -44,7 +46,7 @@ from ela.api.errors import (
     TaskAlreadyRunningError,
 )
 from ela.api.problems import problem
-from ela.api.security import identity_middleware
+from ela.api.security import COMPANION_PREFIX, identity_middleware
 from ela.audit.chain import AuditChainError
 from ela.composition import Ela
 from ela.devices import (
@@ -166,8 +168,18 @@ def _message(failed: Exception) -> str:
 
 
 def _handler(failure: Failure) -> Callable[[Request, Exception], Awaitable[Response]]:
+    """The one answer a failure becomes — JSON, or **a page** under the companion's prefix.
+
+    Dec. D: the handlers answer JSON, and in a browser raw JSON is what the user would see. Under
+    ``/companion/`` the same failure, with the same status and the same sentence, is composed by
+    the same composer that puts the ``Content-Security-Policy`` on every other page — so an error
+    is a page of ELA and not a hole in it. One place, so no route has to remember.
+    """
+
     async def handle(request: Request, failed: Exception) -> Response:
         said = failure.message if failure.message is not None else _message(failed)
+        if request.url.path.startswith(COMPANION_PREFIX):
+            return pages.page("refused", status=failure.status, title=failure.code.value, text=said)
         return JSONResponse(status_code=failure.status, content=problem(failure.code, said))
 
     return handle
@@ -232,6 +244,7 @@ def create_app(ela: Ela) -> FastAPI:
         docs_url=None,
         redoc_url=None,
     )
+    pages.ensure_readable()
     app.state.ela = ela
     app.state.running = set()
     app.state.recovery = RecoverySummary((), (), ())
@@ -250,6 +263,7 @@ def create_app(ela: Ela) -> FastAPI:
         tasks.router,
         approvals.router,
         audit.router,
+        companion.router,
         devices.router,
         nodes.router,
         context.router,

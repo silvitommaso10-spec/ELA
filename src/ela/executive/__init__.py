@@ -36,6 +36,7 @@ from ela.executive.errors import (
 )
 from ela.executive.executor import (
     APPROVAL_NAMESPACE,
+    ASKED,
     AUTHORIZATION_NAMESPACE,
     CONSUMING_RULES,
     DEFAULT_APPROVAL_TTL,
@@ -65,6 +66,7 @@ from ela.executive.runner import OUTCOMES, RUNNABLE_STATES, Run, RunOutcome, Tas
 
 __all__ = [
     "APPROVAL_NAMESPACE",
+    "ASKED",
     "AUTHORIZATION_NAMESPACE",
     "CONSUMING_RULES",
     "DEFAULT_APPROVAL_TTL",

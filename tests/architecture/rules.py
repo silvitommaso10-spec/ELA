@@ -511,6 +511,14 @@ COMPANION_COOKIE = "ela_companion"
 #: a page shows has to exist in a route first — which is why ``ApprovalOut`` grew (dec. F).
 PAGES_MODULE = Path("api") / "companion.py"
 COMPOSED_WORLD = "ela"
+#: Rule 57 (M12.5 dec. D; ADR 0043 §5): every page of ``ela.api`` — the answers, the ``401`` that
+#: is the enrolment form, the ``404`` «non esiste», the errors under the prefix — is composed by
+#: :data:`HTML_COMPOSER`, which is where the ``Content-Security-Policy`` is put on it. A response
+#: built beside it would be a page without the header that makes «niente JavaScript» true in the
+#: browser and not only in the templates.
+HTML_COMPOSER = Path("api") / "pages.py"
+HTML_RESPONSE = "HTMLResponse"
+HTML_MEDIA_TYPE = "text/html"
 #: Rule 48 (M12.2, ADR 0038): the port of the assignments returns the row *as written* — ``OFFERED``
 #: even when it has expired — and whoever decides goes through the service, which derives the
 #: expiry and writes the task's heartbeat before every expiry it sets (dec. G). The mirror of rule
@@ -2655,6 +2663,47 @@ def _names_an_identity(value: str) -> str | None:
     return COMPANION_COOKIE if value == COMPANION_COOKIE else None
 
 
+def check_one_composer_for_a_page(pkg_root: Path) -> list[Violation]:
+    """Rule 57: every HTML answer of ``ela.api`` is composed in one module (M12.5 dec. D).
+
+    «Niente JavaScript» is defended twice, and deliberately not by the same defence twice: the
+    templates carry no script, and a ``Content-Security-Policy`` forbids one anyway — so a value
+    that one day escaped the escaping would be refused by the browser instead of run by it. The
+    second half is only as true as the number of places that build a page, and this rule is that
+    number: one.
+
+    Reported, in every module under ``api/`` but the composer: the name :data:`HTML_RESPONSE`,
+    however it is written — an import, a call, an attribute — and the string
+    :data:`HTML_MEDIA_TYPE`, which is the other way to say the same thing.
+    """
+    rule = "one-composer-for-a-page"
+    found: list[Violation] = []
+    for path in sorted((pkg_root / API_DIR).rglob("*.py")):
+        if path == pkg_root / HTML_COMPOSER:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if _names_the_html_response(node):
+                found.append(Violation(rule, name, HTML_RESPONSE, getattr(node, "lineno", 0)))
+            elif (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and HTML_MEDIA_TYPE in node.value
+            ):
+                found.append(Violation(rule, name, HTML_MEDIA_TYPE, node.lineno))
+    return found
+
+
+def _names_the_html_response(node: ast.AST) -> bool:
+    """``HTMLResponse``, however it is written: imported, called, or reached as an attribute."""
+    if isinstance(node, ast.alias):
+        return node.name == HTML_RESPONSE
+    if isinstance(node, ast.Name):
+        return node.id == HTML_RESPONSE
+    return isinstance(node, ast.Attribute) and node.attr == HTML_RESPONSE
+
+
 def check_pages_read_the_routes(pkg_root: Path) -> list[Violation]:
     """Rule 55: the companion's pages call the routes and reach nothing through ``Ela`` (M12.5).
 
@@ -2979,6 +3028,7 @@ RULES: dict[str, Rule] = {
     "a-node-mints-no-deadline": check_a_node_mints_no_deadline,
     "a-node-does-not-ask-which-machine-it-is": check_a_node_does_not_ask_which_machine_it_is,
     "pages-read-the-routes": check_pages_read_the_routes,
+    "one-composer-for-a-page": check_one_composer_for_a_page,
 }
 
 
@@ -3368,6 +3418,18 @@ CONSTANTS: tuple[Constant, ...] = (
         "permissions-imports", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
     ),
     Constant("permissions-imports", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0010"),
+    # one-composer-for-a-page (rule 57, M12.5 dec. D)
+    Constant("one-composer-for-a-page", "API_DIR", DETECTOR),
+    Constant("one-composer-for-a-page", "HTML_COMPOSER", EXEMPTION, by=WHOLE, adr="ADR 0043 §5"),
+    Constant("one-composer-for-a-page", "HTML_MEDIA_TYPE", DETECTOR),
+    Constant("one-composer-for-a-page", "HTML_RESPONSE", DETECTOR),
+    Constant(
+        "one-composer-for-a-page",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # pages-read-the-routes (rule 55, M12.5 dec. D)
     Constant("pages-read-the-routes", "COMPOSED_WORLD", DETECTOR),
     Constant("pages-read-the-routes", "PAGES_MODULE", DETECTOR),

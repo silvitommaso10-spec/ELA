@@ -43,6 +43,7 @@ from ela.api.schemas import (
 )
 from ela.api.security import Anonymous, count, unauthorized
 from ela.composition import Ela
+from ela.devices import EnrolledNode
 from ela.domain import Assignment, AssignmentId, Device, DeviceId, DeviceRole, TaskId
 from ela.executive import Claimed
 from ela.ports import (
@@ -53,7 +54,7 @@ from ela.ports import (
     NotFoundError,
 )
 
-__all__ = ["WORK_REREAD_INTERVAL", "router", "work_order"]
+__all__ = ["WORK_REREAD_INTERVAL", "enrolled", "router", "work_order"]
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
 
@@ -102,18 +103,30 @@ async def enroll(
     """
     assert identity.code is not None  # the middleware lets only a code through here
     try:
-        enrolled = await ela.enrollment.enroll(
-            identity.code, role=DeviceRole.WORKER, **body.declared()
-        )
+        born = await enrolled(ela, code=identity.code, role=DeviceRole.WORKER, declared=body)
     except NotFoundError:
         return count(request, Anonymous.UNKNOWN_CODE)
     except EnrollmentExpiredError:
         return count(request, Anonymous.EXPIRED_CODE)
     except EnrollmentConsumedError:
         return unauthorized()
-    return EnrolledOut(
-        device_id=enrolled.device.id, secret=enrolled.secret, revision=enrolled.device.revision
-    )
+    return EnrolledOut(device_id=born.device.id, secret=born.secret, revision=born.device.revision)
+
+
+async def enrolled(
+    ela: Ela, *, code: str, role: DeviceRole, declared: DeclarationIn
+) -> EnrolledNode:
+    """Spend ``code`` for an identity of ``role``, with the half it declares of itself.
+
+    The one place a code becomes an identity, for both enrolment routes: the nodes' and the
+    companion's (M12.5 dec. C.5). What differs between them is the role they ask for and the shape
+    of the answer — a body for a node, a ``Set-Cookie`` for a browser — and not what it means to
+    spend a code, which is why the companion's page calls this and does not repeat it.
+
+    Raises what :meth:`~ela.devices.NodeEnrollment.enroll` raises; each caller says what its own
+    reader gets to see.
+    """
+    return await ela.enrollment.enroll(code, role=role, **declared.declared())
 
 
 @router.post("/heartbeat")

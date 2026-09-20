@@ -63,7 +63,7 @@ from ela.domain import (
     TaskState,
     TaskStep,
 )
-from ela.executive import REPORTABLE, Delivery, Envelope, check_envelope
+from ela.executive import ASKED, REPORTABLE, Delivery, Envelope, check_envelope
 from ela.tasks.graph import GraphState
 
 __all__ = [
@@ -307,8 +307,43 @@ class RunOut(BaseModel):
     """
 
 
+class Asked(BaseModel):
+    """The facts of a question, as the executor wrote them beside it (M12.5 dec. F; ``ASKED``).
+
+    Read from ``Approval.metadata`` and **never recomposed**: the risk is the catalogue's at the
+    moment of asking, the ceiling is the task's, the terms are the ones a "yes" will mint. Every
+    field has a default because a question asked before M12.5 has no bag, and a page shows what
+    it has rather than refusing to open.
+
+    ``extra="ignore"``: whoever writes the bag may keep something of their own there, and a key
+    this shape does not know is not a reason to fail a page. That the two lists **do** match is a
+    test of its own (``tests/api/test_approvals.py``).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    description: str = ""
+    """What the capability does, in the catalogue's words."""
+    risk: RiskLevel | None = None
+    """The risk of the catalogue — the one the Guardian used, not the one a plan declares."""
+    max_privacy: PrivacyLevel | None = None
+    """How far this task's content may travel: a level, never a node (ADR 0038 §16)."""
+    goal: str = ""
+    """The goal of the step that asked."""
+    stated: tuple[str, ...] = ()
+    """The declared arguments, as pairs — the same ones the phrase already carries."""
+    grant_uses: int | None = None
+    grant_seconds: int | None = None
+    """The terms of the grant a "yes" mints: how many uses, and for how long."""
+
+
 class ApprovalOut(BaseModel):
-    """A request for the user's consent (§30). ``prompt`` is what the user is asked."""
+    """A request for the user's consent (§30). ``prompt`` is what the user is asked.
+
+    Since M12.5 it also carries the **parts** of that question (dec. F): the phrase is one
+    sentence, and a page has to show what it is made of. One route, two surfaces, nothing
+    recomposed on either.
+    """
 
     id: UUID
     created_at: datetime
@@ -321,9 +356,17 @@ class ApprovalOut(BaseModel):
     expires_at: datetime | None
     responded_at: datetime | None
     responded_by: str | None
+    description: str
+    risk: RiskLevel | None
+    max_privacy: PrivacyLevel | None
+    goal: str
+    stated: tuple[str, ...]
+    grant_uses: int | None
+    grant_seconds: int | None
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:
+        asked = Asked.model_validate(approval.metadata.get(ASKED) or {})
         return cls(
             id=approval.id,
             created_at=approval.created_at,
@@ -336,6 +379,7 @@ class ApprovalOut(BaseModel):
             expires_at=approval.expires_at,
             responded_at=approval.responded_at,
             responded_by=approval.responded_by,
+            **asked.model_dump(),
         )
 
 

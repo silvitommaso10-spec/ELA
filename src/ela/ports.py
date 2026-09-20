@@ -83,6 +83,7 @@ __all__ = [
     "ApprovalAlreadyAnsweredError",
     "ApprovalExpiredError",
     "ApprovalNotAnswerableError",
+    "ApprovalOutOfReachError",
     "ApprovalStore",
     "AssignmentExpiredError",
     "AssignmentHeldElsewhereError",
@@ -410,6 +411,19 @@ class ApprovalExpiredError(ApprovalNotAnswerableError):
     def __init__(self, approval_id: ApprovalId, expires_at: datetime) -> None:
         self.expires_at = expires_at
         super().__init__(approval_id, f"it expired at {expires_at.isoformat()}")
+
+
+class ApprovalOutOfReachError(ApprovalNotAnswerableError):
+    """The identity answering may not be shown what it would be approving (M12.5 dec. F.2).
+
+    The third way a request that exists cannot be answered *now*, beside "already answered" and
+    "too late": the content of the task is above what the user allowed this identity to receive,
+    so the page did not show it — and one does not approve what one cannot see (§30). The answer
+    is not refused to the **user**, who has it at the Mac: it is refused to this bearer.
+    """
+
+    def __init__(self, approval_id: ApprovalId) -> None:
+        super().__init__(approval_id, "its content stays on the Mac: answer it from there")
 
 
 class IdentityConflictError(PortError):

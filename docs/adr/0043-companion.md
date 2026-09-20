@@ -108,6 +108,63 @@ delle rotte e non nomina mai un port, uno store, il catalogo o l'executor **attr
 forma della regola 28 della CLI, all'altro capo dello stesso confine, e **senza porte**: ciò che una
 pagina mostra deve già stare in una rotta, e se non ci sta è la rotta che cresce (dec. F).
 
+## 5. Le pagine: chi le compone, e che cosa risponde ELA sotto il prefisso
+
+Sei rotte, e nessuna porta un id nel percorso — nella query o nel corpo, per la ragione di ADR 0038
+§11: insegnare un template al middleware sarebbe «una difesa che sembra attiva».
+
+| Metodo | Percorso | Che cosa |
+|---|---|---|
+| `GET` | `/companion/` | la presenza, le domande che aspettano, i task vivi; `?task=<id>` mostra l'esito di ciò a cui si è appena risposto |
+| `GET` | `/companion/approval` | una domanda, con le parti che dec. F elenca; `?id=<id>` |
+| `POST` | `/companion/answer` | il sì o il no, e dopo un sì il `run` (§6) |
+| `POST` | `/companion/enroll` | il modulo con il codice: `303` e il `Set-Cookie`, o la stessa pagina con la frase che dice che fare |
+| `GET` | `/companion/tokens.css` | i token del design system, da `apps/` |
+| `GET` | `/companion/components.css` | i componenti del design system, da `apps/` |
+
+**Un compositore solo.** Ogni risposta HTML di `ela.api` — le pagine, il `401` che è il modulo di
+arruolamento, il `404` «non esiste», gli errori sotto il prefisso — si compone in `api/pages.py`, ed
+è lì che nasce la `Content-Security-Policy`: `default-src 'none'; style-src 'self'; form-action
+'self'; frame-ancestors 'none'; base-uri 'none'`. La **regola 57** lo tiene: nessun altro modulo di
+`ela.api` costruisce una risposta HTML. «Niente JavaScript» è difeso due volte e le due difese non
+sono la stessa — i modelli non contengono script (un test in `tests/ios/`), e la politica lo vieta
+comunque, così un valore che un giorno sfuggisse all'escape verrebbe rifiutato dal browser invece
+che eseguito.
+
+**L'escape è per costruzione.** Un valore che entra in una pagina passa da `html.escape`; non esiste
+un argomento che lo disattivi. Ciò che entra crudo è di tipo `Markup`, e `Markup` lo produce solo il
+compositore: un modello di `apps/ios/` o un frammento del design system, cioè file di questo
+repository. Solo la libreria standard: niente Jinja2, `uv.lock` non si muove.
+
+**Gli errori sotto il prefisso sono pagine.** La stessa tabella di ADR 0023 §10, lo stesso stato e la
+stessa frase, composti dal compositore: in un browser il JSON crudo è un vicolo cieco. Un posto solo,
+così nessuna rotta deve ricordarsene.
+
+**Il tema è quello scuro, sempre**, e la pagina di arruolamento è **senza stile**: i fogli stanno
+dietro il middleware come tutto il resto, e chi non è ancora nessuno non li carica. Servirli a
+chiunque sarebbe la prima rotta anonima di ELA.
+
+## 6. Il «sì» risponde e fa ripartire il task
+
+Dal Mac l'utente fa due cose, `ela task approve` e `ela task run`. La pagina fa le stesse due, ognuna
+dalla sua funzione, nella stessa richiesta (dec. H1): un «sì» che resta lì fino al ritorno a casa non
+rende ELA usabile lontano dal Mac. Un «no» non esegue niente — il task è `DENIED`.
+
+Non apre una rotta nuova a chi ruba il telefono: esegue solo ciò che l'utente ha già creato e a cui
+ha appena detto sì, e ogni step `MEDIUM` successivo chiede di nuovo, perché un grant è un uso solo.
+
+**Il browser può smettere di aspettare** prima che un `run` lungo finisca — la pagina si chiude, il
+telefono si blocca, la tailnet cade. Il `run` continua sul Mac, come continua quando si interrompe
+`ela task run` al terminale, e la pagina successiva mostra lo stato vero del task letto dalle rotte.
+Dichiarato.
+
+**Il tetto decide che cosa si vede** (dec. F2-a): il confronto del filtro F2 dell'orchestratore, con
+la `privacy` che l'`Identity` porta e il `max_privacy` della domanda. Per un task che il tetto non
+ammette la pagina non porta lo scopo, i `targets`, la frase né gli argomenti dichiarati: mostra
+l'id, lo stato, la capability, il rischio e le ore, e dice che il contenuto resta sul Mac. Il «sì» da
+lì è rifiutato con `ApprovalOutOfReachError`, che è `409` `not_answerable` come le altre due
+impossibilità — già risposta, troppo tardi — perché non si approva ciò che non si vede (§30).
+
 ## Conseguenze
 
 - Una colonna imposta in più su `devices` e una su `enrollments`; la regola 44 si estende a `role`,

@@ -38,7 +38,7 @@ PERCEPTION_ADR_PATH = ADR_DIR / "0028-perception-core.md"
 CONTEXT_ADR_PATH = ADR_DIR / "0032-context-core.md"
 VOICE_ADR_PATH = ADR_DIR / "0034-voice-online.md"
 SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| `([^`]+)` \| (?:`([^`]+)`|\*\(([^)]+)\)\*) \|")
-ROUTE_ROW = re.compile(r"^\| `(GET|POST)` \| `(/[\w{}/]*)` \| ([^|]+) \|$")
+ROUTE_ROW = re.compile(r"^\| `(GET|POST)` \| `(/[\w.{}/-]*)` \| ([^|]+) \|$")
 NODE_ROUTE_ROW = re.compile(r"^\| `(GET|POST|PUT)` \| `(/[\w{}/]*)` \| ([^|]+) \| ([^|]+) \|$")
 """ADR 0037 §4: the five routes of the nodes, with the identity that may call each."""
 ERROR_ROW = re.compile(r"^\| ([^|]+) \| (?:`(\w+)`|\*\(([^)]+)\)\*) \| `(\d{3})` \|$")
@@ -211,9 +211,25 @@ def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
             | documented_routes(perception_adr_text())
             | documented_routes(context_adr_text())
             | documented_routes(voice_adr_text())
+            | documented_routes(companion_adr_text())
         )
     )
     assert documented == coded_routes()
+
+
+def test_the_pages_of_m12_5_are_the_routes_adr_0043_documents() -> None:
+    """Six, and the two sheets among them: what ``ela.api`` serves of ``apps/`` is a route like
+    the others, behind the identity like the others (M12.5 dec. D)."""
+    added = documented_routes(companion_adr_text())
+
+    assert added == {
+        ("GET", "/companion/"),
+        ("GET", "/companion/approval"),
+        ("POST", "/companion/answer"),
+        ("POST", "/companion/enroll"),
+        ("GET", "/companion/tokens.css"),
+        ("GET", "/companion/components.css"),
+    }
 
 
 def test_the_route_of_m8_3_is_the_one_adr_0025_adds() -> None:
@@ -232,12 +248,13 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_twenty_nine_of_them() -> None:
+def test_there_are_thirty_five_of_them() -> None:
     """Twenty until ADR 0037 §4 added five, twenty-five until ADR 0038 §11 added the three of the
-    work, and twenty-eight until ADR 0039 §2 added the one a node that restarted reads itself
-    with; ``tests/api/test_security.py`` proves that every one of them is behind the middleware,
+    work, twenty-eight until ADR 0039 §2 added the one a node that restarted reads itself with,
+    and twenty-nine until ADR 0043 §5 added the six pages of the companion;
+    ``tests/api/test_security.py`` proves that every one of them is behind the middleware,
     and which identity reaches which."""
-    assert len(coded_routes()) == 29
+    assert len(coded_routes()) == 35
 
 
 def test_the_one_route_of_the_restart_is_the_one_adr_0039_adds() -> None:

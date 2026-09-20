@@ -30,6 +30,8 @@ from httpx import ASGITransport, AsyncClient
 
 from ela.api.security import (
     CODE_ROUTES,
+    COMPANION_CODE_ROUTES,
+    COMPANION_PREFIX,
     NODE_ROUTES,
     Anonymous,
     Call,
@@ -56,20 +58,22 @@ from tests.composition.support import TOKEN
 OTHER = "y" * 40
 
 
-def test_the_application_serves_the_twenty_nine_routes_of_the_adrs_and_its_schema(
+def test_the_application_serves_the_thirty_five_routes_of_the_adrs_and_its_schema(
     app: FastAPI,
 ) -> None:
     """Twelve routes (ADR 0023 §6), the two of ADR 0024 §5, the one of ADR 0025 §4, the one of
     ADR 0028 §8, the one of ADR 0032 §13, the three of ADR 0034 §9, the five of ADR 0037 §4,
-    the three of ADR 0038 §11 and the one of ADR 0039 §2,
+    the three of ADR 0038 §11, the one of ADR 0039 §2 and the six of ADR 0043 §5,
     plus ``/openapi.json``,
-    which the loop below proves is behind the token like everything else — the HTML pages are
-    off, a browser cannot send a header."""
+    which the loop below proves is behind the token like everything else — the schema of the API
+    is not a page, and the pages of the companion are not in it: a browser cannot send a header,
+    and what reaches them is a cookie."""
     paths = served_paths(app)
 
     assert ("GET", "/openapi.json") in paths
     assert ("GET", "/tasks/{task_id}/results") in paths
-    assert len(paths) == 30
+    assert ("GET", "/companion/") in paths
+    assert len(paths) == 36
     assert not {path for _, path in paths} & {"/docs", "/redoc"}
 
 
@@ -85,12 +89,26 @@ def test_the_application_mounts_every_router_of_its_package_and_nothing_else(
 
 
 async def test_no_route_answers_without_the_token(app: FastAPI, anonymous: AsyncClient) -> None:
-    """A route added without a thought is still protected: the guard is not per route."""
+    """A route added without a thought is still protected: the guard is not per route.
+
+    Since M12.5 the refusal has two bodies and the same meaning (dec. C.3): JSON everywhere, and
+    under ``/companion/`` the enrolment page — because what knocks there is a browser, and raw
+    JSON in a browser is a dead end. The ``POST`` of the enrolment is the one route where a body
+    is looked at before anything else (rule 1), and with no ``Origin`` it is refused as a form
+    that did not come from ELA.
+    """
     for method, path in served_paths(app):
         response = await anonymous.request(method, path.replace("{task_id}", str(TOKEN)))
 
-        assert response.status_code == 401, f"{method} {path}"
-        assert response.json()["error"]["code"] == "unauthorized"
+        if not path.startswith(COMPANION_PREFIX):
+            assert response.status_code == 401, f"{method} {path}"
+            assert response.json()["error"]["code"] == "unauthorized"
+        elif method == "POST":
+            assert response.status_code == 403, f"{method} {path}"
+            assert "ELA" in response.text
+        else:
+            assert response.status_code == 401, f"{method} {path}"
+            assert "<form" in response.text and "code" in response.text
 
 
 async def test_the_refusal_says_how_to_authenticate(anonymous: AsyncClient) -> None:
@@ -182,6 +200,12 @@ async def test_a_node_reaches_its_six_routes_and_gets_the_same_401_everywhere_el
         if (method, path) in NODE_ROUTES:
             continue
         response = await client.request(method, concrete(path), headers=node)
+        if (method, path) in COMPANION_CODE_ROUTES:
+            # Rule 1 of M12.5 dec. C.3: on the enrolment of the companion no header is looked at
+            # at all, so what refuses this request is the form's own check and not the identity's.
+            # A node does not enrol here either way: what opens this route is a companion's code.
+            assert response.status_code == 403, f"{method} {path}"
+            continue
         assert response.status_code == 401, f"{method} {path}"
         assert response.json() == nothing, f"{method} {path}"
     assert (await client.post("/nodes/heartbeat", json={}, headers=node)).status_code == 200
@@ -283,8 +307,24 @@ async def _the_core_on_a_node_route(client: AsyncClient, anonymous: AsyncClient,
     return await client.post("/nodes/heartbeat", json={})
 
 
+async def _the_core_on_a_companion_route(
+    client: AsyncClient, anonymous: AsyncClient, _: Any
+) -> object:
+    """The Core's token on a page: the Core is not a browser, and the reason says so (dec. C.3)."""
+    return await client.get("/companion/")
+
+
+async def _a_form_from_somewhere_else(
+    client: AsyncClient, anonymous: AsyncClient, _: Any
+) -> object:
+    """A ``POST`` under the prefix with no ``Origin``: ``Lax`` and this check, one each (C.1)."""
+    return await anonymous.post("/companion/enroll", data={"code": "x" * 43})
+
+
 PRODUCED_BY: dict[Anonymous, Producer] = {
     Anonymous.MISSING: _nothing_presented,
+    Anonymous.CORE_ON_A_COMPANION_ROUTE: _the_core_on_a_companion_route,
+    Anonymous.NOT_FROM_ELA: _a_form_from_somewhere_else,
     Anonymous.UNKNOWN_CREDENTIAL: _a_credential_nobody_knows,
     Anonymous.UNKNOWN_NODE: _a_node_nobody_enrolled,
     Anonymous.UNKNOWN_CODE: _a_code_nobody_issued,
@@ -295,8 +335,16 @@ PRODUCED_BY: dict[Anonymous, Producer] = {
 produce does not enter."""
 
 
+REFUSED_WITH: dict[Anonymous, int] = {reason: 401 for reason in Anonymous}
+REFUSED_WITH[Anonymous.NOT_FROM_ELA] = 403
+"""Every anonymous refusal is a ``401``, and one is not: a form that did not come from ELA is
+**authenticated or not** a separate question — nothing is being told about who is known (ADR 0023
+§7), only that this request did not start on a page of ELA (M12.5 dec. C.1)."""
+
+
 def test_every_anonymous_reason_has_a_request_that_produces_it() -> None:
     assert set(PRODUCED_BY) == set(Anonymous)
+    assert set(REFUSED_WITH) == set(Anonymous)
 
 
 @pytest.mark.parametrize("reason", list(Anonymous), ids=[reason.value for reason in Anonymous])
@@ -308,7 +356,7 @@ async def test_each_anonymous_reason_is_counted_by_its_request_and_by_nothing_el
 ) -> None:
     response = await PRODUCED_BY[reason](client, anonymous, monkeypatch)
 
-    assert getattr(response, "status_code", None) == 401
+    assert getattr(response, "status_code", None) == REFUSED_WITH[reason]
     assert (await client.get("/diagnostics")).json()["refused"] == {reason.value: 1}
 
 

@@ -1437,6 +1437,24 @@ VIOLATIONS: tuple[Case, ...] = (
         "def welcome(response):\n    return response.set_cookie('ela_companion', '')\n",
         "ela_companion",
     ),
+    # --- one-composer-for-a-page (rule 57, M12.5 dec. D) ---
+    Case(
+        # The shortest way to answer a browser from a route — and a page with no
+        # Content-Security-Policy, which is half of «niente JavaScript».
+        "a-route-composes-its-own-page",
+        "one-composer-for-a-page",
+        "api/companion.py",
+        "from fastapi.responses import HTMLResponse\n\nasync def home():\n    return None\n",
+        "HTMLResponse",
+    ),
+    Case(
+        # And the other way to say it, for whoever reaches for the plain Response.
+        "a-route-answers-with-the-media-type",
+        "one-composer-for-a-page",
+        "api/companion.py",
+        "async def home():\n    return Response('<b>ELA</b>', media_type='text/html')\n",
+        "text/html",
+    ),
     # --- pages-read-the-routes (rule 55, M12.5 dec. D) ---
     Case(
         # The shortest way to put a number on a page — and the moment the page stops being a
