@@ -98,6 +98,16 @@ Errori aggiunti, nella forma della tabella di ADR 0023 §10:
 |---|---|---|
 | un codice coniato per l'altro ruolo, sulla rotta di questo | `EnrollmentRoleError` | `422` |
 
+## 4. Le pagine leggono le rotte
+
+`ela.api` serve le pagine da sé (dec. D1): lo stesso processo, lo stesso middleware, le stesse
+funzioni delle rotte JSON, e il browser è il client. «Client dell'API come la CLI» regge solo se una
+pagina è **un'altra rappresentazione delle stesse rotte**, e una regola lo rende vero invece che
+promesso — la **regola 55**, *le pagine leggono le rotte*: `api/companion.py` chiama le funzioni
+delle rotte e non nomina mai un port, uno store, il catalogo o l'executor **attraverso** `Ela`. È la
+forma della regola 28 della CLI, all'altro capo dello stesso confine, e **senza porte**: ciò che una
+pagina mostra deve già stare in una rotta, e se non ci sta è la rotta che cresce (dec. F).
+
 ## Conseguenze
 
 - Una colonna imposta in più su `devices` e una su `enrollments`; la regola 44 si estende a `role`,

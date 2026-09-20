@@ -214,11 +214,16 @@ def test_the_adr_was_accepted_only_after_the_proof_by_hand(shown: str = "2026-09
 
 def test_the_conseguenze_count_what_the_tree_has_today() -> None:
     """Taken over from ADR 0039 by the ADR that moved the rules; the rest did not move, and is
-    pinned here because this is now the newest ADR that states them."""
+    pinned here because this was the newest ADR that states them.
+
+    **Rules up to 54 and not ``len(RULES)``** since M12.5 wrote rule 55: an ADR is immutable, so
+    this one keeps saying the total it saw, the way ADR 0039 does for fifty-three
+    (``test_adr_nodes_macos.py``). The pin on *today's* total moves to the ADR that changes it.
+    """
     text = conseguenze()
 
     assert "**cinquantaquattro**" in text
-    assert len(RULES) == 54
+    assert len(_rules_up_to(54)) == 54
     assert "**restano ventinove**" in text
     assert len(coded_routes()) == 29
     assert "quelle che un nodo può chiamare **sei**" in text

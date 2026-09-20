@@ -502,6 +502,15 @@ AUTHORIZATION_HEADER = "authorization"
 #: who is calling is decided, and the one that forgets the revocation. The name is a detector: the
 #: middleware is the only module of ``ela.api`` allowed to write it.
 COMPANION_COOKIE = "ela_companion"
+#: Rule 55 (M12.5 dec. D; ADR 0043): the pages of the companion are another representation of the
+#: routes, not a second way into the world. ``api/companion.py`` may call the route functions of
+#: ``ela.api`` — handing them the world it was given — and must not reach a port, a store, the
+#: catalogue or the executor *through* it: «un Command Center che leggesse il database sarebbe un
+#: secondo ELA» (``docs/STATO.md``, 5.10). The shape of rule 28 for the CLI, at the other end of
+#: the same boundary, and with no door: there is no attribute of ``Ela`` a page needs, because what
+#: a page shows has to exist in a route first — which is why ``ApprovalOut`` grew (dec. F).
+PAGES_MODULE = Path("api") / "companion.py"
+COMPOSED_WORLD = "ela"
 #: Rule 48 (M12.2, ADR 0038): the port of the assignments returns the row *as written* — ``OFFERED``
 #: even when it has expired — and whoever decides goes through the service, which derives the
 #: expiry and writes the task's heartbeat before every expiry it sets (dec. G). The mirror of rule
@@ -2646,6 +2655,37 @@ def _names_an_identity(value: str) -> str | None:
     return COMPANION_COOKIE if value == COMPANION_COOKIE else None
 
 
+def check_pages_read_the_routes(pkg_root: Path) -> list[Violation]:
+    """Rule 55: the companion's pages call the routes and reach nothing through ``Ela`` (M12.5).
+
+    Dec. D chose to let ``ela.api`` itself serve the pages — the browser is the client — and that
+    is only «client dell'API come la CLI» if a page is *another representation of the same routes*.
+    What would quietly make it a second ELA is a page reading a store, the catalogue or the
+    executor off the composed world and deciding for itself: the same defect rule 28 exists for,
+    one layer in.
+
+    Reported: any attribute read on the name :data:`COMPOSED_WORLD` inside :data:`PAGES_MODULE`.
+    Passing ``ela`` on to a route function is a *name*, not an attribute, and is not reported —
+    that is exactly how a route is called. No exemption: a page that needs a fact the routes do not
+    give is a route that needs a field.
+
+    Written before the module it defends, and silent on a tree without it (ADR 0030 §15).
+    """
+    rule = "pages-read-the-routes"
+    path = pkg_root / PAGES_MODULE
+    if not path.is_file():
+        return []
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    name = module_name(path, pkg_root)
+    return [
+        Violation(rule, name, f"{COMPOSED_WORLD}.{node.attr}", node.lineno)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == COMPOSED_WORLD
+    ]
+
+
 def check_assignment_port_readers(pkg_root: Path) -> list[Violation]:
     """Rule 48: no module imports ``AssignmentStore``; the assignments are reached through the
     service that derives their expiry (M12.2, ADR 0038).
@@ -2938,6 +2978,7 @@ RULES: dict[str, Rule] = {
     "results-are-minted-by-the-core": check_results_are_minted_by_the_core,
     "a-node-mints-no-deadline": check_a_node_mints_no_deadline,
     "a-node-does-not-ask-which-machine-it-is": check_a_node_does_not_ask_which_machine_it_is,
+    "pages-read-the-routes": check_pages_read_the_routes,
 }
 
 
@@ -3327,6 +3368,12 @@ CONSTANTS: tuple[Constant, ...] = (
         "permissions-imports", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
     ),
     Constant("permissions-imports", "STDLIB", EXEMPTION, by=WHOLE, adr="ADR 0010"),
+    # pages-read-the-routes (rule 55, M12.5 dec. D)
+    Constant("pages-read-the-routes", "COMPOSED_WORLD", DETECTOR),
+    Constant("pages-read-the-routes", "PAGES_MODULE", DETECTOR),
+    Constant(
+        "pages-read-the-routes", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
+    ),
     # placement-builders
     Constant("placement-builders", "DEVICES_DIR", EXEMPTION, by=WHOLE, adr="ADR 0026 §5"),
     Constant("placement-builders", "PLACEMENT_DEVICE_FIELD", DETECTOR),

@@ -1437,6 +1437,16 @@ VIOLATIONS: tuple[Case, ...] = (
         "def welcome(response):\n    return response.set_cookie('ela_companion', '')\n",
         "ela_companion",
     ),
+    # --- pages-read-the-routes (rule 55, M12.5 dec. D) ---
+    Case(
+        # The shortest way to put a number on a page — and the moment the page stops being a
+        # representation of the routes and becomes a second ELA.
+        "a-page-reads-the-world",
+        "pages-read-the-routes",
+        "api/companion.py",
+        "async def home(ela):\n    return await ela.approvals.pending()\n",
+        "ela.approvals",
+    ),
     # --- assignment-port-readers (rule 48, M12.2) ---
     Case(
         # The route that takes work, reading the row as written: an OFFERED row an hour past its
