@@ -497,19 +497,36 @@ DEVICE_ENTITY = "Device"
 #: yet, which D12 opens — the routes of approvals and cancellation will read the identity, and the
 #: shortest way to write that is to read it from the header.
 AUTHORIZATION_HEADER = "authorization"
-#: Rule 47, extended (M12.5 dec. C.1): a browser cannot set a header, so the companion's credential
+#: Rule 47, extended (M12.5 dec. C.1): a browser cannot set a header, so a browser's credential
 #: travels in a cookie — and a second place that read *or wrote* it would be a second place where
-#: who is calling is decided, and the one that forgets the revocation. The name is a detector: the
-#: middleware is the only module of ``ela.api`` allowed to write it.
-COMPANION_COOKIE = "ela_companion"
-#: Rule 55 (M12.5 dec. D; ADR 0043): the pages of the companion are another representation of the
-#: routes, not a second way into the world. ``api/companion.py`` may call the route functions of
+#: who is calling is decided, and the one that forgets the revocation. The middleware is the only
+#: module of ``ela.api`` allowed to write one.
+#:
+#: **The names are derived** (M17.2 dec. C.2). Until M17.2 there was one, written here by hand,
+#: and the rule was silent beside every other: a second surface would have meant a second literal
+#: somebody had to remember. They are read instead from the table of surfaces in
+#: :data:`SECURITY_MODULE` — the ``cookie=`` of every ``Surface(...)`` — so a cookie is walked the
+#: day the surface that carries it is written, and an empty derivation is a failure of its own
+#: (``tests/architecture/test_layers.py``).
+SURFACE_CLASS = "Surface"
+COOKIE_FIELD = "cookie"
+#: Rule 55 (M12.5 dec. D; ADR 0043): the pages of a surface are another representation of the
+#: routes, not a second way into the world. A page module may call the route functions of
 #: ``ela.api`` — handing them the world it was given — and must not reach a port, a store, the
 #: catalogue or the executor *through* it: «un Command Center che leggesse il database sarebbe un
 #: secondo ELA» (``docs/STATO.md``, 5.10). The shape of rule 28 for the CLI, at the other end of
 #: the same boundary, and with no door: there is no attribute of ``Ela`` a page needs, because what
 #: a page shows has to exist in a route first — which is why ``ApprovalOut`` grew (dec. F).
-PAGES_MODULE = Path("api") / "companion.py"
+#:
+#: **Which modules are pages is derived** (M17.2 dec. C.1). Until M17.2 it was one path, written
+#: here, and the rule was mute wherever that file was not: with two surfaces it would have been
+#: two names by hand, and at the third somebody would forget one. A page module is a module of
+#: ``api/`` that **declares an ``APIRouter`` and names the composer** — it serves pages as routes.
+#: That shape is also what leaves the middleware out without an exemption: ``api/security.py``
+#: composes two refusals but declares no router and serves nothing, and it is the one module that
+#: *must* read the world, because it answers «who is calling» (rule 47).
+ROUTER_CLASS = "APIRouter"
+COMPOSER_MODULE = "pages"
 COMPOSED_WORLD = "ela"
 #: Rule 56 (M12.5 dec. E; ADR 0043 §8): the bell's vocabulary is closed **by the shape of the
 #: port** — one method per thing that can ring, and one caller for each. The voices are read from
@@ -2645,13 +2662,18 @@ def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
     (``api/security.py``), and asserted silent: the rule is written before the routes that will
     want to know who called (ADR 0030 §15).
 
-    **Extended in M12.5** (dec. C.1): a browser cannot send a header, so the companion's credential
-    arrives in a cookie, :data:`COMPANION_COOKIE`. Its name is reported the same way, and for the
-    same reason — one place decides who is calling — with one addition: the middleware is also the
-    only module that *writes* it, so the ``Set-Cookie`` that hands out the credential and the one
-    that clears it are composed where the credential is understood.
+    **Extended in M12.5** (dec. C.1): a browser cannot send a header, so a browser's credential
+    arrives in a cookie. Its name is reported the same way, and for the same reason — one place
+    decides who is calling — with one addition: the middleware is also the only module that
+    *writes* it, so the ``Set-Cookie`` that hands out the credential and the one that clears it
+    are composed where the credential is understood.
+
+    **Derived in M17.2** (dec. C.2): the names come from :func:`cookie_names`, which reads the
+    table of surfaces of the middleware itself. A second surface is walked the day it is written,
+    and nobody has to remember a literal.
     """
     rule = "identity-resolved-in-one-place"
+    cookies = cookie_names(pkg_root)
     found: list[Violation] = []
     for path in sorted((pkg_root / API_DIR).rglob("*.py")):
         if path == pkg_root / SECURITY_MODULE:
@@ -2662,16 +2684,54 @@ def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
             for node in ast.walk(tree)
             if isinstance(node, ast.Constant)
             and isinstance(node.value, str)
-            and (named := _names_an_identity(node.value)) is not None
+            and (named := _names_an_identity(node.value, cookies)) is not None
         )
     return found
 
 
-def _names_an_identity(value: str) -> str | None:
-    """The header or the cookie that carries an identity, or ``None`` (rule 47, M12.1 and M12.5)."""
+def cookie_names(pkg_root: Path) -> set[str]:
+    """Every cookie that carries an identity, read from the table of surfaces (M17.2 dec. C.2).
+
+    The middleware declares one ``Surface(...)`` per browser ELA serves, and the ``cookie=`` of
+    each is the name this rule forbids everywhere else. Read statically — the rules never import
+    ``ela``, because their negative cases run on a synthetic tree — and through the module's own
+    string constants, which is how the table is written.
+
+    An **empty** answer would leave the rule watching the header alone:
+    ``tests/architecture/test_layers.py`` asserts it is not.
+    """
+    path = pkg_root / SECURITY_MODULE
+    if not path.is_file():
+        return set()
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    constants = {
+        target.id: node.value.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign | ast.AnnAssign)
+        for target in ([node.target] if isinstance(node, ast.AnnAssign) else node.targets)
+        if isinstance(target, ast.Name)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    }
+    found = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or _call_name(node.func) != SURFACE_CLASS:
+            continue
+        for keyword in node.keywords:
+            if keyword.arg != COOKIE_FIELD:
+                continue
+            if isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str):
+                found.add(keyword.value.value)
+            elif isinstance(keyword.value, ast.Name) and keyword.value.id in constants:
+                found.add(constants[keyword.value.id])
+    return found
+
+
+def _names_an_identity(value: str, cookies: set[str]) -> str | None:
+    """The header or a cookie that carries an identity, or ``None`` (rule 47, M12.1 and M12.5)."""
     if value.lower() == AUTHORIZATION_HEADER:
         return AUTHORIZATION_HEADER
-    return COMPANION_COOKIE if value == COMPANION_COOKIE else None
+    return value if value in cookies else None
 
 
 def check_the_bell_rings_a_method(pkg_root: Path) -> list[Violation]:
@@ -2772,8 +2832,57 @@ def _names_the_html_response(node: ast.AST) -> bool:
     return isinstance(node, ast.Attribute) and node.attr == HTML_RESPONSE
 
 
+def page_modules(pkg_root: Path) -> list[Path]:
+    """The modules of ``api/`` that serve pages: a router **and** the composer (M17.2 dec. C.1).
+
+    Derived and not listed, and with no name to skip: a route module declares a router and
+    composes nothing; the composer composes and serves nothing — it neither imports itself nor
+    builds a router; the middleware composes its two refusals and declares no router,
+    and it is the one module that must read the world to answer «who is calling» (rule 47). What
+    is left is exactly the pages of the surfaces — today ``api/companion.py`` and
+    ``api/console.py``, tomorrow whatever a third surface is called.
+
+    An **empty** answer here would make rule 55 pass for ever: ``tests/architecture/test_layers.py``
+    asserts it is not, which is the alarm dec. C asks for.
+    """
+    found = []
+    for path in sorted((pkg_root / API_DIR).rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if _names_the_composer(tree) and _declares_a_router(tree):
+            found.append(path)
+    return found
+
+
+def _names_the_composer(tree: ast.AST) -> bool:
+    """Whether this module imports the one module that builds a page (:data:`HTML_COMPOSER`)."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            if node.module.endswith(f".{API_DIR}") and any(
+                alias.name == COMPOSER_MODULE for alias in node.names
+            ):
+                return True
+            if node.module.endswith(f".{API_DIR}.{COMPOSER_MODULE}"):
+                return True
+    return False
+
+
+def _declares_a_router(tree: ast.AST) -> bool:
+    """Whether this module builds an ``APIRouter``: what makes it serve, and not only compose."""
+    return any(
+        isinstance(node, ast.Call) and _call_name(node.func) == ROUTER_CLASS
+        for node in ast.walk(tree)
+    )
+
+
+def _call_name(func: ast.expr) -> str | None:
+    """What is being called, by its last name: ``APIRouter(...)`` or ``x.APIRouter(...)``."""
+    if isinstance(func, ast.Name):
+        return func.id
+    return func.attr if isinstance(func, ast.Attribute) else None
+
+
 def check_pages_read_the_routes(pkg_root: Path) -> list[Violation]:
-    """Rule 55: the companion's pages call the routes and reach nothing through ``Ela`` (M12.5).
+    """Rule 55: a surface's pages call the routes and reach nothing through ``Ela`` (M12.5).
 
     Dec. D chose to let ``ela.api`` itself serve the pages — the browser is the client — and that
     is only «client dell'API come la CLI» if a page is *another representation of the same routes*.
@@ -2781,26 +2890,26 @@ def check_pages_read_the_routes(pkg_root: Path) -> list[Violation]:
     executor off the composed world and deciding for itself: the same defect rule 28 exists for,
     one layer in.
 
-    Reported: any attribute read on the name :data:`COMPOSED_WORLD` inside :data:`PAGES_MODULE`.
-    Passing ``ela`` on to a route function is a *name*, not an attribute, and is not reported —
-    that is exactly how a route is called. No exemption: a page that needs a fact the routes do not
-    give is a route that needs a field.
+    Reported: any attribute read on the name :data:`COMPOSED_WORLD` inside any module of
+    :func:`page_modules`. Passing ``ela`` on to a route function is a *name*, not an attribute,
+    and is not reported — that is exactly how a route is called. No exemption: a page that needs a
+    fact the routes do not give is a route that needs a field.
 
     Written before the module it defends, and silent on a tree without it (ADR 0030 §15).
     """
     rule = "pages-read-the-routes"
-    path = pkg_root / PAGES_MODULE
-    if not path.is_file():
-        return []
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    name = module_name(path, pkg_root)
-    return [
-        Violation(rule, name, f"{COMPOSED_WORLD}.{node.attr}", node.lineno)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute)
-        and isinstance(node.value, ast.Name)
-        and node.value.id == COMPOSED_WORLD
-    ]
+    found = []
+    for path in page_modules(pkg_root):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        name = module_name(path, pkg_root)
+        found.extend(
+            Violation(rule, name, f"{COMPOSED_WORLD}.{node.attr}", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == COMPOSED_WORLD
+        )
+    return found
 
 
 def check_assignment_port_readers(pkg_root: Path) -> list[Violation]:
@@ -3332,7 +3441,8 @@ CONSTANTS: tuple[Constant, ...] = (
     # identity-resolved-in-one-place (rule 47, M12.1)
     Constant("identity-resolved-in-one-place", "API_DIR", DETECTOR),
     Constant("identity-resolved-in-one-place", "AUTHORIZATION_HEADER", DETECTOR),
-    Constant("identity-resolved-in-one-place", "COMPANION_COOKIE", DETECTOR),
+    Constant("identity-resolved-in-one-place", "COOKIE_FIELD", DETECTOR),
+    Constant("identity-resolved-in-one-place", "SURFACE_CLASS", DETECTOR),
     Constant(
         "identity-resolved-in-one-place",
         "ROOT_PACKAGE",
@@ -3511,9 +3621,11 @@ CONSTANTS: tuple[Constant, ...] = (
         why=INEVITABLE,
         reason=_THE_PACKAGE_ITSELF,
     ),
-    # pages-read-the-routes (rule 55, M12.5 dec. D)
+    # pages-read-the-routes (rule 55, M12.5 dec. D; derived in M17.2 dec. C.1)
+    Constant("pages-read-the-routes", "API_DIR", DETECTOR),
     Constant("pages-read-the-routes", "COMPOSED_WORLD", DETECTOR),
-    Constant("pages-read-the-routes", "PAGES_MODULE", DETECTOR),
+    Constant("pages-read-the-routes", "COMPOSER_MODULE", DETECTOR),
+    Constant("pages-read-the-routes", "ROUTER_CLASS", DETECTOR),
     Constant(
         "pages-read-the-routes", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF
     ),

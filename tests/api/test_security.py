@@ -30,14 +30,15 @@ from httpx import ASGITransport, AsyncClient
 
 from ela.api.security import (
     CODE_ROUTES,
-    COMPANION_CODE_ROUTES,
-    COMPANION_PREFIX,
     NODE_ROUTES,
+    SURFACES,
     Anonymous,
     Call,
     Identity,
     Kind,
     authorized,
+    from_this_machine,
+    surface_of,
 )
 from ela.devices import (
     LOCAL_USER,
@@ -58,22 +59,23 @@ from tests.composition.support import TOKEN
 OTHER = "y" * 40
 
 
-def test_the_application_serves_the_thirty_seven_routes_of_the_adrs_and_its_schema(
+def test_the_application_serves_the_forty_eight_routes_of_the_adrs_and_its_schema(
     app: FastAPI,
 ) -> None:
     """Twelve routes (ADR 0023 §6), the two of ADR 0024 §5, the one of ADR 0025 §4, the one of
     ADR 0028 §8, the one of ADR 0032 §13, the three of ADR 0034 §9, the five of ADR 0037 §4,
-    the three of ADR 0038 §11, the one of ADR 0039 §2 and the eight of ADR 0043 §5,
-    plus ``/openapi.json``,
+    the three of ADR 0038 §11, the one of ADR 0039 §2, the eight of ADR 0043 §5 and the eleven of
+    ADR 0044, plus ``/openapi.json``,
     which the loop below proves is behind the token like everything else — the schema of the API
-    is not a page, and the pages of the companion are not in it: a browser cannot send a header,
+    is not a page, and the pages of a surface are not in it: a browser cannot send a header,
     and what reaches them is a cookie."""
     paths = served_paths(app)
 
     assert ("GET", "/openapi.json") in paths
     assert ("GET", "/tasks/{task_id}/results") in paths
     assert ("GET", "/companion/") in paths
-    assert len(paths) == 38
+    assert ("GET", "/console/") in paths
+    assert len(paths) == 49
     assert not {path for _, path in paths} & {"/docs", "/redoc"}
 
 
@@ -92,15 +94,16 @@ async def test_no_route_answers_without_the_token(app: FastAPI, anonymous: Async
     """A route added without a thought is still protected: the guard is not per route.
 
     Since M12.5 the refusal has two bodies and the same meaning (dec. C.3): JSON everywhere, and
-    under ``/companion/`` the enrolment page — because what knocks there is a browser, and raw
+    under a surface's prefix the enrolment page — because what knocks there is a browser, and raw
     JSON in a browser is a dead end. The ``POST`` of the enrolment is the one route where a body
     is looked at before anything else (rule 1), and with no ``Origin`` it is refused as a form
-    that did not come from ELA.
+    that did not come from ELA. Since M17.2 there are two surfaces and the loop walks the table
+    instead of one prefix: a third would need no line here.
     """
     for method, path in served_paths(app):
         response = await anonymous.request(method, path.replace("{task_id}", str(TOKEN)))
 
-        if not path.startswith(COMPANION_PREFIX):
+        if surface_of(path) is None:
             assert response.status_code == 401, f"{method} {path}"
             assert response.json()["error"]["code"] == "unauthorized"
         elif method == "POST":
@@ -200,10 +203,10 @@ async def test_a_node_reaches_its_six_routes_and_gets_the_same_401_everywhere_el
         if (method, path) in NODE_ROUTES:
             continue
         response = await client.request(method, concrete(path), headers=node)
-        if (method, path) in COMPANION_CODE_ROUTES:
-            # Rule 1 of M12.5 dec. C.3: on the enrolment of the companion no header is looked at
-            # at all, so what refuses this request is the form's own check and not the identity's.
-            # A node does not enrol here either way: what opens this route is a companion's code.
+        if any((method, path) in one.code_routes for one in SURFACES):
+            # Rule 1 of M12.5 dec. C.3: on the enrolment of a surface no header is looked at at
+            # all, so what refuses this request is the form's own check and not the identity's.
+            # A node does not enrol there either way: what opens that route is a browser's code.
             assert response.status_code == 403, f"{method} {path}"
             continue
         assert response.status_code == 401, f"{method} {path}"
@@ -307,10 +310,13 @@ async def _the_core_on_a_node_route(client: AsyncClient, anonymous: AsyncClient,
     return await client.post("/nodes/heartbeat", json={})
 
 
-async def _the_core_on_a_companion_route(
-    client: AsyncClient, anonymous: AsyncClient, _: Any
-) -> object:
-    """The Core's token on a page: the Core is not a browser, and the reason says so (dec. C.3)."""
+async def _the_core_on_a_page(client: AsyncClient, anonymous: AsyncClient, _: Any) -> object:
+    """The Core's token on a page: the Core is not a browser, and the reason says so (dec. C.3).
+
+    One reason for one fact, whichever surface it knocks on (M17.2 dec. K.3): the counter is
+    ``core_on_a_page`` since there are two prefixes, and a name that said «companion» would tell
+    whoever reads ``/diagnostics`` something false.
+    """
     return await client.get("/companion/")
 
 
@@ -323,7 +329,7 @@ async def _a_form_from_somewhere_else(
 
 PRODUCED_BY: dict[Anonymous, Producer] = {
     Anonymous.MISSING: _nothing_presented,
-    Anonymous.CORE_ON_A_COMPANION_ROUTE: _the_core_on_a_companion_route,
+    Anonymous.CORE_ON_A_PAGE: _the_core_on_a_page,
     Anonymous.NOT_FROM_ELA: _a_form_from_somewhere_else,
     Anonymous.UNKNOWN_CREDENTIAL: _a_credential_nobody_knows,
     Anonymous.UNKNOWN_NODE: _a_node_nobody_enrolled,
@@ -421,3 +427,81 @@ async def test_a_middleware_reads_a_field_of_the_form_and_the_route_still_gets_t
 
     assert seen == {"code": FORM["code"]}, "the middleware could not read the field"
     assert response.json() == FORM, "the route was left without the body the middleware read"
+
+
+# --------------------------------------------------------------------------------------
+# The pair of addresses dec. J reads, and what is not an address at all
+# --------------------------------------------------------------------------------------
+
+
+def a_request(client: object, server: object) -> Request:
+    """A request with the two ends of its socket set, and nothing else: what dec. J reads."""
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [],
+            "client": client,
+            "server": server,
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("client", "server", "local"),
+    [
+        (("127.0.0.1", 123), ("127.0.0.1", 8130), True),
+        (("::1", 123), ("::1", 8130), True),
+        (("100.70.98.26", 54536), ("100.76.92.39", 8130), False),
+        (("127.0.0.1", 1), ("100.76.92.39", 8130), False),
+        (("100.70.98.26", 1), ("127.0.0.1", 8130), False),
+        (("127.0.0.1", 123), ("ela", 80), False),
+        (("127.0.0.1", 123), None, False),
+        (None, ("127.0.0.1", 8130), False),
+    ],
+    ids=[
+        "both ends loopback",
+        "both ends loopback, v6",
+        "the phone on the tailnet",
+        "a forged source on a tailnet socket",
+        "a tailnet peer on a loopback socket",
+        "a host name, which is not an address",
+        "a server ASGI did not set",
+        "a client ASGI did not set",
+    ],
+)
+def test_only_a_pair_of_loopback_addresses_is_this_machine(
+    client: object, server: object, local: bool
+) -> None:
+    """M17.2 dec. J, and dec. 9 of its review: the **pair**, and nothing the caller declares.
+
+    The fourth case is the one the pair exists for — P0 measured that a connection coming in on
+    the tailnet interface carries that address as the sockname, which the caller does not choose.
+    The last three are §33: a name is not an address, and an address ASGI did not set is not an
+    address either, so neither is a yes.
+    """
+    assert from_this_machine(a_request(client, server)) is local
+
+
+def test_a_code_is_not_an_identity_that_signs() -> None:
+    """The exhaustive match of M17.2 dec. 6: every member of ``Kind`` has its branch, and the one
+    that is not a person and not a machine says so instead of falling through to ``DEVICE``."""
+    with pytest.raises(ValueError, match="not an identity that signs"):
+        _ = Identity(Kind.CODE, code="x").actor
+
+
+def test_every_kind_has_its_actor_and_none_falls_through() -> None:
+    """The test half of the two defences: ``mypy`` stops whoever adds a member, this stops
+    whoever gives it the wrong branch."""
+    node = DeviceId(uuid.UUID(PLACEHOLDER))
+    signed = {
+        Kind.CORE: Identity(Kind.CORE).actor.kind,
+        Kind.NODE: Identity(Kind.NODE, device_id=node).actor.kind,
+        Kind.COMPANION: Identity(Kind.COMPANION, device_id=node).actor.kind,
+        Kind.CONSOLE: Identity(Kind.CONSOLE, device_id=node).actor.kind,
+    }
+
+    assert set(signed) | {Kind.CODE} == set(Kind), "a member with no branch here"
+    assert signed[Kind.NODE] is ActorKind.DEVICE
+    assert {signed[Kind.CORE], signed[Kind.COMPANION], signed[Kind.CONSOLE]} == {ActorKind.USER}

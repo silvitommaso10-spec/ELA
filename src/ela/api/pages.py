@@ -1,4 +1,4 @@
-"""The one place a page of ELA is composed (M12.5 dec. D; ADR 0043 §5).
+"""The one place a page of ELA is composed (M12.5 dec. D; ADR 0043 §5; M17.2 dec. E).
 
 ``ela.api`` serves the companion's pages itself: the same process, the same middleware, the same
 route functions the JSON answers come from, and the browser as the client. What makes that safe is
@@ -16,10 +16,16 @@ there is no argument that turns that off. The only markup that goes in raw is :c
 which nothing but this module produces — a template of ``apps/ios/`` or a partial of the design
 system, both of them files of this repository.
 
-**Nothing is invented here.** The markup lives in ``apps/ios/``, the look in ``apps/design-system/``
-(ADR 0042), and the sphere is *included* from ``_orb.html`` rather than copied: the one place where
-the declared constraint of ADR 0042 — «il markup di un componente si ricopia» — stops holding,
-because here a copy would be a second sphere nobody keeps in step.
+**It composes for every surface, and knows none of them by name.** Since M17.2 ELA serves two
+browsers — the phone and the Command Center — and this module takes the folder of the templates
+and the prefix the stylesheets are served under as **arguments**. It does not import the table of
+surfaces: that table lives with the cookies, in ``api/security.py``, which imports *this*, and a
+second edge would be a cycle.
+
+**Nothing is invented here.** The markup lives in ``apps/<surface>/``, the look in
+``apps/design-system/`` (ADR 0042), and the sphere is *included* from ``_orb.html`` rather than
+copied: the one place where the declared constraint of ADR 0042 — «il markup di un componente si
+ricopia» — stops holding, because here a copy would be a second sphere nobody keeps in step.
 """
 
 from __future__ import annotations
@@ -27,7 +33,7 @@ from __future__ import annotations
 import html
 import re
 from collections.abc import Iterable, Mapping
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
 from typing import Final
 
@@ -37,15 +43,17 @@ from fastapi.responses import HTMLResponse
 from ela.composition import ConfigurationError
 
 __all__ = [
+    "APPS",
     "CONTENT_SECURITY_POLICY",
     "PARTIALS",
     "STYLESHEETS",
-    "TEMPLATES",
     "Markup",
+    "ensure_readable",
     "fragment",
     "joined",
     "page",
     "stylesheet",
+    "templates_of",
 ]
 
 APPS: Final = Path(__file__).resolve().parents[3] / "apps"
@@ -54,7 +62,6 @@ APPS: Final = Path(__file__).resolve().parents[3] / "apps"
 Checked once at start-up (:func:`ensure_readable`), because a companion without its markup is a
 configuration ELA cannot serve, and that is an exit code and not a traceback on the first request.
 """
-TEMPLATES: Final = APPS / "ios"
 PARTIALS: Final = APPS / "design-system" / "components"
 STYLESHEETS: Final = ("tokens.css", "components.css")
 """What ``ela.api`` serves of the design system, and nothing else: the two derived sheets, read
@@ -90,25 +97,34 @@ class Markup(str):
     __slots__ = ()
 
 
-def ensure_readable() -> None:
-    """Fail the start-up if the markup of the companion is not where it should be.
+def templates_of(surface: str) -> Path:
+    """Where a surface keeps its markup: a folder of ``apps/``, named by the surface."""
+    return APPS / surface
+
+
+def ensure_readable(*surfaces: str) -> None:
+    """Fail the start-up if the markup of any surface is not where it should be.
+
+    Every surface, not the first one: a Command Center that started and answered the phone while
+    its own folder was missing would fail on the first page instead of on the first second.
 
     :raises ConfigurationError: named for whoever reads it — the person who moved the folder or
         installed ELA outside its repository (5.5) — and raised before the first request.
     """
-    for folder in (TEMPLATES, PARTIALS):
+    for folder in (*(templates_of(surface) for surface in surfaces), PARTIALS):
         if not folder.is_dir():
             raise ConfigurationError(
-                f"the companion's markup is missing: {folder} does not exist. ELA runs from its "
-                "repository, and the pages of the iPhone are files of it (M12.5 dec. D)."
+                f"the markup of a page is missing: {folder} does not exist. ELA runs from its "
+                "repository, and the pages it serves are files of it (M12.5 dec. D)."
             )
     _templates.cache_clear()
     _partials.cache_clear()
 
 
-@lru_cache(maxsize=1)
-def _templates() -> Mapping[str, str]:
-    return _read(TEMPLATES)
+@cache
+def _templates(surface: str) -> Mapping[str, str]:
+    """The templates of one surface, read once. One cache entry per surface, not one in all."""
+    return _read(templates_of(surface))
 
 
 @lru_cache(maxsize=1)
@@ -118,7 +134,10 @@ def _partials() -> Mapping[str, str]:
 
 def _read(folder: Path) -> Mapping[str, str]:
     if not folder.is_dir():
-        ensure_readable()
+        raise ConfigurationError(
+            f"the markup of a page is missing: {folder} does not exist. ELA runs from its "
+            "repository, and the pages it serves are files of it (M12.5 dec. D)."
+        )
     return {path.stem: path.read_text(encoding="utf-8") for path in sorted(folder.glob("*.html"))}
 
 
@@ -141,15 +160,15 @@ def _with_partials(markup: str) -> str:
     return INCLUDE.sub(replace, markup)
 
 
-def fragment(name: str, /, **values: object) -> Markup:
-    """The template ``name`` of ``apps/ios/``, filled and escaped.
+def fragment(surface: str, name: str, /, **values: object) -> Markup:
+    """The template ``name`` of ``apps/<surface>/``, filled and escaped.
 
     A slot with no value and a value with no slot are both errors: a page that silently showed
     ``{risk}`` to the user, or silently dropped what it was given, is the failure this forbids.
     """
-    templates = _templates()
+    templates = _templates(surface)
     if name not in templates:
-        raise ValueError(f"{name}{SUFFIX} is not a template of {TEMPLATES}")
+        raise ValueError(f"{name}{SUFFIX} is not a template of {templates_of(surface)}")
     used: set[str] = set()
 
     def replace(found: re.Match[str]) -> str:
@@ -172,18 +191,27 @@ def joined(pieces: Iterable[Markup]) -> Markup:
     return Markup("\n".join(pieces))
 
 
-def page(name: str, /, *, status: int = 200, styled: bool = True, **values: object) -> Response:
-    """A whole page: the shell, the fragment ``name`` inside it, and the headers of dec. D.
+def page(
+    surface: str, name: str, /, *, sheets: str | None = None, status: int = 200, **values: object
+) -> Response:
+    """A whole page of ``surface``: the shell, the fragment ``name``, and the headers of dec. D.
 
-    ``styled`` is false for the one page served before an identity exists — the enrolment form, a
-    ``401`` — because the stylesheets are behind the middleware like everything else (dec. D).
+    ``sheets`` is the prefix the two derived stylesheets are served under for this surface —
+    ``/companion/`` or ``/console/`` —, and ``None`` means **no style at all**: the enrolment
+    form is the one page served before an identity exists, and the sheets are behind the
+    middleware like everything else (dec. D). It has no default that would style a page: a
+    stylesheet served to nobody would be the first anonymous route of ELA, and forgetting the
+    argument must not be the way there.
     """
     document = fragment(
+        surface,
         "shell",
-        styles=joined(fragment("stylesheet", href=f"/companion/{sheet}") for sheet in STYLESHEETS)
-        if styled
-        else Markup(""),
-        content=fragment(name, **values),
+        styles=Markup("")
+        if sheets is None
+        else joined(
+            fragment(surface, "stylesheet", href=f"{sheets}{sheet}") for sheet in STYLESHEETS
+        ),
+        content=fragment(surface, name, **values),
     )
     return HTMLResponse(
         content=document,

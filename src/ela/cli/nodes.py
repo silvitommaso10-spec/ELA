@@ -34,9 +34,9 @@ def list_devices(as_json: Json = False) -> None:
     was true when someone wrote it: a node nobody has heard from is not available.
 
     Two facts, two names (M12.5 dec. B): **last contact** is when that identity spoke to ELA — for
-    a node a heartbeat, for a companion a page — and **available** is the fact of the heartbeat,
-    which is why a companion that opened a page a second ago reads ``False``. Neither column says
-    "connected", which nobody here can know.
+    a node a heartbeat, for a browser a page — and **available** is the fact of the heartbeat,
+    which is why a companion or a console that opened a page a second ago reads ``False``. Neither
+    column says "connected", which nobody here can know.
     """
     with client.connect() as api:
         payload = api.get("/devices")
@@ -90,7 +90,7 @@ def list_providers(as_json: Json = False) -> None:
 
 
 class EnrolledRole(StrEnum):
-    """What the code will make: a node that takes work, or the iPhone that looks and answers.
+    """What the code will make: a node that takes work, or one of the two browsers.
 
     Lower case because that is how the guide writes it — ``--role companion`` — and matched
     without case, so ``COMPANION`` works too (M12.5 dec. A, C.2).
@@ -98,6 +98,8 @@ class EnrolledRole(StrEnum):
 
     WORKER = "worker"
     COMPANION = "companion"
+    CONSOLE = "console"
+    """The browser of the Mac: the Command Center (M17.2 dec. A; ADR 0044)."""
 
 
 class RemotePrivacy(StrEnum):
@@ -119,7 +121,7 @@ def enroll_node(
         typer.Option(
             "--role",
             case_sensitive=False,
-            help="What the code will enrol: a worker, or the iPhone companion.",
+            help="What the code will enrol: a worker, the iPhone companion, or the console.",
         ),
     ] = EnrolledRole.WORKER,
     as_json: Json = False,

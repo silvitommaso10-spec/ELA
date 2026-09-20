@@ -14,7 +14,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ela.api.security import COMPANION_CODE_ROUTES, COMPANION_ROUTES
+from ela.api.security import (
+    COMPANION_CODE_ROUTES,
+    COMPANION_ROUTES,
+    CONSOLE_CODE_ROUTES,
+    CONSOLE_ROUTES,
+)
 from ela.domain import AuditEventType, DeviceRole
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
@@ -24,6 +29,8 @@ ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0043-companion.md"
 MILESTONE = ROOT / "docs" / "milestones" / "M12.5.md"
 NEW_RULES = ("pages-read-the-routes", "the-bell-rings-a-method", "one-composer-for-a-page")
+CONSOLE_PAGES = CONSOLE_ROUTES | CONSOLE_CODE_ROUTES
+"""What M17.2 added after this ADR was accepted, subtracted so the count stays the one it saw."""
 
 
 def adr_text() -> str:
@@ -39,8 +46,14 @@ def bullets(text: str) -> set[str]:
     return {match.group(1).strip() for match in re.finditer(r"^- \*\*(.+?)\*\*", text, re.M)}
 
 
-def test_the_conseguenze_count_what_the_tree_has_today() -> None:
-    """The pin moves to the ADR that moved the totals, as it did from ADR 0039 to ADR 0040."""
+def test_the_conseguenze_count_what_the_tree_had_when_it_was_written() -> None:
+    """The pin on *today's* totals moved on to ADR 0044, as it did from ADR 0039 to ADR 0040.
+
+    An ADR is immutable: what stays here is that the numbers ADR 0043 wrote are still true **of
+    what it saw**. The rules and the ports have not moved since — M17.2 extended two rules and
+    added no port — and the routes have, so that one is counted without the pages M17.2 added
+    (the shape ``test_adr_nodes_windows.py`` already uses, derived from the surfaces).
+    """
     text = conseguenze()
 
     assert "**cinquantasette**" in text
@@ -48,7 +61,7 @@ def test_the_conseguenze_count_what_the_tree_has_today() -> None:
     assert "**ventisei**" in text
     assert len(tuple(port_protocols())) == 26
     assert "**trentasette**" in text
-    assert len(coded_routes()) == 37
+    assert len(coded_routes() - CONSOLE_PAGES) == 37
 
 
 def test_the_three_new_rules_it_names_are_in_the_tree() -> None:
@@ -87,6 +100,8 @@ def test_the_adr_names_the_two_it_revises_and_says_what_changes() -> None:
 
 
 def test_the_role_and_its_two_members_are_the_ones_the_table_documents() -> None:
+    """The two ADR 0043 saw, and only those: an ADR is immutable, so the closed world over
+    **every** member of ``DeviceRole`` moved to ADR 0044 with the third one (M17.2 dec. A)."""
     documented = {
         match.group(1)
         for match in re.finditer(
@@ -94,7 +109,8 @@ def test_the_role_and_its_two_members_are_the_ones_the_table_documents() -> None
         )
     }
 
-    assert documented == {member.value for member in DeviceRole}
+    assert documented == {DeviceRole.WORKER.value, DeviceRole.COMPANION.value}
+    assert documented < {member.value for member in DeviceRole}, "M17.2 added the third"
 
 
 def test_the_event_the_bell_writes_is_the_one_the_domain_has() -> None:

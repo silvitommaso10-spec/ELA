@@ -1437,6 +1437,15 @@ VIOLATIONS: tuple[Case, ...] = (
         "def welcome(response):\n    return response.set_cookie('ela_companion', '')\n",
         "ela_companion",
     ),
+    Case(
+        # M17.2 dec. C.2: the name is not written in the rule any more, it is read from the table
+        # of surfaces — so the second cookie is walked without anybody adding a literal.
+        "a-page-reads-the-console-cookie",
+        "identity-resolved-in-one-place",
+        "api/console.py",
+        "def who(request):\n    return request.cookies.get('ela_console')\n",
+        "ela_console",
+    ),
     # --- the-bell-rings-a-method (rule 56, M12.5 dec. E) ---
     Case(
         # A second place that rings: the runner, when a task ends. It reads well, and it is a
@@ -1465,15 +1474,26 @@ VIOLATIONS: tuple[Case, ...] = (
         "async def home():\n    return Response('<b>ELA</b>', media_type='text/html')\n",
         "text/html",
     ),
-    # --- pages-read-the-routes (rule 55, M12.5 dec. D) ---
+    # --- pages-read-the-routes (rule 55, M12.5 dec. D; derived in M17.2 dec. C.1) ---
     Case(
         # The shortest way to put a number on a page — and the moment the page stops being a
-        # representation of the routes and becomes a second ELA.
+        # representation of the routes and becomes a second ELA. The module is a page module
+        # because of what it *is*: a router and the composer, which is the derivation of dec. C.1.
         "a-page-reads-the-world",
         "pages-read-the-routes",
         "api/companion.py",
+        "from fastapi import APIRouter\n\nfrom ela.api import pages\n\nrouter = APIRouter()\n\n\n"
         "async def home(ela):\n    return await ela.approvals.pending()\n",
         "ela.approvals",
+    ),
+    Case(
+        # And the second surface, which the derivation walks without a line of its own.
+        "the-console-reads-the-world",
+        "pages-read-the-routes",
+        "api/console.py",
+        "from fastapi import APIRouter\n\nfrom ela.api import pages\n\nrouter = APIRouter()\n\n\n"
+        "async def devices(ela):\n    return await ela.devices.devices()\n",
+        "ela.devices",
     ),
     # --- assignment-port-readers (rule 48, M12.2) ---
     Case(
@@ -1653,6 +1673,29 @@ VIOLATIONS: tuple[Case, ...] = (
     ),
 )
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        # Rule 55, the other side of the derivation (M17.2 dec. C.1): a page hands the world it
+        # was given **to a route function**, which is a name and not an attribute — and that is
+        # exactly how a page is meant to reach anything at all.
+        "a-page-passes-the-world-to-a-route",
+        "pages-read-the-routes",
+        "api/console.py",
+        "from fastapi import APIRouter\n\nfrom ela.api import pages\n"
+        "from ela.api.tasks import list_tasks\n\nrouter = APIRouter()\n\n\n"
+        "async def home(ela):\n    return await list_tasks(ela)\n",
+        "",
+    ),
+    Case(
+        # And the shape that keeps the middleware out of the derivation without an exemption: it
+        # composes a refusal and declares no router, so it is not a page module — which is why it
+        # may read the world to answer «who is calling» (rule 47).
+        "a-module-that-composes-but-serves-nothing",
+        "pages-read-the-routes",
+        "api/security.py",
+        "from ela.api import pages\n\n\nasync def refuse(ela):\n"
+        "    await ela.devices.get(1)\n    return pages.page('x', 'enrol')\n",
+        "",
+    ),
     Case(
         # Rule 3 widened (M12.3, ADR 0039 §1): a node is a client and a client speaks HTTP. The
         # widening is **by package and wholesale**, exactly as ``cli`` got it in M8.2 — what keeps

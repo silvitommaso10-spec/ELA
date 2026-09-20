@@ -16,16 +16,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from ela.api.deps import ElaDep, IdentityDep
+from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.schemas import AnswerIn, ApprovalOut, TaskOut
 from ela.api.security import (
     Identity,
 )
+from ela.api.tasks import run_task
 from ela.domain import Approval, ApprovalId, ApprovalStatus, Task, TaskId, TaskState
 from ela.ports import ApprovalAlreadyAnsweredError, NotFoundError
 from ela.tasks.errors import TaskEngineError
 
-__all__ = ["router"]
+__all__ = ["answered_and_resumed", "router"]
 
 router = APIRouter(tags=["approvals"])
 
@@ -89,6 +90,39 @@ async def _answer(
         if answered.status is not status:
             raise
     return TaskOut.of(await _move(identifier, answered, ela, status))
+
+
+async def answered_and_resumed(
+    found: ApprovalOut,
+    *,
+    said_yes: bool,
+    ela: ElaDep,
+    identity: IdentityDep,
+    running: RunningDep,
+) -> TaskOut:
+    """The answer, and — after a "yes" — the run it would otherwise wait for (M12.5 dec. H1).
+
+    **One conduct, in one place** (M17.2 dec. K.1). At the Mac the user does two things,
+    ``ela task approve`` and ``ela task run``; a page does the same two in one request, because a
+    "yes" that sat there until somebody came home would not make ELA usable away from the Mac.
+    Both surfaces call **this**, and not a copy of it three lines long: two copies are two
+    conducts, and the first ``if`` somebody changes makes them diverge.
+
+    It lives here, on the **routes' side** of the boundary, for two reasons. This is the module
+    that owns a "yes" — the one exemption by path of architecture rule 19 (ADR 0015 §9) — and a
+    function of the routes is precisely what a page is allowed to call (rule 55). A third module
+    with no router would be a place that rule does not walk, which is where somebody reads the
+    world tomorrow.
+
+    A "no" runs nothing: the task is DENIED. And the browser may stop waiting before a long run
+    ends — the run goes on, and the next page shows the task's true state (M12.5 dec. H).
+    """
+    answered = await (approve if said_yes else deny)(
+        found.task_id, AnswerIn(approval_id=ApprovalId(found.id)), ela, identity
+    )
+    if said_yes and answered.state is TaskState.QUEUED:
+        await run_task(found.task_id, ela, running)
+    return answered
 
 
 def _settled(task: Task, approval: Approval, status: ApprovalStatus) -> Task:

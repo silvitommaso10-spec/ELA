@@ -377,7 +377,7 @@ async def test_the_core_is_not_a_browser(client: AsyncClient) -> None:
 
     assert answered.status_code == 401
     assert answered.json()["error"]["code"] == "unauthorized"
-    assert (await client.get("/diagnostics")).json()["refused"] == {"core_on_a_companion_route": 1}
+    assert (await client.get("/diagnostics")).json()["refused"] == {"core_on_a_page": 1}
 
 
 # ----------------------------------------------------------------------------------------

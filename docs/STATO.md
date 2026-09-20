@@ -98,7 +98,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
-| 17 — Design | `M17.2` | Proposta | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
+| 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
 
 <!-- fine del blocco generato: le milestone -->
@@ -112,13 +112,13 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **43** | `docs/adr/NNNN-*.md` |
-| Milestone | **48, di cui 45 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **44** | `docs/adr/NNNN-*.md` |
+| Milestone | **48, di cui 46 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **26** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **8** | `production_catalogue()` |
-| Rotte dell'API | **37** | i `router` di `ela.api` |
+| Rotte dell'API | **48** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
 
@@ -175,7 +175,7 @@ il filo.
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 13 | 4 |
+| 13 | 5 |
 | 15 | 14 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
@@ -367,12 +367,26 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   deve già stare in una rotta**, e se non ci sta è la rotta che cresce — è così che `ApprovalOut`
   ha guadagnato i pezzi della domanda invece di lasciare alla pagina una seconda copia.
 
-  M17.2 decide ancora **le sue viste**, l'**identità del browser del Mac** (il cookie di M12.5 è
-  del telefono), il **tema** — le pagine del companion stanno nel tema scuro sempre, perché seguire
-  il sistema vuole una regola derivata che è del generatore di M17.1 — e gli **stati che la
-  proiezione di M12.5 non copre**: il companion ne deriva tre, `WAITING APPROVAL`, `WORKING` e
-  `IDLE`, e gli altri di §6 del design aspettano una fonte che non faccia dire alla sfera una cosa
-  che ELA non sa.
+  **M17.2 le ha decise, il 2026-09-20** (ADR 0044). Le **viste** sono quattro — la home con la
+  presenza, l'Approval Center, il Device Center e un task come execution summary — e ognuna mostra
+  solo ciò che sta già in una rotta: nessuna rotta è cresciuta per servirle. L'**identità del
+  browser del Mac** è un terzo ruolo, `CONSOLE`, coniato dall'utente come il companion, con il suo
+  cookie `ela_console` e il suo prefisso `/console`: non si riusa il cookie del telefono, perché
+  `COMPANION` è una restrizione e una console che cresce a ogni milestone la renderebbe finta. Il
+  **tema** resta scuro sempre, e il perché è scritto: i token del tema chiaro sono emessi solo
+  sotto `[data-theme="light"]`, quindi la media query va derivata dal generatore di M17.1 e non
+  scritta in una superficie. Gli **stati** restano i tre del companion — l'estensione è vuota, e i
+  dieci perché no sono scritti uno per uno con la loro fonte.
+
+  Due cose che M17.2 ha aggiunto e che la registrazione non prevedeva. Il **tetto di ciò che la
+  console vede si deriva dalla coppia degli indirizzi del socket**: `LOCAL_ONLY` quando peer e
+  sockname sono di loopback, altrimenti il livello imposto all'arruolamento — perché un livello
+  inciso nel registro non sa dove sia il browser, e il socket sì; e la pagina dice quale tetto è in
+  vigore **nei due versi**. E la regola «ogni milestone aggiunge la sua vista» è diventata
+  **un'impronta generata** delle capability di `production_catalogue()`, riconfrontata a ogni
+  `make check`: una capability nuova ferma la suite, e la risposta si scrive nel documento della
+  milestone che l'ha fatta fermare.
+
 - **M17.3 — Presenza desktop** (§19 del design), alla fine, dopo le altre fasi.
 - **Com'è ELA sullo schermo** — deciso dall'utente il 2026-09-18, guardando la pagina-campionario
   di M17.1, con le sue parole: «ELA deve sembrare una sfera, azzurra e bianca; una dashboard
