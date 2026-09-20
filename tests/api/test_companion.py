@@ -11,16 +11,30 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from ela.api.companion import IDLE, WAITING_APPROVAL, WORKING, may_see, presence
+from ela.api.companion import IDLE, WAITING_APPROVAL, WORKING, _pairs, may_see, presence
 from ela.api.pages import CONTENT_SECURITY_POLICY, STYLESHEETS
+from ela.api.schemas import ApprovalOut
 from ela.api.security import COMPANION_COOKIE, COMPANION_ROUTES, Identity, Kind
-from ela.domain import AuditEventType, DeviceRole, PrivacyLevel, TaskState
+from ela.devices import NodeEnrollment
+from ela.domain import (
+    Approval,
+    ApprovalId,
+    ApprovalStatus,
+    AuditEventType,
+    DeviceRole,
+    PrivacyLevel,
+    StepId,
+    TaskId,
+    TaskState,
+)
+from ela.ports import EnrollmentExpiredError
 from tests.api.support import BASE, echo_plan, note_plan, queued
 
 ORIGIN = {"Origin": BASE}
@@ -160,18 +174,59 @@ async def test_an_enrolment_that_fails_is_the_same_page_again(
     assert "set-cookie" not in answered.headers
 
 
+@pytest.mark.parametrize(
+    "os", ["WINDOWS", "FROBOZZ", ""], ids=["another system", "no system at all", "nothing"]
+)
 async def test_an_enrolment_that_is_not_an_iphone_is_refused(
-    browser: AsyncClient, client: AsyncClient
+    os: str, browser: AsyncClient, client: AsyncClient
 ) -> None:
-    """Dec. A: a companion declares a name and ``IOS``; anything else is a row that would lie."""
+    """Dec. A: a companion declares a name and ``IOS``; anything else is a row that would lie,
+    and the declared half is never rewritten — so the lie would outlive the mistake."""
     answered = await browser.post(
         "/companion/enroll",
-        data={"code": await code_for(client), "name": "iPhone", "os": "WINDOWS"},
+        data={"code": await code_for(client), "name": "iPhone", "os": os},
         headers=ORIGIN,
     )
 
     assert answered.status_code == 422
     assert "IOS" in answered.text
+
+
+async def test_a_code_presented_twice_is_told_so(browser: AsyncClient, client: AsyncClient) -> None:
+    """One code, one identity: the second presentation is refused, and the page says which of the
+    reasons it is — the user has to know whether to mint another one."""
+    code = await code_for(client)
+    assert (
+        await browser.post("/companion/enroll", data={"code": code, **DECLARED}, headers=ORIGIN)
+    ).status_code == 303
+
+    again = await browser.post("/companion/enroll", data={"code": code, **DECLARED}, headers=ORIGIN)
+
+    assert again.status_code == 401
+    assert "già" in again.text
+
+
+async def test_a_code_past_its_expiry_is_told_so(
+    browser: AsyncClient, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ten minutes, and the page says so instead of the same sentence for every refusal.
+
+    The expiry is moved below the route, as ``tests/api/test_security.py`` does for the nodes':
+    what is being proved is the answer, not the arithmetic of the clock.
+    """
+
+    async def expired(self: NodeEnrollment, code: str, **declared: Any) -> Any:
+        raise EnrollmentExpiredError(datetime.now(UTC))
+
+    monkeypatch.setattr(NodeEnrollment, "enroll", expired)
+
+    answered = await browser.post(
+        "/companion/enroll", data={"code": "x" * 43, **DECLARED}, headers=ORIGIN
+    )
+
+    assert answered.status_code == 401
+    assert "scaduto" in answered.text
+    assert (await client.get("/diagnostics")).json()["refused"] == {"expired_code": 1}
 
 
 # ----------------------------------------------------------------------------------------
@@ -193,8 +248,8 @@ async def test_a_request_with_no_cookie_gets_the_form_and_nothing_is_cleared(
 
 @pytest.mark.parametrize(
     "cookie",
-    ["not-a-credential", f"{uuid.uuid4()}.wrong-secret"],
-    ids=["a cookie of the wrong shape", "an id nobody enrolled"],
+    ["not-a-credential", "not-a-uuid.secret", f"{uuid.uuid4()}.wrong-secret"],
+    ids=["a cookie of the wrong shape", "an id that is no id", "an id nobody enrolled"],
 )
 async def test_a_cookie_that_fails_gets_the_form_and_is_cleared(
     cookie: str, browser: AsyncClient
@@ -207,6 +262,26 @@ async def test_a_cookie_that_fails_gets_the_form_and_is_cleared(
     assert answered.status_code == 401
     assert f"{COMPANION_COOKIE}=;" in answered.headers["set-cookie"]
     assert "Max-Age=0" in answered.headers["set-cookie"]
+
+
+async def test_a_cookie_with_the_right_id_and_the_wrong_secret_is_written_as_bad_secret(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    """The first case of rule 3 for a credential that **names somebody**: the registry writes a
+    ``DEVICE_REJECTED`` — that is what ADR 0037 §13 reserves for a refusal naming a node that
+    exists — and the cookie is taken away, because it is worth nothing."""
+    device_id, _, _ = phone.cookies[COMPANION_COOKIE].partition(".")
+    phone.cookies.set(COMPANION_COOKIE, f"{device_id}.{'w' * 43}")
+
+    answered = await phone.get("/companion/")
+
+    assert answered.status_code == 401
+    assert "Max-Age=0" in answered.headers["set-cookie"]
+    written = (await client.get("/audit")).json()
+    assert any(
+        one["event_type"] == AuditEventType.DEVICE_REJECTED.value and "bad_secret" in one["summary"]
+        for one in written
+    )
 
 
 async def test_a_revoked_companion_is_told_to_enrol_again_and_the_audit_says_why(
@@ -267,20 +342,20 @@ async def test_a_good_companion_on_a_path_that_is_not_a_route_gets_the_404_and_k
 async def test_a_companions_secret_in_a_header_opens_nothing(
     phone: AsyncClient, client: AsyncClient
 ) -> None:
-    """C7: the other half of "the bearer is part of the role", and the ``401`` is the JSON one —
-    a header is what a machine sends, and what answers it is the answer of a machine."""
-    rows = (await client.get("/devices")).json()
-    companion = next(one for one in rows if one["role"] == DeviceRole.COMPANION.value)
-    # The secret itself never leaves ELA, so what is presented here is a credential of the right
-    # shape for that id: the refusal happens on the role, before the secret would be compared.
-    header = {"Authorization": f"Bearer {companion['id']}.{'x' * 43}"}
+    """C7: the other half of "the bearer is part of the role", with the **real** credential —
+    taken out of the browser's jar, which is the one place it exists — so the refusal happens on
+    the role and not on the secret. The ``401`` is the JSON one: a header is what a machine sends.
+    """
+    header = {"Authorization": f"Bearer {phone.cookies[COMPANION_COOKIE]}"}
 
-    for path in ("/nodes/heartbeat", "/companion/"):
+    for path in ("/nodes/heartbeat", "/nodes/me", "/companion/"):
         answered = await client.request(
             "POST" if "heartbeat" in path else "GET", path, headers=header, json={}
         )
         assert answered.status_code == 401, path
         assert answered.json()["error"]["code"] == "unauthorized"
+    written = (await client.get("/audit")).json()
+    assert any("route_not_allowed" in one["summary"] for one in written)
 
 
 async def test_the_core_is_not_a_browser(client: AsyncClient) -> None:
@@ -615,6 +690,33 @@ async def test_a_task_that_is_not_live_is_not_offered_to_be_stopped(
     assert (await phone.get(f"/companion/cancel?id={task_id}")).status_code == 404
     again = await phone.post("/companion/cancel", data={"id": task_id}, headers=ORIGIN)
     assert again.status_code == 404
+
+
+def test_a_question_asked_before_m12_5_shows_what_it_has() -> None:
+    """The bag of dec. F has defaults, and this is why: a request stored before M12.5 carries
+    none of them, and a page that refused to open would be a page that lost a question.
+
+    What it shows then is what it has — the risk, with no level beside it — and never a label
+    with nothing after it.
+    """
+    bare = ApprovalOut.of(
+        Approval(
+            id=ApprovalId(uuid.uuid4()),
+            created_at=datetime.now(UTC),
+            task_id=TaskId(uuid.uuid4()),
+            step_id=StepId(uuid.uuid4()),
+            capability_id="workspace.write_note",
+            prompt="una domanda di prima",
+            status=ApprovalStatus.PENDING,
+        )
+    )
+
+    pairs = _pairs(bare, seen=True)
+
+    assert "Rischio" in pairs
+    assert "Dove può andare" not in pairs
+    assert "Durata" not in pairs
+    assert "Scade" not in pairs
 
 
 # ----------------------------------------------------------------------------------------

@@ -39,8 +39,8 @@ class Answers:
         self._answers = list(answers)
 
     @property
-    def client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(transport=httpx.MockTransport(self._answer))
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._answer)
 
     @property
     def body(self) -> dict[str, object]:
@@ -62,7 +62,7 @@ async def bell_with(*answers: httpx.Response | Exception) -> tuple[NtfyBell, Ans
         topic=SecretStr(TOPIC),
         url=DEFAULT_NTFY_URL,
         timeout=BELL_TIMEOUT_SECONDS,
-        client=given.client,
+        transport=given.transport,
     )
     bell.serving_at((LOOPBACK, TAILNET))
     return bell, given
@@ -109,13 +109,13 @@ async def test_a_bell_that_does_not_ring_is_false_and_never_raises(
 async def test_without_a_topic_or_without_an_address_nothing_is_sent() -> None:
     """Two absences, two facts: no topic is a configuration, no address is an ELA on loopback."""
     given = Answers(httpx.Response(200))
-    silent = NtfyBell(topic=None, url=DEFAULT_NTFY_URL, timeout=1.0, client=given.client)
+    silent = NtfyBell(topic=None, url=DEFAULT_NTFY_URL, timeout=1.0, transport=given.transport)
     silent.serving_at((TAILNET,))
     assert silent.ready is False
     assert await silent.approval_waiting(RiskLevel.MEDIUM) is False
 
     unbound = NtfyBell(
-        topic=SecretStr(TOPIC), url=DEFAULT_NTFY_URL, timeout=1.0, client=given.client
+        topic=SecretStr(TOPIC), url=DEFAULT_NTFY_URL, timeout=1.0, transport=given.transport
     )
     assert unbound.ready is False
     unbound.serving_at((LOOPBACK,))
@@ -136,7 +136,7 @@ async def test_a_slow_provider_does_not_hold_the_run_beyond_the_timeout() -> Non
         topic=SecretStr(TOPIC),
         url=DEFAULT_NTFY_URL,
         timeout=0.05,
-        client=httpx.AsyncClient(transport=httpx.MockTransport(never)),
+        transport=httpx.MockTransport(never),
     )
     bell.serving_at((TAILNET,))
 
@@ -149,9 +149,20 @@ def test_the_address_a_phone_can_open_is_the_one_that_is_not_loopback() -> None:
     assert tailnet_url((LOOPBACK, TAILNET)) == PAGE
     assert tailnet_url((LOOPBACK,)) is None
     assert tailnet_url(()) is None
+    assert tailnet_url(("mac.tailnet.ts.net:8130", TAILNET)) == PAGE, "a name is not an address"
+    assert tailnet_url(("100.101.102.103",)) is None, "and an address without a port is not one"
     assert (
         tailnet_url(("[fd7a:115c:a1e0::1]:8130",)) == "http://[fd7a:115c:a1e0::1]:8130/companion/"
     )
+
+
+def test_the_audit_learns_the_service_and_never_the_topic() -> None:
+    """What ``BELL_RUNG`` records of the provider is this name (§57): the address, not the
+    credential — on ntfy the topic *is* the password of the topic."""
+    bell = NtfyBell(topic=SecretStr(TOPIC), url=DEFAULT_NTFY_URL, timeout=1.0)
+
+    assert bell.name == DEFAULT_NTFY_URL
+    assert TOPIC not in bell.name
 
 
 def test_the_timeout_is_the_measured_constant() -> None:

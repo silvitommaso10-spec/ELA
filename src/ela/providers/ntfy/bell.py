@@ -77,7 +77,7 @@ class NtfyBell:
     because before that nobody knows it.
     """
 
-    __slots__ = ("_client", "_open", "_timeout", "_topic", "_url")
+    __slots__ = ("_open", "_timeout", "_topic", "_transport", "_url")
 
     def __init__(
         self,
@@ -85,12 +85,15 @@ class NtfyBell:
         topic: SecretStr | None,
         url: str,
         timeout: float,
-        client: httpx.AsyncClient | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._topic = topic
         self._url = url.rstrip("/")
         self._timeout = timeout
-        self._client = client
+        self._transport = transport
+        """A double for the tests, as the online voice has (ADR 0034 §5): the suite makes the real
+        transports raise, so an adapter that could not be given one could not be proved at all —
+        and there is **one** path through the request, not one for production and one for tests."""
         self._open: str | None = None
 
     @property
@@ -135,15 +138,11 @@ class NtfyBell:
             "priority": PRIORITY,
         }
         try:
-            async with asyncio.timeout(self._timeout):
-                answered = await self._post(payload)
+            async with (
+                asyncio.timeout(self._timeout),
+                httpx.AsyncClient(transport=self._transport) as client,
+            ):
+                answered = await client.post(self._url, json=payload)
         except (httpx.HTTPError, OSError, TimeoutError):
             return False
         return answered.status_code == httpx.codes.OK
-
-    async def _post(self, payload: Mapping[str, object]) -> httpx.Response:
-        """The request itself, with the client a test injects or one of its own."""
-        if self._client is not None:
-            return await self._client.post(self._url, json=payload)
-        async with httpx.AsyncClient() as client:
-            return await client.post(self._url, json=payload)
