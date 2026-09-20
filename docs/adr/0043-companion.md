@@ -206,7 +206,9 @@ metodo obbliga ogni evento futuro a entrare con il suo chiamante e la sua decisi
 2026-09-19). **Nessun parametro è una stringa**: il rischio è del catalogo, quindi «niente
 dell'utente nel testo» è vero per costruzione — `mypy --strict` rifiuta una frase dove il metodo
 vuole un `RiskLevel` — e l'adattatore compone il testo da una tabella sua, con le chiavi di
-`tokens.json`: titolo «ELA», corpo «WAITING APPROVAL · MEDIUM».
+`tokens.json`: titolo «ELA», corpo «WAITING APPROVAL · MEDIUM». La **regola 56** legge le voci **dal
+port** e pretende un chiamante solo per ciascuna, e nessun parametro `str`: una voce nuova arriva
+con il suo chiamante o non arriva.
 
 **Chi suona, e quanto può trattenere il `run`.** L'executor, dentro `_ask`, **dopo** che la domanda
 è salvata e il task aspetta: un campanello non annuncia mai una domanda che non c'è. È quindi sul
@@ -233,6 +235,88 @@ ELA ascolta sul solo loopback e un campanello aprirebbe un indirizzo muto. Senza
 campanello non è pronto, e `/diagnostics` lo dice. Nessun pulsante d'azione (punto fermo 5): il sì
 si dà sulla pagina, dov'è la domanda. La priorità è una costante.
 
+## 9. Che cosa chiude la Fase 12, e che cosa si sposta con una casa
+
+Ogni rimando del repository alla Fase 12 e a M12.5 è stato censito prima della spec (M12.5, dec. G).
+Quelli onorati qui stanno nelle sezioni sopra. Quelli che **non si applicano** a un companion sono
+questi, con la ragione, perché un rimando senza risposta è un debito che nessuno ritrova: `If-Match`
+ed `ETag` (ADR 0037 §9) — il companion non annuncia; `performance` e `power_source` (ADR 0037 §10) —
+non riporta; la rilettura della revisione (M12.3 dec. L) e la specie «residente» della CLI (M12.3
+dec. M) — non è un processo; ADR 0039 §7, «quando il Core non risponde» — il browser mostra la sua
+pagina d'errore; ADR 0031, «ogni nodo nuovo moltiplica le scelte di piattaforma» — il companion non
+ha codice di piattaforma, e la regola resta in piedi per chi ne avrà; i cinque minuti della decisione
+(ADR 0011) — al companion non arriva nessuna decisione; la creazione idempotente di un task
+dall'iPhone (ADR 0008) — creare task è fuori scope.
+
+E questi **si spostano, con la casa nuova**, approvati dall'utente il 2026-09-19. La Fase 12 si
+chiude e loro restano:
+
+| Che cosa resta | Casa |
+|---|---|
+| `launchd` e l'eseguibile firmato di ELA (ADR 0029 §16, ADR 0039 §6) | una milestone sua, prima di M17.3 |
+| I pesi di §17, «da ritarare in Fase 12 con dati reali»: misurati, non ritarati (ADR 0017) | la Fase 13, quando due nodi competeranno davvero |
+| La deriva dell'orologio di un nodo contro i cinque minuti (M12.2) | la stessa |
+| Spostare un lavoro già in corso da un nodo a un altro (§12 del design) | la stessa |
+| L'iPhone che conosce il contesto di una conversazione avuta al Mac (§22) | la Fase 15, la memoria |
+| I livelli di attenzione e la telefonata (§7, ADR 0042 §5) | la Fase 15 |
+| Dove uno Shortcut tiene un segreto, e come riceve un codice (ADR 0037 §7) | la milestone che darà voce all'iPhone, con la sua misura |
+| La negativa delle rotte diverse, `model.misrouted` (ADR 0040) | la milestone del tetto di spesa (§30): è la prima che avrà una chiave del modello |
+| Lo stato finale di un task il cui nodo tace a metà lavoro (ADR 0040) | la stessa, insieme alla riga sopra: entrambe vogliono il PC come nodo |
+
+## 10. Vincoli dichiarati
+
+Ciò che M12.5 **non** fa, o fa a un prezzo, detto una volta e per intero. Ogni riga è una decisione
+presa con gli occhi aperti, non una svista che qualcuno troverà:
+
+- **Il companion non prende lavoro, e non recita la suite dei nodi**: si misura contro il suo
+  contratto, con il solo cookie (dec. A).
+- **Lo Shortcut di M12.5 non parla a ELA**: apre una pagina. Uno Shortcut con un segreto è della
+  milestone che darà voce all'iPhone (dec. A, C.2).
+- **L'ultimo contatto è la parola del registro, e un companion non è mai disponibile** (dec. B).
+- **Il cookie porta la credenziale durevole**, senza rotazione come il segreto di un nodo, per 400
+  giorni; `Secure` no, perché è `http` (dec. C.1).
+- **Che cosa porti con sé un backup iCloud dell'iPhone non è stabilito** per i cookie del browser
+  (dec. C.2).
+- **Il prefisso `/companion/` si vede da chi bussa senza credenziali**, e una credenziale buona su un
+  percorso che non esiste riceve un `404`: ADR 0023 §7 e ADR 0037 §4 rivisti (dec. C.3).
+- **Il companion vive nel browser predefinito dell'iPhone**, non per forza in Safari: cambiare
+  browser predefinito vuol dire **riarruolarsi**, perché i cookie di un browser non si vedono da un
+  altro (dec. C.0, misurato in P2).
+- **Con Chrome la cronologia e le schede possono sincronizzarsi sull'account Google**: per questo gli
+  URL del companion portano solo id opachi (dec. C.0, dec. D).
+- **L'app web della schermata Home copia i cookie quando la si aggiunge, e poi li tiene separati**:
+  non vede né revoche né riarruolamenti fatti nel browser, e resta fuori scope (dec. C.0, misurato).
+- **`SameSite=Lax` e non `Strict`**: `Strict` è stato trattenuto in due casi reali, e le pagine `GET`
+  del companion non hanno effetti; i `POST` restano difesi da `Lax` e dal controllo dell'`Origin`
+  (dec. C.1, misurato).
+- **Un cookie si cancella solo quando è stato presentato e non vale**: senza cookie il 401 non porta
+  nessun `Set-Cookie`, perché un browser può trattenere una credenziale buona (dec. C.3, misurato).
+- **Con «Non disturbare» il campanello tace**, e la notifica resta nel Centro Notifiche: decidere
+  quando passarci sopra è §7 e §34, la Fase 15 (dec. E, misurato).
+- **Il timeout dell'adattatore del campanello è 5 s**, costante e dichiarato, contro una misura di
+  0,43 s (dec. E).
+- **http sulla tailnet**: la cifratura è di WireGuard (dec. D).
+- **La pagina di arruolamento è senza identità visiva**, con il carattere di default del browser
+  (dec. D).
+- **Le pagine del companion sono nel tema scuro** (dec. D).
+- **ELA gira dal repository**: il percorso di `apps/` si deriva dal package (dec. D).
+- **La presenza mostra tre stati**, e gli altri aspettano M17.2 (dec. D).
+- **Il campanello suona ogni approvazione, anche con l'utente al Mac** (dec. E).
+- **Il campanello suona sul percorso del `run`**, trattenuto al più dal timeout costante
+  dell'adattatore (dec. E).
+- **Con E1, chi conosce l'argomento legge i campanelli e ne suona di falsi**, e il testo — senza
+  niente dell'utente — e l'indirizzo del Mac sulla tailnet passano in chiaro da ntfy.sh, da FCM e da
+  APNs (dec. E).
+- **L'argomento del campanello passa per un momento dagli appunti del Mac e da Handoff** (dec. E).
+- **Una morte fra la domanda e il campanello lascia una domanda senza campanello** (dec. E).
+- **Il dispositivo, le conseguenze e la reversibilità non si nominano in una domanda** (dec. F).
+- **Nessun tetto di rischio per il companion finché nessuna domanda supera `MEDIUM`** (dec. F.3).
+- **Dall'iPhone, la voce si approva senza sentire** (dec. F.4).
+- **Un «sì» dall'iPhone prosegue il task finché gli step restano su `local`**; uno step affidato a un
+  altro nodo aspetta un `run` (dec. H).
+- **Il browser può smettere di aspettare un `run` lungo**: il `run` continua, e la pagina successiva
+  mostra lo stato vero (dec. H).
+
 ## Conseguenze
 
 - Una colonna imposta in più su `devices` e una su `enrollments`; la regola 44 si estende a `role`,
@@ -244,3 +328,17 @@ si dà sulla pagina, dov'è la domanda. La priorità è una costante.
   produce in `tests/api/test_failures.py`.
 - Ogni costruzione di un `Device` dichiara il ruolo: non c'è un default nel dominio, perché il
   default sarebbe quello silenzioso — il ruolo con le rotte.
+- **Tre regole di architettura nuove** — le pagine leggono le rotte (55), il campanello suona un
+  metodo (56), un compositore solo per una pagina (57) —, ciascuna con il suo caso negativo, e due
+  estese, la 46 (il cookie e l'argomento del campanello sono segreti) e la 47 (il cookie è un
+  portatore d'identità come l'header). Le regole di `apps/ios/` non camminano Python: vivono in
+  `tests/ios/`, e il README della cartella le nomina con il loro test.
+- **Un port nuovo**, `Bell`, e un adattatore, `ela.providers.ntfy`; due variabili d'ambiente, in
+  `.env.example` e in `VARIABLES`.
+- **Otto rotte nuove** sotto `/companion/`, e `/openapi.json` non le descrive come descrive le
+  altre: una pagina non è una forma del filo, e ciò che la prova è `tests/api/test_companion.py`.
+- **Un tipo di evento nuovo**, `BELL_RUNG`, con il suo scrittore.
+- **Il companion non recita la suite dei nodi**: ha il suo contratto, e le frasi della suite di
+  M12.2 che promettevano il contrario si correggono dove stanno (dec. A).
+- I totali di oggi: **cinquantasette** regole, **ventisei** port, **trentasette** rotte. Li appunta
+  `tests/docs/test_adr_companion.py`, che è l'ADR più recente che li muove.
