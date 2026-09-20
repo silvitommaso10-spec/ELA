@@ -29,18 +29,27 @@ uv run python scripts/generate_stato.py
 - **v0.1.0**, taggata il 2026-09-07: un task nasce da un intento, riceve un piano, viene
   autorizzato, eseguito su un nodo, verificato e chiuso, e ogni passaggio lascia una riga in un log
   che si accorge se qualcuno lo riscrive. API su loopback dietro un token, CLI che la usa.
-- **Dopo il tag, e fuori da qualunque release**: la **percezione** (Fase 10 — ELA fotografa lo
-  schermo, ne legge il testo sulla macchina, sa quali applicazioni l'utente sta usando, e compone
-  il contesto di §44 dicendo quali fonti le mancano) e la **voce** (Fase 11 — ELA parla, con
-  `say` di macOS e con ElevenLabs, e ascolta il microfono restituendo un trascritto e non l'audio).
-- **ELA gira su una macchina sola.** Il Mac è insieme Core e unico nodo: `local`, la cui riga la
-  scrive il processo stesso all'avvio, con un id deterministico *perché è questa macchina*. Nessun
-  nodo remoto esiste, nessun nodo si autentica, e il Device Orchestrator sceglie fra un candidato
-  solo. **È esattamente ciò che la Fase 12 cambia.**
+- **Dopo il tag, e fuori da qualunque release**, ELA ha guadagnato quattro cose: la **percezione**
+  (Fase 10 — fotografa lo schermo, ne legge il testo sulla macchina, sa quali applicazioni l'utente
+  sta usando, e compone il contesto di §44 dicendo quali fonti le mancano), la **voce** (Fase 11 —
+  parla con `say` di macOS e con ElevenLabs, e ascolta il microfono restituendo un trascritto e non
+  l'audio), i **nodi sulla rete** (Fase 12) e un **aspetto** (Fase 17). Quali milestone e in che
+  stato è la tabella della §2; che cosa ciascuna ha portato è il [changelog](CHANGELOG.md). Non si
+  riscrive qui: sarebbe una terza copia da tenere allineata.
+- **ELA non gira più su una macchina sola** — la Fase 12 si è chiusa il 2026-09-20. Il Mac resta il
+  **Core**, e ci resta per scelta (5.5); è anche un nodo, `local`, la cui riga la scrive il processo
+  stesso all'avvio con un id deterministico *perché è questa macchina*. Accanto a lui un nodo
+  remoto **può** esistere e **si autentica** con un segreto suo (M12.1), prende le chiamate del
+  Core e le riporta (M12.2), e ne esistono due implementazioni vere — questo Mac come nodo (M12.3)
+  e un **PC Windows** sulla tailnet (M12.4) —, più il **companion iPhone**, che nodo non è: guarda,
+  risponde e non prende lavoro (M12.5). Il Device Orchestrator non sceglie più fra un candidato
+  solo per costruzione: sceglie fra quelli che il registro ha, con i filtri e i punteggi di
+  ADR 0017.
 - **Il ciclo di lavoro** è quello di `CLAUDE.md`: una milestone alla volta, SPEC → IMPLEMENTATION →
   TEST → REVIEW → COMMIT, su un branch di lavoro; il merge su `main` lo fa l'utente dopo revisione
-  esterna. `make check` in primo piano, una volta, alla fine della milestone; il controllo Linux è
-  la CI sul branch, verde su entrambi i runner prima del merge.
+  esterna. `make check` in primo piano, una volta, alla fine della milestone, letto intero. Il
+  controllo Linux è la CI sul branch, verde su entrambi i runner di `make check` prima del merge —
+  e da M12.4 la CI ha anche un **terzo** job, la suite del nodo su `windows-latest`.
 
 ## 2. Le milestone
 
@@ -99,9 +108,10 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 13 — *senza nome* | `M13.1` | Proposta | Il filesystem fuori dalla workspace, e il primo HIGH |
 | 13 — *senza nome* | `M13.2` | Proposta | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
-| 13 — *senza nome* | `M13.3` | Proposta | L'azione che viaggia: il verifier dove avviene l'effetto, e i due debiti della fase |
+| 13 — *senza nome* | `M13.3` | Proposta | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — *senza nome* | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
 | 13 — *senza nome* | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
+| 13 — *senza nome* | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
@@ -119,7 +129,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **44** | `docs/adr/NNNN-*.md` |
-| Milestone | **54, di cui 46 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **55, di cui 46 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **26** | i `Protocol` di `src/ela/ports.py` |
@@ -139,24 +149,44 @@ Qui c'è che cosa è **fatto** e che cosa è **aperto**. **Qual è la prossima m
 Una frase che va rincorsa a ogni merge è una lista scritta a mano, e questa è invecchiata due volte
 in tre giorni.
 
-**La regola di questa lista**: quando una fase si chiude, la sua voce resta qui — la prima — finché
-la prossima non comincia; è il posto dove si legge da dove si riparte, e una fase che sparisce il
-giorno in cui finisce lascia il lettore senza il filo. **La Fase 12 se n'è andata da qui il
-2026-09-21**, quando la 13 è cominciata, e la regola è stata applicata invece di essere scavalcata:
-che cosa ha portato sta nel
-[changelog](CHANGELOG.md), e il censimento di ciò che ha chiuso, di ciò che non le si applicava e
-di ciò che si è spostato con una casa nuova sta in ADR 0043 §9.
+**Una registrazione non è un inizio**, ed è lo stesso criterio che vale per il blocco generato in
+fondo alla sezione e per il nome che il changelog dà a una fase: **una fase comincia quando una sua
+milestone esce da `Proposta`**, non quando qualcuno ne scrive i documenti. Una fase registrata e
+non ancora cominciata ha la sua voce qui **e** resta nel blocco delle fasi future: sono due letture
+dello stesso fatto, e nessuna delle due va aggirata.
 
-- **La Fase 13 è cominciata, e non ha ancora un nome.** Registrata il **2026-09-21**, con cinque
-  milestone in `docs/milestones/` — M13.1, M13.2, M13.3, M13.4, M13.5 — tutte `Proposta`: sono
-  registrazioni e non SPEC, e la SPEC la scrive la sessione che apre la milestone. Porta §18,
-  l'Action Core: ELA smette di agire solo dentro la sua workspace — il filesystem vero, il
-  terminale, il browser (§19), lo schermo (§20) —, e con la sua prima milestone **il livello
-  `HIGH`**, che oggi `RISK_POLICY` nega sempre e che nessuna capability può far scattare. L'ordine,
-  le ragioni, ciò che la fase eredita e ciò che **non** porta stanno nella voce 5.11. **Il nome lo
-  darà il changelog** con la prima milestone che esce da `Proposta`; fino ad allora la tabella
-  della §2 la chiama «senza nome» e il blocco qui sotto la tiene fra le fasi future — due liste
-  derivate che leggono lo stesso fatto, ed è lo stesso che è capitato alla 17.
+**La regola della prima voce**: quando una fase si chiude, la sua voce resta qui — la prima —
+finché la prossima non **comincia**; è il posto dove si legge da dove si riparte, e una fase che
+sparisce il giorno in cui finisce lascia il lettore senza il filo.
+
+**Che cosa qui nessun test tiene.** I due criteri qui sopra li tiene `tests/docs/test_stato.py`
+**nella forma dei fatti, non delle parole**: che una fase abbia un nome esattamente quando una sua
+milestone è uscita da `Proposta` è un mondo chiuso con il suo caso negativo, e il giorno in cui
+M13.1 esce da `Proposta` la suite fallisce e dice che cosa riscrivere qui. Ciò che nessun test
+tiene è **il verbo di questa prosa**: se qui si scrive «è cominciata» dove i blocchi derivati
+dicono «registrata», nessuna misura se ne accorge — l'unico controllo possibile sarebbe un
+confronto di stringhe, che la riscrittura successiva aggira, e una prova che non può fallire non è
+una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste.
+
+- **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5), e resta la prima voce perché la 13 non è
+  ancora cominciata. ELA ha smesso di essere un processo su una macchina e di essere usabile solo
+  davanti a quella macchina: un'identità provabile per un nodo, il protocollo del lavoro con la sua
+  suite di conformità, **due implementazioni vere** — questo Mac e un PC Windows — e il companion
+  iPhone, che nodo non è. Che cosa ha portato, milestone per milestone, è il
+  [changelog](CHANGELOG.md); il censimento di ciò che ha onorato, di ciò che non le si applicava e
+  di ciò che si è spostato con una casa nuova è in ADR 0043 §9. **Esce da qui quando M13.1 esce da
+  `Proposta`** — lo stesso fatto che dà un nome alla Fase 13 nel changelog e la toglie dal blocco
+  delle fasi future.
+- **La Fase 13 è registrata, e non è cominciata.** Registrata il **2026-09-21**, con sei milestone
+  in `docs/milestones/` — da M13.1 a M13.6 — tutte `Proposta`: sono registrazioni e non SPEC, e la
+  SPEC la scrive la sessione che apre la milestone. Porta §18, l'Action Core: ELA smette di agire
+  solo dentro la sua workspace — il filesystem vero, il terminale, il browser (§19), lo schermo
+  (§20) —, e con la sua prima milestone **il livello `HIGH`**, che oggi `RISK_POLICY` nega sempre e
+  che nessuna capability può far scattare. L'ordine, le ragioni, ciò che la fase eredita e ciò che
+  **non** porta stanno nella voce 5.11. **Comincerà quando M13.1 uscirà da `Proposta`**: quel
+  giorno il changelog le dà un nome, la tabella della §2 smette di dire «senza nome», il blocco qui
+  sotto la lascia andare, e la voce della Fase 12 qui sopra se ne va. Il precedente è la 17:
+  registrata il 2026-09-18, è rimasta fra le fasi future finché M17.1 non è uscita da `Proposta`.
 - **Fase 17 — il design.** Registrata il 2026-09-18: la fonte di verità è
   [`spec/ELA_design.md`](spec/ELA_design.md), e le decisioni sono nella 5.10. **M17.1, il Design
   System, è fatta** (2026-09-19, ADR 0042): ELA ha un aspetto — una sfera di luce nel vetro, azzurra
@@ -178,15 +208,15 @@ di ciò che si è spostato con una casa nuova sta in ADR 0043 §9.
   deciso**, e il posto dove deciderlo è una SPEC di milestone, non questo file. La Fase 12 è uscita
   da quell'elenco quando la sua prima milestone è uscita da `Proposta` — che è il modo in cui una
   lista derivata dice che una fase ha smesso di essere futura, ed è lo stesso fatto con cui il
-  changelog le dà un nome. **Avere una registrazione non è avere consegnato**: la 13 ci sta dentro
-  pur avendo cinque documenti, e il numero non conta — la 17 c'è rimasta finché M17.1 non è uscita
-  da `Proposta`, anche se è cominciata prima della 13.
+  changelog le dà un nome. **Avere una registrazione non è avere cominciato**: la 13 ci sta dentro
+  pur avendo sei documenti, e il numero non conta — la 17 c'è rimasta finché M17.1 non è uscita da
+  `Proposta`, anche se è cominciata prima della 13.
 
 <!-- generato da scripts/generate_stato.py: le fasi che un documento nomina -->
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 13 | 11 |
+| 13 | 12 |
 | 15 | 14 |
 | 16 | 1 |
 
@@ -489,9 +519,10 @@ nessuna riga di codice le contiene ancora. Le parti tecniche prendono il loro AD
 che le costruisce: la cartella, lo stack e il calcolo della proiezione con M17.2, come la cartella
 della CLI l'ha preso con M8.2 (ADR 0024 §1).
 
-### 5.11 La Fase 13 comincia dal permesso, non dall'azione
+### 5.11 Il permesso prima dell'azione: l'ordine della Fase 13
 
-La **Fase 13 è registrata dal 2026-09-21**, e la sua fonte di verità è
+La **Fase 13 è registrata dal 2026-09-21 — registrata, non cominciata**: comincerà quando M13.1
+uscirà da `Proposta`, che è il criterio di §4.1. La sua fonte di verità è
 [`spec/ELA_spec.md`](spec/ELA_spec.md): §18 (l'Action Core), §19 (il browser), §20 (il computer
 control). Porta il momento in cui ELA smette di agire solo dentro la sua workspace — il filesystem
 vero, il terminale, il browser, lo schermo — e, perché quel momento sia sorvegliato, **il primo
@@ -503,7 +534,9 @@ scattare.
 tiene fra le fasi future. Sono due liste derivate che leggono lo stesso fatto, e nessuna delle due
 si aggira scrivendo un nome a mano.
 
-**L'ordine è M13.1 → M13.2 → M13.3 → M13.4 → M13.5**, e ognuna ha la sua ragione.
+**L'ordine è M13.1 → M13.2 → M13.3 → M13.4 → M13.5**, con **M13.6 dopo M13.3, quando la sua
+condizione d'ingresso scatta** — nella forma condizionale di M17.4: non una posizione nella fila,
+ma un fatto che la apre. E ognuna ha la sua ragione.
 
 - **M13.1 — il filesystem fuori dalla workspace, e il primo `HIGH`. Prima, perché è lei che apre il
   livello.** La riga `HIGH` di `RISK_POLICY` e la prima capability `HIGH` entrano **insieme**, per
@@ -526,12 +559,19 @@ si aggira scrivendo un nome a mano.
   stare negli argomenti, e un piano arriva dal client. **L'output troncato dice di essere
   troncato** (ADR 0032 §9-bis).
 - **M13.3 — l'azione che viaggia. Terza, e prima del browser.** Il verifier gira **dove avviene
-  l'effetto**, e qui la fase paga i due debiti che sono suoi: **ADR 0044 §8**, il battito di
-  `local` — il Mac risulta non disponibile mentre ELA gira —, e **i pesi di §17**, che ADR 0017
-  dichiarò «da ritarare con dati reali» e che la Fase 12 ha misurato senza ritarare (ADR 0043 §9).
-  Si ritarano qui, **quando due nodi competono davvero**. Prima del browser perché **un'azione che
-  non si può verificare su un nodo non si esegue su quel nodo** (ADR 0014 §3): la domanda «dove gira
-  il verifier» si risponde prima di aggiungere l'azione che la farà pesare.
+  l'effetto**, e qui la fase paga **tre** debiti: **ADR 0044 §8**, il battito di `local` — il Mac
+  risulta non disponibile mentre ELA gira —; **i pesi di §17**, che ADR 0017 dichiarò «da ritarare
+  con dati reali» e che la Fase 12 ha misurato senza ritarare (ADR 0043 §9), e che si ritarano qui,
+  quando due nodi competono davvero; e **la deriva dell'orologio di un nodo contro i cinque minuti**
+  (M12.2, la stessa casa di ADR 0043 §9), che è la stessa materia — chi misura il tempo, e con quale
+  orologio — e che M12.2 ha lasciato non misurata perché la sua suite gira sul `FakeClock` del Core.
+  M13.3 guadagna anche **un obbligo esplicito**: **ogni capability che viaggia dichiara se si può
+  ripiazzare**, senza default, come `reads_the_machine`. Oggi §15 è onorato da **un tool su otto**
+  (ADR 0038 §8) e la cosa è vera implicitamente: questa è la milestone che smette di lasciarla
+  implicita, ed è quella dichiarazione a rendere M13.6 possibile o impossibile. Prima del browser
+  perché **un'azione che non si può verificare su un nodo non si esegue su quel nodo** (ADR 0014
+  §3): la domanda «dove gira il verifier» si risponde prima di aggiungere l'azione che la farà
+  pesare.
 - **M13.4 — il browser** (§19), con **Playwright**. **Condizione d'ingresso: M13.3 chiusa.** La
   SPEC **misura e scrive prima di decidere**: una dipendenza nuova, i binari dei browser, il tempo
   che aggiunge a `make check` e il tempo che aggiunge alla CI **sui tre runner** della matrice vera
@@ -540,10 +580,17 @@ si aggira scrivendo un nome a mano.
   (ADR 0039 §6).
 - **M13.5 — il computer control** (§20). **Il muro è dichiarato**, e misurato due volte su questa
   macchina: il grant TCC è legato al **binario** — ADR 0029 §16 per la registrazione dello schermo,
-  ADR 0039 §6 per il portachiavi — e resta murato finché ELA non ha **un eseguibile firmato suo**,
-  che è una milestone sua e non di questa fase (ADR 0043 §9: «una milestone sua, prima di M17.3»).
-  La condizione d'ingresso lo dice: **entra quando il grant si ottiene senza fingere**; e se alla
-  fine della fase non si può, **resta `Proposta` e la fase si chiude senza di lei**.
+  ADR 0039 §6 per il portachiavi. La condizione d'ingresso **non aspetta una milestone: è una misura
+  su questo Mac** — il permesso di controllo è chiesto a un eseguibile di ELA, concesso a quello, e
+  sopravvive a un riavvio. Se a fine fase non si ottiene, **resta `Proposta` e la fase si chiude
+  senza di lei**.
+- **M13.6 — spostare un lavoro già in corso da un nodo a un altro** (§15, §12 del design), il terzo
+  rinvio che ADR 0043 §9 aveva dato alla fase. **Fuori dalla fila**: entra **dopo M13.3**, e solo
+  quando **almeno due capability che viaggiano dichiarano la propria idempotenza** — oggi ne
+  dichiara una sola, `core.echo` (ADR 0038 §8), e uno spostamento con un ripetibile solo non ha
+  niente da spostare che non sia un'eco. Se a fine fase nessun'altra lo fa, **resta `Proposta`**,
+  come M13.5. **Perché non sta dentro M13.3**: è un cambio del runner, e dipende da una cosa che
+  M13.3 crea (la dichiarazione) ma non completa (quante la daranno).
 
 **Che cosa la Fase 13 non porta.**
 
@@ -551,7 +598,7 @@ si aggira scrivendo un nome a mano.
   attaccarsi a mano**, come dal primo giorno. Che uno step dichiari sempre le capability che userà
   resta il vincolo che ADR 0011 lascia a chi costruirà il Planner, e resta lì.
 - **Non §30.** Il tetto di spesa **prende la sua milestone prima della Fase 14**, come dice la 5.9,
-  e quella milestone non è una di queste cinque.
+  e quella milestone non è una di queste sei.
 
 *Che cosa la fase eredita, e non può contraddire:*
 
@@ -564,11 +611,13 @@ si aggira scrivendo un nome a mano.
 - **L'Audit Log non è un canale neutro** (ADR 0011, Conseguenze): i bersagli di una decisione sono
   percorsi, e un percorso fuori dalla workspace è più personale di uno dentro (§57).
 
-*Due debiti della fase non hanno ancora una milestone.* ADR 0043 §9 ha dato alla Fase 13 anche **la
-deriva dell'orologio di un nodo contro i cinque minuti** (M12.2) e **spostare un lavoro già in corso
-da un nodo a un altro** (§12 del design). Sono della materia di M13.3 — due nodi che competono — e
-la SPEC di M13.3 dirà se sono suoi o di una milestone in più: qui restano scritti perché un rinvio
-senza un posto è un rinvio che nessuno ritrova.
+*Chi apre la milestone dell'eseguibile firmato.* ADR 0043 §9 le ha dato una casa — «una milestone
+sua, prima di M17.3» — e non un numero, e adesso la aspettano **quattro** cose: `launchd`
+(ADR 0029 §16), il portachiavi (ADR 0039 §6), M17.3 (una presenza che resta sullo schermo vuole un
+processo residente) e M13.5. La regola è questa: **la prima milestone che ci sbatte contro la
+apre**, e in questa fase è M13.5. Se la misura della sua condizione d'ingresso dice che il grant non
+tiene, **la SPEC di M13.5 si ferma lì** e quella milestone si apre prima, con il suo numero. Un
+debito che quattro cose aspettano e che nessuna apre è un debito che resta aperto per educazione.
 
 *Perché nessun ADR:* è una scelta d'ordine e di perimetro — quale milestone, quando, che cosa
 eredita, che cosa resta fuori — e nessuna riga di codice la contiene. Le parti tecniche prendono il
@@ -603,10 +652,13 @@ pagato da chi doveva.
    **non** entra, i criteri di accettazione e i test previsti. **Fermati e mostrala** prima di
    implementare.
 4. **Fai girare la suite**: durante il lavoro, i test del pezzo che tocchi; `make check` in primo
-   piano, una volta sola, alla fine della milestone — sorvegliarlo costa più del lavoro che
-   sorveglia. Il controllo Linux è la CI sul branch, che il merge vuole verde su entrambi i runner;
-   `make check-linux` serve a riprodurre qui una CI rossa su ubuntu, fingendo l'altra metà della
-   matrice (i suoi limiti sono scritti in `tests/foreign_machine.py`).
-5. **Fai partire ELA**: [`GETTING_STARTED.md`](GETTING_STARTED.md), comando per comando.
+   piano, una volta sola, alla fine della milestone, **letto intero** — sorvegliarlo costa più del
+   lavoro che sorveglia, e tagliargli la coda costa il giro. Il controllo Linux è la CI sul branch,
+   che il merge vuole verde su entrambi i runner di `make check`, e da M12.4 c'è anche la suite del
+   nodo su `windows-latest`; `make check-linux` serve a riprodurre qui una CI rossa su ubuntu,
+   fingendo l'altra metà della matrice (i suoi limiti sono scritti in `tests/foreign_machine.py`).
+5. **Fai partire ELA**: [`GETTING_STARTED.md`](GETTING_STARTED.md), comando per comando — e da
+   M12.3 anche questa macchina come nodo, in un terzo terminale (§11 di quel documento): un nodo è
+   un comando in primo piano, e vive quanto la finestra (ADR 0039 §6).
 6. **Quando aggiungi una milestone, un ADR, una regola o una capability, rigenera questo file.**
    `make check` te lo ricorda fallendo.
