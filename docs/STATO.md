@@ -114,9 +114,9 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 |---|---|---|
 | ADR scritti | **43** | `docs/adr/NNNN-*.md` |
 | Milestone | **48, di cui 44 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **56** | `RULES` in `tests/architecture/` |
+| Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
-| Port | **25** | i `Protocol` di `src/ela/ports.py` |
+| Port | **26** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **8** | `production_catalogue()` |
 | Rotte dell'API | **37** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
@@ -166,7 +166,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Fase | Documenti che la nominano |
 |---|---|
 | 13 | 3 |
-| 15 | 12 |
+| 15 | 13 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
 

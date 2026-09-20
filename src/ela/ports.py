@@ -67,6 +67,7 @@ from ela.domain import (
     RawRecognition,
     RawSpeech,
     RawTranscript,
+    RiskLevel,
     StepId,
     Task,
     TaskEvent,
@@ -98,6 +99,7 @@ __all__ = [
     "AuthorizationNotUsableError",
     "AuthorizationStore",
     "AuthorizingGuardianPort",
+    "Bell",
     "CapabilityRegistryPort",
     "Clock",
     "DeviceRegistryPort",
@@ -847,6 +849,45 @@ class EnrollmentStore(Protocol):
         :class:`EnrollmentExpiredError` is raised. The check and the write are one atomic step: of
         two nodes presenting the same code exactly one is born (ADR 0012 §5, the shape of
         ``consume``)."""
+
+
+@runtime_checkable
+class Bell(Protocol):
+    """How ELA gets the user's attention when it needs them and they are not here (M12.5 dec. E).
+
+    The twenty-sixth port, and the only one whose effect is **on a phone**: everything else ELA
+    does lands where somebody has to go and look. A bell is not a letter — it says that something
+    waits, never what it is — and the vocabulary is closed **by the shape of this port**: one
+    method per thing that can ring, and today one method. An enum with a single member would
+    invite a second voice with no writer; a method obliges every future event to arrive with its
+    own caller and its own decision (the review of 2026-09-19).
+
+    **No parameter is a string**, and that is the guarantee rather than a promise: ``risk`` comes
+    from the catalogue, so nothing of the user's content can be passed in, and ``mypy --strict``
+    refuses a sentence where the method wants a :class:`~ela.domain.RiskLevel`. What the user is
+    shown is composed by the adapter, from a table of its own.
+
+    **It does not fail — it reports.** A bell that does not ring must not fail a run: the question
+    waits on the page and in the CLI all the same, and the outcome is written either way. Whoever
+    calls it writes ``BELL_RUNG`` with what came back (§57: which provider, which data, why).
+    """
+
+    @property
+    def name(self) -> str:
+        """Which provider would ring: what the audit records, never the topic or the URL."""
+        ...
+
+    @property
+    def ready(self) -> bool:
+        """Whether a bell can ring at all: a topic configured, and an address to open."""
+        ...
+
+    async def approval_waiting(self, risk: RiskLevel) -> bool:
+        """Ring for a request for consent that is waiting; ``True`` if it was delivered.
+
+        Never raises: a network that is not there, a provider that says no and a timeout all come
+        back as ``False``.
+        """
 
 
 @runtime_checkable

@@ -69,6 +69,7 @@ from ela.testing.fakes import (
     FakeAssignmentStore,
     FakeAuditLog,
     FakeAuthorizationStore,
+    FakeBell,
     FakeCapabilityRegistry,
     FakeClock,
     FakeDeviceRegistry,
@@ -176,6 +177,8 @@ class World:
     orchestrator: DeviceOrchestrator
     runner: TaskRunner
     assignments: Assignments
+    bell: FakeBell
+    """What rang, and whether it was delivered (M12.5 dec. E): a bell that touches no network."""
     node: Device
     """This machine, and deliberately so: its id **is** ``LOCAL_DEVICE_ID`` (M12.2, dec. A).
 
@@ -577,6 +580,7 @@ def world(
     ttl: timedelta | None = None,
     cap: timedelta | None = None,
     failing: frozenset[CapabilityId] = frozenset(),
+    bell: FakeBell | None = None,
     **executor_options: Any,
 ) -> World:
     clock, ids = FakeClock(), FakeIdGenerator()
@@ -620,6 +624,10 @@ def world(
         **({} if ttl is None else {"ttl": ttl}),
         **({} if cap is None else {"cap": cap}),
     )
+    # Silent unless a test asks for a bell: an ELA where nobody configured one is what every
+    # machine is until somebody does, and it is the baseline every audit sequence here was
+    # written against (M12.5 dec. E).
+    bell = FakeBell(ready=False) if bell is None else bell
     executor = Executor(
         registry=registry,
         tools=tool_registry,
@@ -635,6 +643,7 @@ def world(
         ids=ids,
         actor=ELA_ACTOR,
         assignments=assignments,
+        bell=bell,
         **executor_options,
     )
     runner = TaskRunner(
@@ -665,6 +674,7 @@ def world(
         orchestrator,
         runner,
         assignments,
+        bell,
         device,
         fakes,
         checkers,

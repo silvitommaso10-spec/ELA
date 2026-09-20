@@ -185,6 +185,54 @@ farne di nuovi. Vale anche per un task `LOCAL_ONLY` di cui la pagina non mostra 
 dove sta la persona, un nodo è una macchina che lavora. L'id resta quello che il middleware ha
 risolto, così l'audit dice **da dove** è arrivato l'atto.
 
+## 8. Il campanello: un metodo per voce, e un timeout misurato
+
+**ntfy.sh, gratis, con un argomento casuale di 128 bit trattato come un segreto** (dec. E1). Costa
+zero; E1+ o E3 restano possibili il giorno in cui l'utente vorrà pagare per togliere i campanelli
+falsi. È anche l'unica delle quattro che fa letteralmente ciò che il punto fermo 5 chiede — **la
+notifica apre la pagina**, con un tocco solo, misurato il 2026-09-20 — senza un account, e ciò a
+cui rinuncia rispetto a Pushover, la cifratura, protegge un testo che per costruzione non porta
+niente dell'utente.
+
+Port introdotti:
+
+| Port | Spec | Modalità | Membri |
+|---|---|---|---|
+| `Bell` | §7, §8, §57 | async | `name`, `ready`, `approval_waiting` |
+
+**Un metodo per voce, non un enum.** Il port ha un metodo per ogni evento che suona, e oggi uno
+solo, `approval_waiting(risk)`. Un enum con un membro invita ad aggiungere voci senza scrittore; un
+metodo obbliga ogni evento futuro a entrare con il suo chiamante e la sua decisione (la review del
+2026-09-19). **Nessun parametro è una stringa**: il rischio è del catalogo, quindi «niente
+dell'utente nel testo» è vero per costruzione — `mypy --strict` rifiuta una frase dove il metodo
+vuole un `RiskLevel` — e l'adattatore compone il testo da una tabella sua, con le chiavi di
+`tokens.json`: titolo «ELA», corpo «WAITING APPROVAL · MEDIUM».
+
+**Chi suona, e quanto può trattenere il `run`.** L'executor, dentro `_ask`, **dopo** che la domanda
+è salvata e il task aspetta: un campanello non annuncia mai una domanda che non c'è. È quindi sul
+percorso del `run`, e il timeout dell'adattatore è ciò che limita l'attesa dell'utente: **5 s**,
+costante e dichiarato, contro la misura di 0,43 s di P4 — una dozzina di volte il peggiore dei tre
+tempi misurati. Un test con un fornitore finto lento prova che il `run` non viene trattenuto oltre.
+
+**Un campanello che non suona non fa fallire niente**: la domanda aspetta comunque sulla pagina e
+nella CLI, e l'esito si scrive. Una morte fra la domanda salvata e il campanello lascia una domanda
+senza campanello: dichiarato, e costa poco — la pagina la mostra alla prossima occhiata.
+
+**Nell'audit, sì.** `BELL_RUNG`, attore `SYSTEM`, con il rischio, il fornitore, l'id
+dell'approvazione e se è stato consegnato; **mai** l'argomento di ntfy né l'URL. Nessun campo
+«voce»: avrebbe un valore solo, e che cosa ha suonato lo dice già l'id della domanda.
+
+**Non è una capability** (deciso il 2026-09-19): è l'infrastruttura con cui ELA **chiede** il
+consenso, non un'azione verso lo scopo dell'utente. Non porta contenuto per costruzione; chiedere
+il consenso per poter chiedere il consenso è circolare; la politica è la configurazione
+dell'utente — senza argomento, nessun campanello; e la scelta *se* disturbare è §8, la Fase 15.
+
+**L'URL del tocco è fisso**, e viene dall'indirizzo su cui questo processo **ascolta davvero** —
+quello che `api/server.py` ha legato —, non dall'impostazione: se all'avvio la tailnet non c'era,
+ELA ascolta sul solo loopback e un campanello aprirebbe un indirizzo muto. Senza quell'indirizzo il
+campanello non è pronto, e `/diagnostics` lo dice. Nessun pulsante d'azione (punto fermo 5): il sì
+si dà sulla pagina, dov'è la domanda. La priorità è una costante.
+
 ## Conseguenze
 
 - Una colonna imposta in più su `devices` e una su `enrollments`; la regola 44 si estende a `role`,

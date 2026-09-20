@@ -30,9 +30,9 @@ from tests.architecture.rules import (
 )
 from tests.conformance.test_node_contract import KITS
 from tests.conformance.test_unsupported import PINNED
-from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_cli import SPECIES, coded_commands, documented_species
 from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_listening import ports_before
 from tests.docs.test_adr_placement import _rules_up_to
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -246,5 +246,5 @@ def test_the_conseguenze_count_what_the_tree_has_today() -> None:
     assert "**restano otto**" in text
     assert len(production_catalogue().specs()) == 8
     assert "**venticinque**" in text
-    assert len(tuple(port_protocols())) == 25
+    assert len(ports_before(ADR_PATH.with_name("0043-companion.md"))) == 25
     assert set(INFRA_PACKAGES) == {"providers", "infrastructure", "api", "cli", "node"}

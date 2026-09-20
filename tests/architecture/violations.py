@@ -1437,6 +1437,16 @@ VIOLATIONS: tuple[Case, ...] = (
         "def welcome(response):\n    return response.set_cookie('ela_companion', '')\n",
         "ela_companion",
     ),
+    # --- the-bell-rings-a-method (rule 56, M12.5 dec. E) ---
+    Case(
+        # A second place that rings: the runner, when a task ends. It reads well, and it is a
+        # decision about when ELA disturbs the user taken where nobody decided it.
+        "a-second-place-rings-the-bell",
+        "the-bell-rings-a-method",
+        "executive/runner.py",
+        "async def done(bell, risk):\n    return await bell.approval_waiting(risk)\n",
+        ".approval_waiting(",
+    ),
     # --- one-composer-for-a-page (rule 57, M12.5 dec. D) ---
     Case(
         # The shortest way to answer a browser from a route — and a page with no

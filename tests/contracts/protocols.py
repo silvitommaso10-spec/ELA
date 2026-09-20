@@ -39,6 +39,7 @@ REQUIRED_PORTS = frozenset(
         "TextRecognitionPort",
         "EnrollmentStore",
         "AssignmentStore",
+        "Bell",
     }
 )
 """The eleven ports of M1.3, the two of M5.1 (ADR 0013: the audited Guardian, the tools), the

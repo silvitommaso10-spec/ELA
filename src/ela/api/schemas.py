@@ -891,6 +891,22 @@ class PreviewIn(BaseModel):
     voice_id: str = Field(min_length=1)
 
 
+class BellOut(BaseModel):
+    """Whether ELA can ring the user's phone, and through whom (M12.5 dec. E; ADR 0043 §8).
+
+    Two facts and not one, for the reason ADR 0030 §8 gives: a topic nobody configured and an ELA
+    that never bound an address a phone can open are different things with different answers, and
+    a single ``false`` would send somebody looking in the wrong place.
+    """
+
+    configured: bool
+    """A topic is set: without it ELA is silent, and that is a configuration, not a failure."""
+    ready: bool
+    """And an address a phone can open was bound — the tailnet's, not loopback (ADR 0037 §2)."""
+    provider: str
+    """Who would ring. Never the topic, which is the credential on this provider."""
+
+
 class ListeningOut(BaseModel):
     """What ELA can hear with, right now (M11.2, ADR 0036).
 
@@ -1017,6 +1033,8 @@ class DiagnosticsOut(BaseModel):
     Counted and not written: anyone on the tailnet could otherwise write into the chain of §32 at
     will. In the memory of the process, reset at every start — a fact to see, not to engrave.
     """
+    bell: BellOut
+    """Whether ELA can reach the user on their phone, and through whom (M12.5 dec. E)."""
     perception: PerceptionSummaryOut
     voice: VoiceOut
     listening: ListeningOut

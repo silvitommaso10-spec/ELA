@@ -497,6 +497,14 @@ class AuditEventType(StrEnum):
     """
     DEVICE_REVOKED = "DEVICE_REVOKED"
     """The user revoked a node: its row stays, and its secret opens nothing (ADR 0037 §12)."""
+    BELL_RUNG = "BELL_RUNG"
+    """ELA asked for the user's attention on a device of theirs (§57; M12.5 dec. E).
+
+    A bell is data leaving for a third party — that a question waits, and when — so it is written:
+    the risk, the provider, the request it was about, and whether it was delivered. Never the topic
+    of the provider, which is a credential, and never the URL. No field for *which* voice rang:
+    that would have one value, and what rang is already said by the request it names.
+    """
     SENSOR_ACTIVATED = "SENSOR_ACTIVATED"
     """ELA opened one of the sensors of §11 — today the microphone (M11.2, ADR 0036 §11).
 

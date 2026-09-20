@@ -64,6 +64,7 @@ from ela.domain import (
     RawRecognition,
     RawSpeech,
     RawTranscript,
+    RiskLevel,
     StepId,
     Task,
     TaskEvent,
@@ -110,6 +111,7 @@ __all__ = [
     "FakeApprovalStore",
     "FakeAuditLog",
     "FakeAuthorizationStore",
+    "FakeBell",
     "FakeCapabilityRegistry",
     "FakeClock",
     "FakeDeviceRegistry",
@@ -284,6 +286,38 @@ class FakeTaskRepository:
             return self._plans[task_id]
         except KeyError:
             raise NotFoundError("task plan", task_id) from None
+
+
+class FakeBell:
+    """A bell that remembers what it rang and never touches a network (port ``Bell``).
+
+    ``ready`` is a flag and not a deduction: a test that wants the silent case — no topic, or no
+    address to open — turns it off, and one that wants the bell to fail turns ``delivers`` off.
+    """
+
+    def __init__(self, *, ready: bool = True, delivers: bool = True, name: str = "fake") -> None:
+        self.rung: list[RiskLevel] = []
+        self.serving: tuple[str, ...] = ()
+        self.delivers = delivers
+        self._ready = ready
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def ready(self) -> bool:
+        return self._ready
+
+    def serving_at(self, addresses: Sequence[str]) -> None:
+        """Not a member of the port: the composition hands this over as a callable (ADR 0043 §8),
+        and the fake keeps it so a test can wire one the same way production does."""
+        self.serving = tuple(addresses)
+
+    async def approval_waiting(self, risk: RiskLevel) -> bool:
+        self.rung.append(risk)
+        return self.delivers
 
 
 class FakeAuditLog:

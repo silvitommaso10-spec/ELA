@@ -145,6 +145,10 @@ async def _serve(settings: Settings) -> None:
         sockets = await _claimed(settings.api)
         app = create_app(ela)
         app.state.addresses = tuple(shown(listener) for listener in sockets)
+        # After the bind and before serving: the bell's tap opens the address this process ended
+        # up on, not the one the settings asked for. If the tailnet was not there, ELA is on
+        # loopback only and the bell is not ready — which ``/diagnostics`` says (M12.5 dec. E).
+        ela.serving_at(app.state.addresses)
         server = Stopping(
             uvicorn.Config(app, log_level="info"),
             stopping=app.state.stopping,

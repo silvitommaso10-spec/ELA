@@ -511,6 +511,17 @@ COMPANION_COOKIE = "ela_companion"
 #: a page shows has to exist in a route first — which is why ``ApprovalOut`` grew (dec. F).
 PAGES_MODULE = Path("api") / "companion.py"
 COMPOSED_WORLD = "ela"
+#: Rule 56 (M12.5 dec. E; ADR 0043 §8): the bell's vocabulary is closed **by the shape of the
+#: port** — one method per thing that can ring, and one caller for each. The voices are read from
+#: the port itself (its ``async def``s), not listed here: a second voice added tomorrow is walked
+#: by this rule the day it is written, and it has to arrive with its caller.
+PORTS_FILE = Path("ports.py")
+BELL_PORT = "Bell"
+BELL_CALLER = Path("executive") / "executor.py"
+#: And no parameter of a voice is a ``str``: what the user is told is composed by the adapter from
+#: a table of its own, so «niente dell'utente nel testo» is a property of the types and not of
+#: everybody's attention (dec. E).
+FORBIDDEN_VOICE_PARAMETER = "str"
 #: Rule 57 (M12.5 dec. D; ADR 0043 §5): every page of ``ela.api`` — the answers, the ``401`` that
 #: is the enrolment form, the ``404`` «non esiste», the errors under the prefix — is composed by
 #: :data:`HTML_COMPOSER`, which is where the ``Content-Security-Policy`` is put on it. A response
@@ -2663,6 +2674,63 @@ def _names_an_identity(value: str) -> str | None:
     return COMPANION_COOKIE if value == COMPANION_COOKIE else None
 
 
+def check_the_bell_rings_a_method(pkg_root: Path) -> list[Violation]:
+    """Rule 56: one caller per voice of the bell, and no voice takes a string (M12.5 dec. E).
+
+    The vocabulary of the bell is not an enum but **a method per voice**: an enum with one member
+    invites a second voice with no writer, a method obliges every future event to arrive with its
+    own caller and its own decision (the review of 2026-09-19). This rule is what makes that shape
+    hold — the voices are read from the port, so a second one is walked the day it is written.
+
+    Two things are reported:
+
+    * a call ``<x>.<voice>(...)`` outside :data:`BELL_CALLER` — the executor, where the request for
+      consent is born. A second place that rang would be a second decision about when ELA disturbs
+      the user, taken where nobody decided it. The definitions — in ``ports.py``, in the adapter,
+      in the fake — are ``def``s, not calls, and are not reported (the heuristic of rules 16, 17
+      and 19);
+    * a parameter of a voice annotated :data:`FORBIDDEN_VOICE_PARAMETER`. The one thing a bell
+      must never carry is a sentence of the user's, and a port that took a ``str`` would make that
+      a matter of who is writing the call.
+
+    Silent on a tree with no such port, and written with it (ADR 0030 §15).
+    """
+    rule = "the-bell-rings-a-method"
+    ports = pkg_root / PORTS_FILE
+    if not ports.is_file():
+        return []
+    voices: dict[str, ast.AsyncFunctionDef] = {}
+    for node in ast.walk(ast.parse(ports.read_text(encoding="utf-8"), filename=str(ports))):
+        if isinstance(node, ast.ClassDef) and node.name == BELL_PORT:
+            voices = {
+                member.name: member
+                for member in node.body
+                if isinstance(member, ast.AsyncFunctionDef)
+            }
+    if not voices:
+        return []
+    name = module_name(ports, pkg_root)
+    found = [
+        Violation(rule, name, f"{voice}({argument.arg}: {FORBIDDEN_VOICE_PARAMETER})", node.lineno)
+        for voice, node in voices.items()
+        for argument in node.args.args
+        if isinstance(argument.annotation, ast.Name)
+        and argument.annotation.id == FORBIDDEN_VOICE_PARAMETER
+    ]
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) in {BELL_CALLER, PORTS_FILE}:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, module_name(path, pkg_root), f".{node.func.attr}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in voices
+        )
+    return found
+
+
 def check_one_composer_for_a_page(pkg_root: Path) -> list[Violation]:
     """Rule 57: every HTML answer of ``ela.api`` is composed in one module (M12.5 dec. D).
 
@@ -3029,6 +3097,7 @@ RULES: dict[str, Rule] = {
     "a-node-does-not-ask-which-machine-it-is": check_a_node_does_not_ask_which_machine_it_is,
     "pages-read-the-routes": check_pages_read_the_routes,
     "one-composer-for-a-page": check_one_composer_for_a_page,
+    "the-bell-rings-a-method": check_the_bell_rings_a_method,
 }
 
 
@@ -3425,6 +3494,18 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("one-composer-for-a-page", "HTML_RESPONSE", DETECTOR),
     Constant(
         "one-composer-for-a-page",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-bell-rings-a-method (rule 56, M12.5 dec. E)
+    Constant("the-bell-rings-a-method", "BELL_CALLER", EXEMPTION, by=WHOLE, adr="ADR 0043 §8"),
+    Constant("the-bell-rings-a-method", "BELL_PORT", DETECTOR),
+    Constant("the-bell-rings-a-method", "FORBIDDEN_VOICE_PARAMETER", DETECTOR),
+    Constant("the-bell-rings-a-method", "PORTS_FILE", DETECTOR),
+    Constant(
+        "the-bell-rings-a-method",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,
