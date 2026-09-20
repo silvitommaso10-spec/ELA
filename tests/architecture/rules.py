@@ -451,8 +451,19 @@ TOKEN_NAMES = frozenset({"token", "presented", "node_secret", "presented_hash", 
 #: rule 46: never inside an ``AuditEvent``, a wire shape of the API, or the entity every reader of
 #: the registry holds. The names do not exist yet: the rules are written before the code (ADR 0030
 #: §15), so the day it exists it is born inside the fence.
+#: M12.5 adds two secrets of the same family and puts them behind the same fence (dec. C.1, E):
+#: ``companion_cookie``, the credential a browser carries, and ``bell_topic``, the name of the ntfy
+#: topic — which on the public server *is* the password of that topic.
 NODE_SECRET_NAMES = frozenset(
-    {"node_secret", "presented_hash", "secret_hash", "enrollment_code", "code_hash"}
+    {
+        "node_secret",
+        "presented_hash",
+        "secret_hash",
+        "enrollment_code",
+        "code_hash",
+        "companion_cookie",
+        "bell_topic",
+    }
 )
 #: Rule 31, extended (ADR 0037 §16): the names of a node's secret that no module but
 #: :data:`SECURITY_MODULE` compares **by value** — ``is None`` stays allowed anywhere, because
@@ -484,6 +495,11 @@ DEVICE_ENTITY = "Device"
 #: yet, which D12 opens — the routes of approvals and cancellation will read the identity, and the
 #: shortest way to write that is to read it from the header.
 AUTHORIZATION_HEADER = "authorization"
+#: Rule 47, extended (M12.5 dec. C.1): a browser cannot set a header, so the companion's credential
+#: travels in a cookie — and a second place that read *or wrote* it would be a second place where
+#: who is calling is decided, and the one that forgets the revocation. The name is a detector: the
+#: middleware is the only module of ``ela.api`` allowed to write it.
+COMPANION_COOKIE = "ela_companion"
 #: Rule 48 (M12.2, ADR 0038): the port of the assignments returns the row *as written* — ``OFFERED``
 #: even when it has expired — and whoever decides goes through the service, which derives the
 #: expiry and writes the task's heartbeat before every expiry it sets (dec. G). The mirror of rule
@@ -2598,6 +2614,12 @@ def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
     the middleware. Silent on today's tree, where the middleware is the only reader
     (``api/security.py``), and asserted silent: the rule is written before the routes that will
     want to know who called (ADR 0030 §15).
+
+    **Extended in M12.5** (dec. C.1): a browser cannot send a header, so the companion's credential
+    arrives in a cookie, :data:`COMPANION_COOKIE`. Its name is reported the same way, and for the
+    same reason — one place decides who is calling — with one addition: the middleware is also the
+    only module that *writes* it, so the ``Set-Cookie`` that hands out the credential and the one
+    that clears it are composed where the credential is understood.
     """
     rule = "identity-resolved-in-one-place"
     found: list[Violation] = []
@@ -2606,13 +2628,20 @@ def check_identity_resolved_in_one_place(pkg_root: Path) -> list[Violation]:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         found.extend(
-            Violation(rule, module_name(path, pkg_root), AUTHORIZATION_HEADER, node.lineno)
+            Violation(rule, module_name(path, pkg_root), named, node.lineno)
             for node in ast.walk(tree)
             if isinstance(node, ast.Constant)
             and isinstance(node.value, str)
-            and node.value.lower() == AUTHORIZATION_HEADER
+            and (named := _names_an_identity(node.value)) is not None
         )
     return found
+
+
+def _names_an_identity(value: str) -> str | None:
+    """The header or the cookie that carries an identity, or ``None`` (rule 47, M12.1 and M12.5)."""
+    if value.lower() == AUTHORIZATION_HEADER:
+        return AUTHORIZATION_HEADER
+    return COMPANION_COOKIE if value == COMPANION_COOKIE else None
 
 
 def check_assignment_port_readers(pkg_root: Path) -> list[Violation]:
@@ -3141,6 +3170,7 @@ CONSTANTS: tuple[Constant, ...] = (
     # identity-resolved-in-one-place (rule 47, M12.1)
     Constant("identity-resolved-in-one-place", "API_DIR", DETECTOR),
     Constant("identity-resolved-in-one-place", "AUTHORIZATION_HEADER", DETECTOR),
+    Constant("identity-resolved-in-one-place", "COMPANION_COOKIE", DETECTOR),
     Constant(
         "identity-resolved-in-one-place",
         "ROOT_PACKAGE",

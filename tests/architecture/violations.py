@@ -1381,7 +1381,26 @@ VIOLATIONS: tuple[Case, ...] = (
         "class Device:\n    secret_hash: str\n",
         "secret_hash",
     ),
-    # --- identity-resolved-in-one-place (rule 47, M12.1) ---
+    Case(
+        # M12.5 dec. E: on a public server the topic *is* the password of the topic, and the audit
+        # is append-only — the bell's own event is the first place somebody will write it.
+        "the-bell-topic-in-an-audit-event",
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "executive/executor.py",
+        "from ela.domain import AuditEvent\n"
+        "def rang(bell_topic):\n"
+        "    return AuditEvent(summary=bell_topic)\n",
+        "bell_topic",
+    ),
+    Case(
+        # M12.5 dec. C.1: the companion's credential, on the shape a page would answer with.
+        "the-companion-cookie-on-a-wire-shape",
+        "a-nodes-secret-crosses-no-readable-boundary",
+        "api/schemas.py",
+        "class CompanionOut:\n    companion_cookie: str\n",
+        "companion_cookie",
+    ),
+    # --- identity-resolved-in-one-place (rule 47, M12.1, extended in M12.5) ---
     Case(
         # The shortest way a route learns who called — and the second place that forgets a
         # revocation.
@@ -1390,6 +1409,24 @@ VIOLATIONS: tuple[Case, ...] = (
         "api/approvals.py",
         "def responder(request):\n    return request.headers.get('Authorization')\n",
         "authorization",
+    ),
+    Case(
+        # M12.5 dec. C.1: the browser's half of the credential, read where the revocation is not
+        # known — the header's case, for the carrier a browser can actually send.
+        "a-page-reads-the-companion-cookie",
+        "identity-resolved-in-one-place",
+        "api/companion.py",
+        "def who(request):\n    return request.cookies.get('ela_companion')\n",
+        "ela_companion",
+    ),
+    Case(
+        # And the other half: a page that hands out or clears the credential itself would decide
+        # an enrolment, or a revocation, away from where the credential is understood.
+        "a-page-writes-the-companion-cookie",
+        "identity-resolved-in-one-place",
+        "api/pages.py",
+        "def welcome(response):\n    return response.set_cookie('ela_companion', '')\n",
+        "ela_companion",
     ),
     # --- assignment-port-readers (rule 48, M12.2) ---
     Case(
