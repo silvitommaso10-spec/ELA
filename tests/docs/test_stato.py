@@ -133,6 +133,7 @@ def test_the_closing_sections_of_the_spec_really_are_uncited(generator: ModuleTy
         "Come si paga una sessione",
         "Il tetto di spesa",
         "Il design è una fase, non una rifinitura",
+        "La Fase 13 comincia dal permesso, non dall'azione",
     ],
 )
 def test_every_decision_that_lives_in_no_adr_is_written_here(decision: str) -> None:
