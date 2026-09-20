@@ -7,6 +7,7 @@ middleware and why this module enumerates the application's own routes instead o
 
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from collections.abc import (
@@ -19,16 +20,19 @@ from datetime import (
 )
 from typing import (
     Any,
+    Final,
 )
+from urllib.parse import parse_qsl
 
 import pytest
-from fastapi import FastAPI
-from httpx import AsyncClient
+from fastapi import FastAPI, Request, Response
+from httpx import ASGITransport, AsyncClient
 
 from ela.api.security import (
     CODE_ROUTES,
     NODE_ROUTES,
     Anonymous,
+    Call,
     Identity,
     Kind,
     authorized,
@@ -306,3 +310,66 @@ async def test_each_anonymous_reason_is_counted_by_its_request_and_by_nothing_el
 
     assert getattr(response, "status_code", None) == 401
     assert (await client.get("/diagnostics")).json()["refused"] == {reason.value: 1}
+
+
+# ----------------------------------------------------------------------------------------
+# What M12.5 leans on: a middleware may read a field of the form (M12.5 dec. C.3, rule 1)
+# ----------------------------------------------------------------------------------------
+
+ANSWERED: Final = 5.0
+"""Seconds to wait for an answer that, when the body is replayed, is there at once."""
+FORM: Final = {"code": "c" * 43, "name": "iPhone", "os": "IOS"}
+"""The enrolment form of the companion: the credential, and the two fields the page declares."""
+
+
+def fields(body: bytes) -> dict[str, str]:
+    """An ``application/x-www-form-urlencoded`` body, read with the standard library.
+
+    Not ``request.form()``: Starlette parses a form only with ``python-multipart`` installed
+    (``starlette/requests.py``, the assertion in ``_get_form``), and a third-party parser for
+    file uploads is a large thing to add for three fields — and a page able to read
+    ``multipart/form-data`` is a page that accepts a file. The companion's form is urlencoded,
+    and this is how the middleware and the route will read it.
+    """
+    return dict(parse_qsl(body.decode("utf-8", "replace")))
+
+
+async def test_a_middleware_reads_a_field_of_the_form_and_the_route_still_gets_the_body() -> None:
+    """The platform guarantee ``POST /companion/enroll`` rests on, pinned before the code exists.
+
+    Rule 1 of M12.5 dec. C.3 puts the companion's code where a browser can put it — a field of the
+    form — and keeps the resolution of every credential inside the middleware (D10): so the
+    middleware has to read ``code`` from the body, and the route has to find that same body
+    afterwards, whole. Starlette makes that true by caching what a middleware consumed and
+    replaying it downstream (``starlette.middleware.base._CachedRequest``); nothing in ELA does.
+
+    It is therefore a test of somebody else's promise, which is why it is written **before** the
+    code of C.3 (§«Rischi»: measured by hand on 2026-09-19 with these versions, and a test keeps
+    it). The day an upgrade stops replaying the body it fails here — on a throwaway application of
+    ten lines — instead of failing on the one page an iPhone has to reach.
+
+    The wait is bounded because the negative case, tried against a middleware that eats the body
+    and hands on the empty stream, is not a wrong answer but **no answer**: the route stays waiting
+    for a body that never arrives. :data:`ANSWERED` is not a threshold on how fast anything is —
+    with the replay the answer is already there — it is what turns a deadlock into a sentence.
+    """
+    seen: dict[str, str | None] = {}
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def read_the_code(request: Request, call_next: Call) -> Response:
+        seen["code"] = fields(await request.body()).get("code")
+        return await call_next(request)
+
+    @app.post("/companion/enroll")
+    async def enroll(request: Request) -> dict[str, str]:
+        return fields(await request.body())
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://ela.test") as client:
+        try:
+            response = await asyncio.wait_for(client.post("/companion/enroll", data=FORM), ANSWERED)
+        except TimeoutError:  # pragma: no cover — the body was consumed and not replayed
+            pytest.fail("the route is waiting for a body the middleware consumed")
+
+    assert seen == {"code": FORM["code"]}, "the middleware could not read the field"
+    assert response.json() == FORM, "the route was left without the body the middleware read"
