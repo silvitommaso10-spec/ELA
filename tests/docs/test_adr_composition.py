@@ -218,7 +218,7 @@ def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
 
 
 def test_the_pages_of_m12_5_are_the_routes_adr_0043_documents() -> None:
-    """Six, and the two sheets among them: what ``ela.api`` serves of ``apps/`` is a route like
+    """Eight, and the two sheets among them: what ``ela.api`` serves of ``apps/`` is a route like
     the others, behind the identity like the others (M12.5 dec. D)."""
     added = documented_routes(companion_adr_text())
 
@@ -226,6 +226,8 @@ def test_the_pages_of_m12_5_are_the_routes_adr_0043_documents() -> None:
         ("GET", "/companion/"),
         ("GET", "/companion/approval"),
         ("POST", "/companion/answer"),
+        ("GET", "/companion/cancel"),
+        ("POST", "/companion/cancel"),
         ("POST", "/companion/enroll"),
         ("GET", "/companion/tokens.css"),
         ("GET", "/companion/components.css"),
@@ -248,13 +250,13 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_thirty_five_of_them() -> None:
+def test_there_are_thirty_seven_of_them() -> None:
     """Twenty until ADR 0037 §4 added five, twenty-five until ADR 0038 §11 added the three of the
     work, twenty-eight until ADR 0039 §2 added the one a node that restarted reads itself with,
-    and twenty-nine until ADR 0043 §5 added the six pages of the companion;
+    and twenty-nine until ADR 0043 §5 added the eight pages of the companion;
     ``tests/api/test_security.py`` proves that every one of them is behind the middleware,
     and which identity reaches which."""
-    assert len(coded_routes()) == 35
+    assert len(coded_routes()) == 37
 
 
 def test_the_one_route_of_the_restart_is_the_one_adr_0039_adds() -> None:

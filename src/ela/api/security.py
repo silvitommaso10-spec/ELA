@@ -103,6 +103,8 @@ COMPANION_ROUTES: Final = frozenset(
         ("GET", "/companion/"),
         ("GET", "/companion/approval"),
         ("POST", "/companion/answer"),
+        ("GET", "/companion/cancel"),
+        ("POST", "/companion/cancel"),
         ("GET", "/companion/tokens.css"),
         ("GET", "/companion/components.css"),
     }
@@ -201,10 +203,17 @@ class Identity:
 
     @property
     def actor(self) -> Actor:
-        """Who signs what this identity does: the user at this machine, or the node itself."""
+        """Who signs what this identity does: the user, at this machine or with their phone.
+
+        ``USER`` for the Core and for a companion, ``DEVICE`` for a node — the distinction ADR 0037
+        §15 drew: «who approves, issues a code or revokes a node is a person, not a device». An
+        iPhone is where the person is; a node is a machine doing work. The **id** is always the one
+        the middleware resolved, so the audit says *where* the act came from (M12.5 dec. A, C4).
+        """
         if self.kind is Kind.CORE:
             return LOCAL_USER
-        return Actor(kind=ActorKind.DEVICE, id=str(self.node))
+        kind = ActorKind.USER if self.kind is Kind.COMPANION else ActorKind.DEVICE
+        return Actor(kind=kind, id=str(self.node))
 
     @property
     def node(self) -> DeviceId:

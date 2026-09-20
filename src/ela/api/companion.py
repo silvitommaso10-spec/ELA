@@ -33,9 +33,9 @@ from ela.api import pages
 from ela.api.approvals import approve, deny, pending_approvals
 from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.nodes import enrolled
-from ela.api.schemas import AnswerIn, ApprovalOut, DeclarationIn, TaskOut
+from ela.api.schemas import AnswerIn, ApprovalOut, CancelIn, DeclarationIn, TaskOut
 from ela.api.security import Anonymous, Identity, note, welcome
-from ela.api.tasks import list_tasks
+from ela.api.tasks import cancel_task, list_tasks
 from ela.api.tasks import run_task as run
 from ela.devices import PRIVACY_ORDER
 from ela.domain import ApprovalId, DeviceRole, OperatingSystem, PrivacyLevel, TaskId, TaskState
@@ -75,6 +75,8 @@ SPEAKS: Final = "ELA parlerà ad alta voce su una macchina tua: le parole non so
 STAYS_ON_THE_MAC: Final = "Il contenuto resta sul Mac: rispondi da lì."
 NOTHING: Final = "Nient'altro ti aspetta."
 AFTER_YES: Final = "ELA riprende il task adesso; uno step affidato a un altro nodo aspetta."
+STOPPED: Final = "fermato dall'iPhone"
+"""What the audit reads as the reason of a cancellation asked from the phone (§65)."""
 AN_IPHONE: Final = "Il companion è un iPhone: lascia «IOS» nel campo Sistema e dai un nome."
 NO_SUCH_CODE: Final = "Questo codice non esiste. Coniane uno al Mac e incollalo qui."
 TOO_LATE: Final = "Questo codice è scaduto: dura dieci minuti. Coniane un altro."
@@ -192,22 +194,38 @@ def _tasks(
     screen it was made for, and what the user opens the page for is what is happening now.
     """
     recent = tuple(one for one in reversed(alive) if one not in answered)[:SHOWN]
-    shown = (*answered, *recent)
-    if not shown:
+    if not answered and not recent:
         return pages.Markup("")
     return pages.fragment(
         "tasks",
         title="I task",
         rows=pages.joined(
-            pages.fragment(
-                "row-task",
-                state=WORKING if one.state is TaskState.EXECUTING else IDLE,
-                what=one.goal if may_see(identity, one.max_privacy) else one.id,
-                key=one.state.value,
-            )
-            for one in shown
+            [
+                # The one just answered is shown as it *is*, and it is not offered a "stop": it may
+                # have closed a second ago, and a page that invited the user to stop what is over
+                # would be a page that does not know what happened (dec. D, dec. I).
+                *(
+                    pages.fragment("row-done", what=_title(one, identity), key=one.state.value)
+                    for one in answered
+                ),
+                *(
+                    pages.fragment(
+                        "row-task",
+                        state=WORKING if one.state is TaskState.EXECUTING else IDLE,
+                        what=_title(one, identity),
+                        key=one.state.value,
+                        id=one.id,
+                    )
+                    for one in recent
+                ),
+            ]
         ),
     )
+
+
+def _title(task: TaskOut, identity: Identity) -> object:
+    """What a row calls a task: its goal, or its id when the ceiling keeps the goal on the Mac."""
+    return task.goal if may_see(identity, task.max_privacy) else task.id
 
 
 @router.post("/enroll")
@@ -268,6 +286,50 @@ async def tokens_css() -> Response:
 async def components_css() -> Response:
     """The design system's components, on the same terms as :func:`tokens_css`."""
     return pages.stylesheet("components.css")
+
+
+@router.get("/cancel")
+async def confirm(ela: ElaDep, identity: IdentityDep, id: Annotated[UUID, Query()]) -> Response:
+    """The second page of stopping a task (dec. I): without JavaScript, a confirmation is a page.
+
+    §65 wants ELA «estremamente governabile», and a route that only **takes away** is the first
+    one that makes sense to give a phone: a cancelled task does nothing more, and stopping is the
+    direction of §33. The price is said on the page: it cannot be undone.
+    """
+    found = await _live(ela, id)
+    return pages.page(
+        "cancel",
+        what=found.goal if may_see(identity, found.max_privacy) else found.id,
+        state=found.state.value,
+        id=found.id,
+    )
+
+
+@router.post("/cancel")
+async def cancel(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+    """The form of the confirmation page: the task stops, signed by the iPhone (dec. I).
+
+    Stopping does not ask to see: it works for a task whose content stays on the Mac too (F.2),
+    because what is being asked for is less and not more.
+    """
+    fields = form(await request.body())
+    found = await _live(ela, UUID(fields.get("id", "")))
+    await cancel_task(found.id, CancelIn(reason=STOPPED), ela, identity)
+    return RedirectResponse(HOME, status_code=303)
+
+
+async def _live(ela: ElaDep, id: UUID) -> TaskOut:
+    """The task with this id, among the ones that can still be stopped, or nothing.
+
+    Read through the route (rule 55), and among the live ones for the reason the approval page
+    reads the answerable ones: a page must not offer what ELA would refuse (§33).
+    """
+    found = next(
+        (one for one in await list_tasks(ela) if one.id == id and one.state in LIVE_STATES), None
+    )
+    if found is None:
+        raise NotFoundError("task", str(id))
+    return found
 
 
 @router.get("/approval")

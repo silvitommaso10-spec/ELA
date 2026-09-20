@@ -118,6 +118,8 @@ Sei rotte, e nessuna porta un id nel percorso — nella query o nel corpo, per l
 | `GET` | `/companion/` | la presenza, le domande che aspettano, i task vivi; `?task=<id>` mostra l'esito di ciò a cui si è appena risposto |
 | `GET` | `/companion/approval` | una domanda, con le parti che dec. F elenca; `?id=<id>` |
 | `POST` | `/companion/answer` | il sì o il no, e dopo un sì il `run` (§6) |
+| `GET` | `/companion/cancel` | la conferma di fermare un task: che cosa si ferma, e che è irreversibile; `?id=<id>` |
+| `POST` | `/companion/cancel` | il modulo della conferma: il task si ferma, firmato dall'iPhone (§7) |
 | `POST` | `/companion/enroll` | il modulo con il codice: `303` e il `Set-Cookie`, o la stessa pagina con la frase che dice che fare |
 | `GET` | `/companion/tokens.css` | i token del design system, da `apps/` |
 | `GET` | `/companion/components.css` | i componenti del design system, da `apps/` |
@@ -164,6 +166,24 @@ ammette la pagina non porta lo scopo, i `targets`, la frase né gli argomenti di
 l'id, lo stato, la capability, il rischio e le ore, e dice che il contenuto resta sul Mac. Il «sì» da
 lì è rifiutato con `ApprovalOutOfReachError`, che è `409` `not_answerable` come le altre due
 impossibilità — già risposta, troppo tardi — perché non si approva ciò che non si vede (§30).
+
+## 7. Fermare un task da lontano
+
+La rotta c'è già (`POST /tasks/{task_id}/cancel`), firmata dall'identità che il middleware ha
+risolto. Per il companion è un'aggiunta a `COMPANION_ROUTES` e **una pagina di conferma**, perché
+senza JavaScript una conferma è una pagina: `GET /companion/cancel?id=…` dice che cosa si ferma e
+che è irreversibile, e il suo modulo manda il `POST`.
+
+**Toglie soltanto**, ed è la ragione per cui è la prima rotta che ha senso dare a un telefono: un
+task `CANCELLED` non fa più niente, e fermarsi è il verso di §33. Il prezzo, detto: è
+irreversibile, e chi ruba il telefono può fermare i task dell'utente — non leggerne di più, non
+farne di nuovi. Vale anche per un task `LOCAL_ONLY` di cui la pagina non mostra il contenuto
+(§6): fermare non chiede di vedere.
+
+**L'attore è `USER` con l'id dell'iPhone**, non `DEVICE`. È la distinzione di ADR 0037 §15 —
+«chi approva, conia un codice o revoca un nodo è una persona, non un dispositivo» —: un iPhone è
+dove sta la persona, un nodo è una macchina che lavora. L'id resta quello che il middleware ha
+risolto, così l'audit dice **da dove** è arrivato l'atto.
 
 ## Conseguenze
 

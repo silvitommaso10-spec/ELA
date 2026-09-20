@@ -58,12 +58,12 @@ from tests.composition.support import TOKEN
 OTHER = "y" * 40
 
 
-def test_the_application_serves_the_thirty_five_routes_of_the_adrs_and_its_schema(
+def test_the_application_serves_the_thirty_seven_routes_of_the_adrs_and_its_schema(
     app: FastAPI,
 ) -> None:
     """Twelve routes (ADR 0023 §6), the two of ADR 0024 §5, the one of ADR 0025 §4, the one of
     ADR 0028 §8, the one of ADR 0032 §13, the three of ADR 0034 §9, the five of ADR 0037 §4,
-    the three of ADR 0038 §11, the one of ADR 0039 §2 and the six of ADR 0043 §5,
+    the three of ADR 0038 §11, the one of ADR 0039 §2 and the eight of ADR 0043 §5,
     plus ``/openapi.json``,
     which the loop below proves is behind the token like everything else — the schema of the API
     is not a page, and the pages of the companion are not in it: a browser cannot send a header,
@@ -73,7 +73,7 @@ def test_the_application_serves_the_thirty_five_routes_of_the_adrs_and_its_schem
     assert ("GET", "/openapi.json") in paths
     assert ("GET", "/tasks/{task_id}/results") in paths
     assert ("GET", "/companion/") in paths
-    assert len(paths) == 36
+    assert len(paths) == 38
     assert not {path for _, path in paths} & {"/docs", "/redoc"}
 
 

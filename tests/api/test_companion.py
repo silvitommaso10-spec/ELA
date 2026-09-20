@@ -537,6 +537,87 @@ async def test_a_question_that_is_not_waiting_is_not_a_page(
 
 
 # ----------------------------------------------------------------------------------------
+# I — stopping a task takes two pages, because a confirmation without JavaScript is a page
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_home_page_offers_to_stop_a_live_task(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    task_id = await queued(client, echo_plan(), privacy="TRUSTED")
+
+    answered = await phone.get("/companion/")
+
+    assert f"/companion/cancel?id={task_id}" in answered.text
+
+
+async def test_the_confirmation_says_what_stops_and_that_it_cannot_be_undone(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    """Dec. I: the second page is the confirmation, and it says the price before the button."""
+    task_id = await queued(client, echo_plan(), text="un lavoro", privacy="TRUSTED")
+
+    answered = await phone.get(f"/companion/cancel?id={task_id}")
+
+    assert answered.status_code == 200
+    assert "un lavoro" in answered.text
+    assert "non si può annullare" in answered.text
+    assert f'value="{task_id}"' in answered.text
+
+
+async def test_stopping_is_signed_user_with_the_id_of_the_iphone(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    """C8: the actor is ``USER`` — an iPhone is where the person is — and the id is the phone's,
+    so the audit says where the act came from. The negative can fail: a ``DEVICE`` here would be
+    ELA saying a machine stopped the user's task."""
+    task_id = await queued(client, echo_plan(), privacy="TRUSTED")
+    rows = (await client.get("/devices")).json()
+    companion = next(one for one in rows if one["role"] == DeviceRole.COMPANION.value)
+
+    answered = await phone.post("/companion/cancel", data={"id": task_id}, headers=ORIGIN)
+
+    assert answered.status_code == 303
+    assert answered.headers["Location"] == "/companion/"
+    task = (await client.get(f"/tasks/{task_id}")).json()
+    assert task["state"] == TaskState.CANCELLED.value
+    written = (await client.get("/audit")).json()
+    cancelled = next(
+        one for one in written if one["event_type"] == AuditEventType.TASK_CANCELLED.value
+    )
+    assert cancelled["actor"] == {"kind": "USER", "id": companion["id"]}
+
+
+async def test_a_local_only_task_can_be_stopped_without_being_shown(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    """Dec. I: stopping does not ask to see — what is being asked for is less, not more."""
+    task_id = await queued(client, echo_plan(), text="quello che resta sul Mac")
+
+    confirmation = await phone.get(f"/companion/cancel?id={task_id}")
+    assert confirmation.status_code == 200
+    assert "resta sul Mac" not in confirmation.text, "the goal is content"
+    assert task_id in confirmation.text
+
+    answered = await phone.post("/companion/cancel", data={"id": task_id}, headers=ORIGIN)
+    assert answered.status_code == 303
+    assert (await client.get(f"/tasks/{task_id}")).json()["state"] == TaskState.CANCELLED.value
+
+
+async def test_a_task_that_is_not_live_is_not_offered_to_be_stopped(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    """A page must not offer what ELA would refuse (§33): the state machine would say no, and the
+    page says nothing at all."""
+    task_id = await queued(client, echo_plan(), privacy="TRUSTED")
+    await phone.post("/companion/cancel", data={"id": task_id}, headers=ORIGIN)
+
+    assert (await phone.get(f"/companion/cancel?id={task_id}")).status_code == 404
+    again = await phone.post("/companion/cancel", data={"id": task_id}, headers=ORIGIN)
+    assert again.status_code == 404
+
+
+# ----------------------------------------------------------------------------------------
 # The ceiling, as a function
 # ----------------------------------------------------------------------------------------
 
