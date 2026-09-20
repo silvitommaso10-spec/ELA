@@ -32,7 +32,8 @@ from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Final
+from ipaddress import ip_address
+from typing import Final, assert_never
 from urllib.parse import parse_qsl
 from uuid import UUID
 
@@ -52,20 +53,29 @@ __all__ = [
     "COMPANION_HOME",
     "COMPANION_PREFIX",
     "COMPANION_ROUTES",
+    "COMPANION_SURFACE",
+    "CONSOLE_CODE_ROUTES",
+    "CONSOLE_HOME",
+    "CONSOLE_PREFIX",
+    "CONSOLE_ROUTES",
+    "CONSOLE_SURFACE",
     "COOKIE_MAX_AGE",
     "NODE_ROUTES",
     "SCHEME",
     "SEPARATOR",
+    "SURFACES",
     "Anonymous",
     "Identity",
     "Kind",
+    "Surface",
     "authorized",
     "count",
     "forgotten",
+    "from_this_machine",
     "identity_middleware",
     "note",
     "same_origin",
-    "under_the_prefix",
+    "surface_of",
     "unauthorized",
     "welcome",
 ]
@@ -138,6 +148,42 @@ Read and written **here** and nowhere else in ``ela.api`` (architecture rule 47)
 that wrote it would be a second place that decides who is calling, and the one that forgets a
 revocation.
 """
+
+CONSOLE_PREFIX: Final = "/console/"
+"""Where the pages of the Command Center live (M17.2 dec. B; ADR 0044)."""
+CONSOLE_HOME: Final = "/console"
+"""The prefix without its slash, ground of the console like everything under it.
+
+The lesson of ADR 0043 §5, not paid for twice: the ``Path`` of the cookie is written without the
+trailing slash, because a cookie at ``/console/`` is not sent to ``/console`` (RFC 6265 §5.1.4) —
+and measured on this Mac in C1, with Chrome 152 and Safari 26.6.
+"""
+CONSOLE_ROUTES: Final = frozenset(
+    {
+        ("GET", "/console/"),
+        ("GET", "/console/approvals"),
+        ("GET", "/console/approval"),
+        ("POST", "/console/answer"),
+        ("GET", "/console/devices"),
+        ("GET", "/console/task"),
+        ("GET", "/console/cancel"),
+        ("POST", "/console/cancel"),
+        ("GET", "/console/tokens.css"),
+        ("GET", "/console/components.css"),
+    }
+)
+"""What the console's cookie may call: literal pairs, for the reason of :data:`COMPANION_ROUTES`."""
+CONSOLE_CODE_ROUTES: Final = frozenset({("POST", "/console/enroll")})
+"""The one route a console's code opens, and the one route where a **form** carries it."""
+CONSOLE_COOKIE: Final = "ela_console"
+"""The name of the cookie that carries a console's credential (M17.2 dec. A).
+
+Not the companion's: ``COMPANION`` is a restriction, and one cookie for both surfaces would hand
+the phone whatever the Command Center learns next. Written and read **here** only, like the
+other one (architecture rule 47).
+"""
+ENROL_AT_THE_MAC: Final = "Incolla qui il codice che hai coniato al Mac."
+"""What the console's enrolment page says: the same sentence as the phone's, and nothing else."""
 COOKIE_MAX_AGE: Final = 400 * 24 * 60 * 60
 """Four hundred days, the ceiling draft RFC 6265bis asks browsers to enforce: past it the iPhone
 enrols again. Longer would be a number the browser silently shortens."""
@@ -165,6 +211,12 @@ class Kind(StrEnum):
     A fourth kind and not a second flavour of ``NODE``: the bearer is part of the role, so a
     node's credential in a cookie and a companion's in a header are both refused (dec. A).
     """
+    CONSOLE = "console"
+    """A browser that carries the cookie of an identity enrolled as ``CONSOLE`` (M17.2 dec. A).
+
+    A fifth kind for the same reason the fourth exists: the bearer is part of the role, and the
+    two cookies are refused on each other's ground.
+    """
 
 
 class Anonymous(StrEnum):
@@ -182,16 +234,94 @@ class Anonymous(StrEnum):
     """A code past its expiry, never spent."""
     CORE_ON_A_NODE_ROUTE = "core_on_a_node_route"
     """The Core's token on a route that speaks as a node: the Core is not a node (ADR 0037 §4)."""
-    CORE_ON_A_COMPANION_ROUTE = "core_on_a_companion_route"
-    """The Core's token on a page of the companion: the Core is not a browser (M12.5 dec. C.3).
+    CORE_ON_A_PAGE = "core_on_a_page"
+    """The Core's token on a page of any surface: the Core is not a browser (M12.5 dec. C.3).
 
     A reason of its own and not ``core_on_a_node_route``, which would lie in the name — and the
     name is what somebody reads in ``/diagnostics`` a month later.
+
+    **One entry for one fact** (M17.2 dec. K.3). It was ``core_on_a_companion_route`` until M17.2
+    gave ELA a second surface, and then the name said something false to whoever read
+    ``/diagnostics``: the fact is «the Core's token on a page», and it does not become two facts
+    because there are two prefixes. ADR 0044 says the old name is superseded; M12.5, which names
+    it three times, is history and is read with that line beside it.
     """
     NOT_FROM_ELA = "not_from_ela"
     """A form under the prefix that did not come from a page of ELA: no ``Origin``, or another
     site's (dec. C.1). The measures saw it present from Safari, from the web app and from
     Chrome."""
+
+
+@dataclass(frozen=True, slots=True)
+class Surface:
+    """A browser's ground: where its pages are, what carries its identity, what it may call.
+
+    One entry per browser ELA serves, and the middleware walks the table instead of knowing the
+    surfaces by name (M17.2 dec. E). Three things are derived from it rather than written a
+    second time: the cookie names architecture rule 47 forbids elsewhere, the routes the two
+    counts of ADR 0040 and ADR 0024 subtract, and which templates a page is composed from.
+    """
+
+    name: str
+    """What this surface is called where a person reads it — and the folder of ``apps/``."""
+    templates: str
+    """The folder under ``apps/`` holding its templates: the markup is a file of this repository."""
+    prefix: str
+    """With the trailing slash: everything under it is this surface's ground."""
+    home: str
+    """Without the trailing slash: **the address a person types**, and the cookie's ``Path``."""
+    cookie: str
+    """What carries the identity of this browser, because a form cannot set a header."""
+    role: DeviceRole
+    """What an identity of this surface is in the registry: the imposed half (ADR 0043 §1)."""
+    kind: Kind
+    """What the middleware resolves for it."""
+    routes: frozenset[tuple[str, str]]
+    """Literal pairs, never a template: ADR 0038 §11."""
+    code_routes: frozenset[tuple[str, str]]
+    """The one route where a **form** carries a code, and neither header nor cookie is read."""
+
+    def serves(self, route: tuple[str, str]) -> bool:
+        """Whether this surface may be let through to ``route``: its pages, and the bare address.
+
+        The slash-less address is not one of :attr:`routes` — that set stays exactly the pairs the
+        router serves — and is let through so the router can answer it with its own redirect.
+        """
+        return route in self.routes or route == ("GET", self.home)
+
+    def covers(self, path: str) -> bool:
+        """Whether ``path`` is this surface's ground: under the prefix, or the prefix itself."""
+        return path == self.home or path.startswith(self.prefix)
+
+
+COMPANION_SURFACE: Final = Surface(
+    name="companion",
+    templates="ios",
+    prefix=COMPANION_PREFIX,
+    home=COMPANION_HOME,
+    cookie=COMPANION_COOKIE,
+    role=DeviceRole.COMPANION,
+    kind=Kind.COMPANION,
+    routes=COMPANION_ROUTES,
+    code_routes=COMPANION_CODE_ROUTES,
+)
+CONSOLE_SURFACE: Final = Surface(
+    name="console",
+    templates="command-center",
+    prefix=CONSOLE_PREFIX,
+    home=CONSOLE_HOME,
+    cookie=CONSOLE_COOKIE,
+    role=DeviceRole.CONSOLE,
+    kind=Kind.CONSOLE,
+    routes=CONSOLE_ROUTES,
+    code_routes=CONSOLE_CODE_ROUTES,
+)
+SURFACES: Final = (COMPANION_SURFACE, CONSOLE_SURFACE)
+"""Every browser ELA serves pages to, in the order they were written.
+
+The flat constants above stay: the tests of ADR 0040 and ADR 0043 import them by name, and an ADR
+is immutable. They are the fields of the first entry, not a second copy.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,26 +334,46 @@ class Identity:
     role: DeviceRole | None = None
     """What this identity is, for whoever needs to know which routes it may call (M12.5 dec. A)."""
     privacy: PrivacyLevel | None = None
-    """The ceiling the user imposed on this identity at enrolment (M12.5 dec. F.2).
+    """The ceiling on what this identity may be shown — **of the request**, not of the row.
 
     Carried here because the middleware already holds the row when it checks the revocation: a
     page that had to read the registry again would be a page reading the world, which rule 55
     forbids — and the ceiling is a fact of *who is calling*, which is what this class is.
+
+    For a companion it is the level the user imposed at enrolment (M12.5 dec. F.2). For a
+    **console** it is that level, or ``LOCAL_ONLY`` when both ends of the socket are loopback
+    (M17.2 dec. J): the content is not leaving the machine it lives on, and the socket knows that
+    while a level engraved in the registry cannot. The registry is never written: what is derived
+    here lives for one request.
     """
 
     @property
     def actor(self) -> Actor:
-        """Who signs what this identity does: the user, at this machine or with their phone.
+        """Who signs what this identity does: the user, at this machine or with a browser.
 
-        ``USER`` for the Core and for a companion, ``DEVICE`` for a node — the distinction ADR 0037
-        §15 drew: «who approves, issues a code or revokes a node is a person, not a device». An
-        iPhone is where the person is; a node is a machine doing work. The **id** is always the one
-        the middleware resolved, so the audit says *where* the act came from (M12.5 dec. A, C4).
+        ``USER`` for the Core and for a browser, ``DEVICE`` for a node — the distinction ADR 0037
+        §15 drew: «who approves, issues a code or revokes a node is a person, not a device». A
+        browser is where the person is; a node is a machine doing work. The **id** is always the
+        one the middleware resolved, so the audit says *where* the act came from (M12.5 dec. A,
+        C4).
+
+        **Exhaustive, with no catch-all** (M17.2 dec. 6 of the review): until M17.2 this was
+        ``USER if kind is COMPANION else DEVICE``, and a fifth kind would have taken the ``else``
+        and signed ``DEVICE`` in silence. Now a member nobody handled fails ``mypy --strict``
+        here, and a test walks the members — the type stops whoever adds one, the test stops
+        whoever gives it the wrong branch.
         """
-        if self.kind is Kind.CORE:
-            return LOCAL_USER
-        kind = ActorKind.USER if self.kind is Kind.COMPANION else ActorKind.DEVICE
-        return Actor(kind=kind, id=str(self.node))
+        match self.kind:
+            case Kind.CORE:
+                return LOCAL_USER
+            case Kind.COMPANION | Kind.CONSOLE:
+                return Actor(kind=ActorKind.USER, id=str(self.node))
+            case Kind.NODE:
+                return Actor(kind=ActorKind.DEVICE, id=str(self.node))
+            case Kind.CODE:
+                raise ValueError("a code is not an identity that signs: it is spent, once")
+            case unhandled:  # pragma: no cover — ``mypy --strict`` proves this unreachable
+                assert_never(unhandled)
 
     @property
     def node(self) -> DeviceId:
@@ -280,18 +430,20 @@ def count(request: Request, reason: Anonymous) -> JSONResponse:
     return unauthorized()
 
 
-def enrolment(request: Request, reason: Anonymous, *, message: str = ENROL_AGAIN) -> Response:
-    """The ``401`` of the companion: the enrolment form, counted like every other refusal.
+def enrolment(
+    surface: Surface, request: Request, reason: Anonymous, *, message: str = ENROL_AGAIN
+) -> Response:
+    """The ``401`` of a surface: its enrolment form, counted like every other refusal.
 
     **The same page whatever the path** under the prefix (dec. C.3, rule 3), so that knocking
     without a credential teaches only that the prefix asks for a code — which the JSON of the
     other ``401`` already says of ELA.
     """
     note(request, reason)
-    return pages.page("enrol", status=401, styled=False, message=message)
+    return pages.page(surface.templates, "enrol", status=401, message=message)
 
 
-def forgotten(response: Response) -> Response:
+def forgotten(surface: Surface, response: Response) -> Response:
     """``response``, telling the browser to drop a cookie that is worth nothing any more.
 
     Only for a cookie that was **presented and failed** (dec. C.3, rule 3, second case). A request
@@ -300,11 +452,11 @@ def forgotten(response: Response) -> Response:
     there — so clearing on nothing would destroy a credential that works and send the user back
     to the Mac to enrol again.
     """
-    response.headers.append(SET_COOKIE, f"{COMPANION_COOKIE}=; Max-Age=0; Path={COMPANION_HOME}")
+    response.headers.append(SET_COOKIE, f"{surface.cookie}=; Max-Age=0; Path={surface.home}")
     return response
 
 
-def welcome(device_id: DeviceId, secret: str) -> Response:
+def welcome(surface: Surface, device_id: DeviceId, secret: str) -> Response:
     """The answer that hands a browser its credential, once: the cookie, and the home page.
 
     ``HttpOnly`` so no script can read it — there are none, and the policy forbids them, but the
@@ -321,13 +473,49 @@ def welcome(device_id: DeviceId, secret: str) -> Response:
     return Response(
         status_code=303,
         headers={
-            "Location": COMPANION_PREFIX,
+            "Location": surface.prefix,
             SET_COOKIE: (
-                f"{COMPANION_COOKIE}={device_id}{SEPARATOR}{secret}; HttpOnly; SameSite=Lax; "
-                f"Path={COMPANION_HOME}; Max-Age={COOKIE_MAX_AGE}"
+                f"{surface.cookie}={device_id}{SEPARATOR}{secret}; HttpOnly; SameSite=Lax; "
+                f"Path={surface.home}; Max-Age={COOKIE_MAX_AGE}"
             ),
         },
     )
+
+
+def surface_of(path: str) -> Surface | None:
+    """Which surface's ground ``path`` is, or ``None`` for the rest of the API.
+
+    Read in two places — here, to decide that a cookie is the bearer, and in ``api/app.py``, to
+    decide that a failure is a **page** and not JSON — so that the address a person types behaves
+    like the pages it leads to (the review of 2026-09-20, M17.2 dec. B).
+    """
+    return next((surface for surface in SURFACES if surface.covers(path)), None)
+
+
+def from_this_machine(request: Request) -> bool:
+    """Whether **both ends** of this request's socket are loopback (M17.2 dec. J).
+
+    The pair, and not the peer alone (the review of 2026-09-20, dec. 9). P0 measured that a
+    connection coming in on the tailnet interface carries the tailnet address at *both* ends —
+    this Mac calling its own tailnet address is ``100.76.92.39`` as peer and as sockname — so a
+    packet with a forged source of ``127.0.0.1`` would still show the tailnet address as the
+    sockname, and the pair would not match. The sockname is not chosen by whoever is calling: the
+    operating system writes it when it accepts the connection.
+
+    Nothing the caller *declares* is read here — no header, no ``Host``, no ``X-Forwarded-For``:
+    those are words, and this is the socket.
+    """
+    return _loopback(request.client) and _loopback(request.scope.get("server"))
+
+
+def _loopback(address: object) -> bool:
+    """Whether an ASGI address pair names a loopback host; anything else is a no (§33)."""
+    if not isinstance(address, tuple) or not address or not isinstance(address[0], str):
+        return False
+    try:
+        return ip_address(address[0]).is_loopback
+    except ValueError:
+        return False
 
 
 def same_origin(request: Request) -> bool:
@@ -354,17 +542,18 @@ def identity_middleware(ela: Ela) -> Callable[[Request, Call], Awaitable[Respons
 
     async def guard(request: Request, call_next: Call) -> Response:
         route = (request.method, request.url.path)
-        if route in COMPANION_CODE_ROUTES:
-            return await _from_the_form(request, call_next)
+        ground = surface_of(request.url.path)
+        if ground is not None and route in ground.code_routes:
+            return await _from_the_form(ground, request, call_next)
         header = request.headers.get(AUTHORIZATION_HEADER)
         credential = _credential(header)
-        if credential is None and under_the_prefix(request.url.path):
-            return await _from_the_cookie(ela, request, route, call_next)
+        if credential is None and ground is not None:
+            return await _from_the_cookie(ela, ground, request, route, call_next)
         if credential is None:
             return count(request, Anonymous.MISSING)
         if authorized(header, token):
-            if _a_page_of_the_companion(route) or route in COMPANION_CODE_ROUTES:
-                return count(request, Anonymous.CORE_ON_A_COMPANION_ROUTE)
+            if ground is not None:
+                return count(request, Anonymous.CORE_ON_A_PAGE)
             if route in NODE_ROUTES | CODE_ROUTES:
                 return count(request, Anonymous.CORE_ON_A_NODE_ROUTE)
             request.state.identity = Identity(Kind.CORE)
@@ -384,8 +573,8 @@ def identity_middleware(ela: Ela) -> Callable[[Request, Call], Awaitable[Respons
     return guard
 
 
-async def _from_the_form(request: Request, call_next: Call) -> Response:
-    """Rule 1: ``POST /companion/enroll`` resolves the ``code`` of the form, and nothing else.
+async def _from_the_form(surface: Surface, request: Request, call_next: Call) -> Response:
+    """Rule 1: a surface's enrolment route resolves the ``code`` of the form, and nothing else.
 
     Not the header, not the cookie: an iPhone whose credential was revoked has to be able to enrol
     again, and the one thing a browser can carry here is what the user pasted. The body is read
@@ -393,16 +582,16 @@ async def _from_the_form(request: Request, call_next: Call) -> Response:
     its own pins that promise (``tests/api/test_security.py``).
     """
     if not same_origin(request):
-        return _not_from_ela(request)
+        return _not_from_ela(surface, request)
     code = _form(await request.body()).get(CODE_FIELD, "").strip()
     if not code:
-        return enrolment(request, Anonymous.MISSING)
-    request.state.identity = Identity(Kind.CODE, code=code, role=DeviceRole.COMPANION)
+        return enrolment(surface, request, Anonymous.MISSING)
+    request.state.identity = Identity(Kind.CODE, code=code, role=surface.role)
     return await call_next(request)
 
 
 async def _from_the_cookie(
-    ela: Ela, request: Request, route: tuple[str, str], call_next: Call
+    ela: Ela, surface: Surface, request: Request, route: tuple[str, str], call_next: Call
 ) -> Response:
     """Rule 3: under the prefix, with no header, the cookie is the bearer — of companions only.
 
@@ -419,77 +608,83 @@ async def _from_the_cookie(
       in the registry with a secret nobody holds any more.
     """
     if request.method != "GET" and not same_origin(request):
-        return _not_from_ela(request)
+        return _not_from_ela(surface, request)
     # ``cookie`` and not ``presented``: rule 31 watches the names a secret goes by inside this
     # module, and what is in hand here is the *carrier*. What it carries is ``secret``, and the
     # only thing done to it is the constant-time comparison below.
-    cookie = request.cookies.get(COMPANION_COOKIE)
+    cookie = request.cookies.get(surface.cookie)
     if cookie is None:
-        return enrolment(request, Anonymous.MISSING)
+        return enrolment(surface, request, Anonymous.MISSING)
     claimed, separator, secret = cookie.partition(SEPARATOR)
     if not separator:
-        return forgotten(enrolment(request, Anonymous.UNKNOWN_CREDENTIAL))
+        return forgotten(surface, enrolment(surface, request, Anonymous.UNKNOWN_CREDENTIAL))
     try:
         device_id = DeviceId(UUID(claimed))
     except ValueError:
-        return forgotten(enrolment(request, Anonymous.UNKNOWN_CREDENTIAL))
+        return forgotten(surface, enrolment(surface, request, Anonymous.UNKNOWN_CREDENTIAL))
     try:
         secret_hash = await ela.devices.secret_hash(device_id)
     except NotFoundError:
-        return forgotten(enrolment(request, Anonymous.UNKNOWN_NODE))
+        return forgotten(surface, enrolment(surface, request, Anonymous.UNKNOWN_NODE))
     if not _proves(secret, secret_hash):
         await ela.devices.reject(device_id, Rejection.BAD_SECRET)
-        return forgotten(_page_401(request))
+        return forgotten(surface, _page_401(surface))
     device = await ela.devices.get(device_id)
     if device.revoked_at is not None:
         await ela.devices.reject(device_id, Rejection.REVOKED)
-        return forgotten(_page_401(request))
-    if device.role is not DeviceRole.COMPANION:
+        return forgotten(surface, _page_401(surface))
+    if device.role is not surface.role:
         await ela.devices.reject(device_id, Rejection.ROUTE_NOT_ALLOWED)
-        return forgotten(_page_401(request))
-    if not _a_page_of_the_companion(route):
+        return forgotten(surface, _page_401(surface))
+    if not surface.serves(route):
         await ela.devices.reject(device_id, Rejection.ROUTE_NOT_ALLOWED)
-        return pages.page("missing", status=404)
+        return pages.page(surface.templates, "missing", sheets=surface.prefix, status=404)
     request.state.identity = Identity(
-        Kind.COMPANION, device_id=device_id, role=device.role, privacy=device.privacy
+        surface.kind,
+        device_id=device_id,
+        role=device.role,
+        privacy=_ceiling(surface, device.privacy, request),
     )
     await ela.devices.contacted(device_id)
     return await call_next(request)
 
 
-def under_the_prefix(path: str) -> bool:
-    """Whether ``path`` is the companion's ground: everything under the prefix, and the prefix.
+def _ceiling(surface: Surface, imposed: PrivacyLevel, request: Request) -> PrivacyLevel:
+    """What this identity may be shown **on this request** (M17.2 dec. J).
 
-    Read in two places — here, to decide that a cookie is the bearer, and in ``api/app.py``, to
-    decide that a failure is a **page** and not JSON — so that the address a person types behaves
-    like the pages it leads to (the review of 2026-09-20).
+    The level the user imposed at enrolment, or ``LOCAL_ONLY`` for a **console** whose request
+    came in on loopback at both ends: the content is not leaving the machine it lives on, and a
+    level engraved in the registry cannot know where the browser is while the socket can.
+
+    Bound to the role, and that is the whole safety of it: a promotion that applied to whoever
+    arrives from there would be a door, not a derivation. Nothing is written — the row keeps the
+    level the user imposed, and this lives for one request.
     """
-    return path == COMPANION_HOME or path.startswith(COMPANION_PREFIX)
+    if surface.role is DeviceRole.CONSOLE and from_this_machine(request):
+        return PrivacyLevel.LOCAL_ONLY
+    return imposed
 
 
-def _a_page_of_the_companion(route: tuple[str, str]) -> bool:
-    """What a companion may be let through to: its pages, and the address a person types.
-
-    :data:`COMPANION_ROUTES` stays exactly the pairs the router serves — a test holds it to the
-    application — and the slash-less address is not one of them: it is let through so that the
-    router can answer it with the redirect it already knows how to make.
-    """
-    return route in COMPANION_ROUTES or route == ("GET", COMPANION_HOME)
-
-
-def _page_401(request: Request) -> Response:
+def _page_401(surface: Surface) -> Response:
     """The enrolment page for a credential that named a node that exists: written, not counted.
 
     The audit already holds the ``DEVICE_REJECTED`` (ADR 0037 §13), and counting it as anonymous
     too would say the same refusal twice in two vocabularies.
     """
-    return pages.page("enrol", status=401, styled=False, message=ENROL_AGAIN)
+    return pages.page(surface.templates, "enrol", status=401, message=ENROL_AGAIN)
 
 
-def _not_from_ela(request: Request) -> Response:
+def _not_from_ela(surface: Surface, request: Request) -> Response:
     """A form that did not come from a page of ELA: refused, counted, and said as a page."""
     note(request, Anonymous.NOT_FROM_ELA)
-    return pages.page("refused", status=403, title="Rifiutata", text=NOT_HERE)
+    return pages.page(
+        surface.templates,
+        "refused",
+        sheets=surface.prefix,
+        status=403,
+        title="Rifiutata",
+        text=NOT_HERE,
+    )
 
 
 def _form(body: bytes) -> dict[str, str]:

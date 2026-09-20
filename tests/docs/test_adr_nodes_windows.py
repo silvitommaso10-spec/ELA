@@ -14,7 +14,7 @@ import re
 import tomllib
 from pathlib import Path
 
-from ela.api.security import COMPANION_CODE_ROUTES, COMPANION_ROUTES, NODE_ROUTES
+from ela.api.security import NODE_ROUTES, SURFACES
 from ela.composition import build_node
 from ela.composition.node import ACL_SINCE, PermissionMode, online_player
 from ela.infrastructure.machine import AFPLAY, OnlineSpeechCommand
@@ -212,21 +212,37 @@ def test_the_adr_was_accepted_only_after_the_proof_by_hand(shown: str = "2026-09
 # ----------------------------------------------------------------------------------------
 
 
+def pages_of_every_surface() -> set[tuple[str, str]]:
+    """Every route of every browser ELA serves, read from the middleware's own table.
+
+    Derived, so a surface added tomorrow is subtracted without a line here; and never empty,
+    because a subtraction of nothing is a count that quietly changed its meaning.
+    """
+    found = {route for one in SURFACES for route in one.routes | one.code_routes}
+    assert found, "no surface serves a page: this subtraction would count them as API routes"
+    return found
+
+
 def test_the_conseguenze_count_what_the_tree_has_today() -> None:
     """Taken over from ADR 0039 by the ADR that moved the rules; the rest did not move, and is
     pinned here because this was the newest ADR that states them.
 
     **Rules up to 54 and not ``len(RULES)``** since M12.5 wrote rule 55, and the routes **without
-    the companion's** since ADR 0043 §5 added six: an ADR is immutable, so this one keeps saying
-    the totals it saw, the way ADR 0039 does for fifty-three (``test_adr_nodes_macos.py``). The
-    pin on *today's* totals moves to the ADR that changes them.
+    the pages** since ADR 0043 §5 added six: an ADR is immutable, so this one keeps saying the
+    totals it saw, the way ADR 0039 does for fifty-three (``test_adr_nodes_macos.py``). The pin on
+    *today's* totals moves to the ADR that changes them.
+
+    What is subtracted is **derived from the table of surfaces** and not named here (M17.2 dec. 15
+    of the review): with the console there would have been a second name to remember, and at the
+    fourth surface somebody would forget one. A subtraction that took nothing away would leave
+    this counting the pages too, so :func:`pages_of_every_surface` refuses to be empty.
     """
     text = conseguenze()
 
     assert "**cinquantaquattro**" in text
     assert len(_rules_up_to(54)) == 54
     assert "**restano ventinove**" in text
-    assert len(coded_routes() - COMPANION_ROUTES - COMPANION_CODE_ROUTES) == 29
+    assert len(coded_routes() - pages_of_every_surface()) == 29
     assert "quelle che un nodo può chiamare **sei**" in text
     assert len(NODE_ROUTES) == 6
     assert "**ventisei**" in text

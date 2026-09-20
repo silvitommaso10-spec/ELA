@@ -633,15 +633,23 @@ class DeviceRole(StrEnum):
 
     The role carries **the bearer of the credential** and **the routes**, which is why it is one
     word and not two flags: a worker proves itself with the ``Authorization`` header on the node's
-    routes, a companion with its cookie on the pages, and each of the two is refused on the other's
-    ground. No ``UNKNOWN``: an identity whose role nobody knows would be an identity nobody can
-    place (§33).
+    routes, a browser with the cookie of its own surface on that surface's pages, and each of them
+    is refused on the others' ground. No ``UNKNOWN``: an identity whose role nobody knows would be
+    an identity nobody can place (§33).
     """
 
     WORKER = "WORKER"
     """A node that takes work: every node of today, and ``local``."""
     COMPANION = "COMPANION"
     """An iPhone that looks and answers, and takes no work (spec §6, «Companion Node»)."""
+    CONSOLE = "CONSOLE"
+    """A browser the user watches ELA from: the Command Center (M17.2 dec. A; ADR 0044).
+
+    A third role and not a wider ``COMPANION``: the companion is a **restriction** — see and
+    answer, not command — and a console that grew at every milestone would make that restriction
+    a fiction, handing the phone whatever the Command Center learns next. One identity per
+    browser, as for the phone, with its own code, its own cookie and its own ground.
+    """
 
 
 class PrivacyLevel(StrEnum):

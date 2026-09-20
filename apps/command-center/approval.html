@@ -1,0 +1,27 @@
+{nav}
+<div class="ela-grid">
+  <div class="ela-stack ela-stack--center">
+    <div class="ela-presence ela-presence--lg" data-ela-state="WAITING APPROVAL">
+      {include:_orb}
+      <span class="ela-presence__text">
+        <span class="ela-wordmark ela-wordmark--lg">ELA</span>
+        <span class="ela-presence__key">WAITING APPROVAL</span>
+      </span>
+    </div>
+  </div>
+  <div class="ela-panel ela-panel--warm ela-grid__wide">
+    <div class="ela-stack">
+      <p class="ela-eyebrow">ELA chiede il tuo permesso</p>
+      <p class="ela-display">{capability}</p>
+      <p class="ela-body">{description}</p>
+      <dl class="ela-keyvalue">
+        {pairs}
+      </dl>
+      {content}
+      {answer}
+    </div>
+  </div>
+</div>
+<p class="ela-caption ela-muted">{after}</p>
+{task}
+{ceiling}

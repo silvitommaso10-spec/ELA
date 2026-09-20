@@ -30,13 +30,12 @@ from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import RedirectResponse
 
 from ela.api import pages
-from ela.api.approvals import approve, deny, pending_approvals
+from ela.api.approvals import answered_and_resumed, pending_approvals
 from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.nodes import enrolled
-from ela.api.schemas import AnswerIn, ApprovalOut, CancelIn, DeclarationIn, TaskOut
-from ela.api.security import Anonymous, Identity, note, welcome
+from ela.api.schemas import ApprovalOut, CancelIn, DeclarationIn, TaskOut
+from ela.api.security import COMPANION_SURFACE, Anonymous, Identity, note, welcome
 from ela.api.tasks import cancel_task, list_tasks
-from ela.api.tasks import run_task as run
 from ela.devices import PRIVACY_ORDER
 from ela.domain import ApprovalId, DeviceRole, OperatingSystem, PrivacyLevel, TaskId, TaskState
 from ela.ports import (
@@ -48,10 +47,25 @@ from ela.ports import (
 )
 from ela.tasks.engine import LIVE_STATES
 
-__all__ = ["HOME", "SPOKEN_ALOUD", "counted", "how_long", "may_see", "presence", "router", "terms"]
+__all__ = [
+    "HOME",
+    "SPOKEN_ALOUD",
+    "counted",
+    "form",
+    "how_long",
+    "may_see",
+    "presence",
+    "router",
+    "terms",
+    "when",
+]
 
 router = APIRouter(prefix="/companion", tags=["companion"])
 
+HERE: Final = COMPANION_SURFACE.templates
+"""Which folder of ``apps/`` this module's markup comes from (M17.2 dec. E)."""
+WHERE: Final = COMPANION_SURFACE.prefix
+"""Where this surface's two stylesheets are served: the composer writes the ``href`` from it."""
 HOME: Final = "/companion/"
 WAITING_APPROVAL: Final = "WAITING APPROVAL"
 WORKING: Final = "WORKING"
@@ -171,8 +185,13 @@ def terms(uses: int, seconds: int) -> str:
     return f"{counted(uses, 'un uso', 'usi')}, entro {how_long(seconds)} dal tuo sì"
 
 
-def _when(moment: datetime | None) -> str:
-    """An instant as a phone shows it: the time, and nothing that says what it is about."""
+def when(moment: datetime | None) -> str:
+    """An instant as a page shows it: the time, and nothing that says what it is about.
+
+    Shared with the Command Center, like :func:`presence` and :func:`may_see` (M17.2): both
+    modules are walked by architecture rule 55, so the projection stays where the first surface
+    wrote it rather than moving to a module the rule does not walk.
+    """
     return "" if moment is None else moment.astimezone().strftime("%H:%M")
 
 
@@ -198,7 +217,9 @@ async def home(
     alive = tuple(one for one in tasks if one.state in LIVE_STATES)
     answered = tuple(one for one in tasks if task is not None and one.id == task)
     return pages.page(
+        HERE,
         "home",
+        sheets=WHERE,
         state=presence(approvals, alive),
         waiting=_waiting(approvals),
         tasks=_tasks(alive, answered, identity),
@@ -207,15 +228,17 @@ async def home(
 
 def _waiting(approvals: tuple[ApprovalOut, ...]) -> pages.Markup:
     if not approvals:
-        return pages.fragment("notice", text=NOTHING)
+        return pages.fragment(HERE, "notice", text=NOTHING)
     return pages.fragment(
+        HERE,
         "waiting",
         rows=pages.joined(
             pages.fragment(
+                HERE,
                 "row-approval",
                 id=one.id,
                 what=one.capability_id,
-                when=_when(one.created_at),
+                when=when(one.created_at),
                 risk="" if one.risk is None else one.risk.value,
             )
             for one in approvals
@@ -238,6 +261,7 @@ def _tasks(
     if not answered and not recent:
         return pages.Markup("")
     return pages.fragment(
+        HERE,
         "tasks",
         # A list that stops at six and calls itself «I task» says something false the day there
         # are nine (the review of 2026-09-20): when it cuts, it says how much it is showing.
@@ -248,11 +272,14 @@ def _tasks(
                 # have closed a second ago, and a page that invited the user to stop what is over
                 # would be a page that does not know what happened (dec. D, dec. I).
                 *(
-                    pages.fragment("row-done", what=_title(one, identity), key=one.state.value)
+                    pages.fragment(
+                        HERE, "row-done", what=_title(one, identity), key=one.state.value
+                    )
                     for one in answered
                 ),
                 *(
                     pages.fragment(
+                        HERE,
                         "row-task",
                         state=WORKING if one.state is TaskState.EXECUTING else IDLE,
                         what=_title(one, identity),
@@ -310,12 +337,12 @@ async def enrol(request: Request, ela: ElaDep, identity: IdentityDep) -> Respons
         return _again(ALREADY_SPENT)
     except EnrollmentRoleError:
         return _again(A_NODES_CODE, status=422)
-    return welcome(born.device.id, born.secret)
+    return welcome(COMPANION_SURFACE, born.device.id, born.secret)
 
 
 def _again(message: str, *, status: int = 401) -> Response:
     """The enrolment page, with the one sentence that says what happened."""
-    return pages.page("enrol", status=status, styled=False, message=message)
+    return pages.page(HERE, "enrol", status=status, message=message)
 
 
 @router.get("/tokens.css")
@@ -341,7 +368,9 @@ async def confirm(ela: ElaDep, identity: IdentityDep, id: Annotated[UUID, Query(
     """
     found = await _live(ela, id)
     return pages.page(
+        HERE,
         "cancel",
+        sheets=WHERE,
         what=found.goal if may_see(identity, found.max_privacy) else found.id,
         state=found.state.value,
         id=found.id,
@@ -388,35 +417,41 @@ async def approval(ela: ElaDep, identity: IdentityDep, id: Annotated[UUID, Query
     found = await _answerable(ela, id)
     seen = may_see(identity, found.max_privacy)
     return pages.page(
+        HERE,
         "approval",
+        sheets=WHERE,
         capability=found.capability_id,
         description=found.description if seen else "",
         pairs=_pairs(found, seen),
         content=_content(found, seen),
-        answer=pages.fragment("answer", id=found.id)
+        answer=pages.fragment(HERE, "answer", id=found.id)
         if seen
-        else pages.fragment("notice", text=STAYS_ON_THE_MAC),
+        else pages.fragment(HERE, "notice", text=STAYS_ON_THE_MAC),
         after=AFTER_YES if seen else "",
     )
 
 
 def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
     """The facts every question shows, whatever the ceiling: none of them is content."""
-    pairs = [pages.fragment("pair-risk", risk="" if found.risk is None else found.risk.value)]
+    pairs = [pages.fragment(HERE, "pair-risk", risk="" if found.risk is None else found.risk.value)]
     if found.max_privacy is not None:
         pairs.append(
             pages.fragment(
-                "pair", key="Dove può andare", value=f"un nodo {found.max_privacy.value}"
+                HERE, "pair", key="Dove può andare", value=f"un nodo {found.max_privacy.value}"
             )
         )
     if found.grant_uses is not None and found.grant_seconds is not None:
         pairs.append(
-            pages.fragment("pair", key="Durata", value=terms(found.grant_uses, found.grant_seconds))
+            pages.fragment(
+                HERE, "pair", key="Durata", value=terms(found.grant_uses, found.grant_seconds)
+            )
         )
     if found.expires_at is not None:
-        pairs.append(pages.fragment("pair", key="Scade", value=f"alle {_when(found.expires_at)}"))
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Scade", value=f"alle {when(found.expires_at)}")
+        )
     if seen and found.targets:
-        pairs.append(pages.fragment("pair", key="Su", value=", ".join(found.targets)))
+        pairs.append(pages.fragment(HERE, "pair", key="Su", value=", ".join(found.targets)))
     return pages.joined(pairs)
 
 
@@ -424,13 +459,18 @@ def _content(found: ApprovalOut, seen: bool) -> pages.Markup:
     """The goal and the declared arguments — the part a ceiling can keep on the Mac (F2-a)."""
     if not seen:
         return pages.Markup("")
-    said = [pages.fragment("notice", text=SPEAKS)] if found.capability_id in SPOKEN_ALOUD else []
+    said = (
+        [pages.fragment(HERE, "notice", text=SPEAKS)] if found.capability_id in SPOKEN_ALOUD else []
+    )
     return pages.joined(
         [
             pages.fragment(
+                HERE,
                 "asked",
                 goal=found.goal,
-                stated=pages.joined(pages.fragment("stated", pair=one) for one in found.stated),
+                stated=pages.joined(
+                    pages.fragment(HERE, "stated", pair=one) for one in found.stated
+                ),
             ),
             *said,
         ]
@@ -457,11 +497,9 @@ async def answer(
         raise ApprovalOutOfReachError(ApprovalId(found.id))
     task_id = TaskId(found.task_id)
     said_yes = fields.get(ANSWER_FIELD) == YES
-    answered = await (approve if said_yes else deny)(
-        found.task_id, AnswerIn(approval_id=ApprovalId(found.id)), ela, identity
+    await answered_and_resumed(
+        found, said_yes=said_yes, ela=ela, identity=identity, running=running
     )
-    if said_yes and answered.state is TaskState.QUEUED:
-        await run(found.task_id, ela, running)
     return RedirectResponse(f"{HOME}?task={task_id}", status_code=303)
 
 

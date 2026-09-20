@@ -28,7 +28,10 @@ from tests.domain.examples import LATER, WAITING_ENROLLMENT
 CODE = WAITING_ENROLLMENT
 ROLE = CODE.role
 """The role the code was minted for: the store spends it only on the route that asks for it."""
-OTHER_ROLE = next(role for role in DeviceRole if role is not CODE.role)
+OTHER_ROLES = tuple(role for role in DeviceRole if role is not CODE.role)
+"""**Every** other role, not one of them (M17.2 dec. 15 of the review, applied here): with three
+roles, picking the first would prove half of the promise and leave the other half untested."""
+OTHER_ROLE = OTHER_ROLES[0]
 NODE = DeviceId(UUID("00000000-0000-4000-8000-000000000401"))
 OTHER_NODE = DeviceId(UUID("00000000-0000-4000-8000-000000000402"))
 INSTANT = timedelta(microseconds=1)
@@ -122,21 +125,26 @@ async def test_no_refusal_carries_the_hash(enrollment_store: EnrollmentStore) ->
     assert all(CODE.code_hash not in str(refused) for refused in refusals)
 
 
-async def test_a_code_of_the_other_role_is_refused_and_left_spendable(
+async def test_a_code_of_any_other_role_is_refused_and_left_spendable(
     enrollment_store: EnrollmentStore,
 ) -> None:
     """M12.5 dec. C.5: the role is a condition of the statement, so the refusal writes nothing.
 
-    The other half of the promise is the line after it: the same code, on the route of the role it
-    was minted for, is still spendable — which is what makes a code pasted in the wrong place cost
-    the user nothing.
+    **Every** other role, since M17.2 there are three: a code refused on one wrong route and then
+    accepted on another wrong one would be a condition that only half holds.
+
+    The other half of the promise is the line at the end: the same code, on the route of the role
+    it was minted for, is still spendable — which is what makes a code pasted in the wrong place
+    cost the user nothing.
     """
     await enrollment_store.offer(CODE)
+    assert len(OTHER_ROLES) > 1, "or walking them all would be walking one"
 
-    with pytest.raises(EnrollmentRoleError) as refused:
-        await enrollment_store.consume(CODE.code_hash, device_id=NODE, now=LATER, role=OTHER_ROLE)
+    for other in OTHER_ROLES:
+        with pytest.raises(EnrollmentRoleError) as refused:
+            await enrollment_store.consume(CODE.code_hash, device_id=NODE, now=LATER, role=other)
+        assert (refused.value.carried, refused.value.expected) == (ROLE, other)
 
-    assert (refused.value.carried, refused.value.expected) == (ROLE, OTHER_ROLE)
     spent = await enrollment_store.consume(CODE.code_hash, device_id=NODE, now=LATER, role=ROLE)
     assert spent.consumed_at == LATER
 

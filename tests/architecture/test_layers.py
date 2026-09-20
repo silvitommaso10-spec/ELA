@@ -37,7 +37,9 @@ from tests.architecture.rules import (
     TESTING_DIR,
     VERIFIERS_MODULE,
     Rule,
+    cookie_names,
     imported_modules,
+    page_modules,
 )
 from tests.architecture.violations import PACKAGE_ROOT, copy_package
 
@@ -268,3 +270,51 @@ def test_the_mutation_that_survived_is_now_reported(tmp_path: Path) -> None:
         "== on the token",
         "== on the token",
     ]
+
+
+# --------------------------------------------------------------------------------------
+# The two derivations of M17.2, and the alarm when one stops deriving
+# --------------------------------------------------------------------------------------
+
+
+def test_the_page_modules_are_derived_and_there_are_some() -> None:
+    """Rule 55 walks what it finds (M17.2 dec. C.1), and what it finds is the surfaces' pages.
+
+    The alarm dec. C asks for: a derivation that answered nothing would make the rule pass for
+    ever, green and blind. And two exclusions are asserted because they are the reason the
+    derivation has the shape it has — the composer serves nothing, and the middleware is the one
+    module that must read the world to say who is calling (rule 47).
+    """
+    found = {path.name for path in page_modules(PACKAGE_ROOT)}
+
+    assert found, "rule 55 walks no module: it would pass whatever anybody wrote"
+    assert {"companion.py", "console.py"} <= found
+    assert "security.py" not in found and "pages.py" not in found
+
+
+def test_a_tree_with_no_page_module_is_what_the_alarm_is_about(tmp_path: Path) -> None:
+    """The negative case of the alarm: with the routers gone the derivation is empty and the rule
+    is silent — which is exactly the state the assertion above exists to refuse."""
+    package = copy_package(tmp_path)
+    for path in page_modules(package):
+        path.write_text("from ela.api import pages\n", encoding="utf-8")
+
+    assert page_modules(package) == []
+    assert RULES["pages-read-the-routes"](package) == []
+
+
+def test_the_cookie_names_are_derived_from_the_table_of_surfaces() -> None:
+    """Rule 47 forbids every cookie the middleware declares, and learns them from it."""
+    found = cookie_names(PACKAGE_ROOT)
+
+    assert found == {"ela_companion", "ela_console"}
+
+
+def test_a_middleware_with_no_surface_is_what_that_alarm_is_about(tmp_path: Path) -> None:
+    """With no table there is no cookie to watch, and rule 47 falls back to the header alone."""
+    package = copy_package(tmp_path)
+    module = package / SECURITY_MODULE
+    source = module.read_text(encoding="utf-8")
+    module.write_text(source.replace("Surface(", "Anything("), encoding="utf-8")
+
+    assert cookie_names(package) == set()

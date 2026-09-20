@@ -21,6 +21,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<nome della voce>` | una voce SAPI 5 installata sul PC | l'elenco del passo 3 di §12: sul PC di M12.4, `Microsoft Elsa Desktop` |
 | `<chiave del modello del PC>` | la chiave Anthropic del nodo, mai quella del Core | la console Anthropic (§12, passo 4) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
+| `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
 
 ## 0. Che cosa serve
 
@@ -939,6 +940,70 @@ uv run ela node revoke <id del companion>
 Alla richiesta successiva la pagina torna a chiedere un codice, il cookie sparisce dal browser, e
 nell'audit c'è `DEVICE_REJECTED` con `revoked`. Un codice nuovo riarruola lo stesso browser.
 
+## 14. Il Command Center: ELA nel browser del Mac
+
+Il Command Center è la dashboard di ELA — la presenza, che cosa sta facendo, le domande che
+aspettano, i dispositivi, il riassunto di un task — e vive nel **browser del Mac**, servito da ELA
+stessa (M17.2, ADR 0044). Non è un'applicazione e non c'è niente da installare: è un'identità in
+più nel registro, con il suo codice e il suo cookie.
+
+**1. Conia il codice della console, al Mac.** Lo stesso comando dei nodi e del telefono, con il
+terzo ruolo:
+
+```
+uv run ela node enroll --privacy TRUSTED --role console
+```
+
+Dura dieci minuti, si usa una volta sola, e presentato su un'altra rotta di arruolamento è
+rifiutato **senza consumarsi**: se lo incolli nel posto sbagliato non hai perso niente.
+
+**2. Apri la pagina, e da quale indirizzo.** Sul Mac, `http://127.0.0.1:<porta>/console`.
+
+**La porta la decide il tuo `.env`** (`ELA_API_PORT`), e il modo di sapere quale sia davvero è
+chiederlo al processo:
+
+```
+uv run ela diagnostics
+```
+
+La riga `addresses` porta gli indirizzi su cui ELA **ha legato**, non quelli che l'impostazione
+chiede: se la tailnet non c'era all'avvio, lì c'è solo il loopback.
+
+Incolla il codice, dai un nome, invia. Da lì in poi il browser porta la sua credenziale in un
+cookie e la pagina si apre da sola.
+
+**L'indirizzo conta**, ed è misurato: un cookie è di **un browser e di un indirizzo**. Arruolata su
+`127.0.0.1`, la console non manda niente all'indirizzo della tailnet, e viceversa. Se vuoi aprire
+il Command Center anche da fuori, arruoli quell'indirizzo: sono due console, e `ela device list` le
+mostra tutte e due.
+
+**3. Che cosa vedi, e perché dipende da dove leggi.** Su `127.0.0.1` vedi anche il contenuto dei
+task `LOCAL_ONLY`, che sono quasi tutti: non sta lasciando la macchina su cui vive. Dall'indirizzo
+della tailnet vedi ciò che vede il telefono — l'id di quei task, non il contenuto. **La pagina lo
+dice**, in fondo a ogni vista, nei due versi: «stai leggendo da questa macchina» oppure «stai
+leggendo da fuori». Quella frase non è un dettaglio grafico: è il modo di accorgersi, a occhio, se
+un giorno qualcosa cominciasse a inoltrare le connessioni attraverso il loopback.
+
+Il tetto **non si dichiara all'arruolamento** e non si scrive da nessuna parte: si deriva dai due
+capi del socket, a ogni richiesta, e la riga del registro resta quella che hai imposto.
+
+**4. Le quattro viste.** La **home** con la sfera, che cosa ELA sta facendo adesso e le tre
+tessere; l'**Approval Center**, dove una domanda si legge per intero e si risponde — il sì risponde
+e fa ripartire il task, come dal telefono —; il **Device Center**, con la disponibilità e l'ultimo
+contatto come due colonne distinte; e il **dettaglio di un task**, che è un riassunto di esecuzione:
+l'obiettivo, il piano con lo step corrente, il dispositivo, e la riga che dice che il risultato c'è
+e dove si legge. Il contenuto di un risultato non si legge lì: è su `GET /tasks/<id>/results`.
+
+**5. Revocare la console.** Come per un nodo, e vale subito:
+
+```
+uv run ela device list
+uv run ela node revoke <id della console>
+```
+
+Alla richiesta successiva la pagina torna a chiedere un codice. Un codice nuovo riarruola lo stesso
+browser.
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.
@@ -954,3 +1019,6 @@ nell'audit c'è `DEVICE_REJECTED` con `revoked`. Un codice nuovo riarruola lo st
   con che cosa parla, e perché dichiara solo ciò che la sua macchina sa fare.
 - [`adr/0043-companion.md`](adr/0043-companion.md) — l'iPhone che guarda e risponde: il ruolo, il
   cookie, le pagine e il campanello.
+- [`adr/0044-command-center.md`](adr/0044-command-center.md) — il Command Center: la terza
+  identità, il tetto derivato dal socket, e l'impronta che suona quando una capability arriva
+  senza la sua vista.

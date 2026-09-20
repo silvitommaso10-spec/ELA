@@ -30,6 +30,7 @@ from ela.api import (
     approvals,
     audit,
     companion,
+    console,
     context,
     devices,
     nodes,
@@ -46,7 +47,7 @@ from ela.api.errors import (
     TaskAlreadyRunningError,
 )
 from ela.api.problems import problem
-from ela.api.security import identity_middleware, under_the_prefix
+from ela.api.security import SURFACES, identity_middleware, surface_of
 from ela.audit.chain import AuditChainError
 from ela.composition import Ela
 from ela.devices import (
@@ -168,7 +169,7 @@ def _message(failed: Exception) -> str:
 
 
 def _handler(failure: Failure) -> Callable[[Request, Exception], Awaitable[Response]]:
-    """The one answer a failure becomes — JSON, or **a page** under the companion's prefix.
+    """The one answer a failure becomes — JSON, or **a page** under a surface's prefix.
 
     Dec. D: the handlers answer JSON, and in a browser raw JSON is what the user would see. Under
     ``/companion/`` the same failure, with the same status and the same sentence, is composed by
@@ -178,8 +179,16 @@ def _handler(failure: Failure) -> Callable[[Request, Exception], Awaitable[Respo
 
     async def handle(request: Request, failed: Exception) -> Response:
         said = failure.message if failure.message is not None else _message(failed)
-        if under_the_prefix(request.url.path):
-            return pages.page("refused", status=failure.status, title=failure.code.value, text=said)
+        ground = surface_of(request.url.path)
+        if ground is not None:
+            return pages.page(
+                ground.templates,
+                "refused",
+                sheets=ground.prefix,
+                status=failure.status,
+                title=failure.code.value,
+                text=said,
+            )
         return JSONResponse(status_code=failure.status, content=problem(failure.code, said))
 
     return handle
@@ -244,7 +253,7 @@ def create_app(ela: Ela) -> FastAPI:
         docs_url=None,
         redoc_url=None,
     )
-    pages.ensure_readable()
+    pages.ensure_readable(*(surface.templates for surface in SURFACES))
     app.state.ela = ela
     app.state.running = set()
     app.state.recovery = RecoverySummary((), (), ())
@@ -264,6 +273,7 @@ def create_app(ela: Ela) -> FastAPI:
         approvals.router,
         audit.router,
         companion.router,
+        console.router,
         devices.router,
         nodes.router,
         context.router,

@@ -18,9 +18,8 @@ from pathlib import Path
 
 from ela.api.security import (
     CODE_ROUTES,
-    COMPANION_CODE_ROUTES,
-    COMPANION_ROUTES,
     NODE_ROUTES,
+    SURFACES,
 )
 from ela.audit.verifier import AuditVerifier
 from ela.cli.app import app
@@ -250,11 +249,24 @@ def test_every_route_is_reachable_from_the_command_line() -> None:
     assert called == coded_routes() - NODE_CALLED
 
 
-NODE_CALLED = NODE_ROUTES | CODE_ROUTES | COMPANION_ROUTES | COMPANION_CODE_ROUTES
+def _pages_of_every_surface() -> frozenset[tuple[str, str]]:
+    """Every route of every browser, **derived** from the middleware's table (M17.2 dec. 15).
+
+    Not a second name per surface: with the console there would have been one more literal here,
+    and at the fourth surface somebody would forget it. Empty would mean this set no longer
+    excuses any page, and the assertion above would start asking for a command for each — so it
+    refuses to be.
+    """
+    found = frozenset(route for one in SURFACES for route in one.routes | one.code_routes)
+    assert found, "no surface serves a page: every page would be asked for an ela command"
+    return found
+
+
+NODE_CALLED = NODE_ROUTES | CODE_ROUTES | _pages_of_every_surface()
 """The routes no command calls, classified by name the way ``LATER_ROUTERS`` classifies, so a route
 added tomorrow without a command still fails above.
 
-The node's (ADR 0037 §4) are called by a node; the companion's (ADR 0043 §5) are called by a
+The node's (ADR 0037 §4) are called by a node; a surface's (ADR 0043 §5, ADR 0044) are called by a
 browser, and a browser is not a terminal: there is no ``ela`` command for a page, and there is no
 page for a command. The perimeter of ADR 0024 §2 — a whole turn of ELA without ``curl`` — is about
 what a **person at this machine** can do, and it is untouched: everything the pages do,

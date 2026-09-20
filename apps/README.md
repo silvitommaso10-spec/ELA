@@ -6,4 +6,8 @@ Fase: post-0.1 — applicazioni client per i dispositivi (spec §48).
 - `ios/` — le pagine del companion iPhone (M12.5, ADR 0043): i modelli che `ela.api` compone e
   serve al browser del telefono, e la guida per arruolarlo. Non è Python, e le sue regole vivono
   in `tests/ios/`.
+- `command-center/` — le pagine del Command Center (M17.2, ADR 0044): i modelli che `ela.api`
+  compone e serve al browser del Mac, l'impronta delle capability, e la guida per arruolarlo. §48
+  non la prevede: la documenta l'ADR. Non è Python, e le sue regole vivono in
+  `tests/command_center/`.
 - `desktop/` — segnaposto di §48.
