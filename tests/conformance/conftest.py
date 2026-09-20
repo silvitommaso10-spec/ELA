@@ -30,7 +30,7 @@ from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app
 from ela.composition import Settings, build
-from ela.testing.fakes import FakeClock, FakePower
+from ela.testing.fakes import FakeBell, FakeClock, FakePower
 from tests.api.support import AUTHORIZED, BASE
 from tests.composition.support import create_schema, declare
 from tests.conformance.driver import Conformance
@@ -77,7 +77,9 @@ async def _started(
     """
     # ``UNKNOWN``, as ``local`` was before M12.3c: the stories place work on a node that reports
     # ``AC``, and whether this Mac is plugged in is not part of the contract.
-    ela = await build(settings, clock=clock, power=FakePower())
+    # And a bell that touches no network, named like the clock and for the same reason (M12.5
+    # dec. E): the story «the bell says nothing of yours» has to see what a provider receives.
+    ela = await build(settings, clock=clock, power=FakePower(), bell=FakeBell())
     stack.push_async_callback(ela.aclose)
     app = create_app(ela)
     await stack.enter_async_context(app.router.lifespan_context(app))

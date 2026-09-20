@@ -116,6 +116,19 @@ class Database(Protocol):
     async def dispose(self) -> None: ...
 
 
+class Ringing(Bell, Protocol):
+    """A bell that can also be told where this ELA is listening (M12.5 dec. E).
+
+    Two things and not one port: what a bell **does** is ring, and every reader of ``Ela.bell``
+    needs only that; what it has to be *told* is where the page it opens lives, and that is a fact
+    of the composition — told once by ``api/server.py`` after the bind, through the callable on
+    ``Ela``. Keeping it out of :class:`~ela.ports.Bell` keeps the port all-async, which is the
+    shape ADR 0005's table asks of every port.
+    """
+
+    def serving_at(self, addresses: Sequence[str]) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class Ela:
     """ELA, built: every port bound to an implementation, ready to be used or served.
@@ -312,7 +325,11 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
 
 
 async def build(
-    settings: Settings, *, clock: Clock | None = None, power: PowerReading | None = None
+    settings: Settings,
+    *,
+    clock: Clock | None = None,
+    power: PowerReading | None = None,
+    bell: Ringing | None = None,
 ) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
 
@@ -327,6 +344,11 @@ async def build(
     ``power`` is the same shape (M12.3c): it defaults to the reader of the system this machine
     answers, and a test that places a step between ``local`` and a node names it — otherwise the
     placement would depend on whether the machine running the suite is plugged in.
+
+    ``bell`` is the third, and the last (M12.5 dec. E): it defaults to the adapter built from the
+    settings, and the conformance suite names one that touches no network — because the story «the
+    bell says nothing of yours» has to *see* what a provider receives, and a story that could not
+    be recited would be a hole where a claim is.
 
     :raises ConfigurationError: for anything that makes this configuration unusable — a schema
         nobody migrated, a routing table naming a provider that is not registered, an empty one.
@@ -523,7 +545,7 @@ async def build(
         # The bell of the companion: built always, ready only when a topic is configured **and**
         # the process has bound an address a phone can open (dec. E). Not behind a branch, so that
         # ``/diagnostics`` can say which of the two is missing.
-        bell = NtfyBell(
+        rings: Ringing = bell or NtfyBell(
             topic=settings.ntfy.ntfy_topic,
             url=settings.ntfy.ntfy_url,
             timeout=settings.ntfy.ntfy_timeout_seconds,
@@ -543,7 +565,7 @@ async def build(
             ids=ids,
             actor=ELA_ACTOR,
             assignments=assignments,
-            bell=bell,
+            bell=rings,
             authorization_ttl=settings.core.authorization_ttl,
             approval_ttl=settings.core.approval_ttl,
         )
@@ -605,8 +627,8 @@ async def build(
         executor=executor,
         runner=runner,
         assignments=assignments,
-        bell=bell,
-        serving_at=bell.serving_at,
+        bell=rings,
+        serving_at=rings.serving_at,
         captures=captures,
         context=context,
         speech=speech,

@@ -33,7 +33,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from ela.api.security import COMPANION_COOKIE, COMPANION_ROUTES
-from ela.domain import ActorKind, AuditEventType, DeviceRole, TaskState
+from ela.domain import ActorKind, AuditEventType, DeviceRole, RiskLevel, TaskState
+from ela.testing.fakes import FakeBell
 from tests.api.support import echo_plan, note_plan
 from tests.conformance.driver import Conformance
 
@@ -351,13 +352,13 @@ async def test_c9_what_the_provider_receives_is_the_text_of_a_voice_and_nothing_
     await world.walk(task_id)
 
     bell = world.ela.bell
-    rung = getattr(bell, "rung", None)
-    if rung is None:  # pragma: no cover — the production adapter, which this world does not ring
-        pytest.skip("this world's bell is the adapter, and it is not configured")
+    assert isinstance(bell, FakeBell)  # the world's bell, named at build (conftest)
+    assert bell.rung, "the question was asked, so the bell rang"
+    assert all(isinstance(voice, RiskLevel) for voice in bell.rung)
     written = " ".join(
         one["summary"] + str(one.get("payload"))
         for one in (await world.client.get("/audit")).json()
         if one["event_type"] == E.BELL_RUNG.value
     )
     assert recognisable not in written
-    assert uuid4().hex not in written  # nothing invented: the assertion above is the one that bites
+    assert "note" not in written.lower(), "not even the capability's own words travel by accident"
