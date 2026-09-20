@@ -1,9 +1,11 @@
 # 0043. Il companion iPhone: un ruolo imposto nel registro, un cookie come portatore, pagine servite dal Core, e un campanello che suona un metodo
 
-- **Stato:** Proposta il **2026-09-20**, con la spec di M12.5 approvata dall'utente dopo le misure
-  P0–P4 sull'iPhone. Si accetta quando la prova a mano di M12.5 passa — il percorso di ADR 0040 e di
-  ADR 0042 —, e cresce in «Proposta» a ogni commit della milestone: qui c'è ciò che è deciso e
-  scritto, e ogni sezione entra col codice che difende.
+- **Stato:** **Accettata il 2026-09-20**, quando la prova a mano di M12.5 è passata — undici passi
+  sull'iPhone vero, con Chrome, dall'arruolamento alla revoca: il percorso di ADR 0040 e di ADR 0042.
+  Proposta lo stesso giorno, con la spec di M12.5 approvata dall'utente dopo le misure P0–P4
+  sull'iPhone, ed è cresciuta in «Proposta» a ogni commit della milestone — ogni sezione è entrata
+  col codice che difende — fino alla review dell'implementazione, che ha aggiunto il terreno del
+  companion (§5) e il criterio di §11.
 - **Data:** 2026-09-20
 - **Riferimenti spec:** §6, §16, §57, §58, §65
 - **Milestone:** M12.5, l'ultima della Fase 12 (`docs/STATO.md`, voce 4.1).
@@ -142,6 +144,16 @@ repository. Solo la libreria standard: niente Jinja2, `uv.lock` non si muove.
 stessa frase, composti dal compositore: in un browser il JSON crudo è un vicolo cieco. Un posto solo,
 così nessuna rotta deve ricordarsene.
 
+**Due frasi di ADR 0023 §7 e di ADR 0037 §4 sono riviste, e lo diciamo qui.** «Chi non ha il token
+non impara nemmeno quali rotte esistono»: con la regola 3 chi bussa senza credenziali impara che il
+prefisso `/companion/` è una pagina che chiede un codice — non quali rotte ci siano sotto, perché
+ogni percorso del prefisso risponde la stessa pagina, e il JSON del `401` di oggi dice già che
+dietro c'è ELA. E «a un'identità, su una rotta che non può chiamare, lo **stesso** 401, non un
+403»: per un companion con una credenziale **buona** la risposta diventa un `404`, per la ragione
+di §3 — chi presenta una credenziale che funziona sa già di averla, e il modulo di arruolamento lo
+inviterebbe a lasciare viva nel registro un'identità con un segreto che nessuno ha più. Il `401`
+uguale per chi non ha una credenziale valida resta com'è, e un test tiene ciascuna delle due regole.
+
 **Il terreno del companion è il prefisso, e anche l'indirizzo senza la barra.** `/companion` è ciò
 che una persona digita, e prima della review del 2026-09-20 cadeva fuori: chi lo scriveva senza
 cookie riceveva il `401` JSON invece del modulo, e chi ce l'aveva riceveva «non esiste». Due cose lo
@@ -258,6 +270,16 @@ pagina d'errore; ADR 0031, «ogni nodo nuovo moltiplica le scelte di piattaforma
 ha codice di piattaforma, e la regola resta in piedi per chi ne avrà; i cinque minuti della decisione
 (ADR 0011) — al companion non arriva nessuna decisione; la creazione idempotente di un task
 dall'iPhone (ADR 0008) — creare task è fuori scope.
+
+**Che cosa di ADR 0037 e di ADR 0038 va letto con questa correzione.** Un ADR non si riscrive, e
+questi non si riscrivono: si leggono con la riga qui sotto accanto. Dove dicono che le
+implementazioni del contratto sono **tre** — ADR 0038 §18 e il suo criterio di fine («le tre
+implementazioni reali, M12.3–M12.5, si misureranno contro la suite di conformità»), ADR 0037 §7 e
+§16 («il contratto si scrive una volta e si implementa tre volte») — le implementazioni del
+contratto **dei nodi** sono due, M12.3 e M12.4. La terza non è un'implementazione mancante: è
+un'identità che non prende lavoro, e ha il contratto che `tests/conformance/test_companion_contract.py` recita. Ciò che quelle righe
+dicono del **segreto** resta intero: ognuna delle tre risponde con una misura sulla propria
+macchina, e la misura del companion è il cookie di dec. C.1, fatta sull'iPhone.
 
 E questi **si spostano, con la casa nuova**, approvati dall'utente il 2026-09-19. La Fase 12 si
 chiude e loro restano:
