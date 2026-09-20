@@ -63,6 +63,7 @@ from ela.ports import (
     ApprovalNotAnswerableError,
     AssignmentExpiredError,
     AssignmentNotUsableError,
+    EnrollmentRoleError,
     IdentityConflictError,
     NotFoundError,
     WireCode,
@@ -104,6 +105,7 @@ FAILURES: tuple[Failure, ...] = (
     Failure(AlreadyExistsError, 409, WireCode.ALREADY_EXISTS),
     Failure(ApprovalNotAnswerableError, 409, WireCode.NOT_ANSWERABLE),
     Failure(AuditChainError, 409, WireCode.TAMPERED),
+    Failure(EnrollmentRoleError, 422, WireCode.INVALID),
     Failure(GraphError, 422, WireCode.INVALID),
     Failure(TaskError, 409, WireCode.CONFLICT),
     Failure(ExecutorError, 409, WireCode.CONFLICT),
@@ -134,6 +136,11 @@ order is for whoever reads the table.
 says the plan that arrived cannot be a graph at all (422) — the caller has to change *what* they
 sent, not *when*. The base stays in the table because ``IllegalTransitionError`` lives in
 ``ela.tasks.state_machine``, which this package may not import (contract 7) and does not need to.
+
+``EnrollmentRoleError`` is the one refusal of an enrolment code that is **not** the same ``401`` as
+a credential nobody knows (M12.5 dec. C.5): whoever presents a code that exists, on the route of the
+other role, already holds it — there is nothing to hide from them — and what they need to be told is
+the one thing they can act on. Unknown, expired and already spent keep the answers of ADR 0037 §13.
 
 ``AssignmentRefusedError`` is deliberately **absent** (M12.2, ADR 0038 §12). It is raised inside the
 walk — after the Guardian and the ``consume``, by ``Assignments.assign`` — and no request a caller

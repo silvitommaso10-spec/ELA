@@ -11,6 +11,7 @@ from ela.cli.output import EMPTY
 from ela.composition import Ela
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import (
+    DeviceRole,
     DeviceStatus,
     OperatingSystem,
     PerformanceClass,
@@ -70,9 +71,10 @@ async def test_run_says_which_node_is_doing_the_work(cli: Cli, ela: Ela, tmp_pat
     than over HTTP because being a node is not something the command line can do: ``ela`` is a
     client of the user's API (ADR 0024), and a node speaks from its own five routes.
     """
-    issued = await ela.enrollment.issue(PrivacyLevel.TRUSTED)
+    issued = await ela.enrollment.issue(PrivacyLevel.TRUSTED, DeviceRole.WORKER)
     enrolled = await ela.enrollment.enroll(
         issued.code,
+        role=DeviceRole.WORKER,
         name="pc-windows",
         os=OperatingSystem.WINDOWS,
         capabilities=(),

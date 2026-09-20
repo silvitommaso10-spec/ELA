@@ -6,6 +6,7 @@ import json
 
 from ela.composition import Ela
 from ela.domain import (
+    DeviceRole,
     OperatingSystem,
     PerformanceClass,
     PrivacyLevel,
@@ -21,10 +22,11 @@ async def test_device_list_shows_the_local_node_as_available(cli: Cli, ela: Ela)
         "NAME",
         "ID",
         "OS",
+        "ROLE",
         "AVAILABLE",
         "STATUS",
         "LAST",
-        "SEEN",
+        "CONTACT",
         "REVOKED",
         "TOOLS",
     ]
@@ -62,8 +64,19 @@ async def test_node_enroll_prints_a_code_once_with_its_expiry(cli: Cli) -> None:
 
     assert result.exit_code == 0
     issued = json.loads(result.stdout)
-    assert set(issued) == {"code", "privacy", "expires_at"}
-    assert issued["privacy"] == "TRUSTED"
+    assert set(issued) == {"code", "privacy", "role", "expires_at"}
+    assert (issued["privacy"], issued["role"]) == ("TRUSTED", "WORKER")
+
+
+async def test_node_enroll_mints_a_companion_code_and_keeps_the_table_it_had(cli: Cli) -> None:
+    """M12.5 dec. A: ``--role companion`` is how the iPhone's code is minted, and C.4 keeps the
+    table as it is — a double click on the terminal has to take the whole code and stop there."""
+    result = await cli("node", "enroll", "--privacy", "TRUSTED", "--role", "companion")
+
+    assert result.exit_code == 0
+    assert result.stdout.splitlines()[0].split() == ["CODE", "PRIVACY", "EXPIRES", "AT"]
+    as_json = await cli("node", "enroll", "--privacy", "TRUSTED", "--role", "COMPANION", "--json")
+    assert json.loads(as_json.stdout)["role"] == "COMPANION"
 
 
 async def test_node_enroll_offers_no_default_and_not_this_machines_level(cli: Cli) -> None:
@@ -83,10 +96,11 @@ async def test_node_revoke_refuses_this_machine(cli: Cli, ela: Ela) -> None:
 
 
 async def test_node_revoke_revokes_a_node_and_says_when(cli: Cli, ela: Ela) -> None:
-    issued = await ela.enrollment.issue(PrivacyLevel.TRUSTED)
+    issued = await ela.enrollment.issue(PrivacyLevel.TRUSTED, DeviceRole.WORKER)
     node = (
         await ela.enrollment.enroll(
             issued.code,
+            role=DeviceRole.WORKER,
             name="pc",
             os=OperatingSystem.WINDOWS,
             capabilities=(),

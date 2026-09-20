@@ -43,6 +43,7 @@ from ela.domain import (
     DeviceCapability,
     DeviceCapabilityName,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     ELAIdentity,
     Enrollment,
@@ -238,6 +239,7 @@ devices = st.builds(
     created_at=utc_datetimes,
     name=texts,
     os=st.sampled_from(OperatingSystem),
+    role=st.sampled_from(DeviceRole),
     availability=st.sampled_from(DeviceAvailability),
     status=st.sampled_from(DeviceStatus),
     capabilities=st.lists(device_capabilities, max_size=3).map(tuple),
@@ -265,6 +267,7 @@ def _enrollments(draw: st.DrawFn) -> Enrollment:
         created_at=created_at,
         expires_at=created_at + lifetime,
         privacy=draw(st.sampled_from(REMOTE_PRIVACY_LEVELS)),
+        role=draw(st.sampled_from(DeviceRole)),
         consumed_at=None if consumer is None else consumer[0],
         device_id=None if consumer is None else DeviceId(consumer[1]),
     )

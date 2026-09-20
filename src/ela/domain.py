@@ -74,6 +74,7 @@ __all__ = [
     "DeviceCapability",
     "DeviceCapabilityName",
     "DeviceId",
+    "DeviceRole",
     "DeviceStatus",
     "ELAIdentity",
     "Enrollment",
@@ -615,6 +616,26 @@ class ProviderStatus(StrEnum):
     UNAVAILABLE = "UNAVAILABLE"
 
 
+class DeviceRole(StrEnum):
+    """What an identity in the registry *is*, and therefore how it may speak (M12.5 dec. A).
+
+    Of the same species as :class:`PrivacyLevel`: the user imposes it when they mint the enrolment
+    code, the node never declares it, and it is not rewritten afterwards — ``PUT /nodes/me`` writes
+    the declared half, and this is not in it (ADR 0037 §5, §9).
+
+    The role carries **the bearer of the credential** and **the routes**, which is why it is one
+    word and not two flags: a worker proves itself with the ``Authorization`` header on the node's
+    routes, a companion with its cookie on the pages, and each of the two is refused on the other's
+    ground. No ``UNKNOWN``: an identity whose role nobody knows would be an identity nobody can
+    place (§33).
+    """
+
+    WORKER = "WORKER"
+    """A node that takes work: every node of today, and ``local``."""
+    COMPANION = "COMPANION"
+    """An iPhone that looks and answers, and takes no work (spec §6, «Companion Node»)."""
+
+
 class PrivacyLevel(StrEnum):
     """What data may leave a node (§16, §57).
 
@@ -834,6 +855,13 @@ class Device(_DomainModel):
     created_at: UtcDatetime
     name: str
     os: OperatingSystem
+    role: DeviceRole
+    """What this identity is, imposed by the code it was born from (M12.5 dec. A).
+
+    Beside ``privacy`` and read like it: never declared by the node, never rewritten. A
+    ``COMPANION`` derives ``UNAVAILABLE`` whatever its last contact says (M12.5 dec. B), so the
+    orchestrator cannot place work on something that takes none.
+    """
     availability: DeviceAvailability
     status: DeviceStatus
     capabilities: tuple[DeviceCapability, ...] = ()
@@ -881,6 +909,12 @@ class Enrollment(_DomainModel):
     created_at: UtcDatetime
     expires_at: UtcDatetime
     privacy: PrivacyLevel
+    role: DeviceRole
+    """What the node born from this code will be, and which enrolment route may spend it (M12.5).
+
+    The condition is in the statement that spends the code, not before it: a code presented on the
+    route of another role changes nothing and stays spendable (dec. C.5).
+    """
     consumed_at: UtcDatetime | None = None
     device_id: DeviceId | None = None
 

@@ -174,6 +174,11 @@ def work_adr_text() -> str:
     return ADR_PATH.with_name("0038-work-protocol.md").read_text(encoding="utf-8")
 
 
+def companion_adr_text() -> str:
+    """ADR 0043, which adds the one refusal of a code that is not the shared 401 (dec. C.5)."""
+    return ADR_PATH.with_name("0043-companion.md").read_text(encoding="utf-8")
+
+
 def node_macos_adr_text() -> str:
     """ADR 0039, which adds the one route a node that restarted reads itself with."""
     return ADR_PATH.with_name("0039-node-macos.md").read_text(encoding="utf-8")
@@ -278,7 +283,13 @@ def test_the_error_table_is_the_one_the_application_installs() -> None:
         | documented_errors(cli_adr_text())
         | documented_errors(nodes_adr_text())
         | documented_errors(work_adr_text())
+        | documented_errors(companion_adr_text())
     ) == {failure.exception.__name__: failure.status for failure in FAILURES}
+
+
+def test_the_failure_m12_5_adds_is_the_one_adr_0043_documents() -> None:
+    """One row, and it is the one refusal of an enrolment code that is not the shared 401."""
+    assert documented_errors(companion_adr_text()) == {"EnrollmentRoleError": 422}
 
 
 def test_the_failure_m8_2_adds_is_the_one_adr_0024_documents() -> None:

@@ -21,6 +21,8 @@ from tests.infrastructure.persistence.concurrency import Meeting
 from tests.infrastructure.persistence.conftest import Recorder, create_schema
 
 Attach = Callable[[AsyncEngine], Recorder]
+ROLE = WAITING_ENROLLMENT.role
+"""The role of the code, a condition of the same statement that spends it (M12.5 dec. C.5)."""
 NODE = DeviceId(UUID("00000000-0000-4000-8000-000000000401"))
 OTHER_NODE = DeviceId(UUID("00000000-0000-4000-8000-000000000402"))
 SPEND = "UPDATE enrollments"
@@ -41,10 +43,10 @@ async def test_two_nodes_presenting_one_code_let_exactly_one_be_born(file_url: s
         meeting.attend(second)
         outcomes = await asyncio.gather(
             SqlEnrollmentStore(first).consume(
-                WAITING_ENROLLMENT.code_hash, device_id=NODE, now=LATER
+                WAITING_ENROLLMENT.code_hash, device_id=NODE, now=LATER, role=ROLE
             ),
             SqlEnrollmentStore(second).consume(
-                WAITING_ENROLLMENT.code_hash, device_id=OTHER_NODE, now=LATER
+                WAITING_ENROLLMENT.code_hash, device_id=OTHER_NODE, now=LATER, role=ROLE
             ),
             return_exceptions=True,
         )
@@ -67,10 +69,10 @@ async def test_a_code_is_spent_by_one_conditional_update(
     store = SqlEnrollmentStore(engine)
     await store.offer(WAITING_ENROLLMENT)
     recorded = statements(engine)
-    await store.consume(WAITING_ENROLLMENT.code_hash, device_id=NODE, now=LATER)
+    await store.consume(WAITING_ENROLLMENT.code_hash, device_id=NODE, now=LATER, role=ROLE)
     seen = recorded()
     spends = [statement for statement in seen if statement.startswith(SPEND)]
     assert len(spends) == 1
-    for clause in ("code_hash = ?", "consumed_at IS NULL", "expires_at > ?"):
+    for clause in ("code_hash = ?", "consumed_at IS NULL", "expires_at > ?", "role = ?"):
         assert clause in spends[0], clause
     assert not any(statement.startswith("SELECT") for statement in seen[: seen.index(spends[0])])

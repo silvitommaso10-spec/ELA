@@ -30,6 +30,7 @@ from ela.domain import (
     Device,
     DeviceAvailability,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     NetworkKind,
     OperatingSystem,
@@ -145,7 +146,9 @@ def local_device(
     interpreter. ``availability`` and ``status`` start ``UNKNOWN`` and ``last_seen_at`` ``None``
     because no heartbeat has arrived yet — and a node never seen is not available (ADR 0016 §3).
     ``available_tools`` is given by the caller: which tools exist depends on a workspace root the
-    registry has no business knowing (ADR 0016 §4).
+    registry has no business knowing (ADR 0016 §4). The role is ``WORKER``: this is the machine
+    that runs the work (M12.5 dec. A), and it is the default the migration gave every row that
+    existed before roles did.
     """
     return Device(
         id=LOCAL_DEVICE_ID,
@@ -160,6 +163,7 @@ def local_device(
         network=NetworkKind.LOCAL,
         power_source=PowerSource.UNKNOWN,
         privacy=PrivacyLevel.LOCAL_ONLY,
+        role=DeviceRole.WORKER,
         current_workload=None,
         last_seen_at=None,
     )

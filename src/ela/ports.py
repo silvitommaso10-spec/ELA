@@ -47,6 +47,7 @@ from ela.domain import (
     Device,
     DeviceAvailability,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     Enrollment,
     ErrorMetadata,
@@ -103,6 +104,7 @@ __all__ = [
     "EnrollmentConsumedError",
     "EnrollmentExpiredError",
     "EnrollmentNotUsableError",
+    "EnrollmentRoleError",
     "EnrollmentStore",
     "ExecutionResultStore",
     "IdGenerator",
@@ -461,6 +463,23 @@ class EnrollmentExpiredError(EnrollmentNotUsableError):
         super().__init__(f"the enrollment code expired at {expires_at.isoformat()}")
 
 
+class EnrollmentRoleError(EnrollmentNotUsableError):
+    """The code was minted for one role and presented on the enrolment route of another (M12.5).
+
+    Nothing is written: the role is a condition **of the statement** that spends the code, so a
+    code refused here is still spendable where it belongs (dec. C.5). The message names the two
+    roles and never the code — an error reaches a response body, and a companion's is a page.
+    """
+
+    def __init__(self, carried: DeviceRole, expected: DeviceRole) -> None:
+        self.carried = carried
+        self.expected = expected
+        super().__init__(
+            f"the enrollment code was issued for a {carried.value} "
+            f"and this route enrolls a {expected.value}"
+        )
+
+
 class AssignmentNotUsableError(PortError):
     """An assignment exists and a move asked of it did not happen; the subclasses say why.
 
@@ -803,13 +822,17 @@ class EnrollmentStore(Protocol):
     async def offer(self, enrollment: Enrollment) -> None:
         """Keep a new code; :class:`AlreadyExistsError` if a code with this hash is already kept."""
 
-    async def consume(self, code_hash: str, *, device_id: DeviceId, now: datetime) -> Enrollment:
+    async def consume(
+        self, code_hash: str, *, device_id: DeviceId, now: datetime, role: DeviceRole
+    ) -> Enrollment:
         """Spend the code for ``device_id`` and return it as stored — only if it exists, has not
-        been consumed and has not expired at ``now`` (``expires_at <= now`` is expired, closed
-        bound). Otherwise nothing is written and, in this order, :class:`NotFoundError`,
-        :class:`EnrollmentConsumedError` or :class:`EnrollmentExpiredError` is raised. The check
-        and the write are one atomic step: of two nodes presenting the same code exactly one is
-        born (ADR 0012 §5, the shape of ``consume``)."""
+        been consumed, has not expired at ``now`` (``expires_at <= now`` is expired, closed bound)
+        and carries ``role``, the role of the enrolment route presenting it (M12.5 dec. C.5).
+        Otherwise nothing is written and, in this order, :class:`NotFoundError`,
+        :class:`EnrollmentConsumedError`, :class:`EnrollmentRoleError` or
+        :class:`EnrollmentExpiredError` is raised. The check and the write are one atomic step: of
+        two nodes presenting the same code exactly one is born (ADR 0012 §5, the shape of
+        ``consume``)."""
 
 
 @runtime_checkable

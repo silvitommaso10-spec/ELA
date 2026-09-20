@@ -95,6 +95,7 @@ BARE_DEVICE = Device(
     created_at=DEVICE.created_at,
     name="bare",
     os=DEVICE.os,
+    role=DEVICE.role,
     availability=DEVICE.availability,
     status=DEVICE.status,
     privacy=DEVICE.privacy,

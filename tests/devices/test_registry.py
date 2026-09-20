@@ -21,7 +21,7 @@ from ela.devices import (
     DeviceRegistry,
     is_available,
 )
-from ela.domain import Device, DeviceId, DeviceStatus, OperatingSystem
+from ela.domain import Device, DeviceId, DeviceRole, DeviceStatus, OperatingSystem
 from ela.ports import (
     DeviceRegistryPort,
     NotFoundError,
@@ -99,6 +99,36 @@ def test_is_available_reads_the_last_heartbeat_only() -> None:
     assert is_available(seen, MUCH_LATER + TTL - timedelta(seconds=1), TTL)
     assert not is_available(seen, MUCH_LATER + TTL, TTL)
     assert not is_available(DEVICE.model_copy(update={"last_seen_at": None}), MUCH_LATER, TTL)
+
+
+def test_a_companion_is_not_available_however_fresh_its_contact() -> None:
+    """M12.5 dec. B: availability is the fact of the heartbeat, and a companion sends none.
+
+    The contact is written — the same instant a node's heartbeat would write — and the answer is
+    still ``UNAVAILABLE``: what the iPhone did is open a page, which says nothing about its being
+    able to take work. Derived here and not only in ``available()``, so that a step with no
+    required capability — whose set of tools is empty, so ``MISSING_TOOL`` cannot fire — has
+    nothing to be placed on (dec. A).
+    """
+    just_now = DEVICE.model_copy(update={"last_seen_at": MUCH_LATER, "role": DeviceRole.COMPANION})
+
+    assert not is_available(just_now, MUCH_LATER, TTL)
+    assert is_available(just_now.model_copy(update={"role": DeviceRole.WORKER}), MUCH_LATER, TTL)
+
+
+async def test_a_companion_is_left_out_of_available_and_says_when_it_last_spoke(
+    registry: DeviceRegistry,
+) -> None:
+    """The two facts side by side: not available, and an hour of contact nobody can mistake."""
+    companion = DEVICE.model_copy(
+        update={"id": OTHER_ID, "name": "iPhone", "role": DeviceRole.COMPANION}
+    )
+    await registry.register(companion)
+    seen = await registry.heartbeat(companion.id)
+
+    assert seen.availability is UNAVAILABLE
+    assert seen.last_seen_at is not None
+    assert await registry.available() == ()
 
 
 # ----------------------------------------------------------------------------------------

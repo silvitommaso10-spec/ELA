@@ -1307,6 +1307,15 @@ VIOLATIONS: tuple[Case, ...] = (
         "def next_revision(current):\n    return current.revision + 1\n",
         "revision",
     ),
+    Case(
+        # M12.5 dec. A: the role is imposed at enrolment, like the privacy. A reconciliation that
+        # restated it would let a node that announces itself become a worker — or stop being one.
+        "the-refresh-writes-the-role",
+        "a-refresh-touches-only-what-is-declared",
+        "devices/refresh.py",
+        'def refreshed(current):\n    return current.model_copy(update={"role": "WORKER"})\n',
+        "role",
+    ),
     # --- constant-time-token, extended (rule 31, M12.1 dec. E) ---
     Case(
         # The second place that compares a secret: a helper beside the registry, which reads well

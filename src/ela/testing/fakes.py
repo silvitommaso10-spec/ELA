@@ -39,6 +39,7 @@ from ela.domain import (
     Device,
     DeviceAvailability,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     Enrollment,
     ErrorMetadata,
@@ -89,6 +90,7 @@ from ela.ports import (
     DeviceRevokedError,
     EnrollmentConsumedError,
     EnrollmentExpiredError,
+    EnrollmentRoleError,
     IdentityConflictError,
     IdGenerator,
     ModelProvider,
@@ -409,12 +411,17 @@ class FakeEnrollmentStore:
             raise AlreadyExistsError("enrollment", "code")
         self._codes[enrollment.code_hash] = enrollment
 
-    async def consume(self, code_hash: str, *, device_id: DeviceId, now: datetime) -> Enrollment:
+    async def consume(
+        self, code_hash: str, *, device_id: DeviceId, now: datetime, role: DeviceRole
+    ) -> Enrollment:
+        """The order of the port: unknown, spent, the wrong role, expired (M12.5 dec. C.5)."""
         enrollment = self._codes.get(code_hash)
         if enrollment is None:
             raise NotFoundError("enrollment", "code")
         if enrollment.device_id is not None:
             raise EnrollmentConsumedError(enrollment.device_id)
+        if enrollment.role is not role:
+            raise EnrollmentRoleError(enrollment.role, role)
         if enrollment.expires_at <= now:
             raise EnrollmentExpiredError(enrollment.expires_at)
         spent = enrollment.model_copy(update={"consumed_at": now, "device_id": device_id})

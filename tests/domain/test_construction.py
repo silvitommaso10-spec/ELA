@@ -25,6 +25,7 @@ from ela.domain import (
     DeviceAvailability,
     DeviceCapability,
     DeviceCapabilityName,
+    DeviceRole,
     DeviceStatus,
     Enrollment,
     NetworkKind,
@@ -193,6 +194,7 @@ def _device(**overrides: object) -> Device:
         "created_at": NOW,
         "name": "MacBook",
         "os": OperatingSystem.MACOS,
+        "role": DeviceRole.WORKER,
         "availability": DeviceAvailability.ONLINE,
         "status": DeviceStatus.IDLE,
         "privacy": PrivacyLevel.TRUSTED,
@@ -222,6 +224,16 @@ def test_device_state_enums_default_to_unknown() -> None:
 def test_device_privacy_has_no_default() -> None:
     """§33: an undeclared privacy level must never be mistaken for permission."""
     assert Device.model_fields["privacy"].is_required()
+
+
+def test_device_role_has_no_default() -> None:
+    """M12.5 dec. A: the role is imposed, like the privacy, and a row without one has no bearer.
+
+    A default here would be the quiet one: every construction that forgot it would be a worker,
+    which is the role with the routes, and nobody would be told.
+    """
+    assert Device.model_fields["role"].is_required()
+    assert Enrollment.model_fields["role"].is_required()
 
 
 def test_a_device_is_born_at_revision_zero_and_not_revoked() -> None:

@@ -43,7 +43,7 @@ from ela.api.schemas import (
 )
 from ela.api.security import Anonymous, count, unauthorized
 from ela.composition import Ela
-from ela.domain import Assignment, AssignmentId, Device, DeviceId, TaskId
+from ela.domain import Assignment, AssignmentId, Device, DeviceId, DeviceRole, TaskId
 from ela.executive import Claimed
 from ela.ports import (
     AssignmentNotUsableError,
@@ -71,13 +71,19 @@ wait would let them contradict each other.
 
 @router.post("/enrollments", status_code=201)
 async def issue_code(body: EnrollmentIn, ela: ElaDep) -> EnrollmentCodeOut:
-    """A one-shot code that will impose ``privacy`` on the node that presents it (ADR 0037 §5).
+    """A one-shot code that will impose ``privacy`` and ``role`` on whoever presents it (§5).
 
     Answered once, kept as its hash. Nothing is audited: a code that expires unused changes
     nothing in ELA's world, and the admission is one fact, written when it happens (§13).
+
+    The role decides **which enrolment route** may spend it (M12.5 dec. C.5), and the condition is
+    in the statement that spends it: a code offered on the other route is refused and stays
+    spendable.
     """
-    issued = await ela.enrollment.issue(body.privacy)
-    return EnrollmentCodeOut(code=issued.code, privacy=issued.privacy, expires_at=issued.expires_at)
+    issued = await ela.enrollment.issue(body.privacy, body.role)
+    return EnrollmentCodeOut(
+        code=issued.code, privacy=issued.privacy, role=issued.role, expires_at=issued.expires_at
+    )
 
 
 @router.post("/enroll", status_code=201, response_model=EnrolledOut)
@@ -89,10 +95,16 @@ async def enroll(
     A code that cannot be spent gets the same ``401`` as a credential nobody knows. An unknown or
     expired one is anonymous and counted; one already spent is written by the registry as
     ``DEVICE_REJECTED`` ``code_reused``, naming the node it gave birth to.
+
+    This route enrols a ``WORKER`` and only a ``WORKER``: a companion's code presented here gets
+    ``422`` and is not spent (M12.5 dec. C.5), because a companion's credential is never handed out
+    in a body — it is born in a ``Set-Cookie``, on the companion's own route.
     """
     assert identity.code is not None  # the middleware lets only a code through here
     try:
-        enrolled = await ela.enrollment.enroll(identity.code, **body.declared())
+        enrolled = await ela.enrollment.enroll(
+            identity.code, role=DeviceRole.WORKER, **body.declared()
+        )
     except NotFoundError:
         return count(request, Anonymous.UNKNOWN_CODE)
     except EnrollmentExpiredError:

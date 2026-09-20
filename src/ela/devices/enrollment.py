@@ -27,6 +27,7 @@ from ela.domain import (
     Device,
     DeviceCapability,
     DeviceId,
+    DeviceRole,
     Enrollment,
     OperatingSystem,
     PerformanceClass,
@@ -63,6 +64,7 @@ class IssuedCode:
 
     code: str
     privacy: PrivacyLevel
+    role: DeviceRole
     expires_at: datetime
 
 
@@ -92,8 +94,12 @@ class NodeEnrollment:
         self._clock = clock
         self._ids = ids
 
-    async def issue(self, privacy: PrivacyLevel) -> IssuedCode:
-        """A new code that will impose ``privacy``, valid for :data:`ENROLLMENT_CODE_TTL`.
+    async def issue(self, privacy: PrivacyLevel, role: DeviceRole) -> IssuedCode:
+        """A new code that will impose ``privacy`` and ``role``, valid for
+        :data:`ENROLLMENT_CODE_TTL`.
+
+        Both are the imposed half (M12.5 dec. A): the user chooses them when they mint the code,
+        and the identity born from it never rewrites either.
 
         :raises ValueError: for ``LOCAL_ONLY``, which is this machine's level (D18) — refused by
             the type, before anything is kept.
@@ -105,14 +111,16 @@ class NodeEnrollment:
             created_at=now,
             expires_at=now + ENROLLMENT_CODE_TTL,
             privacy=privacy,
+            role=role,
         )
         await self._codes.offer(enrollment)
-        return IssuedCode(code=code, privacy=privacy, expires_at=enrollment.expires_at)
+        return IssuedCode(code=code, privacy=privacy, role=role, expires_at=enrollment.expires_at)
 
     async def enroll(
         self,
         code: str,
         *,
+        role: DeviceRole,
         name: str,
         os: OperatingSystem,
         capabilities: tuple[DeviceCapability, ...],
@@ -129,14 +137,22 @@ class NodeEnrollment:
         A code already spent names the node it gave birth to: ``DEVICE_REJECTED`` ``code_reused``,
         if that node exists — in the crash window it does not, and there is nothing to name.
 
+        ``role`` is the role of the enrolment route this call speaks for, and it is a condition of
+        the ``UPDATE`` and not a check before it (M12.5 dec. C.5): a code minted for the other
+        role is refused **and stays spendable**, so a user who pasted it in the wrong place has
+        lost nothing.
+
         :raises NotFoundError: for a code nobody issued.
         :raises EnrollmentConsumedError: for a code already spent.
+        :raises EnrollmentRoleError: for a code minted for the other role.
         :raises EnrollmentExpiredError: for a code past its expiry.
         """
         now = self._clock.now()
         device_id = DeviceId(self._ids.new_uuid())
         try:
-            spent = await self._codes.consume(fingerprint(code), device_id=device_id, now=now)
+            spent = await self._codes.consume(
+                fingerprint(code), device_id=device_id, now=now, role=role
+            )
         except EnrollmentConsumedError as reused:
             with suppress(NotFoundError):
                 await self._registry.reject(reused.device_id, Rejection.CODE_REUSED)
@@ -150,6 +166,7 @@ class NodeEnrollment:
             available_tools=available_tools,
             performance=performance,
             privacy=spent.privacy,
+            role=spent.role,
             secret_hash=fingerprint(secret),
             by=LOCAL_USER,
             issued_at=spent.created_at,

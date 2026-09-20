@@ -85,6 +85,7 @@ def test_the_domain_declares_exactly_these_enums() -> None:
         "ContextQuestion",
         "ContextSource",
         "DeviceAvailability",
+        "DeviceRole",
         "DeviceStatus",
         "ExecutionStatus",
         "IntentChannel",

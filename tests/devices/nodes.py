@@ -20,6 +20,7 @@ from ela.domain import (
     DeviceCapability,
     DeviceCapabilityName,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     NetworkKind,
     OperatingSystem,
@@ -54,6 +55,7 @@ def node(
     power_source: PowerSource = PowerSource.UNKNOWN,
     workload: float | None = None,
     revoked_at: datetime | None = None,
+    role: DeviceRole = DeviceRole.WORKER,
 ) -> Device:
     """A node as :class:`~ela.devices.DeviceRegistry` would hand it over: availability judged."""
     return Device(
@@ -61,6 +63,7 @@ def node(
         created_at=NOW,
         name=name,
         os=OperatingSystem.MACOS,
+        role=role,
         availability=availability,
         status=status,
         capabilities=tuple(traits),

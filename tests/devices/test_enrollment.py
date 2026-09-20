@@ -25,6 +25,7 @@ from ela.devices import (
 from ela.domain import (
     AuditEventType,
     DeviceId,
+    DeviceRole,
     Enrollment,
     NetworkKind,
     OperatingSystem,
@@ -35,6 +36,7 @@ from ela.ports import (
     DeviceRegistryPort,
     EnrollmentConsumedError,
     EnrollmentExpiredError,
+    EnrollmentRoleError,
     NotFoundError,
 )
 from ela.testing.fakes import FakeAuditLog, FakeClock, FakeEnrollmentStore, FakeIdGenerator
@@ -47,6 +49,10 @@ DECLARED: dict[str, Any] = {
     "performance": PerformanceClass.HIGH,
 }
 """What a Windows node declares of itself when it presents its code."""
+
+AS_WORKER: dict[str, Any] = {"role": DeviceRole.WORKER, **DECLARED}
+"""The same declaration, on the enrolment route of the nodes: the role is the route's, not the
+node's (M12.5 dec. A)."""
 
 
 class RecordingStore(FakeEnrollmentStore):
@@ -79,7 +85,7 @@ def enrollment(codes: RecordingStore, registry: DeviceRegistry, clock: FakeClock
 async def test_a_code_is_issued_for_ten_minutes_with_the_level_the_user_chose(
     enrollment: NodeEnrollment, codes: RecordingStore, clock: FakeClock
 ) -> None:
-    issued = await enrollment.issue(PrivacyLevel.TRUSTED)
+    issued = await enrollment.issue(PrivacyLevel.TRUSTED, DeviceRole.WORKER)
 
     assert timedelta(minutes=10) == ENROLLMENT_CODE_TTL
     assert (issued.privacy, issued.expires_at) == (
@@ -96,7 +102,7 @@ async def test_local_only_is_refused_before_anything_is_kept(
 ) -> None:
     """D18: the type refuses it, so no route and no caller can mint it."""
     with pytest.raises(ValidationError, match="LOCAL_ONLY"):
-        await enrollment.issue(PrivacyLevel.LOCAL_ONLY)
+        await enrollment.issue(PrivacyLevel.LOCAL_ONLY, DeviceRole.WORKER)
     assert codes.offered == []
 
 
@@ -114,9 +120,9 @@ async def test_a_node_is_born_with_an_id_and_a_privacy_it_did_not_choose(
 ) -> None:
     """Criterion 1, below the route: the privacy is the code's, the network the registry's, and
     the node is never seen — so not available — until its first heartbeat."""
-    issued = await enrollment.issue(PrivacyLevel.TRUSTED)
+    issued = await enrollment.issue(PrivacyLevel.TRUSTED, DeviceRole.WORKER)
 
-    enrolled = await enrollment.enroll(issued.code, **DECLARED)
+    enrolled = await enrollment.enroll(issued.code, **AS_WORKER)
 
     node = await registry.get(enrolled.device.id)
     assert node == enrolled.device
@@ -140,13 +146,80 @@ async def test_a_node_is_born_with_an_id_and_a_privacy_it_did_not_choose(
     assert f"code issued at {clock.now().isoformat()}" in event.summary
 
 
+async def test_a_companion_is_born_from_a_companion_code(
+    enrollment: NodeEnrollment,
+    registry: DeviceRegistry,
+    audit: FakeAuditLog,
+) -> None:
+    """M12.5 dec. A: the role is the code's, like the privacy, and the row is born with it.
+
+    The audit says which of the two entered ELA's world: an identity that answers pages and one
+    that takes work are not the same admission, and the log is what somebody reads a year later.
+    """
+    issued = await enrollment.issue(PrivacyLevel.TRUSTED, DeviceRole.COMPANION)
+
+    enrolled = await enrollment.enroll(
+        issued.code,
+        role=DeviceRole.COMPANION,
+        name="iPhone",
+        os=OperatingSystem.IOS,
+        capabilities=(),
+        available_tools=(),
+        performance=PerformanceClass.UNKNOWN,
+    )
+
+    assert issued.role is DeviceRole.COMPANION
+    node = await registry.get(enrolled.device.id)
+    assert node.role is DeviceRole.COMPANION
+    assert (node.os, node.available_tools, node.capabilities) == (OperatingSystem.IOS, (), ())
+    assert node.availability is UNAVAILABLE
+    (event,) = await audit.read()
+    assert "role COMPANION" in event.summary
+
+
+@pytest.mark.parametrize(
+    ("minted", "presented"),
+    [
+        (DeviceRole.COMPANION, DeviceRole.WORKER),
+        (DeviceRole.WORKER, DeviceRole.COMPANION),
+    ],
+    ids=["a companion code on the nodes' route", "a node's code on the companion's route"],
+)
+async def test_a_code_of_the_other_role_is_refused_and_stays_spendable(
+    minted: DeviceRole,
+    presented: DeviceRole,
+    enrollment: NodeEnrollment,
+    registry: DeviceRegistry,
+    audit: FakeAuditLog,
+) -> None:
+    """M12.5 dec. C.5: the role is a condition of the ``UPDATE``, so nothing is spent.
+
+    Both ways round, because the two routes are not symmetrical in anything else: what they share
+    is that a code pasted in the wrong place costs the user nothing — the code still works where
+    it belongs, and no row, no hash and no event were written in between.
+    """
+    issued = await enrollment.issue(PrivacyLevel.TRUSTED, minted)
+
+    with pytest.raises(EnrollmentRoleError) as refused:
+        await enrollment.enroll(issued.code, **{**AS_WORKER, "role": presented})
+
+    assert (refused.value.carried, refused.value.expected) == (minted, presented)
+    assert issued.code not in str(refused.value)
+    assert await audit.read() == ()
+    assert await registry.devices() == ()
+
+    enrolled = await enrollment.enroll(issued.code, **{**AS_WORKER, "role": minted})
+
+    assert enrolled.device.role is minted
+
+
 async def test_the_code_and_the_secret_are_in_clear_nowhere_but_the_answer(
     enrollment: NodeEnrollment, port: DeviceRegistryPort, audit: FakeAuditLog
 ) -> None:
     """Criterion 6, below the route: not in the audit, not in the entity — and not their hashes
     either. It proves what this test exercises and nothing more."""
-    issued = await enrollment.issue(PrivacyLevel.TRUSTED)
-    enrolled = await enrollment.enroll(issued.code, **DECLARED)
+    issued = await enrollment.issue(PrivacyLevel.TRUSTED, DeviceRole.WORKER)
+    enrolled = await enrollment.enroll(issued.code, **AS_WORKER)
 
     written = " ".join(event.model_dump_json() for event in await audit.read())
     stored = (await port.get(enrolled.device.id)).model_dump_json()
@@ -163,11 +236,11 @@ async def test_the_code_and_the_secret_are_in_clear_nowhere_but_the_answer(
 async def test_a_code_presented_twice_names_the_node_it_gave_birth_to(
     enrollment: NodeEnrollment, registry: DeviceRegistry, audit: FakeAuditLog
 ) -> None:
-    issued = await enrollment.issue(PrivacyLevel.TRUSTED)
-    first = await enrollment.enroll(issued.code, **DECLARED)
+    issued = await enrollment.issue(PrivacyLevel.TRUSTED, DeviceRole.WORKER)
+    first = await enrollment.enroll(issued.code, **AS_WORKER)
 
     with pytest.raises(EnrollmentConsumedError):
-        await enrollment.enroll(issued.code, **DECLARED)
+        await enrollment.enroll(issued.code, **AS_WORKER)
 
     _, rejected = await audit.read()
     assert rejected.event_type is AuditEventType.DEVICE_REJECTED
@@ -187,12 +260,14 @@ async def test_in_the_crash_window_a_reused_code_names_nobody(
 ) -> None:
     """Dec. D §6: the code spent and the row never born. Presenting it again is refused, and
     there is no node to name — a rejection is written only about a node that exists."""
-    issued = await enrollment.issue(PrivacyLevel.TRUSTED)
+    issued = await enrollment.issue(PrivacyLevel.TRUSTED, DeviceRole.WORKER)
     lost = DeviceId(UUID("00000000-0000-4000-8000-000000000501"))
-    await codes.consume(fingerprint(issued.code), device_id=lost, now=clock.now())
+    await codes.consume(
+        fingerprint(issued.code), device_id=lost, now=clock.now(), role=DeviceRole.WORKER
+    )
 
     with pytest.raises(EnrollmentConsumedError):
-        await enrollment.enroll(issued.code, **DECLARED)
+        await enrollment.enroll(issued.code, **AS_WORKER)
 
     assert await audit.read() == ()
     assert await registry.devices() == ()
@@ -202,7 +277,7 @@ async def test_a_code_nobody_issued_leaves_nothing(
     enrollment: NodeEnrollment, registry: DeviceRegistry, audit: FakeAuditLog
 ) -> None:
     with pytest.raises(NotFoundError):
-        await enrollment.enroll("not-a-code", **DECLARED)
+        await enrollment.enroll("not-a-code", **AS_WORKER)
     assert await audit.read() == ()
     assert await registry.devices() == ()
 
@@ -210,11 +285,11 @@ async def test_a_code_nobody_issued_leaves_nothing(
 async def test_a_code_expires_ten_minutes_after_it_was_issued(
     enrollment: NodeEnrollment, registry: DeviceRegistry, audit: FakeAuditLog, clock: FakeClock
 ) -> None:
-    issued = await enrollment.issue(PrivacyLevel.TRUSTED)
+    issued = await enrollment.issue(PrivacyLevel.TRUSTED, DeviceRole.WORKER)
     clock.advance(ENROLLMENT_CODE_TTL)
 
     with pytest.raises(EnrollmentExpiredError):
-        await enrollment.enroll(issued.code, **DECLARED)
+        await enrollment.enroll(issued.code, **AS_WORKER)
 
     assert await audit.read() == ()
     assert await registry.devices() == ()

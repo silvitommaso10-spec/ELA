@@ -20,7 +20,7 @@ from sqlalchemy import CursorResult, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from ela.domain import DeviceId, Enrollment
+from ela.domain import DeviceId, DeviceRole, Enrollment
 from ela.infrastructure.persistence.engine import make_session_factory
 from ela.infrastructure.persistence.mappers import enrollment_to_row, row_to_enrollment
 from ela.infrastructure.persistence.orm import EnrollmentRow
@@ -28,6 +28,7 @@ from ela.ports import (
     AlreadyExistsError,
     EnrollmentConsumedError,
     EnrollmentExpiredError,
+    EnrollmentRoleError,
     NotFoundError,
 )
 
@@ -58,8 +59,15 @@ class SqlEnrollmentStore:
             except IntegrityError:
                 raise AlreadyExistsError(ENROLLMENT, CODE) from None
 
-    async def consume(self, code_hash: str, *, device_id: DeviceId, now: datetime) -> Enrollment:
-        """One conditional ``UPDATE``; then one read, which returns the code or names the error."""
+    async def consume(
+        self, code_hash: str, *, device_id: DeviceId, now: datetime, role: DeviceRole
+    ) -> Enrollment:
+        """One conditional ``UPDATE``; then one read, which returns the code or names the error.
+
+        ``role`` is a condition of the statement, beside the expiry (M12.5 dec. C.5): a code minted
+        for the other role touches no row, so it is not spent and the user can present it where it
+        belongs.
+        """
         async with self._sessions() as session, session.begin():
             result = await session.execute(
                 update(EnrollmentRow)
@@ -67,6 +75,7 @@ class SqlEnrollmentStore:
                     EnrollmentRow.code_hash == code_hash,
                     EnrollmentRow.consumed_at.is_(None),
                     EnrollmentRow.expires_at > now,
+                    EnrollmentRow.role == role.value,
                 )
                 .values(consumed_at=now, device_id=device_id)
             )
@@ -74,18 +83,23 @@ class SqlEnrollmentStore:
                 select(EnrollmentRow).where(EnrollmentRow.code_hash == code_hash)
             )
             if cast(CursorResult[Any], result).rowcount == 0 or row is None:
-                raise _why_not_consumed(row)
+                raise _why_not_consumed(row, role)
             return row_to_enrollment(row)
 
 
-def _why_not_consumed(row: EnrollmentRow | None) -> Exception:
-    """Unknown, else spent, else expired — the port's order.
+def _why_not_consumed(row: EnrollmentRow | None, role: DeviceRole) -> Exception:
+    """Unknown, else spent, else the wrong role, else expired — the port's order.
 
     Spent before expired: a code spent and then expired still names the node it gave birth to,
-    which is what ``DEVICE_REJECTED`` ``code_reused`` reports (ADR 0037 §13).
+    which is what ``DEVICE_REJECTED`` ``code_reused`` reports (ADR 0037 §13). The role comes before
+    the expiry because it is a fact about *this request* and not about time: a code offered on the
+    wrong route is answered the same way a minute after it was minted and a minute after it died,
+    and the user is told the one thing they can act on (M12.5 dec. C.5).
     """
     if row is None:
         return NotFoundError(ENROLLMENT, CODE)
     if row.device_id is not None:
         return EnrollmentConsumedError(DeviceId(row.device_id))
+    if row.role != role.value:
+        return EnrollmentRoleError(DeviceRole(row.role), role)
     return EnrollmentExpiredError(row.expires_at)

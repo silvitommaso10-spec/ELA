@@ -336,7 +336,9 @@ OBSERVED_FIELDS = frozenset(
 #: Rule 44, extended by M12.1 (ADR 0037 §10, §16): what is not declared beyond the observed half —
 #: the level the user imposed at enrollment, and the state of the node's identity. The builder of
 #: the declared half is also the road of a remote announcement, so it must not name these either.
-NOT_DECLARED_FIELDS = frozenset({"privacy", "revoked_at", "revision"})
+#: M12.5 adds ``role`` to the imposed half (dec. A): what an identity *is* is not a thing it may
+#: restate about itself, and a reconciliation that wrote it would be the road that does.
+NOT_DECLARED_FIELDS = frozenset({"privacy", "revoked_at", "revision", "role"})
 #: The constructor of a *new* row: right for a birth, and a reset for everything else.
 BIRTH_CONSTRUCTOR = "local_device"
 

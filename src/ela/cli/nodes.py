@@ -18,7 +18,7 @@ from ela.cli import client
 from ela.cli.errors import handled
 from ela.cli.output import Json, emit, table
 
-__all__ = ["RemotePrivacy", "devices", "node", "providers"]
+__all__ = ["EnrolledRole", "RemotePrivacy", "devices", "node", "providers"]
 
 devices = typer.Typer(no_args_is_help=True, help="The nodes ELA can operate through.")
 node = typer.Typer(no_args_is_help=True, help="Enroll a node, or revoke one (ADR 0037).")
@@ -32,6 +32,11 @@ def list_devices(as_json: Json = False) -> None:
 
     "Available" is derived from the last heartbeat, not read from a column that keeps saying what
     was true when someone wrote it: a node nobody has heard from is not available.
+
+    Two facts, two names (M12.5 dec. B): **last contact** is when that identity spoke to ELA — for
+    a node a heartbeat, for a companion a page — and **available** is the fact of the heartbeat,
+    which is why a companion that opened a page a second ago reads ``False``. Neither column says
+    "connected", which nobody here can know.
     """
     with client.connect() as api:
         payload = api.get("/devices")
@@ -39,12 +44,23 @@ def list_devices(as_json: Json = False) -> None:
         payload,
         as_json,
         table(
-            ("name", "id", "os", "available", "status", "last seen", "revoked", "tools"),
+            (
+                "name",
+                "id",
+                "os",
+                "role",
+                "available",
+                "status",
+                "last contact",
+                "revoked",
+                "tools",
+            ),
             [
                 (
                     one["name"],
                     one["id"],
                     one["os"],
+                    one["role"],
                     one["available"],
                     one["status"],
                     one["last_seen_at"],
@@ -73,6 +89,17 @@ def list_providers(as_json: Json = False) -> None:
     emit(payload, as_json, table(("provider", "status"), sorted(payload.items())))
 
 
+class EnrolledRole(StrEnum):
+    """What the code will make: a node that takes work, or the iPhone that looks and answers.
+
+    Lower case because that is how the guide writes it — ``--role companion`` — and matched
+    without case, so ``COMPANION`` works too (M12.5 dec. A, C.2).
+    """
+
+    WORKER = "worker"
+    COMPANION = "companion"
+
+
 class RemotePrivacy(StrEnum):
     """The levels a user can impose on a remote node: ``LOCAL_ONLY`` is this machine's (D18)."""
 
@@ -87,17 +114,35 @@ def enroll_node(
         RemotePrivacy,
         typer.Option("--privacy", help="The ceiling of what the node may receive. No default."),
     ],
+    role: Annotated[
+        EnrolledRole,
+        typer.Option(
+            "--role",
+            case_sensitive=False,
+            help="What the code will enrol: a worker, or the iPhone companion.",
+        ),
+    ] = EnrolledRole.WORKER,
     as_json: Json = False,
 ) -> None:
-    """Issue a one-shot code for a new node, with the privacy it will have (ADR 0037 §5).
+    """Issue a one-shot code for a new identity, with the privacy and the role it will have.
+
+    ADR 0037 §5, and M12.5 dec. A for the role: both are imposed here, by the user, and neither is
+    ever declared by what presents the code. ``--role companion`` mints the code the iPhone spends
+    in the enrolment form of its browser, and that code opens no other route.
 
     The code is printed once, beside its expiry. A code is not a token: it opens one route once
     and dies in minutes, so the reason ADR 0024 §8 keeps secrets off the terminal — a value that
     stays valid in the scrollback — does not hold for it. Paste it into the node; the node never
     sees ELA's token, and its own secret is never printed at all.
+
+    The table keeps the three columns it had, in the same order: a measure of M12.5 (P3) showed
+    that a double click on the terminal takes the whole code and stops at the next cell, and that
+    is how the code reaches the iPhone (dec. C.4). ``--json`` carries the role.
     """
     with client.connect() as api:
-        payload = api.post("/nodes/enrollments", {"privacy": privacy.value})
+        payload = api.post(
+            "/nodes/enrollments", {"privacy": privacy.value, "role": role.value.upper()}
+        )
     emit(
         payload,
         as_json,

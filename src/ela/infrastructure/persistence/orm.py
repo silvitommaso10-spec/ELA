@@ -260,6 +260,10 @@ class DeviceRow(Base):
     but what a reader gets is not this column: ``DeviceRegistry`` answers availability from
     ``last_seen_at`` and the TTL (ADR 0016 §3). The column holds the last state observed.
 
+    Since M12.5 (ADR 0043 §1) it keeps ``role``, the imposed half that says what this identity is
+    and which bearer proves it — ``WORKER`` for every row that existed before the column, which is
+    what they all were. Last, like every column a later ADR adds (ADR 0043 §2).
+
     Since M12.1 (ADR 0037 §8, §9) the row also keeps the state of the node's identity:
     ``revision``, which an announcement moves; ``revoked_at``, which a revocation writes once; and
     ``secret_hash``, the SHA-256 of the node's secret — ``NULL`` for ``local``, which does not
@@ -291,6 +295,9 @@ class DeviceRow(Base):
     )
     revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     secret_hash: Mapped[str | None] = mapped_column(String(HASH_LENGTH), nullable=True)
+    role: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="WORKER", server_default=text("'WORKER'")
+    )
 
 
 class EnrollmentRow(Base):
@@ -299,6 +306,9 @@ class EnrollmentRow(Base):
     ``code_hash`` is UNIQUE because it is the key the conditional ``UPDATE`` finds a code by
     (ADR 0037 §5); the code itself is never stored. No foreign key to ``devices``: ``device_id`` is
     written by the statement that spends the code, *before* the node's row is born.
+
+    Since M12.5 (ADR 0043 §2) ``role`` says which enrolment route may spend the code, and it is a
+    condition of that same statement: a code offered on the other route touches no row (§3).
     """
 
     __tablename__ = "enrollments"
@@ -311,6 +321,9 @@ class EnrollmentRow(Base):
     privacy: Mapped[str] = mapped_column(String(32), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     device_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    role: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="WORKER", server_default=text("'WORKER'")
+    )
 
 
 class AssignmentRow(Base):

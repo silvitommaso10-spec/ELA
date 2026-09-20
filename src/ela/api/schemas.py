@@ -36,6 +36,7 @@ from ela.domain import (
     DeviceCapability,
     DeviceCapabilityName,
     DeviceId,
+    DeviceRole,
     DeviceStatus,
     ErrorMetadata,
     ExecutionId,
@@ -406,6 +407,9 @@ class DeviceOut(BaseModel):
     created_at: datetime
     name: str
     os: OperatingSystem
+    role: DeviceRole
+    """What this identity is (M12.5 dec. A): beside ``available``, which for a ``COMPANION`` is
+    always ``false`` — it answers pages, it does not send heartbeats (dec. B)."""
     available: bool
     status: DeviceStatus
     capabilities: tuple[TraitOut, ...]
@@ -426,6 +430,7 @@ class DeviceOut(BaseModel):
             created_at=device.created_at,
             name=device.name,
             os=device.os,
+            role=device.role,
             available=available,
             status=device.status,
             capabilities=tuple(TraitOut.of(trait) for trait in device.capabilities),
@@ -450,11 +455,17 @@ hostile, and either way it must be seen: ``422``, and the row does not change (c
 
 
 class EnrollmentIn(BaseModel):
-    """What the user imposes on the node a code will create: only its ``privacy`` (ADR 0037 §5)."""
+    """What the user imposes on the identity a code will create: ``privacy`` and ``role``.
+
+    The two halves nobody may declare about themselves (ADR 0037 §5; M12.5 dec. A). ``role``
+    defaults to ``WORKER``, which is what this route created before roles existed and what every
+    caller that does not know about them still means.
+    """
 
     model_config = NODE_BODY
 
     privacy: PrivacyLevel
+    role: DeviceRole = DeviceRole.WORKER
 
     @field_validator("privacy")
     @classmethod
@@ -477,6 +488,7 @@ class EnrollmentCodeOut(BaseModel):
 
     code: str
     privacy: PrivacyLevel
+    role: DeviceRole
     expires_at: datetime
 
 

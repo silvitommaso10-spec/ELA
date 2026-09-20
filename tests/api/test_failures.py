@@ -70,6 +70,7 @@ from ela.ports import (
     ApprovalNotAnswerableError,
     AssignmentExpiredError,
     AssignmentNotUsableError,
+    EnrollmentRoleError,
     IdentityConflictError,
     NotFoundError,
 )
@@ -276,6 +277,22 @@ async def a_node_credential(live: Live) -> dict[str, str]:
     return {"Authorization": f"Bearer {born['device_id']}.{born['secret']}"}
 
 
+async def a_companions_code_on_the_route_of_the_nodes(live: Live) -> Response:
+    """M12.5 dec. C.5: a code minted for the iPhone, presented where nodes enrol.
+
+    The one refusal of a code that is not the same ``401`` as a credential nobody knows: whoever
+    presents it holds it already, and a companion's credential is never handed out in a body.
+    """
+    code = (
+        await live.client.post(
+            "/nodes/enrollments", json={"privacy": "TRUSTED", "role": "COMPANION"}
+        )
+    ).json()["code"]
+    return await live.client.post(
+        "/nodes/enroll", json=DECLARATION, headers={"Authorization": f"Bearer {code}"}
+    )
+
+
 async def an_announcement_at_a_revision_the_row_left(live: Live) -> Response:
     node = await a_node_credential(live)
     return await live.client.put("/nodes/me", json=DECLARATION, headers={**node, "If-Match": "0"})
@@ -390,6 +407,15 @@ RAISED: tuple[Raised, ...] = (
         "tampered",
         "ALTERED_ROW",
         a_trail_somebody_rewrote_under_the_triggers,
+    ),
+    Raised(
+        EnrollmentRoleError,
+        "POST",
+        "/nodes/enroll",
+        422,
+        "invalid",
+        "issued for a COMPANION",
+        a_companions_code_on_the_route_of_the_nodes,
     ),
     Raised(
         GraphError,
