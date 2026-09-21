@@ -212,6 +212,45 @@ Port estesi:
 |---|---|---|---|
 | `ToolPort` | §18, §30 | async | `prospect` |
 
+### 6-bis. Una domanda si compone solo per ciò che riuscirebbe adesso
+
+**La regola, e la prova a mano l'ha trovata due volte in due modi diversi:**
+
+> una domanda si compone **solo** per ciò che, approvato adesso, riuscirebbe sul disco di adesso.
+
+Il primo modo: lo stesso piano rilanciato sullo stesso file. Il piano dichiarava `overwrite: false`,
+il disco diceva che il file c'era, la domanda mostrava «sovrascrive» — letto dal disco —, l'utente
+ha detto sì, e il tool ha rifiutato perché il **piano** diceva un'altra cosa. **Due verità per lo
+stesso fatto**; e soprattutto ELA ha chiesto di approvare un'azione che sapeva già di rifiutare, che
+è ciò che ADR 0011 §3 vieta dal 2026-09-05 — «a un utente non si chiede di approvare ciò che sarebbe
+negato comunque».
+
+Il secondo modo: una lettura di un file che non c'è. Chiedere il permesso di leggere ciò che non si
+può leggere è chiedere una risposta che non cambia niente.
+
+**Dove si scopre**: dove la domanda si compone, con la **stessa** classificazione con cui il tool
+rifiuterà — `Prospect`, che il tool risponde leggendo `_look`, la sola funzione che decide e la
+stessa che gira quando il tool gira davvero. Un fatto, una definizione, un posto. Lo step fallisce
+lì: **nessuna `Approval`, nessun campanello**, e il motivo arriva a chi guarda (§12-bis).
+
+**Una frase sola, e la parola è «declared».** Il rifiuto di `fs.overwrite_mismatch` nasce adesso in
+**due** posti: prima della domanda, dove *nessuno ha ancora approvato niente*, e prima della
+scrittura, dove qualcosa è stato approvato. «Approvato» sarebbe una diagnosi falsa nel primo posto e
+vera nel secondo — e una diagnosi falsa è falsa anche quando l'esito è giusto (§5). «Dichiarato» è
+vera in tutti e due, perché nel secondo posto **ciò che è stato approvato è ciò che il piano aveva
+dichiarato**: è la dimostrazione qui sotto, letta al contrario.
+
+```text
+'ELA/prova.md' was declared as a new file and something is there now
+'ELA/prova.md' was declared as an overwrite and nothing is there now
+```
+
+**Che cosa questo rende vero alla scrittura.** Poiché la domanda nasce solo quando l'asserzione del
+piano e il disco **già concordano**, l'asserzione *è* il fatto che l'utente ha approvato. Quindi il
+confronto che il tool fa prima di scrivere — asserzione contro disco — è il confronto fra **il fatto
+approvato** e il mondo di adesso, nei due versi, e la frase che ne esce è vera. Non serve un secondo
+canale per far viaggiare il fatto approvato: la regola lo fa coincidere con quello che già viaggia.
+
 ### 7. La sovrascrittura vale nei due versi
 
 `overwrite` è **un'asserzione sul mondo, non una richiesta**. Il tool la rilegge prima di scrivere e
@@ -223,9 +262,15 @@ che nomina un verso solo è mezza difesa, e il caso mancante è proprio quello c
 l'intento e mai con il rapporto del tool; **non risponde dell'identità del percorso**, perché
 risolve la stessa coppia radice/percorso e seguirebbe lo stesso scambio. Un componente sostituito
 fra `classify` e `open` resta un **limite dichiarato** — `ela.tools.notes` lo dichiara già per la
-workspace, e qui è più largo, perché la radice è la casa dell'utente. E se l'asserzione era già falsa
-quando la domanda è nata, il rifiuto arriva dopo il sì e non prima: la domanda mostra comunque la
-verità della macchina, quindi nessuno approva una cosa credendone un'altra.
+workspace, e qui è più largo, perché la radice è la casa dell'utente.
+
+***Superata dalla §6-bis il 2026-09-21.*** ~~E se l'asserzione era già falsa quando la domanda è
+nata, il rifiuto arriva dopo il sì e non prima: la domanda mostra comunque la verità della macchina,
+quindi nessuno approva una cosa credendone un'altra.~~ Era un limite dichiarato con gli occhi
+aperti, e **la prova a mano ha mostrato che era un difetto**: una domanda che nasce già condannata
+viola ADR 0011 §3, e il messaggio che ne usciva diceva «approvato» di ciò che l'utente non aveva
+approvato. Adesso quella domanda non nasce, e la finestra che resta è solo quella vera — il mondo
+che si muove **fra il sì e la scrittura**.
 
 ### 8. Dove vanno i byte di una lettura
 

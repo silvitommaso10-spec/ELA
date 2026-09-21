@@ -416,3 +416,58 @@ async def test_a_target_that_stops_being_a_regular_file_between_the_checks_is_no
     status, code = await read(reader(root), path="tubo")
 
     assert (status, code) == (ExecutionStatus.FAILED, IO_ERROR)
+
+
+# ----------------------------------------------------------------------------------------
+# The refusal is born in two places, and says the same true thing in both (ADR 0045 §6-bis)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_refusal_before_the_question_never_says_anybody_approved_anything(
+    root: Path,
+) -> None:
+    """Nobody has approved anything yet: «approved» here would be a diagnosis of a fact that
+    does not exist, which is the same defect as the one this repair closed."""
+    (root / "c.md").write_text("qualcosa", encoding="utf-8")
+
+    prospect = await writer(root).prospect({"path": "c.md", "body": BODY, "overwrite": False})
+
+    assert prospect.refusal is not None
+    assert prospect.refusal.message == (
+        "'c.md' was declared as a new file and something is there now"
+    )
+    assert "approved" not in prospect.refusal.message
+
+
+async def test_the_refusal_at_the_write_says_the_same_thing_and_it_is_still_true(
+    root: Path,
+) -> None:
+    """The other place it is born: the world moved **between the yes and the write**.
+
+    Here something *was* approved — and what was approved is what the plan declared, because the
+    question is composed only when declaration and disk agree (ADR 0045 §6-bis). So the same
+    sentence is true, and there is one message instead of two.
+    """
+    status, code = await write(writer(root), path="c.md", body=BODY, overwrite=True)
+    result = await writer(root).execute(
+        decision(FS_WRITE), {"path": "c.md", "body": BODY, "overwrite": True}
+    )
+
+    assert (status, code) == (ExecutionStatus.FAILED, OVERWRITE_MISMATCH)
+    assert result.error is not None
+    assert result.error.message == "'c.md' was declared as an overwrite and nothing is there now"
+    assert "approved" not in result.error.message
+
+
+async def test_both_directions_are_named_and_neither_claims_an_approval(root: Path) -> None:
+    """dec. Q: a criterion that names one direction is half a defence."""
+    (root / "c.md").write_text("x", encoding="utf-8")
+
+    appeared = await writer(root).prospect({"path": "c.md", "body": BODY, "overwrite": False})
+    vanished = await writer(root).prospect({"path": "n.md", "body": BODY, "overwrite": True})
+
+    assert appeared.refusal is not None and vanished.refusal is not None
+    assert "something is there now" in appeared.refusal.message
+    assert "nothing is there now" in vanished.refusal.message
+    for refusal in (appeared.refusal, vanished.refusal):
+        assert "declared" in refusal.message and "approved" not in refusal.message

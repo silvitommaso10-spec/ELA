@@ -384,7 +384,7 @@ def test_a_failed_result_shows_its_code_and_message_where_a_person_looks() -> No
                 "output": {},
                 "error": {
                     "code": "fs.overwrite_mismatch",
-                    "message": "'ELA/prova.md' was approved as a new file",
+                    "message": "'ELA/prova.md' was declared as a new file",
                     "retryable": False,
                 },
             }
@@ -392,7 +392,7 @@ def test_a_failed_result_shows_its_code_and_message_where_a_person_looks() -> No
     )
 
     assert "fs.overwrite_mismatch" in shown
-    assert "'ELA/prova.md' was approved as a new file" in shown
+    assert "'ELA/prova.md' was declared as a new file" in shown
     assert "retryable" in shown
 
 

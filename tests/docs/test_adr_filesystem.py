@@ -116,3 +116,29 @@ def test_the_adr_says_where_the_bytes_of_a_read_go() -> None:
 
     assert "il risultato porta il contenuto" in text
     assert "mai i byte" in text
+
+
+def test_the_adr_carries_the_rule_that_unites_the_two_blockers() -> None:
+    """§6-bis is the sentence the proof by hand bought, and it must be in the ADR to survive."""
+    text = adr_text()
+
+    assert "### 6-bis" in text
+    assert "approvato adesso, riuscirebbe sul disco di adesso" in text
+    assert "nessuna `Approval`, nessun campanello" in text
+
+
+def test_the_refusal_the_adr_shows_is_the_one_the_tool_gives() -> None:
+    """A message quoted in a document and nowhere else drifts the first time somebody edits it."""
+    text = adr_text()
+
+    assert "was declared as a new file and something is there now" in text
+    assert "was declared as an overwrite and nothing is there now" in text
+    assert "was approved as" not in text, "nobody has approved anything where this is first born"
+
+
+def test_the_limit_that_turned_out_to_be_a_defect_is_annotated_and_not_rewritten() -> None:
+    """An ADR is not rewritten: what it got wrong is read beside the line that corrects it."""
+    text = adr_text()
+
+    assert "***Superata dalla §6-bis" in text
+    assert "il rifiuto arriva dopo il sì e non prima" in text, "the old sentence is still readable"

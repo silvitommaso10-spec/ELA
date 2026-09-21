@@ -382,7 +382,7 @@ async def test_the_same_plan_sent_again_is_refused_before_anybody_is_asked(
     # person: `ela task run` shows it (M13.1, rilievo 3).
     assert results_of(await client.get(f"/tasks/{task_id}/results")) == []
     assert run["reason"] == (
-        "fs.overwrite_mismatch: 'ELA/prova.md' was approved as a new file and something is "
+        "fs.overwrite_mismatch: 'ELA/prova.md' was declared as a new file and something is "
         "there now"
     )
     assert (

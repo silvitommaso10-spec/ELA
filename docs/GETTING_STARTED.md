@@ -1150,7 +1150,7 @@ dice perché:
 
 ```
 outcome         failed
-reason          fs.overwrite_mismatch: 'ELA/prova.md' was approved as a new file and something is there now
+reason          fs.overwrite_mismatch: 'ELA/prova.md' was declared as a new file and something is there now
 state           FAILED
 steps executed  0
 ```
@@ -1167,6 +1167,12 @@ domanda si compone solo per ciò che, approvato adesso, riuscirebbe sul disco di
 chiede a nessuno di approvare ciò che ELA sa già che rifiuterà, e non si sveglia nessuno per
 questo. Il confronto lo fa la stessa funzione che rifiuterebbe davvero: un fatto, una definizione,
 un posto.
+
+**Il messaggio dice «declared» e non «approved»**, ed è deliberato: qui nessuno ha approvato
+niente, quindi «approved» sarebbe una diagnosi falsa. La stessa frase nasce anche in un secondo
+posto — quando il mondo si muove **fra il sì e la scrittura** — e lì ciò che è stato approvato *è*
+ciò che il piano aveva dichiarato, perché la domanda nasce solo quando dichiarazione e disco
+concordano. Una frase sola, vera in tutti e due i posti.
 
 **Per sovrascrivere davvero** basta che il piano dichiari il vero. Copia il file e cambia una riga:
 

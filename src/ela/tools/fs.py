@@ -267,7 +267,7 @@ class FsWriteTool(Tool):
             return Outcome({}, code, problem.message(path)), None
         there = problem is None
         if there is not overwrite:
-            return Outcome({}, OVERWRITE_MISMATCH, _moved(path, approved=overwrite)), None
+            return Outcome({}, OVERWRITE_MISMATCH, _moved(path, declared=overwrite)), None
         does = OVERWRITES if there else CREATES
         return None, Target(resolved=str(self._root / path), exists=there, does=does)
 
@@ -315,11 +315,19 @@ def _no_root(root: Path) -> str:
     return f"{root} is not there: ELA does not create the folder you declared in ELA_FS_ROOT"
 
 
-def _moved(path: str, *, approved: bool) -> str:
-    """Both directions, named (M13.1 dec. Q). The path, never the content (§57)."""
-    if approved:
-        return f"{path!r} was approved as an overwrite and nothing is there now"
-    return f"{path!r} was approved as a new file and something is there now"
+def _moved(path: str, *, declared: bool) -> str:
+    """Both directions, named (M13.1 dec. Q). The path, never the content (§57).
+
+    **«Declared», not «approved»**, and the word carries the whole of ADR 0045 §6-bis. This
+    refusal is born in two places: before the question, where nobody has approved anything yet,
+    and before the write, where what was approved *is* what the plan declared — because the
+    question is composed only when the declaration and the disk already agree. «Approved» would
+    be a false diagnosis in the first place and a true one in the second; «declared» is true in
+    both, so there is one message and not two.
+    """
+    if declared:
+        return f"{path!r} was declared as an overwrite and nothing is there now"
+    return f"{path!r} was declared as a new file and something is there now"
 
 
 def _read(target: Path) -> bytes:
