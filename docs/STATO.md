@@ -107,6 +107,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
+| 13 — Il permesso prima dell'azione | `M13.1b` | Proposta | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
 | 13 — Il permesso prima dell'azione | `M13.2` | Proposta | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Proposta | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
@@ -129,7 +130,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **45** | `docs/adr/NNNN-*.md` |
-| Milestone | **55, di cui 47 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **56, di cui 47 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **26** | i `Protocol` di `src/ela/ports.py` |
