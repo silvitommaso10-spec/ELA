@@ -1,5 +1,5 @@
-"""Where a note path leads, classified once for the tool and for its verifier (ADR 0014 §2,
-review of M5.2).
+"""Where a path leads, classified once for the tool and for its verifier (ADR 0014 §2, review
+of M5.2).
 
 The tool refuses a path before writing; the verifier refuses the same path before reading. If
 each had its own checks they could disagree — on the order, on the codes, on what a link that
@@ -13,8 +13,15 @@ it covers the verifiers).
 1. :data:`PATH_INVALID` — not a relative POSIX path, or with an empty, ``.`` or ``..`` segment,
    a backslash or a NUL. ``a/../b`` is refused even though it would resolve inside: traversal
    is refused as a *shape*, not as an outcome.
-2. :data:`PATH_OUTSIDE_WORKSPACE` — ``(root / path).resolve()`` is not under the resolved root:
+2. :data:`PATH_OUTSIDE_ROOT` — ``(root / path).resolve()`` is not under the resolved root:
    a link that points outside lands here.
+
+   It was ``path.outside_workspace`` until M13.1 (dec. B). The workspace was the only root there
+   was; ``fs.read`` and ``fs.write`` gave the same classification a second one, and a code named
+   after the wrong boundary is a **false diagnosis — false even when the outcome is right**. The
+   precedent is M17.2 dec. K.3, where ``core_on_a_companion_route`` became ``core_on_a_page`` for
+   the same reason: a name is what somebody reads in a log a month later. ADR 0045 says the old
+   name is superseded; ADR 0013 §11, which names it in a row, is read with that line beside it.
 3. :data:`PATH_SYMLINK` — an existing component of ``root / path`` is a symbolic link, even one
    that points inside: going *through* a link is a doubt (§33).
 4. :data:`PATH_UNREACHABLE` — the OS cannot look at the target (a component that is a file, a
@@ -36,23 +43,26 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from ela.ports import Target
+
 __all__ = [
     "PATH_CODES",
     "PATH_INVALID",
     "PATH_IS_DIRECTORY",
     "PATH_MISSING",
     "PATH_NOT_REGULAR",
-    "PATH_OUTSIDE_WORKSPACE",
+    "PATH_OUTSIDE_ROOT",
     "PATH_SYMLINK",
     "PATH_UNREACHABLE",
     "PathProblem",
     "classify",
+    "describe",
     "is_relative_note_path",
     "resolve_workspace",
 ]
 
 PATH_INVALID: Final = "path.invalid"
-PATH_OUTSIDE_WORKSPACE: Final = "path.outside_workspace"
+PATH_OUTSIDE_ROOT: Final = "path.outside_root"
 PATH_SYMLINK: Final = "path.symlink"
 PATH_UNREACHABLE: Final = "path.unreachable"
 PATH_MISSING: Final = "path.missing"
@@ -62,7 +72,7 @@ PATH_NOT_REGULAR: Final = "path.not_regular"
 PATH_CODES: Final[frozenset[str]] = frozenset(
     {
         PATH_INVALID,
-        PATH_OUTSIDE_WORKSPACE,
+        PATH_OUTSIDE_ROOT,
         PATH_SYMLINK,
         PATH_UNREACHABLE,
         PATH_MISSING,
@@ -111,6 +121,19 @@ def resolve_workspace(root: Path | str) -> Path:
     return Path(root).expanduser().absolute().resolve()
 
 
+def describe(root: Path, path: str) -> Target | None:
+    """The target of ``root / path``, or ``None`` if the path is one :func:`classify` refuses.
+
+    Read-only like the rest of this module. A problem other than "nothing is there" means there
+    is nothing to describe and nothing to ask about: the caller refuses first, with the code the
+    classification gave it.
+    """
+    problem = classify(root, path)
+    if problem is not None and problem.code != PATH_MISSING:
+        return None
+    return Target(resolved=str(root / path), exists=problem is None)
+
+
 def classify(root: Path, path: str) -> PathProblem | None:
     """The problem with ``root / path`` in the order of the module docstring, or ``None`` if a
     regular file is there. ``root`` is a resolved directory. Reads only."""
@@ -119,7 +142,7 @@ def classify(root: Path, path: str) -> PathProblem | None:
     target = root / path
     try:
         if not target.resolve().is_relative_to(root):
-            return PathProblem(PATH_OUTSIDE_WORKSPACE, "resolves outside the workspace")
+            return PathProblem(PATH_OUTSIDE_ROOT, "resolves outside the root it was given")
         current = root
         for part in path.split("/"):
             current = current / part

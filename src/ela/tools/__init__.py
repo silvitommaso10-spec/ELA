@@ -31,6 +31,15 @@ from ela.tools.errors import (
     ToolsError,
     VerifierNotFound,
 )
+from ela.tools.fs import (
+    FS_READ,
+    FS_READ_TOOL_NAME,
+    FS_WRITE,
+    FS_WRITE_TOOL_NAME,
+    OVERWRITE_MISMATCH,
+    FsReadTool,
+    FsWriteTool,
+)
 from ela.tools.listen import LISTEN_TOOL_NAME, PERCEPTION_LISTEN, ListenTool
 from ela.tools.model import MODEL_COMPLETE, MODEL_TOOL_NAME, ModelCompleteTool
 from ela.tools.notes import (
@@ -47,11 +56,12 @@ from ela.tools.paths import (
     PATH_IS_DIRECTORY,
     PATH_MISSING,
     PATH_NOT_REGULAR,
-    PATH_OUTSIDE_WORKSPACE,
+    PATH_OUTSIDE_ROOT,
     PATH_SYMLINK,
     PATH_UNREACHABLE,
     PathProblem,
     classify,
+    describe,
     is_relative_note_path,
     resolve_workspace,
 )
@@ -94,6 +104,12 @@ from ela.tools.verifiers import (
     ECHO_MESSAGE_MATCHES,
     ECHO_MESSAGE_MISMATCH,
     ECHO_VERIFIER_NAME,
+    FS_CONTENT_MATCHES,
+    FS_CONTENT_MISMATCH,
+    FS_FILE_EXISTS,
+    FS_READ_VERIFIER_NAME,
+    FS_UNREADABLE,
+    FS_WRITE_VERIFIER_NAME,
     MODEL_ANSWERED,
     MODEL_MISROUTED,
     MODEL_NO_ANSWER,
@@ -107,6 +123,8 @@ from ela.tools.verifiers import (
     NOTES_VERIFIER_NAME,
     CaptureScreenVerifier,
     EchoVerifier,
+    FsReadVerifier,
+    FsWriteVerifier,
     ListenVerifier,
     ModelCompleteVerifier,
     ReadScreenTextVerifier,
@@ -131,6 +149,22 @@ from ela.tools.voice_online import (
 )
 
 __all__ = [
+    "describe",
+    "FsWriteVerifier",
+    "FsReadVerifier",
+    "FS_WRITE_VERIFIER_NAME",
+    "FS_UNREADABLE",
+    "FS_READ_VERIFIER_NAME",
+    "FS_FILE_EXISTS",
+    "FS_CONTENT_MISMATCH",
+    "FS_CONTENT_MATCHES",
+    "FsWriteTool",
+    "FsReadTool",
+    "OVERWRITE_MISMATCH",
+    "FS_WRITE_TOOL_NAME",
+    "FS_WRITE",
+    "FS_READ_TOOL_NAME",
+    "FS_READ",
     "ListenVerifier",
     "PERCEPTION_LISTEN",
     "ListenTool",
@@ -174,7 +208,7 @@ __all__ = [
     "PATH_IS_DIRECTORY",
     "PATH_MISSING",
     "PATH_NOT_REGULAR",
-    "PATH_OUTSIDE_WORKSPACE",
+    "PATH_OUTSIDE_ROOT",
     "PATH_SYMLINK",
     "PATH_UNREACHABLE",
     "PERCEPTION_CAPTURE_SCREEN",

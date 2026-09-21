@@ -24,8 +24,11 @@ from ela.permissions import (
     CORE_ECHO,
     DEFAULT_DECISION_TTL,
     DEFAULT_NOTES_SCOPE,
+    FS_READ,
+    FS_WRITE,
     MODEL_COMPLETE,
     PERCEPTION_CAPTURE_SCREEN,
+    UNDECLARED_FS_SCOPE,
     WORKSPACE_WRITE_NOTE,
     catalogue_v01,
     production_catalogue,
@@ -350,3 +353,26 @@ async def test_on_a_machine_without_a_capture_helper_ela_still_starts(
         )
     finally:
         await ela.aclose()
+
+
+def test_the_declared_scope_reaches_the_catalogue_and_the_placeholder_never_does(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M13.1 dec. A-bis: the convenience value exists, and production never runs under it.
+
+    ``production_catalogue()`` keeps a default so the catalogue is constructible without an
+    environment — the tests and ``scripts/generate_stato.py`` build it that way. The boundary,
+    though, is the pair ``ELA_FS_ROOT`` + ``ELA_FS_SCOPE``, and neither has one: **a default that
+    became the real boundary without anybody writing it is exactly what dec. A refuses.** This is
+    the test that says the two never meet.
+    """
+    declare(monkeypatch, tmp_path, ELA_FS_SCOPE="documenti/ela")
+    settings = Settings.load()
+
+    catalogue = production_catalogue(
+        notes_scope=settings.core.notes_scope, fs_scope=settings.filesystem.scope
+    )
+
+    for capability in (FS_READ, FS_WRITE):
+        assert catalogue.get(capability).scope == ("documenti/ela",)
+        assert UNDECLARED_FS_SCOPE not in catalogue.get(capability).scope

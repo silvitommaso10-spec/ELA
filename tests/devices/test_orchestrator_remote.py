@@ -28,6 +28,7 @@ from ela.domain import (
 from ela.ports import VerifierRegistryPort
 from ela.testing.fakes import (
     FakeAuditLog,
+    FakeCapabilityRegistry,
     FakeClock,
     FakeDeviceRegistry,
     FakeIdGenerator,
@@ -83,7 +84,15 @@ async def orchestrator_over(
     audit = FakeAuditLog()
     registry = DeviceRegistry(port, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL)
     tools = FakeToolRegistry([FakeTool(WRITE_NOTE, clock, FakeIdGenerator(), name=NOTES)])
-    return DeviceOrchestrator(registry, tools, audit, FakeIdGenerator(), clock, verifiers=verifiers)
+    return DeviceOrchestrator(
+        registry,
+        tools,
+        audit,
+        FakeIdGenerator(),
+        clock,
+        verifiers=verifiers,
+        capabilities=FakeCapabilityRegistry(),
+    )
 
 
 def test_the_nodes_are_the_ones_the_tests_below_need() -> None:

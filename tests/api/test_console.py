@@ -968,3 +968,31 @@ async def test_a_question_links_to_the_summary_of_its_task(
     page = await console.get(f"/console/approval?id={identifier}")
 
     assert f'href="/console/task?id={task}"' in page.text
+
+
+def test_a_question_about_a_file_names_the_resolved_target_and_what_it_does() -> None:
+    """M13.1 dec. G: two facts of the machine, and the surface that answers shows both."""
+    overwriting = an_approval(target="/Users/tommaso/Documenti/ELA/nota.md", overwrites=True)
+    creating = an_approval(target="/Users/tommaso/Documenti/ELA/nuova.md", overwrites=False)
+
+    written = _pairs(overwriting, seen=True)
+    made = _pairs(creating, seen=True)
+
+    assert "/Users/tommaso/Documenti/ELA/nota.md" in written
+    assert "sovrascrive un file che c&#x27;è già" in written or "sovrascrive" in written
+    assert "crea un file che non c&#x27;è" in made or "crea un file" in made
+
+
+def test_a_question_about_no_file_says_nothing_about_one() -> None:
+    """Eight capabilities of ten touch no file, and their question must not invent one."""
+    pairs = _pairs(an_approval(), seen=True)
+
+    assert "Il file" not in pairs and "Che cosa fa" not in pairs
+
+
+def test_the_two_facts_of_a_file_go_where_the_goal_goes() -> None:
+    """A resolved path is the user's own filesystem: the ceiling keeps it on the Mac (§57)."""
+    question = an_approval(target="/Users/tommaso/Documenti/ELA/nota.md", overwrites=True)
+
+    assert "Il file" not in _pairs(question, seen=False)
+    assert "Che cosa fa" not in _pairs(question, seen=False)

@@ -32,6 +32,7 @@ from ela.devices import (
 from ela.domain import AuditEventType, CapabilityId, Device, DeviceAvailability, PrivacyLevel
 from ela.testing.fakes import (
     FakeAuditLog,
+    FakeCapabilityRegistry,
     FakeClock,
     FakeDeviceRegistry,
     FakeIdGenerator,
@@ -146,7 +147,15 @@ def orchestrator(
     tools = FakeToolRegistry([FakeTool(WRITE_NOTE, clock, FakeIdGenerator(), name=NOTES)])
     registry = DeviceRegistry(port, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL)
     verifiers = FakeVerifierRegistry([FakeVerifier(WRITE_NOTE)])
-    return DeviceOrchestrator(registry, tools, audit, FakeIdGenerator(), clock, verifiers=verifiers)
+    return DeviceOrchestrator(
+        registry,
+        tools,
+        audit,
+        FakeIdGenerator(),
+        clock,
+        verifiers=verifiers,
+        capabilities=FakeCapabilityRegistry(),
+    )
 
 
 async def register(port: FakeDeviceRegistry, nodes: Iterable[Device], clock: FakeClock) -> None:

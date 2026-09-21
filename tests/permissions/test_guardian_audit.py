@@ -25,6 +25,7 @@ from tests.permissions.support import (
     CATALOGUE,
     COMPLETE,
     COMPLETE_ARGS,
+    CRITICAL,
     ECHO,
     ECHO_ARGS,
     HIGH,
@@ -84,7 +85,7 @@ async def test_the_payload_carries_the_decision_not_the_arguments(h: Harness) ->
     "spec, arguments, outcome",
     [
         (ECHO, ECHO_ARGS, PermissionOutcome.ALLOWED),
-        (HIGH, ECHO_ARGS, PermissionOutcome.DENIED),
+        (CRITICAL, ECHO_ARGS, PermissionOutcome.DENIED),
         (COMPLETE, COMPLETE_ARGS, PermissionOutcome.REQUIRES_APPROVAL),
     ],
     ids=lambda v: v.value if isinstance(v, PermissionOutcome) else "",

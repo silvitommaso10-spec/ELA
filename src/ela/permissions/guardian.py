@@ -63,6 +63,8 @@ from ela.permissions.scope import scope_covers, targets_of
 from ela.ports import AuditLog, CapabilityRegistryPort, Clock, IdGenerator, NotFoundError
 
 __all__ = [
+    "ASKING_RULES",
+    "asks_at_every_use",
     "DEFAULT_DECISION_TTL",
     "GUARDIAN_ACTOR",
     "MAX_DECISION_TTL",
@@ -72,8 +74,17 @@ __all__ = [
     "Rule",
 ]
 
-POLICY_VERSION: Final = "v0.1"
-"""Which policy produced a decision; recorded in every decision and every audit event."""
+POLICY_VERSION: Final = "v0.2"
+"""Which policy produced a decision; recorded in every decision and every audit event.
+
+**It was ``v0.1`` until M13.1**, and it moves with the table it names. The ``HIGH`` row stopped
+being ``DENY`` and the scope stopped signing its denials with the row that allows: a decision
+stamped ``v0.1`` that permits a HIGH would say the reader could look the table up in ADR 0011 and
+find it, and they could not. A version that does not move when its table moves is the same kind of
+lie as a code named after the wrong boundary (M13.1 dec. B).
+
+Old rows in the audit keep saying ``v0.1``, and that is the point of stamping it.
+"""
 
 DEFAULT_DECISION_TTL: Final = timedelta(minutes=5)
 """How long an ``ALLOWED`` decision stays usable (ADR 0011 §9).
@@ -99,14 +110,29 @@ GUARDIAN_ACTOR: Final = Actor(kind=ActorKind.SYSTEM, id="permission-guardian")
 class Rule(StrEnum):
     """Which check settled a decision; ``metadata["rule"]`` of every decision (ADR 0011 §3).
 
-    The first four are the rows of :data:`RISK_POLICY`, one per risk level; the others are the
-    checks that run before the row, or the fail-safe.
+    The first five are the rows of :data:`RISK_POLICY`, one per risk level; the others are the
+    checks that run before or beside the row, or the fail-safe.
     """
 
     ALLOW = "ALLOW"
     ALLOW_WITHIN_SCOPE = "ALLOW_WITHIN_SCOPE"
     APPROVAL_UNLESS_AUTHORIZED = "APPROVAL_UNLESS_AUTHORIZED"
+    APPROVAL_EVERY_USE = "APPROVAL_EVERY_USE"
+    """HIGH: a question at every use, and no standing policy of §59 reaches it (M13.1 dec. D, N).
+
+    Not ``APPROVAL_UNLESS_AUTHORIZED``: "unless authorized" would be false for the one row no
+    standing authorization can satisfy, and a rule name is what somebody reads in an audit a month
+    later (M17.2 dec. K.3, the precedent of a name that lied).
+    """
     DENY = "DENY"
+    SCOPE = "SCOPE"
+    """A target outside the scope the capability declares — on **any** row (M13.1 dec. C).
+
+    A check and not a row: it is bound to the *fact* that a capability declares a scope, never to
+    one risk level, so the third row born tomorrow cannot quietly escape it. Until M13.1 this
+    denial signed itself ``ALLOW_WITHIN_SCOPE``, which named the row that allows and not the
+    boundary that refused: a false diagnosis is false even when the outcome is right.
+    """
     CATALOGUE = "CATALOGUE"
     ARGUMENTS = "ARGUMENTS"
     STEP_MISMATCH = "STEP_MISMATCH"
@@ -120,12 +146,36 @@ RISK_POLICY: Final[Mapping[RiskLevel, Rule]] = MappingProxyType(
         RiskLevel.SAFE: Rule.ALLOW,
         RiskLevel.LOW: Rule.ALLOW_WITHIN_SCOPE,
         RiskLevel.MEDIUM: Rule.APPROVAL_UNLESS_AUTHORIZED,
-        RiskLevel.HIGH: Rule.DENY,
+        RiskLevel.HIGH: Rule.APPROVAL_EVERY_USE,
         RiskLevel.CRITICAL: Rule.DENY,
     }
 )
-"""Policy v0.1 by risk level (§29). Data, compared with the table of ADR 0011 by the tests; a
-level missing from it is denied."""
+"""Policy by risk level (§29). Data, compared with the table of ADR 0011 and its revision in
+ADR 0045 by the tests; a level missing from it is denied.
+
+``HIGH`` stopped being ``DENY`` in M13.1, openly: §29 said HIGH and CRITICAL were not introduced
+in production "in the first version", v0.1 was tagged on 2026-09-07 and this work stands outside
+it. ``CRITICAL`` is still denied and has no capability: the day it gets one, that row moves the
+same way this one did, in the open."""
+
+ASKING_RULES: Final[frozenset[Rule]] = frozenset(
+    {Rule.APPROVAL_UNLESS_AUTHORIZED, Rule.APPROVAL_EVERY_USE}
+)
+"""The rows that end in a question when no usable grant covers the call.
+
+Derived from here and never re-listed: a row added to :data:`RISK_POLICY` that asks must say so
+once, and the executor reads the same set to know when a decision rests on its grant."""
+
+
+def asks_at_every_use(risk: RiskLevel) -> bool:
+    """Whether this row asks every time and is covered **only** by a grant born from a yes.
+
+    One definition, read by the Guardian when it judges a grant it was handed and by the executor
+    when it chooses which grant to hand over (M13.1 dec. D). Two copies of this rule would be two
+    answers to "does this grant cover", which is the thing ADR 0014 §2 exists to prevent — and the
+    cheaper of the two mistakes would be a task denied where the user should have been asked.
+    """
+    return RISK_POLICY.get(risk) is Rule.APPROVAL_EVERY_USE
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,10 +342,13 @@ class PermissionGuardian:
                 risk,
                 targets,
             )
-        if rule is Rule.ALLOW_WITHIN_SCOPE and not scope_covers(registered.scope, targets):
+        # 4-bis. The scope, on every row that has not already denied (M13.1 dec. C): a capability
+        #        that declares a boundary has it enforced whatever its risk, and a target outside
+        #        is denied *before* any question — the order §3 of ADR 0011 keeps on purpose.
+        if not scope_covers(registered.scope, targets):
             return _Verdict(
                 PermissionOutcome.DENIED,
-                rule,
+                Rule.SCOPE,
                 f"targets {_describe(targets)} of {capability.id} are not within scope "
                 f"{list(registered.scope)}",
                 risk,
@@ -320,7 +373,7 @@ class PermissionGuardian:
         required = registered.requires_authorization or (
             step is not None and step.requires_authorization
         )
-        if rule is not Rule.APPROVAL_UNLESS_AUTHORIZED and not required:
+        if rule not in ASKING_RULES and not required:
             return _Verdict(
                 PermissionOutcome.ALLOWED,
                 rule,
@@ -328,9 +381,7 @@ class PermissionGuardian:
                 risk,
                 targets,
             )
-        settled_by = (
-            rule if rule is Rule.APPROVAL_UNLESS_AUTHORIZED else Rule.AUTHORIZATION_REQUIRED
-        )
+        settled_by = rule if rule in ASKING_RULES else Rule.AUTHORIZATION_REQUIRED
         if authorization is None:
             return _Verdict(
                 PermissionOutcome.REQUIRES_APPROVAL,
@@ -454,6 +505,11 @@ def _mismatch(
         )
     if uses < 0:
         return f"a use count of {uses} cannot be true"
+    if asks_at_every_use(spec.risk) and authorization.approval_id is None:
+        return (
+            f"authorization {authorization.id} is a standing policy (§59) and {spec.id} is "
+            f"{spec.risk.value}: only a grant born from an approval covers it"
+        )
     return None
 
 

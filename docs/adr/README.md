@@ -52,6 +52,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0042](0042-design-system.md) | Il design system: una cartella che non è Python, un file di token da cui il resto deriva per intero, tre liste lette dalla loro fonte, e i nomi dei livelli di attenzione | Accettata |
 | [0043](0043-companion.md) | Il companion iPhone: un ruolo imposto nel registro, un cookie come portatore, pagine servite dal Core, e un campanello che suona un metodo | Accettata |
 | [0044](0044-command-center.md) | Il Command Center: una terza identità nel registro, un tetto derivato dal socket, due regole che smettono di nominare un file, e un'impronta che suona | Accettata |
+| [0045](0045-filesystem-and-high.md) | Il filesystem fuori dalla workspace e il primo HIGH: la riga che chiede a ogni uso, lo scope legato al fatto, un codice che smette di mentire, e un appunto che deve fallire | Accettata |
 
 ## Template
 

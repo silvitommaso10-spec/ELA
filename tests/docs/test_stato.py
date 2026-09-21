@@ -156,22 +156,42 @@ def test_a_phase_named_before_it_delivered_is_detected() -> None:
     assert phases_out_of_step({12: "I nodi sulla rete"}, {12}) == set()
 
 
-def test_the_fase_13_has_not_started_and_41_says_so(generator: ModuleType) -> None:
-    """The pin, in the shape of ADR 0035 §7: it fires on the day the prose goes stale.
+def test_the_fase_13_has_started_and_41_says_so(generator: ModuleType) -> None:
+    """The pin of M12.5, fired and rewritten (M13.1 dec. L, and the shape of ADR 0035 §7).
 
-    §4.1 says three things that all rest on one fact — the Fase 13 is registered and not begun,
-    the Fase 12 keeps the first entry until the 13 begins, and the 13 stays among the future
-    phases. The day M13.1 leaves ``Proposta`` all three become false together, and the message
-    below is what somebody reads instead of discovering it at the next merge.
+    It used to say «13 is registered and not begun», and on 2026-09-21 it failed with the message
+    that named the three things to rewrite: §4.1 stops calling the phase registered, the Fase 12
+    entry stops being the first one, and the changelog gives the phase a name. All three were
+    done, so the pin now guards the other side — a phase that has begun and is still described as
+    future would be the same lie in the opposite direction.
+
+    **What it does not guard is the verb of the prose**, and §4.1 says so itself: no measure can
+    tell «è cominciata» from «registrata» in a sentence somebody rewrites.
     """
     started = {m.phase for m in generator.milestones(ROOT) if m.state != generator.PROPOSED}
 
-    assert 13 not in started, (
-        "M13.1 è uscita da Proposta: la Fase 13 è cominciata. Allora §4.1 di docs/STATO.md non la "
-        "chiama più «registrata», la voce della Fase 12 esce da §4.1, e il changelog le dà un nome."
+    assert 13 in started, "M13.1 is back to Proposta: then §4.1 and the changelog go back too"
+    assert 13 not in dict(generator.future_phases(ROOT)), (
+        "la Fase 13 è cominciata ma il blocco delle fasi future la elenca ancora: rigenera "
+        "docs/STATO.md"
     )
-    assert 13 in dict(generator.future_phases(ROOT))
-    assert 13 not in generator.phase_names(ROOT)
+    assert generator.phase_names(ROOT).get(13) == "Il permesso prima dell'azione", (
+        "il changelog non dà alla Fase 13 il nome che la §2 mostra: una fase cominciata ha un nome"
+    )
+
+
+def test_a_phase_that_has_begun_is_never_listed_as_future(generator: ModuleType) -> None:
+    """The rule the pin above is one case of, closed over every phase the repository knows.
+
+    Written so that the Fase 15 does not need a pin of its own: the day one of its milestones
+    leaves ``Proposta``, this fails without anybody having remembered to add a line.
+    """
+    started = {m.phase for m in generator.milestones(ROOT) if m.state != generator.PROPOSED}
+    future = set(dict(generator.future_phases(ROOT)))
+
+    assert started & future == set(), sorted(started & future)
+    for phase in started:
+        assert phase in generator.phase_names(ROOT), phase
 
 
 # ----------------------------------------------------------------------------------------

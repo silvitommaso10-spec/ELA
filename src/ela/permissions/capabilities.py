@@ -44,7 +44,11 @@ from ela.ports import AlreadyExistsError
 __all__ = [
     "CORE_ECHO",
     "DEFAULT_NOTES_SCOPE",
+    "FS_READ",
+    "FS_WRITE",
     "MAX_RISK",
+    "PHASE_13_INTRODUCED_AT",
+    "UNDECLARED_FS_SCOPE",
     "MODEL_COMPLETE",
     "MAX_LISTEN_SECONDS",
     "PERCEPTION_CAPTURE_SCREEN",
@@ -58,6 +62,8 @@ __all__ = [
     "catalogue_v01",
     "check_capability",
     "core_echo",
+    "fs_read",
+    "fs_write",
     "is_valid_scope_entry",
     "model_complete",
     "perception_capture_screen",
@@ -67,8 +73,17 @@ __all__ = [
     "workspace_write_note",
 ]
 
-MAX_RISK: Final = RiskLevel.MEDIUM
-"""The highest risk a specification may carry in v0.1 (§29)."""
+MAX_RISK: Final = RiskLevel.HIGH
+"""The highest risk a specification may carry (§29, revised openly by ADR 0045).
+
+It was ``MEDIUM`` until M13.1, because §29 said HIGH and CRITICAL were not introduced in
+production "nella prima versione". v0.1 was tagged on 2026-09-07 and this work stands outside it,
+so the cap moves — **in the same milestone that opens the HIGH row of the policy**, never before
+it (ADR 0026 §7: a capability the Guardian would deny anyway is not a capability).
+
+``CRITICAL`` stays above the cap, and the day it has a use it moves the same way: in the open,
+with the row that admits it.
+"""
 
 SCHEMA_VALIDATOR: Final = Draft202012Validator
 """The JSON Schema draft every ``input_schema`` is read as."""
@@ -237,6 +252,8 @@ PERCEPTION_LISTEN: Final = CapabilityId("perception.listen")
 PERCEPTION_READ_SCREEN_TEXT: Final = CapabilityId("perception.read_screen_text")
 VOICE_SPEAK: Final = CapabilityId("voice.speak")
 VOICE_SPEAK_ONLINE: Final = CapabilityId("voice.speak_online")
+FS_READ: Final = CapabilityId("fs.read")
+FS_WRITE: Final = CapabilityId("fs.write")
 
 DEFAULT_NOTES_SCOPE: Final = "workspace/notes"
 """Where ``workspace.write_note`` may write unless the caller says otherwise (ADR 0010 §5).
@@ -245,9 +262,27 @@ The **default**, and no longer a convention: since M8.3 the composition root pas
 ``ELA_NOTES_SCOPE`` here (ADR 0025 §5), so this is what ELA uses when nobody says otherwise.
 """
 
+UNDECLARED_FS_SCOPE: Final = "undeclared"
+"""A placeholder, and **never a boundary** (M13.1 dec. A-bis).
+
+The catalogue must be constructible without settings — ``production_catalogue()`` is called with
+no arguments by the tests and by ``scripts/generate_stato.py`` — but the boundary of ``fs.read``
+and ``fs.write`` is the **pair** ``ELA_FS_ROOT`` + ``ELA_FS_SCOPE``, and neither has a default:
+without them ELA does not start. So this value can never be the boundary anybody runs under, and
+``tests/composition/test_root.py`` proves the production path never uses it.
+
+**Why a placeholder rather than a real folder**: a default like ``ELA`` would let the user declare
+a root and still not be able to write in it, for a value they never saw and a folder nobody
+created — and a silent narrowing is worse than a refusal at start-up, because a refusal is read.
+"""
+
 V01_INTRODUCED_AT: Final = datetime(2026, 9, 5, tzinfo=UTC)
 """``created_at`` of the three specifications: the catalogue is declared, it is not born at
 runtime, so it has no clock."""
+
+PHASE_13_INTRODUCED_AT: Final = datetime(2026, 9, 21, tzinfo=UTC)
+"""``created_at`` of what phase 13 adds: the first two capabilities that touch the filesystem
+outside the workspace, and the first ``HIGH`` ELA has ever had."""
 
 PHASE_10_INTRODUCED_AT: Final = datetime(2026, 9, 8, tzinfo=UTC)
 """``created_at`` of what phase 10 adds. A date of its own, and not :data:`V01_INTRODUCED_AT`,
@@ -631,7 +666,91 @@ def perception_listen() -> CapabilitySpec:
     )
 
 
-def production_catalogue(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> CapabilityRegistry:
+def fs_read(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+    """``fs.read``, MEDIUM: reads one file under the declared root (§18, M13.1 dec. E).
+
+    **MEDIUM and not HIGH**, and the difference is not a feeling. Today both rows ask at every use,
+    because every grant is single-use; what separates them is what they promise about tomorrow:
+    a standing policy of §59 will be able to cover a MEDIUM, and it will never reach a HIGH
+    (dec. D). Reading is not writing — a read is undone by forgetting it, a write outside the
+    workspace is irreversible while §37 does not exist — so the level that can one day be widened
+    is the honest one for reading.
+
+    **Not LOW**, which would ask nothing inside the scope: a file outside the workspace is the
+    user's own content (§57), and LOW would turn a permission into a line of configuration
+    nobody is ever asked about again.
+
+    The risk is the capability's and never the arguments' (ADR 0038 §16): ``fs.read`` is not HIGH
+    for some paths and MEDIUM for others. Where it may read at all is the scope's business.
+    """
+    return CapabilitySpec(
+        id=FS_READ,
+        created_at=PHASE_13_INTRODUCED_AT,
+        description="Reads one file inside the authorised folder, outside the workspace.",
+        risk=RiskLevel.MEDIUM,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "purpose": {"type": "string", "minLength": 1},
+            },
+            "required": ["path", "purpose"],
+            "additionalProperties": False,
+        },
+        scope=(fs_scope,),
+        scoped_arguments=("path",),
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
+def fs_write(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
+    """``fs.write``, **HIGH**: writes one file under the declared root (§18, M13.1 dec. E).
+
+    The first ``HIGH`` capability ELA has ever had, and it arrives in the same milestone that
+    turns the ``HIGH`` row from ``DENY`` into a question at every use — because neither half
+    means anything alone (ADR 0026 §7).
+
+    **Why HIGH and not MEDIUM.** §59's own example — "puoi modificare liberamente i file dentro
+    questa cartella" — is already honoured, today, by ``workspace.write_note``: LOW, inside its
+    scope, no question. ``fs.write`` is the same action on a house instead of a folder, and
+    outside the workspace **a write is irreversible while §37 does not exist**: there is no
+    rollback to appeal to. HIGH is the row no standing policy reaches (dec. D).
+
+    ``overwrite`` is **an assertion about the world, not a request** (dec. Q): the question shows
+    what the machine answers, and the tool reads it again before writing and refuses if it has
+    changed **either way** — created where an overwrite was approved, or gone where one was. A
+    criterion that names one direction is half a defence, and the missing case is the one a race
+    loses.
+    """
+    return CapabilitySpec(
+        id=FS_WRITE,
+        created_at=PHASE_13_INTRODUCED_AT,
+        description="Writes one file inside the authorised folder, outside the workspace.",
+        risk=RiskLevel.HIGH,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "body": {"type": "string"},
+                "overwrite": {"type": "boolean"},
+                "purpose": {"type": "string", "minLength": 1},
+            },
+            "required": ["path", "body", "overwrite", "purpose"],
+            "additionalProperties": False,
+        },
+        scope=(fs_scope,),
+        scoped_arguments=("path",),
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
+def production_catalogue(
+    *, notes_scope: str = DEFAULT_NOTES_SCOPE, fs_scope: str = UNDECLARED_FS_SCOPE
+) -> CapabilityRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
     This says *when it is used*; :func:`catalogue_v01` says *what it contains*. Both exist and
@@ -650,5 +769,7 @@ def production_catalogue(*, notes_scope: str = DEFAULT_NOTES_SCOPE) -> Capabilit
             # In the order the ADRs added them, which is what the catalogue's table is checked
             # against: a capability is added with an ADR and a row, never by accident.
             perception_listen(),
+            fs_read(fs_scope),
+            fs_write(fs_scope),
         )
     )

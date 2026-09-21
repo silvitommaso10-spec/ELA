@@ -197,6 +197,9 @@ def test_the_property_is_not_vacuous() -> None:
     So the three outcomes are pinned as reachable, with the catalogue this harness uses: a SAFE
     capability runs, a MEDIUM one asks, and one above the cap is refused. Deterministic on
     purpose — a statistic over generated cases would be a second thing that can go quiet.
+
+    The refused one is ``finance.pay`` and no longer ``system.shell``: since M13.1 the cap is
+    HIGH, so a HIGH capability **asks** and only CRITICAL is denied by its row.
     """
     h = harness()
     by_id = {spec.id: spec for spec in REGISTERED}
@@ -205,7 +208,7 @@ def test_the_property_is_not_vacuous() -> None:
         for spec in (
             by_id[CapabilityId("core.echo")],
             by_id[CapabilityId("model.complete")],
-            by_id[CapabilityId("system.shell")],
+            by_id[CapabilityId("finance.pay")],
         )
     }
 

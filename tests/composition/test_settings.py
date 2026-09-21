@@ -16,6 +16,7 @@ from pydantic import (
     ValidationError,
 )
 
+import ela
 from ela.composition import (
     DEFAULT_API_HOST,
     DEFAULT_API_PORT,
@@ -26,6 +27,7 @@ from ela.composition import (
     CoreSettings,
     Settings,
 )
+from ela.composition.settings import _ela_source_tree, _sqlite_file
 from ela.devices.settings import DeviceSettings
 from ela.executive import DEFAULT_APPROVAL_TTL, MAX_APPROVAL_TTL
 from ela.permissions import (
@@ -479,3 +481,147 @@ def test_anything_but_an_address_of_the_tailnet_stops_ela(
 
     assert "ELA_API_TAILNET_HOST" in message
     assert why in message
+
+
+# ----------------------------------------------------------------------------------------
+# The folder ELA may read and write for you (M13.1 dec. A, A-bis, F)
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("missing", ["ELA_FS_ROOT", "ELA_FS_SCOPE", "both"])
+def test_without_the_pair_ela_does_not_start_and_one_message_names_both_lines(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, missing: str
+) -> None:
+    """dec. A-bis: the boundary is the pair, so the pair is declared together.
+
+    One message, naming both variables and showing both lines — whoever reads it wrote a ``.env``,
+    and a refusal is only better than a silent narrowing if it can be read.
+    """
+    declare(monkeypatch, tmp_path)
+    for name in ("ELA_FS_ROOT", "ELA_FS_SCOPE") if missing == "both" else (missing,):
+        monkeypatch.delenv(name)
+
+    with pytest.raises(ConfigurationError) as raised:
+        Settings.load()
+
+    message = str(raised.value)
+    assert "ELA_FS_ROOT=" in message and "ELA_FS_SCOPE=" in message
+    assert "does not choose the folder for you" in message
+
+
+def test_a_scope_that_is_not_a_scope_entry_stops_ela(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    message = refused(monkeypatch, tmp_path, ELA_FS_SCOPE="../fuori")
+
+    assert "ELA_FS_SCOPE" in message
+    assert "relative path" in message
+
+
+def test_a_root_that_is_not_there_stops_ela_instead_of_being_created(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    absent = tmp_path / "mai-creata"
+
+    message = refused(monkeypatch, tmp_path, ELA_FS_ROOT=str(absent))
+
+    assert "ELA_FS_ROOT does not exist" in message
+    assert "ELA never creates this folder" in message
+    assert not absent.exists()
+
+
+def test_a_root_that_is_a_link_stops_ela_and_says_which_link(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The iCloud shape of ``~/Documents``, caught once at start-up (dec. F).
+
+    Without this, ``classify`` would refuse to walk through the link and every call would die one
+    by one with ``path.symlink`` and no explanation of why.
+    """
+    real = tmp_path / "vera"
+    real.mkdir()
+    link = tmp_path / "collegata"
+    link.symlink_to(real)
+
+    message = refused(monkeypatch, tmp_path, ELA_FS_ROOT=str(link))
+
+    assert "ELA_FS_ROOT is a symbolic link" in message
+    assert "iCloud" in message
+
+
+@pytest.mark.parametrize(
+    "where",
+    ["workspace", "captures", "state", "home-of-them-all"],
+)
+def test_a_root_that_touches_what_ela_uses_to_exist_stops_ela(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, where: str
+) -> None:
+    """dec. F, and the list is derived: ``~`` is refused because it **contains** ``~/.ela``.
+
+    Not by a special case for ``~`` — by the same comparison that refuses the workspace, the
+    capture store and the folder a node keeps its secret in.
+    """
+    chosen = {
+        "workspace": tmp_path / "workspace",
+        "captures": tmp_path / "captures",
+        "state": tmp_path / "state",
+        "home-of-them-all": tmp_path,
+    }[where]
+    chosen.mkdir(parents=True, exist_ok=True)
+
+    message = refused(
+        monkeypatch,
+        tmp_path,
+        ELA_FS_ROOT=str(chosen),
+        ELA_NODE_STATE_DIR=str(tmp_path / "state"),
+    )
+
+    assert "contain one another" in message
+    assert "HIGH is not a permission to edit ELA's own state" in message
+
+
+def test_a_root_beside_what_ela_uses_to_exist_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The positive case, so the check above is not refusing everything."""
+    beside = tmp_path / "files"
+    beside.mkdir(exist_ok=True)
+
+    settings = loaded(monkeypatch, tmp_path, ELA_FS_ROOT=str(beside), ELA_FS_SCOPE="ela")
+
+    assert settings.filesystem.root == beside
+    assert settings.filesystem.scope == "ela"
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["postgresql://x/y", "sqlite:///", "sqlite:///:memory:"],
+    ids=["postgres", "empty", "mem"],
+)
+def test_a_database_that_is_not_a_file_names_no_place(url: str) -> None:
+    """The derived list of dec. F holds places on disk; a database that is not one is not."""
+    assert _sqlite_file(url) is None
+
+
+def test_a_database_that_is_a_file_names_it() -> None:
+    assert _sqlite_file("sqlite:////tmp/ela/ela.db") == Path("/tmp/ela/ela.db")
+
+
+def test_ela_knows_where_its_own_code_is() -> None:
+    """Asked of the module, so it is right wherever ELA runs from — here, a checkout."""
+    assert (_ela_source_tree() / "pyproject.toml").exists()
+
+
+def test_an_installed_ela_names_the_directory_its_package_sits_in(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Not every ELA runs from a checkout: installed, its code is under ``site-packages``.
+
+    The derived list of dec. F must still name it, or `ELA_FS_ROOT` could be pointed at the
+    directory holding ELA's own code on a machine where it was installed rather than cloned.
+    """
+    installed = tmp_path / "site-packages" / "ela"
+    installed.mkdir(parents=True)
+    monkeypatch.setattr(ela, "__file__", str(installed / "__init__.py"))
+
+    assert _ela_source_tree() == tmp_path / "site-packages"

@@ -58,6 +58,34 @@ manca `ELA_API_TOKEN` esce con `2` e dice come generarne uno.
 Il database e il workspace stanno di default in `~/.ela/`. Per tenerli altrove, togli il commento
 a `ELA_DB_URL` e `ELA_WORKSPACE_DIR` nel `.env` appena scritto.
 
+### Due righe che **devono** essere scritte: la cartella dei tuoi file
+
+Da M13.1 ELA legge e scrive file **fuori dalla sua workspace**, e il confine glielo dichiari tu.
+Sono due righe, e **non hanno un default**: finché mancano, `ela serve` non parte e lo dice.
+
+```
+ELA_FS_ROOT=/Users/tu/Documenti
+ELA_FS_SCOPE=ELA
+```
+
+`ELA_FS_ROOT` è una cartella **tua**, che ELA non crea mai; `ELA_FS_SCOPE` è la sola cartella
+dentro quella radice che `fs.read` e `fs.write` possono toccare — con l'esempio qui sopra,
+`/Users/tu/Documenti/ELA`. Creala tu: ELA rifiuta di inventarsi un posto che non hai scelto.
+
+Che cosa ELA rifiuta all'avvio, e perché il messaggio te lo dice invece di lasciartelo scoprire:
+
+- una radice che **contiene o sta dentro** ciò che ELA usa per esistere — la workspace, il
+  database, le catture, il segreto di un nodo, il `.env`, il suo stesso codice. Per questo `~` non
+  va bene: contiene `~/.ela`;
+- una radice che è un **link simbolico**. Su macOS è la forma che `~/Documents` prende quando
+  «Scrivania e Documenti» di iCloud Drive è attivo: punta la variabile alla cartella vera,
+  altrimenti ogni chiamata fallirebbe una per una senza spiegare perché;
+- una radice che non esiste.
+
+**Scrivere qui dentro è irreversibile**: `fs.write` è la prima capability `HIGH` di ELA, ti chiede
+il permesso **ogni volta**, e nessuna policy potrà mai coprirla in anticipo — il rollback (§37) non
+esiste ancora.
+
 ## 2. `alembic upgrade head` — lo schema
 
 ```

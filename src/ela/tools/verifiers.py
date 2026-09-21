@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from abc import abstractmethod
 from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar, Final
@@ -46,6 +47,7 @@ from ela.tools.captures import (
     inspect_transcript,
 )
 from ela.tools.echo import CORE_ECHO
+from ela.tools.fs import FS_READ, FS_WRITE
 from ela.tools.listen import PERCEPTION_LISTEN
 from ela.tools.model import MODEL_COMPLETE, routing_arguments
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
@@ -95,6 +97,8 @@ __all__ = [
     "CaptureScreenVerifier",
     "EchoVerifier",
     "ModelCompleteVerifier",
+    "FsReadVerifier",
+    "FsWriteVerifier",
     "WriteNoteVerifier",
 ]
 
@@ -206,6 +210,18 @@ class EchoVerifier(Verifier):
         )
 
 
+FS_READ_VERIFIER_NAME: Final = "fs-read-verifier"
+FS_WRITE_VERIFIER_NAME: Final = "fs-write-verifier"
+
+FS_FILE_EXISTS: Final = "fs.file_exists"
+"""The file the call named is there, and is a regular file."""
+FS_CONTENT_MATCHES: Final = "fs.content_matches"
+"""Its bytes are the bytes the call asked for — the intent, never the tool's report."""
+
+FS_CONTENT_MISMATCH: Final = "fs.content_mismatch"
+FS_UNREADABLE: Final = "fs.unreadable"
+
+
 class WriteNoteVerifier(Verifier):
     """``workspace.write_note`` verified from the disk, not from the tool's word (§63).
 
@@ -278,6 +294,112 @@ class WriteNoteVerifier(Verifier):
             return b"".join(chunks)
         finally:
             os.close(descriptor)
+
+
+class _FsVerifier(Verifier):
+    """What ``fs.read`` and ``fs.write`` are both verified against: the disk of this machine.
+
+    One base and two names, because the two capabilities are verified by asking the **same**
+    question of the same place — is the file there, and does it hold the bytes the call named —
+    and a second copy of that question is the thing ADR 0014 §2 exists to prevent.
+
+    ``root`` is resolved the way the tools resolve it and is **never created**: a root that does
+    not exist holds no file, and ELA does not invent the user's folder (M13.1 dec. A).
+
+    The comparison is with the **intent** — the arguments — and never with what the tool put in
+    its output: for ``fs.write`` that is ``body``, for ``fs.read`` it is the content the tool
+    claims to have read, which is checked against the file itself. A verifier that trusted the
+    tool's report would verify nothing.
+    """
+
+    reads_the_machine: ClassVar[bool] = True
+    """The disk of this machine: from a node it would read the Core's disk, where a file with the
+    same path may exist — the false positive of ADR 0038 §14. Neither capability travels."""
+    conditions: ClassVar[frozenset[str]] = frozenset({FS_FILE_EXISTS, FS_CONTENT_MATCHES})
+    failure_codes: ClassVar[frozenset[str]] = (
+        COMMON_FAILURE_CODES | PATH_CODES | {FS_CONTENT_MISMATCH, FS_UNREADABLE}
+    )
+
+    def __init__(self, capability_id: CapabilityId, root: Path | str, *, name: str) -> None:
+        super().__init__(capability_id, name=name)
+        self._root = resolve_workspace(root)
+
+    @abstractmethod
+    def _expected(self, arguments: JsonMapping, result: ExecutionResult) -> str | None:
+        """The text the file must hold, or ``None`` if the call cannot say.
+
+        The one thing the two differ in: a write knows it from the arguments, a read from what the
+        tool says it read — and in both cases the file is what settles it.
+        """
+
+    async def _check(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        path = arguments.get("path")
+        if not isinstance(path, str):
+            return self._failure(
+                condition, VERIFICATION_ARGUMENTS_INVALID, "path must be a string", retryable=False
+            )
+        problem = classify(self._root, path)
+        if problem is not None:
+            return self._failure(condition, problem.code, problem.message(path), retryable=True)
+        if condition == FS_FILE_EXISTS:
+            return None
+        expected = self._expected(arguments, result)
+        if expected is None:
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "the call says nothing about what the file should hold",
+                retryable=False,
+            )
+        try:
+            data = WriteNoteVerifier._read(self._root / path)  # noqa: SLF001
+        except OSError as error:
+            return self._failure(
+                condition,
+                FS_UNREADABLE,
+                f"{path!r} could not be read: {type(error).__name__}: {error.strerror or error}",
+                retryable=True,
+            )
+        if hashlib.sha256(data).digest() == hashlib.sha256(expected.encode("utf-8")).digest():
+            return None
+        return self._failure(
+            condition,
+            FS_CONTENT_MISMATCH,
+            f"{path!r} does not hold what the call named",
+            retryable=True,
+            details={"expected_bytes": len(expected.encode("utf-8")), "actual_bytes": len(data)},
+        )
+
+
+class FsWriteVerifier(_FsVerifier):
+    """``fs.write``: the file holds the ``body`` that was approved."""
+
+    def __init__(self, root: Path | str, *, name: str = FS_WRITE_VERIFIER_NAME) -> None:
+        super().__init__(FS_WRITE, root, name=name)
+
+    def _expected(self, arguments: JsonMapping, result: ExecutionResult) -> str | None:
+        body = arguments.get("body")
+        return body if isinstance(body, str) else None
+
+
+class FsReadVerifier(_FsVerifier):
+    """``fs.read``: the file holds what the tool says it read.
+
+    The intent of a read is not in the arguments — nobody says in advance what a file contains —
+    so the thing to check is that the **content in the result is the content on disk**: the one
+    way a reader can lie is by returning something the file does not hold. The bytes stay in the
+    result and in memory here; what a failure carries is the two **sizes** (M13.1 dec. P), the
+    form ``WriteNoteVerifier`` already uses because a short file's hash inverts by dictionary.
+    """
+
+    def __init__(self, root: Path | str, *, name: str = FS_READ_VERIFIER_NAME) -> None:
+        super().__init__(FS_READ, root, name=name)
+
+    def _expected(self, arguments: JsonMapping, result: ExecutionResult) -> str | None:
+        content = result.output.get("content")
+        return content if isinstance(content, str) else None
 
 
 class ModelCompleteVerifier(Verifier):

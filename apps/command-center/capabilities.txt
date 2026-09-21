@@ -21,3 +21,5 @@ perception.read_screen_text
 voice.speak
 voice.speak_online
 perception.listen
+fs.read
+fs.write

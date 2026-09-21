@@ -25,6 +25,8 @@ from ela.testing.fakes import (
 )
 from ela.tools import (
     CORE_ECHO,
+    FS_READ,
+    FS_WRITE,
     PERCEPTION_CAPTURE_SCREEN,
     PERCEPTION_LISTEN,
     PERCEPTION_READ_SCREEN_TEXT,
@@ -229,8 +231,12 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         speech_online=FakeSpeech(),
         voice_id="VZOd9FMXDnXRZpGn0thg",
         model="eleven_flash_v2_5",
+        fs_root=tmp_path / "files",
     )
-    return tools, production_verifiers(root=tmp_path, router=router, captures=captures), captures
+    verifiers = production_verifiers(
+        root=tmp_path, router=router, captures=captures, fs_root=tmp_path / "files"
+    )
+    return tools, verifiers, captures
 
 
 def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) -> None:
@@ -252,6 +258,8 @@ def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) 
         PERCEPTION_READ_SCREEN_TEXT,
         VOICE_SPEAK,
         VOICE_SPEAK_ONLINE,
+        FS_READ,
+        FS_WRITE,
     ]
     assert {v.capability_id for v in verifiers.verifiers()} == {
         t.capability_id for t in tools.tools()

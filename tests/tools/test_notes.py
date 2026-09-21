@@ -23,7 +23,7 @@ from ela.tools import (
     NOTES_TOOL_NAME,
     PATH_INVALID,
     PATH_IS_DIRECTORY,
-    PATH_OUTSIDE_WORKSPACE,
+    PATH_OUTSIDE_ROOT,
     PATH_SYMLINK,
     WORKSPACE_WRITE_NOTE,
     WriteNoteTool,
@@ -179,9 +179,7 @@ async def test_a_directory_link_to_the_outside_is_refused_and_the_outside_untouc
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     (root / "notes").symlink_to(elsewhere, target_is_directory=True)
-    message = await refused(
-        tool, root, {"path": "notes/a.md", "body": BODY}, PATH_OUTSIDE_WORKSPACE
-    )
+    message = await refused(tool, root, {"path": "notes/a.md", "body": BODY}, PATH_OUTSIDE_ROOT)
     assert "notes/a.md" in message
     assert list(elsewhere.iterdir()) == []
 
@@ -193,7 +191,7 @@ async def test_a_file_link_to_the_outside_is_refused_and_its_target_unchanged(
     secret.write_text("untouched", encoding="utf-8")
     (root / "notes").mkdir()
     (root / "notes" / "a.md").symlink_to(secret)
-    await refused(tool, root, {"path": "notes/a.md", "body": BODY}, PATH_OUTSIDE_WORKSPACE)
+    await refused(tool, root, {"path": "notes/a.md", "body": BODY}, PATH_OUTSIDE_ROOT)
     assert secret.read_text(encoding="utf-8") == "untouched"
 
 
@@ -217,9 +215,9 @@ async def test_a_link_to_the_outside_is_named_as_outside_a_link_inside_as_a_link
     (root / "out").symlink_to(elsewhere, target_is_directory=True)
     (root / "real").mkdir()
     (root / "in").symlink_to(root / "real", target_is_directory=True)
-    outside = await refused(tool, root, {"path": "out/a.md", "body": BODY}, PATH_OUTSIDE_WORKSPACE)
+    outside = await refused(tool, root, {"path": "out/a.md", "body": BODY}, PATH_OUTSIDE_ROOT)
     inside = await refused(tool, root, {"path": "in/a.md", "body": BODY}, PATH_SYMLINK)
-    assert "resolves outside the workspace" in outside
+    assert "resolves outside the root it was given" in outside
     assert "symbolic link" in inside
     assert list(elsewhere.iterdir()) == [] and list((root / "real").iterdir()) == []
 
@@ -276,7 +274,7 @@ def test_declares_its_output_and_error_codes() -> None:
         ARGUMENTS_INVALID,
         PATH_INVALID,
         PATH_SYMLINK,
-        PATH_OUTSIDE_WORKSPACE,
+        PATH_OUTSIDE_ROOT,
         PATH_IS_DIRECTORY,
         IO_ERROR,
     }

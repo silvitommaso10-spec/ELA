@@ -61,6 +61,7 @@ from ela.domain import (
 )
 from ela.ports import (
     AuditLog,
+    CapabilityRegistryPort,
     Clock,
     IdGenerator,
     NotFoundError,
@@ -489,7 +490,15 @@ class DeviceOrchestrator:
     there is no path from here to a task that fails.
     """
 
-    __slots__ = ("_audit", "_clock", "_ids", "_registry", "_tools", "_verifiers")
+    __slots__ = (
+        "_audit",
+        "_capabilities",
+        "_clock",
+        "_ids",
+        "_registry",
+        "_tools",
+        "_verifiers",
+    )
 
     def __init__(
         self,
@@ -500,6 +509,7 @@ class DeviceOrchestrator:
         clock: Clock,
         *,
         verifiers: VerifierRegistryPort,
+        capabilities: CapabilityRegistryPort,
     ) -> None:
         self._registry = registry
         self._tools = tools
@@ -507,6 +517,7 @@ class DeviceOrchestrator:
         self._ids = ids
         self._clock = clock
         self._verifiers = verifiers
+        self._capabilities = capabilities
 
     def requirements(
         self, step: TaskStep, *, max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY
@@ -533,11 +544,39 @@ class DeviceOrchestrator:
         return Requirements(
             tools=frozenset(tools),
             traits=step.preferred_device_traits,
-            risk=step.risk,
+            risk=self._risk_of(step),
             max_privacy=max_privacy,
             unresolved=tuple(unresolved),
             verified_here=tuple(here),
         )
+
+    def _risk_of(self, step: TaskStep) -> RiskLevel:
+        """The risk this step really carries: the catalogue's, and the plan's only if it is higher.
+
+        ``step.risk`` arrives from the client — ``POST /tasks/{id}/plan`` is public surface until
+        the Planner exists (ADR 0023) — and it feeds the one filter that reads a risk: a DEGRADED
+        node is refused from :data:`UNGUARDED_RISK` up. While the catalogue stopped below that
+        level the filter could not fire and the provenance did not matter; ADR 0026 §7 said the
+        day it came alive was the day to look at it again, and M13.1 is that day (dec. J).
+
+        So the client keeps the one power it should have — **it can only tighten** — and loses the
+        one it should never have had: declaring ``SAFE`` for a HIGH capability no longer hides a
+        step from the filter. A capability the catalogue does not know contributes nothing here;
+        it is already collected in ``unresolved``, and the task waits.
+        """
+        registered = [
+            self._capabilities.get(capability_id).risk
+            for capability_id in step.required_capabilities
+            if self._known(capability_id)
+        ]
+        return max([step.risk, *registered])
+
+    def _known(self, capability_id: CapabilityId) -> bool:
+        try:
+            self._capabilities.get(capability_id)
+        except NotFoundError:
+            return False
+        return True
 
     def _reads_this_machine(self, capability_id: CapabilityId) -> bool:
         """Whether the verifier of ``capability_id`` reads this machine; no verifier is a yes."""

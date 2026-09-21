@@ -22,7 +22,7 @@ from ela.devices import (
     ensure_placed,
 )
 from ela.executive import Executor
-from ela.permissions import MAX_RISK
+from ela.permissions import MAX_RISK, production_catalogue
 from tests.architecture.rules import RULES
 from tests.architecture.violations import PACKAGE_ROOT
 
@@ -169,10 +169,23 @@ def test_who_chooses_writes_and_who_only_looks_does_not() -> None:
 # --------------------------------------------------------------------------------------
 
 
-def test_the_vacuous_filter_is_declared_and_still_vacuous() -> None:
-    """§7: the DEGRADED filter cannot fire while the catalogue stops below ``UNGUARDED_RISK``."""
-    assert UNGUARDED_RISK > MAX_RISK
-    assert "il filtro `degraded` è vacuo" in adr_text().lower()
+def test_the_filter_this_adr_declared_vacuous_came_alive_in_m13_1() -> None:
+    """§7 said what would happen the day the catalogue admitted HIGH. That day arrived.
+
+    ADR 0026 is not rewritten: «il filtro `degraded` è vacuo» stays in it, true of the tree it
+    described, and what changed is read here. Two things had to happen together, and both did —
+    the catalogue reaches ``UNGUARDED_RISK``, and the provenance of ``step.risk`` was re-examined
+    instead of left alone (M13.1 dec. J, ADR 0045 §10).
+    """
+    assert "il filtro `degraded` è vacuo" in adr_text().lower(), "ADR 0026 keeps its own sentence"
+    assert MAX_RISK >= UNGUARDED_RISK, (
+        "the catalogue no longer reaches UNGUARDED_RISK: the filter is vacuous again, and both "
+        "this test and ADR 0026 §7 must say so instead of claiming a live defence"
+    )
+    assert any(spec.risk >= UNGUARDED_RISK for spec in production_catalogue().specs()), (
+        "no production capability reaches UNGUARDED_RISK: a filter nothing can trigger is worse "
+        "than an absent one (ADR 0026 §7)"
+    )
 
 
 def test_the_declared_constraints_name_what_they_defer() -> None:

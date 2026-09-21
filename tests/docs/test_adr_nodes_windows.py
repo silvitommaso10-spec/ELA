@@ -19,7 +19,6 @@ from ela.composition import build_node
 from ela.composition.node import ACL_SINCE, PermissionMode, online_player
 from ela.infrastructure.machine import AFPLAY, OnlineSpeechCommand
 from ela.infrastructure.machine.windows import POWERSHELL, SPEAK
-from ela.permissions import production_catalogue
 from ela.ports import WireCode
 from tests.architecture.rules import (
     INFRA_PACKAGES,
@@ -259,8 +258,10 @@ def test_the_conseguenze_count_what_the_tree_has_today() -> None:
         )
         == 14
     )
+    # The pin on **today's** total moved to the ADR that changed it (M13.1 dec. K): an ADR is
+    # immutable, so this one keeps saying the number it saw, and what the tree has today is
+    # asserted in ``tests/docs/test_adr_filesystem.py``.
     assert "**restano otto**" in text
-    assert len(production_catalogue().specs()) == 8
     assert "**venticinque**" in text
     assert len(ports_before(ADR_PATH.with_name("0043-companion.md"))) == 25
     assert set(INFRA_PACKAGES) == {"providers", "infrastructure", "api", "cli", "node"}

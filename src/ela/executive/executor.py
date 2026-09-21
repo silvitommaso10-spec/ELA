@@ -125,6 +125,7 @@ from ela.permissions import (
     DEFAULT_AUTHORIZATION_TTL,
     SINGLE_USE,
     Rule,
+    asks_at_every_use,
     authorization_from_approval,
     scope_covers,
     targets_of,
@@ -144,6 +145,7 @@ from ela.ports import (
     IdGenerator,
     NotAllowedError,
     NotFoundError,
+    Target,
     TaskRepository,
     ToolPort,
     ToolRegistryPort,
@@ -471,18 +473,23 @@ def select_authorization(
     step: TaskStep,
     targets: Sequence[object],
     now: datetime,
+    risk: RiskLevel = RiskLevel.SAFE,
 ) -> Candidate | None:
     """The grant to hand the Guardian for this call, or ``None`` (ADR 0013 §3). Pure.
 
-    A candidate **covers** the call if it is not bound to another task or step and its scope
-    covers the targets; it is **usable** if not expired at ``now`` (closed bound) and not
-    exhausted. Grants bound to this step come first, then the rest, in store order. The first
-    covering and usable candidate wins; failing that, the first covering one (so the Guardian's
-    reason — and the request for approval — names why it could not be used); failing that,
-    nothing. A grant that does not cover is never handed over: the Guardian would read it as the
-    caller's incoherence and deny (ADR 0011 §6).
+    A candidate **covers** the call if it was born from a yes when the row demands one (M13.1
+    dec. D), is not bound to another task or step, and its scope covers the targets; it is
+    **usable** if not expired at ``now`` (closed bound) and not exhausted.
+
+    Grants bound to this step come first, then the rest, in store order. The first covering and
+    usable candidate wins; failing that, the first covering one (so the Guardian's reason — and
+    the request for approval — names why it could not be used); failing that, nothing. A grant
+    that does not cover is never handed over: the Guardian would read it as the caller's
+    incoherence and deny (ADR 0011 §6).
     """
-    covering = [candidate for candidate in candidates if _covers(candidate[0], task, step, targets)]
+    covering = [
+        candidate for candidate in candidates if _covers(candidate[0], task, step, targets, risk)
+    ]
     covering.sort(key=lambda candidate: 0 if candidate[0].step_id == step.id else 1)
     for candidate in covering:
         if _usable(candidate, now):
@@ -490,7 +497,18 @@ def select_authorization(
     return covering[0] if covering else None
 
 
-def _covers(grant: Authorization, task: Task, step: TaskStep, targets: Sequence[object]) -> bool:
+def _covers(
+    grant: Authorization,
+    task: Task,
+    step: TaskStep,
+    targets: Sequence[object],
+    risk: RiskLevel,
+) -> bool:
+    if asks_at_every_use(risk) and grant.approval_id is None:
+        # A standing policy of §59 never covers a row that asks at every use (M13.1 dec. D).
+        # Read here too, from the same predicate, so that the executor never hands the Guardian a
+        # grant it is about to call an incoherence: that would deny the step instead of asking.
+        return False
     if grant.task_id is not None and grant.task_id != task.id:
         return False
     if grant.step_id is not None and grant.step_id != step.id:
@@ -1357,7 +1375,9 @@ class Executor:
             (grant, await self._authorizations.uses(grant.id))
             for grant in await self._authorizations.for_capability(spec.id)
         ]
-        selected = select_authorization(candidates, task=task, step=step, targets=targets, now=now)
+        selected = select_authorization(
+            candidates, task=task, step=step, targets=targets, now=now, risk=spec.risk
+        )
         return (None, 0) if selected is None else selected
 
     # ----------------------------------------------------------------------------------
@@ -1400,7 +1420,7 @@ class Executor:
             status=ApprovalStatus.PENDING,
             decision_id=decision.id,
             expires_at=decision.created_at + self._approval_ttl,
-            metadata={ASKED: self._asked(task, step, spec, arguments)},
+            metadata={ASKED: await self._asked(task, step, spec, arguments)},
         )
         await self._approvals.add(approval)  # stored before the task waits on it (ADR 0015 §6)
         task = await self._engine.request_approval(decision.task_id, approval)
@@ -1445,7 +1465,7 @@ class Executor:
             )
         )
 
-    def _asked(
+    async def _asked(
         self, task: Task, step: TaskStep, spec: CapabilitySpec, arguments: JsonMapping
     ) -> dict[str, JsonValue]:
         """The facts of the question, kept beside it: what a surface shows without recomposing it.
@@ -1462,7 +1482,7 @@ class Executor:
         ``tests/api/test_approvals.py`` pins these keys against the fields that read them: a name
         written on one side only would be a page that quietly shows nothing.
         """
-        return {
+        asked: dict[str, JsonValue] = {
             "description": spec.description,
             "risk": spec.risk.value,
             "max_privacy": task.max_privacy.value,
@@ -1471,6 +1491,29 @@ class Executor:
             "grant_uses": SINGLE_USE,
             "grant_seconds": int(self._authorization_ttl.total_seconds()),
         }
+        target = await self._target(spec, arguments)
+        if target is not None:
+            asked["target"] = target.resolved
+            asked["overwrites"] = target.exists
+        return asked
+
+    async def _target(self, spec: CapabilitySpec, arguments: JsonMapping) -> Target | None:
+        """Where the call would land and whether something is there (M13.1 dec. G).
+
+        Asked of the tool, which holds the root and the classification its verifier shares — not
+        recomputed here, or there would be two definitions of where a path leads (ADR 0014 §2).
+        It is a read, never a run: the tool is executed later and only under an ``ALLOWED``
+        decision, and nothing here touches ``execute``.
+
+        A tool that answers ``None`` leaves the question saying nothing about a file — which is
+        the truth for the eight capabilities that touch none.
+
+        **No guard against a missing tool**, and not by oversight: ``ToolNotFound`` is raised
+        before the Guardian is ever asked (ADR 0014 §3, «nessun grant speso per un'azione che non
+        si potrà verificare»), so by the time a question exists its tool does too. A branch that
+        cannot fire is worse than an absent one (ADR 0026 §7).
+        """
+        return await self._tools.get(spec.id).describe_target(arguments)
 
     async def _fail(
         self,

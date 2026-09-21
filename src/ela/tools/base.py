@@ -31,7 +31,7 @@ from ela.domain import (
     PermissionOutcome,
     ProviderUsage,
 )
-from ela.ports import Clock, IdGenerator, NotAllowedError
+from ela.ports import Clock, IdGenerator, NotAllowedError, Target
 
 __all__ = ["ARGUMENTS_INVALID", "Outcome", "Tool", "check_decision"]
 
@@ -148,6 +148,15 @@ class Tool(ABC):
             usage=outcome.usage,
             duration_ms=max(0, int((finished - started).total_seconds() * 1000)),
         )
+
+    async def describe_target(self, arguments: JsonMapping) -> Target | None:
+        """Nothing, unless a tool works on a path (M13.1 dec. G).
+
+        The default is ``None`` and not an abstract method, unlike :attr:`idempotent`: silence
+        here cannot be mistaken for a permission — a question that names no file is a question
+        about a capability that touches none. The two tools that do touch one override it.
+        """
+        return None
 
     @abstractmethod
     async def _run(self, arguments: JsonMapping) -> Outcome:

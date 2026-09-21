@@ -24,6 +24,7 @@ from ela.domain import (
 )
 from ela.permissions import (
     DEFAULT_DECISION_TTL,
+    MAX_RISK,
     POLICY_VERSION,
     RISK_POLICY,
     PermissionGuardian,
@@ -49,6 +50,7 @@ from tests.permissions.support import (
     OTHER_TASK_ID,
     UNCONSTRAINED_SCOPE,
     Harness,
+    born_of_a_yes,
     grant,
     harness,
     step_for,
@@ -168,7 +170,7 @@ def test_no_step_or_a_step_that_declares_it_leaves_the_policy_to_decide(
 
 
 def test_a_step_that_declares_the_capability_relaxes_nothing(h: Harness) -> None:
-    assert h.guardian.decide(HIGH, ECHO_ARGS, step=step_for(HIGH.id)).outcome is DENIED
+    assert h.guardian.decide(CRITICAL, ECHO_ARGS, step=step_for(CRITICAL.id)).outcome is DENIED
     without_grant = h.guardian.decide(COMPLETE, COMPLETE_ARGS, step=step_for(COMPLETE.id))
     assert without_grant.outcome is REQUIRES_APPROVAL
 
@@ -208,7 +210,7 @@ def test_low_within_scope_is_allowed(h: Harness) -> None:
 def test_low_outside_scope_is_denied_naming_the_scope(h: Harness, path: str) -> None:
     decision = h.guardian.decide(NOTE, {**NOTE_ARGS, "path": path})
     assert decision.outcome is DENIED
-    assert rule_of(decision) is Rule.ALLOW_WITHIN_SCOPE
+    assert rule_of(decision) is Rule.SCOPE
     assert "workspace/notes" in decision.reason and "not within scope" in decision.reason
     assert decision.metadata["targets"] == (path,)
 
@@ -223,14 +225,14 @@ def test_a_scoped_argument_that_is_missing_or_not_a_string_is_outside(
 ) -> None:
     decision = h.guardian.decide(LOOSE_NOTE, arguments)
     assert decision.outcome is DENIED
-    assert rule_of(decision) is Rule.ALLOW_WITHIN_SCOPE
+    assert rule_of(decision) is Rule.SCOPE
     assert decision.metadata["targets"] == targets
 
 
 def test_a_scope_that_constrains_no_argument_is_denied(h: Harness) -> None:
     decision = h.guardian.decide(UNCONSTRAINED_SCOPE, ECHO_ARGS)
     assert decision.outcome is DENIED
-    assert rule_of(decision) is Rule.ALLOW_WITHIN_SCOPE
+    assert rule_of(decision) is Rule.SCOPE
     assert "workspace" in decision.reason
 
 
@@ -251,14 +253,44 @@ def test_medium_with_a_valid_authorization_is_allowed(h: Harness) -> None:
     assert str(authorization.id) in decision.reason
 
 
-@pytest.mark.parametrize("spec", [HIGH, CRITICAL], ids=lambda s: s.risk.value)
-def test_high_and_critical_are_denied_even_with_a_valid_authorization(
-    h: Harness, spec: CapabilitySpec
-) -> None:
-    decision = h.guardian.decide(spec, ECHO_ARGS, authorization=grant(spec), step=step_for(spec.id))
+def test_critical_is_denied_even_with_a_valid_authorization(h: Harness) -> None:
+    spec = CRITICAL
+    decision = h.guardian.decide(
+        spec, ECHO_ARGS, authorization=born_of_a_yes(spec), step=step_for(spec.id)
+    )
     assert decision.outcome is DENIED
     assert rule_of(decision) is Rule.DENY
     assert spec.risk.value in decision.reason and POLICY_VERSION in decision.reason
+
+
+def test_high_asks_at_every_use_and_a_grant_born_of_a_yes_covers_it(h: Harness) -> None:
+    """M13.1 dec. N: the row is ``APPROVAL_EVERY_USE``, and it is not "unless authorized"."""
+    asked = h.guardian.decide(HIGH, ECHO_ARGS, step=step_for(HIGH.id))
+    assert asked.outcome is REQUIRES_APPROVAL
+    assert rule_of(asked) is Rule.APPROVAL_EVERY_USE
+    assert "none was given" in asked.reason
+
+    allowed = h.guardian.decide(
+        HIGH, ECHO_ARGS, task=TASK, step=step_for(HIGH.id), authorization=born_of_a_yes(HIGH)
+    )
+    assert allowed.outcome is ALLOWED
+    assert rule_of(allowed) is Rule.APPROVAL_EVERY_USE
+
+
+def test_a_standing_policy_never_covers_a_row_that_asks_at_every_use(h: Harness) -> None:
+    """M13.1 dec. D: §59 widens, and HIGH is the level those policies do not reach.
+
+    The precondition is constructible **today** — the domain admits a grant with no
+    ``approval_id`` — so this is a defence exercised and not a defence declared.
+    """
+    standing = grant(HIGH)
+    assert standing.approval_id is None
+
+    decision = h.guardian.decide(HIGH, ECHO_ARGS, step=step_for(HIGH.id), authorization=standing)
+
+    assert decision.outcome is DENIED
+    assert rule_of(decision) is Rule.AUTHORIZATION_MISMATCH
+    assert "standing policy" in decision.reason and "born from an approval" in decision.reason
 
 
 def test_a_risk_level_without_a_policy_row_is_denied(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -271,9 +303,29 @@ def test_a_risk_level_without_a_policy_row_is_denied(monkeypatch: pytest.MonkeyP
     assert rule_of(decision) is Rule.DENY
 
 
-def test_the_policy_table_covers_every_risk_level() -> None:
+def test_the_policy_table_and_the_catalogue_cap_are_stated_together() -> None:
+    """The whole table, written out, and the cap beside it (M13.1 dec. M).
+
+    **Not derived from ``MAX_RISK``**, which is the defect this test was repaired for: the old
+    form asked whether every level *above the cap* was denied, so raising the cap made it quietly
+    narrower instead of making it fail. An assertion that adapts to the change it is supposed to
+    catch is not an assertion.
+    """
+    assert RISK_POLICY == {
+        RiskLevel.SAFE: Rule.ALLOW,
+        RiskLevel.LOW: Rule.ALLOW_WITHIN_SCOPE,
+        RiskLevel.MEDIUM: Rule.APPROVAL_UNLESS_AUTHORIZED,
+        RiskLevel.HIGH: Rule.APPROVAL_EVERY_USE,
+        RiskLevel.CRITICAL: Rule.DENY,
+    }, "the policy moved: rewrite this table, ADR 0011 §3 as ADR 0045 revises it, and say why"
+    assert MAX_RISK is RiskLevel.HIGH, (
+        "the catalogue cap moved: state it here with the table, and check that every row above it "
+        "is still DENY and every row below it still says what it does (M13.1 dec. M)"
+    )
     assert set(RISK_POLICY) == set(RiskLevel)
-    assert RISK_POLICY[RiskLevel.HIGH] is RISK_POLICY[RiskLevel.CRITICAL] is Rule.DENY
+    assert {level: rule for level, rule in RISK_POLICY.items() if level > MAX_RISK} == {
+        RiskLevel.CRITICAL: Rule.DENY
+    }
 
 
 # --------------------------------------------------------------------------------------
@@ -307,7 +359,7 @@ def test_a_denial_of_the_row_comes_before_the_question(h: Harness) -> None:
     user is never asked to approve what would be denied anyway."""
     decision = h.guardian.decide(GUARDED_NOTE, {**NOTE_ARGS, "path": "elsewhere/x.md"})
     assert decision.outcome is DENIED
-    assert rule_of(decision) is Rule.ALLOW_WITHIN_SCOPE
+    assert rule_of(decision) is Rule.SCOPE
 
 
 # --------------------------------------------------------------------------------------
@@ -478,7 +530,7 @@ def test_an_unneeded_grant_about_to_expire_does_not_shorten_the_decision(h: Harn
 
 @pytest.mark.parametrize(
     "spec, arguments, outcome",
-    [(HIGH, ECHO_ARGS, DENIED), (COMPLETE, COMPLETE_ARGS, REQUIRES_APPROVAL)],
+    [(CRITICAL, ECHO_ARGS, DENIED), (COMPLETE, COMPLETE_ARGS, REQUIRES_APPROVAL)],
     ids=["denied", "requires-approval"],
 )
 def test_only_allowed_decisions_expire(
@@ -697,18 +749,18 @@ def test_family_4_a_guarded_low_capability_in_scope_without_a_usable_grant_asks(
     assert rule_of(decision) is Rule.AUTHORIZATION_REQUIRED
 
 
-def test_family_5_low_outside_scope_with_a_valid_grant_is_denied_by_the_row(h: Harness) -> None:
+def test_family_5_low_outside_scope_with_a_valid_grant_is_denied_by_the_scope(h: Harness) -> None:
     decision = decide_with(h, NOTE, "valida", arguments={**NOTE_ARGS, "path": "elsewhere/x.md"})
     assert decision.outcome is DENIED
-    assert rule_of(decision) is Rule.ALLOW_WITHIN_SCOPE
+    assert rule_of(decision) is Rule.SCOPE
 
 
 @pytest.mark.parametrize(
     "spec, state",
-    [(CRITICAL, "assente")] + [(spec, state) for spec in (HIGH, CRITICAL) for state in STATES[2:]],
+    [(CRITICAL, "assente")] + [(CRITICAL, state) for state in STATES[2:]],
     ids=_spec_id,
 )
-def test_family_6_high_and_critical_are_denied_by_the_row_whatever_the_grant(
+def test_family_6_critical_is_denied_by_the_row_whatever_the_grant(
     h: Harness, spec: CapabilitySpec, state: AuthState
 ) -> None:
     decision = decide_with(h, spec, state)
