@@ -11,19 +11,24 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 
 from ela.domain import (
+    Approval,
     ApprovalStatus,
     AuditEventType,
     AuthorizationId,
+    CapabilitySpec,
     ExecutionResult,
     ExecutionStatus,
     PermissionOutcome,
     StepState,
+    Task,
     TaskEventType,
     TaskState,
+    TaskStep,
 )
 from ela.executive import RECOVERED, VERIFICATION_FAILED, Executor, ExecutorError
 from ela.ports import NotFoundError
@@ -48,7 +53,7 @@ from tests.executive.support import (
     trail_of,
     world,
 )
-from tests.permissions.support import ECHO, ECHO_ARGS, GUARDED_ECHO, NOTE
+from tests.permissions.support import ECHO, ECHO_ARGS, GUARDED_ECHO, HIGH, NOTE
 from tests.tasks.support import ORPHAN_AFTER
 
 E = AuditEventType
@@ -418,6 +423,111 @@ async def test_window_7a_a_result_that_was_never_stored_means_the_tool_runs_agai
     assert execution.graph.states[step.id] is StepState.COMPLETED
     assert await count(w, task.id, E.PERMISSION_DECIDED) == 2
     assert await count(w, task.id, E.TOOL_EXECUTED) == 1
+
+
+# The clause of row 7a that no test reached until M13.1b: «grant monouso speso → domanda
+# all'utente». The test above runs ``core.echo``, which rests on no grant, so the effect repeating
+# there is the declared limit; with a single-use grant the retry must ask, not act (dec. 0).
+
+
+async def yes_to(w: World, spec: CapabilitySpec, **running: Any) -> tuple[Task, TaskStep, Approval]:
+    """The user said yes to the one step of a fresh task, and the task runs again."""
+    task, step = await w.running(spec.id, **running)
+    asked = await w.execute(task.id, step.id)
+    assert asked.approval is not None
+    await w.engine.approve(task.id, await w.answered(asked.approval))
+    await w.engine.start(task.id)
+    return task, step, asked.approval
+
+
+@pytest.mark.parametrize(
+    ("spec", "running"),
+    [(HIGH, {}), (GUARDED_ECHO, {"requires_authorization": True})],
+    ids=["high", "authorization-required"],
+)
+async def test_window_7a_a_spent_single_use_grant_asks_again_and_never_acts_twice(
+    spec: CapabilitySpec, running: dict[str, Any]
+) -> None:
+    """The tool acted, its outcome was never stored, and the same call is made again (dec. 0).
+
+    The tool is **idempotent** on purpose: that is the shape where no ``STARTED`` record stands
+    between a yes and a second effect, and the grant is the only thing that can. It was spent at
+    ``consume`` — after the Guardian's yes and before the tool — so the retry finds it exhausted and
+    asks. Until M13.1b a ``HIGH`` never passed through ``consume``, and the retry ran the tool a
+    second time under the same yes, with nobody asked.
+    """
+    w, crashes = crashing_world()
+    assert w.tool(spec.id).idempotent, "the case under test is the one no STARTED record covers"
+    task, step, first = await yes_to(w, spec, **running)
+
+    crashes.results.arm("add")
+    with pytest.raises(SimulatedCrash):
+        await w.execute(task.id, step.id)
+    assert len(w.tool(spec.id).calls) == 1  # the effect happened
+    (minted,) = await w.store.for_capability(spec.id)
+    assert await w.store.uses(minted.id) == 1, "the yes was not spent before the tool acted"
+
+    crashes.disarm()
+    retry = await w.execute(task.id, step.id)
+
+    assert len(w.tool(spec.id).calls) == 1, "the same yes covered a second effect"
+    assert retry.decision is not None
+    assert retry.decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
+    assert retry.approval is not None and retry.approval.id != first.id
+    assert retry.approval.step_id == step.id
+    assert retry.task.state is TaskState.WAITING_APPROVAL
+    assert [a.status for a in await w.approvals.for_task(task.id)] == [
+        ApprovalStatus.GRANTED,
+        ApprovalStatus.PENDING,
+    ]
+    assert await w.results.for_step(task.id, step.id) == ()
+
+
+async def test_a_high_that_died_before_its_consume_acts_once_on_the_retry() -> None:
+    """The near side of the point where the yes is spent: nothing acted, nothing was spent.
+
+    ``consume`` never landed, so the retry decides again, spends the grant once and runs the tool
+    once. Together with the far side (window 6, below) it shows the point closes the case from
+    both directions instead of asserting it.
+    """
+    w, crashes = crashing_world()
+    task, step, _ = await yes_to(w, HIGH)
+
+    crashes.authorizations.arm("consume")
+    with pytest.raises(SimulatedCrash):
+        await w.execute(task.id, step.id)
+    (minted,) = await w.store.for_capability(HIGH.id)
+    assert await w.store.uses(minted.id) == 0
+    assert w.tool(HIGH.id).calls == ()
+
+    crashes.disarm()
+    retry = await w.execute(task.id, step.id)
+
+    assert retry.graph.states[step.id] is StepState.COMPLETED
+    assert len(w.tool(HIGH.id).calls) == 1
+    assert await w.store.uses(minted.id) == 1
+
+
+async def test_window_6_a_high_whose_yes_was_spent_before_the_tool_asks_again() -> None:
+    """The far side: the yes is spent and the tool never ran. The price ADR 0012 §6 chose — a
+    second question — and never an effect nobody approved."""
+    w, crashes = crashing_world()
+    task, step, first = await yes_to(w, HIGH)
+
+    crashes.authorizations.arm("consume", after=True)
+    with pytest.raises(SimulatedCrash):
+        await w.execute(task.id, step.id)
+    (minted,) = await w.store.for_capability(HIGH.id)
+    assert await w.store.uses(minted.id) == 1
+    assert w.tool(HIGH.id).calls == ()
+
+    crashes.disarm()
+    retry = await w.execute(task.id, step.id)
+
+    assert retry.decision is not None
+    assert retry.decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
+    assert retry.approval is not None and retry.approval.id != first.id
+    assert w.tool(HIGH.id).calls == ()
 
 
 async def test_window_7b_a_stored_result_without_its_audit_is_recorded_not_rerun() -> None:
