@@ -31,7 +31,7 @@ from ela.domain import (
     PermissionOutcome,
     ProviderUsage,
 )
-from ela.ports import Clock, IdGenerator, NotAllowedError
+from ela.ports import Clock, IdGenerator, NotAllowedError, Prospect
 
 __all__ = ["ARGUMENTS_INVALID", "Outcome", "Tool", "check_decision"]
 
@@ -148,6 +148,16 @@ class Tool(ABC):
             usage=outcome.usage,
             duration_ms=max(0, int((finished - started).total_seconds() * 1000)),
         )
+
+    async def prospect(self, arguments: JsonMapping) -> Prospect:
+        """Nothing to show and nothing to refuse, unless a tool works on a path (dec. G).
+
+        The default is empty and not an abstract method, unlike :attr:`idempotent`: silence here
+        cannot be mistaken for a permission — a capability that touches no file has nothing to
+        say about one, and refusing nothing in advance is what every tool did before M13.1. The
+        two that do touch a file override it.
+        """
+        return Prospect()
 
     @abstractmethod
     async def _run(self, arguments: JsonMapping) -> Outcome:

@@ -9,7 +9,7 @@ ADR 0012).
   convenzione.
 - `scope.py`: cosa vuol dire "dentro lo scope" (prefisso di percorso, regole fail-safe).
 - `guardian.py`: `PermissionGuardian` — `decide` (port, sincrono, puro, non solleva mai) e
-  `authorize` (decide e scrive `PERMISSION_DECIDED`); `RISK_POLICY`, la policy v0.1 per rischio;
+  `authorize` (decide e scrive `PERMISSION_DECIDED`); `RISK_POLICY`, la policy per rischio;
   `DEFAULT_DECISION_TTL` (5 minuti) e `MAX_DECISION_TTL` (1 ora): oltre non è una decisione, è
   un permesso, e i permessi sono le `Authorization` (ADR 0025 §6).
 

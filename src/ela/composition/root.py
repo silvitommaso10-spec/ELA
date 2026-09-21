@@ -393,7 +393,9 @@ async def build(
         # The scope of ``workspace.write_note`` and the life of a decision are configuration
         # since M8.3 (ADR 0025 §5, §6): the catalogue and the Guardian have always accepted them,
         # and until now this line was the reason they were constants.
-        capabilities = production_catalogue(notes_scope=settings.core.notes_scope)
+        capabilities = production_catalogue(
+            notes_scope=settings.core.notes_scope, fs_scope=settings.filesystem.scope
+        )
         guardian = PermissionGuardian(
             capabilities, clock, ids, audit, decision_ttl=settings.core.decision_ttl
         )
@@ -497,8 +499,11 @@ async def build(
             speech_online=playing,
             voice_id=settings.elevenlabs.elevenlabs_voice_id,
             model=settings.elevenlabs.elevenlabs_model,
+            fs_root=settings.filesystem.root,
         )
-        verifiers = production_verifiers(root=root, router=router, captures=captures)
+        verifiers = production_verifiers(
+            root=root, router=router, captures=captures, fs_root=settings.filesystem.root
+        )
 
         # Which tools this machine has is not something the registry can know (ADR 0016 §4), and
         # without the names no node is ever eligible and every task waits. Since M6.1b this also
@@ -529,7 +534,9 @@ async def build(
             actor=ELA_ACTOR,
             orphan_after=settings.core.orphan_after,
         )
-        orchestrator = DeviceOrchestrator(devices, tools, audit, ids, clock, verifiers=verifiers)
+        orchestrator = DeviceOrchestrator(
+            devices, tools, audit, ids, clock, verifiers=verifiers, capabilities=capabilities
+        )
         assignments = Assignments(
             SqlAssignmentStore(database),
             engine=engine,

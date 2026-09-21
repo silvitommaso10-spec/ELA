@@ -32,7 +32,7 @@ from ela.domain import (
     RiskLevel,
     TaskStep,
 )
-from ela.permissions import MAX_RISK
+from ela.permissions import MAX_RISK, production_catalogue
 from ela.permissions.guardian import Rule
 from tests.permissions.support import (
     ARGUMENTS,
@@ -153,19 +153,27 @@ def test_the_guardian_reads_the_registered_risk_and_not_the_steps(h: Harness) ->
     assert decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
 
 
-def test_the_degraded_filter_is_vacuous_today_and_this_says_so() -> None:
-    """The one place ``step.risk`` is read is a filter no real capability can trigger.
+def test_the_degraded_filter_is_alive_now_and_the_plan_can_only_tighten() -> None:
+    """The filter ADR 0026 §7 declared vacuous came alive in M13.1, and this is its new form.
 
-    ``refusals`` discards a DEGRADED node from ``UNGUARDED_RISK`` (HIGH) up, and the catalogue
-    stops at :data:`~ela.permissions.MAX_RISK` (MEDIUM), so declaring a lower risk loosens nothing
-    — there was nothing tight — and declaring a higher one can only tighten.
+    For as long as the catalogue stopped below ``UNGUARDED_RISK`` (HIGH), ``refusals`` could not
+    fire and the provenance of ``step.risk`` — which comes from the client, ``POST
+    /tasks/{id}/plan`` being public surface — did not matter: declaring a lower risk loosened
+    nothing because nothing was tight. **That is no longer true**: ``fs.write`` is HIGH and
+    registrable, so a DEGRADED node can now be refused for a real step.
 
-    Written down rather than left to look like a defence: **a defence that appears active and
-    cannot fire is worse than an absent one, because whoever reads it stops looking for a real
-    one.** It comes alive the day the catalogue admits HIGH, and that is the day the provenance
-    of ``step.risk`` has to be looked at again (ADR 0026 §7).
+    ADR 0026 §7 said the day it came alive was the day to look at that provenance again. The
+    answer is M13.1 dec. J and it lives in the orchestrator, not here: ``Requirements.risk`` is
+    ``max(step.risk, the risk the catalogue carries)``, so a plan can only **tighten**. The
+    behaviour is proved in
+    ``tests/devices/test_orchestrator_audit.py::test_the_risk_of_a_step_is_the_catalogue_s_unless_the_plan_asks_for_more``;
+    what is asserted here is the fact that made the question real.
     """
-    assert UNGUARDED_RISK > MAX_RISK, (
-        "the DEGRADED filter is no longer vacuous: a registrable capability can now reach "
-        "UNGUARDED_RISK, so where step.risk comes from starts to matter (ADR 0026 §7)"
+    assert MAX_RISK >= UNGUARDED_RISK, (
+        "the catalogue no longer reaches UNGUARDED_RISK: the DEGRADED filter is vacuous again, "
+        "and this test and ADR 0026 §7 have to say so instead of claiming a live defence"
+    )
+    assert any(spec.risk >= UNGUARDED_RISK for spec in production_catalogue().specs()), (
+        "no production capability reaches UNGUARDED_RISK any more: a filter nothing can trigger "
+        "is worse than an absent one (ADR 0026 §7)"
     )

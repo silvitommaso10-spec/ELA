@@ -125,6 +125,7 @@ from ela.permissions import (
     DEFAULT_AUTHORIZATION_TTL,
     SINGLE_USE,
     Rule,
+    asks_at_every_use,
     authorization_from_approval,
     scope_covers,
     targets_of,
@@ -144,6 +145,7 @@ from ela.ports import (
     IdGenerator,
     NotAllowedError,
     NotFoundError,
+    Target,
     TaskRepository,
     ToolPort,
     ToolRegistryPort,
@@ -409,6 +411,15 @@ class Execution(NamedTuple):
     result: ExecutionResult | None
     approval: Approval | None
     verification: Verification | None
+    error: ErrorMetadata | None = None
+    """Why this call failed the step **without running anything** (M13.1, rilievo 3).
+
+    A refusal before the tool has no ``ExecutionResult`` to carry it — nothing ran, so there is
+    nothing to record as a result — and before this field the reason ended in the step's trail
+    and nowhere a person looks. ``None`` whenever the tool did run: then the error is the
+    result's, where it has always been.
+    """
+
     assignment: Assignment | None = None
     """The work this call handed to a node instead of running (M12.2, ADR 0038 §2).
 
@@ -471,18 +482,23 @@ def select_authorization(
     step: TaskStep,
     targets: Sequence[object],
     now: datetime,
+    risk: RiskLevel = RiskLevel.SAFE,
 ) -> Candidate | None:
     """The grant to hand the Guardian for this call, or ``None`` (ADR 0013 §3). Pure.
 
-    A candidate **covers** the call if it is not bound to another task or step and its scope
-    covers the targets; it is **usable** if not expired at ``now`` (closed bound) and not
-    exhausted. Grants bound to this step come first, then the rest, in store order. The first
-    covering and usable candidate wins; failing that, the first covering one (so the Guardian's
-    reason — and the request for approval — names why it could not be used); failing that,
-    nothing. A grant that does not cover is never handed over: the Guardian would read it as the
-    caller's incoherence and deny (ADR 0011 §6).
+    A candidate **covers** the call if it was born from a yes when the row demands one (M13.1
+    dec. D), is not bound to another task or step, and its scope covers the targets; it is
+    **usable** if not expired at ``now`` (closed bound) and not exhausted.
+
+    Grants bound to this step come first, then the rest, in store order. The first covering and
+    usable candidate wins; failing that, the first covering one (so the Guardian's reason — and
+    the request for approval — names why it could not be used); failing that, nothing. A grant
+    that does not cover is never handed over: the Guardian would read it as the caller's
+    incoherence and deny (ADR 0011 §6).
     """
-    covering = [candidate for candidate in candidates if _covers(candidate[0], task, step, targets)]
+    covering = [
+        candidate for candidate in candidates if _covers(candidate[0], task, step, targets, risk)
+    ]
     covering.sort(key=lambda candidate: 0 if candidate[0].step_id == step.id else 1)
     for candidate in covering:
         if _usable(candidate, now):
@@ -490,7 +506,18 @@ def select_authorization(
     return covering[0] if covering else None
 
 
-def _covers(grant: Authorization, task: Task, step: TaskStep, targets: Sequence[object]) -> bool:
+def _covers(
+    grant: Authorization,
+    task: Task,
+    step: TaskStep,
+    targets: Sequence[object],
+    risk: RiskLevel,
+) -> bool:
+    if asks_at_every_use(risk) and grant.approval_id is None:
+        # A standing policy of §59 never covers a row that asks at every use (M13.1 dec. D).
+        # Read here too, from the same predicate, so that the executor never hands the Guardian a
+        # grant it is about to call an incoherence: that would deny the step instead of asking.
+        return False
     if grant.task_id is not None and grant.task_id != task.id:
         return False
     if grant.step_id is not None and grant.step_id != step.id:
@@ -743,7 +770,15 @@ class Executor:
             # is deterministic *because it is this machine*, and every other one the Core minted.
             assignment = await self._assignments.assign(decision, placement, authorization_id=spent)
             return Execution(
-                task, step_id, graph, decision, authorization, None, None, None, assignment
+                task,
+                step_id,
+                graph,
+                decision,
+                authorization,
+                None,
+                None,
+                None,
+                assignment=assignment,
             )
         record = (
             None if tool.idempotent else await self._start_record(tool, decision, device_id, spent)
@@ -986,7 +1021,9 @@ class Executor:
         return Delivered(
             marked,
             moved.states[assignment.step_id],
-            Execution(task, assignment.step_id, moved, None, None, None, None, None, marked),
+            Execution(
+                task, assignment.step_id, moved, None, None, None, None, None, assignment=marked
+            ),
         )
 
     async def _again(self, assignment: Assignment) -> Delivered:
@@ -1357,7 +1394,9 @@ class Executor:
             (grant, await self._authorizations.uses(grant.id))
             for grant in await self._authorizations.for_capability(spec.id)
         ]
-        selected = select_authorization(candidates, task=task, step=step, targets=targets, now=now)
+        selected = select_authorization(
+            candidates, task=task, step=step, targets=targets, now=now, risk=spec.risk
+        )
         return (None, 0) if selected is None else selected
 
     # ----------------------------------------------------------------------------------
@@ -1377,6 +1416,10 @@ class Executor:
     ) -> Execution:
         """Build the request for approval from the decision and let the task wait (ADR 0013 §5).
 
+        **No guard against a missing tool**, and not by oversight: ``ToolNotFound`` is raised
+        before the Guardian is ever asked (ADR 0014 §3), so by the time a question exists its
+        tool does too. A branch that cannot fire is worse than an absent one (ADR 0026 §7).
+
         The question names **where this task may go** when that is wider than this machine (M12.2,
         D20): dec. G2 of M11.2 with the place instead of the time — *how long the microphone stays
         open is half of what is being approved* becomes *where the content may go is half of what is
@@ -1385,6 +1428,14 @@ class Executor:
         through them would mean putting the user's policy in a document a model writes.
         """
         assert decision.task_id is not None and decision.step_id is not None
+        # **Before the question exists** (M13.1, ADR 0045 §6-bis): what a call would meet now, read
+        # from the tool that holds the classification it will refuse with. A call that would be
+        # refused this instant has no question to ask — ADR 0011 §3 keeps the denials before the
+        # question for a reason, and it is the same reason here: nobody is asked to approve what
+        # ELA already knows it will refuse, and nobody is woken for it either.
+        prospect = await self._tools.get(spec.id).prospect(arguments)
+        if prospect.refusal is not None:
+            return await self._fail(task, graph, decision, authorization, prospect.refusal)
         targets = approved_targets(decision)
         where = f" on {', '.join(targets)}" if targets else ""
         stated = _stated(spec, arguments)
@@ -1400,7 +1451,7 @@ class Executor:
             status=ApprovalStatus.PENDING,
             decision_id=decision.id,
             expires_at=decision.created_at + self._approval_ttl,
-            metadata={ASKED: self._asked(task, step, spec, arguments)},
+            metadata={ASKED: self._asked(task, step, spec, arguments, prospect.target)},
         )
         await self._approvals.add(approval)  # stored before the task waits on it (ADR 0015 §6)
         task = await self._engine.request_approval(decision.task_id, approval)
@@ -1446,7 +1497,12 @@ class Executor:
         )
 
     def _asked(
-        self, task: Task, step: TaskStep, spec: CapabilitySpec, arguments: JsonMapping
+        self,
+        task: Task,
+        step: TaskStep,
+        spec: CapabilitySpec,
+        arguments: JsonMapping,
+        target: Target | None,
     ) -> dict[str, JsonValue]:
         """The facts of the question, kept beside it: what a surface shows without recomposing it.
 
@@ -1462,7 +1518,7 @@ class Executor:
         ``tests/api/test_approvals.py`` pins these keys against the fields that read them: a name
         written on one side only would be a page that quietly shows nothing.
         """
-        return {
+        asked: dict[str, JsonValue] = {
             "description": spec.description,
             "risk": spec.risk.value,
             "max_privacy": task.max_privacy.value,
@@ -1471,6 +1527,10 @@ class Executor:
             "grant_uses": SINGLE_USE,
             "grant_seconds": int(self._authorization_ttl.total_seconds()),
         }
+        if target is not None:
+            asked["target"] = target.resolved
+            asked["does"] = target.does
+        return asked
 
     async def _fail(
         self,
@@ -1483,7 +1543,9 @@ class Executor:
         """Nothing ran: the step is FAILED with the reason, so the task does not hang (§33)."""
         assert decision.step_id is not None
         graph = await self._engine.fail_step(task.id, decision.step_id, error)
-        return Execution(task, decision.step_id, graph, decision, authorization, None, None, None)
+        return Execution(
+            task, decision.step_id, graph, decision, authorization, None, None, None, error
+        )
 
     # ----------------------------------------------------------------------------------
     # The tool and its audit

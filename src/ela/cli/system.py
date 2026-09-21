@@ -6,13 +6,14 @@ said, and if the database did not answer the exit code is the one for a refusal,
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from collections.abc import Mapping, Sequence
+from typing import Annotated, Any, Final
 
 import typer
 
 from ela.cli import client
 from ela.cli.errors import handled
-from ela.cli.output import Json, emit, fields, table
+from ela.cli.output import Json, emit, fields
 
 __all__ = ["approvals", "diagnostics", "health", "perception", "sensor"]
 
@@ -135,6 +136,34 @@ def perception(as_json: Json = False) -> None:
     emit(payload, as_json, fields(rows))
 
 
+QUESTION_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "description",
+        "risk",
+        "max_privacy",
+        "goal",
+        "stated",
+        "grant_uses",
+        "grant_seconds",
+        "target",
+        "does",
+    }
+)
+"""Every field of the question this surface shows, declared here so it can be checked.
+
+``ela task approve`` is the first yes anybody gives, so this is an **answering surface**, and the
+rule of M13.1 dec. H holds for it as it holds for the two pages: *a surface may answer a question
+only if it shows everything that question names.* The pages show the parts because a page cannot
+make somebody read a sentence (M12.5 dec. F); here the sentence is shown too, and the parts
+beside it.
+
+The gap this closes is older than M13.1 — M12.5 gave the bag of the question to the pages and left
+the command line with the sentence — and what made it visible was adding two fields to the bag.
+``tests/api/test_answering_surfaces.py`` compares this set with ``Asked`` in both directions: a
+field added to the question tomorrow without a line below fails the suite.
+"""
+
+
 @handled
 def approvals(
     limit: Annotated[int | None, typer.Option("--limit", min=1, help="at most this many")] = None,
@@ -144,17 +173,61 @@ def approvals(
 
     A request whose task has moved on — stopped, expired — is not shown: answering it would no
     longer do anything, and asking for an answer that cannot land is asking the impossible.
+
+    **One block per question, not a row**: a question names nine things, and nine columns are a
+    dump rather than something a person reads before saying yes.
     """
     with client.connect() as api:
         payload = api.get("/approvals", client.query(limit=limit))
-    emit(
-        payload,
-        as_json,
-        table(
-            ("approval", "task", "capability", "targets", "asks"),
-            [
-                (one["id"], one["task_id"], one["capability_id"], one["targets"], one["prompt"])
-                for one in payload
-            ],
-        ),
-    )
+    emit(payload, as_json, _questions(payload))
+
+
+def _questions(payload: Sequence[Mapping[str, Any]]) -> str:
+    """The waiting questions, one block each, or the sentence that says there are none."""
+    if not payload:
+        return "nothing to show"
+    return "\n\n".join(fields(_rows(one)) for one in payload)
+
+
+def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    """What a question names, in the order somebody reads it before answering.
+
+    Who is asking and about what, then how much it costs to say yes, then what exactly it will
+    do. The two facts of a file (M13.1 dec. G) sit next to the targets they resolve.
+
+    **Two expiries, and each says whose it is**: the question stops being answerable at one
+    instant, and the grant a "yes" mints lives for another — reading one as the other would be
+    reading the life of a permission off the deadline of a request.
+
+    ``does`` is rendered as the capability wrote it: this surface owns no sentence about files
+    (dec. G, blocker 2 of the proof by hand).
+    """
+    return [
+        ("approval", one["id"]),
+        ("task", one["task_id"]),
+        ("capability", one["capability_id"]),
+        ("what", one.get("description") or None),
+        ("risk", one.get("risk")),
+        ("may go", one.get("max_privacy")),
+        ("question expires", one.get("expires_at")),
+        ("grant if you say yes", _terms(one.get("grant_uses"), one.get("grant_seconds"))),
+        ("step goal", one.get("goal") or None),
+        ("declared", one.get("stated") or None),
+        ("targets", one["targets"]),
+        ("file", one.get("target") or None),
+        ("does", one.get("does") or None),
+        ("asks", one["prompt"]),
+    ]
+
+
+def _terms(uses: int | None, seconds: int | None) -> str | None:
+    """What the "yes" mints: how many uses, and for how long (ADR 0012 §2).
+
+    Half of it is not an answer — «one use» without «for how long» is a permission of unknown
+    life — so either both are there or neither is.
+    """
+    if uses is None or seconds is None:
+        return None
+    minutes, remainder = divmod(seconds, 60)
+    span = f"{minutes} minutes" if not remainder else f"{seconds} seconds"
+    return f"{uses} use, within {span}" if uses == 1 else f"{uses} uses, within {span}"

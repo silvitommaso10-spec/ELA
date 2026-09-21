@@ -19,7 +19,16 @@ from ela.domain import RiskLevel
 from ela.permissions import RISK_POLICY, Rule
 from ela.ports import PermissionGuardianPort
 
-ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0011-permission-guardian.md"
+ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
+ADR_PATH = ADR_DIR / "0011-permission-guardian.md"
+REVISING = "Policy rivista:"
+REVISING_ADRS = ((ADR_DIR / "0045-filesystem-and-high.md", REVISING),)
+"""ADRs that change a row of the policy, under a label, with the whole table rewritten.
+
+An ADR is immutable: ADR 0011 §3 keeps saying what it decided, and the row that moved is read from
+the ADR that moved it (M13.1 dec. O). Additions do not exist here — the table has one row per risk
+level and the levels are §29's five — so a revision must name **every** level, and a revision that
+dropped one would fail ``test_policy_table_covers_every_risk_level``."""
 ROW = re.compile(r"^\| (SAFE|LOW|MEDIUM|HIGH|CRITICAL) \| `(\w+)` \| (.+) \|$")
 SIGNATURE = re.compile(r"```python\n(def decide\(.*?\) -> PermissionDecision: \.\.\.)\n```", re.S)
 
@@ -72,14 +81,41 @@ def coded_signature() -> list[Parameter]:
     ]
 
 
+def section(path: Path, label: str) -> str:
+    """The text after ``label`` in ``path``, up to the next heading: the table it introduces."""
+    text = path.read_text(encoding="utf-8")
+    assert label in text, f"{path.name} must carry the label {label!r}"
+    return text.split(label, 1)[1].split("\n#", 1)[0]
+
+
+def policy_of_today() -> dict[RiskLevel, Rule]:
+    """ADR 0011's table, with every later revision applied in order."""
+    rows = documented_policy(ADR_PATH.read_text(encoding="utf-8"))
+    for path, label in REVISING_ADRS:
+        revised = documented_policy(section(path, label))
+        assert set(revised) == set(rows), f"{path.name} must rewrite the whole table"
+        rows = revised
+    return rows
+
+
 def test_policy_table_matches_the_code() -> None:
-    documented = documented_policy(ADR_PATH.read_text(encoding="utf-8"))
+    documented = policy_of_today()
     assert list(documented) == list(RISK_POLICY)
     assert documented == dict(RISK_POLICY)
 
 
+def test_the_row_that_moved_is_read_from_the_adr_that_moved_it() -> None:
+    """ADR 0011 keeps saying ``DENY`` for HIGH, and that is not drift: it is history (dec. O)."""
+    original = documented_policy(ADR_PATH.read_text(encoding="utf-8"))
+
+    assert original[RiskLevel.HIGH] is Rule.DENY
+    assert policy_of_today()[RiskLevel.HIGH] is Rule.APPROVAL_EVERY_USE
+    assert original[RiskLevel.CRITICAL] is policy_of_today()[RiskLevel.CRITICAL] is Rule.DENY
+
+
 def test_policy_table_covers_every_risk_level() -> None:
     assert set(documented_policy(ADR_PATH.read_text(encoding="utf-8"))) == set(RiskLevel)
+    assert set(policy_of_today()) == set(RiskLevel)
 
 
 def test_decide_signature_matches_the_port() -> None:
@@ -90,7 +126,7 @@ def test_a_drifted_policy_table_is_detected() -> None:
     """Negative case: a rule swapped, a level made permissive; each must show."""
     text = ADR_PATH.read_text(encoding="utf-8")
     for before, after in [
-        ("| HIGH | `DENY` |", "| HIGH | `APPROVAL_UNLESS_AUTHORIZED` |"),
+        ("| HIGH | `DENY` |", "| HIGH | `ALLOW` |"),
         ("| LOW | `ALLOW_WITHIN_SCOPE` |", "| LOW | `ALLOW` |"),
     ]:
         drifted = text.replace(before, after, 1)

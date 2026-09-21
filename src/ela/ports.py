@@ -27,6 +27,7 @@ comparison in ``tests/contracts/test_protocols.py`` covers what ``isinstance`` c
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Final, Protocol, runtime_checkable
@@ -147,6 +148,7 @@ __all__ = [
     "PerceptionProbe",
     "PermissionGuardianPort",
     "PortError",
+    "Prospect",
     "ProviderRegistryPort",
     "ROUTING_EMPTY_ROUTES",
     "ROUTING_ERROR_CODES",
@@ -172,6 +174,7 @@ __all__ = [
     "SPEECH_UNREACHABLE",
     "ScreenCapturePort",
     "SpeechPort",
+    "Target",
     "TaskRepository",
     "TextRecognitionPort",
     "ToolPort",
@@ -1182,6 +1185,44 @@ class AuthorizingGuardianPort(Protocol):
         """
 
 
+@dataclass(frozen=True, slots=True)
+class Target:
+    """Where a path really points, and what a "yes" would do to it (M13.1 dec. G).
+
+    ``resolved`` is the absolute path the call will touch, ``exists`` says whether a regular file
+    is there **now**, and ``does`` is the sentence the user reads before answering. All three are
+    read from the machine with the classification the tool and the verifier share (ADR 0014 §2),
+    never from what the caller declared.
+
+    **``does`` belongs to the capability, not to the fact.** «Overwrites a file that is already
+    there» is true of a write and false of a read, and a warning that says the wrong thing
+    teaches the reader to stop reading it. The tool writes its own sentence, and no surface owns
+    a phrase it could lend to a capability that never asked for one.
+    """
+
+    resolved: str
+    exists: bool
+    does: str
+
+
+@dataclass(frozen=True, slots=True)
+class Prospect:
+    """What a call would meet on the machine **now**, read without running anything.
+
+    The whole of M13.1's rule in one answer: *a question is composed only for something that,
+    approved now, would succeed on the disk as it is now* (ADR 0045 §6-bis). ``refusal`` is what
+    this call would fail with if it ran this instant; ``target`` is what the question would say
+    about the file. A refusal means **there is no question to ask** — the step fails where the
+    question would have been composed, and nobody is woken to approve what is already lost.
+
+    Both come from the same code the tool refuses with when it really runs: one fact, one
+    definition, one place.
+    """
+
+    target: Target | None = None
+    refusal: ErrorMetadata | None = None
+
+
 @runtime_checkable
 class ToolPort(Protocol):
     """The implementation of one capability (§27, §28).
@@ -1210,6 +1251,23 @@ class ToolPort(Protocol):
         read as a yes (§33). The executor reads it to decide whether a run needs the STARTED
         record of ADR 0021 §1 — a tool that can be repeated is repaired by repeating it
         (ADR 0015 §8), one that cannot is never started twice for the same step.
+        """
+
+    async def prospect(self, arguments: JsonMapping) -> Prospect:
+        """What this call would meet now: what to show, and whether to ask at all.
+
+        Read-only and **not an execution**: it is how a question learns the facts it must name
+        before anybody answers it, and how the executor learns that there is nothing to ask
+        (M13.1 dec. G, and the rule of ADR 0045 §6-bis). Asked of the component that holds the
+        root and the shared classification, so that no second definition of «what would happen»
+        can drift from the one that really refuses.
+
+        A tool that works on no path answers an empty :class:`Prospect`: nothing to show, and
+        nothing to refuse in advance.
+
+        ``async`` because it reads the filesystem, which is the criterion of ADR 0005 §1 — and
+        because a port has one mode: a sync member on an async port would be the first place
+        somebody stopped being able to say what this one is.
         """
 
     async def execute(

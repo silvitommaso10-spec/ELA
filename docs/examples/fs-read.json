@@ -1,0 +1,29 @@
+{
+  "_nota": [
+    "Il secondo piano della prova a mano di M13.1: ELA legge il file che fs-write.json ha",
+    "lasciato. Lancialo dopo quello, o il file non c'è e il passo fallisce con path.missing.",
+    "`fs.read` è MEDIUM e non HIGH, e la differenza non è un'impressione: oggi tutt'e due",
+    "chiedono a ogni uso, perché ogni grant è monouso; ciò che le separa è il domani — una",
+    "policy permanente di §59 potrà coprire una MEDIUM e non raggiungerà mai una HIGH.",
+    "Dove vanno i byte: il CONTENUTO sta nel risultato, e si legge con `ela task results`.",
+    "Nell'audit vanno il percorso e la dimensione, mai i byte (§57: ciò che entra in un log",
+    "append-only non si redige più).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "leggere un file fuori dalla workspace",
+  "steps": [
+    {
+      "id": "d1b7c4a2-9e35-4f18-8c60-000000000002",
+      "goal": "rileggere il file che ho appena scritto",
+      "required_capabilities": ["fs.read"],
+      "arguments": {
+        "path": "ELA/prova.md",
+        "purpose": "la prova a mano del filesystem"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "il contenuto del file è nel risultato dello step",
+      "success_conditions": ["fs.file_exists", "fs.content_matches"],
+      "requires_authorization": true
+    }
+  ]
+}

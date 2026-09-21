@@ -28,6 +28,8 @@ API_TOKEN = "ELA_API_TOKEN"
 PERCEPTION = "ELA_PERCEPTION_ENABLED"
 CAPTURES = "ELA_CAPTURE_DIR"
 POLL = "ELA_NODE_POLL_SECONDS"
+FS_ROOT = "ELA_FS_ROOT"
+FS_SCOPE = "ELA_FS_SCOPE"
 
 
 def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> None:
@@ -44,6 +46,13 @@ def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> No
     # a test that left the default alone would create ``~/.ela/captures`` on whoever ran it.
     monkeypatch.setenv(CAPTURES, str(tmp_path / "captures"))
     monkeypatch.setenv(API_TOKEN, TOKEN)
+    # The folder ``fs.read`` and ``fs.write`` may touch (M13.1 dec. A): both lines or no start-up,
+    # and under ``tmp_path`` for the reason the captures are — a test that left them out would be
+    # a test that cannot start, and one that named a real folder would write in somebody's home.
+    # The scope is ``ELA`` and not ``ela``: it is the value ``GETTING_STARTED.md`` tells somebody
+    # to write and the one the example plans use, so the suite walks the paths of the guide.
+    monkeypatch.setenv(FS_ROOT, str(_declared_root(tmp_path)))
+    monkeypatch.setenv(FS_SCOPE, "ELA")
     # Off by default, but a fixture that turned it on before this ran keeps it on: the
     # environment has already been emptied of ``ELA_`` by ``_only_the_declared_environment``,
     # so anything present here was put there by the test on purpose.
@@ -54,6 +63,18 @@ def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> No
     monkeypatch.setenv(POLL, os.environ.get(POLL, "1"))
     for name, value in extra.items():
         monkeypatch.setenv(name, value)
+
+
+def _declared_root(tmp_path: Path) -> Path:
+    """A root that exists and is nothing of ELA's own: created here, because ELA never creates it.
+
+    It sits beside the workspace and the captures rather than inside them, which is what the
+    start-up check requires: the folder ELA may touch for the user cannot contain, or be
+    contained by, the folder ELA uses to exist (M13.1 dec. F).
+    """
+    root = tmp_path / "files"
+    root.mkdir(exist_ok=True)
+    return root
 
 
 def database_url(tmp_path: Path) -> str:

@@ -610,7 +610,13 @@ def world(
     device_port = FakeDeviceRegistry((device,))
     devices = DeviceRegistry(device_port, clock, audit, ids, heartbeat_ttl=HEARTBEAT_TTL)
     orchestrator = DeviceOrchestrator(
-        devices, tool_registry, audit, ids, clock, verifiers=verifier_registry
+        devices,
+        tool_registry,
+        audit,
+        ids,
+        clock,
+        verifiers=verifier_registry,
+        capabilities=registry,
     )
     assignments = Assignments(
         FakeAssignmentStore() if assignment_store is None else assignment_store,

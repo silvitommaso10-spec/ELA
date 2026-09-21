@@ -35,6 +35,7 @@ from pydantic import (
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings.exceptions import SettingsError
 
+import ela
 from ela.composition.errors import ConfigurationError
 from ela.context import ContextSettings
 from ela.devices.settings import DeviceSettings
@@ -68,6 +69,7 @@ from ela.tools.settings import (
     ListenSettings,
     VoiceSettings,
     WorkspaceSettings,
+    speech_dir_beside,
 )
 
 __all__ = [
@@ -405,6 +407,68 @@ Core that is never coming back is a process nobody will notice is useless.
 """
 
 
+class FilesystemSettings(BaseSettings):
+    """Where ``fs.read`` and ``fs.write`` may work: the pair, declared together (M13.1 dec. A).
+
+    **Neither has a default, and that is the decision.** The boundary is the *pair* — a relative
+    scope alone names nothing on disk, a root alone is a house with no door — so ELA refuses to
+    start until both are written, with one message naming both lines.
+
+    A default root would have been ELA's own folder or the user's home; a default scope would
+    have let somebody declare a root and still not be able to write in it, for a value they never
+    saw and a folder nobody created. **A silent narrowing is worse than a refusal at start-up,
+    because a refusal is read.**
+
+    The root is never created by ELA, and what it may not touch is in
+    :meth:`Settings._a_root_that_is_not_ela_s_own`, derived rather than listed.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="ELA_", env_file=".env", extra="ignore")
+
+    fs_root: Path | None = None
+    """``ELA_FS_ROOT``: the directory ``fs.read`` and ``fs.write`` are relative to."""
+
+    fs_scope: str | None = None
+    """``ELA_FS_SCOPE``: the only folder under the root those two may touch, a scope entry."""
+
+    @model_validator(mode="after")
+    def _both_or_neither(self) -> FilesystemSettings:
+        missing = [
+            name
+            for name, value in (("ELA_FS_ROOT", self.fs_root), ("ELA_FS_SCOPE", self.fs_scope))
+            if value is None
+        ]
+        if missing:
+            raise ValueError(
+                "ELA cannot start without the folder it may read and write outside its "
+                f"workspace: {' and '.join(missing)} "
+                f"{'is' if len(missing) == 1 else 'are'} missing. Write both lines in .env, "
+                "for example:\n"
+                "    ELA_FS_ROOT=/Users/you/Documents\n"
+                "    ELA_FS_SCOPE=ELA\n"
+                "They are one boundary and they are declared together: a scope without a root "
+                "names nothing on disk, and ELA does not choose the folder for you (M13.1)."
+            )
+        if not is_valid_scope_entry(self.fs_scope or ""):
+            raise ValueError(
+                f"ELA_FS_SCOPE must be a relative path with no empty, '.' or '..' segment and no "
+                f"backslash, not {self.fs_scope!r}: it is the scope of fs.read and fs.write, and "
+                "a scope ELA cannot compare a path against protects nothing"
+            )
+        return self
+
+    @property
+    def root(self) -> Path:
+        """The declared root, expanded and absolute. Never created here."""
+        assert self.fs_root is not None  # noqa: S101 — the validator refuses the start-up
+        return self.fs_root.expanduser().absolute()
+
+    @property
+    def scope(self) -> str:
+        assert self.fs_scope is not None  # noqa: S101 — the validator refuses the start-up
+        return self.fs_scope
+
+
 class NodeSettings(BaseSettings):
     """What a node reads from the environment, from ``ELA_NODE_*`` (M12.3).
 
@@ -440,6 +504,35 @@ class NodeSettings(BaseSettings):
     node_retry_ceiling: Annotated[int, Field(gt=0)] = DEFAULT_NODE_RETRY_CEILING
 
 
+def _sqlite_file(db_url: str) -> Path | None:
+    """The file a sqlite URL names, or ``None`` when the database is not a file at all."""
+    prefix = "sqlite:///"
+    if not db_url.startswith(prefix):
+        return None
+    rest = db_url[len(prefix) :]
+    return None if rest in {"", ":memory:"} else Path(rest)
+
+
+def _env_file() -> Path | None:
+    """The ``.env`` this process would read, when there is one: ``None`` when nobody wrote it."""
+    env = Path(".env").absolute()
+    return env if env.exists() else None
+
+
+def _ela_source_tree() -> Path:
+    """Where ELA's own code lives: a directory somebody could edit.
+
+    The package's parent — ``src/`` in a checkout, ``site-packages`` in an install — and the
+    checkout's root when there is a ``pyproject.toml`` above it. Not a constant: it is asked of
+    the module, so it is right wherever ELA is running from.
+    """
+    package = Path(ela.__file__).resolve().parent
+    checkout = package.parent.parent
+    if (checkout / "pyproject.toml").exists():
+        return checkout
+    return package.parent
+
+
 class Settings(BaseModel):
     """Everything ELA reads from the environment, in one immutable object (ADR 0023 §2).
 
@@ -473,9 +566,73 @@ class Settings(BaseModel):
     Without a topic ELA is silent — that is a configuration and not a failure — and the iPhone
     still sees every question when the user opens the page."""
     context: ContextSettings
+    filesystem: FilesystemSettings
     node: NodeSettings
     """What a node on this machine reads (M12.3). Held here so that ``.env.example`` and
     ``VARIABLES`` document it with everything else — the Core itself reads none of it."""
+
+    @model_validator(mode="after")
+    def _a_root_that_is_not_ela_s_own(self) -> Settings:
+        """The declared root must not hold, or sit inside, what ELA uses to exist (M13.1 dec. F).
+
+        **The list is derived, not written**, so it cannot go stale the day a setting is added:
+        it is what the other sections already say — the workspace of §23, the database, the
+        captures and the audio beside them, the folder where a node keeps its secret
+        (ADR 0039 §6), the ``.env`` this process actually read, and ELA's own source tree when it
+        is reachable. ``~`` is refused because it *contains* ``~/.ela``, and not by a special case
+        for ``~``.
+
+        The root is **resolved here and the answer is said out loud**: a root that does not exist,
+        or that is a symbolic link — the shape ``~/Documents`` takes when iCloud's "Desktop &
+        Documents" is on — stops the start-up with a sentence, instead of dying at every call with
+        ``path.symlink`` and no explanation.
+        """
+        root = self.filesystem.root
+        if root.is_symlink():
+            raise ValueError(
+                f"ELA_FS_ROOT is a symbolic link ({root} -> {root.readlink()}). ELA refuses to "
+                "walk through a link to reach your files (§33), so every read and write under it "
+                "would fail one by one with path.symlink. Point ELA_FS_ROOT at the real "
+                "directory. On macOS this is what ~/Documents becomes when iCloud Drive's "
+                "'Desktop & Documents Folders' is on."
+            )
+        if not root.is_dir():
+            raise ValueError(
+                f"ELA_FS_ROOT does not exist, or is not a directory: {root}. ELA never creates "
+                "this folder — it is yours, not ELA's — so make it, or point the variable at one "
+                "that is already there."
+            )
+        resolved = root.resolve()
+        for what, place in self._ela_s_own().items():
+            if resolved == place or resolved in place.parents or place in resolved.parents:
+                raise ValueError(
+                    f"ELA_FS_ROOT ({resolved}) and {what} ({place}) contain one another. The "
+                    "folder ELA may read and write for you cannot be the one ELA uses to exist: "
+                    "fs.write is HIGH, and HIGH is not a permission to edit ELA's own state "
+                    "(M13.1). Choose a folder of your own, such as a subfolder of your documents."
+                )
+        return self
+
+    def _ela_s_own(self) -> dict[str, Path]:
+        """What ELA uses to exist, read off the settings that already name it."""
+        state = self.node.node_state_dir.expanduser().absolute().resolve()
+        places = {
+            "the workspace": self.workspace.workspace_dir,
+            "the capture store": self.captures.capture_dir,
+            "the audio ELA sweeps at start-up": speech_dir_beside(self.captures.capture_dir),
+            "the folder a node keeps its secret in": state,
+        }
+        # The three that may not be there: a database that is not a file, a ``.env`` nobody
+        # wrote. One loop rather than three conditions, so that "it is not there" is one answer
+        # and not three shapes of the same answer.
+        for what, place in (
+            ("the database", _sqlite_file(self.persistence.db_url)),
+            ("the .env ELA read", _env_file()),
+            ("ELA's own source tree", _ela_source_tree()),
+        ):
+            if place is not None:
+                places[what] = place
+        return {what: place.expanduser().absolute().resolve() for what, place in places.items()}
 
     @classmethod
     def load(cls) -> Settings:
@@ -497,6 +654,7 @@ class Settings(BaseModel):
                 routing=RoutingSettings(),
                 api=ApiSettings(),
                 core=CoreSettings(),
+                filesystem=FilesystemSettings(),
                 perception=PerceptionSettings(),
                 captures=CaptureSettings(),
                 voice=VoiceSettings(),
@@ -567,10 +725,15 @@ def explain(invalid: ValidationError) -> str:
 
     A whole-model check — the retired ``ELA_ANTHROPIC_MODEL`` is one — has no field to point at,
     and its own message already names what it is about: it is quoted as it stands.
+
+    **A message of several lines is indented on all of them.** One problem is one block, and a
+    block whose first line sits under «ELA is not configured:» while the rest runs flush left
+    reads as two problems, the second of which nobody wrote — and these messages are read by a
+    person who has just written a ``.env`` (M13.1 dec. R).
     """
     lines = []
     for error in invalid.errors():
-        message = error["msg"].removeprefix("Value error, ")
+        message = error["msg"].removeprefix("Value error, ").replace("\n", "\n  ")
         location = error["loc"]
         lines.append(f"  {_variable(location)}: {message}" if location else f"  {message}")
     return "ELA is not configured:\n" + "\n".join(lines)

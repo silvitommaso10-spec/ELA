@@ -9,7 +9,7 @@ scope protects the folder, the tool protects the filesystem.
 Where the path leads is classified by :mod:`ela.tools.paths`, once for this tool and for its
 verifier (ADR 0014 §2): one order, one set of codes, so the two cannot disagree on a path. Each
 refusal is a FAILED result with its code and nothing written (ADR 0013 §12): :data:`PATH_INVALID`,
-:data:`PATH_OUTSIDE_WORKSPACE`, :data:`PATH_SYMLINK`, :data:`PATH_IS_DIRECTORY`; a target that
+:data:`PATH_OUTSIDE_ROOT`, :data:`PATH_SYMLINK`, :data:`PATH_IS_DIRECTORY`; a target that
 cannot be reached or is not a regular file is :data:`IO_ERROR` with the reason — the tool's I/O
 failure code, the shared classification in the message. A missing target is what the tool
 creates.
@@ -34,7 +34,7 @@ from ela.tools.paths import (
     PATH_INVALID,
     PATH_IS_DIRECTORY,
     PATH_MISSING,
-    PATH_OUTSIDE_WORKSPACE,
+    PATH_OUTSIDE_ROOT,
     PATH_SYMLINK,
     classify,
     resolve_workspace,
@@ -55,7 +55,7 @@ NOTES_TOOL_NAME: Final = "workspace-notes"
 IO_ERROR: Final = "io.error"
 
 REFUSALS: Final[frozenset[str]] = frozenset(
-    {PATH_INVALID, PATH_OUTSIDE_WORKSPACE, PATH_SYMLINK, PATH_IS_DIRECTORY}
+    {PATH_INVALID, PATH_OUTSIDE_ROOT, PATH_SYMLINK, PATH_IS_DIRECTORY}
 )
 """The path problems the tool names with their own code; the rest is :data:`IO_ERROR`."""
 
@@ -77,7 +77,7 @@ class WriteNoteTool(Tool):
             ARGUMENTS_INVALID,
             PATH_INVALID,
             PATH_SYMLINK,
-            PATH_OUTSIDE_WORKSPACE,
+            PATH_OUTSIDE_ROOT,
             PATH_IS_DIRECTORY,
             IO_ERROR,
         }

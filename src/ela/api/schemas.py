@@ -335,6 +335,18 @@ class Asked(BaseModel):
     grant_uses: int | None = None
     grant_seconds: int | None = None
     """The terms of the grant a "yes" mints: how many uses, and for how long."""
+    target: str = ""
+    """The **resolved** path the call would touch, when it touches one (M13.1 dec. G).
+
+    Not the argument the plan wrote: where it really lands, read from the machine with the
+    classification the tool and the verifier share. Empty when the capability touches no file."""
+    does: str = ""
+    """What saying yes would do to that file, **in the capability's own words** (dec. G).
+
+    Not a phrase a surface owns: «overwrites a file that is already there» is true of a write and
+    false of a read, and an advisory that says the wrong thing teaches the reader to stop reading
+    it. The tool writes the sentence and it travels with the question; a surface renders it and
+    never composes one. Empty when the question is not about a file."""
 
 
 class ApprovalOut(BaseModel):
@@ -363,6 +375,8 @@ class ApprovalOut(BaseModel):
     stated: tuple[str, ...]
     grant_uses: int | None
     grant_seconds: int | None
+    target: str
+    does: str
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:

@@ -12,7 +12,6 @@ import inspect
 import re
 from pathlib import Path
 
-from ela.permissions import production_catalogue
 from ela.testing.fakes import (
     FakeClock,
     FakeIdGenerator,
@@ -121,7 +120,6 @@ def test_the_conseguenze_count_the_rules_and_the_capabilities_of_today() -> None
     assert "**venticinque**" in conseguenze()
     assert len(ports_before(ADR_PATH.with_name("0043-companion.md"))) == 25
     assert "**restano otto**" in conseguenze()
-    assert len(production_catalogue().specs()) == 8
 
 
 # ----------------------------------------------------------------------------------------
@@ -129,25 +127,37 @@ def test_the_conseguenze_count_the_rules_and_the_capabilities_of_today() -> None
 # ----------------------------------------------------------------------------------------
 
 
-def test_the_verifier_table_says_what_each_verifier_declares(tmp_path: Path) -> None:
-    """§14: one row per capability, and its last cell is the ``reads_the_machine`` the verifier of
-    the Core declares — the table the orchestrator's filter F7 is built on."""
+def test_the_verifier_table_says_what_each_verifier_declared_when_it_was_written(
+    tmp_path: Path,
+) -> None:
+    """§14: one row per capability, and its last cell is what that verifier declares.
+
+    **Appuntata a ciò che l'ADR vide, non al mondo di oggi** (M13.1 dec. K): ADR 0038 saw eight
+    capabilities and said «Quattro capability viaggiano, quattro no», which was true and stays
+    true of what it described. M13.1 added two, and the pin on **today's** total lives in
+    ``tests/docs/test_adr_filesystem.py``, with the ADR that changed it — the shape
+    ``_rules_up_to`` already gives the rules. What this test still guarantees is that every row
+    this ADR wrote is still the truth about that verifier.
+    """
     captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
-    verifiers = production_verifiers(root=tmp_path, router=FakeModelRouter(), captures=captures)
+    verifiers = production_verifiers(
+        root=tmp_path, router=FakeModelRouter(), captures=captures, fs_root=tmp_path / "files"
+    )
     documented = {
         match.group(1): match.group(2) == "True"
         for line in adr_text().splitlines()
         if (match := VERIFIER_ROW.match(line))
     }
-
-    assert documented == {
+    coded = {
         verifier.capability_id: verifier.reads_the_machine for verifier in verifiers.verifiers()
     }
+
+    assert documented == {cid: coded[cid] for cid in documented}
     assert "**Quattro capability viaggiano, quattro no.**" in adr_text()
     assert sorted(documented.values()) == [False] * 4 + [True] * 4
 
 
-def test_fifteen_is_honoured_by_one_tool_of_eight(tmp_path: Path) -> None:
+def test_fifteen_is_honoured_by_one_tool_of_the_eight_this_adr_saw(tmp_path: Path) -> None:
     """Criterion 12, the user's own sentence pinned: «§15 oggi è onorato da un tool su otto.»
 
     Among the capabilities that may travel (§14), the tools that can be **run again** are exactly
@@ -159,9 +169,13 @@ def test_fifteen_is_honoured_by_one_tool_of_eight(tmp_path: Path) -> None:
     changes its idempotency, or if a fourth capability starts travelling.
     """
     captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
-    verifiers = production_verifiers(root=tmp_path, router=FakeModelRouter(), captures=captures)
+    verifiers = production_verifiers(
+        root=tmp_path, router=FakeModelRouter(), captures=captures, fs_root=tmp_path / "files"
+    )
     travels = {v.capability_id for v in verifiers.verifiers() if not v.reads_the_machine}
-    tools = production_tools(root=tmp_path, **_FAKE_MACHINE, captures=captures)
+    tools = production_tools(
+        root=tmp_path, **_FAKE_MACHINE, captures=captures, fs_root=tmp_path / "files"
+    )
 
     repeatable = {
         tool.name
@@ -170,7 +184,6 @@ def test_fifteen_is_honoured_by_one_tool_of_eight(tmp_path: Path) -> None:
     }
 
     assert repeatable == {ECHO_TOOL_NAME}
-    assert len(tuple(production_catalogue().specs())) == 8
     assert "§15 oggi è onorato da un tool su otto" in adr_text()
 
 

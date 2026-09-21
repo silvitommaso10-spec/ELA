@@ -40,6 +40,7 @@ from ela.tools.errors import (
     ToolNotFound,
     VerifierNotFound,
 )
+from ela.tools.fs import FsReadTool, FsWriteTool
 from ela.tools.listen import ListenTool
 from ela.tools.model import ModelCompleteTool
 from ela.tools.notes import WriteNoteTool
@@ -49,6 +50,8 @@ from ela.tools.verifiers import (
     ONLINE_SPEECH_VERIFIER_NAME,
     CaptureScreenVerifier,
     EchoVerifier,
+    FsReadVerifier,
+    FsWriteVerifier,
     ListenVerifier,
     ModelCompleteVerifier,
     ReadScreenTextVerifier,
@@ -187,6 +190,7 @@ def production_tools(
     speech_online: SpeechPort,
     voice_id: str | None,
     model: str,
+    fs_root: Path | str,
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -205,6 +209,11 @@ def production_tools(
             SpeakOnlineTool(
                 speech_online, clock, ids, voice_id=voice_id, model=model, enabled=voice_enabled
             ),
+            # The filesystem outside the workspace (M13.1). ``fs_root`` is not ``root``: the
+            # workspace is ELA's own folder, this is the one the user declared with
+            # ``ELA_FS_ROOT``, and neither tool ever creates it.
+            FsReadTool(fs_root, clock, ids),
+            FsWriteTool(fs_root, clock, ids),
         )
     )
 
@@ -268,7 +277,7 @@ def node_tools(
 
 
 def production_verifiers(
-    *, root: Path | str, router: ModelRouterPort, captures: CaptureStore
+    *, root: Path | str, router: ModelRouterPort, captures: CaptureStore, fs_root: Path | str
 ) -> VerifierRegistry:
     """The verifiers of :func:`production_tools`, one per capability.
 
@@ -287,5 +296,7 @@ def production_verifiers(
             # The same class, a second capability: two permissions over one act, verified by the
             # same two conditions (ADR 0034 §6). What differs is which grant was spent.
             SpeakVerifier(VOICE_SPEAK_ONLINE, name=ONLINE_SPEECH_VERIFIER_NAME),
+            FsReadVerifier(fs_root),
+            FsWriteVerifier(fs_root),
         )
     )

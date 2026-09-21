@@ -33,6 +33,8 @@ from ela.tools import (
     COMMON_FAILURE_CODES,
     CORE_ECHO,
     ECHO_MESSAGE_MATCHES,
+    FS_READ,
+    FS_WRITE,
     MODEL_ANSWERED,
     MODEL_COMPLETE,
     MODEL_ROUTED_AS_ASKED,
@@ -69,9 +71,14 @@ STAYS = frozenset(
         PERCEPTION_CAPTURE_SCREEN,
         PERCEPTION_READ_SCREEN_TEXT,
         PERCEPTION_LISTEN,
+        FS_READ,
+        FS_WRITE,
     }
 )
-"""ADR 0038 §14: the four whose verifier reads the disk or the store of the machine it runs on."""
+"""ADR 0038 §14, as ADR 0045 extends it: the ones whose verifier reads the disk or the store of
+the machine it runs on. ``fs.read`` and ``fs.write`` joined them in M13.1, and **not because
+nobody sends them**: their verifier reads the Core's disk, where a file with the same path may
+exist — the false positive of §14, one root wider."""
 NOTE = "notes/riunione.md"
 NOTE_ARGUMENTS = {"path": NOTE, "body": "# Riunione\n\nGiovedì alle dieci.\n"}
 
@@ -91,7 +98,12 @@ def production(tmp_path: Path, provider: FakeModelProvider) -> VerifierRegistry:
     """The verifiers the Core runs, wired as :func:`production_verifiers` wires them."""
     router, _ = routing_for(provider)
     captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
-    return production_verifiers(root=tmp_path / "workspace", router=router, captures=captures)
+    return production_verifiers(
+        root=tmp_path / "workspace",
+        router=router,
+        captures=captures,
+        fs_root=tmp_path / "files",
+    )
 
 
 # ----------------------------------------------------------------------------------------
@@ -137,9 +149,10 @@ def test_the_refusal_comes_before_the_duplicate_check() -> None:
         VerifierRegistry((EchoVerifier(), _Silent()))  # type: ignore[arg-type]
 
 
-def test_four_production_verifiers_read_the_machine_and_four_do_not(
+def test_the_verifiers_that_read_this_machine_are_the_ones_that_say_so(
     production: VerifierRegistry,
 ) -> None:
+    """Four travel and six do not, since M13.1 (it was four and four until then)."""
     declared = {
         verifier.capability_id: verifier.reads_the_machine for verifier in production.verifiers()
     }

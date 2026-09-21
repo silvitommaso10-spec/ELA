@@ -68,6 +68,7 @@ from ela.domain import (
     TaskState,
 )
 from ela.ports import EnrollmentExpiredError
+from ela.tools import OVERWRITES, READS
 from tests.api.support import BASE, echo_plan, note_plan, queued
 
 LOOPBACK = "http://127.0.0.1"
@@ -968,3 +969,35 @@ async def test_a_question_links_to_the_summary_of_its_task(
     page = await console.get(f"/console/approval?id={identifier}")
 
     assert f'href="/console/task?id={task}"' in page.text
+
+
+def test_a_question_about_a_file_names_the_resolved_target_and_renders_its_sentence() -> None:
+    """M13.1 dec. G: two facts of the machine, and the sentence comes from the capability.
+
+    The page renders ``does`` as it stands. It owns no phrase of its own — that is blocker 2 of
+    the proof by hand, where a read was told it «overwrites a file that is already there».
+    """
+    writing = an_approval(target="/Users/tommaso/Documenti/ELA/nota.md", does=OVERWRITES)
+    reading = an_approval(target="/Users/tommaso/Documenti/ELA/nota.md", does=READS)
+
+    written = _pairs(writing, seen=True)
+    read = _pairs(reading, seen=True)
+
+    assert "/Users/tommaso/Documenti/ELA/nota.md" in written
+    assert "sovrascrive" in written or "overwrites" in written
+    assert "overwrite" not in read.lower(), "a read is not told it overwrites anything"
+
+
+def test_a_question_about_no_file_says_nothing_about_one() -> None:
+    """Eight capabilities of ten touch no file, and their question must not invent one."""
+    pairs = _pairs(an_approval(), seen=True)
+
+    assert "Il file" not in pairs and "Che cosa fa" not in pairs
+
+
+def test_the_two_facts_of_a_file_go_where_the_goal_goes() -> None:
+    """A resolved path is the user's own filesystem: the ceiling keeps it on the Mac (§57)."""
+    question = an_approval(target="/Users/tommaso/Documenti/ELA/nota.md", does=OVERWRITES)
+
+    assert "Il file" not in _pairs(question, seen=False)
+    assert "Che cosa fa" not in _pairs(question, seen=False)

@@ -106,12 +106,12 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.3c` | Implementata | Chi legge l'alimentazione: un campo che l'orchestratore pesa e che nessuna macchina produceva |
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
-| 13 — *senza nome* | `M13.1` | Proposta | Il filesystem fuori dalla workspace, e il primo HIGH |
-| 13 — *senza nome* | `M13.2` | Proposta | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
-| 13 — *senza nome* | `M13.3` | Proposta | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
-| 13 — *senza nome* | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
-| 13 — *senza nome* | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
-| 13 — *senza nome* | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
+| 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
+| 13 — Il permesso prima dell'azione | `M13.2` | Proposta | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
+| 13 — Il permesso prima dell'azione | `M13.3` | Proposta | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
+| 13 — Il permesso prima dell'azione | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
+| 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
+| 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
@@ -128,12 +128,12 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **44** | `docs/adr/NNNN-*.md` |
-| Milestone | **55, di cui 46 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **45** | `docs/adr/NNNN-*.md` |
+| Milestone | **55, di cui 47 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **26** | i `Protocol` di `src/ela/ports.py` |
-| Capability di produzione | **8** | `production_catalogue()` |
+| Capability di produzione | **10** | `production_catalogue()` |
 | Rotte dell'API | **48** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
@@ -161,32 +161,30 @@ sparisce il giorno in cui finisce lascia il lettore senza il filo.
 
 **Che cosa qui nessun test tiene.** I due criteri qui sopra li tiene `tests/docs/test_stato.py`
 **nella forma dei fatti, non delle parole**: che una fase abbia un nome esattamente quando una sua
-milestone è uscita da `Proposta` è un mondo chiuso con il suo caso negativo, e il giorno in cui
-M13.1 esce da `Proposta` la suite fallisce e dice che cosa riscrivere qui. Ciò che nessun test
-tiene è **il verbo di questa prosa**: se qui si scrive «è cominciata» dove i blocchi derivati
+milestone è uscita da `Proposta` è un mondo chiuso con il suo caso negativo. **Ha suonato il
+2026-09-21**, il giorno in cui M13.1 è uscita da `Proposta`, e ha detto che cosa riscrivere qui —
+che è tutto ciò che un appunto del genere deve fare. Ciò che nessun test tiene è **il verbo di
+questa prosa**: se qui si scrive «è cominciata» dove i blocchi derivati
 dicono «registrata», nessuna misura se ne accorge — l'unico controllo possibile sarebbe un
 confronto di stringhe, che la riscrittura successiva aggira, e una prova che non può fallire non è
 una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste.
 
-- **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5), e resta la prima voce perché la 13 non è
-  ancora cominciata. ELA ha smesso di essere un processo su una macchina e di essere usabile solo
-  davanti a quella macchina: un'identità provabile per un nodo, il protocollo del lavoro con la sua
-  suite di conformità, **due implementazioni vere** — questo Mac e un PC Windows — e il companion
-  iPhone, che nodo non è. Che cosa ha portato, milestone per milestone, è il
-  [changelog](CHANGELOG.md); il censimento di ciò che ha onorato, di ciò che non le si applicava e
-  di ciò che si è spostato con una casa nuova è in ADR 0043 §9. **Esce da qui quando M13.1 esce da
-  `Proposta`** — lo stesso fatto che dà un nome alla Fase 13 nel changelog e la toglie dal blocco
-  delle fasi future.
-- **La Fase 13 è registrata, e non è cominciata.** Registrata il **2026-09-21**, con sei milestone
-  in `docs/milestones/` — da M13.1 a M13.6 — tutte `Proposta`: sono registrazioni e non SPEC, e la
-  SPEC la scrive la sessione che apre la milestone. Porta §18, l'Action Core: ELA smette di agire
-  solo dentro la sua workspace — il filesystem vero, il terminale, il browser (§19), lo schermo
-  (§20) —, e con la sua prima milestone **il livello `HIGH`**, che oggi `RISK_POLICY` nega sempre e
-  che nessuna capability può far scattare. L'ordine, le ragioni, ciò che la fase eredita e ciò che
-  **non** porta stanno nella voce 5.11. **Comincerà quando M13.1 uscirà da `Proposta`**: quel
-  giorno il changelog le dà un nome, la tabella della §2 smette di dire «senza nome», il blocco qui
-  sotto la lascia andare, e la voce della Fase 12 qui sopra se ne va. Il precedente è la 17:
-  registrata il 2026-09-18, è rimasta fra le fasi future finché M17.1 non è uscita da `Proposta`.
+- **Fase 13 — il permesso prima dell'azione. È cominciata il 2026-09-21**, con M13.1, ed è la
+  prima voce perché è la fase in corso. ELA ha smesso di agire solo dentro la sua workspace: legge
+  e scrive file in una cartella che l'utente dichiara — `ELA_FS_ROOT` e `ELA_FS_SCOPE`, due righe
+  senza default, perché un confine che ELA sceglie per te è un confine che non ha deciso nessuno —
+  e il livello **`HIGH` esiste davvero**: non è più un diniego, è un'approvazione per ogni uso che
+  nessuna policy permanente di §59 raggiunge. Restano aperte **M13.2** (il terminale), **M13.3**
+  (l'azione che viaggia, e tre debiti), **M13.4** (il browser), **M13.5** (il computer control) e
+  **M13.6** (il ripiazzamento, fuori dalla fila): l'ordine e le condizioni stanno nella voce 5.11.
+- **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
+  una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
+  nodo, il protocollo del lavoro con la sua suite di conformità, **due implementazioni vere** —
+  questo Mac e un PC Windows — e il companion iPhone, che nodo non è. Che cosa ha portato,
+  milestone per milestone, è il [changelog](CHANGELOG.md); il censimento di ciò che ha onorato, di
+  ciò che non le si applicava e di ciò che si è spostato con una casa nuova è in ADR 0043 §9.
+  ***Ha smesso di essere la prima voce il 2026-09-21***, quando la 13 è cominciata: la regola della
+  prima voce ha fatto esattamente ciò per cui esiste, tenere il filo fino al giorno dopo.
 - **Fase 17 — il design.** Registrata il 2026-09-18: la fonte di verità è
   [`spec/ELA_design.md`](spec/ELA_design.md), e le decisioni sono nella 5.10. **M17.1, il Design
   System, è fatta** (2026-09-19, ADR 0042): ELA ha un aspetto — una sfera di luce nel vetro, azzurra
@@ -216,7 +214,6 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 13 | 12 |
 | 15 | 14 |
 | 16 | 1 |
 
@@ -235,7 +232,6 @@ non citate è verificato invece che assunto.
 | Sezione | Titolo |
 |---|---|
 | §24 | Agent System |
-| §37 | Rollback |
 | §38 | Evolution Dashboard |
 | §40 | Creatività |
 | §41 | Programmazione |

@@ -21,10 +21,12 @@ from pathlib import Path
 import pytest
 
 from ela.domain import (
+    CapabilityId,
     ErrorMetadata,
     ExecutionId,
     ExecutionResult,
     ExecutionStatus,
+    JsonMapping,
     ProviderUsage,
 )
 from ela.ports import ROUTING_UNKNOWN_TASK_TYPE, VERIFICATION_UNKNOWN_CONDITION
@@ -60,7 +62,7 @@ from ela.tools import (
     PATH_INVALID,
     PATH_IS_DIRECTORY,
     PATH_MISSING,
-    PATH_OUTSIDE_WORKSPACE,
+    PATH_OUTSIDE_ROOT,
     PATH_SYMLINK,
     PATH_UNREACHABLE,
     PERCEPTION_CAPTURE_SCREEN,
@@ -78,10 +80,21 @@ from ela.tools import (
     WriteNoteVerifier,
 )
 from ela.tools.captures import ALREADY_EXPIRED, TEXT_MALFORMED, CaptureProblem, inspect_text
-from ela.tools.verifiers import TEXT_DECLARED_MISMATCH, TEXT_EXISTS, TEXT_MATCHES
+from ela.tools.fs import FS_READ, FS_WRITE
+from ela.tools.verifiers import (
+    FS_CONTENT_MATCHES,
+    FS_CONTENT_MISMATCH,
+    FS_FILE_EXISTS,
+    FS_UNREADABLE,
+    TEXT_DECLARED_MISMATCH,
+    TEXT_EXISTS,
+    TEXT_MATCHES,
+    FsReadVerifier,
+    FsWriteVerifier,
+)
 from tests.domain.examples import EXECUTION_RESULT
 from tests.routing.support import routing_for
-from tests.tools.support import allowed
+from tests.tools.support import PERMISSIONS_BITE, allowed
 from tests.tools.test_captures import png
 
 NOTE = "workspace/notes/briefing.md"
@@ -319,10 +332,10 @@ async def test_a_link_at_the_path_is_missing_and_its_target_is_not_read(
     (root / NOTE).unlink()
     (root / NOTE).symlink_to(target)
     failures = await verify_unchanged(verifier, root, BOTH, {"path": NOTE, "body": BODY}, result)
-    code = PATH_SYMLINK if inside else PATH_OUTSIDE_WORKSPACE  # the tool's code too
+    code = PATH_SYMLINK if inside else PATH_OUTSIDE_ROOT  # the tool's code too
     assert codes(failures) == [code, code]
     # a link pointing outside resolves outside; one pointing inside is caught as a link
-    expected = "symbolic link" if inside else "resolves outside the workspace"
+    expected = "symbolic link" if inside else "resolves outside the root it was given"
     assert expected in failures[0].message
     assert target.read_text(encoding="utf-8") == BODY
 
@@ -338,8 +351,8 @@ async def test_a_link_in_an_intermediate_directory_is_missing(
     (root / "workspace" / "notes").rmdir()
     (root / "workspace" / "notes").symlink_to(elsewhere)
     failures = await verify_unchanged(verifier, root, BOTH, {"path": NOTE, "body": BODY}, result)
-    assert codes(failures) == [PATH_OUTSIDE_WORKSPACE, PATH_OUTSIDE_WORKSPACE]
-    assert "resolves outside the workspace" in failures[0].message
+    assert codes(failures) == [PATH_OUTSIDE_ROOT, PATH_OUTSIDE_ROOT]
+    assert "resolves outside the root it was given" in failures[0].message
     # the same link pointing inside the workspace is still a link, and still missing
     inside = root / "inside"
     inside.mkdir()
@@ -963,3 +976,126 @@ def test_the_verifier_cannot_recognise_anything_even_if_it_wanted_to() -> None:
         for node in ast.walk(ast.parse(inspect_module.getsource(ReadScreenTextVerifier)))
         if isinstance(node, ast.Attribute) and node.attr == "recognise"
     ]
+
+
+# ----------------------------------------------------------------------------------------
+# fs.read and fs.write: the disk of this machine (M13.1)
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def declared(tmp_path: Path) -> Path:
+    root = tmp_path / "files"
+    root.mkdir()
+    return root
+
+
+def _fs_result(capability: CapabilityId, output: JsonMapping) -> ExecutionResult:
+    return ExecutionResult(
+        id=ExecutionId(FakeIdGenerator().new_uuid()),
+        created_at=FakeClock().now(),
+        capability_id=capability,
+        status=ExecutionStatus.SUCCEEDED,
+        output=output,
+    )
+
+
+async def test_the_write_verifier_reads_the_disk_and_not_the_tools_word(declared: Path) -> None:
+    (declared / "note.md").write_text("vero", encoding="utf-8")
+    verifier = FsWriteVerifier(declared)
+    arguments = {"path": "note.md", "body": "vero", "overwrite": True}
+
+    written = _fs_result(FS_WRITE, {"path": "note.md", "bytes": 4, "overwrote": True})
+
+    passed = await verifier.verify((FS_FILE_EXISTS, FS_CONTENT_MATCHES), arguments, written)
+
+    assert passed == ()
+
+
+async def test_the_write_verifier_fails_when_the_file_holds_something_else(declared: Path) -> None:
+    (declared / "note.md").write_text("altro", encoding="utf-8")
+    verifier = FsWriteVerifier(declared)
+    arguments = {"path": "note.md", "body": "vero", "overwrite": True}
+
+    (failure,) = await verifier.verify(
+        (FS_CONTENT_MATCHES,), arguments, _fs_result(FS_WRITE, {"path": "note.md"})
+    )
+
+    assert failure.code == FS_CONTENT_MISMATCH
+    assert failure.details["expected_bytes"] == 4
+    assert failure.details["actual_bytes"] == 5
+    assert "vero" not in failure.message, "a failure carries sizes, never the content (dec. P)"
+
+
+async def test_the_read_verifier_catches_a_reader_that_invented_the_content(
+    declared: Path,
+) -> None:
+    """The one way a reader can lie: returning something the file does not hold."""
+    (declared / "note.md").write_text("quello che c'è", encoding="utf-8")
+    verifier = FsReadVerifier(declared)
+    invented = _fs_result(FS_READ, {"path": "note.md", "bytes": 9, "content": "inventato"})
+
+    (failure,) = await verifier.verify((FS_CONTENT_MATCHES,), {"path": "note.md"}, invented)
+
+    assert failure.code == FS_CONTENT_MISMATCH
+
+
+async def test_the_read_verifier_passes_what_the_file_really_holds(declared: Path) -> None:
+    (declared / "note.md").write_text("quello che c'è", encoding="utf-8")
+    verifier = FsReadVerifier(declared)
+    honest = _fs_result(FS_READ, {"path": "note.md", "bytes": 15, "content": "quello che c'è"})
+
+    both = (FS_FILE_EXISTS, FS_CONTENT_MATCHES)
+
+    passed = await verifier.verify(both, {"path": "note.md"}, honest)
+
+    assert passed == ()
+
+
+async def test_a_missing_file_fails_with_the_code_the_tool_would_have_given(
+    declared: Path,
+) -> None:
+    (failure,) = await FsWriteVerifier(declared).verify(
+        (FS_FILE_EXISTS,),
+        {"path": "assente.md", "body": "x", "overwrite": False},
+        _fs_result(FS_WRITE, {"path": "assente.md"}),
+    )
+
+    assert failure.code == PATH_MISSING
+
+
+async def test_a_call_that_says_nothing_about_the_content_cannot_be_verified(
+    declared: Path,
+) -> None:
+    (declared / "note.md").write_text("x", encoding="utf-8")
+
+    (failure,) = await FsReadVerifier(declared).verify(
+        (FS_CONTENT_MATCHES,), {"path": "note.md"}, _fs_result(FS_READ, {"path": "note.md"})
+    )
+
+    assert failure.code == VERIFICATION_ARGUMENTS_INVALID
+
+
+async def test_a_path_that_is_not_a_string_is_refused_by_the_verifier(declared: Path) -> None:
+    (failure,) = await FsWriteVerifier(declared).verify(
+        (FS_FILE_EXISTS,), {"path": 7}, _fs_result(FS_WRITE, {})
+    )
+
+    assert failure.code == VERIFICATION_ARGUMENTS_INVALID
+
+
+@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o000) does not deny this user: it is root")
+async def test_a_file_that_cannot_be_read_is_named_as_unreadable(declared: Path) -> None:
+    target = declared / "note.md"
+    target.write_text("x", encoding="utf-8")
+    target.chmod(0o000)
+    try:
+        (failure,) = await FsReadVerifier(declared).verify(
+            (FS_CONTENT_MATCHES,),
+            {"path": "note.md"},
+            _fs_result(FS_READ, {"path": "note.md", "content": "x"}),
+        )
+    finally:
+        target.chmod(0o600)
+
+    assert failure.code == FS_UNREADABLE

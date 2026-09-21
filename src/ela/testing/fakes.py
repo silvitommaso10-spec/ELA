@@ -97,6 +97,7 @@ from ela.ports import (
     ModelProvider,
     NotAllowedError,
     NotFoundError,
+    Prospect,
     RoutingError,
     ToolPort,
     VerifierPort,
@@ -865,6 +866,7 @@ class FakeTool:
         output: JsonMapping | None = None,
         status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
         idempotent: bool = True,
+        prospect: Prospect | None = None,
         usage: ProviderUsage | None = None,
     ) -> None:
         self._capability_id = capability_id
@@ -878,6 +880,7 @@ class FakeTool:
         self._status = status
         self._usage = usage
         self.calls: tuple[ToolCall, ...] = ()
+        self.prospects = Prospect() if prospect is None else prospect
 
     @property
     def capability_id(self) -> CapabilityId:
@@ -886,6 +889,10 @@ class FakeTool:
     @property
     def name(self) -> str:
         return self._name
+
+    async def prospect(self, arguments: JsonMapping) -> Prospect:
+        """Whatever the test set: nothing to show and nothing to refuse, by default."""
+        return self.prospects
 
     async def execute(
         self, decision: PermissionDecision, arguments: JsonMapping

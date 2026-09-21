@@ -26,7 +26,7 @@ from ela.tools import (
     PATH_IS_DIRECTORY,
     PATH_MISSING,
     PATH_NOT_REGULAR,
-    PATH_OUTSIDE_WORKSPACE,
+    PATH_OUTSIDE_ROOT,
     PATH_SYMLINK,
     PATH_UNREACHABLE,
     WORKSPACE_WRITE_NOTE,
@@ -98,8 +98,8 @@ REFUSED_BY_BOTH: list[tuple[str, Setup, str]] = [
             "a\0b.md",
         ]
     ],
-    ("directory link outside", _dir_link_outside, PATH_OUTSIDE_WORKSPACE),
-    ("file link outside", _file_link_outside, PATH_OUTSIDE_WORKSPACE),
+    ("directory link outside", _dir_link_outside, PATH_OUTSIDE_ROOT),
+    ("file link outside", _file_link_outside, PATH_OUTSIDE_ROOT),
     ("link inside", _link_inside, PATH_SYMLINK),
     ("directory", _directory, PATH_IS_DIRECTORY),
 ]
@@ -163,7 +163,7 @@ async def test_what_only_a_reader_can_name_is_the_tools_io_error_with_the_shared
 def test_the_codes_are_seven_and_the_problem_carries_the_path_in_its_message() -> None:
     assert {
         PATH_INVALID,
-        PATH_OUTSIDE_WORKSPACE,
+        PATH_OUTSIDE_ROOT,
         PATH_SYMLINK,
         PATH_UNREACHABLE,
         PATH_MISSING,
@@ -194,8 +194,8 @@ def test_the_order_is_shape_then_outside_then_link_then_target(root: Path, tmp_p
     (root / "alias").symlink_to(root / "real", target_is_directory=True)
     real = resolve_workspace(root)
     assert classify(real, "../out").code == PATH_INVALID
-    assert classify(real, "out").code == PATH_OUTSIDE_WORKSPACE
-    assert classify(real, "out/a.md").code == PATH_OUTSIDE_WORKSPACE
+    assert classify(real, "out").code == PATH_OUTSIDE_ROOT
+    assert classify(real, "out/a.md").code == PATH_OUTSIDE_ROOT
     assert classify(real, "alias").code == PATH_SYMLINK
     assert classify(real, "alias/a.md").code == PATH_SYMLINK
     assert classify(real, "real").code == PATH_IS_DIRECTORY

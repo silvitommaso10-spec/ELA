@@ -34,7 +34,7 @@ from ela.permissions import (
 )
 from ela.ports import CapabilityRegistryPort
 from ela.testing.fakes import FakeAuditLog, FakeCapabilityRegistry, FakeClock, FakeIdGenerator
-from tests.domain.examples import NOW, OTHER_STEP_ID, STEP_ID
+from tests.domain.examples import APPROVAL_ID, NOW, OTHER_STEP_ID, STEP_ID, TASK_ID
 
 ECHO: Final = core_echo()
 NOTE: Final = workspace_write_note()
@@ -174,6 +174,28 @@ def grant(spec: CapabilitySpec, **changes: Any) -> Authorization:
         capability_id=spec.id,
         scope=spec.scope,
         granted_by="tommaso",
+    )
+    return base.model_copy(update=changes)
+
+
+def born_of_a_yes(spec: CapabilitySpec, **changes: Any) -> Authorization:
+    """A grant that came from an approval: single use, bound to this task and this step.
+
+    The other half of :func:`grant`, which mints a **standing** one (``approval_id`` ``None``, the
+    shape §59 will have). The two are what M13.1 dec. D needs on both sides: a row that asks at
+    every use is covered by this one and never by that one, and the domain itself keeps them
+    apart — an ``approval_id`` forces ``max_uses == 1`` and a task and a step (ADR 0012 §1).
+    """
+    base = Authorization(
+        id=AuthorizationId(UUID("00000000-0000-4000-8000-000000000778")),
+        created_at=NOW,
+        capability_id=spec.id,
+        scope=spec.scope,
+        granted_by="tommaso",
+        approval_id=APPROVAL_ID,
+        task_id=TASK_ID,
+        step_id=STEP_ID,
+        max_uses=1,
     )
     return base.model_copy(update=changes)
 

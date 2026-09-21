@@ -30,8 +30,10 @@ from ela.domain import (
     PrivacyLevel,
     RiskLevel,
 )
+from ela.permissions import fs_write
 from ela.testing.fakes import (
     FakeAuditLog,
+    FakeCapabilityRegistry,
     FakeClock,
     FakeDeviceRegistry,
     FakeIdGenerator,
@@ -80,7 +82,15 @@ def orchestrator(
 ) -> DeviceOrchestrator:
     registry = DeviceRegistry(port, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL)
     verifiers = FakeVerifierRegistry([FakeVerifier(WRITE_NOTE)])
-    return DeviceOrchestrator(registry, tools, audit, FakeIdGenerator(), clock, verifiers=verifiers)
+    return DeviceOrchestrator(
+        registry,
+        tools,
+        audit,
+        FakeIdGenerator(),
+        clock,
+        verifiers=verifiers,
+        capabilities=FakeCapabilityRegistry(),
+    )
 
 
 async def register(port: FakeDeviceRegistry, nodes: Iterable[Device]) -> None:
@@ -148,6 +158,45 @@ async def test_a_capability_no_tool_implements_is_unresolved_not_an_error(
     needed = orchestrator.requirements(step(capabilities=(COMPLETE,)))
     assert needed.tools == frozenset()
     assert needed.unresolved == (COMPLETE,)
+
+
+def test_the_risk_of_a_step_is_the_catalogue_s_unless_the_plan_asks_for_more(
+    port: FakeDeviceRegistry, audit: FakeAuditLog, clock: FakeClock
+) -> None:
+    """M13.1 dec. J, and the answer ADR 0026 §7 asked this milestone for.
+
+    ``step.risk`` arrives from the client, and it feeds the one filter that reads a risk. While
+    the catalogue stopped below ``UNGUARDED_RISK`` the filter could not fire and the provenance
+    did not matter. Now it can, so the plan may only **tighten**: a step that declares ``SAFE``
+    for a HIGH capability is treated as HIGH, and one that declares CRITICAL for a SAFE
+    capability stays CRITICAL.
+    """
+    written = fs_write("declared/folder")
+    tools = FakeToolRegistry([FakeTool(written.id, clock, FakeIdGenerator(), name="fs")])
+    registry = DeviceRegistry(port, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL)
+    orchestrator = DeviceOrchestrator(
+        registry,
+        tools,
+        audit,
+        FakeIdGenerator(),
+        clock,
+        verifiers=FakeVerifierRegistry([FakeVerifier(written.id)]),
+        capabilities=FakeCapabilityRegistry([written]),
+    )
+
+    lowered = step(capabilities=(str(written.id),), risk=RiskLevel.SAFE)
+    assert orchestrator.requirements(lowered).risk is RiskLevel.HIGH
+
+    raised = step(capabilities=(str(written.id),), risk=RiskLevel.CRITICAL)
+    assert orchestrator.requirements(raised).risk is RiskLevel.CRITICAL
+
+
+def test_a_capability_the_catalogue_does_not_know_contributes_no_risk(
+    orchestrator: DeviceOrchestrator,
+) -> None:
+    """It is already collected in ``unresolved``, and the task waits: nothing to tighten."""
+    declared = step(capabilities=(COMPLETE,), risk=RiskLevel.LOW)
+    assert orchestrator.requirements(declared).risk is RiskLevel.LOW
 
 
 async def test_a_step_whose_capability_nobody_implements_waits(

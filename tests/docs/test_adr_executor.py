@@ -34,7 +34,10 @@ ADDING_TOOLS = "Tool aggiunti:"
 REPLACING_TOOLS = "Tool sostituiti:"
 ADDING_ADRS = ((ADR_DIR / "0021-started-protocol-and-model-complete.md", ADDING_TOOLS),)
 """ADRs that add a tool after ADR 0013: the label, then the table, read as ADR 0013's is."""
-REPLACING_ADRS = ((ADR_DIR / "0022-model-router.md", REPLACING_TOOLS),)
+REPLACING_ADRS = (
+    (ADR_DIR / "0022-model-router.md", REPLACING_TOOLS),
+    (ADR_DIR / "0045-filesystem-and-high.md", REPLACING_TOOLS),
+)
 """ADRs that change a tool documented earlier (ADR 0022 §9: the router gives ``model.complete``
 two output keys and the routing codes). A replacement names a capability that already has a row,
 and its row is the one the code must match."""

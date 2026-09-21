@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
 from pydantic import SecretStr
 
-from ela.cli import client
+from ela.cli import client, system
 from ela.cli.errors import REFUSED, UNREACHABLE
 from ela.cli.output import EMPTY
+from ela.cli.system import _terms
 from ela.composition import ApiSettings, Ela
 from ela.devices.local import LOCAL_DEVICE_ID
+from ela.tools import CREATES, OVERWRITES, READS
 from tests.cli.support import Cli, plain, unreachable
 from tests.composition.support import TOKEN
 
@@ -83,6 +86,28 @@ async def test_approvals_says_so_when_nothing_waits(cli: Cli) -> None:
 
     assert result.exit_code == 0
     assert "nothing to show" in result.stdout
+
+
+def test_the_terms_of_the_grant_are_shown_whole_or_not_at_all() -> None:
+    """Half of it is not an answer: «one use» without «for how long» is a permission of
+    unknown life (ADR 0012 §2)."""
+    assert _terms(1, 1800) == "1 use, within 30 minutes"
+    assert _terms(3, 1800) == "3 uses, within 30 minutes"
+    assert _terms(1, 90) == "1 use, within 90 seconds"
+    assert _terms(None, 1800) is None
+    assert _terms(1, None) is None
+
+
+def test_the_command_line_holds_no_sentence_about_files() -> None:
+    """dec. G, blocker 2: the phrase belongs to the capability, and travels with the question.
+
+    This surface had one of its own and applied it to whatever filled the column, which is how a
+    read came to be told it «overwrites a file that is already there».
+    """
+    source = Path(system.__file__).read_text(encoding="utf-8")
+
+    for sentence in (CREATES, OVERWRITES, READS):
+        assert sentence not in source, sentence
 
 
 async def test_approvals_takes_a_limit(cli: Cli) -> None:

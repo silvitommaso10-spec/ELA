@@ -119,18 +119,23 @@ def test_duplicate_id_is_already_exists() -> None:
         CapabilityRegistry([ECHO, ECHO.model_copy(update={"risk": RiskLevel.LOW})])
 
 
-@pytest.mark.parametrize("risk", [RiskLevel.HIGH, RiskLevel.CRITICAL])
-def test_risk_above_medium_is_refused(risk: RiskLevel) -> None:
+@pytest.mark.parametrize("risk", [RiskLevel.CRITICAL])
+def test_risk_above_the_cap_is_refused(risk: RiskLevel) -> None:
+    """The cap moved to HIGH in M13.1, so what is above it is CRITICAL and nothing else.
+
+    Parametrised over one level on purpose: the list is what is above :data:`MAX_RISK`, and the
+    day something is added above CRITICAL this test is where somebody notices it is not here.
+    """
     with pytest.raises(RiskNotAllowedError) as info:
         CapabilityRegistry([spec(risk=risk)])
     assert isinstance(info.value, InvalidCapabilityError)
     assert info.value.risk is risk
-    assert info.value.max_risk is MAX_RISK is RiskLevel.MEDIUM
+    assert info.value.max_risk is MAX_RISK is RiskLevel.HIGH
     assert info.value.capability_id == CAPABILITY_SPEC.id
 
 
-@pytest.mark.parametrize("risk", [RiskLevel.SAFE, RiskLevel.LOW, RiskLevel.MEDIUM])
-def test_risk_up_to_medium_is_admitted(risk: RiskLevel) -> None:
+@pytest.mark.parametrize("risk", [RiskLevel.SAFE, RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH])
+def test_risk_up_to_the_cap_is_admitted(risk: RiskLevel) -> None:
     registry = CapabilityRegistry([spec(risk=risk)])
     assert registry.get(CAPABILITY_SPEC.id).risk is risk
 

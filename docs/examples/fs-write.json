@@ -1,0 +1,40 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.1 (ADR 0045): ELA scrive un file FUORI dalla sua",
+    "workspace, dentro la cartella che hai dichiarato con ELA_FS_ROOT e ELA_FS_SCOPE.",
+    "Il percorso è relativo alla radice, e `ELA/` è lo scope dell'esempio di GETTING_STARTED:",
+    "con ELA_FS_ROOT=/Users/tu/Documenti il file finisce in /Users/tu/Documenti/ELA/prova.md.",
+    "La cartella dello scope la crea la prima scrittura, come per le note; la RADICE no, mai:",
+    "quella la scegli tu, e se non c'è ELA rifiuta con fs.no_root invece di inventarsela.",
+    "`fs.write` è HIGH: ELA chiede il permesso OGNI VOLTA, e nessuna policy potrà coprirla in",
+    "anticipo (§59 non raggiunge questo livello). La domanda nomina il percorso RISOLTO e dice",
+    "se crea o se sovrascrive — due fatti letti dal disco, non dal piano.",
+    "`overwrite: false` è un'ASSERZIONE SUL MONDO, non una richiesta: dice «lì non c'è niente».",
+    "Rilancia questo stesso piano una seconda volta e ELA NON TI CHIEDE NIENTE: il file adesso",
+    "c'è, l'asserzione è falsa, e la chiamata verrebbe rifiutata nell'istante in cui girasse —",
+    "una domanda si compone solo per ciò che, approvato adesso, riuscirebbe sul disco di adesso.",
+    "Il task fallisce con fs.overwrite_mismatch e nessuno viene svegliato. Per sovrascrivere",
+    "davvero, scrivi `\"overwrite\": true`: allora l'asserzione è vera, la domanda nasce, e dice",
+    "«overwrites a file that is already there».",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti, e questo file viene",
+    "mandato a ELA byte per byte da un test, perché non marcisca."
+  ],
+  "goal": "scrivere un file fuori dalla workspace",
+  "steps": [
+    {
+      "id": "d1b7c4a2-9e35-4f18-8c60-000000000001",
+      "goal": "lasciare un file nella cartella che ho dichiarato",
+      "required_capabilities": ["fs.write"],
+      "arguments": {
+        "path": "ELA/prova.md",
+        "body": "# M13.1\n\nQuesto file sta fuori dalla workspace di ELA.\n",
+        "overwrite": false,
+        "purpose": "la prova a mano del filesystem"
+      },
+      "risk": "HIGH",
+      "expected_result": "il file è sul disco, dentro lo scope dichiarato",
+      "success_conditions": ["fs.file_exists", "fs.content_matches"],
+      "requires_authorization": true
+    }
+  ]
+}

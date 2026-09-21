@@ -24,6 +24,7 @@ from ela.domain import (
 )
 from ela.permissions import (
     DEFAULT_DECISION_TTL,
+    POLICY_VERSION,
     RISK_POLICY,
     InvalidArgumentsError,
     Rule,
@@ -230,7 +231,7 @@ def test_decide_never_raises_and_always_names_a_rule(
             assert decision.outcome is PermissionOutcome.DENIED
             assert decision.metadata["rule"] == "AUTHORIZATION_MISMATCH"
     assert decision.reason
-    assert decision.metadata["policy"] == "v0.1"
+    assert decision.metadata["policy"] == POLICY_VERSION
     assert isinstance(decision.metadata["rule"], str)
     assert decision.capability_id == spec.id
     assert decision.authorization_id == (None if authorization is None else authorization.id)
