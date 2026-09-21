@@ -116,8 +116,9 @@ def results(task_id: TaskId, as_json: Json = False) -> None:
     """What the tools of this task produced (§63).
 
     The table says which step produced what and how it ended; under it, every result that has an
-    output shows it in full. Nothing is shortened: the answer of a model is the reason this
-    command exists, and a truncated answer is not one.
+    output **or an error** shows it in full. Nothing is shortened: the answer of a model is the
+    reason this command exists, and a truncated answer is not one — and neither is a failure
+    whose code you have to go and read in the JSON (M13.1, rilievo 3).
     """
     with client.connect() as api:
         payload = api.get(f"/tasks/{task_id}/results")
@@ -139,12 +140,29 @@ def _results(payload: list[dict[str, Any]]) -> str:
         ],
     )
     blocks = [
-        f"{one['capability_id']} — step {one['step_id']}\n"
-        + indent(fields(list(one["output"].items())), "  ")
+        f"{one['capability_id']} — step {one['step_id']}\n" + indent(fields(_told(one)), "  ")
         for one in payload
-        if one["output"]
+        if one["output"] or one.get("error")
     ]
     return "\n\n".join([listing, *blocks])
+
+
+def _told(one: dict[str, Any]) -> list[tuple[str, Any]]:
+    """What a result says: its output, and — since M13.1 — **its error**.
+
+    A FAILED row with no code and no message under it sent whoever read it to the JSON to find
+    out what went wrong, which is the same defect as a reason row left empty: a diagnosis that
+    lives where nobody looks is not a diagnosis. The error gets a block for the same reason the
+    output has one.
+    """
+    rows: list[tuple[str, Any]] = list(one["output"].items())
+    error = one.get("error")
+    if error:
+        rows.append(("error", error["code"]))
+        if error.get("message"):
+            rows.append(("message", error["message"]))
+        rows.append(("retryable", error.get("retryable")))
+    return rows
 
 
 @app.command("plan")

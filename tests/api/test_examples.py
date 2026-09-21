@@ -28,6 +28,7 @@ from ela.composition import Ela
 from ela.composition.settings import Settings
 from ela.domain import TaskState
 from ela.ports import PROVIDER_UNAVAILABLE
+from ela.tools import CREATES, OVERWRITES, READS
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
@@ -303,6 +304,11 @@ async def test_it_asks_for_consent_every_time(client: AsyncClient) -> None:
 # ----------------------------------------------------------------------------------------
 
 
+def results_of(response: Any) -> list[dict[str, Any]]:
+    listed: list[dict[str, Any]] = response.json()
+    return listed
+
+
 def fs_plan(name: str) -> dict[str, Any]:
     plan: dict[str, Any] = json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
     return plan
@@ -336,7 +342,7 @@ async def test_the_write_example_asks_and_says_it_creates_a_file(
     assert question["capability_id"] == "fs.write"
     assert question["risk"] == "HIGH"
     assert question["target"] == str(settings.filesystem.root / "ELA" / "prova.md")
-    assert question["overwrites"] is False
+    assert question["does"] == CREATES
 
 
 async def test_the_write_example_leaves_the_file_the_note_promises(
@@ -352,34 +358,53 @@ async def test_the_write_example_leaves_the_file_the_note_promises(
     assert not str(written).startswith(str(settings.workspace.workspace_dir))
 
 
-async def test_the_same_plan_sent_again_says_it_overwrites(
+async def test_the_same_plan_sent_again_is_refused_before_anybody_is_asked(
     client: AsyncClient, settings: Settings
 ) -> None:
-    """**The only way to see dec. G with your eyes**, and dec. Q right behind it.
+    """**The blocker the proof by hand found**, and the shape of its repair (ADR 0045 §6-bis).
 
-    The question is composed from what the machine answers, not from what the plan declared: the
-    second time the file is there, so it says «sovrascrive». And because the plan asserted the
-    opposite, the "yes" ends in a refusal instead of a write — what was approved as a new file
-    does not become an overwrite.
+    The plan asserts «nothing is there». After the first run something is, so the call would be
+    refused the instant it ran — and a question is composed only for what would succeed now. The
+    task fails without asking, and the file that was there is the file that is still there.
     """
     first = await asked(client, fs_plan("fs-write.json"), "scrivi fuori dalla workspace")
     await say_yes(client, first)
 
-    again = await asked(client, fs_plan("fs-write.json"), "riscrivi lo stesso file")
-
-    assert again["overwrites"] is True
-    assert again["target"] == first["target"]
-
-    run = await say_yes(client, again)
+    task_id = (await client.post("/tasks", json={"text": "riscrivi lo stesso file"})).json()["id"]
+    await client.post(f"/tasks/{task_id}/plan", json=fs_plan("fs-write.json"))
+    run = (await client.post(f"/tasks/{task_id}/run")).json()
 
     assert run["task"]["state"] == TaskState.FAILED.value, run
-    results = (await client.get(f"/tasks/{again['task_id']}/results")).json()
-    assert results[-1]["error"]["code"] == "fs.overwrite_mismatch"
+    assert (await client.get("/approvals")).json() == [], "nobody is asked what is already lost"
+    events = (await client.get("/audit")).json()
+    assert "BELL_RUNG" not in [event["event_type"] for event in events]
+    # Nothing ran, so there is no result to carry the error — and the reason must still reach a
+    # person: `ela task run` shows it (M13.1, rilievo 3).
+    assert results_of(await client.get(f"/tasks/{task_id}/results")) == []
+    assert run["reason"] == (
+        "fs.overwrite_mismatch: 'ELA/prova.md' was approved as a new file and something is "
+        "there now"
+    )
     assert (
         settings.filesystem.root.joinpath("ELA", "prova.md")
         .read_text(encoding="utf-8")
         .startswith("# M13.1")
-    ), "the file that was there is the file that is still there"
+    )
+
+
+async def test_a_plan_that_declares_the_overwrite_is_asked_and_says_so(
+    client: AsyncClient,
+) -> None:
+    """And the way to really overwrite: the plan asserts what is true, so the question exists."""
+    await say_yes(client, await asked(client, fs_plan("fs-write.json"), "scrivi"))
+    plan = fs_plan("fs-write.json")
+    plan["steps"][0]["arguments"]["overwrite"] = True
+
+    question = await asked(client, plan, "sovrascrivi davvero")
+
+    assert question["does"] == OVERWRITES
+    run = await say_yes(client, question)
+    assert run["task"]["state"] == TaskState.COMPLETED.value, run
 
 
 async def test_the_read_example_puts_the_content_in_the_result_and_not_in_the_audit(
@@ -391,6 +416,7 @@ async def test_the_read_example_puts_the_content_in_the_result_and_not_in_the_au
     question = await asked(client, fs_plan("fs-read.json"), "rileggi")
     assert question["capability_id"] == "fs.read"
     assert question["risk"] == "MEDIUM"
+    assert question["does"] == READS, "a read is never told it overwrites anything"
     run = await say_yes(client, question)
 
     assert run["task"]["state"] == TaskState.COMPLETED.value, run

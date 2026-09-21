@@ -146,7 +146,7 @@ QUESTION_FIELDS: Final[frozenset[str]] = frozenset(
         "grant_uses",
         "grant_seconds",
         "target",
-        "overwrites",
+        "does",
     }
 )
 """Every field of the question this surface shows, declared here so it can be checked.
@@ -194,6 +194,13 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
 
     Who is asking and about what, then how much it costs to say yes, then what exactly it will
     do. The two facts of a file (M13.1 dec. G) sit next to the targets they resolve.
+
+    **Two expiries, and each says whose it is**: the question stops being answerable at one
+    instant, and the grant a "yes" mints lives for another — reading one as the other would be
+    reading the life of a permission off the deadline of a request.
+
+    ``does`` is rendered as the capability wrote it: this surface owns no sentence about files
+    (dec. G, blocker 2 of the proof by hand).
     """
     return [
         ("approval", one["id"]),
@@ -202,13 +209,13 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         ("what", one.get("description") or None),
         ("risk", one.get("risk")),
         ("may go", one.get("max_privacy")),
-        ("grant", _terms(one.get("grant_uses"), one.get("grant_seconds"))),
-        ("expires", one.get("expires_at")),
+        ("question expires", one.get("expires_at")),
+        ("grant if you say yes", _terms(one.get("grant_uses"), one.get("grant_seconds"))),
         ("step goal", one.get("goal") or None),
         ("declared", one.get("stated") or None),
         ("targets", one["targets"]),
         ("file", one.get("target") or None),
-        ("does", _does(one.get("overwrites"))),
+        ("does", one.get("does") or None),
         ("asks", one["prompt"]),
     ]
 
@@ -224,14 +231,3 @@ def _terms(uses: int | None, seconds: int | None) -> str | None:
     minutes, remainder = divmod(seconds, 60)
     span = f"{minutes} minutes" if not remainder else f"{seconds} seconds"
     return f"{uses} use, within {span}" if uses == 1 else f"{uses} uses, within {span}"
-
-
-def _does(overwrites: bool | None) -> str | None:
-    """What a "yes" would do to the file, in the words the pages use (M13.1 dec. G).
-
-    ``None`` is not "no": it is "this question is not about a file", and an absent value says that
-    without inventing an answer.
-    """
-    if overwrites is None:
-        return None
-    return "overwrites a file that is already there" if overwrites else "creates a new file"

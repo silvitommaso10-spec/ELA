@@ -457,19 +457,10 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
     # be offering a yes to something it has not said.
     if seen and found.target:
         pairs.append(pages.fragment(HERE, "pair", key="Il file", value=found.target))
-    if seen and found.overwrites is not None:
-        pairs.append(
-            pages.fragment(
-                HERE,
-                "pair",
-                key="Che cosa fa",
-                value=(
-                    "sovrascrive un file che c'è già"
-                    if found.overwrites
-                    else "crea un file che non c'è"
-                ),
-            )
-        )
+    if seen and found.does:
+        # The sentence comes from the capability and is rendered as it stands (M13.1 dec. G):
+        # a page that composed one would be lending a write's words to a read.
+        pairs.append(pages.fragment(HERE, "pair", key="Che cosa fa", value=found.does))
     return pages.joined(pairs)
 
 

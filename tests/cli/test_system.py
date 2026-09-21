@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
 from pydantic import SecretStr
 
-from ela.cli import client
+from ela.cli import client, system
 from ela.cli.errors import REFUSED, UNREACHABLE
 from ela.cli.output import EMPTY
-from ela.cli.system import _does, _terms
+from ela.cli.system import _terms
 from ela.composition import ApiSettings, Ela
 from ela.devices.local import LOCAL_DEVICE_ID
+from ela.tools import CREATES, OVERWRITES, READS
 from tests.cli.support import Cli, plain, unreachable
 from tests.composition.support import TOKEN
 
@@ -96,11 +98,16 @@ def test_the_terms_of_the_grant_are_shown_whole_or_not_at_all() -> None:
     assert _terms(1, None) is None
 
 
-def test_a_question_about_no_file_says_nothing_about_one() -> None:
-    """``None`` is not «no»: it is «this question is not about a file» (M13.1 dec. G)."""
-    assert _does(None) is None
-    assert _does(True) == "overwrites a file that is already there"
-    assert _does(False) == "creates a new file"
+def test_the_command_line_holds_no_sentence_about_files() -> None:
+    """dec. G, blocker 2: the phrase belongs to the capability, and travels with the question.
+
+    This surface had one of its own and applied it to whatever filled the column, which is how a
+    read came to be told it «overwrites a file that is already there».
+    """
+    source = Path(system.__file__).read_text(encoding="utf-8")
+
+    for sentence in (CREATES, OVERWRITES, READS):
+        assert sentence not in source, sentence
 
 
 async def test_approvals_takes_a_limit(cli: Cli) -> None:

@@ -43,8 +43,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from ela.ports import Target
-
 __all__ = [
     "PATH_CODES",
     "PATH_INVALID",
@@ -56,7 +54,6 @@ __all__ = [
     "PATH_UNREACHABLE",
     "PathProblem",
     "classify",
-    "describe",
     "is_relative_note_path",
     "resolve_workspace",
 ]
@@ -119,19 +116,6 @@ def resolve_workspace(root: Path | str) -> Path:
     created here — the tool creates the directory before resolving it, the verifier never does.
     """
     return Path(root).expanduser().absolute().resolve()
-
-
-def describe(root: Path, path: str) -> Target | None:
-    """The target of ``root / path``, or ``None`` if the path is one :func:`classify` refuses.
-
-    Read-only like the rest of this module. A problem other than "nothing is there" means there
-    is nothing to describe and nothing to ask about: the caller refuses first, with the code the
-    classification gave it.
-    """
-    problem = classify(root, path)
-    if problem is not None and problem.code != PATH_MISSING:
-        return None
-    return Target(resolved=str(root / path), exists=problem is None)
 
 
 def classify(root: Path, path: str) -> PathProblem | None:

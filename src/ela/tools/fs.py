@@ -30,8 +30,8 @@ import stat
 from pathlib import Path
 from typing import ClassVar, Final
 
-from ela.domain import CapabilityId, JsonMapping
-from ela.ports import Clock, IdGenerator, Target
+from ela.domain import CapabilityId, ErrorMetadata, JsonMapping
+from ela.ports import Clock, IdGenerator, Prospect, Target
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.paths import (
     PATH_INVALID,
@@ -41,7 +41,6 @@ from ela.tools.paths import (
     PATH_OUTSIDE_ROOT,
     PATH_SYMLINK,
     classify,
-    describe,
     resolve_workspace,
 )
 
@@ -50,6 +49,9 @@ __all__ = [
     "FS_READ_TOOL_NAME",
     "FS_WRITE",
     "FS_WRITE_TOOL_NAME",
+    "CREATES",
+    "OVERWRITES",
+    "READS",
     "IO_ERROR",
     "NO_ROOT",
     "OVERWRITE_MISMATCH",
@@ -65,6 +67,16 @@ FS_WRITE_TOOL_NAME: Final = "fs-write"
 IO_ERROR: Final = "io.error"
 OVERWRITE_MISMATCH: Final = "fs.overwrite_mismatch"
 """What was approved is not what the disk says now, in either direction (M13.1 dec. Q)."""
+
+CREATES: Final = "creates a new file"
+OVERWRITES: Final = "overwrites a file that is already there"
+READS: Final = "reads a file that is there"
+"""What a "yes" does, said by the capability that would do it (M13.1 dec. G, blocker 2).
+
+Three sentences and not one table of two: «overwrites a file that is already there» is true of a
+write and false of a read, and an advisory that says the wrong thing teaches the reader to stop
+reading it. No surface holds any of them — they travel with the question.
+"""
 
 NO_ROOT: Final = "fs.no_root"
 """The declared root is not there, and ELA does not make it (M13.1 dec. A).
@@ -144,21 +156,33 @@ class FsReadTool(Tool):
         """The resolved root: ``ELA_FS_ROOT``, never created here."""
         return self._root
 
-    async def describe_target(self, arguments: JsonMapping) -> Target | None:
-        """The resolved path and whether a file is there, for the question to name (dec. G)."""
-        path = arguments.get("path")
-        return describe(self._root, path) if isinstance(path, str) else None
+    async def prospect(self, arguments: JsonMapping) -> Prospect:
+        """What a read of this path would meet now (dec. G, and the rule of ADR 0045 §6-bis)."""
+        return _prospect(self._look(arguments), self.name)
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    def _look(self, arguments: JsonMapping) -> tuple[Outcome | None, Target | None]:
+        """The one place a read decides, read by the question and by the run.
+
+        A file that is not there is **a refusal and not a question**: asking somebody to approve
+        a read that cannot succeed is asking for an answer that changes nothing.
+        """
         path = arguments.get("path")
         if not isinstance(path, str):
-            return Outcome({}, ARGUMENTS_INVALID, "path must be a string")
+            return Outcome({}, ARGUMENTS_INVALID, "path must be a string"), None
         if not self._root.is_dir():
-            return Outcome({}, NO_ROOT, _no_root(self._root))
+            return Outcome({}, NO_ROOT, _no_root(self._root)), None
         problem = classify(self._root, path)
         if problem is not None:
             code = problem.code if problem.code in READ_REFUSALS else IO_ERROR
-            return Outcome({}, code, problem.message(path))
+            return Outcome({}, code, problem.message(path)), None
+        return None, Target(resolved=str(self._root / path), exists=True, does=READS)
+
+    async def _run(self, arguments: JsonMapping) -> Outcome:
+        refused, _ = self._look(arguments)
+        if refused is not None:
+            return refused
+        path = arguments["path"]
+        assert isinstance(path, str)
         try:
             data = _read(self._root / path)
         except OSError as error:
@@ -211,28 +235,48 @@ class FsWriteTool(Tool):
         """The resolved root: ``ELA_FS_ROOT``, never created here."""
         return self._root
 
-    async def describe_target(self, arguments: JsonMapping) -> Target | None:
-        """The resolved path and whether a file is there, for the question to name (dec. G)."""
-        path = arguments.get("path")
-        return describe(self._root, path) if isinstance(path, str) else None
+    async def prospect(self, arguments: JsonMapping) -> Prospect:
+        """What a write of this path would meet now (dec. G, and ADR 0045 §6-bis).
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+        **This is where the contradiction is caught.** If the plan asserts «nothing is there» and
+        something is, or the other way round, the call would be refused the instant it ran — so
+        there is no question to ask, and asking it would be asking somebody to approve what ELA
+        already knows it will refuse (ADR 0011 §3).
+        """
+        return _prospect(self._look(arguments), self.name)
+
+    def _look(self, arguments: JsonMapping) -> tuple[Outcome | None, Target | None]:
+        """The one place a write decides: read by the question and by the run.
+
+        The comparison is between the ``overwrite`` the call asserts and the disk. Because the
+        question is only composed when the two already agree, the assertion **is** the fact the
+        user approved — which is what makes the refusal below true when it fires later.
+        """
         path = arguments.get("path")
         body = arguments.get("body")
         overwrite = arguments.get("overwrite")
         if not isinstance(path, str) or not isinstance(body, str):
-            return Outcome({}, ARGUMENTS_INVALID, "path and body must be strings")
+            return Outcome({}, ARGUMENTS_INVALID, "path and body must be strings"), None
         if not isinstance(overwrite, bool):
-            return Outcome({}, ARGUMENTS_INVALID, "overwrite must be a boolean")
+            return Outcome({}, ARGUMENTS_INVALID, "overwrite must be a boolean"), None
         if not self._root.is_dir():
-            return Outcome({}, NO_ROOT, _no_root(self._root))
+            return Outcome({}, NO_ROOT, _no_root(self._root)), None
         problem = classify(self._root, path)
         if problem is not None and problem.code != PATH_MISSING:
             code = problem.code if problem.code in WRITE_REFUSALS else IO_ERROR
-            return Outcome({}, code, problem.message(path))
+            return Outcome({}, code, problem.message(path)), None
         there = problem is None
         if there is not overwrite:
-            return Outcome({}, OVERWRITE_MISMATCH, _moved(path, approved=overwrite))
+            return Outcome({}, OVERWRITE_MISMATCH, _moved(path, approved=overwrite)), None
+        does = OVERWRITES if there else CREATES
+        return None, Target(resolved=str(self._root / path), exists=there, does=does)
+
+    async def _run(self, arguments: JsonMapping) -> Outcome:
+        refused, _ = self._look(arguments)
+        if refused is not None:
+            return refused
+        path, body = arguments["path"], arguments["body"]
+        assert isinstance(path, str) and isinstance(body, str)
         target = self._root / path
         try:
             target.parent.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
@@ -242,7 +286,28 @@ class FsWriteTool(Tool):
                 handle.write(data)
         except OSError as error:
             return Outcome({}, IO_ERROR, f"{type(error).__name__}: {error.strerror or error}")
-        return Outcome({"path": path, "bytes": len(data), "overwrote": overwrite})
+        return Outcome(
+            {"path": path, "bytes": len(data), "overwrote": bool(arguments["overwrite"])}
+        )
+
+
+def _prospect(looked: tuple[Outcome | None, Target | None], tool_name: str) -> Prospect:
+    """A tool's own refusal, turned into what the executor needs before asking.
+
+    The conversion and nothing else: the decision was taken in ``_look``, which is also what runs
+    when the tool really runs. One fact, one definition, one place.
+    """
+    refused, target = looked
+    if refused is None:
+        return Prospect(target=target)
+    return Prospect(
+        refusal=ErrorMetadata(
+            code=refused.code or IO_ERROR,
+            message=refused.message,
+            tool_name=tool_name,
+            retryable=refused.retryable,
+        )
+    )
 
 
 def _no_root(root: Path) -> str:

@@ -340,11 +340,13 @@ class Asked(BaseModel):
 
     Not the argument the plan wrote: where it really lands, read from the machine with the
     classification the tool and the verifier share. Empty when the capability touches no file."""
-    overwrites: bool | None = None
-    """Whether something is already there — ``None`` when there is no file in the question.
+    does: str = ""
+    """What saying yes would do to that file, **in the capability's own words** (dec. G).
 
-    Both directions matter and the tool checks them again before writing (dec. Q): what was
-    approved as a new file, and what was approved as an overwrite, must still be true."""
+    Not a phrase a surface owns: «overwrites a file that is already there» is true of a write and
+    false of a read, and an advisory that says the wrong thing teaches the reader to stop reading
+    it. The tool writes the sentence and it travels with the question; a surface renders it and
+    never composes one. Empty when the question is not about a file."""
 
 
 class ApprovalOut(BaseModel):
@@ -374,7 +376,7 @@ class ApprovalOut(BaseModel):
     grant_uses: int | None
     grant_seconds: int | None
     target: str
-    overwrites: bool | None
+    does: str
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:

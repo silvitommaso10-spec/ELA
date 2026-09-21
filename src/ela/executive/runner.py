@@ -135,10 +135,36 @@ class Run(NamedTuple):
     ``ASSIGNED`` carries one too, and it is the assignment's: the node, the work and the deadline
     by which it is due (M12.2, ADR 0038 §10). What a person deciding whether to wait has to read.
 
+    ``DENIED`` and ``FAILED`` carry one too, since the proof by hand of M13.1: the row was empty
+    in the two cases where a "why" existed and the user had to go and read the JSON to find it —
+    the Guardian's own reason for a denial, the tool's code and message for a failure. **A
+    diagnosis that lives where nobody looks is not a diagnosis.**
+
     ``None`` for every other outcome: those say what happened. The runner still writes nothing of
-    its own (ADR 0019) — the reason is the placement's or the assignment's, passed on rather than
-    composed here.
+    its own (ADR 0019) — every reason is the placement's, the assignment's, the decision's or the
+    error's, passed on rather than composed here.
     """
+
+
+def _why(execution: Execution) -> str | None:
+    """The reason this call ended the task, passed on and never composed (M13.1, rilievo 3).
+
+    A denial has the Guardian's own sentence; a failure has the error the tool or the verifier
+    reported, as ``code: message``. Neither is written here — both are read off what the executor
+    already returned, which is what keeps ADR 0019 true: the runner adds nothing of its own.
+
+    ``None`` when the task ended without either, which is what a completed task looks like.
+    """
+    if execution.task.state is TaskState.DENIED and execution.decision is not None:
+        return execution.decision.reason
+    error = execution.error
+    if error is None and execution.result is not None:
+        error = execution.result.error
+    if error is None and execution.verification is not None:
+        error = execution.verification.error
+    if error is None:
+        return None
+    return f"{error.code}: {error.message}" if error.message else error.code
 
 
 class TaskRunner:
@@ -226,7 +252,15 @@ class TaskRunner:
         while True:
             if graph.is_blocked:
                 task = await self._fail(task_id)
-                return Run(task, RunOutcome.FAILED, tuple(steps), tuple(executions))
+                # The plan cannot go on because a step failed, and the reason is that step's:
+                # passed on, never composed here (ADR 0019; M13.1, rilievo 3).
+                return Run(
+                    task,
+                    RunOutcome.FAILED,
+                    tuple(steps),
+                    tuple(executions),
+                    _why(executions[-1]) if executions else None,
+                )
             if graph.is_complete:
                 task = await self._complete(task_id, graph)
                 return Run(task, RunOutcome.COMPLETED, tuple(steps), tuple(executions))
@@ -249,7 +283,13 @@ class TaskRunner:
                     executions.append(execution)
                     task = execution.task
                     if task.state in OUTCOMES:
-                        return Run(task, OUTCOMES[task.state], tuple(steps), tuple(executions))
+                        return Run(
+                            task,
+                            OUTCOMES[task.state],
+                            tuple(steps),
+                            tuple(executions),
+                            _why(execution),
+                        )
                 graph = await self._engine.graph(task_id)
                 continue
             placement = await self._node(task_id, step_id, graph, max_privacy)
@@ -283,7 +323,9 @@ class TaskRunner:
             executions.append(execution)
             task = execution.task
             if task.state in OUTCOMES:
-                return Run(task, OUTCOMES[task.state], tuple(steps), tuple(executions))
+                return Run(
+                    task, OUTCOMES[task.state], tuple(steps), tuple(executions), _why(execution)
+                )
             graph = await self._engine.graph(task_id)
 
     # ----------------------------------------------------------------------------------

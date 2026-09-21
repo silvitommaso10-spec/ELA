@@ -411,6 +411,15 @@ class Execution(NamedTuple):
     result: ExecutionResult | None
     approval: Approval | None
     verification: Verification | None
+    error: ErrorMetadata | None = None
+    """Why this call failed the step **without running anything** (M13.1, rilievo 3).
+
+    A refusal before the tool has no ``ExecutionResult`` to carry it — nothing ran, so there is
+    nothing to record as a result — and before this field the reason ended in the step's trail
+    and nowhere a person looks. ``None`` whenever the tool did run: then the error is the
+    result's, where it has always been.
+    """
+
     assignment: Assignment | None = None
     """The work this call handed to a node instead of running (M12.2, ADR 0038 §2).
 
@@ -761,7 +770,15 @@ class Executor:
             # is deterministic *because it is this machine*, and every other one the Core minted.
             assignment = await self._assignments.assign(decision, placement, authorization_id=spent)
             return Execution(
-                task, step_id, graph, decision, authorization, None, None, None, assignment
+                task,
+                step_id,
+                graph,
+                decision,
+                authorization,
+                None,
+                None,
+                None,
+                assignment=assignment,
             )
         record = (
             None if tool.idempotent else await self._start_record(tool, decision, device_id, spent)
@@ -1004,7 +1021,9 @@ class Executor:
         return Delivered(
             marked,
             moved.states[assignment.step_id],
-            Execution(task, assignment.step_id, moved, None, None, None, None, None, marked),
+            Execution(
+                task, assignment.step_id, moved, None, None, None, None, None, assignment=marked
+            ),
         )
 
     async def _again(self, assignment: Assignment) -> Delivered:
@@ -1397,6 +1416,10 @@ class Executor:
     ) -> Execution:
         """Build the request for approval from the decision and let the task wait (ADR 0013 §5).
 
+        **No guard against a missing tool**, and not by oversight: ``ToolNotFound`` is raised
+        before the Guardian is ever asked (ADR 0014 §3), so by the time a question exists its
+        tool does too. A branch that cannot fire is worse than an absent one (ADR 0026 §7).
+
         The question names **where this task may go** when that is wider than this machine (M12.2,
         D20): dec. G2 of M11.2 with the place instead of the time — *how long the microphone stays
         open is half of what is being approved* becomes *where the content may go is half of what is
@@ -1405,6 +1428,14 @@ class Executor:
         through them would mean putting the user's policy in a document a model writes.
         """
         assert decision.task_id is not None and decision.step_id is not None
+        # **Before the question exists** (M13.1, ADR 0045 §6-bis): what a call would meet now, read
+        # from the tool that holds the classification it will refuse with. A call that would be
+        # refused this instant has no question to ask — ADR 0011 §3 keeps the denials before the
+        # question for a reason, and it is the same reason here: nobody is asked to approve what
+        # ELA already knows it will refuse, and nobody is woken for it either.
+        prospect = await self._tools.get(spec.id).prospect(arguments)
+        if prospect.refusal is not None:
+            return await self._fail(task, graph, decision, authorization, prospect.refusal)
         targets = approved_targets(decision)
         where = f" on {', '.join(targets)}" if targets else ""
         stated = _stated(spec, arguments)
@@ -1420,7 +1451,7 @@ class Executor:
             status=ApprovalStatus.PENDING,
             decision_id=decision.id,
             expires_at=decision.created_at + self._approval_ttl,
-            metadata={ASKED: await self._asked(task, step, spec, arguments)},
+            metadata={ASKED: self._asked(task, step, spec, arguments, prospect.target)},
         )
         await self._approvals.add(approval)  # stored before the task waits on it (ADR 0015 §6)
         task = await self._engine.request_approval(decision.task_id, approval)
@@ -1465,8 +1496,13 @@ class Executor:
             )
         )
 
-    async def _asked(
-        self, task: Task, step: TaskStep, spec: CapabilitySpec, arguments: JsonMapping
+    def _asked(
+        self,
+        task: Task,
+        step: TaskStep,
+        spec: CapabilitySpec,
+        arguments: JsonMapping,
+        target: Target | None,
     ) -> dict[str, JsonValue]:
         """The facts of the question, kept beside it: what a surface shows without recomposing it.
 
@@ -1491,29 +1527,10 @@ class Executor:
             "grant_uses": SINGLE_USE,
             "grant_seconds": int(self._authorization_ttl.total_seconds()),
         }
-        target = await self._target(spec, arguments)
         if target is not None:
             asked["target"] = target.resolved
-            asked["overwrites"] = target.exists
+            asked["does"] = target.does
         return asked
-
-    async def _target(self, spec: CapabilitySpec, arguments: JsonMapping) -> Target | None:
-        """Where the call would land and whether something is there (M13.1 dec. G).
-
-        Asked of the tool, which holds the root and the classification its verifier shares — not
-        recomputed here, or there would be two definitions of where a path leads (ADR 0014 §2).
-        It is a read, never a run: the tool is executed later and only under an ``ALLOWED``
-        decision, and nothing here touches ``execute``.
-
-        A tool that answers ``None`` leaves the question saying nothing about a file — which is
-        the truth for the eight capabilities that touch none.
-
-        **No guard against a missing tool**, and not by oversight: ``ToolNotFound`` is raised
-        before the Guardian is ever asked (ADR 0014 §3, «nessun grant speso per un'azione che non
-        si potrà verificare»), so by the time a question exists its tool does too. A branch that
-        cannot fire is worse than an absent one (ADR 0026 §7).
-        """
-        return await self._tools.get(spec.id).describe_target(arguments)
 
     async def _fail(
         self,
@@ -1526,7 +1543,9 @@ class Executor:
         """Nothing ran: the step is FAILED with the reason, so the task does not hang (§33)."""
         assert decision.step_id is not None
         graph = await self._engine.fail_step(task.id, decision.step_id, error)
-        return Execution(task, decision.step_id, graph, decision, authorization, None, None, None)
+        return Execution(
+            task, decision.step_id, graph, decision, authorization, None, None, None, error
+        )
 
     # ----------------------------------------------------------------------------------
     # The tool and its audit

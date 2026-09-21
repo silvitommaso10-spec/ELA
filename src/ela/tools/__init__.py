@@ -32,11 +32,15 @@ from ela.tools.errors import (
     VerifierNotFound,
 )
 from ela.tools.fs import (
+    CREATES,
     FS_READ,
     FS_READ_TOOL_NAME,
     FS_WRITE,
     FS_WRITE_TOOL_NAME,
+    NO_ROOT,
     OVERWRITE_MISMATCH,
+    OVERWRITES,
+    READS,
     FsReadTool,
     FsWriteTool,
 )
@@ -61,7 +65,6 @@ from ela.tools.paths import (
     PATH_UNREACHABLE,
     PathProblem,
     classify,
-    describe,
     is_relative_note_path,
     resolve_workspace,
 )
@@ -149,7 +152,10 @@ from ela.tools.voice_online import (
 )
 
 __all__ = [
-    "describe",
+    "NO_ROOT",
+    "READS",
+    "OVERWRITES",
+    "CREATES",
     "FsWriteVerifier",
     "FsReadVerifier",
     "FS_WRITE_VERIFIER_NAME",

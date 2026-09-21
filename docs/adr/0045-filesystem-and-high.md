@@ -192,8 +192,16 @@ risolto** e **se sovrascrive qualcosa che c'è già**. `purpose` c'è in più, n
 arriva dal client, e un criterio che si fidasse di ciò che il chiamante dichiara sarebbe falso il
 giorno in cui il chiamante sbaglia. Il corpo di una scrittura non si mostra mai (§57).
 
+**La frase appartiene alla capability, non al fatto.** La prova a mano ha visto una domanda di
+`fs.read` dire «sovrascrive un file che c'è già»: il fatto — il file c'è — era giusto, la frase era
+quella della scrittura applicata a qualunque capability riempisse la colonna. **Un avviso che dice
+una cosa falsa insegna a non leggerlo**, ed è la riga su cui si regge tutta la dec. G. Quindi la
+frase la scrive il **tool** (`creates a new file`, `overwrites a file that is already there`,
+`reads a file that is there`) e viaggia con la domanda; **nessuna superficie ne possiede una**, e un
+test lo verifica su tutte e tre — così una capability nuova non eredita le parole di un'altra.
+
 I due fatti li legge **la classificazione condivisa** (`ela.tools.paths`), e li risponde il tool, che
-è il componente che tiene la radice: `describe_target` è di sola lettura e **non è
+è il componente che tiene la radice: `prospect` è di sola lettura e **non è
 un'esecuzione** — il tool si esegue dopo, e solo sotto una decisione `ALLOWED`. È `async` perché
 legge il filesystem (ADR 0005 §1) e perché un port ha **un modo solo**: un membro sincrono su un
 port async sarebbe il primo posto in cui qualcuno smette di poter dire qual è.
@@ -202,7 +210,7 @@ Port estesi:
 
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
-| `ToolPort` | §18, §30 | async | `describe_target` |
+| `ToolPort` | §18, §30 | async | `prospect` |
 
 ### 7. La sovrascrittura vale nei due versi
 
@@ -293,6 +301,23 @@ campi sul filo, quindi mostrarli era formato e non lavoro nuovo.
 rischio e i due fatti nuovi nell'Approval Center. La regola della Fase 17 è «ogni milestone che
 aggiunge una capacità aggiunge **la sua** vista», non «una vista nuova»: una seconda vista della
 stessa cosa sarebbe la seconda copia che la voce 5.10 vieta.
+
+### 12-bis. Ogni superficie umana che riporta un fallimento mostra il suo perché
+
+La prova a mano ha trovato la riga `reason` di `ela task run` vuota **nei due casi in cui un perché
+c'era**: il rifiuto del tool e il diniego per scope. E `ela task results` mostrava `FAILED` senza
+codice né messaggio — stavano solo nel JSON. Il repository aveva già la frase, in `ela diagnostics`:
+**una diagnosi che vive dove nessuno guarda non è una diagnosi.**
+
+La regola: **ogni superficie umana che riporta un fallimento o un diniego mostra il suo perché.**
+`run` porta il motivo della decisione per un diniego e `codice: messaggio` per un fallimento;
+`results` dà all'errore un blocco come ha per l'output. Il runner continua a non scrivere niente di
+suo (ADR 0019): ogni motivo è della decisione, del piazzamento, dell'assegnazione o dell'errore, ed
+è **passato**, non composto.
+
+Un rifiuto che arriva **prima** del tool non ha un `ExecutionResult` che lo porti — non è girato
+niente —, quindi `Execution` prende un campo `error`: prima finiva nella trail dello step e in
+nessun posto dove una persona guardi.
 
 ### 12. Una promessa mantenuta a metà, e la regola che ne esce
 

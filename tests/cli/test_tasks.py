@@ -8,6 +8,7 @@ from typing import Any
 
 from ela.cli.errors import CONFIGURATION, REFUSED
 from ela.cli.output import EMPTY
+from ela.cli.tasks import _results
 from ela.composition import Ela
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import (
@@ -363,3 +364,53 @@ async def test_the_echoed_message_is_the_one_that_was_planned(cli: Cli, tmp_path
     detail = json.loads((await cli("task", "show", task_id, "--json")).stdout)
 
     assert detail["steps"][0]["arguments"] == {"message": ECHO_MESSAGE}
+
+
+def test_a_failed_result_shows_its_code_and_message_where_a_person_looks() -> None:
+    """M13.1, rilievo 3: a FAILED row with nothing under it sent the reader to the JSON.
+
+    The error gets a block for the same reason the output has one — **a diagnosis that lives
+    where nobody looks is not a diagnosis** — and ``retryable`` is there because it is the one
+    thing that says whether trying again is worth anything.
+    """
+    shown = _results(
+        [
+            {
+                "step_id": "s1",
+                "capability_id": "fs.write",
+                "status": "FAILED",
+                "tool_name": "fs-write",
+                "created_at": "2026-09-21T10:00:00Z",
+                "output": {},
+                "error": {
+                    "code": "fs.overwrite_mismatch",
+                    "message": "'ELA/prova.md' was approved as a new file",
+                    "retryable": False,
+                },
+            }
+        ]
+    )
+
+    assert "fs.overwrite_mismatch" in shown
+    assert "'ELA/prova.md' was approved as a new file" in shown
+    assert "retryable" in shown
+
+
+def test_an_error_with_no_message_shows_its_code_and_says_nothing_else() -> None:
+    """An empty message is not a line: a label with nothing after it teaches nothing."""
+    shown = _results(
+        [
+            {
+                "step_id": "s1",
+                "capability_id": "core.echo",
+                "status": "FAILED",
+                "tool_name": "core-echo",
+                "created_at": "2026-09-21T10:00:00Z",
+                "output": {},
+                "error": {"code": "tool.refused", "message": "", "retryable": True},
+            }
+        ]
+    )
+
+    assert "tool.refused" in shown
+    assert "message" not in shown

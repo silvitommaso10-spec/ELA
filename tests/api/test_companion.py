@@ -47,6 +47,7 @@ from ela.domain import (
 )
 from ela.permissions import SINGLE_USE
 from ela.ports import EnrollmentExpiredError
+from ela.tools import OVERWRITES, READS
 from tests.api.support import BASE, echo_plan, note_plan, queued
 
 ORIGIN = {"Origin": BASE}
@@ -895,17 +896,21 @@ def an_approval(**changed: Any) -> ApprovalOut:
     return bare.model_copy(update=changed)
 
 
-def test_a_question_about_a_file_names_the_resolved_target_and_what_it_does() -> None:
-    """M13.1 dec. G: two facts of the machine, and the surface that answers shows both."""
-    overwriting = an_approval(target="/Users/tommaso/Documenti/ELA/nota.md", overwrites=True)
-    creating = an_approval(target="/Users/tommaso/Documenti/ELA/nuova.md", overwrites=False)
+def test_a_question_about_a_file_names_the_resolved_target_and_renders_its_sentence() -> None:
+    """M13.1 dec. G: two facts of the machine, and the sentence comes from the capability.
 
-    written = _pairs(overwriting, seen=True)
-    made = _pairs(creating, seen=True)
+    The page renders ``does`` as it stands. It owns no phrase of its own — that is blocker 2 of
+    the proof by hand, where a read was told it «overwrites a file that is already there».
+    """
+    writing = an_approval(target="/Users/tommaso/Documenti/ELA/nota.md", does=OVERWRITES)
+    reading = an_approval(target="/Users/tommaso/Documenti/ELA/nota.md", does=READS)
+
+    written = _pairs(writing, seen=True)
+    read = _pairs(reading, seen=True)
 
     assert "/Users/tommaso/Documenti/ELA/nota.md" in written
-    assert "sovrascrive un file che c&#x27;è già" in written or "sovrascrive" in written
-    assert "crea un file che non c&#x27;è" in made or "crea un file" in made
+    assert "sovrascrive" in written or "overwrites" in written
+    assert "overwrite" not in read.lower(), "a read is not told it overwrites anything"
 
 
 def test_a_question_about_no_file_says_nothing_about_one() -> None:
@@ -917,7 +922,7 @@ def test_a_question_about_no_file_says_nothing_about_one() -> None:
 
 def test_the_two_facts_of_a_file_go_where_the_goal_goes() -> None:
     """A resolved path is the user's own filesystem: the ceiling keeps it on the Mac (§57)."""
-    question = an_approval(target="/Users/tommaso/Documenti/ELA/nota.md", overwrites=True)
+    question = an_approval(target="/Users/tommaso/Documenti/ELA/nota.md", does=OVERWRITES)
 
     assert "Il file" not in _pairs(question, seen=False)
     assert "Che cosa fa" not in _pairs(question, seen=False)

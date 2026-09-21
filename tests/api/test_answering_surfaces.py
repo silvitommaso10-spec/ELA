@@ -19,6 +19,46 @@ import pytest
 
 from ela.api.schemas import Asked
 from ela.cli.system import QUESTION_FIELDS, _questions
+from ela.permissions import FS_READ, FS_WRITE
+from ela.testing.fakes import (
+    FakeClock,
+    FakeIdGenerator,
+    FakeListening,
+    FakeModelRouter,
+    FakeProbe,
+    FakeProviderRegistry,
+    FakeScreenCapture,
+    FakeSpeech,
+    FakeTextRecognition,
+)
+from ela.tools import (
+    CREATES,
+    OVERWRITES,
+    READS,
+    CaptureSettings,
+    CaptureStore,
+    production_tools,
+)
+
+_FAKE_MACHINE: dict[str, object] = {
+    "clock": FakeClock(),
+    "ids": FakeIdGenerator(),
+    "router": FakeModelRouter(),
+    "providers": FakeProviderRegistry(),
+    "screen": FakeScreenCapture(),
+    "probe": FakeProbe(),
+    "recognition": FakeTextRecognition(),
+    "languages": ("it-IT",),
+    "listening": FakeListening(),
+    "listen_enabled": True,
+    "speech": FakeSpeech(),
+    "voice": "Alice",
+    "voice_enabled": True,
+    "speech_online": FakeSpeech(),
+    "voice_id": None,
+    "model": "eleven_flash_v2_5",
+}
+"""A machine that answers, so that the question is about the tools and not about this Mac."""
 
 ROOT = Path(__file__).resolve().parents[2]
 ANSWERING = {
@@ -29,6 +69,7 @@ ANSWERING = {
 
 A third one added without a line here answers nothing."""
 
+CLI = ROOT / "src" / "ela" / "cli" / "system.py"
 """And the third is the command line: ``ela task approve`` is the first yes anybody gives.
 
 It is held to the same rule, in the same form. It was **not** until M13.1: M12.5 gave the parts of
@@ -105,7 +146,7 @@ def test_every_field_a_question_names_reaches_the_block_the_user_reads() -> None
         "stated": ["purpose: SCOPO-DICHIARATO"],
         "targets": ["ELA/prova.md"],
         "target": "/Users/tommaso/Documenti/ELA/prova.md",
-        "overwrites": True,
+        "does": "FRASE-DELLA-CAPABILITY",
         "prompt": "LA-FRASE-DELLA-DOMANDA",
     }
 
@@ -120,7 +161,7 @@ def test_every_field_a_question_names_reaches_the_block_the_user_reads() -> None
         "grant_uses": "1 use",
         "grant_seconds": "30 minutes",
         "target": "/Users/tommaso/Documenti/ELA/prova.md",
-        "overwrites": "overwrites a file that is already there",
+        "does": "FRASE-DELLA-CAPABILITY",
     }.items():
         assert appears in shown, f"`ela approvals` does not show {name} (M13.1 dec. H)"
     assert set(Asked.model_fields) == QUESTION_FIELDS, "and the two lists are the same list"
@@ -140,9 +181,61 @@ def test_a_question_about_no_file_leaves_its_two_facts_absent_and_not_wrong() ->
         ]
     )
 
-    assert "creates a new file" not in shown
-    assert "overwrites" not in shown
+    assert CREATES not in shown and OVERWRITES not in shown and READS not in shown
     assert "file" in shown, "the row is there and says nothing, which is the truth about it"
+
+
+@pytest.mark.parametrize("surface", sorted(ANSWERING) + ["the command line"])
+def test_no_surface_owns_a_sentence_about_files(surface: str) -> None:
+    """dec. G, blocker 2 of the proof by hand: the phrase belongs to the **capability**.
+
+    A read was told it «overwrites a file that is already there», because one surface held one
+    table of two phrases and applied it to whatever filled the column. The repair is not a third
+    phrase in the same table: it is that **no surface holds any of them**. They travel with the
+    question, written by the tool that would do the thing.
+
+    Closed over the three surfaces and over the sentences the capabilities really use, so a
+    capability added tomorrow cannot inherit another's words.
+    """
+    source = (ANSWERING.get(surface) or CLI).read_text(encoding="utf-8")
+
+    for sentence in (CREATES, OVERWRITES, READS):
+        assert sentence not in source, (
+            f"{surface} holds «{sentence}». A phrase about what a call does belongs to the "
+            "capability that does it, or the next capability inherits words that are false "
+            "about it (M13.1 dec. G)."
+        )
+
+
+async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path) -> None:
+    """And the closed world on the other side: which capabilities fill ``does``, and with what.
+
+    Every production tool is asked what it would do, with arguments that are valid for it. The
+    two that touch a file answer with their own sentence; the eight that do not answer nothing —
+    so a ninth that started answering would show up here without a line.
+    """
+    root = tmp_path / "files"
+    root.mkdir()
+    (root / "ELA").mkdir()
+    (root / "ELA" / "c.md").write_text("x", encoding="utf-8")
+    captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
+    tools = production_tools(
+        root=tmp_path / "workspace", **_FAKE_MACHINE, captures=captures, fs_root=root
+    )
+    arguments = {
+        FS_READ: {"path": "ELA/c.md", "purpose": "x"},
+        FS_WRITE: {"path": "ELA/c.md", "body": "y", "overwrite": True},
+    }
+
+    said = {
+        tool.capability_id: (await tool.prospect(arguments.get(tool.capability_id, {}))).target
+        for tool in tools.tools()
+    }
+
+    assert {cid: found.does for cid, found in said.items() if found is not None} == {
+        FS_READ: READS,
+        FS_WRITE: OVERWRITES,
+    }
 
 
 def test_the_claims_are_about_fields_that_exist() -> None:

@@ -1135,7 +1135,7 @@ cat /Users/tu/Documenti/ELA/prova.md
 non è dentro `ELA_FS_SCOPE` — è il passo 5, ma su un piano che doveva passare. Se il risultato è
 `fs.no_root`, la radice non esiste: creala tu, ELA non lo fa.
 
-### 3. Lo stesso piano una seconda volta — la domanda cambia
+### 3. Lo stesso piano una seconda volta — ELA non chiede, rifiuta
 
 Rilancia **lo stesso file**, senza toccarlo:
 
@@ -1143,26 +1143,54 @@ Rilancia **lo stesso file**, senza toccarlo:
 uv run ela task create "riscrivi lo stesso file"
 uv run ela task plan <id> --file docs/examples/fs-write.json
 uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**: il task va in `FAILED` **senza chiedere niente**, e la riga `reason`
+dice perché:
+
+```
+outcome         failed
+reason          fs.overwrite_mismatch: 'ELA/prova.md' was approved as a new file and something is there now
+state           FAILED
+steps executed  0
+```
+
+```
+uv run ela approvals                   # «nothing to show»
+uv run ela audit tail -n 5             # nessun APPROVAL_REQUESTED, nessun BELL_RUNG
+cat /Users/tu/Documenti/ELA/prova.md   # il file di prima, intatto
+```
+
+**Perché è questo e non una domanda.** Il piano dichiara `"overwrite": false`, cioè «lì non c'è
+niente», e adesso qualcosa c'è: la chiamata verrebbe rifiutata nell'istante in cui girasse. **Una
+domanda si compone solo per ciò che, approvato adesso, riuscirebbe sul disco di adesso** — non si
+chiede a nessuno di approvare ciò che ELA sa già che rifiuterà, e non si sveglia nessuno per
+questo. Il confronto lo fa la stessa funzione che rifiuterebbe davvero: un fatto, una definizione,
+un posto.
+
+**Per sovrascrivere davvero** basta che il piano dichiari il vero. Copia il file e cambia una riga:
+
+```
+sed 's/"overwrite": false/"overwrite": true/' docs/examples/fs-write.json > /tmp/fs-overwrite.json
+uv run ela task create "sovrascrivi davvero"
+uv run ela task plan <id> --file /tmp/fs-overwrite.json
+uv run ela task run <id>
 uv run ela approvals
 ```
 
-**Che cosa si deve vedere**: la stessa capability, lo stesso `file`, e la riga `does` che adesso
-dice **`overwrites a file that is already there`**. È l'unico modo di vedere con gli occhi che la
-domanda racconta il mondo e non il piano — il piano non è cambiato di una virgola.
-
-E se rispondi di sì:
+**Che cosa si deve vedere**: adesso la domanda c'è, e la riga `does` dice **`overwrites a file that
+is already there`** invece di `creates a new file`. È l'unico modo di vedere con gli occhi che la
+domanda racconta il mondo e non il piano — e che la frase è della capability: una lettura, al passo
+4, dirà `reads a file that is there` e non parlerà mai di sovrascrivere.
 
 ```
 uv run ela task approve <id> --approval <approval-id>
 uv run ela task run <id>
-uv run ela task results <id>
 ```
 
-**Che cosa si deve vedere**: il task **fallisce**, con `fs.overwrite_mismatch`, e il file sul disco
-è ancora quello di prima. Non è un difetto: il piano aveva dichiarato `"overwrite": false`, cioè
-«lì non c'è niente», e quella asserzione adesso è falsa. Ciò che è stato approvato come «crea» non
-diventa un «sovrascrivi» — e vale anche al contrario, se il file sparisce fra il sì e la scrittura.
-Per sovrascrivere davvero, metti `"overwrite": true` nel piano.
+**Se non si vede così**: se al primo rilancio compare una domanda invece del `FAILED`, stai girando
+su codice precedente alla riparazione di M13.1 — quella versione chiedeva e poi rifiutava, che è il
+difetto che la prova a mano ha trovato.
 
 ### 4. Rileggere il file, e dove finiscono i byte
 
@@ -1193,17 +1221,34 @@ uv run ela task plan <id> --file docs/examples/fs-outside-the-scope.json
 uv run ela task run <id>
 ```
 
-**Che cosa si deve vedere**: il task va in `DENIED` **subito**, e poi tre assenze:
+**Prima di lanciare, il campanello deve poter suonare.** Un'assenza vale come prova solo se
+l'assenza è di qualcosa che altrimenti ci sarebbe: senza `ELA_NTFY_TOPIC` nel `.env` ELA non suona
+**mai**, e questo passo non proverebbe niente. Configuralo come dice il §13, poi conta i rintocchi
+prima e dopo:
 
 ```
-uv run ela approvals                   # «nothing to show»: nessuno è stato interpellato
-uv run ela audit tail -n 5             # nessun BELL_RUNG
-ls /Users/tu/Documenti/altrove         # non esiste
+uv run ela audit tail -n 200 --json | grep -c BELL_RUNG
 ```
 
-E se hai l'iPhone arruolato (§13), **il telefono non deve aver ricevuto niente**. Guardalo prima di
-lanciare e subito dopo: se ha suonato, il rifiuto è arrivato *dopo* la domanda invece che prima, e
-non si chiede a qualcuno di approvare ciò che sarebbe negato comunque.
+Tieni da parte il numero. Poi lancia, e ricontalo.
+
+**Che cosa si deve vedere**: il task va in `DENIED` **subito**, la riga `reason` dice perché, e poi
+tre assenze:
+
+```
+outcome  denied
+reason   targets ['altrove/non-deve-esistere.md'] of fs.write are not within scope ['ELA']
+```
+
+```
+uv run ela approvals                            # «nothing to show»: nessuno è stato interpellato
+uv run ela audit tail -n 200 --json | grep -c BELL_RUNG   # **lo stesso numero di prima**
+ls /Users/tu/Documenti/altrove                  # non esiste
+```
+
+E se hai l'iPhone arruolato (§13), **il telefono non deve aver ricevuto niente**. Il conteggio dei
+`BELL_RUNG` è ciò che rende la prova una prova: se è salito, il rifiuto è arrivato *dopo* la
+domanda invece che prima, e non si chiede a qualcuno di approvare ciò che sarebbe negato comunque.
 
 Nell'audit la decisione porta `rule: SCOPE`:
 
@@ -1215,12 +1260,34 @@ uv run ela audit tail -n 5 --json | grep -o '"rule": "[A-Z_]*"'
 fuori da `ELA_FS_SCOPE` — con lo scope `ELA` il piano d'esempio scrive in `altrove/`. Se la regola
 dice `ALLOW_WITHIN_SCOPE`, stai girando su codice precedente a M13.1.
 
-### 6. La stessa domanda dal telefono e dal browser
+### 6. La stessa domanda dal telefono e dal browser — e quando il telefono non risponde
 
-Ripeti il passo 2 con l'iPhone aperto sulla pagina del companion (§13) e il Command Center aperto
-sul Mac (§14): **tutt'e due mostrano il percorso risolto e la sovrascrittura**, ed è la ragione per
-cui tutt'e due possono rispondere. Una superficie che non li mostrasse non risponderebbe — la
-regola è quella, non un elenco di dispositivi.
+Qui si vedono **le due metà** della regola: una superficie può rispondere a una domanda solo se
+mostra tutto ciò che quella domanda nomina.
+
+**La metà che risponde.** I piani d'esempio nascono `LOCAL_ONLY`, che è il default, e a quel
+livello il companion **non vede** percorso né sovrascrittura: per il tetto di M12.5 la pagina porta
+solo id, stato, capability e rischio, e dice di rispondere dal Mac. Per dare la domanda al telefono
+il task va creato più largo:
+
+```
+uv run ela task create "scrivi dal telefono" --privacy TRUSTED
+uv run ela task plan <id> --file docs/examples/fs-write.json
+uv run ela task run <id>
+```
+
+(Se `ELA/prova.md` esiste già dal passo 2, cancellalo o cambia il `path` nel piano: altrimenti il
+passo 3 ti ha già insegnato che cosa succede.)
+
+**Che cosa si deve vedere**: con l'iPhone aperto sulla pagina del companion (§13) e il Command
+Center aperto sul Mac (§14), **tutt'e due mostrano il percorso risolto e che cosa fa il sì**, e
+tutt'e due offrono i pulsanti. Rispondi dal telefono: il task riparte nella stessa richiesta.
+
+**La metà che non risponde.** Rifai lo stesso giro **senza** `--privacy TRUSTED`: la pagina del
+telefono mostra la domanda ma non il percorso, non i pulsanti, e dice che il contenuto resta sul
+Mac. **Non è un difetto: è la regola che funziona.** Una superficie che non mostra ciò a cui
+direbbe sì non risponde, e non c'è nessun elenco di dispositivi da tenere aggiornato — il giorno in
+cui una domanda imparerà un fatto nuovo, ogni superficie o lo mostra o smette di offrire il sì.
 
 ## Dove guardare dopo
 

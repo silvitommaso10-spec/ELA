@@ -24,9 +24,13 @@ from ela.domain import (
 )
 from ela.testing.fakes import FakeClock, FakeIdGenerator
 from ela.tools import (
+    CREATES,
     FS_READ,
     FS_WRITE,
     OVERWRITE_MISMATCH,
+    OVERWRITES,
+    READS,
+    EchoTool,
     FsReadTool,
     FsWriteTool,
 )
@@ -283,33 +287,79 @@ async def test_a_reader_refuses_a_directory(root: Path) -> None:
 # ----------------------------------------------------------------------------------------
 # What a question is told (dec. G)
 # ----------------------------------------------------------------------------------------
+# What a question is told, and what is refused before there is a question (dec. G, ADR 0045 §6-bis)
+# ----------------------------------------------------------------------------------------
 
 
-async def test_the_question_learns_the_resolved_path_and_whether_something_is_there(
+async def test_the_question_learns_the_resolved_path_and_what_a_yes_would_do(root: Path) -> None:
+    (root / "c.md").write_text("x", encoding="utf-8")
+
+    making = await writer(root).prospect({"path": "n.md", "body": BODY, "overwrite": False})
+    replacing = await writer(root).prospect({"path": "c.md", "body": BODY, "overwrite": True})
+
+    assert making.refusal is None and making.target is not None
+    assert making.target.resolved == str(root / "n.md")
+    assert making.target.does == CREATES
+    assert replacing.target is not None and replacing.target.does == OVERWRITES
+
+
+async def test_a_write_whose_assertion_the_disk_contradicts_is_refused_before_the_question(
     root: Path,
 ) -> None:
+    """**The blocker the proof by hand found.** ELA asked to approve what it would refuse.
+
+    The plan asserts «nothing is there» and something is. Before M13.1's repair the question was
+    composed anyway — it even said «overwrites», read from the disk — the user said yes, and the
+    tool refused because the *plan* said otherwise: two truths for one fact, and a user asked to
+    approve what ELA already knew it would refuse (ADR 0011 §3).
+    """
+    (root / "c.md").write_text("qualcosa", encoding="utf-8")
+
+    prospect = await writer(root).prospect({"path": "c.md", "body": BODY, "overwrite": False})
+
+    assert prospect.target is None
+    assert prospect.refusal is not None
+    assert prospect.refusal.code == OVERWRITE_MISMATCH
+
+
+async def test_a_read_of_a_file_that_is_not_there_is_refused_before_the_question(
+    root: Path,
+) -> None:
+    """The same rule on a read: approving it would change nothing (ADR 0045 §6-bis)."""
+    prospect = await reader(root).prospect({"path": "assente.md", "purpose": "x"})
+
+    assert prospect.target is None
+    assert prospect.refusal is not None
+    assert prospect.refusal.code == PATH_MISSING
+
+
+async def test_a_read_that_would_succeed_says_what_a_read_does(root: Path) -> None:
+    """dec. G, blocker 2: the sentence belongs to the capability, and a read does not overwrite."""
     (root / "c.md").write_text("x", encoding="utf-8")
 
-    absent = await writer(root).describe_target({"path": "n.md"})
-    present = await writer(root).describe_target({"path": "c.md"})
+    prospect = await reader(root).prospect({"path": "c.md", "purpose": "x"})
 
-    assert absent is not None and present is not None
-    assert absent.resolved == str(root / "n.md") and not absent.exists
-    assert present.resolved == str(root / "c.md") and present.exists
-
-
-async def test_a_path_the_classification_refuses_describes_nothing(root: Path) -> None:
-    """There is nothing to ask about: the refusal comes with the classification's own code."""
-    assert await writer(root).describe_target({"path": "../fuori.md"}) is None
-    assert await writer(root).describe_target({"path": 7}) is None
+    assert prospect.target is not None
+    assert prospect.target.does == READS
+    assert "overwrite" not in prospect.target.does
 
 
-async def test_a_reader_describes_its_target_too(root: Path) -> None:
-    (root / "c.md").write_text("x", encoding="utf-8")
+async def test_a_path_the_classification_refuses_has_no_target_and_a_refusal(root: Path) -> None:
+    bad = {"path": "../fuori.md", "body": BODY, "overwrite": False}
 
-    described = await reader(root).describe_target({"path": "c.md"})
+    prospect = await writer(root).prospect(bad)
 
-    assert described is not None and described.exists
+    assert prospect.target is None
+    assert prospect.refusal is not None and prospect.refusal.code == PATH_INVALID
+
+
+async def test_a_capability_that_touches_no_file_promises_and_refuses_nothing() -> None:
+    """The default of :class:`~ela.tools.base.Tool`: silence is not a permission (dec. G)."""
+    tool = EchoTool(FakeClock(NOW), FakeIdGenerator())
+
+    prospect = await tool.prospect({"message": "ciao"})
+
+    assert prospect.target is None and prospect.refusal is None
 
 
 # ----------------------------------------------------------------------------------------
@@ -354,8 +404,11 @@ async def test_a_target_that_stops_being_a_regular_file_between_the_checks_is_no
 
     ``classify`` says «a regular file is there», and by the time the descriptor is open it is a
     FIFO. In production the classification refuses a FIFO one step earlier, so this branch is only
-    reachable by building the race — which is what makes it worth building (the shape of
-    ``tests/security/test_high_risk_capability.py``).
+    reachable by building the race — which is what makes it worth building.
+
+    Writing this test is what found that ``os.open`` on a FIFO **blocks** until somebody opens the
+    other end: the guard one line below could never run. ``READ_FLAGS`` carries ``O_NONBLOCK``
+    because of it.
     """
     os.mkfifo(root / "tubo")
     monkeypatch.setattr("ela.tools.fs.classify", lambda *_: None)

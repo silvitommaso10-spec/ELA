@@ -46,6 +46,7 @@ from ela.ports import (
     AuthorizationExhaustedError,
     NotAllowedError,
     NotFoundError,
+    Prospect,
     Target,
 )
 from ela.tasks.errors import UnknownStepError
@@ -1145,24 +1146,28 @@ async def test_neither_arguments_output_nor_compared_content_enter_the_verificat
     assert "expected_bytes" in serialized  # sizes, yes (decision F)
 
 
-async def test_a_question_about_a_file_carries_the_resolved_target_and_the_overwrite(
+async def test_a_question_about_a_file_carries_the_resolved_target_and_the_sentence(
     w: World,
 ) -> None:
-    """M13.1 dec. G: the two facts are read from the tool and kept beside the question.
+    """M13.1 dec. G: the facts are read from the tool and kept beside the question.
 
     Asked of the tool because the tool holds the root and the classification its verifier shares —
     and read here, at the moment of asking, so that a file changed tomorrow does not change what
     was asked yesterday.
     """
     task, step = await w.running(NOTE.id, requires_authorization=True)
-    w.tool(NOTE.id).target = Target(resolved="/Users/tommaso/Documenti/ELA/nota.md", exists=True)
+    w.tool(NOTE.id).prospects = Prospect(
+        target=Target(
+            resolved="/Users/tommaso/Documenti/ELA/nota.md", exists=True, does="FRASE-DEL-TOOL"
+        )
+    )
 
     execution = await w.execute(task.id, step.id)
 
     assert execution.approval is not None
     asked = execution.approval.metadata["asked"]
     assert asked["target"] == "/Users/tommaso/Documenti/ELA/nota.md"
-    assert asked["overwrites"] is True
+    assert asked["does"] == "FRASE-DEL-TOOL"
 
 
 async def test_a_question_about_no_file_carries_neither(w: World) -> None:
@@ -1173,4 +1178,25 @@ async def test_a_question_about_no_file_carries_neither(w: World) -> None:
 
     assert execution.approval is not None
     asked = execution.approval.metadata["asked"]
-    assert "target" not in asked and "overwrites" not in asked
+    assert "target" not in asked and "does" not in asked
+
+
+async def test_a_call_that_would_be_refused_now_is_never_asked_about(w: World) -> None:
+    """**The blocker of the proof by hand** (ADR 0045 §6-bis).
+
+    ELA asked the user to approve a write it already knew it would refuse, and then refused it
+    after the yes. A question is composed only for something that, approved now, would succeed on
+    the disk as it is now — so the step fails where the question would have been, and nobody is
+    woken for it.
+    """
+    task, step = await w.running(NOTE.id, requires_authorization=True)
+    w.tool(NOTE.id).prospects = Prospect(
+        refusal=ErrorMetadata(code="fs.overwrite_mismatch", message="il mondo si è mosso")
+    )
+
+    execution = await w.execute(task.id, step.id)
+
+    assert execution.approval is None, "nobody is asked to approve what would be refused"
+    assert await w.step_state(task.id, step.id) is StepState.FAILED
+    assert E.APPROVAL_REQUESTED not in await w.event_types(task.id)
+    assert E.BELL_RUNG not in await w.event_types(task.id)
