@@ -52,7 +52,10 @@ e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.
 - **`make check` una volta, alla fine della milestone, prima del riepilogo; durante il lavoro solo
   i test del pezzo che si tocca.** Si lancia in primo piano e si aspetta lì: non in background,
   non sorvegliato da un monitor, non interrogato a intervalli — il polling costa più del lavoro che
-  sorveglia, e una volta è costato sei ore.
+  sorveglia, e una volta è costato sei ore. **E si legge intero**: non si passa in una pipe che ne
+  taglia la coda — `| tail`, `| head`, un `grep` che tiene solo le righe attese —, perché il
+  riepilogo, i conteggi e l'esito stanno in fondo. Un giro perso perché l'esito è finito in una
+  pipe costa novanta secondi.
 - **La CI sul branch è il controllo Linux; `make check-linux` serve per riprodurre in locale una
   CI rossa su ubuntu.** Il merge esige la CI verde su entrambi i runner all'ultimo commit del
   branch. `make check` gira su una macchina sola, e una suite che eredita da quella macchina passa
