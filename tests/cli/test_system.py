@@ -11,7 +11,7 @@ from pydantic import SecretStr
 from ela.cli import client
 from ela.cli.errors import REFUSED, UNREACHABLE
 from ela.cli.output import EMPTY
-from ela.cli.system import _does
+from ela.cli.system import _does, _terms
 from ela.composition import ApiSettings, Ela
 from ela.devices.local import LOCAL_DEVICE_ID
 from tests.cli.support import Cli, plain, unreachable
@@ -86,11 +86,21 @@ async def test_approvals_says_so_when_nothing_waits(cli: Cli) -> None:
     assert "nothing to show" in result.stdout
 
 
-def test_a_question_about_no_file_leaves_the_two_columns_empty() -> None:
+def test_the_terms_of_the_grant_are_shown_whole_or_not_at_all() -> None:
+    """Half of it is not an answer: «one use» without «for how long» is a permission of
+    unknown life (ADR 0012 §2)."""
+    assert _terms(1, 1800) == "1 use, within 30 minutes"
+    assert _terms(3, 1800) == "3 uses, within 30 minutes"
+    assert _terms(1, 90) == "1 use, within 90 seconds"
+    assert _terms(None, 1800) is None
+    assert _terms(1, None) is None
+
+
+def test_a_question_about_no_file_says_nothing_about_one() -> None:
     """``None`` is not «no»: it is «this question is not about a file» (M13.1 dec. G)."""
-    assert _does(None) == ""
-    assert _does(True) == "sovrascrive"
-    assert _does(False) == "crea"
+    assert _does(None) is None
+    assert _does(True) == "overwrites a file that is already there"
+    assert _does(False) == "creates a new file"
 
 
 async def test_approvals_takes_a_limit(cli: Cli) -> None:

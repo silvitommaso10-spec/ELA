@@ -6,13 +6,14 @@ said, and if the database did not answer the exit code is the one for a refusal,
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from collections.abc import Mapping, Sequence
+from typing import Annotated, Any, Final
 
 import typer
 
 from ela.cli import client
 from ela.cli.errors import handled
-from ela.cli.output import Json, emit, fields, table
+from ela.cli.output import Json, emit, fields
 
 __all__ = ["approvals", "diagnostics", "health", "perception", "sensor"]
 
@@ -135,6 +136,34 @@ def perception(as_json: Json = False) -> None:
     emit(payload, as_json, fields(rows))
 
 
+QUESTION_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "description",
+        "risk",
+        "max_privacy",
+        "goal",
+        "stated",
+        "grant_uses",
+        "grant_seconds",
+        "target",
+        "overwrites",
+    }
+)
+"""Every field of the question this surface shows, declared here so it can be checked.
+
+``ela task approve`` is the first yes anybody gives, so this is an **answering surface**, and the
+rule of M13.1 dec. H holds for it as it holds for the two pages: *a surface may answer a question
+only if it shows everything that question names.* The pages show the parts because a page cannot
+make somebody read a sentence (M12.5 dec. F); here the sentence is shown too, and the parts
+beside it.
+
+The gap this closes is older than M13.1 — M12.5 gave the bag of the question to the pages and left
+the command line with the sentence — and what made it visible was adding two fields to the bag.
+``tests/api/test_answering_surfaces.py`` compares this set with ``Asked`` in both directions: a
+field added to the question tomorrow without a line below fails the suite.
+"""
+
+
 @handled
 def approvals(
     limit: Annotated[int | None, typer.Option("--limit", min=1, help="at most this many")] = None,
@@ -145,40 +174,64 @@ def approvals(
     A request whose task has moved on — stopped, expired — is not shown: answering it would no
     longer do anything, and asking for an answer that cannot land is asking the impossible.
 
-    **A question about a file names two facts of the machine** — where it really lands, and
-    whether something is already there (M13.1 dec. G) — and this is a surface that offers a yes,
-    so it shows them (dec. H). For the capabilities that touch no file the two columns are empty,
-    which is the truth about them and not a gap.
+    **One block per question, not a row**: a question names nine things, and nine columns are a
+    dump rather than something a person reads before saying yes.
     """
     with client.connect() as api:
         payload = api.get("/approvals", client.query(limit=limit))
-    emit(
-        payload,
-        as_json,
-        table(
-            ("approval", "task", "capability", "targets", "file", "does", "asks"),
-            [
-                (
-                    one["id"],
-                    one["task_id"],
-                    one["capability_id"],
-                    one["targets"],
-                    one.get("target") or "",
-                    _does(one.get("overwrites")),
-                    one["prompt"],
-                )
-                for one in payload
-            ],
-        ),
-    )
+    emit(payload, as_json, _questions(payload))
 
 
-def _does(overwrites: bool | None) -> str:
+def _questions(payload: Sequence[Mapping[str, Any]]) -> str:
+    """The waiting questions, one block each, or the sentence that says there are none."""
+    if not payload:
+        return "nothing to show"
+    return "\n\n".join(fields(_rows(one)) for one in payload)
+
+
+def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    """What a question names, in the order somebody reads it before answering.
+
+    Who is asking and about what, then how much it costs to say yes, then what exactly it will
+    do. The two facts of a file (M13.1 dec. G) sit next to the targets they resolve.
+    """
+    return [
+        ("approval", one["id"]),
+        ("task", one["task_id"]),
+        ("capability", one["capability_id"]),
+        ("what", one.get("description") or None),
+        ("risk", one.get("risk")),
+        ("may go", one.get("max_privacy")),
+        ("grant", _terms(one.get("grant_uses"), one.get("grant_seconds"))),
+        ("expires", one.get("expires_at")),
+        ("step goal", one.get("goal") or None),
+        ("declared", one.get("stated") or None),
+        ("targets", one["targets"]),
+        ("file", one.get("target") or None),
+        ("does", _does(one.get("overwrites"))),
+        ("asks", one["prompt"]),
+    ]
+
+
+def _terms(uses: int | None, seconds: int | None) -> str | None:
+    """What the "yes" mints: how many uses, and for how long (ADR 0012 §2).
+
+    Half of it is not an answer — «one use» without «for how long» is a permission of unknown
+    life — so either both are there or neither is.
+    """
+    if uses is None or seconds is None:
+        return None
+    minutes, remainder = divmod(seconds, 60)
+    span = f"{minutes} minutes" if not remainder else f"{seconds} seconds"
+    return f"{uses} use, within {span}" if uses == 1 else f"{uses} uses, within {span}"
+
+
+def _does(overwrites: bool | None) -> str | None:
     """What a "yes" would do to the file, in the words the pages use (M13.1 dec. G).
 
-    ``None`` is not "no": it is "this question is not about a file", and an empty cell says that
+    ``None`` is not "no": it is "this question is not about a file", and an absent value says that
     without inventing an answer.
     """
     if overwrites is None:
-        return ""
-    return "sovrascrive" if overwrites else "crea"
+        return None
+    return "overwrites a file that is already there" if overwrites else "creates a new file"

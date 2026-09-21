@@ -269,11 +269,25 @@ L'orchestratore riceve per questo un `CapabilityRegistryPort`, che è un port e 
 ### 11. Una superficie risponde solo se mostra tutto ciò che la domanda nomina
 
 La regola, derivabile e valida anche per `CRITICAL` quando arriverà: **una superficie può rispondere
-a una domanda solo se mostra tutto ciò che quella domanda nomina.** Il Mac e il telefono mostrano il
-bersaglio risolto e la sovrascrittura, quindi rispondono; una superficie che non li mostrasse non
-risponderebbe. **Non c'è un elenco di dispositivi da tenere aggiornato**: è un mondo chiuso nei due
-versi fra i campi che la domanda dichiara e quelli che ogni superficie legge, e il giorno in cui una
-domanda impara un fatto nuovo, ogni superficie che offre un sì o lo mostra o smette di offrirlo.
+a una domanda solo se mostra tutto ciò che quella domanda nomina.** **Non c'è un elenco di
+dispositivi da tenere aggiornato**: è un mondo chiuso nei due versi fra i campi che la domanda
+dichiara e quelli che ogni superficie mostra, e il giorno in cui una domanda impara un fatto nuovo,
+ogni superficie che offre un sì o lo mostra o smette di offrirlo.
+
+**Le superfici che rispondono sono tre, non due**: il Command Center, il companion, e **la riga di
+comando** — `ela task approve` è il primo sì che chiunque dia. Tutte e tre mostrano ora tutto ciò
+che la domanda nomina: le due pagine ne mostrano le **parti**, perché una pagina non può far
+leggere una frase (M12.5 dec. F), e `ela approvals` mostra la frase **e** le parti, un blocco per
+domanda — nove colonne sarebbero un riversamento, non qualcosa che si legge prima di dire sì.
+
+**Il divario della riga di comando precedeva M13.1**, e va detto perché è il genere di cosa che si
+scopre due volte: M12.5 diede il sacchetto della domanda alle pagine e lasciò alla CLI la frase e i
+bersagli, quindi `ela task approve` poteva rispondere a una domanda senza dirne il rischio.
+Nessuno se n'era accorto finché questa milestone non ha aggiunto due campi al sacchetto e ha dovuto
+chiedersi dove dovessero comparire. **L'ha reso visibile M13.1 e l'ha chiuso M13.1**: le tre strade
+scartate erano ritagliare un'eccezione alla regola per la prima superficie che non la rispettava,
+lasciarlo come debito datato, oppure darlo a una milestone sua — e `ApprovalOut` porta già quei
+campi sul filo, quindi mostrarli era formato e non lavoro nuovo.
 
 `fs.read` e `fs.write` **non hanno una vista propria** nel Command Center: hanno il trattamento del
 rischio e i due fatti nuovi nell'Approval Center. La regola della Fase 17 è «ogni milestone che

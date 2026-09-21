@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from ela.api.schemas import Asked
+from ela.cli.system import QUESTION_FIELDS, _questions
 
 ROOT = Path(__file__).resolve().parents[2]
 ANSWERING = {
@@ -28,16 +29,13 @@ ANSWERING = {
 
 A third one added without a line here answers nothing."""
 
-CLI = ROOT / "src" / "ela" / "cli" / "system.py"
-"""And the one that shows the question as the sentence it is: ``ela approvals``.
+"""And the third is the command line: ``ela task approve`` is the first yes anybody gives.
 
-It is an answering surface too — ``ela task approve`` is the first yes anybody gives — and it is
-held to the same rule for the facts a sentence cannot carry. What it shows instead of the parts is
-``prompt``, which **is** the question; the two machine facts of M13.1 are not in it, so they are
-shown beside it."""
-
-OF_A_FILE = ("target", "overwrites")
-"""The facts a question about a file names, and that no sentence carries (M13.1 dec. G)."""
+It is held to the same rule, in the same form. It was **not** until M13.1: M12.5 gave the parts of
+the question to the two pages and left ``ela approvals`` with the sentence and the targets, and
+nobody noticed until this milestone added two fields to the bag and asked where they had to
+appear. What closed it is ``QUESTION_FIELDS``, which the CLI declares and this file compares with
+``Asked`` **in both directions**."""
 
 NOT_SHOWN: dict[str, str] = {
     "description": "shown as the capability's own sentence, not as a pair",
@@ -72,20 +70,79 @@ def test_an_answering_surface_reads_every_field_a_question_names(surface: str) -
     )
 
 
-def test_the_command_line_shows_the_facts_of_a_file_it_offers_a_yes_to() -> None:
-    """dec. H, on the third surface that answers: `ela task approve` is the first yes given.
+def test_the_command_line_declares_exactly_the_fields_a_question_names() -> None:
+    """Closed in both directions, like the pages (dec. H).
 
-    It shows the question as one sentence — the pages show the parts because a page cannot make
-    somebody read a sentence (M12.5 dec. F) — so what it must show beside it is what a sentence
-    does not carry: where the write really lands, and whether something is already there.
+    One way: a field added to the question tomorrow without a line in ``QUESTION_FIELDS`` fails
+    here, so a surface cannot quietly stop showing what it answers. The other way: a name in
+    ``QUESTION_FIELDS`` that the question does not have is a claim about nothing, and the
+    behavioural test below is what keeps the declaration honest — a declared field that no row
+    renders does not survive it.
     """
-    source = CLI.read_text(encoding="utf-8")
-    unread = [field for field in OF_A_FILE if f'"{field}"' not in source]
+    assert set(Asked.model_fields) == QUESTION_FIELDS, {
+        "not shown by `ela approvals`": sorted(set(Asked.model_fields) - QUESTION_FIELDS),
+        "claimed and not in the question": sorted(QUESTION_FIELDS - set(Asked.model_fields)),
+    }
 
-    assert not unread, (
-        f"`ela approvals` offers a yes to a question that names {unread} and never shows it. "
-        "A surface that does not show what the question is about does not answer it (dec. H)."
+
+def test_every_field_a_question_names_reaches_the_block_the_user_reads() -> None:
+    """And it is really rendered, not only declared: one distinctive value per field.
+
+    ``QUESTION_FIELDS`` is a promise; this is the measure of it. Each value below is unique, so a
+    row that dropped one — or that rendered the same thing twice — shows up as an absence.
+    """
+    question = {
+        "id": "9f2c1e30-0000-4000-8000-000000000001",
+        "task_id": "55ed2ab5-94aa-581f-9468-c4d247d9fe04",
+        "capability_id": "fs.write",
+        "description": "DESCRIZIONE-DELLA-CAPABILITY",
+        "risk": "HIGH",
+        "max_privacy": "CLOUD_ALLOWED",
+        "grant_uses": 1,
+        "grant_seconds": 1800,
+        "expires_at": "2026-09-21T10:44:00+00:00",
+        "goal": "OBIETTIVO-DELLO-STEP",
+        "stated": ["purpose: SCOPO-DICHIARATO"],
+        "targets": ["ELA/prova.md"],
+        "target": "/Users/tommaso/Documenti/ELA/prova.md",
+        "overwrites": True,
+        "prompt": "LA-FRASE-DELLA-DOMANDA",
+    }
+
+    shown = _questions([question])
+
+    for name, appears in {
+        "description": "DESCRIZIONE-DELLA-CAPABILITY",
+        "risk": "HIGH",
+        "max_privacy": "CLOUD_ALLOWED",
+        "goal": "OBIETTIVO-DELLO-STEP",
+        "stated": "SCOPO-DICHIARATO",
+        "grant_uses": "1 use",
+        "grant_seconds": "30 minutes",
+        "target": "/Users/tommaso/Documenti/ELA/prova.md",
+        "overwrites": "overwrites a file that is already there",
+    }.items():
+        assert appears in shown, f"`ela approvals` does not show {name} (M13.1 dec. H)"
+    assert set(Asked.model_fields) == QUESTION_FIELDS, "and the two lists are the same list"
+
+
+def test_a_question_about_no_file_leaves_its_two_facts_absent_and_not_wrong() -> None:
+    """``None`` is «this question is not about a file», and an absence says it (dec. G)."""
+    shown = _questions(
+        [
+            {
+                "id": "9f2c1e30-0000-4000-8000-000000000002",
+                "task_id": "55ed2ab5-94aa-581f-9468-c4d247d9fe04",
+                "capability_id": "core.echo",
+                "targets": [],
+                "prompt": "una domanda che non parla di file",
+            }
+        ]
     )
+
+    assert "creates a new file" not in shown
+    assert "overwrites" not in shown
+    assert "file" in shown, "the row is there and says nothing, which is the truth about it"
 
 
 def test_the_claims_are_about_fields_that_exist() -> None:

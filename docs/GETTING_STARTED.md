@@ -228,9 +228,26 @@ uv run ela approvals
 ```
 
 ```
-APPROVAL                              TASK                                  CAPABILITY            TARGETS                        ASKS
-47fbce38-66ab-519c-b7dc-8cce4bd4a7f2  55ed2ab5-94aa-581f-9468-c4d247d9fe04  workspace.write_note  workspace/notes/first-task.md  workspace.write_note on workspace/notes/first-task.md for step 9c5b8f26-… (scrivere la nota del primo task): workspace.write_note requires an authorization: none was given
+approval    47fbce38-66ab-519c-b7dc-8cce4bd4a7f2
+task        55ed2ab5-94aa-581f-9468-c4d247d9fe04
+capability  workspace.write_note
+what        Writes a note at a path inside the authorised notes folder.
+risk        LOW
+may go      LOCAL_ONLY
+grant       1 use, within 60 minutes
+expires     2026-09-07T09:12:00+00:00
+step goal   scrivere la nota del primo task
+declared    —
+targets     workspace/notes/first-task.md
+file        —
+does        —
+asks        workspace.write_note on workspace/notes/first-task.md for step 9c5b8f26-… (scrivere la nota del primo task): workspace.write_note requires an authorization: none was given
 ```
+
+**Un blocco per domanda, e mostra tutto ciò che la domanda nomina**: è la condizione per cui una
+superficie può offrirti un sì (M13.1, ADR 0045 §11). I trattini non sono buchi — `declared` è vuoto
+perché questa capability non dichiara argomenti da mostrare, `file` e `does` perché la domanda non
+parla di un file: quelli li vedrai in §15.
 
 Leggi la richiesta, poi rispondi. Il «sì» e il «no» hanno due comandi, perché sono due risposte
 (§62):
@@ -1083,11 +1100,30 @@ uv run ela task run <id>
 uv run ela approvals
 ```
 
-**Che cosa si deve vedere**: il task si ferma in `WAITING_APPROVAL`, e la riga della domanda porta
-`fs.write`, la colonna `file` con il **percorso risolto per esteso** —
-`/Users/tu/Documenti/ELA/prova.md`, non `ELA/prova.md` — e la colonna `does` che dice **`crea`**.
-Quei due fatti li legge il disco, non il piano: sono la ragione per cui questa superficie può
-offrirti un sì. Il **rischio** `HIGH` qui non compare: lo mostrano le pagine del passo 6.
+**Che cosa si deve vedere**: il task si ferma in `WAITING_APPROVAL`, e `ela approvals` stampa **un
+blocco** con tutto ciò che la domanda nomina — perché una superficie può offrirti un sì solo se ti
+mostra a che cosa lo stai dicendo:
+
+```
+approval    9f2c1e30-0000-4000-8000-000000000001
+task        55ed2ab5-94aa-581f-9468-c4d247d9fe04
+capability  fs.write
+what        Writes one file inside the authorised folder, outside the workspace.
+risk        HIGH
+may go      LOCAL_ONLY
+grant       1 use, within 30 minutes
+expires     2026-09-21T10:44:00+00:00
+step goal   lasciare un file nella cartella che ho dichiarato
+declared    purpose: la prova a mano del filesystem
+targets     ELA/prova.md
+file        /Users/tu/Documenti/ELA/prova.md
+does        creates a new file
+asks        fs.write on ELA/prova.md for step …: requires an authorization: none was given
+```
+
+Le due righe da guardare sono `file` e `does`: il **percorso risolto per esteso** —
+`/Users/tu/Documenti/ELA/prova.md`, non `ELA/prova.md` — e che cosa il sì farà. Quei due fatti li
+legge il disco, non il piano.
 
 ```
 uv run ela task approve <id> --approval <approval-id>
@@ -1110,9 +1146,9 @@ uv run ela task run <id>
 uv run ela approvals
 ```
 
-**Che cosa si deve vedere**: la stessa capability, lo stesso `file`, e la colonna `does` che adesso
-dice **`sovrascrive`**. È l'unico modo di vedere con gli occhi che la domanda racconta il mondo e
-non il piano — il piano non è cambiato di una virgola.
+**Che cosa si deve vedere**: la stessa capability, lo stesso `file`, e la riga `does` che adesso
+dice **`overwrites a file that is already there`**. È l'unico modo di vedere con gli occhi che la
+domanda racconta il mondo e non il piano — il piano non è cambiato di una virgola.
 
 E se rispondi di sì:
 
@@ -1160,7 +1196,7 @@ uv run ela task run <id>
 **Che cosa si deve vedere**: il task va in `DENIED` **subito**, e poi tre assenze:
 
 ```
-uv run ela approvals                   # vuoto: nessuno è stato interpellato
+uv run ela approvals                   # «nothing to show»: nessuno è stato interpellato
 uv run ela audit tail -n 5             # nessun BELL_RUNG
 ls /Users/tu/Documenti/altrove         # non esiste
 ```
