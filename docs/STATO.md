@@ -234,7 +234,6 @@ non citate è verificato invece che assunto.
 | §24 | Agent System |
 | §38 | Evolution Dashboard |
 | §40 | Creatività |
-| §41 | Programmazione |
 | §42 | Ricerca |
 | §43 | Studio |
 | §60 | ELA e l'utente |
