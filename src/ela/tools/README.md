@@ -12,9 +12,10 @@ verifier (spec §20, §63; M5.2, ADR 0014).
   volte per lo stesso step. È l'unico modulo che chiama `.complete(` su un provider (regola 25).
 - `paths.py`: `classify(root, path)`, dove porta un percorso — forma, risoluzione, link,
   raggiungibilità, esistenza, tipo — in un solo ordine con sette codici `path.*`, condivisa dal
-  tool e dal verifier così che non possano divergere; `describe(root, path)`, che dà a una domanda
-  il bersaglio risolto e se un file c'è già (M13.1); `resolve_workspace`,
-  `is_relative_note_path`. Solo `resolve`/`is_symlink`/`lstat`: nessuna scrittura (regola 18).
+  tool e dal verifier così che non possano divergere; `resolve_workspace`,
+  `is_relative_note_path`. Il bersaglio risolto che una domanda mostra, e se un file c'è già, non
+  sta più qui: lo dice il `prospect` del tool, con la stessa funzione che decide l'esecuzione
+  (M13.1, ADR 0045 §6-bis). Solo `resolve`/`is_symlink`/`lstat`: nessuna scrittura (regola 18).
   Da M13.1 il secondo codice è `path.outside_root` e non più `path.outside_workspace`: la
   workspace era l'unica radice che esistesse, e un nome che indica il confine sbagliato è una
   diagnosi falsa anche quando l'esito è giusto (ADR 0045 §5).
@@ -43,7 +44,9 @@ verifier (spec §20, §63; M5.2, ADR 0014).
   la radice che `ELA_FS_ROOT` dichiara — che nessuno dei due crea mai: una radice assente è
   `fs.no_root`, non un `mkdir`. `overwrite` è un'asserzione sul mondo e non una richiesta: il tool
   la rilegge prima di scrivere e rifiuta se è cambiata **nei due versi**. Il contenuto di una
-  lettura sta nel risultato; nell'audit vanno il percorso e la dimensione, mai i byte.
+  lettura riuscita e la sua dimensione (`bytes`) stanno nel risultato; nell'audit va il percorso,
+  mai i byte (M13.1b). Una lettura fallita porta le dimensioni nell'errore, per scelta (ADR 0045
+  §8).
 - `settings.py`: `WorkspaceSettings` (`ELA_WORKSPACE_DIR`, default `~/.ela/workspace`).
 
 Nessun tool conosce il Guardian; nessun verifier conosce il tool; l'unico modulo che chiama

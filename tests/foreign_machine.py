@@ -47,7 +47,7 @@ import platform
 from typing import Any
 
 APPLE_BINARIES = frozenset(
-    {"/usr/bin/afplay", "/usr/bin/pmset", "/usr/bin/say", "/usr/bin/screencapture"}
+    {"/usr/bin/afplay", "/usr/bin/pmset", "/usr/bin/say", "/usr/sbin/screencapture"}
 )
 """What ELA reaches for on a Mac. Absent here, as they are on a runner."""
 

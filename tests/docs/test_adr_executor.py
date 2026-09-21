@@ -245,13 +245,14 @@ def test_a_drifted_consuming_table_is_detected() -> None:
     assert softened != documents
     assert {r for r, (c, _) in consuming_answers(softened)[0].items() if c} != CONSUMING_RULES
 
-    without_the_high_row = [
-        (name, text.replace("| `APPROVAL_EVERY_USE` | sì |\n", "", 1)) for name, text in documents
+    the_high_row_softened = [
+        (name, text.replace("| `APPROVAL_EVERY_USE` | sì |", "| `APPROVAL_EVERY_USE` | no |", 1))
+        for name, text in documents
     ]
-    assert without_the_high_row != documents
-    assert {r for r, (c, _) in consuming_answers(without_the_high_row)[0].items() if c} != (
-        CONSUMING_RULES
-    )
+    assert the_high_row_softened != documents
+    answers, _ = consuming_answers(the_high_row_softened)
+    assert answers[Rule.APPROVAL_EVERY_USE] == (False, "0045-filesystem-and-high.md")
+    assert {r for r, (c, _) in answers.items() if c} != CONSUMING_RULES
 
 
 def test_when_two_tables_disagree_the_most_recent_wins_and_says_so() -> None:

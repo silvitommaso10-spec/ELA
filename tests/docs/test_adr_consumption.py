@@ -69,7 +69,7 @@ def test_the_adr_writes_the_gravity_it_measured() -> None:
     """Decision 3: the gravity is in the ADR, and so is how the case of the idempotent closed."""
     text = adr_text()
 
-    assert "### La gravità, misurata" in text
+    assert re.search(r"^### \d+\. La gravità, misurata$", text, re.MULTILINE)
     assert "idempotente" in text
     assert "7a" in text and "ADR 0015 §8" in text
 

@@ -107,7 +107,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
-| 13 — Il permesso prima dell'azione | `M13.1b` | Proposta | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
+| 13 — Il permesso prima dell'azione | `M13.1b` | Implementata | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
 | 13 — Il permesso prima dell'azione | `M13.2` | Proposta | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Proposta | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
@@ -129,8 +129,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **45** | `docs/adr/NNNN-*.md` |
-| Milestone | **56, di cui 47 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **46** | `docs/adr/NNNN-*.md` |
+| Milestone | **56, di cui 48 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **26** | i `Protocol` di `src/ela/ports.py` |
@@ -518,18 +518,19 @@ della CLI l'ha preso con M8.2 (ADR 0024 §1).
 
 ### 5.11 Il permesso prima dell'azione: l'ordine della Fase 13
 
-La **Fase 13 è registrata dal 2026-09-21 — registrata, non cominciata**: comincerà quando M13.1
-uscirà da `Proposta`, che è il criterio di §4.1. La sua fonte di verità è
-[`spec/ELA_spec.md`](spec/ELA_spec.md): §18 (l'Action Core), §19 (il browser), §20 (il computer
-control). Porta il momento in cui ELA smette di agire solo dentro la sua workspace — il filesystem
-vero, il terminale, il browser, lo schermo — e, perché quel momento sia sorvegliato, **il primo
-livello `HIGH`**: oggi `RISK_POLICY` lo nega sempre, e nessuna capability del catalogo può farlo
-scattare.
+La **Fase 13 è cominciata il 2026-09-21**, con M13.1: registrata lo stesso giorno, è cominciata
+quando la sua prima milestone è uscita da `Proposta`, che è il criterio di §4.1. La sua fonte di
+verità è [`spec/ELA_spec.md`](spec/ELA_spec.md): §18 (l'Action Core), §19 (il browser), §20 (il
+computer control). Porta il momento in cui ELA smette di agire solo dentro la sua workspace — il
+filesystem vero, il terminale, il browser, lo schermo — e, perché quel momento sia sorvegliato,
+**il livello `HIGH`**: da M13.1 `RISK_POLICY` non lo nega più, lo chiede **a ogni uso**, e nessuna
+`Authorization` permanente di §59 lo raggiunge. `fs.write` è la prima capability che lo fa
+scattare, e da M13.1b un sì ne copre un uso solo — il grant nato dal sì si spende prima che il tool
+agisca, e l'audit lo nomina (ADR 0046).
 
-**Il nome della fase non è qui.** Lo dà il changelog, con la prima milestone che esce da
-`Proposta`; fino ad allora la tabella della §2 la chiama «senza nome» e il blocco della §4.1 la
-tiene fra le fasi future. Sono due liste derivate che leggono lo stesso fatto, e nessuna delle due
-si aggira scrivendo un nome a mano.
+**Il nome della fase l'ha dato il changelog**, con M13.1: «Il permesso prima dell'azione». La tabella
+della §2 e il blocco della §4.1 lo leggono dallo stesso fatto — la prima milestone uscita da
+`Proposta` —, e nessuna delle due liste si aggira scrivendo un nome a mano.
 
 **L'ordine è M13.1 → M13.2 → M13.3 → M13.4 → M13.5**, con **M13.6 dopo M13.3, quando la sua
 condizione d'ingresso scatta** — nella forma condizionale di M17.4: non una posizione nella fila,
@@ -552,8 +553,8 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
 - **M13.2 — il terminale. Seconda, perché vuole la riga che M13.1 apre.** Un comando è **`argv`**,
   non una stringa per la shell: non c'è un interprete in mezzo, quindi non c'è niente da citare e
   nessuna espansione che l'utente non ha scritto. **I programmi ammessi stanno nello scope della
-  capability, non nel piano**, per la ragione di ADR 0038 §16: ciò che decide il livello non può
-  stare negli argomenti, e un piano arriva dal client. **L'output troncato dice di essere
+  capability, non nel piano**, per la ragione di ADR 0026 §7: tutto ciò che la policy legge viene
+  dal catalogo, e un piano arriva dal client. **L'output troncato dice di essere
   troncato** (ADR 0032 §9-bis).
 - **M13.3 — l'azione che viaggia. Terza, e prima del browser.** Il verifier gira **dove avviene
   l'effetto**, e qui la fase paga **tre** debiti: **ADR 0044 §8**, il battito di `local` — il Mac
@@ -563,8 +564,8 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   (M12.2, la stessa casa di ADR 0043 §9), che è la stessa materia — chi misura il tempo, e con quale
   orologio — e che M12.2 ha lasciato non misurata perché la sua suite gira sul `FakeClock` del Core.
   M13.3 guadagna anche **un obbligo esplicito**: **ogni capability che viaggia dichiara se si può
-  ripiazzare**, senza default, come `reads_the_machine`. Oggi §15 è onorato da **un tool su otto**
-  (ADR 0038 §8) e la cosa è vera implicitamente: questa è la milestone che smette di lasciarla
+  ripiazzare**, senza default, come `reads_the_machine`. Oggi §15 è onorato da **un tool solo**,
+  quello di `core.echo` (ADR 0038 §8), e la cosa è vera implicitamente: questa è la milestone che smette di lasciarla
   implicita, ed è quella dichiarazione a rendere M13.6 possibile o impossibile. Prima del browser
   perché **un'azione che non si può verificare su un nodo non si esegue su quel nodo** (ADR 0014
   §3): la domanda «dove gira il verifier» si risponde prima di aggiungere l'azione che la farà

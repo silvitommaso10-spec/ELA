@@ -2,9 +2,9 @@ Fase: v0.1 — catalogo delle capability di §28–§29 (M4.1, ADR 0010), Permis
 §27, §29, §33 (M4.2, ADR 0011) e nascita delle autorizzazioni da un'approvazione di §30 (M4.3,
 ADR 0012).
 
-- `capabilities.py`: `CapabilityRegistry` immutabile, limitato a MEDIUM, validazione JSON Schema
-  degli argomenti, catalogo `catalogue_v01` (`core.echo`, `workspace.write_note`,
-  `model.complete`). Lo scope di `workspace.write_note` è configurabile da M8.3
+- `capabilities.py`: `CapabilityRegistry` immutabile, limitato a `MAX_RISK` (MEDIUM in v0.1,
+  HIGH da M13.1, ADR 0045), validazione JSON Schema degli argomenti, catalogo `catalogue_v01`
+  (`core.echo`, `workspace.write_note`, `model.complete`). Lo scope di `workspace.write_note` è configurabile da M8.3
   (`ELA_NOTES_SCOPE`, ADR 0025 §5); `DEFAULT_NOTES_SCOPE` ne è il default, non più una
   convenzione.
 - `scope.py`: cosa vuol dire "dentro lo scope" (prefisso di percorso, regole fail-safe).

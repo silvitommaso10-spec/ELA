@@ -13,8 +13,9 @@ a failing test: a capability nobody listed makes the suite red, and the way back
 either the view or an explicit regeneration that somebody signs.
 
 **What it is not.** It does not prove that any capability *has* a view, and the file says so of
-itself: none of today's eight has one of its own among the four views of v1 — they are seen
-sideways, in the Approval Center's question and in a task's step. It is an alarm, not a proof.
+itself: none of the capabilities it lists has one of its own among the four views of v1 — they
+are seen sideways, in the Approval Center's question and in a task's step. It is an alarm, not a
+proof.
 
 Unlike ``generate_design_system.py``, this script **imports ``ela``**, and so does
 ``generate_stato.py`` before it: what it derives is a fact of the Core, and the only honest way to
