@@ -1152,7 +1152,7 @@ dice perché:
 outcome         failed
 reason          fs.overwrite_mismatch: 'ELA/prova.md' was declared as a new file and something is there now
 state           FAILED
-steps executed  0
+steps executed  d1b7c4a2-9e35-4f18-8c60-000000000001
 ```
 
 ```
@@ -1167,6 +1167,9 @@ domanda si compone solo per ciò che, approvato adesso, riuscirebbe sul disco di
 chiede a nessuno di approvare ciò che ELA sa già che rifiuterà, e non si sveglia nessuno per
 questo. Il confronto lo fa la stessa funzione che rifiuterebbe davvero: un fatto, una definizione,
 un posto.
+
+`steps executed` porta l'**id dello step**, non un conteggio: lo step è stato tentato e si è
+fermato prima di toccare il disco, ed è quello che il suo id lì dentro significa.
 
 **Il messaggio dice «declared» e non «approved»**, ed è deliberato: qui nessuno ha approvato
 niente, quindi «approved» sarebbe una diagnosi falsa. La stessa frase nasce anche in un secondo
