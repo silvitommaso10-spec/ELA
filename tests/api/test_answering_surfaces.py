@@ -24,7 +24,20 @@ ANSWERING = {
     "the Command Center": ROOT / "src" / "ela" / "api" / "console.py",
     "the companion": ROOT / "src" / "ela" / "api" / "companion.py",
 }
-"""The surfaces that offer a yes. A third one added without a line here answers nothing."""
+"""The surfaces that compose the question out of its parts (M12.5 dec. F).
+
+A third one added without a line here answers nothing."""
+
+CLI = ROOT / "src" / "ela" / "cli" / "system.py"
+"""And the one that shows the question as the sentence it is: ``ela approvals``.
+
+It is an answering surface too — ``ela task approve`` is the first yes anybody gives — and it is
+held to the same rule for the facts a sentence cannot carry. What it shows instead of the parts is
+``prompt``, which **is** the question; the two machine facts of M13.1 are not in it, so they are
+shown beside it."""
+
+OF_A_FILE = ("target", "overwrites")
+"""The facts a question about a file names, and that no sentence carries (M13.1 dec. G)."""
 
 NOT_SHOWN: dict[str, str] = {
     "description": "shown as the capability's own sentence, not as a pair",
@@ -56,6 +69,22 @@ def test_an_answering_surface_reads_every_field_a_question_names(surface: str) -
         f"{'them' if len(unread) > 1 else 'it'}. Either show the field, or add a line to "
         "NOT_SHOWN saying where it is shown instead, or stop offering the answer on that "
         "surface (M13.1 dec. H)."
+    )
+
+
+def test_the_command_line_shows_the_facts_of_a_file_it_offers_a_yes_to() -> None:
+    """dec. H, on the third surface that answers: `ela task approve` is the first yes given.
+
+    It shows the question as one sentence — the pages show the parts because a page cannot make
+    somebody read a sentence (M12.5 dec. F) — so what it must show beside it is what a sentence
+    does not carry: where the write really lands, and whether something is already there.
+    """
+    source = CLI.read_text(encoding="utf-8")
+    unread = [field for field in OF_A_FILE if f'"{field}"' not in source]
+
+    assert not unread, (
+        f"`ela approvals` offers a yes to a question that names {unread} and never shows it. "
+        "A surface that does not show what the question is about does not answer it (dec. H)."
     )
 
 

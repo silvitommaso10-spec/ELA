@@ -725,10 +725,15 @@ def explain(invalid: ValidationError) -> str:
 
     A whole-model check — the retired ``ELA_ANTHROPIC_MODEL`` is one — has no field to point at,
     and its own message already names what it is about: it is quoted as it stands.
+
+    **A message of several lines is indented on all of them.** One problem is one block, and a
+    block whose first line sits under «ELA is not configured:» while the rest runs flush left
+    reads as two problems, the second of which nobody wrote — and these messages are read by a
+    person who has just written a ``.env`` (M13.1 dec. R).
     """
     lines = []
     for error in invalid.errors():
-        message = error["msg"].removeprefix("Value error, ")
+        message = error["msg"].removeprefix("Value error, ").replace("\n", "\n  ")
         location = error["loc"]
         lines.append(f"  {_variable(location)}: {message}" if location else f"  {message}")
     return "ELA is not configured:\n" + "\n".join(lines)

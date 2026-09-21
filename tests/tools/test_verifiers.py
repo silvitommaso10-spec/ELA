@@ -94,7 +94,7 @@ from ela.tools.verifiers import (
 )
 from tests.domain.examples import EXECUTION_RESULT
 from tests.routing.support import routing_for
-from tests.tools.support import allowed
+from tests.tools.support import PERMISSIONS_BITE, allowed
 from tests.tools.test_captures import png
 
 NOTE = "workspace/notes/briefing.md"
@@ -1084,6 +1084,7 @@ async def test_a_path_that_is_not_a_string_is_refused_by_the_verifier(declared: 
     assert failure.code == VERIFICATION_ARGUMENTS_INVALID
 
 
+@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o000) does not deny this user: it is root")
 async def test_a_file_that_cannot_be_read_is_named_as_unreadable(declared: Path) -> None:
     target = declared / "note.md"
     target.write_text("x", encoding="utf-8")

@@ -1,0 +1,35 @@
+{
+  "_nota": [
+    "Il terzo piano della prova a mano di M13.1, ed è quello che NON deve succedere niente.",
+    "Il percorso sta dentro la radice ma FUORI dallo scope: `altrove/` non è `ELA/`.",
+    "Che cosa ti aspetti di vedere: il task va in DENIED, e basta. Nessuna domanda in",
+    "`ela approvals`, nessuna notifica sull'iPhone, nessun file creato.",
+    "Perché conta: fino a M13.1 lo scope di una capability lo faceva rispettare soltanto la",
+    "riga LOW della policy, quindi una HIGH con un confine dichiarato avrebbe avuto un",
+    "confine che nessuno controllava. Adesso il controllo si lega al FATTO che uno scope",
+    "esista, su qualunque riga, e il rifiuto arriva PRIMA della domanda: non si chiede a",
+    "qualcuno di approvare ciò che sarebbe negato comunque (ADR 0011 §3).",
+    "Nell'audit la decisione porta `rule: SCOPE` — il nome del confine che ha rifiutato, non",
+    "quello della riga che permette: una diagnosi falsa è falsa anche quando l'esito è giusto.",
+    "Guardalo con: ela audit tail -n 5",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "provare a scrivere fuori dallo scope",
+  "steps": [
+    {
+      "id": "d1b7c4a2-9e35-4f18-8c60-000000000003",
+      "goal": "scrivere dove non mi è permesso",
+      "required_capabilities": ["fs.write"],
+      "arguments": {
+        "path": "altrove/non-deve-esistere.md",
+        "body": "questo file non deve mai esistere\n",
+        "overwrite": false,
+        "purpose": "la prova che il confine tiene"
+      },
+      "risk": "HIGH",
+      "expected_result": "niente: il Guardian nega prima di chiedere",
+      "success_conditions": ["fs.file_exists"],
+      "requires_authorization": true
+    }
+  ]
+}

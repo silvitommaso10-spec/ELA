@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from ela.cli import client
 from ela.cli.errors import REFUSED, UNREACHABLE
 from ela.cli.output import EMPTY
+from ela.cli.system import _does
 from ela.composition import ApiSettings, Ela
 from ela.devices.local import LOCAL_DEVICE_ID
 from tests.cli.support import Cli, plain, unreachable
@@ -83,6 +84,13 @@ async def test_approvals_says_so_when_nothing_waits(cli: Cli) -> None:
 
     assert result.exit_code == 0
     assert "nothing to show" in result.stdout
+
+
+def test_a_question_about_no_file_leaves_the_two_columns_empty() -> None:
+    """``None`` is not «no»: it is «this question is not about a file» (M13.1 dec. G)."""
+    assert _does(None) == ""
+    assert _does(True) == "sovrascrive"
+    assert _does(False) == "crea"
 
 
 async def test_approvals_takes_a_limit(cli: Cli) -> None:

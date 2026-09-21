@@ -25,6 +25,7 @@ from typing import Any
 from httpx import AsyncClient
 
 from ela.composition import Ela
+from ela.composition.settings import Settings
 from ela.domain import TaskState
 from ela.ports import PROVIDER_UNAVAILABLE
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
@@ -130,10 +131,10 @@ def test_every_example_explains_itself() -> None:
     """An example that cannot say why it is the way it is teaches the wrong thing by omission.
 
     Closed over the folder since M12.5: a fourth file arrived, and a list of three would have let
-    a fifth arrive unexplained.
+    a fifth arrive unexplained. Seven since M13.1, which brought the three of the filesystem.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 4, [path.name for path in found]
+    assert len(found) == 7, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
@@ -295,3 +296,146 @@ async def test_it_asks_for_consent_every_time(client: AsyncClient) -> None:
     assert run["outcome"] == "waiting_approval"
     approval = (await client.get("/approvals")).json()[0]
     assert approval["capability_id"] == "voice.speak"
+
+
+# ----------------------------------------------------------------------------------------
+# The three plans of M13.1: the filesystem outside the workspace (ADR 0045)
+# ----------------------------------------------------------------------------------------
+
+
+def fs_plan(name: str) -> dict[str, Any]:
+    plan: dict[str, Any] = json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
+    return plan
+
+
+async def asked(client: AsyncClient, plan: dict[str, Any], text: str) -> dict[str, Any]:
+    """Send a plan, run it once, and return the question it stopped on."""
+    task_id = (await client.post("/tasks", json={"text": text})).json()["id"]
+    planned = await client.post(f"/tasks/{task_id}/plan", json=plan)
+    assert planned.status_code == 200, planned.text
+    await client.post(f"/tasks/{task_id}/run")
+    waiting = (await client.get("/approvals")).json()
+    assert len(waiting) == 1, waiting
+    question: dict[str, Any] = waiting[0]
+    question["task_id"] = task_id
+    return question
+
+
+async def say_yes(client: AsyncClient, question: dict[str, Any]) -> dict[str, Any]:
+    await client.post(f"/tasks/{question['task_id']}/approve", json={"approval_id": question["id"]})
+    run: dict[str, Any] = (await client.post(f"/tasks/{question['task_id']}/run")).json()
+    return run
+
+
+async def test_the_write_example_asks_and_says_it_creates_a_file(
+    client: AsyncClient, settings: Settings
+) -> None:
+    """The first step of the proof by hand: the question names the **resolved** path (dec. G)."""
+    question = await asked(client, fs_plan("fs-write.json"), "scrivi fuori dalla workspace")
+
+    assert question["capability_id"] == "fs.write"
+    assert question["risk"] == "HIGH"
+    assert question["target"] == str(settings.filesystem.root / "ELA" / "prova.md")
+    assert question["overwrites"] is False
+
+
+async def test_the_write_example_leaves_the_file_the_note_promises(
+    client: AsyncClient, settings: Settings
+) -> None:
+    question = await asked(client, fs_plan("fs-write.json"), "scrivi fuori dalla workspace")
+
+    run = await say_yes(client, question)
+
+    assert run["task"]["state"] == TaskState.COMPLETED.value, run
+    written = settings.filesystem.root / "ELA" / "prova.md"
+    assert written.read_text(encoding="utf-8").startswith("# M13.1")
+    assert not str(written).startswith(str(settings.workspace.workspace_dir))
+
+
+async def test_the_same_plan_sent_again_says_it_overwrites(
+    client: AsyncClient, settings: Settings
+) -> None:
+    """**The only way to see dec. G with your eyes**, and dec. Q right behind it.
+
+    The question is composed from what the machine answers, not from what the plan declared: the
+    second time the file is there, so it says «sovrascrive». And because the plan asserted the
+    opposite, the "yes" ends in a refusal instead of a write — what was approved as a new file
+    does not become an overwrite.
+    """
+    first = await asked(client, fs_plan("fs-write.json"), "scrivi fuori dalla workspace")
+    await say_yes(client, first)
+
+    again = await asked(client, fs_plan("fs-write.json"), "riscrivi lo stesso file")
+
+    assert again["overwrites"] is True
+    assert again["target"] == first["target"]
+
+    run = await say_yes(client, again)
+
+    assert run["task"]["state"] == TaskState.FAILED.value, run
+    results = (await client.get(f"/tasks/{again['task_id']}/results")).json()
+    assert results[-1]["error"]["code"] == "fs.overwrite_mismatch"
+    assert (
+        settings.filesystem.root.joinpath("ELA", "prova.md")
+        .read_text(encoding="utf-8")
+        .startswith("# M13.1")
+    ), "the file that was there is the file that is still there"
+
+
+async def test_the_read_example_puts_the_content_in_the_result_and_not_in_the_audit(
+    client: AsyncClient,
+) -> None:
+    """dec. P: the bytes go into the result; the audit keeps the path and the size."""
+    await say_yes(client, await asked(client, fs_plan("fs-write.json"), "scrivi"))
+
+    question = await asked(client, fs_plan("fs-read.json"), "rileggi")
+    assert question["capability_id"] == "fs.read"
+    assert question["risk"] == "MEDIUM"
+    run = await say_yes(client, question)
+
+    assert run["task"]["state"] == TaskState.COMPLETED.value, run
+    results = (await client.get(f"/tasks/{question['task_id']}/results")).json()
+    assert results[-1]["output"]["content"].startswith("# M13.1")
+    trail = json.dumps((await client.get("/audit")).json())
+    assert "Questo file sta fuori dalla workspace" not in trail
+    assert "ELA/prova.md" in trail
+
+
+async def test_the_plan_outside_the_scope_is_denied_without_asking_anybody(
+    client: AsyncClient, ela: Ela, settings: Settings
+) -> None:
+    """The step of the proof by hand that proves itself by an **absence** (dec. R).
+
+    A defence that denies before the question is proved by the bell that does not ring, not by
+    the denial that appears: if the question existed, the iPhone would have buzzed.
+    """
+    task_id = (await client.post("/tasks", json={"text": "fuori dallo scope"})).json()["id"]
+    planned = await client.post(f"/tasks/{task_id}/plan", json=fs_plan("fs-outside-the-scope.json"))
+    assert planned.status_code == 200, planned.text
+
+    run = (await client.post(f"/tasks/{task_id}/run")).json()
+
+    assert run["task"]["state"] == TaskState.DENIED.value, run
+    assert (await client.get("/approvals")).json() == [], "nobody is asked what is refused anyway"
+    events = (await client.get("/audit")).json()
+    kinds = [event["event_type"] for event in events]
+    assert "BELL_RUNG" not in kinds, "the phone must not buzz for a denial"
+    decided = [event for event in events if event["event_type"] == "PERMISSION_DECIDED"][-1]
+    assert decided["payload"]["rule"] == "SCOPE"
+    assert not (settings.filesystem.root / "altrove").exists()
+
+
+def test_the_paths_of_the_examples_are_the_scope_the_guide_tells_you_to_write() -> None:
+    """``ELA_FS_SCOPE=ELA`` in ``GETTING_STARTED.md``, and the plans walk the same folder.
+
+    An example whose path fell outside the scope of the guide would be denied in the reader's
+    hands, with a message about a boundary they thought they had written correctly.
+    """
+    guide = (EXAMPLES.parent / "GETTING_STARTED.md").read_text(encoding="utf-8")
+
+    assert "ELA_FS_SCOPE=ELA" in guide
+    assert fs_plan("fs-write.json")["steps"][0]["arguments"]["path"].startswith("ELA/")
+    assert fs_plan("fs-read.json")["steps"][0]["arguments"]["path"].startswith("ELA/")
+    assert not fs_plan("fs-outside-the-scope.json")["steps"][0]["arguments"]["path"].startswith(
+        "ELA/"
+    )

@@ -144,6 +144,11 @@ def approvals(
 
     A request whose task has moved on — stopped, expired — is not shown: answering it would no
     longer do anything, and asking for an answer that cannot land is asking the impossible.
+
+    **A question about a file names two facts of the machine** — where it really lands, and
+    whether something is already there (M13.1 dec. G) — and this is a surface that offers a yes,
+    so it shows them (dec. H). For the capabilities that touch no file the two columns are empty,
+    which is the truth about them and not a gap.
     """
     with client.connect() as api:
         payload = api.get("/approvals", client.query(limit=limit))
@@ -151,10 +156,29 @@ def approvals(
         payload,
         as_json,
         table(
-            ("approval", "task", "capability", "targets", "asks"),
+            ("approval", "task", "capability", "targets", "file", "does", "asks"),
             [
-                (one["id"], one["task_id"], one["capability_id"], one["targets"], one["prompt"])
+                (
+                    one["id"],
+                    one["task_id"],
+                    one["capability_id"],
+                    one["targets"],
+                    one.get("target") or "",
+                    _does(one.get("overwrites")),
+                    one["prompt"],
+                )
                 for one in payload
             ],
         ),
     )
+
+
+def _does(overwrites: bool | None) -> str:
+    """What a "yes" would do to the file, in the words the pages use (M13.1 dec. G).
+
+    ``None`` is not "no": it is "this question is not about a file", and an empty cell says that
+    without inventing an answer.
+    """
+    if overwrites is None:
+        return ""
+    return "sovrascrive" if overwrites else "crea"

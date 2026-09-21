@@ -49,8 +49,10 @@ def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> No
     # The folder ``fs.read`` and ``fs.write`` may touch (M13.1 dec. A): both lines or no start-up,
     # and under ``tmp_path`` for the reason the captures are — a test that left them out would be
     # a test that cannot start, and one that named a real folder would write in somebody's home.
+    # The scope is ``ELA`` and not ``ela``: it is the value ``GETTING_STARTED.md`` tells somebody
+    # to write and the one the example plans use, so the suite walks the paths of the guide.
     monkeypatch.setenv(FS_ROOT, str(_declared_root(tmp_path)))
-    monkeypatch.setenv(FS_SCOPE, "ela")
+    monkeypatch.setenv(FS_SCOPE, "ELA")
     # Off by default, but a fixture that turned it on before this ran keeps it on: the
     # environment has already been emptied of ``ELA_`` by ``_only_the_declared_environment``,
     # so anything present here was put there by the test on purpose.

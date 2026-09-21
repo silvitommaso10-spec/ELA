@@ -625,3 +625,22 @@ def test_an_installed_ela_names_the_directory_its_package_sits_in(
     monkeypatch.setattr(ela, "__file__", str(installed / "__init__.py"))
 
     assert _ela_source_tree() == tmp_path / "site-packages"
+
+
+def test_a_refusal_of_several_lines_is_indented_on_all_of_them(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A block that starts indented and then runs flush left reads as two problems (dec. R).
+
+    The message of the filesystem pair is the longest ELA has — it shows the two lines to write —
+    and it is the one somebody reads the first time they clone the repository.
+    """
+    declare(monkeypatch, tmp_path)
+    monkeypatch.delenv("ELA_FS_ROOT")
+
+    with pytest.raises(ConfigurationError) as raised:
+        Settings.load()
+
+    lines = str(raised.value).splitlines()
+    assert lines[0] == "ELA is not configured:"
+    assert all(line.startswith("  ") for line in lines[1:]), lines

@@ -26,12 +26,14 @@ import pytest
 
 from ela.domain import AuditEventType as E
 from ela.domain import CapabilityId, PermissionOutcome, RiskLevel, TaskState
-from ela.permissions import MAX_RISK, RISK_POLICY, asks_at_every_use
+from ela.permissions import MAX_RISK, POLICY_VERSION, RISK_POLICY, asks_at_every_use
 from ela.permissions.guardian import Rule
 from ela.testing.fakes import FakeCapabilityRegistry
 from tests.executive.support import World, world
 from tests.permissions.support import (
     CRITICAL,
+    ECHO,
+    ECHO_ARGS,
     HIGH,
     NOTE_ARGS,
     born_of_a_yes,
@@ -45,29 +47,59 @@ def w() -> World:
     return world()
 
 
-def test_the_cap_and_the_rows_are_stated_together_and_neither_moves_alone() -> None:
+MOVE_THEM_TOGETHER = (
+    "The cap, the rows and the version of the policy are three halves of one decision: a "
+    "capability may exist up to here, this is what happens to it, and this is the name the audit "
+    "stamps on every decision taken under those rules. Move one and you move all three, in the "
+    "open, with an ADR that revises ADR 0011 §3 the way ADR 0045 did (M13.1 dec. M)."
+)
+
+
+def test_the_cap_the_rows_and_the_version_are_stated_together_and_none_moves_alone() -> None:
     """The pin that must **fail** when the world moves, instead of narrowing (dec. M).
 
-    Written out rather than derived: ``MAX_RISK`` and the table are two halves of one decision —
-    a capability may exist up to here, and here is what happens to it — and the day either moves,
-    this fails and the message names the other.
+    Written out rather than derived: the old form asked whether every level *above the cap* was
+    denied, so raising the cap made it quietly narrower instead of making it fail.
+
+    ``POLICY_VERSION`` is here for the same reason it was bumped to ``v0.2`` at all. A decision
+    carries the version of the table that took it, so a milestone that changes a row and forgets
+    the bump makes every decision name a table that is not the one it was decided under —
+    **exactly what the bump exists to prevent**. Nothing else in the suite asserts its value, so
+    if it is not asserted here it is not asserted anywhere.
     """
-    assert MAX_RISK is RiskLevel.HIGH, (
-        "the catalogue cap moved. State the new one here together with the whole RISK_POLICY "
-        "table below, revise ADR 0011 §3 openly in a new ADR as M13.1 did, and check that every "
-        "test in this file still exercises the level it names (M13.1 dec. M)"
-    )
+    assert MAX_RISK is RiskLevel.HIGH, f"the catalogue cap moved. {MOVE_THEM_TOGETHER}"
     assert RISK_POLICY == {
         RiskLevel.SAFE: Rule.ALLOW,
         RiskLevel.LOW: Rule.ALLOW_WITHIN_SCOPE,
         RiskLevel.MEDIUM: Rule.APPROVAL_UNLESS_AUTHORIZED,
         RiskLevel.HIGH: Rule.APPROVAL_EVERY_USE,
         RiskLevel.CRITICAL: Rule.DENY,
-    }, "the policy moved: rewrite it here, and say in an ADR which row changed and why"
+    }, f"the policy moved. {MOVE_THEM_TOGETHER}"
+    assert POLICY_VERSION == "v0.2", (
+        f"the policy version moved, and this is the only place that says which one it is. "
+        f"{MOVE_THEM_TOGETHER}"
+    )
     assert [level for level in RiskLevel if level > MAX_RISK] == [RiskLevel.CRITICAL], (
         "what is above the cap changed: the tests below exercise CRITICAL because it was the one "
         "level the catalogue refuses, and that is no longer true"
     )
+
+
+def test_the_version_the_audit_stamps_is_the_one_stated_above() -> None:
+    """And it is the one a decision really carries, not only the one the constant holds.
+
+    Every decision stamps it in ``metadata["policy"]`` — that is what an audit row keeps — and
+    the rows that settle on the table itself say it in words too.
+    """
+    h = harness()
+
+    asked = h.guardian.decide(HIGH, ECHO_ARGS)
+    allowed = h.guardian.decide(ECHO, ECHO_ARGS)
+    denied = h.guardian.decide(CRITICAL, ECHO_ARGS)
+
+    assert asked.metadata["policy"] == POLICY_VERSION
+    assert POLICY_VERSION in allowed.reason
+    assert POLICY_VERSION in denied.reason
 
 
 async def test_a_capability_above_the_cap_is_denied_through_the_whole_pipeline(w: World) -> None:

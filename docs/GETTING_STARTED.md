@@ -68,9 +68,11 @@ ELA_FS_ROOT=/Users/tu/Documenti
 ELA_FS_SCOPE=ELA
 ```
 
-`ELA_FS_ROOT` è una cartella **tua**, che ELA non crea mai; `ELA_FS_SCOPE` è la sola cartella
-dentro quella radice che `fs.read` e `fs.write` possono toccare — con l'esempio qui sopra,
-`/Users/tu/Documenti/ELA`. Creala tu: ELA rifiuta di inventarsi un posto che non hai scelto.
+`ELA_FS_ROOT` è una cartella **tua**, e ELA non la crea mai: se non c'è, rifiuta con `fs.no_root`
+invece di inventarsi un posto che non hai scelto. `ELA_FS_SCOPE` è la sola cartella dentro quella
+radice che `fs.read` e `fs.write` possono toccare — con l'esempio qui sopra,
+`/Users/tu/Documenti/ELA` — e **quella la crea la prima scrittura**, come la cartella delle note
+dentro la workspace: la radice è tua, ciò che sta dentro lo scope è lavoro di ELA.
 
 Che cosa ELA rifiuta all'avvio, e perché il messaggio te lo dice invece di lasciartelo scoprire:
 
@@ -1032,6 +1034,158 @@ uv run ela node revoke <id della console>
 Alla richiesta successiva la pagina torna a chiedere un codice. Un codice nuovo riarruola lo stesso
 browser.
 
+## 15. Il filesystem fuori dalla workspace: la prova a mano di M13.1
+
+Da M13.1 ELA legge e scrive file **fuori dalla sua workspace**, e `fs.write` è la prima capability
+`HIGH` che abbia mai avuto: chiede il permesso **ogni volta**, e nessuna policy potrà coprirla in
+anticipo. Questa è la prova che quel confine tiene, e che la domanda dice la verità.
+
+Due dei passi qui sotto **nessun test può farli al posto tuo**: il primo, perché il messaggio è
+scritto per un essere umano e l'unico modo di sapere che si legge è leggerlo; e il quinto, perché
+una difesa che nega *prima* della domanda si prova **dall'assenza del campanello**, non dalla
+presenza del diniego.
+
+I piani sono in [`examples/`](examples/) e la suite li manda a ELA byte per byte
+(`tests/api/test_examples.py`): quello che lanci qui è quello che la suite ha visto.
+
+### 1. ELA che non parte — il messaggio che devi leggere
+
+Togli `ELA_FS_ROOT` dal `.env` (commentala) e prova ad avviare:
+
+```
+uv run ela serve
+```
+
+**Che cosa si deve vedere**, e leggilo per intero invece di guardare solo che è rosso:
+
+```
+ELA is not configured:
+  ELA cannot start without the folder it may read and write outside its workspace: ELA_FS_ROOT
+  and ELA_FS_SCOPE are missing. Write both lines in .env, for example:
+      ELA_FS_ROOT=/Users/you/Documents
+      ELA_FS_SCOPE=ELA
+  They are one boundary and they are declared together: a scope without a root names nothing on
+  disk, and ELA does not choose the folder for you (M13.1).
+```
+
+**Se non si vede così**: se ELA parte lo stesso, il `.env` non è quello che sta leggendo — ELA
+legge quello della cartella da cui la lanci. Se il messaggio parla di una variabile sola, l'altra
+era rimasta nell'ambiente della shell: `env | grep ELA_FS`.
+
+Rimetti le due righe, con una cartella tua, e riavvia.
+
+### 2. Un file nuovo, e la domanda che dice che lo **crea**
+
+```
+uv run ela task create "scrivi un file fuori dalla workspace"
+uv run ela task plan <id> --file docs/examples/fs-write.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+**Che cosa si deve vedere**: il task si ferma in `WAITING_APPROVAL`, e la riga della domanda porta
+`fs.write`, la colonna `file` con il **percorso risolto per esteso** —
+`/Users/tu/Documenti/ELA/prova.md`, non `ELA/prova.md` — e la colonna `does` che dice **`crea`**.
+Quei due fatti li legge il disco, non il piano: sono la ragione per cui questa superficie può
+offrirti un sì. Il **rischio** `HIGH` qui non compare: lo mostrano le pagine del passo 6.
+
+```
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+cat /Users/tu/Documenti/ELA/prova.md
+```
+
+**Se non si vede così**: se il task finisce `DENIED` senza chiedere niente, il percorso del piano
+non è dentro `ELA_FS_SCOPE` — è il passo 5, ma su un piano che doveva passare. Se il risultato è
+`fs.no_root`, la radice non esiste: creala tu, ELA non lo fa.
+
+### 3. Lo stesso piano una seconda volta — la domanda cambia
+
+Rilancia **lo stesso file**, senza toccarlo:
+
+```
+uv run ela task create "riscrivi lo stesso file"
+uv run ela task plan <id> --file docs/examples/fs-write.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+**Che cosa si deve vedere**: la stessa capability, lo stesso `file`, e la colonna `does` che adesso
+dice **`sovrascrive`**. È l'unico modo di vedere con gli occhi che la domanda racconta il mondo e
+non il piano — il piano non è cambiato di una virgola.
+
+E se rispondi di sì:
+
+```
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+uv run ela task results <id>
+```
+
+**Che cosa si deve vedere**: il task **fallisce**, con `fs.overwrite_mismatch`, e il file sul disco
+è ancora quello di prima. Non è un difetto: il piano aveva dichiarato `"overwrite": false`, cioè
+«lì non c'è niente», e quella asserzione adesso è falsa. Ciò che è stato approvato come «crea» non
+diventa un «sovrascrivi» — e vale anche al contrario, se il file sparisce fra il sì e la scrittura.
+Per sovrascrivere davvero, metti `"overwrite": true` nel piano.
+
+### 4. Rileggere il file, e dove finiscono i byte
+
+```
+uv run ela task create "rileggi il file"
+uv run ela task plan <id> --file docs/examples/fs-read.json
+uv run ela task run <id>
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+uv run ela task results <id>
+```
+
+**Che cosa si deve vedere**: il contenuto del file **nel risultato**. E nell'audit no:
+
+```
+uv run ela audit tail -n 10
+```
+
+Il percorso c'è, la dimensione c'è, **il contenuto no** — un log append-only non si redige più.
+
+### 5. Fuori dallo scope: il campanello che **non** suona
+
+Questo è il passo che si prova da un'assenza.
+
+```
+uv run ela task create "prova a scrivere fuori dallo scope"
+uv run ela task plan <id> --file docs/examples/fs-outside-the-scope.json
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**: il task va in `DENIED` **subito**, e poi tre assenze:
+
+```
+uv run ela approvals                   # vuoto: nessuno è stato interpellato
+uv run ela audit tail -n 5             # nessun BELL_RUNG
+ls /Users/tu/Documenti/altrove         # non esiste
+```
+
+E se hai l'iPhone arruolato (§13), **il telefono non deve aver ricevuto niente**. Guardalo prima di
+lanciare e subito dopo: se ha suonato, il rifiuto è arrivato *dopo* la domanda invece che prima, e
+non si chiede a qualcuno di approvare ciò che sarebbe negato comunque.
+
+Nell'audit la decisione porta `rule: SCOPE`:
+
+```
+uv run ela audit tail -n 5 --json | grep -o '"rule": "[A-Z_]*"'
+```
+
+**Se non si vede così**: se compare una domanda, controlla che il percorso del piano sia davvero
+fuori da `ELA_FS_SCOPE` — con lo scope `ELA` il piano d'esempio scrive in `altrove/`. Se la regola
+dice `ALLOW_WITHIN_SCOPE`, stai girando su codice precedente a M13.1.
+
+### 6. La stessa domanda dal telefono e dal browser
+
+Ripeti il passo 2 con l'iPhone aperto sulla pagina del companion (§13) e il Command Center aperto
+sul Mac (§14): **tutt'e due mostrano il percorso risolto e la sovrascrittura**, ed è la ragione per
+cui tutt'e due possono rispondere. Una superficie che non li mostrasse non risponderebbe — la
+regola è quella, non un elenco di dispositivi.
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.
@@ -1043,6 +1197,8 @@ browser.
   che restano scritti.
 - [`adr/0039-node-macos.md`](adr/0039-node-macos.md) — perché il nodo è un comando in primo piano,
   dove tiene il segreto e perché non nel portachiavi.
+- [`adr/0045-filesystem-and-high.md`](adr/0045-filesystem-and-high.md) — il primo livello `HIGH`,
+  perché lo scope si lega al fatto e non alla riga, e dove vanno i byte di un file letto.
 - [`adr/0040-node-windows.md`](adr/0040-node-windows.md) — il nodo su un PC: dove tiene il segreto,
   con che cosa parla, e perché dichiara solo ciò che la sua macchina sa fare.
 - [`adr/0043-companion.md`](adr/0043-companion.md) — l'iPhone che guarda e risponde: il ruolo, il
