@@ -22,6 +22,7 @@ from ela.api.security import (
     SURFACES,
 )
 from ela.audit.verifier import AuditVerifier
+from ela.cli import setup
 from ela.cli.app import app
 from ela.cli.errors import CONFIGURATION, OK, REFUSED, UNREACHABLE
 from ela.cli.setup import TOKEN_VARIABLE, VARIABLES
@@ -411,8 +412,18 @@ def documented_variables() -> list[str]:
     return ENV_VARIABLE.findall(ENV_EXAMPLE.read_text(encoding="utf-8"))
 
 
+def written_by_init() -> list[str]:
+    """Every variable ``ela init`` writes: the token, the lines ELA cannot start without, and the
+    optional ones — three lists since M13.1b, read here as one."""
+    return [
+        TOKEN_VARIABLE,
+        *(name for name, _ in setup.REQUIRED),
+        *(name for name, _ in VARIABLES),
+    ]
+
+
 def test_init_writes_the_variables_the_example_documents() -> None:
-    assert sorted(documented_variables()) == sorted([TOKEN_VARIABLE, *(n for n, _ in VARIABLES)])
+    assert sorted(documented_variables()) == sorted(written_by_init())
 
 
 def test_the_list_of_variables_is_every_variable_ela_actually_reads() -> None:
@@ -431,7 +442,7 @@ def test_the_list_of_variables_is_every_variable_ela_actually_reads() -> None:
         for field in group.annotation.model_fields  # type: ignore[union-attr]
     }
 
-    assert declared - RETIRED == {TOKEN_VARIABLE, *(name for name, _ in VARIABLES)}
+    assert declared - RETIRED == set(written_by_init())
 
 
 def test_the_retired_variable_is_not_among_them() -> None:
@@ -441,4 +452,4 @@ def test_the_retired_variable_is_not_among_them() -> None:
     derivation above subtracts it by name instead of quietly allowing a difference.
     """
     assert not RETIRED & set(documented_variables())
-    assert not RETIRED & {name for name, _ in VARIABLES}
+    assert not RETIRED & set(written_by_init())

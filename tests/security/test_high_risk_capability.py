@@ -25,7 +25,14 @@ from __future__ import annotations
 import pytest
 
 from ela.domain import AuditEventType as E
-from ela.domain import CapabilityId, PermissionOutcome, RiskLevel, TaskState
+from ela.domain import (
+    CapabilityId,
+    ExecutionStatus,
+    PermissionOutcome,
+    RiskLevel,
+    StepState,
+    TaskState,
+)
 from ela.permissions import MAX_RISK, POLICY_VERSION, RISK_POLICY, asks_at_every_use
 from ela.permissions.guardian import Rule
 from ela.testing.fakes import FakeCapabilityRegistry
@@ -172,6 +179,42 @@ async def test_a_high_capability_asks_every_time_and_no_standing_policy_covers_i
     )
     assert again.decision.metadata["rule"] == Rule.APPROVAL_EVERY_USE.value
     assert other.tool(HIGH.id).calls == ()
+
+
+async def test_an_approved_high_spends_its_yes_and_the_audit_names_it(w: World) -> None:
+    """M13.1b, decision 14 (a): the grant a yes mints is what the action rests on, so it is spent.
+
+    Until M13.1b the row that asks at every use was missing from ``CONSUMING_RULES``: the action
+    ran, the grant stayed at zero uses for its hour, and the result and ``TOOL_EXECUTED`` carried
+    no ``authorization_id`` — the audit could not say *with which authorization* (§32) for the one
+    level that asks every time. The tool is not idempotent here, as ``fs.write`` is not, so the
+    ``STARTED`` record is part of what must name the grant too. The second use is window 7a of
+    ``tests/executive/test_executor_recovery.py``.
+    """
+    w.tool(HIGH.id).idempotent = False
+    task, step = await w.running(HIGH.id)
+    asked = await w.execute(task.id, step.id)
+    assert asked.approval is not None
+    await w.engine.approve(task.id, await w.answered(asked.approval))
+    await w.engine.start(task.id)
+
+    execution = await w.execute(task.id, step.id)
+
+    assert execution.graph.states[step.id] is StepState.COMPLETED
+    (minted,) = await w.store.for_capability(HIGH.id)
+    assert minted.approval_id == asked.approval.id and minted.max_uses == 1
+    assert await w.store.uses(minted.id) == 1, "the yes was not spent"
+    records = await w.results.for_step(task.id, step.id)
+    assert [record.status for record in records] == [
+        ExecutionStatus.STARTED,
+        ExecutionStatus.SUCCEEDED,
+    ]
+    assert [record.authorization_id for record in records] == [minted.id, minted.id]
+    (executed,) = [
+        event for event in await w.events(task.id) if event.event_type is E.TOOL_EXECUTED
+    ]
+    assert executed.authorization_id == minted.id
+    assert executed.payload["uses"] == 1
 
 
 def test_the_grant_a_yes_mints_is_the_one_that_covers_a_high_row() -> None:

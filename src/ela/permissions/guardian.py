@@ -17,14 +17,17 @@ Order of the checks, the first that denies wins (ADR 0011 §3):
 2. **Arguments.** Valid against the *registered* schema (``validate_arguments``, M4.1).
 3. **Step.** A step that declares its capabilities and does not name this one is a deviation
    from the approved plan.
-4. **Policy row** (:data:`RISK_POLICY`): HIGH and CRITICAL are denied; LOW needs every target
-   inside the capability's scope.
+4. **Policy row** (:data:`RISK_POLICY`): CRITICAL is denied. Then the **scope**, on every row
+   that has not denied: a capability that declares one has every target inside it, whatever its
+   risk (M13.1 dec. C — until M13.1 only the LOW row checked it).
 5. **Authorization.** A grant that does not *cover* the call (another capability, task or
-   step, a scope that misses the targets, a use count that cannot be true) denies, always: the
-   Guardian never ignores a fact it was handed, and an incoherent caller is a doubt. Then, when
-   MEDIUM or when the specification or the step requires one: a covering, *usable* grant allows;
-   none, or one expired or exhausted, asks for approval. A grant that is not needed is ignored
-   if it merely is not usable — an unused grant is not an incoherence.
+   step, a scope that misses the targets, a use count that cannot be true, a standing policy for
+   a row that asks at every use) denies, always: the Guardian never ignores a fact it was handed,
+   and an incoherent caller is a doubt. Then, on a row that asks (:data:`ASKING_RULES`: MEDIUM,
+   and HIGH at every use since M13.1) or when the specification or the step requires one: a
+   covering, *usable* grant allows; none, or one expired or exhausted, asks for approval. A grant
+   that is not needed is ignored if it merely is not usable — an unused grant is not an
+   incoherence.
 
 Whatever goes wrong inside the evaluation is a ``DENIED`` decision, never an exception (§33):
 the only errors that escape are a clock or an id generator that cannot even produce a denial.

@@ -1,6 +1,6 @@
 # 0045. Il filesystem fuori dalla workspace, e il primo livello HIGH: la riga che chiede a ogni uso, lo scope legato al fatto, e un codice che smette di mentire
 
-- **Stato:** Accettata
+- **Stato:** Accettata. §8, «l'audit porta il percorso e la dimensione»: rivista da ADR 0046 §6 — la dimensione di una lettura riuscita sta nel risultato, non nell'audit. Le Conseguenze, «`paths.py` ha `describe`»: rivista da ADR 0046 §6 — `describe` è stata tolta prima del merge. La riga di consumo di §3 è mantenuta da ADR 0046 §1.
 - **Data:** 2026-09-21
 - **Riferimenti spec:** §18, §23, §27, §28, §29, §33, §37, §57, §59, §63
 - **Milestone:** M13.1

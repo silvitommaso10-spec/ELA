@@ -5,9 +5,9 @@
     "`fs.read` è MEDIUM e non HIGH, e la differenza non è un'impressione: oggi tutt'e due",
     "chiedono a ogni uso, perché ogni grant è monouso; ciò che le separa è il domani — una",
     "policy permanente di §59 potrà coprire una MEDIUM e non raggiungerà mai una HIGH.",
-    "Dove vanno i byte: il CONTENUTO sta nel risultato, e si legge con `ela task results`.",
-    "Nell'audit vanno il percorso e la dimensione, mai i byte (§57: ciò che entra in un log",
-    "append-only non si redige più).",
+    "Dove vanno i byte: il CONTENUTO e la sua dimensione (`bytes`) stanno nel risultato, e si",
+    "leggono con `ela task results`. Nell'audit va il percorso, mai i byte e nemmeno la dimensione",
+    "(§57: ciò che entra in un log append-only non si redige più).",
     "Questa chiave è ignorata dall'API (ADR 0025 §8)."
   ],
   "goal": "leggere un file fuori dalla workspace",

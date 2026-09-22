@@ -120,9 +120,10 @@ class FsReadTool(Tool):
     """Reads the file at ``root / path`` and returns its text (§18, MEDIUM).
 
     **Where the bytes go** (M13.1 dec. P): into the **result**, which is what ``fs.read`` exists
-    for and which stays on its own route with rule 29. They never reach the audit — the log keeps
-    the path and the size (§57, and ADR 0011: what enters an append-only log is never redacted) —
-    and a failure carries sizes, never hashes, the way ``WriteNoteVerifier`` already does.
+    for and which stays on its own route with rule 29 — the content and its size, ``bytes``. They
+    never reach the audit, which keeps the path (§57, and ADR 0011: what enters an append-only log
+    is never redacted); until M13.1b this said the audit kept the size too, and no event ever did.
+    A failure carries sizes, never hashes, the way ``WriteNoteVerifier`` already does.
 
     A file that is not valid UTF-8 is a refusal and not a guess: ELA reads text, and a decoder
     that replaced what it could not read would put something in the result that is not in the
