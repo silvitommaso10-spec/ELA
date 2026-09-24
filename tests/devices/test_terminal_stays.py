@@ -12,8 +12,6 @@ from __future__ import annotations
 from datetime import timedelta
 from pathlib import Path
 
-from ela.tools.programs import Programs
-
 from ela.devices import LOCAL_DEVICE_ID, DeviceOrchestrator, DeviceRegistry, Refusal
 from ela.domain import (
     DeviceStatus,
@@ -33,6 +31,7 @@ from ela.testing.fakes import (
     FakeToolRegistry,
     FakeVerifierRegistry,
 )
+from ela.tools.programs import Programs
 from ela.tools.verifiers import TerminalRunVerifier
 from tests.devices.nodes import node, step
 from tests.domain.examples import TASK_ID

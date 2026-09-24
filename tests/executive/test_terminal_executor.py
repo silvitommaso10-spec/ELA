@@ -19,8 +19,6 @@ import json
 from pathlib import Path
 
 import pytest
-from ela.tools.programs import Programs
-from ela.tools.terminal import Terminal, TerminalRunTool
 
 from ela.composition.system import UuidGenerator
 from ela.domain import AuditEventType, ExecutionStatus, PermissionOutcome, StepState, Task, TaskStep
@@ -28,6 +26,8 @@ from ela.executive import AUDIT_NUMBER_INVALID, EXECUTION_INTERRUPTED
 from ela.permissions import TERMINAL_RUN, terminal_run
 from ela.ports import Captured, Ending, Ran
 from ela.testing.fakes import FakeClock, FakeLauncher
+from ela.tools.programs import Programs
+from ela.tools.terminal import Terminal, TerminalRunTool
 from ela.tools.verifiers import TERMINAL_EXIT_CODE_MATCHES, TerminalRunVerifier
 from tests.executive.support import (
     Crashes,

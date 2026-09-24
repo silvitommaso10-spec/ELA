@@ -10,10 +10,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ela.testing.fakes import FakeLauncher
 from ela.tools.programs import Programs
 from ela.tools.terminal import Terminal
-
-from ela.testing.fakes import FakeLauncher
 
 
 def a_terminal(root: Path, *programs: str) -> Terminal:
