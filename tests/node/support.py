@@ -170,6 +170,7 @@ class SlowEcho(Tool):
 
     output_keys: ClassVar[frozenset[str]] = frozenset({"message"})
     idempotent: ClassVar[bool] = True
+    audit_numbers: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, clock: Any, ids: Any, delay: float) -> None:
         super().__init__(CORE_ECHO, clock, ids, name=ECHO_TOOL_NAME)
@@ -195,6 +196,7 @@ class CostlyEcho(Tool):
 
     output_keys: ClassVar[frozenset[str]] = frozenset({"message"})
     idempotent: ClassVar[bool] = True
+    audit_numbers: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, clock: Any, ids: Any) -> None:
         super().__init__(CORE_ECHO, clock, ids, name=ECHO_TOOL_NAME)

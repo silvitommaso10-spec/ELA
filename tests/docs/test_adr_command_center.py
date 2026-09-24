@@ -39,14 +39,19 @@ def bullets(text: str) -> set[str]:
     return {match.group(1).strip() for match in re.finditer(r"^- \*\*(.+?)\*\*", text, re.M)}
 
 
-def test_the_conseguenze_count_what_the_tree_has_today() -> None:
-    """The pin moves to the ADR that moved the totals, as it did from ADR 0043 to this one."""
+def test_the_conseguenze_count_what_the_tree_had_when_it_was_written() -> None:
+    """The pin on *today's* totals moved on to ADR 0047, as it did from ADR 0043 to this one.
+
+    An ADR is immutable: what stays here is that the numbers ADR 0044 wrote are still true **of what
+    it saw**. The rules and the routes have not moved since; the ports have — M13.2 added the
+    launcher of the terminal —, so that one is counted without it.
+    """
     text = conseguenze()
 
     assert "**cinquantasette**" in text
     assert len(RULES) == 57
     assert "**ventisei**" in text
-    assert len(tuple(port_protocols())) == 26
+    assert len(tuple(p for p in port_protocols() if p.__name__ != "CommandLauncher")) == 26
     assert "**quarantotto**" in text
     assert len(coded_routes()) == 48
 

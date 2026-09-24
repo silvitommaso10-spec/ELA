@@ -5,6 +5,8 @@
   M12.1 (`5649c8a`), con quattro risposte dell'utente: l'id dell'assegnazione nel corpo, il 412
   nella storia 5 della suite, lo spegnimento che sveglia chi aspetta, la sensibilità del task in
   una migrazione sua.
+  §11, il segnale di fermata: da ADR 0047 §7 è un evento di `Ela`, letto anche dal lanciatore del
+  terminale, che al segnale svuota il gruppo di un comando.
 - **Data:** 2026-09-11
 - **Riferimenti spec:** §11, §14, §15, §16, §17, §20, §27, §32, §33, §56, §57, §63
 - **Continua:** ADR 0005 §2-bis; ADR 0008 §5, §6, §8, §11, §12; ADR 0009 §8; ADR 0011 §9; ADR 0012

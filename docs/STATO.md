@@ -91,6 +91,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 9 — Le liste che si accorgono di essere false | `M9.2` | Proposta | Le liste che restano scritte a mano |
 | 9 — Le liste che si accorgono di essere false | `M9.3` | Completata | Le esenzioni che si accorgono di essere false |
 | 9 — Le liste che si accorgono di essere false | `M9.4` | Completata | Le finestre, i negativi, e la release v0.1 |
+| 9 — Le liste che si accorgono di essere false | `M9.5` | Proposta | La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento |
 | 10 — La percezione | `M10.1` | Completata | Perception Core: fondamenta |
 | 10 — La percezione | `M10.2` | Completata | Screen awareness: la prima lettura di contenuto |
 | 10 — La percezione | `M10.3` | Implementata | Comprendere ciò che si vede: il contesto che non costa niente, e il testo che non esce |
@@ -108,7 +109,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
 | 13 — Il permesso prima dell'azione | `M13.1b` | Implementata | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
-| 13 — Il permesso prima dell'azione | `M13.2` | Proposta | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
+| 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Proposta | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
@@ -129,12 +130,12 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **46** | `docs/adr/NNNN-*.md` |
-| Milestone | **56, di cui 48 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **47** | `docs/adr/NNNN-*.md` |
+| Milestone | **57, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
-| Port | **26** | i `Protocol` di `src/ela/ports.py` |
-| Capability di produzione | **10** | `production_catalogue()` |
+| Port | **27** | i `Protocol` di `src/ela/ports.py` |
+| Capability di produzione | **11** | `production_catalogue()` |
 | Rotte dell'API | **48** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
@@ -175,9 +176,12 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   e scrive file in una cartella che l'utente dichiara — `ELA_FS_ROOT` e `ELA_FS_SCOPE`, due righe
   senza default, perché un confine che ELA sceglie per te è un confine che non ha deciso nessuno —
   e il livello **`HIGH` esiste davvero**: non è più un diniego, è un'approvazione per ogni uso che
-  nessuna policy permanente di §59 raggiunge. Restano aperte **M13.2** (il terminale), **M13.3**
-  (l'azione che viaggia, e tre debiti), **M13.4** (il browser), **M13.5** (il computer control) e
-  **M13.6** (il ripiazzamento, fuori dalla fila): l'ordine e le condizioni stanno nella voce 5.11.
+  nessuna policy permanente di §59 raggiunge. Con **M13.2** esegue anche i programmi che l'utente
+  dichiara — `ELA_TERMINAL_PROGRAMS`, relativi a `/`, `[]` ammessa —: un comando è `argv`, il figlio
+  riceve un ambiente chiuso e nasce in un gruppo suo, e la domanda nomina ciò che girerà. Restano
+  aperte **M13.3** (l'azione che viaggia, e tre debiti), **M13.4** (il browser), **M13.5** (il
+  computer control) e **M13.6** (il ripiazzamento, fuori dalla fila): l'ordine e le condizioni
+  stanno nella voce 5.11.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
   nodo, il protocollo del lavoro con la sua suite di conformità, **due implementazioni vere** —
@@ -235,7 +239,6 @@ non citate è verificato invece che assunto.
 | §24 | Agent System |
 | §38 | Evolution Dashboard |
 | §40 | Creatività |
-| §41 | Programmazione |
 | §42 | Ricerca |
 | §43 | Studio |
 | §60 | ELA e l'utente |
@@ -555,7 +558,10 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   nessuna espansione che l'utente non ha scritto. **I programmi ammessi stanno nello scope della
   capability, non nel piano**, per la ragione di ADR 0026 §7: tutto ciò che la policy legge viene
   dal catalogo, e un piano arriva dal client. **L'output troncato dice di essere
-  troncato** (ADR 0032 §9-bis).
+  troncato** (ADR 0032 §9-bis). **Implementata il 2026-09-24** (ADR 0047): i programmi sono lo scope,
+  relativi a `/`; l'identità di ognuno si fissa all'avvio; il figlio riceve quattro variabili e
+  nient'altro e nasce in un gruppo suo, che ELA svuota allo scadere e quando si ferma; l'uscita tiene
+  testa e coda con il taglio dichiarato, e nell'audit entrano solo numeri.
 - **M13.3 — l'azione che viaggia. Terza, e prima del browser.** Il verifier gira **dove avviene
   l'effetto**, e qui la fase paga **tre** debiti: **ADR 0044 §8**, il battito di `local` — il Mac
   risulta non disponibile mentre ELA gira —; **i pesi di §17**, che ADR 0017 dichiarò «da ritarare
@@ -635,6 +641,9 @@ pagato da chi doveva.
 |---|---|---|---|
 | ADR 0041 §5 — i test che aspettano, e le difese che costano un terzo della suite | 2026-09-18 | della milestone sulla disciplina della suite | **aperto** |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | **aperto** |
+| ADR 0047 §16 — il surrogato isolato fuori dal piano | 2026-09-24 | di M13.3 | **aperto** |
+| ADR 0047 §17 — i test di Windows che nessun job raccoglie | 2026-09-24 | di M13.3 | **aperto** |
+| ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 

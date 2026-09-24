@@ -25,6 +25,7 @@ from ela.domain import (
     Authorization,
     CapabilityId,
     CapabilitySpec,
+    CommandOutput,
     ContextActivity,
     ContextApproval,
     ContextDeadline,
@@ -650,6 +651,28 @@ def _context_works(draw: st.DrawFn) -> ContextWork:
 
 context_works = _context_works()
 
+
+@st.composite
+def _command_outputs(draw: st.DrawFn) -> CommandOutput:
+    """A stream whose numbers agree, built from its two halves as the tool builds it (M13.2)."""
+    head = draw(st.text(max_size=20))
+    cut = draw(st.booleans())
+    tail = draw(st.text(max_size=20)) if cut else ""
+    shown = len(head.encode()) + len(tail.encode())
+    missing = draw(st.integers(min_value=1, max_value=1000)) if cut else 0
+    return CommandOutput(
+        head=head,
+        tail=tail,
+        cut_after=len(head.encode()),
+        missing=missing,
+        shown=shown,
+        total=shown + missing,
+        replaced=0,
+    )
+
+
+command_outputs = _command_outputs()
+
 context_deadline_rows = st.builds(
     ContextDeadline,
     task_id=uuids,
@@ -744,6 +767,7 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.ContextTask: context_tasks_,
     domain.ContextApproval: context_approvals,
     domain.ContextWork: context_works,
+    domain.CommandOutput: command_outputs,
     domain.ContextDeadline: context_deadline_rows,
     domain.ContextDeadlines: context_deadlines,
     domain.ContextEvent: context_events,

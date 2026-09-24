@@ -11,13 +11,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from textwrap import indent
-from typing import Annotated, Any
+from typing import Annotated, Any, Final
 
 import typer
 
 from ela.cli import client
 from ela.cli.errors import CONFIGURATION, fail, handled
 from ela.cli.output import Json, emit, fields, table
+from ela.domain import listed, visible
 
 __all__ = ["app"]
 
@@ -140,11 +141,69 @@ def _results(payload: list[dict[str, Any]]) -> str:
         ],
     )
     blocks = [
-        f"{one['capability_id']} — step {one['step_id']}\n" + indent(fields(_told(one)), "  ")
+        f"{one['capability_id']} — step {one['step_id']}\n"
+        + indent("\n".join(filter(None, (_fields(_told(one)), *_streams(one)))), "  ")
         for one in payload
         if one["output"] or one.get("error")
     ]
     return "\n\n".join([listing, *blocks])
+
+
+def _shown(value: Any) -> Any:
+    """A value of a result as the reader sees it: text made visible, a list with its borders.
+
+    A list of strings is rendered by :func:`~ela.domain.listed` and never joined with a comma: the
+    arguments of a command — ``["a, b"]`` and ``["a", "b"]`` — are two different commands (M13.2
+    dec. 12), and the proof with two real processes found them joined here. An empty list is
+    ``[]`` — a program run with no argument — and not the dash of a value that is absent.
+    """
+    if isinstance(value, str):
+        return visible(value, lines=True)
+    if isinstance(value, list) and all(isinstance(one, str) for one in value):
+        return listed(value)
+    return value
+
+
+STREAM_KEYS: Final = frozenset(
+    {"head", "tail", "cut_after", "missing", "shown", "total", "replaced"}
+)
+"""What a stream of a command looks like in a result (M13.2 dec. 8): a head, a tail, and the cut."""
+
+
+def _fields(rows: list[tuple[str, Any]]) -> str:
+    return fields(rows) if rows else ""
+
+
+def _is_stream(value: Any) -> bool:
+    return isinstance(value, dict) and set(value) == STREAM_KEYS
+
+
+def _streams(one: dict[str, Any]) -> list[str]:
+    """Each stream of a command: how much was kept, the head, **where** it was cut, the tail.
+
+    The line between the two halves is this surface's own, in its own words (M13.2 dec. 8): in the
+    result there is no invented text, the numbers say where the cut is. What the program printed
+    passes the one rendering with its lines kept (dec. 13): an ESC it wrote reaches the reader as
+    ``\\x1b``, and the terminal of whoever reads does not obey it.
+    """
+    blocks = []
+    for name, value in one["output"].items():
+        if not _is_stream(value):
+            continue
+        said = f"{name}  shown {value['shown']} of {value['total']} bytes"
+        if value["replaced"]:
+            said += f", {value['replaced']} sequences that were not text replaced"
+        lines = [said]
+        if value["head"]:
+            lines.append(visible(value["head"], lines=True).rstrip("\n"))
+        if value["missing"]:
+            lines.append(
+                f"— cut after {value['cut_after']} bytes: {value['missing']} bytes not shown —"
+            )
+            if value["tail"]:
+                lines.append(visible(value["tail"], lines=True).rstrip("\n"))
+        blocks.append("\n".join(lines))
+    return blocks
 
 
 def _told(one: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -155,7 +214,9 @@ def _told(one: dict[str, Any]) -> list[tuple[str, Any]]:
     lives where nobody looks is not a diagnosis. The error gets a block for the same reason the
     output has one.
     """
-    rows: list[tuple[str, Any]] = list(one["output"].items())
+    rows: list[tuple[str, Any]] = [
+        (name, _shown(value)) for name, value in one["output"].items() if not _is_stream(value)
+    ]
     error = one.get("error")
     if error:
         rows.append(("error", error["code"]))

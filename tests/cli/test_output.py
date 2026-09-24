@@ -87,3 +87,20 @@ async def test_every_reading_command_can_answer_in_json(cli: Cli) -> None:
 
         assert result.exit_code == 0, command
         json.loads(result.stdout)  # it parses, which is the whole promise of --json
+
+
+def test_the_json_escapes_the_controls_a_terminal_would_obey(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """M13.2 dec. 13: ``ensure_ascii=False`` escaped C0 and let C1 and DEL through — a CSI written
+    as the single character U+009B is a sequence a terminal obeys. The JSON stays JSON: the same
+    value comes back when it is read."""
+    payload = {"stdout": "a\x1bb\x9bc\x7fd\x85e è"}
+
+    emit(payload, True, "")
+
+    printed = capsys.readouterr().out
+    assert not any(character in printed for character in "\x1b\x9b\x7f\x85")
+    assert "\\u009b" in printed and "\\u007f" in printed and "\\u0085" in printed
+    assert "è" in printed, "what is only foreign is not escaped"
+    assert json.loads(printed) == payload

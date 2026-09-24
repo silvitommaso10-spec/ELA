@@ -249,3 +249,30 @@ async def test_what_it_writes_plus_the_required_lines_is_what_ela_starts_with(
         with pytest.raises(ConfigurationError) as one:
             Settings.load()
         assert missing in str(one.value)
+
+
+def test_the_programs_of_the_terminal_are_required_and_the_example_is_no_program() -> None:
+    """M13.2 dec. 16, in the form M13.1b gave ``ELA_FS_*``: no default, and ``[]`` is an answer.
+
+    The example is ``[]`` and not a program: ELA does not choose what may run on the user's
+    machine, as it does not choose their folder.
+    """
+    assert ("ELA_TERMINAL_PROGRAMS", "[]") in setup.REQUIRED
+
+
+async def test_an_env_without_the_programs_exits_2_names_them_and_says_none_is_an_answer(
+    cli: Cli, tmp_path: Path
+) -> None:
+    others = "".join(f"{name}=x\n" for name, _ in setup.REQUIRED if name != "ELA_TERMINAL_PROGRAMS")
+    env_file(tmp_path).write_text(f"{TOKEN_VARIABLE}=" + "k" * 40 + "\n" + others, encoding="utf-8")
+
+    result = await cli("init")
+
+    assert result.exit_code == CONFIGURATION
+    refused = plain(result.stderr)
+    assert "ELA_TERMINAL_PROGRAMS=[]" in refused
+    assert "without it:" in refused, (
+        "one line missing is «it», found by the proof with two processes"
+    )
+    assert "ELA_FS_ROOT" not in refused, "only what is missing is named"
+    assert "folder of yours" not in refused, "a program is not a folder"

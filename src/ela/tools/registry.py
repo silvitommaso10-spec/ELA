@@ -22,6 +22,7 @@ from ela.domain import CapabilityId
 from ela.ports import (
     AlreadyExistsError,
     Clock,
+    CommandLauncher,
     IdGenerator,
     ListeningPort,
     ModelRouterPort,
@@ -38,14 +39,17 @@ from ela.tools.errors import (
     NotIdempotentError,
     SilentVerifierError,
     ToolNotFound,
+    UndeclaredNumbersError,
     VerifierNotFound,
 )
 from ela.tools.fs import FsReadTool, FsWriteTool
 from ela.tools.listen import ListenTool
 from ela.tools.model import ModelCompleteTool
 from ela.tools.notes import WriteNoteTool
+from ela.tools.programs import Programs
 from ela.tools.screen import CaptureScreenTool, CaptureStore
 from ela.tools.screen_text import ReadScreenTextTool
+from ela.tools.terminal import Terminal, TerminalRunTool
 from ela.tools.verifiers import (
     ONLINE_SPEECH_VERIFIER_NAME,
     CaptureScreenVerifier,
@@ -56,6 +60,7 @@ from ela.tools.verifiers import (
     ModelCompleteVerifier,
     ReadScreenTextVerifier,
     SpeakVerifier,
+    TerminalRunVerifier,
     WriteNoteVerifier,
 )
 from ela.tools.voice import SpeakTool
@@ -76,6 +81,8 @@ class ToolRegistry:
     """Tools by capability id, frozen at construction (port ``ToolRegistryPort``).
 
     **Every tool declares whether it is idempotent, and none may stay silent** (M5.3, then M7.2).
+    Since M13.2 it also declares which numbers of its result enter the audit (``audit_numbers``),
+    and the same silence is refused the same way.
     Until M7.2 the registry accepted only ``True``, because crash window 7a was repaired by
     running the tool again and that repair is safe only while twice is once. ADR 0021 §1 brings
     the STARTED protocol the guard was waiting for, so ``False`` is now a legal answer: the
@@ -93,6 +100,7 @@ class ToolRegistry:
             declared = getattr(tool, "idempotent", None)
             if not isinstance(declared, bool):
                 raise NotIdempotentError(tool.capability_id, tool.name, declared)
+            _numbers_of(tool)
             if tool.capability_id in table:
                 raise AlreadyExistsError("tool", tool.capability_id)
             table[tool.capability_id] = tool
@@ -108,6 +116,32 @@ class ToolRegistry:
     def tools(self) -> tuple[ToolPort, ...]:
         """Every tool, in construction order."""
         return tuple(self._tools.values())
+
+
+def _numbers_of(tool: ToolPort) -> None:
+    """Refuse a tool whose numbers for the audit are silent, or read outside its result (M13.2).
+
+    The same doubt as an undeclared ``idempotent`` (§33): the executor writes into
+    ``TOOL_EXECUTED`` what these keys point at, and a key that does not start in the tool's own
+    ``output_keys`` points at something nobody declared the tool produces.
+    """
+    declared = getattr(tool, "audit_numbers", None)
+    if not isinstance(declared, frozenset) or not all(isinstance(key, str) for key in declared):
+        raise UndeclaredNumbersError(
+            tool.capability_id,
+            tool.name,
+            f"declares no frozenset of keys as audit_numbers (it says {declared!r}): which numbers "
+            "of its result enter the audit is unknown",
+        )
+    keys: frozenset[str] = getattr(tool, "output_keys", frozenset())
+    outside = sorted(key for key in declared if key.partition(".")[0] not in keys)
+    if outside:
+        raise UndeclaredNumbersError(
+            tool.capability_id,
+            tool.name,
+            f"declares audit_numbers {outside} outside its output_keys: only what its result "
+            "holds may enter the audit",
+        )
 
 
 class VerifierRegistry:
@@ -191,6 +225,8 @@ def production_tools(
     voice_id: str | None,
     model: str,
     fs_root: Path | str,
+    terminal: Terminal,
+    launcher: CommandLauncher,
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -214,6 +250,9 @@ def production_tools(
             # ``ELA_FS_ROOT``, and neither tool ever creates it.
             FsReadTool(fs_root, clock, ids),
             FsWriteTool(fs_root, clock, ids),
+            # The terminal (M13.2): the programs with the identity of the start-up, the scope of
+            # M13.1 for the folder, and the launcher the composition built around the stop signal.
+            TerminalRunTool(terminal, launcher, clock, ids),
         )
     )
 
@@ -277,7 +316,12 @@ def node_tools(
 
 
 def production_verifiers(
-    *, root: Path | str, router: ModelRouterPort, captures: CaptureStore, fs_root: Path | str
+    *,
+    root: Path | str,
+    router: ModelRouterPort,
+    captures: CaptureStore,
+    fs_root: Path | str,
+    programs: Programs,
 ) -> VerifierRegistry:
     """The verifiers of :func:`production_tools`, one per capability.
 
@@ -298,5 +342,7 @@ def production_verifiers(
             SpeakVerifier(VOICE_SPEAK_ONLINE, name=ONLINE_SPEECH_VERIFIER_NAME),
             FsReadVerifier(fs_root),
             FsWriteVerifier(fs_root),
+            # The same identities the tool compares with: one table, fixed once (M13.2 dec. 4).
+            TerminalRunVerifier(programs),
         )
     )

@@ -1158,7 +1158,10 @@ async def test_a_question_about_a_file_carries_the_resolved_target_and_the_sente
     task, step = await w.running(NOTE.id, requires_authorization=True)
     w.tool(NOTE.id).prospects = Prospect(
         target=Target(
-            resolved="/Users/tommaso/Documenti/ELA/nota.md", exists=True, does="FRASE-DEL-TOOL"
+            resolved="/Users/tommaso/Documenti/ELA/nota.md",
+            exists=True,
+            does="FRASE-DEL-TOOL",
+            label="ETICHETTA-DEL-TOOL",
         )
     )
 
@@ -1168,6 +1171,7 @@ async def test_a_question_about_a_file_carries_the_resolved_target_and_the_sente
     asked = execution.approval.metadata["asked"]
     assert asked["target"] == "/Users/tommaso/Documenti/ELA/nota.md"
     assert asked["does"] == "FRASE-DEL-TOOL"
+    assert asked["label"] == "ETICHETTA-DEL-TOOL", "what to call it is the tool's word too"
 
 
 async def test_a_question_about_no_file_carries_neither(w: World) -> None:

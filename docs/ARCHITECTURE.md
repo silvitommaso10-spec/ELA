@@ -67,6 +67,7 @@ graph TD
     api --> tools
     cli --> api
     cli --> composition
+    cli --> domain
     cli --> node
     composition --> audit
     composition --> context

@@ -56,6 +56,7 @@ from ela.domain import (
     ExecutionResult,
     ExecutionStatus,
     JsonMapping,
+    JsonValue,
     ModelRoute,
     PermissionDecision,
     PowerSource,
@@ -102,9 +103,13 @@ __all__ = [
     "AuthorizingGuardianPort",
     "Bell",
     "CapabilityRegistryPort",
+    "Captured",
     "Clock",
+    "Command",
+    "CommandLauncher",
     "DeviceRegistryPort",
     "DeviceRevokedError",
+    "Ending",
     "EnrollmentConsumedError",
     "EnrollmentExpiredError",
     "EnrollmentNotUsableError",
@@ -113,6 +118,7 @@ __all__ = [
     "ExecutionResultStore",
     "IdGenerator",
     "IdentityConflictError",
+    "Invocation",
     "LISTEN_DENIED_BY_SYSTEM",
     "LISTEN_DISABLED",
     "LISTEN_ERROR_CODES",
@@ -154,6 +160,7 @@ __all__ = [
     "ROUTING_ERROR_CODES",
     "ROUTING_UNKNOWN_PROVIDER",
     "ROUTING_UNKNOWN_TASK_TYPE",
+    "Ran",
     "RoutingError",
     "SPEECH_AUTHENTICATION_ERROR",
     "SPEECH_ERROR_CODES",
@@ -186,6 +193,7 @@ __all__ = [
     "VerifierPort",
     "VerifierRegistryPort",
     "WireCode",
+    "audited_numbers",
     "check_answer",
     "check_limit",
     "check_verifiable",
@@ -1198,11 +1206,36 @@ class Target:
     there» is true of a write and false of a read, and a warning that says the wrong thing
     teaches the reader to stop reading it. The tool writes its own sentence, and no surface owns
     a phrase it could lend to a capability that never asked for one.
+
+    **And so does ``label``, what the target is called** (M13.2 dec. 12): a surface that wrote
+    «Il file» beside every target was right about a file and misleading about a program — true to
+    the letter, since a program is a file, and wrong about what is being approved. The tool that
+    knows what it touches says what to call it.
     """
 
     resolved: str
     exists: bool
     does: str
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class Invocation:
+    """What a command would receive, read by the tool that will launch it (M13.2 dec. 12).
+
+    ``program`` is the declared path in full and ``runs`` the file it leads to, read from the disk
+    now — two facts, because ELA runs the first and the identity it fixed is the second's.
+    ``arguments`` exactly as the process will receive them, ``folder`` the resolved folder it
+    starts from, and the two numbers of the question: how long ELA waits, and which code the plan
+    expects. None of them is the plan's word: each is what the tool would do with it.
+    """
+
+    program: str
+    runs: str
+    arguments: tuple[str, ...]
+    folder: str
+    timeout_seconds: int
+    expect_exit: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -1221,6 +1254,43 @@ class Prospect:
 
     target: Target | None = None
     refusal: ErrorMetadata | None = None
+    invocation: Invocation | None = None
+    """What a command would receive, when the call is a command (M13.2); ``None`` otherwise."""
+
+
+def audited_numbers(declared: frozenset[str], output: JsonMapping) -> dict[str, JsonValue]:
+    """The numbers of a result that enter ``TOOL_EXECUTED``: integers, by type, and nothing else.
+
+    ``declared`` are the tool's :attr:`ToolPort.audit_numbers`, each a path into ``output``
+    (``"stdout.total"``); a key that is not there is ``None``. A value that is not an ``int`` — a
+    string, a float, a boolean, a list — is a :class:`ValueError` that names the key and the type,
+    **never the value**, which may be the user's content (§57). A boolean is refused although Python
+    counts it as an integer: ``True`` in an audit is a word, not a count.
+
+    **The one definition** (M13.2, ADR 0047): the executor calls it where a result is born — the
+    tool of this machine, and a node's delivery, where a ``ValueError`` is a ``422`` — and where
+    ``TOOL_EXECUTED`` is written, and ``tests/architecture/test_terminal_rules.py`` refuses a
+    payload whose numbers come from anywhere else.
+    """
+    numbers: dict[str, JsonValue] = {}
+    for key in sorted(declared):
+        value: object = output
+        for part in key.split("."):
+            if value is None:
+                break
+            if not isinstance(value, Mapping):
+                raise ValueError(
+                    f"{key!r} passes through a {type(value).__name__}, not an object: only "
+                    "integers enter the audit"
+                )
+            value = value.get(part)
+        if value is not None and type(value) is not int:
+            raise ValueError(
+                f"{key!r} is a {type(value).__name__} and not an integer: only integers enter "
+                "the audit"
+            )
+        numbers[key] = value
+    return numbers
 
 
 @runtime_checkable
@@ -1251,6 +1321,18 @@ class ToolPort(Protocol):
         read as a yes (§33). The executor reads it to decide whether a run needs the STARTED
         record of ADR 0021 §1 — a tool that can be repeated is repaired by repeating it
         (ADR 0015 §8), one that cannot is never started twice for the same step.
+        """
+
+    @property
+    def audit_numbers(self) -> frozenset[str]:
+        """The keys of this tool's result whose **integers** enter ``TOOL_EXECUTED`` (M13.2).
+
+        Declared, never defaulted — the form of :attr:`idempotent` — and closed: a key is a path
+        into the result (``stdout.total``) whose first segment is one of the tool's output keys,
+        and :class:`~ela.tools.registry.ToolRegistry` refuses a tool that declares nothing or a key
+        outside its result. The values pass through :func:`audited_numbers`, which lets through an
+        integer or ``None`` and nothing else: the first door through which a tool writes facts of
+        its own into a log that is never redacted, built narrow (ADR 0047).
         """
 
     async def prospect(self, arguments: JsonMapping) -> Prospect:
@@ -1976,3 +2058,100 @@ class ScreenCapturePort(Protocol):
         1-based. Whether anything was actually written is the caller's to check — an implementation
         that reported success without looking would be the assumption §20 forbids.
         """
+
+
+# --------------------------------------------------------------------------------------
+# The terminal (§18; M13.2, ADR 0047)
+# --------------------------------------------------------------------------------------
+
+
+class Ending(StrEnum):
+    """How a command ended, as the launcher saw it (M13.2 dec. 5, 7, 9).
+
+    Five and not three, because the tool's ``ended`` — ``exited``, ``signalled``,
+    ``stopped_by_ela`` — has two reasons for the third that must not be read as one another, and a
+    run that never started is not a run that ended.
+    """
+
+    EXITED = "exited"
+    """The program ended by itself with a code."""
+    SIGNALLED = "signalled"
+    """The program was ended by a signal nobody in ELA sent."""
+    TIMED_OUT = "timed_out"
+    """ELA stopped the group: the timeout came first."""
+    STOPPED = "stopped"
+    """ELA stopped the group: ELA itself was stopping (ADR 0038 §11)."""
+    NOT_STARTED = "not_started"
+    """The kernel refused the ``exec`` — a format it does not know, a missing interpreter."""
+
+
+@dataclass(frozen=True, slots=True)
+class Command:
+    """What a program receives, **decided by the tool and executed to the letter** (M13.2 dec. 15).
+
+    The decisions stay in the gate: ``argv`` with the declared path first, the closed environment,
+    the folder, the timeout, the breath between ``SIGTERM`` and ``SIGKILL``, and how much of the
+    head and of the tail of each stream to keep. The launcher adds nothing of its own — no ``PATH``
+    search, no shell, no inherited variable, no stdin.
+    """
+
+    argv: tuple[str, ...]
+    environment: tuple[tuple[str, str], ...]
+    folder: str
+    timeout: float
+    grace: float
+    head: int
+    tail: int
+
+
+@dataclass(frozen=True, slots=True)
+class Captured:
+    """One stream as the launcher kept it while reading: raw bytes, and how many there were.
+
+    ``head`` is the first bytes, up to the command's ``head``; ``tail`` the last ones of what came
+    after, up to its ``tail``; ``total`` every byte read. When everything fits, ``head + tail`` is
+    all of it. Decoding, and cutting on a character, are the tool's (M13.2 dec. 8).
+    """
+
+    head: bytes = b""
+    tail: bytes = b""
+    total: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class Ran:
+    """What happened to a command: how it ended, its code or its signal, and its two streams.
+
+    ``failure`` is set only for :attr:`Ending.NOT_STARTED`, with the operating system's words —
+    the error's type and message, never an argument.
+    """
+
+    ending: Ending
+    code: int | None = None
+    signal: int | None = None
+    stdout: Captured = Captured()
+    stderr: Captured = Captured()
+    failure: str | None = None
+
+
+@runtime_checkable
+class CommandLauncher(Protocol):
+    """How ``terminal.run`` starts a program on this machine (§18; M13.2 dec. 15, ADR 0047).
+
+    A port because a tool may not reach ``ela.infrastructure`` (import contract 12), and because the
+    whole of what a program receives is decided in the gate and handed over as a :class:`Command`.
+    The contract every implementation keeps:
+
+    * the child gets exactly ``argv``, exactly ``environment``, starts in ``folder``, and reads the
+      end of a file on stdin — never ELA's TTY;
+    * it lives in **a process group of its own**, and whichever way ELA stops waiting — the
+      timeout, the stop signal of ADR 0038 §11, a cancellation — the group is stopped with
+      ``SIGTERM``, then after ``grace`` with ``SIGKILL``, and **is empty when this returns**;
+    * the streams are capped **while they are read**, and a grandchild that holds a pipe does not
+      hold the launcher;
+    * it does not fail, it reports: a refused ``exec`` is :attr:`Ending.NOT_STARTED`. Only a
+      cancellation propagates, after the group is stopped.
+    """
+
+    async def run(self, command: Command) -> Ran:
+        """Start ``command``, wait for it within its timeout, and say how it ended."""

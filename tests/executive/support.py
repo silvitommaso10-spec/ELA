@@ -581,6 +581,7 @@ def world(
     cap: timedelta | None = None,
     failing: frozenset[CapabilityId] = frozenset(),
     bell: FakeBell | None = None,
+    catalogue: Iterable[CapabilitySpec] | None = None,
     **executor_options: Any,
 ) -> World:
     clock, ids = FakeClock(), FakeIdGenerator()
@@ -589,7 +590,10 @@ def world(
     authorizations = FakeAuthorizationStore() if store is None else store
     approval_store = FakeApprovalStore() if approvals is None else approvals
     result_store = FakeExecutionResultStore() if results is None else results
-    registry = FakeCapabilityRegistry(CATALOGUE)
+    # The wide catalogue of the Guardian's tests, unless a test brings the real specification of a
+    # capability together with its real tool (M13.2: ``terminal.run``, which the test catalogue
+    # does not hold and whose tool reads nothing but its own specification's arguments).
+    registry = FakeCapabilityRegistry(CATALOGUE if catalogue is None else tuple(catalogue))
     guardian = PermissionGuardian(registry, clock, ids, audit)
     fakes = fake_tools(clock, ids, failing)
     tool_registry = FakeToolRegistry(fakes.values() if tools is None else tools)

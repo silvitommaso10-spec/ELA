@@ -7,6 +7,7 @@ comes back as a conflict rather than as a traceback.
 
 from __future__ import annotations
 
+import json
 import uuid
 
 from fastapi import FastAPI
@@ -195,6 +196,29 @@ async def test_a_plan_that_is_not_a_dag_is_refused_before_anything_is_written(
     response = await client.post(f"/tasks/{created['id']}/plan", json=plan)
 
     assert response.status_code == 422
+    assert (await client.get(f"/tasks/{created['id']}")).json()["state"] == TaskState.CREATED.value
+
+
+async def test_a_plan_holding_text_that_is_not_unicode_is_refused_before_anything_is_written(
+    client: AsyncClient,
+) -> None:
+    """A lone surrogate is valid JSON to the parser FastAPI uses and text to nobody else: it cannot
+    be encoded, written to a file name, or handed to a process. Accepted, it left the task
+    ``RUNNING`` for ever — every ``run`` a 422 from the tool's first ``encode`` — and the task
+    unreadable (review of M13.2). Refused where the arguments are born, without echoing it."""
+    created = (await client.post("/tasks", json={"text": "fai"})).json()
+    plan = echo_plan()
+    plan["steps"][0]["arguments"] = {"text": ["a", {"dentro": "x\ud800y"}]}
+
+    response = await client.post(
+        f"/tasks/{created['id']}/plan",
+        content=json.dumps(plan),  # ``ensure_ascii``: the escape travels, as a client would send it
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert "\ud800" not in response.text.lower() and "\\ud800" not in response.text.lower()
+    assert "steps.0.arguments" in response.text
     assert (await client.get(f"/tasks/{created['id']}")).json()["state"] == TaskState.CREATED.value
 
 

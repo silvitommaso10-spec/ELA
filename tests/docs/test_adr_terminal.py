@@ -1,0 +1,265 @@
+"""ADR 0047 and the running code describe the same terminal, the same rows and the same totals.
+
+This is where the **pin on today's totals** lives since M13.2 (the precedent of M13.1 dec. K): an
+ADR is immutable, so each older one keeps saying the number it saw, and the ADR that last changed a
+number carries the assertion about the tree as it is now — the capabilities (eleven), the ones
+that travel (four) and stay (seven), the rules, the ports (a twenty-seventh: the launcher) and the
+routes.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+from ela.permissions import TERMINAL_RUN, production_catalogue
+from ela.tools.programs import PROGRAM_CHANGED, Programs
+from ela.tools.terminal import TerminalRunTool
+from ela.tools.verifiers import TerminalRunVerifier
+from tests.architecture.rules import RULES
+from tests.contracts.protocols import port_protocols
+from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_filesystem import verifiers_today
+from tests.tools.terminals import no_programs
+
+ROOT = Path(__file__).resolve().parents[2]
+ADR_DIR = ROOT / "docs" / "adr"
+ADR_PATH = ADR_DIR / "0047-terminal.md"
+TOOL_ROW = re.compile(
+    r"^\| `(terminal\.run)` \| `(\w+)` \| `([\w-]+)` \| (sì|no) \| (.+?) \| (.+?) \|$"
+)
+VERIFIER_ROW = re.compile(r"^\| `(terminal\.run)` \| `(\w+)` \| `([\w-]+)` \| (.+?) \| (.+?) \|$")
+CODE = re.compile(r"`([^`]+)`")
+
+
+def adr_text() -> str:
+    return ADR_PATH.read_text(encoding="utf-8")
+
+
+def conseguenze() -> str:
+    return adr_text().split("## Conseguenze", 1)[1]
+
+
+def codes(cell: str) -> frozenset[str]:
+    return frozenset(CODE.findall(cell))
+
+
+# ----------------------------------------------------------------------------------------
+# The totals of today, pinned here because this ADR is the one that changed them
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_capabilities_of_today_are_eleven_and_four_of_them_travel(tmp_path: Path) -> None:
+    catalogue = [spec.id for spec in production_catalogue().specs()]
+    declared = [v.reads_the_machine for v in verifiers_today(tmp_path).verifiers()]
+
+    assert len(catalogue) == 11
+    assert sorted(declared) == [False] * 4 + [True] * 7
+    assert "**undici**" in conseguenze()
+    assert "**quattro viaggiano, sette no**" in conseguenze()
+
+
+def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> None:
+    text = conseguenze()
+
+    assert "**cinquantasette**" in text
+    assert len(RULES) == 57
+    assert "**ventisette**" in text
+    assert len(tuple(port_protocols())) == 27
+    assert "CommandLauncher" in {port.__name__ for port in port_protocols()}
+    assert "**quarantotto**" in text
+    assert len(coded_routes()) == 48
+
+
+# ----------------------------------------------------------------------------------------
+# The rows this ADR writes
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_tool_row_is_the_running_tool() -> None:
+    rows = [match for line in adr_text().splitlines() if (match := TOOL_ROW.match(line))]
+
+    (row,) = rows
+    _, class_name, name, idempotent, errors, numbers = row.groups()
+    assert class_name == TerminalRunTool.__name__
+    assert name == "terminal-run"
+    assert (idempotent == "sì") is TerminalRunTool.idempotent
+    assert codes(errors) == TerminalRunTool.error_codes
+    assert codes(numbers) == TerminalRunTool.audit_numbers
+
+
+def test_the_verifier_row_is_the_running_verifier() -> None:
+    rows = [match for line in adr_text().splitlines() if (match := VERIFIER_ROW.match(line))]
+    verifier = TerminalRunVerifier(no_programs())
+
+    (row,) = [match for match in rows if match.group(2) == TerminalRunVerifier.__name__]
+    _, _, name, conditions, failures = row.groups()
+    assert name == verifier.name
+    assert codes(conditions) == verifier.conditions
+    assert codes(failures) == verifier.failure_codes - {
+        code for code in verifier.failure_codes if code.startswith("verification.")
+    }
+
+
+def test_the_refusal_it_quotes_is_the_one_the_tool_gives(tmp_path: Path) -> None:
+    """A message quoted in a document and nowhere else drifts the first time somebody edits it."""
+    program = tmp_path.resolve() / "eco"
+    program.write_text("#!/bin/sh\n", encoding="utf-8")
+    program.chmod(0o755)
+    entry = str(program).lstrip("/")
+    programs = Programs.fixed([entry])
+    program.write_text("#!/bin/sh\necho altro\n", encoding="utf-8")
+
+    problem = programs.problem(entry)
+
+    assert problem is not None and problem.code == PROGRAM_CHANGED
+    assert "changed after ELA started (an update, for instance): restart ELA to accept it" in (
+        problem.message
+    )
+    assert "changed after ELA started (an update, for instance): restart ELA to accept it" in (
+        adr_text()
+    )
+
+
+# ----------------------------------------------------------------------------------------
+# What it revises, named where it is written
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "named",
+    [
+        "ADR 0045 §6-bis",
+        "ADR 0029 §14",
+        "ADR 0040 §5",
+        "ADR 0038 §11",
+        "ADR 0038 §16",
+        "ADR 0026 §7",
+        "`docs/adr/0045-filesystem-and-high.md:140`",
+    ],
+)
+def test_it_names_every_line_it_revises_or_corrects(named: str) -> None:
+    assert named in adr_text()
+
+
+def test_the_revised_adrs_say_so_on_their_status_line() -> None:
+    """The form of ADR 0046: a revised ADR is not rewritten, its «Stato:» line names who revises."""
+    for revised in (
+        "0029-screen-capture.md",
+        "0038-work-protocol.md",
+        "0040-node-windows.md",
+        "0045-filesystem-and-high.md",
+    ):
+        text = (ADR_DIR / revised).read_text(encoding="utf-8")
+        status = text.split("- **Stato:**", 1)[1].split("\n- **", 1)[0]
+        assert "ADR 0047" in status, revised
+
+
+def test_it_names_the_new_channel_of_the_audit_and_says_why() -> None:
+    """Domanda 2: «ADR 0047 lo nomina come canale nuovo dell'audit e dice perché»."""
+    text = adr_text()
+
+    assert "canale nuovo dell'audit" in text
+    assert "solo interi" in text
+    assert "fs.read" in text and "non lo adotta" in text
+
+
+def test_it_writes_the_three_decided_questions_and_the_facts_found_aligning() -> None:
+    text = adr_text()
+
+    assert "un link dichiarato" in text.lower()
+    assert "terminal.stopped" in text
+    assert "M13.3" in text, "the debt of Windows, dated and handed on"
+    assert "Misurato" in text and " ms" in text, "the time from the timeout to the empty group"
+
+
+def test_the_capability_it_adds_is_the_last_of_the_catalogue() -> None:
+    assert production_catalogue().specs()[-1].id == TERMINAL_RUN
+
+
+def test_the_debt_of_the_lone_surrogate_has_an_owner_a_day_and_a_milestone_that_names_it() -> None:
+    """Review of M13.2, condition on decision 2: a debt no milestone takes is a hole, not a debt.
+    The form of ADR 0035 §7 — the owner and the day —, and the owner's own page naming it among
+    what it must close. The Windows debt of §13 has the same owner and the same need."""
+    text = adr_text()
+    owner = (ROOT / "docs" / "milestones" / "M13.3.md").read_text(encoding="utf-8")
+
+    assert "### 16. Un debito datato: il surrogato isolato fuori dal piano" in text
+    assert "**Debito a carico di M13.3**, dichiarato il **2026-09-24**" in text
+    assert "ADR 0047 §16" in owner
+    assert "ADR 0047 §13" in owner
+
+
+def test_it_writes_what_the_review_decided_with_its_measures() -> None:
+    """Decisions 4 and 5 of the review: the absent program has a code of its own, the hash runs in
+    a thread with the measure that justifies it, and the limits of an argument are two, with the
+    residual the check cannot take written down and explained."""
+    text = adr_text()
+
+    for fact in (
+        "`terminal.program_gone`",
+        "`asyncio.to_thread`",
+        "119,5 ms",
+        "1 048 412",
+        "MAX_ARG_STRLEN",
+        "**Il residuo**",
+    ):
+        assert fact in text, fact
+
+
+MILESTONES = ROOT / "docs" / "milestones"
+WINDOWS_ONLY = 'platform.system() != "Windows"'
+"""How a test reserves itself to Windows in this suite, read as source: an ``skipif`` on it."""
+
+
+def test_the_two_debts_of_the_census_have_an_owner_a_day_and_a_page_that_names_them() -> None:
+    """The review's decisions 2 and 3 on the census of skips, in the form of ADR 0035 §7. The
+    second owner was named since 2026-09-09 and registered nowhere: M9.5 is its registration."""
+    text = adr_text()
+    owner = (MILESTONES / "M13.3.md").read_text(encoding="utf-8")
+    discipline = (MILESTONES / "M9.5.md").read_text(encoding="utf-8")
+
+    assert "### 17. Un debito datato: i test di Windows che nessun job raccoglie" in text
+    assert "**Debito a carico di M13.3**, dichiarato il **2026-09-24**, dal censimento" in text
+    assert (
+        "### 18. Un debito datato: gli skip sul sistema che il test copre, che nessuno vede" in text
+    )
+    assert (
+        "**Debito a carico di M9.5, la milestone sulla disciplina della suite**, dichiarato il "
+        "**2026-09-24**"
+    ) in " ".join(text.split())
+    assert "ADR 0047 §17" in owner
+    assert "- **Stato:** **Proposta**" in discipline
+    for inherited in ("ADR 0047 §18", "ADR 0041 §5", "test_microphone_smoke.py"):
+        assert inherited in discipline, inherited
+
+
+def test_the_windows_job_still_leaves_the_tests_of_windows_out() -> None:
+    """ADR 0047 §17, the smallest defence: the job does not collect ``tests/infrastructure/``, and
+    a test there is still reserved to Windows. Failing here is not a regression: the debt is being
+    paid — write the payment in an ADR, and turn this test round."""
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    (job,) = [line for line in workflow.splitlines() if "pytest" in line and "tests/node" in line]
+    reserved = [
+        path.name
+        for path in sorted((ROOT / "tests" / "infrastructure" / "machine").glob("test_*.py"))
+        if WINDOWS_ONLY in path.read_text(encoding="utf-8")
+    ]
+
+    assert "tests/infrastructure" not in job
+    assert reserved, "no test is reserved to Windows any more: ADR 0047 §17 is paid or moot"
+
+
+def test_the_watch_on_skips_still_lives_in_one_file() -> None:
+    """ADR 0047 §18, the smallest defence: the guard of ``test_terminal_limits.py`` is the only one.
+    The day another joins it or replaces it, this fails: write the payment, and turn this round."""
+    guard = "def " + "skip_problems("  # in two pieces, or this file would be found as a guard
+    watching = sorted(
+        str(path.relative_to(ROOT))
+        for path in (ROOT / "tests").rglob("*.py")
+        if guard in path.read_text(encoding="utf-8")
+    )
+
+    assert watching == ["tests/tools/test_terminal_limits.py"]

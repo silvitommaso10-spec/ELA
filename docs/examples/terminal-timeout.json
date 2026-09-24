@@ -1,0 +1,32 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.2 per la durata massima.",
+    "/usr/bin/time lancia /bin/sleep come FIGLIO SUO: per ELA è un NIPOTE, ed è proprio quello",
+    "che la prova vuole vedere morire. Allo scadere ELA ferma l'intero gruppo di processi del",
+    "comando — SIGTERM, un respiro, SIGKILL — e dopo non deve restare vivo nessun `sleep 600`.",
+    "Abbassa prima il timeout (ELA_TERMINAL_TIMEOUT_SECONDS=10, poi riavvia), o aspetterai",
+    "due minuti. Il task finisce FAILED con terminal.timeout, e l'uscita raccolta fino a lì",
+    "sta nel risultato DICHIARATA incompleta: una mezza risposta che dice di esserlo.",
+    "ATTENZIONE: /usr/bin/time esegue qualunque programma gli passi come argomento. Dichiararlo",
+    "allarga il confine a tutto ciò che può lanciare. È qui perché la prova ha bisogno di un",
+    "nipote; toglilo da ELA_TERMINAL_PROGRAMS quando hai finito.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "far girare un programma che non finisce da solo",
+  "steps": [
+    {
+      "id": "e7a3c915-2b64-4d08-9f71-000000000004",
+      "goal": "dormire più a lungo di quanto ELA aspetta",
+      "required_capabilities": ["terminal.run"],
+      "arguments": {
+        "program": "usr/bin/time",
+        "args": ["/bin/sleep", "600"],
+        "purpose": "la prova della durata massima"
+      },
+      "risk": "HIGH",
+      "expected_result": "terminal.timeout, e nessun processo del comando vivo dopo",
+      "success_conditions": ["terminal.exit_code_matches"],
+      "requires_authorization": true
+    }
+  ]
+}

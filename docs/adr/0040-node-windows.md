@@ -7,7 +7,8 @@
   la regola 54, dec. H, dec. I —, e il contenuto approvato dalla review dello stesso giorno. Le
   decisioni ereditate sono D1–D20 di M12.1, A–P di M12.2 e A–M di M12.3. La prova non ha smentito
   niente; due sue parti non sono state fatte, e sono qui fra i vincoli dichiarati. I numeri di dec. J
-  stanno in `docs/milestones/M12.4.md`.
+  stanno in `docs/milestones/M12.4.md`. §5, il meccanismo dell'attesa: il caso del nipote che tiene
+  la pipe è riparato da ADR 0047 §13, per ogni chiamante del lanciatore.
 - **Data:** 2026-09-17 (accettata il 2026-09-18)
 - **Riferimenti spec:** §4, §9, §16, §17, §48, §56, §57
 - **Continua:** ADR 0023 §10; ADR 0028 §1; ADR 0029 §3, §16; ADR 0031 §3, §5, §6; ADR 0033 §9;

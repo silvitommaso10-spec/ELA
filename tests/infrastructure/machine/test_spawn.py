@@ -8,7 +8,10 @@ what is left unexercisable shrinks to one file.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
+import os
+import signal
 import sys
 import tempfile
 from pathlib import Path
@@ -266,3 +269,67 @@ def test_the_sweep_survives_a_file_it_cannot_delete() -> None:
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(Path, "unlink", vanish)
             assert sweep_speech_files(room) == 0
+
+
+# ----------------------------------------------------------------------------------------
+# The two defects of the shared launcher, repaired for every caller (M13.2 dec. 15)
+# ----------------------------------------------------------------------------------------
+
+HOLDER = """
+import os, subprocess, sys, time
+held = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+print(held.pid, flush=True)
+time.sleep(60)
+"""
+
+
+async def test_a_grandchild_that_holds_the_pipe_does_not_hold_the_launcher() -> None:
+    """Measured at ``1c24ec1``: ``spawn(["/bin/sh", "-c", "sleep 2 & wait"], 0.2)`` came back after
+    2.01 s. ``_kill`` killed the child and then waited without a limit for pipes a grandchild still
+    held, so a grandchild that never ends meant a ``spawn`` that never returned.
+
+    Asserted as a fact: ``spawn`` returns **while the grandchild is still alive** — the pipe it
+    holds is closed, not waited for. The guard is a deadlock guard, sixty seconds being the life of
+    the grandchild: before the repair it fires, and the verdict is the hang.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        pid_file = Path(directory) / "pid"
+        child = HOLDER.replace(
+            "print(held.pid, flush=True)",
+            f"open({str(pid_file)!r}, 'w').write(str(held.pid))",
+        )
+        code, _ = await asyncio.wait_for(spawn([sys.executable, "-c", child], 1.0), 45)
+        held = int(pid_file.read_text())
+        try:
+            os.kill(held, 0)  # still alive: the launcher did not wait for it
+            alive = True
+        except ProcessLookupError:
+            alive = False
+        finally:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(held, signal.SIGKILL)
+
+    assert code == TIMED_OUT
+    assert alive, "the grandchild died first, so this proved nothing about the pipe"
+
+
+async def test_a_child_killed_by_a_hangup_is_not_read_as_a_timeout() -> None:
+    """Measured at ``1c24ec1``: ``TIMED_OUT`` was ``-1``, the code of a child killed by ``SIGHUP``,
+    so a callers' ``code == TIMED_OUT`` took a hang-up for a timeout and returned the half output
+    as if it were one. The timeout now has a value no signal can produce."""
+    code, output = await spawn(
+        [
+            sys.executable,
+            "-c",
+            "import os, signal; print('mezza', flush=True); os.kill(os.getpid(), signal.SIGHUP)",
+        ],
+        10,
+    )
+
+    assert code == -signal.SIGHUP
+    assert code != TIMED_OUT
+    assert output == "mezza\n"
+
+
+def test_no_signal_can_produce_the_code_of_a_timeout() -> None:
+    assert -max(signal.valid_signals()) > TIMED_OUT

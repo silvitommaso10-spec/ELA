@@ -100,6 +100,10 @@ class Tool(ABC):
     error_codes: ClassVar[frozenset[str]] = frozenset({ARGUMENTS_INVALID})
     output_keys: ClassVar[frozenset[str]] = frozenset()
     idempotent: ClassVar[bool]
+    audit_numbers: ClassVar[frozenset[str]]
+    """The keys of the result whose integers enter ``TOOL_EXECUTED`` — **no default**, like
+    :attr:`idempotent` (M13.2 dec. 10, ADR 0047): a tool that says nothing is refused by the
+    registry, and a tool that has nothing to count says ``frozenset()`` in so many words."""
 
     def __init__(
         self, capability_id: CapabilityId, clock: Clock, ids: IdGenerator, *, name: str

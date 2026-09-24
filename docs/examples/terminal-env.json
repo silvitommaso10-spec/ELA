@@ -1,0 +1,31 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.2 per l'ambiente del processo figlio.",
+    "/usr/bin/env senza argomenti stampa il proprio ambiente. Ciò che ELA gli passa è un",
+    "ambiente CHIUSO, costruito da ELA: PATH costante, HOME, TMPDIR, LANG — e niente altro.",
+    "Né ELA_API_TOKEN né una chiave di un provider, nemmeno se li hai esportati nella shell da",
+    "cui hai lanciato `ela serve`; né SSH_AUTH_SOCK, perché l'agente ssh è un'autorità che non",
+    "hai dato a questo comando.",
+    "ATTENZIONE: /usr/bin/env con degli argomenti esegue il programma che gli nomini. È qui",
+    "perché la prova ha bisogno di un ambiente da stampare; toglilo da ELA_TERMINAL_PROGRAMS",
+    "quando hai finito.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "guardare l'ambiente che un programma riceve",
+  "steps": [
+    {
+      "id": "e7a3c915-2b64-4d08-9f71-000000000006",
+      "goal": "stampare l'ambiente del processo figlio",
+      "required_capabilities": ["terminal.run"],
+      "arguments": {
+        "program": "usr/bin/env",
+        "args": [],
+        "purpose": "la prova dell'ambiente chiuso"
+      },
+      "risk": "HIGH",
+      "expected_result": "i nomi dell'ambiente chiuso, e nessun segreto",
+      "success_conditions": ["terminal.program_unchanged", "terminal.exit_code_matches", "terminal.output_whole"],
+      "requires_authorization": true
+    }
+  ]
+}

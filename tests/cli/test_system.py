@@ -12,7 +12,7 @@ from pydantic import SecretStr
 from ela.cli import client, system
 from ela.cli.errors import REFUSED, UNREACHABLE
 from ela.cli.output import EMPTY
-from ela.cli.system import _terms
+from ela.cli.system import _questions, _terms
 from ela.composition import ApiSettings, Ela
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.tools import CREATES, OVERWRITES, READS
@@ -96,6 +96,30 @@ def test_the_terms_of_the_grant_are_shown_whole_or_not_at_all() -> None:
     assert _terms(1, 90) == "1 use, within 90 seconds"
     assert _terms(None, 1800) is None
     assert _terms(1, None) is None
+
+
+def test_a_question_that_is_not_a_command_has_no_rows_of_a_command() -> None:
+    """The five rows of M13.2 belong to a command: a question about a file names no program, and
+    five dashes under it would be five things to read that are not there — the block of the guide's
+    §15 is what this surface printed before, and what it prints again."""
+    shown = _questions(
+        [
+            {
+                "id": "a",
+                "task_id": "t",
+                "capability_id": "fs.write",
+                "targets": ["ELA/prova.md"],
+                "label": "file",
+                "target": "/Users/tu/Documenti/ELA/prova.md",
+                "does": "creates a new file",
+                "prompt": "fs.write on ELA/prova.md",
+            }
+        ]
+    )
+
+    names = [line.split("  ")[0] for line in shown.splitlines()]
+    assert "file" in names
+    assert not {"runs", "arguments", "folder", "timeout", "expects exit"} & set(names)
 
 
 def test_the_command_line_holds_no_sentence_about_files() -> None:

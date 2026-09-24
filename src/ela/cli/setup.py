@@ -51,9 +51,12 @@ ASSIGNED = re.compile(r"^\s*(ELA_\w+)\s*=", re.MULTILINE)
 REQUIRED: tuple[tuple[str, str], ...] = (
     ("ELA_FS_ROOT", "/Users/you/Documents"),
     ("ELA_FS_SCOPE", "ELA"),
+    ("ELA_TERMINAL_PROGRAMS", "[]"),
 )
 """The variables ELA cannot start without, beside the token, each with an **example** — not a
-default: ELA has none for them, and it does not choose the user's folder (M13.1, ADR 0045).
+default: ELA has none for them, and it does not choose the user's folder (M13.1, ADR 0045) nor what
+may run on the user's machine (M13.2, ADR 0047). The example of ``ELA_TERMINAL_PROGRAMS`` is ``[]``,
+which is an admitted answer — «no program» — and not a program ELA picked.
 
 Until M13.1b they sat among the optional ones, and ``init`` said the token was «the only variable
 ELA requires» about an ``.env`` ELA would refuse. The list is not compared with another list:
@@ -118,6 +121,8 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_CONTEXT_TASKS_LIMIT", "20"),
     ("ELA_CONTEXT_DEADLINES_LIMIT", "10"),
     ("ELA_CONTEXT_EVENTS_LIMIT", "10"),
+    ("ELA_TERMINAL_TIMEOUT_SECONDS", "120"),
+    ("ELA_TERMINAL_OUTPUT_MAX_BYTES", "65536"),
     ("ELA_NODE_CORE_URL", "http://127.0.0.1:8351"),
     ("ELA_NODE_STATE_DIR", "<home>/.ela"),
     ("ELA_NODE_NAME", "the machine's own name"),
@@ -139,7 +144,8 @@ HEADER = f"""\
 {TOKEN_VARIABLE}=%s
 
 # Required, with no default: ELA does not start until these lines are written. The values are
-# examples — write your own, and remove the `#`.
+# examples — write your own, and remove the `#`. ELA_TERMINAL_PROGRAMS is one line of JSON, each
+# program relative to / (usr/bin/git is /usr/bin/git), and [] means no program at all.
 """
 
 OPTIONAL_HEADER = """
@@ -196,8 +202,20 @@ def init() -> None:
     )
 
 
+NOTES: Final = {
+    "ELA_FS_ROOT": "\nThe folder is yours: ELA does not create it and does not choose it.",
+    "ELA_TERMINAL_PROGRAMS": (
+        "\nThe programs are one line of JSON, each relative to / — usr/bin/git is /usr/bin/git —, "
+        "and [] is an answer: no program at all."
+    ),
+}
+"""What a missing required line needs said beside its example, once (M13.2)."""
+
+
 def _names(variables: tuple[tuple[str, str], ...] | list[tuple[str, str]]) -> str:
-    return " and ".join(name for name, _ in variables)
+    """``A``, ``A and B``, ``A, B and C``: names a person reads, not a chain of «and»."""
+    names = [name for name, _ in variables]
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def _report(env: Path) -> None:
@@ -221,9 +239,12 @@ def _report(env: Path) -> None:
         )
     if missing:
         lines = "".join(f"\n    {name}={example}" for name, example in missing)
+        notes = "".join(NOTES[name] for name, _ in missing if name in NOTES)
+        one = len(missing) == 1
         fail(
             CONFIGURATION,
-            f"{ENV_FILE} does not set {_names(missing)}, and ELA does not start without them: "
-            f"they have no default. Write them, with a folder of yours, for example:{lines}",
+            f"{ENV_FILE} does not set {_names(missing)}, and ELA does not start without "
+            f"{'it' if one else 'them'}: {'it has' if one else 'they have'} no default. Write "
+            f"{'it' if one else 'them'}, for example:{lines}{notes}",
         )
     typer.echo(f"{TOKEN_VARIABLE} and {_names(REQUIRED)} are set: nothing required is missing.")

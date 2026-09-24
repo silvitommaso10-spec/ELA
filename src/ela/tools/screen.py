@@ -355,6 +355,7 @@ class CaptureScreenTool(Tool):
     directory does not belong in a persisted result either (§57)."""
 
     idempotent: ClassVar[bool] = False
+    audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Two captures are two photographs of two instants, and two files. So this runs under the
     STARTED protocol of ADR 0021 §1 and is never run twice for one step — which is also what
     stops a crash between the capture and its record from quietly doubling the content ELA holds.

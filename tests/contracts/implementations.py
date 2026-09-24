@@ -8,6 +8,7 @@ also checks that every port has at least one implementation.
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import tempfile
 from collections.abc import Awaitable, Callable, Sequence
@@ -25,6 +26,7 @@ from ela.domain import CapabilityId, RiskLevel
 from ela.infrastructure.machine import (
     DarwinListening,
     DarwinProbe,
+    ProcessGroupLauncher,
     SaySpeechCommand,
     ScreenCaptureCommand,
     UnsupportedListening,
@@ -56,6 +58,7 @@ from ela.ports import (
     Bell,
     CapabilityRegistryPort,
     Clock,
+    CommandLauncher,
     DeviceRegistryPort,
     EnrollmentStore,
     ExecutionResultStore,
@@ -91,6 +94,7 @@ from ela.testing.fakes import (
     FakeEnrollmentStore,
     FakeExecutionResultStore,
     FakeIdGenerator,
+    FakeLauncher,
     FakeListening,
     FakeModelProvider,
     FakeModelRouter,
@@ -486,6 +490,11 @@ def _screen_capture() -> ScreenCaptureCommand:
     return ScreenCaptureCommand(timeout=timedelta(seconds=1), runner=_no_helper)
 
 
+def _launcher() -> ProcessGroupLauncher:
+    """The launcher of the terminal, with the stop signal of ADR 0038 §11 it waits on (M13.2)."""
+    return ProcessGroupLauncher(asyncio.Event())
+
+
 IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     Clock: (
         Implementation("FakeClock", FakeClock),
@@ -589,6 +598,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     ModelRouterPort: (
         Implementation("FakeModelRouter", _fake_router),
         Implementation("ModelRouter", _router),
+    ),
+    CommandLauncher: (
+        Implementation("FakeLauncher", FakeLauncher),
+        Implementation("ProcessGroupLauncher", _launcher),
     ),
 }
 

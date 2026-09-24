@@ -4,7 +4,9 @@ ADR 0012).
 
 - `capabilities.py`: `CapabilityRegistry` immutabile, limitato a `MAX_RISK` (MEDIUM in v0.1,
   HIGH da M13.1, ADR 0045), validazione JSON Schema degli argomenti, catalogo `catalogue_v01`
-  (`core.echo`, `workspace.write_note`, `model.complete`). Lo scope di `workspace.write_note` è configurabile da M8.3
+  (`core.echo`, `workspace.write_note`, `model.complete`), e `production_catalogue`, che da M13.2
+  finisce con `terminal.run` (HIGH, scope `ELA_TERMINAL_PROGRAMS`: l'unica capability il cui scope
+  vuoto è una risposta, `DECLARES_AN_EMPTY_SCOPE`). Lo scope di `workspace.write_note` è configurabile da M8.3
   (`ELA_NOTES_SCOPE`, ADR 0025 §5); `DEFAULT_NOTES_SCOPE` ne è il default, non più una
   convenzione.
 - `scope.py`: cosa vuol dire "dentro lo scope" (prefisso di percorso, regole fail-safe).

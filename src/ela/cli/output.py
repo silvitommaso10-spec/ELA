@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, Final
 
 import typer
 
@@ -64,6 +64,17 @@ def fields(pairs: Sequence[tuple[str, Any]]) -> str:
     return "\n".join(f"{name.ljust(width)}{GAP}{text(value)}" for name, value in pairs)
 
 
+OBEYED: Final = str.maketrans({code: f"\\u{code:04x}" for code in (0x7F, *range(0x80, 0xA0))})
+"""DEL and the C1 controls, which ``json.dumps(ensure_ascii=False)`` lets through as they are.
+
+It escapes C0 — ESC included — and nothing above it but the quote and the backslash: a CSI written
+as the single character U+009B is a sequence a terminal obeys, and it would have reached the
+terminal of whoever typed ``--json`` (M13.2 dec. 13). The escape is JSON's own, so what is printed
+is still the same JSON, and everything that is only foreign stays readable."""
+
+
 def emit(payload: Any, as_json: bool, rendered: str) -> None:
     """The API's own answer, or the text we made of it."""
-    typer.echo(json.dumps(payload, indent=2, ensure_ascii=False) if as_json else rendered)
+    typer.echo(
+        json.dumps(payload, indent=2, ensure_ascii=False).translate(OBEYED) if as_json else rendered
+    )

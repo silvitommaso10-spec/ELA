@@ -1,0 +1,43 @@
+{
+  "_nota": [
+    "Il primo piano della prova a mano di M13.2 (ADR 0047): ELA esegue un programma e ne",
+    "riporta l'uscita. `terminal.run` è HIGH: ELA chiede OGNI VOLTA, e nessuna policy potrà",
+    "coprirlo in anticipo (§59 non raggiunge questo livello).",
+    "`program` è un percorso RELATIVO ALLA RADICE `/`, come il `path` di fs.write è relativo a",
+    "ELA_FS_ROOT: `bin/echo` è /bin/echo. Si scrive esattamente come sta in",
+    "ELA_TERMINAL_PROGRAMS, e ELA non consulta mai il PATH, né il suo né un altro.",
+    "`args` è una LISTA: il processo riceve [\"/bin/echo\", *args] così com'è, senza una shell",
+    "in mezzo — niente da citare, niente da sfuggire, nessuna espansione. Il primo argomento",
+    "contiene degli spazi, e arriva a /bin/echo come UN argomento.",
+    "`cwd` non c'è, quindi il programma parte dalla cartella dello scope",
+    "(ELA_FS_ROOT/ELA_FS_SCOPE). Non è un confine: è il posto da cui il programma parte. Un",
+    "programma ammesso scrive dove tu scrivi; il confine del terminale è QUALI programmi.",
+    "La domanda nomina il programma per esteso e il file a cui porta, la cartella risolta, e",
+    "gli argomenti uno per uno.",
+    "La parola `girasole-7431` è un MARCATORE: finisce nel risultato, e non deve comparire",
+    "nell'audit — gli argomenti e l'uscita di un comando sono contenuto tuo (§57), e ciò che",
+    "entra in un log append-only non si redige più.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "far girare un programma e leggerne l'uscita",
+  "steps": [
+    {
+      "id": "e7a3c915-2b64-4d08-9f71-000000000001",
+      "goal": "far scrivere una frase a /bin/echo, nella cartella che ho dichiarato",
+      "required_capabilities": ["terminal.run"],
+      "arguments": {
+        "program": "bin/echo",
+        "args": ["la parola di prova è", "girasole-7431"],
+        "purpose": "la prova a mano del terminale"
+      },
+      "risk": "HIGH",
+      "expected_result": "l'uscita contiene la frase, e l'audit non contiene la parola",
+      "success_conditions": [
+        "terminal.program_unchanged",
+        "terminal.exit_code_matches",
+        "terminal.output_whole"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}
