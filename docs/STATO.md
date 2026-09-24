@@ -91,6 +91,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 9 — Le liste che si accorgono di essere false | `M9.2` | Proposta | Le liste che restano scritte a mano |
 | 9 — Le liste che si accorgono di essere false | `M9.3` | Completata | Le esenzioni che si accorgono di essere false |
 | 9 — Le liste che si accorgono di essere false | `M9.4` | Completata | Le finestre, i negativi, e la release v0.1 |
+| 9 — Le liste che si accorgono di essere false | `M9.5` | Proposta | La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento |
 | 10 — La percezione | `M10.1` | Completata | Perception Core: fondamenta |
 | 10 — La percezione | `M10.2` | Completata | Screen awareness: la prima lettura di contenuto |
 | 10 — La percezione | `M10.3` | Implementata | Comprendere ciò che si vede: il contesto che non costa niente, e il testo che non esce |
@@ -130,7 +131,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **47** | `docs/adr/NNNN-*.md` |
-| Milestone | **56, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **57, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **27** | i `Protocol` di `src/ela/ports.py` |
@@ -641,6 +642,8 @@ pagato da chi doveva.
 | ADR 0041 §5 — i test che aspettano, e le difese che costano un terzo della suite | 2026-09-18 | della milestone sulla disciplina della suite | **aperto** |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | **aperto** |
 | ADR 0047 §16 — il surrogato isolato fuori dal piano | 2026-09-24 | di M13.3 | **aperto** |
+| ADR 0047 §17 — i test di Windows che nessun job raccoglie | 2026-09-24 | di M13.3 | **aperto** |
+| ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 

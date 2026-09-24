@@ -207,3 +207,59 @@ def test_it_writes_what_the_review_decided_with_its_measures() -> None:
         "**Il residuo**",
     ):
         assert fact in text, fact
+
+
+MILESTONES = ROOT / "docs" / "milestones"
+WINDOWS_ONLY = 'platform.system() != "Windows"'
+"""How a test reserves itself to Windows in this suite, read as source: an ``skipif`` on it."""
+
+
+def test_the_two_debts_of_the_census_have_an_owner_a_day_and_a_page_that_names_them() -> None:
+    """The review's decisions 2 and 3 on the census of skips, in the form of ADR 0035 §7. The
+    second owner was named since 2026-09-09 and registered nowhere: M9.5 is its registration."""
+    text = adr_text()
+    owner = (MILESTONES / "M13.3.md").read_text(encoding="utf-8")
+    discipline = (MILESTONES / "M9.5.md").read_text(encoding="utf-8")
+
+    assert "### 17. Un debito datato: i test di Windows che nessun job raccoglie" in text
+    assert "**Debito a carico di M13.3**, dichiarato il **2026-09-24**, dal censimento" in text
+    assert (
+        "### 18. Un debito datato: gli skip sul sistema che il test copre, che nessuno vede" in text
+    )
+    assert (
+        "**Debito a carico di M9.5, la milestone sulla disciplina della suite**, dichiarato il "
+        "**2026-09-24**"
+    ) in " ".join(text.split())
+    assert "ADR 0047 §17" in owner
+    assert "- **Stato:** **Proposta**" in discipline
+    for inherited in ("ADR 0047 §18", "ADR 0041 §5", "test_microphone_smoke.py"):
+        assert inherited in discipline, inherited
+
+
+def test_the_windows_job_still_leaves_the_tests_of_windows_out() -> None:
+    """ADR 0047 §17, the smallest defence: the job does not collect ``tests/infrastructure/``, and
+    a test there is still reserved to Windows. Failing here is not a regression: the debt is being
+    paid — write the payment in an ADR, and turn this test round."""
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    (job,) = [line for line in workflow.splitlines() if "pytest" in line and "tests/node" in line]
+    reserved = [
+        path.name
+        for path in sorted((ROOT / "tests" / "infrastructure" / "machine").glob("test_*.py"))
+        if WINDOWS_ONLY in path.read_text(encoding="utf-8")
+    ]
+
+    assert "tests/infrastructure" not in job
+    assert reserved, "no test is reserved to Windows any more: ADR 0047 §17 is paid or moot"
+
+
+def test_the_watch_on_skips_still_lives_in_one_file() -> None:
+    """ADR 0047 §18, the smallest defence: the guard of ``test_terminal_limits.py`` is the only one.
+    The day another joins it or replaces it, this fails: write the payment, and turn this round."""
+    guard = "def " + "skip_problems("  # in two pieces, or this file would be found as a guard
+    watching = sorted(
+        str(path.relative_to(ROOT))
+        for path in (ROOT / "tests").rglob("*.py")
+        if guard in path.read_text(encoding="utf-8")
+    )
+
+    assert watching == ["tests/tools/test_terminal_limits.py"]

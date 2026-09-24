@@ -380,6 +380,55 @@ chiudere.
 afferma il difetto com'è. Il giorno in cui fallisce il debito si sta pagando: si scrive il pagamento
 in un ADR, e il test si gira.
 
+### 17. Un debito datato: i test di Windows che nessun job raccoglie
+
+**Debito a carico di M13.3**, dichiarato il **2026-09-24**, dal censimento degli skip della review di
+M13.2.
+
+Alcuni test coprono soltanto Windows: il loro `skipif` scatta su ogni altro sistema, e sui due runner
+di `make check` si saltano, com'è giusto. Ma **il job `windows-latest` non li raccoglie**: gira
+`tests/node`, `tests/conformance` e `tests/composition/test_build_node.py`
+(`.github/workflows/ci.yml`), e loro stanno fuori. Nessun job della CI li esegue mai; girano solo a
+mano, sul PC. **Come si ricavano**, senza un elenco che invecchi: gli `skipif` della suite riservati a
+Windows, fuori dai percorsi che quel job raccoglie — il 2026-09-24 stavano tutti in
+`tests/infrastructure/machine/`. Uno è fuori per una ragione che la sua docstring dichiara — un
+runner non ha altoparlanti —, e il debito non la contesta: chiede che ogni test o entri nel job, o
+dica perché no in un posto che un test legge.
+
+**Non si ripara qui.** Il job di Windows è di M12.4, e la prima milestone che porta un'azione su quel
+PC è M13.3, che eredita già il debito di Windows del terminale (§13). `docs/milestones/M13.3.md` lo
+nomina fra ciò che eredita.
+
+**La difesa più piccola**:
+`tests/docs/test_adr_terminal.py::test_the_windows_job_still_leaves_the_tests_of_windows_out` afferma
+che il job non raccoglie `tests/infrastructure/` e che lì c'è ancora uno `skipif` riservato a Windows.
+Il giorno in cui fallisce, il debito si sta pagando.
+
+### 18. Un debito datato: gli skip sul sistema che il test copre, che nessuno vede
+
+**Debito a carico di M9.5, la milestone sulla disciplina della suite**, dichiarato il **2026-09-24**,
+dal censimento degli skip della review di M13.2.
+
+Uno `skipif` che legge la macchina — il sistema, un binario, l'utente che esegue la suite (root legge
+tutto), la storia git del clone — dichiara una precondizione, ed è la forma giusta (ADR 0031 §6). Ma
+se scatta **sul sistema che quel test esiste per coprire**, il test non prova più niente e nessuno se
+ne accorge: da questa milestone `make check` stampa ogni skip con la sua ragione (`-ra`), e una riga
+stampata non fa diventare rossa la suite. **Come si ricavano**: sono i marker `skipif` della suite la
+cui condizione legge la macchina. Questo ADR non ne scrive l'elenco, perché un elenco scritto a mano
+diventerebbe falso senza accorgersene. **Che cosa dovrà garantire**: che uno skip sul sistema che il
+test copre faccia diventare rossa la suite, come fa oggi, per i due test sul kernel, la guardia di
+`tests/tools/test_terminal_limits.py` (§5) — generalizzandola, o con un meccanismo che la renda
+inutile.
+
+**Non si ripara qui.** La proprietaria è la milestone che ADR 0041 §5 nomina per i test che
+aspettano, e che fino a questa review non era registrata da nessuna parte: ora lo è, come **M9.5**,
+`Proposta`, con questo debito e quelli che le erano già stati affidati.
+
+**La difesa più piccola**:
+`tests/docs/test_adr_terminal.py::test_the_watch_on_skips_still_lives_in_one_file` afferma che la
+guardia sta in un file solo. Il giorno in cui un'altra la raggiunge o la sostituisce, fallisce: il
+pagamento si scrive in un ADR, e il test si gira.
+
 ## Alternative considerate
 
 - **I programmi a percorso assoluto nello scope** — avrebbero cambiato i quattro confronti che leggono
@@ -421,8 +470,9 @@ in un ADR, e il test si gira.
   lancio si scelgono nominando il sistema (§5, §13). `ela.tools` ha `ArgumentLimits` e
   `PROGRAM_GONE`; il tool, il verifier e la composizione confrontano i programmi con
   `asyncio.to_thread` (§4) — il primo `to_thread` del codice.
-- Il debito datato di §16 è a carico di M13.3, e `docs/milestones/M13.3.md` lo nomina insieme al
-  debito di Windows di §13.
+- I debiti datati di §16 e §17 sono a carico di M13.3, e `docs/milestones/M13.3.md` li nomina
+  insieme al debito di Windows di §13; quello di §18 è a carico di M9.5, registrata con questa
+  review.
 - Le capability di produzione sono **undici**, e **quattro viaggiano, sette no**;
   le regole di architettura restano **cinquantasette** (le tre nuove di M13.2 sono test di
   `tests/architecture` con i loro casi negativi, fuori dal registro), i port sono **ventisette**, le
