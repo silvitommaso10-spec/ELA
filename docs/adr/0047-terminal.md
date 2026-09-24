@@ -123,7 +123,9 @@ dice **quale** limite e **di quanti byte**, senza mai l'argomento:
   chiusura compreso — 128 KiB con pagine da 4 KiB —, qualunque cosa ammetta il totale. Su macOS non
   c'è (lo stesso 1 048 412 lo dimostra), e lì il limite del singolo è il totale; su Windows sono tutti
   e due la riga di comando di `CreateProcess`, 32 767 caratteri. Il test sul kernel di Linux gira sul
-  runner ubuntu.
+  runner ubuntu, e **non lo si deduce dai conteggi**: un test che non si salta mai li sorveglia
+  tutt'e due, e diventa rosso se sul kernel che coprono uno `skipif` scatta — un `/usr/bin/true` che
+  manca compreso —, e se altrove la ragione del salto non è il kernel che manca.
 
 **Il residuo**, che il controllo non può prendere, e perché. **Su Linux il totale non è esatto**: il
 kernel copia il percorso del programma una volta in più (`bprm->filename`) e tetta il limite a tre
