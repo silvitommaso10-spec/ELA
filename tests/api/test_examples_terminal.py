@@ -7,21 +7,26 @@ prints, ``/usr/bin/seq`` prints more than the ceiling, ``/usr/bin/env`` shows wh
 receives. ``/usr/bin/time`` may be missing on a runner's image, and the test that needs it says so
 with a ``skipif`` read from the filesystem (ADR 0031 §6) — a missing entry does not stop ELA
 (Domanda 3), which is why the others still run there.
+
+Three facts no example shows are asserted here on real children too, with plans written in the
+test: what a program prints on stderr and the folder it starts from never reach the audit, and a
+child with no ``cwd`` starts from the scope's folder.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
-from ela.tools.terminal import PROGRAM, RUNS
 from httpx import AsyncClient
 
 from ela.composition.settings import Settings
 from ela.domain import TaskState
+from ela.tools.terminal import PROGRAM, RUNS
 from tests.composition.support import declare
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
@@ -184,6 +189,7 @@ async def test_a_program_that_does_not_end_is_stopped_with_its_grandchild(
     client: AsyncClient,
 ) -> None:
     """Criterion 10 on the plan of the guide: ``time`` is the child, ``sleep`` the grandchild."""
+    before = sleeping()
     question = await asked(client, "terminal-timeout.json", "dormire")
     run = await answered(client, question)
 
@@ -191,6 +197,16 @@ async def test_a_program_that_does_not_end_is_stopped_with_its_grandchild(
     result = await outcome(client, question["task_id"])
     assert result["error"]["code"] == "terminal.timeout"
     assert result["output"]["ended"] == "stopped_by_ela"
+    assert sleeping() <= before, "the grandchild outlived the answer"
+
+
+def sleeping() -> set[int]:
+    """The processes whose whole command line is the grandchild of the plan — the ``pgrep`` the
+    guide tells the reader to run. No other test of the suite starts ``/bin/sleep 600``."""
+    found = subprocess.run(
+        ["pgrep", "-f", "-x", "/bin/sleep 600"], capture_output=True, text=True, check=False
+    )
+    return {int(pid) for pid in found.stdout.split()}
 
 
 async def test_a_control_sequence_is_kept_in_the_result_as_the_program_printed_it(
@@ -232,3 +248,62 @@ def test_the_programs_of_the_plans_are_the_line_the_guide_tells_you_to_write() -
         assert declared is (path.name != "terminal-not-declared.json"), path.name
         assert "terminal.exit_code_matches" in step["success_conditions"], path.name
         assert not step["arguments"]["program"].startswith("/"), "relative to /, as the scope"
+
+
+def written(program: str, args: list[str], **more: Any) -> dict[str, Any]:
+    """A plan of one command, written here: the examples are the guide's, and these facts are not
+    in the guide. The code is not a condition, so a program that fails still completes."""
+    return {
+        "goal": "un comando",
+        "steps": [
+            {
+                "id": "e7a3c915-2b64-4d08-9f71-0000000000ee",
+                "goal": "un comando scritto dal test",
+                "required_capabilities": ["terminal.run"],
+                "arguments": {"program": program, "args": args, "purpose": "il test", **more},
+                "risk": "HIGH",
+                "expected_result": "finisce",
+                "success_conditions": ["terminal.program_unchanged", "terminal.output_whole"],
+                "requires_authorization": True,
+            }
+        ],
+    }
+
+
+async def ran(client: AsyncClient, body: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    task_id = (await client.post("/tasks", json={"text": "un comando"})).json()["id"]
+    assert (await client.post(f"/tasks/{task_id}/plan", json=body)).status_code == 200
+    await client.post(f"/tasks/{task_id}/run")
+    (question,) = (await client.get("/approvals")).json()
+    question["task_id"] = task_id
+    run = await answered(client, question)
+    assert run["task"]["state"] == TaskState.COMPLETED.value, run
+    return task_id, await outcome(client, task_id)
+
+
+async def test_what_a_program_says_on_stderr_and_where_it_started_never_reach_the_audit(
+    client: AsyncClient, settings: Settings
+) -> None:
+    """Criterion 12, the two halves the echo does not show: ``seq`` refuses the marker **on
+    stderr**, from a folder whose name is a second marker, and neither is anywhere in the trail."""
+    folder = "cartella-girasole-9127"
+    (settings.filesystem.root / "ELA" / folder).mkdir()
+
+    _, result = await ran(client, written("usr/bin/seq", [MARKER], cwd=folder))
+
+    assert MARKER in result["output"]["stderr"]["head"], "the precondition: it is on stderr"
+    trail = json.dumps((await client.get("/audit")).json())
+    assert MARKER not in trail
+    assert folder not in trail
+
+
+async def test_a_child_with_no_folder_starts_from_the_scope_and_never_from_ela_s(
+    client: AsyncClient, settings: Settings
+) -> None:
+    """Criterion 9 on a real child reached through the tool: ``env`` runs ``/bin/pwd``, which
+    asks the kernel — the closed environment has no ``PWD`` to repeat."""
+    _, result = await ran(client, written("usr/bin/env", ["/bin/pwd"]))
+
+    printed = result["output"]["stdout"]["head"].strip()
+    assert printed == scope_of(settings)
+    assert printed != str(Path.cwd().resolve())

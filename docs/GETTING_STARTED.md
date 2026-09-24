@@ -44,19 +44,19 @@ uv run ela init
 ```
 wrote .env (mode 600) with a fresh ELA_API_TOKEN. It is not printed here: read it from the file.
 next:
-  write ELA_FS_ROOT and ELA_FS_SCOPE in .env   # no default, and no start without
+  write ELA_FS_ROOT, ELA_FS_SCOPE and ELA_TERMINAL_PROGRAMS in .env   # no default, and no start without
   uv run alembic upgrade head   # ELA does not migrate on start-up (ADR 0006)
   ela serve                     # ELA creates its database directory and workspace
 ```
 
 Scrive **un solo file**, `.env`, con un token generato e permessi `0600`. Il token **non viene
-stampato**: sta nel file, e da lì lo leggono sia ELA sia la CLI. Sotto al token trovi **le due righe
-obbligatorie**, `ELA_FS_ROOT` ed `ELA_FS_SCOPE`, commentate con un esempio — ELA non ha un default
-per loro e non parte finché non le scrivi (qui sotto) —, e poi ogni altra variabile commentata
-accanto al suo default: di quelle si tocca solo ciò che si vuole cambiare.
+stampato**: sta nel file, e da lì lo leggono sia ELA sia la CLI. Sotto al token trovi **le righe
+obbligatorie** — `ELA_FS_ROOT`, `ELA_FS_SCOPE` e, da M13.2, `ELA_TERMINAL_PROGRAMS` —, commentate
+con un esempio: ELA non ha un default per loro e non parte finché non le scrivi (qui sotto). Poi ogni
+altra variabile commentata accanto al suo default: di quelle si tocca solo ciò che si vuole cambiare.
 
 Se `.env` esiste già, `init` **non lo tocca**: dice quali variabili facoltative quel file non
-imposta, e se manca `ELA_API_TOKEN`, o una delle due righe obbligatorie, esce con `2` e dice che cosa
+imposta, e se manca `ELA_API_TOKEN`, o una delle righe obbligatorie, esce con `2` e dice che cosa
 scrivere. Per vederlo, in una cartella vuota (`~/ELA` è la cartella in cui hai clonato ELA):
 
 ```
@@ -64,13 +64,16 @@ cd "$(mktemp -d)" && uv run --project ~/ELA ela init
 uv run --project ~/ELA ela init; echo "exit $?"
 ```
 
-La seconda volta il file c'è già e resta com'è, le due righe non stanno fra quelle «con il default di
-ELA», e l'uscita è `exit 2` con:
+La seconda volta il file c'è già e resta com'è, le righe obbligatorie non stanno fra quelle «con il
+default di ELA», e l'uscita è `exit 2` con:
 
 ```
-ela: .env does not set ELA_FS_ROOT and ELA_FS_SCOPE, and ELA does not start without them: they have no default. Write them, with a folder of yours, for example:
+ela: .env does not set ELA_FS_ROOT, ELA_FS_SCOPE and ELA_TERMINAL_PROGRAMS, and ELA does not start without them: they have no default. Write them, for example:
     ELA_FS_ROOT=/Users/you/Documents
     ELA_FS_SCOPE=ELA
+    ELA_TERMINAL_PROGRAMS=[]
+The folder is yours: ELA does not create it and does not choose it.
+The programs are one line of JSON, each relative to / — usr/bin/git is /usr/bin/git —, and [] is an answer: no program at all.
 ```
 
 Fino a M13.1b `init` diceva che il token era «the only variable ELA requires» e, su questo stesso
@@ -109,6 +112,17 @@ Che cosa ELA rifiuta all'avvio, e perché il messaggio te lo dice invece di lasc
 **Scrivere qui dentro è irreversibile**: `fs.write` è la prima capability `HIGH` di ELA, ti chiede
 il permesso **ogni volta**, e nessuna policy potrà mai coprirla in anticipo — il rollback (§37) non
 esiste ancora.
+
+### Una riga che **deve** essere scritta: i programmi che ELA può lanciare
+
+Da M13.2 ELA esegue anche programmi, e **quali** lo dichiari tu, in una riga di JSON senza default:
+
+```
+ELA_TERMINAL_PROGRAMS=[]
+```
+
+`[]` è una risposta, non un errore: nessun programma, e ogni richiesta di lanciarne uno è negata prima
+di chiederti niente. Come dichiararne, e che cosa vuol dire, sta nella [§16](#16-il-terminale-la-prova-a-mano-di-m132).
 
 ## 2. `alembic upgrade head` — lo schema
 
@@ -1343,10 +1357,12 @@ cui una domanda imparerà un fatto nuovo, ogni superficie o lo mostra o smette d
 
 ## 16. Il terminale: la prova a mano di M13.2
 
-> **Bozza scritta con la SPEC di M13.2**, allineata alle sue decisioni 1–16 e, il 2026-09-24, a
-> M13.1b (ADR 0046) e alle tre domande decise alla ripresa: i blocchi «che cosa si deve vedere» si
-> riscrivono con l'output vero della prima sessione reale. L'ADR è
-> [0047](adr/0047-terminal.md).
+> **Scritta con la SPEC di M13.2**, allineata alle sue decisioni 1–16, a M13.1b (ADR 0046) e alle
+> tre domande decise alla ripresa. **I blocchi della riga di comando vengono dall'uscita vera** di
+> una sessione con due processi del 2026-09-24 — un `ela serve` isolato e la CLI —: ciò che dipende
+> dalla macchina — la cartella, il timeout, gli id — è scritto come lo vedrai tu, e dove l'uscita è
+> lunga le righe tolte sono un `…`. Quelli del telefono e del Command Center li scrive la tua prova.
+> L'ADR è [0047](adr/0047-terminal.md).
 
 Da M13.2 ELA esegue un programma su questo Mac e ne riporta l'uscita. `terminal.run` è `HIGH`, come
 `fs.write`: chiede **ogni volta**, e nessuna policy potrà coprirlo in anticipo.
@@ -1364,7 +1380,7 @@ con due terminali; e l'ottavo, perché che cosa fa Safari mentre una richiesta r
 Safari.
 
 I piani sono in [`examples/`](examples/) e la suite li manda a ELA byte per byte
-(`tests/api/test_examples.py`). Presuppongono §15 fatta: la cartella dello scope — `ELA/` dentro la
+(`tests/api/test_examples_terminal.py`). Presuppongono §15 fatta: la cartella dello scope — `ELA/` dentro la
 tua radice — **deve esistere**, perché è la cartella da cui i programmi partono, e ELA non la crea.
 
 ### 1. ELA che non parte — il messaggio che devi leggere
@@ -1376,8 +1392,17 @@ uv run ela serve
 ```
 
 **Che cosa si deve vedere**: ELA non parte, e il messaggio nomina la variabile, dice la riga da
-scrivere e dice che `[]` è una risposta ammessa — «nessun programma» — e non un errore. Leggilo per
-intero: se una frase ti costringe a rileggere, è un difetto da riportare.
+scrivere e dice che `[]` è una risposta ammessa — «nessun programma» — e non un errore:
+
+```
+ela: ELA is not configured:
+  ELA cannot start without the programs terminal.run may launch: ELA_TERMINAL_PROGRAMS is missing. Write it in .env as one line of JSON, each program relative to /, for example:
+      ELA_TERMINAL_PROGRAMS=["usr/bin/git"]
+  or, for no program at all — an answer, not an error:
+      ELA_TERMINAL_PROGRAMS=[]
+```
+
+Leggilo per intero: se una frase ti costringe a rileggere, è un difetto da riportare.
 
 E `ela init`, sullo stesso `.env`, lo dice nello stesso modo in cui dice le due righe di §15:
 
@@ -1386,7 +1411,13 @@ uv run ela init; echo "exit $?"
 ```
 
 **Che cosa si deve vedere**: il file c'è già e non si tocca; `ELA_TERMINAL_PROGRAMS` è nominata fra
-le righe che mancano — **non** fra quelle «con il default di ELA» —, e `exit 2`.
+le righe che mancano — **non** fra quelle «con il default di ELA» —, e `exit 2`:
+
+```
+ela: .env does not set ELA_TERMINAL_PROGRAMS, and ELA does not start without it: it has no default. Write it, for example:
+    ELA_TERMINAL_PROGRAMS=[]
+The programs are one line of JSON, each relative to / — usr/bin/git is /usr/bin/git —, and [] is an answer: no program at all.
+```
 
 **Se non si vede così**: se ELA parte lo stesso, la variabile è rimasta nell'ambiente della shell —
 `env | grep ELA_TERMINAL`.
@@ -1416,6 +1447,13 @@ di nascere, con `terminal.no_program`.
 link, e la domanda ti mostra il file a cui porta oggi; se dopo l'avvio qualcuno lo ripunta — `brew
 upgrade`, per esempio — ELA rifiuta con `terminal.program_changed` prima di chiederti niente.
 
+**`/usr/bin/git` non è git.** È lo shim di `xcode-select`: un file vero, che esegue il git degli
+strumenti di Xcode — lo stesso file, con 77 altri nomi, è `/usr/bin/make`, `/usr/bin/clang`,
+`/usr/bin/python3`. Dichiararlo si può, e la domanda nominerà `/usr/bin/git`; ciò che quel file
+sceglie di eseguire è comportamento suo. Se vuoi che la domanda nomini ciò che gira davvero,
+dichiara il percorso che stampa `xcrun --find git`, senza la barra iniziale — su un Mac con i soli
+Command Line Tools, `Library/Developer/CommandLineTools/usr/bin/git`.
+
 **Due di questi programmi lanciano altri programmi**: `/usr/bin/time` esegue ciò che gli passi come
 argomento, e `/usr/bin/env` pure. Dichiararli allarga il confine a tutto ciò che possono lanciare.
 Sono qui perché la prova ha bisogno di un nipote (passo 5) e di un ambiente da stampare (passo 7):
@@ -1441,7 +1479,15 @@ uv run ela task run <id>
 ```
 
 **Che cosa si deve vedere**: `DENIED` **subito**, con la riga `reason` che nomina `usr/bin/whoami` e
-lo scope; poi due assenze, e il nome del confine che ha rifiutato:
+lo scope — scritto senza la barra iniziale —:
+
+```
+outcome         denied
+reason          targets ['usr/bin/whoami'] of terminal.run are not within scope ['bin/echo', 'usr/bin/seq', 'usr/bin/time', 'usr/bin/printf', 'usr/bin/env']
+state           DENIED
+```
+
+poi due assenze, e il nome del confine che ha rifiutato:
 
 ```
 uv run ela approvals                                        # «nothing to show»
@@ -1463,10 +1509,24 @@ uv run ela approvals
 ```
 
 **Che cosa si deve vedere**: il task si ferma in `WAITING_APPROVAL`, e il blocco di `ela approvals`
-porta, oltre a ciò che porta per `fs.write`, **il programma per esteso** (`/bin/echo`) e il file a cui
-porta, **la cartella di lavoro risolta** (`/Users/tu/Documenti/ELA`), **gli argomenti uno per uno**
-con i loro confini visibili, **il timeout** (120 s) e **il codice atteso** (`0`). Guarda gli argomenti:
-sono **due**, e il primo contiene degli spazi — una lista, non una riga di shell.
+porta, oltre a ciò che porta per `fs.write`, **il programma per esteso** e il file a cui porta, **gli
+argomenti uno per uno** con i loro confini visibili, **la cartella di lavoro risolta**, **il
+timeout** e **il codice atteso**:
+
+```
+targets               bin/echo
+program               /bin/echo
+runs                  /bin/echo
+arguments             ["la parola di prova è", "girasole-7431"]
+folder                /Users/tu/Documenti/ELA
+timeout               120 s
+expects exit          0
+does                  runs this program from this folder: it can read and change whatever you can, and ELA sees what it prints, not what it changes
+```
+
+Guarda gli argomenti: sono **due**, e il primo contiene degli spazi — una lista, non una riga di
+shell. La riga del bersaglio si chiama `program` perché così lo chiama il tool: per `fs.write` si
+chiama `file`.
 
 E leggi la frase della domanda: dice che il programma parte da quella cartella e **può leggere e
 cambiare tutto ciò che puoi tu**. La cartella di lavoro non è un confine: è il posto da cui il
@@ -1479,7 +1539,20 @@ uv run ela task results <id>
 ```
 
 **Che cosa si deve vedere**: `la parola di prova è girasole-7431` nell'uscita, il codice `0`, e per
-ogni flusso quanto è stato tenuto e quanto c'era. **E nell'audit no**:
+ogni flusso quanto è stato tenuto e quanto c'era:
+
+```
+  args            ["la parola di prova è", "girasole-7431"]
+  argument_count  2
+  ended           exited
+  exit_code       0
+  signal          —
+  stdout  shown 36 of 36 bytes
+  la parola di prova è girasole-7431
+  stderr  shown 0 of 0 bytes
+```
+
+**E nell'audit no**:
 
 ```
 uv run ela audit tail -n 200 --json | grep -c girasole-7431     # 0
@@ -1524,7 +1597,8 @@ uv run ela task approve <id> --approval <approval-id>
 uv run ela task run <id>
 ```
 
-In **un secondo terminale**, mentre aspetti, guarda i due processi — `time` è il figlio, `sleep` il
+In **un terzo terminale** — il primo è quello di `ela serve`, il secondo quello dei comandi —,
+mentre aspetti, guarda i due processi — `time` è il figlio, `sleep` il
 nipote:
 
 ```
@@ -1532,7 +1606,14 @@ pgrep -fl "sleep 600"
 ```
 
 **Che cosa si deve vedere**: dopo una decina di secondi il task va in `FAILED` con
-`terminal.timeout`, e **subito dopo**:
+`terminal.timeout`:
+
+```
+reason          terminal.timeout: /usr/bin/time was still running after 10 s: ELA stopped its process group
+state           FAILED
+```
+
+e **subito dopo**:
 
 ```
 pgrep -fl "sleep 600"          # niente: il nipote è morto con il figlio
@@ -1548,9 +1629,16 @@ stesso giro in un task nuovo, e **mentre il comando gira** premi Ctrl-C nel term
 pgrep -fl "sleep 600"          # niente, anche questa volta, e subito
 ```
 
-Poi riavvia ELA e guarda il risultato del task: `FAILED` con **`terminal.stopped`** — non
-`terminal.timeout`: il tempo non era scaduto, era ELA che si fermava —, `ended: stopped_by_ela`, e
-l'uscita raccolta fino a lì.
+Il `task run` dell'altro terminale torna **subito**, senza aspettare i due minuti:
+
+```
+reason          terminal.stopped: ELA was stopping while /usr/bin/time ran, and stopped its process group
+state           FAILED
+```
+
+`terminal.stopped` e non `terminal.timeout`: il tempo non era scaduto, era ELA che si fermava. Nella
+sessione del 2026-09-24 il gruppo era vuoto 0,03 s dopo il segnale. Poi riavvia ELA e guarda il
+risultato del task: `ended: stopped_by_ela`, e l'uscita raccolta fino a lì.
 
 ```
 uv run ela task results <id>
@@ -1570,10 +1658,27 @@ uv run ela task run <id>
 uv run ela task results <id>
 ```
 
-**Che cosa si deve vedere**: le prime righe (`1`, `2`, `3`…) e le ultime (`…99999`, `100000`), e fra
-le due **una riga della CLI** che dice **dove** sta il taglio — dopo quanti byte, e quanti ne mancano —;
-e sopra, `shown 64 KiB of 575 KiB`. Quella riga è della superficie, non del comando: nei dati non c'è
-nessun testo inventato, il taglio lo dicono i numeri.
+**Che cosa si deve vedere**: sopra, quanto è stato tenuto e quanto c'era; poi le prime righe (`1`,
+`2`, `3`…), **una riga della CLI** che dice **dove** sta il taglio — dopo quanti byte, e quanti ne
+mancano —, e le ultime (`…99999`, `100000`):
+
+```
+  stdout  shown 65536 of 588895 bytes
+  1
+  2
+  …
+  6775
+  — cut after 32768 bytes: 523359 bytes not shown —
+
+  94540
+  …
+  99999
+  100000
+```
+
+Quella riga è della superficie, non del comando: nei dati non c'è nessun testo inventato, il taglio lo
+dicono i numeri. L'ultima riga della testa e la prima della coda possono essere pezzi di un numero:
+il taglio cade sul byte, e lo dice.
 
 ### 7. Che cosa riceve un programma: l'ambiente, e i caratteri che non si stampano
 
@@ -1596,7 +1701,16 @@ uv run ela task results <id>
 ```
 
 **Che cosa si deve vedere**: `PATH`, `HOME`, `TMPDIR`, `LANG`, e **nient'altro**: né
-`ELA_API_TOKEN_DI_PROVA`, né `SSH_AUTH_SOCK`, né `VIRTUAL_ENV`.
+`ELA_API_TOKEN_DI_PROVA`, né `SSH_AUTH_SOCK`, né `VIRTUAL_ENV`:
+
+```
+  args            []
+  stdout  shown 129 of 129 bytes
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin
+  HOME=/Users/tu
+  TMPDIR=/var/folders/…/T
+  LANG=C.UTF-8
+```
 
 **Che `SSH_AUTH_SOCK` manchi è voluto, e ha un prezzo**: un `git push` o un `git pull` via ssh da
 `terminal.run` non funzionano. L'agente ssh è un'autorità che non hai dato a quel comando.
@@ -1620,8 +1734,18 @@ uv run ela task results <id>
 ```
 
 **Che cosa si deve vedere**: il carattere ESC **reso visibile** — la parola `ROSSO` fra due sequenze
-che si leggono come testo —, e il tuo terminale che **non** diventa rosso. Una superficie che mostra
-ciò a cui dici sì non può essere riscritta da ciò che mostra.
+che si leggono come testo —, e il tuo terminale che **non** diventa rosso:
+
+```
+  args            ["prima \\033[31mROSSO\\033[0m dopo\\n"]
+  stdout  shown 26 of 26 bytes
+  prima \x1b[31mROSSO\x1b[0m dopo
+```
+
+Nella domanda e fra gli argomenti la barra rovesciata che hai scritto nel piano è raddoppiata, perché
+una barra scritta e un carattere di controllo non si leggano uguali; nell'uscita `\x1b` è il
+carattere ESC che `printf` ha stampato. Una superficie che mostra ciò a cui dici sì non può essere
+riscritta da ciò che mostra.
 
 **Se non si vede così**: se la parola è rossa, la CLI ha stampato il carattere crudo — è un difetto.
 

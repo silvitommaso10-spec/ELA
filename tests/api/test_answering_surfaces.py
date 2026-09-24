@@ -16,7 +16,6 @@ import re
 from pathlib import Path
 
 import pytest
-from ela.tools.terminal import RUNS
 
 from ela.api.schemas import Asked
 from ela.cli.system import QUESTION_FIELDS, _questions
@@ -40,6 +39,7 @@ from ela.tools import (
     CaptureStore,
     production_tools,
 )
+from ela.tools.terminal import RUNS
 from tests.tools.terminals import a_launcher, a_terminal
 
 _FAKE_MACHINE: dict[str, object] = {
@@ -198,7 +198,9 @@ def test_a_question_about_no_file_leaves_its_two_facts_absent_and_not_wrong() ->
     assert CREATES not in shown and OVERWRITES not in shown and READS not in shown
     assert RUNS not in shown
     assert "target" in shown, "the row is there and says nothing, which is the truth about it"
-    assert "file" not in shown, "and its name is not a word a capability could inherit false"
+    assert not any(line.startswith("file ") for line in shown.splitlines()), (
+        "and its name is not a word a capability could inherit false"
+    )
 
 
 @pytest.mark.parametrize("surface", sorted(ANSWERING) + ["the command line"])

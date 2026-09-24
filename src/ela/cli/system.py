@@ -14,6 +14,7 @@ import typer
 from ela.cli import client
 from ela.cli.errors import handled
 from ela.cli.output import Json, emit, fields
+from ela.domain import listed, visible
 
 __all__ = ["approvals", "diagnostics", "health", "perception", "sensor"]
 
@@ -147,6 +148,12 @@ QUESTION_FIELDS: Final[frozenset[str]] = frozenset(
         "grant_seconds",
         "target",
         "does",
+        "label",
+        "runs",
+        "arguments",
+        "folder",
+        "timeout_seconds",
+        "expect_exit",
     }
 )
 """Every field of the question this surface shows, declared here so it can be checked.
@@ -200,9 +207,16 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
     reading the life of a permission off the deadline of a request.
 
     ``does`` is rendered as the capability wrote it: this surface owns no sentence about files
-    (dec. G, blocker 2 of the proof by hand).
+    (dec. G, blocker 2 of the proof by hand), and since M13.2 no word for the target either — the
+    row is called what the tool calls it (``label``), and ``target`` when the question does not
+    say. **Every word of the plan or of the machine passes** :func:`~ela.domain.visible`, and the
+    arguments of a command :func:`~ela.domain.listed` (M13.2 dec. 12, 13): what the user reads
+    before saying yes cannot be rewritten by what it shows. The rows of a command are there only
+    for a command (:data:`COMMAND_ROWS`).
     """
-    return [
+    arguments = one.get("arguments")
+    timeout = one.get("timeout_seconds")
+    rows = [
         ("approval", one["id"]),
         ("task", one["task_id"]),
         ("capability", one["capability_id"]),
@@ -211,13 +225,35 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         ("may go", one.get("max_privacy")),
         ("question expires", one.get("expires_at")),
         ("grant if you say yes", _terms(one.get("grant_uses"), one.get("grant_seconds"))),
-        ("step goal", one.get("goal") or None),
-        ("declared", one.get("stated") or None),
-        ("targets", one["targets"]),
-        ("file", one.get("target") or None),
+        ("step goal", _seen(one.get("goal"))),
+        ("declared", [_seen(pair) for pair in one.get("stated") or ()] or None),
+        ("targets", [_seen(target) for target in one["targets"]]),
+        (one.get("label") or TARGET, _seen(one.get("target"))),
+        ("runs", _seen(one.get("runs"))),
+        ("arguments", None if arguments is None else listed(arguments)),
+        ("folder", _seen(one.get("folder"))),
+        ("timeout", None if timeout is None else f"{timeout} s"),
+        ("expects exit", one.get("expect_exit")),
         ("does", one.get("does") or None),
-        ("asks", one["prompt"]),
+        ("asks", _seen(one["prompt"])),
     ]
+    return [(name, value) for name, value in rows if value is not None or name not in COMMAND_ROWS]
+
+
+COMMAND_ROWS: Final[frozenset[str]] = frozenset(
+    {"runs", "arguments", "folder", "timeout", "expects exit"}
+)
+"""The rows only a command has (M13.2): absent, not dashed, when the question is about something
+else — a question about a file names no program, and five dashes under it would be five things to
+read that are not there. Every other row keeps its dash: its absence is something to read."""
+
+TARGET: Final = "target"
+"""The row of a target whose question does not say what its tool calls it (M13.2 dec. 12)."""
+
+
+def _seen(value: str | None) -> str | None:
+    """A word of the plan or of the machine, as a question renders it; ``None`` stays absent."""
+    return visible(value, lines=False) if value else None
 
 
 def _terms(uses: int | None, seconds: int | None) -> str | None:

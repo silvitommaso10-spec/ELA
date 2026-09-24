@@ -18,7 +18,6 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from ela.tools.terminal import PROGRAM
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
@@ -29,6 +28,7 @@ from ela.composition import Ela
 from ela.composition.settings import Settings
 from ela.domain import TaskId
 from ela.executive import ASKED
+from ela.tools.terminal import PROGRAM
 from tests.api.support import BASE, queued
 from tests.composition.support import declare
 
@@ -159,6 +159,78 @@ def test_the_command_line_shows_a_result_with_the_cut_and_the_escape_visible() -
     head, _, tail = shown.partition("cut after 20 bytes")
     assert "ROSSO" in head and "fine" in tail, "the cut is said between the two halves"
     assert "500 bytes not shown" in shown
+
+
+def test_the_command_line_says_what_was_replaced_and_a_cut_with_nothing_after_it() -> None:
+    """The other shapes of a stream: bytes that were not text, a head empty, a tail empty."""
+    replaced = {
+        "head": "a\ufffd",
+        "tail": "",
+        "cut_after": 2,
+        "missing": 0,
+        "shown": 2,
+        "total": 2,
+        "replaced": 1,
+    }
+    headless = {
+        "head": "",
+        "tail": "",
+        "cut_after": 0,
+        "missing": 9,
+        "shown": 0,
+        "total": 9,
+        "replaced": 0,
+    }
+    payload = [
+        {
+            "step_id": "e7a3c915-2b64-4d08-9f71-0000000000ab",
+            "capability_id": "terminal.run",
+            "status": "SUCCEEDED",
+            "tool_name": "terminal-run",
+            "created_at": "2026-09-24T10:00:00+00:00",
+            "output": {"ended": "exited", "stdout": replaced, "stderr": headless},
+            "error": None,
+        }
+    ]
+
+    shown = _results(payload)
+
+    assert "1 sequences that were not text replaced" in shown
+    assert "cut after 0 bytes: 9 bytes not shown" in shown
+
+
+def test_the_arguments_in_a_result_keep_their_borders_too() -> None:
+    """Found by the proof with two real processes, not by the suite: ``ela task results`` joined
+    ``args`` with a comma — «la parola di prova è, girasole-7431» — which is the reading decision
+    12 forbids on the question, reached through the result."""
+    stream = {
+        "head": "",
+        "tail": "",
+        "cut_after": 0,
+        "missing": 0,
+        "shown": 0,
+        "total": 0,
+        "replaced": 0,
+    }
+
+    def result(*args: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "step_id": "e7a3c915-2b64-4d08-9f71-0000000000ac",
+                "capability_id": "terminal.run",
+                "status": "SUCCEEDED",
+                "tool_name": "terminal-run",
+                "created_at": "2026-09-24T10:00:00+00:00",
+                "output": {"args": list(args), "stdout": stream, "stderr": stream},
+                "error": None,
+            }
+        ]
+
+    one, two = _results(result("a, b")), _results(result("a", "b"))
+
+    assert '["a, b"]' in one and '["a", "b"]' in two
+    assert one != two
+    assert "args  []" in _results(result()), "no argument is a list too, not an absence"
 
 
 # ----------------------------------------------------------------------------------------

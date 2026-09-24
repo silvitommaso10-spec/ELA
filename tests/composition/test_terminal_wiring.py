@@ -13,6 +13,8 @@ does not reach a command in a group of its own («La ripresa»).
 from __future__ import annotations
 
 import json
+import os
+import platform
 import tempfile
 from pathlib import Path
 
@@ -20,6 +22,7 @@ import pytest
 
 from ela.api.app import create_app
 from ela.composition import Ela, Settings, build
+from ela.composition.system import WINDOWS_COMMAND_LINE, argument_limit
 from ela.permissions import TERMINAL_RUN, UNDECLARED_PROGRAMS
 from tests.composition.support import create_schema, database_url, declare
 
@@ -54,7 +57,23 @@ async def test_the_tool_starts_commands_in_the_scope_of_m13_1_with_the_closed_en
     assert terminal.temporary == tempfile.gettempdir()
     assert terminal.timeout_seconds == ela.settings.terminal.timeout_seconds
     assert terminal.output_max_bytes == ela.settings.terminal.output_max_bytes
-    assert terminal.argument_limit > 0
+    assert terminal.argument_limit == argument_limit(platform.system())
+
+
+@pytest.mark.parametrize("system", ["Darwin", "Linux"])
+def test_a_posix_system_s_limit_is_the_one_execve_passes(system: str) -> None:
+    assert argument_limit(system) == os.sysconf("SC_ARG_MAX")
+
+
+def test_windows_limit_is_the_command_line_and_never_asks_sysconf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``os.sysconf`` does not exist on Windows, and the job ``windows-latest`` builds the Core in
+    the conformance suite: a ``build`` that asked for it there would not start. Deleting it here is
+    what that machine is, for this one question (an ``if`` per system, rule 37)."""
+    monkeypatch.delattr(os, "sysconf")
+
+    assert argument_limit("Windows") == WINDOWS_COMMAND_LINE
 
 
 async def test_the_signal_of_stopping_is_one_event_for_the_pages_and_the_launcher(

@@ -271,5 +271,8 @@ async def test_an_env_without_the_programs_exits_2_names_them_and_says_none_is_a
     assert result.exit_code == CONFIGURATION
     refused = plain(result.stderr)
     assert "ELA_TERMINAL_PROGRAMS=[]" in refused
+    assert "without it:" in refused, (
+        "one line missing is «it», found by the proof with two processes"
+    )
     assert "ELA_FS_ROOT" not in refused, "only what is missing is named"
     assert "folder of yours" not in refused, "a program is not a folder"

@@ -26,7 +26,7 @@ built without a resolver, so a remote reference is an error, not a fetch.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any, Final
@@ -45,12 +45,15 @@ from ela.ports import AlreadyExistsError
 
 __all__ = [
     "CORE_ECHO",
+    "DECLARES_AN_EMPTY_SCOPE",
     "DEFAULT_NOTES_SCOPE",
     "FS_READ",
     "FS_WRITE",
     "MAX_RISK",
     "PHASE_13_INTRODUCED_AT",
+    "TERMINAL_RUN",
     "UNDECLARED_FS_SCOPE",
+    "UNDECLARED_PROGRAMS",
     "MODEL_COMPLETE",
     "MAX_LISTEN_SECONDS",
     "PERCEPTION_CAPTURE_SCREEN",
@@ -71,6 +74,7 @@ __all__ = [
     "perception_capture_screen",
     "perception_read_screen_text",
     "production_catalogue",
+    "terminal_run",
     "validate_arguments",
     "workspace_write_note",
 ]
@@ -139,7 +143,8 @@ def check_capability(spec: CapabilitySpec) -> None:
     In order: risk within :data:`MAX_RISK` (:class:`RiskNotAllowedError`); ``input_schema`` a
     valid schema of the draft; every scope entry well-formed; every scoped argument a ``string``
     property of the schema; scope and scoped arguments both present or both absent — a scope
-    that constrains no argument, or a scoped argument with no scope, is a doubt (§33); every
+    that constrains no argument, or a scoped argument with no scope, is a doubt (§33), except for
+    a capability in :data:`DECLARES_AN_EMPTY_SCOPE`, whose empty scope is an answer; every
     prompt argument a property of a type in :data:`PROMPTABLE_TYPES` **and required**. Each of the
     last five is an :class:`InvalidCapabilityError` naming the capability and the reason.
 
@@ -177,7 +182,8 @@ def check_capability(spec: CapabilitySpec) -> None:
             raise InvalidCapabilityError(
                 spec.id, f"scoped argument {name!r} is not a string property of input_schema"
             )
-    if bool(spec.scope) != bool(spec.scoped_arguments):
+    declared_empty = spec.id in DECLARES_AN_EMPTY_SCOPE and not spec.scope
+    if bool(spec.scope) != bool(spec.scoped_arguments) and not declared_empty:
         raise InvalidCapabilityError(
             spec.id, "scope and scoped_arguments must be both present or both absent"
         )
@@ -256,6 +262,17 @@ VOICE_SPEAK: Final = CapabilityId("voice.speak")
 VOICE_SPEAK_ONLINE: Final = CapabilityId("voice.speak_online")
 FS_READ: Final = CapabilityId("fs.read")
 FS_WRITE: Final = CapabilityId("fs.write")
+TERMINAL_RUN: Final = CapabilityId("terminal.run")
+
+DECLARES_AN_EMPTY_SCOPE: Final[frozenset[CapabilityId]] = frozenset({TERMINAL_RUN})
+"""The capabilities whose empty scope is **an answer** and not a doubt (M13.2 dec. 16).
+
+``ELA_TERMINAL_PROGRAMS=[]`` means «no program», and ELA starts with it: the capability exists and
+the Guardian denies every call with ``Rule.SCOPE`` and ``[]`` in the reason — «an empty scope with
+targets covers none» (``ela.permissions.scope``). Everywhere else a scoped argument with no scope
+stays what :func:`check_capability` says it is, a doubt (§33), and a capability is here because it
+is named, never because its scope happens to be empty.
+"""
 
 DEFAULT_NOTES_SCOPE: Final = "workspace/notes"
 """Where ``workspace.write_note`` may write unless the caller says otherwise (ADR 0010 §5).
@@ -276,6 +293,15 @@ without them ELA does not start. So this value can never be the boundary anybody
 **Why a placeholder rather than a real folder**: a default like ``ELA`` would let the user declare
 a root and still not be able to write in it, for a value they never saw and a folder nobody
 created — and a silent narrowing is worse than a refusal at start-up, because a refusal is read.
+"""
+
+UNDECLARED_PROGRAMS: Final[tuple[str, ...]] = (UNDECLARED_FS_SCOPE,)
+"""The placeholder of ``terminal.run``'s factory, and **never a boundary** (M13.2 dec. 16).
+
+Not ``()``: with ``[]`` an admitted answer, an empty default would read a forgotten wiring as a
+declaration — the difference M13.1 A-bis kept for the filesystem. ``undeclared`` is ``/undeclared``,
+which is not a program; ``tests/composition/test_terminal_wiring.py`` proves the production path
+never runs under it.
 """
 
 V01_INTRODUCED_AT: Final = datetime(2026, 9, 5, tzinfo=UTC)
@@ -686,8 +712,10 @@ def fs_read(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
     user's own content (§57), and LOW would turn a permission into a line of configuration
     nobody is ever asked about again.
 
-    The risk is the capability's and never the arguments' (ADR 0038 §16): ``fs.read`` is not HIGH
-    for some paths and MEDIUM for others. Where it may read at all is the scope's business.
+    The risk is the capability's and never the arguments': ``fs.read`` is not HIGH for some paths
+    and MEDIUM for others. Where it may read at all is the scope's business. The rule is ADR 0026
+    §7 — «tutto ciò che la policy legge viene dal catalogo» —; until M13.2 this line cited ADR 0038
+    §16, whose «level» is the task's sensitivity and not a risk (ADR 0047 names the correction).
     """
     return CapabilitySpec(
         id=FS_READ,
@@ -754,8 +782,59 @@ def fs_write(fs_scope: str = UNDECLARED_FS_SCOPE) -> CapabilitySpec:
     )
 
 
+def terminal_run(programs: Sequence[str] = UNDECLARED_PROGRAMS) -> CapabilitySpec:
+    """``terminal.run``, **HIGH**: runs one program of those declared, and returns what it printed.
+
+    The second capability of the Action Core of §18, and the one the ``HIGH`` row exists to
+    protect. **The boundary is which programs** (M13.2 dec. 2): the scope is the list of
+    ``ELA_TERMINAL_PROGRAMS``, written relative to ``/`` in the grammar every scope has — so the
+    four comparisons that read a scope did not change — and the one scoped argument is ``program``.
+    The arguments of each call are **not** in the scope: they are shown in the question, one by one,
+    and judged by the user **at every use**, which is what the ``HIGH`` row guarantees and no policy
+    of §59 will ever reach.
+
+    Said as plainly as ADR 0047 says it: *admitting an interpreter — ``sh``, ``python``, ``env``,
+    ``xargs``, ``find`` — is admitting anything, and the defence is the question at every use.*
+    There is no list of interpreters or of dangerous flags: it would be incomplete on its first day,
+    and it would teach that what is not on it is safe.
+
+    ``args`` is a **list** and reaches the process as one — never a string, never a shell. ``cwd``
+    is relative to the folder of the scope of M13.1; ``expect_exit`` is the code the plan expects,
+    and the verifier compares it (dec. 9). ``purpose`` is what the user reads (§30).
+    """
+    return CapabilitySpec(
+        id=TERMINAL_RUN,
+        created_at=PHASE_13_INTRODUCED_AT,
+        description=(
+            "Runs one of the programs you declared, with the arguments of this call, and returns "
+            "what it printed."
+        ),
+        risk=RiskLevel.HIGH,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "program": {"type": "string"},
+                "args": {"type": "array", "items": {"type": "string"}},
+                "purpose": {"type": "string", "minLength": 1},
+                "cwd": {"type": "string"},
+                "expect_exit": {"type": "integer", "minimum": 0, "maximum": 255},
+            },
+            "required": ["program", "args", "purpose"],
+            "additionalProperties": False,
+        },
+        scope=tuple(programs),
+        scoped_arguments=("program",),
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
 def production_catalogue(
-    *, notes_scope: str = DEFAULT_NOTES_SCOPE, fs_scope: str = UNDECLARED_FS_SCOPE
+    *,
+    notes_scope: str = DEFAULT_NOTES_SCOPE,
+    fs_scope: str = UNDECLARED_FS_SCOPE,
+    programs: Sequence[str] = UNDECLARED_PROGRAMS,
 ) -> CapabilityRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -777,5 +856,6 @@ def production_catalogue(
             perception_listen(),
             fs_read(fs_scope),
             fs_write(fs_scope),
+            terminal_run(programs),
         )
     )

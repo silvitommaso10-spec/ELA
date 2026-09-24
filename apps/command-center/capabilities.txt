@@ -23,3 +23,4 @@ voice.speak_online
 perception.listen
 fs.read
 fs.write
+terminal.run

@@ -88,7 +88,9 @@ from ela.ports import (
     AuthorizationExhaustedError,
     AuthorizationExpiredError,
     Clock,
+    Command,
     DeviceRevokedError,
+    Ending,
     EnrollmentConsumedError,
     EnrollmentExpiredError,
     EnrollmentRoleError,
@@ -98,6 +100,7 @@ from ela.ports import (
     NotAllowedError,
     NotFoundError,
     Prospect,
+    Ran,
     RoutingError,
     ToolPort,
     VerifierPort,
@@ -115,6 +118,7 @@ __all__ = [
     "FakeBell",
     "FakeCapabilityRegistry",
     "FakeClock",
+    "FakeLauncher",
     "FakeDeviceRegistry",
     "FakeExecutionResultStore",
     "FakeIdGenerator",
@@ -848,6 +852,23 @@ class ToolCall(NamedTuple):
     arguments: JsonMapping
 
 
+class FakeLauncher:
+    """A launcher that launches nothing and remembers what it was handed (port ``CommandLauncher``).
+
+    What a real child receives is asserted on real children
+    (``tests/infrastructure/machine/test_launcher.py``); this is for the tests of the tool and of
+    the executor, which need to know **what the tool decided** and **how many times it launched**.
+    """
+
+    def __init__(self, ran: Ran | None = None) -> None:
+        self.ran = Ran(Ending.EXITED, code=0) if ran is None else ran
+        self.commands: tuple[Command, ...] = ()
+
+    async def run(self, command: Command) -> Ran:
+        self.commands = (*self.commands, command)
+        return self.ran
+
+
 class FakeTool:
     """A tool that returns a fixed result once the decision allows it (port :class:`ToolPort`).
 
@@ -868,6 +889,7 @@ class FakeTool:
         idempotent: bool = True,
         prospect: Prospect | None = None,
         usage: ProviderUsage | None = None,
+        audit_numbers: frozenset[str] = frozenset(),
     ) -> None:
         self._capability_id = capability_id
         self._clock = clock
@@ -876,7 +898,10 @@ class FakeTool:
         self.idempotent = idempotent
         """Whether twice is once (ADR 0015 §8, ADR 0021 §1): ``False`` is how a test builds a
         tool the executor must run under the STARTED protocol."""
-        self._output: JsonMapping = {} if output is None else output
+        self.audit_numbers = audit_numbers
+        """What of its result enters ``TOOL_EXECUTED`` (M13.2): nothing, unless a test says so."""
+        self.output: JsonMapping = {} if output is None else output
+        """What the tool answers with, settable so a test can put a number or a string in it."""
         self._status = status
         self._usage = usage
         self.calls: tuple[ToolCall, ...] = ()
@@ -914,7 +939,7 @@ class FakeTool:
             task_id=decision.task_id,
             step_id=decision.step_id,
             tool_name=self._name,
-            output=self._output,
+            output=self.output,
             usage=self._usage,
             duration_ms=0,
         )

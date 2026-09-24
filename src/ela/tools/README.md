@@ -36,6 +36,10 @@ verifier (spec §20, §63; M5.2, ADR 0014).
   stessa cosa allo stesso posto — per una scrittura i byte sono quelli approvati, per una lettura
   quelli che il tool dice di aver letto, e in tutti e due i casi è il file a decidere. Il modulo
   non ha alcun percorso di scrittura (regola 18).
+  Da M13.2 `TerminalRunVerifier` (`terminal.exit_code_matches`, `terminal.output_whole`,
+  `terminal.program_unchanged`): dice che il programma è finito da sé con il codice che il **piano**
+  si aspettava, che l'uscita è intera, e che il programma sul disco è ancora quello fissato
+  all'avvio — mai che l'effetto sia avvenuto. Legge il disco del Core: `terminal.run` non viaggia.
 - `registry.py`: `ToolRegistry` (port `ToolRegistryPort`), `VerifierRegistry` (port
   `VerifierRegistryPort`), entrambi immutabili; `tools_v01` e `verifiers_v01`, una coppia per
   capability.
@@ -47,6 +51,17 @@ verifier (spec §20, §63; M5.2, ADR 0014).
   lettura riuscita e la sua dimensione (`bytes`) stanno nel risultato; nell'audit va il percorso,
   mai i byte (M13.1b). Una lettura fallita porta le dimensioni nell'errore, per scelta (ADR 0045
   §8).
+- `terminal.py`: `TerminalRunTool` per `terminal.run` (**HIGH**; M13.2, ADR 0047). Un comando è
+  `argv`, dal piano al processo: `["/" + program, *args]`, senza shell e senza `PATH`. Decide in un
+  punto solo, letto dalla domanda e dall'esecuzione, ciò che si sa senza lanciare — il programma è
+  uno di quelli fissati all'avvio, la cartella sta nello scope di M13.1, gli argomenti si possono
+  passare — e dà al lanciatore (`CommandLauncher`) l'ambiente chiuso, la cartella, il timeout, il
+  respiro e le due metà del tetto. L'uscita torna in testa e coda (`stream`, `CommandOutput`), il
+  taglio dichiarato in byte grezzi; i numeri del comando vanno nell'audit per `audit_numbers`.
+  `idempotent = False`: un comando interrotto non si rilancia mai.
+- `programs.py`: `Programs`, l'identità di ogni programma dichiarato — il file a cui porta e lo
+  sha256 — fissata all'avvio e riconfrontata dal tool (prima della domanda e prima dell'`exec`) e dal
+  verifier; tre codici `terminal.*`. Solo letture (regola 18).
 - `settings.py`: `WorkspaceSettings` (`ELA_WORKSPACE_DIR`, default `~/.ela/workspace`).
 
 Nessun tool conosce il Guardian; nessun verifier conosce il tool; l'unico modulo che chiama

@@ -81,11 +81,16 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
     a free-form mapping on it is where the user's content would one day be put "for the node's
     convenience". The call is the decision it carries and the step's arguments, read by reference.
     The decision's own ``metadata`` is the Guardian's, and is checked where the decision is.
+
+    ``CommandOutput`` joined in M13.2 without a bag: it holds what a program printed, and a mapping
+    beside it would be a second place for the output to go. Its numbers are typed and checked
+    against each other; the text is the head and the tail, and nothing else.
     """
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
     assert without == [
         "Actor",
         "Assignment",
+        "CommandOutput",
         "ContextApproval",
         "ContextDeadline",
         "ContextDeadlines",

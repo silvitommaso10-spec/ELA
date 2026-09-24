@@ -582,6 +582,13 @@ VIOLATIONS: tuple[Case, ...] = (
         ".touch(",
     ),
     Case(
+        "program-identity-writes-what-it-hashes",
+        "verifier-read-only",
+        "tools/programs.py",
+        "def w(p):\n    with open(p, 'r+b') as handle:\n        handle.read()\n",
+        "open(",
+    ),
+    Case(
         "availability-read-in-executive",
         "device-availability-readers",
         "executive/placement.py",

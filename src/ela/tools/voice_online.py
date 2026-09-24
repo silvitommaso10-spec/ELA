@@ -96,6 +96,7 @@ class SpeakOnlineTool(Tool):
     round-trip would make a sentence that never played look like one that did."""
 
     idempotent: ClassVar[bool] = False
+    audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Saying a thing twice is saying it twice — and paying twice, and leaving a second copy with
     the provider. Runs under the STARTED protocol of ADR 0021 §1, like its local sister."""
 

@@ -19,6 +19,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
+from ela.domain import (
+    DecisionId,
+    ExecutionStatus,
+    PermissionDecision,
+    PermissionOutcome,
+    RiskLevel,
+)
+from ela.permissions import TERMINAL_RUN
+from ela.ports import Captured, Ending, Invocation, Ran, Target
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeLauncher
+from ela.tools.base import ARGUMENTS_INVALID
+from ela.tools.fs import NO_ROOT
+from ela.tools.paths import PATH_INVALID, PATH_MISSING, PATH_OUTSIDE_ROOT, PATH_SYMLINK
 from ela.tools.programs import NO_PROGRAM, NOT_DECLARED, PROGRAM_CHANGED, Programs
 from ela.tools.terminal import (
     ARGUMENTS_UNPASSABLE,
@@ -37,22 +53,7 @@ from ela.tools.terminal import (
     decoded,
     stream,
 )
-from hypothesis import given
-from hypothesis import strategies as st
-
-from ela.domain import (
-    DecisionId,
-    ExecutionStatus,
-    PermissionDecision,
-    PermissionOutcome,
-    RiskLevel,
-)
-from ela.permissions import TERMINAL_RUN
-from ela.ports import Captured, Ending, Invocation, Ran, Target
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeLauncher
-from ela.tools.base import ARGUMENTS_INVALID
-from ela.tools.fs import NO_ROOT
-from ela.tools.paths import PATH_INVALID, PATH_MISSING, PATH_OUTSIDE_ROOT, PATH_SYMLINK
+from tests.tools.support import PERMISSIONS_BITE
 
 NOW = datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
 SCRIPT = "#!/bin/sh\necho eco\n"
@@ -298,12 +299,12 @@ async def test_a_program_that_appeared_after_the_start_is_a_change_too(
     ],
 )
 async def test_a_folder_that_a_program_cannot_start_from_is_refused_before_the_question(
-    root: Path, place: Path, program: Path, cwd: str, code: str
+    root: Path, program: Path, cwd: str, code: str
 ) -> None:
     """Decision 6: the same classification as ``fs.*``, with the answer turned round."""
     (root / "ELA" / "file.txt").write_text("x", encoding="utf-8")
-    (place / "altrove").mkdir()
-    (root / "ELA" / "collegamento").symlink_to(place / "altrove")
+    (root / "ELA" / "altrove").mkdir()
+    (root / "ELA" / "collegamento").symlink_to(root / "ELA" / "altrove")
 
     prospected = await tool(terminal(root, program)).prospect(call(program, cwd=cwd))
 
@@ -343,6 +344,23 @@ async def test_an_argument_with_a_nul_byte_cannot_reach_a_process(
     assert refusal_of(prospected) == ARGUMENTS_UNPASSABLE
     assert prospected.refusal is not None
     assert MARKER not in prospected.refusal.message, "the argument never enters a message (§57)"
+
+
+async def test_an_argument_that_is_not_text_cannot_reach_a_process(
+    root: Path, program: Path
+) -> None:
+    """A lone surrogate has no bytes: refused as unpassable before the question, never raised."""
+    prospected = await tool(terminal(root, program)).prospect(call(program, f"{MARKER}\ud800"))
+
+    assert refusal_of(prospected) == ARGUMENTS_UNPASSABLE
+    assert prospected.refusal is not None
+    assert MARKER not in prospected.refusal.message
+
+
+async def test_a_folder_that_is_not_text_is_not_a_path(root: Path, program: Path) -> None:
+    prospected = await tool(terminal(root, program)).prospect(call(program, cwd="a\ud800b"))
+
+    assert refusal_of(prospected) == PATH_INVALID
 
 
 async def test_arguments_past_the_limit_of_the_system_cannot_reach_a_process(
@@ -439,7 +457,7 @@ async def test_a_program_that_ended_by_itself_is_a_success_whatever_its_code(
     output = result.output
     assert output["program"] == str(program)
     assert output["runs"] == str(program)
-    assert output["args"] == ["a", "b"]
+    assert output["args"] == ("a", "b"), "a list, frozen as the domain freezes every array"
     assert output["argument_count"] == 2
     assert output["cwd"] == str(root / "ELA")
     assert output["expect_exit"] == 0
@@ -611,3 +629,25 @@ def test_the_numbers_of_the_two_streams_go_in_the_result_as_the_model_dumps_them
         "total": 10,
         "replaced": 0,
     }
+
+
+def test_a_head_of_bytes_that_continue_nothing_is_left_as_it_is() -> None:
+    """Binary output: no character to cut on, so the head is kept and its bytes replaced."""
+    kept = stream(Captured(head=b"\x80\x81\x82\x83", tail=b"z", total=20))
+
+    assert kept.head == "\ufffd" * 4
+    assert kept.cut_after == 4
+    assert kept.replaced == 4
+
+
+@pytest.mark.skipif(not PERMISSIONS_BITE, reason="this user reads files whatever their mode")
+async def test_a_program_that_cannot_be_read_is_one_whose_identity_nobody_can_vouch_for(
+    root: Path, program: Path
+) -> None:
+    program.chmod(0o111)
+    try:
+        prospected = await tool(terminal(root, program)).prospect(call(program))
+    finally:
+        program.chmod(0o755)
+
+    assert refusal_of(prospected) == NO_PROGRAM

@@ -12,7 +12,9 @@ code rather than a habit — there is exactly one file to read to know what ELA 
 
 from __future__ import annotations
 
+import asyncio
 import platform
+import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +23,13 @@ from typing import Protocol
 from ela.audit.verifier import AuditVerifier
 from ela.composition.errors import ConfigurationError
 from ela.composition.settings import Settings
-from ela.composition.system import PowerReading, SystemClock, UuidGenerator, power_reading
+from ela.composition.system import (
+    PowerReading,
+    SystemClock,
+    UuidGenerator,
+    argument_limit,
+    power_reading,
+)
 from ela.context import ContextCore
 from ela.devices import (
     DeviceOrchestrator,
@@ -37,6 +45,7 @@ from ela.infrastructure.machine import (
     DarwinProbe,
     OnlineSpeechCommand,
     Play,
+    ProcessGroupLauncher,
     SaySpeechCommand,
     ScreenCaptureCommand,
     Speak,
@@ -90,6 +99,8 @@ from ela.tasks.engine import LIVE_STATES, TaskEngine
 from ela.tools import (
     DIRECTORY_MODE,
     CaptureStore,
+    Programs,
+    Terminal,
     ToolRegistry,
     VerifierRegistry,
     production_tools,
@@ -251,6 +262,16 @@ class Ela:
     continuous loop is off by default: an observer nobody reads should not be watching.
     """
 
+    stopping: asyncio.Event
+    """Raised when the process is asked to stop: the signal of ADR 0038 §11, one event for all.
+
+    ``api/server.py`` raises it in the signal handler, at the instant of a Ctrl-C, because
+    ``uvicorn`` waits for the requests in flight before it sends the ``lifespan``. The pages'
+    long-polls answer on it, and — since M13.2 — the launcher of ``terminal.run`` stops the group
+    of a running command on it: a command in a group of its own never receives that Ctrl-C, and
+    without this the request would wait for it until its timeout («La ripresa» of M13.2). Built
+    here, because the launcher is built before the application exists; ``create_app`` reads it.
+    """
     speech_dir: Path
     """Where the audio of a sentence exists while it plays, and where nothing should ever be.
 
@@ -394,7 +415,9 @@ async def build(
         # since M8.3 (ADR 0025 §5, §6): the catalogue and the Guardian have always accepted them,
         # and until now this line was the reason they were constants.
         capabilities = production_catalogue(
-            notes_scope=settings.core.notes_scope, fs_scope=settings.filesystem.scope
+            notes_scope=settings.core.notes_scope,
+            fs_scope=settings.filesystem.scope,
+            programs=settings.terminal.programs,
         )
         guardian = PermissionGuardian(
             capabilities, clock, ids, audit, decision_ttl=settings.core.decision_ttl
@@ -480,6 +503,22 @@ async def build(
             recognition = UnsupportedTextRecognition()
             speech = UnsupportedSpeech()
             listening = UnsupportedListening()
+        # The terminal (M13.2): the identity of every declared program fixed **now**, once; the
+        # scope of M13.1 for the folder a command starts from; HOME and TMPDIR computed here, once,
+        # and never read from ``os.environ`` by the tool (decision 1); the limit of what ``execve``
+        # passes; and the launcher that stops a command's group on the stop signal.
+        stopping = asyncio.Event()
+        programs = Programs.fixed(settings.terminal.programs)
+        terminal = Terminal(
+            programs=programs,
+            root=settings.filesystem.root,
+            scope=settings.filesystem.scope,
+            timeout_seconds=settings.terminal.timeout_seconds,
+            output_max_bytes=settings.terminal.output_max_bytes,
+            home=str(Path.home()),
+            temporary=tempfile.gettempdir(),
+            argument_limit=argument_limit(platform.system()),
+        )
         tools = production_tools(
             root=root,
             clock=clock,
@@ -500,9 +539,15 @@ async def build(
             voice_id=settings.elevenlabs.elevenlabs_voice_id,
             model=settings.elevenlabs.elevenlabs_model,
             fs_root=settings.filesystem.root,
+            terminal=terminal,
+            launcher=ProcessGroupLauncher(stopping),
         )
         verifiers = production_verifiers(
-            root=root, router=router, captures=captures, fs_root=settings.filesystem.root
+            root=root,
+            router=router,
+            captures=captures,
+            fs_root=settings.filesystem.root,
+            programs=programs,
         )
 
         # Which tools this machine has is not something the registry can know (ADR 0016 §4), and
@@ -639,6 +684,7 @@ async def build(
         captures=captures,
         context=context,
         speech=speech,
+        stopping=stopping,
         speech_dir=scratch,
         speech_online=playing,
         listening=listening,

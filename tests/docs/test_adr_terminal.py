@@ -13,10 +13,10 @@ import re
 from pathlib import Path
 
 import pytest
-from ela.tools.programs import PROGRAM_CHANGED, Programs
-from ela.tools.terminal import TerminalRunTool
 
 from ela.permissions import TERMINAL_RUN, production_catalogue
+from ela.tools.programs import PROGRAM_CHANGED, Programs
+from ela.tools.terminal import TerminalRunTool
 from ela.tools.verifiers import TerminalRunVerifier
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
@@ -146,12 +146,14 @@ def test_it_names_every_line_it_revises_or_corrects(named: str) -> None:
 
 def test_the_revised_adrs_say_so_on_their_status_line() -> None:
     """The form of ADR 0046: a revised ADR is not rewritten, its «Stato:» line names who revises."""
-    for revised in ("0029-screen-capture.md", "0045-filesystem-and-high.md"):
-        status = next(
-            line
-            for line in (ADR_DIR / revised).read_text(encoding="utf-8").splitlines()
-            if line.startswith("- **Stato:**")
-        )
+    for revised in (
+        "0029-screen-capture.md",
+        "0038-work-protocol.md",
+        "0040-node-windows.md",
+        "0045-filesystem-and-high.md",
+    ):
+        text = (ADR_DIR / revised).read_text(encoding="utf-8")
+        status = text.split("- **Stato:**", 1)[1].split("\n- **", 1)[0]
         assert "ADR 0047" in status, revised
 
 

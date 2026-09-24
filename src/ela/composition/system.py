@@ -10,12 +10,17 @@ M12.3c adds the third, the power source, and it is **chosen by naming the system
 machine's words (``ela.infrastructure.machine``), ``ela.devices.local`` says what they are worth,
 and what is here only puts the two together — so a node and ``local`` read the same machine the
 same way.
+
+M13.2 adds the limit of what a launch passes to a program, chosen the same way: ``execve``'s on a
+POSIX system, the command line of ``CreateProcess`` on Windows, where ``os.sysconf`` does not exist.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import Final
 from uuid import UUID, uuid4
 
 from ela.devices import power_drawn_from, power_on_the_line
@@ -30,9 +35,11 @@ from ela.infrastructure.machine import (
 )
 
 __all__ = [
+    "WINDOWS_COMMAND_LINE",
     "PowerReading",
     "SystemClock",
     "UuidGenerator",
+    "argument_limit",
     "power_nobody_reads",
     "power_of_a_mac",
     "power_of_a_pc",
@@ -103,3 +110,17 @@ def power_reading(system: str) -> PowerReading:
     if system == "Windows":
         return power_of_a_pc
     return power_nobody_reads
+
+
+WINDOWS_COMMAND_LINE: Final = 32767
+"""The longest command line ``CreateProcess`` takes, in characters. The terminal does not run on a
+PC before M13.3 (ADR 0047 §13); the number is here so that ``build`` starts there, and it is the
+real one, not a placeholder."""
+
+
+def argument_limit(system: str) -> int:
+    """What a launch may pass to a program on the system named (ADR 0047 §5): an ``if`` per system,
+    as :func:`power_reading`, so the arm this suite does not run on is proved by name."""
+    if system == "Windows":
+        return WINDOWS_COMMAND_LINE
+    return os.sysconf("SC_ARG_MAX")

@@ -17,10 +17,10 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from ela.tools.programs import PROGRAM_CHANGED, Programs
 
 from ela.domain import ExecutionId, ExecutionResult, ExecutionStatus
 from ela.permissions import TERMINAL_RUN
+from ela.tools.programs import PROGRAM_CHANGED, Programs
 from ela.tools.verifiers import (
     TERMINAL_EXIT_CODE_MATCHES,
     TERMINAL_EXIT_MISMATCH,
@@ -30,6 +30,7 @@ from ela.tools.verifiers import (
     TERMINAL_VERIFIER_NAME,
     TerminalRunVerifier,
 )
+from ela.tools.verify import VERIFICATION_ARGUMENTS_INVALID
 
 NOW = datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
 MARKER = "girasole-7431"
@@ -203,3 +204,17 @@ async def test_a_result_with_numbers_that_are_not_a_stream_is_not_verified(progr
 
     assert await failures_of(checker, TERMINAL_OUTPUT_WHOLE, arguments(program), broken)
     assert await failures_of(checker, TERMINAL_EXIT_CODE_MATCHES, arguments(program), spelled)
+
+
+async def test_arguments_the_verifier_cannot_read_are_a_failure_and_never_a_pass(
+    program: Path,
+) -> None:
+    """§28: neither the Guardian nor the tool is trusted, and a doubt is not a yes."""
+    checker = verifier(program)
+
+    assert await failures_of(
+        checker, TERMINAL_EXIT_CODE_MATCHES, arguments(program, expect_exit="0"), ran(program)
+    ) == [VERIFICATION_ARGUMENTS_INVALID]
+    assert await failures_of(
+        checker, TERMINAL_PROGRAM_UNCHANGED, {"program": 3, "args": []}, ran(program)
+    ) == [VERIFICATION_ARGUMENTS_INVALID]

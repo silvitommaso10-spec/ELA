@@ -34,7 +34,13 @@ from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar, Final
 
-from ela.domain import CapabilityId, ErrorMetadata, ExecutionResult, JsonMapping
+from ela.domain import (
+    CapabilityId,
+    CommandOutput,
+    ErrorMetadata,
+    ExecutionResult,
+    JsonMapping,
+)
 from ela.ports import ModelRouterPort, RoutingError
 from ela.tools.captures import (
     CAPTURE_CODES,
@@ -52,12 +58,21 @@ from ela.tools.listen import PERCEPTION_LISTEN
 from ela.tools.model import MODEL_COMPLETE, routing_arguments
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
 from ela.tools.paths import PATH_CODES, classify, resolve_workspace
+from ela.tools.programs import PROGRAM_CHANGED, Programs
 from ela.tools.screen import PERCEPTION_CAPTURE_SCREEN
 from ela.tools.screen_text import PERCEPTION_READ_SCREEN_TEXT
+from ela.tools.terminal import TERMINAL_RUN
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
 from ela.tools.voice import VOICE_SPEAK, digest_of
 
 __all__ = [
+    "TERMINAL_EXIT_CODE_MATCHES",
+    "TERMINAL_EXIT_MISMATCH",
+    "TERMINAL_OUTPUT_INCOMPLETE",
+    "TERMINAL_OUTPUT_WHOLE",
+    "TERMINAL_PROGRAM_UNCHANGED",
+    "TERMINAL_VERIFIER_NAME",
+    "TerminalRunVerifier",
     "CAPTURE_DECLARED_MISMATCH",
     "CAPTURE_EXISTS",
     "CAPTURE_MATCHES",
@@ -868,3 +883,139 @@ class SpeakVerifier(Verifier):
             retryable=True,
             details={"spoken_seconds": spoken, "at_least": round(floor, 3)},
         )
+
+
+# --------------------------------------------------------------------------------------
+# terminal.run (M13.2, ADR 0047)
+# --------------------------------------------------------------------------------------
+
+TERMINAL_VERIFIER_NAME: Final = "terminal-run-verifier"
+TERMINAL_EXIT_CODE_MATCHES: Final = "terminal.exit_code_matches"
+"""The program ended **by itself** with the code the **plan** expects (``expect_exit``, 0 by
+default) — not a signal, not ELA stopping it."""
+TERMINAL_OUTPUT_WHOLE: Final = "terminal.output_whole"
+"""Nothing of either stream was cut, and no sequence was replaced."""
+TERMINAL_PROGRAM_UNCHANGED: Final = "terminal.program_unchanged"
+"""The file the declared path leads to, **read now from the disk**, still has the identity of the
+start-up, and the result names that very file."""
+TERMINAL_EXIT_MISMATCH: Final = "terminal.exit_code_mismatch"
+TERMINAL_OUTPUT_INCOMPLETE: Final = "terminal.output_incomplete"
+
+
+class TerminalRunVerifier(Verifier):
+    """``terminal.run``: **what it verified, and never that the effect happened** (§63; dec. 9).
+
+    For what a program printed there is no independent source — the case of ``core.echo``, whose
+    arguments are its whole observable world, and of the voice, which «does not prove that anybody
+    heard anything». Running the command again to check it is forbidden twice over (rules 18 and
+    32) and would be a capability of its own. So the three conditions say what **can** be said:
+
+    > the program ended by itself with the code the plan expected; nothing of what it printed is
+    > missing or replaced; and the program on the disk is still the one ELA fixed at start-up.
+
+    **A code is the program's word.** The effect on the world ELA does not see, and a plan that
+    wants it adds a step that reads the world — an ``fs.read`` after a command that writes a file.
+    «If it executes code, it must execute tests» (§63) becomes a ``terminal.run`` of ``pytest`` with
+    ``terminal.exit_code_matches``: the tests are the verifier of the code, not the terminal.
+
+    The expected code is read from the **arguments**, the plan's intent (ADR 0014 §2), never from
+    the ``expect_exit`` the tool copied into its result. Every failure says it with numbers and
+    never with the arguments or the output, which a failure carries into the audit (§57).
+    """
+
+    reads_the_machine: ClassVar[bool] = True
+    """``terminal.program_unchanged`` reads the Core's disk: on a node it would compare the Core's
+    ``/usr/bin/git`` with a run that happened elsewhere — the false positive of ADR 0038 §14. So
+    ``terminal.run`` stays, and a test says so (dec. 11)."""
+    conditions: ClassVar[frozenset[str]] = frozenset(
+        {TERMINAL_EXIT_CODE_MATCHES, TERMINAL_OUTPUT_WHOLE, TERMINAL_PROGRAM_UNCHANGED}
+    )
+    failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
+        TERMINAL_EXIT_MISMATCH,
+        TERMINAL_OUTPUT_INCOMPLETE,
+        PROGRAM_CHANGED,
+    }
+
+    def __init__(self, programs: Programs, *, name: str = TERMINAL_VERIFIER_NAME) -> None:
+        super().__init__(TERMINAL_RUN, name=name)
+        self._programs = programs
+
+    async def _check(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        if condition == TERMINAL_EXIT_CODE_MATCHES:
+            return self._ended_as_expected(condition, arguments, result)
+        if condition == TERMINAL_OUTPUT_WHOLE:
+            return self._whole(condition, result)
+        return self._unchanged(condition, arguments, result)
+
+    def _ended_as_expected(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        expected = arguments.get("expect_exit", 0)
+        if type(expected) is not int:
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "expect_exit must be an integer",
+                retryable=False,
+            )
+        ended, code = result.output.get("ended"), result.output.get("exit_code")
+        code = code if type(code) is int else None
+        if ended == "exited" and code == expected:
+            return None
+        return self._failure(
+            condition,
+            TERMINAL_EXIT_MISMATCH,
+            f"the program did not end by itself with the expected code {expected}: "
+            + (f"it ended with {code}" if ended == "exited" else "it did not end by itself"),
+            retryable=False,
+            details={"expected": expected, "exit_code": code},
+        )
+
+    def _whole(self, condition: str, result: ExecutionResult) -> ErrorMetadata | None:
+        for name in ("stdout", "stderr"):
+            try:
+                kept = CommandOutput.model_validate(result.output.get(name))
+            except ValueError:  # pydantic's ValidationError: numbers that are not a stream
+                return self._failure(
+                    condition,
+                    TERMINAL_OUTPUT_INCOMPLETE,
+                    f"the result does not say what it kept of {name}",
+                    retryable=False,
+                )
+            if kept.missing or kept.replaced:
+                return self._failure(
+                    condition,
+                    TERMINAL_OUTPUT_INCOMPLETE,
+                    f"{name} is not whole: {kept.missing} bytes not kept, {kept.replaced} "
+                    "sequences replaced",
+                    retryable=False,
+                    details={"missing": kept.missing, "replaced": kept.replaced},
+                )
+        return None
+
+    def _unchanged(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        program = arguments.get("program")
+        if not isinstance(program, str):
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "program must be a string",
+                retryable=False,
+            )
+        problem = self._programs.problem(program)
+        if problem is not None:
+            return self._failure(condition, PROGRAM_CHANGED, problem.message, retryable=False)
+        start = self._programs.at_start(program)
+        if start is None or result.output.get("runs") != start.runs:
+            return self._failure(
+                condition,
+                PROGRAM_CHANGED,
+                f"the result names another file than the one {'/' + program!r} led to when ELA "
+                "started",
+                retryable=False,
+            )
+        return None

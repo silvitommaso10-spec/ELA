@@ -37,7 +37,16 @@ from ela.api.schemas import ApprovalOut, CancelIn, DeclarationIn, TaskOut
 from ela.api.security import COMPANION_SURFACE, Anonymous, Identity, note, welcome
 from ela.api.tasks import cancel_task, list_tasks
 from ela.devices import PRIVACY_ORDER
-from ela.domain import ApprovalId, DeviceRole, OperatingSystem, PrivacyLevel, TaskId, TaskState
+from ela.domain import (
+    ApprovalId,
+    DeviceRole,
+    OperatingSystem,
+    PrivacyLevel,
+    TaskId,
+    TaskState,
+    listed,
+    visible,
+)
 from ela.ports import (
     ApprovalOutOfReachError,
     EnrollmentConsumedError,
@@ -87,6 +96,10 @@ of reopening that decision.
 """
 SPEAKS: Final = "ELA parlerà ad alta voce su una macchina tua: le parole non sono nella domanda."
 STAYS_ON_THE_MAC: Final = "Il contenuto resta sul Mac: rispondi da lì."
+
+TARGET: Final = "Bersaglio"
+"""The key of a target whose question does not say what its tool calls it — one asked before
+M13.2. A word true of every capability, so that none can inherit it false (M13.2 dec. 12)."""
 NOTHING: Final = "Nient'altro ti aspetta."
 AFTER_YES: Final = "ELA riprende il task adesso; uno step affidato a un altro nodo aspetta."
 STOPPED: Final = "fermato dall'iPhone"
@@ -451,12 +464,36 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
             pages.fragment(HERE, "pair", key="Scade", value=f"alle {when(found.expires_at)}")
         )
     if seen and found.targets:
-        pairs.append(pages.fragment(HERE, "pair", key="Su", value=", ".join(found.targets)))
-    # The two facts of the machine a question about a file must name (M13.1 dec. G), and the
-    # reason this surface may answer it at all (dec. H): a surface that did not show them would
-    # be offering a yes to something it has not said.
+        shown = ", ".join(visible(one, lines=False) for one in found.targets)
+        pairs.append(pages.fragment(HERE, "pair", key="Su", value=shown))
+    # The facts of the machine a question must name (M13.1 dec. G; M13.2 dec. 12), and the reason
+    # this surface may answer it at all (dec. H): a surface that did not show them would be offering
+    # a yes to something it has not said. The target is called what **the tool** calls it — a page
+    # that wrote «Il file» beside a program would be true to the letter and wrong about the yes —
+    # and every word of the machine or of the plan passes the one rendering (M13.2 dec. 13).
     if seen and found.target:
-        pairs.append(pages.fragment(HERE, "pair", key="Il file", value=found.target))
+        key = found.label or TARGET
+        pairs.append(
+            pages.fragment(HERE, "pair", key=key, value=visible(found.target, lines=False))
+        )
+    if seen and found.runs:
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Porta a", value=visible(found.runs, lines=False))
+        )
+    if seen and found.arguments is not None:
+        pairs.append(pages.fragment(HERE, "pair", key="Argomenti", value=listed(found.arguments)))
+    if seen and found.folder:
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Parte da", value=visible(found.folder, lines=False))
+        )
+    if seen and found.timeout_seconds is not None:
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Tempo massimo", value=f"{found.timeout_seconds} s")
+        )
+    if seen and found.expect_exit is not None:
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Codice atteso", value=str(found.expect_exit))
+        )
     if seen and found.does:
         # The sentence comes from the capability and is rendered as it stands (M13.1 dec. G):
         # a page that composed one would be lending a write's words to a read.
@@ -476,9 +513,10 @@ def _content(found: ApprovalOut, seen: bool) -> pages.Markup:
             pages.fragment(
                 HERE,
                 "asked",
-                goal=found.goal,
+                goal=visible(found.goal, lines=False),
                 stated=pages.joined(
-                    pages.fragment(HERE, "stated", pair=one) for one in found.stated
+                    pages.fragment(HERE, "stated", pair=visible(one, lines=False))
+                    for one in found.stated
                 ),
             ),
             *said,

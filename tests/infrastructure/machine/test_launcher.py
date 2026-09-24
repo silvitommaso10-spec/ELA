@@ -84,6 +84,23 @@ def gone(group: int) -> bool:
     return False
 
 
+def gone_pid(pid: int) -> bool:
+    """One process, asked of the kernel: a zombie nobody reaps yet counts as gone, because it runs
+    nothing — and the launcher's child is reaped by the loop, its grandchildren by nobody here."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    return _zombie(pid)
+
+
+def _zombie(pid: int) -> bool:
+    state = subprocess.run(
+        ["/bin/ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False
+    )
+    return state.stdout.strip().startswith("Z") or not state.stdout.strip()
+
+
 # ----------------------------------------------------------------------------------------
 # What the child receives
 # ----------------------------------------------------------------------------------------
@@ -252,11 +269,35 @@ async def test_once_stopping_nothing_new_starts(tmp_path: Path) -> None:
     assert ran.stdout.total == 0
 
 
+async def test_a_program_that_ends_leaving_a_descendant_on_its_pipe_has_ended(
+    launcher: ProcessGroupLauncher, tmp_path: Path, leftovers: list[int]
+) -> None:
+    """A program ended by itself is ``EXITED`` with its code, never a timeout: a descendant left in
+    its group on the pipe does not hold the launcher until the timeout — it is stopped with the
+    group, which is empty when the launcher returns (ADR 0047 §7). Before, the launcher waited the
+    whole timeout for the pipe and reported ``TIMED_OUT`` for a program that had returned 0."""
+    leaving = """
+        import subprocess, sys
+        left = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+        print(left.pid, flush=True)
+    """
+
+    ran = await asyncio.wait_for(
+        launcher.run(command(*python(leaving), folder=tmp_path, timeout=GUARD * 2)), GUARD
+    )
+
+    left = int(ran.stdout.head.decode().split()[0])
+    leftovers.append(left)
+    assert (ran.ending, ran.code) == (Ending.EXITED, 0)
+    assert gone_pid(left), "the descendant left in the group outlived the launcher"
+
+
 async def test_a_grandchild_that_escapes_the_group_does_not_hold_the_launcher(
     launcher: ProcessGroupLauncher, tmp_path: Path, leftovers: list[int]
 ) -> None:
     """Decision 7's declared limit: a program that makes a session of its own survives — and it
-    must not keep the launcher waiting on a pipe it still holds."""
+    must not keep the launcher waiting on a pipe it still holds, nor turn the end of the program
+    that made it into a timeout."""
     escaping = """
         import os, subprocess, sys
         escaped = subprocess.Popen(
@@ -266,11 +307,46 @@ async def test_a_grandchild_that_escapes_the_group_does_not_hold_the_launcher(
     """
 
     ran = await asyncio.wait_for(
-        launcher.run(command(*python(escaping), folder=tmp_path, timeout=3.0)), GUARD
+        launcher.run(command(*python(escaping), folder=tmp_path, timeout=GUARD * 2)), GUARD
     )
 
     leftovers.append(int(ran.stdout.head.decode().split()[0]))
-    assert ran.ending is Ending.TIMED_OUT
+    assert (ran.ending, ran.code) == (Ending.EXITED, 0)
+
+
+async def test_a_grandchild_that_ignores_sigterm_is_killed_and_the_group_emptied(
+    tmp_path: Path, leftovers: list[int]
+) -> None:
+    """The breath ends, ``SIGKILL`` goes to the group, and the launcher returns only when the kernel
+    knows no process of it — the case ADR 0047 §7 measured at 2024–2028 ms. The grandchild says it
+    is deaf to ``SIGTERM`` before the stop is raised: an event, not a sleep."""
+    stopping = asyncio.Event()
+    ready = tmp_path / "sordo"
+    deaf = (
+        "import pathlib, signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        f"pathlib.Path({str(ready)!r}).write_text('x'); time.sleep(600)"
+    )
+    source = f"""
+        import os, subprocess, sys, time
+        grandchild = subprocess.Popen([sys.executable, "-c", {deaf!r}])
+        print(os.getpid(), grandchild.pid, flush=True)
+        time.sleep(600)
+    """
+    running = asyncio.create_task(
+        ProcessGroupLauncher(stopping).run(command(*python(source), folder=tmp_path))
+    )
+    async with asyncio.timeout(GUARD):
+        while not ready.exists():
+            await asyncio.sleep(0.02)
+    stopping.set()
+
+    ran = await asyncio.wait_for(running, GUARD)
+
+    child, grand = (int(pid) for pid in ran.stdout.head.decode().split())
+    leftovers.extend((child, grand))
+    assert ran.ending is Ending.STOPPED
+    assert gone(child), "the group outlived the launcher"
+    assert gone_pid(grand), "the grandchild deaf to SIGTERM outlived the launcher"
 
 
 async def test_a_cancelled_run_kills_the_group_and_goes_away(

@@ -50,6 +50,7 @@ def step(program: str) -> TaskStep:
         arguments=call(program),
         risk=RiskLevel.HIGH,
         expected_result="la sua uscita",
+        requires_authorization=True,
     )
 
 

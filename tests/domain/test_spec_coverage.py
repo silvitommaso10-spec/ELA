@@ -67,6 +67,7 @@ LATER_ADDITIONS = frozenset(
         "ContextQuestionStatus",
         "Enrollment",
         "Assignment",
+        "CommandOutput",
     }
 )
 """Models a later milestone added, each argued in its own ADR.

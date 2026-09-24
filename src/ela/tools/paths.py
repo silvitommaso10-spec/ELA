@@ -11,8 +11,8 @@ it covers the verifiers).
 :func:`classify` answers in one order, the first problem naming itself:
 
 1. :data:`PATH_INVALID` — not a relative POSIX path, or with an empty, ``.`` or ``..`` segment,
-   a backslash or a NUL. ``a/../b`` is refused even though it would resolve inside: traversal
-   is refused as a *shape*, not as an outcome.
+   a backslash, a NUL or a lone surrogate. ``a/../b`` is refused even though it would resolve
+   inside: traversal is refused as a *shape*, not as an outcome.
 2. :data:`PATH_OUTSIDE_ROOT` — ``(root / path).resolve()`` is not under the resolved root:
    a link that points outside lands here.
 
@@ -102,9 +102,15 @@ def is_relative_note_path(path: str) -> bool:
     """Whether ``path`` has the shape a note path must have (check 1).
 
     Relative, with no empty, ``.`` or ``..`` segment, no backslash and no NUL: the syntax of a
-    scope entry (ADR 0010 §3), restated here because a tool imports nothing of the Guardian.
+    scope entry (ADR 0010 §3), restated here because a tool imports nothing of the Guardian. And
+    text: a lone surrogate names no file, and the first look at the disk would raise instead of
+    answering (review of M13.2).
     """
     if any(character in path for character in FORBIDDEN_CHARACTERS):
+        return False
+    try:
+        path.encode()
+    except UnicodeEncodeError:
         return False
     return not any(part in FORBIDDEN_PARTS for part in path.split("/"))
 

@@ -29,10 +29,12 @@ from ela.tools.errors import (
     SilentVerifierError,
     ToolNotFound,
     ToolsError,
+    UndeclaredNumbersError,
     VerifierNotFound,
 )
 from ela.tools.fs import (
     CREATES,
+    FILE,
     FS_READ,
     FS_READ_TOOL_NAME,
     FS_WRITE,
@@ -68,6 +70,14 @@ from ela.tools.paths import (
     is_relative_note_path,
     resolve_workspace,
 )
+from ela.tools.programs import (
+    NO_PROGRAM,
+    NOT_DECLARED,
+    PROGRAM_CHANGED,
+    Identity,
+    Programs,
+    identity_of,
+)
 from ela.tools.registry import (
     ToolRegistry,
     VerifierRegistry,
@@ -99,6 +109,17 @@ from ela.tools.screen_text import (
     ReadScreenTextTool,
 )
 from ela.tools.settings import CaptureSettings, WorkspaceSettings, default_workspace_dir
+from ela.tools.terminal import (
+    ARGUMENTS_UNPASSABLE,
+    CWD_NOT_A_FOLDER,
+    NOT_STARTED,
+    STOPPED,
+    TERMINAL_RUN,
+    TERMINAL_TOOL_NAME,
+    TIMEOUT,
+    Terminal,
+    TerminalRunTool,
+)
 from ela.tools.verifiers import (
     CAPTURE_DECLARED_MISMATCH,
     CAPTURE_EXISTS,
@@ -132,6 +153,7 @@ from ela.tools.verifiers import (
     ModelCompleteVerifier,
     ReadScreenTextVerifier,
     SpeakVerifier,
+    TerminalRunVerifier,
     WriteNoteVerifier,
 )
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
@@ -152,6 +174,24 @@ from ela.tools.voice_online import (
 )
 
 __all__ = [
+    "ARGUMENTS_UNPASSABLE",
+    "CWD_NOT_A_FOLDER",
+    "FILE",
+    "Identity",
+    "NO_PROGRAM",
+    "NOT_DECLARED",
+    "NOT_STARTED",
+    "PROGRAM_CHANGED",
+    "Programs",
+    "STOPPED",
+    "TERMINAL_RUN",
+    "TERMINAL_TOOL_NAME",
+    "TIMEOUT",
+    "Terminal",
+    "TerminalRunTool",
+    "TerminalRunVerifier",
+    "UndeclaredNumbersError",
+    "identity_of",
     "NO_ROOT",
     "READS",
     "OVERWRITES",

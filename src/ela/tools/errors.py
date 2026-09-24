@@ -17,6 +17,7 @@ __all__ = [
     "SilentVerifierError",
     "ToolNotFound",
     "ToolsError",
+    "UndeclaredNumbersError",
     "VerifierNotFound",
 ]
 
@@ -90,3 +91,18 @@ class VerifierNotFound(NotFoundError):
     def __init__(self, capability_id: CapabilityId) -> None:
         super().__init__("verifier", capability_id)
         self.capability_id = capability_id
+
+
+class UndeclaredNumbersError(ToolsError):
+    """A tool that does not *say* which numbers of its result enter the audit, or says it wrong.
+
+    Raised by :class:`~ela.tools.registry.ToolRegistry` at construction (M13.2, ADR 0047), the form
+    of :class:`NotIdempotentError`: a tool with nothing to count declares ``frozenset()``, and what
+    is refused is silence — or a key outside the tool's own result, which would be a channel into
+    the audit that reads something nobody declared the tool produces.
+    """
+
+    def __init__(self, capability_id: CapabilityId, name: str, reason: str) -> None:
+        self.capability_id = capability_id
+        self.name = name
+        super().__init__(f"tool {name} of {capability_id} {reason}")

@@ -54,6 +54,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0044](0044-command-center.md) | Il Command Center: una terza identità nel registro, un tetto derivato dal socket, due regole che smettono di nominare un file, e un'impronta che suona | Accettata |
 | [0045](0045-filesystem-and-high.md) | Il filesystem fuori dalla workspace e il primo HIGH: la riga che chiede a ogni uso, lo scope legato al fatto, un codice che smette di mentire, e un appunto che deve fallire | Accettata |
 | [0046](0046-consumption.md) | Il grant di un sì si consuma: la regola del consumo derivata dalla domanda, un sì che non copre due effetti, e le righe che il merge di M13.1 ha reso false | Accettata |
+| [0047](0047-terminal.md) | Il terminale: un comando è `argv`, i programmi ammessi sono lo scope, e la domanda nomina ciò che girerà | Accettata |
 
 ## Template
 

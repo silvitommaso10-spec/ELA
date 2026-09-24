@@ -37,6 +37,7 @@ from ela.executive.errors import (
 from ela.executive.executor import (
     APPROVAL_NAMESPACE,
     ASKED,
+    AUDIT_NUMBER_INVALID,
     AUTHORIZATION_NAMESPACE,
     CONSUMING_RULES,
     DEFAULT_APPROVAL_TTL,
@@ -44,6 +45,7 @@ from ela.executive.executor import (
     EXECUTION_INTERRUPTED,
     GRANT_VANISHED,
     MAX_APPROVAL_TTL,
+    NUMBERS,
     RECOVERED,
     REPORTABLE,
     STARTED_ID,
@@ -67,6 +69,7 @@ from ela.executive.runner import OUTCOMES, RUNNABLE_STATES, Run, RunOutcome, Tas
 __all__ = [
     "APPROVAL_NAMESPACE",
     "ASKED",
+    "AUDIT_NUMBER_INVALID",
     "AUTHORIZATION_NAMESPACE",
     "CONSUMING_RULES",
     "DEFAULT_APPROVAL_TTL",
@@ -77,6 +80,7 @@ __all__ = [
     "GRANT_VANISHED",
     "MAX_APPROVAL_TTL",
     "MAX_ASSIGNMENT_CAP",
+    "NUMBERS",
     "WORK_ACTOR",
     "AssignmentAtCapError",
     "AssignmentRefusedError",

@@ -87,6 +87,7 @@ INTRODUCED_PORTS = frozenset(
         "EnrollmentStore",
         "AssignmentStore",
         "Bell",
+        "CommandLauncher",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")

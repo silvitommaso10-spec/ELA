@@ -144,6 +144,7 @@ from ela.ports import (
     Clock,
     ExecutionResultStore,
     IdGenerator,
+    Invocation,
     NotAllowedError,
     NotFoundError,
     Target,
@@ -152,6 +153,7 @@ from ela.ports import (
     ToolRegistryPort,
     VerifierPort,
     VerifierRegistryPort,
+    audited_numbers,
 )
 from ela.tasks.engine import TaskEngine
 from ela.tasks.graph import GraphState
@@ -159,6 +161,7 @@ from ela.tasks.graph import GraphState
 __all__ = [
     "APPROVAL_NAMESPACE",
     "ASKED",
+    "AUDIT_NUMBER_INVALID",
     "AUTHORIZATION_NAMESPACE",
     "CONSUMING_RULES",
     "DEFAULT_APPROVAL_TTL",
@@ -166,6 +169,7 @@ __all__ = [
     "EXECUTION_INTERRUPTED",
     "GRANT_VANISHED",
     "MAX_APPROVAL_TTL",
+    "NUMBERS",
     "RECOVERED",
     "REPORTABLE",
     "STARTED_ID",
@@ -208,6 +212,22 @@ writes the same row instead of a second one — which is what makes a redelivery
 a second key, and what repairs crash window ``A8`` by itself. An id the node chose could collide,
 or be chosen to collide.
 """
+
+NUMBERS: Final = "numbers"
+"""The payload key of ``TOOL_EXECUTED`` that carries a tool's declared numbers (M13.2, ADR 0047).
+
+Present only for a tool that declares some — ``fs.read`` and every tool before M13.2 keep the fixed
+keys they had — and always the value of :func:`~ela.ports.audited_numbers`, which lets through
+integers and nothing else: the first channel through which a tool writes facts of its own into the
+log that is never redacted, built narrow on purpose (decision 10)."""
+
+AUDIT_NUMBER_INVALID: Final = "tool.audit_number_invalid"
+"""Error code of a result whose declared numbers are not all integers (M13.2, ADR 0047).
+
+The tool produced a value the audit must not hold — a string, a float, a boolean — under a key it
+declared as a number. The result becomes ``FAILED`` with this code and **no output**, before it is
+stored, so nothing of the value reaches the trail or a retry. A node that delivers one is refused at
+the gate instead, as a ``ValueError`` — a ``422``."""
 
 RECOVERED: Final = "recovered"
 """The payload key an audit event written on a resumed run carries, set to ``True`` (ADR 0015 §5,
@@ -800,6 +820,7 @@ class Executor:
                 tool_name=tool.name,
             )
             return await self._fail(task, graph, decision, authorization, refused)
+        produced = _counted(tool, produced)
         result = produced.model_copy(
             update={
                 "device_id": device_id,
@@ -895,6 +916,9 @@ class Executor:
             )
             raise AssignmentVoidError(assignment_id, task.state.value)
         ready = self._prepared(assignment.task_id, graph, assignment.step_id)
+        # A node's numbers pass the same function a tool's do, before anything is written: a value
+        # that is not an integer under a declared key is a ``ValueError``, which is a ``422``.
+        audited_numbers(ready.tool.audit_numbers, envelope.output)
         if envelope.form is Delivery.REFUSED:
             return await self._refused_there(task, graph, ready, assignment, digest, now)
         started, _ = await self._stored(assignment.task_id, assignment.step_id)
@@ -1459,7 +1483,11 @@ class Executor:
             status=ApprovalStatus.PENDING,
             decision_id=decision.id,
             expires_at=decision.created_at + self._approval_ttl,
-            metadata={ASKED: self._asked(task, step, spec, arguments, prospect.target)},
+            metadata={
+                ASKED: self._asked(
+                    task, step, spec, arguments, prospect.target, prospect.invocation
+                )
+            },
         )
         await self._approvals.add(approval)  # stored before the task waits on it (ADR 0015 §6)
         task = await self._engine.request_approval(decision.task_id, approval)
@@ -1511,6 +1539,7 @@ class Executor:
         spec: CapabilitySpec,
         arguments: JsonMapping,
         target: Target | None,
+        invocation: Invocation | None = None,
     ) -> dict[str, JsonValue]:
         """The facts of the question, kept beside it: what a surface shows without recomposing it.
 
@@ -1523,8 +1552,18 @@ class Executor:
         asked yesterday. Nothing new leaves the machine — the goal and the declared arguments are
         already inside ``prompt``, and ``prompt`` is already in the audit.
 
-        ``tests/api/test_approvals.py`` pins these keys against the fields that read them: a name
-        written on one side only would be a page that quietly shows nothing.
+        Since M13.2 a question about a command carries what the process would receive — the file
+        the program leads to, the arguments one by one, the folder, the timeout, the expected code —
+        and the target carries what the tool calls it (``label``). **The arguments are here and not
+        in ``prompt``**, and that is the seam that decides where they go (M13.2 dec. 10): ``prompt``
+        enters the audit with ``APPROVAL_REQUESTED``, this bag stays in the table of the approvals,
+        and ``tests/architecture/test_terminal_rules.py`` refuses a module that builds an audit
+        event and reads it.
+
+        ``tests/api/test_terminal_surfaces.py`` holds these keys inside the fields of ``Asked``, and
+        those inside ``ApprovalOut``; ``tests/api/test_answering_surfaces.py`` holds every field to
+        the three surfaces that answer. Until M13.2 this said ``tests/api/test_approvals.py`` did
+        it, and it never had: a name written on one side only is a page that quietly shows nothing.
         """
         asked: dict[str, JsonValue] = {
             "description": spec.description,
@@ -1538,6 +1577,13 @@ class Executor:
         if target is not None:
             asked["target"] = target.resolved
             asked["does"] = target.does
+            asked["label"] = target.label
+        if invocation is not None:
+            asked["runs"] = invocation.runs
+            asked["arguments"] = list(invocation.arguments)
+            asked["folder"] = invocation.folder
+            asked["timeout_seconds"] = invocation.timeout_seconds
+            asked["expect_exit"] = invocation.expect_exit
         return asked
 
     async def _fail(
@@ -1662,6 +1708,9 @@ class Executor:
         targets — never the arguments nor the output (§57). ``created_at`` is the result's when
         written with the run, the clock's on a resume, which also marks the payload.
 
+        ``numbers`` are the tool's declared numbers of the result (M13.2): integers only, read by
+        :func:`~ela.ports.audited_numbers` and by nothing else (``tests/architecture``).
+
         ``usage`` is the result's, and this is the only place ELA writes it: "provider usage
         metadata" is one of the things §32 asks the audit log to hold, and until M7.2 the field
         existed on :class:`~ela.domain.AuditEvent` with nothing to put in it. It is ``None`` for
@@ -1694,6 +1743,11 @@ class Executor:
                     "duration_ms": result.duration_ms,
                     "device": _device(result),
                     "uses": uses,
+                    **(
+                        {NUMBERS: audited_numbers(tool.audit_numbers, result.output)}
+                        if tool.audit_numbers
+                        else {}
+                    ),
                     **({RECOVERED: True} if recovered else {}),
                 },
             )
@@ -1854,6 +1908,28 @@ def _verification_failure(
             "device": _device(result),
         },
     )
+
+
+def _counted(tool: ToolPort, result: ExecutionResult) -> ExecutionResult:
+    """``result``, or a ``FAILED`` one with no output when a declared number is not an integer.
+
+    Where a result of this machine is born, before it is stored (M13.2, ADR 0047): a value that
+    fails :func:`~ela.ports.audited_numbers` never reaches the store, the trail or a retry. The
+    message names the key and the type, never the value.
+    """
+    try:
+        audited_numbers(tool.audit_numbers, result.output)
+    except ValueError as refused:
+        return result.model_copy(
+            update={
+                "status": ExecutionStatus.FAILED,
+                "output": {},
+                "error": ErrorMetadata(
+                    code=AUDIT_NUMBER_INVALID, message=str(refused), tool_name=tool.name
+                ),
+            }
+        )
+    return result
 
 
 def _failure_of(result: ExecutionResult, tool: ToolPort) -> ErrorMetadata:
