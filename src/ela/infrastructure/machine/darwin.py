@@ -62,9 +62,26 @@ PROBE_MODULE: Final = "ela.infrastructure.machine.probe"
 MICROPHONE_MODULE: Final = "ela.infrastructure.machine.microphone"
 """The recorder, started the same way. Its own module because it must be able to die alone."""
 
-TIMED_OUT: Final = -1
-"""The exit code :func:`spawn` reports for a child it had to kill. Any non-zero would do; a name
-is worth more than a magic number in the one place where "no answer" is the answer."""
+TIMED_OUT: Final = -65536
+"""The exit code :func:`spawn` reports for a child it had to kill: a value **no signal can
+produce**.
+
+It was ``-1`` until M13.2, which is also what ``asyncio`` reports for a child killed by ``SIGHUP``:
+the callers compare ``code == TIMED_OUT``, so a hang-up read as a timeout and its half output came
+back as if it were one (measured at ``1c24ec1``, M13.2 dec. 15). A signal is ``-N`` with ``N`` below
+``signal.NSIG`` — 32 on macOS, 65 on Linux — and a Windows code is never negative."""
+
+REAP_SECONDS: Final = 2.0
+"""How long, after a kill, the launcher waits for the child to be reaped and its pipes to close.
+
+A bound where there was none (M13.2 dec. 15): ``asyncio`` wakes ``wait()`` only when **every** pipe
+is closed, and a grandchild that inherited one kept a killed child's launcher waiting as long as it
+lived — measured at ``1c24ec1``, ``spawn(["/bin/sh", "-c", "sleep 2 & wait"], 0.2)`` came back after
+2.01 s. Past the bound the pipes are closed from this side instead of waited for: what the
+grandchild still writes nobody reads, which is the point."""
+
+STREAM_LIMIT: Final = 1 << 16
+"""The buffer of a stream reader, ``asyncio``'s own default, written down because it is passed."""
 
 Spawn = Callable[[Sequence[str], float], Awaitable[tuple[int, str]]]
 """Start a command, wait at most ``timeout`` seconds, answer ``(exit code, stdout)``."""
@@ -113,10 +130,10 @@ async def spawn(argv: Sequence[str], timeout: float) -> tuple[int, str]:
     (M11.1, criterio 9): an orphaned ``say`` is **ELA that keeps talking after being told to
     stop**. Fixed once for every caller, and there are four of them now.
     """
-    process = await asyncio.create_subprocess_exec(
-        *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+    process, transport = await _start(
+        argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
     )
-    return await _wait(process, timeout)
+    return await _wait(process, transport, timeout)
 
 
 async def spawn_with_input(argv: Sequence[str], data: bytes, timeout: float) -> tuple[int, str]:
@@ -137,10 +154,10 @@ async def spawn_with_input(argv: Sequence[str], data: bytes, timeout: float) -> 
 
     Both ways of giving up kill the child, through the same :func:`_wait` as every other caller.
     """
-    process = await asyncio.create_subprocess_exec(
-        *argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE
+    process, transport = await _start(
+        argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE
     )
-    return await _wait(process, timeout, data)
+    return await _wait(process, transport, timeout, data)
 
 
 PMSET: Final = "/usr/bin/pmset"
@@ -227,14 +244,13 @@ async def spawn_with_audio(
         _write_all(fd, audio)
         os.lseek(fd, 0, os.SEEK_SET)
         os.set_inheritable(fd, True)
-        process = await asyncio.create_subprocess_exec(
-            *argv,
-            f"/dev/fd/{fd}",
+        process, transport = await _start(
+            (*argv, f"/dev/fd/{fd}"),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             pass_fds=(fd,),
         )
-        return await _wait(process, timeout)
+        return await _wait(process, transport, timeout)
     finally:
         os.close(fd)
 
@@ -298,14 +314,13 @@ async def spawn_through_nameless_audio(
     try:
         os.unlink(path)
         os.set_inheritable(fd, True)
-        recorder = await asyncio.create_subprocess_exec(
-            *record_argv,
-            str(fd),
+        recorder, transport = await _start(
+            (*record_argv, str(fd)),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             pass_fds=(fd,),
         )
-        recorded = await _wait(recorder, record_timeout)
+        recorded = await _wait(recorder, transport, record_timeout)
         if recorded[0] != 0 or not should_transcribe(recorded[1]):
             return recorded, None
         os.lseek(fd, 0, os.SEEK_SET)
@@ -333,13 +348,14 @@ async def _transcribe(
     os.close(report_fd)
     report = Path(f"{prefix}.json")
     try:
-        process = await asyncio.create_subprocess_exec(
-            *transcribe(f"/dev/fd/{fd}", prefix),
+        process, transport = await _start(
+            transcribe(f"/dev/fd/{fd}", prefix),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             pass_fds=(fd,),
         )
-        code, _ = await _wait(process, timeout)  # stdout is the pretty print; the report is
+        # stdout is the pretty print; the report is the file
+        code, _ = await _wait(process, transport, timeout)
         written = report.read_text(encoding="utf-8") if report.is_file() else ""
         return code, written
     finally:
@@ -378,8 +394,39 @@ def sweep_speech_files(directory: Path) -> int:
     return swept
 
 
+async def _start(
+    argv: Sequence[str],
+    *,
+    stdin: int | None = None,
+    stdout: int | None = None,
+    stderr: int | None = None,
+    pass_fds: Sequence[int] = (),
+) -> tuple[asyncio.subprocess.Process, asyncio.SubprocessTransport]:
+    """Start ``argv`` as ``asyncio.create_subprocess_exec`` does, **keeping the transport**.
+
+    The same three lines the standard library runs, with one difference that is the reason for
+    them: the transport is the only public way to close the pipes of a child, and a launcher that
+    cannot close them has to wait for a grandchild that holds one (M13.2 dec. 15). The defaults are
+    ``create_subprocess_exec``'s — ``None``, inherited —, not ``loop.subprocess_exec``'s, which
+    pipes all three: the stderr of ``spawn_with_input`` goes to the terminal on purpose.
+    """
+    loop = asyncio.get_running_loop()
+    transport, protocol = await loop.subprocess_exec(
+        lambda: asyncio.subprocess.SubprocessStreamProtocol(limit=STREAM_LIMIT, loop=loop),
+        *argv,
+        stdin=stdin,
+        stdout=stdout,
+        stderr=stderr,
+        pass_fds=pass_fds,
+    )
+    return asyncio.subprocess.Process(transport, protocol, loop), transport
+
+
 async def _wait(
-    process: asyncio.subprocess.Process, timeout: float, data: bytes | None = None
+    process: asyncio.subprocess.Process,
+    transport: asyncio.SubprocessTransport,
+    timeout: float,
+    data: bytes | None = None,
 ) -> tuple[int, str]:
     """Wait for a child, and kill it whichever way the waiting ends badly.
 
@@ -394,25 +441,36 @@ async def _wait(
     try:
         stdout, _ = await asyncio.wait_for(process.communicate(data), timeout)
     except TimeoutError:
-        await _kill(process)
+        await _kill(process, transport)
         return TIMED_OUT, ""
     except asyncio.CancelledError:
-        await _kill(process)
+        await _kill(process, transport)
         raise
     code = TIMED_OUT if process.returncode is None else process.returncode
     return code, stdout.decode(errors="replace")
 
 
-async def _kill(process: asyncio.subprocess.Process) -> None:
+async def _kill(
+    process: asyncio.subprocess.Process, transport: asyncio.SubprocessTransport
+) -> None:
     """Kill a child and reap it; a child that already exited is the outcome that was wanted.
 
     ``ProcessLookupError`` is the race between the check and the signal, and it is suppressed
     rather than branched on: whether the child was still there is not something this line can
     know without asking, and asking is the same race one line earlier.
+
+    **The wait has a bound** (M13.2 dec. 15): ``wait()`` returns only when every pipe is closed, so
+    past :data:`REAP_SECONDS` the pipes are closed from this side — a grandchild that holds one
+    does not hold the caller. What it writes afterwards nobody reads.
     """
     with suppress(ProcessLookupError):
         process.kill()
-    await process.wait()
+    try:
+        await asyncio.wait_for(process.wait(), REAP_SECONDS)
+    except TimeoutError:
+        transport.close()
+        with suppress(TimeoutError):
+            await asyncio.wait_for(process.wait(), REAP_SECONDS)
 
 
 class DarwinProbe:

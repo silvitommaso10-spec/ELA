@@ -263,5 +263,12 @@ def test_the_conseguenze_count_what_the_tree_has_today() -> None:
     # asserted in ``tests/docs/test_adr_filesystem.py``.
     assert "**restano otto**" in text
     assert "**venticinque**" in text
-    assert len(ports_before(ADR_PATH.with_name("0043-companion.md"))) == 25
+    assert (
+        len(
+            ports_before(
+                ADR_PATH.with_name("0043-companion.md"), ADR_PATH.with_name("0047-terminal.md")
+            )
+        )
+        == 25
+    )
     assert set(INFRA_PACKAGES) == {"providers", "infrastructure", "api", "cli", "node"}

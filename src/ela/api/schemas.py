@@ -12,8 +12,9 @@ Two leaf values are reused as they are: :class:`~ela.domain.ProviderUsage` and
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Annotated, TypedDict, cast
+from typing import Annotated, Final, TypedDict, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -118,6 +119,38 @@ can change.
 """
 
 
+NOT_TEXT: Final = "holds a lone surrogate, which is not text: no file, program or page takes it"
+"""Why a plan is refused when a string in it cannot be encoded — said without the string (§57)."""
+
+
+def _text_only(value: object) -> object:
+    """Refuse a plan whose strings are not all text (review of M13.2).
+
+    The parser FastAPI uses reads ``"\\ud800"`` as a string, and nothing after it can encode one:
+    not the path a tool looks at, not the argument a process receives, not the page that shows
+    the task. Accepted, a lone surrogate in an argument left the task ``RUNNING`` for ever — every
+    ``run`` a 422 from the tool's first ``encode`` — and the task unreadable. Here is where the
+    arguments are born, so here is where it stops: before anything is written.
+    """
+    if not _encodable(value):
+        raise ValueError(NOT_TEXT)
+    return value
+
+
+def _encodable(value: object) -> bool:
+    if isinstance(value, str):
+        try:
+            value.encode()
+        except UnicodeEncodeError:
+            return False
+        return True
+    if isinstance(value, Mapping):
+        return all(_encodable(key) and _encodable(one) for key, one in value.items())
+    if isinstance(value, tuple):
+        return all(_encodable(one) for one in value)
+    return True
+
+
 class TaskCreate(BaseModel):
     """What the user asked. The plan comes separately, and today by hand (ADR 0023 §6)."""
 
@@ -156,6 +189,10 @@ class StepIn(BaseModel):
     success_conditions: tuple[str, ...] = ()
     requires_authorization: bool = False
 
+    _text = field_validator("goal", "arguments", "expected_result", "success_conditions")(
+        _text_only
+    )
+
     def to_domain(self, created_at: datetime) -> TaskStep:
         return TaskStep(
             id=StepId(self.id),
@@ -179,6 +216,8 @@ class PlanIn(BaseModel):
 
     goal: str
     steps: Annotated[tuple[StepIn, ...], Field(min_length=1)]
+
+    _text = field_validator("goal")(_text_only)
 
     def to_domain(self, task_id: UUID, plan_id: UUID, created_at: datetime) -> TaskPlan:
         return TaskPlan(
@@ -316,8 +355,10 @@ class Asked(BaseModel):
     it has rather than refusing to open.
 
     ``extra="ignore"``: whoever writes the bag may keep something of their own there, and a key
-    this shape does not know is not a reason to fail a page. That the two lists **do** match is a
-    test of its own (``tests/api/test_approvals.py``).
+    this shape does not know is not a reason to fail a page. That what the executor writes is held
+    inside these fields, and these inside ``ApprovalOut``, is a test of its own since M13.2
+    (``tests/api/test_terminal_surfaces.py``); until then this pointed at a test that never read
+    them.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -347,6 +388,21 @@ class Asked(BaseModel):
     false of a read, and an advisory that says the wrong thing teaches the reader to stop reading
     it. The tool writes the sentence and it travels with the question; a surface renders it and
     never composes one. Empty when the question is not about a file."""
+    label: str = ""
+    """What the target is called, **in the tool's own word** (M13.2 dec. 12): ``file`` for
+    ``fs.*``, ``program`` for ``terminal.run``. No surface owns a word another capability could
+    inherit false; empty for a question asked before M13.2, or about no target."""
+    runs: str = ""
+    """The file a program leads to, read from the machine when the question was composed."""
+    arguments: tuple[str, ...] | None = None
+    """The arguments of a command **as a list**, exactly as the process will receive them.
+    ``None`` when the question is not about a command, which is not the same as no argument."""
+    folder: str = ""
+    """The folder a command starts from, resolved."""
+    timeout_seconds: int | None = None
+    """How long ELA waits for the command before it stops its group."""
+    expect_exit: int | None = None
+    """The code the plan expects the program to end with (M13.2 dec. 9)."""
 
 
 class ApprovalOut(BaseModel):
@@ -377,6 +433,12 @@ class ApprovalOut(BaseModel):
     grant_seconds: int | None
     target: str
     does: str
+    label: str
+    runs: str
+    arguments: tuple[str, ...] | None
+    folder: str
+    timeout_seconds: int | None
+    expect_exit: int | None
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:

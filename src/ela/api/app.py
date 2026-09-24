@@ -261,7 +261,9 @@ def create_app(ela: Ela) -> FastAPI:
     # Raised when the process is asked to stop, so that a node holding a long-poll is answered at
     # the instant of the signal instead of at the end of its window (ADR 0038 §11). Who raises it is
     # ``api/server.py``: measured, the lifespan arrives after the requests in flight are awaited.
-    app.state.stopping = asyncio.Event()
+    # **ELA's own event, since M13.2**: the launcher of ``terminal.run`` stops a running command's
+    # group on it, and the launcher is built before this application exists.
+    app.state.stopping = ela.stopping
     # What ``ela serve`` bound, filled in by ``api/server.py``; an in-process transport binds none.
     app.state.addresses = ()
     app.middleware("http")(identity_middleware(ela))

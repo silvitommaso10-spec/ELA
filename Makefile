@@ -5,8 +5,10 @@ UV ?= uv
 install:
 	$(UV) sync
 
+# --no-cache: the cache keeps the verdict of an import whose module did not exist yet, which is
+# every failing test written before its code (tests/scripts/test_lint_without_cache.py).
 lint:
-	$(UV) run ruff check .
+	$(UV) run ruff check --no-cache .
 	$(UV) run ruff format --check .
 	$(UV) run lint-imports
 

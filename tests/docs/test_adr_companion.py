@@ -50,16 +50,17 @@ def test_the_conseguenze_count_what_the_tree_had_when_it_was_written() -> None:
     """The pin on *today's* totals moved on to ADR 0044, as it did from ADR 0039 to ADR 0040.
 
     An ADR is immutable: what stays here is that the numbers ADR 0043 wrote are still true **of
-    what it saw**. The rules and the ports have not moved since — M17.2 extended two rules and
-    added no port — and the routes have, so that one is counted without the pages M17.2 added
-    (the shape ``test_adr_nodes_windows.py`` already uses, derived from the surfaces).
+    what it saw**. The rules have not moved since — M17.2 extended two rules and added no port —;
+    the ports have, by one, the launcher of M13.2, counted out here; and the routes have, so that
+    one is counted without the pages M17.2 added (the shape ``test_adr_nodes_windows.py`` already
+    uses, derived from the surfaces).
     """
     text = conseguenze()
 
     assert "**cinquantasette**" in text
     assert len(RULES) == 57
     assert "**ventisei**" in text
-    assert len(tuple(port_protocols())) == 26
+    assert len(tuple(p for p in port_protocols() if p.__name__ != "CommandLauncher")) == 26
     assert "**trentasette**" in text
     assert len(coded_routes() - CONSOLE_PAGES) == 37
 

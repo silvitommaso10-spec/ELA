@@ -16,6 +16,7 @@ turn works end to end is ``tests/conformance``.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -496,3 +497,32 @@ async def test_the_core_is_not_a_node_on_the_work_routes(client: AsyncClient, pa
     """The Core's token is refused here exactly as nothing is: it is not a node, and there is no
     work for it to take. The matrix of every identity against every route is in test_security.py."""
     assert (await client.post(path, json={})).status_code == 401
+
+
+# ----------------------------------------------------------------------------------------
+# ADR 0047 §16 — the dated debt of M13.3, and the smallest defence it has
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_delivery_holding_a_lone_surrogate_is_still_refused_by_the_encoder(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """The debt, as it is. What a node delivers is free JSON, and a lone surrogate in it reaches
+    the persistence, whose encoder refuses it: a ``422`` that names no rule of ELA's, and a step
+    left ``EXECUTING`` — handed out again when the assignment expires, to be refused again.
+
+    Failing here is not a regression. It means the debt is being paid: write the payment in an
+    ADR, and turn this test round, as ``test_adr_devices.py`` was turned for ADR 0035 §7.
+    """
+    task_id, order, headers, _ = await taken(client, ela)
+    body = {"assignment_id": order["assignment_id"], **ENVELOPE, "output": {"message": "x\ud800y"}}
+
+    delivered = await client.post(
+        "/nodes/work/result",
+        content=json.dumps(body),  # ``ensure_ascii``: the escape travels, as a node would send it
+        headers={**headers, "content-type": "application/json"},
+    )
+
+    assert delivered.status_code == 422
+    assert "surrogates not allowed" in delivered.json()["error"]["message"]
+    assert (await client.get(f"/tasks/{task_id}")).json()["state"] == "EXECUTING"

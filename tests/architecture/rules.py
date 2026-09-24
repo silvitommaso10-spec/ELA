@@ -104,21 +104,31 @@ MACHINE_LIBRARIES = frozenset({"ctypes"})
 #: while ``asyncio.create_subprocess_exec(...)`` — the one this milestone actually uses — shows up
 #: only as a call. A rule that read imports alone would have been a defence that looks active and
 #: cannot fire, which is worse than none (ADR 0026 §7).
-SPAWNING_MODULES = frozenset({"subprocess"})
+#:
+#: M13.2 (dec. 15) widened both, before the code that would test them: the census of the milestone
+#: measured the detector blind to ``asyncio.subprocess.create_subprocess_exec``, the loop's own
+#: ``subprocess_exec``, the ``exec`` and ``spawn`` families beyond the four it named, ``pty`` and
+#: ``multiprocessing`` — each a way to start a program, each with its negative case now.
+SPAWNING_MODULES = frozenset({"subprocess", "pty", "multiprocessing"})
 SPAWNING_CALLS = frozenset(
     {
         "asyncio.create_subprocess_exec",
         "asyncio.create_subprocess_shell",
+        "asyncio.subprocess.create_subprocess_exec",
+        "asyncio.subprocess.create_subprocess_shell",
         "os.system",
         "os.popen",
-        "os.spawnl",
-        "os.spawnv",
-        "os.execv",
-        "os.execvp",
         "os.fork",
+        "os.forkpty",
         "os.posix_spawn",
+        "os.posix_spawnp",
+        *(f"os.exec{tail}" for tail in ("l", "le", "lp", "lpe", "v", "ve", "vp", "vpe")),
+        *(f"os.spawn{tail}" for tail in ("l", "le", "lp", "lpe", "v", "ve", "vp", "vpe")),
     }
 )
+#: The loop's own doors, called on whatever object holds the loop — ``loop.subprocess_exec``,
+#: ``asyncio.get_running_loop().subprocess_exec`` —, so matched by the method's name alone.
+SPAWNING_METHODS = frozenset({"subprocess_exec", "subprocess_shell"})
 
 #: Rule 33 (ADR 0028 §2, extended in M10.3): every helper *child* under the perception adapter
 #: imports only the standard library, never ``ela``. What has to be able to die on its own must
@@ -760,10 +770,12 @@ SQL_EXECUTORS = frozenset({"session", "cursor"})
 COMPLETE_STEP_METHOD = "complete_step"
 RESPOND_METHOD = "respond"
 # Rule 18 (ADR 0014 §10): the module of the verifiers, and the shared path classification the
-# tool and the verifier both use, have no path that writes.
+# tool and the verifier both use, have no path that writes — and, from M13.2, the identity of the
+# terminal's programs, which the tool and its verifier share the same way.
 VERIFIERS_MODULE = Path("tools") / "verifiers.py"
 PATHS_MODULE = Path("tools") / "paths.py"
-READ_ONLY_MODULES = (VERIFIERS_MODULE, PATHS_MODULE)
+PROGRAMS_MODULE = Path("tools") / "programs.py"
+READ_ONLY_MODULES = (VERIFIERS_MODULE, PATHS_MODULE, PROGRAMS_MODULE)
 OPENERS = frozenset({"open", "fdopen"})
 WRITING_OPEN_MODES = frozenset("wax+")
 WRITING_OPEN_FLAGS = frozenset({"O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND", "O_EXCL"})
@@ -1415,8 +1427,9 @@ def check_approval_responders(pkg_root: Path) -> list[Violation]:
 
 
 def check_verifier_read_only(pkg_root: Path) -> list[Violation]:
-    """Rule 18: ``tools/verifiers.py`` and ``tools/paths.py`` have no path that writes (ADR 0014
-    §10, decision I; review of M5.2 for the shared classification).
+    """Rule 18: ``tools/verifiers.py``, ``tools/paths.py`` and ``tools/programs.py`` have no path
+    that writes (ADR 0014 §10, decision I; review of M5.2 for the shared classification; M13.2 for
+    the programs' identity).
 
     A verifier is read-only by construction: it looks at the world and changes nothing, and so
     is the path classification it shares with the tool. Reported in those modules:
@@ -1983,9 +1996,13 @@ def check_machine_access(pkg_root: Path) -> list[Violation]:
         name = module_name(path, pkg_root)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         found.extend(
-            Violation(rule, name, f"{_dotted(node.func)}(...)", node.lineno)
+            Violation(rule, name, f"{_dotted(node.func) or node.func.attr}(...)", node.lineno)  # type: ignore[attr-defined]
             for node in ast.walk(tree)
-            if isinstance(node, ast.Call) and _dotted(node.func) in SPAWNING_CALLS
+            if isinstance(node, ast.Call)
+            and (
+                _dotted(node.func) in SPAWNING_CALLS
+                or (isinstance(node.func, ast.Attribute) and node.func.attr in SPAWNING_METHODS)
+            )
         )
     return found
 
@@ -3860,6 +3877,7 @@ CONSTANTS: tuple[Constant, ...] = (
         reason=_THE_PACKAGE_ITSELF,
     ),
     Constant("machine-access-in-one-place", "SPAWNING_CALLS", DETECTOR),
+    Constant("machine-access-in-one-place", "SPAWNING_METHODS", DETECTOR),
     Constant("machine-access-in-one-place", "SPAWNING_MODULES", DETECTOR),
     # machine-adapter-decides-nothing (rule 34, ADR 0028 §1)
     Constant("machine-adapter-decides-nothing", "MACHINE_ADAPTER_DIR", DETECTOR),

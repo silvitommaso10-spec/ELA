@@ -8,6 +8,11 @@ only at field level: sequences are tuples and free-form JSON payloads are frozen
 The module holds data and nothing else. Task transitions (§14) belong to the Task Engine and
 permission outcomes (§27, §33) to the Guardian: a model here never decides anything.
 
+One pair of functions lives beside the data, and says why at its definition: :func:`visible` and
+:func:`listed`, the one rendering that keeps a surface from being rewritten by what it shows
+(M13.2 dec. 13). Pure, no I/O, and here because this is the leaf the command line and the pages
+both import — rule 28 keeps ``ela.api`` out of the command line.
+
 Two shapes live side by side:
 
 * **Entities** have identity and a life cycle, hence an id and a ``created_at``.
@@ -30,6 +35,7 @@ from uuid import UUID
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     JsonValue,
@@ -54,6 +60,7 @@ __all__ = [
     "CAPABILITY_ID_PATTERN",
     "CapabilityId",
     "CapabilitySpec",
+    "CommandOutput",
     "ContextActivity",
     "ContextApproval",
     "ContextDeadline",
@@ -136,6 +143,8 @@ __all__ = [
     "TaskStep",
     "UserIntent",
     "UtcDatetime",
+    "listed",
+    "visible",
 ]
 
 
@@ -232,8 +241,20 @@ def _thaw_mapping(value: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
     return cast(dict[str, JsonValue], _thaw(dict(value)))
 
 
+def _thawed_input(value: Any) -> Any:
+    """What a payload arrives as, turned back into plain JSON containers before it is validated.
+
+    ``JsonValue`` knows lists and dicts, and a payload the domain has already frozen holds tuples
+    and ``MappingProxyType``: without this, a frozen payload could not be handed to another model —
+    found in M13.2, when ``args`` became the first plan argument that is an array, and the step the
+    API parsed could not become the domain's ``TaskStep``.
+    """
+    return _thaw(value) if isinstance(value, Mapping) else value
+
+
 JsonMapping = Annotated[
     Mapping[str, JsonValue],
+    BeforeValidator(_thawed_input),
     AfterValidator(_freeze_mapping),
     PlainSerializer(_thaw_mapping, return_type=dict[str, JsonValue]),
 ]
@@ -241,7 +262,8 @@ JsonMapping = Annotated[
 
 ``frozen=True`` protects the field, not what the field points at: a plain ``dict`` would still
 be mutable. Values validate as JSON, are stored frozen (mappings become ``MappingProxyType``,
-arrays become tuples) and serialise back to plain JSON containers.
+arrays become tuples) and serialise back to plain JSON containers — and a payload already frozen
+is accepted as it is, so the domain can hand its own values from one model to another.
 """
 
 _METADATA_DESCRIPTION: Final = (
@@ -2125,3 +2147,101 @@ class ContextSnapshot(_DomainModel):
     deadlines: ContextDeadlines
     recent: ContextRecent
     questions: tuple[ContextQuestionStatus, ...] = ()
+
+
+# --------------------------------------------------------------------------------------
+# What a command printed, and how a surface shows it (M13.2, ADR 0047)
+# --------------------------------------------------------------------------------------
+
+
+class CommandOutput(_DomainModel):
+    """One stream of a command, kept as a head and a tail, and **where** it was cut (M13.2 dec. 8).
+
+    The first time ELA keeps a part of something and declares it: a model truncated its answer and
+    said so only in ``finish_reason``, a capture over its ceiling was refused. Here the output of a
+    program is kept — its beginning **and** its end, because the beginning of ``git log`` and the
+    end of ``pytest`` are each the part that matters — and the numbers say what is missing, so that
+    «there is no more» and «I am not showing you the rest» stay two facts (ADR 0032 §9-bis).
+
+    **Every number counts raw bytes**, counted before any decoding: ``cut_after`` is the length of
+    the head, ``shown`` the bytes of the head and of the tail, ``missing`` what is between them,
+    ``total`` what the program wrote. ``replaced`` is how many sequences were not UTF-8 and became
+    U+FFFD. The relations are stated here, as ``ContextWork`` states its own, rather than trusted to
+    the tool that fills them in: numbers that contradict each other are not a stream.
+    """
+
+    head: str
+    tail: str
+    cut_after: Annotated[int, Field(ge=0)]
+    missing: Annotated[int, Field(ge=0)]
+    shown: Annotated[int, Field(ge=0)]
+    total: Annotated[int, Field(ge=0)]
+    replaced: Annotated[int, Field(ge=0)]
+
+    @model_validator(mode="after")
+    def _the_numbers_agree(self) -> CommandOutput:
+        if self.total != self.shown + self.missing:
+            raise ValueError("total is what is shown plus what is missing")
+        if self.cut_after > self.shown:
+            raise ValueError("the cut falls after the head, inside what is shown")
+        if self.missing == 0 and (self.tail or self.cut_after != self.shown):
+            raise ValueError("without a cut everything is in the head and the tail is empty")
+        if self.replaced == 0 and (
+            len(self.head.encode()) != self.cut_after
+            or len(self.tail.encode()) != self.shown - self.cut_after
+        ):
+            # With a replacement one character stands for one to four bytes, and the lengths of
+            # the text can no longer be compared with the raw counts; without one they must match.
+            raise ValueError(
+                "the head is cut_after bytes and the tail is the rest of what is shown"
+            )
+        return self
+
+
+_ESCAPED: Final[dict[int, str]] = {
+    **{code: f"\\x{code:02x}" for code in (*range(0x20), 0x7F, *range(0x80, 0xA0))},
+    **{code: f"\\u{code:04x}" for code in (*range(0x202A, 0x202F), *range(0x2066, 0x206A))},
+    **{code: f"\\u{code:04x}" for code in (0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF)},
+    ord("\\"): "\\\\",
+    # Three controls by the name a reader already knows them by.
+    ord("\n"): "\\n",
+    ord("\t"): "\\t",
+    ord("\r"): "\\r",
+}
+"""Every character that deceives a reader, and how it is written instead.
+
+The C0 controls, DEL and the C1 controls — an ESC or a CSI is a sequence a terminal obeys; the
+bidirectional controls, which reorder a line in a page; the zero-width characters, which hide a
+difference inside a word that looks the same; and the backslash, or ``\\x1b`` written by a program
+and the ESC character would read the same."""
+
+_IN_A_QUESTION: Final = str.maketrans(_ESCAPED)
+_IN_AN_OUTPUT: Final = str.maketrans(
+    {code: seen for code, seen in _ESCAPED.items() if chr(code) not in "\n\t"}
+)
+
+
+def visible(text: str, *, lines: bool) -> str:
+    """``text`` with every character that deceives a reader made into one they can see.
+
+    ``lines`` keeps newline and tab: in the output of a result they are the text. In a question they
+    are made visible too — an argument ``"status\\n--force"`` would read as two — and a carriage
+    return never survives, because it rewrites the line it is on.
+
+    **The one rendering of the three surfaces** (M13.2 dec. 13): the command line, the Command
+    Center and the companion call this, and ``tests/architecture/test_terminal_rules.py`` refuses a
+    surface that does not and a module that holds a copy of the table.
+    """
+    return text.translate(_IN_AN_OUTPUT if lines else _IN_A_QUESTION)
+
+
+def listed(items: tuple[str, ...] | list[str]) -> str:
+    """Arguments as a list whose borders are visible (M13.2 dec. 12).
+
+    Never recomposed into a line of shell and never joined with a comma: ``git status --short`` and
+    ``["git status --short"]`` are two commands, ``["a, b"]`` and ``["a", "b"]`` two lists. Each
+    item in quotes, rendered as a question renders, with a quote inside escaped after the
+    backslashes are: so ``\\"`` can only ever be a quote of the argument.
+    """
+    quoted = (visible(item, lines=False).replace('"', '\\"') for item in items)
+    return "[" + ", ".join(f'"{item}"' for item in quoted) + "]"

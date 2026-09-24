@@ -50,6 +50,7 @@ __all__ = [
     "FS_WRITE",
     "FS_WRITE_TOOL_NAME",
     "CREATES",
+    "FILE",
     "OVERWRITES",
     "READS",
     "IO_ERROR",
@@ -77,6 +78,11 @@ Three sentences and not one table of two: «overwrites a file that is already th
 write and false of a read, and an advisory that says the wrong thing teaches the reader to stop
 reading it. No surface holds any of them — they travel with the question.
 """
+
+FILE: Final = "file"
+"""What the target of ``fs.read`` and ``fs.write`` is called — the tool's word, not a surface's
+(M13.2 dec. 12): a page that wrote «Il file» beside every target would be lending it to a
+program."""
 
 NO_ROOT: Final = "fs.no_root"
 """The declared root is not there, and ELA does not make it (M13.1 dec. A).
@@ -144,6 +150,7 @@ class FsReadTool(Tool):
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes", "content"})
     idempotent: ClassVar[bool] = True
+    audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Reading twice leaves the disk as it was: a retry after a crash costs a second read."""
 
     def __init__(
@@ -176,7 +183,7 @@ class FsReadTool(Tool):
         if problem is not None:
             code = problem.code if problem.code in READ_REFUSALS else IO_ERROR
             return Outcome({}, code, problem.message(path)), None
-        return None, Target(resolved=str(self._root / path), exists=True, does=READS)
+        return None, Target(resolved=str(self._root / path), exists=True, does=READS, label=FILE)
 
     async def _run(self, arguments: JsonMapping) -> Outcome:
         refused, _ = self._look(arguments)
@@ -216,6 +223,7 @@ class FsWriteTool(Tool):
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes", "overwrote"})
     idempotent: ClassVar[bool] = False
+    audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """**Not idempotent, and this is the difference from a note.**
 
     ``workspace.write_note`` may be repeated because rewriting the same body leaves the same
@@ -270,7 +278,7 @@ class FsWriteTool(Tool):
         if there is not overwrite:
             return Outcome({}, OVERWRITE_MISMATCH, _moved(path, declared=overwrite)), None
         does = OVERWRITES if there else CREATES
-        return None, Target(resolved=str(self._root / path), exists=there, does=does)
+        return None, Target(resolved=str(self._root / path), exists=there, does=does, label=FILE)
 
     async def _run(self, arguments: JsonMapping) -> Outcome:
         refused, _ = self._look(arguments)

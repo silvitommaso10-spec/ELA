@@ -96,6 +96,7 @@ REFUSED_BY_BOTH: list[tuple[str, Setup, str]] = [
             "./a.md",
             "a/../b.md",
             "a\0b.md",
+            "a\ud800b.md",
         ]
     ],
     ("directory link outside", _dir_link_outside, PATH_OUTSIDE_ROOT),

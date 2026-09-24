@@ -24,6 +24,10 @@ systems. Both hand over the machine's own words; ``ela.devices.local`` decides w
 M12.4 gives the second system a voice, System.Speech through the same ``powershell.exe``, and the
 first child that receives its words on stdin (``spawn_with_input``).
 
+M13.2 adds the first launcher of **somebody else's** programs — the ones the user declared in
+``ELA_TERMINAL_PROGRAMS`` —, in ``launcher.py``: a process group of its own, emptied whenever ELA
+stops waiting, and nothing decided here (rule 34).
+
 M11.1 adds a fourth, and it is Apple's again (``say(1)``) — and the first that **acts outside
 the screen** rather than reading the machine. It lives here because rule 32's content is *ELA
 touches the operating system in one place*: the door, not the word "perception". That makes
@@ -55,6 +59,7 @@ from ela.infrastructure.machine.darwin import (
     spawn_with_input,
     sweep_speech_files,
 )
+from ela.infrastructure.machine.launcher import ProcessGroupLauncher
 from ela.infrastructure.machine.listening import (
     DarwinListening,
     UnsupportedListening,
@@ -100,6 +105,7 @@ __all__ = [
     "Play",
     "Speak",
     "OnlineSpeechCommand",
+    "ProcessGroupLauncher",
     "spawn_with_audio",
     "sweep_speech_files",
     "SCREENCAPTURE",

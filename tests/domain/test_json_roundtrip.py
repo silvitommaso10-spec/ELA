@@ -7,8 +7,9 @@ import json
 import pytest
 from pydantic import BaseModel
 
-from ela.domain import CapabilitySpec, Device, ProviderUsage, Task, TaskPlan
+from ela.domain import CapabilitySpec, Device, ProviderUsage, Task, TaskPlan, TaskStep
 from tests.domain.examples import EXAMPLES
+from tests.domain.examples import TASK_STEP as STEP
 
 MODELS = sorted(EXAMPLES, key=lambda model: model.__name__)
 
@@ -68,3 +69,33 @@ def test_json_schema_is_generated() -> None:
     schema = Device.model_json_schema()
     assert schema["properties"]["privacy"]
     assert schema["additionalProperties"] is False
+
+
+def test_a_frozen_payload_with_an_array_can_be_handed_to_another_model() -> None:
+    """Found implementing M13.2: ``args`` is the first plan argument that is an array.
+
+    A ``JsonMapping`` freezes an array into a tuple, and ``JsonValue`` refused a tuple — so a step
+    parsed by the API could not become the domain's ``TaskStep``: «input was not a valid JSON
+    value». Nothing had an array before, and a mapping inside a mapping had the same fate
+    (``model.complete``'s ``parameters``). Frozen is what the domain hands around, so frozen must
+    be what it accepts.
+    """
+    first = TaskStep(
+        id=STEP.id,
+        created_at=STEP.created_at,
+        goal=STEP.goal,
+        required_capabilities=STEP.required_capabilities,
+        arguments={"args": ["a", "b"], "parameters": {"max_tokens": 10, "stop": ["x"]}},
+        risk=STEP.risk,
+        expected_result=STEP.expected_result,
+        requires_authorization=STEP.requires_authorization,
+    )
+
+    again = TaskStep.model_validate(first.model_dump())
+    handed = TaskStep(**{**first.model_dump(exclude={"arguments"}), "arguments": first.arguments})
+
+    assert handed.arguments == first.arguments == again.arguments
+    assert handed.model_dump()["arguments"] == {
+        "args": ["a", "b"],
+        "parameters": {"max_tokens": 10, "stop": ["x"]},
+    }

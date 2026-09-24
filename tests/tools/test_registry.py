@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from ela.domain import CapabilityId
-from ela.permissions import MODEL_COMPLETE, catalogue_v01
+from ela.permissions import MODEL_COMPLETE, TERMINAL_RUN, catalogue_v01
 from ela.ports import AlreadyExistsError
 from ela.testing.fakes import (
     FakeClock,
@@ -52,6 +52,7 @@ from ela.tools import (
     verifiers_v01,
 )
 from tests.routing.support import routing_for
+from tests.tools.terminals import a_launcher, a_terminal, no_programs
 
 
 def registry_of(root: Path) -> ToolRegistry:
@@ -232,9 +233,15 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         voice_id="VZOd9FMXDnXRZpGn0thg",
         model="eleven_flash_v2_5",
         fs_root=tmp_path / "files",
+        terminal=a_terminal(tmp_path / "files"),
+        launcher=a_launcher(),
     )
     verifiers = production_verifiers(
-        root=tmp_path, router=router, captures=captures, fs_root=tmp_path / "files"
+        root=tmp_path,
+        router=router,
+        captures=captures,
+        fs_root=tmp_path / "files",
+        programs=no_programs(),
     )
     return tools, verifiers, captures
 
@@ -260,6 +267,7 @@ def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) 
         VOICE_SPEAK_ONLINE,
         FS_READ,
         FS_WRITE,
+        TERMINAL_RUN,
     ]
     assert {v.capability_id for v in verifiers.verifiers()} == {
         t.capability_id for t in tools.tools()

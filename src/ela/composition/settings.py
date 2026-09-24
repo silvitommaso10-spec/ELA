@@ -17,8 +17,10 @@ Both keep the ``ELA_`` prefix: one namespace, one ``.env``.
 from __future__ import annotations
 
 import ipaddress
+import os
 import platform
 import re
+import stat
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Final
@@ -81,6 +83,7 @@ __all__ = [
     "CoreSettings",
     "Settings",
     "TAILNET_RANGES",
+    "TerminalSettings",
 ]
 
 DEFAULT_API_HOST: Final = "127.0.0.1"
@@ -469,6 +472,108 @@ class FilesystemSettings(BaseSettings):
         return self.fs_scope
 
 
+DEFAULT_TERMINAL_TIMEOUT_SECONDS: Final = 120
+MAX_TERMINAL_TIMEOUT_SECONDS: Final = 900
+"""How long ELA waits for a command, and the most it may be told to (M13.2 dec. 7).
+
+**Not measured, and why** (ADR 0029 §14, ADR 0030 §14 want every timeout measured on its own work):
+the work of a terminal is whatever program the user chooses, and it has no median. What is measured
+is the other half — how long ELA takes, from the timeout, to have no process of the command's group
+left —, once, in ADR 0047. The ceiling has the shape of the network knobs (``le=MAX``): a timeout
+without one is a door left open by writing a big number."""
+DEFAULT_TERMINAL_OUTPUT_MAX_BYTES: Final = 65536
+MAX_TERMINAL_OUTPUT_MAX_BYTES: Final = 1048576
+"""How much of each stream a result keeps — half the head, half the tail — and the most (dec. 8)."""
+
+PROGRAMS_EXAMPLE: Final = '["usr/bin/git"]'
+
+
+class TerminalSettings(BaseSettings):
+    """What ``terminal.run`` may launch, and for how long (M13.2 dec. 7, 8, 16; ADR 0047).
+
+    **``ELA_TERMINAL_PROGRAMS`` has no default, and ``[]`` is an answer.** ELA does not choose what
+    may run on the user's machine, as it does not choose their folder (M13.1 dec. A): without the
+    line ELA does not start, and the message says the line to write and that ``[]`` — no program —
+    is admitted. One line of JSON, each program **relative to** ``/`` in the grammar of every scope.
+
+    **At start-up only three things are refused**, each named with the entry and how to write it: an
+    entry the grammar does not admit — a leading slash, a ``..`` —, a folder, which would admit
+    everything in it, and a file that does not execute. **Nothing else** (Domanda 3 of M13.2): not
+    the Python of ELA, not its tree or its ``.venv/bin`` — any interpreter admitted reaches the same
+    things, and the defence is the question at every use (dec. 2) —, and not an entry that is not
+    there, whose every call is refused before the question with ``terminal.no_program``.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="ELA_", env_file=".env", extra="ignore")
+
+    terminal_programs: list[str] | None = None
+    """``ELA_TERMINAL_PROGRAMS``: the scope of ``terminal.run``, one line of JSON."""
+    terminal_timeout_seconds: Annotated[int, Field(gt=0, le=MAX_TERMINAL_TIMEOUT_SECONDS)] = (
+        DEFAULT_TERMINAL_TIMEOUT_SECONDS
+    )
+    terminal_output_max_bytes: Annotated[int, Field(gt=0, le=MAX_TERMINAL_OUTPUT_MAX_BYTES)] = (
+        DEFAULT_TERMINAL_OUTPUT_MAX_BYTES
+    )
+
+    @model_validator(mode="after")
+    def _declared_and_runnable(self) -> TerminalSettings:
+        if self.terminal_programs is None:
+            raise ValueError(
+                "ELA cannot start without the programs terminal.run may launch: "
+                "ELA_TERMINAL_PROGRAMS is missing. Write it in .env as one line of JSON, each "
+                "program relative to /, for example:\n"
+                f"    ELA_TERMINAL_PROGRAMS={PROGRAMS_EXAMPLE}\n"
+                "or, for no program at all — an answer, not an error:\n"
+                "    ELA_TERMINAL_PROGRAMS=[]"
+            )
+        for entry in self.terminal_programs:
+            refused = _not_a_program(entry)
+            if refused is not None:
+                raise ValueError(f"ELA_TERMINAL_PROGRAMS: {refused}")
+        return self
+
+    @property
+    def programs(self) -> tuple[str, ...]:
+        assert self.terminal_programs is not None  # noqa: S101 — the validator refuses the start-up
+        return tuple(self.terminal_programs)
+
+    @property
+    def timeout_seconds(self) -> int:
+        return self.terminal_timeout_seconds
+
+    @property
+    def output_max_bytes(self) -> int:
+        return self.terminal_output_max_bytes
+
+
+def _not_a_program(entry: str) -> str | None:
+    """Why ``entry`` cannot be a program ELA launches, or ``None``: the three refusals, no more."""
+    if not is_valid_scope_entry(entry) or "\0" in entry:
+        written = entry.lstrip("/")
+        hint = (
+            f"write {written!r}"
+            if entry.startswith("/") and is_valid_scope_entry(written)
+            else "write the path after the first slash, for example 'usr/bin/git'"
+        )
+        return (
+            f"{entry!r} is not a path relative to / without empty, '.' or '..' segments: {hint}. "
+            "Programs are written relative to /, as a scope is"
+        )
+    resolved = os.path.realpath("/" + entry)
+    try:
+        mode = os.stat(resolved).st_mode
+    except OSError:
+        return None  # not there: it does not stop ELA, and every call of it asks nothing
+    if stat.S_ISDIR(mode):
+        return (
+            f"{entry!r} is a folder, and a folder would admit every program in it: name the "
+            "programs one by one"
+        )
+    if not stat.S_ISREG(mode) or not os.access(resolved, os.X_OK):
+        return f"{entry!r} is not a file that executes"
+    return None
+
+
 class NodeSettings(BaseSettings):
     """What a node reads from the environment, from ``ELA_NODE_*`` (M12.3).
 
@@ -567,6 +672,8 @@ class Settings(BaseModel):
     still sees every question when the user opens the page."""
     context: ContextSettings
     filesystem: FilesystemSettings
+    terminal: TerminalSettings
+    """What ``terminal.run`` may launch and for how long (M13.2): required, and ``[]`` admitted."""
     node: NodeSettings
     """What a node on this machine reads (M12.3). Held here so that ``.env.example`` and
     ``VARIABLES`` document it with everything else — the Core itself reads none of it."""
@@ -644,30 +751,46 @@ class Settings(BaseModel):
 
         The ``.env`` it reads is the one in the working directory, as every settings class of
         ELA already does: a test that must not see the developer's own runs from elsewhere.
+
+        **Every section is read before anything is refused** (M13.2): a ``.env`` that misses the
+        lines of two sections is told about both at once. Until M13.2 the first section that failed
+        stopped the reading, and with ``ELA_TERMINAL_PROGRAMS`` beside ``ELA_FS_*`` the message
+        would have named one required line and hidden the other.
         """
+        sections: dict[str, type[BaseSettings]] = {
+            "persistence": PersistenceSettings,
+            "workspace": WorkspaceSettings,
+            "devices": DeviceSettings,
+            "anthropic": AnthropicSettings,
+            "routing": RoutingSettings,
+            "api": ApiSettings,
+            "core": CoreSettings,
+            "filesystem": FilesystemSettings,
+            "terminal": TerminalSettings,
+            "perception": PerceptionSettings,
+            "captures": CaptureSettings,
+            "voice": VoiceSettings,
+            "listen": ListenSettings,
+            "elevenlabs": ElevenLabsSettings,
+            "ntfy": NtfySettings,
+            "context": ContextSettings,
+            "node": NodeSettings,
+        }
+        built: dict[str, BaseSettings] = {}
+        problems: list[str] = []
+        for name, section in sections.items():
+            try:
+                built[name] = section()
+            except ValidationError as invalid:
+                problems.extend(_problems(invalid))
+            except SettingsError as unreadable:
+                raise ConfigurationError(cannot_read(unreadable)) from unreadable
+        if problems:
+            raise ConfigurationError(_NOT_CONFIGURED + "\n".join(problems))
         try:
-            return cls(
-                persistence=PersistenceSettings(),
-                workspace=WorkspaceSettings(),
-                devices=DeviceSettings(),
-                anthropic=AnthropicSettings(),
-                routing=RoutingSettings(),
-                api=ApiSettings(),
-                core=CoreSettings(),
-                filesystem=FilesystemSettings(),
-                perception=PerceptionSettings(),
-                captures=CaptureSettings(),
-                voice=VoiceSettings(),
-                listen=ListenSettings(),
-                elevenlabs=ElevenLabsSettings(),
-                ntfy=NtfySettings(),
-                context=ContextSettings(),
-                node=NodeSettings(),
-            )
+            return cls(**built)  # type: ignore[arg-type]
         except ValidationError as invalid:
             raise ConfigurationError(explain(invalid)) from invalid
-        except SettingsError as unreadable:
-            raise ConfigurationError(cannot_read(unreadable)) from unreadable
 
 
 class NodeConfig(BaseModel):
@@ -731,12 +854,20 @@ def explain(invalid: ValidationError) -> str:
     reads as two problems, the second of which nobody wrote — and these messages are read by a
     person who has just written a ``.env`` (M13.1 dec. R).
     """
+    return _NOT_CONFIGURED + "\n".join(_problems(invalid))
+
+
+_NOT_CONFIGURED: Final = "ELA is not configured:\n"
+
+
+def _problems(invalid: ValidationError) -> list[str]:
+    """One block per problem, each naming its variable and indented on every line."""
     lines = []
     for error in invalid.errors():
         message = error["msg"].removeprefix("Value error, ").replace("\n", "\n  ")
         location = error["loc"]
         lines.append(f"  {_variable(location)}: {message}" if location else f"  {message}")
-    return "ELA is not configured:\n" + "\n".join(lines)
+    return lines
 
 
 def cannot_read(unreadable: SettingsError) -> str:

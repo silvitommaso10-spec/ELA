@@ -43,6 +43,7 @@ from ela.tools import (
     PERCEPTION_CAPTURE_SCREEN,
     PERCEPTION_LISTEN,
     PERCEPTION_READ_SCREEN_TEXT,
+    TERMINAL_RUN,
     VOICE_SPEAK,
     VOICE_SPEAK_ONLINE,
     WORKSPACE_WRITE_NOTE,
@@ -59,6 +60,7 @@ from ela.tools import (
 from ela.tools.verifiers import SPEECH_TEXT_MATCHES, SPEECH_TOOK_REAL_TIME
 from tests.routing.support import routing_for
 from tests.tools.support import allowed
+from tests.tools.terminals import no_programs
 from tests.tools.test_verifiers import MODEL_ARGUMENTS, completion, succeeded
 from tests.tools.test_voice_verifier import ARGUMENTS as SPEECH_ARGUMENTS
 from tests.tools.test_voice_verifier import spoken
@@ -73,12 +75,15 @@ STAYS = frozenset(
         PERCEPTION_LISTEN,
         FS_READ,
         FS_WRITE,
+        TERMINAL_RUN,
     }
 )
 """ADR 0038 §14, as ADR 0045 extends it: the ones whose verifier reads the disk or the store of
 the machine it runs on. ``fs.read`` and ``fs.write`` joined them in M13.1, and **not because
 nobody sends them**: their verifier reads the Core's disk, where a file with the same path may
-exist — the false positive of §14, one root wider."""
+exist — the false positive of §14, one root wider. And ``terminal.run`` in M13.2 (decision 11): its
+verifier reads the identity of a program on the Core's disk — ``/usr/bin/git`` of the Core, not of
+a node — and a non-travel left implied is a permission nobody wrote."""
 NOTE = "notes/riunione.md"
 NOTE_ARGUMENTS = {"path": NOTE, "body": "# Riunione\n\nGiovedì alle dieci.\n"}
 
@@ -103,6 +108,7 @@ def production(tmp_path: Path, provider: FakeModelProvider) -> VerifierRegistry:
         router=router,
         captures=captures,
         fs_root=tmp_path / "files",
+        programs=no_programs(),
     )
 
 

@@ -118,6 +118,8 @@ VALUE_OBJECTS = frozenset(
         "ContextEvent",
         "ContextRecent",
         "ContextQuestionStatus",
+        # One stream of a command (M13.2): a value inside a result, whose instant is the result's.
+        "CommandOutput",
     }
 )
 

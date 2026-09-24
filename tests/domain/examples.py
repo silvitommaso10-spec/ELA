@@ -31,6 +31,7 @@ from ela.domain import (
     AuthorizationId,
     CapabilityId,
     CapabilitySpec,
+    CommandOutput,
     ContextActivity,
     ContextApproval,
     ContextDeadline,
@@ -563,6 +564,17 @@ CONTEXT_WORK: Final = ContextWork(
     pending_approvals=(CONTEXT_APPROVAL,),
 )
 
+COMMAND_OUTPUT: Final = CommandOutput(
+    head="1\n2\n",
+    tail="99\n100\n",
+    cut_after=4,
+    missing=280,
+    shown=11,
+    total=291,
+    replaced=0,
+)
+"""A stream of ``seq 1 100`` kept as four bytes of head and seven of tail (M13.2 dec. 8)."""
+
 CONTEXT_DEADLINE: Final = ContextDeadline(
     task_id=TASK.id,
     goal=TASK.goal,
@@ -606,6 +618,7 @@ CONTEXT_SNAPSHOT: Final = ContextSnapshot(
 EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
     type(example): example
     for example in (
+        COMMAND_OUTPUT,
         ELA_ACTOR,
         DEVICE_CAPABILITY,
         PROVIDER_USAGE,

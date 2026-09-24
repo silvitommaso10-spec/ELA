@@ -10,12 +10,18 @@ M12.3c adds the third, the power source, and it is **chosen by naming the system
 machine's words (``ela.infrastructure.machine``), ``ela.devices.local`` says what they are worth,
 and what is here only puts the two together — so a node and ``local`` read the same machine the
 same way.
+
+M13.2 adds the limits of what a launch passes to a program, chosen the same way: ``execve``'s on a
+POSIX system — the total, and on Linux one more for a single argument —, the command line of
+``CreateProcess`` on Windows, where ``os.sysconf`` does not exist.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import Final
 from uuid import UUID, uuid4
 
 from ela.devices import power_drawn_from, power_on_the_line
@@ -28,11 +34,15 @@ from ela.infrastructure.machine import (
     power_status,
     spawn,
 )
+from ela.tools.terminal import ArgumentLimits
 
 __all__ = [
+    "LINUX_PAGES_IN_ONE_ARGUMENT",
+    "WINDOWS_COMMAND_LINE",
     "PowerReading",
     "SystemClock",
     "UuidGenerator",
+    "argument_limits",
     "power_nobody_reads",
     "power_of_a_mac",
     "power_of_a_pc",
@@ -103,3 +113,32 @@ def power_reading(system: str) -> PowerReading:
     if system == "Windows":
         return power_of_a_pc
     return power_nobody_reads
+
+
+WINDOWS_COMMAND_LINE: Final = 32767
+"""The longest command line ``CreateProcess`` takes, in characters. The terminal does not run on a
+PC before M13.3 (ADR 0047 §13); the number is here so that ``build`` starts there, and it is the
+real one, not a placeholder."""
+
+
+LINUX_PAGES_IN_ONE_ARGUMENT: Final = 32
+"""``MAX_ARG_STRLEN`` is ``PAGE_SIZE * 32`` (``include/uapi/linux/binfmts.h``): one argument, its
+closing NUL included, whatever the total allows — 128 KiB with pages of 4 KiB."""
+
+
+def argument_limits(system: str) -> ArgumentLimits:
+    """What a launch may pass to a program on the system named (ADR 0047 §5): an ``if`` per system,
+    as :func:`power_reading`, so the arm this suite does not run on is proved by name.
+
+    macOS has no limit of its own for one argument — measured on 2026-09-24: one argument of
+    1 048 412 bytes starts, and the kernel's count is ELA's to the byte —, so there ``one`` is the
+    total, as it is for a system nobody measured.
+    """
+    if system == "Windows":
+        return ArgumentLimits(total=WINDOWS_COMMAND_LINE, one=WINDOWS_COMMAND_LINE)
+    total = os.sysconf("SC_ARG_MAX")
+    if system == "Linux":
+        return ArgumentLimits(
+            total=total, one=os.sysconf("SC_PAGESIZE") * LINUX_PAGES_IN_ONE_ARGUMENT
+        )
+    return ArgumentLimits(total=total, one=total)

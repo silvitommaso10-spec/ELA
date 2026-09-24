@@ -35,6 +35,7 @@ from tests.docs.test_adr_listening import ports_before
 from tests.docs.test_adr_nodes import documented_rules
 from tests.docs.test_adr_placement import _rules_up_to
 from tests.executive import test_assignment_recovery as recovery
+from tests.tools.terminals import a_launcher, a_terminal, no_programs
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0038-work-protocol.md"
@@ -118,7 +119,14 @@ def test_the_conseguenze_count_the_rules_and_the_capabilities_of_today() -> None
     assert "**cinquantadue**" in conseguenze()
     assert len(_rules_up_to(52)) == 52
     assert "**venticinque**" in conseguenze()
-    assert len(ports_before(ADR_PATH.with_name("0043-companion.md"))) == 25
+    assert (
+        len(
+            ports_before(
+                ADR_PATH.with_name("0043-companion.md"), ADR_PATH.with_name("0047-terminal.md")
+            )
+        )
+        == 25
+    )
     assert "**restano otto**" in conseguenze()
 
 
@@ -141,7 +149,11 @@ def test_the_verifier_table_says_what_each_verifier_declared_when_it_was_written
     """
     captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
     verifiers = production_verifiers(
-        root=tmp_path, router=FakeModelRouter(), captures=captures, fs_root=tmp_path / "files"
+        root=tmp_path,
+        router=FakeModelRouter(),
+        captures=captures,
+        fs_root=tmp_path / "files",
+        programs=no_programs(),
     )
     documented = {
         match.group(1): match.group(2) == "True"
@@ -170,11 +182,20 @@ def test_fifteen_is_honoured_by_one_tool_of_the_eight_this_adr_saw(tmp_path: Pat
     """
     captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
     verifiers = production_verifiers(
-        root=tmp_path, router=FakeModelRouter(), captures=captures, fs_root=tmp_path / "files"
+        root=tmp_path,
+        router=FakeModelRouter(),
+        captures=captures,
+        fs_root=tmp_path / "files",
+        programs=no_programs(),
     )
     travels = {v.capability_id for v in verifiers.verifiers() if not v.reads_the_machine}
     tools = production_tools(
-        root=tmp_path, **_FAKE_MACHINE, captures=captures, fs_root=tmp_path / "files"
+        root=tmp_path,
+        **_FAKE_MACHINE,
+        captures=captures,
+        fs_root=tmp_path / "files",
+        terminal=a_terminal(tmp_path / "files"),
+        launcher=a_launcher(),
     )
 
     repeatable = {

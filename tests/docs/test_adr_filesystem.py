@@ -23,6 +23,7 @@ from ela.tools import (
     CaptureStore,
     production_verifiers,
 )
+from tests.tools.terminals import no_programs
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0045-filesystem-and-high.md"
 VERIFIER_ROW = re.compile(
@@ -41,7 +42,11 @@ def catalogue_today() -> tuple[str, ...]:
 def verifiers_today(tmp_path: Path):  # type: ignore[no-untyped-def]
     captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
     return production_verifiers(
-        root=tmp_path, router=FakeModelRouter(), captures=captures, fs_root=tmp_path / "files"
+        root=tmp_path,
+        router=FakeModelRouter(),
+        captures=captures,
+        fs_root=tmp_path / "files",
+        programs=no_programs(),
     )
 
 
@@ -50,14 +55,21 @@ def verifiers_today(tmp_path: Path):  # type: ignore[no-untyped-def]
 # ----------------------------------------------------------------------------------------
 
 
-def test_the_capabilities_of_today_are_ten_and_this_adr_says_so() -> None:
-    assert len(catalogue_today()) == 10
+def test_the_capabilities_it_saw_were_ten_and_this_adr_says_so() -> None:
+    """The pin on today's total moved on to ADR 0047 (``test_adr_terminal.py``), as it came here
+    from ADR 0038: what stays is that ADR 0045 counted the catalogue it saw, before the terminal."""
+    assert len([one for one in catalogue_today() if one != "terminal.run"]) == 10
     assert "restano dieci" in adr_text()
 
 
 def test_four_travel_and_six_do_not(tmp_path: Path) -> None:
-    """ADR 0038 §14 said four and four, of the eight it saw. Two more stay, and it is six."""
-    declared = {v.capability_id: v.reads_the_machine for v in verifiers_today(tmp_path).verifiers()}
+    """ADR 0038 §14 said four and four, of the eight it saw. Two more stay, and it is six — of the
+    ten ADR 0045 saw; the terminal is the seventh that stays, and ADR 0047 counts it."""
+    declared = {
+        v.capability_id: v.reads_the_machine
+        for v in verifiers_today(tmp_path).verifiers()
+        if v.capability_id != "terminal.run"
+    }
 
     assert sorted(declared.values()) == [False] * 4 + [True] * 6
     assert declared[FS_READ] is True

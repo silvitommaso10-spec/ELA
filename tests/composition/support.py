@@ -30,6 +30,7 @@ CAPTURES = "ELA_CAPTURE_DIR"
 POLL = "ELA_NODE_POLL_SECONDS"
 FS_ROOT = "ELA_FS_ROOT"
 FS_SCOPE = "ELA_FS_SCOPE"
+TERMINAL_PROGRAMS = "ELA_TERMINAL_PROGRAMS"
 
 
 def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> None:
@@ -53,6 +54,10 @@ def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> No
     # to write and the one the example plans use, so the suite walks the paths of the guide.
     monkeypatch.setenv(FS_ROOT, str(_declared_root(tmp_path)))
     monkeypatch.setenv(FS_SCOPE, "ELA")
+    # The programs ``terminal.run`` may launch (M13.2 dec. 16): required, and ``[]`` is an answer.
+    # No program unless a test declares one — a suite that launched programs by default would be
+    # reading the machine it runs on.
+    monkeypatch.setenv(TERMINAL_PROGRAMS, "[]")
     # Off by default, but a fixture that turned it on before this ran keeps it on: the
     # environment has already been emptied of ``ELA_`` by ``_only_the_declared_environment``,
     # so anything present here was put there by the test on purpose.
