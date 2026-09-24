@@ -13,6 +13,16 @@ of its content — and every later reading is compared with that. A path the Gua
 because it starts with a declared one (``usr/bin/git/x``, the prefix of the scope's grammar) is not
 in the table, and is refused as :data:`NOT_DECLARED`: a file has no children.
 
+**Absent is not changed** (review of M13.2, decision 4). A file that was there at the start and is
+not there now is :data:`PROGRAM_GONE`: there is nothing left to compare, and «changed» would claim a
+comparison nobody made. An entry that was never there stays :data:`NO_PROGRAM`, and one that
+appeared after the start is a change — the start fixed its absence.
+
+**The hash is the caller's to put in a thread**: ``identity_of`` reads the whole file, and a
+declared program can be as large as it likes — 357 MB hash in 119,5 ms on this Mac (ADR 0047 §4).
+The functions here stay synchronous, and the tool, the verifier and the composition call them with
+``asyncio.to_thread``.
+
 **What this does not protect**, declared: a program changed **before** the start is the program the
 start fixed; and the window between the last comparison and the ``exec`` stays open — the one ADR
 0045 §7 declares between ``classify`` and ``open`` —, because closing it would mean executing from a
@@ -33,6 +43,7 @@ __all__ = [
     "NOT_DECLARED",
     "NO_PROGRAM",
     "PROGRAM_CHANGED",
+    "PROGRAM_GONE",
     "PROGRAM_CODES",
     "Identity",
     "ProgramProblem",
@@ -43,11 +54,17 @@ __all__ = [
 NOT_DECLARED: Final = "terminal.not_declared"
 """A program that is not one of those whose identity was fixed at start-up."""
 NO_PROGRAM: Final = "terminal.no_program"
-"""Nothing that runs is there now: missing, a dangling link, a file that does not execute."""
+"""Nothing that runs is there now, and it is not a program that went away: an entry that was never
+there, or a file there that does not execute or cannot be read."""
 PROGRAM_CHANGED: Final = "terminal.program_changed"
 """The file the declared path leads to is not the one of the start-up — another file, or another
 content, or one that was not there then (dec. 4)."""
-PROGRAM_CODES: Final[frozenset[str]] = frozenset({NOT_DECLARED, NO_PROGRAM, PROGRAM_CHANGED})
+PROGRAM_GONE: Final = "terminal.program_gone"
+"""The program of the start-up is not there any more: nothing at the path, or a link that leads
+nowhere. Absent, not changed — there is nothing to compare (review of M13.2, decision 4)."""
+PROGRAM_CODES: Final[frozenset[str]] = frozenset(
+    {NOT_DECLARED, NO_PROGRAM, PROGRAM_CHANGED, PROGRAM_GONE}
+)
 
 CHUNK: Final = 1 << 20
 
@@ -133,6 +150,11 @@ class Programs:
                 f"{full!r} is not one of the programs declared in ELA_TERMINAL_PROGRAMS",
             )
         now = identity_of(entry)
+        if now.runs is None and start.executable:
+            return ProgramProblem(
+                PROGRAM_GONE,
+                f"{full!r} was there when ELA started and is not there now: nothing is left to run",
+            )
         if not now.executable:
             return ProgramProblem(
                 NO_PROGRAM, f"{full!r} is not there, does not execute, or cannot be read"

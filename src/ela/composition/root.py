@@ -27,7 +27,7 @@ from ela.composition.system import (
     PowerReading,
     SystemClock,
     UuidGenerator,
-    argument_limit,
+    argument_limits,
     power_reading,
 )
 from ela.context import ContextCore
@@ -503,12 +503,13 @@ async def build(
             recognition = UnsupportedTextRecognition()
             speech = UnsupportedSpeech()
             listening = UnsupportedListening()
-        # The terminal (M13.2): the identity of every declared program fixed **now**, once; the
-        # scope of M13.1 for the folder a command starts from; HOME and TMPDIR computed here, once,
-        # and never read from ``os.environ`` by the tool (decision 1); the limit of what ``execve``
-        # passes; and the launcher that stops a command's group on the stop signal.
+        # The terminal (M13.2): the identity of every declared program fixed **now**, once, in a
+        # thread because it hashes each whole program (review of M13.2, 5a); the scope of M13.1
+        # for the folder a command starts from; HOME and TMPDIR computed here, once, and never
+        # read from ``os.environ`` by the tool (decision 1); the limits of what ``execve`` passes;
+        # and the launcher that stops a command's group on the stop signal.
         stopping = asyncio.Event()
-        programs = Programs.fixed(settings.terminal.programs)
+        programs = await asyncio.to_thread(Programs.fixed, settings.terminal.programs)
         terminal = Terminal(
             programs=programs,
             root=settings.filesystem.root,
@@ -517,7 +518,7 @@ async def build(
             output_max_bytes=settings.terminal.output_max_bytes,
             home=str(Path.home()),
             temporary=tempfile.gettempdir(),
-            argument_limit=argument_limit(platform.system()),
+            argument_limits=argument_limits(platform.system()),
         )
         tools = production_tools(
             root=root,

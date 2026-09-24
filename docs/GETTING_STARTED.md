@@ -1772,7 +1772,7 @@ riga del timeout e riavvia.
 **Se non si vede così**: se il telefono mostra un errore mentre il comando sta ancora girando, o
 dopo, annota che cosa dice e dopo quanti secondi: è un difetto da riparare con il suo test prima.
 
-### 9. Un programma cambiato mentre ELA gira — e la pulizia
+### 9. Un programma cambiato, o sparito, mentre ELA gira — e la pulizia
 
 ELA fissa l'identità di ogni programma dichiarato **all'avvio**, e la riconfronta prima di chiedere e
 prima di eseguire. Per vederlo serve un programma che puoi cambiare tu:
@@ -1805,6 +1805,32 @@ uv run ela task run <id>
 che dice di riavviare ELA per accettare il programma nuovo. E se adesso approvi la domanda del primo
 task e lo rilanci, il rifiuto arriva **prima dell'esecuzione**, con lo stesso codice: il file a cui
 avevi detto sì non è più quello.
+
+**Poi sparito.** Riavvia ELA, che fissa il programma com'è adesso, apri una domanda con lo stesso
+piano senza rispondere, e **cancella il file**:
+
+```
+uv run ela task create "l'eco che sparirà"
+uv run ela task plan <id> --file /tmp/eco.json
+uv run ela task run <id>                 # la domanda nasce: non rispondere ancora
+rm ~/ela-prova/bin/eco
+uv run ela task create "l'eco sparito"
+uv run ela task plan <id> --file /tmp/eco.json
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**: `FAILED` **senza domanda**, con **`terminal.program_gone`** — non
+`terminal.program_changed`: il file non è un altro, non c'è — e una frase che dice il fatto:
+
+```
+'/Users/tu/ela-prova/bin/eco' was there when ELA started and is not there now: nothing is left to run
+```
+
+E se approvi la domanda aperta e rilanci quel task, il rifiuto arriva **prima dell'esecuzione**, con
+lo stesso codice. Il terzo momento — un programma che sparisce *mentre* gira, come un
+disinstallatore che si cancella da sé — non si prova a mano: lo afferma un test dell'executor, e il
+passo finisce `FAILED` per verifica, con `terminal.program_gone` e l'uscita del programma nel
+risultato, perché ELA non può più confermare che ciò che ha girato fosse il programma dichiarato.
 
 **La pulizia**, che fa parte della prova: togli `usr/bin/time`, `usr/bin/env` e
 `Users/tu/ela-prova/bin/eco` da `ELA_TERMINAL_PROGRAMS` (o scrivi `[]`), cancella `~/ela-prova`, e

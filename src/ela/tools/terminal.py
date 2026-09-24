@@ -16,6 +16,11 @@ argument no process can receive (dec. 5). What cannot be known is not pretended:
 with which code, what it prints, what it touches. A file the kernel refuses to execute is found only
 by trying, and it is the one refusal after a yes (``terminal.not_started``).
 
+**The identity is compared off the loop**: comparing hashes the whole program, and a program can be
+as large as it likes — 357 MB in 119,5 ms on this Mac, and the loop would have stood still as long,
+the phone's answer included (review of M13.2, 5a). So the one function the question and the run
+share is a coroutine, and the hash runs in ``asyncio.to_thread``.
+
 **What a program receives is decided here and executed to the letter by the launcher** (dec. 15):
 four environment variables and nothing else — the ``PATH`` below, ``HOME`` and ``TMPDIR`` computed
 by the composition once, ``LANG`` —, the end of a file on stdin, a folder inside the scope of M13.1
@@ -28,6 +33,7 @@ ceiling for the head and half for the tail of each stream.
 
 from __future__ import annotations
 
+import asyncio
 import codecs
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,7 +60,7 @@ from ela.tools.paths import (
     classify,
     resolve_workspace,
 )
-from ela.tools.programs import NO_PROGRAM, NOT_DECLARED, PROGRAM_CHANGED, Programs
+from ela.tools.programs import NO_PROGRAM, NOT_DECLARED, PROGRAM_CHANGED, PROGRAM_GONE, Programs
 
 __all__ = [
     "ARGUMENTS_UNPASSABLE",
@@ -70,6 +76,7 @@ __all__ = [
     "TERMINAL_RUN",
     "TERMINAL_TOOL_NAME",
     "TIMEOUT",
+    "ArgumentLimits",
     "Terminal",
     "TerminalRunTool",
     "decoded",
@@ -80,7 +87,8 @@ TERMINAL_RUN: Final = CapabilityId("terminal.run")
 TERMINAL_TOOL_NAME: Final = "terminal-run"
 
 ARGUMENTS_UNPASSABLE: Final = "terminal.arguments_unpassable"
-"""An argument no process can receive: a NUL byte, or more than the system passes (dec. 5)."""
+"""An argument no process can receive: a NUL byte, a lone surrogate, more than the system passes in
+one argument, or more than it passes in all (dec. 5; review of M13.2, 5b)."""
 CWD_NOT_A_FOLDER: Final = "terminal.cwd_not_a_folder"
 """The folder named is a file, or something that is not a folder: a program cannot start there."""
 NOT_STARTED: Final = "terminal.not_started"
@@ -132,13 +140,27 @@ environment."""
 
 
 @dataclass(frozen=True, slots=True)
+class ArgumentLimits:
+    """What the system passes to a program: ``total`` for every string of ``argv`` and of the
+    environment with its NUL and its pointer, and ``one`` for a single argument with its NUL.
+
+    Two numbers because Linux has two — ``MAX_ARG_STRLEN``, 32 pages, for one argument, whatever
+    the total allows —, and the composition names the system that has them (ADR 0047 §5). Where
+    there is no limit of its own for one argument, as on macOS, ``one`` is the total.
+    """
+
+    total: int
+    one: int
+
+
+@dataclass(frozen=True, slots=True)
 class Terminal:
     """What the composition hands the tool, once, at start-up.
 
     ``programs`` with the identities fixed there; ``root`` and ``scope`` are the pair of M13.1, and
     a command starts in ``root/scope`` or below it; ``home`` and ``temporary`` are computed by the
     composition with ``Path.home()`` and ``tempfile.gettempdir()`` — never read from ``os.environ``
-    here (ADR 0001) —; ``argument_limit`` is what the system passes to ``execve``.
+    here (ADR 0001) —; ``argument_limits`` is what the system passes to ``execve``.
     """
 
     programs: Programs
@@ -148,7 +170,7 @@ class Terminal:
     output_max_bytes: int
     home: str
     temporary: str
-    argument_limit: int
+    argument_limits: ArgumentLimits
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +191,7 @@ class TerminalRunTool(Tool):
             NOT_DECLARED,
             NO_PROGRAM,
             PROGRAM_CHANGED,
+            PROGRAM_GONE,
             ARGUMENTS_UNPASSABLE,
             CWD_NOT_A_FOLDER,
             NO_ROOT,
@@ -218,7 +241,7 @@ class TerminalRunTool(Tool):
 
     async def prospect(self, arguments: JsonMapping) -> Prospect:
         """What this command would meet now, and what the question names (dec. 5, 12)."""
-        looked = self._look(arguments)
+        looked = await self._look(arguments)
         if isinstance(looked, Outcome):
             return Prospect(
                 refusal=ErrorMetadata(
@@ -234,12 +257,13 @@ class TerminalRunTool(Tool):
             invocation=invocation,
         )
 
-    def _look(self, arguments: JsonMapping) -> Outcome | _Call:
+    async def _look(self, arguments: JsonMapping) -> Outcome | _Call:
         """**The one place a command decides**, read by the question and by the run (dec. 5).
 
         In the order of what a person can fix: the shape of the call, the program, the arguments,
         the folder. The identity of the program is compared with the start-up's here, so it is
-        compared twice — when the question is composed and immediately before the launch (dec. 4).
+        compared twice — when the question is composed and immediately before the launch (dec. 4) —,
+        each time in a thread, because it hashes the whole file.
         """
         program, args, cwd, expected = (
             arguments.get("program"),
@@ -255,7 +279,7 @@ class TerminalRunTool(Tool):
             return Outcome({}, ARGUMENTS_INVALID, "cwd must be a string")
         if type(expected) is not int:
             return Outcome({}, ARGUMENTS_INVALID, "expect_exit must be an integer")
-        problem = self._terminal.programs.problem(program)
+        problem = await asyncio.to_thread(self._terminal.programs.problem, program)
         if problem is not None:
             return Outcome({}, problem.code, problem.message)
         start = self._terminal.programs.at_start(program)
@@ -301,7 +325,13 @@ class TerminalRunTool(Tool):
     def _unpassable(
         self, argv: tuple[str, ...], environment: tuple[tuple[str, str], ...]
     ) -> str | None:
-        """Why no process could receive these arguments, or ``None``. Never the arguments."""
+        """Why no process could receive these arguments, or ``None``. Never the arguments.
+
+        The two limits of :class:`ArgumentLimits`, each named with how far past it the call is: the
+        kernel counts an argument with its closing NUL, and the whole as every string of ``argv``
+        and of the environment with its NUL and its pointer, plus the two pointers that end the
+        vectors — measured on macOS as the kernel's count to the byte (ADR 0047 §5).
+        """
         if any("\0" in one for one in argv):
             return "an argument holds a NUL byte, which no process can receive"
         try:
@@ -309,12 +339,21 @@ class TerminalRunTool(Tool):
                 one.encode()
         except UnicodeEncodeError:
             return "an argument holds a lone surrogate, which is not text a process can receive"
+        limits = self._terminal.argument_limits
+        for index, one in enumerate(argv[1:], start=1):
+            size = len(one.encode()) + 1
+            if size > limits.one:
+                return (
+                    f"argument {index} takes {size} bytes with its closing NUL, and this system "
+                    f"passes at most {limits.one} in one argument: {size - limits.one} bytes too "
+                    "many"
+                )
         strings = (*argv, *(f"{name}={value}" for name, value in environment))
         size = sum(len(one.encode()) + 1 + POINTER for one in strings) + 2 * POINTER
-        if size > self._terminal.argument_limit:
+        if size > limits.total:
             return (
-                f"the arguments take {size} bytes and this system passes at most "
-                f"{self._terminal.argument_limit} to a program"
+                f"the arguments and the environment take {size} bytes, and this system passes at "
+                f"most {limits.total} to a program in all: {size - limits.total} bytes too many"
             )
         return None
 
@@ -345,7 +384,7 @@ class TerminalRunTool(Tool):
         return scope / cwd
 
     async def _run(self, arguments: JsonMapping) -> Outcome:
-        looked = self._look(arguments)
+        looked = await self._look(arguments)
         if isinstance(looked, Outcome):
             return looked
         invocation = looked.invocation

@@ -26,6 +26,7 @@ to create.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import stat
@@ -58,7 +59,13 @@ from ela.tools.listen import PERCEPTION_LISTEN
 from ela.tools.model import MODEL_COMPLETE, routing_arguments
 from ela.tools.notes import WORKSPACE_WRITE_NOTE
 from ela.tools.paths import PATH_CODES, classify, resolve_workspace
-from ela.tools.programs import PROGRAM_CHANGED, Programs
+from ela.tools.programs import (
+    PROGRAM_CHANGED,
+    PROGRAM_CODES,
+    PROGRAM_GONE,
+    ProgramProblem,
+    Programs,
+)
 from ela.tools.screen import PERCEPTION_CAPTURE_SCREEN
 from ela.tools.screen_text import PERCEPTION_READ_SCREEN_TEXT
 from ela.tools.terminal import TERMINAL_RUN
@@ -930,11 +937,9 @@ class TerminalRunVerifier(Verifier):
     conditions: ClassVar[frozenset[str]] = frozenset(
         {TERMINAL_EXIT_CODE_MATCHES, TERMINAL_OUTPUT_WHOLE, TERMINAL_PROGRAM_UNCHANGED}
     )
-    failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
-        TERMINAL_EXIT_MISMATCH,
-        TERMINAL_OUTPUT_INCOMPLETE,
-        PROGRAM_CHANGED,
-    }
+    failure_codes: ClassVar[frozenset[str]] = (
+        COMMON_FAILURE_CODES | {TERMINAL_EXIT_MISMATCH, TERMINAL_OUTPUT_INCOMPLETE} | PROGRAM_CODES
+    )
 
     def __init__(self, programs: Programs, *, name: str = TERMINAL_VERIFIER_NAME) -> None:
         super().__init__(TERMINAL_RUN, name=name)
@@ -947,7 +952,7 @@ class TerminalRunVerifier(Verifier):
             return self._ended_as_expected(condition, arguments, result)
         if condition == TERMINAL_OUTPUT_WHOLE:
             return self._whole(condition, result)
-        return self._unchanged(condition, arguments, result)
+        return await self._unchanged(condition, arguments, result)
 
     def _ended_as_expected(
         self, condition: str, arguments: JsonMapping, result: ExecutionResult
@@ -995,9 +1000,13 @@ class TerminalRunVerifier(Verifier):
                 )
         return None
 
-    def _unchanged(
+    async def _unchanged(
         self, condition: str, arguments: JsonMapping, result: ExecutionResult
     ) -> ErrorMetadata | None:
+        """The program on the disk against the start-up, compared in a thread (it hashes the whole
+        file), and each problem under its own code: a program that is not there any more is
+        :data:`PROGRAM_GONE`, not changed — there is nothing to compare it with (review of M13.2,
+        decision 4)."""
         program = arguments.get("program")
         if not isinstance(program, str):
             return self._failure(
@@ -1006,9 +1015,11 @@ class TerminalRunVerifier(Verifier):
                 "program must be a string",
                 retryable=False,
             )
-        problem = self._programs.problem(program)
+        problem = await asyncio.to_thread(self._programs.problem, program)
         if problem is not None:
-            return self._failure(condition, PROGRAM_CHANGED, problem.message, retryable=False)
+            return self._failure(
+                condition, problem.code, _unverified(problem, program), retryable=False
+            )
         start = self._programs.at_start(program)
         if start is None or result.output.get("runs") != start.runs:
             return self._failure(
@@ -1019,3 +1030,19 @@ class TerminalRunVerifier(Verifier):
                 retryable=False,
             )
         return None
+
+
+def _unverified(problem: ProgramProblem, program: str) -> str:
+    """What the verifier could not verify, said as what it found on the disk.
+
+    For a program that is gone the sentence of the tool — «nothing is left to run» — is the wrong
+    one after the run: what matters now is that the comparison cannot be made, so the verifier
+    cannot vouch for what ran, while what it printed stays in the result.
+    """
+    if problem.code == PROGRAM_GONE:
+        return (
+            f"{'/' + program!r} is not there any more, so there is nothing to compare with the "
+            "file ELA fixed at start-up: ELA cannot confirm that the program that ran was the one "
+            "declared — what it printed is in the result"
+        )
+    return problem.message

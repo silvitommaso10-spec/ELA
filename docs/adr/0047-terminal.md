@@ -75,6 +75,24 @@ cosa fare:
 
 Una voce che all'avvio non c'è non ferma ELA (§6): la sua identità è «assente», ogni chiamata è
 `terminal.no_program` prima della domanda, e se il file compare dopo è `terminal.program_changed`.
+
+**Assente non è cambiato** (review di M13.2, decisione 4). Un programma che all'avvio c'era e adesso
+non c'è — cancellato, o un link che non porta più a niente — è **`terminal.program_gone`**, non
+`terminal.program_changed`: non c'è niente con cui confrontarlo, e «cambiato» affermerebbe un
+confronto che nessuno ha fatto. Vale nei due momenti del tool — la domanda non nasce; una domanda
+già aperta, approvata, trova il file sparito prima dell'`exec` e non lancia niente — e dopo
+l'esecuzione, nel verifier (§9). `terminal.no_program` resta per ciò che non è mai stato lì, e per
+un file che c'è ma non si esegue o non si legge.
+
+**Il confronto non gira sul loop.** Confrontare vuol dire rileggere e rifare lo sha256 dell'intero
+file, e un programma dichiarato può essere grande quanto vuole. **Misurato** il 2026-09-24 su questo
+Mac, a cache calda, cinque giri (`.git/m13.2-reference/measure/hash.jsonl`): `swift-frontend` dei
+Command Line Tools, 357 MB, **119,5 ms**; `clang`, 291 MB, 98 ms; `git`, 7,6 MB, 2,4 ms. Chiamato sul
+loop, un ticker da 10 ms ha visto il loop fermo **129,5 ms** — e fermo il loop vuol dire ferma tutta
+ELA, compresa la risposta del telefono —; chiamato con **`asyncio.to_thread`**, il ticker non ha visto
+nessuna fermata (11,1 ms, il suo periodo). Così fanno il tool, il verifier e la composizione che fissa
+le identità all'avvio; `ela.tools.programs` resta sincrono, e il thread è di chi lo chiama. Da freddo
+la lettura va al disco ed è più lenta: una ragione in più, non una in meno.
 **Due limiti, dichiarati**: non protegge da ciò che è cambiato *prima* dell'avvio, e resta la
 finestra fra l'ultimo confronto e l'`exec` — la stessa che ADR 0045 §7 dichiara fra `classify` e
 `open` —, perché chiuderla vorrebbe dire eseguire da un descrittore già verificato, e macOS non ha un
@@ -86,7 +104,37 @@ ADR 0045 §6-bis dice che una domanda si compone solo per ciò che, approvato ad
 disco di adesso». **Per un comando quella frase si legge «partirebbe, per tutto ciò che si può sapere
 senza lanciarlo»**: il programma è dichiarato, c'è, è un file regolare eseguibile e ha l'identità
 dell'avvio; la cartella c'è ed è una cartella dentro lo scope; gli argomenti si possono passare a un
-processo — nessun byte NUL, niente oltre il limite di `execve` (`terminal.arguments_unpassable`).
+processo — nessun byte NUL, nessun surrogato isolato, niente oltre i limiti di `execve`
+(`terminal.arguments_unpassable`).
+
+**I limiti sono due, e si controllano tutt'e due prima della domanda** (review di M13.2, 5b): un
+argomento troppo lungo non partirebbe, e §6-bis dice di non chiedere un sì per ciò che non partirebbe.
+Li sceglie la composizione nominando il sistema (`argument_limits`, un `if` per sistema), e il rifiuto
+dice **quale** limite e **di quanti byte**, senza mai l'argomento:
+
+- **il totale**, `SC_ARG_MAX`: ogni stringa di `argv` e dell'ambiente con il suo NUL e il suo
+  puntatore, più i due puntatori che chiudono i vettori. **Misurato** il 2026-09-24 su questo Mac
+  (`.git/m13.2-reference/measure/argument_limit.jsonl`): con l'ambiente chiuso, l'argomento più lungo
+  che parte è di **1 048 412 byte**, e lì il conto di ELA è 1 048 576, cioè `SC_ARG_MAX`; un byte in
+  più è `E2BIG`. **Il conto è quello del kernel al byte**, e resta esatto con un percorso del programma
+  di 226 caratteri: macOS non conta il percorso una seconda volta. Un test lo riafferma sul kernel
+  vero, `tests/tools/test_terminal_limits.py`;
+- **il singolo argomento**, che su Linux ha un limite suo, `MAX_ARG_STRLEN`: 32 pagine, il NUL di
+  chiusura compreso — 128 KiB con pagine da 4 KiB —, qualunque cosa ammetta il totale. Su macOS non
+  c'è (lo stesso 1 048 412 lo dimostra), e lì il limite del singolo è il totale; su Windows sono tutti
+  e due la riga di comando di `CreateProcess`, 32 767 caratteri. Il test sul kernel di Linux gira sul
+  runner ubuntu.
+
+**Il residuo**, che il controllo non può prendere, e perché. **Su Linux il totale non è esatto**: il
+kernel copia il percorso del programma una volta in più (`bprm->filename`) e tetta il limite a tre
+quarti di `_STK_LIM`, 6 MiB, mentre `SC_ARG_MAX` di glibc è un quarto del limite dello stack, senza
+tetto. Con lo stack di default (8 MiB, quindi 2 MiB) un comando che sta nel conto di ELA per meno
+della lunghezza del suo percorso, o uno stack senza limite oltre i 6 MiB, il kernel lo rifiuta dopo
+il sì: `terminal.not_started`, con `E2BIG` nella frase. Non si corregge fingendo numeri che su
+questa macchina non si misurano: il terminale gira sul Core, che è un Mac, e il giorno in cui
+viaggerà su un nodo Linux la misura si prende lì (M13.3). **E il limite si legge all'avvio**: un
+limite dello stack cambiato dopo non lo vede nessuno — ELA non lo cambia.
+
 **Ciò che non si sa non si finge di saperlo**: se il programma finirà, con quale codice, che cosa
 stamperà o toccherà. E nemmeno «partirebbe» si sa per intero: un formato che il kernel non conosce,
 uno shebang verso un interprete che non c'è, si scoprono solo all'`exec`. È `terminal.not_started`,
@@ -173,7 +221,7 @@ Verifier aggiunti:
 
 | Capability | Verifier | Nome | Condizioni | Codici di fallimento |
 |---|---|---|---|---|
-| `terminal.run` | `TerminalRunVerifier` | `terminal-run-verifier` | `terminal.exit_code_matches`, `terminal.output_whole`, `terminal.program_unchanged` | `terminal.exit_code_mismatch`, `terminal.output_incomplete`, `terminal.program_changed` |
+| `terminal.run` | `TerminalRunVerifier` | `terminal-run-verifier` | `terminal.exit_code_matches`, `terminal.output_whole`, `terminal.program_unchanged` | `terminal.exit_code_mismatch`, `terminal.output_incomplete`, `terminal.program_changed`, `terminal.program_gone`, `terminal.no_program`, `terminal.not_declared` |
 
 Il codice atteso è un argomento del piano, `expect_exit`, 0 se non c'è: un `grep` che non trova niente
 esce con 1, e un piano che cerca un'assenza lo dichiara. Il verifier lo legge dagli **argomenti**,
@@ -182,11 +230,25 @@ mondo ELA non lo vede, e un piano che lo vuole aggiunge uno step che legge il mo
 codice, deve eseguire test» (§63) diventa un `terminal.run` di `pytest` con
 `terminal.exit_code_matches`: i test sono il verifier del codice, non il terminale.
 
+**Un programma sparito dopo l'esecuzione non si può verificare, e il verifier lo dice** (review di
+M13.2, decisione 4). `terminal.program_unchanged` rilegge il disco; se il file non c'è più — un
+disinstallatore si cancella da sé — il fallimento è `terminal.program_gone`, e la frase dice che cosa
+ha potuto verificare e che cosa no: non c'è niente con cui confrontare il file dell'avvio, quindi ELA
+**non può confermare che il programma eseguito fosse quello dichiarato**, e ciò che ha stampato sta
+nel risultato. **Il passo finisce `FAILED`**, `verification.failed` con quel codice, **non
+ritentabile**; il risultato del tool resta `SUCCEEDED`, con la sua uscita. **È la risposta onesta**:
+«completato» affermerebbe un'identità che nessuno può più controllare; «ritentabile» chiederebbe di
+rieseguire un'azione `HIGH`, che è una domanda nuova, e senza il file non partirebbe comunque; e
+`FAILED` non dice che il comando non sia avvenuto — il risultato lo mostra —, dice che ELA non lo
+può garantire. Ogni problema del programma ha il suo codice anche qui: `terminal.no_program` per un
+file che c'è ma non si esegue o non si legge, `terminal.not_declared` per un programma che la tabella
+dell'avvio non conosce.
+
 Tool aggiunti:
 
 | Capability | Tool | Nome | Idempotente | Codici d'errore | Numeri nell'audit |
 |---|---|---|---|---|---|
-| `terminal.run` | `TerminalRunTool` | `terminal-run` | no | `arguments.invalid`, `terminal.not_declared`, `terminal.no_program`, `terminal.program_changed`, `terminal.arguments_unpassable`, `terminal.cwd_not_a_folder`, `fs.no_root`, `path.invalid`, `path.outside_root`, `path.symlink`, `path.unreachable`, `path.missing`, `terminal.not_started`, `terminal.timeout`, `terminal.stopped` | `argument_count`, `exit_code`, `signal`, `stdout.shown`, `stdout.total`, `stderr.shown`, `stderr.total` |
+| `terminal.run` | `TerminalRunTool` | `terminal-run` | no | `arguments.invalid`, `terminal.not_declared`, `terminal.no_program`, `terminal.program_changed`, `terminal.program_gone`, `terminal.arguments_unpassable`, `terminal.cwd_not_a_folder`, `fs.no_root`, `path.invalid`, `path.outside_root`, `path.symlink`, `path.unreachable`, `path.missing`, `terminal.not_started`, `terminal.timeout`, `terminal.stopped` | `argument_count`, `exit_code`, `signal`, `stdout.shown`, `stdout.total`, `stderr.shown`, `stderr.total` |
 
 ### 10. I numeri di un comando entrano nell'audit: un canale nuovo dell'audit, e solo interi
 
@@ -267,7 +329,7 @@ Job Object — ADR 0040 §5 dice già che `TerminateProcess` non uccide ciò che
 lì diventa una stringa sola (`list2cmdline`): il criterio 1 di M13.2 smetterebbe di essere vero. La
 prima milestone che porterà il terminale su un nodo, M13.3, lo paga; il job `windows-latest` oggi non
 fa girare `test_spawn.py`. Il Core però si costruisce anche lì, nella suite di conformità: il limite
-di ciò che un lancio passa a un programma si sceglie nominando il sistema (`argument_limit`, un `if`
+di ciò che un lancio passa a un programma si sceglie nominando il sistema (`argument_limits`, un `if`
 per sistema come il lettore dell'alimentazione), perché `os.sysconf` su Windows non c'è.
 
 ### 14. Una citazione corretta
@@ -290,6 +352,31 @@ di ciascuno lo dice.
   (§7).
 - **ADR 0040 §5** — il meccanismo dell'attesa: il caso del nipote che tiene la pipe è riparato (§13).
 - **ADR 0038 §11** — il segnale di fermata diventa un evento di `Ela`, letto anche dal lanciatore (§7).
+
+### 16. Un debito datato: il surrogato isolato fuori dal piano
+
+**Debito a carico di M13.3**, dichiarato il **2026-09-24**, dalla review di M13.2.
+
+Un surrogato isolato (`"\ud800"`) è una stringa per il parser JSON che FastAPI usa, e non è testo per
+nessun altro: non si codifica, non si scrive, non si passa a un processo. Il piano lo rifiuta da
+questa milestone (Conseguenze), e il testo di un task lo rifiuta già pydantic, che non accetta un
+surrogato in un campo `str`. **Resta aperto l'unico altro corpo con JSON libero in ingresso: la
+consegna di un nodo** (`WorkResultIn`, `output` e `node`). Visto il 2026-09-24 con l'API vera: una
+consegna con un surrogato nell'`output` è un `422` che nasce dall'`UnicodeEncodeError` della
+persistenza, non da una regola di ELA — e il messaggio riporta il carattere —; il passo resta
+`EXECUTING`, e alla scadenza dell'assegnazione un tool ripetibile torna a un nodo, che consegna di
+nuovo la stessa cosa. **Il task non finisce mai.**
+
+**Non si ripara qui.** La consegna è il confine fra il Core e un nodo, e decidere che cosa il Core fa
+di un risultato che non può conservare — un rifiuto con un nome suo, il passo che finisce invece di
+tornare a un nodo, che cosa si dice al nodo — è la materia di **M13.3**, la milestone in cui
+un'azione e il suo verifier girano sul nodo. `docs/milestones/M13.3.md` lo nomina fra ciò che deve
+chiudere.
+
+**La difesa più piccola**:
+`tests/api/test_nodes_work.py::test_a_delivery_holding_a_lone_surrogate_is_still_refused_by_the_encoder`
+afferma il difetto com'è. Il giorno in cui fallisce il debito si sta pagando: si scrive il pagamento
+in un ADR, e il test si gira.
 
 ## Alternative considerate
 
@@ -328,8 +415,12 @@ di ciascuno lo dice.
   argomenti; la grammatica dei percorsi e `terminal.arguments_unpassable` rifiutano anche loro,
   perché un tool non si fida del chiamante. Il testo di un task e gli altri corpi dell'API restano
   fuori da questo ADR.
-- `ela.composition.system` ha `argument_limit`: il limite di un lancio si sceglie nominando il
-  sistema (§13).
+- `ela.composition.system` ha `argument_limits` e `LINUX_PAGES_IN_ONE_ARGUMENT`: i due limiti di un
+  lancio si scelgono nominando il sistema (§5, §13). `ela.tools` ha `ArgumentLimits` e
+  `PROGRAM_GONE`; il tool, il verifier e la composizione confrontano i programmi con
+  `asyncio.to_thread` (§4) — il primo `to_thread` del codice.
+- Il debito datato di §16 è a carico di M13.3, e `docs/milestones/M13.3.md` lo nomina insieme al
+  debito di Windows di §13.
 - Le capability di produzione sono **undici**, e **quattro viaggiano, sette no**;
   le regole di architettura restano **cinquantasette** (le tre nuove di M13.2 sono test di
   `tests/architecture` con i loro casi negativi, fuori dal registro), i port sono **ventisette**, le
