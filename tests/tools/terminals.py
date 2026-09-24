@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ela.testing.fakes import FakeLauncher
 from ela.tools.programs import Programs
-from ela.tools.terminal import Terminal
+from ela.tools.terminal import ArgumentLimits, Terminal
 
 
 def a_terminal(root: Path, *programs: str) -> Terminal:
@@ -25,7 +25,7 @@ def a_terminal(root: Path, *programs: str) -> Terminal:
         output_max_bytes=65536,
         home="/Users/tu",
         temporary="/tmp/tu",
-        argument_limit=1 << 20,
+        argument_limits=ArgumentLimits(total=1 << 20, one=1 << 20),
     )
 
 

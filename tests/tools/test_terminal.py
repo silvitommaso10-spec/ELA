@@ -15,6 +15,10 @@ asserted on real children, in ``tests/infrastructure/machine/test_launcher.py``.
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
+import re
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -35,7 +39,15 @@ from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeLauncher
 from ela.tools.base import ARGUMENTS_INVALID
 from ela.tools.fs import NO_ROOT
 from ela.tools.paths import PATH_INVALID, PATH_MISSING, PATH_OUTSIDE_ROOT, PATH_SYMLINK
-from ela.tools.programs import NO_PROGRAM, NOT_DECLARED, PROGRAM_CHANGED, Programs
+from ela.tools.programs import (
+    NO_PROGRAM,
+    NOT_DECLARED,
+    PROGRAM_CHANGED,
+    PROGRAM_GONE,
+    ProgramProblem,
+    Programs,
+    identity_of,
+)
 from ela.tools.terminal import (
     ARGUMENTS_UNPASSABLE,
     AUDIT_NUMBERS,
@@ -48,6 +60,7 @@ from ela.tools.terminal import (
     RUNS,
     STOPPED,
     TIMEOUT,
+    ArgumentLimits,
     Terminal,
     TerminalRunTool,
     decoded,
@@ -108,7 +121,7 @@ def terminal(
     *programs: Path,
     timeout: int = 120,
     output: int = 64,
-    limit: int = 1 << 20,
+    limits: ArgumentLimits | None = None,
 ) -> Terminal:
     return Terminal(
         programs=Programs.fixed(entry(one) for one in programs),
@@ -118,7 +131,7 @@ def terminal(
         output_max_bytes=output,
         home="/Users/tu",
         temporary="/private/tmp/tu",
-        argument_limit=limit,
+        argument_limits=ArgumentLimits(total=1 << 20, one=1 << 20) if limits is None else limits,
     )
 
 
@@ -231,13 +244,33 @@ async def test_a_program_that_was_never_there_is_refused_before_the_question(
     assert refusal_of(prospected) == NO_PROGRAM
 
 
-async def test_a_program_deleted_after_the_start_is_refused_before_the_question(
+async def test_a_program_deleted_after_the_start_is_gone_and_not_changed(
     root: Path, program: Path
 ) -> None:
+    """Review of M13.2, decision 4: a file that is not there is absent, not «changed» — there is
+    nothing to compare. And it was there at the start, which is what tells it from an entry that
+    never was (``terminal.no_program``)."""
     settings = terminal(root, program)
     program.unlink()
 
-    assert refusal_of(await tool(settings).prospect(call(program))) == NO_PROGRAM
+    prospected = await tool(settings).prospect(call(program))
+
+    assert refusal_of(prospected) == PROGRAM_GONE
+    assert prospected.refusal is not None
+    assert "was there when ELA started" in prospected.refusal.message
+    assert "is not there now" in prospected.refusal.message
+
+
+async def test_a_declared_link_whose_file_was_deleted_is_gone_too(
+    root: Path, place: Path, program: Path
+) -> None:
+    link = place / "links" / "eco"
+    link.parent.mkdir()
+    link.symlink_to(program)
+    settings = terminal(root, link)
+    program.unlink()
+
+    assert refusal_of(await tool(settings).prospect(call(link))) == PROGRAM_GONE
 
 
 async def test_a_program_that_stopped_being_executable_is_refused(
@@ -363,14 +396,94 @@ async def test_a_folder_that_is_not_text_is_not_a_path(root: Path, program: Path
     assert refusal_of(prospected) == PATH_INVALID
 
 
-async def test_arguments_past_the_limit_of_the_system_cannot_reach_a_process(
+async def test_arguments_past_the_total_of_the_system_are_refused_before_the_question(
     root: Path, program: Path
 ) -> None:
-    prospected = await tool(terminal(root, program, limit=512)).prospect(call(program, MARKER * 40))
+    """Review of M13.2, 5b: the limit is known, so no yes is asked for what would not start — and
+    the refusal says which limit, and by how much."""
+    limits = ArgumentLimits(total=512, one=1 << 20)
+
+    prospected = await tool(terminal(root, program, limits=limits)).prospect(
+        call(program, MARKER * 40)
+    )
 
     assert refusal_of(prospected) == ARGUMENTS_UNPASSABLE
     assert prospected.refusal is not None
-    assert MARKER not in prospected.refusal.message
+    message = prospected.refusal.message
+    assert MARKER not in message
+    found = re.search(
+        r"take (\d+) bytes.* at most (\d+) to a program in all: (\d+) bytes too many", message
+    )
+    assert found is not None, message
+    size, limit, over = (int(one) for one in found.groups())
+    assert (limit, over) == (512, size - 512)
+
+
+async def test_one_argument_past_the_limit_of_one_is_refused_before_the_question(
+    root: Path, program: Path
+) -> None:
+    """Linux passes at most 32 pages in **one** argument, whatever the total allows: a second
+    limit, checked apart, and named apart. The size counts the argument's closing NUL, as the
+    kernel does."""
+    limits = ArgumentLimits(total=1 << 20, one=64)
+
+    prospected = await tool(terminal(root, program, limits=limits)).prospect(
+        call(program, "corto", MARKER * 8)
+    )
+
+    assert refusal_of(prospected) == ARGUMENTS_UNPASSABLE
+    assert prospected.refusal is not None
+    message = prospected.refusal.message
+    assert MARKER not in message
+    assert "argument 2 takes 105 bytes" in message
+    assert "at most 64 in one argument: 41 bytes too many" in message
+
+
+async def test_an_argument_exactly_at_the_limit_of_one_is_asked_about(
+    root: Path, program: Path
+) -> None:
+    limits = ArgumentLimits(total=1 << 20, one=64)
+
+    prospected = await tool(terminal(root, program, limits=limits)).prospect(
+        call(program, "x" * 63)
+    )
+
+    assert prospected.refusal is None
+
+
+class Held(Programs):
+    """Programs whose comparison waits until the loop releases it.
+
+    In a thread it is released at once. On the loop nothing can release it — the loop is the one
+    waiting —, and it gives up after ``HELD_SECONDS`` saying so.
+    """
+
+    def __init__(self, entries: tuple[str, ...]) -> None:
+        super().__init__({one: identity_of(one) for one in entries})
+        self.released = threading.Event()
+
+    def problem(self, entry: str) -> ProgramProblem | None:
+        if not self.released.wait(HELD_SECONDS):
+            raise AssertionError("the program was compared on the loop: nobody could release it")
+        return super().problem(entry)
+
+
+HELD_SECONDS = 5.0
+
+
+async def test_the_program_is_hashed_off_the_loop(root: Path, program: Path) -> None:
+    """Review of M13.2, 5a: a declared program can be as large as it likes — 357 MB hash in
+    120 ms on this Mac —, and a loop that waits for it stops every other request of ELA, the
+    phone's answer included. Asserted as a fact, not a time: the loop answers while it hashes."""
+    held = Held((entry(program),))
+    settings = dataclasses.replace(terminal(root, program), programs=held)
+
+    async def release() -> None:
+        held.released.set()
+
+    prospected, _ = await asyncio.gather(tool(settings).prospect(call(program)), release())
+
+    assert prospected.refusal is None
 
 
 @pytest.mark.parametrize(
@@ -438,6 +551,22 @@ async def test_a_program_changed_between_the_yes_and_the_launch_never_launches(
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None and result.error.code == PROGRAM_CHANGED
+    assert launcher.commands == ()
+
+
+async def test_a_program_deleted_between_the_yes_and_the_launch_is_gone_and_never_launches(
+    root: Path, program: Path
+) -> None:
+    """The same distinction for a question already open: the file vanished, it did not change."""
+    launcher = FakeLauncher()
+    runner = tool(terminal(root, program), launcher)
+    assert (await runner.prospect(call(program))).refusal is None
+    program.unlink()
+
+    result = await runner.execute(decision(), call(program))
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None and result.error.code == PROGRAM_GONE
     assert launcher.commands == ()
 
 

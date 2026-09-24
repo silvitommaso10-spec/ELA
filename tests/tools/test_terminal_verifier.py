@@ -11,6 +11,8 @@ capability does not travel (decision 11).
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -20,7 +22,7 @@ import pytest
 
 from ela.domain import ExecutionId, ExecutionResult, ExecutionStatus
 from ela.permissions import TERMINAL_RUN
-from ela.tools.programs import PROGRAM_CHANGED, Programs
+from ela.tools.programs import PROGRAM_CHANGED, PROGRAM_GONE, ProgramProblem, Programs, identity_of
 from ela.tools.verifiers import (
     TERMINAL_EXIT_CODE_MATCHES,
     TERMINAL_EXIT_MISMATCH,
@@ -181,6 +183,53 @@ async def test_a_program_changed_on_the_disk_is_caught_by_reading_the_disk(progr
     assert await failures_of(
         checker, TERMINAL_PROGRAM_UNCHANGED, arguments(program), ran(program)
     ) == [PROGRAM_CHANGED]
+
+
+async def test_a_program_gone_after_its_run_is_gone_and_the_verifier_says_what_it_cannot_know(
+    program: Path,
+) -> None:
+    """Review of M13.2, decision 4. The file is absent, not «changed»: there is nothing to compare
+    it with. So the verifier says what it verified and what it could not — it cannot claim that
+    the program that ran was the one declared, because the file is no longer there."""
+    checker = verifier(program)
+    program.unlink()
+
+    (failure,) = await checker.verify(
+        (TERMINAL_PROGRAM_UNCHANGED,), arguments(program), ran(program)
+    )
+
+    assert failure.code == PROGRAM_GONE
+    assert failure.retryable is False
+    assert "is not there any more" in failure.message
+    assert "cannot confirm that the program that ran was the one declared" in failure.message
+    assert MARKER not in failure.message
+
+
+class Held(Programs):
+    """Programs whose comparison waits until the loop releases it (see ``test_terminal.py``)."""
+
+    def __init__(self, entries: tuple[str, ...]) -> None:
+        super().__init__({one: identity_of(one) for one in entries})
+        self.released = threading.Event()
+
+    def problem(self, entry: str) -> ProgramProblem | None:
+        if not self.released.wait(5.0):
+            raise AssertionError("the program was compared on the loop: nobody could release it")
+        return super().problem(entry)
+
+
+async def test_the_verifier_hashes_off_the_loop(program: Path) -> None:
+    held = Held((entry(program),))
+    checker = TerminalRunVerifier(held)
+
+    async def release() -> None:
+        held.released.set()
+
+    failures, _ = await asyncio.gather(
+        checker.verify((TERMINAL_PROGRAM_UNCHANGED,), arguments(program), ran(program)), release()
+    )
+
+    assert failures == ()
 
 
 async def test_a_result_that_names_another_file_than_the_start_is_caught(

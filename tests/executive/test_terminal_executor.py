@@ -21,14 +21,26 @@ from pathlib import Path
 import pytest
 
 from ela.composition.system import UuidGenerator
-from ela.domain import AuditEventType, ExecutionStatus, PermissionOutcome, StepState, Task, TaskStep
-from ela.executive import AUDIT_NUMBER_INVALID, EXECUTION_INTERRUPTED
+from ela.domain import (
+    AuditEventType,
+    ExecutionStatus,
+    PermissionOutcome,
+    StepState,
+    Task,
+    TaskState,
+    TaskStep,
+)
+from ela.executive import AUDIT_NUMBER_INVALID, EXECUTION_INTERRUPTED, VERIFICATION_FAILED
 from ela.permissions import TERMINAL_RUN, terminal_run
-from ela.ports import Captured, Ending, Ran
+from ela.ports import Captured, Command, Ending, Ran
 from ela.testing.fakes import FakeClock, FakeLauncher
-from ela.tools.programs import Programs
-from ela.tools.terminal import Terminal, TerminalRunTool
-from ela.tools.verifiers import TERMINAL_EXIT_CODE_MATCHES, TerminalRunVerifier
+from ela.tools.programs import PROGRAM_GONE, Programs
+from ela.tools.terminal import ArgumentLimits, Terminal, TerminalRunTool
+from ela.tools.verifiers import (
+    TERMINAL_EXIT_CODE_MATCHES,
+    TERMINAL_PROGRAM_UNCHANGED,
+    TerminalRunVerifier,
+)
 from tests.executive.support import (
     Crashes,
     SimulatedCrash,
@@ -117,8 +129,20 @@ async def test_a_node_that_delivers_a_value_that_is_not_an_integer_is_refused_at
 # ----------------------------------------------------------------------------------------
 
 
+class Uninstaller(FakeLauncher):
+    """A program that deletes itself while it runs — what an uninstaller does."""
+
+    def __init__(self, program: Path, ran: Ran) -> None:
+        super().__init__(ran)
+        self.program = program
+
+    async def run(self, command: Command) -> Ran:
+        self.program.unlink()
+        return await super().run(command)
+
+
 def terminal_parts(
-    tmp_path: Path,
+    tmp_path: Path, *, uninstalls: bool = False
 ) -> tuple[str, TerminalRunTool, TerminalRunVerifier, FakeLauncher]:
     place = tmp_path.resolve()
     (place / "files" / "ELA").mkdir(parents=True)
@@ -128,7 +152,8 @@ def terminal_parts(
     program.chmod(0o755)
     entry = str(program).lstrip("/")
     programs = Programs.fixed([entry])
-    launcher = FakeLauncher(Ran(Ending.EXITED, code=0, stdout=Captured(head=b"eco\n", total=4)))
+    ran = Ran(Ending.EXITED, code=0, stdout=Captured(head=b"eco\n", total=4))
+    launcher = Uninstaller(program, ran) if uninstalls else FakeLauncher(ran)
     settings = Terminal(
         programs=programs,
         root=place / "files",
@@ -137,7 +162,7 @@ def terminal_parts(
         output_max_bytes=64,
         home="/Users/tu",
         temporary="/tmp/tu",
-        argument_limit=1 << 20,
+        argument_limits=ArgumentLimits(total=1 << 20, one=1 << 20),
     )
     tool = TerminalRunTool(settings, launcher, FakeClock(), UuidGenerator())
     return entry, tool, TerminalRunVerifier(programs), launcher
@@ -157,11 +182,13 @@ def crashing_terminal_world(tmp_path: Path) -> tuple[World, Crashes, str, FakeLa
     return w, crashes, entry, launcher
 
 
-async def asked_and_approved(w: World, entry: str) -> tuple[Task, TaskStep]:
+async def asked_and_approved(
+    w: World, entry: str, conditions: tuple[str, ...] = (TERMINAL_EXIT_CODE_MATCHES,)
+) -> tuple[Task, TaskStep]:
     task, step = await w.running(
         TERMINAL_RUN,
         arguments={"program": entry, "args": [MARKER], "purpose": "la prova"},
-        conditions=(TERMINAL_EXIT_CODE_MATCHES,),
+        conditions=conditions,
     )
     asked = await w.execute(task.id, step.id)
     assert asked.approval is not None, "a HIGH asks at every use"
@@ -197,6 +224,35 @@ async def test_an_approved_command_spends_its_grant_and_every_record_names_it(
         "stdout.total": 4,
     }
     assert len(launcher.commands) == 1
+
+
+async def test_a_program_gone_after_its_run_fails_the_step_unverified_and_keeps_what_it_printed(
+    tmp_path: Path,
+) -> None:
+    """Review of M13.2, decision 4, through the executor. The program ran and deleted itself: its
+    result is ``SUCCEEDED`` and keeps what it printed, because that happened. The step is
+    ``FAILED``, ``verification.failed`` naming ``terminal.program_gone``, **not retryable**: ELA
+    cannot vouch that what ran was the program declared, and a HIGH action run again is a new
+    question, not a retry."""
+    entry, tool, verifier, launcher = terminal_parts(tmp_path, uninstalls=True)
+    w = world(catalogue=(terminal_run((entry,)),), tools=(tool,), verifiers=(verifier,))
+    task, step = await asked_and_approved(
+        w, entry, (TERMINAL_EXIT_CODE_MATCHES, TERMINAL_PROGRAM_UNCHANGED)
+    )
+
+    execution = await w.execute(task.id, step.id)
+
+    assert len(launcher.commands) == 1
+    assert execution.result is not None
+    assert execution.result.status is ExecutionStatus.SUCCEEDED
+    assert execution.result.output["stdout"]["head"] == "eco\n"
+    assert execution.graph.states[step.id] is StepState.FAILED
+    assert (await w.task(task.id)).state is TaskState.FAILED
+    error = execution.verification.error if execution.verification else None
+    assert error is not None and error.code == VERIFICATION_FAILED
+    assert error.retryable is False
+    (failure,) = error.details["failures"]
+    assert (failure["condition"], failure["code"]) == (TERMINAL_PROGRAM_UNCHANGED, PROGRAM_GONE)
 
 
 async def test_a_crash_between_the_spend_and_the_launch_asks_again_and_launches_nothing(

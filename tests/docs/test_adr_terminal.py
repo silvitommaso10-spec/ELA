@@ -177,3 +177,33 @@ def test_it_writes_the_three_decided_questions_and_the_facts_found_aligning() ->
 
 def test_the_capability_it_adds_is_the_last_of_the_catalogue() -> None:
     assert production_catalogue().specs()[-1].id == TERMINAL_RUN
+
+
+def test_the_debt_of_the_lone_surrogate_has_an_owner_a_day_and_a_milestone_that_names_it() -> None:
+    """Review of M13.2, condition on decision 2: a debt no milestone takes is a hole, not a debt.
+    The form of ADR 0035 §7 — the owner and the day —, and the owner's own page naming it among
+    what it must close. The Windows debt of §13 has the same owner and the same need."""
+    text = adr_text()
+    owner = (ROOT / "docs" / "milestones" / "M13.3.md").read_text(encoding="utf-8")
+
+    assert "### 16. Un debito datato: il surrogato isolato fuori dal piano" in text
+    assert "**Debito a carico di M13.3**, dichiarato il **2026-09-24**" in text
+    assert "ADR 0047 §16" in owner
+    assert "ADR 0047 §13" in owner
+
+
+def test_it_writes_what_the_review_decided_with_its_measures() -> None:
+    """Decisions 4 and 5 of the review: the absent program has a code of its own, the hash runs in
+    a thread with the measure that justifies it, and the limits of an argument are two, with the
+    residual the check cannot take written down and explained."""
+    text = adr_text()
+
+    for fact in (
+        "`terminal.program_gone`",
+        "`asyncio.to_thread`",
+        "119,5 ms",
+        "1 048 412",
+        "MAX_ARG_STRLEN",
+        "**Il residuo**",
+    ):
+        assert fact in text, fact
