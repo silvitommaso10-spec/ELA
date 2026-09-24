@@ -16,10 +16,11 @@ import re
 from pathlib import Path
 
 import pytest
+from ela.tools.terminal import RUNS
 
 from ela.api.schemas import Asked
 from ela.cli.system import QUESTION_FIELDS, _questions
-from ela.permissions import FS_READ, FS_WRITE
+from ela.permissions import FS_READ, FS_WRITE, TERMINAL_RUN
 from ela.testing.fakes import (
     FakeClock,
     FakeIdGenerator,
@@ -39,6 +40,7 @@ from ela.tools import (
     CaptureStore,
     production_tools,
 )
+from tests.tools.terminals import a_launcher, a_terminal
 
 _FAKE_MACHINE: dict[str, object] = {
     "clock": FakeClock(),
@@ -147,6 +149,12 @@ def test_every_field_a_question_names_reaches_the_block_the_user_reads() -> None
         "targets": ["ELA/prova.md"],
         "target": "/Users/tommaso/Documenti/ELA/prova.md",
         "does": "FRASE-DELLA-CAPABILITY",
+        "label": "ETICHETTA-DEL-TOOL",
+        "runs": "/FILE/A/CUI/PORTA",
+        "arguments": ["ARGOMENTO-UNO", "ARGOMENTO DUE"],
+        "folder": "/CARTELLA/DI/LAVORO",
+        "timeout_seconds": 42,
+        "expect_exit": 7,
         "prompt": "LA-FRASE-DELLA-DOMANDA",
     }
 
@@ -162,6 +170,12 @@ def test_every_field_a_question_names_reaches_the_block_the_user_reads() -> None
         "grant_seconds": "30 minutes",
         "target": "/Users/tommaso/Documenti/ELA/prova.md",
         "does": "FRASE-DELLA-CAPABILITY",
+        "label": "ETICHETTA-DEL-TOOL",
+        "runs": "/FILE/A/CUI/PORTA",
+        "arguments": '["ARGOMENTO-UNO", "ARGOMENTO DUE"]',
+        "folder": "/CARTELLA/DI/LAVORO",
+        "timeout_seconds": "42 s",
+        "expect_exit": "7",
     }.items():
         assert appears in shown, f"`ela approvals` does not show {name} (M13.1 dec. H)"
     assert set(Asked.model_fields) == QUESTION_FIELDS, "and the two lists are the same list"
@@ -182,7 +196,9 @@ def test_a_question_about_no_file_leaves_its_two_facts_absent_and_not_wrong() ->
     )
 
     assert CREATES not in shown and OVERWRITES not in shown and READS not in shown
-    assert "file" in shown, "the row is there and says nothing, which is the truth about it"
+    assert RUNS not in shown
+    assert "target" in shown, "the row is there and says nothing, which is the truth about it"
+    assert "file" not in shown, "and its name is not a word a capability could inherit false"
 
 
 @pytest.mark.parametrize("surface", sorted(ANSWERING) + ["the command line"])
@@ -199,7 +215,7 @@ def test_no_surface_owns_a_sentence_about_files(surface: str) -> None:
     """
     source = (ANSWERING.get(surface) or CLI).read_text(encoding="utf-8")
 
-    for sentence in (CREATES, OVERWRITES, READS):
+    for sentence in (CREATES, OVERWRITES, READS, RUNS):
         assert sentence not in source, (
             f"{surface} holds «{sentence}». A phrase about what a call does belongs to the "
             "capability that does it, or the next capability inherits words that are false "
@@ -211,20 +227,27 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
     """And the closed world on the other side: which capabilities fill ``does``, and with what.
 
     Every production tool is asked what it would do, with arguments that are valid for it. The
-    two that touch a file answer with their own sentence; the eight that do not answer nothing —
-    so a ninth that started answering would show up here without a line.
+    two that touch a file and the one that runs a program answer with their own sentence; the eight
+    that do not answer nothing — so a ninth that started answering would show up here without a
+    line.
     """
-    root = tmp_path / "files"
+    root = tmp_path.resolve() / "files"
     root.mkdir()
     (root / "ELA").mkdir()
     (root / "ELA" / "c.md").write_text("x", encoding="utf-8")
     captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
     tools = production_tools(
-        root=tmp_path / "workspace", **_FAKE_MACHINE, captures=captures, fs_root=root
+        root=tmp_path / "workspace",
+        **_FAKE_MACHINE,
+        captures=captures,
+        fs_root=root,
+        terminal=a_terminal(root, "bin/echo"),
+        launcher=a_launcher(),
     )
     arguments = {
         FS_READ: {"path": "ELA/c.md", "purpose": "x"},
         FS_WRITE: {"path": "ELA/c.md", "body": "y", "overwrite": True},
+        TERMINAL_RUN: {"program": "bin/echo", "args": [], "purpose": "x"},
     }
 
     said = {
@@ -235,6 +258,7 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
     assert {cid: found.does for cid, found in said.items() if found is not None} == {
         FS_READ: READS,
         FS_WRITE: OVERWRITES,
+        TERMINAL_RUN: RUNS,
     }
 
 

@@ -1,0 +1,28 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.2 per i caratteri di controllo.",
+    "/usr/bin/printf trasforma `\\033` nel carattere ESC: l'uscita contiene una sequenza ANSI",
+    "che, stampata cruda, colorerebbe di rosso il terminale di chi legge `ela task results`.",
+    "Una superficie che mostra ciò a cui dici sì non può essere riscritta da ciò che mostra:",
+    "la CLI rende visibile ogni carattere di controllo che non ha scritto lei (`\\x1b`),",
+    "tranne a capo e tabulazione. Con `--json` il carattere è già sfuggito.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "far stampare a un programma una sequenza di controllo",
+  "steps": [
+    {
+      "id": "e7a3c915-2b64-4d08-9f71-000000000005",
+      "goal": "stampare una parola rossa",
+      "required_capabilities": ["terminal.run"],
+      "arguments": {
+        "program": "usr/bin/printf",
+        "args": ["prima \\033[31mROSSO\\033[0m dopo\\n"],
+        "purpose": "la prova dei caratteri di controllo"
+      },
+      "risk": "HIGH",
+      "expected_result": "il testo con la sequenza resa visibile, e il terminale che non cambia colore",
+      "success_conditions": ["terminal.program_unchanged", "terminal.exit_code_matches"],
+      "requires_authorization": true
+    }
+  ]
+}

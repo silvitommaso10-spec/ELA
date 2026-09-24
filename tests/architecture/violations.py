@@ -854,6 +854,62 @@ VIOLATIONS: tuple[Case, ...] = (
         "import asyncio\nasync def go() -> None:\n    await asyncio.create_subprocess_exec('ls')\n",
         "asyncio.create_subprocess_exec(...)",
     ),
+    # M13.2 dec. 15: the spellings the census found the detector blind to, measured on a fake
+    # package before the code that would test them (a terminal is the first caller that could
+    # reach for any of them). One case each, because a list that grew by one would otherwise be
+    # a list whose new entries nobody ever saw fire.
+    Case(
+        "machine-spawn-through-asyncio-subprocess",
+        "machine-access-in-one-place",
+        "tools/shell.py",
+        "import asyncio\nasync def go() -> None:\n"
+        "    await asyncio.subprocess.create_subprocess_exec('ls')\n",
+        "asyncio.subprocess.create_subprocess_exec(...)",
+    ),
+    Case(
+        "machine-spawn-through-the-loop",
+        "machine-access-in-one-place",
+        "tools/shell.py",
+        "import asyncio\nasync def go() -> None:\n"
+        "    loop = asyncio.get_running_loop()\n"
+        "    await loop.subprocess_exec(asyncio.SubprocessProtocol, 'ls')\n",
+        "loop.subprocess_exec(...)",
+    ),
+    Case(
+        "machine-exec-replaces-the-process",
+        "machine-access-in-one-place",
+        "tools/shell.py",
+        "import os\ndef go() -> None:\n    os.execve('/bin/ls', ['ls'], {})\n",
+        "os.execve(...)",
+    ),
+    Case(
+        "machine-posix-spawn-by-path",
+        "machine-access-in-one-place",
+        "tools/shell.py",
+        "import os\ndef go() -> None:\n    os.posix_spawnp('ls', ['ls'], {})\n",
+        "os.posix_spawnp(...)",
+    ),
+    Case(
+        "machine-spawn-by-search",
+        "machine-access-in-one-place",
+        "tools/shell.py",
+        "import os\ndef go() -> None:\n    os.spawnvp(os.P_WAIT, 'ls', ['ls'])\n",
+        "os.spawnvp(...)",
+    ),
+    Case(
+        "machine-pseudo-terminal",
+        "machine-access-in-one-place",
+        "tools/shell.py",
+        "import pty\n",
+        "pty",
+    ),
+    Case(
+        "machine-another-interpreter",
+        "machine-access-in-one-place",
+        "tools/shell.py",
+        "import multiprocessing\n",
+        "multiprocessing",
+    ),
     # --- perception-children-import-only-stdlib (rule 33, ADR 0028 §2; M10.3 dec. 6) ---
     Case(
         "probe-imports-the-domain",

@@ -1,0 +1,33 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.2 per l'uscita troppo lunga.",
+    "`seq 1 100000` scrive 588 895 byte, molto più del tetto (ELA_TERMINAL_OUTPUT_MAX_BYTES,",
+    "64 KiB per flusso). ELA tiene l'INIZIO e la FINE, metà e metà, come due campi separati,",
+    "e dichiara DOVE sta il taglio — dopo quanti byte (`cut_after`) e quanti ne mancano",
+    "(`missing`) — oltre a quanto ha tenuto e quanto c'era (`shown`, `total`): «non ce n'è",
+    "altro» e «non te lo sto mostrando» sono due fatti diversi (ADR 0032 §9-bis).",
+    "Perché l'inizio E la fine: l'inizio di `git log` e la fine di `pytest` sono entrambi la",
+    "parte che conta, e un taglio da una parte sola perde la metà che conta per metà dei",
+    "comandi.",
+    "La condizione `terminal.output_whole` NON c'è, di proposito: con lei lo step fallirebbe,",
+    "perché l'uscita non è intera — ed è ciò che succede se la aggiungi.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "far girare un programma che stampa più del tetto",
+  "steps": [
+    {
+      "id": "e7a3c915-2b64-4d08-9f71-000000000003",
+      "goal": "contare fino a centomila",
+      "required_capabilities": ["terminal.run"],
+      "arguments": {
+        "program": "usr/bin/seq",
+        "args": ["1", "100000"],
+        "purpose": "la prova del tetto dell'uscita"
+      },
+      "risk": "HIGH",
+      "expected_result": "le prime e le ultime righe, e il numero dei byte che non vedo",
+      "success_conditions": ["terminal.program_unchanged", "terminal.exit_code_matches"],
+      "requires_authorization": true
+    }
+  ]
+}

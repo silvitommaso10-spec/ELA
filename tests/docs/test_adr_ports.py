@@ -45,6 +45,7 @@ EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0037-node-identity.md", EXTENDING),
     (ADR_DIR / "0038-work-protocol.md", EXTENDING),
     (ADR_DIR / "0045-filesystem-and-high.md", EXTENDING),
+    (ADR_DIR / "0047-terminal.md", EXTENDING),
 )
 REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),
@@ -63,6 +64,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0037-node-identity.md", INTRODUCING),
     (ADR_DIR / "0038-work-protocol.md", INTRODUCING),
     (ADR_DIR / "0043-companion.md", INTRODUCING),
+    (ADR_DIR / "0047-terminal.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""

@@ -1,0 +1,31 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.2 in cui NON deve succedere niente.",
+    "/usr/bin/whoami è innocuo, ed è proprio per questo che sta qui: non è in",
+    "ELA_TERMINAL_PROGRAMS, e il Guardian lo nega PRIMA di chiedere, qualunque cosa faccia.",
+    "Che cosa ti aspetti di vedere: il task va in DENIED, e basta. Nessuna domanda in",
+    "`ela approvals`, nessuna notifica sull'iPhone.",
+    "Perché conta: i programmi ammessi stanno nello scope della CAPABILITY, non nel piano. Il",
+    "piano arriva dal client, e uno step del client può solo stringere (ADR 0026 §7): un piano",
+    "che nomina un programma fuori dall'elenco non allarga niente.",
+    "Nell'audit la decisione porta `rule: SCOPE`. Guardalo con: ela audit tail -n 5",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "provare a far girare un programma che non ho dichiarato",
+  "steps": [
+    {
+      "id": "e7a3c915-2b64-4d08-9f71-000000000002",
+      "goal": "chiedere chi sono a un programma fuori dall'elenco",
+      "required_capabilities": ["terminal.run"],
+      "arguments": {
+        "program": "usr/bin/whoami",
+        "args": [],
+        "purpose": "la prova che il confine tiene"
+      },
+      "risk": "HIGH",
+      "expected_result": "niente: il Guardian nega prima di chiedere",
+      "success_conditions": ["terminal.exit_code_matches"],
+      "requires_authorization": true
+    }
+  ]
+}
