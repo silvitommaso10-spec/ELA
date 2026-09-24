@@ -1343,9 +1343,10 @@ cui una domanda imparerà un fatto nuovo, ogni superficie o lo mostra o smette d
 
 ## 16. Il terminale: la prova a mano di M13.2
 
-> **Bozza scritta con la SPEC di M13.2** e allineata alle sue decisioni 1–16: i blocchi «che cosa si
-> deve vedere» si riscrivono con l'output vero della prima sessione reale, e i piani che nomina
-> entrano in [`examples/`](examples/) con l'implementazione.
+> **Bozza scritta con la SPEC di M13.2**, allineata alle sue decisioni 1–16 e, il 2026-09-24, a
+> M13.1b (ADR 0046) e alle tre domande decise alla ripresa: i blocchi «che cosa si deve vedere» si
+> riscrivono con l'output vero della prima sessione reale. L'ADR è
+> [0047](adr/0047-terminal.md).
 
 Da M13.2 ELA esegue un programma su questo Mac e ne riporta l'uscita. `terminal.run` è `HIGH`, come
 `fs.write`: chiede **ogni volta**, e nessuna policy potrà coprirlo in anticipo.
@@ -1378,6 +1379,15 @@ uv run ela serve
 scrivere e dice che `[]` è una risposta ammessa — «nessun programma» — e non un errore. Leggilo per
 intero: se una frase ti costringe a rileggere, è un difetto da riportare.
 
+E `ela init`, sullo stesso `.env`, lo dice nello stesso modo in cui dice le due righe di §15:
+
+```
+uv run ela init; echo "exit $?"
+```
+
+**Che cosa si deve vedere**: il file c'è già e non si tocca; `ELA_TERMINAL_PROGRAMS` è nominata fra
+le righe che mancano — **non** fra quelle «con il default di ELA» —, e `exit 2`.
+
 **Se non si vede così**: se ELA parte lo stesso, la variabile è rimasta nell'ambiente della shell —
 `env | grep ELA_TERMINAL`.
 
@@ -1395,10 +1405,16 @@ scope di §15, e per questo il Guardian li confronta come confronta i tuoi perco
 scrivono uguali. **ELA non usa mai il `PATH`.**
 
 ELA li controlla all'avvio e si ferma con una frase se uno non va: uno scritto con la barra o con un
-`..`, una cartella — che ammetterebbe tutto ciò che contiene —, o un file che non si esegue. **Non
-rifiuta gli interpreti**, e non è una dimenticanza: ammettere `sh`, `python`, `env`, `xargs` o `find`
-significa ammettere qualunque cosa, e la difesa è la domanda che ELA ti fa a ogni uso. Una lista di
-interpreti vietati sarebbe incompleta dal primo giorno.
+`..`, una cartella — che ammetterebbe tutto ciò che contiene —, o un file che non si esegue. E
+nient'altro. **Non rifiuta gli interpreti**, nemmeno il Python con cui ELA stessa gira, e non è una
+dimenticanza: ammettere `sh`, `python`, `env`, `xargs` o `find` significa ammettere qualunque cosa, e
+la difesa è la domanda che ELA ti fa a ogni uso. Una lista di interpreti vietati sarebbe incompleta
+dal primo giorno. **Una voce che non c'è non ferma l'avvio**: ogni domanda per lei è rifiutata prima
+di nascere, con `terminal.no_program`.
+
+**Un link dichiarato è una scelta tua.** `ELA_TERMINAL_PROGRAMS=["opt/homebrew/bin/rg"]` dichiara il
+link, e la domanda ti mostra il file a cui porta oggi; se dopo l'avvio qualcuno lo ripunta — `brew
+upgrade`, per esempio — ELA rifiuta con `terminal.program_changed` prima di chiederti niente.
 
 **Due di questi programmi lanciano altri programmi**: `/usr/bin/time` esegue ciò che gli passi come
 argomento, e `/usr/bin/env` pure. Dichiararli allarga il confine a tutto ciò che possono lanciare.
@@ -1471,7 +1487,23 @@ uv run ela audit tail -n 200 --json | grep -c bin/echo          # più di 0: il 
 ```
 
 Il programma è nell'audit — è ciò che la decisione ha giudicato —; gli argomenti e l'uscita no: sono
-contenuto tuo, e un log append-only non si redige più.
+contenuto tuo, e un log append-only non si redige più. **I numeri sì**: il numero degli argomenti, il
+codice d'uscita e i byte di ogni flusso, e sono soltanto numeri:
+
+```
+uv run ela audit tail --task <id> -n 20 --json | grep -A 12 '"numbers"'
+```
+
+**E l'audit dice con quale sì**, come per `fs.write` da M13.1b:
+
+```
+uv run ela task results <id> --json | grep authorization_id
+uv run ela audit tail --task <id> -n 20 --json | grep -E '"(event_type|authorization_id|uses)"'
+```
+
+**Che cosa si deve vedere**: le due righe del risultato (`STARTED` e `SUCCEEDED`) portano **lo stesso**
+`authorization_id`, in `TOOL_EXECUTED` c'è **quello** — lo stesso di `AUTHORIZATION_GRANTED` — e
+`"uses": 1`.
 
 **Se non si vede così**: se il task fallisce prima della domanda con un codice di percorso, la
 cartella `ELA/` non c'è — §15, o creala tu.
@@ -1510,10 +1542,18 @@ uv run ela task results <id>   # l'uscita raccolta fino a lì, con shown e total
 **La seconda volta lo ferma ELA che si ferma.** Togli la riga del timeout, riavvia, rilancia lo
 stesso giro in un task nuovo, e **mentre il comando gira** premi Ctrl-C nel terminale di
 `ela serve`. Il comando sta in un gruppo di processi suo, quindi il Ctrl-C non lo raggiunge da solo:
-è ELA, fermandosi, a doverlo uccidere.
+è ELA, fermandosi, a doverlo uccidere — al segnale, non allo scadere dei due minuti.
 
 ```
-pgrep -fl "sleep 600"          # niente, anche questa volta
+pgrep -fl "sleep 600"          # niente, anche questa volta, e subito
+```
+
+Poi riavvia ELA e guarda il risultato del task: `FAILED` con **`terminal.stopped`** — non
+`terminal.timeout`: il tempo non era scaduto, era ELA che si fermava —, `ended: stopped_by_ela`, e
+l'uscita raccolta fino a lì.
+
+```
+uv run ela task results <id>
 ```
 
 **Se non si vede così**: se `sleep 600` è ancora vivo, ELA ha ucciso il figlio e non il suo gruppo —
