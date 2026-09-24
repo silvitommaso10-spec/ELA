@@ -358,6 +358,31 @@ async def test_the_write_example_leaves_the_file_the_note_promises(
     assert not str(written).startswith(str(settings.workspace.workspace_dir))
 
 
+async def test_the_write_example_spends_its_yes_and_every_record_names_it(
+    client: AsyncClient,
+) -> None:
+    """M13.1b: the audit says *with which authorization* the write happened (§32).
+
+    Until M13.1b this was null on both result rows and on ``TOOL_EXECUTED``, and the grant stayed
+    unspent for its hour: the ``HIGH`` row was missing from ``CONSUMING_RULES``. What the proof by
+    hand of ``GETTING_STARTED.md`` §15 asks the user to see with ``--json``.
+    """
+    question = await asked(client, fs_plan("fs-write.json"), "scrivi fuori dalla workspace")
+    await say_yes(client, question)
+
+    task_id = question["task_id"]
+    results = results_of(await client.get(f"/tasks/{task_id}/results"))
+    events = (await client.get("/audit", params={"task_id": task_id})).json()
+    (granted,) = [e for e in events if e["event_type"] == "AUTHORIZATION_GRANTED"]
+    (executed,) = [e for e in events if e["event_type"] == "TOOL_EXECUTED"]
+
+    assert [r["status"] for r in results] == ["STARTED", "SUCCEEDED"]
+    assert granted["authorization_id"] is not None
+    assert [r["authorization_id"] for r in results] == [granted["authorization_id"]] * 2
+    assert executed["authorization_id"] == granted["authorization_id"]
+    assert executed["payload"]["uses"] == 1
+
+
 async def test_the_same_plan_sent_again_is_refused_before_anybody_is_asked(
     client: AsyncClient, settings: Settings
 ) -> None:
@@ -410,7 +435,13 @@ async def test_a_plan_that_declares_the_overwrite_is_asked_and_says_so(
 async def test_the_read_example_puts_the_content_in_the_result_and_not_in_the_audit(
     client: AsyncClient,
 ) -> None:
-    """dec. P: the bytes go into the result; the audit keeps the path and the size."""
+    """dec. P: the bytes go into the result, and so does their size; the audit keeps the path.
+
+    Until M13.1b this docstring said the audit kept «the path and the size», and the body checked
+    only the path: no event has ever carried the size of a read that succeeded. The size is
+    ``bytes``, in the result beside the content; ``TOOL_EXECUTED`` has its fixed keys and nothing
+    else. A read that *fails* is another matter, and carries sizes on purpose (ADR 0045 §8).
+    """
     await say_yes(client, await asked(client, fs_plan("fs-write.json"), "scrivi"))
 
     question = await asked(client, fs_plan("fs-read.json"), "rileggi")
@@ -422,9 +453,22 @@ async def test_the_read_example_puts_the_content_in_the_result_and_not_in_the_au
     assert run["task"]["state"] == TaskState.COMPLETED.value, run
     results = (await client.get(f"/tasks/{question['task_id']}/results")).json()
     assert results[-1]["output"]["content"].startswith("# M13.1")
+    content = results[-1]["output"]["content"]
+    assert results[-1]["output"]["bytes"] == len(content.encode("utf-8"))
     trail = json.dumps((await client.get("/audit")).json())
     assert "Questo file sta fuori dalla workspace" not in trail
     assert "ELA/prova.md" in trail
+    read = (await client.get("/audit", params={"task_id": question["task_id"]})).json()
+    (executed,) = [e for e in read if e["event_type"] == "TOOL_EXECUTED"]
+    assert set(executed["payload"]) == {
+        "status",
+        "result_id",
+        "targets",
+        "duration_ms",
+        "device",
+        "uses",
+    }, "a key beyond the fixed ones is a channel nobody decided to open"
+    assert executed["error"] is None
 
 
 async def test_the_plan_outside_the_scope_is_denied_without_asking_anybody(

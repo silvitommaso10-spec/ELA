@@ -1,7 +1,8 @@
 """The tables of ADR 0013 and the executor/tools describe the same code.
 
 Same pattern as the other ADR tests: §5 (outcome → engine operation → error code) against the
-engine's tables and the executor's constants, §6 (rule → consumes) against ``CONSUMING_RULES``,
+engine's tables and the executor's constants, §6 (rule → consumes) — **every** such table in
+``docs/adr/``, not ADR 0013's alone (M13.1b) — against ``CONSUMING_RULES``,
 §11 (capability → tool → name → output → error codes) against ``tools_v01`` and the tools' own
 declarations. Each table has a distinctive row shape, so no other table test mistakes it.
 
@@ -43,6 +44,7 @@ two output keys and the routing codes). A replacement names a capability that al
 and its row is the one the code must match."""
 OUTCOME_ROW = re.compile(r"^\| `(ALLOWED|DENIED|REQUIRES_APPROVAL)`(.*?) \| `(\w+)` \| (.+) \|$")
 RULE_ROW = re.compile(r"^\| `([A-Z_]+)` \| (sì|no) \|$")
+CONSUMING_HEADER = "| Regola | Consuma |"
 TOOL_ROW = re.compile(r"^\| `([a-z_.]+)` \| `(\w+)` \| `([\w-]+)` \| (.+?) \| (.+?) \|$")
 CODE = re.compile(r"`([^`]+)`")
 EXECUTOR_CODES = {GRANT_VANISHED, TOOL_REFUSED, TOOL_EXCEPTION}
@@ -62,13 +64,67 @@ def documented_outcomes(text: str) -> list[tuple[str, str, str]]:
 
 
 def documented_consuming_rules(text: str) -> dict[Rule, bool]:
-    rows = {
-        Rule(rule): answer == "sì"
-        for line in text.splitlines()
-        for rule, answer in [m.groups() for m in [RULE_ROW.match(line)] if m is not None]
-    }
-    assert rows, "ADR 0013 must contain the consuming-rules table"
+    """The rows of the «Regola | Consuma» table in ``text``: the lines right under its header."""
+    lines = text.splitlines()
+    assert CONSUMING_HEADER in lines, f"no {CONSUMING_HEADER!r} table here"
+    rows: dict[Rule, bool] = {}
+    for line in lines[lines.index(CONSUMING_HEADER) + 2 :]:
+        match = RULE_ROW.match(line)
+        if match is None:
+            break
+        rows[Rule(match.group(1))] = match.group(2) == "sì"
+    assert rows, f"the {CONSUMING_HEADER!r} table has no row a rule can be read from"
     return rows
+
+
+def adr_documents() -> list[tuple[str, str]]:
+    """Every ADR, as (file name, text), in the order of its number — the order of time."""
+    return [
+        (path.name, path.read_text(encoding="utf-8"))
+        for path in sorted(ADR_DIR.glob("[0-9][0-9][0-9][0-9]-*.md"))
+    ]
+
+
+def consuming_answers(
+    documents: list[tuple[str, str]],
+) -> tuple[dict[Rule, tuple[bool, str]], list[str]]:
+    """What every «Regola | Consuma» table of ``documents`` says, the most recent winning.
+
+    An ADR is immutable, so a later one adds its rows under the same header (ADR 0045 §3 did, for
+    ``APPROVAL_EVERY_USE``); until M13.1b only ADR 0013's was read, and the row ADR 0045 added was
+    a promise no test held. When two tables disagree about a rule, the later ADR is the decision
+    in force — and the disagreement is returned, so the message can say which one was overridden.
+    """
+    answers: dict[Rule, tuple[bool, str]] = {}
+    overridden: list[str] = []
+    for name, text in documents:
+        if CONSUMING_HEADER not in text.splitlines():
+            continue
+        for rule, consumes in documented_consuming_rules(text).items():
+            earlier = answers.get(rule)
+            if earlier is not None and earlier[0] != consumes:
+                overridden.append(
+                    f"{rule.value}: {earlier[1]} says {_word(earlier[0])}, {name} says "
+                    f"{_word(consumes)} — the most recent wins"
+                )
+            answers[rule] = (consumes, name)
+    return answers, overridden
+
+
+def _word(consumes: bool) -> str:
+    return "sì" if consumes else "no"
+
+
+def consuming_message(answers: dict[Rule, tuple[bool, str]], overridden: list[str]) -> str:
+    rows = [f"  {rule.value}: {_word(c)} ({source})" for rule, (c, source) in answers.items()]
+    return "\n".join(
+        [
+            "the «Regola | Consuma» tables of docs/adr/, read in order — when two disagree the "
+            "most recent ADR wins:",
+            *rows,
+            *(f"  overridden: {line}" for line in overridden),
+        ]
+    )
 
 
 def documented_tools(text: str) -> dict[str, tuple[str, str, frozenset[str], frozenset[str]]]:
@@ -149,13 +205,67 @@ def test_every_outcome_row_names_an_engine_operation_and_a_known_code() -> None:
     ]
 
 
-def test_consuming_rules_match_the_code() -> None:
-    documented = documented_consuming_rules(ADR_PATH.read_text(encoding="utf-8"))
-    assert {rule for rule, consumes in documented.items() if consumes} == CONSUMING_RULES
-    assert {rule for rule, consumes in documented.items() if not consumes} == {
+def test_consuming_rules_match_every_table_of_the_adrs() -> None:
+    answers, overridden = consuming_answers(adr_documents())
+    message = consuming_message(answers, overridden)
+
+    assert {rule for rule, (consumes, _) in answers.items() if consumes} == CONSUMING_RULES, message
+    assert {rule for rule, (consumes, _) in answers.items() if not consumes} == {
         Rule.ALLOW,
         Rule.ALLOW_WITHIN_SCOPE,
-    }
+    }, message
+
+
+def test_the_tables_that_state_a_consumption_are_the_ones_expected() -> None:
+    """Two today: ADR 0013 §6 and the row ADR 0045 §3 added. A third is found by the glob."""
+    holding = [name for name, text in adr_documents() if CONSUMING_HEADER in text.splitlines()]
+    assert holding == ["0013-executor.md", "0045-filesystem-and-high.md"]
+
+
+def test_a_drifted_consuming_table_is_detected() -> None:
+    """The negative cases, on the union and not on ADR 0013 alone (M13.1b).
+
+    The old case softened ADR 0013's table and checked it against ``CONSUMING_RULES``. Once the
+    set was derived, ADR 0013 alone differed from it anyway, so that case passed with or without
+    the softening — a negative case that could no longer fail.
+    """
+    documents = adr_documents()
+    consuming = {rule for rule, (c, _) in consuming_answers(documents)[0].items() if c}
+    assert consuming == CONSUMING_RULES
+
+    softened = [
+        (
+            name,
+            text.replace(
+                "| `APPROVAL_UNLESS_AUTHORIZED` | sì |", "| `APPROVAL_UNLESS_AUTHORIZED` | no |", 1
+            ),
+        )
+        for name, text in documents
+    ]
+    assert softened != documents
+    assert {r for r, (c, _) in consuming_answers(softened)[0].items() if c} != CONSUMING_RULES
+
+    the_high_row_softened = [
+        (name, text.replace("| `APPROVAL_EVERY_USE` | sì |", "| `APPROVAL_EVERY_USE` | no |", 1))
+        for name, text in documents
+    ]
+    assert the_high_row_softened != documents
+    answers, _ = consuming_answers(the_high_row_softened)
+    assert answers[Rule.APPROVAL_EVERY_USE] == (False, "0045-filesystem-and-high.md")
+    assert {r for r, (c, _) in answers.items() if c} != CONSUMING_RULES
+
+
+def test_when_two_tables_disagree_the_most_recent_wins_and_says_so() -> None:
+    earlier = ("0013-executor.md", f"{CONSUMING_HEADER}\n|---|---|\n| `ALLOW` | sì |\n")
+    later = ("0099-later.md", f"{CONSUMING_HEADER}\n|---|---|\n| `ALLOW` | no |\n")
+
+    answers, overridden = consuming_answers([earlier, later])
+
+    assert answers[Rule.ALLOW] == (False, "0099-later.md")
+    assert overridden == [
+        "ALLOW: 0013-executor.md says sì, 0099-later.md says no — the most recent wins"
+    ]
+    assert "overridden: ALLOW" in consuming_message(answers, overridden)
 
 
 def test_tools_table_matches_the_code() -> None:
@@ -214,12 +324,6 @@ def test_a_drifted_table_is_detected() -> None:
         drifted = text.replace(before, after, 1)
         assert drifted != text, before
         assert documented_tools(drifted)[cid] != coded[cid], before
-    softened = text.replace(
-        "| `APPROVAL_UNLESS_AUTHORIZED` | sì |", "| `APPROVAL_UNLESS_AUTHORIZED` | no |", 1
-    )
-    assert softened != text
-    consuming = {r for r, c in documented_consuming_rules(softened).items() if c}
-    assert consuming != CONSUMING_RULES
     renamed = text.replace(
         "| `fail_step` | `grant_vanished` |", "| `fail_task` | `grant_vanished` |", 1
     )
@@ -232,7 +336,9 @@ def test_a_drifted_table_is_detected() -> None:
 def test_a_missing_table_is_detected() -> None:
     with pytest.raises(AssertionError, match="outcomes table"):
         documented_outcomes("nothing")
-    with pytest.raises(AssertionError, match="consuming-rules table"):
+    with pytest.raises(AssertionError, match=r"no '\| Regola \| Consuma \|' table here"):
         documented_consuming_rules("nothing")
+    with pytest.raises(AssertionError, match="has no row a rule can be read from"):
+        documented_consuming_rules(f"{CONSUMING_HEADER}\n|---|---|\nnot a row\n")
     with pytest.raises(AssertionError, match="tools table"):
         documented_tools("nothing")

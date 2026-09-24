@@ -44,16 +44,37 @@ uv run ela init
 ```
 wrote .env (mode 600) with a fresh ELA_API_TOKEN. It is not printed here: read it from the file.
 next:
+  write ELA_FS_ROOT and ELA_FS_SCOPE in .env   # no default, and no start without
   uv run alembic upgrade head   # ELA does not migrate on start-up (ADR 0006)
   ela serve                     # ELA creates its database directory and workspace
 ```
 
 Scrive **un solo file**, `.env`, con un token generato e permessi `0600`. Il token **non viene
-stampato**: sta nel file, e da lì lo leggono sia ELA sia la CLI. Sotto al token trovi ogni altra
-variabile commentata accanto al suo default — si tocca solo ciò che si vuole cambiare.
+stampato**: sta nel file, e da lì lo leggono sia ELA sia la CLI. Sotto al token trovi **le due righe
+obbligatorie**, `ELA_FS_ROOT` ed `ELA_FS_SCOPE`, commentate con un esempio — ELA non ha un default
+per loro e non parte finché non le scrivi (qui sotto) —, e poi ogni altra variabile commentata
+accanto al suo default: di quelle si tocca solo ciò che si vuole cambiare.
 
-Se `.env` esiste già, `init` **non lo tocca**: dice quali variabili quel file non imposta, e se
-manca `ELA_API_TOKEN` esce con `2` e dice come generarne uno.
+Se `.env` esiste già, `init` **non lo tocca**: dice quali variabili facoltative quel file non
+imposta, e se manca `ELA_API_TOKEN`, o una delle due righe obbligatorie, esce con `2` e dice che cosa
+scrivere. Per vederlo, in una cartella vuota (`~/ELA` è la cartella in cui hai clonato ELA):
+
+```
+cd "$(mktemp -d)" && uv run --project ~/ELA ela init
+uv run --project ~/ELA ela init; echo "exit $?"
+```
+
+La seconda volta il file c'è già e resta com'è, le due righe non stanno fra quelle «con il default di
+ELA», e l'uscita è `exit 2` con:
+
+```
+ela: .env does not set ELA_FS_ROOT and ELA_FS_SCOPE, and ELA does not start without them: they have no default. Write them, with a folder of yours, for example:
+    ELA_FS_ROOT=/Users/you/Documents
+    ELA_FS_SCOPE=ELA
+```
+
+Fino a M13.1b `init` diceva che il token era «the only variable ELA requires» e, su questo stesso
+file, «nothing required is missing»: se lo leggi ancora, stai girando su codice precedente.
 
 Il database e il workspace stanno di default in `~/.ela/`. Per tenerli altrove, togli il commento
 a `ELA_DB_URL` e `ELA_WORKSPACE_DIR` nel `.env` appena scritto.
@@ -68,8 +89,9 @@ ELA_FS_ROOT=/Users/tu/Documenti
 ELA_FS_SCOPE=ELA
 ```
 
-`ELA_FS_ROOT` è una cartella **tua**, e ELA non la crea mai: se non c'è, rifiuta con `fs.no_root`
-invece di inventarsi un posto che non hai scelto. `ELA_FS_SCOPE` è la sola cartella dentro quella
+`ELA_FS_ROOT` è una cartella **tua**, e ELA non la crea mai: se non c'è, ELA non parte e lo dice —
+e se sparisce dopo l'avvio, ogni chiamata rifiuta con `fs.no_root` —, invece di inventarsi un posto
+che non hai scelto. `ELA_FS_SCOPE` è la sola cartella dentro quella
 radice che `fs.read` e `fs.write` possono toccare — con l'esempio qui sopra,
 `/Users/tu/Documenti/ELA` — e **quella la crea la prima scrittura**, come la cartella delle note
 dentro la workspace: la radice è tua, ciò che sta dentro lo scope è lavoro di ELA.
@@ -1105,21 +1127,25 @@ blocco** con tutto ciò che la domanda nomina — perché una superficie può of
 mostra a che cosa lo stai dicendo:
 
 ```
-approval    9f2c1e30-0000-4000-8000-000000000001
-task        55ed2ab5-94aa-581f-9468-c4d247d9fe04
-capability  fs.write
-what        Writes one file inside the authorised folder, outside the workspace.
-risk        HIGH
-may go      LOCAL_ONLY
-grant       1 use, within 30 minutes
-expires     2026-09-21T10:44:00+00:00
-step goal   lasciare un file nella cartella che ho dichiarato
-declared    purpose: la prova a mano del filesystem
-targets     ELA/prova.md
-file        /Users/tu/Documenti/ELA/prova.md
-does        creates a new file
-asks        fs.write on ELA/prova.md for step …: requires an authorization: none was given
+approval              9f2c1e30-0000-4000-8000-000000000001
+task                  55ed2ab5-94aa-581f-9468-c4d247d9fe04
+capability            fs.write
+what                  Writes one file inside the authorised folder, outside the workspace.
+risk                  HIGH
+may go                LOCAL_ONLY
+question expires      2026-09-22T10:14:00+00:00
+grant if you say yes  1 use, within 60 minutes
+step goal             lasciare un file nella cartella che ho dichiarato
+declared              purpose: la prova a mano del filesystem
+targets               ELA/prova.md
+file                  /Users/tu/Documenti/ELA/prova.md
+does                  creates a new file
+asks                  fs.write on ELA/prova.md for step …: requires an authorization: none was given
 ```
+
+Due scadenze, e ciascuna dice di chi è: `question expires` è fin quando la domanda si può ancora
+rispondere, `grant if you say yes` è quanto vive il permesso che il sì farà nascere — un uso, per
+un'ora col default di `ELA_AUTHORIZATION_TTL_SECONDS`.
 
 Le due righe da guardare sono `file` e `does`: il **percorso risolto per esteso** —
 `/Users/tu/Documenti/ELA/prova.md`, non `ELA/prova.md` — e che cosa il sì farà. Quei due fatti li
@@ -1130,6 +1156,20 @@ uv run ela task approve <id> --approval <approval-id>
 uv run ela task run <id>
 cat /Users/tu/Documenti/ELA/prova.md
 ```
+
+**E l'audit dice con quale sì** (da M13.1b). Il sì ha fatto nascere un grant di un uso solo, e la
+scrittura lo **spende**: il risultato e l'audit lo nominano.
+
+```
+uv run ela task results <id> --json | grep authorization_id
+uv run ela audit tail --task <id> -n 20 --json | grep -E '"(event_type|authorization_id|uses)"'
+```
+
+**Che cosa si deve vedere**: le due righe del risultato — `STARTED`, scritta prima di scrivere, e
+`SUCCEEDED` — portano **lo stesso** `authorization_id`; in `TOOL_EXECUTED` c'è **quello**, lo stesso di
+`AUTHORIZATION_GRANTED`, e `"uses": 1`. Se vedi `null`, stai girando su codice precedente a M13.1b:
+quella versione lasciava il grant intatto per un'ora, e l'audit non sapeva dire con quale
+autorizzazione il file era stato scritto.
 
 **Se non si vede così**: se il task finisce `DENIED` senza chiedere niente, il percorso del piano
 non è dentro `ELA_FS_SCOPE` — è il passo 5, ma su un piano che doveva passare. Se il risultato è
@@ -1218,7 +1258,10 @@ uv run ela task results <id>
 uv run ela audit tail -n 10
 ```
 
-Il percorso c'è, la dimensione c'è, **il contenuto no** — un log append-only non si redige più.
+Il percorso c'è, **il contenuto no** — un log append-only non si redige più — e nemmeno la
+dimensione: quella sta nel risultato, accanto al contenuto (`bytes` nel blocco di `ela task
+results`). Fino a M13.1b questa riga diceva «la dimensione c'è»: non c'è mai stata. Una lettura che
+**fallisce**, invece, porta le dimensioni nel suo errore, per scelta (ADR 0045 §8).
 
 ### 5. Fuori dallo scope: il campanello che **non** suona
 

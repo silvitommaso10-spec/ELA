@@ -122,6 +122,7 @@ from ela.executive.errors import (
     ExecutorError,
 )
 from ela.permissions import (
+    ASKING_RULES,
     DEFAULT_AUTHORIZATION_TTL,
     SINGLE_USE,
     Rule,
@@ -236,11 +237,18 @@ MAX_APPROVAL_TTL: Final = timedelta(days=7)
 """The longest ``approval_ttl`` the executor accepts (review of M5.1): no TTL without a cap, the
 rule of M4.2 and M4.3. Above it is a configuration error, ``ValueError`` at construction."""
 
-CONSUMING_RULES: Final[frozenset[Rule]] = frozenset(
-    {Rule.APPROVAL_UNLESS_AUTHORIZED, Rule.AUTHORIZATION_REQUIRED}
-)
+CONSUMING_RULES: Final[frozenset[Rule]] = ASKING_RULES | {Rule.AUTHORIZATION_REQUIRED}
 """The rules under which an ``ALLOWED`` decision rests on the grant it was given (ADR 0011 §6,
-§9): only then is the grant consumed. ``ALLOW`` and ``ALLOW_WITHIN_SCOPE`` ignore the grant."""
+§9): only then is the grant consumed. ``ALLOW`` and ``ALLOW_WITHIN_SCOPE`` ignore the grant.
+
+**Derived, never listed** (M13.1b, ADR 0046). These are exactly the values the Guardian's
+``settled_by`` can take: the rows that ask, which :data:`~ela.permissions.ASKING_RULES` names once
+beside the policy table, and ``AUTHORIZATION_REQUIRED`` when the capability or the step wants a
+grant (ADR 0011 §7). Until M13.1b this was a list written by hand, and it missed the one row that
+asks at every use: an approved ``HIGH`` never spent its yes, and the audit could not say with
+which authorization it had acted. A row that asks now spends its grant because it asks.
+``tests/executive/test_consuming_rules.py`` holds the derivation to the Guardian's behaviour for
+every value of :class:`~ela.permissions.Rule`, without reading it."""
 
 TOOL_EXCEPTION: Final = "tool.exception"
 """Error code of a result synthesised from an exception the tool raised while acting."""

@@ -28,7 +28,15 @@ import typer
 
 from ela.cli.errors import CONFIGURATION, fail, handled
 
-__all__ = ["ENV_FILE", "GENERATE_TOKEN", "TOKEN_BYTES", "TOKEN_VARIABLE", "VARIABLES", "init"]
+__all__ = [
+    "ENV_FILE",
+    "GENERATE_TOKEN",
+    "REQUIRED",
+    "TOKEN_BYTES",
+    "TOKEN_VARIABLE",
+    "VARIABLES",
+    "init",
+]
 
 ENV_FILE: Final = ".env"
 TOKEN_VARIABLE: Final = "ELA_API_TOKEN"
@@ -39,6 +47,20 @@ GENERATE_TOKEN: Final = 'python -c "import secrets; print(secrets.token_urlsafe(
 
 ASSIGNED = re.compile(r"^\s*(ELA_\w+)\s*=", re.MULTILINE)
 """A variable a file actually sets. A commented line sets nothing."""
+
+REQUIRED: tuple[tuple[str, str], ...] = (
+    ("ELA_FS_ROOT", "/Users/you/Documents"),
+    ("ELA_FS_SCOPE", "ELA"),
+)
+"""The variables ELA cannot start without, beside the token, each with an **example** — not a
+default: ELA has none for them, and it does not choose the user's folder (M13.1, ADR 0045).
+
+Until M13.1b they sat among the optional ones, and ``init`` said the token was «the only variable
+ELA requires» about an ``.env`` ELA would refuse. The list is not compared with another list:
+``tests/cli/test_init.py`` writes what ``init`` writes plus these lines and asks
+``Settings.load()`` whether ELA would start, and without each one of them whether it would not
+(ADR 0046). A variable that becomes required and is not here makes that test fail.
+"""
 
 VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_API_HOST", "127.0.0.1"),
@@ -61,8 +83,6 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_ASSIGNMENT_MAX_SECONDS", "3600"),
     ("ELA_NODE_POLL_SECONDS", "25"),
     ("ELA_NOTES_SCOPE", "workspace/notes"),
-    ("ELA_FS_ROOT", ""),
-    ("ELA_FS_SCOPE", ""),
     ("ELA_PERCEPTION_ENABLED", "true"),
     ("ELA_PERCEPTION_LOOP_INTERVAL_SECONDS", "0"),
     ("ELA_PERCEPTION_SENSORS_INTERVAL_SECONDS", "2"),
@@ -105,7 +125,8 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_NODE_RETRY_SECONDS", "5.0"),
     ("ELA_NODE_RETRY_CEILING", "60"),
 )
-"""Every optional variable, with ELA's own default beside it.
+"""Every optional variable, with ELA's own default beside it — the required ones are in
+:data:`REQUIRED`.
 
 The same list as ``.env.example``, and a documentation test keeps the two the same: a variable
 added to ELA and not to both is a variable nobody discovers.
@@ -114,9 +135,14 @@ added to ELA and not to both is a variable nobody discovers.
 HEADER = f"""\
 # ELA — local configuration, written by `ela init`. Never commit this file.
 #
-# The token is the only variable ELA requires: without it the local API does not open.
+# The token: without it the local API does not open.
 {TOKEN_VARIABLE}=%s
 
+# Required, with no default: ELA does not start until these lines are written. The values are
+# examples — write your own, and remove the `#`.
+"""
+
+OPTIONAL_HEADER = """
 # Everything below is optional, and shows the default ELA uses when it is not set.
 """
 
@@ -124,6 +150,8 @@ HEADER = f"""\
 def template(token: str) -> str:
     """The whole ``.env`` as it is written the first time."""
     lines = [HEADER % token]
+    lines.extend(f"# {name}={example}" for name, example in REQUIRED)
+    lines.append(OPTIONAL_HEADER)
     lines.extend(f"# {name}={default}" for name, default in VARIABLES)
     return "\n".join(lines) + "\n"
 
@@ -162,15 +190,26 @@ def init() -> None:
         f"wrote {ENV_FILE} (mode 600) with a fresh {TOKEN_VARIABLE}. It is not printed here: "
         f"read it from the file.\n"
         "next:\n"
+        f"  write {_names(REQUIRED)} in {ENV_FILE}   # no default, and no start without\n"
         "  uv run alembic upgrade head   # ELA does not migrate on start-up (ADR 0006)\n"
         "  ela serve                     # ELA creates its database directory and workspace"
     )
 
 
+def _names(variables: tuple[tuple[str, str], ...] | list[tuple[str, str]]) -> str:
+    return " and ".join(name for name, _ in variables)
+
+
 def _report(env: Path) -> None:
-    """Say what this ``.env`` does not set, and change nothing (the user's note on 6a)."""
+    """Say what this ``.env`` does not set, and change nothing (the user's note on 6a).
+
+    What ELA cannot start without is a configuration failure, exit ``2``: the token, and since
+    M13.1b the lines of :data:`REQUIRED` too — a file ELA would refuse is not a file with
+    «nothing required missing», and they have no default to be listed beside.
+    """
     present = assigned(env.read_text(encoding="utf-8"))
     unset = [name for name, _ in VARIABLES if name not in present]
+    missing = [(name, example) for name, example in REQUIRED if name not in present]
     typer.echo(f"{ENV_FILE} is already here: left untouched.")
     if unset:
         typer.echo(f"not set, so ELA uses its own default: {', '.join(unset)}")
@@ -180,4 +219,11 @@ def _report(env: Path) -> None:
             f"{ENV_FILE} does not set {TOKEN_VARIABLE}, and ELA does not open an "
             f"unauthenticated API. Add one: {GENERATE_TOKEN}",
         )
-    typer.echo(f"{TOKEN_VARIABLE} is set: nothing required is missing.")
+    if missing:
+        lines = "".join(f"\n    {name}={example}" for name, example in missing)
+        fail(
+            CONFIGURATION,
+            f"{ENV_FILE} does not set {_names(missing)}, and ELA does not start without them: "
+            f"they have no default. Write them, with a folder of yours, for example:{lines}",
+        )
+    typer.echo(f"{TOKEN_VARIABLE} and {_names(REQUIRED)} are set: nothing required is missing.")

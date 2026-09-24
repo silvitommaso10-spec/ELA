@@ -12,9 +12,11 @@ Two properties of the registry are security properties, not conveniences:
 * **Immutable after construction.** There is no ``register``: what ELA may do is decided when
   the registry is built, and nothing that runs later — a planner, a provider's answer, a tool —
   can widen it.
-* **Bounded risk.** A specification above :data:`MAX_RISK` never enters (§29: "le capability
-  HIGH e CRITICAL non vengono introdotte in produzione nella prima versione"). The Guardian
-  denies HIGH and CRITICAL anyway (M4.2); the catalogue makes sure the question never arises.
+* **Bounded risk.** A specification above :data:`MAX_RISK` never enters. Until M13.1 the cap was
+  MEDIUM (§29: "le capability HIGH e CRITICAL non vengono introdotte in produzione nella prima
+  versione"); since M13.1 it is HIGH, revised in the open by ADR 0045, and a HIGH asks at every
+  use. The Guardian denies CRITICAL anyway (M4.2); the catalogue makes sure the question never
+  arises.
 
 The JSON Schema draft is 2020-12 and the validator is ``jsonschema`` (ADR 0010 §4): a
 hand-written validator for "the subset we use" is exactly the security-critical code this
@@ -573,9 +575,11 @@ def voice_speak_online() -> CapabilitySpec:
 
     **MEDIUM, like its local sister, and the level is not what separates them.** §29 calls
     ``model.complete`` MEDIUM *«perché il contenuto dell'utente può essere inviato a un provider
-    AI esterno»*, which is literally this. And HIGH is not a stricter MEDIUM: in the Guardian's
-    policy HIGH is ``DENY``, so a HIGH capability is not watched more closely, it is unusable
-    (ADR 0034 §4).
+    AI esterno»*, which is literally this. And HIGH is not a stricter MEDIUM: when this was
+    decided HIGH was ``DENY`` in the Guardian's policy, so a HIGH capability would not have been
+    watched more closely, it would have been unusable (ADR 0034 §4). That was the row until M13.1;
+    since then HIGH asks at every use (ADR 0045 §3), and choosing it here would be a new decision,
+    not this one.
 
     ``text`` stays out of ``prompt_arguments`` for M11.1's reason (dec. B) — the words would be
     written into a persisted ``Approval``, which is the accumulation §57 forbids reached by
@@ -632,9 +636,11 @@ def perception_listen() -> CapabilitySpec:
     reaches whoever decides. ``perception.listen`` says the thing that happens.
 
     MEDIUM and always authorised, for the reason ADR 0028 §9 registered: this is a reading of
-    **content**, and the first that is neither a screen nor a word of ELA's. HIGH is not an
-    option — in ``RISK_POLICY`` it means ``DENY``, so it would not make listening more careful, it
-    would make it impossible (ADR 0034 §4).
+    **content**, and the first that is neither a screen nor a word of ELA's. HIGH was not an
+    option — in ``RISK_POLICY`` it meant ``DENY``, so it would not have made listening more
+    careful, it would have made it impossible (ADR 0034 §4). That was the row until M13.1; since
+    then HIGH asks at every use (ADR 0045 §3), and choosing it here would be a new decision, not
+    this one.
 
     **No scope**, for the reason ADR 0029 §6 gave the capture: the Guardian's scope is
     path-shaped, and the natural scope of listening is *when* and *who else is in the room*,
