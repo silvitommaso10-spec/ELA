@@ -14,6 +14,9 @@ Ciclo obbligatorio: SPEC → IMPLEMENTATION → TEST → REVIEW → COMMIT → N
 MILESTONE.
 Alla fine della milestone committi e pushi sul branch di lavoro. Non fai mai merge su main
 e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.
+Il titolo del merge ha la forma che `tests/docs/test_changelog.py` legge: la **testa**, prima del
+primo «: » o « — », è l'id della milestone in maiuscolo (più id uniti da «+») oppure il nome del
+branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
 
 ## Prima di scrivere codice
 1. Leggi `docs/spec/ELA_spec.md` (sezioni rilevanti) e `docs/adr/`.
@@ -73,6 +76,7 @@ e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.
 
 ## Fine sessione
 Produci un riepilogo con: file toccati, test aggiunti, output di `pytest -q --cov`,
-cosa hai semplificato o lasciato aperto, domande per la review.
+cosa hai semplificato o lasciato aperto, domande per la review; e, alla fine di un branch, il
+titolo del merge, già scritto nella forma della testa.
 Alla fine della milestone committi e pushi sul branch di lavoro. Non fai mai merge su main
 e non usi mai --force: il merge lo fa l'utente dopo revisione esterna.
