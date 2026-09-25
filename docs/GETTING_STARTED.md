@@ -667,7 +667,7 @@ ELA_NODE_CORE_URL=http://100.76.92.39:8351
 ELA_VOICE_NAME="Microsoft Elsa Desktop"
 ```
 
-Tre cose da sapere prima di andare avanti:
+Da sapere prima di andare avanti:
 
 - **`ELA_MODEL_ROUTES` deve essere uguale a quella del Mac.** Se il `.env` del Mac la imposta,
   copia quella riga identica in questo file; se non la imposta, non scriverla — nella prova il Mac
@@ -678,6 +678,11 @@ Tre cose da sapere prima di andare avanti:
 - **La chiave è del PC** e non viaggia mai con il lavoro: il Core manda la chiamata, il nodo usa la
   sua. Il file sta in `$HOME\ELA` con i permessi della cartella del profilo — lo leggono i processi
   del tuo utente, lo stesso confine del segreto del nodo.
+- **Da M13.3, una riga facoltativa: `ELA_FS_ROOT`**, la cartella in cui il nodo può leggere e scrivere
+  per `fs.read` e `fs.write` (ADR 0048 §7). Sul nodo è **sola** — niente `ELA_FS_SCOPE`: lo scope resta
+  uno, sul Core — e segue le regole della radice del Core: esiste, non è un link, non contiene e non
+  sta dentro `$HOME\.ela` né `$HOME\ELA`. Senza la riga il nodo non dichiara i due tool, e lo dice
+  all'avvio. La prova di M13.3 l'aggiunge al file in §17, passo 2.
 
 ### 5. Il nodo: arruolato dal Mac, avviato sul PC
 
@@ -746,6 +751,9 @@ due letture, alle 20:26 e alle 20:51: il Core manda il proprio battito solo all'
 `task run` (ADR 0023 §5-bis e §9; M12.3c ha lasciato fuori scope un battito periodico), quindi fra
 un run e l'altro la sua riga scade rispetto al TTL. Non tocca il piazzamento — che avviene subito dopo il battito di un `run` — ma la lista lo
 mostra come assente (osservato nella prova, ed è fra le cose da riesaminare di M12.4).
+***Superato da M13.3*** (ADR 0048 §2): il Core batte per `local` prima di ogni piazzamento e a un
+periodo di un terzo del TTL, quindi `local` resta disponibile fra un `run` e l'altro; resta `UNKNOWN`
+soltanto il suo **stato**, che `local` non riporta.
 
 ### 6. Il Mac a batteria, e il PC che parla
 
@@ -1958,8 +1966,8 @@ Get-Content "<radice del PC>\ELA\prova.md"
 ```
 
 **Che cosa si deve vedere**: il task `completed`; il file sul disco del PC, con il testo del piano; e
-nel registro un `EXECUTION_VERIFIED` il cui payload ha `verified_on` uguale al `device_id` del PC —
-quello di `ela device list` —: **la verifica è avvenuta sul PC**, e il file che il Mac può avere allo
+nel registro un `EXECUTION_VERIFIED` il cui payload ha `verified_on` uguale all'id del PC — il campo
+`id` della sua riga in `ela device list --json` —: **la verifica è avvenuta sul PC**, e il file che il Mac può avere allo
 stesso percorso dalla prova di §15 non conta niente. Poi la lettura, con lo stesso giro e `docs/examples/fs-read.json`, e il
 contenuto in `uv run ela task results <id>`.
 
@@ -1997,6 +2005,10 @@ Power Mode su questo Mac a batteria può accendersi da solo, e raddoppia i tempi
 che trova il task occupato da una consegna del PC risponde `409` e non stampa niente: il ciclo lo
 riprova, e non lo conta come una prova.
 
+**Un'asimmetria da sapere prima dei numeri** (ADR 0048 §13): `local` non riporta mai il suo stato, e
+vale 0 dove il PC, `IDLE`, vale 10. È un'asimmetria di osservazione e non di fatto, e nel blocco B è
+parte di ciò che fa vincere il PC: la sessione la scrive accanto alla misura.
+
 **Blocco A, `local`**: il Mac attaccato, i task senza `--privacy`, quindi `LOCAL_ONLY`. Prima del
 blocco, lo stato dei nodi:
 
@@ -2007,7 +2019,7 @@ uv run ela device list --json > ~/Downloads/m13.3-pesi-A-nodi.json
 Dieci eco:
 
 ```
-for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "eco locale $i" --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/echo.json > /dev/null; line=$(uv run ela task run "$id" --json | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$(pmset -g | awk '/lowpowermode/ {print $2}')" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}'); echo "$line" >> ~/Downloads/m13.3-pesi-A-eco.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
+for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "eco locale $i" --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/echo.json > /dev/null; out=$(uv run ela task run "$id" --json); dopo=$(pmset -g | awk '/lowpowermode/ {print $2}'); line=$(echo "$out" | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$dopo" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}'); echo "$line" >> ~/Downloads/m13.3-pesi-A-eco.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
 ```
 
 Dieci letture — ognuna chiede il consenso, e il ciclo lo dà per te. Rileggono `ELA/prova.md` sotto la
@@ -2015,7 +2027,7 @@ radice del **Mac**: se la prova di §15 non l'ha lasciato, scrivilo prima con `f
 senza `--privacy`.
 
 ```
-for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "lettura locale $i" --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/fs-read.json > /dev/null; uv run ela task run "$id" > /dev/null; a=$(uv run ela approvals --json | jq -r --arg t "$id" '.[] | select(.task_id == $t) | .id'); uv run ela task approve "$id" --approval "$a" > /dev/null; line=$(uv run ela task run "$id" --json | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$(pmset -g | awk '/lowpowermode/ {print $2}')" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}'); echo "$line" >> ~/Downloads/m13.3-pesi-A-lettura.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
+for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "lettura locale $i" --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/fs-read.json > /dev/null; uv run ela task run "$id" > /dev/null; a=$(uv run ela approvals --json | jq -r --arg t "$id" '.[] | select(.task_id == $t) | .id'); uv run ela task approve "$id" --approval "$a" > /dev/null; out=$(uv run ela task run "$id" --json); dopo=$(pmset -g | awk '/lowpowermode/ {print $2}'); line=$(echo "$out" | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$dopo" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}'); echo "$line" >> ~/Downloads/m13.3-pesi-A-lettura.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
 ```
 
 **Blocco B, il PC**: **stacca l'alimentatore del Mac**, aspetta un battito — venti secondi —, e i task
@@ -2030,11 +2042,11 @@ Ogni ciclo aspetta che il PC abbia consegnato — rilancia `run` finché la risp
 aspetta in coda gonfierebbe la misura di quella dopo.
 
 ```
-for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "eco sul PC $i" --privacy TRUSTED --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/echo.json > /dev/null; until line=$(uv run ela task run "$id" --json | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$(pmset -g | awk '/lowpowermode/ {print $2}')" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}') && [ -n "$line" ] && ! echo "$line" | jq -e '.outcome == "assigned"' > /dev/null; do sleep 2; done; echo "$line" >> ~/Downloads/m13.3-pesi-B-eco.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
+for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "eco sul PC $i" --privacy TRUSTED --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/echo.json > /dev/null; until out=$(uv run ela task run "$id" --json) && [ -n "$out" ] && ! echo "$out" | jq -e '.outcome == "assigned"' > /dev/null; do sleep 2; done; dopo=$(pmset -g | awk '/lowpowermode/ {print $2}'); line=$(echo "$out" | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$dopo" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}'); echo "$line" >> ~/Downloads/m13.3-pesi-B-eco.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
 ```
 
 ```
-for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "lettura sul PC $i" --privacy TRUSTED --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/fs-read.json > /dev/null; uv run ela task run "$id" > /dev/null; a=$(uv run ela approvals --json | jq -r --arg t "$id" '.[] | select(.task_id == $t) | .id'); uv run ela task approve "$id" --approval "$a" > /dev/null; until line=$(uv run ela task run "$id" --json | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$(pmset -g | awk '/lowpowermode/ {print $2}')" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}') && [ -n "$line" ] && ! echo "$line" | jq -e '.outcome == "assigned"' > /dev/null; do sleep 2; done; echo "$line" >> ~/Downloads/m13.3-pesi-B-lettura.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
+for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "lettura sul PC $i" --privacy TRUSTED --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/fs-read.json > /dev/null; uv run ela task run "$id" > /dev/null; a=$(uv run ela approvals --json | jq -r --arg t "$id" '.[] | select(.task_id == $t) | .id'); uv run ela task approve "$id" --approval "$a" > /dev/null; until out=$(uv run ela task run "$id" --json) && [ -n "$out" ] && ! echo "$out" | jq -e '.outcome == "assigned"' > /dev/null; do sleep 2; done; dopo=$(pmset -g | awk '/lowpowermode/ {print $2}'); line=$(echo "$out" | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$dopo" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}'); echo "$line" >> ~/Downloads/m13.3-pesi-B-lettura.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
 ```
 
 **Che cosa si deve vedere alla fine di ogni ciclo**: nessuna riga «prova … non valida», e nel suo file
@@ -2046,7 +2058,9 @@ file mescolerebbe le prove.
 I `sleep` non misurano niente: danno al nodo il tempo di consegnare fra un `run` e l'altro. **I tempi
 si leggono dal database**, sull'orologio del Core — le assegnazioni, i risultati, e gli eventi con le
 decisioni e i punteggi. Il database è `~/.ela/ela.db` se `ELA_DB_URL` non è impostata; le righe sono
-di tutti i task del database, e la sessione tiene solo quelle dei task che i file `.jsonl` nominano:
+di tutti i task del database, e la sessione tiene solo quelle dei task che i file `.jsonl` nominano —
+nel database un id è di 32 cifre esadecimali senza trattini, nei `.jsonl` è con i trattini, e la
+sessione li confronta togliendoli:
 
 ```
 sqlite3 -json ~/.ela/ela.db "select a.task_id, a.device_id, a.created_at, a.claimed_at, a.delivered_at, r.capability_id, r.duration_ms, r.created_at as received_at, json_extract(r.metadata, '\$.node.ran_at') as ran_at from assignments a join execution_results r on r.task_id = a.task_id and r.step_id = a.step_id and r.status <> 'STARTED' order by a.seq" > ~/Downloads/m13.3-pesi-assegnazioni.json
@@ -2115,7 +2129,8 @@ dopo un'altra sospensione. La differenza fra lo scarto del PC e quello del Mac �
 rispetto al Core, e si confronta con i 180 s che una decisione ha di vita nel caso peggiore. **Il segno
 non si deduce a memoria**: lo si legge dalla documentazione dei due strumenti e lo si conferma con il
 numero di ELA — `ran_at` meno l'istante in cui il Core ha ricevuto la busta, dalle consegne del
-blocco B —, che dice da solo se il PC è avanti. `Out-File` di PowerShell 5.1 scrive un BOM: il file
+blocco B —, che è un limite inferiore: un valore positivo dice che il PC è avanti almeno di tanto, uno
+negativo non dice che è indietro. `Out-File` di PowerShell 5.1 scrive un BOM: il file
 si legge lo stesso.
 
 ### 6. La seconda metà del passo 9 di M13.2

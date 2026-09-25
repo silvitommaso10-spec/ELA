@@ -157,6 +157,17 @@ rifiutato. Nessun esempio e nessun piano del repository usava un nome così.
 con maiuscole diverse dallo scope è negato, il verso fail-safe —, e su Windows non c'è `O_NOFOLLOW`,
 quindi la finestra di ADR 0045 §7 lì è più larga.
 
+**E i byte, su Windows** — trovato dalla rilettura dell'implementazione, prima della prova a mano, e
+misurato dal job di Windows (run `36162668652`, 2026-09-25): senza `O_BINARY` un `os.open` di Windows
+apre in modo testo, e **una lettura riceve altri byte da quelli del disco** — `a\r\nb\x1ac` diventava
+`a\nb`, il ritorno a capo tolto e tutto ciò che segue un `0x1A` perso —, e il verifier, che legge allo
+stesso modo, non vedeva il `\r` che il piano non aveva: `fs.read` e il suo verifier si sarebbero dati
+ragione su un contenuto che il disco non ha, il falso positivo di ADR 0038 §14 proprio sulla macchina
+dove M13.3 manda `fs.*`. La scrittura, misurata, era già giusta; il flag c'è anche lì, perché il modo
+lo decide `os.open` e non chi scrive dopo. I flag di `fs.*` e del verifier portano `O_BINARY` (che
+altrove non esiste, ed è `0`), e `tests/tools/test_fs_windows.py` guarda i byte sul disco, non il
+testo riletto.
+
 **Che Windows legga davvero così** lo mostra un modulo che gira solo lì,
 `tests/tools/test_paths_windows.py`: una giunzione vera, un flusso alternativo vero, un punto in coda
 tolto davvero — prima il fatto di Windows, poi il rifiuto. Il job `windows-latest` lo raccoglie (§5).
@@ -256,16 +267,21 @@ questo che il verifier deve stare lì.
 variabile è obbligatoria insieme allo scope, sul nodo lo scope non c'è, perché resta uno, dell'utente,
 sul Core, e il nodo non ha un Guardian e non ne guadagna uno. Le regole della radice sono quelle del
 Core (ADR 0045 §5), **con un testo solo** (`refuse_the_root`) e un elenco derivato da ciò che **il
-nodo** usa per esistere: la cartella del segreto (ADR 0039 §6), il `.env` letto, l'albero sorgente. Un
+nodo** usa per esistere: la cartella del segreto (ADR 0039 §6), il `.env` letto, l'albero sorgente. Una
+radice che è un link è rifiutata, **e una giunzione è un link** (§4): `is_symlink` una giunzione non la
+vede, e la rilettura dell'implementazione l'ha trovato. Un
 nodo con una radice costruisce i due tool e i loro verifier (`node_tools`, `node_verifiers`) e li
 dichiara; uno senza non costruisce niente, riceve `MISSING_TOOL` da F4, e `ela node run` lo dice con una
 riga. `build_node` rifiuta un tool da verificare sul nodo senza il suo verifier (`carried`): in
-produzione non scatta, e vale per il suo caso negativo.
+produzione non scatta, e vale per il suo caso negativo. Guarda l'insieme di `VERIFIED_ON_THE_NODE`, e
+non ogni capability il cui verifier legge la macchina: un tool di un'altra di quelle il nodo non lo
+costruisce, e se lo costruisse F7 lo terrebbe comunque sul Core.
 
 **F7 legge un insieme in più.** `verified_here` era «il verifier legge la macchina»; è **«il verifier
 legge la macchina, e nessun nodo lo porta»**. L'insieme è una costante di `ela.tools`,
-`VERIFIED_ON_THE_NODE`, la stessa da cui il nodo costruisce i suoi verifier, e la composizione la passa
-all'orchestratore accanto al registro dei verifier. **Perché non una dichiarazione del nodo**, con una
+`VERIFIED_ON_THE_NODE`, e la composizione la passa all'orchestratore accanto al registro dei verifier;
+`node_verifiers` costruisce i due verifier per nome, e un test (`tests/composition/test_build_node.py`)
+tiene uguali la costante e ciò che il nodo costruisce. **Perché non una dichiarazione del nodo**, con una
 colonna nel registro: un nodo che dichiara il tool e non il verifier non ha un produttore, e il rifiuto
 che quella colonna farebbe scattare non scatterebbe mai (ADR 0026 §7). Il Core sa quali verifier un
 nodo porta perché è lo stesso codice, come sa i nomi dei tool.
@@ -304,6 +320,13 @@ capability che il Core verifica da sé, prima di ogni scrittura.
 **Un verdetto che non è testo** è un risultato che non si può conservare (§3): `result.not_text`, con
 `verdict` fra i campi nominati.
 
+**Il contratto ha una quattordicesima storia**, `what_is_verified_on_the_node_is_verified_there`
+(`tests/conformance/test_node_contract.py`), recitata dal nodo finto e dai due reali: un file scritto
+sulla radice del nodo e non su quella del Core supera la verifica; un `fs.write` del nodo che risponde
+`SUCCEEDED` senza scrivere, con lo stesso file sulla radice del Core, non la supera — il falso positivo
+di ADR 0038 §14 nei due versi —; e un nodo che consegna senza il verdetto non è creduto. ADR 0038 §18,
+«tredici storie», si legge con questa riga accanto.
+
 `VerifierPort` è esteso con `failure_codes`, nella tabella delle Conseguenze.
 
 ### 8. La domanda di uno step su un nodo: ciò che il piano afferma, e che ELA non ha guardato quel disco
@@ -340,7 +363,7 @@ per una lettura, `path.symlink` per un link o una giunzione.
 uno step su un nodo.** «A un utente non si chiede di approvare ciò che sarebbe negato comunque»: per
 uno step su un nodo la domanda **può nascere già condannata** — un file che c'è dove il piano ne
 dichiara uno nuovo si scopre dopo il sì, e il sì è speso. È il difetto che la prova a mano di M13.1
-aveva trovato e che ADR 0045 §7 aveva chiuso sul Core; qui torna per un nodo, e lo si dice con il suo
+aveva trovato e che ADR 0045 §6-bis aveva chiuso sul Core; qui torna per un nodo, e lo si dice con il suo
 nome. **Ogni domanda già condannata finisce senza effetto: il costo è un sì speso, mai un effetto
 diverso da quello approvato.** E la domanda nomina il percorso **scritto**, non quello risolto, e non
 dice se attraversa un link, che il nodo rifiuta comunque.
@@ -370,7 +393,7 @@ sta pagando.
 
 ADR 0047 §5 lasciava il residuo di Linux — il kernel conta il percorso del programma una volta in più e
 tetta il totale a tre quarti di `_STK_LIM`, quindi un comando al limite del conto di ELA può essere
-rifiutato dopo il sì — a «il giorno in cui viaggerà su un nodo Linux, la misura si prende lì (M13.3)».
+rifiutato dopo il sì — a «il giorno in cui viaggerà su un nodo Linux la misura si prende lì (M13.3)».
 **Nessuna macchina di ELA esegue il terminale su Linux**, e la sua precondizione — un kernel Linux che
 esegue il terminale — non è quella del Job Object: per questo è un criterio a sé della stessa
 proprietaria, e non una riga del debito di §9. `docs/milestones/M13.7.md` lo porta fra ciò che eredita.
@@ -425,11 +448,19 @@ scrive come tale**, con i valori di ADR 0017 — `NETWORK_POINTS` `LOCAL` 20 e `
 `AC` 10, `STATUS_POINTS` `IDLE` 10, le classi di potenza e il carico come sono —, e chiude quella parte
 del «da ritarare» di ADR 0017. ADR 0017 si legge con questa sezione accanto.
 
-**La potenza di calcolo, il carico e lo stato non hanno un lavoro che viaggi e li metta alla prova:
-sono stub, non debiti** (ADR 0026 §7). Nessuna capability che viaggia dipende dalla potenza di una
-macchina o da quanto è occupata. **Li tiene un tripwire**: `tests/docs/test_adr_travel.py` appunta
-l'insieme delle capability che viaggiano, chiesto a F7 e non riscritto a mano; quando l'insieme cambia,
-il test fallisce e rimanda a questa sezione.
+**La potenza di calcolo e il carico non hanno un lavoro che viaggi e li metta alla prova: sono stub,
+non debiti** (ADR 0026 §7). Nessuna capability che viaggia dipende dalla potenza di una macchina o da
+quanto è occupata. **Li tiene un tripwire**: `tests/docs/test_adr_travel.py` appunta l'insieme delle
+capability che viaggiano, chiesto a F7 e non riscritto a mano; quando l'insieme cambia, il test
+fallisce e rimanda a questa sezione.
+
+**Lo stato, la decisione 12 lo mette con loro, e la rilettura della SPEC ha notato che non è della
+stessa specie**: ha un produttore — il nodo riporta `IDLE` — e decide la gara del blocco B della misura
+(`local` a batteria 20, il PC 5 + 10 + 10, e il secondo 10 è `IDLE`: senza, vincerebbe `local` 20 a
+15), e il tripwire non scatta se cambia. **La forma che prende in questo ADR è una domanda aperta della
+review**; finché non ha una risposta, i suoi valori restano quelli di ADR 0017. **E un'asimmetria si
+scrive accanto alla misura**: `local` non batte mai lo stato, e vale 0 dove un nodo inattivo vale 10 —
+di osservazione e non di fatto, ed è parte di ciò che nel blocco B fa vincere il PC.
 
 **L'ordine di `NETWORK_POINTS` si misura**, ed è l'unica cosa dei pesi che una misura può dire: se un
 lavoro sul nodo della rete locale costa davvero meno di uno su una rete lontana, nell'ordine in cui la
@@ -446,7 +477,8 @@ il nodo confronta la decisione con il proprio orologio all'inizio della chiamata
 Un'offerta presa all'ultimo istante lascia alla decisione la differenza delle due impostazioni:
 **180 s con i default**, e zero se sono uguali, che la validazione ammette. Un nodo **avanti** più di
 così rifiuta, `tool.refused`; un nodo **indietro** non rifiuta mai, e accetta una decisione scaduta per
-quanto è indietro — il verso che ADR 0038 §5 dichiara per la decisione come titolo al portatore.
+quanto è indietro — il verso di ADR 0038 §5, la decisione come titolo al portatore, qui esteso a un
+orologio che è indietro: ADR 0038 §5 lo dice di una decisione ripresentata entro la sua scadenza.
 
 **La misura** — sul Mac, sul PC, e sul PC appena uscito dal sonno, prima che l'ora si risincronizzi —
 è la prova a mano di `docs/GETTING_STARTED.md` §17, e **si scrive qui dopo la misura**, con il numero,
