@@ -739,3 +739,26 @@ async def test_story_a_node_that_lies_is_not_saved_by_the_core_s_disk(
     verified = [e for e in await audit(world, task_id) if e.event_type is E.EXECUTION_VERIFIED]
     assert verified[-1].payload["passed"] is False
     assert verified[-1].payload["verified_on"] == node.device_id
+
+
+async def test_story_a_node_that_brings_no_verdict_is_not_believed(
+    world: Conformance, kit: NodeKit, tmp_path: Path
+) -> None:
+    """Form B's defence at a new boundary, recited by a node of the contract: the effect is real
+    on the node's root, the envelope comes back without the verdict the order asked for, and the
+    Core does not verify it on its own disk to make up for it — the step fails
+    ``verification.failed`` with ``verification.missing``."""
+    needs(kit, "what_is_verified_on_the_node_is_verified_there")
+    root = tmp_path / "node-files"
+    root.mkdir()
+    node = await kit.node(world, fs_root=root)
+    task_id, _, order = await taken(world, kit, write_plan(), node=node)
+    envelope = {key: value for key, value in (await node.run(order)).items() if key != "verdict"}
+
+    delivered = await node.deliver(envelope)
+
+    assert delivered.status == 200 and delivered.body["step"] == "FAILED"
+    verified = [e for e in await audit(world, task_id) if e.event_type is E.EXECUTION_VERIFIED]
+    error = verified[-1].error
+    assert error is not None and error.code == "verification.failed"
+    assert [f["code"] for f in error.details["failures"]] == ["verification.missing"]  # type: ignore[index, union-attr]

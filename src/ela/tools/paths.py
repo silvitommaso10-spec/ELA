@@ -89,7 +89,7 @@ PATH_CODES: Final[frozenset[str]] = frozenset(
 
 FORBIDDEN_PARTS: Final[frozenset[str]] = frozenset({"", ".", ".."})
 INVALID_SHAPE: Final = (
-    "is not a relative path that every machine reads the same way: no '.', '..', '\\\\' or ':', "
+    "is not a relative path that every machine reads the same way: no '.', '..', '\\' or ':', "
     "no name Windows keeps for a device, no name ending with a dot or a space"
 )
 FORBIDDEN_CHARACTERS: Final = ("\\", "\0", ":")

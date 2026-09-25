@@ -256,7 +256,9 @@ async def test_a_verdict_that_is_not_text_is_a_result_that_cannot_be_kept() -> N
 async def test_a_death_before_the_verification_is_repaired_with_the_kept_verdict() -> None:
     w, crashes = crashing_world(carried=frozenset({ECHO.id}))
     verified_there(w)
+    w.tool(ECHO.id).relocatable = False  # as fs.* is: a STARTED record at the claim, beside it
     task, step, taken, remote = await claimed(w)
+    assert len(await w.results.for_step(task.id, step.id)) == 1
     crashes.audit.arm("append", audit_of(E.EXECUTION_VERIFIED))
     with pytest.raises(Exception, match="never happened"):
         await w.executor.deliver(taken.assignment.id, remote.id, answered(verdict=Verdict((OK,))))
