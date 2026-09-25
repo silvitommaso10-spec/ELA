@@ -1837,11 +1837,10 @@ risultato, perché ELA non può più confermare che ciò che ha girato fosse il 
 `Users/tu/ela-prova/bin/eco` da `ELA_TERMINAL_PROGRAMS` (o scrivi `[]`), cancella `~/ela-prova`, e
 riavvia.
 
-## 17. L'azione che viaggia: la prova a mano di M13.3 — bozza
+## 17. L'azione che viaggia: la prova a mano di M13.3
 
-> **Bozza, nata con la SPEC di M13.3 il 2026-09-25.** I comandi che usano ciò che M13.3 costruisce
-> non funzionano ancora, e un piano d'esempio (`docs/examples/echo.json`) entra con l'implementazione;
-> le frasi della domanda sono quelle della forma D di `docs/milestones/M13.3.md`, decisa il 2026-09-25.
+> **Nata come bozza con la SPEC di M13.3, e resa definitiva con l'implementazione (ADR 0048).** Le
+> righe della domanda sono quelle che `ela approvals` stampa: `machine`, il percorso, `does`, `disk`.
 > **L'ordine è parte della prova**: il battito prima di tutto, perché una misura presa mentre il Mac
 > risulta non disponibile misura una gara in cui un nodo non compete. **Un comando per blocco**, tranne
 > i cicli della misura del passo 4, che sono una riga per blocco e non un comando (decisione 11).
@@ -1890,6 +1889,11 @@ stanno il codice e il `.env` del nodo:
 [IO.File]::AppendAllText("$HOME\ELA\.env", "`nELA_FS_ROOT=<radice del PC>`n")
 ```
 
+Il nodo si lancia da **Windows PowerShell** — il 5.1, la voce «Windows PowerShell» del menu Start —
+e **non** da PowerShell 7: da PowerShell 7 i `powershell.exe` con cui ELA legge l'alimentazione e fa
+parlare il PC ereditano un `PSModulePath` che non sanno caricare, e l'alimentazione risulterebbe
+`UNKNOWN` — misurato dal job di Windows della CI il 2026-09-25 (ADR 0048 §5):
+
 ```powershell
 uv run ela node run
 ```
@@ -1897,11 +1901,12 @@ uv run ela node run
 Sul Mac:
 
 ```
-uv run ela device list
+uv run ela device list --json > ~/Downloads/m13.3-pc-con-radice.json
 ```
 
-**Che cosa si deve vedere**: nella riga del PC, fra i tool, `fs-read` e `fs-write`. Senza la riga
-nel `.env` non ci sono, e il nodo lo dice all'avvio.
+**Che cosa si deve vedere**: nella riga del PC, fra i tool, `fs-read` e `fs-write`, e `power_source`
+`AC` — non `UNKNOWN`. Senza la riga nel `.env` i due tool non ci sono, e il nodo lo dice all'avvio
+con una riga («No ELA_FS_ROOT here…»).
 
 ### 3. Un file scritto sul PC, e riletto
 
@@ -1923,8 +1928,10 @@ uv run ela task run <id>
 uv run ela approvals
 ```
 
-**Che cosa si deve vedere**: la domanda nomina **il PC**, il percorso `ELA/prova.md` come il piano lo
-scrive, «crea un file nuovo», e dice che ELA non ha guardato quel disco. Poi:
+**Che cosa si deve vedere**: la domanda nomina **il PC** nella riga `machine` — il suo nome e l'inizio
+del suo id —, il percorso `ELA/prova.md` come il piano lo scrive nella riga `file`, in `does` «creates a
+new file: the plan says nothing is there», e nella riga `disk` che ELA non ha guardato quel disco e che
+il nodo rifiuta prima di agire se il disco dice altro. Poi:
 
 ```
 uv run ela task approve <id> --approval <approval-id>
@@ -1951,9 +1958,9 @@ Get-Content "<radice del PC>\ELA\prova.md"
 ```
 
 **Che cosa si deve vedere**: il task `completed`; il file sul disco del PC, con il testo del piano; e
-nel registro un `EXECUTION_VERIFIED` che nomina il `device_id` del PC — quello di `ela device list` —:
-**la verifica è avvenuta sul PC**, e il file che il Mac può avere allo stesso percorso dalla prova di
-§15 non conta niente. Poi la lettura, con lo stesso giro e `docs/examples/fs-read.json`, e il
+nel registro un `EXECUTION_VERIFIED` il cui payload ha `verified_on` uguale al `device_id` del PC —
+quello di `ela device list` —: **la verifica è avvenuta sul PC**, e il file che il Mac può avere allo
+stesso percorso dalla prova di §15 non conta niente. Poi la lettura, con lo stesso giro e `docs/examples/fs-read.json`, e il
 contenuto in `uv run ela task results <id>`.
 
 **La perdita dichiarata, vista.** Lo stesso `fs-write.json`, in un task nuovo `TRUSTED`, sempre con il
@@ -2057,7 +2064,7 @@ sqlite3 -json ~/.ela/ela.db "select task_id, event_type, created_at, device_id, 
 non la rispetta non vale:
 
 - in `m13.3-pesi-A-nodi.json` la riga di `local` disponibile e `AC`; in `m13.3-pesi-B-nodi.json`
-  disponibile e `BATTERY`;
+  disponibile e `BATTERY`; in tutti e due la riga del PC `AC`, e non `UNKNOWN`;
 - ogni riga finale di un task nei `.jsonl` dice `completed`;
 - nel blocco A ogni `DEVICE_SELECTED` sceglie `local`; nel blocco B sceglie il PC, e fra i candidati
   `local` c'è, con i suoi punti e **senza** `UNAVAILABLE` fra i rifiuti: un PC che vince perché il Mac

@@ -8,13 +8,15 @@ piece per commit, in the order of the SPEC; the pins grow with it.
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from pathlib import Path
 
+from ela.composition import CoreSettings
 from ela.devices import BEATS_PER_TTL, DeviceOrchestrator, DeviceRegistry, LocalHeartbeat
 from ela.domain import CapabilityId
 from ela.executive import VERIFICATION_MISSING
-from ela.permissions import CORE_ECHO, MODEL_COMPLETE
+from ela.permissions import CORE_ECHO, MODEL_COMPLETE, TERMINAL_RUN
 from ela.ports import LocalBeat, ToolRegistryPort, VerifierRegistryPort
 from ela.testing.fakes import (
     FakeAuditLog,
@@ -238,3 +240,84 @@ def test_the_section_of_the_question_says_what_is_lost_and_what_is_not() -> None
     assert "byte per byte" in text
     assert "**Lo sguardo sul nodo prima della domanda**" in adr_text()
     assert "non è un debito" in " ".join(adr_text().split())
+
+
+# ----------------------------------------------------------------------------------------
+# §9 to §14: the debts re-declared, the answers of §57, what is lost, the weights, the clock
+# ----------------------------------------------------------------------------------------
+
+ANSWER_ROW = re.compile(r"^\| \*\*(Quale [^*]+|Perché [^*]+)\*\* \| (.+) \|$")
+LOSS_ROW = re.compile(
+    r"^\| `(fs\.[a-z]+)` \| [^|]+ \| [^|]+ \| [^|]+ \| `(True|False)`, del nodo \|$"
+)
+TRAVELLING_TODAY = frozenset(
+    {"core.echo", "model.complete", "voice.speak", "voice.speak_online", "fs.read", "fs.write"}
+)
+"""The capabilities F7 lets go to a node, as M13.3 left them — pinned, because the weights of §17
+were chosen for these and for no other (ADR 0048 §13)."""
+
+
+def test_the_terminal_and_its_linux_residue_are_re_declared_to_m13_7() -> None:
+    """Criterion 18: ADR 0047 §13 and §5 have a registered owner, and the terminal does not
+    travel — it is not among the capabilities a node verifies."""
+    owner = (ROOT / "docs" / "milestones" / "M13.7.md").read_text(encoding="utf-8")
+
+    for number in (9, 10):
+        text = " ".join(section(number).split())
+        assert "**Debito a carico di M13.7**, dichiarato il **2026-09-25**" in text, number
+    assert "ADR 0047 §13" in section(9) and "ADR 0047 §5" in section(10)
+    assert TERMINAL_RUN not in VERIFIED_ON_THE_NODE
+    assert "ADR 0047 §13" in owner and "ADR 0047 §5" in owner
+
+
+def test_the_four_answers_of_fifty_seven_are_given_for_a_file_on_a_node() -> None:
+    rows = [ANSWER_ROW.match(line) for line in section(11).splitlines()]
+    asked = [row.group(1) for row in rows if row is not None]
+
+    assert asked == [
+        "Quale nodo",
+        "Quale tipo di dati",
+        "Perché viene inviato",
+        "Quale policy lo consente",
+    ]
+    assert "M13.8" in section(11)
+
+
+def test_what_stops_being_proven_is_written_for_the_two_that_travel_with_their_verifier(
+    tmp_path: Path,
+) -> None:
+    """The table of §12 names exactly the capabilities a node verifies, and says their verifier
+    reads the machine — the node's — which is what the code declares."""
+    _, verifiers, _ = _production(tmp_path)
+    rows = {
+        match.group(1): match.group(2) == "True"
+        for line in section(12).splitlines()
+        if (match := LOSS_ROW.match(line))
+    }
+
+    assert set(rows) == {str(cid) for cid in VERIFIED_ON_THE_NODE}
+    assert all(rows.values())
+    assert all(verifiers.get(cid).reads_the_machine for cid in VERIFIED_ON_THE_NODE)
+
+
+def test_the_tripwire_of_the_weights(tmp_path: Path) -> None:
+    """Decision 12: the magnitudes of §17 are a choice, and computing power, workload and status
+    are stubs no travelling work puts to the test. The day the set of what travels changes, this
+    fails — go and read ADR 0048 §13 again before the new capability is weighed like the old."""
+    tools, verifiers, _ = _production(tmp_path)
+    names = travelling(tools, verifiers)
+    travels = {str(tool.capability_id) for tool in tools.tools() if tool.name in names}
+
+    assert travels == TRAVELLING_TODAY, (
+        "the capabilities that travel changed: the weights of §17 were chosen for the old set — "
+        "read ADR 0048 §13 ('I pesi di §17') and say whether they still hold"
+    )
+    assert "### 13. I pesi di §17" in adr_text()
+
+
+def test_the_margin_of_the_clock_is_the_difference_of_the_two_settings() -> None:
+    core = CoreSettings.model_construct()
+    margin = core.decision_ttl_seconds - core.assignment_ttl_seconds
+
+    assert margin == 180
+    assert "**180 s con i default**" in section(14)

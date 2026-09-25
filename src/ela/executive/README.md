@@ -25,6 +25,11 @@ ADR 0014; M5.3, ADR 0015; M7.2, ADR 0021).
   M13.3 per un tool che dichiara `relocatable = False` (ADR 0048 §6): `fs.read` è ripetibile sulla sua
   macchina e non si sposta, perché su un'altra lo stesso percorso è un altro file; una presa scaduta
   con la `STARTED` si chiude `execution.interrupted`, una senza si ripiazza — oggi solo l'eco.
+  Da M13.3 (ADR 0048 §7, §8) un effetto che un nodo verifica sulla propria macchina — `fs.*` — ha il
+  **verdetto del nodo**: l'executor non chiama mai il proprio verifier sul risultato di un nodo il
+  cui verifier legge la macchina, né alla consegna né in una ripresa, e un verdetto mancante o fuori
+  vocabolario è `verification.missing`; e la domanda di uno step piazzato su quel nodo nasce da ciò
+  che il piano afferma (`asserted`), nomina la macchina e dice che ELA non ha guardato quel disco.
   La `ProviderUsage` del risultato finisce in `AuditEvent.usage`
   del `TOOL_EXECUTED` (§32): è l'unico posto dove ELA scrive quel campo. È l'unico modulo del Core
   che chiama `Tool.execute` (regola 16) e `complete_step` (regola 17).

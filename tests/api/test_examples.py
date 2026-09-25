@@ -36,6 +36,7 @@ EXAMPLE = EXAMPLES / "first-task.json"
 ASK_MODEL = EXAMPLES / "ask-model.json"
 SPEAK_ON_A_NODE = EXAMPLES / "speak-on-a-node.json"
 COMPANION = EXAMPLES / "companion.json"
+ECHO = EXAMPLES / "echo.json"
 NOTE = "_nota"
 
 
@@ -133,10 +134,11 @@ def test_every_example_explains_itself() -> None:
 
     Closed over the folder since M12.5: a fourth file arrived, and a list of three would have let
     a fifth arrive unexplained. Seven since M13.1, which brought the three of the filesystem;
-    thirteen since M13.2, which brought the six of the terminal.
+    thirteen since M13.2, which brought the six of the terminal; fourteen since M13.3, which
+    brought the echo of the measurement of the weights.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 13, [path.name for path in found]
+    assert len(found) == 14, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
@@ -298,6 +300,25 @@ async def test_it_asks_for_consent_every_time(client: AsyncClient) -> None:
     assert run["outcome"] == "waiting_approval"
     approval = (await client.get("/approvals")).json()[0]
     assert approval["capability_id"] == "voice.speak"
+
+
+# ----------------------------------------------------------------------------------------
+# ``echo.json``: the work of the measurement of the weights (M13.3, GETTING_STARTED §17)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_echo_of_the_measurement_runs_without_a_question(client: AsyncClient) -> None:
+    """The shortest work that travels, sent byte for byte: ``SAFE``, so it is repeated ten times
+    with nobody asked — and on the Core alone, without ``--privacy``, it completes here."""
+    plan = json.loads(ECHO.read_text(encoding="utf-8"))
+    task_id = (await client.post("/tasks", json={"text": "un'eco"})).json()["id"]
+    planned = await client.post(f"/tasks/{task_id}/plan", json=plan)
+    assert planned.status_code == 200, planned.text
+
+    run = (await client.post(f"/tasks/{task_id}/run")).json()
+
+    assert run["outcome"] == "completed", run
+    assert plan["steps"][0]["required_capabilities"] == ["core.echo"]
 
 
 # ----------------------------------------------------------------------------------------

@@ -110,7 +110,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
 | 13 — Il permesso prima dell'azione | `M13.1b` | Implementata | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
-| 13 — Il permesso prima dell'azione | `M13.3` | Proposta | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
+| 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
@@ -137,7 +137,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **48** | `docs/adr/NNNN-*.md` |
-| Milestone | **63, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **63, di cui 50 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **28** | i `Protocol` di `src/ela/ports.py` |
@@ -595,7 +595,12 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   implicita, ed è quella dichiarazione a rendere M13.6 possibile o impossibile. Prima del browser
   perché **un'azione che non si può verificare su un nodo non si esegue su quel nodo** (ADR 0014
   §3): la domanda «dove gira il verifier» si risponde prima di aggiungere l'azione che la farà
-  pesare.
+  pesare. **Implementata il 2026-09-25, fino alla prova a mano** (ADR 0048): `fs.read` e `fs.write`
+  viaggiano verso un nodo che ha una radice, con il verifier sul nodo e il verdetto nella busta; la
+  domanda di uno step su un nodo nomina la macchina e ciò che il piano afferma; `local` batte prima di
+  ogni piazzamento e a un periodo; il lock di un task non ha più la fessura; `relocatable` è dichiarato
+  da ogni tool; e la grammatica dei percorsi è una per ogni sistema. **I pesi e la deriva
+  dell'orologio aspettano la prova a mano** (§17 della guida).
 - **M13.4 — il browser** (§19), con **Playwright**. **Condizione d'ingresso: M13.3 chiusa.** La
   SPEC **misura e scrive prima di decidere**: una dipendenza nuova, i binari dei browser, il tempo
   che aggiunge a `make check` e il tempo che aggiunge alla CI **sui tre runner** della matrice vera
@@ -671,10 +676,12 @@ pagato da chi doveva.
 | Debito | Dichiarato | A carico | Stato |
 |---|---|---|---|
 | ADR 0041 §5 — i test che aspettano, e le difese che costano un terzo della suite | 2026-09-18 | della milestone sulla disciplina della suite | **aperto** |
-| ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | **aperto** |
 | ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
+| ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
+| ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
+| ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |
 | ADR 0047 §16 — il surrogato isolato fuori dal piano | 2026-09-24 | di M13.3 | saldato da ADR 0048 §3 |
 | ADR 0047 §17 — i test di Windows che nessun job raccoglie | 2026-09-24 | di M13.3 | saldato da ADR 0048 §5 |
 

@@ -7,3 +7,8 @@ nodo `local` auto-registrabile con id deterministico. Persistenza in `devices` v
 M13.3 (ADR 0048 §2): `LocalHeartbeat` — il battito di `local` lo scrive il Core, e soltanto lui:
 prima di ogni piazzamento, su richiesta del runner attraverso il port `LocalBeat`, e a un periodo di
 un terzo del TTL, nel ciclo che il lifespan avvia.
+
+M13.3 (ADR 0048 §7): F7 legge un insieme in più. `DeviceOrchestrator` riceve `carried`, le
+capability che un nodo verifica sulla propria macchina, e `UNVERIFIABLE` scatta per ciò il cui
+verifier legge la macchina **e nessun nodo porta**: `fs.*` viaggia, la nota, la percezione e il
+terminale no.

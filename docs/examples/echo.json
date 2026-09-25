@@ -1,0 +1,25 @@
+{
+  "_nota": [
+    "Un solo step core.echo, per la misura dei pesi di M13.3 (GETTING_STARTED §17, passo 4): il",
+    "lavoro più corto che viaggia, quindi quello in cui il costo del protocollo pesa di più. Non",
+    "chiede il consenso (§29: è SAFE), e per questo si ripete dieci volte senza domande. Un task",
+    "senza --privacy lo tiene sul Mac; uno TRUSTED lo lascia andare al nodo che vince il punteggio.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti, e questo file viene",
+    "mandato a ELA byte per byte da un test, perché non marcisca."
+  ],
+  "goal": "un'eco, per misurare il viaggio",
+  "steps": [
+    {
+      "id": "e3c1a7b5-2d4f-4b69-8a10-000000000001",
+      "goal": "rimandare indietro un messaggio",
+      "required_capabilities": ["core.echo"],
+      "arguments": {
+        "message": "misura del viaggio"
+      },
+      "risk": "SAFE",
+      "expected_result": "il messaggio torna indietro identico",
+      "success_conditions": ["echo.message_matches"],
+      "requires_authorization": false
+    }
+  ]
+}

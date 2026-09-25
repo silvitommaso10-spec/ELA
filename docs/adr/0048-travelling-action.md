@@ -1,8 +1,8 @@
 # 0048. L'azione che viaggia: il verifier dove avviene l'effetto, il battito di `local`, e il lock di un task senza fessura
 
 - **Stato:** Accettata. SPEC di M13.3 decisa dall'utente il 2026-09-25, con le decisioni 1–13 della
-  review. Si scrive un pezzo per commit, nell'ordine della SPEC; le righe dei pesi e della deriva
-  dell'orologio arrivano dopo la prova a mano, con i numeri presi.
+  review. Si è scritta un pezzo per commit, nell'ordine della SPEC; l'esito della misura dei pesi
+  (§13) e della deriva dell'orologio (§14) arriva dopo la prova a mano, con i numeri presi.
 - **Data:** 2026-09-25
 - **Riferimenti spec:** §13, §15, §16, §17, §18, §23, §28, §32, §33, §56, §57, §63
 - **Milestone:** M13.3
@@ -42,7 +42,7 @@ Core non ha mai coniato, che non ha un task da bloccare (ADR 0038 §12).
 **ADR 0023 §9 — «due `run` sullo stesso task non si sovrappongono»** — era vera nell'intenzione e
 falsa nel codice; si legge con questa sezione accanto.
 
-### 2. Il battito di `local` lo scrive il Core, prima di ogni piazzamento e a un periodo
+### 2. Il debito di ADR 0044 §8, saldato: il battito di `local` lo scrive il Core, prima di ogni piazzamento e a un periodo
 
 Il debito di ADR 0044 §8: il Mac risultava `available: false` mentre ELA girava, perché `local`
 batteva solo all'avvio e all'inizio di ogni `run`. E il censimento ha trovato che non era soltanto
@@ -344,6 +344,114 @@ aveva trovato e che ADR 0045 §7 aveva chiuso sul Core; qui torna per un nodo, e
 nome. **Ogni domanda già condannata finisce senza effetto: il costo è un sì speso, mai un effetto
 diverso da quello approvato.** E la domanda nomina il percorso **scritto**, non quello risolto, e non
 dice se attraversa un link, che il nodo rifiuta comunque.
+
+### 9. Un debito datato: il terminale su un nodo, ridichiarato
+
+**Debito a carico di M13.7**, dichiarato il **2026-09-25**, dalla review della SPEC di M13.3 (vincolo 2
+e decisione 6).
+
+ADR 0047 §13 diceva «il debito di Windows è di M13.3»: sul PC il gruppo di un comando è un Job Object
+e non un gruppo di processi, e un `argv` diventa una stringa sola (`list2cmdline`), e il criterio 1 di
+M13.2 smetterebbe di essere vero. **Il terminale non viaggia in M13.3**: nessuna voce dell'eredità lo
+chiede, l'obiettivo è soddisfatto senza, e il suo verifier legge l'identità dei programmi **sul disco
+del Core** — `terminal.run` non è in `VERIFIED_ON_THE_NODE`, e un nodo è rifiutato con `UNVERIFIABLE`.
+La proprietaria è **M13.7 — il terminale su un nodo** (`docs/milestones/M13.7.md`), `Proposta`, in coda
+alla Fase 13 dopo M13.5. ADR 0047 §13 si legge con questa sezione accanto.
+
+**La difesa più piccola**: `tests/devices/test_terminal_stays.py` afferma che un comando resta sul
+Core e che il nodo costruito per vincere è rifiutato `UNVERIFIABLE`, e `tests/docs/test_adr_travel.py`
+che `terminal.run` non è fra le capability che un nodo verifica. Il giorno in cui fallisce, il debito si
+sta pagando.
+
+### 10. Un debito datato: il residuo di Linux del terminale, ridichiarato
+
+**Debito a carico di M13.7**, dichiarato il **2026-09-25**, dalla review della SPEC di M13.3 (decisione
+5), **come criterio a sé**.
+
+ADR 0047 §5 lasciava il residuo di Linux — il kernel conta il percorso del programma una volta in più e
+tetta il totale a tre quarti di `_STK_LIM`, quindi un comando al limite del conto di ELA può essere
+rifiutato dopo il sì — a «il giorno in cui viaggerà su un nodo Linux, la misura si prende lì (M13.3)».
+**Nessuna macchina di ELA esegue il terminale su Linux**, e la sua precondizione — un kernel Linux che
+esegue il terminale — non è quella del Job Object: per questo è un criterio a sé della stessa
+proprietaria, e non una riga del debito di §9. `docs/milestones/M13.7.md` lo porta fra ciò che eredita.
+
+**La difesa più piccola**: `tests/docs/test_adr_travel.py` afferma che M13.7 lo nomina con ADR 0047 §5,
+e che un nodo Linux non riceve `terminal.run` per la stessa ragione di §9.
+
+### 11. Le quattro risposte di §57, per un file su un nodo
+
+Nella forma di ADR 0038 §16:
+
+| Domanda | Risposta |
+|---|---|
+| **Quale nodo** | quello che il piazzamento ha scelto e la domanda nomina; lo stesso fino alla fine dello step, perché uno step `RUNNING` non si ripiazza; e uno rilasciato rifà la domanda, perché ogni grant di `fs.*` nasce da un sì ed è monouso (ADR 0045 §4), e si è speso prima dell'offerta |
+| **Quale tipo di dati** | per `fs.write` il corpo del file, dal Core al nodo, negli argomenti dell'ordine; per `fs.read` il contenuto del file, dal nodo al Core, nella busta e poi nel risultato — mai nell'audit, come prima; e il verdetto, dal nodo al Core, fatto di condizioni e codici e mai di frasi |
+| **Perché viene inviato** | perché l'orchestratore ha scelto quel nodo, e `DEVICE_SELECTED` lo registra con i punteggi e i rifiuti di ogni candidato |
+| **Quale policy lo consente** | la sensibilità del task, dichiarata alla nascita, contro il tetto del nodo, imposto all'arruolamento; e il sì dell'utente a una domanda che nomina la macchina |
+
+**Il limite si scrive**: `ELA/prova.md` è un file sul Mac e un altro sul PC, e il piazzamento sceglie
+per punteggio; un task `TRUSTED` legge o scrive il file della macchina che vince, e l'utente lo vede
+nella domanda. È una scelta a occhi aperti, e la sua proprietaria è **M13.8 — un file che vive su una
+macchina** (`docs/milestones/M13.8.md`).
+
+### 12. Che cosa smette di essere provato quando il verifier gira sul nodo
+
+Nella forma di ADR 0038 §14, per le due capability che viaggiano da M13.3. La riga «da lontano» di
+ADR 0038 §14 diceva che cosa si prova quando **il Core** verifica la parola del nodo; qui verifica **il
+nodo**:
+
+| Capability | Il verifier legge | Dal nodo prova | Dal nodo non prova | Legge la macchina |
+|---|---|---|---|---|
+| `fs.read` | il disco del nodo, sul nodo | che il nodo dice di aver riletto, al percorso sotto la sua radice, i byte che il risultato porta, per le condizioni che il piano chiedeva | che il file ci sia davvero; che la radice sia quella che l'utente ha scritto nel `.env` del nodo; che a verificare sia stato il codice del Core e non un altro; che il verifier abbia riletto il disco invece di ricopiare il risultato | `True`, del nodo |
+| `fs.write` | il disco del nodo, sul nodo | che il nodo dice di aver riletto, al percorso, i byte che il piano chiedeva di scrivere | le stesse quattro cose; che il nodo abbia riconfrontato l'`overwrite` del piano con il disco prima di scrivere — la cosa su cui la domanda di §8 si regge —; che il percorso sotto la radice non abbia attraversato un link o una giunzione; che il verifier sia girato dopo il tool; che il tool non abbia scritto nient'altro; che il file non sia cambiato fra la verifica e la consegna | `True`, del nodo |
+
+**Che cosa il Core prova ancora**, e non è poco: che il verdetto viene dal nodo a cui il lavoro era
+affidato, autenticato dal suo segreto; che è arrivato in tempo, contro una decisione che il Core ha
+coniato; che nomina **esattamente** le condizioni che il piano dichiarava; che i suoi codici stanno nel
+vocabolario del verifier. **Che cosa cambia rispetto a un verifier locale**: sul Core il verifier
+girava nel processo che l'utente ha avviato, sul disco dove il Core scrive, con il codice che l'utente
+ha in mano; sul nodo gira nel processo del nodo, e il Core si fida del suo codice, del suo orologio e
+del suo disco. È il limite di M12.1 D1 detto una volta per tutte, e non si attenua scrivendolo più
+piano. **La versione del nodo** resta dichiarata e non risolta: il Core sa quali verifier un nodo porta
+perché è lo stesso codice; un nodo con un codice più vecchio non dichiara `fs.*` e non li riceve, uno
+con un codice diverso e gli stessi nomi non si distingue.
+
+### 13. I pesi di §17: le grandezze sono una scelta, l'ordine della rete si misura
+
+**Le grandezze sono tassi di cambio**, e nessuna misura li dà (decisione 12): quanto vale un nodo sulla
+rete locale rispetto a uno su una rete lontana, contro quanto vale un alimentatore, è un cambio fra
+cose che non hanno un'unità comune. Un debito che nessun dato può pagare è una scelta, e **ADR 0048 la
+scrive come tale**, con i valori di ADR 0017 — `NETWORK_POINTS` `LOCAL` 20 e `REMOTE` 5, `POWER_POINTS`
+`AC` 10, `STATUS_POINTS` `IDLE` 10, le classi di potenza e il carico come sono —, e chiude quella parte
+del «da ritarare» di ADR 0017. ADR 0017 si legge con questa sezione accanto.
+
+**La potenza di calcolo, il carico e lo stato non hanno un lavoro che viaggi e li metta alla prova:
+sono stub, non debiti** (ADR 0026 §7). Nessuna capability che viaggia dipende dalla potenza di una
+macchina o da quanto è occupata. **Li tiene un tripwire**: `tests/docs/test_adr_travel.py` appunta
+l'insieme delle capability che viaggiano, chiesto a F7 e non riscritto a mano; quando l'insieme cambia,
+il test fallisce e rimanda a questa sezione.
+
+**L'ordine di `NETWORK_POINTS` si misura**, ed è l'unica cosa dei pesi che una misura può dire: se un
+lavoro sul nodo della rete locale costa davvero meno di uno su una rete lontana, nell'ordine in cui la
+tabella li mette. La regola è scritta prima dei numeri (SPEC di M13.3, «Le prove a mano»), la misura è
+la prova a mano di `docs/GETTING_STARTED.md` §17, e **l'esito si scrive qui dopo la misura**, con il
+numero e il giorno — o, se i dati non bastano, il debito si ridichiara con la ragione scritta in numeri.
+
+### 14. L'orologio di un nodo: il margine, calcolato
+
+L'unico orologio di un nodo che arriva al Core è `node.ran_at`, che il Core conserva e non confronta
+con niente. **Il margine peggiore, calcolato e non misurato**: una decisione vive
+`ELA_DECISION_TTL_SECONDS`, un'offerta al più `ELA_ASSIGNMENT_TTL_SECONDS` e mai oltre la decisione, e
+il nodo confronta la decisione con il proprio orologio all'inizio della chiamata, subito dopo la presa.
+Un'offerta presa all'ultimo istante lascia alla decisione la differenza delle due impostazioni:
+**180 s con i default**, e zero se sono uguali, che la validazione ammette. Un nodo **avanti** più di
+così rifiuta, `tool.refused`; un nodo **indietro** non rifiuta mai, e accetta una decisione scaduta per
+quanto è indietro — il verso che ADR 0038 §5 dichiara per la decisione come titolo al portatore.
+
+**La misura** — sul Mac, sul PC, e sul PC appena uscito dal sonno, prima che l'ora si risincronizzi —
+è la prova a mano di `docs/GETTING_STARTED.md` §17, e **si scrive qui dopo la misura**, con il numero,
+il giorno, il segno confermato dal numero di ELA e il confronto con questo margine. ELA non corregge
+l'orologio di un nodo: lo misura e lo scrive.
 
 ## Alternative considerate
 

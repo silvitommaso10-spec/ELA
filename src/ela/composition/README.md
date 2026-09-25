@@ -11,6 +11,11 @@ dentro uno di loro.
   e da M8.3 anche `ELA_NOTES_SCOPE`, che sta qui e non in `WorkspaceSettings` perché validarlo
   vuol dire chiedere al catalogo — ADR 0025 §5). Ciò che era sparso non era la validazione, che
   vive accanto al codice che protegge: era il punto di lettura.
+- `node.py`: `build_node`, il nodo composto — **meno** del Core. Da M13.3 (ADR 0048 §7) costruisce
+  `fs.*` e i loro verifier sulla radice del nodo, quando `NodeFilesystemSettings` ne dichiara una, e
+  `carried` rifiuta un tool da verificare sul nodo costruito senza il suo verifier. Le regole della
+  radice sono quelle del Core, in un testo solo (`refuse_the_root`), con l'elenco derivato da ciò che
+  il nodo usa per esistere.
 - `system.py`: `SystemClock` e `UuidGenerator`, le prime implementazioni **di produzione** dei
   port `Clock` e `IdGenerator` — fino a M8.1 esistevano solo i fake, che nessun modulo di
   produzione può importare.
