@@ -62,7 +62,7 @@ from typing import Any
 
 from httpx import ASGITransport
 
-from ela.composition import NodeConfig, NodeSettings, build_node
+from ela.composition import NodeConfig, NodeFilesystemSettings, NodeSettings, build_node
 from ela.composition.node import online_player
 from ela.domain import PowerSource
 from ela.node import (
@@ -115,6 +115,7 @@ def _config(world: Conformance, directory: Path) -> NodeConfig:
         routing=RoutingSettings(),
         voice=VoiceSettings(voice_enabled=True),
         elevenlabs=ElevenLabsSettings(),
+        filesystem=NodeFilesystemSettings(fs_root=None),
     )
 
 

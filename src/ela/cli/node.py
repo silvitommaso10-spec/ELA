@@ -16,7 +16,7 @@ M8.1, and for the same reason.
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated
+from typing import Annotated, Final
 
 import typer
 
@@ -24,7 +24,14 @@ from ela.cli.errors import REFUSED, UNREACHABLE, fail, handled
 from ela.composition import NodeConfig
 from ela.node import CoreUnreachable, NodeError, run
 
-__all__ = ["run_node"]
+__all__ = ["NO_ROOT", "run_node"]
+
+NO_ROOT: Final = (
+    "No ELA_FS_ROOT here: this node does not declare fs.read and fs.write, and the Core will not "
+    "send it that work. Write ELA_FS_ROOT in this machine's .env to have them."
+)
+"""The one line a node without a root says at start-up (M13.3, ADR 0048): a node does not declare
+what it does not have, and silence would leave the user wondering why a file never lands here."""
 
 JOIN_PROMPT = "Enrollment code"
 """Asked for, never taken as an argument. ADR 0037 §5 in its own words: "on the node's side the
@@ -55,8 +62,11 @@ def run_node(
     node knows who it is, and running it again just runs it.
     """
     code = typer.prompt(JOIN_PROMPT, hide_input=True) if join else None
+    config = NodeConfig.load()
+    if config.filesystem.root is None:
+        typer.echo(NO_ROOT)
     try:
-        asyncio.run(run(NodeConfig.load(), join=code))
+        asyncio.run(run(config, join=code))
     except CoreUnreachable as away:
         # The one a script has to tell from the others: nobody answered at the address, which is
         # exit 3 everywhere else in this CLI (ADR 0024 §6). A node that reported it as a refusal

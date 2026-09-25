@@ -21,6 +21,7 @@ import os
 import platform
 import re
 import stat
+from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Final
@@ -472,6 +473,34 @@ class FilesystemSettings(BaseSettings):
         return self.fs_scope
 
 
+class NodeFilesystemSettings(BaseSettings):
+    """Where ``fs.read`` and ``fs.write`` may work **on a node**: ``ELA_FS_ROOT``, optional, and
+    alone (M13.3, ADR 0048).
+
+    **The same variable, a different obligation.** On the Core the root is required with its scope,
+    because the scope is the user's boundary and the Guardian compares with it. A node has no
+    Guardian and gains none: the scope stays one, the user's, on the Core, and each machine lays the
+    relative path it approves on its own root. A node without a root builds neither tool and
+    declares neither, and ``ela node run`` says so with one line — the tools have nothing to act on.
+
+    What the root may not touch is derived from what the **node** uses to exist, in
+    :meth:`NodeConfig._a_root_that_is_not_the_node_s_own`: a node has no database, no workspace and
+    no captures, and it knows only its own settings.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="ELA_", env_file=".env", extra="ignore")
+
+    fs_root: Path | None = None
+    """``ELA_FS_ROOT``: the directory the node's ``fs.read`` and ``fs.write`` are relative to."""
+
+    @property
+    def root(self) -> Path | None:
+        """The declared root, expanded and absolute, or ``None``. Never created here."""
+        if self.fs_root is None:
+            return None
+        return self.fs_root.expanduser().absolute()
+
+
 DEFAULT_TERMINAL_TIMEOUT_SECONDS: Final = 120
 MAX_TERMINAL_TIMEOUT_SECONDS: Final = 900
 """How long ELA waits for a command, and the most it may be told to (M13.2 dec. 7).
@@ -609,6 +638,39 @@ class NodeSettings(BaseSettings):
     node_retry_ceiling: Annotated[int, Field(gt=0)] = DEFAULT_NODE_RETRY_CEILING
 
 
+def refuse_the_root(root: Path, own: Mapping[str, Path]) -> None:
+    """Refuse a root that is a link, that is not a directory, or that holds or sits inside one of
+    ``own`` — what the process uses to exist, resolved (M13.1 dec. F; M13.3 for a node).
+
+    One text for the Core and for a node, so the two cannot say the rule differently: the list of
+    what the root may not touch is each one's own, derived from its settings, and the sentences are
+    these. A ``ValueError``, which the settings turn into the message that names the variable.
+    """
+    if root.is_symlink():
+        raise ValueError(
+            f"ELA_FS_ROOT is a symbolic link ({root} -> {root.readlink()}). ELA refuses to "
+            "walk through a link to reach your files (§33), so every read and write under it "
+            "would fail one by one with path.symlink. Point ELA_FS_ROOT at the real "
+            "directory. On macOS this is what ~/Documents becomes when iCloud Drive's "
+            "'Desktop & Documents Folders' is on."
+        )
+    if not root.is_dir():
+        raise ValueError(
+            f"ELA_FS_ROOT does not exist, or is not a directory: {root}. ELA never creates "
+            "this folder — it is yours, not ELA's — so make it, or point the variable at one "
+            "that is already there."
+        )
+    resolved = root.resolve()
+    for what, place in own.items():
+        if resolved == place or resolved in place.parents or place in resolved.parents:
+            raise ValueError(
+                f"ELA_FS_ROOT ({resolved}) and {what} ({place}) contain one another. The "
+                "folder ELA may read and write for you cannot be the one ELA uses to exist: "
+                "fs.write is HIGH, and HIGH is not a permission to edit ELA's own state "
+                "(M13.1). Choose a folder of your own, such as a subfolder of your documents."
+            )
+
+
 def _sqlite_file(db_url: str) -> Path | None:
     """The file a sqlite URL names, or ``None`` when the database is not a file at all."""
     prefix = "sqlite:///"
@@ -694,30 +756,7 @@ class Settings(BaseModel):
         Documents" is on — stops the start-up with a sentence, instead of dying at every call with
         ``path.symlink`` and no explanation.
         """
-        root = self.filesystem.root
-        if root.is_symlink():
-            raise ValueError(
-                f"ELA_FS_ROOT is a symbolic link ({root} -> {root.readlink()}). ELA refuses to "
-                "walk through a link to reach your files (§33), so every read and write under it "
-                "would fail one by one with path.symlink. Point ELA_FS_ROOT at the real "
-                "directory. On macOS this is what ~/Documents becomes when iCloud Drive's "
-                "'Desktop & Documents Folders' is on."
-            )
-        if not root.is_dir():
-            raise ValueError(
-                f"ELA_FS_ROOT does not exist, or is not a directory: {root}. ELA never creates "
-                "this folder — it is yours, not ELA's — so make it, or point the variable at one "
-                "that is already there."
-            )
-        resolved = root.resolve()
-        for what, place in self._ela_s_own().items():
-            if resolved == place or resolved in place.parents or place in resolved.parents:
-                raise ValueError(
-                    f"ELA_FS_ROOT ({resolved}) and {what} ({place}) contain one another. The "
-                    "folder ELA may read and write for you cannot be the one ELA uses to exist: "
-                    "fs.write is HIGH, and HIGH is not a permission to edit ELA's own state "
-                    "(M13.1). Choose a folder of your own, such as a subfolder of your documents."
-                )
+        refuse_the_root(self.filesystem.root, self._ela_s_own())
         return self
 
     def _ela_s_own(self) -> dict[str, Path]:
@@ -794,7 +833,7 @@ class Settings(BaseModel):
 
 
 class NodeConfig(BaseModel):
-    """What a **node** reads from the environment: five sections, and not the Core's thirteen.
+    """What a **node** reads from the environment: six sections, and not the Core's thirteen.
 
     A node is not a small ELA. It opens no API, so ``ELA_API_TOKEN`` — which :meth:`Settings.load`
     refuses to start without, because "ELA does not open an unauthenticated API" — is not its
@@ -805,8 +844,9 @@ class NodeConfig(BaseModel):
 
     The precedent is ``cli/client.py``'s, in its own words: *"``ela health`` must not refuse to
     answer because ``ELA_MODEL_ROUTES`` has a typo in it, since that line is not about the question
-    being asked."* Here the question being asked is "run as a node", and the five sections below
-    are what that needs: its own cycle, and the credentials of the four tools that travel.
+    being asked."* Here the question being asked is "run as a node", and the six sections below
+    are what that needs: its own cycle, the credentials of the four tools that travel everywhere,
+    and — since M13.3 — the root of the two that travel only to a node that has one.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -825,6 +865,31 @@ class NodeConfig(BaseModel):
     nobody notices; on two machines it is the first thing that breaks."""
     voice: VoiceSettings
     elevenlabs: ElevenLabsSettings
+    filesystem: NodeFilesystemSettings
+    """The node's root, when it has one (M13.3, ADR 0048): the sixth section, and optional."""
+
+    @model_validator(mode="after")
+    def _a_root_that_is_not_the_node_s_own(self) -> NodeConfig:
+        """A declared root obeys the Core's rules, derived from what **the node** uses to exist.
+
+        The folder that holds the node's secret (ADR 0039 §6), the ``.env`` this process read, and
+        ELA's source tree when it is reachable: the Core's list less what a node does not have — a
+        database, a workspace, the captures. Not a link, and never created by ELA.
+        """
+        root = self.filesystem.root
+        if root is None:
+            return self
+        own = {
+            "the folder a node keeps its secret in": self.node.node_state_dir,
+            "ELA's own source tree": _ela_source_tree(),
+        }
+        env = _env_file()
+        if env is not None:
+            own["the .env ELA read"] = env
+        refuse_the_root(
+            root, {what: place.expanduser().absolute().resolve() for what, place in own.items()}
+        )
+        return self
 
     @classmethod
     def load(cls) -> NodeConfig:
@@ -836,6 +901,7 @@ class NodeConfig(BaseModel):
                 routing=RoutingSettings(),
                 voice=VoiceSettings(),
                 elevenlabs=ElevenLabsSettings(),
+                filesystem=NodeFilesystemSettings(),
             )
         except ValidationError as invalid:
             raise ConfigurationError(explain(invalid)) from invalid

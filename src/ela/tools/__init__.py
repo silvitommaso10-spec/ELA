@@ -82,9 +82,11 @@ from ela.tools.programs import (
     identity_of,
 )
 from ela.tools.registry import (
+    VERIFIED_ON_THE_NODE,
     ToolRegistry,
     VerifierRegistry,
     node_tools,
+    node_verifiers,
     production_tools,
     production_verifiers,
     tools_v01,
@@ -264,6 +266,7 @@ __all__ = [
     "PATH_SYMLINK",
     "PATH_UNREACHABLE",
     "RESERVED_ON_WINDOWS",
+    "VERIFIED_ON_THE_NODE",
     "PERCEPTION_CAPTURE_SCREEN",
     "PERCEPTION_READ_SCREEN_TEXT",
     "digest_of",
@@ -328,6 +331,7 @@ __all__ = [
     "is_relative_note_path",
     "png_size",
     "node_tools",
+    "node_verifiers",
     "production_tools",
     "production_verifiers",
     "resolve_workspace",

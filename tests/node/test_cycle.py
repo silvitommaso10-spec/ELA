@@ -428,6 +428,20 @@ async def test_what_a_node_declares_comes_from_the_objects_it_actually_built(
     }
 
 
+async def test_a_node_with_a_root_declares_the_filesystem_and_one_without_does_not(
+    tmp_path: Path,
+) -> None:
+    """M13.3, form A: a node that has a root builds ``fs.read`` and ``fs.write`` and declares them;
+    one without builds neither, so it has nothing to declare — the Core filters by name and never
+    places a file on a machine that has no root for it."""
+    (tmp_path / "files").mkdir()
+    rooted = world(tmp_path / "a", fs_root=tmp_path / "files")
+    bare = world(tmp_path / "b")
+
+    assert {"fs-read", "fs-write"} <= set((await declaration(rooted))["available_tools"])
+    assert not {"fs-read", "fs-write"} & set((await declaration(bare))["available_tools"])
+
+
 async def test_a_voice_this_machine_cannot_use_is_built_but_not_declared(tmp_path: Path) -> None:
     """M12.4 dec. F. Until M12.4 a node declared every tool it had built, so a machine with no
     ``say`` and no player promised both voices: the orchestrator filters by name, and a step could
