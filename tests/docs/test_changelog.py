@@ -188,25 +188,70 @@ def test_an_entry_for_a_milestone_that_does_not_exist_is_detected() -> None:
 # calling itself a proposal.
 #
 # What closes it has to be a fact read from the repository and not a list somebody keeps: the list
-# would go stale exactly like the ``Stato`` line did. The fact is the history of ``main``. This
-# repository merges one branch per milestone and says so in the subject — ``Merge M11.2 listening —
-# Fase 11 chiusa``, ``Merge M6.1b device refresh``, ``Merge M0.1 + M0.2`` — for all thirty-six
-# merges it has. A merge that names no milestone (``Merge platform-choice fix and ADR index test``)
-# names nothing, which is what it should do.
+# would go stale exactly like the ``Stato`` line did. The fact is the history of ``main``, where a
+# milestone's branch is merged with a title that says so — ``Merge M11.2 listening — Fase 11
+# chiusa``, ``Merge M0.1 + M0.2``, ``Merge M13.2: il terminale — …``, ``Merge m13.1-filesystem-…``.
+#
+# **What a title merges is its head, not its prose** (2026-09-25). Until then every id anywhere in
+# a merge's title counted, and only in capitals. Two consequences, one in each direction. The merge
+# of two registrations, ``a60eda0``, said in its prose which milestones it registered, and turned
+# the CI of ``main`` red for two milestones that are rightly still proposals. And the two merges
+# whose head is the branch in lowercase, ``m13.1-…`` and ``m17.2-…``, named nothing, so for M13.1
+# and M17.2 this defence could not have fired. The head is the text after ``Merge`` and before the
+# prose — the first ``: `` or `` — ``. It names milestones in two forms: ids at its start, in
+# capitals, joined by ``+``; or, when it is one word, the ids of a branch name in lowercase. A head
+# of several words that does not start with an id — ``main in docs-…``, ``remote-tracking branch
+# 'origin/main' into …``, ``platform-choice fix and ADR index test`` — names nothing.
+#
+# **A branch whose name begins with ``docs-`` registers milestones and merges none.** That is a
+# name, and a name can lie, so the name is checked against what git says each such merge brought
+# into ``main``: never code (``test_a_registration_branch_brought_no_code_into_main``).
 
-MERGE = re.compile(r"^Merge\b")
+MERGE = re.compile(r"^Merge\s+(?P<rest>.+)$")
+PROSE = re.compile(r": | — ")
 MILESTONE_ID = re.compile(r"\bM\d+\.\d+[a-z]?\b")
+IDS_FIRST = re.compile(r"^M\d+\.\d+[a-z]?(?:\s*\+\s*M\d+\.\d+[a-z]?)*")
+BRANCH_ID = re.compile(r"(?:^|[-_/])m(\d+\.\d+[a-z]?)(?=$|[-_/])")
+REGISTRATION: Final = "docs-"
+"""The prefix of a branch that registers milestones: its merge brings no milestone into ``main``."""
+CODE: Final = "src/"
 MAIN_REFS = ("main", "origin/main", "refs/remotes/origin/main")
 
 
+def head(subject: str) -> str | None:
+    """What a merge's title says it merges: the words after ``Merge`` and before the prose.
+
+    ``None`` for a title that is not a merge.
+    """
+    found = MERGE.match(subject)
+    if found is None:
+        return None
+    return PROSE.split(found.group("rest"), maxsplit=1)[0].strip()
+
+
+def named_by(merged: str) -> set[str]:
+    """The milestones a head names (the comment above says in which two forms)."""
+    first = IDS_FIRST.match(merged)
+    if first is not None:
+        return set(MILESTONE_ID.findall(first.group(0)))
+    if merged.split() != [merged] or merged.startswith(REGISTRATION):
+        return set()
+    return {f"M{number}" for number in BRANCH_ID.findall(merged)}
+
+
 def merged_in(subjects: Iterable[str]) -> set[str]:
-    """The milestones the merge commits among ``subjects`` name."""
+    """The milestones the merge commits among ``subjects`` merge, read from their heads."""
     return {
         name
         for subject in subjects
-        if MERGE.match(subject)
-        for name in MILESTONE_ID.findall(subject)
+        if (merged := head(subject)) is not None
+        for name in named_by(merged)
     }
+
+
+def brought_code(paths: Iterable[str]) -> bool:
+    """Whether a merge that changed ``paths`` brought code into ``main``."""
+    return any(path.startswith(CODE) for path in paths)
 
 
 def merged_but_still_proposed(merged: Iterable[str], states: Mapping[str, str]) -> set[str]:
@@ -239,6 +284,27 @@ def _history() -> tuple[list[str], str | None]:
 
 
 SUBJECTS, NO_HISTORY = _history()
+
+
+def _git(*arguments: str) -> list[str]:
+    found = subprocess.run(["git", *arguments], cwd=ROOT, capture_output=True, check=True)
+    return found.stdout.decode("utf-8").splitlines()
+
+
+def first_parent_merges() -> list[tuple[str, str]]:
+    """``(sha, title)`` of every merge **into** ``main``: its first-parent history, where a merge of
+    ``main`` into a branch never appears."""
+    for ref in MAIN_REFS:
+        known = subprocess.run(["git", "rev-parse", "--verify", "--quiet", ref], cwd=ROOT)
+        if known.returncode == 0:
+            lines = _git("log", "--first-parent", "--merges", "--format=%H%x09%s", ref)
+            return [(sha, title) for sha, title in (line.split("\t", 1) for line in lines)]
+    raise AssertionError(NO_HISTORY)
+
+
+def changed_by(sha: str) -> list[str]:
+    """The paths a merge changed in ``main``: the diff from its first parent."""
+    return _git("diff", "--name-only", f"{sha}^1", sha)
 
 
 @pytest.mark.skipif(NO_HISTORY is not None, reason=NO_HISTORY or "")
@@ -346,3 +412,22 @@ def test_the_titles_of_these_cases_are_titles_of_main() -> None:
         M17_2_BY_ITS_BRANCH,
     ):
         assert title in SUBJECTS, title
+
+
+@pytest.mark.skipif(NO_HISTORY is not None, reason=NO_HISTORY or "")
+def test_a_registration_branch_brought_no_code_into_main() -> None:
+    """The prefix is a name, and names can lie: what every ``docs-`` merge brought into ``main`` is
+    read from git, and none of it is code. The negative case is the merge of M13.1's branch, which
+    brought code — the thing a branch that only registers never brings."""
+    merges = first_parent_merges()
+    registrations = [
+        (sha, title)
+        for sha, title in merges
+        if (merged := head(title)) is not None and merged.startswith(REGISTRATION)
+    ]
+    assert registrations, "no registration branch was ever merged: this test would be vacuous"
+    for sha, title in registrations:
+        assert not brought_code(changed_by(sha)), title
+
+    (m13_1,) = [sha for sha, title in merges if title == M13_1_BY_ITS_BRANCH]
+    assert brought_code(changed_by(m13_1))
