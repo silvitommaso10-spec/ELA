@@ -115,6 +115,8 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
+| 14 — *senza nome* | `M14.1` | Proposta | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
+| 14 — *senza nome* | `M14.2` | Proposta | Il Planner: ELA scrive i piani da sola |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.2b` | Proposta | Un esito finale sparisce dalle superfici che elencano i task |
@@ -134,7 +136,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **47** | `docs/adr/NNNN-*.md` |
-| Milestone | **60, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **62, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **27** | i `Protocol` di `src/ela/ports.py` |
@@ -223,6 +225,7 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
+| 14 | 1 |
 | 15 | 14 |
 | 16 | 1 |
 
@@ -369,8 +372,10 @@ Quei due ADR hanno messo il tetto sotto §30 — che nella spec è «Pagamenti»
 un ADR né una milestone.
 
 *Che cosa ne discende:* finché §30 non esiste, **il tetto lo mette il fornitore**: una workspace
-dedicata sulla console, con la sua chiave, un limite mensile e l'auto-reload spento. E **§30 prende
-la sua milestone prima della Fase 14, non dopo**.
+dedicata sulla console, con la sua chiave, un limite mensile e l'auto-reload spento. E **§30 ha la
+sua milestone, M14.1, la prima della Fase 14** (registrata il 2026-09-25): essere la prima della fase
+mantiene l'intento di «prima della Fase 14, non dopo», perché nessuna capability della Fase 14 che
+spende nasce prima del tetto.
 
 *Perché nessun ADR, per nessuna di queste tre voci:* ADR 0021 e ADR 0022 sono immutabili e dicono il
 vero, e non si toccano. Li rivedranno apertamente §30 e la capability della Fase 14, quando
@@ -618,8 +623,8 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
 - **Non il Planner.** §13 è una sezione della spec, non questa fase: **un piano continua ad
   attaccarsi a mano**, come dal primo giorno. Che uno step dichiari sempre le capability che userà
   resta il vincolo che ADR 0011 lascia a chi costruirà il Planner, e resta lì.
-- **Non §30.** Il tetto di spesa **prende la sua milestone prima della Fase 14**, come dice la 5.9,
-  e quella milestone non è una di queste sei.
+- **Non §30.** Il tetto di spesa ha la sua milestone, **M14.1**, la prima della Fase 14, come dice
+  la 5.9: non è una milestone di questa fase.
 
 *Che cosa la fase eredita, e non può contraddire:*
 
