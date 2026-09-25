@@ -209,8 +209,14 @@ SAPI falliva. Le prove a mano di M12.4 erano passate perché il nodo girava in W
 **Riparato da M12.3d** (`docs/milestones/M12.3d.md`), per la decisione 1 della review
 dell'implementazione: i `powershell.exe` di ELA partono con l'ambiente del nodo meno `PSModulePath`, e
 Windows PowerShell 5.1 calcola il suo. I due smoke sono tornati nella riga del job, sotto la stessa
-shell PowerShell 7: rossi prima della riparazione (run `36164151413`), verdi dopo. La guida non dice
-più da quale shell lanciare il nodo; dice di controllare che il PC risulti `AC`.
+shell PowerShell 7: rossi prima della riparazione (run `36164151413`). Dopo, l'ACL è passato; la
+lettura dell'alimentazione ha mostrato una ragione sua, misurata e non supposta (run `36178451554` e
+`36178717970`): `power_status` dà `None` dopo 5,01 s — la prima PowerShell del runner, a freddo, supera
+il tetto di 5 s di ELA —, e lo stesso script subito dopo risponde `Online` e `0` in 2,91–3,03 s. Il
+tetto è quello del PC, misurato da P6 in 0,25–0,4 s, e resta il prodotto; **lo smoke aspetta un
+minuto**, con il lanciatore e l'ambiente di ELA, e afferma ciò che dice: la forma della risposta, cioè
+la riparazione (decisione dell'utente, 2026-09-25). La guida non dice più da quale shell lanciare il
+nodo; dice di controllare che il PC risulti `AC`.
 
 ### 6. Ripiazzabile: la dichiarazione, e il secondo predicato di ADR 0038 §8
 
