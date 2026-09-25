@@ -15,7 +15,7 @@ from pathlib import Path
 from ela.composition import CoreSettings
 from ela.devices import BEATS_PER_TTL, DeviceOrchestrator, DeviceRegistry, LocalHeartbeat
 from ela.domain import CapabilityId
-from ela.executive import VERIFICATION_MISSING
+from ela.executive import VERIFICATION_MISSING, Executor
 from ela.permissions import CORE_ECHO, MODEL_COMPLETE, TERMINAL_RUN
 from ela.ports import LocalBeat, ToolRegistryPort, VerifierRegistryPort
 from ela.testing.fakes import (
@@ -314,6 +314,44 @@ def test_the_tripwire_of_the_weights(tmp_path: Path) -> None:
         "read ADR 0048 §13 ('I pesi di §17') and say whether they still hold"
     )
     assert "### 13. I pesi di §17" in adr_text()
+
+
+def test_the_status_of_local_is_the_executor_s_and_a_question_occupies_nothing() -> None:
+    """The user's correction of decision 2 (2026-09-26): ``BUSY`` while a tool runs here, from its
+    start to its result stored — the first form, a step ``RUNNING`` on ``local``, is gone from the
+    code and says so in the ADR only as what was corrected."""
+    text = " ".join(section(13).split())
+
+    assert callable(Executor.running_here)
+    assert "`Executor.running_here`" in text
+    assert "dall'avvio del tool al risultato registrato" in text
+    assert "**Una domanda non occupa il Mac**" in text
+    assert "tests/executive/test_local_status.py" in text
+    assert "running_on" not in adr_text() and "STARTED_ON" not in adr_text()
+
+
+def test_the_order_of_the_network_is_written_measured_with_its_day_and_its_files() -> None:
+    """Rule 2 and rule 6 of the SPEC: the order confirmed for both kinds of work, with the medians,
+    the maxima, the day and the files — for the one pair measured."""
+    text = " ".join(section(13).split())
+
+    assert "**L'esito: l'ordine è misurato**, il **2026-09-26**" in text
+    assert "| `core.echo` | 0,9 ms | 1,0 ms | 463 ms | 1010 ms | 93,5 ms |" in section(13)
+    assert "| `fs.read` | 1,7 ms | 1,9 ms | 559 ms | 1092 ms | 144 ms |" in section(13)
+    assert "**l'eco e la lettura danno lo stesso ordine**" in text
+    assert "**L'ordine vale per la sola coppia misurata**" in text
+    for measured in ("A-eco", "A-lettura", "B-eco", "B-lettura"):
+        assert f"`m13.3-pesi-{measured}.jsonl`" in text
+
+
+def test_the_first_measure_of_the_clock_is_written_and_the_wake_up_is_waited_for() -> None:
+    text = " ".join(section(14).split())
+
+    assert "**La prima misura, con il PC sveglio, il 2026-09-26.**" in text
+    assert "**La deriva del PC rispetto al Core è di circa 7,01 s, con il PC avanti.**" in text
+    assert "lo conferma il numero di ELA stessa" in text
+    assert "7,01 s sono il 3,9 % dei 180 s" in text
+    assert "**La misura del PC appena uscito dal sonno** si scrive qui quando c'è" in text
 
 
 def test_the_margin_of_the_clock_is_the_difference_of_the_two_settings() -> None:

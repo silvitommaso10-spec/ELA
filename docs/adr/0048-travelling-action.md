@@ -64,10 +64,10 @@ eligible node among 1: 1 UNAVAILABLE».
   alla percezione e lo spegnimento ferma. **Non decide niente**: tiene vero il Device Center fra un
   `run` e l'altro. Un battito che fallisce non ferma il ciclo; se il ciclo smette di battere, `local`
   scade, che è la diagnosi giusta;
-- **il battito porta anche lo stato di `local`**, dalla review dell'implementazione (§13): `BUSY` se
-  uno step è `RUNNING` su questa macchina, altrimenti `IDLE` — la domanda la risponde il Task Engine, e
-  il servizio la riceve dalla composizione come riceve la lettura dell'alimentazione; per questo il
-  servizio si costruisce dopo il Task Engine;
+- **il battito porta anche lo stato di `local`**, dalla review dell'implementazione (§13): `BUSY`
+  mentre un tool è in corso su questa macchina, dall'avvio del tool al risultato registrato, altrimenti
+  `IDLE` — la domanda la risponde l'executor, e il servizio la riceve dalla composizione come riceve la
+  lettura dell'alimentazione; per questo il servizio si costruisce dopo l'executor;
 - **la rotta smette di battere**, e il battito dell'avvio passa dal servizio: **fuori da
   `devices/beat.py` nessun modulo chiama `heartbeat` per `LOCAL_DEVICE_ID`**, e un test di
   architettura lo tiene, con il suo caso negativo.
@@ -467,12 +467,20 @@ produceva e che valeva 0: nel blocco B della misura il PC vinceva perché nessun
 Mac. Il risultato era sensato, la ragione era falsa.
 
 **Lo stato di `local` lo dice il Core**, nello stesso battito che §2 chiede prima di ogni piazzamento:
-**`BUSY` se c'è uno step `RUNNING` su `local`, altrimenti `IDLE`**. È un fatto che il Core osserva, non
-una supposizione: il Task Engine lo legge dal trail del task (`TaskEngine.running_on`), dove l'avvio di
-uno step tiene da M13.3 anche il nodo su cui è partito (`STARTED_ON`), con la stessa tabella che il
-grafo piega; il battito riceve la domanda come riceve la lettura dell'alimentazione, perché
-`ela.devices` non importa `ela.tasks`. **Uno step che aspetta il sì dell'utente è `RUNNING`**, e rende
-`local` `BUSY`: tiene il posto di questa macchina.
+**`BUSY` mentre un tool è in corso su `local` — dall'avvio del tool al risultato registrato —,
+altrimenti `IDLE`**. È un fatto che il Core osserva, non una supposizione: lo dice l'executor
+(`Executor.running_here`), l'unico modulo che esegue un tool su questa macchina (regola 16), con un
+conto in memoria — è un fatto di questo processo: un processo morto non esegue niente, e quello dopo
+parte da zero. Il battito riceve la domanda come riceve la lettura dell'alimentazione, perché
+`ela.devices` non importa `ela.executive`.
+
+**Una domanda non occupa il Mac** (correzione dell'utente dopo la prova a mano, 2026-09-26). La prima
+forma di questa sezione diceva `BUSY` se c'era uno step `RUNNING` su `local`, e uno step che aspetta il
+sì dell'utente è `RUNNING`: una domanda lasciata aperta per ore avrebbe mandato ogni lavoro
+ripiazzabile al PC con il Mac sotto corrente e fermo. `BUSY` è ciò che un nodo dice di sé mentre un suo
+tool gira, e per `local` ora vuol dire la stessa cosa. Nemmeno uno step affidato a un nodo occupa
+`local`: il suo `BUSY` è del nodo, nel battito del nodo. `tests/executive/test_local_status.py` tiene
+i tre casi.
 
 **Con lo stato simmetrico e i valori di ADR 0017 l'alimentazione non poteva più spostare niente**: lo
 scarto di `NETWORK_POINTS` (15) superava quello di `POWER_POINTS` (10), e la rilettura
@@ -497,8 +505,8 @@ potenza ignota: **5 + 20 + 10 = 35**. Il Mac è sulla rete locale, 20:
 | a batteria, `IDLE` | 20 | 0 | +10 | **30** | il PC |
 | a batteria, `BUSY` | 20 | 0 | −10 | **10** | il PC |
 
-La seconda riga è lo stato che fa il suo mestiere: un Mac sotto corrente ma occupato — anche da una
-domanda che aspetta — cede il lavoro a un PC libero. `tests/devices/test_mac_or_pc.py` tiene i quattro
+La seconda riga è lo stato che fa il suo mestiere: un Mac sotto corrente ma occupato — da un tool che
+gira lì, non da una domanda che aspetta — cede il lavoro a un PC libero. `tests/devices/test_mac_or_pc.py` tiene i quattro
 casi e l'aritmetica della ragione.
 
 **La potenza di calcolo e il carico non hanno un lavoro che viaggi e li metta alla prova: sono stub,
@@ -510,10 +518,31 @@ fallisce e rimanda a questa sezione.
 **L'ordine di `NETWORK_POINTS` si misura**, ed è l'unica cosa dei pesi che una misura può dire: se un
 lavoro sul nodo della rete locale costa davvero meno di uno su una rete lontana, nell'ordine in cui la
 tabella li mette. La regola è scritta prima dei numeri (SPEC di M13.3, «Le prove a mano»), la misura è
-la prova a mano di `docs/GETTING_STARTED.md` §17, e **l'esito si scrive qui dopo la misura**, con il
-numero e il giorno — o, se i dati non bastano, il debito si ridichiara con la ragione scritta in numeri.
-Se l'eco e la lettura danno ordini diversi, la misura si ferma lì, con i numeri, e non sceglie un tipo
-di lavoro (review dell'implementazione, decisione 3).
+la prova a mano di `docs/GETTING_STARTED.md` §17. Se l'eco e la lettura danno ordini diversi, la misura
+si ferma lì, con i numeri, e non sceglie un tipo di lavoro (review dell'implementazione, decisione 3).
+
+**L'esito: l'ordine è misurato**, il **2026-09-26**, fra le 00:48 e le 00:57 dell'ora del Mac, con dieci
+prove per lavoro e per macchina, tutte valide per la regola 5 della SPEC: ogni prova ha un solo
+`DEVICE_SELECTED`, che sceglie `local` nel blocco A — il PC rifiutato per `PRIVACY`, 35 punti contro
+50 — e il PC nel blocco B — `local` fra i candidati con 30 punti e nessun rifiuto, il PC con 35 —, e
+Low Power Mode è spento prima e dopo ogni prova. Sull'orologio del Core, `local` dalla decisione
+`ALLOWED` al risultato registrato, il PC dall'offerta alla consegna ricevuta:
+
+| Lavoro | `local`, mediana | `local`, massimo | PC, mediana | PC, massimo | PC, minimo |
+|---|---|---|---|---|---|
+| `core.echo` | 0,9 ms | 1,0 ms | 463 ms | 1010 ms | 93,5 ms |
+| `fs.read` | 1,7 ms | 1,9 ms | 559 ms | 1092 ms | 144 ms |
+
+La mediana del PC supera quella di `local` per tutti e due i lavori, quindi **l'eco e la lettura danno
+lo stesso ordine**, e la regola 2 non lo smentisce: `LOCAL` 20 sopra `REMOTE` 5 resta com'è. Il tool,
+sul PC, ha impiegato fra 0 e 1 ms: la differenza è il costo del protocollo, cioè la rilettura del
+long-poll a un secondo, due tragitti sulla tailnet e la presa. **L'ordine vale per la sola coppia
+misurata**, `local` contro un nodo sulla tailnet: `OFFLINE`, `UNKNOWN` e un nodo fuori dalla tailnet
+non sono stati misurati, e restano come sono. I file stanno in `~/Downloads` della macchina che ha
+misurato: `m13.3-pesi-A-eco.jsonl`, `m13.3-pesi-A-lettura.jsonl`, `m13.3-pesi-B-eco.jsonl`,
+`m13.3-pesi-B-lettura.jsonl`, lo stato dei nodi in `m13.3-pesi-A-nodi.json` e `m13.3-pesi-B-nodi.json`,
+e le righe del database in `m13.3-pesi-eventi.json`, `m13.3-pesi-assegnazioni.json` e
+`m13.3-pesi-risultati.json`.
 
 ### 14. L'orologio di un nodo: il margine, calcolato
 
@@ -528,9 +557,26 @@ quanto è indietro — il verso di ADR 0038 §5, la decisione come titolo al por
 orologio che è indietro: ADR 0038 §5 lo dice di una decisione ripresentata entro la sua scadenza.
 
 **La misura** — sul Mac, sul PC, e sul PC appena uscito dal sonno, prima che l'ora si risincronizzi —
-è la prova a mano di `docs/GETTING_STARTED.md` §17, e **si scrive qui dopo la misura**, con il numero,
-il giorno, il segno confermato dal numero di ELA e il confronto con questo margine. ELA non corregge
-l'orologio di un nodo: lo misura e lo scrive.
+è la prova a mano di `docs/GETTING_STARTED.md` §17. ELA non corregge l'orologio di un nodo: lo misura e
+lo scrive.
+
+**La prima misura, con il PC sveglio, il 2026-09-26.** Il Mac, alle 01:01 con `sntp time.apple.com`:
+**+0,0698 ± 0,030 s** (`m13.3-orologio-mac.txt`). Il PC, alle 01:03 dell'ora del PC con `w32tm
+/stripchart` contro lo stesso server: da **−6,9437 s** a **−6,9463 s**. Tutti e due gli strumenti
+scrivono lo scarto nella convenzione di NTP, l'orologio del server meno quello locale — la correzione
+che l'orologio locale dovrebbe applicare, ed è ciò che il manuale di `sntp` dice che `-S` applica —:
+il Mac è indietro di 0,07 s, il PC avanti di 6,94 s. **La deriva del PC rispetto al Core è di circa
+7,01 s, con il PC avanti.** Il segno non si prende dalla convenzione: lo conferma il numero di ELA
+stessa. Nelle venti consegne del blocco B, `node.ran_at` meno l'istante in cui il Core ha ricevuto la
+busta va da 6,998 s a 7,007 s, mediana 7,001 s: positivo, quindi il PC è avanti, e un limite inferiore
+di quanto è avanti, perché il tragitto della busta ne sottrae una parte — sta sotto i 7,01 s della
+differenza dei due scarti, com'è giusto che stia (`m13.3-pesi-assegnazioni.json`). **Contro il margine:
+7,01 s sono il 3,9 % dei 180 s**: un PC avanti così vede scadere una decisione 7 s prima del Core, e
+dei 180 s di margine ne restano 173. La deriva ci sta dentro con margine, e i cinque minuti di ADR 0011
+§9 restano.
+
+**La misura del PC appena uscito dal sonno** si scrive qui quando c'è, con i suoi numeri e il giorno, e
+il merge di M13.3 la aspetta.
 
 ## Alternative considerate
 
@@ -556,9 +602,8 @@ l'orologio di un nodo: lo misura e lo scrive.
   `verifiers`; `ela.executive` ha `Verdict`, `VERDICT` e `VERIFICATION_MISSING`, e `Claimed` le
   condizioni; `ela.node.runner` ha `verdict_of`; `DeviceOrchestrator` riceve `carried`;
   `VerifierPort` ha `failure_codes`; `ela node run` ha `NO_ROOT`.
-- `TaskEngine` ha `running_on`, e l'evento dell'avvio di uno step tiene il nodo (`STARTED_ON`);
-  `LocalHeartbeat` riceve `busy` (`ela.devices.Busy`) e batte lo stato di `local`; `POWER_POINTS`
-  `AC` vale 20.
+- `Executor` ha `running_here`; `LocalHeartbeat` riceve `busy` (`ela.devices.Busy`) e batte lo stato
+  di `local`; `POWER_POINTS` `AC` vale 20.
 - `ToolPort` ha `asserted`, e `FsReadTool` e `FsWriteTool` lo implementano con `ASSERTED_CREATES`,
   `ASSERTED_OVERWRITES` e `ASSERTED_READS`; `ela.executive` ha `UNSEEN`; `Asked` e `ApprovalOut` hanno
   `machine` e `unseen`, le due pagine le coppie «Su quale macchina» e «Il disco», e la riga di comando

@@ -554,6 +554,13 @@ il repository in `$HOME\ELA` con `uv sync --locked`, e un Python **3.12.4 o succ
 Windows il nodo rifiuta una 3.12 più vecchia, perché lì la cartella del segreto non sarebbe
 protetta (M12.4, dec. B).
 
+**Sul PC ELA si lancia con `uv run python -m ela.cli`, mai con `uv run ela`.** `uv sync` ricostruisce
+`ela.exe`, il lanciatore dell'ambiente virtuale: è un file nuovo e senza firma, e con lo Smart App
+Control acceso Windows lo blocca — «Un criterio di controllo dell'applicazione ha bloccato il file»,
+os error 4551 (prova a mano di M13.3, 2026-09-26). `python -m ela.cli` fa girare lo stesso codice
+attraverso l'interprete, che è firmato. **Non spegnere lo Smart App Control** per aggirarlo: una volta
+spento, non si riaccende.
+
 ### 1. Sul Mac: il Core dal codice giusto, e anche sulla tailnet
 
 **Il Core deve girare dal codice del branch del nodo Windows**, o il piano d'esempio e la lettura
@@ -702,7 +709,7 @@ codice si stampa una volta e vale dieci minuti. Sul PC:
 
 ```powershell
 Set-Location $HOME\ELA
-uv run ela node run --join
+uv run python -m ela.cli node run --join
 ```
 
 ```
@@ -717,9 +724,9 @@ ela: this code did not enrol the node (unauthorized). A code is good once and fo
 ```
 
 Arruolato, il nodo ha la sua identità in `$HOME\.ela\node.json`, in una cartella con i permessi
-ristretti a te, SYSTEM e Administrators; le volte dopo basta `uv run ela node run`. **Lascia aperta
-questa finestra**: il nodo vive quanto lei, e chiuderla con la X lo ferma senza chiudere niente.
-Mentre gira non stampa niente.
+ristretti a te, SYSTEM e Administrators; le volte dopo basta `uv run python -m ela.cli node run`.
+**Lascia aperta questa finestra**: il nodo vive quanto lei, e chiuderla con la X lo ferma senza
+chiudere niente. Mentre gira non stampa niente.
 
 In una **seconda** finestra di PowerShell, il firewall:
 
@@ -859,7 +866,7 @@ exit=0
 
 Nella prova la voce si è fermata subito, l'uscita è stata `0`, e **non** è comparsa nessuna riga
 `Exception ignored`: è la traccia che la sonda di P4 lasciava e che il nodo non deve lasciare. Poi il
-nodo si riavvia con `uv run ela node run`.
+nodo si riavvia con `uv run python -m ela.cli node run`.
 
 **Che cosa ne è stato del task interrotto non è stato letto** (2026-09-17): la lettura è stata
 saltata durante la prova. Per il Core è un nodo che ha taciuto, e l'assegnazione scade — ma qui non
@@ -905,7 +912,7 @@ prima della verifica con `provider.unavailable`. Quando la chiave ci sarà: ferm
 
 ```powershell
 [IO.File]::AppendAllText("$HOME\ELA\.env", "`nELA_MODEL_ROUTES={""reasoning"": {""providers"": [""anthropic""], ""profile"": ""cheap""}}`n")
-uv run ela node run
+uv run python -m ela.cli node run
 ```
 
 Sul Mac, il piano con uno step `model.complete`:
@@ -1900,8 +1907,10 @@ stanno il codice e il `.env` del nodo:
 ```
 
 ```powershell
-uv run ela node run
+uv run python -m ela.cli node run
 ```
+
+Con il modulo e non con il lanciatore: dopo un `uv sync` lo Smart App Control blocca `ela.exe` (§12).
 
 Sul Mac:
 
@@ -2006,9 +2015,9 @@ riprova, e non lo conta come una prova.
 **Perché nel blocco B vince il PC** (ADR 0048 §13): il Core osserva lo stato di `local` come il nodo
 riporta il suo, e la corrente vale 20. Il Mac a batteria e libero vale 20 (la rete) + 0 (la corrente)
 + 10 (libero) = **30**; il PC sotto corrente e libero 5 + 20 + 10 = **35**. Attaccato, il Mac varrebbe
-50 e il lavoro resterebbe sul Mac. **Il Mac deve essere libero**: una domanda lasciata aperta su un
-task di prima tiene uno step `RUNNING` su `local`, e lo rende `BUSY` (−10) — nel blocco B il PC
-vincerebbe lo stesso, ma per un'altra ragione.
+50 e il lavoro resterebbe sul Mac. **Una domanda lasciata aperta non occupa il Mac**: `local` è `BUSY`
+(−10) solo mentre un suo tool gira, dall'avvio al risultato registrato, e i cicli qui sotto fanno un
+task alla volta — a ogni piazzamento il Mac è libero.
 
 **Blocco A, `local`**: il Mac attaccato, i task senza `--privacy`, quindi `LOCAL_ONLY`. Prima del
 blocco, lo stato dei nodi:
