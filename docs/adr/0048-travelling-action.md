@@ -296,6 +296,45 @@ capability che il Core verifica da sé, prima di ogni scrittura.
 
 `VerifierPort` è esteso con `failure_codes`, nella tabella delle Conseguenze.
 
+### 8. La domanda di uno step su un nodo: ciò che il piano afferma, e che ELA non ha guardato quel disco
+
+La domanda di un `fs.*` si componeva con il `prospect` del tool **del Core**, sulla radice **del
+Core**: per uno step piazzato sul PC avrebbe detto il file del Mac, e se sul Mac c'è — un fatto vero di
+un'altra macchina, cioè la diagnosi falsa di ADR 0045 §5 nella frase su cui si regge un sì `HIGH`.
+
+**La domanda nomina ciò che il piano afferma, e il nodo lo fa valere** (decisione 1). Per uno step
+piazzato su un nodo il cui verifier legge la macchina l'executor non chiede al tool del Core che
+cosa c'è sul disco, ma **che cosa la chiamata afferma**: un membro nuovo di `ToolPort`, `asserted`,
+accanto a `prospect` che guarda. Per `fs.write` l'`overwrite` del piano, nelle parole del tool —
+«creates a new file: the plan says nothing is there», o «overwrites a file: the plan says one is
+there» —; per `fs.read` che il file c'è. I controlli che non leggono un disco restano **prima** della
+domanda: lo scope, nel Guardian; la forma degli argomenti e la grammatica di §4, che è pura. La domanda
+porta anche **la macchina**, con il nome che il nodo ha scelto — può cambiare a ogni annuncio e non è
+unico — e l'inizio dell'id che il Core ha coniato (decisione 10), e **la frase di ciò che ELA non ha
+fatto** (`UNSEEN`): non ha guardato quel disco, e il nodo rifiuta prima di agire se il disco dice
+altro. `Asked` ha `machine` e `unseen`; le tre superfici che rispondono le mostrano come stanno, e il
+test che tiene ogni campo di `Asked` alle tre superfici (`tests/api/test_answering_surfaces.py`) lo
+ha verificato da sé. **Per uno step su `local` la domanda è quella di prima, byte per byte**: nessuna
+delle due chiavi entra nella borsa, e la riga della macchina e quella del disco mancano.
+
+**Perché regge.** La proprietà su cui ADR 0045 §6-bis si appoggia è che *l'asserzione del piano è il
+fatto approvato, e il tool la riconfronta con il disco prima di scrivere*. Sul nodo resta vera alla
+lettera, perché il tool del nodo è questo codice: `_look` gira dentro `_run`, e
+`fs.overwrite_mismatch` rifiuta nei due versi. **Nessun sì produce un effetto diverso da quello che
+la domanda dice**, fuori dalla finestra fra `classify` e `open` che ADR 0045 §7 dichiara già — più
+larga su un nodo Windows, dove `O_NOFOLLOW` non c'è. Il rifiuto dopo il sì dice **quale fatto** il
+disco ha smentito, con un codice: `fs.overwrite_mismatch` con la frase di ADR 0045 §6-bis, `path.missing`
+per una lettura, `path.symlink` per un link o una giunzione.
+
+**Che cosa si perde, e ADR 0011 §3 e ADR 0045 §6 e §6-bis si leggono con questa sezione accanto per
+uno step su un nodo.** «A un utente non si chiede di approvare ciò che sarebbe negato comunque»: per
+uno step su un nodo la domanda **può nascere già condannata** — un file che c'è dove il piano ne
+dichiara uno nuovo si scopre dopo il sì, e il sì è speso. È il difetto che la prova a mano di M13.1
+aveva trovato e che ADR 0045 §7 aveva chiuso sul Core; qui torna per un nodo, e lo si dice con il suo
+nome. **Ogni domanda già condannata finisce senza effetto: il costo è un sì speso, mai un effetto
+diverso da quello approvato.** E la domanda nomina il percorso **scritto**, non quello risolto, e non
+dice se attraversa un link, che il nodo rifiuta comunque.
+
 ## Alternative considerate
 
 - **Il battito nella rotta, dopo il lock** — l'alimentazione del primo piazzamento sarebbe stata
@@ -304,6 +343,11 @@ capability che il Core verifica da sé, prima di ogni scrittura.
 - **Il solo ciclo periodico** — gli step sarebbero stati piazzati su un'alimentazione vecchia fino a
   venti secondi: la credenza periodica che ADR 0029 §7 vieta. Scartata dalla review (decisione 7).
 - **Il tick della percezione** — spento di default (§2).
+- **Lo sguardo sul nodo prima della domanda** (§8) — il Core avrebbe chiesto al nodo il `prospect`
+  sul suo disco, e la domanda avrebbe detto il fatto e non l'asserzione. Costa un secondo tipo di
+  lavoro nel protocollo — un'offerta che non esegue e una risposta che non è una busta —, e un nuovo
+  chiamante dell'executor sullo step. **Scartata dalla review (decisione 1), e non è un debito**: il
+  costo della strada scelta è un sì speso, mai un effetto diverso.
 
 ## Conseguenze
 
@@ -315,6 +359,10 @@ capability che il Core verifica da sé, prima di ogni scrittura.
   `verifiers`; `ela.executive` ha `Verdict`, `VERDICT` e `VERIFICATION_MISSING`, e `Claimed` le
   condizioni; `ela.node.runner` ha `verdict_of`; `DeviceOrchestrator` riceve `carried`;
   `VerifierPort` ha `failure_codes`; `ela node run` ha `NO_ROOT`.
+- `ToolPort` ha `asserted`, e `FsReadTool` e `FsWriteTool` lo implementano con `ASSERTED_CREATES`,
+  `ASSERTED_OVERWRITES` e `ASSERTED_READS`; `ela.executive` ha `UNSEEN`; `Asked` e `ApprovalOut` hanno
+  `machine` e `unseen`, le due pagine le coppie «Su quale macchina» e «Il disco», e la riga di comando
+  le righe `machine` e `disk`.
 - `ela.ports` ha `LocalBeat`; `ela.devices` ha `LocalHeartbeat`, `BEATS_PER_TTL` e `period_of`;
   `ela.testing.fakes` ha `FakeLocalBeat`; `TaskRunner` riceve `beat`, `Ela` ha `heartbeat`.
 - I port sono **ventotto**; le regole di architettura del registro restano **cinquantasette** — le
@@ -326,5 +374,5 @@ Port estesi:
 
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
-| `ToolPort` | §17, §33 | async | `relocatable` |
+| `ToolPort` | §17, §33 | async | `relocatable`, `asserted` |
 | `VerifierPort` | §20, §63 | async | `failure_codes` |

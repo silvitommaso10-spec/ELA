@@ -154,6 +154,8 @@ QUESTION_FIELDS: Final[frozenset[str]] = frozenset(
         "folder",
         "timeout_seconds",
         "expect_exit",
+        "machine",
+        "unseen",
     }
 )
 """Every field of the question this surface shows, declared here so it can be checked.
@@ -228,6 +230,7 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         ("step goal", _seen(one.get("goal"))),
         ("declared", [_seen(pair) for pair in one.get("stated") or ()] or None),
         ("targets", [_seen(target) for target in one["targets"]]),
+        ("machine", _seen(one.get("machine"))),
         (one.get("label") or TARGET, _seen(one.get("target"))),
         ("runs", _seen(one.get("runs"))),
         ("arguments", None if arguments is None else listed(arguments)),
@@ -235,9 +238,14 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         ("timeout", None if timeout is None else f"{timeout} s"),
         ("expects exit", one.get("expect_exit")),
         ("does", one.get("does") or None),
+        ("disk", one.get("unseen") or None),
         ("asks", _seen(one["prompt"])),
     ]
-    return [(name, value) for name, value in rows if value is not None or name not in COMMAND_ROWS]
+    return [
+        (name, value)
+        for name, value in rows
+        if value is not None or name not in COMMAND_ROWS | NODE_ROWS
+    ]
 
 
 COMMAND_ROWS: Final[frozenset[str]] = frozenset(
@@ -246,6 +254,10 @@ COMMAND_ROWS: Final[frozenset[str]] = frozenset(
 """The rows only a command has (M13.2): absent, not dashed, when the question is about something
 else — a question about a file names no program, and five dashes under it would be five things to
 read that are not there. Every other row keeps its dash: its absence is something to read."""
+
+NODE_ROWS: Final[frozenset[str]] = frozenset({"machine", "disk"})
+"""The rows only a question about a machine ELA has not looked at has (M13.3, ADR 0048): absent,
+not dashed, for every other — the question about this machine is the one it always was."""
 
 TARGET: Final = "target"
 """The row of a target whose question does not say what its tool calls it (M13.2 dec. 12)."""

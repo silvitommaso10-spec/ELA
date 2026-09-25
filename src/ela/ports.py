@@ -1388,6 +1388,17 @@ class ToolPort(Protocol):
         somebody stopped being able to say what this one is.
         """
 
+    async def asserted(self, arguments: JsonMapping) -> Prospect:
+        """What this call **asserts**, answered without looking at any machine (M13.3, ADR 0048).
+
+        Beside :meth:`prospect`, which looks: for a step placed on a node whose verifier reads the
+        machine, the Core's disk is the wrong one to look at, so the question names what the plan
+        asserts — the path as written, and for ``fs.write`` whether it creates or overwrites, in
+        the tool's words — and the node's tool, which is this code, compares that with its own disk
+        before acting. Only what needs no disk may refuse here: the shape of the arguments and the
+        grammar of the path. A tool that works on no path answers an empty :class:`Prospect`.
+        """
+
     async def execute(
         self, decision: PermissionDecision, arguments: JsonMapping
     ) -> ExecutionResult:

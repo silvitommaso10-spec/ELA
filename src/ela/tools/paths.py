@@ -58,6 +58,7 @@ __all__ = [
     "PATH_OUTSIDE_ROOT",
     "PATH_SYMLINK",
     "PATH_UNREACHABLE",
+    "INVALID_SHAPE",
     "RESERVED_ON_WINDOWS",
     "PathProblem",
     "classify",

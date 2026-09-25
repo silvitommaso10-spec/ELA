@@ -167,6 +167,11 @@ class Tool(ABC):
         """
         return Prospect()
 
+    async def asserted(self, arguments: JsonMapping) -> Prospect:
+        """What the call asserts, without looking at a machine (M13.3): nothing, unless a tool
+        works on a path — the default of :meth:`prospect`, for its reason."""
+        return Prospect()
+
     @abstractmethod
     async def _run(self, arguments: JsonMapping) -> Outcome:
         """Act on already-allowed ``arguments``; a failure is an :class:`Outcome` with a code."""

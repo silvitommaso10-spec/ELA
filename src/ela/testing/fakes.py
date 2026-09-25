@@ -913,6 +913,7 @@ class FakeTool:
         self._usage = usage
         self.calls: tuple[ToolCall, ...] = ()
         self.prospects = Prospect() if prospect is None else prospect
+        self.assertions = Prospect()
 
     @property
     def capability_id(self) -> CapabilityId:
@@ -937,6 +938,11 @@ class FakeTool:
     async def prospect(self, arguments: JsonMapping) -> Prospect:
         """Whatever the test set: nothing to show and nothing to refuse, by default."""
         return self.prospects
+
+    async def asserted(self, arguments: JsonMapping) -> Prospect:
+        """What the call asserts without looking (M13.3): whatever the test set, empty by
+        default — and never what :attr:`prospects` says, so a test sees which one was asked."""
+        return self.assertions
 
     async def execute(
         self, decision: PermissionDecision, arguments: JsonMapping

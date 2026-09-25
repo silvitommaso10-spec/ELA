@@ -96,6 +96,7 @@ from ela.domain import (
     Authorization,
     AuthorizationId,
     CapabilitySpec,
+    Device,
     DeviceId,
     ErrorMetadata,
     ExecutionId,
@@ -176,6 +177,7 @@ __all__ = [
     "STARTED_ID",
     "TOOL_EXCEPTION",
     "TOOL_REFUSED",
+    "UNSEEN",
     "RESULT_NOT_TEXT",
     "VERDICT",
     "VERIFICATION_EXCEPTION",
@@ -252,6 +254,14 @@ M12.5 dec. F: one bag, written when the question is composed (:meth:`Executor._a
 the shape that answers ``GET /approvals`` — so the terminal and a page show the same facts and
 neither recomposes them. Namespaced because ``metadata`` belongs to whoever writes it.
 """
+UNSEEN: Final = (
+    "ELA has not looked at that disk: what this question says of the file is what the plan "
+    "asserts, and the node refuses before acting if the disk says otherwise"
+)
+"""What the question of a step placed on a node that verifies on its own machine says of that
+machine's disk (M13.3, ADR 0048): written here, where the question is composed, and rendered as it
+stands by every surface — none composes a sentence of its own. The cost is said in ADR 0048: a
+question can be born already lost, and then the yes is spent and nothing else happens."""
 DEFAULT_APPROVAL_TTL: Final = timedelta(hours=24)
 """How long a request for approval stays answerable (ADR 0013 §5, decision E).
 
@@ -842,7 +852,13 @@ class Executor:
         # After the lookups, so a step with no tool still says so with its own error rather than
         # as a node that cannot host it; before the first read of the results, so a caller with
         # somebody else's placement leaves no trace (ADR 0026 §3).
-        device_id = ensure_placed(placement, task_id, step_id).id
+        device = ensure_placed(placement, task_id, step_id)
+        device_id = device.id
+        # A node that verifies on its own machine is a machine ELA has not looked at: the question
+        # names it, and says what the plan asserts instead of what the Core's disk holds (M13.3).
+        there: Device | None = None
+        if _verified_there(verifier, device_id):
+            there = device
 
         started, settled = await self._stored(task_id, step_id)
         if settled:  # the tool ran in an earlier call: resume from the first missing write
@@ -886,7 +902,15 @@ class Executor:
             return Execution(task, step_id, graph, decision, authorization, None, None, None)
         if decision.outcome is PermissionOutcome.REQUIRES_APPROVAL:
             return await self._ask(
-                task, graph, step, spec, arguments, decision, authorization, decision.reason
+                task,
+                graph,
+                step,
+                spec,
+                arguments,
+                decision,
+                authorization,
+                decision.reason,
+                there=there,
             )
 
         consumed: int | None = None
@@ -897,7 +921,15 @@ class Executor:
                 )
             except AuthorizationNotUsableError as unusable:
                 return await self._ask(
-                    task, graph, step, spec, arguments, decision, authorization, unusable.reason
+                    task,
+                    graph,
+                    step,
+                    spec,
+                    arguments,
+                    decision,
+                    authorization,
+                    unusable.reason,
+                    there=there,
                 )
             except NotFoundError:
                 vanished = ErrorMetadata(
@@ -1586,6 +1618,8 @@ class Executor:
         decision: PermissionDecision,
         authorization: Authorization | None,
         reason: str,
+        *,
+        there: Device | None,
     ) -> Execution:
         """Build the request for approval from the decision and let the task wait (ADR 0013 §5).
 
@@ -1599,6 +1633,11 @@ class Executor:
         being approved*. It comes from ``task.max_privacy`` and not from ``prompt_arguments``: the
         sensitivity is the task's, while the declared arguments belong to the plan, and routing it
         through them would mean putting the user's policy in a document a model writes.
+
+        ``there`` is the node of a step whose verifier reads the machine (M13.3, ADR 0048): then
+        the tool is asked what the call **asserts** and not what the Core's disk holds — the
+        Core's disk is the wrong one — and the question names the machine and says ELA has not
+        looked at it. ``None`` for every other step, whose question is the one it always was.
         """
         assert decision.task_id is not None and decision.step_id is not None
         # **Before the question exists** (M13.1, ADR 0045 §6-bis): what a call would meet now, read
@@ -1606,7 +1645,11 @@ class Executor:
         # refused this instant has no question to ask — ADR 0011 §3 keeps the denials before the
         # question for a reason, and it is the same reason here: nobody is asked to approve what
         # ELA already knows it will refuse, and nobody is woken for it either.
-        prospect = await self._tools.get(spec.id).prospect(arguments)
+        tool = self._tools.get(spec.id)
+        if there is None:
+            prospect = await tool.prospect(arguments)
+        else:
+            prospect = await tool.asserted(arguments)
         if prospect.refusal is not None:
             return await self._fail(task, graph, decision, authorization, prospect.refusal)
         targets = approved_targets(decision)
@@ -1626,7 +1669,7 @@ class Executor:
             expires_at=decision.created_at + self._approval_ttl,
             metadata={
                 ASKED: self._asked(
-                    task, step, spec, arguments, prospect.target, prospect.invocation
+                    task, step, spec, arguments, prospect.target, prospect.invocation, there
                 )
             },
         )
@@ -1681,6 +1724,7 @@ class Executor:
         arguments: JsonMapping,
         target: Target | None,
         invocation: Invocation | None = None,
+        there: Device | None = None,
     ) -> dict[str, JsonValue]:
         """The facts of the question, kept beside it: what a surface shows without recomposing it.
 
@@ -1725,6 +1769,11 @@ class Executor:
             asked["folder"] = invocation.folder
             asked["timeout_seconds"] = invocation.timeout_seconds
             asked["expect_exit"] = invocation.expect_exit
+        if there is not None:
+            # The name the node chose, which may change and is not unique, and the start of the id
+            # the Core minted (M13.3, decision 10); and what ELA did not do (:data:`UNSEEN`).
+            asked["machine"] = f"{there.name} ({str(there.id)[:8]})"
+            asked["unseen"] = UNSEEN
         return asked
 
     async def _fail(
@@ -1946,7 +1995,7 @@ class Executor:
         the node ran it, and its verdict is kept with the result. Every other result is verified
         by the Core, as it always was.
         """
-        if _verified_there(verifier, result):
+        if _verified_there(verifier, result.device_id):
             return _verdict(result, tool, verifier, step.success_conditions)
         return await self._verify(verifier, tool, step, arguments, result)
 
@@ -1986,7 +2035,7 @@ class Executor:
                     "device": _device(result),
                     **(
                         {"verified_on": _device(result)}
-                        if _verified_there(verifier, result)
+                        if _verified_there(verifier, result.device_id)
                         else {}
                     ),
                     **({RECOVERED: True} if recovered else {}),
@@ -2028,14 +2077,14 @@ def _device(result: ExecutionResult) -> JsonValue:
     return None if result.device_id is None else str(result.device_id)
 
 
-def _verified_there(verifier: VerifierPort, result: ExecutionResult) -> bool:
-    """Whether the result's effect was verified on the node that produced it (M13.3, ADR 0048).
+def _verified_there(verifier: VerifierPort, device_id: DeviceId | None) -> bool:
+    """Whether an effect on ``device_id`` is verified on that node, not here (M13.3, ADR 0048).
 
-    A verifier that reads the machine, and a result that a node produced: the filter F7 lets such a
+    A verifier that reads the machine, and a machine that is a node: the filter F7 lets such a
     capability go only to a node that carries its verifier, so there is no other way for the two
     to meet — and if there were, verifying here would be the false positive of ADR 0038 §14.
     """
-    return verifier.reads_the_machine and result.device_id not in (None, LOCAL_DEVICE_ID)
+    return verifier.reads_the_machine and device_id not in (None, LOCAL_DEVICE_ID)
 
 
 def _verdict(

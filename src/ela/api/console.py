@@ -365,6 +365,13 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
     # a yes to something it has not said. The target is called what **the tool** calls it — a page
     # that wrote «Il file» beside a program would be true to the letter and wrong about the yes —
     # and every word of the machine or of the plan passes the one rendering (M13.2 dec. 13).
+    if seen and found.machine:
+        # Which machine's disk, when it is not this one (M13.3): a node's name and its id's start.
+        pairs.append(
+            pages.fragment(
+                HERE, "pair", key="Su quale macchina", value=visible(found.machine, lines=False)
+            )
+        )
     if seen and found.target:
         key = found.label or TARGET
         pairs.append(
@@ -392,6 +399,9 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
         # The sentence comes from the capability and is rendered as it stands (M13.1 dec. G):
         # a page that composed one would be lending a write's words to a read.
         pairs.append(pages.fragment(HERE, "pair", key="Che cosa fa", value=found.does))
+    if seen and found.unseen:
+        # And what ELA did not do on that machine, in the executor's sentence (M13.3, ADR 0048).
+        pairs.append(pages.fragment(HERE, "pair", key="Il disco", value=found.unseen))
     return pages.joined(pairs)
 
 

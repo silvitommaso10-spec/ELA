@@ -17,10 +17,18 @@ from typing import Any
 
 import pytest
 
-from ela.domain import AuditEventType, ExecutionStatus, PrivacyLevel, StepState, TaskState
+from ela.domain import (
+    AuditEventType,
+    ErrorMetadata,
+    ExecutionStatus,
+    PrivacyLevel,
+    StepState,
+    TaskState,
+)
 from ela.executive import (
     RECOVERED,
     RESULT_NOT_TEXT,
+    UNSEEN,
     VERDICT,
     VERIFICATION_EXCEPTION,
     VERIFICATION_FAILED,
@@ -30,6 +38,7 @@ from ela.executive import (
     Verdict,
     check_envelope,
 )
+from ela.ports import Prospect, Target
 from tests.executive.support import BAD, OK, World, audit_of, crashing_world, world
 from tests.executive.test_executor_remote import answered
 from tests.permissions.support import ECHO
@@ -261,3 +270,85 @@ async def test_a_death_before_the_verification_is_repaired_with_the_kept_verdict
     assert event.payload[RECOVERED] is True
     assert event.payload["verified_on"] == str(remote.id)
     assert await w.step_state(task.id, step.id) is StepState.COMPLETED
+
+
+# ----------------------------------------------------------------------------------------
+# The question: what the plan asserts, on which machine, and that ELA has not looked (form D)
+# ----------------------------------------------------------------------------------------
+
+ASSERTED = Target(resolved="ELA/prova.md", exists=False, does="CIÒ-CHE-IL-PIANO-AFFERMA", label="f")
+LOOKED = Target(resolved="/Users/tu/ELA/prova.md", exists=False, does="looked", label="file")
+THE_CORE_S_DISK = Prospect(
+    refusal=ErrorMetadata(code="fs.overwrite_mismatch", message="what the Core's disk says")
+)
+
+
+async def asked_on(w: World, device_id: Any, *, looked: Prospect = THE_CORE_S_DISK) -> Any:
+    """A question about the echo, placed on ``device_id`` (``None``: this machine), with the
+    Core's disk answering ``looked`` and the plan asserting :data:`ASSERTED`."""
+    task, step = await w.running(
+        ECHO.id, requires_authorization=True, max_privacy=PrivacyLevel.TRUSTED
+    )
+    w.tool(ECHO.id).prospects = looked
+    w.tool(ECHO.id).assertions = Prospect(target=ASSERTED)
+    placement = await w.placement(
+        task.id, step.id, device_id=device_id, max_privacy=PrivacyLevel.TRUSTED
+    )
+    return task, step, await w.execute(task.id, step.id, placement=placement)
+
+
+async def test_the_question_of_a_step_on_a_node_names_the_machine_and_what_the_plan_asserts() -> (
+    None
+):
+    """Criterion 6. The Core's disk is the wrong one to look at, so the tool is not asked what it
+    holds — here it would have refused — but what the call asserts; and the question names the
+    machine by the node's name and the start of its id, and says ELA has not looked."""
+    w = a_world()
+    remote = await w.remote("pc-casa")
+
+    _, _, execution = await asked_on(w, remote.id)
+
+    assert execution.approval is not None
+    asked = execution.approval.metadata["asked"]
+    assert asked["machine"] == f"pc-casa ({str(remote.id)[:8]})"
+    assert asked["unseen"] == UNSEEN
+    assert (asked["target"], asked["does"]) == ("ELA/prova.md", "CIÒ-CHE-IL-PIANO-AFFERMA")
+
+
+async def test_the_question_of_a_step_on_this_machine_is_the_one_it_always_was() -> None:
+    """Criterion 6's other half: on ``local`` the tool looks at the disk, as since M13.1 — a disk
+    that refuses means nobody is asked — and no key of a node enters the bag."""
+    refused = a_world()
+    task, step, execution = await asked_on(refused, None)
+    assert execution.approval is None
+    assert await refused.step_state(task.id, step.id) is StepState.FAILED
+
+    _, _, execution = await asked_on(a_world(), None, looked=Prospect(target=LOOKED))
+
+    assert execution.approval is not None
+    asked = execution.approval.metadata["asked"]
+    assert not {"machine", "unseen"} & set(asked)
+    assert asked["target"] == LOOKED.resolved
+
+
+async def test_what_the_grammar_refuses_on_a_node_is_refused_before_the_question() -> None:
+    """The one thing that needs no disk: a path no machine reads the same way fails the step where
+    the question would have been, and nobody is woken."""
+    w = a_world()
+    remote = await w.remote()
+    task, step = await w.running(
+        ECHO.id, requires_authorization=True, max_privacy=PrivacyLevel.TRUSTED
+    )
+    w.tool(ECHO.id).assertions = Prospect(
+        refusal=ErrorMetadata(code="path.invalid", message="'a.md:x' is not a relative path")
+    )
+
+    placement = await w.placement(
+        task.id, step.id, device_id=remote.id, max_privacy=PrivacyLevel.TRUSTED
+    )
+
+    execution = await w.execute(task.id, step.id, placement=placement)
+
+    assert execution.approval is None
+    assert await w.step_state(task.id, step.id) is StepState.FAILED
+    assert E.APPROVAL_REQUESTED not in await w.event_types(task.id)

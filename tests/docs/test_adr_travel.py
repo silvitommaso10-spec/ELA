@@ -224,3 +224,14 @@ def test_the_section_of_the_verifier_on_the_node_names_what_the_code_holds() -> 
     ):
         assert named in text, named
     assert VERIFICATION_MISSING == "verification.missing"
+
+
+def test_the_section_of_the_question_says_what_is_lost_and_what_is_not() -> None:
+    text = " ".join(section(8).split())
+
+    assert "`asserted`" in text and "`UNSEEN`" in text
+    assert "ADR 0011 §3 e ADR 0045 §6 e §6-bis si leggono con questa sezione accanto" in text
+    assert "il costo è un sì speso, mai un effetto diverso da quello approvato" in text
+    assert "byte per byte" in text
+    assert "**Lo sguardo sul nodo prima della domanda**" in adr_text()
+    assert "non è un debito" in " ".join(adr_text().split())

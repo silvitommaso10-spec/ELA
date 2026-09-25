@@ -34,6 +34,9 @@ from ela.tools.errors import (
     VerifierNotFound,
 )
 from ela.tools.fs import (
+    ASSERTED_CREATES,
+    ASSERTED_OVERWRITES,
+    ASSERTED_READS,
     CREATES,
     FILE,
     FS_READ,
@@ -203,6 +206,9 @@ __all__ = [
     "NO_ROOT",
     "READS",
     "OVERWRITES",
+    "ASSERTED_CREATES",
+    "ASSERTED_OVERWRITES",
+    "ASSERTED_READS",
     "CREATES",
     "FsWriteVerifier",
     "FsReadVerifier",

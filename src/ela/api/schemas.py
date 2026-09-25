@@ -373,7 +373,9 @@ class Asked(BaseModel):
     """The **resolved** path the call would touch, when it touches one (M13.1 dec. G).
 
     Not the argument the plan wrote: where it really lands, read from the machine with the
-    classification the tool and the verifier share. Empty when the capability touches no file."""
+    classification the tool and the verifier share. Empty when the capability touches no file.
+    **On a machine ELA has not looked at** (M13.3, :attr:`machine`) it is the path as the plan
+    writes it, under that machine's root: nothing was resolved, and :attr:`unseen` says so."""
     does: str = ""
     """What saying yes would do to that file, **in the capability's own words** (dec. G).
 
@@ -396,6 +398,14 @@ class Asked(BaseModel):
     """How long ELA waits for the command before it stops its group."""
     expect_exit: int | None = None
     """The code the plan expects the program to end with (M13.2 dec. 9)."""
+    machine: str = ""
+    """The machine the call is placed on, when ELA has not looked at its disk (M13.3, ADR 0048):
+    the name the node chose — it may change and is not unique — and the start of the id the Core
+    minted. Empty for a question about this machine, which is the question it always was."""
+    unseen: str = ""
+    """What ELA did not do, in the executor's sentence (M13.3): it did not look at that disk, and
+    the node refuses before acting if the disk says otherwise. Rendered as it stands, like
+    :attr:`does`; empty for a question about this machine."""
 
 
 class ApprovalOut(BaseModel):
@@ -432,6 +442,8 @@ class ApprovalOut(BaseModel):
     folder: str
     timeout_seconds: int | None
     expect_exit: int | None
+    machine: str
+    unseen: str
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:
