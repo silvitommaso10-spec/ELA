@@ -760,7 +760,9 @@ soltanto il suo **stato**, che `local` non riporta.
 **Stacca l'alimentatore del Mac**, e lascialo staccato fino alla fine della sezione. È ciò che
 manda il lavoro al PC, ed è letto, non dichiarato: il Mac a batteria vale 20 punti (la rete),
 il PC a corrente 25 (la rete 5, la corrente 10, libero 10). Con il Mac attaccato vincerebbe lui,
-30 a 25, e parlerebbe il Mac.
+30 a 25, e parlerebbe il Mac. ***Superato da M13.3*** (ADR 0048 §13): il Core osserva lo stato di
+`local` e la corrente vale 20 — il Mac a batteria e libero 30, il PC 35; attaccato, il Mac 50. Vince
+chi vinceva, per la ragione giusta.
 
 ```
 uv run ela task create "fai parlare il PC" --privacy TRUSTED
@@ -1897,11 +1899,6 @@ stanno il codice e il `.env` del nodo:
 [IO.File]::AppendAllText("$HOME\ELA\.env", "`nELA_FS_ROOT=<radice del PC>`n")
 ```
 
-Il nodo si lancia da **Windows PowerShell** — il 5.1, la voce «Windows PowerShell» del menu Start —
-e **non** da PowerShell 7: da PowerShell 7 i `powershell.exe` con cui ELA legge l'alimentazione e fa
-parlare il PC ereditano un `PSModulePath` che non sanno caricare, e l'alimentazione risulterebbe
-`UNKNOWN` — misurato dal job di Windows della CI il 2026-09-25 (ADR 0048 §5):
-
 ```powershell
 uv run ela node run
 ```
@@ -1913,7 +1910,8 @@ uv run ela device list --json > ~/Downloads/m13.3-pc-con-radice.json
 ```
 
 **Che cosa si deve vedere**: nella riga del PC, fra i tool, `fs-read` e `fs-write`, e `power_source`
-`AC` — non `UNKNOWN`. Senza la riga nel `.env` i due tool non ci sono, e il nodo lo dice all'avvio
+`AC` — non `UNKNOWN`: la lettura dell'alimentazione del PC è quella che il blocco B del passo 4 pesa.
+Senza la riga nel `.env` i due tool non ci sono, e il nodo lo dice all'avvio
 con una riga («No ELA_FS_ROOT here…»).
 
 ### 3. Un file scritto sul PC, e riletto
@@ -2005,9 +2003,12 @@ Power Mode su questo Mac a batteria può accendersi da solo, e raddoppia i tempi
 che trova il task occupato da una consegna del PC risponde `409` e non stampa niente: il ciclo lo
 riprova, e non lo conta come una prova.
 
-**Un'asimmetria da sapere prima dei numeri** (ADR 0048 §13): `local` non riporta mai il suo stato, e
-vale 0 dove il PC, `IDLE`, vale 10. È un'asimmetria di osservazione e non di fatto, e nel blocco B è
-parte di ciò che fa vincere il PC: la sessione la scrive accanto alla misura.
+**Perché nel blocco B vince il PC** (ADR 0048 §13): il Core osserva lo stato di `local` come il nodo
+riporta il suo, e la corrente vale 20. Il Mac a batteria e libero vale 20 (la rete) + 0 (la corrente)
++ 10 (libero) = **30**; il PC sotto corrente e libero 5 + 20 + 10 = **35**. Attaccato, il Mac varrebbe
+50 e il lavoro resterebbe sul Mac. **Il Mac deve essere libero**: una domanda lasciata aperta su un
+task di prima tiene uno step `RUNNING` su `local`, e lo rende `BUSY` (−10) — nel blocco B il PC
+vincerebbe lo stesso, ma per un'altra ragione.
 
 **Blocco A, `local`**: il Mac attaccato, i task senza `--privacy`, quindi `LOCAL_ONLY`. Prima del
 blocco, lo stato dei nodi:
@@ -2078,7 +2079,8 @@ sqlite3 -json ~/.ela/ela.db "select task_id, event_type, created_at, device_id, 
 non la rispetta non vale:
 
 - in `m13.3-pesi-A-nodi.json` la riga di `local` disponibile e `AC`; in `m13.3-pesi-B-nodi.json`
-  disponibile e `BATTERY`; in tutti e due la riga del PC `AC`, e non `UNKNOWN`;
+  disponibile e `BATTERY`; in tutti e due la riga di `local` `IDLE` e la riga del PC `AC` e `IDLE`,
+  non `UNKNOWN`;
 - ogni riga finale di un task nei `.jsonl` dice `completed`;
 - nel blocco A ogni `DEVICE_SELECTED` sceglie `local`; nel blocco B sceglie il PC, e fra i candidati
   `local` c'è, con i suoi punti e **senza** `UNAVAILABLE` fra i rifiuti: un PC che vince perché il Mac

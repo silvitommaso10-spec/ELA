@@ -184,11 +184,12 @@ li eseguiva mai.
 
 **Il pagamento**:
 
-- **entra nel job, per nome**, `tests/tools/test_paths_windows.py` (§4), e con lui entravano i due
-  smoke dell'ACL e dell'alimentazione, finché il primo run non li ha misurati (sotto);
+- **entrano nel job, per nome**, `tests/infrastructure/machine/test_acl_smoke.py`,
+  `tests/infrastructure/machine/test_power_smoke.py`, `tests/tools/test_paths_windows.py` e
+  `tests/tools/test_fs_windows.py` (§4) — i due smoke dopo il giro che racconta il paragrafo sotto;
 - **chi resta fuori lo dice in un posto che un test legge**: `tests/windows.py`, una mappa file →
-  ragione. `test_sapi_smoke.py` con la ragione che la sua docstring già scriveva — un runner non ha
-  altoparlanti —, e i due smoke con la ragione misurata;
+  ragione. Oggi ha una voce, `test_sapi_smoke.py`, con la ragione che la sua docstring già scriveva: un
+  runner non ha altoparlanti;
 - **la difesa di ADR 0047 §17 si è girata**:
   `tests/docs/test_adr_terminal.py::test_every_test_of_windows_is_in_the_job_or_says_why_not` ricava
   dalla suite ogni file con uno `skipif` riservato a Windows, e afferma che ognuno o sta nella riga del
@@ -200,14 +201,16 @@ alternativo e il punto in coda sono passati su NTFS vero. **I due smoke no, e no
 la SPEC immaginava** — l'utente del runner, una macchina virtuale —: la shell del job è PowerShell 7,
 e il `powershell.exe` 5.1 che i test e ELA lanciano ne eredita il `PSModulePath`, e non carica i
 propri moduli — «The 'Get-Acl' command was found in the module 'Microsoft.PowerShell.Security', but
-the module could not be loaded» —; `power_status` ha risposto `None`. Entrano nella mappa con questa
-ragione.
+the module could not be loaded» —; `power_status` ha risposto `None`. Per un giro sono stati nella mappa, con questa ragione.
 
-**E la misura dice una cosa sul prodotto, non solo sul runner**: un nodo lanciato da PowerShell 7
-lancerebbe i suoi `powershell.exe` nello stesso ambiente, e sul PC l'alimentazione risulterebbe
-`UNKNOWN` e la voce SAPI fallirebbe. Le prove a mano di M12.4 sono passate perché il nodo girava in
-Windows PowerShell 5.1. La riparazione non è in questa milestone: la guida dice da quale shell
-lanciare il nodo, e la decisione è della review.
+**Ma la misura diceva una cosa sul prodotto, non sul runner**: un nodo lanciato da PowerShell 7 lancia
+i suoi `powershell.exe` nello stesso ambiente, e sul PC l'alimentazione risultava `UNKNOWN` e la voce
+SAPI falliva. Le prove a mano di M12.4 erano passate perché il nodo girava in Windows PowerShell 5.1.
+**Riparato da M12.3d** (`docs/milestones/M12.3d.md`), per la decisione 1 della review
+dell'implementazione: i `powershell.exe` di ELA partono con l'ambiente del nodo meno `PSModulePath`, e
+Windows PowerShell 5.1 calcola il suo. I due smoke sono tornati nella riga del job, sotto la stessa
+shell PowerShell 7: rossi prima della riparazione (run `36164151413`), verdi dopo. La guida non dice
+più da quale shell lanciare il nodo; dice di controllare che il PC risulti `AC`.
 
 ### 6. Ripiazzabile: la dichiarazione, e il secondo predicato di ADR 0038 §8
 

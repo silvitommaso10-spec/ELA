@@ -105,6 +105,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.3` | Implementata | Il nodo macOS: questa macchina diventa un nodo, e il contratto si implementa invece di descriversi |
 | 12 — I nodi sulla rete | `M12.3b` | Implementata | La cartella del segreto del nodo: `0o700` anche dove il Core non l'ha creata prima |
 | 12 — I nodi sulla rete | `M12.3c` | Implementata | Chi legge l'alimentazione: un campo che l'orchestratore pesa e che nessuna macchina produceva |
+| 12 — I nodi sulla rete | `M12.3d` | Implementata | Il powershell.exe di ELA eredita un PSModulePath che non sa caricare |
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
@@ -137,7 +138,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **48** | `docs/adr/NNNN-*.md` |
-| Milestone | **63, di cui 50 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **64, di cui 51 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **28** | i `Protocol` di `src/ela/ports.py` |
@@ -599,7 +600,9 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   viaggiano verso un nodo che ha una radice, con il verifier sul nodo e il verdetto nella busta; la
   domanda di uno step su un nodo nomina la macchina e ciò che il piano afferma; `local` batte prima di
   ogni piazzamento e a un periodo; il lock di un task non ha più la fessura; `relocatable` è dichiarato
-  da ogni tool; e la grammatica dei percorsi è una per ogni sistema. **I pesi e la deriva
+  da ogni tool; e la grammatica dei percorsi è una per ogni sistema. Dalla review dell'implementazione:
+  lo stato di `local` lo osserva il Core e la corrente pesa 20 (ADR 0048 §13), e **M12.3d** ripara il
+  `powershell.exe` che da PowerShell 7 non caricava i suoi moduli. **L'ordine della rete e la deriva
   dell'orologio aspettano la prova a mano** (§17 della guida).
 - **M13.4 — il browser** (§19), con **Playwright**. **Condizione d'ingresso: M13.3 chiusa.** La
   SPEC **misura e scrive prima di decidere**: una dipendenza nuova, i binari dei browser, il tempo

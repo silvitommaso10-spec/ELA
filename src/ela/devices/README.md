@@ -6,7 +6,10 @@ nodo `local` auto-registrabile con id deterministico. Persistenza in `devices` v
 
 M13.3 (ADR 0048 §2): `LocalHeartbeat` — il battito di `local` lo scrive il Core, e soltanto lui:
 prima di ogni piazzamento, su richiesta del runner attraverso il port `LocalBeat`, e a un periodo di
-un terzo del TTL, nel ciclo che il lifespan avvia.
+un terzo del TTL, nel ciclo che il lifespan avvia. Dalla review dell'implementazione (ADR 0048 §13)
+il battito porta anche lo stato di `local`, `BUSY` mentre uno step gira lì: la domanda la risponde il
+Task Engine (`running_on`) e la composizione la passa come passa la lettura dell'alimentazione.
+`POWER_POINTS` `AC` vale 20.
 
 M13.3 (ADR 0048 §7): F7 legge un insieme in più. `DeviceOrchestrator` riceve `carried`, le
 capability che un nodo verifica sulla propria macchina, e `UNVERIFIABLE` scatta per ciò il cui

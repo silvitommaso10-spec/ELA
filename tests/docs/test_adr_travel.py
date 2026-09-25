@@ -136,6 +136,7 @@ def test_the_payment_of_adr_0047_17_names_the_job_the_map_and_the_turned_defence
         assert f"tests/infrastructure/machine/{smoke}" in workflow, smoke
         assert f"tests/infrastructure/machine/{smoke}" not in OUTSIDE_THE_WINDOWS_JOB, smoke
     assert "`36151577468`" in text and "`PSModulePath`" in text
+    assert "**Riparato da M12.3d**" in text and "`36164151413`" in text
     assert "`tests/windows.py`" in text and "`test_sapi_smoke.py`" in text
     assert "test_every_test_of_windows_is_in_the_job_or_says_why_not" in text
 
