@@ -504,15 +504,17 @@ async def test_the_core_is_not_a_node_on_the_work_routes(client: AsyncClient, pa
 # ----------------------------------------------------------------------------------------
 
 
-async def test_a_delivery_holding_a_lone_surrogate_is_still_refused_by_the_encoder(
+async def test_a_delivery_holding_a_lone_surrogate_fails_the_step_with_a_name_of_its_own(
     client: AsyncClient, ela: Ela
 ) -> None:
-    """The debt, as it is. What a node delivers is free JSON, and a lone surrogate in it reaches
-    the persistence, whose encoder refuses it: a ``422`` that names no rule of ELA's, and a step
-    left ``EXECUTING`` — handed out again when the assignment expires, to be refused again.
+    """ADR 0047 §16, paid (M13.3, form I): a lone surrogate is a string for the JSON parser and text
+    for nobody else. Until M13.3 the delivery was a ``422`` born of the encoder — its message
+    carrying the character —, the node kept the envelope, and the step went back to a node at the
+    expiry to be refused again: the task never ended.
 
-    Failing here is not a regression. It means the debt is being paid: write the payment in an
-    ADR, and turn this test round, as ``test_adr_devices.py`` was turned for ADR 0035 §7.
+    Now the Core decides and writes: the result it mints is ``FAILED`` with ``result.not_text``, no
+    output, a message that names the fields and never the content; the node is told ``200`` and
+    lets the envelope go; and the task fails at the next ``run`` instead of waiting forever.
     """
     task_id, order, headers, _ = await taken(client, ela)
     body = {"assignment_id": order["assignment_id"], **ENVELOPE, "output": {"message": "x\ud800y"}}
@@ -523,6 +525,17 @@ async def test_a_delivery_holding_a_lone_surrogate_is_still_refused_by_the_encod
         headers={**headers, "content-type": "application/json"},
     )
 
-    assert delivered.status_code == 422
-    assert "surrogates not allowed" in delivered.json()["error"]["message"]
-    assert (await client.get(f"/tasks/{task_id}")).json()["state"] == "EXECUTING"
+    assert delivered.status_code == 200, delivered.text
+    assert delivered.json()["step"] == "FAILED"
+    (result,) = [
+        one
+        for one in (await client.get(f"/tasks/{task_id}/results")).json()
+        if one["status"] != "STARTED"
+    ]
+    assert result["status"] == "FAILED"
+    assert result["error"]["code"] == "result.not_text"
+    assert result["output"] == {}
+    assert "output" in result["error"]["message"]
+    assert "\ud800" not in result["error"]["message"]
+    assert "\\ud800" not in result["error"]["message"]
+    assert (await client.post(f"/tasks/{task_id}/run")).json()["outcome"] == "failed"
