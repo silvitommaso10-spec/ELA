@@ -20,7 +20,7 @@ from ela.devices import (
     is_available,
     period_of,
 )
-from ela.domain import PowerSource
+from ela.domain import DeviceStatus, PowerSource
 from ela.ports import LocalBeat
 from ela.testing.fakes import FakeClock, FakePower
 from tests.devices.conftest import TTL
@@ -95,6 +95,25 @@ async def test_a_beat_makes_local_alive_with_the_power_read_now(
     assert is_available(device, clock.now(), TTL)
     assert device.power_source is PowerSource.BATTERY
     assert power.asked == 1
+
+
+@pytest.mark.parametrize(
+    ("running", "status"), [(True, DeviceStatus.BUSY), (False, DeviceStatus.IDLE)]
+)
+async def test_a_beat_says_what_the_core_observes_of_local(
+    registry: DeviceRegistry, running: bool, status: DeviceStatus
+) -> None:
+    """M13.3, decision 2: the status of ``local`` is the Core's observation — ``BUSY`` while a step
+    runs here — and the beat is handed the question, as it is handed the power reading."""
+
+    async def busy() -> bool:
+        return running
+
+    heartbeat = LocalHeartbeat(await local(registry), FakePower(), busy=busy, period=period_of(TTL))
+
+    await heartbeat.beat()
+
+    assert (await registry.get(LOCAL_DEVICE_ID)).status is status
 
 
 async def test_the_loop_beats_once_a_period_and_keeps_going_after_a_failed_beat(
