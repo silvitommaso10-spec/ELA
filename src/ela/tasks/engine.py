@@ -119,6 +119,9 @@ ORPHANED: Final = "orphaned"
 SYSTEM_ACTOR: Final = Actor(kind=ActorKind.SYSTEM, id="task-engine")
 """Who acts when nobody asked: expiries, recovery, the cancellation of dependent steps."""
 
+STARTED_ON: Final = "device_id"
+"""Key of the metadata of a ``STEP_STARTED`` event: the node the step was started on (M13.3)."""
+
 LIVE_STATES: Final[frozenset[TaskState]] = frozenset(TaskState) - TERMINAL_STATES
 """The states a task can still leave: the sources of ``cancel`` and ``expire`` (ADR 0004 P3)."""
 
@@ -737,6 +740,29 @@ class TaskEngine:
     # The Task Graph: the steps of the plan (§15, ADR 0009)
     # ----------------------------------------------------------------------------------
 
+    async def running_on(self, device_id: DeviceId) -> bool:
+        """Whether a step of a live task is RUNNING on ``device_id``: read, never written (M13.3).
+
+        A step runs where it was started last, until an event moves it out of ``RUNNING`` — the
+        same table the graph folds (:data:`~ela.tasks.graph.STEP_EVENTS`), so this cannot say a
+        step runs where the graph says it does not. Read from the trail and not from the graph: a
+        live task may have no plan yet, and it has no step either. It is the fact behind the
+        status of ``local``, which the Core observes since M13.3 (ADR 0048 §13): ``BUSY`` while a
+        step runs on this machine — a step waiting for the user's yes included, because it is
+        ``RUNNING`` and holds this machine's place.
+        """
+        for task in await self._repository.tasks(states=LIVE_STATES):
+            started: dict[StepId | None, JsonValue] = {}
+            for event in await self._repository.events(task.id):
+                target = STEP_EVENTS.get(event.event_type)
+                if target is StepState.RUNNING:
+                    started[event.step_id] = event.metadata.get(STARTED_ON)
+                elif target is not None:
+                    started.pop(event.step_id, None)
+            if str(device_id) in started.values():
+                return True
+        return False
+
     async def graph(self, task_id: TaskId) -> GraphState:
         """The plan of the task as a graph, with where every step stands: read, never written.
 
@@ -1106,7 +1132,15 @@ class TaskEngine:
         error: ErrorMetadata | None,
         device_id: DeviceId | None,
     ) -> tuple[TaskEvent, ...]:
-        """Event, then audit (ADR 0008 §4); returns the trail with the new event appended."""
+        """Event, then audit (ADR 0008 §4); returns the trail with the new event appended.
+
+        The start of a step keeps **where** in the trail too, since M13.3 (ADR 0048 §13): the audit
+        event always carried it, and the status of ``local`` is read from the trail
+        (:meth:`running_on`), which is the task's and not the audit's.
+        """
+        metadata: dict[str, JsonValue] = {"operation": op.name, **keyed}
+        if op.target is StepState.RUNNING and device_id is not None:
+            metadata[STARTED_ON] = str(device_id)
         event = TaskEvent(
             id=TaskEventId(self._ids.new_uuid()),
             created_at=now,
@@ -1114,7 +1148,7 @@ class TaskEngine:
             event_type=op.event_type,
             step_id=step_id,
             message=reason,
-            metadata={"operation": op.name, **keyed},
+            metadata=metadata,
         )
         await self._repository.append_event(event)
         await self._audit_log.append(

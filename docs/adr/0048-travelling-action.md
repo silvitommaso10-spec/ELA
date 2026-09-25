@@ -64,6 +64,10 @@ eligible node among 1: 1 UNAVAILABLE».
   alla percezione e lo spegnimento ferma. **Non decide niente**: tiene vero il Device Center fra un
   `run` e l'altro. Un battito che fallisce non ferma il ciclo; se il ciclo smette di battere, `local`
   scade, che è la diagnosi giusta;
+- **il battito porta anche lo stato di `local`**, dalla review dell'implementazione (§13): `BUSY` se
+  uno step è `RUNNING` su questa macchina, altrimenti `IDLE` — la domanda la risponde il Task Engine, e
+  il servizio la riceve dalla composizione come riceve la lettura dell'alimentazione; per questo il
+  servizio si costruisce dopo il Task Engine;
 - **la rotta smette di battere**, e il battito dell'avvio passa dal servizio: **fuori da
   `devices/beat.py` nessun modulo chiama `heartbeat` per `LOCAL_DEVICE_ID`**, e un test di
   architettura lo tiene, con il suo caso negativo.
@@ -439,14 +443,54 @@ piano. **La versione del nodo** resta dichiarata e non risolta: il Core sa quali
 perché è lo stesso codice; un nodo con un codice più vecchio non dichiara `fs.*` e non li riceve, uno
 con un codice diverso e gli stessi nomi non si distingue.
 
-### 13. I pesi di §17: le grandezze sono una scelta, l'ordine della rete si misura
+### 13. I pesi di §17: lo stato di `local` si osserva, la corrente pesa 20, l'ordine della rete si misura
 
 **Le grandezze sono tassi di cambio**, e nessuna misura li dà (decisione 12): quanto vale un nodo sulla
 rete locale rispetto a uno su una rete lontana, contro quanto vale un alimentatore, è un cambio fra
 cose che non hanno un'unità comune. Un debito che nessun dato può pagare è una scelta, e **ADR 0048 la
-scrive come tale**, con i valori di ADR 0017 — `NETWORK_POINTS` `LOCAL` 20 e `REMOTE` 5, `POWER_POINTS`
-`AC` 10, `STATUS_POINTS` `IDLE` 10, le classi di potenza e il carico come sono —, e chiude quella parte
-del «da ritarare» di ADR 0017. ADR 0017 si legge con questa sezione accanto.
+scrive come tale**, e chiude quella parte del «da ritarare» di ADR 0017. ADR 0017 si legge con questa
+sezione accanto.
+
+**La decisione 12 era sbagliata sullo stato**, e questa sezione lo dice apertamente (review
+dell'implementazione, decisione 2). Lo stato non è uno stub: i nodi lo producono — `IDLE` quando stanno
+per chiedere, `BUSY` mentre un loro tool gira. **Lo stub era lo stato di `local`**, che nessuno
+produceva e che valeva 0: nel blocco B della misura il PC vinceva perché nessuno osservava lo stato del
+Mac. Il risultato era sensato, la ragione era falsa.
+
+**Lo stato di `local` lo dice il Core**, nello stesso battito che §2 chiede prima di ogni piazzamento:
+**`BUSY` se c'è uno step `RUNNING` su `local`, altrimenti `IDLE`**. È un fatto che il Core osserva, non
+una supposizione: il Task Engine lo legge dal trail del task (`TaskEngine.running_on`), dove l'avvio di
+uno step tiene da M13.3 anche il nodo su cui è partito (`STARTED_ON`), con la stessa tabella che il
+grafo piega; il battito riceve la domanda come riceve la lettura dell'alimentazione, perché
+`ela.devices` non importa `ela.tasks`. **Uno step che aspetta il sì dell'utente è `RUNNING`**, e rende
+`local` `BUSY`: tiene il posto di questa macchina.
+
+**Con lo stato simmetrico e i valori di ADR 0017 l'alimentazione non poteva più spostare niente**: lo
+scarto di `NETWORK_POINTS` (15) superava quello di `POWER_POINTS` (10), e la rilettura
+dell'alimentazione di M12.3c sarebbe diventata decorativa nell'unica scelta che ELA fa. **La scelta,
+come tasso di cambio: un Mac a batteria cede un lavoro ripiazzabile a un PC sotto corrente; con il Mac
+sotto corrente, e libero, il lavoro resta sul Mac.** `POWER_POINTS` `AC` passa da 10 a 20; il resto dei
+valori di ADR 0017 non cambia:
+
+| Componente | Criterio §17 | Valore |
+|---|---|---|
+| `power` | consumo energetico | AC +20, BATTERY 0, UNKNOWN 0 |
+
+Il tetto del punteggio diventa 115, e i tratti restano la componente più pesante: 40 su 115 possibili.
+
+**I conti dei quattro casi**, contro il PC di §12 della guida — sulla tailnet, sotto corrente, `IDLE`,
+potenza ignota: **5 + 20 + 10 = 35**. Il Mac è sulla rete locale, 20:
+
+| Il Mac | Rete | Corrente | Stato | Totale | Vince |
+|---|---|---|---|---|---|
+| sotto corrente, `IDLE` | 20 | 20 | +10 | **50** | il Mac |
+| sotto corrente, `BUSY` | 20 | 20 | −10 | **30** | il PC |
+| a batteria, `IDLE` | 20 | 0 | +10 | **30** | il PC |
+| a batteria, `BUSY` | 20 | 0 | −10 | **10** | il PC |
+
+La seconda riga è lo stato che fa il suo mestiere: un Mac sotto corrente ma occupato — anche da una
+domanda che aspetta — cede il lavoro a un PC libero. `tests/devices/test_mac_or_pc.py` tiene i quattro
+casi e l'aritmetica della ragione.
 
 **La potenza di calcolo e il carico non hanno un lavoro che viaggi e li metta alla prova: sono stub,
 non debiti** (ADR 0026 §7). Nessuna capability che viaggia dipende dalla potenza di una macchina o da
@@ -454,19 +498,13 @@ quanto è occupata. **Li tiene un tripwire**: `tests/docs/test_adr_travel.py` ap
 capability che viaggiano, chiesto a F7 e non riscritto a mano; quando l'insieme cambia, il test
 fallisce e rimanda a questa sezione.
 
-**Lo stato, la decisione 12 lo mette con loro, e la rilettura della SPEC ha notato che non è della
-stessa specie**: ha un produttore — il nodo riporta `IDLE` — e decide la gara del blocco B della misura
-(`local` a batteria 20, il PC 5 + 10 + 10, e il secondo 10 è `IDLE`: senza, vincerebbe `local` 20 a
-15), e il tripwire non scatta se cambia. **La forma che prende in questo ADR è una domanda aperta della
-review**; finché non ha una risposta, i suoi valori restano quelli di ADR 0017. **E un'asimmetria si
-scrive accanto alla misura**: `local` non batte mai lo stato, e vale 0 dove un nodo inattivo vale 10 —
-di osservazione e non di fatto, ed è parte di ciò che nel blocco B fa vincere il PC.
-
 **L'ordine di `NETWORK_POINTS` si misura**, ed è l'unica cosa dei pesi che una misura può dire: se un
 lavoro sul nodo della rete locale costa davvero meno di uno su una rete lontana, nell'ordine in cui la
 tabella li mette. La regola è scritta prima dei numeri (SPEC di M13.3, «Le prove a mano»), la misura è
 la prova a mano di `docs/GETTING_STARTED.md` §17, e **l'esito si scrive qui dopo la misura**, con il
 numero e il giorno — o, se i dati non bastano, il debito si ridichiara con la ragione scritta in numeri.
+Se l'eco e la lettura danno ordini diversi, la misura si ferma lì, con i numeri, e non sceglie un tipo
+di lavoro (review dell'implementazione, decisione 3).
 
 ### 14. L'orologio di un nodo: il margine, calcolato
 
@@ -509,6 +547,9 @@ l'orologio di un nodo: lo misura e lo scrive.
   `verifiers`; `ela.executive` ha `Verdict`, `VERDICT` e `VERIFICATION_MISSING`, e `Claimed` le
   condizioni; `ela.node.runner` ha `verdict_of`; `DeviceOrchestrator` riceve `carried`;
   `VerifierPort` ha `failure_codes`; `ela node run` ha `NO_ROOT`.
+- `TaskEngine` ha `running_on`, e l'evento dell'avvio di uno step tiene il nodo (`STARTED_ON`);
+  `LocalHeartbeat` riceve `busy` (`ela.devices.Busy`) e batte lo stato di `local`; `POWER_POINTS`
+  `AC` vale 20.
 - `ToolPort` ha `asserted`, e `FsReadTool` e `FsWriteTool` lo implementano con `ASSERTED_CREATES`,
   `ASSERTED_OVERWRITES` e `ASSERTED_READS`; `ela.executive` ha `UNSEEN`; `Asked` e `ApprovalOut` hanno
   `machine` e `unseen`, le due pagine le coppie «Su quale macchina» e «Il disco», e la riga di comando

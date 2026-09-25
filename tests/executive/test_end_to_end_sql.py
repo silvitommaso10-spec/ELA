@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import timedelta
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.audit.chain import AuditChainError
 from ela.devices import (
+    LOCAL_DEVICE_ID,
     DeviceOrchestrator,
     DeviceRegistry,
     LocalHeartbeat,
@@ -208,7 +210,12 @@ class SqlPipeline:
             results=self.results,
             audit=self.audit,
             assignments=self.assignments,
-            beat=LocalHeartbeat(self.devices, FakePower(), period=period_of(HEARTBEAT_TTL)),
+            beat=LocalHeartbeat(
+                self.devices,
+                FakePower(),
+                busy=partial(self.engine.running_on, LOCAL_DEVICE_ID),
+                period=period_of(HEARTBEAT_TTL),
+            ),
         )
 
     async def alive(self) -> None:

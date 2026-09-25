@@ -60,6 +60,11 @@ class Failing:
         return PowerSource.AC
 
 
+async def nothing_runs() -> bool:
+    """No step runs on ``local``: the status the beat writes is ``IDLE``."""
+    return False
+
+
 async def local(registry: DeviceRegistry) -> DeviceRegistry:
     await registry.ensure_local()
     return registry
@@ -73,11 +78,11 @@ def test_the_period_is_a_third_of_the_ttl_and_not_a_setting_of_its_own() -> None
 def test_a_heartbeat_with_no_period_is_refused(registry: DeviceRegistry) -> None:
     for period in (timedelta(0), timedelta(seconds=-1)):
         with pytest.raises(ValueError, match="positive period"):
-            LocalHeartbeat(registry, FakePower(), period=period)
+            LocalHeartbeat(registry, FakePower(), busy=nothing_runs, period=period)
 
 
 def test_the_service_is_the_port_the_runner_is_given(registry: DeviceRegistry) -> None:
-    heartbeat = LocalHeartbeat(registry, FakePower(), period=period_of(TTL))
+    heartbeat = LocalHeartbeat(registry, FakePower(), busy=nothing_runs, period=period_of(TTL))
 
     assert isinstance(heartbeat, LocalBeat)
     assert heartbeat.period == period_of(TTL)
@@ -87,7 +92,9 @@ async def test_a_beat_makes_local_alive_with_the_power_read_now(
     registry: DeviceRegistry, clock: FakeClock
 ) -> None:
     power = FakePower(PowerSource.BATTERY)
-    heartbeat = LocalHeartbeat(await local(registry), power, period=period_of(TTL))
+    heartbeat = LocalHeartbeat(
+        await local(registry), power, busy=nothing_runs, period=period_of(TTL)
+    )
 
     await heartbeat.beat()
 
@@ -120,7 +127,9 @@ async def test_the_loop_beats_once_a_period_and_keeps_going_after_a_failed_beat(
     registry: DeviceRegistry, clock: FakeClock
 ) -> None:
     steps = Steps()
-    heartbeat = LocalHeartbeat(await local(registry), Failing(), period=period_of(TTL), wait=steps)
+    heartbeat = LocalHeartbeat(
+        await local(registry), Failing(), busy=nothing_runs, period=period_of(TTL), wait=steps
+    )
     loop = asyncio.create_task(heartbeat.run())
     await steps.waiting.wait()
     assert steps.asked == [20.0]  # it waits first: start-up has just beaten

@@ -42,6 +42,9 @@ ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0017-device-o
 ADR_0027 = ADR_PATH.with_name("0027-exemptions-withdrawn.md")
 ADR_0037 = ADR_PATH.with_name("0037-node-identity.md")
 ADR_0038 = ADR_PATH.with_name("0038-work-protocol.md")
+ADR_0048 = ADR_PATH.with_name("0048-travelling-action.md")
+"""The ADR that last changed a weight (M13.3, decision 2 of the review of the implementation): its
+rows are read over ADR 0017's, and the sentence of the ceiling is its to say."""
 
 FILTER_ROW = re.compile(r"^\| F(\d) \| ([^|]+?) \| ([^|]+?) \| `(\w+)` \| ([^|]+?) \|$")
 """§4: the hard filters, numbered — no other table in the ADR numbers its rows. ADR 0037 §12 adds
@@ -132,7 +135,15 @@ def test_the_privacy_filter_is_documented_with_the_order_it_uses() -> None:
 
 
 def documented_weights() -> dict[str, str]:
-    return {match.group(1): match.group(3) for match in rows(WEIGHT_ROW)}
+    """ADR 0017 §5, with the rows ADR 0048 §13 rewrote laid over it: ADR 0017 is immutable, so the
+    table the code must match is the union — the same reading the filters have."""
+    rewritten = [
+        match
+        for line in ADR_0048.read_text(encoding="utf-8").splitlines()
+        if (match := WEIGHT_ROW.match(line))
+    ]
+    assert rewritten, "ADR 0048 §13 must contain the rows of the weights it changed"
+    return {match.group(1): match.group(3) for match in (*rows(WEIGHT_ROW), *rewritten)}
 
 
 def test_the_weight_table_has_one_row_per_component() -> None:
@@ -171,7 +182,8 @@ def test_the_trait_and_workload_weights_match_the_document() -> None:
 
 
 def test_the_document_states_the_ceiling_the_weights_produce() -> None:
-    """``40 su 105 possibili``: the sentence that makes the traits "the heaviest component" true."""
+    """``40 su 115 possibili``: the sentence that makes the traits "the heaviest component" true —
+    said by ADR 0048 §13 since it changed a weight, and by ADR 0017 (105) until then."""
     ceiling = (
         TRAIT_POINTS
         + max(NETWORK_POINTS.values())
@@ -180,7 +192,8 @@ def test_the_document_states_the_ceiling_the_weights_produce() -> None:
         + WORKLOAD_POINTS
         + max(STATUS_POINTS.values())
     )
-    assert f"{TRAIT_POINTS} su {ceiling} possibili" in adr_text()
+    assert f"{TRAIT_POINTS} su {ceiling} possibili" in ADR_0048.read_text(encoding="utf-8")
+    assert f"{TRAIT_POINTS} su 105 possibili" in adr_text()
     others = [
         max(NETWORK_POINTS.values()),
         max(PERFORMANCE_POINTS.values()),

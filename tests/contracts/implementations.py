@@ -508,7 +508,14 @@ def _heartbeat() -> LocalHeartbeat:
         FakeIdGenerator(),
         heartbeat_ttl=timedelta(seconds=60),
     )
-    return LocalHeartbeat(registry, FakePower(), period=period_of(timedelta(seconds=60)))
+    return LocalHeartbeat(
+        registry, FakePower(), busy=nothing_runs, period=period_of(timedelta(seconds=60))
+    )
+
+
+async def nothing_runs() -> bool:
+    """A Core with no step running on ``local``: the heartbeat's question, answered."""
+    return False
 
 
 IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {

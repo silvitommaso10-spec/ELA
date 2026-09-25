@@ -95,7 +95,7 @@ async def test_start_step_records_a_trail_event_and_an_audit_event(h: Harness) -
     event = (await h.repository.events(task.id))[-1]
     assert event.event_type is TaskEventType.STEP_STARTED
     assert event.step_id == sid(0)
-    assert event.metadata == {"operation": "start_step"}
+    assert event.metadata == {"operation": "start_step", "device_id": str(DEVICE_ID)}
     assert event.message == f"on device {DEVICE_ID}"
     assert event.previous_state is None and event.new_state is None
     audit = (await h.audit.read())[-1]

@@ -175,12 +175,18 @@ PERFORMANCE_POINTS: Final[Mapping[PerformanceClass, int]] = MappingProxyType(
 
 POWER_POINTS: Final[Mapping[PowerSource, int]] = MappingProxyType(
     {
-        PowerSource.AC: 10,
+        PowerSource.AC: 20,
         PowerSource.BATTERY: 0,
         PowerSource.UNKNOWN: 0,
     }
 )
-"""§17 "consumo energetico": work goes to the machine that is plugged in, all else being equal."""
+"""§17 "consumo energetico": work goes to the machine that is plugged in, all else being equal.
+
+``AC`` is 20 since M13.3 (decision 2 of the review of the implementation; ADR 0048 §13), and not
+ADR 0017's 10: with the status of ``local`` observed, the gap of the network (15) was wider than
+the gap of the power, and the reading of the power source could never move a job from the Mac to a
+PC. The rate of exchange chosen: **a Mac on battery gives a job to a PC on the mains; a Mac on the
+mains, and idle, keeps it**."""
 
 WORKLOAD_POINTS: Final = 10
 """§16 "workload attuale": full marks for an idle node, none for a saturated one."""
