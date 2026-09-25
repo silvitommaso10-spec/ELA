@@ -41,6 +41,7 @@ from tests.contracts.protocols import port_protocols
 from tests.devices.nodes import step
 from tests.docs.test_adr_composition import coded_routes
 from tests.tools.test_registry import _production
+from tests.windows import OUTSIDE_THE_WINDOWS_JOB
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0048-travelling-action.md"
@@ -121,16 +122,18 @@ def test_the_grammar_section_names_the_table_and_its_tripwire() -> None:
 
 
 def test_the_payment_of_adr_0047_17_names_the_job_the_map_and_the_turned_defence() -> None:
+    """§5 as the first run measured it: the grammar's tests in the job, the two smokes in the map
+    with the reason the run gave, and the defect of the product that reason reveals, declared."""
     text = section(5)
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     assert text.startswith("### 5. Il debito di ADR 0047 §17, saldato")
-    for named in (
-        "tests/infrastructure/machine/test_acl_smoke.py",
-        "tests/infrastructure/machine/test_power_smoke.py",
-        "tests/tools/test_paths_windows.py",
-    ):
-        assert named in text and named in workflow, named
+    assert "tests/tools/test_paths_windows.py" in text
+    assert "tests/tools/test_paths_windows.py" in workflow
+    for smoke in ("test_acl_smoke.py", "test_power_smoke.py"):
+        assert smoke not in workflow, smoke
+        assert f"tests/infrastructure/machine/{smoke}" in OUTSIDE_THE_WINDOWS_JOB, smoke
+    assert "`36151577468`" in text and "`PSModulePath`" in text
     assert "`tests/windows.py`" in text and "`test_sapi_smoke.py`" in text
     assert "test_every_test_of_windows_is_in_the_job_or_says_why_not" in text
 
