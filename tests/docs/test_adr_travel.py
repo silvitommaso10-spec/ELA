@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ela.devices import BEATS_PER_TTL, LocalHeartbeat
 from ela.ports import LocalBeat
+from ela.tools import RESERVED_ON_WINDOWS
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_composition import coded_routes
@@ -75,3 +76,34 @@ def test_the_beat_section_says_the_period_the_code_derives() -> None:
     assert "`LocalHeartbeat`" in text and "`LocalBeat`" in text
     assert issubclass(LocalHeartbeat, object) and LocalBeat.__name__ == "LocalBeat"
     assert "tests/executive/test_runner_heartbeat.py" in text
+
+
+# ----------------------------------------------------------------------------------------
+# §4 and §5: the grammar of every system, and the tests of Windows in the job
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_grammar_section_names_the_table_and_its_tripwire() -> None:
+    text = section(4)
+
+    assert "`RESERVED_ON_WINDOWS`" in text and "COM0" in text and "LPT0" in text
+    assert {"COM0", "LPT0"} <= RESERVED_ON_WINDOWS
+    assert "`ntpath.isreserved`" in text and "tests/tools/test_paths.py" in text
+    assert "`is_junction()`" in text
+    assert "**Il Mac si stringe, e lo si scrive**" in text
+    assert "tests/tools/test_paths_windows.py" in text
+
+
+def test_the_payment_of_adr_0047_17_names_the_job_the_map_and_the_turned_defence() -> None:
+    text = section(5)
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert text.startswith("### 5. Il debito di ADR 0047 §17, saldato")
+    for named in (
+        "tests/infrastructure/machine/test_acl_smoke.py",
+        "tests/infrastructure/machine/test_power_smoke.py",
+        "tests/tools/test_paths_windows.py",
+    ):
+        assert named in text and named in workflow, named
+    assert "`tests/windows.py`" in text and "`test_sapi_smoke.py`" in text
+    assert "test_every_test_of_windows_is_in_the_job_or_says_why_not" in text

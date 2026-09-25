@@ -15,7 +15,11 @@ verifier (spec §20, §63; M5.2, ADR 0014).
   tool e dal verifier così che non possano divergere; `resolve_workspace`,
   `is_relative_note_path`. Il bersaglio risolto che una domanda mostra, e se un file c'è già, non
   sta più qui: lo dice il `prospect` del tool, con la stessa funzione che decide l'esecuzione
-  (M13.1, ADR 0045 §6-bis). Solo `resolve`/`is_symlink`/`lstat`: nessuna scrittura (regola 18).
+  (M13.1, ADR 0045 §6-bis). Solo `resolve`/`is_symlink`/`is_junction`/`lstat`: nessuna scrittura
+  (regola 18). Da M13.3 la forma è **una per ogni sistema** (ADR 0048 §4): niente `:`, nessun nome
+  che Windows riserva a un dispositivo (`RESERVED_ON_WINDOWS`, una copia di `ntpath` che un test sa
+  accorgersi di quando invecchia), nessun componente che finisce con un punto o uno spazio; e una
+  giunzione è un link.
   Da M13.1 il secondo codice è `path.outside_root` e non più `path.outside_workspace`: la
   workspace era l'unica radice che esistesse, e un nome che indica il confine sbagliato è una
   diagnosi falsa anche quando l'esito è giusto (ADR 0045 §5).

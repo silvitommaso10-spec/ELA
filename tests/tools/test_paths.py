@@ -9,10 +9,12 @@ see (a target that is not a regular file, a target the OS cannot look at) are th
 
 from __future__ import annotations
 
+import ntpath
 import os
 import stat
 from collections.abc import Callable
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -29,6 +31,7 @@ from ela.tools import (
     PATH_OUTSIDE_ROOT,
     PATH_SYMLINK,
     PATH_UNREACHABLE,
+    RESERVED_ON_WINDOWS,
     WORKSPACE_WRITE_NOTE,
     PathProblem,
     WriteNoteTool,
@@ -78,6 +81,32 @@ def _under_a_file(root: Path, tmp: Path) -> str:
     return "workspace/notes/a.md"
 
 
+READ_OTHERWISE_BY_WINDOWS: Final = (
+    "a.md:x",
+    "C:a.md",
+    "notes/a:b.md",
+    "CON",
+    "con.md",
+    "notes/Nul.txt",
+    "NUL .txt",
+    "aux.tar.gz",
+    "CONIN$",
+    "conout$.md",
+    "COM1.md",
+    "lpt9",
+    "COM0.md",
+    "LPT0",
+    "COM\u00b9.md",
+    "lpt\u00b3",
+    "a.md.",
+    "a.md ",
+    "notes./a.md",
+    "notes /a.md",
+)
+"""M13.3, form G: what Windows reads as another file, a stream or a device — refused on every
+system, the Mac included, with the code of any other malformed path."""
+
+
 def _fifo(root: Path, tmp: Path) -> str:
     (root / "notes").mkdir()
     os.mkfifo(root / "notes" / "a.md")
@@ -97,6 +126,7 @@ REFUSED_BY_BOTH: list[tuple[str, Setup, str]] = [
             "a/../b.md",
             "a\0b.md",
             "a\ud800b.md",
+            *READ_OTHERWISE_BY_WINDOWS,
         ]
     ],
     ("directory link outside", _dir_link_outside, PATH_OUTSIDE_ROOT),
@@ -214,9 +244,48 @@ def test_a_fifo_is_not_regular_and_a_path_under_a_file_is_unreachable(root: Path
     )
 
 
-@pytest.mark.parametrize("path", ["a.md", "a/b.md", "workspace/notes/x.md", "a.b/c-d_e.md"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "a.md",
+        "a/b.md",
+        "workspace/notes/x.md",
+        "a.b/c-d_e.md",
+        "CONSOLE.md",
+        "com10.md",
+        "COMA.md",
+        "nul-ish.md",
+        "LPT.md",
+        "prova 1.md",
+        ".hidden",
+        "a..b.md",
+    ],
+)
 def test_well_formed_relative_paths(path: str) -> None:
+    """Near a reserved name is not one: only the whole stem before the first dot, spaces aside."""
     assert is_relative_note_path(path)
+
+
+def test_the_table_of_reserved_names_is_a_copy_that_knows_when_it_goes_stale() -> None:
+    """Decision 3 of M13.3: Python 3.12 has no ``ntpath.isreserved``, so ``RESERVED_ON_WINDOWS`` is
+    a copy of CPython 3.13's table, plus ``COM0`` and ``LPT0``. The day the repository's Python has
+    the function, this fails — and the copy is **compared** with it, not swapped blind: the function
+    also refuses ``*?"<>|`` and the control characters, and lacks ``COM0`` and ``LPT0``."""
+    assert not hasattr(ntpath, "isreserved"), (
+        "ntpath.isreserved exists now: compare RESERVED_ON_WINDOWS with it (ADR 0048, form G)"
+    )
+    assert {"COM0", "LPT0", "CONIN$", "COM\u00b9", "LPT\u00b3"} <= RESERVED_ON_WINDOWS
+    assert len(RESERVED_ON_WINDOWS) == 6 + 2 * 13
+
+
+def test_the_refusal_says_why_in_words_a_person_reads(root: Path) -> None:
+    """The Mac narrows (form G): a name with ':' or a trailing dot, legal on macOS, is refused, and
+    the sentence names what is refused instead of leaving the user to guess."""
+    root.mkdir()
+    problem = classify(resolve_workspace(root), "nota.md:x")
+
+    assert problem is not None and problem.code == PATH_INVALID
+    assert "':'" in problem.reason and "device" in problem.reason and "dot" in problem.reason
 
 
 def test_the_module_reads_only(root: Path) -> None:

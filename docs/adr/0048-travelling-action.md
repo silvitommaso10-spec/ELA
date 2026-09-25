@@ -122,6 +122,68 @@ La difesa di ADR 0047 §16 si è girata: `tests/api/test_nodes_work.py` afferma 
 cui arrivano stringhe da un'altra macchina; un surrogato lì fa fallire l'annuncio, e il nodo non entra
 — il verso fail-safe, e nessun task resta a metà.
 
+### 4. I percorsi che Windows legge diversamente: una grammatica per ogni sistema
+
+`fs.read` e `fs.write` viaggiano anche verso il PC (decisione 3): senza, l'azione che viaggia si
+proverebbe sullo stesso disco del Core, cioè non si proverebbe. E sul PC un percorso che la grammatica
+di M5.2 ammetteva poteva nominare un altro file. **Una grammatica per ogni sistema**, in
+`ela.tools.paths`, e non un `if` per sistema: ciò che un sistema qualunque leggerebbe diversamente si
+rifiuta ovunque, con `path.invalid`, prima della domanda sul Core e prima di agire sul nodo:
+
+- **`:` in un componente** — su NTFS `nota.md:x` è un flusso alternativo di `nota.md`, e `C:x` una
+  lettera di unità;
+- **un componente che è un nome riservato di Windows**, con o senza estensione e anche con uno spazio
+  prima del punto: `RESERVED_ON_WINDOWS`, la tabella di `ntpath` di CPython 3.13 — `CON`, `PRN`, `AUX`,
+  `NUL`, `CONIN$`, `CONOUT$`, `COM` e `LPT` con una cifra da 1 a 9 o con `¹`, `²`, `³` —, più `COM0` e
+  `LPT0`, che la documentazione di Microsoft elenca;
+- **un componente che finisce con un punto o con uno spazio**, che Windows toglie.
+
+**La tabella è una copia, e sa accorgersi di diventare falsa**: Python 3.12 non ha
+`ntpath.isreserved`, e `tests/tools/test_paths.py` afferma che non c'è — il giorno del passaggio a
+3.13 fallisce. **La sostituzione non sarà a scatola chiusa**: `ntpath.isreserved` non ha `COM0` e
+`LPT0`, e rifiuta anche `*?"<>|` e i caratteri di controllo, un secondo restringimento del Mac. Quel
+giorno la copia si confronta con la funzione, e ciò che cambia si dichiara.
+
+**Una giunzione è un link**: la camminata di `classify` chiede `is_junction()` accanto a
+`is_symlink()`, su ogni sistema — su POSIX risponde sempre no, e su Windows `is_symlink()` una giunzione
+non la vede. Una giunzione che portava dentro la radice passava, dove un link simbolico no.
+
+**Il Mac si stringe, e lo si scrive**: un nome con `:` o che finisce con un punto, legale su macOS, da
+M13.3 è rifiutato ovunque — per `fs.*`, per le note, che condividono la grammatica, e per la cartella di
+un comando, che la classifica con la stessa `classify`. La frase del rifiuto nomina ciò che è
+rifiutato. Nessun esempio e nessun piano del repository usava un nome così.
+
+**Restano dichiarati**: il confronto dello scope distingue le maiuscole e NTFS no — un percorso scritto
+con maiuscole diverse dallo scope è negato, il verso fail-safe —, e su Windows non c'è `O_NOFOLLOW`,
+quindi la finestra di ADR 0045 §7 lì è più larga.
+
+**Che Windows legga davvero così** lo mostra un modulo che gira solo lì,
+`tests/tools/test_paths_windows.py`: una giunzione vera, un flusso alternativo vero, un punto in coda
+tolto davvero — prima il fatto di Windows, poi il rifiuto. Il job `windows-latest` lo raccoglie (§5).
+
+### 5. Il debito di ADR 0047 §17, saldato: i test di Windows nel job, o la ragione per cui no
+
+Il job `node-windows` raccoglieva `tests/node`, `tests/conformance` e
+`tests/composition/test_build_node.py`, e i test riservati a Windows stavano fuori: nessun job della CI
+li eseguiva mai.
+
+**Il pagamento**:
+
+- **entrano nel job, per nome**, `tests/infrastructure/machine/test_acl_smoke.py`,
+  `tests/infrastructure/machine/test_power_smoke.py` e `tests/tools/test_paths_windows.py` (§4);
+- **chi resta fuori lo dice in un posto che un test legge**: `tests/windows.py`, una mappa file →
+  ragione. Oggi ha una voce, `test_sapi_smoke.py`, con la ragione che la sua docstring già scriveva: un
+  runner non ha altoparlanti;
+- **la difesa di ADR 0047 §17 si è girata**:
+  `tests/docs/test_adr_terminal.py::test_every_test_of_windows_is_in_the_job_or_says_why_not` ricava
+  dalla suite ogni file con uno `skipif` riservato a Windows, e afferma che ognuno o sta nella riga del
+  job o sta nella mappa — l'uguaglianza fallisce anche per una voce della mappa che non è più riservata
+  a Windows, o che il job ora nomina. Il suo caso negativo è costruito su una suite finta.
+
+**Il primo run del job è la misura**: che l'ACL si legga sotto l'utente del runner e che `PowerStatus`
+risponda su una macchina virtuale, da qui non si sa. Se uno dei due non ci riesce, entra nella mappa
+con la ragione misurata, e questa sezione lo registra.
+
 ## Alternative considerate
 
 - **Il battito nella rotta, dopo il lock** — l'alimentazione del primo piazzamento sarebbe stata
@@ -134,6 +196,8 @@ cui arrivano stringhe da un'altra macchina; un surrogato lì fa fallire l'annunc
 ## Conseguenze
 
 - `ela.domain` ha `is_text`; `ela.executive` ha `RESULT_NOT_TEXT`.
+- `ela.tools` ha `RESERVED_ON_WINDOWS`; `tests/windows.py` ha la mappa dei test di Windows fuori dal
+  job.
 - `ela.ports` ha `LocalBeat`; `ela.devices` ha `LocalHeartbeat`, `BEATS_PER_TTL` e `period_of`;
   `ela.testing.fakes` ha `FakeLocalBeat`; `TaskRunner` riceve `beat`, `Ela` ha `heartbeat`.
 - I port sono **ventotto**; le regole di architettura del registro restano **cinquantasette** — le
