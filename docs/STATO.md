@@ -115,6 +115,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
+| 13 — Il permesso prima dell'azione | `M13.8` | Proposta | Un file che vive su una macchina: quale disco, e chi lo dice |
 | 14 — *senza nome* | `M14.1` | Proposta | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — *senza nome* | `M14.2` | Proposta | Il Planner: ELA scrive i piani da sola |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
@@ -136,7 +137,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **47** | `docs/adr/NNNN-*.md` |
-| Milestone | **62, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **63, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **27** | i `Protocol` di `src/ela/ports.py` |
@@ -617,6 +618,10 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   M13.3**, perché il terminale non viaggia lì e il suo debito di Windows — il Job Object, e `argv`
   che diventa una stringa sola — voleva una proprietaria registrata. **Fuori dalla fila, dopo
   M13.3**; il numero e l'ordine sono dell'utente.
+- **M13.8 — un file che vive su una macchina** (§13, §23). **Registrata il 2026-09-25 dalla review
+  della SPEC di M13.3**: `fs.*` viaggia e il piazzamento sceglie la macchina, quindi quale file si
+  legge o si scrive lo decide il punteggio; un piano non può dirlo. **In coda alla Fase 13, dopo
+  M13.7.**
 
 **Che cosa la Fase 13 non porta.**
 
