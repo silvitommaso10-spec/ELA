@@ -672,11 +672,11 @@ pagato da chi doveva.
 |---|---|---|---|
 | ADR 0041 §5 — i test che aspettano, e le difese che costano un terzo della suite | 2026-09-18 | della milestone sulla disciplina della suite | **aperto** |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | **aperto** |
-| ADR 0047 §16 — il surrogato isolato fuori dal piano | 2026-09-24 | di M13.3 | **aperto** |
 | ADR 0047 §17 — i test di Windows che nessun job raccoglie | 2026-09-24 | di M13.3 | **aperto** |
 | ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
+| ADR 0047 §16 — il surrogato isolato fuori dal piano | 2026-09-24 | di M13.3 | saldato da ADR 0048 §3 |
 
 <!-- fine del blocco generato: i debiti datati -->
 

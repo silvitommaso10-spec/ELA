@@ -86,6 +86,42 @@ Port introdotti:
 |---|---|---|---|
 | `LocalBeat` | §16 | async | `beat` |
 
+### 3. Il debito di ADR 0047 §16, saldato: un risultato che non è testo chiude il suo step
+
+Un surrogato isolato (`"\ud800"`) è una stringa per il parser
+JSON che FastAPI usa, e testo per nessun altro. La consegna di un nodo lo accettava in ogni stringa —
+`output`, `node`, `error.message` —, e la richiesta moriva in un `422` con il carattere nel messaggio;
+il nodo, che legge un `422` come «il Core non ha deciso», teneva la busta e la riconsegnava finché la
+scadenza non diventava un `410`, e alla scadenza un tool ripetibile tornava a un nodo: **il task non
+finiva mai**.
+
+**Una riga di ADR 0047 §16 si corregge.** Diceva che il `422` «nasce dall'`UnicodeEncodeError` della
+persistenza». Nasceva prima: `Envelope.digest` serializzava con `ensure_ascii=False` e codificava in
+UTF-8 stretto, prima di ogni scrittura (M13.3, C7).
+
+**Il pagamento**, in tre parti:
+
+- **un controllo solo**, `ela.domain.is_text`: lo leggono il piano, dove gli argomenti nascono, e
+  l'executor **dove un risultato si conserva, qualunque macchina l'abbia prodotto**. La risposta di un
+  fornitore che contiene `\ud800` — un JSON valido — è un produttore vero, e sul Core rompeva la
+  persistenza come la consegna la rompeva sul filo: la parità di ADR 0038 §3 vuole la stessa risposta
+  nei due posti;
+- **l'impronta si calcola sempre**: `.encode("utf-8", "surrogatepass")` dà, per ogni busta di testo,
+  gli stessi byte della codifica stretta — un test lo afferma su buste vere —, e per una busta con un
+  surrogato un'impronta invece di un'eccezione;
+- **il Core conia un risultato `FAILED` con `result.not_text`**, senza uscita, senza `usage`, e dei
+  metadati solo ciò che il Core aveva scritto; il messaggio nomina i campi e mai il contenuto. Poi la
+  seconda metà di sempre: `TOOL_EXECUTED`, lo step `FAILED`, e per una consegna l'assegnazione
+  `DELIVERED`. **Al nodo si risponde `200`** (decisione 8): il Core ha deciso e ha scritto, e il nodo
+  lascia la busta; una replica riceve la stessa risposta.
+
+La difesa di ADR 0047 §16 si è girata: `tests/api/test_nodes_work.py` afferma il `200`, lo step
+`FAILED` con `result.not_text`, un messaggio senza il carattere, e il task `FAILED` al `run` dopo.
+
+**Fuori, e dichiarata**: l'annuncio di un nodo (`DeclarationIn`, il nome e i tool) è l'altra porta da
+cui arrivano stringhe da un'altra macchina; un surrogato lì fa fallire l'annuncio, e il nodo non entra
+— il verso fail-safe, e nessun task resta a metà.
+
 ## Alternative considerate
 
 - **Il battito nella rotta, dopo il lock** — l'alimentazione del primo piazzamento sarebbe stata
@@ -97,6 +133,7 @@ Port introdotti:
 
 ## Conseguenze
 
+- `ela.domain` ha `is_text`; `ela.executive` ha `RESULT_NOT_TEXT`.
 - `ela.ports` ha `LocalBeat`; `ela.devices` ha `LocalHeartbeat`, `BEATS_PER_TTL` e `period_of`;
   `ela.testing.fakes` ha `FakeLocalBeat`; `TaskRunner` riceve `beat`, `Ela` ha `heartbeat`.
 - I port sono **ventotto**; le regole di architettura del registro restano **cinquantasette** — le

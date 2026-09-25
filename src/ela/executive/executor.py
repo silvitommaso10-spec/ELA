@@ -114,6 +114,7 @@ from ela.domain import (
     TaskId,
     TaskState,
     TaskStep,
+    is_text,
 )
 from ela.executive.assignments import Assignments, WorkRejection
 from ela.executive.errors import (
@@ -175,6 +176,7 @@ __all__ = [
     "STARTED_ID",
     "TOOL_EXCEPTION",
     "TOOL_REFUSED",
+    "RESULT_NOT_TEXT",
     "VERIFICATION_EXCEPTION",
     "VERIFICATION_FAILED",
     "Claimed",
@@ -274,6 +276,11 @@ TOOL_EXCEPTION: Final = "tool.exception"
 """Error code of a result synthesised from an exception the tool raised while acting."""
 TOOL_REFUSED: Final = "tool.refused"
 """Error code of a step failed because the tool refused the decision (``NotAllowedError``)."""
+RESULT_NOT_TEXT: Final = "result.not_text"
+"""Error code of a result whose strings are not all text — a lone surrogate — and that therefore
+cannot be kept (M13.3, ADR 0048; ADR 0047 §16). The Core mints it in place of what the tool
+reported, on this machine or on a node: a step that ended with what nobody can store ends, and
+does not go back to a node to be refused again."""
 GRANT_VANISHED: Final = "grant_vanished"
 """Error code of a step failed because the grant vanished between ``authorize`` and ``consume``."""
 EXECUTION_INTERRUPTED: Final = "execution.interrupted"
@@ -351,6 +358,10 @@ class Envelope(NamedTuple):
         Canonical — sorted keys, no spacing — so that the same envelope gives the same digest
         whatever order a node's JSON arrived in. It lives in the assignment's row and nowhere else:
         never in an audit event, never in an error message (§57).
+
+        ``surrogatepass`` since M13.3 (ADR 0048): for every envelope of text the bytes are the ones
+        a strict encoding gives, and an envelope holding a lone surrogate gets a digest instead of
+        an exception — the exception that, until M13.3, was the ``422`` of ADR 0047 §16.
         """
         return hashlib.sha256(
             json.dumps(
@@ -367,8 +378,55 @@ class Envelope(NamedTuple):
                 sort_keys=True,
                 separators=(",", ":"),
                 ensure_ascii=False,
-            ).encode()
+            ).encode("utf-8", "surrogatepass")
         ).hexdigest()
+
+
+def _as_text(result: ExecutionResult, tool: ToolPort) -> ExecutionResult:
+    """``result`` as it is, or — when a string in it is not text — the failure kept in its place.
+
+    A lone surrogate is a string for the JSON parser and text for nobody else: the store cannot
+    write it, and until M13.3 a node's delivery holding one was a ``422`` that left the step to go
+    back to a node, which delivered it again — the task never ended (ADR 0047 §16). The check is
+    **one** (``ela.domain.is_text``) and it is read **where a result is kept**, whichever machine
+    produced it: the same answer on this machine and on a node (ADR 0038 §3).
+
+    What replaces it says **which fields** held something that is not text, and never what:
+    ``FAILED`` with :data:`RESULT_NOT_TEXT`, no output, no usage, and of the metadata only what the
+    Core wrote (the id of a STARTED record). The tool ran — ``TOOL_EXECUTED`` will say so —, and
+    what it produced is not kept.
+    """
+    fields = [
+        name
+        for name, value in (
+            ("output", result.output),
+            ("error", None if result.error is None else result.error.model_dump(mode="json")),
+            ("usage", None if result.usage is None else result.usage.model_dump(mode="json")),
+            ("node", result.metadata.get("node")),
+        )
+        if not is_text(value)
+    ]
+    if not fields:
+        return result
+    kept: dict[str, JsonValue] = (
+        {STARTED_ID: result.metadata[STARTED_ID]} if STARTED_ID in result.metadata else {}
+    )
+    return result.model_copy(
+        update={
+            "status": ExecutionStatus.FAILED,
+            "output": {},
+            "usage": None,
+            "metadata": kept,
+            "error": ErrorMetadata(
+                code=RESULT_NOT_TEXT,
+                message=(
+                    f"the result held something that is not text (a lone surrogate) in "
+                    f"{', '.join(fields)}: it cannot be kept, and none of it is shown"
+                ),
+                tool_name=tool.name,
+            ),
+        }
+    )
 
 
 def check_envelope(envelope: Envelope) -> None:
@@ -820,7 +878,7 @@ class Executor:
                 tool_name=tool.name,
             )
             return await self._fail(task, graph, decision, authorization, refused)
-        produced = _counted(tool, produced)
+        produced = _as_text(_counted(tool, produced), tool)
         result = produced.model_copy(
             update={
                 "device_id": device_id,
@@ -922,8 +980,9 @@ class Executor:
         if envelope.form is Delivery.REFUSED:
             return await self._refused_there(task, graph, ready, assignment, digest, now)
         started, _ = await self._stored(assignment.task_id, assignment.step_id)
-        result = self._minted(
-            assignment, ready.tool, envelope, now, started[0] if started else None
+        result = _as_text(
+            self._minted(assignment, ready.tool, envelope, now, started[0] if started else None),
+            ready.tool,
         )
         fresh = await self._stored_once(result)
         marked = await self._assignments.deliver(assignment_id, device_id, digest=digest, now=now)

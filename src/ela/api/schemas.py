@@ -12,7 +12,6 @@ Two leaf values are reused as they are: :class:`~ela.domain.ProviderUsage` and
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import datetime
 from typing import Annotated, Final, TypedDict, cast
 from uuid import UUID
@@ -63,6 +62,7 @@ from ela.domain import (
     TaskPlan,
     TaskState,
     TaskStep,
+    is_text,
 )
 from ela.executive import ASKED, REPORTABLE, Delivery, Envelope, check_envelope
 from ela.tasks.graph import GraphState
@@ -132,23 +132,9 @@ def _text_only(value: object) -> object:
     ``run`` a 422 from the tool's first ``encode`` — and the task unreadable. Here is where the
     arguments are born, so here is where it stops: before anything is written.
     """
-    if not _encodable(value):
+    if not is_text(value):
         raise ValueError(NOT_TEXT)
     return value
-
-
-def _encodable(value: object) -> bool:
-    if isinstance(value, str):
-        try:
-            value.encode()
-        except UnicodeEncodeError:
-            return False
-        return True
-    if isinstance(value, Mapping):
-        return all(_encodable(key) and _encodable(one) for key, one in value.items())
-    if isinstance(value, tuple):
-        return all(_encodable(one) for one in value)
-    return True
 
 
 class TaskCreate(BaseModel):
