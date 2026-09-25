@@ -6,6 +6,9 @@ and a read turns them back and stops at the first ``0x1A``. The tool and its ver
 the translation, and the node's verifier would agree with the tool while the disk says otherwise —
 the false positive of ADR 0038 §14, on the machine M13.3 sends ``fs.*`` to. Declared with its
 ``skipif`` (ADR 0031 §6) and named on the Windows job's line (form J): a Mac cannot build it.
+
+It imports nothing of ``tests/tools/test_verifiers.py``: that module reads ``os.geteuid`` while it
+is collected, and Windows has none — the first run of this file died there, before any test ran.
 """
 
 from __future__ import annotations
@@ -20,8 +23,8 @@ from ela.composition.settings import refuse_the_root
 from ela.domain import ExecutionStatus
 from ela.testing.fakes import FakeClock, FakeIdGenerator
 from ela.tools import FS_CONTENT_MATCHES, FS_WRITE, FsReadTool, FsWriteTool, FsWriteVerifier
+from tests.domain.examples import EXECUTION_RESULT
 from tests.tools.support import allowed
-from tests.tools.test_verifiers import succeeded
 
 pytestmark = pytest.mark.skipif(platform.system() != "Windows", reason="NTFS is Windows's")
 
@@ -58,7 +61,14 @@ async def test_the_verifier_sees_a_carriage_return_the_body_does_not_have(root: 
     failures = await FsWriteVerifier(root).verify(
         (FS_CONTENT_MATCHES,),
         {"path": "ELA/c.md", "body": "a\nb\n", "overwrite": True},
-        succeeded(FS_WRITE),
+        EXECUTION_RESULT.model_copy(
+            update={
+                "capability_id": FS_WRITE,
+                "status": ExecutionStatus.SUCCEEDED,
+                "error": None,
+                "output": {},
+            }
+        ),
     )
 
     assert [failure.code for failure in failures] == ["fs.content_mismatch"]
