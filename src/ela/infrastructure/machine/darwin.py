@@ -25,7 +25,7 @@ import json
 import os
 import sys
 import tempfile
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import suppress
 from datetime import timedelta
 from pathlib import Path
@@ -118,7 +118,9 @@ SPEECH_FILE_PREFIX: Final = "ela-speech-"
 find it. Nothing normally wears this name for longer than one syscall."""
 
 
-async def spawn(argv: Sequence[str], timeout: float) -> tuple[int, str]:
+async def spawn(
+    argv: Sequence[str], timeout: float, *, env: Mapping[str, str] | None = None
+) -> tuple[int, str]:
     """Run ``argv``, kill it past ``timeout``, and answer with its exit code and output.
 
     ``stderr`` is discarded on purpose: a child that dies of an Objective-C exception writes a
@@ -129,14 +131,20 @@ async def spawn(argv: Sequence[str], timeout: float) -> tuple[int, str]:
     and for the capture, where the residue is a stray reader. It is not latent for the voice
     (M11.1, criterio 9): an orphaned ``say`` is **ELA that keeps talking after being told to
     stop**. Fixed once for every caller, and there are four of them now.
+
+    ``env`` is the child's whole environment, or ``None`` to inherit this process's — the default,
+    and every caller's but the ``powershell.exe`` of a PC, which must not inherit ``PSModulePath``
+    (M12.3d, :func:`~ela.infrastructure.machine.windows.spawn_powershell`).
     """
     process, transport = await _start(
-        argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+        argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=env
     )
     return await _wait(process, transport, timeout)
 
 
-async def spawn_with_input(argv: Sequence[str], data: bytes, timeout: float) -> tuple[int, str]:
+async def spawn_with_input(
+    argv: Sequence[str], data: bytes, timeout: float, *, env: Mapping[str, str] | None = None
+) -> tuple[int, str]:
     """Run ``argv`` with ``data`` on its stdin, kill it past ``timeout``, answer as :func:`spawn`.
 
     The sister of :func:`spawn` for a child that must be *told* something without it passing through
@@ -153,9 +161,10 @@ async def spawn_with_input(argv: Sequence[str], data: bytes, timeout: float) -> 
     code decides.
 
     Both ways of giving up kill the child, through the same :func:`_wait` as every other caller.
+    ``env`` as in :func:`spawn`.
     """
     process, transport = await _start(
-        argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE
+        argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, env=env
     )
     return await _wait(process, transport, timeout, data)
 
@@ -401,6 +410,7 @@ async def _start(
     stdout: int | None = None,
     stderr: int | None = None,
     pass_fds: Sequence[int] = (),
+    env: Mapping[str, str] | None = None,
 ) -> tuple[asyncio.subprocess.Process, asyncio.SubprocessTransport]:
     """Start ``argv`` as ``asyncio.create_subprocess_exec`` does, **keeping the transport**.
 
@@ -418,6 +428,7 @@ async def _start(
         stdout=stdout,
         stderr=stderr,
         pass_fds=pass_fds,
+        env=env,
     )
     return asyncio.subprocess.Process(transport, protocol, loop), transport
 

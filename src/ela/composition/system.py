@@ -33,6 +33,7 @@ from ela.infrastructure.machine import (
     pmset_source,
     power_status,
     spawn,
+    spawn_powershell,
 )
 from ela.tools.terminal import ArgumentLimits
 
@@ -87,8 +88,9 @@ async def power_of_a_mac(run: Spawn = spawn, binary: str = PMSET) -> PowerSource
     return power_drawn_from(await pmset_source(run, binary))
 
 
-async def power_of_a_pc(run: Spawn = spawn, binary: str = POWERSHELL) -> PowerSource:
-    """``PowerStatus`` through ``powershell.exe``, through the PC's map."""
+async def power_of_a_pc(run: Spawn = spawn_powershell, binary: str = POWERSHELL) -> PowerSource:
+    """``PowerStatus`` through ``powershell.exe``, through the PC's map — started without the
+    ``PSModulePath`` a PowerShell 7 would hand it (M12.3d)."""
     return power_on_the_line(await power_status(run, binary))
 
 

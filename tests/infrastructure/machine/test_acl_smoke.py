@@ -21,6 +21,7 @@ assertion or the code is at fault is the text Windows really wrote, so a failure
 
 from __future__ import annotations
 
+import os
 import platform
 import re
 import subprocess
@@ -29,7 +30,7 @@ from pathlib import Path
 import pytest
 
 from ela.composition import build_node
-from ela.infrastructure.machine.windows import POWERSHELL, encoded
+from ela.infrastructure.machine.windows import POWERSHELL, encoded, without_module_path
 from ela.node import join_or_read
 from ela.node.state import STATE_FILE
 from ela.testing.fakes import FakePower, FakeSpeech
@@ -62,13 +63,15 @@ BORN = {
 
 
 def sddl(path: Path) -> str:
-    """The security descriptor of ``path``, as Windows writes it."""
+    """The security descriptor of ``path``, as Windows writes it — read by a ``powershell.exe``
+    started as ELA starts its own, without the job's PowerShell 7 ``PSModulePath`` (M12.3d)."""
     done = subprocess.run(
         [POWERSHELL, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded(READ_SDDL)],
         input=str(path).encode("utf-8"),
         capture_output=True,
         timeout=60,
         check=False,
+        env=without_module_path(os.environ),
     )
     assert done.returncode == 0, done.stderr.decode("utf-8", errors="replace")
     return done.stdout.decode("utf-8").strip()

@@ -87,7 +87,12 @@ from ela.infrastructure.machine.textrecognition import (
     VisionTextRecognition,
 )
 from ela.infrastructure.machine.unsupported import UnsupportedProbe
-from ela.infrastructure.machine.windows import POWERSHELL, SapiSpeechCommand, power_status
+from ela.infrastructure.machine.windows import (
+    POWERSHELL,
+    SapiSpeechCommand,
+    power_status,
+    spawn_powershell,
+)
 
 __all__ = [
     "AFPLAY",
@@ -127,6 +132,7 @@ __all__ = [
     "pmset_source",
     "power_status",
     "spawn",
+    "spawn_powershell",
     "spawn_with_input",
     "LOOKUP_TIMEOUT_SECONDS",
     "port_holder",
