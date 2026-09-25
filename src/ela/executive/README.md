@@ -32,7 +32,9 @@ ADR 0014; M5.3, ADR 0015; M7.2, ADR 0021).
   che il piano afferma (`asserted`), nomina la macchina e dice che ELA non ha guardato quel disco.
   La `ProviderUsage` del risultato finisce in `AuditEvent.usage`
   del `TOOL_EXECUTED` (§32): è l'unico posto dove ELA scrive quel campo. È l'unico modulo del Core
-  che chiama `Tool.execute` (regola 16) e `complete_step` (regola 17).
+  che chiama `Tool.execute` (regola 16) e `complete_step` (regola 17), e per questo da M13.3 dice lo
+  stato di `local` (ADR 0048 §13): `running_here` è vero dall'avvio di un tool su questa macchina al
+  suo risultato registrato, e il battito lo porta come `BUSY`.
 - `errors.py`: `ExecutorError`, le precondizioni che rifiutano prima di scrivere.
 
 Il Planner (§13) resta il pezzo mancante; l'orchestrator che percorre il grafo degli step è in

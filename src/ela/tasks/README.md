@@ -1,3 +1,1 @@
 Fase: v0.1 — state machine di §14 (M1.2, ADR 0004), Task Engine (M3.1, ADR 0008): ciclo di vita, idempotenza, recovery dei task orfani; Task Graph di §15 (M3.2, ADR 0009): DAG degli step, stato degli step piegato dalla trail, operazioni per step e propagazione dei fallimenti. Da M5.3 (ADR 0015 §6) l'engine legge l'`ApprovalStore` e `recover()` fa scadere anche i task WAITING_APPROVAL la cui richiesta è scaduta (`TASK_EXPIRED`, attore `task-engine`), senza toccare la richiesta.
-
-Da M13.3 (ADR 0048 §13) `running_on(device_id)` dice se uno step di un task vivo è `RUNNING` su quel nodo, letto dal trail con la tabella che il grafo piega: l'avvio di uno step tiene il nodo nei suoi metadati (`STARTED_ON`). È il fatto dietro lo stato di `local`, che il battito porta.

@@ -513,8 +513,8 @@ def _heartbeat() -> LocalHeartbeat:
     )
 
 
-async def nothing_runs() -> bool:
-    """A Core with no step running on ``local``: the heartbeat's question, answered."""
+def nothing_runs() -> bool:
+    """A Core with no tool running on ``local``: the heartbeat's question, answered."""
     return False
 
 

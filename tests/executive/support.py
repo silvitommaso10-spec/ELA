@@ -15,11 +15,9 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from functools import partial
 from typing import Any
 
 from ela.devices import (
-    LOCAL_DEVICE_ID,
     DeviceOrchestrator,
     DeviceRegistry,
     LocalHeartbeat,
@@ -680,7 +678,7 @@ def world(
     heartbeat = LocalHeartbeat(
         devices,
         power,
-        busy=partial(engine.running_on, LOCAL_DEVICE_ID),
+        busy=executor.running_here,
         period=period_of(HEARTBEAT_TTL),
     )
     runner = TaskRunner(

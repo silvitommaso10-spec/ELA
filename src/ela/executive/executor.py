@@ -811,6 +811,19 @@ class Executor:
         self._bell = bell
         self._authorization_ttl = authorization_ttl
         self._approval_ttl = approval_ttl
+        self._running_here = 0
+        """How many tools run on this machine now, each from its start to its result stored."""
+
+    def running_here(self) -> bool:
+        """Whether a tool runs on this machine now: the status of ``local`` (M13.3, ADR 0048 §13).
+
+        From the start of the tool to its result stored, and nothing else: a step that waits for
+        the user's yes is ``RUNNING`` and occupies nothing — the node's own ``BUSY`` is the time a
+        tool of its runs. In memory, because it is a fact of this process: a process that died ran
+        nothing, and the next one starts at zero. The one module that runs a tool here is this one
+        (rule 16), so this is the one place that can say it.
+        """
+        return self._running_here > 0
 
     async def execute(
         self, task_id: TaskId, step_id: StepId, *, placement: PlacementDecision
@@ -960,26 +973,14 @@ class Executor:
             None if tool.idempotent else await self._start_record(tool, decision, device_id, spent)
         )
         await self._sensor_activated(spec, decision, device_id)
-        produced = await self._run_tool(tool, decision, arguments)
-        if produced is None:
+        result = await self._run_here(tool, decision, arguments, device_id, spent, record)
+        if result is None:
             refused = ErrorMetadata(
                 code=TOOL_REFUSED,
                 message=f"{tool.name} refused the decision {decision.id}",
                 tool_name=tool.name,
             )
             return await self._fail(task, graph, decision, authorization, refused)
-        produced = _as_text(_counted(tool, produced), tool)
-        result = produced.model_copy(
-            update={
-                "device_id": device_id,
-                "decision_id": decision.id,
-                "authorization_id": spent,
-                "metadata": produced.metadata
-                if record is None
-                else {**produced.metadata, STARTED_ID: str(record.id)},
-            }
-        )
-        await self._results.add(result)
         return await self._settled(
             task,
             graph,
@@ -989,6 +990,40 @@ class Executor:
             result,
             consumed,
         )
+
+    async def _run_here(
+        self,
+        tool: ToolPort,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        device_id: DeviceId,
+        spent: AuthorizationId | None,
+        record: ExecutionResult | None,
+    ) -> ExecutionResult | None:
+        """The tool on this machine and its result stored: the span :meth:`running_here` counts.
+
+        ``None`` when the tool refused the decision, and nothing is stored then.
+        """
+        self._running_here += 1
+        try:
+            produced = await self._run_tool(tool, decision, arguments)
+            if produced is None:
+                return None
+            produced = _as_text(_counted(tool, produced), tool)
+            result = produced.model_copy(
+                update={
+                    "device_id": device_id,
+                    "decision_id": decision.id,
+                    "authorization_id": spent,
+                    "metadata": produced.metadata
+                    if record is None
+                    else {**produced.metadata, STARTED_ID: str(record.id)},
+                }
+            )
+            await self._results.add(result)
+            return result
+        finally:
+            self._running_here -= 1
 
     # ----------------------------------------------------------------------------------
     # The three instants of a call that runs elsewhere (ADR 0038 §2)

@@ -18,10 +18,12 @@ step after it, which then waited for a device, or went to another machine.
   one run and the next.
 
 **And what ``local`` is doing, observed by the Core** (M13.3, decision 2 of the review of the
-implementation; ADR 0048 §13): ``BUSY`` while a step runs on this machine, ``IDLE`` otherwise — the
-two words a node says of itself. Until then ``local`` said nothing and scored 0 where an idle node
-scored 10, and a PC won a race because nobody looked at the Mac. The fact is the Task Engine's, and
-the beat is handed the question, as it is handed the power reading.
+implementation, corrected after the manual test; ADR 0048 §13): ``BUSY`` while a tool runs on this
+machine — from its start to its result stored —, ``IDLE`` otherwise: the two words a node says of
+itself, meaning what they mean there. A step waiting for the user's yes occupies nothing. Until then
+``local`` said nothing and scored 0 where an idle node scored 10, and a PC won a race because nobody
+looked at the Mac. The fact is the executor's, and the beat is handed the question, as it is handed
+the power reading.
 
 Not the perception's tick: it is off by default, and a heartbeat that needed perception on would
 make the Mac disappear from the registry the day the user turned perception off. And not the wall
@@ -48,8 +50,8 @@ BEATS_PER_TTL: Final = 3
 Wait = Callable[[float], Awaitable[None]]
 """How the loop waits between two beats: ``asyncio.sleep``, or a test's own event."""
 
-Busy = Callable[[], Awaitable[bool]]
-"""Whether a step runs on ``local`` now: the Task Engine's answer, handed in by the composition."""
+Busy = Callable[[], bool]
+"""Whether a tool runs on ``local`` now: the executor's answer, handed in by the composition."""
 
 
 def period_of(ttl: timedelta) -> timedelta:
@@ -62,7 +64,7 @@ class LocalHeartbeat:
 
     ``power`` is the reading of what this machine runs on — a function the composition hands over,
     because ``ela.devices`` does not import ``ela.composition`` — and ``busy`` the question whether
-    a step runs here, the Task Engine's, because ``ela.devices`` does not import ``ela.tasks``. A
+    a tool runs here, the executor's, because ``ela.devices`` does not import ``ela.executive``. A
     beat that fails in the loop — the database busy, say — does not stop the loop; if the loop stops
     beating, ``local`` expires, and that is the right diagnosis, in the place where somebody looks.
     """
@@ -92,9 +94,9 @@ class LocalHeartbeat:
 
     async def beat(self) -> None:
         """Write the heartbeat of ``local``, with the power source read now and the status
-        observed now: ``BUSY`` while a step runs here, ``IDLE`` otherwise."""
+        observed now: ``BUSY`` while a tool runs here, ``IDLE`` otherwise."""
         status = DeviceStatus.IDLE
-        if await self._busy():
+        if self._busy():
             status = DeviceStatus.BUSY
         await self._registry.heartbeat(
             LOCAL_DEVICE_ID, power_source=await self._power(), status=status

@@ -60,8 +60,8 @@ class Failing:
         return PowerSource.AC
 
 
-async def nothing_runs() -> bool:
-    """No step runs on ``local``: the status the beat writes is ``IDLE``."""
+def nothing_runs() -> bool:
+    """No tool runs on ``local``: the status the beat writes is ``IDLE``."""
     return False
 
 
@@ -110,10 +110,10 @@ async def test_a_beat_makes_local_alive_with_the_power_read_now(
 async def test_a_beat_says_what_the_core_observes_of_local(
     registry: DeviceRegistry, running: bool, status: DeviceStatus
 ) -> None:
-    """M13.3, decision 2: the status of ``local`` is the Core's observation — ``BUSY`` while a step
+    """M13.3, decision 2: the status of ``local`` is the Core's observation — ``BUSY`` while a tool
     runs here — and the beat is handed the question, as it is handed the power reading."""
 
-    async def busy() -> bool:
+    def busy() -> bool:
         return running
 
     heartbeat = LocalHeartbeat(await local(registry), FakePower(), busy=busy, period=period_of(TTL))

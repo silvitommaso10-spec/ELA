@@ -12,14 +12,12 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
-from functools import partial
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from ela.devices import (
-    LOCAL_DEVICE_ID,
     DeviceOrchestrator,
     DeviceRegistry,
     LocalHeartbeat,
@@ -241,7 +239,7 @@ class Pipeline:
             beat=LocalHeartbeat(
                 self.devices,
                 FakePower(),
-                busy=partial(self.engine.running_on, LOCAL_DEVICE_ID),
+                busy=self.executor.running_here,
                 period=period_of(HEARTBEAT_TTL),
             ),
         )
