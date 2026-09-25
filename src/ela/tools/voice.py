@@ -136,6 +136,7 @@ class SpeakTool(Tool):
     — a measurement, never a claim that anybody heard it (M11.1 dec. C)."""
 
     idempotent: ClassVar[bool] = False
+    relocatable: ClassVar[bool] = False
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Saying a thing twice is saying it twice. There is no artefact whose second write would be
     harmless: the effect is the sound, and the sound already happened. So this runs under the

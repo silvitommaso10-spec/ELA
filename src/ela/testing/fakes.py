@@ -888,6 +888,7 @@ class FakeTool:
         output: JsonMapping | None = None,
         status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
         idempotent: bool = True,
+        relocatable: bool | None = None,
         prospect: Prospect | None = None,
         usage: ProviderUsage | None = None,
         audit_numbers: frozenset[str] = frozenset(),
@@ -899,6 +900,7 @@ class FakeTool:
         self.idempotent = idempotent
         """Whether twice is once (ADR 0015 §8, ADR 0021 §1): ``False`` is how a test builds a
         tool the executor must run under the STARTED protocol."""
+        self._relocatable = relocatable
         self.audit_numbers = audit_numbers
         """What of its result enters ``TOOL_EXECUTED`` (M13.2): nothing, unless a test says so."""
         self.output: JsonMapping = {} if output is None else output
@@ -915,6 +917,18 @@ class FakeTool:
     @property
     def name(self) -> str:
         return self._name
+
+    @property
+    def relocatable(self) -> bool:
+        """Whether a node's expired claim is placed again (M13.3, ADR 0048): what the test says,
+        or else what :attr:`idempotent` says **now** — the one predicate the claim read before
+        M13.3, so a test that turns ``idempotent`` off after building the world keeps meaning
+        what it meant. A test that wants the two apart sets this."""
+        return self.idempotent if self._relocatable is None else self._relocatable
+
+    @relocatable.setter
+    def relocatable(self, value: bool) -> None:
+        self._relocatable = value
 
     async def prospect(self, arguments: JsonMapping) -> Prospect:
         """Whatever the test set: nothing to show and nothing to refuse, by default."""

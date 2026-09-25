@@ -21,7 +21,11 @@ ADR 0014; M5.3, ADR 0015; M7.2, ADR 0021).
   `ExecutionResult` **STARTED prima** della chiamata (protocollo di ADR 0021 §1): un retry che
   trova quella riga senza esito **non richiama il tool** e fallisce lo step con
   `execution.interrupted`, perché rifarlo costerebbe di nuovo e manderebbe fuori il contenuto
-  dell'utente una seconda volta. La `ProviderUsage` del risultato finisce in `AuditEvent.usage`
+  dell'utente una seconda volta. Per un lavoro preso da un nodo la `STARTED` nasce alla presa, e da
+  M13.3 per un tool che dichiara `relocatable = False` (ADR 0048 §6): `fs.read` è ripetibile sulla sua
+  macchina e non si sposta, perché su un'altra lo stesso percorso è un altro file; una presa scaduta
+  con la `STARTED` si chiude `execution.interrupted`, una senza si ripiazza — oggi solo l'eco.
+  La `ProviderUsage` del risultato finisce in `AuditEvent.usage`
   del `TOOL_EXECUTED` (§32): è l'unico posto dove ELA scrive quel campo. È l'unico modulo del Core
   che chiama `Tool.execute` (regola 16) e `complete_step` (regola 17).
 - `errors.py`: `ExecutorError`, le precondizioni che rifiutano prima di scrivere.

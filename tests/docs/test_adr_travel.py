@@ -8,17 +8,38 @@ piece per commit, in the order of the SPEC; the pins grow with it.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
-from ela.devices import BEATS_PER_TTL, LocalHeartbeat
-from ela.ports import LocalBeat
-from ela.tools import RESERVED_ON_WINDOWS
+from ela.devices import BEATS_PER_TTL, DeviceOrchestrator, DeviceRegistry, LocalHeartbeat
+from ela.permissions import CORE_ECHO, MODEL_COMPLETE
+from ela.ports import LocalBeat, ToolRegistryPort, VerifierRegistryPort
+from ela.testing.fakes import (
+    FakeAuditLog,
+    FakeCapabilityRegistry,
+    FakeClock,
+    FakeDeviceRegistry,
+    FakeIdGenerator,
+    FakeTool,
+    FakeVerifier,
+)
+from ela.tools import (
+    ECHO_TOOL_NAME,
+    RESERVED_ON_WINDOWS,
+    EchoTool,
+    EchoVerifier,
+    ToolRegistry,
+    VerifierRegistry,
+)
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
+from tests.devices.nodes import step
 from tests.docs.test_adr_composition import coded_routes
+from tests.tools.test_registry import _production
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0048-travelling-action.md"
+WORK_ADR_PATH = ROOT / "docs" / "adr" / "0038-work-protocol.md"
 MILESTONE = ROOT / "docs" / "milestones" / "M13.3.md"
 
 
@@ -107,3 +128,67 @@ def test_the_payment_of_adr_0047_17_names_the_job_the_map_and_the_turned_defence
         assert named in text and named in workflow, named
     assert "`tests/windows.py`" in text and "`test_sapi_smoke.py`" in text
     assert "test_every_test_of_windows_is_in_the_job_or_says_why_not" in text
+
+
+# ----------------------------------------------------------------------------------------
+# §6: relocatable, and the guard of ADR 0038 §8 in its new home
+# ----------------------------------------------------------------------------------------
+
+
+def travelling(tools: ToolRegistryPort, verifiers: VerifierRegistryPort) -> set[str]:
+    """The names of the tools whose capability F7 lets go to a node: asked of the orchestrator's
+    own ``requirements``, not restated — the day a node carries a verifier, this grows by itself."""
+    clock, audit = FakeClock(), FakeAuditLog()
+    orchestrator = DeviceOrchestrator(
+        DeviceRegistry(
+            FakeDeviceRegistry(), clock, audit, FakeIdGenerator(), heartbeat_ttl=timedelta(60)
+        ),
+        tools,
+        audit,
+        FakeIdGenerator(),
+        clock,
+        verifiers=verifiers,
+        capabilities=FakeCapabilityRegistry(),
+    )
+    return {
+        tool.name
+        for tool in tools.tools()
+        if not orchestrator.requirements(
+            step(capabilities=(tool.capability_id,), goal=tool.name)
+        ).verified_here
+    }
+
+
+def moving(tools: ToolRegistryPort, verifiers: VerifierRegistryPort) -> set[str]:
+    """Travels ∩ relocatable: the tools whose claimed and silent work is placed again."""
+    names = travelling(tools, verifiers)
+    return {tool.name for tool in tools.tools() if tool.name in names and tool.relocatable}
+
+
+def test_the_work_that_moves_when_a_node_goes_silent_is_the_echo_s_alone(tmp_path: Path) -> None:
+    """ADR 0038 §8's guard, rewritten and not loosened (M13.3, form E). It computed «travels» from
+    ``reads_the_machine``, and with ``fs.*`` travelling it would have seen nothing. Now «travels» is
+    what F7 lets go, and the predicate is ``relocatable``: the set is ``{core-echo}``, and the entry
+    condition of M13.6 — more than one relocatable tool that travels — is still not met."""
+    tools, verifiers, _ = _production(tmp_path)
+
+    assert moving(tools, verifiers) == {ECHO_TOOL_NAME}
+    assert "§15 oggi è onorato da un tool su otto" in WORK_ADR_PATH.read_text(encoding="utf-8")
+    assert "«viaggia ∩ ripiazzabile» è `{core-echo}`" in section(6)
+
+
+def test_the_guard_sees_one_relocatable_tool_more() -> None:
+    """The negative case: a second tool that travels and declares itself relocatable is seen."""
+    clock, ids = FakeClock(), FakeIdGenerator()
+    tools = ToolRegistry(
+        (
+            EchoTool(clock, ids),
+            FakeTool(MODEL_COMPLETE, clock, ids, name="another", relocatable=True),
+        )
+    )
+    verifiers = VerifierRegistry(
+        (EchoVerifier(), FakeVerifier(MODEL_COMPLETE, reads_the_machine=False))
+    )
+
+    assert moving(tools, verifiers) == {ECHO_TOOL_NAME, "another"}
+    assert CORE_ECHO in {tool.capability_id for tool in tools.tools()}

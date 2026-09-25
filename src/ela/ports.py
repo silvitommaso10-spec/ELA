@@ -1345,6 +1345,21 @@ class ToolPort(Protocol):
         """
 
     @property
+    def relocatable(self) -> bool:
+        """Whether the work of this tool, taken by a node that then goes silent, may be done again
+        on **another machine** without changing what it means and without doubling its effect
+        (M13.3, ADR 0048).
+
+        Declared, never defaulted — the form of :attr:`idempotent` — and **not a synonym of it**:
+        ``fs.read`` can be repeated on its machine, and on another one the same path is another
+        file. The executor reads it at the claim of a node: the STARTED record is written there for
+        a tool that is not relocatable, so an expired claim is closed ``interrupted`` instead of
+        being placed again (the second predicate of ADR 0038 §8). A tool that cannot be repeated
+        here cannot be repeated elsewhere: :class:`~ela.tools.registry.ToolRegistry` refuses
+        ``True`` beside ``idempotent`` ``False``, and silence.
+        """
+
+    @property
     def audit_numbers(self) -> frozenset[str]:
         """The keys of this tool's result whose **integers** enter ``TOOL_EXECUTED`` (M13.2).
 

@@ -24,6 +24,8 @@ class EchoTool(Tool):
 
     output_keys: ClassVar[frozenset[str]] = frozenset({"message"})
     idempotent: ClassVar[bool] = True
+    relocatable: ClassVar[bool] = True
+    """The echo is the same echo on any machine: the one tool whose claimed work moves."""
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Nothing is written and nothing leaves the process: a second run is the first one."""
 

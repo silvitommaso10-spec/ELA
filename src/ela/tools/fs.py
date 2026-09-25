@@ -152,6 +152,10 @@ class FsReadTool(Tool):
     idempotent: ClassVar[bool] = True
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Reading twice leaves the disk as it was: a retry after a crash costs a second read."""
+    relocatable: ClassVar[bool] = False
+    """**Repeatable, and not relocatable** (M13.3, ADR 0048): the same path on another machine is
+    another file, so a read that a silent node took is closed ``interrupted``, not done elsewhere.
+    The tool that makes the declaration a declaration, and not another name for ``idempotent``."""
 
     def __init__(
         self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = FS_READ_TOOL_NAME
@@ -232,6 +236,7 @@ class FsWriteTool(Tool):
     :data:`OVERWRITE_MISMATCH`. Declaring ``True`` would make the executor replay it after a
     crash and call that refusal a failure of the step (ADR 0021 §1).
     """
+    relocatable: ClassVar[bool] = False
 
     def __init__(
         self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = FS_WRITE_TOOL_NAME

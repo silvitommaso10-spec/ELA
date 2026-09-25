@@ -284,7 +284,8 @@ does not go back to a node to be refused again."""
 GRANT_VANISHED: Final = "grant_vanished"
 """Error code of a step failed because the grant vanished between ``authorize`` and ``consume``."""
 EXECUTION_INTERRUPTED: Final = "execution.interrupted"
-"""Error code of a step whose non-idempotent tool was started and never reported (ADR 0021 §2).
+"""Error code of a step whose tool was started under a STARTED record and never reported (ADR
+0021 §2): a non-idempotent tool on this machine, a non-relocatable one at a node's claim (M13.3).
 
 The STARTED record says the tool was about to act; nothing says whether it did. Running it again
 is the one thing ELA must not do — it is why the record exists — so the step fails with this, and
@@ -914,7 +915,10 @@ class Executor:
 
         The STARTED record is born **here and not in** ``run`` (M12.1, D14): until a node takes the
         work nothing can have acted, so a step whose offer nobody claimed is placed again whatever
-        its tool. ``SENSOR_ACTIVATED`` is written for a capability that turns one on — none that
+        its tool. And it is born for a tool that is **not relocatable** (M13.3, ADR 0048), not for
+        one that is not idempotent: a claim that expires with the record is closed ``interrupted``,
+        one without it is placed again — maybe on another machine, where ``fs.read``'s path is
+        another file. ``SENSOR_ACTIVATED`` is written for a capability that turns one on — none that
         travels does today (D15), and the call is here so that the day one does, it is written
         where the sensor is turned on.
 
@@ -928,7 +932,7 @@ class Executor:
         step, spec, tool, _, arguments, _ = self._prepared(
             assignment.task_id, graph, assignment.step_id
         )
-        if not tool.idempotent:
+        if not tool.relocatable:
             await self._start_record(tool, decision, device_id, assignment.authorization_id)
         await self._sensor_activated(spec, decision, device_id)
         return Claimed(assignment, tool.name, arguments)
@@ -1342,7 +1346,10 @@ class Executor:
         targets: Sequence[object],
         record: ExecutionResult,
     ) -> Execution:
-        """A non-idempotent tool was started and never reported: the step fails (ADR 0021 §2).
+        """A tool under a STARTED record was started and never reported: the step fails (ADR
+        0021 §2). On this machine the record is a non-idempotent tool's; at a node's claim, since
+        M13.3, a non-relocatable one's — ``fs.read`` among them, which could be repeated on its
+        machine and not on another (ADR 0048).
 
         The tool is **not** run again — that is the whole reason the STARTED record was written
         — and no outcome is invented: a second row claiming FAILED would say the tool ran and
@@ -1357,8 +1364,8 @@ class Executor:
         error = ErrorMetadata(
             code=EXECUTION_INTERRUPTED,
             message=(
-                f"{tool.name} was started for step {step.id} and never reported; it cannot be "
-                "repeated, so whether it acted is unknown"
+                f"{tool.name} was started for step {step.id} and never reported; it is not run "
+                "again, here or on another machine, so whether it acted is unknown"
             ),
             tool_name=tool.name,
             device_id=record.device_id,

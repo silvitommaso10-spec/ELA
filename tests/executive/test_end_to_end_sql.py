@@ -328,6 +328,7 @@ class _ForgetfulNoteTool:
     """Claims the note of ``inner`` but removes it before answering (§63 on SQLite)."""
 
     idempotent = True
+    relocatable = False
     audit_numbers: frozenset[str] = frozenset()
     """As the tool it wraps: removing the note twice leaves the same absence (ADR 0015 §8)."""
 

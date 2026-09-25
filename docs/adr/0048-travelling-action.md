@@ -184,6 +184,53 @@ li eseguiva mai.
 risponda su una macchina virtuale, da qui non si sa. Se uno dei due non ci riesce, entra nella mappa
 con la ragione misurata, e questa sezione lo registra.
 
+### 6. Ripiazzabile: la dichiarazione, e il secondo predicato di ADR 0038 §8
+
+`fs.read` è idempotente: rileggere lascia il disco com'era. Alla presa di un nodo la `STARTED` si
+scriveva solo per un tool non idempotente, quindi **una `fs.read` reclamata e scaduta sarebbe stata
+rilasciata e ripiazzata** — anche su un'altra macchina, dove lo stesso percorso è un altro file.
+È l'avvertimento di ADR 0038 §8 per la nota, e il test che quell'avvertimento aveva messo di guardia
+non l'avrebbe visto: calcolava «viaggia» da `reads_the_machine`, e `fs.*` continua a leggere la
+macchina.
+
+**Un membro nuovo di `ToolPort`, `relocatable`**, senza default, nella forma di `idempotent` e di
+`audit_numbers`: *il lavoro di questo tool, preso da un nodo che poi tace, si può rifare su un'altra
+macchina senza che cambi che cosa significa e senza raddoppiarne l'effetto.* `ToolRegistry` rifiuta
+con `RelocationError` un tool muto, e `relocatable` vero accanto a `idempotent` falso — ciò che non si
+può rifare qui non si rifà altrove. I due rifiuti non hanno un produttore in produzione, come
+`SilentVerifierError`: valgono per il loro caso negativo, costruito con un tool finto
+(`tests/tools/test_relocatable.py`). **Il nome è `relocatable`** (decisione 4): `replaceable` si
+leggerebbe «sostituibile».
+
+**I valori**: `core.echo` sì; **ogni altro no**. `fs.read` è quello che rende la dichiarazione una
+dichiarazione e non un sinonimo: idempotente sulla sua macchina, un altro file su un'altra.
+
+**Il predicato**: alla presa la `STARTED` si scrive per un tool **non ripiazzabile**. Nel percorso
+locale non cambia niente: lì la `STARTED` difende dal crash della stessa macchina, e resta legata a
+`idempotent`. **ADR 0038 §8 si legge con questa riga accanto**: *reclamata e scaduta ⇒ un tool non
+ripiazzabile si chiude `interrupted`, uno ripiazzabile si ripiazza.* **E ADR 0021 con la stessa
+riga**: la `STARTED` di una presa non dice più «un tool che non si può rifare», ma «un lavoro che non
+si può spostare». La frase di `execution.interrupted` diceva «it cannot be repeated», falso per una
+`fs.read` interrotta; ora dice «it is not run again, here or on another machine».
+
+**La guardia di ADR 0038 §8 si è riscritta, e non si è allentata**, e ha cambiato casa:
+`tests/docs/test_adr_travel.py` chiede all'orchestrator stesso quali capability F7 lascia andare — il
+verifier non legge la macchina, e da §7 anche un verifier che un nodo porta —, e afferma che
+«viaggia ∩ ripiazzabile» è `{core-echo}`; il suo caso negativo vede un tool ripiazzabile in più.
+**La condizione d'ingresso di M13.6 resta non soddisfatta** — un solo ripiazzabile che viaggia —, e
+M13.6 resta `Proposta`: la sua registrazione diceva «dichiarano la propria idempotenza», e
+`docs/milestones/M13.6.md` è annotata, perché la dichiarazione che conta è `relocatable`.
+
+**Nei test**, `FakeTool.relocatable` segue `idempotent` finché un test non lo imposta: era l'unico
+predicato che la presa leggesse prima di M13.3, e un test che spegne `idempotent` dopo aver costruito
+il suo mondo continua a voler dire ciò che diceva.
+
+Port estesi:
+
+| Port | Spec | Modalità | Membri |
+|---|---|---|---|
+| `ToolPort` | §17, §33 | async | `relocatable` |
+
 ## Alternative considerate
 
 - **Il battito nella rotta, dopo il lock** — l'alimentazione del primo piazzamento sarebbe stata
@@ -196,8 +243,8 @@ con la ragione misurata, e questa sezione lo registra.
 ## Conseguenze
 
 - `ela.domain` ha `is_text`; `ela.executive` ha `RESULT_NOT_TEXT`.
-- `ela.tools` ha `RESERVED_ON_WINDOWS`; `tests/windows.py` ha la mappa dei test di Windows fuori dal
-  job.
+- `ela.tools` ha `RESERVED_ON_WINDOWS` e `RelocationError`; `ToolPort` ha `relocatable`, dichiarato da
+  ogni tool; `tests/windows.py` ha la mappa dei test di Windows fuori dal job.
 - `ela.ports` ha `LocalBeat`; `ela.devices` ha `LocalHeartbeat`, `BEATS_PER_TTL` e `period_of`;
   `ela.testing.fakes` ha `FakeLocalBeat`; `TaskRunner` riceve `beat`, `Ela` ha `heartbeat`.
 - I port sono **ventotto**; le regole di architettura del registro restano **cinquantasette** — le

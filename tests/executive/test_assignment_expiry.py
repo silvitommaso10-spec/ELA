@@ -5,7 +5,9 @@ be repeated, so
 
 * **never claimed** ⇒ no record ⇒ the step is **released**, whatever its tool;
 * **claimed and silent** ⇒ a repeatable tool has no record and is released; one that cannot be
-  repeated has its record and is closed ``interrupted``.
+  repeated has its record and is closed ``interrupted``. Since M13.3 (ADR 0048) the record of a
+  claim is a **non-relocatable** tool's: one that could be repeated on its machine and not moved
+  is closed ``interrupted`` too.
 
 Each case is driven through ``run``, because the point is what a *later call* does with work that
 expired — nobody sweeps, and the expiry is derived on read (ADR 0016 §3). The node of these tests
@@ -162,6 +164,30 @@ async def test_a_claimed_assignment_that_expired_closes_interrupted_even_if_the_
     assert w.tool(ECHO.id).calls == ()  # the tool never ran in this process
     assert run.outcome is RunOutcome.FAILED
     assert (await w.task(task.id)).state is TaskState.FAILED
+
+
+async def test_a_claim_of_a_repeatable_tool_that_cannot_move_closes_interrupted(w: World) -> None:
+    """Criterion 5 of M13.3, the second predicate of D6 (ADR 0048): the STARTED record of a claim
+    is written for a tool that is **not relocatable**, not for one that is not idempotent. A tool
+    that could be repeated on its machine — ``fs.read`` is one — and not on another is closed
+    ``interrupted`` when the node that took it goes silent, and is never placed again."""
+    task, step, assignment, remote = await handed_to_a_node(w)
+    w.tool(ECHO.id).relocatable = False
+    assert w.tool(ECHO.id).idempotent is True
+    await w.executor.begin(assignment.id, remote.id)
+    (record,) = await w.results.for_step(task.id, step.id)
+    w.clock.advance(assignment.expires_at - w.now)
+    await only_this_machine_is_alive(w)
+    restored(w)
+
+    run = await w.runner.run(task.id)
+
+    failed = [e for e in await w.events(task.id) if e.event_type is E.STEP_FAILED][-1]
+    assert failed.error is not None and failed.error.code == EXECUTION_INTERRUPTED
+    assert "here or on another machine" in failed.error.message
+    assert len([e for e in await w.events(task.id) if e.event_type is E.DEVICE_SELECTED]) == 1
+    assert w.tool(ECHO.id).calls == ()
+    assert run.outcome is RunOutcome.FAILED
 
 
 async def test_a_plan_of_many_steps_releases_each_step_at_most_once_per_call(w: World) -> None:

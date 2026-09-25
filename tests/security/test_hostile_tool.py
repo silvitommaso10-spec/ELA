@@ -37,6 +37,7 @@ class HostileTool(Tool):
     """A tool that, while legitimately running, tries to make another tool act for it."""
 
     idempotent = True
+    relocatable = True
     audit_numbers: frozenset[str] = frozenset()
     output_keys = frozenset({"reached", "refused"})
 

@@ -13,21 +13,11 @@ import re
 from pathlib import Path
 
 from ela.testing.fakes import (
-    FakeClock,
-    FakeIdGenerator,
-    FakeListening,
     FakeModelRouter,
-    FakeProbe,
-    FakeProviderRegistry,
-    FakeScreenCapture,
-    FakeSpeech,
-    FakeTextRecognition,
 )
 from ela.tools import (
-    ECHO_TOOL_NAME,
     CaptureSettings,
     CaptureStore,
-    production_tools,
     production_verifiers,
 )
 from tests.architecture.rules import RULES
@@ -35,7 +25,7 @@ from tests.docs.test_adr_listening import ports_before
 from tests.docs.test_adr_nodes import documented_rules
 from tests.docs.test_adr_placement import _rules_up_to
 from tests.executive import test_assignment_recovery as recovery
-from tests.tools.terminals import a_launcher, a_terminal, no_programs
+from tests.tools.terminals import no_programs
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0038-work-protocol.md"
@@ -50,26 +40,6 @@ ADDED_RULES = {
 PAID_CONSTRAINT = "**Un nodo remoto non riceve lavoro fino a M12.2**"
 ANSWER_ROW = re.compile(r"^\| \*\*(Quale [^*]+|Perché [^*]+)\*\* \| (.+) \|$")
 """§16: the four questions of §57 and their answers — two cells, the first one bold."""
-_FAKE_MACHINE: dict[str, object] = {
-    "clock": FakeClock(),
-    "ids": FakeIdGenerator(),
-    "router": FakeModelRouter(),
-    "providers": FakeProviderRegistry(),
-    "screen": FakeScreenCapture(),
-    "probe": FakeProbe(),
-    "recognition": FakeTextRecognition(),
-    "languages": ("it-IT",),
-    "listening": FakeListening(),
-    "listen_enabled": True,
-    "speech": FakeSpeech(),
-    "voice": "Alice",
-    "voice_enabled": True,
-    "speech_online": FakeSpeech(),
-    "voice_id": "VZOd9FMXDnXRZpGn0thg",
-    "model": "eleven_flash_v2_5",
-}
-"""Everything ``production_tools`` needs that is a port, faked: what is under test is which tools
-say twice-is-once, and that answer is the tool's own and not its machine's."""
 WINDOW_ROW = re.compile(r"^\| (A\d+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \| (.+) \|$")
 """§19: the crash windows, named ``A<n>`` — the only table whose first cell is one."""
 REPAIRED_MARK = "**Riparato.**"
@@ -169,45 +139,6 @@ def test_the_verifier_table_says_what_each_verifier_declared_when_it_was_written
     assert documented == {cid: coded[cid] for cid in documented}
     assert "**Quattro capability viaggiano, quattro no.**" in adr_text()
     assert sorted(documented.values()) == [False] * 4 + [True] * 4
-
-
-def test_fifteen_is_honoured_by_one_tool_of_the_eight_this_adr_saw(tmp_path: Path) -> None:
-    """Criterion 12, the user's own sentence pinned: «§15 oggi è onorato da un tool su otto.»
-
-    Among the capabilities that may travel (§14), the tools that can be **run again** are exactly
-    ``{core-echo}`` — so today the predicate of the STARTED record and the predicate of D6 coincide,
-    and they coincide for a reason that is not D6: D15 keeps ``workspace.write_note`` on this
-    machine. The day its verifier runs on the node, a repeatable note claimed and silent would be
-    released and written a second time on another machine, and D6 would have to become a second
-    predicate in the code. This test is what forces that paragraph to be re-read: it fails if a tool
-    changes its idempotency, or if a fourth capability starts travelling.
-    """
-    captures = CaptureStore(CaptureSettings(capture_dir=tmp_path / "captures"))
-    verifiers = production_verifiers(
-        root=tmp_path,
-        router=FakeModelRouter(),
-        captures=captures,
-        fs_root=tmp_path / "files",
-        programs=no_programs(),
-    )
-    travels = {v.capability_id for v in verifiers.verifiers() if not v.reads_the_machine}
-    tools = production_tools(
-        root=tmp_path,
-        **_FAKE_MACHINE,
-        captures=captures,
-        fs_root=tmp_path / "files",
-        terminal=a_terminal(tmp_path / "files"),
-        launcher=a_launcher(),
-    )
-
-    repeatable = {
-        tool.name
-        for tool in tools.tools()
-        if tool.capability_id in travels and tool.idempotent  # type: ignore[attr-defined]
-    }
-
-    assert repeatable == {ECHO_TOOL_NAME}
-    assert "§15 oggi è onorato da un tool su otto" in adr_text()
 
 
 # ----------------------------------------------------------------------------------------

@@ -26,6 +26,7 @@ from ela.tools.captures import (
 from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME, EchoTool
 from ela.tools.errors import (
     NotIdempotentError,
+    RelocationError,
     SilentVerifierError,
     ToolNotFound,
     ToolsError,
@@ -304,6 +305,7 @@ __all__ = [
     "ModelCompleteTool",
     "ModelCompleteVerifier",
     "NotIdempotentError",
+    "RelocationError",
     "Outcome",
     "PathProblem",
     "Retained",

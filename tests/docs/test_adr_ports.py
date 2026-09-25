@@ -46,6 +46,7 @@ EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0038-work-protocol.md", EXTENDING),
     (ADR_DIR / "0045-filesystem-and-high.md", EXTENDING),
     (ADR_DIR / "0047-terminal.md", EXTENDING),
+    (ADR_DIR / "0048-travelling-action.md", EXTENDING),
 )
 REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),

@@ -37,6 +37,7 @@ from ela.ports import (
 from ela.tools.echo import EchoTool
 from ela.tools.errors import (
     NotIdempotentError,
+    RelocationError,
     SilentVerifierError,
     ToolNotFound,
     UndeclaredNumbersError,
@@ -82,7 +83,9 @@ class ToolRegistry:
 
     **Every tool declares whether it is idempotent, and none may stay silent** (M5.3, then M7.2).
     Since M13.2 it also declares which numbers of its result enter the audit (``audit_numbers``),
-    and the same silence is refused the same way.
+    and the same silence is refused the same way; since M13.3 whether a node's expired claim of it
+    may be placed again (``relocatable``), refused silent and refused ``True`` beside an
+    ``idempotent`` ``False``.
     Until M7.2 the registry accepted only ``True``, because crash window 7a was repaired by
     running the tool again and that repair is safe only while twice is once. ADR 0021 §1 brings
     the STARTED protocol the guard was waiting for, so ``False`` is now a legal answer: the
@@ -100,6 +103,7 @@ class ToolRegistry:
             declared = getattr(tool, "idempotent", None)
             if not isinstance(declared, bool):
                 raise NotIdempotentError(tool.capability_id, tool.name, declared)
+            _relocation_of(tool, idempotent=declared)
             _numbers_of(tool)
             if tool.capability_id in table:
                 raise AlreadyExistsError("tool", tool.capability_id)
@@ -116,6 +120,26 @@ class ToolRegistry:
     def tools(self) -> tuple[ToolPort, ...]:
         """Every tool, in construction order."""
         return tuple(self._tools.values())
+
+
+def _relocation_of(tool: ToolPort, *, idempotent: bool) -> None:
+    """Refuse a tool that does not say whether its claimed work may move, or says it can move what
+    cannot be repeated (M13.3, ADR 0048)."""
+    declared = getattr(tool, "relocatable", None)
+    if not isinstance(declared, bool):
+        raise RelocationError(
+            tool.capability_id,
+            tool.name,
+            f"declares no boolean relocatable (it says {declared!r}): whether a node's expired "
+            "claim is placed again or closed interrupted is unknown",
+        )
+    if declared and not idempotent:
+        raise RelocationError(
+            tool.capability_id,
+            tool.name,
+            "declares relocatable True and idempotent False: what cannot be done again here is "
+            "not done again elsewhere",
+        )
 
 
 def _numbers_of(tool: ToolPort) -> None:
