@@ -616,8 +616,9 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   M13.3 crea (la dichiarazione) ma non completa (quante la daranno).
 - **M13.7 — il terminale su un nodo** (ADR 0047 §13). **Registrata il 2026-09-25 con la SPEC di
   M13.3**, perché il terminale non viaggia lì e il suo debito di Windows — il Job Object, e `argv`
-  che diventa una stringa sola — voleva una proprietaria registrata. **Fuori dalla fila, dopo
-  M13.3**; il numero e l'ordine sono dell'utente.
+  che diventa una stringa sola — voleva una proprietaria registrata; e prende anche il residuo di
+  Linux di ADR 0047 §5, come criterio a sé. **In coda alla Fase 13, dopo M13.5**: l'ordine
+  M13.4 → M13.5 non cambia.
 - **M13.8 — un file che vive su una macchina** (§13, §23). **Registrata il 2026-09-25 dalla review
   della SPEC di M13.3**: `fs.*` viaggia e il piazzamento sceglie la macchina, quindi quale file si
   legge o si scrive lo decide il punteggio; un piano non può dirlo. **In coda alla Fase 13, dopo
