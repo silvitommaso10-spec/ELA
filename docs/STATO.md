@@ -369,8 +369,8 @@ essere.
 
 Oggi **nessuno lo fa rispettare**. Fra i vincoli dichiarati di ADR 0021 c'è «**Nessun budget** (§3):
 l'usage si registra, non si somma e non si confronta con un tetto», e ADR 0022 lo ripete invariato.
-Quei due ADR hanno messo il tetto sotto §30 — che nella spec è «Pagamenti» —, e §30 non ha ancora né
-un ADR né una milestone.
+Quei due ADR hanno messo il tetto sotto §30 — che nella spec è «Pagamenti» —, e §30 non ha ancora un
+ADR; la sua milestone è M14.1 (sotto).
 
 *Che cosa ne discende:* finché §30 non esiste, **il tetto lo mette il fornitore**: una workspace
 dedicata sulla console, con la sua chiave, un limite mensile e l'auto-reload spento. E **§30 ha la
@@ -584,8 +584,9 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
 - **M13.3 — l'azione che viaggia. Terza, e prima del browser.** Il verifier gira **dove avviene
   l'effetto**, e qui la fase paga **tre** debiti: **ADR 0044 §8**, il battito di `local` — il Mac
   risulta non disponibile mentre ELA gira —; **i pesi di §17**, che ADR 0017 dichiarò «da ritarare
-  con dati reali» e che la Fase 12 ha misurato senza ritarare (ADR 0043 §9), e che si ritarano qui,
-  quando due nodi competono davvero; e **la deriva dell'orologio di un nodo contro i cinque minuti**
+  con dati reali» e che la Fase 12 ha misurato senza ritarare (ADR 0043 §9): qui si misura l'ordine
+  che `NETWORK_POINTS` impone, quando due nodi competono davvero, e le grandezze diventano una scelta
+  scritta (decisione 12 della review della sua SPEC); e **la deriva dell'orologio di un nodo contro i cinque minuti**
   (M12.2, la stessa casa di ADR 0043 §9), che è la stessa materia — chi misura il tempo, e con quale
   orologio — e che M12.2 ha lasciato non misurata perché la sua suite gira sul `FakeClock` del Core.
   M13.3 guadagna anche **un obbligo esplicito**: **ogni capability che viaggia dichiara se si può
@@ -609,8 +610,10 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   senza di lei**.
 - **M13.6 — spostare un lavoro già in corso da un nodo a un altro** (§15, §12 del design), il terzo
   rinvio che ADR 0043 §9 aveva dato alla fase. **Fuori dalla fila**: entra **dopo M13.3**, e solo
-  quando **almeno due capability che viaggiano dichiarano la propria idempotenza** — oggi ne
-  dichiara una sola, `core.echo` (ADR 0038 §8), e uno spostamento con un ripetibile solo non ha
+  quando **almeno due capability che viaggiano si dichiarano ripiazzabili** — `relocatable`, la
+  dichiarazione che M13.3 aggiunge, e non `idempotent`: `fs.read` è idempotente, viaggia, e non si
+  ripiazza, perché su un'altra macchina lo stesso percorso è un altro file (M13.3, C5). Oggi se ne
+  dichiara una sola, `core.echo` (ADR 0038 §8), e uno spostamento con un ripiazzabile solo non ha
   niente da spostare che non sia un'eco. Se a fine fase nessun'altra lo fa, **resta `Proposta`**,
   come M13.5. **Perché non sta dentro M13.3**: è un cambio del runner, e dipende da una cosa che
   M13.3 crea (la dichiarazione) ma non completa (quante la daranno).
