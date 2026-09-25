@@ -417,6 +417,8 @@ async def test_a_decision_the_node_made_up_has_nowhere_to_go(client: AsyncClient
         {"form": "exception"},
         {"form": "exception", "exception": "not an identifier"},
         {"form": "nonsense"},
+        {"form": "result", "status": "FAILED", "verdict": {"conditions": ["echo.message_matches"]}},
+        {**ENVELOPE, "verdict": {"conditions": ["echo.message_matches"]}},
     ],
     ids=[
         "no-status",
@@ -425,6 +427,11 @@ async def test_a_decision_the_node_made_up_has_nowhere_to_go(client: AsyncClient
         "no-name",
         "not-a-name",
         "no-such-form",
+        # M13.3 (ADR 0048 §7; the review of the implementation, decision 4): no node of ELA sends
+        # these two, and the Core refuses them before any write — a verdict about a result that
+        # did not succeed, and a verdict about work the Core verifies itself (the echo).
+        "a-verdict-about-a-failure",
+        "a-verdict-the-core-did-not-ask-for",
     ],
 )
 async def test_an_envelope_that_tells_two_stories_is_refused(
