@@ -149,3 +149,46 @@ def test_the_guide_points_at_both_examples(example: str) -> None:
 def test_the_command_that_reads_an_output_is_in_the_guide() -> None:
     """``ela task results``: without it the model example completes and shows nothing."""
     assert "ela task results" in guide()
+
+
+# ----------------------------------------------------------------------------------------
+# ELA on the PC: the module, never the launcher (M13.3, the manual test of 2026-09-26)
+# ----------------------------------------------------------------------------------------
+
+POWERSHELL_BLOCK = re.compile(r"^```powershell\n(.*?)^```", re.MULTILINE | re.DOTALL)
+LAUNCHER = "uv run ela "
+MODULE = "uv run python -m ela.cli "
+
+
+def launched_by_the_launcher(text: str) -> list[str]:
+    """The PowerShell lines that start ELA through ``ela.exe``, which ``uv sync`` rebuilds."""
+    return [
+        line.strip()
+        for block in POWERSHELL_BLOCK.findall(text)
+        for line in block.splitlines()
+        if LAUNCHER in line
+    ]
+
+
+def test_no_powershell_block_of_the_guide_launches_the_ela_launcher() -> None:
+    """After ``uv sync --locked`` the ``ela.exe`` of the virtualenv is new and unsigned, and Smart
+    App Control blocks it (os error 4551, «Un criterio di controllo dell'applicazione ha bloccato il
+    file»); ``python -m ela.cli`` runs the same code through a signed interpreter."""
+    text = guide()
+
+    assert launched_by_the_launcher(text) == []
+    assert any(MODULE in block for block in POWERSHELL_BLOCK.findall(text))
+
+
+def test_a_powershell_block_that_launches_the_launcher_is_reported() -> None:
+    text = "```powershell\nSet-Location $HOME\\ELA\nuv run ela node run --join\n```\n"
+
+    assert launched_by_the_launcher(text) == ["uv run ela node run --join"]
+
+
+def test_the_guide_says_why_and_says_not_to_turn_smart_app_control_off() -> None:
+    text = guide()
+
+    assert "Smart App Control" in text
+    assert "4551" in text
+    assert "non si riaccende" in text
