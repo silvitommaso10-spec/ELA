@@ -90,6 +90,7 @@ def orchestrator(
         clock,
         verifiers=verifiers,
         capabilities=FakeCapabilityRegistry(),
+        carried=frozenset(),
     )
 
 
@@ -182,6 +183,7 @@ def test_the_risk_of_a_step_is_the_catalogue_s_unless_the_plan_asks_for_more(
         clock,
         verifiers=FakeVerifierRegistry([FakeVerifier(written.id)]),
         capabilities=FakeCapabilityRegistry([written]),
+        carried=frozenset(),
     )
 
     lowered = step(capabilities=(str(written.id),), risk=RiskLevel.SAFE)

@@ -596,6 +596,7 @@ def world(
     bell: FakeBell | None = None,
     catalogue: Iterable[CapabilitySpec] | None = None,
     beat: LocalBeat | None = None,
+    carried: frozenset[CapabilityId] = frozenset(),
     **executor_options: Any,
 ) -> World:
     clock, ids = FakeClock(), FakeIdGenerator()
@@ -635,6 +636,7 @@ def world(
         clock,
         verifiers=verifier_registry,
         capabilities=registry,
+        carried=carried,
     )
     assignments = Assignments(
         FakeAssignmentStore() if assignment_store is None else assignment_store,

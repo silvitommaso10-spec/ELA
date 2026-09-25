@@ -22,9 +22,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
+from pydantic import ValidationError
 
 from ela.api.app import NOT_YOUR_WORK
 from ela.api.nodes import work_order
+from ela.api.schemas import WorkResultIn
 from ela.composition import Ela
 from ela.domain import (
     AuditEventType,
@@ -32,9 +34,10 @@ from ela.domain import (
     ExecutionStatus,
     TaskId,
 )
-from ela.executive import Claimed, RunOutcome, WorkRejection
+from ela.executive import Claimed, RunOutcome, Verdict, WorkRejection
 from tests.api.support import echo_plan, queued
 from tests.api.test_nodes import enrolled, written
+from tests.domain.examples import PERMISSION_DECISION
 
 ENVELOPE: dict[str, Any] = {
     "form": "result",
@@ -167,6 +170,45 @@ def test_the_composer_refuses_an_order_for_another_node() -> None:
 
     with pytest.raises(ValueError, match="belongs to another node"):
         work_order(claimed, DeviceId(uuid4()))
+
+
+def test_the_order_of_work_the_node_verifies_has_a_seventh_key_and_no_other_does() -> None:
+    """M13.3, form B: «e nient'altro» with one line beside it. The conditions travel only for a
+    capability the node verifies on its own machine; for every other the key is absent, not null."""
+
+    class _Assignment:
+        id = uuid4()
+        device_id = DeviceId(uuid4())
+        decision = PERMISSION_DECISION
+        expires_at = PERMISSION_DECISION.created_at
+
+    node = _Assignment.device_id
+    verified = work_order(Claimed(_Assignment(), "fs-read", {}, ("fs.file_exists",)), node)  # type: ignore[arg-type]
+    plain = work_order(Claimed(_Assignment(), "core-echo", {}), node)  # type: ignore[arg-type]
+
+    assert verified.model_dump(mode="json")["success_conditions"] == ["fs.file_exists"]
+    assert "success_conditions" not in plain.model_dump(mode="json")
+    assert len(plain.model_dump(mode="json")) == 6
+
+
+def test_a_delivery_carries_the_verdict_as_codes_and_refuses_anything_else_in_it() -> None:
+    body = {
+        "assignment_id": str(uuid4()),
+        "form": "result",
+        "status": "SUCCEEDED",
+        "verdict": {
+            "conditions": ["fs.file_exists"],
+            "failed": [["fs.file_exists", "path.missing"]],
+        },
+    }
+
+    envelope = WorkResultIn.model_validate(body).envelope()
+
+    assert envelope.verdict == Verdict(("fs.file_exists",), (("fs.file_exists", "path.missing"),))
+    with pytest.raises(ValidationError):
+        WorkResultIn.model_validate(
+            {**body, "verdict": {**body["verdict"], "message": "a sentence of the node's"}}  # type: ignore[dict-item]
+        )
 
 
 # ----------------------------------------------------------------------------------------

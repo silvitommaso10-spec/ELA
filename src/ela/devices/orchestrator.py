@@ -493,6 +493,7 @@ class DeviceOrchestrator:
     __slots__ = (
         "_audit",
         "_capabilities",
+        "_carried",
         "_clock",
         "_ids",
         "_registry",
@@ -510,6 +511,7 @@ class DeviceOrchestrator:
         *,
         verifiers: VerifierRegistryPort,
         capabilities: CapabilityRegistryPort,
+        carried: frozenset[CapabilityId],
     ) -> None:
         self._registry = registry
         self._tools = tools
@@ -518,6 +520,9 @@ class DeviceOrchestrator:
         self._clock = clock
         self._verifiers = verifiers
         self._capabilities = capabilities
+        self._carried = carried
+        """The capabilities a node verifies on its own machine (M13.3, ADR 0048): the composition
+        hands in :data:`~ela.tools.VERIFIED_ON_THE_NODE`, the same set the node builds from."""
 
     def requirements(
         self, step: TaskStep, *, max_privacy: PrivacyLevel = PrivacyLevel.LOCAL_ONLY
@@ -526,9 +531,11 @@ class DeviceOrchestrator:
 
         A capability no tool implements is collected in ``unresolved`` instead of raising: the
         answer to "nobody can run this" is that the task waits, not that it fails (§33). A
-        capability whose verifier reads this machine is collected in ``verified_here`` — and so is
-        one with a tool and no verifier: whether it may be verified elsewhere is unknown, and a
-        doubt keeps it here (§33), where the executor refuses it for its own reason.
+        capability whose verifier reads this machine **and that no node carries** is collected in
+        ``verified_here`` (M13.3, ADR 0048) — and so is one with a tool and no verifier: whether it
+        may be verified elsewhere is unknown, and a doubt keeps it here (§33), where the executor
+        refuses it for its own reason. One that a node carries goes: the node verifies it where the
+        effect happens, and a node without the tool is refused ``MISSING_TOOL`` by F4.
         """
         tools: set[str] = set()
         unresolved: list[CapabilityId] = []
@@ -539,7 +546,7 @@ class DeviceOrchestrator:
             except NotFoundError:
                 unresolved.append(capability_id)
                 continue
-            if self._reads_this_machine(capability_id):
+            if self._verified_here(capability_id):
                 here.append(capability_id)
         return Requirements(
             tools=frozenset(tools),
@@ -578,12 +585,14 @@ class DeviceOrchestrator:
             return False
         return True
 
-    def _reads_this_machine(self, capability_id: CapabilityId) -> bool:
-        """Whether the verifier of ``capability_id`` reads this machine; no verifier is a yes."""
+    def _verified_here(self, capability_id: CapabilityId) -> bool:
+        """Whether ``capability_id`` can be verified only here: its verifier reads this machine and
+        no node carries it (M13.3, ADR 0048). No verifier is a yes."""
         try:
-            return self._verifiers.get(capability_id).reads_the_machine
+            reads = self._verifiers.get(capability_id).reads_the_machine
         except NotFoundError:
             return True
+        return reads and capability_id not in self._carried
 
     async def place(
         self,

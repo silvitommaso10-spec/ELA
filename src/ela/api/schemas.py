@@ -16,7 +16,14 @@ from datetime import datetime
 from typing import Annotated, Final, TypedDict, cast
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+)
 
 from ela.audit.chain import ChainSummary
 from ela.domain import (
@@ -64,7 +71,7 @@ from ela.domain import (
     TaskStep,
     is_text,
 )
-from ela.executive import ASKED, REPORTABLE, Delivery, Envelope, check_envelope
+from ela.executive import ASKED, REPORTABLE, Delivery, Envelope, Verdict, check_envelope
 from ela.tasks.graph import GraphState
 
 __all__ = [
@@ -659,6 +666,12 @@ class WorkOrderOut(BaseModel):
     by the Core, and an order that carried the conditions would read as an invitation to check its
     own work. No placement either — the node does not need to know it won.
 
+    **«E nient'altro» is read with one line beside it since M13.3** (ADR 0048): for a capability
+    the node verifies on its own machine — ``fs.read``, ``fs.write``, whose verifier reads the
+    machine — the order carries a seventh key, ``success_conditions``, and the node sends back its
+    verdict on exactly those. For every other capability the key is **absent**, not empty: the order
+    of an echo is the six keys it always was.
+
     ``decision`` is the :class:`~ela.domain.PermissionDecision` the Core made, whole, because that
     is what a tool checks before acting (``check_decision``); ``arguments`` are the step's, read
     from the plan. Composed in one place, which imports no network client: architecture rule 51.
@@ -670,6 +683,29 @@ class WorkOrderOut(BaseModel):
     decision: PermissionDecision
     arguments: JsonMapping
     expires_at: datetime
+    success_conditions: tuple[str, ...] | None = None
+
+    @model_serializer(mode="wrap")
+    def _six_keys_unless_verified_there(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, object]:
+        """The seventh key only when there is something in it: absent, not ``null``, otherwise."""
+        dumped = cast(dict[str, object], handler(self))
+        if self.success_conditions is None:
+            dumped.pop("success_conditions", None)
+        return dumped
+
+
+class VerdictIn(BaseModel):
+    """What a node's verifier said (M13.3, ADR 0048): codes and names, never a message (§57)."""
+
+    model_config = NODE_BODY
+
+    conditions: tuple[str, ...]
+    failed: tuple[tuple[str | None, str], ...] = ()
+    """One pair per condition that did not hold: the condition, and what the verifier reported —
+    a pair and not an object, the shape of :attr:`~ela.executive.Verdict.failed`."""
+    exception: str | None = None
 
 
 class WorkResultIn(BaseModel):
@@ -693,6 +729,8 @@ class WorkResultIn(BaseModel):
     exception: str | None = None
     node: JsonMapping = {}
     """The node's own instants, by its own clock: reported data, never an instant of the chain."""
+    verdict: VerdictIn | None = None
+    """For a capability the node verifies on its own machine (M13.3): what its verifier said."""
 
     @field_validator("status")
     @classmethod
@@ -715,6 +753,13 @@ class WorkResultIn(BaseModel):
             duration_ms=self.duration_ms,
             exception=self.exception,
             node=self.node,
+            verdict=None
+            if self.verdict is None
+            else Verdict(
+                conditions=self.verdict.conditions,
+                failed=self.verdict.failed,
+                exception=self.verdict.exception,
+            ),
         )
         check_envelope(envelope)
         return envelope

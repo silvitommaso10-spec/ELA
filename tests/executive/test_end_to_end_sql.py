@@ -78,6 +78,7 @@ from ela.tools import (
     ECHO_MESSAGE_MATCHES,
     NOTE_CONTENT_MATCHES,
     NOTE_EXISTS,
+    VERIFIED_ON_THE_NODE,
     tools_v01,
     verifiers_v01,
 )
@@ -197,6 +198,7 @@ class SqlPipeline:
             self.clock,
             verifiers=self.verifiers,
             capabilities=self.registry,
+            carried=VERIFIED_ON_THE_NODE,
         )
         self.runner = TaskRunner(
             engine=self.engine,

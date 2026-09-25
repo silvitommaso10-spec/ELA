@@ -77,6 +77,10 @@ from ela.domain import (
 from ela.ports import (
     ANNOUNCED_FIELDS,
     PROVIDER_UNAVAILABLE,
+    VERIFICATION_NO_CONDITIONS,
+    VERIFICATION_NOT_SUCCEEDED,
+    VERIFICATION_UNKNOWN_CONDITION,
+    VERIFICATION_WRONG_CAPABILITY,
     AlreadyExistsError,
     ApprovalAlreadyAnsweredError,
     ApprovalExpiredError,
@@ -1025,6 +1029,15 @@ class FakeVerifier:
         self._failures: Mapping[str, ErrorMetadata] = MappingProxyType(
             {} if failures is None else dict(failures)
         )
+        self.failure_codes: frozenset[str] = frozenset(
+            {
+                VERIFICATION_WRONG_CAPABILITY,
+                VERIFICATION_NOT_SUCCEEDED,
+                VERIFICATION_NO_CONDITIONS,
+                VERIFICATION_UNKNOWN_CONDITION,
+            }
+        ) | {failure.code for failure in self._failures.values()}
+        """Its vocabulary of failures (ADR 0014 §2): the contract's codes and its table's."""
         unknown = set(self._failures) - self._conditions
         if unknown:
             raise ValueError(f"failures for conditions outside the vocabulary: {sorted(unknown)}")

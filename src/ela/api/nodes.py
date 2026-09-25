@@ -343,6 +343,7 @@ def work_order(claimed: Claimed, device_id: DeviceId) -> WorkOrderOut:
         decision=claimed.assignment.decision,
         arguments=claimed.arguments,
         expires_at=claimed.assignment.expires_at,
+        success_conditions=claimed.conditions,
     )
 
 

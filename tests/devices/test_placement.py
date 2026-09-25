@@ -155,6 +155,7 @@ def orchestrator(
         clock,
         verifiers=verifiers,
         capabilities=FakeCapabilityRegistry(),
+        carried=frozenset(),
     )
 
 

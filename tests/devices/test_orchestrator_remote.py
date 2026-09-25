@@ -37,7 +37,13 @@ from ela.testing.fakes import (
     FakeVerifier,
     FakeVerifierRegistry,
 )
-from ela.tools import WriteNoteVerifier
+from ela.tools import (
+    FS_READ,
+    FS_READ_TOOL_NAME,
+    VERIFIED_ON_THE_NODE,
+    FsReadVerifier,
+    WriteNoteVerifier,
+)
 from tests.devices.nodes import node, step
 from tests.domain.examples import TASK_ID
 
@@ -78,6 +84,7 @@ async def orchestrator_over(
     clock: FakeClock,
     nodes: Iterable[Device],
     verifiers: VerifierRegistryPort,
+    carried: frozenset[CapabilityId] = frozenset(),
 ) -> DeviceOrchestrator:
     for device in nodes:
         await port.register(device.model_copy(update={"last_seen_at": clock.now()}))
@@ -92,6 +99,7 @@ async def orchestrator_over(
         clock,
         verifiers=verifiers,
         capabilities=FakeCapabilityRegistry(),
+        carried=carried,
     )
 
 
@@ -176,3 +184,57 @@ async def test_a_capability_no_tool_implements_is_unresolved_not_verified_here(
 
     assert requirements.unresolved == (CapabilityId("core.rm_rf"),)
     assert requirements.verified_here == ()
+
+
+# ----------------------------------------------------------------------------------------
+# F7 since M13.3: what reads the machine and a node carries travels (ADR 0048, form C)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_capability_a_node_verifies_on_its_own_machine_travels_to_it(
+    port: FakeDeviceRegistry, clock: FakeClock, tmp_path: Path
+) -> None:
+    """Criterion 4's other half: ``fs.read``'s verifier reads the machine, and the node carries it —
+    so the node built to win wins, with no refusal. The same verifier kept ``workspace.write_note``
+    here above: what changed is the set the composition hands in, not ``reads_the_machine``."""
+    rooted = MAC.model_copy(update={"available_tools": (FS_READ_TOOL_NAME,)})
+    for device in (local(tools=(FS_READ_TOOL_NAME,)), rooted):
+        await port.register(device.model_copy(update={"last_seen_at": clock.now()}))
+    audit = FakeAuditLog()
+    orchestrator = DeviceOrchestrator(
+        DeviceRegistry(port, clock, audit, FakeIdGenerator(), heartbeat_ttl=TTL),
+        FakeToolRegistry([FakeTool(FS_READ, clock, FakeIdGenerator(), name=FS_READ_TOOL_NAME)]),
+        audit,
+        FakeIdGenerator(),
+        clock,
+        verifiers=FakeVerifierRegistry([FsReadVerifier(tmp_path)]),
+        capabilities=FakeCapabilityRegistry(),
+        carried=VERIFIED_ON_THE_NODE,
+    )
+    reading = step(capabilities=(FS_READ,), goal="leggere il verbale")
+
+    placed = await orchestrator.place(reading, task_id=TASK_ID, max_privacy=PrivacyLevel.TRUSTED)
+
+    assert FsReadVerifier.reads_the_machine is True
+    assert placed.requirements.verified_here == ()
+    assert placed.device is not None and placed.device.id == MAC.id
+    assert all(judged.refusals == () for judged in placed.scores)
+
+
+async def test_what_no_node_carries_is_still_unverifiable_with_the_production_set(
+    port: FakeDeviceRegistry, clock: FakeClock, tmp_path: Path
+) -> None:
+    """Criterion 4: with the set production hands in, ``workspace.write_note`` still stays here and
+    the remote node is still refused ``UNVERIFIABLE`` — the set names ``fs.*`` and nothing else."""
+    verifiers = FakeVerifierRegistry([WriteNoteVerifier(tmp_path)])
+    orchestrator = await orchestrator_over(
+        port, clock, [local(), MAC], verifiers, carried=VERIFIED_ON_THE_NODE
+    )
+
+    placed = await orchestrator.place(STEP, task_id=TASK_ID, max_privacy=PrivacyLevel.TRUSTED)
+
+    assert WRITE_NOTE not in VERIFIED_ON_THE_NODE
+    assert placed.device is not None and placed.device.id == LOCAL_DEVICE_ID
+    assert {judged.device_id: judged.refusals for judged in placed.scores}[MAC.id] == (
+        Refusal.UNVERIFIABLE,
+    )

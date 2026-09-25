@@ -1450,6 +1450,15 @@ class VerifierPort(Protocol):
         """The success conditions this verifier can check: the vocabulary a plan may use."""
 
     @property
+    def failure_codes(self) -> frozenset[str]:
+        """The codes this verifier can report: the vocabulary of its failures (ADR 0014 §2).
+
+        A member of the port since M13.3 (ADR 0048): a node verifies ``fs.*`` on its own machine
+        and sends the codes back, and the Core accepts a verdict only in this vocabulary — a code
+        outside it is a doubt, and the step fails ``verification.missing``.
+        """
+
+    @property
     def reads_the_machine(self) -> bool:
         """Whether this verifier reads the disk of the machine it runs on (M12.2, ADR 0038 §14).
 

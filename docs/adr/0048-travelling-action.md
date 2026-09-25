@@ -225,11 +225,76 @@ M13.6 resta `Proposta`: la sua registrazione diceva «dichiarano la propria idem
 predicato che la presa leggesse prima di M13.3, e un test che spegne `idempotent` dopo aver costruito
 il suo mondo continua a voler dire ciò che diceva.
 
-Port estesi:
+`ToolPort` è esteso con `relocatable`: la tabella dei port estesi è una, nelle Conseguenze.
 
-| Port | Spec | Modalità | Membri |
-|---|---|---|---|
-| `ToolPort` | §17, §33 | async | `relocatable` |
+### 7. Il verifier dove avviene l'effetto: `fs.read` e `fs.write` su un nodo che ha una radice
+
+La divisione di ADR 0038 §14 resta vera di ciò che descrive — **che cosa legge il verifier** — e smette
+di essere l'unica risposta a «questa capability può viaggiare?». Da M13.3 le risposte sono tre:
+
+1. il verifier **non legge la macchina** — eco, modello, voce: viaggia, e il Core verifica la parola del
+   nodo, come da M12.2;
+2. il verifier **legge la macchina, e un nodo lo porta con sé** — `fs.read`, `fs.write`: viaggia, e
+   **il nodo verifica** sulla propria macchina; il Core registra il verdetto e dove è stato preso;
+3. il verifier **legge la macchina, e nessun nodo lo porta** — `workspace.write_note`, `perception.*`,
+   `terminal.run`: non viaggia, e un nodo è rifiutato con `UNVERIFIABLE`, come prima.
+
+`reads_the_machine` non cambia né di nome né di valore: `fs.*` continua a leggere la macchina, ed è per
+questo che il verifier deve stare lì.
+
+**La radice di un nodo.** `ELA_FS_ROOT` nel `.env` del nodo, **facoltativa e sola**: sul Core la stessa
+variabile è obbligatoria insieme allo scope, sul nodo lo scope non c'è, perché resta uno, dell'utente,
+sul Core, e il nodo non ha un Guardian e non ne guadagna uno. Le regole della radice sono quelle del
+Core (ADR 0045 §5), **con un testo solo** (`refuse_the_root`) e un elenco derivato da ciò che **il
+nodo** usa per esistere: la cartella del segreto (ADR 0039 §6), il `.env` letto, l'albero sorgente. Un
+nodo con una radice costruisce i due tool e i loro verifier (`node_tools`, `node_verifiers`) e li
+dichiara; uno senza non costruisce niente, riceve `MISSING_TOOL` da F4, e `ela node run` lo dice con una
+riga. `build_node` rifiuta un tool da verificare sul nodo senza il suo verifier (`carried`): in
+produzione non scatta, e vale per il suo caso negativo.
+
+**F7 legge un insieme in più.** `verified_here` era «il verifier legge la macchina»; è **«il verifier
+legge la macchina, e nessun nodo lo porta»**. L'insieme è una costante di `ela.tools`,
+`VERIFIED_ON_THE_NODE`, la stessa da cui il nodo costruisce i suoi verifier, e la composizione la passa
+all'orchestratore accanto al registro dei verifier. **Perché non una dichiarazione del nodo**, con una
+colonna nel registro: un nodo che dichiara il tool e non il verifier non ha un produttore, e il rifiuto
+che quella colonna farebbe scattare non scatterebbe mai (ADR 0026 §7). Il Core sa quali verifier un
+nodo porta perché è lo stesso codice, come sa i nomi dei tool.
+
+**L'ordine porta le condizioni, e ADR 0038 §11 si legge con questa riga accanto.** «E nient'altro»
+resta vero per ogni capability che il Core verifica da sé; per una che il nodo verifica l'ordine ha
+una settima chiave, `success_conditions`, e per le altre la chiave **manca**, non è vuota.
+
+**Il nodo verifica dopo il tool e prima di consegnare.** Il verifier si cerca **prima** che il tool
+agisca — un nodo non agisce su ciò che non sa verificare — e gira dopo, su un risultato riuscito, con le
+condizioni e gli argomenti dell'ordine. Il verdetto entra nella busta: le condizioni controllate,
+nell'ordine; quelle che non valgono, ciascuna con il suo **codice**; oppure il **nome** del tipo
+dell'eccezione del verifier. **Mai un messaggio**: la frase che finisce in `EXECUTION_VERIFIED` la
+compone il Core dal codice, perché il testo di un'altra macchina — che può nominare un percorso, cioè
+il contenuto dell'utente — non entri in un log che non si redige (§57). **Il verdetto entra
+nell'impronta**, e solo quando c'è: due buste che differiscono solo nel verdetto sono una consegna in
+conflitto, e l'impronta di ogni busta senza verdetto è quella di prima.
+
+**Il Core registra il verdetto e non lo rifà.** Per un risultato di un nodo il cui verifier legge la
+macchina il Core prende il verdetto conservato con il risultato (`metadata["verdict"]`) invece di
+chiamare il proprio verifier, **alla consegna e in ogni ripresa**: una morte fra il risultato e
+`EXECUTION_VERIFIED` si ripara con il verdetto conservato, mai rileggendo il disco del Core — sarebbe il
+falso positivo di ADR 0038 §14 dalla porta di servizio. `EXECUTION_VERIFIED` porta `verified_on`, il
+nodo che ha verificato; senza quella chiave ha verificato il Core, come sempre.
+
+**Ciò che il Core prova ancora**: che il verdetto nomini **esattamente** le condizioni del piano,
+nell'ordine, e che i suoi codici stiano nel vocabolario del verifier (ADR 0014 §2), che per questo
+entra nel port: `VerifierPort.failure_codes`. Un verdetto che manca, che nomina altre condizioni, che
+fallisce due volte la stessa, o con un codice o una forma fuori posto, per un risultato `SUCCEEDED`, **è
+un dubbio**: lo step fallisce `verification.failed` con un fallimento solo, `verification.missing` —
+dentro la tabella di ADR 0014 §4 e non accanto —, e il task con lui. I fallimenti che il Core compone
+da un verdetto non sono `retryable`: il Core ha solo la parola del nodo. Un risultato che non è
+`SUCCEEDED` non porta verdetto, e una busta che ne porta uno è un `422`; lo è anche un verdetto per una
+capability che il Core verifica da sé, prima di ogni scrittura.
+
+**Un verdetto che non è testo** è un risultato che non si può conservare (§3): `result.not_text`, con
+`verdict` fra i campi nominati.
+
+`VerifierPort` è esteso con `failure_codes`, nella tabella delle Conseguenze.
 
 ## Alternative considerate
 
@@ -245,9 +310,21 @@ Port estesi:
 - `ela.domain` ha `is_text`; `ela.executive` ha `RESULT_NOT_TEXT`.
 - `ela.tools` ha `RESERVED_ON_WINDOWS` e `RelocationError`; `ToolPort` ha `relocatable`, dichiarato da
   ogni tool; `tests/windows.py` ha la mappa dei test di Windows fuori dal job.
+- `ela.tools` ha `VERIFIED_ON_THE_NODE` e `node_verifiers`, e `node_tools` riceve `fs_root`;
+  `ela.composition` ha `NodeFilesystemSettings`, `refuse_the_root` e `carried`, e `NodeWorld` ha
+  `verifiers`; `ela.executive` ha `Verdict`, `VERDICT` e `VERIFICATION_MISSING`, e `Claimed` le
+  condizioni; `ela.node.runner` ha `verdict_of`; `DeviceOrchestrator` riceve `carried`;
+  `VerifierPort` ha `failure_codes`; `ela node run` ha `NO_ROOT`.
 - `ela.ports` ha `LocalBeat`; `ela.devices` ha `LocalHeartbeat`, `BEATS_PER_TTL` e `period_of`;
   `ela.testing.fakes` ha `FakeLocalBeat`; `TaskRunner` riceve `beat`, `Ela` ha `heartbeat`.
 - I port sono **ventotto**; le regole di architettura del registro restano **cinquantasette** — le
   due nuove sono test di `tests/architecture/test_travel_rules.py` con i loro casi negativi, fuori dal
   registro, come quelle di M13.2 —, e le rotte **quarantotto**. Questi conteggi di oggi vivono qui; gli
   ADR precedenti restano appuntati a ciò che videro.
+
+Port estesi:
+
+| Port | Spec | Modalità | Membri |
+|---|---|---|---|
+| `ToolPort` | §17, §33 | async | `relocatable` |
+| `VerifierPort` | §20, §63 | async | `failure_codes` |

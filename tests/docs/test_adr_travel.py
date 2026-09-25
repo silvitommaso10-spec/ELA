@@ -12,6 +12,8 @@ from datetime import timedelta
 from pathlib import Path
 
 from ela.devices import BEATS_PER_TTL, DeviceOrchestrator, DeviceRegistry, LocalHeartbeat
+from ela.domain import CapabilityId
+from ela.executive import VERIFICATION_MISSING
 from ela.permissions import CORE_ECHO, MODEL_COMPLETE
 from ela.ports import LocalBeat, ToolRegistryPort, VerifierRegistryPort
 from ela.testing.fakes import (
@@ -25,7 +27,10 @@ from ela.testing.fakes import (
 )
 from ela.tools import (
     ECHO_TOOL_NAME,
+    FS_READ,
+    FS_WRITE,
     RESERVED_ON_WINDOWS,
+    VERIFIED_ON_THE_NODE,
     EchoTool,
     EchoVerifier,
     ToolRegistry,
@@ -135,7 +140,11 @@ def test_the_payment_of_adr_0047_17_names_the_job_the_map_and_the_turned_defence
 # ----------------------------------------------------------------------------------------
 
 
-def travelling(tools: ToolRegistryPort, verifiers: VerifierRegistryPort) -> set[str]:
+def travelling(
+    tools: ToolRegistryPort,
+    verifiers: VerifierRegistryPort,
+    carried: frozenset[CapabilityId] = VERIFIED_ON_THE_NODE,
+) -> set[str]:
     """The names of the tools whose capability F7 lets go to a node: asked of the orchestrator's
     own ``requirements``, not restated — the day a node carries a verifier, this grows by itself."""
     clock, audit = FakeClock(), FakeAuditLog()
@@ -149,6 +158,7 @@ def travelling(tools: ToolRegistryPort, verifiers: VerifierRegistryPort) -> set[
         clock,
         verifiers=verifiers,
         capabilities=FakeCapabilityRegistry(),
+        carried=carried,
     )
     return {
         tool.name
@@ -192,3 +202,25 @@ def test_the_guard_sees_one_relocatable_tool_more() -> None:
 
     assert moving(tools, verifiers) == {ECHO_TOOL_NAME, "another"}
     assert CORE_ECHO in {tool.capability_id for tool in tools.tools()}
+
+
+# ----------------------------------------------------------------------------------------
+# §7: the verifier where the effect happens
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_section_of_the_verifier_on_the_node_names_what_the_code_holds() -> None:
+    text = section(7)
+
+    assert {FS_READ, FS_WRITE} == VERIFIED_ON_THE_NODE
+    for named in (
+        "`VERIFIED_ON_THE_NODE`",
+        "`verification.missing`",
+        "`verified_on`",
+        "`VerifierPort.failure_codes`",
+        "`refuse_the_root`",
+        "`carried`",
+        "`success_conditions`",
+    ):
+        assert named in text, named
+    assert VERIFICATION_MISSING == "verification.missing"

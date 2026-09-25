@@ -100,6 +100,7 @@ from ela.routing import ModelRouter
 from ela.tasks.engine import LIVE_STATES, TaskEngine
 from ela.tools import (
     DIRECTORY_MODE,
+    VERIFIED_ON_THE_NODE,
     CaptureStore,
     Programs,
     Terminal,
@@ -585,7 +586,14 @@ async def build(
             orphan_after=settings.core.orphan_after,
         )
         orchestrator = DeviceOrchestrator(
-            devices, tools, audit, ids, clock, verifiers=verifiers, capabilities=capabilities
+            devices,
+            tools,
+            audit,
+            ids,
+            clock,
+            verifiers=verifiers,
+            capabilities=capabilities,
+            carried=VERIFIED_ON_THE_NODE,
         )
         assignments = Assignments(
             SqlAssignmentStore(database),

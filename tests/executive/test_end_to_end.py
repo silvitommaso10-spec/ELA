@@ -91,6 +91,7 @@ from ela.tools import (
     NOTES_TOOL_NAME,
     NOTES_VERIFIER_NAME,
     PATH_MISSING,
+    VERIFIED_ON_THE_NODE,
     Outcome,
     ToolRegistry,
     WriteNoteTool,
@@ -186,6 +187,7 @@ class Pipeline:
             self.clock,
             verifiers=self.verifiers,
             capabilities=self.registry,
+            carried=VERIFIED_ON_THE_NODE,
         )
         self.engine = TaskEngine(
             self.repository,

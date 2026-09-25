@@ -66,6 +66,7 @@ async def test_a_command_is_placed_here_and_the_other_node_is_refused_as_unverif
         clock,
         verifiers=FakeVerifierRegistry([TerminalRunVerifier(Programs.fixed(()))]),
         capabilities=FakeCapabilityRegistry(),
+        carried=frozenset(),
     )
 
     placed = await orchestrator.place(STEP, task_id=TASK_ID, max_privacy=PrivacyLevel.TRUSTED)
