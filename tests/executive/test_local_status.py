@@ -23,7 +23,7 @@ from ela.domain import (
 )
 from ela.executive import RunOutcome
 from tests.executive.support import World, world
-from tests.permissions.support import ECHO
+from tests.permissions.support import ECHO, GUARDED_ECHO
 
 
 async def local_status(w: World) -> DeviceStatus:
@@ -107,3 +107,45 @@ async def test_the_beat_says_busy_while_a_step_runs_here_and_idle_after() -> Non
     assert run.outcome is RunOutcome.COMPLETED
     assert seen == [DeviceStatus.BUSY]
     assert await local_status(w) is DeviceStatus.IDLE
+
+
+# ----------------------------------------------------------------------------------------
+# The correction of the manual test (2026-09-26): a question does not occupy the Mac
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_step_waiting_for_the_user_s_yes_leaves_local_idle() -> None:
+    """The user's correction of decision 2, after the manual test: a step that waits for a yes is
+    ``RUNNING`` and occupies nothing. A node is ``BUSY`` only while a tool of its own runs, and a
+    question left open for hours would otherwise send every relocatable job to the PC with the Mac
+    on the mains and idle."""
+    w = world()
+    task, _ = await w.queued(GUARDED_ECHO.id)
+
+    run = await w.runner.run(task.id)
+    await w.heartbeat.beat()
+
+    assert run.outcome is RunOutcome.WAITING_APPROVAL
+    assert await local_status(w) is DeviceStatus.IDLE
+
+
+async def test_the_executor_says_a_tool_runs_here_from_its_start_to_its_stored_result() -> None:
+    """``BUSY`` from the start of the tool to the result stored — the Core's observation, the
+    executor's to make: the one module that runs a tool on this machine."""
+    w = world()
+    seen: list[bool] = []
+    tool = w.fake_tools[ECHO.id]
+    ran = tool.execute
+
+    async def watched(decision: PermissionDecision, arguments: JsonMapping) -> ExecutionResult:
+        seen.append(w.executor.running_here())
+        return await ran(decision, arguments)
+
+    tool.execute = watched  # type: ignore[method-assign]
+    task, _ = await w.queued(ECHO.id)
+    assert w.executor.running_here() is False
+
+    await w.runner.run(task.id)
+
+    assert seen == [True]
+    assert w.executor.running_here() is False
