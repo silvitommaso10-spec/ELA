@@ -53,9 +53,11 @@ def what_the_pc_said() -> str:
 
 @pytest.mark.skipif(platform.system() != "Windows", reason="PowerStatus is Windows's")
 async def test_powershell_answers_in_words_the_reader_can_read() -> None:
+    started = time.monotonic()
     answered = await power_status()
+    took = time.monotonic() - started
 
-    assert answered is not None, what_the_pc_said()
+    assert answered is not None, f"power_status: None in {took:.2f} s; then {what_the_pc_said()}"
     line, batteries = answered
     assert line in {"Online", "Offline", "Unknown"}
     assert batteries >= 0
