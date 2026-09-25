@@ -646,7 +646,8 @@ def refuse_the_root(root: Path, own: Mapping[str, Path]) -> None:
     what the root may not touch is each one's own, derived from its settings, and the sentences are
     these. A ``ValueError``, which the settings turn into the message that names the variable.
     """
-    if root.is_symlink():
+    # A junction is a link (M13.3, ADR 0048 §4): ``is_symlink`` does not see one on Windows.
+    if root.is_symlink() or root.is_junction():
         raise ValueError(
             f"ELA_FS_ROOT is a symbolic link ({root} -> {root.readlink()}). ELA refuses to "
             "walk through a link to reach your files (§33), so every read and write under it "

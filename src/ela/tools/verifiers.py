@@ -190,7 +190,15 @@ NOTE_CONTENT_MATCHES: Final = "note.content_matches"
 NOTE_CONTENT_MISMATCH: Final = "note.content_mismatch"
 NOTE_UNREADABLE: Final = "note.unreadable"
 
-READ_FLAGS: Final = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+READ_FLAGS: Final = (
+    os.O_RDONLY
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_BINARY", 0)
+)
+"""Binary on Windows too (M13.3): a verifier that read in text mode would see ``\n`` where the disk
+holds ``\r\n`` and nothing after a ``0x1A``, and agree with a read that returned other bytes than
+the disk's (ADR 0048 §4)."""
 """How a note is opened to be read back: never through a link, never for writing."""
 
 

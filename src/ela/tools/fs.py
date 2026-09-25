@@ -119,14 +119,28 @@ READ_REFUSALS: Final[frozenset[str]] = frozenset(
 
 DIRECTORY_MODE: Final = 0o700
 FILE_MODE: Final = 0o600
-WRITE_FLAGS: Final = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+WRITE_FLAGS: Final = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_TRUNC
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_BINARY", 0)
+)
 READ_FLAGS: Final = (
     os.O_RDONLY
     | getattr(os, "O_NOFOLLOW", 0)
     | getattr(os, "O_CLOEXEC", 0)
     | getattr(os, "O_NONBLOCK", 0)
+    | getattr(os, "O_BINARY", 0)
 )
 """Read-only, never through a link, closed on exec — and **non-blocking**.
+
+**And binary, on Windows** (M13.3, found by the rereading of the implementation and measured on the
+Windows job): without ``O_BINARY`` an ``os.open`` there is in text mode, and a read turns ``\r\n``
+into ``\n`` and stops at the first ``0x1A``. The tool and the verifier would share the translation
+and agree on bytes the disk does not hold — the false positive of ADR 0038 §14 on the PC. The write
+was measured right without it; :data:`WRITE_FLAGS` carries it all the same, because the mode is
+``os.open``'s to decide and not the writer's. Elsewhere the flag does not exist and is ``0``.
 
 ``O_NONBLOCK`` is not an optimisation: without it the check one line below cannot run. Opening a
 FIFO for reading **blocks until somebody opens the other end**, so a target that stopped being a

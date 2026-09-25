@@ -1,10 +1,12 @@
 """The bytes of ``fs.*`` on a real NTFS, and the root of a node that is a junction (M13.3).
 
 Found by the rereading of the implementation, before the manual test: on Windows ``os.open``
-without ``O_BINARY`` opens a file in **text mode**, so a write turns every ``\\n`` into ``\\r\\n``
-and a read turns them back and stops at the first ``0x1A``. The tool and its verifier would share
-the translation, and the node's verifier would agree with the tool while the disk says otherwise —
-the false positive of ADR 0038 §14, on the machine M13.3 sends ``fs.*`` to. Declared with its
+without ``O_BINARY`` opens a file in **text mode**, and a read turns ``\\r\\n`` into ``\\n`` and
+stops at the first ``0x1A``. The tool and its verifier would share the translation, and the node's
+verifier would agree with the tool on bytes the disk does not hold — the false positive of ADR 0038
+§14, on the machine M13.3 sends ``fs.*`` to. Red on the Windows job before the repair (run
+36162668652): the read, the verifier and the junction root; the write was already right, and its
+test stays as the guard of the flag it carries. Declared with its
 ``skipif`` (ADR 0031 §6) and named on the Windows job's line (form J): a Mac cannot build it.
 
 It imports nothing of ``tests/tools/test_verifiers.py``: that module reads ``os.geteuid`` while it
