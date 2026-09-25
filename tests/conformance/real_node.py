@@ -57,6 +57,7 @@ one thing the fake node could not show, because its "new process" was the same P
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -79,9 +80,11 @@ from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
 from ela.testing.fakes import FakeClock, FakePower, FakeSpeech
+from ela.tools import FS_WRITE, ToolRegistry
 from ela.tools.settings import VoiceSettings
 from tests.conformance.driver import Answered, Conformance, NodeDriver
 from tests.conformance.fake_node import ONE_HOUR_BEHIND
+from tests.conformance.liar import SilentWrite
 
 
 def _scratch(world: Conformance) -> Path:
@@ -95,7 +98,7 @@ def _scratch(world: Conformance) -> Path:
     return world.ela.settings.captures.capture_dir.parent / "nodes"
 
 
-def _config(world: Conformance, directory: Path) -> NodeConfig:
+def _config(world: Conformance, directory: Path, fs_root: Path | None = None) -> NodeConfig:
     """The node's five sections, built here and **not read from the machine**.
 
     The first draft called :meth:`NodeConfig.load`, and claimed that doing so exercised criterion
@@ -115,7 +118,7 @@ def _config(world: Conformance, directory: Path) -> NodeConfig:
         routing=RoutingSettings(),
         voice=VoiceSettings(voice_enabled=True),
         elevenlabs=ElevenLabsSettings(),
-        filesystem=NodeFilesystemSettings(fs_root=None),
+        filesystem=NodeFilesystemSettings(fs_root=fs_root),
     )
 
 
@@ -131,12 +134,16 @@ class RealNode:
         clock: FakeClock,
         identity: NodeIdentity | None = None,
         tools: tuple[str, ...] | None = None,
+        fs_root: Path | None = None,
+        liar: bool = False,
     ) -> None:
         self._world = world
         self._system = system
         self._directory = directory
         self._clock = clock
         self._declared_tools = tools
+        self._fs_root = fs_root
+        self._liar = liar
         self.speech = FakeSpeech()
         """The port the voice speaks through here: what it was asked to say is in ``said``."""
         self.speech_online: FakeSpeech | None = None
@@ -153,13 +160,20 @@ class RealNode:
         if online_player(system) is not None:
             self.speech_online = FakeSpeech()
         self._built = build_node(
-            _config(world, directory),
+            _config(world, directory, fs_root),
             clock=clock,
             speech=self.speech,
             speech_online=self.speech_online,
             system=system,
             power=FakePower(PowerSource.AC),
         )
+        if liar:
+            # The world the composition built, with its ``fs.write`` swapped for one that lies
+            # (M13.3, criterion 1): the verifiers stay the node's own, on the node's root.
+            kept = tuple(t for t in self._built.tools.tools() if t.capability_id != FS_WRITE)
+            self._built = replace(
+                self._built, tools=ToolRegistry((*kept, SilentWrite(clock, self._built.ids)))
+            )
         self._client = self._open(identity)
         self._node = Node(self._built, self._client)
         self.held: dict[str, Any] | None = None
@@ -300,6 +314,8 @@ class RealNode:
             clock=FakeClock(self._clock.now()),
             identity=self._client.identity,
             tools=self._declared_tools,
+            fs_root=self._fs_root,
+            liar=self._liar,
         )
         twin._node.saw(self._node.revision)  # noqa: SLF001 — a twin starts from the same belief
         return twin
@@ -336,6 +352,8 @@ class RealNodeKit:
         *,
         privacy: str = "TRUSTED",
         tools: tuple[str, ...] | None = None,
+        fs_root: Path | None = None,
+        liar: bool = False,
     ) -> RealNode:
         """Enrolled through the routes of M12.1, reporting once so the registry finds it available.
 
@@ -349,6 +367,8 @@ class RealNodeKit:
             directory=_scratch(world) / f"node-{self._made}",
             clock=FakeClock(ONE_HOUR_BEHIND),
             tools=tools,
+            fs_root=fs_root,
+            liar=liar,
         )
         born = await node.enroll(await world.issue(privacy))
         assert born.status == 201, born.body

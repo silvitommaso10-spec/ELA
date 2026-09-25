@@ -1,7 +1,7 @@
 """What a kit of the real node declares, read where the Core keeps it (M12.4 dec. G, criterion 2).
 
 The stories of the contract do not look at what a node declares about itself beyond the tools a
-step needs, so a kit could recite all thirteen while building another system's composition. This
+step needs, so a kit could recite every one while building another system's composition. This
 reads the row the Core wrote at enrollment: the operating system and the tools, **as literals**,
 because a list derived from the composition would agree with whatever the composition built.
 """

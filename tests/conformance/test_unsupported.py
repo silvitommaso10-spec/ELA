@@ -37,7 +37,7 @@ PINNED: dict[str, frozenset[str]] = {
 
 Empty for all three, and the second empty set is what M12.3 was for: a **real** node, a process with
 a secret on disk and a connection that can drop, recites the protocol whole. The map stays a map of
-**nodes**: the companion of M12.5 is not one of them, because a driver with thirteen declarations
+**nodes**: the companion of M12.5 is not one of them, because a driver declaring every story but one
 would be a driver that recites nothing (ADR 0043). macOS can be two
 processes, can die and come back, can keep a file — it has nothing to declare, and neither has
 Windows (M12.4, criterion 1). An entry like "a
@@ -74,14 +74,14 @@ def test_every_story_of_the_contract_is_played_by_a_test() -> None:
     """The other direction: a story nobody recites is a hole, and a passing suite would hide it.
 
     Derived from the source of ``test_node_contract.py``, because a list of names kept by hand is
-    exactly what the thirteen stories must not depend on.
+    exactly what the stories must not depend on.
     """
     source = CONTRACT.read_text(encoding="utf-8")
 
     missing = [story for story in STORIES if f'needs(kit, "{story}")' not in source]
 
     assert missing == []
-    assert len(STORIES) == 13  # dec. P: thirteen, and a fourteenth arrives with its own decision
+    assert len(STORIES) == 14  # dec. P's thirteen, and M13.3's fourteenth (ADR 0048)
 
 
 def test_the_skip_of_an_unrecitable_story_says_which_driver_and_why() -> None:

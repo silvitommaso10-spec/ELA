@@ -18,13 +18,24 @@ something about its platform and not about the protocol.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
-from ela.domain import CapabilityId, PermissionDecision
-from ela.ports import NotAllowedError
+from ela.domain import CapabilityId, ExecutionStatus, PermissionDecision
+from ela.ports import NotAllowedError, ToolPort, VerifierPort
 from ela.testing.fakes import DEFAULT_START, FakeClock, FakeIdGenerator, FakeSpeech
-from ela.tools import EchoTool, SpeakTool
+from ela.tools import (
+    FS_READ,
+    FS_WRITE,
+    EchoTool,
+    FsReadTool,
+    FsReadVerifier,
+    FsWriteTool,
+    FsWriteVerifier,
+    SpeakTool,
+)
 from tests.conformance.driver import Answered, Conformance, NodeDriver
+from tests.conformance.liar import SilentWrite
 
 ONE_HOUR_BEHIND = DEFAULT_START.replace(hour=DEFAULT_START.hour - 1)
 """Where a node's own clock starts: an hour off the Core's, and deliberately.
@@ -46,8 +57,12 @@ class FakeNode:
         secret: str,
         revision: int,
         clock: FakeClock,
+        fs_root: Path | None = None,
+        liar: bool = False,
     ) -> None:
         self._world = world
+        self._fs_root = fs_root
+        self._liar = liar
         self._client = world.node_client()
         self._device_id = device_id
         self._secret = secret
@@ -56,12 +71,21 @@ class FakeNode:
         self._ids = FakeIdGenerator()
         self.speech = FakeSpeech()
         """The port the voice speaks through here: what it was asked to say is in ``said``."""
-        self._tools = {
+        self._tools: dict[CapabilityId, ToolPort] = {
             CapabilityId("core.echo"): EchoTool(clock, self._ids),
             CapabilityId("voice.speak"): SpeakTool(
                 self.speech, clock, self._ids, voice="Alice", enabled=True
             ),
         }
+        self._verifiers: dict[CapabilityId, VerifierPort] = {}
+        """What this node verifies on its own machine (M13.3): ``fs.*`` on its root, if any."""
+        if fs_root is not None:
+            writer: ToolPort = (
+                SilentWrite(clock, self._ids) if liar else FsWriteTool(fs_root, clock, self._ids)
+            )
+            self._tools[FS_READ] = FsReadTool(fs_root, clock, self._ids)
+            self._tools[FS_WRITE] = writer
+            self._verifiers = {FS_READ: FsReadVerifier(fs_root), FS_WRITE: FsWriteVerifier(fs_root)}
         self.order: Mapping[str, Any] | None = None
         """The last order this node received, as it received it."""
         self.held: dict[str, Any] | None = None
@@ -157,7 +181,11 @@ class FakeNode:
         node's clock), and an exception, whose type's name travels and whose message never does.
         """
         decision = PermissionDecision.model_validate(dict(order["decision"]))
-        tool = self._tools[CapabilityId(str(order["capability_id"]))]
+        capability = CapabilityId(str(order["capability_id"]))
+        tool = self._tools[capability]
+        # The verifier before the tool acts (M13.3): a node does not act on what it cannot verify.
+        conditions = order.get("success_conditions")
+        verifier = None if conditions is None else self._verifiers[capability]
         envelope: dict[str, Any]
         try:
             result = await tool.execute(decision, dict(order["arguments"]))
@@ -177,6 +205,10 @@ class FakeNode:
                 envelope["error"] = result.error.model_dump(mode="json")
             if result.usage is not None:
                 envelope["usage"] = result.usage.model_dump(mode="json")
+            if verifier is not None and result.status is ExecutionStatus.SUCCEEDED:
+                envelope["verdict"] = await _verdict(
+                    verifier, tuple(conditions), dict(order["arguments"]), result
+                )
         self.held = {**envelope, "assignment_id": str(order["assignment_id"])}
         return envelope
 
@@ -233,6 +265,8 @@ class FakeNode:
             secret=self._secret,
             revision=self._revision,
             clock=FakeClock(self._clock.now()),
+            fs_root=self._fs_root,
+            liar=self._liar,
         )
         return twin
 
@@ -257,6 +291,8 @@ class FakeNodeKit:
         *,
         privacy: str = "TRUSTED",
         tools: tuple[str, ...] | None = None,
+        fs_root: Path | None = None,
+        liar: bool = False,
     ) -> FakeNode:
         """Enrolled through the routes of M12.1, reporting once so the registry finds it available.
 
@@ -269,6 +305,8 @@ class FakeNodeKit:
             secret="",
             revision=0,
             clock=FakeClock(ONE_HOUR_BEHIND),
+            fs_root=fs_root,
+            liar=liar,
         )
         born = await node.enroll(await world.issue(privacy))
         assert born.status == 201, born.body
@@ -278,6 +316,22 @@ class FakeNodeKit:
         reported = await node.report(status="IDLE", power_source="AC")
         assert reported.status == 200, reported.body
         return node
+
+
+async def _verdict(
+    verifier: VerifierPort, conditions: tuple[str, ...], arguments: dict[str, Any], result: Any
+) -> dict[str, Any]:
+    """What this node's verifier says, as codes and names (M13.3, ADR 0048) — written here and not
+    borrowed from ``ela.node``, so the fake node stays an implementation of its own."""
+    try:
+        failures = await verifier.verify(conditions, arguments, result)
+    except Exception as raised:  # noqa: BLE001 — a node reports the type, never the message
+        return {"conditions": list(conditions), "failed": [], "exception": type(raised).__name__}
+    return {
+        "conditions": list(conditions),
+        "failed": [[failure.details.get("condition"), failure.code] for failure in failures],
+        "exception": None,
+    }
 
 
 FAKE = FakeNodeKit()

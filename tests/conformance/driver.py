@@ -3,7 +3,7 @@
 **This file is the artefact every node inherits.** M12.3 and M12.4 wrote a :class:`NodeDriver`
 for their platform — the macOS node, the Windows Power Node — and recite the stories of
 ``test_node_contract.py`` unchanged. The iPhone companion of M12.5 does **not**: it takes no work,
-so twelve of the thirteen stories have nothing to play, and it has a contract of its own
+so all but one of the stories have nothing to play, and it has a contract of its own
 (``test_companion_contract.py``; ADR 0043). A driver that needed the stories bent to fit it would
 have turned the contract into a description of whatever was built, which is the one thing a
 conformance suite must not become.
@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import pytest
@@ -52,8 +53,10 @@ STORIES: tuple[str, ...] = (
     "the_core_dies_halfway",
     "an_undeclared_task_never_arrives",
     "what_is_verified_only_here_never_arrives",
+    "what_is_verified_on_the_node_is_verified_there",
 )
-"""The thirteen stories of dec. P, by key, in the order the spec lists them.
+"""The stories of dec. P, by key, in the order the spec lists them — thirteen, and since M13.3 a
+fourteenth (ADR 0048): the effect a node verifies on its own machine is verified there.
 
 Keys and not test names: a story is a *property of the protocol*, and the test that plays it may be
 renamed or split without the map of what a driver cannot do changing meaning. Every key here has a
@@ -241,9 +244,21 @@ class NodeKit(Protocol):
         """Story key → the reason this implementation cannot recite it. Empty for the fake node."""
 
     async def node(
-        self, world: Conformance, *, privacy: str = "TRUSTED", tools: tuple[str, ...] | None = None
+        self,
+        world: Conformance,
+        *,
+        privacy: str = "TRUSTED",
+        tools: tuple[str, ...] | None = None,
+        fs_root: Path | None = None,
+        liar: bool = False,
     ) -> NodeDriver:
-        """A node of this implementation, enrolled and ready: the Core minted its id and secret."""
+        """A node of this implementation, enrolled and ready: the Core minted its id and secret.
+
+        ``fs_root`` is the node's own ``ELA_FS_ROOT`` (M13.3): with it the node builds ``fs.*`` and
+        the verifiers it carries. ``liar`` swaps its ``fs.write`` for one that answers
+        ``SUCCEEDED`` and writes nothing (:class:`~tests.conformance.liar.SilentWrite`) — the one
+        way to build the false positive of ADR 0038 §14, since a real tool writes or fails.
+        """
 
 
 def needs(kit: NodeKit, story: str) -> None:
