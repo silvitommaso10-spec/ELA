@@ -22,6 +22,7 @@ import re
 import subprocess
 from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -271,3 +272,77 @@ def test_what_is_not_a_merge_of_a_milestone_merges_nothing() -> None:
     assert merged_in(["docs(m11.2): la spec dell'ascolto"]) == set()
     assert merged_in(["Merge platform-choice fix and ADR index test"]) == set()
     assert merged_in(["Merge M11.2 listening — Fase 11 chiusa"]) == {"M11.2"}
+
+
+# ----------------------------------------------------------------------------------------
+# The head of a title, and the prose after it (2026-09-25)
+# ----------------------------------------------------------------------------------------
+#
+# Each case is a title of ``main``, copied as it is; the last test checks that it still is one.
+
+A60EDA0: Final = (
+    "Merge docs-m17.2b-e-m17.5: M17.2b e M17.5 registrate — un esito finale che sparisce, e il Task"
+    " Center che non aveva proprietaria"
+)
+"""The merge of two registrations, whose prose names the two milestones it registered."""
+MAIN_INTO_A_BRANCH: Final = (
+    "Merge main in docs-m17.2b-e-m17.5: M13.2 (e383800) sotto le due registrazioni",
+    "Merge remote-tracking branch 'origin/main' into m13.2-terminale",
+)
+"""``08da04d``, and one before it: ``main`` merged into a branch, which merges nothing into main."""
+DOCS_FASE_13: Final = (
+    "Merge docs-fase-13: la Fase 13 registrata — sei milestone, il criterio che una registrazione"
+    " non è un inizio, e §1 che torna vera"
+)
+M13_1_BY_ITS_BRANCH: Final = (
+    "Merge m13.1-filesystem-e-il-primo-high: il filesystem fuori dalla workspace e il primo HIGH"
+    " — lo scope legato al fatto, il grant nato da un sì, e nessuna domanda già condannata"
+)
+M17_2_BY_ITS_BRANCH: Final = (
+    "Merge m17.2-command-center: il Command Center — la terza identità, il tetto derivato dal"
+    " socket, e due regole che smettono di nominare un file"
+)
+
+
+def test_the_prose_after_the_head_never_names_a_merged_milestone() -> None:
+    """``a60eda0``: the prose names M17.2b and M17.5, and the head is the branch that merged."""
+    assert set(MILESTONE_ID.findall(A60EDA0)) == {"M17.2b", "M17.5"}  # the case bites
+
+    # The same prose behind a head that does merge a milestone: only the head counts.
+    spliced = A60EDA0.replace("docs-m17.2b-e-m17.5", "m17.2-command-center", 1)
+    assert merged_in([spliced]) == {"M17.2"}
+
+
+def test_a_merge_of_main_into_a_branch_merges_nothing() -> None:
+    """``08da04d``: its prose names M13.2, and what it merges is ``main``, into a branch."""
+    assert "M13.2" in MAIN_INTO_A_BRANCH[0]  # the case bites
+    assert merged_in(MAIN_INTO_A_BRANCH) == set()
+
+
+def test_a_registration_branch_merges_nothing() -> None:
+    """A branch whose name begins with ``docs-`` registers milestones and merges none.
+
+    The negative case is the same title without the prefix: the branch name then names the two
+    milestones, which is exactly what makes the prefix the fact that decides.
+    """
+    assert merged_in([A60EDA0, DOCS_FASE_13]) == set()
+    assert merged_in([A60EDA0.replace("docs-", "", 1)]) == {"M17.2b", "M17.5"}
+
+
+def test_a_head_that_is_the_branch_in_lowercase_names_its_milestone() -> None:
+    """Until 2026-09-25 these two named nothing: for M13.1 and M17.2 the defence could not fire."""
+    assert merged_in([M13_1_BY_ITS_BRANCH]) == {"M13.1"}
+    assert merged_in([M17_2_BY_ITS_BRANCH]) == {"M17.2"}
+
+
+@pytest.mark.skipif(NO_HISTORY is not None, reason=NO_HISTORY or "")
+def test_the_titles_of_these_cases_are_titles_of_main() -> None:
+    """A case built on a title nobody wrote would prove the parser, not the history."""
+    for title in (
+        A60EDA0,
+        *MAIN_INTO_A_BRANCH,
+        DOCS_FASE_13,
+        M13_1_BY_ITS_BRANCH,
+        M17_2_BY_ITS_BRANCH,
+    ):
+        assert title in SUBJECTS, title
