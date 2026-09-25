@@ -10,6 +10,7 @@ The package advises and does not command: it cannot import ``ela.tasks``, so no 
 move — or fail — a task (ADR 0017 §6, architecture rule 22).
 """
 
+from ela.devices.beat import BEATS_PER_TTL, LocalHeartbeat, period_of
 from ela.devices.enrollment import (
     ENROLLMENT_CODE_TTL,
     RANDOM_BYTES,
@@ -118,4 +119,7 @@ __all__ = [
     "POWER_LINE",
     "power_drawn_from",
     "power_on_the_line",
+    "BEATS_PER_TTL",
+    "LocalHeartbeat",
+    "period_of",
 ]

@@ -67,7 +67,8 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
     assert "**cinquantasette**" in text
     assert len(RULES) == 57
     assert "**ventisette**" in text
-    assert len(tuple(port_protocols())) == 27
+    later = {"LocalBeat"}  # ADR 0048, which pins the count of its own day
+    assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 27
     assert "CommandLauncher" in {port.__name__ for port in port_protocols()}
     assert "**quarantotto**" in text
     assert len(coded_routes()) == 48

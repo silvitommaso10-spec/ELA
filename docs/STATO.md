@@ -136,11 +136,11 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **47** | `docs/adr/NNNN-*.md` |
+| ADR scritti | **48** | `docs/adr/NNNN-*.md` |
 | Milestone | **63, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
-| Port | **27** | i `Protocol` di `src/ela/ports.py` |
+| Port | **28** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **11** | `production_catalogue()` |
 | Rotte dell'API | **48** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |

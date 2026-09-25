@@ -48,7 +48,7 @@ from ela.domain import (
 from ela.executive.assignments import Assignments, Lapse, Stand, Standing
 from ela.executive.errors import RunnerError
 from ela.executive.executor import Execution, Executor
-from ela.ports import AuditLog, ExecutionResultStore, TaskRepository
+from ela.ports import AuditLog, ExecutionResultStore, LocalBeat, TaskRepository
 from ela.tasks.engine import TaskEngine
 from ela.tasks.graph import GraphState
 
@@ -179,6 +179,7 @@ class TaskRunner:
     __slots__ = (
         "_assignments",
         "_audit",
+        "_beat",
         "_engine",
         "_executor",
         "_orchestrator",
@@ -196,7 +197,9 @@ class TaskRunner:
         results: ExecutionResultStore,
         audit: AuditLog,
         assignments: Assignments,
+        beat: LocalBeat,
     ) -> None:
+        self._beat = beat
         self._engine = engine
         self._orchestrator = orchestrator
         self._executor = executor
@@ -395,6 +398,12 @@ class TaskRunner:
         from the audit, because a step that was started has already been given a node and asking
         a second time could name another one while a tool ran on the first.
 
+        **Before either, a heartbeat of ``local``** (M13.3, ADR 0048 §2): this process is about to
+        choose where a step runs, and ``local`` is this process. Without it a local step longer than
+        the heartbeat's TTL left ``local`` expired for the step after it, in the same walk; and the
+        power source a placement weighs is read here, at this instant, and not remembered from a
+        beat twenty seconds old — a periodic belief never decides an action (ADR 0029 §7).
+
         Reading it back is not the same as trusting it (ADR 0026 §4). The id comes out of an
         audit event, and ``confirm`` turns it into a decision only if that node is *still*
         eligible: it judges, it does not choose, so it writes no second ``DEVICE_SELECTED``. A
@@ -402,6 +411,7 @@ class TaskRunner:
         of resuming somewhere nobody would place it now.
         """
         step = graph.graph.step(step_id)
+        await self._beat.beat()
         if graph.states[step_id] is StepState.RUNNING:
             return await self._orchestrator.confirm(
                 await self._started_on(task_id, step_id),

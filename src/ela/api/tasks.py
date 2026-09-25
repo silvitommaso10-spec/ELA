@@ -15,9 +15,6 @@ from fastapi import APIRouter, Query
 from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.errors import TaskAlreadyRunningError
 from ela.api.schemas import CancelIn, PlanIn, RunOut, TaskCreate, TaskDetail, TaskOut
-from ela.devices.local import (
-    LOCAL_DEVICE_ID,
-)
 from ela.domain import (
     IntentChannel,
     IntentId,
@@ -121,12 +118,9 @@ async def run_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> RunOut:
         raise TaskAlreadyRunningError(identifier)
     running.add(identifier)
     try:
-        # The local node is this process: a request being served is proof it is alive, and
-        # without a heartbeat within the TTL the orchestrator would find no eligible node and the
-        # task would wait forever (ADR 0016 §3). With what the machine runs on, read here and not
-        # remembered from start-up (M12.3c): a laptop is unplugged in the middle of a session, and
-        # the placement that follows weighs it.
-        await ela.devices.heartbeat(LOCAL_DEVICE_ID, power_source=await ela.power())
+        # No heartbeat here (M13.3, ADR 0048 §2): a route that is answering is not who says the
+        # machine is alive (ADR 0044 §8). The runner asks the Core's heartbeat for one before every
+        # placement, with the power source read at that instant (M12.3c, ADR 0029 §7).
         run = await ela.runner.run(identifier)
     finally:
         running.discard(identifier)

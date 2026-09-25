@@ -17,7 +17,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from ela.devices import DeviceOrchestrator, DeviceRegistry, PlacementDecision, score
+from ela.devices import (
+    DeviceOrchestrator,
+    DeviceRegistry,
+    LocalHeartbeat,
+    PlacementDecision,
+    period_of,
+    score,
+)
 from ela.devices.local import LOCAL_DEVICE_NAME
 from ela.domain import (
     Approval,
@@ -59,6 +66,7 @@ from ela.ports import (
     AuditLog,
     AuthorizationStore,
     ExecutionResultStore,
+    LocalBeat,
     TaskRepository,
     ToolPort,
     VerifierPort,
@@ -75,6 +83,7 @@ from ela.testing.fakes import (
     FakeDeviceRegistry,
     FakeExecutionResultStore,
     FakeIdGenerator,
+    FakePower,
     FakeTaskRepository,
     FakeTool,
     FakeToolRegistry,
@@ -179,6 +188,10 @@ class World:
     assignments: Assignments
     bell: FakeBell
     """What rang, and whether it was delivered (M12.5 dec. E): a bell that touches no network."""
+    power: FakePower
+    """What this machine runs on, as the test says (M12.3c): what every beat of ``local`` reads."""
+    heartbeat: LocalHeartbeat
+    """The one writer of ``local``'s heartbeat (M13.3): asked before every placement."""
     node: Device
     """This machine, and deliberately so: its id **is** ``LOCAL_DEVICE_ID`` (M12.2, dec. A).
 
@@ -582,6 +595,7 @@ def world(
     failing: frozenset[CapabilityId] = frozenset(),
     bell: FakeBell | None = None,
     catalogue: Iterable[CapabilitySpec] | None = None,
+    beat: LocalBeat | None = None,
     **executor_options: Any,
 ) -> World:
     clock, ids = FakeClock(), FakeIdGenerator()
@@ -656,6 +670,10 @@ def world(
         bell=bell,
         **executor_options,
     )
+    # The heartbeat of ``local`` as the composition builds it (M13.3): the runner asks for a beat
+    # before every placement, so this world's one node is alive whenever it is about to be chosen.
+    power = FakePower()
+    heartbeat = LocalHeartbeat(devices, power, period=period_of(HEARTBEAT_TTL))
     runner = TaskRunner(
         engine=engine,
         orchestrator=orchestrator,
@@ -664,6 +682,7 @@ def world(
         results=result_store,
         audit=audit,
         assignments=assignments,
+        beat=heartbeat if beat is None else beat,
     )
     return World(
         repository,
@@ -685,6 +704,8 @@ def world(
         runner,
         assignments,
         bell,
+        power,
+        heartbeat,
         device,
         fakes,
         checkers,

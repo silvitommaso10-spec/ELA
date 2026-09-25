@@ -230,3 +230,51 @@ async def deliver_work(body, ela, running):
     assert unlocked_reaches(source.replace("deliver_work", "deliver_elsewhere")) == [
         "deliver_elsewhere:5"
     ]
+
+
+# ----------------------------------------------------------------------------------------
+# Rule: the heartbeat of ``local`` has one writer (form H; ADR 0044 §8)
+# ----------------------------------------------------------------------------------------
+
+HEARTBEAT_WRITER = PACKAGE / "devices" / "beat.py"
+"""The Core's heartbeat of ``local``: before every placement, and on a period."""
+
+
+def beats_local(source: str) -> list[int]:
+    """The lines that write a heartbeat for ``LOCAL_DEVICE_ID`` — a device's, never a task's.
+
+    ``devices.heartbeat(LOCAL_DEVICE_ID, …)`` is a sign of life of this machine; the task engine's
+    ``heartbeat(task_id)`` is a sign of life of a task, and another thing entirely.
+    """
+    found: list[int] = []
+    for node in ast.walk(ast.parse(source)):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "heartbeat"
+        ):
+            continue
+        named = [*node.args[:1], *(k.value for k in node.keywords if k.arg == "device_id")]
+        if any(isinstance(arg, ast.Name) and arg.id == "LOCAL_DEVICE_ID" for arg in named):
+            found.append(node.lineno)
+    return found
+
+
+def test_only_the_cores_heartbeat_writes_the_heartbeat_of_local() -> None:
+    found = {
+        str(path.relative_to(PACKAGE)): lines
+        for path in sorted(PACKAGE.rglob("*.py"))
+        if path != HEARTBEAT_WRITER and (lines := beats_local(path.read_text(encoding="utf-8")))
+    }
+    assert found == {}, found
+    assert beats_local(HEARTBEAT_WRITER.read_text(encoding="utf-8")), "the writer writes nothing"
+
+
+def test_a_route_that_beats_for_local_is_reported() -> None:
+    source = """
+async def run_task(task_id, ela):
+    await ela.devices.heartbeat(LOCAL_DEVICE_ID, power_source=await ela.power())
+    await ela.devices.heartbeat(device_id=LOCAL_DEVICE_ID)
+    await ela.engine.heartbeat(task_id)
+"""
+    assert beats_local(source) == [3, 4]

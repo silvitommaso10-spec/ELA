@@ -128,6 +128,7 @@ __all__ = [
     "FakeProbe",
     "FakeProviderRegistry",
     "FakeListening",
+    "FakeLocalBeat",
     "FakePower",
     "FakeScreenCapture",
     "FakeSpeech",
@@ -1286,6 +1287,25 @@ class FakePower:
     async def __call__(self) -> PowerSource:
         self.asked += 1
         return self.source
+
+
+class FakeLocalBeat:
+    """A heartbeat of ``local`` that is counted and lands nowhere (:class:`~ela.ports.LocalBeat`).
+
+    Since M13.3 the runner asks for a beat before every placement, so ``local`` is alive whenever
+    it is about to be chosen. A test about what the runner does when **no node is eligible** —
+    which stays reachable for a node that is not this machine, or for a capability no node has —
+    declares this beat to build the precondition with the one node of its world; ``beats`` counts
+    what was asked, which is what proves the runner asks before every ``place`` and ``confirm``.
+    """
+
+    __slots__ = ("beats",)
+
+    def __init__(self) -> None:
+        self.beats = 0
+
+    async def beat(self) -> None:
+        self.beats += 1
 
 
 class FakeListening:

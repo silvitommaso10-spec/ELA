@@ -132,6 +132,7 @@ __all__ = [
     "LISTEN_TRANSCRIPTION_UNAVAILABLE",
     "LISTEN_UNSUPPORTED",
     "ListeningPort",
+    "LocalBeat",
     "ModelProvider",
     "ModelRouterPort",
     "NotAllowedError",
@@ -860,6 +861,26 @@ class EnrollmentStore(Protocol):
         :class:`EnrollmentExpiredError` is raised. The check and the write are one atomic step: of
         two nodes presenting the same code exactly one is born (ADR 0012 §5, the shape of
         ``consume``)."""
+
+
+@runtime_checkable
+class LocalBeat(Protocol):
+    """A sign of life of this machine, with what it runs on read **now** (§16; M13.3, ADR 0048 §2).
+
+    The runner asks for one before **every** placement — ``place`` for a pending step, ``confirm``
+    for a running one — so that ``local`` is alive for the registry whenever it is about to be
+    chosen, and the power source the placement weighs was read at that instant and not remembered
+    from an earlier beat: a periodic belief never decides an action (ADR 0029 §7). A port and not
+    the service, because the runner lives in ``ela.executive`` and the service in ``ela.devices``,
+    and a test fakes a beat without building a registry.
+
+    Only the Core writes it (ADR 0044 §8): never a page, never a route that happens to be
+    answering.
+    """
+
+    async def beat(self) -> None:
+        """Write the heartbeat of ``local``, with the power source read at this instant."""
+        ...
 
 
 @runtime_checkable

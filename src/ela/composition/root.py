@@ -34,7 +34,9 @@ from ela.context import ContextCore
 from ela.devices import (
     DeviceOrchestrator,
     DeviceRegistry,
+    LocalHeartbeat,
     NodeEnrollment,
+    period_of,
 )
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import Actor, ActorKind, RawSpeech
@@ -177,11 +179,13 @@ class Ela:
     power: PowerReading
     """What this machine runs on, read at every heartbeat of ``local`` (M12.3c).
 
-    On ``Ela`` because ``POST /tasks/{id}/run`` writes one of those heartbeats and ``ela.api`` may
-    not name an adapter (architecture rule 27): what the API reaches is this callable. Until M12.3c
-    ``local`` was ``UNKNOWN`` whatever the machine did, and ``POWER_POINTS`` weighed a field nobody
-    could produce.
+    The callable the heartbeat reads, kept on ``Ela`` so a test can say what the machine runs on.
+    Until M12.3c ``local`` was ``UNKNOWN`` whatever the machine did, and ``POWER_POINTS`` weighed a
+    field nobody could produce.
     """
+    heartbeat: LocalHeartbeat
+    """The one writer of ``local``'s heartbeat (M13.3, ADR 0048 §2): before every placement, on the
+    runner's request, and on a period, in the loop the application's lifespan runs."""
     engine: TaskEngine
     orchestrator: DeviceOrchestrator
     executor: Executor
@@ -561,15 +565,15 @@ async def build(
         # And it is alive: the local node *is* this process, so ELA can say so about itself
         # without claiming anything it does not know (§16). A node registered and never heard
         # from is UNAVAILABLE, and no step would ever be placed on it (ADR 0016 §3). Keeping it
-        # alive over time is another matter: every run says so again (ADR 0023 §9), and the
-        # periodic heartbeat of a node that reports itself is M8.3.
+        # alive over time is the heartbeat's own (M13.3, ADR 0048 §2): the runner asks it for a
+        # beat before every placement, and the application's lifespan runs its loop.
         #
-        # And what it runs on, read now (M12.3c): the machine's answer, ``UNKNOWN`` where nothing
-        # reads it. Until M12.3c this line carried nothing, and ``local`` was ``UNKNOWN`` on a Mac
-        # plugged into the wall. ``UNKNOWN`` is sent when a reading fails, too: an old belief left
+        # And what it runs on, read at every beat (M12.3c): the machine's answer, ``UNKNOWN`` where
+        # nothing reads it. ``UNKNOWN`` is sent when a reading fails, too: an old belief left
         # standing would weigh in the next placement, and a periodic belief never decides an action
         # (ADR 0029 §7; the review of M12.3c, 2026-09-16).
-        await devices.heartbeat(LOCAL_DEVICE_ID, power_source=await power())
+        heartbeat = LocalHeartbeat(devices, power, period=period_of(settings.devices.heartbeat_ttl))
+        await heartbeat.beat()
 
         engine = TaskEngine(
             repository,
@@ -630,6 +634,7 @@ async def build(
             results=results,
             audit=audit,
             assignments=assignments,
+            beat=heartbeat,
         )
 
         # The same probe object the capture tool preflights with: one reader of this machine, so
@@ -675,6 +680,7 @@ async def build(
         devices=devices,
         enrollment=enrollment,
         power=power,
+        heartbeat=heartbeat,
         engine=engine,
         orchestrator=orchestrator,
         executor=executor,

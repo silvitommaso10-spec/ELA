@@ -65,6 +65,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0038-work-protocol.md", INTRODUCING),
     (ADR_DIR / "0043-companion.md", INTRODUCING),
     (ADR_DIR / "0047-terminal.md", INTRODUCING),
+    (ADR_DIR / "0048-travelling-action.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
@@ -88,6 +89,7 @@ INTRODUCED_PORTS = frozenset(
         "AssignmentStore",
         "Bell",
         "CommandLauncher",
+        "LocalBeat",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")

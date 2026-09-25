@@ -21,8 +21,10 @@ from ela.audit.chain import AuditChainError
 from ela.devices import (
     DeviceOrchestrator,
     DeviceRegistry,
+    LocalHeartbeat,
     PlacementDecision,
     local_device,
+    period_of,
     score,
 )
 from ela.domain import (
@@ -70,6 +72,7 @@ from ela.testing.fakes import (
     FakeDeviceRegistry,
     FakeIdGenerator,
     FakeModelProvider,
+    FakePower,
 )
 from ela.tools import (
     ECHO_MESSAGE_MATCHES,
@@ -203,6 +206,7 @@ class SqlPipeline:
             results=self.results,
             audit=self.audit,
             assignments=self.assignments,
+            beat=LocalHeartbeat(self.devices, FakePower(), period=period_of(HEARTBEAT_TTL)),
         )
 
     async def alive(self) -> None:
