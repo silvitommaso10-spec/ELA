@@ -17,13 +17,8 @@ from typing import Final
 
 OUTSIDE_THE_WINDOWS_JOB: Final[Mapping[str, str]] = {
     "tests/infrastructure/machine/test_sapi_smoke.py": "a CI runner has no speakers",
-    "tests/infrastructure/machine/test_acl_smoke.py": (
-        "measured on the job's first run (36151577468, 2026-09-25): the job's shell is PowerShell "
-        "7, and the powershell.exe 5.1 the test starts to read the SDDL inherits its PSModulePath "
-        "and cannot load Microsoft.PowerShell.Security ('Get-Acl ... could not be loaded')"
-    ),
-    "tests/infrastructure/machine/test_power_smoke.py": (
-        "measured on the same run: power_status answered None — the powershell.exe 5.1 it starts "
-        "inherits the PSModulePath of the job's PowerShell 7, the cause the ACL smoke names"
-    ),
 }
+"""The two smokes of the ACL and of the power source stood here from M13.3's first run
+(36151577468) until M12.3d: their ``powershell.exe`` inherited the PSModulePath of the job's
+PowerShell 7 and could not load its modules. That was a defect of ELA, not of the runner, and
+M12.3d repaired it; the two are back on the job's line, under the same shell."""

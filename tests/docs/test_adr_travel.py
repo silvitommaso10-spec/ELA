@@ -133,8 +133,8 @@ def test_the_payment_of_adr_0047_17_names_the_job_the_map_and_the_turned_defence
     assert "tests/tools/test_paths_windows.py" in text
     assert "tests/tools/test_paths_windows.py" in workflow
     for smoke in ("test_acl_smoke.py", "test_power_smoke.py"):
-        assert smoke not in workflow, smoke
-        assert f"tests/infrastructure/machine/{smoke}" in OUTSIDE_THE_WINDOWS_JOB, smoke
+        assert f"tests/infrastructure/machine/{smoke}" in workflow, smoke
+        assert f"tests/infrastructure/machine/{smoke}" not in OUTSIDE_THE_WINDOWS_JOB, smoke
     assert "`36151577468`" in text and "`PSModulePath`" in text
     assert "`tests/windows.py`" in text and "`test_sapi_smoke.py`" in text
     assert "test_every_test_of_windows_is_in_the_job_or_says_why_not" in text
