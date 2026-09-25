@@ -114,6 +114,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
+| 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.2b` | Proposta | Un esito finale sparisce dalle superfici che elencano i task |
@@ -133,7 +134,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **47** | `docs/adr/NNNN-*.md` |
-| Milestone | **59, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **60, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **27** | i `Protocol` di `src/ela/ports.py` |
@@ -607,6 +608,10 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   niente da spostare che non sia un'eco. Se a fine fase nessun'altra lo fa, **resta `Proposta`**,
   come M13.5. **Perché non sta dentro M13.3**: è un cambio del runner, e dipende da una cosa che
   M13.3 crea (la dichiarazione) ma non completa (quante la daranno).
+- **M13.7 — il terminale su un nodo** (ADR 0047 §13). **Registrata il 2026-09-25 con la SPEC di
+  M13.3**, perché il terminale non viaggia lì e il suo debito di Windows — il Job Object, e `argv`
+  che diventa una stringa sola — voleva una proprietaria registrata. **Fuori dalla fila, dopo
+  M13.3**; il numero e l'ordine sono dell'utente.
 
 **Che cosa la Fase 13 non porta.**
 
