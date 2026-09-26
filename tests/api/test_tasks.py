@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI
 from httpx import AsyncClient
@@ -19,7 +20,7 @@ from ela.devices import (
 )
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import TaskId, TaskState
-from tests.api.support import ECHO_MESSAGE, echo_plan, note_plan, queued
+from tests.api.support import ECHO_MESSAGE, Clocked, echo_plan, note_plan, queued
 
 UNKNOWN = str(uuid.uuid4())
 
@@ -138,13 +139,19 @@ async def test_a_limit_of_zero_is_a_caller_s_bug(client: AsyncClient) -> None:
 
 
 async def test_the_finished_route_answers_the_last_to_finish_first_and_how_many(
-    client: AsyncClient,
+    clocked: Clocked,
 ) -> None:
-    """The case of M13.2: the task created first and finished last is the first outcome."""
+    """The case of M13.2: the task created first and finished last is the first outcome.
+
+    The two instants are the test's — the clock moves between the runs —, so the order asserted is
+    the order of the outcomes and never a tie broken by insertion, which would give the opposite.
+    """
+    client = clocked.client
     born_first = await queued(client, echo_plan(), text="nata prima")
     born_second = await queued(client, echo_plan(), text="nata dopo")
     await client.post("/tasks", json={"text": "ancora viva"})
     await client.post(f"/tasks/{born_second}/run")
+    clocked.clock.advance(timedelta(seconds=1))
     await client.post(f"/tasks/{born_first}/run")
 
     answered = await client.get("/tasks/finished", params={"limit": 10})
@@ -154,13 +161,17 @@ async def test_the_finished_route_answers_the_last_to_finish_first_and_how_many(
     assert [task["id"] for task in body["tasks"]] == [born_first, born_second]
     assert body["total"] == 2
     assert all(task["finished_at"] is not None for task in body["tasks"])
-    first, second = (task["finished_at"] for task in body["tasks"])
-    assert first >= second
+    first, second = (datetime.fromisoformat(task["finished_at"]) for task in body["tasks"])
+    assert first > second
 
 
-async def test_the_finished_route_keeps_the_last_and_counts_them_all(client: AsyncClient) -> None:
+async def test_the_finished_route_keeps_the_last_and_counts_them_all(clocked: Clocked) -> None:
+    """Three outcomes at three instants the test chose: with a tie, insertion order would give the
+    same answer, and the test would be asserting the tie-break instead of «the last N»."""
+    client = clocked.client
     for text in ("una", "due", "tre"):
         await client.post(f"/tasks/{await queued(client, echo_plan(), text=text)}/run")
+        clocked.clock.advance(timedelta(seconds=1))
 
     body = (await client.get("/tasks/finished", params={"limit": 2})).json()
 

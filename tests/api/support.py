@@ -11,6 +11,7 @@ import json
 import re
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
@@ -23,13 +24,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.api import create_app
-from ela.composition import Ela, build
+from ela.composition import Ela, Settings, build
 from ela.domain import Task, TaskState
 from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS
 from ela.permissions import CORE_ECHO, WORKSPACE_WRITE_NOTE
 from ela.testing.fakes import FakeClock, FakePower
 from ela.tools import ECHO_MESSAGE_MATCHES, NOTE_CONTENT_MATCHES, NOTE_EXISTS
-from tests.composition.support import TOKEN
+from tests.composition.support import TOKEN, create_schema
 
 BASE = "http://ela"
 AUTHORIZED = {"Authorization": f"Bearer {TOKEN}"}
@@ -272,6 +273,42 @@ async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
         AsyncClient(transport=ASGITransport(app=app), base_url=BASE, headers=AUTHORIZED) as opened,
     ):
         yield opened
+
+
+@dataclass(frozen=True)
+class Clocked:
+    """An ELA whose clock the test moves, its application, and a client carrying the token."""
+
+    clock: FakeClock
+    app: FastAPI
+    client: AsyncClient
+
+
+@pytest.fixture
+async def clocked(settings: Settings) -> AsyncIterator[Clocked]:
+    """An ELA built on a :class:`~ela.testing.fakes.FakeClock` the test moves (M17.2b).
+
+    For the tests that assert the order of outcomes: two runs on the real clock may end in the same
+    instant — on Windows the clock ticks every fifteen milliseconds or so —, and a tie is broken by
+    insertion, which gives the opposite order. A test asserts only what it built the preconditions
+    of, so the instants are the test's: the clock moves between one run and the next. Built with
+    ``build(settings, clock=…)`` and not by replacing ``Ela.clock``: ``transition`` reads the
+    engine's clock, which ``build`` hands it.
+    """
+    await create_schema(settings.persistence.db_url)
+    clock = FakeClock(datetime.now(UTC))
+    built = await build(settings, clock=clock, power=FakePower())
+    try:
+        application = create_app(built)
+        async with (
+            application.router.lifespan_context(application),
+            AsyncClient(
+                transport=ASGITransport(app=application), base_url=BASE, headers=AUTHORIZED
+            ) as opened,
+        ):
+            yield Clocked(clock, application, opened)
+    finally:
+        await built.aclose()
 
 
 @pytest.fixture

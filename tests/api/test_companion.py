@@ -13,7 +13,7 @@ import html
 import re
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -54,6 +54,7 @@ from ela.tasks.state_machine import TERMINAL_STATES
 from ela.tools import ASSERTED_CREATES, OVERWRITES, READS
 from tests.api.support import (
     BASE,
+    Clocked,
     NoListOfEveryTask,
     echo_plan,
     ended,
@@ -995,15 +996,22 @@ async def test_a_finished_task_stays_on_the_phone(
     assert "href" not in finished
 
 
-async def test_on_the_phone_the_last_to_finish_comes_first(
-    phone: AsyncClient, client: AsyncClient
-) -> None:
+async def test_on_the_phone_the_last_to_finish_comes_first(clocked: Clocked) -> None:
+    """On an ELA whose clock the test moves between the two runs: on the real clock the two
+    outcomes may share an instant, and the tie, broken by insertion, gives the opposite order."""
+    client = clocked.client
     born_first = await queued(client, echo_plan(), text="nata prima", privacy="TRUSTED")
     later = await queued(client, echo_plan(), text="nata dopo", privacy="TRUSTED")
     await client.post(f"/tasks/{later}/run")
+    clocked.clock.advance(timedelta(seconds=1))
     await client.post(f"/tasks/{born_first}/run")
 
-    finished = group((await phone.get("/companion/")).text, "Finiti")
+    async with AsyncClient(transport=ASGITransport(app=clocked.app), base_url=BASE) as browser:
+        enrolled = await browser.post(
+            "/companion/enroll", data={"code": await code_for(client), **DECLARED}, headers=ORIGIN
+        )
+        assert enrolled.status_code == 303, enrolled.text
+        finished = group((await browser.get("/companion/")).text, "Finiti")
 
     assert finished.index("nata prima") < finished.index("nata dopo")
 

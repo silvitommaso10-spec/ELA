@@ -79,6 +79,7 @@ from ela.tools import ASSERTED_CREATES, OVERWRITES, READS
 from tests.api.support import (
     BASE,
     ENDINGS,
+    Clocked,
     NoListOfEveryTask,
     echo_plan,
     ended,
@@ -1065,15 +1066,26 @@ async def test_a_finished_task_stays_on_the_home(
     assert f"esito {state.value}" in finished
 
 
-async def test_the_last_to_finish_comes_first_even_if_it_was_born_first(
-    console: AsyncClient, client: AsyncClient
-) -> None:
-    """The long command of M13.2: created first, finished last, first on the page."""
+async def test_the_last_to_finish_comes_first_even_if_it_was_born_first(clocked: Clocked) -> None:
+    """The long command of M13.2: created first, finished last, first on the page.
+
+    On an ELA whose clock the test moves between the two runs: on the real clock the two outcomes
+    may share an instant, and the tie, broken by insertion, gives the opposite order.
+    """
+    client = clocked.client
     born_first = await queued(client, echo_plan(), text="nata prima")
     await client.post(f"/tasks/{await queued(client, echo_plan(), text='nata dopo')}/run")
+    clocked.clock.advance(timedelta(seconds=1))
     await client.post(f"/tasks/{born_first}/run")
 
-    finished = group((await console.get("/console/")).text, "Finiti")
+    async with opened(clocked.app, LOOPBACK) as browser:
+        enrolled = await browser.post(
+            "/console/enroll",
+            data={"code": await code_for(client), **DECLARED},
+            headers=origin(LOOPBACK),
+        )
+        assert enrolled.status_code == 303, enrolled.text
+        finished = group((await browser.get("/console/")).text, "Finiti")
 
     assert finished.index("nata prima") < finished.index("nata dopo")
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -28,13 +29,16 @@ from typer.testing import CliRunner
 from ela.api import create_app
 from ela.cli import client
 from ela.cli.app import app as ela_app
-from ela.composition import Ela
+from ela.composition import Ela, Settings, build
+from ela.testing.fakes import FakeClock, FakePower
+from tests.composition.support import create_schema
 
 __all__ = [
     "Cli",
     "LoopTransport",
     "_output_without_a_terminal",
     "cli",
+    "clocked_cli",
     "plain",
     "refusing",
     "unreachable",
@@ -154,3 +158,28 @@ async def cli(ela: Ela, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Cli]:
     )
     async with application.router.lifespan_context(application):
         yield Cli(transport)
+
+
+@pytest.fixture
+async def clocked_cli(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[tuple[Cli, FakeClock]]:
+    """The CLI, pointed at an ELA built on a clock the test moves (M17.2b).
+
+    For the commands whose answer is the order of outcomes: on the real clock two runs may end in
+    one instant, and a tie broken by insertion gives the opposite order — a precondition the test
+    did not build. ``build(settings, clock=…)``, because ``transition`` reads the engine's clock.
+    """
+    await create_schema(settings.persistence.db_url)
+    clock = FakeClock(datetime.now(UTC))
+    built = await build(settings, clock=clock, power=FakePower())
+    try:
+        application = create_app(built)
+        transport = LoopTransport(application, asyncio.get_running_loop())
+        monkeypatch.setattr(
+            client, "connect", lambda: client.open_client(built.settings.api, transport=transport)
+        )
+        async with application.router.lifespan_context(application):
+            yield Cli(transport), clock
+    finally:
+        await built.aclose()
