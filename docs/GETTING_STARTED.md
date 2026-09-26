@@ -993,7 +993,7 @@ capability e il rischio, e dice di rispondere dal Mac.
 **2. Arruola il browser, sull'iPhone.** Apri
 
 ```
-http://<ip tailnet del Mac>:8130/companion/
+http://<ip tailnet del Mac>:<porta>/companion/
 ```
 
 **nel browser predefinito del telefono** — quello che si apre quando tocchi un collegamento. La
@@ -2286,10 +2286,13 @@ Chiudila senza arruolarla.
 
 ### 3. La pagina d'arruolamento, sull'iPhone in Chrome
 
-In Chrome, una **scheda in incognito**, all'indirizzo di §13, `http://<ip tailnet del Mac>:8130/companion/`.
+In Chrome, una **scheda in incognito**, all'indirizzo di §13, `http://<ip tailnet del Mac>:<porta>/companion/`
+— la porta è quella del passo 2, e di `ela diagnostics`.
 
-**Che cosa si deve vedere**: la stessa pagina del passo 2, con la cornice del telefono. Poi un
-arruolamento vero da lì — il modulo del telefono non è quello della console: il campo Sistema è fisso —:
+**Che cosa si deve vedere**: la stessa pagina del passo 2, con la cornice del telefono. **Tocca il
+campo del codice**: la tastiera sale e **la pagina non si ingrandisce**, come nella prova di M17.1 — un
+campo che ingrandisce la pagina è un campo che il foglio non ha raggiunto. Poi un arruolamento vero da
+lì — il modulo del telefono non è quello della console: il campo Sistema è fisso —:
 conia il codice al Mac,
 
 ```
@@ -2393,8 +2396,29 @@ finiti di così, dice di quanti: «Finiti · gli ultimi 8 di 23». Lo stesso, da
 uv run ela task finished
 ```
 
-**Se non si vede così**: se «dormire troppo» manca da una delle due home, o non è primo al passo 4, è
-il difetto di M17.2b che non è riparato su quella superficie. Se una pagina d'arruolamento è arrivata
+### 6. Un task fermato dal telefono, che resta sul telefono
+
+Un task vivo che non gira: creato e pianificato, e **non** lanciato, resta `QUEUED`. `TRUSTED`, così
+il telefono ne vede l'obiettivo:
+
+```
+uv run ela task create "da fermare" --privacy TRUSTED
+```
+
+```
+uv run ela task plan <id> --file docs/examples/echo.json
+```
+
+Sul telefono, nella home, il gruppo «Vivi» ha «da fermare» con `QUEUED`. Toccalo: la seconda pagina
+chiede la conferma. Ferma.
+
+**Che cosa si deve vedere**: la home del telefono, e «da fermare» **è primo nel gruppo «Finiti»**, con
+`CANCELLED`. È l'unico caso rotto oggi che solo il telefono mostra: fino a M17.2b un task fermato dal
+telefono spariva dal telefono nello stesso istante.
+
+**Se non si vede così**: se «dormire troppo» manca da una delle due home, o non è primo al passo 4, o
+«da fermare» manca dal telefono al passo 6, è il difetto di M17.2b che non è riparato su quella
+superficie. Se una pagina d'arruolamento è arrivata
 senza stile, salva dal Mac la risposta intera, intestazioni comprese, e portala nella review:
 
 ```
