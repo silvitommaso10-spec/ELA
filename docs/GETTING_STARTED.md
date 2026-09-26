@@ -2135,14 +2135,23 @@ Get-WinEvent -FilterHashtable @{LogName='System'; StartTime=(Get-Date).AddHours(
 ```
 
 **Che cosa si deve vedere**: un risveglio, e **nessun cambio dell'ora e nessuna sincronizzazione fra
-il risveglio e l'istante della misura**. Se ce n'è uno, la lettura non è il caso peggiore: si rifà
-dopo un'altra sospensione. La differenza fra lo scarto del PC e quello del Mac è la deriva del nodo
-rispetto al Core, e si confronta con i 180 s che una decisione ha di vita nel caso peggiore. **Il segno
-non si deduce a memoria**: lo si legge dalla documentazione dei due strumenti e lo si conferma con il
-numero di ELA — `ran_at` meno l'istante in cui il Core ha ricevuto la busta, dalle consegne del
-blocco B —, che è un limite inferiore: un valore positivo dice che il PC è avanti almeno di tanto, uno
-negativo non dice che è indietro. `Out-File` di PowerShell 5.1 scrive un BOM: il file
-si legge lo stesso.
+il risveglio e l'istante della misura** — tranne il cambio del risveglio stesso, «System time
+synchronized with the hardware clock». Se ce n'è un altro, la lettura non misura il risveglio: si rifà
+dopo un'altra sospensione.
+
+**Il risveglio non è il caso peggiore.** La SPEC lo pensava, e la misura del 2026-09-26 l'ha smentito
+(ADR 0048 §14): al risveglio Windows rimette l'ora da quella dell'orologio hardware, e l'errore è quello
+accumulato dall'ultima sincronizzazione, come da acceso — 0,39 s dopo dieci ore di sonno, 6,94 s la sera
+prima, dopo otto giorni senza sincronizzarsi. Il peggio è il PC rimasto più a lungo senza sincronizzarsi,
+e lo dice la storia delle correzioni del servizio dell'ora: gli eventi `Kernel-General` 1 degli ultimi
+trenta giorni, esclusi i risvegli. Nei trenta giorni prima della prova, il peggio è stato 38,3 s avanti.
+
+La differenza fra lo scarto del PC e quello del Mac è la deriva del nodo rispetto al Core, e si
+confronta con i 180 s che una decisione ha di vita nel caso peggiore. **Il segno non si deduce a
+memoria**: lo si legge dalla documentazione dei due strumenti e lo si conferma con il numero di ELA —
+`ran_at` meno l'istante in cui il Core ha ricevuto la busta, dalle consegne del blocco B —, che è un
+limite inferiore: un valore positivo dice che il PC è avanti almeno di tanto, uno negativo non dice che
+è indietro. `Out-File` di PowerShell 5.1 scrive un BOM: il file si legge lo stesso.
 
 ### 6. La seconda metà del passo 9 di M13.2
 

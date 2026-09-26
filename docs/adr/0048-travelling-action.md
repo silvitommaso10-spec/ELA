@@ -2,7 +2,8 @@
 
 - **Stato:** Accettata. SPEC di M13.3 decisa dall'utente il 2026-09-25, con le decisioni 1–13 della
   review. Si è scritta un pezzo per commit, nell'ordine della SPEC; l'esito della misura dei pesi
-  (§13) e della deriva dell'orologio (§14) arriva dopo la prova a mano, con i numeri presi.
+  (§13) e della deriva dell'orologio (§14) è scritto dopo la prova a mano del 2026-09-26, con i numeri
+  presi.
 - **Data:** 2026-09-25
 - **Riferimenti spec:** §13, §15, §16, §17, §18, §23, §28, §32, §33, §56, §57, §63
 - **Milestone:** M13.3
@@ -480,7 +481,7 @@ sì dell'utente è `RUNNING`: una domanda lasciata aperta per ore avrebbe mandat
 ripiazzabile al PC con il Mac sotto corrente e fermo. `BUSY` è ciò che un nodo dice di sé mentre un suo
 tool gira, e per `local` ora vuol dire la stessa cosa. Nemmeno uno step affidato a un nodo occupa
 `local`: il suo `BUSY` è del nodo, nel battito del nodo. `tests/executive/test_local_status.py` tiene
-i tre casi.
+i casi.
 
 **Con lo stato simmetrico e i valori di ADR 0017 l'alimentazione non poteva più spostare niente**: lo
 scarto di `NETWORK_POINTS` (15) superava quello di `POWER_POINTS` (10), e la rilettura
@@ -544,7 +545,7 @@ misurato: `m13.3-pesi-A-eco.jsonl`, `m13.3-pesi-A-lettura.jsonl`, `m13.3-pesi-B-
 e le righe del database in `m13.3-pesi-eventi.json`, `m13.3-pesi-assegnazioni.json` e
 `m13.3-pesi-risultati.json`.
 
-### 14. L'orologio di un nodo: il margine, calcolato
+### 14. L'orologio di un nodo: il margine calcolato, la deriva misurata
 
 L'unico orologio di un nodo che arriva al Core è `node.ran_at`, che il Core conserva e non confronta
 con niente. **Il margine peggiore, calcolato e non misurato**: una decisione vive
@@ -556,27 +557,65 @@ così rifiuta, `tool.refused`; un nodo **indietro** non rifiuta mai, e accetta u
 quanto è indietro — il verso di ADR 0038 §5, la decisione come titolo al portatore, qui esteso a un
 orologio che è indietro: ADR 0038 §5 lo dice di una decisione ripresentata entro la sua scadenza.
 
-**La misura** — sul Mac, sul PC, e sul PC appena uscito dal sonno, prima che l'ora si risincronizzi —
-è la prova a mano di `docs/GETTING_STARTED.md` §17. ELA non corregge l'orologio di un nodo: lo misura e
-lo scrive.
+**La misura** è la prova a mano di `docs/GETTING_STARTED.md` §17, passo 5, fatta il 2026-09-26. ELA
+non corregge l'orologio di un nodo: lo misura e lo scrive.
 
-**La prima misura, con il PC sveglio, il 2026-09-26.** Il Mac, alle 01:01 con `sntp time.apple.com`:
-**+0,0698 ± 0,030 s** (`m13.3-orologio-mac.txt`). Il PC, alle 01:03 dell'ora del PC con `w32tm
-/stripchart` contro lo stesso server: da **−6,9437 s** a **−6,9463 s**. Tutti e due gli strumenti
-scrivono lo scarto nella convenzione di NTP, l'orologio del server meno quello locale — la correzione
-che l'orologio locale dovrebbe applicare, ed è ciò che il manuale di `sntp` dice che `-S` applica —:
-il Mac è indietro di 0,07 s, il PC avanti di 6,94 s. **La deriva del PC rispetto al Core è di circa
-7,01 s, con il PC avanti.** Il segno non si prende dalla convenzione: lo conferma il numero di ELA
-stessa. Nelle venti consegne del blocco B, `node.ran_at` meno l'istante in cui il Core ha ricevuto la
-busta va da 6,998 s a 7,007 s, mediana 7,001 s: positivo, quindi il PC è avanti, e un limite inferiore
-di quanto è avanti, perché il tragitto della busta ne sottrae una parte — sta sotto i 7,01 s della
-differenza dei due scarti, com'è giusto che stia (`m13.3-pesi-assegnazioni.json`). **Contro il margine:
-7,01 s sono il 3,9 % dei 180 s**: un PC avanti così vede scadere una decisione 7 s prima del Core, e
-dei 180 s di margine ne restano 173. La deriva ci sta dentro con margine, e i cinque minuti di ADR 0011
-§9 restano.
+**La premessa era sbagliata** (vincolo 3 della review della SPEC, corretto dall'utente dopo la misura).
+La SPEC chiamava caso peggiore il PC appena uscito dal sonno, prima che l'ora si risincronizzi. La
+misura lo smentisce: al risveglio Windows rimette l'ora di sistema da quella dell'orologio hardware, e
+dopo dieci ore di sonno il PC era avanti di 0,39 s; la sera prima, otto giorni dopo l'ultima
+sincronizzazione, di 6,94 s.
+**L'errore cresce con il tempo passato dall'ultima sincronizzazione**, e il sonno non ci aggiunge niente
+che si veda: le due misure del PC danno lo stesso passo, **0,83 s al giorno in avanti** — 6,94 s in 8,3
+giorni dalla correzione del 17 settembre, 0,385 s in 11,2 ore dalla correzione delle 02:13 del 26. Il
+peggio non è un risveglio: è il PC rimasto più a lungo senza sincronizzazione, e lo dice la storia delle
+correzioni. L'orologio hardware si legge al secondo — l'evento del risveglio lo scrive «13:02:06.500» —,
+e la misura non basta a dire se, a parte questo, tenga meglio o peggio di quello di sistema.
 
-**La misura del PC appena uscito dal sonno** si scrive qui quando c'è, con i suoi numeri e il giorno, e
-il merge di M13.3 la aspetta.
+**Le misure**, contro `time.apple.com`, nella convenzione di NTP — l'orologio del server meno quello
+locale, la correzione che l'orologio locale dovrebbe applicare:
+
+| Quando, il 2026-09-26 | Il Mac, `sntp` | Il PC, `w32tm /stripchart`, cinque campioni | Il PC rispetto al Core |
+|---|---|---|---|
+| 01:01–01:03, il PC otto giorni dopo l'ultima sincronizzazione | +0,0698 ± 0,030 s | da −6,9403 a −6,9468 s | **+7,01 s** |
+| 13:26, il PC ventiquattro minuti dopo un sonno di dieci ore | +0,0362 ± 0,031 s | da −0,3833 a −0,3862 s | **+0,42 s** |
+
+Il Mac è indietro di 0,04–0,07 s in due misure a dodici ore di distanza: stabile, e l'istante in cui lo
+si misura rispetto al PC non pesa. **La misura del risveglio vale**: il PC era sospeso dalle 00:52:25Z e
+si è riattivato alle 11:02:08Z; l'unico cambio dell'ora fra il risveglio e la misura è quello delle
+11:02:06Z, «System time synchronized with the hardware clock», cioè il risveglio stesso, e nessuna
+sincronizzazione del servizio dell'ora.
+
+**Il segno, confermato due volte** e non preso dalla convenzione. Nelle venti consegne del blocco B dei
+pesi, `node.ran_at` meno l'istante in cui il Core ha ricevuto la busta va da 6,998 s a 7,007 s, mediana
+7,001 s: positivo, quindi il PC è avanti, e un limite inferiore di quanto, perché il tragitto della busta
+ne sottrae una parte (`m13.3-pesi-assegnazioni.json`). E il servizio dell'ora del PC, alle 02:13 del 26,
+un'ora dopo la misura della sera, ha portato l'ora indietro di 6,925 s: quanto `w32tm` aveva detto, con
+il segno meno.
+
+**La storia di trenta giorni**: gli eventi `Kernel-General` 1 del PC, esclusi i risvegli, tutti del
+servizio dell'ora e **tutti con il segno meno**, l'ora portata indietro. Sei correzioni a scatto — il 3
+settembre di 38,3 s, il 4 di 1,1 s, il 9 di 2,0 s, il 14 di 1,4 s, il 17 di 2,1 s, il 26 di 6,9 s — e
+sincronizzazioni a 0 ms il 7, il 12 e il 16: **una sincronizzazione ogni uno-nove giorni**. Fra il 17 e
+il 26 non ce n'è nessun'altra, e quell'intervallo dà lo stesso passo delle due misure, 6,9 s in 8,4
+giorni. **Fra il 3 e il 4 il passo è stato più rapido**: 1,1 s in quindici ore, 1,7 s al giorno, subito
+dopo la correzione più grande. Gli altri intervalli contengono una sincronizzazione a 0 ms di cui il
+riassunto non porta l'ora, e un passo non lo danno. **Il peggio osservato è 38,3 s avanti**, il 3 settembre, dopo un intervallo che il
+registro non copre. **In trenta giorni il PC non è mai stato indietro.**
+
+**Contro il margine, nel verso che conta per un nodo avanti.** Un nodo avanti di X vede scadere una
+decisione X secondi prima del Core, e rifiuta con `tool.refused` ciò che per il Core vale ancora: il
+fail-safe, mai una decisione scaduta eseguita. Dei 180 s, un PC avanti di 7,01 s ne lascia 173;
+avanti di 38,3 s — il peggio osservato — ne lascia 141,7, e consuma il 21 % del margine. Al passo
+misurato, i 180 s si consumerebbero in circa 217 giorni senza una sincronizzazione, e a quello più
+rapido della storia in più di cento; il PC si sincronizza ogni uno-nove. Il verso che accetterebbe una decisione scaduta, un nodo indietro, in trenta
+giorni non si è visto. **La deriva ci sta dentro con margine, e i cinque minuti di ADR 0011 §9
+restano.**
+
+I file stanno in `~/Downloads` della macchina che ha misurato: `m13.3-orologio-mac.txt`,
+`m13.3-orologio-mac-2.txt`, e quelli del PC — `m13.3-orologio-pc.txt`, `m13.3-orologio-pc-sveglio.txt`,
+`m13.3-orologio-pc-sveglio-eventi.txt` trascritti dalla chat, `m13.3-orologio-pc-correzioni.txt`
+riassunto; gli originali restano sul PC.
 
 ## Alternative considerate
 

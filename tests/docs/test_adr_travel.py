@@ -344,14 +344,54 @@ def test_the_order_of_the_network_is_written_measured_with_its_day_and_its_files
         assert f"`m13.3-pesi-{measured}.jsonl`" in text
 
 
-def test_the_first_measure_of_the_clock_is_written_and_the_wake_up_is_waited_for() -> None:
+WORST_AHEAD_SECONDS = 38.332
+"""The worst drift of the PC in the thirty days before the manual test: the time service took the
+clock back by 38 332 ms on 2026-09-03 (ADR 0048 §14)."""
+
+
+def test_the_clock_section_says_the_premise_was_wrong_with_the_measures_and_the_history() -> None:
+    """The user's correction after the measure (2026-09-26): the wake-up is not the worst case —
+    the error grows with the time since the last synchronisation, and the history of the
+    corrections is where the worst case lives."""
     text = " ".join(section(14).split())
 
-    assert "**La prima misura, con il PC sveglio, il 2026-09-26.**" in text
-    assert "**La deriva del PC rispetto al Core è di circa 7,01 s, con il PC avanti.**" in text
-    assert "lo conferma il numero di ELA stessa" in text
-    assert "7,01 s sono il 3,9 % dei 180 s" in text
-    assert "**La misura del PC appena uscito dal sonno** si scrive qui quando c'è" in text
+    assert "**La premessa era sbagliata**" in text
+    assert "**L'errore cresce con il tempo passato dall'ultima sincronizzazione**" in text
+    assert "**0,83 s al giorno in avanti**" in text
+    evening = "01:01–01:03, il PC otto giorni dopo l'ultima sincronizzazione | +0,0698 ± 0,030 s |"
+    assert evening in section(14)
+    assert "| +0,0362 ± 0,031 s | da −0,3833 a −0,3862 s | **+0,42 s** |" in section(14)
+    assert "**La misura del risveglio vale**" in text
+    assert "**Il peggio osservato è 38,3 s avanti**" in text
+    assert "**In trenta giorni il PC non è mai stato indietro.**" in text
+    assert "si scrive qui quando c'è" not in text
+    for measured in ("mac", "mac-2", "pc", "pc-sveglio", "pc-sveglio-eventi", "pc-correzioni"):
+        assert f"`m13.3-orologio-{measured}.txt`" in text
+
+
+def test_the_worst_drift_observed_fits_the_margin_the_settings_give() -> None:
+    """The comparison is with the margin of today's settings: if the TTLs move, the ADR's
+    arithmetic goes stale here and not silently."""
+    core = CoreSettings.model_construct()
+    margin = core.decision_ttl_seconds - core.assignment_ttl_seconds
+    left = f"{margin - WORST_AHEAD_SECONDS:.1f}".replace(".", ",")
+    text = " ".join(section(14).split())
+
+    assert margin > WORST_AHEAD_SECONDS
+    assert f"ne lascia {left}" in text
+    assert (
+        "**La deriva ci sta dentro con margine, e i cinque minuti di ADR 0011 §9 restano.**" in text
+    )
+
+
+def test_the_guide_and_the_spec_no_longer_call_the_wake_up_the_worst_case() -> None:
+    guide = (ROOT / "docs" / "GETTING_STARTED.md").read_text(encoding="utf-8")
+    spec = MILESTONE.read_text(encoding="utf-8")
+
+    assert "**Il risveglio non è il caso peggiore.**" in guide
+    assert "la lettura non è il caso peggiore" not in " ".join(guide.split())
+    assert "**Il vincolo 3 era sbagliato: il risveglio non è il caso peggiore.**" in spec
+    assert "La lettura è il caso peggiore" not in " ".join(spec.split())
 
 
 def test_the_margin_of_the_clock_is_the_difference_of_the_two_settings() -> None:

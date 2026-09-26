@@ -603,9 +603,10 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   da ogni tool; e la grammatica dei percorsi è una per ogni sistema. Dalla review dell'implementazione:
   lo stato di `local` lo osserva il Core e la corrente pesa 20 (ADR 0048 §13), e **M12.3d** ripara il
   `powershell.exe` che da PowerShell 7 non caricava i suoi moduli. **La prova a mano è fatta il
-  2026-09-26, tranne la misura del PC appena uscito dal sonno, che il merge aspetta**: l'ordine della
-  rete è misurato (ADR 0048 §13), la deriva del PC sveglio è di circa 7 s contro i 180 del margine (ADR
-  0048 §14), e la prova ha corretto la decisione 2 — `local` è `BUSY` solo mentre un suo tool gira, e una
+  2026-09-26, tutta**: l'ordine della rete è misurato (ADR 0048 §13); la deriva del PC cresce di 0,83 s
+  al giorno dall'ultima sincronizzazione, il peggio in trenta giorni è 38,3 s avanti contro i 180 del
+  margine, e il risveglio non è il caso peggiore che il vincolo 3 diceva (ADR 0048 §14); e la prova ha
+  corretto la decisione 2 — `local` è `BUSY` solo mentre un suo tool gira, e una
   domanda aperta non occupa il Mac — e trovato che lo Smart App Control blocca `ela.exe` sul PC, che la
   guida ora lancia con `python -m ela.cli`.
 - **M13.4 — il browser** (§19), con **Playwright**. **Condizione d'ingresso: M13.3 chiusa.** La
