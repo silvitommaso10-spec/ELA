@@ -127,6 +127,7 @@ la difende; dove un test non può arrivare, lo dice.
 | Ogni riferimento di ogni pagina e di ogni foglio di stile è un percorso relativo, interno, esistente; nessun `<script>`, nessun `on*`, nessun `javascript:`, nessun `local()` | `tests/design/test_no_network.py` |
 | Nella cartella esistono solo i tipi di file di cui il design system è fatto; nessuna pagina porta un'immagine, nessuna favicon; il wordmark è la parola «ELA», come testo. **La sfera non li aggira: è CSS** | `tests/design/test_closed_world.py` |
 | Il font è lo stack di sistema: nessun candidato è rimasto nella fonte, nessun file di font nella cartella | `tests/design/test_fonts.py` |
+| **Nessun foglio servito chiuderebbe il blocco in cui viaggia**: le pagine che arrivano a chi non è ancora riconosciuto portano i due fogli dentro un `<style>` (M17.2c, ADR 0050), e un `</style` — in qualunque maiuscola — lo chiuderebbe. Una funzione sola di `ela.api.pages` lo dice, e la usano questo test e l'avvio | `tests/design/test_inline_block.py` |
 
 ### Accessibilità — WCAG 2.1 AA come regola
 

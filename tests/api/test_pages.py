@@ -9,6 +9,7 @@ sees a page with ``{risk}`` written on it.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -81,6 +82,36 @@ def test_a_missing_folder_stops_the_start_up_with_a_sentence(tmp_path: Path) -> 
         pages.ensure_readable("da-nessuna-parte")
     with pytest.raises(ConfigurationError, match="markup of a page is missing"):
         pages._read(tmp_path / "nowhere")
+
+
+def test_a_sheet_that_is_missing_stops_the_start_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M17.2c (ADR 0050): the pages that reach whoever is nobody yet carry the sheets inside, so a
+    sheet that is not there would take the enrolment page away — the only door. The start-up says
+    so, once; a refusal at every answer would be a ``500`` on that door."""
+    copy = tmp_path / "design-system"
+    shutil.copytree(pages.APPS / "design-system", copy)
+    (copy / "components.css").unlink()
+    monkeypatch.setattr(pages, "DESIGN_SYSTEM", copy)
+
+    with pytest.raises(ConfigurationError, match="components.css"):
+        pages.ensure_readable(*(surface.templates for surface in SURFACES))
+
+
+def test_a_sheet_that_would_close_its_block_stops_the_start_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Correction C: the start-up asks the one function that says whether a text closes the block,
+    the same one ``tests/design/test_inline_block.py`` asks."""
+    copy = tmp_path / "design-system"
+    shutil.copytree(pages.APPS / "design-system", copy)
+    sheet = copy / "tokens.css"
+    sheet.write_text(sheet.read_text(encoding="utf-8") + "/* </STYLE> */\n", encoding="utf-8")
+    monkeypatch.setattr(pages, "DESIGN_SYSTEM", copy)
+
+    with pytest.raises(ConfigurationError, match="tokens.css"):
+        pages.ensure_readable(*(surface.templates for surface in SURFACES))
 
 
 def test_every_surface_has_its_folder_and_the_check_walks_all_of_them() -> None:

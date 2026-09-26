@@ -52,6 +52,7 @@ TABLES = {
     "assignments",
 }
 REVISIONS = [
+    "0012",
     "0011",
     "0010",
     "0009",
@@ -236,6 +237,58 @@ def test_the_sensitivity_column_is_born_with_the_strictest_default(db: Path) -> 
         engine.dispose()
 
     assert levels == ["LOCAL_ONLY"]
+
+
+def test_the_hour_of_an_outcome_is_read_from_the_event_that_ended_the_task(db: Path) -> None:
+    """``0012`` (M17.2b, ADR 0049): a task that finished before the column existed takes its hour
+    from the event that brought it into the state it is in — and **only** a finished one, because a
+    live task has an event with its own state as ``new_state`` too.
+
+    Where that event is missing — the window of ADR 0015 §8 between a state and its event — the
+    column stays empty: an hour made up here would be a value without a source.
+    """
+    command.upgrade(config_for(db), "0011")
+    engine = create_engine(f"sqlite:///{db.as_posix()}")
+    try:
+        with engine.begin() as connection:
+            for task, state in (("t1", "FAILED"), ("t2", "DENIED"), ("t3", "QUEUED")):
+                connection.execute(
+                    text(
+                        "INSERT INTO tasks (id, created_at, goal, state, metadata)"
+                        " VALUES (:id, '2026-09-26 08:00:00.000000', 'g', :state, '{}')"
+                    ),
+                    {"id": task, "state": state},
+                )
+            for event, task, state, at in (
+                ("e1", "t1", "EXECUTING", "2026-09-26 09:00:00.000000"),
+                ("e2", "t1", "FAILED", "2026-09-26 12:00:00.000000"),
+                ("e3", "t3", "QUEUED", "2026-09-26 10:00:00.000000"),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO task_events"
+                        " (id, task_id, created_at, event_type, new_state, message, metadata)"
+                        " VALUES (:id, :task, :at, 'STATE_CHANGED', :state, '', '{}')"
+                    ),
+                    {"id": event, "task": task, "at": at, "state": state},
+                )
+        command.upgrade(config_for(db), "0012")
+        with engine.connect() as connection:
+            hours = dict(connection.execute(text("SELECT id, finished_at FROM tasks")).all())
+    finally:
+        engine.dispose()
+
+    assert hours == {"t1": "2026-09-26 12:00:00.000000", "t2": None, "t3": None}
+
+
+def test_downgrade_of_the_hour_of_an_outcome_takes_it_away(db: Path) -> None:
+    config = config_for(db)
+    command.upgrade(config, "head")
+    assert "finished_at" in _tables(db)["tasks"]
+
+    command.downgrade(config, "0011")
+
+    assert "finished_at" not in _tables(db)["tasks"]
 
 
 def test_downgrade_of_the_sensitivity_column_takes_it_away(db: Path) -> None:

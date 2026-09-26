@@ -53,7 +53,7 @@ from ela.ports import (
     EnrollmentExpiredError,
 )
 from tests.api.routers import api_routers, routes_of
-from tests.api.support import served_paths
+from tests.api.support import outside_the_block, served_paths
 from tests.composition.support import TOKEN
 
 OTHER = "y" * 40
@@ -108,7 +108,7 @@ async def test_no_route_answers_without_the_token(app: FastAPI, anonymous: Async
             assert response.json()["error"]["code"] == "unauthorized"
         elif method == "POST":
             assert response.status_code == 403, f"{method} {path}"
-            assert "ELA" in response.text
+            assert "ELA" in outside_the_block(response.text)
         else:
             assert response.status_code == 401, f"{method} {path}"
             assert "<form" in response.text and "code" in response.text

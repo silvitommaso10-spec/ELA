@@ -7,8 +7,13 @@ true for these tests too.
 
 from __future__ import annotations
 
+import json
+import re
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from types import MappingProxyType
 from typing import Any, cast
 
 import pytest
@@ -18,10 +23,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.api import create_app
-from ela.composition import Ela
-from ela.domain import Task
+from ela.composition import Ela, build
+from ela.domain import Task, TaskState
 from ela.infrastructure.persistence.orm import APPEND_ONLY_TRIGGERS
 from ela.permissions import CORE_ECHO, WORKSPACE_WRITE_NOTE
+from ela.testing.fakes import FakeClock, FakePower
 from ela.tools import ECHO_MESSAGE_MATCHES, NOTE_CONTENT_MATCHES, NOTE_EXISTS
 from tests.composition.support import TOKEN
 
@@ -120,6 +126,120 @@ class BrokenRepository:
 
     async def tasks(self, **kwargs: Any) -> tuple[Task, ...]:
         raise OSError("disk I/O error")
+
+
+def outside_the_block(page: str) -> str:
+    """A page without its ``<style>`` block (M17.2c, D8): 81 KB of sheet in the text would let a
+    «contains» pass on the CSS — ``components.css`` says «ELA» too — and turn a «does not contain»
+    red for a comment."""
+    return re.sub(r"<style>.*?</style>", "", page, flags=re.DOTALL)
+
+
+class NoListOfEveryTask:
+    """A repository that refuses the one question a page must not ask: every task (M17.2b, C6).
+
+    The finished tasks grow for ever, and a home that loaded them all to show eight would be the
+    shape the review of M8.1 took out of ``/diagnostics`` (ADR 0025 §2). Everything else is the
+    real repository's.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    async def tasks(
+        self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
+    ) -> tuple[Task, ...]:
+        if states is None:
+            raise AssertionError("a page asked for every task (M17.2b, C6)")
+        result: tuple[Task, ...] = await self._inner.tasks(states=states, limit=limit)
+        return result
+
+
+# ----------------------------------------------------------------------------------------
+# A task in each final state, reached the way production reaches it (M17.2b, correction A)
+# ----------------------------------------------------------------------------------------
+
+EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
+
+Ending = Callable[[AsyncClient, Ela, str, str | None], Awaitable[str]]
+
+
+async def _completed(client: AsyncClient, ela: Ela, text: str, privacy: str | None) -> str:
+    """A run that walks a SAFE plan to its end."""
+    task = await queued(client, echo_plan(), text, privacy=privacy)
+    await client.post(f"/tasks/{task}/run")
+    return task
+
+
+async def _failed(client: AsyncClient, ela: Ela, text: str, privacy: str | None) -> str:
+    """A step that fails: the example that asks a model, on a machine without a key."""
+    plan = json.loads((EXAMPLES / "ask-model.json").read_text(encoding="utf-8"))
+    task = await queued(client, plan, text, privacy=privacy)
+    await client.post(f"/tasks/{task}/run")
+    approval = (await client.get("/approvals")).json()[0]["id"]
+    await client.post(f"/tasks/{task}/approve", json={"approval_id": approval})
+    await client.post(f"/tasks/{task}/run")
+    return task
+
+
+async def _denied(client: AsyncClient, ela: Ela, text: str, privacy: str | None) -> str:
+    """A question the user answered no."""
+    task = await queued(client, note_plan(), text, privacy=privacy)
+    await client.post(f"/tasks/{task}/run")
+    approval = (await client.get("/approvals")).json()[0]["id"]
+    await client.post(f"/tasks/{task}/deny", json={"approval_id": approval})
+    return task
+
+
+async def _cancelled(client: AsyncClient, ela: Ela, text: str, privacy: str | None) -> str:
+    """A live task the user stopped."""
+    task = await queued(client, echo_plan(), text, privacy=privacy)
+    await client.post(f"/tasks/{task}/cancel", json={"reason": "fermato"})
+    return task
+
+
+async def _expired(client: AsyncClient, ela: Ela, text: str, privacy: str | None) -> str:
+    """A question nobody answered in time, expired by ``recover()`` — the one producer of
+    ``EXPIRED`` in production (ADR 0015 §6) — on a clock past the question's life.
+
+    Not ``engine.expire``: it has no caller in production (M17.2b, C1), and a precondition built
+    by a producer that does not exist says nothing about the product.
+    """
+    task = await queued(client, note_plan(), text, privacy=privacy)
+    await client.post(f"/tasks/{task}/run")
+    after = datetime.now(UTC) + ela.settings.core.approval_ttl + timedelta(minutes=1)
+    later = await build(ela.settings, clock=FakeClock(after), power=FakePower())
+    try:
+        await later.engine.recover()
+    finally:
+        await later.aclose()
+    return task
+
+
+ENDINGS: Mapping[TaskState, Ending] = MappingProxyType(
+    {
+        TaskState.COMPLETED: _completed,
+        TaskState.FAILED: _failed,
+        TaskState.DENIED: _denied,
+        TaskState.CANCELLED: _cancelled,
+        TaskState.EXPIRED: _expired,
+    }
+)
+"""How each final state is reached. Its keys are held equal to ``TERMINAL_STATES`` by a test, so
+a sixth final state without a way to get there stops the suite instead of skipping a case."""
+
+
+async def ended(
+    state: TaskState, client: AsyncClient, ela: Ela, *, text: str, privacy: str | None = None
+) -> str:
+    """A task in ``state``, reached as production reaches it; returns its id."""
+    task = await ENDINGS[state](client, ela, text, privacy)
+    reached = (await client.get(f"/tasks/{task}")).json()["state"]
+    assert reached == state.value, f"{state.value} was not reached: {reached}"
+    return task
 
 
 def served_paths(app: FastAPI) -> list[tuple[str, str]]:

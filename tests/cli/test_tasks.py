@@ -138,6 +138,52 @@ async def test_list_says_so_when_there_is_nothing(cli: Cli) -> None:
     assert result.stdout.strip() == "nothing to show"
 
 
+async def finished_one(cli: Cli, tmp_path: Path, text: str) -> str:
+    task = await created(cli, text)
+    await cli("task", "plan", task, "--file", written(tmp_path, echo_plan(), f"{task}.json"))
+    ran = await cli("task", "run", task)
+    assert ran.exit_code == 0, ran.output
+    return task
+
+
+async def test_finished_shows_the_last_to_finish_first(cli: Cli, tmp_path: Path) -> None:
+    """``ela task finished`` (M17.2b, ADR 0049): the route of the homes, from the command line —
+    every route has its command (ADR 0024 §2)."""
+    born_first = await created(cli, "nata prima")
+    await cli("task", "plan", born_first, "--file", written(tmp_path, echo_plan(), "a.json"))
+    await finished_one(cli, tmp_path, "nata dopo")
+    await cli("task", "run", born_first)
+
+    result = await cli("task", "finished")
+
+    assert result.exit_code == 0
+    lines = result.stdout.splitlines()
+    assert lines[1].split() == ["ID", "STATE", "FINISHED", "GOAL"]
+    assert "nata prima" in lines[2] and "nata dopo" in lines[3]
+
+
+async def test_finished_says_its_limit_and_how_many_there_are(cli: Cli, tmp_path: Path) -> None:
+    for text in ("una", "due", "tre"):
+        await finished_one(cli, tmp_path, text)
+
+    result = await cli("task", "finished", "--limit", "2")
+    as_json = json.loads((await cli("task", "finished", "--limit", "2", "--json")).stdout)
+
+    assert result.stdout.splitlines()[0] == "the last 2 to finish, of 3"
+    assert [one["goal"] for one in as_json["tasks"]] == ["tre", "due"]
+    assert as_json["total"] == 3
+
+
+async def test_finished_has_a_limit_of_its_own(cli: Cli) -> None:
+    """The default is the CLI's, and says so: nothing claims it is the console's (correction B)."""
+    from ela.cli.tasks import FINISHED_LIMIT
+
+    result = await cli("task", "finished")
+
+    assert result.stdout.splitlines()[0] == f"the last {FINISHED_LIMIT} to finish"
+    assert "nothing to show" in result.stdout
+
+
 async def test_show_lists_the_steps_of_the_plan(cli: Cli, tmp_path: Path) -> None:
     task_id = await created(cli)
     await cli("task", "plan", task_id, "--file", written(tmp_path, echo_plan()))
