@@ -18,7 +18,7 @@ from typing import Any, Final
 import httpx
 
 from ela.composition.node import NodeWorld
-from ela.domain import CapabilityId, PermissionDecision
+from ela.domain import CapabilityId, ExecutionResult, ExecutionStatus, PermissionDecision
 from ela.node.client import NodeClient
 from ela.node.errors import (
     REVOKED,
@@ -29,9 +29,9 @@ from ela.node.errors import (
     NodeRevoked,
     TwinNode,
 )
-from ela.ports import NotAllowedError, WireCode
+from ela.ports import NotAllowedError, VerifierPort, WireCode
 
-__all__ = ["Node", "declaration", "envelope_of"]
+__all__ = ["Node", "declaration", "envelope_of", "verdict_of"]
 
 RENEW_AT: Final = 0.5
 """How much of the remaining time to let pass before asking for more.
@@ -122,10 +122,21 @@ async def envelope_of(world: NodeWorld, order: Mapping[str, Any]) -> dict[str, A
     it does not fire — the hard filter drops a node that lacks the tool before a step is placed on
     it (M12.2 dec. L) — which makes it a defence at a new boundary rather than a refusal with no
     producer in the sense of ADR 0026 §7.
+
+    **And the verification, when the order asks for it** (M13.3, ADR 0048): an order that carries
+    ``success_conditions`` is about a capability whose verifier reads the machine, and the machine
+    is this one. The verifier is looked up **before** the tool acts — a node does not act on what it
+    cannot verify — and runs after it, on a result that succeeded, with the order's conditions and
+    arguments; its verdict travels in the envelope (:func:`verdict_of`).
     """
+    asked = order.get("success_conditions")
+    checked: tuple[VerifierPort, tuple[str, ...]] | None = None
     try:
         decision = PermissionDecision.model_validate(dict(order["decision"]))
-        tool = world.tools.get(CapabilityId(str(order["capability_id"])))
+        capability = CapabilityId(str(order["capability_id"]))
+        tool = world.tools.get(capability)
+        if asked is not None:
+            checked = (world.verifiers.get(capability), tuple(str(c) for c in asked))
         result = await tool.execute(decision, dict(order["arguments"]))
     except NotAllowedError:
         return {"form": "refused"}
@@ -142,7 +153,43 @@ async def envelope_of(world: NodeWorld, order: Mapping[str, Any]) -> dict[str, A
         envelope["error"] = result.error.model_dump(mode="json")
     if result.usage is not None:
         envelope["usage"] = result.usage.model_dump(mode="json")
+    if checked is not None and result.status is ExecutionStatus.SUCCEEDED:
+        verifier, conditions = checked
+        envelope["verdict"] = await verdict_of(
+            verifier, conditions, dict(order["arguments"]), result
+        )
     return envelope
+
+
+async def verdict_of(
+    verifier: VerifierPort,
+    conditions: tuple[str, ...],
+    arguments: Mapping[str, Any],
+    result: ExecutionResult,
+) -> dict[str, Any]:
+    """What this node's verifier says about ``result``: codes and names, never a message (M13.3).
+
+    The conditions it checked, in the order's order; each failure as its condition and its code;
+    or, if the verifier raised, the name of the exception's type — the form an exception already
+    travels in (§57). The sentence a person reads the Core composes from the code: a failure's
+    message can name a path, and a path is the user's content.
+    """
+    try:
+        failures = await verifier.verify(conditions, arguments, result)
+    except Exception as raised:  # noqa: BLE001 — a node reports the type, never the message
+        return {"conditions": list(conditions), "failed": [], "exception": type(raised).__name__}
+    return {
+        "conditions": list(conditions),
+        "failed": [
+            [_condition(failure.details.get("condition")), failure.code] for failure in failures
+        ],
+        "exception": None,
+    }
+
+
+def _condition(value: object) -> str | None:
+    """The condition a failure is about, or ``None`` for a failure of the contract itself."""
+    return value if isinstance(value, str) else None
 
 
 class Node:

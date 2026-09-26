@@ -105,15 +105,20 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.3` | Implementata | Il nodo macOS: questa macchina diventa un nodo, e il contratto si implementa invece di descriversi |
 | 12 — I nodi sulla rete | `M12.3b` | Implementata | La cartella del segreto del nodo: `0o700` anche dove il Core non l'ha creata prima |
 | 12 — I nodi sulla rete | `M12.3c` | Implementata | Chi legge l'alimentazione: un campo che l'orchestratore pesa e che nessuna macchina produceva |
+| 12 — I nodi sulla rete | `M12.3d` | Implementata | Il powershell.exe di ELA eredita un PSModulePath che non sa caricare |
 | 12 — I nodi sulla rete | `M12.4` | Implementata | Il nodo Windows: il contratto su un secondo sistema operativo, e ciò che il primo nascondeva |
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
 | 13 — Il permesso prima dell'azione | `M13.1b` | Implementata | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
-| 13 — Il permesso prima dell'azione | `M13.3` | Proposta | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
+| 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
+| 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
+| 13 — Il permesso prima dell'azione | `M13.8` | Proposta | Un file che vive su una macchina: quale disco, e chi lo dice |
+| 14 — *senza nome* | `M14.1` | Proposta | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
+| 14 — *senza nome* | `M14.2` | Proposta | Il Planner: ELA scrive i piani da sola |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.2b` | Proposta | Un esito finale sparisce dalle superfici che elencano i task |
@@ -132,11 +137,11 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **47** | `docs/adr/NNNN-*.md` |
-| Milestone | **59, di cui 49 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **48** | `docs/adr/NNNN-*.md` |
+| Milestone | **64, di cui 51 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
-| Port | **27** | i `Protocol` di `src/ela/ports.py` |
+| Port | **28** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **11** | `production_catalogue()` |
 | Rotte dell'API | **48** | i `router` di `ela.api` |
 | Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
@@ -222,6 +227,7 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
+| 14 | 1 |
 | 15 | 14 |
 | 16 | 1 |
 
@@ -364,12 +370,14 @@ essere.
 
 Oggi **nessuno lo fa rispettare**. Fra i vincoli dichiarati di ADR 0021 c'è «**Nessun budget** (§3):
 l'usage si registra, non si somma e non si confronta con un tetto», e ADR 0022 lo ripete invariato.
-Quei due ADR hanno messo il tetto sotto §30 — che nella spec è «Pagamenti» —, e §30 non ha ancora né
-un ADR né una milestone.
+Quei due ADR hanno messo il tetto sotto §30 — che nella spec è «Pagamenti» —, e §30 non ha ancora un
+ADR; la sua milestone è M14.1 (sotto).
 
 *Che cosa ne discende:* finché §30 non esiste, **il tetto lo mette il fornitore**: una workspace
-dedicata sulla console, con la sua chiave, un limite mensile e l'auto-reload spento. E **§30 prende
-la sua milestone prima della Fase 14, non dopo**.
+dedicata sulla console, con la sua chiave, un limite mensile e l'auto-reload spento. E **§30 ha la
+sua milestone, M14.1, la prima della Fase 14** (registrata il 2026-09-25): essere la prima della fase
+mantiene l'intento di «prima della Fase 14, non dopo», perché nessuna capability della Fase 14 che
+spende nasce prima del tetto.
 
 *Perché nessun ADR, per nessuna di queste tre voci:* ADR 0021 e ADR 0022 sono immutabili e dicono il
 vero, e non si toccano. Li rivedranno apertamente §30 e la capability della Fase 14, quando
@@ -577,8 +585,9 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
 - **M13.3 — l'azione che viaggia. Terza, e prima del browser.** Il verifier gira **dove avviene
   l'effetto**, e qui la fase paga **tre** debiti: **ADR 0044 §8**, il battito di `local` — il Mac
   risulta non disponibile mentre ELA gira —; **i pesi di §17**, che ADR 0017 dichiarò «da ritarare
-  con dati reali» e che la Fase 12 ha misurato senza ritarare (ADR 0043 §9), e che si ritarano qui,
-  quando due nodi competono davvero; e **la deriva dell'orologio di un nodo contro i cinque minuti**
+  con dati reali» e che la Fase 12 ha misurato senza ritarare (ADR 0043 §9): qui si misura l'ordine
+  che `NETWORK_POINTS` impone, quando due nodi competono davvero, e le grandezze diventano una scelta
+  scritta (decisione 12 della review della sua SPEC); e **la deriva dell'orologio di un nodo contro i cinque minuti**
   (M12.2, la stessa casa di ADR 0043 §9), che è la stessa materia — chi misura il tempo, e con quale
   orologio — e che M12.2 ha lasciato non misurata perché la sua suite gira sul `FakeClock` del Core.
   M13.3 guadagna anche **un obbligo esplicito**: **ogni capability che viaggia dichiara se si può
@@ -587,7 +596,19 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   implicita, ed è quella dichiarazione a rendere M13.6 possibile o impossibile. Prima del browser
   perché **un'azione che non si può verificare su un nodo non si esegue su quel nodo** (ADR 0014
   §3): la domanda «dove gira il verifier» si risponde prima di aggiungere l'azione che la farà
-  pesare.
+  pesare. **Implementata il 2026-09-25, fino alla prova a mano** (ADR 0048): `fs.read` e `fs.write`
+  viaggiano verso un nodo che ha una radice, con il verifier sul nodo e il verdetto nella busta; la
+  domanda di uno step su un nodo nomina la macchina e ciò che il piano afferma; `local` batte prima di
+  ogni piazzamento e a un periodo; il lock di un task non ha più la fessura; `relocatable` è dichiarato
+  da ogni tool; e la grammatica dei percorsi è una per ogni sistema. Dalla review dell'implementazione:
+  lo stato di `local` lo osserva il Core e la corrente pesa 20 (ADR 0048 §13), e **M12.3d** ripara il
+  `powershell.exe` che da PowerShell 7 non caricava i suoi moduli. **La prova a mano è fatta il
+  2026-09-26, tutta**: l'ordine della rete è misurato (ADR 0048 §13); la deriva del PC cresce di 0,83 s
+  al giorno dall'ultima sincronizzazione, il peggio in trenta giorni è 38,3 s avanti contro i 180 del
+  margine, e il risveglio non è il caso peggiore che il vincolo 3 diceva (ADR 0048 §14); e la prova ha
+  corretto la decisione 2 — `local` è `BUSY` solo mentre un suo tool gira, e una
+  domanda aperta non occupa il Mac — e trovato che lo Smart App Control blocca `ela.exe` sul PC, che la
+  guida ora lancia con `python -m ela.cli`.
 - **M13.4 — il browser** (§19), con **Playwright**. **Condizione d'ingresso: M13.3 chiusa.** La
   SPEC **misura e scrive prima di decidere**: una dipendenza nuova, i binari dei browser, il tempo
   che aggiunge a `make check` e il tempo che aggiunge alla CI **sui tre runner** della matrice vera
@@ -602,19 +623,30 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   senza di lei**.
 - **M13.6 — spostare un lavoro già in corso da un nodo a un altro** (§15, §12 del design), il terzo
   rinvio che ADR 0043 §9 aveva dato alla fase. **Fuori dalla fila**: entra **dopo M13.3**, e solo
-  quando **almeno due capability che viaggiano dichiarano la propria idempotenza** — oggi ne
-  dichiara una sola, `core.echo` (ADR 0038 §8), e uno spostamento con un ripetibile solo non ha
+  quando **almeno due capability che viaggiano si dichiarano ripiazzabili** — `relocatable`, la
+  dichiarazione che M13.3 aggiunge, e non `idempotent`: `fs.read` è idempotente, viaggia, e non si
+  ripiazza, perché su un'altra macchina lo stesso percorso è un altro file (M13.3, C5). Oggi se ne
+  dichiara una sola, `core.echo` (ADR 0038 §8), e uno spostamento con un ripiazzabile solo non ha
   niente da spostare che non sia un'eco. Se a fine fase nessun'altra lo fa, **resta `Proposta`**,
   come M13.5. **Perché non sta dentro M13.3**: è un cambio del runner, e dipende da una cosa che
   M13.3 crea (la dichiarazione) ma non completa (quante la daranno).
+- **M13.7 — il terminale su un nodo** (ADR 0047 §13). **Registrata il 2026-09-25 con la SPEC di
+  M13.3**, perché il terminale non viaggia lì e il suo debito di Windows — il Job Object, e `argv`
+  che diventa una stringa sola — voleva una proprietaria registrata; e prende anche il residuo di
+  Linux di ADR 0047 §5, come criterio a sé. **In coda alla Fase 13, dopo M13.5**: l'ordine
+  M13.4 → M13.5 non cambia.
+- **M13.8 — un file che vive su una macchina** (§13, §23). **Registrata il 2026-09-25 dalla review
+  della SPEC di M13.3**: `fs.*` viaggia e il piazzamento sceglie la macchina, quindi quale file si
+  legge o si scrive lo decide il punteggio; un piano non può dirlo. **In coda alla Fase 13, dopo
+  M13.7.**
 
 **Che cosa la Fase 13 non porta.**
 
 - **Non il Planner.** §13 è una sezione della spec, non questa fase: **un piano continua ad
   attaccarsi a mano**, come dal primo giorno. Che uno step dichiari sempre le capability che userà
   resta il vincolo che ADR 0011 lascia a chi costruirà il Planner, e resta lì.
-- **Non §30.** Il tetto di spesa **prende la sua milestone prima della Fase 14**, come dice la 5.9,
-  e quella milestone non è una di queste sei.
+- **Non §30.** Il tetto di spesa ha la sua milestone, **M14.1**, la prima della Fase 14, come dice
+  la 5.9: non è una milestone di questa fase.
 
 *Che cosa la fase eredita, e non può contraddire:*
 
@@ -652,12 +684,14 @@ pagato da chi doveva.
 | Debito | Dichiarato | A carico | Stato |
 |---|---|---|---|
 | ADR 0041 §5 — i test che aspettano, e le difese che costano un terzo della suite | 2026-09-18 | della milestone sulla disciplina della suite | **aperto** |
-| ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | **aperto** |
-| ADR 0047 §16 — il surrogato isolato fuori dal piano | 2026-09-24 | di M13.3 | **aperto** |
-| ADR 0047 §17 — i test di Windows che nessun job raccoglie | 2026-09-24 | di M13.3 | **aperto** |
 | ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
+| ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
+| ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
+| ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |
+| ADR 0047 §16 — il surrogato isolato fuori dal piano | 2026-09-24 | di M13.3 | saldato da ADR 0048 §3 |
+| ADR 0047 §17 — i test di Windows che nessun job raccoglie | 2026-09-24 | di M13.3 | saldato da ADR 0048 §5 |
 
 <!-- fine del blocco generato: i debiti datati -->
 

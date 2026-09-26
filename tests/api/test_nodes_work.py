@@ -22,9 +22,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
+from pydantic import ValidationError
 
 from ela.api.app import NOT_YOUR_WORK
 from ela.api.nodes import work_order
+from ela.api.schemas import WorkResultIn
 from ela.composition import Ela
 from ela.domain import (
     AuditEventType,
@@ -32,9 +34,10 @@ from ela.domain import (
     ExecutionStatus,
     TaskId,
 )
-from ela.executive import Claimed, RunOutcome, WorkRejection
+from ela.executive import Claimed, RunOutcome, Verdict, WorkRejection
 from tests.api.support import echo_plan, queued
 from tests.api.test_nodes import enrolled, written
+from tests.domain.examples import PERMISSION_DECISION
 
 ENVELOPE: dict[str, Any] = {
     "form": "result",
@@ -167,6 +170,45 @@ def test_the_composer_refuses_an_order_for_another_node() -> None:
 
     with pytest.raises(ValueError, match="belongs to another node"):
         work_order(claimed, DeviceId(uuid4()))
+
+
+def test_the_order_of_work_the_node_verifies_has_a_seventh_key_and_no_other_does() -> None:
+    """M13.3, form B: «e nient'altro» with one line beside it. The conditions travel only for a
+    capability the node verifies on its own machine; for every other the key is absent, not null."""
+
+    class _Assignment:
+        id = uuid4()
+        device_id = DeviceId(uuid4())
+        decision = PERMISSION_DECISION
+        expires_at = PERMISSION_DECISION.created_at
+
+    node = _Assignment.device_id
+    verified = work_order(Claimed(_Assignment(), "fs-read", {}, ("fs.file_exists",)), node)  # type: ignore[arg-type]
+    plain = work_order(Claimed(_Assignment(), "core-echo", {}), node)  # type: ignore[arg-type]
+
+    assert verified.model_dump(mode="json")["success_conditions"] == ["fs.file_exists"]
+    assert "success_conditions" not in plain.model_dump(mode="json")
+    assert len(plain.model_dump(mode="json")) == 6
+
+
+def test_a_delivery_carries_the_verdict_as_codes_and_refuses_anything_else_in_it() -> None:
+    body = {
+        "assignment_id": str(uuid4()),
+        "form": "result",
+        "status": "SUCCEEDED",
+        "verdict": {
+            "conditions": ["fs.file_exists"],
+            "failed": [["fs.file_exists", "path.missing"]],
+        },
+    }
+
+    envelope = WorkResultIn.model_validate(body).envelope()
+
+    assert envelope.verdict == Verdict(("fs.file_exists",), (("fs.file_exists", "path.missing"),))
+    with pytest.raises(ValidationError):
+        WorkResultIn.model_validate(
+            {**body, "verdict": {**body["verdict"], "message": "a sentence of the node's"}}  # type: ignore[dict-item]
+        )
 
 
 # ----------------------------------------------------------------------------------------
@@ -375,6 +417,8 @@ async def test_a_decision_the_node_made_up_has_nowhere_to_go(client: AsyncClient
         {"form": "exception"},
         {"form": "exception", "exception": "not an identifier"},
         {"form": "nonsense"},
+        {"form": "result", "status": "FAILED", "verdict": {"conditions": ["echo.message_matches"]}},
+        {**ENVELOPE, "verdict": {"conditions": ["echo.message_matches"]}},
     ],
     ids=[
         "no-status",
@@ -383,6 +427,11 @@ async def test_a_decision_the_node_made_up_has_nowhere_to_go(client: AsyncClient
         "no-name",
         "not-a-name",
         "no-such-form",
+        # M13.3 (ADR 0048 §7; the review of the implementation, decision 4): no node of ELA sends
+        # these two, and the Core refuses them before any write — a verdict about a result that
+        # did not succeed, and a verdict about work the Core verifies itself (the echo).
+        "a-verdict-about-a-failure",
+        "a-verdict-the-core-did-not-ask-for",
     ],
 )
 async def test_an_envelope_that_tells_two_stories_is_refused(
@@ -504,15 +553,17 @@ async def test_the_core_is_not_a_node_on_the_work_routes(client: AsyncClient, pa
 # ----------------------------------------------------------------------------------------
 
 
-async def test_a_delivery_holding_a_lone_surrogate_is_still_refused_by_the_encoder(
+async def test_a_delivery_holding_a_lone_surrogate_fails_the_step_with_a_name_of_its_own(
     client: AsyncClient, ela: Ela
 ) -> None:
-    """The debt, as it is. What a node delivers is free JSON, and a lone surrogate in it reaches
-    the persistence, whose encoder refuses it: a ``422`` that names no rule of ELA's, and a step
-    left ``EXECUTING`` — handed out again when the assignment expires, to be refused again.
+    """ADR 0047 §16, paid (M13.3, form I): a lone surrogate is a string for the JSON parser and text
+    for nobody else. Until M13.3 the delivery was a ``422`` born of the encoder — its message
+    carrying the character —, the node kept the envelope, and the step went back to a node at the
+    expiry to be refused again: the task never ended.
 
-    Failing here is not a regression. It means the debt is being paid: write the payment in an
-    ADR, and turn this test round, as ``test_adr_devices.py`` was turned for ADR 0035 §7.
+    Now the Core decides and writes: the result it mints is ``FAILED`` with ``result.not_text``, no
+    output, a message that names the fields and never the content; the node is told ``200`` and
+    lets the envelope go; and the task fails at the next ``run`` instead of waiting forever.
     """
     task_id, order, headers, _ = await taken(client, ela)
     body = {"assignment_id": order["assignment_id"], **ENVELOPE, "output": {"message": "x\ud800y"}}
@@ -523,6 +574,17 @@ async def test_a_delivery_holding_a_lone_surrogate_is_still_refused_by_the_encod
         headers={**headers, "content-type": "application/json"},
     )
 
-    assert delivered.status_code == 422
-    assert "surrogates not allowed" in delivered.json()["error"]["message"]
-    assert (await client.get(f"/tasks/{task_id}")).json()["state"] == "EXECUTING"
+    assert delivered.status_code == 200, delivered.text
+    assert delivered.json()["step"] == "FAILED"
+    (result,) = [
+        one
+        for one in (await client.get(f"/tasks/{task_id}/results")).json()
+        if one["status"] != "STARTED"
+    ]
+    assert result["status"] == "FAILED"
+    assert result["error"]["code"] == "result.not_text"
+    assert result["output"] == {}
+    assert "output" in result["error"]["message"]
+    assert "\ud800" not in result["error"]["message"]
+    assert "\\ud800" not in result["error"]["message"]
+    assert (await client.post(f"/tasks/{task_id}/run")).json()["outcome"] == "failed"

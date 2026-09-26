@@ -23,6 +23,7 @@ from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_composition import coded_routes
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.tools.terminals import no_programs
+from tests.windows import OUTSIDE_THE_WINDOWS_JOB
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_DIR = ROOT / "docs" / "adr"
@@ -67,7 +68,8 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
     assert "**cinquantasette**" in text
     assert len(RULES) == 57
     assert "**ventisette**" in text
-    assert len(tuple(port_protocols())) == 27
+    later = {"LocalBeat"}  # ADR 0048, which pins the count of its own day
+    assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 27
     assert "CommandLauncher" in {port.__name__ for port in port_protocols()}
     assert "**quarantotto**" in text
     assert len(coded_routes()) == 48
@@ -236,20 +238,53 @@ def test_the_two_debts_of_the_census_have_an_owner_a_day_and_a_page_that_names_t
         assert inherited in discipline, inherited
 
 
-def test_the_windows_job_still_leaves_the_tests_of_windows_out() -> None:
-    """ADR 0047 §17, the smallest defence: the job does not collect ``tests/infrastructure/``, and
-    a test there is still reserved to Windows. Failing here is not a regression: the debt is being
-    paid — write the payment in an ADR, and turn this test round."""
+def reserved_to_windows(root: Path) -> set[str]:
+    """Every test file under ``root / "tests"`` that reserves itself to Windows, from root."""
+    return {
+        path.relative_to(root).as_posix()
+        for path in (root / "tests").rglob("test_*.py")
+        if "skipif(" + WINDOWS_ONLY in path.read_text(encoding="utf-8")
+    }
+
+
+def left_out(job: str, reserved: set[str]) -> set[str]:
+    """The files reserved to Windows that the job's ``pytest`` line does not name."""
+    return reserved - set(job.split())
+
+
+def test_every_test_of_windows_is_in_the_job_or_says_why_not() -> None:
+    """ADR 0047 §17, turned round by M13.3 (form J): the debt is paid in ADR 0048. Every file of the
+    suite reserved to Windows is named on the job's ``pytest`` line or written in
+    ``tests.windows.OUTSIDE_THE_WINDOWS_JOB`` with its reason — and the equality also fails for an
+    entry there that is no longer reserved to Windows, or that the job now names."""
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     (job,) = [line for line in workflow.splitlines() if "pytest" in line and "tests/node" in line]
-    reserved = [
-        path.name
-        for path in sorted((ROOT / "tests" / "infrastructure" / "machine").glob("test_*.py"))
-        if WINDOWS_ONLY in path.read_text(encoding="utf-8")
-    ]
+    reserved = reserved_to_windows(ROOT)
 
-    assert "tests/infrastructure" not in job
-    assert reserved, "no test is reserved to Windows any more: ADR 0047 §17 is paid or moot"
+    assert reserved, "no test is reserved to Windows any more: say so in an ADR"
+    assert left_out(job, reserved) == set(OUTSIDE_THE_WINDOWS_JOB)
+    assert all(reason.strip() for reason in OUTSIDE_THE_WINDOWS_JOB.values())
+    assert "tests/tools/test_paths_windows.py" in reserved - left_out(job, reserved)
+    for path in job.split():
+        assert not path.startswith("tests/") or (ROOT / path).exists(), path
+
+
+def test_the_turned_defence_sees_a_file_the_job_leaves_out(tmp_path: Path) -> None:
+    """The negative case, on a fabricated suite: a file reserved to Windows that the job does not
+    name is left out, one that it names is not, and a file reserved to another system is neither."""
+    (tmp_path / "tests" / "x").mkdir(parents=True)
+    skip = "pytestmark = pytest.mark.skipif(" + WINDOWS_ONLY + ', reason="r")\n'
+    (tmp_path / "tests" / "x" / "test_in.py").write_text(skip, encoding="utf-8")
+    (tmp_path / "tests" / "x" / "test_out.py").write_text(skip, encoding="utf-8")
+    (tmp_path / "tests" / "x" / "test_mac.py").write_text(
+        skip.replace("Windows", "Darwin"), encoding="utf-8"
+    )
+    reserved = reserved_to_windows(tmp_path)
+
+    assert reserved == {"tests/x/test_in.py", "tests/x/test_out.py"}
+    assert left_out("uv run pytest tests/node tests/x/test_in.py", reserved) == {
+        "tests/x/test_out.py"
+    }
 
 
 def test_the_watch_on_skips_still_lives_in_one_file() -> None:

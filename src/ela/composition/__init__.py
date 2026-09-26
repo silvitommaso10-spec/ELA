@@ -17,6 +17,7 @@ from ela.composition.settings import (
     ApiSettings,
     CoreSettings,
     NodeConfig,
+    NodeFilesystemSettings,
     NodeSettings,
     Settings,
 )
@@ -36,6 +37,7 @@ __all__ = [
     "CoreSettings",
     "Ela",
     "NodeConfig",
+    "NodeFilesystemSettings",
     "NodeSettings",
     "NodeWorld",
     "Settings",

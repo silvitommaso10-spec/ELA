@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from types import MappingProxyType
+from typing import Final
 
 from ela.domain import CapabilityId
 from ela.ports import (
@@ -37,12 +38,13 @@ from ela.ports import (
 from ela.tools.echo import EchoTool
 from ela.tools.errors import (
     NotIdempotentError,
+    RelocationError,
     SilentVerifierError,
     ToolNotFound,
     UndeclaredNumbersError,
     VerifierNotFound,
 )
-from ela.tools.fs import FsReadTool, FsWriteTool
+from ela.tools.fs import FS_READ, FS_WRITE, FsReadTool, FsWriteTool
 from ela.tools.listen import ListenTool
 from ela.tools.model import ModelCompleteTool
 from ela.tools.notes import WriteNoteTool
@@ -66,10 +68,21 @@ from ela.tools.verifiers import (
 from ela.tools.voice import SpeakTool
 from ela.tools.voice_online import VOICE_SPEAK_ONLINE, SpeakOnlineTool
 
+VERIFIED_ON_THE_NODE: Final[frozenset[CapabilityId]] = frozenset({FS_READ, FS_WRITE})
+"""The capabilities a node verifies on its own machine (M13.3, ADR 0048): their verifier reads the
+machine, and a node that has a root carries it with the tool.
+
+**A constant, and the one source**: :func:`node_verifiers` builds these verifiers on the node's
+root, and the composition hands this set to the orchestrator, whose filter F7 lets them go to a node
+— «the verifier reads the machine, and no node carries it» is what stays on the Core. The Core knows
+which verifiers a node carries because it is the same code, as it knows the names of its tools."""
+
 __all__ = [
+    "VERIFIED_ON_THE_NODE",
     "ToolRegistry",
     "VerifierRegistry",
     "node_tools",
+    "node_verifiers",
     "production_tools",
     "production_verifiers",
     "tools_v01",
@@ -82,7 +95,9 @@ class ToolRegistry:
 
     **Every tool declares whether it is idempotent, and none may stay silent** (M5.3, then M7.2).
     Since M13.2 it also declares which numbers of its result enter the audit (``audit_numbers``),
-    and the same silence is refused the same way.
+    and the same silence is refused the same way; since M13.3 whether a node's expired claim of it
+    may be placed again (``relocatable``), refused silent and refused ``True`` beside an
+    ``idempotent`` ``False``.
     Until M7.2 the registry accepted only ``True``, because crash window 7a was repaired by
     running the tool again and that repair is safe only while twice is once. ADR 0021 §1 brings
     the STARTED protocol the guard was waiting for, so ``False`` is now a legal answer: the
@@ -100,6 +115,7 @@ class ToolRegistry:
             declared = getattr(tool, "idempotent", None)
             if not isinstance(declared, bool):
                 raise NotIdempotentError(tool.capability_id, tool.name, declared)
+            _relocation_of(tool, idempotent=declared)
             _numbers_of(tool)
             if tool.capability_id in table:
                 raise AlreadyExistsError("tool", tool.capability_id)
@@ -116,6 +132,26 @@ class ToolRegistry:
     def tools(self) -> tuple[ToolPort, ...]:
         """Every tool, in construction order."""
         return tuple(self._tools.values())
+
+
+def _relocation_of(tool: ToolPort, *, idempotent: bool) -> None:
+    """Refuse a tool that does not say whether its claimed work may move, or says it can move what
+    cannot be repeated (M13.3, ADR 0048)."""
+    declared = getattr(tool, "relocatable", None)
+    if not isinstance(declared, bool):
+        raise RelocationError(
+            tool.capability_id,
+            tool.name,
+            f"declares no boolean relocatable (it says {declared!r}): whether a node's expired "
+            "claim is placed again or closed interrupted is unknown",
+        )
+    if declared and not idempotent:
+        raise RelocationError(
+            tool.capability_id,
+            tool.name,
+            "declares relocatable True and idempotent False: what cannot be done again here is "
+            "not done again elsewhere",
+        )
 
 
 def _numbers_of(tool: ToolPort) -> None:
@@ -283,8 +319,10 @@ def node_tools(
     speech_online: SpeechPort,
     voice_id: str | None,
     model: str,
+    fs_root: Path | None,
 ) -> ToolRegistry:
-    """What a node runs: the four capabilities that travel (M12.1 D15, M12.2 dec. L, M12.3 dec. F).
+    """What a node runs: the four capabilities that travel (M12.1 D15, M12.2 dec. L, M12.3 dec. F),
+    and ``fs.read`` and ``fs.write`` on a node that has a root (M13.3, ADR 0048).
 
     Three families — the echo, the model, the voice — and four classes, because the voice has two
     implementations and both are a voice. Beside :func:`production_tools` and :func:`tools_v01`
@@ -301,18 +339,36 @@ def node_tools(
     filter refuses that node before the question is asked (M12.2 dec. L).
 
     No workspace root and no capture store among the arguments, and that is the shape of the
-    claim: a node has nothing to write them to.
+    claim: a node has nothing to write them to. **A root of the user's is another matter** (M13.3):
+    ``fs_root`` is ``ELA_FS_ROOT`` in the node's ``.env``, optional there, and with it the node
+    builds the two tools of the filesystem, whose verifiers it carries (:func:`node_verifiers`) —
+    they read *this* machine, which on a node is the right one. ``None`` builds neither: without a
+    root the tool has nothing to act on, and the node does not declare what it does not have.
     """
-    return ToolRegistry(
-        (
-            EchoTool(clock, ids),
-            ModelCompleteTool(router, providers, clock, ids),
-            SpeakTool(speech, clock, ids, voice=voice, enabled=voice_enabled),
-            SpeakOnlineTool(
-                speech_online, clock, ids, voice_id=voice_id, model=model, enabled=voice_enabled
-            ),
-        )
-    )
+    tools: list[ToolPort] = [
+        EchoTool(clock, ids),
+        ModelCompleteTool(router, providers, clock, ids),
+        SpeakTool(speech, clock, ids, voice=voice, enabled=voice_enabled),
+        SpeakOnlineTool(
+            speech_online, clock, ids, voice_id=voice_id, model=model, enabled=voice_enabled
+        ),
+    ]
+    if fs_root is not None:
+        tools.extend((FsReadTool(fs_root, clock, ids), FsWriteTool(fs_root, clock, ids)))
+    return ToolRegistry(tools)
+
+
+def node_verifiers(fs_root: Path | None) -> VerifierRegistry:
+    """What a node verifies on its own machine: :data:`VERIFIED_ON_THE_NODE`, on its root (M13.3).
+
+    Beside :func:`node_tools` and for its reason — a list that is read and pinned, not a subset
+    computed. The verifiers read the node's disk, which is where the effect happened: the one
+    place from which a verifier that reads the machine proves anything (ADR 0038 §14). Empty with
+    no root, as the tools are.
+    """
+    if fs_root is None:
+        return VerifierRegistry(())
+    return VerifierRegistry((FsReadVerifier(fs_root), FsWriteVerifier(fs_root)))
 
 
 def production_verifiers(

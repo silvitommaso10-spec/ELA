@@ -1,6 +1,7 @@
 # 0045. Il filesystem fuori dalla workspace, e il primo livello HIGH: la riga che chiede a ogni uso, lo scope legato al fatto, e un codice che smette di mentire
 
 - **Stato:** Accettata. §8, «l'audit porta il percorso e la dimensione»: rivista da ADR 0046 §6 — la dimensione di una lettura riuscita sta nel risultato, non nell'audit. Le Conseguenze, «`paths.py` ha `describe`»: rivista da ADR 0046 §6 — `describe` è stata tolta prima del merge. La riga di consumo di §3 è mantenuta da ADR 0046 §1. §6-bis, «sul disco di adesso»: per un comando rivista da ADR 0047 §5 — «per tutto ciò che si può sapere senza lanciarlo». §4, la citazione di ADR 0038 §16 (`:140`): corretta da ADR 0047 §14 — la regola è di ADR 0026 §7.
+  **ADR 0048 §8** (M13.3): §6 e §6-bis, per uno step su un nodo che verifica sulla propria macchina, si leggono con quella sezione accanto — la domanda nomina ciò che il piano afferma e che ELA non ha guardato quel disco, e il nodo rifiuta prima di agire.
 - **Data:** 2026-09-21
 - **Riferimenti spec:** §18, §23, §27, §28, §29, §33, §37, §57, §59, §63
 - **Milestone:** M13.1

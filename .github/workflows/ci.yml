@@ -67,5 +67,7 @@ jobs:
       # No `-q`: `addopts` has one, and with two pytest drops the line of counts criterion 17 reads.
       # `-rs` names every skip with its reason — the Darwin kit's and the 0o600 bits' among them —
       # because a skip the summary does not name is a defence that does not exist (review of dec. G).
+      # The files reserved to Windows are named here, one by one (M13.3, form J; ADR 0048): the ones
+      # left out are in `tests/windows.py`, with the reason, and a test fails for a file in neither.
       - name: The node's suite
-        run: uv run pytest -p no:cacheprovider --no-cov -rs tests/node tests/conformance tests/composition/test_build_node.py
+        run: uv run pytest -p no:cacheprovider --no-cov -rs tests/node tests/conformance tests/composition/test_build_node.py tests/infrastructure/machine/test_acl_smoke.py tests/infrastructure/machine/test_power_smoke.py tests/tools/test_paths_windows.py tests/tools/test_fs_windows.py

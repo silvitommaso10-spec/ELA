@@ -224,6 +224,7 @@ class TerminalRunTool(Tool):
     outcome closes the step as interrupted and **never launches again** (ADR 0021 §2): if ELA dies
     mid-command the command survives it (ADR 0036 §6), and nobody knows what it did.
     """
+    relocatable: ClassVar[bool] = False
 
     def __init__(
         self,

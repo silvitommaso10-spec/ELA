@@ -26,6 +26,7 @@ from ela.tools.captures import (
 from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME, EchoTool
 from ela.tools.errors import (
     NotIdempotentError,
+    RelocationError,
     SilentVerifierError,
     ToolNotFound,
     ToolsError,
@@ -33,6 +34,9 @@ from ela.tools.errors import (
     VerifierNotFound,
 )
 from ela.tools.fs import (
+    ASSERTED_CREATES,
+    ASSERTED_OVERWRITES,
+    ASSERTED_READS,
     CREATES,
     FILE,
     FS_READ,
@@ -65,6 +69,7 @@ from ela.tools.paths import (
     PATH_OUTSIDE_ROOT,
     PATH_SYMLINK,
     PATH_UNREACHABLE,
+    RESERVED_ON_WINDOWS,
     PathProblem,
     classify,
     is_relative_note_path,
@@ -80,9 +85,11 @@ from ela.tools.programs import (
     identity_of,
 )
 from ela.tools.registry import (
+    VERIFIED_ON_THE_NODE,
     ToolRegistry,
     VerifierRegistry,
     node_tools,
+    node_verifiers,
     production_tools,
     production_verifiers,
     tools_v01,
@@ -199,6 +206,9 @@ __all__ = [
     "NO_ROOT",
     "READS",
     "OVERWRITES",
+    "ASSERTED_CREATES",
+    "ASSERTED_OVERWRITES",
+    "ASSERTED_READS",
     "CREATES",
     "FsWriteVerifier",
     "FsReadVerifier",
@@ -261,6 +271,8 @@ __all__ = [
     "PATH_OUTSIDE_ROOT",
     "PATH_SYMLINK",
     "PATH_UNREACHABLE",
+    "RESERVED_ON_WINDOWS",
+    "VERIFIED_ON_THE_NODE",
     "PERCEPTION_CAPTURE_SCREEN",
     "PERCEPTION_READ_SCREEN_TEXT",
     "digest_of",
@@ -302,6 +314,7 @@ __all__ = [
     "ModelCompleteTool",
     "ModelCompleteVerifier",
     "NotIdempotentError",
+    "RelocationError",
     "Outcome",
     "PathProblem",
     "Retained",
@@ -324,6 +337,7 @@ __all__ = [
     "is_relative_note_path",
     "png_size",
     "node_tools",
+    "node_verifiers",
     "production_tools",
     "production_verifiers",
     "resolve_workspace",

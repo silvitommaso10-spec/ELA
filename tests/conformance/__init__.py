@@ -5,8 +5,9 @@ parametrised over the drivers. M12.3 and M12.4 add a driver each and recite the 
 suite is the contract, not a copy of it.
 
 **The companion of M12.5 is not among them, and that is the correction of 2026-09-20.** The
-thirteen stories are the stories of the **work**, and an identity that takes none leaves twelve of
-them with nothing to play: a kit with thirteen entries in ``UNSUPPORTED`` would be a driver that
-recites nothing. The companion has a contract of its own — nine stories, one bearer, in
-``test_companion_contract.py`` — and ADR 0043 says so. Dec. P is untouched for whoever does work.
+stories are the stories of the **work** — thirteen then, fourteen since M13.3 — and an identity
+that takes none leaves all but one of them with nothing to play: a kit declaring nearly every story
+in ``UNSUPPORTED`` would be a driver that recites nothing. The companion has a contract of its
+own — nine stories, one bearer, in ``test_companion_contract.py`` — and ADR 0043 says so. Dec. P
+is untouched for whoever does work.
 """

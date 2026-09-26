@@ -16,6 +16,7 @@ import pytest
 
 from ela.domain import AuditEvent, AuditEventType, StepState, TaskEventType, TaskState
 from ela.executive import RunnerError, RunOutcome, TaskRunner
+from ela.testing.fakes import FakeLocalBeat
 from tests.executive.support import (
     SimulatedCrash,
     World,
@@ -253,7 +254,7 @@ async def test_a_second_fail_on_an_already_failed_task_is_a_silent_no_op() -> No
 
 
 async def test_window_r7_a_wait_saved_without_its_audit_is_the_engines_hole() -> None:
-    w, crashes = crashing_world()
+    w, crashes = crashing_world(beat=FakeLocalBeat())  # no beat lands: the node stays gone
     task, steps = await w.queued(ECHO.id, NOTE.id)
     await w.runner.run(task.id)  # the first step goes through, the task is EXECUTING
     assert (await w.task(task.id)).state is TaskState.COMPLETED
@@ -317,6 +318,7 @@ async def test_window_r8_a_run_resumes_a_waiting_task_in_a_process_that_never_sa
         results=w.results,
         audit=w.audit,
         assignments=w.assignments,
+        beat=w.heartbeat,
     )
     run = await reborn.run(task.id)
 

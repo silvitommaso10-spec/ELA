@@ -145,6 +145,7 @@ class ModelCompleteTool(Tool):
     result — never in an audit event (§57, rule 23) — and they are what makes a fallback a thing
     somebody can see afterwards instead of a silent substitution (§33)."""
     idempotent: ClassVar[bool] = False
+    relocatable: ClassVar[bool] = False
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """A second call is charged, sends the user's content out again (§57) and answers something
     else. The executor runs this tool under the STARTED protocol of ADR 0021 §1."""

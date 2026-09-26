@@ -1,6 +1,7 @@
 # 0011. Permission Guardian: catalogo, policy v0.1 per rischio, scope, autorizzazioni, fail-safe, audit delle decisioni
 
 - **Stato:** Accettata. L'ordine di registrazione dell'uso ("`record_use` dopo l'esecuzione", Conseguenze) è superato da ADR 0012 §6: `authorize` → `consume` → tool. §7, «HIGH resta `DENIED`»: rivista da ADR 0046 §6 — da M13.1 `HIGH` chiede a ogni uso (ADR 0045 §3).
+  **ADR 0048 §8** (M13.3): §3, «a un utente non si chiede di approvare ciò che sarebbe negato comunque», per uno step su un nodo che verifica sulla propria macchina si legge con quella sezione accanto — la domanda nomina ciò che il piano afferma, può nascere già condannata, e il costo è un sì speso, mai un effetto diverso da quello approvato.
 - **Data:** 2026-09-05
 - **Riferimenti spec:** §13, §27, §28, §29, §32, §33, §47, §49, §51, §52, §56, §57, §59, §62, §65
 - **Milestone:** M4.2

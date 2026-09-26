@@ -100,6 +100,10 @@ class Tool(ABC):
     error_codes: ClassVar[frozenset[str]] = frozenset({ARGUMENTS_INVALID})
     output_keys: ClassVar[frozenset[str]] = frozenset()
     idempotent: ClassVar[bool]
+    relocatable: ClassVar[bool]
+    """Whether a node's silent claim may be done again on another machine (M13.3, ADR 0048) —
+    **no default**, like :attr:`idempotent`, and never ``True`` where that is ``False``: the
+    registry refuses both silence and the impossible pair."""
     audit_numbers: ClassVar[frozenset[str]]
     """The keys of the result whose integers enter ``TOOL_EXECUTED`` — **no default**, like
     :attr:`idempotent` (M13.2 dec. 10, ADR 0047): a tool that says nothing is refused by the
@@ -161,6 +165,11 @@ class Tool(ABC):
         say about one, and refusing nothing in advance is what every tool did before M13.1. The
         two that do touch a file override it.
         """
+        return Prospect()
+
+    async def asserted(self, arguments: JsonMapping) -> Prospect:
+        """What the call asserts, without looking at a machine (M13.3): nothing, unless a tool
+        works on a path — the default of :meth:`prospect`, for its reason."""
         return Prospect()
 
     @abstractmethod

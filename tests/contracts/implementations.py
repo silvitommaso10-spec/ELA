@@ -22,6 +22,7 @@ from anthropic import AsyncAnthropic
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.composition import SystemClock, UuidGenerator
+from ela.devices import DeviceRegistry, LocalHeartbeat, period_of
 from ela.domain import CapabilityId, RiskLevel
 from ela.infrastructure.machine import (
     DarwinListening,
@@ -64,6 +65,7 @@ from ela.ports import (
     ExecutionResultStore,
     IdGenerator,
     ListeningPort,
+    LocalBeat,
     ModelProvider,
     ModelRouterPort,
     PerceptionProbe,
@@ -96,9 +98,11 @@ from ela.testing.fakes import (
     FakeIdGenerator,
     FakeLauncher,
     FakeListening,
+    FakeLocalBeat,
     FakeModelProvider,
     FakeModelRouter,
     FakePermissionGuardian,
+    FakePower,
     FakeProbe,
     FakeProviderRegistry,
     FakeScreenCapture,
@@ -495,6 +499,25 @@ def _launcher() -> ProcessGroupLauncher:
     return ProcessGroupLauncher(asyncio.Event())
 
 
+def _heartbeat() -> LocalHeartbeat:
+    """The Core's heartbeat of ``local`` (M13.3), over a registry of fakes and a power reading."""
+    registry = DeviceRegistry(
+        FakeDeviceRegistry(),
+        FakeClock(),
+        FakeAuditLog(),
+        FakeIdGenerator(),
+        heartbeat_ttl=timedelta(seconds=60),
+    )
+    return LocalHeartbeat(
+        registry, FakePower(), busy=nothing_runs, period=period_of(timedelta(seconds=60))
+    )
+
+
+def nothing_runs() -> bool:
+    """A Core with no tool running on ``local``: the heartbeat's question, answered."""
+    return False
+
+
 IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     Clock: (
         Implementation("FakeClock", FakeClock),
@@ -602,6 +625,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     CommandLauncher: (
         Implementation("FakeLauncher", FakeLauncher),
         Implementation("ProcessGroupLauncher", _launcher),
+    ),
+    LocalBeat: (
+        Implementation("FakeLocalBeat", FakeLocalBeat),
+        Implementation("LocalHeartbeat", _heartbeat),
     ),
 }
 

@@ -18,7 +18,7 @@ import httpx
 
 from ela.api.app import FAILURES
 from ela.api.security import unauthorized
-from ela.composition import NodeConfig, NodeSettings, build_node
+from ela.composition import NodeConfig, NodeFilesystemSettings, NodeSettings, build_node
 from ela.composition.node import NodeWorld
 from ela.domain import ProviderUsage
 from ela.node import Node, NodeClient, open_node_client
@@ -35,19 +35,26 @@ from ela.tools.settings import VoiceSettings
 CORE = "http://core.test"
 
 
-def config(directory: Path, **node: Any) -> NodeConfig:
-    """A node's five sections, with nothing read from the environment."""
+def config(directory: Path, *, fs_root: Path | None = None, **node: Any) -> NodeConfig:
+    """A node's six sections, with nothing read from the environment — and no root unless a test
+    names one (M13.3)."""
     return NodeConfig(
         node=NodeSettings(node_state_dir=directory, node_core_url=CORE, **node),
         anthropic=AnthropicSettings(),
         routing=RoutingSettings(),
         voice=VoiceSettings(),
         elevenlabs=ElevenLabsSettings(),
+        filesystem=NodeFilesystemSettings(fs_root=fs_root),
     )
 
 
 def world(
-    directory: Path, clock: FakeClock | None = None, *, system: str = "Darwin", **node: Any
+    directory: Path,
+    clock: FakeClock | None = None,
+    *,
+    system: str = "Darwin",
+    fs_root: Path | None = None,
+    **node: Any,
 ) -> NodeWorld:
     """A node of a named system with both voices faked, so what it declares is the same everywhere.
 
@@ -61,7 +68,7 @@ def world(
     carry ``AC`` at the desk, ``BATTERY`` on the train and ``UNKNOWN`` on the Ubuntu job.
     """
     return build_node(
-        config(directory, **node),
+        config(directory, fs_root=fs_root, **node),
         clock=clock or FakeClock(),
         speech=FakeSpeech(),
         speech_online=FakeSpeech(),
@@ -170,6 +177,7 @@ class SlowEcho(Tool):
 
     output_keys: ClassVar[frozenset[str]] = frozenset({"message"})
     idempotent: ClassVar[bool] = True
+    relocatable: ClassVar[bool] = True
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, clock: Any, ids: Any, delay: float) -> None:
@@ -196,6 +204,7 @@ class CostlyEcho(Tool):
 
     output_keys: ClassVar[frozenset[str]] = frozenset({"message"})
     idempotent: ClassVar[bool] = True
+    relocatable: ClassVar[bool] = True
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, clock: Any, ids: Any) -> None:

@@ -84,6 +84,7 @@ class WriteNoteTool(Tool):
     )
     output_keys: ClassVar[frozenset[str]] = frozenset({"path", "bytes"})
     idempotent: ClassVar[bool] = True
+    relocatable: ClassVar[bool] = False
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """The note is overwritten with the same body: writing it twice leaves the same file, which
     is what makes the retry of crash window 7a harmless (ADR 0015 §8)."""

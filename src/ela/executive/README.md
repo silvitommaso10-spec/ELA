@@ -21,9 +21,20 @@ ADR 0014; M5.3, ADR 0015; M7.2, ADR 0021).
   `ExecutionResult` **STARTED prima** della chiamata (protocollo di ADR 0021 §1): un retry che
   trova quella riga senza esito **non richiama il tool** e fallisce lo step con
   `execution.interrupted`, perché rifarlo costerebbe di nuovo e manderebbe fuori il contenuto
-  dell'utente una seconda volta. La `ProviderUsage` del risultato finisce in `AuditEvent.usage`
+  dell'utente una seconda volta. Per un lavoro preso da un nodo la `STARTED` nasce alla presa, e da
+  M13.3 per un tool che dichiara `relocatable = False` (ADR 0048 §6): `fs.read` è ripetibile sulla sua
+  macchina e non si sposta, perché su un'altra lo stesso percorso è un altro file; una presa scaduta
+  con la `STARTED` si chiude `execution.interrupted`, una senza si ripiazza — oggi solo l'eco.
+  Da M13.3 (ADR 0048 §7, §8) un effetto che un nodo verifica sulla propria macchina — `fs.*` — ha il
+  **verdetto del nodo**: l'executor non chiama mai il proprio verifier sul risultato di un nodo il
+  cui verifier legge la macchina, né alla consegna né in una ripresa, e un verdetto mancante o fuori
+  vocabolario è `verification.missing`; e la domanda di uno step piazzato su quel nodo nasce da ciò
+  che il piano afferma (`asserted`), nomina la macchina e dice che ELA non ha guardato quel disco.
+  La `ProviderUsage` del risultato finisce in `AuditEvent.usage`
   del `TOOL_EXECUTED` (§32): è l'unico posto dove ELA scrive quel campo. È l'unico modulo del Core
-  che chiama `Tool.execute` (regola 16) e `complete_step` (regola 17).
+  che chiama `Tool.execute` (regola 16) e `complete_step` (regola 17), e per questo da M13.3 dice lo
+  stato di `local` (ADR 0048 §13): `running_here` è vero dall'avvio di un tool su questa macchina al
+  suo risultato registrato, e il battito lo porta come `BUSY`.
 - `errors.py`: `ExecutorError`, le precondizioni che rifiutano prima di scrivere.
 
 Il Planner (§13) resta il pezzo mancante; l'orchestrator che percorre il grafo degli step è in

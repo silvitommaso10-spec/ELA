@@ -51,7 +51,12 @@ def test_the_conseguenze_count_what_the_tree_had_when_it_was_written() -> None:
     assert "**cinquantasette**" in text
     assert len(RULES) == 57
     assert "**ventisei**" in text
-    assert len(tuple(p for p in port_protocols() if p.__name__ != "CommandLauncher")) == 26
+    assert (
+        len(
+            tuple(p for p in port_protocols() if p.__name__ not in {"CommandLauncher", "LocalBeat"})
+        )
+        == 26
+    )
     assert "**quarantotto**" in text
     assert len(coded_routes()) == 48
 

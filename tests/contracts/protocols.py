@@ -41,6 +41,7 @@ REQUIRED_PORTS = frozenset(
         "AssignmentStore",
         "Bell",
         "CommandLauncher",
+        "LocalBeat",
     }
 )
 """The eleven ports of M1.3, the two of M5.1 (ADR 0013: the audited Guardian, the tools), the
@@ -54,7 +55,8 @@ effect is outside the screen), ``ListeningPort`` from M11.2 (ADR 0036 §5: where
 and ``EnrollmentStore`` from M12.1 (ADR 0037 §8: the one-shot codes that enroll a node) and
 ``AssignmentStore`` from M12.2 (ADR 0038: the work handed to a node that is not this process), and
 ``CommandLauncher`` from M13.2 (ADR 0047: how the terminal starts a program in a group of its
-own), by name."""
+own), and ``LocalBeat`` from M13.3 (ADR 0048 §2: the heartbeat of ``local`` the runner asks for
+before every placement), by name."""
 
 
 def is_protocol(obj: object) -> bool:

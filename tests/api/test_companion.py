@@ -45,9 +45,10 @@ from ela.domain import (
     TaskId,
     TaskState,
 )
+from ela.executive import UNSEEN
 from ela.permissions import SINGLE_USE
 from ela.ports import EnrollmentExpiredError
-from ela.tools import OVERWRITES, READS
+from ela.tools import ASSERTED_CREATES, OVERWRITES, READS
 from tests.api.support import BASE, echo_plan, note_plan, queued
 
 ORIGIN = {"Origin": BASE}
@@ -911,6 +912,22 @@ def test_a_question_about_a_file_names_the_resolved_target_and_renders_its_sente
     assert "/Users/tommaso/Documenti/ELA/nota.md" in written
     assert "sovrascrive" in written or "overwrites" in written
     assert "overwrite" not in read.lower(), "a read is not told it overwrites anything"
+
+
+def test_a_question_about_a_node_s_disk_names_the_machine_and_what_ela_did_not_do() -> None:
+    """M13.3, criterion 6: the machine by its name and the start of its id, and the executor's
+    sentence about the disk ELA has not looked at, rendered as it stands — and neither pair on a
+    question about this machine, which is the one it always was."""
+    there = an_approval(
+        target="ELA/prova.md", does=ASSERTED_CREATES, machine="pc-casa (3f2b1a00)", unseen=UNSEEN
+    )
+
+    pairs = _pairs(there, seen=True)
+
+    assert "Su quale macchina" in pairs and "pc-casa (3f2b1a00)" in pairs
+    assert "Il disco" in pairs and "ELA has not looked at that disk" in pairs
+    here = _pairs(an_approval(target="/Users/tu/ELA/prova.md", does=OVERWRITES), seen=True)
+    assert "Su quale macchina" not in here and "Il disco" not in here
 
 
 def test_a_question_about_no_file_says_nothing_about_one() -> None:

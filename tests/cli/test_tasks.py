@@ -16,6 +16,7 @@ from ela.domain import (
     DeviceStatus,
     OperatingSystem,
     PerformanceClass,
+    PowerSource,
     PrivacyLevel,
     TaskState,
 )
@@ -82,7 +83,11 @@ async def test_run_says_which_node_is_doing_the_work(cli: Cli, ela: Ela, tmp_pat
         available_tools=tuple(tool.name for tool in ela.tools.tools()),
         performance=PerformanceClass.HIGH,
     )
-    await ela.devices.heartbeat(enrolled.device.id, status=DeviceStatus.IDLE)
+    # Idle and on the mains: since M13.3 ``local`` beats ``IDLE`` too (ADR 0048 §13), and the node
+    # built to win has to win on a fact ``local`` does not have.
+    await ela.devices.heartbeat(
+        enrolled.device.id, status=DeviceStatus.IDLE, power_source=PowerSource.AC
+    )
     answer = await cli("task", "create", "un lavoro per il pc", "--privacy", "TRUSTED", "--json")
     task_id = json.loads(answer.stdout)["id"]
     await cli("task", "plan", task_id, "--file", written(tmp_path, echo_plan()))

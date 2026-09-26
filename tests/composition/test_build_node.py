@@ -8,13 +8,28 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import stat
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
-from ela.composition import ConfigurationError, NodeConfig, NodeSettings, build_node
-from ela.composition.node import NodeWorld, PermissionMode, mkdir_applies_the_acl, online_player
+from ela.composition import (
+    ConfigurationError,
+    NodeConfig,
+    NodeFilesystemSettings,
+    NodeSettings,
+    build_node,
+)
+from ela.composition.node import (
+    NodeWorld,
+    PermissionMode,
+    carried,
+    mkdir_applies_the_acl,
+    online_player,
+)
+from ela.composition.settings import _ela_source_tree
 from ela.domain import OperatingSystem
 from ela.infrastructure.machine import (
     AFPLAY,
@@ -27,8 +42,19 @@ from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
 from ela.routing.policy import Route
-from ela.testing.fakes import FakeClock, FakeSpeech
-from ela.tools import DIRECTORY_MODE, VOICE_ONLINE_TOOL_NAME, VOICE_TOOL_NAME
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeSpeech
+from ela.tools import (
+    DIRECTORY_MODE,
+    FS_READ_TOOL_NAME,
+    FS_WRITE_TOOL_NAME,
+    VERIFIED_ON_THE_NODE,
+    VOICE_ONLINE_TOOL_NAME,
+    VOICE_TOOL_NAME,
+    FsReadTool,
+    FsReadVerifier,
+    ToolRegistry,
+    VerifierRegistry,
+)
 from ela.tools.settings import VoiceSettings
 
 
@@ -39,6 +65,7 @@ def config(directory: Path, **sections: object) -> NodeConfig:
         "routing": RoutingSettings(),
         "voice": VoiceSettings(),
         "elevenlabs": ElevenLabsSettings(),
+        "filesystem": NodeFilesystemSettings(fs_root=None),
     }
     return NodeConfig(**{**base, **sections})  # type: ignore[arg-type]
 
@@ -70,6 +97,7 @@ def test_it_builds_nothing_that_decides(tmp_path: Path) -> None:
         "clock",
         "ids",
         "tools",
+        "verifiers",
         "voices",
         "power",
         "permissions",
@@ -403,3 +431,100 @@ def test_a_node_variable_that_cannot_be_read_stops_it_the_same_way(
 
     with pytest.raises(ConfigurationError, match="ELA_MODEL_ROUTES"):
         NodeConfig.load()
+
+
+# ----------------------------------------------------------------------------------------
+# The root of a node (M13.3, form F; ADR 0048)
+# ----------------------------------------------------------------------------------------
+
+
+def rooted(state: Path, root: Path | None) -> NodeConfig:
+    return config(state, filesystem=NodeFilesystemSettings(fs_root=root))
+
+
+def test_a_node_with_a_root_builds_the_filesystem_and_carries_its_verifiers(tmp_path: Path) -> None:
+    """Criterion 14: the two tools of the filesystem, built on the node's root, and their two
+    verifiers beside them — the set the Core lets go to a node because the node verifies it."""
+    (tmp_path / "files").mkdir()
+    built = build_node(rooted(tmp_path / "state", tmp_path / "files"), speech=FakeSpeech())
+
+    assert {tool.name for tool in built.tools.tools()} >= {FS_READ_TOOL_NAME, FS_WRITE_TOOL_NAME}
+    assert {v.capability_id for v in built.verifiers.verifiers()} == VERIFIED_ON_THE_NODE
+
+
+def test_a_node_without_a_root_builds_neither_tool_nor_verifier(tmp_path: Path) -> None:
+    built = build_node(rooted(tmp_path, None), speech=FakeSpeech())
+
+    assert not {FS_READ_TOOL_NAME, FS_WRITE_TOOL_NAME} & {t.name for t in built.tools.tools()}
+    assert built.verifiers.verifiers() == ()
+
+
+def test_a_tool_that_must_be_verified_on_the_node_without_its_verifier_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The negative case of a refusal with no producer in production (form E): the tool and its
+    verifier are built together, so only a registry built here can hold one without the other."""
+    tools = ToolRegistry((FsReadTool(tmp_path, FakeClock(), FakeIdGenerator()),))
+
+    with pytest.raises(ConfigurationError, match="fs.read"):
+        carried(tools, VerifierRegistry(()))
+    carried(tools, VerifierRegistry((FsReadVerifier(tmp_path),)))
+
+
+@pytest.mark.parametrize(
+    ("where", "what"),
+    [
+        ("the state inside the root", "the folder a node keeps its secret in"),
+        ("the root inside the state", "the folder a node keeps its secret in"),
+        ("the source tree", "ELA's own source tree"),
+    ],
+)
+def test_a_root_that_holds_what_the_node_uses_to_exist_stops_it(
+    tmp_path: Path, where: str, what: str
+) -> None:
+    """The Core's rule, with the node's own list (form F): its secret's folder, its ``.env``, the
+    source tree — never the Core's database, workspace or captures, which a node does not have."""
+    root = {
+        "the state inside the root": tmp_path,
+        "the root inside the state": tmp_path / "state" / "files",
+        "the source tree": _ela_source_tree(),
+    }[where]
+    root.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(ValidationError, match=re.escape(what)):
+        rooted(tmp_path / "state", root)
+
+
+def test_a_root_that_holds_the_env_the_node_read_stops_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / ".env").write_text("", encoding="utf-8")
+    monkeypatch.chdir(tmp_path / "home")
+
+    with pytest.raises(ValidationError, match=re.escape("the .env ELA read")):
+        rooted(tmp_path / "state", tmp_path / "home")
+
+
+def test_a_root_that_is_a_link_or_is_not_there_stops_it(tmp_path: Path) -> None:
+    (tmp_path / "real").mkdir()
+    (tmp_path / "alias").symlink_to(tmp_path / "real", target_is_directory=True)
+
+    with pytest.raises(ValidationError, match="symbolic link"):
+        rooted(tmp_path / "state", tmp_path / "alias")
+    with pytest.raises(ValidationError, match="does not exist"):
+        rooted(tmp_path / "state", tmp_path / "nowhere")
+    assert not (tmp_path / "nowhere").exists()  # ELA never creates it
+
+
+def test_the_node_reads_its_root_from_elas_own_variable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``ELA_FS_ROOT``, the Core's name — and on a node alone, without ``ELA_FS_SCOPE``."""
+    (tmp_path / "files").mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ELA_FS_ROOT", str(tmp_path / "files"))
+    monkeypatch.delenv("ELA_FS_SCOPE", raising=False)
+    monkeypatch.setenv("ELA_NODE_STATE_DIR", str(tmp_path / "state"))
+
+    assert NodeConfig.load().filesystem.root == tmp_path / "files"

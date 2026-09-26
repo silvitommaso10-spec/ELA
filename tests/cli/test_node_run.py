@@ -8,6 +8,7 @@ whose closed world drives every command **to its end** — a resident has none t
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -134,3 +135,19 @@ def test_join_takes_no_value_on_the_command_line() -> None:
     # code would have been in ``ps`` and in the shell's history anyway, which is the whole point.
     # ``2`` is click's usage error: the parser refused it before anything ran.
     assert result.exit_code == CONFIGURATION
+
+
+@pytest.mark.parametrize(("root", "said"), [(None, True), ("/somewhere/of/yours", False)])
+def test_a_node_without_a_root_says_so_at_start_up(
+    monkeypatch: pytest.MonkeyPatch, root: str | None, said: bool
+) -> None:
+    """M13.3, criterion 14: a node without ``ELA_FS_ROOT`` declares neither ``fs.*`` tool, and says
+    so with one line — and a node with one says nothing about it."""
+    answering(monkeypatch, KeyboardInterrupt())
+    loaded = SimpleNamespace(filesystem=SimpleNamespace(root=root))
+    monkeypatch.setattr(command.NodeConfig, "load", staticmethod(lambda: loaded))
+
+    result = runner.invoke(app, ["node", "run"])
+
+    assert result.exit_code == OK
+    assert (command.NO_ROOT in result.output) is said

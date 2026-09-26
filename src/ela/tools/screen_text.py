@@ -117,6 +117,7 @@ class ReadScreenTextTool(Tool):
     with a five-minute life and never in a persisted ``ExecutionResult`` (§57, ADR 0029 §2)."""
 
     idempotent: ClassVar[bool] = False
+    relocatable: ClassVar[bool] = False
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Reading the same capture twice writes the file twice. It is not free of effect, so it runs
     under the STARTED protocol like the capture — and there is no cache, because at 232 ms a

@@ -230,12 +230,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.swept = ela.sweep_speech()
     await ela.perception.tick()
     watching = asyncio.create_task(ela.perception.run())
+    # And the heartbeat of ``local`` on its period (M13.3, ADR 0048 §2): what keeps the Device
+    # Center true between one run and the next. It decides nothing — every placement asks for a
+    # beat of its own —, and it lives and dies with this process, the one the user started.
+    beating = asyncio.create_task(ela.heartbeat.run())
     try:
         yield
     finally:
-        watching.cancel()
-        with suppress(asyncio.CancelledError):
-            await watching
+        for loop in (watching, beating):
+            loop.cancel()
+            with suppress(asyncio.CancelledError):
+                await loop
 
 
 def create_app(ela: Ela) -> FastAPI:

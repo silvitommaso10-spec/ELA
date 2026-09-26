@@ -45,10 +45,13 @@ from ela.providers.registry import ProviderRegistry
 from ela.routing import ModelRouter
 from ela.tools import (
     DIRECTORY_MODE,
+    VERIFIED_ON_THE_NODE,
     VOICE_ONLINE_TOOL_NAME,
     VOICE_TOOL_NAME,
     ToolRegistry,
+    VerifierRegistry,
     node_tools,
+    node_verifiers,
 )
 
 __all__ = [
@@ -56,6 +59,7 @@ __all__ = [
     "NodeWorld",
     "PermissionMode",
     "build_node",
+    "carried",
     "mkdir_applies_the_acl",
     "online_player",
 ]
@@ -135,6 +139,10 @@ class NodeWorld:
     """
     ids: IdGenerator
     tools: ToolRegistry
+    verifiers: VerifierRegistry
+    """What the node verifies on its own machine (M13.3, ADR 0048): the verifiers of
+    :data:`~ela.tools.VERIFIED_ON_THE_NODE` on its root, and none without one. **Not a decision**: a
+    verifier answers whether a condition holds on this disk, and the Core records the verdict."""
     voices: Mapping[str, SpeechPort]
     """The machine's half of each tool that has one, by tool name (M12.4 dec. F).
 
@@ -167,6 +175,30 @@ class NodeWorld:
         reason: a node plays audio too, and start-up is the one moment it is certain to reach.
         """
         return sweep_speech_files(self.speech_dir)
+
+
+def carried(tools: ToolRegistry, verifiers: VerifierRegistry) -> None:
+    """Refuse a node that builds the tool of a capability it must verify, without the verifier.
+
+    :data:`~ela.tools.VERIFIED_ON_THE_NODE` is what the Core lets go to a node **because the node
+    verifies it**, so a node holding such a tool and not its verifier would receive work whose
+    effect nobody could prove. In production the two are built together and this does not fire —
+    it holds by its negative case, built with a registry of the tests' (M13.3, form E).
+
+    :raises ConfigurationError: naming the capabilities whose verifier is missing.
+    """
+    have = {verifier.capability_id for verifier in verifiers.verifiers()}
+    missing = sorted(
+        tool.capability_id
+        for tool in tools.tools()
+        if tool.capability_id in VERIFIED_ON_THE_NODE and tool.capability_id not in have
+    )
+    if missing:
+        raise ConfigurationError(
+            f"this node would run {', '.join(missing)} without the verifier that proves it on this "
+            "machine: the Core sends that work to a node because the node verifies it. The tool "
+            "and its verifier are built together, or neither is."
+        )
 
 
 def build_node(
@@ -314,23 +346,32 @@ def build_node(
     else:
         local = UnsupportedSpeech()
 
+    # The root is the node's own, optional, and already refused by the settings if it is a link or
+    # holds what the node uses to exist (M13.3). The tools of the filesystem and their verifiers are
+    # built on it together, and ``carried`` checks that they were.
+    tools = node_tools(
+        clock=the_clock,
+        ids=ids,
+        router=router,
+        providers=providers,
+        speech=local,
+        voice=config.voice.voice_name,
+        voice_enabled=config.voice.voice_enabled,
+        speech_online=playing,
+        voice_id=config.elevenlabs.elevenlabs_voice_id,
+        model=config.elevenlabs.elevenlabs_model,
+        fs_root=config.filesystem.root,
+    )
+    verifiers = node_verifiers(config.filesystem.root)
+    carried(tools, verifiers)
+
     return NodeWorld(
         config=config,
         os=declared,
         clock=the_clock,
         ids=ids,
-        tools=node_tools(
-            clock=the_clock,
-            ids=ids,
-            router=router,
-            providers=providers,
-            speech=local,
-            voice=config.voice.voice_name,
-            voice_enabled=config.voice.voice_enabled,
-            speech_online=playing,
-            voice_id=config.elevenlabs.elevenlabs_voice_id,
-            model=config.elevenlabs.elevenlabs_model,
-        ),
+        tools=tools,
+        verifiers=verifiers,
         voices=MappingProxyType({VOICE_TOOL_NAME: local, VOICE_ONLINE_TOOL_NAME: playing}),
         power=power,
         permissions=permissions,

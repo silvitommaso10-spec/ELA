@@ -132,6 +132,7 @@ __all__ = [
     "LISTEN_TRANSCRIPTION_UNAVAILABLE",
     "LISTEN_UNSUPPORTED",
     "ListeningPort",
+    "LocalBeat",
     "ModelProvider",
     "ModelRouterPort",
     "NotAllowedError",
@@ -863,6 +864,26 @@ class EnrollmentStore(Protocol):
 
 
 @runtime_checkable
+class LocalBeat(Protocol):
+    """A sign of life of this machine, with what it runs on read **now** (§16; M13.3, ADR 0048 §2).
+
+    The runner asks for one before **every** placement — ``place`` for a pending step, ``confirm``
+    for a running one — so that ``local`` is alive for the registry whenever it is about to be
+    chosen, and the power source the placement weighs was read at that instant and not remembered
+    from an earlier beat: a periodic belief never decides an action (ADR 0029 §7). A port and not
+    the service, because the runner lives in ``ela.executive`` and the service in ``ela.devices``,
+    and a test fakes a beat without building a registry.
+
+    Only the Core writes it (ADR 0044 §8): never a page, never a route that happens to be
+    answering.
+    """
+
+    async def beat(self) -> None:
+        """Write the heartbeat of ``local``, with the power source read at this instant."""
+        ...
+
+
+@runtime_checkable
 class Bell(Protocol):
     """How ELA gets the user's attention when it needs them and they are not here (M12.5 dec. E).
 
@@ -1324,6 +1345,21 @@ class ToolPort(Protocol):
         """
 
     @property
+    def relocatable(self) -> bool:
+        """Whether the work of this tool, taken by a node that then goes silent, may be done again
+        on **another machine** without changing what it means and without doubling its effect
+        (M13.3, ADR 0048).
+
+        Declared, never defaulted — the form of :attr:`idempotent` — and **not a synonym of it**:
+        ``fs.read`` can be repeated on its machine, and on another one the same path is another
+        file. The executor reads it at the claim of a node: the STARTED record is written there for
+        a tool that is not relocatable, so an expired claim is closed ``interrupted`` instead of
+        being placed again (the second predicate of ADR 0038 §8). A tool that cannot be repeated
+        here cannot be repeated elsewhere: :class:`~ela.tools.registry.ToolRegistry` refuses
+        ``True`` beside ``idempotent`` ``False``, and silence.
+        """
+
+    @property
     def audit_numbers(self) -> frozenset[str]:
         """The keys of this tool's result whose **integers** enter ``TOOL_EXECUTED`` (M13.2).
 
@@ -1350,6 +1386,17 @@ class ToolPort(Protocol):
         ``async`` because it reads the filesystem, which is the criterion of ADR 0005 §1 — and
         because a port has one mode: a sync member on an async port would be the first place
         somebody stopped being able to say what this one is.
+        """
+
+    async def asserted(self, arguments: JsonMapping) -> Prospect:
+        """What this call **asserts**, answered without looking at any machine (M13.3, ADR 0048).
+
+        Beside :meth:`prospect`, which looks: for a step placed on a node whose verifier reads the
+        machine, the Core's disk is the wrong one to look at, so the question names what the plan
+        asserts — the path as written, and for ``fs.write`` whether it creates or overwrites, in
+        the tool's words — and the node's tool, which is this code, compares that with its own disk
+        before acting. Only what needs no disk may refuse here: the shape of the arguments and the
+        grammar of the path. A tool that works on no path answers an empty :class:`Prospect`.
         """
 
     async def execute(
@@ -1412,6 +1459,15 @@ class VerifierPort(Protocol):
     @property
     def conditions(self) -> frozenset[str]:
         """The success conditions this verifier can check: the vocabulary a plan may use."""
+
+    @property
+    def failure_codes(self) -> frozenset[str]:
+        """The codes this verifier can report: the vocabulary of its failures (ADR 0014 §2).
+
+        A member of the port since M13.3 (ADR 0048): a node verifies ``fs.*`` on its own machine
+        and sends the codes back, and the Core accepts a verdict only in this vocabulary — a code
+        outside it is a doubt, and the step fails ``verification.missing``.
+        """
 
     @property
     def reads_the_machine(self) -> bool:

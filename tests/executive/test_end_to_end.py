@@ -20,8 +20,10 @@ import pytest
 from ela.devices import (
     DeviceOrchestrator,
     DeviceRegistry,
+    LocalHeartbeat,
     PlacementDecision,
     local_device,
+    period_of,
     score,
 )
 from ela.domain import (
@@ -76,6 +78,7 @@ from ela.testing.fakes import (
     FakeExecutionResultStore,
     FakeIdGenerator,
     FakeModelProvider,
+    FakePower,
     FakeTaskRepository,
 )
 from ela.tools import (
@@ -88,6 +91,7 @@ from ela.tools import (
     NOTES_TOOL_NAME,
     NOTES_VERIFIER_NAME,
     PATH_MISSING,
+    VERIFIED_ON_THE_NODE,
     Outcome,
     ToolRegistry,
     WriteNoteTool,
@@ -183,6 +187,7 @@ class Pipeline:
             self.clock,
             verifiers=self.verifiers,
             capabilities=self.registry,
+            carried=VERIFIED_ON_THE_NODE,
         )
         self.engine = TaskEngine(
             self.repository,
@@ -231,6 +236,12 @@ class Pipeline:
             results=self.results,
             audit=self.audit,
             assignments=self.assignments,
+            beat=LocalHeartbeat(
+                self.devices,
+                FakePower(),
+                busy=self.executor.running_here,
+                period=period_of(HEARTBEAT_TTL),
+            ),
         )
 
     async def alive(self) -> None:
@@ -709,16 +720,19 @@ async def test_the_runner_walks_a_real_plan_end_to_end(p: Pipeline, workspace: P
     ]
 
 
-async def test_a_node_gone_quiet_leaves_a_real_plan_queued(p: Pipeline) -> None:
-    """The Fase 12 case, on the production stack: the node stops answering and the task waits."""
+async def test_local_does_not_go_quiet_under_a_walk_on_the_production_stack(p: Pipeline) -> None:
+    """The Fase 12 case, turned round by M13.3 (ADR 0048 §2).
+
+    Until M13.3 this test let the clock run past the heartbeat's TTL and watched the task wait:
+    ``local`` had stopped answering. But ``local`` is this process, and the runner now asks the
+    Core's heartbeat for a beat before it places anything — so while ELA walks a plan, the node it
+    walks it on cannot have gone quiet. A node that is **not** this machine still can, and waiting
+    for it is the assignments' and the placement's, tested where they live.
+    """
     _, task_id = await p.planned_and_running(CORE_ECHO, start=False)
     p.clock.advance(HEARTBEAT_TTL * 2)
 
     run = await p.runner.run(task_id)
 
-    assert run.outcome is RunOutcome.WAITING_DEVICE
-    assert run.task.state is TaskState.QUEUED
+    assert run.outcome is RunOutcome.COMPLETED
     assert E.TASK_FAILED not in await p.types(task_id)
-
-    await p.devices.heartbeat(p.device.id)
-    assert (await p.runner.run(task_id)).outcome is RunOutcome.COMPLETED

@@ -33,6 +33,7 @@ from __future__ import annotations
 import base64
 import math
 import os
+from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from pathlib import Path
 from typing import Final
@@ -56,11 +57,46 @@ __all__ = [
     "line_and_batteries",
     "power_status",
     "seconds_spoken",
+    "spawn_powershell",
+    "spawn_powershell_with_input",
+    "without_module_path",
 ]
 
 POWERSHELL: Final = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 """Windows PowerShell 5.1, at a literal path. On a Windows installed elsewhere it is not there, and
 the reading is ``None`` — the power source ``UNKNOWN`` — rather than a binary ``PATH`` chose."""
+
+MODULE_PATH: Final = "PSMODULEPATH"
+"""The variable a Windows PowerShell 5.1 must not inherit (M12.3d), by the name Windows gives it.
+
+A PowerShell 7 puts its own module folders there, and its children inherit it. Under it, measured
+on the Windows job (run 36151577468, 2026-09-25), ``powershell.exe`` 5.1 found ``Get-Acl`` in a
+module it «could not load», and the power reading answered nothing. Without the variable, Windows
+PowerShell computes its own default, the folders of 5.1, as a console of its own would have."""
+
+
+def without_module_path(environment: Mapping[str, str]) -> dict[str, str]:
+    """``environment`` as it is, but for ``PSModulePath`` in any spelling (M12.3d).
+
+    Every spelling, because Windows keeps the environment case-insensitive and ``os.environ``
+    uppercases its keys there: ``PSModulePath`` and ``PSMODULEPATH`` are one variable.
+    """
+    return {name: value for name, value in environment.items() if name.upper() != MODULE_PATH}
+
+
+async def spawn_powershell(argv: Sequence[str], timeout: float) -> tuple[int, str]:
+    """:func:`~ela.infrastructure.machine.darwin.spawn`, with the node's environment but for
+    ``PSModulePath`` (M12.3d): the launcher of the power reading."""
+    return await spawn(argv, timeout, env=without_module_path(os.environ))
+
+
+async def spawn_powershell_with_input(
+    argv: Sequence[str], data: bytes, timeout: float
+) -> tuple[int, str]:
+    """:func:`~ela.infrastructure.machine.darwin.spawn_with_input`, with the same environment as
+    :func:`spawn_powershell` (M12.3d): the launcher of the voice."""
+    return await spawn_with_input(argv, data, timeout, env=without_module_path(os.environ))
+
 
 POWER_STATUS: Final = """$ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'Stop'
@@ -83,7 +119,9 @@ def encoded(script: str) -> str:
     return base64.b64encode(script.encode("utf-16-le")).decode("ascii")
 
 
-async def power_status(run: Spawn = spawn, binary: str = POWERSHELL) -> tuple[str, int] | None:
+async def power_status(
+    run: Spawn = spawn_powershell, binary: str = POWERSHELL
+) -> tuple[str, int] | None:
     """What this PC says of its power line, and how many batteries it has — or ``None`` (M12.3c).
 
     ``None`` for every way of not knowing: no ``powershell.exe``, a script that failed or
@@ -170,7 +208,7 @@ class SapiSpeechCommand:
         *,
         timeout: timedelta,
         voice: str,
-        runner: SpawnWithInput = spawn_with_input,
+        runner: SpawnWithInput = spawn_powershell_with_input,
         binary: str = POWERSHELL,
     ) -> None:
         self._timeout = timeout.total_seconds()

@@ -15,7 +15,11 @@ verifier (spec §20, §63; M5.2, ADR 0014).
   tool e dal verifier così che non possano divergere; `resolve_workspace`,
   `is_relative_note_path`. Il bersaglio risolto che una domanda mostra, e se un file c'è già, non
   sta più qui: lo dice il `prospect` del tool, con la stessa funzione che decide l'esecuzione
-  (M13.1, ADR 0045 §6-bis). Solo `resolve`/`is_symlink`/`lstat`: nessuna scrittura (regola 18).
+  (M13.1, ADR 0045 §6-bis). Solo `resolve`/`is_symlink`/`is_junction`/`lstat`: nessuna scrittura
+  (regola 18). Da M13.3 la forma è **una per ogni sistema** (ADR 0048 §4): niente `:`, nessun nome
+  che Windows riserva a un dispositivo (`RESERVED_ON_WINDOWS`, una copia di `ntpath` che un test sa
+  accorgersi di quando invecchia), nessun componente che finisce con un punto o uno spazio; e una
+  giunzione è un link.
   Da M13.1 il secondo codice è `path.outside_root` e non più `path.outside_workspace`: la
   workspace era l'unica radice che esistesse, e un nome che indica il confine sbagliato è una
   diagnosi falsa anche quando l'esito è giusto (ADR 0045 §5).
@@ -42,7 +46,11 @@ verifier (spec §20, §63; M5.2, ADR 0014).
   all'avvio — mai che l'effetto sia avvenuto. Legge il disco del Core: `terminal.run` non viaggia.
 - `registry.py`: `ToolRegistry` (port `ToolRegistryPort`), `VerifierRegistry` (port
   `VerifierRegistryPort`), entrambi immutabili; `tools_v01` e `verifiers_v01`, una coppia per
-  capability.
+  capability. Il registro rifiuta un tool che non dichiara `idempotent`, `audit_numbers` e, da
+  M13.3, `relocatable` — e `relocatable` vero accanto a `idempotent` falso (ADR 0048 §6).
+  `node_tools` e `node_verifiers` sono ciò che un nodo costruisce: l'eco, il modello, le due voci, e
+  su un nodo che ha una radice `fs.read` e `fs.write` con i loro verifier, che sono l'insieme
+  `VERIFIED_ON_THE_NODE` — lo stesso che la composizione passa all'orchestratore (ADR 0048 §7).
 - `fs.py`: `FsReadTool` per `fs.read` (MEDIUM) e `FsWriteTool` per `fs.write` (**HIGH**, la prima
   capability `HIGH` di ELA; M13.1, ADR 0045). Leggono e scrivono **fuori dalla workspace**, dentro
   la radice che `ELA_FS_ROOT` dichiara — che nessuno dei due crea mai: una radice assente è
@@ -50,7 +58,9 @@ verifier (spec §20, §63; M5.2, ADR 0014).
   la rilegge prima di scrivere e rifiuta se è cambiata **nei due versi**. Il contenuto di una
   lettura riuscita e la sua dimensione (`bytes`) stanno nel risultato; nell'audit va il percorso,
   mai i byte (M13.1b). Una lettura fallita porta le dimensioni nell'errore, per scelta (ADR 0045
-  §8).
+  §8). Da M13.3 viaggiano verso un nodo che ha una radice, con il verifier sul nodo (ADR 0048 §7), e
+  rispondono ad `asserted` — ciò che la chiamata afferma, senza guardare un disco — per la domanda di
+  uno step su un nodo (ADR 0048 §8). `fs.read` è ripetibile e non ripiazzabile.
 - `terminal.py`: `TerminalRunTool` per `terminal.run` (**HIGH**; M13.2, ADR 0047). Un comando è
   `argv`, dal piano al processo: `["/" + program, *args]`, senza shell e senza `PATH`. Decide in un
   punto solo, letto dalla domanda e dall'esecuzione, ciò che si sa senza lanciare — il programma è

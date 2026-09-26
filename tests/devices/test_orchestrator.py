@@ -245,7 +245,7 @@ def test_the_points_are_the_sum_of_the_components() -> None:
         needs(traits=[GPU]),
     )
     assert judged.points == sum(judged.components.values())
-    assert judged.points == TRAIT_POINTS + 20 + 15 + 10 + WORKLOAD_POINTS + 10
+    assert judged.points == TRAIT_POINTS + 20 + 15 + 20 + WORKLOAD_POINTS + 10
 
 
 def test_a_refused_node_is_scored_too() -> None:

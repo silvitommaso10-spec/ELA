@@ -12,12 +12,18 @@ Two leaf values are reused as they are: :class:`~ela.domain.ProviderUsage` and
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import datetime
 from typing import Annotated, Final, TypedDict, cast
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+)
 
 from ela.audit.chain import ChainSummary
 from ela.domain import (
@@ -63,8 +69,9 @@ from ela.domain import (
     TaskPlan,
     TaskState,
     TaskStep,
+    is_text,
 )
-from ela.executive import ASKED, REPORTABLE, Delivery, Envelope, check_envelope
+from ela.executive import ASKED, REPORTABLE, Delivery, Envelope, Verdict, check_envelope
 from ela.tasks.graph import GraphState
 
 __all__ = [
@@ -132,23 +139,9 @@ def _text_only(value: object) -> object:
     ``run`` a 422 from the tool's first ``encode`` — and the task unreadable. Here is where the
     arguments are born, so here is where it stops: before anything is written.
     """
-    if not _encodable(value):
+    if not is_text(value):
         raise ValueError(NOT_TEXT)
     return value
-
-
-def _encodable(value: object) -> bool:
-    if isinstance(value, str):
-        try:
-            value.encode()
-        except UnicodeEncodeError:
-            return False
-        return True
-    if isinstance(value, Mapping):
-        return all(_encodable(key) and _encodable(one) for key, one in value.items())
-    if isinstance(value, tuple):
-        return all(_encodable(one) for one in value)
-    return True
 
 
 class TaskCreate(BaseModel):
@@ -380,7 +373,9 @@ class Asked(BaseModel):
     """The **resolved** path the call would touch, when it touches one (M13.1 dec. G).
 
     Not the argument the plan wrote: where it really lands, read from the machine with the
-    classification the tool and the verifier share. Empty when the capability touches no file."""
+    classification the tool and the verifier share. Empty when the capability touches no file.
+    **On a machine ELA has not looked at** (M13.3, :attr:`machine`) it is the path as the plan
+    writes it, under that machine's root: nothing was resolved, and :attr:`unseen` says so."""
     does: str = ""
     """What saying yes would do to that file, **in the capability's own words** (dec. G).
 
@@ -403,6 +398,14 @@ class Asked(BaseModel):
     """How long ELA waits for the command before it stops its group."""
     expect_exit: int | None = None
     """The code the plan expects the program to end with (M13.2 dec. 9)."""
+    machine: str = ""
+    """The machine the call is placed on, when ELA has not looked at its disk (M13.3, ADR 0048):
+    the name the node chose — it may change and is not unique — and the start of the id the Core
+    minted. Empty for a question about this machine, which is the question it always was."""
+    unseen: str = ""
+    """What ELA did not do, in the executor's sentence (M13.3): it did not look at that disk, and
+    the node refuses before acting if the disk says otherwise. Rendered as it stands, like
+    :attr:`does`; empty for a question about this machine."""
 
 
 class ApprovalOut(BaseModel):
@@ -439,6 +442,8 @@ class ApprovalOut(BaseModel):
     folder: str
     timeout_seconds: int | None
     expect_exit: int | None
+    machine: str
+    unseen: str
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:
@@ -673,6 +678,12 @@ class WorkOrderOut(BaseModel):
     by the Core, and an order that carried the conditions would read as an invitation to check its
     own work. No placement either — the node does not need to know it won.
 
+    **«E nient'altro» is read with one line beside it since M13.3** (ADR 0048): for a capability
+    the node verifies on its own machine — ``fs.read``, ``fs.write``, whose verifier reads the
+    machine — the order carries a seventh key, ``success_conditions``, and the node sends back its
+    verdict on exactly those. For every other capability the key is **absent**, not empty: the order
+    of an echo is the six keys it always was.
+
     ``decision`` is the :class:`~ela.domain.PermissionDecision` the Core made, whole, because that
     is what a tool checks before acting (``check_decision``); ``arguments`` are the step's, read
     from the plan. Composed in one place, which imports no network client: architecture rule 51.
@@ -684,6 +695,29 @@ class WorkOrderOut(BaseModel):
     decision: PermissionDecision
     arguments: JsonMapping
     expires_at: datetime
+    success_conditions: tuple[str, ...] | None = None
+
+    @model_serializer(mode="wrap")
+    def _six_keys_unless_verified_there(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, object]:
+        """The seventh key only when there is something in it: absent, not ``null``, otherwise."""
+        dumped = cast(dict[str, object], handler(self))
+        if self.success_conditions is None:
+            dumped.pop("success_conditions", None)
+        return dumped
+
+
+class VerdictIn(BaseModel):
+    """What a node's verifier said (M13.3, ADR 0048): codes and names, never a message (§57)."""
+
+    model_config = NODE_BODY
+
+    conditions: tuple[str, ...]
+    failed: tuple[tuple[str | None, str], ...] = ()
+    """One pair per condition that did not hold: the condition, and what the verifier reported —
+    a pair and not an object, the shape of :attr:`~ela.executive.Verdict.failed`."""
+    exception: str | None = None
 
 
 class WorkResultIn(BaseModel):
@@ -707,6 +741,8 @@ class WorkResultIn(BaseModel):
     exception: str | None = None
     node: JsonMapping = {}
     """The node's own instants, by its own clock: reported data, never an instant of the chain."""
+    verdict: VerdictIn | None = None
+    """For a capability the node verifies on its own machine (M13.3): what its verifier said."""
 
     @field_validator("status")
     @classmethod
@@ -729,6 +765,13 @@ class WorkResultIn(BaseModel):
             duration_ms=self.duration_ms,
             exception=self.exception,
             node=self.node,
+            verdict=None
+            if self.verdict is None
+            else Verdict(
+                conditions=self.verdict.conditions,
+                failed=self.verdict.failed,
+                exception=self.verdict.exception,
+            ),
         )
         check_envelope(envelope)
         return envelope

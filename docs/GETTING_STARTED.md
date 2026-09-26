@@ -22,6 +22,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<chiave del modello del PC>` | la chiave Anthropic del nodo, mai quella del Core | la console Anthropic (§12, passo 4) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
+| `<radice del PC>` | la cartella del PC dentro cui ELA può leggere e scrivere | la scegli tu, sul PC: una cartella che c'è, e che non contiene né sta dentro `$HOME\.ela` o `$HOME\ELA` (§17, passo 2) |
 
 ## 0. Che cosa serve
 
@@ -553,6 +554,13 @@ il repository in `$HOME\ELA` con `uv sync --locked`, e un Python **3.12.4 o succ
 Windows il nodo rifiuta una 3.12 più vecchia, perché lì la cartella del segreto non sarebbe
 protetta (M12.4, dec. B).
 
+**Sul PC ELA si lancia con `uv run python -m ela.cli`, mai con `uv run ela`.** `uv sync` ricostruisce
+`ela.exe`, il lanciatore dell'ambiente virtuale: è un file nuovo e senza firma, e con lo Smart App
+Control acceso Windows lo blocca — «Un criterio di controllo dell'applicazione ha bloccato il file»,
+os error 4551 (prova a mano di M13.3, 2026-09-26). `python -m ela.cli` fa girare lo stesso codice
+attraverso l'interprete, che è firmato. **Non spegnere lo Smart App Control** per aggirarlo: una volta
+spento, non si riaccende.
+
 ### 1. Sul Mac: il Core dal codice giusto, e anche sulla tailnet
 
 **Il Core deve girare dal codice del branch del nodo Windows**, o il piano d'esempio e la lettura
@@ -666,7 +674,7 @@ ELA_NODE_CORE_URL=http://100.76.92.39:8351
 ELA_VOICE_NAME="Microsoft Elsa Desktop"
 ```
 
-Tre cose da sapere prima di andare avanti:
+Da sapere prima di andare avanti:
 
 - **`ELA_MODEL_ROUTES` deve essere uguale a quella del Mac.** Se il `.env` del Mac la imposta,
   copia quella riga identica in questo file; se non la imposta, non scriverla — nella prova il Mac
@@ -677,6 +685,11 @@ Tre cose da sapere prima di andare avanti:
 - **La chiave è del PC** e non viaggia mai con il lavoro: il Core manda la chiamata, il nodo usa la
   sua. Il file sta in `$HOME\ELA` con i permessi della cartella del profilo — lo leggono i processi
   del tuo utente, lo stesso confine del segreto del nodo.
+- **Da M13.3, una riga facoltativa: `ELA_FS_ROOT`**, la cartella in cui il nodo può leggere e scrivere
+  per `fs.read` e `fs.write` (ADR 0048 §7). Sul nodo è **sola** — niente `ELA_FS_SCOPE`: lo scope resta
+  uno, sul Core — e segue le regole della radice del Core: esiste, non è un link, non contiene e non
+  sta dentro `$HOME\.ela` né `$HOME\ELA`. Senza la riga il nodo non dichiara i due tool, e lo dice
+  all'avvio. La prova di M13.3 l'aggiunge al file in §17, passo 2.
 
 ### 5. Il nodo: arruolato dal Mac, avviato sul PC
 
@@ -696,7 +709,7 @@ codice si stampa una volta e vale dieci minuti. Sul PC:
 
 ```powershell
 Set-Location $HOME\ELA
-uv run ela node run --join
+uv run python -m ela.cli node run --join
 ```
 
 ```
@@ -711,9 +724,9 @@ ela: this code did not enrol the node (unauthorized). A code is good once and fo
 ```
 
 Arruolato, il nodo ha la sua identità in `$HOME\.ela\node.json`, in una cartella con i permessi
-ristretti a te, SYSTEM e Administrators; le volte dopo basta `uv run ela node run`. **Lascia aperta
-questa finestra**: il nodo vive quanto lei, e chiuderla con la X lo ferma senza chiudere niente.
-Mentre gira non stampa niente.
+ristretti a te, SYSTEM e Administrators; le volte dopo basta `uv run python -m ela.cli node run`.
+**Lascia aperta questa finestra**: il nodo vive quanto lei, e chiuderla con la X lo ferma senza
+chiudere niente. Mentre gira non stampa niente.
 
 In una **seconda** finestra di PowerShell, il firewall:
 
@@ -745,13 +758,18 @@ due letture, alle 20:26 e alle 20:51: il Core manda il proprio battito solo all'
 `task run` (ADR 0023 §5-bis e §9; M12.3c ha lasciato fuori scope un battito periodico), quindi fra
 un run e l'altro la sua riga scade rispetto al TTL. Non tocca il piazzamento — che avviene subito dopo il battito di un `run` — ma la lista lo
 mostra come assente (osservato nella prova, ed è fra le cose da riesaminare di M12.4).
+***Superato da M13.3*** (ADR 0048 §2): il Core batte per `local` prima di ogni piazzamento e a un
+periodo di un terzo del TTL, quindi `local` resta disponibile fra un `run` e l'altro; resta `UNKNOWN`
+soltanto il suo **stato**, che `local` non riporta.
 
 ### 6. Il Mac a batteria, e il PC che parla
 
 **Stacca l'alimentatore del Mac**, e lascialo staccato fino alla fine della sezione. È ciò che
 manda il lavoro al PC, ed è letto, non dichiarato: il Mac a batteria vale 20 punti (la rete),
 il PC a corrente 25 (la rete 5, la corrente 10, libero 10). Con il Mac attaccato vincerebbe lui,
-30 a 25, e parlerebbe il Mac.
+30 a 25, e parlerebbe il Mac. ***Superato da M13.3*** (ADR 0048 §13): il Core osserva lo stato di
+`local` e la corrente vale 20 — il Mac a batteria e libero 30, il PC 35; attaccato, il Mac 50. Vince
+chi vinceva, per la ragione giusta.
 
 ```
 uv run ela task create "fai parlare il PC" --privacy TRUSTED
@@ -848,7 +866,7 @@ exit=0
 
 Nella prova la voce si è fermata subito, l'uscita è stata `0`, e **non** è comparsa nessuna riga
 `Exception ignored`: è la traccia che la sonda di P4 lasciava e che il nodo non deve lasciare. Poi il
-nodo si riavvia con `uv run ela node run`.
+nodo si riavvia con `uv run python -m ela.cli node run`.
 
 **Che cosa ne è stato del task interrotto non è stato letto** (2026-09-17): la lettura è stata
 saltata durante la prova. Per il Core è un nodo che ha taciuto, e l'assegnazione scade — ma qui non
@@ -894,7 +912,7 @@ prima della verifica con `provider.unavailable`. Quando la chiave ci sarà: ferm
 
 ```powershell
 [IO.File]::AppendAllText("$HOME\ELA\.env", "`nELA_MODEL_ROUTES={""reasoning"": {""providers"": [""anthropic""], ""profile"": ""cheap""}}`n")
-uv run ela node run
+uv run python -m ela.cli node run
 ```
 
 Sul Mac, il piano con uno step `model.complete`:
@@ -1835,6 +1853,376 @@ risultato, perché ELA non può più confermare che ciò che ha girato fosse il 
 **La pulizia**, che fa parte della prova: togli `usr/bin/time`, `usr/bin/env` e
 `Users/tu/ela-prova/bin/eco` da `ELA_TERMINAL_PROGRAMS` (o scrivi `[]`), cancella `~/ela-prova`, e
 riavvia.
+
+## 17. L'azione che viaggia: la prova a mano di M13.3
+
+> **Nata come bozza con la SPEC di M13.3, e resa definitiva con l'implementazione (ADR 0048).** Le
+> righe della domanda sono quelle che `ela approvals` stampa: `machine`, il percorso, `does`, `disk`.
+> **L'ordine è parte della prova**: il battito prima di tutto, perché una misura presa mentre il Mac
+> risulta non disponibile misura una gara in cui un nodo non compete. **Un comando per blocco**, tranne
+> i cicli della misura del passo 4, che sono una riga per blocco e non un comando (decisione 11).
+
+Il Core resta su questo Mac, il nodo sul PC, la tailnet in mezzo: la preparazione è quella di §12,
+passi 1–5. **Ogni uscita che è una misura va in un file**, in `~/Downloads` sul Mac; quelle del PC si
+prendono in `$HOME\Downloads` e si copiano sul Mac. Il nome del file è nel comando. I comandi non
+portano commenti: con la configurazione di default di zsh un `#` incollato non è un commento, e
+diventa un argomento.
+
+### 1. Il Mac che resta disponibile
+
+Nel primo terminale, il Core con il codice di M13.3:
+
+```
+uv run ela serve
+```
+
+Nel secondo, **senza lanciare nessun task**:
+
+```
+uv run ela device list --json > ~/Downloads/m13.3-battito-1.json
+```
+
+```
+sleep 90
+```
+
+```
+uv run ela device list --json > ~/Downloads/m13.3-battito-2.json
+```
+
+**Che cosa si deve vedere**: nella riga di `local`, `"available": true` in tutti e due i file. La
+disponibilità la deriva il Core nell'istante della lettura dall'ultimo battito, quindi `true` nel
+secondo file vuol dire che nei novanta secondi qualcuno ha battuto per il Mac, e nessun `run` l'ha
+fatto. Prima di M13.3 il secondo diceva `false`: novanta secondi sono più dei sessanta del TTL.
+**Finché questo passo non passa, il passo 4 non si comincia.**
+
+### 2. Il PC con una radice
+
+Sul PC, il nodo fermo con `Ctrl-C`; poi una riga in più nel suo `.env` — la cartella deve esistere, e
+non deve contenere né stare dentro `$HOME\.ela`, dove il nodo tiene il segreto, o `$HOME\ELA`, dove
+stanno il codice e il `.env` del nodo:
+
+```powershell
+[IO.File]::AppendAllText("$HOME\ELA\.env", "`nELA_FS_ROOT=<radice del PC>`n")
+```
+
+```powershell
+uv run python -m ela.cli node run
+```
+
+Con il modulo e non con il lanciatore: dopo un `uv sync` lo Smart App Control blocca `ela.exe` (§12).
+
+Sul Mac:
+
+```
+uv run ela device list --json > ~/Downloads/m13.3-pc-con-radice.json
+```
+
+**Che cosa si deve vedere**: nella riga del PC, fra i tool, `fs-read` e `fs-write`, e `power_source`
+`AC` — non `UNKNOWN`: la lettura dell'alimentazione del PC è quella che il blocco B del passo 4 pesa.
+Senza la riga nel `.env` i due tool non ci sono, e il nodo lo dice all'avvio
+con una riga («No ELA_FS_ROOT here…»).
+
+### 3. Un file scritto sul PC, e riletto
+
+**Stacca l'alimentatore del Mac**: con il Mac a batteria vince il PC (§12, passo 6).
+
+```
+uv run ela task create "un file sul PC" --privacy TRUSTED
+```
+
+```
+uv run ela task plan <id> --file docs/examples/fs-write.json
+```
+
+```
+uv run ela task run <id>
+```
+
+```
+uv run ela approvals
+```
+
+**Che cosa si deve vedere**: la domanda nomina **il PC** nella riga `machine` — il suo nome e l'inizio
+del suo id —, il percorso `ELA/prova.md` come il piano lo scrive nella riga `file`, in `does` «creates a
+new file: the plan says nothing is there», e nella riga `disk` che ELA non ha guardato quel disco e che
+il nodo rifiuta prima di agire se il disco dice altro. Poi:
+
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+```
+uv run ela task run <id>
+```
+
+La risposta è `assigned`. Dopo qualche secondo:
+
+```
+uv run ela task run <id>
+```
+
+```
+uv run ela audit tail --task <id> -n 10 --json > ~/Downloads/m13.3-file-sul-pc.json
+```
+
+Sul PC:
+
+```powershell
+Get-Content "<radice del PC>\ELA\prova.md"
+```
+
+**Che cosa si deve vedere**: il task `completed`; il file sul disco del PC, con il testo del piano; e
+nel registro un `EXECUTION_VERIFIED` il cui payload ha `verified_on` uguale all'id del PC — il campo
+`id` della sua riga in `ela device list --json` —: **la verifica è avvenuta sul PC**, e il file che il Mac può avere allo
+stesso percorso dalla prova di §15 non conta niente. Poi la lettura, con lo stesso giro e `docs/examples/fs-read.json`, e il
+contenuto in `uv run ela task results <id>`.
+
+**La perdita dichiarata, vista.** Lo stesso `fs-write.json`, in un task nuovo `TRUSTED`, sempre con il
+Mac a batteria: **la domanda nasce** — ELA non vede il disco del PC, e sul Mac, dove lo vede, non
+l'avrebbe fatta nascere (§15, passo 3) —; approvala, e il nodo **rifiuta prima di scrivere**. Il
+rifiuto dice quale fatto il disco ha smentito, con il suo codice, fra le righe del risultato:
+
+```
+uv run ela task results <id>
+```
+
+```
+error      fs.overwrite_mismatch
+message    'ELA/prova.md' was declared as a new file and something is there now
+```
+
+(qui solo le due righe dell'errore; il resto del blocco è quello di sempre).
+
+Il file sul PC resta quello di prima: il costo della domanda già condannata è un sì speso, mai un
+effetto diverso da quello approvato.
+
+### 4. La misura dei pesi
+
+Il PC attaccato alla corrente e fermo, il passo 1 passato. **Che cosa si misura** sta nella SPEC
+(«Le prove a mano»), scritto prima dei numeri: l'eco e la lettura, dieci prove per macchina — la voce
+no, perché misurerebbe il motore e non la località —; sul PC dall'offerta alla consegna ricevuta, su
+`local` dalla decisione `ALLOWED` al risultato registrato — mai dal piazzamento, perché lo step
+comincia prima della domanda, e per una lettura misurerebbe il consenso.
+
+**I blocchi sono cicli**, una riga ciascuno: ogni prova scrive la sua riga nel file, con l'esito e con
+**Low Power Mode letto da `pmset` all'inizio e alla fine della prova**, e il ciclo **si ferma alla prima
+prova che non vale** — un esito che non è `completed`, o Low Power Mode acceso — e stampa quale. Low
+Power Mode su questo Mac a batteria può accendersi da solo, e raddoppia i tempi. Nel blocco B un `run`
+che trova il task occupato da una consegna del PC risponde `409` e non stampa niente: il ciclo lo
+riprova, e non lo conta come una prova.
+
+**Perché nel blocco B vince il PC** (ADR 0048 §13): il Core osserva lo stato di `local` come il nodo
+riporta il suo, e la corrente vale 20. Il Mac a batteria e libero vale 20 (la rete) + 0 (la corrente)
++ 10 (libero) = **30**; il PC sotto corrente e libero 5 + 20 + 10 = **35**. Attaccato, il Mac varrebbe
+50 e il lavoro resterebbe sul Mac. **Una domanda lasciata aperta non occupa il Mac**: `local` è `BUSY`
+(−10) solo mentre un suo tool gira, dall'avvio al risultato registrato, e i cicli qui sotto fanno un
+task alla volta — a ogni piazzamento il Mac è libero.
+
+**Blocco A, `local`**: il Mac attaccato, i task senza `--privacy`, quindi `LOCAL_ONLY`. Prima del
+blocco, lo stato dei nodi:
+
+```
+uv run ela device list --json > ~/Downloads/m13.3-pesi-A-nodi.json
+```
+
+Dieci eco:
+
+```
+for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "eco locale $i" --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/echo.json > /dev/null; out=$(uv run ela task run "$id" --json); dopo=$(pmset -g | awk '/lowpowermode/ {print $2}'); line=$(echo "$out" | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$dopo" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}'); echo "$line" >> ~/Downloads/m13.3-pesi-A-eco.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
+```
+
+Dieci letture — ognuna chiede il consenso, e il ciclo lo dà per te. Rileggono `ELA/prova.md` sotto la
+radice del **Mac**: se la prova di §15 non l'ha lasciato, scrivilo prima con `fs-write.json` in un task
+senza `--privacy`.
+
+```
+for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "lettura locale $i" --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/fs-read.json > /dev/null; uv run ela task run "$id" > /dev/null; a=$(uv run ela approvals --json | jq -r --arg t "$id" '.[] | select(.task_id == $t) | .id'); uv run ela task approve "$id" --approval "$a" > /dev/null; out=$(uv run ela task run "$id" --json); dopo=$(pmset -g | awk '/lowpowermode/ {print $2}'); line=$(echo "$out" | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$dopo" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}'); echo "$line" >> ~/Downloads/m13.3-pesi-A-lettura.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
+```
+
+**Blocco B, il PC**: **stacca l'alimentatore del Mac**, aspetta un battito — venti secondi —, e i task
+`TRUSTED`. Lo stato dei nodi deve dire `local` disponibile **e** a batteria:
+
+```
+uv run ela device list --json > ~/Downloads/m13.3-pesi-B-nodi.json
+```
+
+Ogni ciclo aspetta che il PC abbia consegnato — rilancia `run` finché la risposta non è più
+`assigned` — prima di passare al task dopo: un nodo tiene un lavoro alla volta, e un'offerta che
+aspetta in coda gonfierebbe la misura di quella dopo.
+
+```
+for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "eco sul PC $i" --privacy TRUSTED --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/echo.json > /dev/null; until out=$(uv run ela task run "$id" --json) && [ -n "$out" ] && ! echo "$out" | jq -e '.outcome == "assigned"' > /dev/null; do sleep 2; done; dopo=$(pmset -g | awk '/lowpowermode/ {print $2}'); line=$(echo "$out" | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$dopo" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}'); echo "$line" >> ~/Downloads/m13.3-pesi-B-eco.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
+```
+
+```
+for i in {1..10}; do prima=$(pmset -g | awk '/lowpowermode/ {print $2}'); id=$(uv run ela task create "lettura sul PC $i" --privacy TRUSTED --json | jq -r .id); uv run ela task plan "$id" --file docs/examples/fs-read.json > /dev/null; uv run ela task run "$id" > /dev/null; a=$(uv run ela approvals --json | jq -r --arg t "$id" '.[] | select(.task_id == $t) | .id'); uv run ela task approve "$id" --approval "$a" > /dev/null; until out=$(uv run ela task run "$id" --json) && [ -n "$out" ] && ! echo "$out" | jq -e '.outcome == "assigned"' > /dev/null; do sleep 2; done; dopo=$(pmset -g | awk '/lowpowermode/ {print $2}'); line=$(echo "$out" | jq -c --argjson prova "$i" --arg prima "$prima" --arg dopo "$dopo" '. + {prova: $prova, lowpowermode_prima: $prima, lowpowermode_dopo: $dopo}'); echo "$line" >> ~/Downloads/m13.3-pesi-B-lettura.jsonl; echo "$line" | jq -e '.outcome == "completed" and .lowpowermode_prima == "0" and .lowpowermode_dopo == "0"' > /dev/null || { echo "prova $i non valida: $line"; break; }; done
+```
+
+**Che cosa si deve vedere alla fine di ogni ciclo**: nessuna riga «prova … non valida», e nel suo file
+dieci righe, ciascuna con `"outcome":"completed"`, `"lowpowermode_prima":"0"` e
+`"lowpowermode_dopo":"0"`. Se il ciclo si è fermato, sposta il suo file — per esempio aggiungendo `.1`
+al nome — e rifai il blocco da capo: i nomi dei file sono nei comandi, e un secondo giro nello stesso
+file mescolerebbe le prove.
+
+I `sleep` non misurano niente: danno al nodo il tempo di consegnare fra un `run` e l'altro. **I tempi
+si leggono dal database**, sull'orologio del Core — le assegnazioni, i risultati, e gli eventi con le
+decisioni e i punteggi. Il database è `~/.ela/ela.db` se `ELA_DB_URL` non è impostata; le righe sono
+di tutti i task del database, e la sessione tiene solo quelle dei task che i file `.jsonl` nominano —
+nel database un id è di 32 cifre esadecimali senza trattini, nei `.jsonl` è con i trattini, e la
+sessione li confronta togliendoli:
+
+```
+sqlite3 -json ~/.ela/ela.db "select a.task_id, a.device_id, a.created_at, a.claimed_at, a.delivered_at, r.capability_id, r.duration_ms, r.created_at as received_at, json_extract(r.metadata, '\$.node.ran_at') as ran_at from assignments a join execution_results r on r.task_id = a.task_id and r.step_id = a.step_id and r.status <> 'STARTED' order by a.seq" > ~/Downloads/m13.3-pesi-assegnazioni.json
+```
+
+```
+sqlite3 -json ~/.ela/ela.db "select task_id, capability_id, device_id, created_at, duration_ms from execution_results where status <> 'STARTED' order by seq" > ~/Downloads/m13.3-pesi-risultati.json
+```
+
+```
+sqlite3 -json ~/.ela/ela.db "select task_id, event_type, created_at, device_id, payload from audit_events where event_type in ('DEVICE_SELECTED', 'PERMISSION_DECIDED', 'STEP_STARTED', 'TOOL_EXECUTED', 'EXECUTION_VERIFIED', 'STEP_COMPLETED') order by seq" > ~/Downloads/m13.3-pesi-eventi.json
+```
+
+**Che cosa si deve vedere, prima di guardare un numero** — è la regola 5 della SPEC, e una prova che
+non la rispetta non vale:
+
+- in `m13.3-pesi-A-nodi.json` la riga di `local` disponibile e `AC`; in `m13.3-pesi-B-nodi.json`
+  disponibile e `BATTERY`; in tutti e due la riga di `local` `IDLE` e la riga del PC `AC` e `IDLE`,
+  non `UNKNOWN`;
+- ogni riga finale di un task nei `.jsonl` dice `completed`;
+- nel blocco A ogni `DEVICE_SELECTED` sceglie `local`; nel blocco B sceglie il PC, e fra i candidati
+  `local` c'è, con i suoi punti e **senza** `UNAVAILABLE` fra i rifiuti: un PC che vince perché il Mac
+  risultava assente misura la gara che il vincolo della review esclude;
+- l'eco e la lettura valide **tutte e due**, sulle due macchine.
+
+I numeri li legge la sessione dai file, con la regola scritta nella SPEC prima di vederli.
+
+### 5. L'orologio
+
+Sul Mac e sul PC, uno subito dopo l'altro, contro lo stesso server; nessuno dei due comandi imposta
+l'ora — `sntp` la imposta solo con `-s` o `-S`, e `/stripchart` la legge soltanto:
+
+```
+sntp time.apple.com > ~/Downloads/m13.3-orologio-mac.txt 2>&1
+```
+
+```powershell
+w32tm /stripchart /computer:time.apple.com /samples:5 /dataonly | Out-File -Encoding utf8 "$HOME\Downloads\m13.3-orologio-pc.txt"
+```
+
+**Il PC appena sveglio.** Sospendi il PC per almeno un'ora. Al risveglio, **la misura prima di
+qualunque altra cosa** — e mai `w32tm /resync`, né avviare il servizio dell'ora per leggerne lo stato,
+perché avviarlo è già una risincronizzazione:
+
+```powershell
+w32tm /stripchart /computer:time.apple.com /samples:5 /dataonly | Out-File -Encoding utf8 "$HOME\Downloads\m13.3-orologio-pc-sveglio.txt"
+```
+
+E sul Mac, nello stesso minuto:
+
+```
+sntp time.apple.com > ~/Downloads/m13.3-orologio-mac-2.txt 2>&1
+```
+
+**Solo dopo**, sul PC, la prova che fra il risveglio e la misura nessuno ha toccato l'ora — gli eventi
+di sistema delle ultime due ore: il risveglio (`Power-Troubleshooter`, con l'istante in cui la
+macchina si è svegliata), ogni cambio dell'ora (`Kernel-General`, con l'ora vecchia e la nuova), ogni
+sincronizzazione del servizio dell'ora (`Time-Service`):
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='System'; StartTime=(Get-Date).AddHours(-2)} | Where-Object { $_.ProviderName -in 'Microsoft-Windows-Power-Troubleshooter','Microsoft-Windows-Kernel-General','Microsoft-Windows-Time-Service' } | Format-List TimeCreated, ProviderName, Id, Message | Out-File -Encoding utf8 "$HOME\Downloads\m13.3-orologio-pc-sveglio-eventi.txt"
+```
+
+**Che cosa si deve vedere**: un risveglio, e **nessun cambio dell'ora e nessuna sincronizzazione fra
+il risveglio e l'istante della misura** — tranne il cambio del risveglio stesso, «System time
+synchronized with the hardware clock». Se ce n'è un altro, la lettura non misura il risveglio: si rifà
+dopo un'altra sospensione.
+
+**Il risveglio non è il caso peggiore.** La SPEC lo pensava, e la misura del 2026-09-26 l'ha smentito
+(ADR 0048 §14): al risveglio Windows rimette l'ora da quella dell'orologio hardware, e l'errore è quello
+accumulato dall'ultima sincronizzazione, come da acceso — 0,39 s dopo dieci ore di sonno, 6,94 s la sera
+prima, dopo otto giorni senza sincronizzarsi. Il peggio è il PC rimasto più a lungo senza sincronizzarsi,
+e lo dice la storia delle correzioni del servizio dell'ora: gli eventi `Kernel-General` 1 degli ultimi
+trenta giorni, esclusi i risvegli. Nei trenta giorni prima della prova, il peggio è stato 38,3 s avanti.
+
+La differenza fra lo scarto del PC e quello del Mac è la deriva del nodo rispetto al Core, e si
+confronta con i 180 s che una decisione ha di vita nel caso peggiore. **Il segno non si deduce a
+memoria**: lo si legge dalla documentazione dei due strumenti e lo si conferma con il numero di ELA —
+`ran_at` meno l'istante in cui il Core ha ricevuto la busta, dalle consegne del blocco B —, che è un
+limite inferiore: un valore positivo dice che il PC è avanti almeno di tanto, uno negativo non dice che
+è indietro. `Out-File` di PowerShell 5.1 scrive un BOM: il file si legge lo stesso.
+
+### 6. La seconda metà del passo 9 di M13.2
+
+La prova di §16, passo 9, dal paragrafo «Poi sparito», **nella sostanza com'è scritta**; qui i
+comandi sono uno per blocco e senza i commenti in coda, e c'è la preparazione, che la pulizia di
+M13.2 ha tolto e un riavvio del Mac cancella da `/tmp`. Un programma da cancellare:
+
+```
+mkdir -p ~/ela-prova/bin
+```
+
+```
+cp /bin/echo ~/ela-prova/bin/eco
+```
+
+Aggiungi `"Users/tu/ela-prova/bin/eco"` a `ELA_TERMINAL_PROGRAMS` nel `.env` — senza la barra
+iniziale —, riavvia `ela serve` nel primo terminale, e prepara il piano:
+
+```
+sed 's#"bin/echo"#"Users/tu/ela-prova/bin/eco"#' docs/examples/terminal-echo.json > /tmp/eco.json
+```
+
+Una domanda aperta, a cui **non** rispondere:
+
+```
+uv run ela task create "l'eco che sparirà"
+```
+
+```
+uv run ela task plan <id> --file /tmp/eco.json
+```
+
+```
+uv run ela task run <id>
+```
+
+Poi il file sparisce, mentre ELA gira:
+
+```
+rm ~/ela-prova/bin/eco
+```
+
+```
+uv run ela task create "l'eco sparito"
+```
+
+```
+uv run ela task plan <id> --file /tmp/eco.json
+```
+
+```
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**: questo secondo task `FAILED` **senza domanda**, con
+**`terminal.program_gone`**, e la frase di §16. Poi approva la domanda del primo task e rilancialo:
+
+```
+uv run ela approvals
+```
+
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+```
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**: il rifiuto **prima dell'esecuzione**, con lo stesso codice. La pulizia è
+quella di §16: togli la voce da `ELA_TERMINAL_PROGRAMS`, cancella `~/ela-prova`, e riavvia.
 
 ## Dove guardare dopo
 

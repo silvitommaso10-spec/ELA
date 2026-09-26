@@ -74,8 +74,8 @@ def test_ports_are_exactly_the_twenty_five_required() -> None:
     from M7.3 (ADR 0022 §5), the three of phase 10 (ADR 0028, 0029, 0030), ``SpeechPort`` from
     M11.1 (ADR 0033), ``ListeningPort`` from M11.2 (ADR 0036 §5), ``EnrollmentStore`` from M12.1
     (ADR 0037 §8), ``AssignmentStore`` from M12.2 (ADR 0038), ``Bell`` from M12.5 (ADR 0043) and
-    ``CommandLauncher`` from M13.2 (ADR 0047): a port is added with an ADR and a row here, never by
-    accident."""
+    ``CommandLauncher`` from M13.2 (ADR 0047) and ``LocalBeat`` from M13.3 (ADR 0048 §2): a port is
+    added with an ADR and a row here, never by accident."""
     assert {port.__name__ for port in PORTS} == REQUIRED_PORTS
     assert set(IMPLEMENTATIONS) == set(PORTS)
 

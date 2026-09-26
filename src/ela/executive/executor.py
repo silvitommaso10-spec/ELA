@@ -73,11 +73,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Final, NamedTuple
+from typing import Final, NamedTuple, cast
 from uuid import UUID, uuid5
 
 from ela.devices import LOCAL_DEVICE_ID, PlacementDecision, ensure_placed
@@ -96,6 +96,7 @@ from ela.domain import (
     Authorization,
     AuthorizationId,
     CapabilitySpec,
+    Device,
     DeviceId,
     ErrorMetadata,
     ExecutionId,
@@ -114,6 +115,7 @@ from ela.domain import (
     TaskId,
     TaskState,
     TaskStep,
+    is_text,
 )
 from ela.executive.assignments import Assignments, WorkRejection
 from ela.executive.errors import (
@@ -175,14 +177,19 @@ __all__ = [
     "STARTED_ID",
     "TOOL_EXCEPTION",
     "TOOL_REFUSED",
+    "UNSEEN",
+    "RESULT_NOT_TEXT",
+    "VERDICT",
     "VERIFICATION_EXCEPTION",
     "VERIFICATION_FAILED",
+    "VERIFICATION_MISSING",
     "Claimed",
     "Delivered",
     "Delivery",
     "Envelope",
     "Execution",
     "Executor",
+    "Verdict",
     "Verification",
     "approved_targets",
     "check_envelope",
@@ -247,6 +254,14 @@ M12.5 dec. F: one bag, written when the question is composed (:meth:`Executor._a
 the shape that answers ``GET /approvals`` — so the terminal and a page show the same facts and
 neither recomposes them. Namespaced because ``metadata`` belongs to whoever writes it.
 """
+UNSEEN: Final = (
+    "ELA has not looked at that disk: what this question says of the file is what the plan "
+    "asserts, and the node refuses before acting if the disk says otherwise"
+)
+"""What the question of a step placed on a node that verifies on its own machine says of that
+machine's disk (M13.3, ADR 0048): written here, where the question is composed, and rendered as it
+stands by every surface — none composes a sentence of its own. The cost is said in ADR 0048: a
+question can be born already lost, and then the yes is spent and nothing else happens."""
 DEFAULT_APPROVAL_TTL: Final = timedelta(hours=24)
 """How long a request for approval stays answerable (ADR 0013 §5, decision E).
 
@@ -274,10 +289,16 @@ TOOL_EXCEPTION: Final = "tool.exception"
 """Error code of a result synthesised from an exception the tool raised while acting."""
 TOOL_REFUSED: Final = "tool.refused"
 """Error code of a step failed because the tool refused the decision (``NotAllowedError``)."""
+RESULT_NOT_TEXT: Final = "result.not_text"
+"""Error code of a result whose strings are not all text — a lone surrogate — and that therefore
+cannot be kept (M13.3, ADR 0048; ADR 0047 §16). The Core mints it in place of what the tool
+reported, on this machine or on a node: a step that ended with what nobody can store ends, and
+does not go back to a node to be refused again."""
 GRANT_VANISHED: Final = "grant_vanished"
 """Error code of a step failed because the grant vanished between ``authorize`` and ``consume``."""
 EXECUTION_INTERRUPTED: Final = "execution.interrupted"
-"""Error code of a step whose non-idempotent tool was started and never reported (ADR 0021 §2).
+"""Error code of a step whose tool was started under a STARTED record and never reported (ADR
+0021 §2): a non-idempotent tool on this machine, a non-relocatable one at a node's claim (M13.3).
 
 The STARTED record says the tool was about to act; nothing says whether it did. Running it again
 is the one thing ELA must not do — it is why the record exists — so the step fails with this, and
@@ -294,6 +315,15 @@ VERIFICATION_FAILED: Final = "verification.failed"
 VERIFICATION_EXCEPTION: Final = "verification.exception"
 """Error code of a step, and its task, failed because the verifier raised: a verifier that
 could not answer has not verified, and a doubt is a failure (§33)."""
+VERIFICATION_MISSING: Final = "verification.missing"
+"""Failure code of a verification whose verdict the node did not give as the plan asked (M13.3,
+ADR 0048): none, about other conditions, or with a code outside the verifier's vocabulary. Inside
+the table of ADR 0014 §4 and not beside it: the step and the task fail ``verification.failed``, and
+this is the one failure that says why — so what reads ``verification.failed`` today stays true."""
+VERDICT: Final = "verdict"
+"""Key of ``ExecutionResult.metadata`` that keeps a node's verdict beside the result it is about
+(M13.3, ADR 0048): a resume after a crash reads it, and never verifies on the Core's disk an effect
+that happened on the node's."""
 
 _CONSUMING_RULE_VALUES: Final[frozenset[str]] = frozenset(rule.value for rule in CONSUMING_RULES)
 
@@ -325,6 +355,30 @@ class Delivery(StrEnum):
     """The tool raised: the type's name, never the message (§57)."""
 
 
+class Verdict(NamedTuple):
+    """What a node's verifier said about the result it delivers (M13.3, ADR 0048).
+
+    The conditions it checked, in the order the order gave them; the ones that did not hold, each
+    with its **code**; or the **name** of the type of the exception the verifier raised. Codes and
+    names, never a message: the sentence that reaches ``EXECUTION_VERIFIED`` the Core composes from
+    the code, so that another machine's text does not enter a log that is never redacted (§57).
+    """
+
+    conditions: tuple[str, ...]
+    failed: tuple[tuple[str | None, str], ...] = ()
+    """``(condition, code)`` per failure, a pair on the wire too; the condition is ``None`` for a
+    failure of the contract, as the verifier's own ``details["condition"]`` is."""
+    exception: str | None = None
+
+    def as_json(self) -> dict[str, JsonValue]:
+        """The verdict as it is kept in a result's metadata and fingerprinted in an envelope."""
+        return {
+            "conditions": list(self.conditions),
+            "failed": [[condition, code] for condition, code in self.failed],
+            "exception": self.exception,
+        }
+
+
 class Envelope(NamedTuple):
     """What a node delivers: what the tool said, and nothing the Core knows already (ADR 0038 §4).
 
@@ -343,6 +397,8 @@ class Envelope(NamedTuple):
     duration_ms: int | None = None
     exception: str | None = None
     node: JsonMapping = _NOTHING
+    verdict: Verdict | None = None
+    """What the node's verifier said, for a capability verified on the node (M13.3, ADR 0048)."""
 
     @property
     def digest(self) -> str:
@@ -351,7 +407,19 @@ class Envelope(NamedTuple):
         Canonical — sorted keys, no spacing — so that the same envelope gives the same digest
         whatever order a node's JSON arrived in. It lives in the assignment's row and nowhere else:
         never in an audit event, never in an error message (§57).
+
+        ``surrogatepass`` since M13.3 (ADR 0048): for every envelope of text the bytes are the ones
+        a strict encoding gives, and an envelope holding a lone surrogate gets a digest instead of
+        an exception — the exception that, until M13.3, was the ``422`` of ADR 0047 §16.
+
+        **The verdict is in the digest** (M13.3): two envelopes that differ only in it are a
+        delivery in conflict, not a replica. Listed only when there is one, so the digest of every
+        envelope without a verdict is the one it was — a replay of a delivery made before M13.3
+        is still the same answer.
         """
+        verdict: dict[str, JsonValue] = (
+            {} if self.verdict is None else {"verdict": self.verdict.as_json()}
+        )
         return hashlib.sha256(
             json.dumps(
                 {
@@ -363,12 +431,61 @@ class Envelope(NamedTuple):
                     "duration_ms": self.duration_ms,
                     "exception": self.exception,
                     "node": dict(self.node),
+                    **verdict,
                 },
                 sort_keys=True,
                 separators=(",", ":"),
                 ensure_ascii=False,
-            ).encode()
+            ).encode("utf-8", "surrogatepass")
         ).hexdigest()
+
+
+def _as_text(result: ExecutionResult, tool: ToolPort) -> ExecutionResult:
+    """``result`` as it is, or — when a string in it is not text — the failure kept in its place.
+
+    A lone surrogate is a string for the JSON parser and text for nobody else: the store cannot
+    write it, and until M13.3 a node's delivery holding one was a ``422`` that left the step to go
+    back to a node, which delivered it again — the task never ended (ADR 0047 §16). The check is
+    **one** (``ela.domain.is_text``) and it is read **where a result is kept**, whichever machine
+    produced it: the same answer on this machine and on a node (ADR 0038 §3).
+
+    What replaces it says **which fields** held something that is not text, and never what:
+    ``FAILED`` with :data:`RESULT_NOT_TEXT`, no output, no usage, and of the metadata only what the
+    Core wrote (the id of a STARTED record). The tool ran — ``TOOL_EXECUTED`` will say so —, and
+    what it produced is not kept.
+    """
+    fields = [
+        name
+        for name, value in (
+            ("output", result.output),
+            ("error", None if result.error is None else result.error.model_dump(mode="json")),
+            ("usage", None if result.usage is None else result.usage.model_dump(mode="json")),
+            ("node", result.metadata.get("node")),
+            ("verdict", result.metadata.get(VERDICT)),
+        )
+        if not is_text(value)
+    ]
+    if not fields:
+        return result
+    kept: dict[str, JsonValue] = (
+        {STARTED_ID: result.metadata[STARTED_ID]} if STARTED_ID in result.metadata else {}
+    )
+    return result.model_copy(
+        update={
+            "status": ExecutionStatus.FAILED,
+            "output": {},
+            "usage": None,
+            "metadata": kept,
+            "error": ErrorMetadata(
+                code=RESULT_NOT_TEXT,
+                message=(
+                    f"the result held something that is not text (a lone surrogate) in "
+                    f"{', '.join(fields)}: it cannot be kept, and none of it is shown"
+                ),
+                tool_name=tool.name,
+            ),
+        }
+    )
 
 
 def check_envelope(envelope: Envelope) -> None:
@@ -398,6 +515,11 @@ def check_envelope(envelope: Envelope) -> None:
         envelope.output or envelope.error is not None or envelope.usage is not None
     ):
         raise ValueError("a tool that refused the decision produced nothing: the envelope is empty")
+    if envelope.verdict is not None and envelope.status is not ExecutionStatus.SUCCEEDED:
+        raise ValueError(
+            "a verdict is about a result that succeeded: a failure, a refusal or an exception "
+            "carries none, as on this machine"
+        )
 
 
 class Verification(NamedTuple):
@@ -485,6 +607,10 @@ class Claimed(NamedTuple):
     assignment: Assignment
     tool_name: str
     arguments: JsonMapping
+    conditions: tuple[str, ...] | None = None
+    """The step's success conditions, for a capability the node verifies on its own machine
+    (M13.3, ADR 0048) — its verifier reads the machine, and the one that did the work is the node.
+    ``None`` for every other: what the node produced is verified here, as since M12.2."""
 
 
 class Delivered(NamedTuple):
@@ -685,6 +811,19 @@ class Executor:
         self._bell = bell
         self._authorization_ttl = authorization_ttl
         self._approval_ttl = approval_ttl
+        self._running_here = 0
+        """How many tools run on this machine now, each from its start to its result stored."""
+
+    def running_here(self) -> bool:
+        """Whether a tool runs on this machine now: the status of ``local`` (M13.3, ADR 0048 §13).
+
+        From the start of the tool to its result stored, and nothing else: a step that waits for
+        the user's yes is ``RUNNING`` and occupies nothing — the node's own ``BUSY`` is the time a
+        tool of its runs. In memory, because it is a fact of this process: a process that died ran
+        nothing, and the next one starts at zero. The one module that runs a tool here is this one
+        (rule 16), so this is the one place that can say it.
+        """
+        return self._running_here > 0
 
     async def execute(
         self, task_id: TaskId, step_id: StepId, *, placement: PlacementDecision
@@ -726,7 +865,13 @@ class Executor:
         # After the lookups, so a step with no tool still says so with its own error rather than
         # as a node that cannot host it; before the first read of the results, so a caller with
         # somebody else's placement leaves no trace (ADR 0026 §3).
-        device_id = ensure_placed(placement, task_id, step_id).id
+        device = ensure_placed(placement, task_id, step_id)
+        device_id = device.id
+        # A node that verifies on its own machine is a machine ELA has not looked at: the question
+        # names it, and says what the plan asserts instead of what the Core's disk holds (M13.3).
+        there: Device | None = None
+        if _verified_there(verifier, device_id):
+            there = device
 
         started, settled = await self._stored(task_id, step_id)
         if settled:  # the tool ran in an earlier call: resume from the first missing write
@@ -770,7 +915,15 @@ class Executor:
             return Execution(task, step_id, graph, decision, authorization, None, None, None)
         if decision.outcome is PermissionOutcome.REQUIRES_APPROVAL:
             return await self._ask(
-                task, graph, step, spec, arguments, decision, authorization, decision.reason
+                task,
+                graph,
+                step,
+                spec,
+                arguments,
+                decision,
+                authorization,
+                decision.reason,
+                there=there,
             )
 
         consumed: int | None = None
@@ -781,7 +934,15 @@ class Executor:
                 )
             except AuthorizationNotUsableError as unusable:
                 return await self._ask(
-                    task, graph, step, spec, arguments, decision, authorization, unusable.reason
+                    task,
+                    graph,
+                    step,
+                    spec,
+                    arguments,
+                    decision,
+                    authorization,
+                    unusable.reason,
+                    there=there,
                 )
             except NotFoundError:
                 vanished = ErrorMetadata(
@@ -812,26 +973,14 @@ class Executor:
             None if tool.idempotent else await self._start_record(tool, decision, device_id, spent)
         )
         await self._sensor_activated(spec, decision, device_id)
-        produced = await self._run_tool(tool, decision, arguments)
-        if produced is None:
+        result = await self._run_here(tool, decision, arguments, device_id, spent, record)
+        if result is None:
             refused = ErrorMetadata(
                 code=TOOL_REFUSED,
                 message=f"{tool.name} refused the decision {decision.id}",
                 tool_name=tool.name,
             )
             return await self._fail(task, graph, decision, authorization, refused)
-        produced = _counted(tool, produced)
-        result = produced.model_copy(
-            update={
-                "device_id": device_id,
-                "decision_id": decision.id,
-                "authorization_id": spent,
-                "metadata": produced.metadata
-                if record is None
-                else {**produced.metadata, STARTED_ID: str(record.id)},
-            }
-        )
-        await self._results.add(result)
         return await self._settled(
             task,
             graph,
@@ -841,6 +990,40 @@ class Executor:
             result,
             consumed,
         )
+
+    async def _run_here(
+        self,
+        tool: ToolPort,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        device_id: DeviceId,
+        spent: AuthorizationId | None,
+        record: ExecutionResult | None,
+    ) -> ExecutionResult | None:
+        """The tool on this machine and its result stored: the span :meth:`running_here` counts.
+
+        ``None`` when the tool refused the decision, and nothing is stored then.
+        """
+        self._running_here += 1
+        try:
+            produced = await self._run_tool(tool, decision, arguments)
+            if produced is None:
+                return None
+            produced = _as_text(_counted(tool, produced), tool)
+            result = produced.model_copy(
+                update={
+                    "device_id": device_id,
+                    "decision_id": decision.id,
+                    "authorization_id": spent,
+                    "metadata": produced.metadata
+                    if record is None
+                    else {**produced.metadata, STARTED_ID: str(record.id)},
+                }
+            )
+            await self._results.add(result)
+            return result
+        finally:
+            self._running_here -= 1
 
     # ----------------------------------------------------------------------------------
     # The three instants of a call that runs elsewhere (ADR 0038 §2)
@@ -856,7 +1039,10 @@ class Executor:
 
         The STARTED record is born **here and not in** ``run`` (M12.1, D14): until a node takes the
         work nothing can have acted, so a step whose offer nobody claimed is placed again whatever
-        its tool. ``SENSOR_ACTIVATED`` is written for a capability that turns one on — none that
+        its tool. And it is born for a tool that is **not relocatable** (M13.3, ADR 0048), not for
+        one that is not idempotent: a claim that expires with the record is closed ``interrupted``,
+        one without it is placed again — maybe on another machine, where ``fs.read``'s path is
+        another file. ``SENSOR_ACTIVATED`` is written for a capability that turns one on — none that
         travels does today (D15), and the call is here so that the day one does, it is written
         where the sensor is turned on.
 
@@ -867,13 +1053,20 @@ class Executor:
         assignment = await self._assignments.claim(assignment_id, device_id)
         decision = assignment.decision
         graph = await self._engine.graph(assignment.task_id)
-        step, spec, tool, _, arguments, _ = self._prepared(
+        step, spec, tool, verifier, arguments, _ = self._prepared(
             assignment.task_id, graph, assignment.step_id
         )
-        if not tool.idempotent:
+        if not tool.relocatable:
             await self._start_record(tool, decision, device_id, assignment.authorization_id)
         await self._sensor_activated(spec, decision, device_id)
-        return Claimed(assignment, tool.name, arguments)
+        # A verifier that reads the machine proves an effect only on the machine where it
+        # happened, and a claim is always a node's: the node verifies, with the plan's conditions.
+        return Claimed(
+            assignment,
+            tool.name,
+            arguments,
+            step.success_conditions if verifier.reads_the_machine else None,
+        )
 
     async def deliver(
         self, assignment_id: AssignmentId, device_id: DeviceId, envelope: Envelope
@@ -919,11 +1112,18 @@ class Executor:
         # A node's numbers pass the same function a tool's do, before anything is written: a value
         # that is not an integer under a declared key is a ``ValueError``, which is a ``422``.
         audited_numbers(ready.tool.audit_numbers, envelope.output)
+        if envelope.verdict is not None and not ready.verifier.reads_the_machine:
+            # The same door and for the same reason: a verdict about work the Core verifies here
+            # is a node claiming to have decided something it was not asked (M13.3).
+            raise ValueError(
+                f"{ready.spec.id} is verified here, by the Core: the node was asked for no verdict"
+            )
         if envelope.form is Delivery.REFUSED:
             return await self._refused_there(task, graph, ready, assignment, digest, now)
         started, _ = await self._stored(assignment.task_id, assignment.step_id)
-        result = self._minted(
-            assignment, ready.tool, envelope, now, started[0] if started else None
+        result = _as_text(
+            self._minted(assignment, ready.tool, envelope, now, started[0] if started else None),
+            ready.tool,
         )
         fresh = await self._stored_once(result)
         marked = await self._assignments.deliver(assignment_id, device_id, digest=digest, now=now)
@@ -1103,6 +1303,8 @@ class Executor:
         metadata: dict[str, JsonValue] = {"node": dict(envelope.node)}
         if record is not None:
             metadata[STARTED_ID] = str(record.id)
+        if envelope.verdict is not None:
+            metadata[VERDICT] = envelope.verdict.as_json()
         return ExecutionResult(
             id=ExecutionId(uuid5(DELIVERY_NAMESPACE, str(assignment.id))),
             created_at=now,
@@ -1230,7 +1432,7 @@ class Executor:
             return Execution(
                 task, ready.step.id, moved, decision, authorization, result, None, None
             )
-        verification = await self._verify(
+        verification = await self._verification(
             ready.verifier, ready.tool, ready.step, ready.arguments, result
         )
         await self._record_verification(ready.tool, ready.verifier, result, verification)
@@ -1268,7 +1470,10 @@ class Executor:
             return Execution(task, step.id, graph, None, None, result, None, None)
         verified = _event_about(events, AuditEventType.EXECUTION_VERIFIED, result.id)
         if verified is None:  # re-verify: the verifier only reads (rule 18)
-            verification = await self._verify(verifier, tool, step, arguments, result)
+            # Or read the node's verdict again, kept with the result: an effect verified on the
+            # node is never verified on the Core's disk — the false positive of ADR 0038 §14,
+            # through the back door (M13.3).
+            verification = await self._verification(verifier, tool, step, arguments, result)
             await self._record_verification(tool, verifier, result, verification, recovered=True)
         else:
             verification = Verification(step.success_conditions, (), verified.error)
@@ -1283,7 +1488,10 @@ class Executor:
         targets: Sequence[object],
         record: ExecutionResult,
     ) -> Execution:
-        """A non-idempotent tool was started and never reported: the step fails (ADR 0021 §2).
+        """A tool under a STARTED record was started and never reported: the step fails (ADR
+        0021 §2). On this machine the record is a non-idempotent tool's; at a node's claim, since
+        M13.3, a non-relocatable one's — ``fs.read`` among them, which could be repeated on its
+        machine and not on another (ADR 0048).
 
         The tool is **not** run again — that is the whole reason the STARTED record was written
         — and no outcome is invented: a second row claiming FAILED would say the tool ran and
@@ -1298,8 +1506,8 @@ class Executor:
         error = ErrorMetadata(
             code=EXECUTION_INTERRUPTED,
             message=(
-                f"{tool.name} was started for step {step.id} and never reported; it cannot be "
-                "repeated, so whether it acted is unknown"
+                f"{tool.name} was started for step {step.id} and never reported; it is not run "
+                "again, here or on another machine, so whether it acted is unknown"
             ),
             tool_name=tool.name,
             device_id=record.device_id,
@@ -1445,6 +1653,8 @@ class Executor:
         decision: PermissionDecision,
         authorization: Authorization | None,
         reason: str,
+        *,
+        there: Device | None,
     ) -> Execution:
         """Build the request for approval from the decision and let the task wait (ADR 0013 §5).
 
@@ -1458,6 +1668,11 @@ class Executor:
         being approved*. It comes from ``task.max_privacy`` and not from ``prompt_arguments``: the
         sensitivity is the task's, while the declared arguments belong to the plan, and routing it
         through them would mean putting the user's policy in a document a model writes.
+
+        ``there`` is the node of a step whose verifier reads the machine (M13.3, ADR 0048): then
+        the tool is asked what the call **asserts** and not what the Core's disk holds — the
+        Core's disk is the wrong one — and the question names the machine and says ELA has not
+        looked at it. ``None`` for every other step, whose question is the one it always was.
         """
         assert decision.task_id is not None and decision.step_id is not None
         # **Before the question exists** (M13.1, ADR 0045 §6-bis): what a call would meet now, read
@@ -1465,7 +1680,11 @@ class Executor:
         # refused this instant has no question to ask — ADR 0011 §3 keeps the denials before the
         # question for a reason, and it is the same reason here: nobody is asked to approve what
         # ELA already knows it will refuse, and nobody is woken for it either.
-        prospect = await self._tools.get(spec.id).prospect(arguments)
+        tool = self._tools.get(spec.id)
+        if there is None:
+            prospect = await tool.prospect(arguments)
+        else:
+            prospect = await tool.asserted(arguments)
         if prospect.refusal is not None:
             return await self._fail(task, graph, decision, authorization, prospect.refusal)
         targets = approved_targets(decision)
@@ -1485,7 +1704,7 @@ class Executor:
             expires_at=decision.created_at + self._approval_ttl,
             metadata={
                 ASKED: self._asked(
-                    task, step, spec, arguments, prospect.target, prospect.invocation
+                    task, step, spec, arguments, prospect.target, prospect.invocation, there
                 )
             },
         )
@@ -1540,6 +1759,7 @@ class Executor:
         arguments: JsonMapping,
         target: Target | None,
         invocation: Invocation | None = None,
+        there: Device | None = None,
     ) -> dict[str, JsonValue]:
         """The facts of the question, kept beside it: what a surface shows without recomposing it.
 
@@ -1584,6 +1804,11 @@ class Executor:
             asked["folder"] = invocation.folder
             asked["timeout_seconds"] = invocation.timeout_seconds
             asked["expect_exit"] = invocation.expect_exit
+        if there is not None:
+            # The name the node chose, which may change and is not unique, and the start of the id
+            # the Core minted (M13.3, decision 10); and what ELA did not do (:data:`UNSEEN`).
+            asked["machine"] = f"{there.name} ({str(there.id)[:8]})"
+            asked["unseen"] = UNSEEN
         return asked
 
     async def _fail(
@@ -1790,6 +2015,25 @@ class Executor:
             _verification_failure(result, tool, verifier, conditions, failures),
         )
 
+    async def _verification(
+        self,
+        verifier: VerifierPort,
+        tool: ToolPort,
+        step: TaskStep,
+        arguments: JsonMapping,
+        result: ExecutionResult,
+    ) -> Verification:
+        """The verification of a SUCCEEDED result: the node's verdict, or the Core's verifier.
+
+        **Where the effect happened decides** (M13.3, ADR 0048): a verifier that reads the machine
+        proves an effect only on the machine it reads, so for a node's result it never runs here —
+        the node ran it, and its verdict is kept with the result. Every other result is verified
+        by the Core, as it always was.
+        """
+        if _verified_there(verifier, result.device_id):
+            return _verdict(result, tool, verifier, step.success_conditions)
+        return await self._verify(verifier, tool, step, arguments, result)
+
     async def _record_verification(
         self,
         tool: ToolPort,
@@ -1824,6 +2068,11 @@ class Executor:
                     "conditions": list(verification.conditions),
                     "failed": [_condition_of(failure) for failure in verification.failures],
                     "device": _device(result),
+                    **(
+                        {"verified_on": _device(result)}
+                        if _verified_there(verifier, result.device_id)
+                        else {}
+                    ),
                     **({RECOVERED: True} if recovered else {}),
                 },
             )
@@ -1861,6 +2110,128 @@ def _device(result: ExecutionResult) -> JsonValue:
     attribute the effect to whoever happens to pick the step up.
     """
     return None if result.device_id is None else str(result.device_id)
+
+
+def _verified_there(verifier: VerifierPort, device_id: DeviceId | None) -> bool:
+    """Whether an effect on ``device_id`` is verified on that node, not here (M13.3, ADR 0048).
+
+    A verifier that reads the machine, and a machine that is a node: the filter F7 lets such a
+    capability go only to a node that carries its verifier, so there is no other way for the two
+    to meet — and if there were, verifying here would be the false positive of ADR 0038 §14.
+    """
+    return verifier.reads_the_machine and device_id not in (None, LOCAL_DEVICE_ID)
+
+
+def _verdict(
+    result: ExecutionResult,
+    tool: ToolPort,
+    verifier: VerifierPort,
+    conditions: tuple[str, ...],
+) -> Verification:
+    """The node's verdict, kept with ``result``, as a :class:`Verification` the Core composes.
+
+    What the Core still proves (ADR 0048): that the verdict names **exactly** the conditions of the
+    plan, in order, and that its codes are in the verifier's vocabulary. Anything else — no
+    verdict, other conditions, a condition out of place or failed twice, a code outside the
+    vocabulary, an exception beside failures — is a doubt, and a doubt is one failure,
+    :data:`VERIFICATION_MISSING`. The sentences are the Core's, composed from the codes: a node
+    sends none (§57).
+    """
+    verdict = _kept(result)
+    doubt = _doubt_about(verdict, verifier, conditions)
+    if verdict is None or doubt is not None:
+        failures: tuple[ErrorMetadata, ...] = (
+            ErrorMetadata(
+                code=VERIFICATION_MISSING,
+                message=(
+                    f"the node {_device(result)} {doubt or 'delivered no verdict'}: an effect "
+                    "verified on the node is recorded from its verdict, and without one it is not "
+                    "verified"
+                ),
+                tool_name=tool.name,
+                details={"condition": None},
+            ),
+        )
+    else:
+        failures = _failures_in(verdict, tool, result)
+    if not failures:
+        return Verification(conditions, (), None)
+    return Verification(
+        conditions,
+        failures,
+        _verification_failure(result, tool, verifier, conditions, failures),
+    )
+
+
+def _kept(result: ExecutionResult) -> Verdict | None:
+    """The verdict kept with ``result``, as :meth:`Verdict.as_json` wrote it; ``None`` if none.
+
+    Read without checking its shape, because nothing else writes it: ``_minted`` does, from the
+    typed verdict of an envelope the wire already validated. What is checked is what it says.
+    """
+    kept = result.metadata.get(VERDICT)
+    if not isinstance(kept, Mapping):
+        return None
+    failed = cast(Sequence[Sequence[str | None]], kept["failed"])
+    return Verdict(
+        conditions=tuple(cast(Sequence[str], kept["conditions"])),
+        failed=tuple((condition, str(code)) for condition, code in failed),
+        exception=cast(str | None, kept["exception"]),
+    )
+
+
+def _doubt_about(
+    verdict: Verdict | None, verifier: VerifierPort, conditions: tuple[str, ...]
+) -> str | None:
+    """Why a verdict cannot be read as the plan's verification, or ``None`` if it can."""
+    if verdict is None:
+        return "delivered no verdict"
+    if verdict.conditions != conditions:
+        return "delivered a verdict about other conditions than the plan's"
+    if verdict.exception is not None:
+        if verdict.failed:
+            return "delivered a verdict of a shape the Core does not read"
+        if not verdict.exception.isidentifier():
+            return "delivered a verdict whose exception is not a name"
+        return None
+    seen: set[str | None] = set()
+    for condition, code in verdict.failed:
+        if condition is not None and condition not in conditions:
+            return "delivered a verdict about a condition the plan did not name"
+        if condition in seen:
+            return "delivered a verdict that fails one condition twice"
+        seen.add(condition)
+        if code not in verifier.failure_codes:
+            return "delivered a verdict with a code outside the verifier's vocabulary"
+    return None
+
+
+def _failures_in(
+    verdict: Verdict, tool: ToolPort, result: ExecutionResult
+) -> tuple[ErrorMetadata, ...]:
+    """The failures of a verdict :func:`_doubt_about` found readable, composed by the Core from
+    the codes — the message names the condition, the code and the node, and nothing the node
+    wrote in words."""
+    if verdict.exception is not None:
+        return (
+            ErrorMetadata(
+                code=VERIFICATION_EXCEPTION,
+                message=verdict.exception,
+                tool_name=tool.name,
+                details={"condition": None},
+            ),
+        )
+    return tuple(
+        ErrorMetadata(
+            code=code,
+            message=(
+                f"{condition or 'the call'} did not hold on the node {_device(result)} ({code})"
+            ),
+            tool_name=tool.name,
+            details={"condition": condition},
+        )
+        for condition, code in verdict.failed
+    )
 
 
 def _condition_of(failure: ErrorMetadata) -> str:

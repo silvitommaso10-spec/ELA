@@ -61,6 +61,7 @@ def test_a_tool_that_declares_no_numbers_is_refused_at_registration() -> None:
         capability_id = ECHO
         name = "silent"
         idempotent = True
+        relocatable = True
 
     with pytest.raises(UndeclaredNumbersError) as caught:
         ToolRegistry((_Silent(),))  # type: ignore[arg-type]

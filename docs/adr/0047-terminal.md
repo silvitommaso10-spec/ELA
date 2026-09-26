@@ -2,6 +2,7 @@
 
 - **Stato:** Accettata. SPEC di M13.2 approvata con le decisioni 1–16 della review del 2026-09-21, e
   allineata il 2026-09-24 alle tre domande decise alla ripresa, dopo il merge di M13.1b (ADR 0046).
+  **ADR 0048** (M13.3): §13 e il residuo di Linux di §5 sono ridichiarati a M13.7 (ADR 0048 §9, §10); §16 e §17 sono saldati (ADR 0048 §3, §5), e la riga di §16 sul `422` si corregge in ADR 0048 §3.
 - **Data:** 2026-09-24
 - **Riferimenti spec:** §18, §27, §28, §29, §32, §33, §36, §41, §57, §59, §63
 - **Milestone:** M13.2

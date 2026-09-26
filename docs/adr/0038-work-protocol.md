@@ -7,6 +7,7 @@
   una migrazione sua.
   §11, il segnale di fermata: da ADR 0047 §7 è un evento di `Ela`, letto anche dal lanciatore del
   terminale, che al segnale svuota il gruppo di un comando.
+  **ADR 0048** (M13.3): §8 si legge con il secondo predicato di ADR 0048 §6 — reclamata e scaduta, un tool non ripiazzabile si chiude `interrupted` e uno ripiazzabile si ripiazza; §11, «e nient'altro», con la settima chiave `success_conditions` di ADR 0048 §7; §14 con la terza risposta di ADR 0048 §7 e la tabella di ADR 0048 §12; §16 con le quattro risposte di ADR 0048 §11 per un file su un nodo; §18, «tredici storie», con la quattordicesima di ADR 0048 §7.
 - **Data:** 2026-09-11
 - **Riferimenti spec:** §11, §14, §15, §16, §17, §20, §27, §32, §33, §56, §57, §63
 - **Continua:** ADR 0005 §2-bis; ADR 0008 §5, §6, §8, §11, §12; ADR 0009 §8; ADR 0011 §9; ADR 0012

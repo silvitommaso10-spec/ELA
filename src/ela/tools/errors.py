@@ -14,6 +14,7 @@ from ela.ports import NotFoundError
 
 __all__ = [
     "NotIdempotentError",
+    "RelocationError",
     "SilentVerifierError",
     "ToolNotFound",
     "ToolsError",
@@ -91,6 +92,23 @@ class VerifierNotFound(NotFoundError):
     def __init__(self, capability_id: CapabilityId) -> None:
         super().__init__("verifier", capability_id)
         self.capability_id = capability_id
+
+
+class RelocationError(ToolsError):
+    """A tool that does not *say* whether its claimed work may move to another machine, or says
+    what cannot be (M13.3, ADR 0048).
+
+    Raised by :class:`~ela.tools.registry.ToolRegistry` at construction, the form of
+    :class:`NotIdempotentError`: both answers are legal, and what is refused is silence — the
+    executor reads the flag at a node's claim to decide whether an expired claim is placed again —
+    and ``relocatable`` ``True`` beside ``idempotent`` ``False``: what cannot be done again here is
+    not done again elsewhere.
+    """
+
+    def __init__(self, capability_id: CapabilityId, name: str, reason: str) -> None:
+        self.capability_id = capability_id
+        self.name = name
+        super().__init__(f"tool {name} of {capability_id} {reason}")
 
 
 class UndeclaredNumbersError(ToolsError):

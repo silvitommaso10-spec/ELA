@@ -15,6 +15,7 @@ from ela.cli.output import EMPTY
 from ela.cli.system import _questions, _terms
 from ela.composition import ApiSettings, Ela
 from ela.devices.local import LOCAL_DEVICE_ID
+from ela.executive import UNSEEN
 from ela.tools import CREATES, OVERWRITES, READS
 from tests.cli.support import Cli, plain, unreachable
 from tests.composition.support import TOKEN
@@ -120,6 +121,28 @@ def test_a_question_that_is_not_a_command_has_no_rows_of_a_command() -> None:
     names = [line.split("  ")[0] for line in shown.splitlines()]
     assert "file" in names
     assert not {"runs", "arguments", "folder", "timeout", "expects exit"} & set(names)
+
+
+def test_a_question_about_a_node_s_disk_names_the_machine_and_what_ela_did_not_do() -> None:
+    """M13.3, criterion 6: two rows more for a question about a machine ELA has not looked at —
+    and none for a question about this one, which the command line prints as it always did."""
+    asked = {
+        "id": "a",
+        "task_id": "t",
+        "capability_id": "fs.write",
+        "targets": ["ELA/prova.md"],
+        "label": "file",
+        "target": "ELA/prova.md",
+        "does": "creates a new file: the plan says nothing is there",
+        "prompt": "fs.write on ELA/prova.md",
+    }
+
+    there = _questions([{**asked, "machine": "pc-casa (3f2b1a00)", "unseen": UNSEEN}])
+    here = _questions([asked])
+
+    assert "pc-casa (3f2b1a00)" in there and UNSEEN in there
+    names = [line.split("  ")[0] for line in here.splitlines()]
+    assert not {"machine", "disk"} & set(names)
 
 
 def test_the_command_line_holds_no_sentence_about_files() -> None:

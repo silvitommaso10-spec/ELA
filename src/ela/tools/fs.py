@@ -34,17 +34,23 @@ from ela.domain import CapabilityId, ErrorMetadata, JsonMapping
 from ela.ports import Clock, IdGenerator, Prospect, Target
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.paths import (
+    INVALID_SHAPE,
     PATH_INVALID,
     PATH_IS_DIRECTORY,
     PATH_MISSING,
     PATH_NOT_REGULAR,
     PATH_OUTSIDE_ROOT,
     PATH_SYMLINK,
+    PathProblem,
     classify,
+    is_relative_note_path,
     resolve_workspace,
 )
 
 __all__ = [
+    "ASSERTED_CREATES",
+    "ASSERTED_OVERWRITES",
+    "ASSERTED_READS",
     "FS_READ",
     "FS_READ_TOOL_NAME",
     "FS_WRITE",
@@ -79,6 +85,14 @@ write and false of a read, and an advisory that says the wrong thing teaches the
 reading it. No surface holds any of them — they travel with the question.
 """
 
+ASSERTED_CREATES: Final = "creates a new file: the plan says nothing is there"
+ASSERTED_OVERWRITES: Final = "overwrites a file: the plan says one is there"
+ASSERTED_READS: Final = "reads a file: the plan says one is there"
+"""What a "yes" does on a machine ELA has not looked at (M13.3, ADR 0048): the plan's assertion, in
+the capability's words, for a step placed on a node. The node's tool compares it with its own disk
+before acting, and refuses — ``fs.overwrite_mismatch``, ``path.missing`` — when the disk disagrees.
+"""
+
 FILE: Final = "file"
 """What the target of ``fs.read`` and ``fs.write`` is called — the tool's word, not a surface's
 (M13.2 dec. 12): a page that wrote «Il file» beside every target would be lending it to a
@@ -105,14 +119,28 @@ READ_REFUSALS: Final[frozenset[str]] = frozenset(
 
 DIRECTORY_MODE: Final = 0o700
 FILE_MODE: Final = 0o600
-WRITE_FLAGS: Final = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+WRITE_FLAGS: Final = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_TRUNC
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_BINARY", 0)
+)
 READ_FLAGS: Final = (
     os.O_RDONLY
     | getattr(os, "O_NOFOLLOW", 0)
     | getattr(os, "O_CLOEXEC", 0)
     | getattr(os, "O_NONBLOCK", 0)
+    | getattr(os, "O_BINARY", 0)
 )
 """Read-only, never through a link, closed on exec — and **non-blocking**.
+
+**And binary, on Windows** (M13.3, found by the rereading of the implementation and measured on the
+Windows job): without ``O_BINARY`` an ``os.open`` there is in text mode, and a read turns ``\r\n``
+into ``\n`` and stops at the first ``0x1A``. The tool and the verifier would share the translation
+and agree on bytes the disk does not hold — the false positive of ADR 0038 §14 on the PC. The write
+was measured right without it; :data:`WRITE_FLAGS` carries it all the same, because the mode is
+``os.open``'s to decide and not the writer's. Elsewhere the flag does not exist and is ``0``.
 
 ``O_NONBLOCK`` is not an optimisation: without it the check one line below cannot run. Opening a
 FIFO for reading **blocks until somebody opens the other end**, so a target that stopped being a
@@ -152,6 +180,10 @@ class FsReadTool(Tool):
     idempotent: ClassVar[bool] = True
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Reading twice leaves the disk as it was: a retry after a crash costs a second read."""
+    relocatable: ClassVar[bool] = False
+    """**Repeatable, and not relocatable** (M13.3, ADR 0048): the same path on another machine is
+    another file, so a read that a silent node took is closed ``interrupted``, not done elsewhere.
+    The tool that makes the declaration a declaration, and not another name for ``idempotent``."""
 
     def __init__(
         self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = FS_READ_TOOL_NAME
@@ -167,6 +199,14 @@ class FsReadTool(Tool):
     async def prospect(self, arguments: JsonMapping) -> Prospect:
         """What a read of this path would meet now (dec. G, and the rule of ADR 0045 §6-bis)."""
         return _prospect(self._look(arguments), self.name)
+
+    async def asserted(self, arguments: JsonMapping) -> Prospect:
+        """What a read asserts, on a machine ELA has not looked at (M13.3): that the file the plan
+        names is there, to be read."""
+        path = arguments.get("path")
+        if not isinstance(path, str):
+            return _refused(ARGUMENTS_INVALID, "path must be a string", self.name)
+        return _as_written(path, exists=True, does=ASSERTED_READS, tool_name=self.name)
 
     def _look(self, arguments: JsonMapping) -> tuple[Outcome | None, Target | None]:
         """The one place a read decides, read by the question and by the run.
@@ -232,6 +272,7 @@ class FsWriteTool(Tool):
     :data:`OVERWRITE_MISMATCH`. Declaring ``True`` would make the executor replay it after a
     crash and call that refusal a failure of the step (ADR 0021 §1).
     """
+    relocatable: ClassVar[bool] = False
 
     def __init__(
         self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = FS_WRITE_TOOL_NAME
@@ -243,6 +284,19 @@ class FsWriteTool(Tool):
     def root(self) -> Path:
         """The resolved root: ``ELA_FS_ROOT``, never created here."""
         return self._root
+
+    async def asserted(self, arguments: JsonMapping) -> Prospect:
+        """What a write asserts, on a machine ELA has not looked at (M13.3): the ``overwrite`` of
+        the plan, in the tool's words — the fact the node's ``_look`` compares with its disk."""
+        path = arguments.get("path")
+        body = arguments.get("body")
+        overwrite = arguments.get("overwrite")
+        if not isinstance(path, str) or not isinstance(body, str):
+            return _refused(ARGUMENTS_INVALID, "path and body must be strings", self.name)
+        if not isinstance(overwrite, bool):
+            return _refused(ARGUMENTS_INVALID, "overwrite must be a boolean", self.name)
+        does = ASSERTED_OVERWRITES if overwrite else ASSERTED_CREATES
+        return _as_written(path, exists=overwrite, does=does, tool_name=self.name)
 
     async def prospect(self, arguments: JsonMapping) -> Prospect:
         """What a write of this path would meet now (dec. G, and ADR 0045 §6-bis).
@@ -317,6 +371,21 @@ def _prospect(looked: tuple[Outcome | None, Target | None], tool_name: str) -> P
             retryable=refused.retryable,
         )
     )
+
+
+def _refused(code: str, message: str, tool_name: str) -> Prospect:
+    """A refusal that needs no disk: the shape of the arguments, or the grammar of the path."""
+    return Prospect(refusal=ErrorMetadata(code=code, message=message, tool_name=tool_name))
+
+
+def _as_written(path: str, *, exists: bool, does: str, tool_name: str) -> Prospect:
+    """The path as the plan writes it, under a root ELA has not seen (M13.3): refused only by the
+    grammar every machine shares, which is pure (ADR 0048 §4)."""
+    if not is_relative_note_path(path):
+        return _refused(
+            PATH_INVALID, PathProblem(PATH_INVALID, INVALID_SHAPE).message(path), tool_name
+        )
+    return Prospect(target=Target(resolved=path, exists=exists, does=does, label=FILE))
 
 
 def _no_root(root: Path) -> str:

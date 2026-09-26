@@ -21,6 +21,7 @@ from ela.domain import (
     TaskState,
 )
 from ela.executive import RunnerError, RunOutcome
+from ela.testing.fakes import FakeLocalBeat
 from tests.executive.support import BAD, HEARTBEAT_TTL, OK, World, world
 from tests.permissions.support import CRITICAL, ECHO, GUARDED_ECHO, NOTE, grant
 from tests.tasks.support import result_for
@@ -31,6 +32,18 @@ E = AuditEventType
 @pytest.fixture
 def w() -> World:
     return world()
+
+
+@pytest.fixture
+def quiet() -> World:
+    """A world whose runner asks for ``local``'s beat and gets none (M13.3).
+
+    Since M13.3 the runner beats ``local`` before every placement, so the one node of a world can
+    no longer go quiet under a walk. The tests below are about what the runner does when **no node
+    is eligible** — a branch that stays reachable for a node that is not this machine —, and they
+    build that precondition by declaring a beat that lands nowhere, not by waiting for one.
+    """
+    return world(beat=FakeLocalBeat())
 
 
 async def unavailable(w: World) -> None:
@@ -214,7 +227,8 @@ async def test_a_denied_step_stops_the_walk_with_the_task_denied(w: World) -> No
 # --------------------------------------------------------------------------------------
 
 
-async def test_no_eligible_node_leaves_the_task_queued_without_failing_it(w: World) -> None:
+async def test_no_eligible_node_leaves_the_task_queued_without_failing_it(quiet: World) -> None:
+    w = quiet
     """The acceptance criterion of M6.3: QUEUED, no ``TASK_FAILED``, one ``DEVICE_UNAVAILABLE``."""
     task, steps = await w.queued(ECHO.id)
     await unavailable(w)
@@ -230,7 +244,8 @@ async def test_no_eligible_node_leaves_the_task_queued_without_failing_it(w: Wor
     assert types.count(E.DEVICE_UNAVAILABLE) == 1  # the one ``place`` wrote, and no other
 
 
-async def test_a_node_that_disappears_mid_plan_puts_the_task_back_to_queued(w: World) -> None:
+async def test_a_node_that_disappears_mid_plan_puts_the_task_back_to_queued(quiet: World) -> None:
+    w = quiet
     task, steps = await w.queued(ECHO.id, NOTE.id)
     first = await w.runner.run(task.id)
     assert first.outcome is RunOutcome.COMPLETED
@@ -249,7 +264,8 @@ async def test_a_node_that_disappears_mid_plan_puts_the_task_back_to_queued(w: W
     assert E.TASK_FAILED not in await w.event_types(later.id)
 
 
-async def test_every_retry_records_its_own_wait(w: World) -> None:
+async def test_every_retry_records_its_own_wait(quiet: World) -> None:
+    w = quiet
     """ADR 0017 §6.4: each call is a decision taken at a different instant, on a registry that
     may have changed, so each one writes its own event."""
     task, _ = await w.queued(ECHO.id)
@@ -261,7 +277,8 @@ async def test_every_retry_records_its_own_wait(w: World) -> None:
     assert (await w.event_types(task.id)).count(E.DEVICE_UNAVAILABLE) == 2
 
 
-async def test_the_wait_records_why_every_candidate_lost(w: World) -> None:
+async def test_the_wait_records_why_every_candidate_lost(quiet: World) -> None:
+    w = quiet
     task, _ = await w.queued(ECHO.id)
     await unavailable(w)
 
@@ -273,7 +290,8 @@ async def test_the_wait_records_why_every_candidate_lost(w: World) -> None:
     assert candidate["refusals"] == (Refusal.UNAVAILABLE.value,)
 
 
-async def test_the_wait_carries_its_reason_out_with_the_result(w: World) -> None:
+async def test_the_wait_carries_its_reason_out_with_the_result(quiet: World) -> None:
+    w = quiet
     """M6.1b dec. F: the sentence the audit already held travels with the answer.
 
     ``waiting_device`` on its own tells whoever is waiting nothing they can act on. What the
@@ -330,7 +348,8 @@ async def test_a_node_wider_than_the_task_declares_is_not_eligible(w: World) -> 
     assert (await w.runner.run(declared.id)).outcome is RunOutcome.COMPLETED
 
 
-async def test_a_node_that_comes_back_lets_the_next_run_finish_the_plan(w: World) -> None:
+async def test_a_node_that_comes_back_lets_the_next_run_finish_the_plan(quiet: World) -> None:
+    w = quiet
     task, _ = await w.queued(ECHO.id, NOTE.id)
     await unavailable(w)
     assert (await w.runner.run(task.id)).outcome is RunOutcome.WAITING_DEVICE
@@ -517,7 +536,7 @@ async def test_a_completed_plan_whose_result_is_missing_cannot_close_the_task(w:
 
 
 async def test_a_walk_resumed_after_the_user_took_their_time_needs_a_node_still_alive(
-    w: World,
+    quiet: World,
 ) -> None:
     """The shape a long task really has (review of M6.3): the walk stops for a consent, the user
     thinks for longer than a heartbeat lasts, and the node has to still be there afterwards.
@@ -533,6 +552,7 @@ async def test_a_walk_resumed_after_the_user_took_their_time_needs_a_node_still_
     walk waits, and waiting is the answer ADR 0017 §6 already gives. Nothing fails, nothing is
     lost — the step is still RUNNING and the same walk finishes it as soon as the node speaks.
     """
+    w = quiet
     task, steps = await w.queued(GUARDED_ECHO.id, ECHO.id)
     asked = await w.runner.run(task.id)
     assert asked.outcome is RunOutcome.WAITING_APPROVAL

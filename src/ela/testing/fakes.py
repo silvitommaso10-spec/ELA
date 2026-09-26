@@ -77,6 +77,10 @@ from ela.domain import (
 from ela.ports import (
     ANNOUNCED_FIELDS,
     PROVIDER_UNAVAILABLE,
+    VERIFICATION_NO_CONDITIONS,
+    VERIFICATION_NOT_SUCCEEDED,
+    VERIFICATION_UNKNOWN_CONDITION,
+    VERIFICATION_WRONG_CAPABILITY,
     AlreadyExistsError,
     ApprovalAlreadyAnsweredError,
     ApprovalExpiredError,
@@ -128,6 +132,7 @@ __all__ = [
     "FakeProbe",
     "FakeProviderRegistry",
     "FakeListening",
+    "FakeLocalBeat",
     "FakePower",
     "FakeScreenCapture",
     "FakeSpeech",
@@ -887,6 +892,7 @@ class FakeTool:
         output: JsonMapping | None = None,
         status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
         idempotent: bool = True,
+        relocatable: bool | None = None,
         prospect: Prospect | None = None,
         usage: ProviderUsage | None = None,
         audit_numbers: frozenset[str] = frozenset(),
@@ -898,6 +904,7 @@ class FakeTool:
         self.idempotent = idempotent
         """Whether twice is once (ADR 0015 §8, ADR 0021 §1): ``False`` is how a test builds a
         tool the executor must run under the STARTED protocol."""
+        self._relocatable = relocatable
         self.audit_numbers = audit_numbers
         """What of its result enters ``TOOL_EXECUTED`` (M13.2): nothing, unless a test says so."""
         self.output: JsonMapping = {} if output is None else output
@@ -906,6 +913,7 @@ class FakeTool:
         self._usage = usage
         self.calls: tuple[ToolCall, ...] = ()
         self.prospects = Prospect() if prospect is None else prospect
+        self.assertions = Prospect()
 
     @property
     def capability_id(self) -> CapabilityId:
@@ -915,9 +923,26 @@ class FakeTool:
     def name(self) -> str:
         return self._name
 
+    @property
+    def relocatable(self) -> bool:
+        """Whether a node's expired claim is placed again (M13.3, ADR 0048): what the test says,
+        or else what :attr:`idempotent` says **now** — the one predicate the claim read before
+        M13.3, so a test that turns ``idempotent`` off after building the world keeps meaning
+        what it meant. A test that wants the two apart sets this."""
+        return self.idempotent if self._relocatable is None else self._relocatable
+
+    @relocatable.setter
+    def relocatable(self, value: bool) -> None:
+        self._relocatable = value
+
     async def prospect(self, arguments: JsonMapping) -> Prospect:
         """Whatever the test set: nothing to show and nothing to refuse, by default."""
         return self.prospects
+
+    async def asserted(self, arguments: JsonMapping) -> Prospect:
+        """What the call asserts without looking (M13.3): whatever the test set, empty by
+        default — and never what :attr:`prospects` says, so a test sees which one was asked."""
+        return self.assertions
 
     async def execute(
         self, decision: PermissionDecision, arguments: JsonMapping
@@ -1010,6 +1035,15 @@ class FakeVerifier:
         self._failures: Mapping[str, ErrorMetadata] = MappingProxyType(
             {} if failures is None else dict(failures)
         )
+        self.failure_codes: frozenset[str] = frozenset(
+            {
+                VERIFICATION_WRONG_CAPABILITY,
+                VERIFICATION_NOT_SUCCEEDED,
+                VERIFICATION_NO_CONDITIONS,
+                VERIFICATION_UNKNOWN_CONDITION,
+            }
+        ) | {failure.code for failure in self._failures.values()}
+        """Its vocabulary of failures (ADR 0014 §2): the contract's codes and its table's."""
         unknown = set(self._failures) - self._conditions
         if unknown:
             raise ValueError(f"failures for conditions outside the vocabulary: {sorted(unknown)}")
@@ -1286,6 +1320,25 @@ class FakePower:
     async def __call__(self) -> PowerSource:
         self.asked += 1
         return self.source
+
+
+class FakeLocalBeat:
+    """A heartbeat of ``local`` that is counted and lands nowhere (:class:`~ela.ports.LocalBeat`).
+
+    Since M13.3 the runner asks for a beat before every placement, so ``local`` is alive whenever
+    it is about to be chosen. A test about what the runner does when **no node is eligible** —
+    which stays reachable for a node that is not this machine, or for a capability no node has —
+    declares this beat to build the precondition with the one node of its world; ``beats`` counts
+    what was asked, which is what proves the runner asks before every ``place`` and ``confirm``.
+    """
+
+    __slots__ = ("beats",)
+
+    def __init__(self) -> None:
+        self.beats = 0
+
+    async def beat(self) -> None:
+        self.beats += 1
 
 
 class FakeListening:

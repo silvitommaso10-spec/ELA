@@ -108,6 +108,7 @@ class ListenTool(Tool):
     """
 
     idempotent: ClassVar[bool] = False
+    relocatable: ClassVar[bool] = False
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Two recordings are two rooms at two instants. So this runs under the STARTED protocol, and
     a crash between the recording and its record cannot quietly double what ELA holds."""

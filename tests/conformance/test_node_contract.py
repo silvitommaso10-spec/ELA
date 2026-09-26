@@ -1,4 +1,7 @@
-"""The thirteen stories of the work protocol, once, for every driver (M12.2, dec. P; ADR 0038 §18).
+"""The stories of the work protocol, once, for every driver (M12.2, dec. P; ADR 0038 §18).
+
+Thirteen from M12.2, and a fourteenth since M13.3 (ADR 0048): what a node verifies on its own
+machine is verified there, and the Core's disk neither fails it nor saves it.
 
 Each story is a property of the **protocol**, not of an implementation: a node enrolls, announces,
 asks, runs, reports back, goes quiet, comes back late, comes back twice, is revoked halfway. They
@@ -39,6 +42,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -652,3 +656,109 @@ async def test_story_what_is_verified_only_here_never_arrives(
         for candidate in (await chosen(world, task_id))[-1].payload["candidates"]
     }
     assert "UNVERIFIABLE" in refusals[node.device_id]
+
+
+# ----------------------------------------------------------------------------------------
+# 14. What is verified on the node is verified there (M13.3, ADR 0048)
+# ----------------------------------------------------------------------------------------
+
+WRITTEN = "# M13.3\n\nScritto sulla radice del nodo.\n"
+
+
+def write_plan() -> dict[str, Any]:
+    """A plan of one ``fs.write`` step: ``HIGH``, asked every time, verified where it happens."""
+    return {
+        "goal": "scrivere un file su un'altra macchina",
+        "steps": [
+            {
+                "id": "5c0e7a31-2b4d-4f6a-9e81-7d3c2b1a0f14",
+                "goal": "write",
+                "required_capabilities": ["fs.write"],
+                "arguments": {
+                    "path": "ELA/prova.md",
+                    "body": WRITTEN,
+                    "overwrite": False,
+                    "purpose": "la storia 14 del contratto",
+                },
+                "risk": "HIGH",
+                "expected_result": "the file is on the node's disk",
+                "success_conditions": ["fs.file_exists", "fs.content_matches"],
+                "requires_authorization": True,
+            }
+        ],
+    }
+
+
+async def test_story_what_is_verified_on_the_node_is_verified_there(
+    world: Conformance, kit: NodeKit, tmp_path: Path
+) -> None:
+    """Criterion 1, the first way. The file is written on the **node's** root and not on the
+    Core's: a verifier on the Core would have looked at the wrong disk and said no. The order
+    carries the plan's conditions, the node's verdict closes the step, and the trail says where
+    the verdict was taken."""
+    needs(kit, "what_is_verified_on_the_node_is_verified_there")
+    root = tmp_path / "node-files"
+    root.mkdir()
+    node = await kit.node(world, fs_root=root)
+    task_id, _, order = await taken(world, kit, write_plan(), node=node)
+
+    delivered = await node.deliver(await node.run(order))
+
+    assert order["success_conditions"] == ["fs.file_exists", "fs.content_matches"]
+    assert delivered.status == 200 and delivered.body["step"] == "COMPLETED"
+    assert (root / "ELA" / "prova.md").read_text(encoding="utf-8") == WRITTEN
+    assert not (world.ela.settings.filesystem.root / "ELA" / "prova.md").exists()
+    verified = [e for e in await audit(world, task_id) if e.event_type is E.EXECUTION_VERIFIED]
+    assert verified[-1].payload["passed"] is True
+    assert verified[-1].payload["verified_on"] == node.device_id
+
+
+async def test_story_a_node_that_lies_is_not_saved_by_the_core_s_disk(
+    world: Conformance, kit: NodeKit, tmp_path: Path
+) -> None:
+    """Criterion 1, the other way: the false positive of ADR 0038 §14. The node's ``fs.write``
+    answers ``SUCCEEDED`` and writes nothing, while the Core's root holds a file with the same path
+    and the same bytes — the Core's verifier would have said yes. The node's verifier looks at the
+    node's disk, and the step fails. And the question was asked although the Core's disk would have
+    refused it: for a step on a node the Core does not look at its own disk."""
+    needs(kit, "what_is_verified_on_the_node_is_verified_there")
+    core = world.ela.settings.filesystem.root / "ELA"
+    core.mkdir()
+    (core / "prova.md").write_text(WRITTEN, encoding="utf-8")
+    root = tmp_path / "node-files"
+    root.mkdir()
+    node = await kit.node(world, fs_root=root, liar=True)
+    task_id, _, order = await taken(world, kit, write_plan(), node=node)
+
+    delivered = await node.deliver(await node.run(order))
+
+    assert delivered.status == 200 and delivered.body["step"] == "FAILED"
+    assert not (root / "ELA").exists()
+    detail = (await world.client.get(f"/tasks/{task_id}")).json()
+    assert detail["state"] == "FAILED"
+    verified = [e for e in await audit(world, task_id) if e.event_type is E.EXECUTION_VERIFIED]
+    assert verified[-1].payload["passed"] is False
+    assert verified[-1].payload["verified_on"] == node.device_id
+
+
+async def test_story_a_node_that_brings_no_verdict_is_not_believed(
+    world: Conformance, kit: NodeKit, tmp_path: Path
+) -> None:
+    """Form B's defence at a new boundary, recited by a node of the contract: the effect is real
+    on the node's root, the envelope comes back without the verdict the order asked for, and the
+    Core does not verify it on its own disk to make up for it — the step fails
+    ``verification.failed`` with ``verification.missing``."""
+    needs(kit, "what_is_verified_on_the_node_is_verified_there")
+    root = tmp_path / "node-files"
+    root.mkdir()
+    node = await kit.node(world, fs_root=root)
+    task_id, _, order = await taken(world, kit, write_plan(), node=node)
+    envelope = {key: value for key, value in (await node.run(order)).items() if key != "verdict"}
+
+    delivered = await node.deliver(envelope)
+
+    assert delivered.status == 200 and delivered.body["step"] == "FAILED"
+    verified = [e for e in await audit(world, task_id) if e.event_type is E.EXECUTION_VERIFIED]
+    error = verified[-1].error
+    assert error is not None and error.code == "verification.failed"
+    assert [f["code"] for f in error.details["failures"]] == ["verification.missing"]  # type: ignore[index, union-attr]

@@ -48,7 +48,12 @@ async def test_a_plugged_in_mac_keeps_the_step_and_an_unplugged_one_hands_it_to_
     client: AsyncClient, ela: Ela
 ) -> None:
     """The table of M12.4, played: no ``HIGH`` and no trait, a node idle on ``AC``, and the only
-    thing that changes between the two runs is what ``local``'s machine answers."""
+    thing that changes between the two runs is what ``local``'s machine answers.
+
+    The numbers are M13.3's (ADR 0048 §13): ``local`` beats ``IDLE`` now, observed by the Core, and
+    ``AC`` is worth 20 — the Mac on the mains 50 against the PC's 35, on battery 30 against 35.
+    Until M13.3 they were 30 and 20 against 25: the same outcome, for the wrong reason — nobody
+    observed the Mac's status."""
     node_id, headers = await enrolled(
         client,
         "TRUSTED",
@@ -73,6 +78,6 @@ async def test_a_plugged_in_mac_keeps_the_step_and_an_unplugged_one_hands_it_to_
         for event in await written(ela, AuditEventType.DEVICE_SELECTED)
     ]
     assert placed == [
-        {str(LOCAL_DEVICE_ID): 30, node_id: 25},
-        {str(LOCAL_DEVICE_ID): 20, node_id: 25},
+        {str(LOCAL_DEVICE_ID): 50, node_id: 35},
+        {str(LOCAL_DEVICE_ID): 30, node_id: 35},
     ]

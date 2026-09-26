@@ -10,6 +10,7 @@
   mosso** — fermato (§65), scaduto — restava nell'inbox, e rispondere ci **scriveva** una
   risposta che non muoveva niente. Corretto in §8: `/approvals` non la mostra, e `approve`/`deny`
   la rifiutano **prima di scrivere**.
+  **ADR 0048 §1 e §2** (M13.3): §9, «due `run` sullo stesso task non si sovrappongono», era falsa nel codice — il lock di `run_task` aveva una fessura — e ora è vera; §5-bis, il battito nella rotta: la rotta non batte più, lo fa il servizio del Core prima di ogni piazzamento e a un periodo.
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §12, §27, §30, §32, §33, §46, §47, §48, §54, §57, §58, §62, §65
 - **Milestone:** M8.1 (decisioni dell'utente del 2026-09-07: divisione approvata con la CLI

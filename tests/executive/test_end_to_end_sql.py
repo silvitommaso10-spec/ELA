@@ -21,8 +21,10 @@ from ela.audit.chain import AuditChainError
 from ela.devices import (
     DeviceOrchestrator,
     DeviceRegistry,
+    LocalHeartbeat,
     PlacementDecision,
     local_device,
+    period_of,
     score,
 )
 from ela.domain import (
@@ -70,11 +72,13 @@ from ela.testing.fakes import (
     FakeDeviceRegistry,
     FakeIdGenerator,
     FakeModelProvider,
+    FakePower,
 )
 from ela.tools import (
     ECHO_MESSAGE_MATCHES,
     NOTE_CONTENT_MATCHES,
     NOTE_EXISTS,
+    VERIFIED_ON_THE_NODE,
     tools_v01,
     verifiers_v01,
 )
@@ -194,6 +198,7 @@ class SqlPipeline:
             self.clock,
             verifiers=self.verifiers,
             capabilities=self.registry,
+            carried=VERIFIED_ON_THE_NODE,
         )
         self.runner = TaskRunner(
             engine=self.engine,
@@ -203,6 +208,12 @@ class SqlPipeline:
             results=self.results,
             audit=self.audit,
             assignments=self.assignments,
+            beat=LocalHeartbeat(
+                self.devices,
+                FakePower(),
+                busy=self.executor.running_here,
+                period=period_of(HEARTBEAT_TTL),
+            ),
         )
 
     async def alive(self) -> None:
@@ -324,6 +335,7 @@ class _ForgetfulNoteTool:
     """Claims the note of ``inner`` but removes it before answering (§63 on SQLite)."""
 
     idempotent = True
+    relocatable = False
     audit_numbers: frozenset[str] = frozenset()
     """As the tool it wraps: removing the note twice leaves the same absence (ADR 0015 §8)."""
 

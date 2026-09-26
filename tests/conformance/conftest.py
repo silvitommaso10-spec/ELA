@@ -7,7 +7,7 @@ two databases), and the **protocol** (HTTP over the ASGI transport of ``httpx``)
 
 One thing is deliberately not real: the **clock**. The Core is built with the ``FakeClock`` of
 ``ela.testing`` — through ``build(settings, clock=…)``, a declared parameter and not a patch —
-six of the thirteen stories turn on an expiry, and a suite that waited out a TTL would be measuring
+six of the stories turn on an expiry, and a suite that waited out a TTL would be measuring
 patience. What that costs is written among the limits: the expiry is proved, its tuning is not.
 
 The settings are chosen so that the stories are playable rather than comfortable:

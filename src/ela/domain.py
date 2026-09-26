@@ -143,6 +143,7 @@ __all__ = [
     "TaskStep",
     "UserIntent",
     "UtcDatetime",
+    "is_text",
     "listed",
     "visible",
 ]
@@ -2233,6 +2234,27 @@ def visible(text: str, *, lines: bool) -> str:
     surface that does not and a module that holds a copy of the table.
     """
     return text.translate(_IN_AN_OUTPUT if lines else _IN_A_QUESTION)
+
+
+def is_text(value: object) -> bool:
+    """Whether every string in ``value`` — a JSON value, however nested — is text.
+
+    A lone surrogate (``"\\ud800"``) is a string for the JSON parser FastAPI uses and text for
+    nobody else: it does not encode, so no file, program, database or page takes it. **The one
+    definition** (M13.3, ADR 0048): the plan reads it where arguments are born, and the executor
+    where a result is kept, whichever machine produced it (ADR 0047 §16).
+    """
+    if isinstance(value, str):
+        try:
+            value.encode()
+        except UnicodeEncodeError:
+            return False
+        return True
+    if isinstance(value, Mapping):
+        return all(is_text(key) and is_text(one) for key, one in value.items())
+    if isinstance(value, tuple | list):
+        return all(is_text(one) for one in value)
+    return True
 
 
 def listed(items: tuple[str, ...] | list[str]) -> str:
