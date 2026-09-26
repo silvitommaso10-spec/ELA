@@ -143,6 +143,7 @@ def task_values(task: Task) -> dict[str, Any]:
         "deadline": task.deadline,
         "max_privacy": task.max_privacy.value,
         "metadata_": _plain(task.metadata),
+        "finished_at": task.finished_at,
     }
 
 
@@ -162,6 +163,7 @@ def row_to_task(row: TaskRow) -> Task:
         deadline=row.deadline,
         max_privacy=PrivacyLevel(row.max_privacy),
         metadata=row.metadata_,
+        finished_at=row.finished_at,
     )
 
 

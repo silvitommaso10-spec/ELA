@@ -21,6 +21,7 @@ Le regole di ciò che sta in `apps/` non camminano Python: vivono nei test della
 | I modelli e il codice che li riempie sono un mondo chiuso nei due versi | `tests/ios/test_templates.py` |
 | Ogni fessura è un nome minuscolo che il compositore sa vedere | `tests/ios/test_templates.py` |
 | Ogni pagina risponde con la `Content-Security-Policy` che vieta gli script, e i valori dell'utente arrivano con l'escape | `tests/api/test_companion.py` |
+| Il modulo d'arruolamento e la pagina «rifiutata» portano i fogli dentro, in ogni modo in cui ci si arriva; la loro politica ammette solo l'hash del blocco che servono, e non nominano niente da caricare | `tests/api/test_enrolment_page.py` |
 
 La prima e l'ultima riga sono le **due difese di «niente JavaScript»**, e non sono la stessa cosa
 detta due volte: se un giorno un valore sfuggisse all'escape, il browser si rifiuterebbe comunque
@@ -62,8 +63,11 @@ di eseguirlo.
   gli indirizzi del companion non portano mai uno scopo o un nome: al più un id opaco.
 - **L'app web della schermata Home resta fuori scope**: copia i cookie quando la aggiungi e poi li
   tiene separati, quindi non vede né una revoca né un riarruolamento.
-- **La pagina di arruolamento è senza stile.** I fogli stanno dietro l'identità come tutto il
-  resto: chi non è ancora nessuno non li carica.
+- **La pagina di arruolamento porta i suoi fogli dentro** (M17.2c, ADR 0050), e così la pagina
+  «rifiutata»: le due pagine che possono arrivare a chi non è ancora riconosciuto. I fogli restano
+  dietro l'identità come tutto il resto — nessuna rotta risponde a chi non è nessuno —, e viaggiano
+  in un blocco `<style>` dentro la risposta, che la politica ammette con il suo `sha256`, calcolato a
+  ogni risposta dagli stessi file che una pagina riconosciuta collega.
 - **Un task `LOCAL_ONLY` non si risponde dal telefono**: la pagina mostra la capability, il rischio
   e le ore, e dice che il contenuto resta sul Mac. Per rispondere dall'iPhone, il task va creato
   `TRUSTED`.

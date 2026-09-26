@@ -121,8 +121,8 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 14 — *senza nome* | `M14.2` | Proposta | Il Planner: ELA scrive i piani da sola |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
-| 17 — Design | `M17.2b` | Proposta | Un esito finale sparisce dalle superfici che elencano i task |
-| 17 — Design | `M17.2c` | Proposta | La pagina d'arruolamento arriva senza stile, sulla console e sul telefono |
+| 17 — Design | `M17.2b` | Implementata | Un esito finale sparisce dalle superfici che elencano i task |
+| 17 — Design | `M17.2c` | Implementata | La pagina d'arruolamento arriva senza stile, sulla console e sul telefono |
 | 17 — Design | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
 | 17 — Design | `M17.4` | Proposta | Il passaggio di design del Command Center: le viste tutte insieme, quando guardarle non basta più |
 | 17 — Design | `M17.5` | Proposta | Il Task Center: ogni task, vivo o finito, in una vista sua |
@@ -138,14 +138,14 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **48** | `docs/adr/NNNN-*.md` |
-| Milestone | **65, di cui 51 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **50** | `docs/adr/NNNN-*.md` |
+| Milestone | **65, di cui 53 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **28** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **11** | `production_catalogue()` |
-| Rotte dell'API | **48** | i `router` di `ela.api` |
-| Comandi della CLI | **25** | l'albero Typer di `ela.cli` |
+| Rotte dell'API | **49** | i `router` di `ela.api` |
+| Comandi della CLI | **26** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
@@ -207,9 +207,10 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   sul Mac e vede ELA — quattro viste che mostrano solo ciò che sta già in una rotta, una terza
   identità del registro, un tetto derivato dalla coppia degli indirizzi del socket —, e da lì vale
   la regola che ogni milestone che aggiunge una capacità aggiunge la sua vista. **Restano aperte**
-  M17.4, il passaggio di design del Command Center, M17.3, la presenza desktop, e — registrate il
-  2026-09-24 — M17.2b, la riparazione di un esito che sparisce, e M17.5, il Task Center; e M17.2c,
-  la pagina d'arruolamento senza stile, registrata il 2026-09-26: quando si fanno lo dice la 5.10.
+  M17.4, il passaggio di design del Command Center, M17.3, la presenza desktop, e M17.5, il Task
+  Center: quando si fanno lo dice la 5.10. **M17.2b e M17.2c sono implementate** (2026-09-26, ADR 0049
+  e ADR 0050) — l'esito che resta sulle home, e la pagina d'arruolamento con i suoi fogli dentro — e
+  **la loro prova a mano aspetta l'utente** (`GETTING_STARTED.md` §18).
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
@@ -487,8 +488,9 @@ M17.1 il 2026-09-19, M12.5 e M17.2 il 2026-09-20 —, e **ciò che viene dopo è
 prima milestone è M13.1, e l'ordine dentro la fase sta nella 5.11. **M17.2b viene dopo M13.3**, in
 una sessione di design insieme alle altre riparazioni della stessa pagina, ciascuna con il suo
 documento e la sua lettera, su un branch solo: **quella sessione è del 2026-09-26, con M17.2c**, sul
-branch `m17.2b-m17.2c-design`, e le due SPEC sono approvate dall'utente lo stesso giorno — le
-domande numerate insieme, 1–6 per M17.2b e 7–10 per M17.2c, e le correzioni A–F. **L'ordine di M17.5 non è deciso.**
+branch `m17.2b-m17.2c-design`; le due SPEC sono approvate dall'utente lo stesso giorno — le domande
+numerate insieme, 1–6 per M17.2b e 7–10 per M17.2c, e le correzioni A–F — e implementate, con la
+prova a mano che aspetta. **L'ordine di M17.5 non è deciso.**
 
 *Perché è una fase:* è il design stesso a chiederlo. §33 del design vieta di saltare da «ELA deve
 essere futuristica» a «scrivi il codice della dashboard», §22 del design vuole l'identità progettata

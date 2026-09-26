@@ -14,7 +14,15 @@ from fastapi import APIRouter, Query
 
 from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.errors import TaskAlreadyRunningError
-from ela.api.schemas import CancelIn, PlanIn, RunOut, TaskCreate, TaskDetail, TaskOut
+from ela.api.schemas import (
+    CancelIn,
+    FinishedOut,
+    PlanIn,
+    RunOut,
+    TaskCreate,
+    TaskDetail,
+    TaskOut,
+)
 from ela.domain import (
     IntentChannel,
     IntentId,
@@ -22,6 +30,7 @@ from ela.domain import (
     TaskState,
     UserIntent,
 )
+from ela.tasks.engine import TERMINAL_STATES
 from ela.tasks.graph import TaskGraph
 
 __all__ = ["PLAN_IS_TEMPORARY", "router"]
@@ -69,6 +78,23 @@ async def list_tasks(
     states = frozenset(state) if state else None
     tasks = await ela.repository.tasks(states=states, limit=limit)
     return tuple(TaskOut.of(task) for task in tasks)
+
+
+@router.get("/finished")
+async def finished_tasks(ela: ElaDep, limit: Annotated[int, Query(ge=1)]) -> FinishedOut:
+    """The last ``limit`` tasks to reach a final state, the last first, and how many in all.
+
+    M17.2b (ADR 0049): what the two homes list beside the live tasks. A route of its own because
+    its order is not the one ``GET /tasks`` declares, and a different order is a different
+    question. **Declared before** ``/{task_id}``: the router takes the first route whose path
+    matches, and ``{task_id}`` matches any segment — ``finished`` would be refused as an id.
+
+    ``limit`` is required: the route answers «the last N», and an N that is missing is the caller's
+    bug. The count is read **after** the tasks, so ``total`` is never smaller than what came back.
+    """
+    tasks = await ela.repository.finished(states=TERMINAL_STATES, limit=limit)
+    counted = await ela.repository.count(states=TERMINAL_STATES)
+    return FinishedOut(tasks=tuple(TaskOut.of(task) for task in tasks), total=sum(counted.values()))
 
 
 @router.get("/{task_id}")

@@ -26,13 +26,13 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app, pages
+from ela.api.companion import NO_LIVE
 from ela.api.console import (
     FROM_AWAY,
     FROM_THIS_MACHINE,
     NO_DEVICES,
     NO_PLAN,
     NO_RESULTS,
-    NO_TASKS,
     NO_TOOLS,
     NOTHING_RUNS,
     NOTHING_WAITS,
@@ -941,7 +941,7 @@ async def test_the_approval_center_with_nothing_waiting_says_so(console: AsyncCl
 async def test_the_home_with_no_live_task_says_so(console: AsyncClient) -> None:
     home = await console.get("/console/")
 
-    assert NO_TASKS in home.text
+    assert NO_LIVE in home.text
     assert NOTHING_RUNS in home.text
     assert escape(NOTHING_WAITS) in home.text
 

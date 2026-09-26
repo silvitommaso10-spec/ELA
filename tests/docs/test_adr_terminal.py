@@ -20,7 +20,7 @@ from ela.tools.terminal import TerminalRunTool
 from ela.tools.verifiers import TerminalRunVerifier
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
-from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.tools.terminals import no_programs
 from tests.windows import OUTSIDE_THE_WINDOWS_JOB
@@ -72,7 +72,7 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
     assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 27
     assert "CommandLauncher" in {port.__name__ for port in port_protocols()}
     assert "**quarantotto**" in text
-    assert len(coded_routes()) == 48
+    assert len(coded_routes() - routes_after_0048()) == 48
 
 
 # ----------------------------------------------------------------------------------------

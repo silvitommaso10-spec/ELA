@@ -6,6 +6,8 @@
   sull'iPhone, ed è cresciuta in «Proposta» a ogni commit della milestone — ogni sezione è entrata
   col codice che difende — fino alla review dell'implementazione, che ha aggiunto il terreno del
   companion (§5) e il criterio di §11.
+  **ADR 0049 §7** (M17.2b): la riga di §5 «`?task=<id>` mostra l'esito di ciò a cui si è appena risposto» non vale più — la home elenca i vivi e gli ultimi finiti, e dopo una risposta la pagina torna a `/companion/`.
+  **ADR 0050 §6** (M17.2c): §5, i capoversi «Un compositore solo», «L'escape è per costruzione» e l'ultimo, e §10, il vincolo «La pagina di arruolamento è senza identità visiva», si leggono con quella accanto — il modulo d'arruolamento e la pagina «rifiutata» portano i fogli dentro, ammessi dal loro hash, e nessuna rotta risponde a nessuno. La scelta funzionava come scritta.
 - **Data:** 2026-09-20
 - **Riferimenti spec:** §6, §16, §57, §58, §65
 - **Milestone:** M12.5, l'ultima della Fase 12 (`docs/STATO.md`, voce 4.1).

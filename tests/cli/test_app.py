@@ -44,6 +44,7 @@ def test_every_command_of_the_milestone_is_there() -> None:
         "context",
         "task create",
         "task list",
+        "task finished",
         "task show",
         "task results",
         "task plan",

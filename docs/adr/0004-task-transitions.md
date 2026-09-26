@@ -1,6 +1,6 @@
 # 0004. Transizioni di stato del Task e forma della funzione `transition`
 
-- **Stato:** Accettata
+- **Stato:** Accettata. **ADR 0049 §1 e §2** (M17.2b): §3, «cambia solo `state`», si legge con quella accanto — quando lo stato è finale cambia anche `finished_at`, l'ora dell'esito, scritta con lo stesso istante dell'evento; §6, la regola 5 guarda anche `finished_at`.
 - **Data:** 2026-09-04
 - **Riferimenti spec:** §14, §15, §17, §27, §33, §34, §51, §52, §62, §63, §65
 - **Milestone:** M1.2

@@ -971,8 +971,9 @@ del battito restano quelli (M12.4, dec. J).
 ## 13. L'iPhone come companion: vedere e rispondere da lontano
 
 L'iPhone **non è un nodo**: non prende lavoro, non esegue tool, non manda battiti. È l'unica
-identità che *guarda e risponde* — le domande che aspettano, i task vivi, il sì, il no, e fermare un
-task —, e lo fa da una pagina che ELA serve, nel browser del telefono (M12.5, ADR 0043).
+identità che *guarda e risponde* — le domande che aspettano, i task vivi e gli ultimi finiti, il sì,
+il no, e fermare un task —, e lo fa da una pagina che ELA serve, nel browser del telefono (M12.5,
+ADR 0043).
 
 Serve la tailnet del §12: l'iPhone con Tailscale, sulla stessa rete del Mac.
 
@@ -1025,12 +1026,15 @@ bloccato (chiede il codice di sblocco e poi apre). «ELA» da solo Siri non lo c
 contiene nessun segreto: apre un indirizzo, e la credenziale è quella del browser.
 
 **5. Che cosa fa la pagina.** La sfera dice se una domanda aspetta (`WAITING APPROVAL`), se ELA sta
-lavorando (`WORKING`) o se è ferma (`IDLE`). Sotto, le domande che aspettano e i task vivi. Toccare
-una domanda apre la pagina della domanda: che cosa ELA vuole fare, con che rischio, fin dove può
-andare il contenuto, per quanto vale il sì. **Il sì risponde e fa ripartire il task nella stessa
-richiesta** — le stesse due cose che al Mac sono `ela task approve` e `ela task run` —, e la pagina
-torna con l'esito vero. Toccare un task vivo porta alla conferma per fermarlo, su una seconda pagina:
-fermare non si annulla.
+lavorando (`WORKING`) o se è ferma (`IDLE`). Sotto, le domande che aspettano, e i task in due gruppi:
+i **vivi** e i **finiti** — gli ultimi sei, l'ultimo a finire per primo, con il loro stato; il titolo
+dice il limite e, se sono di più, di quanti (M17.2b). Toccare una domanda apre la pagina della
+domanda: che cosa ELA vuole fare, con che rischio, fin dove può andare il contenuto, per quanto vale
+il sì. **Il sì risponde e fa ripartire il task nella stessa richiesta** — le stesse due cose che al
+Mac sono `ela task approve` e `ela task run` —, e la pagina torna alla home, dove il task è il primo
+dei finiti se si è chiuso. Toccare un task vivo porta alla conferma per fermarlo, su una seconda
+pagina: fermare non si annulla, e il task fermato resta fra i finiti. Un task finito non è un
+collegamento: il suo riassunto si legge dal Mac.
 
 **6. Revocare il telefono.** Come per un nodo, e vale subito:
 
@@ -2227,9 +2231,10 @@ quella di §16: togli la voce da `ELA_TERMINAL_PROGRAMS`, cancella `~/ela-prova`
 
 ## 18. La pagina che mente e la pagina spoglia: la prova a mano di M17.2b e M17.2c
 
-> **Bozza, scritta con le SPEC del 2026-09-26** e con le loro proposte (domande 1–10): nessun passo è
-> ancora stato eseguito, e ciò che si deve vedere cambia con le risposte. Le uscite vere la
-> sostituiscono con l'implementazione. Gli ADR saranno 0049 (M17.2b) e 0050 (M17.2c).
+> **Scritta con le SPEC del 2026-09-26, decise (domande 1–10, correzioni A–F), e allineata
+> all'implementazione** — ADR [0049](adr/0049-finished-on-the-homes.md) e
+> [0050](adr/0050-sheets-inside-the-page.md). **Nessun passo è ancora stato eseguito**: ciò che si
+> deve vedere è ciò che il codice e i suoi test dicono, e le uscite vere lo sostituiranno.
 
 Due riparazioni. **M17.2b**: un task finito non sparisce più dalle home — la console e il telefono
 elencano, accanto ai vivi, gli ultimi task arrivati in uno stato finale, l'ultimo per primo. **M17.2c**:

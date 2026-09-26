@@ -26,6 +26,7 @@ from tests.architecture.rules import RULES, current_name
 from tests.architecture.violations import PACKAGE_ROOT
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_cli import COMMAND_ROW
+from tests.docs.test_adr_composition import routes_after_0048
 from tests.docs.test_v01_surface import V01_ROUTERS
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0029-screen-capture.md"
@@ -130,7 +131,7 @@ def test_no_capability_of_v01_shows_an_argument_in_the_question() -> None:
 def test_no_route_was_added() -> None:
     """§15: the capture is reached through ``POST /tasks``, ``/approvals`` and the results."""
     routers = api_routers()
-    coded = routes_of(routers[name] for name in ROUTERS_OF_THIS_ADR)
+    coded = routes_of(routers[name] for name in ROUTERS_OF_THIS_ADR) - routes_after_0048()
 
     assert len(coded) == 16
     assert "Nessuna rotta nuova e nessun comando nuovo" in adr_text()

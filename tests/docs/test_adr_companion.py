@@ -23,7 +23,7 @@ from ela.api.security import (
 from ela.domain import AuditEventType, DeviceRole
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
-from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0043-companion.md"
@@ -67,7 +67,7 @@ def test_the_conseguenze_count_what_the_tree_had_when_it_was_written() -> None:
         == 26
     )
     assert "**trentasette**" in text
-    assert len(coded_routes() - CONSOLE_PAGES) == 37
+    assert len(coded_routes() - CONSOLE_PAGES - routes_after_0048()) == 37
 
 
 def test_the_three_new_rules_it_names_are_in_the_tree() -> None:

@@ -20,9 +20,14 @@ from ela.cli.errors import CONFIGURATION, fail, handled
 from ela.cli.output import Json, emit, fields, table
 from ela.domain import listed, visible
 
-__all__ = ["app"]
+__all__ = ["FINISHED_LIMIT", "app"]
 
 app = typer.Typer(no_args_is_help=True, help="Create, read, plan, run and stop tasks.")
+
+FINISHED_LIMIT: Final = 10
+"""How many outcomes ``ela task finished`` shows when nobody says: **the CLI's own number**
+(M17.2b, correction B). The CLI is a client and reads no constant of a page; a terminal has room for
+a few more lines than a phone, and ``--limit`` is there for whoever wants another."""
 
 TaskId = Annotated[str, typer.Argument(metavar="TASK_ID", help="the id of the task")]
 Approval = Annotated[
@@ -91,6 +96,36 @@ def list_tasks(
         table(
             ("id", "state", "created", "goal"),
             [(one["id"], one["state"], one["created_at"], one["goal"]) for one in payload],
+        ),
+    )
+
+
+@app.command("finished")
+@handled
+def finished(
+    limit: Annotated[
+        int, typer.Option("--limit", min=1, help="at most this many; the CLI's own default")
+    ] = FINISHED_LIMIT,
+    as_json: Json = False,
+) -> None:
+    """The last tasks to reach a final state, the last first, and how many there are in all."""
+    with client.connect() as api:
+        payload = api.get("/tasks/finished", client.query(limit=limit))
+    shown = payload["tasks"]
+    title = f"the last {limit} to finish"
+    if payload["total"] > len(shown):
+        title = f"{title}, of {payload['total']}"
+    emit(
+        payload,
+        as_json,
+        "\n".join(
+            [
+                title,
+                table(
+                    ("id", "state", "finished", "goal"),
+                    [(one["id"], one["state"], one["finished_at"], one["goal"]) for one in shown],
+                ),
+            ]
         ),
     )
 

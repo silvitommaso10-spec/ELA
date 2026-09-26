@@ -671,6 +671,25 @@ class TaskRepository(Protocol):
         ten thousand (review of M8.1).
         """
 
+    async def finished(self, *, states: frozenset[TaskState], limit: int) -> tuple[Task, ...]:
+        """Stored tasks in ``states``, the last to finish first, ``limit`` of them (M17.2b).
+
+        The question the homes ask — «the last N outcomes» — and a member of its own for the reason
+        :meth:`due` gives: ``tasks()`` keeps insertion order, and a different order is a different
+        question. The order is ``finished_at``, newest first, with insertion order newest first on
+        a tie so the answer is stable; a task **without** a ``finished_at`` — one that finished
+        before the hour was written, and whose final event was lost (ADR 0015 §8) — comes **last**,
+        never left out: it finished, and a list of outcomes that dropped it would be the defect
+        this member repairs.
+
+        ``states`` is the caller's (``TERMINAL_STATES``): the port does not import the state
+        machine. An empty ``frozenset`` is a question about no state at all and answers ``()``, as
+        for ``tasks`` and ``count``. ``limit`` is required and at least 1, else ``ValueError``: its
+        only caller always passes one, and ``None`` would be a branch nobody produces. How many
+        there are in all is :meth:`count` — the question a list that cuts must be able to answer
+        without loading what it cut.
+        """
+
     async def due(
         self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
     ) -> tuple[Task, ...]:

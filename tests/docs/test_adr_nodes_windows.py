@@ -29,8 +29,8 @@ from tests.architecture.rules import (
 )
 from tests.conformance.test_node_contract import KITS
 from tests.conformance.test_unsupported import PINNED
-from tests.docs.test_adr_cli import SPECIES, coded_commands, documented_species
-from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_cli import SPECIES, coded_commands, commands_after_0048, documented_species
+from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 from tests.docs.test_adr_listening import ports_before
 from tests.docs.test_adr_placement import _rules_up_to
 
@@ -241,11 +241,11 @@ def test_the_conseguenze_count_what_the_tree_has_today() -> None:
     assert "**cinquantaquattro**" in text
     assert len(_rules_up_to(54)) == 54
     assert "**restano ventinove**" in text
-    assert len(coded_routes() - pages_of_every_surface()) == 29
+    assert len(coded_routes() - pages_of_every_surface() - routes_after_0048()) == 29
     assert "quelle che un nodo può chiamare **sei**" in text
     assert len(NODE_ROUTES) == 6
     assert "**ventisei**" in text
-    assert len(coded_commands()) == 26
+    assert len(coded_commands() - commands_after_0048()) == 26
     assert "le specie di comando **tre**" in text
     assert set(documented_species().values()) == SPECIES
     assert len(SPECIES) == 3

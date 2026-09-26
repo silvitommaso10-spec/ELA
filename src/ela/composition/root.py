@@ -69,6 +69,7 @@ from ela.infrastructure.persistence import (
     SqlExecutionResultStore,
     SqlTaskRepository,
     make_engine,
+    missing_columns,
     missing_tables,
 )
 from ela.perception import PerceptionCore
@@ -399,6 +400,15 @@ async def build(
             raise ConfigurationError(
                 f"the database at {settings.persistence.db_url} is missing the tables "
                 f"{', '.join(absent)}. ELA does not migrate on start-up (ADR 0006): run "
+                "`uv run alembic upgrade head` first."
+            )
+        # The columns too (M17.2b decisione 6): a database left before a migration that added a
+        # column has every table, and would start and fail at the first read, far from the cause.
+        lacking = await missing_columns(database)
+        if lacking:
+            raise ConfigurationError(
+                f"the database at {settings.persistence.db_url} is missing the columns "
+                f"{', '.join(lacking)}. ELA does not migrate on start-up (ADR 0006): run "
                 "`uv run alembic upgrade head` first."
             )
 

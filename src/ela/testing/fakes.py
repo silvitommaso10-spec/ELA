@@ -247,6 +247,23 @@ class FakeTaskRepository:
                 counted[task.state] = counted.get(task.state, 0) + 1
         return counted
 
+    async def finished(self, *, states: frozenset[TaskState], limit: int) -> tuple[Task, ...]:
+        check_limit(limit)
+        selected = [
+            (index, task) for index, task in enumerate(self._tasks.values()) if task.state in states
+        ]
+        # Newest hour first, the last inserted first on a tie, and no hour at the end: the order
+        # the SQL writes as ``finished_at DESC NULLS LAST, seq DESC``.
+        selected.sort(
+            key=lambda pair: (
+                pair[1].finished_at is not None,
+                pair[1].finished_at or datetime.min.replace(tzinfo=UTC),
+                pair[0],
+            ),
+            reverse=True,
+        )
+        return tuple(task for _, task in selected)[:limit]
+
     async def due(
         self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
     ) -> tuple[Task, ...]:

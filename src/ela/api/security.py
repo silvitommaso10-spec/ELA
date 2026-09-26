@@ -440,7 +440,7 @@ def enrolment(
     other ``401`` already says of ELA.
     """
     note(request, reason)
-    return pages.page(surface.templates, "enrol", status=401, message=message)
+    return pages.page(surface.templates, "enrol", sheets=pages.INSIDE, status=401, message=message)
 
 
 def forgotten(surface: Surface, response: Response) -> Response:
@@ -671,16 +671,22 @@ def _page_401(surface: Surface) -> Response:
     The audit already holds the ``DEVICE_REJECTED`` (ADR 0037 §13), and counting it as anonymous
     too would say the same refusal twice in two vocabularies.
     """
-    return pages.page(surface.templates, "enrol", status=401, message=ENROL_AGAIN)
+    return pages.page(
+        surface.templates, "enrol", sheets=pages.INSIDE, status=401, message=ENROL_AGAIN
+    )
 
 
 def _not_from_ela(surface: Surface, request: Request) -> Response:
-    """A form that did not come from a page of ELA: refused, counted, and said as a page."""
+    """A form that did not come from a page of ELA: refused, counted, and said as a page.
+
+    With its sheets inside, whoever receives it (M17.2c dec. 9): it is composed before an identity
+    is resolved, and to a browser nobody has recognised the linked sheets would answer the form.
+    """
     note(request, Anonymous.NOT_FROM_ELA)
     return pages.page(
         surface.templates,
         "refused",
-        sheets=surface.prefix,
+        sheets=pages.INSIDE,
         status=403,
         title="Rifiutata",
         text=NOT_HERE,

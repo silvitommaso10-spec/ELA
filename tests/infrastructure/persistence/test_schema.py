@@ -67,3 +67,15 @@ async def test_a_migrated_database_lacks_no_column(engine: AsyncEngine) -> None:
     from ela.infrastructure.persistence import missing_columns
 
     assert await missing_columns(engine) == ()
+
+
+async def test_a_table_that_is_missing_is_not_named_again_column_by_column() -> None:
+    """A missing table is :func:`missing_tables`' to say: naming each of its columns as well would
+    say the same thing twice, longer, in the message that stops the start-up."""
+    from ela.infrastructure.persistence import missing_columns
+
+    empty = make_engine(MEMORY_URL)
+    try:
+        assert await missing_columns(empty) == ()
+    finally:
+        await empty.dispose()

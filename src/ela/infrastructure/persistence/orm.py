@@ -111,6 +111,12 @@ class TaskRow(Base):
     a class whose field order disagreed with the database's would make the two descriptions of one
     table differ for no reason anybody could act on (ADR 0006 §4).
     """
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    """When the task reached its final state (M17.2b, ADR 0049): ``NULL`` while it is alive.
+
+    Written in the same ``UPDATE`` as ``state``. Declared after ``max_privacy`` for the reason that
+    column gives: ``0012`` adds it with ``ALTER TABLE ADD COLUMN``, which puts it last.
+    """
 
 
 class TaskEventRow(Base):

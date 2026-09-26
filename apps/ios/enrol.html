@@ -1,9 +1,18 @@
-<h1>ELA</h1>
-<p>{message}</p>
-<form method="post" action="/companion/enroll">
-  <p><label>Codice<br><input name="code" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" size="45"></label></p>
-  <p><label>Nome<br><input name="name" value="iPhone"></label></p>
-  <p><label>Sistema<br><input name="os" value="IOS" readonly></label></p>
-  <p><button type="submit">Arruola questo browser</button></p>
+<h1 class="ela-title">ELA</h1>
+<p class="ela-body">{message}</p>
+<form class="ela-stack" method="post" action="/companion/enroll">
+  <div class="ela-field">
+    <label class="ela-field__label" for="enrol-code">Codice</label>
+    <input class="ela-field__input" id="enrol-code" name="code" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+  </div>
+  <div class="ela-field">
+    <label class="ela-field__label" for="enrol-name">Nome</label>
+    <input class="ela-field__input" id="enrol-name" name="name" value="iPhone">
+  </div>
+  <div class="ela-field">
+    <label class="ela-field__label" for="enrol-os">Sistema</label>
+    <input class="ela-field__input" id="enrol-os" name="os" value="IOS" readonly>
+  </div>
+  <p><button class="ela-button ela-button--primary ela-button--block" type="submit">Arruola questo browser</button></p>
 </form>
-<p>Il codice si conia al Mac, con <code>ela node enroll --privacy TRUSTED --role companion</code>, e vale dieci minuti.</p>
+<p class="ela-caption">Il codice si conia al Mac, con <code>ela node enroll --privacy TRUSTED --role companion</code>, e vale dieci minuti.</p>

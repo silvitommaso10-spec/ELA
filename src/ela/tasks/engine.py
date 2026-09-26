@@ -97,6 +97,7 @@ __all__ = [
     "STEP_OPERATIONS",
     "SYSTEM_ACTOR",
     "TASK_NAMESPACE",
+    "TERMINAL_STATES",
     "Operation",
     "RecoverySummary",
     "StepOperation",
@@ -120,7 +121,11 @@ SYSTEM_ACTOR: Final = Actor(kind=ActorKind.SYSTEM, id="task-engine")
 """Who acts when nobody asked: expiries, recovery, the cancellation of dependent steps."""
 
 LIVE_STATES: Final[frozenset[TaskState]] = frozenset(TaskState) - TERMINAL_STATES
-"""The states a task can still leave: the sources of ``cancel`` and ``expire`` (ADR 0004 P3)."""
+"""The states a task can still leave: the sources of ``cancel`` and ``expire`` (ADR 0004 P3).
+
+Exported beside :data:`TERMINAL_STATES`, its complement, which the engine re-exports (M17.2b): the
+contract 7 of import-linter keeps ``ela.api`` away from the state machine, and «which states are
+final» is one answer, read from here by whoever may not read it there."""
 
 
 class Operation(NamedTuple):

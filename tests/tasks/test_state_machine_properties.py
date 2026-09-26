@@ -87,7 +87,12 @@ def test_event_trace_reconstructs_the_path(task: Task, data: st.DataObject) -> N
     assert all(e.event_type is TaskEventType.STATE_CHANGED for e in events)
     assert all(e.task_id == task.id for e in events)
     assert current.state is path[-1]
-    assert current.model_dump(exclude={"state"}) == task.model_dump(exclude={"state"})
+    # The state, and — once it is final — the hour of the outcome, which is the instant of the event
+    # that ended the walk (M17.2b, ADR 0049 revising ADR 0004 §3); nothing else.
+    moved = {"state", "finished_at"}
+    assert current.model_dump(exclude=moved) == task.model_dump(exclude=moved)
+    ended = is_terminal(current.state) and bool(events)
+    assert current.finished_at == (events[-1].created_at if ended else task.finished_at)
     # Every walk that ran out of moves ended in one of the five terminal states.
     if is_terminal(current.state):
         assert current.state in TERMINAL_STATES

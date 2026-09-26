@@ -990,6 +990,10 @@ def check_state_changes(pkg_root: Path) -> list[Violation]:
     Reported: ``x.model_copy(update={... "state": ...})`` with a literal dict, and
     ``Task(..., state=<anything but TaskState.CREATED>)``. A heuristic on names, not on types:
     it catches the obvious bypass, the review catches the rest.
+
+    Since M17.2b (ADR 0049) the hour of an outcome is part of the state it belongs to, and the rule
+    watches it the same way: ``model_copy(update={... "finished_at": ...})`` and
+    ``Task(..., finished_at=<anything but None>)`` are a finish nobody reached.
     """
     rule = "task-state-changes-only-in-the-state-machine"
     found: list[Violation] = []
@@ -1005,8 +1009,14 @@ def check_state_changes(pkg_root: Path) -> list[Violation]:
                 found.append(
                     Violation(rule, name, 'model_copy(update={"state": ...})', node.lineno)
                 )
+            elif _copies_field(node, "finished_at"):
+                found.append(
+                    Violation(rule, name, 'model_copy(update={"finished_at": ...})', node.lineno)
+                )
             elif _builds_task_in_a_state(node):
                 found.append(Violation(rule, name, "Task(state=...)", node.lineno))
+            elif _builds_task_finished(node):
+                found.append(Violation(rule, name, "Task(finished_at=...)", node.lineno))
     return found
 
 
@@ -1024,6 +1034,19 @@ def _copies_field(call: ast.Call, field: str) -> bool:
                 isinstance(key, ast.Constant) and key.value == field for key in keyword.value.keys
             )
     return False
+
+
+def _builds_task_finished(call: ast.Call) -> bool:
+    """``Task(..., finished_at=<anything but None>)``: a task born with an outcome's hour."""
+    callee = call.func
+    callee_name = callee.id if isinstance(callee, ast.Name) else getattr(callee, "attr", None)
+    if callee_name != "Task":
+        return False
+    return any(
+        keyword.arg == "finished_at"
+        and not (isinstance(keyword.value, ast.Constant) and keyword.value.value is None)
+        for keyword in call.keywords
+    )
 
 
 def _builds_task_in_a_state(call: ast.Call) -> bool:

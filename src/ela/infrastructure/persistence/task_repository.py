@@ -122,6 +122,27 @@ class SqlTaskRepository:
             rows = await session.execute(query)
             return {TaskState(state): total for state, total in rows.all()}
 
+    async def finished(self, *, states: frozenset[TaskState], limit: int) -> tuple[Task, ...]:
+        """``ORDER BY finished_at DESC NULLS LAST, seq DESC``: the database sorts (M17.2b).
+
+        SQLite already puts ``NULL`` last in a descending order; the query says it anyway, because
+        «a task without an hour is at the bottom and not missing» is the contract and not an
+        accident of one engine. The hours are stored at a fixed width, so the order of the text is
+        the order of the time.
+        """
+        check_limit(limit)
+        if not states:
+            return ()
+        query = (
+            select(TaskRow)
+            .where(TaskRow.state.in_([state.value for state in states]))
+            .order_by(TaskRow.finished_at.desc().nulls_last(), TaskRow.seq.desc())
+            .limit(limit)
+        )
+        async with self._sessions() as session:
+            rows = await session.scalars(query)
+            return tuple(row_to_task(row) for row in rows)
+
     async def due(
         self, *, states: frozenset[TaskState] | None = None, limit: int | None = None
     ) -> tuple[Task, ...]:
