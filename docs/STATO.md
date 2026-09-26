@@ -122,6 +122,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.2b` | Proposta | Un esito finale sparisce dalle superfici che elencano i task |
+| 17 — Design | `M17.2c` | Proposta | La pagina d'arruolamento arriva senza stile, sulla console e sul telefono |
 | 17 — Design | `M17.3` | Proposta | La presenza desktop: ELA sullo schermo senza la dashboard aperta |
 | 17 — Design | `M17.4` | Proposta | Il passaggio di design del Command Center: le viste tutte insieme, quando guardarle non basta più |
 | 17 — Design | `M17.5` | Proposta | Il Task Center: ogni task, vivo o finito, in una vista sua |
@@ -138,7 +139,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **48** | `docs/adr/NNNN-*.md` |
-| Milestone | **64, di cui 51 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **65, di cui 51 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **28** | i `Protocol` di `src/ela/ports.py` |
@@ -207,8 +208,8 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   identità del registro, un tetto derivato dalla coppia degli indirizzi del socket —, e da lì vale
   la regola che ogni milestone che aggiunge una capacità aggiunge la sua vista. **Restano aperte**
   M17.4, il passaggio di design del Command Center, M17.3, la presenza desktop, e — registrate il
-  2026-09-24 — M17.2b, la riparazione di un esito che sparisce, e M17.5, il Task Center: quando si
-  fanno lo dice la 5.10.
+  2026-09-24 — M17.2b, la riparazione di un esito che sparisce, e M17.5, il Task Center; e M17.2c,
+  la pagina d'arruolamento senza stile, registrata il 2026-09-26: quando si fanno lo dice la 5.10.
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
@@ -457,6 +458,14 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   da quella del telefono: l'esito che l'utente aspettava è quello che la vista smette di mostrare. È
   la decisione 22 di M17.2 che funziona come scritta, e il suo prezzo; ed è una vista che **mente**,
   quindi si ripara prima di M17.4, per la regola della voce qui sopra. Il suo confine è M17.5.
+- **M17.2c — La pagina d'arruolamento arriva senza stile, sulla console e sul telefono**
+  (registrata il 2026-09-26, da una decisione dell'utente presa nella chat di M13.2). La pagina che
+  un browser nuovo vede per prima, e che chiede il codice, è HTML senza stile: è la decisione D di
+  M12.5 che funziona come scritta — i fogli dietro il middleware, e una politica che rifiuta gli
+  stili in linea. È spoglia e non mente, ma **M17.4 non la potrebbe riparare**: la sua registrazione
+  fissa «la stessa `Content-Security-Policy`», e con quella politica la pagina resta senza stile per
+  sempre. La cura è sul confine di sicurezza — il foglio dentro il `401`, ammesso dal suo hash —, non
+  un passaggio di design.
 - **M17.5 — Il Task Center** (§9 del design; registrata il 2026-09-24, con M17.2b). M17.2 l'aveva
   messo fuori scope come «una vista sua», e nessuna milestone lo prendeva.
 - **M17.3 — Presenza desktop** (§19 del design), alla fine, dopo le altre fasi.
@@ -477,7 +486,8 @@ quando si fa: M17.1 è venuta prima dell'ultima milestone della Fase 12. **Le tr
 M17.1 il 2026-09-19, M12.5 e M17.2 il 2026-09-20 —, e **ciò che viene dopo è la Fase 13**: la sua
 prima milestone è M13.1, e l'ordine dentro la fase sta nella 5.11. **M17.2b viene dopo M13.3**, in
 una sessione di design insieme alle altre riparazioni della stessa pagina, ciascuna con il suo
-documento e la sua lettera, su un branch solo. **L'ordine di M17.5 non è deciso.**
+documento e la sua lettera, su un branch solo: **quella sessione è del 2026-09-26, con M17.2c**, sul
+branch `m17.2b-m17.2c-design`. **L'ordine di M17.5 non è deciso.**
 
 *Perché è una fase:* è il design stesso a chiederlo. §33 del design vieta di saltare da «ELA deve
 essere futuristica» a «scrivi il codice della dashboard», §22 del design vuole l'identità progettata
