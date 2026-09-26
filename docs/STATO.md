@@ -487,7 +487,8 @@ M17.1 il 2026-09-19, M12.5 e M17.2 il 2026-09-20 —, e **ciò che viene dopo è
 prima milestone è M13.1, e l'ordine dentro la fase sta nella 5.11. **M17.2b viene dopo M13.3**, in
 una sessione di design insieme alle altre riparazioni della stessa pagina, ciascuna con il suo
 documento e la sua lettera, su un branch solo: **quella sessione è del 2026-09-26, con M17.2c**, sul
-branch `m17.2b-m17.2c-design`. **L'ordine di M17.5 non è deciso.**
+branch `m17.2b-m17.2c-design`, e le due SPEC aspettano le risposte dell'utente alle loro domande,
+numerate insieme (1–6 per M17.2b, 7–10 per M17.2c). **L'ordine di M17.5 non è deciso.**
 
 *Perché è una fase:* è il design stesso a chiederlo. §33 del design vieta di saltare da «ELA deve
 essere futuristica» a «scrivi il codice della dashboard», §22 del design vuole l'identità progettata
