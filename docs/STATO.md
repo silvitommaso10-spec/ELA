@@ -81,6 +81,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 6 — I nodi | `M6.1b` | Implementata | Il nodo che non impara: una capability aggiunta dopo il primo avvio |
 | 6 — I nodi | `M6.2` | Implementata | Device Orchestrator |
 | 6 — I nodi | `M6.3` | Implementata | Task Runner: la camminata del grafo |
+| 6 — I nodi | `M6.3b` | Proposta | `ela task run` dice «steps executed» di uno step che non ha eseguito |
 | 7 — Il modello | `M7.1` | Implementata | `ModelProvider` e provider Anthropic |
 | 7 — Il modello | `M7.2` | Implementata | Protocollo STARTED e `model.complete` |
 | 7 — Il modello | `M7.3` | Implementata | Model Router |
@@ -139,7 +140,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **50** | `docs/adr/NNNN-*.md` |
-| Milestone | **65, di cui 53 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **66, di cui 53 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **28** | i `Protocol` di `src/ela/ports.py` |
@@ -208,9 +209,10 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   identità del registro, un tetto derivato dalla coppia degli indirizzi del socket —, e da lì vale
   la regola che ogni milestone che aggiunge una capacità aggiunge la sua vista. **Restano aperte**
   M17.4, il passaggio di design del Command Center, M17.3, la presenza desktop, e M17.5, il Task
-  Center: quando si fanno lo dice la 5.10. **M17.2b e M17.2c sono implementate** (2026-09-26, ADR 0049
-  e ADR 0050) — l'esito che resta sulle home, e la pagina d'arruolamento con i suoi fogli dentro — e
-  **la loro prova a mano aspetta l'utente** (`GETTING_STARTED.md` §18).
+  Center: quando si fanno lo dice la 5.10. **M17.2b e M17.2c sono fatte** (ADR 0049 e ADR 0050,
+  accettati): l'esito che resta sulle home, e la pagina d'arruolamento con i suoi fogli dentro, con la
+  prova a mano passata il 2026-09-27 (`GETTING_STARTED.md` §18). La prova ha trovato un'etichetta
+  falsa della CLI — `steps executed` di uno step che aspetta il sì —, registrata come **M6.3b**.
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
@@ -459,6 +461,8 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   da quella del telefono: l'esito che l'utente aspettava è quello che la vista smette di mostrare. È
   la decisione 22 di M17.2 che funziona come scritta, e il suo prezzo; ed è una vista che **mente**,
   quindi si ripara prima di M17.4, per la regola della voce qui sopra. Il suo confine è M17.5.
+  **Fatta il 2026-09-27** (ADR 0049): la tessera dei task ha i vivi e gli ultimi finiti, l'ultimo a
+  finire per primo, con l'ora dell'esito scritta con lo stato.
 - **M17.2c — La pagina d'arruolamento arriva senza stile, sulla console e sul telefono**
   (registrata il 2026-09-26, da una decisione dell'utente presa nella chat di M13.2). La pagina che
   un browser nuovo vede per prima, e che chiede il codice, è HTML senza stile: è la decisione D di
@@ -466,7 +470,8 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   stili in linea. È spoglia e non mente, ma **M17.4 non la potrebbe riparare**: la sua registrazione
   fissa «la stessa `Content-Security-Policy`», e con quella politica la pagina resta senza stile per
   sempre. La cura è sul confine di sicurezza — il foglio dentro il `401`, ammesso dal suo hash —, non
-  un passaggio di design.
+  un passaggio di design. **Fatta il 2026-09-27** (ADR 0050): il modulo d'arruolamento e la pagina
+  «rifiutata» portano i fogli dentro, e nessuna rotta risponde a nessuno.
 - **M17.5 — Il Task Center** (§9 del design; registrata il 2026-09-24, con M17.2b). M17.2 l'aveva
   messo fuori scope come «una vista sua», e nessuna milestone lo prendeva.
 - **M17.3 — Presenza desktop** (§19 del design), alla fine, dopo le altre fasi.
@@ -489,8 +494,9 @@ prima milestone è M13.1, e l'ordine dentro la fase sta nella 5.11. **M17.2b vie
 una sessione di design insieme alle altre riparazioni della stessa pagina, ciascuna con il suo
 documento e la sua lettera, su un branch solo: **quella sessione è del 2026-09-26, con M17.2c**, sul
 branch `m17.2b-m17.2c-design`; le due SPEC sono approvate dall'utente lo stesso giorno — le domande
-numerate insieme, 1–6 per M17.2b e 7–10 per M17.2c, e le correzioni A–F — e implementate, con la
-prova a mano che aspetta. **L'ordine di M17.5 non è deciso.**
+numerate insieme, 1–6 per M17.2b e 7–10 per M17.2c, e le correzioni A–F —, implementate, e **fatte**
+con la prova a mano del 2026-09-27. **L'ordine di M17.5 non è deciso**, e nemmeno quello di M6.3b,
+registrata da quella prova.
 
 *Perché è una fase:* è il design stesso a chiederlo. §33 del design vieta di saltare da «ELA deve
 essere futuristica» a «scrivi il codice della dashboard», §22 del design vuole l'identità progettata

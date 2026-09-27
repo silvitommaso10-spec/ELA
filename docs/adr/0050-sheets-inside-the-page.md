@@ -1,8 +1,10 @@
 # 0050. La pagina di chi non è ancora nessuno porta i suoi fogli: dentro la risposta, ammessi dal loro hash, e nessuna rotta che risponda a nessuno
 
-- **Stato:** Proposta. SPEC di M17.2c decisa dall'utente il 2026-09-26, con le decisioni 7–10 — tutte
-  (a) — e le correzioni C e D della sua review. Diventa **Accettata** quando la prova a mano di
-  `docs/GETTING_STARTED.md` §18 è passata, in Chrome e in Safari sul Mac e in Chrome sull'iPhone.
+- **Stato:** **Accettata il 2026-09-27**, quando la prova a mano di `docs/GETTING_STARTED.md` §18 è
+  passata a `f85b228`: la pagina d'arruolamento vestita in Chrome e in Safari sul Mac e in Chrome
+  sull'iPhone, un arruolamento vero da ciascuna delle due superfici, e il campo del codice che
+  sull'iPhone non ingrandisce la pagina. Proposta il 2026-09-26, con la SPEC di M17.2c decisa
+  dall'utente — le decisioni 7–10, tutte (a), e le correzioni C e D della sua review.
 - **Data:** 2026-09-26
 - **Riferimenti spec:** §6
 - **Milestone:** M17.2c

@@ -2231,10 +2231,13 @@ quella di §16: togli la voce da `ELA_TERMINAL_PROGRAMS`, cancella `~/ela-prova`
 
 ## 18. La pagina che mente e la pagina spoglia: la prova a mano di M17.2b e M17.2c
 
-> **Scritta con le SPEC del 2026-09-26, decise (domande 1–10, correzioni A–F), e allineata
-> all'implementazione** — ADR [0049](adr/0049-finished-on-the-homes.md) e
-> [0050](adr/0050-sheets-inside-the-page.md). **Nessun passo è ancora stato eseguito**: ciò che si
-> deve vedere è ciò che il codice e i suoi test dicono, e le uscite vere lo sostituiranno.
+> **Eseguita dall'utente il 2026-09-27 a `f85b228`**, su questo Mac (la porta era 8351) e
+> sull'iPhone. **Passati i passi 1–4 e 6; il 5 è saltato**, per decisione dell'utente, e ciò che
+> doveva mostrare lo affermano i test sull'orologio finto (sotto). Nata come bozza con le SPEC del
+> 2026-09-26 e allineata all'implementazione: gli ADR sono [0049](adr/0049-finished-on-the-homes.md) e
+> [0050](adr/0050-sheets-inside-the-page.md), accettati dopo questa prova. Sotto ogni passo, **ciò
+> che si deve vedere** è l'istruzione per chi la rifà, e **nella prova del 2026-09-27** ciò che è
+> successo.
 
 Due riparazioni. **M17.2b**: un task finito non sparisce più dalle home — la console e il telefono
 elencano, accanto ai vivi, gli ultimi task arrivati in uno stato finale, l'ultimo per primo. **M17.2c**:
@@ -2255,12 +2258,28 @@ M17.2b aggiunge una colonna — l'ora in cui un task è finito —, e ELA non mi
 uv run alembic upgrade head
 ```
 
+`alembic upgrade head`, in questo repository, **non stampa niente**: non c'è una configurazione di
+log che gli faccia dire quale migrazione ha applicato. A dirlo è la domanda successiva:
+
+```
+uv run alembic current
+```
+
+```
+0012 (head)
+```
+
 ```
 uv run ela serve
 ```
 
-**Che cosa si deve vedere**: la migrazione `0012` applicata, e ELA che parte. Sulla home del
-Command Center, nella tessera «Task», il gruppo «Finiti» con i task delle prove precedenti.
+**Che cosa si deve vedere**: `0012 (head)`, e ELA che parte. Sulla home del Command Center, nella
+tessera «Task», il gruppo «Finiti» con i task delle prove precedenti.
+
+**Nella prova del 2026-09-27**: l'upgrade non ha stampato niente — la bozza prometteva «la migrazione
+`0012` applicata», che il comando non dice, ed è il rilievo che ha portato qui `alembic current` —;
+`alembic current` ha risposto `0012 (head)`; sulla home della console, il gruppo «Finiti» con i task
+delle prove precedenti.
 
 ### 2. La pagina d'arruolamento, sul Mac, in due browser
 
@@ -2275,8 +2294,9 @@ carattere del browser. Poi un arruolamento vero da lì, perché la pagina è cam
 uv run ela node enroll --privacy TRUSTED --role console
 ```
 
-incollalo, dai un nome che la distingua, invia. **Che cosa si deve vedere**: la home. Poi revoca
-quella console — la finestra normale resta arruolata —, con l'id della riga che porta quel nome:
+incollalo, dai un nome che la distingua, invia. **Che cosa si deve vedere**: la home. Se non vuoi
+tenere quella console nel registro, revocala — la finestra normale resta arruolata —, con l'id della
+riga che porta quel nome:
 
 ```
 uv run ela device list
@@ -2288,6 +2308,11 @@ uv run ela node revoke <id della console>
 
 Poi in **Safari**, una finestra privata (⇧⌘N), lo stesso indirizzo: **la stessa pagina, vestita**.
 Chiudila senza arruolarla.
+
+**Nella prova del 2026-09-27**: in Chrome in incognito la pagina d'arruolamento è arrivata vestita;
+l'arruolamento vero, con il nome «prova incognito», è riuscito ed è arrivato alla home. **La revoca
+non è stata fatta**, per scelta dell'utente: quell'identità resta nel registro. In Safari, finestra
+privata, la pagina è arrivata vestita, ed è stata chiusa senza arruolarsi.
 
 ### 3. La pagina d'arruolamento, sull'iPhone in Chrome
 
@@ -2305,8 +2330,8 @@ uv run ela node enroll --privacy TRUSTED --role companion
 ```
 
 incollalo nella scheda in incognito, dai un nome che la distingua, invia. **Che cosa si deve
-vedere**: la home del telefono. Poi revoca quell'identità — la scheda normale di Chrome resta
-arruolata —, con l'id della riga che porta il nome che hai appena dato:
+vedere**: la home del telefono. Se non vuoi tenere quell'identità, revocala — la scheda normale di
+Chrome resta arruolata —, con l'id della riga che porta il nome che hai appena dato:
 
 ```
 uv run ela device list
@@ -2315,6 +2340,11 @@ uv run ela device list
 ```
 uv run ela node revoke <id del companion>
 ```
+
+**Nella prova del 2026-09-27**: su `http://100.76.92.39:8351/companion/`, in Chrome in incognito, la
+pagina è arrivata vestita, e toccando il campo del codice la pagina non si è ingrandita.
+L'arruolamento vero, con il nome «prova incognito telefono», è riuscito; non revocato, per scelta
+dell'utente.
 
 ### 4. Un task creato prima e finito dopo
 
@@ -2378,6 +2408,17 @@ con `FAILED`, anche se è stato creato prima dell'eco — l'ordine è quello del
 telefono, nel gruppo «Finiti», lo stesso ordine: «dormire troppo» con `FAILED`, poi l'id dell'eco con
 `COMPLETED`, senza collegamenti.
 
+**Nella prova del 2026-09-27**: «dormire troppo» (`8c71d897…`) creato prima dell'eco (`f70a69aa…`).
+L'eco è finita `COMPLETED`; poi «dormire troppo», dopo il sì, `FAILED` con `terminal.timeout`. Su tutte
+e due le home «dormire troppo» è il primo dei finiti, con `FAILED`, e l'eco è seconda. Sulla console
+un clic porta al riassunto; sul telefono l'eco compare con il suo id, e le righe dei finiti non sono
+collegamenti. I titoli dichiarano il limite.
+
+**Trovato qui, e non preso.** Il primo `ela task run` di «dormire troppo», con esito
+`waiting_approval`, ha stampato sotto `steps executed` lo step che aspettava il sì, e quello step
+non era stato eseguito: misurato, `steps` contiene gli step consegnati all'executor, qualunque cosa
+abbia fatto. È registrato come riparazione, **M6.3b** (`docs/milestones/M6.3b.md`).
+
 ### 5. Un terzo task che finisce dopo, e il primo che resta
 
 ```
@@ -2401,6 +2442,17 @@ finiti di così, dice di quanti: «Finiti · gli ultimi 8 di 23». Lo stesso, da
 uv run ela task finished
 ```
 
+**Nella prova del 2026-09-27: saltato**, per decisione dell'utente — non passato. Ciò che doveva
+mostrare lo affermano i test su un orologio che il test sposta fra un'esecuzione e l'altra:
+l'ultimo a finire è il primo sulla console, sul telefono, nella rotta e nella CLI
+(`test_the_last_to_finish_comes_first_even_if_it_was_born_first`,
+`test_on_the_phone_the_last_to_finish_comes_first`,
+`test_the_finished_route_answers_the_last_to_finish_first_and_how_many`,
+`test_finished_shows_the_last_to_finish_first`), il limite e il totale
+(`test_the_finished_route_keeps_the_last_and_counts_them_all`,
+`test_finished_says_its_limit_and_how_many_there_are`), e i titoli che dichiarano il limite sulle
+due home.
+
 ### 6. Un task fermato dal telefono, che resta sul telefono
 
 Un task vivo che non gira: creato e pianificato, e **non** lanciato, resta `QUEUED`. `TRUSTED`, così
@@ -2418,8 +2470,11 @@ Sul telefono, nella home, il gruppo «Vivi» ha «da fermare» con `QUEUED`. Toc
 chiede la conferma. Ferma.
 
 **Che cosa si deve vedere**: la home del telefono, e «da fermare» **è primo nel gruppo «Finiti»**, con
-`CANCELLED`. È l'unico caso rotto oggi che solo il telefono mostra: fino a M17.2b un task fermato dal
+`CANCELLED`. È l'unico caso rotto prima di M17.2b che solo il telefono mostra: un task fermato dal
 telefono spariva dal telefono nello stesso istante.
+
+**Nella prova del 2026-09-27**: «da fermare» (`a0d9bd07…`), in `QUEUED`, fermato dal telefono, è il
+primo dei finiti, con `CANCELLED`.
 
 **Se non si vede così**: se «dormire troppo» manca da una delle due home, o non è primo al passo 4, o
 «da fermare» manca dal telefono al passo 6, è il difetto di M17.2b che non è riparato su quella
@@ -2431,7 +2486,8 @@ curl -s -D ~/Downloads/m17.2c-401-intestazioni.txt -o ~/Downloads/m17.2c-401.htm
 ```
 
 **La pulizia**, che fa parte della prova: togli `usr/bin/time` da `ELA_TERMINAL_PROGRAMS` e la riga
-di `ELA_TERMINAL_TIMEOUT_SECONDS`, e riavvia.
+di `ELA_TERMINAL_TIMEOUT_SECONDS`, e riavvia. **Nella prova del 2026-09-27**: fatta, ed ELA
+riavviato.
 
 ## Dove guardare dopo
 

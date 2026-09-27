@@ -1,8 +1,10 @@
 # 0049. Un esito finale resta sulle superfici che elencano i task: l'ora dell'esito scritta con lo stato, gli ultimi N, e una domanda che prende un nome
 
-- **Stato:** Proposta. SPEC di M17.2b decisa dall'utente il 2026-09-26, con le decisioni 1–6 — tutte
-  (a) — e le correzioni A e B della sua review. Diventa **Accettata** quando la prova a mano di
-  `docs/GETTING_STARTED.md` §18 è passata.
+- **Stato:** **Accettata il 2026-09-27**, quando la prova a mano di `docs/GETTING_STARTED.md` §18 è
+  passata a `f85b228` — i passi 1–4 e 6, sul Mac e sull'iPhone; il 5 saltato per decisione
+  dell'utente, e ciò che doveva mostrare lo affermano i test su un orologio che il test sposta.
+  Proposta il 2026-09-26, con la SPEC di M17.2b decisa dall'utente — le decisioni 1–6, tutte (a), e
+  le correzioni A e B della sua review.
 - **Data:** 2026-09-26
 - **Riferimenti spec:** §14, §15
 - **Milestone:** M17.2b
