@@ -141,6 +141,23 @@ VIOLATIONS: tuple[Case, ...] = (
         "def make(state):\n    return ela.domain.Task(id=i, created_at=n, goal='g', state=state)\n",
         "Task(state=...)",
     ),
+    # M17.2b (ADR 0049): the hour of an outcome is written with the state, by the state machine
+    # alone — a ``finished_at`` set anywhere else is a finish nobody reached.
+    Case(
+        "finished-at-model-copy",
+        "state-changes",
+        "executive/loop.py",
+        'def close(task, now):\n    return task.model_copy(update={"finished_at": now})\n',
+        'model_copy(update={"finished_at": ...})',
+    ),
+    Case(
+        "finished-at-task-constructed",
+        "state-changes",
+        "tasks/engine.py",
+        "from ela.domain import Task, TaskState\n"
+        "t = Task(id=i, created_at=now, goal='g', state=TaskState.CREATED, finished_at=now)\n",
+        "Task(finished_at=...)",
+    ),
     Case(
         "testing-imported-by-executive",
         "testing-isolation",
@@ -2153,6 +2170,24 @@ ALLOWED: tuple[Case, ...] = (
         "def load(row):\n"
         "    return Task(id=row.id, created_at=row.created_at, goal=row.goal, "
         "state=TaskState(row.state))\n",
+        "",
+    ),
+    Case(
+        "finished-at-mapper-rehydrates",
+        "state-changes",
+        "infrastructure/persistence/mappers.py",
+        "from ela.domain import Task, TaskState\n"
+        "def load(row):\n"
+        "    return Task(id=row.id, created_at=row.created_at, goal=row.goal, "
+        "state=TaskState(row.state), finished_at=row.finished_at)\n",
+        "",
+    ),
+    Case(
+        "finished-at-none-at-birth",
+        "state-changes",
+        "tasks/engine.py",
+        "from ela.domain import Task, TaskState\n"
+        "t = Task(id=i, created_at=now, goal='g', state=TaskState.CREATED, finished_at=None)\n",
         "",
     ),
     Case(

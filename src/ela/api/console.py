@@ -34,7 +34,19 @@ from fastapi.responses import RedirectResponse
 
 from ela.api import pages
 from ela.api.approvals import answered_and_resumed, pending_approvals
-from ela.api.companion import TARGET, counted, form, may_see, presence, terms, when
+from ela.api.companion import (
+    NO_FINISHED,
+    NO_LIVE,
+    TARGET,
+    counted,
+    finished_title,
+    form,
+    live_title,
+    may_see,
+    presence,
+    terms,
+    when,
+)
 from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.devices import list_devices
 from ela.api.nodes import enrolled
@@ -45,12 +57,13 @@ from ela.api.schemas import (
     DeclarationIn,
     DeviceOut,
     ExecutionResultOut,
+    FinishedOut,
     StepOut,
     TaskDetail,
     TaskOut,
 )
 from ela.api.security import CONSOLE_SURFACE, Anonymous, Identity, note, welcome
-from ela.api.tasks import cancel_task, list_tasks, read_task
+from ela.api.tasks import cancel_task, finished_tasks, list_tasks, read_task
 from ela.domain import (
     ApprovalId,
     DeviceRole,
@@ -118,10 +131,12 @@ NO_SUCH_CODE: Final = "Questo codice non esiste. Coniane uno al Mac e incollalo 
 TOO_LATE: Final = "Questo codice è scaduto: dura dieci minuti. Coniane un altro."
 ALREADY_SPENT: Final = "Questo codice è già stato usato. Coniane un altro."
 ANOTHER_ROLE: Final = "Questo codice non è di una console. Al Mac: --role console."
-NO_TASKS: Final = "Nessun task vivo."
 SHOWN: Final = 8
-"""How many live tasks the home lists, newest first. A list without a bound stops being readable,
-and when it cuts it says how much it is showing — the lesson of the phone's home (ADR 0043)."""
+"""How many rows a list of tasks keeps on the home: the live ones, newest first, and the last to
+finish, the last first — one number for the two lists of the tile (M17.2b dec. 1). A list without a
+bound stops being readable, and when it cuts it says how much it is showing — the lesson of the
+phone's home (ADR 0043). Not measured: it is the only answer this surface has given to «how many
+rows», and a second number would be a second opinion on the same question."""
 ANSWER_FIELD: Final = "answer"
 YES: Final = "yes"
 
@@ -159,10 +174,16 @@ def _title(goal: str, identifier: object, identity: Identity, level: PrivacyLeve
 
 @router.get("/")
 async def home(ela: ElaDep, identity: IdentityDep) -> Response:
-    """The presence, what is happening now, and the three tiles (§7, §8 of the design)."""
+    """The presence, what is happening now, and the three tiles (§7, §8 of the design).
+
+    Never every task (M17.2b, C6): the live ones by their states, and the last to finish with how
+    many finished in all, through the route that answers exactly that — the finished grow for
+    ever, and a home that loaded them all to show eight would be what the review of M8.1 took out
+    of ``/diagnostics``.
+    """
     approvals = await pending_approvals(ela)
-    tasks = await list_tasks(ela)
-    alive = tuple(one for one in tasks if one.state in LIVE_STATES)
+    alive = await list_tasks(ela, state=sorted(LIVE_STATES))
+    finished = await finished_tasks(ela, limit=SHOWN)
     working = next((one for one in alive if one.state is TaskState.EXECUTING), None)
     detail = None if working is None else await read_task(working.id, ela)
     devices = await list_devices(ela)
@@ -173,7 +194,7 @@ async def home(ela: ElaDep, identity: IdentityDep) -> Response:
         nav=_nav(),
         state=presence(approvals, alive),
         now=_now(detail, identity),
-        tiles=_tiles(tasks, alive, approvals, devices, identity),
+        tiles=_tiles(alive, finished, approvals, devices, identity),
         ceiling=_ceiling(identity),
     )
 
@@ -224,9 +245,24 @@ def _step(one: StepOut, identity: Identity, level: PrivacyLevel | None) -> pages
     return pages.fragment(HERE, "step", what=f"{said} · {one.state.value}")
 
 
+def _row(one: TaskOut, identity: Identity) -> pages.Markup:
+    """A task as a row of the tile: its goal or its id, its state, and the way to its summary.
+
+    Live or finished, the same row: a finished task has a summary too, and reaching it is what
+    decision 22 of M17.2 had left to its id alone (M17.2b)."""
+    return pages.fragment(
+        HERE,
+        "row-task",
+        state="WORKING" if one.state is TaskState.EXECUTING else "IDLE",
+        what=_title(one.goal, one.id, identity, one.max_privacy),
+        key=one.state.value,
+        id=one.id,
+    )
+
+
 def _tiles(
-    tasks: tuple[TaskOut, ...],
     alive: tuple[TaskOut, ...],
+    finished: FinishedOut,
     approvals: tuple[ApprovalOut, ...],
     devices: tuple[DeviceOut, ...],
     identity: Identity,
@@ -234,8 +270,11 @@ def _tiles(
     """Tasks, devices, attention: the three tiles of §7 of the design.
 
     The tasks tile is a **list** and not only a number, because it is how a task is reached: its
-    rows link to the execution summary. It stops at :data:`SHOWN`, and when it cuts it says so in
-    its own title.
+    rows link to the execution summary. It holds two groups — the TASKS tile of §7 of the design has
+    the running and the failed in one place —: **the live ones**, newest first, and **the last to
+    finish**, the last first (M17.2b, ADR 0049). Each stops at :data:`SHOWN` and carries its cut in
+    its own title, and each says what it holds when it holds nothing. Until M17.2b the tile listed
+    the live ones alone, and the outcome the user was waiting for was the one it stopped showing.
     """
     usable = tuple(one for one in devices if one.available)
     recent = tuple(reversed(alive))[:SHOWN]
@@ -244,29 +283,28 @@ def _tiles(
             pages.fragment(
                 HERE,
                 "tile-rows",
-                title="Task"
-                if len(recent) == len(alive)
-                else f"Task · {len(recent)} di {len(alive)}",
+                title="Task",
                 rows=pages.joined(
-                    pages.fragment(
-                        HERE,
-                        "row-task",
-                        state="WORKING" if one.state is TaskState.EXECUTING else "IDLE",
-                        what=_title(one.goal, one.id, identity, one.max_privacy),
-                        key=one.state.value,
-                        id=one.id,
-                    )
-                    for one in recent
-                )
-                if recent
-                else pages.fragment(HERE, "notice", text=NO_TASKS),
+                    [
+                        pages.fragment(HERE, "group", title=live_title(len(recent), len(alive))),
+                        *(_row(one, identity) for one in recent),
+                        *(() if recent else (pages.fragment(HERE, "notice", text=NO_LIVE),)),
+                        pages.fragment(HERE, "group", title=finished_title(SHOWN, finished.total)),
+                        *(_row(one, identity) for one in finished.tasks),
+                        *(
+                            ()
+                            if finished.tasks
+                            else (pages.fragment(HERE, "notice", text=NO_FINISHED),)
+                        ),
+                    ]
+                ),
             ),
             pages.fragment(
                 HERE,
                 "tile",
                 title="Dispositivi",
                 number=f"{len(usable)} / {len(devices)}",
-                detail=f"disponibili adesso · {len(tasks)} task in tutto",
+                detail=f"disponibili adesso · {len(alive) + finished.total} task in tutto",
             ),
             pages.fragment(
                 HERE,
@@ -669,7 +707,7 @@ async def enrol(request: Request, ela: ElaDep, identity: IdentityDep) -> Respons
 
 def _again(message: str, *, status: int = 401) -> Response:
     """The enrolment page, with the one sentence that says what happened."""
-    return pages.page(HERE, "enrol", status=status, message=message)
+    return pages.page(HERE, "enrol", sheets=pages.INSIDE, status=status, message=message)
 
 
 @router.get("/tokens.css")

@@ -132,7 +132,9 @@ def transition(
 
     Pure and deterministic: the caller provides ``event_id`` and ``now`` because the domain
     neither generates ids nor reads the clock (ADR 0003). The returned task is a copy of ``task``
-    that differs only in ``state``; the returned event is a ``STATE_CHANGED`` event whose
+    that differs in ``state`` — and, when ``new_state`` is final, in ``finished_at``, which is
+    ``now``: the hour of an outcome is written with the state, in the same move (M17.2b, ADR 0049
+    revising ADR 0004 §3). The returned event is a ``STATE_CHANGED`` event whose
     ``previous_state`` and ``new_state`` describe exactly this move, so a transition without its
     event cannot exist (ADR 0004 §3). ``message``, ``step_id`` and ``metadata`` are passed to the
     event unchanged.
@@ -157,4 +159,8 @@ def transition(
         message=message,
         metadata={} if metadata is None else metadata,
     )
-    return Transition(task.model_copy(update={"state": new_state}), event)
+    if is_terminal(new_state):
+        moved = task.model_copy(update={"state": new_state, "finished_at": now})
+    else:
+        moved = task.model_copy(update={"state": new_state})
+    return Transition(moved, event)

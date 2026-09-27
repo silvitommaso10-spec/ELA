@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI
 from httpx import AsyncClient
@@ -19,7 +20,7 @@ from ela.devices import (
 )
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import TaskId, TaskState
-from tests.api.support import ECHO_MESSAGE, echo_plan, note_plan, queued
+from tests.api.support import ECHO_MESSAGE, Clocked, echo_plan, note_plan, queued
 
 UNKNOWN = str(uuid.uuid4())
 
@@ -130,6 +131,73 @@ async def test_the_list_filters_by_state_and_limits_after_the_filter(
 
 async def test_a_limit_of_zero_is_a_caller_s_bug(client: AsyncClient) -> None:
     assert (await client.get("/tasks", params={"limit": 0})).status_code == 422
+
+
+# ----------------------------------------------------------------------------------------
+# The last to finish (M17.2b, ADR 0049): a different order is a different question
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_finished_route_answers_the_last_to_finish_first_and_how_many(
+    clocked: Clocked,
+) -> None:
+    """The case of M13.2: the task created first and finished last is the first outcome.
+
+    The two instants are the test's — the clock moves between the runs —, so the order asserted is
+    the order of the outcomes and never a tie broken by insertion, which would give the opposite.
+    """
+    client = clocked.client
+    born_first = await queued(client, echo_plan(), text="nata prima")
+    born_second = await queued(client, echo_plan(), text="nata dopo")
+    await client.post("/tasks", json={"text": "ancora viva"})
+    await client.post(f"/tasks/{born_second}/run")
+    clocked.clock.advance(timedelta(seconds=1))
+    await client.post(f"/tasks/{born_first}/run")
+
+    answered = await client.get("/tasks/finished", params={"limit": 10})
+
+    assert answered.status_code == 200
+    body = answered.json()
+    assert [task["id"] for task in body["tasks"]] == [born_first, born_second]
+    assert body["total"] == 2
+    assert all(task["finished_at"] is not None for task in body["tasks"])
+    first, second = (datetime.fromisoformat(task["finished_at"]) for task in body["tasks"])
+    assert first > second
+
+
+async def test_the_finished_route_keeps_the_last_and_counts_them_all(clocked: Clocked) -> None:
+    """Three outcomes at three instants the test chose: with a tie, insertion order would give the
+    same answer, and the test would be asserting the tie-break instead of «the last N»."""
+    client = clocked.client
+    for text in ("una", "due", "tre"):
+        await client.post(f"/tasks/{await queued(client, echo_plan(), text=text)}/run")
+        clocked.clock.advance(timedelta(seconds=1))
+
+    body = (await client.get("/tasks/finished", params={"limit": 2})).json()
+
+    assert [task["goal"] for task in body["tasks"]] == ["tre", "due"]
+    assert body["total"] == 3
+
+
+async def test_the_finished_route_wants_a_limit(client: AsyncClient) -> None:
+    """The route answers «the last N», and an N that is missing is the caller's bug."""
+    assert (await client.get("/tasks/finished")).status_code == 422
+    assert (await client.get("/tasks/finished", params={"limit": 0})).status_code == 422
+
+
+async def test_finished_is_not_taken_for_the_id_of_a_task(client: AsyncClient) -> None:
+    """Declared after ``/tasks/{task_id}``, the literal would be read as an id and refused as one:
+    ``422`` instead of the list. This is the test that fails in that order."""
+    assert (await client.get("/tasks/finished", params={"limit": 1})).status_code == 200
+
+
+async def test_a_task_says_when_it_finished_and_a_live_one_does_not(client: AsyncClient) -> None:
+    done = await queued(client, echo_plan(), text="fatta")
+    await client.post(f"/tasks/{done}/run")
+    live = await queued(client, echo_plan(), text="viva")
+
+    assert (await client.get(f"/tasks/{done}")).json()["finished_at"] is not None
+    assert (await client.get(f"/tasks/{live}")).json()["finished_at"] is None
 
 
 async def test_an_unknown_task_is_not_found(client: AsyncClient) -> None:

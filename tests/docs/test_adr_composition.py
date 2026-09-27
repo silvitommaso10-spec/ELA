@@ -189,6 +189,21 @@ def node_macos_adr_text() -> str:
     return ADR_PATH.with_name("0039-node-macos.md").read_text(encoding="utf-8")
 
 
+def finished_adr_text() -> str:
+    """ADR 0049, which adds the one route of the last outcomes (M17.2b)."""
+    return ADR_PATH.with_name("0049-finished-on-the-homes.md").read_text(encoding="utf-8")
+
+
+def routes_after_0048() -> set[tuple[str, str]]:
+    """The routes the ADRs after ADR 0048 added, **read from them**: what the tests of an earlier
+    ADR take away to keep counting what that ADR saw. Derived, so a route a later ADR documents is
+    subtracted without anybody writing its path a second time — and a later ADR that documented
+    none would leave this empty, which is why it refuses to be."""
+    found = documented_routes(finished_adr_text())
+    assert found, "ADR 0049 documents a route"
+    return found
+
+
 def documented_node_routes(text: str | None = None) -> set[tuple[str, str]]:
     """The routes of a node, from the ADR that documents them — ADR 0037 §4 by default.
 
@@ -218,6 +233,7 @@ def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
             | documented_routes(voice_adr_text())
             | documented_routes(companion_adr_text())
             | documented_routes(console_adr_text())
+            | documented_routes(finished_adr_text())
         )
     )
     assert documented == coded_routes()
@@ -256,14 +272,14 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_forty_eight_of_them() -> None:
+def test_there_are_forty_nine_of_them() -> None:
     """Twenty until ADR 0037 §4 added five, twenty-five until ADR 0038 §11 added the three of the
     work, twenty-eight until ADR 0039 §2 added the one a node that restarted reads itself with,
-    twenty-nine until ADR 0043 §5 added the eight pages of the companion, and thirty-seven until
-    ADR 0044 added the eleven of the Command Center;
-    ``tests/api/test_security.py`` proves that every one of them is behind the middleware,
-    and which identity reaches which."""
-    assert len(coded_routes()) == 48
+    twenty-nine until ADR 0043 §5 added the eight pages of the companion, thirty-seven until
+    ADR 0044 added the eleven of the Command Center, and forty-eight until ADR 0049 added the one
+    of the last outcomes; ``tests/api/test_security.py`` proves that every one of them is behind
+    the middleware, and which identity reaches which."""
+    assert len(coded_routes()) == 49
 
 
 def test_the_one_route_of_the_restart_is_the_one_adr_0039_adds() -> None:

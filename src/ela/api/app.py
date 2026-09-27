@@ -181,10 +181,13 @@ def _handler(failure: Failure) -> Callable[[Request, Exception], Awaitable[Respo
         said = failure.message if failure.message is not None else _message(failed)
         ground = surface_of(request.url.path)
         if ground is not None:
+            # The sheets inside, whoever asked (M17.2c dec. 9): under the prefix of an enrolment
+            # route the identity is a code and the browser has no cookie, and the linked sheets
+            # would answer it the enrolment form.
             return pages.page(
                 ground.templates,
                 "refused",
-                sheets=ground.prefix,
+                sheets=pages.INSIDE,
                 status=failure.status,
                 title=failure.code.value,
                 text=said,

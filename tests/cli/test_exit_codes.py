@@ -41,6 +41,7 @@ INVOCATIONS: dict[str, tuple[str, ...]] = {
     "voice audition": ("voice", "audition", "VZOd9FMXDnXRZpGn0thg"),
     "task create": ("task", "create", "una cosa"),
     "task list": ("task", "list"),
+    "task finished": ("task", "finished"),
     "task show": ("task", "show", MISSING),
     "task results": ("task", "results", MISSING),
     "task plan": ("task", "plan", MISSING, "--file", PLAN),

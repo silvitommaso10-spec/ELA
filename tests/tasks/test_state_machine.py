@@ -209,6 +209,34 @@ def test_only_state_changes() -> None:
     assert Task.model_validate_json(after.model_dump_json()) == after
 
 
+@pytest.mark.parametrize("pair", LEGAL, ids=pair_id)
+def test_a_transition_writes_when_the_task_finished_and_only_then(
+    pair: tuple[TaskState, TaskState],
+) -> None:
+    """M17.2b (ADR 0049): the hour of an outcome is written **with** the state, in one move.
+
+    The instant of the event when the target is final, ``None`` when it is not: the order in which
+    the homes list what finished is the order of these hours, and a final state saved without its
+    hour is the gap ADR 0015 §8 leaves between a state and its event.
+    """
+    current, new_state = pair
+    before = task_in(current)
+
+    result = move(before, new_state)
+
+    assert result.task.finished_at == (LATER if new_state in TERMINAL_STATES else None)
+    assert result.task.finished_at in (None, result.event.created_at)
+    assert before.finished_at is None
+
+
+def test_a_final_transition_changes_the_state_and_its_hour_and_nothing_else() -> None:
+    before = task_in(S.EXECUTING)
+    after = move(before, S.FAILED).task
+    expected = {**before.model_dump(), "state": S.FAILED, "finished_at": LATER}
+    assert after.model_dump() == expected
+    assert Task.model_validate_json(after.model_dump_json()) == after
+
+
 def test_transition_is_deterministic() -> None:
     before = task_in(S.WAITING_APPROVAL)
     first = move(before, S.QUEUED)

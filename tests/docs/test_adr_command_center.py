@@ -18,7 +18,7 @@ from ela.api.security import CONSOLE_CODE_ROUTES, CONSOLE_ROUTES, Kind
 from ela.domain import DeviceRole
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
-from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0044-command-center.md"
@@ -58,7 +58,7 @@ def test_the_conseguenze_count_what_the_tree_had_when_it_was_written() -> None:
         == 26
     )
     assert "**quarantotto**" in text
-    assert len(coded_routes()) == 48
+    assert len(coded_routes() - routes_after_0048()) == 48
 
 
 def test_it_adds_no_rule_and_the_two_it_extends_exist() -> None:

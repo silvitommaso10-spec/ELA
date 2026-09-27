@@ -27,6 +27,7 @@ Le regole di ciò che sta in `apps/` non camminano Python: vivono nei test della
 | `capabilities.txt` è byte per byte ciò che il generatore produce, e una capability nuova fa fallire | `tests/command_center/test_capabilities.py` |
 | Questo README nomina ogni test della cartella, e nessun altro | `tests/command_center/test_documents.py` |
 | Ogni pagina risponde con la `Content-Security-Policy` che vieta gli script, e i valori dell'utente arrivano con l'escape | `tests/api/test_console.py` |
+| Il modulo d'arruolamento e la pagina «rifiutata» portano i fogli dentro, in ogni modo in cui ci si arriva; la loro politica ammette solo l'hash del blocco che servono, e non nominano niente da caricare | `tests/api/test_enrolment_page.py` |
 
 La prima e l'ultima riga sono le **due difese di «niente JavaScript»**, e non sono la stessa cosa
 detta due volte: se un giorno un valore sfuggisse all'escape, il browser si rifiuterebbe comunque
@@ -65,8 +66,11 @@ di eseguirlo.
 - **Il tema è scuro, sempre**, anche su un Mac in tema chiaro: seguire `prefers-color-scheme`
   vuole una media query che deve derivare il generatore del design system, non una superficie
   (M17.2 dec. F).
-- **La pagina di arruolamento è senza stile.** I fogli stanno dietro l'identità come tutto il
-  resto: chi non è ancora nessuno non li carica.
+- **La pagina di arruolamento porta i suoi fogli dentro** (M17.2c, ADR 0050), e così la pagina
+  «rifiutata»: le due pagine che possono arrivare a chi non è ancora riconosciuto. I fogli restano
+  dietro l'identità come tutto il resto — nessuna rotta risponde a chi non è nessuno —, e viaggiano
+  in un blocco `<style>` dentro la risposta, che la politica ammette con il suo `sha256`, calcolato a
+  ogni risposta dagli stessi file che una pagina riconosciuta collega.
 - **Il contenuto di un risultato non si legge qui.** Il riassunto di un task dice che il risultato
   c'è e dove si legge — `GET /tasks/<id>/results`, dietro il token del Core — e non finisce con
   «completato» come se non ci fosse niente.

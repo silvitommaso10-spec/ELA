@@ -7,8 +7,8 @@ rule 55, with its negative case. What a page needs and a route does not give is 
 (that is how ``ApprovalOut`` grew, dec. F), never a second read of the world from here.
 
 The perimeter is **see and answer, not command** (the user's fixed point 3): the pages show the
-questions that wait and the tasks that are alive, answer a question, and stop a task. Nothing
-creates a task, nothing edits a plan, nothing touches a node.
+questions that wait, the tasks that are alive and the last that finished (M17.2b), answer a
+question, and stop a task. Nothing creates a task, nothing edits a plan, nothing touches a node.
 
 Three things this module holds that have nowhere else to be, and each has its reason:
 
@@ -33,16 +33,15 @@ from ela.api import pages
 from ela.api.approvals import answered_and_resumed, pending_approvals
 from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.nodes import enrolled
-from ela.api.schemas import ApprovalOut, CancelIn, DeclarationIn, TaskOut
+from ela.api.schemas import ApprovalOut, CancelIn, DeclarationIn, FinishedOut, TaskOut
 from ela.api.security import COMPANION_SURFACE, Anonymous, Identity, note, welcome
-from ela.api.tasks import cancel_task, list_tasks
+from ela.api.tasks import cancel_task, finished_tasks, list_tasks
 from ela.devices import PRIVACY_ORDER
 from ela.domain import (
     ApprovalId,
     DeviceRole,
     OperatingSystem,
     PrivacyLevel,
-    TaskId,
     TaskState,
     listed,
     visible,
@@ -58,10 +57,14 @@ from ela.tasks.engine import LIVE_STATES
 
 __all__ = [
     "HOME",
+    "NO_FINISHED",
+    "NO_LIVE",
     "SPOKEN_ALOUD",
     "counted",
+    "finished_title",
     "form",
     "how_long",
+    "live_title",
     "may_see",
     "presence",
     "router",
@@ -110,7 +113,14 @@ TOO_LATE: Final = "Questo codice è scaduto: dura dieci minuti. Coniane un altro
 ALREADY_SPENT: Final = "Questo codice è già stato usato. Coniane un altro."
 A_NODES_CODE: Final = "Questo è il codice di un nodo. Per il telefono serve --role companion."
 SHOWN: Final = 6
-"""How many live tasks a page lists, newest first."""
+"""How many rows a list of tasks keeps on the phone: the live ones, newest first, and the last to
+finish, the last first — one number for the two lists of one page (M17.2b dec. 1). Not measured: it
+is the only answer the surface has given to «how many rows», and a second number would be a second
+opinion on the same question."""
+LIVE: Final = "Vivi"
+FINISHED: Final = "Finiti"
+NO_LIVE: Final = "Nessun task vivo."
+NO_FINISHED: Final = "Nessun task finito."
 CODE_FIELD: Final = "code"
 ANSWER_FIELD: Final = "answer"
 YES: Final = "yes"
@@ -214,28 +224,27 @@ def when(moment: datetime | None) -> str:
 
 
 @router.get("/")
-async def home(
-    ela: ElaDep,
-    identity: IdentityDep,
-    task: Annotated[UUID | None, Query()] = None,
-) -> Response:
-    """Everything that waits, and everything that is alive (dec. D).
+async def home(ela: ElaDep, identity: IdentityDep) -> Response:
+    """Everything that waits, everything that is alive, and the last to finish (dec. D, M17.2b).
 
-    ``task`` is the one a "yes" was just given to: it is shown with its **true** state even when
-    that state is final, because what the user wants to know after answering is what happened —
-    and a task that closed would otherwise vanish from the page that was supposed to report it.
+    The task a "yes" or a "no" was just given to is where the general rule puts it: the first of
+    the finished if it closed — what the user wants to know after answering —, among the live ones
+    if not. Until M17.2b a ``?task=`` showed it apart, and covered only an answer: a task stopped
+    from here vanished from here (ADR 0049).
+
+    Never every task: the live ones by their states, the finished ones through the route that
+    answers the last N and how many in all — the finished grow for ever (M17.2b, C6).
     """
     approvals = await pending_approvals(ela)
-    tasks = await list_tasks(ela)
-    alive = tuple(one for one in tasks if one.state in LIVE_STATES)
-    answered = tuple(one for one in tasks if task is not None and one.id == task)
+    alive = await list_tasks(ela, state=sorted(LIVE_STATES))
+    finished = await finished_tasks(ela, limit=SHOWN)
     return pages.page(
         HERE,
         "home",
         sheets=WHERE,
         state=presence(approvals, alive),
         waiting=_waiting(approvals),
-        tasks=_tasks(alive, answered, identity),
+        tasks=_tasks(alive, finished, identity),
     )
 
 
@@ -259,37 +268,43 @@ def _waiting(approvals: tuple[ApprovalOut, ...]) -> pages.Markup:
     )
 
 
-def _tasks(
-    alive: tuple[TaskOut, ...], answered: tuple[TaskOut, ...], identity: Identity
-) -> pages.Markup:
-    """The answered one first, then the live ones, newest first and no more than :data:`SHOWN`.
+def live_title(shown: int, alive: int) -> str:
+    """«Vivi», and when the list cuts, how much it shows (the review of 2026-09-20).
+
+    A list of the live tasks is complete until it cuts, so it says nothing more until then.
+    Shared with the Command Center, like :func:`presence` (M17.2b).
+    """
+    return LIVE if shown == alive else f"{LIVE} · {shown} di {alive}"
+
+
+def finished_title(limit: int, total: int) -> str:
+    """«Finiti · gli ultimi N» **always**, and «di M» when there are more (M17.2b).
+
+    A window on the last N outcomes is never complete by nature, so it declares its limit even
+    when it shows them all — the decision of the registration of M17.2b: the list says its limit,
+    and says when there are more. Never an age: the limit is a number (dec. 2).
+    """
+    said = f"{FINISHED} · gli ultimi {limit}"
+    return said if total <= limit else f"{said} di {total}"
+
+
+def _tasks(alive: tuple[TaskOut, ...], finished: FinishedOut, identity: Identity) -> pages.Markup:
+    """The live ones, newest first, and the last to finish, the last first — :data:`SHOWN` each.
 
     A phone is not a dashboard: a list that grows without a bound stops being readable on the
-    screen it was made for, and what the user opens the page for is what is happening now. What it
-    does **not** do is let the cut pass in silence — the title carries it, because a page that
-    showed six of nine under a title saying «the tasks» would be a page that lies quietly.
+    screen it was made for. What it does **not** do is let the cut pass in silence — each group
+    carries its own in its title —, nor an empty group: each says what it holds when it holds
+    nothing. A finished row is not a link: the phone has no summary, and there is nothing left to
+    stop (M17.2b dec. 3).
     """
-    live = tuple(one for one in reversed(alive) if one not in answered)
-    recent = live[:SHOWN]
-    if not answered and not recent:
-        return pages.Markup("")
+    recent = tuple(reversed(alive))[:SHOWN]
     return pages.fragment(
         HERE,
         "tasks",
-        # A list that stops at six and calls itself «I task» says something false the day there
-        # are nine (the review of 2026-09-20): when it cuts, it says how much it is showing.
-        title="I task" if len(recent) == len(live) else f"I task · {len(recent)} di {len(live)}",
+        title="I task",
         rows=pages.joined(
             [
-                # The one just answered is shown as it *is*, and it is not offered a "stop": it may
-                # have closed a second ago, and a page that invited the user to stop what is over
-                # would be a page that does not know what happened (dec. D, dec. I).
-                *(
-                    pages.fragment(
-                        HERE, "row-done", what=_title(one, identity), key=one.state.value
-                    )
-                    for one in answered
-                ),
+                pages.fragment(HERE, "group", title=live_title(len(recent), len(alive))),
                 *(
                     pages.fragment(
                         HERE,
@@ -301,6 +316,15 @@ def _tasks(
                     )
                     for one in recent
                 ),
+                *(() if recent else (pages.fragment(HERE, "notice", text=NO_LIVE),)),
+                pages.fragment(HERE, "group", title=finished_title(SHOWN, finished.total)),
+                *(
+                    pages.fragment(
+                        HERE, "row-done", what=_title(one, identity), key=one.state.value
+                    )
+                    for one in finished.tasks
+                ),
+                *(() if finished.tasks else (pages.fragment(HERE, "notice", text=NO_FINISHED),)),
             ]
         ),
     )
@@ -354,8 +378,9 @@ async def enrol(request: Request, ela: ElaDep, identity: IdentityDep) -> Respons
 
 
 def _again(message: str, *, status: int = 401) -> Response:
-    """The enrolment page, with the one sentence that says what happened."""
-    return pages.page(HERE, "enrol", status=status, message=message)
+    """The enrolment page, with the one sentence that says what happened — its sheets inside, like
+    every way to it (M17.2c)."""
+    return pages.page(HERE, "enrol", sheets=pages.INSIDE, status=status, message=message)
 
 
 @router.get("/tokens.css")
@@ -410,7 +435,7 @@ async def _live(ela: ElaDep, id: UUID) -> TaskOut:
     reads the answerable ones: a page must not offer what ELA would refuse (§33).
     """
     found = next(
-        (one for one in await list_tasks(ela) if one.id == id and one.state in LIVE_STATES), None
+        (one for one in await list_tasks(ela, state=sorted(LIVE_STATES)) if one.id == id), None
     )
     if found is None:
         raise NotFoundError("task", str(id))
@@ -547,17 +572,19 @@ async def answer(
     The browser may stop waiting before a long run ends — the page closes, the phone locks, the
     tailnet drops. The run goes on, exactly as it does when ``ela task run`` is interrupted at the
     terminal, and the next page shows the task's true state (declared, dec. H).
+
+    The answer lands on the home, where the task is the first of the finished if it closed, among
+    the live ones if not (M17.2b dec. 4).
     """
     fields = form(await request.body())
     found = await _answerable(ela, UUID(fields.get("id", "")))
     if not may_see(identity, found.max_privacy):
         raise ApprovalOutOfReachError(ApprovalId(found.id))
-    task_id = TaskId(found.task_id)
     said_yes = fields.get(ANSWER_FIELD) == YES
     await answered_and_resumed(
         found, said_yes=said_yes, ela=ela, identity=identity, running=running
     )
-    return RedirectResponse(f"{HOME}?task={task_id}", status_code=303)
+    return RedirectResponse(HOME, status_code=303)
 
 
 async def _answerable(ela: ElaDep, id: UUID) -> ApprovalOut:

@@ -7,7 +7,7 @@ from uuid import UUID
 
 import pytest
 
-from ela.domain import PlanId, TaskEventId, TaskId, TaskState
+from ela.domain import PlanId, Task, TaskEventId, TaskId, TaskState
 from ela.ports import AlreadyExistsError, NotFoundError, TaskRepository
 from tests.domain.examples import TASK, TASK_EVENT, TASK_PLAN
 
@@ -374,3 +374,111 @@ async def test_due_count_counts_without_the_limit_that_due_applies(
 
 async def test_due_count_of_an_empty_repository_is_zero(task_repository: TaskRepository) -> None:
     assert await task_repository.due_count() == 0
+
+
+# ----------------------------------------------------------------------------------------
+# ``finished`` (M17.2b, ADR 0049): the last to finish first — a question with a name of its own
+# ----------------------------------------------------------------------------------------
+
+FINAL = frozenset(
+    {
+        TaskState.COMPLETED,
+        TaskState.FAILED,
+        TaskState.CANCELLED,
+        TaskState.DENIED,
+        TaskState.EXPIRED,
+    }
+)
+"""The five final states, written out: a contract test does not read the code it holds to."""
+
+
+def ended(number: int, state: TaskState, hour: int | None) -> Task:
+    """A task in ``state`` that finished at ``hour`` o'clock — or, with ``None``, without an hour:
+    what a task finished before M17.2b whose final event was lost looks like (ADR 0015 §8)."""
+    return TASK.model_copy(
+        update={
+            "id": TaskId(UUID(f"00000000-0000-4000-8000-{number:012d}")),
+            "state": state,
+            "finished_at": None if hour is None else datetime(2026, 9, 26, hour, 0, tzinfo=UTC),
+        }
+    )
+
+
+async def test_finished_puts_the_last_to_finish_first_even_if_it_was_born_first(
+    task_repository: TaskRepository,
+) -> None:
+    """The case of M13.2: a long command, created before a short one, finishes after it."""
+    long_one = ended(301, TaskState.FAILED, 12)
+    short_one = ended(302, TaskState.COMPLETED, 10)
+    await task_repository.add(long_one)
+    await task_repository.add(short_one)
+
+    found = await task_repository.finished(states=FINAL, limit=10)
+
+    assert [task.id for task in found] == [long_one.id, short_one.id]
+    assert [task.id for task in await task_repository.tasks()] == [long_one.id, short_one.id]
+
+
+async def test_finished_breaks_a_tie_with_the_last_inserted_first(
+    task_repository: TaskRepository,
+) -> None:
+    """Two outcomes at the same instant come back stably, never in whatever order the rows are."""
+    first = ended(311, TaskState.COMPLETED, 9)
+    second = ended(312, TaskState.CANCELLED, 9)
+    await task_repository.add(first)
+    await task_repository.add(second)
+
+    found = await task_repository.finished(states=FINAL, limit=10)
+
+    assert [task.id for task in found] == [second.id, first.id]
+
+
+async def test_finished_puts_a_task_without_its_hour_last_and_not_out(
+    task_repository: TaskRepository,
+) -> None:
+    """A final state without an hour is at the bottom of the list, never missing from it."""
+    unhoured = ended(321, TaskState.DENIED, None)
+    houred = ended(322, TaskState.EXPIRED, 8)
+    await task_repository.add(unhoured)
+    await task_repository.add(houred)
+
+    found = await task_repository.finished(states=FINAL, limit=10)
+
+    assert [task.id for task in found] == [houred.id, unhoured.id]
+
+
+async def test_finished_keeps_only_the_states_asked(task_repository: TaskRepository) -> None:
+    await task_repository.add(OTHER_TASK)
+    await task_repository.add(ended(331, TaskState.COMPLETED, 7))
+
+    found = await task_repository.finished(states=FINAL, limit=10)
+
+    assert [task.state for task in found] == [TaskState.COMPLETED]
+    assert await task_repository.finished(states=frozenset(), limit=10) == ()
+
+
+async def test_finished_limit_keeps_the_last_to_finish(task_repository: TaskRepository) -> None:
+    """``tasks`` keeps the first N; ``finished`` keeps the most recent, which is the point of it."""
+    for number, hour in ((341, 6), (342, 11), (343, 8)):
+        await task_repository.add(ended(number, TaskState.COMPLETED, hour))
+
+    found = await task_repository.finished(states=FINAL, limit=2)
+
+    assert [task.finished_at.hour for task in found if task.finished_at is not None] == [11, 8]
+
+
+async def test_finished_rejects_a_non_positive_limit(task_repository: TaskRepository) -> None:
+    with pytest.raises(ValueError):
+        await task_repository.finished(states=FINAL, limit=0)
+    with pytest.raises(ValueError):
+        await task_repository.finished(states=FINAL, limit=-1)
+
+
+async def test_the_hour_of_an_outcome_is_stored_and_read_back(
+    task_repository: TaskRepository,
+) -> None:
+    """Round trip: what ``transition`` wrote is what the next reader gets."""
+    task = ended(351, TaskState.FAILED, 13)
+    await task_repository.add(task)
+
+    assert await task_repository.get(task.id) == task

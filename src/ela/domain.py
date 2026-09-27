@@ -866,6 +866,16 @@ class Task(_DomainModel):
     new task does.
     """
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
+    finished_at: UtcDatetime | None = None
+    """When the task reached its final state (M17.2b, ADR 0049): ``None`` while it is alive.
+
+    Written by :func:`~ela.tasks.state_machine.transition` alone, with the instant of the event,
+    and saved by the same ``save`` that saves the state — the two are one write, so a final state
+    without its hour cannot be born (architecture rule 5 watches this field as it watches
+    ``state``). It is what «the last outcomes» are ordered by on the homes. A task that finished
+    before the column existed took its hour from its final event, and has none where that event
+    was lost (ADR 0015 §8): declared, never made up.
+    """
 
 
 class TaskEvent(_DomainModel):

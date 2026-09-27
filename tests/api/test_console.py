@@ -13,9 +13,11 @@ its refusals are exercised here, address by address.
 
 from __future__ import annotations
 
+import dataclasses
+import re
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from html import escape
 from typing import Any
 
@@ -23,18 +25,19 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from ela.api import pages
+from ela.api import create_app, pages
+from ela.api.companion import NO_LIVE
 from ela.api.console import (
     FROM_AWAY,
     FROM_THIS_MACHINE,
     NO_DEVICES,
     NO_PLAN,
     NO_RESULTS,
-    NO_TASKS,
     NO_TOOLS,
     NOTHING_RUNS,
     NOTHING_WAITS,
     RESULTS_ARE_ELSEWHERE,
+    SHOWN,
     STAYS_ON_THE_MAC,
     _content,
     _now,
@@ -52,6 +55,7 @@ from ela.api.security import (
     Identity,
     Kind,
 )
+from ela.composition import Ela
 from ela.devices import NodeEnrollment
 from ela.domain import (
     Approval,
@@ -69,8 +73,19 @@ from ela.domain import (
 )
 from ela.executive import UNSEEN
 from ela.ports import EnrollmentExpiredError
+from ela.tasks.state_machine import TERMINAL_STATES
+from ela.testing.fakes import FakeClock
 from ela.tools import ASSERTED_CREATES, OVERWRITES, READS
-from tests.api.support import BASE, echo_plan, note_plan, queued
+from tests.api.support import (
+    BASE,
+    ENDINGS,
+    Clocked,
+    NoListOfEveryTask,
+    echo_plan,
+    ended,
+    note_plan,
+    queued,
+)
 
 LOOPBACK = "http://127.0.0.1"
 """What the Mac's browser opens when the person is at the Mac: both ends of the socket loopback."""
@@ -927,7 +942,7 @@ async def test_the_approval_center_with_nothing_waiting_says_so(console: AsyncCl
 async def test_the_home_with_no_live_task_says_so(console: AsyncClient) -> None:
     home = await console.get("/console/")
 
-    assert NO_TASKS in home.text
+    assert NO_LIVE in home.text
     assert NOTHING_RUNS in home.text
     assert escape(NOTHING_WAITS) in home.text
 
@@ -1018,3 +1033,153 @@ def test_the_two_facts_of_a_file_go_where_the_goal_goes() -> None:
 
     assert "Il file" not in _pairs(question, seen=False)
     assert "Che cosa fa" not in _pairs(question, seen=False)
+
+
+# ----------------------------------------------------------------------------------------
+# M17.2b (ADR 0049): an outcome stays on the home — the last to finish first, among the last N
+# ----------------------------------------------------------------------------------------
+
+
+def group(page: str, title: str) -> str:
+    """What a group of the tasks tile holds: from its title to the next group or the next tile."""
+    after = page.split(f">{title}", 1)[1]
+    return re.split(r'class="ela-caption"|class="ela-panel', after, maxsplit=1)[0]
+
+
+def test_every_final_state_has_a_way_to_be_reached_as_in_production() -> None:
+    """The keys of the map are the final states: a sixth one without a way stops the suite."""
+    assert set(ENDINGS) == TERMINAL_STATES
+
+
+@pytest.mark.parametrize("state", sorted(TERMINAL_STATES), ids=lambda state: state.value)
+async def test_a_finished_task_stays_on_the_home(
+    state: TaskState, console: AsyncClient, client: AsyncClient, ela: Ela
+) -> None:
+    """The defect of M13.2, for every final state: the outcome is on the page, with its state and
+    the way to its summary."""
+    task = await ended(state, client, ela, text=f"esito {state.value}")
+
+    finished = group((await console.get("/console/")).text, "Finiti")
+
+    assert f'href="/console/task?id={task}"' in finished
+    assert f">{state.value}<" in finished
+    assert f"esito {state.value}" in finished
+
+
+async def test_the_last_to_finish_comes_first_even_if_it_was_born_first(clocked: Clocked) -> None:
+    """The long command of M13.2: created first, finished last, first on the page.
+
+    On an ELA whose clock the test moves between the two runs: on the real clock the two outcomes
+    may share an instant, and the tie, broken by insertion, gives the opposite order.
+    """
+    client = clocked.client
+    born_first = await queued(client, echo_plan(), text="nata prima")
+    await client.post(f"/tasks/{await queued(client, echo_plan(), text='nata dopo')}/run")
+    clocked.clock.advance(timedelta(seconds=1))
+    await client.post(f"/tasks/{born_first}/run")
+
+    async with opened(clocked.app, LOOPBACK) as browser:
+        enrolled = await browser.post(
+            "/console/enroll",
+            data={"code": await code_for(client), **DECLARED},
+            headers=origin(LOOPBACK),
+        )
+        assert enrolled.status_code == 303, enrolled.text
+        finished = group((await browser.get("/console/")).text, "Finiti")
+
+    assert finished.index("nata prima") < finished.index("nata dopo")
+
+
+async def test_the_finished_group_declares_its_limit_and_how_many_there_are(
+    console: AsyncClient, client: AsyncClient
+) -> None:
+    for number in range(SHOWN + 2):
+        await client.post(f"/tasks/{await queued(client, echo_plan(), text=f'n{number}')}/run")
+
+    home = (await console.get("/console/")).text
+
+    assert f"Finiti · gli ultimi {SHOWN} di {SHOWN + 2}</p>" in home
+    assert group(home, "Finiti").count('class="ela-row"') == SHOWN
+
+
+async def test_the_finished_group_declares_its_limit_when_it_shows_them_all(
+    console: AsyncClient, client: AsyncClient
+) -> None:
+    """A window on the last N is never complete by nature, so it says its limit even when it fits
+    (M17.2b dec. 2 of the registration)."""
+    await client.post(f"/tasks/{await queued(client, echo_plan())}/run")
+
+    home = (await console.get("/console/")).text
+
+    assert f"Finiti · gli ultimi {SHOWN}</p>" in home
+
+
+async def test_no_window_of_time_decides_what_is_listed(
+    console: AsyncClient, client: AsyncClient, ela: Ela
+) -> None:
+    """A year later the outcome is still there: the limit is a number, never an age."""
+    await client.post(f"/tasks/{await queued(client, echo_plan(), text='un anno fa')}/run")
+    a_year_later = FakeClock(datetime.now(UTC) + timedelta(days=365))
+
+    later_app = create_app(dataclasses.replace(ela, clock=a_year_later))
+    async with opened(later_app, LOOPBACK) as later:
+        later.cookies.set(CONSOLE_COOKIE, credential(console))
+        home = (await later.get("/console/")).text
+
+    assert "un anno fa" in group(home, "Finiti")
+
+
+async def test_the_ceiling_holds_for_a_finished_task(
+    console: AsyncClient, client: AsyncClient, app: FastAPI
+) -> None:
+    """From the tailnet a ``LOCAL_ONLY`` outcome is its id — present — and never its goal."""
+    task = await queued(client, echo_plan(), text="resta sul Mac")
+    await client.post(f"/tasks/{task}/run")
+
+    async with opened(app, TAILNET, peer=PHONE_PEER) as away:
+        away.cookies.set(CONSOLE_COOKIE, credential(console))
+        finished = group((await away.get("/console/")).text, "Finiti")
+
+    assert f'<span class="ela-row__title">{task}</span>' in finished
+    assert "resta sul Mac" not in finished
+
+
+async def test_no_finished_task_is_said(console: AsyncClient) -> None:
+    assert "Nessun task finito." in group((await console.get("/console/")).text, "Finiti")
+
+
+async def test_the_live_group_says_how_much_it_shows_when_it_cuts(
+    console: AsyncClient, client: AsyncClient
+) -> None:
+    """C8: the cut of the console had no test."""
+    for number in range(SHOWN + 1):
+        await queued(client, echo_plan(), text=f"viva {number}")
+
+    home = (await console.get("/console/")).text
+
+    assert f"Vivi · {SHOWN} di {SHOWN + 1}</p>" in home
+    assert group(home, "Vivi").count('class="ela-row"') == SHOWN
+
+
+async def test_every_task_is_counted_live_and_finished(
+    console: AsyncClient, client: AsyncClient
+) -> None:
+    await queued(client, echo_plan())
+    for _ in range(2):
+        await client.post(f"/tasks/{await queued(client, echo_plan())}/run")
+
+    assert "3 task in tutto" in (await console.get("/console/")).text
+
+
+async def test_the_home_asks_for_no_list_of_every_task(
+    console: AsyncClient, client: AsyncClient, ela: Ela
+) -> None:
+    """C6: the finished grow for ever, and the home reads the live ones, the last N and a count."""
+    await client.post(f"/tasks/{await queued(client, echo_plan())}/run")
+
+    guarded = create_app(dataclasses.replace(ela, repository=NoListOfEveryTask(ela.repository)))
+    async with opened(guarded, LOOPBACK) as browser:
+        browser.cookies.set(CONSOLE_COOKIE, credential(console))
+        home = await browser.get("/console/")
+
+    assert home.status_code == 200, home.text

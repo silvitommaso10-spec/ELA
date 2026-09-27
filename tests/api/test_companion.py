@@ -8,17 +8,19 @@ something the user did not agree to. The browser itself is not here (ADR 0038 §
 
 from __future__ import annotations
 
+import dataclasses
 import html
 import re
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from ela.api import create_app
 from ela.api.companion import (
     IDLE,
     SHOWN,
@@ -48,8 +50,18 @@ from ela.domain import (
 from ela.executive import UNSEEN
 from ela.permissions import SINGLE_USE
 from ela.ports import EnrollmentExpiredError
+from ela.tasks.state_machine import TERMINAL_STATES
 from ela.tools import ASSERTED_CREATES, OVERWRITES, READS
-from tests.api.support import BASE, echo_plan, note_plan, queued
+from tests.api.support import (
+    BASE,
+    Clocked,
+    NoListOfEveryTask,
+    echo_plan,
+    ended,
+    note_plan,
+    outside_the_block,
+    queued,
+)
 
 ORIGIN = {"Origin": BASE}
 """What a browser sends on a ``POST``, and what every page of ELA answers to (dec. C.1)."""
@@ -395,7 +407,7 @@ async def test_a_form_from_another_site_is_refused(phone: AsyncClient) -> None:
     )
 
     assert answered.status_code == 403
-    assert "ELA" in answered.text
+    assert "ELA" in outside_the_block(answered.text), "the sheets say «ELA» too (M17.2c, D8)"
 
 
 async def test_a_form_with_no_origin_is_refused(phone: AsyncClient) -> None:
@@ -420,10 +432,16 @@ async def test_every_page_carries_the_policy_that_forbids_a_script(phone: AsyncC
 
 
 async def test_the_pages_of_the_enrolment_carry_it_too(browser: AsyncClient) -> None:
+    """M17.2c (ADR 0050): the policy of the page that carries its sheet inside is derived from that
+    sheet, and it still forbids a script; the sheets are still behind the middleware — no link."""
+    from ela.api.pages import inside_policy
+
     answered = await browser.get("/companion/")
 
-    assert answered.headers["content-security-policy"] == CONTENT_SECURITY_POLICY
-    assert "stylesheet" not in answered.text, "the sheets are behind the middleware (dec. D)"
+    block = re.search(r"<style>(.*?)</style>", answered.text, flags=re.DOTALL)
+    assert block is not None
+    assert answered.headers["content-security-policy"] == inside_policy(block.group(1))
+    assert "<link" not in outside_the_block(answered.text)
 
 
 async def test_what_the_user_wrote_is_escaped_and_never_markup(
@@ -555,7 +573,8 @@ async def test_a_yes_answers_and_runs_the_task_in_the_same_request(
     phone: AsyncClient, client: AsyncClient
 ) -> None:
     """Dec. H1: the two things the user does at the Mac, from the page, in one request — and the
-    page it lands on shows the true state of the task it just answered."""
+    page it lands on is the home, where the task it just answered is the first outcome (M17.2b
+    dec. 4: the remedy of ``?task=`` gave way to the rule that covers every task)."""
     task_id, approval_id = await waiting_question(client, privacy="TRUSTED")
 
     answered = await phone.post(
@@ -563,11 +582,11 @@ async def test_a_yes_answers_and_runs_the_task_in_the_same_request(
     )
 
     assert answered.status_code == 303
-    assert answered.headers["Location"] == f"/companion/?task={task_id}"
+    assert answered.headers["Location"] == "/companion/"
     task = (await client.get(f"/tasks/{task_id}")).json()
     assert task["state"] == TaskState.COMPLETED.value, task
-    landed = await phone.get(f"/companion/?task={task_id}")
-    assert TaskState.COMPLETED.value in landed.text
+    first = group((await phone.get("/companion/")).text, "Finiti").split('class="ela-row"')[1]
+    assert f">{TaskState.COMPLETED.value}<" in first
 
 
 async def test_the_yes_is_signed_by_the_iphone(phone: AsyncClient, client: AsyncClient) -> None:
@@ -641,8 +660,8 @@ async def test_a_list_that_cuts_says_how_much_it_is_showing(
 
     answered = await phone.get("/companion/")
 
-    assert f"I task · {SHOWN} di {SHOWN + 2}" in answered.text
-    assert answered.text.count('class="ela-row"') == SHOWN
+    assert f"Vivi · {SHOWN} di {SHOWN + 2}</p>" in answered.text
+    assert group(answered.text, "Vivi").count('class="ela-row"') == SHOWN
 
 
 async def test_a_list_that_fits_says_nothing_about_a_cut(
@@ -943,3 +962,121 @@ def test_the_two_facts_of_a_file_go_where_the_goal_goes() -> None:
 
     assert "Il file" not in _pairs(question, seen=False)
     assert "Che cosa fa" not in _pairs(question, seen=False)
+
+
+# ----------------------------------------------------------------------------------------
+# M17.2b (ADR 0049): an outcome stays on the phone — the last to finish first, among the last N
+# ----------------------------------------------------------------------------------------
+
+
+def group(page: str, title: str) -> str:
+    """What a group of the tasks section holds: from its title to the next group or panel."""
+    after = page.split(f">{title}", 1)[1]
+    return re.split(r'class="ela-caption"|class="ela-panel', after, maxsplit=1)[0]
+
+
+def first_row(page: str, title: str) -> str:
+    return group(page, title).split('class="ela-row"')[1]
+
+
+@pytest.mark.parametrize("state", sorted(TERMINAL_STATES), ids=lambda state: state.value)
+async def test_a_finished_task_stays_on_the_phone(
+    state: TaskState, phone: AsyncClient, client: AsyncClient, ela: Ela
+) -> None:
+    """For every final state: the outcome is on the page with its state, and it is not a link —
+    the phone has no summary (M17.2b dec. 3). The task is ``LOCAL_ONLY``, so the row carries its id
+    and not its goal: the ceiling holds for an outcome too."""
+    task = await ended(state, client, ela, text=f"esito {state.value}")
+
+    finished = group((await phone.get("/companion/")).text, "Finiti")
+
+    assert f">{state.value}<" in finished
+    assert f'<span class="ela-row__title">{task}</span>' in finished
+    assert f"esito {state.value}" not in finished
+    assert "href" not in finished
+
+
+async def test_on_the_phone_the_last_to_finish_comes_first(clocked: Clocked) -> None:
+    """On an ELA whose clock the test moves between the two runs: on the real clock the two
+    outcomes may share an instant, and the tie, broken by insertion, gives the opposite order."""
+    client = clocked.client
+    born_first = await queued(client, echo_plan(), text="nata prima", privacy="TRUSTED")
+    later = await queued(client, echo_plan(), text="nata dopo", privacy="TRUSTED")
+    await client.post(f"/tasks/{later}/run")
+    clocked.clock.advance(timedelta(seconds=1))
+    await client.post(f"/tasks/{born_first}/run")
+
+    async with AsyncClient(transport=ASGITransport(app=clocked.app), base_url=BASE) as browser:
+        enrolled = await browser.post(
+            "/companion/enroll", data={"code": await code_for(client), **DECLARED}, headers=ORIGIN
+        )
+        assert enrolled.status_code == 303, enrolled.text
+        finished = group((await browser.get("/companion/")).text, "Finiti")
+
+    assert finished.index("nata prima") < finished.index("nata dopo")
+
+
+async def test_on_the_phone_the_finished_group_declares_its_limit(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    for number in range(SHOWN + 2):
+        await client.post(f"/tasks/{await queued(client, echo_plan(), text=f'n{number}')}/run")
+
+    home = (await phone.get("/companion/")).text
+
+    assert f"Finiti · gli ultimi {SHOWN} di {SHOWN + 2}</p>" in home
+    assert group(home, "Finiti").count('class="ela-row"') == SHOWN
+
+
+async def test_a_no_puts_the_task_first_among_the_finished(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    """The remedy of ``?task=`` fired after a no too (C5); the rule that replaces it covers it."""
+    task_id, approval_id = await waiting_question(client, privacy="TRUSTED")
+
+    answered = await phone.post(
+        "/companion/answer", data={"id": approval_id, "answer": "no"}, headers=ORIGIN
+    )
+
+    assert answered.headers["Location"] == "/companion/"
+    assert (await client.get(f"/tasks/{task_id}")).json()["state"] == TaskState.DENIED.value
+    assert f">{TaskState.DENIED.value}<" in first_row(
+        (await phone.get("/companion/")).text, "Finiti"
+    )
+
+
+async def test_a_task_stopped_from_the_phone_stays_on_the_phone(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    """C5: until M17.2b a task stopped here vanished from here in the same instant."""
+    task_id = await queued(client, echo_plan(), text="da fermare", privacy="TRUSTED")
+
+    await phone.post("/companion/cancel", data={"id": task_id}, headers=ORIGIN)
+
+    first = first_row((await phone.get("/companion/")).text, "Finiti")
+    assert "da fermare" in first
+    assert f">{TaskState.CANCELLED.value}<" in first
+
+
+async def test_an_empty_phone_says_both_of_its_empties(phone: AsyncClient) -> None:
+    home = (await phone.get("/companion/")).text
+
+    assert "Nessun task vivo." in group(home, "Vivi")
+    assert "Nessun task finito." in group(home, "Finiti")
+
+
+async def test_the_phone_asks_for_no_list_of_every_task(
+    phone: AsyncClient, client: AsyncClient, ela: Ela
+) -> None:
+    """C6, for the home and for the confirmation to stop, which loaded every task to find one."""
+    live = await queued(client, echo_plan(), privacy="TRUSTED")
+    await client.post(f"/tasks/{await queued(client, echo_plan())}/run")
+
+    guarded = create_app(dataclasses.replace(ela, repository=NoListOfEveryTask(ela.repository)))
+    async with AsyncClient(transport=ASGITransport(app=guarded), base_url=BASE) as browser:
+        browser.cookies.set(COMPANION_COOKIE, phone.cookies[COMPANION_COOKIE])
+        home = await browser.get("/companion/")
+        confirmation = await browser.get(f"/companion/cancel?id={live}")
+
+    assert home.status_code == 200, home.text
+    assert confirmation.status_code == 200, confirmation.text

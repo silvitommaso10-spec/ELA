@@ -96,6 +96,7 @@ __all__ = [
     "StepOut",
     "TaskCreate",
     "TaskDetail",
+    "FinishedOut",
     "TaskOut",
     "TraitOut",
     "WorkOrderOut",
@@ -249,6 +250,9 @@ class TaskOut(BaseModel):
     max_privacy: PrivacyLevel
     """What the user declared about where this task may run (ADR 0038 §16): shown, because a policy
     that decides where content goes and cannot be read back is a policy nobody can check."""
+    finished_at: datetime | None = None
+    """When the task reached its final state (M17.2b, ADR 0049), ``None`` while it is alive: the
+    order ``GET /tasks/finished`` declares, readable in what it answers."""
 
     @classmethod
     def of(cls, task: Task) -> TaskOut:
@@ -262,7 +266,19 @@ class TaskOut(BaseModel):
             parent_id=task.parent_id,
             deadline=task.deadline,
             max_privacy=task.max_privacy,
+            finished_at=task.finished_at,
         )
+
+
+class FinishedOut(BaseModel):
+    """The last tasks to reach a final state, the last first, and how many finished in all.
+
+    ``total`` is what lets a list that cuts say so — «gli ultimi 8 di 23» — without loading the
+    twenty-three (ADR 0025 §2), and what a home adds to its live tasks to count them all.
+    """
+
+    tasks: tuple[TaskOut, ...]
+    total: int
 
 
 class StepOut(BaseModel):

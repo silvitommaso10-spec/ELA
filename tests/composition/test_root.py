@@ -231,6 +231,30 @@ async def test_a_database_nobody_migrated_stops_ela(
     assert "tasks" in message and "audit_events" in message
 
 
+async def test_a_database_left_before_a_new_column_stops_ela_naming_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M17.2b decisione 6: the guide promises that a forgotten migration stops the start-up with the
+    command to run, and until M17.2b that was true of a table and false of a column — a database
+    left at ``0011`` started, and failed at the first read of ``tasks``.
+
+    The precondition is built as it happens: ``alembic`` takes the database to ``0011``.
+    """
+    from alembic import command
+
+    from tests.infrastructure.persistence.test_migrations import config_for
+
+    declare(monkeypatch, tmp_path)
+    command.upgrade(config_for(tmp_path / "ela.db"), "0011")
+
+    with pytest.raises(ConfigurationError) as raised:
+        await build(Settings.load())
+
+    message = str(raised.value)
+    assert "tasks.finished_at" in message
+    assert "alembic upgrade head" in message
+
+
 async def test_a_route_naming_an_unknown_provider_stops_ela(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

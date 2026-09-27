@@ -87,9 +87,13 @@ def test_every_router_of_the_api_is_v01s_or_came_after() -> None:
 def test_the_routers_carry_the_fifteen_routes_of_v01_and_no_others() -> None:
     """Fifteen written routes (ADR 0023 §6); ``/openapi.json`` is FastAPI's, and behind the token
     like the rest (``tests/api/test_security.py`` counts what the app really serves)."""
+    from tests.docs.test_adr_composition import routes_after_0048
+
     routers = api_routers()
 
-    assert len(routes_of(routers[name] for name in V01_ROUTERS)) == 15
+    # ``GET /tasks/finished`` (ADR 0049) lives in the tasks router, one of v0.1's: the fifteen are
+    # what v0.1 wrote, and a route a later ADR adds to one of its modules is not one of them.
+    assert len(routes_of(routers[name] for name in V01_ROUTERS) - routes_after_0048()) == 15
 
 
 def test_the_catalogue_holds_the_three_capabilities_of_v01() -> None:
@@ -108,7 +112,14 @@ def test_the_registry_holds_one_tool_and_one_verifier_per_capability(tmp_path: P
     }
 
 
-LATER_COMMANDS = ("node enroll", "node revoke", "node run", "voice audition", "voice preview")
+LATER_COMMANDS = (
+    "node enroll",
+    "node revoke",
+    "node run",
+    "task finished",
+    "voice audition",
+    "voice preview",
+)
 """What the phases after v0.1 added, kept beside the twenty rather than folded into them
 (ADR 0029 §13). ``ela voice`` itself is the group's own callback and not a registered command,
 which is what makes the bare ``ela voice`` answer instead of printing help — ``tests/cli`` holds

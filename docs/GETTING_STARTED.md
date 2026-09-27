@@ -22,6 +22,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<chiave del modello del PC>` | la chiave Anthropic del nodo, mai quella del Core | la console Anthropic (§12, passo 4) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
+| `<porta>` | la porta su cui ELA ascolta | `ela diagnostics`, riga `addresses` (§14) |
 | `<radice del PC>` | la cartella del PC dentro cui ELA può leggere e scrivere | la scegli tu, sul PC: una cartella che c'è, e che non contiene né sta dentro `$HOME\.ela` o `$HOME\ELA` (§17, passo 2) |
 
 ## 0. Che cosa serve
@@ -970,8 +971,9 @@ del battito restano quelli (M12.4, dec. J).
 ## 13. L'iPhone come companion: vedere e rispondere da lontano
 
 L'iPhone **non è un nodo**: non prende lavoro, non esegue tool, non manda battiti. È l'unica
-identità che *guarda e risponde* — le domande che aspettano, i task vivi, il sì, il no, e fermare un
-task —, e lo fa da una pagina che ELA serve, nel browser del telefono (M12.5, ADR 0043).
+identità che *guarda e risponde* — le domande che aspettano, i task vivi e gli ultimi finiti, il sì,
+il no, e fermare un task —, e lo fa da una pagina che ELA serve, nel browser del telefono (M12.5,
+ADR 0043).
 
 Serve la tailnet del §12: l'iPhone con Tailscale, sulla stessa rete del Mac.
 
@@ -992,7 +994,7 @@ capability e il rischio, e dice di rispondere dal Mac.
 **2. Arruola il browser, sull'iPhone.** Apri
 
 ```
-http://<ip tailnet del Mac>:8130/companion/
+http://<ip tailnet del Mac>:<porta>/companion/
 ```
 
 **nel browser predefinito del telefono** — quello che si apre quando tocchi un collegamento. La
@@ -1024,12 +1026,15 @@ bloccato (chiede il codice di sblocco e poi apre). «ELA» da solo Siri non lo c
 contiene nessun segreto: apre un indirizzo, e la credenziale è quella del browser.
 
 **5. Che cosa fa la pagina.** La sfera dice se una domanda aspetta (`WAITING APPROVAL`), se ELA sta
-lavorando (`WORKING`) o se è ferma (`IDLE`). Sotto, le domande che aspettano e i task vivi. Toccare
-una domanda apre la pagina della domanda: che cosa ELA vuole fare, con che rischio, fin dove può
-andare il contenuto, per quanto vale il sì. **Il sì risponde e fa ripartire il task nella stessa
-richiesta** — le stesse due cose che al Mac sono `ela task approve` e `ela task run` —, e la pagina
-torna con l'esito vero. Toccare un task vivo porta alla conferma per fermarlo, su una seconda pagina:
-fermare non si annulla.
+lavorando (`WORKING`) o se è ferma (`IDLE`). Sotto, le domande che aspettano, e i task in due gruppi:
+i **vivi** e i **finiti** — gli ultimi sei, l'ultimo a finire per primo, con il loro stato; il titolo
+dice il limite e, se sono di più, di quanti (M17.2b). Toccare una domanda apre la pagina della
+domanda: che cosa ELA vuole fare, con che rischio, fin dove può andare il contenuto, per quanto vale
+il sì. **Il sì risponde e fa ripartire il task nella stessa richiesta** — le stesse due cose che al
+Mac sono `ela task approve` e `ela task run` —, e la pagina torna alla home, dove il task è il primo
+dei finiti se si è chiuso. Toccare un task vivo porta alla conferma per fermarlo, su una seconda
+pagina: fermare non si annulla, e il task fermato resta fra i finiti. Un task finito non è un
+collegamento: il suo riassunto si legge dal Mac.
 
 **6. Revocare il telefono.** Come per un nodo, e vale subito:
 
@@ -2223,6 +2228,266 @@ uv run ela task run <id>
 
 **Che cosa si deve vedere**: il rifiuto **prima dell'esecuzione**, con lo stesso codice. La pulizia è
 quella di §16: togli la voce da `ELA_TERMINAL_PROGRAMS`, cancella `~/ela-prova`, e riavvia.
+
+## 18. La pagina che mente e la pagina spoglia: la prova a mano di M17.2b e M17.2c
+
+> **Eseguita dall'utente il 2026-09-27 a `f85b228`**, su questo Mac (la porta era 8351) e
+> sull'iPhone. **Passati i passi 1–4 e 6; il 5 è saltato**, per decisione dell'utente, e ciò che
+> doveva mostrare lo affermano i test sull'orologio finto (sotto). Nata come bozza con le SPEC del
+> 2026-09-26 e allineata all'implementazione: gli ADR sono [0049](adr/0049-finished-on-the-homes.md) e
+> [0050](adr/0050-sheets-inside-the-page.md), accettati dopo questa prova. Sotto ogni passo, **ciò
+> che si deve vedere** è l'istruzione per chi la rifà, e **nella prova del 2026-09-27** ciò che è
+> successo.
+
+Due riparazioni. **M17.2b**: un task finito non sparisce più dalle home — la console e il telefono
+elencano, accanto ai vivi, gli ultimi task arrivati in uno stato finale, l'ultimo per primo. **M17.2c**:
+la pagina d'arruolamento, la prima che un browser nuovo vede, ha l'aspetto di ELA, senza che nessuna
+rotta risponda a chi non è ancora nessuno.
+
+Presuppone il Command Center arruolato su `127.0.0.1` (§14) e il telefono arruolato **in Chrome**, il
+browser predefinito (§13). Tre passi **nessun test può farli al posto tuo**: il secondo e il terzo,
+perché l'hash del foglio lo calcola il browser, e se ne calcola un altro la pagina arriva senza stile —
+lo vede solo un browser vero, e i motori sono due, Blink e WebKit —; e il quarto, perché l'ordine in
+cui un utente ritrova i suoi esiti si guarda sulle due pagine insieme.
+
+### 1. Il Core dal codice giusto, e lo schema
+
+M17.2b aggiunge una colonna — l'ora in cui un task è finito —, e ELA non migra all'avvio (§2):
+
+```
+uv run alembic upgrade head
+```
+
+`alembic upgrade head`, in questo repository, **non stampa niente**: non c'è una configurazione di
+log che gli faccia dire quale migrazione ha applicato. A dirlo è la domanda successiva:
+
+```
+uv run alembic current
+```
+
+```
+0012 (head)
+```
+
+```
+uv run ela serve
+```
+
+**Che cosa si deve vedere**: `0012 (head)`, e ELA che parte. Sulla home del Command Center, nella
+tessera «Task», il gruppo «Finiti» con i task delle prove precedenti.
+
+**Nella prova del 2026-09-27**: l'upgrade non ha stampato niente — la bozza prometteva «la migrazione
+`0012` applicata», che il comando non dice, ed è il rilievo che ha portato qui `alembic current` —;
+`alembic current` ha risposto `0012 (head)`; sulla home della console, il gruppo «Finiti» con i task
+delle prove precedenti.
+
+### 2. La pagina d'arruolamento, sul Mac, in due browser
+
+In **Chrome**, il browser predefinito del Mac, una finestra in incognito (⇧⌘N): non ha il cookie della
+console. Apri lo stesso indirizzo di §14, `http://127.0.0.1:<porta>/console`.
+
+**Che cosa si deve vedere**: la stanza scura e il carattere delle altre pagine di ELA, il titolo e le
+frasi del design system, i campi e il bottone del design system — non la pagina bianca con il
+carattere del browser. Poi un arruolamento vero da lì, perché la pagina è cambiata: conia il codice
+
+```
+uv run ela node enroll --privacy TRUSTED --role console
+```
+
+incollalo, dai un nome che la distingua, invia. **Che cosa si deve vedere**: la home. Se non vuoi
+tenere quella console nel registro, revocala — la finestra normale resta arruolata —, con l'id della
+riga che porta quel nome:
+
+```
+uv run ela device list
+```
+
+```
+uv run ela node revoke <id della console>
+```
+
+Poi in **Safari**, una finestra privata (⇧⌘N), lo stesso indirizzo: **la stessa pagina, vestita**.
+Chiudila senza arruolarla.
+
+**Nella prova del 2026-09-27**: in Chrome in incognito la pagina d'arruolamento è arrivata vestita;
+l'arruolamento vero, con il nome «prova incognito», è riuscito ed è arrivato alla home. **La revoca
+non è stata fatta**, per scelta dell'utente: quell'identità resta nel registro. In Safari, finestra
+privata, la pagina è arrivata vestita, ed è stata chiusa senza arruolarsi.
+
+### 3. La pagina d'arruolamento, sull'iPhone in Chrome
+
+In Chrome, una **scheda in incognito**, all'indirizzo di §13, `http://<ip tailnet del Mac>:<porta>/companion/`
+— la porta è quella del passo 2, e di `ela diagnostics`.
+
+**Che cosa si deve vedere**: la stessa pagina del passo 2, con la cornice del telefono. **Tocca il
+campo del codice**: la tastiera sale e **la pagina non si ingrandisce**, come nella prova di M17.1 — un
+campo che ingrandisce la pagina è un campo che il foglio non ha raggiunto. Poi un arruolamento vero da
+lì — il modulo del telefono non è quello della console: il campo Sistema è fisso —:
+conia il codice al Mac,
+
+```
+uv run ela node enroll --privacy TRUSTED --role companion
+```
+
+incollalo nella scheda in incognito, dai un nome che la distingua, invia. **Che cosa si deve
+vedere**: la home del telefono. Se non vuoi tenere quell'identità, revocala — la scheda normale di
+Chrome resta arruolata —, con l'id della riga che porta il nome che hai appena dato:
+
+```
+uv run ela device list
+```
+
+```
+uv run ela node revoke <id del companion>
+```
+
+**Nella prova del 2026-09-27**: su `http://100.76.92.39:8351/companion/`, in Chrome in incognito, la
+pagina è arrivata vestita, e toccando il campo del codice la pagina non si è ingrandita.
+L'arruolamento vero, con il nome «prova incognito telefono», è riuscito; non revocato, per scelta
+dell'utente.
+
+### 4. Un task creato prima e finito dopo
+
+Il comando di §16, passo 5, con il timeout abbassato: presuppone §15 e §16 fatte, e la cartella
+dello scope che c'è. Nel `.env`, **aggiungi** `"usr/bin/time"` alla lista di `ELA_TERMINAL_PROGRAMS` —
+la pulizia di §16 l'ha tolto; con la lista vuota diventa la prima riga qui sotto — e abbassa il
+timeout a dieci secondi, poi riavvia `ela serve`:
+
+```
+ELA_TERMINAL_PROGRAMS=["usr/bin/time"]
+```
+
+```
+ELA_TERMINAL_TIMEOUT_SECONDS=10
+```
+
+Il comando lungo **si crea per primo**, `TRUSTED`, così il telefono ne vede l'obiettivo:
+
+```
+uv run ela task create "dormire troppo" --privacy TRUSTED
+```
+
+```
+uv run ela task plan <id> --file docs/examples/terminal-timeout.json
+```
+
+Poi un'eco, **senza `--privacy`**: resta sul Mac — un'eco `TRUSTED` può viaggiare al PC e tornare
+`assigned` (§17) —, e dal telefono se ne vede l'id e non l'obiettivo, perché il tetto vale anche per
+un task finito. Creala, pianificala e lanciala **subito**:
+
+```
+uv run ela task create "un'eco"
+```
+
+```
+uv run ela task plan <id> --file docs/examples/echo.json
+```
+
+```
+uv run ela task run <id>
+```
+
+L'eco è `COMPLETED`. **Adesso** il comando lungo, con l'id di «dormire troppo»:
+
+```
+uv run ela task run <id>
+```
+
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+```
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**: dopo una decina di secondi «dormire troppo» è `FAILED`, con
+`terminal.timeout`. Sulla home del Command Center, nel gruppo «Finiti», **«dormire troppo» è il primo**,
+con `FAILED`, anche se è stato creato prima dell'eco — l'ordine è quello della fine, non della nascita
+—, e l'eco è seconda, `COMPLETED`; un clic su «dormire troppo» porta al suo riassunto. Sulla home del
+telefono, nel gruppo «Finiti», lo stesso ordine: «dormire troppo» con `FAILED`, poi l'id dell'eco con
+`COMPLETED`, senza collegamenti.
+
+**Nella prova del 2026-09-27**: «dormire troppo» (`8c71d897…`) creato prima dell'eco (`f70a69aa…`).
+L'eco è finita `COMPLETED`; poi «dormire troppo», dopo il sì, `FAILED` con `terminal.timeout`. Su tutte
+e due le home «dormire troppo» è il primo dei finiti, con `FAILED`, e l'eco è seconda. Sulla console
+un clic porta al riassunto; sul telefono l'eco compare con il suo id, e le righe dei finiti non sono
+collegamenti. I titoli dichiarano il limite.
+
+**Trovato qui, e non preso.** Il primo `ela task run` di «dormire troppo», con esito
+`waiting_approval`, ha stampato sotto `steps executed` lo step che aspettava il sì, e quello step
+non era stato eseguito: misurato, `steps` contiene gli step consegnati all'executor, qualunque cosa
+abbia fatto. È registrato come riparazione, **M6.3b** (`docs/milestones/M6.3b.md`).
+
+### 5. Un terzo task che finisce dopo, e il primo che resta
+
+```
+uv run ela task create "un'altra eco"
+```
+
+```
+uv run ela task plan <id> --file docs/examples/echo.json
+```
+
+```
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**: su tutte e due le home l'eco nuova è **prima**, e «dormire troppo» è
+**ancora lì**, seconda, con `FAILED`. Il titolo del gruppo dichiara il limite — «Finiti · gli ultimi
+8» sulla console, «Finiti · gli ultimi 6» sul telefono — e, se le prove precedenti hanno lasciato più
+finiti di così, dice di quanti: «Finiti · gli ultimi 8 di 23». Lo stesso, dal terminale:
+
+```
+uv run ela task finished
+```
+
+**Nella prova del 2026-09-27: saltato**, per decisione dell'utente — non passato. Ciò che doveva
+mostrare lo affermano i test su un orologio che il test sposta fra un'esecuzione e l'altra:
+l'ultimo a finire è il primo sulla console, sul telefono, nella rotta e nella CLI
+(`test_the_last_to_finish_comes_first_even_if_it_was_born_first`,
+`test_on_the_phone_the_last_to_finish_comes_first`,
+`test_the_finished_route_answers_the_last_to_finish_first_and_how_many`,
+`test_finished_shows_the_last_to_finish_first`), il limite e il totale
+(`test_the_finished_route_keeps_the_last_and_counts_them_all`,
+`test_finished_says_its_limit_and_how_many_there_are`), e i titoli che dichiarano il limite sulle
+due home.
+
+### 6. Un task fermato dal telefono, che resta sul telefono
+
+Un task vivo che non gira: creato e pianificato, e **non** lanciato, resta `QUEUED`. `TRUSTED`, così
+il telefono ne vede l'obiettivo:
+
+```
+uv run ela task create "da fermare" --privacy TRUSTED
+```
+
+```
+uv run ela task plan <id> --file docs/examples/echo.json
+```
+
+Sul telefono, nella home, il gruppo «Vivi» ha «da fermare» con `QUEUED`. Toccalo: la seconda pagina
+chiede la conferma. Ferma.
+
+**Che cosa si deve vedere**: la home del telefono, e «da fermare» **è primo nel gruppo «Finiti»**, con
+`CANCELLED`. È l'unico caso rotto prima di M17.2b che solo il telefono mostra: un task fermato dal
+telefono spariva dal telefono nello stesso istante.
+
+**Nella prova del 2026-09-27**: «da fermare» (`a0d9bd07…`), in `QUEUED`, fermato dal telefono, è il
+primo dei finiti, con `CANCELLED`.
+
+**Se non si vede così**: se «dormire troppo» manca da una delle due home, o non è primo al passo 4, o
+«da fermare» manca dal telefono al passo 6, è il difetto di M17.2b che non è riparato su quella
+superficie. Se una pagina d'arruolamento è arrivata
+senza stile, salva dal Mac la risposta intera, intestazioni comprese, e portala nella review:
+
+```
+curl -s -D ~/Downloads/m17.2c-401-intestazioni.txt -o ~/Downloads/m17.2c-401.html http://127.0.0.1:<porta>/console
+```
+
+**La pulizia**, che fa parte della prova: togli `usr/bin/time` da `ELA_TERMINAL_PROGRAMS` e la riga
+di `ELA_TERMINAL_TIMEOUT_SECONDS`, e riavvia. **Nella prova del 2026-09-27**: fatta, ed ELA
+riavviato.
 
 ## Dove guardare dopo
 
