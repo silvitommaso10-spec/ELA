@@ -219,8 +219,8 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   accettati): l'esito che resta sulle home, e la pagina d'arruolamento con i suoi fogli dentro, con la
   prova a mano passata il 2026-09-27 (`GETTING_STARTED.md` §18). La prova ha trovato un'etichetta
   falsa della CLI — `steps executed` di uno step che aspetta il sì —, registrata come **M6.3b** e
-  **implementata il 2026-09-28** fino alla prova a mano (§19): la riga si chiama `steps handled`, gli
-  step su cui la corsa ha dato la sua risposta (ADR 0051, Proposta fino alla prova).
+  **fatta il 2026-09-28**, con la prova a mano passata lo stesso giorno (§19): la riga si chiama
+  `steps handled`, gli step su cui la corsa ha dato la sua risposta (ADR 0051, accettato).
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task

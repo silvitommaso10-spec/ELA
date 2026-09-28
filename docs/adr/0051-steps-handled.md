@@ -1,7 +1,8 @@
 # 0051. Gli step di una corsa sono quelli che ha trattato: la parola dice ciò che il campo contiene, e il vuoto non dice chi ha chiuso il task
 
-- **Stato:** Proposta. SPEC di M6.3b decisa dal revisore il 2026-09-28, con le domande 1–10, tutte
-  (a). Diventa **Accettata** quando la prova a mano di `docs/GETTING_STARTED.md` §19 è passata.
+- **Stato:** **Accettata il 2026-09-28**, quando la prova a mano di `docs/GETTING_STARTED.md` §19 è
+  passata a `f1861b3` — i passi 1–3, su questo Mac. SPEC di M6.3b decisa dal revisore lo stesso
+  giorno, con le domande 1–10, tutte (a).
 - **Data:** 2026-09-28
 - **Riferimenti spec:** §14, §15, §32, §62
 - **Milestone:** M6.3b

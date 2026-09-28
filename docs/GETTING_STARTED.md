@@ -2525,9 +2525,11 @@ riavviato.
 
 ## 19. La parola degli step: la prova a mano di M6.3b
 
-> Nata come bozza con la SPEC il 2026-09-28 e allineata all'implementazione: la parola è `steps
-> handled` (decisione 1), l'ADR è [0051](adr/0051-steps-handled.md), che resta Proposta fino a questa
-> prova. **Aspetta l'utente.**
+> **Eseguita dall'utente il 2026-09-28 a `f1861b3`**, su questo Mac (la porta era 8351). **Passati i
+> passi 1–3.** Nata come bozza con la SPEC dello stesso giorno e allineata all'implementazione: la
+> parola è `steps handled` (decisione 1), l'ADR è [0051](adr/0051-steps-handled.md), accettato dopo
+> questa prova. Sotto ogni passo, **ciò che si deve vedere** è l'istruzione per chi la rifà, e **nella
+> prova del 2026-09-28** ciò che è successo.
 
 Una riparazione. `ela task run` stampava sotto `steps executed` anche lo step su cui ELA si era fermato
 a chiedere, e quello step non era stato eseguito (§18, passo 4). La riga adesso si chiama `steps
@@ -2563,6 +2565,12 @@ steps handled  9c5b8f26-1a2b-4c3d-8e4f-000000000001, 9c5b8f26-1a2b-4c3d-8e4f-000
 Il primo id è l'eco, eseguita; il secondo è lo step su cui ELA si è fermato a chiedere, e non è stato
 eseguito. Se il telefono è arruolato (§13), la domanda suona anche lì: è atteso.
 
+**Nella prova del 2026-09-28**: il task `8e837b0d-99c8-519d-a06b-2b9b2c31cb96`, con il piano di
+`docs/examples/first-task.json`. La corsa è tornata con `outcome waiting_approval`, `reason —`, `state
+WAITING_APPROVAL` e `steps handled 9c5b8f26-1a2b-4c3d-8e4f-000000000001,
+9c5b8f26-1a2b-4c3d-8e4f-000000000002`: **identica al blocco di §6**. Gli id coincidono con quelli della
+guida perché li fissa il file del piano.
+
 ### 2. Il no, e la corsa che trova il task chiuso
 
 ```
@@ -2588,6 +2596,18 @@ steps handled  —
 
 Nessuno step trattato: la corsa ha trovato il task già chiuso dal tuo no, e non aveva niente da fare.
 
+**Nella prova del 2026-09-28**: `ela approvals` ha mostrato la domanda
+`601ecd9c-d168-5fb5-834e-17d8984ba95b` — `workspace.write_note` su `workspace/notes/first-task.md`,
+`LOW`. Il no ha portato il task a `DENIED`, e la corsa dopo è tornata con `outcome denied`, `reason —`,
+`state DENIED` e `steps handled —`. È stata lanciata due volte, per errore, con la stessa uscita tutte e
+due le volte: il file delle uscite la contiene due volte.
+
+**Trovato qui, e non preso.** Il blocco di `ela approvals` stampato in questo passo ha le righe
+`question expires`, `grant if you say yes` e `target`; quello di §6 mostra ancora `grant`, `expires` e
+`file`, nell'ordine di prima di M13.1, che le ha cambiate con la correzione della sua prova a mano
+(`f08bbfd`), e la frase sotto spiega il trattino di `file`. Non è una frase su `steps`: che cosa farne
+lo decide il revisore.
+
 ### 3. Che cosa dice l'help
 
 ```
@@ -2598,7 +2618,12 @@ uv run ela task run --help
 the executor gave its answer about it in this call» —, e che la ragione di `denied` e `failed` c'è
 quando la corsa l'ha ricevuta.
 
-Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`.
+**Nella prova del 2026-09-28**: l'help di `ela task run` contiene la definizione di uno step trattato,
+«``—`` means the run handled no step», e la frase che dice che la ragione di `denied` e `failed` c'è
+quando la corsa l'ha ricevuta.
+
+Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`. **Nella prova del
+2026-09-28** ci sono le uscite dal `plan` in poi, scritte con `tee`.
 
 ## Dove guardare dopo
 

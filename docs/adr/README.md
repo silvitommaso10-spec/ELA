@@ -58,7 +58,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0048](0048-travelling-action.md) | L'azione che viaggia: il verifier dove avviene l'effetto, il battito di `local`, e il lock di un task senza fessura | Accettata |
 | [0049](0049-finished-on-the-homes.md) | Un esito finale resta sulle superfici che elencano i task: l'ora dell'esito scritta con lo stato, gli ultimi N, e una domanda che prende un nome | Accettata |
 | [0050](0050-sheets-inside-the-page.md) | La pagina di chi non è ancora nessuno porta i suoi fogli: dentro la risposta, ammessi dal loro hash, e nessuna rotta che risponda a nessuno | Accettata |
-| [0051](0051-steps-handled.md) | Gli step di una corsa sono quelli che ha trattato: la parola dice ciò che il campo contiene, e il vuoto non dice chi ha chiuso il task | Proposta |
+| [0051](0051-steps-handled.md) | Gli step di una corsa sono quelli che ha trattato: la parola dice ciò che il campo contiene, e il vuoto non dice chi ha chiuso il task | Accettata |
 
 ## Template
 
