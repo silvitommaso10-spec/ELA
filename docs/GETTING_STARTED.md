@@ -2499,6 +2499,80 @@ curl -s -D ~/Downloads/m17.2c-401-intestazioni.txt -o ~/Downloads/m17.2c-401.htm
 di `ELA_TERMINAL_TIMEOUT_SECONDS`, e riavvia. **Nella prova del 2026-09-27**: fatta, ed ELA
 riavviato.
 
+## 19. La parola degli step: la prova a mano di M6.3b
+
+> **Bozza**, scritta con la SPEC il 2026-09-28: la parola `steps handled` è la proposta della SPEC
+> (`docs/milestones/M6.3b.md`, domanda 1), e i blocchi attesi cambiano con la risposta.
+
+Una riparazione. `ela task run` stampava sotto `steps executed` anche lo step su cui ELA si era fermato
+a chiedere, e quello step non era stato eseguito (§18, passo 4). La riga adesso si chiama `steps
+handled`: gli step su cui, in quella corsa, ELA ha dato la sua risposta — eseguiti, falliti, negati, o
+fermi sul tuo consenso.
+
+È breve: l'esempio di §5 e §6 sul tuo ELA, con il suo `.env` com'è e il Core acceso dal codice del
+branch (`uv run ela serve`). Il sì non si dà mai, quindi niente si scrive sul disco.
+
+### 1. Una corsa che si ferma a chiedere
+
+```
+uv run ela task create "la parola degli step"
+```
+
+```
+uv run ela task plan <id> --file docs/examples/first-task.json
+```
+
+```
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**, identico al blocco di §6:
+
+```
+outcome        waiting_approval
+reason         —
+state          WAITING_APPROVAL
+steps handled  9c5b8f26-1a2b-4c3d-8e4f-000000000001, 9c5b8f26-1a2b-4c3d-8e4f-000000000002
+```
+
+Il primo id è l'eco, eseguita; il secondo è lo step su cui ELA si è fermato a chiedere, e non è stato
+eseguito. Se il telefono è arruolato (§13), la domanda suona anche lì: è atteso.
+
+### 2. Il no, e la corsa che trova il task chiuso
+
+```
+uv run ela approvals
+```
+
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+```
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**:
+
+```
+outcome        denied
+reason         —
+state          DENIED
+steps handled  —
+```
+
+Nessuno step trattato: la corsa ha trovato il task già chiuso dal tuo no, e non aveva niente da fare.
+
+### 3. Che cosa dice l'help
+
+```
+uv run ela task run --help
+```
+
+**Che cosa si deve vedere**: la frase che dice che cosa è uno step trattato.
+
+Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`.
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.
