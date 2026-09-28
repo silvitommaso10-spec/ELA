@@ -38,7 +38,8 @@ di eseguirlo.
    Il codice dura **dieci minuti**, si usa una volta sola, e si copia con un doppio clic sulla
    cella `CODE` della tabella.
 
-2. **Sull'iPhone**, apri `http://<indirizzo del Mac sulla tailnet>:8130/companion/` **nel browser
+2. **Sull'iPhone**, apri `http://<indirizzo del Mac sulla tailnet>:<porta>/companion/` — la porta su
+   cui ELA ascolta la dice `ela diagnostics`, riga `addresses`, sul Mac — **nel browser
    predefinito del telefono** — quello che si apre quando tocchi un collegamento —, incolla il
    codice nel modulo, lascia «IOS» nel campo Sistema, e invia. Da lì in poi il browser porta la
    sua credenziale in un cookie e la pagina si apre da sola.

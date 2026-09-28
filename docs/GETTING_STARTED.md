@@ -81,6 +81,10 @@ The programs are one line of JSON, each relative to / — usr/bin/git is /usr/bi
 Fino a M13.1b `init` diceva che il token era «the only variable ELA requires» e, su questo stesso
 file, «nothing required is missing»: se lo leggi ancora, stai girando su codice precedente.
 
+**Nella verifica a mano di M13.1b, il 2026-09-22**: la seconda chiamata è uscita con `2` e ha
+nominato `ELA_FS_ROOT` ed `ELA_FS_SCOPE`, le obbligatorie di allora; `ELA_TERMINAL_PROGRAMS` è
+entrata con M13.2.
+
 Il database e il workspace stanno di default in `~/.ela/`. Per tenerli altrove, togli il commento
 a `ELA_DB_URL` e `ELA_WORKSPACE_DIR` nel `.env` appena scritto.
 
@@ -1207,6 +1211,12 @@ uv run ela audit tail --task <id> -n 20 --json | grep -E '"(event_type|authoriza
 `AUTHORIZATION_GRANTED`, e `"uses": 1`. Se vedi `null`, stai girando su codice precedente a M13.1b:
 quella versione lasciava il grant intatto per un'ora, e l'audit non sapeva dire con quale
 autorizzazione il file era stato scritto.
+
+**Nella verifica a mano di M13.1b, il 2026-09-22**: la domanda ha detto «creates a new file», e dopo
+il sì il task `2f03cb88…` ha scritto `ELA/prova.md` ed è finito `COMPLETED`. Le righe `STARTED` e
+`SUCCEEDED` portano lo stesso `authorization_id`, `0b4537fc…`, che è quello di
+`AUTHORIZATION_GRANTED` e di `TOOL_EXECUTED`, con `"uses": 1` (letto dal database il 2026-09-28;
+l'esito intero è in `docs/milestones/M13.1b.md`).
 
 **Se non si vede così**: se il task finisce `DENIED` senza chiedere niente, il percorso del piano
 non è dentro `ELA_FS_SCOPE` — è il passo 5, ma su un piano che doveva passare. Se il risultato è

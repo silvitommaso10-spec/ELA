@@ -187,10 +187,12 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   e il livello **`HIGH` esiste davvero**: non è più un diniego, è un'approvazione per ogni uso che
   nessuna policy permanente di §59 raggiunge. Con **M13.2** esegue anche i programmi che l'utente
   dichiara — `ELA_TERMINAL_PROGRAMS`, relativi a `/`, `[]` ammessa —: un comando è `argv`, il figlio
-  riceve un ambiente chiuso e nasce in un gruppo suo, e la domanda nomina ciò che girerà. Restano
-  aperte **M13.3** (l'azione che viaggia, e tre debiti), **M13.4** (il browser), **M13.5** (il
-  computer control) e **M13.6** (il ripiazzamento, fuori dalla fila): l'ordine e le condizioni
-  stanno nella voce 5.11.
+  riceve un ambiente chiuso e nasce in un gruppo suo, e la domanda nomina ciò che girerà. Con
+  **M13.3** (2026-09-26, ADR 0048) l'azione viaggia: `fs.read` e `fs.write` vanno a un nodo che ha
+  una radice, il verifier gira dove avviene l'effetto, e la fase ha pagato i tre debiti che le
+  toccavano. Restano aperte **M13.4** (il browser), **M13.5** (il computer control), **M13.6** (il
+  ripiazzamento, fuori dalla fila), **M13.7** (il terminale su un nodo) e **M13.8** (un file che vive
+  su una macchina): l'ordine e le condizioni stanno nella voce 5.11.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
   nodo, il protocollo del lavoro con la sua suite di conformità, **due implementazioni vere** —
@@ -495,8 +497,8 @@ una sessione di design insieme alle altre riparazioni della stessa pagina, ciasc
 documento e la sua lettera, su un branch solo: **quella sessione è del 2026-09-26, con M17.2c**, sul
 branch `m17.2b-m17.2c-design`; le due SPEC sono approvate dall'utente lo stesso giorno — le domande
 numerate insieme, 1–6 per M17.2b e 7–10 per M17.2c, e le correzioni A–F —, implementate, e **fatte**
-con la prova a mano del 2026-09-27. **L'ordine di M17.5 non è deciso**, e nemmeno quello di M6.3b,
-registrata da quella prova.
+con la prova a mano del 2026-09-27. **L'ordine di M17.5 non è deciso**; quello di M6.3b, registrata
+da quella prova, sì: **prima di M13.4** (il revisore, 2026-09-28, in `milestones/M6.3b.md`).
 
 *Perché è una fase:* è il design stesso a chiederlo. §33 del design vieta di saltare da «ELA deve
 essere futuristica» a «scrivi il codice della dashboard», §22 del design vuole l'identità progettata
