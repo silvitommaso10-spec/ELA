@@ -20,7 +20,7 @@ from ela.cli.errors import CONFIGURATION, fail, handled
 from ela.cli.output import Json, emit, fields, table
 from ela.domain import listed, visible
 
-__all__ = ["FINISHED_LIMIT", "app"]
+__all__ = ["FINISHED_LIMIT", "RUN_LABELS", "app"]
 
 app = typer.Typer(no_args_is_help=True, help="Create, read, plan, run and stop tasks.")
 
@@ -28,6 +28,10 @@ FINISHED_LIMIT: Final = 10
 """How many outcomes ``ela task finished`` shows when nobody says: **the CLI's own number**
 (M17.2b, correction B). The CLI is a client and reads no constant of a page; a terminal has room for
 a few more lines than a phone, and ``--limit`` is there for whoever wants another."""
+
+RUN_LABELS: Final = ("outcome", "reason", "state", "steps executed")
+"""The rows of ``ela task run``, in the order it prints them (M6.3b). The guide's blocks of that
+output are checked against these, and the tests read them here."""
 
 TaskId = Annotated[str, typer.Argument(metavar="TASK_ID", help="the id of the task")]
 Approval = Annotated[
@@ -301,18 +305,8 @@ def run(task_id: TaskId, as_json: Json = False) -> None:
     """
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/run")
-    emit(
-        payload,
-        as_json,
-        fields(
-            [
-                ("outcome", payload["outcome"]),
-                ("reason", payload["reason"]),
-                ("state", payload["task"]["state"]),
-                ("steps executed", payload["steps"]),
-            ]
-        ),
-    )
+    values = (payload["outcome"], payload["reason"], payload["task"]["state"], payload["steps"])
+    emit(payload, as_json, fields(list(zip(RUN_LABELS, values, strict=True))))
 
 
 @app.command("approve")
