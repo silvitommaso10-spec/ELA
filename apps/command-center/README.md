@@ -44,7 +44,8 @@ di eseguirlo.
    Il codice dura **dieci minuti** e si usa una volta sola. Presentato su un'altra rotta di
    arruolamento è rifiutato **e non si consuma**: non hai perso niente.
 
-2. **Nel browser**, apri `http://127.0.0.1:8130/console` — oppure l'indirizzo del Mac sulla
+2. **Nel browser**, apri `http://127.0.0.1:<porta>/console` — la porta su cui ELA ascolta la dice
+   `ela diagnostics`, riga `addresses` —, oppure l'indirizzo del Mac sulla
    tailnet, se vuoi aprirlo da fuori —, incolla il codice, dai un nome e invia. Da lì in poi il
    browser porta la sua credenziale in un cookie e la pagina si apre da sola.
 
