@@ -336,8 +336,17 @@ class TaskDetail(TaskOut):
 
 
 class RunOut(BaseModel):
-    """What one call of ``run`` did: where the task is now, which steps it executed, and why it
-    stopped when the outcome alone does not say."""
+    """What one call of ``run`` did: where the task is now, the steps it handled, and why it stopped
+    when the outcome alone does not say.
+
+    A step is handled when the executor gave its answer about it in this call: it ran; it was closed
+    from what a node delivered or a crash left; it failed — before the act, after it, or without
+    knowing whether the act happened —; the Guardian denied it; or ELA stopped on it to ask for
+    consent. A step handed to a node is not handled: the node will answer, and ``reason`` names it.
+    A step waiting for a node is not handled: the executor did not see it in this call. After
+    ``waiting_approval``, ``denied`` and ``failed`` the last step listed is the one the call stopped
+    on. The list is empty when the call handled no step, which does not say who closed the task
+    (M6.3b, ADR 0051)."""
 
     task: TaskOut
     outcome: str
@@ -345,11 +354,14 @@ class RunOut(BaseModel):
     reason: str | None = None
     """Why the run stopped where it did, when the outcome alone does not say.
 
-    Two outcomes carry one. ``waiting_device`` used to arrive as a bare word while the audit already
-    held the sentence — which nodes were considered, why each was refused, and for a missing tool
-    its name — and that sentence travels with the answer now (M6.1b dec. F). ``assigned`` carries
-    the assignment's own: the node, the work and the deadline it is due by (M12.2, ADR 0038 §10),
-    which is what a person deciding whether to wait has to read.
+    ``waiting_device`` used to arrive as a bare word while the audit already held the sentence —
+    which nodes were considered, why each was refused, and for a missing tool its name — and that
+    sentence travels with the answer now (M6.1b dec. F). ``assigned`` carries the assignment's own:
+    the node, the work and the deadline it is due by (M12.2, ADR 0038 §10), which is what a person
+    deciding whether to wait has to read. ``denied`` and ``failed`` carry the Guardian's reason or
+    the error's code and message **when this run received one** (M13.1): a task the run found
+    already closed, a step whose tool may or may not have acted, a plan an earlier run left blocked
+    arrive without one, and their why is in the audit (M13.1c).
 
     ``null`` for every other outcome: those explain themselves.
     """

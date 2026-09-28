@@ -252,12 +252,16 @@ uv run ela task run <id>
 ```
 
 ```
-outcome         waiting_approval
-state           WAITING_APPROVAL
-steps executed  9c5b8f26-1a2b-4c3d-8e4f-000000000001, 9c5b8f26-1a2b-4c3d-8e4f-000000000002
+outcome        waiting_approval
+reason         —
+state          WAITING_APPROVAL
+steps handled  9c5b8f26-1a2b-4c3d-8e4f-000000000001, 9c5b8f26-1a2b-4c3d-8e4f-000000000002
 ```
 
-Il primo step — l'echo — è stato eseguito; sul secondo ELA si ferma e chiede. **Non è per il
+Il primo step — l'echo — è stato eseguito; sul secondo ELA si ferma e chiede. Sotto `steps handled`
+ci sono gli step che questa corsa ha **trattato** — quelli su cui ELA ha dato la sua risposta:
+eseguiti, falliti, negati, o fermi sul tuo consenso —, e dopo `waiting_approval` l'ultimo è quello su
+cui si è fermata: un id lì sotto non vuol dire che lo step sia stato eseguito (M6.3b, ADR 0051). **Non è per il
 rischio:** `workspace.write_note` è LOW (§29), perché è lo *scope* a proteggerla — può scrivere
 solo dentro la cartella autorizzata — e per questo la capability non richiede da sé
 un'autorizzazione. A chiederla è lo **step**, che nel file dichiara `requires_authorization`. Il
@@ -308,9 +312,10 @@ uv run ela task run <id>
 ```
 
 ```
-outcome         completed
-state           COMPLETED
-steps executed  9c5b8f26-1a2b-4c3d-8e4f-000000000002
+outcome        completed
+reason         —
+state          COMPLETED
+steps handled  9c5b8f26-1a2b-4c3d-8e4f-000000000002
 ```
 
 Il secondo `run` esegue solo ciò che restava: il primo step era già fatto, e rifarlo sarebbe
@@ -551,8 +556,11 @@ di **PowerShell**, in una finestra da utente normale; sul Mac, del terminale.
 
 Gli output qui sotto sono quelli della prova a mano del **2026-09-17**, con il Core su questo Mac
 (tailnet `100.76.92.39`) e il nodo sul PC `DESKTOP-QQ0GSE2` (tailnet `100.92.165.124`, Windows 11
-10.0.26200, Python 3.12.10). Dove un passo non è stato rieseguito perché una misura lo aveva già
-coperto, è detto lì. Il trascritto integrale sta in `.git/m12-reference/ela-prova-a-mano.txt`.
+10.0.26200, Python 3.12.10); ***dal 2026-09-28 (M6.3b)*** i blocchi di `ela task run` del passo 6
+sono scritti come la CLI li stampa oggi — la riga degli step si chiama `steps handled`, non più
+`steps executed`, e la colonna è di 15 —, con gli id e le ragioni di quella prova e le righe `reason`
+e degli step che la guida aveva tolto. Dove un passo non è stato rieseguito perché una misura lo
+aveva già coperto, è detto lì. Il trascritto integrale sta in `.git/m12-reference/ela-prova-a-mano.txt`.
 
 Sul PC servono Windows 10 o 11, Tailscale acceso sulla stessa tailnet del Mac, [uv](https://docs.astral.sh/uv/),
 il repository in `$HOME\ELA` con `uv sync --locked`, e un Python **3.12.4 o successivo**: su
@@ -789,16 +797,21 @@ Il primo `run` si ferma sul consenso; dopo l'approvazione il secondo risponde `a
 è del PC:
 
 ```
-outcome         waiting_approval
-state           WAITING_APPROVAL
-steps executed  5a1e0c3d-7b2f-4e8a-9c41-000000000001
+outcome        waiting_approval
+reason         —
+state          WAITING_APPROVAL
+steps handled  5a1e0c3d-7b2f-4e8a-9c41-000000000001
 ```
 
 ```
-outcome         assigned
-reason          step 5a1e0c3d-7b2f-4e8a-9c41-000000000001 assigned to node DESKTOP-QQ0GSE2 (5ddae87a-6eb1-4fb0-947c-f912fce6c026) as assignment 0fa13927-593d-46f7-b5e2-744dde2c15aa, due by 2026-09-17T20:46:46.808533+00:00
-state           EXECUTING
+outcome        assigned
+reason         step 5a1e0c3d-7b2f-4e8a-9c41-000000000001 assigned to node DESKTOP-QQ0GSE2 (5ddae87a-6eb1-4fb0-947c-f912fce6c026) as assignment 0fa13927-593d-46f7-b5e2-744dde2c15aa, due by 2026-09-17T20:46:46.808533+00:00
+state          EXECUTING
+steps handled  —
 ```
+
+Sotto `assigned` nessuno step è trattato: lo step è del PC, la risposta la darà lui, e il `reason`
+lo nomina.
 
 **Il PC parla**, con la voce di Elsa — una frase di tre quarti di minuto, lunga apposta per le prove
 di questo passo e del passo 7. Nella prova l'albero dei processi e il Core spento a metà sono stati
@@ -839,9 +852,14 @@ uv run ela audit tail --task <id> -n 20
 ```
 
 ```
-outcome         completed
-state           COMPLETED
+outcome        completed
+reason         —
+state          COMPLETED
+steps handled  —
 ```
+
+`steps handled` è vuoto anche qui: lo step l'ha chiuso la consegna del PC, e questa corsa ha solo
+chiuso il task.
 
 ```
 2026-09-17T20:43:53.955644Z  DEVICE_SELECTED     SYSTEM:device-orchestrator  place step 5a1e0c3d-…: DESKTOP-QQ0GSE2 (5ddae87a-6eb1-4fb0-947c-f912fce6c026) with 25 points, 2 of 2 node(s) eligible
@@ -1236,10 +1254,10 @@ uv run ela task run <id>
 dice perché:
 
 ```
-outcome         failed
-reason          fs.overwrite_mismatch: 'ELA/prova.md' was declared as a new file and something is there now
-state           FAILED
-steps executed  d1b7c4a2-9e35-4f18-8c60-000000000001
+outcome        failed
+reason         fs.overwrite_mismatch: 'ELA/prova.md' was declared as a new file and something is there now
+state          FAILED
+steps handled  d1b7c4a2-9e35-4f18-8c60-000000000001
 ```
 
 ```
@@ -1255,8 +1273,9 @@ chiede a nessuno di approvare ciò che ELA sa già che rifiuterà, e non si sveg
 questo. Il confronto lo fa la stessa funzione che rifiuterebbe davvero: un fatto, una definizione,
 un posto.
 
-`steps executed` porta l'**id dello step**, non un conteggio: lo step è stato tentato e si è
-fermato prima di toccare il disco, ed è quello che il suo id lì dentro significa.
+`steps handled` porta l'**id dello step**, non un conteggio: ELA ha dato la sua risposta su quello
+step — un rifiuto, prima di toccare il disco —, ed è quello che il suo id lì dentro significa. Il tool
+non è stato chiamato.
 
 **Il messaggio dice «declared» e non «approved»**, ed è deliberato: qui nessuno ha approvato
 niente, quindi «approved» sarebbe una diagnosi falsa. La stessa frase nasce anche in un secondo
@@ -1335,8 +1354,10 @@ Tieni da parte il numero. Poi lancia, e ricontalo.
 tre assenze:
 
 ```
-outcome  denied
-reason   targets ['altrove/non-deve-esistere.md'] of fs.write are not within scope ['ELA']
+outcome        denied
+reason         targets ['altrove/non-deve-esistere.md'] of fs.write are not within scope ['ELA']
+state          DENIED
+steps handled  d1b7c4a2-9e35-4f18-8c60-000000000003
 ```
 
 ```
@@ -1515,9 +1536,10 @@ uv run ela task run <id>
 lo scope — scritto senza la barra iniziale —:
 
 ```
-outcome         denied
-reason          targets ['usr/bin/whoami'] of terminal.run are not within scope ['bin/echo', 'usr/bin/seq', 'usr/bin/time', 'usr/bin/printf', 'usr/bin/env']
-state           DENIED
+outcome        denied
+reason         targets ['usr/bin/whoami'] of terminal.run are not within scope ['bin/echo', 'usr/bin/seq', 'usr/bin/time', 'usr/bin/printf', 'usr/bin/env']
+state          DENIED
+steps handled  e7a3c915-2b64-4d08-9f71-000000000002
 ```
 
 poi due assenze, e il nome del confine che ha rifiutato:
@@ -2427,7 +2449,9 @@ collegamenti. I titoli dichiarano il limite.
 **Trovato qui, e non preso.** Il primo `ela task run` di «dormire troppo», con esito
 `waiting_approval`, ha stampato sotto `steps executed` lo step che aspettava il sì, e quello step
 non era stato eseguito: misurato, `steps` contiene gli step consegnati all'executor, qualunque cosa
-abbia fatto. È registrato come riparazione, **M6.3b** (`docs/milestones/M6.3b.md`).
+abbia fatto. È registrato come riparazione, **M6.3b** (`docs/milestones/M6.3b.md`). ***Riparato da
+M6.3b il 2026-09-28***: la riga si chiama `steps handled`, e porta gli step su cui la corsa ha dato
+la sua risposta (ADR 0051); la prova è la §19.
 
 ### 5. Un terzo task che finisce dopo, e il primo che resta
 
@@ -2501,8 +2525,9 @@ riavviato.
 
 ## 19. La parola degli step: la prova a mano di M6.3b
 
-> **Bozza**, scritta con la SPEC il 2026-09-28: la parola `steps handled` è la proposta della SPEC
-> (`docs/milestones/M6.3b.md`, domanda 1), e i blocchi attesi cambiano con la risposta.
+> Nata come bozza con la SPEC il 2026-09-28 e allineata all'implementazione: la parola è `steps
+> handled` (decisione 1), l'ADR è [0051](adr/0051-steps-handled.md), che resta Proposta fino a questa
+> prova. **Aspetta l'utente.**
 
 Una riparazione. `ela task run` stampava sotto `steps executed` anche lo step su cui ELA si era fermato
 a chiedere, e quello step non era stato eseguito (§18, passo 4). La riga adesso si chiama `steps
@@ -2569,7 +2594,9 @@ Nessuno step trattato: la corsa ha trovato il task già chiuso dal tuo no, e non
 uv run ela task run --help
 ```
 
-**Che cosa si deve vedere**: la frase che dice che cosa è uno step trattato.
+**Che cosa si deve vedere**: la frase che dice che cosa è uno step trattato — «A step is handled when
+the executor gave its answer about it in this call» —, e che la ragione di `denied` e `failed` c'è
+quando la corsa l'ha ricevuta.
 
 Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`.
 

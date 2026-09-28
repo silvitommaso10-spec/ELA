@@ -132,8 +132,9 @@ async def run_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> RunOut:
     """Walk the plan as far as it goes and say where it stopped (ADR 0019).
 
     Synchronous: the answer comes back when the run stops, which is when the task closes, when
-    the user's consent is needed, or when no node is eligible. A second ``run`` of the same task
-    while this one is walking is refused, not queued (ADR 0023 §9).
+    the user's consent is needed, when no node is eligible, or when a step went out to a node and
+    has not come back (``assigned``, ADR 0038 §10). A second ``run`` of the same task while this
+    one is walking is refused, not queued (ADR 0023 §9).
     """
     identifier = TaskId(task_id)
     # The check and the insert with nothing in between (M13.3, C10): ``running_of`` promises it,

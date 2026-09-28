@@ -63,7 +63,8 @@ class RunOutcome(StrEnum):
     FAILED = "failed"
     """A step failed and the task is FAILED, its pending descendants CANCELLED."""
     DENIED = "denied"
-    """The Guardian denied a step; the task is DENIED and nothing ran."""
+    """The task is DENIED — the Guardian denied a step, or the user said no to a question — and the
+    denied step did not run. Steps before it may have (M6.3b, ADR 0051)."""
     WAITING_APPROVAL = "waiting_approval"
     """A step needs the user's consent (§30). The next run resumes it."""
     WAITING_DEVICE = "waiting_device"
@@ -95,8 +96,10 @@ OUTCOMES: Final[Mapping[TaskState, RunOutcome]] = MappingProxyType(
 """The states in which the loop has nothing left to do, and the outcome each one is reported as.
 
 One table for both the check at the door and the check between two iterations: a task already
-closed when ``run`` is called is reported exactly as one closed by the call itself, and the empty
-``Run.steps`` is what says which of the two happened.
+closed when ``run`` is called is reported exactly as one closed by the call itself. The empty
+``Run.steps`` does **not** tell the two apart: it says that the call handled no step, and a retry
+that closes a task whose last step an earlier call finished — windows R5 and R6 — handles none
+either (M6.3b, ADR 0051 §2). Who closed the task is in the audit.
 
 One state, one outcome. A task somebody stopped and a task whose deadline passed are two
 different facts — one is a decision with an actor behind it, the other is time running out — and
@@ -115,9 +118,14 @@ one is the Planner's job (§13), not this module's.
 class Run(NamedTuple):
     """What one call of :meth:`TaskRunner.run` did.
 
-    ``steps`` are the steps this call executed, in the order it executed them; ``executions`` is
-    the executor's word about each, in the same order. Both are empty for a call that found
-    nothing to do. Nothing here is persisted: the trail, the results and the audit are.
+    ``steps`` are the steps this call **handled**, in the order it handled them: the ones the
+    executor gave its answer about in this call — it ran, it was closed from what a node delivered
+    or a crash left, it failed, it was denied, or ELA stopped on it to ask for consent (M6.3b,
+    ADR 0051 §1). A step handed to a node is not among them, because the node will answer and
+    ``reason`` names it; nor is a step waiting for a node, which the executor did not see in this
+    call. ``executions`` is the executor's word about each, in the same order. Both are empty for a
+    call that handled no step, which says nothing about who closed the task (ADR 0051 §2). Nothing
+    here is persisted: the trail, the results and the audit are.
     """
 
     task: Task
@@ -230,7 +238,7 @@ class TaskRunner:
         returns on. A released step is PENDING and is placed again at once: on a remote node the
         new assignment returns the call, on ``local`` the iteration closes it. So at most two
         iterations per step of the plan — asserted for real by
-        ``test_a_run_executes_each_step_at_most_once`` for the half that runs, and by
+        ``test_a_run_handles_each_step_at_most_once`` for the half that closes, and by
         ``test_a_plan_of_many_steps_releases_each_step_at_most_once_per_call`` for the half that
         releases.
         """
@@ -314,7 +322,8 @@ class TaskRunner:
             execution = await self._executor.execute(task_id, step_id, placement=placement)
             if execution.assignment is not None:
                 # The call handed the step to a node instead of running it (ADR 0038 §10). It is
-                # not among the steps this run executed, because this run executed nothing of it.
+                # not among the steps this run handled: the answer about it is the node's to give,
+                # and the reason names it (M6.3b, ADR 0051 §1).
                 return Run(
                     execution.task,
                     RunOutcome.ASSIGNED,

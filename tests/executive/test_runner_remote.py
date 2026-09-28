@@ -44,7 +44,7 @@ async def test_a_step_placed_on_a_remote_node_is_assigned_not_executed(w: World)
     run = await w.runner.run(task.id)
 
     assert run.outcome is RunOutcome.ASSIGNED
-    assert run.steps == () and run.executions == ()  # this call executed nothing
+    assert run.steps == () and run.executions == ()  # the node will answer (ADR 0051 §1)
     stand = await w.assignments.standing(task.id, step.id)
     assert stand.standing is Standing.LIVE
     assert stand.assignment is not None

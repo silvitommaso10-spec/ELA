@@ -29,9 +29,10 @@ FINISHED_LIMIT: Final = 10
 (M17.2b, correction B). The CLI is a client and reads no constant of a page; a terminal has room for
 a few more lines than a phone, and ``--limit`` is there for whoever wants another."""
 
-RUN_LABELS: Final = ("outcome", "reason", "state", "steps executed")
-"""The rows of ``ela task run``, in the order it prints them (M6.3b). The guide's blocks of that
-output are checked against these, and the tests read them here."""
+RUN_LABELS: Final = ("outcome", "reason", "state", "steps handled")
+"""The rows of ``ela task run``, in the order it prints them. The last one was ``steps executed``,
+and under ``waiting_approval`` it carried the step ELA had stopped on to ask, which had not run
+(M6.3b, ADR 0051). The guide's blocks of that output are checked against these."""
 
 TaskId = Annotated[str, typer.Argument(metavar="TASK_ID", help="the id of the task")]
 Approval = Annotated[
@@ -297,11 +298,19 @@ def run(task_id: TaskId, as_json: Json = False) -> None:
     eligible, or a step went out to a node and has not come back. A long step keeps the command
     waiting, because the run is the request.
 
-    ``reason`` is filled in for the two outcomes that need it. Waiting for a node, it says which
+    ``steps handled`` lists the steps this run handled. A step is handled when the executor gave its
+    answer about it in this call: it ran, it was closed from what a node delivered or a crash left,
+    it failed, the Guardian denied it, or ELA stopped on it to ask for your consent. A step handed
+    to a node, or waiting for one, is not handled. After ``waiting_approval``, ``denied`` and
+    ``failed`` the last one is where the run stopped; an empty cell means the run handled no step.
+
+    ``reason`` says why the run stopped when the outcome alone does not. Waiting for a node, which
     nodes were considered, why each was refused and — for a tool that is not installed — which tool.
-    ``assigned``, it says which node is doing the work, under which assignment, and by when it is
-    due (M12.2): what you need in order to decide whether to wait. Empty otherwise: an outcome that
-    explains itself does not need a sentence under it.
+    ``assigned``, which node is doing the work, under which assignment, and by when it is due: what
+    you need in order to decide whether to wait. ``denied`` and ``failed``, the Guardian's reason or
+    the error, when this run received one: a task the run found already closed, or a step whose
+    tool may or may not have acted, leaves it empty, and the audit has the why. Empty for every
+    other outcome: an outcome that explains itself does not need a sentence under it.
     """
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/run")

@@ -2,8 +2,8 @@
 
 The example tests fix the behaviour; these fix the shape of a walk. Two of them are the reason
 the loop has no counter guarding it: termination is a property of the code — every iteration that
-does not return closes a step — and a property is asserted, not defended with a branch nobody can
-reach.
+does not return closes a step or releases one (ADR 0038 §10) — and a property is asserted, not
+defended with a branch nobody can reach.
 """
 
 from __future__ import annotations
@@ -42,9 +42,11 @@ async def walk(capabilities: list[str], chain: bool) -> tuple[World, object, tup
 
 @given(capabilities=PLANS, chain=CHAINED)
 @SETTINGS
-def test_a_run_executes_each_step_at_most_once(capabilities: list[str], chain: bool) -> None:
-    """The invariant that makes the loop terminate without a counter (ADR 0019 §3): a step runs
-    once, so a walk cannot iterate more times than the plan has steps."""
+def test_a_run_handles_each_step_at_most_once(capabilities: list[str], chain: bool) -> None:
+    """The half of the invariant that makes the loop terminate without a counter (ADR 0019 §3,
+    rewritten by ADR 0038 §10) that closes: a call handles a step at most once. The name said
+    «executes» until M6.3b, of a list that also holds steps that asked or were denied (ADR 0051
+    §3); the half that releases has its own test, in ``test_assignment_expiry.py``."""
     _, run, steps = asyncio.run(walk(capabilities, chain))
     assert len(set(run.steps)) == len(run.steps)
     assert len(run.steps) <= len(steps)
@@ -67,7 +69,7 @@ def test_a_walk_ends_in_a_state_that_explains_its_outcome(
 
 @given(capabilities=PLANS, chain=CHAINED)
 @SETTINGS
-def test_every_executed_step_was_placed_and_started_on_the_same_node(
+def test_every_handled_step_was_placed_and_started_on_the_same_node(
     capabilities: list[str], chain: bool
 ) -> None:
     """The node an execution records is the node the orchestrator chose for that step, and the

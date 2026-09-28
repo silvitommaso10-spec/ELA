@@ -81,7 +81,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 6 — I nodi | `M6.1b` | Implementata | Il nodo che non impara: una capability aggiunta dopo il primo avvio |
 | 6 — I nodi | `M6.2` | Implementata | Device Orchestrator |
 | 6 — I nodi | `M6.3` | Implementata | Task Runner: la camminata del grafo |
-| 6 — I nodi | `M6.3b` | Proposta | `ela task run` dice «steps executed» di uno step che non ha eseguito |
+| 6 — I nodi | `M6.3b` | Implementata | `ela task run` dice «steps executed» di uno step che non ha eseguito |
 | 6 — I nodi | `M6.3c` | Proposta | Un task fermato mentre il suo tool gira fa rispondere `run` con un `409`, e lascia lo step `RUNNING` |
 | 7 — Il modello | `M7.1` | Implementata | `ModelProvider` e provider Anthropic |
 | 7 — Il modello | `M7.2` | Implementata | Protocollo STARTED e `model.complete` |
@@ -141,8 +141,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **50** | `docs/adr/NNNN-*.md` |
-| Milestone | **68, di cui 53 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **51** | `docs/adr/NNNN-*.md` |
+| Milestone | **68, di cui 54 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **28** | i `Protocol` di `src/ela/ports.py` |
@@ -218,7 +218,9 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   Center: quando si fanno lo dice la 5.10. **M17.2b e M17.2c sono fatte** (ADR 0049 e ADR 0050,
   accettati): l'esito che resta sulle home, e la pagina d'arruolamento con i suoi fogli dentro, con la
   prova a mano passata il 2026-09-27 (`GETTING_STARTED.md` §18). La prova ha trovato un'etichetta
-  falsa della CLI — `steps executed` di uno step che aspetta il sì —, registrata come **M6.3b**.
+  falsa della CLI — `steps executed` di uno step che aspetta il sì —, registrata come **M6.3b** e
+  **implementata il 2026-09-28** fino alla prova a mano (§19): la riga si chiama `steps handled`, gli
+  step su cui la corsa ha dato la sua risposta (ADR 0051, Proposta fino alla prova).
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
