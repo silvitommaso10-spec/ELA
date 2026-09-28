@@ -82,6 +82,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 6 — I nodi | `M6.2` | Implementata | Device Orchestrator |
 | 6 — I nodi | `M6.3` | Implementata | Task Runner: la camminata del grafo |
 | 6 — I nodi | `M6.3b` | Proposta | `ela task run` dice «steps executed» di uno step che non ha eseguito |
+| 6 — I nodi | `M6.3c` | Proposta | Un task fermato mentre il suo tool gira fa rispondere `run` con un `409`, e lascia lo step `RUNNING` |
 | 7 — Il modello | `M7.1` | Implementata | `ModelProvider` e provider Anthropic |
 | 7 — Il modello | `M7.2` | Implementata | Protocollo STARTED e `model.complete` |
 | 7 — Il modello | `M7.3` | Implementata | Model Router |
@@ -111,6 +112,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
 | 13 — Il permesso prima dell'azione | `M13.1b` | Implementata | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
+| 13 — Il permesso prima dell'azione | `M13.1c` | Proposta | In quattro rami di `run` un diniego o un fallimento arriva senza il suo perché |
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
@@ -140,7 +142,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **50** | `docs/adr/NNNN-*.md` |
-| Milestone | **66, di cui 53 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **68, di cui 53 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **28** | i `Protocol` di `src/ela/ports.py` |
@@ -192,7 +194,9 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   una radice, il verifier gira dove avviene l'effetto, e la fase ha pagato i tre debiti che le
   toccavano. Restano aperte **M13.4** (il browser), **M13.5** (il computer control), **M13.6** (il
   ripiazzamento, fuori dalla fila), **M13.7** (il terminale su un nodo) e **M13.8** (un file che vive
-  su una macchina): l'ordine e le condizioni stanno nella voce 5.11.
+  su una macchina), più una riparazione, **M13.1c** (un diniego o un fallimento senza il suo perché in
+  quattro rami di `run`, registrata il 2026-09-28 dalla SPEC di M6.3b): l'ordine e le condizioni
+  stanno nella voce 5.11.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
   nodo, il protocollo del lavoro con la sua suite di conformità, **due implementazioni vere** —
@@ -498,7 +502,10 @@ documento e la sua lettera, su un branch solo: **quella sessione è del 2026-09-
 branch `m17.2b-m17.2c-design`; le due SPEC sono approvate dall'utente lo stesso giorno — le domande
 numerate insieme, 1–6 per M17.2b e 7–10 per M17.2c, e le correzioni A–F —, implementate, e **fatte**
 con la prova a mano del 2026-09-27. **L'ordine di M17.5 non è deciso**; quello di M6.3b, registrata
-da quella prova, sì: **prima di M13.4** (il revisore, 2026-09-28, in `milestones/M6.3b.md`).
+da quella prova, sì: **prima di M13.4** (il revisore, 2026-09-28, in `milestones/M6.3b.md`). La SPEC
+di M6.3b ha registrato due riparazioni che ha trovato e non prende, **M6.3c** (un task fermato mentre
+il suo tool gira fa rispondere `run` con un `409`) e **M13.1c** (sopra, Fase 13): **tutte e due dopo
+M13.4** (il revisore, 2026-09-28).
 
 *Perché è una fase:* è il design stesso a chiederlo. §33 del design vieta di saltare da «ELA deve
 essere futuristica» a «scrivi il codice della dashboard», §22 del design vuole l'identità progettata
@@ -660,6 +667,11 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   della SPEC di M13.3**: `fs.*` viaggia e il piazzamento sceglie la macchina, quindi quale file si
   legge o si scrive lo decide il punteggio; un piano non può dirlo. **In coda alla Fase 13, dopo
   M13.7.**
+- **M13.1c — un diniego o un fallimento senza il suo perché** (ADR 0045 §12-bis). **Registrata il
+  2026-09-28 dalla SPEC di M6.3b**: in quattro rami di `run` — il no dell'utente visto alla porta, un
+  `execution.interrupted`, un grafo già bloccato, una verifica lasciata a metà — la riga `reason` è
+  vuota. **Dopo M13.4** (il revisore): il perché c'è altrove, nella risposta dell'utente e
+  nell'audit, quindi non c'è fretta.
 
 **Che cosa la Fase 13 non porta.**
 
