@@ -25,7 +25,7 @@ from uuid import uuid4
 import pytest
 
 from ela.api.schemas import WorkResultIn
-from ela.cli.output import GAP, fields
+from ela.cli.output import EMPTY, GAP, fields
 from ela.cli.tasks import RUN_LABELS
 from ela.composition import Ela, build
 from ela.domain import (
@@ -350,10 +350,16 @@ def test_the_command_prints_the_label_written_here() -> None:
 
 async def test_the_help_says_what_a_handled_step_is(cli: Cli) -> None:
     """Typer rewraps the docstring at the test's width, so the text is compared with its spaces
-    made single; the double backticks are printed as they are."""
+    made single; the double backticks are printed as they are.
+
+    The help names what the user sees: the character the command prints in an empty cell, taken from
+    :data:`~ela.cli.output.EMPTY` — the constant the command prints it with — and not written here
+    by hand, so a cell that changed its character leaves the help stale and this test red (review of
+    M6.3b, 2026-09-28)."""
     helped = await cli("task", "run", "--help")
     text = " ".join(plain(helped.stdout).split())
 
     assert helped.exit_code == 0
     assert DEFINITION in text
+    assert f"``{EMPTY}`` means the run handled no step" in text
     assert "steps executed" not in text

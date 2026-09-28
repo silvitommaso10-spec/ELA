@@ -302,7 +302,7 @@ def run(task_id: TaskId, as_json: Json = False) -> None:
     answer about it in this call: it ran, it was closed from what a node delivered or a crash left,
     it failed, the Guardian denied it, or ELA stopped on it to ask for your consent. A step handed
     to a node, or waiting for one, is not handled. After ``waiting_approval``, ``denied`` and
-    ``failed`` the last one is where the run stopped; an empty cell means the run handled no step.
+    ``failed`` the last one is where the run stopped; ``—`` means the run handled no step.
 
     ``reason`` says why the run stopped when the outcome alone does not. Waiting for a node, which
     nodes were considered, why each was refused and — for a tool that is not installed — which tool.
