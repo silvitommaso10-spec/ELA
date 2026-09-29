@@ -22,6 +22,7 @@ from typing import Final
 from ela.domain import CapabilityId
 from ela.ports import (
     AlreadyExistsError,
+    Browser,
     Clock,
     CommandLauncher,
     IdGenerator,
@@ -35,6 +36,7 @@ from ela.ports import (
     ToolPort,
     VerifierPort,
 )
+from ela.tools.browser import BrowserActTool, BrowserReadTool, Browsing
 from ela.tools.echo import EchoTool
 from ela.tools.errors import (
     NotIdempotentError,
@@ -54,6 +56,8 @@ from ela.tools.screen_text import ReadScreenTextTool
 from ela.tools.terminal import Terminal, TerminalRunTool
 from ela.tools.verifiers import (
     ONLINE_SPEECH_VERIFIER_NAME,
+    BrowserActVerifier,
+    BrowserReadVerifier,
     CaptureScreenVerifier,
     EchoVerifier,
     FsReadVerifier,
@@ -263,6 +267,8 @@ def production_tools(
     fs_root: Path | str,
     terminal: Terminal,
     launcher: CommandLauncher,
+    browsing: Browsing,
+    browser: Browser,
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -289,6 +295,10 @@ def production_tools(
             # The terminal (M13.2): the programs with the identity of the start-up, the scope of
             # M13.1 for the folder, and the launcher the composition built around the stop signal.
             TerminalRunTool(terminal, launcher, clock, ids),
+            # The browser (M13.4): the declared sites and their origins, and one browser of ELA's
+            # own, empty for every page. Not in :func:`node_tools`: it does not travel (form A).
+            BrowserReadTool(browsing, browser, clock, ids),
+            BrowserActTool(browsing, browser, clock, ids),
         )
     )
 
@@ -378,6 +388,8 @@ def production_verifiers(
     captures: CaptureStore,
     fs_root: Path | str,
     programs: Programs,
+    browser: Browser,
+    browser_seconds: float,
 ) -> VerifierRegistry:
     """The verifiers of :func:`production_tools`, one per capability.
 
@@ -400,5 +412,9 @@ def production_verifiers(
             FsWriteVerifier(fs_root),
             # The same identities the tool compares with: one table, fixed once (M13.2 dec. 4).
             TerminalRunVerifier(programs),
+            # The same browser the tools opened the page in: the verifier looks at that page, and
+            # never at the tool's report of it (M13.4 form I).
+            BrowserReadVerifier(browser, browser_seconds),
+            BrowserActVerifier(browser, browser_seconds),
         )
     )

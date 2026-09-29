@@ -77,6 +77,19 @@ __all__ = [
     "terminal_run",
     "validate_arguments",
     "workspace_write_note",
+    "BROWSER_ACT",
+    "BROWSER_READ",
+    "PATH_PATTERN",
+    "SITE_PATTERN",
+    "UNDECLARED_SITES",
+    "BROWSER_INTRODUCED_AT",
+    "browser_act",
+    "browser_read",
+    "EXPECT_MAX_LENGTH",
+    "FILLS_MAX",
+    "PATH_MAX_LENGTH",
+    "SELECTOR_MAX_LENGTH",
+    "VALUE_MAX_LENGTH",
 ]
 
 MAX_RISK: Final = RiskLevel.HIGH
@@ -263,15 +276,20 @@ VOICE_SPEAK_ONLINE: Final = CapabilityId("voice.speak_online")
 FS_READ: Final = CapabilityId("fs.read")
 FS_WRITE: Final = CapabilityId("fs.write")
 TERMINAL_RUN: Final = CapabilityId("terminal.run")
+BROWSER_READ: Final = CapabilityId("browser.read")
+BROWSER_ACT: Final = CapabilityId("browser.act")
 
-DECLARES_AN_EMPTY_SCOPE: Final[frozenset[CapabilityId]] = frozenset({TERMINAL_RUN})
+DECLARES_AN_EMPTY_SCOPE: Final[frozenset[CapabilityId]] = frozenset(
+    {TERMINAL_RUN, BROWSER_READ, BROWSER_ACT}
+)
 """The capabilities whose empty scope is **an answer** and not a doubt (M13.2 dec. 16).
 
 ``ELA_TERMINAL_PROGRAMS=[]`` means «no program», and ELA starts with it: the capability exists and
 the Guardian denies every call with ``Rule.SCOPE`` and ``[]`` in the reason — «an empty scope with
 targets covers none» (``ela.permissions.scope``). Everywhere else a scoped argument with no scope
 stays what :func:`check_capability` says it is, a doubt (§33), and a capability is here because it
-is named, never because its scope happens to be empty.
+is named, never because its scope happens to be empty. ``ELA_BROWSER_SITES=[]`` is the same answer
+for the two capabilities of the browser (M13.4, ADR 0052): no site.
 """
 
 DEFAULT_NOTES_SCOPE: Final = "workspace/notes"
@@ -304,6 +322,52 @@ which is not a program; ``tests/composition/test_terminal_wiring.py`` proves the
 never runs under it.
 """
 
+UNDECLARED_SITES: Final[tuple[str, ...]] = (UNDECLARED_FS_SCOPE,)
+"""The placeholder of the browser's two factories, and **never a boundary** (M13.4, ADR 0052).
+
+The form of :data:`UNDECLARED_PROGRAMS`, for its reason: ``[]`` is an admitted answer, so an empty
+default would read a forgotten wiring as a declaration. ``undeclared`` is not a site — it has no
+dot, so :data:`SITE_PATTERN` refuses it — and ``tests/composition/test_browser_wiring.py`` proves
+the production path never runs under it.
+"""
+
+SITE_PATTERN: Final = (
+    r"^(?!.*\n)(?=.{1,253}$)"
+    r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+)
+"""What a site is, **in one place** (M13.4 form E, ADR 0052): a host name and nothing else.
+
+Labels of lower-case ASCII letters, digits and hyphens, separated by dots, at least two, the last
+beginning with a letter — so no IP address, no ``localhost``, no port, no scheme, no capital, no dot
+at the end —; an international name is written in punycode (``xn--…``). The schema of the browser's
+two capabilities reads it, so a site outside it is ``DENIED`` with ``Rule.ARGUMENTS`` before the
+scope is looked at; the settings read it, so ``ELA_BROWSER_SITES`` refuses such an entry at
+start-up; and the tool reads it, because it never trusts its caller (ADR 0047, Conseguenze).
+
+**Why not the scope's grammar**: a scope is a path, and ``within_scope`` compares segments — a site
+would be *inside* another as ``example.com/x`` is inside ``example.com``, and
+``is_valid_scope_entry`` admits a port, a star and a space (census C1). A site is compared whole,
+and a host name has no segments: ``www.example.com`` is not ``example.com``, and each is declared on
+its own.
+
+The negative look-ahead at the start refuses a line break anywhere: a schema's ``pattern`` is
+searched, and ``$`` matches before a final newline.
+"""
+
+PATH_PATTERN: Final = r"^(?!.*\n)/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*$"
+"""What follows the site in an address (M13.4 form E): it begins with ``/``, printable ASCII in the
+grammar of a URL — what does not fit is written with ``%`` —, no space and no control character. Not
+scoped: the question shows it, and the audit never does."""
+
+PATH_MAX_LENGTH: Final = 2048
+SELECTOR_MAX_LENGTH: Final = 512
+VALUE_MAX_LENGTH: Final = 4096
+EXPECT_MAX_LENGTH: Final = 256
+FILLS_MAX: Final = 20
+"""The limits of a browser call, **decisions and not measures** (M13.4 form H): enough for a contact
+form and an address with its query, and a ceiling to what a question makes somebody read."""
+
 V01_INTRODUCED_AT: Final = datetime(2026, 9, 5, tzinfo=UTC)
 """``created_at`` of the three specifications: the catalogue is declared, it is not born at
 runtime, so it has no clock."""
@@ -311,6 +375,9 @@ runtime, so it has no clock."""
 PHASE_13_INTRODUCED_AT: Final = datetime(2026, 9, 21, tzinfo=UTC)
 """``created_at`` of what phase 13 adds: the first two capabilities that touch the filesystem
 outside the workspace, and the first ``HIGH`` ELA has ever had."""
+
+BROWSER_INTRODUCED_AT: Final = datetime(2026, 9, 29, tzinfo=UTC)
+"""``created_at`` of the browser's two capabilities (M13.4, ADR 0052)."""
 
 PHASE_10_INTRODUCED_AT: Final = datetime(2026, 9, 8, tzinfo=UTC)
 """``created_at`` of what phase 10 adds. A date of its own, and not :data:`V01_INTRODUCED_AT`,
@@ -830,11 +897,118 @@ def terminal_run(programs: Sequence[str] = UNDECLARED_PROGRAMS) -> CapabilitySpe
     )
 
 
+def browser_read(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
+    """``browser.read``, **LOW**: opens one page of a declared site and reads it (§19; M13.4).
+
+    **LOW, and on three facts** (decision 4 of the review of M13.4): the sites are the user's —
+    ``ELA_BROWSER_SITES`` —, the plan is the user's, attached by hand, and the browser holds none of
+    the user's credentials — its profile is empty for every page. **Not because a read has no
+    effect**: a GET with a token in its query acts by itself, and a page runs its own script. So the
+    level stands while the three facts do, and the second stops standing the day a model writes the
+    plan: ``docs/milestones/M14.2.md`` says that milestone looks at it again.
+
+    **Not MEDIUM like** ``fs.read``, whose file is the user's own content (§57); a page read with no
+    cookie is not, and what the user gives away is the visit, to a site they declared. **Not SAFE**,
+    which does not look at the scope. Inside the sites it is allowed without a question — unless a
+    step asks for one (decision E of M4) —, and outside them it is denied with ``Rule.SCOPE``.
+
+    ``site`` is a host name (:data:`SITE_PATTERN`) and the one scoped argument; ``path`` is the rest
+    of the address; ``selector``, when present, the one element whose text is read.
+    """
+    return CapabilitySpec(
+        id=BROWSER_READ,
+        created_at=BROWSER_INTRODUCED_AT,
+        description=(
+            "Opens one page of a site you declared, in ELA's own empty browser, and reads its text."
+        ),
+        risk=RiskLevel.LOW,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "site": {"type": "string", "pattern": SITE_PATTERN},
+                "path": {"type": "string", "pattern": PATH_PATTERN, "maxLength": PATH_MAX_LENGTH},
+                "purpose": {"type": "string", "minLength": 1},
+                "selector": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": SELECTOR_MAX_LENGTH,
+                },
+            },
+            "required": ["site", "path", "purpose"],
+            "additionalProperties": False,
+        },
+        scope=tuple(sites),
+        scoped_arguments=("site",),
+        prompt_arguments=("purpose",),
+        requires_authorization=False,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
+def browser_act(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
+    """``browser.act``, **HIGH**: fills fields on one page of a declared site and clicks (§19;
+    M13.4).
+
+    **HIGH**: a click or a submission can send something out of the machine — a form, a message, an
+    order — and **what is sent is not taken back**. ``fs.write`` is HIGH because a write is
+    irreversible while §37 does not exist; a submission is irreversible for ever, because no
+    rollback reaches somebody else's server. A question at every use, which no policy of §59
+    reaches, and the grant is spent before the first gesture (ADR 0046). ELA cannot know whether a
+    click sends, so the capability says it can, always: the risk is the catalogue's and never the
+    arguments' (ADR 0026 §7).
+
+    One page, ``fill`` — pairs ``[selector, value]``, in order, possibly none —, **one** ``click``,
+    and the ``expect_text`` the page must show after it: a click sent is not a click that worked
+    (§20), and the verifier looks for that text on the page.
+    """
+    return CapabilitySpec(
+        id=BROWSER_ACT,
+        created_at=BROWSER_INTRODUCED_AT,
+        description=(
+            "Fills fields on one page of a site you declared and clicks, in ELA's own empty "
+            "browser: what it sends cannot be taken back."
+        ),
+        risk=RiskLevel.HIGH,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "site": {"type": "string", "pattern": SITE_PATTERN},
+                "path": {"type": "string", "pattern": PATH_PATTERN, "maxLength": PATH_MAX_LENGTH},
+                "fill": {
+                    "type": "array",
+                    "maxItems": FILLS_MAX,
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 2,
+                        "maxItems": 2,
+                    },
+                },
+                "click": {"type": "string", "minLength": 1, "maxLength": SELECTOR_MAX_LENGTH},
+                "expect_text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": EXPECT_MAX_LENGTH,
+                },
+                "purpose": {"type": "string", "minLength": 1},
+            },
+            "required": ["site", "path", "fill", "click", "expect_text", "purpose"],
+            "additionalProperties": False,
+        },
+        scope=tuple(sites),
+        scoped_arguments=("site",),
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
 def production_catalogue(
     *,
     notes_scope: str = DEFAULT_NOTES_SCOPE,
     fs_scope: str = UNDECLARED_FS_SCOPE,
     programs: Sequence[str] = UNDECLARED_PROGRAMS,
+    sites: Sequence[str] = UNDECLARED_SITES,
 ) -> CapabilityRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -857,5 +1031,7 @@ def production_catalogue(
             fs_read(fs_scope),
             fs_write(fs_scope),
             terminal_run(programs),
+            browser_read(sites),
+            browser_act(sites),
         )
     )

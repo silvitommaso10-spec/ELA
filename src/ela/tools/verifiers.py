@@ -42,7 +42,9 @@ from ela.domain import (
     ExecutionResult,
     JsonMapping,
 )
-from ela.ports import ModelRouterPort, RoutingError
+from ela.permissions import BROWSER_ACT, BROWSER_READ
+from ela.ports import Browser, BrowserStopped, Glanced, ModelRouterPort, PageGone, RoutingError
+from ela.tools.browser import cut, origin_of
 from ela.tools.captures import (
     CAPTURE_CODES,
     Capture,
@@ -73,6 +75,16 @@ from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALI
 from ela.tools.voice import VOICE_SPEAK, digest_of
 
 __all__ = [
+    "BROWSER_ACT_VERIFIER_NAME",
+    "BROWSER_EXPECT_MISSING",
+    "BROWSER_EXPECT_VISIBLE",
+    "BROWSER_PAGE_GONE",
+    "BROWSER_READ_VERIFIER_NAME",
+    "BROWSER_TEXT_MATCHES",
+    "BROWSER_TEXT_MISMATCH",
+    "LOOK_GRACE_SECONDS",
+    "BrowserActVerifier",
+    "BrowserReadVerifier",
     "TERMINAL_EXIT_CODE_MATCHES",
     "TERMINAL_EXIT_MISMATCH",
     "TERMINAL_OUTPUT_INCOMPLETE",
@@ -1054,3 +1066,211 @@ def _unverified(problem: ProgramProblem, program: str) -> str:
             "declared — what it printed is in the result"
         )
     return problem.message
+
+
+# --------------------------------------------------------------------------------------
+# browser.read and browser.act (M13.4, ADR 0052)
+# --------------------------------------------------------------------------------------
+
+BROWSER_READ_VERIFIER_NAME: Final = "browser-read-verifier"
+BROWSER_ACT_VERIFIER_NAME: Final = "browser-act-verifier"
+BROWSER_TEXT_MATCHES: Final = "browser.text_matches"
+"""The text the result carries is the text the page shows **now**, under the same selector and cut
+the same way."""
+BROWSER_EXPECT_VISIBLE: Final = "browser.expect_visible"
+"""The text the plan expects **appears** on the page after the click, within the tool's time."""
+BROWSER_TEXT_MISMATCH: Final = "browser.text_mismatch"
+BROWSER_EXPECT_MISSING: Final = "browser.expect_missing"
+BROWSER_PAGE_GONE: Final = "browser.page_gone"
+"""The page the tool left for the verifier is not there any more: ELA stopped or restarted between
+the tool and the look, which ``_resume`` does again on the next run (census C4)."""
+LOOK_GRACE_SECONDS: Final = 5.0
+"""What the look may take beyond the wait for the text: counting the element, reading it, closing
+the browser. A decision, like the tool's thirty seconds, not a measure."""
+
+
+class _PageVerifier(Verifier):
+    """What the two browser verifiers share: **the page, never the tool's report** (§20, §63).
+
+    The tool keeps the page it worked on and names it in its result (``page``) — its word about
+    *which* page, never about what the page shows —, and the verifier looks at it **once**: the
+    port releases the page with the look, so this module calls nothing that closes (rule 18).
+
+    ``reads_the_machine`` is ``True``: the page lives in a process of this machine, of the kind of
+    the Core's own stores that ADR 0038 §14 already counts as the machine. A node carries no such
+    verifier, so the browser does not travel (M13.4 form A).
+
+    **The look has one deadline**, around all of it: the wait for the text, and ``grace`` for the
+    rest. Past it the verifier raises ``TimeoutError`` and the executor records
+    ``verification.exception`` — a look that could not answer has not verified (§33). Without it, a
+    page that never answered held the verification for ever: the adapter cancels the deadline of a
+    kept page when the look starts, and no call of Playwright's has one (ADR 0052 §9).
+    """
+
+    reads_the_machine: ClassVar[bool] = True
+
+    def __init__(
+        self,
+        capability_id: CapabilityId,
+        browser: Browser,
+        seconds: float,
+        *,
+        grace: float,
+        name: str,
+    ) -> None:
+        super().__init__(capability_id, name=name)
+        self._browser = browser
+        self._seconds = seconds
+        self._grace = grace
+
+    async def _glanced(
+        self,
+        condition: str,
+        result: ExecutionResult,
+        *,
+        selector: str | None,
+        expect: str | None,
+    ) -> Glanced | ErrorMetadata:
+        page = result.output.get("page")
+        if not isinstance(page, str):
+            return self._gone(condition, "the result names no page to look at")
+        try:
+            async with asyncio.timeout(self._seconds + self._grace):
+                return await self._browser.glance(
+                    page, selector=selector, expect=expect, seconds=self._seconds
+                )
+        except (PageGone, BrowserStopped):
+            return self._gone(
+                condition,
+                "the page is not there any more — ELA stopped or started again between the tool "
+                "and this look",
+            )
+
+    def _gone(self, condition: str, why: str) -> ErrorMetadata:
+        """The honest answer of :data:`~ela.tools.programs.PROGRAM_GONE`, for a page (form I)."""
+        return self._failure(
+            condition,
+            BROWSER_PAGE_GONE,
+            f"{why}: ELA cannot confirm what the page showed, and what the tool reported is in the "
+            "result",
+            retryable=False,
+        )
+
+
+class BrowserReadVerifier(_PageVerifier):
+    """``browser.read``: the page shows, now, what the result says it read (§63; M13.4 form I).
+
+    A page that changes by itself between the read and the look — a clock, a counter — **fails**:
+    the result says what the page showed, the verifier that it shows it no more, and ELA does not
+    choose which to believe. Every failure speaks in sizes, never with the text (§57).
+    """
+
+    conditions: ClassVar[frozenset[str]] = frozenset({BROWSER_TEXT_MATCHES})
+    failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
+        BROWSER_TEXT_MISMATCH,
+        BROWSER_PAGE_GONE,
+    }
+
+    def __init__(
+        self,
+        browser: Browser,
+        seconds: float,
+        *,
+        grace: float = LOOK_GRACE_SECONDS,
+        name: str = BROWSER_READ_VERIFIER_NAME,
+    ) -> None:
+        super().__init__(BROWSER_READ, browser, seconds, grace=grace, name=name)
+
+    async def _check(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        selector = arguments.get("selector")
+        if selector is not None and not isinstance(selector, str):
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "selector must be a string",
+                retryable=False,
+            )
+        glanced = await self._glanced(condition, result, selector=selector, expect=None)
+        if isinstance(glanced, ErrorMetadata):
+            return glanced
+        if glanced.text is None:
+            return self._failure(
+                condition,
+                BROWSER_TEXT_MISMATCH,
+                "the element the selector names is not on the page exactly once any more",
+                retryable=False,
+            )
+        shown, _, total = cut(glanced.text)
+        carried = result.output.get("text")
+        if shown == carried:
+            return None
+        size = len(carried.encode()) if isinstance(carried, str) else None
+        return self._failure(
+            condition,
+            BROWSER_TEXT_MISMATCH,
+            f"the page shows another text than the result carries: {total} bytes on the page, "
+            f"{size} in the result",
+            retryable=False,
+            details={"page_bytes": total, "result_bytes": size},
+        )
+
+
+class BrowserActVerifier(_PageVerifier):
+    """``browser.act``: **a click sent is not a click that worked** (§20; M13.4 form I).
+
+    The tool clicked; whether it worked the page says, looked at by the verifier, which waits for an
+    event — the expected text appearing — and not a duration. **It says what it verified, never that
+    the effect happened** (ADR 0047 §9): the page showed the text; whether the site did what its
+    page says is the site's word. The text is read from the **arguments**, the plan's intent (ADR
+    0014 §2), and never written in a failure, which carries it into the audit.
+    """
+
+    conditions: ClassVar[frozenset[str]] = frozenset({BROWSER_EXPECT_VISIBLE})
+    failure_codes: ClassVar[frozenset[str]] = COMMON_FAILURE_CODES | {
+        BROWSER_EXPECT_MISSING,
+        BROWSER_PAGE_GONE,
+    }
+
+    def __init__(
+        self,
+        browser: Browser,
+        seconds: float,
+        *,
+        grace: float = LOOK_GRACE_SECONDS,
+        name: str = BROWSER_ACT_VERIFIER_NAME,
+    ) -> None:
+        super().__init__(BROWSER_ACT, browser, seconds, grace=grace, name=name)
+
+    async def _check(
+        self, condition: str, arguments: JsonMapping, result: ExecutionResult
+    ) -> ErrorMetadata | None:
+        expect = arguments.get("expect_text")
+        if not isinstance(expect, str) or not expect:
+            return self._failure(
+                condition,
+                VERIFICATION_ARGUMENTS_INVALID,
+                "expect_text must be a text",
+                retryable=False,
+            )
+        glanced = await self._glanced(condition, result, selector=None, expect=expect)
+        if isinstance(glanced, ErrorMetadata):
+            return glanced
+        if glanced.shown:
+            return None
+        went = (
+            ""
+            if glanced.left is None
+            else f"; the page tried to go to {origin_of(glanced.left)}, outside the site, and the "
+            "browser did "
+            "not follow"
+        )
+        return self._failure(
+            condition,
+            BROWSER_EXPECT_MISSING,
+            "the text the plan expects did not appear on the page within "
+            f"{self._seconds:g} s after the click{went}: what the click sent may have arrived all "
+            "the same",
+            retryable=False,
+        )

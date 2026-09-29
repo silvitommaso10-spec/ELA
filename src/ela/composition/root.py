@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import platform
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -47,6 +47,7 @@ from ela.infrastructure.machine import (
     DarwinProbe,
     OnlineSpeechCommand,
     Play,
+    PlaywrightBrowser,
     ProcessGroupLauncher,
     SaySpeechCommand,
     ScreenCaptureCommand,
@@ -81,6 +82,7 @@ from ela.ports import (
     AuditLog,
     AuthorizationStore,
     Bell,
+    Browser,
     CapabilityRegistryPort,
     Clock,
     ExecutionResultStore,
@@ -100,17 +102,21 @@ from ela.providers.registry import ProviderRegistry
 from ela.routing import ModelRouter
 from ela.tasks.engine import LIVE_STATES, TaskEngine
 from ela.tools import (
+    BROWSER_TIMEOUT_SECONDS,
     DIRECTORY_MODE,
     VERIFIED_ON_THE_NODE,
+    Browsing,
     CaptureStore,
     Programs,
     Terminal,
     ToolRegistry,
     VerifierRegistry,
+    https_origin,
     production_tools,
     production_verifiers,
 )
 from ela.tools.settings import speech_dir_beside
+from ela.tools.terminal import CLOSED_PATH, LANGUAGE
 
 __all__ = ["ELA_ACTOR", "WORKSPACE_MODE", "Database", "Ela", "build"]
 
@@ -351,12 +357,22 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
     return play
 
 
+def _kept_for(seconds: int) -> Callable[[], Awaitable[None]]:
+    """How long a page handed to the verifier waits for its look: the tool's own time (form I)."""
+
+    async def kept() -> None:
+        await asyncio.sleep(seconds)
+
+    return kept
+
+
 async def build(
     settings: Settings,
     *,
     clock: Clock | None = None,
     power: PowerReading | None = None,
     bell: Ringing | None = None,
+    browser: Browser | None = None,
 ) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
 
@@ -372,10 +388,15 @@ async def build(
     answers, and a test that places a step between ``local`` and a node names it — otherwise the
     placement would depend on whether the machine running the suite is plugged in.
 
-    ``bell`` is the third, and the last (M12.5 dec. E): it defaults to the adapter built from the
+    ``bell`` is the third (M12.5 dec. E): it defaults to the adapter built from the
     settings, and the conformance suite names one that touches no network — because the story «the
     bell says nothing of yours» has to *see* what a provider receives, and a story that could not
     be recited would be a hole where a claim is.
+
+    ``browser`` is the fourth (M13.4): it defaults to :class:`PlaywrightBrowser`, which starts
+    nothing until a page is asked for, and a test that stops a task **while a gesture is in flight**
+    names one that holds the click until the test lets it go — the precondition of form M, built
+    instead of waited for, through the API as M6.3c's criterion asks.
 
     :raises ConfigurationError: for anything that makes this configuration unusable — a schema
         nobody migrated, a routing table naming a provider that is not registered, an empty one.
@@ -433,6 +454,7 @@ async def build(
             notes_scope=settings.core.notes_scope,
             fs_scope=settings.filesystem.scope,
             programs=settings.terminal.programs,
+            sites=settings.browser.sites,
         )
         guardian = PermissionGuardian(
             capabilities, clock, ids, audit, decision_ttl=settings.core.decision_ttl
@@ -535,6 +557,23 @@ async def build(
             temporary=tempfile.gettempdir(),
             argument_limits=argument_limits(platform.system()),
         )
+        # The browser (M13.4, ADR 0052): the sites of ``ELA_BROWSER_SITES`` and their ``https``
+        # origins — the one seam a test of the real browser replaces, held here to ``https`` by
+        # ``tests/composition/test_browser_wiring.py`` —; a browser of ELA's own for every page,
+        # with the four variables a program of the terminal gets (M6), started on the stop signal;
+        # and a page handed to the verifier waits for its look no longer than the tool's time.
+        if browser is None:
+            browser = PlaywrightBrowser(
+                stopping,
+                environment={
+                    "PATH": CLOSED_PATH,
+                    "HOME": str(Path.home()),
+                    "TMPDIR": tempfile.gettempdir(),
+                    "LANG": LANGUAGE,
+                },
+                kept=_kept_for(BROWSER_TIMEOUT_SECONDS),
+            )
+        browsing = Browsing(sites=settings.browser.sites, origin=https_origin)
         tools = production_tools(
             root=root,
             clock=clock,
@@ -557,6 +596,8 @@ async def build(
             fs_root=settings.filesystem.root,
             terminal=terminal,
             launcher=ProcessGroupLauncher(stopping),
+            browsing=browsing,
+            browser=browser,
         )
         verifiers = production_verifiers(
             root=root,
@@ -564,6 +605,8 @@ async def build(
             captures=captures,
             fs_root=settings.filesystem.root,
             programs=programs,
+            browser=browser,
+            browser_seconds=float(BROWSER_TIMEOUT_SECONDS),
         )
 
         # Which tools this machine has is not something the registry can know (ADR 0016 §4), and

@@ -155,6 +155,7 @@ from ela.ports import (
     ToolRegistryPort,
     VerifierPort,
     VerifierRegistryPort,
+    Visit,
     audited_numbers,
 )
 from ela.tasks.engine import TaskEngine
@@ -1705,7 +1706,14 @@ class Executor:
             expires_at=decision.created_at + self._approval_ttl,
             metadata={
                 ASKED: self._asked(
-                    task, step, spec, arguments, prospect.target, prospect.invocation, there
+                    task,
+                    step,
+                    spec,
+                    arguments,
+                    prospect.target,
+                    prospect.invocation,
+                    there,
+                    prospect.visit,
                 )
             },
         )
@@ -1761,6 +1769,7 @@ class Executor:
         target: Target | None,
         invocation: Invocation | None = None,
         there: Device | None = None,
+        visit: Visit | None = None,
     ) -> dict[str, JsonValue]:
         """The facts of the question, kept beside it: what a surface shows without recomposing it.
 
@@ -1785,6 +1794,11 @@ class Executor:
         those inside ``ApprovalOut``; ``tests/api/test_answering_surfaces.py`` holds every field to
         the three surfaces that answer. Until M13.2 this said ``tests/api/test_approvals.py`` did
         it, and it never had: a name written on one side only is a page that quietly shows nothing.
+
+        Since M13.4 a question about a page carries the browser's :class:`~ela.ports.Visit`: the
+        site as the target, with the tool's word and sentence, the address, the gestures one by one,
+        the text an action waits for and the time. Not a :class:`~ela.ports.Target`, whose
+        ``exists`` would be a fact about a site nobody visited (ADR 0052).
         """
         asked: dict[str, JsonValue] = {
             "description": spec.description,
@@ -1805,6 +1819,15 @@ class Executor:
             asked["folder"] = invocation.folder
             asked["timeout_seconds"] = invocation.timeout_seconds
             asked["expect_exit"] = invocation.expect_exit
+        if visit is not None:
+            asked["target"] = visit.site
+            asked["does"] = visit.does
+            asked["label"] = visit.label
+            asked["address"] = visit.address
+            asked["gestures"] = list(visit.gestures)
+            asked["timeout_seconds"] = visit.timeout_seconds
+            if visit.expect:
+                asked["expect"] = visit.expect
         if there is not None:
             # The name the node chose, which may change and is not unique, and the start of the id
             # the Core minted (M13.3, decision 10); and what ELA did not do (:data:`UNSEEN`).

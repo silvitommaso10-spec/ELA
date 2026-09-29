@@ -16,7 +16,9 @@ the ports.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
@@ -91,6 +93,8 @@ from ela.ports import (
     AssignmentStillLiveError,
     AuthorizationExhaustedError,
     AuthorizationExpiredError,
+    BrowserError,
+    BrowserStopped,
     Clock,
     Command,
     DeviceRevokedError,
@@ -98,11 +102,15 @@ from ela.ports import (
     EnrollmentConsumedError,
     EnrollmentExpiredError,
     EnrollmentRoleError,
+    Field,
+    Glanced,
     IdentityConflictError,
     IdGenerator,
     ModelProvider,
     NotAllowedError,
     NotFoundError,
+    Opened,
+    PageGone,
     Prospect,
     Ran,
     RoutingError,
@@ -120,6 +128,8 @@ __all__ = [
     "FakeAuditLog",
     "FakeAuthorizationStore",
     "FakeBell",
+    "FakeBrowser",
+    "FakePage",
     "FakeCapabilityRegistry",
     "FakeClock",
     "FakeLauncher",
@@ -889,6 +899,149 @@ class FakeLauncher:
     async def run(self, command: Command) -> Ran:
         self.commands = (*self.commands, command)
         return self.ran
+
+
+@dataclass
+class FakePage:
+    """What a :class:`FakeBrowser` page answers (M13.4): a script, not a browser.
+
+    ``texts`` maps a selector to the text of its element, and ``None`` to the whole page's;
+    ``counts`` how many elements a selector finds — one when it is not listed —; ``fields`` what an
+    element declares; ``left`` a navigation the boundary refused at the opening,
+    ``left_after_click`` one the click started; ``shown`` whether an awaited text appears, and
+    ``changes_to`` the text the page shows once the tool is done with it, for the verifier's look.
+    """
+
+    status: int | None = 200
+    address: str | None = None
+    title: str = "a page"
+    texts: dict[str | None, str] = field(default_factory=lambda: {None: "the text of the page"})
+    counts: dict[str, int] = field(default_factory=dict)
+    fields: dict[str, Field] = field(default_factory=dict)
+    left: str | None = None
+    left_after_click: str | None = None
+    shown: bool = True
+    changes_to: dict[str | None, str] | None = None
+
+
+class FakeBrowser:
+    """A browser that opens nothing and remembers what it was asked (port ``Browser``, M13.4).
+
+    What a real browser does is asserted on a real browser
+    (``tests/infrastructure/machine/test_browser.py``); this is for the tool, the verifiers, the
+    executor and the API, which need to know **what the tool decided** — the address, the boundary,
+    each gesture — and to answer **when the test decides**. ``raising`` makes one member raise the
+    given error; ``click_reached`` and ``click_released``, when set, hold the click until the test
+    lets it go — the precondition of a stop given halfway, built instead of waited for.
+    """
+
+    def __init__(self, page: FakePage | None = None, *, installed: bool = True) -> None:
+        self.page = FakePage() if page is None else page
+        self.installed_answer = installed
+        self.raising: dict[str, BrowserError] = {}
+        self.opened: list[str] = []
+        self.allowed: list[Callable[[str], bool]] = []
+        self.fills: list[tuple[str, str]] = []
+        self.clicks: list[str] = []
+        self.kept: list[str] = []
+        self.closed: list[str] = []
+        self.glances: list[tuple[str, str | None, str | None, float]] = []
+        self.click_reached: asyncio.Event | None = None
+        self.click_released: asyncio.Event | None = None
+        self._open: dict[str, bool] = {}
+        self._clicked = False
+
+    def _raise(self, member: str) -> None:
+        error = self.raising.get(member)
+        if error is not None:
+            raise error
+
+    def _on(self, page: str) -> None:
+        if page not in self._open:
+            raise PageGone(page)
+
+    async def installed(self) -> bool:
+        self._raise("installed")
+        return self.installed_answer
+
+    async def open(self, address: str, allowed: Callable[[str], bool]) -> Opened:
+        self._raise("open")
+        self.opened.append(address)
+        self.allowed.append(allowed)
+        page = f"page-{len(self.opened)}"
+        self._open[page] = False
+        return Opened(
+            page=page,
+            status=self.page.status,
+            address=address if self.page.address is None else self.page.address,
+            left=self.page.left,
+        )
+
+    async def count(self, page: str, selector: str) -> int:
+        self._on(page)
+        self._raise("count")
+        return self.page.counts.get(selector, 1)
+
+    async def field(self, page: str, selector: str) -> Field:
+        self._on(page)
+        return self.page.fields.get(selector, Field(type="text", autocomplete=""))
+
+    async def fill(self, page: str, selector: str, value: str) -> None:
+        self._on(page)
+        self._raise("fill")
+        self.fills.append((selector, value))
+
+    async def click(self, page: str, selector: str) -> None:
+        self._on(page)
+        if self.click_reached is not None and self.click_released is not None:
+            self.click_reached.set()
+            await self.click_released.wait()
+        self._raise("click")
+        self.clicks.append(selector)
+        self._clicked = True
+
+    async def text(self, page: str, selector: str | None) -> str:
+        self._on(page)
+        self._raise("text")
+        return self.page.texts.get(selector, "")
+
+    async def title(self, page: str) -> str:
+        self._on(page)
+        return self.page.title
+
+    async def left(self, page: str) -> str | None:
+        self._on(page)
+        return self.page.left_after_click if self._clicked else self.page.left
+
+    async def keep(self, page: str) -> None:
+        if page in self._open:
+            self._open[page] = True
+            self.kept.append(page)
+
+    async def glance(
+        self, page: str, *, selector: str | None, expect: str | None, seconds: float
+    ) -> Glanced:
+        self.glances.append((page, selector, expect, seconds))
+        self._raise("glance")
+        if not self._open.get(page, False):
+            raise PageGone(page)
+        del self._open[page]
+        texts = self.page.texts if self.page.changes_to is None else self.page.changes_to
+        return Glanced(
+            text=texts.get(selector) if selector in texts else None,
+            shown=None if expect is None else self.page.shown,
+            left=self.page.left_after_click if self._clicked else self.page.left,
+        )
+
+    async def close(self, page: str) -> None:
+        self.closed.append(page)
+        self._open.pop(page, None)
+
+    def stop(self) -> None:
+        """What the stop signal does to a real one: every page closed, and what runs is stopped."""
+        self._open.clear()
+        for member in ("open", "count", "fill", "click", "text", "glance", "installed"):
+            self.raising[member] = BrowserStopped("ELA is stopping")
 
 
 class FakeTool:

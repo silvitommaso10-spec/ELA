@@ -28,6 +28,11 @@ M13.2 adds the first launcher of **somebody else's** programs — the ones the u
 ``ELA_TERMINAL_PROGRAMS`` —, in ``launcher.py``: a process group of its own, emptied whenever ELA
 stops waiting, and nothing decided here (rule 34).
 
+M13.4 adds a browser, in ``browser.py``, and with it the first **library** that starts processes by
+itself: Playwright launches its Node driver and a Chromium, and rule 32 names ``playwright`` among
+the ways out so that the library stays here too. Its decisions — the address, which navigations may
+be sent, which element and which value — reach it as data from ``ela.tools.browser``.
+
 M11.1 adds a fourth, and it is Apple's again (``say(1)``) — and the first that **acts outside
 the screen** rather than reading the machine. It lives here because rule 32's content is *ELA
 touches the operating system in one place*: the door, not the word "perception". That makes
@@ -45,6 +50,7 @@ from ela.infrastructure.machine.audition import (
     Play,
     Speak,
 )
+from ela.infrastructure.machine.browser import MISSING_EXECUTABLE, PlaywrightBrowser
 from ela.infrastructure.machine.darwin import (
     PMSET,
     POWER_TIMEOUT_SECONDS,
@@ -135,5 +141,7 @@ __all__ = [
     "spawn_powershell",
     "spawn_with_input",
     "LOOKUP_TIMEOUT_SECONDS",
+    "MISSING_EXECUTABLE",
+    "PlaywrightBrowser",
     "port_holder",
 ]

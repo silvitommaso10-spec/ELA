@@ -34,6 +34,15 @@ git clone <questo repo> && cd ELA
 uv sync
 ```
 
+E, da M13.4, il browser che ELA usa — lo shell di Chromium della versione che il lock nomina, circa
+100 MB da scaricare, in `~/Library/Caches/ms-playwright` —, una volta per macchina e di nuovo quando
+il lock porta un Playwright nuovo. `uv sync` non lo scarica, e senza di lui i test del browser
+falliscono dicendo questo comando:
+
+```
+uv run playwright install --only-shell chromium
+```
+
 Da qui in poi i comandi si scrivono `uv run ela …`. Se preferisci scrivere solo `ela`, attiva il
 virtualenv (`source .venv/bin/activate`).
 
@@ -46,14 +55,15 @@ uv run ela init
 ```
 wrote .env (mode 600) with a fresh ELA_API_TOKEN. It is not printed here: read it from the file.
 next:
-  write ELA_FS_ROOT, ELA_FS_SCOPE and ELA_TERMINAL_PROGRAMS in .env   # no default, and no start without
+  write ELA_FS_ROOT, ELA_FS_SCOPE, ELA_TERMINAL_PROGRAMS and ELA_BROWSER_SITES in .env   # no default, and no start without
   uv run alembic upgrade head   # ELA does not migrate on start-up (ADR 0006)
   ela serve                     # ELA creates its database directory and workspace
 ```
 
 Scrive **un solo file**, `.env`, con un token generato e permessi `0600`. Il token **non viene
 stampato**: sta nel file, e da lì lo leggono sia ELA sia la CLI. Sotto al token trovi **le righe
-obbligatorie** — `ELA_FS_ROOT`, `ELA_FS_SCOPE` e, da M13.2, `ELA_TERMINAL_PROGRAMS` —, commentate
+obbligatorie** — `ELA_FS_ROOT`, `ELA_FS_SCOPE`, da M13.2 `ELA_TERMINAL_PROGRAMS` e da M13.4
+`ELA_BROWSER_SITES` —, commentate
 con un esempio: ELA non ha un default per loro e non parte finché non le scrivi (qui sotto). Poi ogni
 altra variabile commentata accanto al suo default: di quelle si tocca solo ciò che si vuole cambiare.
 
@@ -70,12 +80,14 @@ La seconda volta il file c'è già e resta com'è, le righe obbligatorie non sta
 default di ELA», e l'uscita è `exit 2` con:
 
 ```
-ela: .env does not set ELA_FS_ROOT, ELA_FS_SCOPE and ELA_TERMINAL_PROGRAMS, and ELA does not start without them: they have no default. Write them, for example:
+ela: .env does not set ELA_FS_ROOT, ELA_FS_SCOPE, ELA_TERMINAL_PROGRAMS and ELA_BROWSER_SITES, and ELA does not start without them: they have no default. Write them, for example:
     ELA_FS_ROOT=/Users/you/Documents
     ELA_FS_SCOPE=ELA
     ELA_TERMINAL_PROGRAMS=[]
+    ELA_BROWSER_SITES=[]
 The folder is yours: ELA does not create it and does not choose it.
 The programs are one line of JSON, each relative to / — usr/bin/git is /usr/bin/git —, and [] is an answer: no program at all.
+The sites are one line of JSON, each a host name alone — example.com, without https:// —, and [] is an answer: no site at all.
 ```
 
 Fino a M13.1b `init` diceva che il token era «the only variable ELA requires» e, su questo stesso
@@ -83,7 +95,7 @@ file, «nothing required is missing»: se lo leggi ancora, stai girando su codic
 
 **Nella verifica a mano di M13.1b, il 2026-09-22**: la seconda chiamata è uscita con `2` e ha
 nominato `ELA_FS_ROOT` ed `ELA_FS_SCOPE`, le obbligatorie di allora; `ELA_TERMINAL_PROGRAMS` è
-entrata con M13.2.
+entrata con M13.2, `ELA_BROWSER_SITES` con M13.4.
 
 Il database e il workspace stanno di default in `~/.ela/`. Per tenerli altrove, togli il commento
 a `ELA_DB_URL` e `ELA_WORKSPACE_DIR` nel `.env` appena scritto.
@@ -129,6 +141,20 @@ ELA_TERMINAL_PROGRAMS=[]
 
 `[]` è una risposta, non un errore: nessun programma, e ogni richiesta di lanciarne uno è negata prima
 di chiederti niente. Come dichiararne, e che cosa vuol dire, sta nella [§16](#16-il-terminale-la-prova-a-mano-di-m132).
+
+### Una riga che **deve** essere scritta: i siti che il browser di ELA può aprire
+
+Da M13.4 ELA apre pagine in un browser suo, vuoto, e **quali siti** lo dichiari tu, in una riga di
+JSON senza default — un nome per sito, senza `https://`:
+
+```
+ELA_BROWSER_SITES=[]
+```
+
+`[]` è una risposta: nessun sito. Che cosa vuol dire dichiararne uno — ELA lo può **leggere senza
+chiederti niente**, e per compilarvi un modulo ti chiede ogni volta — sta nella
+[§20](#20-il-browser-la-prova-a-mano-di-m134). **Se il tuo `.env` è di prima di M13.4, `ela serve` non
+parte finché non aggiungi questa riga.**
 
 ## 2. `alembic upgrade head` — lo schema
 
@@ -2629,10 +2655,9 @@ Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`. *
 
 > **Bozza, scritta con la SPEC di M13.4 il 2026-09-29**, prima di ogni riga di codice, e allineata lo
 > stesso giorno alle decisioni 1–14 della review: i comandi e le uscite attese sono quelli che la SPEC
-> decide, e si allineano all'implementazione. **I piani stanno in `.git/m13.4-reference/examples/`** finché le due capability
-> non esistono — nel working tree romperebbero la suite, che conta i file di `examples/` —, e rientrano
-> in [`examples/`](examples/) con l'implementazione; i comandi qui sotto li leggono da lì. L'ADR sarà il
-> 0052. Le frasi dei messaggi sono indicative: le scrive l'implementazione, e questa bozza le riprende.
+> decide, e **allineata all'implementazione**: i piani sono in [`examples/`](examples/), e la suite li
+> manda a ELA byte per byte (`tests/api/test_examples_browser.py`); le frasi dei messaggi sono quelle
+> che il codice scrive. L'ADR è [0052](adr/0052-browser.md), `Proposta` fino a questa prova.
 
 Da M13.4 ELA apre pagine in un browser suo. `browser.read` è `LOW`: dentro i siti che dichiari **non
 chiede**, e fuori nega. `browser.act` — riempire dei campi e cliccare — è `HIGH`, come `fs.write` e
@@ -2722,7 +2747,7 @@ uv run ela task create "leggere una pagina"
 ```
 
 ```
-uv run ela task plan <id> --file .git/m13.4-reference/examples/browser-read.json
+uv run ela task plan <id> --file docs/examples/browser-read.json
 ```
 
 ```
@@ -2742,8 +2767,11 @@ steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000001
 uv run ela task results <id>
 ```
 
-**Che cosa si deve vedere**: l'indirizzo `https://example.com/`, lo stato `200`, e il testo «Example
-Domain». Il verifier l'ha riletto sulla pagina, non dal risultato.
+**Che cosa si deve vedere**: l'indirizzo `https://example.com/`, lo stato `200`, il titolo «Example
+Domain» e il testo del paragrafo, «This domain is for use in documentation examples…». Il verifier
+l'ha riletto sulla pagina, non dal risultato. (Il piano legge `body > p:first-of-type`: il 2026-09-30
+la pagina non ha un `<h1>`, e il suo JavaScript le aggiunge altri paragrafi, dove `p` sarebbe
+`browser.element_ambiguous`. Se example.com cambia ancora, è il piano da correggere, non ELA.)
 
 Poi, in un task nuovo, `browser-read-outside.json` — `example.org`, che non hai dichiarato:
 
@@ -2759,7 +2787,7 @@ browser su `example.org`.
 
 ```
 outcome        failed
-reason         browser.left_site: the page of httpbin.org went to example.org, which is not a declared site
+reason         browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000003
 ```
@@ -2771,7 +2799,7 @@ uv run ela task create "inviare un modulo di prova"
 ```
 
 ```
-uv run ela task plan <id> --file .git/m13.4-reference/examples/browser-act.json
+uv run ela task plan <id> --file docs/examples/browser-act.json
 ```
 
 ```
@@ -2897,7 +2925,7 @@ perché ELA, fermandosi, finisce le richieste che ha in corso:
 
 ```
 outcome        failed
-reason         browser.stopped: ELA stopped while the page of httpbin.org was open; no gesture was made
+reason         browser.stopped: ELA stopped while the page of httpbin.org was open
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000004
 ```
