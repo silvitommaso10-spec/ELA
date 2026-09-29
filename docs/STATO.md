@@ -507,7 +507,8 @@ con la prova a mano del 2026-09-27. **L'ordine di M17.5 non è deciso**; quello 
 da quella prova, sì: **prima di M13.4** (il revisore, 2026-09-28, in `milestones/M6.3b.md`). La SPEC
 di M6.3b ha registrato due riparazioni che ha trovato e non prende, **M6.3c** (un task fermato mentre
 il suo tool gira fa rispondere `run` con un `409`) e **M13.1c** (sopra, Fase 13): **tutte e due dopo
-M13.4** (il revisore, 2026-09-28).
+M13.4** (il revisore, 2026-09-28). **M6.3c è la prima dopo M13.4**, e porta anche la fermata di un tool
+che gira prima del suo punto di non ritorno (il revisore, 2026-09-29, decisione 11 della SPEC di M13.4).
 
 *Perché è una fase:* è il design stesso a chiederlo. §33 del design vieta di saltare da «ELA deve
 essere futuristica» a «scrivi il codice della dashboard», §22 del design vuole l'identità progettata

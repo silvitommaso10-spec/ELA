@@ -2627,9 +2627,9 @@ Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`. *
 
 ## 20. Il browser: la prova a mano di M13.4
 
-> **Bozza, scritta con la SPEC di M13.4 il 2026-09-29**, prima di ogni riga di codice: i comandi e le
-> uscite attese sono quelli che la SPEC propone, e si allineano alle decisioni della review e
-> all'implementazione. **I piani stanno in `.git/m13.4-reference/examples/`** finché le due capability
+> **Bozza, scritta con la SPEC di M13.4 il 2026-09-29**, prima di ogni riga di codice, e allineata lo
+> stesso giorno alle decisioni 1–14 della review: i comandi e le uscite attese sono quelli che la SPEC
+> decide, e si allineano all'implementazione. **I piani stanno in `.git/m13.4-reference/examples/`** finché le due capability
 > non esistono — nel working tree romperebbero la suite, che conta i file di `examples/` —, e rientrano
 > in [`examples/`](examples/) con l'implementazione; i comandi qui sotto li leggono da lì. L'ADR sarà il
 > 0052. Le frasi dei messaggi sono indicative: le scrive l'implementazione, e questa bozza le riprende.
@@ -2652,7 +2652,13 @@ solo con due terminali; e l'ottavo, perché una difesa che nega prima della doma
 
 La prova usa due siti veri: `example.com`, per leggere, e `httpbin.org`, che ha un modulo di prova e
 rimanda indietro ciò che riceve — se lo tenga non si sa; ciò che riceve è un marcatore innocuo. **Il
-passo 4 invia davvero un modulo** a `httpbin.org`.
+passo 4 invia davvero un modulo** a `httpbin.org`. Se `httpbin.org` risponde con un errore `5xx`, il
+passo si ripete più tardi, **senza cambiare sito**.
+
+**Mai una password o una carta in un piano.** ELA rifiuta di scrivere in un campo che si dichiara
+password o carta, ma il rifiuto arriva **dopo** il sì: il valore sarebbe già nel piano, nella domanda
+— anche sul telefono — e nella tabella delle approvazioni, che non si cancella. E il riconoscimento è
+parziale: una password in un campo di testo qualunque passa.
 
 ### 0. Lo shell di Chromium
 
@@ -2863,7 +2869,19 @@ uv run ela task show <id>
 
 il task `CANCELLED` e lo step **ancora `RUNNING`**; e `uv run ela task results <id>` ha un risultato
 `SUCCEEDED`. **Non è il comportamento giusto**: è il difetto di M6.3c, scritto com'è — e con
-`browser.act` vorrebbe dire un modulo inviato dopo il «ferma». M13.4 non lo ripara.
+`browser.act` vorrebbe dire un modulo inviato dopo il «ferma». M13.4 non lo ripara; M6.3c, la milestone
+dopo, sì, e porta anche la fermata del browser prima del primo gesto.
+
+**E, durante gli otto secondi, i nomi dell'ambiente del driver** — i nomi soltanto, mai i valori — da un
+terzo terminale:
+
+```
+ps eww -o command= -p "$(pgrep -f 'driver/node.*run-driver')" | tr ' ' '\n' | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' | cut -d= -f1 | sort
+```
+
+**Che cosa si deve vedere**: le variabili della tua shell, quelle che `uv` aggiunge e quelle di
+Playwright (`PW_…`), e **nessuna `ELA_`**: ELA legge il `.env` e non lo esporta. Se ne compare una,
+è un difetto da riportare prima di andare avanti.
 
 ### 7. ELA si ferma con un browser aperto
 
@@ -2901,7 +2919,42 @@ In un task nuovo, `browser-act.json`, e `run`:
 `uv run playwright install --only-shell chromium`; `uv run ela approvals` **non** ha una domanda nuova,
 e il telefono **non** suona. Poi riaccendi ELA com'era.
 
-Le uscite di tutti i passi, integrali, in un file: `~/Downloads/m13.4-prova.txt`.
+### 9. Il PC sul branch: la ruota che niente lancia
+
+Il browser non va sul PC, ma **la ruota di Playwright sì** — con un `node.exe` dentro — a ogni
+`uv sync`, e il processo del nodo importa l'adapter del browser senza costruirlo. Che lo Smart App
+Control lasci stare il nodo è un fatto del PC, e si prova qui, **prima del merge**. Il `.env` del PC
+**resta com'è**: il nodo non legge né chiede `ELA_BROWSER_SITES`.
+
+Sul PC:
+
+```powershell
+cd $HOME\ELA
+git fetch
+git checkout m13.4-browser
+uv sync --locked
+Test-Path .venv\Lib\site-packages\playwright\driver\node.exe
+uv run python -m ela.cli node run
+```
+
+**Che cosa si deve vedere**: `True` — la ruota è arrivata —, e il nodo che parte come sempre, senza
+nessun «Un criterio di controllo dell'applicazione ha bloccato il file». Sul Mac:
+
+```
+uv run ela device list
+```
+
+**Che cosa si deve vedere**: la riga del PC disponibile, come in §12. E sul PC, da un'altra finestra
+di PowerShell, nessun `node` in esecuzione:
+
+```powershell
+Get-Process node -ErrorAction SilentlyContinue
+```
+
+Poi il PC torna a `main` quando il branch è mergiato.
+
+Le uscite di tutti i passi, integrali, in un file: `~/Downloads/m13.4-prova.txt`, e quelle del PC in
+`~/Downloads/m13.4-prova-pc.txt`.
 
 ## Dove guardare dopo
 
