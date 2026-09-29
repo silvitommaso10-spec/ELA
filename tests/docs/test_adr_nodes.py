@@ -139,7 +139,10 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_capabilities_of_today
     assert (
         len(
             ports_before(
-                *later, ADR_DIR / "0047-terminal.md", ADR_DIR / "0048-travelling-action.md"
+                *later,
+                ADR_DIR / "0047-terminal.md",
+                ADR_DIR / "0048-travelling-action.md",
+                ADR_DIR / "0052-browser.md",
             )
         )
         == 24

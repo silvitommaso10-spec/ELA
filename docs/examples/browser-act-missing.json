@@ -1,0 +1,38 @@
+{
+  "_nota": [
+    "La prova a mano di M13.4 per una pagina che NON è quella del piano: il bottone `#non-esiste`",
+    "non c'è. Si scopre solo aprendo la pagina, cioè dopo il sì — la domanda non guarda la rete —,",
+    "e ELA se ne accorge PRIMA DEL PRIMO GESTO: nessun campo riempito, niente inviato, lo step",
+    "fallisce con browser.element_missing. Il sì è speso: un altro run chiede di nuovo.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "un modulo con un bottone che non c'è",
+  "steps": [
+    {
+      "id": "b4c2d7e1-5a3f-4b69-8d20-000000000006",
+      "goal": "compilare il modulo e cliccare un bottone che non c'è",
+      "required_capabilities": [
+        "browser.act"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/forms/post",
+        "fill": [
+          [
+            "input[name=custname]",
+            "ELA prova 7431"
+          ]
+        ],
+        "click": "#non-esiste",
+        "expect_text": "ELA prova 7431",
+        "purpose": "la prova a mano del browser"
+      },
+      "risk": "HIGH",
+      "expected_result": "fallito con browser.element_missing, e nessun gesto fatto",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

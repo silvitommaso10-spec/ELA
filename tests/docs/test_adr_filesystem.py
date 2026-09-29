@@ -23,6 +23,7 @@ from ela.tools import (
     CaptureStore,
     production_verifiers,
 )
+from tests.tools.browsers import SECONDS, a_browser
 from tests.tools.terminals import no_programs
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0045-filesystem-and-high.md"
@@ -33,6 +34,11 @@ VERIFIER_ROW = re.compile(
 
 def adr_text() -> str:
     return ADR_PATH.read_text(encoding="utf-8")
+
+
+AFTER_0045 = frozenset({"terminal.run", "browser.read", "browser.act"})
+"""What the ADRs after this one added, each pinned by its own: the terminal (ADR 0047) and the
+browser (ADR 0052)."""
 
 
 def catalogue_today() -> tuple[str, ...]:
@@ -47,6 +53,8 @@ def verifiers_today(tmp_path: Path):  # type: ignore[no-untyped-def]
         captures=captures,
         fs_root=tmp_path / "files",
         programs=no_programs(),
+        browser=a_browser(),
+        browser_seconds=SECONDS,
     )
 
 
@@ -57,8 +65,9 @@ def verifiers_today(tmp_path: Path):  # type: ignore[no-untyped-def]
 
 def test_the_capabilities_it_saw_were_ten_and_this_adr_says_so() -> None:
     """The pin on today's total moved on to ADR 0047 (``test_adr_terminal.py``), as it came here
-    from ADR 0038: what stays is that ADR 0045 counted the catalogue it saw, before the terminal."""
-    assert len([one for one in catalogue_today() if one != "terminal.run"]) == 10
+    from ADR 0038, and on to ADR 0052 (``test_adr_browser.py``): what stays is that ADR 0045 counted
+    the catalogue it saw, before the terminal and the browser."""
+    assert len([one for one in catalogue_today() if one not in AFTER_0045]) == 10
     assert "restano dieci" in adr_text()
 
 
@@ -68,7 +77,7 @@ def test_four_travel_and_six_do_not(tmp_path: Path) -> None:
     declared = {
         v.capability_id: v.reads_the_machine
         for v in verifiers_today(tmp_path).verifiers()
-        if v.capability_id != "terminal.run"
+        if v.capability_id not in AFTER_0045
     }
 
     assert sorted(declared.values()) == [False] * 4 + [True] * 6

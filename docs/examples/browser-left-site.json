@@ -1,0 +1,30 @@
+{
+  "_nota": [
+    "La prova a mano di M13.4 per una pagina che PORTA ALTROVE: httpbin.org è dichiarato, e il suo",
+    "/redirect-to manda il browser su example.org, che non lo è. Il Guardian ha giudicato il sito",
+    "del piano; dove la pagina porta dopo lo guarda il tool, che interrompe la navigazione e fallisce",
+    "con browser.left_site. Il browser non arriva mai su example.org.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "seguire un redirect fuori dai siti",
+  "steps": [
+    {
+      "id": "b4c2d7e1-5a3f-4b69-8d20-000000000003",
+      "goal": "aprire un redirect verso example.org",
+      "required_capabilities": [
+        "browser.read"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/redirect-to?url=https%3A%2F%2Fexample.org%2F",
+        "purpose": "la prova a mano del browser"
+      },
+      "risk": "LOW",
+      "expected_result": "fallito con browser.left_site, e l'host nel messaggio",
+      "success_conditions": [
+        "browser.text_matches"
+      ],
+      "requires_authorization": false
+    }
+  ]
+}

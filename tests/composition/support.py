@@ -31,6 +31,7 @@ POLL = "ELA_NODE_POLL_SECONDS"
 FS_ROOT = "ELA_FS_ROOT"
 FS_SCOPE = "ELA_FS_SCOPE"
 TERMINAL_PROGRAMS = "ELA_TERMINAL_PROGRAMS"
+BROWSER_SITES = "ELA_BROWSER_SITES"
 
 
 def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> None:
@@ -58,6 +59,9 @@ def declare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> No
     # No program unless a test declares one — a suite that launched programs by default would be
     # reading the machine it runs on.
     monkeypatch.setenv(TERMINAL_PROGRAMS, "[]")
+    # The sites the browser may open (M13.4): required, and ``[]`` is an answer. No site unless a
+    # test declares one — a suite that opened pages by default would be reading the network.
+    monkeypatch.setenv(BROWSER_SITES, "[]")
     # Off by default, but a fixture that turned it on before this ran keeps it on: the
     # environment has already been emptied of ``ELA_`` by ``_only_the_declared_environment``,
     # so anything present here was put there by the test on purpose.

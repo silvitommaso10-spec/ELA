@@ -28,6 +28,7 @@ from typing import ClassVar
 import pytest
 
 from ela.domain import CapabilityId, ErrorMetadata, ExecutionResult, JsonMapping, ProviderRequest
+from ela.permissions import BROWSER_ACT, BROWSER_READ
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
 from ela.tools import (
     COMMON_FAILURE_CODES,
@@ -59,6 +60,7 @@ from ela.tools import (
 )
 from ela.tools.verifiers import SPEECH_TEXT_MATCHES, SPEECH_TOOK_REAL_TIME
 from tests.routing.support import routing_for
+from tests.tools.browsers import SECONDS, a_browser
 from tests.tools.support import allowed
 from tests.tools.terminals import no_programs
 from tests.tools.test_verifiers import MODEL_ARGUMENTS, completion, succeeded
@@ -76,6 +78,8 @@ STAYS = frozenset(
         FS_READ,
         FS_WRITE,
         TERMINAL_RUN,
+        BROWSER_READ,
+        BROWSER_ACT,
     }
 )
 """ADR 0038 §14, as ADR 0045 extends it: the ones whose verifier reads the disk or the store of
@@ -83,7 +87,9 @@ the machine it runs on. ``fs.read`` and ``fs.write`` joined them in M13.1, and *
 nobody sends them**: their verifier reads the Core's disk, where a file with the same path may
 exist — the false positive of §14, one root wider. And ``terminal.run`` in M13.2 (decision 11): its
 verifier reads the identity of a program on the Core's disk — ``/usr/bin/git`` of the Core, not of
-a node — and a non-travel left implied is a permission nobody wrote."""
+a node — and a non-travel left implied is a permission nobody wrote. And the browser's two in
+M13.4 (form A): their verifier looks at a page that lives in a process of this machine, and no node
+carries it."""
 NOTE = "notes/riunione.md"
 NOTE_ARGUMENTS = {"path": NOTE, "body": "# Riunione\n\nGiovedì alle dieci.\n"}
 
@@ -109,6 +115,8 @@ def production(tmp_path: Path, provider: FakeModelProvider) -> VerifierRegistry:
         captures=captures,
         fs_root=tmp_path / "files",
         programs=no_programs(),
+        browser=a_browser(),
+        browser_seconds=SECONDS,
     )
 
 
@@ -158,7 +166,8 @@ def test_the_refusal_comes_before_the_duplicate_check() -> None:
 def test_the_verifiers_that_read_this_machine_are_the_ones_that_say_so(
     production: VerifierRegistry,
 ) -> None:
-    """Four travel and six do not, since M13.1 (it was four and four until then)."""
+    """The ones that travel and the ones that stay, each set written above with why: a verifier that
+    changes side, or a new one, fails here until the set that names it says so."""
     declared = {
         verifier.capability_id: verifier.reads_the_machine for verifier in production.verifiers()
     }

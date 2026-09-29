@@ -19,7 +19,7 @@ import pytest
 
 from ela.api.schemas import Asked
 from ela.cli.system import QUESTION_FIELDS, _questions
-from ela.permissions import FS_READ, FS_WRITE, TERMINAL_RUN
+from ela.permissions import BROWSER_ACT, BROWSER_READ, FS_READ, FS_WRITE, TERMINAL_RUN
 from ela.testing.fakes import (
     FakeClock,
     FakeIdGenerator,
@@ -39,7 +39,9 @@ from ela.tools import (
     CaptureStore,
     production_tools,
 )
+from ela.tools.browser import ACTS, OPENS, Browsing
 from ela.tools.terminal import RUNS
+from tests.tools.browsers import a_browser
 from tests.tools.terminals import a_launcher, a_terminal
 
 _FAKE_MACHINE: dict[str, object] = {
@@ -217,7 +219,7 @@ def test_no_surface_owns_a_sentence_about_files(surface: str) -> None:
     """
     source = (ANSWERING.get(surface) or CLI).read_text(encoding="utf-8")
 
-    for sentence in (CREATES, OVERWRITES, READS, RUNS):
+    for sentence in (CREATES, OVERWRITES, READS, RUNS, OPENS, ACTS):
         assert sentence not in source, (
             f"{surface} holds «{sentence}». A phrase about what a call does belongs to the "
             "capability that does it, or the next capability inherits words that are false "
@@ -229,9 +231,10 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
     """And the closed world on the other side: which capabilities fill ``does``, and with what.
 
     Every production tool is asked what it would do, with arguments that are valid for it. The
-    two that touch a file and the one that runs a program answer with their own sentence; the eight
-    that do not answer nothing — so a ninth that started answering would show up here without a
-    line.
+    two that touch a file and the one that runs a program answer with their own sentence; the two
+    of the browser answer theirs in the visit, not in a target (M13.4) — a site is not a file
+    anybody resolved —; the eight that do not answer nothing — so another that started answering
+    would show up here without a line.
     """
     root = tmp_path.resolve() / "files"
     root.mkdir()
@@ -245,22 +248,40 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
         fs_root=root,
         terminal=a_terminal(root, "bin/echo"),
         launcher=a_launcher(),
+        browsing=Browsing(sites=("example.com",)),
+        browser=a_browser(),
     )
     arguments = {
         FS_READ: {"path": "ELA/c.md", "purpose": "x"},
         FS_WRITE: {"path": "ELA/c.md", "body": "y", "overwrite": True},
         TERMINAL_RUN: {"program": "bin/echo", "args": [], "purpose": "x"},
+        BROWSER_READ: {"site": "example.com", "path": "/", "purpose": "x"},
+        BROWSER_ACT: {
+            "site": "example.com",
+            "path": "/",
+            "fill": [],
+            "click": "button",
+            "expect_text": "ok",
+            "purpose": "x",
+        },
     }
 
-    said = {
-        tool.capability_id: (await tool.prospect(arguments.get(tool.capability_id, {}))).target
+    prospects = {
+        tool.capability_id: await tool.prospect(arguments.get(tool.capability_id, {}))
         for tool in tools.tools()
     }
+    said = {
+        cid: (prospect.target or prospect.visit)
+        for cid, prospect in prospects.items()
+        if prospect.target is not None or prospect.visit is not None
+    }
 
-    assert {cid: found.does for cid, found in said.items() if found is not None} == {
+    assert {cid: found.does for cid, found in said.items()} == {
         FS_READ: READS,
         FS_WRITE: OVERWRITES,
         TERMINAL_RUN: RUNS,
+        BROWSER_READ: OPENS,
+        BROWSER_ACT: ACTS,
     }
 
 

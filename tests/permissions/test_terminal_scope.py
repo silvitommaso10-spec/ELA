@@ -88,9 +88,12 @@ def test_the_terminal_is_high_scoped_on_the_program_and_asks_for_the_purpose() -
     assert schema["additionalProperties"] is False
 
 
-def test_it_is_in_the_catalogue_the_composition_builds_last() -> None:
-    """In the order the ADRs added them: ADR 0047 comes after ADR 0045."""
-    assert production_catalogue().specs()[-1].id == TERMINAL_RUN
+def test_it_is_in_the_catalogue_the_composition_builds_after_the_filesystem() -> None:
+    """In the order the ADRs added them: ADR 0047 comes after ADR 0045, and before ADR 0052's
+    two."""
+    ids = [spec.id for spec in production_catalogue().specs()]
+    assert ids[ids.index(TERMINAL_RUN) - 1] == "fs.write"
+    assert ids[ids.index(TERMINAL_RUN) + 1 :] == ["browser.read", "browser.act"]
 
 
 def test_the_default_of_the_factory_is_a_placeholder_and_not_an_empty_list() -> None:

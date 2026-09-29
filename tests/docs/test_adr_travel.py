@@ -80,7 +80,7 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_their_day()
     assert "**cinquantasette**" in text
     assert len(RULES) == 57
     assert "**ventotto**" in text
-    assert len(tuple(port_protocols())) == 28
+    assert len(tuple(p for p in port_protocols() if p.__name__ != "Browser")) == 28  # ADR 0052
     assert "**quarantotto**" in text
     assert len(coded_routes() - routes_after_0048()) == 48
 
