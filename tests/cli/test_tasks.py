@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from ela.cli.errors import CONFIGURATION, REFUSED
-from ela.cli.output import EMPTY
-from ela.cli.tasks import _results
+from ela.cli.output import EMPTY, GAP
+from ela.cli.tasks import RUN_LABELS, _results
 from ela.composition import Ela
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import (
@@ -365,7 +365,7 @@ async def test_a_run_that_is_not_waiting_prints_no_reason(cli: Cli, tmp_path: Pa
     assert "completed" in result.stdout
     printed = plain(result.stdout).splitlines()
     assert [line for line in printed if line.startswith("reason")] == [
-        "reason".ljust(len("steps executed")) + "  " + EMPTY
+        "reason".ljust(max(map(len, RUN_LABELS))) + GAP + EMPTY
     ]
 
 

@@ -96,7 +96,7 @@ async def test_a_run_that_handed_a_step_out_says_so_and_why(client: AsyncClient,
 
     assert run.json()["outcome"] == "assigned"
     assert run.json()["task"]["state"] == "EXECUTING"
-    assert run.json()["steps"] == []  # this call executed nothing
+    assert run.json()["steps"] == []  # handed to the node, not handled here (ADR 0051 §1)
     reason = run.json()["reason"]
     assert reason is not None
     assert node["device_id"] in reason and "due by" in reason

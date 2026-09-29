@@ -166,6 +166,25 @@ async def test_a_claimed_assignment_that_expired_closes_interrupted_even_if_the_
     assert (await w.task(task.id)).state is TaskState.FAILED
 
 
+async def test_a_step_closed_interrupted_after_its_node_went_silent_is_handled_by_the_call(
+    w: World,
+) -> None:
+    """The branch ``finish`` → ``interrupted`` of M6.3b (ADR 0051 §1), which no test asserted
+    ``steps`` on: whether the tool acted on the node is unknown, and the call that closes the step
+    has handled it — the executor gave its answer, a failure — so the step is in ``steps``, alone,
+    though no tool ran in this process."""
+    task, step, assignment, remote = await handed_to_a_node(w, repeatable=False)
+    await w.executor.begin(assignment.id, remote.id)
+    w.clock.advance(assignment.expires_at - w.now)
+    await only_this_machine_is_alive(w)
+
+    run = await w.runner.run(task.id)
+
+    assert run.outcome is RunOutcome.FAILED
+    assert run.steps == (step.id,)
+    assert w.tool(ECHO.id).calls == ()
+
+
 async def test_a_claim_of_a_repeatable_tool_that_cannot_move_closes_interrupted(w: World) -> None:
     """Criterion 5 of M13.3, the second predicate of D6 (ADR 0048): the STARTED record of a claim
     is written for a tool that is **not relocatable**, not for one that is not idempotent. A tool

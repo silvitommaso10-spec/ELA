@@ -1,6 +1,12 @@
 # 0019. Task Runner: un ciclo ri-entrante che non scrive nulla di suo, finestre R1–R9
 
-- **Stato:** Accettata
+- **Stato:** Accettata. §10 e la terminazione di §3: rivisti da **ADR 0038 §10** (M12.2) — l'esito
+  `ASSIGNED` si legge in unione con la tabella, e ogni iterazione che non ritorna chiude uno step **o
+  ne rilascia uno**. §9, «`max_privacy` è una keyword di `run`»: rivista da **ADR 0038 §16** (M12.2,
+  D20) — la sensibilità è del task, dichiarata alla creazione. §10, «gli step eseguiti *da questa
+  chiamata*», «`Run.steps` vuoto è ciò che dice quale dei due è successo» e la riga `DENIED`, e il
+  nome del test citato in §3: rivisti da **ADR 0051** (M6.3b) — gli step trattati, e un vuoto che non
+  dice chi ha chiuso il task.
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §13, §14, §15, §17, §18, §27, §32, §33, §63
 - **Milestone:** M6.3

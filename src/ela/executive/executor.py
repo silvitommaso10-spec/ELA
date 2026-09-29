@@ -575,7 +575,8 @@ class Execution(NamedTuple):
 
     Set only by the remote branch, and it is what tells the runner that the call assigned: the
     tool did not run here, the step stays RUNNING, and the run returns ``ASSIGNED``. ``None`` for
-    every call that ran something, which is every call of a plan that runs on this machine.
+    every call that did not hand the step away — every call of a plan that runs on this machine,
+    whether the tool ran, was refused, or is waiting for consent (M6.3b).
     """
 
 

@@ -195,7 +195,7 @@ async def test_window_r5_a_finished_plan_whose_task_is_open_is_closed_by_the_ret
     run = await w.runner.run(task.id)
 
     assert run.outcome is RunOutcome.COMPLETED
-    assert run.steps == ()  # nothing was executed again
+    assert run.steps == ()  # no step handled: the call only closed the task (ADR 0051 §2)
     assert len(w.tool(NOTE.id).calls) == 1
     (last,) = await w.results.for_step(task.id, steps[-1].id)
     completed = next(e for e in await w.events(task.id) if e.event_type is E.TASK_COMPLETED)

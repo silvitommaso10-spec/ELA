@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from ela.cli.output import GAP
+from ela.cli.tasks import RUN_LABELS
 from ela.domain import RiskLevel
 from ela.permissions import catalogue_v01
 
@@ -192,3 +194,79 @@ def test_the_guide_says_why_and_says_not_to_turn_smart_app_control_off() -> None
     assert "Smart App Control" in text
     assert "4551" in text
     assert "non si riaccende" in text
+
+
+# ----------------------------------------------------------------------------------------
+# What ``ela task run`` prints, as the guide shows it (M6.3b, ADR 0051)
+# ----------------------------------------------------------------------------------------
+
+
+def run_blocks(text: str) -> list[str]:
+    """Every fenced block that shows the output of ``ela task run``: the ones whose first line is
+    its first label. No other command prints ``outcome``; one that did would be reported here as a
+    run block out of shape, not let through."""
+    found = []
+    for block in BLOCK.findall(text):
+        body = block.splitlines()[1:-1]
+        if body and body[0].startswith(RUN_LABELS[0] + " "):
+            found.append("\n".join(body))
+    return found
+
+
+def not_what_the_cli_prints(block: str) -> list[str]:
+    """What is wrong with one block, measured against the command: its labels, in its order, at its
+    width — the four rows it always prints, with nothing taken out."""
+    width = max(map(len, RUN_LABELS))
+    lines = block.splitlines()
+    if len(lines) != len(RUN_LABELS):
+        return [f"{len(lines)} rows, the command prints {len(RUN_LABELS)}: {block!r}"]
+    return [
+        f"{line!r} is not {label!r} at width {width}"
+        for line, label in zip(lines, RUN_LABELS, strict=True)
+        if not line.startswith(label.ljust(width) + GAP) or not aligned(line[width + len(GAP) :])
+    ]
+
+
+def aligned(value: str) -> bool:
+    """A value that starts in the command's column: there, and not one space further."""
+    return bool(value) and not value.startswith(" ")
+
+
+def test_every_run_block_of_the_guide_is_what_the_cli_prints() -> None:
+    """§6 once showed two ids under ``steps executed`` and said right below that the second had not
+    run (M6.3b): a block of the guide is the command's output, so the label that changes in the
+    command changes here or the suite stops."""
+    blocks = run_blocks(guide())
+
+    assert blocks
+    assert [problem for block in blocks for problem in not_what_the_cli_prints(block)] == []
+
+
+def test_a_run_block_with_the_old_label_is_reported() -> None:
+    block = (
+        "outcome         waiting_approval\n"
+        "reason          —\n"
+        "state           WAITING_APPROVAL\n"
+        "steps executed  9c5b8f26-1a2b-4c3d-8e4f-000000000001"
+    )
+
+    assert not_what_the_cli_prints(block) != []
+
+
+def test_a_run_block_aligned_to_another_width_is_reported() -> None:
+    block = "\n".join(f"{label}  x" for label in RUN_LABELS)
+
+    assert not_what_the_cli_prints(block) != []
+
+
+def test_a_run_block_with_a_row_taken_out_is_reported() -> None:
+    width = max(map(len, RUN_LABELS))
+    block = "\n".join(f"{label.ljust(width)}{GAP}x" for label in RUN_LABELS[:-1])
+
+    assert not_what_the_cli_prints(block) != []
+
+
+def test_a_run_block_is_found_by_its_first_row() -> None:
+    text = "prima\n\n```\noutcome  denied\nreason   no\n```\n\n```\nid  1\n```\n"
+
+    assert run_blocks(text) == ["outcome  denied\nreason   no"]
