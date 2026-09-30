@@ -180,6 +180,17 @@ async def test_what_is_known_without_the_page_is_refused_before_the_question(
     assert browser.opened == [], "nothing is opened to find out"
 
 
+async def test_what_the_question_refused_the_tool_refuses_again_and_opens_nothing() -> None:
+    """The tool trusts neither the Guardian nor its own ``prospect`` (§28): ``execute`` checks the
+    arguments again, and a plan that reaches it outside the grammar starts no browser."""
+    browser = FakeBrowser()
+
+    result = await act(browser).execute(decision(BROWSER_ACT), with_(ACT, path="forms/post"))
+
+    assert result.error is not None and result.error.code == ARGUMENTS_INVALID
+    assert browser.opened == [] and browser.closed == []
+
+
 async def test_a_selector_of_a_read_is_refused_the_same_way() -> None:
     prospect = await read(FakeBrowser()).prospect(with_(READ, selector=">>"))
 

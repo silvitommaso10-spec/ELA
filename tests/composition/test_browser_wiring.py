@@ -9,6 +9,7 @@ the tools nor the port (form A), though its process imports the module (C12).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import tempfile
 from pathlib import Path
@@ -19,6 +20,7 @@ from ela.composition import Ela, Settings, build
 from ela.infrastructure.machine import PlaywrightBrowser
 from ela.permissions import BROWSER_ACT, BROWSER_READ, UNDECLARED_SITES
 from ela.testing.fakes import FakeBrowser
+from ela.tools import BROWSER_TIMEOUT_SECONDS
 from ela.tools.terminal import CLOSED_PATH, LANGUAGE
 from tests.composition.support import create_schema, database_url, declare
 
@@ -62,6 +64,23 @@ async def test_the_browser_of_the_core_is_playwright_with_the_closed_environment
     assert browser._pages == {}, "nothing starts until a page is asked for"  # noqa: SLF001
     assert browser._stopping is ela.stopping, "the stop signal of ADR 0038 §11"  # noqa: SLF001
     assert browser._launch()["handle_sigint"] is False  # noqa: SLF001 — M5-bis
+
+
+async def test_a_page_handed_to_the_verifier_waits_the_tool_s_time_and_no_more(
+    ela: Ela, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Form I: the adapter closes a kept page nobody looked at when the tool's own time is up —
+    the composition's deadline, the tool's thirty seconds, and not a number of the adapter's."""
+    browser = ela.tools.get(BROWSER_ACT)._browser  # type: ignore[attr-defined]  # noqa: SLF001
+    waited: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        waited.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    await browser._kept()  # noqa: SLF001
+
+    assert waited == [BROWSER_TIMEOUT_SECONDS]
 
 
 async def test_the_same_browser_serves_the_tools_and_the_verifiers(
