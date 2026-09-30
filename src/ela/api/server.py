@@ -140,6 +140,14 @@ async def _claimed(api: ApiSettings) -> list[socket.socket]:
 
 async def _serve(settings: Settings) -> None:
     ela = await build(settings)
+    if ela.removed_from_environment:
+        # The names and never the values (M13.4, decision 4 of the review of 2026-09-30): a name
+        # is what somebody needs to find the line in their shell.
+        print(
+            f"ela: removed {', '.join(ela.removed_from_environment)} from ELA's environment: the "
+            "browser's driver must not inherit what turns its checks off (ADR 0052 §14)",
+            file=sys.stderr,
+        )
     sockets: list[socket.socket] = []
     try:
         sockets = await _claimed(settings.api)

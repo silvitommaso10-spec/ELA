@@ -38,12 +38,17 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import os
+import sys
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from pathlib import Path
+from typing import Any, Final, TypeVar
 from urllib.parse import urljoin
 from uuid import uuid4
 
+import playwright
 from playwright.async_api import Browser as Chromium
 from playwright.async_api import BrowserContext, Page, Playwright, Request, Route, async_playwright
 from playwright.async_api import Error as PlaywrightError
@@ -61,11 +66,44 @@ from ela.ports import (
     SiteUnreachable,
 )
 
-__all__ = ["MISSING_EXECUTABLE", "PlaywrightBrowser"]
+__all__ = ["MISSING_EXECUTABLE", "PlaywrightBrowser", "shell_folder"]
 
 MISSING_EXECUTABLE = "Executable doesn't exist"
 """What Playwright says when the browser the lock names was never installed (M2): the one message
 of the engine this module reads, and a test with an empty browsers folder holds it."""
+
+SHELL: Final = "chromium-headless-shell"
+"""The name Playwright's registry gives the Chrome Headless Shell, in its ``browsers.json``."""
+
+
+def shell_folder(environment: Mapping[str, str]) -> Path | None:
+    """The folder Playwright installs the shell of the lock's version into — found as its registry
+    finds it, never by launching anything (decision 2 of the review of 2026-09-30).
+
+    ``PLAYWRIGHT_BROWSERS_PATH`` first — ``0`` for the folder inside the package, anything else a
+    folder of its own —, then the cache folder of the system: the two systems the Core runs on, and
+    ``None`` on any other, where the answer is «not installed». The revision is the one of the
+    ``browsers.json`` Playwright ships. The day Playwright moves the shell, the test of the real
+    browser that asks Playwright where it launches from fails.
+    """
+    package = Path(playwright.__file__).parent / "driver" / "package"
+    declared = environment.get("PLAYWRIGHT_BROWSERS_PATH")
+    if declared == "0":
+        registry = package / ".local-browsers"
+    elif declared:
+        registry = Path(declared)
+    elif sys.platform == "darwin":
+        registry = Path.home() / "Library" / "Caches" / "ms-playwright"
+    elif sys.platform == "linux":
+        registry = (
+            Path(environment.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "ms-playwright"
+        )
+    else:
+        return None
+    browsers = json.loads((package / "browsers.json").read_text(encoding="utf-8"))["browsers"]
+    (revision,) = [entry["revision"] for entry in browsers if entry["name"] == SHELL]
+    return registry.absolute() / f"{SHELL.replace('-', '_')}-{revision}"
+
 
 _T = TypeVar("_T")
 
@@ -139,19 +177,14 @@ class PlaywrightBrowser:
         return error
 
     async def installed(self) -> bool:
+        """Whether the shell's executable is where Playwright would launch it from: a look at a
+        file, and nothing started — the launch that does the work says the rest."""
         self._refuse_if_stopping()
-        playwright = await async_playwright().start()
-        try:
-            try:
-                browser = await playwright.chromium.launch(**self._launch())
-            except PlaywrightError as error:
-                if MISSING_EXECUTABLE in str(error):
-                    return False
-                raise self._translated(error) from None
-            await browser.close()
-            return True
-        finally:
-            await _quietly(playwright.stop)
+        folder = shell_folder(os.environ)
+        return folder is not None and any(
+            found.is_file()
+            for found in folder.glob("chrome-headless-shell-*/chrome-headless-shell")
+        )
 
     async def open(self, address: str, allowed: Callable[[str], bool]) -> Opened:
         self._refuse_if_stopping()

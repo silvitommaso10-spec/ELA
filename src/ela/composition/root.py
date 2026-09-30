@@ -13,6 +13,7 @@ code rather than a habit — there is exactly one file to read to know what ELA 
 from __future__ import annotations
 
 import asyncio
+import os
 import platform
 import tempfile
 from collections.abc import Awaitable, Callable, Sequence
@@ -29,6 +30,7 @@ from ela.composition.system import (
     UuidGenerator,
     argument_limits,
     power_reading,
+    without_node_variables,
 )
 from ela.context import ContextCore
 from ela.devices import (
@@ -259,6 +261,11 @@ class Ela:
     — and nothing chooses between the two by itself, because the two are different permissions
     (ADR 0034 §5).
     """
+    removed_from_environment: tuple[str, ...]
+    """The ``NODE_`` variables ``build`` took out of ELA's environment, by name (M13.4, decision 4
+    of the review of 2026-09-30): the browser's driver inherits the environment, and one of them
+    turns its check of a certificate off. Kept so that the start can say which — never the values.
+    """
     audition: Audition
     """Hearing a voice before choosing it, without a task per attempt (ADR 0034 §9).
 
@@ -410,6 +417,9 @@ async def build(
     readable in one place, and a reader who has to jump between helpers to know what ELA is bound
     to has lost exactly what this module exists to give.
     """
+    # Before anything that could start the browser's driver, which inherits this environment:
+    # every NODE_ variable out, by the prefix (M13.4, decision 4 of the review of 2026-09-30).
+    removed = without_node_variables(os.environ)
     clock = SystemClock() if clock is None else clock
     if power is None:
         power = power_reading(platform.system())
@@ -765,6 +775,7 @@ async def build(
         speech_dir=scratch,
         speech_online=playing,
         listening=listening,
+        removed_from_environment=removed,
         audition=Audition(speak=_audition_speaker(online, playing), play=_sample(online, playing)),
         perception=perception,
     )

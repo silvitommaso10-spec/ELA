@@ -106,8 +106,12 @@ TEXT_MAX_BYTES: Final = 65536
 decision — the terminal's ceiling per stream (ADR 0047 §8) —, not a measure."""
 
 NOT_INSTALLED: Final = "browser.not_installed"
-"""The browser the lock names is not on this machine: refused before the question, and before any
-page."""
+"""The browser the lock names is not on this machine: refused before the question, from its
+executable; and in the run, from the launch that does the work."""
+NOT_INSTALLED_MESSAGE: Final = (
+    "the browser ELA uses is not installed on this machine: run "
+    "`uv run playwright install --only-shell chromium`"
+)
 UNREACHABLE: Final = "browser.unreachable"
 """The page did not answer."""
 HTTP_STATUS: Final = "browser.http_status"
@@ -256,8 +260,15 @@ class _BrowserTool(Tool):
         self._browser = browser
 
     async def prospect(self, arguments: JsonMapping) -> Prospect:
-        """What this call would do, and what the question names (form G)."""
-        looked = await self._look(arguments)
+        """What this call would do, and what the question names (form G): the shape and the
+        grammar, then whether the shell is there — asked here, before the question, and **not in
+        the run**, where the launch that does the work says it (decision 2 of the review of
+        2026-09-30: asking there cost a browser more at every step)."""
+        looked = self._shaped(arguments)
+        if not isinstance(looked, Outcome):
+            missing = await self._installed()
+            if missing is not None:
+                looked = missing
         if isinstance(looked, Outcome):
             return Prospect(
                 refusal=ErrorMetadata(
@@ -269,12 +280,8 @@ class _BrowserTool(Tool):
             )
         return Prospect(visit=looked.visit)
 
-    async def _look(self, arguments: JsonMapping) -> Outcome | _Call:
-        """**The one place a browser call decides before the page**, read by the question and by
-        the run: the shape and the grammar, then whether the browser is there (form G)."""
-        shaped = self._shaped(arguments)
-        if isinstance(shaped, Outcome):
-            return shaped
+    async def _installed(self) -> Outcome | None:
+        """Whether the shell is there, from its executable and without starting it (form G)."""
         try:
             async with asyncio.timeout(self._browsing.timeout_seconds):
                 installed = await self._browser.installed()
@@ -282,20 +289,18 @@ class _BrowserTool(Tool):
             return Outcome(
                 {},
                 FAILED,
-                f"the browser did not start within {self._browsing.timeout_seconds} s",
+                "the browser did not say whether it is installed within "
+                f"{self._browsing.timeout_seconds} s",
             )
         except BrowserStopped:
             return Outcome({}, STOPPED, "ELA was stopping: no browser was started")
         except BrowserFailed as failed:
-            return Outcome({}, FAILED, f"the browser could not be started: {failed}")
-        if not installed:
             return Outcome(
-                {},
-                NOT_INSTALLED,
-                "the browser ELA uses is not installed on this machine: run "
-                "`uv run playwright install --only-shell chromium`",
+                {}, FAILED, f"whether the browser is installed could not be read: {failed}"
             )
-        return shaped
+        if not installed:
+            return Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
+        return None
 
     def _shaped(self, arguments: JsonMapping) -> Outcome | _Call:
         site, path = arguments.get("site"), arguments.get("path")
@@ -330,7 +335,7 @@ class _BrowserTool(Tool):
         )
 
     async def _run(self, arguments: JsonMapping) -> Outcome:
-        looked = await self._look(arguments)
+        looked = self._shaped(arguments)
         if isinstance(looked, Outcome):
             return looked
         site = looked.visit.site
@@ -348,12 +353,7 @@ class _BrowserTool(Tool):
                 f"ELA closed the browser{self._after(done)}",
             )
         except BrowserNotInstalled:
-            outcome = Outcome(
-                {},
-                NOT_INSTALLED,
-                "the browser ELA uses is not installed on this machine: run "
-                "`uv run playwright install --only-shell chromium`",
-            )
+            outcome = Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
         except SiteUnreachable as away:
             outcome = Outcome({}, UNREACHABLE, f"the page of {site} did not answer: {away}")
         except BrowserStopped:

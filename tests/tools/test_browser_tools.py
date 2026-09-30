@@ -257,7 +257,7 @@ async def test_a_browser_that_does_not_answer_whether_it_is_there_is_bounded() -
     prospect = await tool.prospect(READ)
 
     assert prospect.refusal is not None and prospect.refusal.code == FAILED
-    assert "did not start within" in prospect.refusal.message
+    assert "did not say whether it is installed within" in prospect.refusal.message
 
 
 # ----------------------------------------------------------------------------------------

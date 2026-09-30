@@ -14,12 +14,15 @@ same way.
 M13.2 adds the limits of what a launch passes to a program, chosen the same way: ``execve``'s on a
 POSIX system — the total, and on Linux one more for a single argument —, the command line of
 ``CreateProcess`` on Windows, where ``os.sysconf`` does not exist.
+
+M13.4 adds what ELA takes **away** from its own environment before the browser's Node driver can
+inherit it (decision 4 of the review of 2026-09-30; ADR 0052 §14).
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, MutableMapping
 from datetime import UTC, datetime
 from typing import Final
 from uuid import UUID, uuid4
@@ -39,6 +42,7 @@ from ela.tools.terminal import ArgumentLimits
 
 __all__ = [
     "LINUX_PAGES_IN_ONE_ARGUMENT",
+    "NODE_PREFIX",
     "WINDOWS_COMMAND_LINE",
     "PowerReading",
     "SystemClock",
@@ -48,6 +52,7 @@ __all__ = [
     "power_of_a_mac",
     "power_of_a_pc",
     "power_reading",
+    "without_node_variables",
 ]
 
 
@@ -144,3 +149,20 @@ def argument_limits(system: str) -> ArgumentLimits:
             total=total, one=os.sysconf("SC_PAGESIZE") * LINUX_PAGES_IN_ONE_ARGUMENT
         )
     return ArgumentLimits(total=total, one=total)
+
+
+NODE_PREFIX: Final = "NODE_"
+"""What makes a variable Node's (decision 4 of the review of 2026-09-30). Playwright's driver is a
+Node process that inherits ELA's environment, and it is the driver that fetches the document of the
+main frame: ``NODE_TLS_REJECT_UNAUTHORIZED=0`` or ``NODE_EXTRA_CA_CERTS`` in the shell that starts
+ELA made a page with an invalid certificate open (M4-ter). **A prefix and not a list of names**: the
+variable Node reads tomorrow is one nobody here has heard of."""
+
+
+def without_node_variables(environment: MutableMapping[str, str]) -> tuple[str, ...]:
+    """Remove from ``environment`` every variable whose name begins with ``NODE_``, and return the
+    names in order — **never the values**, which may be a path or a secret."""
+    removed = tuple(sorted(name for name in environment if name.startswith(NODE_PREFIX)))
+    for name in removed:
+        del environment[name]
+    return removed
