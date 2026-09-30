@@ -9,6 +9,17 @@ classified once, in :mod:`ela.tools.paths`, for both.
 """
 
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool, check_decision
+from ela.tools.browser import (
+    ACTS,
+    BROWSER_ACT_TOOL_NAME,
+    BROWSER_READ_TOOL_NAME,
+    BROWSER_TIMEOUT_SECONDS,
+    OPENS,
+    BrowserActTool,
+    BrowserReadTool,
+    Browsing,
+    https_origin,
+)
 from ela.tools.captures import (
     CAPTURE_CODES,
     CAPTURE_MALFORMED,
@@ -130,6 +141,8 @@ from ela.tools.terminal import (
     TerminalRunTool,
 )
 from ela.tools.verifiers import (
+    BROWSER_ACT_VERIFIER_NAME,
+    BROWSER_READ_VERIFIER_NAME,
     CAPTURE_DECLARED_MISMATCH,
     CAPTURE_EXISTS,
     CAPTURE_MATCHES,
@@ -154,6 +167,8 @@ from ela.tools.verifiers import (
     NOTE_EXISTS,
     NOTE_UNREADABLE,
     NOTES_VERIFIER_NAME,
+    BrowserActVerifier,
+    BrowserReadVerifier,
     CaptureScreenVerifier,
     EchoVerifier,
     FsReadVerifier,
@@ -183,7 +198,20 @@ from ela.tools.voice_online import (
 )
 
 __all__ = [
+    "ACTS",
     "ARGUMENTS_UNPASSABLE",
+    "BROWSER_ACT_TOOL_NAME",
+    "BROWSER_ACT_VERIFIER_NAME",
+    "BROWSER_READ_TOOL_NAME",
+    "BROWSER_READ_VERIFIER_NAME",
+    "BROWSER_TIMEOUT_SECONDS",
+    "OPENS",
+    "BrowserActTool",
+    "BrowserActVerifier",
+    "BrowserReadTool",
+    "BrowserReadVerifier",
+    "Browsing",
+    "https_origin",
     "CWD_NOT_A_FOLDER",
     "ArgumentLimits",
     "FILE",

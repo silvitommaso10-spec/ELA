@@ -433,6 +433,20 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
         pairs.append(
             pages.fragment(HERE, "pair", key="Codice atteso", value=str(found.expect_exit))
         )
+    if seen and found.address:
+        # What a browser call opens and does (M13.4): the address, the gestures one by one — each
+        # value the plan would type —, and the text the page must show after the click.
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Indirizzo", value=visible(found.address, lines=False))
+        )
+    if seen and found.gestures is not None:
+        pairs.append(pages.fragment(HERE, "pair", key="Gesti", value=listed(found.gestures)))
+    if seen and found.expect:
+        pairs.append(
+            pages.fragment(
+                HERE, "pair", key="Testo atteso", value=visible(found.expect, lines=False)
+            )
+        )
     if seen and found.does:
         # The sentence comes from the capability and is rendered as it stands (M13.1 dec. G):
         # a page that composed one would be lending a write's words to a read.

@@ -52,11 +52,13 @@ REQUIRED: tuple[tuple[str, str], ...] = (
     ("ELA_FS_ROOT", "/Users/you/Documents"),
     ("ELA_FS_SCOPE", "ELA"),
     ("ELA_TERMINAL_PROGRAMS", "[]"),
+    ("ELA_BROWSER_SITES", "[]"),
 )
 """The variables ELA cannot start without, beside the token, each with an **example** — not a
 default: ELA has none for them, and it does not choose the user's folder (M13.1, ADR 0045) nor what
-may run on the user's machine (M13.2, ADR 0047). The example of ``ELA_TERMINAL_PROGRAMS`` is ``[]``,
-which is an admitted answer — «no program» — and not a program ELA picked.
+may run on the user's machine (M13.2, ADR 0047), nor which sites its browser may open (M13.4,
+ADR 0052). The examples of ``ELA_TERMINAL_PROGRAMS`` and ``ELA_BROWSER_SITES`` are ``[]``, which is
+an admitted answer — «no program», «no site» — and not a program or a site ELA picked.
 
 Until M13.1b they sat among the optional ones, and ``init`` said the token was «the only variable
 ELA requires» about an ``.env`` ELA would refuse. The list is not compared with another list:
@@ -146,6 +148,8 @@ HEADER = f"""\
 # Required, with no default: ELA does not start until these lines are written. The values are
 # examples — write your own, and remove the `#`. ELA_TERMINAL_PROGRAMS is one line of JSON, each
 # program relative to / (usr/bin/git is /usr/bin/git), and [] means no program at all.
+# ELA_BROWSER_SITES is one line of JSON too, each site a host name alone (example.com, without
+# https://), and [] means no site at all.
 """
 
 OPTIONAL_HEADER = """
@@ -207,6 +211,10 @@ NOTES: Final = {
     "ELA_TERMINAL_PROGRAMS": (
         "\nThe programs are one line of JSON, each relative to / — usr/bin/git is /usr/bin/git —, "
         "and [] is an answer: no program at all."
+    ),
+    "ELA_BROWSER_SITES": (
+        "\nThe sites are one line of JSON, each a host name alone — example.com, without https:// "
+        "—, and [] is an answer: no site at all."
     ),
 }
 """What a missing required line needs said beside its example, once (M13.2)."""

@@ -1,0 +1,37 @@
+{
+  "_nota": [
+    "Il primo piano della prova a mano di M13.4 (ADR 0052): ELA apre una pagina pubblica e ne legge",
+    "il paragrafo. `browser.read` è LOW: dentro i siti di ELA_BROWSER_SITES NON CHIEDE, e fuori nega.",
+    "`site` è un nome di host e basta — niente https://, niente porta, niente maiuscole —, ed è",
+    "l'unico argomento che il Guardian confronta con i siti dichiarati. `path` è il resto",
+    "dell'indirizzo: ELA compone https://example.com/ e non legge mai un indirizzo intero dal piano.",
+    "Il browser è VUOTO: nessun cookie, nessun login, niente del tuo Chrome o del tuo Safari.",
+    "`selector` è `body > p:first-of-type`: il 2026-09-30 la pagina di example.com non ha un <h1>, e",
+    "il suo JavaScript le aggiunge altri paragrafi — con `p` il passo fallirebbe come ambiguo, perché",
+    "un selettore deve trovare un elemento solo. Il verifier non si fida del risultato: rilegge il",
+    "paragrafo sulla pagina rimasta aperta.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "leggere una pagina pubblica",
+  "steps": [
+    {
+      "id": "b4c2d7e1-5a3f-4b69-8d20-000000000001",
+      "goal": "leggere il paragrafo di example.com",
+      "required_capabilities": [
+        "browser.read"
+      ],
+      "arguments": {
+        "site": "example.com",
+        "path": "/",
+        "selector": "body > p:first-of-type",
+        "purpose": "la prova a mano del browser"
+      },
+      "risk": "LOW",
+      "expected_result": "il testo del paragrafo, «This domain is for use in documentation examples…», è nel risultato dello step",
+      "success_conditions": [
+        "browser.text_matches"
+      ],
+      "requires_authorization": false
+    }
+  ]
+}

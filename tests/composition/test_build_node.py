@@ -33,6 +33,7 @@ from ela.composition.settings import _ela_source_tree
 from ela.domain import OperatingSystem
 from ela.infrastructure.machine import (
     AFPLAY,
+    PlaywrightBrowser,
     SapiSpeechCommand,
     SaySpeechCommand,
     UnsupportedSpeech,
@@ -81,6 +82,22 @@ def test_it_builds_the_four_tools_that_travel_and_no_others(tmp_path: Path) -> N
         "voice-speak",
         "voice-speak-online",
     }
+
+
+def test_it_builds_neither_the_browser_s_tools_nor_its_browser(tmp_path: Path) -> None:
+    """M13.4 form A and C12: the process of the node imports the adapter — ``ela.composition`` is
+    one package, and ``root.py`` sits beside ``node.py`` —, and that starts nothing. What matters is
+    what
+    is built, and a test on the module alone would pass while the process imports it."""
+    built = build_node(config(tmp_path), speech=FakeSpeech())
+
+    names = {tool.name for tool in built.tools.tools()}
+    names |= {verifier.name for verifier in built.verifiers.verifiers()}
+    assert not any(name.startswith("browser") for name in names)
+    assert not any(
+        isinstance(getattr(built, name), PlaywrightBrowser)
+        for name in NodeWorld.__dataclass_fields__
+    )
 
 
 def test_it_builds_nothing_that_decides(tmp_path: Path) -> None:

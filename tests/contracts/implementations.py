@@ -9,6 +9,7 @@ also checks that every port has at least one implementation.
 from __future__ import annotations
 
 import asyncio
+import platform
 import shutil
 import tempfile
 from collections.abc import Awaitable, Callable, Sequence
@@ -27,6 +28,7 @@ from ela.domain import CapabilityId, RiskLevel
 from ela.infrastructure.machine import (
     DarwinListening,
     DarwinProbe,
+    PlaywrightBrowser,
     ProcessGroupLauncher,
     SaySpeechCommand,
     ScreenCaptureCommand,
@@ -57,6 +59,7 @@ from ela.ports import (
     AuthorizationStore,
     AuthorizingGuardianPort,
     Bell,
+    Browser,
     CapabilityRegistryPort,
     Clock,
     CommandLauncher,
@@ -90,6 +93,7 @@ from ela.testing.fakes import (
     FakeAuditLog,
     FakeAuthorizationStore,
     FakeBell,
+    FakeBrowser,
     FakeCapabilityRegistry,
     FakeClock,
     FakeDeviceRegistry,
@@ -494,6 +498,17 @@ def _screen_capture() -> ScreenCaptureCommand:
     return ScreenCaptureCommand(timeout=timedelta(seconds=1), runner=_no_helper)
 
 
+def _browser() -> PlaywrightBrowser:
+    """The browser of the Core, built as the composition builds it: nothing starts until a page
+    is asked for (M13.4)."""
+    return PlaywrightBrowser(asyncio.Event(), environment={}, kept=_never, system=platform.system())
+
+
+async def _never() -> None:
+    """A deadline that never comes: the contract test opens no page."""
+    await asyncio.Event().wait()
+
+
 def _launcher() -> ProcessGroupLauncher:
     """The launcher of the terminal, with the stop signal of ADR 0038 §11 it waits on (M13.2)."""
     return ProcessGroupLauncher(asyncio.Event())
@@ -621,6 +636,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     ModelRouterPort: (
         Implementation("FakeModelRouter", _fake_router),
         Implementation("ModelRouter", _router),
+    ),
+    Browser: (
+        Implementation("FakeBrowser", FakeBrowser),
+        Implementation("PlaywrightBrowser", _browser),
     ),
     CommandLauncher: (
         Implementation("FakeLauncher", FakeLauncher),

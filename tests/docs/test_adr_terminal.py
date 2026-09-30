@@ -52,9 +52,18 @@ def codes(cell: str) -> frozenset[str]:
 # ----------------------------------------------------------------------------------------
 
 
+AFTER_0047 = frozenset({"browser.read", "browser.act"})
+"""What ADR 0052 added, and pins itself: this ADR keeps the totals it saw."""
+
+
 def test_the_capabilities_of_today_are_eleven_and_four_of_them_travel(tmp_path: Path) -> None:
-    catalogue = [spec.id for spec in production_catalogue().specs()]
-    declared = [v.reads_the_machine for v in verifiers_today(tmp_path).verifiers()]
+    """The totals ADR 0047 saw: the pin on today's moved to ADR 0052 (``test_adr_browser.py``)."""
+    catalogue = [spec.id for spec in production_catalogue().specs() if spec.id not in AFTER_0047]
+    declared = [
+        v.reads_the_machine
+        for v in verifiers_today(tmp_path).verifiers()
+        if v.capability_id not in AFTER_0047
+    ]
 
     assert len(catalogue) == 11
     assert sorted(declared) == [False] * 4 + [True] * 7
@@ -68,7 +77,7 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
     assert "**cinquantasette**" in text
     assert len(RULES) == 57
     assert "**ventisette**" in text
-    later = {"LocalBeat"}  # ADR 0048, which pins the count of its own day
+    later = {"LocalBeat", "Browser"}  # ADR 0048 and ADR 0052, which pin the count of their day
     assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 27
     assert "CommandLauncher" in {port.__name__ for port in port_protocols()}
     assert "**quarantotto**" in text
@@ -178,7 +187,9 @@ def test_it_writes_the_three_decided_questions_and_the_facts_found_aligning() ->
 
 
 def test_the_capability_it_adds_is_the_last_of_the_catalogue() -> None:
-    assert production_catalogue().specs()[-1].id == TERMINAL_RUN
+    """The last of the catalogue it saw: the browser came after it, with ADR 0052."""
+    specs = [spec.id for spec in production_catalogue().specs() if spec.id not in AFTER_0047]
+    assert specs[-1] == TERMINAL_RUN
 
 
 def test_the_debt_of_the_lone_surrogate_has_an_owner_a_day_and_a_milestone_that_names_it() -> None:

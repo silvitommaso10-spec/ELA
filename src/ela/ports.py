@@ -26,7 +26,7 @@ comparison in ``tests/contracts/test_protocols.py`` covers what ``isinstance`` c
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -102,6 +102,12 @@ __all__ = [
     "AuthorizationStore",
     "AuthorizingGuardianPort",
     "Bell",
+    "Browser",
+    "BrowserError",
+    "BrowserFailed",
+    "BrowserNotInstalled",
+    "BrowserStopped",
+    "BrowserUnsupported",
     "CapabilityRegistryPort",
     "Captured",
     "Clock",
@@ -116,6 +122,8 @@ __all__ = [
     "EnrollmentRoleError",
     "EnrollmentStore",
     "ExecutionResultStore",
+    "Field",
+    "Glanced",
     "IdGenerator",
     "IdentityConflictError",
     "Invocation",
@@ -137,6 +145,7 @@ __all__ = [
     "ModelRouterPort",
     "NotAllowedError",
     "NotFoundError",
+    "Opened",
     "PROVIDER_AUTHENTICATION_ERROR",
     "PROVIDER_BAD_REQUEST",
     "PROVIDER_ERROR_CODES",
@@ -152,6 +161,7 @@ __all__ = [
     "PROVIDER_UNKNOWN_MODEL_HINT",
     "PROVIDER_UNREACHABLE",
     "PROVIDER_UNSUPPORTED_PARAMETER",
+    "PageGone",
     "PerceptionProbe",
     "PermissionGuardianPort",
     "PortError",
@@ -181,6 +191,7 @@ __all__ = [
     "SPEECH_UNKNOWN_VOICE",
     "SPEECH_UNREACHABLE",
     "ScreenCapturePort",
+    "SiteUnreachable",
     "SpeechPort",
     "Target",
     "TaskRepository",
@@ -193,6 +204,7 @@ __all__ = [
     "VERIFICATION_WRONG_CAPABILITY",
     "VerifierPort",
     "VerifierRegistryPort",
+    "Visit",
     "WireCode",
     "audited_numbers",
     "check_answer",
@@ -1296,6 +1308,10 @@ class Prospect:
     refusal: ErrorMetadata | None = None
     invocation: Invocation | None = None
     """What a command would receive, when the call is a command (M13.2); ``None`` otherwise."""
+    visit: Visit | None = None
+    """What a browser call would do, when the call is one (M13.4, ADR 0052); ``None`` otherwise.
+    It carries the site, what the tool calls it and the tool's sentence itself, because a site is
+    not a :class:`Target`: nobody resolved it."""
 
 
 def audited_numbers(declared: frozenset[str], output: JsonMapping) -> dict[str, JsonValue]:
@@ -1490,7 +1506,9 @@ class VerifierPort(Protocol):
 
     @property
     def reads_the_machine(self) -> bool:
-        """Whether this verifier reads the disk of the machine it runs on (M12.2, ADR 0038 §14).
+        """Whether this verifier reads the disk of the machine it runs on (M12.2, ADR 0038 §14) —
+        or anything else that lives there: the Core's stores (ADR 0038 §14), a page open in a
+        process of this machine (M13.4, ADR 0052 §2).
 
         Declared, never defaulted — the form of ``ToolPort.idempotent``: forgetting it must not
         read as a no. A verifier that reads the Core's disk proves an effect only if the effect
@@ -2230,3 +2248,177 @@ class CommandLauncher(Protocol):
 
     async def run(self, command: Command) -> Ran:
         """Start ``command``, wait for it within its timeout, and say how it ended."""
+
+
+# --------------------------------------------------------------------------------------
+# The browser (§19; M13.4, ADR 0052)
+# --------------------------------------------------------------------------------------
+
+
+class BrowserError(PortError):
+    """Something a browser of ELA's could not do (M13.4). The tool turns each kind into a code;
+    the message is a type's name or a sentence of the adapter's, never a page, an address or an
+    argument, which a failure carries into the audit (§57)."""
+
+
+class BrowserNotInstalled(BrowserError):
+    """The browser the lock names is not on this machine: nobody ran the command that installs
+    it."""
+
+
+class SiteUnreachable(BrowserError):
+    """The page did not answer: a name that does not resolve, a refused connection, a certificate
+    the browser does not accept. What went wrong is the engine's type name, never its message."""
+
+
+class BrowserUnsupported(BrowserError):
+    """ELA does not know where the browser would be on this system, so it cannot say whether it is
+    there: not «not installed», which a command could fix, but «not looked» (M13.4; review of the
+    summary, 2026-09-30)."""
+
+
+class BrowserStopped(BrowserError):
+    """ELA was stopping, and its browsers were closed: the stop signal of ADR 0038 §11."""
+
+
+class PageGone(BrowserError):
+    """No page under this identifier: closed, never opened, or opened by a process that is gone."""
+
+
+class BrowserFailed(BrowserError):
+    """Anything else the engine raised, named by its type (ADR 0052): a poor diagnosis, and said."""
+
+
+@dataclass(frozen=True, slots=True)
+class Opened:
+    """A page the browser opened, and what the opening met (M13.4).
+
+    ``page`` is the identifier every later call names; ``status`` the HTTP status of the main
+    document, ``None`` when no response came back; ``address`` where the main frame is now;
+    ``left`` the address of a navigation of the main frame that the boundary refused — the request
+    was never sent —, ``None`` when there was none. An address and not an origin: what an origin is,
+    the tool says, once (``ela.tools.browser.origin_of``).
+    """
+
+    page: str
+    status: int | None
+    address: str
+    left: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Field:
+    """What an element declares of itself, lower-cased: its ``type`` and its ``autocomplete``
+    attributes, empty when absent. The tool decides what they mean (M13.4, ADR 0052)."""
+
+    type: str
+    autocomplete: str
+
+
+@dataclass(frozen=True, slots=True)
+class Glanced:
+    """What the verifier saw in its one look at a page (M13.4).
+
+    ``text`` is the text under the selector it asked about — ``None`` when that selector does not
+    find exactly one element —; ``shown`` whether the text it waited for appeared, ``None`` when it
+    waited for none; ``left`` the address of the last navigation the boundary refused since the
+    opening.
+    """
+
+    text: str | None
+    shown: bool | None
+    left: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Visit:
+    """What a browser call would do, as the question names it (M13.4 dec. G, ADR 0052).
+
+    Beside :class:`Invocation`, which is a command's: ``site`` is the target and ``label`` what the
+    tool calls it, ``does`` the tool's sentence — that the browser is empty, and for an action that
+    what it sends is not taken back —, ``address`` in full, ``gestures`` one line each in the tool's
+    words, ``expect`` the text an action waits for (empty for a read), and ``timeout_seconds``.
+    **Not a** :class:`Target`: its ``exists`` would be a fact about a site nobody visited, and a
+    field filled with a fact nobody looked at is the false diagnosis of ADR 0045 §5.
+    """
+
+    site: str
+    label: str
+    does: str
+    address: str
+    gestures: tuple[str, ...]
+    expect: str
+    timeout_seconds: int
+
+
+@runtime_checkable
+class Browser(Protocol):
+    """A browser of ELA's own, with an empty profile for every page (§19; M13.4, ADR 0052).
+
+    **A mechanism, not a policy.** Every decision is the tool's and reaches the adapter as data: the
+    address, which navigations of the main frame may happen (``allowed``, a function of the tool),
+    which element, which value. What an implementation keeps:
+
+    * each :meth:`open` starts a browser of its own, with an empty profile, and **closes it** when
+      the page is closed, looked at, or refused — nothing passes from one page to the next;
+    * a navigation of the main frame that ``allowed`` refuses **is not sent**, and
+    :attr:`Opened.left`
+      names it;
+    * the browser is started so that a signal to ELA's process group does not close it: the stop is
+      ELA's, through the stop signal of ADR 0038 §11, which raises :class:`BrowserStopped` in what
+      was running;
+    * a page kept with :meth:`keep` waits for :meth:`glance`, and an implementation closes it
+      itself if nobody looks before its deadline;
+    * when :meth:`close` returns, the kernel knows no process of that page's browser any more.
+    """
+
+    async def installed(self) -> bool:
+        """Whether the browser the lock names is on this machine. No page, no network."""
+
+    async def open(self, address: str, allowed: Callable[[str], bool]) -> Opened:
+        """Open ``address`` in a new, empty browser; a navigation ``allowed`` refuses is not sent.
+
+        :raises BrowserNotInstalled, SiteUnreachable, BrowserStopped, BrowserFailed: and nothing
+            stays open behind the exception.
+        """
+
+    async def count(self, page: str, selector: str) -> int:
+        """How many elements ``selector`` finds on the page."""
+
+    async def field(self, page: str, selector: str) -> Field:
+        """What the one element ``selector`` finds declares of itself."""
+
+    async def fill(self, page: str, selector: str, value: str) -> None:
+        """Write ``value`` in the one element ``selector`` finds."""
+
+    async def click(self, page: str, selector: str) -> None:
+        """Click the one element ``selector`` finds."""
+
+    async def text(self, page: str, selector: str | None) -> str:
+        """The text of the one element ``selector`` finds, or of the whole page when ``None``."""
+
+    async def title(self, page: str) -> str:
+        """The title of the page."""
+
+    async def left(self, page: str) -> str | None:
+        """The address of the last navigation the boundary refused since the opening, or
+        ``None``."""
+
+    async def keep(self, page: str) -> None:
+        """Hand the page over to the verifier: it stays open until :meth:`glance`, or its deadline.
+
+        Never raises: a page that is not there any more — ELA was stopping — is found gone by the
+        verifier, which says so (``browser.page_gone``)."""
+
+    async def glance(
+        self, page: str, *, selector: str | None, expect: str | None, seconds: float
+    ) -> Glanced:
+        """The verifier's one look, and the page is released with it.
+
+        The text under ``selector`` when one is asked (or of the page, when ``selector`` is ``None``
+        and ``expect`` is too), and whether ``expect`` appeared within ``seconds``.
+        """
+
+    async def close(self, page: str) -> None:
+        """Close the page and its browser; nothing of it runs when this returns. Idempotent, and
+        never raises: what cannot be closed any more is closed already."""

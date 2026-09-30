@@ -36,6 +36,36 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      # The browser of M13.4 (ADR 0052): the Chrome Headless Shell of the version the lock names,
+      # which `uv sync` does not download. The two runners of `make check` run the tests of the real
+      # browser; the Windows job does not, because the browser does not travel to a node (form A).
+      # The cache is keyed on Playwright's version and saved **even when the job fails**, so that a
+      # red commit still leaves it for the next push — the measure of number 4 needs both halves.
+      - name: Playwright's version
+        id: playwright
+        run: echo "version=$(uv run python -c 'import importlib.metadata as m; print(m.version("playwright"))')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the browser
+        id: browser
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install the browser
+        run: uv run playwright install --only-shell chromium
+
+      - name: Save the browser
+        if: always() && steps.browser.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
       - name: make check
         run: make check
 

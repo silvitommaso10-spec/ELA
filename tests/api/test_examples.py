@@ -135,10 +135,11 @@ def test_every_example_explains_itself() -> None:
     Closed over the folder since M12.5: a fourth file arrived, and a list of three would have let
     a fifth arrive unexplained. Seven since M13.1, which brought the three of the filesystem;
     thirteen since M13.2, which brought the six of the terminal; fourteen since M13.3, which
-    brought the echo of the measurement of the weights.
+    brought the echo of the measurement of the weights; twenty since M13.4, which brought the six of
+    the browser.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 14, [path.name for path in found]
+    assert len(found) == 20, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name

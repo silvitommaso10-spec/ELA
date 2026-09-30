@@ -34,6 +34,15 @@ git clone <questo repo> && cd ELA
 uv sync
 ```
 
+E, da M13.4, il browser che ELA usa — lo shell di Chromium della versione che il lock nomina, circa
+100 MB da scaricare, in `~/Library/Caches/ms-playwright` —, una volta per macchina e di nuovo quando
+il lock porta un Playwright nuovo. `uv sync` non lo scarica, e senza di lui i test del browser
+falliscono dicendo questo comando:
+
+```
+uv run playwright install --only-shell chromium
+```
+
 Da qui in poi i comandi si scrivono `uv run ela …`. Se preferisci scrivere solo `ela`, attiva il
 virtualenv (`source .venv/bin/activate`).
 
@@ -46,14 +55,15 @@ uv run ela init
 ```
 wrote .env (mode 600) with a fresh ELA_API_TOKEN. It is not printed here: read it from the file.
 next:
-  write ELA_FS_ROOT, ELA_FS_SCOPE and ELA_TERMINAL_PROGRAMS in .env   # no default, and no start without
+  write ELA_FS_ROOT, ELA_FS_SCOPE, ELA_TERMINAL_PROGRAMS and ELA_BROWSER_SITES in .env   # no default, and no start without
   uv run alembic upgrade head   # ELA does not migrate on start-up (ADR 0006)
   ela serve                     # ELA creates its database directory and workspace
 ```
 
 Scrive **un solo file**, `.env`, con un token generato e permessi `0600`. Il token **non viene
 stampato**: sta nel file, e da lì lo leggono sia ELA sia la CLI. Sotto al token trovi **le righe
-obbligatorie** — `ELA_FS_ROOT`, `ELA_FS_SCOPE` e, da M13.2, `ELA_TERMINAL_PROGRAMS` —, commentate
+obbligatorie** — `ELA_FS_ROOT`, `ELA_FS_SCOPE`, da M13.2 `ELA_TERMINAL_PROGRAMS` e da M13.4
+`ELA_BROWSER_SITES` —, commentate
 con un esempio: ELA non ha un default per loro e non parte finché non le scrivi (qui sotto). Poi ogni
 altra variabile commentata accanto al suo default: di quelle si tocca solo ciò che si vuole cambiare.
 
@@ -70,12 +80,14 @@ La seconda volta il file c'è già e resta com'è, le righe obbligatorie non sta
 default di ELA», e l'uscita è `exit 2` con:
 
 ```
-ela: .env does not set ELA_FS_ROOT, ELA_FS_SCOPE and ELA_TERMINAL_PROGRAMS, and ELA does not start without them: they have no default. Write them, for example:
+ela: .env does not set ELA_FS_ROOT, ELA_FS_SCOPE, ELA_TERMINAL_PROGRAMS and ELA_BROWSER_SITES, and ELA does not start without them: they have no default. Write them, for example:
     ELA_FS_ROOT=/Users/you/Documents
     ELA_FS_SCOPE=ELA
     ELA_TERMINAL_PROGRAMS=[]
+    ELA_BROWSER_SITES=[]
 The folder is yours: ELA does not create it and does not choose it.
 The programs are one line of JSON, each relative to / — usr/bin/git is /usr/bin/git —, and [] is an answer: no program at all.
+The sites are one line of JSON, each a host name alone — example.com, without https:// —, and [] is an answer: no site at all.
 ```
 
 Fino a M13.1b `init` diceva che il token era «the only variable ELA requires» e, su questo stesso
@@ -83,7 +95,7 @@ file, «nothing required is missing»: se lo leggi ancora, stai girando su codic
 
 **Nella verifica a mano di M13.1b, il 2026-09-22**: la seconda chiamata è uscita con `2` e ha
 nominato `ELA_FS_ROOT` ed `ELA_FS_SCOPE`, le obbligatorie di allora; `ELA_TERMINAL_PROGRAMS` è
-entrata con M13.2.
+entrata con M13.2, `ELA_BROWSER_SITES` con M13.4.
 
 Il database e il workspace stanno di default in `~/.ela/`. Per tenerli altrove, togli il commento
 a `ELA_DB_URL` e `ELA_WORKSPACE_DIR` nel `.env` appena scritto.
@@ -129,6 +141,20 @@ ELA_TERMINAL_PROGRAMS=[]
 
 `[]` è una risposta, non un errore: nessun programma, e ogni richiesta di lanciarne uno è negata prima
 di chiederti niente. Come dichiararne, e che cosa vuol dire, sta nella [§16](#16-il-terminale-la-prova-a-mano-di-m132).
+
+### Una riga che **deve** essere scritta: i siti che il browser di ELA può aprire
+
+Da M13.4 ELA apre pagine in un browser suo, vuoto, e **quali siti** lo dichiari tu, in una riga di
+JSON senza default — un nome per sito, senza `https://`:
+
+```
+ELA_BROWSER_SITES=[]
+```
+
+`[]` è una risposta: nessun sito. Che cosa vuol dire dichiararne uno — ELA lo può **leggere senza
+chiederti niente**, e per compilarvi un modulo ti chiede ogni volta — sta nella
+[§20](#20-il-browser-la-prova-a-mano-di-m134). **Se il tuo `.env` è di prima di M13.4, `ela serve` non
+parte finché non aggiungi questa riga.**
 
 ## 2. `alembic upgrade head` — lo schema
 
@@ -2624,6 +2650,392 @@ quando la corsa l'ha ricevuta.
 
 Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`. **Nella prova del
 2026-09-28** ci sono le uscite dal `plan` in poi, scritte con `tee`.
+
+## 20. Il browser: la prova a mano di M13.4
+
+> **Bozza, scritta con la SPEC di M13.4 il 2026-09-29**, prima di ogni riga di codice, e allineata lo
+> stesso giorno alle decisioni 1–14 della review: i comandi e le uscite attese sono quelli che la SPEC
+> decide, e **allineata all'implementazione**: i piani sono in [`examples/`](examples/), e la suite li
+> manda a ELA byte per byte (`tests/api/test_examples_browser.py`); le frasi dei messaggi sono quelle
+> che il codice scrive. L'ADR è [0052](adr/0052-browser.md), `Proposta` fino a questa prova.
+
+Da M13.4 ELA apre pagine in un browser suo. `browser.read` è `LOW`: dentro i siti che dichiari **non
+chiede**, e fuori nega. `browser.act` — riempire dei campi e cliccare — è `HIGH`, come `fs.write` e
+`terminal.run`: chiede **ogni volta**, e nessuna policy potrà coprirlo in anticipo.
+
+**Prima di cominciare, una frase da leggere per intero.** Il browser di ELA è **vuoto** a ogni step:
+nessun cookie, nessun login, niente del tuo Chrome o del tuo Safari — il sito vede un visitatore, non
+te. Un sito che dichiari è un sito che ELA può **visitare senza chiederti niente**. E ciò che un click
+manda — un modulo, un messaggio, un ordine — **non si riprende**: ELA non sa se un click manda qualcosa
+prima di averlo fatto, e per questo te lo chiede ogni volta.
+
+Cinque dei passi qui sotto **nessun test può farli al posto tuo**: il primo, perché il messaggio è
+scritto per un essere umano; il quarto, perché la domanda si legge — sul telefono e in console — prima
+di dire sì; il sesto e il settimo, perché un «ferma» e una fermata a metà di una pagina lenta si vedono
+solo con due terminali; e l'ottavo, perché una difesa che nega prima della domanda si prova
+**dall'assenza del campanello**.
+
+La prova usa due siti veri: `example.com`, per leggere, e `httpbin.org`, che ha un modulo di prova e
+rimanda indietro ciò che riceve — se lo tenga non si sa; ciò che riceve è un marcatore innocuo. **Il
+passo 4 invia davvero un modulo** a `httpbin.org`. Se `httpbin.org` risponde con un errore `5xx`, il
+passo si ripete più tardi, **senza cambiare sito**.
+
+**Mai una password o una carta in un piano.** ELA rifiuta di scrivere in un campo che si dichiara
+password o carta, ma il rifiuto arriva **dopo** il sì: il valore sarebbe già nel piano, nella domanda
+— anche sul telefono — e nella tabella delle approvazioni, che non si cancella. E il riconoscimento è
+parziale: una password in un campo di testo qualunque passa.
+
+### 0. Lo shell di Chromium
+
+```
+uv sync --locked
+```
+
+```
+uv run playwright install --only-shell chromium
+```
+
+**Che cosa si deve vedere**: due scaricamenti, «Chrome Headless Shell 153.0.8010.12» e «FFmpeg», da
+`cdn.playwright.dev`, in `~/Library/Caches/ms-playwright`. Una volta sola per macchina, e di nuovo
+quando il lock porta una versione nuova di Playwright.
+
+```
+ls ~/Library/Caches/ms-playwright
+```
+
+```
+chromium_headless_shell-1243
+ffmpeg-1011
+```
+
+### 1. ELA che non parte — il messaggio che devi leggere
+
+Senza `ELA_BROWSER_SITES` nel `.env`:
+
+```
+uv run ela serve
+```
+
+**Che cosa si deve vedere**: ELA non parte, e il messaggio nomina la variabile, dice la riga da
+scrivere — un nome di sito per voce, senza `https://` — e dice che `[]` è una risposta ammessa,
+«nessun sito», e non un errore. Leggilo per intero: se una frase ti costringe a rileggere, è un
+difetto da riportare.
+
+```
+uv run ela init; echo "exit $?"
+```
+
+**Che cosa si deve vedere**: il file c'è già e non si tocca; `ELA_BROWSER_SITES` è nominata fra le
+righe che mancano, e `exit 2`.
+
+### 2. I siti, nel `.env`
+
+```
+ELA_BROWSER_SITES=["example.com", "httpbin.org"]
+```
+
+Un sito è **se stesso e basta**: `www.example.com` non è `example.com`, e si dichiara a parte. Poi:
+
+```
+uv run ela serve
+```
+
+### 3. Una lettura senza domanda, un sito che non hai dichiarato, e una pagina che porta altrove
+
+```
+uv run ela task create "leggere una pagina"
+```
+
+```
+uv run ela task plan <id> --file docs/examples/browser-read.json
+```
+
+```
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**: nessuna domanda, nessun campanello:
+
+```
+outcome        completed
+reason         —
+state          COMPLETED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000001
+```
+
+```
+uv run ela task results <id>
+```
+
+**Che cosa si deve vedere**: l'indirizzo `https://example.com/`, lo stato `200`, il titolo «Example
+Domain» e il testo del paragrafo, «This domain is for use in documentation examples…». Il verifier
+l'ha riletto sulla pagina, non dal risultato. (Il piano legge `body > p:first-of-type`: il 2026-09-30
+la pagina non ha un `<h1>`, e il suo JavaScript le aggiunge altri paragrafi, dove `p` sarebbe
+`browser.element_ambiguous`. Se example.com cambia ancora, è il piano da correggere, non ELA.)
+
+Poi, in un task nuovo, `browser-read-outside.json` — `example.org`, che non hai dichiarato:
+
+```
+outcome        denied
+reason         targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org']
+state          DENIED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000002
+```
+
+E in un task nuovo `browser-left-site.json`: `httpbin.org` è dichiarato, ma la pagina manda il
+browser su `example.org`.
+
+```
+outcome        failed
+reason         browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there
+state          FAILED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000003
+```
+
+### 4. Un modulo, e la domanda da leggere prima del sì
+
+Due giri, come in §15, passo 6: **uno `LOCAL_ONLY`**, il default, a cui si risponde dal Mac, e **uno
+`TRUSTED`**, a cui si risponde dal telefono.
+
+**Il giro `LOCAL_ONLY`, risposto dal Mac.**
+
+```
+uv run ela task create "inviare un modulo di prova"
+```
+
+```
+uv run ela task plan <id> --file docs/examples/browser-act.json
+```
+
+```
+uv run ela task run <id>
+```
+
+```
+outcome        waiting_approval
+reason         —
+state          WAITING_APPROVAL
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000005
+```
+
+```
+uv run ela approvals
+```
+
+**Che cosa si deve vedere**, in `ela approvals` e nell'Approval Center (§14), **tutto**: il sito,
+`httpbin.org`; l'indirizzo per intero, `https://httpbin.org/forms/post`; i gesti, **come una lista**
+— `["fills input[name=custname] with “ELA prova 7431”", "clicks form button"]`: fra parentesi quadre,
+ogni gesto fra virgolette, come le tre superfici scrivono gli argomenti di un comando (M13.2,
+decisione 12), perché un valore non possa travestirsi da un gesto in più —; il testo atteso; i 30
+secondi; e la frase che dice che il browser è vuoto, che il sito vede un visitatore e non te, e che
+ciò che manda non si riprende. Una superficie che non mostra tutto non deve offrire il sì.
+
+**Sul telefono** (§13) la domanda c'è, ma il sì no: il task è `LOCAL_ONLY`, e la pagina dice
+
+```
+Il contenuto resta sul Mac: rispondi da lì.
+```
+
+**Non è un difetto: è la regola che funziona** (§15, passo 6). Si risponde dal Mac:
+
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+```
+uv run ela task run <id>
+```
+
+```
+outcome        completed
+reason         —
+state          COMPLETED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000005
+```
+
+`uv run ela task results <id>`: lo stato della pagina del modulo, `200`, e due gesti fatti — il campo
+e il click. La pagina dopo il click non la riporta il tool: l'ha guardata il verifier, che ha visto
+comparire il testo atteso. E il marcatore **non** è nell'audit:
+
+```
+uv run ela audit tail --task <id> -n 30 --json | grep -c "ELA prova 7431"
+```
+
+```
+0
+```
+
+**Il giro `TRUSTED`, risposto dal telefono.** In un task nuovo, creato più largo:
+
+```
+uv run ela task create "inviare un modulo dal telefono" --privacy TRUSTED
+```
+
+```
+uv run ela task plan <id> --file docs/examples/browser-act.json
+```
+
+```
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**: con l'iPhone aperto sulla pagina del companion (§13), il campanello
+suona, e la pagina mostra **tutti i campi** che mostra `ela approvals` — il sito, l'indirizzo, i gesti
+come lista, il testo atteso, il tempo, la frase — **e offre il sì**. Rispondi dal telefono: il sì fa
+ripartire il task nella stessa richiesta, fino a `COMPLETED`, e `uv run ela task show <id>` lo dice.
+
+### 5. Un bottone che non c'è
+
+In un task nuovo, `browser-act-missing.json`: il sì, poi di nuovo `run`.
+
+```
+outcome        failed
+reason         browser.element_missing: gesture 2 of 2 names no element on the page of httpbin.org; no gesture was made
+state          FAILED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000006
+```
+
+**Che cosa si deve vedere**: la frase dice che nessun gesto è stato fatto — il controllo di ogni
+elemento viene prima del primo gesto, e sulla pagina non lo vedi, perché ELA l'ha chiusa —, e il sì è
+speso: la domanda è nata prima che ELA aprisse la pagina, e questo è il suo prezzo.
+
+### 6. Il «ferma» a metà corsa, com'è oggi
+
+Nel terminale A, in un task nuovo con `browser-read-slow.json` — una pagina che risponde dopo otto
+secondi:
+
+```
+uv run ela task run <id>
+```
+
+E nel terminale B, **circa tre secondi dopo l'Invio di `run`** — non subito: lo step deve essere
+cominciato —, e prima che passino gli otto secondi:
+
+```
+uv run ela task cancel <id>
+```
+
+Un «ferma» dato subito dopo l'Invio arriva **prima che lo step cominci**, e `run` risponde così:
+
+```
+outcome        cancelled
+reason         —
+state          CANCELLED
+steps handled  —
+```
+
+Nessuno step trattato, e il `reason` vuoto è quello di M13.1c: il caso di M6.3c **non si vede**.
+Rifallo in un task nuovo, aspettando i tre secondi.
+
+**Che cosa si deve vedere**, con i tre secondi: il «ferma» risponde; **il browser no** — la visita finisce —, e nel
+terminale A `run` torna con il rifiuto dell'API — un `409`, che la riga di comando chiama `conflict` — ed
+esce con `1`:
+
+```
+ela: conflict: task <id>: complete_step needs an EXECUTING task, not CANCELLED
+```
+
+Poi:
+
+```
+uv run ela task show <id>
+```
+
+il task `CANCELLED` e lo step **ancora `RUNNING`**; e `uv run ela task results <id>` ha un risultato
+`SUCCEEDED`. **Non è il comportamento giusto**: è il difetto di M6.3c, scritto com'è — e con
+`browser.act` vorrebbe dire un modulo inviato dopo il «ferma». M13.4 non lo ripara; M6.3c, la milestone
+dopo, sì, e porta anche la fermata del browser prima del primo gesto.
+
+**I nomi dell'ambiente del driver** — i nomi soltanto, mai i valori — hanno **un giro loro, con un
+task loro**: in otto secondi non stanno insieme un «ferma» e un `ps`. In un task nuovo con
+`browser-read-slow.json`, `run` nel terminale A, e durante gli otto secondi, dal terminale B:
+
+```
+ps eww -o command= -p "$(pgrep -f 'driver/node.*run-driver')" | tr ' ' '\n' | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' | cut -d= -f1 | sort
+```
+
+**Che cosa si deve vedere**: le variabili della tua shell — `SSH_AUTH_SOCK` compresa, se la tua shell
+l'ha: è dichiarato in ADR 0052 §14, e il browser non la riceve —, quelle che `uv` aggiunge e quelle di
+Playwright (`PW_…`); **nessuna `ELA_`**, perché ELA legge il `.env` e non lo esporta, e **nessuna
+`NODE_`**, perché il Core le toglie dal proprio ambiente quando parte. Se ne compare una, è un difetto
+da riportare prima di andare avanti.
+
+Se il comando risponde `ps: Invalid process id:`, seguito da qualche carattere senza senso, **nessun
+driver stava girando**: gli otto secondi erano passati, o `run` non era ancora partito. Non c'è niente
+da leggere; rifai il giro.
+
+### 7. ELA si ferma con un browser aperto
+
+Di nuovo `browser-read-slow.json` in un task nuovo, `run` nel terminale A, e durante gli otto secondi
+**Ctrl-C nel terminale di `ela serve`**. Poi, dal terminale B:
+
+```
+pgrep -fl chrome-headless-shell
+```
+
+**Che cosa si deve vedere**: niente — nessun browser rimasto. Nel terminale A la corsa è tornata,
+perché ELA, fermandosi, finisce le richieste che ha in corso:
+
+```
+outcome        failed
+reason         browser.stopped: ELA stopped while the page of httpbin.org was open
+state          FAILED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000004
+```
+
+`browser.stopped`, e non `browser.timeout` né `browser.failed`: il Ctrl-C arriva anche al driver di
+Playwright, e ELA lo lancia in modo che non chiuda il browser da sé (la misura M5-bis della SPEC).
+
+### 8. Lo shell che manca: il campanello che non suona
+
+Ferma ELA, e riaccendila con i browser in una cartella vuota:
+
+```
+PLAYWRIGHT_BROWSERS_PATH=/tmp/nessun-browser uv run ela serve
+```
+
+In un task nuovo, `browser-act.json`, e `run`:
+
+**Che cosa si deve vedere**: `failed` con `browser.not_installed`, e una frase che dice di lanciare
+`uv run playwright install --only-shell chromium`; `uv run ela approvals` **non** ha una domanda nuova,
+e il telefono **non** suona. Poi riaccendi ELA com'era.
+
+### 9. Il PC sul branch: la ruota che niente lancia
+
+Il browser non va sul PC, ma **la ruota di Playwright sì** — con un `node.exe` dentro — a ogni
+`uv sync`, e il processo del nodo importa l'adapter del browser senza costruirlo. Che lo Smart App
+Control lasci stare il nodo è un fatto del PC, e si prova qui, **prima del merge**. Il `.env` del PC
+**resta com'è**: il nodo non legge né chiede `ELA_BROWSER_SITES`.
+
+Sul PC:
+
+```powershell
+cd $HOME\ELA
+git fetch
+git checkout m13.4-browser
+uv sync --locked
+Test-Path .venv\Lib\site-packages\playwright\driver\node.exe
+uv run python -m ela.cli node run
+```
+
+**Che cosa si deve vedere**: `True` — la ruota è arrivata —, e il nodo che parte come sempre, senza
+nessun «Un criterio di controllo dell'applicazione ha bloccato il file». Sul Mac:
+
+```
+uv run ela device list
+```
+
+**Che cosa si deve vedere**: la riga del PC disponibile, come in §12. E sul PC, da un'altra finestra
+di PowerShell, nessun `node` in esecuzione:
+
+```powershell
+Get-Process node -ErrorAction SilentlyContinue
+```
+
+Poi il PC torna a `main` quando il branch è mergiato.
+
+Le uscite di tutti i passi, integrali, in un file: `~/Downloads/m13.4-prova.txt`, e quelle del PC in
+`~/Downloads/m13.4-prova-pc.txt`.
 
 ## Dove guardare dopo
 

@@ -30,6 +30,7 @@ ADDING_ADRS = (
     (ADR_DIR / "0036-listening.md", ADDING),
     (ADR_DIR / "0045-filesystem-and-high.md", ADDING),
     (ADR_DIR / "0047-terminal.md", ADDING),
+    (ADR_DIR / "0052-browser.md", ADDING),
 )
 """ADRs that add a capability the catalogue did not have (ADR 0029 §6: ``perception.capture_
 screen``), under a label of their own. An addition must be new, the way an extension must not be:

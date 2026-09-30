@@ -1,0 +1,30 @@
+{
+  "_nota": [
+    "La prova a mano di M13.4 per un sito NON dichiarato: example.org non sta in ELA_BROWSER_SITES,",
+    "e il Guardian nega con Rule.SCOPE prima di ogni domanda e prima che un browser parta.",
+    "Nell'audit resta il sito — il bersaglio della decisione — e mai il percorso.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "leggere un sito che non ho dichiarato",
+  "steps": [
+    {
+      "id": "b4c2d7e1-5a3f-4b69-8d20-000000000002",
+      "goal": "leggere example.org, che non è fra i siti",
+      "required_capabilities": [
+        "browser.read"
+      ],
+      "arguments": {
+        "site": "example.org",
+        "path": "/",
+        "selector": "h1",
+        "purpose": "la prova a mano del browser"
+      },
+      "risk": "LOW",
+      "expected_result": "negato: example.org non è un sito dichiarato",
+      "success_conditions": [
+        "browser.text_matches"
+      ],
+      "requires_authorization": false
+    }
+  ]
+}

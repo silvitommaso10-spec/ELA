@@ -58,6 +58,7 @@ from ela.permissions import (
     DEFAULT_NOTES_SCOPE,
     MAX_AUTHORIZATION_TTL,
     MAX_DECISION_TTL,
+    SITE_PATTERN,
     is_valid_scope_entry,
 )
 from ela.providers.anthropic import AnthropicSettings
@@ -81,6 +82,7 @@ __all__ = [
     "DEFAULT_ORPHAN_AFTER_SECONDS",
     "MIN_TOKEN_LENGTH",
     "ApiSettings",
+    "BrowserSettings",
     "CoreSettings",
     "Settings",
     "TAILNET_RANGES",
@@ -575,6 +577,55 @@ class TerminalSettings(BaseSettings):
         return self.terminal_output_max_bytes
 
 
+SITES_EXAMPLE: Final = '["example.com"]'
+
+
+class BrowserSettings(BaseSettings):
+    """Which sites the browser of ELA may open (M13.4 form E, ADR 0052).
+
+    **``ELA_BROWSER_SITES`` has no default, and ``[]`` is an answer** — the form of
+    ``ELA_TERMINAL_PROGRAMS`` (M13.2 dec. 16): a boundary ELA chose for the user is a boundary
+    nobody decided. One line of JSON, each entry **a host name and nothing else**, in the grammar
+    the catalogue's schema and the tool read (``SITE_PATTERN``): no ``https://``, no port, no path,
+    no capital; ``www.example.com`` is not ``example.com``, and each is declared on its own. An
+    entry outside the grammar stops the start-up with its reason.
+
+    **The browser's time is not here**: thirty seconds are a constant of the tool, shown by the
+    question (decision 8 of the review of M13.4).
+    """
+
+    model_config = SettingsConfigDict(env_prefix="ELA_", env_file=".env", extra="ignore")
+
+    browser_sites: list[str] | None = None
+    """``ELA_BROWSER_SITES``: the scope of ``browser.read`` and ``browser.act``, one line of
+    JSON."""
+
+    @model_validator(mode="after")
+    def _declared_and_sites(self) -> BrowserSettings:
+        if self.browser_sites is None:
+            raise ValueError(
+                "ELA cannot start without the sites its browser may open: ELA_BROWSER_SITES is "
+                "missing. Write it in .env as one line of JSON, each site a host name without "
+                "https://, for example:\n"
+                f"    ELA_BROWSER_SITES={SITES_EXAMPLE}\n"
+                "or, for no site at all — an answer, not an error:\n"
+                "    ELA_BROWSER_SITES=[]"
+            )
+        for entry in self.browser_sites:
+            if re.fullmatch(SITE_PATTERN, entry) is None:
+                raise ValueError(
+                    f"ELA_BROWSER_SITES: {entry!r} is not a host name. Write the name alone, in "
+                    "lower case, such as 'example.com': no https://, no port, no path, and a name "
+                    "that is not in ASCII in its punycode form (xn--…)"
+                )
+        return self
+
+    @property
+    def sites(self) -> tuple[str, ...]:
+        assert self.browser_sites is not None  # noqa: S101 — the validator refuses the start-up
+        return tuple(self.browser_sites)
+
+
 def _not_a_program(entry: str) -> str | None:
     """Why ``entry`` cannot be a program ELA launches, or ``None``: the three refusals, no more."""
     if not is_valid_scope_entry(entry) or "\0" in entry:
@@ -737,6 +788,8 @@ class Settings(BaseModel):
     filesystem: FilesystemSettings
     terminal: TerminalSettings
     """What ``terminal.run`` may launch and for how long (M13.2): required, and ``[]`` admitted."""
+    browser: BrowserSettings
+    """Which sites the browser may open (M13.4): required, and ``[]`` admitted."""
     node: NodeSettings
     """What a node on this machine reads (M12.3). Held here so that ``.env.example`` and
     ``VARIABLES`` document it with everything else — the Core itself reads none of it."""
@@ -807,6 +860,7 @@ class Settings(BaseModel):
             "core": CoreSettings,
             "filesystem": FilesystemSettings,
             "terminal": TerminalSettings,
+            "browser": BrowserSettings,
             "perception": PerceptionSettings,
             "captures": CaptureSettings,
             "voice": VoiceSettings,

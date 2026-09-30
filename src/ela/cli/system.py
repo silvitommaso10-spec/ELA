@@ -156,6 +156,9 @@ QUESTION_FIELDS: Final[frozenset[str]] = frozenset(
         "expect_exit",
         "machine",
         "unseen",
+        "address",
+        "gestures",
+        "expect",
     }
 )
 """Every field of the question this surface shows, declared here so it can be checked.
@@ -217,6 +220,7 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
     for a command (:data:`COMMAND_ROWS`).
     """
     arguments = one.get("arguments")
+    gestures = one.get("gestures")
     timeout = one.get("timeout_seconds")
     rows = [
         ("approval", one["id"]),
@@ -237,6 +241,9 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         ("folder", _seen(one.get("folder"))),
         ("timeout", None if timeout is None else f"{timeout} s"),
         ("expects exit", one.get("expect_exit")),
+        ("address", _seen(one.get("address"))),
+        ("gestures", None if gestures is None else listed(gestures)),
+        ("expects", _seen(one.get("expect"))),
         ("does", one.get("does") or None),
         ("disk", one.get("unseen") or None),
         ("asks", _seen(one["prompt"])),
@@ -244,7 +251,7 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
     return [
         (name, value)
         for name, value in rows
-        if value is not None or name not in COMMAND_ROWS | NODE_ROWS
+        if value is not None or name not in COMMAND_ROWS | NODE_ROWS | PAGE_ROWS
     ]
 
 
@@ -258,6 +265,10 @@ read that are not there. Every other row keeps its dash: its absence is somethin
 NODE_ROWS: Final[frozenset[str]] = frozenset({"machine", "disk"})
 """The rows only a question about a machine ELA has not looked at has (M13.3, ADR 0048): absent,
 not dashed, for every other — the question about this machine is the one it always was."""
+
+PAGE_ROWS: Final[frozenset[str]] = frozenset({"address", "gestures", "expects"})
+"""The rows only a question about a page has (M13.4, ADR 0052): absent, not dashed, for every other
+— the form of :data:`COMMAND_ROWS`."""
 
 TARGET: Final = "target"
 """The row of a target whose question does not say what its tool calls it (M13.2 dec. 12)."""

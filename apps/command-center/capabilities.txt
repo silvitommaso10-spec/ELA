@@ -24,3 +24,5 @@ perception.listen
 fs.read
 fs.write
 terminal.run
+browser.read
+browser.act

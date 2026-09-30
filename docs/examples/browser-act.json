@@ -1,0 +1,45 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.4 per un'azione con un EFFETTO FUORI DALLA MACCHINA:",
+    "ELA compila il modulo di prova di httpbin.org e lo invia. `browser.act` è HIGH: chiede OGNI",
+    "VOLTA, e nessuna policy potrà coprirlo in anticipo (§59 non raggiunge questo livello).",
+    "La domanda nomina il sito, l'indirizzo per intero, i gesti — il campo e il valore, il bottone —,",
+    "il testo atteso, il tempo, e dice che il browser è vuoto: il sito vede un visitatore, non te.",
+    "httpbin.org rimanda indietro ciò che riceve e non tiene niente; è comunque un invio vero.",
+    "Prima del primo gesto ELA controlla che ogni elemento ci sia, una volta sola, e che nessun",
+    "campo sia una password: se no, non riempie niente. Dopo il click, il verifier guarda la pagina",
+    "e aspetta che compaia il testo atteso: un click inviato non è un click riuscito (§20).",
+    "Il valore `ELA prova 7431` è un MARCATORE: sta nella domanda e nel risultato, e non deve",
+    "comparire nell'audit.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "compilare e inviare un modulo",
+  "steps": [
+    {
+      "id": "b4c2d7e1-5a3f-4b69-8d20-000000000005",
+      "goal": "compilare il nome nel modulo di prova e inviarlo",
+      "required_capabilities": [
+        "browser.act"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/forms/post",
+        "fill": [
+          [
+            "input[name=custname]",
+            "ELA prova 7431"
+          ]
+        ],
+        "click": "form button",
+        "expect_text": "ELA prova 7431",
+        "purpose": "la prova a mano del browser"
+      },
+      "risk": "HIGH",
+      "expected_result": "la pagina dopo l'invio mostra il nome scritto",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

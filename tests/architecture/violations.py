@@ -863,6 +863,15 @@ VIOLATIONS: tuple[Case, ...] = (
         "ctypes",
     ),
     Case(
+        # M13.4 (ADR 0052): the browser library starts a driver and a browser by itself, and an
+        # adapter of it written outside the machine package would be a second door.
+        "machine-browser-in-a-tool",
+        "machine-access-in-one-place",
+        "tools/web.py",
+        "from playwright.async_api import async_playwright\n",
+        "playwright.async_api.async_playwright",
+    ),
+    Case(
         "machine-subprocess-in-a-tool",
         "machine-access-in-one-place",
         "tools/run.py",

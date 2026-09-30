@@ -25,6 +25,7 @@ from tests.docs.test_adr_listening import ports_before
 from tests.docs.test_adr_nodes import documented_rules
 from tests.docs.test_adr_placement import _rules_up_to
 from tests.executive import test_assignment_recovery as recovery
+from tests.tools.browsers import SECONDS, a_browser
 from tests.tools.terminals import no_programs
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
@@ -95,6 +96,7 @@ def test_the_conseguenze_count_the_rules_and_the_capabilities_of_today() -> None
                 ADR_PATH.with_name("0043-companion.md"),
                 ADR_PATH.with_name("0047-terminal.md"),
                 ADR_PATH.with_name("0048-travelling-action.md"),
+                ADR_PATH.with_name("0052-browser.md"),
             )
         )
         == 25
@@ -126,6 +128,8 @@ def test_the_verifier_table_says_what_each_verifier_declared_when_it_was_written
         captures=captures,
         fs_root=tmp_path / "files",
         programs=no_programs(),
+        browser=a_browser(),
+        browser_seconds=SECONDS,
     )
     documented = {
         match.group(1): match.group(2) == "True"

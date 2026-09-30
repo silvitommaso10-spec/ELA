@@ -98,7 +98,9 @@ PLACEMENT_DEVICE_FIELD = "device"
 #: the first thing in ELA that reads the *machine* rather than the database — one door is easier
 #: to guard than a habit, and a second one would have no reason to be found.
 MACHINE_ADAPTER_DIR = Path("infrastructure") / "machine"
-MACHINE_LIBRARIES = frozenset({"ctypes"})
+MACHINE_LIBRARIES = frozenset({"ctypes", "playwright"})
+#: ``playwright`` since M13.4 (ADR 0052): a library that starts processes by itself — its Node
+#: driver, and the browser — so an ``import`` of it is a way out as much as ``subprocess`` is.
 #: Ways to start another process. Two spellings, because the rule is about *reaching outside* and
 #: neither spelling is more honest than the other: ``import subprocess`` shows up as an import,
 #: while ``asyncio.create_subprocess_exec(...)`` — the one this milestone actually uses — shows up

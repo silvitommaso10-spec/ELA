@@ -1,0 +1,31 @@
+{
+  "_nota": [
+    "La prova a mano di M13.4 per il «ferma» a metà corsa e per la fermata di ELA: httpbin.org",
+    "risponde a /delay/8 dopo otto secondi, e in quegli otto secondi lo step del browser gira.",
+    "Un `ela task cancel` dato adesso da un secondo terminale NON ferma il browser: la visita",
+    "finisce, `run` risponde 409, e lo step resta RUNNING in un task CANCELLED. È il difetto di",
+    "M6.3c, scritto com'è; M13.4 non lo ripara. Una lettura: nessun modulo parte, è solo una visita.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "una pagina lenta",
+  "steps": [
+    {
+      "id": "b4c2d7e1-5a3f-4b69-8d20-000000000004",
+      "goal": "aprire una pagina che risponde dopo otto secondi",
+      "required_capabilities": [
+        "browser.read"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/delay/8",
+        "purpose": "la prova a mano del browser"
+      },
+      "risk": "LOW",
+      "expected_result": "il testo della pagina è nel risultato dello step",
+      "success_conditions": [
+        "browser.text_matches"
+      ],
+      "requires_authorization": false
+    }
+  ]
+}

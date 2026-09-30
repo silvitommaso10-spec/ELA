@@ -434,6 +434,15 @@ class Asked(BaseModel):
     """What ELA did not do, in the executor's sentence (M13.3): it did not look at that disk, and
     the node refuses before acting if the disk says otherwise. Rendered as it stands, like
     :attr:`does`; empty for a question about this machine."""
+    address: str = ""
+    """The address a browser call opens, in full (M13.4, ADR 0052): the origin of the site and the
+    path, as the tool composed them. Empty when the question is not about a page."""
+    gestures: tuple[str, ...] | None = None
+    """What an action does on the page, one line per gesture in the tool's words — each field with
+    its value, then the click. ``None`` when the question is not about a page; empty for a read."""
+    expect: str = ""
+    """The text an action waits for on the page after the click (M13.4): what the verifier looks
+    for. Empty for a read, and when the question is not about a page."""
 
 
 class ApprovalOut(BaseModel):
@@ -472,6 +481,9 @@ class ApprovalOut(BaseModel):
     expect_exit: int | None
     machine: str
     unseen: str
+    address: str
+    gestures: tuple[str, ...] | None
+    expect: str
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:

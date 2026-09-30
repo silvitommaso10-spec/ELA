@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import os
 import runpy
 import signal
 import socket
@@ -98,6 +99,44 @@ def test_serve_binds_what_the_settings_say(
     (address,) = uvicorn.app.state.addresses
     assert address.startswith("127.0.0.1:")
     assert listener.fileno() == -1  # closed when the server stopped
+
+
+def test_the_start_names_the_node_variables_it_removed_and_never_their_values(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Decision 4 of the review of 2026-09-30: the Core removes every ``NODE_`` variable from its
+    environment before the browser's driver can inherit it, and the start says which — a name is
+    what somebody needs to find the line in their shell; a value may be a path or a secret."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake_server(monkeypatch)
+    monkeypatch.setenv("NODE_TLS_REJECT_UNAUTHORIZED", "0")
+    monkeypatch.setenv("NODE_EXTRA_CA_CERTS", "/segreto/ca-7431.pem")
+
+    server.serve(settings)
+
+    error = capsys.readouterr().err
+    assert "NODE_EXTRA_CA_CERTS" in error and "NODE_TLS_REJECT_UNAUTHORIZED" in error
+    assert "7431" not in error and "=" not in error
+    assert "ADR 0052" in error
+
+
+def test_a_start_with_no_node_variable_says_nothing_about_them(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake_server(monkeypatch)
+    for name in [name for name in os.environ if name.startswith("NODE_")]:
+        monkeypatch.delenv(name)
+
+    server.serve(settings)
+
+    assert "NODE_" not in capsys.readouterr().err
 
 
 async def test_a_stop_wakes_the_node_that_waits(app: Any, client: AsyncClient, ela: Ela) -> None:

@@ -42,6 +42,7 @@ REQUIRED_PORTS = frozenset(
         "Bell",
         "CommandLauncher",
         "LocalBeat",
+        "Browser",
     }
 )
 """The eleven ports of M1.3, the two of M5.1 (ADR 0013: the audited Guardian, the tools), the
@@ -56,7 +57,8 @@ and ``EnrollmentStore`` from M12.1 (ADR 0037 §8: the one-shot codes that enroll
 ``AssignmentStore`` from M12.2 (ADR 0038: the work handed to a node that is not this process), and
 ``CommandLauncher`` from M13.2 (ADR 0047: how the terminal starts a program in a group of its
 own), and ``LocalBeat`` from M13.3 (ADR 0048 §2: the heartbeat of ``local`` the runner asks for
-before every placement), by name."""
+before every placement), and ``Browser`` from M13.4 (ADR 0052 §11: a browser of ELA's own, empty for
+every page), by name."""
 
 
 def is_protocol(obj: object) -> bool:
