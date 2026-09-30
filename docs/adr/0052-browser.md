@@ -144,7 +144,11 @@ rifiutano prima della domanda. **Lo shell installato si sa dall'eseguibile**, do
 lancerebbe — la cartella del suo registro e la revisione del suo `browsers.json` —, **senza avviare
 niente**; e lo chiede solo la domanda: nella corsa `browser.not_installed` viene dal lancio che fa il
 lavoro (decisione 2 della review del 2026-09-30 — prima lo chiedeva anche la corsa, e costava un
-browser in più a ogni step). Un test del browser vero si fa dire da Playwright dove lo lancia. Aprire la pagina prima del sì sarebbe una visita che l'audit non
+browser in più a ogni step). Un test del browser vero si fa dire da Playwright dove lo lancia. **Su un
+sistema dove ELA non sa dove guardare** — né Darwin né Linux, il sistema che la composizione nomina —
+la domanda non nasce, con un codice suo, **`browser.unsupported_system`**, e una frase che dice che ELA
+non sa dove sarebbe lo shell: «non ho potuto guardare» detto come «non c'è» manderebbe a lanciare
+un'installazione che non cambia niente (decisione 1 della review dei numeri, 2026-09-30). Aprire la pagina prima del sì sarebbe una visita che l'audit non
 registra. **Si perde**: una domanda può nascere già condannata, e il sì è speso — **mai un effetto
 diverso da quello approvato**.
 

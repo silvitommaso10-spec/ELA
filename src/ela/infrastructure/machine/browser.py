@@ -40,7 +40,6 @@ import asyncio
 import contextlib
 import json
 import os
-import sys
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -59,6 +58,7 @@ from ela.ports import (
     BrowserFailed,
     BrowserNotInstalled,
     BrowserStopped,
+    BrowserUnsupported,
     Field,
     Glanced,
     Opened,
@@ -76,15 +76,16 @@ SHELL: Final = "chromium-headless-shell"
 """The name Playwright's registry gives the Chrome Headless Shell, in its ``browsers.json``."""
 
 
-def shell_folder(environment: Mapping[str, str]) -> Path | None:
+def shell_folder(environment: Mapping[str, str], system: str) -> Path | None:
     """The folder Playwright installs the shell of the lock's version into — found as its registry
     finds it, never by launching anything (decision 2 of the review of 2026-09-30).
 
     ``PLAYWRIGHT_BROWSERS_PATH`` first — ``0`` for the folder inside the package, anything else a
-    folder of its own —, then the cache folder of the system: the two systems the Core runs on, and
-    ``None`` on any other, where the answer is «not installed». The revision is the one of the
-    ``browsers.json`` Playwright ships. The day Playwright moves the shell, the test of the real
-    browser that asks Playwright where it launches from fails.
+    folder of its own —, then the cache folder of ``system``, named as ``platform.system()`` names
+    it: the two systems the Core runs on, and ``None`` on any other — where ELA does not know where
+    to look, which is not «not installed» (review of the summary, 2026-09-30, decision 1). The
+    revision is the one of the ``browsers.json`` Playwright ships. The day Playwright moves the
+    shell, the test of the real browser that asks Playwright where it launches from fails.
     """
     package = Path(playwright.__file__).parent / "driver" / "package"
     declared = environment.get("PLAYWRIGHT_BROWSERS_PATH")
@@ -92,9 +93,9 @@ def shell_folder(environment: Mapping[str, str]) -> Path | None:
         registry = package / ".local-browsers"
     elif declared:
         registry = Path(declared)
-    elif sys.platform == "darwin":
+    elif system == "Darwin":
         registry = Path.home() / "Library" / "Caches" / "ms-playwright"
-    elif sys.platform == "linux":
+    elif system == "Linux":
         registry = (
             Path(environment.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "ms-playwright"
         )
@@ -182,8 +183,10 @@ class PlaywrightBrowser:
         """Whether the shell's executable is where Playwright would launch it from: a look at a
         file, and nothing started — the launch that does the work says the rest."""
         self._refuse_if_stopping()
-        folder = shell_folder(os.environ)
-        return folder is not None and any(
+        folder = shell_folder(os.environ, self._system)
+        if folder is None:
+            raise BrowserUnsupported(self._system)
+        return any(
             found.is_file()
             for found in folder.glob("chrome-headless-shell-*/chrome-headless-shell")
         )

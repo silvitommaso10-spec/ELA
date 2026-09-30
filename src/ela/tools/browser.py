@@ -51,6 +51,7 @@ from ela.ports import (
     BrowserFailed,
     BrowserNotInstalled,
     BrowserStopped,
+    BrowserUnsupported,
     Clock,
     IdGenerator,
     Opened,
@@ -299,6 +300,13 @@ class _BrowserTool(Tool):
             )
         except BrowserStopped:
             return Outcome({}, STOPPED, "ELA was stopping: no browser was started")
+        except BrowserUnsupported as system:
+            return Outcome(
+                {},
+                UNSUPPORTED_SYSTEM,
+                f"ELA does not know where the browser would be on this system ({system}), so it "
+                "cannot say whether it is there: no question is asked",
+            )
         except BrowserFailed as failed:
             return Outcome(
                 {}, FAILED, f"whether the browser is installed could not be read: {failed}"
