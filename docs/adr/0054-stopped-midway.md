@@ -35,6 +35,10 @@ note di rilascio. `macos-latest` e `windows-latest` restano come sono: non sono 
 0053 §1). Ubuntu 26 resta di ADR 0053 §3: si passa quando Playwright lo supporta, misurato, in un commit
 che dice perché.
 
+**La prova**: la CI di `92e4d5b` è verde sui tre job (run `36737326073`, 2026-09-30), e le annotazioni dei
+job non hanno più gli avvisi di Node.js 20 né quello su `ubuntu-latest` che la CI di `main` a `a7e6ba0` (run
+`36732243902`) stampava.
+
 **La difesa girata**: `tests/docs/test_adr_ci_runner.py` affermava il debito com'era; ora afferma che il
 runner di Linux è una versione scritta di Ubuntu e che nessuna delle azioni degli avvisi è rimasta. Il
 suo caso negativo: un file che rimette l'etichetta che si muove, o una delle azioni vecchie, deve di
