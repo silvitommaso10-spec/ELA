@@ -81,6 +81,7 @@ __all__ = [
     "TEXT_MAX_BYTES",
     "TIMEOUT",
     "UNREACHABLE",
+    "UNSUPPORTED_SYSTEM",
     "BrowserActTool",
     "BrowserReadTool",
     "Browsing",
@@ -108,6 +109,9 @@ decision — the terminal's ceiling per stream (ADR 0047 §8) —, not a measure
 NOT_INSTALLED: Final = "browser.not_installed"
 """The browser the lock names is not on this machine: refused before the question, from its
 executable; and in the run, from the launch that does the work."""
+UNSUPPORTED_SYSTEM: Final = "browser.unsupported_system"
+"""ELA does not know where the browser would be on this system: refused before the question, like
+:data:`NOT_INSTALLED`, and not called that — installing would not change the answer."""
 NOT_INSTALLED_MESSAGE: Final = (
     "the browser ELA uses is not installed on this machine: run "
     "`uv run playwright install --only-shell chromium`"
@@ -135,6 +139,7 @@ FAILED: Final = "browser.failed"
 BROWSER_CODES: Final[frozenset[str]] = frozenset(
     {
         NOT_INSTALLED,
+        UNSUPPORTED_SYSTEM,
         UNREACHABLE,
         HTTP_STATUS,
         LEFT_SITE,

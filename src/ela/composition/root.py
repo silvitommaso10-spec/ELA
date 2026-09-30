@@ -582,6 +582,7 @@ async def build(
                     "LANG": LANGUAGE,
                 },
                 kept=_kept_for(BROWSER_TIMEOUT_SECONDS),
+                system=platform.system(),
             )
         browsing = Browsing(sites=settings.browser.sites, origin=https_origin)
         tools = production_tools(

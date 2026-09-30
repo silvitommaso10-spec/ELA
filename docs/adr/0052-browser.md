@@ -172,8 +172,8 @@ Tool aggiunti:
 
 | Capability | Tool | Nome | Idempotente | Codici d'errore | Numeri nell'audit |
 |---|---|---|---|---|---|
-| `browser.read` | `BrowserReadTool` | `browser-read` | sì | `arguments.invalid`, `browser.not_installed`, `browser.unreachable`, `browser.http_status`, `browser.left_site`, `browser.element_missing`, `browser.element_ambiguous`, `browser.timeout`, `browser.stopped`, `browser.failed` | `status`, `shown`, `total` |
-| `browser.act` | `BrowserActTool` | `browser-act` | no | `arguments.invalid`, `browser.not_installed`, `browser.unreachable`, `browser.http_status`, `browser.left_site`, `browser.element_missing`, `browser.element_ambiguous`, `browser.secret_field`, `browser.timeout`, `browser.stopped`, `browser.failed` | `status`, `gestures` |
+| `browser.read` | `BrowserReadTool` | `browser-read` | sì | `arguments.invalid`, `browser.not_installed`, `browser.unsupported_system`, `browser.unreachable`, `browser.http_status`, `browser.left_site`, `browser.element_missing`, `browser.element_ambiguous`, `browser.timeout`, `browser.stopped`, `browser.failed` | `status`, `shown`, `total` |
+| `browser.act` | `BrowserActTool` | `browser-act` | no | `arguments.invalid`, `browser.not_installed`, `browser.unsupported_system`, `browser.unreachable`, `browser.http_status`, `browser.left_site`, `browser.element_missing`, `browser.element_ambiguous`, `browser.secret_field`, `browser.timeout`, `browser.stopped`, `browser.failed` | `status`, `gestures` |
 
 `browser.read` restituisce l'indirizzo finale, lo stato, il titolo e **l'inizio** del testo, fino a
 64 KiB su un confine di carattere, con `shown` e `total`. `browser.act` restituisce lo stato della

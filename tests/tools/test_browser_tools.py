@@ -27,6 +27,7 @@ from ela.ports import (
     BrowserFailed,
     BrowserNotInstalled,
     BrowserStopped,
+    BrowserUnsupported,
     Field,
     Opened,
     PageGone,
@@ -50,6 +51,7 @@ from ela.tools.browser import (
     TEXT_MAX_BYTES,
     TIMEOUT,
     UNREACHABLE,
+    UNSUPPORTED_SYSTEM,
     BrowserActTool,
     BrowserReadTool,
     Browsing,
@@ -202,6 +204,22 @@ async def test_a_browser_that_is_not_installed_refuses_before_the_question() -> 
 
     assert prospect.refusal is not None and prospect.refusal.code == NOT_INSTALLED
     assert "playwright install --only-shell chromium" in prospect.refusal.message
+
+
+async def test_a_system_where_elas_cannot_look_is_not_called_not_installed() -> None:
+    """Review of the summary, 2026-09-30, decision 1: «not looked» said as «not there» would send
+    somebody to run an install that changes nothing. Its own code, a sentence that says what ELA
+    does not know, and no question — as for ``browser.not_installed``."""
+    browser = FakeBrowser()
+    browser.raising["installed"] = BrowserUnsupported("Plan 9")
+
+    prospect = await act(browser).prospect(ACT)
+
+    assert prospect.visit is None
+    assert prospect.refusal is not None and prospect.refusal.code == UNSUPPORTED_SYSTEM
+    assert "does not know where" in prospect.refusal.message
+    assert "Plan 9" in prospect.refusal.message
+    assert "install" not in prospect.refusal.message
 
 
 @pytest.mark.parametrize(

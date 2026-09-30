@@ -9,6 +9,7 @@ also checks that every port has at least one implementation.
 from __future__ import annotations
 
 import asyncio
+import platform
 import shutil
 import tempfile
 from collections.abc import Awaitable, Callable, Sequence
@@ -500,7 +501,7 @@ def _screen_capture() -> ScreenCaptureCommand:
 def _browser() -> PlaywrightBrowser:
     """The browser of the Core, built as the composition builds it: nothing starts until a page
     is asked for (M13.4)."""
-    return PlaywrightBrowser(asyncio.Event(), environment={}, kept=_never)
+    return PlaywrightBrowser(asyncio.Event(), environment={}, kept=_never, system=platform.system())
 
 
 async def _never() -> None:

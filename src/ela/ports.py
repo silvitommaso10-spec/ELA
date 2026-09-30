@@ -107,6 +107,7 @@ __all__ = [
     "BrowserFailed",
     "BrowserNotInstalled",
     "BrowserStopped",
+    "BrowserUnsupported",
     "CapabilityRegistryPort",
     "Captured",
     "Clock",
@@ -2268,6 +2269,12 @@ class BrowserNotInstalled(BrowserError):
 class SiteUnreachable(BrowserError):
     """The page did not answer: a name that does not resolve, a refused connection, a certificate
     the browser does not accept. What went wrong is the engine's type name, never its message."""
+
+
+class BrowserUnsupported(BrowserError):
+    """ELA does not know where the browser would be on this system, so it cannot say whether it is
+    there: not «not installed», which a command could fix, but «not looked» (M13.4; review of the
+    summary, 2026-09-30)."""
 
 
 class BrowserStopped(BrowserError):

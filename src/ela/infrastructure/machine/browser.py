@@ -137,8 +137,10 @@ class PlaywrightBrowser:
         *,
         environment: Mapping[str, str],
         kept: Callable[[], Awaitable[None]],
+        system: str,
     ) -> None:
         self._stopping = stopping
+        self._system = system
         self._environment: dict[str, str | float | bool] = dict(environment)
         self._kept = kept
         self._pages: dict[str, _Open] = {}
