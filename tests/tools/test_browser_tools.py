@@ -205,6 +205,33 @@ async def test_a_browser_that_is_not_installed_refuses_before_the_question() -> 
 
 
 @pytest.mark.parametrize(
+    ("capability", "arguments"), [(BROWSER_READ, READ), (BROWSER_ACT, ACT)], ids=["read", "act"]
+)
+async def test_the_run_does_not_ask_whether_the_browser_is_there(
+    capability: str, arguments: JsonMapping
+) -> None:
+    """Decision 2 of the review of 2026-09-30: asking in ``execute`` was a browser more at every
+    step. The question asked before the question; in the run, ``browser.not_installed`` comes from
+    the launch that does the work (``test_what_the_browser_raises_has_a_code_of_its_own``)."""
+
+    class Counting(FakeBrowser):
+        asked = 0
+
+        async def installed(self) -> bool:
+            self.asked += 1
+            return True
+
+    browser = Counting(FakePage(texts={None: "testo"}, shown=True))
+    tool = read(browser) if capability == BROWSER_READ else act(browser)
+
+    result = await tool.execute(decision(capability), arguments)
+
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+    assert browser.asked == 0
+    assert len(browser.opened) == 1
+
+
+@pytest.mark.parametrize(
     ("error", "code"),
     [(BrowserStopped("stop"), STOPPED), (BrowserFailed("Error"), FAILED)],
 )

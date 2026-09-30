@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -33,6 +34,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import async_playwright
 
 from ela.domain import (
     DecisionId,
@@ -600,6 +603,29 @@ async def test_a_missing_browser_is_said_before_any_page(
     assert await browser.installed() is False
     with pytest.raises(BrowserNotInstalled):
         await browser.open("http://127.0.0.1:9/", lambda url: True)
+    assert descendants() == []
+
+
+async def test_whether_the_shell_is_there_is_read_where_playwright_launches_it_starting_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision 2 of the review of 2026-09-30: before the question, «the shell is installed» is
+    known from the executable, without launching the browser. **The place is Playwright's**: with an
+    empty folder of browsers Playwright names it in its own error, and an empty file put there makes
+    the answer «installed» — an empty file cannot be started, so the answer was read, not launched.
+    The day Playwright moves the shell, this test fails instead of ELA saying «not installed»."""
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path))
+    async with async_playwright() as playwright:
+        with pytest.raises(PlaywrightError) as missing:
+            await playwright.chromium.launch(headless=True)
+    (named,) = re.findall(r"Executable doesn't exist at (\S+)", str(missing.value))
+    browser = PlaywrightBrowser(asyncio.Event(), environment={}, kept=Kept())
+    assert await browser.installed() is False
+
+    Path(named).parent.mkdir(parents=True)
+    Path(named).touch()
+
+    assert await browser.installed() is True
     assert descendants() == []
 
 
