@@ -213,6 +213,7 @@ def test_a_phase_that_has_begun_is_never_listed_as_future(generator: ModuleType)
         "Il tetto di spesa",
         "Il design è una fase, non una rifinitura",
         "Il permesso prima dell'azione: l'ordine della Fase 13",
+        "L'ordine della Fase 14, e perché comincia prima che la 13 sia chiusa",
     ],
 )
 def test_every_decision_that_lives_in_no_adr_is_written_here(decision: str) -> None:
