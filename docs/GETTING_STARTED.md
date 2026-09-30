@@ -2794,6 +2794,11 @@ steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000003
 
 ### 4. Un modulo, e la domanda da leggere prima del sì
 
+Due giri, come in §15, passo 6: **uno `LOCAL_ONLY`**, il default, a cui si risponde dal Mac, e **uno
+`TRUSTED`**, a cui si risponde dal telefono.
+
+**Il giro `LOCAL_ONLY`, risposto dal Mac.**
+
 ```
 uv run ela task create "inviare un modulo di prova"
 ```
@@ -2817,12 +2822,21 @@ steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000005
 uv run ela approvals
 ```
 
-**Che cosa si deve vedere**, in `ela approvals`, sul telefono (§13) e nell'Approval Center (§14),
-**tutto**: il sito, `httpbin.org`; l'indirizzo per intero, `https://httpbin.org/forms/post`; i gesti,
-uno per riga — il campo `input[name=custname]` con il valore `ELA prova 7431`, e il click su `form
-button` —; il testo atteso; i 30 secondi; e la frase che dice che il browser è vuoto, che il sito
-vede un visitatore e non te, e che ciò che manda non si riprende. Una superficie che non mostra tutto
-non deve offrire il sì.
+**Che cosa si deve vedere**, in `ela approvals` e nell'Approval Center (§14), **tutto**: il sito,
+`httpbin.org`; l'indirizzo per intero, `https://httpbin.org/forms/post`; i gesti, **come una lista**
+— `["fills input[name=custname] with “ELA prova 7431”", "clicks form button"]`: fra parentesi quadre,
+ogni gesto fra virgolette, come le tre superfici scrivono gli argomenti di un comando (M13.2,
+decisione 12), perché un valore non possa travestirsi da un gesto in più —; il testo atteso; i 30
+secondi; e la frase che dice che il browser è vuoto, che il sito vede un visitatore e non te, e che
+ciò che manda non si riprende. Una superficie che non mostra tutto non deve offrire il sì.
+
+**Sul telefono** (§13) la domanda c'è, ma il sì no: il task è `LOCAL_ONLY`, e la pagina dice
+
+```
+Il contenuto resta sul Mac: rispondi da lì.
+```
+
+**Non è un difetto: è la regola che funziona** (§15, passo 6). Si risponde dal Mac:
 
 ```
 uv run ela task approve <id> --approval <approval-id>
@@ -2851,6 +2865,25 @@ uv run ela audit tail --task <id> -n 30 --json | grep -c "ELA prova 7431"
 0
 ```
 
+**Il giro `TRUSTED`, risposto dal telefono.** In un task nuovo, creato più largo:
+
+```
+uv run ela task create "inviare un modulo dal telefono" --privacy TRUSTED
+```
+
+```
+uv run ela task plan <id> --file docs/examples/browser-act.json
+```
+
+```
+uv run ela task run <id>
+```
+
+**Che cosa si deve vedere**: con l'iPhone aperto sulla pagina del companion (§13), il campanello
+suona, e la pagina mostra **tutti i campi** che mostra `ela approvals` — il sito, l'indirizzo, i gesti
+come lista, il testo atteso, il tempo, la frase — **e offre il sì**. Rispondi dal telefono: il sì fa
+ripartire il task nella stessa richiesta, fino a `COMPLETED`, e `uv run ela task show <id>` lo dice.
+
 ### 5. Un bottone che non c'è
 
 In un task nuovo, `browser-act-missing.json`: il sì, poi di nuovo `run`.
@@ -2875,13 +2908,26 @@ secondi:
 uv run ela task run <id>
 ```
 
-E **subito**, nel terminale B, prima che passino gli otto secondi:
+E nel terminale B, **circa tre secondi dopo l'Invio di `run`** — non subito: lo step deve essere
+cominciato —, e prima che passino gli otto secondi:
 
 ```
 uv run ela task cancel <id>
 ```
 
-**Che cosa si deve vedere**: il «ferma» risponde; **il browser no** — la visita finisce —, e nel
+Un «ferma» dato subito dopo l'Invio arriva **prima che lo step cominci**, e `run` risponde così:
+
+```
+outcome        cancelled
+reason         —
+state          CANCELLED
+steps handled  —
+```
+
+Nessuno step trattato, e il `reason` vuoto è quello di M13.1c: il caso di M6.3c **non si vede**.
+Rifallo in un task nuovo, aspettando i tre secondi.
+
+**Che cosa si deve vedere**, con i tre secondi: il «ferma» risponde; **il browser no** — la visita finisce —, e nel
 terminale A `run` torna con il rifiuto dell'API — un `409`, che la riga di comando chiama `conflict` — ed
 esce con `1`:
 
@@ -2900,16 +2946,23 @@ il task `CANCELLED` e lo step **ancora `RUNNING`**; e `uv run ela task results <
 `browser.act` vorrebbe dire un modulo inviato dopo il «ferma». M13.4 non lo ripara; M6.3c, la milestone
 dopo, sì, e porta anche la fermata del browser prima del primo gesto.
 
-**E, durante gli otto secondi, i nomi dell'ambiente del driver** — i nomi soltanto, mai i valori — da un
-terzo terminale:
+**I nomi dell'ambiente del driver** — i nomi soltanto, mai i valori — hanno **un giro loro, con un
+task loro**: in otto secondi non stanno insieme un «ferma» e un `ps`. In un task nuovo con
+`browser-read-slow.json`, `run` nel terminale A, e durante gli otto secondi, dal terminale B:
 
 ```
 ps eww -o command= -p "$(pgrep -f 'driver/node.*run-driver')" | tr ' ' '\n' | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' | cut -d= -f1 | sort
 ```
 
-**Che cosa si deve vedere**: le variabili della tua shell, quelle che `uv` aggiunge e quelle di
-Playwright (`PW_…`), e **nessuna `ELA_`**: ELA legge il `.env` e non lo esporta. Se ne compare una,
-è un difetto da riportare prima di andare avanti.
+**Che cosa si deve vedere**: le variabili della tua shell — `SSH_AUTH_SOCK` compresa, se la tua shell
+l'ha: è dichiarato in ADR 0052 §14, e il browser non la riceve —, quelle che `uv` aggiunge e quelle di
+Playwright (`PW_…`); **nessuna `ELA_`**, perché ELA legge il `.env` e non lo esporta, e **nessuna
+`NODE_`**, perché il Core le toglie dal proprio ambiente quando parte. Se ne compare una, è un difetto
+da riportare prima di andare avanti.
+
+Se il comando risponde `ps: Invalid process id:`, seguito da qualche carattere senza senso, **nessun
+driver stava girando**: gli otto secondi erano passati, o `run` non era ancora partito. Non c'è niente
+da leggere; rifai il giro.
 
 ### 7. ELA si ferma con un browser aperto
 

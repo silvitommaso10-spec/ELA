@@ -1,10 +1,10 @@
 # 0052. Il browser: un profilo vuoto per ogni step, il sito della domanda, e un click inviato che il verifier guarda riuscire
 
-- **Stato:** **Proposta**. SPEC di M13.4 decisa dal revisore il 2026-09-29, con le decisioni 1–14
-  (`docs/milestones/M13.4.md`). **I numeri 3 e 4** della registrazione — il tempo che il browser
-  aggiunge a `make check` e alla CI — sono misurati il 2026-09-30, con la procedura corretta, e **sotto
-  la soglia** scritta prima di loro (§16). Resta Proposta finché **la prova a mano** di
-  `docs/GETTING_STARTED.md` §20, il passo sul PC compreso, non è passata.
+- **Stato:** **Accettata il 2026-09-30**, quando la prova a mano di `docs/GETTING_STARTED.md` §20 è
+  passata a `9c44303` — sul Mac, e il passo 9 sul PC (DESKTOP-QQ0GSE2) sullo stesso commit (§18). SPEC
+  di M13.4 decisa dal revisore il 2026-09-29, con le decisioni 1–14 (`docs/milestones/M13.4.md`). **I
+  numeri 3 e 4** della registrazione — il tempo che il browser aggiunge a `make check` e alla CI — sono
+  misurati il 2026-09-30, con la procedura corretta, e **sotto la soglia** scritta prima di loro (§16).
 - **Data:** 2026-09-29
 - **Riferimenti spec:** §10, §18, §19, §20, §27, §28, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.4
@@ -128,8 +128,11 @@ sempre; lo ha trovato lo stesso file di test.
 
 ### 7. La domanda, e «partirebbe»: ADR 0045 §6-bis rivista per un browser
 
-La domanda di `browser.act` nomina il sito, l'indirizzo per intero, i gesti uno per riga — ogni campo
-con il suo valore, poi il click —, il testo atteso, il tempo e **la frase del tool**: il browser è
+La domanda di `browser.act` nomina il sito, l'indirizzo per intero, i gesti ~~uno per riga~~ — ogni campo
+con il suo valore, poi il click — ***come una lista*** (corretto dalla prova a mano del 2026-09-30: le
+tre superfici li scrivono con `listed()`, fra parentesi quadre e ogni gesto fra virgolette, come gli
+argomenti di un comando per M13.2, decisione 12, perché un valore non possa travestirsi da un gesto in
+più), il testo atteso, il tempo e **la frase del tool**: il browser è
 vuoto, il sito vede un visitatore, e ciò che manda ELA non può saperlo prima né riprenderlo dopo. Li
 porta un campo nuovo di `Prospect`, `visit` — un `Visit`, non un `Target`: il suo `exists` sarebbe un
 fatto su un sito che nessuno ha visitato —, e un ramo di `Executor._asked`. `Asked` e `ApprovalOut`
@@ -508,6 +511,48 @@ Un ADR accettato non si riscrive: le righe qui sotto si leggono con questo accan
   che vive in un processo di questa macchina è la macchina (§2).
 - **La registrazione di M13.4**, che citava ADR 0038 §16 per il livello nella capability: la regola è
   di ADR 0026 §7, come ADR 0047 §14 aveva già corretto (annotata nel documento della milestone).
+
+### 18. La prova a mano, passata il 2026-09-30
+
+GETTING_STARTED §20, fatta da Tommaso sul Mac a `9c44303`, e il passo 9 sul PC (DESKTOP-QQ0GSE2) sullo
+stesso commit.
+
+- **Passo 0**: lo shell c'era già (`chromium_headless_shell-1243`, e `ffmpeg-1011`).
+- **Passo 1**: il messaggio di `ela serve` senza `ELA_BROWSER_SITES`, letto da Tommaso, è chiaro; `ela
+  init` esce con `2` e nomina la riga.
+- **Passo 3**: la lettura di `example.com` è `completed`, senza domanda; `example.org` è `denied` per
+  scope; il rimando da `httpbin.org` a `example.org` è `browser.left_site`.
+- **Passo 4**: la domanda è completa nella CLI e in console; il campanello ha suonato; il modulo è
+  partito, il verifier ha visto il testo atteso, e il marcatore nell'audit conta `0`. Il giro
+  `LOCAL_ONLY` si risponde dal Mac, e il telefono mostra «Il contenuto resta sul Mac: rispondi da lì.»;
+  il giro `TRUSTED` mostra sul telefono tutti i campi, offre il sì, e il sì fa ripartire il task fino a
+  `COMPLETED`.
+- **Passo 5**: `browser.element_missing`, gesto 2 di 2, nessun gesto fatto.
+- **Passo 6**: il difetto di M6.3c com'è scritto — `cancel` `CANCELLED`, `run` `409`, lo step
+  `RUNNING`, il risultato `SUCCEEDED` dopo il «ferma». L'ambiente del driver: nessun nome `ELA_` né
+  `NODE_`; `SSH_AUTH_SOCK` presente, come dichiarato (§14).
+- **Passo 7**: `browser.stopped` con Ctrl-C a pagina aperta; nessun `chrome-headless-shell` rimasto.
+- **Passo 8**: `browser.not_installed` prima della domanda, nessuna approvazione, il telefono zitto — e
+  il controllo positivo: il campanello aveva suonato al passo 4.
+- **Passo 9**: sul PC la ruota con `node.exe` è arrivata (`Test-Path` risponde `True`); il nodo parte
+  senza blocchi dello Smart App Control, il Core lo vede disponibile, e nessun processo `node` gira.
+
+**Nessun difetto del codice.** Tre difetti **della guida**, corretti prima di chiudere:
+
+- **Passo 4, la privacy.** Un task senza `--privacy` è `LOCAL_ONLY`, e il telefono non offre il sì: la
+  guida prometteva la domanda completa sul telefono, e la promessa era falsa. Ora il passo ha i due
+  giri, sul modello di §15: `LOCAL_ONLY` risposto dal Mac, con la frase che il telefono mostra, e
+  `TRUSTED` risposto dal telefono.
+- **Passo 4, i gesti.** «Uno per riga» era falso: le tre superfici li scrivono con `listed()` (M13.2,
+  decisione 12), una lista fra parentesi quadre con ogni gesto fra virgolette, perché un valore non
+  possa travestirsi da un gesto in più. Si è corretta la frase, non il codice — e la stessa frase in
+  §7, annotata.
+- **Passo 6, i tempi.** Un `cancel` premuto subito dopo `run` arriva prima che lo step cominci: `run`
+  risponde `cancelled`, `steps handled —` (con il `reason` vuoto di M13.1c), e il caso di M6.3c non si
+  vede. La guida dice di aspettare circa tre secondi dopo l'Invio di `run`; la verifica dei nomi
+  dell'ambiente del driver ha un giro suo, con un task suo, perché in otto secondi non stanno insieme
+  un `cancel` e un `ps`; e se nessun driver gira, `ps` risponde `Invalid process id`, e la guida lo
+  dice.
 
 ## Alternative considerate
 

@@ -115,7 +115,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.1c` | Proposta | In quattro rami di `run` un diniego o un fallimento arriva senza il suo perché |
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
-| 13 — Il permesso prima dell'azione | `M13.4` | Proposta | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
+| 13 — Il permesso prima dell'azione | `M13.4` | Implementata | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
@@ -142,7 +142,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **52** | `docs/adr/NNNN-*.md` |
-| Milestone | **68, di cui 54 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **68, di cui 55 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **29** | i `Protocol` di `src/ela/ports.py` |
@@ -192,7 +192,11 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   riceve un ambiente chiuso e nasce in un gruppo suo, e la domanda nomina ciò che girerà. Con
   **M13.3** (2026-09-26, ADR 0048) l'azione viaggia: `fs.read` e `fs.write` vanno a un nodo che ha
   una radice, il verifier gira dove avviene l'effetto, e la fase ha pagato i tre debiti che le
-  toccavano. Restano aperte **M13.4** (il browser), **M13.5** (il computer control), **M13.6** (il
+  toccavano. Con **M13.4** (2026-09-30, ADR 0052) usa un browser — il Chrome Headless Shell della
+  versione del lock, con un profilo vuoto per ogni step —: `browser.read` legge una pagina dei siti che
+  l'utente dichiara, `ELA_BROWSER_SITES`, e `browser.act` riempie campi e clicca sul sito della
+  domanda, con un sì a ogni uso; il verifier guarda la pagina, e il browser non viaggia. Restano
+  aperte **M13.5** (il computer control), **M13.6** (il
   ripiazzamento, fuori dalla fila), **M13.7** (il terminale su un nodo) e **M13.8** (un file che vive
   su una macchina), più una riparazione, **M13.1c** (un diniego o un fallimento senza il suo perché in
   quattro rami di `run`, registrata il 2026-09-28 dalla SPEC di M6.3b): l'ordine e le condizioni
@@ -645,7 +649,13 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   che aggiunge a `make check` e il tempo che aggiunge alla CI **sui tre runner** della matrice vera
   — `ubuntu-latest`, `macos-latest`, `windows-latest`. Se il conto non regge, la decisione si
   riapre con i numeri in mano, come è stato per il modello della voce (5.3) e per il portachiavi
-  (ADR 0039 §6).
+  (ADR 0039 §6). **Implementata il 2026-09-30, con la prova a mano passata lo stesso giorno** (ADR 0052,
+  Accettata): il Core e nessun nodo, un profilo vuoto per step, `browser.read` `LOW` dentro i siti
+  dichiarati e `browser.act` `HIGH` sul sito della domanda, i campi segreti rifiutati prima del primo
+  gesto, il verifier che guarda la pagina. **Il conto regge**: il numero 3, misurato dentro il giro
+  perché su questo Mac i totali fra giri diversi non risolvono un 10 %, è il 4,7 % e il 3,8 %; il
+  numero 4, i passi d'installazione dello shell, 4–6 s a freddo e 1–4 s con la cache (ADR 0052 §16).
+  Il «ferma» a metà di uno step del browser è il debito datato di ADR 0052 §15, a carico di M6.3c.
 - **M13.5 — il computer control** (§20). **Il muro è dichiarato**, e misurato due volte su questa
   macchina: il grant TCC è legato al **binario** — ADR 0029 §16 per la registrazione dello schermo,
   ADR 0039 §6 per il portachiavi. La condizione d'ingresso **non aspetta una milestone: è una misura
