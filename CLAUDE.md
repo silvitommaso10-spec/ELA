@@ -82,9 +82,13 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   allo script.
 - **Una soglia di tempo si fissa solo dove la macchina la può risolvere.** Su questo Mac il confronto
   dei totali fra giri non risolve il 10 % (ADR 0052 §16): il metodo è la misura dentro il giro.
-- **Niente di Tommaso nel codice.** Nomi, macchine, percorsi, siti, preferenze e identità stanno nella
-  configurazione, mai scritti in `src/`. Se un censimento trova qualcosa di suo già scritto nel codice,
-  lo elenca nel riepilogo e non lo ripara: la riparazione è una milestone sua.
+- **Niente di Tommaso in ciò che ELA installa e serve: `src/` e `apps/`.** Nomi, macchine, percorsi,
+  siti, preferenze e identità stanno nella configurazione. `scripts/` e `docs/` sono l'officina, e possono
+  nominare le macchine di Tommaso. La lingua e i default del prodotto non sono la sua identità. Il test
+  della regola prova solo ciò che una macchina sa riconoscere, e lo dice nel nome — nessun indirizzo
+  Tailscale (`100.64.0.0/10`) e nessun percorso assoluto dentro la home di un utente, in `src/` e `apps/`
+  —; il resto resta alla review. Se un censimento trova qualcosa di suo già scritto lì, lo elenca nel
+  riepilogo e non lo ripara: la riparazione è una milestone sua.
 
 ## Fine sessione
 Produci un riepilogo con: file toccati, test aggiunti, output di `pytest -q --cov`,

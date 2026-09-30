@@ -156,6 +156,48 @@ def test_a_phase_named_before_it_delivered_is_detected() -> None:
     assert phases_out_of_step({12: "I nodi sulla rete"}, {12}) == set()
 
 
+VOICE = re.compile(r"^- \*\*Fase (\d+) — ", re.MULTILINE)
+
+
+def voices_of_41(text: str) -> set[int]:
+    """The phases §4.1 gives a voice to: its bullets that open with ``**Fase N — ``."""
+    section = text.split("### 4.1 ")[1].split("### 4.2 ")[0]
+    return {int(number) for number in VOICE.findall(section)}
+
+
+def registered_not_begun(states: Iterable[tuple[int, str]], proposed: str) -> set[int]:
+    """The phases that have documents and no milestone out of ``Proposta`` yet."""
+    by_phase: dict[int, set[str]] = {}
+    for phase, state in states:
+        by_phase.setdefault(phase, set()).add(state)
+    return {phase for phase, found in by_phase.items() if found == {proposed}}
+
+
+def phases_without_a_voice(states: Iterable[tuple[int, str]], proposed: str, text: str) -> set[int]:
+    return registered_not_begun(states, proposed) - voices_of_41(text)
+
+
+def test_every_phase_registered_and_not_begun_has_its_voice_in_41(generator: ModuleType) -> None:
+    """«Una fase registrata e non ancora cominciata ha la sua voce qui» (§4.1), read as a fact.
+
+    The Fase 14 was registered on 2026-09-25, with M14.1 and M14.2, and had no voice here until
+    2026-09-30: nothing noticed, because the rule lived only in a sentence. This holds the rule as
+    §4.1 writes it and no more — a phase that has begun and still has milestones in ``Proposta``
+    (the 6 and the 9, on 2026-09-30) is not asked for a voice by it.
+    """
+    states = [(m.phase, m.state) for m in generator.milestones(ROOT)]
+
+    assert phases_without_a_voice(states, generator.PROPOSED, document()) == set()
+
+
+def test_a_registered_phase_without_its_voice_is_detected() -> None:
+    """The negative case: registered and voiceless is reported; begun, or with a voice, is not."""
+    text = "### 4.1 Le fasi\n\n- **Fase 20 — una voce.** Registrata.\n\n### 4.2 Altro\n"
+    states = [(19, "Implementata"), (19, "Proposta"), (20, "Proposta"), (21, "Proposta")]
+
+    assert phases_without_a_voice(states, "Proposta", text) == {21}
+
+
 def test_the_fase_13_has_started_and_41_says_so(generator: ModuleType) -> None:
     """The pin of M12.5, fired and rewritten (M13.1 dec. L, and the shape of ADR 0035 §7).
 
