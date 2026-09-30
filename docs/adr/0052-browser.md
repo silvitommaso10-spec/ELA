@@ -319,6 +319,60 @@ freddo con la cache cancellata e con la cache al push dopo. **La soglia**: `make
 scrivono qui quando ci sono**; sotto la soglia la decisione su Playwright diventa definitiva, sopra la
 milestone si ferma e lo dice.
 
+**Misurati il 2026-09-30. Il numero 3 è sopra la soglia: la milestone si ferma qui** (decisione 10).
+Le uscite intere e le condizioni di ogni giro sono in `.git/m13.4-reference/measure/`
+(`make-check-*.txt` e `make-check-*-conditions.txt`).
+
+**Numero 3**, `make check` su questo Mac — un MacBook Air M5 a dieci core, **senza ventola** —, in un
+worktree fermo al commit misurato. Prima di ogni giro: `pmset -g batt`, la riga `lowpowermode` di
+`pmset -g`, `pgrep -fl 'ela serve'`, lo stato termico di macOS (`ProcessInfo.thermalState`) e un
+campione di `top` di 15 s. Lo stato termico è un'aggiunta: **i giri uno dopo l'altro scaldano il
+Mac, e un Mac caldo rallenta** — il primo giro di una serie è il più veloce —, quindi ogni giro
+contato dal quarto in poi comincia a `nominal`, aspettato come un evento.
+
+| Giro | Commit | Prima del giro | Orologio | Suite | Test | Conta |
+|---|---|---|---|---|---|---|
+| prima-1 | `8acdfaa` | AC, `lowpowermode 0`, nessun `ela serve`; stato termico non letto | 123,83 s | 102,38 s | 7886, 12 skip | no: il 2 e il 3 differiscono da lui di più del 5 % |
+| prima-2 | `8acdfaa` | le stesse; Spotify all'89 % di un core subito prima | 153,74 s | 133,61 s | 7886, 12 skip | **no**: altro lavoro sulla macchina |
+| prima-3 | `8acdfaa` | le stesse; subito dopo il 2 | 134,64 s | 114,57 s | 7886, 12 skip | sì |
+| prima-4 | `8acdfaa` | le stesse; `nominal` | 139,23 s | 118,08 s | 7886, 12 skip | sì |
+| dopo-1 | `7c64fa7` | le stesse; `nominal`, dopo un giro di riscaldamento non contato | 170,68 s | 147,62 s | 8106, 12 skip | sì |
+| dopo-2 | `7c64fa7` | le stesse; `nominal` | 171,55 s | 142,66 s | 8106, 12 skip | sì, con la riserva sotto |
+
+**I due giri «prima» che contano differiscono del 3,4 %**, quindi il confronto si legge: **136,9 s
+prima, 171,1 s dopo, +25,0 %**, e la suite da sola da 116,3 s a 145,1 s. **Sopra il 10 %.**
+
+Ciò che la procedura non ha tenuto, detto:
+
+- **Spotify suonava durante tutti i giri**, fra il 13 e il 33 % di un core nei campioni di `top`:
+  «nessun altro lavoro sulla macchina» non vale alla lettera per nessun giro, e vale allo stesso modo
+  per tutti. È dell'utente, e non l'ho fermato.
+- **L'alimentatore si stacca e si riattacca**: il registro di `pmset -g log` lo mostra cinque volte
+  fra le 01:19 e le 01:39, prima dei giri, e alle 02:19:55 per restare staccato — **negli ultimi 15 s
+  circa di dopo-2**, dopo la fine dei test, durante il rapporto della copertura e `detect-secrets`.
+- **La divisione del delta** — ciò che la dipendenza costa a tutti e ciò che costano i test nuovi —
+  **non è misurata**: la corsa a parte con `--durations` del file del browser vero (32,0 s in serie,
+  19 test) e la suite senza quel file (225,8 s) sono cadute dopo le 02:19:55, **a batteria con Low
+  Power Mode acceso**, e non contano. Da rifare con l'alimentatore.
+
+**Numero 4**, la CI.
+
+- **Il commit rosso** (`b09c814`, run `36647974084`), a freddo: l'installazione dello shell **5 s** su
+  ubuntu e **6 s** su macOS, il salvataggio della cache 3 e 2 s, `uv sync --locked` 1 e 3 s. Il
+  `make check` di quel commit si è fermato a `ruff`, non ai test: `ruff` classifica come di terze
+  parti l'import di un modulo che non esiste ancora, e ordina il blocco in un altro modo (`I001`).
+- **Il primo commit verde** (`7c64fa7`, run `36648998022`), con la cache dei browser cancellata prima:
+  ubuntu **654 s** contro i 628 dell'ultimo run verde di `main` (`36551572834`), **+26 s**; macOS **445
+  s** contro 238, **+207 s**; il job del nodo su Windows 91 s contro 88. L'installazione dello shell 4
+  e 5 s, il salvataggio 3 e 4 s. **Letto alla lettera, il job macOS è sopra la soglia** dei due minuti
+  a freddo. **Ma** i cinque run verdi di `main` più recenti vanno da 238 a 529 s su macOS e da 459 a
+  628 s su ubuntu (`ci-main-recent.txt`): l'ultimo è il più veloce dei cinque su macOS, e un confronto
+  con un run solo non si legge, per la stessa ragione del 5 % del numero 3.
+- **Con la cache**: il run del commit che porta questi numeri.
+
+**Quindi la decisione su Playwright non diventa definitiva**, e questo ADR resta Proposta: la riapre
+il revisore, con questi numeri in mano.
+
 ### 17. Righe riviste
 
 Un ADR accettato non si riscrive: le righe qui sotto si leggono con questo accanto.
