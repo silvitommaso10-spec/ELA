@@ -94,6 +94,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 9 — Le liste che si accorgono di essere false | `M9.3` | Completata | Le esenzioni che si accorgono di essere false |
 | 9 — Le liste che si accorgono di essere false | `M9.4` | Completata | Le finestre, i negativi, e la release v0.1 |
 | 9 — Le liste che si accorgono di essere false | `M9.5` | Proposta | La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento |
+| 9 — Le liste che si accorgono di essere false | `M9.6` | Proposta | Niente di Tommaso nel codice: ciò che ELA installa e serve non porta le macchine e l'account di chi l'ha scritta |
 | 10 — La percezione | `M10.1` | Completata | Perception Core: fondamenta |
 | 10 — La percezione | `M10.2` | Completata | Screen awareness: la prima lettura di contenuto |
 | 10 — La percezione | `M10.3` | Implementata | Comprendere ciò che si vede: il contesto che non costa niente, e il testo che non esce |
@@ -113,6 +114,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
 | 13 — Il permesso prima dell'azione | `M13.1b` | Implementata | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
 | 13 — Il permesso prima dell'azione | `M13.1c` | Proposta | In quattro rami di `run` un diniego o un fallimento arriva senza il suo perché |
+| 13 — Il permesso prima dell'azione | `M13.1d` | Proposta | Il blocco di `ela approvals` in GETTING_STARTED §6 non è quello che la CLI stampa |
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Implementata | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
@@ -120,8 +122,13 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
 | 13 — Il permesso prima dell'azione | `M13.8` | Proposta | Un file che vive su una macchina: quale disco, e chi lo dice |
+| 13 — Il permesso prima dell'azione | `M13.9` | Proposta | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
+| 13 — Il permesso prima dell'azione | `M13.10` | Proposta | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
+| 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 14 — *senza nome* | `M14.1` | Proposta | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — *senza nome* | `M14.2` | Proposta | Il Planner: ELA scrive i piani da sola |
+| 14 — *senza nome* | `M14.3` | Proposta | Il browser guidato dal modello: da una frase, il modello guarda la pagina e sceglie il gesto dopo |
+| 14 — *senza nome* | `M14.4` | Proposta | Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3 |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.2b` | Implementata | Un esito finale sparisce dalle superfici che elencano i task |
@@ -141,8 +148,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **52** | `docs/adr/NNNN-*.md` |
-| Milestone | **68, di cui 55 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **53** | `docs/adr/NNNN-*.md` |
+| Milestone | **75, di cui 55 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **29** | i `Protocol` di `src/ela/ports.py` |
@@ -199,8 +206,11 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   aperte **M13.5** (il computer control), **M13.6** (il
   ripiazzamento, fuori dalla fila), **M13.7** (il terminale su un nodo) e **M13.8** (un file che vive
   su una macchina), più una riparazione, **M13.1c** (un diniego o un fallimento senza il suo perché in
-  quattro rami di `run`, registrata il 2026-09-28 dalla SPEC di M6.3b): l'ordine e le condizioni
-  stanno nella voce 5.11.
+  quattro rami di `run`, registrata il 2026-09-28 dalla SPEC di M6.3b). **Registrate il 2026-09-30**,
+  da una decisione di Tommaso e del revisore: **M13.9** (il browser con i suoi account: un Chrome di ELA
+  che dura, e le password in Bitwarden), **M13.10** (più passi e i file), **M13.11** (il browser sul
+  PC), e una seconda riparazione, **M13.1d** (il blocco di `ela approvals` della guida, fermo a M13.1).
+  L'ordine e le condizioni stanno nella voce 5.11, e la fila che attraversa le fasi nella 5.10.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
   nodo, il protocollo del lavoro con la sua suite di conformità, **due implementazioni vere** —
@@ -225,6 +235,16 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   falsa della CLI — `steps executed` di uno step che aspetta il sì —, registrata come **M6.3b** e
   **fatta il 2026-09-28**, con la prova a mano passata lo stesso giorno (§19): la riga si chiama
   `steps handled`, gli step su cui la corsa ha dato la sua risposta (ADR 0051, accettato).
+- **Fase 14 — il tetto, il Planner, e il modello che guarda e decide.** Registrata il 2026-09-25 con
+  **M14.1** (il tetto di spesa, §30) e **M14.2** (il Planner, §13), dalla review della SPEC di M13.3; il
+  2026-09-30 si sono aggiunte **M14.3** (il browser guidato dal modello, §19) e **M14.4** (il computer
+  guidato dal modello, §20). **Non è cominciata**: nessuna sua milestone è uscita da `Proposta`, e resta
+  nel blocco delle fasi future. Sono aperte tutte, e quando la fase comincia sta nella voce 5.12. *Questa
+  voce è del 2026-09-30*: dal 2026-09-25 la fase era registrata senza la voce che la regola qui sopra le
+  dà. Da quel giorno la regola la tiene un test, `tests/docs/test_stato.py`: una fase che ha documenti e
+  nessuna milestone fuori da `Proposta` ha la sua voce qui. **Solo quella** (Tommaso e il revisore,
+  2026-09-30): le fasi cominciate le mostra la tabella generata della §2, e una seconda voce per
+  ciascuna sarebbe un elenco scritto a mano accanto a uno derivato.
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
@@ -235,15 +255,17 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   deciso**, e il posto dove deciderlo è una SPEC di milestone, non questo file. La Fase 12 è uscita
   da quell'elenco quando la sua prima milestone è uscita da `Proposta` — che è il modo in cui una
   lista derivata dice che una fase ha smesso di essere futura, ed è lo stesso fatto con cui il
-  changelog le dà un nome. **Avere una registrazione non è avere cominciato**: la 13 ci sta dentro
-  pur avendo sei documenti, e il numero non conta — la 17 c'è rimasta finché M17.1 non è uscita da
-  `Proposta`, anche se è cominciata prima della 13.
+  changelog le dà un nome. **Avere una registrazione non è avere cominciato**: ~~la 13 ci sta dentro
+  pur avendo sei documenti~~ la 13 ci è stata, con sei documenti, finché M13.1 non è uscita da
+  `Proposta` il 2026-09-21, e oggi ci sta la 14 (***corretto il 2026-09-30***: la frase era falsa da quel
+  giorno); il numero non conta — la 17 c'è rimasta finché M17.1 non è uscita da `Proposta`, anche se è
+  cominciata prima della 13.
 
 <!-- generato da scripts/generate_stato.py: le fasi che un documento nomina -->
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 14 | 1 |
+| 14 | 2 |
 | 15 | 14 |
 | 16 | 1 |
 
@@ -270,6 +292,22 @@ non citate è verificato invece che assunto.
 | §61 | ELA deve anticipare |
 
 <!-- fine del blocco generato: le sezioni della spec che nessuna milestone ha nominato -->
+
+### 4.3 Oltre le fasi in fila
+
+Ciò che Tommaso vuole dopo le fasi in fila. **Non ha un numero né un ordine**, e non è una
+registrazione: nessuna milestone lo porta, e il giorno in cui una lo porterà avrà il suo documento.
+
+- **Un ELA per persona, per amici e parenti** (Tommaso, 2026-09-30). Dopo ELA, Commerce ed «ELA
+  Finanza» — ELA che sorveglia il bot di trading di Tommaso e lo aiuta a migliorarlo, come per i suoi
+  altri progetti —, un ELA per ognuno: **installato e impostato da Tommaso per ognuno**, non un servizio
+  sul web, non un Core condiviso. Ognuno con **chiavi, costi, password e registro suoi**, che Tommaso non
+  vede. **La parte finanziaria non si condivide.**
+
+  ***Annotato il 2026-09-30*** (review della registrazione, decisione 8d): `TEXT_IS_RETAINED` in
+  `src/ela/providers/elevenlabs/settings.py` è vero «on this plan», **il piano ElevenLabs di Tommaso**
+  (la 5.4). Un ELA per un'altra persona avrà il piano di quella persona, e quel fatto andrà riletto per
+  lei.
 
 ## 5. Le decisioni che non stanno in nessun ADR
 
@@ -361,6 +399,13 @@ una sessione di Claude Code che ELA lancia come programma.
   nell'audit.
 - **Ciò che si approva è il diff, non la sessione.** La sessione gira in un worktree suo, e il suo
   effetto è ispezionabile.
+
+***Precisato da Tommaso e dal revisore il 2026-09-30.*** **Un ciclo in cui il modello guarda e decide il
+gesto dopo è lavoro agentico**, e ricade qui: M14.3 (il browser) lo fa girare come una sessione di Claude
+Code lanciata da ELA, con le capability del browser di ELA come strumenti e il Guardian come host dei
+permessi (5.7, 5.8), **oppure la sua SPEC rivede questa voce apertamente, con un ADR**, con i costi
+misurati delle due strade; M14.4 (lo schermo) riusa quel meccanismo. **Il Planner di M14.2 — una chiamata
+che scrive un piano — non è lavoro agentico.**
 
 ### 5.8 Come si paga una sessione
 
@@ -460,9 +505,11 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   M17.2). M17.2 ha costruito il Command Center perché ELA si potesse **guardare**; il passaggio di
   §23 del design e §24 del design — ritmo, gerarchia, movimento, l'interfaccia che cambia con ciò
   che sta succedendo (§27 del design) — si fa su **tutte** le viste insieme, e le viste non ci sono
-  ancora tutte. **Condizione d'ingresso**, la prima che arriva: dopo la Fase 16, oppure quando il
-  Command Center smette di bastare a guardarlo — quando per capire che cosa succede si apre il
-  terminale invece della pagina. **Costo dichiarato:** le viste che le milestone aggiungeranno da
+  ancora tutte. ***Rivista da Tommaso e dal revisore il 2026-09-30*** — ~~**Condizione d'ingresso**,
+  la prima che arriva: dopo la Fase 16, oppure quando il Command Center smette di bastare a guardarlo —
+  quando per capire che cosa succede si apre il terminale invece della pagina.~~ **M17.4, il redesign,
+  viene alla fine**, dopo le milestone in fila (qui sotto), e **i suoi ingressi sono l'elenco di ciò
+  che a Tommaso non piace e un periodo di uso reale di ELA**. **Costo dichiarato:** le viste che le milestone aggiungeranno da
   qui in poi nascono con l'aspetto di M17.2, e M17.4 le ritroverà tutte insieme; è il prezzo di
   aver messo il Command Center prima della Fase 13 invece che dopo la Fase 16, ed è voluto.
   **Nessuna riparazione estetica nel frattempo**: una vista si ripara quando *mente* — un'assenza
@@ -486,7 +533,9 @@ si scrive sempre «§N del design», e un «§N» da solo resta la spec.
   «rifiutata» portano i fogli dentro, e nessuna rotta risponde a nessuno.
 - **M17.5 — Il Task Center** (§9 del design; registrata il 2026-09-24, con M17.2b). M17.2 l'aveva
   messo fuori scope come «una vista sua», e nessuna milestone lo prendeva.
-- **M17.3 — Presenza desktop** (§19 del design), alla fine, dopo le altre fasi.
+- **M17.3 — Presenza desktop** (§19 del design), ~~alla fine,~~ dopo le altre fasi — nella fila, dopo
+  la Fase 15 — e dopo l'eseguibile firmato; dopo di lei viene M17.4 (***precisato il 2026-09-30***, la
+  fila qui sotto).
 - **Com'è ELA sullo schermo** — deciso dall'utente il 2026-09-18, guardando la pagina-campionario
   di M17.1, con le sue parole: «ELA deve sembrare una sfera, azzurra e bianca; una dashboard
   futuristica stile JARVIS ma senza informazioni inutili; ELA deve apparire sul mio schermo come un
@@ -498,8 +547,9 @@ delle due è §4.1, che dice che cosa è fatto e che cosa è aperto e non che co
 frase sulla «prossima milestone» scritta lì va rincorsa a ogni merge, ed è invecchiata due volte in
 tre giorni.
 
-L'ordine è **M17.1 → M12.5 → M17.2 → Fase 13**, con M17.4 dopo la Fase 16 (o prima, se la sua
-condizione scatta) e M17.3 dopo tutte. Il numero di una fase non dice
+L'ordine è **M17.1 → M12.5 → M17.2 → Fase 13**, ~~con M17.4 dopo la Fase 16 (o prima, se la sua
+condizione scatta) e M17.3 dopo tutte~~ (***rivisto il 2026-09-30***: M17.3 e M17.4 hanno il loro posto
+nella fila, qui sotto). Il numero di una fase non dice
 quando si fa: M17.1 è venuta prima dell'ultima milestone della Fase 12. **Le tre sono fatte** —
 M17.1 il 2026-09-19, M12.5 e M17.2 il 2026-09-20 —, e **ciò che viene dopo è la Fase 13**: la sua
 prima milestone è M13.1, e l'ordine dentro la fase sta nella 5.11. **M17.2b viene dopo M13.3**, in
@@ -513,6 +563,30 @@ di M6.3b ha registrato due riparazioni che ha trovato e non prende, **M6.3c** (u
 il suo tool gira fa rispondere `run` con un `409`) e **M13.1c** (sopra, Fase 13): **tutte e due dopo
 M13.4** (il revisore, 2026-09-28). **M6.3c è la prima dopo M13.4**, e porta anche la fermata di un tool
 che gira prima del suo punto di non ritorno (il revisore, 2026-09-29, decisione 11 della SPEC di M13.4).
+
+**La fila del 2026-09-30**, decisa da Tommaso e dal revisore, e completata lo stesso giorno dalla review
+della sua registrazione. Dopo M13.4, in quest'ordine:
+
+1. **M6.3c**, con il «ferma» che arriva al tool prima del suo punto di non ritorno; **il suo primo
+   commit paga il debito di ADR 0053 §2**, il runner della CI, entro il 2026-10-19;
+2. **M13.1c e M13.1d**, sullo stesso branch, ciascuna con il suo documento;
+3. **M9.6**, niente di Tommaso nel codice: subito dopo, sullo stesso branch, con il suo documento e il
+   test della regola di `CLAUDE.md`;
+4. **M14.1 e M14.2**;
+5. **M14.3**;
+6. **M13.9, M13.10, M13.11**;
+7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
+   dell'eseguibile firmato (5.11);
+8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
+9. **M13.7 e M13.8**;
+10. **la Fase 15**, nel suo ordine;
+11. **M17.3**, dopo la Fase 15 e dopo l'eseguibile firmato;
+12. **M17.4**, il redesign, alla fine.
+
+**La Fase 14 comincia prima che la Fase 13 sia chiusa**, e le voci delle due fasi lo dicono, con la
+ragione (5.11 e 5.12). **M9.2, M9.5, M17.5 e M13.6 non cambiano**: ciò che i loro documenti e le loro
+voci dicono dell'ordine resta com'è. La fila sta qui perché attraversa le fasi, come
+«M17.1 → M12.5 → M17.2 → Fase 13» prima di lei; l'ordine dentro una fase resta nella voce della fase.
 
 *Perché è una fase:* è il design stesso a chiederlo. §33 del design vieta di saltare da «ELA deve
 essere futuristica» a «scrivi il codice della dashboard», §22 del design vuole l'identità progettata
@@ -558,6 +632,9 @@ niente da mostrare finché ELA non decide da sola di dire qualcosa — §18 del 
 Fase 15 —, e una presenza che resta sullo schermo vuole il processo residente che è murato finché
 ELA non ha un eseguibile firmato suo (ADR 0029 §16, ADR 0039 §6).
 
+***Annotato il 2026-09-30***: M17.3 non è più l'ultima — dopo di lei c'è M17.4, alla fine della fila —, e
+le sue ragioni restano tutte: nella fila viene dopo la Fase 15 e dopo l'eseguibile firmato.
+
 *Che cosa il design eredita, e non può contraddire:*
 
 - **Niente app iPhone nativa** (la 5.1, qui sopra). Il companion di §20 del design, e la voce 17
@@ -592,7 +669,16 @@ della §2 e il blocco della §4.1 lo leggono dallo stesso fatto — la prima mil
 
 **L'ordine è M13.1 → M13.2 → M13.3 → M13.4 → M13.5**, con **M13.6 dopo M13.3, quando la sua
 condizione d'ingresso scatta** — nella forma condizionale di M17.4: non una posizione nella fila,
-ma un fatto che la apre. E ognuna ha la sua ragione.
+ma un fatto che la apre. E ognuna ha la sua ragione. (***Annotato il 2026-09-30***: M17.4 quella forma
+non l'ha più — viene alla fine della fila, 5.10 —; M13.6 la tiene.)
+
+***Rivisto da Tommaso e dal revisore il 2026-09-30.*** Dopo M13.4 l'ordine della fase è **M13.1c e
+M13.1d → M13.9 → M13.10 → M13.11 → M13.5 → M13.7 → M13.8**; dopo M13.1c e M13.1d, prima di M13.9,
+**comincia la Fase 14** — M14.1, M14.2, M14.3 —, e fra M13.5 e M13.7 viene M14.4. La fila intera, con
+M6.3c in testa, sta nella 5.10. M13.6 resta fuori dalla
+fila, con la sua condizione. **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e la ragione è di
+Tommaso: **tutto ciò che vuole dal browser e dal computer control passa da un modello che guarda e
+decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
 
 - **M13.1 — il filesystem fuori dalla workspace, e il primo `HIGH`. Prima, perché è lei che apre il
   livello.** La riga `HIGH` di `RISK_POLICY` e la prima capability `HIGH` entrano **insieme**, per
@@ -661,7 +747,10 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   ADR 0039 §6 per il portachiavi. La condizione d'ingresso **non aspetta una milestone: è una misura
   su questo Mac** — il permesso di controllo è chiesto a un eseguibile di ELA, concesso a quello, e
   sopravvive a un riavvio. Se a fine fase non si ottiene, **resta `Proposta` e la fase si chiude
-  senza di lei**.
+  senza di lei**. ***Il 2026-09-30*** la condizione d'ingresso non cambia, e il posto sì: dopo M13.11.
+  **Il controllo di mouse e tastiera sul PC è una milestone a sé**, da registrare quando M13.5 è chiusa.
+  E **M13.5 resta la capability** — mouse, tastiera, il Guardian, la verifica —, usabile con piani scritti
+  a mano: il modello che guarda lo schermo e decide il gesto dopo è **M14.4**, subito dopo (5.12).
 - **M13.6 — spostare un lavoro già in corso da un nodo a un altro** (§15, §12 del design), il terzo
   rinvio che ADR 0043 §9 aveva dato alla fase. **Fuori dalla fila**: entra **dopo M13.3**, e solo
   quando **almeno due capability che viaggiano si dichiarano ripiazzabili** — `relocatable`, la
@@ -674,8 +763,9 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
 - **M13.7 — il terminale su un nodo** (ADR 0047 §13). **Registrata il 2026-09-25 con la SPEC di
   M13.3**, perché il terminale non viaggia lì e il suo debito di Windows — il Job Object, e `argv`
   che diventa una stringa sola — voleva una proprietaria registrata; e prende anche il residuo di
-  Linux di ADR 0047 §5, come criterio a sé. **In coda alla Fase 13, dopo M13.5**: l'ordine
-  M13.4 → M13.5 non cambia.
+  Linux di ADR 0047 §5, come criterio a sé. **In coda alla Fase 13, dopo M13.5**: ~~l'ordine
+  M13.4 → M13.5 non cambia~~ (***rivisto il 2026-09-30***: fra M13.4 e M13.5 ci sono M6.3c, M13.1c, M13.1d,
+  M14.1–M14.3 e M13.9–M13.11; M13.7 resta dopo M13.5, e dopo M14.4).
 - **M13.8 — un file che vive su una macchina** (§13, §23). **Registrata il 2026-09-25 dalla review
   della SPEC di M13.3**: `fs.*` viaggia e il piazzamento sceglie la macchina, quindi quale file si
   legge o si scrive lo decide il punteggio; un piano non può dirlo. **In coda alla Fase 13, dopo
@@ -684,13 +774,34 @@ ma un fatto che la apre. E ognuna ha la sua ragione.
   2026-09-28 dalla SPEC di M6.3b**: in quattro rami di `run` — il no dell'utente visto alla porta, un
   `execution.interrupted`, un grafo già bloccato, una verifica lasciata a metà — la riga `reason` è
   vuota. **Dopo M13.4** (il revisore): il perché c'è altrove, nella risposta dell'utente e
-  nell'audit, quindi non c'è fretta.
+  nell'audit, quindi non c'è fretta. ***Precisato il 2026-09-30***: dopo M6.3c, **con M13.1d, sullo
+  stesso branch**, ciascuna con il suo documento.
+- **M13.1d — il blocco di `ela approvals` in `GETTING_STARTED.md` §6** (ADR 0045 §11). **Registrata il
+  2026-09-30**; il difetto l'ha trovato la prova a mano di M6.3b. Il blocco è fermo a M13.1 prima della
+  riparazione della sua prova a mano (`f08bbfd`), e nessun test confronta i blocchi di quel comando con
+  la CLI: si ripara il blocco e si estende a `ela approvals` il controllo di M6.3b. **Con M13.1c.**
+- **M13.9 — il browser con i tuoi account** (§19, §57). **Registrata il 2026-09-30**: un Chrome vero con
+  un profilo di ELA che dura, uno per macchina; le password in Bitwarden, prese una alla volta con la CLI
+  ufficiale dopo un sì a ogni uso, e mai scritte in ELA; il profilo non accende la sincronizzazione di
+  Chrome con l'account Google di Tommaso. Il suo ADR rivede apertamente le decisioni 3 e 6 di M13.4.
+  **Dopo M14.3.**
+- **M13.10 — più passi e i file** (§19). **Registrata il 2026-09-30**: una sessione del browser fra gli
+  step dello stesso task, una sequenza di gesti con ogni elemento aspettato quando serve — rivede la
+  decisione 7 di M13.4 —, uno scaricamento come un `fs.write` e un caricamento come un `fs.read`, con la
+  domanda che nomina il file. **Dopo M13.9.**
+- **M13.11 — il browser sul PC** (§19, §56). **Registrata il 2026-09-30**: le capacità di M13.9 e M13.10
+  sul nodo Windows, con il verifier sul nodo e il verdetto in busta (ADR 0048 §7); rivede la decisione 1
+  di M13.4. **Condizione d'ingresso: una misura sul PC** di che cosa lo Smart App Control lascia partire
+  e della CLI di Bitwarden. **Dopo M13.10.**
 
 **Che cosa la Fase 13 non porta.**
 
 - **Non il Planner.** §13 è una sezione della spec, non questa fase: **un piano continua ad
   attaccarsi a mano**, come dal primo giorno. Che uno step dichiari sempre le capability che userà
-  resta il vincolo che ADR 0011 lascia a chi costruirà il Planner, e resta lì.
+  resta il vincolo che ADR 0011 lascia a chi costruirà il Planner, e resta lì. ***Annotato il
+  2026-09-30***: la fase continua a non portarlo, ma nella fila M14.2 viene prima di M13.9, e le
+  milestone della fase che vengono dopo troveranno il Planner: «un piano continua ad attaccarsi a mano»
+  resta vero fino a lì.
 - **Non §30.** Il tetto di spesa ha la sua milestone, **M14.1**, la prima della Fase 14, come dice
   la 5.9: non è una milestone di questa fase.
 
@@ -713,10 +824,68 @@ apre**, e in questa fase è M13.5. Se la misura della sua condizione d'ingresso 
 tiene, **la SPEC di M13.5 si ferma lì** e quella milestone si apre prima, con il suo numero. Un
 debito che quattro cose aspettano e che nessuna apre è un debito che resta aperto per educazione.
 
+***Deciso da Tommaso il 2026-09-30: l'account Apple Developer si prende, e lo paga lui.*** Il Developer
+ID che l'eseguibile firmato vuole — «bundle, Developer ID, identità TCC sua», ADR 0029 §16 — smette di
+essere un costo futuro che nessuno aveva deciso: M11.2 lo aveva lasciato così, «comprarli per una
+milestone non è una decisione tecnica». **Si compra quando si apre la milestone dell'eseguibile
+firmato, non prima.**
+
+*Chi apre la milestone delle policy di §59.* ***Deciso da Tommaso e dal revisore il 2026-09-30.***
+**«Senza chiedere» è l'obiettivo di Tommaso, non un livello di rischio**: il livello lo decide ogni SPEC
+con le sue ragioni — M14.2 riesamina `browser.read`, M13.9 dà a una lettura con il profilo almeno
+`MEDIUM`. **Un'azione `MEDIUM` diventa autonoma solo con una policy di §59 che Tommaso crea**, con uno
+scope — capability, sito, durata —, **mai abbassando il livello**; `HIGH` resta fuori dalle policy
+(ADR 0045 §3). Oggi nessun percorso di produzione crea una policy di §59: un grant nasce solo da un sì,
+nell'executor. La regola è quella dell'eseguibile firmato: **la prima milestone della fila che ha bisogno
+di un'azione `MEDIUM` senza domanda apre, subito prima di sé, la milestone che costruisce quel
+percorso**, con il suo numero. Tommaso non vuole che ogni lettura chieda: vuole crearsi le policy.
+
 *Perché nessun ADR:* è una scelta d'ordine e di perimetro — quale milestone, quando, che cosa
 eredita, che cosa resta fuori — e nessuna riga di codice la contiene. Le parti tecniche prendono il
 loro ADR con la milestone che le costruisce, come per la Fase 17 (5.10): il livello `HIGH` e la
 revisione di ADR 0011 con M13.1, il posto del verifier e i pesi con M13.3.
+
+### 5.12 L'ordine della Fase 14, e perché comincia prima che la 13 sia chiusa
+
+La **Fase 14 è registrata** — M14.1 e M14.2 dal 2026-09-25, dalla review della SPEC di M13.3, M14.3 e
+M14.4 dal 2026-09-30 — e **non è cominciata**: nessuna sua milestone è uscita da `Proposta`, che è il criterio di
+§4.1. Non ha ancora un nome, e lo avrà dal changelog quando consegnerà la prima.
+
+**L'ordine è M14.1 → M14.2 → M14.3 → M14.4**, con M14.4 più avanti nella fila, dopo M13.5; ognuna ha la
+sua ragione.
+
+- **M14.1 — il tetto di spesa** (§30). **La prima**, perché nessuna capability della fase che spende
+  nasce prima del tetto (5.9).
+- **M14.2 — il Planner** (§13). **Dopo M14.1**, perché è la prima milestone che chiama il modello per
+  decidere, e una chiamata che decide spende.
+- **M14.3 — il browser guidato dal modello** (§19). **Registrata il 2026-09-30**: da una frase il modello
+  guarda la pagina e sceglie il gesto dopo. L'obiettivo di Tommaso è aprire, leggere, cercare e navigare
+  senza chiedere, dove il livello lo permette o una sua policy di §59 lo copre (5.11); mandare qualcosa a
+  nome di Tommaso chiede ogni volta; «cercare» è navigare, un `browser.read`. È lavoro agentico (5.7).
+  **Dopo M14.2**, e non aspetta M13.9: le pagine pubbliche non vogliono il login, e WhatsApp Web, che lo
+  vuole, passa nella prova a mano di M13.9.
+- **M14.4 — il computer guidato dal modello** (§20). **Registrata il 2026-09-30** dalla review della
+  registrazione: il meccanismo di M14.3 riusato sullo schermo, sotto la 5.7, sopra la capability di M13.5.
+  **Subito dopo M13.5**, e se M13.5 non entra non entra nemmeno lei.
+
+**La Fase 14 comincia prima che la Fase 13 sia chiusa** (Tommaso e il revisore, 2026-09-30): dopo M6.3c,
+M13.1c e M13.1d, e prima di M13.9. La fila intera sta nella 5.10, e la voce della Fase 13, la 5.11, lo
+dice dall'altra parte.
+
+*Perché:* **tutto ciò che Tommaso vuole dal browser e dal computer control passa da un modello che
+guarda e decide.**
+
+*Che cosa ne discende:* le milestone della Fase 13 che vengono dopo — M13.9, M13.10, M13.11, M13.5, M13.7,
+M13.8 — trovano il Planner e il browser guidato dal modello già fatti, e la 5.11 annota la frase «un
+piano continua ad attaccarsi a mano», vera fino a lì. La milestone delle policy di §59 la apre la prima
+che ne ha bisogno (5.11). **Una policy per contatto senza domanda** — a
+questo contatto ELA scrive senza chiedere — è una decisione futura di Tommaso, con un ADR che rivede
+ADR 0045 §3: non entra in M14.3.
+
+*Perché nessun ADR:* è una scelta d'ordine, e nessuna riga di codice la contiene. Le parti tecniche
+prendono il loro ADR con la milestone che le costruisce: il tetto con M14.1, che rivede apertamente
+ADR 0021 e ADR 0022 (5.9); il Planner con M14.2; il browser guidato dal modello con M14.3, e lo schermo
+con M14.4.
 
 ## 6. I debiti datati
 
@@ -734,6 +903,7 @@ pagato da chi doveva.
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0052 §15 — il «ferma» a metà di uno step del browser | 2026-09-29 | di M6.3c | **aperto** |
+| ADR 0053 §2 — il runner della CI, da fissare entro il 2026-10-19 | 2026-09-30 | di M6.3c | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |

@@ -73,6 +73,23 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   vera, la dichiara con uno `skipif`, che compare nel riepilogo — un `if` dentro il test no
   (ADR 0031 §6). Una precondizione che non si può costruire dichiarando il sistema si costruisce
   iniettando la dipendenza: `available()` legge il filesystem, non `platform.system()`.
+- **Da M6.3c, la prova a mano di una milestone ha uno script in `scripts/`**, con il nome che sceglie
+  la SPEC. Lo script esegue i passi meccanici della sezione della guida, confronta ogni uscita con
+  quella attesa, stampa per ogni passo PASSATO o FALLITO con l'uscita vera, e scrive tutto in un file.
+  Si ferma ad aspettare Invio solo dove serve l'occhio o la mano di Tommaso: leggere un messaggio,
+  guardare il telefono, dire sì. Il «ferma» a tempo lo fa lo script. **La guida resta la fonte di
+  verità**, e la SPEC dice come script e guida restano allineati. Un giudizio a occhio non si delega
+  allo script.
+- **Una soglia di tempo si fissa solo dove la macchina la può risolvere.** Su questo Mac il confronto
+  dei totali fra giri non risolve il 10 % (ADR 0052 §16): il metodo è la misura dentro il giro.
+- **Niente di Tommaso in ciò che ELA installa e serve: `src/` e `apps/`.** Nomi, macchine, percorsi,
+  siti, preferenze e identità stanno nella configurazione. `scripts/` e `docs/` sono l'officina, e possono
+  nominare le macchine di Tommaso. La lingua e i default del prodotto non sono la sua identità. Il test
+  della regola prova solo ciò che una macchina sa riconoscere, e lo dice nel nome — nessun indirizzo
+  Tailscale (`100.64.0.0/10`) e nessun percorso assoluto dentro la home di un utente, in `src/` e `apps/`
+  —; il resto resta alla review. Le sue due eccezioni — una rete scritta con il prefisso, e il segnaposto
+  `you` — sono in `docs/milestones/M9.6.md`, che porta il test. Se un censimento trova qualcosa di suo
+  già scritto lì, lo elenca nel riepilogo e non lo ripara: la riparazione è una milestone sua.
 
 ## Fine sessione
 Produci un riepilogo con: file toccati, test aggiunti, output di `pytest -q --cov`,
