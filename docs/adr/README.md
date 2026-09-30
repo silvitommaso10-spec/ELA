@@ -60,6 +60,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0050](0050-sheets-inside-the-page.md) | La pagina di chi non è ancora nessuno porta i suoi fogli: dentro la risposta, ammessi dal loro hash, e nessuna rotta che risponda a nessuno | Accettata |
 | [0051](0051-steps-handled.md) | Gli step di una corsa sono quelli che ha trattato: la parola dice ciò che il campo contiene, e il vuoto non dice chi ha chiuso il task | Accettata |
 | [0052](0052-browser.md) | Il browser: un profilo vuoto per ogni step, il sito della domanda, e un click inviato che il verifier guarda riuscire | Accettata |
+| [0053](0053-ci-runner.md) | Il runner della CI ha una versione scritta: Ubuntu fissato prima del 2026-10-19, le azioni aggiornate, e Ubuntu 26 misurato quando Playwright lo supporta; un debito datato a carico di M6.3c | Accettata |
 
 ## Template
 

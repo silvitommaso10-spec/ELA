@@ -94,6 +94,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 9 — Le liste che si accorgono di essere false | `M9.3` | Completata | Le esenzioni che si accorgono di essere false |
 | 9 — Le liste che si accorgono di essere false | `M9.4` | Completata | Le finestre, i negativi, e la release v0.1 |
 | 9 — Le liste che si accorgono di essere false | `M9.5` | Proposta | La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento |
+| 9 — Le liste che si accorgono di essere false | `M9.6` | Proposta | Niente di Tommaso nel codice: ciò che ELA installa e serve non porta le macchine e l'account di chi l'ha scritta |
 | 10 — La percezione | `M10.1` | Completata | Perception Core: fondamenta |
 | 10 — La percezione | `M10.2` | Completata | Screen awareness: la prima lettura di contenuto |
 | 10 — La percezione | `M10.3` | Implementata | Comprendere ciò che si vede: il contesto che non costa niente, e il testo che non esce |
@@ -147,8 +148,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **52** | `docs/adr/NNNN-*.md` |
-| Milestone | **74, di cui 55 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **53** | `docs/adr/NNNN-*.md` |
+| Milestone | **75, di cui 55 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **57** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **29** | i `Protocol` di `src/ela/ports.py` |
@@ -241,7 +242,9 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   nel blocco delle fasi future. Sono aperte tutte, e quando la fase comincia sta nella voce 5.12. *Questa
   voce è del 2026-09-30*: dal 2026-09-25 la fase era registrata senza la voce che la regola qui sopra le
   dà. Da quel giorno la regola la tiene un test, `tests/docs/test_stato.py`: una fase che ha documenti e
-  nessuna milestone fuori da `Proposta` ha la sua voce qui.
+  nessuna milestone fuori da `Proposta` ha la sua voce qui. **Solo quella** (Tommaso e il revisore,
+  2026-09-30): le fasi cominciate le mostra la tabella generata della §2, e una seconda voce per
+  ciascuna sarebbe un elenco scritto a mano accanto a uno derivato.
 - **Fase 15 — la memoria e la proattività.** §21 (Memory Core) e §34 (Proactive Core), rimandate
   da ADR 0023, ADR 0025, ADR 0036 e da tre milestone: il richiamo periodico di `recover()`, il
   momento in cui ELA decide di parlare da sola, e il trascritto che oggi non sopravvive al task
@@ -564,20 +567,21 @@ che gira prima del suo punto di non ritorno (il revisore, 2026-09-29, decisione 
 **La fila del 2026-09-30**, decisa da Tommaso e dal revisore, e completata lo stesso giorno dalla review
 della sua registrazione. Dopo M13.4, in quest'ordine:
 
-1. **M6.3c**, con il «ferma» che arriva al tool prima del suo punto di non ritorno;
-2. **M13.1c e M13.1d**, sullo stesso branch, ciascuna con il suo documento, e con loro **la riparazione
-   del censimento** della regola di `CLAUDE.md` — niente di Tommaso in ciò che ELA installa e serve —, con
-   il suo documento e il test della regola;
-3. **M14.1 e M14.2**;
-4. **M14.3**;
-5. **M13.9, M13.10, M13.11**;
-6. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
+1. **M6.3c**, con il «ferma» che arriva al tool prima del suo punto di non ritorno; **il suo primo
+   commit paga il debito di ADR 0053 §2**, il runner della CI, entro il 2026-10-19;
+2. **M13.1c e M13.1d**, sullo stesso branch, ciascuna con il suo documento;
+3. **M9.6**, niente di Tommaso nel codice: subito dopo, sullo stesso branch, con il suo documento e il
+   test della regola di `CLAUDE.md`;
+4. **M14.1 e M14.2**;
+5. **M14.3**;
+6. **M13.9, M13.10, M13.11**;
+7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
-7. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
-8. **M13.7 e M13.8**;
-9. **la Fase 15**, nel suo ordine;
-10. **M17.3**, dopo la Fase 15 e dopo l'eseguibile firmato;
-11. **M17.4**, il redesign, alla fine.
+8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
+9. **M13.7 e M13.8**;
+10. **la Fase 15**, nel suo ordine;
+11. **M17.3**, dopo la Fase 15 e dopo l'eseguibile firmato;
+12. **M17.4**, il redesign, alla fine.
 
 **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e le voci delle due fasi lo dicono, con la
 ragione (5.11 e 5.12). **M9.2, M9.5, M17.5 e M13.6 non cambiano**: ciò che i loro documenti e le loro
@@ -899,6 +903,7 @@ pagato da chi doveva.
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0052 §15 — il «ferma» a metà di uno step del browser | 2026-09-29 | di M6.3c | **aperto** |
+| ADR 0053 §2 — il runner della CI, da fissare entro il 2026-10-19 | 2026-09-30 | di M6.3c | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |

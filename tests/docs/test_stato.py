@@ -183,7 +183,9 @@ def test_every_phase_registered_and_not_begun_has_its_voice_in_41(generator: Mod
     The Fase 14 was registered on 2026-09-25, with M14.1 and M14.2, and had no voice here until
     2026-09-30: nothing noticed, because the rule lived only in a sentence. This holds the rule as
     §4.1 writes it and no more — a phase that has begun and still has milestones in ``Proposta``
-    (the 6 and the 9, on 2026-09-30) is not asked for a voice by it.
+    (the 6 and the 9, on 2026-09-30) is not asked for a voice by it, on purpose (the review of
+    2026-09-30): the phases that have begun are shown by the generated table, and a second voice for
+    each would be a list written by hand next to a derived one.
     """
     states = [(m.phase, m.state) for m in generator.milestones(ROOT)]
 

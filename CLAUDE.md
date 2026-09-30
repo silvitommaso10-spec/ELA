@@ -87,8 +87,9 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   nominare le macchine di Tommaso. La lingua e i default del prodotto non sono la sua identità. Il test
   della regola prova solo ciò che una macchina sa riconoscere, e lo dice nel nome — nessun indirizzo
   Tailscale (`100.64.0.0/10`) e nessun percorso assoluto dentro la home di un utente, in `src/` e `apps/`
-  —; il resto resta alla review. Se un censimento trova qualcosa di suo già scritto lì, lo elenca nel
-  riepilogo e non lo ripara: la riparazione è una milestone sua.
+  —; il resto resta alla review. Le sue due eccezioni — una rete scritta con il prefisso, e il segnaposto
+  `you` — sono in `docs/milestones/M9.6.md`, che porta il test. Se un censimento trova qualcosa di suo
+  già scritto lì, lo elenca nel riepilogo e non lo ripara: la riparazione è una milestone sua.
 
 ## Fine sessione
 Produci un riepilogo con: file toccati, test aggiunti, output di `pytest -q --cov`,
