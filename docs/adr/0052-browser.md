@@ -368,7 +368,11 @@ Ciò che la procedura non ha tenuto, detto:
   a freddo. **Ma** i cinque run verdi di `main` più recenti vanno da 238 a 529 s su macOS e da 459 a
   628 s su ubuntu (`ci-main-recent.txt`): l'ultimo è il più veloce dei cinque su macOS, e un confronto
   con un run solo non si legge, per la stessa ragione del 5 % del numero 3.
-- **Con la cache**: il run del commit che porta questi numeri.
+- **Con la cache** (`ebf8483`, run `36650536205`): il ripristino dello shell 1 e 3 s, l'installazione
+  0 e 1 s. Ubuntu **532 s** (−96 s contro `main`), macOS **676 s** (+438 s), il nodo 86 s. **Lo stesso
+  codice su macOS ha fatto 445 s a freddo e 676 s con la cache**: il rumore del runner macOS è più
+  grande dell'effetto che si misura, e il confronto con un run di `main` non regge, né per assolvere né
+  per condannare. Il costo proprio del browser nella CI — i passi d'installazione — è di pochi secondi.
 
 **Quindi la decisione su Playwright non diventa definitiva**, e questo ADR resta Proposta: la riapre
 il revisore, con questi numeri in mano.
