@@ -1,10 +1,10 @@
 # 0052. Il browser: un profilo vuoto per ogni step, il sito della domanda, e un click inviato che il verifier guarda riuscire
 
 - **Stato:** **Proposta**. SPEC di M13.4 decisa dal revisore il 2026-09-29, con le decisioni 1–14
-  (`docs/milestones/M13.4.md`). Resta Proposta finché **i numeri 3 e 4** della registrazione — il tempo
-  che il browser aggiunge a `make check` e alla CI — non sono misurati e sotto la soglia scritta prima
-  di loro (§16), e finché **la prova a mano** di `docs/GETTING_STARTED.md` §20, il passo sul PC
-  compreso, non è passata.
+  (`docs/milestones/M13.4.md`). **I numeri 3 e 4** della registrazione — il tempo che il browser
+  aggiunge a `make check` e alla CI — sono misurati il 2026-09-30, con la procedura corretta, e **sotto
+  la soglia** scritta prima di loro (§16). Resta Proposta finché **la prova a mano** di
+  `docs/GETTING_STARTED.md` §20, il passo sul PC compreso, non è passata.
 - **Data:** 2026-09-29
 - **Riferimenti spec:** §10, §18, §19, §20, §27, §28, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.4
@@ -140,7 +140,11 @@ frase della lettura.
 **ADR 0045 §6-bis si legge, per un browser, «partirebbe, per tutto ciò che si sa senza aprire la
 pagina»** (decisione 5), come ADR 0047 §5 l'ha letta per un comando: la grammatica di sito, percorso e
 selettori, la forma dei gesti e i loro limiti, e lo shell installato (`browser.not_installed`) si
-rifiutano prima della domanda. Aprire la pagina prima del sì sarebbe una visita che l'audit non
+rifiutano prima della domanda. **Lo shell installato si sa dall'eseguibile**, dove Playwright lo
+lancerebbe — la cartella del suo registro e la revisione del suo `browsers.json` —, **senza avviare
+niente**; e lo chiede solo la domanda: nella corsa `browser.not_installed` viene dal lancio che fa il
+lavoro (decisione 2 della review del 2026-09-30 — prima lo chiedeva anche la corsa, e costava un
+browser in più a ogni step). Un test del browser vero si fa dire da Playwright dove lo lancia. Aprire la pagina prima del sì sarebbe una visita che l'audit non
 registra. **Si perde**: una domanda può nascere già condannata, e il sì è speso — **mai un effetto
 diverso da quello approvato**.
 
@@ -282,8 +286,22 @@ anche con `NODE_USE_ENV_PROXY=1`) oggi **non** cambiano la strada — misurato, 
 e una versione nuova di Playwright va rimisurata. Le richieste che fa il browser le giudica Chromium,
 con l'ambiente chiuso di §10: uno script da quel server non si carica nemmeno con
 `NODE_TLS_REJECT_UNAUTHORIZED=0` nell'ambiente del driver. **Nella misura della decisione 14 nessuna di
-queste variabili c'è**: né una `NODE_…`, né un proxy, né una `SSL_CERT…`. Chi le mette nella shell da
-cui lancia `ela serve` cambia che cosa il browser di ELA accetta, e ELA non lo vede.
+queste variabili c'è**: né una `NODE_…`, né un proxy, né una `SSL_CERT…`. ~~Chi le mette nella shell da
+cui lancia `ela serve` cambia che cosa il browser di ELA accetta, e ELA non lo vede.~~
+
+***Superata dalla decisione 4 della review del 2026-09-30.*** Dichiararlo non bastava: una variabile
+dimenticata in una shell spegnerebbe in silenzio la verifica di un'azione `HIGH` che manda dati fuori.
+**Il Core toglie dal proprio ambiente ogni variabile che comincia con `NODE_`** — dal prefisso, non da
+un elenco di nomi: la variabile che Node leggerà domani nessuno qui l'ha ancora sentita — **quando
+`build()` comincia, prima che esista l'adapter**, e tiene i nomi in `Ela.removed_from_environment`.
+**L'avvio li scrive** su stderr, i nomi e mai i valori, che possono essere un percorso o un segreto. Il
+posto è `ela.composition.system.without_node_variables`, nel gate al 100 % dei rami, e non l'adapter,
+che è fuori dal gate e non decide (ADR 0028 §1). Il nodo non lo fa: non costruisce il browser. **Lo
+tiene un test** (`tests/composition/test_node_variables.py`): con `NODE_TLS_REJECT_UNAUTHORIZED=0`
+nell'ambiente, il driver del Core non la riceve, letto dal suo processo come nella misura della
+decisione 14, con `PW_LANG_NAME` — che Playwright gli dà sempre — come controllo che la lettura legga
+davvero il driver. **Restano dichiarati**: i proxy dell'ambiente, che oggi non cambiano la strada
+(misurato), e ciò che non comincia con `NODE_`.
 
 ### 15. Un debito datato: il «ferma» a metà di uno step del browser
 
@@ -319,7 +337,102 @@ freddo con la cache cancellata e con la cache al push dopo. **La soglia**: `make
 scrivono qui quando ci sono**; sotto la soglia la decisione su Playwright diventa definitiva, sopra la
 milestone si ferma e lo dice.
 
-**Misurati il 2026-09-30. Il numero 3 è sopra la soglia: la milestone si ferma qui** (decisione 10).
+#### I numeri, con la procedura corretta (2026-09-30)
+
+**La procedura della forma P si corregge qui, apertamente** (decisione del revisore del 2026-09-30,
+dopo i tre giri qui sotto). **Su questo Mac il confronto dei totali fra giri diversi non risolve un
+10 %.** La prova sono tre giri di `make check` **sullo stesso commit** (`8acdfaa`), nelle condizioni
+della decisione 5 — AC, `lowpowermode 0`, nessun `ela serve`, stato termico `nominal` alla partenza,
+nessun'altra applicazione, lo script di misura che ferma il giro a un distacco —, uno dopo l'altro
+(`giro2-prima-*.txt`):
+
+| Giro | Orologio (`real`) | Suite | CPU user |
+|---|---|---|---|
+| 1 | 125,36 s | 104,18 s | 803 s |
+| 2 | 131,64 s | 110,24 s | 849 s |
+| 3 | 164,48 s | 133,27 s | 915 s |
+
+**Il riscaldamento non è regolare: accelera.** Lo stato termico torna `nominal` in un minuto e mezzo,
+ma il Mac, che non ha ventola, resta caldo. Con una deriva che accelera, un ordine prima-dopo-dopo-prima
+non la annulla — carica il quarto giro e fa sembrare più veloce il commit nuovo, di un margine
+paragonabile alla soglia —, e pause lunghe andrebbero misurate a loro volta. **Quindi il numero 3 si
+misura dentro il giro stesso: a + b + c, in percentuale del `make check` dello stesso giro.** La soglia
+resta il 10 %.
+
+**a. Il costo dei test nuovi.** Due giri della suite intera al commit «dopo» (`255230b`) con
+`--durations=0 --durations-min=0`, nelle condizioni della decisione 5 (`a-suite-dopo-*.txt`). **I test
+di M13.4 sono gli id raccolti a `255230b` e non a `8acdfaa`** — `pytest --collect-only -q` ai due
+commit, confrontati (`m13.4-test-ids.txt`): 228, e uno rinominato. La loro quota del tempo dei test,
+applicata al tempo della suite di quel giro, è il loro costo (`share.py`):
+
+| Giro | Suite | Quota dei test di M13.4 | Costo | Il test più lungo | Il più lungo di M13.4 |
+|---|---|---|---|---|---|
+| a-1 | 126,10 s | 3,69 % | **4,65 s** | 34,05 s, `test_every_audit_event_type_has_a_writer` | 2,87 s |
+| a-2 | 181,85 s | 3,03 % | **5,51 s** | 39,24 s, lo stesso | 3,43 s |
+
+La suite cambia di 56 s fra i due giri — il Mac che si scalda —, **la quota no**. Il test più lungo
+della suite è di prima di M13.4, e non aspetta una durata: legge l'AST di tutto `src/`, e dura quanto
+la CPU gli concede (17 s nella corsa A della decisione 1, 34 e 39 s qui).
+
+**b. Le parti di `make check` che non sono la suite**, prima e dopo, alternate in quattro giri corti,
+ognuno nei due worktree e con l'ordine che si inverte (`b-parti.txt`), mediane:
+
+| Parte | Prima | Dopo | Delta |
+|---|---|---|---|
+| `ruff check`, `ruff format`, `lint-imports` | 0,15 s | 0,14 s | 0,00 s |
+| `mypy --strict src/` | 0,17 s | 0,16 s | 0,00 s |
+| il rapporto della copertura dei pacchetti critici | 0,38 s | 0,39 s | +0,01 s |
+| `scripts/check_milestone.py` | 0,03 s | 0,03 s | 0,00 s |
+| `detect-secrets` su `git ls-files` | 17,14 s | 17,79 s | +0,66 s |
+| **Totale** | **17,86 s** | **18,52 s** | **+0,66 s** |
+
+**c. Il costo della dipendenza sui test vecchi**: il tempo di `Settings.load()` + `build()` +
+`aclose()` del Core — ciò che paga ogni test sul fixture `ela` —, prima e dopo, alternati in sei giri,
+ognuno un processo nuovo con trenta costruzioni dopo una di riscaldamento; e l'import di
+`ela.composition`, che ogni worker paga una volta (`c-build.txt`):
+
+| | Prima | Dopo | Delta |
+|---|---|---|---|
+| una costruzione del Core, mediana | 12,44 ms | 13,84 ms | **+1,40 ms** |
+| l'import di `ela.composition`, mediana di 18 | 333,95 ms | 347,11 ms | **+13,16 ms** |
+
+I test vecchi costruiscono il Core **782 volte** in una suite (contate con un plugin che avvolge
+`build`, `build-count-prima.txt`): 1,09 s di lavoro dei worker, 0,11 s di orologio divisi su dieci. Gli
+import sono undici, in parallelo. **c si conta dal lato largo**: 1,09 s + 11 × 13,16 ms = **1,23 s**.
+
+**Il numero 3:**
+
+| Giro | a | b | c | a + b + c | `make check` del giro (suite + parti) | Quota del giro | Sopra un `make check` senza M13.4 |
+|---|---|---|---|---|---|---|---|
+| a-1 | 4,65 s | 0,66 s | 1,23 s | **6,54 s** | 126,10 + 18,52 = 144,62 s | 4,5 % | **4,7 %** |
+| a-2 | 5,51 s | 0,66 s | 1,23 s | **7,40 s** | 181,85 + 18,52 = 200,37 s | 3,7 % | **3,8 %** |
+
+**Sotto il 10 %.**
+
+**Il numero 4, corretto** (decisione 3): **il totale di un job su `macos-latest` non misura l'effetto**
+— i cinque run verdi di `main` più recenti vanno da 238 a 529 s, e lo stesso commit del branch ha fatto
+445 s a freddo e 676 s con la cache. **Il numero 4 è il tempo dei passi d'installazione dello shell**,
+confrontato con la soglia, **più il delta della suite, che è il numero 3**:
+
+| | ubuntu | macOS | Soglia |
+|---|---|---|---|
+| a freddo: installazione, e salvataggio della cache | 4–5 s, 3 s | 5–6 s, 2–4 s | 2 minuti |
+| con la cache: ripristino, e installazione | 1 s, 0 s | 3 s, 1 s | 30 s |
+
+**Sotto la soglia**, e il delta della suite è il numero 3. Il totale su ubuntu, riportato com'è:
+654 s a freddo e 532 s con la cache, contro i 628 s dell'ultimo run verde di `main`.
+
+**Quindi la scelta di Playwright regge**, per la regola scritta prima dei numeri; questo ADR resta
+Proposta fino alla prova a mano di GETTING_STARTED §20 (decisione 7 della review del riepilogo).
+
+#### Storia: i giri della notte del 2026-09-30, che non contano
+
+***Superati dalle decisioni 5 e 6 della review del riepilogo del 2026-09-30***: presi senza lo stato
+termico alla partenza dei primi giri, con Spotify acceso e con l'alimentatore che si staccava, e
+confrontati come totali fra giri diversi — il metodo che la procedura corretta, sopra, sostituisce. Il
+testo resta com'era.
+
+~~**Misurati il 2026-09-30. Il numero 3 è sopra la soglia: la milestone si ferma qui** (decisione 10).~~
 Le uscite intere e le condizioni di ogni giro sono in `.git/m13.4-reference/measure/`
 (`make-check-*.txt` e `make-check-*-conditions.txt`).
 
@@ -374,8 +487,8 @@ Ciò che la procedura non ha tenuto, detto:
   grande dell'effetto che si misura, e il confronto con un run di `main` non regge, né per assolvere né
   per condannare. Il costo proprio del browser nella CI — i passi d'installazione — è di pochi secondi.
 
-**Quindi la decisione su Playwright non diventa definitiva**, e questo ADR resta Proposta: la riapre
-il revisore, con questi numeri in mano.
+~~**Quindi la decisione su Playwright non diventa definitiva**, e questo ADR resta Proposta: la riapre
+il revisore, con questi numeri in mano.~~
 
 ### 17. Righe riviste
 
