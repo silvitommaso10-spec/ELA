@@ -27,6 +27,7 @@ import pytest
 
 from ela.infrastructure.machine import ProcessGroupLauncher
 from ela.ports import Command, Ending
+from ela.testing.fakes import FakeStop
 
 GUARD = 30.0
 """A deadlock guard, and nothing else: no verdict here depends on it."""
@@ -117,7 +118,8 @@ async def test_argv_arrives_as_a_list_and_nothing_is_interpreted_on_the_way(
             *python("import json, sys; print(json.dumps(sys.argv[1:]))"),
             *arguments,
             folder=tmp_path,
-        )
+        ),
+        FakeStop(),
     )
 
     assert ran.ending is Ending.EXITED and ran.code == 0
@@ -132,7 +134,7 @@ async def test_the_child_receives_the_closed_environment_and_nothing_else(
     monkeypatch.setenv("ELA_API_TOKEN_DI_PROVA", "non-deve-arrivare")
     monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/agente")
 
-    ran = await launcher.run(command("/usr/bin/env", folder=tmp_path))
+    ran = await launcher.run(command("/usr/bin/env", folder=tmp_path), FakeStop())
 
     assert ran.ending is Ending.EXITED and ran.code == 0
     printed = ran.stdout.head.decode().splitlines()
@@ -146,7 +148,9 @@ async def test_the_child_starts_in_the_folder_it_was_given_and_never_in_ela_s(
     folder = (tmp_path / "progetto").resolve()
     folder.mkdir()
 
-    ran = await launcher.run(command(*python("import os; print(os.getcwd())"), folder=folder))
+    ran = await launcher.run(
+        command(*python("import os; print(os.getcwd())"), folder=folder), FakeStop()
+    )
 
     assert ran.stdout.head.decode().strip() == str(folder)
     assert Path.cwd().resolve() != folder
@@ -163,10 +167,11 @@ def test_the_child_reads_the_end_of_file_and_not_the_stdin_of_ela(tmp_path: Path
         import asyncio, sys
         from ela.infrastructure.machine import ProcessGroupLauncher
         from ela.ports import Command
+        from ela.testing.fakes import FakeStop
         child = [sys.executable, "-c", "import sys; print(repr(sys.stdin.read()))"]
         ran = asyncio.run(ProcessGroupLauncher(asyncio.Event()).run(Command(
             argv=tuple(child), environment={ENVIRONMENT!r}, folder={str(tmp_path)!r},
-            timeout=30.0, grace=0.2, head=4096, tail=4096)))
+            timeout=30.0, grace=0.2, head=4096, tail=4096), FakeStop()))
         print(ran.stdout.head.decode().strip())
         """
     )
@@ -190,9 +195,12 @@ def test_the_child_reads_the_end_of_file_and_not_the_stdin_of_ela(tmp_path: Path
 async def test_a_code_is_an_exit_and_a_signal_is_a_signal(
     launcher: ProcessGroupLauncher, tmp_path: Path
 ) -> None:
-    exited = await launcher.run(command(*python("raise SystemExit(3)"), folder=tmp_path))
+    exited = await launcher.run(
+        command(*python("raise SystemExit(3)"), folder=tmp_path), FakeStop()
+    )
     hung_up = await launcher.run(
-        command(*python("import os, signal; os.kill(os.getpid(), signal.SIGHUP)"), folder=tmp_path)
+        command(*python("import os, signal; os.kill(os.getpid(), signal.SIGHUP)"), folder=tmp_path),
+        FakeStop(),
     )
 
     assert (exited.ending, exited.code, exited.signal) == (Ending.EXITED, 3, None)
@@ -225,7 +233,7 @@ async def test_past_the_timeout_the_group_is_empty_when_the_launcher_returns(
     """Criterion 10: the grandchild included, and asserted as a fact of the process table."""
     pids = tmp_path / "pids"
     running = asyncio.create_task(
-        launcher.run(command(*python(grandchild(pids)), folder=tmp_path, timeout=3.0))
+        launcher.run(command(*python(grandchild(pids)), folder=tmp_path, timeout=3.0), FakeStop())
     )
     child, grand = await written(pids)
     leftovers.extend((child, grand))
@@ -244,7 +252,9 @@ async def test_at_the_signal_of_stopping_the_group_is_emptied_the_same_way(
     stopping = asyncio.Event()
     pids = tmp_path / "pids"
     running = asyncio.create_task(
-        ProcessGroupLauncher(stopping).run(command(*python(grandchild(pids)), folder=tmp_path))
+        ProcessGroupLauncher(stopping).run(
+            command(*python(grandchild(pids)), folder=tmp_path), FakeStop()
+        )
     )
     child, grand = await written(pids)
     leftovers.extend((child, grand))
@@ -262,7 +272,7 @@ async def test_once_stopping_nothing_new_starts(tmp_path: Path) -> None:
     stopping.set()
 
     ran = await ProcessGroupLauncher(stopping).run(
-        command(*python("print('partito')"), folder=tmp_path)
+        command(*python("print('partito')"), folder=tmp_path), FakeStop()
     )
 
     assert ran.ending is Ending.STOPPED
@@ -283,7 +293,8 @@ async def test_a_program_that_ends_leaving_a_descendant_on_its_pipe_has_ended(
     """
 
     ran = await asyncio.wait_for(
-        launcher.run(command(*python(leaving), folder=tmp_path, timeout=GUARD * 2)), GUARD
+        launcher.run(command(*python(leaving), folder=tmp_path, timeout=GUARD * 2), FakeStop()),
+        GUARD,
     )
 
     left = int(ran.stdout.head.decode().split()[0])
@@ -307,7 +318,8 @@ async def test_a_grandchild_that_escapes_the_group_does_not_hold_the_launcher(
     """
 
     ran = await asyncio.wait_for(
-        launcher.run(command(*python(escaping), folder=tmp_path, timeout=GUARD * 2)), GUARD
+        launcher.run(command(*python(escaping), folder=tmp_path, timeout=GUARD * 2), FakeStop()),
+        GUARD,
     )
 
     leftovers.append(int(ran.stdout.head.decode().split()[0]))
@@ -333,7 +345,7 @@ async def test_a_grandchild_that_ignores_sigterm_is_killed_and_the_group_emptied
         time.sleep(600)
     """
     running = asyncio.create_task(
-        ProcessGroupLauncher(stopping).run(command(*python(source), folder=tmp_path))
+        ProcessGroupLauncher(stopping).run(command(*python(source), folder=tmp_path), FakeStop())
     )
     async with asyncio.timeout(GUARD):
         while not ready.exists():
@@ -349,6 +361,35 @@ async def test_a_grandchild_that_ignores_sigterm_is_killed_and_the_group_emptied
     assert gone_pid(grand), "the grandchild deaf to SIGTERM outlived the launcher"
 
 
+async def test_a_task_stopped_after_the_exec_stops_the_group_and_says_who_asked(
+    launcher: ProcessGroupLauncher, tmp_path: Path, leftovers: list[int]
+) -> None:
+    """The stop of the task, not of ELA (M6.3c, ADR 0054 §3): the program is past its point, and
+    the group is stopped as for the timeout — the ending is ``HALTED``, and no process of the group
+    outlives the launcher. The child says it has started before the stop is raised: an event, not
+    a sleep."""
+    ready = tmp_path / "partito"
+    source = f"""
+        import os, pathlib, time
+        print(os.getpid(), flush=True)
+        pathlib.Path({str(ready)!r}).write_text("x")
+        time.sleep(600)
+    """
+    stop = FakeStop()
+    running = asyncio.create_task(launcher.run(command(*python(source), folder=tmp_path), stop))
+    async with asyncio.timeout(GUARD):
+        while not ready.exists():
+            await asyncio.sleep(0.02)
+    stop.event.set()
+
+    ran = await asyncio.wait_for(running, GUARD)
+
+    (child,) = (int(pid) for pid in ran.stdout.head.decode().split())
+    leftovers.append(child)
+    assert ran.ending is Ending.HALTED
+    assert gone(child), "the group outlived the launcher"
+
+
 async def test_a_cancelled_run_kills_the_group_and_goes_away(
     launcher: ProcessGroupLauncher, tmp_path: Path, leftovers: list[int]
 ) -> None:
@@ -358,7 +399,9 @@ async def test_a_cancelled_run_kills_the_group_and_goes_away(
         time.sleep(1.0)
         pathlib.Path({str(marker)!r}).write_text("x")
     """
-    running = asyncio.create_task(launcher.run(command(*python(source), folder=tmp_path)))
+    running = asyncio.create_task(
+        launcher.run(command(*python(source), folder=tmp_path), FakeStop())
+    )
     await asyncio.sleep(0.3)
     running.cancel()
 
@@ -377,7 +420,7 @@ async def test_what_the_kernel_refuses_is_a_run_that_never_started(
     garbage.write_bytes(b"\x00\x01\x02 non sono un eseguibile")
     garbage.chmod(0o755)
 
-    ran = await launcher.run(command(str(garbage), folder=tmp_path))
+    ran = await launcher.run(command(str(garbage), folder=tmp_path), FakeStop())
 
     assert ran.ending is Ending.NOT_STARTED
     assert ran.failure is not None and "Errno" in ran.failure
@@ -401,7 +444,9 @@ async def test_the_output_is_capped_while_it_is_read_and_every_byte_is_counted(
         sys.stderr.write("errore")
     """
 
-    ran = await launcher.run(command(*python(source), folder=tmp_path, head=10, tail=10))
+    ran = await launcher.run(
+        command(*python(source), folder=tmp_path, head=10, tail=10), FakeStop()
+    )
 
     assert ran.stdout.head == b"0123456789"
     assert ran.stdout.tail == b"0123456789"
@@ -410,7 +455,9 @@ async def test_the_output_is_capped_while_it_is_read_and_every_byte_is_counted(
 
 
 async def test_what_fits_is_kept_whole(launcher: ProcessGroupLauncher, tmp_path: Path) -> None:
-    ran = await launcher.run(command(*python("print('corto')"), folder=tmp_path, head=10, tail=10))
+    ran = await launcher.run(
+        command(*python("print('corto')"), folder=tmp_path, head=10, tail=10), FakeStop()
+    )
 
     assert ran.stdout.head + ran.stdout.tail == b"corto\n"
     assert ran.stdout.total == 6

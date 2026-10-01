@@ -23,7 +23,7 @@ import pytest
 
 from ela.composition.settings import refuse_the_root
 from ela.domain import ExecutionStatus
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
 from ela.tools import FS_CONTENT_MATCHES, FS_WRITE, FsReadTool, FsWriteTool, FsWriteVerifier
 from tests.domain.examples import EXECUTION_RESULT
 from tests.tools.support import allowed
@@ -41,7 +41,7 @@ async def test_a_write_puts_on_the_disk_exactly_the_bytes_of_the_body(root: Path
     tool = FsWriteTool(root, FakeClock(), FakeIdGenerator())
 
     result = await tool.execute(
-        allowed(FS_WRITE), {"path": "ELA/a.md", "body": "a\nb\n", "overwrite": False}
+        allowed(FS_WRITE), {"path": "ELA/a.md", "body": "a\nb\n", "overwrite": False}, FakeStop()
     )
 
     assert result.status is ExecutionStatus.SUCCEEDED
@@ -52,7 +52,7 @@ async def test_a_read_returns_exactly_the_bytes_on_the_disk(root: Path) -> None:
     (root / "ELA" / "b.md").write_bytes(b"a\r\nb\x1ac")
     tool = FsReadTool(root, FakeClock(), FakeIdGenerator())
 
-    result = await tool.execute(allowed(tool.capability_id), {"path": "ELA/b.md"})
+    result = await tool.execute(allowed(tool.capability_id), {"path": "ELA/b.md"}, FakeStop())
 
     assert result.output["content"] == "a\r\nb\x1ac"
 

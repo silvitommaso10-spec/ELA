@@ -22,6 +22,8 @@ from ela.tasks.graph import STEP_TRANSITIONS
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0009-task-graph.md"
 RELEASE_ADR = ADR_PATH.with_name("0038-work-protocol.md")
 """ADR 0038 §8: the release, RUNNING → PENDING, its edge and its row."""
+STOP_ADR = ADR_PATH.with_name("0054-stopped-midway.md")
+"""ADR 0054 §4: the stop, RUNNING → CANCELLED, its edge and its row (M6.3c)."""
 MERMAID_BLOCK = re.compile(r"```mermaid\n(.*?)```", re.DOTALL)
 EDGE = re.compile(r"^\s*(\S+)\s*-->\s*(\S+?)\s*(?::.*)?$")
 START_OR_END = "[*]"
@@ -62,9 +64,13 @@ def coded_edges() -> set[tuple[str, str]]:
     return {(a.value, b.value) for a, targets in STEP_TRANSITIONS.items() for b in targets}
 
 
-def both_texts() -> tuple[str, str]:
-    """ADR 0009 and ADR 0038, each read whole: the second adds, it never replaces."""
-    return ADR_PATH.read_text(encoding="utf-8"), RELEASE_ADR.read_text(encoding="utf-8")
+def both_texts() -> tuple[str, str, str]:
+    """ADR 0009, ADR 0038 and ADR 0054, each read whole: the later ones add, never replace."""
+    return (
+        ADR_PATH.read_text(encoding="utf-8"),
+        RELEASE_ADR.read_text(encoding="utf-8"),
+        STOP_ADR.read_text(encoding="utf-8"),
+    )
 
 
 def test_mermaid_matches_the_code() -> None:
@@ -89,9 +95,17 @@ def test_mermaid_names_every_step_state() -> None:
     assert named == {state.value for state in StepState}
 
 
+def test_adr_0054_adds_the_stop_and_nothing_else() -> None:
+    """The one edge the stop of a task needs (M6.3c); the cascade stays ADR 0009's."""
+    assert mermaid_edges(STOP_ADR.read_text(encoding="utf-8")) == {("RUNNING", "CANCELLED")}
+    assert list(documented_operations(STOP_ADR.read_text(encoding="utf-8"))) == ["stop_step"]
+
+
 def test_table_matches_the_code() -> None:
-    first, then = both_texts()
-    documented = documented_operations(first) | documented_operations(then)
+    first, then, last = both_texts()
+    documented = (
+        documented_operations(first) | documented_operations(then) | documented_operations(last)
+    )
     assert list(documented) == list(STEP_OPERATIONS)
     for name, row in documented.items():
         assert row == STEP_OPERATIONS[name], name

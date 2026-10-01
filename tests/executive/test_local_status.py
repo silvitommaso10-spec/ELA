@@ -24,7 +24,7 @@ from ela.domain import (
     StepState,
 )
 from ela.executive import TOOL_REFUSED, RunOutcome
-from ela.ports import NotAllowedError
+from ela.ports import NotAllowedError, TaskStop
 from tests.executive.support import World, world
 from tests.permissions.support import ECHO, GUARDED_ECHO
 
@@ -48,9 +48,11 @@ async def test_the_executor_says_a_tool_runs_here_from_its_start_to_its_stored_r
     ran = tool.execute
     stored = w.results.add
 
-    async def watched(decision: PermissionDecision, arguments: JsonMapping) -> ExecutionResult:
+    async def watched(
+        decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+    ) -> ExecutionResult:
         seen.append(w.executor.running_here())
-        return await ran(decision, arguments)
+        return await ran(decision, arguments, stop)
 
     async def storing(result: ExecutionResult) -> None:
         seen.append(w.executor.running_here())
@@ -70,7 +72,9 @@ async def test_the_executor_says_a_tool_runs_here_from_its_start_to_its_stored_r
 async def test_a_tool_that_refuses_the_decision_occupies_nothing_after() -> None:
     w = world()
 
-    async def refusing(decision: PermissionDecision, arguments: JsonMapping) -> ExecutionResult:
+    async def refusing(
+        decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+    ) -> ExecutionResult:
         raise NotAllowedError(ECHO.id, "the tool said no")
 
     w.fake_tools[ECHO.id].execute = refusing  # type: ignore[method-assign]
@@ -115,10 +119,12 @@ async def test_the_beat_says_busy_while_a_tool_runs_here_and_idle_after() -> Non
     tool = w.fake_tools[ECHO.id]
     ran = tool.execute
 
-    async def watched(decision: PermissionDecision, arguments: JsonMapping) -> ExecutionResult:
+    async def watched(
+        decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+    ) -> ExecutionResult:
         await w.heartbeat.beat()
         seen.append(await local_status(w))
-        return await ran(decision, arguments)
+        return await ran(decision, arguments, stop)
 
     tool.execute = watched  # type: ignore[method-assign]
     task, _ = await w.queued(ECHO.id)

@@ -46,7 +46,11 @@ from tests.cli.support import Cli, plain
 STEPS = "steps handled"
 """The label of the row, written out: the one place in the suite that holds the word itself."""
 
-LABELS = ("outcome", "reason", "state", STEPS)
+STOPPED = "stopped step"
+"""The row M6.3c added (ADR 0054 §7), written out like :data:`STEPS`: what the step in progress had
+done when a task was stopped — ``—`` in every branch here, none of which is a stop midway."""
+
+LABELS = ("outcome", "reason", "state", STEPS, STOPPED)
 
 DEFINITION = "A step is handled when the executor gave its answer about it in this call"
 """The sentence ``ela task run --help`` carries, the same as the schema's."""
@@ -58,7 +62,8 @@ WAITING_FOR_CONSENT = (
     "outcome        waiting_approval\n"
     "reason         —\n"
     "state          WAITING_APPROVAL\n"
-    "steps handled  9c5b8f26-1a2b-4c3d-8e4f-000000000001, 9c5b8f26-1a2b-4c3d-8e4f-000000000002"
+    "steps handled  9c5b8f26-1a2b-4c3d-8e4f-000000000001, 9c5b8f26-1a2b-4c3d-8e4f-000000000002\n"
+    "stopped step   —"
 )
 """The guide's §6, and the first block of the proof by hand of §19, letter by letter."""
 
@@ -246,7 +251,9 @@ async def cancelled_at_the_door(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
     task = await planned(cli, tmp_path, echo_plan())
     stopped = await cli("task", "cancel", task, "--reason", "fermato")
     assert stopped.exit_code == 0, stopped.stdout
-    return Printed(await run(cli, task), RunOutcome.CANCELLED, "CANCELLED", ())
+    # The stop's words, never empty (decision 7 of the review of M6.3c): the door says what the
+    # loop would.
+    return Printed(await run(cli, task), RunOutcome.CANCELLED, "CANCELLED", (), reason="(fermato)")
 
 
 async def expired_at_the_door(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
@@ -256,6 +263,7 @@ async def expired_at_the_door(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
     later = await build(ela.settings, clock=FakeClock(after), power=FakePower())
     try:
         await later.engine.recover()
+        await later.executor.close_every_open_step()
     finally:
         await later.aclose()
     return Printed(await run(cli, task), RunOutcome.EXPIRED, "EXPIRED", ())
@@ -324,7 +332,7 @@ async def test_the_run_prints_the_steps_it_handled(
         list(
             zip(
                 LABELS,
-                (printed.outcome.value, shown, printed.state, list(printed.steps)),
+                (printed.outcome.value, shown, printed.state, list(printed.steps), None),
                 strict=True,
             )
         )

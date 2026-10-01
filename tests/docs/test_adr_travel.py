@@ -38,10 +38,10 @@ from ela.tools import (
     ToolRegistry,
     VerifierRegistry,
 )
-from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
 from tests.devices.nodes import step
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048
+from tests.docs.test_adr_placement import _rules_up_to
 from tests.tools.test_registry import _production
 from tests.windows import OUTSIDE_THE_WINDOWS_JOB
 
@@ -78,9 +78,10 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_their_day()
     text = conseguenze()
 
     assert "**cinquantasette**" in text
-    assert len(RULES) == 57
+    assert len(_rules_up_to(57)) == 57  # rules 58 and 59 are ADR 0054's
     assert "**ventotto**" in text
-    assert len(tuple(p for p in port_protocols() if p.__name__ != "Browser")) == 28  # ADR 0052
+    later = {"Browser", "TaskStop"}  # ADR 0052 and ADR 0054
+    assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 28
     assert "**quarantotto**" in text
     assert len(coded_routes() - routes_after_0048()) == 48
 

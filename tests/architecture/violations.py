@@ -1535,6 +1535,66 @@ VIOLATIONS: tuple[Case, ...] = (
         "def who(request):\n    return request.cookies.get('ela_console')\n",
         "ela_console",
     ),
+    # --- step-completers, extended to stop_step (rule 17, M6.3c) ---
+    Case(
+        # The route of the «ferma» closing the step itself: it would say «it did not act» about a
+        # tool it never watched — the executor is the one that knows.
+        "step-stopped-by-a-route",
+        "step-completers",
+        "api/tasks.py",
+        "async def cancel(ela, t, s):\n    return await ela.engine.stop_step(t, s, reason='x')\n",
+        ".stop_step(",
+    ),
+    # --- only-the-engine-raises-a-stop (rule 58, M6.3c) ---
+    Case(
+        # The runner raising the stop when it sees the task ended: a stop the audit does not have.
+        "the-runner-raises-the-stop",
+        "only-the-engine-raises-a-stop",
+        "executive/runner.py",
+        "def stop(engine, t):\n    engine.stop_signal(t).set()\n",
+        ".stop_signal(",
+    ),
+    Case(
+        # The event kept under a name: handed to nobody, so it may be raised anywhere.
+        "the-executor-keeps-the-event",
+        "only-the-engine-raises-a-stop",
+        "executive/executor.py",
+        "def stop(engine, t):\n    event = engine.stop_signal(t)\n    return event\n",
+        ".stop_signal(",
+    ),
+    Case(
+        # The stop of a call that raises what it was handed.
+        "the-stop-of-a-call-raises-it",
+        "only-the-engine-raises-a-stop",
+        "executive/stops.py",
+        "class StopOfTask:\n    def halt(self):\n        self._event.set()\n",
+        ".set(",
+    ),
+    # --- a-stop-arrives-per-call (rule 59, M6.3c) ---
+    Case(
+        # A launcher built with the stop of the first task it served.
+        "a-launcher-built-with-a-stop",
+        "a-stop-arrives-per-call",
+        "infrastructure/machine/launcher2.py",
+        "class L:\n    def __init__(self, stop: TaskStop) -> None:\n        self._stop = stop\n",
+        "TaskStop",
+    ),
+    Case(
+        # The same, said as a field of a dataclass.
+        "a-tool-with-a-stop-for-a-field",
+        "a-stop-arrives-per-call",
+        "tools/held.py",
+        "class T:\n    stop: StopOfTask\n",
+        "StopOfTask",
+    ),
+    Case(
+        # The composition handing a stop out: it builds once, for every task.
+        "the-composition-names-a-stop",
+        "a-stop-arrives-per-call",
+        "composition/stops.py",
+        "from ela.executive.stops import StopOfTask\n",
+        "StopOfTask",
+    ),
     # --- the-bell-rings-a-method (rule 56, M12.5 dec. E) ---
     Case(
         # A second place that rings: the runner, when a task ends. It reads well, and it is a
@@ -1762,6 +1822,24 @@ VIOLATIONS: tuple[Case, ...] = (
     ),
 )
 ALLOWED: tuple[Case, ...] = (
+    Case(
+        # The executor hands the event straight to the stop of one call, which cannot raise it.
+        "the-executor-hands-the-stop-to-a-call",
+        "only-the-engine-raises-a-stop",
+        "executive/executor.py",
+        "def stop(engine, t, here):\n    return StopOfTask(engine.stop_signal(t), here)\n",
+        "",
+    ),
+    Case(
+        # A stop as the parameter of a method: what the rule asks for.
+        "a-tool-hears-the-stop-per-call",
+        "a-stop-arrives-per-call",
+        "tools/held.py",
+        "class T:\n"
+        "    async def execute(self, d, a, stop: TaskStop) -> None:\n"
+        "        return None\n",
+        "",
+    ),
     Case(
         # Rule 55, the other side of the derivation (M17.2 dec. C.1): a page hands the world it
         # was given **to a route function**, which is a name and not an attribute — and that is

@@ -162,7 +162,9 @@ def test_a_tool_that_does_not_declare_it_is_refused_too() -> None:
         capability_id = CapabilityId("core.echo")
         name = "undeclared"
 
-        async def execute(self, decision: object, arguments: object) -> object:  # pragma: no cover
+        async def execute(  # pragma: no cover
+            self, decision: object, arguments: object, stop: object
+        ) -> object:
             raise AssertionError("never registered, never called")
 
     with pytest.raises(NotIdempotentError) as caught:
@@ -181,7 +183,9 @@ def test_a_non_boolean_declaration_is_refused_like_silence() -> None:
         name = "chatty"
         idempotent = "yes"
 
-        async def execute(self, decision: object, arguments: object) -> object:  # pragma: no cover
+        async def execute(  # pragma: no cover
+            self, decision: object, arguments: object, stop: object
+        ) -> object:
             raise AssertionError("never registered, never called")
 
     with pytest.raises(NotIdempotentError) as caught:
@@ -196,7 +200,9 @@ def test_the_refusal_comes_before_the_duplicate_check() -> None:
         capability_id = CORE_ECHO
         name = "silent"
 
-        async def execute(self, decision: object, arguments: object) -> object:  # pragma: no cover
+        async def execute(  # pragma: no cover
+            self, decision: object, arguments: object, stop: object
+        ) -> object:
             raise AssertionError("never registered, never called")
 
     echo = EchoTool(FakeClock(), FakeIdGenerator())

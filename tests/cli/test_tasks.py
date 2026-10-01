@@ -165,7 +165,7 @@ async def test_finished_shows_the_last_to_finish_first(
 
     assert result.exit_code == 0
     lines = result.stdout.splitlines()
-    assert lines[1].split() == ["ID", "STATE", "FINISHED", "GOAL"]
+    assert lines[1].split() == ["ID", "STATE", "FINISHED", "STOPPED", "STEP", "GOAL"]
     assert "nata prima" in lines[2] and "nata dopo" in lines[3]
 
 

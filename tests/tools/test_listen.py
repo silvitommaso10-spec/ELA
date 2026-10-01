@@ -34,7 +34,7 @@ from ela.ports import (
     LISTEN_PERMISSION_UNREADABLE,
     LISTEN_TIMEOUT,
 )
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeListening, FakeProbe
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeListening, FakeProbe, FakeStop
 from ela.tools import (
     ARGUMENTS_INVALID,
     PERCEPTION_LISTEN,
@@ -96,7 +96,9 @@ def tool_for(
 
 
 async def run(tool: ListenTool, **arguments: object) -> object:
-    return await tool.execute(DECISION, {"purpose": "prendere una nota", "seconds": 3, **arguments})
+    return await tool.execute(
+        DECISION, {"purpose": "prendere una nota", "seconds": 3, **arguments}, FakeStop()
+    )
 
 
 # ----------------------------------------------------------------------------------------
@@ -210,7 +212,7 @@ async def test_a_full_store_refuses_before_the_microphone_opens(tmp_path: Path) 
     listening = FakeListening(report=HEARD)
     tool = ListenTool(store, listening, FakeProbe([GRANTED]), FakeClock(), FakeIdGenerator())
 
-    result = await tool.execute(DECISION, {"purpose": "una nota", "seconds": 3})
+    result = await tool.execute(DECISION, {"purpose": "una nota", "seconds": 3}, FakeStop())
 
     assert result.error is not None
     assert result.error.code == SCREEN_STORE_FULL

@@ -770,6 +770,22 @@ PROBED_MODULE = "os"
 SQL_EXECUTORS = frozenset({"session", "cursor"})
 # Rule 17 (ADR 0014 §9): only the executor completes a step, and only after verification.
 COMPLETE_STEP_METHOD = "complete_step"
+# Rule 17, extended by M6.3c (ADR 0054 §4): and only the executor stops one — it is the one that
+# knows whether the step's tool passed its point of no return.
+STOP_STEP_METHOD = "stop_step"
+# Rule 58 (M6.3c, ADR 0054 §2): the stop of a task is raised in the engine and nowhere else. The
+# engine's method that hands out the event of a task, the one place that may raise it, the stop of
+# one call — the only thing outside the engine the event may be handed to —, the module that
+# defines it, and what raising looks like.
+STOP_SIGNAL_METHOD = "stop_signal"
+STOP_RAISER = Path(TASKS_DIR) / "engine.py"
+STOP_OF_A_CALL = "StopOfTask"
+STOPS_MODULE = Path("executive") / "stops.py"
+RAISE_METHOD = "set"
+# Rule 59 (M6.3c, ADR 0054 §3): the stop of a task arrives per call, never at construction. The
+# names of its types, and the method that builds an object.
+STOP_TYPES = frozenset({"TaskStop", STOP_OF_A_CALL})
+CONSTRUCTOR = "__init__"
 RESPOND_METHOD = "respond"
 # Rule 18 (ADR 0014 §10): the module of the verifiers, and the shared path classification the
 # tool and the verifier both use, have no path that writes — and, from M13.2, the identity of the
@@ -1400,12 +1416,14 @@ def _is_the_nodes_tool(receiver: ast.expr) -> bool:
 
 def check_step_completers(pkg_root: Path) -> list[Violation]:
     """Rule 17: outside ``executive/executor.py`` nobody calls ``<x>.complete_step(...)`` (ADR
-    0014 §9).
+    0014 §9) — nor, since M6.3c, ``<x>.stop_step(...)`` (ADR 0054 §4).
 
     A step is COMPLETED only after its result was verified (§63), and the verification happens
     in one place, the executor; a second caller of ``complete_step`` would be a second place to
-    complete a step on the tool's word alone. The definition in ``tasks/engine.py`` is not a
-    call and is not reported. A heuristic on names, like rule 16.
+    complete a step on the tool's word alone. A step is stopped only where it is known whether its
+    tool passed its point of no return — the executor again —; a second caller of ``stop_step``
+    would say «it did not act» about a tool it never watched. The definitions in
+    ``tasks/engine.py`` are not calls and are not reported. A heuristic on names, like rule 16.
     """
     rule = "step-completed-only-by-the-executor"
     found: list[Violation] = []
@@ -1415,12 +1433,115 @@ def check_step_completers(pkg_root: Path) -> list[Violation]:
         name = module_name(path, pkg_root)
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         found.extend(
-            Violation(rule, name, f".{COMPLETE_STEP_METHOD}(", node.lineno)
+            Violation(rule, name, f".{node.func.attr}(", node.lineno)
             for node in ast.walk(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and node.func.attr == COMPLETE_STEP_METHOD
+            and node.func.attr in {COMPLETE_STEP_METHOD, STOP_STEP_METHOD}
         )
+    return found
+
+
+def check_only_the_engine_raises_a_stop(pkg_root: Path) -> list[Violation]:
+    """Rule 58: the stop of a task is raised by the engine alone (M6.3c, ADR 0054 §2).
+
+    The engine raises it after the row, the trail and the audit of the transition that ended the
+    task: the stop is a fact before it is a signal. A second place that raised it would stop a tool
+    for an end nobody wrote — a stop the audit does not have. So outside :data:`STOP_RAISER`:
+
+    * a call ``<x>.stop_signal(...)`` is reported unless its value is handed straight to the stop
+      of one call, ``StopOfTask(<x>.stop_signal(...), ...)`` — which reads it and has no way to
+      raise it;
+    * in the module of that stop, :data:`STOPS_MODULE`, any ``.set(...)``.
+
+    **Its limit, written**: an event held under another name and raised elsewhere is not seen —
+    the event can only be had from ``stop_signal``, and that is what the first half watches.
+    """
+    rule = "only-the-engine-raises-a-stop"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        relative = path.relative_to(pkg_root)
+        if relative == STOP_RAISER:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        handed = {
+            id(node.args[0])
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and _call_name(node.func) == STOP_OF_A_CALL and node.args
+        }
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            if node.func.attr == STOP_SIGNAL_METHOD and id(node) not in handed:
+                found.append(Violation(rule, name, f".{STOP_SIGNAL_METHOD}(", node.lineno))
+            elif node.func.attr == RAISE_METHOD and relative == STOPS_MODULE:
+                found.append(Violation(rule, name, f".{RAISE_METHOD}(", node.lineno))
+    return found
+
+
+def check_a_stop_arrives_per_call(pkg_root: Path) -> list[Violation]:
+    """Rule 59: the stop of a task arrives per call, never at construction (M6.3c, ADR 0054 §3).
+
+    A tool, an adapter or a launcher built with the stop of one task would stop the next one —
+    or never stop at all —, and the composition builds them once, for every task. So the types of
+    the stop (:data:`STOP_TYPES`) are reported:
+
+    * as the annotation of a parameter of a constructor (:data:`CONSTRUCTOR`);
+    * as the annotation of a field in a class body — a dataclass is built with its fields;
+    * anywhere in ``ela.composition``, which builds and does not run.
+
+    As the parameter of any other method they are what the rule asks for.
+    """
+    rule = "a-stop-arrives-per-call"
+    found: list[Violation] = []
+
+    def named(annotation: ast.expr | None) -> list[str]:
+        if annotation is None:
+            return []
+        return sorted(
+            {
+                node.id
+                for node in ast.walk(annotation)
+                if isinstance(node, ast.Name) and node.id in STOP_TYPES
+            }
+        )
+
+    for path in _source_files(pkg_root):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if path.relative_to(pkg_root).parts[0] == COMPOSITION_DIR:
+            found.extend(
+                Violation(rule, name, node.id, node.lineno)
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Name) and node.id in STOP_TYPES
+            )
+            found.extend(
+                Violation(rule, name, alias.name, node.lineno)
+                for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom)
+                for alias in node.names
+                if alias.name in STOP_TYPES
+            )
+            continue
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and node.name == CONSTRUCTOR
+            ):
+                arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+                found.extend(
+                    Violation(rule, name, stop, node.lineno)
+                    for argument in arguments
+                    for stop in named(argument.annotation)
+                )
+            elif isinstance(node, ast.ClassDef):
+                found.extend(
+                    Violation(rule, name, stop, member.lineno)
+                    for member in node.body
+                    if isinstance(member, ast.AnnAssign)
+                    for stop in named(member.annotation)
+                )
     return found
 
 
@@ -3249,6 +3370,8 @@ RULES: dict[str, Rule] = {
     "pages-read-the-routes": check_pages_read_the_routes,
     "one-composer-for-a-page": check_one_composer_for_a_page,
     "the-bell-rings-a-method": check_the_bell_rings_a_method,
+    "only-the-engine-raises-a-stop": check_only_the_engine_raises_a_stop,
+    "a-stop-arrives-per-call": check_a_stop_arrives_per_call,
 }
 
 
@@ -3651,6 +3774,34 @@ CONSTANTS: tuple[Constant, ...] = (
         why=INEVITABLE,
         reason=_THE_PACKAGE_ITSELF,
     ),
+    # only-the-engine-raises-a-stop (rule 58, M6.3c)
+    Constant("only-the-engine-raises-a-stop", "RAISE_METHOD", DETECTOR),
+    Constant("only-the-engine-raises-a-stop", "STOPS_MODULE", DETECTOR),
+    Constant(
+        "only-the-engine-raises-a-stop", "STOP_OF_A_CALL", EXEMPTION, by=WHOLE, adr="ADR 0054 §3"
+    ),
+    Constant(
+        "only-the-engine-raises-a-stop", "STOP_RAISER", EXEMPTION, by=WHOLE, adr="ADR 0054 §2"
+    ),
+    Constant("only-the-engine-raises-a-stop", "STOP_SIGNAL_METHOD", DETECTOR),
+    Constant(
+        "only-the-engine-raises-a-stop",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # a-stop-arrives-per-call (rule 59, M6.3c)
+    Constant("a-stop-arrives-per-call", "COMPOSITION_DIR", DETECTOR),
+    Constant("a-stop-arrives-per-call", "CONSTRUCTOR", DETECTOR),
+    Constant("a-stop-arrives-per-call", "STOP_TYPES", DETECTOR),
+    Constant(
+        "a-stop-arrives-per-call",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
     # the-bell-rings-a-method (rule 56, M12.5 dec. E)
     Constant("the-bell-rings-a-method", "BELL_CALLER", EXEMPTION, by=WHOLE, adr="ADR 0043 §8"),
     Constant("the-bell-rings-a-method", "BELL_PORT", DETECTOR),
@@ -3709,6 +3860,7 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("state-machine-callers", "TASKS_DIR", EXEMPTION, by=WHOLE, adr="ADR 0008"),
     # step-completers
     Constant("step-completers", "COMPLETE_STEP_METHOD", DETECTOR),
+    Constant("step-completers", "STOP_STEP_METHOD", DETECTOR),
     Constant("step-completers", "EXECUTOR_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0014 §9"),
     Constant(
         "step-completers", "ROOT_PACKAGE", SUBJECT, why=INEVITABLE, reason=_THE_PACKAGE_ITSELF

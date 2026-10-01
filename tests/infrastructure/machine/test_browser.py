@@ -48,13 +48,15 @@ from ela.domain import (
 from ela.infrastructure.machine import PlaywrightBrowser
 from ela.permissions import BROWSER_ACT, BROWSER_READ
 from ela.ports import (
+    NAVIGATION,
     BrowserNotInstalled,
     BrowserStopped,
     BrowserUnsupported,
     PageGone,
     SiteUnreachable,
+    ToolStopped,
 )
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
 from ela.tools.browser import (
     ELEMENT_MISSING,
     LEFT_SITE,
@@ -230,7 +232,7 @@ async def test_a_page_is_read_and_the_verifier_reads_it_again(
     arguments = {"site": "sito0.example", "path": "/", "selector": "h1", "purpose": "x"}
 
     result = await BrowserReadTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), arguments
+        decision(BROWSER_READ), arguments, FakeStop()
     )
     failures = await BrowserReadVerifier(browser, 5.0).verify(
         [BROWSER_TEXT_MATCHES], arguments, result
@@ -264,7 +266,7 @@ async def test_a_click_that_worked_is_verified_by_the_page(
     }
 
     result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments
+        decision(BROWSER_ACT), arguments, FakeStop()
     )
     failures = await BrowserActVerifier(browser, 5.0).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
@@ -293,7 +295,7 @@ async def test_a_click_that_did_nothing_is_not_a_click_that_worked(
     }
 
     result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments
+        decision(BROWSER_ACT), arguments, FakeStop()
     )
     (failure,) = await BrowserActVerifier(browser, 0.2).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
@@ -324,7 +326,7 @@ async def test_a_read_follows_a_redirect_on_the_same_site_and_reads_where_it_lan
     arguments = {"site": "sito0.example", "path": "/", "selector": "h1", "purpose": "x"}
 
     result = await BrowserReadTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), arguments
+        decision(BROWSER_READ), arguments, FakeStop()
     )
     failures = await BrowserReadVerifier(browser, 5.0).verify(
         [BROWSER_TEXT_MATCHES], arguments, result
@@ -346,7 +348,7 @@ async def test_a_read_follows_a_redirect_to_another_declared_site(
     arguments = {"site": "sito0.example", "path": "/", "selector": "h1", "purpose": "x"}
 
     result = await BrowserReadTool(browsing(web, other), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_READ), arguments
+        decision(BROWSER_READ), arguments, FakeStop()
     )
     failures = await BrowserReadVerifier(browser, 5.0).verify(
         [BROWSER_TEXT_MATCHES], arguments, result
@@ -373,7 +375,7 @@ async def test_an_action_follows_a_redirect_on_its_site_to_the_form(
     }
 
     result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments
+        decision(BROWSER_ACT), arguments, FakeStop()
     )
     failures = await BrowserActVerifier(browser, 5.0).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
@@ -408,7 +410,7 @@ async def test_a_form_answered_with_a_303_is_followed_to_its_page(
     }
 
     result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments
+        decision(BROWSER_ACT), arguments, FakeStop()
     )
     failures = await BrowserActVerifier(browser, 5.0).verify(
         [BROWSER_EXPECT_VISIBLE], arguments, result
@@ -431,7 +433,7 @@ async def test_a_redirect_off_the_boundary_is_not_followed_and_nothing_reaches_t
     other = site(served, {"/": (200, {}, "<p>altrove</p>")})
     web = site(served, {"/": (302, {"Location": other.origin + "/?chiave=segreta"}, "")})
 
-    opened = await browser.open(web.origin + "/", boundary(frozenset({web.origin})))
+    opened = await browser.open(web.origin + "/", boundary(frozenset({web.origin})), FakeStop())
 
     assert opened.left is not None and origin_of(opened.left) == other.origin
     assert other.requests == [], "the request was never sent"
@@ -464,7 +466,7 @@ async def test_a_form_that_sends_to_another_site_is_not_sent(
     }
 
     result = await BrowserActTool(names, browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments
+        decision(BROWSER_ACT), arguments, FakeStop()
     )
 
     assert result.error is not None and result.error.code == LEFT_SITE
@@ -503,7 +505,7 @@ async def test_nothing_is_touched_when_the_page_is_not_the_plan_s(
     }
 
     result = await BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator()).execute(
-        decision(BROWSER_ACT), arguments
+        decision(BROWSER_ACT), arguments, FakeStop()
     )
 
     assert result.error is not None and result.error.code == code
@@ -528,9 +530,9 @@ async def test_a_cookie_does_not_pass_from_one_page_to_the_next(
     )
     allowed = boundary(frozenset({web.origin}))
 
-    first = await browser.open(web.origin + "/set", allowed)
+    first = await browser.open(web.origin + "/set", allowed, FakeStop())
     await browser.close(first.page)
-    second = await browser.open(web.origin + "/check", allowed)
+    second = await browser.open(web.origin + "/check", allowed, FakeStop())
     await browser.close(second.page)
 
     assert web.cookies == ["", ""]
@@ -549,7 +551,7 @@ async def test_a_site_that_does_not_answer_is_unreachable_and_leaves_nothing(
     closed.server_close()
 
     with pytest.raises(SiteUnreachable):
-        await browser.open(address, lambda url: True)
+        await browser.open(address, lambda url: True, FakeStop())
 
     assert descendants() == []
 
@@ -558,7 +560,7 @@ async def test_a_page_closed_leaves_no_process_when_the_close_returns(
     browser: PlaywrightBrowser, served: list[Site]
 ) -> None:
     web = site(served, {"/": (200, {}, "<p>x</p>")})
-    opened = await browser.open(web.origin + "/", lambda url: True)
+    opened = await browser.open(web.origin + "/", lambda url: True, FakeStop())
     assert descendants(), "a driver and a browser run while the page is open"
 
     await browser.close(opened.page)
@@ -572,7 +574,7 @@ async def test_the_stop_signal_closes_every_page_and_stops_what_runs(served: lis
     web = site(served, {"/": (200, {}, "<p>x</p>")})
     stopping = asyncio.Event()
     browser = PlaywrightBrowser(stopping, environment={}, kept=Kept(), system=SYSTEM)
-    opened = await browser.open(web.origin + "/", lambda url: True)
+    opened = await browser.open(web.origin + "/", lambda url: True, FakeStop())
     watching = browser._watching  # noqa: SLF001 — the task the signal wakes
     assert watching is not None
 
@@ -583,7 +585,40 @@ async def test_the_stop_signal_closes_every_page_and_stops_what_runs(served: lis
     with pytest.raises(BrowserStopped):
         await browser.text(opened.page, None)
     with pytest.raises(BrowserStopped):
-        await browser.open(web.origin + "/", lambda url: True)
+        await browser.open(web.origin + "/", lambda url: True, FakeStop())
+
+
+async def test_a_stopped_task_leaves_before_the_navigation_and_the_site_sees_nothing(
+    browser: PlaywrightBrowser, served: list[Site]
+) -> None:
+    """The adapter's own listening (M6.3c, ADR 0054 §3): the page is made, the stop is heard
+    before ``goto``, and the request never leaves — the site counts no request, and the browser
+    started for the page is gone when ``open`` raises."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    stop = FakeStop(stopped=True)
+
+    with pytest.raises(ToolStopped) as caught:
+        await browser.open(web.origin + "/", lambda url: True, stop)
+
+    assert caught.value.where == NAVIGATION
+    assert stop.listened == [NAVIGATION]
+    assert web.requests == []
+    assert descendants() == []
+
+
+async def test_a_task_stopped_right_after_the_navigation_is_listened_to_reads_the_page(
+    browser: PlaywrightBrowser, served: list[Site]
+) -> None:
+    """The other side: past the listening the request leaves, and the page is the site's."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    stop = FakeStop(after=NAVIGATION)
+
+    opened = await browser.open(web.origin + "/", lambda url: True, stop)
+
+    assert stop.is_set()
+    assert opened.status == 200
+    assert web.requests == ["GET /"]
+    await browser.close(opened.page)
 
 
 async def test_a_page_handed_over_and_never_looked_at_is_closed_at_its_deadline(
@@ -592,7 +627,7 @@ async def test_a_page_handed_over_and_never_looked_at_is_closed_at_its_deadline(
     web = site(served, {"/": (200, {}, "<p>x</p>")})
     kept = Kept()
     browser = PlaywrightBrowser(asyncio.Event(), environment={}, kept=kept, system=SYSTEM)
-    opened = await browser.open(web.origin + "/", lambda url: True)
+    opened = await browser.open(web.origin + "/", lambda url: True, FakeStop())
     await browser.keep(opened.page)
     deadline = browser._pages[opened.page].kept  # noqa: SLF001 — the task the deadline wakes
     assert deadline is not None
@@ -613,7 +648,7 @@ async def test_a_missing_browser_is_said_before_any_page(
 
     assert await browser.installed() is False
     with pytest.raises(BrowserNotInstalled):
-        await browser.open("http://127.0.0.1:9/", lambda url: True)
+        await browser.open("http://127.0.0.1:9/", lambda url: True, FakeStop())
     assert descendants() == []
 
 
@@ -659,13 +694,14 @@ async def test_on_a_system_whose_shell_it_cannot_place_it_says_it_did_not_look()
 HOLDER = r"""
 import asyncio, platform, signal, sys
 from ela.infrastructure.machine import PlaywrightBrowser
+from ela.testing.fakes import FakeStop
 
 async def main() -> None:
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # uvicorn keeps serving what is in flight
     browser = PlaywrightBrowser(
         asyncio.Event(), environment={}, kept=asyncio.Event().wait, system=platform.system()
     )
-    opened = await browser.open(sys.argv[1], lambda url: True)
+    opened = await browser.open(sys.argv[1], lambda url: True, FakeStop())
     print("ready", flush=True)
     await asyncio.get_running_loop().run_in_executor(None, sys.stdin.readline)
     try:

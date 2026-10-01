@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from ela.composition import SystemClock, UuidGenerator
 from ela.devices import DeviceRegistry, LocalHeartbeat, period_of
 from ela.domain import CapabilityId, RiskLevel
+from ela.executive import StopOfTask
 from ela.infrastructure.machine import (
     DarwinListening,
     DarwinProbe,
@@ -51,6 +52,7 @@ from ela.infrastructure.persistence import (
     make_engine,
 )
 from ela.infrastructure.persistence.orm import Base
+from ela.node.runner import NEVER_STOPPED
 from ela.permissions import CapabilityRegistry, PermissionGuardian
 from ela.ports import (
     ApprovalStore,
@@ -77,6 +79,7 @@ from ela.ports import (
     ScreenCapturePort,
     SpeechPort,
     TaskRepository,
+    TaskStop,
     TextRecognitionPort,
     ToolPort,
     ToolRegistryPort,
@@ -111,6 +114,7 @@ from ela.testing.fakes import (
     FakeProviderRegistry,
     FakeScreenCapture,
     FakeSpeech,
+    FakeStop,
     FakeTaskRepository,
     FakeTextRecognition,
     FakeTool,
@@ -648,6 +652,11 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     LocalBeat: (
         Implementation("FakeLocalBeat", FakeLocalBeat),
         Implementation("LocalHeartbeat", _heartbeat),
+    ),
+    TaskStop: (
+        Implementation("FakeStop", FakeStop),
+        Implementation("StopOfTask", lambda: StopOfTask(asyncio.Event(), None)),
+        Implementation("NeverStopped", lambda: NEVER_STOPPED),
     ),
 }
 

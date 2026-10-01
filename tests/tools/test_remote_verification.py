@@ -29,7 +29,7 @@ import pytest
 
 from ela.domain import CapabilityId, ErrorMetadata, ExecutionResult, JsonMapping, ProviderRequest
 from ela.permissions import BROWSER_ACT, BROWSER_READ
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider, FakeStop
 from ela.tools import (
     COMMON_FAILURE_CODES,
     CORE_ECHO,
@@ -195,12 +195,12 @@ async def test_the_note_verifier_passes_a_note_the_node_did_not_leave_behind(
     """
     node = tmp_path / "node"
     reported = await WriteNoteTool(node, FakeClock(), FakeIdGenerator()).execute(
-        allowed(WORKSPACE_WRITE_NOTE), NOTE_ARGUMENTS
+        allowed(WORKSPACE_WRITE_NOTE), NOTE_ARGUMENTS, FakeStop()
     )
     shutil.rmtree(node)
     core = tmp_path / "core"
     await WriteNoteTool(core, FakeClock(), FakeIdGenerator()).execute(
-        allowed(WORKSPACE_WRITE_NOTE), NOTE_ARGUMENTS
+        allowed(WORKSPACE_WRITE_NOTE), NOTE_ARGUMENTS, FakeStop()
     )
     verifier = WriteNoteVerifier(core)
 
@@ -365,7 +365,7 @@ async def test_the_check_sees_what_the_note_verifier_reads(tmp_path: Path) -> No
     """And it sees the reads of a verifier that declares them, which is why that one stays."""
     root = tmp_path / "workspace"
     result = await WriteNoteTool(root, FakeClock(), FakeIdGenerator()).execute(
-        allowed(WORKSPACE_WRITE_NOTE), NOTE_ARGUMENTS
+        allowed(WORKSPACE_WRITE_NOTE), NOTE_ARGUMENTS, FakeStop()
     )
 
     assert await disk_reads_of(WriteNoteVerifier(root), NOTE_ARGUMENTS, result) != []

@@ -152,7 +152,8 @@ async def denied_by_the_guardian(client: AsyncClient, ela: Ela) -> Branch:
     plan = example("fs-outside-the-scope.json")
     task = await queued(client, plan)
     step = plan["steps"][0]["id"]
-    return Branch(task, await run(client, task), (Handled(step, StepState.RUNNING, False),))
+    # The denied step did not act, and closes CANCELLED (M6.3c, ADR 0054 §4).
+    return Branch(task, await run(client, task), (Handled(step, StepState.CANCELLED, False),))
 
 
 async def denied_at_the_door(client: AsyncClient, ela: Ela) -> Branch:
@@ -210,7 +211,9 @@ async def expired_at_the_door(client: AsyncClient, ela: Ela) -> Branch:
     after = datetime.now(UTC) + ela.settings.core.approval_ttl + timedelta(minutes=1)
     later = await build(ela.settings, clock=FakeClock(after), power=FakePower())
     try:
+        # What the start-up does: recover(), then the close of the steps it left open (M6.3c).
         await later.engine.recover()
+        await later.executor.close_every_open_step()
     finally:
         await later.aclose()
     return Branch(task, await run(client, task), ())

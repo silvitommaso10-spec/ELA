@@ -34,6 +34,8 @@ GUIDE = EXAMPLES.parent / "GETTING_STARTED.md"
 DECLARED = ["bin/echo", "usr/bin/seq", "usr/bin/time", "usr/bin/printf", "usr/bin/env"]
 """The line of the guide, step 2 of §16 — read from it by the last test of this file."""
 MARKER = "girasole-7431"
+STOP_PLAN = "terminal-stop.json"
+"""The plan of §21 (M6.3c): ``/bin/sleep 97``, declared by its own line of the guide."""
 
 
 @pytest.fixture
@@ -237,12 +239,20 @@ async def test_a_child_receives_the_closed_environment_whatever_the_core_has(
 
 
 def test_the_programs_of_the_plans_are_the_line_the_guide_tells_you_to_write() -> None:
-    """The fixture declares what §16 says, and every plan but one names a declared program."""
+    """The fixture declares what §16 says, and every plan but one names a declared program.
+
+    ``terminal-stop.json`` is §21's (M6.3c): ``bin/sleep`` is declared by the line of §21, for the
+    one hand test that needs a program that runs until it is stopped, and taken away at its end."""
     guide = GUIDE.read_text(encoding="utf-8")
     line = f"ELA_TERMINAL_PROGRAMS={json.dumps(DECLARED, separators=(',', ':'))}"
 
     assert line in guide
+    assert 'ELA_TERMINAL_PROGRAMS=["bin/sleep"]' in guide
+    (stopped,) = plan(STOP_PLAN)["steps"]
+    assert (stopped["arguments"]["program"], stopped["arguments"]["args"]) == ("bin/sleep", ["97"])
     for path in sorted(EXAMPLES.glob("terminal-*.json")):
+        if path.name == STOP_PLAN:
+            continue
         (step,) = plan(path.name)["steps"]
         declared = step["arguments"]["program"] in DECLARED
         assert declared is (path.name != "terminal-not-declared.json"), path.name

@@ -19,7 +19,7 @@ from typing import Final
 import pytest
 
 from ela.domain import ExecutionStatus
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
 from ela.tools import (
     IO_ERROR,
     NOTE_EXISTS,
@@ -150,7 +150,9 @@ async def _tool_and_verifier(root: Path, path: str) -> tuple[str | None, str, st
     tool = WriteNoteTool(root, FakeClock(), FakeIdGenerator())
     verifier = WriteNoteVerifier(root)
     before = snapshot(root)
-    result = await tool.execute(allowed(WORKSPACE_WRITE_NOTE), {"path": path, "body": BODY})
+    result = await tool.execute(
+        allowed(WORKSPACE_WRITE_NOTE), {"path": path, "body": BODY}, FakeStop()
+    )
     assert result.status is ExecutionStatus.FAILED and result.error is not None
     assert snapshot(root) == before  # the tool wrote nothing
     failures = await verifier.verify(

@@ -279,15 +279,18 @@ async def test_the_assignment_never_carries_the_arguments_of_the_step() -> None:
 # ----------------------------------------------------------------------------------------
 
 
-async def test_finishing_a_step_of_a_task_that_closed_is_refused() -> None:
-    """``finish`` writes the second half of a call; a task nobody is waiting for has no second half,
-    and a doubt is a failure (§33)."""
+async def test_finishing_a_step_of_a_task_that_closed_withdraws_the_offer_and_closes_it() -> None:
+    """Until M6.3c ``finish`` refused a task that had ended. Now it closes the step it left open:
+    here an offer nobody took, which is withdrawn, and the step is ``CANCELLED`` (ADR 0054 §9)."""
     w = world()
     step, _, assignment = await handed(w)
     await w.engine.cancel(assignment.task_id, reason="basta")  # type: ignore[attr-defined]
 
-    with pytest.raises(ExecutorError, match="needs an EXECUTING task"):
-        await w.executor.finish(assignment.task_id, step.id)  # type: ignore[attr-defined]
+    await w.executor.finish(assignment.task_id, step.id)  # type: ignore[attr-defined]
+
+    assert await w.step_state(assignment.task_id, step.id) is StepState.CANCELLED  # type: ignore[attr-defined]
+    (offer,) = await w.assignments._store.for_step(assignment.task_id, step.id)  # type: ignore[attr-defined]
+    assert offer.state is AssignmentState.WITHDRAWN
 
 
 async def test_finishing_a_step_nothing_ran_on_is_refused() -> None:
@@ -392,11 +395,29 @@ async def test_a_late_delivery_is_refused_and_the_audit_keeps_what_it_reported()
     assert await w.step_state(assignment.task_id, step.id) is StepState.RUNNING  # type: ignore[attr-defined]
 
 
-async def test_a_delivery_for_a_task_that_closed_is_void() -> None:
+async def test_a_delivery_for_a_task_that_closed_after_the_claim_closes_the_step() -> None:
+    """The envelope was the point of no return: a task stopped after the node took the work still
+    takes its delivery, and the step closes as a normal one, with the result written (M6.3c, ADR
+    0054 §9). Until M6.3c this was ``task_closed``, and the node's effect was written nowhere."""
     w = world()
     step, remote, assignment = await handed(w)
     await w.executor.begin(assignment.id, remote.id)  # type: ignore[attr-defined]
     await w.engine.cancel(assignment.task_id, reason="the user changed their mind")  # type: ignore[attr-defined]
+
+    delivered = await w.executor.deliver(assignment.id, remote.id, answered())  # type: ignore[attr-defined]
+
+    assert delivered.step_state is StepState.COMPLETED
+    (result,) = await w.results.for_step(assignment.task_id, step.id)  # type: ignore[attr-defined]
+    assert result.status is ExecutionStatus.SUCCEEDED
+    assert await rejections(w) == []
+
+
+async def test_a_delivery_for_a_step_no_longer_running_is_void() -> None:
+    w = world()
+    step, remote, assignment = await handed(w)
+    await w.executor.begin(assignment.id, remote.id)  # type: ignore[attr-defined]
+    await w.engine.cancel(assignment.task_id, reason="the user changed their mind")  # type: ignore[attr-defined]
+    await w.engine.stop_step(assignment.task_id, step.id, reason="closed by somebody else")  # type: ignore[attr-defined]
 
     with pytest.raises(AssignmentVoidError):
         await w.executor.deliver(assignment.id, remote.id, answered())  # type: ignore[attr-defined]

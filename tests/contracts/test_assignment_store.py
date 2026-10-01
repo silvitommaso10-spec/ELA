@@ -343,3 +343,58 @@ async def test_a_revocation_cuts_every_live_assignment_of_the_node(
     assert (await assignment_store.get(offered.id)).expires_at == cut
     assert await assignment_store.get(theirs.id) == theirs
     assert await assignment_store.cut_short(NODE, now=cut) == 0
+
+
+# ----------------------------------------------------------------------------------------
+# The withdrawal of an offer whose task ended (M6.3c, ADR 0054 §9)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_an_offer_nobody_took_is_withdrawn_and_cannot_be_taken(
+    assignment_store: AssignmentStore,
+) -> None:
+    await assignment_store.add(OFFER)
+
+    withdrawn = await assignment_store.withdraw(OFFER.id, now=TAKEN)
+
+    assert withdrawn.state is AssignmentState.WITHDRAWN
+    assert withdrawn.claimed_at is None
+    assert await assignment_store.get(OFFER.id) == withdrawn
+    assert await assignment_store.offered_to(NODE) == ()
+    with pytest.raises(AssignmentStateError) as caught:
+        await assignment_store.claim(OFFER.id, device_id=NODE, now=TAKEN, expires_at=DUE)
+    assert caught.value.state is AssignmentState.WITHDRAWN
+
+
+async def test_a_claim_that_came_first_wins_over_the_withdrawal(
+    assignment_store: AssignmentStore,
+) -> None:
+    """Conditioned on ``OFFERED``, in the statement that moves it: the row comes back as the claim
+    left it, and the caller leaves the step to its node."""
+    taken = await claimed(assignment_store)
+
+    assert await assignment_store.withdraw(OFFER.id, now=TAKEN + INSTANT) == taken
+    assert await assignment_store.get(OFFER.id) == taken
+
+
+async def test_a_withdrawal_written_twice_is_one(assignment_store: AssignmentStore) -> None:
+    await assignment_store.add(OFFER)
+    first = await assignment_store.withdraw(OFFER.id, now=TAKEN)
+
+    assert await assignment_store.withdraw(OFFER.id, now=DUE) == first
+
+
+async def test_a_withdrawn_offer_still_holds_its_step(assignment_store: AssignmentStore) -> None:
+    """No migration (M6.3c): the index of a step's open assignment counts every state but
+    ``EXPIRED``, so a withdrawn offer keeps its step — harmless, because the step of a task that
+    ended is never offered again."""
+    await assignment_store.add(OFFER)
+    await assignment_store.withdraw(OFFER.id, now=TAKEN)
+
+    with pytest.raises(AlreadyExistsError):
+        await assignment_store.add(offer_for(9).model_copy(update={"step_id": OFFER.step_id}))
+
+
+async def test_withdrawing_what_is_unknown_is_not_found(assignment_store: AssignmentStore) -> None:
+    with pytest.raises(NotFoundError):
+        await assignment_store.withdraw(AssignmentId(UUID(int=404)), now=TAKEN)

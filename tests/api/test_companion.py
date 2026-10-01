@@ -22,6 +22,7 @@ from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app
 from ela.api.companion import (
+    HALT_PHRASES,
     IDLE,
     SHOWN,
     WAITING_APPROVAL,
@@ -42,6 +43,7 @@ from ela.domain import (
     ApprovalStatus,
     AuditEventType,
     DeviceRole,
+    Halt,
     PrivacyLevel,
     StepId,
     TaskId,
@@ -1080,3 +1082,66 @@ async def test_the_phone_asks_for_no_list_of_every_task(
 
     assert home.status_code == 200, home.text
     assert confirmation.status_code == 200, confirmation.text
+
+
+# ----------------------------------------------------------------------------------------
+# What the step in progress had done when the task was stopped (M6.3c, ADR 0054 §8)
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("halt", list(Halt), ids=str)
+async def test_the_row_of_a_finished_task_says_what_the_step_in_progress_had_done(
+    phone: AsyncClient,
+    client: AsyncClient,
+    ela: Ela,
+    monkeypatch: pytest.MonkeyPatch,
+    halt: Halt,
+) -> None:
+    """The phone has no page of a task: the row among the finished is the one place it says it,
+    under every ceiling — ``halt`` is a fact of the execution, like the state (C-R25)."""
+    task = await queued(client, echo_plan())
+    await client.post(f"/tasks/{task}/cancel", json={"reason": "ferma"})
+
+    async def said(task_id: object) -> Halt:
+        return halt
+
+    monkeypatch.setattr(ela.executor, "halt", said)
+
+    assert html.escape(HALT_PHRASES[halt]) in (await phone.get("/companion/")).text
+
+
+async def test_a_row_whose_stop_found_no_step_at_work_says_nothing_of_one(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    task = await queued(client, echo_plan())
+    await client.post(f"/tasks/{task}/cancel", json={"reason": "ferma"})
+
+    home = (await phone.get("/companion/")).text
+
+    assert not any(html.escape(phrase) in home for phrase in HALT_PHRASES.values())
+
+
+async def test_the_confirmation_of_the_stop_says_where_the_phone_will_say_how_it_went(
+    phone: AsyncClient, client: AsyncClient
+) -> None:
+    task = await queued(client, echo_plan(), privacy="TRUSTED")
+
+    confirm = (await phone.get(f"/companion/cancel?id={task}")).text
+
+    assert html.escape(PHONE_CONFIRMATION) in confirm
+    assert "non farà più niente" not in confirm
+
+
+PHONE_CONFIRMATION = (
+    "Nessuno step nuovo partirà. Uno step che ha già agito può finire ciò che ha cominciato: la "
+    "riga del task, fra i finiti, dirà se aveva agito."
+)
+"""The sentence of proposal 6 of M6.3c's SPEC: the phone has no page of the task."""
+
+
+def test_every_value_has_its_sentence_and_none_says_an_effect_happened() -> None:
+    """ADR 0047 §9 and ADR 0052 §9: a verifier says what it verified, never that the effect
+    happened — and neither does a sentence built on it (decision 12 of the review)."""
+    assert set(HALT_PHRASES) == set(Halt)
+    assert len(set(HALT_PHRASES.values())) == len(Halt)
+    assert not any("è avvenut" in phrase for phrase in HALT_PHRASES.values())

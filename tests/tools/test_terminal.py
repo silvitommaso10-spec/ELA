@@ -35,7 +35,7 @@ from ela.domain import (
 )
 from ela.permissions import TERMINAL_RUN
 from ela.ports import Captured, Ending, Invocation, Ran, Target
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeLauncher
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeLauncher, FakeStop
 from ela.tools.base import ARGUMENTS_INVALID
 from ela.tools.fs import NO_ROOT
 from ela.tools.paths import PATH_INVALID, PATH_MISSING, PATH_OUTSIDE_ROOT, PATH_SYMLINK
@@ -516,7 +516,7 @@ async def test_the_launcher_receives_exactly_what_the_tool_decided(
     launcher = FakeLauncher()
     runner = tool(terminal(root, program, timeout=30, output=64), launcher)
 
-    await runner.execute(decision(), call(program, "a b", "'$HOME'", '"x"'))
+    await runner.execute(decision(), call(program, "a b", "'$HOME'", '"x"'), FakeStop())
 
     (command,) = launcher.commands
     assert command.argv == (str(program), "a b", "'$HOME'", '"x"')
@@ -547,7 +547,7 @@ async def test_a_program_changed_between_the_yes_and_the_launch_never_launches(
     assert (await runner.prospect(call(program))).refusal is None
     executable(program, "#!/bin/sh\necho cambiato\n")
 
-    result = await runner.execute(decision(), call(program))
+    result = await runner.execute(decision(), call(program), FakeStop())
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None and result.error.code == PROGRAM_CHANGED
@@ -563,7 +563,7 @@ async def test_a_program_deleted_between_the_yes_and_the_launch_is_gone_and_neve
     assert (await runner.prospect(call(program))).refusal is None
     program.unlink()
 
-    result = await runner.execute(decision(), call(program))
+    result = await runner.execute(decision(), call(program), FakeStop())
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None and result.error.code == PROGRAM_GONE
@@ -579,7 +579,7 @@ async def test_a_program_that_ended_by_itself_is_a_success_whatever_its_code(
     )
 
     result = await tool(terminal(root, program), launcher).execute(
-        decision(), call(program, "a", "b")
+        decision(), call(program, "a", "b"), FakeStop()
     )
 
     assert result.status is ExecutionStatus.SUCCEEDED
@@ -607,7 +607,9 @@ async def test_a_program_that_ended_by_itself_is_a_success_whatever_its_code(
 async def test_a_program_stopped_by_a_signal_says_which(root: Path, program: Path) -> None:
     launcher = FakeLauncher(Ran(Ending.SIGNALLED, signal=9))
 
-    result = await tool(terminal(root, program), launcher).execute(decision(), call(program))
+    result = await tool(terminal(root, program), launcher).execute(
+        decision(), call(program), FakeStop()
+    )
 
     assert result.status is ExecutionStatus.SUCCEEDED
     assert (result.output["ended"], result.output["signal"]) == ("signalled", 9)
@@ -623,7 +625,9 @@ async def test_what_ela_stopped_is_a_failure_that_carries_its_partial_output(
     """Decision 7, and «La ripresa»: a half answer that says it is one, and never retried."""
     launcher = FakeLauncher(Ran(ending, signal=15, stdout=Captured(head=b"mezza", total=5)))
 
-    result = await tool(terminal(root, program), launcher).execute(decision(), call(program))
+    result = await tool(terminal(root, program), launcher).execute(
+        decision(), call(program), FakeStop()
+    )
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
@@ -639,7 +643,9 @@ async def test_what_the_kernel_refused_is_the_one_refusal_after_a_yes(
     """Decision 5: an exec format nobody could have known about without trying."""
     launcher = FakeLauncher(Ran(Ending.NOT_STARTED, failure="OSError: [Errno 8] Exec format error"))
 
-    result = await tool(terminal(root, program), launcher).execute(decision(), call(program))
+    result = await tool(terminal(root, program), launcher).execute(
+        decision(), call(program), FakeStop()
+    )
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None and result.error.code == NOT_STARTED
@@ -659,7 +665,7 @@ async def test_neither_the_arguments_nor_the_output_enter_an_error_message(
     )
 
     result = await tool(terminal(root, program), launcher).execute(
-        decision(), call(program, MARKER)
+        decision(), call(program, MARKER), FakeStop()
     )
 
     assert result.error is not None

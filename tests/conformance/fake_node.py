@@ -23,7 +23,7 @@ from typing import Any
 
 from ela.domain import CapabilityId, ExecutionStatus, PermissionDecision
 from ela.ports import NotAllowedError, ToolPort, VerifierPort
-from ela.testing.fakes import DEFAULT_START, FakeClock, FakeIdGenerator, FakeSpeech
+from ela.testing.fakes import DEFAULT_START, FakeClock, FakeIdGenerator, FakeSpeech, FakeStop
 from ela.tools import (
     FS_READ,
     FS_WRITE,
@@ -188,7 +188,7 @@ class FakeNode:
         verifier = None if conditions is None else self._verifiers[capability]
         envelope: dict[str, Any]
         try:
-            result = await tool.execute(decision, dict(order["arguments"]))
+            result = await tool.execute(decision, dict(order["arguments"]), FakeStop())
         except NotAllowedError:
             envelope = {"form": "refused"}
         except Exception as raised:  # noqa: BLE001 — a node reports the type, never the message

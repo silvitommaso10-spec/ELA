@@ -8,7 +8,7 @@ import pytest
 
 from ela.domain import ExecutionStatus, PermissionOutcome
 from ela.ports import NotAllowedError
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
 from ela.tools import ARGUMENTS_INVALID, CORE_ECHO, ECHO_TOOL_NAME, EchoTool
 from tests.tools.support import allowed
 
@@ -20,7 +20,7 @@ def tool() -> EchoTool:
 
 async def test_echoes_the_message(tool: EchoTool) -> None:
     decision = allowed(CORE_ECHO)
-    result = await tool.execute(decision, {"message": "hello"})
+    result = await tool.execute(decision, {"message": "hello"}, FakeStop())
     assert result.status is ExecutionStatus.SUCCEEDED
     assert result.output == {"message": "hello"}
     assert result.error is None
@@ -40,7 +40,7 @@ async def test_duration_is_measured_on_the_tools_clock() -> None:
             return instant
 
     tool = EchoTool(SlowClock(), FakeIdGenerator())
-    result = await tool.execute(allowed(CORE_ECHO), {"message": "hi"})
+    result = await tool.execute(allowed(CORE_ECHO), {"message": "hi"}, FakeStop())
     assert result.duration_ms == 250
 
 
@@ -48,7 +48,7 @@ async def test_duration_is_measured_on_the_tools_clock() -> None:
 async def test_a_message_that_is_not_a_string_fails_with_a_code(
     tool: EchoTool, arguments: dict[str, object]
 ) -> None:
-    result = await tool.execute(allowed(CORE_ECHO), arguments)
+    result = await tool.execute(allowed(CORE_ECHO), arguments, FakeStop())
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
     assert result.error.code == ARGUMENTS_INVALID
@@ -58,16 +58,21 @@ async def test_a_message_that_is_not_a_string_fails_with_a_code(
 
 async def test_the_contract_is_checked_before_anything(tool: EchoTool) -> None:
     with pytest.raises(NotAllowedError, match="outcome is DENIED"):
-        await tool.execute(allowed(CORE_ECHO, outcome=PermissionOutcome.DENIED), {"message": "x"})
+        await tool.execute(
+            allowed(CORE_ECHO, outcome=PermissionOutcome.DENIED), {"message": "x"}, FakeStop()
+        )
     with pytest.raises(NotAllowedError, match="is about workspace.write_note"):
         await tool.execute(
             allowed(tool.capability_id).model_copy(
                 update={"capability_id": "workspace.write_note"}
             ),
             {"message": "x"},
+            FakeStop(),
         )
     with pytest.raises(NotAllowedError, match="expired"):
-        await tool.execute(allowed(CORE_ECHO, expires_at=FakeClock().now()), {"message": "x"})
+        await tool.execute(
+            allowed(CORE_ECHO, expires_at=FakeClock().now()), {"message": "x"}, FakeStop()
+        )
 
 
 def test_declares_its_output_and_error_codes() -> None:

@@ -75,7 +75,7 @@ def test_the_table_is_total_and_has_no_self_transition() -> None:
         assert state not in targets
 
 
-def test_the_legal_moves_are_the_four_of_adr_0009_and_the_release_of_adr_0038() -> None:
+def test_the_legal_moves_are_adr_0009_s_the_release_of_adr_0038_and_the_stop_of_adr_0054() -> None:
     legal = {(a, b) for a, targets in STEP_TRANSITIONS.items() for b in targets}
     assert legal == {
         (P.PENDING, P.RUNNING),
@@ -83,10 +83,12 @@ def test_the_legal_moves_are_the_four_of_adr_0009_and_the_release_of_adr_0038() 
         (P.RUNNING, P.COMPLETED),
         (P.RUNNING, P.FAILED),
         (P.RUNNING, P.PENDING),
+        (P.RUNNING, P.CANCELLED),
     }
     assert can_step_transition(P.PENDING, P.RUNNING)
     assert not can_step_transition(P.PENDING, P.COMPLETED)
-    assert not can_step_transition(P.RUNNING, P.CANCELLED)
+    assert can_step_transition(P.RUNNING, P.CANCELLED)
+    assert not can_step_transition(P.CANCELLED, P.RUNNING)
 
 
 def test_every_step_event_type_moves_a_step_somewhere_legal() -> None:

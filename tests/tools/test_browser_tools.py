@@ -32,8 +32,9 @@ from ela.ports import (
     Opened,
     PageGone,
     SiteUnreachable,
+    TaskStop,
 )
-from ela.testing.fakes import FakeBrowser, FakeClock, FakeIdGenerator, FakePage
+from ela.testing.fakes import FakeBrowser, FakeClock, FakeIdGenerator, FakePage, FakeStop
 from ela.tools.base import ARGUMENTS_INVALID
 from ela.tools.browser import (
     ACTS,
@@ -187,7 +188,9 @@ async def test_what_the_question_refused_the_tool_refuses_again_and_opens_nothin
     arguments again, and a plan that reaches it outside the grammar starts no browser."""
     browser = FakeBrowser()
 
-    result = await act(browser).execute(decision(BROWSER_ACT), with_(ACT, path="forms/post"))
+    result = await act(browser).execute(
+        decision(BROWSER_ACT), with_(ACT, path="forms/post"), FakeStop()
+    )
 
     assert result.error is not None and result.error.code == ARGUMENTS_INVALID
     assert browser.opened == [] and browser.closed == []
@@ -242,7 +245,7 @@ async def test_the_run_does_not_ask_whether_the_browser_is_there(
     browser = Counting(FakePage(texts={None: "testo"}, shown=True))
     tool = read(browser) if capability == BROWSER_READ else act(browser)
 
-    result = await tool.execute(decision(capability), arguments)
+    result = await tool.execute(decision(capability), arguments, FakeStop())
 
     assert result.status is ExecutionStatus.SUCCEEDED, result.error
     assert browser.asked == 0
@@ -286,7 +289,9 @@ async def test_a_browser_that_does_not_answer_whether_it_is_there_is_bounded() -
 async def test_a_read_composes_the_address_hands_the_declared_sites_and_keeps_the_page() -> None:
     browser = FakeBrowser(FakePage(title="Example Domain", texts={"h1": "Example Domain"}))
 
-    result = await read(browser).execute(decision(BROWSER_READ), with_(READ, selector="h1"))
+    result = await read(browser).execute(
+        decision(BROWSER_READ), with_(READ, selector="h1"), FakeStop()
+    )
 
     assert result.status is ExecutionStatus.SUCCEEDED
     assert browser.opened == ["https://example.com/"]
@@ -308,7 +313,7 @@ async def test_a_read_composes_the_address_hands_the_declared_sites_and_keeps_th
 async def test_a_read_of_the_whole_page_keeps_its_beginning() -> None:
     browser = FakeBrowser(FakePage(texts={None: "x" * (TEXT_MAX_BYTES + 10)}))
 
-    result = await read(browser).execute(decision(BROWSER_READ), READ)
+    result = await read(browser).execute(decision(BROWSER_READ), READ, FakeStop())
 
     assert result.output["shown"] == TEXT_MAX_BYTES
     assert result.output["total"] == TEXT_MAX_BYTES + 10
@@ -329,7 +334,9 @@ async def test_what_the_page_refuses_closes_the_browser(
 ) -> None:
     browser = FakeBrowser(page)
 
-    result = await read(browser).execute(decision(BROWSER_READ), with_(READ, selector="h1"))
+    result = await read(browser).execute(
+        decision(BROWSER_READ), with_(READ, selector="h1"), FakeStop()
+    )
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None and result.error.code == code
@@ -352,7 +359,7 @@ async def test_what_the_browser_raises_has_a_code_of_its_own(error: Exception, c
     browser = FakeBrowser()
     browser.raising["open"] = error  # type: ignore[assignment]
 
-    result = await read(browser).execute(decision(BROWSER_READ), READ)
+    result = await read(browser).execute(decision(BROWSER_READ), READ, FakeStop())
 
     assert result.error is not None and result.error.code == code
     assert browser.closed == [], "nothing was opened, so nothing is left to close"
@@ -367,7 +374,7 @@ async def test_a_page_that_is_still_at_work_after_the_time_is_closed_and_says_so
     browser = Slow()
     tool = read(browser, Browsing(sites=("example.com",), timeout_seconds=0))
 
-    result = await tool.execute(decision(BROWSER_READ), READ)
+    result = await tool.execute(decision(BROWSER_READ), READ, FakeStop())
 
     assert result.error is not None and result.error.code == TIMEOUT
     assert "still at work after 0 s" in result.error.message
@@ -386,7 +393,9 @@ async def test_a_page_that_never_opens_is_bounded_by_the_step_s_time(
     never answers is ``browser.timeout``; the guard is the test's, and never the one that fires."""
 
     class Unanswered(FakeBrowser):
-        async def open(self, address: str, allowed: Callable[[str], bool]) -> Opened:
+        async def open(
+            self, address: str, allowed: Callable[[str], bool], stop: TaskStop
+        ) -> Opened:
             await asyncio.Event().wait()
             raise AssertionError("never reached")
 
@@ -395,7 +404,7 @@ async def test_a_page_that_never_opens_is_bounded_by_the_step_s_time(
     tool = read(browser, browsing) if capability == BROWSER_READ else act(browser, browsing)
 
     async with asyncio.timeout(10):
-        result = await tool.execute(decision(capability), arguments)
+        result = await tool.execute(decision(capability), arguments, FakeStop())
 
     assert result.error is not None and result.error.code == TIMEOUT
     assert "still at work after 0 s" in result.error.message
@@ -410,7 +419,7 @@ async def test_a_page_that_never_opens_is_bounded_by_the_step_s_time(
 async def test_an_action_fills_then_clicks_on_its_own_site_and_keeps_the_page() -> None:
     browser = FakeBrowser()
 
-    result = await act(browser).execute(decision(BROWSER_ACT), ACT)
+    result = await act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop())
 
     assert result.status is ExecutionStatus.SUCCEEDED
     assert browser.opened == ["https://httpbin.org/forms/post"]
@@ -426,7 +435,7 @@ async def test_an_action_fills_then_clicks_on_its_own_site_and_keeps_the_page() 
 async def test_an_action_with_no_field_is_one_click() -> None:
     browser = FakeBrowser()
 
-    result = await act(browser).execute(decision(BROWSER_ACT), with_(ACT, fill=[]))
+    result = await act(browser).execute(decision(BROWSER_ACT), with_(ACT, fill=[]), FakeStop())
 
     assert result.output["gestures"] == 1 and browser.clicks == ["form button"]
 
@@ -445,7 +454,7 @@ async def test_an_action_with_no_field_is_one_click() -> None:
 async def test_a_page_that_is_not_the_plan_s_gets_no_gesture(page: FakePage, code: str) -> None:
     browser = FakeBrowser(page)
 
-    result = await act(browser).execute(decision(BROWSER_ACT), ACT)
+    result = await act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop())
 
     assert result.error is not None and result.error.code == code
     assert result.output == {"gestures": 0}
@@ -459,7 +468,7 @@ async def test_a_page_that_is_not_the_plan_s_gets_no_gesture(page: FakePage, cod
 async def test_a_click_that_starts_a_navigation_off_the_site_is_stopped_and_said() -> None:
     browser = FakeBrowser(FakePage(left_after_click="https://pagamenti.example/checkout"))
 
-    result = await act(browser).execute(decision(BROWSER_ACT), ACT)
+    result = await act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop())
 
     assert result.error is not None and result.error.code == LEFT_SITE
     assert "https://pagamenti.example," in result.error.message
@@ -472,7 +481,7 @@ async def test_a_click_that_starts_a_navigation_off_the_site_is_stopped_and_said
 async def test_an_action_on_a_page_that_answers_an_error_makes_no_gesture() -> None:
     browser = FakeBrowser(FakePage(status=500))
 
-    result = await act(browser).execute(decision(BROWSER_ACT), ACT)
+    result = await act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop())
 
     assert result.error is not None and result.error.code == HTTP_STATUS
     assert browser.fills == [] and browser.clicks == []
@@ -482,7 +491,7 @@ async def test_a_stop_during_a_gesture_says_how_many_were_made() -> None:
     browser = FakeBrowser()
     browser.raising["click"] = BrowserStopped("ELA is stopping")  # type: ignore[assignment]
 
-    result = await act(browser).execute(decision(BROWSER_ACT), ACT)
+    result = await act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop())
 
     assert result.error is not None and result.error.code == STOPPED
     assert result.error.message.endswith("1 gesture was made")
@@ -493,7 +502,7 @@ async def test_a_failure_during_a_gesture_is_named_by_its_type() -> None:
     browser = FakeBrowser()
     browser.raising["fill"] = BrowserFailed("TargetClosedError")  # type: ignore[assignment]
 
-    result = await act(browser).execute(decision(BROWSER_ACT), ACT)
+    result = await act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop())
 
     assert result.error is not None and result.error.code == FAILED
     assert "BrowserFailed: TargetClosedError" in result.error.message
@@ -509,7 +518,7 @@ async def test_a_timeout_before_the_first_gesture_says_none_was_made() -> None:
     browser = Slow()
 
     result = await act(browser, Browsing(sites=("httpbin.org",), timeout_seconds=0)).execute(
-        decision(BROWSER_ACT), ACT
+        decision(BROWSER_ACT), ACT, FakeStop()
     )
 
     assert result.error is not None and result.error.code == TIMEOUT

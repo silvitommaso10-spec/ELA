@@ -22,7 +22,7 @@ from ela.ports import (
     PermissionGuardianPort,
     ToolPort,
 )
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider, FakeStop
 from ela.tools import tools_v01
 from tests.contracts.implementations import implementations_of
 from tests.domain.examples import PERMISSION_DECISION
@@ -45,7 +45,7 @@ def decision_for(tool: ToolPort, **update: object) -> PermissionDecision:
 
 async def test_allowed_decision_executes(tool: ToolPort) -> None:
     decision = decision_for(tool, expires_at=FAR_AHEAD)
-    result = await tool.execute(decision, ARGUMENTS)
+    result = await tool.execute(decision, ARGUMENTS, FakeStop())
     assert isinstance(result, ExecutionResult)
     assert result.capability_id == tool.capability_id
     assert result.tool_name == tool.name
@@ -58,12 +58,12 @@ async def test_allowed_decision_executes(tool: ToolPort) -> None:
 )
 async def test_non_allowed_decision_is_refused(tool: ToolPort, outcome: PermissionOutcome) -> None:
     with pytest.raises(NotAllowedError):
-        await tool.execute(decision_for(tool, outcome=outcome), ARGUMENTS)
+        await tool.execute(decision_for(tool, outcome=outcome), ARGUMENTS, FakeStop())
 
 
 async def test_expired_decision_is_refused(tool: ToolPort) -> None:
     with pytest.raises(NotAllowedError):
-        await tool.execute(decision_for(tool, expires_at=LONG_AGO), ARGUMENTS)
+        await tool.execute(decision_for(tool, expires_at=LONG_AGO), ARGUMENTS, FakeStop())
 
 
 async def test_expiry_is_closed(tool: ToolPort) -> None:
@@ -77,14 +77,14 @@ async def test_expiry_is_closed(tool: ToolPort) -> None:
     ``tests/testing/test_fakes.py``.
     """
     with pytest.raises(NotAllowedError):
-        await tool.execute(decision_for(tool, expires_at=FakeClock().now()), ARGUMENTS)
+        await tool.execute(decision_for(tool, expires_at=FakeClock().now()), ARGUMENTS, FakeStop())
 
 
 async def test_decision_for_another_capability_is_refused(tool: ToolPort) -> None:
     other = CapabilityId("some.other_capability")
     assert other != tool.capability_id
     with pytest.raises(NotAllowedError):
-        await tool.execute(decision_for(tool, capability_id=other), ARGUMENTS)
+        await tool.execute(decision_for(tool, capability_id=other), ARGUMENTS, FakeStop())
 
 
 def test_tool_holds_no_guardian_and_no_store(tool: ToolPort) -> None:

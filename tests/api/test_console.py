@@ -26,7 +26,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app, pages
-from ela.api.companion import NO_LIVE
+from ela.api.companion import HALT_PHRASES, NO_LIVE
 from ela.api.console import (
     FROM_AWAY,
     FROM_THIS_MACHINE,
@@ -64,6 +64,7 @@ from ela.domain import (
     AuditEventType,
     DeviceId,
     DeviceRole,
+    Halt,
     PrivacyLevel,
     RiskLevel,
     StepId,
@@ -1183,3 +1184,84 @@ async def test_the_home_asks_for_no_list_of_every_task(
         home = await browser.get("/console/")
 
     assert home.status_code == 200, home.text
+
+
+# ----------------------------------------------------------------------------------------
+# What the step in progress had done when the task was stopped (M6.3c, ADR 0054 §8)
+# ----------------------------------------------------------------------------------------
+
+
+async def stopped_with(
+    client: AsyncClient, ela: Ela, monkeypatch: pytest.MonkeyPatch, halt: Halt
+) -> str:
+    """A stopped task whose ``halt`` is ``halt``: the value is the executor's to compute, and the
+    views are tested on what the route hands them — so the route is handed each value."""
+    task = await queued(client, echo_plan())
+    await client.post(f"/tasks/{task}/cancel", json={"reason": "ferma"})
+
+    async def said(task_id: object) -> Halt:
+        return halt
+
+    monkeypatch.setattr(ela.executor, "halt", said)
+    return task
+
+
+@pytest.mark.parametrize("halt", list(Halt), ids=str)
+async def test_the_summary_says_what_the_step_in_progress_had_done(
+    console: AsyncClient,
+    client: AsyncClient,
+    ela: Ela,
+    monkeypatch: pytest.MonkeyPatch,
+    halt: Halt,
+) -> None:
+    task = await stopped_with(client, ela, monkeypatch, halt)
+
+    page = await console.get(f"/console/task?id={task}")
+
+    assert escape(HALT_PHRASES[halt]) in page.text
+    assert "Lo step in corso" in page.text
+
+
+@pytest.mark.parametrize("halt", list(Halt), ids=str)
+async def test_the_row_of_a_finished_task_says_it_too(
+    console: AsyncClient,
+    client: AsyncClient,
+    ela: Ela,
+    monkeypatch: pytest.MonkeyPatch,
+    halt: Halt,
+) -> None:
+    await stopped_with(client, ela, monkeypatch, halt)
+
+    assert escape(HALT_PHRASES[halt]) in (await console.get("/console/")).text
+
+
+async def test_a_task_whose_stop_found_no_step_at_work_says_nothing_of_one(
+    console: AsyncClient, client: AsyncClient
+) -> None:
+    task = await queued(client, echo_plan())
+    await client.post(f"/tasks/{task}/cancel", json={"reason": "ferma"})
+
+    page = await console.get(f"/console/task?id={task}")
+
+    assert "Lo step in corso" not in page.text
+    assert not any(escape(phrase) in page.text for phrase in HALT_PHRASES.values())
+
+
+async def test_the_confirmation_of_the_stop_says_what_is_true_with_every_answer(
+    console: AsyncClient, client: AsyncClient
+) -> None:
+    """The sentence «the task will do nothing more» was false for a step past its point; the
+    confirmation now says what a stop does, and where the summary will say how it went."""
+    task = await queued(client, echo_plan())
+
+    confirm = (await console.get(f"/console/cancel?id={task}")).text
+
+    assert escape(CONSOLE_CONFIRMATION) in confirm
+    assert "non farà più niente" not in confirm
+
+
+CONSOLE_CONFIRMATION = (
+    "Nessuno step nuovo partirà. Uno step che ha già agito può finire ciò che ha cominciato: il "
+    "riassunto del task dirà se aveva agito."
+)
+"""The sentence of proposal 6 of M6.3c's SPEC, as it is written there."""

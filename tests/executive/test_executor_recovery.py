@@ -333,9 +333,9 @@ async def test_window_4_a_denied_task_without_its_events_refuses_the_retry() -> 
 
     The declared hole of ADR 0008 §4, seen from the executor's side: the state is terminal and
     neither the trail nor the audit carries the transition, so nothing can be replayed — the
-    retry is refused because the task is not EXECUTING, and that refusal is the whole promise
-    of the row. What matters is what it does *not* do: no tool runs, and the ``PERMISSION_DECIDED``
-    that was already written is not written a second time.
+    retry runs nothing because the task is not EXECUTING. What matters is what it does *not* do: no
+    tool runs, and the ``PERMISSION_DECIDED`` that was already written is not written a second time;
+    since M6.3c it closes the step the crash left RUNNING, ``CANCELLED`` (ADR 0054 §5).
     """
     w, crashes = crashing_world()
     task, step = await w.running(NOTE.id, arguments=OUTSIDE_THE_SCOPE)
@@ -350,12 +350,14 @@ async def test_window_4_a_denied_task_without_its_events_refuses_the_retry() -> 
     assert all(event.new_state is not TaskState.DENIED for event in trail)
 
     crashes.disarm()
-    with pytest.raises(ExecutorError, match="a tool needs an EXECUTING task, not DENIED"):
-        await w.execute(task.id, step.id)
-    assert await w.event_types(task.id) == types  # nothing was written by the refusal
+    execution = await w.execute(task.id, step.id)
+    # Since M6.3c the retry closes the step the crash left RUNNING, and only that: no second
+    # PERMISSION_DECIDED, no tool, and the step CANCELLED — it never acted (ADR 0054 §5).
+    assert execution.task.state is TaskState.DENIED
+    assert await w.event_types(task.id) == [*types, E.STEP_CANCELLED]
+    assert await w.step_state(task.id, step.id) is StepState.CANCELLED
     assert w.tool(NOTE.id).calls == ()
     assert await w.store.for_capability(NOTE.id) == ()
-    assert await w.step_state(task.id, step.id) is StepState.RUNNING  # the task is terminal
 
 
 # --------------------------------------------------------------------------------------

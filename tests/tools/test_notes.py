@@ -14,7 +14,7 @@ import pytest
 
 from ela.domain import ExecutionStatus, PermissionOutcome
 from ela.ports import NotAllowedError
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
 from ela.tools import (
     ARGUMENTS_INVALID,
     DIRECTORY_MODE,
@@ -56,7 +56,7 @@ def tool(root: Path) -> WriteNoteTool:
 
 
 async def test_writes_the_note_privately_and_reports_it(tool: WriteNoteTool, root: Path) -> None:
-    result = await tool.execute(DECISION, {"path": NOTE, "body": BODY})
+    result = await tool.execute(DECISION, {"path": NOTE, "body": BODY}, FakeStop())
     assert result.status is ExecutionStatus.SUCCEEDED
     written = root / NOTE
     assert written.read_text(encoding="utf-8") == BODY
@@ -69,8 +69,8 @@ async def test_writes_the_note_privately_and_reports_it(tool: WriteNoteTool, roo
 
 
 async def test_overwrites_an_existing_note(tool: WriteNoteTool, root: Path) -> None:
-    await tool.execute(DECISION, {"path": NOTE, "body": "first, and longer"})
-    result = await tool.execute(DECISION, {"path": NOTE, "body": "second"})
+    await tool.execute(DECISION, {"path": NOTE, "body": "first, and longer"}, FakeStop())
+    result = await tool.execute(DECISION, {"path": NOTE, "body": "second"}, FakeStop())
     assert result.status is ExecutionStatus.SUCCEEDED
     assert (root / NOTE).read_text(encoding="utf-8") == "second"
 
@@ -99,7 +99,7 @@ async def test_a_root_that_is_a_link_writes_into_the_real_directory(tmp_path: Pa
     link = tmp_path / "link"
     link.symlink_to(real, target_is_directory=True)
     tool = WriteNoteTool(link, FakeClock(), FakeIdGenerator())
-    result = await tool.execute(DECISION, {"path": "a.md", "body": "x"})
+    result = await tool.execute(DECISION, {"path": "a.md", "body": "x"}, FakeStop())
     assert result.status is ExecutionStatus.SUCCEEDED
     assert (real / "a.md").read_text(encoding="utf-8") == "x"
 
@@ -111,7 +111,7 @@ async def test_a_root_that_is_a_link_writes_into_the_real_directory(tmp_path: Pa
 
 async def refused(tool: WriteNoteTool, root: Path, arguments: dict[str, object], code: str) -> str:
     before_root, before_parent = snapshot(root), snapshot(root.parent)
-    result = await tool.execute(DECISION, arguments)
+    result = await tool.execute(DECISION, arguments, FakeStop())
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
     assert result.error.code == code, result.error.message
@@ -264,6 +264,7 @@ async def test_the_contract_is_checked_before_the_path(tool: WriteNoteTool, root
         await tool.execute(
             DECISION.model_copy(update={"outcome": PermissionOutcome.DENIED}),
             {"path": NOTE, "body": BODY},
+            FakeStop(),
         )
     assert snapshot(root) == set()
 
