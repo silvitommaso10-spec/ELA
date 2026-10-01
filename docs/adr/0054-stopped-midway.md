@@ -1,8 +1,9 @@
 # 0054. Il «ferma» a metà corsa: la fermata arriva al tool prima del suo punto di non ritorno; e il runner della CI con una versione scritta
 
 - **Stato:** Proposta. Aperta il 2026-09-30 dal primo commit di M6.3c, che paga il debito di ADR 0053
-  §2 prima della SPEC (decisione 8 della sessione di M6.3c): questo commit scrive solo il §1. Il resto
-  lo scrive la SPEC di M6.3c, che si mostra prima di implementare.
+  §2 prima della SPEC (decisione 8 della sessione di M6.3c): questo commit scrive solo il §1. Le sezioni
+  delle decisioni le scrive l'implementazione di M6.3c, dopo che la SPEC è decisa (`docs/milestones/M6.3c.md`),
+  e i «Riferimenti spec» crescono con loro.
 - **Data:** 2026-09-30
 - **Riferimenti spec:** §51, §52, §53
 - **Milestone:** M6.3c
@@ -14,8 +15,8 @@ step `RUNNING` dentro un task finale (`docs/milestones/M6.3c.md`). Prima di quel
 milestone paga un debito che non è suo per materia ma lo è per data: **il runner della CI, da fissare
 entro il 2026-10-19** (ADR 0053 §2), il giorno in cui `ubuntu-latest` comincia a passare a Ubuntu 26.
 
-Le decisioni sul «ferma» a metà corsa le scrive la SPEC, e le sezioni che seguono il §1 arrivano con
-lei.
+Le decisioni sul «ferma» a metà corsa le propone la SPEC di M6.3c; le sezioni che seguono il §1 arrivano
+con l'implementazione, dopo che la SPEC è decisa.
 
 ## Decisione
 

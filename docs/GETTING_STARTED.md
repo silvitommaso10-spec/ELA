@@ -3037,6 +3037,147 @@ Poi il PC torna a `main` quando il branch è mergiato.
 Le uscite di tutti i passi, integrali, in un file: `~/Downloads/m13.4-prova.txt`, e quelle del PC in
 `~/Downloads/m13.4-prova-pc.txt`.
 
+## 21. Il «ferma» a metà corsa: la prova a mano di M6.3c
+
+> **Bozza, scritta con la SPEC di M6.3c il 2026-09-30 e rivista il 2026-10-01 dopo la sua rilettura**, prima
+> di ogni riga di codice: i passi e le frasi attese sono quelli che la SPEC propone (`milestones/M6.3c.md`,
+> proposte 5, 6 e 10), e cambiano con le risposte alle sue domande 1–17. **I blocchi con l'uscita di `ela task
+> run` e i marcatori che lo script legge si scrivono con l'implementazione**, quando la riga nuova `stopped
+> step` esiste nella riga di comando: fino ad allora le uscite attese sono scritte in prosa. L'ADR è
+> [0054](adr/0054-stopped-midway.md), `Proposta` fino a questa prova.
+
+Da M6.3c il «ferma» — `ela task cancel`, il bottone della console, quello del telefono — **arriva al tool
+che sta girando**, prima del suo punto di non ritorno: un browser che non ha ancora fatto il primo gesto non
+lo fa, un programma che non è ancora partito non parte. Se il tool l'ha già passato, lo step si chiude come uno
+step normale, e **ogni superficie dice che lo step in corso aveva già agito** — e se la sua verifica è passata,
+o no.
+
+**È la prima prova a mano con uno script.** I passi meccanici — creare i task, farli girare, guardare lo step,
+mandare il «ferma» nell'istante giusto, confrontare ogni uscita con quella attesa — li fa
+`scripts/prova_m6_3c.py`, che **legge da questa sezione i comandi, che cosa guardare e le uscite attese**: la
+guida resta la fonte di verità, e un test tiene allineati i due. Lo script manda il «ferma» **quando vede lo
+step in corso**, non dopo un'attesa fissa. **A te restano la console e il telefono**: il sì ai due passi
+`HIGH` lo dai lì, e lì guardi gli esiti. Ciò che guardi lo script non lo giudica: ti chiede che cosa hai visto,
+e lo scrive.
+
+### 0. Prima di cominciare
+
+Il branch, e lo shell di Chromium com'era in §20, passo 0. Nel `.env`, **due righe in più** rispetto a §20:
+
+```
+ELA_BROWSER_SITES=["example.com","httpbin.org"]
+ELA_TERMINAL_PROGRAMS=["bin/sleep"]
+```
+
+Se `ELA_TERMINAL_PROGRAMS` dichiara già altri programmi, aggiungi `bin/sleep` a quelli; e se avevi abbassato
+`ELA_TERMINAL_TIMEOUT_SECONDS` per §16, rimettilo sopra i 97 secondi. `bin/sleep` serve a un piano solo,
+`terminal-stop.json`: **toglilo alla fine** (passo 8). Poi, nel terminale A:
+
+```
+uv run ela serve
+```
+
+E apri la console nel browser del Mac (§14) e la home del telefono (§13).
+
+### 1. Lo script
+
+Nel terminale B:
+
+```
+uv run python scripts/prova_m6_3c.py
+```
+
+**Che cosa si deve vedere**: lo script controlla che ELA risponda, che lo shell ci sia, che i due siti e
+`bin/sleep` siano dichiarati e che il tempo massimo di un comando superi i 97 secondi, e stampa **PASSATO**
+per ciascuno. Se una riga dice **FALLITO**, si ferma lì con l'uscita vera: si ripara il `.env` e si rilancia.
+Tutto ciò che stampa finisce anche in un file in `~/Downloads`, `prova-m6.3c-` con la data e l'ora nel nome.
+
+### 2. `browser.read`, fermato prima della navigazione
+
+Lo script crea un task con [`examples/browser-read.json`](examples/browser-read.json), stampa il suo id, lo fa
+girare con `ela task run`, e manda il «ferma» **appena vede un processo nuovo dello shell di Chromium**: il tool
+sta avviando il browser, e `example.com` non ha ancora visto niente.
+
+**Che cosa si deve vedere**, nell'uscita di `run` che lo script confronta: `outcome` `cancelled`; `reason` con
+le parole del «ferma» — «cancel: EXECUTING -> CANCELLED», e il perché che lo script dà —, **mai vuota**; la riga
+nuova `stopped step` con `had not acted`; `steps handled` con l'id dello step. Poi lo step `CANCELLED` in `ela
+task show`, e un risultato `CANCELLED` con `execution.stopped` in `ela task results`.
+
+Lo script legge dalla trail e dall'audit **dove** è caduto il «ferma»: prima che lo step cominciasse, prima che
+il tool partisse, prima della navigazione, dopo. Se non è caduto prima della navigazione, stampa **FALLITO** con
+il lato vero e **ripete il passo da sé**, con un task nuovo, fino a tre giri. Non è un difetto di ELA: in una
+prova vera l'avvio del browser è più o meno veloce, e il lato «dopo» del browser lo provano i test.
+
+### 3. `browser.act`, fermato prima del primo gesto
+
+Lo script crea un task con [`examples/browser-act.json`](examples/browser-act.json), stampa il suo id e lo fa
+girare: è `HIGH`, e arriva la domanda. **Il sì è tuo, dalla console**: leggi la domanda come in §20, passo 4, e
+premi «Sì». La console fa ripartire il task nella stessa richiesta; lo script guarda da quando la domanda è nata,
+e manda il «ferma» **appena vede la `STARTED` dello step** in `GET /tasks/<id>/results`: il tool sta aprendo la
+pagina, e nessun campo è stato toccato.
+
+**Che cosa si deve vedere**, in `ela task show` e `ela task results` che lo script confronta: lo step
+`CANCELLED`, `stopped step` `had not acted`, la ragione del «ferma»; i risultati `STARTED` e poi `CANCELLED` con
+`execution.stopped`; e in `TOOL_EXECUTED` **nessun numero di gesti** — il tool non ha restituito niente.
+`httpbin.org` non ha ricevuto nessun modulo. La console, dopo il sì, atterra sul riassunto del task. Se il
+«ferma» cade dopo il primo gesto, lo script lo dice come al passo 2, e ripete.
+
+### 4. `terminal.run`, fermato dopo l'`exec`
+
+Lo script crea un task `TRUSTED` con `examples/terminal-stop.json` — `/bin/sleep 97` —, perché il telefono
+offra il sì e ne mostri lo scopo, e lo fa girare fino alla domanda. **Il sì è tuo, dal telefono.** Lo script
+manda il «ferma» **quando vede `sleep 97` nella tabella dei processi**: il programma è partito, e il punto di non
+ritorno è passato.
+
+**Che cosa si deve vedere**: lo step `FAILED`, e `stopped step` che dice che lo step aveva già agito e che
+nessuna verifica ne ha constatato l'effetto; la ragione del «ferma»; il risultato `FAILED` con `terminal.stopped`
+e l'uscita raccolta fino al «ferma». **Nessun `sleep 97` resta vivo**: lo script lo controlla nella tabella dei
+processi. Il telefono, dopo il sì, torna alla home. *(È ciò che la SPEC raccomanda alla domanda 5; se la risposta
+è un'altra, il passo cambia: senza fermare il gruppo, il task finisce dopo i novantasette secondi, e lo step si
+chiude come uno step normale.)*
+
+### 5. La console
+
+Lo script si ferma e ti chiede di guardare. Nella home della console, fra i finiti, i tre task dei passi 2–4,
+ciascuno con la sua frase:
+
+- «Fermato prima che lo step in corso agisse.» per i passi 2 e 3;
+- «Fermato, ma lo step in corso aveva già agito: nessuna verifica l'ha constatato.» per il passo 4.
+
+Poi apri il riassunto di ciascuno: la stessa frase accanto a «Stato», e nel piano **nessuno step disegnato come
+in corso**. Rispondi allo script con `s` o `n`: lo scrive nel file come GUARDATO.
+
+Poi lo script crea un quarto task con [`examples/echo.json`](examples/echo.json), stampa il suo id, e lo lascia
+`QUEUED`. Aprilo in console e premi «Ferma»: **leggi la conferma**. Non deve più dire «il task non farà più
+niente», ma che nessuno step nuovo partirà, e che uno step che ha già agito può finire ciò che ha cominciato e il
+riassunto del task dirà se aveva agito. Conferma. Lo script controlla da sé che il task sia `CANCELLED` con la
+ragione della console, e ti chiede che cosa dicesse la conferma.
+
+### 6. Il telefono
+
+Lo script crea un quinto task come il quarto. Sul telefono, fermalo dalla home, e **leggi la conferma**: dice
+che la riga del task, fra i finiti, dirà se aveva agito. Poi, fra i finiti della home, i tre task dei passi
+2–4 con le loro frasi: quelli dei passi 2 e 3 sono `LOCAL_ONLY`, e il telefono li mostra con l'id che lo script
+ha stampato; quello del passo 4 con il suo scopo. La frase c'è per tutti e tre: non dice niente del contenuto.
+Lo script controlla da sé il quinto task, e ti chiede che cosa hai visto.
+
+**Che cosa si deve vedere**, alla fine dello script: i passi meccanici **PASSATO**, i passi a occhio **GUARDATO**
+con le tue risposte, e il nome del file con l'uscita intera.
+
+### 7. Il PC: lo step che un nodo ha preso
+
+*(Solo se la domanda 17 della SPEC dice sì.)* Con il PC acceso e disponibile come in §12, e il Mac a
+batteria perché il lavoro vada al PC (§12, passo 6), lo script crea un task
+`TRUSTED` con [`examples/speak-on-a-node.json`](examples/speak-on-a-node.json), che va al PC; dopo il sì dal
+telefono, manda il «ferma» **quando vede la `STARTED` che la presa del PC scrive**: la busta è uscita. Il PC
+parla fino in fondo, consegna, e lo step si chiude come uno step normale: `stopped step` dice che aveva già
+agito, e il risultato del PC è scritto.
+
+### 8. Alla fine
+
+Togli `bin/sleep` da `ELA_TERMINAL_PROGRAMS`, e riavvia `ela serve`. Il file dello script resta in
+`~/Downloads`.
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.
