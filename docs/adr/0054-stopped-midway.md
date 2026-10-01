@@ -2,8 +2,8 @@
 
 - **Stato:** Proposta. Aperta il 2026-09-30 dal primo commit di M6.3c, che paga il debito di ADR 0053
   §2 prima della SPEC (decisione 8 della sessione di M6.3c): il primo commit scrive il §1. Le sezioni §2–§14 recepiscono la SPEC di
-  M6.3c (`docs/milestones/M6.3c.md`), decisa dal revisore il 2026-10-01 con le domande 1–17; i numeri di §13 si
-  scrivono con la misura.
+  M6.3c (`docs/milestones/M6.3c.md`), decisa dal revisore il 2026-10-01 con le domande 1–17; i numeri di §13 sono
+  la misura del 2026-10-01.
 - **Data:** 2026-09-30
 - **Riferimenti spec:** §14, §15, §18, §19, §32, §33, §51, §52, §53, §63, §65
 - **Milestone:** M6.3c
@@ -55,7 +55,9 @@ stato finale, dopo l'ultima delle sue tre scritture** — la riga, la trail, l'a
 fra l'audit e l'evento. Ogni fine passa di lì, `recover()` compreso. La fermata è un fatto prima di essere un
 segnale: l'ordine dell'audit è fisso, e `TASK_CANCELLED` viene prima del `TOOL_EXECUTED` di un tool fermato al
 suo punto. Il prezzo: fra la riga e l'audit un tool può passare il suo punto, e allora l'esito dice che ha
-agito, ed è vero. Il ramo idempotente non rialza niente. **Solo l'engine la alza**: una regola di architettura.
+agito, ed è vero. Il ramo idempotente non rialza niente. **Solo l'engine la alza**: la regola 58,
+`only-the-engine-raises-a-stop` — fuori dall'engine, `stop_signal` si chiama solo per consegnarne il valore alla
+fermata di una chiamata, e il modulo di quella fermata non chiama `set`.
 L'evento è di un processo: un processo nuovo non ha un tool in volo, e ciò che trova lo chiude il §5.
 
 ### 3. Il tool dichiara dove ascolta, in due metà, e ascolta nominando il punto
@@ -74,8 +76,20 @@ suo punto. Il punto si nomina perché lo stesso oggetto serve un ascolto che non
 apre la pagina con lo stesso `open` di `browser.read`, e l'ascolto prima della navigazione ferma la visita senza
 dire che `browser.act` ha agito. **La garanzia**: nessun `await` di ELA fra `listen(here)` e la chiamata che
 produce l'effetto; ciò che la chiamata fa dentro è oltre il punto. Non si controlla a macchina: è della review.
-**La fermata arriva per chiamata, mai per costruzione**: una regola di architettura. **L'executor ascolta prima
+**La fermata arriva per chiamata, mai per costruzione**: la regola 59, `a-stop-arrives-per-call` — i tipi della
+fermata non annotano il parametro di un costruttore né il campo di una classe, e `ela.composition` non li nomina.
+**L'executor ascolta prima
 di consumare la grant**: un task fermato prima della chiamata non spende il sì e non scrive la `STARTED`.
+
+Port introdotti:
+
+| Port | Spec | Modalità | Membri |
+|---|---|---|---|
+| `TaskStop` | §65 | sync | `listen`, `is_set`, `stopped` |
+
+**Sincrono, e un modo solo** (ADR 0005 §1): `listen` non deve cedere il loop, e `stopped` consegna
+l'awaitable che un lanciatore mette in corsa con il programma. Le implementazioni sono tre: `StopOfTask`
+dell'executor, la fermata che non si alza mai del runner del nodo, e `FakeStop` dei test.
 
 | Capability | `here` | `on_a_node` |
 |---|---|---|
@@ -112,7 +126,22 @@ Il tool fermato al suo punto ha un risultato **`ExecutionStatus.CANCELLED`**, co
 **`execution.stopped`** scritto dall'executor: il valore del dominio ha finalmente un produttore (ADR 0026 §7).
 
 `STEP_TRANSITIONS` guadagna **`RUNNING → CANCELLED`**; **`stop_step`** lo scrive, con `STEP_CANCELLED`,
-idempotente per stato, solo su un task finito e solo dall'executor (la regola 17 si estende). Le tre chiusure —
+idempotente per stato, solo su un task finito e solo dall'executor: la regola 17,
+`step-completers`, si estende da `complete_step` a `stop_step`. Il lato e la
+riga che questo ADR aggiunge a quelli di ADR 0009 e ADR 0038, letti insieme:
+
+```mermaid
+stateDiagram-v2
+    RUNNING --> CANCELLED: stop_step (il task è finito e il tool non ha passato il suo punto)
+```
+
+| Operazione | Da | A | Evento della trail | Evento dell'audit | Chiave |
+|---|---|---|---|---|---|
+| `stop_step` | RUNNING | CANCELLED | `STEP_CANCELLED` | `STEP_CANCELLED` | — |
+
+`fail_step` guadagna un argomento, `stopped_if_ended`: per uno step il cui tool **non ha agito**, in un task
+vivo fallisce come sempre, e in un task finito è fermato con quella ragione — deciso sotto il lock del task,
+così un «ferma» che cade in mezzo si vede. Le tre chiusure —
 `complete_step`, `fail_step`, `stop_step` — valgono anche su un task finito, solo per uno step `RUNNING`, e la
 chiusura già applicata resta un no-op. `start_step` e `release_step` vogliono ancora un task `EXECUTING`.
 Nessuna classe d'errore nuova: il runner riconosce un task finito rileggendolo.
@@ -151,11 +180,11 @@ trail, degli eventi d'audit e della posizione della presa dello step, se un nodo
 | `halt` | Da che cosa | Riga di comando |
 |---|---|---|
 | — | nessuno step era in corso | `—` |
-| `not_acted` | chiuso `STEP_CANCELLED` | `had not acted` |
-| `acted_verified` | chiuso `STEP_COMPLETED` | `had acted; its verification passed` |
-| `acted` | chiuso `STEP_FAILED`, codice diverso da `execution.interrupted` | `had acted; its effect was not verified` |
-| `unknown` | chiuso `STEP_FAILED` `execution.interrupted`, o senza la riga d'audit; o aperto con la presa del nodo scaduta | `may have acted: unknown` |
-| `finishing` | aperto: il tool oltre il punto finisce, o un nodo tiene una presa viva | `still finishing` |
+| `NOT_ACTED` | chiuso `STEP_CANCELLED` | `had not acted` |
+| `ACTED_VERIFIED` | chiuso `STEP_COMPLETED` | `had acted; its verification passed` |
+| `ACTED` | chiuso `STEP_FAILED`, codice diverso da `execution.interrupted` | `had acted; its effect was not verified` |
+| `UNKNOWN` | chiuso `STEP_FAILED` `execution.interrupted`, o senza la riga d'audit; o aperto con la presa del nodo scaduta | `may have acted: unknown` |
+| `FINISHING` | aperto: il tool oltre il punto finisce, o un nodo tiene una presa viva | `still finishing` |
 
 **La frase dice ciò che la verifica ha fatto, mai che l'effetto è avvenuto**: ADR 0047 §9 e ADR 0052 §9 restano
 veri. La precisazione B della sessione di M6.3c — «l'effetto è avvenuto lo dice il verifier dove c'è» — **era
@@ -176,11 +205,11 @@ del «ferma» non dicono più «il task non farà più niente».
 
 Un'offerta non presa si **ritira** con un'operazione nuova del port delle assegnazioni, condizionata su
 `OFFERED`, in uno stato nuovo, **`AssignmentState.WITHDRAWN`** (`expire` scrive `EXPIRED` solo dove il tempo ha
-deciso). La presa di un'offerta il cui task è finito la ritira lei e risponde «niente lavoro», e `next_for`
-salta le offerte dei task finiti. **Dopo la presa** la consegna è accettata per uno step `RUNNING` di un task
+deciso). La presa di un'offerta il cui task è finito la ritira lei e chiude lo step, e la richiesta di lavoro
+del nodo passa all'offerta successiva, o risponde «niente lavoro». **Dopo la presa** la consegna è accettata per uno step `RUNNING` di un task
 finito, e lo chiude con la regola del §4; il rinnovo di quella presa salta il battito del task invece di
 sollevare. **Una presa scaduta di un task finito** vuol dire che nessuno sta eseguendo lo step: `halt` dice
-`unknown`, mai `finishing`, e lo step si chiude al primo avvio o al primo `run` di quel task — niente chiusure
+`UNKNOWN`, mai `FINISHING`, e lo step si chiude al primo avvio o al primo `run` di quel task — niente chiusure
 nella richiesta di lavoro di un nodo per task che non sono suoi, e nessun giro periodico nuovo. **Far viaggiare
 la fermata fino al nodo** è della prima fra M13.11 e M13.7 che si apre, o della sua SPEC che dice perché no;
 lì `on_a_node` guadagna il suo secondo valore.
@@ -192,11 +221,19 @@ per chiudere. **Il «mai 409» vale per ogni titolare del lock**: il `run` di un
 preso, da un altro `run`, da una consegna, da una presa o dalla chiusura del «ferma», risponde dalla porta
 senza chiudere niente. Due `run` di un task vivo ricevono ancora `409 already_running`.
 
-### 11. Il «ferma» a metà di uno step del browser: il debito di ADR 0052 §15
+### 11. Il debito di ADR 0052 §15, saldato: il «ferma» a metà di uno step del browser
 
-`tests/api/test_browser_stopped_midway.py` si gira: con il click trattenuto, oltre il punto, `run` risponde
-`200 cancelled` con la sua ragione e `halt` `acted_verified`, e lo step è `COMPLETED`. Accanto, il gemello che
-ferma il task prima del primo gesto: nessun gesto, `not_acted`, lo step `CANCELLED`, nessuna pagina aperta.
+`tests/api/test_browser_stopped_midway.py` si gira, e i suoi tre test dicono i tre lati del punto di non ritorno
+di `browser.act`, attraverso l'API e con il browser finto che trattiene l'istante che serve:
+
+- `test_a_browser_step_stopped_after_its_first_gesture_closes_as_a_normal_one` — il caso del debito, girato:
+  il click è in corso, oltre il punto; parte, il verifier guarda, lo step è `COMPLETED`, e `run` risponde
+  `200 cancelled` con le parole del «ferma» e `halt` `ACTED_VERIFIED`;
+- `test_a_browser_step_stopped_before_the_navigation_visits_nothing` — il «ferma» mentre il browser parte: il
+  sito non vede niente, nessun gesto, il risultato `CANCELLED` con `execution.stopped`, `NOT_ACTED`;
+- `test_a_browser_step_stopped_before_its_first_gesture_fills_nothing_and_closes_the_page` — il punto della
+  decisione 2: la pagina è aperta e gli elementi si stanno guardando; nessun campo, nessun click, e la pagina
+  si chiude.
 
 ### 12. Le eccezioni della decisione 1, scritte apertamente
 
@@ -208,7 +245,31 @@ fino al primo avvio o al primo `run` del task. Il test della decisione 1 nomina 
 ### 13. La misura dell'avvio
 
 La decisione 2 della review: si misura su una copia del database vero del Mac quanti task finiti l'avvio legge,
-quanti ne chiude e quanto impiega. *Si scrive qui quando c'è.*
+quanti ne chiude e quanto impiega. **Misurata il 2026-10-01**, a `6adec5b` più il lavoro di M6.3c non ancora
+committato, su una copia di `~/.ela/ela.db` fatta con l'API di backup di sqlite da una connessione in sola
+lettura, con ELA costruita come la costruisce `ela serve` e il solo `ELA_DB_URL` sulla copia; il tempo misurato
+dentro il giro, con `perf_counter`, per ciascuna chiamata. L'uscita intera è in
+`~/Downloads/m6.3c-misura-avvio.txt`.
+
+| | |
+|---|---|
+| task nel database | 92: 61 `COMPLETED`, 18 `FAILED`, 6 `DENIED`, 4 `CANCELLED`, 2 `QUEUED`, 1 `CREATED` |
+| task finiti, e con un piano | 89, e 88: **letti** |
+| step `RUNNING` in un task finito | **8**, tutti scritti prima di M6.3c: **chiusi** |
+| `recover()` | niente da fare, 0,7 ms |
+| `close_every_open_step()`, primo avvio | **160 ms** |
+| i due avvii dopo | 114 ms ciascuno, 0 chiusi |
+
+**Gli otto, e come si sono chiusi**: sei sono il no dell'utente, che lasciava `RUNNING` lo step che aveva chiesto
+— `CANCELLED`, «the task ended before the tool of this step acted», senza risultati; uno è uno step di
+`voice.speak` su un nodo, con la sola `STARTED` della presa e il task `FAILED` — `FAILED` con
+`execution.interrupted`; e uno è **il difetto del §15 di ADR 0052**, il task del passo 6 di §20: il `browser.act`
+del modulo aveva finito `SUCCEEDED` dopo il «ferma» — la ripresa lo verifica e lo chiude `COMPLETED`, e `halt`
+dice `ACTED_VERIFIED`. L'effetto compiuto resta scritto, su un dato vero.
+
+**Il costo** cresce con la storia, linearmente: circa 1,3 ms per task finito con un piano, la lettura della trail e
+del piano di ciascuno. A 88 task non pesa, e nessun filtro si propone (decisione 2: «se la misura dice che pesa,
+il riepilogo propone un filtro, non prima»).
 
 ### 14. Righe riviste
 
@@ -235,6 +296,21 @@ quanti ne chiude e quanto impiega. *Si scrive qui quando c'è.*
   è l'unica scelta che non cambia niente.
 
 ## Conseguenze
+
+Port estesi:
+
+| Port | Spec | Modalità | Membri |
+|---|---|---|---|
+| `ToolPort` | §27, §65 | async | `stop_point` |
+| `AssignmentStore` | §15, §65 | async | `withdraw` |
+
+E le firme che cambiano senza un membro nuovo: `ToolPort.execute` riceve la fermata del task,
+`Browser.open` anche, e `CommandLauncher.run` la mette in corsa con il programma.
+
+Con questo ADR le regole di architettura sono **cinquantanove** (la 58 e la 59, e la 17 estesa), i port
+**trenta** (`TaskStop`), le rotte dell'API restano **quarantanove** e i comandi della CLI **ventisette**: nessuna
+rotta e nessun comando nuovi — `halt` è un campo delle risposte che c'erano.
+
 
 - Il nome del job diventa `make check (ubuntu-24.04)`. `main` non ha una protezione di branch
   (`gh api repos/{owner}/{repo}/branches/main/protection` risponde 404, il 2026-09-30), quindi nessun
