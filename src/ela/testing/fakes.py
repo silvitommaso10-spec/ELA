@@ -17,7 +17,7 @@ the ports.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -78,6 +78,7 @@ from ela.domain import (
 )
 from ela.ports import (
     ANNOUNCED_FIELDS,
+    NAVIGATION,
     PROVIDER_UNAVAILABLE,
     VERIFICATION_NO_CONDITIONS,
     VERIFICATION_NOT_SUCCEEDED,
@@ -114,7 +115,10 @@ from ela.ports import (
     Prospect,
     Ran,
     RoutingError,
+    StopPoint,
+    TaskStop,
     ToolPort,
+    ToolStopped,
     VerifierPort,
     check_answer,
     check_limit,
@@ -157,6 +161,7 @@ __all__ = [
     "VerifierCall",
     "FakeEnrollmentStore",
     "FakeAssignmentStore",
+    "FakeStop",
 ]
 
 DEFAULT_START: Final = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -593,6 +598,12 @@ class FakeAssignmentStore:
         row = self._movable(assignment_id, device_id, AssignmentState.CLAIMED, now)
         return self._write(assignment_id, {**row, "expires_at": expires_at})
 
+    async def withdraw(self, assignment_id: AssignmentId, *, now: datetime) -> Assignment:
+        row = self._row(assignment_id)
+        if row["state"] is not AssignmentState.OFFERED:
+            return Assignment.model_validate(row)
+        return self._write(assignment_id, {**row, "state": AssignmentState.WITHDRAWN})
+
     async def expire(self, assignment_id: AssignmentId, *, now: datetime) -> Assignment:
         row = self._row(assignment_id)
         if row["state"] is AssignmentState.EXPIRED:
@@ -877,6 +888,37 @@ class FakePermissionGuardian:
         )
 
 
+class FakeStop:
+    """The stop of a task as a tool sees it, scripted by the test (port ``TaskStop``, M6.3c).
+
+    The two sides of a tool's point, built and never waited for: ``stopped=True`` is a task stopped
+    **before** the point — :meth:`listen` raises ``ToolStopped`` and the port sees no effect —;
+    ``after=<point>`` is a task stopped **right after** the tool passed it — the listening there
+    goes through, and the stop is raised the instant after. ``listened`` is every place the tool
+    listened at, in order: what a test reads to know the tool listened where it declared.
+    """
+
+    def __init__(self, *, stopped: bool = False, after: str | None = None) -> None:
+        self.event = asyncio.Event()
+        if stopped:
+            self.event.set()
+        self.after = after
+        self.listened: list[str] = []
+
+    def listen(self, where: str) -> None:
+        self.listened.append(where)
+        if self.event.is_set():
+            raise ToolStopped(where)
+        if where == self.after:
+            self.event.set()
+
+    def is_set(self) -> bool:
+        return self.event.is_set()
+
+    def stopped(self) -> Awaitable[object]:
+        return self.event.wait()
+
+
 class ToolCall(NamedTuple):
     """One execution a :class:`FakeTool` accepted."""
 
@@ -896,8 +938,12 @@ class FakeLauncher:
         self.ran = Ran(Ending.EXITED, code=0) if ran is None else ran
         self.commands: tuple[Command, ...] = ()
 
-    async def run(self, command: Command) -> Ran:
+    async def run(self, command: Command, stop: TaskStop) -> Ran:
+        """The command «starts» — it is remembered — and a stop of its task already raised ends it
+        as the real launcher would, with the group stopped (M6.3c)."""
         self.commands = (*self.commands, command)
+        if stop.is_set():
+            return Ran(Ending.HALTED, signal=15)
         return self.ran
 
 
@@ -948,6 +994,10 @@ class FakeBrowser:
         self.glances: list[tuple[str, str | None, str | None, float]] = []
         self.click_reached: asyncio.Event | None = None
         self.click_released: asyncio.Event | None = None
+        self.launch_reached: asyncio.Event | None = None
+        self.launch_released: asyncio.Event | None = None
+        """Held, when set, while «the browser starts» — before the navigation and its listening
+        (M6.3c): the window where a stop finds the site not yet visited."""
         self._open: dict[str, bool] = {}
         self._clicked = False
 
@@ -964,8 +1014,12 @@ class FakeBrowser:
         self._raise("installed")
         return self.installed_answer
 
-    async def open(self, address: str, allowed: Callable[[str], bool]) -> Opened:
+    async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         self._raise("open")
+        if self.launch_reached is not None and self.launch_released is not None:
+            self.launch_reached.set()
+            await self.launch_released.wait()
+        stop.listen(NAVIGATION)
         self.opened.append(address)
         self.allowed.append(allowed)
         page = f"page-{len(self.opened)}"
@@ -1066,11 +1120,15 @@ class FakeTool:
         prospect: Prospect | None = None,
         usage: ProviderUsage | None = None,
         audit_numbers: frozenset[str] = frozenset(),
+        stop_point: StopPoint | None = None,
     ) -> None:
         self._capability_id = capability_id
         self._clock = clock
         self._ids = ids
         self._name = name
+        self.stop_point = StopPoint(here=None, on_a_node=None) if stop_point is None else stop_point
+        """Where it listens for the stop of its task (M6.3c): nowhere — its point is the call —,
+        unless a test gives it a point, and then it listens there before it «acts»."""
         self.idempotent = idempotent
         """Whether twice is once (ADR 0015 §8, ADR 0021 §1): ``False`` is how a test builds a
         tool the executor must run under the STARTED protocol."""
@@ -1115,7 +1173,7 @@ class FakeTool:
         return self.assertions
 
     async def execute(
-        self, decision: PermissionDecision, arguments: JsonMapping
+        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
     ) -> ExecutionResult:
         if decision.capability_id != self._capability_id:
             raise NotAllowedError(
@@ -1125,6 +1183,8 @@ class FakeTool:
             raise NotAllowedError(self._capability_id, f"outcome is {decision.outcome.value}")
         if decision.expires_at is not None and decision.expires_at <= self._clock.now():
             raise NotAllowedError(self._capability_id, f"decision expired at {decision.expires_at}")
+        if self.stop_point.here is not None:
+            stop.listen(self.stop_point.here)
         self.calls = (*self.calls, ToolCall(decision, arguments))
         return ExecutionResult(
             id=ExecutionId(self._ids.new_uuid()),

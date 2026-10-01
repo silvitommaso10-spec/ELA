@@ -49,6 +49,7 @@ from ela.domain import (
     ExecutionId,
     ExecutionResult,
     ExecutionStatus,
+    Halt,
     JsonMapping,
     NetworkKind,
     OperatingSystem,
@@ -270,6 +271,13 @@ class TaskOut(BaseModel):
         )
 
 
+class FinishedTaskOut(TaskOut):
+    """A task that reached a final state, and — for one that was stopped — what the step in
+    progress had done (M6.3c, ADR 0054 §8): what the homes show beside the state."""
+
+    halt: Halt | None = None
+
+
 class FinishedOut(BaseModel):
     """The last tasks to reach a final state, the last first, and how many finished in all.
 
@@ -277,7 +285,7 @@ class FinishedOut(BaseModel):
     twenty-three (ADR 0025 §2), and what a home adds to its live tasks to count them all.
     """
 
-    tasks: tuple[TaskOut, ...]
+    tasks: tuple[FinishedTaskOut, ...]
     total: int
 
 
@@ -322,10 +330,13 @@ class TaskDetail(TaskOut):
     """A task with its plan, in topological order. Empty steps means: no plan yet."""
 
     steps: tuple[StepOut, ...] = ()
+    halt: Halt | None = None
+    """For a stopped task, what the step in progress had done when it was stopped (M6.3c, ADR 0054
+    §7); ``None`` otherwise, and for a stop that found no step in progress."""
 
     @classmethod
-    def of_graph(cls, task: Task, graph: GraphState | None) -> TaskDetail:
-        detail = cls(**TaskOut.of(task).model_dump())
+    def of_graph(cls, task: Task, graph: GraphState | None, halt: Halt | None = None) -> TaskDetail:
+        detail = cls(**TaskOut.of(task).model_dump(), halt=halt)
         if graph is None:
             return detail
         steps = tuple(
@@ -363,8 +374,13 @@ class RunOut(BaseModel):
     already closed, a step whose tool may or may not have acted, a plan an earlier run left blocked
     arrive without one, and their why is in the audit (M13.1c).
 
+    ``cancelled`` carries one since M6.3c, never empty: the words of the stop (ADR 0054 §7).
+
     ``null`` for every other outcome: those explain themselves.
     """
+    halt: Halt | None = None
+    """For ``cancelled``, what the step in progress had done when the task was stopped — not acted,
+    acted and verified, acted, unknown, still finishing (M6.3c, ADR 0054 §7); ``null`` otherwise."""
 
 
 class Asked(BaseModel):

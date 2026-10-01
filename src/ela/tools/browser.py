@@ -47,6 +47,7 @@ from ela.permissions import (
     VALUE_MAX_LENGTH,
 )
 from ela.ports import (
+    NAVIGATION,
     Browser,
     BrowserFailed,
     BrowserNotInstalled,
@@ -58,6 +59,9 @@ from ela.ports import (
     PageGone,
     Prospect,
     SiteUnreachable,
+    StopPoint,
+    TaskStop,
+    ToolStopped,
     Visit,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
@@ -155,6 +159,9 @@ BROWSER_CODES: Final[frozenset[str]] = frozenset(
 
 SITE: Final = "site"
 """What the target of the two capabilities is called, in the tools' own word (M13.2 dec. 12)."""
+FIRST_GESTURE: Final = "the first gesture"
+"""Where ``browser.act`` listens for the stop of its task: a field filled, or the click (M6.3c)."""
+
 OPENS: Final = (
     "opens this address in ELA's own browser, which is empty — no cookies, no logins: the site "
     "sees a visitor, not you — and reads the page; it fills in nothing and clicks nothing"
@@ -347,7 +354,7 @@ class _BrowserTool(Tool):
             timeout_seconds=self._browsing.timeout_seconds,
         )
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         looked = self._shaped(arguments)
         if isinstance(looked, Outcome):
             return looked
@@ -356,8 +363,14 @@ class _BrowserTool(Tool):
         opened: Opened | None = None
         try:
             async with asyncio.timeout(self._browsing.timeout_seconds):
-                opened = await self._browser.open(looked.visit.address, looked.allowed)
-                outcome = await self._on_the_page(looked, opened, done)
+                opened = await self._browser.open(looked.visit.address, looked.allowed, stop)
+                outcome = await self._on_the_page(looked, opened, done, stop)
+        except ToolStopped:
+            # Stopped before the point (M6.3c): what was opened is closed, and the call leaves
+            # without acting — the executor records it.
+            if opened is not None:
+                await self._browser.close(opened.page)
+            raise
         except TimeoutError:
             outcome = Outcome(
                 self._partial(done),
@@ -389,7 +402,9 @@ class _BrowserTool(Tool):
                 await self._browser.close(opened.page)
         return outcome
 
-    async def _on_the_page(self, call: _Call, opened: Opened, done: list[int]) -> Outcome:
+    async def _on_the_page(
+        self, call: _Call, opened: Opened, done: list[int], stop: TaskStop
+    ) -> Outcome:
         """What happens once the page is open: the refusals of the page, then the work."""
         site = call.visit.site
         if opened.left is not None:
@@ -402,10 +417,10 @@ class _BrowserTool(Tool):
                 HTTP_STATUS,
                 f"the page of {site} answered {opened.status}",
             )
-        return await self._work(call, opened, done)
+        return await self._work(call, opened, done, stop)
 
     @abstractmethod
-    async def _work(self, call: _Call, opened: Opened, done: list[int]) -> Outcome:
+    async def _work(self, call: _Call, opened: Opened, done: list[int], stop: TaskStop) -> Outcome:
         """What the capability does on a page that answered, on its own site."""
 
     async def _one(self, page: str, selector: str, which: str, site: str) -> Outcome | None:
@@ -454,6 +469,8 @@ class BrowserReadTool(_BrowserTool):
     by reading again, and a grant is not at stake: the row is LOW."""
     does: ClassVar[str] = OPENS
     acts: ClassVar[bool] = False
+    stop_point: ClassVar[StopPoint] = StopPoint(here=NAVIGATION, on_a_node=None)
+    """The visit is the effect: the adapter listens right before the navigation (M6.3c)."""
 
     def __init__(
         self,
@@ -481,7 +498,7 @@ class BrowserReadTool(_BrowserTool):
             allowed=boundary(origins),
         )
 
-    async def _work(self, call: _Call, opened: Opened, done: list[int]) -> Outcome:
+    async def _work(self, call: _Call, opened: Opened, done: list[int], stop: TaskStop) -> Outcome:
         site = call.visit.site
         if call.selector is not None:
             refused = await self._one(opened.page, call.selector, "the selector", site)
@@ -515,6 +532,9 @@ class BrowserActTool(_BrowserTool):
     interrupted and **never clicks again** (ADR 0021 §2)."""
     does: ClassVar[str] = ACTS
     acts: ClassVar[bool] = True
+    stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_GESTURE, on_a_node=None)
+    """Before the first gesture (decision 2 of M6.3c); the navigation before it is listened to
+    without being this tool's point, and after it no gesture follows a stop (decision 5)."""
 
     def __init__(
         self,
@@ -580,8 +600,11 @@ class BrowserActTool(_BrowserTool):
             allowed=boundary(frozenset({self._browsing.origin(site)})),
         )
 
-    async def _work(self, call: _Call, opened: Opened, done: list[int]) -> Outcome:
-        """Every element before the first gesture, then the gestures, in order (form H)."""
+    async def _work(self, call: _Call, opened: Opened, done: list[int], stop: TaskStop) -> Outcome:
+        """Every element before the first gesture, then the gestures, in order (form H).
+
+        The stop of the task is listened to right before the first gesture — the point — and
+        looked at before every other one: a gesture never follows a stop (M6.3c, decision 5)."""
         site, page = call.visit.site, opened.page
         total = len(call.fills) + 1
         for index, (selector, _) in enumerate(call.fills, start=1):
@@ -603,9 +626,14 @@ class BrowserActTool(_BrowserTool):
         refused = await self._one(page, call.click, f"gesture {total} of {total}", site)
         if refused is not None:
             return self._none_made(refused)
+        stop.listen(FIRST_GESTURE)
         for selector, value in call.fills:
+            if done[0] and stop.is_set():
+                return self._stopped(opened, done, site)
             await self._browser.fill(page, selector, value)
             done[0] += 1
+        if done[0] and stop.is_set():
+            return self._stopped(opened, done, site)
         await self._browser.click(page, call.click)
         done[0] += 1
         left = await self._browser.left(page)
@@ -619,6 +647,15 @@ class BrowserActTool(_BrowserTool):
 
     def _none_made(self, refused: Outcome) -> Outcome:
         return Outcome({"gestures": 0}, refused.code, refused.message + "; no gesture was made")
+
+    def _stopped(self, opened: Opened, done: list[int], site: str) -> Outcome:
+        """The task was stopped after the first gesture: no other one is made (M6.3c)."""
+        return Outcome(
+            {"status": opened.status, "gestures": done[0]},
+            STOPPED,
+            f"the task was stopped on the page of {site}{self._after(done)}, and no other gesture "
+            "followed",
+        )
 
 
 def _selector(selector: object, which: str) -> Outcome | None:

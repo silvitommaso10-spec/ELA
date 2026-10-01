@@ -11,7 +11,7 @@ asks for more time and is told (architecture rule 53).
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Awaitable, Mapping
 from datetime import datetime
 from typing import Any, Final
 
@@ -53,6 +53,26 @@ vocabulary of the wire (:class:`~ela.ports.WireCode`): ``delivery.conflict`` is 
 decided, ``already_running`` is a "not now" the envelope is kept for (ADR 0038 §12). Until M12.4
 both were strings written again here, and the second was never read by anything.
 """
+
+
+class _NeverStopped:
+    """The stop of a task as a node's tool sees it: never raised (M6.3c, ADR 0054 §3).
+
+    The stop of a task does not reach a node, and every tool that travels says so in
+    ``stop_point.on_a_node`` — the point of a step on a node is the order sent. Its tools listen
+    to this, and hear nothing: a promise to listen here would be a defence that cannot fire."""
+
+    def listen(self, where: str) -> None:
+        del where
+
+    def is_set(self) -> bool:
+        return False
+
+    def stopped(self) -> Awaitable[object]:
+        return asyncio.Event().wait()
+
+
+NEVER_STOPPED: Final = _NeverStopped()
 
 
 async def declaration(world: NodeWorld) -> dict[str, Any]:
@@ -137,7 +157,7 @@ async def envelope_of(world: NodeWorld, order: Mapping[str, Any]) -> dict[str, A
         tool = world.tools.get(capability)
         if asked is not None:
             checked = (world.verifiers.get(capability), tuple(str(c) for c in asked))
-        result = await tool.execute(decision, dict(order["arguments"]))
+        result = await tool.execute(decision, dict(order["arguments"]), NEVER_STOPPED)
     except NotAllowedError:
         return {"form": "refused"}
     except Exception as raised:  # noqa: BLE001 — a node reports the type, never the message

@@ -44,6 +44,8 @@ from ela.ports import (
     IdGenerator,
     ListeningPort,
     PerceptionProbe,
+    StopPoint,
+    TaskStop,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.captures import CAPTURE_CODES, CaptureProblem
@@ -57,6 +59,10 @@ DENIED_MESSAGE: Final = (
     "the microphone is not granted to the process ELA runs under; grant it in System Settings > "
     "Privacy & Security > Microphone, then quit and reopen that application"
 )
+
+
+MICROPHONE_POINT: Final = "opening the microphone"
+"""Where this tool listens for the stop of its task: its point of no return (M6.3c, ADR 0054 §3)."""
 
 
 class ListenTool(Tool):
@@ -109,6 +115,7 @@ class ListenTool(Tool):
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
+    stop_point: ClassVar[StopPoint] = StopPoint(here=MICROPHONE_POINT, on_a_node=None)
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Two recordings are two rooms at two instants. So this runs under the STARTED protocol, and
     a crash between the recording and its record cannot quietly double what ELA holds."""
@@ -130,7 +137,7 @@ class ListenTool(Tool):
         self._probe = probe
         self._enabled = enabled
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         purpose = arguments.get("purpose")
         seconds = arguments.get("seconds")
         if not isinstance(purpose, str) or not purpose:
@@ -148,7 +155,7 @@ class ListenTool(Tool):
         refused = await self._refusal()
         if refused is not None:
             return refused
-        return await self._hear(seconds)
+        return await self._hear(seconds, stop)
 
     async def _refusal(self) -> Outcome | None:
         """Everything that has to be true before a microphone opens, in order."""
@@ -181,8 +188,9 @@ class ListenTool(Tool):
             return Outcome({}, SCREEN_STORE_FULL, full, retryable=True)
         return None
 
-    async def _hear(self, seconds: int) -> Outcome:
+    async def _hear(self, seconds: int, stop: TaskStop) -> Outcome:
         """Open the device, and turn what came back into an artefact or into a named failure."""
+        stop.listen(MICROPHONE_POINT)
         heard = await self._listening.listen(seconds)
         if heard.error is not None:
             return Outcome({}, heard.error, _message(heard), retryable=heard.retryable)

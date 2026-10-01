@@ -54,6 +54,7 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ela.ports import (
+    NAVIGATION,
     BrowserError,
     BrowserFailed,
     BrowserNotInstalled,
@@ -64,6 +65,7 @@ from ela.ports import (
     Opened,
     PageGone,
     SiteUnreachable,
+    TaskStop,
 )
 
 __all__ = ["MISSING_EXECUTABLE", "PlaywrightBrowser", "shell_folder"]
@@ -191,7 +193,7 @@ class PlaywrightBrowser:
             for found in folder.glob("chrome-headless-shell-*/chrome-headless-shell")
         )
 
-    async def open(self, address: str, allowed: Callable[[str], bool]) -> Opened:
+    async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         self._refuse_if_stopping()
         self._watch()
         playwright = await async_playwright().start()
@@ -244,6 +246,9 @@ class PlaywrightBrowser:
             await context.route("**/*", gate)
             page = await context.new_page()
             self._pages[token] = _Open(playwright, browser, context, page, refused)
+            # The last instant before the site sees anything (M6.3c, ADR 0054 §3): a stopped task
+            # leaves here with ToolStopped, and the page and its browser are closed below.
+            stop.listen(NAVIGATION)
             try:
                 response = await page.goto(address, wait_until="load")
             except PlaywrightError as error:

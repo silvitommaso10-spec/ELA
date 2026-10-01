@@ -34,7 +34,7 @@ from __future__ import annotations
 from typing import ClassVar, Final
 
 from ela.domain import CapabilityId, JsonMapping
-from ela.ports import Clock, IdGenerator, TextRecognitionPort
+from ela.ports import Clock, IdGenerator, StopPoint, TaskStop, TextRecognitionPort
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.captures import (
     CAPTURE_CODES,
@@ -69,6 +69,10 @@ The code exists because without it the answer would have been an empty recogniti
 different fact wearing the same clothes (ADR 0030 §8)."""
 TEXT_TIMEOUT: Final = "text.timeout"
 TEXT_RECOGNITION_FAILED: Final = "text.recognition_failed"
+
+
+TEXT_POINT: Final = "writing the text"
+"""Where this tool listens for the stop of its task: its point of no return (M6.3c, ADR 0054 §3)."""
 
 
 class ReadScreenTextTool(Tool):
@@ -118,6 +122,9 @@ class ReadScreenTextTool(Tool):
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
+    stop_point: ClassVar[StopPoint] = StopPoint(here=TEXT_POINT, on_a_node=None)
+    """The recognition reads a file of the store and changes nothing; the file of text beside it is
+    the effect (M6.3c)."""
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Reading the same capture twice writes the file twice. It is not free of effect, so it runs
     under the STARTED protocol like the capture — and there is no cache, because at 232 ms a
@@ -138,7 +145,7 @@ class ReadScreenTextTool(Tool):
         self._recognition = recognition
         self._languages = languages
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         capture_id = arguments.get("capture_id")
         purpose = arguments.get("purpose")
         if not isinstance(purpose, str) or not purpose:
@@ -152,9 +159,11 @@ class ReadScreenTextTool(Tool):
             return Outcome(
                 {}, TEXT_UNSUPPORTED, "this operating system has no text recognition ELA can use"
             )
-        return await self._read(capture_id, region)
+        return await self._read(capture_id, region, stop)
 
-    async def _read(self, capture_id: str, region: tuple[float, ...] | None) -> Outcome:
+    async def _read(
+        self, capture_id: str, region: tuple[float, ...] | None, stop: TaskStop
+    ) -> Outcome:
         """Purge, check the image is whole, recognise, write beside it."""
         self._store.purge(self._clock.now())
         name = name_for(capture_id)
@@ -186,6 +195,7 @@ class ReadScreenTextTool(Tool):
                 f"the recognition helper exited with {report.exit_code}",
                 retryable=True,
             )
+        stop.listen(TEXT_POINT)
         written = self._store.write_text(capture_id, report.lines)
         if isinstance(written, CaptureProblem):
             return Outcome({}, written.code, written.message(text_name_for(capture_id)))

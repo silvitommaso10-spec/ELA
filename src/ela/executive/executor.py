@@ -102,6 +102,7 @@ from ela.domain import (
     ExecutionId,
     ExecutionResult,
     ExecutionStatus,
+    Halt,
     JsonMapping,
     JsonValue,
     PermissionDecision,
@@ -117,12 +118,13 @@ from ela.domain import (
     TaskStep,
     is_text,
 )
-from ela.executive.assignments import Assignments, WorkRejection
+from ela.executive.assignments import Assignments, Standing, WorkRejection
 from ela.executive.errors import (
     AssignmentVoidError,
     DeliveryConflictError,
     ExecutorError,
 )
+from ela.executive.stops import StopOfTask
 from ela.permissions import (
     ASKING_RULES,
     DEFAULT_AUTHORIZATION_TTL,
@@ -137,6 +139,7 @@ from ela.ports import (
     AlreadyExistsError,
     ApprovalStore,
     AssignmentExpiredError,
+    AssignmentStateError,
     AuditLog,
     AuthorizationNotUsableError,
     AuthorizationStore,
@@ -151,15 +154,19 @@ from ela.ports import (
     NotFoundError,
     Target,
     TaskRepository,
+    TaskStop,
     ToolPort,
     ToolRegistryPort,
+    ToolStopped,
     VerifierPort,
     VerifierRegistryPort,
     Visit,
     audited_numbers,
 )
-from ela.tasks.engine import TaskEngine
+from ela.tasks.engine import TERMINAL_STATES, TaskEngine
+from ela.tasks.errors import TaskError
 from ela.tasks.graph import GraphState
+from ela.tasks.halt import halt_of, in_progress_at_stop
 
 __all__ = [
     "APPROVAL_NAMESPACE",
@@ -195,6 +202,12 @@ __all__ = [
     "approved_targets",
     "check_envelope",
     "select_authorization",
+    "EXECUTION_STOPPED",
+    "NOT_ACTED_REASON",
+    "NOT_REACHED",
+    "PASSED",
+    "POINT",
+    "Closing",
 ]
 
 AUTHORIZATION_NAMESPACE: Final = UUID("2d9b7f61-8c4a-4e0b-9f3d-6a1e5c7b8d90")
@@ -307,6 +320,20 @@ is the one thing ELA must not do — it is why the record exists — so the step
 again (a failed step never restarts, ADR 0009). Whether the money was spent is unknown, and the
 audit says so rather than guessing.
 """
+EXECUTION_STOPPED: Final = "execution.stopped"
+"""Error code of a call that did not act because its task was stopped before the tool passed its
+point of no return (M6.3c, ADR 0054 §4). The result is ``CANCELLED`` — the value of the domain that
+had no producer until then — and the step closes ``CANCELLED`` with it."""
+POINT: Final = "point"
+"""Key of ``ExecutionResult.metadata`` on the result of a tool that declares a point (M6.3c, ADR
+0054 §4): :data:`PASSED` or :data:`NOT_REACHED`, so that a step closed after a crash knows whether
+its tool acted. A tool whose point is the call itself, and a node's result, carry nothing: called
+and returned, they acted."""
+PASSED: Final = "passed"
+NOT_REACHED: Final = "not_reached"
+NOT_ACTED_REASON: Final = "the task ended before the tool of this step acted"
+"""The reason of ``stop_step``, in the trail and in the audit (M6.3c, ADR 0054 §4)."""
+_NOTHING_DONE: Final = (None, None, None, None, None)
 STARTED_ID: Final = "started_id"
 """Key of ``ExecutionResult.metadata`` on an outcome that settles a STARTED record (ADR 0021 §1):
 the id of that record, so the two rows of one run are one run and not two."""
@@ -579,6 +606,15 @@ class Execution(NamedTuple):
     every call that did not hand the step away — every call of a plan that runs on this machine,
     whether the tool ran, was refused, or is waiting for consent (M6.3b).
     """
+
+
+class Closing(NamedTuple):
+    """What the start-up close of the open steps did (M6.3c, ADR 0054 §13)."""
+
+    read: int
+    """Tasks that have ended and have a plan: every one is read."""
+    closed: int
+    """Steps closed: one per task that had a step still RUNNING and nobody holding it."""
 
 
 class Prepared(NamedTuple):
@@ -856,6 +892,10 @@ class Executor:
         ``VerifierNotFound``, ``ApprovalMismatchError``.
         """
         task = await self._repository.get(task_id)
+        if task.state in TERMINAL_STATES:
+            # The task ended between the runner's read and this one (M6.3c, ADR 0054 §6): no tool
+            # runs, and the step it was about is closed from what the stores say.
+            return await self._closed_on_arrival(task, step_id)
         if task.state is not TaskState.EXECUTING:
             raise ExecutorError(task_id, f"a tool needs an EXECUTING task, not {task.state.value}")
         graph = await self._engine.graph(task_id)
@@ -863,6 +903,7 @@ class Executor:
         if closed is not None:
             return closed
         step, spec, tool, verifier, arguments, targets = self._prepared(task_id, graph, step_id)
+        stop = StopOfTask(self._engine.stop_signal(task_id), tool.stop_point.here)
         # Where, once it is settled that there is something to run and before anything runs.
         # After the lookups, so a step with no tool still says so with its own error rather than
         # as a node that cannot host it; before the first read of the results, so a caller with
@@ -914,6 +955,11 @@ class Executor:
         )
         if decision.outcome is PermissionOutcome.DENIED:
             task = await self._engine.deny(task_id, decision=decision)
+            # The denied step did not act: it closes CANCELLED, never left RUNNING in a task
+            # that has ended (M6.3c, ADR 0054 §4).
+            graph = await self._engine.stop_step(
+                task_id, step_id, reason=f"denied: {decision.reason}"
+            )
             return Execution(task, step_id, graph, decision, authorization, None, None, None)
         if decision.outcome is PermissionOutcome.REQUIRES_APPROVAL:
             return await self._ask(
@@ -928,6 +974,10 @@ class Executor:
                 there=there,
             )
 
+        if stop.is_set():
+            # The executor's own listening, before the grant (ADR 0054 §3): a task stopped before
+            # its tool is called spends no yes and writes no STARTED record.
+            return await self._closed_without_acting(task_id, step_id, decision, authorization)
         consumed: int | None = None
         if authorization is not None and decision.metadata.get("rule") in _CONSUMING_RULE_VALUES:
             try:
@@ -975,7 +1025,7 @@ class Executor:
             None if tool.idempotent else await self._start_record(tool, decision, device_id, spent)
         )
         await self._sensor_activated(spec, decision, device_id)
-        result = await self._run_here(tool, decision, arguments, device_id, spent, record)
+        result = await self._run_here(tool, decision, arguments, device_id, spent, record, stop)
         if result is None:
             refused = ErrorMetadata(
                 code=TOOL_REFUSED,
@@ -1001,25 +1051,31 @@ class Executor:
         device_id: DeviceId,
         spent: AuthorizationId | None,
         record: ExecutionResult | None,
+        stop: StopOfTask,
     ) -> ExecutionResult | None:
         """The tool on this machine and its result stored: the span :meth:`running_here` counts.
 
-        ``None`` when the tool refused the decision, and nothing is stored then.
+        ``None`` when the tool refused the decision, and nothing is stored then. The result of a
+        tool with a point says whether the tool passed it (:data:`POINT`, M6.3c).
         """
         self._running_here += 1
         try:
-            produced = await self._run_tool(tool, decision, arguments)
+            produced = await self._run_tool(tool, decision, arguments, stop)
             if produced is None:
                 return None
             produced = _as_text(_counted(tool, produced), tool)
+            metadata = dict(produced.metadata)
+            if record is not None:
+                metadata[STARTED_ID] = str(record.id)
+            if tool.stop_point.here is not None:
+                acted = stop.passed and produced.status is not ExecutionStatus.CANCELLED
+                metadata[POINT] = PASSED if acted else NOT_REACHED
             result = produced.model_copy(
                 update={
                     "device_id": device_id,
                     "decision_id": decision.id,
                     "authorization_id": spent,
-                    "metadata": produced.metadata
-                    if record is None
-                    else {**produced.metadata, STARTED_ID: str(record.id)},
+                    "metadata": metadata,
                 }
             )
             await self._results.add(result)
@@ -1052,6 +1108,12 @@ class Executor:
         (``NotFoundError``), another node's, not offered any more, expired, or a node whose hands
         are already full (``AssignmentNodeBusyError``).
         """
+        offer = await self._assignments.held(assignment_id)
+        if (await self._repository.get(offer.task_id)).state in TERMINAL_STATES:
+            # The task ended before any node took the work (M6.3c, ADR 0054 §9): the offer is
+            # withdrawn, the step closed, and the node is told there is nothing to take.
+            await self.close_open_step(offer.task_id)
+            raise AssignmentStateError(assignment_id, AssignmentState.WITHDRAWN)
         assignment = await self._assignments.claim(assignment_id, device_id)
         decision = assignment.decision
         graph = await self._engine.graph(assignment.task_id)
@@ -1102,10 +1164,11 @@ class Executor:
             return await self._again(assignment)
         task = await self._repository.get(assignment.task_id)
         graph = await self._engine.graph(assignment.task_id)
-        if (
-            task.state is not TaskState.EXECUTING
-            or graph.states[assignment.step_id] is not StepState.RUNNING
-        ):
+        # A task that ended while the node worked still takes the delivery of a step that is
+        # RUNNING: the envelope was the point of no return, and the step closes as a normal one,
+        # with its result written (M6.3c, ADR 0054 §9). A step no longer RUNNING has nothing to
+        # deliver into.
+        if graph.states[assignment.step_id] is not StepState.RUNNING:
             await self._refuse(
                 assignment, device_id, WorkRejection.TASK_CLOSED, reported=envelope.status
             )
@@ -1151,6 +1214,8 @@ class Executor:
         released, not finished, and a doubt is a failure (§33).
         """
         task = await self._repository.get(task_id)
+        if task.state in TERMINAL_STATES:
+            return await self._closed_on_arrival(task, step_id)
         if task.state is not TaskState.EXECUTING:
             raise ExecutorError(
                 task_id, f"finishing a step needs an EXECUTING task, not {task.state.value}"
@@ -1181,6 +1246,120 @@ class Executor:
             f"step {step_id} has neither an outcome nor a started record: nothing ran on it, so "
             "it was to be released and not finished",
         )
+
+    async def close_open_step(self, task_id: TaskId) -> Execution | None:
+        """Close the step a task that has **ended** left RUNNING, from what the stores say (M6.3c,
+        ADR 0054 §5); ``None`` when there is none, or a node still holds it.
+
+        The reading of :meth:`finish`: an outcome → the resume, which closes it as a normal step if
+        the tool acted and ``CANCELLED`` if it did not; a STARTED record alone →
+        ``execution.interrupted``; an offer nobody took → withdrawn, and ``CANCELLED``; a live claim
+        → nothing, the node's delivery or expiry closes it; a lapsed one → expired, then as above;
+        nothing at all → ``CANCELLED``. **The caller holds the lock of the task**: the executor has
+        none of its own (ADR 0015 §8), and a second caller at the same time would write twice.
+        """
+        task = await self._repository.get(task_id)
+        if task.state not in TERMINAL_STATES:
+            raise ExecutorError(
+                task_id, f"an open step is closed in a task that has ended, not {task.state.value}"
+            )
+        graph = await self._engine.graph(task_id)
+        running = [step for step, state in graph.states.items() if state is StepState.RUNNING]
+        if not running:
+            return None
+        step_id = running[-1]
+        stand = await self._assignments.standing(task_id, step_id)
+        if stand.standing is Standing.LIVE:
+            assert stand.assignment is not None
+            if stand.assignment.state is not AssignmentState.OFFERED:
+                return None
+            withdrawn = await self._assignments.withdraw(stand.assignment)
+            if withdrawn.state is not AssignmentState.WITHDRAWN:
+                return None
+        started, settled = await self._stored(task_id, step_id)
+        if settled:
+            ready = self._prepared(task_id, graph, step_id)
+            return await self._resume(
+                task,
+                graph,
+                ready.step,
+                ready.tool,
+                ready.verifier,
+                ready.arguments,
+                ready.targets,
+                settled[0],
+            )
+        if stand.standing is Standing.LAPSED:
+            assert stand.assignment is not None
+            await self._assignments.close_lapsed(stand.assignment)
+        if started:
+            ready = self._prepared(task_id, graph, step_id)
+            return await self._interrupted(
+                task, graph, ready.step, ready.tool, ready.targets, started[0]
+            )
+        graph = await self._engine.stop_step(task_id, step_id, reason=NOT_ACTED_REASON)
+        return Execution(task, step_id, graph, None, None, None, None, None)
+
+    async def close_every_open_step(self) -> Closing:
+        """Close the open step of every task that has ended (M6.3c, decision 2 of the review).
+
+        Called at start-up, after ``recover()`` and before the server takes a request: nothing else
+        runs, so no lock is needed. It closes what ``recover()`` ended — the orphan, the expired
+        question —, what a crash left between the end of a task and the close of its step, and the
+        rows written before M6.3c. How many it reads and closes is what ADR 0054 §13 measures.
+        """
+        read = closed = 0
+        for task in await self._repository.tasks(states=TERMINAL_STATES):
+            if task.plan_id is None:
+                continue
+            read += 1
+            graph = await self._engine.graph(task.id)
+            if StepState.RUNNING in graph.states.values() and (
+                await self.close_open_step(task.id) is not None
+            ):
+                closed += 1
+        return Closing(read, closed)
+
+    async def halt(self, task_id: TaskId) -> Halt | None:
+        """What the step in progress had done when the task was stopped (M6.3c, ADR 0054 §7):
+        ``None`` for a task that is not CANCELLED, or that no step was in progress for.
+
+        The trail and the audit, through the pure :func:`~ela.tasks.halt.halt_of`; and, for a step
+        still open, the position of a node's claim: a lapsed one means nobody is executing the
+        step, and the answer is ``UNKNOWN``, never ``FINISHING`` (decision 15 of the review).
+        """
+        task = await self._repository.get(task_id)
+        if task.state is not TaskState.CANCELLED:
+            return None
+        trail = await self._repository.events(task_id)
+        audit = await self._audit.read(task_id=task_id)
+        found = halt_of(trail, audit, interrupted=EXECUTION_INTERRUPTED)
+        if found is Halt.FINISHING:
+            step = in_progress_at_stop(trail)
+            assert step is not None
+            if (await self._assignments.standing(task_id, step)).standing is Standing.LAPSED:
+                return Halt.UNKNOWN
+        return found
+
+    async def _closed_on_arrival(self, task: Task, step_id: StepId) -> Execution:
+        """A call that found its task ended: no tool runs, and the open step is closed."""
+        closed = await self.close_open_step(task.id)
+        if closed is not None:
+            return closed
+        return Execution(task, step_id, await self._engine.graph(task.id), *_NOTHING_DONE)
+
+    async def _closed_without_acting(
+        self,
+        task_id: TaskId,
+        step_id: StepId,
+        decision: PermissionDecision,
+        authorization: Authorization | None,
+    ) -> Execution:
+        """The task was stopped before the tool was called: the step closes CANCELLED, and the
+        grant is not spent (ADR 0054 §3)."""
+        graph = await self._engine.stop_step(task_id, step_id, reason=NOT_ACTED_REASON)
+        task = await self._repository.get(task_id)
+        return Execution(task, step_id, graph, decision, authorization, None, None, None)
 
     # ----------------------------------------------------------------------------------
     # The gate of a delivery, and what it refuses
@@ -1248,7 +1427,9 @@ class Executor:
             tool_name=ready.tool.name,
             device_id=assignment.device_id,
         )
-        moved = await self._engine.fail_step(task.id, assignment.step_id, refused)
+        moved = await self._engine.fail_step(
+            task.id, assignment.step_id, refused, stopped_if_ended=NOT_ACTED_REASON
+        )
         marked = await self._assignments.deliver(
             assignment.id, assignment.device_id, digest=digest, now=now
         )
@@ -1429,7 +1610,10 @@ class Executor:
         await self._record_execution(ready.tool, result, ready.targets, uses)
         if result.status is not ExecutionStatus.SUCCEEDED:
             moved = await self._engine.fail_step(
-                task.id, ready.step.id, _failure_of(result, ready.tool)
+                task.id,
+                ready.step.id,
+                _failure_of(result, ready.tool),
+                stopped_if_ended=None if _acted(result) else NOT_ACTED_REASON,
             )
             return Execution(
                 task, ready.step.id, moved, decision, authorization, result, None, None
@@ -1468,7 +1652,12 @@ class Executor:
             )
             await self._record_execution(tool, result, targets, uses, recovered=True)
         if result.status is not ExecutionStatus.SUCCEEDED:
-            graph = await self._engine.fail_step(task.id, step.id, _failure_of(result, tool))
+            graph = await self._engine.fail_step(
+                task.id,
+                step.id,
+                _failure_of(result, tool),
+                stopped_if_ended=None if _acted(result) else NOT_ACTED_REASON,
+            )
             return Execution(task, step.id, graph, None, None, result, None, None)
         verified = _event_about(events, AuditEventType.EXECUTION_VERIFIED, result.id)
         if verified is None:  # re-verify: the verifier only reads (rule 18)
@@ -1542,8 +1731,21 @@ class Executor:
             graph = await self._engine.complete_step(task.id, step.id, result)
         else:
             graph = await self._engine.fail_step(task.id, step.id, verification.error)
-            task = await self._engine.fail(task.id, verification.error)
+            task = await self._failed_unless_ended(task.id, verification.error)
         return Execution(task, step.id, graph, decision, authorization, result, None, verification)
+
+    async def _failed_unless_ended(self, task_id: TaskId, error: ErrorMetadata) -> Task:
+        """The task FAILED with the verification's error — unless it has ended already: a task
+        stopped while its step was verified stays stopped, and the step says how it went (M6.3c).
+        The engine refuses the move from a state that has ended, and the refusal is read again: a
+        refusal of a task still alive is what it was."""
+        try:
+            return await self._engine.fail(task_id, error)
+        except TaskError:
+            current = await self._repository.get(task_id)
+            if current.state not in TERMINAL_STATES:
+                raise
+            return current
 
     async def _unfinished_verification_failure(
         self, task_id: TaskId, step_id: StepId
@@ -1843,9 +2045,12 @@ class Executor:
         authorization: Authorization | None,
         error: ErrorMetadata,
     ) -> Execution:
-        """Nothing ran: the step is FAILED with the reason, so the task does not hang (§33)."""
+        """Nothing ran: the step is FAILED with the reason, so the task does not hang (§33) — or
+        CANCELLED, if the task ended meanwhile: nothing acted (M6.3c, ADR 0054 §4)."""
         assert decision.step_id is not None
-        graph = await self._engine.fail_step(task.id, decision.step_id, error)
+        graph = await self._engine.fail_step(
+            task.id, decision.step_id, error, stopped_if_ended=NOT_ACTED_REASON
+        )
         return Execution(
             task, decision.step_id, graph, decision, authorization, None, None, None, error
         )
@@ -1916,19 +2121,25 @@ class Executor:
         )
 
     async def _run_tool(
-        self, tool: ToolPort, decision: PermissionDecision, arguments: JsonMapping
+        self, tool: ToolPort, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
     ) -> ExecutionResult | None:
         """The only call of a tool in the Core (rule 16), with an ALLOWED decision in hand.
 
         ``None`` if the tool refused the decision before acting; a FAILED result if it raised
-        while acting, so that the run is recorded whatever happened (§32).
+        while acting, so that the run is recorded whatever happened (§32); a ``CANCELLED`` one if
+        the task was stopped before the tool passed its point — looked at once more right before
+        the call, with no ``await`` in between, and listened to by the tool at its point (M6.3c).
         """
         assert decision.outcome is PermissionOutcome.ALLOWED
         assert decision.capability_id == tool.capability_id
+        if stop.is_set():
+            return self._stopped(tool, decision)
         try:
-            return await tool.execute(decision, arguments)
+            return await tool.execute(decision, arguments, stop)
         except NotAllowedError:
             return None
+        except ToolStopped:
+            return self._stopped(tool, decision)
         except Exception as error:  # a tool that fell over halfway: recorded, never hidden
             return ExecutionResult(
                 id=ExecutionId(self._ids.new_uuid()),
@@ -1942,6 +2153,23 @@ class Executor:
                     code=TOOL_EXCEPTION, message=type(error).__name__, tool_name=tool.name
                 ),
             )
+
+    def _stopped(self, tool: ToolPort, decision: PermissionDecision) -> ExecutionResult:
+        """The result of a call that did not act: its task was stopped first (ADR 0054 §4)."""
+        return ExecutionResult(
+            id=ExecutionId(self._ids.new_uuid()),
+            created_at=self._clock.now(),
+            capability_id=tool.capability_id,
+            status=ExecutionStatus.CANCELLED,
+            task_id=decision.task_id,
+            step_id=decision.step_id,
+            tool_name=tool.name,
+            error=ErrorMetadata(
+                code=EXECUTION_STOPPED,
+                message=f"the task was stopped before {tool.name} acted",
+                tool_name=tool.name,
+            ),
+        )
 
     async def _record_execution(
         self,
@@ -2325,6 +2553,15 @@ def _counted(tool: ToolPort, result: ExecutionResult) -> ExecutionResult:
             }
         )
     return result
+
+
+def _acted(result: ExecutionResult) -> bool:
+    """Whether the call behind ``result`` passed its tool's point of no return (ADR 0054 §4): not
+    for a call stopped before it, nor for a tool that failed before its point; yes for a tool
+    whose point is the call, for a node's result, and for every result written before M6.3c."""
+    return result.status is not ExecutionStatus.CANCELLED and result.metadata.get(POINT) != (
+        NOT_REACHED
+    )
 
 
 def _failure_of(result: ExecutionResult, tool: ToolPort) -> ErrorMetadata:

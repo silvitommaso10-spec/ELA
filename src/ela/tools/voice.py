@@ -42,7 +42,7 @@ import hashlib
 from typing import ClassVar, Final
 
 from ela.domain import CapabilityId, JsonMapping
-from ela.ports import Clock, IdGenerator, SpeechPort
+from ela.ports import ENVELOPE, Clock, IdGenerator, SpeechPort, StopPoint, TaskStop
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 
@@ -118,6 +118,10 @@ def digest_of(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+SOUND_POINT: Final = "the sound"
+"""Where this tool listens for the stop of its task: its point of no return (M6.3c, ADR 0054 §3)."""
+
+
 class SpeakTool(Tool):
     """Says one sentence out loud (§29 MEDIUM; ADR 0033).
 
@@ -137,6 +141,7 @@ class SpeakTool(Tool):
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
+    stop_point: ClassVar[StopPoint] = StopPoint(here=SOUND_POINT, on_a_node=ENVELOPE)
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Saying a thing twice is saying it twice. There is no artefact whose second write would be
     harmless: the effect is the sound, and the sound already happened. So this runs under the
@@ -158,7 +163,7 @@ class SpeakTool(Tool):
         self._voice = voice
         self._enabled = enabled
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         asked = sentence_of(arguments)
         if isinstance(asked, Outcome):
             return asked
@@ -177,10 +182,11 @@ class SpeakTool(Tool):
                 VOICE_UNSUPPORTED,
                 "this operating system has no voice ELA can use",
             )
-        return await self._say(text)
+        return await self._say(text, stop)
 
-    async def _say(self, text: str) -> Outcome:
+    async def _say(self, text: str, stop: TaskStop) -> Outcome:
         """Run the helper for the whole sentence, and report how it ended."""
+        stop.listen(SOUND_POINT)
         report = await self._speech.speak(text)
         if report.timed_out:
             return Outcome(

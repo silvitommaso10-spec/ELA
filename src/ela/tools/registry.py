@@ -32,6 +32,7 @@ from ela.ports import (
     ProviderRegistryPort,
     ScreenCapturePort,
     SpeechPort,
+    StopPoint,
     TextRecognitionPort,
     ToolPort,
     VerifierPort,
@@ -41,6 +42,7 @@ from ela.tools.echo import EchoTool
 from ela.tools.errors import (
     NotIdempotentError,
     RelocationError,
+    SilentStopPointError,
     SilentVerifierError,
     ToolNotFound,
     UndeclaredNumbersError,
@@ -121,6 +123,7 @@ class ToolRegistry:
                 raise NotIdempotentError(tool.capability_id, tool.name, declared)
             _relocation_of(tool, idempotent=declared)
             _numbers_of(tool)
+            _stop_point_of(tool)
             if tool.capability_id in table:
                 raise AlreadyExistsError("tool", tool.capability_id)
             table[tool.capability_id] = tool
@@ -156,6 +159,26 @@ def _relocation_of(tool: ToolPort, *, idempotent: bool) -> None:
             "declares relocatable True and idempotent False: what cannot be done again here is "
             "not done again elsewhere",
         )
+
+
+def _stop_point_of(tool: ToolPort) -> None:
+    """Refuse a tool that does not say where it listens for the stop of its task (M6.3c, ADR 0054
+    §3): silence would read as «it listens», and a doubt is not a yes (§33)."""
+    declared = getattr(tool, "stop_point", None)
+    if not isinstance(declared, StopPoint):
+        raise SilentStopPointError(
+            tool.capability_id,
+            tool.name,
+            f"declares no StopPoint as stop_point (it says {declared!r}): where the stop of its "
+            "task reaches it is unknown",
+        )
+    for half in (declared.here, declared.on_a_node):
+        if half is not None and (not isinstance(half, str) or not half.strip()):
+            raise SilentStopPointError(
+                tool.capability_id,
+                tool.name,
+                f"declares a stop_point half that is neither a sentence nor None: {half!r}",
+            )
 
 
 def _numbers_of(tool: ToolPort) -> None:

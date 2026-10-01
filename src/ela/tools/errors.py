@@ -15,6 +15,7 @@ from ela.ports import NotFoundError
 __all__ = [
     "NotIdempotentError",
     "RelocationError",
+    "SilentStopPointError",
     "SilentVerifierError",
     "ToolNotFound",
     "ToolsError",
@@ -118,6 +119,23 @@ class UndeclaredNumbersError(ToolsError):
     of :class:`NotIdempotentError`: a tool with nothing to count declares ``frozenset()``, and what
     is refused is silence — or a key outside the tool's own result, which would be a channel into
     the audit that reads something nobody declared the tool produces.
+    """
+
+    def __init__(self, capability_id: CapabilityId, name: str, reason: str) -> None:
+        self.capability_id = capability_id
+        self.name = name
+        super().__init__(f"tool {name} of {capability_id} {reason}")
+
+
+class SilentStopPointError(ToolsError):
+    """A tool that does not *say* where it listens for the stop of its task, or says it wrong
+    (M6.3c, ADR 0054 §3).
+
+    Raised by :class:`~ela.tools.registry.ToolRegistry` at construction, the form of
+    :class:`RelocationError`: ``here=None`` is a legal answer — the point is the call itself —, and
+    what is refused is silence, a value that is not a :class:`~ela.ports.StopPoint`, or a half that
+    is neither a sentence nor ``None``. Whether ``on_a_node`` matches what travels is the
+    orchestrator's to say, and a test of the documents derives it.
     """
 
     def __init__(self, capability_id: CapabilityId, name: str, reason: str) -> None:

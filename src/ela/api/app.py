@@ -226,6 +226,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     ela: Ela = app.state.ela
     app.state.recovery = await ela.engine.recover()
+    # The steps a task that has ended left open (M6.3c, decision 2 of the review): what recover()
+    # just ended, what a crash left between the end and the close, and the rows of before M6.3c.
+    app.state.closed = await ela.executor.close_every_open_step()
     ela.captures.purge(ela.clock.now())
     # And the voice's floor, for the same reason and a smaller one: what it collects is the crash
     # that landed between making the audio's file and unlinking it — one syscall wide, and exactly

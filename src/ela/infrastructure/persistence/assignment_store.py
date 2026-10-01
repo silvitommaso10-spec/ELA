@@ -155,6 +155,29 @@ class SqlAssignmentStore:
         )
         return await self._move(statement, assignment_id, device_id, AssignmentState.CLAIMED, now)
 
+    async def withdraw(self, assignment_id: AssignmentId, *, now: datetime) -> Assignment:
+        """``WITHDRAWN`` only while it is still ``OFFERED`` (M6.3c): a claim that came first wins,
+        and the row comes back as it is. ``now`` is the port's, and no column keeps it: the state
+        is the fact, and the audit of the step that closes with it says when."""
+        del now
+        statement = (
+            update(AssignmentRow)
+            .where(
+                AssignmentRow.id == assignment_id,
+                AssignmentRow.state == AssignmentState.OFFERED.value,
+            )
+            .values(state=AssignmentState.WITHDRAWN.value)
+            .execution_options(synchronize_session=False)
+        )
+        async with self._sessions() as session, session.begin():
+            await session.execute(statement)
+            row = await session.scalar(
+                select(AssignmentRow).where(AssignmentRow.id == assignment_id)
+            )
+            if row is None:
+                raise NotFoundError(ASSIGNMENT, assignment_id)
+            return row_to_assignment(row)
+
     async def expire(self, assignment_id: AssignmentId, *, now: datetime) -> Assignment:
         """``EXPIRED`` only where time has already decided; an expiry written twice is one."""
         statement = (

@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import ClassVar, Final
 
 from ela.domain import CapabilityId, ErrorMetadata, JsonMapping
-from ela.ports import Clock, IdGenerator, Prospect, Target
-from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
+from ela.ports import ENVELOPE, Clock, IdGenerator, Prospect, StopPoint, Target, TaskStop
+from ela.tools.base import ARGUMENTS_INVALID, FIRST_WRITE, Outcome, Tool
 from ela.tools.paths import (
     INVALID_SHAPE,
     PATH_INVALID,
@@ -184,6 +184,8 @@ class FsReadTool(Tool):
     """**Repeatable, and not relocatable** (M13.3, ADR 0048): the same path on another machine is
     another file, so a read that a silent node took is closed ``interrupted``, not done elsewhere.
     The tool that makes the declaration a declaration, and not another name for ``idempotent``."""
+    stop_point: ClassVar[StopPoint] = StopPoint(here=None, on_a_node=ENVELOPE)
+    """A read has no effect in the world and no wait before it: its point is the call (M6.3c)."""
 
     def __init__(
         self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = FS_READ_TOOL_NAME
@@ -225,7 +227,7 @@ class FsReadTool(Tool):
             return Outcome({}, code, problem.message(path)), None
         return None, Target(resolved=str(self._root / path), exists=True, does=READS, label=FILE)
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         refused, _ = self._look(arguments)
         if refused is not None:
             return refused
@@ -273,6 +275,7 @@ class FsWriteTool(Tool):
     crash and call that refusal a failure of the step (ADR 0021 §1).
     """
     relocatable: ClassVar[bool] = False
+    stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_WRITE, on_a_node=ENVELOPE)
 
     def __init__(
         self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = FS_WRITE_TOOL_NAME
@@ -334,13 +337,14 @@ class FsWriteTool(Tool):
         does = OVERWRITES if there else CREATES
         return None, Target(resolved=str(self._root / path), exists=there, does=does, label=FILE)
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         refused, _ = self._look(arguments)
         if refused is not None:
             return refused
         path, body = arguments["path"], arguments["body"]
         assert isinstance(path, str) and isinstance(body, str)
         target = self._root / path
+        stop.listen(FIRST_WRITE)
         try:
             target.parent.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
             data = body.encode("utf-8")

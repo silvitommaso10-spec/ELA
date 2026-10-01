@@ -28,8 +28,8 @@ from pathlib import Path
 from typing import ClassVar, Final
 
 from ela.domain import CapabilityId, JsonMapping
-from ela.ports import Clock, IdGenerator
-from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
+from ela.ports import Clock, IdGenerator, StopPoint, TaskStop
+from ela.tools.base import ARGUMENTS_INVALID, FIRST_WRITE, Outcome, Tool
 from ela.tools.paths import (
     PATH_INVALID,
     PATH_IS_DIRECTORY,
@@ -88,6 +88,7 @@ class WriteNoteTool(Tool):
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """The note is overwritten with the same body: writing it twice leaves the same file, which
     is what makes the retry of crash window 7a harmless (ADR 0015 §8)."""
+    stop_point: ClassVar[StopPoint] = StopPoint(here=FIRST_WRITE, on_a_node=None)
 
     def __init__(
         self, root: Path | str, clock: Clock, ids: IdGenerator, *, name: str = NOTES_TOOL_NAME
@@ -101,7 +102,7 @@ class WriteNoteTool(Tool):
         """The resolved workspace directory."""
         return self._root
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         path = arguments.get("path")
         body = arguments.get("body")
         if not isinstance(path, str) or not isinstance(body, str):
@@ -110,6 +111,7 @@ class WriteNoteTool(Tool):
         if refused is not None:
             return refused
         target = self._root / path
+        stop.listen(FIRST_WRITE)
         try:
             target.parent.mkdir(mode=DIRECTORY_MODE, parents=True, exist_ok=True)
             data = body.encode("utf-8")

@@ -91,6 +91,8 @@ from ela.tasks.state_machine import (
 )
 
 __all__ = [
+    "CLOSINGS",
+    "ENDED_ONLY",
     "LIVE_STATES",
     "OPERATIONS",
     "ORPHANED",
@@ -284,16 +286,40 @@ STEP_OPERATIONS: Final[Mapping[str, StepOperation]] = MappingProxyType(
                 AuditEventType.STEP_RELEASED,
                 "assignment_id",
             ),
+            StepOperation(
+                "stop_step",
+                frozenset({_P.RUNNING}),
+                _P.CANCELLED,
+                TaskEventType.STEP_CANCELLED,
+                AuditEventType.STEP_CANCELLED,
+                None,
+            ),
         )
     }
 )
-"""The moves of one step of the plan: ADR 0009's table, in its order, then ADR 0038's row.
+"""The moves of one step of the plan: ADR 0009's table, in its order, then ADR 0038's row and ADR
+0054's.
 
 ``cancel_step`` has no public method: it is the propagation of ``fail_step`` to the PENDING
 descendants of the failed step, written with the SYSTEM actor because nobody asked for it.
 ``release_step`` has one caller, the service of the assignments (architecture rule 50): only it
-can see that the store holds nothing for the step.
+can see that the store holds nothing for the step. ``stop_step`` closes a RUNNING step whose task
+ended before its tool passed its point of no return (M6.3c, ADR 0054 §4): idempotent by state, like
+``fail_step``, and only on a task that has ended.
 """
+
+CLOSINGS: Final[frozenset[str]] = frozenset({"complete_step", "fail_step", "stop_step"})
+"""The step operations that also apply to a task that has **ended** (M6.3c, ADR 0054 §4).
+
+They close a RUNNING step and do nothing else: a tool past its point finishes after the stop and
+its step closes like any other, and a step whose tool never passed it closes ``CANCELLED``.
+``start_step`` and ``release_step`` still want an EXECUTING task — nothing starts or goes back in
+play in a task that is over.
+"""
+
+ENDED_ONLY: Final[frozenset[str]] = frozenset({"stop_step"})
+"""The step operations that apply **only** to a task that has ended: in a live task a step stops
+only because its task did."""
 
 Guard = Callable[[Task, tuple[TaskEvent, ...], datetime], Awaitable[None]]
 Payload = Mapping[str, JsonValue]
@@ -385,6 +411,7 @@ class TaskEngine:
         self._actor = actor
         self._orphan_after = orphan_after
         self._locks: dict[TaskId, asyncio.Lock] = {}
+        self._stops: dict[TaskId, asyncio.Event] = {}
 
     # ----------------------------------------------------------------------------------
     # Operations that do not go through the transition table
@@ -738,6 +765,17 @@ class TaskEngine:
             guard=_require_deadline_passed,
         )
 
+    def stop_signal(self, task_id: TaskId) -> asyncio.Event:
+        """The stop of ``task_id`` in this process: raised when the task ends (M6.3c, ADR 0054 §2).
+
+        The mechanism of ``Ela.stopping`` (ADR 0047 §7) narrowed to one task. **Only the engine
+        raises it** (architecture rule 58), in :meth:`_apply_loaded`, after the row, the trail and
+        the audit of the transition are written: the stop is a fact before it is a signal. In
+        memory and of one process: a process that is born again has no tool in flight, and what it
+        finds open the executor closes at start-up.
+        """
+        return self._stops.setdefault(task_id, asyncio.Event())
+
     # ----------------------------------------------------------------------------------
     # The Task Graph: the steps of the plan (§15, ADR 0009)
     # ----------------------------------------------------------------------------------
@@ -784,11 +822,22 @@ class TaskEngine:
             payload={"capability_id": result.capability_id, "tool_name": result.tool_name},
         )
 
-    async def fail_step(self, task_id: TaskId, step_id: StepId, error: ErrorMetadata) -> GraphState:
+    async def fail_step(
+        self,
+        task_id: TaskId,
+        step_id: StepId,
+        error: ErrorMetadata,
+        *,
+        stopped_if_ended: str | None = None,
+    ) -> GraphState:
         """RUNNING → FAILED, then every PENDING descendant → CANCELLED with the reason (§15).
 
         A retry on a step already FAILED writes no second failure but completes the cascade a
         crash may have cut short (ADR 0009: idempotent by outcome).
+
+        ``stopped_if_ended`` is for a step whose tool **did not act** (M6.3c, ADR 0054 §4): in a
+        live task it fails as always, and in a task that has ended it is stopped instead, with this
+        reason — decided under the task's lock, so a stop that lands in between is seen.
         """
         return await self._apply_step(
             STEP_OPERATIONS["fail_step"],
@@ -798,6 +847,7 @@ class TaskEngine:
             error=error,
             payload={"code": error.code},
             cascade=error,
+            stopped_if_ended=stopped_if_ended,
         )
 
     async def release_step(
@@ -825,6 +875,16 @@ class TaskEngine:
             device_id=device_id,
             once=True,
         )
+
+    async def stop_step(self, task_id: TaskId, step_id: StepId, *, reason: str) -> GraphState:
+        """RUNNING → CANCELLED, on a task that has ended (M6.3c, ADR 0054 §4).
+
+        The step's tool did not pass its point of no return — stopped there, failed before it, or
+        never called —, so the step did not act. Idempotent by state, like ``fail_step``: a second
+        call on a step already CANCELLED writes nothing. The one caller is the executor
+        (architecture rule 17), which is the one that knows whether the tool passed its point.
+        """
+        return await self._apply_step(STEP_OPERATIONS["stop_step"], task_id, step_id, reason=reason)
 
     # ----------------------------------------------------------------------------------
     # The one write path
@@ -959,6 +1019,10 @@ class TaskEngine:
                 },
             )
         )
+        if op.target in TERMINAL_STATES:
+            # After the third write and with no await after it (ADR 0054 §2): a tool reacts only
+            # to a stop the audit already has, and TASK_CANCELLED precedes what the stop causes.
+            self.stop_signal(task_id).set()
         return moved.task
 
     def _already_applied(
@@ -998,17 +1062,33 @@ class TaskEngine:
         must_be_ready: bool = False,
         cascade: ErrorMetadata | None = None,
         once: bool = False,
+        stopped_if_ended: str | None = None,
     ) -> GraphState:
         async with self._lock(task_id):
             task = await self._repository.get(task_id)
             events = await self._repository.events(task_id)
-            if task.state is not TaskState.EXECUTING:
+            ended = task.state in TERMINAL_STATES
+            if op.name in ENDED_ONLY and not ended:
+                raise TaskEngineError(
+                    task_id, f"{op.name} needs a task that has ended, not {task.state}"
+                )
+            if task.state is not TaskState.EXECUTING and not (ended and op.name in CLOSINGS):
                 raise TaskEngineError(
                     task_id, f"{op.name} needs an EXECUTING task, not {task.state}"
                 )
             graph, states = await self._graph(task_id, events)
             graph.step(step_id)
             current = states[step_id]
+            if ended and stopped_if_ended is not None and current is _P.RUNNING:
+                # Only a step still RUNNING is stopped: one already FAILED is a retry of its
+                # failure, and finishes the cascade a crash may have cut short.
+                op, reason, key, payload = (
+                    STEP_OPERATIONS["stop_step"],
+                    stopped_if_ended,
+                    None,
+                    None,
+                )
+                error, cascade = None, None
             if once and _applied_with(events, op, step_id, key):
                 return GraphState(graph, states)
             if current is op.target and not once:

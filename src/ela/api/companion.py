@@ -21,7 +21,9 @@ Three things this module holds that have nowhere else to be, and each has its re
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
+from types import MappingProxyType
 from typing import Annotated, Final
 from urllib.parse import parse_qsl
 from uuid import UUID
@@ -40,6 +42,7 @@ from ela.devices import PRIVACY_ORDER
 from ela.domain import (
     ApprovalId,
     DeviceRole,
+    Halt,
     OperatingSystem,
     PrivacyLevel,
     TaskState,
@@ -168,6 +171,29 @@ def form(body: bytes) -> dict[str, str]:
     way, and a test pins that the body it consumed reaches the route whole (dec. C.3, §«Rischi»).
     """
     return dict(parse_qsl(body.decode("utf-8", "replace")))
+
+
+HALT_PHRASES: Final[Mapping[Halt, str]] = MappingProxyType(
+    {
+        Halt.NOT_ACTED: "Fermato prima che lo step in corso agisse.",
+        Halt.ACTED_VERIFIED: (
+            "Fermato, ma lo step in corso aveva già agito, e la sua verifica è passata."
+        ),
+        Halt.ACTED: (
+            "Fermato, ma lo step in corso aveva già agito: nessuna verifica l'ha constatato."
+        ),
+        Halt.UNKNOWN: "Fermato: se lo step in corso abbia agito non si sa.",
+        Halt.FINISHING: "Fermato: lo step in corso sta ancora finendo.",
+    }
+)
+"""What the pages say of the step in progress of a stopped task (M6.3c, ADR 0054 §7–§8): what the
+verification did, never that an effect happened (ADR 0047 §9). One vocabulary for the two surfaces —
+the console reads it from here, as it reads the titles of the groups."""
+
+
+def halt_phrase(halt: Halt | None) -> str:
+    """The sentence for ``halt``; empty for a task whose stop found no step in progress."""
+    return "" if halt is None else HALT_PHRASES[halt]
 
 
 def counted(how_many: int, one: str, many: str) -> str:
@@ -320,7 +346,11 @@ def _tasks(alive: tuple[TaskOut, ...], finished: FinishedOut, identity: Identity
                 pages.fragment(HERE, "group", title=finished_title(SHOWN, finished.total)),
                 *(
                     pages.fragment(
-                        HERE, "row-done", what=_title(one, identity), key=one.state.value
+                        HERE,
+                        "row-done",
+                        what=_title(one, identity),
+                        key=one.state.value,
+                        halt=_halt(one.halt),
                     )
                     for one in finished.tasks
                 ),
@@ -328,6 +358,14 @@ def _tasks(alive: tuple[TaskOut, ...], finished: FinishedOut, identity: Identity
             ]
         ),
     )
+
+
+def _halt(halt: Halt | None) -> pages.Markup:
+    """What the step in progress had done when the task was stopped, under every ceiling: a fact of
+    the execution, like the state, and nothing of the content (M6.3c, ADR 0054 §8)."""
+    if halt is None:
+        return pages.Markup("")
+    return pages.fragment(HERE, "halt", text=halt_phrase(halt))
 
 
 def _title(task: TaskOut, identity: Identity) -> object:
@@ -401,8 +439,10 @@ async def confirm(ela: ElaDep, identity: IdentityDep, id: Annotated[UUID, Query(
     """The second page of stopping a task (dec. I): without JavaScript, a confirmation is a page.
 
     §65 wants ELA «estremamente governabile», and a route that only **takes away** is the first
-    one that makes sense to give a phone: a cancelled task does nothing more, and stopping is the
-    direction of §33. The price is said on the page: it cannot be undone.
+    one that makes sense to give a phone: no new step of a cancelled task starts, and stopping is
+    the direction of §33. The price is said on the page: it cannot be undone, and a step that has
+    already acted may finish what it began — the row of the task, among the finished, says whether
+    it had acted (M6.3c).
     """
     found = await _live(ela, id)
     return pages.page(
@@ -416,7 +456,9 @@ async def confirm(ela: ElaDep, identity: IdentityDep, id: Annotated[UUID, Query(
 
 
 @router.post("/cancel")
-async def cancel(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+async def cancel(
+    request: Request, ela: ElaDep, identity: IdentityDep, running: RunningDep
+) -> Response:
     """The form of the confirmation page: the task stops, signed by the iPhone (dec. I).
 
     Stopping does not ask to see: it works for a task whose content stays on the Mac too (F.2),
@@ -424,7 +466,7 @@ async def cancel(request: Request, ela: ElaDep, identity: IdentityDep) -> Respon
     """
     fields = form(await request.body())
     found = await _live(ela, UUID(fields.get("id", "")))
-    await cancel_task(found.id, CancelIn(reason=STOPPED), ela, identity)
+    await cancel_task(found.id, CancelIn(reason=STOPPED), ela, identity, running)
     return RedirectResponse(HOME, status_code=303)
 
 
