@@ -194,7 +194,8 @@ sbagliata nella forma, ed è corretta dalla decisione 12 della review**.
 
 `halt` sta in `RunOut`, `TaskDetail` e nelle righe di `FinishedOut`. **L'elenco delle viste si deriva**:
 ogni rotta il cui modello porta lo stato di un task, e ogni suo lettore — le funzioni dei moduli di pagine che la
-chiamano, i comandi della CLI che ne chiedono il percorso —, in `docs/outcomes.txt`, generato da
+chiamano, i comandi della CLI che ne chiedono il percorso, dove un campo annotato `Literal` vale per i suoi valori
+e uno che resta `str` per ogni segmento —, in `docs/outcomes.txt`, generato da
 `scripts/generate_outcomes.py` e riconfrontato byte per byte dalla suite: **un allarme, non una
 dimostrazione**, come l'impronta di ADR 0044 §6. Un lettore nuovo ferma `make check`, e la risposta — la resa di
 `halt` con il suo test, o la riga che dice perché no — si scrive nel documento della milestone. Il telefono

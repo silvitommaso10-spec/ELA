@@ -12,6 +12,10 @@
 #     uv run python scripts/generate_outcomes.py
 #
 # Rigenerare e basta riporta questo file a decorazione.
+#
+# Un campo nel percorso di una richiesta della riga di comando vale per il parametro della rotta con
+# il suo nome; uno annotato `Literal[...]` vale per i suoi valori; uno che resta `str` vale per ogni
+# segmento — e allora la riga può nominare rotte che il comando non chiama.
 route GET /tasks list_tasks
 route POST /tasks create_task
 route GET /tasks/finished finished_tasks
@@ -36,5 +40,5 @@ cli ela.cli.tasks.finished <- GET /tasks/finished
 cli ela.cli.tasks.show <- GET /tasks/{task_id}
 cli ela.cli.tasks.plan <- POST /tasks/{task_id}/plan
 cli ela.cli.tasks.run <- POST /tasks/{task_id}/run
-cli ela.cli.tasks.emit_answer <- POST /tasks/{task_id}/approve, POST /tasks/{task_id}/cancel, POST /tasks/{task_id}/deny, POST /tasks/{task_id}/plan, POST /tasks/{task_id}/run
+cli ela.cli.tasks.emit_answer <- POST /tasks/{task_id}/approve, POST /tasks/{task_id}/deny
 cli ela.cli.tasks.cancel <- POST /tasks/{task_id}/cancel

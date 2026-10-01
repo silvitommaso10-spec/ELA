@@ -22,6 +22,9 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<chiave del modello del PC>` | la chiave Anthropic del nodo, mai quella del Core | la console Anthropic (§12, passo 4) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
+| `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
+| `<id del passo 3>` | l'id del task del passo 3 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
+| `<id del passo 4>` | l'id del task del passo 4 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
 | `<porta>` | la porta su cui ELA ascolta | `ela diagnostics`, riga `addresses` (§14) |
 | `<radice del PC>` | la cartella del PC dentro cui ELA può leggere e scrivere | la scegli tu, sul PC: una cartella che c'è, e che non contiene né sta dentro `$HOME\.ela` o `$HOME\ELA` (§17, passo 2) |
 
@@ -3082,19 +3085,23 @@ script legge hanno sopra un marcatore, `<!-- prova: N.tipo -->`, che il Markdown
 | Tipo | Che cosa fa lo script |
 |---|---|
 | `comando` | fa girare le righe una per una; `<id>` è l'id del task che il passo ha creato. Prima del «ferma», l'ultima riga gira mentre lo script guarda |
-| `guarda` | guarda finché vede lo step in corso, o finché il task finisce da sé: `processo <modello>` è un processo nuovo la cui riga di comando contiene il modello, `risultato STARTED` è la `STARTED` dello step fra i risultati del task |
+| `guarda` | guarda finché vede lo step in corso, o finché il task finisce da sé: `processo <modello>` è un processo nuovo la cui riga di comando contiene il modello, `risultato STARTED` è la `STARTED` dello step fra i risultati del task, e `su un nodo` vuole che l'abbia scritta un nodo e non il Mac |
 | `ferma` | manda il «ferma» — `POST /tasks/<id>/cancel`, con «la prova di M6.3c» — e dice il lato dove deve cadere: prima dello step, prima del tool, prima del punto o dopo il punto |
-| `atteso` | le righe che l'uscita del comando sopra deve contenere, a meno degli spazi |
+| `atteso` | le righe che l'uscita del comando sopra deve avere: ciascuna a parole intere, dentro una riga dell'uscita e a meno degli spazi — «0» non è dentro «10» —, e nell'ordine in cui sono scritte |
 | `mano` | ciò che fai tu: lo script lo stampa, e — tranne quando subito dopo guarda — aspetta Invio |
-| `occhio` | ciò che guardi tu: lo script lo chiede, e scrive la tua risposta come GUARDATO |
+| `occhio` | ciò che guardi tu: lo script lo chiede, e scrive la tua risposta come GUARDATO, sì o no |
 | `se` | una domanda: un no salta il passo, e il file lo scrive come SALTATO |
 
 Lo script manda il «ferma» **quando vede lo step in corso**, non dopo un'attesa fissa; poi aspetta che lo step
 in corso si chiuda, e solo allora confronta. Legge dalla trail e dai risultati **dove** è caduto il «ferma»; se
-non è caduto dal lato atteso stampa **FALLITO** con il lato vero e **ripete il passo da sé**, con un task nuovo,
-fino a tre giri — e il file dice a che giro il passo è passato: «PASSATO al secondo giro» non è «PASSATO». Non è
+non è caduto dal lato atteso — o se il task è finito da sé prima che lo step si vedesse — stampa **DA RIPETERE**
+con il lato vero e **ripete il passo da sé**, con un task nuovo, fino a tre giri: è **FALLITO** solo se sbaglia
+anche il terzo, e il file dice a che giro il passo è passato — «PASSATO al secondo giro» non è «PASSATO». Non è
 un difetto di ELA: in una prova vera un browser parte più o meno in fretta, e i due lati di ogni tool li provano
-i test. **A te restano la console e il telefono**: il sì ai passi `HIGH` lo dai lì, e lì guardi gli esiti. Ciò
+i test. **L'ultima riga** conta i PASSATO con i loro giri, i FALLITO, i GUARDATO con un no e i SALTATO, e dice
+«La prova è passata» solo senza FALLITO, senza SALTATO e con ogni GUARDATO un sì; altrimenti dice che cosa manca.
+Dove una domanda nomina il task di un altro passo, `<id del passo 2>` e gli altri, lo script scrive l'id del suo
+ultimo giro: fra i finiti, i giri ripetuti lasciano più righe che passi. **A te restano la console e il telefono**: il sì ai passi `HIGH` lo dai lì, e lì guardi gli esiti. Ciò
 che guardi lo script non lo giudica: te lo chiede, e lo scrive.
 
 ### 0. Prima di cominciare
@@ -3300,8 +3307,8 @@ uv run ela task results <id>
 <!-- prova: 4.atteso -->
 ```
 c6d3e2f1-7a48-4c3b-9e05-000000000001 terminal.run FAILED terminal-run
-error terminal.stopped
 ended stopped_with_the_task
+error terminal.stopped
 ```
 
 **Nessun `sleep 97` resta vivo**: lo script lo conta nella tabella dei processi.
@@ -3328,7 +3335,7 @@ uv run ela task plan <id> --file docs/examples/echo.json
 
 <!-- prova: 5.mano -->
 ```
-Nella console, apri il task con l'id che lo script ha stampato, premi «Ferma» e leggi la conferma prima di confermare.
+Nella console, apri il task con l'id che lo script ha stampato e premi «Ferma»; leggi la conferma, poi conferma. Quando la console mostra il task fermato, premi Invio.
 ```
 
 <!-- prova: 5.occhio -->
@@ -3353,16 +3360,16 @@ stopped step   —
 ```
 
 E ti chiede di guardare la home della console, dove fra i finiti ci sono i task dei passi 2–4, ciascuno con la
-sua frase.
+sua frase: lo script ti dà i loro id.
 
 <!-- prova: 5.occhio -->
 ```
-Fra i finiti della console: i task dei passi 2 e 3 dicono «Fermato prima che lo step in corso agisse.», quello del passo 4 «Fermato, ma lo step in corso aveva già agito: nessuna verifica l'ha constatato.»?
+Fra i finiti della console: i task <id del passo 2> e <id del passo 3> dicono «Fermato prima che lo step in corso agisse.», e <id del passo 4> «Fermato, ma lo step in corso aveva già agito: nessuna verifica l'ha constatato.»?
 ```
 
 <!-- prova: 5.occhio -->
 ```
-Nel riassunto di ciascuno dei tre la stessa frase sta accanto a «Lo step in corso», e nel piano nessuno step è disegnato come in corso?
+Nel riassunto di <id del passo 2>, <id del passo 3> e <id del passo 4> la stessa frase sta accanto a «Lo step in corso», e nel piano nessuno step è disegnato come in corso?
 ```
 
 ### 6. Il telefono
@@ -3377,7 +3384,7 @@ uv run ela task plan <id> --file docs/examples/echo.json
 
 <!-- prova: 6.mano -->
 ```
-Sul telefono, ferma dalla home il task con l'id che lo script ha stampato, e leggi la conferma prima di confermare.
+Sul telefono, apri dalla home il task con l'id che lo script ha stampato e premi «Ferma»; leggi la conferma, poi conferma. Quando il telefono mostra il task fermato, premi Invio.
 ```
 
 <!-- prova: 6.occhio -->
@@ -3404,14 +3411,15 @@ passo 4 con il suo scopo. La frase c'è per tutti e tre: dice che cosa aveva fat
 
 <!-- prova: 6.occhio -->
 ```
-Fra i finiti della home del telefono, i task dei passi 2, 3 e 4 hanno le stesse frasi della console?
+Fra i finiti della home del telefono, i task <id del passo 2>, <id del passo 3> e <id del passo 4> hanno le stesse frasi della console?
 ```
 
 ### 7. Il PC sul branch
 
-Il passo 8 manda uno step al PC, e il nodo del PC deve girare dal codice di questo branch: è una prova del Core,
-e il nodo non cambia, ma il PC è già rimasto una volta su un branch dopo il merge. Sul PC, con il nodo fermo
-(Ctrl-C nella sua finestra):
+Il passo 8 manda uno step al PC, e il nodo del PC deve girare dal codice di questo branch: il protocollo fra il
+Core e il nodo non cambia, ma `src/ela/node/runner.py` sì — la fermata che non si alza mai, che il nodo dà ai suoi
+tool —, ed è per questo che il PC gira dal branch. Il PC è già rimasto una volta su un branch dopo il merge: per
+questo anche il ritorno su `main` è un passo scritto. Sul PC, con il nodo fermo (Ctrl-C nella sua finestra):
 
 ```powershell
 cd $HOME\ELA
@@ -3455,11 +3463,13 @@ Dai il sì dal telefono.
 ```
 
 Dopo il sì il lavoro va al PC, e lo script manda il «ferma» **quando vede la `STARTED` che la presa del PC
-scrive**: la busta è uscita, ed è il punto di non ritorno di uno step su un nodo.
+scrive**: la busta è uscita, ed è il punto di non ritorno di uno step su un nodo. Se la `STARTED` l'ha scritta il
+Mac, lo step è girato qui: il passo è **FALLITO** con «lo step è girato sul Mac, non sul PC», senza un altro giro,
+che farebbe la stessa cosa — guarda che il Mac vada a batteria e che il PC sia disponibile.
 
 <!-- prova: 8.guarda -->
 ```
-risultato STARTED
+risultato STARTED su un nodo
 ```
 
 <!-- prova: 8.ferma -->

@@ -34,7 +34,7 @@ import pkgutil
 import re
 import sys
 import typing
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,6 +61,10 @@ HEADER = """\
 #     uv run python scripts/generate_outcomes.py
 #
 # Rigenerare e basta riporta questo file a decorazione.
+#
+# Un campo nel percorso di una richiesta della riga di comando vale per il parametro della rotta con
+# il suo nome; uno annotato `Literal[...]` vale per i suoi valori; uno che resta `str` vale per ogni
+# segmento — e allora la riga può nominare rotte che il comando non chiama.
 """
 
 
@@ -217,10 +221,16 @@ def _template(argument: ast.expr) -> str | None:
     return "".join(parts)
 
 
-def _matches(requested: str, path: str, parameters: frozenset[str]) -> bool:
+def _matches(
+    requested: str,
+    path: str,
+    parameters: frozenset[str],
+    literals: Mapping[str, frozenset[str]] | None = None,
+) -> bool:
     """Segment by segment: a literal equals a literal; a field of the request is the route's
-    parameter of the same name — the names coincide (B-R8) —, and a field whose name is no route's
-    parameter names any literal segment (``{verb}`` is ``approve``)."""
+    parameter of the same name — the names coincide (B-R8) —; a field annotated ``Literal[...]``
+    names its values and nothing else; and a field that stays ``str``, whose name is no route's
+    parameter, names any literal segment."""
     asked, served = requested.split("/"), path.split("/")
     if len(asked) != len(served):
         return False
@@ -228,10 +238,35 @@ def _matches(requested: str, path: str, parameters: frozenset[str]) -> bool:
         if one == other:
             continue
         field = re.fullmatch(r"\{(\w+)\}", one)
-        if field and field.group(1) not in parameters and not other.startswith("{"):
-            continue
-        return False
+        if field is None or other.startswith("{") or field.group(1) in parameters:
+            return False
+        values = (literals or {}).get(field.group(1))
+        if values is not None and other not in values:
+            return False
     return True
+
+
+def _literals(function: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, frozenset[str]]:
+    """The parameters of ``function`` annotated ``Literal["a", "b"]``, with their values."""
+    found: dict[str, frozenset[str]] = {}
+    for argument in [*function.args.args, *function.args.kwonlyargs]:
+        annotation = argument.annotation
+        if not (isinstance(annotation, ast.Subscript) and _named(annotation.value) == "Literal"):
+            continue
+        inner = annotation.slice
+        values = inner.elts if isinstance(inner, ast.Tuple) else [inner]
+        found[argument.arg] = frozenset(
+            value.value
+            for value in values
+            if isinstance(value, ast.Constant) and isinstance(value.value, str)
+        )
+    return found
+
+
+def _named(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    return node.attr if isinstance(node, ast.Attribute) else None
 
 
 def cli_readers() -> list[str]:
@@ -261,7 +296,8 @@ def cli_readers() -> list[str]:
                 read |= {
                     f"{method} {route}"
                     for verb, route, _ in served
-                    if verb == method and _matches(requested, route, parameters)
+                    if verb == method
+                    and _matches(requested, route, parameters, _literals(function))
                 }
             if read:
                 found.append(

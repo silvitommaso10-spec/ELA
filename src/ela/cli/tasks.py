@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from textwrap import indent
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Literal
 
 import typer
 
@@ -173,6 +173,11 @@ def show(task_id: TaskId, as_json: Json = False) -> None:
     """A task and where each of its steps stands. No steps means: no plan yet."""
     with client.connect() as api:
         payload = api.get(f"/tasks/{task_id}")
+    emit(payload, as_json, _detail(payload))
+
+
+def _detail(payload: dict[str, Any]) -> str:
+    """What ``ela task show`` prints: the task, what its step in progress had done, its steps."""
     steps = table(
         ("step", "state", "risk", "capabilities", "goal"),
         [
@@ -181,7 +186,7 @@ def show(task_id: TaskId, as_json: Json = False) -> None:
         ],
     )
     described = fields([*_task_pairs(payload), ("stopped step", halt_words(payload["halt"]))])
-    emit(payload, as_json, f"{described}\n\n{steps}")
+    return f"{described}\n\n{steps}"
 
 
 @app.command("results")
@@ -353,6 +358,11 @@ def run(task_id: TaskId, as_json: Json = False) -> None:
     """
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/run")
+    emit(payload, as_json, _ran(payload))
+
+
+def _ran(payload: dict[str, Any]) -> str:
+    """What ``ela task run`` prints: the rows of :data:`RUN_LABELS`, in their order."""
     values = (
         payload["outcome"],
         payload["reason"],
@@ -360,7 +370,7 @@ def run(task_id: TaskId, as_json: Json = False) -> None:
         payload["steps"],
         halt_words(payload["halt"]),
     )
-    emit(payload, as_json, fields(list(zip(RUN_LABELS, values, strict=True))))
+    return fields(list(zip(RUN_LABELS, values, strict=True)))
 
 
 @app.command("approve")
@@ -377,7 +387,11 @@ def deny(task_id: TaskId, approval: Approval, as_json: Json = False) -> None:
     emit_answer(task_id, approval, "deny", as_json)
 
 
-def emit_answer(task_id: str, approval: str, verb: str, as_json: bool) -> None:
+def emit_answer(
+    task_id: str, approval: str, verb: Literal["approve", "deny"], as_json: bool
+) -> None:
+    """The two answers, through their two routes. ``verb`` is a ``Literal`` and not a ``str``: the
+    fingerprint of ``docs/outcomes.txt`` reads its values, and names only the routes it calls."""
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/{verb}", {"approval_id": approval})
     emit(payload, as_json, _task(payload))

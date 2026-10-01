@@ -11,10 +11,13 @@ Il codice qui è il lettore, il vocabolario di ``guarda``, l'invio del «ferma»
 proposta 10).
 
 Per ogni passo meccanico stampa **PASSATO** o **FALLITO** con l'uscita vera — e a che giro un passo
-è passato: «PASSATO al secondo giro» non è «PASSATO» (decisione 8 della review). Si ferma ad
-aspettare Invio solo dove serve la mano di Tommaso; ciò che serve il suo occhio non lo giudica: lo
-chiede, e scrive la risposta come **GUARDATO**. Tutto ciò che stampa va anche nel file, in
-``~/Downloads``.
+è passato: «PASSATO al secondo giro» non è «PASSATO» (decisione 8 della review). Un giro il cui
+«ferma» cade dal lato sbagliato è **DA RIPETERE**, con il lato vero, e non conta: è FALLITO solo se
+sbaglia anche il terzo. Si ferma ad aspettare Invio solo dove serve la mano di Tommaso; ciò che
+serve il suo occhio non lo giudica: lo chiede, e scrive la risposta come **GUARDATO**. La riga
+finale conta i PASSATO con i loro giri, i FALLITO, i GUARDATO con un no e i SALTATO, e dice «La
+prova è passata» solo senza FALLITO, senza SALTATO e con ogni GUARDATO un sì; altrimenti dice che
+cosa manca, e lo script esce con 1. Tutto ciò che stampa va anche nel file, in ``~/Downloads``.
 
 Nessuna soglia di tempo (decisione 7): lo script guarda **finché vede il segno, o finché il task
 finisce da sé**, e dopo il «ferma» aspetta che lo step in corso si chiuda. Il «ferma» lo manda
@@ -55,6 +58,11 @@ ROUNDS = 3
 """A count, not a time: how many times a step whose stop landed on the wrong side is tried again."""
 STOP_WORDS = "la prova di M6.3c"
 ID = "<id>"
+STEP_ID = re.compile(r"<id del passo (\d+)>")
+"""The task of another step, the one of its last round: what an ``occhio`` names so that Tommaso
+recognises it among the finished tasks, where repeated rounds leave more rows than steps."""
+ON_A_NODE = " su un nodo"
+"""The suffix of ``risultato`` for a step that must run on a node: its result is not this Mac's."""
 ENDED = frozenset({"COMPLETED", "FAILED", "CANCELLED", "DENIED", "EXPIRED"})
 SITES = ("example.com", "httpbin.org")
 SLEEPER = "bin/sleep"
@@ -62,6 +70,7 @@ SLEPT = 97
 PAUSE = 0.05
 """Between two looks at the world: a cadence, not a threshold — nothing is decided by it."""
 ROUND_NAMES = {1: "", 2: " al secondo giro", 3: " al terzo giro"}
+ROUND_WORDS = {1: "al primo giro", 2: "al secondo", 3: "al terzo"}
 
 
 # ----------------------------------------------------------------------------------------
@@ -102,13 +111,29 @@ def steps(found: Sequence[Block]) -> dict[int, list[Block]]:
     return dict(sorted(by_step.items()))
 
 
-def sign_of(block: Block) -> tuple[str, str]:
-    """``guarda`` as ``(word, model)``: ``processo sleep 97`` is ``("processo", "sleep 97")``."""
+@dataclass(frozen=True)
+class Sign:
+    """What ``guarda`` looks for: ``processo sleep 97``, ``risultato STARTED``, and
+    ``risultato STARTED su un nodo`` — a result written by a node, not by this Mac."""
+
+    word: str
+    model: str
+    on_a_node: bool = False
+
+
+def sign_of(block: Block) -> Sign:
     (line,) = block.lines
-    word, _, model = line.partition(" ")
-    if word not in SIGNS or not model:
+    on_a_node = line.endswith(ON_A_NODE)
+    word, _, model = line.removesuffix(ON_A_NODE).partition(" ")
+    if word not in SIGNS or not model or (on_a_node and word != "risultato"):
         raise ValueError(f"step {block.step}: {line!r} is not in the vocabulary of guarda")
-    return word, model
+    return Sign(word, model, on_a_node)
+
+
+def filled(text: str, task_id: str | None, ids: dict[int, str]) -> str:
+    """``<id>`` is the step's own task; ``<id del passo N>`` the task of step N's last round."""
+    text = text.replace(ID, task_id or ID)
+    return STEP_ID.sub(lambda found: ids.get(int(found.group(1)), found.group(0)), text)
 
 
 # ----------------------------------------------------------------------------------------
@@ -116,16 +141,38 @@ def sign_of(block: Block) -> tuple[str, str]:
 # ----------------------------------------------------------------------------------------
 
 
-def normalized(line: str) -> str:
-    return " ".join(line.split())
+def contains(words: Sequence[str], wanted: Sequence[str]) -> bool:
+    """Whether ``wanted`` is a contiguous run of whole words of ``words``: «0» is not in «10»."""
+    width = len(wanted)
+    return width > 0 and any(
+        list(words[start : start + width]) == list(wanted)
+        for start in range(len(words) - width + 1)
+    )
 
 
-def missing(expected: Sequence[str], output: str, task_id: str | None = None) -> list[str]:
-    """The expected lines the output does not contain, whitespace aside: each one is looked for
-    inside one line of the output, with ``<id>`` replaced by the task's."""
-    lines = [normalized(line) for line in output.splitlines()]
-    wanted = [normalized(line.replace(ID, task_id or ID)) for line in expected]
-    return [one for one in wanted if not any(one in line for line in lines)]
+def missing(
+    expected: Sequence[str],
+    output: str,
+    task_id: str | None = None,
+    ids: dict[int, str] | None = None,
+) -> list[str]:
+    """The expected lines the output does not have, whitespace aside.
+
+    Each one must be a contiguous run of whole words of one line of the output, **in the order the
+    guide writes them**: an expected line is looked for after the line the one before it matched —
+    STARTED before CANCELLED. ``<id>`` and ``<id del passo N>`` are filled first.
+    """
+    lines = [line.split() for line in output.splitlines()]
+    absent: list[str] = []
+    after = 0
+    for line in expected:
+        wanted = filled(line, task_id, ids or {}).split()
+        found = next((at for at in range(after, len(lines)) if contains(lines[at], wanted)), None)
+        if found is None:
+            absent.append(" ".join(wanted))
+        else:
+            after = found + 1
+    return absent
 
 
 def side_of(detail: dict[str, Any], results: Sequence[dict[str, Any]]) -> str:
@@ -156,9 +203,21 @@ def side_of(detail: dict[str, Any], results: Sequence[dict[str, Any]]) -> str:
 
 @dataclass
 class Report:
+    """What the screen and the file say, and the count the last line is made of.
+
+    A round to repeat is **not** a failure: it prints DA RIPETERE with the true side, and only the
+    last round that goes wrong is FALLITO. A no to an ``occhio`` and a step skipped by its ``se``
+    are not failures either, and the proof has not passed with any of them (decision B).
+    """
+
     out: TextIO
-    failed: int = 0
     lines: list[str] = field(default_factory=list)
+    passes: dict[int, int] = field(default_factory=dict)
+    """How many checks passed at each round."""
+    failures: int = 0
+    refused: list[int] = field(default_factory=list)
+    """The steps where Tommaso answered no to what he looked at."""
+    skipped_steps: list[int] = field(default_factory=list)
 
     def say(self, text: str = "") -> None:
         print(text, flush=True)
@@ -167,21 +226,51 @@ class Report:
         self.lines.append(text)
 
     def passed(self, step: int, what: str, round_: int = 1) -> None:
+        self.passes[round_] = self.passes.get(round_, 0) + 1
         self.say(f"[{step}] PASSATO{ROUND_NAMES[round_]}: {what}")
 
+    def to_repeat(self, step: int, what: str) -> None:
+        self.say(f"[{step}] DA RIPETERE: {what}")
+
     def failure(self, step: int, what: str, output: str = "") -> None:
-        self.failed += 1
+        self.failures += 1
         self.say(f"[{step}] FALLITO: {what}")
         if output:
             for line in output.rstrip("\n").splitlines():
                 self.say(f"    | {line}")
 
-    def looked(self, step: int, question: str, answer: str) -> None:
+    def looked(self, step: int, question: str, yes: bool) -> None:
+        if not yes:
+            self.refused.append(step)
         self.say(f"[{step}] GUARDATO: {question}")
-        self.say(f"    risposta di Tommaso: {answer}")
+        self.say(f"    risposta di Tommaso: {'sì' if yes else 'no'}")
 
     def skipped(self, step: int, why: str) -> None:
+        self.skipped_steps.append(step)
         self.say(f"[{step}] SALTATO: {why}")
+
+    @property
+    def ok(self) -> bool:
+        return self.failures == 0 and not self.skipped_steps and not self.refused
+
+    def verdict(self) -> None:
+        """The last lines: the count, and whether the proof passed — or what it lacks."""
+        rounds = ", ".join(
+            f"{ROUND_WORDS[round_]} {self.passes.get(round_, 0)}" for round_ in range(1, ROUNDS + 1)
+        )
+        self.say(
+            f"PASSATI: {sum(self.passes.values())} ({rounds}) — FALLITI: {self.failures} — "
+            f"GUARDATI con un no: {len(self.refused)} — SALTATI: {len(self.skipped_steps)}"
+        )
+        if self.ok:
+            self.say("La prova è passata.")
+            return
+        lacking = [
+            *([f"{self.failures} FALLITI"] if self.failures else []),
+            *(f"il passo {step} SALTATO" for step in self.skipped_steps),
+            *(f"un no al passo {step}" for step in self.refused),
+        ]
+        self.say(f"La prova non è passata: {', '.join(lacking)}.")
 
 
 # ----------------------------------------------------------------------------------------
@@ -189,9 +278,9 @@ class Report:
 # ----------------------------------------------------------------------------------------
 
 
-def run(line: str, task_id: str | None) -> subprocess.CompletedProcess[str]:
+def run(line: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S602 — the lines are the guide's, read from the repository
-        line.replace(ID, task_id or ID),
+        line,
         shell=True,
         cwd=ROOT,
         capture_output=True,
@@ -200,9 +289,9 @@ def run(line: str, task_id: str | None) -> subprocess.CompletedProcess[str]:
     )
 
 
-def started(line: str, task_id: str | None) -> subprocess.Popen[str]:
+def started(line: str) -> subprocess.Popen[str]:
     return subprocess.Popen(  # noqa: S602 — as above
-        line.replace(ID, task_id or ID),
+        line,
         shell=True,
         cwd=ROOT,
         stdout=subprocess.PIPE,
@@ -241,11 +330,29 @@ class Api:
         self._client.close()
 
 
-def seen(api: Api, task_id: str, word: str, model: str, before: dict[int, str]) -> bool:
+def seen(api: Api, task_id: str, sign: Sign, before: dict[int, str]) -> bool:
     """One look: the sign of ``guarda``."""
-    if word == "processo":
-        return any(model in command for pid, command in processes().items() if pid not in before)
-    return any(one["status"] == model for one in api.get(f"/tasks/{task_id}/results"))
+    if sign.word == "processo":
+        return any(
+            sign.model in command for pid, command in processes().items() if pid not in before
+        )
+    return any(one["status"] == sign.model for one in api.get(f"/tasks/{task_id}/results"))
+
+
+def this_machine() -> str:
+    """The id this Mac has as a node: ``local``'s (M12.2, dec. A)."""
+    from ela.devices.local import LOCAL_DEVICE_ID
+
+    return str(LOCAL_DEVICE_ID)
+
+
+def ran_here(api: Api, task_id: str, sign: Sign) -> bool:
+    """Whether the result ``guarda`` saw was written by this Mac and not by a node."""
+    here = this_machine()
+    return any(
+        one["status"] == sign.model and one.get("device_id") == here
+        for one in api.get(f"/tasks/{task_id}/results")
+    )
 
 
 def ended(api: Api, task_id: str) -> bool:
@@ -280,55 +387,71 @@ class Turn:
 Ask = Callable[[str], str]
 
 
+@dataclass
+class Proof:
+    """What every step shares: the API, the report, Tommaso's answers, and the task of each step."""
+
+    api: Api
+    report: Report
+    ask: Ask
+    ids: dict[int, str] = field(default_factory=dict)
+    """The task of each step's last round: what ``<id del passo N>`` stands for."""
+
+
 def created_id(output: str) -> str:
     task_id: str = json.loads(output)["id"]
     return task_id
 
 
-def commands(block: Block, turn: Turn, report: Report, *, last_in_background: bool) -> None:
-    for index, line in enumerate(block.lines):
-        report.say(f"    $ {line.replace(ID, turn.task_id or ID)}")
+def commands(
+    number: int, block: Block, turn: Turn, proof: Proof, *, last_in_background: bool
+) -> None:
+    for index, written in enumerate(block.lines):
+        line = filled(written, turn.task_id, proof.ids)
+        proof.report.say(f"    $ {line}")
         if last_in_background and index == len(block.lines) - 1:
-            turn.background = started(line, turn.task_id)
+            turn.background = started(line)
             continue
-        done = run(line, turn.task_id)
+        done = run(line)
         turn.last = done.stdout + done.stderr
         if " task create " in f" {line} ":
             turn.task_id = created_id(done.stdout)
-            report.say(f"    il task: {turn.task_id}")
+            proof.ids[number] = turn.task_id
+            proof.report.say(f"    il task: {turn.task_id}")
 
 
-def a_round(
-    number: int, todo: list[Block], api: Api, report: Report, ask: Ask, round_: int
-) -> str | None:
-    """One round of a step: ``None`` if it went to its end, or the side the stop truly landed on
-    when it is not the one the guide expects — the round to repeat."""
+def a_round(number: int, todo: list[Block], proof: Proof, round_: int) -> str | None:
+    """One round of a step: ``None`` if it went to its end — passed, or failed in a way another
+    round would repeat —, or why it must be tried again: the side the stop truly landed on, or the
+    task that ended before the step was seen."""
+    api, report = proof.api, proof.report
     turn = Turn()
     stopped = False
     before: dict[int, str] = {}
     for index, block in enumerate(todo):
         following = todo[index + 1].kind if index + 1 < len(todo) else None
+        text = filled(block.body, turn.task_id, proof.ids)
         if block.kind == "comando":
             watching = not stopped and any(one.kind == "guarda" for one in todo[index:])
             if watching:
                 before = processes()
-            commands(block, turn, report, last_in_background=watching)
+            commands(number, block, turn, proof, last_in_background=watching)
         elif block.kind == "mano":
-            report.say(f"[{number}] A TE: {block.body}")
+            report.say(f"[{number}] A TE: {text}")
             if following != "guarda":
-                ask("    premi Invio quando hai fatto ")
+                proof.ask("    premi Invio quando hai fatto ")
         elif block.kind == "guarda":
             assert turn.task_id is not None
-            word, model = sign_of(block)
+            sign = sign_of(block)
             report.say(f"[{number}] guardo: {block.body}")
-            while not seen(api, turn.task_id, word, model, before):
+            while not seen(api, turn.task_id, sign, before):
                 if ended(api, turn.task_id):
-                    report.failure(
-                        number,
-                        f"il task è finito da sé prima che lo step si vedesse (giro {round_})",
-                    )
-                    return SIDES[3]
+                    return "il task è finito da sé prima che lo step si vedesse"
                 time.sleep(PAUSE)
+            if sign.on_a_node and ran_here(api, turn.task_id, sign):
+                # Another round would do the same: the placement does not change by trying again.
+                report.failure(number, "lo step è girato sul Mac, non sul PC")
+                return None
         elif block.kind == "ferma":
             assert turn.task_id is not None
             api.post(f"/tasks/{turn.task_id}/cancel", {"reason": STOP_WORDS})
@@ -340,40 +463,40 @@ def a_round(
             detail = settled(api, turn.task_id)
             landed = side_of(detail, api.get(f"/tasks/{turn.task_id}/results"))
             if landed != block.body.strip():
-                report.failure(
-                    number,
-                    f"il «ferma» è caduto {landed}, non {block.body.strip()} (giro {round_})",
-                )
-                return landed
+                return f"il «ferma» è caduto {landed}, non {block.body.strip()}"
             report.passed(number, f"il «ferma» è caduto {landed}", round_)
         elif block.kind == "atteso":
-            absent = missing(block.lines, turn.last, turn.task_id)
+            absent = missing(block.lines, turn.last, turn.task_id, proof.ids)
             if absent:
                 report.failure(number, f"mancano {absent}", turn.last)
             else:
                 report.passed(number, "l'uscita è quella attesa", round_)
         elif block.kind == "occhio":
-            answer = ask(f"[{number}] {block.body} (s/n) ").strip().lower()
-            report.looked(number, block.body, "sì" if answer.startswith("s") else "no")
+            answer = proof.ask(f"[{number}] {text} (s/n) ").strip().lower()
+            report.looked(number, text, answer.startswith("s"))
     if turn.background is not None:
         turn.last, _ = turn.background.communicate()
     return None
 
 
-def a_step(number: int, todo: list[Block], api: Api, report: Report, ask: Ask) -> None:
+def a_step(number: int, todo: list[Block], proof: Proof) -> None:
+    report = proof.report
     report.say()
     report.say(f"—— passo {number} ——")
     if todo[0].kind == "se":
-        answer = ask(f"[{number}] {todo[0].body} (s/n) ").strip().lower()
-        if not answer.startswith("s"):
-            report.skipped(number, todo[0].body)
+        question = filled(todo[0].body, None, proof.ids)
+        if not proof.ask(f"[{number}] {question} (s/n) ").strip().lower().startswith("s"):
+            report.skipped(number, question)
             return
         todo = todo[1:]
     for round_ in range(1, ROUNDS + 1):
-        if a_round(number, todo, api, report, ask, round_) is None:
+        again = a_round(number, todo, proof, round_)
+        if again is None:
             return
         if round_ < ROUNDS:
-            report.say(f"[{number}] ripeto il passo con un task nuovo")
+            report.to_repeat(number, f"{again} (giro {round_}): ripeto il passo con un task nuovo")
+        else:
+            report.failure(number, f"{again} (giro {round_}, l'ultimo)")
 
 
 # ----------------------------------------------------------------------------------------
@@ -440,17 +563,17 @@ def main(argv: Sequence[str] | None = None, ask: Ask = input) -> int:
         report.say(f"il file: {out}")
         report.say()
         report.say("—— passo 1 ——")
-        if not preconditions(report):
-            return 1
-        api = Api()
-        try:
-            for number, its in todo.items():
-                a_step(number, its, api, report, ask)
-        finally:
-            api.close()
+        if preconditions(report):
+            proof = Proof(Api(), report, ask)
+            try:
+                for number, its in todo.items():
+                    a_step(number, its, proof)
+            finally:
+                proof.api.close()
         report.say()
-        report.say(f"FALLITI: {report.failed}. Il file: {out}")
-    return 0 if report.failed == 0 else 1
+        report.verdict()
+        report.say(f"Il file: {out}")
+    return 0 if report.ok else 1
 
 
 if __name__ == "__main__":
