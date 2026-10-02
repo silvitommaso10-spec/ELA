@@ -243,6 +243,7 @@ def test_a_path_inside_somebody_s_home_is_found(written: str) -> None:
     "written",
     [
         "/Users/you/Documents",
+        "file:///Users/you/Documents/index.html",
         "ELA_FS_ROOT=/Users/you/Documents",
         r"C:\Users\you\Documents",
         "C:\\\\Users\\\\you",
