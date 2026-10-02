@@ -1,9 +1,11 @@
 # 0054. Il «ferma» a metà corsa: la fermata arriva al tool prima del suo punto di non ritorno; e il runner della CI con una versione scritta
 
-- **Stato:** Proposta. Aperta il 2026-09-30 dal primo commit di M6.3c, che paga il debito di ADR 0053
-  §2 prima della SPEC (decisione 8 della sessione di M6.3c): il primo commit scrive il §1. Le sezioni §2–§14 recepiscono la SPEC di
-  M6.3c (`docs/milestones/M6.3c.md`), decisa dal revisore il 2026-10-01 con le domande 1–17; i numeri di §13 sono
-  la misura del 2026-10-01.
+- **Stato:** **Accettata il 2026-10-02**, quando la prova a mano di `docs/GETTING_STARTED.md` §21 è passata
+  sul Mac a `8f9d2c1`, con `scripts/prova_m6_3c.py` (§15) — **con un debito datato**: il passo 8, lo step
+  preso dal PC, entro domenica 2026-10-04 (§16). Aperta il 2026-09-30 dal primo commit di M6.3c, che paga il
+  debito di ADR 0053 §2 prima della SPEC (decisione 8 della sessione di M6.3c): il primo commit scrive il §1.
+  Le sezioni §2–§14 recepiscono la SPEC di M6.3c (`docs/milestones/M6.3c.md`), decisa dal revisore il
+  2026-10-01 con le domande 1–17; i numeri di §13 sono la misura del 2026-10-01.
 - **Data:** 2026-09-30
 - **Riferimenti spec:** §14, §15, §18, §19, §32, §33, §51, §52, §53, §63, §65
 - **Milestone:** M6.3c
@@ -285,6 +287,39 @@ il riepilogo propone un filtro, non prima»).
   (le sue quattro ragioni sono di `denied` e `failed`): ADR 0052 §18 sbagliava a darglielo, e da M6.3c quel
   vuoto non c'è più (§7).
 - **La precisazione B** della sessione di M6.3c, corretta dalla decisione 12 della review (§7).
+
+### 15. La prova a mano, passata sul Mac il 2026-10-02
+
+Tommaso, a `8f9d2c1`, con lo script, in due giri: **`~/Downloads/prova-m6.3c-20261002-101840.txt`** e
+**`~/Downloads/prova-m6.3c-20261002-102354.txt`**.
+
+- **Passi 2, 3 e 4 — il «ferma» che arriva al tool**: `browser.read` fermato prima della navigazione,
+  `browser.act` prima del primo gesto, `terminal.run` dopo l'`exec`, con il gruppo fermato e nessun `sleep 97`
+  rimasto vivo. **PASSATO al primo giro in tutti e due i file**: il lato del «ferma» e ogni uscita attesa.
+- **Passi 5 e 6 — le conferme nuove e il «ferma» dalle due pagine**: PASSATO al primo giro nel secondo file.
+  Nel primo, FALLITO **non per ELA**: la conferma letta, «Ferma il task» non premuto — l'audit di `fce07aca` non
+  ha nessuna riga di fermata fra `TASK_QUEUED` e il `run` dello script —; da allora lo script verifica il
+  «ferma» di Tommaso invece di aspettare un Invio. Il «no» alla prima domanda del passo 5 nel secondo file è un
+  Invio vuoto, e da allora una risposta vuota si richiede.
+- **Passo 8 — lo step preso dal PC**: FALLITO in tutti e due i file, con il PC spento: lo step è girato sul
+  Mac, e lo script l'ha visto senza ripetere. È il debito del §16.
+
+**Nessun difetto del codice di ELA.** Le correzioni sono dello script e della guida, nella SPEC di M6.3c («La
+review della prova, recepita»).
+
+### 16. Un debito datato: il passo 8 della prova a mano, entro domenica 2026-10-04
+
+**Debito a carico del giro di domenica della prova di M6.3c, su `main`**, dichiarato il **2026-10-02**, dalla
+review della prova a mano (correzione 5).
+
+Il passo 8 di §21 — uno step preso dal PC, fermato dopo la busta, che il PC finisce e consegna e che si chiude
+come uno step normale — non si è potuto fare: il PC non è disponibile fino a **domenica 2026-10-04**. Ciò che
+prova non è nella suite: la suite prova la consegna dopo il «ferma» con le rotte vere e un nodo che parla
+attraverso di esse dallo stesso processo (`tests/api/test_nodes_work.py`), non con due processi su due macchine.
+
+**Si paga così**: dopo il merge, con il Mac e il PC su `main` (§21 passo 7), Tommaso fa girare lo script
+intero, una volta, e **il debito è saldato da un file che dice «La prova è passata»**. Se il passo 8 fallisce,
+si apre una riparazione con la sua lettera. `bin/sleep` resta nel `.env` di Tommaso fino a quel giro.
 
 ## Alternative considerate
 
