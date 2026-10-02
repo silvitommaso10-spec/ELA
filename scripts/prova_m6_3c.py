@@ -105,18 +105,22 @@ class Block:
         return [line for line in self.body.splitlines() if line.strip()]
 
 
-def section(text: str) -> str:
-    """§21 of the guide, from its heading to the next one of its level."""
-    start = text.index(HEADING)
+def section(text: str, heading: str = HEADING) -> str:
+    """A section of the guide — §21 unless told otherwise — up to the next one of its level.
+
+    The heading is a parameter since the branch of M13.1c, M13.1d and M9.6: its script reads §22
+    with this same reader (``scripts/prova_m13_1c_m13_1d_m9_6.py``).
+    """
+    start = text.index(heading)
     end = text.find("\n## ", start + 1)
     return text[start:] if end == -1 else text[start:end]
 
 
-def blocks(text: str) -> list[Block]:
-    """The marked blocks of §21, in the order the guide writes them."""
+def blocks(text: str, heading: str = HEADING) -> list[Block]:
+    """The marked blocks of a section — §21 unless told otherwise —, in the order it writes them."""
     return [
         Block(int(match.group(1)), match.group(2), match.group(3))
-        for match in MARKED.finditer(section(text))
+        for match in MARKED.finditer(section(text, heading))
     ]
 
 

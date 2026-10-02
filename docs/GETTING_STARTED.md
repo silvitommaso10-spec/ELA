@@ -3561,10 +3561,10 @@ file dello script restano in `~/Downloads`.
 
 ## 22. Le ragioni, il blocco delle domande e niente di Tommaso: la prova a mano di M13.1c, M13.1d e M9.6
 
-> **Bozza, scritta con le SPEC del 2026-10-02** (`milestones/M13.1c.md`, `M13.1d.md`, `M9.6.md`), prima del codice:
-> le uscite sono quelle che la CLI stamperà **dopo** l'implementazione, e oggi non le stampa. Si allinea con
-> l'implementazione, e la si fa sul Mac, sul branch `m13.1c-m13.1d-m9.6`, con lo script
-> `scripts/prova_m13_1c_m13_1d_m9_6.py`. Il PC non serve.
+> **Scritta con le SPEC del 2026-10-02** (`milestones/M13.1c.md`, `M13.1d.md`, `M9.6.md`) e **allineata con
+> l'implementazione** il 2026-10-02: i passi 2–6 li fa girare la suite con lo script stesso, su un ELA nello stesso
+> processo, con il browser finto (`tests/cli/test_section_22_on_the_cli.py`). La si fa sul Mac, sul branch
+> `m13.1c-m13.1d-m9.6`, con lo script `scripts/prova_m13_1c_m13_1d_m9_6.py`. Il PC non serve.
 
 Tre riparazioni, una prova. **M13.1c**: un diniego e un fallimento dicono il loro perché, e lo dicono uguale alla
 corsa che chiude il task e a ogni corsa dopo — le parole della transizione che l'ha chiuso, come per un «ferma» da
@@ -3592,7 +3592,7 @@ dice prima di cominciare.
 
 <!-- prova: 2.comando -->
 ```
-uv run ela task create "un sito che non hai dichiarato"
+uv run ela task create "un sito che non hai dichiarato" --json
 uv run ela task plan <id> --file docs/examples/browser-read-outside.json
 uv run ela task run <id>
 ```
@@ -3629,7 +3629,7 @@ seconda diceva `reason —`.
 
 <!-- prova: 3.comando -->
 ```
-uv run ela task create "una pagina che porta altrove"
+uv run ela task create "una pagina che porta altrove" --json
 uv run ela task plan <id> --file docs/examples/browser-left-site.json
 uv run ela task run <id>
 ```
@@ -3664,7 +3664,7 @@ scriveva solo il messaggio, e la seconda corsa diceva `reason —`.
 
 <!-- prova: 4.comando -->
 ```
-uv run ela task create "il mio primo task"
+uv run ela task create "il mio primo task" --json
 uv run ela task plan <id> --file docs/examples/first-task.json
 uv run ela task run <id>
 uv run ela approvals
@@ -3718,7 +3718,7 @@ uv run ela task run --help
 
 <!-- prova: 5.atteso -->
 ```
-always carry their why
+``denied``, ``failed``, ``cancelled`` and ``expired`` always carry their why: the words of the transition that ended the task
 ```
 
 Lo script legge l'help con gli spazi riuniti, come la suite: l'help va a capo alla larghezza del terminale.

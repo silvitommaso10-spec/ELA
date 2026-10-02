@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -85,7 +86,17 @@ Builder = Callable[[World], Awaitable[Branch]]
 @pytest.fixture
 async def world(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> AsyncIterator[World]:
     """ELA as ``build`` makes it, with the browser of ``ela.testing`` and the guide's sites."""
-    declare(monkeypatch, tmp_path, ELA_BROWSER_SITES=json.dumps(SITES))
+    async with opened(monkeypatch, tmp_path) as built:
+        yield built
+
+
+@asynccontextmanager
+async def opened(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **declared: str
+) -> AsyncIterator[World]:
+    """The world of :func:`world`, with whatever else the test declares — a configured voice for
+    the dry run of the guide's §22 (``tests/cli/test_section_22_on_the_cli.py``)."""
+    declare(monkeypatch, tmp_path, ELA_BROWSER_SITES=json.dumps(SITES), **declared)
     settings = Settings.load()
     await create_schema(settings.persistence.db_url)
     browser = FakeBrowser()
@@ -100,9 +111,9 @@ async def world(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> AsyncIterato
             app.router.lifespan_context(app),
             AsyncClient(
                 transport=ASGITransport(app=app), base_url=BASE, headers=AUTHORIZED
-            ) as opened,
+            ) as client,
         ):
-            yield World(ela, app, opened, Cli(transport), browser, settings)
+            yield World(ela, app, client, Cli(transport), browser, settings)
     finally:
         await ela.aclose()
 
