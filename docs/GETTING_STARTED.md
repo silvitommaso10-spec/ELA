@@ -3067,8 +3067,10 @@ Le uscite di tutti i passi, integrali, in un file: `~/Downloads/m13.4-prova.txt`
 ## 21. Il «ferma» a metà corsa: la prova a mano di M6.3c
 
 > **Scritta con l'implementazione di M6.3c il 2026-10-01**, dalla bozza della SPEC
-> (`milestones/M6.3c.md`, proposta 10) e con le decisioni della sua review. L'ADR è
-> [0054](adr/0054-stopped-midway.md), `Proposta` fino a questa prova.
+> (`milestones/M6.3c.md`, proposta 10) e con le decisioni della sua review. **Fatta da Tommaso il
+> 2026-10-02 sul branch**: i passi del Mac sono passati, e il passo 8 — il PC — è il debito datato di
+> [ADR 0054](adr/0054-stopped-midway.md) §16, da pagare **domenica 2026-10-04**, dopo il merge, con il Mac e
+> il PC su `main`: lo script intero, una volta, e un file che dice «La prova è passata».
 
 Da M6.3c il «ferma» — `ela task cancel`, il bottone della console, quello del telefono — **arriva al tool
 che sta girando**, prima del suo punto di non ritorno: un browser che non ha ancora fatto il primo gesto non
@@ -3085,12 +3087,12 @@ script legge hanno sopra un marcatore, `<!-- prova: N.tipo -->`, che il Markdown
 | Tipo | Che cosa fa lo script |
 |---|---|
 | `comando` | fa girare le righe una per una; `<id>` è l'id del task che il passo ha creato. Prima del «ferma», l'ultima riga gira mentre lo script guarda |
-| `guarda` | guarda finché vede lo step in corso, o finché il task finisce da sé: `processo <modello>` è un processo nuovo la cui riga di comando contiene il modello, `risultato STARTED` è la `STARTED` dello step fra i risultati del task, e `su un nodo` vuole che l'abbia scritta un nodo e non il Mac |
+| `guarda` | guarda finché vede il segno, o finché il task finisce da sé: `processo <modello>` è un processo nuovo la cui riga di comando contiene il modello, `risultato STARTED` è la `STARTED` dello step fra i risultati del task — `su un nodo` vuole che l'abbia scritta un nodo e non il Mac —, `stato CANCELLED` è il task fermato |
 | `ferma` | manda il «ferma» — `POST /tasks/<id>/cancel`, con «la prova di M6.3c» — e dice il lato dove deve cadere: prima dello step, prima del tool, prima del punto o dopo il punto |
 | `atteso` | le righe che l'uscita del comando sopra deve avere: ciascuna a parole intere, dentro una riga dell'uscita e a meno degli spazi — «0» non è dentro «10» —, e nell'ordine in cui sono scritte |
-| `mano` | ciò che fai tu: lo script lo stampa, e — tranne quando subito dopo guarda — aspetta Invio |
-| `occhio` | ciò che guardi tu: lo script lo chiede, e scrive la tua risposta come GUARDATO, sì o no |
-| `se` | una domanda: un no salta il passo, e il file lo scrive come SALTATO |
+| `mano` | ciò che fai tu: lo script lo stampa e non aspetta un Invio — lo verifica il `guarda` che lo segue |
+| `occhio` | ciò che guardi tu: lo script lo chiede finché rispondi `s` o `n`, e scrive la tua risposta come GUARDATO |
+| `richiede` | ciò che il passo vuole dal mondo, verificato dallo script e mai chiesto: `un nodo disponibile` lo legge da ELA, `il Mac a batteria` da `pmset -g batt`; se manca, il passo è SALTATO con ciò che manca |
 
 Lo script manda il «ferma» **quando vede lo step in corso**, non dopo un'attesa fissa; poi aspetta che lo step
 in corso si chiuda, e solo allora confronta. Legge dalla trail e dai risultati **dove** è caduto il «ferma»; se
@@ -3101,16 +3103,27 @@ un difetto di ELA: in una prova vera un browser parte più o meno in fretta, e i
 i test. **L'ultima riga** conta i PASSATO con i loro giri, i FALLITO, i GUARDATO con un no e i SALTATO, e dice
 «La prova è passata» solo senza FALLITO, senza SALTATO e con ogni GUARDATO un sì; altrimenti dice che cosa manca.
 Dove una domanda nomina il task di un altro passo, `<id del passo 2>` e gli altri, lo script scrive l'id del suo
-ultimo giro: fra i finiti, i giri ripetuti lasciano più righe che passi. **A te restano la console e il telefono**: il sì ai passi `HIGH` lo dai lì, e lì guardi gli esiti. Ciò
-che guardi lo script non lo giudica: te lo chiede, e lo scrive.
+ultimo giro: fra i finiti, i giri ripetuti lasciano più righe che passi. **A te restano la console e il
+telefono**: il sì ai passi `HIGH` e il «ferma» dei passi 5 e 6 li dai lì — lo script vede da sé quando sono
+fatti, e aspetta finché non lo sono —, e lì guardi gli esiti. Ciò che guardi lo script non lo giudica: te lo
+chiede, e lo scrive.
 
 ### 0. Prima di cominciare
 
-Il Mac sul branch, e lo shell di Chromium com'era in §20, passo 0:
+Il Mac sul codice da provare — il branch prima del merge, `main` per il giro di domenica che paga il debito
+del passo 8 —, e lo shell di Chromium com'era in §20, passo 0. Sul branch:
 
 ```
 git fetch
 git checkout m6.3c-ferma-a-meta-corsa
+uv sync --locked
+```
+
+Dopo il merge, su `main`:
+
+```
+git checkout main
+git pull
 uv sync --locked
 ```
 
@@ -3123,7 +3136,8 @@ ELA_TERMINAL_PROGRAMS=["bin/sleep"]
 
 Se `ELA_TERMINAL_PROGRAMS` dichiara già altri programmi, aggiungi `bin/sleep` a quelli; e se avevi abbassato
 `ELA_TERMINAL_TIMEOUT_SECONDS` per §16, rimettilo sopra i 97 secondi. `bin/sleep` serve a un piano solo,
-[`examples/terminal-stop.json`](examples/terminal-stop.json): **toglilo alla fine** (passo 9). Poi, nel
+[`examples/terminal-stop.json`](examples/terminal-stop.json): **toglilo alla fine**, dopo il giro di domenica
+(passo 9). Poi, nel
 terminale A:
 
 ```
@@ -3335,7 +3349,12 @@ uv run ela task plan <id> --file docs/examples/echo.json
 
 <!-- prova: 5.mano -->
 ```
-Nella console, apri il task con l'id che lo script ha stampato e premi «Ferma»; leggi la conferma, poi conferma. Quando la console mostra il task fermato, premi Invio.
+Nella console, apri il task con l'id che lo script ha stampato e premi «Ferma»; leggi la conferma, poi premi «Ferma il task». Lo script aspetta finché vede il task fermato.
+```
+
+<!-- prova: 5.guarda -->
+```
+stato CANCELLED
 ```
 
 <!-- prova: 5.occhio -->
@@ -3384,7 +3403,12 @@ uv run ela task plan <id> --file docs/examples/echo.json
 
 <!-- prova: 6.mano -->
 ```
-Sul telefono, apri dalla home il task con l'id che lo script ha stampato e premi «Ferma»; leggi la conferma, poi conferma. Quando il telefono mostra il task fermato, premi Invio.
+Sul telefono, apri dalla home il task con l'id che lo script ha stampato e premi «Ferma»; leggi la conferma, poi premi «Ferma il task». Lo script aspetta finché vede il task fermato.
+```
+
+<!-- prova: 6.guarda -->
+```
+stato CANCELLED
 ```
 
 <!-- prova: 6.occhio -->
@@ -3414,23 +3438,12 @@ passo 4 con il suo scopo. La frase c'è per tutti e tre: dice che cosa aveva fat
 Fra i finiti della home del telefono, i task <id del passo 2>, <id del passo 3> e <id del passo 4> hanno le stesse frasi della console?
 ```
 
-### 7. Il PC sul branch
+### 7. Il PC su `main`, per il giro di domenica
 
-Il passo 8 manda uno step al PC, e il nodo del PC deve girare dal codice di questo branch: il protocollo fra il
-Core e il nodo non cambia, ma `src/ela/node/runner.py` sì — la fermata che non si alza mai, che il nodo dà ai suoi
-tool —, ed è per questo che il PC gira dal branch. Il PC è già rimasto una volta su un branch dopo il merge: per
-questo anche il ritorno su `main` è un passo scritto. Sul PC, con il nodo fermo (Ctrl-C nella sua finestra):
-
-```powershell
-cd $HOME\ELA
-git fetch
-git checkout m6.3c-ferma-a-meta-corsa
-uv sync --locked
-uv run python -m ela.cli node run
-```
-
-**Che cosa si deve vedere**: il nodo che parte come sempre, e sul Mac la riga del PC disponibile in `uv run ela
-device list`. **Dopo il merge**, il PC torna su `main` — anche questo sul PC, con il nodo fermo:
+Il passo 8 manda uno step al PC, e si fa **dopo il merge, con il Mac e il PC su `main`**: è il giro che paga il
+debito di ADR 0054 §16. Il protocollo fra il Core e il nodo non cambia, ma `src/ela/node/runner.py` sì — la
+fermata che non si alza mai, che il nodo dà ai suoi tool —, ed è per questo che il PC gira dal codice mergiato,
+non da quello di prima. Sul PC, con il nodo fermo (Ctrl-C nella sua finestra):
 
 ```powershell
 cd $HOME\ELA
@@ -3440,14 +3453,20 @@ uv sync --locked
 uv run python -m ela.cli node run
 ```
 
+**Che cosa si deve vedere**: il nodo che parte come sempre, e sul Mac la riga del PC disponibile in `uv run ela
+device list`. Poi lo script, intero, una volta (passo 1): i passi del Mac rifanno ciò che il 2026-10-02 è
+passato, e il passo 8 è quello nuovo.
+
 ### 8. Lo step che un nodo ha preso
 
 Con il PC acceso e disponibile, e il Mac a batteria perché il lavoro vada al PC (§12, passo 6), lo script crea
-un task `TRUSTED` con [`examples/speak-on-a-node.json`](examples/speak-on-a-node.json), che va al PC.
+un task `TRUSTED` con [`examples/speak-on-a-node.json`](examples/speak-on-a-node.json), che va al PC. Le due
+condizioni le verifica lo script, prima di cominciare: il PC lo legge da ELA, la batteria dal Mac.
 
-<!-- prova: 8.se -->
+<!-- prova: 8.richiede -->
 ```
-Il PC è acceso, sul branch, con il nodo che gira, e il Mac va a batteria?
+un nodo disponibile
+il Mac a batteria
 ```
 
 <!-- prova: 8.comando -->
@@ -3465,7 +3484,7 @@ Dai il sì dal telefono.
 Dopo il sì il lavoro va al PC, e lo script manda il «ferma» **quando vede la `STARTED` che la presa del PC
 scrive**: la busta è uscita, ed è il punto di non ritorno di uno step su un nodo. Se la `STARTED` l'ha scritta il
 Mac, lo step è girato qui: il passo è **FALLITO** con «lo step è girato sul Mac, non sul PC», senza un altro giro,
-che farebbe la stessa cosa — guarda che il Mac vada a batteria e che il PC sia disponibile.
+che farebbe la stessa cosa.
 
 <!-- prova: 8.guarda -->
 ```
@@ -3493,12 +3512,13 @@ stopped step had acted; its verification passed
 ```
 
 **Che cosa si deve vedere**, alla fine dello script: i passi meccanici **PASSATO**, quelli a occhio **GUARDATO**
-con le tue risposte, e il nome del file con l'uscita intera.
+con le tue risposte, e l'ultima riga che dice «La prova è passata». Quel file salda il debito; se il passo 8
+fallisce, si apre una riparazione con la sua lettera.
 
 ### 9. Alla fine
 
-Togli `bin/sleep` da `ELA_TERMINAL_PROGRAMS`, e riavvia `ela serve`. Il file dello script resta in
-`~/Downloads`. E dopo il merge, il PC torna su `main` (passo 7).
+**Dopo il giro di domenica**, non prima: togli `bin/sleep` da `ELA_TERMINAL_PROGRAMS`, e riavvia `ela serve`. I
+file dello script restano in `~/Downloads`.
 
 ## Dove guardare dopo
 

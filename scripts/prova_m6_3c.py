@@ -13,11 +13,14 @@ proposta 10).
 Per ogni passo meccanico stampa **PASSATO** o **FALLITO** con l'uscita vera — e a che giro un passo
 è passato: «PASSATO al secondo giro» non è «PASSATO» (decisione 8 della review). Un giro il cui
 «ferma» cade dal lato sbagliato è **DA RIPETERE**, con il lato vero, e non conta: è FALLITO solo se
-sbaglia anche il terzo. Si ferma ad aspettare Invio solo dove serve la mano di Tommaso; ciò che
-serve il suo occhio non lo giudica: lo chiede, e scrive la risposta come **GUARDATO**. La riga
-finale conta i PASSATO con i loro giri, i FALLITO, i GUARDATO con un no e i SALTATO, e dice «La
-prova è passata» solo senza FALLITO, senza SALTATO e con ogni GUARDATO un sì; altrimenti dice che
-cosa manca, e lo script esce con 1. Tutto ciò che stampa va anche nel file, in ``~/Downloads``.
+sbaglia anche il terzo. **Non aspetta mai un Invio**: ciò che fa la mano di Tommaso lo verifica il
+``guarda`` che la segue, e ciò che un passo richiede al mondo — un nodo disponibile, il Mac a
+batteria — lo legge da ELA e dal Mac, senza chiederlo; se manca, il passo è SALTATO con ciò che
+manca. Ciò che serve l'occhio di Tommaso non lo giudica: lo chiede finché la risposta è s o n, e la
+scrive come **GUARDATO**. La riga finale conta i PASSATO con i loro giri, i FALLITO, i GUARDATO con
+un no e i SALTATO, e dice «La prova è passata» solo senza FALLITO, senza SALTATO e con ogni
+GUARDATO un sì; altrimenti dice che cosa manca, e lo script esce con 1. Tutto ciò che stampa va
+anche nel file, in ``~/Downloads``.
 
 Nessuna soglia di tempo (decisione 7): lo script guarda **finché vede il segno, o finché il task
 finisce da sé**, e dopo il «ferma» aspetta che lo step in corso si chiuda. Il «ferma» lo manda
@@ -46,12 +49,23 @@ GUIDE = ROOT / "docs" / "GETTING_STARTED.md"
 HEADING = "## 21. "
 MARKED = re.compile(r"<!-- prova: (\d+)\.(\w+) -->\n```[^\n]*\n(.*?)\n```", re.DOTALL)
 """A block of §21 the script reads: the marker on the line before its fence."""
-KINDS = ("comando", "guarda", "ferma", "atteso", "mano", "occhio", "se")
+KINDS = ("comando", "guarda", "ferma", "atteso", "mano", "occhio", "richiede")
 SIGNS = {
     "processo": "un processo nuovo la cui riga di comando contiene il modello",
     "risultato": "un risultato dello step con lo stato scritto, fra i risultati del task",
+    "stato": "il task nello stato scritto: ciò che la mano di Tommaso ha fatto, verificato",
 }
 """The vocabulary of ``guarda``: the first word, then what to look for."""
+NODE = "un nodo disponibile"
+BATTERY = "il Mac a batteria"
+REQUIREMENTS = (NODE, BATTERY)
+"""The vocabulary of ``richiede``: what a step wants of the world, verified by the script and never
+asked — a node that is not this Mac and is available, read from ELA; this Mac drawing from its
+battery, read from the Mac. One missing is a step SKIPPED with what is missing."""
+BATTERY_POWER = "Battery Power"
+"""What ``pmset -g batt`` names when the Mac draws from its battery (M12.3c, P6)."""
+ANSWERS = {"s": True, "n": False}
+"""The only answers to a question of the eye: an empty one is asked again, never a no."""
 SIDES = ("prima dello step", "prima del tool", "prima del punto", "dopo il punto")
 """Where a stop can land, in the order a step goes through them."""
 ROUNDS = 3
@@ -71,6 +85,8 @@ PAUSE = 0.05
 """Between two looks at the world: a cadence, not a threshold — nothing is decided by it."""
 ROUND_NAMES = {1: "", 2: " al secondo giro", 3: " al terzo giro"}
 ROUND_WORDS = {1: "al primo giro", 2: "al secondo", 3: "al terzo"}
+Ask = Callable[[str], str]
+"""How the script asks Tommaso: ``input``, and a fake in the tests."""
 
 
 # ----------------------------------------------------------------------------------------
@@ -336,6 +352,8 @@ def seen(api: Api, task_id: str, sign: Sign, before: dict[int, str]) -> bool:
         return any(
             sign.model in command for pid, command in processes().items() if pid not in before
         )
+    if sign.word == "stato":
+        return bool(api.get(f"/tasks/{task_id}")["state"] == sign.model)
     return any(one["status"] == sign.model for one in api.get(f"/tasks/{task_id}/results"))
 
 
@@ -353,6 +371,47 @@ def ran_here(api: Api, task_id: str, sign: Sign) -> bool:
         one["status"] == sign.model and one.get("device_id") == here
         for one in api.get(f"/tasks/{task_id}/results")
     )
+
+
+def node_available(api: Api) -> bool:
+    """A node that is not this Mac, available and not revoked, in ELA's register of devices."""
+    here = this_machine()
+    return any(
+        one["role"] == "WORKER"
+        and one["id"] != here
+        and one["available"]
+        and one["revoked_at"] is None
+        for one in api.get("/devices")
+    )
+
+
+def on_battery() -> bool:
+    """Whether this Mac draws from its battery: ``pmset -g batt``, read by ELA's own reader."""
+    import asyncio
+
+    from ela.infrastructure.machine.darwin import pmset_source
+
+    return asyncio.run(pmset_source()) == BATTERY_POWER
+
+
+def lacking(block: Block, api: Api) -> list[str]:
+    """What ``richiede`` wants that the world does not have."""
+    checks: dict[str, Callable[[], bool]] = {
+        NODE: lambda: node_available(api),
+        BATTERY: on_battery,
+    }
+    for line in block.lines:
+        if line not in checks:
+            raise ValueError(f"step {block.step}: {line!r} is not in the vocabulary of richiede")
+    return [line for line in block.lines if not checks[line]()]
+
+
+def yes_or_no(ask: Ask, question: str) -> bool:
+    """A question of the eye, asked until the answer is s or n: an empty Enter is not a no."""
+    while True:
+        answer = ask(question).strip().lower()
+        if answer in ANSWERS:
+            return ANSWERS[answer]
 
 
 def ended(api: Api, task_id: str) -> bool:
@@ -382,9 +441,6 @@ class Turn:
     task_id: str | None = None
     last: str = ""
     background: subprocess.Popen[str] | None = None
-
-
-Ask = Callable[[str], str]
 
 
 @dataclass
@@ -429,17 +485,17 @@ def a_round(number: int, todo: list[Block], proof: Proof, round_: int) -> str | 
     stopped = False
     before: dict[int, str] = {}
     for index, block in enumerate(todo):
-        following = todo[index + 1].kind if index + 1 < len(todo) else None
         text = filled(block.body, turn.task_id, proof.ids)
         if block.kind == "comando":
             watching = not stopped and any(one.kind == "guarda" for one in todo[index:])
             if watching:
                 before = processes()
-            commands(number, block, turn, proof, last_in_background=watching)
+            # The run a stop lands on goes on while the script looks; nothing else does.
+            stopping = not stopped and any(one.kind == "ferma" for one in todo[index:])
+            commands(number, block, turn, proof, last_in_background=stopping)
         elif block.kind == "mano":
+            # Never an Enter: what the hand did, the ``guarda`` after it verifies.
             report.say(f"[{number}] A TE: {text}")
-            if following != "guarda":
-                proof.ask("    premi Invio quando hai fatto ")
         elif block.kind == "guarda":
             assert turn.task_id is not None
             sign = sign_of(block)
@@ -472,8 +528,7 @@ def a_round(number: int, todo: list[Block], proof: Proof, round_: int) -> str | 
             else:
                 report.passed(number, "l'uscita è quella attesa", round_)
         elif block.kind == "occhio":
-            answer = proof.ask(f"[{number}] {text} (s/n) ").strip().lower()
-            report.looked(number, text, answer.startswith("s"))
+            report.looked(number, text, yes_or_no(proof.ask, f"[{number}] {text} (s/n) "))
     if turn.background is not None:
         turn.last, _ = turn.background.communicate()
     return None
@@ -483,11 +538,12 @@ def a_step(number: int, todo: list[Block], proof: Proof) -> None:
     report = proof.report
     report.say()
     report.say(f"—— passo {number} ——")
-    if todo[0].kind == "se":
-        question = filled(todo[0].body, None, proof.ids)
-        if not proof.ask(f"[{number}] {question} (s/n) ").strip().lower().startswith("s"):
-            report.skipped(number, question)
+    if todo[0].kind == "richiede":
+        missing_here = lacking(todo[0], proof.api)
+        if missing_here:
+            report.skipped(number, f"manca {', '.join(missing_here)}")
             return
+        report.passed(number, f"c'è ciò che il passo richiede: {', '.join(todo[0].lines)}")
         todo = todo[1:]
     for round_ in range(1, ROUNDS + 1):
         again = a_round(number, todo, proof, round_)
