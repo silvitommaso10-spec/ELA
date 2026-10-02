@@ -380,6 +380,19 @@ async def _require_deadline_passed(
         )
 
 
+def _said(error: ErrorMetadata) -> str:
+    """A failure in the words of a transition: ``code: message`` (ADR 0045 §12-bis), the code alone
+    when the message is empty (M13.1c, ADR 0055).
+
+    Every transition to ``FAILED`` says it so — ``fail`` and the orphan of
+    :meth:`TaskEngine.recover` — because the reason of a transition is what ``run`` reports, and
+    until M13.1c the code stood beside it, in the error of the audit event, where no line a person
+    reads showed it. The engine writes the words of its transitions, as it writes «rejected by» and
+    «approved by»: so the runner passes them and composes nothing (ADR 0019 §2).
+    """
+    return f"{error.code}: {error.message}" if error.message else error.code
+
+
 class TaskEngine:
     """The life cycle of tasks, on a repository, an audit log, a clock and an id source (§14).
 
@@ -579,7 +592,7 @@ class TaskEngine:
                         task,
                         events,
                         actor=SYSTEM_ACTOR,
-                        reason=error.message,
+                        reason=_said(error),
                         error=error,
                         payload={"code": ORPHANED},
                     )
@@ -734,12 +747,14 @@ class TaskEngine:
         )
 
     async def fail(self, task_id: TaskId, error: ErrorMetadata) -> Task:
-        """PLANNING/EXECUTING → FAILED, with the error turned into information (§64)."""
+        """PLANNING/EXECUTING → FAILED, with the error turned into information (§64): the words of
+        the transition are the error's ``code: message`` (M13.1c, ADR 0055), which ``run`` passes
+        on."""
         return await self._apply(
             OPERATIONS["fail"],
             task_id,
             actor=self._actor,
-            reason=error.message,
+            reason=_said(error),
             error=error,
             payload={"code": error.code},
         )

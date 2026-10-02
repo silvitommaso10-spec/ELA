@@ -462,23 +462,36 @@ provider_results = st.builds(
     metadata=json_mappings,
 )
 
-execution_results = st.builds(
-    ExecutionResult,
-    id=uuids,
-    created_at=utc_datetimes,
-    capability_id=capability_ids,
-    status=st.sampled_from(ExecutionStatus),
-    task_id=_optional(uuids),
-    step_id=_optional(uuids),
-    tool_name=_optional(texts),
-    device_id=_optional(uuids),
-    decision_id=_optional(uuids),
-    authorization_id=_optional(uuids),
-    output=json_mappings,
-    error=_optional(error_metadata),
-    duration_ms=_optional(counts),
-    metadata=json_mappings,
-)
+_EXPLAINED = frozenset({ExecutionStatus.SUCCEEDED, ExecutionStatus.STARTED})
+"""The statuses that need no error; every other one says why (M13.1c, ADR 0055)."""
+
+
+@st.composite
+def execution_results(draw: st.DrawFn) -> ExecutionResult:
+    """A result whose error follows its status: optional for one that succeeded or has not ended,
+    always there for one that did not succeed — the domain refuses anything else (§64)."""
+    status = draw(st.sampled_from(ExecutionStatus))
+    error = draw(_optional(error_metadata) if status in _EXPLAINED else error_metadata)
+    return draw(
+        st.builds(
+            ExecutionResult,
+            id=uuids,
+            created_at=utc_datetimes,
+            capability_id=capability_ids,
+            status=st.just(status),
+            task_id=_optional(uuids),
+            step_id=_optional(uuids),
+            tool_name=_optional(texts),
+            device_id=_optional(uuids),
+            decision_id=_optional(uuids),
+            authorization_id=_optional(uuids),
+            output=json_mappings,
+            error=st.just(error),
+            duration_ms=_optional(counts),
+            metadata=json_mappings,
+        )
+    )
+
 
 sensor_statuses = st.builds(
     SensorStatus, state=st.sampled_from(SensorState), cause=st.sampled_from(SensorCause)
@@ -749,7 +762,7 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.ModelRoute: model_routes,
     domain.ProviderRequest: provider_requests,
     domain.ProviderResult: provider_results,
-    domain.ExecutionResult: execution_results,
+    domain.ExecutionResult: execution_results(),
     domain.Assignment: assignments,
     domain.SensorStatus: sensor_statuses,
     domain.RawObservation: raw_observations,

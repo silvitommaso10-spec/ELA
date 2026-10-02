@@ -766,6 +766,9 @@ class FakeExecutionResultStore:
         self._results: dict[ExecutionId, ExecutionResult] = {}
 
     async def add(self, result: ExecutionResult) -> None:
+        # What the domain refuses is refused here too, as by the SQL store (M13.1c, ADR 0055): a
+        # copy skips the validators, and a fake that kept it would pass what production fails.
+        result = ExecutionResult.model_validate(result.model_dump())
         if result.id in self._results:
             raise AlreadyExistsError("execution result", result.id)
         if result.status is ExecutionStatus.STARTED and any(
@@ -1121,6 +1124,7 @@ class FakeTool:
         usage: ProviderUsage | None = None,
         audit_numbers: frozenset[str] = frozenset(),
         stop_point: StopPoint | None = None,
+        error: ErrorMetadata | None = None,
     ) -> None:
         self._capability_id = capability_id
         self._clock = clock
@@ -1138,6 +1142,9 @@ class FakeTool:
         self.output: JsonMapping = {} if output is None else output
         """What the tool answers with, settable so a test can put a number or a string in it."""
         self._status = status
+        self._error = error
+        """What it reports with a status that did not succeed (M13.1c): the test's, or one of its
+        own — a result that did not succeed says why, or the domain does not build it (§64)."""
         self._usage = usage
         self.calls: tuple[ToolCall, ...] = ()
         self.prospects = Prospect() if prospect is None else prospect
@@ -1195,8 +1202,20 @@ class FakeTool:
             step_id=decision.step_id,
             tool_name=self._name,
             output=self.output,
+            error=self._failure(),
             usage=self._usage,
             duration_ms=0,
+        )
+
+    def _failure(self) -> ErrorMetadata | None:
+        if self._status in (ExecutionStatus.SUCCEEDED, ExecutionStatus.STARTED):
+            return None
+        if self._error is not None:
+            return self._error
+        return ErrorMetadata(
+            code=f"fake.{self._status.value.lower()}",
+            message=f"{self._name} reported {self._status.value}",
+            tool_name=self._name,
         )
 
 

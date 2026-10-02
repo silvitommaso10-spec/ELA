@@ -27,7 +27,7 @@ from ela.ports import (
     ToolPort,
     VerifierPort,
 )
-from tests.domain.examples import EXECUTION_RESULT
+from tests.domain.examples import ERROR_METADATA, EXECUTION_RESULT
 
 ARGUMENTS = {"path": "workspace/notes/briefing.md", "body": "...", "message": "hello"}
 
@@ -40,7 +40,12 @@ def succeeded(verifier: VerifierPort, **update: object) -> ExecutionResult:
         "error": None,
         "output": {},
     }
-    return EXECUTION_RESULT.model_copy(update={**base, **update})
+    result = EXECUTION_RESULT.model_copy(update={**base, **update})
+    explained = (ExecutionStatus.SUCCEEDED, ExecutionStatus.STARTED)
+    if result.status not in explained and result.error is None:
+        # A result that did not succeed says why (§64; M13.1c, ADR 0055).
+        return result.model_copy(update={"error": ERROR_METADATA})
+    return result
 
 
 def codes(failures: tuple[ErrorMetadata, ...]) -> list[str]:

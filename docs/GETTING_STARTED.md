@@ -1290,7 +1290,7 @@ dice perché:
 
 ```
 outcome        failed
-reason         fs.overwrite_mismatch: 'ELA/prova.md' was declared as a new file and something is there now
+reason         fail: EXECUTING -> FAILED (fs.overwrite_mismatch: 'ELA/prova.md' was declared as a new file and something is there now)
 state          FAILED
 steps handled  d1b7c4a2-9e35-4f18-8c60-000000000001
 stopped step   —
@@ -1391,7 +1391,7 @@ tre assenze:
 
 ```
 outcome        denied
-reason         targets ['altrove/non-deve-esistere.md'] of fs.write are not within scope ['ELA']
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['altrove/non-deve-esistere.md'] of fs.write are not within scope ['ELA'])
 state          DENIED
 steps handled  d1b7c4a2-9e35-4f18-8c60-000000000003
 stopped step   —
@@ -1574,11 +1574,15 @@ lo scope — scritto senza la barra iniziale —:
 
 ```
 outcome        denied
-reason         targets ['usr/bin/whoami'] of terminal.run are not within scope ['bin/echo', 'usr/bin/seq', 'usr/bin/time', 'usr/bin/printf', 'usr/bin/env']
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['usr/bin/whoami'] of terminal.run are not within scope ['bin/echo', 'usr/bin/seq', 'usr/bin/time', 'usr/bin/printf', 'usr/bin/env'])
 state          DENIED
 steps handled  e7a3c915-2b64-4d08-9f71-000000000002
 stopped step   —
 ```
+
+***Riscritto il 2026-10-02*** (M13.1c, ADR 0055): la riga `reason` è quella che la CLI stampa da M13.1c, le parole
+della transizione che ha chiuso il task; nella sessione del 2026-09-24 era la sola ragione del Guardian, `targets
+['usr/bin/whoami'] of terminal.run are not within scope […]`.
 
 poi due assenze, e il nome del confine che ha rifiutato:
 
@@ -1702,9 +1706,17 @@ pgrep -fl "sleep 600"
 `terminal.timeout`:
 
 ```
-reason          terminal.timeout: /usr/bin/time was still running after 10 s: ELA stopped its process group
-state           FAILED
+outcome        failed
+reason         fail: EXECUTING -> FAILED (terminal.timeout: /usr/bin/time was still running after 10 s: ELA stopped its process group)
+state          FAILED
+steps handled  e7a3c915-2b64-4d08-9f71-000000000004
+stopped step   —
 ```
+
+***Riscritto il 2026-10-02*** (M13.1c, ADR 0055): il blocco era un ritaglio di due righe, `reason` e `state`, ancora
+alla colonna di prima di M6.3b — il controllo dei blocchi di `run` non lo vedeva, perché cercava la riga `outcome` —;
+le righe che mancavano sono determinate dal piano, e la ragione è quella che la CLI stampa da M13.1c. Nella sessione
+del 2026-09-24 la riga era `reason terminal.timeout: …`, senza la transizione.
 
 e **subito dopo**:
 
@@ -1725,8 +1737,11 @@ pgrep -fl "sleep 600"          # niente, anche questa volta, e subito
 Il `task run` dell'altro terminale torna **subito**, senza aspettare i due minuti:
 
 ```
-reason          terminal.stopped: ELA was stopping while /usr/bin/time ran, and stopped its process group
-state           FAILED
+outcome        failed
+reason         fail: EXECUTING -> FAILED (terminal.stopped: ELA was stopping while /usr/bin/time ran, and stopped its process group)
+state          FAILED
+steps handled  e7a3c915-2b64-4d08-9f71-000000000004
+stopped step   —
 ```
 
 `terminal.stopped` e non `terminal.timeout`: il tempo non era scaduto, era ELA che si fermava. Nella
@@ -2628,13 +2643,17 @@ uv run ela task run <id>
 
 ```
 outcome        denied
-reason         —
+reason         deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by 6c38f1c5-6cda-5680-8a7a-4f061588deed)
 state          DENIED
 steps handled  —
 stopped step   —
 ```
 
-Nessuno step trattato: la corsa ha trovato il task già chiuso dal tuo no, e non aveva niente da fare.
+Nessuno step trattato: la corsa ha trovato il task già chiuso dal tuo no — lo step che chiedeva l'ha chiuso la
+risposta —, e la riga `reason` dice chi l'ha chiuso: `deny_by_approval`, con l'id dell'identità che ha risposto, che
+dalla riga di comando è quello di `local`, la persona a questa macchina.
+
+***Riscritto il 2026-10-02*** (M13.1c, ADR 0055): fino a M13.1c la riga era `reason —`, come nella prova qui sotto.
 
 **Nella prova del 2026-09-28**: `ela approvals` ha mostrato la domanda
 `601ecd9c-d168-5fb5-834e-17d8984ba95b` — `workspace.write_note` su `workspace/notes/first-task.md`,
@@ -2661,6 +2680,10 @@ quando la corsa l'ha ricevuta.
 **Nella prova del 2026-09-28**: l'help di `ela task run` contiene la definizione di uno step trattato,
 «``—`` means the run handled no step», e la frase che dice che la ragione di `denied` e `failed` c'è
 quando la corsa l'ha ricevuta.
+
+***Annotato il 2026-10-02*** (M13.1c, ADR 0055): da M13.1c l'help dice che `denied`, `failed`, `cancelled` ed
+`expired` portano **sempre** il loro perché, lo stesso alla corsa che chiude il task e a ogni corsa dopo; «quando la
+corsa l'ha ricevuta» non c'è più. Lo prova §22, passo 5.
 
 Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`. **Nella prova del
 2026-09-28** ci sono le uscite dal `plan` in poi, scritte con `tee`.
@@ -2792,7 +2815,7 @@ Poi, in un task nuovo, `browser-read-outside.json` — `example.org`, che non ha
 
 ```
 outcome        denied
-reason         targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org']
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org'])
 state          DENIED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000002
 stopped step   —
@@ -2803,7 +2826,7 @@ browser su `example.org`.
 
 ```
 outcome        failed
-reason         browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there
+reason         fail: EXECUTING -> FAILED (browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there)
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000003
 stopped step   —
@@ -2909,7 +2932,7 @@ In un task nuovo, `browser-act-missing.json`: il sì, poi di nuovo `run`.
 
 ```
 outcome        failed
-reason         browser.element_missing: gesture 2 of 2 names no element on the page of httpbin.org; no gesture was made
+reason         fail: EXECUTING -> FAILED (browser.element_missing: gesture 2 of 2 names no element on the page of httpbin.org; no gesture was made)
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000006
 stopped step   —
@@ -2953,6 +2976,10 @@ stopped step   —
 
 Nessuno step trattato, e il `reason` vuoto è quello di M13.1c: il caso di M6.3c **non si vede**.
 Rifallo in un task nuovo, aspettando i tre secondi.
+
+***Annotato il 2026-10-02*** (M13.1c, ADR 0055): quel vuoto **non era di M13.1c**, che esclude `cancelled` — lo
+dice già ADR 0054 §14 —, e da M6.3c non c'è più: la ragione di un «ferma» sono le sue parole. Il blocco resta il
+verbale del 2026-09-30.
 
 **Che cosa si deve vedere**, con i tre secondi: il «ferma» risponde; **il browser no** — la visita finisce —, e nel
 terminale A `run` torna con il rifiuto dell'API — un `409`, che la riga di comando chiama `conflict` — ed
@@ -3005,7 +3032,7 @@ perché ELA, fermandosi, finisce le richieste che ha in corso:
 
 ```
 outcome        failed
-reason         browser.stopped: ELA stopped while the page of httpbin.org was open
+reason         fail: EXECUTING -> FAILED (browser.stopped: ELA stopped while the page of httpbin.org was open)
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000004
 stopped step   —

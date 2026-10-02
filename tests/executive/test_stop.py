@@ -113,7 +113,9 @@ class Hooked(FakeTool):
 
 
 def _failed(result: ExecutionResult) -> ExecutionResult:
-    return result.model_copy(update={"status": ExecutionStatus.FAILED})
+    """A tool that failed before its point, and says why (§64; M13.1c, ADR 0055)."""
+    error = ErrorMetadata(code="probe.before_the_point", message="the tool failed before its point")
+    return result.model_copy(update={"status": ExecutionStatus.FAILED, "error": error})
 
 
 class _Unheard:
@@ -755,7 +757,9 @@ async def test_a_vanished_grant_on_a_task_that_ended_closes_the_step_cancelled()
     grants.stopping = stopping
     execution = await w.execute(task.id, step.id)
 
-    assert execution.result is None and execution.error is not None
+    assert execution.result is None
+    stopped = [e for e in await w.events(task.id) if e.event_type is AuditEventType.STEP_CANCELLED]
+    assert stopped, "the step closes CANCELLED: the grant vanished and the task had ended"
     assert w.tool(NOTE.id).calls == ()
     assert await w.step_state(task.id, step.id) is StepState.CANCELLED
 

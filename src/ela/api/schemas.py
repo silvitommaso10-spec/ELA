@@ -357,7 +357,12 @@ class RunOut(BaseModel):
     A step waiting for a node is not handled: the executor did not see it in this call. After
     ``waiting_approval``, ``denied`` and ``failed`` the last step listed is the one the call stopped
     on. The list is empty when the call handled no step, which does not say who closed the task
-    (M6.3b, ADR 0051)."""
+    (M6.3b, ADR 0051).
+
+    ``denied``, ``failed``, ``cancelled`` and ``expired`` always carry their why in ``reason``: the
+    words of the transition that ended the task — the Guardian's reason, the user's no, the error as
+    ``code: message``, the words of the stop, the expiry —, the same at the run that ended it and at
+    every run after (M13.1c, ADR 0055)."""
 
     task: TaskOut
     outcome: str
@@ -369,12 +374,14 @@ class RunOut(BaseModel):
     which nodes were considered, why each was refused, and for a missing tool its name — and that
     sentence travels with the answer now (M6.1b dec. F). ``assigned`` carries the assignment's own:
     the node, the work and the deadline it is due by (M12.2, ADR 0038 §10), which is what a person
-    deciding whether to wait has to read. ``denied`` and ``failed`` carry the Guardian's reason or
-    the error's code and message **when this run received one** (M13.1): a task the run found
-    already closed, a step whose tool may or may not have acted, a plan an earlier run left blocked
-    arrive without one, and their why is in the audit (M13.1c).
+    deciding whether to wait has to read.
 
-    ``cancelled`` carries one since M6.3c, never empty: the words of the stop (ADR 0054 §7).
+    ``denied``, ``failed``, ``cancelled`` and ``expired`` always carry one: the summary of the audit
+    event of the transition that ended the task (M13.1c, ADR 0055; the form of ADR 0054 §7) — for a
+    failure written since M13.1c with the error's ``code: message`` —, the same for the run that
+    ended the task and for every run after it, which finds it at the door. The name of the
+    operation says who ended it: ``deny_by_decision`` the Guardian, ``deny_by_approval`` the user,
+    ``recover`` the start-up.
 
     ``null`` for every other outcome: those explain themselves.
     """

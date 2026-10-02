@@ -1247,6 +1247,12 @@ class ExecutionResult(_DomainModel):
     ``decision_id`` and ``authorization_id`` say under which decision the tool ran and which
     grant that run spent (§32; M5.3, ADR 0015): a result knows where it comes from, as an
     :class:`AuditEvent` does. Both are ``None`` for a result no executor produced.
+
+    **A result that did not succeed says why** (§64; M13.1c, ADR 0055): every status but
+    ``SUCCEEDED`` and ``STARTED`` — which has not ended — carries its ``error``, or the result is
+    not built. Until M13.1c the executor minted one from the status, and that was the one reason
+    nobody had given. A copy (``model_copy``) is not validated: the stores refuse it, at the one
+    door every result passes.
     """
 
     id: ExecutionId
@@ -1271,6 +1277,20 @@ class ExecutionResult(_DomainModel):
     """
     duration_ms: Annotated[int, Field(ge=0)] | None = None
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
+
+    @model_validator(mode="after")
+    def _a_failure_says_why(self) -> ExecutionResult:
+        if self.status not in _EXPLAINED and self.error is None:
+            raise ValueError(
+                f"a result that ended {self.status.value} says why, and this one has no error: "
+                "a failure turned into information, not just FAILED (§64)"
+            )
+        return self
+
+
+_EXPLAINED: Final = frozenset({ExecutionStatus.SUCCEEDED, ExecutionStatus.STARTED})
+"""The statuses of a result that need no error: the one that succeeded, and the one that has not
+ended (ADR 0021 §1)."""
 
 
 # --------------------------------------------------------------------------------------
