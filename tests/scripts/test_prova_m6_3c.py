@@ -47,11 +47,22 @@ class World:
         self.lines: list[str] = []
         self.device = PC
         """Who writes the step's STARTED: a node, unless a test says this Mac."""
+        self.devices: list[dict[str, Any]] = [
+            {"id": PC, "role": "WORKER", "available": True, "revoked_at": None}
+        ]
+        self.hand_after: int | None = None
+        """How many looks at the task before Tommaso's hand stops it: ``None``, it never does."""
+        self.task_looks = 0
 
     # the API
     def get(self, path: str) -> Any:
         if path.endswith("/results"):
             return self._results()
+        if path == "/devices":
+            return self.devices
+        self.task_looks += 1
+        if self.hand_after is not None and self.task_looks > self.hand_after:
+            self.cancelled.append("by the hand")
         if not self.cancelled:
             return {"state": "EXECUTING", "halt": None, "steps": [{"state": "RUNNING"}]}
         return {"state": "CANCELLED", "halt": "NOT_ACTED", "steps": [{"state": "CANCELLED"}]}
@@ -281,43 +292,124 @@ def test_this_machine_is_the_id_of_local() -> None:
 # ----------------------------------------------------------------------------------------
 
 
-def test_a_question_that_says_no_skips_the_step_and_the_proof_has_not_passed(
-    world: World,
+@pytest.mark.parametrize(
+    ("node", "battery", "lacks"),
+    [
+        (False, True, "un nodo disponibile"),
+        (True, False, "il Mac a batteria"),
+        (False, False, "un nodo disponibile, il Mac a batteria"),
+    ],
+)
+def test_a_step_whose_world_lacks_what_it_requires_is_skipped_with_what_is_missing(
+    world: World, monkeypatch: pytest.MonkeyPatch, node: bool, battery: bool, lacks: str
 ) -> None:
+    """Correction 4 of the hand test: never asked to Tommaso, read from ELA and from the Mac."""
     block = script().Block
-    done = proof(world, lambda question: "n")
+    monkeypatch.setattr(script(), "this_machine", lambda: "the-mac")
+    monkeypatch.setattr(script(), "on_battery", lambda: battery)
+    if not node:
+        world.devices = []
+    done = proof(world)
 
-    script().a_step(8, [block(8, "se", "Il PC è acceso?"), *node_step()], done)
+    script().a_step(
+        8, [block(8, "richiede", "un nodo disponibile\nil Mac a batteria"), *node_step()], done
+    )
 
-    assert done.report.lines[-1] == "[8] SALTATO: Il PC è acceso?"
+    assert done.report.lines[-1] == f"[8] SALTATO: manca {lacks}"
     assert world.lines == []
     assert last_lines(done)[1] == "La prova non è passata: il passo 8 SALTATO."
 
 
-def test_what_the_eye_sees_is_written_as_looked_and_a_no_fails_the_proof(world: World) -> None:
+def test_a_step_whose_world_has_what_it_requires_goes_on(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    block = script().Block
+    world.sides = ["dopo il punto"]
+    monkeypatch.setattr(script(), "this_machine", lambda: "the-mac")
+    monkeypatch.setattr(script(), "on_battery", lambda: True)
+    done = proof(world)
+
+    script().a_step(
+        8, [block(8, "richiede", "un nodo disponibile\nil Mac a batteria"), *node_step()], done
+    )
+
+    assert done.report.lines[2].startswith("[8] PASSATO: c'è ciò che il passo richiede")
+    assert "[8] PASSATO: il «ferma» è caduto dopo il punto" in done.report.lines
+
+
+@pytest.mark.parametrize(
+    ("row", "available"),
+    [
+        ({"id": PC, "role": "WORKER", "available": True, "revoked_at": None}, True),
+        ({"id": PC, "role": "WORKER", "available": False, "revoked_at": None}, False),
+        ({"id": PC, "role": "WORKER", "available": True, "revoked_at": "2026-10-01"}, False),
+        ({"id": PC, "role": "COMPANION", "available": True, "revoked_at": None}, False),
+        ({"id": "the-mac", "role": "WORKER", "available": True, "revoked_at": None}, False),
+    ],
+)
+def test_a_node_available_is_a_worker_that_is_not_this_mac(
+    world: World, monkeypatch: pytest.MonkeyPatch, row: dict[str, Any], available: bool
+) -> None:
+    monkeypatch.setattr(script(), "this_machine", lambda: "the-mac")
+    world.devices = [row]
+
+    assert script().node_available(world) is available
+
+
+@pytest.mark.parametrize(("source", "battery"), [("Battery Power", True), ("AC Power", False)])
+def test_the_battery_is_read_from_pmset_by_ela_s_own_reader(
+    monkeypatch: pytest.MonkeyPatch, source: str, battery: bool
+) -> None:
+    import ela.infrastructure.machine.darwin as darwin
+
+    async def drawn() -> str:
+        return source
+
+    monkeypatch.setattr(darwin, "pmset_source", drawn)
+
+    assert script().on_battery() is battery
+
+
+def test_a_requirement_the_script_does_not_know_is_refused(world: World) -> None:
+    with pytest.raises(ValueError, match="not in the vocabulary of richiede"):
+        script().lacking(script().Block(8, "richiede", "il PC acceso"), world)
+
+
+def test_the_hand_is_verified_by_the_look_and_an_empty_answer_is_asked_again(
+    world: World,
+) -> None:
+    """Correction 2 and 3 of the hand test: no Enter after the hand — the script looks until the
+    task is stopped —, and an empty answer is not a no."""
     block = script().Block
     asked: list[str] = []
-    answers = iter(["", "n"])
+    answers = iter(["", "x", "n"])
 
     def answer(question: str) -> str:
         asked.append(question)
         return next(answers)
 
     todo = [
-        block(5, "comando", 'uv run ela task create "x" --json'),
-        block(5, "mano", "Ferma il task dalla console, poi conferma; poi premi Invio."),
+        block(5, "comando", 'uv run ela task create "x" --json\nuv run ela task plan <id>'),
+        block(5, "mano", "Ferma il task dalla console, poi premi «Ferma il task»."),
+        block(5, "guarda", "stato CANCELLED"),
         block(5, "occhio", "Il task <id del passo 2> dice il vero?"),
         block(5, "comando", "uv run ela task run <id>"),
         block(5, "atteso", "outcome cancelled"),
     ]
+    world.hand_after = 3
     done = proof(world, answer)
     done.ids[2] = "the-task-of-step-2"
 
     script().a_step(5, todo, done)
 
-    assert len(asked) == 2, "Enter after the hand, and the question of the eye"
-    assert asked[1] == "[5] Il task the-task-of-step-2 dice il vero? (s/n) "
+    assert world.task_looks > 3, "it looked until the hand had stopped the task"
+    assert asked == ["[5] Il task the-task-of-step-2 dice il vero? (s/n) "] * 3
+    assert world.lines[1].endswith(f"task plan {TASK}"), "nothing in the background: no stop"
     assert "[5] GUARDATO: Il task the-task-of-step-2 dice il vero?" in done.report.lines
     assert "    risposta di Tommaso: no" in done.report.lines
     assert done.ids[5] == TASK
     assert last_lines(done)[1] == "La prova non è passata: un no al passo 5."
+
+
+def test_a_yes_is_a_yes(world: World) -> None:
+    assert script().yes_or_no(lambda question: " S ", "q") is True

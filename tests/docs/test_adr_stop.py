@@ -124,3 +124,28 @@ def test_the_measure_of_the_start_up_is_written_with_its_file_and_its_numbers() 
     assert "**letti**" in text and "**chiusi**" in text
     assert "**160 ms**" in text
     assert "il difetto del §15 di ADR 0052" in text
+
+
+def test_it_is_accepted_with_the_hand_test_and_its_two_files() -> None:
+    """Accepted when the Mac's half of §21 passed (2026-10-02), with the debt of step 8 written."""
+    text = adr_text()
+    proof = section(15)
+
+    assert "- **Stato:** **Accettata il 2026-10-02**" in text
+    assert "`~/Downloads/prova-m6.3c-20261002-101840.txt`" in proof
+    assert "`~/Downloads/prova-m6.3c-20261002-102354.txt`" in proof
+    assert "**Nessun difetto del codice di ELA.**" in proof
+
+
+def test_the_debt_of_step_8_has_an_owner_a_day_a_deadline_and_a_way_to_be_paid() -> None:
+    """The form of ADR 0052 §15, read by ``scripts/generate_stato.py`` into the table of debts."""
+    debt = section(16)
+
+    assert debt.startswith("\n### 16. Un debito datato: il passo 8 della prova a mano")
+    assert "entro domenica 2026-10-04" in debt
+    assert "**Debito a carico del giro di domenica della prova di M6.3c, su `main`**" in debt
+    assert "dichiarato il **2026-10-02**" in debt
+    assert "saldato da un file che dice «La prova è passata»" in debt
+    assert "si apre una riparazione con la sua lettera" in debt
+    stato = (ROOT / "docs" / "STATO.md").read_text(encoding="utf-8")
+    assert "| ADR 0054 §16 — il passo 8 della prova a mano, entro domenica 2026-10-04 |" in stato

@@ -136,13 +136,31 @@ def test_a_guarda_outside_the_vocabulary_is_refused() -> None:
         script().sign_of(script().Block(9, "guarda", "processo sleep 97 su un nodo"))
 
 
-def test_the_only_question_that_skips_a_step_is_the_node_s() -> None:
-    asking = [number for number, blocks in marked().items() if kinds(blocks)[0] == "se"]
+def test_only_the_step_on_the_pc_requires_something_of_the_world_and_says_it_first() -> None:
+    """Correction 4 of the hand test: the conditions are verified, never asked — and the block
+    that asked them, ``se``, has gone with them."""
+    requiring = {
+        number: blocks[0] for number, blocks in marked().items() if "richiede" in kinds(blocks)
+    }
 
-    assert asking == [8]
-    assert all("se" not in kinds(blocks)[1:] for blocks in marked().values()), (
-        "a question that skips is the first block of its step"
-    )
+    assert list(requiring) == [8]
+    assert kinds(marked()[8]).count("richiede") == 1
+    assert requiring[8].lines == list(script().REQUIREMENTS)
+    assert "se" not in script().KINDS
+
+
+def test_a_requirement_outside_the_vocabulary_is_refused() -> None:
+    with pytest.raises(ValueError, match="not in the vocabulary of richiede"):
+        script().lacking(script().Block(8, "richiede", "il PC acceso"), None)
+
+
+def test_every_hand_is_verified_by_the_look_that_follows_it() -> None:
+    """Correction 3: what Tommaso's hand does, the script verifies — it never waits for an
+    Enter that could come before the hand has done it."""
+    for number, blocks in marked().items():
+        for index, block in enumerate(blocks):
+            if block.kind == "mano":
+                assert blocks[index + 1].kind == "guarda", number
 
 
 def expected_lines() -> list[str]:
@@ -216,24 +234,39 @@ def test_the_script_fills_the_id_of_a_step_and_leaves_one_it_does_not_have() -> 
     assert filled == "i task a e <id del passo 3>; questo t"
 
 
-def test_the_hand_of_the_console_and_of_the_phone_confirms_before_enter() -> None:
-    """C of the review: an Enter before the confirmation would run the echo, and the step would
-    fail without saying why."""
+def test_the_stop_of_the_console_and_of_the_phone_is_pressed_and_then_seen() -> None:
+    """C of the review and correction 3 of the hand test: the hand presses «Ferma il task», and
+    the script waits until it sees the task stopped — a confirmation that never came stays a
+    wait, and does not become a failure that looks like ELA's (the first file of 2026-10-02)."""
     for number in (5, 6):
-        (hand,) = [block.body for block in marked()[number] if block.kind == "mano"]
-        assert "poi conferma" in hand
-        assert hand.endswith("premi Invio.")
+        found = marked()[number]
+        (hand,) = [block.body for block in found if block.kind == "mano"]
+        assert "poi premi «Ferma il task»" in hand
+        assert "Invio" not in hand
+        assert script().sign_of(found[kinds(found).index("mano") + 1]) == script().Sign(
+            "stato", "CANCELLED"
+        )
 
 
-def test_the_pc_runs_from_the_branch_because_its_runner_changed() -> None:
-    """E of the review: the protocol does not change, the node's runner does."""
+def test_the_pc_runs_from_main_for_the_round_that_pays_the_debt() -> None:
+    """E of the review, and correction 5 of the hand test: step 8 is done after the merge, with
+    the Mac and the PC on ``main``; the protocol does not change, the node's runner does."""
     section = script().section(guide())
     step = section[section.index("### 7. ") : section.index("### 8. ")]
 
     assert "src/ela/node/runner.py" in step
-    assert "il protocollo fra il\nCore e il nodo non cambia" in step
-    assert "è una prova del Core,\ne il nodo non cambia" not in step
+    assert "Il protocollo fra il Core e il nodo non cambia" in step
     assert "git checkout main" in step
+    assert "m6.3c-ferma-a-meta-corsa" not in step
+    assert "ADR 0054 §16" in step
+
+
+def test_bin_sleep_is_taken_away_after_sunday_s_round() -> None:
+    """Correction 6: it stays in the ``.env`` until the round that pays the debt."""
+    section = script().section(guide())
+    step = section[section.index("### 9. ") :]
+
+    assert "**Dopo il giro di domenica**, non prima" in step
 
 
 # ----------------------------------------------------------------------------------------
