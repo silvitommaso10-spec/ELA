@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from ela.domain import AuditEventType, CapabilityId, JsonMapping, TaskState
+from ela.ports import TaskStop
 from ela.tasks.engine import ORPHANED, RecoverySummary
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
 from ela.tools import NotIdempotentError, Outcome, Tool, ToolRegistry, tools_v01
@@ -237,7 +238,9 @@ def test_the_idempotence_guard_of_window_7a_is_documented_and_coded() -> None:
 class SilentTool(Tool):
     """A tool that declares no ``idempotent`` at all: what the guard still refuses (ADR 0021 §1)."""
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:  # pragma: no cover - never runs
+    async def _run(  # pragma: no cover - never runs
+        self, arguments: JsonMapping, stop: TaskStop
+    ) -> Outcome:
         return Outcome({})
 
     def __init__(self, capability_id: CapabilityId, clock: FakeClock, ids: FakeIdGenerator) -> None:

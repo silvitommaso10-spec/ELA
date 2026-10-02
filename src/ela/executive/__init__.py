@@ -43,9 +43,14 @@ from ela.executive.executor import (
     DEFAULT_APPROVAL_TTL,
     DELIVERY_NAMESPACE,
     EXECUTION_INTERRUPTED,
+    EXECUTION_STOPPED,
     GRANT_VANISHED,
     MAX_APPROVAL_TTL,
+    NOT_ACTED_REASON,
+    NOT_REACHED,
     NUMBERS,
+    PASSED,
+    POINT,
     RECOVERED,
     REPORTABLE,
     RESULT_NOT_TEXT,
@@ -58,6 +63,7 @@ from ela.executive.executor import (
     VERIFICATION_FAILED,
     VERIFICATION_MISSING,
     Claimed,
+    Closing,
     Delivered,
     Delivery,
     Envelope,
@@ -70,6 +76,7 @@ from ela.executive.executor import (
     select_authorization,
 )
 from ela.executive.runner import OUTCOMES, RUNNABLE_STATES, Run, RunOutcome, TaskRunner
+from ela.executive.stops import StopOfTask
 
 __all__ = [
     "APPROVAL_NAMESPACE",
@@ -126,4 +133,11 @@ __all__ = [
     "approved_targets",
     "check_envelope",
     "select_authorization",
+    "EXECUTION_STOPPED",
+    "NOT_ACTED_REASON",
+    "NOT_REACHED",
+    "PASSED",
+    "POINT",
+    "Closing",
+    "StopOfTask",
 ]

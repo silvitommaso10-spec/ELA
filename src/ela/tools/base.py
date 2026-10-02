@@ -31,9 +31,14 @@ from ela.domain import (
     PermissionOutcome,
     ProviderUsage,
 )
-from ela.ports import Clock, IdGenerator, NotAllowedError, Prospect
+from ela.ports import Clock, IdGenerator, NotAllowedError, Prospect, StopPoint, TaskStop
 
-__all__ = ["ARGUMENTS_INVALID", "Outcome", "Tool", "check_decision"]
+__all__ = ["ARGUMENTS_INVALID", "FIRST_WRITE", "Outcome", "Tool", "check_decision"]
+
+FIRST_WRITE = "the first write to the disk"
+"""The point of no return of a tool that writes a file (M6.3c, ADR 0054 §3): the first ``mkdir``
+of a missing folder, before the file is opened — an existing file is truncated when it is
+opened."""
 
 ARGUMENTS_INVALID = "arguments.invalid"
 """An argument is missing or of the wrong type. The Guardian validated the schema already
@@ -108,6 +113,11 @@ class Tool(ABC):
     """The keys of the result whose integers enter ``TOOL_EXECUTED`` — **no default**, like
     :attr:`idempotent` (M13.2 dec. 10, ADR 0047): a tool that says nothing is refused by the
     registry, and a tool that has nothing to count says ``frozenset()`` in so many words."""
+    stop_point: ClassVar[StopPoint]
+    """Where the tool listens for the stop of its task, in two halves (M6.3c, ADR 0054 §3) — **no
+    default**, like :attr:`relocatable`: the registry refuses silence. ``here`` is the point the
+    tool passes to :meth:`~ela.ports.TaskStop.listen` with no ``await`` between it and the effect,
+    or ``None`` when the point is the call itself."""
 
     def __init__(
         self, capability_id: CapabilityId, clock: Clock, ids: IdGenerator, *, name: str
@@ -126,12 +136,15 @@ class Tool(ABC):
         return self._name
 
     async def execute(
-        self, decision: PermissionDecision, arguments: JsonMapping
+        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
     ) -> ExecutionResult:
-        """Check the decision, act, and answer with a result whose status says how it went."""
+        """Check the decision, act, and answer with a result whose status says how it went.
+
+        ``stop`` reaches :meth:`_run`; a :class:`~ela.ports.ToolStopped` it raises at the tool's
+        point leaves here as it is, because the tool did not act (M6.3c)."""
         started = self._clock.now()
         check_decision(decision, self._capability_id, started)
-        outcome = await self._run(arguments)
+        outcome = await self._run(arguments, stop)
         finished = self._clock.now()
         error = (
             None
@@ -173,5 +186,8 @@ class Tool(ABC):
         return Prospect()
 
     @abstractmethod
-    async def _run(self, arguments: JsonMapping) -> Outcome:
-        """Act on already-allowed ``arguments``; a failure is an :class:`Outcome` with a code."""
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
+        """Act on already-allowed ``arguments``; a failure is an :class:`Outcome` with a code.
+
+        A tool with a point calls ``stop.listen(self.stop_point.here)`` there, with no ``await``
+        between the call and the effect (M6.3c, ADR 0054 §3)."""

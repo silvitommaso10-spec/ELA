@@ -13,7 +13,7 @@ import pytest
 from ela.domain import ExecutionStatus, PermissionOutcome, RawSpeech
 from ela.permissions.capabilities import MAX_SPOKEN_CHARACTERS as CATALOGUE_MAX
 from ela.ports import NotAllowedError
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeSpeech
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeSpeech, FakeStop
 from ela.tools.base import ARGUMENTS_INVALID
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 from ela.tools.voice import (
@@ -38,7 +38,7 @@ def tool(speech: FakeSpeech, *, enabled: bool = True) -> SpeakTool:
 
 
 async def run(speech: FakeSpeech, arguments: dict[str, object], *, enabled: bool = True):  # type: ignore[no-untyped-def]
-    return await tool(speech, enabled=enabled).execute(DECISION, arguments)
+    return await tool(speech, enabled=enabled).execute(DECISION, arguments, FakeStop())
 
 
 # --------------------------------------------------------------------------------------
@@ -211,7 +211,7 @@ async def test_a_decision_that_does_not_allow_stops_it_before_a_sound() -> None:
     denied = allowed(VOICE_SPEAK, outcome=PermissionOutcome.DENIED)
 
     with pytest.raises(NotAllowedError):
-        await tool(speech).execute(denied, {"text": SENTENCE, "purpose": "x"})
+        await tool(speech).execute(denied, {"text": SENTENCE, "purpose": "x"}, FakeStop())
 
     assert speech.said == ()
 

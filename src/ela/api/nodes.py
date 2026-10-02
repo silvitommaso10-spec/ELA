@@ -44,10 +44,19 @@ from ela.api.schemas import (
 from ela.api.security import Anonymous, count, unauthorized
 from ela.composition import Ela
 from ela.devices import EnrolledNode
-from ela.domain import Assignment, AssignmentId, Device, DeviceId, DeviceRole, TaskId
+from ela.domain import (
+    Assignment,
+    AssignmentId,
+    AssignmentState,
+    Device,
+    DeviceId,
+    DeviceRole,
+    TaskId,
+)
 from ela.executive import Claimed
 from ela.ports import (
     AssignmentNotUsableError,
+    AssignmentStateError,
     DeviceRevokedError,
     EnrollmentConsumedError,
     EnrollmentExpiredError,
@@ -310,17 +319,24 @@ async def _taken(ela: Ela, device_id: DeviceId, running: set[TaskId]) -> WorkOrd
     — the lock, skipped for this reread rather than refused — and the offer stopped being takeable
     between the read and the claim, which is the race two nodes of one user can lose honestly.
     """
-    offer = await ela.assignments.next_for(device_id)
-    if offer is None or offer.task_id in running:
-        return None
-    running.add(offer.task_id)
-    try:
-        claimed = await ela.executor.begin(offer.id, device_id)
-    except (AssignmentNotUsableError, NotFoundError):
-        return None
-    finally:
-        running.discard(offer.task_id)
-    return work_order(claimed, device_id)
+    while True:
+        offer = await ela.assignments.next_for(device_id)
+        if offer is None or offer.task_id in running:
+            return None
+        running.add(offer.task_id)
+        try:
+            claimed = await ela.executor.begin(offer.id, device_id)
+        except AssignmentStateError as refused:
+            if refused.state is AssignmentState.WITHDRAWN:
+                # Its task ended before anybody took the work: the claim withdrew the offer and
+                # closed the step, and the next offer is tried at once (M6.3c, ADR 0054 §9).
+                continue
+            return None
+        except (AssignmentNotUsableError, NotFoundError):
+            return None
+        finally:
+            running.discard(offer.task_id)
+        return work_order(claimed, device_id)
 
 
 def work_order(claimed: Claimed, device_id: DeviceId) -> WorkOrderOut:

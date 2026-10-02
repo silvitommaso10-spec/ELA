@@ -22,6 +22,9 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<chiave del modello del PC>` | la chiave Anthropic del nodo, mai quella del Core | la console Anthropic (§12, passo 4) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
+| `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
+| `<id del passo 3>` | l'id del task del passo 3 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
+| `<id del passo 4>` | l'id del task del passo 4 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
 | `<porta>` | la porta su cui ELA ascolta | `ela diagnostics`, riga `addresses` (§14) |
 | `<radice del PC>` | la cartella del PC dentro cui ELA può leggere e scrivere | la scegli tu, sul PC: una cartella che c'è, e che non contiene né sta dentro `$HOME\.ela` o `$HOME\ELA` (§17, passo 2) |
 
@@ -282,6 +285,7 @@ outcome        waiting_approval
 reason         —
 state          WAITING_APPROVAL
 steps handled  9c5b8f26-1a2b-4c3d-8e4f-000000000001, 9c5b8f26-1a2b-4c3d-8e4f-000000000002
+stopped step   —
 ```
 
 Il primo step — l'echo — è stato eseguito; sul secondo ELA si ferma e chiede. Sotto `steps handled`
@@ -342,6 +346,7 @@ outcome        completed
 reason         —
 state          COMPLETED
 steps handled  9c5b8f26-1a2b-4c3d-8e4f-000000000002
+stopped step   —
 ```
 
 Il secondo `run` esegue solo ciò che restava: il primo step era già fatto, e rifarlo sarebbe
@@ -827,6 +832,7 @@ outcome        waiting_approval
 reason         —
 state          WAITING_APPROVAL
 steps handled  5a1e0c3d-7b2f-4e8a-9c41-000000000001
+stopped step   —
 ```
 
 ```
@@ -834,6 +840,7 @@ outcome        assigned
 reason         step 5a1e0c3d-7b2f-4e8a-9c41-000000000001 assigned to node DESKTOP-QQ0GSE2 (5ddae87a-6eb1-4fb0-947c-f912fce6c026) as assignment 0fa13927-593d-46f7-b5e2-744dde2c15aa, due by 2026-09-17T20:46:46.808533+00:00
 state          EXECUTING
 steps handled  —
+stopped step   —
 ```
 
 Sotto `assigned` nessuno step è trattato: lo step è del PC, la risposta la darà lui, e il `reason`
@@ -882,6 +889,7 @@ outcome        completed
 reason         —
 state          COMPLETED
 steps handled  —
+stopped step   —
 ```
 
 `steps handled` è vuoto anche qui: lo step l'ha chiuso la consegna del PC, e questa corsa ha solo
@@ -1284,6 +1292,7 @@ outcome        failed
 reason         fs.overwrite_mismatch: 'ELA/prova.md' was declared as a new file and something is there now
 state          FAILED
 steps handled  d1b7c4a2-9e35-4f18-8c60-000000000001
+stopped step   —
 ```
 
 ```
@@ -1384,6 +1393,7 @@ outcome        denied
 reason         targets ['altrove/non-deve-esistere.md'] of fs.write are not within scope ['ELA']
 state          DENIED
 steps handled  d1b7c4a2-9e35-4f18-8c60-000000000003
+stopped step   —
 ```
 
 ```
@@ -1566,6 +1576,7 @@ outcome        denied
 reason         targets ['usr/bin/whoami'] of terminal.run are not within scope ['bin/echo', 'usr/bin/seq', 'usr/bin/time', 'usr/bin/printf', 'usr/bin/env']
 state          DENIED
 steps handled  e7a3c915-2b64-4d08-9f71-000000000002
+stopped step   —
 ```
 
 poi due assenze, e il nome del confine che ha rifiutato:
@@ -2586,6 +2597,7 @@ outcome        waiting_approval
 reason         —
 state          WAITING_APPROVAL
 steps handled  9c5b8f26-1a2b-4c3d-8e4f-000000000001, 9c5b8f26-1a2b-4c3d-8e4f-000000000002
+stopped step   —
 ```
 
 Il primo id è l'eco, eseguita; il secondo è lo step su cui ELA si è fermato a chiedere, e non è stato
@@ -2618,6 +2630,7 @@ outcome        denied
 reason         —
 state          DENIED
 steps handled  —
+stopped step   —
 ```
 
 Nessuno step trattato: la corsa ha trovato il task già chiuso dal tuo no, e non aveva niente da fare.
@@ -2761,6 +2774,7 @@ outcome        completed
 reason         —
 state          COMPLETED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000001
+stopped step   —
 ```
 
 ```
@@ -2780,6 +2794,7 @@ outcome        denied
 reason         targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org']
 state          DENIED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000002
+stopped step   —
 ```
 
 E in un task nuovo `browser-left-site.json`: `httpbin.org` è dichiarato, ma la pagina manda il
@@ -2790,6 +2805,7 @@ outcome        failed
 reason         browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000003
+stopped step   —
 ```
 
 ### 4. Un modulo, e la domanda da leggere prima del sì
@@ -2816,6 +2832,7 @@ outcome        waiting_approval
 reason         —
 state          WAITING_APPROVAL
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000005
+stopped step   —
 ```
 
 ```
@@ -2851,6 +2868,7 @@ outcome        completed
 reason         —
 state          COMPLETED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000005
+stopped step   —
 ```
 
 `uv run ela task results <id>`: lo stato della pagina del modulo, `200`, e due gesti fatti — il campo
@@ -2893,6 +2911,7 @@ outcome        failed
 reason         browser.element_missing: gesture 2 of 2 names no element on the page of httpbin.org; no gesture was made
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000006
+stopped step   —
 ```
 
 **Che cosa si deve vedere**: la frase dice che nessun gesto è stato fatto — il controllo di ogni
@@ -2900,6 +2919,12 @@ elemento viene prima del primo gesto, e sulla pagina non lo vedi, perché ELA l'
 speso: la domanda è nata prima che ELA aprisse la pagina, e questo è il suo prezzo.
 
 ### 6. Il «ferma» a metà corsa, com'è oggi
+
+> **Superato da M6.3c** (§21, ADR 0054 §11): questo passo mostra il difetto com'era quando M13.4 è stata
+> provata, e da M6.3c non si riproduce più. Il «ferma» arriva al browser prima della navigazione o prima del
+> primo gesto; `run` risponde `cancelled`, **mai `409`**, con la ragione del «ferma» — anche alla porta, dove
+> era vuota — e con la riga `stopped step`; e uno step che aveva già agito si chiude come uno step normale. Le
+> uscite qui sotto restano quelle di allora.
 
 Nel terminale A, in un task nuovo con `browser-read-slow.json` — una pagina che risponde dopo otto
 secondi:
@@ -2922,6 +2947,7 @@ outcome        cancelled
 reason         —
 state          CANCELLED
 steps handled  —
+stopped step   —
 ```
 
 Nessuno step trattato, e il `reason` vuoto è quello di M13.1c: il caso di M6.3c **non si vede**.
@@ -2981,6 +3007,7 @@ outcome        failed
 reason         browser.stopped: ELA stopped while the page of httpbin.org was open
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000004
+stopped step   —
 ```
 
 `browser.stopped`, e non `browser.timeout` né `browser.failed`: il Ctrl-C arriva anche al driver di
@@ -3036,6 +3063,462 @@ Poi il PC torna a `main` quando il branch è mergiato.
 
 Le uscite di tutti i passi, integrali, in un file: `~/Downloads/m13.4-prova.txt`, e quelle del PC in
 `~/Downloads/m13.4-prova-pc.txt`.
+
+## 21. Il «ferma» a metà corsa: la prova a mano di M6.3c
+
+> **Scritta con l'implementazione di M6.3c il 2026-10-01**, dalla bozza della SPEC
+> (`milestones/M6.3c.md`, proposta 10) e con le decisioni della sua review. **Fatta da Tommaso il
+> 2026-10-02 sul branch**: i passi del Mac sono passati, e il passo 8 — il PC — è il debito datato di
+> [ADR 0054](adr/0054-stopped-midway.md) §16, da pagare **domenica 2026-10-04**, dopo il merge, con il Mac e
+> il PC su `main`: lo script intero, una volta, e un file che dice «La prova è passata».
+
+Da M6.3c il «ferma» — `ela task cancel`, il bottone della console, quello del telefono — **arriva al tool
+che sta girando**, prima del suo punto di non ritorno: un browser che non ha ancora fatto il primo gesto non
+lo fa, un programma che non è ancora partito non parte. Se il tool l'ha già passato, lo step si chiude come uno
+step normale, e **ogni superficie dice che cosa aveva fatto lo step in corso**: la riga `stopped step` della
+riga di comando, la frase della console e quella del telefono.
+
+**È la prima prova a mano con uno script.** I passi meccanici — creare i task, farli girare, guardare lo step,
+mandare il «ferma» nell'istante giusto, confrontare ogni uscita con quella attesa — li fa
+`scripts/prova_m6_3c.py`, che **legge da questa sezione i comandi, che cosa guardare e le uscite attese**: la
+guida resta la fonte di verità, e `tests/docs/test_prova_m6_3c.py` tiene allineati i due. I blocchi che lo
+script legge hanno sopra un marcatore, `<!-- prova: N.tipo -->`, che il Markdown non mostra:
+
+| Tipo | Che cosa fa lo script |
+|---|---|
+| `comando` | fa girare le righe una per una; `<id>` è l'id del task che il passo ha creato. Prima del «ferma», l'ultima riga gira mentre lo script guarda |
+| `guarda` | guarda finché vede il segno, o finché il task finisce da sé: `processo <modello>` è un processo nuovo la cui riga di comando contiene il modello, `risultato STARTED` è la `STARTED` dello step fra i risultati del task — `su un nodo` vuole che l'abbia scritta un nodo e non il Mac —, `stato CANCELLED` è il task fermato |
+| `ferma` | manda il «ferma» — `POST /tasks/<id>/cancel`, con «la prova di M6.3c» — e dice il lato dove deve cadere: prima dello step, prima del tool, prima del punto o dopo il punto |
+| `atteso` | le righe che l'uscita del comando sopra deve avere: ciascuna a parole intere, dentro una riga dell'uscita e a meno degli spazi — «0» non è dentro «10» —, e nell'ordine in cui sono scritte |
+| `mano` | ciò che fai tu: lo script lo stampa e non aspetta un Invio — lo verifica il `guarda` che lo segue |
+| `occhio` | ciò che guardi tu: lo script lo chiede finché rispondi `s` o `n`, e scrive la tua risposta come GUARDATO |
+| `richiede` | ciò che il passo vuole dal mondo, verificato dallo script e mai chiesto: `un nodo disponibile` lo legge da ELA, `il Mac a batteria` da `pmset -g batt`; se manca, il passo è SALTATO con ciò che manca |
+
+Lo script manda il «ferma» **quando vede lo step in corso**, non dopo un'attesa fissa; poi aspetta che lo step
+in corso si chiuda, e solo allora confronta. Legge dalla trail e dai risultati **dove** è caduto il «ferma»; se
+non è caduto dal lato atteso — o se il task è finito da sé prima che lo step si vedesse — stampa **DA RIPETERE**
+con il lato vero e **ripete il passo da sé**, con un task nuovo, fino a tre giri: è **FALLITO** solo se sbaglia
+anche il terzo, e il file dice a che giro il passo è passato — «PASSATO al secondo giro» non è «PASSATO». Non è
+un difetto di ELA: in una prova vera un browser parte più o meno in fretta, e i due lati di ogni tool li provano
+i test. **L'ultima riga** conta i PASSATO con i loro giri, i FALLITO, i GUARDATO con un no e i SALTATO, e dice
+«La prova è passata» solo senza FALLITO, senza SALTATO e con ogni GUARDATO un sì; altrimenti dice che cosa manca.
+Dove una domanda nomina il task di un altro passo, `<id del passo 2>` e gli altri, lo script scrive l'id del suo
+ultimo giro: fra i finiti, i giri ripetuti lasciano più righe che passi. **A te restano la console e il
+telefono**: il sì ai passi `HIGH` e il «ferma» dei passi 5 e 6 li dai lì — lo script vede da sé quando sono
+fatti, e aspetta finché non lo sono —, e lì guardi gli esiti. Ciò che guardi lo script non lo giudica: te lo
+chiede, e lo scrive.
+
+### 0. Prima di cominciare
+
+Il Mac sul codice da provare — il branch prima del merge, `main` per il giro di domenica che paga il debito
+del passo 8 —, e lo shell di Chromium com'era in §20, passo 0. Sul branch:
+
+```
+git fetch
+git checkout m6.3c-ferma-a-meta-corsa
+uv sync --locked
+```
+
+Dopo il merge, su `main`:
+
+```
+git checkout main
+git pull
+uv sync --locked
+```
+
+Nel `.env`, **due righe in più** rispetto a §20:
+
+```
+ELA_BROWSER_SITES=["example.com","httpbin.org"]
+ELA_TERMINAL_PROGRAMS=["bin/sleep"]
+```
+
+Se `ELA_TERMINAL_PROGRAMS` dichiara già altri programmi, aggiungi `bin/sleep` a quelli; e se avevi abbassato
+`ELA_TERMINAL_TIMEOUT_SECONDS` per §16, rimettilo sopra i 97 secondi. `bin/sleep` serve a un piano solo,
+[`examples/terminal-stop.json`](examples/terminal-stop.json): **toglilo alla fine**, dopo il giro di domenica
+(passo 9). Poi, nel
+terminale A:
+
+```
+uv run ela serve
+```
+
+E apri la console nel browser del Mac (§14) e la home del telefono (§13).
+
+### 1. Lo script
+
+Nel terminale B:
+
+```
+uv run python scripts/prova_m6_3c.py
+```
+
+**Che cosa si deve vedere**: lo script controlla che ELA risponda, che lo shell di Chromium ci sia, che i due
+siti e `bin/sleep` siano dichiarati nel `.env` e che il tempo massimo di un comando superi i 97 secondi, e
+stampa **PASSATO** per ciascuno. Se una riga dice **FALLITO**, si ferma lì con l'uscita vera: si ripara il
+`.env`, si riavvia `ela serve` e si rilancia. Tutto ciò che stampa finisce anche in un file in `~/Downloads`,
+`prova-m6.3c-` con la data e l'ora nel nome (`--out` per un altro). I passi che seguono li fa lo script, in
+quest'ordine; qui sotto c'è ciò che legge.
+
+### 2. `browser.read`, fermato prima della navigazione
+
+Lo script crea un task con [`examples/browser-read.json`](examples/browser-read.json), stampa il suo id, lo fa
+girare con `ela task run`, e manda il «ferma» **appena vede un processo nuovo dello shell di Chromium**: il tool
+sta avviando il browser, e `example.com` non ha ancora visto niente.
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create "la prova di M6.3c: browser.read" --json
+uv run ela task plan <id> --file docs/examples/browser-read.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.guarda -->
+```
+processo chrome-headless-shell
+```
+
+<!-- prova: 2.ferma -->
+```
+prima del punto
+```
+
+**Che cosa si deve vedere**, nell'uscita di `run`: `cancelled`; la ragione con le parole del «ferma», mai
+vuota; lo step trattato; e `stopped step` che dice che lo step in corso non aveva agito.
+
+<!-- prova: 2.atteso -->
+```
+outcome        cancelled
+reason         cancel: EXECUTING -> CANCELLED (la prova di M6.3c)
+state          CANCELLED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000001
+stopped step   had not acted
+```
+
+E fra i risultati, uno solo: `CANCELLED`, con `execution.stopped`.
+
+<!-- prova: 2.comando -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+b4c2d7e1-5a3f-4b69-8d20-000000000001 browser.read CANCELLED browser-read
+error execution.stopped
+```
+
+### 3. `browser.act`, fermato prima del primo gesto
+
+Lo script crea un task con [`examples/browser-act.json`](examples/browser-act.json), stampa il suo id e lo fa
+girare: è `HIGH`, e arriva la domanda.
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create "la prova di M6.3c: browser.act" --json
+uv run ela task plan <id> --file docs/examples/browser-act.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.mano -->
+```
+Dai il sì dalla console: apri la domanda come in §20, passo 4, e premi «Sì».
+```
+
+La console fa ripartire il task nella stessa richiesta; lo script guarda da quando la domanda è nata, e manda il
+«ferma» **appena vede la `STARTED` dello step**: il tool sta aprendo la pagina, e nessun campo è stato toccato.
+
+<!-- prova: 3.guarda -->
+```
+risultato STARTED
+```
+
+<!-- prova: 3.ferma -->
+```
+prima del punto
+```
+
+**Che cosa si deve vedere**: lo step `CANCELLED`, `stopped step` che dice che non aveva agito; i risultati
+`STARTED` e poi `CANCELLED` con `execution.stopped`. `httpbin.org` non ha ricevuto nessun modulo, e la console,
+dopo il sì, atterra sul riassunto del task.
+
+<!-- prova: 3.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+state CANCELLED
+stopped step had not acted
+b4c2d7e1-5a3f-4b69-8d20-000000000005 CANCELLED
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+b4c2d7e1-5a3f-4b69-8d20-000000000005 browser.act STARTED browser-act
+b4c2d7e1-5a3f-4b69-8d20-000000000005 browser.act CANCELLED browser-act
+error execution.stopped
+```
+
+### 4. `terminal.run`, fermato dopo l'`exec`
+
+Lo script crea un task `TRUSTED` con [`examples/terminal-stop.json`](examples/terminal-stop.json) — `/bin/sleep
+97` —, perché il telefono offra il sì e ne mostri lo scopo, e lo fa girare fino alla domanda.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "la prova di M6.3c: terminal.run" --privacy TRUSTED --json
+uv run ela task plan <id> --file docs/examples/terminal-stop.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.mano -->
+```
+Dai il sì dal telefono: apri la domanda dalla home, e premi «Sì».
+```
+
+Lo script manda il «ferma» **quando vede `sleep 97` nella tabella dei processi**: il programma è partito, e il
+punto di non ritorno è passato.
+
+<!-- prova: 4.guarda -->
+```
+processo sleep 97
+```
+
+<!-- prova: 4.ferma -->
+```
+dopo il punto
+```
+
+**Che cosa si deve vedere**: lo step `FAILED`, e `stopped step` che dice che lo step in corso aveva già agito e
+che nessuna verifica ne ha constatato l'effetto; il risultato `FAILED` con `terminal.stopped`, e `ended` che
+nomina la fermata del task. Il telefono, dopo il sì, torna alla home.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+state CANCELLED
+stopped step had acted; its effect was not verified
+c6d3e2f1-7a48-4c3b-9e05-000000000001 FAILED
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task results <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+c6d3e2f1-7a48-4c3b-9e05-000000000001 terminal.run FAILED terminal-run
+ended stopped_with_the_task
+error terminal.stopped
+```
+
+**Nessun `sleep 97` resta vivo**: lo script lo conta nella tabella dei processi.
+
+<!-- prova: 4.comando -->
+```
+ps -axo command= | grep -c "[s]leep 97"
+```
+
+<!-- prova: 4.atteso -->
+```
+0
+```
+
+### 5. La console
+
+Lo script crea un task con [`examples/echo.json`](examples/echo.json), stampa il suo id, e lo lascia `QUEUED`.
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create "la prova di M6.3c: la console" --json
+uv run ela task plan <id> --file docs/examples/echo.json
+```
+
+<!-- prova: 5.mano -->
+```
+Nella console, apri il task con l'id che lo script ha stampato e premi «Ferma»; leggi la conferma, poi premi «Ferma il task». Lo script aspetta finché vede il task fermato.
+```
+
+<!-- prova: 5.guarda -->
+```
+stato CANCELLED
+```
+
+<!-- prova: 5.occhio -->
+```
+La conferma dice che nessuno step nuovo partirà, che uno step che ha già agito può finire ciò che ha cominciato, e che il riassunto del task dirà se aveva agito — e non più «il task non farà più niente»?
+```
+
+Lo script controlla da sé che il task sia `CANCELLED` con la ragione della console:
+
+<!-- prova: 5.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome        cancelled
+reason         cancel: QUEUED -> CANCELLED (fermato dal Command Center)
+state          CANCELLED
+steps handled  —
+stopped step   —
+```
+
+E ti chiede di guardare la home della console, dove fra i finiti ci sono i task dei passi 2–4, ciascuno con la
+sua frase: lo script ti dà i loro id.
+
+<!-- prova: 5.occhio -->
+```
+Fra i finiti della console: i task <id del passo 2> e <id del passo 3> dicono «Fermato prima che lo step in corso agisse.», e <id del passo 4> «Fermato, ma lo step in corso aveva già agito: nessuna verifica l'ha constatato.»?
+```
+
+<!-- prova: 5.occhio -->
+```
+Nel riassunto di <id del passo 2>, <id del passo 3> e <id del passo 4> la stessa frase sta accanto a «Lo step in corso», e nel piano nessuno step è disegnato come in corso?
+```
+
+### 6. Il telefono
+
+Lo script crea un altro task come al passo 5.
+
+<!-- prova: 6.comando -->
+```
+uv run ela task create "la prova di M6.3c: il telefono" --json
+uv run ela task plan <id> --file docs/examples/echo.json
+```
+
+<!-- prova: 6.mano -->
+```
+Sul telefono, apri dalla home il task con l'id che lo script ha stampato e premi «Ferma»; leggi la conferma, poi premi «Ferma il task». Lo script aspetta finché vede il task fermato.
+```
+
+<!-- prova: 6.guarda -->
+```
+stato CANCELLED
+```
+
+<!-- prova: 6.occhio -->
+```
+La conferma dice che la riga del task, fra i finiti, dirà se aveva agito?
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome        cancelled
+reason         cancel: QUEUED -> CANCELLED (fermato dall'iPhone)
+state          CANCELLED
+steps handled  —
+stopped step   —
+```
+
+I task dei passi 2 e 3 sono `LOCAL_ONLY`, e il telefono li mostra con l'id che lo script ha stampato; quello del
+passo 4 con il suo scopo. La frase c'è per tutti e tre: dice che cosa aveva fatto lo step, niente del contenuto.
+
+<!-- prova: 6.occhio -->
+```
+Fra i finiti della home del telefono, i task <id del passo 2>, <id del passo 3> e <id del passo 4> hanno le stesse frasi della console?
+```
+
+### 7. Il PC su `main`, per il giro di domenica
+
+Il passo 8 manda uno step al PC, e si fa **dopo il merge, con il Mac e il PC su `main`**: è il giro che paga il
+debito di ADR 0054 §16. Il protocollo fra il Core e il nodo non cambia, ma `src/ela/node/runner.py` sì — la
+fermata che non si alza mai, che il nodo dà ai suoi tool —, ed è per questo che il PC gira dal codice mergiato,
+non da quello di prima. Sul PC, con il nodo fermo (Ctrl-C nella sua finestra):
+
+```powershell
+cd $HOME\ELA
+git checkout main
+git pull
+uv sync --locked
+uv run python -m ela.cli node run
+```
+
+**Che cosa si deve vedere**: il nodo che parte come sempre, e sul Mac la riga del PC disponibile in `uv run ela
+device list`. Poi lo script, intero, una volta (passo 1): i passi del Mac rifanno ciò che il 2026-10-02 è
+passato, e il passo 8 è quello nuovo.
+
+### 8. Lo step che un nodo ha preso
+
+Con il PC acceso e disponibile, e il Mac a batteria perché il lavoro vada al PC (§12, passo 6), lo script crea
+un task `TRUSTED` con [`examples/speak-on-a-node.json`](examples/speak-on-a-node.json), che va al PC. Le due
+condizioni le verifica lo script, prima di cominciare: il PC lo legge da ELA, la batteria dal Mac.
+
+<!-- prova: 8.richiede -->
+```
+un nodo disponibile
+il Mac a batteria
+```
+
+<!-- prova: 8.comando -->
+```
+uv run ela task create "la prova di M6.3c: il nodo" --privacy TRUSTED --json
+uv run ela task plan <id> --file docs/examples/speak-on-a-node.json
+uv run ela task run <id>
+```
+
+<!-- prova: 8.mano -->
+```
+Dai il sì dal telefono.
+```
+
+Dopo il sì il lavoro va al PC, e lo script manda il «ferma» **quando vede la `STARTED` che la presa del PC
+scrive**: la busta è uscita, ed è il punto di non ritorno di uno step su un nodo. Se la `STARTED` l'ha scritta il
+Mac, lo step è girato qui: il passo è **FALLITO** con «lo step è girato sul Mac, non sul PC», senza un altro giro,
+che farebbe la stessa cosa.
+
+<!-- prova: 8.guarda -->
+```
+risultato STARTED su un nodo
+```
+
+<!-- prova: 8.ferma -->
+```
+dopo il punto
+```
+
+**Che cosa si deve vedere**: il PC parla fino in fondo — il «ferma» non arriva al nodo —, consegna, e lo step si
+chiude come uno step normale; lo script aspetta la consegna prima di confermare.
+
+<!-- prova: 8.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 8.atteso -->
+```
+state CANCELLED
+stopped step had acted; its verification passed
+5a1e0c3d-7b2f-4e8a-9c41-000000000001 COMPLETED
+```
+
+**Che cosa si deve vedere**, alla fine dello script: i passi meccanici **PASSATO**, quelli a occhio **GUARDATO**
+con le tue risposte, e l'ultima riga che dice «La prova è passata». Quel file salda il debito; se il passo 8
+fallisce, si apre una riparazione con la sua lettera.
+
+### 9. Alla fine
+
+**Dopo il giro di domenica**, non prima: togli `bin/sleep` da `ELA_TERMINAL_PROGRAMS`, e riavvia `ela serve`. I
+file dello script restano in `~/Downloads`.
 
 ## Dove guardare dopo
 

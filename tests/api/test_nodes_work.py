@@ -323,21 +323,24 @@ async def test_a_late_delivery_is_refused_and_the_audit_keeps_what_it_reported(
     assert "ciao" not in str(refusal)
 
 
-async def test_a_delivery_for_a_task_the_user_stopped_is_void(
+async def test_a_delivery_for_a_task_the_user_stopped_after_the_claim_is_accepted(
     client: AsyncClient, ela: Ela
 ) -> None:
+    """The envelope was the point of no return: the node's work is written, and its step closes as a
+    normal one (M6.3c, ADR 0054 §9). Until M6.3c this was ``410 assignment.void``, and the effect
+    the node had produced was written nowhere."""
     task_id, order, headers, device_id = await taken(client, ela)
     await client.post(f"/tasks/{task_id}/cancel", json={"reason": "non mi serve più"})
 
-    void = await client.post(
+    delivered = await client.post(
         "/nodes/work/result",
         json={"assignment_id": order["assignment_id"], **ENVELOPE},
         headers=headers,
     )
 
-    assert void.status_code == 410
-    assert void.json()["error"]["code"] == "assignment.void"
-    assert (await rejections(ela))[-1]["reason"] == WorkRejection.TASK_CLOSED.value
+    assert delivered.status_code == 200, delivered.text
+    assert delivered.json()["step"] == "COMPLETED"
+    assert await rejections(ela) == []
 
 
 async def test_a_delivery_from_a_revoked_node_is_refused_before_the_work_path_sees_it(

@@ -22,9 +22,16 @@ PACKAGE = Path(__file__).resolve().parents[2] / "src" / "ela"
 API = PACKAGE / "api"
 LOCK = "running"
 REACHES_THE_EXECUTOR = frozenset(
-    {("runner", "run"), ("executor", "begin"), ("executor", "deliver")}
+    {
+        ("runner", "run"),
+        ("executor", "begin"),
+        ("executor", "deliver"),
+        ("executor", "close_open_step"),
+    }
 )
-"""``….runner.run(…)``, ``….executor.begin(…)``, ``….executor.deliver(…)``."""
+"""``….runner.run(…)``, ``….executor.begin(…)``, ``….executor.deliver(…)``, and since M6.3c
+``….executor.close_open_step(…)``: the close of a stop's open step is a fourth caller of the
+executor on a step, and the executor has no lock of its own (ADR 0054 §5)."""
 NO_TASK_TO_LOCK = ("deliver_work", "held is None")
 """The route and the test of the branch that delivers an id the Core never minted (ADR 0038 §12)."""
 

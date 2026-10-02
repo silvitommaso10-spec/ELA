@@ -332,7 +332,7 @@ def _assignments(draw: st.DrawFn) -> Assignment:
         claimed_at = created_at + draw(_steps_of_time)
     elif state is AssignmentState.EXPIRED:
         claimed_at = draw(_optional(st.just(created_at + draw(_steps_of_time))))
-    if state is AssignmentState.OFFERED:
+    if state in (AssignmentState.OFFERED, AssignmentState.WITHDRAWN):
         expires_at = decision.expires_at - draw(_steps_of_time)
     else:
         expires_at = (claimed_at or created_at) + draw(_steps_of_time)

@@ -97,6 +97,7 @@ def test_the_conseguenze_count_the_rules_and_the_capabilities_of_today() -> None
                 ADR_PATH.with_name("0047-terminal.md"),
                 ADR_PATH.with_name("0048-travelling-action.md"),
                 ADR_PATH.with_name("0052-browser.md"),
+                ADR_PATH.with_name("0054-stopped-midway.md"),
             )
         )
         == 25

@@ -188,8 +188,8 @@ async def created(h: Harness, *, deadline: datetime | None = None) -> Task:
     return await h.engine.create(intent, deadline=deadline)
 
 
-async def planning(h: Harness, *, with_plan: bool = True) -> Task:
-    task = await created(h)
+async def planning(h: Harness, *, with_plan: bool = True, deadline: datetime | None = None) -> Task:
+    task = await created(h, deadline=deadline)
     task = await h.engine.start_planning(task.id)
     if with_plan:
         plan = plan_for(task.id).model_copy(update={"id": PlanId(h.ids.new_uuid())})
@@ -214,9 +214,11 @@ async def executing(h: Harness) -> Task:
     return await h.engine.start(task.id)
 
 
-async def executing_with(h: Harness, steps: tuple[TaskStep, ...]) -> Task:
+async def executing_with(
+    h: Harness, steps: tuple[TaskStep, ...], *, deadline: datetime | None = None
+) -> Task:
     """An EXECUTING task whose plan has these steps, all PENDING."""
-    task = await planning(h, with_plan=False)
+    task = await planning(h, with_plan=False, deadline=deadline)
     plan = dag_plan_for(task.id, steps).model_copy(update={"id": PlanId(h.ids.new_uuid())})
     task = await h.engine.plan(task.id, plan)
     task = await h.engine.queue(task.id)

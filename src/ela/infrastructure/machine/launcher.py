@@ -42,7 +42,7 @@ import signal
 from contextlib import suppress
 from typing import Any, Final
 
-from ela.ports import Captured, Command, Ending, Ran
+from ela.ports import Captured, Command, Ending, Ran, TaskStop
 
 __all__ = ["EMPTY_SECONDS", "ProcessGroupLauncher"]
 
@@ -115,7 +115,7 @@ class ProcessGroupLauncher:
     def __init__(self, stopping: asyncio.Event) -> None:
         self._stopping = stopping
 
-    async def run(self, command: Command) -> Ran:
+    async def run(self, command: Command, stop: TaskStop) -> Ran:
         if self._stopping.is_set():
             return Ran(Ending.STOPPED)
         loop = asyncio.get_running_loop()
@@ -134,9 +134,10 @@ class ProcessGroupLauncher:
         except OSError as refused:
             return Ran(Ending.NOT_STARTED, failure=f"{type(refused).__name__}: {refused}")
         group = transport.get_pid()
-        stop = asyncio.ensure_future(self._stopping.wait())
+        stopping = asyncio.ensure_future(self._stopping.wait())
+        halted = asyncio.ensure_future(stop.stopped())
         ending: Ending | None = None
-        racing: set[asyncio.Future[Any]] = {watching.exited, stop}
+        racing: set[asyncio.Future[Any]] = {watching.exited, stopping, halted}
         try:
             done, _ = await asyncio.wait(
                 racing, timeout=command.timeout, return_when=asyncio.FIRST_COMPLETED
@@ -144,14 +145,21 @@ class ProcessGroupLauncher:
             if watching.exited in done:
                 with suppress(TimeoutError):
                     await asyncio.wait_for(asyncio.shield(watching.closed), REAP_SECONDS)
+            elif stopping in done:
+                ending = Ending.STOPPED
+            elif halted in done:
+                # The task of the command was stopped after the exec (M6.3c, ADR 0054 §3): the
+                # group is stopped as for the timeout, and the ending says who asked.
+                ending = Ending.HALTED
             else:
-                ending = Ending.STOPPED if stop in done else Ending.TIMED_OUT
+                ending = Ending.TIMED_OUT
             await _stop(group, watching, command.grace)
         except asyncio.CancelledError:
             await _stop(group, watching, command.grace)
             raise
         finally:
-            stop.cancel()
+            stopping.cancel()
+            halted.cancel()
             transport.close()
         code = transport.get_returncode()
         exited = code if code is not None and code >= 0 else None

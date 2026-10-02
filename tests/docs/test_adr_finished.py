@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_cli import coded_commands, commands_after_0048
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048
+from tests.docs.test_adr_placement import _rules_up_to
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0049-finished-on-the-homes.md"
@@ -29,9 +29,10 @@ def test_the_conseguenze_count_the_rules_the_ports_the_routes_and_the_commands_o
     text = conseguenze()
 
     assert "**cinquantasette**" in text
-    assert len(RULES) == 57
+    assert len(_rules_up_to(57)) == 57  # rules 58 and 59 are ADR 0054's
     assert "**ventotto**" in text
-    assert len(tuple(p for p in port_protocols() if p.__name__ != "Browser")) == 28  # ADR 0052
+    later = {"Browser", "TaskStop"}  # ADR 0052 and ADR 0054
+    assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 28
     assert "**quarantanove**" in text
     assert len(coded_routes()) == 49
     assert "**ventisette**" in text

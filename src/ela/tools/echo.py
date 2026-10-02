@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import ClassVar, Final
 
 from ela.domain import CapabilityId, JsonMapping
-from ela.ports import Clock, IdGenerator
+from ela.ports import ENVELOPE, Clock, IdGenerator, StopPoint, TaskStop
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 
 __all__ = ["CORE_ECHO", "ECHO_TOOL_NAME", "EchoTool"]
@@ -28,11 +28,14 @@ class EchoTool(Tool):
     """The echo is the same echo on any machine: the one tool whose claimed work moves."""
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Nothing is written and nothing leaves the process: a second run is the first one."""
+    stop_point: ClassVar[StopPoint] = StopPoint(here=None, on_a_node=ENVELOPE)
+    """No wait before its answer: its point is the call (M6.3c). It travels: on a node, the
+    envelope."""
 
     def __init__(self, clock: Clock, ids: IdGenerator, *, name: str = ECHO_TOOL_NAME) -> None:
         super().__init__(CORE_ECHO, clock, ids, name=name)
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         message = arguments.get("message")
         if not isinstance(message, str):
             return Outcome({}, ARGUMENTS_INVALID, "message must be a string")

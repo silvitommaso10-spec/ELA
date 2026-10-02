@@ -32,7 +32,7 @@ from ela.domain import (
 )
 from ela.executive import AUDIT_NUMBER_INVALID, EXECUTION_INTERRUPTED, VERIFICATION_FAILED
 from ela.permissions import TERMINAL_RUN, terminal_run
-from ela.ports import Captured, Command, Ending, Ran
+from ela.ports import Captured, Command, Ending, Ran, TaskStop
 from ela.testing.fakes import FakeClock, FakeLauncher
 from ela.tools.programs import PROGRAM_GONE, Programs
 from ela.tools.terminal import ArgumentLimits, Terminal, TerminalRunTool
@@ -136,9 +136,9 @@ class Uninstaller(FakeLauncher):
         super().__init__(ran)
         self.program = program
 
-    async def run(self, command: Command) -> Ran:
+    async def run(self, command: Command, stop: TaskStop) -> Ran:
         self.program.unlink()
-        return await super().run(command)
+        return await super().run(command, stop)
 
 
 def terminal_parts(

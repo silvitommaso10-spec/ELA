@@ -90,6 +90,7 @@ __all__ = [
     "ExecutionResult",
     "ExecutionStatus",
     "FAMILY_FIELDS",
+    "Halt",
     "IdentityId",
     "IntentChannel",
     "IntentId",
@@ -365,6 +366,26 @@ class StepState(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class Halt(StrEnum):
+    """What the step in progress had done when its task was stopped (§65; M6.3c, ADR 0054 §7).
+
+    A projection, folded from the trail, the audit and the position of a node's claim — never
+    stored. It says what the verification did, **never that an effect happened**: a verifier says
+    what it verified (ADR 0047 §9, ADR 0052 §9). No value for a stop that found no step in progress.
+    """
+
+    NOT_ACTED = "NOT_ACTED"
+    """The step closed without its tool passing its point of no return."""
+    ACTED_VERIFIED = "ACTED_VERIFIED"
+    """The tool had passed its point, and the step's verification passed."""
+    ACTED = "ACTED"
+    """The tool had passed its point; the tool failed afterwards, or its verification did."""
+    UNKNOWN = "UNKNOWN"
+    """Whether the tool acted is not known: started and never reported, or a node's claim lapsed."""
+    FINISHING = "FINISHING"
+    """The step is still open: a tool past its point on this machine, or a node holds the work."""
+
+
 class PermissionOutcome(StrEnum):
     """What the Guardian decided about one capability call (§27, §33)."""
 
@@ -417,6 +438,10 @@ class AssignmentState(StrEnum):
     """The node's envelope was accepted: its outcome is in the store, or the step is closed."""
     EXPIRED = "EXPIRED"
     """Its expiry passed and whoever acted on it said so: the step was released or closed."""
+    WITHDRAWN = "WITHDRAWN"
+    """Offered, and taken back before any node took it, because its task ended (M6.3c, ADR 0054
+    §9). Not ``EXPIRED``: nobody's time ran out — the work stopped being wanted, and the word says
+    which."""
 
 
 class TaskEventType(StrEnum):
@@ -427,7 +452,9 @@ class TaskEventType(StrEnum):
     STEP_COMPLETED = "STEP_COMPLETED"
     STEP_FAILED = "STEP_FAILED"
     STEP_CANCELLED = "STEP_CANCELLED"
-    """A step cancelled because a step it depends on failed (M3.2, ADR 0009)."""
+    """A step that will not run, or whose tool did not act: cancelled because a step it depends on
+    failed (M3.2, ADR 0009), or closed because its task ended before the tool passed its point of no
+    return (M6.3c, ADR 0054 §4)."""
     STEP_RELEASED = "STEP_RELEASED"
     """A RUNNING step put back to PENDING because the work handed to a node expired with nothing
     in the store: without a STARTED record nothing ran (M12.1, D14; ADR 0038 §8)."""
@@ -1310,7 +1337,7 @@ class Assignment(_DomainModel):
                 "the decision never expires: a bearer title with no expiry is not handed to a "
                 "node (ADR 0011 §9)"
             )
-        if self.state is AssignmentState.OFFERED:
+        if self.state in (AssignmentState.OFFERED, AssignmentState.WITHDRAWN):
             if self.claimed_at is not None:
                 raise ValueError("an offer nobody took has no claimed_at")
             if self.expires_at > decision.expires_at:

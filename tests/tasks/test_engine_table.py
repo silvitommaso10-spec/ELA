@@ -96,7 +96,7 @@ def test_every_step_source_may_reach_the_target(op: StepOperation) -> None:
 def test_every_legal_step_transition_is_some_step_operation() -> None:
     covered = {(s, op.target) for op in STEP_OPERATIONS.values() for s in op.sources}
     assert covered == STEP_LEGAL
-    assert len(STEP_LEGAL) == 5  # the four of ADR 0009, and the release of ADR 0038 §8
+    assert len(STEP_LEGAL) == 6  # ADR 0009's four, ADR 0038 §8's release, ADR 0054 §4's stop
 
 
 def test_no_terminal_step_state_is_a_source() -> None:

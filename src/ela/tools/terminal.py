@@ -49,7 +49,9 @@ from ela.ports import (
     IdGenerator,
     Invocation,
     Prospect,
+    StopPoint,
     Target,
+    TaskStop,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.fs import NO_ROOT
@@ -182,6 +184,10 @@ class _Call:
     command: Command
 
 
+EXEC_POINT: Final = "the exec of the program"
+"""Where ``terminal.run`` listens for the stop of its task: after it, the program runs (M6.3c)."""
+
+
 class TerminalRunTool(Tool):
     """Runs a declared program and returns its output, in head and tail (§18, **HIGH**)."""
 
@@ -225,6 +231,9 @@ class TerminalRunTool(Tool):
     mid-command the command survives it (ADR 0036 §6), and nobody knows what it did.
     """
     relocatable: ClassVar[bool] = False
+    stop_point: ClassVar[StopPoint] = StopPoint(here=EXEC_POINT, on_a_node=None)
+    """Listened to right before the launcher, which does not yield the loop before the ``fork``;
+    after the ``exec``, the stop of the task stops the group (M6.3c, decision 5)."""
 
     def __init__(
         self,
@@ -384,12 +393,13 @@ class TerminalRunTool(Tool):
             return refused
         return scope / cwd
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         looked = await self._look(arguments)
         if isinstance(looked, Outcome):
             return looked
         invocation = looked.invocation
-        ran = await self._launcher.run(looked.command)
+        stop.listen(EXEC_POINT)
+        ran = await self._launcher.run(looked.command, stop)
         if ran.ending is Ending.NOT_STARTED:
             return Outcome({}, NOT_STARTED, f"{invocation.program} did not start: {ran.failure}")
         output: dict[str, JsonValue] = {
@@ -418,6 +428,13 @@ class TerminalRunTool(Tool):
                 STOPPED,
                 f"ELA was stopping while {invocation.program} ran, and stopped its process group",
             )
+        if ran.ending is Ending.HALTED:
+            return Outcome(
+                output,
+                STOPPED,
+                f"the task was stopped while {invocation.program} ran, and ELA stopped its "
+                "process group",
+            )
         return Outcome(output)
 
 
@@ -426,6 +443,7 @@ _ENDED: Final = {
     Ending.SIGNALLED: "signalled",
     Ending.TIMED_OUT: "stopped_by_ela",
     Ending.STOPPED: "stopped_by_ela",
+    Ending.HALTED: "stopped_with_the_task",
 }
 
 

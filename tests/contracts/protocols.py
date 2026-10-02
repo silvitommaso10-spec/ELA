@@ -43,6 +43,7 @@ REQUIRED_PORTS = frozenset(
         "CommandLauncher",
         "LocalBeat",
         "Browser",
+        "TaskStop",
     }
 )
 """The eleven ports of M1.3, the two of M5.1 (ADR 0013: the audited Guardian, the tools), the

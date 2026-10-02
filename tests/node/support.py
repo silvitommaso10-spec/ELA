@@ -22,14 +22,14 @@ from ela.composition import NodeConfig, NodeFilesystemSettings, NodeSettings, bu
 from ela.composition.node import NodeWorld
 from ela.domain import ProviderUsage
 from ela.node import Node, NodeClient, open_node_client
-from ela.ports import WireCode
+from ela.ports import StopPoint, WireCode
 from ela.providers.anthropic import AnthropicSettings
 from ela.providers.elevenlabs import ElevenLabsSettings
 from ela.routing import RoutingSettings
 from ela.testing.fakes import FakeClock, FakePower, FakeSpeech
 from ela.tools import ToolRegistry
 from ela.tools.base import Outcome, Tool
-from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME
+from ela.tools.echo import CORE_ECHO, ECHO_TOOL_NAME, EchoTool
 from ela.tools.settings import VoiceSettings
 
 CORE = "http://core.test"
@@ -179,12 +179,13 @@ class SlowEcho(Tool):
     idempotent: ClassVar[bool] = True
     relocatable: ClassVar[bool] = True
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
+    stop_point: ClassVar[StopPoint] = EchoTool.stop_point
 
     def __init__(self, clock: Any, ids: Any, delay: float) -> None:
         super().__init__(CORE_ECHO, clock, ids, name=ECHO_TOOL_NAME)
         self._delay = delay
 
-    async def _run(self, arguments: Any) -> Outcome:
+    async def _run(self, arguments: Any, stop: Any) -> Outcome:
         await asyncio.sleep(self._delay)
         return Outcome({"message": "fatto"})
 
@@ -206,11 +207,12 @@ class CostlyEcho(Tool):
     idempotent: ClassVar[bool] = True
     relocatable: ClassVar[bool] = True
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
+    stop_point: ClassVar[StopPoint] = EchoTool.stop_point
 
     def __init__(self, clock: Any, ids: Any) -> None:
         super().__init__(CORE_ECHO, clock, ids, name=ECHO_TOOL_NAME)
 
-    async def _run(self, arguments: Any) -> Outcome:
+    async def _run(self, arguments: Any, stop: Any) -> Outcome:
         return Outcome(
             {},
             code="provider.overloaded",

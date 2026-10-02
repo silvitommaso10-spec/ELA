@@ -17,12 +17,14 @@ from ela.api.errors import TaskAlreadyRunningError
 from ela.api.schemas import (
     CancelIn,
     FinishedOut,
+    FinishedTaskOut,
     PlanIn,
     RunOut,
     TaskCreate,
     TaskDetail,
     TaskOut,
 )
+from ela.composition import Ela
 from ela.domain import (
     IntentChannel,
     IntentId,
@@ -30,10 +32,11 @@ from ela.domain import (
     TaskState,
     UserIntent,
 )
+from ela.executive import Run
 from ela.tasks.engine import TERMINAL_STATES
 from ela.tasks.graph import TaskGraph
 
-__all__ = ["PLAN_IS_TEMPORARY", "router"]
+__all__ = ["PLAN_IS_TEMPORARY", "close_if_free", "router"]
 
 PLAN_IS_TEMPORARY = (
     "**The shape of this request is temporary and unversioned.** ELA has no Planner (spec §13) "
@@ -94,7 +97,11 @@ async def finished_tasks(ela: ElaDep, limit: Annotated[int, Query(ge=1)]) -> Fin
     """
     tasks = await ela.repository.finished(states=TERMINAL_STATES, limit=limit)
     counted = await ela.repository.count(states=TERMINAL_STATES)
-    return FinishedOut(tasks=tuple(TaskOut.of(task) for task in tasks), total=sum(counted.values()))
+    rows: list[FinishedTaskOut] = []
+    for task in tasks:
+        halt = await ela.executor.halt(task.id)
+        rows.append(FinishedTaskOut(**TaskOut.of(task).model_dump(), halt=halt))
+    return FinishedOut(tasks=tuple(rows), total=sum(counted.values()))
 
 
 @router.get("/{task_id}")
@@ -102,7 +109,7 @@ async def read_task(task_id: UUID, ela: ElaDep) -> TaskDetail:
     """The task and where each of its steps stands. No plan yet: ``steps`` is empty."""
     task = await ela.repository.get(TaskId(task_id))
     graph = None if task.plan_id is None else await ela.engine.graph(TaskId(task_id))
-    return TaskDetail.of_graph(task, graph)
+    return TaskDetail.of_graph(task, graph, await ela.executor.halt(task.id))
 
 
 @router.post("/{task_id}/plan", description=PLAN_IS_TEMPORARY)
@@ -141,9 +148,15 @@ async def run_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> RunOut:
     # and until M13.3 a heartbeat and a reading of the power source sat here, so two runs of one
     # task arriving together both passed the check — the race of M13.1b in a configuration ELA
     # declares. Whatever this route does beyond the check, it does holding the lock.
-    if identifier in running:
+    if identifier not in running:
+        running.add(identifier)
+    elif (await ela.repository.get(identifier)).state in TERMINAL_STATES:
+        # Never a 409 for a task that has ended (M6.3c, decision 16 of the review): whoever holds
+        # the lock — another run, a delivery, a claim, the close of a stop — closes what is open,
+        # and this run answers as the door would. Two runs of a live task still get the 409.
+        return _out(await ela.runner.answer(identifier))
+    else:
         raise TaskAlreadyRunningError(identifier)
-    running.add(identifier)
     try:
         # No heartbeat here (M13.3, ADR 0048 §2): a route that is answering is not who says the
         # machine is alive (ADR 0044 §8). The runner asks the Core's heartbeat for one before every
@@ -151,20 +164,47 @@ async def run_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> RunOut:
         run = await ela.runner.run(identifier)
     finally:
         running.discard(identifier)
+    return _out(run)
+
+
+def _out(run: Run) -> RunOut:
     return RunOut(
         task=TaskOut.of(run.task),
         outcome=run.outcome.value,
         steps=tuple(run.steps),
         reason=run.reason,
+        halt=run.halt,
     )
 
 
 @router.post("/{task_id}/cancel")
-async def cancel_task(task_id: UUID, body: CancelIn, ela: ElaDep, identity: IdentityDep) -> TaskOut:
+async def cancel_task(
+    task_id: UUID, body: CancelIn, ela: ElaDep, identity: IdentityDep, running: RunningDep
+) -> TaskOut:
     """Stop the task (§65). The actor is the user: stopping ELA is the user's, always.
 
     Whoever the middleware resolved for the call (D12; ADR 0037 §15) — in M12.1 only the Core's
     token reaches this route, so it is the user at this machine.
+
+    **The stop does not take the lock of ``run`` to stop** (M6.3c, ADR 0054 §10): that is what lets
+    it reach a tool that is running, which hears it at its point of no return. It takes the lock
+    **to close** the step the task left open — after the end is written, and only if nobody holds
+    it: whoever does, closes it as its last act.
     """
-    task = await ela.engine.cancel(TaskId(task_id), reason=body.reason, actor=identity.actor)
-    return TaskOut.of(task)
+    identifier = TaskId(task_id)
+    await ela.engine.cancel(identifier, reason=body.reason, actor=identity.actor)
+    await close_if_free(identifier, ela, running)
+    return TaskOut.of(await ela.repository.get(identifier))
+
+
+async def close_if_free(task_id: TaskId, ela: Ela, running: set[TaskId]) -> None:
+    """Close the step an ended task left RUNNING, under the lock of ``run`` — **if it is free**
+    (M6.3c, ADR 0054 §5). The check and the insert with nothing in between, as for ``run``; a
+    lock already taken means its holder rereads the task as its last act and closes it there."""
+    if task_id in running:
+        return
+    running.add(task_id)
+    try:
+        await ela.executor.close_open_step(task_id)
+    finally:
+        running.discard(task_id)

@@ -11,14 +11,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from textwrap import indent
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Literal
 
 import typer
 
 from ela.cli import client
 from ela.cli.errors import CONFIGURATION, fail, handled
 from ela.cli.output import Json, emit, fields, table
-from ela.domain import listed, visible
+from ela.domain import Halt, listed, visible
 
 __all__ = ["FINISHED_LIMIT", "RUN_LABELS", "app"]
 
@@ -29,10 +29,28 @@ FINISHED_LIMIT: Final = 10
 (M17.2b, correction B). The CLI is a client and reads no constant of a page; a terminal has room for
 a few more lines than a phone, and ``--limit`` is there for whoever wants another."""
 
-RUN_LABELS: Final = ("outcome", "reason", "state", "steps handled")
-"""The rows of ``ela task run``, in the order it prints them. The last one was ``steps executed``,
-and under ``waiting_approval`` it carried the step ELA had stopped on to ask, which had not run
-(M6.3b, ADR 0051). The guide's blocks of that output are checked against these."""
+RUN_LABELS: Final = ("outcome", "reason", "state", "steps handled", "stopped step")
+"""The rows of ``ela task run``, in the order it prints them. ``steps handled`` was ``steps
+executed``, and under ``waiting_approval`` it carried the step ELA had stopped on to ask, which had
+not run (M6.3b, ADR 0051). ``stopped step`` says, for a task that was stopped, what the step in
+progress had done (M6.3c, ADR 0054 §7). The guide's blocks of that output are checked against
+these."""
+
+HALT_WORDS: Final = {
+    Halt.NOT_ACTED: "had not acted",
+    Halt.ACTED_VERIFIED: "had acted; its verification passed",
+    Halt.ACTED: "had acted; its effect was not verified",
+    Halt.UNKNOWN: "may have acted: unknown",
+    Halt.FINISHING: "still finishing",
+}
+"""What the line ``stopped step`` says for each value of :class:`~ela.domain.Halt` (M6.3c, ADR 0054
+§7): what the verification did, never that an effect happened (ADR 0047 §9)."""
+
+
+def halt_words(value: object) -> str | None:
+    """The words for a ``halt`` as the API sends it; ``None`` — printed ``—`` — for none."""
+    return None if value is None else HALT_WORDS[Halt(str(value))]
+
 
 TaskId = Annotated[str, typer.Argument(metavar="TASK_ID", help="the id of the task")]
 Approval = Annotated[
@@ -41,17 +59,19 @@ Approval = Annotated[
 
 
 def _task(payload: dict[str, Any]) -> str:
-    return fields(
-        [
-            ("id", payload["id"]),
-            ("state", payload["state"]),
-            ("goal", payload["goal"]),
-            ("created", payload["created_at"]),
-            ("deadline", payload["deadline"]),
-            ("privacy", payload["max_privacy"]),
-            ("plan", payload["plan_id"]),
-        ]
-    )
+    return fields(_task_pairs(payload))
+
+
+def _task_pairs(payload: dict[str, Any]) -> list[tuple[str, Any]]:
+    return [
+        ("id", payload["id"]),
+        ("state", payload["state"]),
+        ("goal", payload["goal"]),
+        ("created", payload["created_at"]),
+        ("deadline", payload["deadline"]),
+        ("privacy", payload["max_privacy"]),
+        ("plan", payload["plan_id"]),
+    ]
 
 
 @app.command("create")
@@ -92,7 +112,10 @@ def list_tasks(
     limit: Annotated[int | None, typer.Option("--limit", min=1, help="at most this many")] = None,
     as_json: Json = False,
 ) -> None:
-    """The tasks ELA knows, in the order they were created."""
+    """The tasks ELA knows, in the order they were created.
+
+    For a task that was stopped, `ela task show` says what the step in progress had done.
+    """
     with client.connect() as api:
         payload = api.get("/tasks", client.query(state=state, limit=limit))
     emit(
@@ -127,8 +150,17 @@ def finished(
             [
                 title,
                 table(
-                    ("id", "state", "finished", "goal"),
-                    [(one["id"], one["state"], one["finished_at"], one["goal"]) for one in shown],
+                    ("id", "state", "finished", "stopped step", "goal"),
+                    [
+                        (
+                            one["id"],
+                            one["state"],
+                            one["finished_at"],
+                            halt_words(one["halt"]),
+                            one["goal"],
+                        )
+                        for one in shown
+                    ],
                 ),
             ]
         ),
@@ -141,6 +173,11 @@ def show(task_id: TaskId, as_json: Json = False) -> None:
     """A task and where each of its steps stands. No steps means: no plan yet."""
     with client.connect() as api:
         payload = api.get(f"/tasks/{task_id}")
+    emit(payload, as_json, _detail(payload))
+
+
+def _detail(payload: dict[str, Any]) -> str:
+    """What ``ela task show`` prints: the task, what its step in progress had done, its steps."""
     steps = table(
         ("step", "state", "risk", "capabilities", "goal"),
         [
@@ -148,7 +185,8 @@ def show(task_id: TaskId, as_json: Json = False) -> None:
             for one in payload["steps"]
         ],
     )
-    emit(payload, as_json, f"{_task(payload)}\n\n{steps}")
+    described = fields([*_task_pairs(payload), ("stopped step", halt_words(payload["halt"]))])
+    return f"{described}\n\n{steps}"
 
 
 @app.command("results")
@@ -304,18 +342,35 @@ def run(task_id: TaskId, as_json: Json = False) -> None:
     to a node, or waiting for one, is not handled. After ``waiting_approval``, ``denied`` and
     ``failed`` the last one is where the run stopped; ``—`` means the run handled no step.
 
+    ``stopped step`` says, for a task that was stopped, what the step in progress had done: it had
+    not acted, it had acted and its verification passed, it had acted and nothing verified its
+    effect, nobody knows whether it acted, or it is still finishing. ``—`` when no step was in
+    progress, and for every outcome but ``cancelled``.
+
     ``reason`` says why the run stopped when the outcome alone does not. Waiting for a node, which
     nodes were considered, why each was refused and — for a tool that is not installed — which tool.
     ``assigned``, which node is doing the work, under which assignment, and by when it is due: what
     you need in order to decide whether to wait. ``denied`` and ``failed``, the Guardian's reason or
     the error, when this run received one: a task the run found already closed, or a step whose
-    tool may or may not have acted, leaves it empty, and the audit has the why. Empty for every
-    other outcome: an outcome that explains itself does not need a sentence under it.
+    tool may or may not have acted, leaves it empty, and the audit has the why. ``cancelled``, the
+    words of the stop, never empty. Empty for every other outcome: an outcome that explains itself
+    does not need a sentence under it.
     """
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/run")
-    values = (payload["outcome"], payload["reason"], payload["task"]["state"], payload["steps"])
-    emit(payload, as_json, fields(list(zip(RUN_LABELS, values, strict=True))))
+    emit(payload, as_json, _ran(payload))
+
+
+def _ran(payload: dict[str, Any]) -> str:
+    """What ``ela task run`` prints: the rows of :data:`RUN_LABELS`, in their order."""
+    values = (
+        payload["outcome"],
+        payload["reason"],
+        payload["task"]["state"],
+        payload["steps"],
+        halt_words(payload["halt"]),
+    )
+    return fields(list(zip(RUN_LABELS, values, strict=True)))
 
 
 @app.command("approve")
@@ -332,7 +387,11 @@ def deny(task_id: TaskId, approval: Approval, as_json: Json = False) -> None:
     emit_answer(task_id, approval, "deny", as_json)
 
 
-def emit_answer(task_id: str, approval: str, verb: str, as_json: bool) -> None:
+def emit_answer(
+    task_id: str, approval: str, verb: Literal["approve", "deny"], as_json: bool
+) -> None:
+    """The two answers, through their two routes. ``verb`` is a ``Literal`` and not a ``str``: the
+    fingerprint of ``docs/outcomes.txt`` reads its values, and names only the routes it calls."""
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/{verb}", {"approval_id": approval})
     emit(payload, as_json, _task(payload))
@@ -345,7 +404,11 @@ def cancel(
     reason: Annotated[str, typer.Option("--reason", help="why, for the audit trail")] = "",
     as_json: Json = False,
 ) -> None:
-    """Stop the task (§65). Stopping ELA is yours, always."""
+    """Stop the task (§65). Stopping ELA is yours, always.
+
+    The answer comes before the step in progress has closed: `ela task show` says whether it had
+    acted.
+    """
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/cancel", {"reason": reason})
     emit(payload, as_json, _task(payload))

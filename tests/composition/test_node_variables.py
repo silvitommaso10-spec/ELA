@@ -23,7 +23,7 @@ import pytest
 
 from ela.composition import Settings, build
 from ela.permissions import BROWSER_READ
-from ela.testing.fakes import FakeBrowser, FakePower
+from ela.testing.fakes import FakeBrowser, FakePower, FakeStop
 from tests.composition.support import create_schema, database_url, declare
 
 PREFIX = "NODE_"
@@ -91,7 +91,7 @@ async def test_the_driver_of_the_core_does_not_receive_a_node_variable_of_the_sh
     ela = await build(Settings.load(), power=FakePower())
     browser = ela.tools.get(BROWSER_READ)._browser  # type: ignore[attr-defined]  # noqa: SLF001
     try:
-        opened = await browser.open("about:blank", lambda url: True)
+        opened = await browser.open("about:blank", lambda url: True, FakeStop())
         try:
             names = environment_names(driver_of_this_process())
         finally:

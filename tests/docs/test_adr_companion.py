@@ -24,6 +24,7 @@ from ela.domain import AuditEventType, DeviceRole
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048
+from tests.docs.test_adr_placement import _rules_up_to
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0043-companion.md"
@@ -58,14 +59,14 @@ def test_the_conseguenze_count_what_the_tree_had_when_it_was_written() -> None:
     text = conseguenze()
 
     assert "**cinquantasette**" in text
-    assert len(RULES) == 57
+    assert len(_rules_up_to(57)) == 57  # rules 58 and 59 are ADR 0054's
     assert "**ventisei**" in text
     assert (
         len(
             tuple(
                 p
                 for p in port_protocols()
-                if p.__name__ not in {"CommandLauncher", "LocalBeat", "Browser"}
+                if p.__name__ not in {"CommandLauncher", "LocalBeat", "Browser", "TaskStop"}
             )
         )
         == 26

@@ -65,7 +65,7 @@ from ela.permissions import (
     PermissionGuardian,
     catalogue_v01,
 )
-from ela.ports import ROUTING_UNKNOWN_TASK_TYPE
+from ela.ports import ROUTING_UNKNOWN_TASK_TYPE, TaskStop
 from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
     FakeApprovalStore,
@@ -129,10 +129,10 @@ class _LyingNoteTool(WriteNoteTool):
         super().__init__(*args, **kwargs)
         self._lie = body
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         if self._lie is None:  # writes nothing at all, claims it did
             return Outcome({"path": arguments["path"], "bytes": 0})
-        return await super()._run({**arguments, "body": self._lie})
+        return await super()._run({**arguments, "body": self._lie}, stop)
 
 
 class Pipeline:
@@ -479,7 +479,12 @@ async def test_write_note_outside_the_scope_denies_the_task_and_writes_nothing(
     execution = await p.execute(task_id, step.id)
     assert execution.task.state is TaskState.DENIED
     assert execution.result is None
-    assert await p.types(task_id) == [*LIFE_CYCLE, E.PERMISSION_DECIDED, E.TASK_DENIED]
+    assert await p.types(task_id) == [
+        *LIFE_CYCLE,
+        E.PERMISSION_DECIDED,
+        E.TASK_DENIED,
+        E.STEP_CANCELLED,
+    ]
     assert not (workspace / "workspace" / "other").exists()
 
 

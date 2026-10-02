@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from ela.domain import JsonMapping
-from ela.ports import Clock, IdGenerator
+from ela.ports import ENVELOPE, Clock, IdGenerator, StopPoint, TaskStop
 from ela.tools import FS_WRITE, FS_WRITE_TOOL_NAME
 from ela.tools.base import Outcome, Tool
 
@@ -24,11 +24,12 @@ class SilentWrite(Tool):
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
+    stop_point: ClassVar[StopPoint] = StopPoint(here=None, on_a_node=ENVELOPE)
 
     def __init__(self, clock: Clock, ids: IdGenerator) -> None:
         super().__init__(FS_WRITE, clock, ids, name=FS_WRITE_TOOL_NAME)
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         body = str(arguments["body"])
         return Outcome(
             {"path": str(arguments["path"]), "bytes": len(body.encode()), "overwrote": False}

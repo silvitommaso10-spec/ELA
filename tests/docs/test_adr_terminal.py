@@ -18,10 +18,10 @@ from ela.permissions import TERMINAL_RUN, production_catalogue
 from ela.tools.programs import PROGRAM_CHANGED, Programs
 from ela.tools.terminal import TerminalRunTool
 from ela.tools.verifiers import TerminalRunVerifier
-from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 from tests.docs.test_adr_filesystem import verifiers_today
+from tests.docs.test_adr_placement import _rules_up_to
 from tests.tools.terminals import no_programs
 from tests.windows import OUTSIDE_THE_WINDOWS_JOB
 
@@ -75,9 +75,9 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
     text = conseguenze()
 
     assert "**cinquantasette**" in text
-    assert len(RULES) == 57
+    assert len(_rules_up_to(57)) == 57  # rules 58 and 59 are ADR 0054's
     assert "**ventisette**" in text
-    later = {"LocalBeat", "Browser"}  # ADR 0048 and ADR 0052, which pin the count of their day
+    later = {"LocalBeat", "Browser", "TaskStop"}  # ADR 0048, 0052 and 0054 pin their day
     assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 27
     assert "CommandLauncher" in {port.__name__ for port in port_protocols()}
     assert "**quarantotto**" in text

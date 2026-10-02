@@ -82,7 +82,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 6 — I nodi | `M6.2` | Implementata | Device Orchestrator |
 | 6 — I nodi | `M6.3` | Implementata | Task Runner: la camminata del grafo |
 | 6 — I nodi | `M6.3b` | Implementata | `ela task run` dice «steps executed» di uno step che non ha eseguito |
-| 6 — I nodi | `M6.3c` | Proposta | Un task fermato mentre il suo tool gira fa rispondere `run` con un `409`, e lascia lo step `RUNNING` |
+| 6 — I nodi | `M6.3c` | Implementata | Un task fermato mentre il suo tool gira fa rispondere `run` con un `409`, e lascia lo step `RUNNING` |
 | 7 — Il modello | `M7.1` | Implementata | `ModelProvider` e provider Anthropic |
 | 7 — Il modello | `M7.2` | Implementata | Protocollo STARTED e `model.complete` |
 | 7 — Il modello | `M7.3` | Implementata | Model Router |
@@ -118,6 +118,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Implementata | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
+| 13 — Il permesso prima dell'azione | `M13.4b` | Proposta | Una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
@@ -148,11 +149,11 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **53** | `docs/adr/NNNN-*.md` |
-| Milestone | **75, di cui 55 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **57** | `RULES` in `tests/architecture/` |
+| ADR scritti | **54** | `docs/adr/NNNN-*.md` |
+| Milestone | **76, di cui 56 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **59** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
-| Port | **29** | i `Protocol` di `src/ela/ports.py` |
+| Port | **30** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **13** | `production_catalogue()` |
 | Rotte dell'API | **49** | i `router` di `ela.api` |
 | Comandi della CLI | **26** | l'albero Typer di `ela.cli` |
@@ -902,13 +903,14 @@ pagato da chi doveva.
 | ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
-| ADR 0052 §15 — il «ferma» a metà di uno step del browser | 2026-09-29 | di M6.3c | **aperto** |
-| ADR 0053 §2 — il runner della CI, da fissare entro il 2026-10-19 | 2026-09-30 | di M6.3c | **aperto** |
+| ADR 0054 §16 — il passo 8 della prova a mano, entro domenica 2026-10-04 | 2026-10-02 | del giro di domenica della prova di M6.3c, su `main` | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |
 | ADR 0047 §16 — il surrogato isolato fuori dal piano | 2026-09-24 | di M13.3 | saldato da ADR 0048 §3 |
 | ADR 0047 §17 — i test di Windows che nessun job raccoglie | 2026-09-24 | di M13.3 | saldato da ADR 0048 §5 |
+| ADR 0052 §15 — il «ferma» a metà di uno step del browser | 2026-09-29 | di M6.3c | saldato da ADR 0054 §11 |
+| ADR 0053 §2 — il runner della CI, da fissare entro il 2026-10-19 | 2026-09-30 | di M6.3c | saldato da ADR 0054 §1 |
 
 <!-- fine del blocco generato: i debiti datati -->
 

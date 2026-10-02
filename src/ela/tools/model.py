@@ -45,6 +45,7 @@ from ela.domain import (
     ProviderResult,
 )
 from ela.ports import (
+    ENVELOPE,
     PROVIDER_ERROR_CODES,
     PROVIDER_NO_OUTPUT,
     PROVIDER_UNAVAILABLE,
@@ -55,11 +56,14 @@ from ela.ports import (
     NotFoundError,
     ProviderRegistryPort,
     RoutingError,
+    StopPoint,
+    TaskStop,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 
 __all__ = [
     "MODEL_COMPLETE",
+    "PROVIDER_REQUEST",
     "MODEL_TOOL_NAME",
     "ROUTING_ARGUMENTS",
     "ModelCompleteTool",
@@ -118,6 +122,11 @@ def routing_arguments(arguments: JsonMapping) -> tuple[str | None, str | None] |
     return task_type, model_hint
 
 
+PROVIDER_REQUEST: Final = "the request to the provider"
+"""The point of no return of ``model.complete`` (M6.3c, ADR 0054 §3): the user's content leaves, and
+the call is charged. Listened to before the first send; the provider's own retries come after it."""
+
+
 class ModelCompleteTool(Tool):
     """Completes ``input`` with a model, through the router and one provider (§25, §29).
 
@@ -149,6 +158,7 @@ class ModelCompleteTool(Tool):
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """A second call is charged, sends the user's content out again (§57) and answers something
     else. The executor runs this tool under the STARTED protocol of ADR 0021 §1."""
+    stop_point: ClassVar[StopPoint] = StopPoint(here=PROVIDER_REQUEST, on_a_node=ENVELOPE)
 
     def __init__(
         self,
@@ -163,7 +173,7 @@ class ModelCompleteTool(Tool):
         self._router = router
         self._providers = providers
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         """Validate, route, call. Only the last step leaves this machine.
 
         The order is not incidental: arguments that do not typecheck are refused before the
@@ -183,7 +193,9 @@ class ModelCompleteTool(Tool):
             provider = self._providers.get(route.provider)
         except NotFoundError:
             return Outcome({}, PROVIDER_UNAVAILABLE, f"no provider named {route.provider!r}")
-        answered = await provider.complete(self._request(texts, parameters, route))
+        request = self._request(texts, parameters, route)
+        stop.listen(PROVIDER_REQUEST)
+        answered = await provider.complete(request)
         return self._outcome(answered, route)
 
     def _request(

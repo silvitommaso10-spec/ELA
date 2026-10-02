@@ -37,6 +37,7 @@ from ela.testing.fakes import (
     FakeModelProvider,
     FakeModelRouter,
     FakePermissionGuardian,
+    FakeStop,
     FakeTool,
     FakeVerifier,
     GuardianCall,
@@ -172,7 +173,7 @@ async def test_tool_records_accepted_calls_and_returns_its_output() -> None:
         status=ExecutionStatus.SUCCEEDED,
     )
     decision = allowed_decision()
-    result = await tool.execute(decision, ARGUMENTS)  # type: ignore[arg-type]
+    result = await tool.execute(decision, ARGUMENTS, FakeStop())  # type: ignore[arg-type]
     assert tool.calls == (ToolCall(decision, ARGUMENTS),)  # type: ignore[arg-type]
     assert result.output == {"written": True}
     assert result.status is ExecutionStatus.SUCCEEDED
@@ -184,7 +185,7 @@ async def test_tool_records_accepted_calls_and_returns_its_output() -> None:
 async def test_tool_leaves_no_trace_of_a_refused_call() -> None:
     tool = FakeTool(WRITE_NOTE, FakeClock(), FakeIdGenerator())
     with pytest.raises(NotAllowedError) as info:
-        await tool.execute(PERMISSION_DECISION, ARGUMENTS)  # REQUIRES_APPROVAL
+        await tool.execute(PERMISSION_DECISION, ARGUMENTS, FakeStop())  # REQUIRES_APPROVAL
     assert info.value.capability_id == WRITE_NOTE
     assert "REQUIRES_APPROVAL" in info.value.reason
     assert tool.calls == ()
@@ -194,10 +195,10 @@ async def test_tool_expiry_is_measured_on_its_own_clock() -> None:
     clock = FakeClock()
     tool = FakeTool(WRITE_NOTE, clock, FakeIdGenerator())
     decision = allowed_decision(expires_at=DEFAULT_START + timedelta(minutes=1))
-    await tool.execute(decision, ARGUMENTS)  # type: ignore[arg-type]
+    await tool.execute(decision, ARGUMENTS, FakeStop())  # type: ignore[arg-type]
     clock.advance(timedelta(minutes=1))  # expiring right now is already expired
     with pytest.raises(NotAllowedError, match="expired"):
-        await tool.execute(decision, ARGUMENTS)  # type: ignore[arg-type]
+        await tool.execute(decision, ARGUMENTS, FakeStop())  # type: ignore[arg-type]
     assert len(tool.calls) == 1
 
 

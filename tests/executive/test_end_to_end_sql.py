@@ -351,8 +351,12 @@ class _ForgetfulNoteTool:
     def name(self) -> str:
         return str(self._inner.name)  # type: ignore[attr-defined]
 
-    async def execute(self, decision: object, arguments: object) -> object:
-        result = await self._inner.execute(decision, arguments)  # type: ignore[attr-defined]
+    @property
+    def stop_point(self) -> object:
+        return self._inner.stop_point  # type: ignore[attr-defined]
+
+    async def execute(self, decision: object, arguments: object, stop: object) -> object:
+        result = await self._inner.execute(decision, arguments, stop)  # type: ignore[attr-defined]
         (self._root / str(arguments["path"])).unlink()  # type: ignore[index]
         return result
 

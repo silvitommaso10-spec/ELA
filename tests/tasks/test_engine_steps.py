@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
+from typing import Final
 from uuid import UUID
 
 import pytest
@@ -32,7 +33,7 @@ from ela.infrastructure.persistence import (
 )
 from ela.infrastructure.persistence.orm import Base
 from ela.ports import NotFoundError
-from ela.tasks.engine import STEP_OPERATIONS, SYSTEM_ACTOR, TaskEngine
+from ela.tasks.engine import STEP_OPERATIONS, SYSTEM_ACTOR, TERMINAL_STATES, TaskEngine
 from ela.tasks.errors import (
     ClockSkewError,
     CyclicDependencyError,
@@ -295,11 +296,22 @@ async def test_the_whole_diamond_runs_to_completion(h: Harness) -> None:
 # --------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("state", [s for s in S if s is not S.EXECUTING], ids=str)
-@pytest.mark.parametrize("operation", ["start_step", "complete_step", "fail_step", "release_step"])
+NOT_EXECUTING: Final = [s for s in S if s is not S.EXECUTING]
+LIVE_NOT_EXECUTING: Final = [s for s in NOT_EXECUTING if s not in TERMINAL_STATES]
+
+
+@pytest.mark.parametrize(
+    ("state", "operation"),
+    [(state, op) for op in ("start_step", "release_step") for state in NOT_EXECUTING]
+    + [(state, op) for op in ("complete_step", "fail_step") for state in LIVE_NOT_EXECUTING],
+    ids=str,
+)
 async def test_step_operations_need_an_executing_task(
     h: Harness, state: TaskState, operation: str
 ) -> None:
+    """``complete_step`` and ``fail_step`` also close a RUNNING step of a task that has **ended**
+    (M6.3c, ADR 0054 §4): ``tests/tasks/test_engine_stop.py``. In a live task they still want it
+    EXECUTING."""
     task = await task_in(h, state)
     before = await h.snapshot(task.id)
     with pytest.raises(TaskEngineError, match=f"{operation} needs an EXECUTING task"):
@@ -406,13 +418,18 @@ async def test_a_clock_that_went_backwards_is_refused_for_steps_too(h: Harness) 
 
 
 async def test_after_the_task_is_cancelled_the_steps_stay_as_they_were(h: Harness) -> None:
+    """The engine's ``cancel`` moves the task and no step; the step that was RUNNING is closed by
+    the executor, which knows whether its tool acted — and since M6.3c it can be, on a task that has
+    ended (ADR 0054 §4). A PENDING step stays PENDING (decision 11 of the review)."""
     task = await executing_with(h, diamond())
     await h.engine.start_step(task.id, sid(0))
     await h.engine.cancel(task.id, reason="changed my mind")
     state = await h.engine.graph(task.id)
     assert state.states[sid(0)] is P.RUNNING and state.states[sid(1)] is P.PENDING
-    with pytest.raises(TaskEngineError, match="needs an EXECUTING task"):
-        await h.engine.complete_step(task.id, sid(0), step_result_for(task.id, sid(0)))
+    closed = await h.engine.complete_step(task.id, sid(0), step_result_for(task.id, sid(0)))
+    assert closed.states[sid(0)] is P.COMPLETED and closed.states[sid(1)] is P.PENDING
+    with pytest.raises(TaskEngineError, match="start_step needs an EXECUTING task"):
+        await h.engine.start_step(task.id, sid(1))
 
 
 # --------------------------------------------------------------------------------------

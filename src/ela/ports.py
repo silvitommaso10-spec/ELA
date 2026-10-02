@@ -26,7 +26,7 @@ comparison in ``tests/contracts/test_protocols.py`` covers what ``isinstance`` c
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -115,6 +115,7 @@ __all__ = [
     "CommandLauncher",
     "DeviceRegistryPort",
     "DeviceRevokedError",
+    "ENVELOPE",
     "Ending",
     "EnrollmentConsumedError",
     "EnrollmentExpiredError",
@@ -143,6 +144,7 @@ __all__ = [
     "LocalBeat",
     "ModelProvider",
     "ModelRouterPort",
+    "NAVIGATION",
     "NotAllowedError",
     "NotFoundError",
     "Opened",
@@ -193,11 +195,14 @@ __all__ = [
     "ScreenCapturePort",
     "SiteUnreachable",
     "SpeechPort",
+    "StopPoint",
     "Target",
     "TaskRepository",
+    "TaskStop",
     "TextRecognitionPort",
     "ToolPort",
     "ToolRegistryPort",
+    "ToolStopped",
     "VERIFICATION_NOT_SUCCEEDED",
     "VERIFICATION_NO_CONDITIONS",
     "VERIFICATION_UNKNOWN_CONDITION",
@@ -591,6 +596,21 @@ class NotAllowedError(PortError):
         self.capability_id = capability_id
         self.reason = reason
         super().__init__(f"tool for {capability_id} refused to execute: {reason}")
+
+
+class ToolStopped(PortError):
+    """The task of a running tool was stopped before the tool passed its point of no return
+    (M6.3c, ADR 0054 §3).
+
+    Raised by :meth:`TaskStop.listen`, at the point or before it, and only there: nothing has
+    happened that the call was approved to do, and the executor records the call as ``CANCELLED``.
+    A tool stopped **after** its point does not raise this — it reports what it did, in its own
+    words, because then it has acted.
+    """
+
+    def __init__(self, where: str) -> None:
+        self.where = where
+        super().__init__(f"the task was stopped before {where}")
 
 
 # --------------------------------------------------------------------------------------
@@ -1021,6 +1041,14 @@ class AssignmentStore(Protocol):
         writes nothing. :class:`AssignmentStateError` for a ``DELIVERED`` one,
         :class:`AssignmentStillLiveError` for one whose expiry is still ahead."""
 
+    async def withdraw(self, assignment_id: AssignmentId, *, now: datetime) -> Assignment:
+        """``OFFERED → WITHDRAWN`` at ``now``, **only if it is still ``OFFERED``** (M6.3c, ADR
+        0054 §9): its task ended before any node took it. A claim that came first wins, and the row
+        comes back as it is — ``CLAIMED`` —, as does one already ``WITHDRAWN``: the caller reads
+        which. Not :meth:`expire`, which writes only where time has decided. :class:`NotFoundError`
+        if unknown.
+        """
+
     async def cut_short(self, device_id: DeviceId, *, now: datetime) -> int:
         """The expiry of every assignment of the node that is ``OFFERED`` or ``CLAIMED`` and not
         expired at ``now`` becomes ``now`` (M12.1, D17): how many were cut. No state changes —
@@ -1349,6 +1377,52 @@ def audited_numbers(declared: frozenset[str], output: JsonMapping) -> dict[str, 
     return numbers
 
 
+ENVELOPE: Final = "the envelope"
+"""The point of no return of a step placed on a node (M6.3c, ADR 0054 §3): the order goes out as the
+answer to the node's own request, and the stop of a task does not reach the node."""
+
+
+@dataclass(frozen=True, slots=True)
+class StopPoint:
+    """Where a tool listens for the stop of its task, in two halves (M6.3c, ADR 0054 §3).
+
+    ``here`` names the point of no return where the tool listens **on this machine** — the instant
+    after which an effect of the call has happened or can no longer be taken back —, or is ``None``
+    for a tool whose point is **the call itself**: it has no wait inside before its effect, and the
+    one listening is the executor's, before the grant. ``on_a_node`` is :data:`ENVELOPE` for a tool
+    that travels and ``None`` for one that does not: never a promise to listen on a node, because
+    the stop does not reach one — for a step on a node, the point is the order sent.
+    """
+
+    here: str | None
+    on_a_node: str | None
+
+
+@runtime_checkable
+class TaskStop(Protocol):
+    """The stop of one task, as one call of a tool sees it (M6.3c, ADR 0054 §2–§3).
+
+    The mechanism of ``Ela.stopping`` (ADR 0047 §7) narrowed to a task, and handed **per call**,
+    never at construction: an adapter built with the stop of one task would stop the next one.
+    """
+
+    def listen(self, where: str) -> None:
+        """Raise :class:`ToolStopped` if the task is stopped; otherwise, when ``where`` is the
+        tool's own point (:attr:`StopPoint.here`), record that the tool has passed it.
+
+        Called **with no ``await`` of ELA's between it and the call that produces the effect**.
+        Named, because the same stop serves a listening that is not the tool's point:
+        ``browser.act`` opens its page through the same navigation ``browser.read`` acts with."""
+
+    def is_set(self) -> bool:
+        """Whether the task is stopped, for a tool past its point that can still spare an effect."""
+
+    def stopped(self) -> Awaitable[object]:
+        """What completes when the task is stopped: what a launcher races a running program
+        against. A sync member that hands out the awaitable, so the port has one mode — a sync
+        one, because :meth:`listen` must not yield the loop (ADR 0005 §1)."""
+
+
 @runtime_checkable
 class ToolPort(Protocol):
     """The implementation of one capability (§27, §28).
@@ -1434,10 +1508,21 @@ class ToolPort(Protocol):
         grammar of the path. A tool that works on no path answers an empty :class:`Prospect`.
         """
 
+    @property
+    def stop_point(self) -> StopPoint:
+        """Where this tool listens for the stop of its task (M6.3c, ADR 0054 §3).
+
+        Declared, never defaulted — the form of :attr:`relocatable` —: a tool that says nothing is
+        refused by :class:`~ela.tools.registry.ToolRegistry`, and one with no wait before its effect
+        says ``here=None`` in so many words."""
+
     async def execute(
-        self, decision: PermissionDecision, arguments: JsonMapping
+        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
     ) -> ExecutionResult:
-        """Run the capability under ``decision``; :class:`NotAllowedError` if it does not allow."""
+        """Run the capability under ``decision``; :class:`NotAllowedError` if it does not allow.
+
+        ``stop`` is the stop of the task (M6.3c): the tool calls :meth:`TaskStop.listen` at its
+        point, and :class:`ToolStopped` leaves the call there, before any effect."""
 
 
 @runtime_checkable
@@ -2159,11 +2244,11 @@ class ScreenCapturePort(Protocol):
 
 
 class Ending(StrEnum):
-    """How a command ended, as the launcher saw it (M13.2 dec. 5, 7, 9).
+    """How a command ended, as the launcher saw it (M13.2 dec. 5, 7, 9; M6.3c).
 
-    Five and not three, because the tool's ``ended`` — ``exited``, ``signalled``,
-    ``stopped_by_ela`` — has two reasons for the third that must not be read as one another, and a
-    run that never started is not a run that ended.
+    More than the tool's ``ended`` — ``exited``, ``signalled``, ``stopped_by_ela``,
+    ``stopped_with_the_task`` —, because ELA stops a group for two reasons that must not be read as
+    one another, and a run that never started is not a run that ended.
     """
 
     EXITED = "exited"
@@ -2174,6 +2259,8 @@ class Ending(StrEnum):
     """ELA stopped the group: the timeout came first."""
     STOPPED = "stopped"
     """ELA stopped the group: ELA itself was stopping (ADR 0038 §11)."""
+    HALTED = "halted"
+    """ELA stopped the group: the task of the command was stopped (M6.3c, ADR 0054 §3)."""
     NOT_STARTED = "not_started"
     """The kernel refused the ``exec`` — a format it does not know, a missing interpreter."""
 
@@ -2246,13 +2333,21 @@ class CommandLauncher(Protocol):
       cancellation propagates, after the group is stopped.
     """
 
-    async def run(self, command: Command) -> Ran:
-        """Start ``command``, wait for it within its timeout, and say how it ended."""
+    async def run(self, command: Command, stop: TaskStop) -> Ran:
+        """Start ``command``, wait for it within its timeout, and say how it ended.
+
+        ``stop`` is the stop of the command's task (M6.3c): raised while the program runs, the
+        group is stopped as for the timeout, and the ending is :attr:`Ending.HALTED`."""
 
 
 # --------------------------------------------------------------------------------------
 # The browser (§19; M13.4, ADR 0052)
 # --------------------------------------------------------------------------------------
+
+
+NAVIGATION: Final = "the navigation"
+"""Where :meth:`Browser.open` listens for the stop of its task: the request of the page leaves after
+it (M6.3c, ADR 0054 §3). ``browser.read``'s point, and only a listening for ``browser.act``."""
 
 
 class BrowserError(PortError):
@@ -2375,11 +2470,14 @@ class Browser(Protocol):
     async def installed(self) -> bool:
         """Whether the browser the lock names is on this machine. No page, no network."""
 
-    async def open(self, address: str, allowed: Callable[[str], bool]) -> Opened:
+    async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         """Open ``address`` in a new, empty browser; a navigation ``allowed`` refuses is not sent.
 
-        :raises BrowserNotInstalled, SiteUnreachable, BrowserStopped, BrowserFailed: and nothing
-            stays open behind the exception.
+        ``stop`` is listened to **right before the navigation**, as :data:`NAVIGATION` (M6.3c): a
+        stopped task leaves the page unopened and the site unvisited.
+
+        :raises BrowserNotInstalled, SiteUnreachable, BrowserStopped, BrowserFailed, ToolStopped:
+            and nothing stays open behind the exception.
         """
 
     async def count(self, page: str, selector: str) -> int:

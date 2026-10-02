@@ -21,7 +21,7 @@ from ela.api.schemas import AnswerIn, ApprovalOut, TaskOut
 from ela.api.security import (
     Identity,
 )
-from ela.api.tasks import run_task
+from ela.api.tasks import close_if_free, run_task
 from ela.domain import Approval, ApprovalId, ApprovalStatus, Task, TaskId, TaskState
 from ela.ports import ApprovalAlreadyAnsweredError, NotFoundError
 from ela.tasks.errors import TaskEngineError
@@ -60,9 +60,17 @@ async def approve(task_id: UUID, body: AnswerIn, ela: ElaDep, identity: Identity
 
 
 @router.post("/tasks/{task_id}/deny")
-async def deny(task_id: UUID, body: AnswerIn, ela: ElaDep, identity: IdentityDep) -> TaskOut:
-    """ "No": the request is rejected and the task is DENIED. A refusal is an answer (§62)."""
-    return await _answer(task_id, body, ela, ApprovalStatus.REJECTED, identity)
+async def deny(
+    task_id: UUID, body: AnswerIn, ela: ElaDep, identity: IdentityDep, running: RunningDep
+) -> TaskOut:
+    """ "No": the request is rejected and the task is DENIED. A refusal is an answer (§62).
+
+    The step that asked did not act, and it does not stay RUNNING in a task that has ended: it is
+    closed CANCELLED, under the lock of ``run`` (M6.3c, ADR 0054 §5)."""
+    answered = await _answer(task_id, body, ela, ApprovalStatus.REJECTED, identity)
+    if answered.state is TaskState.DENIED:
+        await close_if_free(TaskId(task_id), ela, running)
+    return answered
 
 
 async def _answer(
@@ -117,8 +125,11 @@ async def answered_and_resumed(
     A "no" runs nothing: the task is DENIED. And the browser may stop waiting before a long run
     ends — the run goes on, and the next page shows the task's true state (M12.5 dec. H).
     """
-    answered = await (approve if said_yes else deny)(
-        found.task_id, AnswerIn(approval_id=ApprovalId(found.id)), ela, identity
+    body = AnswerIn(approval_id=ApprovalId(found.id))
+    answered = (
+        await approve(found.task_id, body, ela, identity)
+        if said_yes
+        else await deny(found.task_id, body, ela, identity, running)
     )
     if said_yes and answered.state is TaskState.QUEUED:
         await run_task(found.task_id, ela, running)

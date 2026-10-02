@@ -7,6 +7,7 @@ nobody can revoke, because nobody can name it.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,7 @@ from ela.node import (
     read_identity,
     run,
 )
+from ela.node.runner import NEVER_STOPPED
 from ela.node.state import STATE_FILE
 from ela.ports import WireCode
 from tests.node.support import dropped, ok, refused, replies, status, world
@@ -202,3 +204,15 @@ async def test_a_node_with_no_world_handed_to_it_builds_its_own(tmp_path: Path) 
 
     with pytest.raises(CoreUnreachable):
         await run(built.config, transport=replies(dropped()).transport())
+
+
+async def test_the_stop_a_nodes_tool_hears_is_never_raised() -> None:
+    """The stop of a task does not reach a node (M6.3c, ADR 0054 §3): a tool on a node listens,
+    and hears nothing — every tool that travels says so in ``stop_point.on_a_node``."""
+    NEVER_STOPPED.listen("the request to the provider")
+    waiting = asyncio.ensure_future(NEVER_STOPPED.stopped())
+    await asyncio.sleep(0)  # one turn of the loop: nothing could have raised it
+
+    assert not NEVER_STOPPED.is_set()
+    assert not waiting.done()
+    waiting.cancel()

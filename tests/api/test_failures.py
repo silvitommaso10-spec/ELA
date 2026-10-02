@@ -324,10 +324,16 @@ async def a_delivery_after_the_work_was_cut_short(live: Live) -> Response:
     return await _delivery(live, order["assignment_id"], headers)
 
 
-async def a_delivery_for_a_task_the_user_stopped(live: Live) -> Response:
-    """The node was working while the task closed: what it brings has nowhere to go (§12)."""
+async def a_delivery_for_a_step_no_longer_running(live: Live) -> Response:
+    """The node was working while its step was closed: what it brings has nowhere to go (§12).
+
+    Until M6.3c a task the user stopped was enough. Since then the delivery of work taken before
+    the stop is accepted — the envelope was the point of no return (ADR 0054 §9) —, and the void
+    is for a step that is no longer RUNNING."""
     task_id, order, headers, _ = await taken(live.client, live.ela)
     await live.client.post(f"/tasks/{task_id}/cancel", json={"reason": "non mi serve più"})
+    step = order["decision"]["step_id"]
+    await live.ela.engine.stop_step(TaskId(uuid.UUID(task_id)), StepId(uuid.UUID(step)), reason="x")
     return await _delivery(live, order["assignment_id"], headers)
 
 
@@ -532,7 +538,7 @@ RAISED: tuple[Raised, ...] = (
         410,
         "assignment.void",
         "nothing left to deliver into",
-        a_delivery_for_a_task_the_user_stopped,
+        a_delivery_for_a_step_no_longer_running,
     ),
     Raised(
         WorkNotYoursError,

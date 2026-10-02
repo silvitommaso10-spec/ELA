@@ -35,7 +35,17 @@ ADR 0014; M5.3, ADR 0015; M7.2, ADR 0021).
   che chiama `Tool.execute` (regola 16) e `complete_step` (regola 17), e per questo da M13.3 dice lo
   stato di `local` (ADR 0048 §13): `running_here` è vero dall'avvio di un tool su questa macchina al
   suo risultato registrato, e il battito lo porta come `BUSY`.
+  Da M6.3c (ADR 0054) l'executor **ascolta la fermata del task** prima di consumare la grant, la
+  consegna al tool per chiamata (`StopOfTask`, in `stops.py`), e scrive nel risultato di un tool con un
+  punto di non ritorno se l'ha passato (`metadata["point"]`). Chiude lo step che un task finito ha
+  lasciato `RUNNING` con **`close_open_step`**, sotto il lock del task: `CANCELLED` (`stop_step`, di cui
+  è l'unico chiamante: regola 17) se il tool non aveva passato il suo punto, come uno step normale se
+  l'aveva passato; all'avvio, dopo `recover()`, lo fa per ogni task finito (`close_every_open_step`). E
+  `halt` dice che cosa aveva fatto lo step in corso quando il task è stato fermato.
+- `stops.py`: `StopOfTask`, la fermata di un task come la vede una chiamata di un tool — la legge,
+  non la alza mai (regola 58).
 - `errors.py`: `ExecutorError`, le precondizioni che rifiutano prima di scrivere.
 
 Il Planner (§13) resta il pezzo mancante; l'orchestrator che percorre il grafo degli step è in
-`runner.py` (M6.3, ADR 0019).
+`runner.py` (M6.3, ADR 0019), e da M6.3c non solleva mai per un task fermato: lo rilegge, chiude lo
+step aperto, e risponde `cancelled` con la ragione della fermata e `halt`.

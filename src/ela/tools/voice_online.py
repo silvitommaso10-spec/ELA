@@ -25,6 +25,7 @@ from typing import ClassVar, Final
 
 from ela.domain import CapabilityId, JsonMapping, RawSpeech
 from ela.ports import (
+    ENVELOPE,
     SPEECH_ERROR_CODES,
     SPEECH_NO_KEY,
     SPEECH_NO_PLAYER,
@@ -33,6 +34,8 @@ from ela.ports import (
     Clock,
     IdGenerator,
     SpeechPort,
+    StopPoint,
+    TaskStop,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.voice import VOICE_DISABLED, digest_of, sentence_of
@@ -56,6 +59,10 @@ restated it would be a second place for the same sentence to go stale. Only thre
 because only three have an action attached — and the last one is here because "it timed out" and
 "you heard half a sentence" are not the same news (ADR 0033 §9).
 """
+
+
+SYNTHESIS_POINT: Final = "the request for the synthesis"
+"""Where this tool listens for the stop of its task: its point of no return (M6.3c, ADR 0054 §3)."""
 
 
 class SpeakOnlineTool(Tool):
@@ -97,6 +104,9 @@ class SpeakOnlineTool(Tool):
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
+    stop_point: ClassVar[StopPoint] = StopPoint(here=SYNTHESIS_POINT, on_a_node=ENVELOPE)
+    """The first of its two effects (M6.3c): the text leaves and is paid for, and the sound comes
+    after."""
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Saying a thing twice is saying it twice — and paying twice, and leaving a second copy with
     the provider. Runs under the STARTED protocol of ADR 0021 §1, like its local sister."""
@@ -118,7 +128,7 @@ class SpeakOnlineTool(Tool):
         self._model = model
         self._enabled = enabled
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         asked = sentence_of(arguments)
         if isinstance(asked, Outcome):
             return asked
@@ -135,6 +145,7 @@ class SpeakOnlineTool(Tool):
         # which is the wrong way round: the key is configuration and the player is the machine.
         # The port answers both, in the decided order, because it is the one object that knows
         # them both (:class:`~ela.infrastructure.machine.speech.OnlineSpeechCommand`).
+        stop.listen(SYNTHESIS_POINT)
         return self._reported(asked, await self._speech.speak(asked))
 
     def _reported(self, text: str, said: RawSpeech) -> Outcome:

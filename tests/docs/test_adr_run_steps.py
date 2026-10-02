@@ -70,7 +70,9 @@ def test_a_rename_is_read_as_a_pair() -> None:
 
 
 def test_the_adr_names_the_label_the_command_prints() -> None:
-    assert f"`{RUN_LABELS[-1]}`" in ADR.read_text(encoding="utf-8")
+    """``steps handled``, the row ADR 0051 is about; the row after it is ADR 0054's (M6.3c)."""
+    assert RUN_LABELS[3] == "steps handled"
+    assert f"`{RUN_LABELS[3]}`" in ADR.read_text(encoding="utf-8")
 
 
 def test_the_state_of_adr_0019_names_every_adr_that_revised_it() -> None:

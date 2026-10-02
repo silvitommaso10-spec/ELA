@@ -19,7 +19,7 @@ from ela.ports import (
     SPEECH_RATE_LIMITED,
     NotAllowedError,
 )
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeSpeech
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeSpeech, FakeStop
 from ela.tools.base import ARGUMENTS_INVALID
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 from ela.tools.voice import VOICE_DISABLED, digest_of
@@ -58,7 +58,7 @@ def tool(
 async def test_the_sentence_is_said_and_the_result_carries_its_receipt() -> None:
     speech = FakeSpeech(report=SPOKEN)
 
-    result = await tool(speech).execute(DECISION, ARGUMENTS)
+    result = await tool(speech).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert speech.said == (SENTENCE,)
     assert result.output == {
@@ -76,7 +76,7 @@ async def test_the_sentence_is_said_and_the_result_carries_its_receipt() -> None
 
 async def test_the_result_never_carries_the_words() -> None:
     """§57 twice over: an ``ExecutionResult`` is persisted, and the audit trail is forever."""
-    result = await tool(FakeSpeech(report=SPOKEN)).execute(DECISION, ARGUMENTS)
+    result = await tool(FakeSpeech(report=SPOKEN)).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert SENTENCE not in str(result.output)
     assert "buona idea" not in str(result.output)
@@ -89,7 +89,7 @@ async def test_the_receipt_is_what_makes_the_retention_checkable() -> None:
     The provider keeps the text; this id is where that copy is. Without it the retention would be
     a sentence in a document, and with it it is a row somebody can go and look at.
     """
-    result = await tool(FakeSpeech(report=SPOKEN)).execute(DECISION, ARGUMENTS)
+    result = await tool(FakeSpeech(report=SPOKEN)).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert result.output["history_item_id"] == "bZ7h4eUtFFJyXt7MbkwH"
     assert result.output["credits"] == 16, "what the provider stated, not what ELA estimated"
@@ -106,7 +106,7 @@ async def test_a_decision_for_the_local_voice_does_not_authorise_this_one() -> N
     speech = FakeSpeech(report=SPOKEN)
 
     with pytest.raises(NotAllowedError):
-        await tool(speech).execute(allowed(VOICE_SPEAK), ARGUMENTS)
+        await tool(speech).execute(allowed(VOICE_SPEAK), ARGUMENTS, FakeStop())
 
     assert speech.said == (), "nothing was said, and nothing was sent"
 
@@ -116,7 +116,7 @@ async def test_a_denied_decision_sends_nothing() -> None:
     denied = allowed(VOICE_SPEAK_ONLINE, outcome=PermissionOutcome.DENIED)
 
     with pytest.raises(NotAllowedError):
-        await tool(speech).execute(denied, ARGUMENTS)
+        await tool(speech).execute(denied, ARGUMENTS, FakeStop())
 
     assert speech.said == ()
 
@@ -126,7 +126,7 @@ async def test_the_switch_covers_this_voice_too() -> None:
     still a sound in the room."""
     speech = FakeSpeech(report=SPOKEN)
 
-    result = await tool(speech, enabled=False).execute(DECISION, ARGUMENTS)
+    result = await tool(speech, enabled=False).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert result.error is not None and result.error.code == VOICE_DISABLED
     assert speech.said == (), "switched off means nothing is sent, not only nothing is heard"
@@ -142,7 +142,7 @@ async def test_a_machine_with_no_player_says_which_thing_it_lacks() -> None:
     """
     speech = FakeSpeech(report=RawSpeech(error=SPEECH_NO_PLAYER))
 
-    result = await tool(speech).execute(DECISION, ARGUMENTS)
+    result = await tool(speech).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert result.error is not None and result.error.code == SPEECH_NO_PLAYER
     assert "no audio player" in result.error.message
@@ -156,7 +156,7 @@ async def test_the_tool_does_not_reorder_the_two_absences() -> None:
     """
     speech = FakeSpeech(report=RawSpeech(error=SPEECH_NO_KEY), there=False)
 
-    result = await tool(speech).execute(DECISION, ARGUMENTS)
+    result = await tool(speech).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert result.error is not None and result.error.code == SPEECH_NO_KEY
 
@@ -166,7 +166,7 @@ async def test_the_two_absences_reach_the_caller_apart(code: str) -> None:
     """ADR 0034 §5, and the user's own words: two facts with two different things to do."""
     speech = FakeSpeech(report=RawSpeech(error=code))
 
-    result = await tool(speech).execute(DECISION, ARGUMENTS)
+    result = await tool(speech).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert result.error is not None
     assert result.error.code == code
@@ -176,7 +176,7 @@ async def test_the_two_absences_reach_the_caller_apart(code: str) -> None:
 async def test_a_message_says_what_to_do_when_there_is_something_to_do() -> None:
     speech = FakeSpeech(report=RawSpeech(error=SPEECH_NO_VOICE))
 
-    result = await tool(speech).execute(DECISION, ARGUMENTS)
+    result = await tool(speech).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert result.error is not None
     assert "ela voice audition" in result.error.message
@@ -186,7 +186,7 @@ async def test_a_retryable_failure_stays_retryable() -> None:
     """The nature of the failure travels with it (ADR 0020 §7): the provider said "later"."""
     speech = FakeSpeech(report=RawSpeech(error=SPEECH_RATE_LIMITED, retryable=True))
 
-    result = await tool(speech).execute(DECISION, ARGUMENTS)
+    result = await tool(speech).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert result.error is not None
     assert result.error.code == SPEECH_RATE_LIMITED
@@ -199,7 +199,7 @@ async def test_being_cut_off_mid_word_is_not_nothing_happened() -> None:
         report=RawSpeech(error=SPEECH_PLAYBACK_TIMEOUT, retryable=True, timed_out=True)
     )
 
-    result = await tool(speech).execute(DECISION, ARGUMENTS)
+    result = await tool(speech).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert result.error is not None
     assert "cut off mid-word" in result.error.message
@@ -210,7 +210,7 @@ async def test_the_ceiling_is_the_same_one_the_local_voice_has() -> None:
     speech = FakeSpeech(report=SPOKEN)
 
     result = await tool(speech).execute(
-        DECISION, {"text": "a" * (MAX_SPOKEN_CHARACTERS + 1), "purpose": "troppo"}
+        DECISION, {"text": "a" * (MAX_SPOKEN_CHARACTERS + 1), "purpose": "troppo"}, FakeStop()
     )
 
     assert result.error is not None and result.error.code == ARGUMENTS_INVALID
@@ -232,7 +232,7 @@ async def test_bad_arguments_are_refused_before_anything_leaves(
 ) -> None:
     speech = FakeSpeech(report=SPOKEN)
 
-    result = await tool(speech).execute(DECISION, arguments)
+    result = await tool(speech).execute(DECISION, arguments, FakeStop())
 
     assert result.error is not None and result.error.code == ARGUMENTS_INVALID
     assert speech.said == ()
@@ -250,6 +250,6 @@ def test_every_error_code_is_declared() -> None:
 
 
 async def test_the_output_keys_are_the_ones_declared() -> None:
-    result = await tool(FakeSpeech(report=SPOKEN)).execute(DECISION, ARGUMENTS)
+    result = await tool(FakeSpeech(report=SPOKEN)).execute(DECISION, ARGUMENTS, FakeStop())
 
     assert set(result.output) == SpeakOnlineTool.output_keys

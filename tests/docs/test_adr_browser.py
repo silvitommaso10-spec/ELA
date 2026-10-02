@@ -16,10 +16,11 @@ from ela.ports import Browser
 from ela.testing.fakes import FakeBrowser
 from ela.tools.browser import BrowserActTool, BrowserReadTool
 from ela.tools.verifiers import BrowserActVerifier, BrowserReadVerifier
-from tests.architecture.rules import MACHINE_LIBRARIES, RULES
+from tests.architecture.rules import MACHINE_LIBRARIES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.test_adr_composition import coded_routes
 from tests.docs.test_adr_filesystem import verifiers_today
+from tests.docs.test_adr_placement import _rules_up_to
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0052-browser.md"
@@ -63,9 +64,11 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
     text = conseguenze()
 
     assert "**cinquantasette**" in text
-    assert len(RULES) == 57, "no rule is new: rule 32 names playwright among its ways out"
+    assert len(_rules_up_to(57)) == 57, (
+        "no rule is new: rule 32 names playwright among its ways out"
+    )
     assert "**ventinove**" in text
-    assert len(tuple(port_protocols())) == 29
+    assert len(tuple(p for p in port_protocols() if p.__name__ != "TaskStop")) == 29  # ADR 0054
     assert "**quarantanove**" in text
     assert len(coded_routes()) == 49
 
@@ -138,7 +141,15 @@ def test_the_debt_of_the_stop_given_halfway_has_an_owner_a_day_and_its_defence()
     defence = "tests/api/test_browser_stopped_midway.py"
     test = "test_a_browser_step_stopped_midway_is_the_defect_of_m6_3c"
     assert f"`{defence}::{test}`" in section.replace("\n", "")
-    assert f"def {test}(" in (ROOT / defence).read_text(encoding="utf-8")
+    # Turned by M6.3c, which paid the debt (ADR 0054 §11): the ADR is immutable and keeps the name
+    # of the defence it wrote; the file now holds the behaviour, under the names the payment gives.
+    written = (ROOT / defence).read_text(encoding="utf-8")
+    assert f"def {test}(" not in written
+    payment = (ROOT / "docs" / "adr" / "0054-stopped-midway.md").read_text(encoding="utf-8")
+    assert "### 11. Il debito di ADR 0052 §15, saldato" in payment
+    turned = re.findall(r"def (test_[a-z0-9_]+)\(", written)
+    assert turned
+    assert all(f"`{name}`" in payment for name in turned)
 
 
 def test_the_answer_to_the_fingerprint_is_written_in_the_milestone_before_regenerating() -> None:

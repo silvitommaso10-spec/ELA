@@ -56,7 +56,7 @@ from ela.domain import (
     RawHeardSegment,
     RawTextLine,
 )
-from ela.ports import Clock, IdGenerator, PerceptionProbe, ScreenCapturePort
+from ela.ports import Clock, IdGenerator, PerceptionProbe, ScreenCapturePort, StopPoint, TaskStop
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 from ela.tools.captures import (
     ALREADY_EXPIRED,
@@ -319,6 +319,10 @@ class CaptureStore:
             path.unlink(missing_ok=True)
 
 
+CAPTURE_POINT: Final = "the capture"
+"""Where this tool listens for the stop of its task: its point of no return (M6.3c, ADR 0054 §3)."""
+
+
 class CaptureScreenTool(Tool):
     """Photographs one display into the capture store (§29 MEDIUM; ADR 0029).
 
@@ -356,6 +360,7 @@ class CaptureScreenTool(Tool):
 
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
+    stop_point: ClassVar[StopPoint] = StopPoint(here=CAPTURE_POINT, on_a_node=None)
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
     """Two captures are two photographs of two instants, and two files. So this runs under the
     STARTED protocol of ADR 0021 §1 and is never run twice for one step — which is also what
@@ -377,7 +382,7 @@ class CaptureScreenTool(Tool):
         self._capture = capture
         self._probe = probe
 
-    async def _run(self, arguments: JsonMapping) -> Outcome:
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         purpose = arguments.get("purpose")
         display = arguments.get("display", DEFAULT_DISPLAY)
         if not isinstance(purpose, str) or not purpose:
@@ -387,7 +392,7 @@ class CaptureScreenTool(Tool):
         refused = await self._refusal()
         if refused is not None:
             return refused
-        return await self._photograph(display)
+        return await self._photograph(display, stop)
 
     async def _refusal(self) -> Outcome | None:
         """Everything that has to be true before the helper is allowed to run, in order."""
@@ -421,9 +426,10 @@ class CaptureScreenTool(Tool):
             return Outcome({}, SCREEN_STORE_FULL, full, retryable=True)
         return None
 
-    async def _photograph(self, display: int) -> Outcome:
+    async def _photograph(self, display: int, stop: TaskStop) -> Outcome:
         """Run the helper into a destination this process owns, and clear up after a failure."""
         capture_id = str(self._ids.new_uuid())
+        stop.listen(CAPTURE_POINT)
         destination = self._store.reserve(capture_id)
         settled: Capture | None = None
         try:

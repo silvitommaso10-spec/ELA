@@ -22,7 +22,7 @@ from ela.domain import (
     PermissionOutcome,
     RiskLevel,
 )
-from ela.testing.fakes import FakeClock, FakeIdGenerator
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop
 from ela.tools import (
     CREATES,
     FS_READ,
@@ -76,12 +76,12 @@ def reader(root: Path) -> FsReadTool:
 
 
 async def write(tool: FsWriteTool, **arguments: object) -> tuple[ExecutionStatus, str | None]:
-    result = await tool.execute(decision(FS_WRITE), arguments)
+    result = await tool.execute(decision(FS_WRITE), arguments, FakeStop())
     return result.status, None if result.error is None else result.error.code
 
 
 async def read(tool: FsReadTool, **arguments: object) -> tuple[ExecutionStatus, str | None]:
-    result = await tool.execute(decision(FS_READ), arguments)
+    result = await tool.execute(decision(FS_READ), arguments, FakeStop())
     return result.status, None if result.error is None else result.error.code
 
 
@@ -159,7 +159,7 @@ async def test_the_refusal_names_the_path_and_never_the_body(root: Path) -> None
     (root / "note.md").write_text("x", encoding="utf-8")
 
     result = await writer(root).execute(
-        decision(FS_WRITE), {"path": "note.md", "body": "SEGRETO", "overwrite": False}
+        decision(FS_WRITE), {"path": "note.md", "body": "SEGRETO", "overwrite": False}, FakeStop()
     )
 
     assert result.error is not None
@@ -222,7 +222,7 @@ async def test_a_directory_is_not_a_file(root: Path) -> None:
     ids=["path", "body", "overwrite"],
 )
 async def test_arguments_of_the_wrong_type_are_refused(root: Path, arguments: dict) -> None:
-    result = await writer(root).execute(decision(FS_WRITE), arguments)
+    result = await writer(root).execute(decision(FS_WRITE), arguments, FakeStop())
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
@@ -237,7 +237,7 @@ async def test_arguments_of_the_wrong_type_are_refused(root: Path, arguments: di
 async def test_the_content_is_in_the_result(root: Path) -> None:
     (root / "note.md").write_text(BODY, encoding="utf-8")
 
-    result = await reader(root).execute(decision(FS_READ), {"path": "note.md"})
+    result = await reader(root).execute(decision(FS_READ), {"path": "note.md"}, FakeStop())
 
     assert result.status is ExecutionStatus.SUCCEEDED
     assert result.output["content"] == BODY
@@ -254,7 +254,7 @@ async def test_a_file_that_is_not_there_is_a_refusal_for_a_reader(root: Path) ->
 async def test_bytes_that_are_not_text_are_refused_and_never_guessed(root: Path) -> None:
     (root / "immagine.bin").write_bytes(b"\xff\xfe\x00binario")
 
-    result = await reader(root).execute(decision(FS_READ), {"path": "immagine.bin"})
+    result = await reader(root).execute(decision(FS_READ), {"path": "immagine.bin"}, FakeStop())
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
@@ -269,7 +269,7 @@ async def test_a_reader_refuses_a_path_of_the_wrong_shape(root: Path) -> None:
 
 
 async def test_a_reader_refuses_arguments_that_are_not_strings(root: Path) -> None:
-    result = await reader(root).execute(decision(FS_READ), {"path": 7})
+    result = await reader(root).execute(decision(FS_READ), {"path": 7}, FakeStop())
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
@@ -450,7 +450,7 @@ async def test_the_refusal_at_the_write_says_the_same_thing_and_it_is_still_true
     """
     status, code = await write(writer(root), path="c.md", body=BODY, overwrite=True)
     result = await writer(root).execute(
-        decision(FS_WRITE), {"path": "c.md", "body": BODY, "overwrite": True}
+        decision(FS_WRITE), {"path": "c.md", "body": BODY, "overwrite": True}, FakeStop()
     )
 
     assert (status, code) == (ExecutionStatus.FAILED, OVERWRITE_MISMATCH)

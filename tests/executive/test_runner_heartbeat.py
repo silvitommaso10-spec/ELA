@@ -25,6 +25,7 @@ from ela.domain import (
     TaskState,
 )
 from ela.executive import RunOutcome
+from ela.ports import TaskStop
 from ela.testing.fakes import FakeLocalBeat
 from tests.executive.support import HEARTBEAT_TTL, World, world
 from tests.permissions.support import ECHO, GUARDED_ECHO, NOTE
@@ -38,8 +39,10 @@ def outlasting_the_heartbeat(w: World) -> None:
     tool = w.fake_tools[ECHO.id]
     ran = tool.execute
 
-    async def long_step(decision: PermissionDecision, arguments: JsonMapping) -> ExecutionResult:
-        result = await ran(decision, arguments)
+    async def long_step(
+        decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+    ) -> ExecutionResult:
+        result = await ran(decision, arguments, stop)
         w.clock.advance(PAST_THE_TTL)
         w.power.source = PowerSource.BATTERY
         return result

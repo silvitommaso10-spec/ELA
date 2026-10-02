@@ -37,7 +37,7 @@ from ela.domain import DecisionId, PermissionDecision, PermissionOutcome, RiskLe
 from ela.infrastructure.machine import ProcessGroupLauncher
 from ela.permissions import TERMINAL_RUN
 from ela.ports import Command, Ending
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeLauncher
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeLauncher, FakeStop
 from ela.tools.programs import Programs
 from ela.tools.terminal import ARGUMENTS_UNPASSABLE, ArgumentLimits, Terminal, TerminalRunTool
 
@@ -102,7 +102,7 @@ async def the_last_asked(tool: TerminalRunTool, high: int) -> int:
 
 async def the_command_of(tool: TerminalRunTool, launcher: FakeLauncher, size: int) -> Command:
     """The command the tool would hand the launcher for an argument of ``size`` bytes."""
-    await tool.execute(allowed(), call("a" * size))
+    await tool.execute(allowed(), call("a" * size), FakeStop())
     return launcher.commands[-1]
 
 
@@ -123,8 +123,8 @@ async def test_on_macos_the_last_command_asked_about_starts_and_one_byte_more_do
     command = await the_command_of(tool, launcher, last)
     real = ProcessGroupLauncher(asyncio.Event())
 
-    started = await real.run(command)
-    refused = await real.run(one_byte_more(command))
+    started = await real.run(command, FakeStop())
+    refused = await real.run(one_byte_more(command), FakeStop())
 
     assert (started.ending, started.code) == (Ending.EXITED, 0)
     assert refused.ending is Ending.NOT_STARTED
@@ -144,8 +144,8 @@ async def test_on_linux_the_longest_argument_asked_about_starts_and_one_byte_mor
     command = await the_command_of(tool, launcher, one - 1)
     real = ProcessGroupLauncher(asyncio.Event())
 
-    started = await real.run(command)
-    refused = await real.run(one_byte_more(command))
+    started = await real.run(command, FakeStop())
+    refused = await real.run(one_byte_more(command), FakeStop())
 
     assert refusal is not None and refusal.code == ARGUMENTS_UNPASSABLE
     assert "in one argument" in refusal.message

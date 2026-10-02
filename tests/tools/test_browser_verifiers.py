@@ -16,7 +16,7 @@ import pytest
 from ela.domain import ExecutionResult, JsonMapping
 from ela.permissions import BROWSER_ACT, BROWSER_READ
 from ela.ports import BrowserFailed, BrowserStopped, Glanced
-from ela.testing.fakes import FakeBrowser, FakePage
+from ela.testing.fakes import FakeBrowser, FakePage, FakeStop
 from ela.tools.verifiers import (
     BROWSER_EXPECT_MISSING,
     BROWSER_EXPECT_VISIBLE,
@@ -36,7 +36,7 @@ def result(capability: str, output: JsonMapping) -> ExecutionResult:
 
 async def opened(browser: FakeBrowser) -> str:
     """A page the tool handed to the verifier, as the tool does."""
-    page = (await browser.open("https://example.com/", lambda url: True)).page
+    page = (await browser.open("https://example.com/", lambda url: True, FakeStop())).page
     await browser.keep(page)
     return page
 

@@ -43,6 +43,7 @@ from ela.testing.fakes import (
     FakeModelProvider,
     FakeModelRouter,
     FakeProviderRegistry,
+    FakeStop,
 )
 from ela.tools import ARGUMENTS_INVALID, MODEL_COMPLETE, MODEL_TOOL_NAME, ModelCompleteTool
 from tests.routing.support import routing_for
@@ -76,7 +77,7 @@ def tool(provider: FakeModelProvider) -> ModelCompleteTool:
 async def test_the_answer_comes_back_with_the_provider_the_model_and_the_usage(
     tool: ModelCompleteTool, provider: FakeModelProvider
 ) -> None:
-    result = await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+    result = await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
 
     assert result.status is ExecutionStatus.SUCCEEDED
     assert result.output["output"] == "una sintesi"
@@ -102,6 +103,7 @@ async def test_the_request_carries_what_the_arguments_said(
             "model_hint": "cheap",
             "parameters": {"max_output_tokens": 200},
         },
+        FakeStop(),
     )
 
     (request,) = provider.requests
@@ -118,7 +120,7 @@ async def test_a_request_without_a_purpose_names_the_capability(
 ) -> None:
     """``ProviderRequest.purpose`` is mandatory in the domain and optional in the schema: the
     tool fills it with the capability, never with a guess about the content."""
-    await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+    await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
 
     (request,) = provider.requests
     assert request.purpose == "model.complete"
@@ -136,9 +138,9 @@ async def test_the_task_type_chooses_the_profile(
 ) -> None:
     """The table of §25 read through the tool: the expensive profile for coding, the cheap one
     for routine, and neither of them typed by the caller."""
-    await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "coding"})
-    await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "routine"})
-    await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+    await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "coding"}, FakeStop())
+    await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "routine"}, FakeStop())
+    await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
 
     assert [request.model_hint for request in provider.requests] == ["quality", "cheap", "balanced"]
 
@@ -149,7 +151,9 @@ async def test_an_explicit_hint_wins_over_the_table(
     """ADR 0022 §3 (decision 5a): whoever wrote a hint has chosen. The provider is still the task
     type's, and the result says which profile actually went out."""
     result = await tool.execute(
-        allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "coding", "model_hint": "cheap"}
+        allowed(MODEL_COMPLETE),
+        {**ARGUMENTS, "task_type": "coding", "model_hint": "cheap"},
+        FakeStop(),
     )
 
     (request,) = provider.requests
@@ -165,7 +169,9 @@ async def test_the_purpose_does_not_route(
     description must not be able to change which model answers because somebody rewrote it."""
     for purpose in ("un riassunto", "CODING! quality! opus!"):
         await tool.execute(
-            allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "routine", "purpose": purpose}
+            allowed(MODEL_COMPLETE),
+            {**ARGUMENTS, "task_type": "routine", "purpose": purpose},
+            FakeStop(),
         )
 
     assert {request.model_hint for request in provider.requests} == {"cheap"}
@@ -180,7 +186,9 @@ async def test_a_provider_that_is_down_is_skipped_and_the_jump_is_recorded() -> 
     router, providers = routing_for(down, up)
     tool = ModelCompleteTool(router, providers, clock, ids)
 
-    result = await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "coding"})
+    result = await tool.execute(
+        allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "coding"}, FakeStop()
+    )
 
     assert result.status is ExecutionStatus.SUCCEEDED
     assert result.output["provider"] == "up"
@@ -197,7 +205,7 @@ async def test_no_provider_of_the_route_is_available() -> None:
     router, providers = routing_for(down, other)
     tool = ModelCompleteTool(router, providers, clock, ids)
 
-    result = await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+    result = await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
@@ -212,7 +220,9 @@ async def test_an_unknown_task_type_fails_before_the_network(
 ) -> None:
     """Decision 7b: the vocabulary is closed, and a type nobody mapped is a bug in the plan, not
     a case to cover with the default route."""
-    result = await tool.execute(allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "telepathy"})
+    result = await tool.execute(
+        allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "telepathy"}, FakeStop()
+    )
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
@@ -232,7 +242,7 @@ async def test_a_route_naming_a_provider_the_registry_lost_is_unavailable() -> N
         FakeModelRouter(provider="ghost"), FakeProviderRegistry(), FakeClock(), FakeIdGenerator()
     )
 
-    result = await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+    result = await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
@@ -247,9 +257,11 @@ async def test_the_router_is_asked_exactly_what_the_arguments_said() -> None:
     tool = ModelCompleteTool(router, registry, FakeClock(), FakeIdGenerator())
 
     await tool.execute(
-        allowed(MODEL_COMPLETE), {**ARGUMENTS, "task_type": "coding", "model_hint": "cheap"}
+        allowed(MODEL_COMPLETE),
+        {**ARGUMENTS, "task_type": "coding", "model_hint": "cheap"},
+        FakeStop(),
     )
-    await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+    await tool.execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
 
     assert router.calls == (("coding", "cheap"), (None, None))
 
@@ -287,7 +299,7 @@ async def test_the_router_is_asked_exactly_what_the_arguments_said() -> None:
 async def test_bad_arguments_fail_before_the_network(
     tool: ModelCompleteTool, provider: FakeModelProvider, arguments: dict[str, object]
 ) -> None:
-    result = await tool.execute(allowed(MODEL_COMPLETE), arguments)
+    result = await tool.execute(allowed(MODEL_COMPLETE), arguments, FakeStop())
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
@@ -304,7 +316,9 @@ async def test_a_decision_that_does_not_allow_stops_the_tool_before_the_provider
     """The contract of every tool, and the reason rule 25 exists: content leaves only under an
     ALLOWED decision (§27, §57)."""
     with pytest.raises(NotAllowedError):
-        await tool.execute(allowed(MODEL_COMPLETE, outcome=PermissionOutcome.DENIED), ARGUMENTS)
+        await tool.execute(
+            allowed(MODEL_COMPLETE, outcome=PermissionOutcome.DENIED), ARGUMENTS, FakeStop()
+        )
     assert provider.requests == ()
 
 
@@ -319,7 +333,7 @@ async def test_every_provider_code_arrives_unchanged(code: str, retryable: bool)
     error = ErrorMetadata(code=code, message=f"{code} happened", retryable=retryable)
     provider = FakeModelProvider(FakeClock(), FakeIdGenerator(), error=error)
 
-    result = await tool_with(provider).execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+    result = await tool_with(provider).execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
@@ -334,7 +348,7 @@ async def test_a_rate_limit_stays_retryable_all_the_way_to_the_result() -> None:
     error = ErrorMetadata(code=PROVIDER_RATE_LIMITED, message="429", retryable=True)
     provider = FakeModelProvider(FakeClock(), FakeIdGenerator(), error=error)
 
-    result = await tool_with(provider).execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+    result = await tool_with(provider).execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
 
     assert result.error is not None
     assert result.error.retryable is True
@@ -344,7 +358,7 @@ async def test_an_unconfigured_provider_answers_without_touching_the_network() -
     """ADR 0020 §2 read from the tool's side: no key is a fact, not a crash."""
     provider = FakeModelProvider(FakeClock(), FakeIdGenerator(), status=ProviderStatus.UNAVAILABLE)
 
-    result = await tool_with(provider).execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+    result = await tool_with(provider).execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
 
     assert result.error is not None
     assert result.error.code == PROVIDER_UNAVAILABLE
@@ -356,7 +370,7 @@ async def test_a_failed_call_still_reports_what_it_consumed() -> None:
     error = ErrorMetadata(code=PROVIDER_RATE_LIMITED, message="429", retryable=True)
     provider = FakeModelProvider(FakeClock(), FakeIdGenerator(), error=error)
 
-    result = await tool_with(provider).execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+    result = await tool_with(provider).execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
 
     assert result.usage is not None
     assert result.usage.input_tokens > 0
@@ -393,7 +407,7 @@ class EmptyProvider:
 
 async def test_an_empty_answer_is_refused_here_and_not_one_layer_later() -> None:
     result = await tool_with(EmptyProvider()).execute(  # type: ignore[arg-type]
-        allowed(MODEL_COMPLETE), ARGUMENTS
+        allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop()
     )
 
     assert result.status is ExecutionStatus.FAILED
@@ -414,12 +428,12 @@ async def test_no_failure_message_repeats_the_users_content() -> None:
     for code in sorted(PROVIDER_ERROR_CODES):
         error = ErrorMetadata(code=code, message=f"{code} happened", retryable=False)
         provider = FakeModelProvider(FakeClock(), FakeIdGenerator(), error=error)
-        result = await tool_with(provider).execute(allowed(MODEL_COMPLETE), ARGUMENTS)
+        result = await tool_with(provider).execute(allowed(MODEL_COMPLETE), ARGUMENTS, FakeStop())
         assert result.error is not None
         assert INPUT not in result.error.message
         assert INPUT not in str(result.error.details)
     bad = await tool_with(FakeModelProvider(FakeClock(), FakeIdGenerator())).execute(
-        allowed(MODEL_COMPLETE), {"input": INPUT, "purpose": 7}
+        allowed(MODEL_COMPLETE), {"input": INPUT, "purpose": 7}, FakeStop()
     )
     assert bad.error is not None
     assert INPUT not in bad.error.message

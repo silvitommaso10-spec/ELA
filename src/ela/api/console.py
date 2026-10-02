@@ -41,6 +41,7 @@ from ela.api.companion import (
     counted,
     finished_title,
     form,
+    halt_phrase,
     live_title,
     may_see,
     presence,
@@ -67,6 +68,7 @@ from ela.api.tasks import cancel_task, finished_tasks, list_tasks, read_task
 from ela.domain import (
     ApprovalId,
     DeviceRole,
+    Halt,
     OperatingSystem,
     PrivacyLevel,
     StepState,
@@ -245,11 +247,12 @@ def _step(one: StepOut, identity: Identity, level: PrivacyLevel | None) -> pages
     return pages.fragment(HERE, "step", what=f"{said} · {one.state.value}")
 
 
-def _row(one: TaskOut, identity: Identity) -> pages.Markup:
+def _row(one: TaskOut, identity: Identity, halt: Halt | None = None) -> pages.Markup:
     """A task as a row of the tile: its goal or its id, its state, and the way to its summary.
 
     Live or finished, the same row: a finished task has a summary too, and reaching it is what
-    decision 22 of M17.2 had left to its id alone (M17.2b)."""
+    decision 22 of M17.2 had left to its id alone (M17.2b). A stopped one says what the step in
+    progress had done (M6.3c, ADR 0054 §8)."""
     return pages.fragment(
         HERE,
         "row-task",
@@ -257,7 +260,14 @@ def _row(one: TaskOut, identity: Identity) -> pages.Markup:
         what=_title(one.goal, one.id, identity, one.max_privacy),
         key=one.state.value,
         id=one.id,
+        halt=_halt(halt),
     )
+
+
+def _halt(halt: Halt | None) -> pages.Markup:
+    if halt is None:
+        return pages.Markup("")
+    return pages.fragment(HERE, "halt", text=halt_phrase(halt))
 
 
 def _tiles(
@@ -290,7 +300,7 @@ def _tiles(
                         *(_row(one, identity) for one in recent),
                         *(() if recent else (pages.fragment(HERE, "notice", text=NO_LIVE),)),
                         pages.fragment(HERE, "group", title=finished_title(SHOWN, finished.total)),
-                        *(_row(one, identity) for one in finished.tasks),
+                        *(_row(one, identity, one.halt) for one in finished.tasks),
                         *(
                             ()
                             if finished.tasks
@@ -582,6 +592,15 @@ async def summary(ela: ElaDep, identity: IdentityDep, id: UUID) -> Response:
     seen = may_see(identity, detail.max_privacy)
     pairs = [
         pages.fragment(HERE, "pair", key="Stato", value=detail.state.value),
+        *(
+            ()
+            if detail.halt is None
+            else (
+                pages.fragment(
+                    HERE, "pair", key="Lo step in corso", value=halt_phrase(detail.halt)
+                ),
+            )
+        ),
         pages.fragment(HERE, "pair", key="Creato", value=when(detail.created_at)),
         pages.fragment(HERE, "pair", key="Dove può andare", value=detail.max_privacy.value),
         pages.fragment(
@@ -651,7 +670,9 @@ async def confirm(ela: ElaDep, identity: IdentityDep, id: Annotated[UUID, Query(
 
 
 @router.post("/cancel")
-async def cancel(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+async def cancel(
+    request: Request, ela: ElaDep, identity: IdentityDep, running: RunningDep
+) -> Response:
     """The form of the confirmation page: the task stops, signed by the Command Center.
 
     Stopping does not ask to see: it works for a task whose content stays on the Mac too, because
@@ -659,7 +680,7 @@ async def cancel(request: Request, ela: ElaDep, identity: IdentityDep) -> Respon
     """
     fields = form(await request.body())
     found = await _live(ela, UUID(fields.get("id", "")))
-    await cancel_task(found.id, CancelIn(reason=STOPPED), ela, identity)
+    await cancel_task(found.id, CancelIn(reason=STOPPED), ela, identity, running)
     return RedirectResponse(f"/console/task?id={found.id}", status_code=303)
 
 

@@ -31,7 +31,7 @@ from ela.domain import (
 )
 from ela.ports import ROUTING_UNKNOWN_TASK_TYPE, VERIFICATION_UNKNOWN_CONDITION
 from ela.routing import BALANCED, QUALITY, ModelRouter
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider, FakeStop
 from ela.tools import (
     CAPTURE_CODES,
     CAPTURE_DECLARED_MISMATCH,
@@ -151,7 +151,7 @@ def test_echo_verifier_declares_itself(echo: EchoVerifier) -> None:
 
 async def test_echo_verifier_passes_when_the_output_repeats_the_message(echo: EchoVerifier) -> None:
     tool = EchoTool(FakeClock(), FakeIdGenerator())
-    result = await tool.execute(allowed(CORE_ECHO), {"message": "ciao"})
+    result = await tool.execute(allowed(CORE_ECHO), {"message": "ciao"}, FakeStop())
     assert await echo.verify((ECHO_MESSAGE_MATCHES,), {"message": "ciao"}, result) == ()
 
 
@@ -201,7 +201,9 @@ def verifier(root: Path) -> WriteNoteVerifier:
 
 
 async def written(tool: WriteNoteTool, path: str = NOTE, body: str = BODY) -> ExecutionResult:
-    result = await tool.execute(allowed(WORKSPACE_WRITE_NOTE), {"path": path, "body": body})
+    result = await tool.execute(
+        allowed(WORKSPACE_WRITE_NOTE), {"path": path, "body": body}, FakeStop()
+    )
     assert result.status is ExecutionStatus.SUCCEEDED
     return result
 

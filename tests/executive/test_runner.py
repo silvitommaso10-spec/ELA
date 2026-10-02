@@ -406,7 +406,10 @@ async def test_the_resumed_step_is_not_placed_a_second_time(w: World) -> None:
 async def test_a_rejected_request_leaves_the_task_denied_and_the_next_run_says_so(
     w: World,
 ) -> None:
-    task, _ = await w.queued(GUARDED_ECHO.id)
+    """The no written by the engine alone leaves the step that asked RUNNING; the door of the next
+    run closes it — it never acted — and counts it among the steps it handled (M6.3c). The reason
+    stays empty: that one is M13.1c's (decision 4 of the session)."""
+    task, (step,) = await w.queued(GUARDED_ECHO.id)
     await w.runner.run(task.id)
     (request,) = await w.approvals.for_task(task.id)
     answer = await w.answered(request, status=ApprovalStatus.REJECTED)
@@ -415,7 +418,9 @@ async def test_a_rejected_request_leaves_the_task_denied_and_the_next_run_says_s
     run = await w.runner.run(task.id)
 
     assert run.outcome is RunOutcome.DENIED
-    assert run.steps == ()
+    assert run.steps == (step.id,)
+    assert run.reason is None
+    assert await w.step_state(task.id, step.id) is StepState.CANCELLED
 
 
 async def test_a_standing_grant_lets_a_guarded_step_run_without_asking(w: World) -> None:

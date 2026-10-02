@@ -57,7 +57,7 @@ from ela.ports import (
     NotFoundError,
     TaskRepository,
 )
-from ela.tasks.engine import TaskEngine
+from ela.tasks.engine import TERMINAL_STATES, TaskEngine
 
 __all__ = [
     "DEFAULT_ASSIGNMENT_CAP",
@@ -243,7 +243,12 @@ class Assignments:
     async def standing(self, task_id: TaskId, step_id: StepId) -> Stand:
         """The latest assignment of a step, as it is now — read, never written."""
         held = await self._store.for_step(task_id, step_id)
-        if not held or await self._released(held[-1]):
+        if (
+            not held
+            or held[-1].state is AssignmentState.WITHDRAWN
+            or await self._released(held[-1])
+        ):
+            # A withdrawn offer is work nobody took and nobody will (M6.3c): no standing at all.
             return Stand(Standing.NONE, None)
         last = held[-1]
         if last.state is AssignmentState.DELIVERED:
@@ -364,7 +369,10 @@ class Assignments:
         expires_at = min(now + self._ttl, work.claimed_at + self._cap)
         if expires_at <= work.expires_at:
             raise AssignmentAtCapError(assignment_id, work.expires_at)
-        await self._engine.heartbeat(work.task_id)
+        if (await self._repository.get(work.task_id)).state not in TERMINAL_STATES:
+            # A task that ended while the node works has no life left to sign: the claim still
+            # lives its TTL more, so the delivery is not refused as late (M6.3c, ADR 0054 §9).
+            await self._engine.heartbeat(work.task_id)
         return await self._store.renew(
             assignment_id, device_id=device_id, now=now, expires_at=expires_at
         )
@@ -391,6 +399,20 @@ class Assignments:
             device_id=assignment.device_id,
         )
         return Lapse.RELEASED
+
+    async def withdraw(self, assignment: Assignment) -> Assignment:
+        """Take an offer back before any node takes it: its task ended (M6.3c, ADR 0054 §9).
+
+        ``WITHDRAWN`` only if it is still ``OFFERED``: a claim that came first wins, and the row
+        comes back as it is — the caller reads which, and leaves a claimed step to its node.
+        """
+        return await self._store.withdraw(assignment.id, now=self._clock.now())
+
+    async def close_lapsed(self, assignment: Assignment) -> None:
+        """Write the expiry of work whose task ended and whose time ran out (M6.3c, ADR 0054 §9):
+        the half of :meth:`lapse` that a task over still needs — nothing goes back in play, so
+        nothing is released, and the executor closes the step from what the store holds."""
+        await self._store.expire(assignment.id, now=self._clock.now())
 
     async def cut_short(self, device_id: DeviceId) -> int:
         """The revocation is an expiry (M12.1, D17): every live assignment of the node expires now,

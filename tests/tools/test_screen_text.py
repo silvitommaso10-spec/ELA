@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from ela.domain import ExecutionStatus, PermissionDecision, RawRecognition, RawTextLine
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeTextRecognition
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeStop, FakeTextRecognition
 from ela.tools import (
     ARGUMENTS_INVALID,
     PERCEPTION_READ_SCREEN_TEXT,
@@ -88,7 +88,9 @@ def capture(store: CaptureStore, *, age: timedelta | None = None) -> Path:
 async def run(
     tool: ReadScreenTextTool, decision: PermissionDecision, **arguments: object
 ) -> object:
-    return await tool.execute(decision, {"capture_id": CAPTURE_ID, "purpose": "x", **arguments})
+    return await tool.execute(
+        decision, {"capture_id": CAPTURE_ID, "purpose": "x", **arguments}, FakeStop()
+    )
 
 
 # ----------------------------------------------------------------------------------------
@@ -375,7 +377,9 @@ async def test_arguments_that_are_not_arguments_are_refused(
     tool, recognition, store = tool_for(tmp_path)
     capture(store)
 
-    result = await tool.execute(DECISION, {"capture_id": CAPTURE_ID, "purpose": "x", **arguments})
+    result = await tool.execute(
+        DECISION, {"capture_id": CAPTURE_ID, "purpose": "x", **arguments}, FakeStop()
+    )
 
     assert result.error is not None
     assert result.error.code == ARGUMENTS_INVALID

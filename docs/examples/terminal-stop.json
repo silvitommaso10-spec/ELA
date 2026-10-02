@@ -1,0 +1,27 @@
+{
+  "_nota": [
+    "La prova a mano di M6.3c per il «ferma» dopo l'exec: /bin/sleep 97 dorme finché qualcuno",
+    "non lo ferma, e il numero 97 lo rende riconoscibile nella tabella dei processi — è così che",
+    "lo script vede lo step in corso. Serve `bin/sleep` in ELA_TERMINAL_PROGRAMS; toglilo quando",
+    "hai finito. Il task finisce CANCELLED, e `run` dice che lo step in corso aveva già agito:",
+    "il programma era partito.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "far girare un programma che dorme finché non lo si ferma",
+  "steps": [
+    {
+      "id": "c6d3e2f1-7a48-4c3b-9e05-000000000001",
+      "goal": "dormire novantasette secondi",
+      "required_capabilities": ["terminal.run"],
+      "arguments": {
+        "program": "bin/sleep",
+        "args": ["97"],
+        "purpose": "la prova del ferma dopo l'exec"
+      },
+      "risk": "HIGH",
+      "expected_result": "il programma dorme finché il task non è fermato",
+      "success_conditions": ["terminal.exit_code_matches"],
+      "requires_authorization": true
+    }
+  ]
+}

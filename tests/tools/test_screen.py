@@ -22,7 +22,7 @@ import pytest
 
 from ela.domain import ExecutionStatus, RawCapture, RawObservation
 from ela.ports import NotAllowedError
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeProbe, FakeScreenCapture
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeProbe, FakeScreenCapture, FakeStop
 from ela.tools import (
     ARGUMENTS_INVALID,
     CAPTURE_MALFORMED,
@@ -84,7 +84,7 @@ async def run(
     subject: CaptureScreenTool, **arguments: object
 ) -> tuple[str | None, dict[str, object]]:
     """The tool's result, as ``(error code or None, output)``."""
-    result = await subject.execute(DECISION, {"purpose": PURPOSE, **arguments})
+    result = await subject.execute(DECISION, {"purpose": PURPOSE, **arguments}, FakeStop())
     code = None if result.error is None else result.error.code
     return code, dict(result.output)
 
@@ -121,7 +121,7 @@ async def test_the_refusal_says_what_to_do_about_it(tmp_path: Path) -> None:
     §2), so the only correct thing ELA can do is say precisely where a human grants it."""
     subject, _, _ = tool(tmp_path / "captures", observed=DENIED)
 
-    result = await subject.execute(DECISION, {"purpose": PURPOSE})
+    result = await subject.execute(DECISION, {"purpose": PURPOSE}, FakeStop())
 
     assert result.error is not None
     assert "Screen & System Audio Recording" in result.error.message
@@ -134,7 +134,7 @@ async def test_a_denied_permission_is_a_failed_result_and_not_an_exception(
     """§33: the task learns what happened; it does not blow up."""
     subject, _, _ = tool(tmp_path / "captures", observed=DENIED)
 
-    result = await subject.execute(DECISION, {"purpose": PURPOSE})
+    result = await subject.execute(DECISION, {"purpose": PURPOSE}, FakeStop())
 
     assert result.status is ExecutionStatus.FAILED
     assert result.tool_name == SCREEN_TOOL_NAME
@@ -144,7 +144,7 @@ async def test_a_denied_permission_is_not_retryable(tmp_path: Path) -> None:
     """It can succeed later, but only after a human acts: retrying on its own changes nothing."""
     subject, _, _ = tool(tmp_path / "captures", observed=DENIED)
 
-    result = await subject.execute(DECISION, {"purpose": PURPOSE})
+    result = await subject.execute(DECISION, {"purpose": PURPOSE}, FakeStop())
 
     assert result.error is not None and not result.error.retryable
 
@@ -153,7 +153,7 @@ async def test_a_permission_that_cannot_be_read_attempts_nothing_either(tmp_path
     """A doubt is not a yes (§33). Retryable, because the next read may answer."""
     subject, helper, kept = tool(tmp_path / "captures", observed=UNREADABLE)
 
-    result = await subject.execute(DECISION, {"purpose": PURPOSE})
+    result = await subject.execute(DECISION, {"purpose": PURPOSE}, FakeStop())
 
     assert result.error is not None
     assert result.error.code == SCREEN_NOT_OBSERVABLE
@@ -179,7 +179,7 @@ async def test_the_permission_is_read_at_the_instant_of_the_capture(tmp_path: Pa
         FakeIdGenerator(),
     )
 
-    await subject.execute(DECISION, {"purpose": PURPOSE})
+    await subject.execute(DECISION, {"purpose": PURPOSE}, FakeStop())
 
     assert probe.calls == (frozenset({ProbeFamily.PERMISSIONS}),)
 
@@ -200,7 +200,7 @@ async def test_a_machine_with_no_capture_helper_says_so_before_reading_a_permiss
         store(tmp_path / "captures"), helper, probe, clock(), FakeIdGenerator()
     )
 
-    result = await subject.execute(DECISION, {"purpose": PURPOSE})
+    result = await subject.execute(DECISION, {"purpose": PURPOSE}, FakeStop())
 
     assert result.error is not None
     assert result.error.code == SCREEN_UNSUPPORTED
@@ -286,7 +286,7 @@ async def test_a_purpose_that_is_not_a_non_empty_string_is_refused_before_any_io
 ) -> None:
     subject, helper, kept = tool(tmp_path / "captures")
 
-    result = await subject.execute(DECISION, {"purpose": purpose})
+    result = await subject.execute(DECISION, {"purpose": purpose}, FakeStop())
 
     assert result.error is not None and result.error.code == ARGUMENTS_INVALID
     assert helper.calls == ()
@@ -317,7 +317,7 @@ async def test_a_helper_that_exits_badly_leaves_no_residue(tmp_path: Path) -> No
         capture=FakeScreenCapture(payload=png()[:10], report=RawCapture(exit_code=1)),
     )
 
-    result = await subject.execute(DECISION, {"purpose": PURPOSE})
+    result = await subject.execute(DECISION, {"purpose": PURPOSE}, FakeStop())
 
     assert result.error is not None
     assert result.error.code == SCREEN_CAPTURE_FAILED
@@ -335,7 +335,7 @@ async def test_a_helper_that_is_killed_for_overstaying_leaves_no_residue(tmp_pat
         ),
     )
 
-    result = await subject.execute(DECISION, {"purpose": PURPOSE})
+    result = await subject.execute(DECISION, {"purpose": PURPOSE}, FakeStop())
 
     assert result.error is not None
     assert result.error.code == SCREEN_TIMEOUT
@@ -374,7 +374,7 @@ async def test_a_failure_removes_only_what_this_capture_left(tmp_path: Path) -> 
     write(directory, "9c858901-8a57-4791-81fe-4c455b099bc9.png", png())
     subject, _, kept = tool(directory, capture=FakeScreenCapture(payload=None))
 
-    await subject.execute(DECISION, {"purpose": PURPOSE})
+    await subject.execute(DECISION, {"purpose": PURPOSE}, FakeStop())
 
     assert held(kept.directory) == ["9c858901-8a57-4791-81fe-4c455b099bc9.png"]
 
@@ -415,7 +415,7 @@ async def test_the_count_ceiling_refuses_and_does_not_evict(tmp_path: Path) -> N
     write(directory, "9c858901-8a57-4791-81fe-4c455b099bc9.png", png())
     subject, helper, kept = tool(directory, capture_max_count=1)
 
-    result = await subject.execute(DECISION, {"purpose": PURPOSE})
+    result = await subject.execute(DECISION, {"purpose": PURPOSE}, FakeStop())
 
     assert result.error is not None
     assert result.error.code == SCREEN_STORE_FULL
@@ -530,7 +530,7 @@ async def test_the_tool_refuses_a_decision_about_another_capability(tmp_path: Pa
     subject, helper, _ = tool(tmp_path / "captures")
 
     with pytest.raises(NotAllowedError):
-        await subject.execute(allowed(CORE_ECHO), {"purpose": PURPOSE})
+        await subject.execute(allowed(CORE_ECHO), {"purpose": PURPOSE}, FakeStop())
     assert helper.calls == ()
 
 

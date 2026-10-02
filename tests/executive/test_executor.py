@@ -113,7 +113,12 @@ async def test_a_task_that_is_not_executing_is_refused(w: World) -> None:
 
 
 @pytest.mark.parametrize("state", [TaskState.CANCELLED, TaskState.COMPLETED, TaskState.FAILED])
-async def test_a_terminal_task_is_refused(w: World, state: TaskState) -> None:
+async def test_a_terminal_task_runs_no_tool_and_its_open_step_is_closed(
+    w: World, state: TaskState
+) -> None:
+    """Until M6.3c a task that had ended was refused with ``ExecutorError``, and a step it had left
+    RUNNING stayed so. Now the call runs nothing and closes that step — ``CANCELLED``, the tool did
+    not act — and a step already closed is left as it is (ADR 0054 §5–§6)."""
     task, step = await w.running(ECHO.id)
     if state is TaskState.CANCELLED:
         await w.engine.cancel(task.id)
@@ -125,10 +130,15 @@ async def test_a_terminal_task_is_refused(w: World, state: TaskState) -> None:
     assert (await w.task(task.id)).state is state
     before = len(await w.events())
     calls = len(w.tool(ECHO.id).calls)
-    with pytest.raises(ExecutorError, match=f"needs an EXECUTING task, not {state.value}"):
-        await w.execute(task.id, step.id)
-    assert len(await w.events()) == before
+    execution = await w.execute(task.id, step.id)
+    assert execution.task.state is state
     assert len(w.tool(ECHO.id).calls) == calls
+    if state is TaskState.COMPLETED:
+        assert len(await w.events()) == before
+        assert await w.step_state(task.id, step.id) is StepState.COMPLETED
+    else:
+        assert (await w.event_types(task.id))[-1] is E.STEP_CANCELLED
+        assert await w.step_state(task.id, step.id) is StepState.CANCELLED
 
 
 async def test_an_unknown_step_is_refused(w: World) -> None:
@@ -331,10 +341,15 @@ async def test_denied_denies_the_task_and_runs_nothing(w: World) -> None:
     assert execution.result is None and execution.approval is None
     assert execution.task.state is TaskState.DENIED
     assert w.tool(NOTE.id).calls == ()
-    assert (await w.event_types(task.id))[-2:] == [E.PERMISSION_DECIDED, E.TASK_DENIED]
-    denied = (await w.events(task.id))[-1]
+    assert (await w.event_types(task.id))[-3:] == [
+        E.PERMISSION_DECIDED,
+        E.TASK_DENIED,
+        E.STEP_CANCELLED,
+    ]
+    denied = (await w.events(task.id))[-2]
     assert denied.decision_id == execution.decision.id
-    assert await w.step_state(task.id, step.id) is StepState.RUNNING  # the task is terminal
+    # The denied step did not act, and does not stay RUNNING in a task that ended (M6.3c).
+    assert await w.step_state(task.id, step.id) is StepState.CANCELLED
 
 
 async def test_critical_risk_is_denied_too(w: World) -> None:
@@ -782,7 +797,7 @@ async def test_a_grant_that_vanished_fails_the_step_and_runs_nothing() -> None:
 
 
 class _RaisingTool(FakeTool):
-    async def execute(self, decision: PermissionDecision, arguments: Any) -> Any:
+    async def execute(self, decision: PermissionDecision, arguments: Any, stop: Any) -> Any:
         raise RuntimeError("the disk caught fire")
 
 

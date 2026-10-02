@@ -38,10 +38,12 @@ from ela.domain import (
     AuditEventType,
     DeviceId,
     ExecutionStatus,
+    Halt,
     PrivacyLevel,
     StepId,
     StepState,
     Task,
+    TaskEventType,
     TaskId,
     TaskState,
 )
@@ -49,7 +51,8 @@ from ela.executive.assignments import Assignments, Lapse, Stand, Standing
 from ela.executive.errors import RunnerError
 from ela.executive.executor import Execution, Executor
 from ela.ports import AuditLog, ExecutionResultStore, LocalBeat, TaskRepository
-from ela.tasks.engine import TaskEngine
+from ela.tasks.engine import TERMINAL_STATES, TaskEngine
+from ela.tasks.errors import TaskError
 from ela.tasks.graph import GraphState
 
 __all__ = ["OUTCOMES", "RUNNABLE_STATES", "Run", "RunOutcome", "TaskRunner"]
@@ -70,7 +73,9 @@ class RunOutcome(StrEnum):
     WAITING_DEVICE = "waiting_device"
     """No node was eligible: the task is QUEUED and does **not** fail (ADR 0017 §6)."""
     CANCELLED = "cancelled"
-    """Somebody stopped the task (§65). A decision, and the audit says whose."""
+    """Somebody stopped the task (§65). A decision, and the audit says whose. Said at the door and,
+    since M6.3c, from inside the walk too — a stop under a running step is an outcome, never a 409
+    (ADR 0054 §6) —, with the words of the stop and what the step in progress had done."""
     EXPIRED = "expired"
     """The task ran out of time (§14). Nobody decided anything; a deadline passed."""
     ASSIGNED = "assigned"
@@ -151,7 +156,13 @@ class Run(NamedTuple):
     ``None`` for every other outcome: those say what happened. The runner still writes nothing of
     its own (ADR 0019) — every reason is the placement's, the assignment's, the decision's or the
     error's, passed on rather than composed here.
+
+    ``CANCELLED`` carries one too, since M6.3c, and never an empty one: the words of the stop, from
+    its audit event (ADR 0054 §7).
     """
+    halt: Halt | None = None
+    """What the step in progress had done when the task was stopped (M6.3c, ADR 0054 §7); ``None``
+    for every outcome but ``CANCELLED``, and for a stop that found no step in progress."""
 
 
 def _why(execution: Execution) -> str | None:
@@ -242,10 +253,37 @@ class TaskRunner:
         ``test_a_plan_of_many_steps_releases_each_step_at_most_once_per_call`` for the half that
         releases.
         """
+        walked = await self._walk(task_id)
+        if walked.task.state in TERMINAL_STATES:
+            return walked
+        # The last act under the lock of ``run`` (M6.3c, ADR 0054 §5): a stop that landed after the
+        # walk's last write is seen here, and nobody else would close its step — the route of the
+        # stop leaves the closing to whoever holds the lock. After this read, nothing awaits until
+        # the route releases the lock.
+        task = await self._repository.get(task_id)
+        if task.state in TERMINAL_STATES:
+            return await self._ended(task, list(walked.steps), list(walked.executions))
+        return walked
+
+    async def answer(self, task_id: TaskId) -> Run:
+        """What ``run`` would answer at the door for a task that has ended, **without closing
+        anything** (M6.3c, decision 16 of the review): for a ``run`` that finds the lock taken by
+        somebody else, who closes what is open. Never a ``409`` for a task that was stopped."""
+        task = await self._repository.get(task_id)
+        return Run(
+            task,
+            OUTCOMES[task.state],
+            (),
+            (),
+            await self._door_reason(task),
+            await self._executor.halt(task_id),
+        )
+
+    async def _walk(self, task_id: TaskId) -> Run:
         task = await self._repository.get(task_id)
         max_privacy = task.max_privacy
         if task.state in OUTCOMES:
-            return Run(task, OUTCOMES[task.state], (), ())
+            return await self._at_the_door(task)
         if task.state not in RUNNABLE_STATES:
             raise RunnerError(
                 task_id, f"a plan is walked from QUEUED or EXECUTING, not from {task.state.value}"
@@ -257,9 +295,27 @@ class TaskRunner:
                 "the plan has no steps: there is nothing to walk, and no result to close the "
                 "task with",
             )
-
         steps: list[StepId] = []
         executions: list[Execution] = []
+        try:
+            return await self._loop(task, graph, max_privacy, steps, executions)
+        except TaskError:
+            # A write of this walk found the task ended under it (M6.3c, ADR 0054 §6): a stop is an
+            # outcome, never a 409. Anything else that raises is what it was.
+            task = await self._repository.get(task_id)
+            if task.state not in TERMINAL_STATES:
+                raise
+            return await self._ended(task, steps, executions)
+
+    async def _loop(
+        self,
+        task: Task,
+        graph: GraphState,
+        max_privacy: PrivacyLevel,
+        steps: list[StepId],
+        executions: list[Execution],
+    ) -> Run:
+        task_id = task.id
         while True:
             if graph.is_blocked:
                 task = await self._fail(task_id)
@@ -292,15 +348,9 @@ class TaskRunner:
                 if execution is not None:
                     steps.append(step_id)
                     executions.append(execution)
-                    task = execution.task
+                    task = await self._repository.get(task_id)
                     if task.state in OUTCOMES:
-                        return Run(
-                            task,
-                            OUTCOMES[task.state],
-                            tuple(steps),
-                            tuple(executions),
-                            _why(execution),
-                        )
+                        return await self._closing(task, execution, steps, executions)
                 graph = await self._engine.graph(task_id)
                 continue
             placement = await self._node(task_id, step_id, graph, max_privacy)
@@ -333,12 +383,88 @@ class TaskRunner:
                 )
             steps.append(step_id)
             executions.append(execution)
-            task = execution.task
+            # Read again, never believed (M6.3c, ADR 0054 §6): ``execution.task`` is the task as
+            # the executor read it before the tool, and a stop since then is only in the store.
+            task = await self._repository.get(task_id)
             if task.state in OUTCOMES:
-                return Run(
-                    task, OUTCOMES[task.state], tuple(steps), tuple(executions), _why(execution)
-                )
+                return await self._closing(task, execution, steps, executions)
             graph = await self._engine.graph(task_id)
+
+    # ----------------------------------------------------------------------------------
+    # A task that ended: by this walk, or under it (M6.3c, ADR 0054 §5–§7)
+    # ----------------------------------------------------------------------------------
+
+    async def _closing(
+        self, task: Task, execution: Execution, steps: list[StepId], executions: list[Execution]
+    ) -> Run:
+        """The walk stops on a task in a state of :data:`OUTCOMES`. One the walk itself reached is
+        reported as it always was, with the executor's reason; a stop, or an end somebody else
+        wrote, is :meth:`_ended`."""
+        if task.state is TaskState.CANCELLED or (
+            task.state in TERMINAL_STATES and execution.task.state is not task.state
+        ):
+            return await self._ended(task, steps, executions)
+        return Run(task, OUTCOMES[task.state], tuple(steps), tuple(executions), _why(execution))
+
+    async def _ended(self, task: Task, steps: list[StepId], executions: list[Execution]) -> Run:
+        """A task that ended under the walk: its open step closed, its reason passed, its halt.
+
+        The reason is **never empty** (decision 4 of the session): the words of the transition that
+        ended the task, which the engine always writes.
+        """
+        closed = await self._executor.close_open_step(task.id)
+        if closed is not None and closed.step_id not in steps:
+            steps.append(closed.step_id)
+            executions.append(closed)
+        return Run(
+            task,
+            OUTCOMES[task.state],
+            tuple(steps),
+            tuple(executions),
+            await self._transition_reason(task),
+            await self._executor.halt(task.id),
+        )
+
+    async def _at_the_door(self, task: Task) -> Run:
+        """A task already in a state of :data:`OUTCOMES` when ``run`` is called (ADR 0019 §10).
+
+        An ended task whose step is still RUNNING has it closed here (M6.3c): the door is one of
+        the places a stop's open step is closed, under the lock of ``run``.
+        """
+        if task.state not in TERMINAL_STATES:
+            return Run(task, OUTCOMES[task.state], (), ())
+        closed = await self._executor.close_open_step(task.id)
+        handled = () if closed is None else (closed.step_id,)
+        done = () if closed is None else (closed,)
+        return Run(
+            task,
+            OUTCOMES[task.state],
+            handled,
+            done,
+            await self._door_reason(task),
+            await self._executor.halt(task.id),
+        )
+
+    async def _door_reason(self, task: Task) -> str | None:
+        """The reason at the door: a stop's words for ``cancelled`` (decision 7 of the review);
+        ``None`` for the other outcomes, as they were — the empty ones of ``denied`` and ``failed``
+        are M13.1c's, and M6.3c does not touch them (decision 4)."""
+        if task.state is not TaskState.CANCELLED:
+            return None
+        return await self._transition_reason(task)
+
+    async def _transition_reason(self, task: Task) -> str:
+        """The words of the transition that put the task in its state, passed and not composed
+        (ADR 0019 §2): the summary of its audit event; without one — a crash between the row and
+        the audit —, the message of the trail's ``STATE_CHANGED`` with its operation."""
+        for event in reversed(await self._audit.read(task_id=task.id)):
+            if event.payload.get("new_state") == task.state.value:
+                return event.summary
+        for change in reversed(await self._repository.events(task.id)):
+            if change.event_type is TaskEventType.STATE_CHANGED and change.new_state is task.state:
+                operation = str(change.metadata.get("operation", ""))
+                return f"{operation}: {change.message}" if change.message else operation
+        return task.state.value
 
     # ----------------------------------------------------------------------------------
     # A step that was handed to a node (M12.2, ADR 0038 §10)
