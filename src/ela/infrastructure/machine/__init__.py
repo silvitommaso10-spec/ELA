@@ -43,7 +43,6 @@ to write a file instead of speaking.
 
 from ela.infrastructure.machine.audition import (
     AUDITION_PHRASES,
-    CANDIDATES,
     Audition,
     Candidate,
     Heard,
@@ -103,7 +102,6 @@ from ela.infrastructure.machine.windows import (
 __all__ = [
     "AFPLAY",
     "AUDITION_PHRASES",
-    "CANDIDATES",
     "PMSET",
     "POWERSHELL",
     "POWER_TIMEOUT_SECONDS",

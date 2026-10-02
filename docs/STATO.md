@@ -94,7 +94,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 9 — Le liste che si accorgono di essere false | `M9.3` | Completata | Le esenzioni che si accorgono di essere false |
 | 9 — Le liste che si accorgono di essere false | `M9.4` | Completata | Le finestre, i negativi, e la release v0.1 |
 | 9 — Le liste che si accorgono di essere false | `M9.5` | Proposta | La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento |
-| 9 — Le liste che si accorgono di essere false | `M9.6` | Proposta | Niente di Tommaso nel codice: ciò che ELA installa e serve non porta le macchine e l'account di chi l'ha scritta |
+| 9 — Le liste che si accorgono di essere false | `M9.6` | Implementata | Niente di Tommaso nel codice: ciò che ELA installa e serve non porta le macchine e l'account di chi l'ha scritta |
 | 9 — Le liste che si accorgono di essere false | `M9.7` | Proposta | Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI |
 | 10 — La percezione | `M10.1` | Completata | Perception Core: fondamenta |
 | 10 — La percezione | `M10.2` | Completata | Screen awareness: la prima lettura di contenuto |
@@ -152,8 +152,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **55** | `docs/adr/NNNN-*.md` |
-| Milestone | **79, di cui 58 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **56** | `docs/adr/NNNN-*.md` |
+| Milestone | **79, di cui 59 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **59** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **30** | i `Protocol` di `src/ela/ports.py` |

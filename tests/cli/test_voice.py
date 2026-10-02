@@ -79,7 +79,7 @@ async def test_an_empty_catalogue_is_said_and_the_command_exits_0(
     assert answered.exit_code == OK
     lines = plain(answered.stdout).splitlines()
     assert EMPTY_CATALOGUE in lines
-    assert [line.split() for line in lines if CONFIGURED in line] == [
+    assert [line.split() for line in lines if line.startswith("(la voce configurata)")] == [
         ["(la", "voce", "configurata)", CONFIGURED, "yes"]
     ]
 

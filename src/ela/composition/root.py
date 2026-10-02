@@ -271,7 +271,8 @@ class Ela:
 
     On ``Ela`` because the routes need it and the CLI may not build it: architecture rule 27 keeps
     adapters out of everything but the composition root, and rule 28 keeps the CLI a client. What
-    it can say is fixed in its own module — two sentences from §9, written in the repository.
+    it can say is fixed in its own module — two sentences from §9, written in the repository; the
+    voices it offers are the user's, ``ELA_ELEVENLABS_CANDIDATES`` (M9.6).
     """
     perception: PerceptionCore
     """What ELA believes about the machine it runs on (§10, §11; M10.1, ADR 0028).
@@ -317,9 +318,9 @@ def _audition_speaker(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> S
 
     The audition is the only caller that chooses a voice, because choosing is what it is for. It
     reaches the provider directly rather than through ``voice.speak_online``: the capability
-    requires an authorization, and six voices would be six approvals — which is exactly the cost
-    the user refused. What makes that safe is not this function, it is that nothing on this path
-    can carry a sentence of the user's: the words are literals in
+    requires an authorization, and every voice tried would be an approval — which is exactly the
+    cost the user refused. What makes that safe is not this function, it is that nothing on this
+    path can carry a sentence of the user's: the words are literals in
     :mod:`ela.infrastructure.machine.audition`, and architecture rule 43 keeps them so.
     """
 
@@ -777,6 +778,10 @@ async def build(
         speech_online=playing,
         listening=listening,
         removed_from_environment=removed,
-        audition=Audition(speak=_audition_speaker(online, playing), play=_sample(online, playing)),
+        audition=Audition(
+            speak=_audition_speaker(online, playing),
+            play=_sample(online, playing),
+            catalogue=settings.audition.catalogue,
+        ),
         perception=perception,
     )

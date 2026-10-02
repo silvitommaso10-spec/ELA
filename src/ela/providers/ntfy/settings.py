@@ -30,11 +30,12 @@ own ntfy is the same protocol at another address (docs.ntfy.sh/publish)."""
 BELL_TIMEOUT_SECONDS: Final = 5.0
 """How long a run may be held while the bell rings, and it is a **measured** number.
 
-The bell rings on the path of the run — the executor rings where the question is born — so this
-is time the user waits for. P4, on 2026-09-20 from this Mac: ntfy.sh answered ``200`` in 0,43 s,
-then 0,42 and 0,33. Five seconds is a dozen times the worst of those: enough not to fail on the
-first slow network, short enough that a provider that stopped answering cannot hold a step open.
-A test with a slow fake provider proves the run is not held longer than this.
+The bell rings on the path of the run — the executor rings where the question is born — so this is
+time the user waits for. P4 (M12.5, «Gli esiti delle misure, con data e macchina»; ADR 0043 §8):
+ntfy.sh answered ``200`` in 0,43 s, then 0,42 and 0,33. Five seconds is a dozen times the worst of
+those: enough not to fail on the first slow network, short enough that a provider that stopped
+answering cannot hold a step open. A test with a slow fake provider proves the run is not held
+longer than this.
 """
 MAX_BELL_TIMEOUT_SECONDS: Final = 30.0
 """The ceiling on the knob, in the shape of every other ceiling in ELA: a timeout nobody bounded

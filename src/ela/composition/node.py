@@ -82,7 +82,7 @@ class PermissionMode(StrEnum):
     """The directory's ACL: made first with ``mkdir(0o700)``, which on Windows applies a protected
     ACL — SYSTEM, Administrators, OWNER RIGHTS, nothing inherited — that the file inherits the
     moment it exists. No ``fchmod``, which Windows has only from 3.13, and no ``O_NOFOLLOW``, which
-    it has not at all. Measured on the user's PC by P2 (2026-09-15)."""
+    it has not at all. Measured by P2 (M12.4, «Gli esiti, con data e macchina»)."""
 
 
 ACL_SINCE: Final = (3, 12, 4)
@@ -163,8 +163,8 @@ class NodeWorld:
     """How the secret is written on this machine, chosen for the named system (M12.4 dec. B).
 
     The composition's and never the writer's: until M12.4 ``write_identity`` asked ``os`` whether it
-    had ``O_NOFOLLOW`` and called ``fchmod`` unconditionally, and on the PC every first run died on
-    that line after ``O_EXCL`` had made the file and before its first byte.
+    had ``O_NOFOLLOW`` and called ``fchmod`` unconditionally, and on Windows every first run died
+    on that line after ``O_EXCL`` had made the file and before its first byte (M12.4, P1).
     """
     speech_dir: Path
 
@@ -247,8 +247,9 @@ def build_node(
 
     :raises ConfigurationError: on Windows, for a Python older than :data:`ACL_SINCE`, before the
         state directory exists (M12.4 dec. B). **The only guarantee** of the directory that holds
-        the secret: the project does not choose the PC's Python — ``uv`` uses the 3.12 it finds —,
-        and a directory made by an interpreter that ignores the mode would keep the profile's
+        the secret: the project does not choose the Python of a Windows machine — ``uv`` uses the
+        one it finds (M12.4, P0; ADR 0040 §2) —, and a directory made by an interpreter that
+        ignores the mode would keep the profile's
         inherited ACL, because one that already exists is left as it is.
 
     :raises ConfigurationError: if the routing table names a provider nobody registered, or is

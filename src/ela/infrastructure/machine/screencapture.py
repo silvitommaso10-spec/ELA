@@ -1,7 +1,7 @@
 """The screen-capture helper: Apple's own binary, run as a child (M10.2, ADR 0029 §3).
 
-Three ways to photograph a display on macOS 26 were looked at before this one was chosen, and
-the measurement is in the milestone:
+Three ways to photograph a display on macOS were looked at before this one was chosen, and the
+measurement, with the system it was taken on, is in the milestone and in ADR 0029, «Contesto»:
 
 * ``CGDisplayCreateImage`` and friends, through ``ctypes``: the symbols are still there, and both
   have been deprecated since macOS 14/15 — and macOS 15 added a **periodic re-consent prompt** for

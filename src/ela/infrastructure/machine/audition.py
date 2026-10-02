@@ -1,7 +1,7 @@
 """Sentire una voce prima di sceglierla, senza che diventi un task (M11.3, ADR 0034 §9).
 
 The problem this module exists for is not technical. ``voice.speak_online`` requires an
-authorization, so trying six voices through the capability would be six approvals — and the user
+authorization, so trying voices through the capability would be an approval per voice — and the user
 said plainly that hearing a few voices must not cost a task per attempt. So an audition is not a
 capability: it is a person at a terminal, listening.
 
@@ -31,7 +31,7 @@ from typing import Final
 
 from ela.domain import RawSpeech
 
-__all__ = ["AUDITION_PHRASES", "CANDIDATES", "Audition", "Candidate", "Heard", "Play", "Speak"]
+__all__ = ["AUDITION_PHRASES", "Audition", "Candidate", "Catalogue", "Heard", "Play", "Speak"]
 
 AUDITION_PHRASES: Final = (
     "No, questa non è una buona idea.",
@@ -46,23 +46,15 @@ wrong saying them is the wrong voice, however pleasant it is reading a paragraph
 They are literals, and a tuple, and nothing computes them. That is the whole of rule 43's subject.
 """
 
-CANDIDATES: Final = (
-    ("VZOd9FMXDnXRZpGn0thg", "Daniela Narrator IT — Warm Elegant ITA"),
-    ("kavPiGHUq62Aokyp5Tui", "Daniela — Giovane ed elegante"),
-    ("UnOINkXZ3yK4vVg3Iayj", "Beatrice AI Agent"),
-    ("3LTv5xMEHTJYUIMl1jBR", "Aurora — Clear and Supportive"),
-    ("MuTiG4dbrEGYEy3XP4iP", "Rossana — Warm Italian Conversational"),
-    ("mT0eqrjKfAPl6gQBlfBa", "Chiara — Professional and Versatile"),
-)
-"""The six voices worth hearing, out of the twenty-five this workspace can reach.
+Catalogue = Sequence[tuple[str, str]]
+"""The voices offered for listening, as ``(voice_id, name)`` in the order they are heard.
 
-Chosen on 2026-09-08 against §9 — *una presenza femminile e professionale*, and the user's own
-words, *elegante e moderna* — and not against a ranking: the first is described by its own author
-as *warm, elegant and modern*, and the last two are declared for voice agents and assistants.
-
-A list in the repository and not a search, because a roster that changed under the user between
-one listening and the next would make "the third one" mean nothing. If none of the six convinces,
-the list changes here, in a diff, and the audition is run again.
+**Not written here** (M9.6, ADR 0056): until M9.6 it was a tuple in this module, the voices the
+repository's author had chosen for their own ELA, with an argument for keeping it in a diff. Whoever
+chooses writes, so the catalogue is in the ``.env`` of whoever chose it,
+``ELA_ELEVENLABS_CANDIDATES``, and the composition root hands it to :class:`Audition`. It still
+changes only when somebody edits it — a roster that moved between one listening and the next would
+make "the third one" mean nothing —, and now that somebody is the one who listens.
 """
 
 
@@ -96,15 +88,21 @@ Play = Callable[[str], Awaitable[RawSpeech]]
 class Audition:
     """Plays the two sentences of §9 in the voices offered, so a person can choose (ADR 0034 §9).
 
-    Holds two callables and no state. It cannot be asked to say anything else: that is not a
-    policy of this class, it is the shape of its methods.
+    Holds two callables and the catalogue it was given, and no state. It cannot be asked to say
+    anything else: that is not a policy of this class, it is the shape of its methods.
     """
 
-    __slots__ = ("_play", "_speak")
+    __slots__ = ("_catalogue", "_play", "_speak")
 
-    def __init__(self, *, speak: Speak, play: Play) -> None:
+    def __init__(self, *, speak: Speak, play: Play, catalogue: Catalogue) -> None:
         self._speak = speak
         self._play = play
+        self._catalogue = tuple(catalogue)
+
+    @property
+    def catalogue(self) -> tuple[tuple[str, str], ...]:
+        """The voices offered, as received: empty when nobody has written any."""
+        return self._catalogue
 
     @property
     def phrases(self) -> tuple[str, ...]:
@@ -139,10 +137,10 @@ class Audition:
         return await self._play(voice_id)
 
     def candidates(self, chosen: str | None) -> tuple[Candidate, ...]:
-        """The six, plus the one in use if it is not among them."""
+        """The catalogue, plus the one in use if it is not in it — first, and named as such."""
         offered = tuple(
             Candidate(voice_id=voice_id, name=name, chosen=voice_id == chosen)
-            for voice_id, name in CANDIDATES
+            for voice_id, name in self._catalogue
         )
         if chosen is None or any(one.chosen for one in offered):
             return offered

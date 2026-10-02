@@ -129,6 +129,12 @@ la difende; dove un test non può arrivare, lo dice.
 | Il font è lo stack di sistema: nessun candidato è rimasto nella fonte, nessun file di font nella cartella | `tests/design/test_fonts.py` |
 | **Nessun foglio servito chiuderebbe il blocco in cui viaggia**: le pagine che arrivano a chi non è ancora riconosciuto portano i due fogli dentro un `<style>` (M17.2c, ADR 0050), e un `</style` — in qualunque maiuscola — lo chiuderebbe. Una funzione sola di `ela.api.pages` lo dice, e la usano questo test e l'avvio | `tests/design/test_inline_block.py` |
 
+### Niente di chi l'ha scritta
+
+| Regola | La difende |
+|---|---|
+| Niente di chi ha scritto ELA in ciò che ELA installa e serve: nessun host delle reti Tailscale di `TAILNET_RANGES` e nessun percorso assoluto dentro la home di un utente, qui e in `src/` (M9.6, ADR 0056). Il resto della regola di `CLAUDE.md` — un nome, una macchina descritta, una preferenza — è della review | `tests/architecture/test_the_author_is_not_in_the_product.py`, `test_no_tailnet_host_and_no_path_inside_a_home_in_src_and_apps` |
+
 ### Accessibilità — WCAG 2.1 AA come regola
 
 | Regola | La difende |

@@ -86,13 +86,13 @@ DEFAULT_CAPTURE_MAX_BYTES: Final = 200 * 1024 * 1024
 DEFAULT_CAPTURE_TIMEOUT_SECONDS: Final = 5.0
 """How long the capture helper may take before ELA calls the capture failed.
 
-**Measured**, on a granted machine, after M10.2's review (ADR 0029 §14). Fifteen captures of a
-2940x1912 display: 88 ms median, 138 ms on the first one (cold), 96 ms at the 95th percentile;
-the PNG was 0.8-1.4 MB there and 4.0 MB on a screen full of text — its size follows the content,
-not the display. Repeated with twice as many CPU-burning processes as the machine has
-cores, it did not move — 81 ms median, 99 ms worst — because the work is ``WindowServer``'s and
-userland load does not reach it. That stability is itself part of the answer: the number is not
-sitting on a noisy measurement.
+**Measured**, on a granted machine, after M10.2's review — the machine, its display and the date are
+in ADR 0029 §14 and M10.2 §14. Fifteen captures: 88 ms median, 138 ms on the first one (cold), 96 ms
+at the 95th percentile; the PNG was 0.8-1.4 MB there and 4.0 MB on a screen full of text — its size
+follows the content, not the display. Repeated with twice as many CPU-burning processes as the
+machine has cores, it did not move — 81 ms median, 99 ms worst — because the work is
+``WindowServer``'s and userland load does not reach it. That stability is itself part of the answer:
+the number is not sitting on a noisy measurement.
 
 Five seconds is **fifty-seven times the median**, which is the ratio ADR 0028 §6 chose for the
 probe (2 s over 35 ms) applied to the number this milestone measured, and thirty-six times the
@@ -119,8 +119,8 @@ needs a machine before it can be honest.
 DEFAULT_OCR_TIMEOUT_SECONDS: Final = 10.0
 """How long the recognition helper may take before ELA calls the reading failed.
 
-**Measured on 2026-09-08 on this machine** — 10 cores, macOS 26.6 (25G72), display 2940 x 1912 —
-and where it was measured is part of the number, not a footnote:
+**Measured** — and the machine it was measured on is part of the number, not a footnote: it is
+written with it, its cores, its system, its display and the date, in ADR 0030 §14. What it gave:
 
 ===============================================  ========
 a real screen                                    232 ms
@@ -139,15 +139,15 @@ it, and 57x of a median at rest would be a number borrowed from a measurement of
 > will meet.
 
 So the base is the worst case *under load*, 2,96 s, and 10 s leaves 3,4x for a display larger
-than this one, where the pixels can be 2,5 times as many. Like the capture's, it is not a
+than the one measured, where the pixels can be 2,5 times as many. Like the capture's, it is not a
 performance budget: it is the line past which a Vision that does not answer stops being ELA's
 problem.
 """
 
 DEFAULT_OCR_LANGUAGES: Final = ("it-IT", "en-US")
-"""Which languages the recognition is asked for. Both verified present among the thirty this
-macOS supports — and the helper checks, every time, because an unsupported language does not
-fail: it answers "this screen has no text" (ADR 0030 §8)."""
+"""Which languages the recognition is asked for. Both verified present among the ones the system
+supports (ADR 0030 §8; M10.3, «OCR locale (Vision)») — and the helper checks, every time, because
+an unsupported language does not fail: it answers "this screen has no text" (ADR 0030 §8)."""
 
 
 def default_capture_dir() -> Path:
@@ -201,8 +201,9 @@ class CaptureSettings(BaseSettings):
 MAX_SPOKEN_CHARACTERS: Final = 600
 """The longest sentence ELA may say in one call (M11.1 dec. E).
 
-**Measured on 2026-09-08 on this machine** (macOS 26.6, voice ``Alice``), speaking exactly 600
-characters of ordinary Italian prose:
+**Measured** with the voice ``Alice``, speaking exactly 600 characters of ordinary Italian prose —
+the machine, its system and the date are in ADR 0033, «La ricognizione, in numeri», and the row of
+``-r 150``, which no document had, in M9.6, «La misura che solo un docstring portava»:
 
 =========================  ===========  ===============
 rate                       spoken       characters/s
@@ -224,8 +225,9 @@ long is an argument that is wrong, not an action that fails.
 DEFAULT_VOICE_NAME: Final = "Alice"
 """Which voice, when nothing says otherwise.
 
-The only female Italian voice ``say`` offers on this machine — 9 Italian of 184, one of them
-female — and it is **not the voice §9 describes**. §9 asks for a *presenza femminile e
+The only female Italian voice ``say`` offered where it was measured — 9 Italian of 184, one of
+them female, in ADR 0033, «La ricognizione, in numeri» — and it is **not the voice §9
+describes**. §9 asks for a *presenza femminile e
 professionale*; Alice is dated concatenative synthesis. M11.1 delivers *that ELA speaks*, not
 *that ELA sounds like §9* (dec. D), and M11.3 is where that is reopened along with the four
 answers of §57 that sending ELA's words anywhere would require.

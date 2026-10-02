@@ -1,9 +1,11 @@
 """The speaking helper: Apple's own binary, run as a child (M11.1, ADR 0033).
 
 ``/usr/bin/say`` is present on every macOS, signed by Apple, needs no permission of any kind and
-adds no dependency. Measured on this machine before the milestone was specified: 360-513 ms to
-synthesise, and **flat in the length of the text** — 0.54 s, 1.65 s and 9.30 s of speech all came
-from about 380 ms of work. The wait before the first syllable does not grow with the answer.
+adds no dependency. Measured before the milestone was specified (ADR 0033, «La ricognizione, in
+numeri»):
+360-513 ms to synthesise, and **flat in the length of the text** — 0.54 s, 1.65 s and 9.30 s of
+speech all came from about 380 ms of work. The wait before the first syllable does not grow with the
+answer.
 
 The argument that put it here rather than in a library is ADR 0029 §3's, and it is about rule 33
 rather than about robustness: *what has to be able to die on its own must not carry the Core's

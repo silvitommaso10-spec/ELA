@@ -19,3 +19,11 @@ task — e ogni comando di `ela` che fa lo stesso — è nell'impronta `docs/out
 quando il task è stato fermato, oppure il documento della milestone che l'ha fatta suonare dice perché
 no. La difende `tests/docs/test_outcomes.py`, e le frasi di ogni valore stanno nei test delle due
 superfici (`tests/api/test_console.py`, `tests/api/test_companion.py`).
+
+Una regola attraversa tutto `apps/` e `src/`, e vive in un test solo: **niente di chi ha scritto ELA in
+ciò che ELA installa e serve** (`CLAUDE.md`, «Qualità»; M9.6, ADR 0056). La parte che una macchina sa
+riconoscere — nessun host delle reti Tailscale di `TAILNET_RANGES` e nessun percorso assoluto dentro la
+home di un utente — la difende
+`tests/architecture/test_the_author_is_not_in_the_product.py`,
+`test_no_tailnet_host_and_no_path_inside_a_home_in_src_and_apps`; il resto è della review. Ogni README
+di `apps/`, i segnaposto compresi, la nomina con il suo test, e lo stesso modulo lo verifica.

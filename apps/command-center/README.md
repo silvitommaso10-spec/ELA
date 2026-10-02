@@ -28,6 +28,7 @@ Le regole di ciò che sta in `apps/` non camminano Python: vivono nei test della
 | Questo README nomina ogni test della cartella, e nessun altro | `tests/command_center/test_documents.py` |
 | Ogni pagina risponde con la `Content-Security-Policy` che vieta gli script, e i valori dell'utente arrivano con l'escape | `tests/api/test_console.py` |
 | Il modulo d'arruolamento e la pagina «rifiutata» portano i fogli dentro, in ogni modo in cui ci si arriva; la loro politica ammette solo l'hash del blocco che servono, e non nominano niente da caricare | `tests/api/test_enrolment_page.py` |
+| Niente di chi ha scritto ELA in ciò che ELA installa e serve: nessun host delle reti Tailscale di `TAILNET_RANGES` e nessun percorso assoluto dentro la home di un utente, qui e in `src/` (M9.6, ADR 0056). Il resto della regola di `CLAUDE.md` — un nome, una macchina descritta, una preferenza — è della review | `tests/architecture/test_the_author_is_not_in_the_product.py`, `test_no_tailnet_host_and_no_path_inside_a_home_in_src_and_apps` |
 
 La prima e l'ultima riga sono le **due difese di «niente JavaScript»**, e non sono la stessa cosa
 detta due volte: se un giorno un valore sfuggisse all'escape, il browser si rifiuterebbe comunque

@@ -63,6 +63,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0053](0053-ci-runner.md) | Il runner della CI ha una versione scritta: Ubuntu fissato prima del 2026-10-19, le azioni aggiornate, e Ubuntu 26 misurato quando Playwright lo supporta; un debito datato a carico di M6.3c | Accettata |
 | [0054](0054-stopped-midway.md) | Il «ferma» a metà corsa: la fermata arriva al tool prima del suo punto di non ritorno; e il runner della CI con una versione scritta | Accettata |
 | [0055](0055-the-reason-of-an-end.md) | La ragione di una fine è quella della transizione che ha chiuso il task: la stessa alla chiusura e alla porta, con il codice dell'errore; e un risultato che non è riuscito dice perché | Proposta |
+| [0056](0056-the-author-is-not-in-the-product.md) | Niente di chi ha scritto ELA in ciò che installa e serve: un test per ciò che una macchina riconosce, il catalogo dell'audizione nella configurazione, la provenienza di una misura in `docs/` | Proposta |
 
 ## Template
 

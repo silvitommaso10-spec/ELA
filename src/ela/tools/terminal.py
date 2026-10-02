@@ -17,9 +17,9 @@ with which code, what it prints, what it touches. A file the kernel refuses to e
 by trying, and it is the one refusal after a yes (``terminal.not_started``).
 
 **The identity is compared off the loop**: comparing hashes the whole program, and a program can be
-as large as it likes — 357 MB in 119,5 ms on this Mac, and the loop would have stood still as long,
-the phone's answer included (review of M13.2, 5a). So the one function the question and the run
-share is a coroutine, and the hash runs in ``asyncio.to_thread``.
+as large as it likes — 357 MB in 119,5 ms (ADR 0047 §4), and the loop would have stood still as
+long, the phone's answer included (review of M13.2, 5a). So the one function the question and the
+run share is a coroutine, and the hash runs in ``asyncio.to_thread``.
 
 **What a program receives is decided here and executed to the letter by the launcher** (dec. 15):
 four environment variables and nothing else — the ``PATH`` below, ``HOME`` and ``TMPDIR`` computed

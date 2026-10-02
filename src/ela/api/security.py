@@ -156,7 +156,8 @@ CONSOLE_HOME: Final = "/console"
 
 The lesson of ADR 0043 §5, not paid for twice: the ``Path`` of the cookie is written without the
 trailing slash, because a cookie at ``/console/`` is not sent to ``/console`` (RFC 6265 §5.1.4) —
-and measured on this Mac in C1, with Chrome 152 and Safari 26.6.
+and measured in C1, in Chrome and in Safari: where, and with which versions, is in M17.2, «La
+misura C1», and ADR 0044 §4.
 """
 CONSOLE_ROUTES: Final = frozenset(
     {
@@ -448,9 +449,9 @@ def forgotten(surface: Surface, response: Response) -> Response:
 
     Only for a cookie that was **presented and failed** (dec. C.3, rule 3, second case). A request
     that presented none gets the same page **without** this: P1 measured that a browser can hold a
-    good cookie back — ``Strict`` did not arrive after the iPhone restarted, and the cookie was
-    there — so clearing on nothing would destroy a credential that works and send the user back
-    to the Mac to enrol again.
+    good cookie back — a ``Strict`` cookie that was there and did not arrive (M12.5, decision C,
+    with the device and the date) — so clearing on nothing would destroy a credential that works
+    and send the user back to the Mac to enrol again.
     """
     response.headers.append(SET_COOKIE, f"{surface.cookie}=; Max-Age=0; Path={surface.home}")
     return response
@@ -496,11 +497,12 @@ def from_this_machine(request: Request) -> bool:
     """Whether **both ends** of this request's socket are loopback (M17.2 dec. J).
 
     The pair, and not the peer alone (the review of 2026-09-20, dec. 9). P0 measured that a
-    connection coming in on the tailnet interface carries the tailnet address at *both* ends —
-    this Mac calling its own tailnet address is ``100.76.92.39`` as peer and as sockname — so a
-    packet with a forged source of ``127.0.0.1`` would still show the tailnet address as the
-    sockname, and the pair would not match. The sockname is not chosen by whoever is calling: the
-    operating system writes it when it accepts the connection.
+    connection coming in on the tailnet interface carries the tailnet address at *both* ends — the
+    Core calling its own tailnet address, ``ELA_API_TAILNET_HOST``, sees that address as peer and
+    as sockname — so a packet with a forged source of ``127.0.0.1`` would still show the tailnet
+    address as the sockname, and the pair would not match. The sockname is not chosen by whoever
+    is calling: the operating system writes it when it accepts the connection. The measure, with
+    its machine and its date, is in M17.2, «La misura P0».
 
     Nothing the caller *declares* is read here — no header, no ``Host``, no ``X-Forwarded-For``:
     those are words, and this is the socket.

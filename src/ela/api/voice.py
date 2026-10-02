@@ -3,8 +3,8 @@
 Three routes, none of which is a capability, and the reason is worth reading because it is not
 the obvious one. Choosing a voice **could** have been done through ``voice.speak_online``: it is
 already the capability that speaks. It is not, because that capability requires an authorization,
-and six voices would be six approvals — precisely the cost the user refused when they asked for a
-way to try voices that is not a task per attempt.
+and every voice tried would be an approval — precisely the cost the user refused when they asked
+for a way to try voices that is not a task per attempt.
 
 What makes that safe is not this module's care: it is that **nothing on this path can carry a
 sentence of the user's.** ``AuditionIn`` has no field for text; the words are two literals in
@@ -31,6 +31,7 @@ from ela.api.schemas import (
     VoiceStatusOut,
 )
 from ela.api.system import voice_of
+from ela.composition.settings import CANDIDATES_VARIABLE
 
 __all__ = ["router"]
 
@@ -44,6 +45,10 @@ async def voice(ela: ElaDep) -> VoiceStatusOut:
     The retention is stated here and not only in ``/diagnostics`` because this is the route a
     person reads when they are *choosing* a voice, which is the moment the cost is worth knowing
     (ADR 0034 §11).
+
+    **An empty catalogue is said, not hidden** (M9.6, decision K): the voices to try are the user's
+    to write, and with none written the answer names the line that writes them. Not an error —
+    the configured voice is still in ``candidates``, and it still speaks.
     """
     chosen = ela.settings.elevenlabs.elevenlabs_voice_id
     return VoiceStatusOut(
@@ -52,6 +57,7 @@ async def voice(ela: ElaDep) -> VoiceStatusOut:
             VoiceCandidateOut(voice_id=one.voice_id, name=one.name, chosen=one.chosen)
             for one in ela.audition.candidates(chosen)
         ),
+        empty_catalogue_setting=None if ela.audition.catalogue else CANDIDATES_VARIABLE,
         phrases=ela.audition.phrases,
     )
 

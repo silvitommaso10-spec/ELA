@@ -799,8 +799,9 @@ SPEECH_TEXT_MISMATCH: Final = "speech.text_mismatch"
 MIN_SECONDS_PER_CHARACTER: Final = 0.005
 """The floor below which a "spoken" sentence was not spoken (M11.1 dec. C).
 
-**Measured on 2026-09-08 on this machine**: 600 characters took 31,5 s at ``say``'s default rate
-and 37,8 s at its slowest — 52 and 63 ms per character. The floor is 5 ms, roughly **ten times
+**Measured** — the machine and the date are in ADR 0033, «La ricognizione, in numeri»: 600
+characters took 31,5 s at ``say``'s default rate and 37,8 s at its slowest — 52 and 63 ms per
+character. The floor is 5 ms, roughly **ten times
 below** the fastest reading, because it is not a performance budget: it is the line under which
 the only explanation is that no sound was produced.
 

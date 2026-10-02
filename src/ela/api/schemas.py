@@ -1117,6 +1117,11 @@ class VoiceStatusOut(BaseModel):
 
     voice: VoiceOut
     candidates: tuple[VoiceCandidateOut, ...]
+    """The user's catalogue in its order, and the configured voice first when it is not in it."""
+    empty_catalogue_setting: str | None
+    """The setting that fills the catalogue, ``ELA_ELEVENLABS_CANDIDATES``, when the catalogue
+    lists no voice; ``None`` otherwise (M9.6, decision K). A field and not the length of
+    ``candidates``, which carries the configured voice even when the catalogue is empty."""
     phrases: tuple[str, ...]
     """What an audition would say — the two sentences of §9, from the repository."""
 
