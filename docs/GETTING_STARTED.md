@@ -27,6 +27,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<id del passo 4>` | l'id del task del passo 4 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
 | `<porta>` | la porta su cui ELA ascolta | `ela diagnostics`, riga `addresses` (§14) |
 | `<radice del PC>` | la cartella del PC dentro cui ELA può leggere e scrivere | la scegli tu, sul PC: una cartella che c'è, e che non contiene né sta dentro `$HOME\.ela` o `$HOME\ELA` (§17, passo 2) |
+| `<id della voce configurata>` | l'id della voce online che usi | `uv run ela voice`, riga `online voice`: lo scrive `scripts/prova_m13_1c_m13_1d_m9_6.py` al posto del segnaposto (§22) |
 
 ## 0. Che cosa serve
 
@@ -3519,6 +3520,233 @@ fallisce, si apre una riparazione con la sua lettera.
 
 **Dopo il giro di domenica**, non prima: togli `bin/sleep` da `ELA_TERMINAL_PROGRAMS`, e riavvia `ela serve`. I
 file dello script restano in `~/Downloads`.
+
+## 22. Le ragioni, il blocco delle domande e niente di Tommaso: la prova a mano di M13.1c, M13.1d e M9.6
+
+> **Bozza, scritta con le SPEC del 2026-10-02** (`milestones/M13.1c.md`, `M13.1d.md`, `M9.6.md`), prima del codice:
+> le uscite sono quelle che la CLI stamperà **dopo** l'implementazione, e oggi non le stampa. Si allinea con
+> l'implementazione, e la si fa sul Mac, sul branch `m13.1c-m13.1d-m9.6`, con lo script
+> `scripts/prova_m13_1c_m13_1d_m9_6.py`. Il PC non serve.
+
+Tre riparazioni, una prova. **M13.1c**: un diniego e un fallimento dicono il loro perché, e lo dicono uguale alla
+corsa che chiude il task e a ogni corsa dopo — le parole della transizione che l'ha chiuso, come per un «ferma» da
+M6.3c. **M13.1d**: il blocco di `ela approvals` di §6 è quello che la CLI stampa. **M9.6**: le voci che hai scelto
+per l'audizione stanno nel tuo `.env`, non nel codice, e il saluto del design system non porta il tuo nome.
+
+Lo script legge da questa sezione i blocchi con il marcatore sopra, come `scripts/prova_m6_3c.py` legge §21 — gli
+stessi tipi, `comando`, `atteso`, `occhio` —, e in più fa tre confronti suoi: **ai passi 2, 3 e 4 la riga `reason`
+delle due corse è la stessa, e non è `—`**; **al passo 4 il blocco di `ela approvals` del task ha le etichette, il
+loro ordine e la loro larghezza del blocco di §6**; **al passo 6 il comando esce con `0`**. I segnaposto che riempie
+sono `<id>`, `<approval-id>` — la domanda del task del passo — e `<id della voce configurata>`, letto da
+`GET /voice`. Scrive tutto in `~/Downloads`, in `prova-m13.1c-m13.1d-m9.6-` con la
+data e l'ora, e l'ultima riga dice «La prova è passata» o che cosa manca.
+
+Sull'ELA di sempre, con il tuo `.env` com'è — i siti di §20 (`example.com` e `httpbin.org`), lo scope di §15, la voce
+online di §12 — e **senza** la riga delle voci (passo 9: si aggiunge dopo il merge). Il Core acceso dal codice del
+branch, `uv run ela serve`. Niente si scrive sul disco, e nessun sì si dà.
+
+### 1. Prima
+
+ELA risponde, i due siti rispondono, e la voce online è configurata: lo script lo controlla e, se manca qualcosa, lo
+dice prima di cominciare.
+
+### 2. Un diniego, due volte
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create "un sito che non hai dichiarato"
+uv run ela task plan <id> --file docs/examples/browser-read-outside.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome        denied
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org'])
+state          DENIED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000002
+stopped step   —
+```
+
+E di nuovo, sullo stesso task:
+
+<!-- prova: 2.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome        denied
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org'])
+state          DENIED
+steps handled  —
+stopped step   —
+```
+
+La seconda corsa trova il task chiuso e non tratta nessuno step; **la ragione è la stessa**. Prima di M13.1c la
+seconda diceva `reason —`.
+
+### 3. Un fallimento, due volte
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create "una pagina che porta altrove"
+uv run ela task plan <id> --file docs/examples/browser-left-site.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome        failed
+reason         fail: EXECUTING -> FAILED (browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there)
+state          FAILED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000003
+stopped step   —
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome        failed
+reason         fail: EXECUTING -> FAILED (browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there)
+state          FAILED
+steps handled  —
+stopped step   —
+```
+
+Il codice dell'errore, `browser.left_site`, sta nelle parole della transizione: prima di M13.1c la transizione
+scriveva solo il messaggio, e la seconda corsa diceva `reason —`.
+
+### 4. Il no, e la domanda di §6
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "il mio primo task"
+uv run ela task plan <id> --file docs/examples/first-task.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+Il primo `run` si ferma a chiedere, come in §6. **Lo script prende il blocco di `ela approvals` la cui riga `task` è
+il task di questo passo** — può aspettare anche un'altra domanda — **e lo confronta con il blocco di §6**: le stesse
+etichette, nello stesso ordine, alla stessa larghezza, con lo stesso nome della riga del bersaglio (M13.1d). Poi dice no lui, con la CLI — la ragione di
+un no si legge solo nella riga di comando e nell'audit — e fa girare due corse:
+
+<!-- prova: 4.comando -->
+```
+uv run ela task deny <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome        denied
+reason         deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by 6c38f1c5-6cda-5680-8a7a-4f061588deed)
+state          DENIED
+steps handled  —
+stopped step   —
+```
+
+La corsa trova il task chiuso dal no — lo step che chiedeva l'ha chiuso la risposta —, e la seconda dice lo stesso:
+
+<!-- prova: 4.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome        denied
+reason         deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by 6c38f1c5-6cda-5680-8a7a-4f061588deed)
+state          DENIED
+steps handled  —
+stopped step   —
+```
+
+`6c38f1c5-6cda-5680-8a7a-4f061588deed` è l'id di `local`: la CLI parla con il token del Core, e chi risponde con quel
+token è la persona a questa macchina. Dalla console o dal telefono sarebbe l'id della loro riga nel registro.
+
+### 5. Che cosa dice l'help
+
+<!-- prova: 5.comando -->
+```
+uv run ela task run --help
+```
+
+<!-- prova: 5.atteso -->
+```
+always carry their why
+```
+
+Lo script legge l'help con gli spazi riuniti, come la suite: l'help va a capo alla larghezza del terminale.
+
+### 6. Il catalogo dell'audizione, vuoto
+
+<!-- prova: 6.comando -->
+```
+uv run ela voice
+```
+
+<!-- prova: 6.atteso -->
+```
+(la voce configurata)  <id della voce configurata>  yes
+the audition's catalogue is empty: ELA_ELEVENLABS_CANDIDATES in .env names the voices to try
+```
+
+Non è un errore: il comando esce con `0` — lo script lo controlla —, e la voce che usi resta nella tabella, con
+`yes`.
+
+### 7. L'audizione fa ancora parlare la voce che usi
+
+<!-- prova: 7.comando -->
+```
+uv run ela voice audition <id della voce configurata>
+```
+
+<!-- prova: 7.occhio -->
+```
+Hai sentito la voce dire le due frasi di §9?
+```
+
+Costa i caratteri di due frasi. L'audizione è la parte che M9.6 ricostruisce; `voice.speak_online`, che M9.6 non
+tocca e che chiederebbe un sì, la tengono i suoi test.
+
+### 8. Il saluto del design system
+
+<!-- prova: 8.comando -->
+```
+open apps/design-system/index.html
+```
+
+<!-- prova: 8.occhio -->
+```
+Nella composizione «home», nei due temi, il saluto è «Good evening.», senza un nome?
+```
+
+### 9. Dopo il merge: le tue voci nel `.env`
+
+**Non fa parte della prova**: si fa dopo il merge, sul Mac, dalla cartella di ELA. La riga va **in cima** al `.env`
+(`1i\`): il `sed` di macOS che aggiunge in fondo, su un `.env` che non finisce con un a-capo, la incollerebbe
+all'ultima riga.
+
+```
+sed -i '' '1i\
+ELA_ELEVENLABS_CANDIDATES={"VZOd9FMXDnXRZpGn0thg": "Daniela Narrator IT — Warm Elegant ITA", "kavPiGHUq62Aokyp5Tui": "Daniela — Giovane ed elegante", "UnOINkXZ3yK4vVg3Iayj": "Beatrice AI Agent", "3LTv5xMEHTJYUIMl1jBR": "Aurora — Clear and Supportive", "MuTiG4dbrEGYEy3XP4iP": "Rossana — Warm Italian Conversational", "mT0eqrjKfAPl6gQBlfBa": "Chiara — Professional and Versatile"}
+' .env
+```
+
+```
+grep -c '^ELA_ELEVENLABS_CANDIDATES=' .env
+```
+
+**Che cosa si deve vedere**: `1`. Un altro numero — `0`, o `2` dopo un secondo `sed` — si guarda con `grep -n` e si
+corregge a mano. Poi riavvia `ela serve`, e `uv run ela voice` elenca le sei, con `yes` accanto a quella che usi, e
+senza la riga del catalogo vuoto.
 
 ## Dove guardare dopo
 
