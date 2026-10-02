@@ -484,7 +484,7 @@ async def test_fail_records_the_error(h: Harness, source: TaskState) -> None:
     assert audit.event_type is AuditEventType.TASK_FAILED
     assert audit.error == ERROR
     assert audit.payload["code"] == ERROR.code
-    assert audit.payload["reason"] == ERROR.message
+    assert audit.payload["reason"] == f"{ERROR.code}: {ERROR.message}"  # M13.1c, ADR 0055
 
 
 @pytest.mark.parametrize(

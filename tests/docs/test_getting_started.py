@@ -17,10 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from ela.cli.output import GAP
+from ela.cli.output import EMPTY, GAP
 from ela.cli.tasks import RUN_LABELS
 from ela.domain import RiskLevel
+from ela.executive.runner import OUTCOMES
 from ela.permissions import catalogue_v01
+from ela.tasks.engine import OPERATIONS
 
 GUIDE = Path(__file__).resolve().parents[2] / "docs" / "GETTING_STARTED.md"
 BLOCK = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
@@ -201,16 +203,59 @@ def test_the_guide_says_why_and_says_not_to_turn_smart_app_control_off() -> None
 # ----------------------------------------------------------------------------------------
 
 
+def is_a_run_row(line: str) -> bool:
+    """A row of ``ela task run``: one of its labels, then the gap — never a label and one space,
+    which is how the ``atteso`` lines of §21 are written (M13.1c)."""
+    return any(line.startswith(label + GAP) for label in RUN_LABELS)
+
+
 def run_blocks(text: str) -> list[str]:
     """Every fenced block that shows the output of ``ela task run``: the ones whose first line is
-    its first label. No other command prints ``outcome``; one that did would be reported here as a
-    run block out of shape, not let through."""
+    one of its rows — ``outcome`` for a whole block, another for a cut one, which is reported as out
+    of shape (M13.1c: the two cuts of §16 step 5 sat outside the check of M6.3b for that reason). No
+    other command prints these rows; one that did would be reported here, not let through. Marked or
+    not: an ``atteso`` block that begins with ``outcome`` is a block of ``run``."""
     found = []
     for block in BLOCK.findall(text):
         body = block.splitlines()[1:-1]
-        if body and body[0].startswith(RUN_LABELS[0] + " "):
+        if body and is_a_run_row(body[0]):
             found.append("\n".join(body))
     return found
+
+
+def unrecognised_run_blocks(text: str) -> list[str]:
+    """Blocks with two or more rows of ``ela task run`` that do not begin with one: a cut that
+    begins with ``…`` or with a line of prose would leave the check, and is reported instead
+    (M13.1c)."""
+    found = []
+    for block in BLOCK.findall(text):
+        body = block.splitlines()[1:-1]
+        if body and not is_a_run_row(body[0]) and sum(map(is_a_run_row, body)) >= 2:
+            found.append("\n".join(body))
+    return found
+
+
+def without_its_why(block: str) -> list[str]:
+    """A block whose outcome is ``denied`` or ``failed`` says why, in the form ``run`` prints it
+    since M13.1c: the summary of the transition that ended the task, which begins with the name of
+    an operation of the engine that puts the task in that state (ADR 0055; decision F of the
+    session). The operations are read from the engine, not written here."""
+    rows = dict(
+        (line[: line.index(GAP)].rstrip(), line[line.index(GAP) :].strip())
+        for line in block.splitlines()
+        if is_a_run_row(line)
+    )
+    outcome = rows.get("outcome")
+    states = {run_outcome.value: state for state, run_outcome in OUTCOMES.items()}
+    if outcome not in {"denied", "failed"}:
+        return []
+    reason = rows.get("reason", EMPTY)
+    if reason == EMPTY:
+        return [f"{outcome} with no reason: {block!r}"]
+    names = {op.name for op in OPERATIONS.values() if op.target is states[outcome]}
+    if not any(reason.startswith(f"{name}: ") for name in names):
+        return [f"{outcome} whose reason is not a transition's ({sorted(names)}): {reason!r}"]
+    return []
 
 
 def not_what_the_cli_prints(block: str) -> list[str]:
@@ -240,6 +285,84 @@ def test_every_run_block_of_the_guide_is_what_the_cli_prints() -> None:
 
     assert blocks
     assert [problem for block in blocks for problem in not_what_the_cli_prints(block)] == []
+
+
+def test_no_block_of_the_guide_cuts_a_run_without_being_seen() -> None:
+    assert unrecognised_run_blocks(guide()) == []
+
+
+def test_every_denied_or_failed_block_of_the_guide_says_why() -> None:
+    """Decision F of M13.1c: since then ``denied`` and ``failed`` always carry their why, and the
+    guide shows it — §19 step 2 showed ``reason —`` after the user's no until M13.1c."""
+    blocks = run_blocks(guide())
+
+    assert [problem for block in blocks for problem in without_its_why(block)] == []
+
+
+def test_a_denied_block_with_an_empty_reason_is_reported() -> None:
+    width = max(map(len, RUN_LABELS))
+    values = ("denied", EMPTY, "DENIED", EMPTY, EMPTY)
+    block = "\n".join(
+        f"{label.ljust(width)}{GAP}{value}" for label, value in zip(RUN_LABELS, values, strict=True)
+    )
+
+    assert without_its_why(block) != []
+
+
+def test_a_failed_block_with_the_reason_of_before_is_reported() -> None:
+    """The form ``run`` printed until M13.1c: the error alone, without the transition."""
+    width = max(map(len, RUN_LABELS))
+    values = ("failed", "fs.overwrite_mismatch: something is there now", "FAILED", EMPTY, EMPTY)
+    block = "\n".join(
+        f"{label.ljust(width)}{GAP}{value}" for label, value in zip(RUN_LABELS, values, strict=True)
+    )
+
+    assert without_its_why(block) != []
+
+
+def test_a_failed_block_with_the_reason_of_a_transition_passes() -> None:
+    width = max(map(len, RUN_LABELS))
+    reason = "fail: EXECUTING -> FAILED (fs.overwrite_mismatch: something is there now)"
+    values = ("failed", reason, "FAILED", EMPTY, EMPTY)
+    block = "\n".join(
+        f"{label.ljust(width)}{GAP}{value}" for label, value in zip(RUN_LABELS, values, strict=True)
+    )
+
+    assert without_its_why(block) == []
+
+
+def test_a_marked_block_that_begins_with_outcome_is_a_run_block() -> None:
+    """The marker of a hand test does not exempt a block that has the form of an output: §21 and §22
+    write their expected runs whole, and the check confronts them."""
+    text = "<!-- prova: 4.atteso -->\n```\noutcome        denied\nreason         —\n```\n"
+
+    (block,) = run_blocks(text)
+    assert without_its_why(block) != []
+
+
+def test_a_cut_run_block_is_found_by_any_of_its_rows_and_reported() -> None:
+    """The two cuts of §16 step 5 began with ``reason`` and sat outside the check of M6.3b."""
+    width = max(map(len, RUN_LABELS))
+    text = f"```\n{'reason'.ljust(width)}{GAP}x\n{'state'.ljust(width)}{GAP}FAILED\n```\n"
+
+    (block,) = run_blocks(text)
+    assert not_what_the_cli_prints(block) != []
+
+
+def test_a_cut_run_block_that_begins_with_an_ellipsis_is_reported() -> None:
+    width = max(map(len, RUN_LABELS))
+    text = f"```\n…\n{'reason'.ljust(width)}{GAP}x\n{'state'.ljust(width)}{GAP}FAILED\n```\n"
+
+    assert run_blocks(text) == []
+    assert unrecognised_run_blocks(text) != []
+
+
+def test_the_atteso_lines_of_a_hand_test_are_not_run_rows() -> None:
+    """``state CANCELLED``, one space: what ``scripts/prova_m6_3c.py`` looks for, word by word."""
+    text = "<!-- prova: 2.atteso -->\n```\nstate CANCELLED\n```\n"
+
+    assert run_blocks(text) == []
+    assert unrecognised_run_blocks(text) == []
 
 
 def test_a_run_block_with_the_old_label_is_reported() -> None:

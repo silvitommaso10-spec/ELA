@@ -106,7 +106,8 @@ async def test_a_page_that_goes_elsewhere_fails_and_the_browser_does_not_follow(
 
     assert ran["outcome"] == "failed", ran
     assert ran["reason"].startswith(
-        "browser.left_site: the page of httpbin.org went to https://example.org,"
+        "fail: EXECUTING -> FAILED (browser.left_site: the page of httpbin.org went to "
+        "https://example.org,"
     )
 
 
@@ -158,8 +159,8 @@ async def test_a_button_that_is_not_there_gets_no_gesture_after_the_yes(
 
     assert ran["outcome"] == "failed", ran
     assert ran["reason"] == (
-        "browser.element_missing: gesture 2 of 2 names no element on the page of httpbin.org; "
-        "no gesture was made"
+        "fail: EXECUTING -> FAILED (browser.element_missing: gesture 2 of 2 names no element on "
+        "the page of httpbin.org; no gesture was made)"
     )
     assert browser.fills == [] and browser.clicks == []
 

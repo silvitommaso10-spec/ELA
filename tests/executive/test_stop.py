@@ -28,6 +28,7 @@ from ela.domain import (
     Assignment,
     AssignmentState,
     AuditEventType,
+    ErrorMetadata,
     ExecutionResult,
     ExecutionStatus,
     Halt,
@@ -896,36 +897,92 @@ async def test_a_task_failed_by_somebody_else_under_the_run_is_said_with_that_en
     assert await w.step_state(task.id, step.id) is StepState.COMPLETED
 
 
-async def test_the_four_empty_reasons_of_m13_1c_are_still_empty() -> None:
-    """Decision 4 of the session: M6.3c does not touch them, and M13.1c will turn this test. The
-    first — the no seen at the door — is ``test_runner``'s; the other three are here."""
-    # failed after execution.interrupted
+async def transition_summary(w: World, task_id: TaskId) -> str:
+    """The summary of the audit event that put the task in its state (ADR 0054 §7, ADR 0055)."""
+    state = (await w.task(task_id)).state
+    return next(
+        event.summary
+        for event in reversed(await w.events(task_id))
+        if event.payload.get("new_state") == state.value
+    )
+
+
+async def test_an_interrupted_step_fails_the_task_with_the_words_of_its_transition() -> None:
+    """M13.1c turned this case (decision D of its session): the run that closes the task and the run
+    after it say the same reason, the transition's, with the code beside the message."""
     w = world()
     task_id, _ = await _started(w)
-    run = await w.runner.run(task_id)
-    assert (run.outcome, run.reason) == (RunOutcome.FAILED, None)
 
-    # failed, the graph already blocked at the resume (R6)
+    run = await w.runner.run(task_id)
+    again = await w.runner.run(task_id)
+
+    assert run.outcome is RunOutcome.FAILED
+    assert run.reason == again.reason == await transition_summary(w, task_id)
+    assert (
+        run.reason is not None
+        and "fail: EXECUTING -> FAILED (execution.interrupted: " in run.reason
+    )
+
+
+async def test_a_plan_blocked_at_the_resume_fails_the_task_with_the_words_of_its_transition() -> (
+    None
+):
+    """Window R6, the other way to the row of a failure a node delivered: the call that fails the
+    task has no execution of its own, and still says why."""
     w, crashes = crashing_world(failing=frozenset({ECHO.id}))
     task, _ = await w.queued(ECHO.id, NOTE.id)
     crashes.repository.arm("save", saved_as(TaskState.FAILED))
     with pytest.raises(SimulatedCrash):
         await w.runner.run(task.id)
     crashes.disarm()
-    run = await w.runner.run(task.id)
-    assert (run.outcome, run.reason) == (RunOutcome.FAILED, None)
 
-    # failed, a verification left half done by an earlier call: the executor's Execution carries
-    # nothing a reason could be read from (``executor.py``, ``_closed_by_unfinished_verification``)
+    run = await w.runner.run(task.id)
+    again = await w.runner.run(task.id)
+
+    assert run.outcome is RunOutcome.FAILED
+    assert run.reason == again.reason == await transition_summary(w, task.id)
+    assert run.reason is not None and run.reason.startswith("fail: EXECUTING -> FAILED (")
+
+
+async def test_execute_called_on_a_step_whose_verification_failed_fails_the_task_it_left_open() -> (
+    None
+):
+    """The contract of ``execute`` (and ``finish``) called directly on a step a verification failed,
+    whose task a crash left open (ADR 0015 §7): the task is failed, and nothing else is in the
+    answer. **Not a branch of ``run``** (decision 3 of the review of M13.1c, ADR 0055): the runner
+    sees the blocked plan first and fails the task itself — the row of a blocked plan, with its
+    reason."""
     w, crashes = crashing_world()
     task, step = await w.running(ECHO.id, conditions=(BAD,))
     crashes.repository.arm("save", saved_as(TaskState.FAILED))
     with pytest.raises(SimulatedCrash):
         await w.execute(task.id, step.id)
     crashes.disarm()
+
     closed = await w.execute(task.id, step.id)
+
     assert closed.task.state is TaskState.FAILED
-    assert (closed.error, closed.result, closed.verification) == (None, None, None)
+    assert (closed.result, closed.verification) == (None, None)
+
+
+async def test_a_task_failed_by_another_between_the_two_reads_is_said_with_that_end() -> None:
+    """Row 13 of the table of M13.1c, theoretical in production — ``recover()`` runs only at
+    start-up —: the end is written after the runner read the task and before the executor does. The
+    executor answers with the task already FAILED, the states the runner compares are equal, and
+    until M13.1c the reason was the executor's word about a call that ran nothing: none."""
+    w = world()
+    task, _ = await w.queued(ECHO.id)
+    executing = w.executor.execute
+
+    async def ended_before(task_id: TaskId, step_id: StepId, **kwargs: Any) -> Any:
+        await w.engine.fail(task_id, ErrorMetadata(code="probe.ended", message="by another"))
+        return await executing(task_id, step_id, **kwargs)
+
+    w.executor.execute = ended_before  # type: ignore[method-assign]
+    run = await w.runner.run(task.id)
+
+    assert run.outcome is RunOutcome.FAILED
+    assert run.reason == "fail: EXECUTING -> FAILED (probe.ended: by another)"
 
 
 def test_the_reason_a_step_did_not_act_is_one_sentence() -> None:

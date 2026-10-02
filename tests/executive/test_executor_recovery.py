@@ -21,6 +21,7 @@ from ela.domain import (
     AuditEventType,
     AuthorizationId,
     CapabilitySpec,
+    ErrorMetadata,
     ExecutionResult,
     ExecutionStatus,
     PermissionOutcome,
@@ -599,8 +600,15 @@ async def test_window_7b_with_a_consumed_grant_names_it_and_reads_its_uses_now()
     assert verified.authorization_id == policy.id
 
 
+TOOL_ERROR = ErrorMetadata(code="notes.locked", message="the workspace is locked", tool_name="fake")
+"""What the failing tool of windows 7b and 8 reports: a result that did not succeed says why
+(M13.1c)."""
+
+
 async def test_window_7b_with_a_failed_result_records_it_and_fails_the_step() -> None:
-    failing = FakeTool(ECHO.id, FakeClock(), FakeIdGenerator(), status=ExecutionStatus.FAILED)
+    failing = FakeTool(
+        ECHO.id, FakeClock(), FakeIdGenerator(), status=ExecutionStatus.FAILED, error=TOOL_ERROR
+    )
     w, crashes = crashing_world(tools=(failing,))
     task, step = await w.running(ECHO.id)
     crashes.audit.arm("append", audit_of(E.TOOL_EXECUTED))
@@ -615,7 +623,7 @@ async def test_window_7b_with_a_failed_result_records_it_and_fails_the_step() ->
     assert (await w.event_types(task.id))[-2:] == [E.TOOL_EXECUTED, E.STEP_FAILED]
     executed, failed = (await w.events(task.id))[-2:]
     assert executed.payload["status"] == "FAILED" and executed.payload[RECOVERED] is True
-    assert failed.error is not None and failed.error.code == "tool.failed"
+    assert failed.error == TOOL_ERROR
     assert len(failing.calls) == 1
     assert w.verifier(ECHO.id).calls == ()
 
@@ -626,7 +634,9 @@ async def test_window_7b_with_a_failed_result_records_it_and_fails_the_step() ->
 
 
 async def test_window_8_a_recorded_failure_closes_the_step_without_a_rerun() -> None:
-    failing = FakeTool(ECHO.id, FakeClock(), FakeIdGenerator(), status=ExecutionStatus.FAILED)
+    failing = FakeTool(
+        ECHO.id, FakeClock(), FakeIdGenerator(), status=ExecutionStatus.FAILED, error=TOOL_ERROR
+    )
     w, crashes = crashing_world(tools=(failing,))
     task, step = await w.running(ECHO.id)
     crashes.repository.arm("append_event", trail_of(TaskEventType.STEP_FAILED))
@@ -644,7 +654,7 @@ async def test_window_8_a_recorded_failure_closes_the_step_without_a_rerun() -> 
     assert (await w.event_types(task.id))[-2:] == [E.TOOL_EXECUTED, E.STEP_FAILED]
     executed, failed = (await w.events(task.id))[-2:]
     assert RECOVERED not in executed.payload  # written with the run, not at the retry
-    assert failed.error is not None and failed.error.code == "tool.failed"
+    assert failed.error == TOOL_ERROR
 
 
 async def test_window_8a_an_executed_unverified_result_is_verified_again_not_rerun() -> None:
