@@ -8,22 +8,95 @@ API says the provider keeps the text and the terminal does not say so, this fail
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 
+import pytest
+
+from ela.api import create_app
+from ela.cli import client
 from ela.cli.errors import OK
 from ela.cli.voice import RETENTION, _heard, _lines
+from ela.composition import Settings, build
 from ela.ports import SPEECH_NO_KEY
-from tests.cli.support import Cli, plain
+from ela.testing.fakes import FakePower
+from tests.cli.support import Cli, LoopTransport, plain
+from tests.composition.support import create_schema, declare
+
+CANDIDATES = "ELA_ELEVENLABS_CANDIDATES"
+VOICE_ID = "ELA_ELEVENLABS_VOICE_ID"
+CONFIGURED = "a-voice-of-my-own"
+CATALOGUE = (("voice-first", "The first — listed first"), ("voice-second", "The second"))
+EMPTY_CATALOGUE = (
+    "the audition's catalogue is empty: ELA_ELEVENLABS_CANDIDATES in .env names the voices to try"
+)
 
 
-async def test_it_shows_both_voices_and_the_ones_worth_hearing(cli: Cli) -> None:
+async def test_it_shows_both_voices(cli: Cli) -> None:
     answered = await cli("voice")
 
     assert answered.exit_code == OK
     output = plain(answered.stdout)
     assert "local voice" in output
     assert "online voice" in output
-    assert "Daniela Narrator IT — Warm Elegant ITA" in output
+
+
+@asynccontextmanager
+async def served(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **declared: str
+) -> AsyncIterator[Cli]:
+    """The CLI on an ELA built by ``build`` from what the test declares, with a voice configured.
+
+    The catalogue goes the way it goes in production: ``ELA_ELEVENLABS_CANDIDATES``, the
+    composition root, ``GET /voice``, the command (M9.6, decision K).
+    """
+    declare(monkeypatch, tmp_path, **{VOICE_ID: CONFIGURED}, **declared)
+    settings = Settings.load()
+    await create_schema(settings.persistence.db_url)
+    built = await build(settings, power=FakePower())
+    try:
+        application = create_app(built)
+        transport = LoopTransport(application, asyncio.get_running_loop())
+        monkeypatch.setattr(
+            client, "connect", lambda: client.open_client(built.settings.api, transport=transport)
+        )
+        async with application.router.lifespan_context(application):
+            yield Cli(transport)
+    finally:
+        await built.aclose()
+
+
+async def test_an_empty_catalogue_is_said_and_the_command_exits_0(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Not an error (decision K): the line names the setting, and the configured voice stays."""
+    async with served(monkeypatch, tmp_path) as cli:
+        answered = await cli("voice")
+
+    assert answered.exit_code == OK
+    lines = plain(answered.stdout).splitlines()
+    assert EMPTY_CATALOGUE in lines
+    assert [line.split() for line in lines if CONFIGURED in line] == [
+        ["(la", "voce", "configurata)", CONFIGURED, "yes"]
+    ]
+
+
+async def test_a_catalogue_is_listed_and_the_line_is_not_there(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    written = json.dumps(dict(CATALOGUE), ensure_ascii=False)
+    async with served(monkeypatch, tmp_path, **{CANDIDATES: written}) as cli:
+        answered = await cli("voice")
+
+    assert answered.exit_code == OK
+    output = plain(answered.stdout)
+    assert EMPTY_CATALOGUE not in output
+    assert CANDIDATES not in output
+    for voice_id, name in CATALOGUE:
+        assert voice_id in output and name in output
 
 
 async def test_it_says_what_an_audition_would_say(cli: Cli) -> None:
@@ -111,6 +184,7 @@ def _status(*, configured: bool) -> dict[str, object]:
             },
         },
         "candidates": [{"name": "Daniela", "voice_id": "VZOd", "chosen": configured}],
+        "empty_catalogue_setting": None,
         "phrases": ["No, questa non è una buona idea."],
     }
 
@@ -125,6 +199,17 @@ def test_an_unconfigured_one_warns_about_nothing_because_nothing_is_kept() -> No
 
     assert RETENTION not in rendered
     assert "not chosen" in rendered
+
+
+def test_the_line_of_an_empty_catalogue_is_written_exactly_when_the_api_names_the_setting() -> None:
+    """The setting is the API's: the command writes the name it receives, not one of its own."""
+    empty = _status(configured=True) | {"empty_catalogue_setting": "ELA_SOME_SETTING"}
+
+    assert (
+        "the audition's catalogue is empty: ELA_SOME_SETTING in .env names the voices to try"
+        in _lines(empty).splitlines()
+    )
+    assert "catalogue is empty" not in _lines(_status(configured=True))
 
 
 def test_what_was_heard_is_reported_with_its_cost_and_the_retention() -> None:

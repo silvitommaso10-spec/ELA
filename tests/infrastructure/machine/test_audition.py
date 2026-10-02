@@ -4,15 +4,24 @@ The tests here are about the property that makes an audition acceptable without 
 **it can only say what is written in the repository.** Rule 43 proves the shape; these prove the
 behaviour, which is the other half — a module can have no ``text`` parameter and still contrive
 to say something else.
+
+**The voices offered are not the repository's** (M9.6, ADR 0056): the catalogue is the one the
+composition root reads from ``ELA_ELEVENLABS_CANDIDATES``, and the audition offers it as it
+receives it — in its order, and empty when it is empty.
 """
 
 from __future__ import annotations
 
 from ela.domain import RawSpeech
-from ela.infrastructure.machine import AUDITION_PHRASES, CANDIDATES, Audition
+from ela.infrastructure.machine import AUDITION_PHRASES, Audition
 from ela.ports import SPEECH_RATE_LIMITED, SPEECH_UNKNOWN_VOICE
 
-VOICE = "VZOd9FMXDnXRZpGn0thg"
+VOICE = "voice-in-use"
+CATALOGUE = (
+    ("voice-first", "The first one listed"),
+    (VOICE, "The one in use"),
+    ("voice-last", "Last"),
+)
 FLASH = "eleven_flash_v2_5"
 MULTI = "eleven_multilingual_v2"
 
@@ -32,8 +41,8 @@ class Heardable:
         return self._answers[0]
 
 
-def audition(recorder: Heardable) -> Audition:
-    return Audition(speak=recorder.speak, play=recorder.play)
+def audition(recorder: Heardable, catalogue: tuple[tuple[str, str], ...] = CATALOGUE) -> Audition:
+    return Audition(speak=recorder.speak, play=recorder.play, catalogue=catalogue)
 
 
 async def test_it_says_the_two_sentences_of_9_and_nothing_else() -> None:
@@ -84,20 +93,34 @@ async def test_a_preview_sends_nothing_and_names_what_it_could_not_get() -> None
     assert recorder.asked == [], "a preview synthesises nothing"
 
 
-def test_the_candidates_are_the_six_and_the_one_in_use_is_marked() -> None:
+def test_the_candidates_are_the_catalogue_in_its_order_and_the_one_in_use_is_marked() -> None:
     listed = audition(Heardable()).candidates(VOICE)
 
-    assert len(listed) == len(CANDIDATES) == 6
+    assert [(one.voice_id, one.name) for one in listed] == list(CATALOGUE)
     assert [one.voice_id for one in listed if one.chosen] == [VOICE]
 
 
 def test_a_voice_nobody_listed_is_still_shown_as_the_one_in_use() -> None:
-    """Somebody who chose a voice of their own must see it, or ``ela voice`` would show six
-    candidates and no answer to "which one am I using"."""
+    """Somebody who chose a voice of their own must see it, or ``ela voice`` would show the
+    catalogue and no answer to "which one am I using"."""
     listed = audition(Heardable()).candidates("una-voce-mia")
 
     assert listed[0].chosen and listed[0].voice_id == "una-voce-mia"
-    assert len(listed) == len(CANDIDATES) + 1
+    assert listed[0].name == "(la voce configurata)"
+    assert len(listed) == len(CATALOGUE) + 1
+
+
+def test_with_an_empty_catalogue_the_one_in_use_is_the_only_candidate() -> None:
+    """Decision K: an empty catalogue is not an error, and the configured voice is still shown."""
+    empty = audition(Heardable(), catalogue=())
+
+    assert empty.catalogue == ()
+    assert [(one.voice_id, one.chosen) for one in empty.candidates(VOICE)] == [(VOICE, True)]
+    assert empty.candidates(None) == ()
+
+
+def test_the_catalogue_is_the_one_received() -> None:
+    assert audition(Heardable()).catalogue == CATALOGUE
 
 
 def test_with_no_voice_chosen_nothing_is_marked() -> None:
