@@ -16,6 +16,7 @@ import io
 import re
 import subprocess
 import sys
+import urllib.error
 from functools import cache
 from pathlib import Path
 from types import ModuleType
@@ -285,3 +286,60 @@ def test_a_task_without_its_question_is_reported(monkeypatch: pytest.MonkeyPatch
     module.a_command(4, module.APPROVALS, module.Turn(task_id="t"), proof(report))
 
     assert report.failures == 1
+
+
+# ----------------------------------------------------------------------------------------
+# Step 1: what the proof requires of the world is SKIPPED when it is missing, never FAILED
+# ----------------------------------------------------------------------------------------
+
+
+class Answering:
+    """An ELA that answers, with an online voice configured."""
+
+    def get(self, path: str) -> Any:
+        if path == "/voice":
+            return {"voice": {"online": {"configured": True, "voice_id": "a-voice"}}}
+        return {"status": "ok"}
+
+
+class Declared:
+    sites = ("example.com", "httpbin.org")
+
+
+def test_a_site_that_does_not_answer_skips_step_1_and_fails_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Review of M13.1c+M13.1d+M9.6, 2-bis: a site that does not answer is a world the proof needs
+    and does not have — step 1 SKIPPED with what is missing, not a FAILED that would read as ELA's.
+    Everything before it is there: ELA, the shell of Chromium, the declared sites."""
+    module = script()
+    shell = tmp_path / "chrome-headless-shell-mac-arm64" / "chrome-headless-shell"
+    shell.parent.mkdir()
+    shell.touch()
+
+    def no_route(site: str) -> bool:
+        if site == "example.com":
+            raise urllib.error.URLError("no route to host")
+        return True
+
+    monkeypatch.setattr(module.base, "Api", Answering)
+    monkeypatch.setattr("ela.infrastructure.machine.browser.shell_folder", lambda *_: tmp_path)
+    monkeypatch.setattr("ela.composition.settings.BrowserSettings", Declared)
+    monkeypatch.setattr(module, "answers", no_route)
+    report = module.base.Report(io.StringIO())
+
+    assert module.preconditions(report) is None
+
+    assert report.failures == 0, report.lines
+    assert report.skipped_steps == [1]
+    assert report.lines[:3] == [
+        "[1] PASSATO: ELA risponde",
+        "[1] PASSATO: lo shell di Chromium c'è",
+        "[1] PASSATO: i siti example.com, httpbin.org sono dichiarati",
+    ]
+    assert report.lines[3] == (
+        "[1] SALTATO: la prova richiede «example.com risponde», e non è così "
+        "(URLError: <urlopen error no route to host>)"
+    )
+    report.verdict()
+    assert report.lines[-1] == "La prova non è passata: il passo 1 SALTATO."

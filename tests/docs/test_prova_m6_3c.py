@@ -14,6 +14,7 @@ and it must find nothing on the right ones.
 from __future__ import annotations
 
 import importlib.util
+import io
 import re
 import sys
 from functools import cache
@@ -498,3 +499,56 @@ def test_the_expected_block_of_step_4_fails_on_a_step_that_completed() -> None:
     other = shown(4, "COMPLETED", "ACTED_VERIFIED", "HIGH", "terminal.run")
 
     assert script().missing(block.lines, other, TASK) != []
+
+
+# ----------------------------------------------------------------------------------------
+# Step 1: what the proof requires of the world is SKIPPED when it is missing, never FAILED
+# ----------------------------------------------------------------------------------------
+
+
+class Unreachable:
+    """An API that is not there: what ``Api()`` meets when ``ela serve`` is not running."""
+
+    def __init__(self) -> None:
+        raise ConnectionRefusedError("connection refused")
+
+
+def test_an_ela_that_does_not_answer_skips_step_1_and_fails_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Step 1 checks the world, not ELA: one thing missing is step 1 SKIPPED with what is missing,
+    and the script stops there — a FAILED would read as ELA's (review of M13.1c+M13.1d+M9.6, 2-bis).
+    """
+    module = script()
+    monkeypatch.setattr(module, "Api", Unreachable)
+    report = module.Report(io.StringIO())
+
+    assert module.preconditions(report) is False
+
+    assert report.failures == 0, report.lines
+    assert report.skipped_steps == [1]
+    assert report.lines[-1].startswith("[1] SALTATO: la prova richiede «ELA risponde»")
+    report.verdict()
+    assert report.lines[-1] == "La prova non è passata: il passo 1 SALTATO."
+
+
+def test_what_is_there_passes_and_the_first_thing_missing_stops_step_1() -> None:
+    """The shared reader of step 1, on constructed checks: one passed, one false, one never read."""
+    module = script()
+    report = module.Report(io.StringIO())
+    read: list[str] = []
+
+    def never() -> bool:
+        read.append("never")
+        return True
+
+    assert not module.required(
+        report,
+        [("ELA risponde", lambda: True), ("example.com risponde", lambda: False), ("c", never)],
+    )
+
+    assert report.lines == [
+        "[1] PASSATO: ELA risponde",
+        "[1] SALTATO: la prova richiede «example.com risponde», e non è così",
+    ]
+    assert read == [], "the script stops at the first thing missing"
