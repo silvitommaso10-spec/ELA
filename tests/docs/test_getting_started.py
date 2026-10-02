@@ -13,11 +13,14 @@ Two drifts, both found by the user's first hand-run of the guide and neither by 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from ela.cli.output import EMPTY, GAP
+from ela.api.schemas import ApprovalOut
+from ela.cli.output import EMPTY, GAP, fields
+from ela.cli.system import _rows
 from ela.cli.tasks import RUN_LABELS
 from ela.domain import RiskLevel
 from ela.executive.runner import OUTCOMES
@@ -393,3 +396,367 @@ def test_a_run_block_is_found_by_its_first_row() -> None:
     text = "prima\n\n```\noutcome  denied\nreason   no\n```\n\n```\nid  1\n```\n"
 
     assert run_blocks(text) == ["outcome  denied\nreason   no"]
+
+
+# ----------------------------------------------------------------------------------------
+# What ``ela approvals`` prints, as the guide shows it (M13.1d)
+# ----------------------------------------------------------------------------------------
+#
+# The shape comes from what the command uses to print — ``_rows`` and ``fields`` on two questions
+# built here —, never from a list of labels written in this file (decision G of M13.1d). A whole
+# block begins with the first row; a cut one carries a ``…`` line on each side it cuts, the
+# convention the guide already used for long outputs; a block with rows of the command that is
+# neither is reported, because an unmarked cut is how a block leaves the check. Here a cut stays a
+# cut, while the cuts of ``ela task run`` are made whole (M13.1c): there every missing value is
+# determined by the plan, here the values of a session that is over are not known.
+
+TARGET_WORD = "the-tool-s-own-word-for-a-target"
+"""The word the full question puts in ``label``: no other row carries it, and it is longer than any
+label of the empty question, so the two outputs have different widths."""
+
+QUESTION = {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "created_at": "2026-10-02T00:00:00Z",
+    "task_id": "00000000-0000-4000-8000-000000000002",
+    "step_id": "00000000-0000-4000-8000-000000000003",
+    "capability_id": "workspace.write_note",
+    "targets": ["t"],
+    "prompt": "the prompt",
+    "status": "PENDING",
+    "expires_at": None,
+    "responded_at": None,
+    "responded_by": None,
+}
+FULL = {
+    **QUESTION,
+    "expires_at": "2026-10-02T00:10:00Z",
+    "description": "what it does",
+    "risk": "LOW",
+    "max_privacy": "LOCAL_ONLY",
+    "goal": "the goal",
+    "stated": ["a: 1"],
+    "grant_uses": 1,
+    "grant_seconds": 3600,
+    "target": "/x",
+    "does": "does",
+    "label": TARGET_WORD,
+    "runs": "/bin/x",
+    "arguments": ["a"],
+    "folder": "/f",
+    "timeout_seconds": 30,
+    "expect_exit": 0,
+    "machine": "pc (abcd1234)",
+    "unseen": "unseen",
+    "address": "https://x/y",
+    "gestures": ["click"],
+    "expect": "ok",
+}
+EMPTY_QUESTION = {
+    **QUESTION,
+    "description": "",
+    "risk": None,
+    "max_privacy": None,
+    "goal": "",
+    "stated": [],
+    "grant_uses": None,
+    "grant_seconds": None,
+    "target": "",
+    "does": "",
+    "label": "",
+    "runs": "",
+    "arguments": None,
+    "folder": "",
+    "timeout_seconds": None,
+    "expect_exit": None,
+    "machine": "",
+    "unseen": "",
+    "address": "",
+    "gestures": None,
+    "expect": "",
+}
+
+
+def printed(question: dict[str, object]) -> list[str]:
+    """What ``ela approvals`` prints for one question: the lines of ``fields(_rows(…))``."""
+    payload = ApprovalOut.model_validate(question).model_dump(mode="json")
+    return fields(_rows(payload)).splitlines()
+
+
+def labels_of(lines: list[str]) -> list[str]:
+    width = len(lines[0]) - len(lines[0][len(lines[0].split(GAP)[0]) :].lstrip(" "))
+    return [line[:width].rstrip() for line in lines]
+
+
+@dataclass(frozen=True)
+class Shape:
+    """The shape of ``ela approvals``, read off the command: the order of every position, the ones
+    always printed, where the target row sits, and what an empty one is called."""
+
+    order: tuple[str, ...]
+    always: frozenset[int]
+    target: int
+    empty_target: str
+
+    @property
+    def last(self) -> int:
+        return len(self.order) - 1
+
+    def position(self, label: str) -> int | None:
+        if label in self.order and label != TARGET_WORD:
+            return self.order.index(label)
+        return None
+
+
+def shape() -> Shape:
+    full, empty = labels_of(printed(FULL)), labels_of(printed(EMPTY_QUESTION))
+    target = full.index(TARGET_WORD)
+    (empty_target,) = [label for label in empty if label not in full]
+    always = frozenset(target if label == empty_target else full.index(label) for label in empty)
+    return Shape(tuple(full), always, target, empty_target)
+
+
+def is_an_approvals_row(line: str, known: Shape) -> bool:
+    if line.startswith(" "):
+        return False
+    label = line.split(GAP)[0].rstrip()
+    return (
+        bool(label)
+        and (label in known.order or label == known.empty_target)
+        and (line.startswith(label + GAP))
+    )
+
+
+def is_a_cut(line: str) -> bool:
+    return line.strip() == "…"
+
+
+def approvals_blocks(text: str) -> tuple[list[str], list[str], list[str]]:
+    """The whole blocks, the marked cuts, and the blocks with rows of the command that are
+    neither."""
+    known = shape()
+    whole, cuts, unmarked = [], [], []
+    for block in BLOCK.findall(text):
+        body = block.splitlines()[1:-1]
+        rows = [line for line in body if is_an_approvals_row(line, known)]
+        if any(map(is_a_cut, body)) and len(rows) >= 2:
+            cuts.append("\n".join(body))
+        elif body and body[0].startswith(known.order[0] + GAP):
+            whole.append("\n".join(body))
+        elif len(rows) >= 2:
+            unmarked.append("\n".join(body))
+    return whole, cuts, unmarked
+
+
+def _rows_of(lines: list[str], known: Shape) -> list[tuple[str, int | None, str]]:
+    """``(label, position, value)`` of each row; the position of a word nobody else prints is the
+    target's, and only one row may claim it."""
+    found = []
+    for line in lines:
+        label = line.split(GAP)[0].rstrip()
+        position = known.position(label)
+        found.append((label, known.target if position is None else position, line))
+    return found
+
+
+def _aligned_at(width: int, rows: list[tuple[str, int | None, str]]) -> list[str]:
+    return [
+        f"{line!r} is not at width {width}"
+        for label, _, line in rows
+        if not line.startswith(label.ljust(width) + GAP) or not aligned(line[width + len(GAP) :])
+    ]
+
+
+def _in_order(rows: list[tuple[str, int | None, str]], known: Shape) -> list[str]:
+    positions = [position for _, position, _ in rows]
+    problems = []
+    if positions != sorted(set(positions)):
+        problems.append(f"rows out of the command's order: {[label for label, _, _ in rows]}")
+    unknown = [label for label, position, _ in rows if position == known.target]
+    if len(unknown) > 1:
+        problems.append(f"rows the command does not print: {unknown}")
+    return problems
+
+
+def _the_target_s_name(rows: list[tuple[str, int | None, str]], known: Shape) -> list[str]:
+    """A question with no target — ``does`` empty — names its target row as the command does
+    then."""
+    does = [line for label, _, line in rows if label == "does"]
+    named = [label for label, position, _ in rows if position == known.target]
+    if (
+        does
+        and does[0].split(GAP, 1)[1].strip() == EMPTY
+        and named
+        and named[0] != known.empty_target
+    ):
+        return [
+            f"the target row of a question with no target is {known.empty_target!r}: {named[0]!r}"
+        ]
+    return []
+
+
+def not_what_approvals_prints(block: str) -> list[str]:
+    """A whole block: the command's rows in its order, every row always printed, at its width."""
+    known = shape()
+    rows = _rows_of(block.splitlines(), known)
+    problems = _in_order(rows, known) + _the_target_s_name(rows, known)
+    missing = known.always - {position for _, position, _ in rows}
+    if missing:
+        problems.append(
+            f"rows always printed are missing: {[known.order[i] for i in sorted(missing)]}"
+        )
+    return problems + _aligned_at(max(len(label) for label, _, _ in rows), rows)
+
+
+def not_what_a_cut_of_approvals_shows(block: str) -> list[str]:
+    """A marked cut: a ``…`` on each side it cuts, and each piece a stretch of the command's output
+    at the width of the whole block it was cut from."""
+    known = shape()
+    lines = block.splitlines()
+    pieces: list[list[str]] = [[]]
+    for line in lines:
+        if is_a_cut(line):
+            pieces.append([])
+        else:
+            pieces[-1].append(line)
+    problems = []
+    rows = _rows_of([line for line in lines if not is_a_cut(line)], known)
+    if rows and not is_a_cut(lines[0]) and rows[0][1] != 0:
+        problems.append("a cut that does not begin with the first row begins with …")
+    if rows and not is_a_cut(lines[-1]) and rows[-1][1] != known.last:
+        problems.append("a cut that does not end with the last row ends with …")
+    for piece in (piece for piece in pieces if piece):
+        here = _rows_of(piece, known)
+        problems += _in_order(here, known) + _the_target_s_name(here, known)
+        first, last = here[0][1] or 0, here[-1][1] or 0
+        skipped = {i for i in known.always if first < i < last} - {p for _, p, _ in here}
+        if skipped:
+            problems.append(f"a piece skips rows always printed: {sorted(skipped)}")
+    longest = max(
+        [len(label) for label, _, _ in rows] + [len(known.order[i]) for i in known.always]
+    )
+    return problems + _aligned_at(longest, rows)
+
+
+def test_the_shape_of_approvals_is_read_off_the_command() -> None:
+    """The precondition of the check, asserted before it is used: two outputs of different widths,
+    each aligned at its own longest label — the rule is «the longest of the block», and a fixed
+    width would fail here and not on a block of the guide —, one target position, and no optional
+    row longer than the longest that is always printed, which is what makes the width of a cut
+    true."""
+    full, empty = printed(FULL), printed(EMPTY_QUESTION)
+    known = shape()
+    widths = []
+    for lines in (full, empty):
+        longest = max(len(label) for label in labels_of(lines))
+        assert all(line[longest : longest + len(GAP)] == GAP for line in lines)
+        assert all(aligned(line[longest + len(GAP) :]) for line in lines)
+        widths.append(longest)
+    assert widths[0] != widths[1]
+    optional = set(range(len(known.order))) - known.always
+    assert max(len(known.order[i]) for i in optional) <= max(
+        len(known.order[i]) for i in known.always - {known.target}
+    )
+    assert known.order[0] == labels_of(empty)[0]
+
+
+def test_every_approvals_block_of_the_guide_is_what_the_cli_prints() -> None:
+    """§6 showed `grant`, `expires` and `file` until M13.1d — the labels before the proof by hand of
+    M13.1 renamed two rows (`f08bbfd`) and M13.2 gave the target row the tool's word (`5851d56`)."""
+    whole, cuts, unmarked = approvals_blocks(guide())
+
+    problems = [problem for block in whole for problem in not_what_approvals_prints(block)]
+    problems += [problem for block in cuts for problem in not_what_a_cut_of_approvals_shows(block)]
+    problems += [f"a cut of approvals with no …: {block!r}" for block in unmarked]
+    assert problems == []
+    assert whole and cuts, "the guide shows whole blocks of approvals and a marked cut"
+
+
+SIX_OF_AB87D9D = """approval    47fbce38-66ab-519c-b7dc-8cce4bd4a7f2
+task        55ed2ab5-94aa-581f-9468-c4d247d9fe04
+capability  workspace.write_note
+what        Writes a note at a path inside the authorised notes folder.
+risk        LOW
+may go      LOCAL_ONLY
+grant       1 use, within 60 minutes
+expires     2026-09-07T09:12:00+00:00
+step goal   scrivere la nota del primo task
+declared    —
+targets     workspace/notes/first-task.md
+file        —
+does        —
+asks        workspace.write_note on workspace/notes/first-task.md"""
+"""The block of §6 at ``ab87d9d``, copied as it was: the negative case of decision G, red at every
+run of the suite and not only on the day of the repair."""
+
+
+def test_the_block_of_six_as_it_was_is_reported() -> None:
+    problems = not_what_approvals_prints(SIX_OF_AB87D9D)
+
+    assert any("does not print" in problem for problem in problems)
+    assert any("always printed are missing" in problem for problem in problems)
+    assert any("out of the command's order" in problem for problem in problems)
+
+
+def _built(
+    question: dict[str, object], *, without: str | None = None, width: int | None = None
+) -> str:
+    lines = printed(question)
+    rows = [(line.split(GAP)[0].rstrip(), line.split(GAP, 1)[1].lstrip()) for line in lines]
+    rows = [(label, value) for label, value in rows if label != without]
+    wide = max(len(label) for label, _ in rows) if width is None else width
+    return "\n".join(f"{label.ljust(wide)}{GAP}{value}" for label, value in rows)
+
+
+def test_a_whole_block_printed_by_the_command_passes() -> None:
+    assert not_what_approvals_prints(_built(EMPTY_QUESTION)) == []
+    assert not_what_approvals_prints(_built(FULL)) == []
+
+
+def test_a_whole_block_without_a_row_always_printed_is_reported() -> None:
+    assert not_what_approvals_prints(_built(EMPTY_QUESTION, without="risk")) != []
+
+
+def test_a_whole_block_at_another_width_is_reported() -> None:
+    assert not_what_approvals_prints(_built(EMPTY_QUESTION, width=30)) != []
+
+
+def test_a_question_with_no_target_names_its_row_as_the_command_does() -> None:
+    block = _built(EMPTY_QUESTION).replace(shape().empty_target.ljust(20), "file".ljust(20))
+
+    assert not_what_approvals_prints(block) != []
+
+
+def _cut(question: dict[str, object], first: str, last: str, *, before: bool, after: bool) -> str:
+    lines = _built(question).splitlines()
+    labels = [line.split(GAP)[0].rstrip() for line in lines]
+    piece = lines[labels.index(first) : labels.index(last) + 1]
+    return "\n".join((["…"] if before else []) + piece + (["…"] if after else []))
+
+
+def test_a_cut_marked_on_both_sides_passes() -> None:
+    block = _cut(FULL, "targets", "does", before=True, after=True)
+
+    assert not_what_a_cut_of_approvals_shows(block) == []
+
+
+@pytest.mark.parametrize(("before", "after"), [(True, False), (False, True)])
+def test_a_cut_marked_on_one_side_only_is_reported(before: bool, after: bool) -> None:
+    block = _cut(FULL, "targets", "does", before=before, after=after)
+
+    assert not_what_a_cut_of_approvals_shows(block) != []
+
+
+def test_an_unmarked_cut_is_found_and_reported() -> None:
+    block = _cut(FULL, "targets", "does", before=False, after=False)
+    text = f"prima\n\n```\n{block}\n```\n"
+
+    whole, cuts, unmarked = approvals_blocks(text)
+
+    assert (whole, cuts, unmarked) == ([], [], [block])
+
+
+def test_a_whole_block_is_found_by_its_first_row() -> None:
+    block = _built(EMPTY_QUESTION)
+    text = f"prima\n\n```\n{block}\n```\n\n```\nid  1\n```\n"
+
+    assert approvals_blocks(text) == ([block], [], [])
