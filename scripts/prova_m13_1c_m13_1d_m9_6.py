@@ -24,8 +24,12 @@ I segnaposto sono ``<id>`` — il task creato nel passo —, ``<approval-id>`` e
 configurata>``, letto da ``GET /voice``. Un comando che chiede ``--help`` si confronta con gli spazi
 riuniti, come la suite: l'help va a capo alla larghezza del terminale. Per ogni confronto stampa
 **PASSATO** o **FALLITO** con l'uscita vera, e l'uscita di ogni comando; ciò che serve l'occhio di
-Tommaso lo chiede finché la risposta è s o n. La riga finale è quella di M6.3c: «La prova è
-passata» solo senza FALLITO e con ogni GUARDATO un sì. Tutto va anche nel file, in ``~/Downloads``.
+Tommaso lo chiede finché la risposta è s o n. **Il passo 1 controlla ciò che la prova richiede al
+mondo** — ELA acceso, lo shell di Chromium, i siti dichiarati e che rispondono, la voce configurata
+—, con il lettore del passo 1 di M6.3c: la prima cosa che manca fa il passo 1 **SALTATO** con ciò
+che manca, e lo script si ferma lì; mai un FALLITO, che sembrerebbe di ELA (decisione 2-bis della
+review, 2026-10-02). La riga finale è quella di M6.3c: «La prova è passata» solo senza FALLITO,
+senza SALTATO e con ogni GUARDATO un sì. Tutto va anche nel file, in ``~/Downloads``.
 """
 
 from __future__ import annotations
@@ -266,7 +270,11 @@ def answers(site: str) -> bool:
 
 
 def preconditions(report: base.Report) -> str | None:
-    """What §22 needs, read where ELA reads it; the configured voice's id, or ``None``."""
+    """What §22 needs of the world, read where ELA reads it; the configured voice's id, or ``None``.
+
+    Through the reader of M6.3c's step 1: the first thing missing makes step 1 SKIPPED with what is
+    missing, and the script stops there — never a FAILED, which would read as ELA's (dec. 2-bis).
+    """
     from ela.composition.settings import BrowserSettings
     from ela.infrastructure.machine.browser import shell_folder
 
@@ -277,7 +285,7 @@ def preconditions(report: base.Report) -> str | None:
     def reached(site: str) -> Callable[[], bool]:
         return lambda: answers(site)
 
-    checks: list[tuple[str, Callable[[], bool]]] = [
+    checks: list[tuple[str, base.Check]] = [
         ("ELA risponde", lambda: base.Api().get("/health") is not None),
         (
             "lo shell di Chromium c'è",
@@ -294,16 +302,8 @@ def preconditions(report: base.Report) -> str | None:
         *((f"{site} risponde", reached(site)) for site in SITES),
         ("la voce online è configurata", lambda: bool(voice()["configured"])),
     ]
-    for what, check in checks:
-        try:
-            ok = check()
-        except Exception as error:  # noqa: BLE001 — every failure is reported with what it said
-            report.failure(1, what, f"{type(error).__name__}: {error}")
-            return None
-        if not ok:
-            report.failure(1, what)
-            return None
-        report.passed(1, what)
+    if not base.required(report, checks):
+        return None
     voice_id: str = voice()["voice_id"]
     report.say(f"    la voce configurata: {voice_id}")
     return voice_id

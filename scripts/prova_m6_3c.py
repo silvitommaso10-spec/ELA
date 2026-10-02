@@ -16,11 +16,13 @@ Per ogni passo meccanico stampa **PASSATO** o **FALLITO** con l'uscita vera — 
 sbaglia anche il terzo. **Non aspetta mai un Invio**: ciò che fa la mano di Tommaso lo verifica il
 ``guarda`` che la segue, e ciò che un passo richiede al mondo — un nodo disponibile, il Mac a
 batteria — lo legge da ELA e dal Mac, senza chiederlo; se manca, il passo è SALTATO con ciò che
-manca. Ciò che serve l'occhio di Tommaso non lo giudica: lo chiede finché la risposta è s o n, e la
-scrive come **GUARDATO**. La riga finale conta i PASSATO con i loro giri, i FALLITO, i GUARDATO con
-un no e i SALTATO, e dice «La prova è passata» solo senza FALLITO, senza SALTATO e con ogni
-GUARDATO un sì; altrimenti dice che cosa manca, e lo script esce con 1. Tutto ciò che stampa va
-anche nel file, in ``~/Downloads``.
+manca. **Lo stesso per il passo 1**, ciò che la prova intera richiede: la prima cosa che manca lo fa
+SALTATO, e lo script si ferma lì (dal 2026-10-02, decisione 2-bis della review di M13.1c, M13.1d e
+M9.6; prima era FALLITO, che sembrava di ELA). Ciò che serve l'occhio di Tommaso non lo giudica:
+lo chiede finché la risposta è s o n, e la scrive come **GUARDATO**. La riga finale conta i PASSATO
+con i loro giri, i FALLITO, i GUARDATO con un no e i SALTATO, e dice «La prova è passata» solo senza
+FALLITO, senza SALTATO e con ogni GUARDATO un sì; altrimenti dice che cosa manca, e lo script esce
+con 1. Tutto ciò che stampa va anche nel file, in ``~/Downloads``.
 
 Nessuna soglia di tempo (decisione 7): lo script guarda **finché vede il segno, o finché il task
 finisce da sé**, e dopo il «ferma» aspetta che lo step in corso si chiuda. Il «ferma» lo manda
@@ -564,12 +566,39 @@ def a_step(number: int, todo: list[Block], proof: Proof) -> None:
 # ----------------------------------------------------------------------------------------
 
 
+Check = Callable[[], bool]
+"""One thing step 1 requires of the world, read where ELA reads it: true when it is there."""
+
+
+def required(report: Report, checks: Sequence[tuple[str, Check]]) -> bool:
+    """Step 1: what the proof requires of the world, in order — never a behaviour of ELA.
+
+    Each one there is PASSED. **The first one missing makes step 1 SKIPPED with what is missing,
+    and the script stops there**, as a ``richiede`` does for its step: a FAILED would read as ELA's
+    (decision 2-bis of the review of M13.1c, M13.1d and M9.6, 2026-10-02). A check that raises is
+    missing too, with what it said. Shared by the step 1 of every proof script.
+    """
+    for what, check in checks:
+        try:
+            ok = check()
+        except Exception as error:  # noqa: BLE001 — every miss is reported with what it said
+            report.skipped(
+                1, f"la prova richiede «{what}», e non è così ({type(error).__name__}: {error})"
+            )
+            return False
+        if not ok:
+            report.skipped(1, f"la prova richiede «{what}», e non è così")
+            return False
+        report.passed(1, what)
+    return True
+
+
 def preconditions(report: Report) -> bool:
     """What the plans need, read where ELA reads it: the API, the ``.env``, the shell's folder."""
     from ela.composition.settings import BrowserSettings, TerminalSettings
     from ela.infrastructure.machine.browser import shell_folder
 
-    checks: list[tuple[str, Callable[[], bool]]] = [
+    checks: list[tuple[str, Check]] = [
         ("ELA risponde", lambda: Api().get("/health") is not None),
         (
             "lo shell di Chromium c'è",
@@ -589,17 +618,7 @@ def preconditions(report: Report) -> bool:
             lambda: TerminalSettings().timeout_seconds > SLEPT,
         ),
     ]
-    for what, check in checks:
-        try:
-            ok = check()
-        except Exception as error:  # noqa: BLE001 — every failure is reported with what it said
-            report.failure(1, what, f"{type(error).__name__}: {error}")
-            return False
-        if not ok:
-            report.failure(1, what)
-            return False
-        report.passed(1, what)
-    return True
+    return required(report, checks)
 
 
 # ----------------------------------------------------------------------------------------

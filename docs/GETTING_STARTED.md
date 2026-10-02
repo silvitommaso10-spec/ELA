@@ -3200,6 +3200,13 @@ stampa **PASSATO** per ciascuno. Se una riga dice **FALLITO**, si ferma lì con 
 `prova-m6.3c-` con la data e l'ora nel nome (`--out` per un altro). I passi che seguono li fa lo script, in
 quest'ordine; qui sotto c'è ciò che legge.
 
+> ***Annotato il 2026-10-02*** (decisione 2-bis della review di M13.1c, M13.1d e M9.6): **dal merge del branch
+> `m13.1c-m13.1d-m9.6`**, ciò che manca al passo 1 non dice più **FALLITO**: il passo 1 è **SALTATO** con ciò che
+> manca — «la prova richiede «…», e non è così» —, lo script si ferma lì, e l'ultima riga dice «La prova non è
+> passata: il passo 1 SALTATO.». Ciò che il passo 1 controlla è ciò che la prova richiede al mondo, non un
+> comportamento di ELA, e un FALLITO sembrerebbe di ELA. Il rimedio è lo stesso: si ripara il `.env`, si riavvia
+> `ela serve` e si rilancia. Il giro di domenica 2026-10-04 usa lo script di `main`, com'è scritto sopra.
+
 ### 2. `browser.read`, fermato prima della navigazione
 
 Lo script crea un task con [`examples/browser-read.json`](examples/browser-read.json), stampa il suo id, lo fa
@@ -3585,8 +3592,11 @@ branch, `uv run ela serve`. Niente si scrive sul disco, e nessun sì si dà.
 
 ### 1. Prima
 
-ELA risponde, i due siti rispondono, e la voce online è configurata: lo script lo controlla e, se manca qualcosa, lo
-dice prima di cominciare.
+ELA risponde, lo shell di Chromium c'è, i due siti sono dichiarati e rispondono, e la voce online è configurata:
+lo script lo controlla e stampa **PASSATO** per ciascuno. **Se qualcosa manca, il passo 1 è SALTATO** con ciò che
+manca, e lo script si ferma lì: è il mondo che la prova richiede, non un comportamento di ELA, e un FALLITO
+sembrerebbe di ELA. L'ultima riga dice «La prova non è passata: il passo 1 SALTATO.»; si ripara ciò che manca e si
+rilancia.
 
 ### 2. Un diniego, due volte
 
