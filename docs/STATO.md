@@ -116,7 +116,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
 | 13 — Il permesso prima dell'azione | `M13.1b` | Implementata | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
 | 13 — Il permesso prima dell'azione | `M13.1c` | Implementata | In quattro rami di `run` un diniego o un fallimento arriva senza il suo perché |
-| 13 — Il permesso prima dell'azione | `M13.1d` | Proposta | Il blocco di `ela approvals` in GETTING_STARTED §6 non è quello che la CLI stampa |
+| 13 — Il permesso prima dell'azione | `M13.1d` | Implementata | Il blocco di `ela approvals` in GETTING_STARTED §6 non è quello che la CLI stampa |
 | 13 — Il permesso prima dell'azione | `M13.1e` | Proposta | La console, il telefono e la riga di comando mostrano un diniego o un fallimento senza il suo perché |
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
@@ -153,7 +153,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **55** | `docs/adr/NNNN-*.md` |
-| Milestone | **79, di cui 57 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **79, di cui 58 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **59** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **30** | i `Protocol` di `src/ela/ports.py` |

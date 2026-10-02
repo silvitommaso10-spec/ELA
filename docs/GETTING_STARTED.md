@@ -4,6 +4,9 @@ Il giro completo, comando per comando, su una macchina vuota. Non serve `curl`: 
 guida dalla riga di comando (§54; ADR 0023 per il processo, ADR 0024 per la CLI).
 
 Ogni output qui sotto è quello vero di una sessione reale — id e istanti a parte, che cambiano.
+**Un blocco d'uscita è ciò che la CLI stampa**, e dove è lungo e se ne mostra un pezzo, le righe tolte
+sono un `…`, sopra e sotto: un test confronta i blocchi di `ela task run` e di `ela approvals` con il comando
+(M6.3b, M13.1c, M13.1d), e gli altri li prenderà M9.7.
 
 ### Come si leggono i comandi
 
@@ -305,26 +308,29 @@ uv run ela approvals
 ```
 
 ```
-approval    47fbce38-66ab-519c-b7dc-8cce4bd4a7f2
-task        55ed2ab5-94aa-581f-9468-c4d247d9fe04
-capability  workspace.write_note
-what        Writes a note at a path inside the authorised notes folder.
-risk        LOW
-may go      LOCAL_ONLY
-grant       1 use, within 60 minutes
-expires     2026-09-07T09:12:00+00:00
-step goal   scrivere la nota del primo task
-declared    —
-targets     workspace/notes/first-task.md
-file        —
-does        —
-asks        workspace.write_note on workspace/notes/first-task.md for step 9c5b8f26-… (scrivere la nota del primo task): workspace.write_note requires an authorization: none was given
+approval              47fbce38-66ab-519c-b7dc-8cce4bd4a7f2
+task                  55ed2ab5-94aa-581f-9468-c4d247d9fe04
+capability            workspace.write_note
+what                  Writes a note at a path inside the authorised notes folder.
+risk                  LOW
+may go                LOCAL_ONLY
+question expires      2026-09-07T09:12:00+00:00
+grant if you say yes  1 use, within 60 minutes
+step goal             scrivere la nota del primo task
+declared              —
+targets               workspace/notes/first-task.md
+target                —
+does                  —
+asks                  workspace.write_note on workspace/notes/first-task.md for step 9c5b8f26-… (scrivere la nota del primo task): workspace.write_note requires an authorization: none was given
 ```
 
 **Un blocco per domanda, e mostra tutto ciò che la domanda nomina**: è la condizione per cui una
-superficie può offrirti un sì (M13.1, ADR 0045 §11). I trattini non sono buchi — `declared` è vuoto
-perché questa capability non dichiara argomenti da mostrare, `file` e `does` perché la domanda non
-parla di un file: quelli li vedrai in §15.
+superficie può offrirti un sì (M13.1, ADR 0045 §11). Le due scadenze dicono ciascuna di chi è: la
+domanda smette di poter essere risposta a un istante, e il permesso che un sì crea vive per un altro. I
+trattini non sono buchi — `declared` è vuoto perché questa capability non dichiara argomenti da mostrare;
+`target` e `does` perché lo strumento delle note non descrive prima che cosa tocca: quelli che lo fanno —
+un file fuori dalla workspace in §15, un programma in §16 — chiamano la riga del bersaglio con la loro
+parola, `file` e `program`.
 
 Leggi la richiesta, poi rispondi. Il «sì» e il «no» hanno due comandi, perché sono due risposte
 (§62):
@@ -1234,7 +1240,7 @@ declared              purpose: la prova a mano del filesystem
 targets               ELA/prova.md
 file                  /Users/tu/Documenti/ELA/prova.md
 does                  creates a new file
-asks                  fs.write on ELA/prova.md for step …: requires an authorization: none was given
+asks                  fs.write on ELA/prova.md for step …: fs.write requires an authorization: none was given
 ```
 
 Due scadenze, e ciascuna dice di chi è: `question expires` è fin quando la domanda si può ancora
@@ -1611,6 +1617,7 @@ argomenti uno per uno** con i loro confini visibili, **la cartella di lavoro ris
 timeout** e **il codice atteso**:
 
 ```
+…
 targets               bin/echo
 program               /bin/echo
 runs                  /bin/echo
@@ -1619,6 +1626,7 @@ folder                /Users/tu/Documenti/ELA
 timeout               120 s
 expects exit          0
 does                  runs this program from this folder: it can read and change whatever you can, and ELA sees what it prints, not what it changes
+…
 ```
 
 Guarda gli argomenti: sono **due**, e il primo contiene degli spazi — una lista, non una riga di
@@ -2666,6 +2674,9 @@ due le volte: il file delle uscite la contiene due volte.
 `file`, nell'ordine di prima di M13.1, che le ha cambiate con la correzione della sua prova a mano
 (`f08bbfd`), e la frase sotto spiega il trattino di `file`. Non è una frase su `steps`: che cosa farne
 lo decide il revisore.
+
+***Annotato il 2026-10-02***: il blocco di §6 l'ha riparato **M13.1d**, e da allora un test confronta ogni
+blocco di `ela approvals` della guida con ciò che la CLI stampa.
 
 ### 3. Che cosa dice l'help
 

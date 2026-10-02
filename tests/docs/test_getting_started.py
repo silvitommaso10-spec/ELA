@@ -632,7 +632,8 @@ def not_what_a_cut_of_approvals_shows(block: str) -> list[str]:
         if skipped:
             problems.append(f"a piece skips rows always printed: {sorted(skipped)}")
     longest = max(
-        [len(label) for label, _, _ in rows] + [len(known.order[i]) for i in known.always]
+        [len(label) for label, _, _ in rows]
+        + [len(known.order[i]) for i in known.always - {known.target}]
     )
     return problems + _aligned_at(longest, rows)
 
