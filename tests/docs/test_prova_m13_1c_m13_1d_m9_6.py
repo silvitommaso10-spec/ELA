@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from ela.cli.errors import UNREACHABLE
 from ela.cli.output import EMPTY
 from ela.executive.runner import _REASONED, OUTCOMES
 
@@ -301,6 +302,9 @@ class Answering:
             return {"voice": {"online": {"configured": True, "voice_id": "a-voice"}}}
         return {"status": "ok"}
 
+    def close(self) -> None:
+        return None
+
 
 class Declared:
     sites = ("example.com", "httpbin.org")
@@ -343,3 +347,40 @@ def test_a_site_that_does_not_answer_skips_step_1_and_fails_nothing(
     )
     report.verdict()
     assert report.lines[-1] == "La prova non è passata: il passo 1 SALTATO."
+
+
+# ----------------------------------------------------------------------------------------
+# An ELA that stops answering mid-round: written in the file, never a traceback (decision R)
+# ----------------------------------------------------------------------------------------
+
+ADDRESS = "http://127.0.0.1:8351"
+
+
+def silent(line: str) -> subprocess.CompletedProcess[str]:
+    """``uv run ela …`` with nobody listening: the CLI's exit code and its sentence on stderr."""
+    said = f"ela: ELA does not answer at {ADDRESS} (connection refused): start it with `ela serve`"
+    return subprocess.CompletedProcess(line, UNREACHABLE, "", said + "\n")
+
+
+def never(question: str) -> str:
+    raise AssertionError(f"nothing is asked of the eye before ELA stops answering: {question!r}")
+
+
+def test_an_ela_that_stops_answering_ends_the_proof_where_it_did_and_exits_1(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision R of 2026-10-05, in the script of the branch: its commands meet an ELA that stopped
+    as the CLI's exit 3, and until R the first ``task create`` fell on JSON nobody had written."""
+    module = script()
+    monkeypatch.setattr(module, "preconditions", lambda report: "a-voice")
+    monkeypatch.setattr(module.base, "Api", Answering)
+    monkeypatch.setattr(module.base, "run", silent)
+    out = tmp_path / "prova.txt"
+
+    assert module.main(["--out", str(out)], ask=never) == 1
+
+    lines = out.read_text(encoding="utf-8").splitlines()
+    interrupted = [line for line in lines if line.startswith("[2] INTERROTTO: ELA ha smesso")]
+    assert len(interrupted) == 1 and ADDRESS in interrupted[0], lines
+    assert lines[-2] == "La prova non è passata: ELA ha smesso di rispondere al passo 2."
+    assert not any(line.startswith("—— passo 3") for line in lines), "no step after it"

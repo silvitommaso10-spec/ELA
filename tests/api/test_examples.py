@@ -35,6 +35,7 @@ EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
 EXAMPLE = EXAMPLES / "first-task.json"
 ASK_MODEL = EXAMPLES / "ask-model.json"
 SPEAK_ON_A_NODE = EXAMPLES / "speak-on-a-node.json"
+SPEAK_TO_THE_END = EXAMPLES / "speak-on-a-node-to-the-end.json"
 COMPANION = EXAMPLES / "companion.json"
 ECHO = EXAMPLES / "echo.json"
 NOTE = "_nota"
@@ -136,10 +137,11 @@ def test_every_example_explains_itself() -> None:
     a fifth arrive unexplained. Seven since M13.1, which brought the three of the filesystem;
     thirteen since M13.2, which brought the six of the terminal; fourteen since M13.3, which
     brought the echo of the measurement of the weights; twenty since M13.4, which brought the six of
-    the browser; twenty-one since M6.3c, which brought the program that sleeps until it is stopped.
+    the browser; twenty-one since M6.3c, which brought the program that sleeps until it is stopped;
+    twenty-two since the review of 2026-10-05 (decision Q), which gave §21 step 8 its own sentence.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 21, [path.name for path in found]
+    assert len(found) == 22, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
@@ -301,6 +303,41 @@ async def test_it_asks_for_consent_every_time(client: AsyncClient) -> None:
     assert run["outcome"] == "waiting_approval"
     approval = (await client.get("/approvals")).json()[0]
     assert approval["capability_id"] == "voice.speak"
+
+
+# ----------------------------------------------------------------------------------------
+# ``speak-on-a-node-to-the-end.json``: §21 step 8, a node left to speak (decision Q, 2026-10-05)
+# ----------------------------------------------------------------------------------------
+
+
+def the_sentence(path: Path) -> str:
+    plan = json.loads(path.read_text(encoding="utf-8"))
+    text: str = plan["steps"][0]["arguments"]["text"]
+    return text
+
+
+async def test_the_plan_of_the_stop_on_a_node_is_accepted_and_asks(client: AsyncClient) -> None:
+    """Sent byte for byte, like every example: one ``voice.speak`` that asks every time."""
+    plan = json.loads(SPEAK_TO_THE_END.read_text(encoding="utf-8"))
+    task_id = (await client.post("/tasks", json={"text": "fai parlare il PC"})).json()["id"]
+
+    planned = await client.post(f"/tasks/{task_id}/plan", json=plan)
+    run = (await client.post(f"/tasks/{task_id}/run")).json()
+
+    assert planned.status_code == 200, planned.text
+    assert run["outcome"] == "waiting_approval"
+    assert (await client.get("/approvals")).json()[0]["capability_id"] == "voice.speak"
+    assert len(the_sentence(SPEAK_TO_THE_END)) <= MAX_SPOKEN_CHARACTERS
+
+
+def test_a_sentence_written_for_one_proof_is_not_reused_by_one_that_asks_the_opposite() -> None:
+    """Decision Q: the sentence of §12 asks whoever listens to press Ctrl-C, and on 2026-10-05 it
+    was pressed on ``ela serve`` in §21, where the PC must be left to speak to the end. §21 has a
+    sentence of its own, which gives whoever listens no instruction; §12 keeps its own."""
+    assert "Ctrl-C" in the_sentence(SPEAK_ON_A_NODE)
+    heard = the_sentence(SPEAK_TO_THE_END).lower()
+    for asked in ("ctrl", "premi", "premere", "guarda", "guardare"):
+        assert asked not in heard, asked
 
 
 # ----------------------------------------------------------------------------------------

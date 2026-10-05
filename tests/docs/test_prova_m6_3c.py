@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import re
+import subprocess
 import sys
+from collections.abc import Callable
 from functools import cache
 from pathlib import Path
 from types import ModuleType
@@ -26,6 +29,7 @@ import pytest
 
 from ela.api.companion import STOPPED as STOPPED_BY_THE_PHONE
 from ela.api.console import STOPPED as STOPPED_BY_THE_CONSOLE
+from ela.cli.client import Unreachable
 from ela.cli.output import EMPTY
 from ela.cli.tasks import HALT_WORDS, RUN_LABELS, _detail, _ran, _results
 from ela.domain import Halt
@@ -200,6 +204,18 @@ def test_the_plans_the_commands_name_exist() -> None:
     assert plans
     assert all((ROOT / plan).is_file() for plan in plans)
     assert "docs/examples/terminal-stop.json" in plans
+
+
+def test_step_8_plans_its_own_example_and_not_the_one_of_section_12() -> None:
+    """Decision Q of 2026-10-05: the sentence of §12 asks whoever listens to press Ctrl-C, and here
+    the PC must be left to speak to the end. A sentence written for one proof is not reused by one
+    that asks the opposite."""
+    commands = "\n".join(block.body for block in marked()[8] if block.kind == "comando")
+
+    assert re.findall(r"--file (docs/examples/[\w-]+\.json)", commands) == [
+        "docs/examples/speak-on-a-node-to-the-end.json"
+    ]
+    assert "speak-on-a-node.json" not in script().section(guide())
 
 
 def test_the_ids_of_other_steps_are_of_earlier_steps_that_made_a_task() -> None:
@@ -380,7 +396,7 @@ STEP_OF = {
     2: "b4c2d7e1-5a3f-4b69-8d20-000000000001",
     3: "b4c2d7e1-5a3f-4b69-8d20-000000000005",
     4: "c6d3e2f1-7a48-4c3b-9e05-000000000001",
-    8: "5a1e0c3d-7b2f-4e8a-9c41-000000000001",
+    8: "5a1e0c3d-7b2f-4e8a-9c41-000000000002",
 }
 
 
@@ -506,7 +522,7 @@ def test_the_expected_block_of_step_4_fails_on_a_step_that_completed() -> None:
 # ----------------------------------------------------------------------------------------
 
 
-class Unreachable:
+class Away:
     """An API that is not there: what ``Api()`` meets when ``ela serve`` is not running."""
 
     def __init__(self) -> None:
@@ -520,7 +536,7 @@ def test_an_ela_that_does_not_answer_skips_step_1_and_fails_nothing(
     and the script stops there — a FAILED would read as ELA's (review of M13.1c+M13.1d+M9.6, 2-bis).
     """
     module = script()
-    monkeypatch.setattr(module, "Api", Unreachable)
+    monkeypatch.setattr(module, "Api", Away)
     report = module.Report(io.StringIO())
 
     assert module.preconditions(report) is False
@@ -552,3 +568,182 @@ def test_what_is_there_passes_and_the_first_thing_missing_stops_step_1() -> None
         "[1] SALTATO: la prova richiede «example.com risponde», e non è così",
     ]
     assert read == [], "the script stops at the first thing missing"
+
+
+# ----------------------------------------------------------------------------------------
+# An ELA that stops answering mid-round: written in the file, never a traceback (decision R)
+# ----------------------------------------------------------------------------------------
+
+ADDRESS = "http://127.0.0.1:8351"
+
+
+class Silent:
+    """An ELA that answered step 1 and then stopped: every call is :class:`Unreachable`."""
+
+    def get(self, path: str) -> Any:
+        raise Unreachable(ADDRESS, ConnectionRefusedError("connection refused"))
+
+    def post(self, path: str, body: dict[str, Any] | None = None) -> Any:
+        return self.get(path)
+
+    def close(self) -> None:
+        return None
+
+
+class Background:
+    """The run that goes on while the script looks, already over."""
+
+    def communicate(self) -> tuple[str, None]:
+        return "", None
+
+
+def created(line: str) -> subprocess.CompletedProcess[str]:
+    """``uv run ela …`` that answered: a task created, a plan written."""
+    return subprocess.CompletedProcess(line, 0, json.dumps({"id": TASK}), "")
+
+
+def never(question: str) -> str:
+    raise AssertionError(f"nothing is asked of the eye before ELA stops answering: {question!r}")
+
+
+def test_an_ela_that_stops_answering_mid_round_ends_the_proof_in_the_file_and_exits_1(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision R of 2026-10-05: at 10:45 ELA stopped at step 8 and the script fell with a
+    traceback that went to the terminal, not to the file. Now the file says at which step, the
+    last line says so, and the exit is 1."""
+    module = script()
+    monkeypatch.setattr(module, "preconditions", lambda report: True)
+    monkeypatch.setattr(module, "Api", Silent)
+    monkeypatch.setattr(module, "run", created)
+    monkeypatch.setattr(module, "started", lambda line: Background())
+    monkeypatch.setattr(module, "processes", dict)
+    out = tmp_path / "prova.txt"
+
+    assert module.main(["--out", str(out)], ask=never) == 1
+
+    lines = out.read_text(encoding="utf-8").splitlines()
+    interrupted = [line for line in lines if line.startswith("[2] INTERROTTO: ELA ha smesso")]
+    assert len(interrupted) == 1 and ADDRESS in interrupted[0], lines
+    assert lines[-2] == "La prova non è passata: ELA ha smesso di rispondere al passo 2."
+    assert not any(line.startswith("—— passo 3") for line in lines), "no step after it"
+
+
+def test_the_last_line_says_where_ela_stopped_answering_beside_what_else_is_missing() -> None:
+    module = script()
+    report = module.Report(io.StringIO())
+    report.failure(5, "mancano ['x']")
+    report.lost(8, ADDRESS)
+
+    report.verdict()
+
+    assert not report.ok
+    assert report.lines[-1] == (
+        "La prova non è passata: ELA ha smesso di rispondere al passo 8, 1 FALLITI."
+    )
+
+
+# ----------------------------------------------------------------------------------------
+# A stop from the other surface: a human step to redo, not a failure of ELA (decision S)
+# ----------------------------------------------------------------------------------------
+
+
+class Stopped:
+    """An ELA whose task is CANCELLED as soon as it is looked at: what the hand of steps 5 and 6
+    leaves, whichever surface it pressed «Ferma il task» on."""
+
+    def get(self, path: str) -> Any:
+        return {"state": "CANCELLED"}
+
+    def post(self, path: str, body: dict[str, Any] | None = None) -> Any:
+        raise AssertionError("steps 5 and 6 send no stop of their own")
+
+    def close(self) -> None:
+        return None
+
+
+def said_by(*surfaces: str) -> Callable[[str], subprocess.CompletedProcess[str]]:
+    """``uv run ela …`` whose ``task run`` says, round after round, who stopped the task."""
+    each = iter(surfaces)
+
+    def run(line: str) -> subprocess.CompletedProcess[str]:
+        if " task run " in f" {line} ":
+            printed = ran(f"cancel: QUEUED -> CANCELLED ({next(each)})", [], None)
+            return subprocess.CompletedProcess(line, 0, printed, "")
+        return created(line)
+
+    return run
+
+
+ASKED = {5: STOPPED_BY_THE_CONSOLE, 6: STOPPED_BY_THE_PHONE}
+"""The surface each step asks the hand to stop the task from — the words of its expected reason."""
+OTHER = {5: STOPPED_BY_THE_PHONE, 6: STOPPED_BY_THE_CONSOLE}
+
+
+def walked(number: int, monkeypatch: pytest.MonkeyPatch, *surfaces: str) -> Any:
+    module = script()
+    monkeypatch.setattr(module, "run", said_by(*surfaces))
+    monkeypatch.setattr(module, "processes", dict)
+    report = module.Report(io.StringIO())
+    module.a_step(number, marked()[number], module.Proof(Stopped(), report, lambda question: "s"))
+    return report
+
+
+def test_the_surfaces_are_the_words_the_code_writes_and_each_step_asks_for_one() -> None:
+    assert set(script().SURFACES) == {STOPPED_BY_THE_CONSOLE, STOPPED_BY_THE_PHONE}
+    for number, surface in ASKED.items():
+        expected = "\n".join(block.body for block in marked()[number] if block.kind == "atteso")
+        assert [one for one in script().SURFACES if f"({one})" in expected] == [surface], number
+
+
+@pytest.mark.parametrize("number", sorted(ASKED))
+def test_a_stop_from_the_other_surface_is_a_human_step_done_again_not_a_failure(
+    number: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Decision S of 2026-10-05: at 17:46 «Ferma» was pressed on the phone at step 5, and the
+    reason said so, truly. The step is done again in a new round, and nothing fails."""
+    report = walked(number, monkeypatch, OTHER[number], ASKED[number])
+
+    assert report.failures == 0, report.lines
+    assert (
+        f"[{number}] DA RIPETERE: il passo umano non è stato fatto come chiesto: la ragione dice "
+        f"«{OTHER[number]}», il passo chiede «{ASKED[number]}» (giro 1): ripeto il passo con un "
+        "task nuovo"
+    ) in report.lines
+    assert f"[{number}] PASSATO al secondo giro: l'uscita è quella attesa" in report.lines
+
+
+def test_the_other_surface_three_times_fails_the_step_and_says_it_was_the_human_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rounds are the ones of a stop on the wrong side: a count, not a time."""
+    report = walked(5, monkeypatch, *([STOPPED_BY_THE_PHONE] * script().ROUNDS))
+
+    assert report.failures == 1
+    assert report.lines[-1].startswith(
+        "[5] FALLITO: il passo umano non è stato fatto come chiesto: la ragione dice"
+    )
+
+
+def test_a_reason_that_is_wrong_from_the_right_surface_is_a_failure_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The negative case: only the surface makes a step to redo; any other difference is ELA's."""
+    module = script()
+    printed = ran(f"cancel: EXECUTING -> CANCELLED ({STOPPED_BY_THE_CONSOLE})", [], None)
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda line: (
+            subprocess.CompletedProcess(line, 0, printed, "")
+            if " task run " in f" {line} "
+            else created(line)
+        ),
+    )
+    monkeypatch.setattr(module, "processes", dict)
+    report = module.Report(io.StringIO())
+
+    module.a_step(5, marked()[5], module.Proof(Stopped(), report, lambda question: "s"))
+
+    assert report.failures == 1
+    assert not any("DA RIPETERE" in line for line in report.lines)
