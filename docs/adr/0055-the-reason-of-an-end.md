@@ -97,6 +97,37 @@ Gli ADR non si riscrivono: queste righe si leggono con questo accanto.
   ogni fallimento consegnato da un nodo, non solo della ripresa, e la ragione che `run` dice è quella della transizione.
 - **ADR 0051, le Conseguenze**: «`denied` e `failed` la portano **quando la chiamata l'ha ricevuta**» — superata (§1).
 - **ADR 0054 §7**: «La porta dà la stessa ragione» vale da M13.1c per ogni fine che non è `completed`.
+- **ADR 0054 §16**: «il debito è saldato da un file che dice «La prova è passata»» — rivisto da §7: il debito del
+  passo 8 lo salda il passo 8 PASSATO sul PC.
+
+### 7. Il debito di ADR 0054 §16, saldato: il passo 8 della prova a mano, passato sul PC il 2026-10-05
+
+**Il giro è stato fatto il 2026-10-05, un giorno dopo la data di ADR 0054 §16** («entro domenica 2026-10-04»),
+su `main` a `ab87d9d`, con il Mac e il PC e con lo script di `main`, `scripts/prova_m6_3c.py`. I file sono due:
+
+- **`~/Downloads/prova-m6.3c-20261005-104506.txt`**, delle 10:45. I passi 2–6 come attesi; al passo 5 un no di
+  Tommaso a una domanda dell'occhio, che dopo, rilette le tre frasi nella console, ha visto giuste. Al passo 8 il PC
+  ha detto la frase di `docs/examples/speak-on-a-node.json`, **che chiede a chi ascolta di premere Ctrl-C**, perché
+  era scritta per la prova di §12; Tommaso l'ha premuto sulla finestra di `ela serve`, ELA ha smesso di rispondere,
+  e la chiamata seguente dello script all'API è finita in `Unreachable`: **lo script è crollato con un traceback**,
+  che è andato sul terminale e non nel file. Il file si ferma a «[8] «ferma» mandato», senza l'ultima riga.
+  **Nessun difetto di ELA**: ELA l'ha fermato chi faceva la prova, su istruzione di una frase scritta per un'altra
+  prova. I difetti sono dell'esempio e dello script, e li riparano le decisioni Q e R della review (§21 prende un
+  esempio suo; lo script che perde ELA a metà giro lo scrive nel file ed esce con 1).
+- **`~/Downloads/prova-m6.3c-20261005-174637.txt`**, delle 17:46. **Il passo 8 PASSATO al primo giro**: «c'è ciò
+  che il passo richiede: un nodo disponibile, il Mac a batteria», «il «ferma» è caduto dopo il punto», e l'uscita
+  attesa di `task show` — fermato dopo il punto, il PC ha consegnato, e lo step si è chiuso come uno step normale.
+  **L'unico FALLITO è al passo 5, ed è un passo umano fatto dalla superficie sbagliata**: Tommaso ha premuto «Ferma»
+  dal telefono invece che dalla console, e la ragione dice il vero, «fermato dall'iPhone», dove il passo aspettava
+  «fermato dal Command Center». ELA ha scritto chi ha fermato il task; non è un suo difetto, e da questo branch lo
+  script lo riconosce e fa rifare il passo (decisione S). L'ultima riga dice «La prova non è passata: 1 FALLITI.».
+
+**Il criterio di ADR 0054 §16 è rivisto qui, apertamente.** §16 voleva il debito saldato «da un file che dice «La
+prova è passata»». **Era sbagliato**: chiedeva a un debito sul passo 8 di essere pagato anche dai passi che non
+c'entrano — i passi 2–6, passati sul Mac il 2026-10-02, che sono la ragione per cui ADR 0054 è Accettata —, e così un
+no detto per sbaglio, o un «Ferma» premuto dal telefono, avrebbero tenuto aperto un debito che il passo 8 aveva
+pagato. **Il debito era il passo 8, e lo salda il passo 8 PASSATO sul PC: il file delle 17:46.** Il giorno di ritardo
+resta scritto qui, accanto alla data che §16 dava.
 
 ## Alternative considerate
 

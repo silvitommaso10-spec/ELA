@@ -3561,6 +3561,10 @@ stopped step had acted; its verification passed
 con le tue risposte, e l'ultima riga che dice «La prova è passata». Quel file salda il debito; se il passo 8
 fallisce, si apre una riparazione con la sua lettera.
 
+> ***Annotato il 2026-10-05***: **il debito è saldato** da ADR 0055 §7, con il giro su `main` del 2026-10-05 — un
+> giorno dopo la data di ADR 0054 §16 —, dove il passo 8 è PASSATO sul PC. Il criterio di sopra, «un file che dice
+> «La prova è passata»», è rivisto lì: il debito era il passo 8, e lo salda il passo 8.
+
 ### 9. Alla fine
 
 **Dopo il giro di domenica**, non prima: togli `bin/sleep` da `ELA_TERMINAL_PROGRAMS`, e riavvia `ela serve`. I

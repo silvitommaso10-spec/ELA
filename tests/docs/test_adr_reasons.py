@@ -82,3 +82,35 @@ def test_the_adr_cites_the_tests_that_hold_it() -> None:
     ):
         assert f"`{path}`" in text, path
         assert (ROOT / path).is_file(), path
+
+
+STATO = ROOT / "docs" / "STATO.md"
+PAID_ON = "2026-10-05"
+FILES = (
+    "~/Downloads/prova-m6.3c-20261005-104506.txt",
+    "~/Downloads/prova-m6.3c-20261005-174637.txt",
+)
+
+
+def test_section_7_pays_the_debt_of_step_8_with_the_file_where_step_8_passed() -> None:
+    """Decisions O and P of the session: the heading ``scripts/generate_stato.py`` reads to call the
+    debt paid, the day it was paid — one after the date of ADR 0054 §16 —, and the two files."""
+    paid = section(7)
+
+    assert paid.startswith(
+        "\n### 7. Il debito di ADR 0054 §16, saldato: il passo 8 della prova a mano, "
+        f"passato sul PC il {PAID_ON}"
+    )
+    assert "un giorno dopo la data di ADR 0054 §16" in paid
+    for name in FILES:
+        assert f"`{name}`" in paid, name
+    assert "**Il criterio di ADR 0054 §16 è rivisto qui, apertamente.**" in paid
+
+
+def test_the_table_of_debts_says_section_7_paid_it() -> None:
+    rows = [
+        line for line in STATO.read_text(encoding="utf-8").splitlines() if "ADR 0054 §16" in line
+    ]
+
+    assert len(rows) == 1, rows
+    assert rows[0].endswith("| saldato da ADR 0055 §7 |"), rows[0]

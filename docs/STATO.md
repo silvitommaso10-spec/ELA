@@ -916,7 +916,6 @@ pagato da chi doveva.
 | ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
-| ADR 0054 §16 — il passo 8 della prova a mano, entro domenica 2026-10-04 | 2026-10-02 | del giro di domenica della prova di M6.3c, su `main` | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |
@@ -924,6 +923,7 @@ pagato da chi doveva.
 | ADR 0047 §17 — i test di Windows che nessun job raccoglie | 2026-09-24 | di M13.3 | saldato da ADR 0048 §5 |
 | ADR 0052 §15 — il «ferma» a metà di uno step del browser | 2026-09-29 | di M6.3c | saldato da ADR 0054 §11 |
 | ADR 0053 §2 — il runner della CI, da fissare entro il 2026-10-19 | 2026-09-30 | di M6.3c | saldato da ADR 0054 §1 |
+| ADR 0054 §16 — il passo 8 della prova a mano, entro domenica 2026-10-04 | 2026-10-02 | del giro di domenica della prova di M6.3c, su `main` | saldato da ADR 0055 §7 |
 
 <!-- fine del blocco generato: i debiti datati -->
 
