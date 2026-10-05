@@ -28,7 +28,10 @@ Tommaso lo chiede finché la risposta è s o n. **Il passo 1 controlla ciò che 
 mondo** — ELA acceso, lo shell di Chromium, i siti dichiarati e che rispondono, la voce configurata
 —, con il lettore del passo 1 di M6.3c: la prima cosa che manca fa il passo 1 **SALTATO** con ciò
 che manca, e lo script si ferma lì; mai un FALLITO, che sembrerebbe di ELA (decisione 2-bis della
-review, 2026-10-02). La riga finale è quella di M6.3c: «La prova è passata» solo senza FALLITO,
+review, 2026-10-02). **Se ELA smette di rispondere a metà giro** — un comando di ``ela`` che esce
+con il codice della CLI per «nessuno risponde» —, il passo è INTERROTTO nel file, i passi che
+restano non si fanno, e l'ultima riga lo dice: il ciclo dei passi è quello di M6.3c (decisione R,
+2026-10-05). La riga finale è quella di M6.3c: «La prova è passata» solo senza FALLITO,
 senza SALTATO e con ogni GUARDATO un sì. Tutto va anche nel file, in ``~/Downloads``.
 """
 
@@ -198,7 +201,7 @@ def filled(text: str, turn: Turn, proof: Proof) -> str:
 def a_command(number: int, line: str, turn: Turn, proof: Proof) -> None:
     report = proof.report
     report.say(f"    $ {line}")
-    done = base.run(line)
+    done = base.heard(line, base.run(line))
     output = done.stdout + done.stderr
     turn.last = joined(output) if line.endswith(HELP) else output
     for printed in output.rstrip("\n").splitlines():
@@ -336,8 +339,7 @@ def main(argv: Sequence[str] | None = None, ask: base.Ask = input) -> int:
         if voice_id is not None:
             proof = Proof(base.Api(), report, ask, the_guides_question(text), voice_id)
             try:
-                for number, its in todo.items():
-                    a_step(number, its, proof)
+                base.walk(report, todo, lambda number, its: a_step(number, its, proof))
             finally:
                 proof.api.close()
         report.say()

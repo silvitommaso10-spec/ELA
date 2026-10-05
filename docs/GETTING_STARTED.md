@@ -3207,6 +3207,26 @@ quest'ordine; qui sotto c'è ciò che legge.
 > comportamento di ELA, e un FALLITO sembrerebbe di ELA. Il rimedio è lo stesso: si ripara il `.env`, si riavvia
 > `ela serve` e si rilancia. Il giro di domenica 2026-10-04 usa lo script di `main`, com'è scritto sopra.
 
+> ***Annotato il 2026-10-05*** (decisioni Q, R e S della review del giro su `main` del 2026-10-05, ADR 0055 §7):
+> **dal merge del branch `m13.1c-m13.1d-m9.6`**, tre cose cambiano, nello script e qui.
+>
+> - **Q. Il passo 8 ha un esempio suo**,
+>   [`examples/speak-on-a-node-to-the-end.json`](examples/speak-on-a-node-to-the-end.json), con una frase che non
+>   dà istruzioni a chi ascolta. Quella di
+>   [`examples/speak-on-a-node.json`](examples/speak-on-a-node.json) è scritta per §12 e chiede di premere Ctrl-C:
+>   il 2026-10-05 è stato premuto sulla finestra di `ela serve`, e ELA si è fermato a metà giro. Una frase scritta
+>   per una prova non si riusa in un'altra che chiede il contrario. §12 resta com'è.
+> - **R. Se ELA smette di rispondere a metà giro, lo script non crolla**: scrive nel file
+>   «[N] INTERROTTO: ELA ha smesso di rispondere — …» al passo in cui è successo, non fa i passi che restano, e
+>   l'ultima riga dice «La prova non è passata: ELA ha smesso di rispondere al passo N.»; l'uscita è 1. Fino a R,
+>   il traceback andava sul terminale e il file restava senza l'ultima riga.
+> - **S. Ai passi 5 e 6, un «Ferma» dato dalla superficie sbagliata si rifà**: la ragione nomina la superficie che
+>   ha fermato il task, con le parole che la console e il telefono scrivono; se non è quella che il passo chiede,
+>   lo script stampa **DA RIPETERE** — «il passo umano non è stato fatto come chiesto: la ragione dice «…», il
+>   passo chiede «…»» — e rifà il passo con un task nuovo, come per un «ferma» caduto dal lato sbagliato,
+>   fino a tre giri. Non è un difetto di ELA, che ha scritto il vero; ogni altra differenza della ragione resta
+>   un **FALLITO**.
+
 ### 2. `browser.read`, fermato prima della navigazione
 
 Lo script crea un task con [`examples/browser-read.json`](examples/browser-read.json), stampa il suo id, lo fa
@@ -3506,8 +3526,10 @@ passato, e il passo 8 è quello nuovo.
 ### 8. Lo step che un nodo ha preso
 
 Con il PC acceso e disponibile, e il Mac a batteria perché il lavoro vada al PC (§12, passo 6), lo script crea
-un task `TRUSTED` con [`examples/speak-on-a-node.json`](examples/speak-on-a-node.json), che va al PC. Le due
-condizioni le verifica lo script, prima di cominciare: il PC lo legge da ELA, la batteria dal Mac.
+un task `TRUSTED` con [`examples/speak-on-a-node-to-the-end.json`](examples/speak-on-a-node-to-the-end.json), che
+va al PC. Le due condizioni le verifica lo script, prima di cominciare: il PC lo legge da ELA, la batteria dal Mac.
+**La frase non chiede niente a chi ascolta**: il PC va lasciato parlare fino in fondo. Non è quella di §12, che
+chiede di premere Ctrl-C (decisione Q, nella nota del passo 1).
 
 <!-- prova: 8.richiede -->
 ```
@@ -3518,7 +3540,7 @@ il Mac a batteria
 <!-- prova: 8.comando -->
 ```
 uv run ela task create "la prova di M6.3c: il nodo" --privacy TRUSTED --json
-uv run ela task plan <id> --file docs/examples/speak-on-a-node.json
+uv run ela task plan <id> --file docs/examples/speak-on-a-node-to-the-end.json
 uv run ela task run <id>
 ```
 
@@ -3554,7 +3576,7 @@ uv run ela task show <id>
 ```
 state CANCELLED
 stopped step had acted; its verification passed
-5a1e0c3d-7b2f-4e8a-9c41-000000000001 COMPLETED
+5a1e0c3d-7b2f-4e8a-9c41-000000000002 COMPLETED
 ```
 
 **Che cosa si deve vedere**, alla fine dello script: i passi meccanici **PASSATO**, quelli a occhio **GUARDATO**
@@ -3588,7 +3610,9 @@ delle due corse è la stessa, e non è `—`**; **al passo 4 il blocco di `ela a
 loro ordine e la loro larghezza del blocco di §6**; **al passo 6 il comando esce con `0`**. I segnaposto che riempie
 sono `<id>`, `<approval-id>` — la domanda del task del passo — e `<id della voce configurata>`, letto da
 `GET /voice`. Scrive tutto in `~/Downloads`, in `prova-m13.1c-m13.1d-m9.6-` con la
-data e l'ora, e l'ultima riga dice «La prova è passata» o che cosa manca.
+data e l'ora, e l'ultima riga dice «La prova è passata» o che cosa manca. **Se ELA smette di rispondere a metà
+giro**, lo script scrive **INTERROTTO** al passo in cui è successo, non fa i passi che restano, e l'ultima riga lo
+dice (decisione R, nella nota di §21 passo 1).
 
 Sull'ELA di sempre, con il tuo `.env` com'è — i siti di §20 (`example.com` e `httpbin.org`), lo scope di §15, la voce
 online di §12 — e **senza** la riga delle voci (passo 9: si aggiunge dopo il merge). Il Core acceso dal codice del

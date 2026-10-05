@@ -215,7 +215,9 @@ def test_step_8_plans_its_own_example_and_not_the_one_of_section_12() -> None:
     assert re.findall(r"--file (docs/examples/[\w-]+\.json)", commands) == [
         "docs/examples/speak-on-a-node-to-the-end.json"
     ]
-    assert "speak-on-a-node.json" not in script().section(guide())
+    assert "--file docs/examples/speak-on-a-node.json" not in script().section(guide()), (
+        "the note may name §12's example; no command of §21 plans it"
+    )
 
 
 def test_the_ids_of_other_steps_are_of_earlier_steps_that_made_a_task() -> None:
