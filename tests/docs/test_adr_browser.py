@@ -18,7 +18,7 @@ from ela.tools.browser import BrowserActTool, BrowserReadTool
 from ela.tools.verifiers import BrowserActVerifier, BrowserReadVerifier
 from tests.architecture.rules import MACHINE_LIBRARIES
 from tests.contracts.protocols import members, port_protocols
-from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_composition import coded_routes, routes_after_0056
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.docs.test_adr_placement import _rules_up_to
 
@@ -70,7 +70,7 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
     assert "**ventinove**" in text
     assert len(tuple(p for p in port_protocols() if p.__name__ != "TaskStop")) == 29  # ADR 0054
     assert "**quarantanove**" in text
-    assert len(coded_routes()) == 49
+    assert len(coded_routes() - routes_after_0056()) == 49  # ADR 0057's is later
 
 
 # ----------------------------------------------------------------------------------------

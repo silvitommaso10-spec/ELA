@@ -6,6 +6,7 @@
   il contratto di `for_step` è un contract test e non solo una docstring, e una seconda `STARTED`
   per lo stesso step è rifiutata in `add` (§1-bis).
   **ADR 0048 §6** (M13.3): la `STARTED` di una presa nasce per un tool non ripiazzabile (`relocatable`), non per uno non idempotente — dice «un lavoro che non si può spostare»; sul Core resta legata a `idempotent`.
+  **ADR 0057 §4 e §11** (M14.1): «Nessun budget» non è più vero — la `STARTED` di una chiamata che spende porta il suo caso peggiore, il libro del mese si deriva dalle righe dei risultati, e una chiamata parte solo sotto il tetto di `ELA_SPENDING_CAP_USD`.
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §26, §27, §28, §29, §32, §33, §57, §62, §63, §64
 - **Milestone:** M7.2 (decisioni dell'utente del 2026-09-07: **1a**, **2a**, **8a**, **9a**,

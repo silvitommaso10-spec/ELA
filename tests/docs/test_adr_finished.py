@@ -9,8 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from tests.contracts.protocols import port_protocols
-from tests.docs.test_adr_cli import coded_commands, commands_after_0048
-from tests.docs.test_adr_composition import coded_routes, routes_after_0048
+from tests.docs.test_adr_cli import coded_commands, commands_after_0048, commands_after_0056
+from tests.docs.test_adr_composition import coded_routes, routes_after_0048, routes_after_0056
 from tests.docs.test_adr_placement import _rules_up_to
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
@@ -34,15 +34,15 @@ def test_the_conseguenze_count_the_rules_the_ports_the_routes_and_the_commands_o
     later = {"Browser", "TaskStop"}  # ADR 0052 and ADR 0054
     assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 28
     assert "**quarantanove**" in text
-    assert len(coded_routes()) == 49
+    assert len(coded_routes() - routes_after_0056()) == 49  # ADR 0057's is later
     assert "**ventisette**" in text
-    assert len(coded_commands()) == 27
+    assert len(coded_commands() - commands_after_0056()) == 27
 
 
 def test_it_adds_one_route_and_the_command_that_calls_it() -> None:
     """What the tests of the earlier ADRs take away is exactly this — read from here."""
-    assert routes_after_0048() == {("GET", "/tasks/finished")}
-    assert commands_after_0048() == {"task finished"}
+    assert routes_after_0048() - routes_after_0056() == {("GET", "/tasks/finished")}
+    assert commands_after_0048() - commands_after_0056() == {"task finished"}
 
 
 def test_it_says_the_decision_it_revises_worked_as_written_and_names_its_boundary() -> None:

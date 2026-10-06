@@ -45,11 +45,13 @@ uv run python scripts/generate_stato.py
   risponde e non prende lavoro (M12.5). Il Device Orchestrator non sceglie più fra un candidato
   solo per costruzione: sceglie fra quelli che il registro ha, con i filtri e i punteggi di
   ADR 0017.
+- **La chiave del modello ha un tetto** — M14.1, la prima della Fase 14: una chiamata che spende parte
+  solo se il caso peggiore sta dentro il tetto del mese, scritto nel `.env` del Core (5.9).
 - **Il ciclo di lavoro** è quello di `CLAUDE.md`: una milestone alla volta, SPEC → IMPLEMENTATION →
   TEST → REVIEW → COMMIT, su un branch di lavoro; il merge su `main` lo fa l'utente dopo revisione
   esterna. `make check` in primo piano, una volta, alla fine della milestone, letto intero. Il
-  controllo Linux è la CI sul branch, verde su entrambi i runner di `make check` prima del merge —
-  e da M12.4 la CI ha anche un **terzo** job, la suite del nodo su `windows-latest`.
+  controllo Linux è la CI sul branch, verde prima del merge sui suoi **tre** job: `make check` su
+  ubuntu e su macos, e — da M12.4 — la suite del nodo su `windows-latest`.
 
 ## 2. Le milestone
 
@@ -129,10 +131,10 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.9` | Proposta | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
 | 13 — Il permesso prima dell'azione | `M13.10` | Proposta | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
-| 14 — *senza nome* | `M14.1` | Proposta | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
-| 14 — *senza nome* | `M14.2` | Proposta | Il Planner: ELA scrive i piani da sola |
-| 14 — *senza nome* | `M14.3` | Proposta | Il browser guidato dal modello: da una frase, il modello guarda la pagina e sceglie il gesto dopo |
-| 14 — *senza nome* | `M14.4` | Proposta | Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3 |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.2` | Proposta | Il Planner: ELA scrive i piani da sola |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.3` | Proposta | Il browser guidato dal modello: da una frase, il modello guarda la pagina e sceglie il gesto dopo |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.4` | Proposta | Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3 |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.2b` | Implementata | Un esito finale sparisce dalle superfici che elencano i task |
@@ -152,14 +154,14 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **56** | `docs/adr/NNNN-*.md` |
-| Milestone | **79, di cui 59 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **59** | `RULES` in `tests/architecture/` |
+| ADR scritti | **57** | `docs/adr/NNNN-*.md` |
+| Milestone | **79, di cui 60 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **61** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **30** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **13** | `production_catalogue()` |
-| Rotte dell'API | **49** | i `router` di `ela.api` |
-| Comandi della CLI | **26** | l'albero Typer di `ela.cli` |
+| Rotte dell'API | **50** | i `router` di `ela.api` |
+| Comandi della CLI | **27** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
@@ -271,7 +273,6 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 14 | 2 |
 | 15 | 14 |
 | 16 | 1 |
 
@@ -435,20 +436,24 @@ non è a consumo.
 Il budget dell'utente sulla chiave API è **non più di ~50 EUR al mese**, più gli abbonamenti già in
 essere.
 
-Oggi **nessuno lo fa rispettare**. Fra i vincoli dichiarati di ADR 0021 c'è «**Nessun budget** (§3):
-l'usage si registra, non si somma e non si confronta con un tetto», e ADR 0022 lo ripete invariato.
-Quei due ADR hanno messo il tetto sotto §30 — che nella spec è «Pagamenti» —, e §30 non ha ancora un
-ADR; la sua milestone è M14.1 (sotto).
+**Da M14.1 lo fa rispettare ELA** ([ADR 0057](adr/0057-spending-cap.md), Proposta finché la prova a
+mano di `GETTING_STARTED.md` §23 non è passata). Il tetto è una riga del `.env` del Core,
+`ELA_SPENDING_CAP_USD`, in dollari come il listino e la console, e la scrive chi paga: nel codice non
+c'è nessun numero. Prima di ogni chiamata che spende ELA prenota il caso peggiore — la finestra di
+contesto del modello meno l'output, più il `max_tokens` della richiesta — e la lascia partire solo
+se speso + prenotato + caso peggiore sta dentro il tetto del mese, in UTC. **Senza la riga nessuna
+chiamata che spende parte**, e la ragione nomina la riga. `ela spend` dice dove sei, con la stessa
+funzione del cancello.
 
-*Che cosa ne discende:* finché §30 non esiste, **il tetto lo mette il fornitore**: una workspace
-dedicata sulla console, con la sua chiave, un limite mensile e l'auto-reload spento. E **§30 ha la
-sua milestone, M14.1, la prima della Fase 14** (registrata il 2026-09-25): essere la prima della fase
-mantiene l'intento di «prima della Fase 14, non dopo», perché nessuna capability della Fase 14 che
-spende nasce prima del tetto.
+*Che cosa ne discende:* **i tetti sono due**. Il secondo resta quello del fornitore — la workspace
+dedicata sulla console, con le due chiavi del Mac e del PC, un limite mensile e l'auto-reload
+spento —, e il tetto di ELA sta sotto, con un margine: copre anche ciò che le chiavi spendono fuori
+da ELA. «Nessun budget» di ADR 0021 e di ADR 0022 è rivisto apertamente da ADR 0057, come questa
+sezione diceva che sarebbe successo.
 
-*Perché nessun ADR, per nessuna di queste tre voci:* ADR 0021 e ADR 0022 sono immutabili e dicono il
-vero, e non si toccano. Li rivedranno apertamente §30 e la capability della Fase 14, quando
-esisteranno, ciascuno con il proprio ADR.
+*Perché la capability della Fase 14 non è qui:* il lavoro agentico (§5.7, §5.8) spende sulla stessa
+chiave senza passare da `model.complete`, e il tetto di quella strada è di M14.3, che lo sa da
+un'annotazione datata.
 
 ### 5.10 Il design è una fase, non una rifinitura
 

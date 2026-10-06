@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.docs.test_adr_composition import ROUTE_ROW, coded_routes
+from tests.docs.test_adr_composition import ROUTE_ROW, coded_routes, routes_after_0056
 
 ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
 ADR_PATH = ADR_DIR / "0050-sheets-inside-the-page.md"
@@ -31,7 +31,7 @@ def test_it_adds_no_route() -> None:
     """ADR 0037 §3: the sheets travel in the answer, and the routes stay where they were."""
     assert not [line for line in adr_text().splitlines() if ROUTE_ROW.match(line)]
     assert "Nessuna rotta nuova" in adr_text().split("## Conseguenze", 1)[1]
-    assert len(coded_routes()) == 49
+    assert len(coded_routes() - routes_after_0056()) == 49  # ADR 0057's is later
 
 
 def test_it_names_the_rule_of_the_block_with_its_test() -> None:

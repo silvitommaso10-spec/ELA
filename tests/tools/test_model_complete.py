@@ -46,6 +46,7 @@ from ela.testing.fakes import (
     FakeStop,
 )
 from ela.tools import ARGUMENTS_INVALID, MODEL_COMPLETE, MODEL_TOOL_NAME, ModelCompleteTool
+from tests.domain.examples import TASK_STEP
 from tests.routing.support import routing_for
 from tests.tools.support import allowed
 
@@ -113,6 +114,31 @@ async def test_the_request_carries_what_the_arguments_said(
     assert request.instructions == "in tre righe"
     assert request.model_hint == "cheap"
     assert request.parameters == {"max_output_tokens": 200}
+
+
+async def test_parameters_from_a_plan_reach_the_provider(
+    tool: ModelCompleteTool, provider: FakeModelProvider
+) -> None:
+    """The arguments of a step come out of the domain frozen — a ``MappingProxyType`` inside — and
+    ``parameters`` is one of them. Until M14.1 the tool asked for a ``dict`` and refused every plan
+    that named one, ``arguments.invalid``: §23 of the guide was the first plan to try."""
+    step = TASK_STEP.model_copy(update={"arguments": {}})
+    frozen = (
+        type(step)
+        .model_validate(
+            {
+                **step.model_dump(),
+                "arguments": {"input": INPUT, "parameters": {"max_output_tokens": 8192}},
+            }
+        )
+        .arguments
+    )
+
+    result = await tool.execute(allowed(MODEL_COMPLETE), frozen, FakeStop())
+
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+    (request,) = provider.requests
+    assert request.parameters == {"max_output_tokens": 8192}
 
 
 async def test_a_request_without_a_purpose_names_the_capability(

@@ -17,8 +17,8 @@ from ela.domain import Halt
 from ela.ports import ENVELOPE
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
-from tests.docs.test_adr_cli import coded_commands
-from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_cli import coded_commands, commands_after_0056
+from tests.docs.test_adr_composition import coded_routes, routes_after_0056
 from tests.docs.test_adr_placement import _rules_up_to
 from tests.executive.test_stop import EXCEPTIONS
 from tests.tools.test_registry import _production
@@ -84,7 +84,7 @@ def test_the_rules_it_names_are_registered_with_their_numbers() -> None:
     assert {"only-the-engine-raises-a-stop", "a-stop-arrives-per-call", "step-completers"} <= set(
         RULES
     )
-    assert set(RULES) - set(_rules_up_to(57)) == {
+    assert set(_rules_up_to(59)) - set(_rules_up_to(57)) == {
         "only-the-engine-raises-a-stop",
         "a-stop-arrives-per-call",
     }
@@ -101,18 +101,18 @@ def test_the_exceptions_of_decision_1_are_the_three_the_test_holds() -> None:
 
 
 def test_the_conseguenze_count_the_rules_the_ports_the_routes_and_the_commands_of_today() -> None:
-    """The pin on today's totals, taken over from ADR 0052: it moves to the ADR that changes
-    them."""
+    """The pin on today's totals, taken over from ADR 0052, moved on to ADR 0057 (M14.1): what
+    this ADR saw, counted without what came after it."""
     text = conseguenze()
 
     assert "**cinquantanove**" in text
-    assert len(RULES) == 59
+    assert len(_rules_up_to(59)) == 59  # rules 60 and 61 are ADR 0057's
     assert "**trenta**" in text
     assert len(tuple(port_protocols())) == 30
     assert "**quarantanove**" in text
-    assert len(coded_routes()) == 49
+    assert len(coded_routes() - routes_after_0056()) == 49
     assert "**ventisette**" in text
-    assert len(coded_commands()) == 27
+    assert len(coded_commands() - commands_after_0056()) == 27
 
 
 def test_the_measure_of_the_start_up_is_written_with_its_file_and_its_numbers() -> None:

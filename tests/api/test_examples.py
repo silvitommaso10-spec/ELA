@@ -35,7 +35,7 @@ from ela.executive.spending import CAP_VARIABLE, month_of
 from ela.ports import PROVIDER_UNAVAILABLE
 from ela.tools import CREATES, OVERWRITES, READS
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
-from tests.api.reasons import opened
+from tests.api.reasons import example, opened
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
 EXAMPLE = EXAMPLES / "first-task.json"
@@ -144,10 +144,11 @@ def test_every_example_explains_itself() -> None:
     thirteen since M13.2, which brought the six of the terminal; fourteen since M13.3, which
     brought the echo of the measurement of the weights; twenty since M13.4, which brought the six of
     the browser; twenty-one since M6.3c, which brought the program that sleeps until it is stopped;
-    twenty-two since the review of 2026-10-05 (decision Q), which gave §21 step 8 its own sentence.
+    twenty-two since the review of 2026-10-05 (decision Q), which gave §21 step 8 its own sentence;
+    twenty-five since M14.1, which brought the three calls of §23 the first one does not make.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 22, [path.name for path in found]
+    assert len(found) == 25, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
@@ -256,6 +257,44 @@ async def test_it_asks_for_consent_because_the_capability_does(
         )
         month = month_of(datetime.now(UTC)).label
         assert approval["left"] == f"5 of 5 USD left in {month}"
+
+
+@pytest.mark.parametrize(
+    ("name", "worst"),
+    [
+        ("ask-model.json", "4.065536 USD, claude-opus-5-5, up to 995904 tokens in and 4096 out"),
+        (
+            "ask-model-balanced.json",
+            "2.032768 USD, claude-sonnet-5-5, up to 995904 tokens in and 4096 out",
+        ),
+        (
+            "ask-model-routine.json",
+            "0.216384 USD, claude-haiku-4-5-20251001, up to 195904 tokens in and 4096 out",
+        ),
+        (
+            "ask-model-long.json",
+            "0.232768 USD, claude-haiku-4-5-20251001, up to 191808 tokens in and 8192 out",
+        ),
+    ],
+)
+async def test_the_four_calls_of_section_23_ask_with_the_worst_case_the_guide_prints(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str, worst: str
+) -> None:
+    """The four questions of the hand test of M14.1 (§23 steps 4–7): the same plan, the same route,
+    the same price — the line ``ela approvals`` prints is the line the guide expects."""
+    async with opened(
+        monkeypatch, tmp_path, ELA_SPENDING_CAP_USD="30", ELA_ANTHROPIC_API_KEY="sk-ant-test"
+    ) as world:
+        task_id = (await world.client.post("/tasks", json={"text": name})).json()["id"]
+        planned = await world.client.post(f"/tasks/{task_id}/plan", json=example(name))
+        assert planned.status_code == 200, planned.text
+
+        run = (await world.client.post(f"/tasks/{task_id}/run")).json()
+
+        assert run["outcome"] == "waiting_approval", run
+        (approval,) = (await world.client.get("/approvals")).json()
+        assert approval["worst_case"] == worst
+        assert guide_section_23_names(worst)
 
 
 async def test_without_a_cap_it_is_denied_before_the_question_and_never_reaches_the_network(
@@ -599,3 +638,11 @@ def test_the_paths_of_the_examples_are_the_scope_the_guide_tells_you_to_write() 
     assert not fs_plan("fs-outside-the-scope.json")["steps"][0]["arguments"]["path"].startswith(
         "ELA/"
     )
+
+
+def guide_section_23_names(worst: str) -> bool:
+    """Whether §23 of the guide expects this worst case in the row ``ela approvals`` writes —
+    whitespace aside, as the script of §23 compares."""
+    guide = (EXAMPLES.parent / "GETTING_STARTED.md").read_text(encoding="utf-8")
+    section = guide[guide.index("## 23. ") :]
+    return " ".join(f"worst case {worst}".split()) in " ".join(section.split())

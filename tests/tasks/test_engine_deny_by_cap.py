@@ -79,20 +79,30 @@ async def test_it_needs_a_decision_about_this_task(h: Harness) -> None:
     assert await h.snapshot(task.id) == before
 
 
-@pytest.mark.parametrize(
-    "outcome", [PermissionOutcome.DENIED, PermissionOutcome.REQUIRES_APPROVAL], ids=str
-)
-async def test_it_needs_a_decision_that_allowed_the_call(
-    h: Harness, outcome: PermissionOutcome
-) -> None:
+async def test_it_needs_a_decision_that_did_not_say_no(h: Harness) -> None:
     """A Guardian's no is ``deny_by_decision``; the cap only ever stops what was allowed."""
     task = await executing(h)
     before = await h.snapshot(task.id)
-    with pytest.raises(TaskEngineError, match="the Guardian allowed"):
+    with pytest.raises(TaskEngineError, match="a Guardian's no"):
         await h.engine.deny_by_cap(
-            task.id, decision=decision_for(task.id, outcome), reason=REASON, payload=NUMBERS
+            task.id,
+            decision=decision_for(task.id, PermissionOutcome.DENIED),
+            reason=REASON,
+            payload=NUMBERS,
         )
     assert await h.snapshot(task.id) == before
+
+
+async def test_it_denies_a_question_a_yes_could_not_make_pass(h: Harness) -> None:
+    """Review decision 7: before the question the Guardian has said ``REQUIRES_APPROVAL``, and the
+    cap denies the call there — nobody is asked for a yes that would not let it out."""
+    task = await executing(h)
+    asking = decision_for(task.id, PermissionOutcome.REQUIRES_APPROVAL)
+
+    moved = await h.engine.deny_by_cap(task.id, decision=asking, reason=REASON, payload=NUMBERS)
+
+    assert moved.state is S.DENIED
+    assert (await h.audit.read())[-1].decision_id == asking.id
 
 
 @pytest.mark.parametrize("make", [planning, waiting_approval], ids=["planning", "waiting"])

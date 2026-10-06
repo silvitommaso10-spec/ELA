@@ -1,0 +1,31 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M14.1 (GETTING_STARTED §23, passo 4) per il profilo di mezzo.",
+    "Come ask-model.json, senza \"task_type\": il Model Router dà allo step la rotta di default,",
+    "balanced, che ELA manda a Sonnet 5.5 (ADR 0057). Il caso peggiore che la domanda nomina è",
+    "2,032768 $: la finestra di contesto meno l'output, al prezzo d'ingresso, più 4096 token d'uscita.",
+    "Senza ELA_SPENDING_CAP_USD nel .env del Core lo step è negato prima della domanda, con la riga",
+    "nominata nella ragione: nessuna chiamata che spende parte senza un tetto (decisione B di M14.1).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti."
+  ],
+  "goal": "chiedere una cosa al modello di mezzo",
+  "steps": [
+    {
+      "id": "3f0d1a44-5b6c-4d7e-8f90-000000000002",
+      "goal": "farsi dire in una riga che cos'è un registro a sola aggiunta",
+      "required_capabilities": [
+        "model.complete"
+      ],
+      "arguments": {
+        "input": "In una riga: che cos'è un registro a sola aggiunta?",
+        "purpose": "il profilo di mezzo nella prova di M14.1"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "una riga di testo, in italiano",
+      "success_conditions": [
+        "model.answered",
+        "model.routed_as_asked"
+      ]
+    }
+  ]
+}

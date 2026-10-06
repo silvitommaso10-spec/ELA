@@ -223,7 +223,7 @@ class ModelCompleteTool(Tool):
         routing = routing_arguments(arguments)
         texts = _text_arguments(arguments)
         parameters = arguments.get("parameters", {})
-        if routing is None or texts is None or not isinstance(parameters, dict):
+        if routing is None or texts is None or not isinstance(parameters, Mapping):
             return Outcome({}, ARGUMENTS_INVALID, "input must be a string; so must every other")
         try:
             route = self._router.route(*routing)

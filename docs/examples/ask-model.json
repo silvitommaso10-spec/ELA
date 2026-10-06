@@ -1,9 +1,11 @@
 {
   "_nota": [
-    "Un piano con un solo step model.complete, per quando il provider avrà una chiave.",
-    "Senza chiave ELA parte lo stesso: il provider si registra UNAVAILABLE e lo step fallisce",
-    "con provider.unavailable *senza toccare la rete* (ADR 0020 §2). Per dargliela, metti",
-    "ELA_ANTHROPIC_API_KEY nel .env e riavvia `ela serve`.",
+    "Un piano con un solo step model.complete: una domanda a Opus 5.5, che costa al più 4,065536 $.",
+    "Da M14.1 una chiamata che spende parte solo sotto un tetto mensile (ADR 0057): senza",
+    "ELA_SPENDING_CAP_USD nel .env del Core lo step è negato *prima della domanda*, con la riga",
+    "nominata nella ragione; con il tetto e senza chiave è negato perché non si può limitare,",
+    "provider.unavailable, *senza toccare la rete* (ADR 0020 §2). Per farlo girare, metti",
+    "ELA_SPENDING_CAP_USD e ELA_ANTHROPIC_API_KEY nel .env e riavvia `ela serve`.",
     "Lo step chiede il tuo consenso e qui non c'è niente da dichiarare: model.complete è MEDIUM",
     "e requires_authorization nel catalogo (spec §29), perché il contenuto esce da questa",
     "macchina. Il contrario di first-task.json, dove è lo step ad alzare l'asticella.",
