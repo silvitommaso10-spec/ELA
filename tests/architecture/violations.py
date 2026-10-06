@@ -1595,6 +1595,58 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.executive.stops import StopOfTask\n",
         "StopOfTask",
     ),
+    # --- a-tool-that-spends-is-neither-repeated-nor-moved (rule 60, M14.1) ---
+    Case(
+        # A tool that spends and says it may run twice: a retry would be a second bill with no
+        # STARTED record, so no reservation, for the second one.
+        "a-tool-that-spends-runs-twice",
+        "a-tool-that-spends-is-neither-repeated-nor-moved",
+        "tools/paid.py",
+        "class Paid:\n"
+        "    idempotent = True\n"
+        "    relocatable = False\n"
+        "    async def worst_case(self, arguments):\n"
+        "        return None\n",
+        "Paid.idempotent",
+    ),
+    Case(
+        # The same tool, moved to another node when its claim lapses: the call of the first node
+        # may have left, and the second spends again on a reservation that was never written.
+        "a-tool-that-spends-is-moved",
+        "a-tool-that-spends-is-neither-repeated-nor-moved",
+        "tools/paid.py",
+        "class Paid:\n"
+        "    idempotent: ClassVar[bool] = False\n"
+        "    relocatable: ClassVar[bool] = True\n"
+        "    async def worst_case(self, arguments):\n"
+        "        return None\n",
+        "Paid.relocatable",
+    ),
+    # --- who-calls-the-model-bounds-the-call (rule 61, M14.1) ---
+    Case(
+        # A second tool that asks the model and never says what it costs: the gate reads nothing
+        # and the cap cannot hold. (Rule 25 reports it too; each rule is asked on its own.)
+        "a-tool-calls-the-model-without-a-bound",
+        "who-calls-the-model-bounds-the-call",
+        "tools/summary.py",
+        "class Summary:\n"
+        "    async def _run(self, request):\n"
+        "        return await self._provider.complete(request)\n",
+        "Summary.complete(",
+    ),
+    Case(
+        # The bound in the class next door is not this class's bound.
+        "the-bound-is-in-another-class",
+        "who-calls-the-model-bounds-the-call",
+        "tools/summary.py",
+        "class Bound:\n"
+        "    async def worst_case(self, arguments):\n"
+        "        return None\n"
+        "class Summary:\n"
+        "    async def _run(self, request):\n"
+        "        return await self._provider.complete(request)\n",
+        "Summary.complete(",
+    ),
     # --- the-bell-rings-a-method (rule 56, M12.5 dec. E) ---
     Case(
         # A second place that rings: the runner, when a task ends. It reads well, and it is a
@@ -1828,6 +1880,56 @@ ALLOWED: tuple[Case, ...] = (
         "only-the-engine-raises-a-stop",
         "executive/executor.py",
         "def stop(engine, t, here):\n    return StopOfTask(engine.stop_signal(t), here)\n",
+        "",
+    ),
+    Case(
+        # Rule 60: a tool that spends, run once and where it was sent — what the rule asks for.
+        "a-tool-that-spends-runs-once-where-it-was-sent",
+        "a-tool-that-spends-is-neither-repeated-nor-moved",
+        "tools/paid.py",
+        "class Paid:\n"
+        "    idempotent: ClassVar[bool] = False\n"
+        "    relocatable: ClassVar[bool] = False\n"
+        "    async def worst_case(self, arguments):\n"
+        "        return None\n",
+        "",
+    ),
+    Case(
+        # Rule 60: a tool that spends nothing says nothing, and may be repeated and moved.
+        "a-tool-that-spends-nothing-is-free-to-run-again",
+        "a-tool-that-spends-is-neither-repeated-nor-moved",
+        "tools/free.py",
+        "class Free:\n    idempotent = True\n    relocatable = True\n",
+        "",
+    ),
+    Case(
+        # Rule 60 reads tools: a provider's ``worst_case`` is the bound a tool asks for, not a tool.
+        "a-provider-bounds-without-flags",
+        "a-tool-that-spends-is-neither-repeated-nor-moved",
+        "providers/other/provider.py",
+        "class Other:\n    async def worst_case(self, request):\n        return None\n",
+        "",
+    ),
+    Case(
+        # Rule 61: the caller that bounds its call, in the same class.
+        "the-caller-bounds-its-call",
+        "who-calls-the-model-bounds-the-call",
+        "tools/summary.py",
+        "class Summary:\n"
+        "    async def worst_case(self, arguments):\n"
+        "        return None\n"
+        "    async def _run(self, request):\n"
+        "        return await self._provider.complete(request)\n",
+        "",
+    ),
+    Case(
+        # Rule 61: the Task Engine closing a task shares the name and nothing else.
+        "the-engine-completes-a-task",
+        "who-calls-the-model-bounds-the-call",
+        "executive/closer.py",
+        "class Closer:\n"
+        "    async def close(self, task, result):\n"
+        "        return await self._engine.complete(task, result)\n",
         "",
     ),
     Case(

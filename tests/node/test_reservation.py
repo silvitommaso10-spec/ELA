@@ -87,13 +87,13 @@ async def test_the_same_worst_case_as_the_cores_is_within_it(tmp_path: Path) -> 
         pytest.param(
             RESERVED.model_copy(update={"amount": None}),
             RESERVED,
-            "up to an unbounded amount on this call, and the Core reserved 0.25",
+            "has no price for m, and the Core reserved 0.25",
             id="a-model-this-node-cannot-price",
         ),
         pytest.param(
             ErrorMetadata(code="provider.unavailable", message="no key"),
             RESERVED,
-            "up to an unbounded amount on this call, and the Core reserved 0.25",
+            "cannot bound this call (provider.unavailable: no key), and the Core reserved 0.25",
             id="a-call-this-node-cannot-bound",
         ),
         pytest.param(

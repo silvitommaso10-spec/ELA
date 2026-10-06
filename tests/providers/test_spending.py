@@ -21,6 +21,7 @@ from ela.ports import (
     PROVIDER_BAD_REQUEST,
     PROVIDER_RATE_LIMITED,
     PROVIDER_SERVER_ERROR,
+    PROVIDER_UNAVAILABLE,
     PROVIDER_UNKNOWN_MODEL_HINT,
     PROVIDER_UNSUPPORTED_PARAMETER,
     PROVIDER_WORKSPACE_LIMIT,
@@ -120,10 +121,18 @@ async def test_a_request_refused_before_the_network_has_no_worst_case_but_the_sa
     assert unsupported.code == PROVIDER_UNSUPPORTED_PARAMETER
 
 
-async def test_the_worst_case_needs_no_key() -> None:
-    """Nothing leaves this machine to bound a call: a provider without a key can say it."""
+async def test_without_a_key_there_is_no_worst_case_but_the_error_complete_gives() -> None:
+    """Nothing leaves this machine to bound a call, and yet a provider without a key does not bound
+    one: it cannot make it. Same error, same words, same order as ``complete`` — on a node without
+    a key the refusal names the key instead of a price."""
     provider, _ = make_provider(configured=False)
-    assert isinstance(await provider.worst_case(request()), WorstCase)
+
+    bound = await provider.worst_case(request(model_hint="gpt-4"))
+    answered = await provider.complete(request(model_hint="gpt-4"))
+
+    assert isinstance(bound, ErrorMetadata) and bound.code == PROVIDER_UNAVAILABLE
+    assert answered.error is not None
+    assert (bound.code, bound.message) == (answered.error.code, answered.error.message)
 
 
 async def test_a_model_with_no_price_has_a_worst_case_with_no_amount(

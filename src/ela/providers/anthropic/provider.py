@@ -70,6 +70,12 @@ clients, ELA is one client, and a delay a test can predict is a delay a test can
 REFUSAL: Final = "refusal"
 TEXT_BLOCK: Final = "text"
 
+_NO_KEY: Final = Failure(
+    PROVIDER_UNAVAILABLE, "no API key configured (ELA_ANTHROPIC_API_KEY)", retryable=False
+)
+"""What an adapter without a key answers to ``complete`` and to ``worst_case``, before the network
+and in the same words (ADR 0020 §2)."""
+
 Sleep = Callable[[float], Awaitable[None]]
 Monotonic = Callable[[], float]
 
@@ -119,14 +125,7 @@ class AnthropicProvider:
         started = self._monotonic()
         client = self._client
         if client is None:
-            unusable = Failure(
-                PROVIDER_UNAVAILABLE,
-                "no API key configured (ELA_ANTHROPIC_API_KEY)",
-                retryable=False,
-            )
-            return self._failed(
-                request, unusable, model="", started=started, attempts=0, sent=False
-            )
+            return self._failed(request, _NO_KEY, model="", started=started, attempts=0, sent=False)
         try:
             model = self._model_for(request)
             payload = build_payload(request, model, self._settings.anthropic_max_output_tokens)
@@ -145,9 +144,13 @@ class AnthropicProvider:
         """The most ``request`` can cost: the model and the ``max_tokens`` of the payload that
         ``complete`` would send, built by the same function, and that model's price (ADR 0057).
 
-        No key is needed — nothing leaves this machine —, and a request ``complete`` would refuse
-        before the network is refused here with the same error.
+        Nothing leaves this machine, and a request ``complete`` would refuse before the network is
+        refused here with the same error, in the same order — no key first: a provider that cannot
+        make the call does not bound it, and the gate does not let it out (the contract of
+        ``tests/contracts/test_model_provider.py``).
         """
+        if self._client is None:
+            return self._error(_NO_KEY, model="", attempts=0)
         try:
             model = self._model_for(request)
             payload = build_payload(request, model, self._settings.anthropic_max_output_tokens)

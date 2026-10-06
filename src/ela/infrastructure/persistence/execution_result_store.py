@@ -22,7 +22,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Final
 
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -93,9 +93,10 @@ class SqlExecutionResultStore:
     async def _spending(
         session: AsyncSession, since: datetime, until: datetime
     ) -> tuple[ExecutionResult, ...]:
-        """The period's reservations, then what closes them: the results of the same steps that
-        name one of them. Filtered here and not in SQL — a JSON ``NULL`` and a SQL ``NULL`` are
-        two things, and the rows of a month are few."""
+        """The period's reservations, then what closes them: the results of the same tasks — or of
+        no task, as a result no executor produced (§63) — that name one of them. Filtered here and
+        not in SQL — a JSON ``NULL`` and a SQL ``NULL`` are two things, and the rows of a month are
+        few."""
         started = (
             select(ExecutionResultRow)
             .where(
@@ -111,13 +112,13 @@ class SqlExecutionResultStore:
             if result.worst_case is not None
         ]
         ids = {str(result.id) for result in reservations}
+        if not reservations:
+            return ()
         tasks = {result.task_id for result in reservations if result.task_id is not None}
-        if not tasks:
-            return tuple(reservations)
         others = (
             select(ExecutionResultRow)
             .where(
-                ExecutionResultRow.task_id.in_(tasks),
+                or_(ExecutionResultRow.task_id.in_(tasks), ExecutionResultRow.task_id.is_(None)),
                 ExecutionResultRow.status != ExecutionStatus.STARTED.value,
             )
             .order_by(ExecutionResultRow.seq)

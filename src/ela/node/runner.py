@@ -224,13 +224,16 @@ async def beyond_the_reservation(
     mine = worst.amount if isinstance(worst, WorstCase) else None
     if bound is not None and bound.amount is not None and mine is not None and mine <= bound.amount:
         return None
-    said = "nothing" if bound is None or bound.amount is None else f"{bound.amount}"
+    said = "nothing" if bound is None or bound.amount is None else f"{bound.amount.normalize():f}"
+    if isinstance(worst, ErrorMetadata):
+        here = f"cannot bound this call ({worst.code}: {worst.message or ''})"
+    elif mine is None:
+        here = f"has no price for {worst.model}"
+    else:
+        here = f"would spend up to {mine.normalize():f} on this call"
     error = ErrorMetadata(
         code=SPENDING_OVER_RESERVATION,
-        message=(
-            f"this node would spend up to {mine if mine is not None else 'an unbounded amount'} "
-            f"on this call, and the Core reserved {said}: not sent"
-        ),
+        message=f"this node {here}, and the Core reserved {said}: not sent",
         tool_name=tool.name,
     )
     return {

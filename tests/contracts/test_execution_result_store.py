@@ -311,6 +311,22 @@ async def test_spending_is_the_periods_reservations_and_what_closes_them(
     assert {row.id for row in rows} == {RESERVATION.id, CLOSING.id}
 
 
+async def test_spending_closes_a_reservation_no_task_made_as_well(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    """A result no executor produced has no task (§63): its outcome names its ``STARTED`` all the
+    same, and the two stores find it the same way — the fake did, the SQL store looked only among
+    the reservations' tasks."""
+    alone = RESERVATION.model_copy(update={"task_id": None, "step_id": None})
+    closing = CLOSING.model_copy(update={"task_id": None, "step_id": None})
+    await execution_result_store.add(alone)
+    await execution_result_store.add(closing)
+
+    rows = await execution_result_store.spending(SINCE, UNTIL)
+
+    assert {row.id for row in rows} == {alone.id, closing.id}
+
+
 async def test_spending_leaves_out_a_started_record_with_no_reservation(
     execution_result_store: ExecutionResultStore,
 ) -> None:

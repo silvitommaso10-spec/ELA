@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.infrastructure.persistence import make_engine, missing_tables
@@ -41,12 +42,23 @@ async def test_the_check_creates_nothing(engine: AsyncEngine) -> None:
     assert await missing_tables(engine) == tuple(sorted(Base.metadata.tables))
 
 
-async def test_a_database_left_at_0011_lacks_one_column_and_no_table(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("revision", "lacking"),
+    [
+        ("0011", ("execution_results.worst_case", "tasks.finished_at")),
+        ("0012", ("execution_results.worst_case",)),
+    ],
+)
+async def test_a_database_left_behind_lacks_its_columns_and_no_table(
+    tmp_path: Path, revision: str, lacking: tuple[str, ...]
+) -> None:
     """M17.2b decisione 6: the precondition built as it happens — a database that ``alembic`` took
     to ``0011``, the revision before the hour of an outcome, and not a column taken away by hand.
+    And ``0012``, the revision before the reservation's amount (M14.1): every database that ran
+    before this branch.
 
-    The tables are all there, so the check of the tables says nothing; the column is what is
-    missing, and it is what the start-up has to name.
+    The tables are all there, so the check of the tables says nothing; the columns are what is
+    missing, and they are what the start-up has to name.
     """
     from alembic import command
 
@@ -54,11 +66,11 @@ async def test_a_database_left_at_0011_lacks_one_column_and_no_table(tmp_path: P
     from tests.infrastructure.persistence.test_migrations import config_for
 
     database = tmp_path / "ela.db"
-    command.upgrade(config_for(database), "0011")
+    command.upgrade(config_for(database), revision)
     engine = make_engine(f"sqlite:///{database.as_posix()}")
     try:
         assert await missing_tables(engine) == ()
-        assert await missing_columns(engine) == ("tasks.finished_at",)
+        assert await missing_columns(engine) == lacking
     finally:
         await engine.dispose()
 
