@@ -12,7 +12,6 @@ import ast
 import hashlib
 import inspect as inspect_module
 import json
-import os
 import re
 import stat
 from datetime import timedelta
@@ -399,7 +398,7 @@ async def test_a_missing_root_holds_no_note(tmp_path: Path) -> None:
     assert not (tmp_path / "nowhere").exists()
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root reads everything")
+@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o000) does not deny this user: it is root")
 async def test_an_unreadable_note_exists_but_cannot_be_verified(
     tool: WriteNoteTool, verifier: WriteNoteVerifier, root: Path
 ) -> None:

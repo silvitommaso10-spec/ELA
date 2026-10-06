@@ -23,6 +23,7 @@ from ela.composition import (
     build_node,
 )
 from ela.composition.node import (
+    ACL_SINCE,
     NodeWorld,
     PermissionMode,
     carried,
@@ -202,7 +203,7 @@ def test_without_the_seam_the_voice_is_the_named_system_s(tmp_path: Path) -> Non
     argues against. The system is a parameter now, and each arm is asked for by name.
     """
     darwin = build_node(config(tmp_path), system="Darwin")
-    windows = build_node(config(tmp_path), system="Windows")
+    windows = build_node(config(tmp_path), system="Windows", python_version=ACL_SINCE)
     elsewhere = build_node(config(tmp_path), system="Linux")
 
     assert isinstance(_speech_of(darwin), SaySpeechCommand)
@@ -237,7 +238,9 @@ def test_the_operating_system_is_the_one_the_node_was_built_for(
     """M12.4 dec. A. Until M12.4 a node declared ``"MACOS"`` as a literal wherever it ran. The value
     comes from the map the Core's ``local`` is declared with (``ela.devices.local``), and not from a
     second list here."""
-    built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+    built = build_node(
+        config(tmp_path), speech=FakeSpeech(), system=system, python_version=ACL_SINCE
+    )
 
     assert built.os is declared
 
@@ -255,7 +258,9 @@ def test_the_secret_is_protected_the_way_the_named_system_allows(
 ) -> None:
     """M12.4 dec. B, criterion 15. ``BITS`` where there are permission bits to narrow; ``ACL`` on
     Windows, where ``os.fchmod`` does not exist on 3.12 and the protection is the directory's."""
-    built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+    built = build_node(
+        config(tmp_path), speech=FakeSpeech(), system=system, python_version=ACL_SINCE
+    )
 
     assert built.permissions is permissions
 
@@ -342,10 +347,14 @@ async def test_the_online_voice_plays_through_afplay_on_darwin_and_through_nobod
     assert online_player("Windows") is None
     assert online_player("Linux") is None
     for system in ("Darwin", "Windows", "Linux"):
-        built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+        built = build_node(
+            config(tmp_path), speech=FakeSpeech(), system=system, python_version=ACL_SINCE
+        )
         wired = _port_of(built, VOICE_ONLINE_TOOL_NAME)
         assert wired._binary == online_player(system), system  # type: ignore[attr-defined]  # noqa: SLF001
-    elsewhere = build_node(config(tmp_path), speech=FakeSpeech(), system="Windows")
+    elsewhere = build_node(
+        config(tmp_path), speech=FakeSpeech(), system="Windows", python_version=ACL_SINCE
+    )
     assert await elsewhere.voices[VOICE_ONLINE_TOOL_NAME].available() is False
 
 
@@ -353,7 +362,12 @@ async def test_a_windows_node_without_a_key_still_says_the_key_is_missing(tmp_pa
     """The order of the two absences survives a system with no player: the key first (2026-09-09,
     ADR 0034 §5). Nothing is sent: there is no key to send it with."""
     unkeyed = ElevenLabsSettings(elevenlabs_api_key=None, _env_file=None)  # type: ignore[call-arg]
-    built = build_node(config(tmp_path, elevenlabs=unkeyed), speech=FakeSpeech(), system="Windows")
+    built = build_node(
+        config(tmp_path, elevenlabs=unkeyed),
+        speech=FakeSpeech(),
+        system="Windows",
+        python_version=ACL_SINCE,
+    )
 
     said = await built.voices[VOICE_ONLINE_TOOL_NAME].speak("una frase")
 

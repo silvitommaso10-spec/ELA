@@ -59,6 +59,9 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   taglia la coda — `| tail`, `| head`, un `grep` che tiene solo le righe attese —, perché il
   riepilogo, i conteggi e l'esito stanno in fondo. Un giro perso perché l'esito è finito in una
   pipe costa novanta secondi.
+  **Nella sessione cloud, che gira come root**, il gate `cov-critical` manca dei rami che solo un
+  sistema che nega raggiunge: `make -k check`, il riepilogo elenca quelle righe, e le giudica la CI
+  sul branch. La suite di `main` non si rifà per confronto, salvo per un rosso che non si sa spiegare.
 - **La CI sul branch è il controllo Linux; `make check-linux` serve per riprodurre in locale una
   CI rossa su ubuntu.** Il merge esige la CI verde all'ultimo commit del branch su tutti e tre i
   suoi job: `make check` su ubuntu e su macos, e la suite del nodo su windows. `make check` gira su

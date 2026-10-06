@@ -30,6 +30,7 @@ from ela.executive.spending import (
     Foresight,
     Month,
     Refusal,
+    ReservationError,
     SpendingCode,
     SpendingGate,
     dollars,
@@ -167,6 +168,18 @@ def test_the_ledger_sums_every_kind_at_once() -> None:
 def test_a_started_record_with_no_reservation_and_a_stray_outcome_count_for_nothing() -> None:
     stray = OTHER.model_copy(update={"metadata": {STARTED_ID: "elsewhere"}})
     assert ledger([STARTED, stray, OTHER]) == EMPTY
+
+
+def test_a_reservation_without_an_amount_stops_the_ledger() -> None:
+    """The domain refuses such a row (ADR 0057 §4), so one read here was not made by it — and
+    counted at zero it would count in the wrong direction. The ledger refuses to say a number,
+    and the gate that asked it lets nothing out (§33)."""
+    unpriced = reserved(1).model_copy(
+        update={"worst_case": BOUND.model_copy(update={"amount": None})}
+    )
+
+    with pytest.raises(ReservationError, match="ADR 0057"):
+        ledger([unpriced])
 
 
 def test_the_same_rows_give_the_same_ledger() -> None:

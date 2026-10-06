@@ -18,6 +18,7 @@ import httpx
 import pytest
 
 from ela.composition import build_node
+from ela.composition.node import ACL_SINCE
 from ela.domain import CapabilityId
 from ela.node import (
     CoreUnreachable,
@@ -481,7 +482,13 @@ async def test_a_node_declares_what_the_named_system_can_use_on_every_runner(
     Darwin is nobody on every runner. Until M12.4 it read ``/usr/bin/afplay``, which this Mac has
     and the Ubuntu job has not, so the same world declared a tool more here than there.
     """
-    built = build_node(config(tmp_path), clock=FakeClock(), speech=local, system=system)
+    built = build_node(
+        config(tmp_path),
+        clock=FakeClock(),
+        speech=local,
+        system=system,
+        python_version=ACL_SINCE,
+    )
 
     said = await declaration(built)
 

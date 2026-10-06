@@ -64,7 +64,7 @@ from typing import Any
 from httpx import ASGITransport
 
 from ela.composition import NodeConfig, NodeFilesystemSettings, NodeSettings, build_node
-from ela.composition.node import online_player
+from ela.composition.node import ACL_SINCE, online_player
 from ela.domain import PowerSource
 from ela.node import (
     Node,
@@ -166,6 +166,9 @@ class RealNode:
             speech_online=self.speech_online,
             system=system,
             power=FakePower(PowerSource.AC),
+            # The first interpreter a Windows node accepts, named (M14.1): the kit is about the
+            # contract, and left to the machine a Windows kit is refused on a 3.12.3.
+            python_version=ACL_SINCE,
         )
         if liar:
             # The world the composition built, with its ``fs.write`` swapped for one that lies

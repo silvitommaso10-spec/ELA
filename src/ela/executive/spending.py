@@ -45,6 +45,7 @@ __all__ = [
     "Foresight",
     "Month",
     "Refusal",
+    "ReservationError",
     "SpendingCode",
     "SpendingGate",
     "crossed",
@@ -62,6 +63,21 @@ say where the number lives."""
 
 CURRENCY: Final = "USD"
 """The cap's currency: the price list's and the console's. A conversion would be another belief."""
+
+
+class ReservationError(Exception):
+    """A reservation the ledger cannot count: a ``STARTED`` record whose worst case has no amount.
+
+    The domain refuses one (ADR 0057 §4), so a row that has it was not made by the domain; counted
+    at zero it would count in the wrong direction. The ledger says no number at all, and whoever
+    asked — the gate before a call, ``GET /spend`` — lets nothing out (§33)."""
+
+    def __init__(self, record: ExecutionResult) -> None:
+        self.record_id = record.id
+        super().__init__(
+            f"the reservation {record.id} has no amount: the ledger does not count it at zero "
+            "(ADR 0057 §4)"
+        )
 
 
 class SpendingCode(StrEnum):
@@ -116,7 +132,9 @@ def ledger(rows: Iterable[ExecutionResult]) -> Ledger:
     for row in held:
         if row.status is not ExecutionStatus.STARTED or row.worst_case is None:
             continue
-        amount = row.worst_case.amount or Decimal(0)
+        amount = row.worst_case.amount
+        if amount is None:
+            raise ReservationError(row)
         outcome = closing.get(str(row.id))
         if outcome is None:
             reserved += amount

@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -52,14 +53,53 @@ async def test_the_core_removes_every_node_variable_and_keeps_only_the_names(
     assert all("7431" not in name for name in removed), "names, never values"
 
 
+def processes() -> list[tuple[int, int, str]]:
+    """Every process, with its parent and its **whole** command (M14.1, measured on 2026-10-06).
+
+    ``-ww`` asks ``ps`` for unlimited width, procps's and macOS's alike. Without it the width is
+    ``COLUMNS``, and the suite does not choose that: pytest imports ``readline`` as it starts, and
+    GNU readline writes ``COLUMNS=80`` into the C environment of the process — where ``os.environ``
+    does not see it, and where ``ps`` reads it. At 80 columns the driver's command ends before
+    ``run-driver``, and the reading below found no driver at all."""
+    out = subprocess.run(
+        ["/bin/ps", "-A", "-ww", "-o", "pid=,ppid=,command="],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return [
+        (int(pid), int(ppid), command)
+        for pid, ppid, command in (line.split(None, 2) for line in out.splitlines())
+    ]
+
+
+def test_the_reading_of_a_command_is_whole_whatever_the_width(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The precondition of the reading below, built: the command of a process is read whole, at
+    any width ``ps`` would otherwise take from the environment."""
+    monkeypatch.setenv("COLUMNS", "80")
+    end = "the-end-of-a-long-command"
+    child = subprocess.Popen(
+        [sys.executable, "-c", "print('ready', flush=True); input()", "x" * 200, end],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert child.stdout is not None and child.stdout.readline() == "ready\n"
+        (command,) = [command for pid, _, command in processes() if pid == child.pid]
+    finally:
+        child.communicate("\n")
+
+    assert command.endswith(end), command
+
+
 def driver_of_this_process() -> int:
     """The pid of the Node driver this worker started: the descendant running ``run-driver``."""
-    out = subprocess.run(
-        ["/bin/ps", "-A", "-o", "pid=,ppid=,command="], capture_output=True, text=True, check=True
-    ).stdout
     children: dict[int, list[tuple[int, str]]] = {}
-    for pid, ppid, command in (line.split(None, 2) for line in out.splitlines()):
-        children.setdefault(int(ppid), []).append((int(pid), command))
+    for pid, ppid, command in processes():
+        children.setdefault(ppid, []).append((pid, command))
     todo, found = [os.getpid()], []
     while todo:
         for pid, command in children.get(todo.pop(), []):
