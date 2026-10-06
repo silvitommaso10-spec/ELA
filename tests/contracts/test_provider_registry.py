@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ela.domain import ProviderRequest, ProviderResult, ProviderStatus
+from ela.domain import ErrorMetadata, ProviderRequest, ProviderResult, ProviderStatus, WorstCase
 from ela.ports import AlreadyExistsError, ModelProvider, NotFoundError, ProviderRegistryPort
 
 
@@ -23,6 +23,9 @@ class _Provider:
         return ProviderStatus.AVAILABLE
 
     async def complete(self, request: ProviderRequest) -> ProviderResult:
+        raise NotImplementedError
+
+    async def worst_case(self, request: ProviderRequest) -> WorstCase | ErrorMetadata:
         raise NotImplementedError
 
 

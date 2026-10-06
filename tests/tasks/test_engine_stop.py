@@ -24,6 +24,7 @@ from ela.domain import (
     AuditEvent,
     AuditEventType,
     Halt,
+    PermissionOutcome,
     StepState,
     Task,
     TaskEventType,
@@ -145,6 +146,10 @@ async def _ended_by(h: Harness, operation: str) -> Task:
     if operation == "deny_by_decision":
         task = await executing_with(h, ())
         return await h.engine.deny(task.id, decision=decision_for(task.id))
+    if operation == "deny_by_cap":
+        task = await executing_with(h, ())
+        allowed = decision_for(task.id, PermissionOutcome.ALLOWED)
+        return await h.engine.deny_by_cap(task.id, decision=allowed, reason="cap", payload={})
     if operation == "deny_by_approval":
         task = await waiting_approval(h)
         return await h.engine.deny(task.id, approval=approval_for(task.id, ApprovalStatus.REJECTED))
@@ -167,6 +172,7 @@ def test_the_operations_that_end_a_task_are_the_ones_the_tests_drive() -> None:
         "cancel",
         "complete",
         "deny_by_approval",
+        "deny_by_cap",
         "deny_by_decision",
         "expire",
         "fail",

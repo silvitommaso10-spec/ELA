@@ -34,15 +34,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import ClassVar, Final
+from uuid import UUID
 
 from ela.domain import (
     CapabilityId,
+    ErrorMetadata,
     JsonMapping,
     JsonValue,
     ModelRoute,
     ProviderRequest,
     ProviderRequestId,
     ProviderResult,
+    WorstCase,
 )
 from ela.ports import (
     ENVELOPE,
@@ -52,6 +55,7 @@ from ela.ports import (
     ROUTING_ERROR_CODES,
     Clock,
     IdGenerator,
+    ModelProvider,
     ModelRouterPort,
     NotFoundError,
     ProviderRegistryPort,
@@ -122,6 +126,10 @@ def routing_arguments(arguments: JsonMapping) -> tuple[str | None, str | None] |
     return task_type, model_hint
 
 
+QUOTED_REQUEST_ID: Final = UUID(int=0)
+"""The id of the request a worst case is computed for: it is never sent, so it needs no id of its
+own, and it takes none from the generator — a quote is not an event (M14.1)."""
+
 PROVIDER_REQUEST: Final = "the request to the provider"
 """The point of no return of ``model.complete`` (M6.3c, ADR 0054 §3): the user's content leaves, and
 the call is charged. Listened to before the first send; the provider's own retries come after it."""
@@ -147,12 +155,14 @@ class ModelCompleteTool(Tool):
     :data:`~ela.ports.PROVIDER_NO_OUTPUT`, which lives there and not here (review of M7.2) — and
     the routing codes, which are reported with the code the router raised."""
     output_keys: ClassVar[frozenset[str]] = frozenset(
-        {"output", "provider", "model", "finish_reason", "profile", "skipped"}
+        {"output", "provider", "model", "finish_reason", "profile", "skipped", "workspace"}
     )
     """``profile`` and ``skipped`` are the route the call took: which profile was asked for, and
     which providers were passed over because they were not usable. They live in the execution
     result — never in an audit event (§57, rule 23) — and they are what makes a fallback a thing
-    somebody can see afterwards instead of a silent substitution (§33)."""
+    somebody can see afterwards instead of a silent substitution (§33). ``workspace`` is where the
+    provider says the call was billed (M14.1, review decision 12): the second cap is the monthly
+    limit of that workspace, and two machines whose answers name the same one share it."""
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
     audit_numbers: ClassVar[frozenset[str]] = frozenset()
@@ -180,6 +190,36 @@ class ModelCompleteTool(Tool):
         router is asked anything, so a routing failure always means the arguments were fine and
         the *policy* said no.
         """
+        prepared = self._prepared(arguments, self._ids.new_uuid())
+        if isinstance(prepared, Outcome):
+            return prepared
+        provider, request, route = prepared
+        stop.listen(PROVIDER_REQUEST)
+        answered = await provider.complete(request)
+        return self._outcome(answered, route)
+
+    async def worst_case(self, arguments: JsonMapping) -> WorstCase | ErrorMetadata:
+        """The most this call can cost: the steps of :meth:`_run` up to the network, then the
+        provider's bound instead of its answer (M14.1, ADR 0057).
+
+        A refusal on the way — arguments, route, provider — is an error with the code the run
+        would fail with: a call that cannot be bounded is a call that is not made.
+        """
+        prepared = self._prepared(arguments, QUOTED_REQUEST_ID)
+        if isinstance(prepared, Outcome):
+            return ErrorMetadata(
+                code=prepared.code or ARGUMENTS_INVALID,
+                message=prepared.message,
+                tool_name=self.name,
+            )
+        provider, request, _ = prepared
+        return await provider.worst_case(request)
+
+    def _prepared(
+        self, arguments: JsonMapping, request_id: UUID
+    ) -> tuple[ModelProvider, ProviderRequest, ModelRoute] | Outcome:
+        """Everything before the network: the arguments, the route, the provider, the request —
+        or the failed :class:`Outcome` of the first one that refuses."""
         routing = routing_arguments(arguments)
         texts = _text_arguments(arguments)
         parameters = arguments.get("parameters", {})
@@ -193,13 +233,14 @@ class ModelCompleteTool(Tool):
             provider = self._providers.get(route.provider)
         except NotFoundError:
             return Outcome({}, PROVIDER_UNAVAILABLE, f"no provider named {route.provider!r}")
-        request = self._request(texts, parameters, route)
-        stop.listen(PROVIDER_REQUEST)
-        answered = await provider.complete(request)
-        return self._outcome(answered, route)
+        return provider, self._request(texts, parameters, route, request_id), route
 
     def _request(
-        self, texts: Mapping[str, str], parameters: JsonMapping, route: ModelRoute
+        self,
+        texts: Mapping[str, str],
+        parameters: JsonMapping,
+        route: ModelRoute,
+        request_id: UUID,
     ) -> ProviderRequest:
         """The arguments and the route as a :class:`~ela.domain.ProviderRequest`.
 
@@ -209,7 +250,7 @@ class ModelCompleteTool(Tool):
         was one and the table's profile when there was not (ADR 0022 §3).
         """
         return ProviderRequest(
-            id=ProviderRequestId(self._ids.new_uuid()),
+            id=ProviderRequestId(request_id),
             created_at=self._clock.now(),
             purpose=texts.get("purpose", DEFAULT_PURPOSE),
             input=texts["input"],
@@ -233,6 +274,7 @@ class ModelCompleteTool(Tool):
             "finish_reason": answered.finish_reason,
             "profile": route.profile,
             "skipped": list(route.skipped),
+            "workspace": answered.workspace,
         }
         if answered.error is not None:
             return Outcome(

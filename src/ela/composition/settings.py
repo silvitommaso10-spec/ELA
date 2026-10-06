@@ -23,6 +23,7 @@ import re
 import stat
 from collections.abc import Mapping
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Final
 
@@ -690,6 +691,32 @@ class AuditionSettings(BaseSettings):
         return tuple(self.elevenlabs_candidates.items())
 
 
+class SpendingSettings(BaseSettings):
+    """The month's spending cap on the model's key, in dollars (§30; M14.1, ADR 0057).
+
+    **One line, written by whoever pays** (decision A): ``ELA_SPENDING_CAP_USD``, in dollars like
+    the price list and the console, below the monthly limit of the console's workspace — the
+    second cap — with a margin. No number of the author's is here: the default is **no cap**, and
+    without a cap no call that spends goes out (decision B), with a reason that names this line.
+    ELA starts the same: a missing cap is a configuration, and every call that would spend says so.
+
+    **Zero is a cap**: nothing is spent. Empty is no cap, as an empty key is no key
+    (``env_ignore_empty``). A value that is not a finite amount of at least zero stops the start-up
+    with the variable named.
+
+    **A section of its own, and only the Core's**: a node has no cap of its own — it spends only
+    what the Core reserved for the work it sends (decision B) —, so :class:`NodeConfig` does not
+    read this, and the price list's sections (``AnthropicSettings``) do not hold it either.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="ELA_", env_file=".env", extra="ignore", env_ignore_empty=True
+    )
+
+    spending_cap_usd: Annotated[Decimal, Field(ge=0, allow_inf_nan=False)] | None = None
+    """``ELA_SPENDING_CAP_USD``: the most the month may spend on the model's key, in dollars."""
+
+
 class NodeSettings(BaseSettings):
     """What a node reads from the environment, from ``ELA_NODE_*`` (M12.3).
 
@@ -818,6 +845,8 @@ class Settings(BaseModel):
     audition: AuditionSettings
     """The voices an audition offers (M9.6): the user's choice, and only the Core's — a node reads
     ``elevenlabs`` and not this."""
+    spending: SpendingSettings
+    """The month's cap on the model's key (M14.1): only the Core's — a node has none."""
     ntfy: NtfySettings
     """The bell of the companion (M12.5 dec. E): a topic, which is a credential, and an address.
 
@@ -906,6 +935,7 @@ class Settings(BaseModel):
             "listen": ListenSettings,
             "elevenlabs": ElevenLabsSettings,
             "audition": AuditionSettings,
+            "spending": SpendingSettings,
             "ntfy": NtfySettings,
             "context": ContextSettings,
             "node": NodeSettings,

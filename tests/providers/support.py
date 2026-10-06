@@ -18,7 +18,7 @@ from pydantic import SecretStr
 
 from ela.domain import ProviderRequest, ProviderRequestId, UtcDatetime
 from ela.providers.anthropic import AnthropicProvider, AnthropicSettings
-from ela.providers.anthropic.models import SONNET_5
+from ela.providers.anthropic.models import SONNET_5_5
 from ela.testing.fakes import DEFAULT_START, FakeClock, FakeIdGenerator
 from tests.domain.examples import PROVIDER_REQUEST_ID
 
@@ -59,7 +59,7 @@ def request(
 def answer(
     text: str = "ecco il riassunto",
     *,
-    model: str = SONNET_5,
+    model: str = SONNET_5_5,
     stop_reason: str = "end_turn",
     input_tokens: int = 1_200,
     output_tokens: int = 340,
@@ -67,6 +67,7 @@ def answer(
     request_id: str | None = None,
     refusal_category: str | None = None,
     blocks: list[Any] | None = None,
+    workspace: str | None = None,
 ) -> Message:
     """A ``Message`` as the SDK would have parsed one."""
     content = blocks if blocks is not None else [TextBlock(text=text, type="text")]
@@ -91,11 +92,17 @@ def answer(
     )
     if request_id is not None:
         message._request_id = request_id
+    if workspace is not None:
+        message._workspace_id = workspace
     return message
 
 
 def status_error(
-    status: int, *, error_type: str = "invalid_request_error", retry_after: str | None = None
+    status: int,
+    *,
+    error_type: str = "invalid_request_error",
+    retry_after: str | None = None,
+    words: str = "server side text",
 ) -> anthropic.APIStatusError:
     """The exception the SDK raises for an HTTP status, with the headers a real one carries."""
     headers = {"request-id": REQUEST_ID}
@@ -106,7 +113,7 @@ def status_error(
         headers=headers,
         request=httpx2.Request("POST", API_URL),
     )
-    body = {"type": "error", "error": {"type": error_type, "message": "server side text"}}
+    body = {"type": "error", "error": {"type": error_type, "message": words}}
     error_class = STATUS_ERRORS.get(
         status, anthropic.InternalServerError if status >= 500 else anthropic.APIStatusError
     )

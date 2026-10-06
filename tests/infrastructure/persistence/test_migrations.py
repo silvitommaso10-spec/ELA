@@ -52,6 +52,7 @@ TABLES = {
     "assignments",
 }
 REVISIONS = [
+    "0013",
     "0012",
     "0011",
     "0010",
@@ -289,6 +290,20 @@ def test_downgrade_of_the_hour_of_an_outcome_takes_it_away(db: Path) -> None:
     command.downgrade(config, "0011")
 
     assert "finished_at" not in _tables(db)["tasks"]
+
+
+def test_the_reservation_column_and_its_index_come_with_0013(db: Path) -> None:
+    """The worst case a ``STARTED`` row reserves, and the date the month's ledger reads by
+    (M14.1, ADR 0057)."""
+    config = config_for(db)
+    command.upgrade(config, "head")
+    assert "worst_case" in _tables(db)["execution_results"]
+    assert "ix_execution_results_created_at" in _indexes(db)
+
+    command.downgrade(config, "0012")
+
+    assert "worst_case" not in _tables(db)["execution_results"]
+    assert "ix_execution_results_created_at" not in _indexes(db)
 
 
 def test_downgrade_of_the_sensitivity_column_takes_it_away(db: Path) -> None:

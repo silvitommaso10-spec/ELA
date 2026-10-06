@@ -116,6 +116,7 @@ from ela.domain import (
     TaskId,
     TaskState,
     TaskStep,
+    WorstCase,
     is_text,
 )
 from ela.executive.assignments import Assignments, Standing, WorkRejection
@@ -124,6 +125,7 @@ from ela.executive.errors import (
     DeliveryConflictError,
     ExecutorError,
 )
+from ela.executive.spending import CURRENCY, Foresight, Refusal, SpendingGate, dollars, worst_said
 from ela.executive.stops import StopOfTask
 from ela.permissions import (
     ASKING_RULES,
@@ -136,6 +138,7 @@ from ela.permissions import (
     targets_of,
 )
 from ela.ports import (
+    STARTED_ID,
     AlreadyExistsError,
     ApprovalStore,
     AssignmentExpiredError,
@@ -340,9 +343,6 @@ NOT_REACHED: Final = "not_reached"
 NOT_ACTED_REASON: Final = "the task ended before the tool of this step acted"
 """The reason of ``stop_step``, in the trail and in the audit (M6.3c, ADR 0054 §4)."""
 _NOTHING_DONE: Final = (None, None, None, None, None)
-STARTED_ID: Final = "started_id"
-"""Key of ``ExecutionResult.metadata`` on an outcome that settles a STARTED record (ADR 0021 §1):
-the id of that record, so the two rows of one run are one run and not two."""
 VERIFICATION_FAILED: Final = "verification.failed"
 """Error code of a step, and its task, failed because a success condition did not hold (ADR
 0014 §4): the tool said SUCCEEDED and the world said otherwise."""
@@ -646,6 +646,9 @@ class Claimed(NamedTuple):
     """The step's success conditions, for a capability the node verifies on its own machine
     (M13.3, ADR 0048) — its verifier reads the machine, and the one that did the work is the node.
     ``None`` for every other: what the node produced is verified here, as since M12.2."""
+    worst_case: WorstCase | None = None
+    """The reservation of a call that spends (M14.1, ADR 0057): the most the Core let it cost. The
+    node does not spend beyond it. ``None`` for every call that spends nothing."""
 
 
 class Delivered(NamedTuple):
@@ -824,6 +827,7 @@ class Executor:
         bell: Bell,
         authorization_ttl: timedelta = DEFAULT_AUTHORIZATION_TTL,
         approval_ttl: timedelta = DEFAULT_APPROVAL_TTL,
+        spending: SpendingGate | None = None,
     ) -> None:
         if not timedelta(0) < approval_ttl <= MAX_APPROVAL_TTL:
             raise ValueError(
@@ -846,6 +850,9 @@ class Executor:
         self._bell = bell
         self._authorization_ttl = authorization_ttl
         self._approval_ttl = approval_ttl
+        self._spending = SpendingGate(results, None) if spending is None else spending
+        """The month's cap (M14.1, ADR 0057). Without one given, no cap: no call that spends goes
+        out (decision B) — the safe default for an executor composed without it."""
         self._running_here = 0
         """How many tools run on this machine now, each from its start to its result stored."""
 
@@ -1018,9 +1025,12 @@ class Executor:
                 None,
                 assignment=assignment,
             )
-        record = (
-            None if tool.idempotent else await self._start_record(tool, decision, device_id, spent)
-        )
+        record: ExecutionResult | None = None
+        if not tool.idempotent:
+            opened = await self._start_record(tool, decision, device_id, spent, arguments)
+            if isinstance(opened, Refusal):
+                return await self._denied_by_cap(task_id, step_id, decision, authorization, opened)
+            record = opened
         await self._sensor_activated(spec, decision, device_id)
         result = await self._run_here(tool, decision, arguments, device_id, spent, record, stop)
         if result is None:
@@ -1111,14 +1121,37 @@ class Executor:
             # withdrawn, the step closed, and the node is told there is nothing to take.
             await self.close_open_step(offer.task_id)
             raise AssignmentStateError(assignment_id, AssignmentState.WITHDRAWN)
+        graph = await self._engine.graph(offer.task_id)
+        step, spec, tool, verifier, arguments, _ = self._prepared(
+            offer.task_id, graph, offer.step_id
+        )
+        worst = await tool.worst_case(arguments)
+        if worst is not None:
+            # The Core decides before it sends (decision B): a call the month could not let out
+            # now is denied before the claim, the offer withdrawn as for a task that ended.
+            seen = await self._spending.foresee(worst, self._clock.now())
+            if isinstance(seen, Refusal):
+                await self._engine.deny_by_cap(
+                    offer.task_id, decision=offer.decision, reason=seen.reason, payload=seen.payload
+                )
+                await self.close_open_step(offer.task_id)
+                raise AssignmentStateError(assignment_id, AssignmentState.WITHDRAWN)
         assignment = await self._assignments.claim(assignment_id, device_id)
         decision = assignment.decision
-        graph = await self._engine.graph(assignment.task_id)
-        step, spec, tool, verifier, arguments, _ = self._prepared(
-            assignment.task_id, graph, assignment.step_id
-        )
+        reserved: WorstCase | None = None
         if not tool.relocatable:
-            await self._start_record(tool, decision, device_id, assignment.authorization_id)
+            started = await self._start_record(
+                tool, decision, device_id, assignment.authorization_id, arguments
+            )
+            if isinstance(started, Refusal):
+                # Another call took the margin between the look and the claim: the task is denied
+                # and no order leaves. The claim stays the node's until it lapses, with no STARTED
+                # record — nothing acted, and nothing is paid (ADR 0057).
+                await self._denied_by_cap(
+                    assignment.task_id, assignment.step_id, decision, None, started
+                )
+                raise AssignmentStateError(assignment_id, AssignmentState.CLAIMED)
+            reserved = started.worst_case
         await self._sensor_activated(spec, decision, device_id)
         # A verifier that reads the machine proves an effect only on the machine where it
         # happened, and a claim is always a node's: the node verifies, with the plan's conditions.
@@ -1127,6 +1160,7 @@ class Executor:
             tool.name,
             arguments,
             step.success_conditions if verifier.reads_the_machine else None,
+            reserved,
         )
 
     async def deliver(
@@ -1898,6 +1932,17 @@ class Executor:
             prospect = await tool.asserted(arguments)
         if prospect.refusal is not None:
             return await self._fail(task, graph, decision, authorization, prospect.refusal)
+        spending: Foresight | None = None
+        worst = await tool.worst_case(arguments)
+        if worst is not None:
+            # A call that spends names its worst case and what the month has left (decision H);
+            # one that could not go out now is denied, and nobody is asked a "yes" that cannot
+            # help (review decision 7). The numbers are the moment's: after the yes the gate
+            # reads the month again, where the STARTED record is born (ADR 0029 §7).
+            seen = await self._spending.foresee(worst, self._clock.now())
+            if isinstance(seen, Refusal):
+                return await self._denied_by_cap(task.id, step.id, decision, authorization, seen)
+            spending = seen
         targets = approved_targets(decision)
         where = f" on {', '.join(targets)}" if targets else ""
         stated = _stated(spec, arguments)
@@ -1923,6 +1968,7 @@ class Executor:
                     prospect.invocation,
                     there,
                     prospect.visit,
+                    spending,
                 )
             },
         )
@@ -1979,6 +2025,7 @@ class Executor:
         invocation: Invocation | None = None,
         there: Device | None = None,
         visit: Visit | None = None,
+        spending: Foresight | None = None,
     ) -> dict[str, JsonValue]:
         """The facts of the question, kept beside it: what a surface shows without recomposing it.
 
@@ -2008,6 +2055,11 @@ class Executor:
         site as the target, with the tool's word and sentence, the address, the gestures one by one,
         the text an action waits for and the time. Not a :class:`~ela.ports.Target`, whose
         ``exists`` would be a fact about a site nobody visited (ADR 0052).
+
+        Since M14.1 a question about a call that spends carries **its worst case and what the month
+        has left** (decision H): here and not in ``prompt``, so the three surfaces show them and the
+        audit of the question does not (review decision 6) — the money in the audit is the usage
+        of ``TOOL_EXECUTED`` and the numbers of a ``TASK_DENIED``.
         """
         asked: dict[str, JsonValue] = {
             "description": spec.description,
@@ -2042,6 +2094,12 @@ class Executor:
             # the Core minted (M13.3, decision 10); and what ELA did not do (:data:`UNSEEN`).
             asked["machine"] = f"{there.name} ({str(there.id)[:8]})"
             asked["unseen"] = UNSEEN
+        if spending is not None:
+            asked["worst_case"] = worst_said(spending.worst)
+            asked["left"] = (
+                f"{dollars(spending.left)} of {dollars(spending.cap)} {CURRENCY} left in "
+                f"{spending.month.label}"
+            )
         return asked
 
     async def _fail(
@@ -2072,14 +2130,22 @@ class Executor:
         decision: PermissionDecision,
         device_id: DeviceId,
         authorization_id: AuthorizationId | None,
-    ) -> ExecutionResult:
-        """The STARTED record of a tool that cannot be run twice (ADR 0021 §1).
+        arguments: JsonMapping,
+    ) -> ExecutionResult | Refusal:
+        """The STARTED record of a tool that cannot be run twice (ADR 0021 §1) — and, for a call
+        that spends, **the gate of the month's cap** (M14.1, ADR 0057).
 
         Written **before** the tool acts and stored before it is called, so that the instant
         between the action and the insert of its outcome — crash window 7a, declared unrepairable
         in ADR 0015 §8 — leaves something behind. It carries everything the outcome will carry
         except the outcome: whose decision, whose grant, which node. No audit event: nothing has
         happened yet, and ``TOOL_EXECUTED`` is written at the outcome, interrupted or not.
+
+        A tool that spends says its worst case, and the record **is** the reservation: written with
+        that amount only if ``spent + reserved + worst case <= cap``, in one operation with the
+        read; otherwise nothing is written and the :class:`~ela.executive.spending.Refusal` says
+        why. Here, where the record is born, on this machine and at a node's claim alike: the one
+        place every call that spends passes before it leaves (decision B).
         """
         record = ExecutionResult(
             id=ExecutionId(self._ids.new_uuid()),
@@ -2093,8 +2159,30 @@ class Executor:
             decision_id=decision.id,
             authorization_id=authorization_id,
         )
-        await self._results.add(record)
-        return record
+        worst = await tool.worst_case(arguments)
+        if worst is None:
+            await self._results.add(record)
+            return record
+        refused = await self._spending.reserve(record, worst)
+        if refused is not None:
+            return refused
+        return record.model_copy(update={"worst_case": worst})
+
+    async def _denied_by_cap(
+        self,
+        task_id: TaskId,
+        step_id: StepId,
+        decision: PermissionDecision,
+        authorization: Authorization | None,
+        refused: Refusal,
+    ) -> Execution:
+        """→ DENIED by the cap, with the sentence that names the line and the numbers in the audit
+        (decision G); the step closes ``CANCELLED`` without acting, as after a Guardian's no."""
+        task = await self._engine.deny_by_cap(
+            task_id, decision=decision, reason=refused.reason, payload=refused.payload
+        )
+        graph = await self._engine.stop_step(task_id, step_id, reason=f"denied: {refused.reason}")
+        return Execution(task, step_id, graph, decision, authorization, None, None, None)
 
     async def _sensor_activated(
         self, spec: CapabilitySpec, decision: PermissionDecision, device_id: DeviceId

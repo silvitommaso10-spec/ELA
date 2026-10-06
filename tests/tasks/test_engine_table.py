@@ -53,9 +53,11 @@ def test_live_states_are_the_non_terminal_ones() -> None:
 
 
 def test_every_row_has_a_public_method() -> None:
-    """``deny_by_*`` are the two facts of ``deny``; every other row is a method of its name."""
+    """``deny_by_approval`` and ``deny_by_decision`` are the two facts of ``deny``; every other row
+    is a method of its name — ``deny_by_cap`` too (M14.1): the cap is not a reason ``deny`` takes,
+    because what it denies is a call the Guardian allowed."""
     for name in OPERATIONS:
-        method = name.partition("_by_")[0]
+        method = "deny" if name in {"deny_by_approval", "deny_by_decision"} else name
         assert callable(getattr(TaskEngine, method)), name
 
 
@@ -66,6 +68,7 @@ def test_keys_name_the_input_that_makes_the_operation_idempotent() -> None:
         "approve": "approval_id",
         "deny_by_approval": "approval_id",
         "deny_by_decision": "decision_id",
+        "deny_by_cap": "decision_id",
         "complete": "result_id",
     }
 

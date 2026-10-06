@@ -12,8 +12,8 @@ from ela.providers.anthropic import AnthropicSettings, anthropic_provider
 from ela.providers.anthropic.models import (
     DEFAULT_MODEL,
     LARGEST_OUTPUT_TOKENS,
-    OPUS_5,
-    SONNET_5,
+    OPUS_5_5,
+    SONNET_5_5,
 )
 from ela.providers.anthropic.settings import (
     DEFAULT_MAX_OUTPUT_TOKENS,
@@ -54,7 +54,7 @@ def test_defaults() -> None:
 
 def test_the_default_model_is_the_balanced_one_not_the_expensive_one() -> None:
     """§25: the powerful model is chosen for a reason; what starts by itself is the cheap one."""
-    assert DEFAULT_MODEL != OPUS_5
+    assert DEFAULT_MODEL != OPUS_5_5
 
 
 def test_the_key_is_read_from_elas_variable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -94,7 +94,7 @@ def test_a_key_makes_the_provider_available(monkeypatch: pytest.MonkeyPatch) -> 
     assert provider.name == "anthropic"
 
 
-@pytest.mark.parametrize("value", ["gpt-4", SONNET_5, ""])
+@pytest.mark.parametrize("value", ["gpt-4", SONNET_5_5, ""])
 def test_the_retired_model_variable_stops_ela_instead_of_being_ignored(
     monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
@@ -116,7 +116,7 @@ def test_the_retired_model_variable_stops_ela_instead_of_being_ignored(
 def test_the_retired_variable_is_refused_from_a_dotenv_file_too(tmp_path: Path) -> None:
     """Not only from the environment: a ``.env`` left over from M7.2 must stop ELA as well."""
     dotenv = tmp_path / ".env"
-    dotenv.write_text(f"ELA_ANTHROPIC_MODEL={OPUS_5}\n", encoding="utf-8")
+    dotenv.write_text(f"ELA_ANTHROPIC_MODEL={OPUS_5_5}\n", encoding="utf-8")
 
     with pytest.raises(ValidationError, match="retired"):
         AnthropicSettings(_env_file=dotenv)

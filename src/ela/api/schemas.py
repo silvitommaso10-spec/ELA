@@ -70,6 +70,7 @@ from ela.domain import (
     TaskPlan,
     TaskState,
     TaskStep,
+    WorstCase,
     is_text,
 )
 from ela.executive import ASKED, REPORTABLE, Delivery, Envelope, Verdict, check_envelope
@@ -466,6 +467,12 @@ class Asked(BaseModel):
     expect: str = ""
     """The text an action waits for on the page after the click (M13.4): what the verifier looks
     for. Empty for a read, and when the question is not about a page."""
+    worst_case: str = ""
+    """The most the call can cost, in the executor's line — amount, model, tokens — when the call
+    spends (M14.1, ADR 0057; decision H). Empty for a call that spends nothing."""
+    left: str = ""
+    """What the month had left under the cap **when the question was asked** (decision H): the
+    gate reads the month again after the yes. Empty for a call that spends nothing."""
 
 
 class ApprovalOut(BaseModel):
@@ -507,6 +514,8 @@ class ApprovalOut(BaseModel):
     address: str
     gestures: tuple[str, ...] | None
     expect: str
+    worst_case: str
+    left: str
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:
@@ -525,6 +534,28 @@ class ApprovalOut(BaseModel):
             responded_by=approval.responded_by,
             **asked.model_dump(),
         )
+
+
+class SpendOut(BaseModel):
+    """The month under the spending cap (M14.1, ADR 0057), as the gate reads it (decision I).
+
+    ``cap`` and ``left`` are ``None`` without a cap — and then no call that spends goes out, which
+    ``cap_setting`` lets a client say with the name of the line. The amounts are strings, written by
+    the gate's own formatting: exact, never rounded. ``open`` counts the reservations nothing closed
+    — in flight, or ended without an outcome, held until the month turns —, ``unknown`` the ones an
+    outcome closed without a known cost: both are inside ``reserved``.
+    """
+
+    month: str
+    resets_at: datetime
+    cap: str | None
+    cap_setting: str
+    currency: str
+    spent: str
+    reserved: str
+    open: int
+    unknown: int
+    left: str | None
 
 
 class AuditEventOut(BaseModel):
@@ -750,6 +781,10 @@ class WorkOrderOut(BaseModel):
     ``decision`` is the :class:`~ela.domain.PermissionDecision` the Core made, whole, because that
     is what a tool checks before acting (``check_decision``); ``arguments`` are the step's, read
     from the plan. Composed in one place, which imports no network client: architecture rule 51.
+
+    **And one more since M14.1** (ADR 0057): the order of a call that spends carries
+    ``worst_case``, the reservation the Core wrote under the month's cap, and the node does not
+    spend beyond it. Absent, not ``null``, for every call that spends nothing.
     """
 
     assignment_id: UUID
@@ -759,15 +794,19 @@ class WorkOrderOut(BaseModel):
     arguments: JsonMapping
     expires_at: datetime
     success_conditions: tuple[str, ...] | None = None
+    worst_case: WorstCase | None = None
 
     @model_serializer(mode="wrap")
     def _six_keys_unless_verified_there(
         self, handler: SerializerFunctionWrapHandler
     ) -> dict[str, object]:
-        """The seventh key only when there is something in it: absent, not ``null``, otherwise."""
+        """The seventh and eighth keys only when there is something in them: absent, not ``null``,
+        otherwise."""
         dumped = cast(dict[str, object], handler(self))
         if self.success_conditions is None:
             dumped.pop("success_conditions", None)
+        if self.worst_case is None:
+            dumped.pop("worst_case", None)
         return dumped
 
 

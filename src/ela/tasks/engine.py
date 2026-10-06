@@ -204,6 +204,13 @@ OPERATIONS: Final[Mapping[str, Operation]] = MappingProxyType(
                 "decision_id",
             ),
             Operation(
+                "deny_by_cap",
+                frozenset({_S.EXECUTING}),
+                _S.DENIED,
+                AuditEventType.TASK_DENIED,
+                "decision_id",
+            ),
+            Operation(
                 "queue",
                 frozenset({_S.PLANNING, _S.EXECUTING}),
                 _S.QUEUED,
@@ -711,6 +718,38 @@ class TaskEngine:
                 payload={"capability_id": decision.capability_id},
             )
         raise TaskEngineError(task_id, "deny needs exactly one of decision and approval")
+
+    async def deny_by_cap(
+        self,
+        task_id: TaskId,
+        *,
+        decision: PermissionDecision,
+        reason: str,
+        payload: Payload,
+    ) -> Task:
+        """→ DENIED by the month's spending cap (§30; M14.1, ADR 0057).
+
+        ``decision`` is the Guardian's, which **allowed** the call: the cap is not a permission and
+        a "yes" does not raise it (decision G), so the denial comes after an ``ALLOWED`` and names
+        it — the audit reads ``PERMISSION_DECIDED`` ``ALLOWED``, then this. ``reason`` is the
+        sentence that names the line of the ``.env``; ``payload`` the numbers it was judged on.
+        """
+        if decision.task_id != task_id:
+            raise TaskEngineError(task_id, f"the decision is about task {decision.task_id}")
+        if decision.outcome is not PermissionOutcome.ALLOWED:
+            raise TaskEngineError(
+                task_id,
+                f"the cap denies a call the Guardian allowed, not one it {decision.outcome.value}",
+            )
+        return await self._apply(
+            OPERATIONS["deny_by_cap"],
+            task_id,
+            actor=self._actor,
+            reason=reason,
+            key=decision.id,
+            decision_id=decision.id,
+            payload={"capability_id": decision.capability_id, **payload},
+        )
 
     async def queue(self, task_id: TaskId, *, reason: str = "") -> Task:
         """PLANNING/EXECUTING → QUEUED: ready to run, or interrupted and to be resumed (§15)."""

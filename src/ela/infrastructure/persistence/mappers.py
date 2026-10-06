@@ -62,6 +62,7 @@ from ela.domain import (
     TaskPlan,
     TaskState,
     TaskStep,
+    WorstCase,
 )
 from ela.infrastructure.persistence.orm import (
     ApprovalRow,
@@ -347,6 +348,7 @@ def result_values(result: ExecutionResult) -> dict[str, Any]:
         "usage": _plain_model(result.usage),
         "duration_ms": result.duration_ms,
         "metadata_": _plain(result.metadata),
+        "worst_case": _plain_model(result.worst_case),
     }
 
 
@@ -372,6 +374,7 @@ def row_to_result(row: ExecutionResultRow) -> ExecutionResult:
         error=None if row.error is None else ErrorMetadata.model_validate(row.error),
         usage=None if row.usage is None else ProviderUsage.model_validate(row.usage),
         duration_ms=row.duration_ms,
+        worst_case=None if row.worst_case is None else WorstCase.model_validate(row.worst_case),
         metadata=row.metadata_,
     )
 

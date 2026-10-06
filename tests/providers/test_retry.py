@@ -1,4 +1,9 @@
-"""The retry policy (ADR 0020 §8): again on 429 and 5xx, never on a 4xx, and never blindly.
+"""The retry policy (ADR 0020 §8, revised by ADR 0057): again only on what the API did not run.
+
+Until M14.1 every ``429``, ``5xx``, timeout and dropped connection was tried again. Since the
+spending cap (review decision 2), only the ``429`` and the ``529`` are: they are turned down before
+anything runs. A timeout, a dropped connection or another ``5xx`` may come after the work was done
+and paid, and trying again would pay twice for an outcome nobody knows.
 
 The reason this policy is ELA's and not the SDK's is visible here: the client is a double, so the
 SDK's own retrying would be invisible and untestable. What the tests hold to account is the
@@ -29,10 +34,10 @@ from tests.providers.support import (
 )
 
 
-async def test_a_server_error_then_an_answer_costs_one_wait() -> None:
+async def test_an_overloaded_api_then_an_answer_costs_one_wait() -> None:
     sleeper = Sleeper()
     provider, client = make_provider(
-        status_error(500, error_type="api_error"), answer("ok"), sleep=sleeper
+        status_error(529, error_type="overloaded_error"), answer("ok"), sleep=sleeper
     )
 
     result = await provider.complete(request())
@@ -49,11 +54,9 @@ async def test_a_server_error_then_an_answer_costs_one_wait() -> None:
     [
         (status_error(429, error_type="rate_limit_error"), PROVIDER_RATE_LIMITED),
         (status_error(529, error_type="overloaded_error"), PROVIDER_SERVER_ERROR),
-        (connection_error(), PROVIDER_UNREACHABLE),
-        (timeout_error(), PROVIDER_TIMEOUT),
     ],
 )
-async def test_every_retryable_failure_is_tried_again(failure: BaseException, code: str) -> None:
+async def test_what_the_api_did_not_run_is_tried_again(failure: BaseException, code: str) -> None:
     sleeper = Sleeper()
     provider, client = make_provider(failure, answer("ok"), sleep=sleeper)
 
@@ -64,8 +67,32 @@ async def test_every_retryable_failure_is_tried_again(failure: BaseException, co
     assert len(sleeper.delays) == 1
 
 
+@pytest.mark.parametrize(
+    ("failure", "code"),
+    [
+        (status_error(500, error_type="api_error"), PROVIDER_SERVER_ERROR),
+        (status_error(504, error_type="timeout_error"), PROVIDER_SERVER_ERROR),
+        (connection_error(), PROVIDER_UNREACHABLE),
+        (timeout_error(), PROVIDER_TIMEOUT),
+    ],
+)
+async def test_an_outcome_nobody_knows_is_not_tried_again(
+    failure: BaseException, code: str
+) -> None:
+    """Retryable by nature, and not retried: the first try may have been run and paid."""
+    sleeper = Sleeper()
+    provider, client = make_provider(failure, answer("ok"), sleep=sleeper)
+
+    result = await provider.complete(request())
+
+    assert result.error is not None and result.error.code == code
+    assert result.error.retryable is True, "the nature of the failure is unchanged"
+    assert client is not None and len(client.messages.calls) == 1
+    assert sleeper.delays == []
+
+
 async def test_the_backoff_doubles_and_stops_at_the_cap() -> None:
-    failures = [status_error(500) for _ in range(6)]
+    failures = [status_error(529, error_type="overloaded_error") for _ in range(6)]
     sleeper = Sleeper()
     provider, client = make_provider(
         *failures, sleep=sleeper, provider_settings=settings(anthropic_max_retries=5)
@@ -131,7 +158,7 @@ async def test_a_client_error_is_never_retried(status: int) -> None:
 async def test_retrying_can_be_switched_off() -> None:
     sleeper = Sleeper()
     provider, client = make_provider(
-        status_error(500), provider_settings=settings(anthropic_max_retries=0), sleep=sleeper
+        status_error(529), provider_settings=settings(anthropic_max_retries=0), sleep=sleeper
     )
 
     result = await provider.complete(request())
@@ -143,7 +170,7 @@ async def test_retrying_can_be_switched_off() -> None:
 
 
 async def test_the_latency_covers_every_attempt() -> None:
-    provider, _ = make_provider(status_error(500), status_error(500), answer("ok"))
+    provider, _ = make_provider(status_error(529), status_error(429), answer("ok"))
 
     result = await provider.complete(request())
 
@@ -153,7 +180,7 @@ async def test_the_latency_covers_every_attempt() -> None:
 
 async def test_a_bad_request_after_a_retryable_one_stops_the_loop() -> None:
     sleeper = Sleeper()
-    provider, client = make_provider(status_error(500), status_error(400), sleep=sleeper)
+    provider, client = make_provider(status_error(529), status_error(400), sleep=sleeper)
 
     result = await provider.complete(request())
 

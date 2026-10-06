@@ -219,7 +219,9 @@ class ExecutionResultRow(Base):
     as one JSON document — ``cost`` a string, because a ``Decimal`` that went through a float
     would stop adding up. Nullable: a tool that calls no provider has none, and that is not zero.
     A ``STARTED`` row (ADR 0021 §1) is one of these too, with no output, no error and no usage:
-    what it records is that a tool that cannot be run twice was about to run.
+    what it records is that a tool that cannot be run twice was about to run. Since M14.1 the
+    ``STARTED`` row of a call that spends carries its ``worst_case`` — the reservation of the
+    month's cap (ADR 0057) —, and ``created_at`` is indexed: the month's ledger reads by it.
     """
 
     __tablename__ = "execution_results"
@@ -231,6 +233,7 @@ class ExecutionResultRow(Base):
             unique=True,
             sqlite_where=text("status = 'STARTED'"),
         ),
+        Index("ix_execution_results_created_at", "created_at"),
         {"sqlite_autoincrement": True},
     )
     """A **partial** unique index: one ``STARTED`` record per step (ADR 0021 §1-bis). It is a
@@ -254,8 +257,11 @@ class ExecutionResultRow(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
     usage: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    """Last on purpose: ``ALTER TABLE ADD COLUMN`` appends, so a database built by
-    ``create_all`` and one built by the migrations have the columns in the same order."""
+    """After the original columns on purpose: ``ALTER TABLE ADD COLUMN`` appends, so a database
+    built by ``create_all`` and one built by the migrations have the columns in the same order."""
+    worst_case: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    """The reservation of a ``STARTED`` row that spends (M14.1, ADR 0057), as one JSON document —
+    ``amount`` a string, like ``usage.cost``. Last, for the reason of ``usage``."""
 
 
 class DeviceRow(Base):

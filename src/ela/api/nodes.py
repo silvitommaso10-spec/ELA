@@ -360,6 +360,7 @@ def work_order(claimed: Claimed, device_id: DeviceId) -> WorkOrderOut:
         arguments=claimed.arguments,
         expires_at=claimed.assignment.expires_at,
         success_conditions=claimed.conditions,
+        worst_case=claimed.worst_case,
     )
 
 

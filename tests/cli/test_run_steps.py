@@ -15,7 +15,7 @@ ELA's ports, because being a node is not something the command line can do (ADR 
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -27,7 +27,7 @@ import pytest
 from ela.api.schemas import WorkResultIn
 from ela.cli.output import EMPTY, GAP, fields
 from ela.cli.tasks import RUN_LABELS
-from ela.composition import Ela, build
+from ela.composition import Ela, Settings, build
 from ela.domain import (
     DeviceId,
     DeviceRole,
@@ -38,10 +38,35 @@ from ela.domain import (
     PrivacyLevel,
 )
 from ela.executive import RunOutcome
-from ela.testing.fakes import FakeClock, FakePower
+from ela.testing.fakes import FakeBrowser, FakeClock, FakePage, FakePower
 from tests.api.support import EXAMPLES, echo_plan, note_plan
 from tests.api.test_nodes_work import ENVELOPE
 from tests.cli.support import Cli, plain
+from tests.composition.support import create_schema, declare
+
+
+@pytest.fixture
+def settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Settings:
+    """The composition's world with the guide's sites (M14.1): the step that runs and fails is a
+    gesture on a field the page does not have, since a call to the model that cannot be bounded is
+    denied before its question (ADR 0057)."""
+    declare(monkeypatch, tmp_path, ELA_BROWSER_SITES=json.dumps(["example.com", "httpbin.org"]))
+    return Settings.load()
+
+
+@pytest.fixture
+async def ela(settings: Settings) -> AsyncIterator[Ela]:
+    """ELA as ``build`` makes it, with a browser that opens nothing and a page with no
+    ``#non-esiste`` — the story of ``browser-act-missing.json``."""
+    await create_schema(settings.persistence.db_url)
+    built = await build(
+        settings, power=FakePower(), browser=FakeBrowser(FakePage(counts={"#non-esiste": 0}))
+    )
+    try:
+        yield built
+    finally:
+        await built.aclose()
+
 
 STEPS = "steps handled"
 """The label of the row, written out: the one place in the suite that holds the word itself."""
@@ -224,7 +249,8 @@ async def failed_before_the_act(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
 
 
 async def failed_after_the_act(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
-    plan = example("ask-model.json")
+    """A gesture on a field the page does not have (since M14.1: see the API's twin)."""
+    plan = example("browser-act-missing.json")
     task = await planned(cli, tmp_path, plan)
     await run(cli, task)
     await answer_the_question(cli, task, "approve")
@@ -233,7 +259,7 @@ async def failed_after_the_act(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
         RunOutcome.FAILED,
         "FAILED",
         (plan["steps"][0]["id"],),
-        reason="provider.unavailable",
+        reason="browser.element_missing",
     )
 
 

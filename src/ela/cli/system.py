@@ -159,6 +159,8 @@ QUESTION_FIELDS: Final[frozenset[str]] = frozenset(
         "address",
         "gestures",
         "expect",
+        "worst_case",
+        "left",
     }
 )
 """Every field of the question this surface shows, declared here so it can be checked.
@@ -231,6 +233,8 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         ("may go", one.get("max_privacy")),
         ("question expires", one.get("expires_at")),
         ("grant if you say yes", _terms(one.get("grant_uses"), one.get("grant_seconds"))),
+        ("worst case", one.get("worst_case") or None),
+        ("left this month", one.get("left") or None),
         ("step goal", _seen(one.get("goal"))),
         ("declared", [_seen(pair) for pair in one.get("stated") or ()] or None),
         ("targets", [_seen(target) for target in one["targets"]]),
@@ -251,7 +255,7 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
     return [
         (name, value)
         for name, value in rows
-        if value is not None or name not in COMMAND_ROWS | NODE_ROWS | PAGE_ROWS
+        if value is not None or name not in COMMAND_ROWS | NODE_ROWS | PAGE_ROWS | SPENDING_ROWS
     ]
 
 
@@ -269,6 +273,11 @@ not dashed, for every other — the question about this machine is the one it al
 PAGE_ROWS: Final[frozenset[str]] = frozenset({"address", "gestures", "expects"})
 """The rows only a question about a page has (M13.4, ADR 0052): absent, not dashed, for every other
 — the form of :data:`COMMAND_ROWS`."""
+
+SPENDING_ROWS: Final[frozenset[str]] = frozenset({"worst case", "left this month"})
+"""The rows only a question about a call that spends has (M14.1, ADR 0057): its worst case and what
+the month had left when it was asked — absent, not dashed, for every other, in the form of
+:data:`COMMAND_ROWS`. Next to the terms of the grant: what a yes costs, in time and in money."""
 
 TARGET: Final = "target"
 """The row of a target whose question does not say what its tool calls it (M13.2 dec. 12)."""

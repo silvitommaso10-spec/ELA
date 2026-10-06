@@ -176,12 +176,11 @@ async def _completed(client: AsyncClient, ela: Ela, text: str, privacy: str | No
 
 
 async def _failed(client: AsyncClient, ela: Ela, text: str, privacy: str | None) -> str:
-    """A step that fails: the example that asks a model, on a machine without a key."""
-    plan = json.loads((EXAMPLES / "ask-model.json").read_text(encoding="utf-8"))
+    """A step that fails: the example that reads a file nobody wrote — ``path.missing``, before
+    the question. Until M14.1 it was the model asked on a machine without a key, which the spending
+    cap now denies before the question (ADR 0057)."""
+    plan = json.loads((EXAMPLES / "fs-read.json").read_text(encoding="utf-8"))
     task = await queued(client, plan, text, privacy=privacy)
-    await client.post(f"/tasks/{task}/run")
-    approval = (await client.get("/approvals")).json()[0]["id"]
-    await client.post(f"/tasks/{task}/approve", json={"approval_id": approval})
     await client.post(f"/tasks/{task}/run")
     return task
 

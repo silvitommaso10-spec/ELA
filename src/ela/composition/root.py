@@ -43,6 +43,7 @@ from ela.devices import (
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import Actor, ActorKind, RawSpeech
 from ela.executive import Assignments, Executor, TaskRunner
+from ela.executive.spending import SpendingGate
 from ela.infrastructure.machine import (
     Audition,
     DarwinListening,
@@ -266,6 +267,9 @@ class Ela:
     of the review of 2026-09-30): the browser's driver inherits the environment, and one of them
     turns its check of a certificate off. Kept so that the start can say which — never the values.
     """
+    spending: SpendingGate
+    """The month's spending cap (M14.1, ADR 0057): the gate the executor applies, held here so that
+    ``GET /spend`` reads the ledger with the very function the gate judges with (decision I)."""
     audition: Audition
     """Hearing a voice before choosing it, without a task per attempt (ADR 0034 §9).
 
@@ -667,6 +671,10 @@ async def build(
             url=settings.ntfy.ntfy_url,
             timeout=settings.ntfy.ntfy_timeout_seconds,
         )
+        # The month's cap (M14.1, ADR 0057): one gate, which the executor applies where a call that
+        # spends is about to leave, and which ``GET /spend`` reads — the same function, the same
+        # rows (decision I).
+        spending = SpendingGate(results, settings.spending.spending_cap_usd)
         executor = Executor(
             registry=capabilities,
             tools=tools,
@@ -685,6 +693,7 @@ async def build(
             bell=rings,
             authorization_ttl=settings.core.authorization_ttl,
             approval_ttl=settings.core.approval_ttl,
+            spending=spending,
         )
         # And it is alive: the local node *is* this process, so ELA can say so about itself
         # without claiming anything it does not know (§16). A node registered and never heard
@@ -778,6 +787,7 @@ async def build(
         speech_online=playing,
         listening=listening,
         removed_from_environment=removed,
+        spending=spending,
         audition=Audition(
             speak=_audition_speaker(online, playing),
             play=_sample(online, playing),

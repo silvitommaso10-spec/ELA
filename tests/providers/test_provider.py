@@ -27,7 +27,7 @@ from ela.ports import (
     PROVIDER_UNREACHABLE,
     PROVIDER_UNSUPPORTED_PARAMETER,
 )
-from ela.providers.anthropic.models import OPUS_5, SONNET_5
+from ela.providers.anthropic.models import OPUS_5_5, SONNET_5_5
 from ela.providers.anthropic.pricing import CURRENCY
 from ela.providers.anthropic.provider import PROVIDER_NAME
 from tests.providers.support import (
@@ -52,7 +52,7 @@ async def test_an_answer_becomes_a_result() -> None:
 
     assert result.request_id == request().id
     assert result.provider == PROVIDER_NAME
-    assert result.model == SONNET_5
+    assert result.model == SONNET_5_5
     assert result.output == "ecco"
     assert result.finish_reason == "end_turn"
     assert result.error is None
@@ -129,8 +129,8 @@ async def test_an_unsupported_parameter_stops_before_the_network() -> None:
     assert result.error is not None
     assert result.error.code == PROVIDER_UNSUPPORTED_PARAMETER
     assert "temperature" in result.error.message
-    assert result.model == SONNET_5
-    assert result.error.model == SONNET_5
+    assert result.model == SONNET_5_5
+    assert result.error.model == SONNET_5_5
     assert client is not None and client.messages.calls == []
 
 
@@ -222,8 +222,8 @@ async def test_an_answer_the_sdk_cannot_parse_is_a_broken_channel_not_a_rejectio
 
 async def test_a_failure_still_reports_the_model_it_was_going_to_use() -> None:
     provider, _ = make_provider(status_error(400), provider_settings=settings())
-    result = await provider.complete(request(model_hint=OPUS_5))
-    assert result.model == OPUS_5
+    result = await provider.complete(request(model_hint=OPUS_5_5))
+    assert result.model == OPUS_5_5
     assert result.usage.cost == Decimal("0")
     assert result.usage.currency == CURRENCY
 

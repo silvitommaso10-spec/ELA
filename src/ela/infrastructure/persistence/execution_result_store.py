@@ -9,24 +9,34 @@ names the result's id.
 Which of the two constraints an ``IntegrityError`` came from is read from the row, not from the
 database's message: a message is a string a driver may reword, and the caller is owed the reason
 its insert was refused.
+
+**The reservation of the spending cap** (M14.1, ADR 0057) is the one write that reads first:
+``reserve`` holds SQLite's write lock from the read of the month's rows to the insert, with the
+``BEGIN IMMEDIATE`` the audit log uses for its head, so two calls cannot both be written on the
+same margin. The sum is not the store's: it reads the rows and asks the caller.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from collections.abc import Callable
+from datetime import datetime
+from typing import Final
+
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from ela.domain import ExecutionId, ExecutionResult, ExecutionStatus, StepId, TaskId
 from ela.infrastructure.persistence.engine import make_session_factory
 from ela.infrastructure.persistence.mappers import result_to_row, row_to_result
 from ela.infrastructure.persistence.orm import ExecutionResultRow
-from ela.ports import AlreadyExistsError, NotFoundError
+from ela.ports import STARTED_ID, AlreadyExistsError, NotFoundError
 
 __all__ = ["SqlExecutionResultStore"]
 
 EXECUTION_RESULT = "execution result"
 STARTED_FOR_STEP = "started record for step"
+BEGIN_IMMEDIATE: Final = text("BEGIN IMMEDIATE")
 
 
 class SqlExecutionResultStore:
@@ -49,11 +59,75 @@ class SqlExecutionResultStore:
         """
         checked = ExecutionResult.model_validate(result.model_dump())
         async with self._sessions() as session, session.begin():
-            session.add(result_to_row(checked))
-            try:
-                await session.flush()
-            except IntegrityError:
-                raise self._refusal(result) from None
+            await self._insert(session, checked, result)
+
+    async def _insert(
+        self, session: AsyncSession, checked: ExecutionResult, result: ExecutionResult
+    ) -> None:
+        session.add(result_to_row(checked))
+        try:
+            await session.flush()
+        except IntegrityError:
+            raise self._refusal(result) from None
+
+    async def spending(self, since: datetime, until: datetime) -> tuple[ExecutionResult, ...]:
+        async with self._sessions() as session:
+            return await self._spending(session, since, until)
+
+    async def reserve(
+        self,
+        record: ExecutionResult,
+        since: datetime,
+        until: datetime,
+        admits: Callable[[tuple[ExecutionResult, ...]], bool],
+    ) -> bool:
+        checked = ExecutionResult.model_validate(record.model_dump())
+        async with self._sessions() as session, session.begin():
+            await session.execute(BEGIN_IMMEDIATE)
+            if not admits(await self._spending(session, since, until)):
+                return False
+            await self._insert(session, checked, record)
+            return True
+
+    @staticmethod
+    async def _spending(
+        session: AsyncSession, since: datetime, until: datetime
+    ) -> tuple[ExecutionResult, ...]:
+        """The period's reservations, then what closes them: the results of the same steps that
+        name one of them. Filtered here and not in SQL — a JSON ``NULL`` and a SQL ``NULL`` are
+        two things, and the rows of a month are few."""
+        started = (
+            select(ExecutionResultRow)
+            .where(
+                ExecutionResultRow.status == ExecutionStatus.STARTED.value,
+                ExecutionResultRow.created_at >= since,
+                ExecutionResultRow.created_at < until,
+            )
+            .order_by(ExecutionResultRow.seq)
+        )
+        reservations = [
+            result
+            for result in (row_to_result(row) for row in await session.scalars(started))
+            if result.worst_case is not None
+        ]
+        ids = {str(result.id) for result in reservations}
+        tasks = {result.task_id for result in reservations if result.task_id is not None}
+        if not tasks:
+            return tuple(reservations)
+        others = (
+            select(ExecutionResultRow)
+            .where(
+                ExecutionResultRow.task_id.in_(tasks),
+                ExecutionResultRow.status != ExecutionStatus.STARTED.value,
+            )
+            .order_by(ExecutionResultRow.seq)
+        )
+        closing = [
+            result
+            for result in (row_to_result(row) for row in await session.scalars(others))
+            if result.metadata.get(STARTED_ID) in ids
+        ]
+        return (*reservations, *closing)
 
     @staticmethod
     def _refusal(result: ExecutionResult) -> AlreadyExistsError:
