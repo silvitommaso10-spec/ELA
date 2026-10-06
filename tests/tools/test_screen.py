@@ -39,7 +39,7 @@ from ela.tools import (
     CaptureSettings,
     CaptureStore,
 )
-from tests.tools.support import allowed
+from tests.tools.support import PERMISSIONS_BITE, allowed
 from tests.tools.test_captures import png, write
 
 DECISION = allowed(PERCEPTION_CAPTURE_SCREEN)
@@ -470,6 +470,7 @@ def test_the_purge_leaves_what_is_not_a_capture_alone(tmp_path: Path) -> None:
     assert held(directory) == ["somebody-elses-file.txt"]
 
 
+@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o500) does not deny this user: it is root")
 def test_the_purge_of_a_capture_that_cannot_be_removed_does_not_raise(tmp_path: Path) -> None:
     """A file that went away between the listing and the unlink is the outcome asked for."""
     directory = tmp_path / "captures"

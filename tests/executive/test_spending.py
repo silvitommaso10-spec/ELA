@@ -45,6 +45,8 @@ BOUND = WorstCase(
     amount=Decimal("0.25"), currency="USD", model="m", input_tokens=900, output_tokens=100
 )
 OCTOBER = month_of(datetime(2026, 10, 6, 12, tzinfo=UTC))
+EMPTY = Ledger(spent=Decimal(0), reserved=Decimal(0))
+"""A month with nothing spent and nothing held: both numbers are written, never defaulted."""
 
 
 def reserved(number: int, *, bound: WorstCase = BOUND) -> ExecutionResult:
@@ -111,7 +113,7 @@ def test_the_last_instant_and_the_first_belong_to_two_months() -> None:
 
 
 def test_an_empty_month_is_an_empty_ledger() -> None:
-    assert ledger(()) == Ledger(spent=Decimal(0), reserved=Decimal(0))
+    assert ledger(()) == EMPTY
 
 
 def test_a_reservation_nothing_closed_holds_its_worst_case() -> None:
@@ -121,7 +123,7 @@ def test_a_reservation_nothing_closed_holds_its_worst_case() -> None:
 
 def test_a_call_that_was_not_sent_costs_nothing() -> None:
     first = reserved(1)
-    assert ledger([first, closing(first, usage(sent=False), 1)]) == Ledger()
+    assert ledger([first, closing(first, usage(sent=False), 1)]) == EMPTY
 
 
 def test_a_call_sent_with_a_cost_costs_the_cost() -> None:
@@ -147,7 +149,7 @@ def test_where_the_fact_is_missing_the_call_counts_as_sent() -> None:
 def test_a_cost_of_zero_is_a_cost() -> None:
     """A request the API turned down cost nothing, and said so: zero, spent."""
     first = reserved(1)
-    assert ledger([first, closing(first, usage(cost=Decimal(0)), 1)]) == Ledger()
+    assert ledger([first, closing(first, usage(cost=Decimal(0)), 1)]) == EMPTY
 
 
 def test_the_ledger_sums_every_kind_at_once() -> None:
@@ -164,7 +166,7 @@ def test_the_ledger_sums_every_kind_at_once() -> None:
 
 def test_a_started_record_with_no_reservation_and_a_stray_outcome_count_for_nothing() -> None:
     stray = OTHER.model_copy(update={"metadata": {STARTED_ID: "elsewhere"}})
-    assert ledger([STARTED, stray, OTHER]) == Ledger()
+    assert ledger([STARTED, stray, OTHER]) == EMPTY
 
 
 def test_the_same_rows_give_the_same_ledger() -> None:
@@ -180,7 +182,7 @@ def test_the_same_rows_give_the_same_ledger() -> None:
 
 
 def test_without_a_cap_nothing_that_spends_goes_out() -> None:
-    refused = judge(cap=None, worst=BOUND, month=OCTOBER, held=Ledger())
+    refused = judge(cap=None, worst=BOUND, month=OCTOBER, held=EMPTY)
     assert isinstance(refused, Refusal) and refused.code is SpendingCode.NO_CAP
     assert refused.reason == f"no monthly cap: {CAP_VARIABLE} in the Core's .env sets it, in USD"
 
@@ -232,7 +234,7 @@ def test_a_call_that_reaches_the_cap_exactly_goes_out() -> None:
 
 
 def test_a_cap_of_zero_lets_nothing_out() -> None:
-    refused = judge(cap=Decimal(0), worst=BOUND, month=OCTOBER, held=Ledger())
+    refused = judge(cap=Decimal(0), worst=BOUND, month=OCTOBER, held=EMPTY)
     assert isinstance(refused, Refusal) and refused.code is SpendingCode.OVER_CAP
 
 
@@ -282,7 +284,7 @@ async def test_the_gate_reads_the_ledger_of_the_month_of_now() -> None:
     assert month.label == "2026-09"
     assert held == Ledger(spent=0, reserved=Decimal("0.25"), open=1)
     assert gate.cap == Decimal(5)
-    assert (await gate.ledger(NOW + timedelta(days=30)))[1] == Ledger(), "October is empty"
+    assert (await gate.ledger(NOW + timedelta(days=30)))[1] == EMPTY, "October is empty"
 
 
 async def test_foresee_says_what_is_left_before_the_call() -> None:

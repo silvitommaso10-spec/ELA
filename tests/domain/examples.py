@@ -62,6 +62,7 @@ from ela.domain import (
     IdentityId,
     IntentChannel,
     IntentId,
+    Ledger,
     ModelRoute,
     NetworkKind,
     Observation,
@@ -102,6 +103,7 @@ from ela.domain import (
     TaskState,
     TaskStep,
     UserIntent,
+    WorstCase,
 )
 
 
@@ -148,6 +150,19 @@ PROVIDER_USAGE: Final = ProviderUsage(
     currency="EUR",
     latency_ms=1_450,
 )
+
+WORST_CASE: Final = WorstCase(
+    amount=Decimal("0.216384"),
+    currency="USD",
+    model="claude-haiku-4-5-20251001",
+    input_tokens=195_904,
+    output_tokens=4_096,
+)
+"""The most one call to Haiku 4.5 can cost with 4096 tokens out: the window less the output in,
+the output out (M14.1, ADR 0057 §2)."""
+
+LEDGER: Final = Ledger(spent=Decimal("3.21"), reserved=Decimal("0.216384"), open=1, unknown=1)
+"""A month with a cost written and a reservation held — the ``ela spend`` of M14.1 §8."""
 
 ERROR_METADATA: Final = ErrorMetadata(
     code="tool.timeout",
@@ -622,6 +637,8 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         ELA_ACTOR,
         DEVICE_CAPABILITY,
         PROVIDER_USAGE,
+        WORST_CASE,
+        LEDGER,
         ERROR_METADATA,
         ELA_IDENTITY,
         USER_INTENT,

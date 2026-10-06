@@ -805,6 +805,22 @@ def test_a_question_shows_the_terms_and_the_expiry_when_it_has_them() -> None:
     assert "Scade" in pairs and "Dove può andare" in pairs
 
 
+def test_a_question_that_spends_shows_its_worst_case_and_what_the_month_has_left() -> None:
+    """M14.1, decision H: what a yes may cost and what the month has left, as the executor wrote
+    them — amounts and a model's name, not the user's content, so whatever the ceiling."""
+    question = an_approval(
+        worst_case="4.065536 USD, claude-opus-5-5, up to 995904 tokens in and 4096 out",
+        left="40.8 of 45 USD left in 2026-10",
+    )
+
+    for seen in (True, False):
+        pairs = _pairs(question, seen=seen)
+        assert "Costo massimo" in pairs and "4.065536 USD, claude-opus-5-5" in pairs
+        assert "Resta nel mese" in pairs and "40.8 of 45 USD left in 2026-10" in pairs
+    nothing = _pairs(an_approval(), seen=True)
+    assert "Costo massimo" not in nothing and "Resta nel mese" not in nothing
+
+
 # ----------------------------------------------------------------------------------------
 # The refusals of the enrolment, each with its own sentence
 # ----------------------------------------------------------------------------------------

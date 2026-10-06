@@ -36,6 +36,7 @@ from ela.ports import PROVIDER_UNAVAILABLE
 from ela.tools import CREATES, OVERWRITES, READS
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 from tests.api.reasons import example, opened
+from tests.providers.support import SECRET
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
 EXAMPLE = EXAMPLES / "first-task.json"
@@ -240,7 +241,7 @@ async def test_it_asks_for_consent_because_the_capability_does(
     (decision H) — no network is touched to say it.
     """
     async with opened(
-        monkeypatch, tmp_path, ELA_SPENDING_CAP_USD="5", ELA_ANTHROPIC_API_KEY="sk-ant-test"
+        monkeypatch, tmp_path, ELA_SPENDING_CAP_USD="5", ELA_ANTHROPIC_API_KEY=SECRET
     ) as world:
         plan = ask_model_plan()
         assert "requires_authorization" not in plan["steps"][0]
@@ -283,7 +284,7 @@ async def test_the_four_calls_of_section_23_ask_with_the_worst_case_the_guide_pr
     """The four questions of the hand test of M14.1 (§23 steps 4–7): the same plan, the same route,
     the same price — the line ``ela approvals`` prints is the line the guide expects."""
     async with opened(
-        monkeypatch, tmp_path, ELA_SPENDING_CAP_USD="30", ELA_ANTHROPIC_API_KEY="sk-ant-test"
+        monkeypatch, tmp_path, ELA_SPENDING_CAP_USD="30", ELA_ANTHROPIC_API_KEY=SECRET
     ) as world:
         task_id = (await world.client.post("/tasks", json={"text": name})).json()["id"]
         planned = await world.client.post(f"/tasks/{task_id}/plan", json=example(name))

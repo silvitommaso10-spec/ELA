@@ -799,8 +799,8 @@ class Ledger(_DomainModel):
     ledger, and nothing updates it.
     """
 
-    spent: Annotated[Decimal, Field(ge=0)] = Decimal(0)
-    reserved: Annotated[Decimal, Field(ge=0)] = Decimal(0)
+    spent: Annotated[Decimal, Field(ge=0)]
+    reserved: Annotated[Decimal, Field(ge=0)]
     open: Annotated[int, Field(ge=0)] = 0
     unknown: Annotated[int, Field(ge=0)] = 0
 

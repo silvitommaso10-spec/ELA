@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
@@ -57,6 +58,7 @@ from ela.executive import (
     RunOutcome,
     TaskRunner,
 )
+from ela.executive.spending import SpendingCode, SpendingGate
 from ela.permissions import (
     CORE_ECHO,
     MODEL_COMPLETE,
@@ -120,6 +122,10 @@ ARGUMENTS: dict[CapabilityId, JsonMapping] = {
 }
 """What each capability is called with. Since ADR 0018 this belongs to the step: a plan that does
 not say it is a plan that cannot be executed."""
+CAP: Final = Decimal(1)
+"""The month's cap of a pipeline whose ``model.complete`` is to leave (M14.1, ADR 0057): a dollar,
+which the fake provider's one-cent worst case fits under. Without a cap, as on an ELA nobody gave
+one, a call that spends is denied before it leaves (decision B)."""
 
 
 class _LyingNoteTool(WriteNoteTool):
@@ -144,6 +150,7 @@ class Pipeline:
         *,
         tools: ToolRegistry | None = None,
         model_providers: tuple[FakeModelProvider, ...] | None = None,
+        cap: Decimal | None = None,
     ) -> None:
         self.clock, self.ids, self.audit = FakeClock(), FakeIdGenerator(), FakeAuditLog()
         self.repository, self.store = FakeTaskRepository(), FakeAuthorizationStore()
@@ -227,6 +234,7 @@ class Pipeline:
             actor=ELA,
             assignments=self.assignments,
             bell=FakeBell(),
+            spending=SpendingGate(self.results, cap),
         )
         self.runner = TaskRunner(
             engine=self.engine,
@@ -347,6 +355,12 @@ def workspace(tmp_path: Path) -> Path:
 @pytest.fixture
 def p(workspace: Path) -> Pipeline:
     return Pipeline(workspace)
+
+
+@pytest.fixture
+def capped(workspace: Path) -> Pipeline:
+    """The pipeline with a cap on the month: the one a call to the model can leave from."""
+    return Pipeline(workspace, cap=CAP)
 
 
 LIFE_CYCLE = [
@@ -540,7 +554,7 @@ async def test_a_step_that_requires_authorization_is_approved_granted_and_run_on
 
 
 async def test_model_complete_goes_out_through_the_guardian_and_comes_back_accounted_for(
-    p: Pipeline,
+    capped: Pipeline,
 ) -> None:
     """The claim of M7.2, end to end (§27, §29, §32).
 
@@ -549,6 +563,7 @@ async def test_model_complete_goes_out_through_the_guardian_and_comes_back_accou
     and its outcome after, and puts what the call consumed in the ``TOOL_EXECUTED``. The text of
     the answer is in the result and in no audit event (§57).
     """
+    p = capped
     step, task_id = await p.planned_and_running(MODEL_COMPLETE)
     asked = await p.execute(task_id, step.id)
     assert asked.task.state is TaskState.WAITING_APPROVAL
@@ -582,9 +597,10 @@ async def test_model_complete_goes_out_through_the_guardian_and_comes_back_accou
     assert "Riassumi" not in json.dumps([e.model_dump(mode="json") for e in await p.audit.read()])
 
 
-async def test_a_routed_model_call_goes_where_the_table_says(p: Pipeline) -> None:
+async def test_a_routed_model_call_goes_where_the_table_says(capped: Pipeline) -> None:
     """The claim of M7.3, end to end (§25): the plan says *what kind of task* it is, and the
     profile that reaches the provider is the table's — nobody typed it."""
+    p = capped
     step, task_id = await p.planned_and_running(
         MODEL_COMPLETE, arguments={**ARGUMENTS[MODEL_COMPLETE], "task_type": "coding"}
     )
@@ -605,7 +621,7 @@ async def test_a_provider_that_is_down_is_stepped_over_end_to_end(tmp_path: Path
     clock, ids = FakeClock(), FakeIdGenerator()
     down = FakeModelProvider(clock, ids, name="down", status=ProviderStatus.UNAVAILABLE)
     up = FakeModelProvider(clock, ids, name="up")
-    p = Pipeline(tmp_path / "workspace", model_providers=(down, up))
+    p = Pipeline(tmp_path / "workspace", model_providers=(down, up), cap=CAP)
 
     step, task_id = await p.planned_and_running(MODEL_COMPLETE)
     await p.grant(task_id, step.id)
@@ -621,28 +637,33 @@ async def test_a_provider_that_is_down_is_stepped_over_end_to_end(tmp_path: Path
     assert "skipped" not in events
 
 
-async def test_an_unknown_task_type_fails_the_step_without_a_call(p: Pipeline) -> None:
+async def test_an_unknown_task_type_is_denied_without_a_call(capped: Pipeline) -> None:
     """Decision 7b end to end: the Guardian allows it — the schema says ``task_type`` is a
-    string — and the *router* refuses it, before the network, with a code of its own."""
+    string — and the *router* refuses it, before the network, with a code of its own.
+
+    Since M14.1 the router says it before the question: a call with no route has no worst case,
+    and a call that cannot be bounded is not made nor asked about (ADR 0057 §2). The task is
+    denied, and the router's code is in the reason (M14.1, proposal 2)."""
+    p = capped
     step, task_id = await p.planned_and_running(
         MODEL_COMPLETE, arguments={**ARGUMENTS[MODEL_COMPLETE], "task_type": "telepathy"}
     )
-    await p.grant(task_id, step.id)
     execution = await p.execute(task_id, step.id)
 
-    assert execution.graph.states[step.id] is StepState.FAILED
+    assert execution.task.state is TaskState.DENIED
+    assert execution.approval is None
     assert p.provider.requests == ()
-    executed = next(
-        e for e in await p.audit.read(task_id=task_id) if e.event_type is E.TOOL_EXECUTED
-    )
-    assert executed.error is not None
-    assert executed.error.code == ROUTING_UNKNOWN_TASK_TYPE
-    assert executed.error.retryable is False
+    denied = next(e for e in await p.audit.read(task_id=task_id) if e.event_type is E.TASK_DENIED)
+    assert denied.payload["operation"] == "deny_by_cap"
+    assert denied.payload["code"] == SpendingCode.UNBOUNDED.value
+    assert ROUTING_UNKNOWN_TASK_TYPE in str(denied.payload["reason"])
+    assert E.TOOL_EXECUTED not in await p.types(task_id)
 
 
-async def test_an_interrupted_model_call_is_never_made_twice(p: Pipeline) -> None:
+async def test_an_interrupted_model_call_is_never_made_twice(capped: Pipeline) -> None:
     """The reason the STARTED record exists (ADR 0021 §2): a crash before the outcome leaves a
     record, and the retry fails the step instead of calling — and charging — again."""
+    p = capped
     step, task_id = await p.planned_and_running(MODEL_COMPLETE)
     asked = await p.execute(task_id, step.id)
     assert asked.approval is not None

@@ -52,6 +52,7 @@ from ela.domain import (
     ExecutionResult,
     ExecutionStatus,
     IntentChannel,
+    Ledger,
     ModelRoute,
     NetworkKind,
     Observation,
@@ -86,6 +87,7 @@ from ela.domain import (
     TaskState,
     TaskStep,
     UserIntent,
+    WorstCase,
 )
 
 uuids = st.uuids(version=4)
@@ -149,6 +151,17 @@ provider_usages = st.builds(
     currency=_optional(texts),
     latency_ms=_optional(counts),
 )
+
+worst_cases = st.builds(
+    WorstCase,
+    amount=_optional(decimals),
+    currency=_optional(texts),
+    model=texts,
+    input_tokens=counts,
+    output_tokens=counts,
+)
+
+ledgers = st.builds(Ledger, spent=decimals, reserved=decimals, open=counts, unknown=counts)
 
 error_metadata = st.builds(
     ErrorMetadata,
@@ -745,6 +758,8 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.Actor: actors,
     domain.DeviceCapability: device_capabilities,
     domain.ProviderUsage: provider_usages,
+    domain.WorstCase: worst_cases,
+    domain.Ledger: ledgers,
     domain.ErrorMetadata: error_metadata,
     domain.ELAIdentity: ela_identities,
     domain.UserIntent: user_intents,

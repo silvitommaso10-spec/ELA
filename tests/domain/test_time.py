@@ -120,6 +120,11 @@ VALUE_OBJECTS = frozenset(
         "ContextQuestionStatus",
         # One stream of a command (M13.2): a value inside a result, whose instant is the result's.
         "CommandOutput",
+        # The spending cap (M14.1): the worst case is a value inside a STARTED record, whose
+        # instant is the record's; the ledger is derived from the rows at the moment it is read
+        # and never stored, so it has nothing to date but the month it is asked for.
+        "WorstCase",
+        "Ledger",
     }
 )
 

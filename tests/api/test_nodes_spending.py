@@ -24,6 +24,7 @@ from ela.tools.model import MODEL_COMPLETE
 from tests.api.reasons import World, answer_the_question, ending, example, opened, run
 from tests.api.support import queued
 from tests.api.test_nodes import enrolled
+from tests.providers.support import SECRET
 
 OPUS = WorstCase(
     amount=Decimal("4.065536"),
@@ -41,7 +42,7 @@ async def capped(
 ) -> AsyncIterator[tuple[World, dict[str, str]]]:
     """An ELA with a cap and a key, and a node that declares every tool and is built to win."""
     async with opened(
-        monkeypatch, tmp_path, ELA_SPENDING_CAP_USD=cap, ELA_ANTHROPIC_API_KEY="sk-ant-test"
+        monkeypatch, tmp_path, ELA_SPENDING_CAP_USD=cap, ELA_ANTHROPIC_API_KEY=SECRET
     ) as w:
         _, headers = await enrolled(
             w.client, "TRUSTED", available_tools=[tool.name for tool in w.ela.tools.tools()]

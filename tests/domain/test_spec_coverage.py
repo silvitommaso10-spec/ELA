@@ -68,6 +68,8 @@ LATER_ADDITIONS = frozenset(
         "Enrollment",
         "Assignment",
         "CommandOutput",
+        "WorstCase",
+        "Ledger",
     }
 )
 """Models a later milestone added, each argued in its own ADR.
@@ -119,6 +121,12 @@ is not this process, with a life — offered, claimed, delivered or expired — 
 :class:`~ela.ports.AssignmentStore`. It is not a ``PlacementDecision``, which stays the in-process
 value of ADR 0026 §2 (M12.1, D8), and it does not carry the arguments of the call: those are the
 step's, and the call is the decision it carries plus the step, read by reference (M12.1, D1).
+
+``WorstCase`` and ``Ledger`` (M14.1, ADR 0057) are values. The worst case is what
+:meth:`~ela.ports.ModelProvider.worst_case` answers and what a ``STARTED`` record carries as its
+reservation — a port names it, which is the criterion of the four of perception. The ledger is the
+month's spending derived from the rows each time it is read, never stored and never updated: it is
+what the gate decides on and what ``GET /spend`` reads, the same function for both.
 """
 
 

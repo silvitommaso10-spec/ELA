@@ -85,6 +85,10 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
     ``CommandOutput`` joined in M13.2 without a bag: it holds what a program printed, and a mapping
     beside it would be a second place for the output to go. Its numbers are typed and checked
     against each other; the text is the head and the tail, and nothing else.
+
+    ``WorstCase`` and ``Ledger`` joined in M14.1 without a bag: they are amounts and counts, and a
+    mapping beside them would be where the call's input or the answer would one day be put next to
+    what it cost — the money says why a call was denied, never what it said (§57; ADR 0057).
     """
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
     assert without == [
@@ -101,6 +105,7 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
         "ContextSnapshot",
         "ContextTask",
         "Enrollment",
+        "Ledger",
         "ModelRoute",
         "PerceptionChange",
         "ProviderUsage",
@@ -113,6 +118,7 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
         "RawTextLine",
         "RawTranscript",
         "SensorStatus",
+        "WorstCase",
     ]
 
 

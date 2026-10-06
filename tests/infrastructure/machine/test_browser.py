@@ -34,6 +34,7 @@ from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import playwright
 import pytest
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
@@ -46,6 +47,7 @@ from ela.domain import (
     RiskLevel,
 )
 from ela.infrastructure.machine import PlaywrightBrowser
+from ela.infrastructure.machine.browser import shell_folder
 from ela.permissions import BROWSER_ACT, BROWSER_READ
 from ela.ports import (
     NAVIGATION,
@@ -675,15 +677,56 @@ async def test_whether_the_shell_is_there_is_read_where_playwright_launches_it_s
     assert descendants() == []
 
 
-async def test_on_a_system_whose_shell_it_cannot_place_it_says_it_did_not_look() -> None:
+async def test_on_a_system_whose_shell_it_cannot_place_it_says_it_did_not_look(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Review of the summary, 2026-09-30, decision 1: the system is handed to the adapter by the
-    composition, and here by the test — never read from the machine the suite runs on."""
+    composition, and here by the test — never read from the machine the suite runs on.
+
+    **Nor is the folder of browsers**: the system places the shell only where nobody declared a
+    folder, so the test takes the declaration away (M14.1). A machine that sets
+    ``PLAYWRIGHT_BROWSERS_PATH`` — the container of the session of 2026-10-06 does — has said where
+    to look, on any system, and the test below holds that half."""
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
     browser = PlaywrightBrowser(asyncio.Event(), environment={}, kept=Kept(), system="Plan 9")
 
     with pytest.raises(BrowserUnsupported) as unsupported:
         await browser.installed()
 
     assert "Plan 9" in str(unsupported.value)
+    assert descendants() == []
+
+
+@pytest.mark.parametrize("declared", ["a folder", "0"])
+async def test_on_any_system_a_declared_folder_of_browsers_is_where_it_looks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, declared: str
+) -> None:
+    """The other half (M14.1, measured on 2026-10-06): Playwright's driver reads
+    ``PLAYWRIGHT_BROWSERS_PATH`` from **ELA's process environment** — the client copies
+    ``os.environ`` into the driver it starts, and the ``env`` of the launch is the browser's, not
+    the driver's: declared only there, the shell installed in that folder is not found. So
+    ``installed()`` reads the process environment, and a declared folder is the place to look
+    whatever the system. Both values: a folder of its own, and ``0``, the folder inside the
+    package — here a package of the test's, so that nothing is written into the installed one."""
+    if declared == "0":
+        package = tmp_path / "playwright" / "driver" / "package"
+        package.mkdir(parents=True)
+        installed = Path(playwright.__file__).parent / "driver" / "package" / "browsers.json"
+        (package / "browsers.json").write_bytes(installed.read_bytes())
+        monkeypatch.setattr(playwright, "__file__", str(tmp_path / "playwright" / "__init__.py"))
+        monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", "0")
+    else:
+        monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "browsers"))
+    browser = PlaywrightBrowser(asyncio.Event(), environment={}, kept=Kept(), system="Plan 9")
+    folder = shell_folder(os.environ, "Plan 9")
+    assert folder is not None and folder.is_relative_to(tmp_path)
+
+    assert await browser.installed() is False
+    shell = folder / "chrome-headless-shell-plan9" / "chrome-headless-shell"
+    shell.parent.mkdir(parents=True)
+    shell.touch()
+
+    assert await browser.installed() is True
     assert descendants() == []
 
 
