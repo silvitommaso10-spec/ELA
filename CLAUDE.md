@@ -60,8 +60,9 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   riepilogo, i conteggi e l'esito stanno in fondo. Un giro perso perché l'esito è finito in una
   pipe costa novanta secondi.
 - **La CI sul branch è il controllo Linux; `make check-linux` serve per riprodurre in locale una
-  CI rossa su ubuntu.** Il merge esige la CI verde su entrambi i runner all'ultimo commit del
-  branch. `make check` gira su una macchina sola, e una suite che eredita da quella macchina passa
+  CI rossa su ubuntu.** Il merge esige la CI verde all'ultimo commit del branch su tutti e tre i
+  suoi job: `make check` su ubuntu e su macos, e la suite del nodo su windows. `make check` gira su
+  una macchina sola, e una suite che eredita da quella macchina passa
   lì e fallisce sull'altra — è successo il 2026-09-08, e la CI se n'è accorta undici minuti dopo il
   merge. `make check-linux` rifà la suite e il gate della copertura fingendo l'altra metà della
   matrice. **Ha dei limiti e sono scritti in
