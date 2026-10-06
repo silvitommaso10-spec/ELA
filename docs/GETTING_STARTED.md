@@ -3601,7 +3601,10 @@ file dello script restano in `~/Downloads`.
 > **Scritta con le SPEC del 2026-10-02** (`milestones/M13.1c.md`, `M13.1d.md`, `M9.6.md`) e **allineata con
 > l'implementazione** il 2026-10-02: i passi 2–6 li fa girare la suite con lo script stesso, su un ELA nello stesso
 > processo, con il browser finto (`tests/cli/test_section_22_on_the_cli.py`). La si fa sul Mac, sul branch
-> `m13.1c-m13.1d-m9.6`, con lo script `scripts/prova_m13_1c_m13_1d_m9_6.py`. Il PC non serve.
+> `m13.1c-m13.1d-m9.6`, con lo script `scripts/prova_m13_1c_m13_1d_m9_6.py`. Il PC non serve. **Fatta da Tommaso il
+> 2026-10-06 sul branch**, a `b589b68`: passata, ogni passo al primo giro
+> (`~/Downloads/prova-m13.1c-m13.1d-m9.6-20261006-122115.txt`); [ADR 0055](adr/0055-the-reason-of-an-end.md) e
+> [ADR 0056](adr/0056-the-author-is-not-in-the-product.md) sono Accettate.
 
 Tre riparazioni, una prova. **M13.1c**: un diniego e un fallimento dicono il loro perché, e lo dicono uguale alla
 corsa che chiude il task e a ogni corsa dopo — le parole della transizione che l'ha chiuso, come per un «ferma» da

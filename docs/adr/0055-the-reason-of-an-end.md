@@ -1,8 +1,8 @@
 # 0055. La ragione di una fine è quella della transizione che ha chiuso il task: la stessa alla chiusura e alla porta, con il codice dell'errore; e un risultato che non è riuscito dice perché
 
-- **Stato:** **Proposta** fino alla prova a mano di `docs/GETTING_STARTED.md` §22, con
-  `scripts/prova_m13_1c_m13_1d_m9_6.py`. Recepisce la SPEC di M13.1c (`docs/milestones/M13.1c.md`), decisa dal
-  revisore il 2026-10-02 con le domande 1–5 e la 7 di M13.1d.
+- **Stato:** **Accettata il 2026-10-06**, quando la prova a mano di `docs/GETTING_STARTED.md` §22 è passata sul Mac
+  a `b589b68`, con `scripts/prova_m13_1c_m13_1d_m9_6.py` (§8). Recepisce la SPEC di M13.1c
+  (`docs/milestones/M13.1c.md`), decisa dal revisore il 2026-10-02 con le domande 1–5 e la 7 di M13.1d.
 - **Data:** 2026-10-02
 - **Riferimenti spec:** §14, §32, §33, §62, §63, §64
 - **Milestone:** M13.1c
@@ -128,6 +128,26 @@ c'entrano — i passi 2–6, passati sul Mac il 2026-10-02, che sono la ragione 
 no detto per sbaglio, o un «Ferma» premuto dal telefono, avrebbero tenuto aperto un debito che il passo 8 aveva
 pagato. **Il debito era il passo 8, e lo salda il passo 8 PASSATO sul PC: il file delle 17:46.** Il giorno di ritardo
 resta scritto qui, accanto alla data che §16 dava.
+
+### 8. La prova a mano, passata sul Mac il 2026-10-06
+
+Tommaso, a `b589b68`, con lo script, in un giro: **`~/Downloads/prova-m13.1c-m13.1d-m9.6-20261006-122115.txt`**.
+**19 PASSATI al primo giro**, nessun FALLITO, nessun SALTATO, nessun no a una domanda dell'occhio, e l'ultima riga «La
+prova è passata.».
+
+- **Passo 2 — un diniego, due volte**: `browser-read-outside.json`; le due corse dicono `denied` con la stessa ragione,
+  `deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope […])`, alla
+  chiusura e alla porta (§1).
+- **Passo 3 — un fallimento, due volte**: `browser-left-site.json`; le due corse dicono `failed` con
+  `fail: EXECUTING -> FAILED (browser.left_site: …)`, il codice nelle parole della transizione (§2).
+- **Passo 4 — il no**: `first-task.json`; il blocco di `ela approvals` del task ha la forma del blocco di §6 (M13.1d,
+  §4), il no dato con `ela task deny`, e le due corse dicono `deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by
+  6c38f1c5-6cda-5680-8a7a-4f061588deed)`, l'id di `local` (§1).
+- **Passo 5 — l'help** di `ela task run` dice che `denied`, `failed`, `cancelled` ed `expired` portano sempre il loro
+  perché.
+
+**Nessun difetto del codice di ELA.** Le correzioni degli script di questi giorni — 2-bis, Q, R, S e U — sono nel
+documento di M13.1c, «L'implementazione, e dove si scosta».
 
 ## Alternative considerate
 

@@ -1,8 +1,9 @@
 # 0056. Niente di chi ha scritto ELA in ciò che installa e serve: un test per ciò che una macchina riconosce, il catalogo dell'audizione nella configurazione, la provenienza di una misura in `docs/`
 
-- **Stato:** **Proposta** fino alla prova a mano di `docs/GETTING_STARTED.md` §22, passi 6–8, con
-  `scripts/prova_m13_1c_m13_1d_m9_6.py`. Recepisce la SPEC di M9.6 (`docs/milestones/M9.6.md`), decisa dal revisore
-  il 2026-10-02 con le domande 8–11 e con le decisioni I–M della sessione.
+- **Stato:** **Accettata il 2026-10-06**, quando la prova a mano di `docs/GETTING_STARTED.md` §22, passi 6–8, è
+  passata sul Mac a `b589b68`, con `scripts/prova_m13_1c_m13_1d_m9_6.py` (§7). Recepisce la SPEC di M9.6
+  (`docs/milestones/M9.6.md`), decisa dal revisore il 2026-10-02 con le domande 8–11 e con le decisioni I–M della
+  sessione.
 - **Data:** 2026-10-02
 - **Riferimenti spec:** §9, §48, §54
 - **Milestone:** M9.6
@@ -114,6 +115,21 @@ Gli ADR non si riscrivono: queste righe si leggono con questo accanto.
   `src/` e `apps/`.
 - **`docs/milestones/M11.3.md`**, la tabella delle candidate e la riga di `ela voice` che «dice le sei candidate»:
   da M9.6 `ela voice` dice il catalogo del `.env`, o che è vuoto.
+
+### 7. La prova a mano, passata sul Mac il 2026-10-06
+
+Tommaso, a `b589b68`, con lo script, sull'ELA di sempre e con il suo `.env` **senza** la riga delle voci, nello stesso
+giro di ADR 0055 §8: **`~/Downloads/prova-m13.1c-m13.1d-m9.6-20261006-122115.txt`**.
+
+- **Passo 6 — il catalogo vuoto**: `uv run ela voice` stampa la riga della voce configurata, «(la voce configurata)»,
+  il suo id e `yes`, e sotto la tabella «the audition's catalogue is empty: ELA_ELEVENLABS_CANDIDATES in .env names
+  the voices to try»; esce con `0` (§3).
+- **Passo 7 — l'audizione**: `uv run ela voice audition` con la voce configurata dice le due frasi di §9, su un modello,
+  per 18 crediti; Tommaso le ha sentite: sì.
+- **Passo 8 — il saluto**: nella composizione «home» del design system, nei due temi, il saluto è «Good evening.»,
+  senza un nome; Tommaso l'ha guardato: sì.
+
+**Nessun difetto del codice di ELA.** La riga delle voci va nel `.env` di Tommaso dopo il merge: §22, passo 9.
 
 ## Alternative considerate
 
