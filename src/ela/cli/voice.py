@@ -27,7 +27,7 @@ from ela.cli import client
 from ela.cli.errors import handled
 from ela.cli.output import Json, emit, fields, table, text
 
-__all__ = ["app", "audition", "preview", "voice"]
+__all__ = ["EMPTY_CATALOGUE", "app", "audition", "preview", "voice"]
 
 app = typer.Typer(
     help="Which voice ELA speaks with, and how to change it.", invoke_without_command=True
@@ -39,6 +39,11 @@ RETENTION = (
 )
 """The sentence, in one place. It is printed whenever the online voice is configured, and a test
 fails if the fact is true and the sentence is missing (ADR 0034 §11)."""
+
+EMPTY_CATALOGUE = "the audition's catalogue is empty: {setting} in .env names the voices to try"
+"""Under the table, when ``GET /voice`` names the setting that fills the catalogue (M9.6, decision
+K). «Catalogue» and not «lists no voice»: the table above may hold the configured voice. The name is
+the API's, not written here twice."""
 
 
 def _lines(payload: dict[str, Any]) -> str:
@@ -62,6 +67,9 @@ def _lines(payload: dict[str, Any]) -> str:
             for one in payload["candidates"]
         ],
     )
+    setting = payload["empty_catalogue_setting"]
+    if setting is not None:
+        listed += "\n\n" + EMPTY_CATALOGUE.format(setting=setting)
     said = "\n".join(f"  {phrase}" for phrase in payload["phrases"])
     return f"{rendered}\n\n{listed}\n\nan audition says:\n{said}"
 

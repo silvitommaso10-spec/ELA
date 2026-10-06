@@ -67,7 +67,8 @@ class RunOutcome(StrEnum):
     """A step failed and the task is FAILED, its pending descendants CANCELLED."""
     DENIED = "denied"
     """The task is DENIED — the Guardian denied a step, or the user said no to a question — and the
-    denied step did not run. Steps before it may have (M6.3b, ADR 0051)."""
+    denied step did not run. Steps before it may have (M6.3b, ADR 0051). The reason says which:
+    ``deny_by_decision`` or ``deny_by_approval`` (M13.1c, ADR 0055)."""
     WAITING_APPROVAL = "waiting_approval"
     """A step needs the user's consent (§30). The next run resumes it."""
     WAITING_DEVICE = "waiting_device"
@@ -77,7 +78,8 @@ class RunOutcome(StrEnum):
     since M6.3c, from inside the walk too — a stop under a running step is an outcome, never a 409
     (ADR 0054 §6) —, with the words of the stop and what the step in progress had done."""
     EXPIRED = "expired"
-    """The task ran out of time (§14). Nobody decided anything; a deadline passed."""
+    """The task ran out of time (§14). Nobody decided anything; a deadline passed — and the reason
+    says which: the question nobody answered, in the words of its transition (M13.1c, ADR 0055)."""
     ASSIGNED = "assigned"
     """A step was handed to a remote node and has not come back (M12.2, ADR 0038 §10).
 
@@ -111,6 +113,9 @@ different facts — one is a decision with an actor behind it, the other is time
 collapsing them into a single "terminal" would throw away a distinction that cannot be recovered
 later (review of M6.3).
 """
+
+_REASONED: Final[frozenset[TaskState]] = frozenset(TERMINAL_STATES - {TaskState.COMPLETED})
+"""The ends whose run says why: every one but ``COMPLETED`` (M13.1c, ADR 0055)."""
 
 RUNNABLE_STATES: Final[frozenset[TaskState]] = frozenset({TaskState.QUEUED, TaskState.EXECUTING})
 """The two states a plan can be walked from (§14): ready to start, or already under way.
@@ -148,42 +153,22 @@ class Run(NamedTuple):
     ``ASSIGNED`` carries one too, and it is the assignment's: the node, the work and the deadline
     by which it is due (M12.2, ADR 0038 §10). What a person deciding whether to wait has to read.
 
-    ``DENIED`` and ``FAILED`` carry one too, since the proof by hand of M13.1: the row was empty
-    in the two cases where a "why" existed and the user had to go and read the JSON to find it —
-    the Guardian's own reason for a denial, the tool's code and message for a failure. **A
-    diagnosis that lives where nobody looks is not a diagnosis.**
+    **Every end but ``COMPLETED`` carries one, always** — ``DENIED``, ``FAILED``, ``CANCELLED`` and
+    ``EXPIRED`` —: the words of the transition that ended the task, the summary of its audit event
+    (M13.1c, ADR 0055; the form of ADR 0054 §7). The same for the call that ended the task and for
+    every call after it, which finds it at the door: until M13.1c the door said nothing for a denial
+    or a failure, and the call that closed a task said nothing when the executor's word carried no
+    error — a failure a node delivered, a step a crash left. The name of the operation says who
+    ended it: ``deny_by_decision`` the Guardian, ``deny_by_approval`` the user, ``recover`` the
+    start-up. **A diagnosis that lives where nobody looks is not a diagnosis** (M13.1).
 
     ``None`` for every other outcome: those say what happened. The runner still writes nothing of
-    its own (ADR 0019) — every reason is the placement's, the assignment's, the decision's or the
-    error's, passed on rather than composed here.
-
-    ``CANCELLED`` carries one too, since M6.3c, and never an empty one: the words of the stop, from
-    its audit event (ADR 0054 §7).
+    its own (ADR 0019) — every reason is the placement's, the assignment's or the transition's,
+    passed on rather than composed here.
     """
     halt: Halt | None = None
     """What the step in progress had done when the task was stopped (M6.3c, ADR 0054 §7); ``None``
     for every outcome but ``CANCELLED``, and for a stop that found no step in progress."""
-
-
-def _why(execution: Execution) -> str | None:
-    """The reason this call ended the task, passed on and never composed (M13.1, rilievo 3).
-
-    A denial has the Guardian's own sentence; a failure has the error the tool or the verifier
-    reported, as ``code: message``. Neither is written here — both are read off what the executor
-    already returned, which is what keeps ADR 0019 true: the runner adds nothing of its own.
-
-    ``None`` when the task ended without either, which is what a completed task looks like.
-    """
-    if execution.task.state is TaskState.DENIED and execution.decision is not None:
-        return execution.decision.reason
-    error = execution.error
-    if error is None and execution.result is not None:
-        error = execution.result.error
-    if error is None and execution.verification is not None:
-        error = execution.verification.error
-    if error is None:
-        return None
-    return f"{error.code}: {error.message}" if error.message else error.code
 
 
 class TaskRunner:
@@ -275,7 +260,7 @@ class TaskRunner:
             OUTCOMES[task.state],
             (),
             (),
-            await self._door_reason(task),
+            await self._reason(task),
             await self._executor.halt(task_id),
         )
 
@@ -319,14 +304,15 @@ class TaskRunner:
         while True:
             if graph.is_blocked:
                 task = await self._fail(task_id)
-                # The plan cannot go on because a step failed, and the reason is that step's:
-                # passed on, never composed here (ADR 0019; M13.1, rilievo 3).
+                # The plan cannot go on because a step failed — here, on a node that delivered it,
+                # or in a call a crash cut short — and the reason is the transition's, which carries
+                # that step's error: the same whoever failed the step (M13.1c, ADR 0055).
                 return Run(
                     task,
                     RunOutcome.FAILED,
                     tuple(steps),
                     tuple(executions),
-                    _why(executions[-1]) if executions else None,
+                    await self._reason(task),
                 )
             if graph.is_complete:
                 task = await self._complete(task_id, graph)
@@ -397,20 +383,22 @@ class TaskRunner:
     async def _closing(
         self, task: Task, execution: Execution, steps: list[StepId], executions: list[Execution]
     ) -> Run:
-        """The walk stops on a task in a state of :data:`OUTCOMES`. One the walk itself reached is
-        reported as it always was, with the executor's reason; a stop, or an end somebody else
-        wrote, is :meth:`_ended`."""
+        """The walk stops on a task in a state of :data:`OUTCOMES`. A stop, or an end somebody else
+        wrote, is :meth:`_ended`; one the walk itself reached is reported with the words of its
+        transition — the one source of a reason since M13.1c, whoever wrote the end."""
         if task.state is TaskState.CANCELLED or (
             task.state in TERMINAL_STATES and execution.task.state is not task.state
         ):
             return await self._ended(task, steps, executions)
-        return Run(task, OUTCOMES[task.state], tuple(steps), tuple(executions), _why(execution))
+        return Run(
+            task, OUTCOMES[task.state], tuple(steps), tuple(executions), await self._reason(task)
+        )
 
     async def _ended(self, task: Task, steps: list[StepId], executions: list[Execution]) -> Run:
         """A task that ended under the walk: its open step closed, its reason passed, its halt.
 
-        The reason is **never empty** (decision 4 of the session): the words of the transition that
-        ended the task, which the engine always writes.
+        The reason is **never empty** for an end that has one (decision 4 of the session of M6.3c):
+        the words of the transition that ended the task, which the engine always writes.
         """
         closed = await self._executor.close_open_step(task.id)
         if closed is not None and closed.step_id not in steps:
@@ -421,7 +409,7 @@ class TaskRunner:
             OUTCOMES[task.state],
             tuple(steps),
             tuple(executions),
-            await self._transition_reason(task),
+            await self._reason(task),
             await self._executor.halt(task.id),
         )
 
@@ -441,15 +429,18 @@ class TaskRunner:
             OUTCOMES[task.state],
             handled,
             done,
-            await self._door_reason(task),
+            await self._reason(task),
             await self._executor.halt(task.id),
         )
 
-    async def _door_reason(self, task: Task) -> str | None:
-        """The reason at the door: a stop's words for ``cancelled`` (decision 7 of the review);
-        ``None`` for the other outcomes, as they were — the empty ones of ``denied`` and ``failed``
-        are M13.1c's, and M6.3c does not touch them (decision 4)."""
-        if task.state is not TaskState.CANCELLED:
+    async def _reason(self, task: Task) -> str | None:
+        """The reason of a run whose task has ended, **the one source of it** (M13.1c, ADR 0055):
+        the words of the transition that ended the task for every end but ``COMPLETED``, which
+        explains itself — at the door, under a taken lock, at the end the walk reached, at a blocked
+        plan, and for an end written under the walk. The same for the call that ended the task and
+        for every call after it (decision D of the session). ``None`` for a task that has not
+        ended."""
+        if task.state not in _REASONED:
             return None
         return await self._transition_reason(task)
 

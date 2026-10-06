@@ -94,10 +94,12 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 9 — Le liste che si accorgono di essere false | `M9.3` | Completata | Le esenzioni che si accorgono di essere false |
 | 9 — Le liste che si accorgono di essere false | `M9.4` | Completata | Le finestre, i negativi, e la release v0.1 |
 | 9 — Le liste che si accorgono di essere false | `M9.5` | Proposta | La disciplina della suite: gli skip che si accorgono di essere saltati, e i test che aspettano un evento |
-| 9 — Le liste che si accorgono di essere false | `M9.6` | Proposta | Niente di Tommaso nel codice: ciò che ELA installa e serve non porta le macchine e l'account di chi l'ha scritta |
+| 9 — Le liste che si accorgono di essere false | `M9.6` | Implementata | Niente di Tommaso nel codice: ciò che ELA installa e serve non porta le macchine e l'account di chi l'ha scritta |
+| 9 — Le liste che si accorgono di essere false | `M9.7` | Proposta | Ogni blocco della guida che mostra un'uscita della CLI è confrontato con la CLI |
 | 10 — La percezione | `M10.1` | Completata | Perception Core: fondamenta |
 | 10 — La percezione | `M10.2` | Completata | Screen awareness: la prima lettura di contenuto |
 | 10 — La percezione | `M10.3` | Implementata | Comprendere ciò che si vede: il contesto che non costa niente, e il testo che non esce |
+| 10 — La percezione | `M10.3b` | Proposta | Una riga che `ela init` scrive, tolto il `#`, ferma l'avvio |
 | 10 — La percezione | `M10.4` | Implementata | Il Context Core: comporre senza decidere, e dire ciò che non si sa |
 | 11 — La voce | `M11.1` | Implementata | La voce che esce: ELA dice qualcosa, e non lascia traccia |
 | 11 — La voce | `M11.2` | Implementata | L'ascolto: ELA apre il microfono, e tiene solo le parole |
@@ -113,8 +115,9 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 12 — I nodi sulla rete | `M12.5` | Implementata | Il companion iPhone: vedere e rispondere da lontano, e un campanello che non porta lettere |
 | 13 — Il permesso prima dell'azione | `M13.1` | Implementata | Il filesystem fuori dalla workspace, e il primo HIGH |
 | 13 — Il permesso prima dell'azione | `M13.1b` | Implementata | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
-| 13 — Il permesso prima dell'azione | `M13.1c` | Proposta | In quattro rami di `run` un diniego o un fallimento arriva senza il suo perché |
-| 13 — Il permesso prima dell'azione | `M13.1d` | Proposta | Il blocco di `ela approvals` in GETTING_STARTED §6 non è quello che la CLI stampa |
+| 13 — Il permesso prima dell'azione | `M13.1c` | Implementata | In quattro rami di `run` un diniego o un fallimento arriva senza il suo perché |
+| 13 — Il permesso prima dell'azione | `M13.1d` | Implementata | Il blocco di `ela approvals` in GETTING_STARTED §6 non è quello che la CLI stampa |
+| 13 — Il permesso prima dell'azione | `M13.1e` | Proposta | La console, il telefono e la riga di comando mostrano un diniego o un fallimento senza il suo perché |
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Implementata | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
@@ -149,8 +152,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **54** | `docs/adr/NNNN-*.md` |
-| Milestone | **76, di cui 56 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **56** | `docs/adr/NNNN-*.md` |
+| Milestone | **79, di cui 59 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **59** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **14** | `pyproject.toml` |
 | Port | **30** | i `Protocol` di `src/ela/ports.py` |
@@ -210,7 +213,9 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   quattro rami di `run`, registrata il 2026-09-28 dalla SPEC di M6.3b). **Registrate il 2026-09-30**,
   da una decisione di Tommaso e del revisore: **M13.9** (il browser con i suoi account: un Chrome di ELA
   che dura, e le password in Bitwarden), **M13.10** (più passi e i file), **M13.11** (il browser sul
-  PC), e una seconda riparazione, **M13.1d** (il blocco di `ela approvals` della guida, fermo a M13.1).
+  PC), e una seconda riparazione, **M13.1d** (il blocco di `ela approvals` della guida, fermo a M13.1). **Registrata il
+  2026-10-02**, dalla review della SPEC di M13.1c: una terza, **M13.1e** (la console, il telefono e la riga di comando
+  che mostrano un diniego o un fallimento senza il suo perché).
   L'ordine e le condizioni stanno nella voce 5.11, e la fila che attraversa le fasi nella 5.10.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
@@ -573,7 +578,8 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
 2. **M13.1c e M13.1d**, sullo stesso branch, ciascuna con il suo documento;
 3. **M9.6**, niente di Tommaso nel codice: subito dopo, sullo stesso branch, con il suo documento e il
    test della regola di `CLAUDE.md`;
-4. **M14.1 e M14.2**;
+4. **M14.1 e M14.2**; e subito dopo **M13.1e**, prima di M14.3 (***aggiunta il 2026-10-02***, decisione 5 della
+   review della SPEC di M13.1c: le superfici che mostrano un diniego o un fallimento senza il perché);
 5. **M14.3**;
 6. **M13.9, M13.10, M13.11**;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
@@ -585,7 +591,9 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
 12. **M17.4**, il redesign, alla fine.
 
 **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e le voci delle due fasi lo dicono, con la
-ragione (5.11 e 5.12). **M9.2, M9.5, M17.5 e M13.6 non cambiano**: ciò che i loro documenti e le loro
+ragione (5.11 e 5.12). ***Annotato il 2026-10-02***: **M9.7** (ogni blocco della guida che mostra un'uscita della CLI
+confrontato con la CLI) e **M10.3b** (una riga che `ela init` scrive, tolto il `#`, ferma l'avvio), registrate dalla
+review delle SPEC di M13.1d e M9.6, stanno **fuori dalla fila, senza ordine**, come M9.2 e M9.5. **M9.2, M9.5, M17.5 e M13.6 non cambiano**: ciò che i loro documenti e le loro
 voci dicono dell'ordine resta com'è. La fila sta qui perché attraversa le fasi, come
 «M17.1 → M12.5 → M17.2 → Fase 13» prima di lei; l'ordine dentro una fase resta nella voce della fase.
 
@@ -675,7 +683,8 @@ non l'ha più — viene alla fine della fila, 5.10 —; M13.6 la tiene.)
 
 ***Rivisto da Tommaso e dal revisore il 2026-09-30.*** Dopo M13.4 l'ordine della fase è **M13.1c e
 M13.1d → M13.9 → M13.10 → M13.11 → M13.5 → M13.7 → M13.8**; dopo M13.1c e M13.1d, prima di M13.9,
-**comincia la Fase 14** — M14.1, M14.2, M14.3 —, e fra M13.5 e M13.7 viene M14.4. La fila intera, con
+**comincia la Fase 14** — M14.1, M14.2, M14.3 —, e fra M13.5 e M13.7 viene M14.4. (***Annotato il 2026-10-02***:
+**M13.1e**, registrata dalla review della SPEC di M13.1c, viene dopo M14.1 e M14.2 e prima di M14.3.) La fila intera, con
 M6.3c in testa, sta nella 5.10. M13.6 resta fuori dalla
 fila, con la sua condizione. **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e la ragione è di
 Tommaso: **tutto ciò che vuole dal browser e dal computer control passa da un modello che guarda e
@@ -781,6 +790,10 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   2026-09-30**; il difetto l'ha trovato la prova a mano di M6.3b. Il blocco è fermo a M13.1 prima della
   riparazione della sua prova a mano (`f08bbfd`), e nessun test confronta i blocchi di quel comando con
   la CLI: si ripara il blocco e si estende a `ela approvals` il controllo di M6.3b. **Con M13.1c.**
+- **M13.1e — un diniego o un fallimento senza il suo perché, dove il task si guarda dopo** (ADR 0045 §12-bis).
+  **Registrata il 2026-10-02 dalla review della SPEC di M13.1c**: M13.1c fa dire il perché a `ela task run`; la console,
+  il telefono, `ela task show` e `ela task finished` mostrano ancora un `DENIED` o un `FAILED` senza. Dentro, la domanda
+  se il no debba nominare il dispositivo invece dell'id dell'identità. **Dopo M14.1 e M14.2, prima di M14.3.**
 - **M13.9 — il browser con i tuoi account** (§19, §57). **Registrata il 2026-09-30**: un Chrome vero con
   un profilo di ELA che dura, uno per macchina; le password in Bitwarden, prese una alla volta con la CLI
   ufficiale dopo un sì a ogni uso, e mai scritte in ELA; il profilo non accende la sincronizzazione di
@@ -903,7 +916,6 @@ pagato da chi doveva.
 | ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
-| ADR 0054 §16 — il passo 8 della prova a mano, entro domenica 2026-10-04 | 2026-10-02 | del giro di domenica della prova di M6.3c, su `main` | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |
@@ -911,6 +923,7 @@ pagato da chi doveva.
 | ADR 0047 §17 — i test di Windows che nessun job raccoglie | 2026-09-24 | di M13.3 | saldato da ADR 0048 §5 |
 | ADR 0052 §15 — il «ferma» a metà di uno step del browser | 2026-09-29 | di M6.3c | saldato da ADR 0054 §11 |
 | ADR 0053 §2 — il runner della CI, da fissare entro il 2026-10-19 | 2026-09-30 | di M6.3c | saldato da ADR 0054 §1 |
+| ADR 0054 §16 — il passo 8 della prova a mano, entro domenica 2026-10-04 | 2026-10-02 | del giro di domenica della prova di M6.3c, su `main` | saldato da ADR 0055 §7 |
 
 <!-- fine del blocco generato: i debiti datati -->
 

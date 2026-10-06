@@ -19,7 +19,8 @@ comparison nobody made. An entry that was never there stays :data:`NO_PROGRAM`, 
 appeared after the start is a change — the start fixed its absence.
 
 **The hash is the caller's to put in a thread**: ``identity_of`` reads the whole file, and a
-declared program can be as large as it likes — 357 MB hash in 119,5 ms on this Mac (ADR 0047 §4).
+declared program can be as large as it likes — 357 MB hash in 119,5 ms (ADR 0047 §4, with the
+machine).
 The functions here stay synchronous, and the tool, the verifier and the composition call them with
 ``asyncio.to_thread``.
 

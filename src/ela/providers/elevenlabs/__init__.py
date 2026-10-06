@@ -7,7 +7,8 @@ M11.1, "ELA has to speak" is answered on this machine and for free.
 
 What leaves, what is kept and under which permission are the four answers of §57 in ADR 0034 §2.
 The shortest of them is the one worth having here too: **the text is retained by the provider**,
-it is readable in the account's own history, and no flag on this plan changes that.
+it is readable in the account's own history, and below an enterprise plan no flag changes that
+(ADR 0034 §1.2).
 """
 
 from __future__ import annotations

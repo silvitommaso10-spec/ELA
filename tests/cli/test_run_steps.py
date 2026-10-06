@@ -197,7 +197,14 @@ async def denied_at_the_door(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
     task = await planned(cli, tmp_path, note_plan())
     await run(cli, task)
     await answer_the_question(cli, task, "deny")
-    return Printed(await run(cli, task), RunOutcome.DENIED, "DENIED", ())
+    # The words of the no at the door, since M13.1c (ADR 0055): the CLI's identity is ``local``'s.
+    return Printed(
+        await run(cli, task),
+        RunOutcome.DENIED,
+        "DENIED",
+        (),
+        reason="deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by",
+    )
 
 
 async def failed_before_the_act(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
@@ -266,7 +273,10 @@ async def expired_at_the_door(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
         await later.executor.close_every_open_step()
     finally:
         await later.aclose()
-    return Printed(await run(cli, task), RunOutcome.EXPIRED, "EXPIRED", ())
+    # The words of the question that expired, since M13.1c (decision 2 of its review, ADR 0055).
+    return Printed(
+        await run(cli, task), RunOutcome.EXPIRED, "EXPIRED", (), reason="expire: WAITING_APPROVAL"
+    )
 
 
 async def assigned(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
@@ -371,3 +381,16 @@ async def test_the_help_says_what_a_handled_step_is(cli: Cli) -> None:
     assert DEFINITION in text
     assert f"``{EMPTY}`` means the run handled no step" in text
     assert "steps executed" not in text
+
+
+async def test_the_help_says_that_an_end_always_carries_its_why(cli: Cli) -> None:
+    """Decision F of M13.1c, the strong sentence, written here and not read from the code (the
+    precedent of ADR 0051 §1): ``denied`` and ``failed`` — and, since decision 2 of its review,
+    ``cancelled`` and ``expired`` — always carry their why, the same at every run."""
+    helped = await cli("task", "run", "--help")
+    text = " ".join(plain(helped.stdout).split())
+
+    assert helped.exit_code == 0
+    assert "``denied``, ``failed``, ``cancelled`` and ``expired`` always carry their why" in text
+    assert "the same at the run that ended it and at every run after" in text
+    assert "when this run received one" not in text

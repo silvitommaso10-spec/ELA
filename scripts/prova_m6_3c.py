@@ -16,11 +16,18 @@ Per ogni passo meccanico stampa **PASSATO** o **FALLITO** con l'uscita vera — 
 sbaglia anche il terzo. **Non aspetta mai un Invio**: ciò che fa la mano di Tommaso lo verifica il
 ``guarda`` che la segue, e ciò che un passo richiede al mondo — un nodo disponibile, il Mac a
 batteria — lo legge da ELA e dal Mac, senza chiederlo; se manca, il passo è SALTATO con ciò che
-manca. Ciò che serve l'occhio di Tommaso non lo giudica: lo chiede finché la risposta è s o n, e la
-scrive come **GUARDATO**. La riga finale conta i PASSATO con i loro giri, i FALLITO, i GUARDATO con
-un no e i SALTATO, e dice «La prova è passata» solo senza FALLITO, senza SALTATO e con ogni
-GUARDATO un sì; altrimenti dice che cosa manca, e lo script esce con 1. Tutto ciò che stampa va
-anche nel file, in ``~/Downloads``.
+manca. **Lo stesso per il passo 1**, ciò che la prova intera richiede: la prima cosa che manca lo fa
+SALTATO, e lo script si ferma lì (dal 2026-10-02, decisione 2-bis della review di M13.1c, M13.1d e
+M9.6; prima era FALLITO, che sembrava di ELA). **Ai passi 5 e 6, una ragione che nomina l'altra
+superficie** — le parole che la console e il telefono scrivono, lette dal codice — è il passo umano
+fatto altrove, ed è DA RIPETERE come un «ferma» caduto dal lato sbagliato (decisione S, 2026-10-05).
+**Se ELA smette di rispondere a metà giro**, il file dice INTERROTTO al passo dove è successo, i
+passi che restano non si fanno, e l'ultima riga lo dice: mai un traceback (decisione R, 2026-10-05).
+Ciò che serve l'occhio di Tommaso non lo giudica: lo chiede finché la risposta è s o n — o «si»,
+«sì», «no», dalla decisione U del 2026-10-06 —, e la scrive come **GUARDATO**. La riga finale conta
+i PASSATO con i loro giri, i FALLITO, i GUARDATO con un no e i SALTATO, e dice «La prova è passata»
+solo senza FALLITO, senza SALTATO e con ogni GUARDATO un sì; altrimenti dice che cosa manca, e lo
+script esce con 1. Tutto ciò che stampa va anche nel file, in ``~/Downloads``.
 
 Nessuna soglia di tempo (decisione 7): lo script guarda **finché vede il segno, o finché il task
 finisce da sé**, e dopo il «ferma» aspetta che lo step in corso si chiuda. Il «ferma» lo manda
@@ -38,11 +45,16 @@ import re
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Final, TextIO
+
+from ela.api.companion import STOPPED as STOPPED_BY_THE_PHONE
+from ela.api.console import STOPPED as STOPPED_BY_THE_CONSOLE
+from ela.cli.client import Unreachable
+from ela.cli.errors import UNREACHABLE
 
 ROOT = Path(__file__).resolve().parents[1]
 GUIDE = ROOT / "docs" / "GETTING_STARTED.md"
@@ -64,8 +76,10 @@ asked — a node that is not this Mac and is available, read from ELA; this Mac 
 battery, read from the Mac. One missing is a step SKIPPED with what is missing."""
 BATTERY_POWER = "Battery Power"
 """What ``pmset -g batt`` names when the Mac draws from its battery (M12.3c, P6)."""
-ANSWERS = {"s": True, "n": False}
-"""The only answers to a question of the eye: an empty one is asked again, never a no."""
+ANSWERS = {"s": True, "si": True, "sì": True, "n": False, "no": False}
+"""The only answers to a question of the eye, read in lower case: an empty one is asked again, never
+a no. «si» and «sì» since decision U of the review of 2026-10-06 — Tommaso wrote «si» in the proofs
+of those days, and the script asked again every time."""
 SIDES = ("prima dello step", "prima del tool", "prima del punto", "dopo il punto")
 """Where a stop can land, in the order a step goes through them."""
 ROUNDS = 3
@@ -87,6 +101,11 @@ ROUND_NAMES = {1: "", 2: " al secondo giro", 3: " al terzo giro"}
 ROUND_WORDS = {1: "al primo giro", 2: "al secondo", 3: "al terzo"}
 Ask = Callable[[str], str]
 """How the script asks Tommaso: ``input``, and a fake in the tests."""
+SURFACES: Final = (STOPPED_BY_THE_CONSOLE, STOPPED_BY_THE_PHONE)
+"""The words each surface writes as the reason when its «Ferma il task» stops a task — the code's
+own constants, not words written here (decision S of 2026-10-05)."""
+ELA: Final = "uv run ela "
+"""A line of the guide that is a command of ELA's: the one whose exit says whether ELA answered."""
 
 
 # ----------------------------------------------------------------------------------------
@@ -105,18 +124,22 @@ class Block:
         return [line for line in self.body.splitlines() if line.strip()]
 
 
-def section(text: str) -> str:
-    """§21 of the guide, from its heading to the next one of its level."""
-    start = text.index(HEADING)
+def section(text: str, heading: str = HEADING) -> str:
+    """A section of the guide — §21 unless told otherwise — up to the next one of its level.
+
+    The heading is a parameter since the branch of M13.1c, M13.1d and M9.6: its script reads §22
+    with this same reader (``scripts/prova_m13_1c_m13_1d_m9_6.py``).
+    """
+    start = text.index(heading)
     end = text.find("\n## ", start + 1)
     return text[start:] if end == -1 else text[start:end]
 
 
-def blocks(text: str) -> list[Block]:
-    """The marked blocks of §21, in the order the guide writes them."""
+def blocks(text: str, heading: str = HEADING) -> list[Block]:
+    """The marked blocks of a section — §21 unless told otherwise —, in the order it writes them."""
     return [
         Block(int(match.group(1)), match.group(2), match.group(3))
-        for match in MARKED.finditer(section(text))
+        for match in MARKED.finditer(section(text, heading))
     ]
 
 
@@ -234,6 +257,8 @@ class Report:
     refused: list[int] = field(default_factory=list)
     """The steps where Tommaso answered no to what he looked at."""
     skipped_steps: list[int] = field(default_factory=list)
+    lost_at: int | None = None
+    """The step where ELA stopped answering, if it did: no step after it was done (decision R)."""
 
     def say(self, text: str = "") -> None:
         print(text, flush=True)
@@ -265,9 +290,22 @@ class Report:
         self.skipped_steps.append(step)
         self.say(f"[{step}] SALTATO: {why}")
 
+    def lost(self, step: int, said: str) -> None:
+        """ELA stopped answering during ``step``: written here, never a traceback (decision R)."""
+        self.lost_at = step
+        self.say(
+            f"[{step}] INTERROTTO: ELA ha smesso di rispondere — {said}; "
+            "i passi che restano non si fanno"
+        )
+
     @property
     def ok(self) -> bool:
-        return self.failures == 0 and not self.skipped_steps and not self.refused
+        return (
+            self.failures == 0
+            and not self.skipped_steps
+            and not self.refused
+            and self.lost_at is None
+        )
 
     def verdict(self) -> None:
         """The last lines: the count, and whether the proof passed — or what it lacks."""
@@ -282,6 +320,7 @@ class Report:
             self.say("La prova è passata.")
             return
         lacking = [
+            *([f"ELA ha smesso di rispondere al passo {self.lost_at}"] if self.lost_at else []),
             *([f"{self.failures} FALLITI"] if self.failures else []),
             *(f"il passo {step} SALTATO" for step in self.skipped_steps),
             *(f"un no al passo {step}" for step in self.refused),
@@ -303,6 +342,40 @@ def run(line: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+class Silent(Exception):
+    """ELA stopped answering in the middle of the proof: what said so, for the file (decision R)."""
+
+
+def heard(line: str, done: subprocess.CompletedProcess[str]) -> subprocess.CompletedProcess[str]:
+    """``done`` as it is, unless it is a command of ELA's whose exit says nothing answered.
+
+    The CLI's own code for it, :data:`~ela.cli.errors.UNREACHABLE`: a ``task create`` that met no
+    ELA would otherwise reach the script as JSON nobody wrote, and fall there with a traceback.
+    """
+    if line.startswith(ELA) and done.returncode == UNREACHABLE:
+        raise Silent((done.stderr or done.stdout).strip())
+    return done
+
+
+def walk(
+    report: Report,
+    todo: Mapping[int, list[Block]],
+    one: Callable[[int, list[Block]], None],
+) -> None:
+    """Every step in order, and where ELA stopped answering if it did (decision R, 2026-10-05).
+
+    At 10:45 of 2026-10-05 ELA stopped at step 8 — a Ctrl-C pressed on ``ela serve`` — and the
+    script fell with a traceback that reached the terminal and not the file, with no last line.
+    Now the step is in the file, no step after it is done, and the verdict says so: exit 1.
+    """
+    for number, its in todo.items():
+        try:
+            one(number, its)
+        except (Unreachable, Silent) as away:
+            report.lost(number, str(away))
+            return
 
 
 def started(line: str) -> subprocess.Popen[str]:
@@ -407,7 +480,8 @@ def lacking(block: Block, api: Api) -> list[str]:
 
 
 def yes_or_no(ask: Ask, question: str) -> bool:
-    """A question of the eye, asked until the answer is s or n: an empty Enter is not a no."""
+    """A question of the eye, asked until the answer is one of :data:`ANSWERS`: an empty Enter is
+    not a no, and neither is anything else."""
     while True:
         answer = ask(question).strip().lower()
         if answer in ANSWERS:
@@ -468,7 +542,7 @@ def commands(
         if last_in_background and index == len(block.lines) - 1:
             turn.background = started(line)
             continue
-        done = run(line)
+        done = heard(line, run(line))
         turn.last = done.stdout + done.stderr
         if " task create " in f" {line} ":
             turn.task_id = created_id(done.stdout)
@@ -476,10 +550,28 @@ def commands(
             proof.report.say(f"    il task: {turn.task_id}")
 
 
+def other_surface(expected: str, output: str) -> str | None:
+    """Why a human step must be done again: the reason names a surface the step did not ask for.
+
+    Steps 5 and 6 ask the hand to stop the task from one surface, and the reason ELA writes names
+    the surface that did it (:data:`SURFACES`). Another one there is the hand's step done
+    elsewhere, truly reported — not a failure of ELA (decision S of 2026-10-05: at 17:46 «Ferma» was
+    pressed on the phone at step 5). Any other difference is ELA's, and stays a failure.
+    """
+    asked = [one for one in SURFACES if f"({one})" in expected]
+    said = [one for one in SURFACES if f"({one})" in output]
+    if len(asked) == 1 and len(said) == 1 and asked != said:
+        return (
+            f"il passo umano non è stato fatto come chiesto: la ragione dice «{said[0]}», il passo "
+            f"chiede «{asked[0]}»"
+        )
+    return None
+
+
 def a_round(number: int, todo: list[Block], proof: Proof, round_: int) -> str | None:
     """One round of a step: ``None`` if it went to its end — passed, or failed in a way another
-    round would repeat —, or why it must be tried again: the side the stop truly landed on, or the
-    task that ended before the step was seen."""
+    round would repeat —, or why it must be tried again: the side the stop truly landed on, the
+    task that ended before the step was seen, or the surface the hand stopped the task from."""
     api, report = proof.api, proof.report
     turn = Turn()
     stopped = False
@@ -523,6 +615,9 @@ def a_round(number: int, todo: list[Block], proof: Proof, round_: int) -> str | 
             report.passed(number, f"il «ferma» è caduto {landed}", round_)
         elif block.kind == "atteso":
             absent = missing(block.lines, turn.last, turn.task_id, proof.ids)
+            elsewhere = other_surface(block.body, turn.last) if absent else None
+            if elsewhere is not None:
+                return elsewhere
             if absent:
                 report.failure(number, f"mancano {absent}", turn.last)
             else:
@@ -560,12 +655,39 @@ def a_step(number: int, todo: list[Block], proof: Proof) -> None:
 # ----------------------------------------------------------------------------------------
 
 
+Check = Callable[[], bool]
+"""One thing step 1 requires of the world, read where ELA reads it: true when it is there."""
+
+
+def required(report: Report, checks: Sequence[tuple[str, Check]]) -> bool:
+    """Step 1: what the proof requires of the world, in order — never a behaviour of ELA.
+
+    Each one there is PASSED. **The first one missing makes step 1 SKIPPED with what is missing,
+    and the script stops there**, as a ``richiede`` does for its step: a FAILED would read as ELA's
+    (decision 2-bis of the review of M13.1c, M13.1d and M9.6, 2026-10-02). A check that raises is
+    missing too, with what it said. Shared by the step 1 of every proof script.
+    """
+    for what, check in checks:
+        try:
+            ok = check()
+        except Exception as error:  # noqa: BLE001 — every miss is reported with what it said
+            report.skipped(
+                1, f"la prova richiede «{what}», e non è così ({type(error).__name__}: {error})"
+            )
+            return False
+        if not ok:
+            report.skipped(1, f"la prova richiede «{what}», e non è così")
+            return False
+        report.passed(1, what)
+    return True
+
+
 def preconditions(report: Report) -> bool:
     """What the plans need, read where ELA reads it: the API, the ``.env``, the shell's folder."""
     from ela.composition.settings import BrowserSettings, TerminalSettings
     from ela.infrastructure.machine.browser import shell_folder
 
-    checks: list[tuple[str, Callable[[], bool]]] = [
+    checks: list[tuple[str, Check]] = [
         ("ELA risponde", lambda: Api().get("/health") is not None),
         (
             "lo shell di Chromium c'è",
@@ -585,17 +707,7 @@ def preconditions(report: Report) -> bool:
             lambda: TerminalSettings().timeout_seconds > SLEPT,
         ),
     ]
-    for what, check in checks:
-        try:
-            ok = check()
-        except Exception as error:  # noqa: BLE001 — every failure is reported with what it said
-            report.failure(1, what, f"{type(error).__name__}: {error}")
-            return False
-        if not ok:
-            report.failure(1, what)
-            return False
-        report.passed(1, what)
-    return True
+    return required(report, checks)
 
 
 # ----------------------------------------------------------------------------------------
@@ -622,8 +734,7 @@ def main(argv: Sequence[str] | None = None, ask: Ask = input) -> int:
         if preconditions(report):
             proof = Proof(Api(), report, ask)
             try:
-                for number, its in todo.items():
-                    a_step(number, its, proof)
+                walk(report, todo, lambda number, its: a_step(number, its, proof))
             finally:
                 proof.api.close()
         report.say()

@@ -19,9 +19,9 @@ stderr, as it does for every child, and ``spawn_with_input`` leaves it to the no
 script is encoded at the moment of starting, base64 of UTF-16LE, which is what ``-EncodedCommand``
 reads: so whoever reads this module reads the script as PowerShell does.
 
-Measured on the user's PC on 2026-09-15 (P6), with the same two lines and no ``try``: ``Online`` and
-``0`` in five readings out of five, 0.25-0.36 s each, stderr empty; and on 2026-09-17 (P6-bis) in
-this module's form, 0.265-0.406 s.
+Measured by P6, with the same two lines and no ``try``: ``Online`` and ``0`` in five readings out
+of five, 0.25-0.36 s each, stderr empty; and by P6-bis in this module's form, 0.265-0.406 s — the
+machine and the dates are in M12.3c, «La misura: P6» and «L'esito sul PC: P6-bis».
 
 Nothing here decides: the answer is the machine's word for its power line and a count, and
 :mod:`ela.devices.local` says what they are worth; the voice answers with a
@@ -111,7 +111,7 @@ try {
 """
 """Two lines on stdout: ``PowerLineStatus`` (``Online``, ``Offline``, ``Unknown``) and how many
 ``Win32_Battery`` objects the machine has. The count is read and not ``BatteryLifePercent``, which
-on the PC of P6 — a desktop, ``NoSystemBattery`` — answered ``1``."""
+on a machine with no battery, ``NoSystemBattery``, answered ``1`` (P6, M12.3c, «La misura: P6»)."""
 
 
 def encoded(script: str) -> str:
@@ -171,9 +171,10 @@ try {
   exit 1
 }
 """
-"""P3-bis's script, as it was measured on the PC (2026-09-15): the voice on the first line of
-stdin, the sentence after it, both decoded from UTF-8 by the script itself; ``Speak`` to the default
-audio device, timed by a stopwatch whose seconds go to stdout in the invariant culture.
+"""P3-bis's script, as it was measured (M12.4, «Gli esiti, con data e macchina»): the voice on the
+first line of stdin, the sentence after it, both decoded from UTF-8 by the script itself; ``Speak``
+to the default audio device, timed by a stopwatch whose seconds go to stdout in the invariant
+culture.
 
 **The text is data, never code**: it is read from stdin into a variable and handed to ``Speak``, so
 nothing a model writes can become PowerShell. And **to the speaker and nowhere else** — rule 40
@@ -192,8 +193,8 @@ class SapiSpeechCommand:
     * **the sentence goes through stdin**, after the voice's name, and the command line is the same
       for every sentence;
     * **``spoken_seconds`` is the script's stopwatch**, and the life of the child is only what the
-      timeout watches. On the PC, on a sentence of 40 characters, the child outlived the script's
-      stopwatch by 0.55 s and 1.43 s (P3, P3-bis) — an overhead above the verifier's floor for any
+      timeout watches. On a sentence of 40 characters the child outlived the script's stopwatch by
+      0.55 s and 1.43 s (P3, P3-bis; ADR 0040 §3) — an overhead above the verifier's floor for any
       sentence under a hundred characters: timed from outside, a child that exited ``0`` without a
       sound would pass.
 

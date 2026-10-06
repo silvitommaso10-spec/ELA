@@ -350,11 +350,11 @@ def run(task_id: TaskId, as_json: Json = False) -> None:
     ``reason`` says why the run stopped when the outcome alone does not. Waiting for a node, which
     nodes were considered, why each was refused and — for a tool that is not installed — which tool.
     ``assigned``, which node is doing the work, under which assignment, and by when it is due: what
-    you need in order to decide whether to wait. ``denied`` and ``failed``, the Guardian's reason or
-    the error, when this run received one: a task the run found already closed, or a step whose
-    tool may or may not have acted, leaves it empty, and the audit has the why. ``cancelled``, the
-    words of the stop, never empty. Empty for every other outcome: an outcome that explains itself
-    does not need a sentence under it.
+    you need in order to decide whether to wait. ``denied``, ``failed``, ``cancelled`` and
+    ``expired`` always carry their why: the words of the transition that ended the task — the
+    Guardian's reason, your no, the error, the words of the stop, the expiry —, the same at the run
+    that ended it and at every run after. Empty for every other outcome: an outcome that explains
+    itself does not need a sentence under it.
     """
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/run")

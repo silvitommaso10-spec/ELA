@@ -95,8 +95,9 @@ TAILNET_RANGES: Final = (
     ipaddress.ip_network("100.64.0.0/10"),
     ipaddress.ip_network("fd7a:115c:a1e0::/48"),
 )
-"""The addresses of Tailscale, from its documentation — not from this repository — and verified on
-this machine with ``tailscale ip`` on 2026-09-11, before the validator was written (ADR 0037 §2)."""
+"""The addresses of Tailscale, from its documentation — not from this repository — and verified
+with ``tailscale ip`` before the validator was written (ADR 0037 §2, with the machine and the
+date)."""
 DEFAULT_API_PORT: Final = 8351
 """An uncommon port collides less with whatever else runs on a developer's machine."""
 MIN_TOKEN_LENGTH: Final = 32
@@ -654,6 +655,41 @@ def _not_a_program(entry: str) -> str | None:
     return None
 
 
+CANDIDATES_VARIABLE: Final = "ELA_ELEVENLABS_CANDIDATES"
+"""The line that fills the audition's catalogue: ``GET /voice`` names it when the catalogue is
+empty, so that whoever reads ``ela voice`` learns what to write and where (M9.6, decision K)."""
+
+
+class AuditionSettings(BaseSettings):
+    """The voices an audition offers: chosen by whoever listens, written in their ``.env`` (M9.6).
+
+    **Whoever chooses writes** (decision K, ADR 0056). Until M9.6 the catalogue was a tuple in the
+    repository, the voices its author had chosen for their own ELA; now it is one line of JSON, an
+    object ``{"<voice_id>": "<name>"}`` in the order the voices are heard — the order is kept, from
+    the file and from the environment. **Empty by default, and the empty value is an empty
+    catalogue**, as ``ELA_ELEVENLABS_VOICE_ID=`` is no voice: ``env_ignore_empty`` reads it before
+    the JSON parser would refuse it. An empty catalogue is not an error — ``ela voice`` says so and
+    names this line —, and the configured voice speaks as before. Malformed JSON, or a value that
+    is not an object of names, stops the start-up with the variable named.
+
+    **A section of its own, and only the Core's**: not in ``ElevenLabsSettings``, which a node
+    reads too (:class:`NodeConfig`). The audition is the Core's, and a malformed line of its
+    catalogue must not stop ``ela node run`` on a machine that never runs one.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="ELA_", env_file=".env", extra="ignore", env_ignore_empty=True
+    )
+
+    elevenlabs_candidates: dict[str, str] = Field(default_factory=dict)
+    """``ELA_ELEVENLABS_CANDIDATES``: the voices to try, one line of JSON."""
+
+    @property
+    def catalogue(self) -> tuple[tuple[str, str], ...]:
+        """The voices as ``(voice_id, name)``, in the order they were written."""
+        return tuple(self.elevenlabs_candidates.items())
+
+
 class NodeSettings(BaseSettings):
     """What a node reads from the environment, from ``ELA_NODE_*`` (M12.3).
 
@@ -755,7 +791,7 @@ def _ela_source_tree() -> Path:
 class Settings(BaseModel):
     """Everything ELA reads from the environment, in one immutable object (ADR 0023 §2).
 
-    Not a ``BaseSettings`` itself: it reads *through* the eight, not instead of them, and each of
+    Not a ``BaseSettings`` itself: it reads *through* the sections, not instead of them, and each of
     them stays constructible on its own — which is what keeps the tests that know one piece
     working, and keeps every validation next to the code it protects.
     """
@@ -779,6 +815,9 @@ class Settings(BaseModel):
     elevenlabs: ElevenLabsSettings
     """The online voice (M11.3). A section of its own and not part of ``voice``: one is a switch
     and a helper on this machine, the other is a credential, a supplier and a bill."""
+    audition: AuditionSettings
+    """The voices an audition offers (M9.6): the user's choice, and only the Core's — a node reads
+    ``elevenlabs`` and not this."""
     ntfy: NtfySettings
     """The bell of the companion (M12.5 dec. E): a topic, which is a credential, and an address.
 
@@ -838,7 +877,7 @@ class Settings(BaseModel):
     def load(cls) -> Settings:
         """Read the environment (and ``.env``) once; :class:`ConfigurationError` if it is wrong.
 
-        The eleven are built here and nowhere else. A failure names the variable and what to do
+        The sections are built here and nowhere else. A failure names the variable and what to do
         with it: whoever reads this message wrote the ``.env``, and a ``ValidationError`` dumped
         on a terminal is not an answer to them.
 
@@ -866,6 +905,7 @@ class Settings(BaseModel):
             "voice": VoiceSettings,
             "listen": ListenSettings,
             "elevenlabs": ElevenLabsSettings,
+            "audition": AuditionSettings,
             "ntfy": NtfySettings,
             "context": ContextSettings,
             "node": NodeSettings,

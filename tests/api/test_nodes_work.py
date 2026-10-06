@@ -556,6 +556,41 @@ async def test_the_core_is_not_a_node_on_the_work_routes(client: AsyncClient, pa
 # ----------------------------------------------------------------------------------------
 
 
+async def test_a_failure_the_node_does_not_explain_fails_the_step_with_an_error_naming_the_node(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """Decision 4 of the review of M13.1c (ADR 0055): a ``FAILED`` with no error — which no node of
+    this code sends, since ``Tool.execute`` ties a failure to its error — is accepted, and the
+    result the Core mints carries an error of the Core's that says what it knows: the node reported
+    a failure and did not say why. **The code names the node as the source**: not ``tool.failed``,
+    nor any code of a tool. A ``422`` instead would have the node deliver again until the ``410``.
+    """
+    task_id, order, headers, _ = await taken(client, ela)
+    body = {
+        "assignment_id": order["assignment_id"],
+        "form": "result",
+        "status": "FAILED",
+        "duration_ms": 12,
+        "node": {"finished_at": "2026-10-02T08:00:02Z"},
+    }
+
+    delivered = await client.post("/nodes/work/result", json=body, headers=headers)
+
+    assert delivered.status_code == 200, delivered.text
+    assert delivered.json()["step"] == "FAILED"
+    (result,) = [
+        one
+        for one in (await client.get(f"/tasks/{task_id}/results")).json()
+        if one["status"] != "STARTED"
+    ]
+    assert result["status"] == "FAILED"
+    assert result["error"]["code"] == "node.unexplained_failure"
+    assert "did not say why" in result["error"]["message"]
+    ran = (await client.post(f"/tasks/{task_id}/run")).json()
+    assert ran["outcome"] == "failed"
+    assert "node.unexplained_failure: " in ran["reason"]
+
+
 async def test_a_delivery_holding_a_lone_surrogate_fails_the_step_with_a_name_of_its_own(
     client: AsyncClient, ela: Ela
 ) -> None:

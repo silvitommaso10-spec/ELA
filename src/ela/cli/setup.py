@@ -114,6 +114,7 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_STT_TIMEOUT_SECONDS", "30.0"),
     ("ELA_ELEVENLABS_API_KEY", ""),
     ("ELA_ELEVENLABS_VOICE_ID", ""),
+    ("ELA_ELEVENLABS_CANDIDATES", ""),
     ("ELA_ELEVENLABS_MODEL", "eleven_flash_v2_5"),
     ("ELA_ELEVENLABS_TIMEOUT_SECONDS", "15.0"),
     ("ELA_ELEVENLABS_MAX_RETRIES", "1"),

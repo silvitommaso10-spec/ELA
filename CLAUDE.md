@@ -85,11 +85,13 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
 - **Niente di Tommaso in ciò che ELA installa e serve: `src/` e `apps/`.** Nomi, macchine, percorsi,
   siti, preferenze e identità stanno nella configurazione. `scripts/` e `docs/` sono l'officina, e possono
   nominare le macchine di Tommaso. La lingua e i default del prodotto non sono la sua identità. Il test
-  della regola prova solo ciò che una macchina sa riconoscere, e lo dice nel nome — nessun indirizzo
-  Tailscale (`100.64.0.0/10`) e nessun percorso assoluto dentro la home di un utente, in `src/` e `apps/`
-  —; il resto resta alla review. Le sue due eccezioni — una rete scritta con il prefisso, e il segnaposto
-  `you` — sono in `docs/milestones/M9.6.md`, che porta il test. Se un censimento trova qualcosa di suo
-  già scritto lì, lo elenca nel riepilogo e non lo ripara: la riparazione è una milestone sua.
+  della regola, `tests/architecture/test_the_author_is_not_in_the_product.py`, prova solo ciò che una
+  macchina sa riconoscere, e lo dice nel nome — nessun host delle reti Tailscale di `TAILNET_RANGES`, IPv4
+  e IPv6, e nessun percorso assoluto dentro la home di un utente, in `src/` e `apps/` —; il resto resta alla
+  review. Le sue due eccezioni — una rete scritta con il prefisso, più corto dell'indirizzo e senza bit
+  d'host, e il segnaposto `you` — sono in `docs/milestones/M9.6.md`, che porta il test. Se un censimento
+  trova qualcosa di suo già scritto lì, lo elenca nel riepilogo e non lo ripara: la riparazione è una
+  milestone sua.
 
 ## Fine sessione
 Produci un riepilogo con: file toccati, test aggiunti, output di `pytest -q --cov`,

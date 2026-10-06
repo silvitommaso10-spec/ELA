@@ -96,8 +96,9 @@ DRAWING_FROM: Final[Mapping[str, PowerSource]] = MappingProxyType(
 )
 """What ``pmset -g batt`` names on its first line, mapped to the domain (M12.3c).
 
-The two words P6 measured on this Mac on 2026-09-15, plugged in and unplugged, and no others: a
-word nobody measured — ``UPS Power`` exists — is worth what a fact nobody observed is worth.
+The two words P6 measured, plugged in and unplugged (M12.4, «Gli esiti, con data e macchina»), and
+no others: a word nobody measured — ``UPS Power`` exists — is worth what a fact nobody observed is
+worth.
 """
 
 POWER_LINE: Final[Mapping[str, PowerSource]] = MappingProxyType(
@@ -123,8 +124,8 @@ def power_on_the_line(status: tuple[str, int] | None) -> PowerSource:
     """The domain value for what a PC says of its power line and of how many batteries it has.
 
     **A machine with no battery is on AC** (decisione del 2026-09-15), whatever its line says: there
-    is nothing else it could be drawing from. The PC of P6 is that case — ``Online``, ``0``,
-    ``NoSystemBattery``.
+    is nothing else it could be drawing from. P6 measured that case — ``Online``, ``0``,
+    ``NoSystemBattery`` (M12.3c, «La misura: P6»).
     """
     if status is None:
         return PowerSource.UNKNOWN

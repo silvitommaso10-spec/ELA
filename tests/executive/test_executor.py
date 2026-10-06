@@ -827,18 +827,21 @@ async def test_a_tool_that_raises_is_a_failed_result_recorded_then_the_step_fail
 
 
 async def test_a_failed_result_fails_the_step_with_the_tools_error() -> None:
-    error = ErrorMetadata(code="notes.locked", message="the workspace is locked")
-    tool = FakeTool(ECHO.id, FakeClock(), FakeIdGenerator(), status=ExecutionStatus.FAILED)
+    """The step fails with the error the tool reported — never one minted from the status: since
+    M13.1c a result that did not succeed says why, or the domain does not let it be built (ADR
+    0055). Until then the fake could not report one, and this test asserted the minted code its name
+    denied."""
+    error = ErrorMetadata(code="notes.locked", message="the workspace is locked", tool_name="fake")
+    tool = FakeTool(
+        ECHO.id, FakeClock(), FakeIdGenerator(), status=ExecutionStatus.FAILED, error=error
+    )
     w = _world_with(tool)
     task, step = await w.running(ECHO.id)
     execution = await w.execute(task.id, step.id)
-    assert execution.result is not None and execution.result.error is None
+    assert execution.result is not None and execution.result.error == error
     failed = (await w.events(task.id))[-1]
     assert failed.event_type is E.STEP_FAILED
-    assert failed.error is not None
-    assert failed.error.code == "tool.failed"
-    assert failed.error.tool_name == tool.name
-    assert error.code != failed.error.code  # the synthesised one, since the tool gave none
+    assert failed.error == error
 
 
 @pytest.mark.parametrize(
@@ -850,8 +853,8 @@ async def test_any_status_but_succeeded_fails_the_step(status: ExecutionStatus) 
     execution = await w.execute(task.id, step.id)
     assert execution.graph.states[step.id] is StepState.FAILED
     failed = (await w.events(task.id))[-1]
-    assert failed.error is not None
-    assert failed.error.code == f"tool.{status.value.lower()}"
+    assert execution.result is not None and execution.result.error is not None
+    assert failed.error == execution.result.error  # the tool's, not a ``tool.<status>`` minted here
 
 
 async def test_a_tool_that_refuses_the_decision_fails_the_step_without_a_run() -> None:

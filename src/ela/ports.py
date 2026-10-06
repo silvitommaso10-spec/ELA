@@ -1992,7 +1992,7 @@ SPEECH_QUOTA_EXCEEDED: Final = "speech.quota_exceeded"
 """The account is out of credits. Not retryable by ELA: what fixes it is a human, next month or
 on a different plan."""
 SPEECH_RATE_LIMITED: Final = "speech.rate_limited"
-"""Too many requests, or too many at once — the measured ceiling of this plan is ten concurrent."""
+"""Too many requests, or too many at once — ten concurrent on the plan ADR 0034 §1.4 measured."""
 SPEECH_SERVER_ERROR: Final = "speech.server_error"
 """The provider failed on its own side."""
 SPEECH_UNREACHABLE: Final = "speech.unreachable"

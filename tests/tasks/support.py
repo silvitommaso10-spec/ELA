@@ -136,9 +136,17 @@ def step_result_for(
             "step_id": step_id,
             "id": ExecutionId(_id(tail)),
             "status": status,
-            "error": None,
+            "error": _why(status),
         }
     )
+
+
+def _why(status: ExecutionStatus) -> ErrorMetadata | None:
+    """The error a result with ``status`` carries: none for one that succeeded or has not ended, the
+    example's for every other — a result that did not succeed says why (§64; M13.1c, ADR 0055)."""
+    if status in (ExecutionStatus.SUCCEEDED, ExecutionStatus.STARTED):
+        return None
+    return ERROR_METADATA
 
 
 def approval_for(
@@ -170,7 +178,12 @@ def result_for(
     task_id: TaskId, status: ExecutionStatus = ExecutionStatus.SUCCEEDED, *, tail: int = 930
 ) -> ExecutionResult:
     return EXECUTION_RESULT.model_copy(
-        update={"task_id": task_id, "id": ExecutionId(_id(tail)), "status": status, "error": None}
+        update={
+            "task_id": task_id,
+            "id": ExecutionId(_id(tail)),
+            "status": status,
+            "error": _why(status),
+        }
     )
 
 

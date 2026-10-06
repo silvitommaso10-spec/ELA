@@ -315,7 +315,7 @@ VOICE_ENDPOINT_FIELDS = frozenset({"base_url", "api_base", "endpoint", "host"})
 #: settings of ELA go through pydantic, never through ``os.environ`` (ADR 0001).
 VOICE_ENVIRONMENT_READS = frozenset({"environ", "getenv"})
 
-#: Rule 43 (M11.3 dec. I and J): **the audition says only what the repository says.** Hearing six
+#: Rule 43 (M11.3 dec. I and J): **the audition says only what the repository says.** Hearing
 #: voices must not become a way to speak arbitrary text without a capability: what leaves the
 #: machine during an audition is a literal anybody can read in ``git``, and the shape that keeps
 #: it true is that no function on that path accepts text at all. It can fire, which is the only
@@ -2431,7 +2431,7 @@ def check_the_voice_goes_only_where_it_is_declared(pkg_root: Path) -> list[Viola
 def check_the_audition_speaks_only_the_repositorys_words(pkg_root: Path) -> list[Violation]:
     """Rule 43: an audition says the two sentences of §9 and nothing anybody typed (M11.3 dec. I).
 
-    Hearing six voices cannot be allowed to become a way of saying arbitrary things out loud,
+    Hearing voices cannot be allowed to become a way of saying arbitrary things out loud,
     and over the network, without a capability. What leaves the machine during an audition is a
     literal that is in the repository and in nobody's private context — and the shape that keeps
     that true is not a comment but an absence: **no function on the audition path takes text.**

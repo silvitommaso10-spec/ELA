@@ -303,6 +303,12 @@ TOOL_EXCEPTION: Final = "tool.exception"
 """Error code of a result synthesised from an exception the tool raised while acting."""
 TOOL_REFUSED: Final = "tool.refused"
 """Error code of a step failed because the tool refused the decision (``NotAllowedError``)."""
+NODE_UNEXPLAINED_FAILURE: Final = "node.unexplained_failure"
+"""Error code of a result a node reported ``FAILED`` without saying why (M13.1c, ADR 0055, decision
+4 of its review). No node of this code sends one — ``Tool.execute`` ties a failure to its error —
+and a result that did not succeed says why or is not built (§64): the Core accepts the delivery and
+writes what it knows, naming the node as the source. Not ``tool.failed``: the tool said nothing, the
+node did; and not a ``422``, which would have the node deliver again until the ``410``."""
 RESULT_NOT_TEXT: Final = "result.not_text"
 """Error code of a result whose strings are not all text — a lone surrogate — and that therefore
 cannot be kept (M13.3, ADR 0048; ADR 0047 §16). The Core mints it in place of what the tool
@@ -589,15 +595,6 @@ class Execution(NamedTuple):
     result: ExecutionResult | None
     approval: Approval | None
     verification: Verification | None
-    error: ErrorMetadata | None = None
-    """Why this call failed the step **without running anything** (M13.1, rilievo 3).
-
-    A refusal before the tool has no ``ExecutionResult`` to carry it — nothing ran, so there is
-    nothing to record as a result — and before this field the reason ended in the step's trail
-    and nowhere a person looks. ``None`` whenever the tool did run: then the error is the
-    result's, where it has always been.
-    """
-
     assignment: Assignment | None = None
     """The work this call handed to a node instead of running (M12.2, ADR 0038 §2).
 
@@ -1483,6 +1480,16 @@ class Executor:
             )
             status = ExecutionStatus.FAILED
         assert status is not None  # check_envelope: a result reports one, an exception is FAILED
+        if status is not ExecutionStatus.SUCCEEDED and error is None:
+            error = ErrorMetadata(
+                code=NODE_UNEXPLAINED_FAILURE,
+                message=(
+                    f"node {assignment.device_id} reported a failure of {tool.name} and did not "
+                    "say why"
+                ),
+                tool_name=tool.name,
+                device_id=assignment.device_id,
+            )
         metadata: dict[str, JsonValue] = {"node": dict(envelope.node)}
         if record is not None:
             metadata[STARTED_ID] = str(record.id)
@@ -1612,7 +1619,7 @@ class Executor:
             moved = await self._engine.fail_step(
                 task.id,
                 ready.step.id,
-                _failure_of(result, ready.tool),
+                _failure_of(result),
                 stopped_if_ended=None if _acted(result) else NOT_ACTED_REASON,
             )
             return Execution(
@@ -1655,7 +1662,7 @@ class Executor:
             graph = await self._engine.fail_step(
                 task.id,
                 step.id,
-                _failure_of(result, tool),
+                _failure_of(result),
                 stopped_if_ended=None if _acted(result) else NOT_ACTED_REASON,
             )
             return Execution(task, step.id, graph, None, None, result, None, None)
@@ -2046,14 +2053,14 @@ class Executor:
         error: ErrorMetadata,
     ) -> Execution:
         """Nothing ran: the step is FAILED with the reason, so the task does not hang (§33) — or
-        CANCELLED, if the task ended meanwhile: nothing acted (M6.3c, ADR 0054 §4)."""
+        CANCELLED, if the task ended meanwhile: nothing acted (M6.3c, ADR 0054 §4). The reason is in
+        the ``STEP_FAILED``, and in the transition that fails the task with it, which is what
+        ``run`` reports (M13.1c, ADR 0055)."""
         assert decision.step_id is not None
         graph = await self._engine.fail_step(
             task.id, decision.step_id, error, stopped_if_ended=NOT_ACTED_REASON
         )
-        return Execution(
-            task, decision.step_id, graph, decision, authorization, None, None, None, error
-        )
+        return Execution(task, decision.step_id, graph, decision, authorization, None, None, None)
 
     # ----------------------------------------------------------------------------------
     # The tool and its audit
@@ -2564,12 +2571,9 @@ def _acted(result: ExecutionResult) -> bool:
     )
 
 
-def _failure_of(result: ExecutionResult, tool: ToolPort) -> ErrorMetadata:
-    """The error a step is failed with: the tool's, or one named after the status."""
-    if result.error is not None:
-        return result.error
-    return ErrorMetadata(
-        code=f"tool.{result.status.value.lower()}",
-        message=f"{tool.name} ended with status {result.status.value}",
-        tool_name=tool.name,
-    )
+def _failure_of(result: ExecutionResult) -> ErrorMetadata:
+    """The error a step is failed with: the result's own. A result that did not succeed says why,
+    or the domain does not build it (§64; M13.1c, ADR 0055): until then one was minted here from the
+    status, ``tool.failed``, and it was the one reason nobody had given."""
+    assert result.error is not None  # the validator of ExecutionResult
+    return result.error

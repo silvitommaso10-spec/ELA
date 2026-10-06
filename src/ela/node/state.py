@@ -6,7 +6,8 @@ the Core's row, and the node asks for it (``GET /nodes/me``, dec. L). A copy of 
 a second machine is a cache nobody resynchronises, and a node that believes a stale revision is a
 node in ``412`` with nothing able to take it out of there.
 
-**Not the Keychain**, and that was measured rather than argued (2026-09-12, macOS 26.6). Six probes:
+**Not the Keychain**, and that was measured rather than argued (ADR 0039 §6, with the date and the
+system). Six probes:
 the same interpreter reads its own entry with no dialog even from a path it has never been at, while
 ``/usr/bin/security`` and a freshly ad-hoc-signed binary are stopped by one. What the ACL recognises
 is the *code identity* — the ``cdhash`` — so every update of the interpreter would make the secret
@@ -18,8 +19,9 @@ executable of ELA's own, together with ``launchd``.
 be visible in ``ps`` and land in the shell's history.
 
 **On Windows, still a file** (M12.4 dec. B), and for a reason that is not the Mac's. DPAPI and the
-Credential Manager do not recognise the binary — measured on the user's PC by P2 (2026-09-15): a
-copy of the interpreter and ``powershell.exe`` both read the blob back — so their boundary is the
+Credential Manager do not recognise the binary — measured by P2 (M12.4, «Gli esiti, con data e
+macchina»): a copy of the interpreter and ``powershell.exe`` both read the blob back — so their
+boundary is the
 user, which is the boundary a file under the directory's ACL already has; what they would add is
 not D5's threat; they would cost ``ctypes`` in the node's process or a child at every start; and a
 password reset by an administrator would leave a secret nobody can read behind a file ``O_EXCL``
@@ -100,7 +102,8 @@ def write_identity(directory: Path, identity: NodeIdentity, permissions: Permiss
 
     **The protection is exact before a byte is written, by one of two roads** — ``permissions`` is
     the composition's choice for the system the node was built for, and it has no default, because
-    a writer called without it is the line that died on the PC (M12.4, criterion 7):
+    a writer called without it is the line that died on Windows (M12.4, criterion 7, and P1 in
+    «Gli esiti, con data e macchina»):
 
     * ``BITS`` — ``fchmod(0o600)`` on the descriptor, and not a ``chmod`` afterwards: the creation
       mode can only be narrowed by the process umask, so a file written and then narrowed carries

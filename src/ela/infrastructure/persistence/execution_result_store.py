@@ -42,8 +42,14 @@ class SqlExecutionResultStore:
         return self._engine
 
     async def add(self, result: ExecutionResult) -> None:
+        """Insert-only; and **what the domain refuses never becomes a row** (M13.1c, ADR 0055): a
+        copy (``model_copy``) skips the validators, and this is the one door every result passes
+        before anybody reads it — a row the mapper could not read back would hide every result of
+        its task.
+        """
+        checked = ExecutionResult.model_validate(result.model_dump())
         async with self._sessions() as session, session.begin():
-            session.add(result_to_row(result))
+            session.add(result_to_row(checked))
             try:
                 await session.flush()
             except IntegrityError:

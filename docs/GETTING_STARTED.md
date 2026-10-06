@@ -4,6 +4,9 @@ Il giro completo, comando per comando, su una macchina vuota. Non serve `curl`: 
 guida dalla riga di comando (§54; ADR 0023 per il processo, ADR 0024 per la CLI).
 
 Ogni output qui sotto è quello vero di una sessione reale — id e istanti a parte, che cambiano.
+**Un blocco d'uscita è ciò che la CLI stampa**, e dove è lungo e se ne mostra un pezzo, le righe tolte
+sono un `…`, sopra e sotto: un test confronta i blocchi di `ela task run` e di `ela approvals` con il comando
+(M6.3b, M13.1c, M13.1d), e gli altri li prenderà M9.7.
 
 ### Come si leggono i comandi
 
@@ -27,6 +30,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<id del passo 4>` | l'id del task del passo 4 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
 | `<porta>` | la porta su cui ELA ascolta | `ela diagnostics`, riga `addresses` (§14) |
 | `<radice del PC>` | la cartella del PC dentro cui ELA può leggere e scrivere | la scegli tu, sul PC: una cartella che c'è, e che non contiene né sta dentro `$HOME\.ela` o `$HOME\ELA` (§17, passo 2) |
+| `<id della voce configurata>` | l'id della voce online che usi | `uv run ela voice`, riga `online voice`: lo scrive `scripts/prova_m13_1c_m13_1d_m9_6.py` al posto del segnaposto (§22) |
 
 ## 0. Che cosa serve
 
@@ -304,26 +308,29 @@ uv run ela approvals
 ```
 
 ```
-approval    47fbce38-66ab-519c-b7dc-8cce4bd4a7f2
-task        55ed2ab5-94aa-581f-9468-c4d247d9fe04
-capability  workspace.write_note
-what        Writes a note at a path inside the authorised notes folder.
-risk        LOW
-may go      LOCAL_ONLY
-grant       1 use, within 60 minutes
-expires     2026-09-07T09:12:00+00:00
-step goal   scrivere la nota del primo task
-declared    —
-targets     workspace/notes/first-task.md
-file        —
-does        —
-asks        workspace.write_note on workspace/notes/first-task.md for step 9c5b8f26-… (scrivere la nota del primo task): workspace.write_note requires an authorization: none was given
+approval              47fbce38-66ab-519c-b7dc-8cce4bd4a7f2
+task                  55ed2ab5-94aa-581f-9468-c4d247d9fe04
+capability            workspace.write_note
+what                  Writes a note at a path inside the authorised notes folder.
+risk                  LOW
+may go                LOCAL_ONLY
+question expires      2026-09-07T09:12:00+00:00
+grant if you say yes  1 use, within 60 minutes
+step goal             scrivere la nota del primo task
+declared              —
+targets               workspace/notes/first-task.md
+target                —
+does                  —
+asks                  workspace.write_note on workspace/notes/first-task.md for step 9c5b8f26-… (scrivere la nota del primo task): workspace.write_note requires an authorization: none was given
 ```
 
 **Un blocco per domanda, e mostra tutto ciò che la domanda nomina**: è la condizione per cui una
-superficie può offrirti un sì (M13.1, ADR 0045 §11). I trattini non sono buchi — `declared` è vuoto
-perché questa capability non dichiara argomenti da mostrare, `file` e `does` perché la domanda non
-parla di un file: quelli li vedrai in §15.
+superficie può offrirti un sì (M13.1, ADR 0045 §11). Le due scadenze dicono ciascuna di chi è: la
+domanda smette di poter essere risposta a un istante, e il permesso che un sì crea vive per un altro. I
+trattini non sono buchi — `declared` è vuoto perché questa capability non dichiara argomenti da mostrare;
+`target` e `does` perché lo strumento delle note non descrive prima che cosa tocca: quelli che lo fanno —
+un file fuori dalla workspace in §15, un programma in §16 — chiamano la riga del bersaglio con la loro
+parola, `file` e `program`.
 
 Leggi la richiesta, poi rispondi. Il «sì» e il «no» hanno due comandi, perché sono due risposte
 (§62):
@@ -1233,7 +1240,7 @@ declared              purpose: la prova a mano del filesystem
 targets               ELA/prova.md
 file                  /Users/tu/Documenti/ELA/prova.md
 does                  creates a new file
-asks                  fs.write on ELA/prova.md for step …: requires an authorization: none was given
+asks                  fs.write on ELA/prova.md for step …: fs.write requires an authorization: none was given
 ```
 
 Due scadenze, e ciascuna dice di chi è: `question expires` è fin quando la domanda si può ancora
@@ -1289,7 +1296,7 @@ dice perché:
 
 ```
 outcome        failed
-reason         fs.overwrite_mismatch: 'ELA/prova.md' was declared as a new file and something is there now
+reason         fail: EXECUTING -> FAILED (fs.overwrite_mismatch: 'ELA/prova.md' was declared as a new file and something is there now)
 state          FAILED
 steps handled  d1b7c4a2-9e35-4f18-8c60-000000000001
 stopped step   —
@@ -1390,7 +1397,7 @@ tre assenze:
 
 ```
 outcome        denied
-reason         targets ['altrove/non-deve-esistere.md'] of fs.write are not within scope ['ELA']
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['altrove/non-deve-esistere.md'] of fs.write are not within scope ['ELA'])
 state          DENIED
 steps handled  d1b7c4a2-9e35-4f18-8c60-000000000003
 stopped step   —
@@ -1573,11 +1580,15 @@ lo scope — scritto senza la barra iniziale —:
 
 ```
 outcome        denied
-reason         targets ['usr/bin/whoami'] of terminal.run are not within scope ['bin/echo', 'usr/bin/seq', 'usr/bin/time', 'usr/bin/printf', 'usr/bin/env']
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['usr/bin/whoami'] of terminal.run are not within scope ['bin/echo', 'usr/bin/seq', 'usr/bin/time', 'usr/bin/printf', 'usr/bin/env'])
 state          DENIED
 steps handled  e7a3c915-2b64-4d08-9f71-000000000002
 stopped step   —
 ```
+
+***Riscritto il 2026-10-02*** (M13.1c, ADR 0055): la riga `reason` è quella che la CLI stampa da M13.1c, le parole
+della transizione che ha chiuso il task; nella sessione del 2026-09-24 era la sola ragione del Guardian, `targets
+['usr/bin/whoami'] of terminal.run are not within scope […]`.
 
 poi due assenze, e il nome del confine che ha rifiutato:
 
@@ -1606,6 +1617,7 @@ argomenti uno per uno** con i loro confini visibili, **la cartella di lavoro ris
 timeout** e **il codice atteso**:
 
 ```
+…
 targets               bin/echo
 program               /bin/echo
 runs                  /bin/echo
@@ -1614,6 +1626,7 @@ folder                /Users/tu/Documenti/ELA
 timeout               120 s
 expects exit          0
 does                  runs this program from this folder: it can read and change whatever you can, and ELA sees what it prints, not what it changes
+…
 ```
 
 Guarda gli argomenti: sono **due**, e il primo contiene degli spazi — una lista, non una riga di
@@ -1701,9 +1714,17 @@ pgrep -fl "sleep 600"
 `terminal.timeout`:
 
 ```
-reason          terminal.timeout: /usr/bin/time was still running after 10 s: ELA stopped its process group
-state           FAILED
+outcome        failed
+reason         fail: EXECUTING -> FAILED (terminal.timeout: /usr/bin/time was still running after 10 s: ELA stopped its process group)
+state          FAILED
+steps handled  e7a3c915-2b64-4d08-9f71-000000000004
+stopped step   —
 ```
+
+***Riscritto il 2026-10-02*** (M13.1c, ADR 0055): il blocco era un ritaglio di due righe, `reason` e `state`, ancora
+alla colonna di prima di M6.3b — il controllo dei blocchi di `run` non lo vedeva, perché cercava la riga `outcome` —;
+le righe che mancavano sono determinate dal piano, e la ragione è quella che la CLI stampa da M13.1c. Nella sessione
+del 2026-09-24 la riga era `reason terminal.timeout: …`, senza la transizione.
 
 e **subito dopo**:
 
@@ -1724,8 +1745,11 @@ pgrep -fl "sleep 600"          # niente, anche questa volta, e subito
 Il `task run` dell'altro terminale torna **subito**, senza aspettare i due minuti:
 
 ```
-reason          terminal.stopped: ELA was stopping while /usr/bin/time ran, and stopped its process group
-state           FAILED
+outcome        failed
+reason         fail: EXECUTING -> FAILED (terminal.stopped: ELA was stopping while /usr/bin/time ran, and stopped its process group)
+state          FAILED
+steps handled  e7a3c915-2b64-4d08-9f71-000000000004
+stopped step   —
 ```
 
 `terminal.stopped` e non `terminal.timeout`: il tempo non era scaduto, era ELA che si fermava. Nella
@@ -2627,13 +2651,17 @@ uv run ela task run <id>
 
 ```
 outcome        denied
-reason         —
+reason         deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by 6c38f1c5-6cda-5680-8a7a-4f061588deed)
 state          DENIED
 steps handled  —
 stopped step   —
 ```
 
-Nessuno step trattato: la corsa ha trovato il task già chiuso dal tuo no, e non aveva niente da fare.
+Nessuno step trattato: la corsa ha trovato il task già chiuso dal tuo no — lo step che chiedeva l'ha chiuso la
+risposta —, e la riga `reason` dice chi l'ha chiuso: `deny_by_approval`, con l'id dell'identità che ha risposto, che
+dalla riga di comando è quello di `local`, la persona a questa macchina.
+
+***Riscritto il 2026-10-02*** (M13.1c, ADR 0055): fino a M13.1c la riga era `reason —`, come nella prova qui sotto.
 
 **Nella prova del 2026-09-28**: `ela approvals` ha mostrato la domanda
 `601ecd9c-d168-5fb5-834e-17d8984ba95b` — `workspace.write_note` su `workspace/notes/first-task.md`,
@@ -2646,6 +2674,9 @@ due le volte: il file delle uscite la contiene due volte.
 `file`, nell'ordine di prima di M13.1, che le ha cambiate con la correzione della sua prova a mano
 (`f08bbfd`), e la frase sotto spiega il trattino di `file`. Non è una frase su `steps`: che cosa farne
 lo decide il revisore.
+
+***Annotato il 2026-10-02***: il blocco di §6 l'ha riparato **M13.1d**, e da allora un test confronta ogni
+blocco di `ela approvals` della guida con ciò che la CLI stampa.
 
 ### 3. Che cosa dice l'help
 
@@ -2660,6 +2691,10 @@ quando la corsa l'ha ricevuta.
 **Nella prova del 2026-09-28**: l'help di `ela task run` contiene la definizione di uno step trattato,
 «``—`` means the run handled no step», e la frase che dice che la ragione di `denied` e `failed` c'è
 quando la corsa l'ha ricevuta.
+
+***Annotato il 2026-10-02*** (M13.1c, ADR 0055): da M13.1c l'help dice che `denied`, `failed`, `cancelled` ed
+`expired` portano **sempre** il loro perché, lo stesso alla corsa che chiude il task e a ogni corsa dopo; «quando la
+corsa l'ha ricevuta» non c'è più. Lo prova §22, passo 5.
 
 Le uscite dei tre passi, integrali, in un file: `~/Downloads/m6.3b-prova.txt`. **Nella prova del
 2026-09-28** ci sono le uscite dal `plan` in poi, scritte con `tee`.
@@ -2791,7 +2826,7 @@ Poi, in un task nuovo, `browser-read-outside.json` — `example.org`, che non ha
 
 ```
 outcome        denied
-reason         targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org']
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org'])
 state          DENIED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000002
 stopped step   —
@@ -2802,7 +2837,7 @@ browser su `example.org`.
 
 ```
 outcome        failed
-reason         browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there
+reason         fail: EXECUTING -> FAILED (browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there)
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000003
 stopped step   —
@@ -2908,7 +2943,7 @@ In un task nuovo, `browser-act-missing.json`: il sì, poi di nuovo `run`.
 
 ```
 outcome        failed
-reason         browser.element_missing: gesture 2 of 2 names no element on the page of httpbin.org; no gesture was made
+reason         fail: EXECUTING -> FAILED (browser.element_missing: gesture 2 of 2 names no element on the page of httpbin.org; no gesture was made)
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000006
 stopped step   —
@@ -2952,6 +2987,10 @@ stopped step   —
 
 Nessuno step trattato, e il `reason` vuoto è quello di M13.1c: il caso di M6.3c **non si vede**.
 Rifallo in un task nuovo, aspettando i tre secondi.
+
+***Annotato il 2026-10-02*** (M13.1c, ADR 0055): quel vuoto **non era di M13.1c**, che esclude `cancelled` — lo
+dice già ADR 0054 §14 —, e da M6.3c non c'è più: la ragione di un «ferma» sono le sue parole. Il blocco resta il
+verbale del 2026-09-30.
 
 **Che cosa si deve vedere**, con i tre secondi: il «ferma» risponde; **il browser no** — la visita finisce —, e nel
 terminale A `run` torna con il rifiuto dell'API — un `409`, che la riga di comando chiama `conflict` — ed
@@ -3004,7 +3043,7 @@ perché ELA, fermandosi, finisce le richieste che ha in corso:
 
 ```
 outcome        failed
-reason         browser.stopped: ELA stopped while the page of httpbin.org was open
+reason         fail: EXECUTING -> FAILED (browser.stopped: ELA stopped while the page of httpbin.org was open)
 state          FAILED
 steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000004
 stopped step   —
@@ -3091,7 +3130,7 @@ script legge hanno sopra un marcatore, `<!-- prova: N.tipo -->`, che il Markdown
 | `ferma` | manda il «ferma» — `POST /tasks/<id>/cancel`, con «la prova di M6.3c» — e dice il lato dove deve cadere: prima dello step, prima del tool, prima del punto o dopo il punto |
 | `atteso` | le righe che l'uscita del comando sopra deve avere: ciascuna a parole intere, dentro una riga dell'uscita e a meno degli spazi — «0» non è dentro «10» —, e nell'ordine in cui sono scritte |
 | `mano` | ciò che fai tu: lo script lo stampa e non aspetta un Invio — lo verifica il `guarda` che lo segue |
-| `occhio` | ciò che guardi tu: lo script lo chiede finché rispondi `s` o `n`, e scrive la tua risposta come GUARDATO |
+| `occhio` | ciò che guardi tu: lo script lo chiede finché rispondi `s` o `n` — o «si», «sì», «no» —, e scrive la tua risposta come GUARDATO |
 | `richiede` | ciò che il passo vuole dal mondo, verificato dallo script e mai chiesto: `un nodo disponibile` lo legge da ELA, `il Mac a batteria` da `pmset -g batt`; se manca, il passo è SALTATO con ciò che manca |
 
 Lo script manda il «ferma» **quando vede lo step in corso**, non dopo un'attesa fissa; poi aspetta che lo step
@@ -3160,6 +3199,37 @@ stampa **PASSATO** per ciascuno. Se una riga dice **FALLITO**, si ferma lì con 
 `.env`, si riavvia `ela serve` e si rilancia. Tutto ciò che stampa finisce anche in un file in `~/Downloads`,
 `prova-m6.3c-` con la data e l'ora nel nome (`--out` per un altro). I passi che seguono li fa lo script, in
 quest'ordine; qui sotto c'è ciò che legge.
+
+> ***Annotato il 2026-10-02*** (decisione 2-bis della review di M13.1c, M13.1d e M9.6): **dal merge del branch
+> `m13.1c-m13.1d-m9.6`**, ciò che manca al passo 1 non dice più **FALLITO**: il passo 1 è **SALTATO** con ciò che
+> manca — «la prova richiede «…», e non è così» —, lo script si ferma lì, e l'ultima riga dice «La prova non è
+> passata: il passo 1 SALTATO.». Ciò che il passo 1 controlla è ciò che la prova richiede al mondo, non un
+> comportamento di ELA, e un FALLITO sembrerebbe di ELA. Il rimedio è lo stesso: si ripara il `.env`, si riavvia
+> `ela serve` e si rilancia. Il giro di domenica 2026-10-04 usa lo script di `main`, com'è scritto sopra.
+
+> ***Annotato il 2026-10-05*** (decisioni Q, R e S della review del giro su `main` del 2026-10-05, ADR 0055 §7):
+> **dal merge del branch `m13.1c-m13.1d-m9.6`**, tre cose cambiano, nello script e qui.
+>
+> - **Q. Il passo 8 ha un esempio suo**,
+>   [`examples/speak-on-a-node-to-the-end.json`](examples/speak-on-a-node-to-the-end.json), con una frase che non
+>   dà istruzioni a chi ascolta. Quella di
+>   [`examples/speak-on-a-node.json`](examples/speak-on-a-node.json) è scritta per §12 e chiede di premere Ctrl-C:
+>   il 2026-10-05 è stato premuto sulla finestra di `ela serve`, e ELA si è fermato a metà giro. Una frase scritta
+>   per una prova non si riusa in un'altra che chiede il contrario. §12 resta com'è.
+> - **R. Se ELA smette di rispondere a metà giro, lo script non crolla**: scrive nel file
+>   «[N] INTERROTTO: ELA ha smesso di rispondere — …» al passo in cui è successo, non fa i passi che restano, e
+>   l'ultima riga dice «La prova non è passata: ELA ha smesso di rispondere al passo N.»; l'uscita è 1. Fino a R,
+>   il traceback andava sul terminale e il file restava senza l'ultima riga.
+> - **S. Ai passi 5 e 6, un «Ferma» dato dalla superficie sbagliata si rifà**: la ragione nomina la superficie che
+>   ha fermato il task, con le parole che la console e il telefono scrivono; se non è quella che il passo chiede,
+>   lo script stampa **DA RIPETERE** — «il passo umano non è stato fatto come chiesto: la ragione dice «…», il
+>   passo chiede «…»» — e rifà il passo con un task nuovo, come per un «ferma» caduto dal lato sbagliato,
+>   fino a tre giri. Non è un difetto di ELA, che ha scritto il vero; ogni altra differenza della ragione resta
+>   un **FALLITO**.
+
+> ***Annotato il 2026-10-06*** (decisione U della review della prova di §22): **dal merge del branch
+> `m13.1c-m13.1d-m9.6`**, a una domanda dell'occhio lo script prende anche «si» e «sì» per sì e «no» per no, oltre
+> a `s` e `n`; ogni altra risposta, vuota compresa, la richiede ancora.
 
 ### 2. `browser.read`, fermato prima della navigazione
 
@@ -3460,8 +3530,10 @@ passato, e il passo 8 è quello nuovo.
 ### 8. Lo step che un nodo ha preso
 
 Con il PC acceso e disponibile, e il Mac a batteria perché il lavoro vada al PC (§12, passo 6), lo script crea
-un task `TRUSTED` con [`examples/speak-on-a-node.json`](examples/speak-on-a-node.json), che va al PC. Le due
-condizioni le verifica lo script, prima di cominciare: il PC lo legge da ELA, la batteria dal Mac.
+un task `TRUSTED` con [`examples/speak-on-a-node-to-the-end.json`](examples/speak-on-a-node-to-the-end.json), che
+va al PC. Le due condizioni le verifica lo script, prima di cominciare: il PC lo legge da ELA, la batteria dal Mac.
+**La frase non chiede niente a chi ascolta**: il PC va lasciato parlare fino in fondo. Non è quella di §12, che
+chiede di premere Ctrl-C (decisione Q, nella nota del passo 1).
 
 <!-- prova: 8.richiede -->
 ```
@@ -3472,7 +3544,7 @@ il Mac a batteria
 <!-- prova: 8.comando -->
 ```
 uv run ela task create "la prova di M6.3c: il nodo" --privacy TRUSTED --json
-uv run ela task plan <id> --file docs/examples/speak-on-a-node.json
+uv run ela task plan <id> --file docs/examples/speak-on-a-node-to-the-end.json
 uv run ela task run <id>
 ```
 
@@ -3508,17 +3580,256 @@ uv run ela task show <id>
 ```
 state CANCELLED
 stopped step had acted; its verification passed
-5a1e0c3d-7b2f-4e8a-9c41-000000000001 COMPLETED
+5a1e0c3d-7b2f-4e8a-9c41-000000000002 COMPLETED
 ```
 
 **Che cosa si deve vedere**, alla fine dello script: i passi meccanici **PASSATO**, quelli a occhio **GUARDATO**
 con le tue risposte, e l'ultima riga che dice «La prova è passata». Quel file salda il debito; se il passo 8
 fallisce, si apre una riparazione con la sua lettera.
 
+> ***Annotato il 2026-10-05***: **il debito è saldato** da ADR 0055 §7, con il giro su `main` del 2026-10-05 — un
+> giorno dopo la data di ADR 0054 §16 —, dove il passo 8 è PASSATO sul PC. Il criterio di sopra, «un file che dice
+> «La prova è passata»», è rivisto lì: il debito era il passo 8, e lo salda il passo 8.
+
 ### 9. Alla fine
 
 **Dopo il giro di domenica**, non prima: togli `bin/sleep` da `ELA_TERMINAL_PROGRAMS`, e riavvia `ela serve`. I
 file dello script restano in `~/Downloads`.
+
+## 22. Le ragioni, il blocco delle domande e niente di Tommaso: la prova a mano di M13.1c, M13.1d e M9.6
+
+> **Scritta con le SPEC del 2026-10-02** (`milestones/M13.1c.md`, `M13.1d.md`, `M9.6.md`) e **allineata con
+> l'implementazione** il 2026-10-02: i passi 2–6 li fa girare la suite con lo script stesso, su un ELA nello stesso
+> processo, con il browser finto (`tests/cli/test_section_22_on_the_cli.py`). La si fa sul Mac, sul branch
+> `m13.1c-m13.1d-m9.6`, con lo script `scripts/prova_m13_1c_m13_1d_m9_6.py`. Il PC non serve. **Fatta da Tommaso il
+> 2026-10-06 sul branch**, a `b589b68`: passata, ogni passo al primo giro
+> (`~/Downloads/prova-m13.1c-m13.1d-m9.6-20261006-122115.txt`); [ADR 0055](adr/0055-the-reason-of-an-end.md) e
+> [ADR 0056](adr/0056-the-author-is-not-in-the-product.md) sono Accettate.
+
+Tre riparazioni, una prova. **M13.1c**: un diniego e un fallimento dicono il loro perché, e lo dicono uguale alla
+corsa che chiude il task e a ogni corsa dopo — le parole della transizione che l'ha chiuso, come per un «ferma» da
+M6.3c. **M13.1d**: il blocco di `ela approvals` di §6 è quello che la CLI stampa. **M9.6**: le voci che hai scelto
+per l'audizione stanno nel tuo `.env`, non nel codice, e il saluto del design system non porta il tuo nome.
+
+Lo script legge da questa sezione i blocchi con il marcatore sopra, come `scripts/prova_m6_3c.py` legge §21 — gli
+stessi tipi, `comando`, `atteso`, `occhio` —, e in più fa tre confronti suoi: **ai passi 2, 3 e 4 la riga `reason`
+delle due corse è la stessa, e non è `—`**; **al passo 4 il blocco di `ela approvals` del task ha le etichette, il
+loro ordine e la loro larghezza del blocco di §6**; **al passo 6 il comando esce con `0`**. I segnaposto che riempie
+sono `<id>`, `<approval-id>` — la domanda del task del passo — e `<id della voce configurata>`, letto da
+`GET /voice`. Scrive tutto in `~/Downloads`, in `prova-m13.1c-m13.1d-m9.6-` con la
+data e l'ora, e l'ultima riga dice «La prova è passata» o che cosa manca. **Se ELA smette di rispondere a metà
+giro**, lo script scrive **INTERROTTO** al passo in cui è successo, non fa i passi che restano, e l'ultima riga lo
+dice (decisione R, nella nota di §21 passo 1).
+
+Sull'ELA di sempre, con il tuo `.env` com'è — i siti di §20 (`example.com` e `httpbin.org`), lo scope di §15, la voce
+online di §12 — e **senza** la riga delle voci (passo 9: si aggiunge dopo il merge). Il Core acceso dal codice del
+branch, `uv run ela serve`. Niente si scrive sul disco, e nessun sì si dà.
+
+### 1. Prima
+
+ELA risponde, lo shell di Chromium c'è, i due siti sono dichiarati e rispondono, e la voce online è configurata:
+lo script lo controlla e stampa **PASSATO** per ciascuno. **Se qualcosa manca, il passo 1 è SALTATO** con ciò che
+manca, e lo script si ferma lì: è il mondo che la prova richiede, non un comportamento di ELA, e un FALLITO
+sembrerebbe di ELA. L'ultima riga dice «La prova non è passata: il passo 1 SALTATO.»; si ripara ciò che manca e si
+rilancia.
+
+### 2. Un diniego, due volte
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create "un sito che non hai dichiarato" --json
+uv run ela task plan <id> --file docs/examples/browser-read-outside.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome        denied
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org'])
+state          DENIED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000002
+stopped step   —
+```
+
+E di nuovo, sullo stesso task:
+
+<!-- prova: 2.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome        denied
+reason         deny_by_decision: EXECUTING -> DENIED (targets ['example.org'] of browser.read are not within scope ['example.com', 'httpbin.org'])
+state          DENIED
+steps handled  —
+stopped step   —
+```
+
+La seconda corsa trova il task chiuso e non tratta nessuno step; **la ragione è la stessa**. Prima di M13.1c la
+seconda diceva `reason —`.
+
+### 3. Un fallimento, due volte
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create "una pagina che porta altrove" --json
+uv run ela task plan <id> --file docs/examples/browser-left-site.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome        failed
+reason         fail: EXECUTING -> FAILED (browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there)
+state          FAILED
+steps handled  b4c2d7e1-5a3f-4b69-8d20-000000000003
+stopped step   —
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome        failed
+reason         fail: EXECUTING -> FAILED (browser.left_site: the page of httpbin.org went to https://example.org, which is not a declared site: the browser did not follow, and nothing was sent there)
+state          FAILED
+steps handled  —
+stopped step   —
+```
+
+Il codice dell'errore, `browser.left_site`, sta nelle parole della transizione: prima di M13.1c la transizione
+scriveva solo il messaggio, e la seconda corsa diceva `reason —`.
+
+### 4. Il no, e la domanda di §6
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "il mio primo task" --json
+uv run ela task plan <id> --file docs/examples/first-task.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+Il primo `run` si ferma a chiedere, come in §6. **Lo script prende il blocco di `ela approvals` la cui riga `task` è
+il task di questo passo** — può aspettare anche un'altra domanda — **e lo confronta con il blocco di §6**: le stesse
+etichette, nello stesso ordine, alla stessa larghezza, con lo stesso nome della riga del bersaglio (M13.1d). Poi dice no lui, con la CLI — la ragione di
+un no si legge solo nella riga di comando e nell'audit — e fa girare due corse:
+
+<!-- prova: 4.comando -->
+```
+uv run ela task deny <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome        denied
+reason         deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by 6c38f1c5-6cda-5680-8a7a-4f061588deed)
+state          DENIED
+steps handled  —
+stopped step   —
+```
+
+La corsa trova il task chiuso dal no — lo step che chiedeva l'ha chiuso la risposta —, e la seconda dice lo stesso:
+
+<!-- prova: 4.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome        denied
+reason         deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by 6c38f1c5-6cda-5680-8a7a-4f061588deed)
+state          DENIED
+steps handled  —
+stopped step   —
+```
+
+`6c38f1c5-6cda-5680-8a7a-4f061588deed` è l'id di `local`: la CLI parla con il token del Core, e chi risponde con quel
+token è la persona a questa macchina. Dalla console o dal telefono sarebbe l'id della loro riga nel registro.
+
+### 5. Che cosa dice l'help
+
+<!-- prova: 5.comando -->
+```
+uv run ela task run --help
+```
+
+<!-- prova: 5.atteso -->
+```
+``denied``, ``failed``, ``cancelled`` and ``expired`` always carry their why: the words of the transition that ended the task
+```
+
+Lo script legge l'help con gli spazi riuniti, come la suite: l'help va a capo alla larghezza del terminale.
+
+### 6. Il catalogo dell'audizione, vuoto
+
+<!-- prova: 6.comando -->
+```
+uv run ela voice
+```
+
+<!-- prova: 6.atteso -->
+```
+(la voce configurata)  <id della voce configurata>  yes
+the audition's catalogue is empty: ELA_ELEVENLABS_CANDIDATES in .env names the voices to try
+```
+
+Non è un errore: il comando esce con `0` — lo script lo controlla —, e la voce che usi resta nella tabella, con
+`yes`.
+
+### 7. L'audizione fa ancora parlare la voce che usi
+
+<!-- prova: 7.comando -->
+```
+uv run ela voice audition <id della voce configurata>
+```
+
+<!-- prova: 7.occhio -->
+```
+Hai sentito la voce dire le due frasi di §9?
+```
+
+Costa i caratteri di due frasi. L'audizione è la parte che M9.6 ricostruisce; `voice.speak_online`, che M9.6 non
+tocca e che chiederebbe un sì, la tengono i suoi test.
+
+### 8. Il saluto del design system
+
+<!-- prova: 8.comando -->
+```
+open apps/design-system/index.html
+```
+
+<!-- prova: 8.occhio -->
+```
+Nella composizione «home», nei due temi, il saluto è «Good evening.», senza un nome?
+```
+
+### 9. Dopo il merge: le tue voci nel `.env`
+
+**Non fa parte della prova**: si fa dopo il merge, sul Mac, dalla cartella di ELA. La riga va **in cima** al `.env`
+(`1i\`): il `sed` di macOS che aggiunge in fondo, su un `.env` che non finisce con un a-capo, la incollerebbe
+all'ultima riga.
+
+```
+sed -i '' '1i\
+ELA_ELEVENLABS_CANDIDATES={"VZOd9FMXDnXRZpGn0thg": "Daniela Narrator IT — Warm Elegant ITA", "kavPiGHUq62Aokyp5Tui": "Daniela — Giovane ed elegante", "UnOINkXZ3yK4vVg3Iayj": "Beatrice AI Agent", "3LTv5xMEHTJYUIMl1jBR": "Aurora — Clear and Supportive", "MuTiG4dbrEGYEy3XP4iP": "Rossana — Warm Italian Conversational", "mT0eqrjKfAPl6gQBlfBa": "Chiara — Professional and Versatile"}
+' .env
+```
+
+```
+grep -c '^ELA_ELEVENLABS_CANDIDATES=' .env
+```
+
+**Che cosa si deve vedere**: `1`. Un altro numero — `0`, o `2` dopo un secondo `sed` — si guarda con `grep -n` e si
+corregge a mano. Poi riavvia `ela serve`, e `uv run ela voice` elenca le sei, con `yes` accanto a quella che usi, e
+senza la riga del catalogo vuoto.
 
 ## Dove guardare dopo
 

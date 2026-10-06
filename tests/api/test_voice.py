@@ -9,20 +9,29 @@ status true for thirty seconds is not one anybody can act on.
 from __future__ import annotations
 
 import dataclasses
+import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app
-from ela.composition import Ela
+from ela.composition import Ela, Settings, build
 from ela.domain import RawSpeech
 from ela.infrastructure.machine import AUDITION_PHRASES, Audition
 from ela.ports import SPEECH_NO_KEY, SPEECH_RATE_LIMITED
+from ela.testing.fakes import FakePower
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 from tests.api.support import AUTHORIZED, BASE
+from tests.composition.support import create_schema, declare
+
+CANDIDATES = "ELA_ELEVENLABS_CANDIDATES"
+VOICE_ID = "ELA_ELEVENLABS_VOICE_ID"
+CONFIGURED = "a-voice-of-my-own"
+CATALOGUE = (("voice-first", "The first — listed first"), ("voice-second", "The second"))
 
 
 class Recording:
@@ -56,7 +65,10 @@ def app_with() -> AppWith:
     @asynccontextmanager
     async def build(ela: Ela, recording: Recording) -> AsyncIterator[tuple[AsyncClient, Recording]]:
         doubled = dataclasses.replace(
-            ela, audition=Audition(speak=recording.speak, play=recording.play)
+            ela,
+            audition=Audition(
+                speak=recording.speak, play=recording.play, catalogue=ela.audition.catalogue
+            ),
         )
         app: FastAPI = create_app(doubled)
         async with AsyncClient(
@@ -153,15 +165,67 @@ def test_the_voice_writes_nothing_anywhere_it_could(ela: Ela) -> None:
 # --------------------------------------------------------------------------------------
 
 
-async def test_the_route_lists_the_voices_and_what_an_audition_would_say(
-    client: AsyncClient,
-) -> None:
+async def test_the_route_says_what_an_audition_would_say(client: AsyncClient) -> None:
     body = (await client.get("/voice")).json()
 
-    assert [one["name"] for one in body["candidates"]][0].startswith("Daniela")
     assert body["phrases"] == [
         "No, questa non è una buona idea.",
         "Stai cercando di risolvere il problema sbagliato.",
+    ]
+
+
+@asynccontextmanager
+async def served(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **declared: str
+) -> AsyncIterator[AsyncClient]:
+    """An ELA built by ``build`` from what the test declares, with a voice of its own configured.
+
+    Through the composition root and not a doubled audition: the catalogue reaches the route the
+    way it does in production, from ``ELA_ELEVENLABS_CANDIDATES`` (M9.6, decision K).
+    """
+    declare(monkeypatch, tmp_path, **{VOICE_ID: CONFIGURED}, **declared)
+    settings = Settings.load()
+    await create_schema(settings.persistence.db_url)
+    built = await build(settings, power=FakePower())
+    try:
+        app = create_app(built)
+        async with (
+            app.router.lifespan_context(app),
+            AsyncClient(
+                transport=ASGITransport(app=app), base_url=BASE, headers=AUTHORIZED
+            ) as opened,
+        ):
+            yield opened
+    finally:
+        await built.aclose()
+
+
+async def test_an_empty_catalogue_is_said_with_the_setting_that_fills_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision K: not an error — a ``200`` —, and the configured voice is still the one in use."""
+    async with served(monkeypatch, tmp_path) as client:
+        answered = await client.get("/voice")
+
+    assert answered.status_code == 200
+    body = answered.json()
+    assert body["empty_catalogue_setting"] == CANDIDATES
+    assert body["candidates"] == [
+        {"voice_id": CONFIGURED, "name": "(la voce configurata)", "chosen": True}
+    ]
+
+
+async def test_a_catalogue_is_listed_in_its_order_and_names_no_setting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    written = json.dumps(dict(CATALOGUE), ensure_ascii=False)
+    async with served(monkeypatch, tmp_path, **{CANDIDATES: written}) as client:
+        body = (await client.get("/voice")).json()
+
+    assert body["empty_catalogue_setting"] is None
+    assert [(one["voice_id"], one["name"], one["chosen"]) for one in body["candidates"]] == [
+        (CONFIGURED, "(la voce configurata)", True),
+        *((voice_id, name, False) for voice_id, name in CATALOGUE),
     ]
 
 

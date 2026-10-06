@@ -22,6 +22,7 @@ Le regole di ciò che sta in `apps/` non camminano Python: vivono nei test della
 | Ogni fessura è un nome minuscolo che il compositore sa vedere | `tests/ios/test_templates.py` |
 | Ogni pagina risponde con la `Content-Security-Policy` che vieta gli script, e i valori dell'utente arrivano con l'escape | `tests/api/test_companion.py` |
 | Il modulo d'arruolamento e la pagina «rifiutata» portano i fogli dentro, in ogni modo in cui ci si arriva; la loro politica ammette solo l'hash del blocco che servono, e non nominano niente da caricare | `tests/api/test_enrolment_page.py` |
+| Niente di chi ha scritto ELA in ciò che ELA installa e serve: nessun host delle reti Tailscale di `TAILNET_RANGES` e nessun percorso assoluto dentro la home di un utente, qui e in `src/` (M9.6, ADR 0056). Il resto della regola di `CLAUDE.md` — un nome, una macchina descritta, una preferenza — è della review | `tests/architecture/test_the_author_is_not_in_the_product.py`, `test_no_tailnet_host_and_no_path_inside_a_home_in_src_and_apps` |
 
 La prima e l'ultima riga sono le **due difese di «niente JavaScript»**, e non sono la stessa cosa
 detta due volte: se un giorno un valore sfuggisse all'escape, il browser si rifiuterebbe comunque
@@ -45,13 +46,15 @@ di eseguirlo.
    sua credenziale in un cookie e la pagina si apre da sola.
 
    **Perché proprio il browser predefinito:** lo Shortcut e il tocco di una notifica aprono
-   *quello*, e un cookie messo in un altro browser lì non si vede. Su questo iPhone il predefinito
-   è Chrome.
+   *quello*, e un cookie messo in un altro browser lì non si vede. Il predefinito può non essere
+   Safari: con quale browser sono state fatte le misure lo dice M12.5, «Gli esiti delle misure, con
+   data e macchina».
 
 3. **Lo Shortcut**, per aprire la pagina senza digitare l'indirizzo. In Comandi: un'azione sola,
-   **«Apri URL»**, con l'indirizzo del passo 2. **Chiamalo «Cruscotto»**: è il nome misurato che
-   Siri riconosce anche a telefono bloccato — chiede il codice di sblocco e poi apre. «ELA» da solo
-   Siri non lo capisce, e «esegui ELA prova» funziona solo a telefono sbloccato.
+   **«Apri URL»**, con l'indirizzo del passo 2. **Chiamalo «Cruscotto»**: è il nome che Siri, nella
+   misura di M12.5 («Gli esiti delle misure, con data e macchina»), ha riconosciuto anche a telefono
+   bloccato — chiede il codice di sblocco e poi apre. «ELA» da solo Siri non l'ha capito, e «esegui
+   ELA prova» ha funzionato solo a telefono sbloccato.
 
    Lo Shortcut **non contiene nessun segreto**: apre un indirizzo, e la credenziale è quella del
    browser. Condividerlo, esportarlo o sincronizzarlo non porta con sé niente.

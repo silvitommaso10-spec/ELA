@@ -50,7 +50,8 @@ MODELS: Final = frozenset({"eleven_multilingual_v2", "eleven_flash_v2_5"})
 parameters: an unmeasured model would be paid for at the first request and its silence before the
 first syllable would be nobody's number.
 
-Measured on 2026-09-08, at the 600-character ceiling, from this machine:
+Measured at the 600-character ceiling — the date and the plan are in ADR 0034 §1, the numbers in
+§1.1 and §1.4:
 
 ===========================  ==================  ==================  ================
 Model                        Whole response      Spoken             Credits/character
@@ -116,11 +117,13 @@ a way to make one sentence hold a step open for an afternoon."""
 TEXT_IS_RETAINED: Final = True
 """**What ELA says is kept by this provider, and can be read back in the account's dashboard.**
 
-Not a doubt and not a policy quotation — measured on 2026-09-08, twice over:
+Not a doubt and not a policy quotation — measured twice over (ADR 0034 §1.2, with the plan and the
+date):
 
 * ``enable_logging=false``, the flag that would turn retention off, answers **200 and returns a
-  ``history-item-id`` anyway** on this plan. Zero Retention Mode is an enterprise feature; asking
-  for it here changes nothing, so ELA does not ask and does not pretend.
+  ``history-item-id`` anyway** on a plan that is not enterprise. Zero Retention Mode is an
+  enterprise feature; asking for it there changes nothing, so ELA does not ask and does not
+  pretend.
 * ``GET /v1/history`` gave back the reconnaissance sentences **verbatim**.
 
 The user accepted this cost knowingly, and the decision was that **the choice must stay visible**:

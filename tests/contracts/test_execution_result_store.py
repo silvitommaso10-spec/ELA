@@ -36,6 +36,9 @@ OTHER_TASK = RESULT.model_copy(
 BARE = RESULT.model_copy(
     update={
         "id": ExecutionId(UUID("00000000-0000-4000-8000-000000000606")),
+        # SUCCEEDED, so that the error can be empty too: a result that did not succeed says why
+        # (M13.1c, ADR 0055), and "every optional field empty" is a result that needed nothing.
+        "status": ExecutionStatus.SUCCEEDED,
         "task_id": None,
         "step_id": None,
         "tool_name": None,
@@ -67,6 +70,23 @@ a node, and nothing about an outcome."""
 async def test_add_then_get(execution_result_store: ExecutionResultStore) -> None:
     await execution_result_store.add(RESULT)
     assert await execution_result_store.get(RESULT.id) == RESULT
+
+
+async def test_a_result_the_domain_refuses_is_refused_and_nothing_is_stored(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    """A copy skips the validators of the domain — pydantic's ``model_copy`` validates nothing —,
+    and every result passes by the store before anybody reads it: the store refuses what the domain
+    refuses (M13.1c, ADR 0055), so a result that did not succeed and does not say why never becomes
+    a row."""
+    unexplained = RESULT.model_copy(
+        update={"id": ExecutionId(UUID("00000000-0000-4000-8000-000000000608")), "error": None}
+    )
+
+    with pytest.raises(ValueError, match="§64"):
+        await execution_result_store.add(unexplained)
+    with pytest.raises(NotFoundError):
+        await execution_result_store.get(unexplained.id)
 
 
 async def test_add_twice_is_rejected_and_the_first_stays(
