@@ -749,3 +749,41 @@ def test_a_reason_that_is_wrong_from_the_right_surface_is_a_failure_at_once(
 
     assert report.failures == 1
     assert not any("DA RIPETERE" in line for line in report.lines)
+
+
+# ----------------------------------------------------------------------------------------
+# The answers to a question of the eye (decision U of the review of 2026-10-06)
+# ----------------------------------------------------------------------------------------
+
+
+class Answers:
+    """Tommaso at the keyboard, one answer per question; a question past the last one fails."""
+
+    def __init__(self, *said: str) -> None:
+        self.said = list(said)
+        self.asked = 0
+
+    def __call__(self, question: str) -> str:
+        self.asked += 1
+        if not self.said:
+            raise AssertionError(f"asked again after the last answer: {question!r}")
+        return self.said.pop(0)
+
+
+@pytest.mark.parametrize(
+    ("said", "meant"),
+    [("si", True), ("sì", True), ("Sì", True), ("s", True), ("no", False), ("n", False)],
+)
+def test_si_and_no_are_an_answer_at_the_first_ask(said: str, meant: bool) -> None:
+    """In the proofs of these days Tommaso wrote «si», and the script asked again every time."""
+    answers = Answers(said)
+
+    assert script().yes_or_no(answers, "Hai sentito la voce? (s/n) ") is meant
+    assert answers.asked == 1
+
+
+def test_any_other_answer_is_asked_again_the_empty_one_included() -> None:
+    answers = Answers("forse", "", "yes", "sii", "si")
+
+    assert script().yes_or_no(answers, "Hai sentito la voce? (s/n) ") is True
+    assert answers.asked == 5
