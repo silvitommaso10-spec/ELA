@@ -24,15 +24,16 @@ I segnaposto sono ``<id>`` — il task creato nel passo —, ``<approval-id>`` e
 configurata>``, letto da ``GET /voice``. Un comando che chiede ``--help`` si confronta con gli spazi
 riuniti, come la suite: l'help va a capo alla larghezza del terminale. Per ogni confronto stampa
 **PASSATO** o **FALLITO** con l'uscita vera, e l'uscita di ogni comando; ciò che serve l'occhio di
-Tommaso lo chiede finché la risposta è s o n. **Il passo 1 controlla ciò che la prova richiede al
-mondo** — ELA acceso, lo shell di Chromium, i siti dichiarati e che rispondono, la voce configurata
-—, con il lettore del passo 1 di M6.3c: la prima cosa che manca fa il passo 1 **SALTATO** con ciò
-che manca, e lo script si ferma lì; mai un FALLITO, che sembrerebbe di ELA (decisione 2-bis della
-review, 2026-10-02). **Se ELA smette di rispondere a metà giro** — un comando di ``ela`` che esce
-con il codice della CLI per «nessuno risponde» —, il passo è INTERROTTO nel file, i passi che
-restano non si fanno, e l'ultima riga lo dice: il ciclo dei passi è quello di M6.3c (decisione R,
-2026-10-05). La riga finale è quella di M6.3c: «La prova è passata» solo senza FALLITO,
-senza SALTATO e con ogni GUARDATO un sì. Tutto va anche nel file, in ``~/Downloads``.
+Tommaso lo chiede finché la risposta è s o n — o «si», «sì», «no» (decisione U, 2026-10-06). **Il
+passo 1 controlla ciò che la prova richiede al mondo** — ELA acceso, lo shell di Chromium, i siti
+dichiarati e che rispondono, la voce configurata —, con il lettore del passo 1 di M6.3c: la prima
+cosa che manca fa il passo 1 **SALTATO** con ciò che manca, e lo script si ferma lì; mai un FALLITO,
+che sembrerebbe di ELA (decisione 2-bis della review, 2026-10-02). **Se ELA smette di rispondere a
+metà giro** — un comando di ``ela`` che esce con il codice della CLI per «nessuno risponde» —, il
+passo è INTERROTTO nel file, i passi che restano non si fanno, e l'ultima riga lo dice: il ciclo dei
+passi è quello di M6.3c (decisione R, 2026-10-05). La riga finale è quella di M6.3c: «La prova è
+passata» solo senza FALLITO, senza SALTATO e con ogni GUARDATO un sì. Tutto va anche nel file, in
+``~/Downloads``.
 """
 
 from __future__ import annotations

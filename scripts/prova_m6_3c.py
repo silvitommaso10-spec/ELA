@@ -23,11 +23,11 @@ superficie** — le parole che la console e il telefono scrivono, lette dal codi
 fatto altrove, ed è DA RIPETERE come un «ferma» caduto dal lato sbagliato (decisione S, 2026-10-05).
 **Se ELA smette di rispondere a metà giro**, il file dice INTERROTTO al passo dove è successo, i
 passi che restano non si fanno, e l'ultima riga lo dice: mai un traceback (decisione R, 2026-10-05).
-Ciò che serve l'occhio di Tommaso non lo giudica:
-lo chiede finché la risposta è s o n, e la scrive come **GUARDATO**. La riga finale conta i PASSATO
-con i loro giri, i FALLITO, i GUARDATO con un no e i SALTATO, e dice «La prova è passata» solo senza
-FALLITO, senza SALTATO e con ogni GUARDATO un sì; altrimenti dice che cosa manca, e lo script esce
-con 1. Tutto ciò che stampa va anche nel file, in ``~/Downloads``.
+Ciò che serve l'occhio di Tommaso non lo giudica: lo chiede finché la risposta è s o n — o «si»,
+«sì», «no», dalla decisione U del 2026-10-06 —, e la scrive come **GUARDATO**. La riga finale conta
+i PASSATO con i loro giri, i FALLITO, i GUARDATO con un no e i SALTATO, e dice «La prova è passata»
+solo senza FALLITO, senza SALTATO e con ogni GUARDATO un sì; altrimenti dice che cosa manca, e lo
+script esce con 1. Tutto ciò che stampa va anche nel file, in ``~/Downloads``.
 
 Nessuna soglia di tempo (decisione 7): lo script guarda **finché vede il segno, o finché il task
 finisce da sé**, e dopo il «ferma» aspetta che lo step in corso si chiuda. Il «ferma» lo manda
@@ -76,8 +76,10 @@ asked — a node that is not this Mac and is available, read from ELA; this Mac 
 battery, read from the Mac. One missing is a step SKIPPED with what is missing."""
 BATTERY_POWER = "Battery Power"
 """What ``pmset -g batt`` names when the Mac draws from its battery (M12.3c, P6)."""
-ANSWERS = {"s": True, "n": False}
-"""The only answers to a question of the eye: an empty one is asked again, never a no."""
+ANSWERS = {"s": True, "si": True, "sì": True, "n": False, "no": False}
+"""The only answers to a question of the eye, read in lower case: an empty one is asked again, never
+a no. «si» and «sì» since decision U of the review of 2026-10-06 — Tommaso wrote «si» in the proofs
+of those days, and the script asked again every time."""
 SIDES = ("prima dello step", "prima del tool", "prima del punto", "dopo il punto")
 """Where a stop can land, in the order a step goes through them."""
 ROUNDS = 3
@@ -478,7 +480,8 @@ def lacking(block: Block, api: Api) -> list[str]:
 
 
 def yes_or_no(ask: Ask, question: str) -> bool:
-    """A question of the eye, asked until the answer is s or n: an empty Enter is not a no."""
+    """A question of the eye, asked until the answer is one of :data:`ANSWERS`: an empty Enter is
+    not a no, and neither is anything else."""
     while True:
         answer = ask(question).strip().lower()
         if answer in ANSWERS:

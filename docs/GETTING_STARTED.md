@@ -3130,7 +3130,7 @@ script legge hanno sopra un marcatore, `<!-- prova: N.tipo -->`, che il Markdown
 | `ferma` | manda il «ferma» — `POST /tasks/<id>/cancel`, con «la prova di M6.3c» — e dice il lato dove deve cadere: prima dello step, prima del tool, prima del punto o dopo il punto |
 | `atteso` | le righe che l'uscita del comando sopra deve avere: ciascuna a parole intere, dentro una riga dell'uscita e a meno degli spazi — «0» non è dentro «10» —, e nell'ordine in cui sono scritte |
 | `mano` | ciò che fai tu: lo script lo stampa e non aspetta un Invio — lo verifica il `guarda` che lo segue |
-| `occhio` | ciò che guardi tu: lo script lo chiede finché rispondi `s` o `n`, e scrive la tua risposta come GUARDATO |
+| `occhio` | ciò che guardi tu: lo script lo chiede finché rispondi `s` o `n` — o «si», «sì», «no» —, e scrive la tua risposta come GUARDATO |
 | `richiede` | ciò che il passo vuole dal mondo, verificato dallo script e mai chiesto: `un nodo disponibile` lo legge da ELA, `il Mac a batteria` da `pmset -g batt`; se manca, il passo è SALTATO con ciò che manca |
 
 Lo script manda il «ferma» **quando vede lo step in corso**, non dopo un'attesa fissa; poi aspetta che lo step
@@ -3226,6 +3226,10 @@ quest'ordine; qui sotto c'è ciò che legge.
 >   passo chiede «…»» — e rifà il passo con un task nuovo, come per un «ferma» caduto dal lato sbagliato,
 >   fino a tre giri. Non è un difetto di ELA, che ha scritto il vero; ogni altra differenza della ragione resta
 >   un **FALLITO**.
+
+> ***Annotato il 2026-10-06*** (decisione U della review della prova di §22): **dal merge del branch
+> `m13.1c-m13.1d-m9.6`**, a una domanda dell'occhio lo script prende anche «si» e «sì» per sì e «no» per no, oltre
+> a `s` e `n`; ogni altra risposta, vuota compresa, la richiede ancora.
 
 ### 2. `browser.read`, fermato prima della navigazione
 
