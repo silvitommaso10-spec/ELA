@@ -1,10 +1,15 @@
-"""The tables of ADR 0020 and ``ela.providers`` say the same thing.
+"""The tables of ADR 0020, as ADR 0057 revised them, and ``ela.providers`` say the same thing.
 
 Four tables, four row shapes, so none is mistaken for another: §3 (the settings and their
 defaults), §4 (the models, their limits and their prices), §5 (``model_hint`` -> model) and §7
 (the SDK exceptions mapped onto ELA's error vocabulary). Prices and model limits are facts read
 from a vendor's documentation on a given day: what this test can hold is that the document and
 the code never drift apart, and the date in the ADR says when a human last checked the world.
+
+**Since M14.1 three of them are ADR 0057's** (§3 and §10 there): the models 5.5 with their prices
+and the date of the price list, the profiles, and the fifteen codes. An ADR is not rewritten, so
+ADR 0020 keeps its tables as they were, and what the code answers to is the later one. The
+settings, the backoff and the sentences that did not change are still read from ADR 0020.
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ from ela.ports import (
     PROVIDER_REFUSAL,
     PROVIDER_REJECTED,
     PROVIDER_SERVER_ERROR,
+    PROVIDER_SPEND_LIMIT,
     PROVIDER_TIMEOUT,
     PROVIDER_UNAVAILABLE,
     PROVIDER_UNKNOWN_MODEL,
@@ -51,6 +57,8 @@ from ela.tombstones import (
 )
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0020-provider-anthropic.md"
+SPENDING_PATH = ADR_PATH.with_name("0057-spending-cap.md")
+PROFILES_HEADING = "#### I profili"
 MODEL_ROW = re.compile(
     r"^\| Claude [\w.\s]+ \| `([\w.-]+)` \| \S+ \| (\d+) \| (\d+) \| (\d+) \| (sì|no) \|$"
 )
@@ -58,9 +66,11 @@ HINT_ROW = re.compile(r"^\| ((?:`\w+`(?:, )?)+) \| `([\w.-]+)` \|$")
 ERROR_ROW = re.compile(r"^\| (.+) \| (.+) \| `(provider\.\w+)` \| (\*\*sì\*\*|no) \|$")
 SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| (.+) \| `?([\w.-]+)`? \| (.+) \|$")
 CHECKED_ON = re.compile(r"^- \*\*Listino verificato il:\*\* (\d{4}-\d{2}-\d{2})")
-MAX_PRICE_AGE_DAYS = 180
-"""Six months. Prices are a fact about the world, and no test can watch the world: what the gate
-can do is refuse to let the last human check drift out of sight (review of M7.1)."""
+MAX_PRICE_AGE_DAYS = 30
+"""Thirty days since M14.1 (review decision 9; it was six months): the price is no longer a piece
+of information but the number the spending gate decides with. Prices are a fact about the world,
+and no test can watch the world: what the gate can do is refuse to let the last human check drift
+out of sight (review of M7.1)."""
 NAME = re.compile(r"`(\w+)`")
 ABSENT = "assente"
 """How the §3 table writes a variable that has no default: the key is one of them."""
@@ -68,6 +78,20 @@ ABSENT = "assente"
 
 def adr_text() -> str:
     return ADR_PATH.read_text(encoding="utf-8")
+
+
+def spending_text() -> str:
+    """ADR 0057, where the models, the prices, the profiles and the codes are today (M14.1)."""
+    return SPENDING_PATH.read_text(encoding="utf-8")
+
+
+def profiles_section() -> str:
+    """ADR 0057's table of the profiles, alone: its row shape is also the shape of a column the
+    same ADR adds, so the hints are read under their heading and nowhere else."""
+    text = spending_text()
+    start = text.index(PROFILES_HEADING)
+    end = text.find("\n#", start + 1)
+    return text[start:end]
 
 
 # ----------------------------------------------------------------------------------------
@@ -91,7 +115,7 @@ def documented_models(text: str) -> dict[str, tuple[int, Decimal, Decimal, bool]
 
 
 def test_the_model_table_matches_the_code() -> None:
-    rows = documented_models(adr_text())
+    rows = documented_models(spending_text())
     assert set(rows) == set(MODELS) == set(PRICES)
     for model_id, (max_output, price_in, price_out, effort) in rows.items():
         assert MODELS[model_id].max_output_tokens == max_output
@@ -104,20 +128,20 @@ def documented_price_check(text: str) -> date:
     match = next(
         (CHECKED_ON.match(line) for line in text.splitlines() if CHECKED_ON.match(line)), None
     )
-    assert match is not None, "ADR 0020 §6 must say when the prices were last checked"
+    assert match is not None, "ADR 0057 §3 must say when the prices were last checked"
     return date.fromisoformat(match.group(1))
 
 
 def price_check_problem(checked: date, today: date) -> str | None:
     """Why this price check is not good enough, or ``None`` if it is (review of M7.1)."""
     if checked > today:
-        return f"ADR 0020 §6 says the prices were checked on {checked}, which is in the future"
+        return f"ADR 0057 §3 says the prices were checked on {checked}, which is in the future"
     age = (today - checked).days
     if age > MAX_PRICE_AGE_DAYS:
         return (
-            f"the Anthropic prices in ADR 0020 §4 were last checked {age} days ago ({checked}). "
+            f"the Anthropic prices in ADR 0057 §3 were last checked {age} days ago ({checked}). "
             "Re-verify them on platform.claude.com/docs/en/about-claude/pricing, update the table "
-            "and ela/providers/anthropic/pricing.py if they changed, then update the date in §6."
+            "and ela/providers/anthropic/pricing.py if they changed, then update the date there."
         )
     return None
 
@@ -125,15 +149,15 @@ def price_check_problem(checked: date, today: date) -> str | None:
 def test_the_prices_have_been_checked_recently() -> None:
     """The one thing no test can verify is whether the world still agrees with the table.
 
-    So the gate holds the *reminder* instead: when the last human check is older than six months,
+    So the gate holds the *reminder* instead: when the last human check is older than thirty days,
     this fails and says what to do. A constraint that lives in someone's memory has already
     expired.
     """
-    assert price_check_problem(documented_price_check(adr_text()), date.today()) is None
+    assert price_check_problem(documented_price_check(spending_text()), date.today()) is None
 
 
 def test_an_old_or_impossible_price_check_is_detected() -> None:
-    """The negative case of the gate above, without waiting six months for it."""
+    """The negative case of the gate above, without waiting thirty days for it."""
     today = date(2027, 1, 1)
     fresh = today - timedelta(days=MAX_PRICE_AGE_DAYS)
     assert price_check_problem(fresh, today) is None
@@ -147,14 +171,16 @@ def test_an_old_or_impossible_price_check_is_detected() -> None:
     assert ahead is not None and "in the future" in ahead
 
     with pytest.raises(AssertionError, match="when the prices were last checked"):
-        documented_price_check("# 0020. Un ADR senza data\n")
+        documented_price_check("# 0057. Un ADR senza data\n")
 
 
-def test_the_cache_read_rate_of_the_adr_is_a_tenth_of_the_input_price() -> None:
-    """The ADR states the rule in words; the code states it in numbers, model by model."""
-    assert "10% dell'input" in adr_text()
+def test_the_cache_read_rate_of_the_adr_is_the_code_s_model_by_model() -> None:
+    """The ADR states the rule in words; the code states it in numbers, model by model. ADR 0020 §6
+    said a tenth on all three; the 5.5 price list gives Opus a twentieth (ADR 0057 §3)."""
+    assert "il 5% dell'input su Opus 5.5 e il 10% sugli altri due" in spending_text()
     for model_id, price in PRICES.items():
-        assert price.cache_read == price.input / 10, model_id
+        share = 20 if model_id == "claude-opus-5-5" else 10
+        assert price.cache_read == price.input / share, model_id
 
 
 def test_the_expensive_model_is_not_the_default() -> None:
@@ -162,8 +188,8 @@ def test_the_expensive_model_is_not_the_default() -> None:
 
     Since M7.3 that default is a constant and not a setting (ADR 0022 §8): what it answers is a
     request that names no profile, and the router names one on every call it makes."""
-    assert "Il default è `claude-sonnet-5`, non il modello più potente" in adr_text()
-    assert DEFAULT_MODEL == "claude-sonnet-5"
+    assert "Il default è `claude-sonnet-5-5`, non il modello più potente" in spending_text()
+    assert DEFAULT_MODEL == "claude-sonnet-5-5"
     model = model_for_hint(None)
     assert model is not None and model.id == DEFAULT_MODEL
 
@@ -190,7 +216,7 @@ def documented_hints(text: str) -> dict[str, str]:
 
 
 def test_the_hint_table_matches_the_code() -> None:
-    rows = documented_hints(adr_text())
+    rows = documented_hints(profiles_section())
     assert rows == dict(PROFILES)
     for hint, model_id in rows.items():
         model = model_for_hint(hint)
@@ -218,8 +244,12 @@ def documented_errors(text: str) -> dict[str, bool]:
 
 
 def test_the_error_table_is_exactly_the_vocabulary_of_the_port() -> None:
-    assert set(documented_errors(adr_text())) == set(PROVIDER_ERROR_CODES)
-    assert len(PROVIDER_ERROR_CODES) == 14
+    """Fourteen in ADR 0020 §7, fifteen in ADR 0057 §10: ``provider.spend_limit``."""
+    assert set(documented_errors(spending_text())) == set(PROVIDER_ERROR_CODES)
+    assert len(PROVIDER_ERROR_CODES) == 15
+    assert set(documented_errors(spending_text())) - set(documented_errors(adr_text())) == {
+        PROVIDER_SPEND_LIMIT
+    }
 
 
 def test_an_answer_with_no_text_is_in_the_vocabulary_and_not_beside_it() -> None:
@@ -231,7 +261,7 @@ def test_an_answer_with_no_text_is_in_the_vocabulary_and_not_beside_it() -> None
     row that names a result nobody reported, an answer that arrived with nothing in it.
     """
     assert PROVIDER_NO_OUTPUT in PROVIDER_ERROR_CODES
-    assert documented_errors(adr_text())[PROVIDER_NO_OUTPUT] is False
+    assert documented_errors(spending_text())[PROVIDER_NO_OUTPUT] is False
     assert "PROVIDER_NO_OUTPUT" in ela.ports.__all__
     assert "PROVIDER_NO_OUTPUT" not in ela.tools.model.__all__
     assert "PROVIDER_NO_OUTPUT" not in ela.tools.__all__
@@ -240,12 +270,15 @@ def test_an_answer_with_no_text_is_in_the_vocabulary_and_not_beside_it() -> None
 def test_a_turned_down_request_and_an_unreadable_answer_are_two_different_things() -> None:
     """Review of M7.1: a serialisation bug must not read as "your request was rejected"."""
     assert PROVIDER_REJECTED != PROVIDER_MALFORMED_RESPONSE
-    assert {PROVIDER_REJECTED, PROVIDER_MALFORMED_RESPONSE} <= set(documented_errors(adr_text()))
+    assert {PROVIDER_REJECTED, PROVIDER_MALFORMED_RESPONSE} <= set(
+        documented_errors(spending_text())
+    )
 
 
 def test_what_the_table_calls_retryable() -> None:
-    """The rule of the milestone, read from the document: 429, 5xx and transport, no more."""
-    rows = documented_errors(adr_text())
+    """The nature of each code, read from the document: 429, 5xx and transport, no more. What ELA
+    sends again is narrower since M14.1 — see the test below."""
+    rows = documented_errors(spending_text())
     retryable = {code for code, again in rows.items() if again}
     assert retryable == {
         PROVIDER_RATE_LIMITED,
@@ -264,7 +297,20 @@ def test_what_the_table_calls_retryable() -> None:
         PROVIDER_UNAVAILABLE,
         PROVIDER_UNKNOWN_MODEL_HINT,
         PROVIDER_UNSUPPORTED_PARAMETER,
+        PROVIDER_SPEND_LIMIT,
     }
+
+
+def test_only_what_did_not_run_is_sent_again() -> None:
+    """ADR 0020 §8 revised in the open (review decision 2): the ``429`` of frequency and the
+    ``529``, and not an outcome that may have been paid — nor the ``429`` of the tier's spend cap,
+    which holds until the month turns (review of ``be7f131``). ``tests/providers/test_retry.py``
+    and ``tests/providers/test_spending.py`` prove it on the adapter."""
+    text = spending_text()
+    assert "**ADR 0020 §8 è rivisto\napertamente**" in text
+    assert "**solo** per il `429` di frequenza e il `529`" in text
+    assert "non per il `429` del tetto del livello" in text
+    assert "**Che un `529` non si paghi è una lettura del nome**" in text
 
 
 # ----------------------------------------------------------------------------------------
@@ -301,7 +347,7 @@ def test_the_settings_table_matches_the_defaults() -> None:
     settings = AnthropicSettings(_env_file=None)
     assert rows["ELA_ANTHROPIC_API_KEY"] == ABSENT
     assert settings.anthropic_api_key is None
-    assert rows["ELA_ANTHROPIC_MODEL"] == DEFAULT_MODEL  # what it meant while it existed
+    assert rows["ELA_ANTHROPIC_MODEL"] == "claude-sonnet-5"  # what it meant while it existed
     assert int(rows["ELA_ANTHROPIC_TIMEOUT_SECONDS"]) == DEFAULT_TIMEOUT_SECONDS == 60
     assert int(rows["ELA_ANTHROPIC_MAX_RETRIES"]) == DEFAULT_MAX_RETRIES == 2
     assert int(rows["ELA_ANTHROPIC_MAX_OUTPUT_TOKENS"]) == DEFAULT_MAX_OUTPUT_TOKENS == 4096
@@ -314,7 +360,7 @@ def test_the_retired_variable_is_the_one_a_later_adr_retired() -> None:
     assert set(RETIRED_SETTINGS) & anthropic == {"ELA_ANTHROPIC_MODEL"}
     assert "ELA_ANTHROPIC_MODEL" in documented_settings(adr_text())
     with pytest.raises(ValidationError, match="retired"):
-        AnthropicSettings(_env_file=None, anthropic_model=DEFAULT_MODEL)
+        AnthropicSettings(_env_file=None, anthropic_model="claude-sonnet-5")
 
 
 def test_the_backoff_of_the_adr_is_the_backoff_of_the_code() -> None:

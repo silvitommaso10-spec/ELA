@@ -450,6 +450,8 @@ FULL = {
     "address": "https://x/y",
     "gestures": ["click"],
     "expect": "ok",
+    "worst_case": "0.2 USD, m, up to 900 tokens in and 100 out",
+    "left": "4.8 of 5 USD left in 2026-10",
 }
 EMPTY_QUESTION = {
     **QUESTION,
@@ -473,6 +475,8 @@ EMPTY_QUESTION = {
     "address": "",
     "gestures": None,
     "expect": "",
+    "worst_case": "",
+    "left": "",
 }
 
 

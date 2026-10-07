@@ -18,21 +18,47 @@ has its own.
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient, Response
 
-from ela.composition import Ela, build
+from ela.composition import Ela, Settings, build
 from ela.domain import StepState
 from ela.executive import RunOutcome
-from ela.testing.fakes import FakeClock, FakePower
+from ela.testing.fakes import FakeBrowser, FakeClock, FakePage, FakePower
 from tests.api.support import EXAMPLES, echo_plan, note_plan, queued
 from tests.api.test_nodes_work import ENVELOPE, a_node
+from tests.composition.support import create_schema, declare
+
+
+@pytest.fixture
+def settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Settings:
+    """The composition's world with the guide's sites (M14.1): the step that runs and fails is a
+    gesture on a field the page does not have, since a call to the model that cannot be bounded is
+    denied before its question (ADR 0057)."""
+    declare(monkeypatch, tmp_path, ELA_BROWSER_SITES=json.dumps(["example.com", "httpbin.org"]))
+    return Settings.load()
+
+
+@pytest.fixture
+async def ela(settings: Settings) -> AsyncIterator[Ela]:
+    """ELA as ``build`` makes it, with a browser that opens nothing and a page with no
+    ``#non-esiste`` — the story of ``browser-act-missing.json``."""
+    await create_schema(settings.persistence.db_url)
+    built = await build(
+        settings, power=FakePower(), browser=FakeBrowser(FakePage(counts={"#non-esiste": 0}))
+    )
+    try:
+        yield built
+    finally:
+        await built.aclose()
+
 
 DEFINITION = "A step is handled when the executor gave its answer about it in this call"
 """The sentence the schema carries, written here and not read from the code: a test that read it
@@ -177,8 +203,9 @@ async def failed_before_the_act(client: AsyncClient, ela: Ela) -> Branch:
 
 
 async def failed_after_the_act(client: AsyncClient, ela: Ela) -> Branch:
-    """The model is asked, on a machine without a key: the tool ran, and failed."""
-    plan = example("ask-model.json")
+    """A gesture on a field the page does not have: the tool ran, and failed (since M14.1; until
+    then the model asked on a machine without a key, which is now denied before the question)."""
+    plan = example("browser-act-missing.json")
     task = await queued(client, plan)
     await run(client, task)
     await answer_the_question(client, task, "approve")

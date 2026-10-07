@@ -20,6 +20,7 @@ import asyncio
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple, cast
@@ -75,11 +76,13 @@ from ela.domain import (
     TaskPlan,
     TaskState,
     TaskStep,
+    WorstCase,
 )
 from ela.ports import (
     ANNOUNCED_FIELDS,
     NAVIGATION,
     PROVIDER_UNAVAILABLE,
+    STARTED_ID,
     VERIFICATION_NO_CONDITIONS,
     VERIFICATION_NOT_SUCCEEDED,
     VERIFICATION_UNKNOWN_CONDITION,
@@ -128,6 +131,8 @@ from ela.ports import (
 __all__ = [
     "DEFAULT_START",
     "FAKE_CONDITION",
+    "FAKE_CURRENCY",
+    "FAKE_WORST_CASE",
     "FakeApprovalStore",
     "FakeAuditLog",
     "FakeAuthorizationStore",
@@ -794,6 +799,37 @@ class FakeExecutionResultStore:
     async def for_task(self, task_id: TaskId) -> tuple[ExecutionResult, ...]:
         return tuple(r for r in self._results.values() if r.task_id == task_id)
 
+    async def spending(self, since: datetime, until: datetime) -> tuple[ExecutionResult, ...]:
+        """The period's reservations and what closes them, as the SQL store reads them."""
+        reservations = [
+            r
+            for r in self._results.values()
+            if r.status is ExecutionStatus.STARTED
+            and r.worst_case is not None
+            and since <= r.created_at < until
+        ]
+        ids = {str(r.id) for r in reservations}
+        closing = [
+            r
+            for r in self._results.values()
+            if r.status is not ExecutionStatus.STARTED and r.metadata.get(STARTED_ID) in ids
+        ]
+        return (*reservations, *closing)
+
+    async def reserve(
+        self,
+        record: ExecutionResult,
+        since: datetime,
+        until: datetime,
+        admits: Callable[[tuple[ExecutionResult, ...]], bool],
+    ) -> bool:
+        """The read and the insert with nothing between them that yields to the event loop: the
+        fake's reads do not suspend, so one call is one step of the loop."""
+        if not admits(await self.spending(since, until)):
+            return False
+        await self.add(record)
+        return True
+
 
 # --------------------------------------------------------------------------------------
 # Capabilities, decisions and tools
@@ -1149,6 +1185,7 @@ class FakeTool:
         self.calls: tuple[ToolCall, ...] = ()
         self.prospects = Prospect() if prospect is None else prospect
         self.assertions = Prospect()
+        self.bound: WorstCase | ErrorMetadata | None = None
 
     @property
     def capability_id(self) -> CapabilityId:
@@ -1178,6 +1215,11 @@ class FakeTool:
         """What the call asserts without looking (M13.3): whatever the test set, empty by
         default — and never what :attr:`prospects` says, so a test sees which one was asked."""
         return self.assertions
+
+    async def worst_case(self, arguments: JsonMapping) -> WorstCase | ErrorMetadata | None:
+        """What the test set in :attr:`bound`: ``None`` — a tool that spends nothing — by default
+        (M14.1)."""
+        return self.bound
 
     async def execute(
         self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
@@ -1353,6 +1395,11 @@ class FakeVerifierRegistry:
 # --------------------------------------------------------------------------------------
 
 
+FAKE_CURRENCY: Final = "USD"
+FAKE_WORST_CASE: Final = Decimal("0.01")
+"""What a :class:`FakeModelProvider` reserves for a call unless a test says otherwise: one cent."""
+
+
 class FakeModelProvider:
     """A provider that answers from a canned reply (port :class:`~ela.ports.ModelProvider`).
 
@@ -1360,7 +1407,12 @@ class FakeModelProvider:
     With ``error`` set, every result carries that error and an empty output, which is how a real
     provider reports a failure (a result, not an exception). ``status`` says whether the provider
     is configured at all (ADR 0020 §2); an ``UNAVAILABLE`` fake answers with
-    :data:`~ela.ports.PROVIDER_UNAVAILABLE` and records no request, as the real one does.
+    :data:`~ela.ports.PROVIDER_UNAVAILABLE`, says it sent nothing, and records no request, as the
+    real one does.
+
+    ``cost`` is what every answered call reports it cost, ``None`` by default — a model with no
+    price. ``worst`` is what :meth:`worst_case` answers (M14.1): a bound of one cent by default,
+    or the error a test wants; it is asked without the network, so it records nothing.
     """
 
     def __init__(
@@ -1372,6 +1424,8 @@ class FakeModelProvider:
         reply: str | Callable[[ProviderRequest], str] = "ok",
         error: ErrorMetadata | None = None,
         status: ProviderStatus = ProviderStatus.AVAILABLE,
+        cost: Decimal | None = None,
+        worst: WorstCase | ErrorMetadata | None = None,
     ) -> None:
         self._clock = clock
         self._ids = ids
@@ -1379,6 +1433,8 @@ class FakeModelProvider:
         self._reply = reply
         self._error = error
         self._status = status
+        self._cost = cost
+        self._worst = worst
         self.requests: tuple[ProviderRequest, ...] = ()
 
     @property
@@ -1407,9 +1463,26 @@ class FakeModelProvider:
             provider=self._name,
             model=f"{self._name}-model",
             output=output,
-            usage=ProviderUsage(input_tokens=prompt_words, output_tokens=len(output.split())),
+            usage=ProviderUsage(
+                input_tokens=prompt_words,
+                output_tokens=len(output.split()),
+                cost=self._cost,
+                currency=None if self._cost is None else FAKE_CURRENCY,
+            ),
             finish_reason="error" if self._error is not None else "end_turn",
             error=self._error,
+        )
+
+    async def worst_case(self, request: ProviderRequest) -> WorstCase | ErrorMetadata:
+        """What the test set, or one cent on this fake's model: never the network."""
+        if self._worst is not None:
+            return self._worst
+        return WorstCase(
+            amount=FAKE_WORST_CASE,
+            currency=FAKE_CURRENCY,
+            model=f"{self._name}-model",
+            input_tokens=1_000,
+            output_tokens=100,
         )
 
     def _unusable(self, request: ProviderRequest) -> ProviderResult:
@@ -1421,7 +1494,7 @@ class FakeModelProvider:
             provider=self._name,
             model="",
             output="",
-            usage=ProviderUsage(input_tokens=0, output_tokens=0),
+            usage=ProviderUsage(input_tokens=0, output_tokens=0, sent=False),
             error=ErrorMetadata(
                 code=PROVIDER_UNAVAILABLE,
                 message=f"provider {self._name} is not configured",

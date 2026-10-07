@@ -194,13 +194,27 @@ def finished_adr_text() -> str:
     return ADR_PATH.with_name("0049-finished-on-the-homes.md").read_text(encoding="utf-8")
 
 
+def spending_adr_text() -> str:
+    """ADR 0057, which adds the one route of the month's spending (M14.1)."""
+    return ADR_PATH.with_name("0057-spending-cap.md").read_text(encoding="utf-8")
+
+
 def routes_after_0048() -> set[tuple[str, str]]:
     """The routes the ADRs after ADR 0048 added, **read from them**: what the tests of an earlier
     ADR take away to keep counting what that ADR saw. Derived, so a route a later ADR documents is
     subtracted without anybody writing its path a second time — and a later ADR that documented
-    none would leave this empty, which is why it refuses to be."""
-    found = documented_routes(finished_adr_text())
+    none would leave this empty, which is why it refuses to be. ADR 0049's, and ADR 0057's since
+    M14.1."""
+    found = documented_routes(finished_adr_text()) | routes_after_0056()
     assert found, "ADR 0049 documents a route"
+    return found
+
+
+def routes_after_0056() -> set[tuple[str, str]]:
+    """The routes the ADRs after ADR 0056 added, read from them: what the tests of ADR 0049 and of
+    ADR 0054 take away to keep counting the forty-nine they saw (M14.1)."""
+    found = documented_routes(spending_adr_text())
+    assert found, "ADR 0057 documents a route"
     return found
 
 
@@ -234,6 +248,7 @@ def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
             | documented_routes(companion_adr_text())
             | documented_routes(console_adr_text())
             | documented_routes(finished_adr_text())
+            | documented_routes(spending_adr_text())
         )
     )
     assert documented == coded_routes()
@@ -272,14 +287,19 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_forty_nine_of_them() -> None:
+def test_there_are_fifty_of_them() -> None:
     """Twenty until ADR 0037 §4 added five, twenty-five until ADR 0038 §11 added the three of the
     work, twenty-eight until ADR 0039 §2 added the one a node that restarted reads itself with,
     twenty-nine until ADR 0043 §5 added the eight pages of the companion, thirty-seven until
-    ADR 0044 added the eleven of the Command Center, and forty-eight until ADR 0049 added the one
-    of the last outcomes; ``tests/api/test_security.py`` proves that every one of them is behind
-    the middleware, and which identity reaches which."""
-    assert len(coded_routes()) == 49
+    ADR 0044 added the eleven of the Command Center, forty-eight until ADR 0049 added the one
+    of the last outcomes, and forty-nine until ADR 0057 added the one of the month's spending;
+    ``tests/api/test_security.py`` proves that every one of them is behind the middleware, and
+    which identity reaches which."""
+    assert len(coded_routes()) == 50
+
+
+def test_the_route_of_m14_1_is_the_one_adr_0057_adds() -> None:
+    assert routes_after_0056() == {("GET", "/spend")}
 
 
 def test_the_one_route_of_the_restart_is_the_one_adr_0039_adds() -> None:

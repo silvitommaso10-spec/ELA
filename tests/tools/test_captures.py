@@ -42,6 +42,7 @@ from ela.tools.captures import (
     room,
     text_name_for,
 )
+from tests.tools.support import PERMISSIONS_BITE
 
 TTL = timedelta(seconds=300)
 NAME = "3f2504e0-4f89-41d3-9a0c-0305e82c3301.png"
@@ -196,6 +197,7 @@ def test_a_link_is_not_a_regular_file_even_when_it_points_at_a_png(tmp_path: Pat
     assert problem.code == CAPTURE_NOT_REGULAR
 
 
+@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o000) does not deny this user: it is root")
 def test_a_name_inside_an_unreachable_directory_is_unreadable(tmp_path: Path) -> None:
     closed = tmp_path / "closed"
     closed.mkdir()
@@ -211,6 +213,7 @@ def test_a_name_inside_an_unreachable_directory_is_unreadable(tmp_path: Path) ->
     assert "PermissionError" in problem.reason
 
 
+@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o000) does not deny this user: it is root")
 def test_a_file_that_cannot_be_opened_is_unreadable(tmp_path: Path) -> None:
     """``lstat`` said regular file and the read still failed: the second net, and it reports."""
     target = write(tmp_path, NAME, png())

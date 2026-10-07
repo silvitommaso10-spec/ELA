@@ -64,6 +64,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0054](0054-stopped-midway.md) | Il «ferma» a metà corsa: la fermata arriva al tool prima del suo punto di non ritorno; e il runner della CI con una versione scritta | Accettata |
 | [0055](0055-the-reason-of-an-end.md) | La ragione di una fine è quella della transizione che ha chiuso il task: la stessa alla chiusura e alla porta, con il codice dell'errore; e un risultato che non è riuscito dice perché | Accettata |
 | [0056](0056-the-author-is-not-in-the-product.md) | Niente di chi ha scritto ELA in ciò che installa e serve: un test per ciò che una macchina riconosce, il catalogo dell'audizione nella configurazione, la provenienza di una misura in `docs/` | Accettata |
+| [0057](0057-spending-cap.md) | Il tetto di spesa: una riga del Core, il caso peggiore prenotato nella `STARTED`, e i modelli 5.5 | Accettata |
 
 ## Template
 

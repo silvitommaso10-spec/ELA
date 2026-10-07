@@ -2,10 +2,14 @@
 
 Two things happen here, and only here:
 
-* **Classification.** Which of :data:`~ela.ports.PROVIDER_ERROR_CODES` an exception is, and
-  whether trying again could ever change the answer. The rule the milestone asks for lives in one
-  place: 429 and 5xx are retried, a 4xx never is — retrying a rejected request only rejects it
-  again, and retrying an authentication failure cannot invent a credential. An answer that is not
+* **Classification.** Which of :data:`~ela.ports.PROVIDER_ERROR_CODES` an exception is, whether
+  trying again could ever change the answer, and **whether the API ran the request** (M14.1,
+  ADR 0057). A ``4xx`` — the ``429`` included — and the ``529`` of an overloaded API are turned
+  down before anything runs: they cost nothing, and only the ``429`` of frequency and the ``529``
+  are worth trying again — not the ``429`` of the tier's spend cap, which holds until the month
+  turns. A timeout, a dropped connection, any other ``5xx`` and an answer that cannot be
+  read may come after the work was done and paid: nobody knows, so they are not tried again —
+  one unknown outcome is not paid twice (ADR 0021 §2, a level further down). An answer that is not
   an answer is neither: a 409 or a 422 is the API turning a request down, an unreadable body is
   the channel breaking, and the two get different codes so that a serialisation bug never reads
   as "your request was rejected" (review of M7.1).
@@ -29,18 +33,62 @@ from ela.ports import (
     PROVIDER_RATE_LIMITED,
     PROVIDER_REJECTED,
     PROVIDER_SERVER_ERROR,
+    PROVIDER_SPEND_LIMIT,
     PROVIDER_TIMEOUT,
     PROVIDER_UNKNOWN_MODEL,
     PROVIDER_UNREACHABLE,
 )
 
-__all__ = ["Failure", "UnsupportedRequestError", "classify"]
+__all__ = [
+    "ORGANIZATION_LIMIT_PREFIX",
+    "WORKSPACE_LIMIT_PREFIX",
+    "Failure",
+    "UnsupportedRequestError",
+    "classify",
+]
 
 SERVER_ERROR_FROM: Final = 500
 AUTHENTICATION_STATUS: Final = frozenset({401, 403})
 RATE_LIMIT_STATUS: Final = 429
+OVERLOADED_STATUS: Final = 529
 BAD_REQUEST_STATUS: Final = 400
 NOT_FOUND_STATUS: Final = 404
+
+ORGANIZATION_LIMIT_PREFIX: Final = "You have reached your specified API usage limits"
+"""How the API begins the ``400`` of an organization that reached the monthly spend limit somebody
+set on the console's Billing page — the **second cap** (M14.1, ADR 0057) — in the documentation's
+words (``api/rate-limits``, read on 2026-10-07)."""
+
+WORKSPACE_LIMIT_PREFIX: Final = "You have reached your specified workspace API usage limits"
+"""And how it begins the same ``400`` for a workspace's spend limit, in the same paragraph.
+
+Both are **read and never kept** (ADR 0020 §10): they decide the code, and the message ELA keeps
+is its own. If a sentence ever changes the answer falls back to
+:data:`~ela.ports.PROVIDER_BAD_REQUEST`, which is what it was before M14.1: no harm (review
+decision 10). An event whose sentence the documentation does not write — an exhausted credit
+balance — is not guessed, and stays where it falls."""
+
+TIER_CAP_ERROR_CODE: Final = "enforced_spend_limit_reached"
+"""How the API marks the ``429`` of the usage tier's monthly spend cap: in
+``error.details.error_code``, a field and not a sentence (``api/rate-limits``, read on
+2026-10-07). It holds until the month turns, so it is not tried again (ADR 0057 §10, revising
+ADR 0020 §8)."""
+
+SPEND_LIMIT_REACHED: Final = "a spend limit of the provider was reached"
+"""The fact, and only the fact (review of ``be7f131``): the provider's month need not be ELA's, so
+a limit can be reached with ELA in order with its own cap. The reason names the limit; the Core
+adds how much ELA counted of its cap (:mod:`ela.executive.spending`), and §23 of the guide lists
+the causes."""
+
+ORGANIZATION_LIMIT: Final = "the organization's monthly spend limit, set in the console"
+WORKSPACE_LIMIT: Final = "a workspace's monthly spend limit, set in the console"
+TIER_CAP: Final = "the usage tier's monthly spend cap"
+
+SPEND_LIMITS: Final = (
+    (ORGANIZATION_LIMIT_PREFIX, ORGANIZATION_LIMIT),
+    (WORKSPACE_LIMIT_PREFIX, WORKSPACE_LIMIT),
+)
+"""The two beginnings, each with the limit it names."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +102,9 @@ class Failure:
     request_id: str | None = None
     retry_after: float | None = None
     """What the provider asked us to wait, in seconds, when it said so (429)."""
+    unrun: bool = False
+    """The API turned the request down before running it: it cost nothing, and trying again does
+    not pay twice. ``False`` where nobody knows — the safe answer (§33; M14.1, ADR 0057)."""
 
 
 class UnsupportedRequestError(Exception):
@@ -86,10 +137,48 @@ def _retry_after(exc: anthropic.APIStatusError) -> float | None:
         return None
 
 
+def _error_of(exc: anthropic.APIStatusError) -> dict[str, object] | None:
+    """The ``error`` object of the body, when the body is the API's JSON."""
+    body = exc.body
+    error = body.get("error") if isinstance(body, dict) else None
+    return error if isinstance(error, dict) else None
+
+
+def _limit_set(exc: anthropic.APIStatusError) -> str | None:
+    """Which spend limit set in the console the server's own words begin like, if any.
+
+    The only place ELA reads the server's text, and it keeps none of it: the answer is one of
+    ELA's own names for the limit.
+    """
+    error = _error_of(exc)
+    words = None if error is None else error.get("message")
+    if isinstance(words, str):
+        for prefix, which in SPEND_LIMITS:
+            if words.startswith(prefix):
+                return which
+    return None
+
+
+def _tier_cap(exc: anthropic.APIStatusError) -> bool:
+    """Whether a ``429`` is the tier's spend cap: told by its ``error_code``, never by its words."""
+    error = _error_of(exc)
+    details = None if error is None else error.get("details")
+    return isinstance(details, dict) and details.get("error_code") == TIER_CAP_ERROR_CODE
+
+
 def _status_failure(exc: anthropic.APIStatusError) -> Failure:
     status = exc.status_code
     message = f"{status} {exc.type or 'error'}"
     request_id = exc.request_id
+    if status == RATE_LIMIT_STATUS and _tier_cap(exc):
+        return Failure(
+            PROVIDER_SPEND_LIMIT,
+            f"{message}: {SPEND_LIMIT_REACHED}: {TIER_CAP}",
+            retryable=False,
+            status_code=status,
+            request_id=request_id,
+            unrun=True,
+        )
     if status == RATE_LIMIT_STATUS:
         return Failure(
             PROVIDER_RATE_LIMITED,
@@ -98,6 +187,7 @@ def _status_failure(exc: anthropic.APIStatusError) -> Failure:
             status_code=status,
             request_id=request_id,
             retry_after=_retry_after(exc),
+            unrun=True,
         )
     if status >= SERVER_ERROR_FROM:
         code, retryable = PROVIDER_SERVER_ERROR, True
@@ -105,15 +195,27 @@ def _status_failure(exc: anthropic.APIStatusError) -> Failure:
         code, retryable = PROVIDER_AUTHENTICATION_ERROR, False
     elif status == BAD_REQUEST_STATUS:
         code, retryable = PROVIDER_BAD_REQUEST, False
+        which = _limit_set(exc)
+        if which is not None:
+            code = PROVIDER_SPEND_LIMIT
+            message = f"{message}: {SPEND_LIMIT_REACHED}: {which}"
     elif status == NOT_FOUND_STATUS:
         code, retryable = PROVIDER_UNKNOWN_MODEL, False
     else:
         code, retryable = PROVIDER_REJECTED, False
-    return Failure(code, message, retryable=retryable, status_code=status, request_id=request_id)
+    return Failure(
+        code,
+        message,
+        retryable=retryable,
+        status_code=status,
+        request_id=request_id,
+        unrun=status < SERVER_ERROR_FROM or status == OVERLOADED_STATUS,
+    )
 
 
 def classify(exc: anthropic.APIError) -> Failure:
-    """Which failure this exception is: retryable exactly for 429, 5xx and transport."""
+    """Which failure this exception is: retryable by nature for 429, 5xx and transport; unrun —
+    turned down before anything ran — for a ``4xx`` and the ``529``."""
     if isinstance(exc, anthropic.APITimeoutError):
         return Failure(PROVIDER_TIMEOUT, "the call did not answer in time", retryable=True)
     if isinstance(exc, anthropic.APIConnectionError):

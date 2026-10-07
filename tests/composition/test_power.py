@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from ela.composition import Settings, build, build_node
+from ela.composition.node import ACL_SINCE
 from ela.composition.system import (
     power_nobody_reads,
     power_of_a_mac,
@@ -72,7 +73,9 @@ async def test_a_pc_s_reading_is_power_status_through_the_pc_s_map() -> None:
 def test_a_node_reads_the_power_of_the_system_it_was_built_for(
     tmp_path: Path, system: str, reader: Callable[..., object]
 ) -> None:
-    built = build_node(config(tmp_path), speech=FakeSpeech(), system=system)
+    built = build_node(
+        config(tmp_path), speech=FakeSpeech(), system=system, python_version=ACL_SINCE
+    )
 
     assert built.power is reader
 

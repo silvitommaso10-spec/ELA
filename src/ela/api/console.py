@@ -405,6 +405,12 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
         pairs.append(
             pages.fragment(HERE, "pair", key="Scade", value=f"alle {when(found.expires_at)}")
         )
+    # What saying yes costs in money, for a call that spends (M14.1, ADR 0057; decision H): the
+    # executor's lines, rendered as they stand. Not content, so whatever the ceiling.
+    if found.worst_case:
+        pairs.append(pages.fragment(HERE, "pair", key="Costo massimo", value=found.worst_case))
+    if found.left:
+        pairs.append(pages.fragment(HERE, "pair", key="Resta nel mese", value=found.left))
     if seen and found.targets:
         shown = ", ".join(visible(one, lines=False) for one in found.targets)
         pairs.append(pages.fragment(HERE, "pair", key="Su", value=shown))

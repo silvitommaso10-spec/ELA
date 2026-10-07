@@ -42,6 +42,7 @@ VOICE_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0034-voice-online.md"
 NODES_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0037-node-identity.md"
 NODE_MACOS_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0039-node-macos.md"
 FINISHED_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0049-finished-on-the-homes.md"
+SPENDING_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0057-spending-cap.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMMAND_ROW = re.compile(
@@ -75,6 +76,7 @@ def adr_text() -> str:
             NODES_ADR_PATH,
             NODE_MACOS_ADR_PATH,
             FINISHED_ADR_PATH,
+            SPENDING_ADR_PATH,
         )
     )
 
@@ -84,6 +86,13 @@ def commands_after_0048() -> set[str]:
     takes away to keep counting what that ADR saw (the shape of ``routes_after_0048``)."""
     found = set(documented_commands_of(FINISHED_ADR_PATH.read_text(encoding="utf-8")))
     assert found, "ADR 0049 documents a command"
+    return found | commands_after_0056()
+
+
+def commands_after_0056() -> set[str]:
+    """The commands the ADRs after ADR 0056 added, read from them: ADR 0057's (M14.1)."""
+    found = set(documented_commands_of(SPENDING_ADR_PATH.read_text(encoding="utf-8")))
+    assert found, "ADR 0057 documents a command"
     return found
 
 
@@ -190,9 +199,10 @@ def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:
     assert set(documented_commands()) == coded_commands()
 
 
-def test_there_are_twenty_seven_of_them() -> None:
-    """Twenty-six until ADR 0049 added ``ela task finished``, the client of its one route."""
-    assert len(coded_commands()) == 27
+def test_there_are_twenty_eight_of_them() -> None:
+    """Twenty-six until ADR 0049 added ``ela task finished``, the client of its one route, and
+    twenty-seven until ADR 0057 added ``ela spend``, the client of its."""
+    assert len(coded_commands()) == 28
 
 
 def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
@@ -214,6 +224,7 @@ def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
         "voice audition",
         "node run",
         "task finished",
+        "spend",
     }
 
 

@@ -59,13 +59,14 @@ from tests.composition.support import TOKEN
 OTHER = "y" * 40
 
 
-def test_the_application_serves_the_forty_nine_routes_of_the_adrs_and_its_schema(
+def test_the_application_serves_the_fifty_routes_of_the_adrs_and_its_schema(
     app: FastAPI,
 ) -> None:
     """Twelve routes (ADR 0023 §6), the two of ADR 0024 §5, the one of ADR 0025 §4, the one of
     ADR 0028 §8, the one of ADR 0032 §13, the three of ADR 0034 §9, the five of ADR 0037 §4,
     the three of ADR 0038 §11, the one of ADR 0039 §2, the eight of ADR 0043 §5, the eleven of
-    ADR 0044 and the one of ADR 0049 (``GET /tasks/finished``), plus ``/openapi.json``,
+    ADR 0044, the one of ADR 0049 (``GET /tasks/finished``) and the one of ADR 0057 §9
+    (``GET /spend``, M14.1), plus ``/openapi.json``,
     which the loop below proves is behind the token like everything else — the schema of the API
     is not a page, and the pages of a surface are not in it: a browser cannot send a header,
     and what reaches them is a cookie."""
@@ -76,7 +77,8 @@ def test_the_application_serves_the_forty_nine_routes_of_the_adrs_and_its_schema
     assert ("GET", "/companion/") in paths
     assert ("GET", "/console/") in paths
     assert ("GET", "/tasks/finished") in paths
-    assert len(paths) == 50
+    assert ("GET", "/spend") in paths
+    assert len(paths) == 51
     assert not {path for _, path in paths} & {"/docs", "/redoc"}
 
 

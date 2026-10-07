@@ -1,0 +1,36 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M14.1 (GETTING_STARTED §23, passo 6): il nodo che tace a metà.",
+    "Una risposta lunga, perché il PC sia ancora nella chiamata quando lo script dice di premere",
+    "Ctrl-C: \"max_output_tokens\" 8192, e il caso peggiore sale a 0,232768 $. Il testo che il",
+    "modello scrive è una descrizione, e non contiene istruzioni per nessuno (decisione 17 della",
+    "review di M14.1, la lezione della decisione Q di §21): chi legge il risultato non ha niente da fare.",
+    "Il Core prenota il caso peggiore alla presa; il nodo che tace lascia la prenotazione aperta, e",
+    "ela spend la conta fino al primo del mese dopo (ADR 0057).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti."
+  ],
+  "goal": "una risposta lunga del modello economico",
+  "steps": [
+    {
+      "id": "3f0d1a44-5b6c-4d7e-8f90-000000000004",
+      "goal": "una descrizione lunga della storia dei registri contabili",
+      "required_capabilities": [
+        "model.complete"
+      ],
+      "arguments": {
+        "input": "Descrivi in modo lungo e dettagliato, in almeno tremila parole, la storia dei registri contabili: dalle tavolette d'argilla alla partita doppia, ai registri a sola aggiunta dei sistemi informatici.",
+        "purpose": "la risposta lunga nella prova di M14.1",
+        "task_type": "routine",
+        "parameters": {
+          "max_output_tokens": 8192
+        }
+      },
+      "risk": "MEDIUM",
+      "expected_result": "un testo lungo, in italiano",
+      "success_conditions": [
+        "model.answered",
+        "model.routed_as_asked"
+      ]
+    }
+  ]
+}

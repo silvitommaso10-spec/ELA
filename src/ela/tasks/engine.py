@@ -232,14 +232,23 @@ OPERATIONS: Final[Mapping[str, Operation]] = MappingProxyType(
             Operation(
                 "recover", frozenset({_S.EXECUTING}), _S.FAILED, AuditEventType.TASK_FAILED, None
             ),
+            Operation(
+                "deny_by_cap",
+                frozenset({_S.EXECUTING}),
+                _S.DENIED,
+                AuditEventType.TASK_DENIED,
+                "decision_id",
+            ),
         )
     }
 )
-"""The operations that change state, as decided in ADR 0008 §3, in the order of its table.
+"""The operations that change state, as decided in ADR 0008 §3, in the order of its table — and
+then the rows a later ADR added, in the order of theirs: ``deny_by_cap`` (ADR 0057 §7).
 
 ``create``, ``plan`` and ``heartbeat`` are not here: they do not move the task through the
 transition table. ``deny`` is two rows because it records two different facts: an approval the
-user rejected (``APPROVAL_RESOLVED``) and a decision of the Guardian (``TASK_DENIED``).
+user rejected (``APPROVAL_RESOLVED``) and a decision of the Guardian (``TASK_DENIED``). The third
+denial, the cap's, is an operation of its own: what it stops is a call the Guardian let through.
 """
 
 STEP_OPERATIONS: Final[Mapping[str, StepOperation]] = MappingProxyType(
@@ -711,6 +720,39 @@ class TaskEngine:
                 payload={"capability_id": decision.capability_id},
             )
         raise TaskEngineError(task_id, "deny needs exactly one of decision and approval")
+
+    async def deny_by_cap(
+        self,
+        task_id: TaskId,
+        *,
+        decision: PermissionDecision,
+        reason: str,
+        payload: Payload,
+    ) -> Task:
+        """→ DENIED by the month's spending cap (§30; M14.1, ADR 0057).
+
+        ``decision`` is the Guardian's, which **let the call through**: the cap is not a permission
+        and a "yes" does not raise it (decision G), so the denial comes after an ``ALLOWED`` — or,
+        before a question, after a ``REQUIRES_APPROVAL`` that a yes could not make pass (review
+        decision 7) — and names it. A ``DENIED`` is ``deny_by_decision``'s, and refused here.
+        ``reason`` is the sentence that names the line of the ``.env``; ``payload`` the numbers it
+        was judged on.
+        """
+        if decision.task_id != task_id:
+            raise TaskEngineError(task_id, f"the decision is about task {decision.task_id}")
+        if decision.outcome is PermissionOutcome.DENIED:
+            raise TaskEngineError(
+                task_id, "a Guardian's no is deny_by_decision: the cap stops what it let through"
+            )
+        return await self._apply(
+            OPERATIONS["deny_by_cap"],
+            task_id,
+            actor=self._actor,
+            reason=reason,
+            key=decision.id,
+            decision_id=decision.id,
+            payload={"capability_id": decision.capability_id, **payload},
+        )
 
     async def queue(self, task_id: TaskId, *, reason: str = "") -> Task:
         """PLANNING/EXECUTING → QUEUED: ready to run, or interrupted and to be resumed (§15)."""

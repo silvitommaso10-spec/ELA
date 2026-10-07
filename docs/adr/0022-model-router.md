@@ -3,6 +3,7 @@
 - **Stato:** Accettata. §8 esteso dalla review di M7.3: una tabella di rotte **vuota** è
   rifiutata quando la politica viene costruita, con `routing.empty_routes` — il quarto codice di
   §5. Il resto dell'ADR non cambia.
+  **ADR 0057 §3 e §11** (M14.1): «Nessun budget» non è più vero — l'usage si somma nel libro derivato e si confronta con il tetto prima della chiamata; i profili puntano ai modelli 5.5.
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §25, §26, §29, §32, §33, §57
 - **Milestone:** M7.3 (decisioni dell'utente del 2026-09-07: **3a**, **4a**, **5a**, **6a**,

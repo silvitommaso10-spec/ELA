@@ -12,9 +12,9 @@ from ela.providers.anthropic.models import (
     DEFAULT_MODEL,
     HAIKU_4_5,
     MODELS,
-    OPUS_5,
+    OPUS_5_5,
     PROFILES,
-    SONNET_5,
+    SONNET_5_5,
     model_for_hint,
 )
 from ela.providers.anthropic.payload import ALLOWED_PARAMETERS
@@ -25,18 +25,18 @@ def test_no_hint_is_the_default_model() -> None:
     """Since M7.3 the router names a profile on every call it makes, so this is what answers a
     request built outside that path (ADR 0022 §8): the balanced model, not a configured one."""
     model = model_for_hint(None)
-    assert model is not None and model.id == SONNET_5 == DEFAULT_MODEL
+    assert model is not None and model.id == SONNET_5_5 == DEFAULT_MODEL
 
 
 @pytest.mark.parametrize(
     ("hint", "expected"),
     [
-        ("reasoning", OPUS_5),
-        ("planning", OPUS_5),
-        ("coding", OPUS_5),
-        ("quality", OPUS_5),
-        ("analysis", OPUS_5),
-        ("balanced", SONNET_5),
+        ("reasoning", OPUS_5_5),
+        ("planning", OPUS_5_5),
+        ("coding", OPUS_5_5),
+        ("quality", OPUS_5_5),
+        ("analysis", OPUS_5_5),
+        ("balanced", SONNET_5_5),
         ("classification", HAIKU_4_5),
         ("extraction", HAIKU_4_5),
         ("cheap", HAIKU_4_5),
@@ -50,8 +50,8 @@ def test_the_profiles_of_the_spec(hint: str, expected: str) -> None:
 
 
 def test_a_model_id_is_accepted_as_itself() -> None:
-    model = model_for_hint(OPUS_5)
-    assert model is not None and model.id == OPUS_5
+    model = model_for_hint(OPUS_5_5)
+    assert model is not None and model.id == OPUS_5_5
 
 
 def test_an_unknown_hint_resolves_to_nothing() -> None:
@@ -70,7 +70,7 @@ async def test_the_body_of_a_plain_request() -> None:
     assert client is not None
     assert client.messages.calls == [
         {
-            "model": SONNET_5,
+            "model": SONNET_5_5,
             "max_tokens": 4096,
             "messages": [{"role": "user", "content": "ciao"}],
         }

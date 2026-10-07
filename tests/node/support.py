@@ -19,7 +19,7 @@ import httpx
 from ela.api.app import FAILURES
 from ela.api.security import unauthorized
 from ela.composition import NodeConfig, NodeFilesystemSettings, NodeSettings, build_node
-from ela.composition.node import NodeWorld
+from ela.composition.node import ACL_SINCE, NodeWorld
 from ela.domain import ProviderUsage
 from ela.node import Node, NodeClient, open_node_client
 from ela.ports import StopPoint, WireCode
@@ -66,6 +66,10 @@ def world(
 
     And the power source, which every heartbeat reads (M12.3c): left to the machine, a beat would
     carry ``AC`` at the desk, ``BATTERY`` on the train and ``UNKNOWN`` on the Ubuntu job.
+
+    And the interpreter, named as the first one a Windows node accepts (M14.1): left to the
+    machine, a world of Windows would be built on a runner's Python and refused on a 3.12.3. The
+    refusal itself is proved where the version is the subject, in ``test_build_node.py``.
     """
     return build_node(
         config(directory, fs_root=fs_root, **node),
@@ -74,6 +78,7 @@ def world(
         speech_online=FakeSpeech(),
         system=system,
         power=FakePower(),
+        python_version=ACL_SINCE,
     )
 
 

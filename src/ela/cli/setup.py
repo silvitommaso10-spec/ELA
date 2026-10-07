@@ -80,6 +80,7 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_ANTHROPIC_MAX_OUTPUT_TOKENS", "4096"),
     ("ELA_MODEL_ROUTES", "the table of spec §25"),
     ("ELA_MODEL_DEFAULT_ROUTE", "the default route of spec §25"),
+    ("ELA_SPENDING_CAP_USD", ""),
     ("ELA_AUTHORIZATION_TTL_SECONDS", "3600"),
     ("ELA_APPROVAL_TTL_SECONDS", "86400"),
     ("ELA_TASK_ORPHAN_AFTER_SECONDS", "900"),

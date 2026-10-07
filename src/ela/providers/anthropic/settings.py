@@ -66,7 +66,9 @@ class AnthropicSettings(BaseSettings):
     )
 
     anthropic_max_retries: Annotated[int, Field(ge=0, le=MAX_RETRIES_CEILING)] = DEFAULT_MAX_RETRIES
-    """How many times a *retryable* failure is tried again. ``0`` disables retrying."""
+    """How many times a request the API **did not run** is sent again: a ``429`` or a ``529``, and
+    nothing else since M14.1 (ADR 0057 §10) — an outcome that may have been paid is not paid twice.
+    ``0`` disables retrying."""
 
     anthropic_max_output_tokens: Annotated[int, Field(gt=0)] = DEFAULT_MAX_OUTPUT_TOKENS
     """The output budget of a call that does not ask for one."""

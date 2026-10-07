@@ -55,6 +55,7 @@ INVOCATIONS: dict[str, tuple[str, ...]] = {
     "node enroll": ("node", "enroll", "--privacy", "TRUSTED"),
     "node revoke": ("node", "revoke", MISSING),
     "provider list": ("provider", "list"),
+    "spend": ("spend",),
 }
 """One valid invocation per command that talks to ELA — valid, so that what is being tested is
 how it *ends* and not that its arguments were wrong. ``init`` and ``serve`` are not here: they

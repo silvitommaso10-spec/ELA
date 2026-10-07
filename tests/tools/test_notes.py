@@ -29,7 +29,7 @@ from ela.tools import (
     WriteNoteTool,
     is_relative_note_path,
 )
-from tests.tools.support import allowed
+from tests.tools.support import PERMISSIONS_BITE, allowed
 
 NOTE = "workspace/notes/briefing.md"
 BODY = "# Briefing\n\nTre punti.\n"
@@ -248,7 +248,7 @@ async def test_a_target_that_is_not_a_regular_file_is_an_io_error(
     assert "is not a regular file" in message
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o500) does not deny this user: it is root")
 async def test_a_read_only_directory_is_an_io_error(tool: WriteNoteTool, root: Path) -> None:
     folder = root / "workspace" / "notes"
     folder.mkdir(parents=True)

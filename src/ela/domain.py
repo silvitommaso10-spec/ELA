@@ -96,6 +96,7 @@ __all__ = [
     "IntentId",
     "JsonMapping",
     "JsonValue",
+    "Ledger",
     "ModelRoute",
     "NAME_MAX_LENGTH",
     "NetworkKind",
@@ -144,6 +145,7 @@ __all__ = [
     "TaskStep",
     "UserIntent",
     "UtcDatetime",
+    "WorstCase",
     "is_text",
     "listed",
     "visible",
@@ -745,7 +747,14 @@ class DeviceCapability(_DomainModel):
 
 
 class ProviderUsage(_DomainModel):
-    """What one provider call consumed (§32, "provider usage metadata")."""
+    """What one provider call consumed (§32, "provider usage metadata").
+
+    ``cost`` is ``None`` when nobody knows it: a model with no price, and — since M14.1 — a call
+    that left this machine and failed in a way that does not say whether the provider ran it (a
+    timeout, a dropped connection, a ``5xx`` that is not a ``529``, an answer that cannot be read).
+    The zero tokens such a call reports are the tokens it *reported*; the zero dollars would have
+    been a number nobody measured (ADR 0057).
+    """
 
     input_tokens: Annotated[int, Field(ge=0)]
     output_tokens: Annotated[int, Field(ge=0)]
@@ -753,6 +762,47 @@ class ProviderUsage(_DomainModel):
     cost: Annotated[Decimal, Field(ge=0)] | None = None
     currency: str | None = None
     latency_ms: Annotated[int, Field(ge=0)] | None = None
+    sent: bool = True
+    """Whether the request left this machine (M14.1, ADR 0057; review decision 14).
+
+    Written by whoever knows: the adapter says ``False`` for the failures it finds before the
+    network, and a node that refuses to spend beyond what the Core reserved says ``False`` too.
+    The default is ``True``, so a writer that does not say counts as one that sent (§33): the
+    month's ledger reads this fact, never a list of codes.
+    """
+
+
+class WorstCase(_DomainModel):
+    """The most one call can cost, worked out before it is made (§30; M14.1, ADR 0057).
+
+    An upper bound and never an average: ``output_tokens`` is the ``max_tokens`` the payload
+    carries, and ``input_tokens`` is the rest of the model's context window — input and output
+    billed together fit in the window, and the API refuses an input that alone does not. ``amount``
+    is ``None`` for a model with no price, which with a cap is a call that is not made: ``None``
+    is not ``0``. ``model`` is the provider's name for the model, as the result will report it.
+    """
+
+    amount: Annotated[Decimal, Field(ge=0)] | None
+    currency: str | None = None
+    model: str
+    input_tokens: Annotated[int, Field(ge=0)]
+    output_tokens: Annotated[int, Field(ge=0)]
+
+
+class Ledger(_DomainModel):
+    """The month's spending, derived from the written facts at the moment it is read (ADR 0057).
+
+    ``spent`` is the cost of the calls that closed with one; ``reserved`` is the worst case of
+    the calls that did not. ``open`` counts the reservations nothing closed — in flight, or ended
+    without an outcome, which stay open until the month turns —, ``unknown`` the ones closed by an
+    outcome that left this machine and has no cost. Never a counter: the same rows give the same
+    ledger, and nothing updates it.
+    """
+
+    spent: Annotated[Decimal, Field(ge=0)]
+    reserved: Annotated[Decimal, Field(ge=0)]
+    open: Annotated[int, Field(ge=0)] = 0
+    unknown: Annotated[int, Field(ge=0)] = 0
 
 
 class ErrorMetadata(_DomainModel):
@@ -1237,6 +1287,10 @@ class ProviderResult(_DomainModel):
     usage: ProviderUsage
     finish_reason: str | None = None
     error: ErrorMetadata | None = None
+    workspace: str | None = None
+    """Where the provider says the call was billed, when it says it (M14.1, ADR 0057): for Anthropic
+    the workspace the key belongs to, whose monthly limit is the second cap. It is kept in the
+    execution result and never in an audit event."""
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 
 
@@ -1276,7 +1330,27 @@ class ExecutionResult(_DomainModel):
     :attr:`AuditEvent.usage`.
     """
     duration_ms: Annotated[int, Field(ge=0)] | None = None
+    worst_case: WorstCase | None = None
+    """The reservation of a call that spends (§30; M14.1, ADR 0057): the most it can cost, on its
+    ``STARTED`` record and on nothing else. The record is written only if the month's cap admits
+    it, and it stays counted at this amount until an outcome closes it with a known cost."""
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
+
+    @model_validator(mode="after")
+    def _a_reservation_is_a_started_record(self) -> ExecutionResult:
+        if self.worst_case is None:
+            return self
+        if self.status is not ExecutionStatus.STARTED:
+            raise ValueError(
+                f"a worst case is the reservation of a call about to be made, and a result that "
+                f"ended {self.status.value} is not one (ADR 0057)"
+            )
+        if self.worst_case.amount is None:
+            raise ValueError(
+                "a reservation has an amount: a call whose worst case has none is a call the cap "
+                "does not let out (ADR 0057)"
+            )
+        return self
 
     @model_validator(mode="after")
     def _a_failure_says_why(self) -> ExecutionResult:

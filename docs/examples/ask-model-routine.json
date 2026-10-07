@@ -1,0 +1,31 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M14.1 (GETTING_STARTED §23, passi 4 e 5) per il profilo economico.",
+    "\"task_type\": \"routine\" è una delle tre voci economiche della tabella (spec §25): ELA la manda",
+    "a Haiku 4.5, con l'id fissato (ADR 0057). Il caso peggiore che la domanda nomina è 0,216384 $.",
+    "Al passo 4 passa sotto il tetto piccolo dove la stessa domanda a Opus 5.5 è negata; al passo 5",
+    "la prende il PC, che chiama con la sua chiave, e lo speso del mese sul Mac la conta.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti."
+  ],
+  "goal": "chiedere una cosa al modello economico",
+  "steps": [
+    {
+      "id": "3f0d1a44-5b6c-4d7e-8f90-000000000003",
+      "goal": "farsi dire in una riga a che cosa serve un tetto di spesa",
+      "required_capabilities": [
+        "model.complete"
+      ],
+      "arguments": {
+        "input": "In una riga: a che cosa serve un tetto di spesa mensile?",
+        "purpose": "il profilo economico nella prova di M14.1",
+        "task_type": "routine"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "una riga di testo, in italiano",
+      "success_conditions": [
+        "model.answered",
+        "model.routed_as_asked"
+      ]
+    }
+  ]
+}

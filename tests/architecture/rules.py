@@ -686,6 +686,13 @@ COMPLETE_METHOD = "complete"
 #: holding a provider would be reported, and a provider called through any other name is too.
 ENGINE_RECEIVERS = frozenset({"_engine"})
 
+#: Rules 60 and 61 (M14.1, ADR 0057): the method by which a tool says the most its call can cost,
+#: before the call. The cap reserves that amount on the ``STARTED`` record of ADR 0021 §1.
+WORST_CASE_METHOD = "worst_case"
+#: Rule 60's one door: the base class, whose ``worst_case`` is the default — ``None``, a tool that
+#: spends nothing — and whose two flags have no default at all (the registry refuses silence).
+BASE_TOOL_MODULE = Path("tools") / "base.py"
+
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
 TESTING_DIR = "testing"
@@ -1541,6 +1548,96 @@ def check_a_stop_arrives_per_call(pkg_root: Path) -> list[Violation]:
                     for member in node.body
                     if isinstance(member, ast.AnnAssign)
                     for stop in named(member.annotation)
+                )
+    return found
+
+
+def check_a_tool_that_spends_is_neither_repeated_nor_moved(pkg_root: Path) -> list[Violation]:
+    """Rule 60: a tool that says what its call can cost is not idempotent and not relocatable
+    (M14.1, ADR 0057).
+
+    The reservation of a call that spends *is* its ``STARTED`` record (ADR 0021 §1), and a tool
+    has one only if it cannot be run twice — ``idempotent = False`` — and is not moved to another
+    node when a claim lapses — ``relocatable = False`` (ADR 0048 §6). Either flag ``True`` and one
+    of the two roads, on the Core or at a node's claim, would run the call with no reservation and
+    nothing for the month's ledger to count.
+
+    Reported: a class under ``tools/`` that defines :data:`WORST_CASE_METHOD` in its body and does
+    not assign both flags ``False`` in the same body — the place a reader looks. The base class is
+    the door (:data:`BASE_TOOL_MODULE`): its ``worst_case`` answers ``None``, a tool that spends
+    nothing, and its flags are declared without a value.
+    """
+    rule = "a-tool-that-spends-is-neither-repeated-nor-moved"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root / TOOLS_DIR):
+        if path.relative_to(pkg_root) == BASE_TOOL_MODULE:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef) or not any(
+                isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef)
+                and member.name == WORST_CASE_METHOD
+                for member in node.body
+            ):
+                continue
+            false = {
+                target.id
+                for member in node.body
+                if isinstance(member, ast.Assign | ast.AnnAssign)
+                and isinstance(member.value, ast.Constant)
+                and member.value.value is False
+                for target in (
+                    member.targets if isinstance(member, ast.Assign) else [member.target]
+                )
+                if isinstance(target, ast.Name)
+            }
+            found.extend(
+                Violation(rule, name, f"{node.name}.{flag}", node.lineno)
+                for flag in ("idempotent", "relocatable")
+                if flag not in false
+            )
+    return found
+
+
+def check_who_calls_the_model_bounds_the_call(pkg_root: Path) -> list[Violation]:
+    """Rule 61: a class that calls ``<x>.complete(...)`` says what the call can cost (M14.1,
+    ADR 0057).
+
+    The cap holds only for a call whose worst case the gate can read before it leaves, and the gate
+    reads it from the tool. Rule 25 already keeps the call to one module; this rule keeps the
+    module honest about the money: whoever calls the provider defines ``worst_case`` in the same
+    class. The receiver of :data:`ENGINE_RECEIVERS` is the homonym of rule 25 — the Task Engine
+    closing a task — and is not a call to a model.
+
+    **It sees only a call to ``.complete(``** (review decision 15): a session of Claude Code,
+    which M14.3 brings, spends on the same key without calling it, and this rule is blind to it —
+    the cap of that road is M14.3's to write. Calls at module level are rule 25's.
+    """
+    rule = "who-calls-the-model-bounds-the-call"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            calls = [
+                call
+                for call in ast.walk(node)
+                if isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == COMPLETE_METHOD
+                and not _is_the_engine(call.func.value)
+            ]
+            bounded = any(
+                isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef)
+                and member.name == "worst_case"
+                for member in node.body
+            )
+            if calls and not bounded:
+                found.append(
+                    Violation(rule, name, f"{node.name}.{COMPLETE_METHOD}(", calls[0].lineno)
                 )
     return found
 
@@ -3372,6 +3469,10 @@ RULES: dict[str, Rule] = {
     "the-bell-rings-a-method": check_the_bell_rings_a_method,
     "only-the-engine-raises-a-stop": check_only_the_engine_raises_a_stop,
     "a-stop-arrives-per-call": check_a_stop_arrives_per_call,
+    "a-tool-that-spends-is-neither-repeated-nor-moved": (
+        check_a_tool_that_spends_is_neither_repeated_nor_moved
+    ),
+    "who-calls-the-model-bounds-the-call": check_who_calls_the_model_bounds_the_call,
 }
 
 
@@ -3797,6 +3898,39 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-stop-arrives-per-call", "STOP_TYPES", DETECTOR),
     Constant(
         "a-stop-arrives-per-call",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # a-tool-that-spends-is-neither-repeated-nor-moved (rule 60, M14.1)
+    Constant(
+        "a-tool-that-spends-is-neither-repeated-nor-moved",
+        "BASE_TOOL_MODULE",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0057",
+    ),
+    Constant("a-tool-that-spends-is-neither-repeated-nor-moved", "TOOLS_DIR", DETECTOR),
+    Constant("a-tool-that-spends-is-neither-repeated-nor-moved", "WORST_CASE_METHOD", DETECTOR),
+    Constant(
+        "a-tool-that-spends-is-neither-repeated-nor-moved",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # who-calls-the-model-bounds-the-call (rule 61, M14.1)
+    Constant("who-calls-the-model-bounds-the-call", "COMPLETE_METHOD", DETECTOR),
+    Constant(
+        "who-calls-the-model-bounds-the-call",
+        "ENGINE_RECEIVERS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0021 §5",
+    ),
+    Constant(
+        "who-calls-the-model-bounds-the-call",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

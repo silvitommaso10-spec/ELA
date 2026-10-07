@@ -70,6 +70,7 @@ from tests.executive.support import (
     world,
 )
 from tests.executive.test_executor_remote import answered
+from tests.executive.test_spending_gate import a_world
 from tests.permissions.support import CRITICAL, ECHO, GUARDED_ECHO, NOTE
 
 E = AuditEventType
@@ -404,6 +405,34 @@ async def guardian_says_no() -> Ended:
     return Ended(w, task.id, step.id, [])
 
 
+async def cap_says_no_here() -> Ended:
+    """No cap on the Core (M14.1, ADR 0057): the Guardian allowed, and the call that spends is
+    denied before its STARTED record, by the same run that would have made it."""
+    w = a_world(cap=None)
+    task, step = await w.running(ECHO.id)
+    assert (await w.execute(task.id, step.id)).task.state is TaskState.DENIED
+    return Ended(w, task.id, step.id, [])
+
+
+async def cap_says_no_at_the_claim() -> Ended:
+    """The cap at a node's claim: the offer is withdrawn and the node is sent nothing."""
+    w = a_world(cap=None)
+    task_id, step_id, offer = await handed(w)
+    with pytest.raises(AssignmentStateError):
+        await w.executor.begin(offer.id, offer.device_id)
+    return Ended(w, task_id, step_id, [])
+
+
+async def cap_says_no_before_asking() -> Ended:
+    """The question a yes could not make pass is not asked (M14.1, review decision 7)."""
+    w = a_world(cap=None)
+    task, step = await w.running(NOTE.id, requires_authorization=True)
+    execution = await w.execute(task.id, step.id)
+    assert execution.task.state is TaskState.DENIED
+    assert execution.approval is None
+    return Ended(w, task.id, step.id, [])
+
+
 async def fail_after_a_step_failed() -> Ended:
     w = world(failing=frozenset({ECHO.id}))
     task, (step,) = await w.queued(ECHO.id)
@@ -440,6 +469,9 @@ ROADS: Final = (
     Road("recover", "a STARTED record", StepState.FAILED, None, orphan_started),
     Road("recover", "an outcome past the point", StepState.COMPLETED, None, orphan_settled),
     Road("deny_by_decision", "being decided", StepState.CANCELLED, None, guardian_says_no),
+    Road("deny_by_cap", "being gated here", StepState.CANCELLED, None, cap_says_no_here),
+    Road("deny_by_cap", "being claimed", StepState.CANCELLED, None, cap_says_no_at_the_claim),
+    Road("deny_by_cap", "about to ask", StepState.CANCELLED, None, cap_says_no_before_asking),
     Road("fail", "none: the step failed first", None, None, fail_after_a_step_failed),
     Road("complete", "none: every step completed", None, None, complete),
 )

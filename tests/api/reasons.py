@@ -214,8 +214,13 @@ async def failed_before_the_act(w: World) -> Branch:
 
 
 async def failed_after_the_act(w: World) -> Branch:
-    """Row 4: the model asked on a machine without a key — the tool ran, and failed."""
-    task = await queued(w.client, example("ask-model.json"))
+    """Row 4: a gesture on a field the page does not have — the tool ran, and failed.
+
+    Until M14.1 this row was the model asked on a machine without a key; since the spending cap a
+    call that spends is denied before its question when it cannot be bounded (ADR 0057), and the
+    row needs a tool that does run. The page has no ``#non-esiste``: the example's own story."""
+    w.browser.page = FakePage(counts={"#non-esiste": 0})
+    task = await queued(w.client, example("browser-act-missing.json"))
     await run(w, task)
     await answer_the_question(w, task, "approve")
     return Branch(task, RunOutcome.FAILED, closes=True)

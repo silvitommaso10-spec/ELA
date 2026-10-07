@@ -77,6 +77,7 @@ from ela.domain import (
     TaskPlan,
     TaskState,
     TaskStep,
+    WorstCase,
 )
 
 __all__ = [
@@ -157,6 +158,7 @@ __all__ = [
     "PROVIDER_REFUSAL",
     "PROVIDER_REJECTED",
     "PROVIDER_SERVER_ERROR",
+    "PROVIDER_SPEND_LIMIT",
     "PROVIDER_TIMEOUT",
     "PROVIDER_UNAVAILABLE",
     "PROVIDER_UNKNOWN_MODEL",
@@ -192,6 +194,8 @@ __all__ = [
     "SPEECH_UNKNOWN_MODEL",
     "SPEECH_UNKNOWN_VOICE",
     "SPEECH_UNREACHABLE",
+    "SPENDING_OVER_RESERVATION",
+    "STARTED_ID",
     "ScreenCapturePort",
     "SiteUnreachable",
     "SpeechPort",
@@ -1144,6 +1148,19 @@ class ApprovalStore(Protocol):
         answers exactly one is recorded."""
 
 
+SPENDING_OVER_RESERVATION: Final = "spending.over_reservation"
+"""A node did not make a call that spends because its own worst case was more than the Core
+reserved (M14.1, ADR 0057): another output budget, another route, another price list — another
+commit. Not a cap of the node's: the node does not spend beyond what the Core decided. The call
+was not sent, and the result says so (``usage.sent`` false)."""
+
+STARTED_ID: Final = "started_id"
+"""Key of ``ExecutionResult.metadata`` on an outcome that settles a STARTED record (ADR 0021 §1):
+the id of that record, so the two rows of one run are one run and not two. Here since M14.1, with
+the port, because three packages read it — the executor that writes it, the store that finds what
+closes a reservation, and the month's ledger (ADR 0057)."""
+
+
 @runtime_checkable
 class ExecutionResultStore(Protocol):
     """Where what a tool produced is kept (§63; ADR 0015).
@@ -1177,6 +1194,29 @@ class ExecutionResultStore(Protocol):
         that cannot be run twice — the ``STARTED`` record written before it acted (ADR 0021 §1).
         The outcome names the record it settles in ``metadata["started_id"]``; a ``STARTED`` with
         no outcome is a run that was interrupted, never one to repeat.
+        """
+
+    async def spending(self, since: datetime, until: datetime) -> tuple[ExecutionResult, ...]:
+        """The reservations of a period and what closed them (M14.1, ADR 0057).
+
+        Every ``STARTED`` record with a ``worst_case`` created in ``[since, until)``, and every
+        result that names one of them in ``metadata["started_id"]``, wherever its own date falls:
+        the rows the month's ledger is derived from, and nothing else.
+        """
+
+    async def reserve(
+        self,
+        record: ExecutionResult,
+        since: datetime,
+        until: datetime,
+        admits: Callable[[tuple[ExecutionResult, ...]], bool],
+    ) -> bool:
+        """Add ``record`` only if ``admits`` says yes to the period's rows, as one operation.
+
+        Under the write lock from the read to the insert (M14.1, ADR 0057): the rows are those of
+        :meth:`spending`, read inside the same transaction, so two reservations that would each fit
+        alone cannot both be written on the same margin. ``False``, and nothing written, when
+        ``admits`` says no. The other refusals of :meth:`add` hold.
         """
 
     async def for_task(self, task_id: TaskId) -> tuple[ExecutionResult, ...]:
@@ -1516,6 +1556,17 @@ class ToolPort(Protocol):
         refused by :class:`~ela.tools.registry.ToolRegistry`, and one with no wait before its effect
         says ``here=None`` in so many words."""
 
+    async def worst_case(self, arguments: JsonMapping) -> WorstCase | ErrorMetadata | None:
+        """The most this call can cost, before it is made (§30; M14.1, ADR 0057).
+
+        ``None`` for a tool that spends nothing, which is every tool but the ones that call a paid
+        provider. A tool that spends answers with the same steps its run takes up to the network —
+        the arguments, the route, the provider — and an error when one of them refuses: a call
+        that cannot be bounded is a call that is not made. The executor asks it where the
+        ``STARTED`` record is born, on the Core; a node asks its own copy before running an order,
+        and does not spend beyond what the Core reserved.
+        """
+
     async def execute(
         self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
     ) -> ExecutionResult:
@@ -1659,6 +1710,16 @@ PROVIDER_TIMEOUT: Final = "provider.timeout"
 PROVIDER_REFUSAL: Final = "provider.refusal"
 """The model declined to answer. Not a fault: a fact about the request, worth remembering
 separately from a breakdown (§64) — hence a code of its own, and ``retryable`` false."""
+PROVIDER_SPEND_LIMIT: Final = "provider.spend_limit"
+"""The provider refused the request because one of its monthly spend limits is reached — the one
+the organization set in the console, which is the **second cap**, a workspace's, or the usage
+tier's cap (M14.1, ADR 0057). Never retried: it holds until the provider's month turns or somebody
+raises the limit. It does **not** say that ELA's count is wrong: the provider's month need not be
+ELA's, so the limit can be reached with ELA in order with its own cap. The reason names the limit,
+the Core adds what ELA counted of its cap, and the guide lists the causes (review of ``be7f131``).
+A name of its own instead of :data:`PROVIDER_BAD_REQUEST` and :data:`PROVIDER_RATE_LIMITED`, which
+is what it was until M14.1: named ``provider.workspace_limit`` until the console of 2026-10-07
+showed that the limit that holds is the organization's."""
 PROVIDER_NO_OUTPUT: Final = "provider.no_output"
 """The call succeeded and carries no text. Nothing was refused and nothing broke: an answer
 arrived and there is nothing in it (M7.2, ADR 0021 §5).
@@ -1686,14 +1747,16 @@ PROVIDER_ERROR_CODES: Final = frozenset(
         PROVIDER_TIMEOUT,
         PROVIDER_REFUSAL,
         PROVIDER_NO_OUTPUT,
+        PROVIDER_SPEND_LIMIT,
     }
 )
 """The closed vocabulary of ``ProviderResult.error.code`` (ADR 0020 §7).
 
 It lives here, with the port, and not inside an adapter, for the reason §26 exists: a caller must
 be able to tell an authentication failure from an overload without importing — or even knowing —
-the provider that produced it. A second provider reports the same fourteen codes or it is not
-interchangeable with the first.
+the provider that produced it. A second provider reports the same fifteen codes or it is not
+interchangeable with the first — fifteen since M14.1, which added :data:`PROVIDER_SPEND_LIMIT`
+(ADR 0057).
 
 Closed means closed: a caller that needs a name for a failure the vocabulary does not have adds
 it *here*, with an ADR, and never coins one of its own next to the code that raises it. A code
@@ -1729,6 +1792,16 @@ class ModelProvider(Protocol):
 
     async def complete(self, request: ProviderRequest) -> ProviderResult:
         """Answer ``request``; a failure is a result with ``error`` set, not an exception."""
+
+    async def worst_case(self, request: ProviderRequest) -> WorstCase | ErrorMetadata:
+        """The most ``request`` can cost, worked out without the network (§30; M14.1, ADR 0057).
+
+        Computed with the functions that build the call — the model ``complete`` would choose and
+        the output budget the payload would carry —, never with a second estimate. An error when
+        the request could not be made at all, with the code ``complete`` would answer; never an
+        exception, like ``complete``. A model with no price is a :class:`~ela.domain.WorstCase`
+        with no amount.
+        """
 
 
 @runtime_checkable

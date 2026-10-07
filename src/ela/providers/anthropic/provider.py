@@ -12,8 +12,14 @@ and appear nowhere else — not in a message, not in ``details``, not in a log. 
 failure is a status code, an error *type*, a request id and a count of attempts (§57).
 
 Retrying is done here rather than by the SDK (``max_retries=0`` on the client, ADR 0020 §8): the
-rule "again on 429 and 5xx, never on 4xx" is a rule of ELA, and a rule that lives inside a client
-nobody can observe is a rule no test can hold to account.
+rule is a rule of ELA, and a rule that lives inside a client nobody can observe is a rule no test
+can hold to account. Since M14.1 it is "again only on what the API did not run" — the ``429`` and
+the ``529`` —: a timeout, a dropped connection or another ``5xx`` may come after the work was done
+and paid, and is not paid twice (ADR 0057, revising ADR 0020 §8).
+
+**What a call cost is said by the one who knows** (ADR 0057): the usage says whether the request
+left this machine (``sent``), and a failure after the network whose outcome nobody knows has no
+cost — ``None``, not a zero nobody measured. A cap reads those two facts, never a list of codes.
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ from ela.domain import (
     ProviderResultId,
     ProviderStatus,
     ProviderUsage,
+    WorstCase,
 )
 from ela.ports import (
     PROVIDER_REFUSAL,
@@ -46,7 +53,7 @@ from ela.ports import (
 from ela.providers.anthropic.errors import Failure, UnsupportedRequestError, classify
 from ela.providers.anthropic.models import Model, model_for_hint
 from ela.providers.anthropic.payload import build_payload
-from ela.providers.anthropic.pricing import CURRENCY, estimate_cost
+from ela.providers.anthropic.pricing import CURRENCY, estimate_cost, worst_cost
 from ela.providers.anthropic.settings import AnthropicSettings
 
 __all__ = ["BACKOFF_BASE_SECONDS", "BACKOFF_CAP_SECONDS", "PROVIDER_NAME", "AnthropicProvider"]
@@ -62,6 +69,12 @@ clients, ELA is one client, and a delay a test can predict is a delay a test can
 
 REFUSAL: Final = "refusal"
 TEXT_BLOCK: Final = "text"
+
+_NO_KEY: Final = Failure(
+    PROVIDER_UNAVAILABLE, "no API key configured (ELA_ANTHROPIC_API_KEY)", retryable=False
+)
+"""What an adapter without a key answers to ``complete`` and to ``worst_case``, before the network
+and in the same words (ADR 0020 §2)."""
 
 Sleep = Callable[[float], Awaitable[None]]
 Monotonic = Callable[[], float]
@@ -112,20 +125,46 @@ class AnthropicProvider:
         started = self._monotonic()
         client = self._client
         if client is None:
-            unusable = Failure(
-                PROVIDER_UNAVAILABLE,
-                "no API key configured (ELA_ANTHROPIC_API_KEY)",
-                retryable=False,
-            )
-            return self._failed(request, unusable, model="", started=started, attempts=0)
+            return self._failed(request, _NO_KEY, model="", started=started, attempts=0, sent=False)
         try:
             model = self._model_for(request)
             payload = build_payload(request, model, self._settings.anthropic_max_output_tokens)
         except UnsupportedRequestError as refused:
             return self._failed(
-                request, refused.failure, model=refused.model, started=started, attempts=0
+                request,
+                refused.failure,
+                model=refused.model,
+                started=started,
+                attempts=0,
+                sent=False,
             )
         return await self._call(client, request, model, payload, started)
+
+    async def worst_case(self, request: ProviderRequest) -> WorstCase | ErrorMetadata:
+        """The most ``request`` can cost: the model and the ``max_tokens`` of the payload that
+        ``complete`` would send, built by the same function, and that model's price (ADR 0057).
+
+        Nothing leaves this machine, and a request ``complete`` would refuse before the network is
+        refused here with the same error, in the same order — no key first: a provider that cannot
+        make the call does not bound it, and the gate does not let it out (the contract of
+        ``tests/contracts/test_model_provider.py``).
+        """
+        if self._client is None:
+            return self._error(_NO_KEY, model="", attempts=0)
+        try:
+            model = self._model_for(request)
+            payload = build_payload(request, model, self._settings.anthropic_max_output_tokens)
+        except UnsupportedRequestError as refused:
+            return self._error(refused.failure, model=refused.model, attempts=0)
+        output_tokens: int = payload["max_tokens"]
+        amount = worst_cost(model, output_tokens=output_tokens)
+        return WorstCase(
+            amount=amount,
+            currency=None if amount is None else CURRENCY,
+            model=model.id,
+            input_tokens=model.context_window - output_tokens,
+            output_tokens=output_tokens,
+        )
 
     def _model_for(self, request: ProviderRequest) -> Model:
         model = model_for_hint(request.model_hint)
@@ -147,7 +186,11 @@ class AnthropicProvider:
         payload: dict[str, Any],
         started: float,
     ) -> ProviderResult:
-        """One call, retried while the failure is retryable and attempts are left (ADR 0020 §8)."""
+        """One call, retried while the API did not run it and attempts are left (ADR 0057).
+
+        ``retryable`` is the nature of a failure; whether to try again is also whether the first
+        try may have been paid: only a failure the API turned down before running it (``unrun``)
+        is tried again."""
         attempts = self._settings.anthropic_max_retries + 1
         attempt = 0
         while True:
@@ -156,7 +199,7 @@ class AnthropicProvider:
                 answer = await client.messages.create(**payload)
             except anthropic.APIError as exc:
                 failure = classify(exc)
-                if not (failure.retryable and attempt < attempts):
+                if not (failure.retryable and failure.unrun and attempt < attempts):
                     return self._failed(
                         request, failure, model=model.id, started=started, attempts=attempt
                     )
@@ -206,6 +249,7 @@ class AnthropicProvider:
             usage=usage,
             finish_reason=answer.stop_reason,
             error=error,
+            workspace=self._workspace_of(answer),
             metadata=self._metadata(attempts, self._request_id_of(answer)),
         )
 
@@ -218,6 +262,18 @@ class AnthropicProvider:
         """
         request_id = getattr(answer, "_request_id", None)
         return request_id if isinstance(request_id, str) else None
+
+    @staticmethod
+    def _workspace_of(answer: Message) -> str | None:
+        """The ``anthropic-workspace-id`` header the SDK attaches to a parsed response, when there
+        is one (M14.1, review decision 12): the workspace that holds ELA's keys together, whose
+        spend in the console is ELA's. The second cap is the organization's, over every key.
+
+        Set by the SDK next to ``_request_id``, from the same response; a message that never came
+        from an HTTP response has none.
+        """
+        workspace = getattr(answer, "_workspace_id", None)
+        return workspace if isinstance(workspace, str) else None
 
     @staticmethod
     def _refusal_message(answer: Message) -> str:
@@ -240,8 +296,14 @@ class AnthropicProvider:
         model: str,
         started: float,
         attempts: int,
+        sent: bool = True,
     ) -> ProviderResult:
-        """A result that carries a failure: no output, real latency, no tokens spent."""
+        """A result that carries a failure: no output, real latency, no tokens reported.
+
+        ``sent`` is ``False`` for the failures found before the network. After it, the cost is
+        zero only for a request the API turned down before running it; for the others it is
+        ``None``, because nobody knows (ADR 0057, revising ADR 0020 §9).
+        """
         return ProviderResult(
             id=ProviderResultId(self._ids.new_uuid()),
             created_at=self._clock.now(),
@@ -250,7 +312,13 @@ class AnthropicProvider:
             model=model,
             output="",
             usage=self._usage(
-                model, input_tokens=0, output_tokens=0, cached_input_tokens=None, started=started
+                model,
+                input_tokens=0,
+                output_tokens=0,
+                cached_input_tokens=None,
+                started=started,
+                sent=sent,
+                known=not sent or failure.unrun,
             ),
             error=self._error(failure, model=model, attempts=attempts),
             metadata=self._metadata(attempts, failure.request_id),
@@ -264,13 +332,22 @@ class AnthropicProvider:
         output_tokens: int,
         cached_input_tokens: int | None,
         started: float,
+        sent: bool = True,
+        known: bool = True,
     ) -> ProviderUsage:
-        """Tokens, estimated cost and how long the whole call took, retries included."""
-        cost = estimate_cost(
-            model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_input_tokens=cached_input_tokens,
+        """Tokens, estimated cost and how long the whole call took, retries included.
+
+        ``known`` is ``False`` for a failure whose outcome nobody knows: the cost is then ``None``.
+        """
+        cost = (
+            estimate_cost(
+                model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_input_tokens=cached_input_tokens,
+            )
+            if known
+            else None
         )
         return ProviderUsage(
             input_tokens=input_tokens,
@@ -279,6 +356,7 @@ class AnthropicProvider:
             cost=cost,
             currency=None if cost is None else CURRENCY,
             latency_ms=self._elapsed_ms(started),
+            sent=sent,
         )
 
     def _elapsed_ms(self, started: float) -> int:

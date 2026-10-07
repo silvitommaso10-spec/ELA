@@ -23,6 +23,8 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<ip tailnet del Mac>` | l'indirizzo del Mac sulla tailnet | `tailscale ip -4`, sul Mac (§12) |
 | `<nome della voce>` | una voce SAPI 5 installata sul PC | l'elenco del passo 3 di §12: sul PC di M12.4, `Microsoft Elsa Desktop` |
 | `<chiave del modello del PC>` | la chiave Anthropic del nodo, mai quella del Core | la console Anthropic (§12, passo 4) |
+| `<chiave del modello del Mac>` | la chiave Anthropic del Core, nella stessa workspace di quella del PC | la console Anthropic (§9, §23) |
+| `<tetto in dollari>` | quanto il mese può spendere sulla chiave del modello, sotto il limite mensile dell'organizzazione | lo decidi tu (§9, §23) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
 | `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
@@ -471,9 +473,21 @@ te, il JSON è per uno script.
 
 C'è un secondo esempio, [`examples/ask-model.json`](examples/ask-model.json): un piano con un solo
 step `model.complete`, cioè una domanda a un modello. Si usa come il primo — `task plan`, `task
-run`, il consenso, `task run` — e la risposta si legge con `ela task results`. Senza chiave lo
-step fallisce con `provider.unavailable` **senza toccare la rete**, che è il comportamento
-dichiarato del provider: per dargliene una, `ELA_ANTHROPIC_API_KEY` nel `.env`.
+run`, il consenso, `task run` — e la risposta si legge con `ela task results`.
+
+**Da M14.1 una chiamata che spende parte solo sotto un tetto mensile** ([ADR 0057](adr/0057-spending-cap.md)).
+Senza la riga del tetto lo step è negato **prima della domanda**, e la ragione nomina la riga; con il tetto e senza
+chiave è negato perché non si può limitare, `provider.unavailable`, **senza toccare la rete**. Per farlo girare, due
+righe nel `.env` e `ela serve` riavviato:
+
+```
+ELA_ANTHROPIC_API_KEY=<chiave del modello del Mac>
+ELA_SPENDING_CAP_USD=<tetto in dollari>
+```
+
+Il tetto sta **sotto** il limite mensile dell'organizzazione che imposti nella console di Anthropic, nella pagina
+Billing: quello copre ogni chiave, anche ciò che spende fuori da ELA. La domanda di `ask-model.json` dice quanto può costare la chiamata — il caso peggiore,
+4,065536 $ su Opus 5.5 — e quanto resta nel mese; `uv run ela spend` dice dove sei. Tutto il resto, con il PC, è §23.
 
 Un secondo step che salvasse la risposta in una nota non è ancora esprimibile: gli argomenti di
 uno step stanno nel piano, e nessun dato passa da uno step al successivo (ADR 0018 §6). È il primo
@@ -717,8 +731,8 @@ ELA_ANTHROPIC_API_KEY=<chiave del modello del PC>
 Get-Content "$HOME\ELA\.env"
 ```
 
-Nella prova il file è stato scritto **senza** la terza riga, perché su nessuna delle due macchine c'è
-ancora una chiave del modello:
+Nella prova di M12.4 il file è stato scritto **senza** la terza riga, perché su nessuna delle due macchine
+c'era ancora una chiave del modello (da M14.1 c'è, §23):
 
 ```
 ELA_NODE_CORE_URL=http://100.76.92.39:8351
@@ -734,7 +748,10 @@ Da sapere prima di andare avanti:
 - **Nessun `ELA_NODE_PERFORMANCE`** e nessun tratto: chi parla lo decide ciò che le macchine
   leggono di sé, non una dichiarazione (passo 6).
 - **La chiave è del PC** e non viaggia mai con il lavoro: il Core manda la chiamata, il nodo usa la
-  sua. Il file sta in `$HOME\ELA` con i permessi della cartella del profilo — lo leggono i processi
+  sua. Da M14.1 sta nella **stessa workspace** della chiave del Mac — la workspace tiene insieme le due chiavi di ELA,
+  e la sua spesa nella console è quella di ELA —, sotto il limite mensile dell'organizzazione, e il PC **non ha un
+  tetto suo**: `ELA_SPENDING_CAP_USD` è una riga del Core, e il nodo spende solo ciò che il Core gli ha
+  prenotato con l'ordine (§23). Il file sta in `$HOME\ELA` con i permessi della cartella del profilo — lo leggono i processi
   del tuo utente, lo stesso confine del segreto del nodo.
 - **Da M13.3, una riga facoltativa: `ELA_FS_ROOT`**, la cartella in cui il nodo può leggere e scrivere
   per `fs.read` e `fs.write` (ADR 0048 §7). Sul nodo è **sola** — niente `ELA_FS_SCOPE`: lo scope resta
@@ -934,7 +951,9 @@ nodo si riavvia con `uv run python -m ela.cli node run`.
 
 **Che cosa ne è stato del task interrotto non è stato letto** (2026-09-17): la lettura è stata
 saltata durante la prova. Per il Core è un nodo che ha taciuto, e l'assegnazione scade — ma qui non
-c'è l'output che lo mostra.
+c'è l'output che lo mostra. ***Letto il 2026-10-07***, con la prova a mano di M14.1 (§23, passo 6):
+`Ctrl-C` sul nodo del PC a metà chiamata, la presa scaduta in 125 secondi, e il task `FAILED` con
+`execution.interrupted`, non rieseguito.
 
 ### 8. Le prove negative
 
@@ -970,9 +989,11 @@ perché il verifier della nota rileggerebbe la workspace del Mac, dove il PC non
 Aveva più punti del Mac e non è stato scelto. Il consenso della nota si nega con `ela task deny`.
 
 **Una tabella di rotte diversa fa fallire la verifica** — **non eseguita il 2026-09-17**, perché non
-c'è ancora una chiave del modello né sul Mac né sul PC, e senza chiave `model.complete` fallisce
-prima della verifica con `provider.unavailable`. Quando la chiave ci sarà: ferma il nodo con
-`Ctrl-C`, aggiungi al `.env` del PC una riga che il Mac non ha, e riavvialo:
+c'era ancora una chiave del modello né sul Mac né sul PC, e senza chiave `model.complete` fallisce
+prima della verifica con `provider.unavailable`. **Da M14.1 è il passo 7 di §23**, con le chiavi e con lo
+script, ***ed è passata il 2026-10-07*** sulle due macchine: il risultato del PC `SUCCEEDED` sul nodo, e il task
+`FAILED` con `model.routed_as_asked (model.misrouted)`. Qui sotto i comandi a mano. Il Core prenota il caso peggiore di Opus 5.5, la sua rotta; il PC chiama Haiku, che
+ci sta dentro. Ferma il nodo con `Ctrl-C`, aggiungi al `.env` del PC una riga che il Mac non ha, e riavvialo:
 
 ```powershell
 [IO.File]::AppendAllText("$HOME\ELA\.env", "`nELA_MODEL_ROUTES={""reasoning"": {""providers"": [""anthropic""], ""profile"": ""cheap""}}`n")
@@ -3830,6 +3851,603 @@ grep -c '^ELA_ELEVENLABS_CANDIDATES=' .env
 **Che cosa si deve vedere**: `1`. Un altro numero — `0`, o `2` dopo un secondo `sed` — si guarda con `grep -n` e si
 corregge a mano. Poi riavvia `ela serve`, e `uv run ela voice` elenca le sei, con `yes` accanto a quella che usi, e
 senza la riga del catalogo vuoto.
+
+## 23. Il tetto di spesa sulla chiave del modello: la prova a mano di M14.1
+
+> **Scritta con la SPEC del 2026-10-06** (`milestones/M14.1.md`, «La prova a mano») e **allineata con
+> l'implementazione** il 2026-10-06: le domande dei quattro piani, con il caso peggiore che i passi 4–7 si aspettano,
+> le fa la suite (`tests/api/test_examples.py`), e `tests/docs/test_prova_m14_1.py` tiene lo script allineato a questa
+> sezione. **Riallineata con la console vera il 2026-10-07**, e corretta lo stesso giorno: il secondo tetto è il limite
+> mensile dell'organizzazione, non quello della workspace, e il mese di ELA resta dichiarato (M14.1, «Le decisioni del
+> 2026-10-07»). La si fa sul Mac e sul PC,
+> sul branch di M14.1, con lo script `scripts/prova_m14_1.py`. **Fatta da Tommaso il 2026-10-07 sul branch**, a
+> `845830c`, sul Mac e sul PC: passata, 45 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO
+> (`~/Downloads/prova-m14.1-20261007-213354.txt`); [ADR 0057](adr/0057-spending-cap.md) è Accettata.
+
+**Che cosa ha misurato**, il 2026-10-07:
+
+- **Il tetto che scatta** (passo 4): con il tetto piccolo, 1,48308 $, Opus 5.5 è negato prima della chiamata — speso
+  0,017544 + prenotato 0,465536 + caso peggiore 4,065536 sopra il tetto —, e Haiku passa sotto lo stesso tetto. Ogni
+  domanda nomina il caso peggiore e ciò che resta del mese.
+- **I costi veri**, ciascuno con il modello che la risposta dichiara uguale a quello della tabella:
+  `claude-opus-5-5` 0,003016 $, `claude-sonnet-5-5` 0,00097 $, `claude-haiku-4-5-20251001` 0,000315 $ e 0,00031 $
+  sul Mac, 0,000325 $ sul PC al passo 5 e 0,000595 $ sul PC al passo 7.
+- **Le due chiavi nella stessa workspace**: lo stesso id per le chiamate del Mac e del PC.
+- **Il nodo che tace** (passo 6): `Ctrl-C` sul nodo del PC, la presa scaduta in 125 secondi, il task `FAILED` con
+  `execution.interrupted` e non rieseguito; in `ela spend` lo speso invariato e una prenotazione aperta in più.
+- **Le rotte diverse** (passo 7): il risultato del PC `SUCCEEDED` sul nodo, e il task `FAILED` con
+  `model.routed_as_asked (model.misrouted)`.
+
+Così si chiudono le due verifiche che M12.4 aveva lasciato a questa milestone (§12, passi 7 e 8; ADR 0040).
+
+**Da M14.1 nessuna chiamata che spende parte senza un tetto** ([ADR 0057](adr/0057-spending-cap.md)). Il tetto è una
+riga del `.env` del Core, in dollari come il listino e la console:
+
+```
+ELA_SPENDING_CAP_USD=<tetto in dollari>
+```
+
+Prima di ogni chiamata ELA prenota il **caso peggiore** — la finestra di contesto del modello meno l'output, al prezzo
+d'ingresso, più il `max_tokens` che la richiesta manda, al prezzo d'uscita — e la lascia partire solo se **speso +
+prenotato + caso peggiore** sta dentro il tetto. Il mese è quello del calendario, in UTC, dichiarato. Senza la riga, ogni chiamata
+che spende è negata prima, con la riga nominata nella ragione; un «sì» non alza il tetto, lo alza solo chi lo scrive.
+`uv run ela spend` dice dove sei, con la stessa funzione con cui il cancello giudica.
+
+**I tetti sono due.** Il secondo è il **limite mensile dell'organizzazione**, che imposti nella console di Anthropic
+nella pagina Billing: copre ogni chiave dovunque stia, anche ciò che spende fuori da ELA. Il tetto di ELA sta **sotto**,
+con un margine. **Il mese del fornitore può non essere quello di ELA**: la documentazione scrive l'azzeramento alle 00:00
+UTC del primo del mese per il tetto del livello, e del limite che scegli dice solo che la risposta indica quando
+l'accesso riprende. Le due chiavi —
+quella del Mac e quella del PC — stanno nella **stessa workspace**: la workspace tiene insieme le chiavi di ELA, e la
+sua spesa nella console resta quella di ELA. Sul PC non c'è un tetto: il nodo spende solo ciò che il Core ha prenotato
+per il lavoro che gli manda, e non oltre. Per esempio: un tetto di 50 $ sotto un limite di 55 $.
+
+**Il credito è un fermo anche lui.** Con il credito prepagato e la ricarica automatica spenta, finito il credito le
+chiamate si fermano finché non lo ricarichi; se il credito è più piccolo del tetto — 5 $ sotto un tetto di 50 $, per
+esempio — è il primo a scattare. ELA non lo conta: il libro è la spesa del mese, non il saldo.
+
+Lo script legge da questa sezione i blocchi con il marcatore sopra, con il lettore di `scripts/prova_m6_3c.py`: i
+tipi di §21 — `comando`, `atteso`, `occhio`, `richiede`, `guarda`, `mano` — e sei suoi:
+
+- **`commit`**: il comando da dare **sul PC**; lo script chiede i primi sette caratteri che stampa e li confronta con il
+  commit del Mac.
+- **`limite`**: chiede il limite mensile dell'organizzazione che leggi nella console, in dollari, e lo confronta con il
+  tetto che `GET /spend` dice: **PASSATO se il tetto di ELA sta sotto**.
+- **`costo`**: legge i risultati del task del passo e vuole il modello scritto, **un costo** e un `finish_reason`; scrive
+  l'id della workspace. Con «su un nodo», il risultato è del PC e la workspace è la stessa delle chiamate del Mac.
+- **`spesa`**: confronta `GET /spend` con com'era all'ultimo `tetto`, all'ultima `spesa` o all'inizio del passo.
+- **`tetto`**: «piccolo» calcola un tetto — speso + prenotato + 1 — e lo stampa come riga da mettere nel `.env` del
+  Core; «il tuo» stampa quello che c'era. Aspetta che tu la scriva e riavvii il Core, e controlla che ELA la legga.
+  **Se ELA legge un altro tetto, la prova si ferma lì** — **FERMATO** —: il resto sarebbe misurato con un tetto che
+  non è quello voluto, e l'ultima riga lo dice.
+- **`tace`** e **`aspetta`**: al passo 6, che il nodo non abbia consegnato prima del `Ctrl-C`, e che la presa scada —
+  l'attesa la fa lo script, con il TTL della presa del `.env` del Core.
+
+I segnaposto che riempie sono `<id>`, il task del passo, e `<approval-id>`, la sua domanda. Scrive tutto in
+`~/Downloads`, in `prova-m14.1-` con la data e l'ora, e l'ultima riga dice «La prova è passata» o che cosa manca. **Se
+ELA smette di rispondere a metà giro**, lo script scrive **INTERROTTO** al passo in cui è successo — al passo 4 lo
+fermi tu, per riavviare il Core: lo script aspetta Invio prima di parlargli di nuovo.
+
+Sul Mac, il `.env` con la chiave del Mac e il tuo tetto; sul PC, il `.env` di §12 passo 4, con la chiave del PC. Il
+Core acceso dal codice del branch, dopo `uv run alembic upgrade head`; il nodo del PC acceso da §12 passo 5. Le chiamate
+vere sono otto o nove, per pochi centesimi.
+
+```
+uv run python scripts/prova_m14_1.py
+```
+
+### 1. Prima
+
+ELA risponde, dal codice del branch — `GET /spend` c'è, e c'è perché la migrazione `0013` è applicata: senza, il Core
+non parte —, il tetto è dichiarato, e il provider del modello ha una chiave. Lo script lo controlla e stampa
+**PASSATO** per ciascuno; **se qualcosa manca, il passo 1 è SALTATO** con ciò che manca, e lo script si ferma lì.
+
+### 2. Il PC sullo stesso commit del Mac
+
+Sul PC, nella cartella di ELA:
+
+<!-- prova: 2.commit -->
+```powershell
+git log --oneline -1
+```
+
+Lo script chiede i primi sette caratteri che il PC ha stampato e li confronta con il commit del Mac: il nodo non
+dichiara il suo commit, e nessun canale porta il `git` del PC al Mac. Se sono diversi, `git pull` sul PC, il nodo
+riavviato, e si rilancia.
+
+### 3. Il secondo tetto
+
+Nella console di Anthropic, nella pagina Billing, alla voce dei limiti di spesa:
+
+<!-- prova: 3.limite -->
+```
+il limite mensile dell'organizzazione, in dollari
+```
+
+<!-- prova: 3.occhio -->
+```
+La console dice che la ricarica automatica dei crediti è spenta?
+```
+
+Quando il limite riparte lo script non te lo chiede: la console non risponde a ciò che la documentazione non scrive. La
+documentazione scrive la ripresa alle 00:00 UTC del primo del mese per il tetto del livello; del limite che scegli dice
+solo che la risposta indica quando l'accesso riprende. Il mese di ELA è quello del calendario, in UTC, dichiarato
+(ADR 0057 §4).
+
+### 4. I tre modelli, e il tetto che scatta
+
+Tre domande, una per profilo, **con il tuo tetto**. I task restano su questo Mac: senza `--privacy` non viaggiano.
+
+Opus 5.5, il profilo `quality`:
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Opus 5.5, con il tetto" --json
+uv run ela task plan <id> --file docs/examples/ask-model.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+<!-- prova: 4.atteso -->
+```
+worst case            4.065536 USD, claude-opus-5-5, up to 995904 tokens in and 4096 out
+left this month
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome        completed
+reason         —
+state          COMPLETED
+steps handled  3f0d1a44-5b6c-4d7e-8f90-000000000001
+stopped step   —
+```
+
+<!-- prova: 4.costo -->
+```
+claude-opus-5-5
+```
+
+Sonnet 5.5, il profilo `balanced` — lo step non nomina un `task_type`:
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Sonnet 5.5, con il tetto" --json
+uv run ela task plan <id> --file docs/examples/ask-model-balanced.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+<!-- prova: 4.atteso -->
+```
+worst case            2.032768 USD, claude-sonnet-5-5, up to 995904 tokens in and 4096 out
+left this month
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome        completed
+reason         —
+state          COMPLETED
+steps handled  3f0d1a44-5b6c-4d7e-8f90-000000000002
+stopped step   —
+```
+
+<!-- prova: 4.costo -->
+```
+claude-sonnet-5-5
+```
+
+Haiku 4.5, il profilo `cheap`, con l'id fissato:
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Haiku 4.5, con il tetto" --json
+uv run ela task plan <id> --file docs/examples/ask-model-routine.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+<!-- prova: 4.atteso -->
+```
+worst case            0.216384 USD, claude-haiku-4-5-20251001, up to 195904 tokens in and 4096 out
+left this month
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome        completed
+reason         —
+state          COMPLETED
+steps handled  3f0d1a44-5b6c-4d7e-8f90-000000000003
+stopped step   —
+```
+
+<!-- prova: 4.costo -->
+```
+claude-haiku-4-5-20251001
+```
+
+Un costo che manca è un FALLITO: un nome di modello che la tabella di ELA non conosce terrebbe ogni chiamata al caso
+peggiore per un mese. Ora **un tetto piccolo**: speso + prenotato + 1 dollaro. Lo script lo stampa; scrivilo nel `.env`
+del Core al posto del tuo, ferma il Core con `Ctrl-C` e riaccendilo con `uv run ela serve`, poi Invio.
+
+<!-- prova: 4.tetto -->
+```
+piccolo
+```
+
+Opus 5.5 non ci sta più: **negato prima della domanda**, nessun risultato, e il prenotato non si muove.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Opus 5.5, sotto il tetto piccolo" --json
+uv run ela task plan <id> --file docs/examples/ask-model.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome        denied
+reason         deny_by_cap: EXECUTING -> DENIED (the monthly cap would be crossed: spent
+state          DENIED
+steps handled  3f0d1a44-5b6c-4d7e-8f90-000000000001
+stopped step   —
+```
+
+<!-- prova: 4.spesa -->
+```
+speso invariato
+prenotato invariato
+```
+
+Haiku ci sta: chiede, passa, e lo speso cresce del suo costo vero.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Haiku 4.5, sotto il tetto piccolo" --json
+uv run ela task plan <id> --file docs/examples/ask-model-routine.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+<!-- prova: 4.atteso -->
+```
+worst case            0.216384 USD, claude-haiku-4-5-20251001, up to 195904 tokens in and 4096 out
+left this month
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome        completed
+reason         —
+state          COMPLETED
+steps handled  3f0d1a44-5b6c-4d7e-8f90-000000000003
+stopped step   —
+```
+
+<!-- prova: 4.costo -->
+```
+claude-haiku-4-5-20251001
+```
+
+<!-- prova: 4.spesa -->
+```
+speso cresciuto del costo
+prenotato invariato
+```
+
+Rimetti il tuo tetto nel `.env`, riavvia il Core, Invio:
+
+<!-- prova: 4.tetto -->
+```
+il tuo
+```
+
+Una difesa che non si è vista scattare non conta: questo passo è il tetto che scatta, con la chiave vera.
+
+### 5. Una chiamata sul PC
+
+Il nodo del PC acceso. Il task può viaggiare, e lo prende il PC, che chiama con **la sua** chiave:
+
+<!-- prova: 5.richiede -->
+```
+un nodo disponibile
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create "Haiku 4.5, sul PC" --privacy TRUSTED --json
+uv run ela task plan <id> --file docs/examples/ask-model-routine.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+<!-- prova: 5.atteso -->
+```
+worst case            0.216384 USD, claude-haiku-4-5-20251001, up to 195904 tokens in and 4096 out
+left this month
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome        assigned
+reason         step 3f0d1a44-5b6c-4d7e-8f90-000000000003 assigned to node
+state          EXECUTING
+steps handled  —
+stopped step   —
+```
+
+<!-- prova: 5.guarda -->
+```
+risultato SUCCEEDED su un nodo
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome        completed
+reason         —
+state          COMPLETED
+steps handled  —
+stopped step   —
+```
+
+<!-- prova: 5.costo -->
+```
+claude-haiku-4-5-20251001 su un nodo
+```
+
+<!-- prova: 5.spesa -->
+```
+speso cresciuto del costo
+prenotato invariato
+```
+
+La chiamata del PC la conta il libro del Mac, e la sua workspace è quella delle chiamate del Mac: la stessa workspace
+tiene insieme le due chiavi di ELA, e la sua spesa nella console resta quella di ELA. Il limite dell'organizzazione
+copre ogni chiave, dovunque stia.
+
+### 6. Il nodo che tace a metà lavoro
+
+Una risposta lunga — `max_output_tokens` 8192, caso peggiore 0,232768 $ — perché il PC sia ancora dentro la chiamata
+quando premi `Ctrl-C`. Il testo che il modello scrive è una descrizione, e non contiene istruzioni per nessuno.
+
+<!-- prova: 6.richiede -->
+```
+un nodo disponibile
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task create "una risposta lunga, sul PC" --privacy TRUSTED --json
+uv run ela task plan <id> --file docs/examples/ask-model-long.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+<!-- prova: 6.atteso -->
+```
+worst case            0.232768 USD, claude-haiku-4-5-20251001, up to 191808 tokens in and 8192 out
+left this month
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome        assigned
+reason         step 3f0d1a44-5b6c-4d7e-8f90-000000000004 assigned to node
+state          EXECUTING
+steps handled  —
+stopped step   —
+```
+
+Lo script guarda finché il PC prende il lavoro — la presa scrive il `STARTED`, con la prenotazione:
+
+<!-- prova: 6.guarda -->
+```
+risultato STARTED su un nodo
+```
+
+<!-- prova: 6.mano -->
+```
+Adesso: Ctrl-C nella finestra del nodo sul PC, poi Invio qui.
+```
+
+<!-- prova: 6.tace -->
+```
+nessun esito prima del Ctrl-C
+```
+
+**Se la risposta è arrivata prima del `Ctrl-C`**, il passo non ha provato niente: lo script lo scrive **SALTATO**, ti
+chiede di riaccendere il nodo e lo rifà, fino a tre volte. Non è un fallimento di ELA.
+
+<!-- prova: 6.aspetta -->
+```
+la presa scade
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome        failed
+reason         fail: EXECUTING -> FAILED (execution.interrupted: model-complete was started for step 3f0d1a44-5b6c-4d7e-8f90-000000000004 and never reported; it is not run again, here or on another machine, so whether it acted is unknown)
+state          FAILED
+steps handled  3f0d1a44-5b6c-4d7e-8f90-000000000004
+stopped step   —
+```
+
+<!-- prova: 6.spesa -->
+```
+speso invariato
+una prenotazione aperta in più
+```
+
+Nessuno sa se la chiamata è partita, e il mese la tiene **al caso peggiore** fino al primo del mese dopo: è il vincolo
+dichiarato di ADR 0040, con il suo prezzo scritto in ADR 0057. Riaccendi il nodo sul PC, poi Invio.
+
+<!-- prova: 6.mano -->
+```
+Riaccendi il nodo sul PC (uv run python -m ela.cli node run), poi Invio qui.
+```
+
+### 7. La tabella di rotte diversa: `model.misrouted`
+
+La negativa di §12 passo 8, ora con le chiavi. Sul PC: `Ctrl-C` sul nodo, una riga di rotte che il Mac non ha, e il
+nodo di nuovo acceso:
+
+```powershell
+[IO.File]::AppendAllText("$HOME\ELA\.env", "`nELA_MODEL_ROUTES={""reasoning"": {""providers"": [""anthropic""], ""profile"": ""cheap""}}`n")
+uv run python -m ela.cli node run
+```
+
+<!-- prova: 7.mano -->
+```
+Sul PC: la riga di ELA_MODEL_ROUTES nel .env e il nodo riacceso, poi Invio qui.
+```
+
+<!-- prova: 7.richiede -->
+```
+un nodo disponibile
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task create "una domanda, con le rotte del PC" --privacy TRUSTED --json
+uv run ela task plan <id> --file docs/examples/ask-model.json
+uv run ela task run <id>
+uv run ela approvals
+```
+
+<!-- prova: 7.atteso -->
+```
+worst case            4.065536 USD, claude-opus-5-5, up to 995904 tokens in and 4096 out
+left this month
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task approve <id> --approval <approval-id>
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome        assigned
+reason         step 3f0d1a44-5b6c-4d7e-8f90-000000000001 assigned to node
+state          EXECUTING
+steps handled  —
+stopped step   —
+```
+
+<!-- prova: 7.guarda -->
+```
+risultato SUCCEEDED su un nodo
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome        failed
+reason         fail: EXECUTING -> FAILED (verification.failed: 1 of 2 success conditions failed for model.complete: model.routed_as_asked (model.misrouted))
+state          FAILED
+steps handled  —
+stopped step   —
+```
+
+<!-- prova: 7.costo -->
+```
+claude-haiku-4-5-20251001 su un nodo
+```
+
+Il Core ha prenotato il caso peggiore di Opus 5.5, la sua rotta; il PC, con la sua tabella, ha chiamato Haiku — che ci
+sta dentro, e quindi è partito —, e la verifica sul Mac ha visto la rotta sbagliata. Le negative per ultime, perché
+questa cambia il `.env` del PC.
+
+### 8. Il ripristino
+
+Sul PC, il `.env` riscritto con il blocco di §12 passo 4 — senza la riga delle rotte — e il nodo riacceso.
+
+<!-- prova: 8.mano -->
+```
+Sul PC: il .env riscritto con il blocco di §12 passo 4 e il nodo riacceso, poi Invio qui.
+```
+
+<!-- prova: 8.richiede -->
+```
+un nodo disponibile
+```
+
+**Quando il fornitore ferma una chiamata**, il codice dice che cosa guardare, perché il rimedio è diverso:
+
+- **`provider.spend_limit`**: un limite di spesa del fornitore è raggiunto. La ragione dice quale — quello
+  dell'organizzazione, quello di una workspace, se un giorno ce n'è uno, o il tetto del livello — e quanto ELA ha contato
+  del suo tetto nel suo mese. Non dice perché, e le cause possibili sono tre:
+  1. **il conto di ELA è indietro rispetto alla fattura**: lo speso della console è più di quello di `ela spend`;
+  2. **un'altra chiave dell'organizzazione ha speso**: il limite dell'organizzazione copre ogni chiave, non solo le due
+     di ELA, e la spesa della workspace di ELA nella console è la sola parte di ELA;
+  3. **il mese del fornitore non è quello di ELA**: per esempio 50 $ a fine mese e 50 all'inizio del mese dopo, nella
+     stessa finestra del fornitore — ELA è in regola con il suo tetto, e il limite scatta lo stesso.
+
+  Guarda il limite e la spesa nella console, la spesa della workspace di ELA, e `uv run ela spend`. Non si ritenta: tiene
+  finché il fornitore non riapre, come dice la console, o finché qualcuno alza il limite.
+- **Un fallimento con il tipo `billing_error`**, o **un `provider.bad_request` mentre `ela spend` mostra margine**: i
+  piani della prova sono quelli che la suite fa girare, quindi la prima cosa da guardare è **il credito e il
+  pagamento**, nella pagina Billing della console. Se il credito è finito, ricaricalo. La documentazione non scrive con
+  che risposta arriva il credito finito, ed ELA non la indovina: un `400` resta `provider.bad_request`, un `402` resta
+  `provider.rejected` con il tipo `billing_error` nella ragione (ADR 0057 §10).
+
+**Nessuno dei due la prova lo raggiunge**: servirebbe spendere fino al limite, o fino all'ultimo centesimo del credito.
+Il primo lo prova la suite, con le risposte costruite sulle parole e sul campo della documentazione. **Il confronto fra la somma di ELA e il costo della console non è nella prova**:
+le chiamate di prova costano meno di un centesimo e la console arrotonda ai centesimi; è una misura da fare dopo un
+mese d'uso (ADR 0057).
 
 ## Dove guardare dopo
 

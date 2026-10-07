@@ -18,7 +18,15 @@ from typing import Any, Final
 import httpx
 
 from ela.composition.node import NodeWorld
-from ela.domain import CapabilityId, ExecutionResult, ExecutionStatus, PermissionDecision
+from ela.domain import (
+    CapabilityId,
+    ErrorMetadata,
+    ExecutionResult,
+    ExecutionStatus,
+    PermissionDecision,
+    ProviderUsage,
+    WorstCase,
+)
 from ela.node.client import NodeClient
 from ela.node.errors import (
     REVOKED,
@@ -29,7 +37,13 @@ from ela.node.errors import (
     NodeRevoked,
     TwinNode,
 )
-from ela.ports import NotAllowedError, VerifierPort, WireCode
+from ela.ports import (
+    SPENDING_OVER_RESERVATION,
+    NotAllowedError,
+    ToolPort,
+    VerifierPort,
+    WireCode,
+)
 
 __all__ = ["Node", "declaration", "envelope_of", "verdict_of"]
 
@@ -148,6 +162,11 @@ async def envelope_of(world: NodeWorld, order: Mapping[str, Any]) -> dict[str, A
     is this one. The verifier is looked up **before** the tool acts — a node does not act on what it
     cannot verify — and runs after it, on a result that succeeded, with the order's conditions and
     arguments; its verdict travels in the envelope (:func:`verdict_of`).
+
+    **And the reservation, when the call spends** (M14.1, ADR 0057): before acting the node asks its
+    own tool the worst case — its route, its output budget, its prices — and **does not spend
+    beyond what the Core reserved** (:func:`beyond_the_reservation`). Not a cap of the node's: the
+    Core decided, and the node keeps to it.
     """
     asked = order.get("success_conditions")
     checked: tuple[VerifierPort, tuple[str, ...]] | None = None
@@ -157,6 +176,11 @@ async def envelope_of(world: NodeWorld, order: Mapping[str, Any]) -> dict[str, A
         tool = world.tools.get(capability)
         if asked is not None:
             checked = (world.verifiers.get(capability), tuple(str(c) for c in asked))
+        beyond = await beyond_the_reservation(
+            world, tool, dict(order["arguments"]), order.get("worst_case")
+        )
+        if beyond is not None:
+            return beyond
         result = await tool.execute(decision, dict(order["arguments"]), NEVER_STOPPED)
     except NotAllowedError:
         return {"form": "refused"}
@@ -179,6 +203,48 @@ async def envelope_of(world: NodeWorld, order: Mapping[str, Any]) -> dict[str, A
             verifier, conditions, dict(order["arguments"]), result
         )
     return envelope
+
+
+async def beyond_the_reservation(
+    world: NodeWorld, tool: ToolPort, arguments: dict[str, Any], reserved: object
+) -> dict[str, Any] | None:
+    """The envelope of a call this node does not make because it would spend beyond what the Core
+    reserved, or ``None`` when it may (M14.1, ADR 0057).
+
+    A tool that spends nothing is never stopped here. One that spends is, when the order carries
+    no reservation, when this node cannot bound the call or price it, or when its worst case is
+    more than the Core's: the ``max_tokens`` that leaves this machine is this machine's, and the
+    Core reserved its own. The result says the call was **not sent** — ``usage.sent`` false —,
+    which is what closes the reservation at zero in the month's ledger.
+    """
+    worst = await tool.worst_case(arguments)
+    if worst is None:
+        return None
+    bound = None if reserved is None else WorstCase.model_validate(reserved)
+    mine = worst.amount if isinstance(worst, WorstCase) else None
+    if bound is not None and bound.amount is not None and mine is not None and mine <= bound.amount:
+        return None
+    said = "nothing" if bound is None or bound.amount is None else f"{bound.amount.normalize():f}"
+    if isinstance(worst, ErrorMetadata):
+        here = f"cannot bound this call ({worst.code}: {worst.message or ''})"
+    elif mine is None:
+        here = f"has no price for {worst.model}"
+    else:
+        here = f"would spend up to {mine.normalize():f} on this call"
+    error = ErrorMetadata(
+        code=SPENDING_OVER_RESERVATION,
+        message=f"this node {here}, and the Core reserved {said}: not sent",
+        tool_name=tool.name,
+    )
+    return {
+        "form": "result",
+        "status": ExecutionStatus.FAILED.value,
+        "output": {},
+        "duration_ms": 0,
+        "node": {"ran_at": world.clock.now().isoformat(), "result_id": str(world.ids.new_uuid())},
+        "error": error.model_dump(mode="json"),
+        "usage": ProviderUsage(input_tokens=0, output_tokens=0, sent=False).model_dump(mode="json"),
+    }
 
 
 async def verdict_of(

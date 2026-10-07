@@ -3,12 +3,13 @@ read back whole, found by step."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
 import pytest
 
-from ela.domain import ExecutionId, ExecutionStatus, StepId, TaskId
+from ela.domain import ExecutionId, ExecutionResult, ExecutionStatus, StepId, TaskId, WorstCase
 from ela.executive import STARTED_ID
 from ela.ports import AlreadyExistsError, ExecutionResultStore, NotFoundError
 from tests.domain.examples import EXECUTION_RESULT
@@ -276,3 +277,106 @@ async def test_for_step_filters_by_task_and_step_in_insertion_order(
         OTHER_TASK,
     )
     assert await execution_result_store.for_step(TaskId(UUID(int=7)), RESULT.step_id) == ()
+
+
+# --------------------------------------------------------------------------------------
+# The spending cap (M14.1, ADR 0057): the period's reservations, and one write that reads first
+# --------------------------------------------------------------------------------------
+
+BOUND = WorstCase(
+    amount=Decimal("0.25"), currency="USD", model="m", input_tokens=900, output_tokens=100
+)
+SINCE = datetime(2026, 9, 1, tzinfo=UTC)
+UNTIL = datetime(2026, 10, 1, tzinfo=UTC)
+RESERVATION = STARTED.model_copy(update={"worst_case": BOUND})
+CLOSING = OTHER.model_copy(update={"metadata": {STARTED_ID: str(RESERVATION.id)}})
+
+
+async def test_a_reservation_survives_the_round_trip(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    await execution_result_store.add(RESERVATION)
+    assert (await execution_result_store.get(RESERVATION.id)).worst_case == BOUND
+
+
+async def test_spending_is_the_periods_reservations_and_what_closes_them(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    await execution_result_store.add(RESERVATION)
+    await execution_result_store.add(CLOSING)
+    await execution_result_store.add(OTHER_STEP)
+
+    rows = await execution_result_store.spending(SINCE, UNTIL)
+
+    assert {row.id for row in rows} == {RESERVATION.id, CLOSING.id}
+
+
+async def test_spending_closes_a_reservation_no_task_made_as_well(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    """A result no executor produced has no task (§63): its outcome names its ``STARTED`` all the
+    same, and the two stores find it the same way — the fake did, the SQL store looked only among
+    the reservations' tasks."""
+    alone = RESERVATION.model_copy(update={"task_id": None, "step_id": None})
+    closing = CLOSING.model_copy(update={"task_id": None, "step_id": None})
+    await execution_result_store.add(alone)
+    await execution_result_store.add(closing)
+
+    rows = await execution_result_store.spending(SINCE, UNTIL)
+
+    assert {row.id for row in rows} == {alone.id, closing.id}
+
+
+async def test_spending_leaves_out_a_started_record_with_no_reservation(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    """A ``STARTED`` of a tool that spends nothing reserved nothing: it is not the ledger's."""
+    await execution_result_store.add(STARTED)
+    assert await execution_result_store.spending(SINCE, UNTIL) == ()
+
+
+async def test_spending_leaves_out_another_period(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    await execution_result_store.add(RESERVATION)
+    assert await execution_result_store.spending(UNTIL, datetime(2026, 11, 1, tzinfo=UTC)) == ()
+    assert await execution_result_store.spending(SINCE, RESERVATION.created_at) == ()
+
+
+async def test_reserve_writes_what_is_admitted_and_shows_the_rows_it_read(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    await execution_result_store.add(RESERVATION)
+    seen: list[tuple[ExecutionResult, ...]] = []
+    second = RESERVATION.model_copy(
+        update={
+            "id": ExecutionId(UUID("00000000-0000-4000-8000-000000000608")),
+            "step_id": StepId(UUID("00000000-0000-4000-8000-000000000609")),
+        }
+    )
+
+    def admits(rows: tuple[ExecutionResult, ...]) -> bool:
+        seen.append(rows)
+        return True
+
+    assert await execution_result_store.reserve(second, SINCE, UNTIL, admits) is True
+    assert [row.id for row in seen[0]] == [RESERVATION.id]
+    assert (await execution_result_store.get(second.id)).worst_case == BOUND
+
+
+async def test_reserve_writes_nothing_when_refused(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    assert (
+        await execution_result_store.reserve(RESERVATION, SINCE, UNTIL, lambda rows: False) is False
+    )
+    with pytest.raises(NotFoundError):
+        await execution_result_store.get(RESERVATION.id)
+
+
+async def test_reserve_keeps_the_refusals_of_add(
+    execution_result_store: ExecutionResultStore,
+) -> None:
+    await execution_result_store.add(STARTED)
+    with pytest.raises(AlreadyExistsError):
+        await execution_result_store.reserve(RESERVATION, SINCE, UNTIL, lambda rows: True)

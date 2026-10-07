@@ -9,8 +9,9 @@ verifier would agree with the tool on bytes the disk does not hold — the false
 test stays as the guard of the flag it carries. Declared with its
 ``skipif`` (ADR 0031 §6) and named on the Windows job's line (form J): a Mac cannot build it.
 
-It imports nothing of ``tests/tools/test_verifiers.py``: that module reads ``os.geteuid`` while it
-is collected, and Windows has none — the first run of this file died there, before any test ran.
+It imports nothing of ``tests/tools/test_verifiers.py``: that module read ``os.geteuid`` while it
+was collected, until M14.1 measured the precondition instead, and Windows has none — the first run
+of this file died there, before any test ran.
 """
 
 from __future__ import annotations

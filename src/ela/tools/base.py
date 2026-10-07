@@ -30,6 +30,7 @@ from ela.domain import (
     PermissionDecision,
     PermissionOutcome,
     ProviderUsage,
+    WorstCase,
 )
 from ela.ports import Clock, IdGenerator, NotAllowedError, Prospect, StopPoint, TaskStop
 
@@ -184,6 +185,15 @@ class Tool(ABC):
         """What the call asserts, without looking at a machine (M13.3): nothing, unless a tool
         works on a path — the default of :meth:`prospect`, for its reason."""
         return Prospect()
+
+    async def worst_case(self, arguments: JsonMapping) -> WorstCase | ErrorMetadata | None:
+        """``None``: this tool spends nothing (M14.1, ADR 0057).
+
+        A default, unlike :attr:`idempotent`, and on purpose: the tools that call a paid provider
+        are the ones rule 25 lets call ``.complete(``, and an architecture rule obliges every tool
+        of those modules to override this — the gate cannot be forgotten by one of them.
+        """
+        return None
 
     @abstractmethod
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:

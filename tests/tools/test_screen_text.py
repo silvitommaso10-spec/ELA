@@ -38,7 +38,7 @@ from ela.tools.captures import (
     name_for,
     text_name_for,
 )
-from tests.tools.support import allowed
+from tests.tools.support import PERMISSIONS_BITE, allowed
 
 DECISION = allowed(PERCEPTION_READ_SCREEN_TEXT)
 CAPTURE_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
@@ -393,6 +393,7 @@ async def test_the_tool_is_not_idempotent(tmp_path: Path) -> None:
     assert ReadScreenTextTool.idempotent is False
 
 
+@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o500) does not deny this user: it is root")
 async def test_a_store_that_cannot_be_written_to_is_reported_and_not_raised(
     tmp_path: Path,
 ) -> None:

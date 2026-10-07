@@ -44,7 +44,7 @@ from ela.tools import (
 )
 from ela.tools.captures import CAPTURE_UNREADABLE, jsonl_segments
 from ela.tools.screen import SCREEN_STORE_FULL
-from tests.tools.support import allowed
+from tests.tools.support import PERMISSIONS_BITE, allowed
 
 DECISION = allowed(PERCEPTION_LISTEN)
 HELD_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
@@ -303,6 +303,7 @@ async def test_a_denial_from_the_adapter_says_where_to_click(tmp_path: Path) -> 
     assert "System Settings" in result.error.message
 
 
+@pytest.mark.skipif(not PERMISSIONS_BITE, reason="chmod(0o500) does not deny this user: it is root")
 async def test_a_store_that_cannot_be_written_is_a_named_failure(tmp_path: Path) -> None:
     tool, _, store = tool_for(tmp_path)
     store.directory.mkdir(parents=True, exist_ok=True)

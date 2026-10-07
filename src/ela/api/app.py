@@ -37,6 +37,7 @@ from ela.api import (
     pages,
     perception,
     results,
+    spend,
     system,
     tasks,
     voice,
@@ -292,6 +293,7 @@ def create_app(ela: Ela) -> FastAPI:
         context.router,
         perception.router,
         results.router,
+        spend.router,
         voice.router,
     ):
         app.include_router(router)
