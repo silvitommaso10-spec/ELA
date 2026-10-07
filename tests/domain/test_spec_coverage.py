@@ -70,6 +70,7 @@ LATER_ADDITIONS = frozenset(
         "CommandOutput",
         "WorstCase",
         "Ledger",
+        "PlanAuthor",
     }
 )
 """Models a later milestone added, each argued in its own ADR.
@@ -127,6 +128,10 @@ step's, and the call is the decision it carries plus the step, read by reference
 reservation — a port names it, which is the criterion of the four of perception. The ledger is the
 month's spending derived from the rows each time it is read, never stored and never updated: it is
 what the gate decides on and what ``GET /spend`` reads, the same function for both.
+
+``PlanAuthor`` (M14.2, ADR 0058) is a value inside a ``TaskPlan``: who wrote the plan — a person,
+the Planner's code, or the model through the Planner —, and for the model which call. §13 does
+not name it, and it is what makes «a plan written by a model» a fact a test can read.
 """
 
 

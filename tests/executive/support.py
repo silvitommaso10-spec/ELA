@@ -45,6 +45,8 @@ from ela.domain import (
     JsonMapping,
     NetworkKind,
     PerformanceClass,
+    PlanAuthor,
+    PlanAuthorKind,
     PlanId,
     PowerSource,
     PrivacyLevel,
@@ -254,6 +256,7 @@ class World:
             task_id=task.id,
             goal=goal,
             steps=(step,),
+            author=PlanAuthor(by=PlanAuthorKind.HAND),
         )
         await self.engine.plan(task.id, plan)
         await self.engine.queue(task.id)
@@ -294,6 +297,7 @@ class World:
             task_id=task.id,
             goal="two steps",
             steps=(first, second),
+            author=PlanAuthor(by=PlanAuthorKind.HAND),
         )
         await self.engine.plan(task.id, plan)
         await self.engine.queue(task.id)
@@ -345,6 +349,7 @@ class World:
                 task_id=task.id,
                 goal=goal,
                 steps=tuple(steps),
+                author=PlanAuthor(by=PlanAuthorKind.HAND),
             ),
         )
         await self.engine.queue(task.id)

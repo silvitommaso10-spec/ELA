@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -52,6 +53,7 @@ TABLES = {
     "assignments",
 }
 REVISIONS = [
+    "0014",
     "0013",
     "0012",
     "0011",
@@ -304,6 +306,45 @@ def test_the_reservation_column_and_its_index_come_with_0013(db: Path) -> None:
 
     assert "worst_case" not in _tables(db)["execution_results"]
     assert "ix_execution_results_created_at" not in _indexes(db)
+
+
+def test_the_plans_written_before_0014_were_written_by_hand(db: Path) -> None:
+    """``0014`` (M14.2, ADR 0058): who wrote a plan. Before the column there was no Planner, so
+    every plan stored was sent by a person through the route — a fact, not a guess —, and the
+    ``server_default`` says so to anything that inserts a plan without the column."""
+    command.upgrade(config_for(db), "0013")
+    engine = create_engine(f"sqlite:///{db.as_posix()}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO tasks (id, created_at, goal, state, metadata)"
+                    " VALUES ('t1', '2026-01-01', 'g', 'QUEUED', '{}')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO task_plans (id, created_at, task_id, goal, steps, metadata)"
+                    " VALUES ('p1', '2026-01-01', 't1', 'g', '[]', '{}')"
+                )
+            )
+        command.upgrade(config_for(db), "0014")
+        with engine.connect() as connection:
+            authors = [row[0] for row in connection.execute(text("SELECT author FROM task_plans"))]
+    finally:
+        engine.dispose()
+
+    assert [json.loads(author) for author in authors] == [{"by": "HAND"}]
+
+
+def test_downgrade_of_the_author_of_a_plan_takes_it_away(db: Path) -> None:
+    config = config_for(db)
+    command.upgrade(config, "head")
+    assert "author" in _tables(db)["task_plans"]
+
+    command.downgrade(config, "0013")
+
+    assert "author" not in _tables(db)["task_plans"]
 
 
 def test_downgrade_of_the_sensitivity_column_takes_it_away(db: Path) -> None:

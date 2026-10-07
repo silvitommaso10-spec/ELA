@@ -18,6 +18,8 @@ from ela.domain import (
     Device,
     Enrollment,
     ExecutionResult,
+    PlanAuthor,
+    PlanAuthorKind,
     Task,
     TaskEvent,
     TaskPlan,
@@ -74,6 +76,7 @@ from tests.domain.examples import (
     ENROLLMENT,
     ERROR_METADATA,
     EXECUTION_RESULT,
+    MODEL_AUTHOR,
     POLICY_AUTHORIZATION,
     SINGLE_USE_AUTHORIZATION,
     TASK,
@@ -100,7 +103,14 @@ BARE_DEVICE = Device(
     status=DEVICE.status,
     privacy=DEVICE.privacy,
 )
-BARE_PLAN = TaskPlan(id=TASK_PLAN.id, created_at=TASK_PLAN.created_at, task_id=TASK.id, goal="bare")
+BARE_PLAN = TaskPlan(
+    id=TASK_PLAN.id,
+    created_at=TASK_PLAN.created_at,
+    task_id=TASK.id,
+    goal="bare",
+    author=PlanAuthor(by=PlanAuthorKind.HAND),
+)
+MODEL_PLAN = TASK_PLAN.model_copy(update={"author": MODEL_AUTHOR})
 FAILED_AUDIT_EVENT = AUDIT_EVENT.model_copy(update={"error": ERROR_METADATA, "usage": None})
 BARE_AUDIT_EVENT = AuditEvent(
     id=AUDIT_EVENT.id,
@@ -125,9 +135,17 @@ def test_event_round_trip(event: TaskEvent) -> None:
     assert row_to_event(event_to_row(event)) == event
 
 
-@pytest.mark.parametrize("plan", [TASK_PLAN, BARE_PLAN], ids=["with-steps", "bare"])
+@pytest.mark.parametrize(
+    "plan", [TASK_PLAN, BARE_PLAN, MODEL_PLAN], ids=["with-steps", "bare", "by-the-model"]
+)
 def test_plan_round_trip(plan: TaskPlan) -> None:
     assert row_to_plan(plan_to_row(plan)) == plan
+
+
+def test_a_plan_by_hand_is_stored_as_the_column_s_default() -> None:
+    """The author of a plan written by hand is the ``server_default`` of ``0014``, byte for byte in
+    JSON: a row the mapper wrote and a row written before the column read the same."""
+    assert plan_to_row(BARE_PLAN).author == {"by": "HAND"}
 
 
 @pytest.mark.parametrize(

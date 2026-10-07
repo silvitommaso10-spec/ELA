@@ -1411,8 +1411,10 @@ class FakeModelProvider:
     real one does.
 
     ``cost`` is what every answered call reports it cost, ``None`` by default — a model with no
-    price. ``worst`` is what :meth:`worst_case` answers (M14.1): a bound of one cent by default,
-    or the error a test wants; it is asked without the network, so it records nothing.
+    price. ``finish_reason`` is what an answer that did not fail reports, ``end_turn`` by default:
+    ``max_tokens`` is how a test says the answer was cut (M14.2). ``worst`` is what
+    :meth:`worst_case` answers (M14.1): a bound of one cent by default, or the error a test wants;
+    it is asked without the network, so it records nothing.
     """
 
     def __init__(
@@ -1426,11 +1428,13 @@ class FakeModelProvider:
         status: ProviderStatus = ProviderStatus.AVAILABLE,
         cost: Decimal | None = None,
         worst: WorstCase | ErrorMetadata | None = None,
+        finish_reason: str = "end_turn",
     ) -> None:
         self._clock = clock
         self._ids = ids
         self._name = name
         self._reply = reply
+        self._finish_reason = finish_reason
         self._error = error
         self._status = status
         self._cost = cost
@@ -1469,7 +1473,7 @@ class FakeModelProvider:
                 cost=self._cost,
                 currency=None if self._cost is None else FAKE_CURRENCY,
             ),
-            finish_reason="error" if self._error is not None else "end_turn",
+            finish_reason="error" if self._error is not None else self._finish_reason,
             error=self._error,
         )
 

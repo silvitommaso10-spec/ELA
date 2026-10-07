@@ -266,3 +266,18 @@ async def task_in(h: Harness, state: TaskState) -> Task:
     task = await created(h, deadline=h.clock.now() + HOUR)
     h.clock.advance(HOUR)
     return await h.engine.expire(task.id)
+
+
+async def planning_denied(h: Harness) -> tuple[Task, Task]:
+    """A parent PLANNING, and its planning child denied by the user's no (M14.2, ADR 0058)."""
+    parent = await planning(h, with_plan=False)
+    child = await h.engine.create_child(parent.id, key="planning", goal="plan the task")
+    await h.engine.start_planning(child.id)
+    await h.engine.plan(child.id, plan_for(child.id, tail=901))
+    await h.engine.request_approval(
+        child.id, approval_for(child.id, ApprovalStatus.PENDING, tail=911, responded_by=None)
+    )
+    denied = await h.engine.deny(
+        child.id, approval=approval_for(child.id, ApprovalStatus.REJECTED, tail=911)
+    )
+    return parent, denied

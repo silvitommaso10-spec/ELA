@@ -154,6 +154,11 @@ class TaskPlanRow(Base):
     task_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tasks.id"), unique=True, nullable=False)
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     steps: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    author: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, server_default=text("""'{"by": "HAND"}'""")
+    )
+    """Who wrote the plan (M14.2, ADR 0058): ``HAND``, ``PLANNER`` or ``MODEL`` with the result and
+    the model. The default is the history's: before ``0014`` every plan was written by hand."""
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
 
 

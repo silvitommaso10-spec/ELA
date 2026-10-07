@@ -26,6 +26,8 @@ from ela.domain import (
     DeviceRole,
     DeviceStatus,
     OperatingSystem,
+    PlanAuthor,
+    PlanAuthorKind,
     PlanId,
     PrivacyLevel,
     RiskLevel,
@@ -193,7 +195,12 @@ async def test_the_step_under_way_is_named_by_the_plan(
     await repository.add(one)
     await repository.add_plan(
         TaskPlan(
-            id=PlanId(uuid4()), created_at=NOW, task_id=one.id, goal=one.goal, steps=(running,)
+            id=PlanId(uuid4()),
+            created_at=NOW,
+            task_id=one.id,
+            goal=one.goal,
+            steps=(running,),
+            author=PlanAuthor(by=PlanAuthorKind.HAND),
         )
     )
     await repository.append_event(event(one.id, TaskEventType.STEP_STARTED, step_id=running.id))
@@ -241,7 +248,14 @@ async def test_a_plan_that_does_not_hold_the_step_names_no_goal(
     running, other = step(), step("altro")
     await repository.add(one)
     await repository.add_plan(
-        TaskPlan(id=PlanId(uuid4()), created_at=NOW, task_id=one.id, goal=one.goal, steps=(other,))
+        TaskPlan(
+            id=PlanId(uuid4()),
+            created_at=NOW,
+            task_id=one.id,
+            goal=one.goal,
+            steps=(other,),
+            author=PlanAuthor(by=PlanAuthorKind.HAND),
+        )
     )
     await repository.append_event(event(one.id, TaskEventType.STEP_STARTED, step_id=running.id))
 
@@ -264,6 +278,7 @@ async def test_an_event_about_another_step_does_not_close_the_running_one(
             task_id=one.id,
             goal=one.goal,
             steps=(running, other),
+            author=PlanAuthor(by=PlanAuthorKind.HAND),
         )
     )
     await repository.append_event(event(one.id, TaskEventType.STEP_STARTED, step_id=running.id))

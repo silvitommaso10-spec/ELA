@@ -104,6 +104,7 @@ __all__ = [
     "RecoverySummary",
     "StepOperation",
     "TaskEngine",
+    "child_id",
 ]
 
 _S = TaskState
@@ -115,6 +116,17 @@ TASK_NAMESPACE: Final = UUID("6f1c2a4e-3b7d-4d8a-9e21-5c0b7a1d2e33")
 Arbitrary and fixed forever: one intent gives one root task, however many times the request is
 retried (ADR 0008 §8). Changing it would change the id of every root task.
 """
+
+
+def child_id(parent_id: TaskId, key: str) -> TaskId:
+    """The id of the child ``key`` of ``parent_id``: one child per parent and key (M14.2, ADR 0058).
+
+    Derived, like the id of a root task, so that asking twice — a retry, a crash between the
+    creation and what follows — finds the same child instead of making a second one. In the same
+    namespace as the root tasks: ``"<key>/<uuid>"`` is never the string of an intent's id.
+    """
+    return TaskId(uuid5(TASK_NAMESPACE, f"{key}/{parent_id}"))
+
 
 ORPHANED: Final = "orphaned"
 """The error code of a task failed by :meth:`TaskEngine.recover`."""
@@ -239,16 +251,27 @@ OPERATIONS: Final[Mapping[str, Operation]] = MappingProxyType(
                 AuditEventType.TASK_DENIED,
                 "decision_id",
             ),
+            Operation(
+                "deny_by_planning",
+                frozenset({_S.PLANNING}),
+                _S.DENIED,
+                AuditEventType.TASK_DENIED,
+                "planning_task_id",
+            ),
         )
     }
 )
 """The operations that change state, as decided in ADR 0008 §3, in the order of its table — and
-then the rows a later ADR added, in the order of theirs: ``deny_by_cap`` (ADR 0057 §7).
+then the rows a later ADR added, in the order of theirs: ``deny_by_cap`` (ADR 0057 §7) and
+``deny_by_planning`` (ADR 0058).
 
 ``create``, ``plan`` and ``heartbeat`` are not here: they do not move the task through the
 transition table. ``deny`` is two rows because it records two different facts: an approval the
 user rejected (``APPROVAL_RESOLVED``) and a decision of the Guardian (``TASK_DENIED``). The third
 denial, the cap's, is an operation of its own: what it stops is a call the Guardian let through.
+The fourth, ``deny_by_planning``, closes a task whose plan nobody could write because the call that
+would have written it was denied — by the user's no or by the cap, on the planning task (M14.2):
+a no of the user is a denial, not a failure.
 """
 
 STEP_OPERATIONS: Final[Mapping[str, StepOperation]] = MappingProxyType(
@@ -490,6 +513,54 @@ class TaskEngine:
             )
             return task
 
+    async def create_child(self, parent_id: TaskId, *, key: str, goal: str) -> Task:
+        """The child ``key`` of ``parent_id``: created once, returned as stored on every retry.
+
+        M14.2, ADR 0058: the first producer of ``parent_id``. The child carries the parent's request
+        and deadline — it is the same thing the user asked —, and comes into the world at the
+        **default** ``max_privacy``, the strictest: a task ELA creates for itself cannot widen
+        itself (``create``), so the planning task of M14.2 runs on this machine. Moves no state,
+        like ``create``; its ``TASK_CREATED`` names the parent and the key.
+
+        :raises NotFoundError: the parent does not exist — a child of nobody is not a task.
+        """
+        parent = await self._repository.get(parent_id)
+        task_id = child_id(parent_id, key)
+        async with self._lock(task_id):
+            now = self._clock.now()
+            task = Task(
+                id=task_id,
+                created_at=now,
+                goal=goal,
+                state=TaskState.CREATED,
+                intent_id=parent.intent_id,
+                parent_id=parent_id,
+                deadline=parent.deadline,
+            )
+            try:
+                await self._repository.add(task)
+            except AlreadyExistsError:
+                return await self._repository.get(task_id)
+            await self._audit_log.append(
+                AuditEvent(
+                    id=AuditEventId(self._ids.new_uuid()),
+                    created_at=now,
+                    event_type=AuditEventType.TASK_CREATED,
+                    actor=self._actor,
+                    summary=f"create_child: task {task_id}, child of task {parent_id} ({key})",
+                    task_id=task_id,
+                    payload={
+                        "operation": "create_child",
+                        "parent_id": str(parent_id),
+                        "key": key,
+                        "intent_id": None if task.intent_id is None else str(task.intent_id),
+                        "goal": task.goal,
+                        "max_privacy": task.max_privacy.value,
+                    },
+                )
+            )
+            return task
+
     async def plan(self, task_id: TaskId, plan: TaskPlan) -> Task:
         """Attach ``plan`` to a PLANNING task: store it, set ``plan_id``, record and audit it.
 
@@ -540,6 +611,8 @@ class TaskEngine:
                         "plan_id": str(plan.id),
                         "steps": len(plan.steps),
                         "goal": plan.goal,
+                        # Who wrote it (M14.2, ADR 0058): the first answer to «why did it do that».
+                        "author": plan.author.model_dump(mode="json", exclude_none=True),
                     },
                 )
             )
@@ -752,6 +825,35 @@ class TaskEngine:
             key=decision.id,
             decision_id=decision.id,
             payload={"capability_id": decision.capability_id, **payload},
+        )
+
+    async def deny_by_planning(
+        self, task_id: TaskId, *, planning_task_id: TaskId, reason: str
+    ) -> Task:
+        """PLANNING → DENIED: the call that would have written the plan was denied (ADR 0058).
+
+        ``planning_task_id`` is the child that asked for that call, and it must be **this task's
+        planning child and DENIED** — by the user's no or by the month's cap —: a denial of a task
+        is a fact, and an engine that wrote one for a call that was not denied would write a fact
+        nobody decided (§33). ``reason`` is the child's end, in the child's own words (ADR 0055).
+        """
+        planning = await self._repository.get(planning_task_id)
+        if planning.parent_id != task_id:
+            raise TaskEngineError(
+                task_id, f"task {planning_task_id} is not the planning task of {task_id}"
+            )
+        if planning.state is not TaskState.DENIED:
+            raise TaskEngineError(
+                task_id,
+                f"the planning task {planning_task_id} was not denied: it is "
+                f"{planning.state.value}",
+            )
+        return await self._apply(
+            OPERATIONS["deny_by_planning"],
+            task_id,
+            actor=self._actor,
+            reason=reason,
+            key=planning_task_id,
         )
 
     async def queue(self, task_id: TaskId, *, reason: str = "") -> Task:

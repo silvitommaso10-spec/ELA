@@ -62,6 +62,8 @@ from ela.domain import (
     PermissionDecision,
     PermissionOutcome,
     PermissionState,
+    PlanAuthor,
+    PlanAuthorKind,
     PowerSource,
     PrivacyLevel,
     ProviderRequest,
@@ -211,6 +213,15 @@ task_steps = st.builds(
     requires_authorization=st.booleans(),
 )
 
+plan_authors = st.builds(
+    PlanAuthor, by=st.sampled_from([PlanAuthorKind.HAND, PlanAuthorKind.PLANNER])
+) | st.builds(
+    PlanAuthor,
+    by=st.just(PlanAuthorKind.MODEL),
+    result_id=uuids,
+    model=st.text(min_size=1, max_size=24),
+)
+
 task_plans = st.builds(
     TaskPlan,
     id=uuids,
@@ -218,6 +229,7 @@ task_plans = st.builds(
     task_id=uuids,
     goal=texts,
     steps=st.lists(task_steps, max_size=3).map(tuple),
+    author=plan_authors,
     metadata=json_mappings,
 )
 
@@ -764,6 +776,7 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.ELAIdentity: ela_identities,
     domain.UserIntent: user_intents,
     domain.TaskStep: task_steps,
+    domain.PlanAuthor: plan_authors,
     domain.TaskPlan: task_plans,
     domain.Task: tasks,
     domain.TaskEvent: task_events,

@@ -107,6 +107,8 @@ __all__ = [
     "PermissionDecision",
     "PermissionOutcome",
     "PermissionState",
+    "PlanAuthor",
+    "PlanAuthorKind",
     "PlanId",
     "PowerSource",
     "PrivacyLevel",
@@ -704,6 +706,19 @@ class DeviceRole(StrEnum):
     """
 
 
+class PlanAuthorKind(StrEnum):
+    """Who wrote a plan (M14.2, ADR 0058; decision 5 of the review): three authors, not two.
+
+    ``HAND`` is a person, through the route a plan written by hand is sent to. ``PLANNER`` is the
+    Planner's own code: the plan of one ``model.complete`` step it gives the task that asks the
+    model. ``MODEL`` is the model, through the Planner — the plan that came out of that call.
+    """
+
+    HAND = "HAND"
+    PLANNER = "PLANNER"
+    MODEL = "MODEL"
+
+
 class PrivacyLevel(StrEnum):
     """What data may leave a node (§16, §57).
 
@@ -903,6 +918,39 @@ class TaskStep(_DomainModel):
     requires_authorization: bool
 
 
+class PlanAuthor(_DomainModel):
+    """Who wrote a :class:`TaskPlan`, written by whoever attaches it and never by the payload.
+
+    ``result_id`` and ``model`` say **which call** wrote a plan of ``MODEL``: the
+    :class:`ExecutionResult` of the planning task the plan came from, and the model the answer
+    declared. They are **required for ``MODEL`` and refused for the other two** (decision 5): a
+    value that meant «the code» or «the model» according to whether another field were there is a
+    reading that goes wrong — and what ``browser.read`` stays ``LOW`` on is a fact about ``MODEL``
+    (ADR 0058).
+    """
+
+    by: PlanAuthorKind
+    result_id: ExecutionId | None = None
+    model: str | None = None
+
+    @model_validator(mode="after")
+    def _only_the_model_names_a_call(self) -> PlanAuthor:
+        named = self.result_id is not None or self.model is not None
+        if self.by is not PlanAuthorKind.MODEL:
+            if named:
+                raise ValueError(
+                    f"only a plan the model wrote names a result and a model, and this one was "
+                    f"written by {self.by.value} (ADR 0058)"
+                )
+            return self
+        if self.result_id is None or not self.model:
+            raise ValueError(
+                "a plan the model wrote names the result it came from and the model that wrote "
+                "it (ADR 0058)"
+            )
+        return self
+
+
 class TaskPlan(_DomainModel):
     """A goal turned into steps (§13). Independent of any device, like its steps."""
 
@@ -911,6 +959,11 @@ class TaskPlan(_DomainModel):
     task_id: TaskId
     goal: str
     steps: tuple[TaskStep, ...] = ()
+    author: PlanAuthor
+    """Who wrote the plan (M14.2, ADR 0058), with **no default**: whoever builds a plan says who
+    wrote it — the route ``HAND``, the Planner ``PLANNER`` for its own step and ``MODEL`` for the
+    plan the model wrote. A default would let a plan written by a model pass for one written by
+    hand."""
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 
 

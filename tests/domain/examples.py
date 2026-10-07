@@ -72,6 +72,8 @@ from ela.domain import (
     PermissionDecision,
     PermissionOutcome,
     PermissionState,
+    PlanAuthor,
+    PlanAuthorKind,
     PlanId,
     PowerSource,
     PrivacyLevel,
@@ -130,6 +132,12 @@ AUDIT_EVENT_ID: Final = AuditEventId(_uuid(12))
 PROVIDER_REQUEST_ID: Final = ProviderRequestId(_uuid(13))
 PROVIDER_RESULT_ID: Final = ProviderResultId(_uuid(14))
 EXECUTION_ID: Final = ExecutionId(_uuid(15))
+
+MODEL_AUTHOR: Final = PlanAuthor(
+    by=PlanAuthorKind.MODEL, result_id=EXECUTION_ID, model="claude-opus-5-5"
+)
+"""A plan the model wrote through the Planner: the result it came from, the model that wrote it
+(M14.2, ADR 0058; decision 5)."""
 
 WRITE_NOTE: Final = CapabilityId("workspace.write_note")
 MODEL_COMPLETE: Final = CapabilityId("model.complete")
@@ -223,6 +231,7 @@ TASK_PLAN: Final = TaskPlan(
     task_id=TASK_ID,
     goal="preparare la riunione di domani",
     steps=(OTHER_STEP, TASK_STEP),  # a valid DAG: TASK_STEP depends on OTHER_STEP (M3.2)
+    author=PlanAuthor(by=PlanAuthorKind.HAND),
     metadata={"planner": "executive-core"},
 )
 
@@ -639,6 +648,7 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         PROVIDER_USAGE,
         WORST_CASE,
         LEDGER,
+        MODEL_AUTHOR,
         ERROR_METADATA,
         ELA_IDENTITY,
         USER_INTENT,

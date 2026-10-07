@@ -38,6 +38,8 @@ from ela.domain import (
     ExecutionStatus,
     IntentId,
     JsonMapping,
+    PlanAuthor,
+    PlanAuthorKind,
     PlanId,
     ProviderStatus,
     RiskLevel,
@@ -322,6 +324,7 @@ class Pipeline:
             task_id=task.id,
             goal=intent.text,
             steps=(step,),
+            author=PlanAuthor(by=PlanAuthorKind.HAND),
         )
         await self.engine.plan(task.id, plan)
         await self.engine.queue(task.id)

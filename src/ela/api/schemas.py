@@ -57,6 +57,8 @@ from ela.domain import (
     PerformanceClass,
     PermissionDecision,
     PermissionState,
+    PlanAuthor,
+    PlanAuthorKind,
     PlanId,
     PowerSource,
     PrivacyLevel,
@@ -222,6 +224,8 @@ class PlanIn(BaseModel):
             task_id=task_id,  # type: ignore[arg-type]  # TaskId is a NewType over UUID
             goal=self.goal,
             steps=tuple(step.to_domain(created_at) for step in self.steps),
+            # The route writes who wrote it, never the payload (M14.2, ADR 0058).
+            author=PlanAuthor(by=PlanAuthorKind.HAND),
         )
 
 

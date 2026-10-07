@@ -125,6 +125,7 @@ from ela.executive.errors import (
     DeliveryConflictError,
     ExecutorError,
 )
+from ela.executive.readiness import Unready, readiness
 from ela.executive.spending import CURRENCY, Foresight, Refusal, SpendingGate, dollars, worst_said
 from ela.executive.stops import StopOfTask
 from ela.permissions import (
@@ -1575,28 +1576,25 @@ class Executor:
             raise ExecutorError(
                 task_id, f"step {step_id} is {state.value}, not RUNNING: start the step first"
             )
-        if len(step.required_capabilities) != 1:
-            raise ExecutorError(
-                task_id,
-                f"step {step_id} declares {len(step.required_capabilities)} capabilities; an "
-                "executable step declares exactly one",
-            )
-        if not step.success_conditions:
-            raise ExecutorError(
-                task_id,
-                f"step {step_id} declares no success condition; an action that cannot be "
-                "verified is not executed",
-            )
-        spec = self._registry.get(step.required_capabilities[0])
-        tool = self._tools.get(spec.id)
-        verifier = self._verifiers.get(spec.id)
-        unknown = [c for c in step.success_conditions if c not in verifier.conditions]
-        if unknown:
-            raise ExecutorError(
-                task_id,
-                f"step {step_id} names success conditions {verifier.name} cannot check: "
-                f"{', '.join(unknown)}; an action that cannot be verified is not executed",
-            )
+        # The preconditions are one function since M14.2 (ADR 0058): the Planner and the hand
+        # route ask it before a plan comes in, and this is where the same answer is enforced.
+        ready = readiness(
+            step, capabilities=self._registry, tools=self._tools, verifiers=self._verifiers
+        )
+        if isinstance(ready, Unready):
+            if ready.error is not None:
+                raise ready.error
+            if ready.outside:
+                # The executor quotes the conditions, as it always did: the plan is the caller's.
+                checker = self._verifiers.get(step.required_capabilities[0]).name
+                raise ExecutorError(
+                    task_id,
+                    f"step {step_id} names success conditions {checker} cannot check: "
+                    f"{', '.join(ready.outside)}; an action that cannot be verified is not "
+                    "executed",
+                )
+            raise ExecutorError(task_id, f"step {step_id} {ready.said}")
+        spec, tool, verifier = ready
         return Prepared(
             step, spec, tool, verifier, step.arguments, tuple(targets_of(spec, step.arguments))
         )

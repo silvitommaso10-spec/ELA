@@ -72,6 +72,7 @@ from tests.executive.support import (
 from tests.executive.test_executor_remote import answered
 from tests.executive.test_spending_gate import a_world
 from tests.permissions.support import CRITICAL, ECHO, GUARDED_ECHO, NOTE
+from tests.tasks.support import Harness, planning_denied
 
 E = AuditEventType
 POINT_NAME: Final = "the point"
@@ -153,6 +154,8 @@ async def handed(w: World) -> tuple[TaskId, StepId, Assignment]:
 
 
 async def running(w: World, task_id: TaskId) -> list[StepId]:
+    if (await w.repository.get(task_id)).plan_id is None:
+        return []  # a task that ended while planning (M14.2): no plan, so no step at all
     graph = await w.engine.graph(task_id)
     return [step for step, state in graph.states.items() if state is StepState.RUNNING]
 
@@ -447,6 +450,17 @@ async def complete() -> Ended:
     return Ended(w, task.id, None, await running(w, task.id))
 
 
+async def no_to_the_planning_call() -> Ended:
+    """M14.2 (ADR 0058): a task whose planning call the user refused ends in PLANNING, where it has
+    neither a plan nor a step — there is nothing to close."""
+    w = world()
+    parts = (w.repository, w.audit, w.clock, w.ids, w.approvals, w.engine)
+    harness = Harness(*parts)  # type: ignore[arg-type]  # the world's fakes, typed as ports
+    parent, child = await planning_denied(harness)
+    await w.engine.deny_by_planning(parent.id, planning_task_id=child.id, reason="no")
+    return Ended(w, parent.id, None, await running(w, parent.id))
+
+
 ROADS: Final = (
     Road("cancel", "asking", StepState.CANCELLED, None, cancel_asking),
     Road("cancel", "nothing in the stores", StepState.CANCELLED, None, cancel_nothing),
@@ -474,6 +488,7 @@ ROADS: Final = (
     Road("deny_by_cap", "about to ask", StepState.CANCELLED, None, cap_says_no_before_asking),
     Road("fail", "none: the step failed first", None, None, fail_after_a_step_failed),
     Road("complete", "none: every step completed", None, None, complete),
+    Road("deny_by_planning", "none: a task still planning", None, None, no_to_the_planning_call),
 )
 OUTSIDE: Final = {
     "expire": "engine.expire from EXECUTING has no caller in src/ (B-R18): only the expiry of a "
