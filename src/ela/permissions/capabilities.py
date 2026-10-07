@@ -900,12 +900,14 @@ def terminal_run(programs: Sequence[str] = UNDECLARED_PROGRAMS) -> CapabilitySpe
 def browser_read(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
     """``browser.read``, **LOW**: opens one page of a declared site and reads it (§19; M13.4).
 
-    **LOW, and on three facts** (decision 4 of the review of M13.4): the sites are the user's —
-    ``ELA_BROWSER_SITES`` —, the plan is the user's, attached by hand, and the browser holds none of
-    the user's credentials — its profile is empty for every page. **Not because a read has no
-    effect**: a GET with a token in its query acts by itself, and a page runs its own script. So the
-    level stands while the three facts do, and the second stops standing the day a model writes the
-    plan: ``docs/milestones/M14.2.md`` says that milestone looks at it again.
+    **LOW, and on three facts** (decision 4 of the review of M13.4, rewritten by M14.2 — ADR 0058,
+    decision I): the sites are the user's — ``ELA_BROWSER_SITES``, with no default —; **a plan the
+    model wrote is started by the user after seeing it**, with its arguments, in what ``ela task
+    plan`` and ``ela task show`` print; and the browser holds none of the user's credentials — its
+    profile is empty for every page. **Not because a read has no effect**: a GET with a token in its
+    query acts by itself, a page runs its own script, and a GET the model wrote may carry words of
+    the goal to a declared site. So the level stands while the three facts do. In M14.2 no model
+    reads the text of a page; M14.3 is the day that changes, and looks at it again.
 
     **Not MEDIUM like** ``fs.read``, whose file is the user's own content (§57); a page read with no
     cookie is not, and what the user gives away is the visit, to a site they declared. **Not SAFE**,

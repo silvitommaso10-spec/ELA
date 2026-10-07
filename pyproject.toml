@@ -443,6 +443,16 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "15. ela.executive non importa ela.context: il Planner non mette il contesto nel prompt (ADR 0058)"
+type = "forbidden"
+# M14.2 (domanda 7 della SPEC). La regola 39 vieta che il contesto entri nell'audit e nella
+# richiesta a un provider per *nome* di tipo; un Planner che mettesse il contesto nell'`input`
+# non la farebbe scattare. Questo chiude la porta dall'altra parte: chi vorrà il contesto nel
+# prompt troverà il contratto e le quattro domande di §57. Indiretto incluso: nessuna catena.
+source_modules = ["ela.executive"]
+forbidden_modules = ["ela.context"]
+
+[[tool.importlinter.contracts]]
 name = "13. nessuno importa ela.cli: la CLI è un client, non una libreria (ADR 0024 §7)"
 type = "forbidden"
 # La seconda clausola della regola 28. Una CLI che qualcuno importa è una CLI diventata libreria

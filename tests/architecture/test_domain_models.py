@@ -22,6 +22,7 @@ from ela.domain import (
     NetworkKind,
     OperatingSystem,
     PerformanceClass,
+    PlanAuthor,
     PowerSource,
     TaskPlan,
     TaskStep,
@@ -48,7 +49,7 @@ DEVICE_TYPES = frozenset(
     }
 )
 
-PLAN_MODELS = (TaskPlan, TaskStep)
+PLAN_MODELS = (TaskPlan, TaskStep, PlanAuthor)
 
 
 def domain_models() -> tuple[type[BaseModel], ...]:
@@ -64,7 +65,7 @@ def domain_models() -> tuple[type[BaseModel], ...]:
 
 def test_the_domain_actually_has_models() -> None:
     """A rule applied to an empty list would hold vacuously."""
-    assert len(domain_models()) == 48  # 47 entities and value objects, plus the private base
+    assert len(domain_models()) == 49  # 48 entities and value objects, plus the private base
 
 
 def test_plan_is_device_independent() -> None:

@@ -150,7 +150,8 @@ def _text_only(value: object) -> object:
 
 
 class TaskCreate(BaseModel):
-    """What the user asked. The plan comes separately, and today by hand (ADR 0023 §6)."""
+    """What the user asked. The plan comes separately: written by hand (ADR 0023 §6), or by ELA's
+    Planner when asked (M14.2, ADR 0058)."""
 
     text: Annotated[str, Field(min_length=1)]
     goal: str | None = None
@@ -166,7 +167,8 @@ class TaskCreate(BaseModel):
 
 
 class StepIn(BaseModel):
-    """One step of a plan written by the caller, until the Planner (§13) writes them.
+    """One step of a plan written by the caller — the route of a plan by hand, which stays beside
+    the Planner's (§13; M14.2, ADR 0058).
 
     ``id`` is the caller's: ``dependencies`` name the other steps by id, and a step id minted here
     would leave the caller with no way to express the shape of its own plan.

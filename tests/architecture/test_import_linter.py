@@ -250,6 +250,31 @@ def test_lint_imports_breaks_contract(tmp_path: Path, package_copy: Path, case: 
     assert case.module in output
 
 
+def test_the_fifteenth_contract_breaks_on_an_executive_that_imports_the_context(
+    tmp_path: Path, package_copy: Path
+) -> None:
+    """Contract 15 (M14.2, ADR 0058): no pytest rule mirrors it — it is a door closed for the day
+    somebody wants the context in the Planner's prompt —, so its negative case is here."""
+    case = Case(
+        "the-executive-reads-the-context",
+        "",
+        "executive/prompt.py",
+        "from ela.context import core\n",
+        "ela.context",
+    )
+    shutil.copy(PYPROJECT, tmp_path / "pyproject.toml")
+    apply(case, package_copy)
+
+    result = _run_lint_imports(tmp_path)
+
+    (contract,) = [c for c in _contracts() if c["source_modules"] == ["ela.executive"]]
+    assert contract["forbidden_modules"] == ["ela.context"]
+    output = " ".join(result.stdout.split())
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f"{contract['name']} BROKEN" in output
+    assert case.module in output
+
+
 def test_lint_imports_cannot_forbid_a_package_from_itself(
     tmp_path: Path, package_copy: Path
 ) -> None:
