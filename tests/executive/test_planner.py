@@ -28,11 +28,13 @@ from ela.executive.planner import (
     PLANNER_TRUNCATED,
     PLANNER_UNANSWERED,
     PLANNER_UNVERIFIABLE,
+    Planner,
     PlanningError,
     PlanningOutcome,
     planning_id,
 )
-from ela.permissions.capabilities import CORE_ECHO
+from ela.permissions.capabilities import CORE_ECHO, MODEL_COMPLETE
+from ela.ports import NotFoundError
 from tests.executive.planning import (
     ECHO_STEP,
     NO_PLAN,
@@ -418,3 +420,111 @@ async def test_a_task_that_ended_without_planning_is_not_planned(world: Planned)
 
     with pytest.raises(PlanningError, match="CANCELLED"):
         await world.planner.plan(task.id)
+
+
+# ----------------------------------------------------------------------------------------
+# The ends nobody's gesture reaches: what a crash or a lost record leaves
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_crash_between_the_plan_of_the_child_and_its_queue_is_finished_once(
+    world: Planned, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The child is ``PLANNING`` with its plan, and not in the queue: the next gesture queues it
+    and does not write a second plan."""
+    task = await world.task()
+    queue = world.engine.queue
+
+    async def crashed(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("the process died between plan and queue")
+
+    monkeypatch.setattr(world.engine, "queue", crashed)
+    with pytest.raises(RuntimeError):
+        await world.planner.plan(task.id)
+    child = await world.repository.get(planning_id(task.id))
+    assert child.state is S.PLANNING and child.plan_id is not None
+    monkeypatch.setattr(world.engine, "queue", queue)
+
+    asked = await world.planner.plan(task.id)
+
+    assert asked.outcome is PlanningOutcome.WAITING_APPROVAL
+    assert (await world.repository.get(child.id)).plan_id == child.plan_id
+
+
+class WithoutTheModel:
+    """A tool registry where ``model.complete`` has no tool: the call cannot be made here."""
+
+    def __init__(self, inner: object) -> None:
+        self._inner = inner
+
+    def get(self, capability_id: object) -> object:
+        if capability_id == MODEL_COMPLETE:
+            raise NotFoundError("tool", str(capability_id))
+        return self._inner.get(capability_id)  # type: ignore[attr-defined]
+
+
+async def test_a_planner_whose_call_has_no_tool_refuses_before_anything_leaves(
+    world: Planned,
+) -> None:
+    planner = Planner(
+        engine=world.engine,
+        runner=world.runner,
+        repository=world.repository,
+        results=world.results,
+        approvals=world.approvals,
+        capabilities=world.registry,
+        tools=WithoutTheModel(world.tools),  # type: ignore[arg-type]
+        verifiers=world.verifiers,
+        router=world.router,
+        task_types=("reasoning",),
+    )
+    task = await world.task()
+
+    with pytest.raises(PlanningError, match="the planning call cannot be made: it requires"):
+        await planner.plan(task.id)
+    assert world.model.requests == ()
+
+
+async def completed_unsettled(world: Planned) -> tuple[TaskId, TaskId]:
+    """The child walked to its end by the runner, and the parent never settled: a crash."""
+    task = await world.task()
+    await world.yes(await world.planner.plan(task.id))
+    child = planning_id(task.id)
+    await world.runner.run(child)
+    assert (await world.repository.get(child)).state is S.COMPLETED
+    return task.id, child
+
+
+async def test_a_child_completed_with_no_answer_to_read_fails_the_parent(
+    world: Planned, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A store that lost the result of the call — an answer nobody can read is no plan."""
+    task_id, child = await completed_unsettled(world)
+
+    async def lost(*args: object, **kwargs: object) -> list[object]:
+        return []
+
+    monkeypatch.setattr(world.results, "for_step", lost)
+
+    settled = await world.planner.settle(task_id)
+
+    assert settled.outcome is PlanningOutcome.FAILED
+    assert settled.no_plan is None and settled.problems == ()
+    reason = await reason_of(world, task_id)
+    assert PLANNER_CALL_FAILED in reason
+    assert f"the planning task {child} completed with no answer to read" in reason
+
+
+async def test_a_parent_stopped_after_its_child_completed_keeps_no_plan_and_says_none(
+    world: Planned,
+) -> None:
+    """The plan the model wrote is never attached to a task that ended: the view says the end,
+    with no words of «no plan» and no problems, because there were none."""
+    task_id, _ = await completed_unsettled(world)
+    await world.engine.cancel(task_id, reason="fermato")
+
+    settled = await world.planner.settle(task_id)
+
+    assert settled.outcome is PlanningOutcome.CANCELLED
+    assert settled.task.plan_id is None
+    assert settled.no_plan is None and settled.problems == ()

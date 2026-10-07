@@ -22,6 +22,7 @@ import pytest
 from ela.domain import (
     PlanAuthorKind,
     PlanId,
+    ProviderStatus,
     RiskLevel,
     TaskId,
     TaskPlan,
@@ -41,6 +42,7 @@ from ela.executive.planner import (
     drafted_plan,
     read_answer,
 )
+from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
 from tests.domain.examples import MODEL_AUTHOR
 from tests.executive.planning import (
     ASK_STEP,
@@ -53,6 +55,7 @@ from tests.executive.planning import (
     plan_of,
     step,
 )
+from tests.routing.support import routing_for
 
 TASK = TaskId(UUID("00000000-0000-4000-8000-000000000101"))
 PLAN = PlanId(UUID("00000000-0000-4000-8000-000000000102"))
@@ -125,8 +128,19 @@ def test_spaces_around_the_object_are_not_text_around_it(world: Planned) -> None
         '"a plan"',
         "",
         '{"plan": {"steps": [}',
+        '{"no_plan": {"reason": NaN}}',
+        '{"no_plan": {"reason": Infinity}}',
     ],
-    ids=["a-sentence-before", "a-code-fence", "an-array", "a-string", "nothing", "broken"],
+    ids=[
+        "a-sentence-before",
+        "a-code-fence",
+        "an-array",
+        "a-string",
+        "nothing",
+        "broken",
+        "nan",
+        "infinity",
+    ],
 )
 def test_anything_but_one_json_object_is_not_json(world: Planned, text: str) -> None:
     answer = refused(world, text)
@@ -215,11 +229,11 @@ def test_what_does_not_fit_the_shape_is_malformed(world: Planned, text: str) -> 
 
 
 def test_a_value_the_model_wrote_is_never_in_the_reason(world: Planned) -> None:
-    secret = "a-value-only-the-model-wrote"
-    answer = refused(world, plan_of(step(ECHO_STEP, capability=secret)))
+    written = "a-value-only-the-model-wrote"
+    answer = refused(world, plan_of(step(ECHO_STEP, capability=written)))
 
-    assert secret not in answer.message
-    assert all(secret not in problem for problem in answer.problems)
+    assert written not in answer.message
+    assert all(written not in problem for problem in answer.problems)
 
 
 # ----------------------------------------------------------------------------------------
@@ -284,6 +298,33 @@ def test_arguments_outside_the_schema_are_refused_with_the_paths(world: Planned)
     assert answer.message.startswith("step 1 of 1 (core.echo): ")
     assert "$.message" in answer.message
     assert "extra" not in answer.message, "the paths, as the Guardian says them (ADR 0011 §8)"
+
+
+def test_a_route_with_no_usable_provider_is_the_run_s_to_refuse(world: Planned) -> None:
+    """Only ``routing.unknown_task_type`` refuses the plan: a route whose provider is unavailable
+    today is refused at the run, with the cap's reason (ADR 0057 §2) — the plan is not wrong."""
+    unavailable = FakeModelProvider(
+        FakeClock(), FakeIdGenerator(), status=ProviderStatus.UNAVAILABLE
+    )
+    router, _ = routing_for(unavailable)
+    asked = step(ASK_STEP, arguments={"input": "q", "task_type": "reasoning"})
+    drafts = read(world, plan_of(asked))
+    assert isinstance(drafts, tuple)
+
+    plan = drafted_plan(
+        drafts,
+        task_id=TASK,
+        goal="the task's own goal",
+        plan_id=PLAN,
+        created_at=AT,
+        author=MODEL_AUTHOR,
+        capabilities=world.registry,
+        tools=world.tools,
+        verifiers=world.verifiers,
+        router=router,
+    )
+
+    assert isinstance(plan, TaskPlan)
 
 
 def test_a_task_type_outside_the_routing_table_is_refused(world: Planned) -> None:
