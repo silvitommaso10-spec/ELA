@@ -1,8 +1,9 @@
 # 0057. Il tetto di spesa: una riga del Core, il caso peggiore prenotato nella `STARTED`, e i modelli 5.5
 
-- **Stato:** Proposta. Aperta il 2026-10-06 con la SPEC di M14.1 e le decisioni della review dello stesso giorno
-  (A–L della sessione, 1–18 della review, in `docs/milestones/M14.1.md`); diventa Accettata quando la prova a mano di
-  `docs/GETTING_STARTED.md` §23 è passata. **Rivista il 2026-10-07**, prima della prova, sulla console vera: il secondo
+- **Stato:** Accettata il **2026-10-07**, quando la prova a mano di `docs/GETTING_STARTED.md` §23 è passata sul Mac e
+  sul PC a `845830c` (`~/Downloads/prova-m14.1-20261007-213354.txt`, 45 PASSATI al primo giro; §12). Aperta il
+  2026-10-06 con la SPEC di M14.1 e le decisioni della review dello stesso giorno (A–L della sessione, 1–18 della
+  review, in `docs/milestones/M14.1.md`). **Rivista il 2026-10-07**, prima della prova, sulla console vera: il secondo
   tetto è il limite mensile dell'organizzazione, non quello della workspace, e il codice di §10 si rinomina
   (`docs/milestones/M14.1.md`, «Le decisioni del 2026-10-07»). **Corretta lo stesso giorno**, dalla review di
   `be7f131`: l'azzeramento alle 00:00 UTC la documentazione lo scrive per il tetto del livello, non per il limite scelto,
@@ -293,7 +294,9 @@ il lavoro non è stato fatto e che potrebbe farsi poco dopo — non per il `429`
 mese dopo (review di `be7f131`). Un timeout, una connessione caduta, ogni altro `5xx` e una risposta illeggibile possono arrivare dopo
 che il lavoro è stato fatto e pagato: nessuno lo sa, e un esito ignoto **non si paga due volte**. Per questi l'esito è
 «partita, costo ignoto», e il libro tiene il caso peggiore. **Che un `529` non si paghi è una lettura del nome**,
-«overloaded»: la documentazione non lo scrive. `ELA_ANTHROPIC_MAX_RETRIES` conta i ritentativi di quei due.
+«overloaded»: la documentazione non lo scrive. **Anche un `4xx` chiude la prenotazione a zero** (`unrun` in
+`errors.py`), e anche questa è una lettura, della classe dello stato: una richiesta rifiutata non è eseguita, ma la
+documentazione non lo scrive. `ELA_ANTHROPIC_MAX_RETRIES` conta i ritentativi del `429` di frequenza e del `529`.
 
 L'adapter scrive anche **l'id della workspace** in cui la chiave ha lavorato, dall'intestazione della risposta: il tool
 lo mette nell'output, `workspace` (decisione 12). È ciò che fa vedere alla prova che le due chiavi di ELA stanno nella
@@ -316,14 +319,19 @@ Gli ADR non si riscrivono: queste righe si leggono con questo accanto.
 - **ADR 0021 «Nessun budget»** e **ADR 0022 «Nessun budget»**: l'usage si somma, nel libro derivato di §4, e si
   confronta con il tetto di §1, prima della chiamata.
 - **ADR 0040, due vincoli dichiarati** che ADR 0043 §9 manda qui — la negativa delle due tabelle di rotte e il task il
-  cui nodo tace a metà lavoro — si chiudono con i passi 7 e 6 di §23, **quando la prova passa**.
+  cui nodo tace a metà lavoro — si chiudono con i passi 7 e 6 di §23: **chiusi il 2026-10-07**, quando la prova è
+  passata (§12).
 
 ### 12. La prova a mano
 
 `docs/GETTING_STARTED.md` §23, con lo script `scripts/prova_m14_1.py`, sul Mac e sul PC: il PC sullo stesso commit, il
 secondo tetto — il limite dell'organizzazione, sopra il tetto di ELA —, i tre modelli con la chiave vera, il tetto che
 scatta, una chiamata del PC con la stessa workspace, il nodo che tace con la sua prenotazione aperta, e la negativa
-`model.misrouted`. **Da fare.**
+`model.misrouted`. **Passata il 2026-10-07** a `845830c`, sul Mac e sul PC, 45 PASSATI al primo giro: con il tetto
+piccolo Opus 5.5 negato prima della chiamata e Haiku passato, i tre modelli con il costo vero e il modello dichiarato
+uguale a quello della tabella, lo stesso id di workspace per le chiamate del Mac e del PC, il task del nodo che tace
+`FAILED` con `execution.interrupted` e la sua prenotazione aperta, e `model.misrouted`. Le misure sono in §23 e in
+`docs/milestones/M14.1.md`, «Passata il 2026-10-07».
 
 ## Alternative considerate
 
@@ -362,7 +370,8 @@ Ciò che questo ADR dichiara e non risolve:
   scattare con ELA in regola: la ragione dice il fatto e il conto di ELA, non la causa (§10).
 - **Il credito esaurito non si riconosce**: la documentazione non scrive la sua risposta, e resta
   `provider.bad_request` se è un `400` (§10).
-- **Che un `529` non si paghi è la lettura del nome** (§10).
+- **Che un `529` non si paghi è la lettura del nome**, e che un `4xx` non si paghi è la lettura della classe dello
+  stato (§10).
 - **Il prezzo non si controlla da sé**: lo controlla una persona ogni trenta giorni (§3).
 - **La regola 61 non vede una sessione di Claude Code** (§6), che M14.3 porterà.
 - **Il confronto fra la somma di ELA e il costo della console è una misura da fare dopo un mese d'uso**: le chiamate di

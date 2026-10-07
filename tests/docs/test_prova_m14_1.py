@@ -406,3 +406,76 @@ def test_three_answers_before_the_ctrl_c_skip_the_step(monkeypatch: pytest.Monke
     assert proof.report.skipped_steps == [6]
     assert proof.report.failures == 0, "skipped, never failed: it is not ELA's"
     assert not proof.report.ok
+
+
+# ----------------------------------------------------------------------------------------
+# A cap ELA does not read stops the proof: what follows would measure another cap
+# ----------------------------------------------------------------------------------------
+
+THE_REST = "il resto del giro sarebbe misurato con un tetto che non è quello voluto"
+
+
+class Ela:
+    """An ELA restarted by the hand with the cap of its ``.env``: ``/health`` and ``/spend``."""
+
+    def __init__(self, cap: str) -> None:
+        self.cap = cap
+
+    def get(self, path: str) -> Any:
+        if path == "/spend":
+            return {"cap": self.cap, "spent": "0.245361", "reserved": "0", "open": 0}
+        return {"status": "ok"}
+
+    def close(self) -> None:
+        return None
+
+
+def walked(read: str, yours: str | None) -> tuple[Any, list[int]]:
+    """Step 4 puts back the cap of before — ``tetto`` «il tuo» —, and ELA reads ``read``; step 7
+    follows with a hand of its own."""
+    module = script()
+    ela = Ela(read)
+    proof = module.Proof(
+        api=ela, report=module.base.Report(io.StringIO()), ask=lambda question: "", yours=yours
+    )
+    proof.reconnect = lambda: ela
+    todo = {
+        4: [module.base.Block(4, "tetto", module.YOURS)],
+        7: [module.base.Block(7, "mano", "Lancia il task sul PC, poi Invio.")],
+    }
+    done: list[int] = []
+
+    def one(number: int, its: list[Any]) -> None:
+        done.append(number)
+        module.a_step(number, its, proof)
+
+    module.base.walk(proof.report, todo, one)
+    proof.report.verdict()
+    return proof.report, done
+
+
+@pytest.mark.parametrize(
+    ("read", "yours"), [("1.245361", "50"), ("50", None)], ids=["another-cap", "never-read"]
+)
+def test_a_cap_that_fails_stops_the_proof_and_the_verdict_says_why(
+    read: str, yours: str | None
+) -> None:
+    """2026-10-07, 21:17: ELA read 1.245361 where 50 was wanted, and step 7 measured five FALLITO
+    under the small cap. A ``tetto`` that fails is the last thing the proof does."""
+    report, done = walked(read, yours)
+
+    assert done == [4], "no step after the cap"
+    assert report.failures == 1, "the cap's own FALLITO, and nothing measured under it"
+    assert not report.ok
+    assert any(line.startswith("[4] FERMATO: ") and THE_REST in line for line in report.lines)
+    assert report.lines[-1] == (
+        f"La prova non è passata: la prova si è fermata al passo 4 — {THE_REST}, 1 FALLITI."
+    )
+
+
+def test_a_cap_ela_reads_lets_the_proof_go_on() -> None:
+    report, done = walked("50", "50")
+
+    assert done == [4, 7]
+    assert report.ok
+    assert report.lines[-1] == "La prova è passata."

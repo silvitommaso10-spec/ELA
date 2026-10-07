@@ -259,6 +259,9 @@ class Report:
     skipped_steps: list[int] = field(default_factory=list)
     lost_at: int | None = None
     """The step where ELA stopped answering, if it did: no step after it was done (decision R)."""
+    stopped: tuple[int, str] | None = None
+    """The step that stopped the proof, and why: what followed it would have measured something
+    else (M14.1, 2026-10-07)."""
 
     def say(self, text: str = "") -> None:
         print(text, flush=True)
@@ -298,6 +301,11 @@ class Report:
             "i passi che restano non si fanno"
         )
 
+    def stop(self, step: int, why: str) -> None:
+        """``step`` failed in a way that makes the rest measure something else: no step after it."""
+        self.stopped = (step, why)
+        self.say(f"[{step}] FERMATO: {why}; i passi che restano non si fanno")
+
     @property
     def ok(self) -> bool:
         return (
@@ -305,6 +313,7 @@ class Report:
             and not self.skipped_steps
             and not self.refused
             and self.lost_at is None
+            and self.stopped is None
         )
 
     def verdict(self) -> None:
@@ -321,6 +330,11 @@ class Report:
             return
         lacking = [
             *([f"ELA ha smesso di rispondere al passo {self.lost_at}"] if self.lost_at else []),
+            *(
+                [f"la prova si è fermata al passo {self.stopped[0]} — {self.stopped[1]}"]
+                if self.stopped
+                else []
+            ),
             *([f"{self.failures} FALLITI"] if self.failures else []),
             *(f"il passo {step} SALTATO" for step in self.skipped_steps),
             *(f"un no al passo {step}" for step in self.refused),
@@ -348,6 +362,14 @@ class Silent(Exception):
     """ELA stopped answering in the middle of the proof: what said so, for the file (decision R)."""
 
 
+class Stop(Exception):
+    """A step failed so that every step after it would measure something else: why, for the file.
+
+    M14.1, 2026-10-07: a ``tetto`` that ELA did not read, and step 7 measured five FALLITO under
+    the cap of step 4. A test asserts only what it built the preconditions of.
+    """
+
+
 def heard(line: str, done: subprocess.CompletedProcess[str]) -> subprocess.CompletedProcess[str]:
     """``done`` as it is, unless it is a command of ELA's whose exit says nothing answered.
 
@@ -368,13 +390,17 @@ def walk(
 
     At 10:45 of 2026-10-05 ELA stopped at step 8 — a Ctrl-C pressed on ``ela serve`` — and the
     script fell with a traceback that reached the terminal and not the file, with no last line.
-    Now the step is in the file, no step after it is done, and the verdict says so: exit 1.
+    Now the step is in the file, no step after it is done, and the verdict says so: exit 1. A
+    :class:`Stop` ends the walk the same way, with the step's own reason (M14.1, 2026-10-07).
     """
     for number, its in todo.items():
         try:
             one(number, its)
         except (Unreachable, Silent) as away:
             report.lost(number, str(away))
+            return
+        except Stop as why:
+            report.stop(number, str(why))
             return
 
 

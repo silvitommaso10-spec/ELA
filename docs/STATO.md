@@ -225,6 +225,10 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   questo Mac e un PC Windows — e il companion iPhone, che nodo non è. Che cosa ha portato,
   milestone per milestone, è il [changelog](CHANGELOG.md); il censimento di ciò che ha onorato, di
   ciò che non le si applicava e di ciò che si è spostato con una casa nuova è in ADR 0043 §9.
+  ***Le due verifiche che M12.4 aveva lasciato al tetto di spesa sono chiuse il 2026-10-07***, con la
+  prova a mano di M14.1 (`GETTING_STARTED.md` §23, passi 6 e 7): la negativa `model.misrouted` sulle
+  due macchine, e il task il cui nodo tace a metà lavoro, `FAILED` con `execution.interrupted` e non
+  rieseguito (ADR 0040, vincoli dichiarati).
   ***Ha smesso di essere la prima voce il 2026-09-21***, quando la 13 è cominciata: la regola della
   prima voce ha fatto esattamente ciò per cui esiste, tenere il filo fino al giorno dopo.
 - **Fase 17 — il design.** Registrata il 2026-09-18: la fonte di verità è
@@ -436,8 +440,8 @@ non è a consumo.
 Il budget dell'utente sulla chiave API è **non più di ~50 EUR al mese**, più gli abbonamenti già in
 essere.
 
-**Da M14.1 lo fa rispettare ELA** ([ADR 0057](adr/0057-spending-cap.md), Proposta finché la prova a
-mano di `GETTING_STARTED.md` §23 non è passata). Il tetto è una riga del `.env` del Core,
+**Da M14.1 lo fa rispettare ELA** ([ADR 0057](adr/0057-spending-cap.md), Accettata il 2026-10-07,
+quando la prova a mano di `GETTING_STARTED.md` §23 è passata sul Mac e sul PC). Il tetto è una riga del `.env` del Core,
 `ELA_SPENDING_CAP_USD`, in dollari come il listino e la console, e la scrive chi paga: nel codice non
 c'è nessun numero. Prima di ogni chiamata che spende ELA prenota il caso peggiore — la finestra di
 contesto del modello meno l'output, più il `max_tokens` della richiesta — e la lascia partire solo

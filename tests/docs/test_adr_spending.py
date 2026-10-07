@@ -136,13 +136,21 @@ def test_the_budget_lines_it_revises_are_still_there_as_they_were_written() -> N
         assert "**Nessun budget**" in (ADR_DIR / name).read_text(encoding="utf-8"), name
 
 
-def test_it_is_proposed_until_the_proof_by_hand_has_passed() -> None:
+def test_it_was_accepted_only_after_the_proof_by_hand(shown: str = "2026-10-07") -> None:
+    """It stayed «Proposta» until §23 passed on the Mac and the PC, and was accepted in the same
+    commit that gave the guide the proof: an ADR accepted over a guide whose proof is still to do
+    would be the thing that was refused (the form of ADR 0040)."""
     (row,) = INDEX_ROW.findall((ADR_DIR / "README.md").read_text(encoding="utf-8"))
     status = adr_text().split("- **Stato:**", 1)[1].split("\n- **", 1)[0]
+    guide = (ROOT / "docs" / "GETTING_STARTED.md").read_text(encoding="utf-8")
+    section = guide.split("## 23. ", 1)[1].split("\n## ", 1)[0]
 
-    assert row[1] == "Proposta"
-    assert status.strip().startswith("Proposta")
-    assert "§23" in status
+    assert row[1] == "Accettata"
+    assert status.strip().startswith(f"Accettata il **{shown}**")
+    assert "§23" in status and "prova-m14.1-20261007-213354.txt" in status
+    assert "**Da fare.**" not in section
+    assert "**Da fare.**" not in adr_text()
+    assert f"**Fatta da Tommaso il {shown} sul branch**" in section
 
 
 def test_stato_says_who_enforces_the_cap_now() -> None:

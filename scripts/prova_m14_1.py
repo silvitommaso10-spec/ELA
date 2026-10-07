@@ -25,7 +25,8 @@ sul suo azzeramento: la console non risponde a ciò che la documentazione non sc
   all'inizio del passo;
 * ``tetto``: «piccolo» calcola speso + prenotato + 1 e lo stampa come riga del ``.env``; «il tuo»
   rimette quello di prima; aspetta Invio — il Core riavviato da Tommaso — e controlla che ELA lo
-  legga;
+  legga. **Un** ``tetto`` **fallito ferma la prova**: i passi dopo sarebbero misurati con un tetto
+  che non è quello voluto, e il verdetto lo dice;
 * ``tace`` e ``aspetta``: che il nodo non abbia consegnato prima del ``Ctrl-C``, e la scadenza della
   presa, con il TTL del ``.env`` del Core. **Un esito arrivato prima del** ``Ctrl-C`` **fa il giro
   SALTATO, e il passo si rifà** (decisione 17), fino a tre giri: non è un FALLITO di ELA.
@@ -92,6 +93,8 @@ LEDGER_WORDS: Final = (SPENT_SAME, RESERVED_SAME, SPENT_BY_THE_COST, ONE_MORE_OP
 """The vocabulary of ``spesa``: what changed in ``GET /spend`` since the last look."""
 SILENT: Final = "nessun esito prima del Ctrl-C"
 LAPSE: Final = "la presa scade"
+THE_REST: Final = "il resto del giro sarebbe misurato con un tetto che non è quello voluto"
+"""Why a ``tetto`` that fails stops the proof (2026-10-07, 21:17)."""
 MARGIN: Final = 5
 """Seconds after the TTL of a claim before the step reads it lapsed: the node's last renewal may
 have landed a moment after the script started waiting."""
@@ -345,7 +348,7 @@ def a_cap(number: int, line: str, turn: Turn, proof: Proof) -> None:
     elif line == YOURS:
         if proof.yours is None:
             report.failure(number, "il tetto di prima non è mai stato letto")
-            return
+            raise base.Stop(THE_REST)
         wanted = proof.yours
     else:
         raise ValueError(f"step {number}: {line!r} is not in the vocabulary of tetto")
@@ -353,10 +356,10 @@ def a_cap(number: int, line: str, turn: Turn, proof: Proof) -> None:
     proof.ask(f"[{number}] Scrivi la riga nel .env del Core, riavvia il Core, poi Invio. ")
     back(proof)
     read = proof.ledger()
-    if read.cap is not None and Decimal(read.cap) == Decimal(wanted):
-        report.passed(number, f"ELA legge il tetto {read.cap} {CURRENCY}")
-    else:
+    if read.cap is None or Decimal(read.cap) != Decimal(wanted):
         report.failure(number, f"ELA legge il tetto {read.cap}, non {wanted}")
+        raise base.Stop(THE_REST)
+    report.passed(number, f"ELA legge il tetto {read.cap} {CURRENCY}")
     turn.before = read
 
 

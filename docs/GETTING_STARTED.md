@@ -951,7 +951,9 @@ nodo si riavvia con `uv run python -m ela.cli node run`.
 
 **Che cosa ne è stato del task interrotto non è stato letto** (2026-09-17): la lettura è stata
 saltata durante la prova. Per il Core è un nodo che ha taciuto, e l'assegnazione scade — ma qui non
-c'è l'output che lo mostra.
+c'è l'output che lo mostra. ***Letto il 2026-10-07***, con la prova a mano di M14.1 (§23, passo 6):
+`Ctrl-C` sul nodo del PC a metà chiamata, la presa scaduta in 125 secondi, e il task `FAILED` con
+`execution.interrupted`, non rieseguito.
 
 ### 8. Le prove negative
 
@@ -989,7 +991,8 @@ Aveva più punti del Mac e non è stato scelto. Il consenso della nota si nega c
 **Una tabella di rotte diversa fa fallire la verifica** — **non eseguita il 2026-09-17**, perché non
 c'era ancora una chiave del modello né sul Mac né sul PC, e senza chiave `model.complete` fallisce
 prima della verifica con `provider.unavailable`. **Da M14.1 è il passo 7 di §23**, con le chiavi e con lo
-script; qui sotto i comandi a mano. Il Core prenota il caso peggiore di Opus 5.5, la sua rotta; il PC chiama Haiku, che
+script, ***ed è passata il 2026-10-07*** sulle due macchine: il risultato del PC `SUCCEEDED` sul nodo, e il task
+`FAILED` con `model.routed_as_asked (model.misrouted)`. Qui sotto i comandi a mano. Il Core prenota il caso peggiore di Opus 5.5, la sua rotta; il PC chiama Haiku, che
 ci sta dentro. Ferma il nodo con `Ctrl-C`, aggiungi al `.env` del PC una riga che il Mac non ha, e riavvialo:
 
 ```powershell
@@ -3857,7 +3860,25 @@ senza la riga del catalogo vuoto.
 > sezione. **Riallineata con la console vera il 2026-10-07**, e corretta lo stesso giorno: il secondo tetto è il limite
 > mensile dell'organizzazione, non quello della workspace, e il mese di ELA resta dichiarato (M14.1, «Le decisioni del
 > 2026-10-07»). La si fa sul Mac e sul PC,
-> sul branch di M14.1, con lo script `scripts/prova_m14_1.py`. **Da fare.**
+> sul branch di M14.1, con lo script `scripts/prova_m14_1.py`. **Fatta da Tommaso il 2026-10-07 sul branch**, a
+> `845830c`, sul Mac e sul PC: passata, 45 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO
+> (`~/Downloads/prova-m14.1-20261007-213354.txt`); [ADR 0057](adr/0057-spending-cap.md) è Accettata.
+
+**Che cosa ha misurato**, il 2026-10-07:
+
+- **Il tetto che scatta** (passo 4): con il tetto piccolo, 1,48308 $, Opus 5.5 è negato prima della chiamata — speso
+  0,017544 + prenotato 0,465536 + caso peggiore 4,065536 sopra il tetto —, e Haiku passa sotto lo stesso tetto. Ogni
+  domanda nomina il caso peggiore e ciò che resta del mese.
+- **I costi veri**, ciascuno con il modello che la risposta dichiara uguale a quello della tabella:
+  `claude-opus-5-5` 0,003016 $, `claude-sonnet-5-5` 0,00097 $, `claude-haiku-4-5-20251001` 0,000315 $ e 0,00031 $
+  sul Mac, 0,000325 $ sul PC al passo 5 e 0,000595 $ sul PC al passo 7.
+- **Le due chiavi nella stessa workspace**: lo stesso id per le chiamate del Mac e del PC.
+- **Il nodo che tace** (passo 6): `Ctrl-C` sul nodo del PC, la presa scaduta in 125 secondi, il task `FAILED` con
+  `execution.interrupted` e non rieseguito; in `ela spend` lo speso invariato e una prenotazione aperta in più.
+- **Le rotte diverse** (passo 7): il risultato del PC `SUCCEEDED` sul nodo, e il task `FAILED` con
+  `model.routed_as_asked (model.misrouted)`.
+
+Così si chiudono le due verifiche che M12.4 aveva lasciato a questa milestone (§12, passi 7 e 8; ADR 0040).
 
 **Da M14.1 nessuna chiamata che spende parte senza un tetto** ([ADR 0057](adr/0057-spending-cap.md)). Il tetto è una
 riga del `.env` del Core, in dollari come il listino e la console:
@@ -3897,6 +3918,8 @@ tipi di §21 — `comando`, `atteso`, `occhio`, `richiede`, `guarda`, `mano` —
 - **`spesa`**: confronta `GET /spend` con com'era all'ultimo `tetto`, all'ultima `spesa` o all'inizio del passo.
 - **`tetto`**: «piccolo» calcola un tetto — speso + prenotato + 1 — e lo stampa come riga da mettere nel `.env` del
   Core; «il tuo» stampa quello che c'era. Aspetta che tu la scriva e riavvii il Core, e controlla che ELA la legga.
+  **Se ELA legge un altro tetto, la prova si ferma lì** — **FERMATO** —: il resto sarebbe misurato con un tetto che
+  non è quello voluto, e l'ultima riga lo dice.
 - **`tace`** e **`aspetta`**: al passo 6, che il nodo non abbia consegnato prima del `Ctrl-C`, e che la presa scada —
   l'attesa la fa lo script, con il TTL della presa del `.env` del Core.
 

@@ -353,10 +353,16 @@ viaggiano dentro un risultato, come sua parola, e non come risposta a una richie
 - **Che due tabelle di rotte diverse facciano fallire la verifica non è stato provato a mano**: la
   prova negativa di `GETTING_STARTED.md` §12 chiede una chiave del modello, e il 2026-09-17 non ce
   n'era una né sul Mac né sul PC. Il percorso è provato dalla suite, non dalle due macchine.
+  ***Chiuso il 2026-10-07*** dalla prova a mano di M14.1 (`GETTING_STARTED.md` §23, passo 7), sulle
+  due macchine con le loro chiavi: il PC con una tabella diversa ha chiamato Haiku, il suo risultato
+  è `SUCCEEDED` sul nodo, e il task è `FAILED` con `model.routed_as_asked (model.misrouted)`.
 - **Che cosa diventa un task il cui nodo tace a metà lavoro non è stato letto**: nella prova del
   2026-09-17 il `Ctrl-C` sul nodo è stato dato e lo stato finale di quel task non è stato guardato.
   Il protocollo lo tratta come un'assegnazione che scade (M12.1 D6), e nessuna riga della prova lo
-  mostra.
+  mostra. ***Chiuso il 2026-10-07*** dalla prova a mano di M14.1 (§23, passo 6): `Ctrl-C` sul nodo
+  del PC a metà chiamata, la presa scaduta in 125 secondi, e il task `FAILED` con
+  `execution.interrupted`, non rieseguito; la sua prenotazione resta aperta al caso peggiore
+  (ADR 0057 §4).
 - **Il vocabolario del filo copre le risposte dell'API e non i codici dei tool**: un `provider.*` o uno
   `speech.*` inventato in un test del nodo non lo ferma nessuna lista chiusa, perché viaggia dentro un
   risultato (§7).
