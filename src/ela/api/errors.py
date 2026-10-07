@@ -12,6 +12,7 @@ from ela.domain import TaskId
 __all__ = [
     "ApiError",
     "DatabaseUnavailableError",
+    "PlanNotReadyError",
     "RevisionRequiredError",
     "TaskAlreadyRunningError",
 ]
@@ -51,3 +52,15 @@ class RevisionRequiredError(ApiError):
         super().__init__(
             'PUT /nodes/me is conditional: send the revision you last saw as If-Match: "<revision>"'
         )
+
+
+class PlanNotReadyError(ApiError, ValueError):
+    """A plan written by hand with a step the executor would refuse (M14.2, ADR 0058; decision 8).
+
+    A ``ValueError``, so the table answers it as every malformed plan — ``422`` ``invalid`` —: the
+    caller has to change *what* they sent. Until M14.2 such a plan came in, and left its task
+    ``EXECUTING`` at the first run, answering ``409`` to every run after it.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"the plan has a step the executor would refuse: {reason}")

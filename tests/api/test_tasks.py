@@ -300,22 +300,23 @@ async def test_a_plan_without_steps_is_refused(client: AsyncClient) -> None:
     assert response.status_code == 422
 
 
-async def test_a_step_naming_a_capability_nobody_implements_waits(client: AsyncClient) -> None:
-    """§33 through the API: no node can run it, so the task **waits** instead of failing.
-
-    The orchestrator advises and never moves a task (ADR 0017 §6): a capability no tool
-    implements leaves the step unplaceable, and unplaceable is not the same as impossible.
+async def test_a_step_naming_a_capability_nobody_implements_is_refused_before_the_queue(
+    client: AsyncClient,
+) -> None:
+    """Until M14.2 such a task **waited**, ``waiting_device`` with ``UNKNOWN_CAPABILITY``, at every
+    run. Since ADR 0058 (decision 8 of the review) the route asks the executor's own preconditions
+    before it moves the task: a capability outside the catalogue is a plan nobody can run, refused
+    with ``422`` and nothing written. Unplaceable for want of a node still waits — the test below.
     """
+    task_id = (await client.post("/tasks", json={"text": "un task"})).json()["id"]
     plan = echo_plan()
     plan["steps"][0]["required_capabilities"] = ["core.rm_rf"]
-    task_id = await queued(client, plan)
 
-    body = (await client.post(f"/tasks/{task_id}/run")).json()
+    response = await client.post(f"/tasks/{task_id}/plan", json=plan)
 
-    assert body["outcome"] == "waiting_device"
-    assert body["task"]["state"] == TaskState.QUEUED.value
-    # And *why*, since M6.1b: a bare "waiting_device" is not something anybody can act on.
-    assert "UNKNOWN_CAPABILITY" in body["reason"]
+    assert response.status_code == 422, response.text
+    assert "step 1 of 1 requires a capability that is not in the catalogue" in response.text
+    assert (await client.get(f"/tasks/{task_id}")).json()["state"] == TaskState.CREATED.value
 
 
 async def test_a_step_whose_tool_the_node_does_not_have_says_which_tool(

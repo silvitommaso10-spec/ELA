@@ -230,6 +230,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # The steps a task that has ended left open (M6.3c, decision 2 of the review): what recover()
     # just ended, what a crash left between the end and the close, and the rows of before M6.3c.
     app.state.closed = await ela.executor.close_every_open_step()
+    # And the tasks a planning left open (M14.2, decision 13 of the review): a question that expired
+    # in recover() above, a crash between the end of a planning task and the settle of the task it
+    # plans. Found with a read of the repository, after the two that close what ended.
+    app.state.planned = await ela.planner.settle_all()
     ela.captures.purge(ela.clock.now())
     # And the voice's floor, for the same reason and a smaller one: what it collects is the crash
     # that landed between making the audio's file and unlinking it — one syscall wide, and exactly
@@ -269,6 +273,7 @@ def create_app(ela: Ela) -> FastAPI:
     app.state.ela = ela
     app.state.running = set()
     app.state.recovery = RecoverySummary((), (), ())
+    app.state.planned = ()
     app.state.refused = Counter()
     # Raised when the process is asked to stop, so that a node holding a long-poll is answered at
     # the instant of the signal instead of at the end of its window (ADR 0038 §11). Who raises it is

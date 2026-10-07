@@ -1,8 +1,9 @@
 """Tasks over HTTP: create, read, plan, run, stop (spec §14, §15, §65; ADR 0023 §6, §9).
 
-**The plan arrives from outside** because the Planner (§13) does not exist yet: ``/plan`` does
-``start_planning`` → ``plan`` → ``queue``, and the day the Planner arrives it takes exactly that
-place. Every transition is the Task Engine's; this module writes nothing of its own.
+**A plan arrives in two ways** since M14.2 (ADR 0058). ``/plan`` takes a plan written by hand and
+does ``start_planning`` → ``plan`` → ``queue``; ``/planning`` asks ELA's Planner (§13), whose plan
+enters by that same door — ``engine.plan`` and ``queue`` — and nobody else's. Every transition is
+the Task Engine's; this module writes nothing of its own.
 """
 
 from __future__ import annotations
@@ -13,12 +14,14 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 
 from ela.api.deps import ElaDep, IdentityDep, RunningDep
-from ela.api.errors import TaskAlreadyRunningError
+from ela.api.errors import PlanNotReadyError, TaskAlreadyRunningError
 from ela.api.schemas import (
+    ApprovalOut,
     CancelIn,
     FinishedOut,
     FinishedTaskOut,
     PlanIn,
+    PlanningOut,
     RunOut,
     TaskCreate,
     TaskDetail,
@@ -28,24 +31,30 @@ from ela.composition import Ela
 from ela.domain import (
     IntentChannel,
     IntentId,
+    Task,
     TaskId,
     TaskState,
+    TaskStep,
     UserIntent,
 )
 from ela.executive import Run
+from ela.executive.planner import Planning, PlanningError, is_planning_task, planning_id
+from ela.executive.readiness import Unready, readiness
 from ela.tasks.engine import TERMINAL_STATES
 from ela.tasks.graph import TaskGraph
 
-__all__ = ["PLAN_IS_TEMPORARY", "close_if_free", "router"]
+__all__ = ["PLAN_IS_TEMPORARY", "close_if_free", "router", "settle_the_plan_of"]
 
 PLAN_IS_TEMPORARY = (
-    "**The shape of this request is temporary and unversioned.** ELA has no Planner (spec §13) "
-    "yet, so a plan is written by hand and sent here; the day the Planner writes plans itself, "
-    "this endpoint's schema may change — or the endpoint may go — **without a version bump**. "
-    "Build nothing long-lived on it.\n\n"
+    "**The shape of this request is the shape of a plan written by hand, and it is unversioned.** "
+    "ELA's Planner (spec §13) writes plans itself, through `POST /tasks/{task_id}/planning`; this "
+    "endpoint stays for the plans a person writes — the tests and the proofs drive ELA with them "
+    "—, and its schema may change **without a version bump**. Build nothing long-lived on it.\n\n"
     "Attaches the plan and queues the task: CREATED to PLANNING to (plan) to QUEUED. A plan that "
-    "cannot be a graph — a cycle, a dependency on a step outside the plan, a duplicate id — is "
-    "refused before the task is moved, and nothing is written."
+    "cannot be a graph — a cycle, a dependency on a step outside the plan, a duplicate id — or "
+    "with a step the executor would refuse — not exactly one capability of the catalogue, no "
+    "success condition, one outside its verifier's vocabulary — is refused before the task is "
+    "moved, and nothing is written. A task ELA is planning takes no plan by hand."
 )
 """What the API says about itself where whoever uses it will read it (review of M8.1).
 
@@ -106,10 +115,32 @@ async def finished_tasks(ela: ElaDep, limit: Annotated[int, Query(ge=1)]) -> Fin
 
 @router.get("/{task_id}")
 async def read_task(task_id: UUID, ela: ElaDep) -> TaskDetail:
-    """The task and where each of its steps stands. No plan yet: ``steps`` is empty."""
-    task = await ela.repository.get(TaskId(task_id))
-    graph = None if task.plan_id is None else await ela.engine.graph(TaskId(task_id))
-    return TaskDetail.of_graph(task, graph, await ela.executor.halt(task.id))
+    """The task and where each of its steps stands. No plan yet: ``steps`` is empty.
+
+    Since M14.2 (ADR 0058) it says who wrote the plan, and for a task ELA was asked to plan its
+    planning task and, when the model wrote no plan, the model's reason: what the user reads before
+    starting a plan the model wrote (decision I).
+    """
+    return await detail_of(TaskId(task_id), ela)
+
+
+async def detail_of(task_id: TaskId, ela: Ela, planning: Planning | None = None) -> TaskDetail:
+    """The detail of ``task_id``, with its author and its planning: one composer for the read and
+    for the answer of ``/planning``."""
+    task = await ela.repository.get(task_id)
+    graph = None if task.plan_id is None else await ela.engine.graph(task_id)
+    author = None if task.plan_id is None else (await ela.repository.plan(task_id)).author
+    if planning is None and not is_planning_task(task):
+        planning = await ela.planner.view(task_id)
+    child = None if planning is None else planning.planning_task
+    return TaskDetail.of_graph(
+        task,
+        graph,
+        await ela.executor.halt(task.id),
+        author=author,
+        planning_task_id=None if child is None else child.id,
+        no_plan=None if planning is None else planning.no_plan,
+    )
 
 
 @router.post("/{task_id}/plan", description=PLAN_IS_TEMPORARY)
@@ -123,15 +154,79 @@ async def attach_plan(task_id: UUID, body: PlanIn, ela: ElaDep) -> TaskOut:
 
     A task **already** PLANNING is planned without asking the engine to move it again: that is
     where a previously refused plan may have left it.
+
+    Since M14.2 (ADR 0058, decision 8 of the review) the steps also pass the executor's own
+    preconditions — :func:`~ela.executive.readiness.readiness` — **before** anything is written: a
+    plan the executor would refuse at the first run, leaving its task ``EXECUTING``, is a ``422``
+    here. The arguments stay the Guardian's, at the run: a plan written by hand may want to show a
+    denial.
     """
     identifier = TaskId(task_id)
     plan = body.to_domain(task_id, ela.ids.new_uuid(), ela.clock.now())
     TaskGraph.from_plan(plan)
+    _ready(plan.steps, ela)
+    if (planning := (await ela.planner.view(identifier)).planning_task) is not None:
+        raise PlanningError(identifier, f"ELA is planning this task: task {planning.id}")
     if (await ela.repository.get(identifier)).state is TaskState.CREATED:
         await ela.engine.start_planning(identifier)
     await ela.engine.plan(identifier, plan)
     task = await ela.engine.queue(identifier, reason="planned through the API")
     return TaskOut.of(task)
+
+
+def _ready(steps: tuple[TaskStep, ...], ela: Ela) -> None:
+    """Refuse a plan with a step the executor would refuse, naming the step by position (§57: the
+    sentence quotes no word of the plan)."""
+    for index, step in enumerate(steps):
+        ready = readiness(
+            step, capabilities=ela.capabilities, tools=ela.tools, verifiers=ela.verifiers
+        )
+        if isinstance(ready, Unready):
+            raise PlanNotReadyError(f"step {index + 1} of {len(steps)} {ready.said}")
+
+
+@router.post("/{task_id}/planning")
+async def plan_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> PlanningOut:
+    """Ask ELA's Planner for the plan of this task, as far as it goes (M14.2, ADR 0058).
+
+    Re-entrant, like ``run``: the first call creates the planning task and walks it to its
+    question; after the yes, the next call — or a ``run`` of the planning task — makes the call,
+    and the plan is validated and attached, the task ``QUEUED``. **Nothing is started** (decision
+    H). Under the lock of ``run`` of both tasks: two gestures at once on one task are a caller's
+    bug, a ``409``.
+    """
+    identifier = TaskId(task_id)
+    child = planning_id(identifier)
+    if identifier in running or child in running:
+        raise TaskAlreadyRunningError(identifier)
+    running.update((identifier, child))
+    try:
+        planning = await ela.planner.plan(identifier)
+    finally:
+        running.difference_update((identifier, child))
+    return await planning_out(planning, ela)
+
+
+async def planning_out(planning: Planning, ela: Ela) -> PlanningOut:
+    return PlanningOut(
+        task=await detail_of(planning.task.id, ela, planning),
+        planning_task=(
+            None if planning.planning_task is None else TaskOut.of(planning.planning_task)
+        ),
+        outcome=planning.outcome.value,
+        reason=planning.reason,
+        approval=None if planning.approval is None else ApprovalOut.of(planning.approval),
+        no_plan=planning.no_plan,
+        problems=planning.problems,
+    )
+
+
+async def settle_the_plan_of(task: Task, ela: Ela) -> None:
+    """After a run, a no or a stop of a planning task, the task it plans is settled (M14.2): planned
+    from what the model wrote, or closed with its planning task's reason. Nothing for any other."""
+    if is_planning_task(task):
+        assert task.parent_id is not None
+        await ela.planner.settle(TaskId(task.parent_id))
 
 
 @router.post("/{task_id}/run")
@@ -162,6 +257,7 @@ async def run_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> RunOut:
         # machine is alive (ADR 0044 §8). The runner asks the Core's heartbeat for one before every
         # placement, with the power source read at that instant (M12.3c, ADR 0029 §7).
         run = await ela.runner.run(identifier)
+        await settle_the_plan_of(run.task, ela)
     finally:
         running.discard(identifier)
     return _out(run)
@@ -194,7 +290,15 @@ async def cancel_task(
     identifier = TaskId(task_id)
     await ela.engine.cancel(identifier, reason=body.reason, actor=identity.actor)
     await close_if_free(identifier, ela, running)
-    return TaskOut.of(await ela.repository.get(identifier))
+    # The planning of M14.2 (ADR 0058): a stopped task stops the call that would plan it — a yes
+    # given later would pay for a plan nobody can attach —, and a stopped planning task closes the
+    # task it plans.
+    stopped = await ela.planner.stop_planning(identifier, reason=body.reason)
+    if stopped is not None:
+        await close_if_free(stopped.id, ela, running)
+    task = await ela.repository.get(identifier)
+    await settle_the_plan_of(task, ela)
+    return TaskOut.of(task)
 
 
 async def close_if_free(task_id: TaskId, ela: Ela, running: set[TaskId]) -> None:

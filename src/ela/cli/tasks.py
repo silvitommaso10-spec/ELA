@@ -2,8 +2,9 @@
 
 Every command is one call to the API and a rendering of the answer: the transitions are the Task
 Engine's, the consent is the Guardian's, and nothing here decides anything. ``plan`` is the one
-that carries a file, because the shape of a plan is the API's — temporary and unversioned until
-the Planner (§13) exists — and a second place that knew it would be a second place to change.
+that may carry a file: with ``--file`` it sends a plan written by hand, as it stands — its shape is
+the API's, unversioned, and a second place that knew it would be a second place to change —, and
+without it it asks ELA's Planner (§13; M14.2, ADR 0058).
 """
 
 from __future__ import annotations
@@ -177,7 +178,12 @@ def show(task_id: TaskId, as_json: Json = False) -> None:
 
 
 def _detail(payload: dict[str, Any]) -> str:
-    """What ``ela task show`` prints: the task, what its step in progress had done, its steps."""
+    """What ``ela task show`` prints: the task, what its step in progress had done, who wrote its
+    plan, its steps — and under them, step by step, what each is called with and what verifies it.
+
+    The arguments and the conditions were only in ``--json`` until M14.2: a plan the model wrote is
+    started by the user after seeing it (ADR 0058, decision I), and seeing it means these.
+    """
     steps = table(
         ("step", "state", "risk", "capabilities", "goal"),
         [
@@ -185,8 +191,49 @@ def _detail(payload: dict[str, Any]) -> str:
             for one in payload["steps"]
         ],
     )
-    described = fields([*_task_pairs(payload), ("stopped step", halt_words(payload["halt"]))])
-    return f"{described}\n\n{steps}"
+    described = fields(
+        [
+            *_task_pairs(payload),
+            ("stopped step", halt_words(payload["halt"])),
+            ("author", author_words(payload.get("plan_author"))),
+            *_planning_pairs(payload),
+        ]
+    )
+    blocks = "".join(f"\n\n{_step_block(one)}" for one in payload["steps"])
+    return f"{described}\n\n{steps}{blocks}"
+
+
+def author_words(author: dict[str, Any] | None) -> str | None:
+    """Who wrote the plan, as a line: ``MODEL claude-opus-5-5 (result …)`` for the model."""
+    if author is None:
+        return None
+    if author["by"] != "MODEL":
+        return str(author["by"])
+    return f"MODEL {author['model']} (result {author['result_id']})"
+
+
+def _planning_pairs(payload: dict[str, Any]) -> list[tuple[str, Any]]:
+    """The planning task and the model's «no plan», for a task ELA was asked to plan."""
+    pairs: list[tuple[str, Any]] = []
+    if payload.get("planning_task_id"):
+        pairs.append(("planning", payload["planning_task_id"]))
+    if payload.get("no_plan"):
+        pairs.append(("no plan", visible(payload["no_plan"], lines=False)))
+    return pairs
+
+
+def _step_block(one: dict[str, Any]) -> str:
+    """One step under the table: its arguments, its conditions, what it waits for."""
+    head = f"{', '.join(one['required_capabilities']) or '—'} — step {one['id']}"
+    rows = fields(
+        [
+            ("arguments", visible(json.dumps(one["arguments"], ensure_ascii=False), lines=False)),
+            ("conditions", one["success_conditions"]),
+            ("after", one["dependencies"]),
+            ("authorization", one["requires_authorization"]),
+        ]
+    )
+    return f"{head}\n{indent(rows, '  ')}"
 
 
 @app.command("results")
@@ -308,14 +355,26 @@ def _told(one: dict[str, Any]) -> list[tuple[str, Any]]:
 @handled
 def plan(
     task_id: TaskId,
-    file: Annotated[Path, typer.Option("--file", help="the plan, as JSON")],
+    file: Annotated[
+        Path | None,
+        typer.Option("--file", help="a plan written by hand, as JSON; without it, ELA plans"),
+    ] = None,
     as_json: Json = False,
 ) -> None:
-    """Attach a plan written by hand and queue the task.
+    """Ask ELA for the plan of a task, or attach a plan written by hand with ``--file``.
 
-    The file is sent as it stands. Its shape belongs to the API and is temporary: the day ELA
-    plans for itself, this is the endpoint that goes.
+    Without ``--file`` ELA's Planner writes it (M14.2, ADR 0058): the first call stops at the
+    question of the planning task — the call to the model wants your yes, with its worst case —;
+    after the yes, call it again, or run the planning task, and the plan is attached and the task
+    queued. Nothing is started: the run is yours.
+
+    With ``--file`` the file is sent as it stands: its shape belongs to the API, and is unversioned.
     """
+    if file is None:
+        with client.connect() as api:
+            payload = api.post(f"/tasks/{task_id}/planning", {})
+        emit(payload, as_json, _planning(payload))
+        return
     try:
         body = json.loads(file.read_text(encoding="utf-8"))
     except OSError as unreadable:
@@ -325,6 +384,38 @@ def plan(
     with client.connect() as api:
         payload = api.post(f"/tasks/{task_id}/plan", body)
     emit(payload, as_json, _task(payload))
+
+
+def _planning(payload: dict[str, Any]) -> str:
+    """What ``ela task plan`` prints without ``--file``: where the planning stands, and what to do
+    next — the question to answer, or the plan to read before running it."""
+    task = payload["task"]
+    planning = payload["planning_task"]
+    pairs: list[tuple[str, Any]] = [
+        ("task", f"{task['id']} — {task['state']}"),
+        ("planning", None if planning is None else f"{planning['id']} — {planning['state']}"),
+        ("outcome", payload["outcome"]),
+        ("reason", payload["reason"]),
+    ]
+    question = payload["approval"]
+    if question is not None:
+        pairs += [
+            ("question", question["id"]),
+            ("worst case", question["worst_case"] or None),
+            ("left this month", question["left"] or None),
+            (
+                "next",
+                f"ela task approve {question['task_id']} --approval {question['id']}, "
+                f"then ela task plan {task['id']} again",
+            ),
+        ]
+    if payload["no_plan"]:
+        pairs.append(("no plan", visible(payload["no_plan"], lines=False)))
+    pairs += [("problem", problem) for problem in payload["problems"]]
+    said = fields(pairs)
+    if payload["outcome"] == "planned":
+        return f"{said}\n\n{_detail(task)}"
+    return said
 
 
 @app.command("run")

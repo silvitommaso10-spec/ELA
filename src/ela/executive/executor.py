@@ -1298,6 +1298,10 @@ class Executor:
             raise ExecutorError(
                 task_id, f"an open step is closed in a task that has ended, not {task.state.value}"
             )
+        if task.plan_id is None:
+            # Stopped before it had a plan — CREATED, or PLANNING while ELA planned it (M14.2):
+            # no step was ever open. Until then the graph was asked for, and the stop answered 404.
+            return None
         graph = await self._engine.graph(task_id)
         running = [step for step, state in graph.states.items() if state is StepState.RUNNING]
         if not running:

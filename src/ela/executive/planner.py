@@ -775,7 +775,7 @@ class Planner:
             and child.state in TERMINAL_STATES
         ):
             await self._close(task, child)
-        return await self._view(task_id)
+        return await self.view(task_id)
 
     async def _close(self, parent: Task, child: Task) -> None:
         said = (await self._runner.answer(child.id)).reason or child.state.value
@@ -887,7 +887,7 @@ class Planner:
             router=self._router,
         )
 
-    async def _view(self, task_id: TaskId) -> Planning:
+    async def view(self, task_id: TaskId) -> Planning:
         """Where the planning of ``task_id`` stands, read and never written."""
         task = await self._repository.get(task_id)
         child = await self._child(task_id)

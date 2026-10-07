@@ -426,19 +426,22 @@ def planner_modules() -> list[Path]:
     return sorted(set(named + defines))
 
 
-def test_the_plan_endpoint_says_its_schema_is_temporary_while_it_is() -> None:
-    """ADR 0023 keeps this among the constraints to reopen; the caller reads it in the schema.
+def test_the_plan_endpoint_says_it_is_for_plans_written_by_hand_while_the_planner_is() -> None:
+    """ADR 0023 kept this among the constraints to reopen; the caller reads it in the schema.
 
-    The day the Planner (§13) arrives, this test fails on purpose: the sentence has to be
-    revisited then — kept, reworded, or removed with the endpoint — and not quietly left behind
-    telling people to expect a change that already happened.
+    Until M14.2 the test wanted **no** Planner, and failed on purpose the day it arrived. It
+    arrived (ADR 0058, decision J), and the sentence was revisited: the route stays for the plans a
+    person writes, and says so. Now the test wants the Planner **present** and the sentence naming
+    its route — and fails on purpose the day the Planner disappeared, because the sentence would be
+    false again.
     """
     planner = planner_modules()
-    assert not planner, f"the Planner exists ({planner}): revisit PLAN_IS_TEMPORARY"
+    assert planner, "no Planner: PLAN_IS_TEMPORARY names a route that is not there"
 
-    assert "Planner" in PLAN_IS_TEMPORARY
-    assert "temporary" in PLAN_IS_TEMPORARY
+    assert "POST /tasks/{task_id}/planning" in PLAN_IS_TEMPORARY
+    assert "by hand" in PLAN_IS_TEMPORARY
     assert "without a version bump" in PLAN_IS_TEMPORARY
+    assert "temporary" not in PLAN_IS_TEMPORARY, "the shape is a hand's, not one waiting for §13"
 
 
 def test_the_route_carries_that_sentence_as_its_description() -> None:

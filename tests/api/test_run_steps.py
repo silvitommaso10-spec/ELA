@@ -29,10 +29,13 @@ from fastapi import FastAPI
 from httpx import AsyncClient, Response
 
 from ela.composition import Ela, Settings, build
+from ela.devices import LOCAL_DEVICE_ID
 from ela.domain import StepState
 from ela.executive import RunOutcome
+from ela.permissions import WORKSPACE_WRITE_NOTE
 from ela.testing.fakes import FakeBrowser, FakeClock, FakePage, FakePower
-from tests.api.support import EXAMPLES, echo_plan, note_plan, queued
+from ela.tools import NOTE_EXISTS
+from tests.api.support import EXAMPLES, NOTE_BODY, NOTE_PATH, echo_plan, note_plan, queued
 from tests.api.test_nodes_work import ENVELOPE, a_node
 from tests.composition.support import create_schema, declare
 
@@ -214,8 +217,19 @@ async def failed_after_the_act(client: AsyncClient, ela: Ela) -> Branch:
 
 
 async def waiting_device(client: AsyncClient, ela: Ela) -> Branch:
-    """An echo, then a capability no node has: the echo was handled, the second step never was."""
-    plan, echo, missing = echo_then("core.rm_rf")
+    """An echo, then a note whose tool no node has: the echo was handled, the second step never was.
+
+    Until M14.2 the second step named a capability nobody implements; since ADR 0058 the route
+    refuses that plan before it is queued, and a node without the tool is what is left to wait on.
+    """
+    plan, echo, missing = echo_then(WORKSPACE_WRITE_NOTE)
+    plan["steps"][1].update(
+        arguments={"path": NOTE_PATH, "body": NOTE_BODY},
+        success_conditions=[NOTE_EXISTS],
+        risk="LOW",
+    )
+    node = await ela.devices.get(LOCAL_DEVICE_ID)
+    await ela.devices.update(node.model_copy(update={"available_tools": ("core-echo",)}))
     task = await queued(client, plan)
     return Branch(
         task, await run(client, task), (Handled(echo, StepState.COMPLETED, True),), waiting=missing

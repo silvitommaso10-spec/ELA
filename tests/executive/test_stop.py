@@ -538,6 +538,21 @@ async def test_close_open_step_wants_a_task_that_has_ended() -> None:
         await w.executor.close_open_step(task_id)
 
 
+@pytest.mark.parametrize("planning", [False, True], ids=["created", "planning"])
+async def test_close_open_step_of_a_task_stopped_before_its_plan_finds_nothing(
+    planning: bool,
+) -> None:
+    """Found by M14.2: the graph of a task with no plan does not exist, and the route of the stop
+    answered 404 for a stop already written. No plan, no step: nothing to close."""
+    w = world()
+    task = await w.engine.create(w.intent())
+    if planning:
+        await w.engine.start_planning(task.id)
+    await w.engine.cancel(task.id)
+
+    assert await w.executor.close_open_step(task.id) is None
+
+
 async def test_close_open_step_finds_nothing_to_close_twice() -> None:
     w = world()
     task_id, step_id = await _nothing(w)
