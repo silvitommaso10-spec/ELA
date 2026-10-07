@@ -35,13 +35,13 @@ from ela.ports import (
     PROVIDER_REFUSAL,
     PROVIDER_REJECTED,
     PROVIDER_SERVER_ERROR,
+    PROVIDER_SPEND_LIMIT,
     PROVIDER_TIMEOUT,
     PROVIDER_UNAVAILABLE,
     PROVIDER_UNKNOWN_MODEL,
     PROVIDER_UNKNOWN_MODEL_HINT,
     PROVIDER_UNREACHABLE,
     PROVIDER_UNSUPPORTED_PARAMETER,
-    PROVIDER_WORKSPACE_LIMIT,
 )
 from ela.providers.anthropic.models import DEFAULT_MODEL, MODELS, PROFILES, model_for_hint
 from ela.providers.anthropic.pricing import PRICES
@@ -244,11 +244,11 @@ def documented_errors(text: str) -> dict[str, bool]:
 
 
 def test_the_error_table_is_exactly_the_vocabulary_of_the_port() -> None:
-    """Fourteen in ADR 0020 §7, fifteen in ADR 0057 §10: ``provider.workspace_limit``."""
+    """Fourteen in ADR 0020 §7, fifteen in ADR 0057 §10: ``provider.spend_limit``."""
     assert set(documented_errors(spending_text())) == set(PROVIDER_ERROR_CODES)
     assert len(PROVIDER_ERROR_CODES) == 15
     assert set(documented_errors(spending_text())) - set(documented_errors(adr_text())) == {
-        PROVIDER_WORKSPACE_LIMIT
+        PROVIDER_SPEND_LIMIT
     }
 
 
@@ -297,7 +297,7 @@ def test_what_the_table_calls_retryable() -> None:
         PROVIDER_UNAVAILABLE,
         PROVIDER_UNKNOWN_MODEL_HINT,
         PROVIDER_UNSUPPORTED_PARAMETER,
-        PROVIDER_WORKSPACE_LIMIT,
+        PROVIDER_SPEND_LIMIT,
     }
 
 

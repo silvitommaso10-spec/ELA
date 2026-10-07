@@ -445,11 +445,15 @@ se speso + prenotato + caso peggiore sta dentro il tetto del mese, in UTC. **Sen
 chiamata che spende parte**, e la ragione nomina la riga. `ela spend` dice dove sei, con la stessa
 funzione del cancello.
 
-*Che cosa ne discende:* **i tetti sono due**. Il secondo resta quello del fornitore — la workspace
-dedicata sulla console, con le due chiavi del Mac e del PC, un limite mensile e l'auto-reload
-spento —, e il tetto di ELA sta sotto, con un margine: copre anche ciò che le chiavi spendono fuori
-da ELA. «Nessun budget» di ADR 0021 e di ADR 0022 è rivisto apertamente da ADR 0057, come questa
-sezione diceva che sarebbe successo.
+*Che cosa ne discende:* **i tetti sono due**. Il secondo resta quello del fornitore: **il limite
+mensile dell'organizzazione**, scelto nella pagina Billing della console, che copre ogni chiave
+dovunque stia e riparte alle 00:00 UTC del primo del mese, come il mese di ELA; il tetto di ELA sta
+sotto, con un margine. Le due chiavi del Mac e del PC stanno in una workspace dedicata, che le tiene
+insieme e la cui spesa nella console è quella di ELA. Il credito è prepagato, con la ricarica
+automatica spenta: finito, ferma le chiamate anche lui, e se è più piccolo del tetto scatta per
+primo. Fino al 2026-10-07 il secondo tetto era scritto come il limite della workspace, che la console
+vera non ha lasciato impostare. «Nessun budget» di ADR 0021 e di ADR 0022 è rivisto apertamente da
+ADR 0057, come questa sezione diceva che sarebbe successo.
 
 *Perché la capability della Fase 14 non è qui:* il lavoro agentico (§5.7, §5.8) spende sulla stessa
 chiave senza passare da `model.complete`, e il tetto di quella strada è di M14.3, che lo sa da

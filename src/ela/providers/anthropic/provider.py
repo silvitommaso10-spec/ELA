@@ -266,7 +266,8 @@ class AnthropicProvider:
     @staticmethod
     def _workspace_of(answer: Message) -> str | None:
         """The ``anthropic-workspace-id`` header the SDK attaches to a parsed response, when there
-        is one (M14.1, review decision 12): the workspace whose monthly limit is the second cap.
+        is one (M14.1, review decision 12): the workspace that holds ELA's keys together, whose
+        spend in the console is ELA's. The second cap is the organization's, over every key.
 
         Set by the SDK next to ``_request_id``, from the same response; a message that never came
         from an HTTP response has none.

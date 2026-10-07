@@ -2,7 +2,7 @@
 
 The guide is the source of truth, and the script reads it with the reader of M6.3c: this file reads
 §23 with the script's own functions and asserts that every marker is a kind the script knows and a
-step of the section, that every placeholder is one it fills, and that every line of its seven kinds
+step of the section, that every placeholder is one it fills, and that every line of its six kinds
 is in their vocabulary. **Each comparison of the script has its negative case**, on constructed
 answers: a check that only ever passes proves nothing. That the questions §23 expects are the ones
 ELA asks — the worst case of each plan, in the row ``ela approvals`` prints — is proved in
@@ -216,7 +216,7 @@ def test_what_is_not_an_amount_is_asked_again(typed: str) -> None:
     assert script().dollars_typed(typed) is None
 
 
-def test_a_cap_below_the_limit_of_the_workspace_passes() -> None:
+def test_a_cap_below_the_limit_of_the_organization_passes() -> None:
     assert script().under_the_limit("45", Decimal(50)) is None
 
 

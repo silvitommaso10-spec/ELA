@@ -2,7 +2,9 @@
 
 - **Stato:** Proposta. Aperta il 2026-10-06 con la SPEC di M14.1 e le decisioni della review dello stesso giorno
   (A–L della sessione, 1–18 della review, in `docs/milestones/M14.1.md`); diventa Accettata quando la prova a mano di
-  `docs/GETTING_STARTED.md` §23 è passata.
+  `docs/GETTING_STARTED.md` §23 è passata. **Rivista il 2026-10-07**, prima della prova, sulla console vera: il secondo
+  tetto è il limite mensile dell'organizzazione, non quello della workspace, e il codice di §10 si rinomina
+  (`docs/milestones/M14.1.md`, «Le decisioni del 2026-10-07»).
 - **Data:** 2026-10-06
 - **Riferimenti spec:** §25, §26, §30, §32, §33, §57, §63, §64
 - **Milestone:** M14.1
@@ -18,12 +20,16 @@ che si ripete o un nodo che tace possono spenderne molti prima che qualcuno guar
 dei due dice **quanto** il mese può spendere. Lo dice chi paga, e M14.1 gli dà il posto dove scriverlo e il cancello
 che lo fa valere: prima della chiamata, mai dopo.
 
-La documentazione ufficiale (letta il 2026-10-06) dice quattro cose che questo ADR usa:
+La documentazione ufficiale (letta il 2026-10-06, e riletta il 2026-10-07 per le risposte dei limiti) dice cinque cose
+che questo ADR usa:
 
-- il limite di spesa dell'organizzazione riparte alle **00:00 UTC del primo del mese**; quello di una workspace è un
-  limite mensile e la documentazione non dice quando riparte;
-- una workspace che ha raggiunto il suo limite risponde un `400` il cui messaggio comincia con «You have reached your
-  specified workspace API usage limits»;
+- il tetto dell'organizzazione è ciò che può spendere **ogni mese del calendario**, e raggiunto si riparte alle **00:00
+  UTC del primo del mese dopo**; il limite che si sceglie, sulla pagina Billing, sta sotto quel tetto;
+- un limite che si è scelto, raggiunto, risponde un `400 invalid_request_error` il cui messaggio comincia con «You have
+  reached your specified API usage limits» — quello dell'organizzazione — o con «You have reached your specified
+  workspace API usage limits» — quello di una workspace —, e dice quando l'accesso riprende (`api/rate-limits`);
+- finito il credito prepagato non si chiama più l'API finché non lo si ricarica, e **la documentazione non scrive con
+  quale risposta** (`api/errors`, `api/rate-limits` e la pagina d'aiuto sul pagamento, lette il 2026-10-07);
 - il conteggio dei token prima di una chiamata è una **stima**, e manda il contenuto fuori una volta in più;
 - un `429` e un `529` dicono che la richiesta non è stata eseguita: il primo per i limiti di frequenza, il secondo per
   il sovraccarico dell'API.
@@ -41,9 +47,18 @@ che non è un importo finito e non negativo ferma l'avvio con la variabile nomin
 La sezione è del Core soltanto: `SpendingSettings`, che `NodeConfig` non legge. **Un nodo non ha un tetto suo**:
 spende solo ciò che il Core ha prenotato per il lavoro che gli manda (§6).
 
-**I tetti sono due.** Il secondo è il **limite mensile della workspace** nella console di Anthropic, che copre anche ciò
-che le chiavi spendono fuori da ELA. Le due chiavi — del Mac e del PC — stanno nella stessa workspace (decisione K), e il
-tetto di ELA sta sotto il limite della workspace, con un margine: la guida lo fa creare, e la prova lo verifica.
+**I tetti sono due.** Il secondo è il **limite mensile dell'organizzazione**, quello che chi paga sceglie nella pagina
+Billing della console: copre ogni chiave dovunque stia, anche ciò che le chiavi spendono fuori da ELA. Il tetto di ELA
+sta sotto, con un margine: la guida lo fa impostare, e la prova lo verifica. **Fino al 2026-10-07 questo ADR diceva il
+limite della workspace**: nella console vera Tommaso non è riuscito a impostarlo (decisione 1 del 2026-10-07).
+
+Le due chiavi — del Mac e del PC — stanno nella stessa workspace (decisione K), con una ragione che non è più il limite:
+**la workspace tiene insieme le due chiavi di ELA**, e la sua spesa nella console resta quella di ELA. La prova lo
+verifica con l'id della workspace che ogni risposta porta (§10).
+
+**Il credito prepagato è un fermo anche lui**: con la ricarica automatica spenta, finito il credito le chiamate si
+fermano, e se è più piccolo del tetto scatta per primo. ELA non lo conta — il libro è la spesa del mese, non il saldo —
+e non riconosce la sua risposta, che la documentazione non scrive (§10).
 
 ### 2. Il caso peggiore di una chiamata: dalla stessa funzione che costruisce il payload
 
@@ -125,9 +140,10 @@ lo sa — l'adapter, e il nodo che rifiuta (§6).
 
 I codici restano per la ragione, non per il conto.
 
-Il mese è **il mese del calendario, in UTC** (decisione F): la documentazione lo scrive per il limite
-dell'organizzazione e non per quello di una workspace, quindi è dichiarato. Una chiamata conta nel mese della sua
-`STARTED`.
+Il mese è **il mese del calendario, in UTC** (decisione F). È il confine che la documentazione scrive per il tetto
+dell'organizzazione — ripresa alle 00:00 UTC del primo del mese —, e da quando il secondo tetto è il limite
+dell'organizzazione **il mese di ELA coincide con un confine documentato del secondo tetto**, non è più soltanto
+dichiarato (decisione 2 del 2026-10-07). Una chiamata conta nel mese della sua `STARTED`.
 
 Colonne aggiunte:
 
@@ -211,14 +227,23 @@ Gli importi sono quelli del cancello, esatti: una frazione di centesimo si stamp
 la riga dice che nessuna chiamata che spende parte e quale riga lo cambia, e il comando esce `0`: un tetto che manca è
 una configurazione, non un errore del comando.
 
-### 10. Gli errori: `provider.workspace_limit`, e un ritentativo solo per ciò che non è partito
+### 10. Gli errori: `provider.spend_limit`, e un ritentativo solo per ciò che non è partito
 
-ADR 0020 §7 ha un quindicesimo codice (decisione 10): `provider.workspace_limit`, il `400` di una workspace che ha
-raggiunto il suo limite, riconosciuto dall'inizio del messaggio che la documentazione scrive. Il messaggio del server
-**si legge e non si conserva** (ADR 0020 §10): decide il codice, e quello che ELA tiene è suo — guardare il limite della
-workspace nella console, e `ela spend`. Se la frase cambiasse, la risposta tornerebbe `provider.bad_request`, com'era
-prima: nessun danno. **La prova a mano non lo raggiunge**: servirebbe spendere fino al limite. Lo prova la suite, con una
-risposta costruita.
+ADR 0020 §7 ha un quindicesimo codice (decisione 10): `provider.spend_limit`, il `400` di un limite di spesa che chi
+paga ha scelto nella console — **quello dell'organizzazione**, il secondo tetto, o quello di una workspace, che la
+documentazione scrive ancora e che resta riconosciuto —, dall'inizio del messaggio che la documentazione scrive per
+ciascuno. Il messaggio del server **si legge e non si conserva** (ADR 0020 §10): decide il codice, e quello che ELA tiene
+è suo — il conto di ELA è indietro rispetto alla fattura: guardare il limite e la spesa del mese nella console, e `ela
+spend`. Se una frase cambiasse, la risposta tornerebbe `provider.bad_request`, com'era prima: nessun danno. **Si
+chiamava `provider.workspace_limit`** fino al 2026-10-07, quando la console vera ha mostrato che il limite che tiene è
+quello dell'organizzazione (decisione 3 del 2026-10-07); il branch non era ancora unito, e il nome si è potuto cambiare.
+
+**Il credito esaurito non ha un codice suo**: la documentazione non scrive con che risposta arriva, e un evento il cui
+messaggio non è scritto non si indovina. Resta dove cade — `provider.bad_request`, se è un `400` —, e §23 della guida
+dice che cosa significa un `provider.bad_request` mentre `ela spend` mostra margine: guardare il credito, e ricaricarlo.
+
+**La prova a mano non raggiunge né l'uno né l'altro**: servirebbe spendere fino al limite, o fino all'ultimo centesimo
+del credito. Il primo lo prova la suite, con una risposta costruita sulle parole della documentazione.
 
 | Eccezione SDK | HTTP | Codice | `retryable` |
 |---|---|---|---|
@@ -230,7 +255,7 @@ risposta costruita.
 | `RateLimitError` | 429 | `provider.rate_limited` | **sì** |
 | `InternalServerError` | ≥500 (incl. 529, 504) | `provider.server_error` | **sì** |
 | `AuthenticationError`, `PermissionDeniedError` | 401, 403 | `provider.authentication_error` | no |
-| `BadRequestError` con il messaggio del limite della workspace | 400 | `provider.workspace_limit` | no |
+| `BadRequestError` con il messaggio di un limite di spesa scelto | 400 | `provider.spend_limit` | no |
 | `BadRequestError` | 400 | `provider.bad_request` | no |
 | `NotFoundError` | 404 | `provider.unknown_model` | no |
 | altro `APIStatusError` 4xx (409, 422, …) | 4xx | `provider.rejected` | no |
@@ -245,14 +270,15 @@ che il lavoro è stato fatto e pagato: nessuno lo sa, e un esito ignoto **non si
 «partita, costo ignoto», e il libro tiene il caso peggiore. **Che un `529` non si paghi è una lettura del nome**,
 «overloaded»: la documentazione non lo scrive. `ELA_ANTHROPIC_MAX_RETRIES` conta i ritentativi di quei due.
 
-L'adapter scrive anche **l'id della workspace** che ha pagato, dall'intestazione della risposta: il tool lo mette
-nell'output, `workspace` (decisione 12).
+L'adapter scrive anche **l'id della workspace** in cui la chiave ha lavorato, dall'intestazione della risposta: il tool
+lo mette nell'output, `workspace` (decisione 12). È ciò che fa vedere alla prova che le due chiavi di ELA stanno nella
+stessa workspace (§1).
 
 Tool sostituiti:
 
 | Capability | Classe | Nome | Output | Codici d'errore |
 |---|---|---|---|---|
-| `model.complete` | `ModelCompleteTool` | `model-complete` | `output`, `provider`, `model`, `finish_reason`, `profile`, `skipped`, `workspace` | `arguments.invalid`, `routing.unknown_task_type`, `routing.unknown_provider`, `routing.empty_routes`, `provider.no_output`, `provider.unavailable`, `provider.unknown_model_hint`, `provider.unsupported_parameter`, `provider.authentication_error`, `provider.bad_request`, `provider.unknown_model`, `provider.rejected`, `provider.malformed_response`, `provider.rate_limited`, `provider.server_error`, `provider.unreachable`, `provider.timeout`, `provider.refusal`, `provider.workspace_limit` |
+| `model.complete` | `ModelCompleteTool` | `model-complete` | `output`, `provider`, `model`, `finish_reason`, `profile`, `skipped`, `workspace` | `arguments.invalid`, `routing.unknown_task_type`, `routing.unknown_provider`, `routing.empty_routes`, `provider.no_output`, `provider.unavailable`, `provider.unknown_model_hint`, `provider.unsupported_parameter`, `provider.authentication_error`, `provider.bad_request`, `provider.unknown_model`, `provider.rejected`, `provider.malformed_response`, `provider.rate_limited`, `provider.server_error`, `provider.unreachable`, `provider.timeout`, `provider.refusal`, `provider.spend_limit` |
 
 ### 11. Righe riviste
 
@@ -270,8 +296,9 @@ Gli ADR non si riscrivono: queste righe si leggono con questo accanto.
 ### 12. La prova a mano
 
 `docs/GETTING_STARTED.md` §23, con lo script `scripts/prova_m14_1.py`, sul Mac e sul PC: il PC sullo stesso commit, il
-secondo tetto, i tre modelli con la chiave vera, il tetto che scatta, una chiamata del PC con la stessa workspace, il
-nodo che tace con la sua prenotazione aperta, e la negativa `model.misrouted`. **Da fare.**
+secondo tetto — il limite dell'organizzazione, sopra il tetto di ELA —, i tre modelli con la chiave vera, il tetto che
+scatta, una chiamata del PC con la stessa workspace, il nodo che tace con la sua prenotazione aperta, e la negativa
+`model.misrouted`. **Da fare.**
 
 ## Alternative considerate
 
@@ -305,7 +332,13 @@ Ciò che questo ADR dichiara e non risolve:
   che non arriva, tengono fermo il margine (§4).
 - **La presa persa nella corsa resta presa fino alla sua scadenza**: il nodo non riceve niente e non fa niente, e
   intanto non prende altro lavoro (§6).
-- **Il mese è dichiarato**, in UTC, e il limite della workspace potrebbe ripartire a un'altra ora (§4).
+- **Il limite che si sceglie riparte quando dice la sua risposta**: la documentazione scrive la ripresa alle 00:00 UTC
+  del primo del mese per il tetto dell'organizzazione, e del limite scelto dice che la risposta «states when access
+  resumes» (§4).
+- **Il credito esaurito non si riconosce**: la documentazione non scrive la sua risposta, e resta
+  `provider.bad_request` se è un `400` (§10).
+- **Il `429` del tetto del livello** — `enforced_spend_limit_reached`, senza `retry-after` — **resta
+  `provider.rate_limited`**: sta sopra il limite che si sceglie, che scatta prima (§10).
 - **Che un `529` non si paghi è la lettura del nome** (§10).
 - **Il prezzo non si controlla da sé**: lo controlla una persona ogni trenta giorni (§3).
 - **La regola 61 non vede una sessione di Claude Code** (§6), che M14.3 porterà.

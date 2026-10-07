@@ -306,7 +306,7 @@ def test_a_drifted_added_table_is_detected() -> None:
 def test_the_replacing_table_is_the_one_the_code_must_match() -> None:
     """ADR 0021's row for ``model.complete`` is the M7.2 one and ADR 0022's the M7.3 one, and both
     stay as they were written; what the code answers to is ADR 0057's, the last (M14.1: the output
-    ``workspace`` and the code ``provider.workspace_limit``)."""
+    ``workspace`` and the code ``provider.spend_limit``)."""
     added = documented_tools(section(*ADDING_ADRS[0]))["model.complete"]
     routed = documented_tools(section(*REPLACING_ADRS[0]))["model.complete"]
     replaced = documented_tools(section(*REPLACING_ADRS[-1]))["model.complete"]

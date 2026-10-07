@@ -32,13 +32,19 @@ from ela.ports import (
     PROVIDER_RATE_LIMITED,
     PROVIDER_REJECTED,
     PROVIDER_SERVER_ERROR,
+    PROVIDER_SPEND_LIMIT,
     PROVIDER_TIMEOUT,
     PROVIDER_UNKNOWN_MODEL,
     PROVIDER_UNREACHABLE,
-    PROVIDER_WORKSPACE_LIMIT,
 )
 
-__all__ = ["WORKSPACE_LIMIT_PREFIX", "Failure", "UnsupportedRequestError", "classify"]
+__all__ = [
+    "ORGANIZATION_LIMIT_PREFIX",
+    "WORKSPACE_LIMIT_PREFIX",
+    "Failure",
+    "UnsupportedRequestError",
+    "classify",
+]
 
 SERVER_ERROR_FROM: Final = 500
 AUTHENTICATION_STATUS: Final = frozenset({401, 403})
@@ -47,16 +53,25 @@ OVERLOADED_STATUS: Final = 529
 BAD_REQUEST_STATUS: Final = 400
 NOT_FOUND_STATUS: Final = 404
 
-WORKSPACE_LIMIT_PREFIX: Final = "You have reached your specified workspace API usage limits"
-"""How the API begins the ``400`` of a workspace that reached its monthly spending limit — the
-documentation's words (``api/rate-limits``, read on 2026-10-06). **Read and never kept**
-(ADR 0020 §10): it decides the code, and the message ELA keeps is its own. If the sentence ever
-changes the answer falls back to :data:`~ela.ports.PROVIDER_BAD_REQUEST`, which is what it was
-before M14.1: no harm (review decision 10)."""
+ORGANIZATION_LIMIT_PREFIX: Final = "You have reached your specified API usage limits"
+"""How the API begins the ``400`` of an organization that reached the monthly spend limit somebody
+set on the console's Billing page — the **second cap** (M14.1, ADR 0057) — in the documentation's
+words (``api/rate-limits``, read on 2026-10-07)."""
 
-WORKSPACE_LIMIT_MESSAGE: Final = (
-    "the workspace of this key reached its monthly spending limit: look at the workspace's "
-    "limit in the console, and at `ela spend`"
+WORKSPACE_LIMIT_PREFIX: Final = "You have reached your specified workspace API usage limits"
+"""And how it begins the same ``400`` for a workspace's spend limit, in the same paragraph.
+
+Both are **read and never kept** (ADR 0020 §10): they decide the code, and the message ELA keeps
+is its own. If a sentence ever changes the answer falls back to
+:data:`~ela.ports.PROVIDER_BAD_REQUEST`, which is what it was before M14.1: no harm (review
+decision 10). An event whose sentence the documentation does not write — an exhausted credit
+balance — is not guessed, and stays where it falls."""
+
+SPEND_LIMIT_PREFIXES: Final = (ORGANIZATION_LIMIT_PREFIX, WORKSPACE_LIMIT_PREFIX)
+
+SPEND_LIMIT_MESSAGE: Final = (
+    "a monthly spend limit set in the console was reached: ELA's count of the month is behind "
+    "the bill — look at the limit and the month's spend in the console, and at `ela spend`"
 )
 
 
@@ -106,15 +121,15 @@ def _retry_after(exc: anthropic.APIStatusError) -> float | None:
         return None
 
 
-def _workspace_limit(exc: anthropic.APIStatusError) -> bool:
-    """Whether the server's own words begin the way a workspace's spending limit does.
+def _spend_limit(exc: anthropic.APIStatusError) -> bool:
+    """Whether the server's own words begin the way a spend limit set in the console does.
 
     The only place ELA reads the server's text, and it keeps none of it: the answer is a bool.
     """
     body = exc.body
     error = body.get("error") if isinstance(body, dict) else None
     words = error.get("message") if isinstance(error, dict) else None
-    return isinstance(words, str) and words.startswith(WORKSPACE_LIMIT_PREFIX)
+    return isinstance(words, str) and words.startswith(SPEND_LIMIT_PREFIXES)
 
 
 def _status_failure(exc: anthropic.APIStatusError) -> Failure:
@@ -135,9 +150,9 @@ def _status_failure(exc: anthropic.APIStatusError) -> Failure:
         code, retryable = PROVIDER_SERVER_ERROR, True
     elif status in AUTHENTICATION_STATUS:
         code, retryable = PROVIDER_AUTHENTICATION_ERROR, False
-    elif status == BAD_REQUEST_STATUS and _workspace_limit(exc):
-        code, retryable = PROVIDER_WORKSPACE_LIMIT, False
-        message = f"{message}: {WORKSPACE_LIMIT_MESSAGE}"
+    elif status == BAD_REQUEST_STATUS and _spend_limit(exc):
+        code, retryable = PROVIDER_SPEND_LIMIT, False
+        message = f"{message}: {SPEND_LIMIT_MESSAGE}"
     elif status == BAD_REQUEST_STATUS:
         code, retryable = PROVIDER_BAD_REQUEST, False
     elif status == NOT_FOUND_STATUS:

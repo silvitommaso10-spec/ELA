@@ -158,13 +158,13 @@ __all__ = [
     "PROVIDER_REFUSAL",
     "PROVIDER_REJECTED",
     "PROVIDER_SERVER_ERROR",
+    "PROVIDER_SPEND_LIMIT",
     "PROVIDER_TIMEOUT",
     "PROVIDER_UNAVAILABLE",
     "PROVIDER_UNKNOWN_MODEL",
     "PROVIDER_UNKNOWN_MODEL_HINT",
     "PROVIDER_UNREACHABLE",
     "PROVIDER_UNSUPPORTED_PARAMETER",
-    "PROVIDER_WORKSPACE_LIMIT",
     "PageGone",
     "PerceptionProbe",
     "PermissionGuardianPort",
@@ -1710,12 +1710,14 @@ PROVIDER_TIMEOUT: Final = "provider.timeout"
 PROVIDER_REFUSAL: Final = "provider.refusal"
 """The model declined to answer. Not a fault: a fact about the request, worth remembering
 separately from a breakdown (§64) — hence a code of its own, and ``retryable`` false."""
-PROVIDER_WORKSPACE_LIMIT: Final = "provider.workspace_limit"
-"""The provider refused the request because the monthly spending limit of the account's workspace
-is reached: the **second cap** (M14.1, ADR 0057). Never retried: it holds until the month turns
-or somebody raises the limit in the console. ELA's own cap sits below it, so this code means that
-ELA's count of the month is wrong — the moment a vague diagnosis costs the most, hence a name of
-its own instead of :data:`PROVIDER_BAD_REQUEST`, which is what it was until M14.1."""
+PROVIDER_SPEND_LIMIT: Final = "provider.spend_limit"
+"""The provider refused the request because a monthly spend limit somebody set in the console is
+reached — the organization's, which is the **second cap**, or a workspace's (M14.1, ADR 0057).
+Never retried: it holds until the month turns or somebody raises the limit. ELA's own cap sits
+below it, so this code means that ELA's count of the month is behind the bill — the moment a vague
+diagnosis costs the most, hence a name of its own instead of :data:`PROVIDER_BAD_REQUEST`, which
+is what it was until M14.1. Named ``provider.workspace_limit`` until the console of 2026-10-07
+showed that the limit that holds is the organization's."""
 PROVIDER_NO_OUTPUT: Final = "provider.no_output"
 """The call succeeded and carries no text. Nothing was refused and nothing broke: an answer
 arrived and there is nothing in it (M7.2, ADR 0021 §5).
@@ -1743,7 +1745,7 @@ PROVIDER_ERROR_CODES: Final = frozenset(
         PROVIDER_TIMEOUT,
         PROVIDER_REFUSAL,
         PROVIDER_NO_OUTPUT,
-        PROVIDER_WORKSPACE_LIMIT,
+        PROVIDER_SPEND_LIMIT,
     }
 )
 """The closed vocabulary of ``ProviderResult.error.code`` (ADR 0020 §7).
@@ -1751,7 +1753,7 @@ PROVIDER_ERROR_CODES: Final = frozenset(
 It lives here, with the port, and not inside an adapter, for the reason §26 exists: a caller must
 be able to tell an authentication failure from an overload without importing — or even knowing —
 the provider that produced it. A second provider reports the same fifteen codes or it is not
-interchangeable with the first — fifteen since M14.1, which added :data:`PROVIDER_WORKSPACE_LIMIT`
+interchangeable with the first — fifteen since M14.1, which added :data:`PROVIDER_SPEND_LIMIT`
 (ADR 0057).
 
 Closed means closed: a caller that needs a name for a failure the vocabulary does not have adds

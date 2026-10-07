@@ -3,7 +3,8 @@
 The month's cap reads three things the adapter writes, and nothing else: the worst case of a
 request before it is made, whether a request left this machine (``usage.sent``), and its cost —
 ``None`` when nobody knows it. Every test here proves one of the three, and the code the second
-cap gets when the workspace's monthly limit is the one that stopped a call.
+cap gets when a monthly spend limit set in the console — the organization's, or a workspace's —
+is the one that stopped a call.
 """
 
 from __future__ import annotations
@@ -21,13 +22,13 @@ from ela.ports import (
     PROVIDER_BAD_REQUEST,
     PROVIDER_RATE_LIMITED,
     PROVIDER_SERVER_ERROR,
+    PROVIDER_SPEND_LIMIT,
     PROVIDER_UNAVAILABLE,
     PROVIDER_UNKNOWN_MODEL_HINT,
     PROVIDER_UNSUPPORTED_PARAMETER,
-    PROVIDER_WORKSPACE_LIMIT,
 )
 from ela.providers.anthropic import pricing
-from ela.providers.anthropic.errors import WORKSPACE_LIMIT_PREFIX
+from ela.providers.anthropic.errors import ORGANIZATION_LIMIT_PREFIX, WORKSPACE_LIMIT_PREFIX
 from ela.providers.anthropic.models import HAIKU_4_5, MODELS, OPUS_5_5, PROFILES, SONNET_5_5
 from tests.providers.support import (
     Sleeper,
@@ -235,19 +236,25 @@ async def test_a_turned_down_try_then_an_unknown_one_has_no_cost() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The second cap: the workspace's monthly limit, with a name of its own
+# The second cap: a monthly spend limit set in the console, with a name of its own
 # --------------------------------------------------------------------------------------
 
 
-async def test_the_workspace_limit_has_a_code_of_its_own() -> None:
-    words = f"{WORKSPACE_LIMIT_PREFIX}. You will regain access on 2026-11-01 at 00:00 UTC."
+@pytest.mark.parametrize(
+    "prefix", [ORGANIZATION_LIMIT_PREFIX, WORKSPACE_LIMIT_PREFIX], ids=["organization", "workspace"]
+)
+async def test_a_spend_limit_set_in_the_console_has_a_code_of_its_own(prefix: str) -> None:
+    """The ``400`` of a spend limit somebody set, the organization's or a workspace's — the
+    documentation's own beginnings (``api/rate-limits``, read on 2026-10-07): ELA's ledger is
+    behind the bill, and the remedy is the console and ``ela spend``, not the request."""
+    words = f"{prefix}. You will regain access on 2026-11-01 at 00:00 UTC."
     sleeper = Sleeper()
     provider, client = make_provider(status_error(400, words=words), sleep=sleeper)
 
     result = await provider.complete(request())
 
     assert result.error is not None
-    assert result.error.code == PROVIDER_WORKSPACE_LIMIT
+    assert result.error.code == PROVIDER_SPEND_LIMIT
     assert result.error.retryable is False
     assert "console" in result.error.message and "ela spend" in result.error.message
     assert "regain" not in result.error.message, "the server's words are read, never kept"
@@ -258,13 +265,17 @@ async def test_the_workspace_limit_has_a_code_of_its_own() -> None:
 @pytest.mark.parametrize(
     "words",
     [
-        "You have reached your specified API usage limits.",
+        "Your credit balance is too low to access the API.",
         "messages: at least one message is required",
+        "You have reached your API usage limits",
         "",
     ],
 )
 async def test_any_other_bad_request_is_still_a_bad_request(words: str) -> None:
-    """If the sentence ever changes, the answer falls back to what it was before M14.1."""
+    """If a sentence ever changes, the answer falls back to what it was before M14.1. And a 400
+    the documentation does not write is not guessed: an exhausted credit balance is one — the
+    documentation says only that the API cannot be called until credits are added —, and it stays
+    a bad request, which §23 of the guide tells how to read (ADR 0057 §10)."""
     provider, _ = make_provider(status_error(400, words=words))
 
     result = await provider.complete(request())
@@ -282,10 +293,10 @@ async def test_a_bad_request_with_no_body_is_a_bad_request() -> None:
     assert result.error is not None and result.error.code == PROVIDER_BAD_REQUEST
 
 
-async def test_the_workspace_limit_is_not_a_rate_limit() -> None:
+async def test_a_spend_limit_s_words_in_a_429_are_still_a_rate_limit() -> None:
     """The tier's spend cap is a ``429`` with no ``retry-after``: still a rate limit, by code."""
     provider, _ = make_provider(
-        status_error(429, words=WORKSPACE_LIMIT_PREFIX),
+        status_error(429, words=ORGANIZATION_LIMIT_PREFIX),
         provider_settings=settings(anthropic_max_retries=0),
     )
     result = await provider.complete(request())

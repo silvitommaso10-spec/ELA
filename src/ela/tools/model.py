@@ -161,8 +161,9 @@ class ModelCompleteTool(Tool):
     which providers were passed over because they were not usable. They live in the execution
     result — never in an audit event (§57, rule 23) — and they are what makes a fallback a thing
     somebody can see afterwards instead of a silent substitution (§33). ``workspace`` is where the
-    provider says the call was billed (M14.1, review decision 12): the second cap is the monthly
-    limit of that workspace, and two machines whose answers name the same one share it."""
+    provider says the call was billed (M14.1, review decision 12): the workspace that holds ELA's
+    keys together, whose spend in the console is ELA's, and two machines whose answers name the same
+    one are ELA's two keys. The second cap is the organization's monthly limit, over every key."""
     idempotent: ClassVar[bool] = False
     relocatable: ClassVar[bool] = False
     audit_numbers: ClassVar[frozenset[str]] = frozenset()

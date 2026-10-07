@@ -17,9 +17,11 @@ ELA reserves, before a call that spends, the most the call can cost, and lets it
   (:meth:`~ela.ports.ExecutionResultStore.reserve`): two calls in parallel do not pass on the
   same margin.
 
-The month is the calendar month in UTC: the documentation writes it for the organisation's
-monthly cap (``00:00 UTC on the first day of the next month``) and does not write it for a
-workspace's limit, so it is declared (decision F). A call counts in the month of its ``STARTED``.
+The month is the calendar month in UTC (decision F): the boundary the documentation writes for the
+organisation's monthly cap (``00:00 UTC on the first day of the next month``), and the
+organisation's monthly limit is the second cap (M14.1, decisions of 2026-10-07) — so ELA's month
+is a documented boundary of the second cap, not only a declared one. A call counts in the month of
+its ``STARTED``.
 
 The cap is one line of the Core's ``.env``, :data:`CAP_VARIABLE`, in dollars like the price list
 and the console. Without it no call that spends goes out (decision B), and every refusal names

@@ -24,7 +24,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<nome della voce>` | una voce SAPI 5 installata sul PC | l'elenco del passo 3 di §12: sul PC di M12.4, `Microsoft Elsa Desktop` |
 | `<chiave del modello del PC>` | la chiave Anthropic del nodo, mai quella del Core | la console Anthropic (§12, passo 4) |
 | `<chiave del modello del Mac>` | la chiave Anthropic del Core, nella stessa workspace di quella del PC | la console Anthropic (§9, §23) |
-| `<tetto in dollari>` | quanto il mese può spendere sulla chiave del modello, sotto il limite della workspace | lo decidi tu (§9, §23) |
+| `<tetto in dollari>` | quanto il mese può spendere sulla chiave del modello, sotto il limite mensile dell'organizzazione | lo decidi tu (§9, §23) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
 | `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
@@ -485,8 +485,8 @@ ELA_ANTHROPIC_API_KEY=<chiave del modello del Mac>
 ELA_SPENDING_CAP_USD=<tetto in dollari>
 ```
 
-Il tetto sta **sotto** il limite mensile della workspace che crei nella console di Anthropic: quello copre anche ciò che
-la chiave spende fuori da ELA. La domanda di `ask-model.json` dice quanto può costare la chiamata — il caso peggiore,
+Il tetto sta **sotto** il limite mensile dell'organizzazione che imposti nella console di Anthropic, nella pagina
+Billing: quello copre ogni chiave, anche ciò che spende fuori da ELA. La domanda di `ask-model.json` dice quanto può costare la chiamata — il caso peggiore,
 4,065536 $ su Opus 5.5 — e quanto resta nel mese; `uv run ela spend` dice dove sei. Tutto il resto, con il PC, è §23.
 
 Un secondo step che salvasse la risposta in una nota non è ancora esprimibile: gli argomenti di
@@ -748,8 +748,9 @@ Da sapere prima di andare avanti:
 - **Nessun `ELA_NODE_PERFORMANCE`** e nessun tratto: chi parla lo decide ciò che le macchine
   leggono di sé, non una dichiarazione (passo 6).
 - **La chiave è del PC** e non viaggia mai con il lavoro: il Core manda la chiamata, il nodo usa la
-  sua. Da M14.1 sta nella **stessa workspace** della chiave del Mac, sotto lo stesso limite della console, e il PC
-  **non ha un tetto suo**: `ELA_SPENDING_CAP_USD` è una riga del Core, e il nodo spende solo ciò che il Core gli ha
+  sua. Da M14.1 sta nella **stessa workspace** della chiave del Mac — la workspace tiene insieme le due chiavi di ELA,
+  e la sua spesa nella console è quella di ELA —, sotto il limite mensile dell'organizzazione, e il PC **non ha un
+  tetto suo**: `ELA_SPENDING_CAP_USD` è una riga del Core, e il nodo spende solo ciò che il Core gli ha
   prenotato con l'ordine (§23). Il file sta in `$HOME\ELA` con i permessi della cartella del profilo — lo leggono i processi
   del tuo utente, lo stesso confine del segreto del nodo.
 - **Da M13.3, una riga facoltativa: `ELA_FS_ROOT`**, la cartella in cui il nodo può leggere e scrivere
@@ -3853,7 +3854,9 @@ senza la riga del catalogo vuoto.
 > **Scritta con la SPEC del 2026-10-06** (`milestones/M14.1.md`, «La prova a mano») e **allineata con
 > l'implementazione** il 2026-10-06: le domande dei quattro piani, con il caso peggiore che i passi 4–7 si aspettano,
 > le fa la suite (`tests/api/test_examples.py`), e `tests/docs/test_prova_m14_1.py` tiene lo script allineato a questa
-> sezione. La si fa sul Mac e sul PC, sul branch di M14.1, con lo script `scripts/prova_m14_1.py`. **Da fare.**
+> sezione. **Riallineata con la console vera il 2026-10-07**: il secondo tetto è il limite mensile
+> dell'organizzazione, non quello della workspace (M14.1, «Le decisioni del 2026-10-07»). La si fa sul Mac e sul PC,
+> sul branch di M14.1, con lo script `scripts/prova_m14_1.py`. **Da fare.**
 
 **Da M14.1 nessuna chiamata che spende parte senza un tetto** ([ADR 0057](adr/0057-spending-cap.md)). Il tetto è una
 riga del `.env` del Core, in dollari come il listino e la console:
@@ -3868,19 +3871,24 @@ prenotato + caso peggiore** sta dentro il tetto. Il mese è quello del calendari
 che spende è negata prima, con la riga nominata nella ragione; un «sì» non alza il tetto, lo alza solo chi lo scrive.
 `uv run ela spend` dice dove sei, con la stessa funzione con cui il cancello giudica.
 
-**I tetti sono due.** Il secondo è il **limite mensile della workspace** nella console di Anthropic, che copre anche
-ciò che le chiavi spendono fuori da ELA: le due chiavi — quella del Mac e quella del PC — stanno nella **stessa
-workspace**, e il tetto di ELA sta **sotto** il limite della workspace, con un margine. Sul PC non c'è un tetto: il
-nodo spende solo ciò che il Core ha prenotato per il lavoro che gli manda, e non oltre.
+**I tetti sono due.** Il secondo è il **limite mensile dell'organizzazione**, che imposti nella console di Anthropic
+nella pagina Billing: copre ogni chiave dovunque stia, anche ciò che spende fuori da ELA, e riparte alle **00:00 UTC
+del primo del mese** — il confine del mese di ELA. Il tetto di ELA sta **sotto**, con un margine. Le due chiavi —
+quella del Mac e quella del PC — stanno nella **stessa workspace**: la workspace tiene insieme le chiavi di ELA, e la
+sua spesa nella console resta quella di ELA. Sul PC non c'è un tetto: il nodo spende solo ciò che il Core ha prenotato
+per il lavoro che gli manda, e non oltre. Per esempio: un tetto di 50 $ sotto un limite di 55 $.
+
+**Il credito è un fermo anche lui.** Con il credito prepagato e la ricarica automatica spenta, finito il credito le
+chiamate si fermano finché non lo ricarichi; se il credito è più piccolo del tetto — 5 $ sotto un tetto di 50 $, per
+esempio — è il primo a scattare. ELA non lo conta: il libro è la spesa del mese, non il saldo.
 
 Lo script legge da questa sezione i blocchi con il marcatore sopra, con il lettore di `scripts/prova_m6_3c.py`: i
-tipi di §21 — `comando`, `atteso`, `occhio`, `richiede`, `guarda`, `mano` — e sette suoi:
+tipi di §21 — `comando`, `atteso`, `occhio`, `richiede`, `guarda`, `mano` — e sei suoi:
 
 - **`commit`**: il comando da dare **sul PC**; lo script chiede i primi sette caratteri che stampa e li confronta con il
   commit del Mac.
-- **`limite`**: chiede il limite mensile della workspace che leggi nella console, in dollari, e lo confronta con il
+- **`limite`**: chiede il limite mensile dell'organizzazione che leggi nella console, in dollari, e lo confronta con il
   tetto che `GET /spend` dice: **PASSATO se il tetto di ELA sta sotto**.
-- **`scrivi`**: una domanda la cui risposta lo script scrive nel file, senza giudicarla.
 - **`costo`**: legge i risultati del task del passo e vuole il modello scritto, **un costo** e un `finish_reason`; scrive
   l'id della workspace. Con «su un nodo», il risultato è del PC e la workspace è la stessa delle chiamate del Mac.
 - **`spesa`**: confronta `GET /spend` con com'era all'ultimo `tetto`, all'ultima `spesa` o all'inizio del passo.
@@ -3923,11 +3931,11 @@ riavviato, e si rilancia.
 
 ### 3. Il secondo tetto
 
-Nella console di Anthropic, nella pagina dei limiti della workspace delle due chiavi:
+Nella console di Anthropic, nella pagina Billing, alla voce dei limiti di spesa:
 
 <!-- prova: 3.limite -->
 ```
-il limite mensile della workspace, in dollari
+il limite mensile dell'organizzazione, in dollari
 ```
 
 <!-- prova: 3.occhio -->
@@ -3935,14 +3943,8 @@ il limite mensile della workspace, in dollari
 La console dice che la ricarica automatica dei crediti è spenta?
 ```
 
-<!-- prova: 3.scrivi -->
-```
-Che cosa dice la console di quando il limite della workspace riparte?
-```
-
-Se la console non lo dice, scrivi ciò che dice: non è un fallimento di ELA. Il mese di ELA è quello del calendario, in
-UTC, dichiarato (ADR 0057): la documentazione lo scrive per il limite dell'organizzazione e non per quello di una
-workspace.
+Quando il limite riparte non te lo chiede nessuno: la documentazione scrive il tetto dell'organizzazione per il mese del
+calendario, con la ripresa alle 00:00 UTC del primo del mese dopo, ed è il mese di ELA (ADR 0057 §4).
 
 ### 4. I tre modelli, e il tetto che scatta
 
@@ -4208,8 +4210,9 @@ speso cresciuto del costo
 prenotato invariato
 ```
 
-La chiamata del PC la conta il libro del Mac, e la sua workspace è quella delle chiamate del Mac: il limite della
-console copre anche la chiave del PC, anche quando spende fuori da ELA.
+La chiamata del PC la conta il libro del Mac, e la sua workspace è quella delle chiamate del Mac: la stessa workspace
+tiene insieme le due chiavi di ELA, e la sua spesa nella console resta quella di ELA. Il limite dell'organizzazione
+copre ogni chiave, dovunque stia.
 
 ### 6. Il nodo che tace a metà lavoro
 
@@ -4394,8 +4397,19 @@ Sul PC: il .env riscritto con il blocco di §12 passo 4 e il nodo riacceso, poi 
 un nodo disponibile
 ```
 
-**`provider.workspace_limit` la prova non lo raggiunge**: servirebbe spendere fino al limite della workspace. Lo prova
-la suite, con una risposta costruita. **Il confronto fra la somma di ELA e il costo della console non è nella prova**:
+**Quando il fornitore ferma una chiamata**, il codice dice che cosa guardare, perché il rimedio è diverso:
+
+- **`provider.spend_limit`**: un limite di spesa scelto nella console è raggiunto — quello dell'organizzazione, o
+  quello di una workspace, se un giorno ce n'è uno. Il conto di ELA è indietro rispetto alla fattura: guarda il
+  limite e la spesa del mese nella console, e `uv run ela spend`. Non si ritenta: tiene fino al primo del mese o finché
+  qualcuno alza il limite.
+- **`provider.bad_request` mentre `ela spend` mostra margine**: i piani della prova sono quelli che la suite fa
+  girare, quindi la prima cosa da guardare è **il credito**, nella pagina Billing della console. Se è finito,
+  ricaricalo. La documentazione non scrive con che risposta arriva il credito finito, ed ELA non la indovina: resta
+  `provider.bad_request` (ADR 0057 §10).
+
+**Nessuno dei due la prova lo raggiunge**: servirebbe spendere fino al limite, o fino all'ultimo centesimo del credito.
+Il primo lo prova la suite, con una risposta costruita sulle parole della documentazione. **Il confronto fra la somma di ELA e il costo della console non è nella prova**:
 le chiamate di prova costano meno di un centesimo e la console arrotonda ai centesimi; è una misura da fare dopo un
 mese d'uso (ADR 0057).
 

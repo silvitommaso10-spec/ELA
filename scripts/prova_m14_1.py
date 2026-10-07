@@ -9,14 +9,15 @@ parole intere e in ordine», il rapporto, il client dell'API, il vocabolario di 
 ``richiede`` e il controllo del passo 1. ``tests/docs/test_prova_m14_1.py`` legge §23 con lo stesso
 lettore e tiene allineati i due, con un caso negativo per ogni confronto di questo file.
 
-I tipi di §21 — ``comando``, ``atteso``, ``occhio``, ``richiede``, ``guarda``, ``mano`` — e sette
-suoi (la SPEC di M14.1, «La prova a mano», e le decisioni 11, 16, 17 e 18 della review):
+I tipi di §21 — ``comando``, ``atteso``, ``occhio``, ``richiede``, ``guarda``, ``mano`` — e sei
+suoi (la SPEC di M14.1, «La prova a mano», le decisioni 11, 16 e 17 della review, e quelle del
+2026-10-07, che fanno del secondo tetto il limite dell'organizzazione e tolgono la domanda «scrivi»
+sul suo azzeramento: ciò che la documentazione dice non si chiede a Tommaso):
 
 * ``commit``: il comando da dare sul PC; chiede i primi sette caratteri che stampa e li confronta
   con il commit di questo Mac — il confronto lo fa lo script, non l'occhio;
-* ``limite``: chiede il limite mensile della workspace, in dollari, e **PASSATO se il tetto di ELA
-  sta sotto**, letto da ``GET /spend``;
-* ``scrivi``: una domanda la cui risposta va nel file, senza giudizio;
+* ``limite``: chiede il limite mensile dell'organizzazione, in dollari, e **PASSATO se il tetto di
+  ELA sta sotto**, letto da ``GET /spend``;
 * ``costo``: il risultato del task ha il modello scritto, un costo e un ``finish_reason``; scrive la
   workspace. «su un nodo»: il risultato è di un nodo, e la workspace è quella delle chiamate di
   questo Mac;
@@ -67,7 +68,6 @@ KINDS: Final = (
     "mano",
     "commit",
     "limite",
-    "scrivi",
     "costo",
     "spesa",
     "tetto",
@@ -135,12 +135,15 @@ def dollars_typed(typed: str) -> Decimal | None:
 
 
 def under_the_limit(cap: str | None, limit: Decimal) -> str | None:
-    """Why ELA's cap is not below the workspace's limit, or ``None`` if it is (the second cap)."""
+    """Why ELA's cap is not below the organization's monthly limit, or ``None`` if it is (the
+    second cap)."""
     if cap is None:
         return "ELA non ha un tetto: GET /spend dice cap null"
     if Decimal(cap) < limit:
         return None
-    return f"il tetto di ELA, {cap} {CURRENCY}, non sta sotto il limite della workspace, {limit}"
+    return (
+        f"il tetto di ELA, {cap} {CURRENCY}, non sta sotto il limite dell'organizzazione, {limit}"
+    )
 
 
 @dataclass(frozen=True)
@@ -439,13 +442,6 @@ def a_round(number: int, todo: Sequence[base.Block], proof: Proof, round_: int) 
             a_commit(number, block, proof)
         elif kind == "limite":
             a_limit(number, block, proof)
-        elif kind == "scrivi":
-            question = block.body.strip()
-            answer = ""
-            while not answer.strip():
-                answer = proof.ask(f"[{number}] {question} ")
-            report.say(f"[{number}] SCRITTO: {question}")
-            report.say(f"    risposta di Tommaso: {answer.strip()}")
         elif kind == "costo":
             for line in block.lines:
                 a_cost(number, line, turn, proof)
