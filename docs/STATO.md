@@ -447,8 +447,10 @@ funzione del cancello.
 
 *Che cosa ne discende:* **i tetti sono due**. Il secondo resta quello del fornitore: **il limite
 mensile dell'organizzazione**, scelto nella pagina Billing della console, che copre ogni chiave
-dovunque stia e riparte alle 00:00 UTC del primo del mese, come il mese di ELA; il tetto di ELA sta
-sotto, con un margine. Le due chiavi del Mac e del PC stanno in una workspace dedicata, che le tiene
+dovunque stia; il tetto di ELA sta sotto, con un margine. Il mese di ELA, in UTC, è dichiarato: la
+documentazione scrive l'azzeramento alle 00:00 UTC per il tetto del livello, e del limite scelto
+dice solo che la risposta indica quando l'accesso riprende — quindi il secondo tetto può scattare
+con ELA in regola, e la ragione dice il fatto e il conto di ELA, non la causa. Le due chiavi del Mac e del PC stanno in una workspace dedicata, che le tiene
 insieme e la cui spesa nella console è quella di ELA. Il credito è prepagato, con la ricarica
 automatica spenta: finito, ferma le chiamate anche lui, e se è più piccolo del tetto scatta per
 primo. Fino al 2026-10-07 il secondo tetto era scritto come il limite della workspace, che la console

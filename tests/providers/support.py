@@ -103,8 +103,12 @@ def status_error(
     error_type: str = "invalid_request_error",
     retry_after: str | None = None,
     words: str = "server side text",
+    details: dict[str, str] | None = None,
 ) -> anthropic.APIStatusError:
-    """The exception the SDK raises for an HTTP status, with the headers a real one carries."""
+    """The exception the SDK raises for an HTTP status, with the headers a real one carries.
+
+    ``details`` is the ``error.details`` object the API adds to some answers — the tier's spend
+    cap carries its ``error_code`` there (``api/rate-limits``)."""
     headers = {"request-id": REQUEST_ID}
     if retry_after is not None:
         headers["retry-after"] = retry_after
@@ -113,7 +117,10 @@ def status_error(
         headers=headers,
         request=httpx2.Request("POST", API_URL),
     )
-    body = {"type": "error", "error": {"type": error_type, "message": words}}
+    error: dict[str, object] = {"type": error_type, "message": words}
+    if details is not None:
+        error["details"] = details
+    body = {"type": "error", "error": error}
     error_class = STATUS_ERRORS.get(
         status, anthropic.InternalServerError if status >= 500 else anthropic.APIStatusError
     )

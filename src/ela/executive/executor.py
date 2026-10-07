@@ -1085,6 +1085,8 @@ class Executor:
                     "metadata": metadata,
                 }
             )
+            # A provider's spend limit that stopped the call: what ELA counted, beside the fact.
+            result = await self._spending.counted(result, self._clock.now())
             await self._results.add(result)
             return result
         finally:
@@ -1221,6 +1223,7 @@ class Executor:
             self._minted(assignment, ready.tool, envelope, now, started[0] if started else None),
             ready.tool,
         )
+        result = await self._spending.counted(result, now)
         fresh = await self._stored_once(result)
         marked = await self._assignments.deliver(assignment_id, device_id, digest=digest, now=now)
         if not fresh:  # window A8: the row was already there, so the writes after it may be missing

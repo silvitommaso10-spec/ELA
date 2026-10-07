@@ -3,7 +3,7 @@
 - **Stato:** Accettata. §7 esteso dalla review di M7.2 (ADR 0021 §5): `provider.no_output` è
   il **quattordicesimo** codice del vocabolario chiuso. La riga è nella tabella di §7; il
   resto dell'ADR — gli otto esiti di §9 compresi — non cambia.
-  **ADR 0057 §3, §10 e §11** (M14.1): i modelli di §4 e i profili di §5 sono i 5.5, con Haiku all'id fissato; la cache di §6 è il 5% dell'input su Opus 5.5, e il listino si riverifica ogni 30 giorni; §7 ha un quindicesimo codice, `provider.spend_limit`; §8 ritenta solo il `429` e il `529`.
+  **ADR 0057 §3, §10 e §11** (M14.1): i modelli di §4 e i profili di §5 sono i 5.5, con Haiku all'id fissato; la cache di §6 è il 5% dell'input su Opus 5.5, e il listino si riverifica ogni 30 giorni; §7 ha un quindicesimo codice, `provider.spend_limit`; §8 ritenta solo il `429` di frequenza e il `529`, non il `429` del tetto del livello.
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §25, §26, §29, §32, §33, §50, §51, §57, §64
 

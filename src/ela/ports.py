@@ -1711,12 +1711,14 @@ PROVIDER_REFUSAL: Final = "provider.refusal"
 """The model declined to answer. Not a fault: a fact about the request, worth remembering
 separately from a breakdown (§64) — hence a code of its own, and ``retryable`` false."""
 PROVIDER_SPEND_LIMIT: Final = "provider.spend_limit"
-"""The provider refused the request because a monthly spend limit somebody set in the console is
-reached — the organization's, which is the **second cap**, or a workspace's (M14.1, ADR 0057).
-Never retried: it holds until the month turns or somebody raises the limit. ELA's own cap sits
-below it, so this code means that ELA's count of the month is behind the bill — the moment a vague
-diagnosis costs the most, hence a name of its own instead of :data:`PROVIDER_BAD_REQUEST`, which
-is what it was until M14.1. Named ``provider.workspace_limit`` until the console of 2026-10-07
+"""The provider refused the request because one of its monthly spend limits is reached — the one
+the organization set in the console, which is the **second cap**, a workspace's, or the usage
+tier's cap (M14.1, ADR 0057). Never retried: it holds until the provider's month turns or somebody
+raises the limit. It does **not** say that ELA's count is wrong: the provider's month need not be
+ELA's, so the limit can be reached with ELA in order with its own cap. The reason names the limit,
+the Core adds what ELA counted of its cap, and the guide lists the causes (review of ``be7f131``).
+A name of its own instead of :data:`PROVIDER_BAD_REQUEST` and :data:`PROVIDER_RATE_LIMITED`, which
+is what it was until M14.1: named ``provider.workspace_limit`` until the console of 2026-10-07
 showed that the limit that holds is the organization's."""
 PROVIDER_NO_OUTPUT: Final = "provider.no_output"
 """The call succeeded and carries no text. Nothing was refused and nothing broke: an answer

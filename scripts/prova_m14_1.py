@@ -12,7 +12,7 @@ lettore e tiene allineati i due, con un caso negativo per ogni confronto di ques
 I tipi di §21 — ``comando``, ``atteso``, ``occhio``, ``richiede``, ``guarda``, ``mano`` — e sei
 suoi (la SPEC di M14.1, «La prova a mano», le decisioni 11, 16 e 17 della review, e quelle del
 2026-10-07, che fanno del secondo tetto il limite dell'organizzazione e tolgono la domanda «scrivi»
-sul suo azzeramento: ciò che la documentazione dice non si chiede a Tommaso):
+sul suo azzeramento: la console non risponde a ciò che la documentazione non scrive):
 
 * ``commit``: il comando da dare sul PC; chiede i primi sette caratteri che stampa e li confronta
   con il commit di questo Mac — il confronto lo fa lo script, non l'occhio;

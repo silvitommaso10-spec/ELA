@@ -241,12 +241,19 @@ async def test_a_turned_down_try_then_an_unknown_one_has_no_cost() -> None:
 
 
 @pytest.mark.parametrize(
-    "prefix", [ORGANIZATION_LIMIT_PREFIX, WORKSPACE_LIMIT_PREFIX], ids=["organization", "workspace"]
+    ("prefix", "which"),
+    [
+        (ORGANIZATION_LIMIT_PREFIX, "the organization's monthly spend limit"),
+        (WORKSPACE_LIMIT_PREFIX, "a workspace's monthly spend limit"),
+    ],
+    ids=["organization", "workspace"],
 )
-async def test_a_spend_limit_set_in_the_console_has_a_code_of_its_own(prefix: str) -> None:
+async def test_a_spend_limit_set_in_the_console_has_a_code_of_its_own(
+    prefix: str, which: str
+) -> None:
     """The ``400`` of a spend limit somebody set, the organization's or a workspace's — the
-    documentation's own beginnings (``api/rate-limits``, read on 2026-10-07): ELA's ledger is
-    behind the bill, and the remedy is the console and ``ela spend``, not the request."""
+    documentation's own beginnings (``api/rate-limits``, read on 2026-10-07). The reason says the
+    fact and which limit; it does not say why — ELA may be in order with its own month (§23)."""
     words = f"{prefix}. You will regain access on 2026-11-01 at 00:00 UTC."
     sleeper = Sleeper()
     provider, client = make_provider(status_error(400, words=words), sleep=sleeper)
@@ -256,7 +263,33 @@ async def test_a_spend_limit_set_in_the_console_has_a_code_of_its_own(prefix: st
     assert result.error is not None
     assert result.error.code == PROVIDER_SPEND_LIMIT
     assert result.error.retryable is False
-    assert "console" in result.error.message and "ela spend" in result.error.message
+    assert "a spend limit of the provider was reached" in result.error.message
+    assert which in result.error.message
+    assert "regain" not in result.error.message, "the server's words are read, never kept"
+    assert client is not None and len(client.messages.calls) == 1 and sleeper.delays == []
+    assert result.usage.cost == Decimal(0), "turned down: it cost nothing"
+
+
+async def test_the_tier_s_spend_cap_is_a_spend_limit_and_is_not_tried_again() -> None:
+    """The ``429`` of the usage tier's monthly spend cap is told by ``error.details.error_code``, a
+    field and not a sentence (``api/rate-limits``, read on 2026-10-07). It holds until the month
+    turns, so sending it again is two more answers that say the same: ADR 0020 §8, revised by ADR
+    0057 §10, tries again only the ``429`` of frequency and the ``529``."""
+    refusal = status_error(
+        429,
+        error_type="rate_limit_error",
+        words="You have reached your API usage limits: ... You will regain access on 2026-11-01.",
+        details={"error_code": "enforced_spend_limit_reached"},
+    )
+    sleeper = Sleeper()
+    provider, client = make_provider(refusal, sleep=sleeper)
+
+    result = await provider.complete(request())
+
+    assert result.error is not None
+    assert result.error.code == PROVIDER_SPEND_LIMIT
+    assert result.error.retryable is False
+    assert "the usage tier's monthly spend cap" in result.error.message
     assert "regain" not in result.error.message, "the server's words are read, never kept"
     assert client is not None and len(client.messages.calls) == 1 and sleeper.delays == []
     assert result.usage.cost == Decimal(0), "turned down: it cost nothing"
@@ -293,10 +326,17 @@ async def test_a_bad_request_with_no_body_is_a_bad_request() -> None:
     assert result.error is not None and result.error.code == PROVIDER_BAD_REQUEST
 
 
-async def test_a_spend_limit_s_words_in_a_429_are_still_a_rate_limit() -> None:
-    """The tier's spend cap is a ``429`` with no ``retry-after``: still a rate limit, by code."""
+@pytest.mark.parametrize(
+    "details",
+    [None, {"error_code": "something_else"}, {}],
+    ids=["no-details", "another-error-code", "no-error-code"],
+)
+async def test_a_429_is_a_spend_limit_by_its_field_and_never_by_its_words(
+    details: dict[str, str] | None,
+) -> None:
+    """Without the tier's ``error_code`` a ``429`` is a rate limit, whatever its sentence says."""
     provider, _ = make_provider(
-        status_error(429, words=ORGANIZATION_LIMIT_PREFIX),
+        status_error(429, words=ORGANIZATION_LIMIT_PREFIX, details=details),
         provider_settings=settings(anthropic_max_retries=0),
     )
     result = await provider.complete(request())

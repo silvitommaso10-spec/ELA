@@ -38,7 +38,7 @@ from ela.executive.spending import (
     ledger,
     month_of,
 )
-from ela.ports import STARTED_ID
+from ela.ports import PROVIDER_BAD_REQUEST, PROVIDER_SPEND_LIMIT, STARTED_ID
 from ela.testing.fakes import FakeExecutionResultStore
 from tests.contracts.test_execution_result_store import OTHER, STARTED
 
@@ -337,6 +337,73 @@ async def test_reserve_writes_nothing_over_the_cap_and_says_why() -> None:
     assert isinstance(refused, Refusal) and refused.code is SpendingCode.OVER_CAP
     assert refused.ledger == Ledger(spent=0, reserved=Decimal("0.25"), open=1)
     assert [row.id for row in await results.for_task(STARTED.task_id)] == [reserved(1).id]  # type: ignore[arg-type]
+
+
+SPEND_LIMIT = ErrorMetadata(
+    code=PROVIDER_SPEND_LIMIT,
+    message=(
+        "400 invalid_request_error: a spend limit of the provider was reached: the organization's "
+        "monthly spend limit, set in the console"
+    ),
+)
+
+
+def stopped_by_the_provider(reservation: ExecutionResult, number: int) -> ExecutionResult:
+    """The outcome of a call a provider's spend limit turned down: sent, and free."""
+    return closing(reservation, usage(cost=Decimal(0)), number).model_copy(
+        update={"status": ExecutionStatus.FAILED, "error": SPEND_LIMIT}
+    )
+
+
+async def test_a_provider_s_spend_limit_is_told_with_what_ela_counted_of_its_cap() -> None:
+    """Review of ``be7f131``: the provider's month need not be ELA's, and its limit can be reached
+    with ELA in order — the reason says the fact, and beside it how much ELA counted of its cap in
+    its own month, this outcome included: it closes its reservation at no cost. The causes are in
+    §23 of the guide, not in the reason."""
+    results = FakeExecutionResultStore()
+    before = reserved(1)
+    await results.add(before)
+    await results.add(closing(before, usage(cost=Decimal("49.1")), 1))
+    mine = reserved(2)
+    await results.add(mine)
+    stopped = stopped_by_the_provider(mine, 2)
+
+    told = await SpendingGate(results, Decimal(50)).counted(stopped, NOW)
+
+    assert told.error is not None and told.error.code == PROVIDER_SPEND_LIMIT
+    assert told.error.message == (
+        f"{SPEND_LIMIT.message}; ELA counted 49.1 spent and 0 reserved of its cap of 50 USD in "
+        f"2026-09 ({CAP_VARIABLE})"
+    )
+    assert told.model_copy(update={"error": stopped.error}) == stopped, "nothing else changes"
+
+
+async def test_without_a_cap_the_count_says_there_is_none() -> None:
+    """A node's delivery can reach a Core started again without the line: the count still says
+    what it counted, and that there is no cap."""
+    results = FakeExecutionResultStore()
+    mine = reserved(1)
+    await results.add(mine)
+
+    told = await SpendingGate(results, None).counted(stopped_by_the_provider(mine, 1), NOW)
+
+    assert told.error is not None
+    assert told.error.message.endswith(
+        f"; ELA counted 0 spent and 0 reserved in 2026-09, with no cap ({CAP_VARIABLE})"
+    )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [None, ErrorMetadata(code=PROVIDER_BAD_REQUEST, message="400 invalid_request_error")],
+    ids=["no-error", "another-code"],
+)
+async def test_any_other_outcome_is_left_as_it_is(error: ErrorMetadata | None) -> None:
+    outcome = OTHER.model_copy(update={"error": error})
+
+    assert await SpendingGate(FakeExecutionResultStore(), Decimal(50)).counted(outcome, NOW) is (
+        outcome
+    )
 
 
 @pytest.mark.parametrize(

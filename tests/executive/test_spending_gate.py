@@ -31,9 +31,10 @@ from ela.domain import (
 from ela.executive import RunOutcome
 from ela.executive.executor import ASKED
 from ela.executive.spending import CAP_VARIABLE, SpendingCode, SpendingGate, month_of
-from ela.ports import AssignmentStateError
+from ela.ports import PROVIDER_SPEND_LIMIT, AssignmentStateError
 from ela.testing.fakes import FakeExecutionResultStore, FakeTool
 from tests.executive.support import OK, World, fake_tools, world
+from tests.executive.test_executor_remote import answered
 from tests.permissions.support import ECHO, NOTE
 
 E = AuditEventType
@@ -49,12 +50,16 @@ def a_world(
     bound: WorstCase | ErrorMetadata | None = BOUND,
     usage: ProviderUsage | None = COST,
     results: FakeExecutionResultStore | None = None,
+    error: ErrorMetadata | None = None,
 ) -> World:
     """A world whose ``core.echo`` and ``workspace.write_note`` spend: tools that cannot be run
     twice, nor moved, and that say ``bound`` is the most they cost."""
     store = FakeExecutionResultStore() if results is None else results
     base = world()
     tools = fake_tools(base.clock, base.ids)
+    failing: dict[str, object] = {}
+    if error is not None:
+        failing = {"status": ExecutionStatus.FAILED, "error": error}
     for spec in (ECHO, NOTE):
         tool = FakeTool(
             spec.id,
@@ -64,6 +69,7 @@ def a_world(
             output={"ok": True},
             idempotent=False,
             usage=usage,
+            **failing,  # type: ignore[arg-type]
         )
         tool.bound = bound
         tools[spec.id] = tool
@@ -183,6 +189,52 @@ async def test_a_tool_that_spends_nothing_never_meets_the_gate() -> None:
     assert execution.task.state is not TaskState.DENIED
     started, _ = await w.results.for_step(task.id, step.id)
     assert started.worst_case is None
+
+
+SPEND_LIMIT = ErrorMetadata(
+    code=PROVIDER_SPEND_LIMIT,
+    message=(
+        "400 invalid_request_error: a spend limit of the provider was reached: the organization's "
+        "monthly spend limit, set in the console"
+    ),
+)
+FREE = ProviderUsage(input_tokens=0, output_tokens=0, cost=Decimal(0), currency="USD")
+"""What a turned-down call costs: it left, and nothing ran."""
+
+
+async def test_an_outcome_a_provider_s_limit_stopped_here_says_what_ela_counted() -> None:
+    """Review of ``be7f131``: the count is the Core's — the adapter does not see the month — and
+    it is added where the outcome is written, before anything reads it."""
+    w = a_world(cap=Decimal(5), usage=FREE, error=SPEND_LIMIT)
+    task, step = await w.running(ECHO.id, conditions=(OK,))
+
+    await w.execute(task.id, step.id)
+
+    _, outcome = await w.results.for_step(task.id, step.id)
+    assert outcome.error is not None and outcome.error.code == PROVIDER_SPEND_LIMIT
+    month = month_of(w.now).label
+    assert outcome.error.message == (
+        f"{SPEND_LIMIT.message}; ELA counted 0 spent and 0 reserved of its cap of 5 USD in {month} "
+        f"({CAP_VARIABLE})"
+    )
+
+
+async def test_an_outcome_a_provider_s_limit_stopped_on_a_node_says_it_too() -> None:
+    """The same count for the node's delivery: the node's adapter said which limit, the Core says
+    what it counted."""
+    w = a_world(cap=Decimal(5))
+    step, remote, assignment = await handed(w)
+    await w.executor.begin(assignment.id, remote.id)  # type: ignore[attr-defined]
+
+    await w.executor.deliver(
+        assignment.id,  # type: ignore[attr-defined]
+        remote.id,  # type: ignore[attr-defined]
+        answered(status=ExecutionStatus.FAILED, output={}, error=SPEND_LIMIT, usage=FREE),
+    )
+
+    _, outcome = await w.results.for_step(assignment.task_id, step.id)  # type: ignore[attr-defined]
+    assert outcome.error is not None
+    assert outcome.error.message.startswith(f"{SPEND_LIMIT.message}; ELA counted 0 spent")
 
 
 # --------------------------------------------------------------------------------------

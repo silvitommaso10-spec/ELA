@@ -3854,8 +3854,9 @@ senza la riga del catalogo vuoto.
 > **Scritta con la SPEC del 2026-10-06** (`milestones/M14.1.md`, «La prova a mano») e **allineata con
 > l'implementazione** il 2026-10-06: le domande dei quattro piani, con il caso peggiore che i passi 4–7 si aspettano,
 > le fa la suite (`tests/api/test_examples.py`), e `tests/docs/test_prova_m14_1.py` tiene lo script allineato a questa
-> sezione. **Riallineata con la console vera il 2026-10-07**: il secondo tetto è il limite mensile
-> dell'organizzazione, non quello della workspace (M14.1, «Le decisioni del 2026-10-07»). La si fa sul Mac e sul PC,
+> sezione. **Riallineata con la console vera il 2026-10-07**, e corretta lo stesso giorno: il secondo tetto è il limite
+> mensile dell'organizzazione, non quello della workspace, e il mese di ELA resta dichiarato (M14.1, «Le decisioni del
+> 2026-10-07»). La si fa sul Mac e sul PC,
 > sul branch di M14.1, con lo script `scripts/prova_m14_1.py`. **Da fare.**
 
 **Da M14.1 nessuna chiamata che spende parte senza un tetto** ([ADR 0057](adr/0057-spending-cap.md)). Il tetto è una
@@ -3867,13 +3868,15 @@ ELA_SPENDING_CAP_USD=<tetto in dollari>
 
 Prima di ogni chiamata ELA prenota il **caso peggiore** — la finestra di contesto del modello meno l'output, al prezzo
 d'ingresso, più il `max_tokens` che la richiesta manda, al prezzo d'uscita — e la lascia partire solo se **speso +
-prenotato + caso peggiore** sta dentro il tetto. Il mese è quello del calendario, in UTC. Senza la riga, ogni chiamata
+prenotato + caso peggiore** sta dentro il tetto. Il mese è quello del calendario, in UTC, dichiarato. Senza la riga, ogni chiamata
 che spende è negata prima, con la riga nominata nella ragione; un «sì» non alza il tetto, lo alza solo chi lo scrive.
 `uv run ela spend` dice dove sei, con la stessa funzione con cui il cancello giudica.
 
 **I tetti sono due.** Il secondo è il **limite mensile dell'organizzazione**, che imposti nella console di Anthropic
-nella pagina Billing: copre ogni chiave dovunque stia, anche ciò che spende fuori da ELA, e riparte alle **00:00 UTC
-del primo del mese** — il confine del mese di ELA. Il tetto di ELA sta **sotto**, con un margine. Le due chiavi —
+nella pagina Billing: copre ogni chiave dovunque stia, anche ciò che spende fuori da ELA. Il tetto di ELA sta **sotto**,
+con un margine. **Il mese del fornitore può non essere quello di ELA**: la documentazione scrive l'azzeramento alle 00:00
+UTC del primo del mese per il tetto del livello, e del limite che scegli dice solo che la risposta indica quando
+l'accesso riprende. Le due chiavi —
 quella del Mac e quella del PC — stanno nella **stessa workspace**: la workspace tiene insieme le chiavi di ELA, e la
 sua spesa nella console resta quella di ELA. Sul PC non c'è un tetto: il nodo spende solo ciò che il Core ha prenotato
 per il lavoro che gli manda, e non oltre. Per esempio: un tetto di 50 $ sotto un limite di 55 $.
@@ -3943,8 +3946,10 @@ il limite mensile dell'organizzazione, in dollari
 La console dice che la ricarica automatica dei crediti è spenta?
 ```
 
-Quando il limite riparte non te lo chiede nessuno: la documentazione scrive il tetto dell'organizzazione per il mese del
-calendario, con la ripresa alle 00:00 UTC del primo del mese dopo, ed è il mese di ELA (ADR 0057 §4).
+Quando il limite riparte lo script non te lo chiede: la console non risponde a ciò che la documentazione non scrive. La
+documentazione scrive la ripresa alle 00:00 UTC del primo del mese per il tetto del livello; del limite che scegli dice
+solo che la risposta indica quando l'accesso riprende. Il mese di ELA è quello del calendario, in UTC, dichiarato
+(ADR 0057 §4).
 
 ### 4. I tre modelli, e il tetto che scatta
 
@@ -4399,17 +4404,25 @@ un nodo disponibile
 
 **Quando il fornitore ferma una chiamata**, il codice dice che cosa guardare, perché il rimedio è diverso:
 
-- **`provider.spend_limit`**: un limite di spesa scelto nella console è raggiunto — quello dell'organizzazione, o
-  quello di una workspace, se un giorno ce n'è uno. Il conto di ELA è indietro rispetto alla fattura: guarda il
-  limite e la spesa del mese nella console, e `uv run ela spend`. Non si ritenta: tiene fino al primo del mese o finché
-  qualcuno alza il limite.
-- **`provider.bad_request` mentre `ela spend` mostra margine**: i piani della prova sono quelli che la suite fa
-  girare, quindi la prima cosa da guardare è **il credito**, nella pagina Billing della console. Se è finito,
-  ricaricalo. La documentazione non scrive con che risposta arriva il credito finito, ed ELA non la indovina: resta
-  `provider.bad_request` (ADR 0057 §10).
+- **`provider.spend_limit`**: un limite di spesa del fornitore è raggiunto. La ragione dice quale — quello
+  dell'organizzazione, quello di una workspace, se un giorno ce n'è uno, o il tetto del livello — e quanto ELA ha contato
+  del suo tetto nel suo mese. Non dice perché, e le cause possibili sono tre:
+  1. **il conto di ELA è indietro rispetto alla fattura**: lo speso della console è più di quello di `ela spend`;
+  2. **un'altra chiave dell'organizzazione ha speso**: il limite dell'organizzazione copre ogni chiave, non solo le due
+     di ELA, e la spesa della workspace di ELA nella console è la sola parte di ELA;
+  3. **il mese del fornitore non è quello di ELA**: per esempio 50 $ a fine mese e 50 all'inizio del mese dopo, nella
+     stessa finestra del fornitore — ELA è in regola con il suo tetto, e il limite scatta lo stesso.
+
+  Guarda il limite e la spesa nella console, la spesa della workspace di ELA, e `uv run ela spend`. Non si ritenta: tiene
+  finché il fornitore non riapre, come dice la console, o finché qualcuno alza il limite.
+- **Un fallimento con il tipo `billing_error`**, o **un `provider.bad_request` mentre `ela spend` mostra margine**: i
+  piani della prova sono quelli che la suite fa girare, quindi la prima cosa da guardare è **il credito e il
+  pagamento**, nella pagina Billing della console. Se il credito è finito, ricaricalo. La documentazione non scrive con
+  che risposta arriva il credito finito, ed ELA non la indovina: un `400` resta `provider.bad_request`, un `402` resta
+  `provider.rejected` con il tipo `billing_error` nella ragione (ADR 0057 §10).
 
 **Nessuno dei due la prova lo raggiunge**: servirebbe spendere fino al limite, o fino all'ultimo centesimo del credito.
-Il primo lo prova la suite, con una risposta costruita sulle parole della documentazione. **Il confronto fra la somma di ELA e il costo della console non è nella prova**:
+Il primo lo prova la suite, con le risposte costruite sulle parole e sul campo della documentazione. **Il confronto fra la somma di ELA e il costo della console non è nella prova**:
 le chiamate di prova costano meno di un centesimo e la console arrotonda ai centesimi; è una misura da fare dopo un
 mese d'uso (ADR 0057).
 

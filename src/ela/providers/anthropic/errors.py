@@ -5,8 +5,9 @@ Two things happen here, and only here:
 * **Classification.** Which of :data:`~ela.ports.PROVIDER_ERROR_CODES` an exception is, whether
   trying again could ever change the answer, and **whether the API ran the request** (M14.1,
   ADR 0057). A ``4xx`` — the ``429`` included — and the ``529`` of an overloaded API are turned
-  down before anything runs: they cost nothing, and only the ``429`` and the ``529`` are worth
-  trying again. A timeout, a dropped connection, any other ``5xx`` and an answer that cannot be
+  down before anything runs: they cost nothing, and only the ``429`` of frequency and the ``529``
+  are worth trying again — not the ``429`` of the tier's spend cap, which holds until the month
+  turns. A timeout, a dropped connection, any other ``5xx`` and an answer that cannot be
   read may come after the work was done and paid: nobody knows, so they are not tried again —
   one unknown outcome is not paid twice (ADR 0021 §2, a level further down). An answer that is not
   an answer is neither: a 409 or a 422 is the API turning a request down, an unreadable body is
@@ -67,12 +68,27 @@ is its own. If a sentence ever changes the answer falls back to
 decision 10). An event whose sentence the documentation does not write — an exhausted credit
 balance — is not guessed, and stays where it falls."""
 
-SPEND_LIMIT_PREFIXES: Final = (ORGANIZATION_LIMIT_PREFIX, WORKSPACE_LIMIT_PREFIX)
+TIER_CAP_ERROR_CODE: Final = "enforced_spend_limit_reached"
+"""How the API marks the ``429`` of the usage tier's monthly spend cap: in
+``error.details.error_code``, a field and not a sentence (``api/rate-limits``, read on
+2026-10-07). It holds until the month turns, so it is not tried again (ADR 0057 §10, revising
+ADR 0020 §8)."""
 
-SPEND_LIMIT_MESSAGE: Final = (
-    "a monthly spend limit set in the console was reached: ELA's count of the month is behind "
-    "the bill — look at the limit and the month's spend in the console, and at `ela spend`"
+SPEND_LIMIT_REACHED: Final = "a spend limit of the provider was reached"
+"""The fact, and only the fact (review of ``be7f131``): the provider's month need not be ELA's, so
+a limit can be reached with ELA in order with its own cap. The reason names the limit; the Core
+adds how much ELA counted of its cap (:mod:`ela.executive.spending`), and §23 of the guide lists
+the causes."""
+
+ORGANIZATION_LIMIT: Final = "the organization's monthly spend limit, set in the console"
+WORKSPACE_LIMIT: Final = "a workspace's monthly spend limit, set in the console"
+TIER_CAP: Final = "the usage tier's monthly spend cap"
+
+SPEND_LIMITS: Final = (
+    (ORGANIZATION_LIMIT_PREFIX, ORGANIZATION_LIMIT),
+    (WORKSPACE_LIMIT_PREFIX, WORKSPACE_LIMIT),
 )
+"""The two beginnings, each with the limit it names."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,21 +137,48 @@ def _retry_after(exc: anthropic.APIStatusError) -> float | None:
         return None
 
 
-def _spend_limit(exc: anthropic.APIStatusError) -> bool:
-    """Whether the server's own words begin the way a spend limit set in the console does.
-
-    The only place ELA reads the server's text, and it keeps none of it: the answer is a bool.
-    """
+def _error_of(exc: anthropic.APIStatusError) -> dict[str, object] | None:
+    """The ``error`` object of the body, when the body is the API's JSON."""
     body = exc.body
     error = body.get("error") if isinstance(body, dict) else None
-    words = error.get("message") if isinstance(error, dict) else None
-    return isinstance(words, str) and words.startswith(SPEND_LIMIT_PREFIXES)
+    return error if isinstance(error, dict) else None
+
+
+def _limit_set(exc: anthropic.APIStatusError) -> str | None:
+    """Which spend limit set in the console the server's own words begin like, if any.
+
+    The only place ELA reads the server's text, and it keeps none of it: the answer is one of
+    ELA's own names for the limit.
+    """
+    error = _error_of(exc)
+    words = None if error is None else error.get("message")
+    if isinstance(words, str):
+        for prefix, which in SPEND_LIMITS:
+            if words.startswith(prefix):
+                return which
+    return None
+
+
+def _tier_cap(exc: anthropic.APIStatusError) -> bool:
+    """Whether a ``429`` is the tier's spend cap: told by its ``error_code``, never by its words."""
+    error = _error_of(exc)
+    details = None if error is None else error.get("details")
+    return isinstance(details, dict) and details.get("error_code") == TIER_CAP_ERROR_CODE
 
 
 def _status_failure(exc: anthropic.APIStatusError) -> Failure:
     status = exc.status_code
     message = f"{status} {exc.type or 'error'}"
     request_id = exc.request_id
+    if status == RATE_LIMIT_STATUS and _tier_cap(exc):
+        return Failure(
+            PROVIDER_SPEND_LIMIT,
+            f"{message}: {SPEND_LIMIT_REACHED}: {TIER_CAP}",
+            retryable=False,
+            status_code=status,
+            request_id=request_id,
+            unrun=True,
+        )
     if status == RATE_LIMIT_STATUS:
         return Failure(
             PROVIDER_RATE_LIMITED,
@@ -150,11 +193,12 @@ def _status_failure(exc: anthropic.APIStatusError) -> Failure:
         code, retryable = PROVIDER_SERVER_ERROR, True
     elif status in AUTHENTICATION_STATUS:
         code, retryable = PROVIDER_AUTHENTICATION_ERROR, False
-    elif status == BAD_REQUEST_STATUS and _spend_limit(exc):
-        code, retryable = PROVIDER_SPEND_LIMIT, False
-        message = f"{message}: {SPEND_LIMIT_MESSAGE}"
     elif status == BAD_REQUEST_STATUS:
         code, retryable = PROVIDER_BAD_REQUEST, False
+        which = _limit_set(exc)
+        if which is not None:
+            code = PROVIDER_SPEND_LIMIT
+            message = f"{message}: {SPEND_LIMIT_REACHED}: {which}"
     elif status == NOT_FOUND_STATUS:
         code, retryable = PROVIDER_UNKNOWN_MODEL, False
     else:

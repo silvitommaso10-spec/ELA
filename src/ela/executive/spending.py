@@ -17,11 +17,12 @@ ELA reserves, before a call that spends, the most the call can cost, and lets it
   (:meth:`~ela.ports.ExecutionResultStore.reserve`): two calls in parallel do not pass on the
   same margin.
 
-The month is the calendar month in UTC (decision F): the boundary the documentation writes for the
-organisation's monthly cap (``00:00 UTC on the first day of the next month``), and the
-organisation's monthly limit is the second cap (M14.1, decisions of 2026-10-07) — so ELA's month
-is a documented boundary of the second cap, not only a declared one. A call counts in the month of
-its ``STARTED``.
+The month is the calendar month in UTC, **declared** (decision F). The documentation writes that
+boundary for the usage tier's cap (``00:00 UTC on the first day of the next month``); of the limit
+an organization sets — the second cap — it says only that the answer states when access resumes
+(correction of 2026-10-07, review of ``be7f131``). So the provider's month need not be ELA's, and
+the second cap can be reached with ELA in order: :meth:`SpendingGate.counted` puts what ELA counted
+beside the provider's refusal. A call counts in the month of its ``STARTED``.
 
 The cap is one line of the Core's ``.env``, :data:`CAP_VARIABLE`, in dollars like the price list
 and the console. Without it no call that spends goes out (decision B), and every refusal names
@@ -38,7 +39,7 @@ from enum import StrEnum
 from typing import Final
 
 from ela.domain import ErrorMetadata, ExecutionResult, ExecutionStatus, Ledger, WorstCase
-from ela.ports import STARTED_ID, ExecutionResultStore
+from ela.ports import PROVIDER_SPEND_LIMIT, STARTED_ID, ExecutionResultStore
 
 __all__ = [
     "CAP_VARIABLE",
@@ -273,6 +274,31 @@ class SpendingGate:
     def cap(self) -> Decimal | None:
         """The cap of the Core's ``.env``, or ``None``: no call that spends goes out."""
         return self._cap
+
+    async def counted(self, outcome: ExecutionResult, now: datetime) -> ExecutionResult:
+        """``outcome``, and if a provider's spend limit stopped it, how much ELA counted beside it.
+
+        The provider's month need not be ELA's (review of ``be7f131``): its limit can be reached
+        with ELA in order with its own cap, so the adapter's reason says only which limit, and the
+        Core adds what it counted of its cap — the ledger of the month **with this outcome in it**,
+        which closes its own reservation. The causes are for the guide (§23). Every other outcome
+        is returned as it is.
+        """
+        error = outcome.error
+        if error is None or error.code != PROVIDER_SPEND_LIMIT:
+            return outcome
+        month = month_of(now)
+        held = ledger([*await self._results.spending(month.since, month.until), outcome])
+        said = f"ELA counted {dollars(held.spent)} spent and {dollars(held.reserved)} reserved"
+        if self._cap is None:
+            said = f"{said} in {month.label}, with no cap ({CAP_VARIABLE})"
+        else:
+            said = (
+                f"{said} of its cap of {dollars(self._cap)} {CURRENCY} in {month.label} "
+                f"({CAP_VARIABLE})"
+            )
+        told = error.model_copy(update={"message": f"{error.message}; {said}"})
+        return outcome.model_copy(update={"error": told})
 
     async def ledger(self, now: datetime) -> tuple[Month, Ledger]:
         """The month of ``now`` and its ledger, read now: the same function the gate judges with,

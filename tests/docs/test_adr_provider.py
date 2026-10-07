@@ -302,11 +302,14 @@ def test_what_the_table_calls_retryable() -> None:
 
 
 def test_only_what_did_not_run_is_sent_again() -> None:
-    """ADR 0020 §8 revised in the open (review decision 2): the ``429`` and the ``529``, and not an
-    outcome that may have been paid. ``tests/providers/test_retry.py`` proves it on the adapter."""
+    """ADR 0020 §8 revised in the open (review decision 2): the ``429`` of frequency and the
+    ``529``, and not an outcome that may have been paid — nor the ``429`` of the tier's spend cap,
+    which holds until the month turns (review of ``be7f131``). ``tests/providers/test_retry.py``
+    and ``tests/providers/test_spending.py`` prove it on the adapter."""
     text = spending_text()
     assert "**ADR 0020 §8 è rivisto\napertamente**" in text
-    assert "**solo** per il `429` e il `529`" in text
+    assert "**solo** per il `429` di frequenza e il `529`" in text
+    assert "non per il `429` del tetto del livello" in text
     assert "**Che un `529` non si paghi è una lettura del nome**" in text
 
 
