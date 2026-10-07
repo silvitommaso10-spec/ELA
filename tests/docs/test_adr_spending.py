@@ -29,10 +29,9 @@ from ela.ports import SPENDING_OVER_RESERVATION
 from ela.providers.anthropic.models import MODELS
 from ela.providers.anthropic.pricing import worst_cost
 from ela.providers.anthropic.settings import DEFAULT_MAX_OUTPUT_TOKENS
-from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_cli import coded_commands
-from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_composition import coded_routes, routes_after_0057
 from tests.docs.test_adr_placement import _rules_up_to
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,20 +56,20 @@ def conseguenze() -> str:
 
 
 def test_the_conseguenze_count_the_rules_the_ports_the_routes_and_the_commands_of_today() -> None:
-    """The pin on today's totals, taken over from ADR 0054: it moves to the ADR that changes
-    them."""
+    """The pin on today's totals, taken over from ADR 0054, moved on to ADR 0058 (M14.2): what
+    this ADR saw, counted without what came after it."""
     text = conseguenze()
 
     assert "**sessantuno**" in text
-    assert len(RULES) == 61
-    assert set(RULES) - set(_rules_up_to(59)) == {
+    assert len(_rules_up_to(61)) == 61  # rules 62 and 63 are ADR 0058's
+    assert set(_rules_up_to(61)) - set(_rules_up_to(59)) == {
         "a-tool-that-spends-is-neither-repeated-nor-moved",
         "who-calls-the-model-bounds-the-call",
     }
     assert "**trenta**" in text
     assert len(tuple(port_protocols())) == 30
     assert "**cinquanta**" in text
-    assert len(coded_routes()) == 50
+    assert len(coded_routes() - routes_after_0057()) == 50
     assert "**ventotto**" in text
     assert len(coded_commands()) == 28
 

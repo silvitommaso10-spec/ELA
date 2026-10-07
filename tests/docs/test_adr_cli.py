@@ -43,6 +43,7 @@ NODES_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0037-node-identity.md"
 NODE_MACOS_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0039-node-macos.md"
 FINISHED_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0049-finished-on-the-homes.md"
 SPENDING_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0057-spending-cap.md"
+PLANNER_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0058-planner.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMMAND_ROW = re.compile(
@@ -77,6 +78,7 @@ def adr_text() -> str:
             NODE_MACOS_ADR_PATH,
             FINISHED_ADR_PATH,
             SPENDING_ADR_PATH,
+            PLANNER_ADR_PATH,
         )
     )
 
@@ -127,6 +129,19 @@ species cost a word and not a regex.
 def documented_commands() -> dict[str, tuple[str, str] | None]:
     """command → the (method, path) it calls, or ``None`` for the ones that name no route."""
     return documented_commands_of(adr_text())
+
+
+def documented_command_routes() -> set[tuple[str, str]]:
+    """Every route a row of the table names, **all of them**: since ADR 0058 §8 one command calls
+    two — ``ela task plan`` sends a plan written by hand with ``--file``, and asks the Planner
+    without — and a dictionary by command would keep only the last row it read."""
+    found = {
+        (match.group(2), match.group(3))
+        for line in adr_text().splitlines()
+        if (match := COMMAND_ROW.match(line)) is not None and match.group(2) is not None
+    }
+    assert found, "the table of the commands names routes"
+    return found
 
 
 def documented_species() -> dict[str, str]:
@@ -255,9 +270,7 @@ def test_every_command_declares_one_of_the_three_species() -> None:
 def test_every_other_command_names_a_route_the_application_serves() -> None:
     from tests.docs.test_adr_composition import coded_routes
 
-    called = {route for route in documented_commands().values() if route is not None}
-
-    assert called <= coded_routes()
+    assert documented_command_routes() <= coded_routes()
 
 
 def test_every_route_is_reachable_from_the_command_line() -> None:
@@ -268,9 +281,7 @@ def test_every_route_is_reachable_from_the_command_line() -> None:
     """
     from tests.docs.test_adr_composition import coded_routes
 
-    called = {route for route in documented_commands().values() if route is not None}
-
-    assert called == coded_routes() - NODE_CALLED
+    assert documented_command_routes() == coded_routes() - NODE_CALLED
 
 
 def _pages_of_every_surface() -> frozenset[tuple[str, str]]:

@@ -24,6 +24,7 @@ route POST /tasks/{task_id}/approve approve
 route POST /tasks/{task_id}/cancel cancel_task
 route POST /tasks/{task_id}/deny deny
 route POST /tasks/{task_id}/plan attach_plan
+route POST /tasks/{task_id}/planning plan_task
 route POST /tasks/{task_id}/run run_task
 page ela.api.companion.home <- finished_tasks, list_tasks
 page ela.api.companion.cancel <- cancel_task
@@ -38,7 +39,7 @@ cli ela.cli.tasks.create <- POST /tasks
 cli ela.cli.tasks.list_tasks <- GET /tasks
 cli ela.cli.tasks.finished <- GET /tasks/finished
 cli ela.cli.tasks.show <- GET /tasks/{task_id}
-cli ela.cli.tasks.plan <- POST /tasks/{task_id}/plan
+cli ela.cli.tasks.plan <- POST /tasks/{task_id}/plan, POST /tasks/{task_id}/planning
 cli ela.cli.tasks.run <- POST /tasks/{task_id}/run
 cli ela.cli.tasks.emit_answer <- POST /tasks/{task_id}/approve, POST /tasks/{task_id}/deny
 cli ela.cli.tasks.cancel <- POST /tasks/{task_id}/cancel

@@ -113,7 +113,9 @@ def test_the_fourteenth_contract_exists_and_forbids_what_the_adr_says() -> None:
     ]
     ours = [one for one in contracts if one["source_modules"] == ["ela.context"]]
 
-    assert len(contracts) == 14
+    # What this ADR saw: the contracts numbered up to its own. The fifteenth is ADR 0058's (M14.2),
+    # and a test of a closed milestone does not assert a total of the repository (§17).
+    assert len([one for one in contracts if int(one["name"].split(".", 1)[0]) <= 14]) == 14
     assert len(ours) == 1
     assert set(ours[0]["forbidden_modules"]) == {
         "ela.api",

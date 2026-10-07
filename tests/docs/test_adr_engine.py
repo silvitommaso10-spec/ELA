@@ -16,6 +16,7 @@ from ela.tasks.engine import OPERATIONS, Operation
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0008-task-engine.md"
 SPENDING_ADR_PATH = ADR_PATH.with_name("0057-spending-cap.md")
+PLANNER_ADR_PATH = ADR_PATH.with_name("0058-planner.md")
 ROW = re.compile(r"^\| `(\w+)` \| ([A-Z_, ]+) \| ([A-Z_]+) \| `(\w+)` \| (—|`\w+`) \|$")
 
 
@@ -40,18 +41,27 @@ def documented_operations(text: str) -> dict[str, Operation]:
 
 def both_texts() -> dict[str, Operation]:
     """ADR 0008's table, then the rows a later ADR adds in the same shape, appended: ADR 0057 §7's
-    ``deny_by_cap`` (M14.1). An ADR is immutable, so the operation lives where it was decided —
-    the form of ``tests/docs/test_adr_graph.py`` for the step operations."""
+    ``deny_by_cap`` (M14.1) and ADR 0058 §1's ``deny_by_planning`` (M14.2). An ADR is immutable,
+    so the operation lives where it was decided — the form of ``tests/docs/test_adr_graph.py``
+    for the step operations."""
     rows = documented_operations(ADR_PATH.read_text(encoding="utf-8"))
-    later = documented_operations(SPENDING_ADR_PATH.read_text(encoding="utf-8"))
-    assert not set(rows) & set(later), "a later ADR adds operations, it does not rewrite them"
-    return {**rows, **later}
+    for path in (SPENDING_ADR_PATH, PLANNER_ADR_PATH):
+        later = documented_operations(path.read_text(encoding="utf-8"))
+        assert not set(rows) & set(later), "a later ADR adds operations, it does not rewrite them"
+        rows = {**rows, **later}
+    return rows
 
 
 def test_the_operation_of_adr_0057_is_the_cap_s() -> None:
     later = documented_operations(SPENDING_ADR_PATH.read_text(encoding="utf-8"))
 
     assert list(later) == ["deny_by_cap"]
+
+
+def test_the_operation_of_adr_0058_closes_a_task_whose_planning_was_denied() -> None:
+    later = documented_operations(PLANNER_ADR_PATH.read_text(encoding="utf-8"))
+
+    assert list(later) == ["deny_by_planning"]
 
 
 def test_table_matches_the_code() -> None:

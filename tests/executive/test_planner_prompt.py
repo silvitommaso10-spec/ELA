@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, get_type_hints
 
 import pytest
 
@@ -20,13 +20,19 @@ from ela.executive import planner as planner_module
 from ela.executive.planner import (
     PLANNING_OUTPUT_TOKENS,
     PLANNING_TASK_TYPE,
+    Planner,
     answer_schema,
     catalogue,
     instructions,
     planning_arguments,
 )
 from ela.permissions import CapabilityRegistry, catalogue_v01
-from ela.permissions.capabilities import browser_read, fs_read, terminal_run
+from ela.permissions.capabilities import (
+    browser_read,
+    fs_read,
+    production_catalogue,
+    terminal_run,
+)
 from ela.testing.fakes import (
     FakeClock,
     FakeIdGenerator,
@@ -192,3 +198,38 @@ async def test_no_device_and_no_context_reach_the_planner(world: Planned) -> Non
     source = Path(planner_module.__file__).read_text(encoding="utf-8")
     assert "ContextSnapshot" not in source
     assert "DeviceRegistry" not in source
+
+
+MACHINE_WORDS = ("device", "node", "machine", "host", "computer")
+"""What an argument would be called if it chose where a step runs (proposal 8, fourth fact)."""
+
+
+def test_no_capability_of_the_catalogue_has_an_argument_that_chooses_the_machine() -> None:
+    """The fourth fact of §7 of ADR 0058: the model writes the arguments, so an argument that
+    named a machine would be the place the plan stops being independent of the device. Read from
+    the production catalogue, so a capability added tomorrow is read too."""
+    names = {
+        (spec.id, name)
+        for spec in production_catalogue().specs()
+        for name in spec.input_schema.get("properties", {})
+    }
+
+    assert len({capability for capability, _ in names}) == len(production_catalogue().specs())
+    assert {
+        (capability, name)
+        for capability, name in names
+        if any(word in name.lower() for word in MACHINE_WORDS)
+    } == set()
+
+
+def test_the_planner_is_built_with_no_registry_of_devices() -> None:
+    """The second fact, on the constructor as ``tests/contracts/test_guardian.py`` reads the
+    Guardian's: no hint names the devices or the orchestrator, whatever the attributes are."""
+    hints = get_type_hints(Planner.__init__)
+
+    assert hints, "the constructor declares what it takes"
+    assert not [
+        name
+        for name, hint in hints.items()
+        if any(word in str(hint).lower() for word in ("device", "orchestrat"))
+    ]

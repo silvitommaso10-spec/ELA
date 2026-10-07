@@ -36,6 +36,7 @@ COLUMN_ADRS = {
     "0043": ADR_DIR / "0043-companion.md",
     "0049": ADR_DIR / "0049-finished-on-the-homes.md",
     "0057": ADR_DIR / "0057-spending-cap.md",
+    "0058": ADR_DIR / "0058-planner.md",
 }
 """ADRs that add a column to a table another ADR created (ADR 0021 §11: ``execution_results``
 gains ``usage``). An ADR is immutable, so the new column is documented by the ADR that decided

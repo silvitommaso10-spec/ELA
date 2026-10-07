@@ -1,6 +1,7 @@
 # 0004. Transizioni di stato del Task e forma della funzione `transition`
 
 - **Stato:** Accettata. **ADR 0049 §1 e §2** (M17.2b): §3, «cambia solo `state`», si legge con quella accanto — quando lo stato è finale cambia anche `finished_at`, l'ora dell'esito, scritta con lo stesso istante dell'evento; §6, la regola 5 guarda anche `finished_at`.
+  **ADR 0058 §1 e §10** (M14.2): P5 si rilegge — `DENIED` da PLANNING anche quando chi ha deciso è l'utente, con un no alla chiamata che avrebbe scritto il piano, o il tetto, sul task figlio di pianificazione che il padre nomina (`deny_by_planning`).
 - **Data:** 2026-09-04
 - **Riferimenti spec:** §14, §15, §17, §27, §33, §34, §51, §52, §62, §63, §65
 - **Milestone:** M1.2

@@ -5,6 +5,7 @@
   di M13.4 decisa dal revisore il 2026-09-29, con le decisioni 1–14 (`docs/milestones/M13.4.md`). **I
   numeri 3 e 4** della registrazione — il tempo che il browser aggiunge a `make check` e alla CI — sono
   misurati il 2026-09-30, con la procedura corretta, e **sotto la soglia** scritta prima di loro (§16).
+  **ADR 0058 §9 e §10** (M14.2): i tre fatti di §4 su cui `browser.read` è `LOW` si riscrivono — il secondo è che un piano scritto dal modello lo avvia l'utente dopo averlo visto —; M14.3 è il giorno in cui il modello legge una pagina.
 - **Data:** 2026-09-29
 - **Riferimenti spec:** §10, §18, §19, §20, §27, §28, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.4

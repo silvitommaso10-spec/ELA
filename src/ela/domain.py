@@ -1342,8 +1342,9 @@ class ProviderResult(_DomainModel):
     error: ErrorMetadata | None = None
     workspace: str | None = None
     """Where the provider says the call was billed, when it says it (M14.1, ADR 0057): for Anthropic
-    the workspace the key belongs to, whose monthly limit is the second cap. It is kept in the
-    execution result and never in an audit event."""
+    the workspace the key belongs to, which holds ELA's two keys together — the second cap is the
+    organization's monthly limit (ADR 0057 §1, revised on 2026-10-07). It is kept in the execution
+    result and never in an audit event."""
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 
 
