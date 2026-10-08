@@ -48,15 +48,42 @@ SCRIPT = ROOT / "scripts" / "prova_m14_2.py"
 PLACEHOLDER = re.compile(r"<[^>\s][^>]*>")
 
 
+SIBLINGS = ("prova_m6_3c", "prova_m14_1")
+"""The scripts ``prova_m14_2`` imports. Other test files load them by path and register their own
+copies under these names (``test_prova_m6_3c.py``, ``test_prova_m14_1.py``): a ``prova_m14_1``
+loaded before a new ``prova_m6_3c`` keeps the old one, and the script would hold two — a test that
+patched one left the other to the real client (decision 31 of the review of the proof)."""
+
+
 @cache
 def script() -> ModuleType:
-    """The script, loaded by path: ``scripts/`` is not a package."""
-    spec = importlib.util.spec_from_file_location("prova_m14_2", SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    """The script, loaded by path: ``scripts/`` is not a package. Its siblings are imported anew
+    for it, once each, as ``python scripts/prova_m14_2.py`` imports them — whatever another test
+    file registered under their names —, and ``sys.modules`` is given back as it was found."""
+    found = {name: sys.modules.pop(name, None) for name in SIBLINGS}
+    try:
+        spec = importlib.util.spec_from_file_location("prova_m14_2", SCRIPT)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+    finally:
+        for name, before in found.items():
+            if before is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = before
     return module
+
+
+def test_the_script_and_its_siblings_are_one_world() -> None:
+    """Decision 31: a test patches the module the script uses, never a second copy of it. The
+    script reads ELA's API through ``prova_m6_3c`` both itself and through ``prova_m14_1``: they
+    are one module, as when ``python scripts/prova_m14_2.py`` imports them, whatever another test
+    file registered under their names before."""
+    module = script()
+
+    assert module.spending.base is module.base
 
 
 def guide() -> str:
@@ -470,12 +497,12 @@ NOT_AS_THE_PROOF_WANTS: dict[str, tuple[str, Callable[[Real], Any], str]] = {
                 if path != script().PLANNING_ROUTE
             },
         ),
-        "lo schema ha",
+        "il Core gira dal codice del branch: lo schema ha /tasks/{task_id}/planning",
     ),
     "no-key": (
         "/diagnostics",
         lambda real: changed(real.diagnostics, providers={"anthropic": "UNAVAILABLE"}),
-        "ha una chiave",
+        "il provider del modello ha una chiave",
     ),
     "no-cap": (
         "/spend",
@@ -485,9 +512,12 @@ NOT_AS_THE_PROOF_WANTS: dict[str, tuple[str, Callable[[Real], Any], str]] = {
     "too-little-left": (
         "/spend",
         lambda real: changed(real.spend_start, left="17.04"),
-        "restano almeno 17.048576",
+        "restano almeno 17.04857600 USD, 4 pianificazioni al caso peggiore",
     ),
 }
+"""Each answer that stops step 1, and the check that says no to it: the whole sentence of the
+check, so that a case stops for its own reason — a check that raised says what it raised instead,
+and the case without a key once passed on a stop that was a ``ConfigurationError`` (decision 31)."""
 
 
 @pytest.mark.parametrize(
@@ -504,8 +534,7 @@ def test_step_1_stops_on_an_answer_that_is_not_what_the_proof_wants(
 ) -> None:
     report = preconditions_on(step_1(real, **{path: answer(real)}), monkeypatch)
 
-    assert report.stopped is not None, report.lines
-    assert what in report.stopped[1]
+    assert report.stopped == (1, f"la prova richiede «{what}», e non è così"), report.lines
 
 
 # «sì» -------------------------------------------------------------------------------------
