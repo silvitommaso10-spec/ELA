@@ -5,6 +5,7 @@
   sapere sono §3 (una domanda porta ciò che la risponde **e** ciò che le manca, e la seconda lista
   è derivata), §4 (il confine con §21, con il test operativo e la direzione della dipendenza) e §7
   (uno snapshot non entra in un `AuditEvent` né in un `ProviderRequest`, e non è una nota).
+  **ADR 0058 §2 e §10** (M14.2): §1, il Planner — il secondo consumatore dichiarato — **non** è consegnato: il contesto resta fuori dal prompt; §7, la porta fra il contesto e il Planner la chiude anche il contratto 15 di import-linter.
 - **Contesto:** M10.4, la milestone che compone.
 - **Riferimenti spec:** §10, §11, §14, §15, §16, §21, §32, §33, §44, §45, §51, §52, §57
 - **Estende:** ADR 0002 (le regole di architettura: due nuove, 38 e 39), ADR 0005 (due membri su un

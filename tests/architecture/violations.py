@@ -1647,6 +1647,42 @@ VIOLATIONS: tuple[Case, ...] = (
         "        return await self._provider.complete(request)\n",
         "Summary.complete(",
     ),
+    # --- plans-enter-by-two-doors (rule 62, M14.2) ---
+    Case(
+        # A third door: the runner attaching a plan of its own to a task it found without one —
+        # no check of the executor's preconditions, no author anybody chose.
+        "the-runner-plans-a-task",
+        "plans-enter-by-two-doors",
+        "executive/runner.py",
+        "async def rescue(self, task_id, plan):\n    await self._engine.plan(task_id, plan)\n",
+        ".plan(",
+    ),
+    Case(
+        # The same door from a route of its own, through the composition's engine.
+        "a-second-route-plans-a-task",
+        "plans-enter-by-two-doors",
+        "api/companion.py",
+        "async def plan_here(ela, task_id, plan):\n    await ela.engine.plan(task_id, plan)\n",
+        ".plan(",
+    ),
+    # --- the-planner-names-no-device (rule 63, M14.2) ---
+    Case(
+        # The Planner asking the registry which machines exist, to write it into the plan: the plan
+        # would depend on the device, and the orchestrator's choice would be made twice.
+        "the-planner-reads-the-devices",
+        "the-planner-names-no-device",
+        "executive/planner.py",
+        "from ela.ports import DeviceRegistryPort\n",
+        "DeviceRegistryPort",
+    ),
+    Case(
+        # A parameter is enough: whoever builds the Planner would hand it the registry.
+        "the-planner-takes-an-orchestrator",
+        "the-planner-names-no-device",
+        "executive/planner.py",
+        "class Planner:\n    def __init__(self, orchestrator):\n        pass\n",
+        "orchestrator",
+    ),
     # --- the-bell-rings-a-method (rule 56, M12.5 dec. E) ---
     Case(
         # A second place that rings: the runner, when a task ends. It reads well, and it is a
@@ -1930,6 +1966,30 @@ ALLOWED: tuple[Case, ...] = (
         "class Closer:\n"
         "    async def close(self, task, result):\n"
         "        return await self._engine.complete(task, result)\n",
+        "",
+    ),
+    Case(
+        # Rule 62: the read of a plan has the repository as receiver, and is not the door.
+        "the-runner-reads-a-plan",
+        "plans-enter-by-two-doors",
+        "executive/runner.py",
+        "async def steps(self, task_id):\n    return await self._repository.plan(task_id)\n",
+        "",
+    ),
+    Case(
+        # Rule 62: the Planner is one of the two doors.
+        "the-planner-plans-a-task",
+        "plans-enter-by-two-doors",
+        "executive/planner.py",
+        "async def collect(self, task_id, plan):\n    await self._engine.plan(task_id, plan)\n",
+        "",
+    ),
+    Case(
+        # Rule 63 reads names, not strings: the instructions may say what a plan must not name.
+        "the-planner-says-no-device-in-a-sentence",
+        "the-planner-names-no-device",
+        "executive/planner.py",
+        'INSTRUCTIONS = "never name a device or a node: where a step runs is not yours"\n',
         "",
     ),
     Case(

@@ -695,8 +695,9 @@ class SpendingSettings(BaseSettings):
     """The month's spending cap on the model's key, in dollars (§30; M14.1, ADR 0057).
 
     **One line, written by whoever pays** (decision A): ``ELA_SPENDING_CAP_USD``, in dollars like
-    the price list and the console, below the monthly limit of the console's workspace — the
-    second cap — with a margin. No number of the author's is here: the default is **no cap**, and
+    the price list and the console, below the monthly limit of the organization — the second cap,
+    on the Billing page of the console (ADR 0057 §1, revised on 2026-10-07) — with a margin. No
+    number of the author's is here: the default is **no cap**, and
     without a cap no call that spends goes out (decision B), with a reason that names this line.
     ELA starts the same: a missing cap is a configuration, and every call that would spend says so.
 

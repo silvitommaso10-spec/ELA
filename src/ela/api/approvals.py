@@ -21,7 +21,7 @@ from ela.api.schemas import AnswerIn, ApprovalOut, TaskOut
 from ela.api.security import (
     Identity,
 )
-from ela.api.tasks import close_if_free, run_task
+from ela.api.tasks import close_if_free, run_task, settle_the_plan_of
 from ela.domain import Approval, ApprovalId, ApprovalStatus, Task, TaskId, TaskState
 from ela.ports import ApprovalAlreadyAnsweredError, NotFoundError
 from ela.tasks.errors import TaskEngineError
@@ -70,6 +70,8 @@ async def deny(
     answered = await _answer(task_id, body, ela, ApprovalStatus.REJECTED, identity)
     if answered.state is TaskState.DENIED:
         await close_if_free(TaskId(task_id), ela, running)
+        # A no to the call of a planning task closes the task it plans (M14.2, ADR 0058).
+        await settle_the_plan_of(await ela.repository.get(TaskId(task_id)), ela)
     return answered
 
 

@@ -693,6 +693,18 @@ WORST_CASE_METHOD = "worst_case"
 #: spends nothing — and whose two flags have no default at all (the registry refuses silence).
 BASE_TOOL_MODULE = Path("tools") / "base.py"
 
+#: Rule 62 (M14.2, ADR 0058): the door a plan enters a task by is the Task Engine's ``plan``, and
+#: two modules open it — the route of a plan written by hand and ELA's Planner. The receiver
+#: decides, as for rule 61: ``repository.plan(…)`` reads a plan and is not the door.
+PLAN_METHOD = "plan"
+PLAN_RECEIVERS = frozenset({"engine", "_engine"})
+PLAN_DOORS = frozenset({Path("api") / "tasks.py", Path("executive") / "planner.py"})
+#: Rule 63 (M14.2, ADR 0058): the plan is independent of the device (§13), so the Planner's module
+#: names nothing of the machines. A contract of import-linter cannot say it: the Planner imports the
+#: runner, and the runner the orchestrator.
+PLANNER_MODULE = Path("executive") / "planner.py"
+DEVICE_WORDS = ("device", "orchestrat", "placement", "node")
+
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
 TESTING_DIR = "testing"
@@ -1598,6 +1610,82 @@ def check_a_tool_that_spends_is_neither_repeated_nor_moved(pkg_root: Path) -> li
                 if flag not in false
             )
     return found
+
+
+def check_plans_enter_by_two_doors(pkg_root: Path) -> list[Violation]:
+    """Rule 62: outside :data:`PLAN_DOORS` nobody calls ``<engine>.plan(...)`` (M14.2, ADR 0058).
+
+    A plan enters a task by the Task Engine's ``plan`` — the graph checked, the trail and the audit
+    written — and since M14.2 two modules open that door: ``api/tasks.py``, for a plan written by
+    hand, which passes the executor's preconditions first; and the Planner, for the plan the model
+    wrote, which passes the same and the Guardian's arguments. A third caller would be a third way
+    in with neither. Reported: a call to ``.plan(`` whose receiver is named in
+    :data:`PLAN_RECEIVERS` — ``ela.engine``, ``self._engine``, ``engine``. A heuristic on names,
+    like rules 16 and 17: ``repository.plan(…)``, the read, has another receiver.
+    """
+    rule = "plans-enter-by-two-doors"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) in PLAN_DOORS:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f".{PLAN_METHOD}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == PLAN_METHOD
+            and _names_a_plan_receiver(node.func.value)
+        )
+    return found
+
+
+def _names_a_plan_receiver(receiver: ast.expr) -> bool:
+    if isinstance(receiver, ast.Name):
+        return receiver.id in PLAN_RECEIVERS
+    return isinstance(receiver, ast.Attribute) and receiver.attr in PLAN_RECEIVERS
+
+
+def check_the_planner_names_no_device(pkg_root: Path) -> list[Violation]:
+    """Rule 63: the Planner's module names no machine (M14.2, ADR 0058; §13).
+
+    The plan is independent of the device: where a step runs is the orchestrator's, at the run.
+    The schema of the answer has no key that chooses a machine and the Planner's constructor takes
+    no registry of devices — two tests say so —; this rule keeps the module from reaching one by
+    another way. Reported: an import, an identifier, an attribute, a parameter or a definition in
+    :data:`PLANNER_MODULE` whose name holds one of :data:`DEVICE_WORDS`. **Names, not strings**: the
+    instructions may say what the plan must not name, and a docstring may say why.
+    """
+    rule = "the-planner-names-no-device"
+    path = pkg_root / PLANNER_MODULE
+    if not path.is_file():
+        return []
+    name = module_name(path, pkg_root)
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found: list[Violation] = []
+    for node in ast.walk(tree):
+        for named in _names_of(node):
+            if any(word in named.lower() for word in DEVICE_WORDS):
+                found.append(Violation(rule, name, named, getattr(node, "lineno", 0)))
+    return found
+
+
+def _names_of(node: ast.AST) -> list[str]:
+    """The names a node writes in the source: what a reader would call an identifier."""
+    if isinstance(node, ast.Name):
+        return [node.id]
+    if isinstance(node, ast.Attribute):
+        return [node.attr]
+    if isinstance(node, ast.arg):
+        return [node.arg]
+    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+        return [node.name]
+    if isinstance(node, ast.alias):
+        return [node.name, *([node.asname] if node.asname else [])]
+    if isinstance(node, ast.ImportFrom):
+        return [node.module or ""]
+    return []
 
 
 def check_who_calls_the_model_bounds_the_call(pkg_root: Path) -> list[Violation]:
@@ -3473,6 +3561,8 @@ RULES: dict[str, Rule] = {
         check_a_tool_that_spends_is_neither_repeated_nor_moved
     ),
     "who-calls-the-model-bounds-the-call": check_who_calls_the_model_bounds_the_call,
+    "plans-enter-by-two-doors": check_plans_enter_by_two_doors,
+    "the-planner-names-no-device": check_the_planner_names_no_device,
 }
 
 
@@ -3931,6 +4021,27 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     Constant(
         "who-calls-the-model-bounds-the-call",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # plans-enter-by-two-doors (rule 62, M14.2)
+    Constant("plans-enter-by-two-doors", "PLAN_DOORS", EXEMPTION, by=EACH, adr="ADR 0058"),
+    Constant("plans-enter-by-two-doors", "PLAN_METHOD", DETECTOR),
+    Constant("plans-enter-by-two-doors", "PLAN_RECEIVERS", DETECTOR),
+    Constant(
+        "plans-enter-by-two-doors",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-planner-names-no-device (rule 63, M14.2)
+    Constant("the-planner-names-no-device", "DEVICE_WORDS", DETECTOR),
+    Constant("the-planner-names-no-device", "PLANNER_MODULE", DETECTOR),
+    Constant(
+        "the-planner-names-no-device",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

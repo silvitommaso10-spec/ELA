@@ -250,14 +250,11 @@ def test_the_conseguenze_count_what_the_tree_has_today() -> None:
     assert set(documented_species().values()) == SPECIES
     assert len(SPECIES) == 3
     assert "restano **quattordici**" in text
-    assert (
-        len(
-            tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["tool"]["importlinter"][
-                "contracts"
-            ]
-        )
-        == 14
-    )
+    contracts = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["tool"]["importlinter"][
+        "contracts"
+    ]
+    # The ones it saw: the fifteenth is ADR 0058's (M14.2).
+    assert len([one for one in contracts if int(one["name"].split(".", 1)[0]) <= 14]) == 14
     # The pin on **today's** total moved to the ADR that changed it (M13.1 dec. K): an ADR is
     # immutable, so this one keeps saying the number it saw, and what the tree has today is
     # asserted in ``tests/docs/test_adr_filesystem.py``.

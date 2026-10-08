@@ -317,23 +317,24 @@ async def test_run_walks_the_plan_and_says_where_it_stopped(cli: Cli, tmp_path: 
     assert TaskState.COMPLETED.value in result.stdout
 
 
-async def test_run_prints_why_it_is_waiting_for_a_node(cli: Cli, tmp_path: Path) -> None:
-    """Criterion 6, on the screen: ``waiting_device`` with the sentence that explains it.
-
-    What the user saw before M6.1b was the outcome, the state and an empty list of steps, while
-    the diagnosis sat in an audit event nobody had a reason to open.
+async def test_a_capability_nobody_implements_is_refused_by_plan_and_never_waits_for_a_node(
+    cli: Cli, tmp_path: Path
+) -> None:
+    """Criterion 6 of M6.1b printed ``waiting_device`` with ``UNKNOWN_CAPABILITY``: a step naming a
+    capability nobody implements came in, and waited for a node that could never exist. Since
+    M14.2 (ADR 0058, decision 8) ``ela task plan`` refuses it, naming the step by position; the
+    reason a run still prints for a node is ``MISSING_TOOL``, the test below.
     """
     plan = echo_plan()
     plan["steps"][0]["required_capabilities"] = ["core.rm_rf"]
     task_id = await created(cli)
-    await cli("task", "plan", task_id, "--file", written(tmp_path, plan))
 
-    result = await cli("task", "run", task_id)
+    refused = await cli("task", "plan", task_id, "--file", written(tmp_path, plan))
 
-    assert result.exit_code == 0
-    assert "waiting_device" in result.stdout
-    assert "reason" in plain(result.stdout)
-    assert "UNKNOWN_CAPABILITY" in result.stdout
+    assert refused.exit_code == REFUSED
+    assert "step 1 of 1 requires a capability that is not in the catalogue" in plain(refused.stderr)
+    assert "core.rm_rf" not in refused.stderr
+    assert TaskState.CREATED.value in (await cli("task", "show", task_id)).stdout
 
 
 async def test_run_prints_which_tool_the_node_does_not_have(

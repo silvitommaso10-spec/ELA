@@ -69,6 +69,7 @@ def test_keys_name_the_input_that_makes_the_operation_idempotent() -> None:
         "deny_by_approval": "approval_id",
         "deny_by_decision": "decision_id",
         "deny_by_cap": "decision_id",
+        "deny_by_planning": "planning_task_id",
         "complete": "result_id",
     }
 

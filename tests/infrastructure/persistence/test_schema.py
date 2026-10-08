@@ -45,8 +45,9 @@ async def test_the_check_creates_nothing(engine: AsyncEngine) -> None:
 @pytest.mark.parametrize(
     ("revision", "lacking"),
     [
-        ("0011", ("execution_results.worst_case", "tasks.finished_at")),
-        ("0012", ("execution_results.worst_case",)),
+        ("0011", ("execution_results.worst_case", "task_plans.author", "tasks.finished_at")),
+        ("0012", ("execution_results.worst_case", "task_plans.author")),
+        ("0013", ("task_plans.author",)),
     ],
 )
 async def test_a_database_left_behind_lacks_its_columns_and_no_table(
@@ -54,8 +55,8 @@ async def test_a_database_left_behind_lacks_its_columns_and_no_table(
 ) -> None:
     """M17.2b decisione 6: the precondition built as it happens — a database that ``alembic`` took
     to ``0011``, the revision before the hour of an outcome, and not a column taken away by hand.
-    And ``0012``, the revision before the reservation's amount (M14.1): every database that ran
-    before this branch.
+    And ``0012``, the revision before the reservation's amount (M14.1), and ``0013``, the revision
+    before the author of a plan (M14.2): every database that ran before this branch.
 
     The tables are all there, so the check of the tables says nothing; the columns are what is
     missing, and they are what the start-up has to name.

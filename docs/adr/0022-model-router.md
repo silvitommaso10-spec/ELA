@@ -4,6 +4,7 @@
   rifiutata quando la politica viene costruita, con `routing.empty_routes` — il quarto codice di
   §5. Il resto dell'ADR non cambia.
   **ADR 0057 §3 e §11** (M14.1): «Nessun budget» non è più vero — l'usage si somma nel libro derivato e si confronta con il tetto prima della chiamata; i profili puntano ai modelli 5.5.
+  **ADR 0058 §3, §4 e §10** (M14.2): §6, «il Planner produrrà tipi da un enum» — i `task_type` del Planner vengono dalla tabella delle rotte, e un tipo fuori tabella è rifiutato dal router prima della porta.
 - **Data:** 2026-09-07
 - **Riferimenti spec:** §25, §26, §29, §32, §33, §57
 - **Milestone:** M7.3 (decisioni dell'utente del 2026-09-07: **3a**, **4a**, **5a**, **6a**,

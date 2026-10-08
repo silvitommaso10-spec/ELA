@@ -30,3 +30,7 @@ htmlcov/
 .idea/
 .vscode/
 .DS_Store
+
+# The browser of the cloud sessions (review of M14.2, decision 21): Playwright installs the shell
+# of the lock here, with PLAYWRIGHT_BROWSERS_PATH pointing at it; nothing leaves the repository.
+.playwright-browsers/

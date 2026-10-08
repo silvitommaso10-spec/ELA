@@ -9,6 +9,7 @@ line is the Core's alone: a node has no cap of its own, so ``NodeConfig`` does n
 
 from __future__ import annotations
 
+import inspect
 from decimal import Decimal
 from pathlib import Path
 
@@ -16,6 +17,7 @@ import pytest
 
 from ela.composition import ConfigurationError, NodeConfig, Settings
 from ela.composition.settings import SpendingSettings
+from ela.domain import ProviderResult
 from ela.executive.spending import CAP_VARIABLE
 from tests.composition.support import declare
 
@@ -83,3 +85,24 @@ def test_a_node_does_not_read_it() -> None:
         "spending_cap_usd" not in section.annotation.model_fields  # type: ignore[union-attr]
         for section in NodeConfig.model_fields.values()
     )
+
+
+def test_its_docstring_names_the_second_cap_as_the_organization_s_monthly_limit() -> None:
+    """M14.1b (decision 17 of the review of M14.2): ADR 0057 §1 was revised on 2026-10-07 — the
+    second cap is the **organization's** monthly limit, on the Billing page of the console; the
+    workspace's could not be set on the real console —, and this docstring kept saying the
+    workspace's. What ``SpendingSettings`` says of itself is read by whoever writes the line."""
+    said = " ".join((inspect.getdoc(SpendingSettings) or "").split())
+
+    assert "workspace" not in said
+    assert "monthly limit of the organization" in said
+
+
+def test_the_workspace_of_a_result_is_not_called_the_second_cap() -> None:
+    """The same defect, in a second place the census of M14.1b found: what a result says of the
+    workspace it was billed in. The workspace holds ELA's two keys together (ADR 0057 §1); its
+    limit is not the second cap."""
+    said = " ".join(inspect.getsource(ProviderResult).split())
+
+    assert "whose monthly limit is the second cap" not in said
+    assert "the second cap is the organization's monthly limit" in said

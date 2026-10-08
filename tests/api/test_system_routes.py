@@ -186,15 +186,19 @@ async def test_no_secret_ever_reaches_a_response(
     assert "api_key" not in text and "token" not in text
 
 
-async def test_the_schema_warns_that_the_plan_endpoint_is_temporary(client: AsyncClient) -> None:
+async def test_the_schema_says_the_plan_endpoint_is_for_plans_written_by_hand(
+    client: AsyncClient,
+) -> None:
     """The limit of ADR 0023 read by whoever *uses* the API, not only by whoever reads the ADR:
-    until the Planner exists (§13), the shape of a plan is not something to build on."""
+    since M14.2 the Planner (§13) writes plans through its own route, and the shape of a plan
+    written by hand is still not something to build on (ADR 0058, decision J)."""
     schema = (await client.get("/openapi.json")).json()
 
     description = schema["paths"]["/tasks/{task_id}/plan"]["post"]["description"]
     assert description == PLAN_IS_TEMPORARY
-    assert "temporary" in description and "without a version bump" in description
-    assert "Planner" in description
+    assert "by hand" in description and "without a version bump" in description
+    assert "/tasks/{task_id}/planning" in schema["paths"]
+    assert "POST /tasks/{task_id}/planning" in description
 
 
 async def test_the_schema_needs_the_token_too(anonymous: AsyncClient) -> None:

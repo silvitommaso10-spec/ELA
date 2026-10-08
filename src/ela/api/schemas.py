@@ -57,6 +57,8 @@ from ela.domain import (
     PerformanceClass,
     PermissionDecision,
     PermissionState,
+    PlanAuthor,
+    PlanAuthorKind,
     PlanId,
     PowerSource,
     PrivacyLevel,
@@ -148,7 +150,8 @@ def _text_only(value: object) -> object:
 
 
 class TaskCreate(BaseModel):
-    """What the user asked. The plan comes separately, and today by hand (ADR 0023 §6)."""
+    """What the user asked. The plan comes separately: written by hand (ADR 0023 §6), or by ELA's
+    Planner when asked (M14.2, ADR 0058)."""
 
     text: Annotated[str, Field(min_length=1)]
     goal: str | None = None
@@ -164,7 +167,8 @@ class TaskCreate(BaseModel):
 
 
 class StepIn(BaseModel):
-    """One step of a plan written by the caller, until the Planner (§13) writes them.
+    """One step of a plan written by the caller — the route of a plan by hand, which stays beside
+    the Planner's (§13; M14.2, ADR 0058).
 
     ``id`` is the caller's: ``dependencies`` name the other steps by id, and a step id minted here
     would leave the caller with no way to express the shape of its own plan.
@@ -222,6 +226,8 @@ class PlanIn(BaseModel):
             task_id=task_id,  # type: ignore[arg-type]  # TaskId is a NewType over UUID
             goal=self.goal,
             steps=tuple(step.to_domain(created_at) for step in self.steps),
+            # The route writes who wrote it, never the payload (M14.2, ADR 0058).
+            author=PlanAuthor(by=PlanAuthorKind.HAND),
         )
 
 
@@ -327,6 +333,19 @@ class StepOut(BaseModel):
         )
 
 
+class PlanAuthorOut(BaseModel):
+    """Who wrote the plan (M14.2, ADR 0058): ``HAND``, ``PLANNER`` or ``MODEL``, and for the model
+    the result the plan came from and the model that wrote it."""
+
+    by: PlanAuthorKind
+    result_id: UUID | None = None
+    model: str | None = None
+
+    @classmethod
+    def of(cls, author: PlanAuthor) -> PlanAuthorOut:
+        return cls(by=author.by, result_id=author.result_id, model=author.model)
+
+
 class TaskDetail(TaskOut):
     """A task with its plan, in topological order. Empty steps means: no plan yet."""
 
@@ -334,10 +353,34 @@ class TaskDetail(TaskOut):
     halt: Halt | None = None
     """For a stopped task, what the step in progress had done when it was stopped (M6.3c, ADR 0054
     §7); ``None`` otherwise, and for a stop that found no step in progress."""
+    plan_author: PlanAuthorOut | None = None
+    """Who wrote the plan (M14.2, ADR 0058); ``None`` with no plan. A plan the model wrote is
+    started by the user after seeing it (decision I): this, the steps and their arguments are what
+    is seen."""
+    planning_task_id: UUID | None = None
+    """The planning task of this task, when ELA was asked for its plan (M14.2)."""
+    no_plan: str | None = None
+    """The model's reason for writing no plan, read from the planning task's result — the private
+    store, never the audit (ADR 0021 §7)."""
 
     @classmethod
-    def of_graph(cls, task: Task, graph: GraphState | None, halt: Halt | None = None) -> TaskDetail:
-        detail = cls(**TaskOut.of(task).model_dump(), halt=halt)
+    def of_graph(
+        cls,
+        task: Task,
+        graph: GraphState | None,
+        halt: Halt | None = None,
+        *,
+        author: PlanAuthor | None = None,
+        planning_task_id: UUID | None = None,
+        no_plan: str | None = None,
+    ) -> TaskDetail:
+        detail = cls(
+            **TaskOut.of(task).model_dump(),
+            halt=halt,
+            plan_author=None if author is None else PlanAuthorOut.of(author),
+            planning_task_id=planning_task_id,
+            no_plan=no_plan,
+        )
         if graph is None:
             return detail
         steps = tuple(
@@ -534,6 +577,25 @@ class ApprovalOut(BaseModel):
             responded_by=approval.responded_by,
             **asked.model_dump(),
         )
+
+
+class PlanningOut(BaseModel):
+    """Where the planning of a task stands (M14.2, ADR 0058): what ``POST /tasks/{id}/planning``
+    answers, as far as the planning went.
+
+    ``task`` is the task with its plan and who wrote it, once there is one; ``planning_task`` the
+    task that asks for the call; ``approval`` its question while it waits for the yes. ``no_plan``
+    is the model's own reason and ``problems`` the constraints a refused plan broke — words that
+    come back to the user and never go to the audit.
+    """
+
+    task: TaskDetail
+    planning_task: TaskOut | None
+    outcome: str
+    reason: str | None = None
+    approval: ApprovalOut | None = None
+    no_plan: str | None = None
+    problems: tuple[str, ...] = ()
 
 
 class SpendOut(BaseModel):

@@ -49,6 +49,7 @@ from ela.domain import (
     OperatingSystem,
     PerformanceClass,
     PermissionDecision,
+    PlanAuthor,
     PlanId,
     PowerSource,
     PrivacyLevel,
@@ -218,6 +219,7 @@ def plan_values(plan: TaskPlan) -> dict[str, Any]:
         "task_id": plan.task_id,
         "goal": plan.goal,
         "steps": [step.model_dump(mode="json") for step in plan.steps],
+        "author": plan.author.model_dump(mode="json", exclude_none=True),
         "metadata_": _plain(plan.metadata),
     }
 
@@ -233,6 +235,7 @@ def row_to_plan(row: TaskPlanRow) -> TaskPlan:
         task_id=TaskId(row.task_id),
         goal=row.goal,
         steps=tuple(TaskStep.model_validate(step) for step in row.steps),
+        author=PlanAuthor.model_validate(row.author),
         metadata=row.metadata_,
     )
 

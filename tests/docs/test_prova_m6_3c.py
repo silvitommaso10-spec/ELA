@@ -425,6 +425,7 @@ def shown(number: int, step_state: str, halt: str, risk: str, capability: str) -
             "max_privacy": "LOCAL_ONLY",
             "plan_id": "7c1e2d3f-0a4b-4c5d-8e6f-000000000043",
             "halt": halt,
+            "plan_author": {"by": "HAND", "result_id": None, "model": None},
             "steps": [
                 {
                     "id": STEP_OF[number],
@@ -432,6 +433,12 @@ def shown(number: int, step_state: str, halt: str, risk: str, capability: str) -
                     "risk": risk,
                     "required_capabilities": [capability],
                     "goal": "lo step della prova",
+                    # What the API sends for every step, and ``ela task show`` prints under the
+                    # table since M14.2 (ADR 0058, decision I).
+                    "arguments": {},
+                    "success_conditions": [],
+                    "dependencies": [],
+                    "requires_authorization": True,
                 }
             ],
         }

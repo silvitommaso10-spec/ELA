@@ -147,6 +147,20 @@ async def test_the_stop_of_a_task_nobody_runs_closes_its_open_step(
     assert after is StepState.CANCELLED
 
 
+async def test_the_stop_of_a_task_with_no_plan_yet_is_a_stop_and_not_a_404(
+    client: AsyncClient,
+) -> None:
+    """Found by M14.2: a task that is ``CREATED`` — or ``PLANNING``, while ELA plans it — has no
+    plan, so no step to close. The route asked for the graph anyway, and answered ``404 task plan
+    not found`` for a stop the engine had already written."""
+    task_id = (await client.post("/tasks", json={"text": "fermato prima del piano"})).json()["id"]
+
+    stopped = await client.post(f"/tasks/{task_id}/cancel", json={"reason": "ferma"})
+
+    assert stopped.status_code == 200, stopped.text
+    assert stopped.json()["state"] == "CANCELLED"
+
+
 async def test_the_stop_of_a_task_whose_lock_is_taken_leaves_the_close_to_its_holder(
     client: AsyncClient, ela: Ela, app: FastAPI
 ) -> None:

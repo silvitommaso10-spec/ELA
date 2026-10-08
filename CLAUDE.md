@@ -62,6 +62,11 @@ branch; un branch di sola registrazione comincia con `docs-` e non porta codice.
   **Nella sessione cloud, che gira come root**, il gate `cov-critical` manca dei rami che solo un
   sistema che nega raggiunge: `make -k check`, il riepilogo elenca quelle righe, e le giudica la CI
   sul branch. La suite di `main` non si rifà per confronto, salvo per un rosso che non si sa spiegare.
+  **Nella sessione cloud il browser dei test è quello del lock**, in `.playwright-browsers/` del repo, che git
+  ignora: `PLAYWRIGHT_BROWSERS_PATH=$PWD/.playwright-browsers uv run playwright install --only-shell chromium` una volta
+  per sessione, e la stessa variabile per i test e per `make -k check`. Quello di `/opt/pw-browsers` è di un'altra
+  revisione: senza questa riga `test_browser.py` e `test_node_variables.py` fanno 21 rossi `BrowserNotInstalled`, che
+  nasconderebbero quello vero (review di M14.2, decisione 21; misurato il 2026-10-08: 28 verdi).
 - **La CI sul branch è il controllo Linux; `make check-linux` serve per riprodurre in locale una
   CI rossa su ubuntu.** Il merge esige la CI verde all'ultimo commit del branch su tutti e tre i
   suoi job: `make check` su ubuntu e su macos, e la suite del nodo su windows. `make check` gira su

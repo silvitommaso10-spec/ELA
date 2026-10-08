@@ -19,6 +19,8 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<questo repo>` | l'URL da cui cloni ELA | da dove hai preso il repository |
 | `<id>` | l'id di un task | `ela task create`, oppure `ela task list` |
 | `<approval-id>` | l'id di una richiesta di consenso | `ela approvals` |
+| `<id del figlio>` | l'id del task di pianificazione di un task | `ela task plan <id>`, riga `planning` (§5, sezione 24) |
+| `<nota>` | il nome della nota del passo 2 della sezione 24, unico per giro | lo scrive `scripts/prova_m14_2.py` al posto del segnaposto, con la data e l'ora |
 | `<codice>` | il codice di arruolamento di un nodo | `ela node enroll`, stampato una volta sola |
 | `<ip tailnet del Mac>` | l'indirizzo del Mac sulla tailnet | `tailscale ip -4`, sul Mac (§12) |
 | `<nome della voce>` | una voce SAPI 5 installata sul PC | l'elenco del passo 3 di §12: sul PC di M12.4, `Microsoft Elsa Desktop` |
@@ -165,6 +167,11 @@ chiederti niente**, e per compilarvi un modulo ti chiede ogni volta — sta nell
 [§20](#20-il-browser-la-prova-a-mano-di-m134). **Se il tuo `.env` è di prima di M13.4, `ela serve` non
 parte finché non aggiungi questa riga.**
 
+**Da M14.2 un piano lo può scrivere anche il modello** (§5), e una lettura di un sito dichiarato è un GET
+che lui compone: può portare al sito parole del tuo obiettivo — nel percorso, nella query —, e se il sito
+fa qualcosa su un GET, lo fa. Il piano lo leggi prima di avviarlo, con i suoi argomenti; ma dichiara solo
+siti a cui una lettura non fa fare niente.
+
 ## 2. `alembic upgrade head` — lo schema
 
 ```
@@ -253,9 +260,19 @@ plan      —
 
 Tieni da parte l'`id`: lo vogliono i comandi che seguono.
 
-### Il piano, per ora, si scrive a mano
+### Il piano lo scrive ELA, o lo scrivi tu
 
-ELA non ha ancora un Planner (§13), quindi il piano entra da fuori. Ne trovi uno pronto in
+Da M14.2 ELA ha un **Planner** (§13): `ela task plan <id>`, **senza** `--file`, gli chiede il piano. Il Planner
+non chiama il modello da sé: crea un **task di pianificazione**, figlio del tuo, il cui unico step è una domanda
+al modello — e quella domanda, come ogni chiamata che spende, **chiede il tuo sì**, con il caso peggiore e ciò che
+resta del mese (§23). Dopo il sì — `ela task approve <id del figlio> --approval <approval-id>` —, di nuovo
+`ela task plan <id>`: il modello scrive il piano, ELA lo controlla con le stesse funzioni che decideranno quando
+gira, e il task va in coda. **Non parte da solo**: lo leggi con `ela task show <id>` — chi l'ha scritto, e per
+ogni step gli argomenti e le condizioni —, e lo avvii tu, con `ela task run <id>`. Serve una chiave e un tetto
+(§9, §23); senza tetto la pianificazione è negata prima della domanda, e la ragione dice quale riga manca. La
+prova a mano è la [sezione 24](#24-il-planner-la-prova-a-mano-di-m142).
+
+Il piano lo puoi anche **scrivere tu**, ed è ciò che fa questo primo giro. Ne trovi uno pronto in
 [`examples/first-task.json`](examples/first-task.json): due step, il secondo dipendente dal primo —
 un `core.echo` che non chiede niente a nessuno, e un `workspace.write_note` che chiede il tuo
 consenso. Il file spiega da sé, nella chiave `_nota`, perché lo chiede.
@@ -277,8 +294,10 @@ goal      il mio primo task
 plan      be397065-1fc4-4ff2-8ead-c7e76657e7be
 ```
 
-Il file viene mandato com'è. La sua forma è quella dell'API, ed è **temporanea**: il giorno in cui
-il Planner esisterà, quell'endpoint cambierà o sparirà — non costruirci sopra niente di duraturo.
+Il file viene mandato com'è. La sua forma è quella di un **piano scritto a mano**, non versionata: può
+cambiare senza preavviso, e non conviene costruirci sopra niente di duraturo. ELA lo controlla prima di
+metterlo in coda — ogni step con una capability sola del catalogo e almeno una condizione che il suo
+verifier sa controllare —, e un piano che non lo è torna indietro subito, con lo step per numero.
 
 ## 6. `ela task run` — ELA si ferma e chiede
 
@@ -2738,6 +2757,11 @@ te. Un sito che dichiari è un sito che ELA può **visitare senza chiederti nien
 manda — un modulo, un messaggio, un ordine — **non si riprende**: ELA non sa se un click manda qualcosa
 prima di averlo fatto, e per questo te lo chiede ogni volta.
 
+***Annotato il 2026-10-07*** (M14.2, [ADR 0058](adr/0058-planner.md) §9): **da M14.2 il piano lo può scrivere il
+modello**, e una lettura è un GET che compone lui: può portare al sito dichiarato parole del tuo obiettivo, e se il
+sito fa qualcosa su un GET, lo fa. `browser.read` resta `LOW` perché un piano del modello lo avvii tu, dopo averlo
+letto con i suoi argomenti (§5); dichiara solo siti a cui una lettura non fa fare niente.
+
 Cinque dei passi qui sotto **nessun test può farli al posto tuo**: il primo, perché il messaggio è
 scritto per un essere umano; il quarto, perché la domanda si legge — sul telefono e in console — prima
 di dire sì; il sesto e il settimo, perché un «ferma» e una fermata a metà di una pagina lenta si vedono
@@ -4448,6 +4472,283 @@ un nodo disponibile
 Il primo lo prova la suite, con le risposte costruite sulle parole e sul campo della documentazione. **Il confronto fra la somma di ELA e il costo della console non è nella prova**:
 le chiamate di prova costano meno di un centesimo e la console arrotonda ai centesimi; è una misura da fare dopo un
 mese d'uso (ADR 0057).
+
+## 24. Il Planner: la prova a mano di M14.2
+
+> **Scritta con l'implementazione il 2026-10-07** (`milestones/M14.2.md`, «La prova a mano», con le decisioni della
+> review dello stesso giorno), e `tests/docs/test_prova_m14_2.py` tiene lo script allineato a questa sezione. La si fa
+> **sul Mac**, sul branch di M14.2, con lo script `scripts/prova_m14_2.py`: M14.2 non cambia niente sul nodo. Il
+> cancello sulla chiamata del Planner — senza tetto, o con un tetto che non ci sta — lo prova la suite
+> (`tests/executive/test_planner_spending.py`); qui lo vedi nella domanda. **Fatta da Tommaso il 2026-10-08 sul
+> branch**, a `f2b67c0`, sul Mac: passata, 29 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO
+> (`~/Downloads/prova-m14.2-20261008-091143.txt`); [ADR 0058](adr/0058-planner.md) è Accettata, e le misure sono in `milestones/M14.2.md`,
+> «Passata il 2026-10-08». Il primo giro, a `28c4c88`, non era passato per due difetti dello script, non di ELA —
+> l'atteso del passo 2 leggeva solo l'ultimo comando, il rifiuto cercava la ragione dove l'API non la scrive —, corretti
+> lo stesso giorno (`milestones/M14.2.md`, «Il primo giro»).
+
+Da M14.2 `uv run ela task plan <id>`, senza `--file`, chiede il piano a ELA (§5). Il Planner crea il **task di
+pianificazione**, figlio del tuo, con un solo step `model.complete`: ciò che esce è il tuo obiettivo, le istruzioni del
+Planner e il catalogo delle capability — mai le cartelle, i siti e i programmi che hai dichiarato, mai i dispositivi,
+mai il contesto. La chiamata va a Opus 5.5 con `max_output_tokens` 16384, e **il suo caso peggiore è 4,262144 $**:
+la domanda lo dice, con ciò che resta del mese. Dopo il tuo sì il modello scrive il piano, ELA lo controlla con le
+funzioni che decideranno quando gira, e il tuo task va in coda — **senza partire**: lo leggi, e lo avvii tu.
+
+**Il modello non è deterministico**: lo stesso obiettivo dà piani diversi. Lo script confronta **proprietà, non
+piani**, e il giudizio «fa ciò che l'obiettivo chiede?» resta al tuo occhio. A te restano due cose: **i sì** — lo
+script ti mostra la domanda e chiede «rispondi sì?»; con un «s» dà il sì con la CLI, con un «n» la prova si ferma, perché
+il resto del passo non avrebbe niente da misurare — e **l'occhio** su ogni piano.
+
+Lo script legge da questa sezione i blocchi con il marcatore sopra, con il lettore di `scripts/prova_m6_3c.py`: i tipi
+`comando`, `atteso` e `occhio` di §21 — qui l'`atteso` cerca le sue righe in ciò che hanno stampato **tutti** i comandi
+del blocco sopra, in ordine —, e cinque suoi:
+
+- **`sì`**: legge il task di pianificazione e la sua domanda, te la mostra, e chiede «rispondi sì?». Con un «s» esegue il
+  comando del blocco, il sì con la CLI; con un «n» la prova si ferma — **FERMATO** —.
+- **`piano`**: legge `GET /tasks/<id>` e vuole il task `QUEUED`, **l'autore `MODEL`** con un risultato e
+  `claude-opus-5-5`, e per ogni step una capability **del catalogo del codice** — letto al commit che il passo 1 ha
+  verificato, dal catalogo e dai verifier, mai dalle funzioni del Planner —, almeno una condizione nel suo vocabolario,
+  il rischio e la domanda del catalogo, nessun tratto preferito, nessuno step `HIGH`. Ogni riga del blocco è una
+  capability che il piano deve avere; per `model.complete`, un `task_type` della tabella delle rotte. **Il catalogo che
+  il Planner ha mandato** lo confronta con lo stesso: ogni sua capability c'è nel codice, con lo stesso rischio, la
+  stessa domanda e lo stesso vocabolario. Un Planner che sbagliasse la derivazione scriverebbe piano e catalogo
+  d'accordo fra loro, e solo il codice lo vede. Scrive il piano nel file, step per step, con gli argomenti.
+- **`chiamata`**: il risultato del task di pianificazione — `claude-opus-5-5`, un costo, un `finish_reason` —, e scrive
+  due misure: **se la risposta era un oggetto JSON**, e **quanti token d'uscita** ha usato.
+- **`rifiuto`**: il task `FAILED`, nessun piano, le parole del modello stampate, e **`planner.no_plan` nella riga
+  `reason` dell'`uv run ela task plan <id>` sopra** — ciò che leggi tu; `GET /tasks/<id>` una ragione non ce l'ha. **Se
+  il modello scrive comunque un piano valido, il passo è SALTATO e non FALLITO**: ciò che il modello non ha dato non è
+  un errore di ELA. Lo script scrive il piano nel file e ti chiede di guardarlo.
+- **`spesa`**: `GET /spend`, confrontato con com'era al passo 1.
+
+I segnaposto che riempie sono `<id>`, il task del passo; `<nota>`, il nome della nota del passo 2, **unico per giro**,
+con la data e l'ora; `<id del figlio>`, il task di pianificazione; e `<approval-id>`, la sua domanda. Scrive tutto in
+`~/Downloads`, in `prova-m14.2-` con la data e l'ora, e l'ultima riga dice «La prova è passata» o che cosa manca.
+**Nessuna modifica al `.env`, nessun `Ctrl-C`, nessun riavvio** dopo l'avvio.
+
+Sul Mac, il `.env` con la chiave del Mac e il tuo tetto (§23); il Core acceso dal codice del branch, dopo
+`uv run alembic upgrade head`. Le chiamate vere sono **quattro**, tutte a Opus 5.5; il loro costo vero lo legge il
+passo 6.
+
+```
+uv run python scripts/prova_m14_2.py
+```
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch su `origin`, con l'albero
+pulito; il Core gira da quel codice — lo schema dell'API ha `POST /tasks/{task_id}/planning` —; `uv run alembic current`
+dice `0014 (head)`; il provider del modello ha una chiave e c'è un tetto; ciò che resta del mese basta per **quattro
+pianificazioni al caso peggiore**, 4 × 4,262144 = 17,048576 $, calcolate dalla funzione del cancello; `example.com` è
+fra i siti dichiarati (§20, passo 2). **Se qualcosa manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca:
+il resto misurerebbe un'altra cosa.
+
+### 2. Una nota
+
+Un obiettivo che il catalogo sa fare, e che si fa girare: la nota la scrive `workspace.write_note`, che dentro lo scope
+non chiede.
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create "Scrivi in workspace/notes/<nota> una nota con il testo: Questa nota l'ha pianificata ELA." --json
+uv run ela task plan <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome waiting_approval
+worst case 4.262144 USD, claude-opus-5-5, up to 983616 tokens in and 16384 out
+```
+
+<!-- prova: 2.sì -->
+```
+uv run ela task approve <id del figlio> --approval <approval-id>
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task plan <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome planned
+author MODEL claude-opus-5-5
+```
+
+<!-- prova: 2.piano -->
+```
+workspace.write_note
+```
+
+<!-- prova: 2.chiamata -->
+```
+claude-opus-5-5
+```
+
+<!-- prova: 2.occhio -->
+```
+Il piano scrive la nota che l'obiettivo chiede, nel posto che l'obiettivo nomina?
+```
+
+Poi lo avvii: niente domanda, e la nota c'è.
+
+<!-- prova: 2.comando -->
+```
+uv run ela task run <id>
+cat ~/.ela/workspace/workspace/notes/<nota>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome completed
+Questa nota l'ha pianificata ELA.
+```
+
+### 3. Una pagina
+
+Un obiettivo del browser. Il piano **non si fa girare**: un selettore scelto dal modello può trovare più di un paragrafo,
+e non è ciò che questa prova misura.
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create "Leggi il primo paragrafo della pagina principale di example.com." --json
+uv run ela task plan <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome waiting_approval
+worst case 4.262144 USD, claude-opus-5-5, up to 983616 tokens in and 16384 out
+```
+
+<!-- prova: 3.sì -->
+```
+uv run ela task approve <id del figlio> --approval <approval-id>
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task plan <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome planned
+```
+
+<!-- prova: 3.piano -->
+```
+browser.read
+```
+
+<!-- prova: 3.chiamata -->
+```
+claude-opus-5-5
+```
+
+<!-- prova: 3.occhio -->
+```
+Il piano legge la pagina principale di example.com, e il suo primo paragrafo?
+```
+
+### 4. Una domanda al modello
+
+Un piano con uno step `model.complete`: `MEDIUM`, che chiede, con un `task_type` della tabella. **Non si fa girare**:
+sarebbe una quinta chiamata, e un altro sì.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "Fatti spiegare dal modello, in due frasi, che cos'è un grafo aciclico diretto." --json
+uv run ela task plan <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+worst case 4.262144 USD, claude-opus-5-5, up to 983616 tokens in and 16384 out
+```
+
+<!-- prova: 4.sì -->
+```
+uv run ela task approve <id del figlio> --approval <approval-id>
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task plan <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome planned
+```
+
+<!-- prova: 4.piano -->
+```
+model.complete
+```
+
+<!-- prova: 4.chiamata -->
+```
+claude-opus-5-5
+```
+
+<!-- prova: 4.occhio -->
+```
+Il piano chiede al modello di spiegare, in due frasi, che cos'è un grafo aciclico diretto?
+```
+
+### 5. La negativa, con la chiave vera: un obiettivo fuori catalogo
+
+Nessuna capability spegne una luce. Il modello deve rispondere che non c'è un piano, e dire perché; un piano che parla
+della luce invece di spegnerla non è un piano (le istruzioni glielo dicono).
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create "Spegni la luce della cucina." --json
+uv run ela task plan <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome waiting_approval
+worst case 4.262144 USD, claude-opus-5-5, up to 983616 tokens in and 16384 out
+```
+
+<!-- prova: 5.sì -->
+```
+uv run ela task approve <id del figlio> --approval <approval-id>
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task plan <id>
+```
+
+<!-- prova: 5.chiamata -->
+```
+claude-opus-5-5
+```
+
+<!-- prova: 5.rifiuto -->
+```
+planner.no_plan
+```
+
+<!-- prova: 5.occhio -->
+```
+La ragione del modello dice perché il catalogo non sa spegnere una luce?
+```
+
+### 6. La spesa
+
+Le quattro chiamate sono nello speso, e nessuna prenotazione è rimasta aperta.
+
+<!-- prova: 6.spesa -->
+```
+speso cresciuto dei costi delle chiamate
+prenotato com'era al passo 1
+```
 
 ## Dove guardare dopo
 

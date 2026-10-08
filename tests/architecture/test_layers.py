@@ -28,6 +28,9 @@ from tests.architecture.rules import (
     PERMISSIONS_ALLOWED_EXTERNAL,
     PERMISSIONS_DIR,
     PERSISTENCE_MAPPERS,
+    PLAN_DOORS,
+    PLAN_METHOD,
+    PLANNER_MODULE,
     PORTS_ALLOWED_INTERNAL,
     RESPOND_METHOD,
     RULES,
@@ -233,6 +236,21 @@ def test_the_orchestrator_really_has_no_way_to_reach_the_task_engine() -> None:
     assert any(name.startswith("ela.ports") for name in imported)
     assert not any(name.startswith("ela.tasks") for name in imported)
     assert not any(name.startswith("ela.executive") for name in imported)
+
+
+def test_the_two_doors_of_a_plan_really_open_it() -> None:
+    """Rule 62 would hold vacuously if neither door called ``engine.plan``: both do (M14.2)."""
+    for door in sorted(PLAN_DOORS):
+        text = (PACKAGE_ROOT / door).read_text(encoding="utf-8")
+        assert f"engine.{PLAN_METHOD}(" in text, door
+
+
+def test_the_planner_rule_63_reads_is_a_module_with_names() -> None:
+    """Rule 63 returns nothing for a module that is not there: it is, and it imports the runner —
+    the road by which the orchestrator is one import away, which is why the rule reads names."""
+    planner = PACKAGE_ROOT / PLANNER_MODULE
+    imported = [name for name, _ in imported_modules(planner, PACKAGE_ROOT)]
+    assert any(name.startswith("ela.executive.runner") for name in imported)
 
 
 def test_the_mutation_that_survived_is_now_reported(tmp_path: Path) -> None:

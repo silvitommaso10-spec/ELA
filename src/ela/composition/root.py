@@ -43,6 +43,7 @@ from ela.devices import (
 from ela.devices.local import LOCAL_DEVICE_ID
 from ela.domain import Actor, ActorKind, RawSpeech
 from ela.executive import Assignments, Executor, TaskRunner
+from ela.executive.planner import Planner
 from ela.executive.spending import SpendingGate
 from ela.infrastructure.machine import (
     Audition,
@@ -201,6 +202,10 @@ class Ela:
     orchestrator: DeviceOrchestrator
     executor: Executor
     runner: TaskRunner
+    planner: Planner
+    """ELA's Planner (§13; M14.2, ADR 0058): one call of the model, through a planning task, writes
+    the plan of a task. It holds the engine, the runner and the registries — no provider, no device
+    registry, no context."""
     assignments: Assignments
     """The work handed to remote nodes, as it is now, and every write of it (M12.2, ADR 0038 §6).
 
@@ -479,7 +484,8 @@ async def build(
         provider = anthropic_provider(clock, ids, settings=settings.anthropic)
         providers = ProviderRegistry((provider,))
         try:
-            router = ModelRouter(settings.routing.policy(), providers)
+            policy = settings.routing.policy()
+            router = ModelRouter(policy, providers)
         except RoutingError as wrong:
             raise ConfigurationError(
                 f"ELA_MODEL_ROUTES cannot be used ({wrong.code}): {wrong}. Unset it to fall back "
@@ -728,6 +734,21 @@ async def build(
             beat=heartbeat,
         )
 
+        # The Planner (M14.2, ADR 0058): the routing table's task types are data the root supplies,
+        # like ``live_states`` below — the vocabulary the model may route a step on (ADR 0022 §6).
+        planner = Planner(
+            engine=engine,
+            runner=runner,
+            repository=repository,
+            results=results,
+            approvals=approvals,
+            capabilities=capabilities,
+            tools=tools,
+            verifiers=verifiers,
+            router=router,
+            task_types=policy.task_types(),
+        )
+
         # The same probe object the capture tool preflights with: one reader of this machine, so
         # "what ELA believes" and "what ELA checks before acting" cannot come from two places
         # that disagree. They are still two *reads* — a periodic belief never decides an action
@@ -776,6 +797,7 @@ async def build(
         orchestrator=orchestrator,
         executor=executor,
         runner=runner,
+        planner=planner,
         assignments=assignments,
         bell=rings,
         serving_at=rings.serving_at,

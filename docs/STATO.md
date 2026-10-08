@@ -85,6 +85,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 6 — I nodi | `M6.3` | Implementata | Task Runner: la camminata del grafo |
 | 6 — I nodi | `M6.3b` | Implementata | `ela task run` dice «steps executed» di uno step che non ha eseguito |
 | 6 — I nodi | `M6.3c` | Implementata | Un task fermato mentre il suo tool gira fa rispondere `run` con un `409`, e lascia lo step `RUNNING` |
+| 6 — I nodi | `M6.3d` | Implementata | Il «ferma» di un task che non ha ancora un piano risponde `404` |
 | 7 — Il modello | `M7.1` | Implementata | `ModelProvider` e provider Anthropic |
 | 7 — Il modello | `M7.2` | Implementata | Protocollo STARTED e `model.complete` |
 | 7 — Il modello | `M7.3` | Implementata | Model Router |
@@ -132,9 +133,11 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.10` | Proposta | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
-| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.2` | Proposta | Il Planner: ELA scrive i piani da sola |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.2` | Implementata | Il Planner: ELA scrive i piani da sola |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.3` | Proposta | Il browser guidato dal modello: da una frase, il modello guarda la pagina e sceglie il gesto dopo |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.4` | Proposta | Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3 |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.5` | Proposta | Il contesto nel Planner: che cosa ELA sa della giornata, nel prompt che scrive un piano |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.2b` | Implementata | Un esito finale sparisce dalle superfici che elencano i task |
@@ -154,13 +157,13 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **57** | `docs/adr/NNNN-*.md` |
-| Milestone | **79, di cui 60 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **61** | `RULES` in `tests/architecture/` |
-| Contratti import-linter | **14** | `pyproject.toml` |
+| ADR scritti | **58** | `docs/adr/NNNN-*.md` |
+| Milestone | **82, di cui 63 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **63** | `RULES` in `tests/architecture/` |
+| Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **30** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **13** | `production_catalogue()` |
-| Rotte dell'API | **50** | i `router` di `ela.api` |
+| Rotte dell'API | **51** | i `router` di `ela.api` |
 | Comandi della CLI | **27** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
 
@@ -830,7 +833,9 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   resta il vincolo che ADR 0011 lascia a chi costruirà il Planner, e resta lì. ***Annotato il
   2026-09-30***: la fase continua a non portarlo, ma nella fila M14.2 viene prima di M13.9, e le
   milestone della fase che vengono dopo troveranno il Planner: «un piano continua ad attaccarsi a mano»
-  resta vero fino a lì.
+  resta vero fino a lì. ***Annotato il 2026-10-07***: da M14.2 non è più vero dal giorno del merge — un
+  piano lo scrive anche ELA, con `ela task plan` senza `--file` ([ADR 0058](adr/0058-planner.md)); il
+  piano a mano resta, sulla sua rotta, e il vincolo di ADR 0011 è chiuso per le due porte.
 - **Non §30.** Il tetto di spesa ha la sua milestone, **M14.1**, la prima della Fase 14, come dice
   la 5.9: non è una milestone di questa fase.
 
@@ -878,7 +883,10 @@ revisione di ADR 0011 con M13.1, il posto del verifier e i pesi con M13.3.
 
 La **Fase 14 è registrata** — M14.1 e M14.2 dal 2026-09-25, dalla review della SPEC di M13.3, M14.3 e
 M14.4 dal 2026-09-30 — e **non è cominciata**: nessuna sua milestone è uscita da `Proposta`, che è il criterio di
-§4.1. Non ha ancora un nome, e lo avrà dal changelog quando consegnerà la prima.
+§4.1. Non ha ancora un nome, e lo avrà dal changelog quando consegnerà la prima. ***Annotato il 2026-10-07***:
+M14.1 è fatta (5.9), e **M14.2 è implementata, fino alla prova a mano** ([ADR 0058](adr/0058-planner.md),
+Proposta finché la sezione 24 della guida non passa sul Mac). ***Annotato il 2026-10-08***: **la prova a mano di
+M14.2 è passata** sul Mac a `f2b67c0`, e ADR 0058 è Accettata: ELA scrive i piani.
 
 **L'ordine è M14.1 → M14.2 → M14.3 → M14.4**, con M14.4 più avanti nella fila, dopo M13.5; ognuna ha la
 sua ragione.
@@ -886,7 +894,11 @@ sua ragione.
 - **M14.1 — il tetto di spesa** (§30). **La prima**, perché nessuna capability della fase che spende
   nasce prima del tetto (5.9).
 - **M14.2 — il Planner** (§13). **Dopo M14.1**, perché è la prima milestone che chiama il modello per
-  decidere, e una chiamata che decide spende.
+  decidere, e una chiamata che decide spende. **Che cosa è vero del Planner** (ADR 0058): non chiama
+  nessun provider — la sua chiamata è uno step `model.complete` di un task figlio, con la domanda, il
+  caso peggiore di 4,26 $ e il tetto di M14.1 —; il piano che il modello scrive passa le funzioni di chi
+  decide prima della porta, entra con `engine.plan` e non si avvia da sé; il piano dice chi l'ha scritto;
+  il contesto resta fuori dal prompt, e nessuno step sceglie una macchina.
 - **M14.3 — il browser guidato dal modello** (§19). **Registrata il 2026-09-30**: da una frase il modello
   guarda la pagina e sceglie il gesto dopo. L'obiettivo di Tommaso è aprire, leggere, cercare e navigare
   senza chiedere, dove il livello lo permette o una sua policy di §59 lo copre (5.11); mandare qualcosa a

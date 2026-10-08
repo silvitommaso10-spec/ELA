@@ -95,6 +95,7 @@ def test_the_domain_declares_exactly_these_enums() -> None:
         "PerformanceClass",
         "PermissionOutcome",
         "PermissionState",
+        "PlanAuthorKind",
         "PowerSource",
         "PrivacyLevel",
         "ProbeFamily",

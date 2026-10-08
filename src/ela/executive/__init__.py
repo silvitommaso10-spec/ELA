@@ -10,8 +10,12 @@ step from the first write that is missing instead of running the tool again.
 :mod:`ela.executive.runner` is the driver above it (M6.3, ADR 0019): the loop that chooses a
 ready step, asks the Device Orchestrator where it runs, executes it and closes the task. It
 writes nothing of its own — every fact it produces is already an event of ``place``, of the
-engine or of the executor. The Planner (§13) is still to come; M6.3 executes plans, it does not
-produce them.
+engine or of the executor.
+
+:mod:`ela.executive.planner` is the Planner of §13 (M14.2, ADR 0058): it calls no provider. It
+plans a task by creating its **planning task**, a child whose one step is a ``model.complete``
+the runner walks like any other — the Guardian, the question, the cap, the verifier —, and it
+reads the answer, validates the plan before the door, and attaches it with ``engine.plan``.
 """
 
 from ela.executive.assignments import (

@@ -28,6 +28,7 @@ from ela.api.schemas import WorkResultIn
 from ela.cli.output import EMPTY, GAP, fields
 from ela.cli.tasks import RUN_LABELS
 from ela.composition import Ela, Settings, build
+from ela.devices import LOCAL_DEVICE_ID
 from ela.domain import (
     DeviceId,
     DeviceRole,
@@ -38,8 +39,10 @@ from ela.domain import (
     PrivacyLevel,
 )
 from ela.executive import RunOutcome
+from ela.permissions import WORKSPACE_WRITE_NOTE
 from ela.testing.fakes import FakeBrowser, FakeClock, FakePage, FakePower
-from tests.api.support import EXAMPLES, echo_plan, note_plan
+from ela.tools import NOTE_EXISTS, NOTES_TOOL_NAME
+from tests.api.support import EXAMPLES, NOTE_BODY, NOTE_PATH, echo_plan, note_plan
 from tests.api.test_nodes_work import ENVELOPE
 from tests.cli.support import Cli, plain
 from tests.composition.support import create_schema, declare
@@ -264,19 +267,29 @@ async def failed_after_the_act(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
 
 
 async def waiting_device(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
+    """An echo, then a note whose tool no node has. Until M14.2 the second step named a capability
+    nobody implements; since ADR 0058 ``ela task plan`` refuses that plan before the queue."""
     plan = echo_plan()
     first = plan["steps"][0]
-    second = {**first, "id": "00000000-0000-4000-8000-0000000000b2"}
-    second["required_capabilities"] = ["core.rm_rf"]
-    second["dependencies"] = [first["id"]]
+    second = {
+        **first,
+        "id": "00000000-0000-4000-8000-0000000000b2",
+        "required_capabilities": [WORKSPACE_WRITE_NOTE],
+        "arguments": {"path": NOTE_PATH, "body": NOTE_BODY},
+        "success_conditions": [NOTE_EXISTS],
+        "risk": "LOW",
+        "dependencies": [first["id"]],
+    }
     plan["steps"].append(second)
+    node = await ela.devices.get(LOCAL_DEVICE_ID)
+    await ela.devices.update(node.model_copy(update={"available_tools": ("core-echo",)}))
     task = await planned(cli, tmp_path, plan)
     return Printed(
         await run(cli, task),
         RunOutcome.WAITING_DEVICE,
         "QUEUED",
         (first["id"],),
-        reason="UNKNOWN_CAPABILITY",
+        reason=f"MISSING_TOOL ({NOTES_TOOL_NAME})",
     )
 
 

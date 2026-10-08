@@ -35,6 +35,8 @@ from ela.domain import (
     CapabilityId,
     IntentId,
     JsonMapping,
+    PlanAuthor,
+    PlanAuthorKind,
     PlanId,
     StepId,
     StepState,
@@ -278,6 +280,7 @@ class SqlPipeline:
             task_id=task.id,
             goal=intent.text,
             steps=(step,),
+            author=PlanAuthor(by=PlanAuthorKind.HAND),
         )
         await self.engine.plan(task.id, plan)
         await self.engine.queue(task.id)

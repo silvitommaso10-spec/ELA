@@ -57,6 +57,7 @@ from tests.tasks.support import (
     h,
     make_harness,
     planning,
+    planning_denied,
     queued,
     result_for,
     step_result_for,
@@ -150,6 +151,9 @@ async def _ended_by(h: Harness, operation: str) -> Task:
         task = await executing_with(h, ())
         allowed = decision_for(task.id, PermissionOutcome.ALLOWED)
         return await h.engine.deny_by_cap(task.id, decision=allowed, reason="cap", payload={})
+    if operation == "deny_by_planning":
+        parent, child = await planning_denied(h)
+        return await h.engine.deny_by_planning(parent.id, planning_task_id=child.id, reason="no")
     if operation == "deny_by_approval":
         task = await waiting_approval(h)
         return await h.engine.deny(task.id, approval=approval_for(task.id, ApprovalStatus.REJECTED))
@@ -174,6 +178,7 @@ def test_the_operations_that_end_a_task_are_the_ones_the_tests_drive() -> None:
         "deny_by_approval",
         "deny_by_cap",
         "deny_by_decision",
+        "deny_by_planning",
         "expire",
         "fail",
         "recover",

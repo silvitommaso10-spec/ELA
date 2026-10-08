@@ -125,6 +125,8 @@ VALUE_OBJECTS = frozenset(
         # and never stored, so it has nothing to date but the month it is asked for.
         "WorstCase",
         "Ledger",
+        # Who wrote a plan (M14.2): a value inside the plan, whose instant is the plan's.
+        "PlanAuthor",
     }
 )
 
