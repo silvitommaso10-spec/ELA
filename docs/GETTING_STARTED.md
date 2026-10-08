@@ -4480,7 +4480,9 @@ mese d'uso (ADR 0057).
 > **sul Mac**, sul branch di M14.2, con lo script `scripts/prova_m14_2.py`: M14.2 non cambia niente sul nodo. Il
 > cancello sulla chiamata del Planner — senza tetto, o con un tetto che non ci sta — lo prova la suite
 > (`tests/executive/test_planner_spending.py`); qui lo vedi nella domanda. [ADR 0058](adr/0058-planner.md) è
-> `Proposta` fino a questa prova.
+> `Proposta` fino a questa prova. **Il primo giro, il 2026-10-08 a `28c4c88`, non è passato** per due difetti dello
+> script, non di ELA — l'atteso del passo 2 leggeva solo l'ultimo comando, il rifiuto cercava la ragione dove l'API non
+> la scrive —, corretti lo stesso giorno (`milestones/M14.2.md`, «Il primo giro»): la prova si rifà da capo.
 
 Da M14.2 `uv run ela task plan <id>`, senza `--file`, chiede il piano a ELA (§5). Il Planner crea il **task di
 pianificazione**, figlio del tuo, con un solo step `model.complete`: ciò che esce è il tuo obiettivo, le istruzioni del
@@ -4495,7 +4497,8 @@ script ti mostra la domanda e chiede «rispondi sì?»; con un «s» dà il sì 
 il resto del passo non avrebbe niente da misurare — e **l'occhio** su ogni piano.
 
 Lo script legge da questa sezione i blocchi con il marcatore sopra, con il lettore di `scripts/prova_m6_3c.py`: i tipi
-`comando`, `atteso` e `occhio` di §21, e cinque suoi:
+`comando`, `atteso` e `occhio` di §21 — qui l'`atteso` cerca le sue righe in ciò che hanno stampato **tutti** i comandi
+del blocco sopra, in ordine —, e cinque suoi:
 
 - **`sì`**: legge il task di pianificazione e la sua domanda, te la mostra, e chiede «rispondi sì?». Con un «s» esegue il
   comando del blocco, il sì con la CLI; con un «n» la prova si ferma — **FERMATO** —.
@@ -4509,9 +4512,10 @@ Lo script legge da questa sezione i blocchi con il marcatore sopra, con il letto
   d'accordo fra loro, e solo il codice lo vede. Scrive il piano nel file, step per step, con gli argomenti.
 - **`chiamata`**: il risultato del task di pianificazione — `claude-opus-5-5`, un costo, un `finish_reason` —, e scrive
   due misure: **se la risposta era un oggetto JSON**, e **quanti token d'uscita** ha usato.
-- **`rifiuto`**: il task `FAILED` con `planner.no_plan`, nessun piano, e le parole del modello stampate. **Se il modello
-  scrive comunque un piano valido, il passo è SALTATO e non FALLITO**: ciò che il modello non ha dato non è un errore di
-  ELA. Lo script scrive il piano nel file e ti chiede di guardarlo.
+- **`rifiuto`**: il task `FAILED`, nessun piano, le parole del modello stampate, e **`planner.no_plan` nella riga
+  `reason` dell'`uv run ela task plan <id>` sopra** — ciò che leggi tu; `GET /tasks/<id>` una ragione non ce l'ha. **Se
+  il modello scrive comunque un piano valido, il passo è SALTATO e non FALLITO**: ciò che il modello non ha dato non è
+  un errore di ELA. Lo script scrive il piano nel file e ti chiede di guardarlo.
 - **`spesa`**: `GET /spend`, confrontato con com'era al passo 1.
 
 I segnaposto che riempie sono `<id>`, il task del passo; `<nota>`, il nome della nota del passo 2, **unico per giro**,

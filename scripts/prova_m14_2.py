@@ -10,8 +10,10 @@ confronto «a parole intere e in ordine», il rapporto, il client dell'API e ``S
 ``tests/docs/test_prova_m14_2.py`` legge la sezione con lo stesso lettore e tiene allineati i due,
 con un caso negativo per ogni confronto di questo file.
 
-I tipi di §21 — ``comando``, ``atteso``, ``occhio`` — e cinque suoi (la SPEC di M14.2, «La prova a
-mano», e le decisioni 4, 15 e 16 della review):
+I tipi di §21 — ``comando``, ``atteso``, ``occhio`` —, con l'``atteso`` confrontato con ciò che
+hanno stampato **tutti** i comandi del blocco che lo precede, in ordine (decisione 23 della review
+della prova), e cinque suoi (la SPEC di M14.2, «La prova a mano», e le decisioni 4, 15 e 16 della
+review):
 
 * ``sì``: legge il task di pianificazione del task del passo e la sua domanda, la mostra, e chiede
   «rispondi sì?»; con un «s» esegue la riga del blocco — il sì con la CLI —, con un «n» la prova si
@@ -26,9 +28,11 @@ mano», e le decisioni 4, 15 e 16 della review):
 * ``chiamata``: il risultato del task di pianificazione, con il modello, un costo e un
   ``finish_reason``; scrive **se la risposta era un oggetto JSON** e **i token d'uscita**
   (decisione 4);
-* ``rifiuto``: il task ``FAILED`` con il codice della riga, nessun piano, e le parole del modello
-  stampate; **un piano valido fa il passo SALTATO**, non FALLITO, e lo script lo scrive nel file e
-  chiede l'occhio (decisione 16);
+* ``rifiuto``: il task ``FAILED``, nessun piano, le parole del modello stampate, e **la ragione
+  con il codice della riga, letta nell'uscita dell'``ela task plan <id>`` che lo precede** — la riga
+  ``reason``, ciò che Tommaso legge —: ``GET /tasks/<id>`` non ha una ragione (decisione 24 della
+  review della prova); **un piano valido fa il passo SALTATO**, non FALLITO, e lo script lo scrive
+  nel file e chiede l'occhio (decisione 16);
 * ``spesa``: ``GET /spend`` confrontato con com'era al passo 1.
 
 I segnaposto sono ``<id>`` — il task del passo —, ``<nota>`` — il nome della nota del passo 2,
@@ -57,6 +61,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import prova_m6_3c as base  # noqa: E402 — a sibling in scripts/, which is not a package
 import prova_m14_1 as spending  # noqa: E402 — the same
 
+from ela.cli.output import EMPTY  # noqa: E402
 from ela.executive.planner import PLANNING_OUTPUT_TOKENS  # noqa: E402
 from ela.providers.anthropic.models import MODELS, OPUS_5_5  # noqa: E402
 from ela.providers.anthropic.pricing import worst_cost  # noqa: E402
@@ -86,6 +91,8 @@ SPENT_BY_THE_CALLS: Final = "speso cresciuto dei costi delle chiamate"
 RESERVED_AS_AT_STEP_1: Final = "prenotato com'era al passo 1"
 LEDGER_WORDS: Final = (SPENT_BY_THE_CALLS, RESERVED_AS_AT_STEP_1)
 """The vocabulary of ``spesa``: what changed in ``GET /spend`` since step 1."""
+REASON: Final = "reason"
+"""The row of ``ela task plan <id>`` that says why the planning ended: what ``rifiuto`` reads."""
 SAID_NO: Final = "hai risposto no: il resto del passo non avrebbe niente da misurare"
 
 
@@ -304,14 +311,27 @@ def measured(results: Sequence[Mapping[str, Any]]) -> Measure:
     return Measure(isinstance(parsed, dict), tokens if isinstance(tokens, int) else None)
 
 
-def refusal_failures(task: Mapping[str, Any], code: str) -> list[str]:
-    """What ``rifiuto`` finds wrong: the task ``FAILED`` with ``code``, no plan, and the model's
-    words."""
+def reason_of(printed: str) -> str | None:
+    """The ``reason`` row of what ``ela task plan <id>`` printed — ``PlanningOut.reason``, the why
+    of the end as Tommaso reads it —, or ``None`` if the output has none. ``GET /tasks/<id>`` has
+    no reason (decision 24 of the review of the proof: the why of an end in ``task show`` is
+    M13.1e)."""
+    for line in printed.splitlines():
+        name, _, value = line.partition(" ")
+        if name == REASON:
+            said = value.strip()
+            return None if said in ("", EMPTY) else said
+    return None
+
+
+def refusal_failures(task: Mapping[str, Any], reason: str | None, code: str) -> list[str]:
+    """What ``rifiuto`` finds wrong: the task ``FAILED``, the reason ``ela task plan`` printed
+    with ``code``, no plan, and the model's words."""
     failures: list[str] = []
     if task.get("state") != "FAILED":
         failures.append(f"il task è {task.get('state')}, non FAILED")
-    if code not in (task.get("reason") or ""):
-        failures.append(f"la ragione non dice {code}: {task.get('reason')!r}")
+    if code not in (reason or ""):
+        failures.append(f"la ragione che ela task plan ha stampato non dice {code}: {reason!r}")
     if task.get("plan_id") is not None:
         failures.append("il task ha un piano")
     if not task.get("no_plan"):
@@ -348,7 +368,8 @@ class Done(Exception):
 
 @dataclass
 class Turn:
-    """What a step has done so far: its task, the planning task, the question, the last output."""
+    """What a step has done so far: its task, the planning task, the question, and what the
+    commands of its last block printed, every one in order."""
 
     task_id: str | None = None
     child_id: str | None = None
@@ -381,13 +402,23 @@ def filled(text: str, turn: Turn, note: str) -> str:
     return text
 
 
+def commands(lines: Sequence[str], turn: Turn, proof: Proof) -> None:
+    """The commands of a block, in order: ``turn.last`` is what **all** of them printed, so that
+    the ``atteso`` after the block reads every command and not only the last one (decision 23 of
+    the review of the proof: step 2 runs ``ela task run`` and ``cat`` in one block)."""
+    turn.last = ""
+    for line in lines:
+        a_command(filled(line, turn, proof.note), turn, proof)
+
+
 def a_command(line: str, turn: Turn, proof: Proof) -> None:
     report = proof.report
     report.say(f"    $ {line}")
     done = base.heard(line, base.run(line))
-    turn.last = done.stdout + done.stderr
-    for printed in turn.last.rstrip("\n").splitlines():
-        report.say(f"    | {printed}")
+    printed = done.stdout + done.stderr
+    turn.last += printed
+    for one in printed.rstrip("\n").splitlines():
+        report.say(f"    | {one}")
     if CREATE in f" {line} ":
         turn.task_id = base.created_id(done.stdout)
         report.say(f"    il task: {turn.task_id}")
@@ -416,8 +447,7 @@ def a_yes(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
     report.say(f"    | resta nel mese: {question.get('left')}")
     if not base.yes_or_no(proof.ask, f"[{number}] Rispondi sì? (s/n) "):
         raise base.Stop(SAID_NO)
-    for line in block.lines:
-        a_command(filled(line, turn, proof.note), turn, proof)
+    commands(block.lines, turn, proof)
     child = proof.api.get(f"/tasks/{turn.child_id}")
     if child.get("state") == "QUEUED":
         report.passed(number, f"il sì al task di pianificazione {turn.child_id}")
@@ -485,7 +515,7 @@ def a_refusal(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
             base.yes_or_no(proof.ask, f"[{number}] Il piano nel file ha senso? (s/n) "),
         )
         raise Done
-    failures = refusal_failures(task, code)
+    failures = refusal_failures(task, reason_of(turn.last), code)
     if failures:
         proof.report.failure(number, "; ".join(failures))
         return
@@ -514,8 +544,7 @@ def a_step(number: int, todo: Sequence[base.Block], proof: Proof, turn: Turn | N
         for block in todo:
             kind = block.kind
             if kind == "comando":
-                for line in block.lines:
-                    a_command(filled(line, turn, proof.note), turn, proof)
+                commands(block.lines, turn, proof)
             elif kind == "atteso":
                 wanted = [filled(line, turn, proof.note) for line in block.lines]
                 absent = base.missing(wanted, turn.last)
