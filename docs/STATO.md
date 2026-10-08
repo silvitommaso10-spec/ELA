@@ -298,7 +298,6 @@ non citate è verificato invece che assunto.
 
 | Sezione | Titolo |
 |---|---|
-| §24 | Agent System |
 | §38 | Evolution Dashboard |
 | §40 | Creatività |
 | §42 | Ricerca |
