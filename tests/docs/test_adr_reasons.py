@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ela.domain import TaskState
 from ela.executive import NODE_UNEXPLAINED_FAILURE
-from ela.executive.runner import _REASONED
+from ela.tasks.ending import REASONED
 from ela.tasks.engine import OPERATIONS, TERMINAL_STATES
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,7 +33,7 @@ def section(number: int) -> str:
 
 def test_every_end_but_completed_carries_its_reason() -> None:
     assert "**Ogni fine che non è `completed` porta la sua ragione**" in section(1)
-    assert TERMINAL_STATES - {TaskState.COMPLETED} == _REASONED
+    assert TERMINAL_STATES - {TaskState.COMPLETED} == REASONED
 
 
 def test_the_operations_that_say_who_ended_a_task_are_the_engine_s() -> None:

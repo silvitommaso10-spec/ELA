@@ -26,7 +26,8 @@ import pytest
 
 from ela.cli.errors import UNREACHABLE
 from ela.cli.output import EMPTY
-from ela.executive.runner import _REASONED, OUTCOMES
+from ela.executive.runner import OUTCOMES
+from ela.tasks.ending import REASONED
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "prova_m13_1c_m13_1d_m9_6.py"
@@ -141,7 +142,7 @@ def test_the_three_checks_have_where_to_fire() -> None:
 
 
 def test_the_ends_with_a_reason_are_the_runner_s() -> None:
-    assert {OUTCOMES[state].value for state in _REASONED} == script().REASONED
+    assert {OUTCOMES[state].value for state in REASONED} == script().REASONED
 
 
 def test_the_question_of_section_6_is_found() -> None:

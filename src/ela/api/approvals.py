@@ -21,7 +21,7 @@ from ela.api.schemas import AnswerIn, ApprovalOut, TaskOut
 from ela.api.security import (
     Identity,
 )
-from ela.api.tasks import close_if_free, run_task, settle_the_plan_of
+from ela.api.tasks import close_if_free, run_task, settle_the_plan_of, task_out
 from ela.domain import Approval, ApprovalId, ApprovalStatus, Task, TaskId, TaskState
 from ela.ports import ApprovalAlreadyAnsweredError, NotFoundError
 from ela.tasks.errors import TaskEngineError
@@ -84,7 +84,7 @@ async def _answer(
         raise NotFoundError("approval", f"{body.approval_id} of task {task_id}")
     task = await ela.repository.get(identifier)
     if task.state is not TaskState.WAITING_APPROVAL:
-        return TaskOut.of(_settled(task, approval, status))
+        return await task_out(_settled(task, approval, status), ela)
     try:
         answered = await ela.approvals.respond(
             approval.id,
@@ -99,7 +99,7 @@ async def _answer(
         answered = await ela.approvals.get(approval.id)
         if answered.status is not status:
             raise
-    return TaskOut.of(await _move(identifier, answered, ela, status))
+    return await task_out(await _move(identifier, answered, ela, status), ela)
 
 
 async def answered_and_resumed(

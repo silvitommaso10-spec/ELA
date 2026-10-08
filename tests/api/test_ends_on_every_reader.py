@@ -1,10 +1,10 @@
-"""Every reader of ``docs/outcomes.txt`` that shows an ended task shows its why (M13.1e, decision C).
+"""Every reader of ``docs/outcomes.txt`` that shows an ended task shows its why (M13.1e, dec. C).
 
 The readers are **derived from the file**, not listed here: every one has a way to render it in
-:data:`RENDERERS`, or a line of «Le viste che non dicono la ragione» of ``docs/milestones/M13.1e.md``
-that says why not — for the whole reader, or for one state it cannot reach. The world is closed both
-ways: a reader with neither fails, and a line about a reader the file does not list is an answer to
-nothing.
+:data:`RENDERERS`, or a line of «Le viste che non dicono la ragione» of
+``docs/milestones/M13.1e.md`` that says why not — for the whole reader, or for one state it cannot
+reach. The world is closed both ways: a reader with neither fails, and a line about a reader the
+file does not list is an answer to nothing.
 
 A rendering is the real one: **the page is served** by the application, with the identity the page
 wants — the console from loopback, the phone enrolled through its page —, and **the command is
@@ -177,7 +177,7 @@ async def cli_cancel(s: Surfaces, state: TaskState) -> Rendered:
 
 
 async def asked_for_a_plan(s: Surfaces) -> tuple[str, str]:
-    """A task ELA was asked to plan, its planning task at the question: the task and the question."""
+    """A task ELA was asked to plan, its planning task at the question: the task, the question."""
     task = await created(s.world.client)
     body = (await s.world.client.post(f"/tasks/{task}/planning")).json()
     assert body["outcome"] == "waiting_approval", body

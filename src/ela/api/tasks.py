@@ -8,7 +8,9 @@ the Task Engine's; this module writes nothing of its own.
 
 from __future__ import annotations
 
-from typing import Annotated
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import Annotated, Final
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -16,8 +18,11 @@ from fastapi import APIRouter, Query
 from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.errors import PlanNotReadyError, TaskAlreadyRunningError
 from ela.api.schemas import (
+    AnswererOut,
+    AnswererRole,
     ApprovalOut,
     CancelIn,
+    EndOut,
     FinishedOut,
     FinishedTaskOut,
     PlanIn,
@@ -28,7 +33,10 @@ from ela.api.schemas import (
     TaskOut,
 )
 from ela.composition import Ela
+from ela.devices import LOCAL_USER
 from ela.domain import (
+    DeviceId,
+    DeviceRole,
     IntentChannel,
     IntentId,
     Task,
@@ -40,10 +48,20 @@ from ela.domain import (
 from ela.executive import Run
 from ela.executive.planner import Planning, PlanningError, is_planning_task, planning_id
 from ela.executive.readiness import Unready, readiness
+from ela.ports import NotFoundError
 from ela.tasks.engine import TERMINAL_STATES
 from ela.tasks.graph import TaskGraph
 
-__all__ = ["PLAN_IS_TEMPORARY", "close_if_free", "router", "settle_the_plan_of"]
+__all__ = [
+    "LOCAL_ANSWERER",
+    "PLAN_IS_TEMPORARY",
+    "answerer",
+    "close_if_free",
+    "end_of",
+    "router",
+    "settle_the_plan_of",
+    "task_out",
+]
 
 PLAN_IS_TEMPORARY = (
     "**The shape of this request is the shape of a plan written by hand, and it is unversioned.** "
@@ -64,6 +82,58 @@ never sees: it belongs in the description the schema carries, next to the reques
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
+LOCAL_ANSWERER: Final = "the command line on the Core"
+"""The name of the Core's token when it said no (M13.1e, ADR 0059; decision D).
+
+``LOCAL_USER`` is whoever holds the Core's token — the command line, the scripts of the hand tests,
+anything on this machine that reads the ``.env`` —, and its id is the id of the registry's row
+``local``, which a lookup would call «local». The name says the command line because that is where
+a person answers from; it is the API's, in the API's language, as «rejected by» is.
+"""
+
+ANSWERING_ROLES: Final[Mapping[DeviceRole, AnswererRole]] = MappingProxyType(
+    {DeviceRole.CONSOLE: "CONSOLE", DeviceRole.COMPANION: "COMPANION"}
+)
+"""The roles of the registry that answer a question (ADR 0043, ADR 0044): a node does not."""
+
+
+async def answerer(identity: str, ela: Ela) -> AnswererOut:
+    """Who said no, resolved at the read (M13.1e, ADR 0059; decision D, decision 2 of the review).
+
+    ``LOCAL_USER`` **before** the registry — its row exists, and is called ``local`` —; then the row
+    of the registry, revoked or not (the row stays, ADR 0037), with its name and its role; and for
+    an id the registry does not have, or a value that is not an id — ``responded_by`` before M12.1
+    was ``ELA_USER_NAME``, ADR 0037 §15 —, the identity alone. The audit is not touched.
+    """
+    if identity == LOCAL_USER.id:
+        return AnswererOut(identity=identity, name=LOCAL_ANSWERER, role="LOCAL")
+    try:
+        device = await ela.devices.get(DeviceId(UUID(identity)))
+    except (ValueError, NotFoundError):
+        return AnswererOut(identity=identity)
+    return AnswererOut(identity=identity, name=device.name, role=ANSWERING_ROLES.get(device.role))
+
+
+async def end_of(task: Task, ela: Ela) -> EndOut | None:
+    """Why ``task`` ended, from the one reading of it (:meth:`~ela.tasks.engine.TaskEngine.ending`),
+    and who said no, named by the registry. ``None`` for a task that did not end with a reason."""
+    ending = await ela.engine.ending(task)
+    if ending is None:
+        return None
+    return EndOut(
+        reason=ending.reason,
+        operation=ending.operation,
+        reason_code=ending.code,
+        answered_by=(
+            None if ending.responded_by is None else await answerer(ending.responded_by, ela)
+        ),
+    )
+
+
+async def task_out(task: Task, ela: Ela) -> TaskOut:
+    """A task as every route answers with it: with the why of its end (M13.1e)."""
+    return TaskOut.of(task, await end_of(task, ela))
+
 
 @router.post("", status_code=201)
 async def create_task(body: TaskCreate, ela: ElaDep) -> TaskOut:
@@ -77,7 +147,7 @@ async def create_task(body: TaskCreate, ela: ElaDep) -> TaskOut:
     task = await ela.engine.create(
         intent, goal=body.goal, deadline=body.deadline, max_privacy=body.max_privacy
     )
-    return TaskOut.of(task)
+    return await task_out(task, ela)
 
 
 @router.get("")
@@ -89,7 +159,7 @@ async def list_tasks(
     """The tasks in insertion order; ``state`` may be repeated, ``limit`` applies after it."""
     states = frozenset(state) if state else None
     tasks = await ela.repository.tasks(states=states, limit=limit)
-    return tuple(TaskOut.of(task) for task in tasks)
+    return tuple([await task_out(task, ela) for task in tasks])
 
 
 @router.get("/finished")
@@ -109,7 +179,7 @@ async def finished_tasks(ela: ElaDep, limit: Annotated[int, Query(ge=1)]) -> Fin
     rows: list[FinishedTaskOut] = []
     for task in tasks:
         halt = await ela.executor.halt(task.id)
-        rows.append(FinishedTaskOut(**TaskOut.of(task).model_dump(), halt=halt))
+        rows.append(FinishedTaskOut(**(await task_out(task, ela)).model_dump(), halt=halt))
     return FinishedOut(tasks=tuple(rows), total=sum(counted.values()))
 
 
@@ -137,6 +207,7 @@ async def detail_of(task_id: TaskId, ela: Ela, planning: Planning | None = None)
         task,
         graph,
         await ela.executor.halt(task.id),
+        end=await end_of(task, ela),
         author=author,
         planning_task_id=None if child is None else child.id,
         no_plan=None if planning is None else planning.no_plan,
@@ -171,7 +242,7 @@ async def attach_plan(task_id: UUID, body: PlanIn, ela: ElaDep) -> TaskOut:
         await ela.engine.start_planning(identifier)
     await ela.engine.plan(identifier, plan)
     task = await ela.engine.queue(identifier, reason="planned through the API")
-    return TaskOut.of(task)
+    return await task_out(task, ela)
 
 
 def _ready(steps: tuple[TaskStep, ...], ela: Ela) -> None:
@@ -211,7 +282,7 @@ async def planning_out(planning: Planning, ela: Ela) -> PlanningOut:
     return PlanningOut(
         task=await detail_of(planning.task.id, ela, planning),
         planning_task=(
-            None if planning.planning_task is None else TaskOut.of(planning.planning_task)
+            None if planning.planning_task is None else await task_out(planning.planning_task, ela)
         ),
         outcome=planning.outcome.value,
         reason=planning.reason,
@@ -249,7 +320,7 @@ async def run_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> RunOut:
         # Never a 409 for a task that has ended (M6.3c, decision 16 of the review): whoever holds
         # the lock — another run, a delivery, a claim, the close of a stop — closes what is open,
         # and this run answers as the door would. Two runs of a live task still get the 409.
-        return _out(await ela.runner.answer(identifier))
+        return await _out(await ela.runner.answer(identifier), ela)
     else:
         raise TaskAlreadyRunningError(identifier)
     try:
@@ -260,12 +331,12 @@ async def run_task(task_id: UUID, ela: ElaDep, running: RunningDep) -> RunOut:
         await settle_the_plan_of(run.task, ela)
     finally:
         running.discard(identifier)
-    return _out(run)
+    return await _out(run, ela)
 
 
-def _out(run: Run) -> RunOut:
+async def _out(run: Run, ela: Ela) -> RunOut:
     return RunOut(
-        task=TaskOut.of(run.task),
+        task=await task_out(run.task, ela),
         outcome=run.outcome.value,
         steps=tuple(run.steps),
         reason=run.reason,
@@ -298,7 +369,7 @@ async def cancel_task(
         await close_if_free(stopped.id, ela, running)
     task = await ela.repository.get(identifier)
     await settle_the_plan_of(task, ela)
-    return TaskOut.of(task)
+    return await task_out(task, ela)
 
 
 async def close_if_free(task_id: TaskId, ela: Ela, running: set[TaskId]) -> None:

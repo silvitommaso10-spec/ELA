@@ -38,7 +38,10 @@ from ela.api.companion import (
     NO_FINISHED,
     NO_LIVE,
     TARGET,
+    answered_said,
     counted,
+    end_caption,
+    end_said,
     finished_title,
     form,
     halt_phrase,
@@ -252,7 +255,9 @@ def _row(one: TaskOut, identity: Identity, halt: Halt | None = None) -> pages.Ma
 
     Live or finished, the same row: a finished task has a summary too, and reaching it is what
     decision 22 of M17.2 had left to its id alone (M17.2b). A stopped one says what the step in
-    progress had done (M6.3c, ADR 0054 §8)."""
+    progress had done (M6.3c, ADR 0054 §8); an ended one why it ended, and who said no, in the form
+    its ceiling allows (M13.1e, ADR 0059)."""
+    said = end_caption(one.end, may_see(identity, one.max_privacy))
     return pages.fragment(
         HERE,
         "row-task",
@@ -261,6 +266,7 @@ def _row(one: TaskOut, identity: Identity, halt: Halt | None = None) -> pages.Ma
         key=one.state.value,
         id=one.id,
         halt=_halt(halt),
+        why=pages.fragment(HERE, "why", text=said) if said else pages.Markup(""),
     )
 
 
@@ -598,6 +604,7 @@ async def summary(ela: ElaDep, identity: IdentityDep, id: UUID) -> Response:
     seen = may_see(identity, detail.max_privacy)
     pairs = [
         pages.fragment(HERE, "pair", key="Stato", value=detail.state.value),
+        *_end_pairs(detail, seen),
         *(
             ()
             if detail.halt is None
@@ -633,6 +640,19 @@ async def summary(ela: ElaDep, identity: IdentityDep, id: UUID) -> Response:
         else pages.Markup(""),
         ceiling=_ceiling(identity),
     )
+
+
+def _end_pairs(detail: TaskDetail, seen: bool) -> list[pages.Markup]:
+    """«Perché» and, for a no, «Ha risposto» (M13.1e, ADR 0059): whole from this machine, and from
+    away for a task the ceiling lets through; otherwise only words of ELA — the operation, the
+    code, the role (decision 2 of the review)."""
+    if detail.end is None:
+        return []
+    pairs = [pages.fragment(HERE, "pair", key="Perché", value=end_said(detail.end, seen))]
+    who = answered_said(detail.end.answered_by, seen)
+    if who is not None:
+        pairs.append(pages.fragment(HERE, "pair", key="Ha risposto", value=who))
+    return pairs
 
 
 def _results(produced: tuple[ExecutionResultOut, ...], seen: bool) -> pages.Markup:

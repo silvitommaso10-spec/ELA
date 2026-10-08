@@ -106,6 +106,9 @@ class Printed:
     steps: tuple[str, ...]
     reason: str | None = None
     """A fragment the reason must contain; ``None`` for the empty cell."""
+    answered: str | None = None
+    """Who said no, for a no: the row ``answered by`` after the reason (M13.1e, ADR 0059), which is
+    not one of :data:`LABELS` and is printed for a no alone."""
 
 
 Case = Callable[[Cli, Ela, Path], Awaitable[Printed]]
@@ -232,6 +235,7 @@ async def denied_at_the_door(cli: Cli, ela: Ela, tmp_path: Path) -> Printed:
         "DENIED",
         (),
         reason="deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by",
+        answered="the command line on the Core",
     )
 
 
@@ -377,15 +381,15 @@ async def test_the_run_prints_the_steps_it_handled(
     reason = reason_line[width + len(GAP) :]
     shown = reason if printed.reason is not None else None
 
-    expected = fields(
-        list(
-            zip(
-                LABELS,
-                (printed.outcome.value, shown, printed.state, list(printed.steps), None),
-                strict=True,
-            )
+    rows = list(
+        zip(
+            LABELS,
+            (printed.outcome.value, shown, printed.state, list(printed.steps), None),
+            strict=True,
         )
     )
+    answered = [] if printed.answered is None else [("answered by", printed.answered)]
+    expected = fields([*rows[:2], *answered, *rows[2:]])
     assert "\n".join(lines) == expected
     if printed.reason is not None:
         assert reason_line.startswith("reason".ljust(width) + GAP)

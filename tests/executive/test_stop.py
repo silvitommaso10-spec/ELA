@@ -919,12 +919,12 @@ async def test_a_stop_without_words_is_still_named_by_its_operation() -> None:
 async def test_a_state_no_transition_wrote_is_named_by_the_state() -> None:
     """The last answer of the reason, for a state neither the audit nor the trail has a
     transition to — which the engine never leaves: asked of a task value, not written in a store.
-    Never empty."""
+    Never empty. Since M13.1e the runner reads it from the engine's one reading (ADR 0059)."""
     w = world()
     task = await w.engine.create(w.intent())
     claimed = task.model_copy(update={"state": TaskState.CANCELLED})
 
-    assert await w.runner._transition_reason(claimed) == "CANCELLED"  # noqa: SLF001
+    assert await w.runner._reason(claimed) == "CANCELLED"  # noqa: SLF001
 
 
 async def test_answer_says_the_outcome_at_the_door_and_closes_nothing() -> None:

@@ -81,6 +81,7 @@ from ela.ports import (
     IdGenerator,
     TaskRepository,
 )
+from ela.tasks.ending import REASONED, Ending, of_the_audit, of_the_trail
 from ela.tasks.errors import ClockSkewError, IllegalStepTransitionError, TaskEngineError
 from ela.tasks.graph import STEP_EVENTS, GraphState, TaskGraph
 from ela.tasks.state_machine import (
@@ -947,6 +948,28 @@ class TaskEngine:
         async with self._lock(task_id):
             await self._repository.get(task_id)
             return await self._graph(task_id, await self._repository.events(task_id))
+
+    async def ending(self, task: Task) -> Ending | None:
+        """Why ``task`` ended, in the words of the transition that ended it: **the one reading** of
+        them (M13.1e, ADR 0059; decision A). ``None`` for a task that has not ended, and for
+        ``COMPLETED``, which explains itself.
+
+        The audit first — one read, every event of the task —, and the trail only without the row
+        the audit should have (ADR 0054 §7). For a task denied by its planning, the planning task it
+        names is read too, and who said no to it is who said no (M14.2): followed through the key,
+        never read out of the words. A read, under no lock: the end of a task is written once.
+        """
+        if task.state not in REASONED:
+            return None
+        found = of_the_audit(task, await self._audit_log.read(task_id=task.id))
+        if found is None:
+            found = of_the_trail(task, await self._repository.events(task.id))
+        if found.planning_task_id is None:
+            return found
+        child = await self.ending(await self._repository.get(found.planning_task_id))
+        # ``deny_by_planning`` checks that the child is DENIED before it writes (ADR 0058 §1).
+        assert child is not None
+        return found._replace(responded_by=child.responded_by)
 
     async def start_step(
         self, task_id: TaskId, step_id: StepId, *, device_id: DeviceId | None = None

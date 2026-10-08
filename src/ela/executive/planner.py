@@ -778,7 +778,8 @@ class Planner:
         return await self.view(task_id)
 
     async def _close(self, parent: Task, child: Task) -> None:
-        said = (await self._runner.answer(child.id)).reason or child.state.value
+        closed = await self._engine.ending(child)
+        said = child.state.value if closed is None else closed.reason
         if child.state is TaskState.COMPLETED:
             await self._collect(parent, child)
         elif child.state is TaskState.DENIED:
@@ -891,13 +892,14 @@ class Planner:
         """Where the planning of ``task_id`` stands, read and never written."""
         task = await self._repository.get(task_id)
         child = await self._child(task_id)
-        reason = (await self._runner.answer(task_id)).reason if task.state in _ENDS else None
         if task.plan_id is not None:
             return Planning(task, child, PlanningOutcome.PLANNED)
         if task.state in _ENDS:
+            ended = await self._engine.ending(task)
+            assert ended is not None  # every state of _ENDS is one of REASONED
             no_plan, problems = await self._words(child)
             return Planning(
-                task, child, _ENDS[task.state], reason, no_plan=no_plan, problems=problems
+                task, child, _ENDS[task.state], ended.reason, no_plan=no_plan, problems=problems
             )
         if child is not None and child.state is TaskState.WAITING_APPROVAL:
             return Planning(

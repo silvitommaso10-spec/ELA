@@ -18,7 +18,7 @@ more for a task denied by its planning — counted, not timed (ADR 0052 §16).
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 
@@ -45,6 +45,9 @@ from tests.api.support import echo_plan, queued
 from tests.docs.test_outcomes import written
 
 LOCAL_NAME = "the command line on the Core"
+NOBODY = "0b7c2f4e-9a1d-4c3e-8f6a-2d5b8e1c7a90"
+"""An id no row of the registry has: one fixed value, so every worker of the suite collects the
+same case."""
 
 COVERED = frozenset(
     {
@@ -63,7 +66,8 @@ here."""
 
 NEVER = frozenset({("POST", "/tasks"), ("POST", "/tasks/{task_id}/plan")})
 """The routes that cannot: a task just created is ``CREATED``, and a plan written by hand enters a
-``CREATED`` or ``PLANNING`` task and leaves it ``QUEUED``. They carry ``end`` like every other — empty."""
+``CREATED`` or ``PLANNING`` task and leaves it ``QUEUED``. They carry ``end`` like every other —
+empty."""
 
 
 def outcome_routes() -> set[tuple[str, str]]:
@@ -212,7 +216,7 @@ async def test_a_device_revoked_after_its_no_keeps_its_name(surfaces: Surfaces) 
     }
 
 
-@pytest.mark.parametrize("recorded", ["user", str(uuid4())])
+@pytest.mark.parametrize("recorded", ["user", NOBODY])
 async def test_an_identity_the_registry_does_not_know_is_the_id_alone(
     surfaces: Surfaces, recorded: str
 ) -> None:

@@ -6,7 +6,7 @@ through ``GET /tasks/{id}``. An operation added to the engine that ends a task, 
 fails :func:`test_every_operation_that_ends_a_task_has_its_case` — the alarm that keeps a new end
 from reaching the surfaces without its why.
 
-``end.code`` is the payload's own, wherever the payload carries one: the failure's code, the
+``end.reason_code`` is the payload's own, wherever the payload carries one: the failure's code, the
 orphan's, the cap's ``spending.*`` — never a list of operations that have one.
 """
 
@@ -133,6 +133,6 @@ async def test_the_end_of_every_operation_is_read_through_the_route(
     assert end is not None
     assert end["reason"] == event["summary"]
     assert end["operation"] == event["payload"]["operation"] == operation
-    assert end["code"] == event["payload"].get("code")
-    assert (end["code"] is None) == (CODES[operation] is None)
-    assert str(end["code"] or "").startswith(CODES[operation] or "")
+    assert end["reason_code"] == event["payload"].get("code")
+    assert (end["reason_code"] is None) == (CODES[operation] is None)
+    assert str(end["reason_code"] or "").startswith(CODES[operation] or "")

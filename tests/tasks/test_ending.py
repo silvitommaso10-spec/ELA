@@ -28,10 +28,13 @@ from tests.tasks.support import (
     approval_for,
     decision_for,
     executing,
+    h,
     planning_denied,
     task_in,
     waiting_approval,
 )
+
+__all__ = ["h"]
 
 
 def closing_summary(events: tuple[AuditEvent, ...], state: TaskState) -> str:
