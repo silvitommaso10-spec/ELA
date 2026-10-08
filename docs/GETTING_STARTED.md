@@ -5276,7 +5276,7 @@ leggi con `ela approvals`.
 <!-- prova: 2.comando -->
 ```
 uv run ela task create "Apri YouTube e cerca il canale di MrBeast." --json
-uv run ela task plan <id> --file docs/examples/browser-guided-youtube.json
+uv run ela task plan <id> --file docs/examples/guided-youtube.json
 uv run ela task run <id>
 ```
 
@@ -5358,7 +5358,7 @@ confine del suo step stringe quello della riga. Il modello legge il diniego, e l
 <!-- prova: 4.comando -->
 ```
 uv run ela task create "Prova a leggere la pagina principale di example.com, anche se non è fra i siti di questa sessione, e dimmi che cosa ti risponde ELA." --json
-uv run ela task plan <id> --file docs/examples/browser-guided-outside.json
+uv run ela task plan <id> --file docs/examples/guided-outside.json
 uv run ela task run <id>
 ```
 
@@ -5407,7 +5407,7 @@ task che chiede, e il modulo parte. `httpbin.org` rimanda indietro ciò che rice
 <!-- prova: 5.comando -->
 ```
 uv run ela task create "Su httpbin.org apri il modulo /forms/post, scrivi «ELA prova 26» nel campo custname e invia l'ordine con il bottone «Submit order»." --json
-uv run ela task plan <id> --file docs/examples/browser-guided-form.json
+uv run ela task plan <id> --file docs/examples/guided-form.json
 uv run ela task run <id>
 ```
 
@@ -5461,7 +5461,7 @@ Il secondo giro, con un sì.
 <!-- prova: 5.comando -->
 ```
 uv run ela task create "Su httpbin.org apri il modulo /forms/post, scrivi «ELA prova 26» nel campo custname e invia l'ordine con il bottone «Submit order»." --json
-uv run ela task plan <id> --file docs/examples/browser-guided-form.json
+uv run ela task plan <id> --file docs/examples/guided-form.json
 uv run ela task run <id>
 ```
 
@@ -5525,7 +5525,7 @@ prenotazione è chiusa**: le chiamate fatte fin lì sono nel libro, con il loro 
 <!-- prova: 6.comando -->
 ```
 uv run ela task create "Su httpbin.org apri il modulo /forms/post, scrivi «ELA prova 26» nel campo custname e invia l'ordine con il bottone «Submit order»." --json
-uv run ela task plan <id> --file docs/examples/browser-guided-form.json
+uv run ela task plan <id> --file docs/examples/guided-form.json
 uv run ela task run <id>
 ```
 

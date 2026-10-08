@@ -38,9 +38,9 @@ from tests.cli.support import Cli, LoopTransport, plain
 
 ROOT: Final = Path(__file__).resolve().parents[2]
 EXAMPLES: Final = ROOT / "docs" / "examples"
-YOUTUBE: Final = "browser-guided-youtube.json"
-OUTSIDE: Final = "browser-guided-outside.json"
-FORM: Final = "browser-guided-form.json"
+YOUTUBE: Final = "guided-youtube.json"
+OUTSIDE: Final = "guided-outside.json"
+FORM: Final = "guided-form.json"
 MARKER: Final = "ELA prova 26"
 STOP_WORDS: Final = "la prova del ferma"
 
