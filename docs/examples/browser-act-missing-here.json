@@ -1,0 +1,35 @@
+{
+  "_nota": [
+    "La prova a mano di M13.1e per un fallimento dopo un sì, senza nessuna chiamata al modello:",
+    "un clic su un bottone, `#non-esiste`, che sulla pagina di example.com non c'è. Il sito è",
+    "quello che la prova di M14.2 ha controllato fra i siti dichiarati. Si scopre solo aprendo",
+    "la pagina, cioè dopo il sì, e ELA se ne accorge PRIMA DEL PRIMO GESTO: niente cliccato, lo",
+    "step fallisce con browser.element_missing, e la ragione della fine lo dice con il codice.",
+    "Il testo atteso è quello della pagina, perché lo schema lo chiede; non si arriva a leggerlo.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "un bottone che non c'è",
+  "steps": [
+    {
+      "id": "e3f1a9c7-2b4d-4e58-9a61-000000000001",
+      "goal": "cliccare un bottone che sulla pagina non c'è",
+      "required_capabilities": [
+        "browser.act"
+      ],
+      "arguments": {
+        "site": "example.com",
+        "path": "/",
+        "fill": [],
+        "click": "#non-esiste",
+        "expect_text": "Example Domain",
+        "purpose": "la prova a mano di M13.1e"
+      },
+      "risk": "HIGH",
+      "expected_result": "fallito con browser.element_missing, e nessun gesto fatto",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

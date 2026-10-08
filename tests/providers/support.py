@@ -151,6 +151,11 @@ class FakeMessages:
         self._repeat = repeat
         self.calls: list[dict[str, Any]] = []
 
+    def prepare(self, *answers: Any) -> None:
+        """More answers, after the ones the client was built with: for a test whose call comes
+        after a world built once for every case (``tests/api/ends.py``)."""
+        self._answers.extend(answers)
+
     async def create(self, **payload: Any) -> Message:
         self.calls.append(payload)
         assert self._answers, "the provider called the API more times than the test prepared"

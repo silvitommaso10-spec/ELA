@@ -1683,6 +1683,25 @@ VIOLATIONS: tuple[Case, ...] = (
         "class Planner:\n    def __init__(self, orchestrator):\n        pass\n",
         "orchestrator",
     ),
+    # --- the-end-has-one-reader (rule 64, M13.1e) ---
+    Case(
+        # A route that finds the transition by itself, to say a reason faster than the engine:
+        # the second copy decision A of M13.1e forbids, and the first to drift from the summary.
+        "a-route-reads-the-end-by-itself",
+        "the-end-has-one-reader",
+        "api/tasks.py",
+        "def reason(events, state):\n"
+        "    return [e for e in events if e.payload.get('new_state') == state][-1].summary\n",
+        "new_state",
+    ),
+    Case(
+        # The runner going back to the copy it had before M13.1e.
+        "the-runner-keeps-its-own-reason",
+        "the-end-has-one-reader",
+        "executive/runner.py",
+        "def _transition_reason(event, task):\n    return event.payload.get('new_state')\n",
+        "new_state",
+    ),
     # --- the-bell-rings-a-method (rule 56, M12.5 dec. E) ---
     Case(
         # A second place that rings: the runner, when a task ends. It reads well, and it is a
@@ -1966,6 +1985,31 @@ ALLOWED: tuple[Case, ...] = (
         "class Closer:\n"
         "    async def close(self, task, result):\n"
         "        return await self._engine.complete(task, result)\n",
+        "",
+    ),
+    Case(
+        # Rule 64: the engine writes the payload of its transitions.
+        "the-engine-writes-the-new-state",
+        "the-end-has-one-reader",
+        "tasks/engine.py",
+        "payload = {'new_state': 'DENIED'}\n",
+        "",
+    ),
+    Case(
+        # Rule 64: the one reader reads it back.
+        "the-ending-reads-the-new-state",
+        "the-end-has-one-reader",
+        "tasks/ending.py",
+        "def of(event):\n    return event.payload.get('new_state')\n",
+        "",
+    ),
+    Case(
+        # Rule 64 reads strings, not names: ``TaskEvent.new_state``, the attribute of the trail,
+        # is another thing — the halt of M6.3c reads it, and so does the trail's fallback.
+        "the-trail-has-a-new-state-attribute",
+        "the-end-has-one-reader",
+        "tasks/halt.py",
+        "def stopped(change, state):\n    return change.new_state is state\n",
         "",
     ),
     Case(
