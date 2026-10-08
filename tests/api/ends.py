@@ -17,7 +17,7 @@ from __future__ import annotations
 import html
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -82,6 +82,16 @@ async def enrol(
 
 @pytest.fixture
 async def surfaces(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> AsyncIterator[Surfaces]:
+    async with opened_surfaces(monkeypatch, tmp_path) as built:
+        yield built
+
+
+@asynccontextmanager
+async def opened_surfaces(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> AsyncIterator[Surfaces]:
+    """The world of :func:`surfaces`, for a recording that lives longer than one test
+    (``tests/docs/real_ends.py``)."""
     async with with_a_model(monkeypatch, tmp_path) as (world, model), AsyncExitStack() as stack:
         console = await stack.enter_async_context(browser(world.app, LOOPBACK))
         away = await stack.enter_async_context(browser(world.app, TAILNET, PHONE_PEER))
@@ -148,27 +158,37 @@ async def no_from_the_command_line(s: Surfaces, *, privacy: str | None = None) -
     return task
 
 
-async def no_from_the_console(s: Surfaces, *, privacy: str | None = None) -> str:
-    """The «Rifiuta» of the console, from loopback."""
-    task = await asking(s, "il no dalla console", privacy=privacy)
+async def the_console_says_no(s: Surfaces, task: str) -> None:
+    """The «Rifiuta» of the console, from loopback, to the question of ``task``."""
     answered = await s.console.post(
         "/console/answer",
         data={"id": await question_of(s, task), "answer": "no"},
         headers={"Origin": LOOPBACK},
     )
     assert answered.status_code == 303, answered.text
-    return task
 
 
-async def no_from_the_phone(s: Surfaces) -> str:
-    """The «No» of the phone: the task ``TRUSTED``, or the phone could not see what it answers."""
-    task = await asking(s, "il no dal telefono", privacy="TRUSTED")
+async def the_phone_says_no(s: Surfaces, task: str) -> None:
+    """The «No» of the phone to the question of ``task``."""
     answered = await s.phone.post(
         "/companion/answer",
         data={"id": await question_of(s, task), "answer": "no"},
         headers={"Origin": BASE},
     )
     assert answered.status_code == 303, answered.text
+
+
+async def no_from_the_console(s: Surfaces, *, privacy: str | None = None) -> str:
+    """The «Rifiuta» of the console, from loopback."""
+    task = await asking(s, "il no dalla console", privacy=privacy)
+    await the_console_says_no(s, task)
+    return task
+
+
+async def no_from_the_phone(s: Surfaces) -> str:
+    """The «No» of the phone: the task ``TRUSTED``, or the phone could not see what it answers."""
+    task = await asking(s, "il no dal telefono", privacy="TRUSTED")
+    await the_phone_says_no(s, task)
     return task
 
 

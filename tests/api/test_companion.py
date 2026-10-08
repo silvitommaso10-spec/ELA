@@ -52,6 +52,7 @@ from ela.domain import (
 from ela.executive import UNSEEN
 from ela.permissions import SINGLE_USE
 from ela.ports import EnrollmentExpiredError
+from ela.tasks.ending import REASONED
 from ela.tasks.state_machine import TERMINAL_STATES
 from ela.tools import ASSERTED_CREATES, OVERWRITES, READS
 from tests.api.support import (
@@ -988,13 +989,33 @@ def test_a_question_that_spends_shows_its_worst_case_and_what_the_month_has_left
 
 
 def group(page: str, title: str) -> str:
-    """What a group of the tasks section holds: from its title to the next group or panel."""
+    """What a group of the tasks section holds: from its title to the next group or panel.
+
+    The next group starts with its title, a ``<p class="ela-caption">``; a row's own captions —
+    the halt, the why (M13.1e) — are ``<span>``s inside it, and stay in the group.
+    """
     after = page.split(f">{title}", 1)[1]
-    return re.split(r'class="ela-caption"|class="ela-panel', after, maxsplit=1)[0]
+    return re.split(r'<p class="ela-caption"|class="ela-panel', after, maxsplit=1)[0]
 
 
 def first_row(page: str, title: str) -> str:
     return group(page, title).split('class="ela-row"')[1]
+
+
+@pytest.mark.parametrize("state", sorted(REASONED), ids=lambda state: state.value)
+async def test_the_finished_group_holds_its_rows_whole(
+    state: TaskState, phone: AsyncClient, client: AsyncClient, ela: Ela
+) -> None:
+    """The cut reads a group up to the next group, not up to the first caption: a row's own
+    captions — the halt of M6.3c, the why of M13.1e — are inside the row, and an absence asserted
+    on the group would otherwise be asserted on half a row."""
+    task = await ended(state, client, ela, text=f"intera {state.value}")
+    operation = (await client.get(f"/tasks/{task}")).json()["end"]["operation"]
+
+    finished = group((await phone.get("/companion/")).text, "Finiti")
+
+    assert operation in finished
+    assert finished.count('class="ela-row"') == 1
 
 
 @pytest.mark.parametrize("state", sorted(TERMINAL_STATES), ids=lambda state: state.value)
