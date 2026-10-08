@@ -27,6 +27,7 @@ import tomllib
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 BEGIN = "<!-- generato da scripts/generate_stato.py: {name} -->"
 END = "<!-- fine del blocco generato: {name} -->"
@@ -219,6 +220,30 @@ def constraints_count(root: Path) -> int:
     return len(found)
 
 
+def command_paths(app: Any, prefix: str = "") -> list[str]:
+    """Every command a person can type, ``task run`` written as ``task run``: **the one definition**
+    of what the CLI offers (M12.1b).
+
+    The commands each group registers, and a group that answers on its own — ``ela voice``, a
+    group with ``invoke_without_command`` whose bare form prints the voices, which ADR 0034 §9 gives
+    as a command with its route and its exits. Until M12.1b this script walked the registered
+    commands and never the group, while ``coded_commands()`` of ``tests/docs/test_adr_cli.py`` and
+    the list of ``tests/cli/test_app.py`` added it: two rules for one number, and STATO said one
+    command less than every ADR. The tests count with this function now, and
+    ``tests/docs/test_stato.py`` holds the seam.
+    """
+    found = [
+        prefix + (command.name or command.callback.__name__)
+        for command in app.registered_commands
+        if command.callback is not None or command.name is not None
+    ]
+    for group in app.registered_groups:
+        if group.typer_instance.info.invoke_without_command is True:
+            found.append(prefix + group.name)
+        found += command_paths(group.typer_instance, f"{prefix}{group.name} ")
+    return sorted(found)
+
+
 def surface() -> list[tuple[str, str, str]]:
     """The three figures that can only be answered by the running code, asked of the code.
 
@@ -248,16 +273,6 @@ def surface() -> list[tuple[str, str, str]]:
             if method not in {"HEAD", "OPTIONS"}
         }
 
-    def commands(app: object, prefix: str = "") -> list[str]:
-        found = [
-            prefix + (command.name or command.callback.__name__)
-            for command in getattr(app, "registered_commands", [])
-            if command.callback is not None or command.name is not None
-        ]
-        for group in getattr(app, "registered_groups", []):
-            found += commands(group.typer_instance, f"{group.name} ")
-        return found
-
     return [
         (
             "Capability di produzione",
@@ -265,7 +280,7 @@ def surface() -> list[tuple[str, str, str]]:
             "`production_catalogue()`",
         ),
         ("Rotte dell'API", str(len(routes)), "i `router` di `ela.api`"),
-        ("Comandi della CLI", str(len(commands(cli_app))), "l'albero Typer di `ela.cli`"),
+        ("Comandi della CLI", str(len(command_paths(cli_app))), "l'albero Typer di `ela.cli`"),
     ]
 
 

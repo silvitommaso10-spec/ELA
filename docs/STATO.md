@@ -108,6 +108,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 11 — La voce | `M11.2` | Implementata | L'ascolto: ELA apre il microfono, e tiene solo le parole |
 | 11 — La voce | `M11.3` | Implementata | La voce di §9: la prima frase che esce da questa macchina |
 | 12 — I nodi sulla rete | `M12.1` | Implementata | L'identità: provare chi si è, e poter smettere di esserlo |
+| 12 — I nodi sulla rete | `M12.1b` | Implementata | STATO conta i comandi della CLI con una regola sua, e `ela voice` non c'è |
 | 12 — I nodi sulla rete | `M12.2` | Implementata | L'assegnazione e il protocollo del lavoro: la chiamata al tool fatta da lontano, e il tempo che decide per chi tace |
 | 12 — I nodi sulla rete | `M12.2b` | Implementata | Il rinnovo passa per la porta della consegna: una frase, un codice e un audit per ogni «non è tuo» |
 | 12 — I nodi sulla rete | `M12.3` | Implementata | Il nodo macOS: questa macchina diventa un nodo, e il contratto si implementa invece di descriversi |
@@ -158,13 +159,13 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **58** | `docs/adr/NNNN-*.md` |
-| Milestone | **82, di cui 63 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **83, di cui 64 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **63** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **30** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **13** | `production_catalogue()` |
 | Rotte dell'API | **51** | i `router` di `ela.api` |
-| Comandi della CLI | **27** | l'albero Typer di `ela.cli` |
+| Comandi della CLI | **28** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->

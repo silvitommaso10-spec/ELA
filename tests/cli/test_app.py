@@ -11,26 +11,18 @@ import runpy
 import pytest
 
 import ela.cli.app as commands
-from ela.cli.app import app
 from tests.cli.support import Cli
+from tests.docs.test_adr_cli import coded_commands
 
 
 def command_paths() -> set[str]:
-    """Every command path the app serves, ``task run`` written as ``task run``."""
-    found = set()
-    for name, group in [("", app)]:
-        for command in group.registered_commands:
-            found.add(f"{name}{command.name}")
-    for group in app.registered_groups:
-        assert group.typer_instance is not None
-        for command in group.typer_instance.registered_commands:
-            found.add(f"{group.name} {command.name}")
-        # A group that answers on its own is a command too (M11.3): ``ela voice`` prints the
-        # voices, not a help screen, because that is where somebody looks at what ELA is using.
-        if group.typer_instance.info.invoke_without_command is True:
-            assert group.name is not None
-            found.add(group.name)
-    return found
+    """Every command path the app serves, ``task run`` written as ``task run``.
+
+    A group that answers on its own is a command too (M11.3): ``ela voice`` prints the voices, not a
+    help screen, because that is where somebody looks at what ELA is using. Counted with the one
+    definition of the generator of STATO (M12.1b), which ``coded_commands()`` reads.
+    """
+    return coded_commands()
 
 
 def test_every_command_of_the_milestone_is_there() -> None:
