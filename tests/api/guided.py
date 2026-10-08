@@ -109,14 +109,24 @@ def events(*, model: str = HAIKU_5_5, input_tokens: int = 1_200, output_tokens: 
 
 @dataclass
 class Anthropic:
-    """The provider behind the gateway: what it received, and what it streams back."""
+    """The provider behind the gateway: what it received, and what it streams back.
+
+    ``held``, when set, keeps every call at the provider — in flight — until the test sets it;
+    ``arrived`` says that one has got there. A test that needs two calls in flight at once builds
+    it with these, and never with an order the event loop happens to choose (ubuntu, 2026-10-09).
+    """
 
     received: list[httpx.Request] = field(default_factory=list)
     answer: bytes = field(default_factory=events)
     status: int = 200
+    held: asyncio.Event | None = None
+    arrived: asyncio.Event = field(default_factory=asyncio.Event)
 
-    def handler(self, request: httpx.Request) -> httpx.Response:
+    async def handler(self, request: httpx.Request) -> httpx.Response:
         self.received.append(request)
+        self.arrived.set()
+        if self.held is not None:
+            await self.held.wait()
         return httpx.Response(
             self.status, headers={"content-type": "text/event-stream"}, content=self.answer
         )

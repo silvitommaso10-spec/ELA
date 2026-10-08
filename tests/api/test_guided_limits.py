@@ -160,15 +160,28 @@ async def test_a_call_that_does_not_fit_in_the_reservation_stops_the_session(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """0,60 $ holds one call of Haiku 5.5 at its worst, 0,516384 $: a second one in flight at the
-    same time does not fit."""
+    same time does not fit.
+
+    «At the same time» is built, not hoped for: the first call is held at the provider until the
+    second has been refused, and ELA's interrupt is held until the first has come back. With two
+    calls merely gathered, the first could end before the second was weighed — on ubuntu it did,
+    on 2026-10-09, and the second fit."""
     script = Script([])
+    interrupt = asyncio.Event()
 
     async def two_at_once(s: Script, plan: Any, host: Any) -> None:
-        await asyncio.gather(call()(s, plan, host), call()(s, plan, host))
+        first = asyncio.ensure_future(call()(s, plan, host))
+        await g.anthropic.arrived.wait()
+        await call()(s, plan, host)
+        assert g.anthropic.held is not None
+        g.anthropic.held.set()
+        await first
+        interrupt.set()
 
     script.steps = [two_at_once]
-    async with guided(monkeypatch, tmp_path, script) as g:
-        g.anthropic.answer = g.anthropic.answer  # one stream per call
+    session = FakeAgentSession(script, held=interrupt)
+    async with guided(monkeypatch, tmp_path, script, session=session) as g:
+        g.anthropic.held = asyncio.Event()
         task = await planned(g)
         ran = await approved_and_run(g, task)
         found = await outcome_of(g, task)
