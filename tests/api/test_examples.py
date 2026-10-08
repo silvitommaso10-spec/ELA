@@ -148,10 +148,11 @@ def test_every_example_explains_itself() -> None:
     twenty-two since the review of 2026-10-05 (decision Q), which gave §21 step 8 its own sentence;
     twenty-five since M14.1, which brought the three calls of §23 the first one does not make;
     twenty-six since M13.1e, which brought the button example.com does not have, for a failure after
-    a yes with no call to the model.
+    a yes with no call to the model; twenty-nine since M14.3, which brought the three sessions of
+    the guided browser of section 26.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 26, [path.name for path in found]
+    assert len(found) == 29, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name

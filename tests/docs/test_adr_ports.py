@@ -72,6 +72,7 @@ INTRODUCING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0048-travelling-action.md", INTRODUCING),
     (ADR_DIR / "0052-browser.md", INTRODUCING),
     (ADR_DIR / "0054-stopped-midway.md", INTRODUCING),
+    (ADR_DIR / "0060-guided-browser.md", INTRODUCING),
 )
 """ADRs that add whole ports (ADR 0013 §10, ADR 0014 §1, ADR 0015 §1): a port introduced must
 not exist already."""
@@ -98,6 +99,9 @@ INTRODUCED_PORTS = frozenset(
         "LocalBeat",
         "Browser",
         "TaskStop",
+        "ModelGateway",
+        "Gestures",
+        "AgentSession",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")

@@ -204,6 +204,11 @@ def planner_adr_text() -> str:
     return ADR_PATH.with_name("0058-planner.md").read_text(encoding="utf-8")
 
 
+def guided_adr_text() -> str:
+    """ADR 0060, which adds the one route of the gateway of a guided session (M14.3)."""
+    return ADR_PATH.with_name("0060-guided-browser.md").read_text(encoding="utf-8")
+
+
 def routes_after_0048() -> set[tuple[str, str]]:
     """The routes the ADRs after ADR 0048 added, **read from them**: what the tests of an earlier
     ADR take away to keep counting what that ADR saw. Derived, so a route a later ADR documents is
@@ -226,9 +231,17 @@ def routes_after_0056() -> set[tuple[str, str]]:
 
 def routes_after_0057() -> set[tuple[str, str]]:
     """The routes the ADRs after ADR 0057 added, read from them: what the test of ADR 0057 takes
-    away to keep counting the fifty it saw (M14.2)."""
+    away to keep counting the fifty it saw (M14.2) — ADR 0058's, and ADR 0060's since M14.3."""
     found = documented_routes(planner_adr_text())
     assert found, "ADR 0058 documents a route"
+    return found | routes_after_0059()
+
+
+def routes_after_0059() -> set[tuple[str, str]]:
+    """The routes the ADRs after ADR 0059 added, read from them: what the tests of ADR 0058 and of
+    ADR 0059 take away to keep counting the fifty-one they saw (M14.3) — ADR 0060's."""
+    found = documented_routes(guided_adr_text())
+    assert found, "ADR 0060 documents a route"
     return found
 
 
@@ -264,6 +277,7 @@ def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
             | documented_routes(finished_adr_text())
             | documented_routes(spending_adr_text())
             | documented_routes(planner_adr_text())
+            | documented_routes(guided_adr_text())
         )
     )
     assert documented == coded_routes()
@@ -302,15 +316,16 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_fifty_one_of_them() -> None:
+def test_there_are_fifty_two_of_them() -> None:
     """Twenty until ADR 0037 §4 added five, twenty-five until ADR 0038 §11 added the three of the
     work, twenty-eight until ADR 0039 §2 added the one a node that restarted reads itself with,
     twenty-nine until ADR 0043 §5 added the eight pages of the companion, thirty-seven until
     ADR 0044 added the eleven of the Command Center, forty-eight until ADR 0049 added the one
-    of the last outcomes, forty-nine until ADR 0057 added the one of the month's spending, and
-    fifty until ADR 0058 added the one of the Planner; ``tests/api/test_security.py`` proves that
-    every one of them is behind the middleware, and which identity reaches which."""
-    assert len(coded_routes()) == 51
+    of the last outcomes, forty-nine until ADR 0057 added the one of the month's spending, fifty
+    until ADR 0058 added the one of the Planner, and fifty-one until ADR 0060 added the gateway of
+    a guided session; ``tests/api/test_security.py`` proves that every one of them is behind the
+    middleware, and which identity reaches which."""
+    assert len(coded_routes()) == 52
 
 
 def test_the_route_of_m14_1_is_the_one_adr_0057_adds() -> None:
@@ -319,7 +334,11 @@ def test_the_route_of_m14_1_is_the_one_adr_0057_adds() -> None:
 
 
 def test_the_route_of_m14_2_is_the_one_adr_0058_adds() -> None:
-    assert routes_after_0057() == {("POST", "/tasks/{task_id}/planning")}
+    assert routes_after_0057() - routes_after_0059() == {("POST", "/tasks/{task_id}/planning")}
+
+
+def test_the_route_of_m14_3_is_the_one_adr_0060_adds() -> None:
+    assert routes_after_0059() == {("POST", "/sessions/{session}/v1/messages")}
 
 
 def test_the_one_route_of_the_restart_is_the_one_adr_0039_adds() -> None:

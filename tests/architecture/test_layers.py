@@ -266,18 +266,33 @@ def test_the_mutation_that_survived_is_now_reported(tmp_path: Path) -> None:
     Two comparisons and not three since M12.5: the cookie of the companion carries the same
     credential in another envelope, and it is proved by the same helper — so the surface rule 31
     watches did not grow with the bearer.
+
+    **Four since M14.3** (ADR 0060): a guided session presents its token on its own paths, and the
+    middleware compares it twice — with the Core's token, which is refused there, and with the
+    session's. Both are replaced, and both are reported.
     """
     package = copy_package(tmp_path)
     module = package / SECURITY_MODULE
     source = module.read_text(encoding="utf-8")
-    mutated = source.replace(
-        "return secrets.compare_digest(credential.encode(), token.encode())",
-        "return credential.encode() == token.encode()",
-    ).replace(
-        'secrets.compare_digest(presented_hash.encode(), (secret_hash or "").encode())',
-        'presented_hash.encode() == (secret_hash or "").encode()',
+    mutated = (
+        source.replace(
+            "return secrets.compare_digest(credential.encode(), token.encode())",
+            "return credential.encode() == token.encode()",
+        )
+        .replace(
+            'secrets.compare_digest(presented_hash.encode(), (secret_hash or "").encode())',
+            'presented_hash.encode() == (secret_hash or "").encode()',
+        )
+        .replace(
+            "secrets.compare_digest(presented.encode(), token.encode())",
+            "presented.encode() == token.encode()",
+        )
+        .replace(
+            "secrets.compare_digest(presented.encode(), expected.encode())",
+            "presented.encode() == expected.encode()",
+        )
     )
-    assert source.count("secrets.compare_digest(") == 2
+    assert source.count("secrets.compare_digest(") == 4
     assert "secrets.compare_digest(" not in mutated, "a line rule 31 defends has moved"
     module.write_text(mutated, encoding="utf-8")
 
@@ -285,6 +300,8 @@ def test_the_mutation_that_survived_is_now_reported(tmp_path: Path) -> None:
 
     assert [violation.imported for violation in reported] == [
         "compare_digest(...)",
+        "== on the token",
+        "== on the token",
         "== on the token",
         "== on the token",
     ]

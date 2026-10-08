@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tests.contracts.protocols import port_protocols
+from tests.docs.guided_ports import GUIDED_PORTS
 from tests.docs.test_adr_cli import coded_commands, commands_after_0048, commands_after_0056
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048, routes_after_0056
 from tests.docs.test_adr_placement import _rules_up_to
@@ -31,7 +32,7 @@ def test_the_conseguenze_count_the_rules_the_ports_the_routes_and_the_commands_o
     assert "**cinquantasette**" in text
     assert len(_rules_up_to(57)) == 57  # rules 58 and 59 are ADR 0054's
     assert "**ventotto**" in text
-    later = {"Browser", "TaskStop"}  # ADR 0052 and ADR 0054
+    later = {"Browser", "TaskStop", *GUIDED_PORTS}  # ADR 0052, ADR 0054 and ADR 0060
     assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 28
     assert "**quarantanove**" in text
     assert len(coded_routes() - routes_after_0056()) == 49  # ADR 0057's is later

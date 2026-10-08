@@ -8,9 +8,17 @@ from pathlib import Path
 import pytest
 
 from ela.domain import CapabilityId
-from ela.permissions import BROWSER_ACT, BROWSER_READ, MODEL_COMPLETE, TERMINAL_RUN, catalogue_v01
+from ela.permissions import (
+    BROWSER_ACT,
+    BROWSER_GUIDED,
+    BROWSER_READ,
+    MODEL_COMPLETE,
+    TERMINAL_RUN,
+    catalogue_v01,
+)
 from ela.ports import AlreadyExistsError
 from ela.testing.fakes import (
+    FakeAuditLog,
     FakeClock,
     FakeIdGenerator,
     FakeListening,
@@ -53,6 +61,7 @@ from ela.tools import (
 )
 from tests.routing.support import routing_for
 from tests.tools.browsers import SECONDS, a_browser, no_sites
+from tests.tools.guided import GATEWAY, a_room, a_session
 from tests.tools.terminals import a_launcher, a_terminal, no_programs
 
 
@@ -244,6 +253,9 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         launcher=a_launcher(),
         browsing=no_sites(),
         browser=a_browser(),
+        gestures=a_room(),
+        sessions=a_session(),
+        gateway=GATEWAY,
     )
     verifiers = production_verifiers(
         root=tmp_path,
@@ -253,6 +265,9 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         programs=no_programs(),
         browser=a_browser(),
         browser_seconds=SECONDS,
+        gestures=a_room(),
+        sessions=a_session(),
+        audit=FakeAuditLog(),
     )
     return tools, verifiers, captures
 
@@ -281,6 +296,7 @@ def test_the_production_registries_are_v01_plus_what_came_after(tmp_path: Path) 
         TERMINAL_RUN,
         BROWSER_READ,
         BROWSER_ACT,
+        BROWSER_GUIDED,
     ]
     assert {v.capability_id for v in verifiers.verifiers()} == {
         t.capability_id for t in tools.tools()

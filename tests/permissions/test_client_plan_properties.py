@@ -74,6 +74,17 @@ def client_steps(draw: st.DrawFn, capability_id: CapabilityId) -> TaskStep:
         expected_result="whatever the client wrote",
         success_conditions=(),
         requires_authorization=draw(st.booleans()),
+        # Since M14.3 a step can narrow the scope too (ADR 0060): ``within``, and only narrow.
+        within=draw(
+            st.one_of(
+                st.none(),
+                st.just(()),
+                st.lists(
+                    st.sampled_from(["workspace", "workspace/notes", "example.com", "/", "etc"]),
+                    max_size=3,
+                ).map(tuple),
+            )
+        ),
     )
 
 

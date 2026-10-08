@@ -17,8 +17,9 @@ from ela.executive.planner import PLANNER_CODES, PLANNING_OUTPUT_TOKENS
 from ela.providers.anthropic.models import MODELS, OPUS_5_5
 from ela.providers.anthropic.pricing import worst_cost
 from tests.contracts.protocols import port_protocols
+from tests.docs.guided_ports import GUIDED_PORTS
 from tests.docs.test_adr_cli import coded_commands, documented_command_routes
-from tests.docs.test_adr_composition import coded_routes, routes_after_0057
+from tests.docs.test_adr_composition import coded_routes, routes_after_0057, routes_after_0059
 from tests.docs.test_adr_persistence import added_columns
 from tests.docs.test_adr_placement import _rules_up_to
 
@@ -77,15 +78,15 @@ def test_the_conseguenze_count_the_rules_the_contracts_the_ports_the_routes_and_
     assert "**quindici**" in text
     assert len(contracts()) == 15
     assert "**trenta**" in text
-    assert len(tuple(port_protocols())) == 30
+    assert len(tuple(p for p in port_protocols() if p.__name__ not in GUIDED_PORTS)) == 30
     assert "**cinquantuno**" in text
-    assert len(coded_routes()) == 51
+    assert len(coded_routes() - routes_after_0059()) == 51
     assert "**ventotto**" in text
     assert len(coded_commands()) == 28
 
 
 def test_the_route_it_adds_is_the_planner_s_and_the_command_calls_both() -> None:
-    assert routes_after_0057() == {("POST", "/tasks/{task_id}/planning")}
+    assert routes_after_0057() - routes_after_0059() == {("POST", "/tasks/{task_id}/planning")}
     assert {
         ("POST", "/tasks/{task_id}/plan"),
         ("POST", "/tasks/{task_id}/planning"),

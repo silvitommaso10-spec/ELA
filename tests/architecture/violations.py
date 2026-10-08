@@ -872,6 +872,15 @@ VIOLATIONS: tuple[Case, ...] = (
         "playwright.async_api.async_playwright",
     ),
     Case(
+        # M14.3 (ADR 0060): the Agent SDK starts the binary of Claude Code by itself, and an
+        # adapter of it written outside the machine package would be a second door.
+        "machine-agent-sdk-in-a-tool",
+        "machine-access-in-one-place",
+        "tools/wander.py",
+        "from claude_agent_sdk import ClaudeSDKClient\n",
+        "claude_agent_sdk.ClaudeSDKClient",
+    ),
+    Case(
         "machine-subprocess-in-a-tool",
         "machine-access-in-one-place",
         "tools/run.py",
@@ -1647,6 +1656,42 @@ VIOLATIONS: tuple[Case, ...] = (
         "        return await self._provider.complete(request)\n",
         "Summary.complete(",
     ),
+    # --- who-spends-passes-the-gate (rule 65, M14.3) ---
+    Case(
+        # A tool that writes its own pass: a session launched on money nobody set aside.
+        "a-tool-mints-its-own-reservation",
+        "who-spends-passes-the-gate",
+        "tools/guided.py",
+        "def free(task_id, step_id):\n    return Reservation(task_id=task_id, step_id=step_id)\n",
+        "Reservation(",
+    ),
+    Case(
+        # The gateway admitting its own call: the budget never weighed it.
+        "the-gateway-admits-itself",
+        "who-spends-passes-the-gate",
+        "api/sessions.py",
+        "def let_out(model):\n    return Admission(session=None, call=1, model=model)\n",
+        "Admission(",
+    ),
+    Case(
+        # A module beside the key that calls the provider in a third form: no complete, no pass.
+        "the-key-calls-out-without-a-pass",
+        "who-spends-passes-the-gate",
+        "providers/anthropic/warmup.py",
+        "async def warm(client, body):\n"
+        "    return await client.post('/v1/messages', content=body)\n",
+        "warm -> .post(",
+    ),
+    Case(
+        # A class that launches a session and says nothing of what it may cost.
+        "a-session-launched-without-a-bound",
+        "who-spends-passes-the-gate",
+        "tools/wander.py",
+        "class Wander:\n"
+        "    async def _run(self, reservation, plan, host):\n"
+        "        return await self._sessions.launch(reservation, plan, host)\n",
+        "Wander.launch(",
+    ),
     # --- plans-enter-by-two-doors (rule 62, M14.2) ---
     Case(
         # A third door: the runner attaching a plan of its own to a task it found without one —
@@ -1963,6 +2008,35 @@ ALLOWED: tuple[Case, ...] = (
         "a-tool-that-spends-is-neither-repeated-nor-moved",
         "providers/other/provider.py",
         "class Other:\n    async def worst_case(self, request):\n        return None\n",
+        "",
+    ),
+    Case(
+        # Rule 65: the gate mints its passes.
+        "the-gate-mints-a-reservation",
+        "who-spends-passes-the-gate",
+        "executive/spending.py",
+        "def held(task_id, step_id):\n    return Reservation(task_id=task_id, step_id=step_id)\n",
+        "",
+    ),
+    Case(
+        # Rule 65: beside the key, a call that carries its admission.
+        "the-key-calls-out-with-a-pass",
+        "who-spends-passes-the-gate",
+        "providers/anthropic/warmup.py",
+        "async def warm(client, admission: Admission, body):\n"
+        "    return await client.post('/v1/messages', content=body)\n",
+        "",
+    ),
+    Case(
+        # Rule 65: the launcher that declares its worst case, in the same class.
+        "a-session-launched-with-its-bound",
+        "who-spends-passes-the-gate",
+        "tools/wander.py",
+        "class Wander:\n"
+        "    async def worst_case(self, arguments):\n"
+        "        return None\n"
+        "    async def _run(self, reservation, plan, host):\n"
+        "        return await self._sessions.launch(reservation, plan, host)\n",
         "",
     ),
     Case(

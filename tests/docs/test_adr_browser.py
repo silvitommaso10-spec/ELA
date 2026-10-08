@@ -18,9 +18,13 @@ from ela.tools.browser import BrowserActTool, BrowserReadTool
 from ela.tools.verifiers import BrowserActVerifier, BrowserReadVerifier
 from tests.architecture.rules import MACHINE_LIBRARIES
 from tests.contracts.protocols import members, port_protocols
+from tests.docs.guided_ports import GUIDED_PORTS
 from tests.docs.test_adr_composition import coded_routes, routes_after_0056
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.docs.test_adr_placement import _rules_up_to
+
+AFTER_0052 = frozenset({"browser.guided"})
+"""What ADR 0060 added after this one, pinned by its own test."""
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0052-browser.md"
@@ -50,8 +54,12 @@ def codes(cell: str) -> frozenset[str]:
 
 
 def test_the_capabilities_of_today_are_thirteen_and_four_of_them_travel(tmp_path: Path) -> None:
-    catalogue = [spec.id for spec in production_catalogue().specs()]
-    declared = [v.reads_the_machine for v in verifiers_today(tmp_path).verifiers()]
+    catalogue = [spec.id for spec in production_catalogue().specs() if spec.id not in AFTER_0052]
+    declared = [
+        v.reads_the_machine
+        for v in verifiers_today(tmp_path).verifiers()
+        if v.capability_id not in AFTER_0052
+    ]
 
     assert len(catalogue) == 13
     assert catalogue[-2:] == [BROWSER_READ, BROWSER_ACT]
@@ -68,7 +76,8 @@ def test_the_conseguenze_count_the_rules_the_ports_and_the_routes_of_today() -> 
         "no rule is new: rule 32 names playwright among its ways out"
     )
     assert "**ventinove**" in text
-    assert len(tuple(p for p in port_protocols() if p.__name__ != "TaskStop")) == 29  # ADR 0054
+    later = {"TaskStop", *GUIDED_PORTS}  # ADR 0054 and ADR 0060
+    assert len(tuple(p for p in port_protocols() if p.__name__ not in later)) == 29
     assert "**quarantanove**" in text
     assert len(coded_routes() - routes_after_0056()) == 49  # ADR 0057's is later
 

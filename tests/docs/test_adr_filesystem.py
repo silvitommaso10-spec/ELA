@@ -15,7 +15,7 @@ import pytest
 
 from ela.domain import RiskLevel
 from ela.permissions import MAX_RISK, RISK_POLICY, Rule, production_catalogue
-from ela.testing.fakes import FakeModelRouter
+from ela.testing.fakes import FakeAuditLog, FakeModelRouter
 from ela.tools import (
     FS_READ,
     FS_WRITE,
@@ -24,6 +24,7 @@ from ela.tools import (
     production_verifiers,
 )
 from tests.tools.browsers import SECONDS, a_browser
+from tests.tools.guided import a_room, a_session
 from tests.tools.terminals import no_programs
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0045-filesystem-and-high.md"
@@ -36,7 +37,7 @@ def adr_text() -> str:
     return ADR_PATH.read_text(encoding="utf-8")
 
 
-AFTER_0045 = frozenset({"terminal.run", "browser.read", "browser.act"})
+AFTER_0045 = frozenset({"terminal.run", "browser.read", "browser.act", "browser.guided"})
 """What the ADRs after this one added, each pinned by its own: the terminal (ADR 0047) and the
 browser (ADR 0052)."""
 
@@ -55,6 +56,9 @@ def verifiers_today(tmp_path: Path):  # type: ignore[no-untyped-def]
         programs=no_programs(),
         browser=a_browser(),
         browser_seconds=SECONDS,
+        gestures=a_room(),
+        sessions=a_session(),
+        audit=FakeAuditLog(),
     )
 
 

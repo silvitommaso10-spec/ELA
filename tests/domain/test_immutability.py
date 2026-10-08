@@ -93,10 +93,15 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
     ``PlanAuthor`` joined in M14.2 without a bag: who wrote a plan is three names, a result and a
     model, and a mapping beside them would be where the answer of the model would one day be put
     next to its author (ADR 0021 §7; ADR 0058).
+
+    ``Reservation`` and ``Admission`` joined in M14.3 without a bag: they are the two passes of the
+    cap, amounts and counts and a model's name, and a mapping beside them would be where a call's
+    body would one day be put next to what it may cost (§57; ADR 0060).
     """
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
     assert without == [
         "Actor",
+        "Admission",
         "Assignment",
         "CommandOutput",
         "ContextApproval",
@@ -122,6 +127,7 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
         "RawSpeech",
         "RawTextLine",
         "RawTranscript",
+        "Reservation",
         "SensorStatus",
         "WorstCase",
     ]

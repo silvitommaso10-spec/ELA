@@ -822,6 +822,33 @@ def test_a_question_that_spends_shows_its_worst_case_and_what_the_month_has_left
     assert "Costo massimo" not in nothing and "Resta nel mese" not in nothing
 
 
+def test_a_guided_session_shows_its_numbers_whatever_the_ceiling_and_its_sentence_behind_it() -> (
+    None
+):
+    """M14.3, decision 4: the model, the most it may spend, the looks and what leaves the machine
+    are ELA's numbers and words; the sentence and the sites are the plan's, behind the ceiling."""
+    question = an_approval(
+        phrase="Apri YouTube e cerca il canale di MrBeast.",
+        sites=("www.youtube.com",),
+        model="claude-haiku-5-5",
+        max_cost="0.6 USD",
+        looks=8,
+        sends="the text of every page read in the session goes to anthropic",
+    )
+
+    behind = _pairs(question, seen=False)
+    shown = _pairs(question, seen=True)
+
+    for pairs in (behind, shown):
+        assert "Modello" in pairs and "claude-haiku-5-5" in pairs
+        assert "Spesa massima" in pairs and "0.6 USD" in pairs
+        assert "Gesti massimi" in pairs and "Che cosa esce" in pairs
+    assert "MrBeast" not in behind and "www.youtube.com" not in behind
+    assert "La frase" in shown and "MrBeast" in shown and "Siti" in shown
+    nothing = _pairs(an_approval(), seen=True)
+    assert "Modello" not in nothing and "La frase" not in nothing
+
+
 # ----------------------------------------------------------------------------------------
 # The refusals of the enrolment, each with its own sentence
 # ----------------------------------------------------------------------------------------

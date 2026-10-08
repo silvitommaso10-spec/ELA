@@ -28,8 +28,8 @@ from typing import ClassVar
 import pytest
 
 from ela.domain import CapabilityId, ErrorMetadata, ExecutionResult, JsonMapping, ProviderRequest
-from ela.permissions import BROWSER_ACT, BROWSER_READ
-from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider, FakeStop
+from ela.permissions import BROWSER_ACT, BROWSER_GUIDED, BROWSER_READ
+from ela.testing.fakes import FakeAuditLog, FakeClock, FakeIdGenerator, FakeModelProvider, FakeStop
 from ela.tools import (
     COMMON_FAILURE_CODES,
     CORE_ECHO,
@@ -61,6 +61,7 @@ from ela.tools import (
 from ela.tools.verifiers import SPEECH_TEXT_MATCHES, SPEECH_TOOK_REAL_TIME
 from tests.routing.support import routing_for
 from tests.tools.browsers import SECONDS, a_browser
+from tests.tools.guided import a_room, a_session
 from tests.tools.support import allowed
 from tests.tools.terminals import no_programs
 from tests.tools.test_verifiers import MODEL_ARGUMENTS, completion, succeeded
@@ -80,6 +81,7 @@ STAYS = frozenset(
         TERMINAL_RUN,
         BROWSER_READ,
         BROWSER_ACT,
+        BROWSER_GUIDED,
     }
 )
 """ADR 0038 §14, as ADR 0045 extends it: the ones whose verifier reads the disk or the store of
@@ -89,7 +91,8 @@ exist — the false positive of §14, one root wider. And ``terminal.run`` in M1
 verifier reads the identity of a program on the Core's disk — ``/usr/bin/git`` of the Core, not of
 a node — and a non-travel left implied is a permission nobody wrote. And the browser's two in
 M13.4 (form A): their verifier looks at a page that lives in a process of this machine, and no node
-carries it."""
+carries it. And ``browser.guided`` in M14.3 (ADR 0060): its verifier reads the processes of the
+session, which runs on the Core."""
 NOTE = "notes/riunione.md"
 NOTE_ARGUMENTS = {"path": NOTE, "body": "# Riunione\n\nGiovedì alle dieci.\n"}
 
@@ -117,6 +120,9 @@ def production(tmp_path: Path, provider: FakeModelProvider) -> VerifierRegistry:
         programs=no_programs(),
         browser=a_browser(),
         browser_seconds=SECONDS,
+        gestures=a_room(),
+        sessions=a_session(),
+        audit=FakeAuditLog(),
     )
 
 

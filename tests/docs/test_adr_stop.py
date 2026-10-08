@@ -16,9 +16,9 @@ from ela.cli.tasks import HALT_WORDS
 from ela.domain import Halt
 from ela.ports import ENVELOPE
 from tests.architecture.rules import RULES
-from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_cli import coded_commands, commands_after_0056
 from tests.docs.test_adr_composition import coded_routes, routes_after_0056
+from tests.docs.test_adr_listening import ports_before
 from tests.docs.test_adr_placement import _rules_up_to
 from tests.executive.test_stop import EXCEPTIONS
 from tests.tools.test_registry import _production
@@ -46,9 +46,10 @@ def conseguenze() -> str:
 
 
 def test_the_table_of_the_two_halves_is_production(tmp_path: Path) -> None:
+    guided = ADR_PATH.with_name("0060-guided-browser.md").read_text(encoding="utf-8")
     rows = {
         match.group(1): (match.group(2), match.group(3))
-        for line in section(3).splitlines()
+        for line in (*section(3).splitlines(), *guided.splitlines())
         if (match := ROW.match(line))
     }
     tools, _, _ = _production(tmp_path)
@@ -108,7 +109,7 @@ def test_the_conseguenze_count_the_rules_the_ports_the_routes_and_the_commands_o
     assert "**cinquantanove**" in text
     assert len(_rules_up_to(59)) == 59  # rules 60 and 61 are ADR 0057's
     assert "**trenta**" in text
-    assert len(tuple(port_protocols())) == 30
+    assert len(ports_before(ADR_PATH.with_name("0060-guided-browser.md"))) == 30
     assert "**quarantanove**" in text
     assert len(coded_routes() - routes_after_0056()) == 49
     assert "**ventisette**" in text

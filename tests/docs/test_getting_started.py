@@ -492,6 +492,12 @@ FULL = {
     "expect": "ok",
     "worst_case": "0.2 USD, m, up to 900 tokens in and 100 out",
     "left": "4.8 of 5 USD left in 2026-10",
+    "phrase": "the sentence",
+    "sites": ["example.com"],
+    "model": "m",
+    "max_cost": "0.6 USD",
+    "looks": 8,
+    "sends": "the pages go to the provider",
 }
 EMPTY_QUESTION = {
     **QUESTION,
@@ -517,6 +523,12 @@ EMPTY_QUESTION = {
     "expect": "",
     "worst_case": "",
     "left": "",
+    "phrase": "",
+    "sites": None,
+    "model": "",
+    "max_cost": "",
+    "looks": None,
+    "sends": "",
 }
 
 

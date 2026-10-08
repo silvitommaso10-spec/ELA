@@ -117,6 +117,7 @@ def test_the_conseguenze_count_the_rules_and_the_ports_up_to_this_adr() -> None:
                 ADR_PATH.with_name("0048-travelling-action.md"),
                 ADR_PATH.with_name("0052-browser.md"),
                 ADR_PATH.with_name("0054-stopped-midway.md"),
+                ADR_PATH.with_name("0060-guided-browser.md"),
             )
         )
         == 23

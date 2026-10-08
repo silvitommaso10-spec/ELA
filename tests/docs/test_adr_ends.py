@@ -16,10 +16,11 @@ from ela.api.schemas import AnswererOut, EndOut
 from ela.api.tasks import LOCAL_ANSWERER
 from ela.cli.tasks import ROLE_WORDS as CLI_ROLE_WORDS
 from ela.cli.tasks import WHY_HEADERS
-from tests.architecture.rules import END_KEY, END_MODULES, RULES
+from tests.architecture.rules import END_KEY, END_MODULES
 from tests.contracts.protocols import port_protocols
+from tests.docs.guided_ports import GUIDED_PORTS
 from tests.docs.test_adr_cli import coded_commands
-from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_composition import coded_routes, routes_after_0059
 from tests.docs.test_adr_placement import _rules_up_to
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,22 +52,22 @@ def conseguenze() -> str:
 def test_the_conseguenze_count_the_rules_the_contracts_the_ports_the_routes_and_the_commands() -> (
     None
 ):
-    """The pin on today's totals, taken over from ADR 0058: it moves to the ADR that changes
-    them."""
+    """The pin on today's totals, taken over from ADR 0058, moved on to ADR 0060 (M14.3): what this
+    ADR saw, counted without what came after it."""
     text = conseguenze()
     contracts = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["tool"]["importlinter"][
         "contracts"
     ]
 
     assert "**sessantaquattro**" in text
-    assert len(RULES) == 64
-    assert set(RULES) - set(_rules_up_to(63)) == {"the-end-has-one-reader"}
+    assert len(_rules_up_to(64)) == 64  # rule 65 is ADR 0060's
+    assert set(_rules_up_to(64)) - set(_rules_up_to(63)) == {"the-end-has-one-reader"}
     assert "**quindici**" in text
     assert len(contracts) == 15
     assert "**trenta**" in text
-    assert len(tuple(port_protocols())) == 30
+    assert len(tuple(p for p in port_protocols() if p.__name__ not in GUIDED_PORTS)) == 30
     assert "**cinquantuno**" in text
-    assert len(coded_routes()) == 51
+    assert len(coded_routes() - routes_after_0059()) == 51
     assert "**ventotto**" in text
     assert len(coded_commands()) == 28
 

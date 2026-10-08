@@ -42,6 +42,7 @@ from ela.tools import (
 from ela.tools.browser import ACTS, OPENS, Browsing
 from ela.tools.terminal import RUNS
 from tests.tools.browsers import a_browser
+from tests.tools.guided import GATEWAY, a_room, a_session
 from tests.tools.terminals import a_launcher, a_terminal
 
 _FAKE_MACHINE: dict[str, object] = {
@@ -233,8 +234,9 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
     Every production tool is asked what it would do, with arguments that are valid for it. The
     two that touch a file and the one that runs a program answer with their own sentence; the two
     of the browser answer theirs in the visit, not in a target (M13.4) — a site is not a file
-    anybody resolved —; the eight that do not answer nothing — so another that started answering
-    would show up here without a line.
+    anybody resolved —; the nine that do not answer nothing — ``browser.guided`` among them, whose
+    question is its own piece (M14.3) — so another that started answering would show up here
+    without a line.
     """
     root = tmp_path.resolve() / "files"
     root.mkdir()
@@ -250,6 +252,9 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
         launcher=a_launcher(),
         browsing=Browsing(sites=("example.com",)),
         browser=a_browser(),
+        gestures=a_room(),
+        sessions=a_session(),
+        gateway=GATEWAY,
     )
     arguments = {
         FS_READ: {"path": "ELA/c.md", "purpose": "x"},
