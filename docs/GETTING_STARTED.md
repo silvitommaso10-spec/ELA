@@ -4479,10 +4479,12 @@ mese d'uso (ADR 0057).
 > review dello stesso giorno), e `tests/docs/test_prova_m14_2.py` tiene lo script allineato a questa sezione. La si fa
 > **sul Mac**, sul branch di M14.2, con lo script `scripts/prova_m14_2.py`: M14.2 non cambia niente sul nodo. Il
 > cancello sulla chiamata del Planner — senza tetto, o con un tetto che non ci sta — lo prova la suite
-> (`tests/executive/test_planner_spending.py`); qui lo vedi nella domanda. [ADR 0058](adr/0058-planner.md) è
-> `Proposta` fino a questa prova. **Il primo giro, il 2026-10-08 a `28c4c88`, non è passato** per due difetti dello
-> script, non di ELA — l'atteso del passo 2 leggeva solo l'ultimo comando, il rifiuto cercava la ragione dove l'API non
-> la scrive —, corretti lo stesso giorno (`milestones/M14.2.md`, «Il primo giro»): la prova si rifà da capo.
+> (`tests/executive/test_planner_spending.py`); qui lo vedi nella domanda. **Fatta da Tommaso il 2026-10-08 sul
+> branch**, a `f2b67c0`, sul Mac: passata, 29 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO
+> (`~/Downloads/prova-m14.2-20261008-091143.txt`); [ADR 0058](adr/0058-planner.md) è Accettata, e le misure sono in `milestones/M14.2.md`,
+> «Passata il 2026-10-08». Il primo giro, a `28c4c88`, non era passato per due difetti dello script, non di ELA —
+> l'atteso del passo 2 leggeva solo l'ultimo comando, il rifiuto cercava la ragione dove l'API non la scrive —, corretti
+> lo stesso giorno (`milestones/M14.2.md`, «Il primo giro»).
 
 Da M14.2 `uv run ela task plan <id>`, senza `--file`, chiede il piano a ELA (§5). Il Planner crea il **task di
 pianificazione**, figlio del tuo, con un solo step `model.complete`: ciò che esce è il tuo obiettivo, le istruzioni del

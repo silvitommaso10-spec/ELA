@@ -1,8 +1,10 @@
 # 0058. Il Planner: una chiamata di `model.complete` in un task figlio, un piano validato prima della porta, e chi l'ha scritto
 
-- **Stato:** Proposta il **2026-10-07**, con l'implementazione di M14.2 e le decisioni della review della SPEC dello
-  stesso giorno (A–M della sessione, 1–17 della review, in `docs/milestones/M14.2.md`). **Si accetta quando la prova a
-  mano della sezione 24 di `docs/GETTING_STARTED.md` passa sul Mac** (§12), nello stesso commit che la registra.
+- **Stato:** Accettata il **2026-10-08**, quando la prova a mano della sezione 24 di `docs/GETTING_STARTED.md` è passata
+  sul Mac a `f2b67c0` (`~/Downloads/prova-m14.2-20261008-091143.txt`, 29 PASSATI al primo giro; §12). Aperta il 2026-10-07 con
+  l'implementazione di M14.2 e le decisioni della review della SPEC dello stesso giorno (A–M della sessione, 1–17 della
+  review, in `docs/milestones/M14.2.md`). Un primo giro, a `28c4c88`, non era passato per due difetti dello script, non
+  di ELA (`docs/milestones/M14.2.md`, «Il primo giro»).
 - **Data:** 2026-10-07
 - **Riferimenti spec:** §12, §13, §14, §25, §27, §33, §44, §57, §63
 - **Milestone:** M14.2
@@ -292,7 +294,11 @@ avviata —, una pagina da leggere e una domanda al modello — pianificate e le
 catalogo, che deve finire `planner.no_plan`. Lo script confronta **proprietà, non piani**, perché il modello non è
 deterministico; il giudizio «fa ciò che l'obiettivo chiede?» resta all'occhio. Per ogni chiamata scrive se la risposta era
 un oggetto JSON e quanti token d'uscita ha usato (decisione 4): la misura con cui la domanda delle uscite strutturate si
-riapre. **Il cancello sulla chiamata del Planner lo prova la suite**; la prova lo vede nella domanda.
+riapre. **Il cancello sulla chiamata del Planner lo prova la suite**; la prova lo vede nella domanda. **Passata il
+2026-10-08** a `f2b67c0`, sul Mac, 29 PASSATI al primo giro: quattro risposte su quattro un oggetto JSON, il costo vero
+di ogni pianificazione fra 0,0195 e 0,0216 $ contro un caso peggiore di 4,262144 $, ogni prenotazione chiusa alla fine,
+la nota pianificata, scritta e letta, e l'obiettivo fuori catalogo `FAILED` con `planner.no_plan` e la ragione del
+modello. Le misure sono in `docs/milestones/M14.2.md`, «Passata il 2026-10-08».
 
 ## Alternative considerate
 

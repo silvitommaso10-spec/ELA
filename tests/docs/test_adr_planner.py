@@ -147,12 +147,16 @@ def test_the_lines_it_revises_are_still_there_as_they_were_written() -> None:
     ).read_text(encoding="utf-8")
 
 
-def test_it_stays_proposed_until_the_proof_by_hand_passes() -> None:
-    """The form of ADR 0057: «Proposta» until section 24 of the guide passes on the Mac, and
+def test_it_was_accepted_only_after_the_proof_by_hand(shown: str = "2026-10-08") -> None:
+    """The form of ADR 0057: «Proposta» until section 24 of the guide passed on the Mac, and
     accepted in the commit that records it — an ADR accepted over a proof still to do is what
-    ADR 0040 refused."""
+    ADR 0040 refused (decision 28 of the review of the proof)."""
     (row,) = INDEX_ROW.findall((ADR_DIR / "README.md").read_text(encoding="utf-8"))
+    guide = (ROOT / "docs" / "GETTING_STARTED.md").read_text(encoding="utf-8")
+    section = guide.split("## 24. ", 1)[1].split("\n## ", 1)[0]
 
-    assert status().strip().startswith("Proposta")
-    assert row[1] == "Proposta"
-    assert "sezione 24" in status()
+    assert row[1] == "Accettata"
+    assert status().strip().startswith(f"Accettata il **{shown}**")
+    assert "sezione 24" in status() and "prova-m14.2-20261008-091143.txt" in status()
+    assert "`Proposta` fino a questa prova" not in section
+    assert f"**Fatta da Tommaso il {shown} sul" in section

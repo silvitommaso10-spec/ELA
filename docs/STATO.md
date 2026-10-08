@@ -885,7 +885,8 @@ La **Fase 14 è registrata** — M14.1 e M14.2 dal 2026-09-25, dalla review dell
 M14.4 dal 2026-09-30 — e **non è cominciata**: nessuna sua milestone è uscita da `Proposta`, che è il criterio di
 §4.1. Non ha ancora un nome, e lo avrà dal changelog quando consegnerà la prima. ***Annotato il 2026-10-07***:
 M14.1 è fatta (5.9), e **M14.2 è implementata, fino alla prova a mano** ([ADR 0058](adr/0058-planner.md),
-Proposta finché la sezione 24 della guida non passa sul Mac).
+Proposta finché la sezione 24 della guida non passa sul Mac). ***Annotato il 2026-10-08***: **la prova a mano di
+M14.2 è passata** sul Mac a `f2b67c0`, e ADR 0058 è Accettata: ELA scrive i piani.
 
 **L'ordine è M14.1 → M14.2 → M14.3 → M14.4**, con M14.4 più avanti nella fila, dopo M13.5; ognuna ha la
 sua ragione.
