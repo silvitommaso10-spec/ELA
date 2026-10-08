@@ -139,6 +139,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.3` | Proposta | Il browser guidato dal modello: da una frase, il modello guarda la pagina e sceglie il gesto dopo |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.4` | Proposta | Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3 |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.5` | Proposta | Il contesto nel Planner: che cosa ELA sa della giornata, nel prompt che scrive un piano |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6` | Proposta | Haiku 5.5 nel listino: due fasce di prezzo, il caso peggiore che le conosce, e il profilo economico al modello nuovo |
 | 17 — Design | `M17.1` | Implementata | Il Design System: l'identità minima, e le regole che ogni superficie di ELA eredita |
 | 17 — Design | `M17.2` | Implementata | Il Command Center v1: un client dell'API, quattro viste, e la terza identità del registro |
 | 17 — Design | `M17.2b` | Implementata | Un esito finale sparisce dalle superfici che elencano i task |
@@ -159,7 +160,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **59** | `docs/adr/NNNN-*.md` |
-| Milestone | **83, di cui 65 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **84, di cui 65 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **64** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **30** | i `Protocol` di `src/ela/ports.py` |
@@ -600,7 +601,8 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    review della SPEC di M13.1c: le superfici che mostrano un diniego o un fallimento senza il perché).
    ***Annotato il 2026-10-08***: tutte e tre fatte, con la prova a mano passata; M13.1e sul Mac e sul telefono a
    `b5a8d7a`, e ADR 0059 è Accettata;
-5. **M14.3**;
+5. **M14.3**; ***annotato il 2026-10-08***: con **M14.6** prima di lei, sullo stesso branch — Haiku 5.5 nel listino, decisa
+   dalla review della SPEC di M14.3 (decisione 27) —, un merge e un giro di CI invece di due;
 6. **M13.9, M13.10, M13.11**;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
@@ -898,7 +900,8 @@ Proposta finché la sezione 24 della guida non passa sul Mac). ***Annotato il 20
 M14.2 è passata** sul Mac a `f2b67c0`, e ADR 0058 è Accettata: ELA scrive i piani.
 
 **L'ordine è M14.1 → M14.2 → M14.3 → M14.4**, con M14.4 più avanti nella fila, dopo M13.5; ognuna ha la
-sua ragione.
+sua ragione. ***Annotato il 2026-10-08***: **M14.6 viene prima di M14.3**, sullo stesso branch (decisione 27 della review
+della SPEC di M14.3); M14.5 resta fuori dalla fila.
 
 - **M14.1 — il tetto di spesa** (§30). **La prima**, perché nessuna capability della fase che spende
   nasce prima del tetto (5.9).
@@ -917,6 +920,12 @@ sua ragione.
 - **M14.4 — il computer guidato dal modello** (§20). **Registrata il 2026-09-30** dalla review della
   registrazione: il meccanismo di M14.3 riusato sullo schermo, sotto la 5.7, sopra la capability di M13.5.
   **Subito dopo M13.5**, e se M13.5 non entra non entra nemmeno lei.
+- **M14.6 — Haiku 5.5 nel listino** (§25, §30). **Registrata e decisa il 2026-10-08** dalla review della SPEC di M14.3
+  (decisione 27): Claude Haiku 5.5, uscito il 2026-10-07, entra nel listino di ELA con le sue due fasce di prezzo; la
+  funzione del caso peggiore di ADR 0057 §2 le conosce e resta sulla finestra; il profilo economico passa a Haiku 5.5, e
+  Haiku 4.5 resta nel listino senza profilo; i byte del corpo di una chiamata che spende entrano nell'audit accanto al suo
+  usage. **Su questo branch di M14.3, prima del suo codice** — la misura di M14.3 ha scelto il profilo economico per il
+  browser, e quel profilo è Haiku 5.5 —, con ADR 0061 e senza una prova a mano sua: la prova di M14.3 gira su Haiku 5.5.
 
 **La Fase 14 comincia prima che la Fase 13 sia chiusa** (Tommaso e il revisore, 2026-09-30): dopo M6.3c,
 M13.1c e M13.1d, e prima di M13.9. La fila intera sta nella 5.10, e la voce della Fase 13, la 5.11, lo

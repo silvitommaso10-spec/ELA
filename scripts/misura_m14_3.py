@@ -555,6 +555,13 @@ class World:
             self.interrupt("il tetto di 1 $ della misura")
 
 
+def begin(world: World, run: Run, probe: str | None = None) -> None:
+    """Una corsa comincia da uno stato pulito: nessuna prova del «ferma» in corso, e nessun
+    SIGINT di una corsa di prima. Il file del 2026-10-08 segnava «dopo il SIGINT» le chiamate di
+    un ciclo che veniva dopo la prova del «ferma» (decisione 28)."""
+    world.run, world.probe, world.probe_fired, world.sigint_at = run, probe, False, None
+
+
 def app_of(world: World) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -1129,7 +1136,7 @@ async def session(
         for where, text in (("ambiente", json.dumps(environment)), ("argomenti", json.dumps(argv)))
         if world.key and world.key in text
     ]
-    world.run, world.probe, world.probe_fired, world.sigint_at = run, probe, False, None
+    begin(world, run, probe)
     run.started = time.monotonic()
     process = await asyncio.create_subprocess_exec(
         *argv,
@@ -1341,7 +1348,7 @@ async def sdk_session(
     (folder / "driver.py").write_text(DRIVER, encoding="utf-8")
     (folder / "config.json").write_text(json.dumps(config), encoding="utf-8")
     run.key_found = ["configurazione"] if world.key and world.key in json.dumps(config) else []
-    world.run, world.probe, world.probe_fired, world.sigint_at = run, None, False, None
+    begin(world, run)
     run.started = time.monotonic()
     process = await asyncio.create_subprocess_exec(
         str(python),
@@ -1480,7 +1487,7 @@ def cycle_input(phrase: Phrase, history: Sequence[str], page: str | None) -> str
 
 async def cycle(world: World, phrase: Phrase, model: str, label: str) -> Run:
     run = Run(label, "ciclo", model, phrase.number, phrase.sites)
-    world.run = run
+    begin(world, run)
     run.started = time.monotonic()
     history: list[str] = []
     page: str | None = None

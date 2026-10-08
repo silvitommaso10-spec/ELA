@@ -429,3 +429,36 @@ def test_fact_c_for_haiku_5_5_is_read_outside_the_rule(tmp_path: Path) -> None:
     found = facts(tmp_path, here, [s, c])
     assert f"(c, fuori dalla regola) {HAIKU_5_5}" in found
     assert f"(c) {HAIKU}:" in found  # the rule's models are read as written
+
+
+# --- the defects the measure found in itself (decision 28) ----------------------------------------
+
+
+async def test_a_cycle_after_a_stopped_session_does_not_mark_its_calls_after_the_sigint() -> None:
+    """In the file of 2026-10-08 the calls 23 and 24 (``ciclo-haiku55-1``) say «dopo il SIGINT»:
+    the probe of the stop that ran before them left ``sigint_at`` set, and a cycle never reset
+    it."""
+    from starlette.requests import Request
+
+    measure = script()
+    here = world(port=1)
+    here.sigint_at = 123.0  # left by the probe of the stop that ran before
+    here.capped.set()  # the cap stops the cycle before its first call: nothing leaves the test
+    await measure.cycle(here, measure.DRY_PHRASE, HAIKU, "ciclo-haiku55-1")
+    assert here.sigint_at is None
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b'{"model": "m"}', "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/v1/messages",
+            "query_string": b"",
+            "headers": [(b"x-api-key", here.token.encode())],
+        },
+        receive,
+    )
+    await measure.gateway(here, request)
+    assert not here.calls[-1].after_sigint
