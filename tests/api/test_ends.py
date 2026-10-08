@@ -36,6 +36,7 @@ from tests.api.ends import (
     no_from_the_command_line,
     no_from_the_console,
     no_from_the_phone,
+    page_text,
     question_of,
     task_of,
 )
@@ -234,6 +235,10 @@ async def test_an_identity_the_registry_does_not_know_is_the_id_alone(
     await s.world.ela.engine.deny(TaskId(UUID(task)), approval=answered)
 
     assert await answered_by(s, task) == {"identity": recorded, "name": None, "role": None}
+    summary = await s.console.get("/console/task", params={"id": task})
+    assert summary.status_code == 200, summary.text
+    assert f"Ha risposto {recorded} " in page_text(summary.text) + " "
+    assert f"Ha risposto {recorded} (" not in page_text(summary.text)
 
 
 async def test_a_task_denied_by_its_planning_says_who_answered_its_planning_task(

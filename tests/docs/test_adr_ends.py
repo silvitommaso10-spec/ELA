@@ -105,7 +105,7 @@ def test_the_ceiling_rule_is_written_in_its_own_words() -> None:
     assert "### 4. Sotto il tetto solo parole di ELA, mai parole scritte da qualcuno" in adr_text()
 
 
-def test_the_cost_and_the_answer_if_it_weighs_are_written_and_the_answer_is_not_built() -> None:
+def test_the_cost_is_written_with_its_answer_if_too_heavy_and_that_answer_is_not_built() -> None:
     text = flat()
 
     assert "circa **1,9 ms per ragione**" in text

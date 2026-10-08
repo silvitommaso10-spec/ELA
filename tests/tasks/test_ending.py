@@ -64,6 +64,16 @@ async def test_a_task_that_did_not_end_with_a_reason_has_no_ending(
     assert await h.engine.ending(task) is None
 
 
+async def test_the_audit_alone_gives_no_ending_to_a_completed_task(h: Harness) -> None:
+    """The pure reading guards itself: the audit row that wrote ``COMPLETED`` is no reason, even
+    read without the engine, which asks only for the ends of ``REASONED``."""
+    task = await task_in(h, TaskState.COMPLETED)
+    audit = await h.audit.read()
+
+    assert any(event.payload.get("new_state") == TaskState.COMPLETED.value for event in audit)
+    assert of_the_audit(task, audit) is None
+
+
 async def test_the_reason_is_the_summary_of_the_transition_and_its_payload_the_rest(
     h: Harness,
 ) -> None:
