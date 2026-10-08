@@ -196,16 +196,24 @@ class AnthropicProvider:
         while True:
             attempt += 1
             try:
-                answer = await client.messages.create(**payload)
+                raw = await client.messages.with_raw_response.create(**payload)
+                answer = await raw.parse()
             except anthropic.APIError as exc:
                 failure = classify(exc)
                 if not (failure.retryable and failure.unrun and attempt < attempts):
                     return self._failed(
-                        request, failure, model=model.id, started=started, attempts=attempt
+                        request,
+                        failure,
+                        model=model.id,
+                        started=started,
+                        attempts=attempt,
+                        request_bytes=len(exc.request.content),
                     )
                 await self._sleep(self._delay(attempt, failure.retry_after))
             else:
-                return self._answered(request, answer, model, started, attempt)
+                return self._answered(
+                    request, answer, model, started, attempt, len(raw.http_request.content)
+                )
 
     def _delay(self, attempt: int, retry_after: float | None) -> float:
         """How long to wait before attempt ``attempt + 1``: what the provider asked, or backoff."""
@@ -220,14 +228,19 @@ class AnthropicProvider:
         model: Model,
         started: float,
         attempts: int,
+        request_bytes: int,
     ) -> ProviderResult:
-        """The API answered. A refusal is an answer too — one that costs tokens and has no text."""
+        """The API answered. A refusal is an answer too — one that costs tokens and has no text.
+
+        ``request_bytes`` is the body the SDK sent, read from the request the raw response carries,
+        not from a serialization of ELA's (M14.6, ADR 0061)."""
         usage = self._usage(
             answer.model,
             input_tokens=answer.usage.input_tokens,
             output_tokens=answer.usage.output_tokens,
             cached_input_tokens=answer.usage.cache_read_input_tokens,
             started=started,
+            request_bytes=request_bytes,
         )
         error: ErrorMetadata | None = None
         output = ""
@@ -297,12 +310,14 @@ class AnthropicProvider:
         started: float,
         attempts: int,
         sent: bool = True,
+        request_bytes: int | None = None,
     ) -> ProviderResult:
         """A result that carries a failure: no output, real latency, no tokens reported.
 
         ``sent`` is ``False`` for the failures found before the network. After it, the cost is
         zero only for a request the API turned down before running it; for the others it is
-        ``None``, because nobody knows (ADR 0057, revising ADR 0020 §9).
+        ``None``, because nobody knows (ADR 0057, revising ADR 0020 §9). ``request_bytes`` is the
+        body the failed request carried, and ``None`` before the network (M14.6).
         """
         return ProviderResult(
             id=ProviderResultId(self._ids.new_uuid()),
@@ -319,6 +334,7 @@ class AnthropicProvider:
                 started=started,
                 sent=sent,
                 known=not sent or failure.unrun,
+                request_bytes=request_bytes,
             ),
             error=self._error(failure, model=model, attempts=attempts),
             metadata=self._metadata(attempts, failure.request_id),
@@ -334,6 +350,7 @@ class AnthropicProvider:
         started: float,
         sent: bool = True,
         known: bool = True,
+        request_bytes: int | None = None,
     ) -> ProviderUsage:
         """Tokens, estimated cost and how long the whole call took, retries included.
 
@@ -357,6 +374,7 @@ class AnthropicProvider:
             currency=None if cost is None else CURRENCY,
             latency_ms=self._elapsed_ms(started),
             sent=sent,
+            request_bytes=request_bytes,
         )
 
     def _elapsed_ms(self, started: float) -> int:

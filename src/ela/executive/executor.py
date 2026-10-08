@@ -451,10 +451,17 @@ class Envelope(NamedTuple):
         delivery in conflict, not a replica. Listed only when there is one, so the digest of every
         envelope without a verdict is the one it was — a replay of a delivery made before M13.3
         is still the same answer.
+
+        **The bytes of the request are in the usage** since M14.6 (ADR 0061), and listed the same
+        way: a usage without them has the digest it had before.
         """
         verdict: dict[str, JsonValue] = (
             {} if self.verdict is None else {"verdict": self.verdict.as_json()}
         )
+        usage: dict[str, JsonValue] | None = None
+        if self.usage is not None:
+            unsaid = {"request_bytes"} if self.usage.request_bytes is None else None
+            usage = self.usage.model_dump(mode="json", exclude=unsaid)
         return hashlib.sha256(
             json.dumps(
                 {
@@ -462,7 +469,7 @@ class Envelope(NamedTuple):
                     "status": None if self.status is None else self.status.value,
                     "output": dict(self.output),
                     "error": None if self.error is None else self.error.model_dump(mode="json"),
-                    "usage": None if self.usage is None else self.usage.model_dump(mode="json"),
+                    "usage": usage,
                     "duration_ms": self.duration_ms,
                     "exception": self.exception,
                     "node": dict(self.node),

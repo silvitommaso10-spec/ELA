@@ -2,7 +2,8 @@
   "_nota": [
     "Il piano della prova a mano di M14.1 (GETTING_STARTED §23, passo 6): il nodo che tace a metà.",
     "Una risposta lunga, perché il PC sia ancora nella chiamata quando lo script dice di premere",
-    "Ctrl-C: \"max_output_tokens\" 8192, e il caso peggiore sale a 0,232768 $. Il testo che il",
+    "Ctrl-C: \"max_output_tokens\" 8192, e il caso peggiore sale a 0,232768 $ (0,516384 $ su Haiku 5.5,",
+    "il profilo economico dal 2026-10-08: M14.6, ADR 0061). Il testo che il",
     "modello scrive è una descrizione, e non contiene istruzioni per nessuno (decisione 17 della",
     "review di M14.1, la lezione della decisione Q di §21): chi legge il risultato non ha niente da fare.",
     "Il Core prenota il caso peggiore alla presa; il nodo che tace lascia la prenotazione aperta, e",

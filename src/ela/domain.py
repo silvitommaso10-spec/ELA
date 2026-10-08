@@ -785,6 +785,12 @@ class ProviderUsage(_DomainModel):
     The default is ``True``, so a writer that does not say counts as one that sent (§33): the
     month's ledger reads this fact, never a list of codes.
     """
+    request_bytes: Annotated[int, Field(ge=0)] | None = None
+    """The bytes of the body of the request **as it left**, or ``None`` when no request was built
+    (M14.6, ADR 0061; review of M14.3, decision 26). ADR 0057 §2 is to be revised by a month of
+    usage — the true input tokens beside the bytes that made them —, and that month exists only if
+    the bytes are written next to the tokens. A number, never the body: the body is content (§57).
+    """
 
 
 class WorstCase(_DomainModel):

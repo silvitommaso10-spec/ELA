@@ -3923,6 +3923,17 @@ senza la riga del catalogo vuoto.
 
 Così si chiudono le due verifiche che M12.4 aveva lasciato a questa milestone (§12, passi 7 e 8; ADR 0040).
 
+> ***Dal 2026-10-08 (M14.6, [ADR 0061](adr/0061-haiku-5-5.md))*** il profilo economico è **Haiku 5.5**, con due fasce
+> di prezzo, e la lettura dalla cache di Sonnet 5.5 costa 0,10 $. I blocchi qui sotto restano quelli della prova del
+> 2026-10-07, fatta su Haiku 4.5. Oggi gli stessi piani, `docs/examples/ask-model-routine.json` e
+> `ask-model-long.json`, fanno nominare a ELA il caso peggiore della fascia alta di Haiku 5.5, che la finestra meno
+> l'uscita raggiunge sempre:
+>
+> ```
+> worst case            0.508192 USD, claude-haiku-5-5, up to 995904 tokens in and 4096 out
+> worst case            0.516384 USD, claude-haiku-5-5, up to 991808 tokens in and 8192 out
+> ```
+
 **Da M14.1 nessuna chiamata che spende parte senza un tetto** ([ADR 0057](adr/0057-spending-cap.md)). Il tetto è una
 riga del `.env` del Core, in dollari come il listino e la console:
 
