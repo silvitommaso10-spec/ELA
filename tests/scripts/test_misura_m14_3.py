@@ -71,7 +71,7 @@ def test_a_cached_call_prices_write_and_read_and_without_the_cache_every_token_i
             100 * Decimal(2)
             + 1000 * Decimal(2) * Decimal("1.25")
             + 10 * Decimal(2) * Decimal(2)
-            + 2000 * Decimal("0.2")
+            + 2000 * Decimal("0.1")  # the cache read of ELA's price list, 0,10 $ since M14.6
             + 10 * Decimal(10)
         )
         / MILLION

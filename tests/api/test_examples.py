@@ -272,11 +272,11 @@ async def test_it_asks_for_consent_because_the_capability_does(
         ),
         (
             "ask-model-routine.json",
-            "0.216384 USD, claude-haiku-4-5-20251001, up to 195904 tokens in and 4096 out",
+            "0.508192 USD, claude-haiku-5-5, up to 995904 tokens in and 4096 out",
         ),
         (
             "ask-model-long.json",
-            "0.232768 USD, claude-haiku-4-5-20251001, up to 191808 tokens in and 8192 out",
+            "0.516384 USD, claude-haiku-5-5, up to 991808 tokens in and 8192 out",
         ),
     ],
 )
@@ -284,7 +284,9 @@ async def test_the_four_calls_of_section_23_ask_with_the_worst_case_the_guide_pr
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str, worst: str
 ) -> None:
     """The four questions of the hand test of M14.1 (§23 steps 4–7): the same plan, the same route,
-    the same price — the line ``ela approvals`` prints is the line the guide expects."""
+    the same price — the line ``ela approvals`` prints is the line the guide expects. Since M14.6
+    the cheap profile is Haiku 5.5, and the rows of the two cheap plans are the ones of the dated
+    annotation in §23 (ADR 0061)."""
     async with opened(
         monkeypatch, tmp_path, ELA_SPENDING_CAP_USD="30", ELA_ANTHROPIC_API_KEY=SECRET
     ) as world:

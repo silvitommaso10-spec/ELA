@@ -29,7 +29,14 @@ from ela.ports import (
 )
 from ela.providers.anthropic import pricing
 from ela.providers.anthropic.errors import ORGANIZATION_LIMIT_PREFIX, WORKSPACE_LIMIT_PREFIX
-from ela.providers.anthropic.models import HAIKU_4_5, MODELS, OPUS_5_5, PROFILES, SONNET_5_5
+from ela.providers.anthropic.models import (
+    HAIKU_4_5,
+    HAIKU_5_5,
+    MODELS,
+    OPUS_5_5,
+    PROFILES,
+    SONNET_5_5,
+)
 from tests.providers.support import (
     Sleeper,
     answer,
@@ -70,7 +77,8 @@ async def test_the_worst_case_of_a_plain_request() -> None:
     [
         ("planning", OPUS_5_5, Decimal("4.065536")),
         ("balanced", SONNET_5_5, Decimal("2.032768")),
-        ("routine", HAIKU_4_5, Decimal("0.216384")),
+        ("routine", HAIKU_5_5, Decimal("0.508192")),
+        (HAIKU_4_5, HAIKU_4_5, Decimal("0.216384")),
     ],
 )
 async def test_the_worst_case_is_the_profiles_model(hint: str, model: str, amount: Decimal) -> None:

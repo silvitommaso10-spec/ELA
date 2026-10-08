@@ -10,6 +10,9 @@ the code never drift apart, and the date in the ADR says when a human last check
 and the date of the price list, the profiles, and the fifteen codes. An ADR is not rewritten, so
 ADR 0020 keeps its tables as they were, and what the code answers to is the later one. The
 settings, the backoff and the sentences that did not change are still read from ADR 0020.
+
+**Since M14.6 the price list is ADR 0061's** (§1 there): Haiku 5.5 with its two tiers, the cache
+of Sonnet 5.5, the profiles and the date. The codes and the default stay ADR 0057's.
 """
 
 from __future__ import annotations
@@ -44,7 +47,7 @@ from ela.ports import (
     PROVIDER_UNSUPPORTED_PARAMETER,
 )
 from ela.providers.anthropic.models import DEFAULT_MODEL, MODELS, PROFILES, model_for_hint
-from ela.providers.anthropic.pricing import PRICES
+from ela.providers.anthropic.pricing import PRICES, TIERS
 from ela.providers.anthropic.provider import BACKOFF_BASE_SECONDS, BACKOFF_CAP_SECONDS
 from ela.providers.anthropic.settings import (
     DEFAULT_MAX_OUTPUT_TOKENS,
@@ -58,10 +61,14 @@ from ela.tombstones import (
 
 ADR_PATH = Path(__file__).resolve().parents[2] / "docs" / "adr" / "0020-provider-anthropic.md"
 SPENDING_PATH = ADR_PATH.with_name("0057-spending-cap.md")
+PRICELIST_PATH = ADR_PATH.with_name("0061-haiku-5-5.md")
 PROFILES_HEADING = "#### I profili"
 MODEL_ROW = re.compile(
-    r"^\| Claude [\w.\s]+ \| `([\w.-]+)` \| \S+ \| (\d+) \| (\d+) \| (\d+) \| (sì|no) \|$"
+    r"^\| Claude [\w.\s]+ \| `([\w.-]+)` \| \S+ \| (\d+) \| (—|fino a \d+|oltre \d+) "
+    r"\| ([\d,]+) \| ([\d,]+) \| ([\d,]+) \| (sì|no) \|$"
 )
+"""A row of the price list of ADR 0061: a model and a tier — ``—`` for a model with one price,
+``fino a N`` and ``oltre N`` for the two tiers of a model priced by the length of the prompt."""
 HINT_ROW = re.compile(r"^\| ((?:`\w+`(?:, )?)+) \| `([\w.-]+)` \|$")
 ERROR_ROW = re.compile(r"^\| (.+) \| (.+) \| `(provider\.\w+)` \| (\*\*sì\*\*|no) \|$")
 SETTING_ROW = re.compile(r"^\| `(ELA_\w+)` \| (.+) \| `?([\w.-]+)`? \| (.+) \|$")
@@ -85,10 +92,15 @@ def spending_text() -> str:
     return SPENDING_PATH.read_text(encoding="utf-8")
 
 
+def pricelist_text() -> str:
+    """ADR 0061, where the models, the prices, the profiles and the date are today (M14.6)."""
+    return PRICELIST_PATH.read_text(encoding="utf-8")
+
+
 def profiles_section() -> str:
-    """ADR 0057's table of the profiles, alone: its row shape is also the shape of a column the
-    same ADR adds, so the hints are read under their heading and nowhere else."""
-    text = spending_text()
+    """ADR 0061's table of the profiles, alone: its row shape is also the shape of a column an
+    earlier ADR adds, so the hints are read under their heading and nowhere else."""
+    text = pricelist_text()
     start = text.index(PROFILES_HEADING)
     end = text.find("\n#", start + 1)
     return text[start:end]
@@ -99,47 +111,67 @@ def profiles_section() -> str:
 # ----------------------------------------------------------------------------------------
 
 
-def documented_models(text: str) -> dict[str, tuple[int, Decimal, Decimal, bool]]:
-    rows = {
-        match.group(1): (
-            int(match.group(2)),
-            Decimal(match.group(3)),
-            Decimal(match.group(4)),
-            match.group(5) == "sì",
+def _amount(text: str) -> Decimal:
+    return Decimal(text.replace(",", "."))
+
+
+def documented_models(
+    text: str,
+) -> dict[str, tuple[int, bool, list[tuple[str, Decimal, Decimal, Decimal]]]]:
+    """model → (max output, effort, its tiers as (tier, input, output, cache read))."""
+    rows: dict[str, tuple[int, bool, list[tuple[str, Decimal, Decimal, Decimal]]]] = {}
+    for line in text.splitlines():
+        match = MODEL_ROW.match(line)
+        if match is None:
+            continue
+        model_id = match.group(1)
+        tier = (
+            match.group(3),
+            _amount(match.group(4)),
+            _amount(match.group(5)),
+            _amount(match.group(6)),
         )
-        for line in text.splitlines()
-        if (match := MODEL_ROW.match(line)) is not None
-    }
-    assert rows, "ADR 0020 §4 must contain the model table"
+        _, _, tiers = rows.setdefault(model_id, (int(match.group(2)), match.group(7) == "sì", []))
+        tiers.append(tier)
+    assert rows, "ADR 0061 must contain the model table"
     return rows
 
 
 def test_the_model_table_matches_the_code() -> None:
-    rows = documented_models(spending_text())
+    rows = documented_models(pricelist_text())
     assert set(rows) == set(MODELS) == set(PRICES)
-    for model_id, (max_output, price_in, price_out, effort) in rows.items():
+    for model_id, (max_output, effort, tiers) in rows.items():
         assert MODELS[model_id].max_output_tokens == max_output
         assert MODELS[model_id].supports_effort is effort
-        assert PRICES[model_id].input == price_in
-        assert PRICES[model_id].output == price_out
+        base, *above = tiers
+        assert base[0] in {"—"} | {f"fino a {bound}" for bound, _ in TIERS.get(model_id, ())}
+        assert (PRICES[model_id].input, PRICES[model_id].output, PRICES[model_id].cache_read) == (
+            base[1],
+            base[2],
+            base[3],
+        )
+        assert [
+            (f"oltre {bound}", price.input, price.output, price.cache_read)
+            for bound, price in TIERS.get(model_id, ())
+        ] == above
 
 
 def documented_price_check(text: str) -> date:
     match = next(
         (CHECKED_ON.match(line) for line in text.splitlines() if CHECKED_ON.match(line)), None
     )
-    assert match is not None, "ADR 0057 §3 must say when the prices were last checked"
+    assert match is not None, "ADR 0061 §1 must say when the prices were last checked"
     return date.fromisoformat(match.group(1))
 
 
 def price_check_problem(checked: date, today: date) -> str | None:
     """Why this price check is not good enough, or ``None`` if it is (review of M7.1)."""
     if checked > today:
-        return f"ADR 0057 §3 says the prices were checked on {checked}, which is in the future"
+        return f"ADR 0061 §1 says the prices were checked on {checked}, which is in the future"
     age = (today - checked).days
     if age > MAX_PRICE_AGE_DAYS:
         return (
-            f"the Anthropic prices in ADR 0057 §3 were last checked {age} days ago ({checked}). "
+            f"the Anthropic prices in ADR 0061 §1 were last checked {age} days ago ({checked}). "
             "Re-verify them on platform.claude.com/docs/en/about-claude/pricing, update the table "
             "and ela/providers/anthropic/pricing.py if they changed, then update the date there."
         )
@@ -153,7 +185,7 @@ def test_the_prices_have_been_checked_recently() -> None:
     this fails and says what to do. A constraint that lives in someone's memory has already
     expired.
     """
-    assert price_check_problem(documented_price_check(spending_text()), date.today()) is None
+    assert price_check_problem(documented_price_check(pricelist_text()), date.today()) is None
 
 
 def test_an_old_or_impossible_price_check_is_detected() -> None:
@@ -171,16 +203,23 @@ def test_an_old_or_impossible_price_check_is_detected() -> None:
     assert ahead is not None and "in the future" in ahead
 
     with pytest.raises(AssertionError, match="when the prices were last checked"):
-        documented_price_check("# 0057. Un ADR senza data\n")
+        documented_price_check("# 0061. Un ADR senza data\n")
 
 
 def test_the_cache_read_rate_of_the_adr_is_the_code_s_model_by_model() -> None:
     """The ADR states the rule in words; the code states it in numbers, model by model. ADR 0020 §6
-    said a tenth on all three; the 5.5 price list gives Opus a twentieth (ADR 0057 §3)."""
-    assert "il 5% dell'input su Opus 5.5 e il 10% sugli altri due" in spending_text()
+    said a tenth on all three; ADR 0057 §3 gave Opus a twentieth; the page of 2026-10-08 gives
+    Sonnet 5.5 a twentieth too (ADR 0061)."""
+    assert (
+        "il 5% dell'input su Opus 5.5 e Sonnet 5.5, il 10% su Haiku 4.5 e Haiku 5.5"
+        in pricelist_text()
+    )
+    twentieth = {"claude-opus-5-5", "claude-sonnet-5-5"}
     for model_id, price in PRICES.items():
-        share = 20 if model_id == "claude-opus-5-5" else 10
+        share = 20 if model_id in twentieth else 10
         assert price.cache_read == price.input / share, model_id
+        for _, tier in TIERS.get(model_id, ()):
+            assert tier.cache_read == tier.input / share, model_id
 
 
 def test_the_expensive_model_is_not_the_default() -> None:

@@ -8,8 +8,15 @@ from decimal import Decimal
 import pytest
 
 from ela.providers.anthropic import pricing
-from ela.providers.anthropic.models import HAIKU_4_5, MODELS, OPUS_5_5, SONNET_5_5, Model
-from ela.providers.anthropic.pricing import CURRENCY, PRICES, Price, estimate_cost, worst_cost
+from ela.providers.anthropic.models import HAIKU_4_5, HAIKU_5_5, MODELS, OPUS_5_5, SONNET_5_5, Model
+from ela.providers.anthropic.pricing import (
+    CURRENCY,
+    PRICES,
+    TIERS,
+    Price,
+    estimate_cost,
+    worst_cost,
+)
 
 
 @pytest.mark.parametrize(
@@ -27,11 +34,12 @@ def test_a_thousand_in_and_four_hundred_out(model: str, expected: Decimal) -> No
 
 
 def test_cached_input_is_billed_at_its_own_rate() -> None:
-    """A cached token is a tenth of an input token; adding the two would overcharge the cache."""
+    """A cached token of Sonnet 5.5 is a twentieth of an input token (the page of 2026-10-08,
+    M14.6); adding the two would overcharge the cache."""
     full = estimate_cost(SONNET_5_5, input_tokens=1_000, output_tokens=0, cached_input_tokens=None)
     cached = estimate_cost(SONNET_5_5, input_tokens=0, output_tokens=0, cached_input_tokens=1_000)
     assert full == Decimal("0.002")
-    assert cached == Decimal("0.0002")
+    assert cached == Decimal("0.0001")
 
 
 def test_no_tokens_costs_nothing_on_a_known_model() -> None:
@@ -60,11 +68,14 @@ def test_every_model_ela_uses_has_a_price() -> None:
     assert CURRENCY == "USD"
 
 
-def test_the_cache_read_rate_is_a_twentieth_on_opus_5_5_and_a_tenth_elsewhere() -> None:
-    """The pricing page of 2026-10-06: Opus 5.5 reads its cache at 0.05×, the other two at 0.1×."""
+def test_the_cache_read_rate_is_a_twentieth_on_the_5_5_models_and_a_tenth_on_haiku() -> None:
+    """The pricing page of 2026-10-08 (M14.6): Opus 5.5 and Sonnet 5.5 read their cache at 0.05×,
+    Haiku 4.5 and both tiers of Haiku 5.5 at 0.1×."""
     assert PRICES[OPUS_5_5].cache_read == PRICES[OPUS_5_5].input / 20
-    assert PRICES[SONNET_5_5].cache_read == PRICES[SONNET_5_5].input / 10
+    assert PRICES[SONNET_5_5].cache_read == PRICES[SONNET_5_5].input / 10 / 2
     assert PRICES[HAIKU_4_5].cache_read == PRICES[HAIKU_4_5].input / 10
+    for price in (PRICES[HAIKU_5_5], *(tier for _, tier in TIERS[HAIKU_5_5])):
+        assert price.cache_read == price.input / 10
 
 
 @pytest.mark.parametrize(
