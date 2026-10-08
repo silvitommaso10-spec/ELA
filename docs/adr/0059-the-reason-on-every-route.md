@@ -1,8 +1,9 @@
 # 0059. La ragione di una fine su ogni rotta che porta lo stato di un task: una lettura sola nell'engine, chi ha detto no col nome del registro, e sotto il tetto solo parole di ELA
 
-- **Stato:** **Proposta**. Aperta il 2026-10-08 con l'implementazione di M13.1e, dopo la SPEC decisa lo stesso giorno
-  (le decisioni A–F della sessione e 1–8 della review, in `docs/milestones/M13.1e.md`). Si accetta quando la prova a
-  mano della sezione 25 di `docs/GETTING_STARTED.md` passa sul Mac e sul telefono, con `scripts/prova_m13_1e.py` (§10).
+- **Stato:** Accettata il **2026-10-08**, quando la prova a mano della sezione 25 di `docs/GETTING_STARTED.md` è passata
+  sul Mac e sul telefono a `b5a8d7a`, con `scripts/prova_m13_1e.py` (`~/Downloads/prova-m13.1e-20261008-124455.txt`, 29 PASSATI al
+  primo giro; §10). Aperta lo stesso giorno con l'implementazione di M13.1e, dopo la SPEC decisa (le decisioni A–F della
+  sessione e 1–8 della review, in `docs/milestones/M13.1e.md`), con le decisioni 9 e 10 della review del riepilogo.
 - **Data:** 2026-10-08
 - **Riferimenti spec:** §14, §32, §33, §57, §62, §64, §65
 - **Milestone:** M13.1e
@@ -120,6 +121,11 @@ del design — è un parametro di `AuditLog.read`, `task_ids`, una query con `ta
 parametro e non un membro, come `newest_first` (ADR 0025 §3). **Non è costruito.** Si riapre con la misura che la prova
 prende sul database vero del Mac (§10).
 
+**La misura sul Mac**, al passo 10 della prova del 2026-10-08, sul database vero, scritta come misura: `GET /tasks` su
+168 task, 72 con una ragione, mediana 39,8 ms, 0,55 ms per ragione; `GET /tasks/finished?limit=10`, mediana 9,3 ms,
+1,56 ms per ragione. **La domanda del costo, per oggi, è chiusa**: `task_ids` resta la risposta scritta se una misura
+futura dice che pesa, e non si costruisce.
+
 ### 7. La regola 64
 
 **La regola 64, `the-end-has-one-reader`**: fuori da `ela.tasks.engine`, che scrive il payload delle transizioni, e da
@@ -155,7 +161,12 @@ no (§2).
 La sezione 25 di `docs/GETTING_STARTED.md`, con lo script `scripts/prova_m13_1e.py`, **sul Mac e sul telefono, senza il
 PC**: tre no — dalla riga di comando, dalla console, dal telefono —, un fallimento dopo un sì con `browser.act` su un
 bottone che `example.com` non ha, un fermo con `ela task cancel`, e la misura del costo sul database vero; nessuna
-chiamata al modello, nessuna voce. `EXPIRED` lo prova la suite. **Da fare.**
+chiamata al modello, nessuna voce. `EXPIRED` lo prova la suite. **Passata il 2026-10-08** a `b5a8d7a`, sul Mac e sul
+telefono, 29 PASSATI al primo giro e dieci sì all'occhio: i tre no con il ruolo e il nome giusti — «the command line on
+the Core», «MacBook (console)», «iPhone (phone)» —; sul telefono, per i task `LOCAL_ONLY`, solo l'operazione, il codice
+e il ruolo, e per il task `TRUSTED` la ragione intera con il nome; `ela task list` sulla storia vera, con le ragioni
+delle fini di settembre e ottobre; e la misura di §6. Le misure sono in `docs/milestones/M13.1e.md`, «Passata il
+2026-10-08».
 
 ## Alternative considerate
 

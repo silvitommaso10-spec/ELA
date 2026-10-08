@@ -113,6 +113,16 @@ def test_the_cost_is_written_with_its_answer_if_too_heavy_and_that_answer_is_not
     assert "**Non è costruito.**" in text
 
 
+def test_the_measure_on_the_mac_closes_the_question_of_the_cost_for_today() -> None:
+    """Decision 11: the numbers of step 10, written as measures; ``task_ids`` stays the written
+    answer, not built."""
+    text = flat()
+
+    assert "168 task, 72 con una ragione, mediana 39,8 ms, 0,55 ms per ragione" in text
+    assert "mediana 9,3 ms, 1,56 ms per ragione" in text
+    assert "**La domanda del costo, per oggi, è chiusa**" in text
+
+
 def test_the_adrs_it_revises_say_so_in_their_state() -> None:
     for name in REVISED:
         text = (ADR_DIR / name).read_text(encoding="utf-8")
@@ -128,9 +138,23 @@ def test_the_lines_it_revises_are_still_there_as_they_were_written() -> None:
     ).read_text(encoding="utf-8")
 
 
-def test_the_index_lists_it_with_its_state() -> None:
+def status() -> str:
+    return adr_text().split("- **Stato:**", 1)[1].split("\n- **", 1)[0]
+
+
+def test_it_was_accepted_only_after_the_proof_by_hand(shown: str = "2026-10-08") -> None:
+    """The form of ADR 0058: «Proposta» until section 25 of the guide passed on the Mac and on the
+    phone, then «Accettata» with the file and the commit, in the index too (decision 11 of the
+    review of the proof)."""
     found = INDEX_ROW.search((ADR_DIR / "README.md").read_text(encoding="utf-8"))
+    guide = (ROOT / "docs" / "GETTING_STARTED.md").read_text(encoding="utf-8")
+    section = guide.split("## 25. ", 1)[1].split("\n## ", 1)[0]
 
     assert found is not None
-    assert found.group(2) == "Proposta"
-    assert adr_text().split("- **Stato:**", 1)[1].lstrip().startswith("**Proposta**")
+    assert found.group(2) == "Accettata"
+    assert status().strip().startswith(f"Accettata il **{shown}**")
+    assert "sezione 25" in status() and "prova-m13.1e-20261008-124455.txt" in status()
+    assert "`b5a8d7a`" in status()
+    assert "**Da fare.**" not in adr_text()
+    assert "**Da fare.**" not in section
+    assert f"**Fatta da Tommaso il {shown} sul" in section

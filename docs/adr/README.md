@@ -66,7 +66,7 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0056](0056-the-author-is-not-in-the-product.md) | Niente di chi ha scritto ELA in ciò che installa e serve: un test per ciò che una macchina riconosce, il catalogo dell'audizione nella configurazione, la provenienza di una misura in `docs/` | Accettata |
 | [0057](0057-spending-cap.md) | Il tetto di spesa: una riga del Core, il caso peggiore prenotato nella `STARTED`, e i modelli 5.5 | Accettata |
 | [0058](0058-planner.md) | Il Planner: una chiamata di `model.complete` in un task figlio, un piano validato prima della porta, e chi l'ha scritto | Accettata |
-| [0059](0059-the-reason-on-every-route.md) | La ragione di una fine su ogni rotta che porta lo stato di un task: una lettura sola nell'engine, chi ha detto no col nome del registro, e sotto il tetto solo parole di ELA | Proposta |
+| [0059](0059-the-reason-on-every-route.md) | La ragione di una fine su ogni rotta che porta lo stato di un task: una lettura sola nell'engine, chi ha detto no col nome del registro, e sotto il tetto solo parole di ELA | Accettata |
 
 ## Template
 

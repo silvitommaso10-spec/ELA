@@ -4775,7 +4775,10 @@ prenotato com'era al passo 1
 > **Scritta con l'implementazione il 2026-10-08** (`milestones/M13.1e.md`, «La prova a mano», con le decisioni della
 > review dello stesso giorno), e `tests/docs/test_prova_m13_1e.py` tiene lo script allineato a questa sezione. La si fa
 > **sul Mac e sul telefono, senza il PC**, sul branch di M13.1e, con lo script `scripts/prova_m13_1e.py`. `EXPIRED` lo
-> prova la suite: a mano vorrebbe un riavvio. **Da fare.**
+> prova la suite: a mano vorrebbe un riavvio. **Fatta da Tommaso il 2026-10-08 sul branch**, a `b5a8d7a`, sul Mac e sul
+> telefono: passata, 29 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO
+> (`~/Downloads/prova-m13.1e-20261008-124455.txt`); [ADR 0059](adr/0059-the-reason-on-every-route.md) è Accettata, e le misure
+> sono in `milestones/M13.1e.md`, «Passata il 2026-10-08».
 
 Da M13.1e ogni superficie che mostra un task finito dice **perché è finito** — la stessa ragione di `ela task run`, il
 sommario della transizione che l'ha chiuso — e, per un no, **chi ha risposto**: `ela task show`, le risposte di

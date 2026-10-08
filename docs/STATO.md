@@ -598,7 +598,9 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
 3. **M9.6**, niente di Tommaso nel codice: subito dopo, sullo stesso branch, con il suo documento e il
    test della regola di `CLAUDE.md`;
 4. **M14.1 e M14.2**; e subito dopo **M13.1e**, prima di M14.3 (***aggiunta il 2026-10-02***, decisione 5 della
-   review della SPEC di M13.1c: le superfici che mostrano un diniego o un fallimento senza il perché);
+   review della SPEC di M13.1c: le superfici che mostrano un diniego o un fallimento senza il perché).
+   ***Annotato il 2026-10-08***: tutte e tre fatte, con la prova a mano passata; M13.1e sul Mac e sul telefono a
+   `b5a8d7a`, e ADR 0059 è Accettata;
 5. **M14.3**;
 6. **M13.9, M13.10, M13.11**;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
@@ -703,7 +705,8 @@ non l'ha più — viene alla fine della fila, 5.10 —; M13.6 la tiene.)
 ***Rivisto da Tommaso e dal revisore il 2026-09-30.*** Dopo M13.4 l'ordine della fase è **M13.1c e
 M13.1d → M13.9 → M13.10 → M13.11 → M13.5 → M13.7 → M13.8**; dopo M13.1c e M13.1d, prima di M13.9,
 **comincia la Fase 14** — M14.1, M14.2, M14.3 —, e fra M13.5 e M13.7 viene M14.4. (***Annotato il 2026-10-02***:
-**M13.1e**, registrata dalla review della SPEC di M13.1c, viene dopo M14.1 e M14.2 e prima di M14.3.) La fila intera, con
+**M13.1e**, registrata dalla review della SPEC di M13.1c, viene dopo M14.1 e M14.2 e prima di M14.3. ***Annotato il
+2026-10-08***: fatta, con la prova a mano passata.) La fila intera, con
 M6.3c in testa, sta nella 5.10. M13.6 resta fuori dalla
 fila, con la sua condizione. **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e la ragione è di
 Tommaso: **tutto ciò che vuole dal browser e dal computer control passa da un modello che guarda e
@@ -816,7 +819,9 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   ***Annotato il 2026-10-08***: **implementata, fino alla prova a mano** ([ADR 0059](adr/0059-the-reason-on-every-route.md),
   Proposta finché la sezione 25 della guida non passa sul Mac e sul telefono). Ogni rotta che porta un task porta la
   ragione, letta in un posto solo; il no nomina la riga del registro con il suo ruolo, e sotto il tetto solo il ruolo.
-  Sullo stesso branch **M12.1b**: STATO conta i comandi della CLI come gli ADR, 28.
+  Sullo stesso branch **M12.1b**: STATO conta i comandi della CLI come gli ADR, 28. ***Annotato il 2026-10-08***: **la
+  prova a mano di M13.1e è passata** sul Mac e sul telefono a `b5a8d7a`, e ADR 0059 è Accettata: la console, il
+  telefono e la riga di comando dicono il perché di una fine.
 - **M13.9 — il browser con i tuoi account** (§19, §57). **Registrata il 2026-09-30**: un Chrome vero con
   un profilo di ELA che dura, uno per macchina; le password in Bitwarden, prese una alla volta con la CLI
   ufficiale dopo un sì a ogni uso, e mai scritte in ELA; il profilo non accende la sincronizzazione di
