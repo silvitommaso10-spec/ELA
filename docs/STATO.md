@@ -136,7 +136,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.2` | Implementata | Il Planner: ELA scrive i piani da sola |
-| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.3` | Proposta | Il browser guidato dal modello: da una frase, il modello guarda la pagina e sceglie il gesto dopo |
+| 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.3` | Implementata | Il browser guidato dal modello: da una frase, il modello guarda la pagina e sceglie il gesto dopo |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.4` | Proposta | Il computer guidato dal modello: lo schermo, con il meccanismo di M14.3 |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.5` | Proposta | Il contesto nel Planner: che cosa ELA sa della giornata, nel prompt che scrive un piano |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.6` | Implementata | Haiku 5.5 nel listino: due fasce di prezzo, il caso peggiore che le conosce, e il profilo economico al modello nuovo |
@@ -159,13 +159,13 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **60** | `docs/adr/NNNN-*.md` |
-| Milestone | **84, di cui 66 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **64** | `RULES` in `tests/architecture/` |
+| ADR scritti | **61** | `docs/adr/NNNN-*.md` |
+| Milestone | **84, di cui 67 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **65** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
-| Port | **30** | i `Protocol` di `src/ela/ports.py` |
-| Capability di produzione | **13** | `production_catalogue()` |
-| Rotte dell'API | **51** | i `router` di `ela.api` |
+| Port | **33** | i `Protocol` di `src/ela/ports.py` |
+| Capability di produzione | **14** | `production_catalogue()` |
+| Rotte dell'API | **52** | i `router` di `ela.api` |
 | Comandi della CLI | **28** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
 
@@ -422,6 +422,12 @@ permessi (5.7, 5.8), **oppure la sua SPEC rivede questa voce apertamente, con un
 misurati delle due strade; M14.4 (lo schermo) riusa quel meccanismo. **Il Planner di M14.2 — una chiamata
 che scrive un piano — non è lavoro agentico.**
 
+***Annotato il 2026-10-09*** (M14.3, [ADR 0060](adr/0060-guided-browser.md) §5): **la strada è la sessione** — la misura
+del 2026-10-08 non ha trovato nessuno dei tre fatti scritti prima dei numeri —, e per un ciclo nel browser le tre
+condizioni si leggono così: la **prima** è intatta; la **seconda** si legge **«ogni effetto della sessione è
+un'esecuzione dell'executor, con il Guardian»** — ogni gesto è un task figlio, e lo strato dei permessi di Claude Code
+non ha niente da decidere —; la **terza**, «ciò che si approva è ogni effetto, uno per uno».
+
 ### 5.8 Come si paga una sessione
 
 Il modo di pagamento **non è una variabile di configurazione: deriva dalla cartella su cui la
@@ -467,7 +473,10 @@ ADR 0057, come questa sezione diceva che sarebbe successo.
 
 *Perché la capability della Fase 14 non è qui:* il lavoro agentico (§5.7, §5.8) spende sulla stessa
 chiave senza passare da `model.complete`, e il tetto di quella strada è di M14.3, che lo sa da
-un'annotazione datata.
+un'annotazione datata. ***Annotato il 2026-10-09*** (M14.3, [ADR 0060](adr/0060-guided-browser.md) §2): **ora c'è**. Una
+sessione guidata prenota il suo costo massimo nella `STARTED` del suo step, e **ogni sua chiamata al modello passa da
+un gateway di ELA** che la pesa sulla prenotazione — speso nella sessione, in volo e caso peggiore — prima che lasci il
+Mac; la sessione non vede mai la chiave. La regola 65 trova chi spende leggendo l'albero.
 
 ### 5.10 Il design è una fase, non una rifinitura
 
@@ -897,7 +906,10 @@ M14.4 dal 2026-09-30 — e **non è cominciata**: nessuna sua milestone è uscit
 §4.1. Non ha ancora un nome, e lo avrà dal changelog quando consegnerà la prima. ***Annotato il 2026-10-07***:
 M14.1 è fatta (5.9), e **M14.2 è implementata, fino alla prova a mano** ([ADR 0058](adr/0058-planner.md),
 Proposta finché la sezione 24 della guida non passa sul Mac). ***Annotato il 2026-10-08***: **la prova a mano di
-M14.2 è passata** sul Mac a `f2b67c0`, e ADR 0058 è Accettata: ELA scrive i piani.
+M14.2 è passata** sul Mac a `f2b67c0`, e ADR 0058 è Accettata: ELA scrive i piani. ***Annotato il 2026-10-09***:
+**M14.6 è implementata** — Haiku 5.5 nel listino, [ADR 0061](adr/0061-haiku-5-5.md) — e **M14.3 è implementata, fino
+alla prova a mano** ([ADR 0060](adr/0060-guided-browser.md), Proposta finché la sezione 26 della guida non passa sul
+Mac): il modello guida il browser, un gesto alla volta, e ogni gesto è deciso dal Guardian.
 
 **L'ordine è M14.1 → M14.2 → M14.3 → M14.4**, con M14.4 più avanti nella fila, dopo M13.5; ognuna ha la
 sua ragione. ***Annotato il 2026-10-08***: **M14.6 viene prima di M14.3**, sullo stesso branch (decisione 27 della review

@@ -37,6 +37,7 @@ from ela.api import (
     pages,
     perception,
     results,
+    sessions,
     spend,
     system,
     tasks,
@@ -227,6 +228,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     ela: Ela = app.state.ela
     app.state.recovery = await ela.engine.recover()
+    # The gestures of a guided session whose session's task has ended (M14.3, ADR 0060): a crash, a
+    # restart with a question open. Found with a read of the repository and stopped — before the
+    # close below, which closes the steps they left open as it closes every ended task's.
+    app.state.orphans = await ela.sessions.close_orphans()
     # The steps a task that has ended left open (M6.3c, decision 2 of the review): what recover()
     # just ended, what a crash left between the end and the close, and the rows of before M6.3c.
     app.state.closed = await ela.executor.close_every_open_step()
@@ -271,9 +276,12 @@ def create_app(ela: Ela) -> FastAPI:
     )
     pages.ensure_readable(*(surface.templates for surface in SURFACES))
     app.state.ela = ela
-    app.state.running = set()
+    # The lock of ``run`` is ELA's since M14.3 (ADR 0060): the room of the guided sessions walks a
+    # gesture's child under it too, and the routes and the room must hold the same set.
+    app.state.running = ela.running
     app.state.recovery = RecoverySummary((), (), ())
     app.state.planned = ()
+    app.state.orphans = ()
     app.state.refused = Counter()
     # Raised when the process is asked to stop, so that a node holding a long-poll is answered at
     # the instant of the signal instead of at the end of its window (ADR 0038 §11). Who raises it is
@@ -298,6 +306,7 @@ def create_app(ela: Ela) -> FastAPI:
         context.router,
         perception.router,
         results.router,
+        sessions.router,
         spend.router,
         voice.router,
     ):

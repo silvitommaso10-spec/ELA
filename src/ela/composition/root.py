@@ -41,12 +41,14 @@ from ela.devices import (
     period_of,
 )
 from ela.devices.local import LOCAL_DEVICE_ID
-from ela.domain import Actor, ActorKind, RawSpeech
+from ela.domain import Actor, ActorKind, RawSpeech, TaskId
 from ela.executive import Assignments, Executor, TaskRunner
 from ela.executive.planner import Planner
+from ela.executive.sessions import SessionRoom
 from ela.executive.spending import SpendingGate
 from ela.infrastructure.machine import (
     Audition,
+    ClaudeAgentSession,
     DarwinListening,
     DarwinProbe,
     OnlineSpeechCommand,
@@ -99,7 +101,7 @@ from ela.ports import (
     TaskRepository,
     TextRecognitionPort,
 )
-from ela.providers.anthropic import anthropic_provider
+from ela.providers.anthropic import anthropic_gateway, anthropic_provider
 from ela.providers.elevenlabs import ElevenLabsVoice
 from ela.providers.ntfy import NtfyBell
 from ela.providers.registry import ProviderRegistry
@@ -119,7 +121,7 @@ from ela.tools import (
     production_tools,
     production_verifiers,
 )
-from ela.tools.settings import speech_dir_beside
+from ela.tools.settings import sessions_dir_beside, speech_dir_beside
 from ela.tools.terminal import CLOSED_PATH, LANGUAGE
 
 __all__ = ["ELA_ACTOR", "WORKSPACE_MODE", "Database", "Ela", "build"]
@@ -202,6 +204,13 @@ class Ela:
     orchestrator: DeviceOrchestrator
     executor: Executor
     runner: TaskRunner
+    running: set[TaskId]
+    """The lock of ``run``: the tasks a walk is in right now (ADR 0023 §9). **ELA's since M14.3**
+    (ADR 0060), and no longer the application's alone: the room of the guided sessions walks a
+    gesture's child task under it, and the routes and the room must hold the same set."""
+    sessions: SessionRoom
+    """The room of the guided sessions (M14.3, ADR 0060): every gesture a child task, each
+    session's budget and token — what the gateway's route reads, and the cancel route stops."""
     planner: Planner
     """ELA's Planner (§13; M14.2, ADR 0058): one call of the model, through a planning task, writes
     the plan of a task. It holds the engine, the runner and the registries — no provider, no device
@@ -596,6 +605,36 @@ async def build(
                 system=platform.system(),
             )
         browsing = Browsing(sites=settings.browser.sites, origin=https_origin)
+        # The engine and the month's cap before the tools since M14.3 (ADR 0060): the room of the
+        # guided sessions needs both, and the tool of ``browser.guided`` holds the room.
+        engine = TaskEngine(
+            repository,
+            audit,
+            clock,
+            ids,
+            approvals=approvals,
+            actor=ELA_ACTOR,
+            orphan_after=settings.core.orphan_after,
+        )
+        # The month's cap (M14.1, ADR 0057): one gate, which the executor applies where a call that
+        # spends is about to leave, and which ``GET /spend`` reads — the same function, the same
+        # rows (decision I).
+        spending = SpendingGate(results, settings.spending.spending_cap_usd)
+        # The guided sessions (M14.3, ADR 0060): the lock of ``run``, ELA's now; the gateway that
+        # holds the key; the room where every gesture becomes a child task — it receives the runner
+        # and the verifiers once they exist, the one late binding of this graph —; and a session of
+        # Claude Code in a folder of ELA's beside the capture store.
+        running: set[TaskId] = set()
+        sessions = SessionRoom(
+            engine=engine,
+            repository=repository,
+            results=results,
+            capabilities=capabilities,
+            spending=spending,
+            gateway=anthropic_gateway(settings=settings.anthropic),
+            running=running,
+        )
+        agents = ClaudeAgentSession(sessions_dir_beside(settings.captures.capture_dir))
         tools = production_tools(
             root=root,
             clock=clock,
@@ -620,6 +659,9 @@ async def build(
             launcher=ProcessGroupLauncher(stopping),
             browsing=browsing,
             browser=browser,
+            gestures=sessions,
+            sessions=agents,
+            gateway=settings.api.base_url,
         )
         verifiers = production_verifiers(
             root=root,
@@ -629,6 +671,9 @@ async def build(
             programs=programs,
             browser=browser,
             browser_seconds=float(BROWSER_TIMEOUT_SECONDS),
+            gestures=sessions,
+            sessions=agents,
+            audit=audit,
         )
 
         # Which tools this machine has is not something the registry can know (ADR 0016 §4), and
@@ -638,15 +683,6 @@ async def build(
         # purpose — the reconciliation writes the row it read, so it must not be able to lose the
         # sign of life ELA writes below, once the executor that says what it is doing exists.
         await devices.ensure_local(available_tools=tuple(tool.name for tool in tools.tools()))
-        engine = TaskEngine(
-            repository,
-            audit,
-            clock,
-            ids,
-            approvals=approvals,
-            actor=ELA_ACTOR,
-            orphan_after=settings.core.orphan_after,
-        )
         orchestrator = DeviceOrchestrator(
             devices,
             tools,
@@ -677,10 +713,6 @@ async def build(
             url=settings.ntfy.ntfy_url,
             timeout=settings.ntfy.ntfy_timeout_seconds,
         )
-        # The month's cap (M14.1, ADR 0057): one gate, which the executor applies where a call that
-        # spends is about to leave, and which ``GET /spend`` reads — the same function, the same
-        # rows (decision I).
-        spending = SpendingGate(results, settings.spending.spending_cap_usd)
         executor = Executor(
             registry=capabilities,
             tools=tools,
@@ -733,6 +765,7 @@ async def build(
             assignments=assignments,
             beat=heartbeat,
         )
+        sessions.bind(runner=runner, verifiers=verifiers)
 
         # The Planner (M14.2, ADR 0058): the routing table's task types are data the root supplies,
         # like ``live_states`` below — the vocabulary the model may route a step on (ADR 0022 §6).
@@ -797,6 +830,8 @@ async def build(
         orchestrator=orchestrator,
         executor=executor,
         runner=runner,
+        running=running,
+        sessions=sessions,
         planner=planner,
         assignments=assignments,
         bell=rings,

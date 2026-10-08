@@ -44,7 +44,8 @@ from ela.api import pages
 from ela.api.problems import problem
 from ela.composition import Ela
 from ela.devices import LOCAL_USER, Rejection, fingerprint
-from ela.domain import Actor, ActorKind, DeviceId, DeviceRole, PrivacyLevel
+from ela.domain import Actor, ActorKind, DeviceId, DeviceRole, PrivacyLevel, StepId
+from ela.executive.sessions import SESSIONS_PATH
 from ela.ports import NotFoundError, WireCode
 
 __all__ = [
@@ -63,6 +64,7 @@ __all__ = [
     "NODE_ROUTES",
     "SCHEME",
     "SEPARATOR",
+    "SESSION_KEY_HEADER",
     "SURFACES",
     "Anonymous",
     "Identity",
@@ -75,6 +77,7 @@ __all__ = [
     "identity_middleware",
     "note",
     "same_origin",
+    "session_of",
     "surface_of",
     "unauthorized",
     "welcome",
@@ -86,6 +89,10 @@ AUTHORIZATION_HEADER: Final = "authorization"
 """The header a machine presents an identity in — and the one a browser cannot set (dec. C.1)."""
 SEPARATOR: Final = "."
 """Between a node's id and its secret: it is in neither a ``token_urlsafe`` nor a UUID."""
+SESSION_KEY_HEADER: Final = "x-api-key"
+"""Where a guided session presents its token (M14.3, ADR 0060): Claude Code sends
+``ANTHROPIC_API_KEY`` there, and the session's ``ANTHROPIC_API_KEY`` is its token. Read **only** on
+the paths of a session, and only here (rule 47)."""
 NODE_ROUTES: Final = frozenset(
     {
         ("GET", "/nodes/me"),
@@ -218,6 +225,12 @@ class Kind(StrEnum):
     A fifth kind for the same reason the fourth exists: the bearer is part of the role, and the
     two cookies are refused on each other's ground.
     """
+    SESSION = "session"
+    """A guided session of the browser, presenting its token on its own gateway (M14.3, ADR 0060).
+
+    A sixth kind: valid only when both ends of the socket are loopback, only on the paths of its
+    session, and only while the session is open. It calls one route, the gateway, and signs
+    nothing."""
 
 
 class Anonymous(StrEnum):
@@ -247,6 +260,10 @@ class Anonymous(StrEnum):
     because there are two prefixes. ADR 0044 says the old name is superseded; M12.5, which names
     it three times, is history and is read with that line beside it.
     """
+    CORE_ON_A_SESSION = "core_on_a_session"
+    """The Core's token presented as a session's: the Core is not a session (M14.3)."""
+    SESSION_FROM_ELSEWHERE = "session_from_elsewhere"
+    """A request on a session's path whose socket is not loopback at both ends (M14.3)."""
     NOT_FROM_ELA = "not_from_ela"
     """A form under the prefix that did not come from a page of ELA: no ``Origin``, or another
     site's (dec. C.1). The measures saw it present from Safari, from the web app and from
@@ -334,6 +351,8 @@ class Identity:
     code: str | None = None
     role: DeviceRole | None = None
     """What this identity is, for whoever needs to know which routes it may call (M12.5 dec. A)."""
+    session: StepId | None = None
+    """The session a ``SESSION`` identity is, by the step it runs for (M14.3)."""
     privacy: PrivacyLevel | None = None
     """The ceiling on what this identity may be shown — **of the request**, not of the row.
 
@@ -373,6 +392,8 @@ class Identity:
                 return Actor(kind=ActorKind.DEVICE, id=str(self.node))
             case Kind.CODE:
                 raise ValueError("a code is not an identity that signs: it is spent, once")
+            case Kind.SESSION:
+                raise ValueError("a session is not an identity that signs: it calls its gateway")
             case unhandled:  # pragma: no cover — ``mypy --strict`` proves this unreachable
                 assert_never(unhandled)
 
@@ -544,6 +565,9 @@ def identity_middleware(ela: Ela) -> Callable[[Request, Call], Awaitable[Respons
 
     async def guard(request: Request, call_next: Call) -> Response:
         route = (request.method, request.url.path)
+        session = session_of(request.url.path)
+        if session is not None:
+            return await _from_the_session(ela, token, request, session, call_next)
         ground = surface_of(request.url.path)
         if ground is not None and route in ground.code_routes:
             return await _from_the_form(ground, request, call_next)
@@ -573,6 +597,40 @@ def identity_middleware(ela: Ela) -> Callable[[Request, Call], Awaitable[Respons
         return count(request, Anonymous.UNKNOWN_CREDENTIAL)
 
     return guard
+
+
+def session_of(path: str) -> StepId | None:
+    """The session whose ground ``path`` is — ``/sessions/<step>/…`` — or ``None`` (M14.3)."""
+    head, _, rest = path.removeprefix(SESSIONS_PATH + "/").partition("/")
+    if not path.startswith(SESSIONS_PATH + "/") or not rest:
+        return None
+    try:
+        return StepId(UUID(head))
+    except ValueError:
+        return None
+
+
+async def _from_the_session(
+    ela: Ela, token: str, request: Request, session: StepId, call_next: Call
+) -> Response:
+    """A session's path: its token in ``x-api-key``, from this machine, while it is open (M14.3).
+
+    The socket first — a session never calls from elsewhere —, then the header: the Core's token
+    is refused here as a node's is on a page, and a token is compared in constant time (rule 31).
+    The header of every other route is never read on these paths, and this one on no other path.
+    """
+    if not from_this_machine(request):
+        return count(request, Anonymous.SESSION_FROM_ELSEWHERE)
+    presented = request.headers.get(SESSION_KEY_HEADER) or ""
+    if not presented:
+        return count(request, Anonymous.MISSING)
+    if secrets.compare_digest(presented.encode(), token.encode()):
+        return count(request, Anonymous.CORE_ON_A_SESSION)
+    expected = ela.sessions.token(session)
+    if expected is None or not secrets.compare_digest(presented.encode(), expected.encode()):
+        return count(request, Anonymous.UNKNOWN_CREDENTIAL)
+    request.state.identity = Identity(Kind.SESSION, session=session)
+    return await call_next(request)
 
 
 async def _from_the_form(surface: Surface, request: Request, call_next: Call) -> Response:

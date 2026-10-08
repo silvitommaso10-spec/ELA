@@ -191,6 +191,9 @@ def read_code_catalogue() -> dict[str, dict[str, Any]]:
         programs=None,  # type: ignore[arg-type]
         browser=None,  # type: ignore[arg-type]
         browser_seconds=0,
+        gestures=None,  # type: ignore[arg-type]
+        sessions=None,  # type: ignore[arg-type]
+        audit=None,  # type: ignore[arg-type]
     )
     return code_catalogue(
         production_catalogue().specs(),

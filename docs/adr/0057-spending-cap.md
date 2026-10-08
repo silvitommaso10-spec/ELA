@@ -11,6 +11,8 @@
   dice il fatto e il conto di ELA, non la causa (§10). **Rivista da ADR 0061 (M14.6)** il 2026-10-08: il caso peggiore di
   §2 impara le fasce di prezzo di Haiku 5.5 e resta sulla finestra; i modelli, i prezzi, i profili e la data del listino
   di §3 sono quelli di ADR 0061 §1, con Haiku 5.5 nel profilo economico e la lettura dalla cache di Sonnet 5.5 a 0,10 $.
+  **Riletta da ADR 0060 (M14.3)** il 2026-10-09: il cancello di §6 sta anche nel gateway di una sessione guidata, con
+  il bilancio della sessione, e chiude a zero la prenotazione di una chiamata fermata prima di agire (ADR 0060 §2).
 - **Data:** 2026-10-06
 - **Riferimenti spec:** §25, §26, §30, §32, §33, §57, §63, §64
 - **Milestone:** M14.1

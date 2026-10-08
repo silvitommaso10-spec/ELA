@@ -78,7 +78,15 @@ __all__ = [
     "validate_arguments",
     "workspace_write_note",
     "BROWSER_ACT",
+    "BROWSER_GUIDED",
     "BROWSER_READ",
+    "COST_PATTERN",
+    "GUIDED_INTRODUCED_AT",
+    "LOOKS_MAX",
+    "LOOKS_MIN",
+    "SECONDS_MAX",
+    "SECONDS_MIN",
+    "browser_guided",
     "PATH_PATTERN",
     "SITE_PATTERN",
     "UNDECLARED_SITES",
@@ -190,10 +198,11 @@ def check_capability(spec: CapabilitySpec) -> None:
             )
     properties = schema.get("properties", {})
     for name in spec.scoped_arguments:
-        declared = properties.get(name)
-        if not isinstance(declared, dict) or declared.get("type") != "string":
+        if not _is_text_or_texts(properties.get(name)):
             raise InvalidCapabilityError(
-                spec.id, f"scoped argument {name!r} is not a string property of input_schema"
+                spec.id,
+                f"scoped argument {name!r} is not a string or an array of strings property of "
+                "input_schema",
             )
     declared_empty = spec.id in DECLARES_AN_EMPTY_SCOPE and not spec.scope
     if bool(spec.scope) != bool(spec.scoped_arguments) and not declared_empty:
@@ -212,6 +221,21 @@ def check_capability(spec: CapabilitySpec) -> None:
             raise InvalidCapabilityError(
                 spec.id, f"prompt argument {name!r} is not required by input_schema"
             )
+
+
+def _is_text_or_texts(declared: object) -> bool:
+    """A scoped argument is a ``string``, or since M14.3 an ``array`` of them (ADR 0060): a guided
+    session's sites, each a target of its own (``ela.permissions.scope``)."""
+    if not isinstance(declared, dict):
+        return False
+    if declared.get("type") == "string":
+        return True
+    items = declared.get("items")
+    return (
+        declared.get("type") == "array"
+        and isinstance(items, dict)
+        and items.get("type") == "string"
+    )
 
 
 def validate_arguments(spec: CapabilitySpec, arguments: Mapping[str, object]) -> None:
@@ -278,9 +302,10 @@ FS_WRITE: Final = CapabilityId("fs.write")
 TERMINAL_RUN: Final = CapabilityId("terminal.run")
 BROWSER_READ: Final = CapabilityId("browser.read")
 BROWSER_ACT: Final = CapabilityId("browser.act")
+BROWSER_GUIDED: Final = CapabilityId("browser.guided")
 
 DECLARES_AN_EMPTY_SCOPE: Final[frozenset[CapabilityId]] = frozenset(
-    {TERMINAL_RUN, BROWSER_READ, BROWSER_ACT}
+    {TERMINAL_RUN, BROWSER_READ, BROWSER_ACT, BROWSER_GUIDED}
 )
 """The capabilities whose empty scope is **an answer** and not a doubt (M13.2 dec. 16).
 
@@ -378,6 +403,21 @@ outside the workspace, and the first ``HIGH`` ELA has ever had."""
 
 BROWSER_INTRODUCED_AT: Final = datetime(2026, 9, 29, tzinfo=UTC)
 """``created_at`` of the browser's two capabilities (M13.4, ADR 0052)."""
+
+GUIDED_INTRODUCED_AT: Final = datetime(2026, 10, 8, tzinfo=UTC)
+"""``created_at`` of ``browser.guided`` (M14.3, ADR 0060)."""
+
+LOOKS_MIN: Final = 1
+LOOKS_MAX: Final = 30
+SECONDS_MIN: Final = 30
+SECONDS_MAX: Final = 1800
+"""The limits of a guided session, **decisions and not measures** (M14.3, proposal 1): how many
+gestures the model may ask for — a look, even a denied one —, and how long the session may last,
+the wait for a yes included."""
+
+COST_PATTERN: Final = r"^(?!.*\n)[0-9]{1,6}(?:\.[0-9]{1,8})?$"
+"""The most a session may spend, in dollars: a ``Decimal`` written as a string, like the amounts of
+ADR 0057 — never a float —, with at most eight decimals, the precision of the price list."""
 
 PHASE_10_INTRODUCED_AT: Final = datetime(2026, 9, 8, tzinfo=UTC)
 """``created_at`` of what phase 10 adds. A date of its own, and not :data:`V01_INTRODUCED_AT`,
@@ -1005,6 +1045,55 @@ def browser_act(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
     )
 
 
+def browser_guided(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
+    """``browser.guided``, **MEDIUM**: a model guides ELA's browser from a sentence, one gesture
+    at a time, on the sites of the session (§19; M14.3, ADR 0060).
+
+    **MEDIUM, with an authorization at every use**: a yes covers **one session** (ADR 0046), and it
+    names the sentence, the sites, the model, the most the session may spend, the looks, the
+    duration and that the text of the pages goes to the model's provider. Not idempotent and not
+    relocatable (rule 60): it spends. **It lowers no level**: every gesture of the session is a task
+    of its own with its own decision of the Guardian — a ``browser.read`` inside the sites is
+    ``LOW`` and does not ask, a ``browser.act`` is ``HIGH`` and asks, a site outside the session is
+    denied with ``Rule.SCOPE``.
+
+    ``sites`` is the scope and the boundary of every gesture: one or more host names
+    (:data:`SITE_PATTERN`), each a target of its own, each inside ``ELA_BROWSER_SITES``.
+    """
+    return CapabilitySpec(
+        id=BROWSER_GUIDED,
+        created_at=GUIDED_INTRODUCED_AT,
+        description=(
+            "A model guides ELA's own empty browser from a sentence, on sites you declared, one "
+            "gesture at a time: each is decided by the Guardian, and the text of the pages goes to "
+            "the model's provider."
+        ),
+        risk=RiskLevel.MEDIUM,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string", "minLength": 1},
+                "sites": {
+                    "type": "array",
+                    "items": {"type": "string", "pattern": SITE_PATTERN},
+                    "minItems": 1,
+                    "uniqueItems": True,
+                },
+                "max_cost_usd": {"type": "string", "pattern": COST_PATTERN},
+                "looks": {"type": "integer", "minimum": LOOKS_MIN, "maximum": LOOKS_MAX},
+                "seconds": {"type": "integer", "minimum": SECONDS_MIN, "maximum": SECONDS_MAX},
+                "task_type": {"type": "string", "minLength": 1},
+            },
+            "required": ["goal", "sites", "max_cost_usd", "looks", "seconds"],
+            "additionalProperties": False,
+        },
+        scope=tuple(sites),
+        scoped_arguments=("sites",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
 def production_catalogue(
     *,
     notes_scope: str = DEFAULT_NOTES_SCOPE,
@@ -1035,5 +1124,6 @@ def production_catalogue(
             terminal_run(programs),
             browser_read(sites),
             browser_act(sites),
+            browser_guided(sites),
         )
     )

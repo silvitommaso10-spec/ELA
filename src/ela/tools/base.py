@@ -145,7 +145,7 @@ class Tool(ABC):
         point leaves here as it is, because the tool did not act (M6.3c)."""
         started = self._clock.now()
         check_decision(decision, self._capability_id, started)
-        outcome = await self._run(arguments, stop)
+        outcome = await self._decided(decision, arguments, stop)
         finished = self._clock.now()
         error = (
             None
@@ -194,6 +194,17 @@ class Tool(ABC):
         of those modules to override this — the gate cannot be forgotten by one of them.
         """
         return None
+
+    async def _decided(
+        self, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+    ) -> Outcome:
+        """The hook with the decision (M14.3, ADR 0060): the task and the step the call is for.
+
+        Every tool acts on its arguments alone, and this hands them to :meth:`_run`. The one that
+        needs more is ``browser.guided``, whose gestures are child tasks of the task of its step:
+        it reads the two ids from the decision it was handed, the one source of them a tool has —
+        never an argument, which a plan writes."""
+        return await self._run(arguments, stop)
 
     @abstractmethod
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:

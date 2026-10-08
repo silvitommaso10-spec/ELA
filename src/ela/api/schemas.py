@@ -367,6 +367,10 @@ class StepOut(BaseModel):
     expected_result: str
     success_conditions: tuple[str, ...]
     requires_authorization: bool
+    within: tuple[str, ...] | None = None
+    """The step's narrowing of its capability's scope (M14.3, ADR 0060): the sites of the guided
+    session, on the plan of one of its gestures; ``None`` for every other step. Read here, written
+    only by the room of the sessions — the route of a plan written by hand does not carry it."""
 
     @classmethod
     def of(cls, step: TaskStep, state: StepState) -> StepOut:
@@ -382,20 +386,25 @@ class StepOut(BaseModel):
             expected_result=step.expected_result,
             success_conditions=step.success_conditions,
             requires_authorization=step.requires_authorization,
+            within=step.within,
         )
 
 
 class PlanAuthorOut(BaseModel):
-    """Who wrote the plan (M14.2, ADR 0058): ``HAND``, ``PLANNER`` or ``MODEL``, and for the model
-    the result the plan came from and the model that wrote it."""
+    """Who wrote the plan (M14.2, ADR 0058): ``HAND``, ``PLANNER``, ``MODEL`` or ``SESSION``, for
+    the model the result the plan came from and the model that wrote it, and for a guided session
+    (M14.3, ADR 0060) the step of the session and its model."""
 
     by: PlanAuthorKind
     result_id: UUID | None = None
+    session: UUID | None = None
     model: str | None = None
 
     @classmethod
     def of(cls, author: PlanAuthor) -> PlanAuthorOut:
-        return cls(by=author.by, result_id=author.result_id, model=author.model)
+        return cls(
+            by=author.by, result_id=author.result_id, session=author.session, model=author.model
+        )
 
 
 class TaskDetail(TaskOut):
@@ -569,6 +578,21 @@ class Asked(BaseModel):
     left: str = ""
     """What the month had left under the cap **when the question was asked** (decision H): the
     gate reads the month again after the yes. Empty for a call that spends nothing."""
+    phrase: str = ""
+    """The sentence a guided session of the browser starts from (M14.3, ADR 0060; decision 4).
+    Empty when the question is not about a session."""
+    sites: tuple[str, ...] | None = None
+    """The sites of a guided session: its scope, and the boundary of every gesture. ``None`` when
+    the question is not about a session."""
+    model: str = ""
+    """The model the router chose for the session — the one that runs, or the step fails."""
+    max_cost: str = ""
+    """The most the session may spend, with its currency: what the yes reserves."""
+    looks: int | None = None
+    """How many gestures the session's model may ask for, a denied one included."""
+    sends: str = ""
+    """What leaves the machine, in the tool's sentence: the text of the pages goes to the model's
+    provider (§57). Empty when the question is not about a session."""
 
 
 class ApprovalOut(BaseModel):
@@ -612,6 +636,12 @@ class ApprovalOut(BaseModel):
     expect: str
     worst_case: str
     left: str
+    phrase: str
+    sites: tuple[str, ...] | None
+    model: str
+    max_cost: str
+    looks: int | None
+    sends: str
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:

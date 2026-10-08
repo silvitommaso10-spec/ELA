@@ -46,6 +46,7 @@ from pydantic import (
 __all__ = [
     "Actor",
     "ActorKind",
+    "Admission",
     "Approval",
     "ApprovalId",
     "ApprovalStatus",
@@ -128,6 +129,7 @@ __all__ = [
     "RawSpeech",
     "RawTextLine",
     "RawTranscript",
+    "Reservation",
     "RiskLevel",
     "SOURCE_FIELDS",
     "SensorCause",
@@ -707,16 +709,19 @@ class DeviceRole(StrEnum):
 
 
 class PlanAuthorKind(StrEnum):
-    """Who wrote a plan (M14.2, ADR 0058; decision 5 of the review): three authors, not two.
+    """Who wrote a plan (M14.2, ADR 0058; decision 5 of the review): four authors since M14.3.
 
     ``HAND`` is a person, through the route a plan written by hand is sent to. ``PLANNER`` is the
     Planner's own code: the plan of one ``model.complete`` step it gives the task that asks the
     model. ``MODEL`` is the model, through the Planner — the plan that came out of that call.
+    ``SESSION`` is the model of a guided session of the browser (M14.3, ADR 0060): the plan of one
+    gesture it asked for, which ELA turned into a child task of the session.
     """
 
     HAND = "HAND"
     PLANNER = "PLANNER"
     MODEL = "MODEL"
+    SESSION = "SESSION"
 
 
 class PrivacyLevel(StrEnum):
@@ -808,6 +813,45 @@ class WorstCase(_DomainModel):
     model: str
     input_tokens: Annotated[int, Field(ge=0)]
     output_tokens: Annotated[int, Field(ge=0)]
+    per_call: bool = False
+    """``True`` for a session of many calls (M14.3, ADR 0060): ``amount`` is the session's, the most
+    it may spend, and the tokens are **one call's** — what each call of the session is held to."""
+
+
+class Reservation(_DomainModel):
+    """What the cap gives a ``STARTED`` record it reserved (M14.3, ADR 0060): the amount held for
+    the step, and the model and the tokens of one call under it.
+
+    **Minted by** ``ela.executive.spending`` **and by nobody else** (architecture rule 65): whoever
+    holds one holds a reservation the month admitted, and a method that receives one — the launch of
+    a session — can only be called with money already set aside.
+    """
+
+    task_id: TaskId
+    step_id: StepId
+    started_id: ExecutionId
+    amount: Annotated[Decimal, Field(ge=0)]
+    currency: str
+    model: str
+    input_tokens: Annotated[int, Field(ge=0)]
+    output_tokens: Annotated[int, Field(ge=0)]
+
+
+class Admission(_DomainModel):
+    """What the budget of a session gives one call it admitted (M14.3, ADR 0060): the call, its
+    model and ``max_tokens``, its worst case, and the bytes of its body.
+
+    **Minted by** ``ela.executive.spending`` **and by nobody else** (architecture rule 65): the
+    gateway forwards only a call that carries one, so a call of the session cannot leave the
+    machine without having been weighed against the reservation.
+    """
+
+    session: StepId
+    call: Annotated[int, Field(ge=1)]
+    model: str
+    max_tokens: Annotated[int, Field(ge=1)]
+    worst: Annotated[Decimal, Field(ge=0)]
+    request_bytes: Annotated[int, Field(ge=0)]
 
 
 class Ledger(_DomainModel):
@@ -922,6 +966,13 @@ class TaskStep(_DomainModel):
     expected_result: str
     success_conditions: tuple[str, ...] = ()
     requires_authorization: bool
+    within: tuple[str, ...] | None = None
+    """A narrowing of the capability's scope for this step, or ``None`` for none (M14.3, ADR 0060).
+
+    It **can only narrow**: the Guardian denies with ``Rule.SCOPE`` a target the capability's scope
+    does not cover **or** this does not — the property of ADR 0026 §7, that a step may tighten and
+    never loosen, extended to the scope. The plan of a gesture of a guided session carries the
+    session's sites here; the route of a plan written by hand does not carry it."""
 
 
 class PlanAuthor(_DomainModel):
@@ -933,26 +984,46 @@ class PlanAuthor(_DomainModel):
     value that meant «the code» or «the model» according to whether another field were there is a
     reading that goes wrong — and what ``browser.read`` stays ``LOW`` on is a fact about ``MODEL``
     (ADR 0058).
+
+    ``session`` and ``model`` say **which session** wrote a plan of ``SESSION`` (M14.3, ADR 0060):
+    the step of the guided session whose model asked for the gesture, and that model. Required for
+    ``SESSION`` and refused for the others, in the same form: the ``STARTED`` record of the session
+    does not reach its tool, so the step names the session instead of a result.
     """
 
     by: PlanAuthorKind
     result_id: ExecutionId | None = None
+    session: StepId | None = None
     model: str | None = None
 
     @model_validator(mode="after")
     def _only_the_model_names_a_call(self) -> PlanAuthor:
-        named = self.result_id is not None or self.model is not None
-        if self.by is not PlanAuthorKind.MODEL:
-            if named:
-                raise ValueError(
-                    f"only a plan the model wrote names a result and a model, and this one was "
-                    f"written by {self.by.value} (ADR 0058)"
-                )
-            return self
-        if self.result_id is None or not self.model:
+        by_model = self.by is PlanAuthorKind.MODEL
+        by_session = self.by is PlanAuthorKind.SESSION
+        if self.result_id is not None and not by_model:
+            raise ValueError(
+                f"only a plan the model wrote names a result, and this one was written by "
+                f"{self.by.value} (ADR 0058)"
+            )
+        if self.session is not None and not by_session:
+            raise ValueError(
+                f"only a plan a guided session wrote names a session, and this one was written by "
+                f"{self.by.value} (ADR 0060)"
+            )
+        if self.model is not None and not (by_model or by_session):
+            raise ValueError(
+                f"only a plan a model wrote names a model, and this one was written by "
+                f"{self.by.value} (ADR 0058)"
+            )
+        if by_model and (self.result_id is None or not self.model):
             raise ValueError(
                 "a plan the model wrote names the result it came from and the model that wrote "
                 "it (ADR 0058)"
+            )
+        if by_session and (self.session is None or not self.model):
+            raise ValueError(
+                "a plan a guided session wrote names the step of the session and its model "
+                "(ADR 0060)"
             )
         return self
 

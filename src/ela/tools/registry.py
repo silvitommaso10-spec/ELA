@@ -21,10 +21,13 @@ from typing import Final
 
 from ela.domain import CapabilityId
 from ela.ports import (
+    AgentSession,
     AlreadyExistsError,
+    AuditLog,
     Browser,
     Clock,
     CommandLauncher,
+    Gestures,
     IdGenerator,
     ListeningPort,
     ModelRouterPort,
@@ -49,6 +52,7 @@ from ela.tools.errors import (
     VerifierNotFound,
 )
 from ela.tools.fs import FS_READ, FS_WRITE, FsReadTool, FsWriteTool
+from ela.tools.guided import BrowserGuidedTool, BrowserGuidedVerifier
 from ela.tools.listen import ListenTool
 from ela.tools.model import ModelCompleteTool
 from ela.tools.notes import WriteNoteTool
@@ -292,6 +296,9 @@ def production_tools(
     launcher: CommandLauncher,
     browsing: Browsing,
     browser: Browser,
+    gestures: Gestures,
+    sessions: AgentSession,
+    gateway: str,
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -322,6 +329,10 @@ def production_tools(
             # own, empty for every page. Not in :func:`node_tools`: it does not travel (form A).
             BrowserReadTool(browsing, browser, clock, ids),
             BrowserActTool(browsing, browser, clock, ids),
+            # The browser guided by a model (M14.3, ADR 0060): the room of the sessions, where
+            # every gesture becomes a child task, and a session of Claude Code with no tools of its
+            # own. The same router and providers as ``model.complete``: one route for the model.
+            BrowserGuidedTool(gestures, sessions, router, providers, clock, ids, gateway=gateway),
         )
     )
 
@@ -413,6 +424,9 @@ def production_verifiers(
     programs: Programs,
     browser: Browser,
     browser_seconds: float,
+    gestures: Gestures,
+    sessions: AgentSession,
+    audit: AuditLog,
 ) -> VerifierRegistry:
     """The verifiers of :func:`production_tools`, one per capability.
 
@@ -439,5 +453,7 @@ def production_verifiers(
             # never at the tool's report of it (M13.4 form I).
             BrowserReadVerifier(browser, browser_seconds),
             BrowserActVerifier(browser, browser_seconds),
+            # What a guided session left behind: its processes, its calls, its gestures' tasks.
+            BrowserGuidedVerifier(gestures, sessions, audit),
         )
     )

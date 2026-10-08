@@ -11,6 +11,7 @@ from anthropic import AsyncAnthropic
 
 from ela.ports import Clock, IdGenerator
 from ela.providers.anthropic.errors import Failure, UnsupportedRequestError, classify
+from ela.providers.anthropic.gateway import AnthropicGateway
 from ela.providers.anthropic.models import DEFAULT_MODEL, MODELS, PROFILES, Model, model_for_hint
 from ela.providers.anthropic.payload import ALLOWED_PARAMETERS, build_payload
 from ela.providers.anthropic.pricing import CURRENCY, PRICES, Price, estimate_cost
@@ -32,12 +33,14 @@ __all__ = [
     "PRICES",
     "PROFILES",
     "PROVIDER_NAME",
+    "AnthropicGateway",
     "AnthropicProvider",
     "AnthropicSettings",
     "Failure",
     "Model",
     "Price",
     "UnsupportedRequestError",
+    "anthropic_gateway",
     "anthropic_provider",
     "build_payload",
     "classify",
@@ -66,3 +69,14 @@ def anthropic_provider(
         )
     )
     return AnthropicProvider(client, clock=clock, ids=ids, settings=settings)
+
+
+def anthropic_gateway(*, settings: AnthropicSettings | None = None) -> AnthropicGateway:
+    """Build the gateway of the guided sessions (M14.3, ADR 0060) with the key of the ``.env`` — the
+    same key the provider holds, read here and nowhere else of ELA's."""
+    settings = AnthropicSettings() if settings is None else settings
+    key = settings.anthropic_api_key
+    return AnthropicGateway(
+        None if key is None else key.get_secret_value(),
+        timeout=settings.anthropic_timeout_seconds,
+    )

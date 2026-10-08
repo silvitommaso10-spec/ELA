@@ -26,10 +26,21 @@ __all__ = ["scope_covers", "targets_of", "within_scope"]
 def targets_of(spec: CapabilitySpec, arguments: Mapping[str, object]) -> tuple[object, ...]:
     """The values of the arguments ``spec.scoped_arguments`` names, in that order.
 
-    A missing argument yields ``None``: the tuple always has one item per scoped argument, so a
-    scope that constrains an argument is applied even when the caller left it out.
+    A missing argument yields ``None``: the tuple has an item for every scoped argument that is not
+    a list, so a scope that constrains an argument is applied even when the caller left it out.
+
+    **An argument that is a list gives one target per element** (M14.3, ADR 0060): the sites of a
+    guided session are each a target, compared on its own. An empty list gives none — and a
+    non-empty scope with no target is a doubt (:func:`scope_covers`), so it is denied.
     """
-    return tuple(arguments.get(name) for name in spec.scoped_arguments)
+    targets: list[object] = []
+    for name in spec.scoped_arguments:
+        value = arguments.get(name)
+        if isinstance(value, list | tuple):
+            targets.extend(value)
+        else:
+            targets.append(value)
+    return tuple(targets)
 
 
 def within_scope(scope: Sequence[str], target: object) -> bool:

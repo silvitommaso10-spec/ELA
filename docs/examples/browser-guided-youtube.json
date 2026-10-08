@@ -1,0 +1,42 @@
+{
+  "_nota": [
+    "La frase della registrazione, per la prova a mano di M14.3 (GETTING_STARTED §26, passo 2):",
+    "un modello guida il browser di ELA su www.youtube.com, un gesto alla volta. Ogni gesto è un",
+    "task figlio, deciso dal Guardian: una lettura dentro i siti della sessione non chiede.",
+    "`sites` è il confine della sessione, e può solo stringere ELA_BROWSER_SITES: un sito che non",
+    "c'è lì è negato a ogni gesto. Il consenso dei cookie di YouTube vive su consent.youtube.com,",
+    "fuori dalla sessione: la ricerca si legge senza click, la pagina di un canale no (M13.9).",
+    "`max_cost_usd` è il più che la sessione può spendere: 0,60 $, un dollaro scritto come testo,",
+    "perché un numero con la virgola mobile non è una cifra di denaro. Su Haiku 5.5 il caso peggiore",
+    "di una chiamata è 0,516384 $, e un tetto sotto quello non lascerebbe partire niente: la sessione",
+    "sarebbe rifiutata prima della domanda, con `guided.cap_below_one_call`.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "guidare il browser su YouTube",
+  "steps": [
+    {
+      "id": "c0de1a26-0000-4b00-8a00-000000000001",
+      "goal": "cercare il canale sulla pagina dei risultati",
+      "required_capabilities": [
+        "browser.guided"
+      ],
+      "arguments": {
+        "goal": "Apri YouTube e cerca il canale di MrBeast.",
+        "sites": [
+          "www.youtube.com"
+        ],
+        "max_cost_usd": "0.60",
+        "looks": 8,
+        "seconds": 600
+      },
+      "risk": "MEDIUM",
+      "expected_result": "la risposta del modello nomina il canale, con l'indirizzo che lo prova",
+      "success_conditions": [
+        "guided.closed",
+        "guided.gestures_audited",
+        "guided.reservations_closed"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

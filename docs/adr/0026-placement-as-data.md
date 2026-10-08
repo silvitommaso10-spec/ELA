@@ -6,6 +6,7 @@
   scadenza e la forma A tornerà in discussione. Una cosa è emersa implementando ed è argomentata
   dove vale: il ramo di **ripresa** di `Runner._node` non passava dall'orchestrator affatto (§4),
   e chiuderlo cambia un comportamento che un test documentava (§4, «Cosa cambia per chi guarda»).
+  **Riletta da ADR 0060 (M14.3)** il 2026-10-09: uno step può stringere anche lo scope, con `within` (§7).
 - **Contesto:** M9.1, la prima metà della milestone di hardening: le difese.
 - **Riferimenti spec:** §16, §17, §27, §28, §29, §33, §51, §52, §57, §58
 - **Estende:** ADR 0002 (le regole di architettura: due nuove), ADR 0013 e ADR 0018 §4 (la firma

@@ -5,6 +5,8 @@
   l'implementazione di M14.2 e le decisioni della review della SPEC dello stesso giorno (A–M della sessione, 1–17 della
   review, in `docs/milestones/M14.2.md`). Un primo giro, a `28c4c88`, non era passato per due difetti dello script, non
   di ELA (`docs/milestones/M14.2.md`, «Il primo giro»).
+  **Riletta da ADR 0060 (M14.3)** il 2026-10-09: i fatti di `browser.read` di §9 si riscrivono per il modello che legge
+  la pagina, e la regola 62 ha una terza porta, la stanza delle sessioni guidate (ADR 0060 §4, §9).
 - **Data:** 2026-10-07
 - **Riferimenti spec:** §12, §13, §14, §25, §27, §33, §44, §57, §63
 - **Milestone:** M14.2

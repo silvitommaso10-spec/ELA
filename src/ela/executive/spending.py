@@ -32,23 +32,49 @@ the line. A "yes" does not raise it: only the person who wrote it does, by chang
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Final
 
-from ela.domain import ErrorMetadata, ExecutionResult, ExecutionStatus, Ledger, WorstCase
-from ela.ports import PROVIDER_SPEND_LIMIT, STARTED_ID, ExecutionResultStore
+from ela.domain import (
+    Admission,
+    ErrorMetadata,
+    ExecutionResult,
+    ExecutionStatus,
+    Ledger,
+    ProviderUsage,
+    Reservation,
+    StepId,
+    TaskId,
+    WorstCase,
+)
+from ela.ports import (
+    GUIDED_CACHE,
+    GUIDED_COST,
+    GUIDED_MAX_TOKENS,
+    GUIDED_MODEL_CHANGED,
+    GUIDED_TOOLS_CHANGED,
+    GUIDED_UNCHECKED,
+    PROVIDER_SPEND_LIMIT,
+    STARTED_ID,
+    CallRequest,
+    ExecutionResultStore,
+)
 
 __all__ = [
     "CAP_VARIABLE",
     "CURRENCY",
+    "BudgetCode",
+    "BudgetRefusal",
     "Cleared",
     "Foresight",
     "Month",
     "Refusal",
     "ReservationError",
+    "SessionBudget",
+    "SettledCall",
     "SpendingCode",
     "SpendingGate",
     "crossed",
@@ -57,6 +83,7 @@ __all__ = [
     "judge",
     "ledger",
     "month_of",
+    "reservation_of",
     "worst_said",
 ]
 
@@ -155,9 +182,10 @@ def ledger(rows: Iterable[ExecutionResult]) -> Ledger:
 def worst_said(worst: WorstCase) -> str:
     """A worst case in one line, as a question shows it: the amount, the model, the tokens."""
     amount = "no price" if worst.amount is None else f"{dollars(worst.amount)} {CURRENCY}"
+    each = " per call" if worst.per_call else ""
     return (
         f"{amount}, {worst.model}, up to {worst.input_tokens} tokens in and "
-        f"{worst.output_tokens} out"
+        f"{worst.output_tokens} out{each}"
     )
 
 
@@ -336,3 +364,237 @@ class SpendingGate:
         if await self._results.reserve(reserved, month.since, month.until, admits):
             return None
         return crossed(judged, month, seen[-1])
+
+    async def reservation(self, task_id: TaskId, step_id: StepId) -> Reservation | None:
+        """What this gate reserved for the step, as a :class:`~ela.domain.Reservation`, or
+        ``None`` if it reserved nothing (M14.3, ADR 0060): read from the ``STARTED`` record, which
+        is the reservation (ADR 0057 §4), and never from what the caller says."""
+        for row in await self._results.for_step(task_id, step_id):
+            reserved = reservation_of(row)
+            if reserved is not None:
+                return reserved
+        return None
+
+
+def reservation_of(record: ExecutionResult) -> Reservation | None:
+    """The :class:`~ela.domain.Reservation` a ``STARTED`` record holds, or ``None`` for any other
+    row and for a record that reserved nothing. **The one place one is minted** (rule 65)."""
+    worst = record.worst_case
+    if (
+        record.status is not ExecutionStatus.STARTED
+        or worst is None
+        or worst.amount is None
+        or record.task_id is None
+        or record.step_id is None
+    ):
+        return None
+    return Reservation(
+        task_id=record.task_id,
+        step_id=record.step_id,
+        started_id=record.id,
+        amount=worst.amount,
+        currency=worst.currency or CURRENCY,
+        model=worst.model,
+        input_tokens=worst.input_tokens,
+        output_tokens=worst.output_tokens,
+    )
+
+
+# ----------------------------------------------------------------------------------------
+# The budget of a guided session (M14.3, ADR 0060)
+# ----------------------------------------------------------------------------------------
+
+
+class BudgetCode(StrEnum):
+    """Why a call of a guided session was not let out — each refused **before the network**, and
+    each the code of the step ELA fails when it stops the session for it. The values are the
+    shared vocabulary of ``ela.ports``, where the tool of the session declares them."""
+
+    UNCHECKED = GUIDED_UNCHECKED
+    TOOLS = GUIDED_TOOLS_CHANGED
+    MODEL = GUIDED_MODEL_CHANGED
+    MAX_TOKENS = GUIDED_MAX_TOKENS
+    CACHE = GUIDED_CACHE
+    COST = GUIDED_COST
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetRefusal:
+    """A call of the session not let out: the code, and a sentence in ELA's words — never a word
+    of the request, which is the user's content (§57)."""
+
+    code: BudgetCode
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class SettledCall:
+    """One call of the session as it closed: numbers only. ``cost`` is ``None`` when the outcome
+    is unknown — counted at its worst case (ADR 0057 §10)."""
+
+    call: int
+    model: str
+    input_tokens: int
+    output_tokens: int
+    request_bytes: int
+    cost: Decimal | None
+    worst: Decimal
+
+    @property
+    def counted(self) -> Decimal:
+        return self.worst if self.cost is None else self.cost
+
+
+@dataclass(slots=True)
+class SessionBudget:
+    """The reservation of one guided session, spent call by call (M14.3, ADR 0060; decision 5).
+
+    A call goes out only if ``spent + in flight + its worst case <= the reservation``, with the
+    worst case of ADR 0057 §2 **on the model and the** ``max_tokens`` **of the request itself**,
+    which whoever holds the price list hands to :meth:`admit`. In memory: the reservation is
+    already in the month's ledger, and a crash leaves the ``STARTED`` record open at its worst
+    case, which is ADR 0057 §4. The checks are pure, and their order is the order of what is wrong
+    — the start not checked, the tools, the model, the budget of output, the cache, the money.
+    """
+
+    reservation: Reservation
+    tools: frozenset[str]
+    checked: bool = False
+    calls: int = 0
+    in_flight: dict[int, Admission] = field(default_factory=dict)
+    settled: list[SettledCall] = field(default_factory=list)
+
+    @property
+    def spent(self) -> Decimal:
+        """What the closed calls count: their cost, or their worst case when it is unknown."""
+        return sum((call.counted for call in self.settled), Decimal(0))
+
+    @property
+    def flying(self) -> Decimal:
+        return sum((admission.worst for admission in self.in_flight.values()), Decimal(0))
+
+    def start(self, tools: Iterable[str]) -> BudgetRefusal | None:
+        """The tools the session's start lists, checked before any call (decision 22)."""
+        refused = self._tools(tools, "the start of the session")
+        if refused is None:
+            self.checked = True
+        return refused
+
+    def _tools(self, tools: Iterable[str] | None, where: str) -> BudgetRefusal | None:
+        offered = None if tools is None else list(tools)
+        if offered is None or len(offered) != len(set(offered)) or set(offered) != self.tools:
+            said = "none" if not offered else f"{len(offered)}"
+            return BudgetRefusal(
+                BudgetCode.TOOLS,
+                f"{where} offers {said} tools, not exactly the session's {sorted(self.tools)}",
+            )
+        return None
+
+    def admit(self, request: CallRequest, worst: Decimal | None) -> Admission | BudgetRefusal:
+        """An :class:`~ela.domain.Admission` for this call, or why it does not go out. ``worst`` is
+        the worst case of one call to the reservation's model with the request's ``max_tokens`` —
+        ``None`` for a model with no price."""
+        if not self.checked:
+            return BudgetRefusal(
+                BudgetCode.UNCHECKED, "a call before the tools of the start were checked"
+            )
+        refused = self._tools(request.tools, "the call")
+        if refused is not None:
+            return refused
+        if request.model != self.reservation.model:
+            return BudgetRefusal(
+                BudgetCode.MODEL,
+                f"the call asks for another model than {self.reservation.model}, the one the "
+                "router chose and the question named",
+            )
+        max_tokens = request.max_tokens
+        if max_tokens is None or not 1 <= max_tokens <= self.reservation.output_tokens:
+            return BudgetRefusal(
+                BudgetCode.MAX_TOKENS,
+                f"the call's max_tokens is not between 1 and the "
+                f"{self.reservation.output_tokens} the session declared",
+            )
+        if request.cached:
+            return BudgetRefusal(
+                BudgetCode.CACHE,
+                "the call asks for the cache, whose writes the worst case does not price",
+            )
+        if worst is None:
+            return BudgetRefusal(
+                BudgetCode.COST, f"{self.reservation.model} has no price in ELA's table"
+            )
+        if self.spent + self.flying + worst > self.reservation.amount:
+            return BudgetRefusal(
+                BudgetCode.COST,
+                f"the call does not fit: spent {dollars(self.spent)} + in flight "
+                f"{dollars(self.flying)} + its worst case {dollars(worst)} > the session's "
+                f"{dollars(self.reservation.amount)} {CURRENCY}",
+            )
+        self.calls += 1
+        admission = Admission(
+            session=self.reservation.step_id,
+            call=self.calls,
+            model=self.reservation.model,
+            max_tokens=max_tokens,
+            worst=worst,
+            request_bytes=request.request_bytes,
+        )
+        self.in_flight[admission.call] = admission
+        return admission
+
+    def settle(self, admission: Admission, usage: ProviderUsage | None) -> None:
+        """Close one call with what it consumed. ``None``, or a usage with no cost after the
+        network, is an unknown outcome: the worst case stays. A call settled twice, or after the
+        session closed, changes nothing."""
+        if self.in_flight.pop(admission.call, None) is None:
+            return
+        if usage is not None and not usage.sent:
+            cost: Decimal | None = Decimal(0)
+        else:
+            cost = None if usage is None else usage.cost
+        self.settled.append(
+            SettledCall(
+                call=admission.call,
+                model=admission.model,
+                input_tokens=0 if usage is None else usage.input_tokens,
+                output_tokens=0 if usage is None else usage.output_tokens,
+                request_bytes=admission.request_bytes,
+                cost=cost,
+                worst=admission.worst,
+            )
+        )
+
+    def close(self) -> None:
+        """The session is over: a call still in flight has no outcome, and counts its worst
+        case."""
+        for admission in list(self.in_flight.values()):
+            self.settle(admission, None)
+
+    def usage(self) -> ProviderUsage:
+        """The usage of the whole session, which closes its reservation: the sum of the calls,
+        those with an unknown outcome at their worst case (decision 11 (a)); nothing sent when no
+        call went out."""
+        calls = self.settled
+        return ProviderUsage(
+            input_tokens=sum(call.input_tokens for call in calls),
+            output_tokens=sum(call.output_tokens for call in calls),
+            cost=self.spent,
+            currency=CURRENCY,
+            sent=bool(calls),
+            request_bytes=sum(call.request_bytes for call in calls) if calls else None,
+        )
+
+    @property
+    def unknown(self) -> int:
+        return sum(1 for call in self.settled if call.cost is None)
+
+    @property
+    def input_minus_bytes_max(self) -> int | None:
+        """The most, over the calls, of input tokens minus the bytes of the body (decision 26): the
+        number ADR 0057 §2's month of usage reads. ``None`` with no call."""
+        known = [
+            call.input_tokens - call.request_bytes
+            for call in self.settled
+            if call.cost is not None and call.input_tokens
+        ]
+        return max(known) if known else None

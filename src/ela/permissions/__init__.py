@@ -11,6 +11,7 @@ from ela.permissions.authorizations import (
 )
 from ela.permissions.capabilities import (
     BROWSER_ACT,
+    BROWSER_GUIDED,
     BROWSER_INTRODUCED_AT,
     BROWSER_READ,
     CORE_ECHO,
@@ -41,6 +42,7 @@ from ela.permissions.capabilities import (
     WORKSPACE_WRITE_NOTE,
     CapabilityRegistry,
     browser_act,
+    browser_guided,
     browser_read,
     catalogue_v01,
     check_capability,
@@ -80,6 +82,7 @@ from ela.permissions.scope import scope_covers, targets_of, within_scope
 __all__ = [
     "ASKING_RULES",
     "BROWSER_ACT",
+    "BROWSER_GUIDED",
     "BROWSER_INTRODUCED_AT",
     "BROWSER_READ",
     "EXPECT_MAX_LENGTH",
@@ -91,6 +94,7 @@ __all__ = [
     "UNDECLARED_SITES",
     "VALUE_MAX_LENGTH",
     "browser_act",
+    "browser_guided",
     "browser_read",
     "asks_at_every_use",
     "CHECKS",
