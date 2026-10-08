@@ -3,6 +3,7 @@
 - **Stato:** **Accettata il 2026-10-06**, quando la prova a mano di `docs/GETTING_STARTED.md` §22 è passata sul Mac
   a `b589b68`, con `scripts/prova_m13_1c_m13_1d_m9_6.py` (§8). Recepisce la SPEC di M13.1c
   (`docs/milestones/M13.1c.md`), decisa dal revisore il 2026-10-02 con le domande 1–5 e la 7 di M13.1d.
+  **ADR 0059 §1 e §9** (M13.1e): «Una fonte sola, `TaskRunner._reason`» si legge con quella accanto — la lettura sola della ragione è `ela.tasks.ending`, composta da `TaskEngine.ending`, che il runner chiama come le rotte; e la domanda aperta del nome di chi ha detto no è chiusa da ADR 0059 §3 e §4.
 - **Data:** 2026-10-02
 - **Riferimenti spec:** §14, §32, §33, §62, §63, §64
 - **Milestone:** M13.1c

@@ -21,7 +21,7 @@ from ela.cli.errors import CONFIGURATION, fail, handled
 from ela.cli.output import Json, emit, fields, table
 from ela.domain import Halt, listed, visible
 
-__all__ = ["FINISHED_LIMIT", "RUN_LABELS", "app"]
+__all__ = ["ANSWERED_LABEL", "FINISHED_LIMIT", "RUN_LABELS", "app"]
 
 app = typer.Typer(no_args_is_help=True, help="Create, read, plan, run and stop tasks.")
 
@@ -57,7 +57,11 @@ ROLE_WORDS: Final = {"CONSOLE": "console", "COMPANION": "phone"}
 """What the command line calls the role of who said no beside its name (M13.1e, ADR 0059). The
 Core's token has a name that says it already, and is printed alone."""
 
-WHY_HEADERS: Final = ("id", "reason", "answered by")
+ANSWERED_LABEL: Final = "answered by"
+"""The row of who said no (M13.1e, ADR 0059): after ``reason``, for a no alone — in ``run`` it is
+not one of :data:`RUN_LABELS`, so the guide's blocks of every other outcome stay what they are."""
+
+WHY_HEADERS: Final = ("id", "reason", ANSWERED_LABEL)
 """The table ``why`` under the lists: a row per task with a reason (M13.1e, decision 3 (a''))."""
 
 
@@ -87,7 +91,7 @@ def answered_words(payload: dict[str, Any]) -> str | None:
 def _answered_pairs(payload: dict[str, Any]) -> list[tuple[str, Any]]:
     """The row ``answered by``, for a no and nothing else."""
     said = answered_words(payload)
-    return [] if said is None else [("answered by", said)]
+    return [] if said is None else [(ANSWERED_LABEL, said)]
 
 
 def _why(tasks: list[dict[str, Any]]) -> str:

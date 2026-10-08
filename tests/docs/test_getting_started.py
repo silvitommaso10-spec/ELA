@@ -21,7 +21,7 @@ import pytest
 from ela.api.schemas import ApprovalOut
 from ela.cli.output import EMPTY, GAP, fields
 from ela.cli.system import _rows
-from ela.cli.tasks import RUN_LABELS
+from ela.cli.tasks import ANSWERED_LABEL, RUN_LABELS
 from ela.domain import RiskLevel
 from ela.executive.runner import OUTCOMES
 from ela.permissions import catalogue_v01
@@ -263,14 +263,23 @@ def without_its_why(block: str) -> list[str]:
 
 def not_what_the_cli_prints(block: str) -> list[str]:
     """What is wrong with one block, measured against the command: its labels, in its order, at its
-    width — the four rows it always prints, with nothing taken out."""
+    width — the rows it always prints, with nothing taken out.
+
+    Since M13.1e (ADR 0059) a no has one row more, :data:`ANSWERED_LABEL`, after the reason: it is
+    let through after the reason of a ``denied`` and nowhere else. A block of a no written before
+    M13.1e — the verbali of §19 and §22 — has it not, and is a dated record of that day."""
     width = max(map(len, RUN_LABELS))
     lines = block.splitlines()
-    if len(lines) != len(RUN_LABELS):
-        return [f"{len(lines)} rows, the command prints {len(RUN_LABELS)}: {block!r}"]
+    labels = list(RUN_LABELS)
+    if len(lines) > 2 and lines[2].startswith(ANSWERED_LABEL.ljust(width) + GAP):
+        if not lines[0].endswith(" denied"):
+            return [f"who answered, after an outcome that is not a no: {block!r}"]
+        labels.insert(2, ANSWERED_LABEL)
+    if len(lines) != len(labels):
+        return [f"{len(lines)} rows, the command prints {len(labels)}: {block!r}"]
     return [
         f"{line!r} is not {label!r} at width {width}"
-        for line, label in zip(lines, RUN_LABELS, strict=True)
+        for line, label in zip(lines, labels, strict=True)
         if not line.startswith(label.ljust(width) + GAP) or not aligned(line[width + len(GAP) :])
     ]
 
@@ -381,6 +390,37 @@ def test_a_run_block_with_the_old_label_is_reported() -> None:
 
 def test_a_run_block_aligned_to_another_width_is_reported() -> None:
     block = "\n".join(f"{label}  x" for label in RUN_LABELS)
+
+    assert not_what_the_cli_prints(block) != []
+
+
+def test_a_no_with_who_answered_is_what_the_cli_prints() -> None:
+    """M13.1e: the row of who answered, after the reason of a no."""
+    width = max(map(len, RUN_LABELS))
+    labels = [*RUN_LABELS[:2], ANSWERED_LABEL, *RUN_LABELS[2:]]
+    values = (
+        "denied",
+        "deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by x)",
+        "the command line on the Core",
+        "DENIED",
+        EMPTY,
+        EMPTY,
+    )
+    block = "\n".join(
+        f"{label.ljust(width)}{GAP}{value}" for label, value in zip(labels, values, strict=True)
+    )
+
+    assert not_what_the_cli_prints(block) == []
+    assert without_its_why(block) == []
+
+
+def test_who_answered_after_an_outcome_that_is_not_a_no_is_reported() -> None:
+    width = max(map(len, RUN_LABELS))
+    labels = [*RUN_LABELS[:2], ANSWERED_LABEL, *RUN_LABELS[2:]]
+    values = ("failed", "fail: EXECUTING -> FAILED (x)", "y", "FAILED", EMPTY, EMPTY)
+    block = "\n".join(
+        f"{label.ljust(width)}{GAP}{value}" for label, value in zip(labels, values, strict=True)
+    )
 
     assert not_what_the_cli_prints(block) != []
 
