@@ -19,13 +19,17 @@ Tommaso che cosa fare e non aspetta Invio, ed è il ``guarda`` dopo a verificarl
 mano», e la decisione 8 della review):
 
 * ``guarda``: ``stato <S>``, e aspetta che il task finisca, al più :data:`WATCH_SECONDS`; finito in
-  un altro stato, o non finito, il passo è FALLITO con ciò che è successo, e non va avanti;
+  un altro stato il passo è FALLITO, con lo stato — lì può esserci un difetto di ELA —; non finito
+  in tempo è **SALTATO**, «nessuno ha risposto in un quarto d'ora: il passo si rifà» (decisione 9
+  della review del riepilogo); in tutti e due i casi il passo non va avanti;
 * ``fine``: ``GET /tasks/<id>``, ``GET /audit?task_id=<id>`` e ``GET /devices`` — quattro letture
   con l'uscita della CLI, perché il confronto non sia circolare —: la ragione è il sommario
   dell'evento della transizione che ha chiuso il task, l'operazione e il codice sono quelli del
   blocco, e chi ha risposto è il ruolo del blocco, con il nome fisso per ``LOCAL`` e il nome della
   sua riga del registro per ``CONSOLE`` e ``COMPANION``; la stessa ``end`` nella riga del task di
-  ``GET /tasks/finished``. Riempie ``<id di chi ha risposto>`` e ``<nome di chi ha risposto>``;
+  ``GET /tasks/finished`` — se il task non è fra gli ultimi :data:`FINISHED_LOOK`, quella parte è
+  **SALTATA** con la ragione, e il resto si confronta comunque (decisione 10). Riempie
+  ``<id di chi ha risposto>`` e ``<nome di chi ha risposto>``;
 * ``ultimi``: ``GET /tasks/finished`` con il numero di righe della superficie, e i task dei passi
   nominati fra quelle; uno spinto fuori fa il passo **SALTATO** — la precondizione del passo umano,
   non un errore di ELA — e i suoi occhi non si chiedono;
@@ -108,6 +112,13 @@ WATCH_SECONDS: Final = 15 * 60
 WATCH_PAUSE: Final = 1.0
 TIMES: Final = 5
 """How many times ``misura`` reads each route."""
+UNANSWERED: Final = "nessuno ha risposto in un quarto d'ora: il passo si rifà"
+"""What ``guarda`` says when :data:`WATCH_SECONDS` pass and the task is still alive: the human step
+not done, like lesson S of M13.1c — SALTATO, not FALLITO (decision 9 of the review of the
+summary)."""
+PUSHED_OUT: Final = "un altro task finito l'ha spinto fuori"
+"""Why ``fine`` does not compare the row of ``GET /tasks/finished``: the task is not among the last
+:data:`FINISHED_LOOK` (decision 10 of the review of the summary, as ``ultimi`` of decision 8)."""
 SAID_NO: Final = "hai risposto no: il resto del passo non avrebbe niente da misurare"
 NO_QUESTION: Final = "senza la domanda il passo non ha niente da misurare"
 
@@ -173,7 +184,8 @@ def end_failures(
     """What ``fine`` finds wrong with the end of ``task``, one sentence each; ``[]`` if nothing.
 
     Four reads — the task's route, the audit, the registry, the finished list — and the output of
-    the CLI in the ``atteso`` around: the reason is the audit's summary, never composed here."""
+    the CLI in the ``atteso`` around: the reason is the audit's summary, never composed here. A task
+    that is not in ``finished`` has no row to compare: :func:`pushed_out_of_finished` says why."""
     end = task.get("end")
     if not isinstance(end, Mapping):
         return [f"il task {task.get('state')} non ha una ragione: end è {end!r}"]
@@ -204,12 +216,30 @@ def end_failures(
     if end.get("reason_code") != wanted.code:
         failures.append(f"end dice il codice {end.get('reason_code')!r}, il passo {wanted.code!r}")
     failures.extend(_answered_failures(end.get("answered_by"), payload, devices, wanted))
-    row = next((one for one in finished if one.get("id") == task.get("id")), None)
-    if row is None:
-        failures.append(f"il task non è fra gli ultimi {len(finished)} di GET /tasks/finished")
-    elif row.get("end") != end:
+    row = _row_of(task, finished)
+    if row is not None and row.get("end") != end:
         failures.append(f"la riga di GET /tasks/finished dice {row.get('end')!r}, il task {end!r}")
     return failures
+
+
+def _row_of(
+    task: Mapping[str, Any], finished: Sequence[Mapping[str, Any]]
+) -> Mapping[str, Any] | None:
+    return next((one for one in finished if one.get("id") == task.get("id")), None)
+
+
+def pushed_out_of_finished(
+    task: Mapping[str, Any], finished: Sequence[Mapping[str, Any]]
+) -> str | None:
+    """Why the row of ``task`` in ``GET /tasks/finished`` is not compared, or ``None`` when it is
+    there: the task is not among the last :data:`FINISHED_LOOK`, and :func:`end_failures` compares
+    the rest — the route of the task, the audit, the registry (decision 10)."""
+    if _row_of(task, finished) is not None:
+        return None
+    return (
+        f"il task {task.get('id')} non è fra gli ultimi {FINISHED_LOOK} finiti di "
+        f"GET /tasks/finished: {PUSHED_OUT}, e la sua riga non si confronta"
+    )
 
 
 def _answered_failures(
@@ -420,7 +450,9 @@ def a_yes(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
 
 
 def a_watch(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
-    """Until the task ends, or :data:`WATCH_SECONDS` pass: what the hand did, verified."""
+    """Until the task ends, or :data:`WATCH_SECONDS` pass: what the hand did, verified. Another end
+    is FALLITO, with the state: there may be a defect of ELA. No end in time is SALTATO: nobody
+    acted, and the step is done again (decision 9)."""
     wanted = watched_word(block)
     deadline = time.monotonic() + WATCH_SECONDS
     while True:
@@ -434,9 +466,7 @@ def a_watch(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
     if state in ENDED:
         proof.report.failure(number, f"il task {turn.task_id} è finito {state}, non {wanted}")
     else:
-        proof.report.failure(
-            number, f"il task {turn.task_id} è ancora {state} dopo {WATCH_SECONDS} secondi"
-        )
+        proof.report.skipped(number, f"il task {turn.task_id} è ancora {state}: {UNANSWERED}")
     raise Done
 
 
@@ -444,12 +474,9 @@ def an_end(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
     wanted = wanted_of(block)
     api = proof.api
     task = api.get(f"/tasks/{turn.task_id}")
+    finished = api.get(f"/tasks/finished?limit={FINISHED_LOOK}").get("tasks") or []
     failures = end_failures(
-        task,
-        api.get(f"/audit?task_id={turn.task_id}"),
-        api.get("/devices"),
-        api.get(f"/tasks/finished?limit={FINISHED_LOOK}").get("tasks") or [],
-        wanted,
+        task, api.get(f"/audit?task_id={turn.task_id}"), api.get("/devices"), finished, wanted
     )
     turn.who = answerer_of(task)
     end = task.get("end") or {}
@@ -463,6 +490,9 @@ def an_end(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
         proof.report.passed(
             number, f"la ragione è il sommario dell'audit: {wanted.operation}, ha risposto {who}"
         )
+    pushed = pushed_out_of_finished(task, finished)
+    if pushed is not None:
+        proof.report.skipped(number, pushed)
 
 
 def the_last(number: int, block: base.Block, proof: Proof) -> None:

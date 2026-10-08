@@ -4796,12 +4796,14 @@ Lo script legge da questa sezione i blocchi con il marcatore sopra, con il letto
 comandi del blocco sopra, in ordine; `mano` ti dice che cosa fare, e non aspetta Invio —, `sì` della sezione 24 — qui
 legge la domanda del task stesso —, e quattro suoi:
 
-- **`guarda`**: `stato DENIED`, e aspetta che il task finisca, al più un quarto d'ora; finito in un altro stato, il passo
-  è FALLITO con lo stato vero.
+- **`guarda`**: `stato DENIED`, e aspetta che il task finisca, al più un quarto d'ora. Finito in un altro stato, il passo
+  è FALLITO con lo stato vero: lì può esserci un difetto di ELA. Se in un quarto d'ora nessuno ha agito, il passo è
+  **SALTATO** — «nessuno ha risposto in un quarto d'ora: il passo si rifà» —: è il passo umano non fatto.
 - **`fine`**: legge `GET /tasks/<id>`, `GET /audit` e `GET /devices`, e vuole la ragione del task uguale al sommario
   dell'evento della transizione che l'ha chiuso, l'operazione e il codice della riga, e chi ha risposto con il ruolo
   della riga — `LOCAL` con il nome fisso, `CONSOLE` o `COMPANION` con il nome della sua riga del registro, `nessuno` —;
-  e la stessa ragione nella riga del task di `GET /tasks/finished`.
+  e la stessa ragione nella riga del task di `GET /tasks/finished`. Se il task non è fra gli ultimi 20 finiti, quella
+  riga non si confronta — **SALTATO**, «un altro task finito l'ha spinto fuori» —, e il resto sì.
 - **`ultimi`**: prima dei passi all'occhio, legge `GET /tasks/finished` con il numero di righe della superficie — 8 la
   console, 6 il telefono — e vuole fra quelle i task dei passi 2–6. Se un altro task finito li ha spinti fuori, il passo
   è **SALTATO**, con il task e la superficie: è la precondizione del passo, non un errore di ELA.

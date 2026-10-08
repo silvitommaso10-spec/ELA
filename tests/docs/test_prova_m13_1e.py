@@ -282,6 +282,15 @@ def test_every_hand_of_the_section_is_given_by_a_page_of_the_recording() -> None
 def test_the_watch_waits_a_quarter_of_an_hour_as_the_section_says() -> None:
     assert script().WATCH_SECONDS == 15 * 60
     assert "al più un quarto d'ora" in section()
+    assert "nessuno ha risposto in un quarto d'ora: il passo si rifà" in words(section())
+
+
+def test_the_section_says_what_fine_does_with_a_task_pushed_out() -> None:
+    """Decision 10, in the guide's words: the row is SALTATA, the rest compared."""
+    text = words(section())
+
+    assert f"gli ultimi {script().FINISHED_LOOK} finiti" in text
+    assert "un altro task finito l'ha spinto fuori" in text
 
 
 # ----------------------------------------------------------------------------------------
@@ -535,15 +544,6 @@ NEGATIVES: dict[str, tuple[int, Negative, str]] = {
         },
         "la riga di GET /tasks/finished",
     ),
-    "the task not among the finished": (
-        5,
-        lambda r: {
-            "finished": [
-                one for one in r.finished[script().FINISHED_LOOK]["tasks"] if one["id"] != r.ids[5]
-            ]
-        },
-        "non è fra gli ultimi",
-    ),
     "the block wants another code": (
         6,
         lambda r: {"wanted": changed_wanted(6, code="execution.stopped")},
@@ -591,6 +591,69 @@ def test_fine_on_the_real_routes_fills_who_answered_and_fails_on_a_changed_answe
     assert failing.report.failures == 1
 
 
+def pushed_out(real: Real, step: int) -> Any:
+    """The real last finished, without the task of ``step``: others finished after it."""
+    answer = real.finished[script().FINISHED_LOOK]
+    return changed(answer, tasks=[one for one in answer["tasks"] if one["id"] != real.ids[step]])
+
+
+def fine_on(real: Real, step: int, **paths: Any) -> Any:
+    """``fine`` of ``step`` on the real answers, with some routes answering otherwise."""
+    module = script()
+    (fine,) = [one for one in marked()[step] if one.kind == "fine"]
+    answers = real.answers(step)
+    if "finished" in paths:
+        answers[f"/tasks/finished?limit={module.FINISHED_LOOK}"] = paths["finished"]
+    if "task" in paths:
+        answers[f"/tasks/{real.ids[step]}"] = paths["task"]
+    proof = proof_on(answers)
+    proof.turn = module.Turn(task_id=real.ids[step])
+    module.an_end(step, fine, proof.turn, proof)
+    return proof
+
+
+def test_a_task_pushed_out_of_the_finished_skips_its_row_and_the_rest_is_compared(
+    real: Real,
+) -> None:
+    """Decision 10 of the review of the summary: the part of ``fine`` that reads the row of
+    ``GET /tasks/finished`` is SALTATA, with the reason, as ``ultimi`` of decision 8; the route
+    of the task, the audit and the registry are compared all the same."""
+    proof = fine_on(real, 3, finished=pushed_out(real, 3))
+
+    assert proof.report.failures == 0, proof.report.lines
+    assert proof.report.skipped_steps == [3]
+    (skipped,) = [line for line in proof.report.lines if line.startswith("[3] SALTATO: ")]
+    assert real.ids[3] in skipped
+    assert "un altro task finito l'ha spinto fuori" in skipped
+    assert (
+        "[3] PASSATO: la ragione è il sommario dell'audit: deny_by_approval, ha risposto CONSOLE"
+    ) in proof.report.lines
+    assert proof.turn.who is not None
+
+
+def test_a_task_pushed_out_still_fails_on_what_the_rest_finds(real: Real) -> None:
+    proof = fine_on(
+        real, 3, finished=pushed_out(real, 3), task=with_end(real.tasks[3], reason="altro")
+    )
+
+    assert proof.report.failures == 1
+    assert proof.report.skipped_steps == [3]
+
+
+def test_the_comparison_of_a_task_pushed_out_is_the_comparison_of_the_rest(real: Real) -> None:
+    """The pure part: no row, no failure for the row — and the sentence of the skip."""
+    module = script()
+    finished = pushed_out(real, 5)["tasks"]
+
+    assert failures_of(real, 5, finished=finished) == []
+    said = module.pushed_out_of_finished(real.tasks[5], finished)
+    assert said is not None and "un altro task finito l'ha spinto fuori" in said
+    assert (
+        module.pushed_out_of_finished(real.tasks[5], real.finished[module.FINISHED_LOOK]["tasks"])
+        is None
+    )
+
+
 # «guarda» ---------------------------------------------------------------------------------
 
 
@@ -627,14 +690,20 @@ def test_the_watch_fails_on_another_end_and_the_step_goes_no_further(
     assert proof.api.asked == [f"/tasks/{real.ids[3]}"]
 
 
-def test_the_watch_fails_on_a_task_still_waiting_after_its_time(
+def test_a_watch_nobody_answered_in_time_skips_the_step_and_goes_no_further(
     real: Real, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Decision 9 of the review of the summary: nobody acted within ``WATCH_SECONDS`` — the human
+    step not done, like lesson S of M13.1c —: SALTATO, never FALLITO, and the step is done again.
+    The words are the decision's, written here and not read from the script."""
     proof = watch(real, real.waiting[3], monkeypatch)
 
-    assert f"[3] FALLITO: il task {real.ids[3]} è ancora WAITING_APPROVAL dopo 0 secondi" in (
-        proof.report.lines
-    )
+    assert proof.report.failures == 0
+    assert proof.report.skipped_steps == [3]
+    (skipped,) = [line for line in proof.report.lines if line.startswith("[3] SALTATO: ")]
+    assert real.ids[3] in skipped and "WAITING_APPROVAL" in skipped
+    assert skipped.endswith("nessuno ha risposto in un quarto d'ora: il passo si rifà")
+    assert proof.api.asked == [f"/tasks/{real.ids[3]}"]
 
 
 # «sì» and the question of a command ---------------------------------------------------------
