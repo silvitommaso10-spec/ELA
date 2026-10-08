@@ -35,7 +35,15 @@ from ela.api import pages
 from ela.api.approvals import answered_and_resumed, pending_approvals
 from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.nodes import enrolled
-from ela.api.schemas import ApprovalOut, CancelIn, DeclarationIn, FinishedOut, TaskOut
+from ela.api.schemas import (
+    AnswererOut,
+    ApprovalOut,
+    CancelIn,
+    DeclarationIn,
+    EndOut,
+    FinishedOut,
+    TaskOut,
+)
 from ela.api.security import COMPANION_SURFACE, Anonymous, Identity, note, welcome
 from ela.api.tasks import cancel_task, finished_tasks, list_tasks
 from ela.devices import PRIVACY_ORDER
@@ -63,7 +71,9 @@ __all__ = [
     "NO_FINISHED",
     "NO_LIVE",
     "SPOKEN_ALOUD",
+    "answered_said",
     "counted",
+    "end_said",
     "finished_title",
     "form",
     "how_long",
@@ -194,6 +204,52 @@ the console reads it from here, as it reads the titles of the groups."""
 def halt_phrase(halt: Halt | None) -> str:
     """The sentence for ``halt``; empty for a task whose stop found no step in progress."""
     return "" if halt is None else HALT_PHRASES[halt]
+
+
+ROLE_WORDS: Final[Mapping[str, str]] = MappingProxyType(
+    {"LOCAL": "la riga di comando", "CONSOLE": "la console", "COMPANION": "il telefono"}
+)
+"""What the pages call the role of who said no (M13.1e, ADR 0059; decision 2 of the review):
+words of ELA, which a page shows under every ceiling. One vocabulary for the two surfaces."""
+
+
+def end_said(end: EndOut, seen: bool) -> str:
+    """Why a task ended, as a page says it (M13.1e, ADR 0059).
+
+    **Under the ceiling only words of ELA, never words somebody wrote** (decision 2 of the review):
+    above it the reason whole — the summary of the transition, with its code —; under it the
+    operation that ended the task and the code its payload carries, because the message of an end
+    names targets, scopes, paths, sites and the words of a stop, which the ceiling keeps on the Mac.
+    No cut takes the code away: the code is what one looks for.
+    """
+    if seen:
+        return visible(end.reason, lines=False)
+    return " · ".join(word for word in (end.operation, end.reason_code) if word)
+
+
+def answered_said(answered: AnswererOut | None, seen: bool) -> str | None:
+    """Who said no, as a page says it: above the ceiling the name the user typed at enrolment with
+    the role beside it, or the id alone when the registry has no name; under it the role alone, in
+    the pages' words — a device's name may be personal, like ``machine`` of a question. ``None``
+    when nobody said no, and under the ceiling for an identity with no role."""
+    if answered is None:
+        return None
+    role = None if answered.role is None else ROLE_WORDS[answered.role]
+    if not seen:
+        return role
+    if answered.name is None:
+        return visible(answered.identity, lines=False)
+    name = visible(answered.name, lines=False)
+    return name if role is None else f"{name} ({role})"
+
+
+def end_caption(end: EndOut | None, seen: bool) -> str:
+    """The line a row of a finished task carries under its state: the why, and who said no."""
+    if end is None:
+        return ""
+    who = answered_said(end.answered_by, seen)
+    said = end_said(end, seen)
+    return said if who is None else f"{said} · ha risposto: {who}"
 
 
 def counted(how_many: int, one: str, many: str) -> str:
@@ -351,6 +407,7 @@ def _tasks(alive: tuple[TaskOut, ...], finished: FinishedOut, identity: Identity
                         what=_title(one, identity),
                         key=one.state.value,
                         halt=_halt(one.halt),
+                        why=_why(one, identity),
                     )
                     for one in finished.tasks
                 ),
@@ -366,6 +423,12 @@ def _halt(halt: Halt | None) -> pages.Markup:
     if halt is None:
         return pages.Markup("")
     return pages.fragment(HERE, "halt", text=halt_phrase(halt))
+
+
+def _why(task: TaskOut, identity: Identity) -> pages.Markup:
+    """Why a finished task ended, and who said no, in the form its ceiling allows (M13.1e)."""
+    said = end_caption(task.end, may_see(identity, task.max_privacy))
+    return pages.fragment(HERE, "why", text=said) if said else pages.Markup("")
 
 
 def _title(task: TaskOut, identity: Identity) -> object:

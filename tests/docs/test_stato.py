@@ -97,6 +97,20 @@ def test_the_constraint_count_is_the_one_the_list_of_m94_is_checked_against(
     assert generator.constraints_count(ROOT) == len(declared_constraints())
 
 
+def test_the_command_count_is_the_one_the_adrs_hold(generator: ModuleType) -> None:
+    """M12.1b: the commands of the CLI, counted by the script as the ADRs and their tests do.
+
+    Until M12.1b the two counts had two rules — the script walked the registered commands and
+    never the group, ``coded_commands()`` added the group that answers on its own (M11.3, ADR 0034
+    §9) —, and STATO said one command less than every ADR: ``ela voice``. One of two derivations of
+    the same number was false; this is the seam that keeps them one.
+    """
+    from tests.docs.test_adr_cli import coded_commands
+
+    counted = {label: value for label, value, _ in generator.surface()}
+    assert counted["Comandi della CLI"] == str(len(coded_commands()))
+
+
 # ----------------------------------------------------------------------------------------
 # The one exclusion
 # ----------------------------------------------------------------------------------------

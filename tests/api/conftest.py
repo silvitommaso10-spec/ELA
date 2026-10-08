@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from tests.api.ends import surfaces  # noqa: F401 — re-exported as a fixture (M13.1e)
 from tests.api.reasons import world  # noqa: F401 — re-exported as a fixture (M13.1c)
 from tests.api.support import (  # noqa: F401 — re-exported as fixtures
     anonymous,

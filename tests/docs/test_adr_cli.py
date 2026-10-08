@@ -13,8 +13,12 @@ is a variable nobody discovers.
 
 from __future__ import annotations
 
+import importlib.util
 import re
+import sys
+from functools import cache
 from pathlib import Path
+from types import ModuleType
 
 from ela.api.security import (
     CODE_ROUTES,
@@ -190,24 +194,33 @@ def documented_command_exits() -> dict[str, frozenset[int]]:
     return rows
 
 
+STATO_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "generate_stato.py"
+
+
+@cache
+def stato() -> ModuleType:
+    """``scripts/generate_stato.py``, loaded by path under a name of its own: its ``command_paths``
+    is the one definition of what the CLI offers (M12.1b), and a name of its own keeps this copy
+    from replacing the one ``tests/docs/test_stato.py`` loads."""
+    spec = importlib.util.spec_from_file_location("generate_stato_commands", STATO_SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def coded_commands() -> set[str]:
     """Every command the app serves, a sub-command written as its group and its name.
 
     A **group that answers on its own** counts as one of them (M11.3): ``ela voice`` is a group
     with a callback and ``invoke_without_command``, so it is something a person types and gets an
     answer from, not a help screen — and the table of ADR 0024 §3 is about what can be typed.
+    Counted by the generator of STATO, with the one definition both use since M12.1b: until then
+    this function and the generator had a rule each, and STATO said one command less.
     """
-    found = {command.name for command in app.registered_commands if command.name}
-    for group in app.registered_groups:
-        assert group.typer_instance is not None and group.name is not None
-        found |= {
-            f"{group.name} {command.name}"
-            for command in group.typer_instance.registered_commands
-            if command.name
-        }
-        if group.typer_instance.info.invoke_without_command is True:
-            found.add(group.name)
-    return found
+    paths: list[str] = stato().command_paths(app)
+    return set(paths)
 
 
 def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:

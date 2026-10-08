@@ -6,6 +6,7 @@
   debito di ADR 0053 §2 prima della SPEC (decisione 8 della sessione di M6.3c): il primo commit scrive il §1.
   Le sezioni §2–§14 recepiscono la SPEC di M6.3c (`docs/milestones/M6.3c.md`), decisa dal revisore il
   2026-10-01 con le domande 1–17; i numeri di §13 sono la misura del 2026-10-01.
+  **ADR 0059 §8** (M13.1e): il protocollo di §8 per `docs/outcomes.txt` vale anche per la ragione di una fine, con le righe «perché no» di `docs/milestones/M13.1e.md`.
 - **Data:** 2026-09-30
 - **Riferimenti spec:** §14, §15, §18, §19, §32, §33, §51, §52, §53, §63, §65
 - **Milestone:** M6.3c

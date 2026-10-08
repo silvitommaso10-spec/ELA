@@ -704,6 +704,12 @@ PLAN_DOORS = frozenset({Path("api") / "tasks.py", Path("executive") / "planner.p
 #: runner, and the runner the orchestrator.
 PLANNER_MODULE = Path("executive") / "planner.py"
 DEVICE_WORDS = ("device", "orchestrat", "placement", "node")
+#: Rule 64 (M13.1e, ADR 0059): the words of the transition that ended a task have one reader. The
+#: engine writes ``new_state`` in the payload of every transition, and ``ela.tasks.ending`` reads it
+#: back; a third module that looked for the transition by itself would be the second copy of the
+#: reason decision A of M13.1e forbids.
+END_KEY = "new_state"
+END_MODULES = frozenset({Path("tasks") / "engine.py", Path("tasks") / "ending.py"})
 
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
@@ -1686,6 +1692,32 @@ def _names_of(node: ast.AST) -> list[str]:
     if isinstance(node, ast.ImportFrom):
         return [node.module or ""]
     return []
+
+
+def check_the_end_has_one_reader(pkg_root: Path) -> list[Violation]:
+    """Rule 64: outside :data:`END_MODULES` nobody names the key ``new_state`` (M13.1e, ADR 0059).
+
+    The reason of an end is the summary of the audit event whose ``payload.new_state`` is the
+    task's state (ADR 0055), and since M13.1e every route that carries a task's state carries it:
+    **one reading** of it, ``ela.tasks.ending``, which the engine composes and the runner, the
+    Planner and the routes call. The engine writes the key; a third module that names it is looking
+    for the transition by itself. Reported: a string constant equal to :data:`END_KEY`. A heuristic
+    on strings, like rules 16, 17 and 62: ``TaskEvent.new_state``, the attribute of the trail, is
+    a name and not a string, and ``ela.tasks.halt`` reads it for another fact.
+    """
+    rule = "the-end-has-one-reader"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) in END_MODULES:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, END_KEY, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and node.value == END_KEY
+        )
+    return found
 
 
 def check_who_calls_the_model_bounds_the_call(pkg_root: Path) -> list[Violation]:
@@ -3563,6 +3595,7 @@ RULES: dict[str, Rule] = {
     "who-calls-the-model-bounds-the-call": check_who_calls_the_model_bounds_the_call,
     "plans-enter-by-two-doors": check_plans_enter_by_two_doors,
     "the-planner-names-no-device": check_the_planner_names_no_device,
+    "the-end-has-one-reader": check_the_end_has_one_reader,
 }
 
 
@@ -4032,6 +4065,16 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("plans-enter-by-two-doors", "PLAN_RECEIVERS", DETECTOR),
     Constant(
         "plans-enter-by-two-doors",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-end-has-one-reader (rule 64, M13.1e)
+    Constant("the-end-has-one-reader", "END_KEY", DETECTOR),
+    Constant("the-end-has-one-reader", "END_MODULES", EXEMPTION, by=EACH, adr="ADR 0059"),
+    Constant(
+        "the-end-has-one-reader",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

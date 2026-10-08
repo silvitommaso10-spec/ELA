@@ -13,7 +13,7 @@ Two leaf values are reused as they are: :class:`~ela.domain.ProviderUsage` and
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Final, TypedDict, cast
+from typing import Annotated, Final, Literal, TypedDict, cast
 from uuid import UUID
 
 from pydantic import (
@@ -80,6 +80,8 @@ from ela.tasks.graph import GraphState
 
 __all__ = [
     "AnswerIn",
+    "AnswererOut",
+    "AnswererRole",
     "ApprovalOut",
     "AuditEventOut",
     "CancelIn",
@@ -89,6 +91,7 @@ __all__ = [
     "DeliveredOut",
     "DeviceOut",
     "DiagnosticsOut",
+    "EndOut",
     "ExecutionResultOut",
     "HealthOut",
     "PerceptionOut",
@@ -246,6 +249,47 @@ class CancelIn(BaseModel):
     reason: str = ""
 
 
+AnswererRole = Literal["LOCAL", "CONSOLE", "COMPANION"]
+"""Who answered a question, as the route resolves it (M13.1e, ADR 0059): ``LOCAL`` for the Core's
+token, ``CONSOLE`` and ``COMPANION`` for a row of the device registry with that role."""
+
+
+class AnswererOut(BaseModel):
+    """Who said no (M13.1e, ADR 0059; decision D, and decision 2 of the review).
+
+    ``identity`` is what the approval recorded, ``responded_by`` — the audit stays as it is.
+    ``name`` and ``role`` are what the route found for it at the read: for the Core's token — the
+    command line, the scripts of the hand tests, whoever holds it — a fixed name, ``the command line
+    on the Core``, because that is where a person answers from, and ``LOCAL``; for a row of the
+    registry its name, which the user typed at enrolment and which may be personal, and its role,
+    revoked rows included; for an id the registry does not know, or a value that is not an id — an
+    end written before M12.1 —, neither. The name is not unique: the id stays beside it.
+    """
+
+    identity: str
+    name: str | None = None
+    role: AnswererRole | None = None
+
+
+class EndOut(BaseModel):
+    """Why a task ended, for every end but ``COMPLETED`` (M13.1e, ADR 0059).
+
+    ``reason`` is the summary of the transition that ended the task — the reason ``run`` gives
+    (M13.1c, ADR 0055), from the same reading. ``operation`` is the operation that ended it, who
+    ended it; ``reason_code`` the code its payload carries, when it carries one — a failure's, the
+    orphan's, the cap's ``spending.*`` —, named so on the wire because architecture rule 46 keeps
+    the bare word for the code a node enrols with. ``answered_by`` is who said no, for a no and for
+    a task denied by its planning. Under the ceiling of a page only words of ELA are shown — the
+    operation, the code, the role —, never words somebody wrote: the message, the words of a stop,
+    the name of a device.
+    """
+
+    reason: str
+    operation: str | None = None
+    reason_code: str | None = None
+    answered_by: AnswererOut | None = None
+
+
 class TaskOut(BaseModel):
     id: UUID
     created_at: datetime
@@ -261,9 +305,16 @@ class TaskOut(BaseModel):
     finished_at: datetime | None = None
     """When the task reached its final state (M17.2b, ADR 0049), ``None`` while it is alive: the
     order ``GET /tasks/finished`` declares, readable in what it answers."""
+    end: EndOut | None = None
+    """Why the task ended: ``denied``, ``failed``, ``cancelled`` and ``expired`` always carry their
+    why — the words of the transition that ended the task, the same ``run`` gives —, and a no says
+    who answered (M13.1e, ADR 0059). ``None`` for a task that has not ended, and for ``COMPLETED``.
+    """
 
     @classmethod
-    def of(cls, task: Task) -> TaskOut:
+    def of(cls, task: Task, end: EndOut | None) -> TaskOut:
+        """``end`` has no default: every route that answers with a task says why it ended, and a
+        constructor that forgot it would be a route that stopped saying it (M13.1e)."""
         return cls(
             id=task.id,
             created_at=task.created_at,
@@ -275,6 +326,7 @@ class TaskOut(BaseModel):
             deadline=task.deadline,
             max_privacy=task.max_privacy,
             finished_at=task.finished_at,
+            end=end,
         )
 
 
@@ -370,12 +422,13 @@ class TaskDetail(TaskOut):
         graph: GraphState | None,
         halt: Halt | None = None,
         *,
+        end: EndOut | None,
         author: PlanAuthor | None = None,
         planning_task_id: UUID | None = None,
         no_plan: str | None = None,
     ) -> TaskDetail:
         detail = cls(
-            **TaskOut.of(task).model_dump(),
+            **TaskOut.of(task, end).model_dump(),
             halt=halt,
             plan_author=None if author is None else PlanAuthorOut.of(author),
             planning_task_id=planning_task_id,

@@ -74,6 +74,7 @@ from ela.domain import (
 )
 from ela.executive import UNSEEN
 from ela.ports import EnrollmentExpiredError
+from ela.tasks.ending import REASONED
 from ela.tasks.state_machine import TERMINAL_STATES
 from ela.testing.fakes import FakeClock
 from ela.tools import ASSERTED_CREATES, OVERWRITES, READS
@@ -1058,14 +1059,34 @@ def test_the_two_facts_of_a_file_go_where_the_goal_goes() -> None:
 
 
 def group(page: str, title: str) -> str:
-    """What a group of the tasks tile holds: from its title to the next group or the next tile."""
+    """What a group of the tasks tile holds: from its title to the next group or the next tile.
+
+    The next group starts with its title, a ``<p class="ela-caption">``; a row's own captions —
+    the halt, the why (M13.1e) — are ``<span>``s inside it, and stay in the group.
+    """
     after = page.split(f">{title}", 1)[1]
-    return re.split(r'class="ela-caption"|class="ela-panel', after, maxsplit=1)[0]
+    return re.split(r'<p class="ela-caption"|class="ela-panel', after, maxsplit=1)[0]
 
 
 def test_every_final_state_has_a_way_to_be_reached_as_in_production() -> None:
     """The keys of the map are the final states: a sixth one without a way stops the suite."""
     assert set(ENDINGS) == TERMINAL_STATES
+
+
+@pytest.mark.parametrize("state", sorted(REASONED), ids=lambda state: state.value)
+async def test_the_finished_group_holds_its_rows_whole(
+    state: TaskState, console: AsyncClient, client: AsyncClient, ela: Ela
+) -> None:
+    """The cut reads a group up to the next group, not up to the first caption: a row's own
+    captions — the halt of M6.3c, the why of M13.1e — are inside the row, and an absence asserted
+    on the group would otherwise be asserted on half a row."""
+    task = await ended(state, client, ela, text=f"intera {state.value}")
+    operation = (await client.get(f"/tasks/{task}")).json()["end"]["operation"]
+
+    finished = group((await console.get("/console/")).text, "Finiti")
+
+    assert operation in finished
+    assert finished.count('class="ela-row"') == 1
 
 
 @pytest.mark.parametrize("state", sorted(TERMINAL_STATES), ids=lambda state: state.value)

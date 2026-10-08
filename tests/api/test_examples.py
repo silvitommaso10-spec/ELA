@@ -146,10 +146,12 @@ def test_every_example_explains_itself() -> None:
     brought the echo of the measurement of the weights; twenty since M13.4, which brought the six of
     the browser; twenty-one since M6.3c, which brought the program that sleeps until it is stopped;
     twenty-two since the review of 2026-10-05 (decision Q), which gave §21 step 8 its own sentence;
-    twenty-five since M14.1, which brought the three calls of §23 the first one does not make.
+    twenty-five since M14.1, which brought the three calls of §23 the first one does not make;
+    twenty-six since M13.1e, which brought the button example.com does not have, for a failure after
+    a yes with no call to the model.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 25, [path.name for path in found]
+    assert len(found) == 26, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name

@@ -1,8 +1,9 @@
 """ADR 0058 says what the code does: the route, the command, the column, the operation, the codes,
 the rules, the contract, the worst case and the totals of today (M14.2).
 
-The pin on **today's** totals moves here from ADR 0057, the ADR that last changed them: the tests
-of the earlier ADRs count what they saw, without what came after (ADR 0032 §17).
+The pin on **today's** totals moved here from ADR 0057, and on to ADR 0059 (M13.1e), the ADR that
+last changed them: the tests of the earlier ADRs count what they saw, without what came after (ADR
+0032 §17).
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ from pathlib import Path
 from ela.executive.planner import PLANNER_CODES, PLANNING_OUTPUT_TOKENS
 from ela.providers.anthropic.models import MODELS, OPUS_5_5
 from ela.providers.anthropic.pricing import worst_cost
-from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.test_adr_cli import coded_commands, documented_command_routes
 from tests.docs.test_adr_composition import coded_routes, routes_after_0057
@@ -64,13 +64,13 @@ def contracts() -> list[dict[str, object]]:
 def test_the_conseguenze_count_the_rules_the_contracts_the_ports_the_routes_and_the_commands() -> (
     None
 ):
-    """The pin on today's totals, taken over from ADR 0057: it moves to the ADR that changes
-    them."""
+    """The pin on today's totals, taken over from ADR 0057, moved on to ADR 0059 (M13.1e): what
+    this ADR saw, counted without what came after it."""
     text = conseguenze()
 
     assert "**sessantatré**" in text
-    assert len(RULES) == 63
-    assert set(RULES) - set(_rules_up_to(61)) == {
+    assert len(_rules_up_to(63)) == 63  # rule 64 is ADR 0059's
+    assert set(_rules_up_to(63)) - set(_rules_up_to(61)) == {
         "plans-enter-by-two-doors",
         "the-planner-names-no-device",
     }

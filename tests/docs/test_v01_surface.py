@@ -21,6 +21,7 @@ from ela.permissions import catalogue_v01
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeModelProvider
 from ela.tools import tools_v01, verifiers_v01
 from tests.api.routers import api_routers, routes_of
+from tests.docs.test_adr_cli import stato
 from tests.routing.support import routing_for
 
 V01_ROUTERS = ("approvals", "audit", "devices", "results", "system", "tasks")
@@ -57,16 +58,10 @@ COMMANDS = (
 )
 
 
-def commands_of(app: Typer, prefix: str = "") -> list[str]:
-    found = [
-        prefix + (command.name or command.callback.__name__)
-        for command in app.registered_commands
-        if command.callback is not None or command.name is not None
-    ]
-    for group in app.registered_groups:
-        assert group.typer_instance is not None and group.name is not None
-        found += commands_of(group.typer_instance, f"{group.name} ")
-    return sorted(found)
+def commands_of(app: Typer) -> list[str]:
+    """The commands of ``app``, with the one definition of the generator of STATO (M12.1b)."""
+    paths: list[str] = stato().command_paths(app)
+    return paths
 
 
 def test_every_router_of_the_api_is_v01s_or_came_after() -> None:
@@ -118,13 +113,14 @@ LATER_COMMANDS = (
     "node run",
     "spend",
     "task finished",
+    "voice",
     "voice audition",
     "voice preview",
 )
 """What the phases after v0.1 added, kept beside the twenty rather than folded into them
-(ADR 0029 §13). ``ela voice`` itself is the group's own callback and not a registered command,
-which is what makes the bare ``ela voice`` answer instead of printing help — ``tests/cli`` holds
-that one."""
+(ADR 0029 §13). ``ela voice`` is the group's own callback, which is what makes the bare ``ela
+voice`` answer instead of printing help, and since M12.1b it is counted here as everywhere else:
+it is something a person types and gets an answer from (ADR 0034 §9)."""
 
 
 def test_the_cli_offers_the_twenty_commands_of_v01_plus_what_came_after() -> None:

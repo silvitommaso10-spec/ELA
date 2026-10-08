@@ -43,7 +43,6 @@ from ela.domain import (
     StepId,
     StepState,
     Task,
-    TaskEventType,
     TaskId,
     TaskState,
 )
@@ -113,9 +112,6 @@ different facts — one is a decision with an actor behind it, the other is time
 collapsing them into a single "terminal" would throw away a distinction that cannot be recovered
 later (review of M6.3).
 """
-
-_REASONED: Final[frozenset[TaskState]] = frozenset(TERMINAL_STATES - {TaskState.COMPLETED})
-"""The ends whose run says why: every one but ``COMPLETED`` (M13.1c, ADR 0055)."""
 
 RUNNABLE_STATES: Final[frozenset[TaskState]] = frozenset({TaskState.QUEUED, TaskState.EXECUTING})
 """The two states a plan can be walked from (§14): ready to start, or already under way.
@@ -434,28 +430,17 @@ class TaskRunner:
         )
 
     async def _reason(self, task: Task) -> str | None:
-        """The reason of a run whose task has ended, **the one source of it** (M13.1c, ADR 0055):
-        the words of the transition that ended the task for every end but ``COMPLETED``, which
-        explains itself — at the door, under a taken lock, at the end the walk reached, at a blocked
-        plan, and for an end written under the walk. The same for the call that ended the task and
-        for every call after it (decision D of the session). ``None`` for a task that has not
-        ended."""
-        if task.state not in _REASONED:
-            return None
-        return await self._transition_reason(task)
+        """The reason of a run whose task has ended (M13.1c, ADR 0055): the words of the transition
+        that ended the task for every end but ``COMPLETED``, which explains itself — at the door,
+        under a taken lock, at the end the walk reached, at a blocked plan, and for an end written
+        under the walk. The same for the call that ended the task and for every call after it
+        (decision D of the session). ``None`` for a task that has not ended.
 
-    async def _transition_reason(self, task: Task) -> str:
-        """The words of the transition that put the task in its state, passed and not composed
-        (ADR 0019 §2): the summary of its audit event; without one — a crash between the row and
-        the audit —, the message of the trail's ``STATE_CHANGED`` with its operation."""
-        for event in reversed(await self._audit.read(task_id=task.id)):
-            if event.payload.get("new_state") == task.state.value:
-                return event.summary
-        for change in reversed(await self._repository.events(task.id)):
-            if change.event_type is TaskEventType.STATE_CHANGED and change.new_state is task.state:
-                operation = str(change.metadata.get("operation", ""))
-                return f"{operation}: {change.message}" if change.message else operation
-        return task.state.value
+        Read from :meth:`~ela.tasks.engine.TaskEngine.ending`, **the one reading** of those words
+        since M13.1e (ADR 0059): the routes read the same, for every task whose state they carry.
+        """
+        ending = await self._engine.ending(task)
+        return None if ending is None else ending.reason
 
     # ----------------------------------------------------------------------------------
     # A step that was handed to a node (M12.2, ADR 0038 §10)

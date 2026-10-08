@@ -21,7 +21,7 @@ from ela.cli.errors import CONFIGURATION, fail, handled
 from ela.cli.output import Json, emit, fields, table
 from ela.domain import Halt, listed, visible
 
-__all__ = ["FINISHED_LIMIT", "RUN_LABELS", "app"]
+__all__ = ["ANSWERED_LABEL", "FINISHED_LIMIT", "RUN_LABELS", "app"]
 
 app = typer.Typer(no_args_is_help=True, help="Create, read, plan, run and stop tasks.")
 
@@ -53,6 +53,58 @@ def halt_words(value: object) -> str | None:
     return None if value is None else HALT_WORDS[Halt(str(value))]
 
 
+ROLE_WORDS: Final = {"CONSOLE": "console", "COMPANION": "phone"}
+"""What the command line calls the role of who said no beside its name (M13.1e, ADR 0059). The
+Core's token has a name that says it already, and is printed alone."""
+
+ANSWERED_LABEL: Final = "answered by"
+"""The row of who said no (M13.1e, ADR 0059): after ``reason``, for a no alone — in ``run`` it is
+not one of :data:`RUN_LABELS`, so the guide's blocks of every other outcome stay what they are."""
+
+WHY_HEADERS: Final = ("id", "reason", ANSWERED_LABEL)
+"""The table ``why`` under the lists: a row per task with a reason (M13.1e, decision 3 (a''))."""
+
+
+def reason_of(payload: dict[str, Any]) -> str | None:
+    """The why of a task's end, as the API sends it in ``end``; ``None`` for a task that did not end
+    with one. Read with ``get``, as ``plan_author``: a payload written before M13.1e has no key."""
+    end = payload.get("end")
+    return None if end is None else str(end["reason"])
+
+
+def answered_words(payload: dict[str, Any]) -> str | None:
+    """Who said no, for the command line: on the Core, above every ceiling, the name with its role
+    beside it — ``<name> (console)``, ``<name> (phone)`` —, the fixed name of the Core's token
+    alone, and the id alone when the registry gave no name. ``None`` when nobody said no."""
+    end = payload.get("end")
+    answered = None if end is None else end.get("answered_by")
+    if answered is None:
+        return None
+    name = answered["name"]
+    if name is None:
+        return visible(str(answered["identity"]), lines=False)
+    role = ROLE_WORDS.get(str(answered["role"]))
+    said = visible(str(name), lines=False)
+    return said if role is None else f"{said} ({role})"
+
+
+def _answered_pairs(payload: dict[str, Any]) -> list[tuple[str, Any]]:
+    """The row ``answered by``, for a no and nothing else."""
+    said = answered_words(payload)
+    return [] if said is None else [(ANSWERED_LABEL, said)]
+
+
+def _why(tasks: list[dict[str, Any]]) -> str:
+    """The table ``why`` under a list: the tasks with a reason, their reason and who said no; an
+    empty string when none of them has one, so that a list of live tasks stays as it was."""
+    rows = [
+        (one["id"], reason_of(one), answered_words(one))
+        for one in tasks
+        if reason_of(one) is not None
+    ]
+    return "" if not rows else f"\n\nwhy\n{table(WHY_HEADERS, rows)}"
+
+
 TaskId = Annotated[str, typer.Argument(metavar="TASK_ID", help="the id of the task")]
 Approval = Annotated[
     str, typer.Option("--approval", help="the id of the request you are answering")
@@ -64,9 +116,14 @@ def _task(payload: dict[str, Any]) -> str:
 
 
 def _task_pairs(payload: dict[str, Any]) -> list[tuple[str, Any]]:
+    """The rows of a task: after its state, the why of its end — ``—`` for a task that did not end
+    with one — and, for a no, who answered (M13.1e): the order of ``run``, the outcome, the why,
+    the state."""
     return [
         ("id", payload["id"]),
         ("state", payload["state"]),
+        ("reason", reason_of(payload)),
+        *_answered_pairs(payload),
         ("goal", payload["goal"]),
         ("created", payload["created_at"]),
         ("deadline", payload["deadline"]),
@@ -115,7 +172,10 @@ def list_tasks(
 ) -> None:
     """The tasks ELA knows, in the order they were created.
 
-    For a task that was stopped, `ela task show` says what the step in progress had done.
+    For a task that was stopped, `ela task show` says what the step in progress had done. Under the
+    list, the table `why`: denied, failed, cancelled and expired always carry their why: the words
+    of the transition that ended the task — the Guardian's reason, your no, the error, the words of
+    the stop, the expiry —, and a no says who answered.
     """
     with client.connect() as api:
         payload = api.get("/tasks", client.query(state=state, limit=limit))
@@ -125,7 +185,8 @@ def list_tasks(
         table(
             ("id", "state", "created", "goal"),
             [(one["id"], one["state"], one["created_at"], one["goal"]) for one in payload],
-        ),
+        )
+        + _why(payload),
     )
 
 
@@ -137,7 +198,12 @@ def finished(
     ] = FINISHED_LIMIT,
     as_json: Json = False,
 ) -> None:
-    """The last tasks to reach a final state, the last first, and how many there are in all."""
+    """The last tasks to reach a final state, the last first, and how many there are in all.
+
+    Under the list, the table `why`: denied, failed, cancelled and expired always carry their why:
+    the words of the transition that ended the task — the Guardian's reason, your no, the error, the
+    words of the stop, the expiry —, and a no says who answered.
+    """
     with client.connect() as api:
         payload = api.get("/tasks/finished", client.query(limit=limit))
     shown = payload["tasks"]
@@ -162,7 +228,8 @@ def finished(
                         )
                         for one in shown
                     ],
-                ),
+                )
+                + _why(shown),
             ]
         ),
     )
@@ -171,7 +238,12 @@ def finished(
 @app.command("show")
 @handled
 def show(task_id: TaskId, as_json: Json = False) -> None:
-    """A task and where each of its steps stands. No steps means: no plan yet."""
+    """A task and where each of its steps stands. No steps means: no plan yet.
+
+    `reason`: denied, failed, cancelled and expired always carry their why: the words of the
+    transition that ended the task — the Guardian's reason, your no, the error, the words of the
+    stop, the expiry —, the same `ela task run` says; and a no says who answered, in `answered by`.
+    """
     with client.connect() as api:
         payload = api.get(f"/tasks/{task_id}")
     emit(payload, as_json, _detail(payload))
@@ -396,6 +468,7 @@ def _planning(payload: dict[str, Any]) -> str:
         ("planning", None if planning is None else f"{planning['id']} — {planning['state']}"),
         ("outcome", payload["outcome"]),
         ("reason", payload["reason"]),
+        *_answered_pairs(task),
     ]
     question = payload["approval"]
     if question is not None:
@@ -453,7 +526,9 @@ def run(task_id: TaskId, as_json: Json = False) -> None:
 
 
 def _ran(payload: dict[str, Any]) -> str:
-    """What ``ela task run`` prints: the rows of :data:`RUN_LABELS`, in their order."""
+    """What ``ela task run`` prints: the rows of :data:`RUN_LABELS`, in their order, and after the
+    reason of a no who answered (M13.1e) — a row of its own, not one of :data:`RUN_LABELS`, so the
+    guide's blocks of every other outcome stay what they are."""
     values = (
         payload["outcome"],
         payload["reason"],
@@ -461,7 +536,8 @@ def _ran(payload: dict[str, Any]) -> str:
         payload["steps"],
         halt_words(payload["halt"]),
     )
-    return fields(list(zip(RUN_LABELS, values, strict=True)))
+    rows = list(zip(RUN_LABELS, values, strict=True))
+    return fields([*rows[:2], *_answered_pairs(payload["task"]), *rows[2:]])
 
 
 @app.command("approve")

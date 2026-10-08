@@ -108,6 +108,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 11 — La voce | `M11.2` | Implementata | L'ascolto: ELA apre il microfono, e tiene solo le parole |
 | 11 — La voce | `M11.3` | Implementata | La voce di §9: la prima frase che esce da questa macchina |
 | 12 — I nodi sulla rete | `M12.1` | Implementata | L'identità: provare chi si è, e poter smettere di esserlo |
+| 12 — I nodi sulla rete | `M12.1b` | Implementata | STATO conta i comandi della CLI con una regola sua, e `ela voice` non c'è |
 | 12 — I nodi sulla rete | `M12.2` | Implementata | L'assegnazione e il protocollo del lavoro: la chiamata al tool fatta da lontano, e il tempo che decide per chi tace |
 | 12 — I nodi sulla rete | `M12.2b` | Implementata | Il rinnovo passa per la porta della consegna: una frase, un codice e un audit per ogni «non è tuo» |
 | 12 — I nodi sulla rete | `M12.3` | Implementata | Il nodo macOS: questa macchina diventa un nodo, e il contratto si implementa invece di descriversi |
@@ -120,7 +121,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.1b` | Implementata | Il grant di un sì si consuma: la riga `HIGH` e le promesse di M13.1 che l'albero non manteneva |
 | 13 — Il permesso prima dell'azione | `M13.1c` | Implementata | In quattro rami di `run` un diniego o un fallimento arriva senza il suo perché |
 | 13 — Il permesso prima dell'azione | `M13.1d` | Implementata | Il blocco di `ela approvals` in GETTING_STARTED §6 non è quello che la CLI stampa |
-| 13 — Il permesso prima dell'azione | `M13.1e` | Proposta | La console, il telefono e la riga di comando mostrano un diniego o un fallimento senza il suo perché |
+| 13 — Il permesso prima dell'azione | `M13.1e` | Implementata | La console, il telefono e la riga di comando mostrano un diniego o un fallimento senza il suo perché |
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Implementata | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
@@ -157,14 +158,14 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **58** | `docs/adr/NNNN-*.md` |
-| Milestone | **82, di cui 63 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **63** | `RULES` in `tests/architecture/` |
+| ADR scritti | **59** | `docs/adr/NNNN-*.md` |
+| Milestone | **83, di cui 65 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **64** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **30** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **13** | `production_catalogue()` |
 | Rotte dell'API | **51** | i `router` di `ela.api` |
-| Comandi della CLI | **27** | l'albero Typer di `ela.cli` |
+| Comandi della CLI | **28** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
@@ -597,7 +598,9 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
 3. **M9.6**, niente di Tommaso nel codice: subito dopo, sullo stesso branch, con il suo documento e il
    test della regola di `CLAUDE.md`;
 4. **M14.1 e M14.2**; e subito dopo **M13.1e**, prima di M14.3 (***aggiunta il 2026-10-02***, decisione 5 della
-   review della SPEC di M13.1c: le superfici che mostrano un diniego o un fallimento senza il perché);
+   review della SPEC di M13.1c: le superfici che mostrano un diniego o un fallimento senza il perché).
+   ***Annotato il 2026-10-08***: tutte e tre fatte, con la prova a mano passata; M13.1e sul Mac e sul telefono a
+   `b5a8d7a`, e ADR 0059 è Accettata;
 5. **M14.3**;
 6. **M13.9, M13.10, M13.11**;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
@@ -702,7 +705,8 @@ non l'ha più — viene alla fine della fila, 5.10 —; M13.6 la tiene.)
 ***Rivisto da Tommaso e dal revisore il 2026-09-30.*** Dopo M13.4 l'ordine della fase è **M13.1c e
 M13.1d → M13.9 → M13.10 → M13.11 → M13.5 → M13.7 → M13.8**; dopo M13.1c e M13.1d, prima di M13.9,
 **comincia la Fase 14** — M14.1, M14.2, M14.3 —, e fra M13.5 e M13.7 viene M14.4. (***Annotato il 2026-10-02***:
-**M13.1e**, registrata dalla review della SPEC di M13.1c, viene dopo M14.1 e M14.2 e prima di M14.3.) La fila intera, con
+**M13.1e**, registrata dalla review della SPEC di M13.1c, viene dopo M14.1 e M14.2 e prima di M14.3. ***Annotato il
+2026-10-08***: fatta, con la prova a mano passata.) La fila intera, con
 M6.3c in testa, sta nella 5.10. M13.6 resta fuori dalla
 fila, con la sua condizione. **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e la ragione è di
 Tommaso: **tutto ciò che vuole dal browser e dal computer control passa da un modello che guarda e
@@ -812,6 +816,12 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   **Registrata il 2026-10-02 dalla review della SPEC di M13.1c**: M13.1c fa dire il perché a `ela task run`; la console,
   il telefono, `ela task show` e `ela task finished` mostrano ancora un `DENIED` o un `FAILED` senza. Dentro, la domanda
   se il no debba nominare il dispositivo invece dell'id dell'identità. **Dopo M14.1 e M14.2, prima di M14.3.**
+  ***Annotato il 2026-10-08***: **implementata, fino alla prova a mano** ([ADR 0059](adr/0059-the-reason-on-every-route.md),
+  Proposta finché la sezione 25 della guida non passa sul Mac e sul telefono). Ogni rotta che porta un task porta la
+  ragione, letta in un posto solo; il no nomina la riga del registro con il suo ruolo, e sotto il tetto solo il ruolo.
+  Sullo stesso branch **M12.1b**: STATO conta i comandi della CLI come gli ADR, 28. ***Annotato il 2026-10-08***: **la
+  prova a mano di M13.1e è passata** sul Mac e sul telefono a `b5a8d7a`, e ADR 0059 è Accettata: la console, il
+  telefono e la riga di comando dicono il perché di una fine.
 - **M13.9 — il browser con i tuoi account** (§19, §57). **Registrata il 2026-09-30**: un Chrome vero con
   un profilo di ELA che dura, uno per macchina; le password in Bitwarden, prese una alla volta con la CLI
   ufficiale dopo un sì a ogni uso, e mai scritte in ELA; il profilo non accende la sincronizzazione di

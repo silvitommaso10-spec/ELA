@@ -29,9 +29,13 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<tetto in dollari>` | quanto il mese può spendere sulla chiave del modello, sotto il limite mensile dell'organizzazione | lo decidi tu (§9, §23) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
-| `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
-| `<id del passo 3>` | l'id del task del passo 3 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
-| `<id del passo 4>` | l'id del task del passo 4 di §21, nel suo ultimo giro | lo scrive `scripts/prova_m6_3c.py` al posto del segnaposto |
+| `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
+| `<id del passo 3>` | l'id del task del passo 3 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
+| `<id del passo 4>` | l'id del task del passo 4 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
+| `<id del passo 5>` | l'id del task del passo 5 della sezione 25 | lo scrive `scripts/prova_m13_1e.py` al posto del segnaposto |
+| `<id del passo 6>` | l'id del task del passo 6 della sezione 25 | lo scrive `scripts/prova_m13_1e.py` al posto del segnaposto |
+| `<id di chi ha risposto>` | l'id dell'identità che ha detto no, nel passo della sezione 25 | lo scrive `scripts/prova_m13_1e.py`, da `GET /tasks/<id>`, al posto del segnaposto |
+| `<nome di chi ha risposto>` | il nome che il registro dà a chi ha detto no | lo scrive `scripts/prova_m13_1e.py`, da `GET /devices`, al posto del segnaposto |
 | `<porta>` | la porta su cui ELA ascolta | `ela diagnostics`, riga `addresses` (§14) |
 | `<radice del PC>` | la cartella del PC dentro cui ELA può leggere e scrivere | la scegli tu, sul PC: una cartella che c'è, e che non contiene né sta dentro `$HOME\.ela` o `$HOME\ELA` (§17, passo 2) |
 | `<id della voce configurata>` | l'id della voce online che usi | `uv run ela voice`, riga `online voice`: lo scrive `scripts/prova_m13_1c_m13_1d_m9_6.py` al posto del segnaposto (§22) |
@@ -268,7 +272,9 @@ al modello — e quella domanda, come ogni chiamata che spende, **chiede il tuo 
 resta del mese (§23). Dopo il sì — `ela task approve <id del figlio> --approval <approval-id>` —, di nuovo
 `ela task plan <id>`: il modello scrive il piano, ELA lo controlla con le stesse funzioni che decideranno quando
 gira, e il task va in coda. **Non parte da solo**: lo leggi con `ela task show <id>` — chi l'ha scritto, e per
-ogni step gli argomenti e le condizioni —, e lo avvii tu, con `ela task run <id>`. Serve una chiave e un tetto
+ogni step gli argomenti e le condizioni —, e lo avvii tu, con `ela task run <id>`. Di un task finito
+`ela task show` dice anche **perché è finito**, nella riga `reason` sotto `state` — da M13.1e, la stessa ragione
+di `ela task run` —, e per un no **chi ha risposto**, nella riga `answered by`. Serve una chiave e un tetto
 (§9, §23); senza tetto la pianificazione è negata prima della domanda, e la ragione dice quale riga manca. La
 prova a mano è la [sezione 24](#24-il-planner-la-prova-a-mano-di-m142).
 
@@ -1131,7 +1137,10 @@ contiene nessun segreto: apre un indirizzo, e la credenziale è quella del brows
 **5. Che cosa fa la pagina.** La sfera dice se una domanda aspetta (`WAITING APPROVAL`), se ELA sta
 lavorando (`WORKING`) o se è ferma (`IDLE`). Sotto, le domande che aspettano, e i task in due gruppi:
 i **vivi** e i **finiti** — gli ultimi sei, l'ultimo a finire per primo, con il loro stato; il titolo
-dice il limite e, se sono di più, di quanti (M17.2b). Toccare una domanda apre la pagina della
+dice il limite e, se sono di più, di quanti (M17.2b). Sotto lo stato di un task finito c'è **perché è finito**
+(M13.1e): per un task che il telefono può vedere la ragione intera e, per un no, chi ha risposto con il suo nome;
+per un task che resta sul Mac **solo parole di ELA** — l'operazione, il codice, e chi ha risposto detto come
+«la riga di comando», «la console» o «il telefono» —, per esempio «`deny_by_approval` · ha risposto: la console». Toccare una domanda apre la pagina della
 domanda: che cosa ELA vuole fare, con che rischio, fin dove può andare il contenuto, per quanto vale
 il sì. **Il sì risponde e fa ripartire il task nella stessa richiesta** — le stesse due cose che al
 Mac sono `ela task approve` e `ela task run` —, e la pagina torna alla home, dove il task è il primo
@@ -1201,7 +1210,9 @@ tessere; l'**Approval Center**, dove una domanda si legge per intero e si rispon
 e fa ripartire il task, come dal telefono —; il **Device Center**, con la disponibilità e l'ultimo
 contatto come due colonne distinte; e il **dettaglio di un task**, che è un riassunto di esecuzione:
 l'obiettivo, il piano con lo step corrente, il dispositivo, e la riga che dice che il risultato c'è
-e dove si legge. Il contenuto di un risultato non si legge lì: è su `GET /tasks/<id>/results`.
+e dove si legge. Di un task finito il riassunto dice **«Perché»** e, per un no, **«Ha risposto»** (M13.1e), e
+la riga del task nella home porta la stessa ragione sotto lo stato: da questa macchina intera, con il nome di chi
+ha risposto; da fuori, per un task che resta sul Mac, solo l'operazione, il codice e il ruolo di chi ha risposto. Il contenuto di un risultato non si legge lì: è su `GET /tasks/<id>/results`.
 
 **5. Revocare la console.** Come per un nodo, e vale subito:
 
@@ -2703,6 +2714,10 @@ dalla riga di comando è quello di `local`, la persona a questa macchina.
 
 ***Riscritto il 2026-10-02*** (M13.1c, ADR 0055): fino a M13.1c la riga era `reason —`, come nella prova qui sotto.
 
+***Annotato il 2026-10-08*** (M13.1e, ADR 0059): da M13.1e, sotto la riga `reason` di un no, la corsa stampa anche
+`answered by  the command line on the Core` — chi ha risposto, con il nome fisso del token del Core. Il blocco resta il
+verbale del 2026-10-02.
+
 **Nella prova del 2026-09-28**: `ela approvals` ha mostrato la domanda
 `601ecd9c-d168-5fb5-834e-17d8984ba95b` — `workspace.write_note` su `workspace/notes/first-task.md`,
 `LOW`. Il no ha portato il task a `DENIED`, e la corsa dopo è tornata con `outcome denied`, `reason —`,
@@ -3799,6 +3814,10 @@ stopped step   —
 `6c38f1c5-6cda-5680-8a7a-4f061588deed` è l'id di `local`: la CLI parla con il token del Core, e chi risponde con quel
 token è la persona a questa macchina. Dalla console o dal telefono sarebbe l'id della loro riga nel registro.
 
+***Annotato il 2026-10-08*** (M13.1e, ADR 0059): da M13.1e la corsa stampa anche, sotto `reason`, `answered by  the
+command line on the Core`; gli `atteso` cercano le loro righe in ordine, e quella in più non li cambia. Dalla console o
+dal telefono, il nome della loro riga con il ruolo accanto: la sezione 25.
+
 ### 5. Che cosa dice l'help
 
 <!-- prova: 5.comando -->
@@ -4515,7 +4534,8 @@ del blocco sopra, in ordine —, e cinque suoi:
 - **`chiamata`**: il risultato del task di pianificazione — `claude-opus-5-5`, un costo, un `finish_reason` —, e scrive
   due misure: **se la risposta era un oggetto JSON**, e **quanti token d'uscita** ha usato.
 - **`rifiuto`**: il task `FAILED`, nessun piano, le parole del modello stampate, e **`planner.no_plan` nella riga
-  `reason` dell'`uv run ela task plan <id>` sopra** — ciò che leggi tu; `GET /tasks/<id>` una ragione non ce l'ha. **Se
+  `reason` dell'`uv run ela task plan <id>` sopra** — ciò che leggi tu; `GET /tasks/<id>` una ragione non ce l'ha
+  (***annotato il 2026-10-08***: da M13.1e ce l'ha, in `end`, e `rifiuto` legge ancora la riga di `ela task plan`). **Se
   il modello scrive comunque un piano valido, il passo è SALTATO e non FALLITO**: ciò che il modello non ha dato non è
   un errore di ELA. Lo script scrive il piano nel file e ti chiede di guardarlo.
 - **`spesa`**: `GET /spend`, confrontato con com'era al passo 1.
@@ -4748,6 +4768,387 @@ Le quattro chiamate sono nello speso, e nessuna prenotazione è rimasta aperta.
 ```
 speso cresciuto dei costi delle chiamate
 prenotato com'era al passo 1
+```
+
+## 25. La ragione di una fine sulle tre superfici: la prova a mano di M13.1e
+
+> **Scritta con l'implementazione il 2026-10-08** (`milestones/M13.1e.md`, «La prova a mano», con le decisioni della
+> review dello stesso giorno), e `tests/docs/test_prova_m13_1e.py` tiene lo script allineato a questa sezione. La si fa
+> **sul Mac e sul telefono, senza il PC**, sul branch di M13.1e, con lo script `scripts/prova_m13_1e.py`. `EXPIRED` lo
+> prova la suite: a mano vorrebbe un riavvio. **Fatta da Tommaso il 2026-10-08 sul branch**, a `b5a8d7a`, sul Mac e sul
+> telefono: passata, 29 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO
+> (`~/Downloads/prova-m13.1e-20261008-124455.txt`); [ADR 0059](adr/0059-the-reason-on-every-route.md) è Accettata, e le misure
+> sono in `milestones/M13.1e.md`, «Passata il 2026-10-08».
+
+Da M13.1e ogni superficie che mostra un task finito dice **perché è finito** — la stessa ragione di `ela task run`, il
+sommario della transizione che l'ha chiuso — e, per un no, **chi ha risposto**: `ela task show`, le risposte di
+`ela task deny` e `ela task cancel`, la tabella `why` sotto `ela task finished` e `ela task list`, il riassunto e la home
+della console, la home del telefono. Chi ha risposto lo dice il registro dei dispositivi: il nome che hai scritto
+quando hai arruolato la console o il telefono, con il ruolo accanto; per la riga di comando sul Core un nome fisso,
+`the command line on the Core`. **Sotto il tetto** — il telefono per un task `LOCAL_ONLY`, la console da fuori — una
+pagina mostra **solo parole di ELA**: l'operazione, il codice, e chi ha risposto detto come «la riga di comando», «la
+console» o «il telefono»; mai il messaggio, che nomina percorsi e siti, mai il nome di un dispositivo.
+
+A te restano tre cose con le mani — il «Rifiuta» della console, il «No» del telefono, il sì del passo 5 — e l'**occhio**
+sulla console e sul telefono, una domanda per task. Tutto il resto lo script lo legge da solo, dalla riga di comando e
+dall'API. **Nessuna chiamata parte**: i piani sono esempi senza `model.complete`, un no nega prima di ogni chiamata, e il
+fallimento lo dà `browser.act` su un bottone che `example.com` non ha. Nessuna voce.
+
+Lo script legge da questa sezione i blocchi con il marcatore sopra, con il lettore di `scripts/prova_m6_3c.py`: i tipi
+`comando`, `atteso`, `occhio` e `mano` di §21 — l'`atteso` cerca le sue righe in ciò che hanno stampato **tutti** i
+comandi del blocco sopra, in ordine; `mano` ti dice che cosa fare, e non aspetta Invio —, `sì` della sezione 24 — qui
+legge la domanda del task stesso —, e quattro suoi:
+
+- **`guarda`**: `stato DENIED`, e aspetta che il task finisca, al più un quarto d'ora. Finito in un altro stato, il passo
+  è FALLITO con lo stato vero: lì può esserci un difetto di ELA. Se in un quarto d'ora nessuno ha agito, il passo è
+  **SALTATO** — «nessuno ha risposto in un quarto d'ora: il passo si rifà» —: è il passo umano non fatto.
+- **`fine`**: legge `GET /tasks/<id>`, `GET /audit` e `GET /devices`, e vuole la ragione del task uguale al sommario
+  dell'evento della transizione che l'ha chiuso, l'operazione e il codice della riga, e chi ha risposto con il ruolo
+  della riga — `LOCAL` con il nome fisso, `CONSOLE` o `COMPANION` con il nome della sua riga del registro, `nessuno` —;
+  e la stessa ragione nella riga del task di `GET /tasks/finished`. Se il task non è fra gli ultimi 20 finiti, quella
+  riga non si confronta — **SALTATO**, «un altro task finito l'ha spinto fuori» —, e il resto sì.
+- **`ultimi`**: prima dei passi all'occhio, legge `GET /tasks/finished` con il numero di righe della superficie — 8 la
+  console, 6 il telefono — e vuole fra quelle i task dei passi 2–6. Se un altro task finito li ha spinti fuori, il passo
+  è **SALTATO**, con il task e la superficie: è la precondizione del passo, non un errore di ELA.
+- **`misura`**: le rotte della riga, cinque volte ciascuna, con quanti task hanno una ragione; scrive i millisecondi,
+  ed è una misura, non un verdetto.
+
+I segnaposto che riempie sono `<id>`, il task del passo; `<approval-id>`, la sua domanda; `<id di chi ha risposto>` e
+`<nome di chi ha risposto>`, che scrive `fine`; e `<id del passo N>`, il task del passo N. Scrive tutto in
+`~/Downloads`, in `prova-m13.1e-` con la data e l'ora, e l'ultima riga dice «La prova è passata» o che cosa manca.
+**Nessuna modifica al `.env`, nessun `Ctrl-C`, nessun riavvio** dopo l'avvio: M13.1e non ha migrazioni.
+
+Sul Mac, il Core acceso dal codice del branch; la console aperta nel browser del Mac, su `127.0.0.1` (§14); il telefono
+arruolato con `--privacy TRUSTED` (§13).
+
+```
+uv run python scripts/prova_m13_1e.py
+```
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch su `origin`, con l'albero
+pulito; ELA risponde, dal codice del branch — lo schema dell'API ha `EndOut` —; `uv run alembic current` dice
+`0014 (head)`; `example.com` è fra i siti dichiarati, e lo shell di Chromium c'è; nel registro c'è una console e c'è un
+telefono `TRUSTED`, non revocati. **Se qualcosa manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca.
+
+### 2. Il no dalla riga di comando
+
+Il piano del primo task: il saluto, poi la nota, che chiede. Al no lo dici tu dalla riga di comando, cioè lo script.
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create "il no dalla riga di comando" --json
+uv run ela task plan <id> --file docs/examples/first-task.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task deny <id> --approval <approval-id>
+```
+
+<!-- prova: 2.atteso -->
+```
+state DENIED
+reason deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by 6c38f1c5-6cda-5680-8a7a-4f061588deed)
+answered by the command line on the Core
+```
+
+<!-- prova: 2.fine -->
+```
+operazione deny_by_approval
+codice —
+ha risposto LOCAL
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+state DENIED
+reason deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by 6c38f1c5-6cda-5680-8a7a-4f061588deed)
+answered by the command line on the Core
+```
+
+### 3. Il no dalla console
+
+Lo stesso piano; il no lo dai tu, dalla console.
+
+<!-- prova: 3.comando -->
+```
+uv run ela task create "il no dalla console" --json
+uv run ela task plan <id> --file docs/examples/first-task.json
+uv run ela task run <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 3.mano -->
+```
+Dalla console sul Mac apri l'Approval Center, apri la domanda del task <id> e premi «Rifiuta».
+```
+
+<!-- prova: 3.guarda -->
+```
+stato DENIED
+```
+
+<!-- prova: 3.fine -->
+```
+operazione deny_by_approval
+codice —
+ha risposto CONSOLE
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 3.atteso -->
+```
+state DENIED
+reason deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by <id di chi ha risposto>)
+answered by <nome di chi ha risposto> (console)
+```
+
+### 4. Il no dal telefono
+
+Il task è `TRUSTED`, perché il telefono possa vederlo e rispondere: un task `LOCAL_ONLY` resta sul Mac.
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create "il no dal telefono" --privacy TRUSTED --json
+uv run ela task plan <id> --file docs/examples/first-task.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 4.mano -->
+```
+Dal telefono apri la domanda del task <id> e premi «No».
+```
+
+<!-- prova: 4.guarda -->
+```
+stato DENIED
+```
+
+<!-- prova: 4.fine -->
+```
+operazione deny_by_approval
+codice —
+ha risposto COMPANION
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+state DENIED
+reason deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by <id di chi ha risposto>)
+answered by <nome di chi ha risposto> (phone)
+```
+
+### 5. Un fallimento dopo un sì
+
+`docs/examples/browser-act-missing-here.json`: un clic su `#non-esiste`, che sulla pagina di `example.com` non c'è. La
+domanda è `HIGH`; dopo il sì la pagina si apre, e prima del primo gesto ELA vede che il bottone non c'è.
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create "un bottone che non c'è" --json
+uv run ela task plan <id> --file docs/examples/browser-act-missing-here.json
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 5.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome failed
+reason fail: EXECUTING -> FAILED (browser.element_missing: gesture 1 of 1 names no element on the page of example.com; no gesture was made)
+```
+
+<!-- prova: 5.fine -->
+```
+operazione fail
+codice browser.element_missing
+ha risposto nessuno
+```
+
+### 6. Un fermo dalla riga di comando
+
+Un task in coda, mai avviato, fermato con parole tue.
+
+<!-- prova: 6.comando -->
+```
+uv run ela task create "da fermare" --json
+uv run ela task plan <id> --file docs/examples/echo.json
+uv run ela task cancel <id> --reason "la prova di M13.1e"
+```
+
+<!-- prova: 6.atteso -->
+```
+state CANCELLED
+reason cancel: QUEUED -> CANCELLED (la prova di M13.1e)
+```
+
+<!-- prova: 6.fine -->
+```
+operazione cancel
+codice —
+ha risposto nessuno
+```
+
+### 7. La riga di comando, tutti insieme
+
+La tabella `why` sotto le due liste: gli ultimi cinque, l'ultimo a finire per primo, e i task fermati, negati e falliti
+nell'ordine in cui sono nati.
+
+<!-- prova: 7.comando -->
+```
+uv run ela task finished --limit 5
+uv run ela task list --state DENIED --state FAILED --state CANCELLED
+```
+
+<!-- prova: 7.atteso -->
+```
+why
+<id del passo 6> cancel: QUEUED -> CANCELLED (la prova di M13.1e) —
+<id del passo 5> fail: EXECUTING -> FAILED (browser.element_missing:
+<id del passo 4> deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by
+<id del passo 3> deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by
+<id del passo 2> deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by 6c38f1c5-6cda-5680-8a7a-4f061588deed) the command line on the Core
+why
+<id del passo 2> deny_by_approval:
+<id del passo 3> deny_by_approval:
+<id del passo 4> deny_by_approval:
+<id del passo 5> fail:
+<id del passo 6> cancel:
+```
+
+### 8. La console
+
+Nella console sul Mac — la nota in fondo dice «Stai leggendo da questa macchina» —: la home, fra i Finiti, e il
+riassunto di ogni task, che si apre toccando la sua riga.
+
+<!-- prova: 8.ultimi -->
+```
+console 8
+<id del passo 2>
+<id del passo 3>
+<id del passo 4>
+<id del passo 5>
+<id del passo 6>
+```
+
+<!-- prova: 8.occhio -->
+```
+Il task «il no dalla riga di comando» dice «deny_by_approval: WAITING_APPROVAL -> DENIED (rejected by 6c38f1c5-…)» e, nel riassunto, «Ha risposto the command line on the Core (la riga di comando)»?
+```
+
+<!-- prova: 8.occhio -->
+```
+Il task «il no dalla console» dice «deny_by_approval: … (rejected by …)» e «Ha risposto» con il nome della tua console e «(la console)» accanto?
+```
+
+<!-- prova: 8.occhio -->
+```
+Il task «il no dal telefono» dice «deny_by_approval: … (rejected by …)» e «Ha risposto» con il nome del tuo telefono e «(il telefono)» accanto?
+```
+
+<!-- prova: 8.occhio -->
+```
+Il task «un bottone che non c'è» dice «fail: EXECUTING -> FAILED (browser.element_missing: …)», e nessun «Ha risposto»?
+```
+
+<!-- prova: 8.occhio -->
+```
+Il task «da fermare» dice «cancel: QUEUED -> CANCELLED (la prova di M13.1e)»?
+```
+
+### 9. Il telefono
+
+La home del telefono, fra i Finiti. Dei quattro task `LOCAL_ONLY` il telefono mostra l'id, non l'obiettivo, e della
+ragione **solo parole di ELA**; del task `TRUSTED` del passo 4 l'obiettivo e la ragione intera.
+
+<!-- prova: 9.ultimi -->
+```
+telefono 6
+<id del passo 2>
+<id del passo 3>
+<id del passo 4>
+<id del passo 5>
+<id del passo 6>
+```
+
+<!-- prova: 9.occhio -->
+```
+La riga del task <id del passo 2> dice «deny_by_approval · ha risposto: la riga di comando», e niente altro della ragione?
+```
+
+<!-- prova: 9.occhio -->
+```
+La riga del task <id del passo 3> dice «deny_by_approval · ha risposto: la console», senza il nome della console?
+```
+
+<!-- prova: 9.occhio -->
+```
+La riga del task «il no dal telefono» dice la ragione intera, «deny_by_approval: … (rejected by …)», e «ha risposto:» con il nome del tuo telefono e «(il telefono)» accanto?
+```
+
+<!-- prova: 9.occhio -->
+```
+La riga del task <id del passo 5> dice «fail · browser.element_missing», senza il resto del messaggio?
+```
+
+<!-- prova: 9.occhio -->
+```
+La riga del task <id del passo 6> dice «cancel», senza le parole del fermo?
+```
+
+### 10. La misura
+
+Sul database vero del Mac: quanto costa leggere la ragione di ogni task finito di una lista. Lo script scrive i numeri
+nel file; non c'è un verdetto.
+
+<!-- prova: 10.misura -->
+```
+/tasks
+/tasks/finished?limit=10
 ```
 
 ## Dove guardare dopo
