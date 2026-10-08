@@ -329,3 +329,103 @@ def test_fact_c_leaves_out_a_phrase_the_cap_of_the_measure_stopped(tmp_path: Pat
     found = facts(tmp_path, here, runs)
     assert "sulle 1 frasi" in found
     assert "rapporto 1.00 → non trovato" in found
+
+
+# --- the bytes of a request (question 17) ------------------------------------------------------
+
+
+async def test_the_gateway_records_the_bytes_of_the_body_as_they_arrive() -> None:
+    from starlette.requests import Request
+
+    here = world()
+    here.capped.set()  # the cap stops the call before the network: no request leaves the test
+    body = json.dumps({"model": HAIKU, "max_tokens": 10, "messages": []}).encode()
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/v1/messages",
+            "query_string": b"beta=true",
+            "headers": [(b"x-api-key", here.token.encode())],
+        },
+        receive,
+    )
+    answer = await script().gateway(here, request)
+    assert answer.status_code == 400
+    (found,) = here.calls
+    assert found.body_bytes == len(body)
+    assert not found.forwarded
+
+
+def test_the_bytes_and_the_tokens_are_read_per_model_and_road_on_calls_with_their_usage() -> None:
+    calls = [
+        call(run="ciclo-haiku45-1", model=HAIKU, input_tokens=300, body_bytes=1000),
+        call(run="ciclo-haiku45-2", model=HAIKU, input_tokens=900, body_bytes=1000),
+        call(run="sessione-haiku45-1", model=HAIKU, input_tokens=1200, body_bytes=1000),
+        call(run="sdk-api-haiku-2", model=HAIKU, input_tokens=100, body_bytes=50),
+        call(run="ciclo-haiku45-3", model=HAIKU, input_tokens=0, body_bytes=1000),
+        call(run="ciclo-haiku45-3", model=HAIKU, input_tokens=5000, body_bytes=10, forwarded=False),
+    ]
+    for number, one in enumerate(calls, 1):
+        one.number = number
+    found = script().bytes_and_tokens(calls)
+    cycle = found[(HAIKU, "ciclo")]
+    assert cycle["calls"] == 2
+    assert (cycle["ratio"], cycle["ratio_call"]) == (Decimal("0.9"), 2)
+    assert (cycle["diff"], cycle["diff_call"]) == (-100, 2)
+    session = found[(HAIKU, "sessione")]
+    assert session["calls"] == 2
+    assert (session["ratio"], session["ratio_call"]) == (Decimal(2), 4)
+    assert (session["diff"], session["diff_call"]) == (200, 3)
+
+
+# --- Haiku 5.5, at the price of the measure (question 18) ---------------------------------------
+
+HAIKU_5_5 = "claude-haiku-5-5"
+
+
+def test_a_call_to_haiku_5_5_falls_in_the_low_tier_up_to_100000_tokens_and_in_the_high_above() -> (
+    None
+):
+    low = call(model=HAIKU_5_5, input_tokens=100_000, output_tokens=1000)
+    assert low.tier == "bassa"
+    assert low.nocache == (100_000 * Decimal("0.10") + 1000 * Decimal("0.50")) / MILLION
+    high = call(model=HAIKU_5_5, input_tokens=100_001, output_tokens=1000)
+    assert high.tier == "alta"
+    assert high.nocache == (100_001 * Decimal("0.50") + 1000 * Decimal("2.50")) / MILLION
+    assert call(model=HAIKU, input_tokens=100_001).tier is None
+
+
+def test_the_tier_counts_every_input_token_the_cache_ones_too() -> None:
+    cached = call(model=HAIKU_5_5, input_tokens=60_000, cache_read=50_000)
+    assert cached.tier == "alta"
+
+
+def test_the_worst_case_of_a_call_is_the_whole_window_and_for_haiku_5_5_the_high_tier() -> None:
+    worst_of = script().worst_of
+    assert worst_of(HAIKU_5_5) == Decimal("0.516384")
+    assert worst_of(HAIKU) == Decimal("0.232768")
+    assert worst_of(SONNET) == Decimal("2.065536")
+
+
+def test_the_three_models_have_three_labels_so_their_calls_never_mix() -> None:
+    measure = script()
+    assert measure.MEASURED_MODELS == (HAIKU, HAIKU_5_5, SONNET)
+    assert len({measure.SHORT[model] for model in measure.MEASURED_MODELS}) == 3
+    assert measure.RULE_MODELS == (HAIKU, SONNET)
+
+
+def test_fact_c_for_haiku_5_5_is_read_outside_the_rule(tmp_path: Path) -> None:
+    measure = script()
+    here = world()
+    s = session("sessione-haiku55-1", model=HAIKU_5_5)
+    c = measure.Run("ciclo-haiku55-1", "ciclo", HAIKU_5_5, 1, ("example.com",))
+    here.calls.append(call(run=s.label, model=HAIKU_5_5, input_tokens=3000))
+    here.calls.append(call(run=c.label, model=HAIKU_5_5, input_tokens=1000))
+    found = facts(tmp_path, here, [s, c])
+    assert f"(c, fuori dalla regola) {HAIKU_5_5}" in found
+    assert f"(c) {HAIKU}:" in found  # the rule's models are read as written

@@ -6,7 +6,7 @@
 **Lo lancia Tommaso, dal repository, con un comando solo** (SPEC di M14.3, decisione 9). Scrive
 tutto in un file, ``~/Downloads/misura-m14.3-<data e ora>.txt``, e lo stampa anche qui.
 
-Che cosa misura, sulle stesse tre frasi, con Haiku 4.5 e Sonnet 5.5:
+Che cosa misura, sulle stesse tre frasi, con Haiku 4.5, Haiku 5.5 e Sonnet 5.5:
 
 * **il ciclo di ELA** — il modello chiamato da ELA, uno sguardo per chiamata: il corpo della
   richiesta lo costruisce ``build_payload`` di ELA, e ogni chiamata vede l'obiettivo, i gesti fatti
@@ -16,7 +16,10 @@ Che cosa misura, sulle stesse tre frasi, con Haiku 4.5 e Sonnet 5.5:
   gateway di prova su loopback, che mette la chiave vera: la sessione riceve un gettone suo.
 
 Per ciascuna: i dollari con il listino di ELA, i token d'ingresso e d'uscita per sguardo, le
-chiamate, il tempo, e se la frase è riuscita. Per la sessione, in più: la versione di ``claude``,
+chiamate, il tempo, e se la frase è riuscita; e per ogni chiamata **i byte del corpo** che parte,
+con il massimo di token d'ingresso / byte e di token − byte per modello e strada (domanda 17
+della SPEC). Haiku 5.5 non è nel listino di ELA: ha **il prezzo della misura**, a fasce, scritto
+qui con la data (domanda 18). Per la sessione, in più: la versione di ``claude``,
 gli strumenti che dichiara all'avvio e quelli che ogni richiesta offre al modello, ogni richiesta
 che passa dal gateway, le connessioni non di loopback del processo, i file che scrive nella sua
 cartella, e due prove del «ferma» (SIGINT durante un gesto e durante una chiamata). E l'Agent SDK
@@ -70,7 +73,7 @@ from ela.executive.stops import StopOfTask
 from ela.infrastructure.machine.browser import PlaywrightBrowser
 from ela.permissions.capabilities import PATH_MAX_LENGTH, PATH_PATTERN, SITE_PATTERN
 from ela.ports import NAVIGATION, BrowserError
-from ela.providers.anthropic.models import HAIKU_4_5, MODELS, SONNET_5_5
+from ela.providers.anthropic.models import HAIKU_4_5, MODELS, SONNET_5_5, Model
 from ela.providers.anthropic.payload import build_payload
 from ela.providers.anthropic.pricing import PRICES, worst_cost
 from ela.tools.browser import BROWSER_TIMEOUT_SECONDS, boundary, cut, https_origin
@@ -87,7 +90,12 @@ OUTPUT_TOKENS: Final = 8192
 """Lo stesso ``max_tokens`` per le due strade: ``CLAUDE_CODE_MAX_OUTPUT_TOKENS`` per la sessione,
 ``max_output_tokens`` per il ciclo."""
 STOP_GRACE_SECONDS: Final = 15
-MEASURED_MODELS: Final = (HAIKU_4_5, SONNET_5_5)
+HAIKU_5_5: Final = "claude-haiku-5-5"
+MEASURED_MODELS: Final = (HAIKU_4_5, HAIKU_5_5, SONNET_5_5)
+RULE_MODELS: Final = (HAIKU_4_5, SONNET_5_5)
+"""I modelli su cui la regola scritta prima dei numeri legge il fatto (c), come è scritta: Haiku
+5.5 fa lo stesso confronto, fuori dalla regola, e ciò che dice di diverso è un dubbio."""
+SHORT: Final = {HAIKU_4_5: "haiku45", HAIKU_5_5: "haiku55", SONNET_5_5: "sonnet55"}
 SDK: Final = "claude-agent-sdk"
 SDK_VERSION: Final = "0.2.165"
 UPSTREAM: Final = "https://api.anthropic.com"
@@ -99,6 +107,80 @@ CACHE_WRITE_1H: Final = Decimal("2")
 """I moltiplicatori della scrittura in cache sul prezzo d'ingresso, dalla pagina dei prezzi letta il
 2026-10-08: il listino di ELA non li ha, perché ELA non chiede mai la cache (ADR 0057 §2)."""
 LOOPBACK: Final = ("127.0.0.1", "::1", "localhost", "[::1]")
+
+
+@dataclass(frozen=True)
+class Rates:
+    """Dollari per milione di token: ingresso, uscita, lettura dalla cache, scrittura in cache a
+    cinque minuti e a un'ora."""
+
+    input: Decimal
+    output: Decimal
+    cache_read: Decimal
+    write_5m: Decimal
+    write_1h: Decimal
+
+
+HAIKU_5_5_BOUND: Final = 100_000
+HAIKU_5_5_LOW: Final = Rates(
+    Decimal("0.10"), Decimal("0.50"), Decimal("0.01"), Decimal("0.125"), Decimal("0.20")
+)
+HAIKU_5_5_HIGH: Final = Rates(
+    Decimal("0.50"), Decimal("2.50"), Decimal("0.05"), Decimal("0.625"), Decimal("1")
+)
+"""**Il prezzo di Haiku 5.5 nella misura**, dalla pagina dei prezzi letta il 2026-10-08: a fasce per
+la lunghezza del prompt — fino a 100 000 token d'ingresso la bassa, oltre l'alta. **Fuori dal
+listino di ELA**: ``PRICES`` non lo ha, e ``src/`` non si tocca (decisione 20); il file lo dice."""
+HAIKU_5_5_MODEL: Final = Model(
+    HAIKU_5_5, max_output_tokens=128_000, supports_effort=True, context_window=1_000_000
+)
+"""Il profilo di Haiku 5.5, dalla pagina dei modelli letta il 2026-10-08: contesto di un milione,
+uscita 128K, pensiero adattivo, effort di default ``medium``. Fuori da ``MODELS``: serve al
+``build_payload`` del ciclo."""
+PROFILES: Final = {
+    HAIKU_4_5: MODELS[HAIKU_4_5],
+    HAIKU_5_5: HAIKU_5_5_MODEL,
+    SONNET_5_5: MODELS[SONNET_5_5],
+}
+TOOL_PROMPT_TOKENS: Final = {HAIKU_4_5: 496, HAIKU_5_5: 286, SONNET_5_5: 286}
+"""Il prompt di sistema che l'API aggiunge quando ci sono strumenti, con ``tool_choice`` ``auto``:
+la pagina dei prezzi letta il 2026-10-08, «Tool use pricing». Il margine della domanda 17, scritto
+nel file accanto ai numeri; il ciclo non ha strumenti, e non lo paga."""
+
+
+def rates(model: str | None, fed: int) -> Rates | None:
+    """Il prezzo di una chiamata con ``fed`` token d'ingresso: il listino di ELA, con la scrittura
+    in cache dai moltiplicatori della pagina; per Haiku 5.5 la fascia del prezzo della misura."""
+    if model == HAIKU_5_5:
+        return HAIKU_5_5_LOW if fed <= HAIKU_5_5_BOUND else HAIKU_5_5_HIGH
+    price = PRICES.get(model or "")
+    if price is None:
+        return None
+    return Rates(
+        price.input,
+        price.output,
+        price.cache_read,
+        price.input * CACHE_WRITE_5M,
+        price.input * CACHE_WRITE_1H,
+    )
+
+
+def shown(price: Rates) -> str:
+    return (
+        f"ingresso {price.input}, uscita {price.output}, lettura dalla cache {price.cache_read}, "
+        f"scrittura in cache {price.write_5m} e {price.write_1h}"
+    )
+
+
+def worst_of(model: str) -> Decimal | None:
+    """Il caso peggiore di una chiamata con ``max_tokens`` :data:`OUTPUT_TOKENS`, con la funzione di
+    ADR 0057 §2 sulla finestra intera; per Haiku 5.5 con la fascia alta del prezzo della misura."""
+    if model == HAIKU_5_5:
+        high = HAIKU_5_5_HIGH
+        window = HAIKU_5_5_MODEL.context_window
+        cost = (window - OUTPUT_TOKENS) * high.input + OUTPUT_TOKENS * high.output
+        return cost / Decimal(1_000_000)
+    return worst_cost(MODELS[model], output_tokens=OUTPUT_TOKENS)
 
 
 @dataclass(frozen=True)
@@ -227,28 +309,43 @@ class Call:
     tool_uses: list[str] = field(default_factory=list)
     seconds: float = 0.0
     after_sigint: bool = False
+    body_bytes: int = 0
+    """I byte del corpo della richiesta come arriva al gateway, cioè come parte verso Anthropic:
+    il gateway inoltra quei byte e nient'altro (domanda 17)."""
+
+    @property
+    def fed(self) -> int:
+        """I token d'ingresso, con quelli scritti e letti in cache: tutto ciò che il modello ha
+        letto."""
+        return self.input_tokens + self.cache_write_5m + self.cache_write_1h + self.cache_read
+
+    @property
+    def tier(self) -> str | None:
+        """La fascia di Haiku 5.5 in cui la chiamata è caduta; ``None`` per gli altri modelli."""
+        if self.model != HAIKU_5_5:
+            return None
+        return "bassa" if self.fed <= HAIKU_5_5_BOUND else "alta"
 
     @property
     def nocache(self) -> Decimal | None:
         """Il costo con il listino di ELA, ogni token d'ingresso al prezzo pieno: ciò che la
         stessa chiamata costerebbe senza la cache (i token sono gli stessi)."""
-        price = PRICES.get(self.model or "")
+        price = rates(self.model, self.fed)
         if price is None or not self.forwarded:
             return None
-        fed = self.input_tokens + self.cache_write_5m + self.cache_write_1h + self.cache_read
-        return (price.input * fed + price.output * self.output_tokens) / Decimal(1_000_000)
+        return (price.input * self.fed + price.output * self.output_tokens) / Decimal(1_000_000)
 
     @property
     def billed(self) -> Decimal | None:
         """Il costo con la cache come la risposta la dichiara: la lettura al prezzo del listino di
         ELA, la scrittura con i moltiplicatori della pagina dei prezzi."""
-        price = PRICES.get(self.model or "")
+        price = rates(self.model, self.fed)
         if price is None or not self.forwarded:
             return None
         cost = (
             price.input * self.input_tokens
-            + price.input * CACHE_WRITE_5M * self.cache_write_5m
-            + price.input * CACHE_WRITE_1H * self.cache_write_1h
+            + price.write_5m * self.cache_write_5m
+            + price.write_1h * self.cache_write_1h
             + price.cache_read * self.cache_read
             + price.output * self.output_tokens
         )
@@ -263,7 +360,7 @@ class Call:
             return Decimal(0)
         found = [one for one in (self.nocache, self.billed) if one is not None]
         known = max(found) if found else Decimal(0)
-        price = PRICES.get(self.model or "")
+        price = rates(self.model, self.fed)
         if self.complete or price is None:
             return known
         missing = max(0, (self.max_tokens or 0) - self.output_tokens)
@@ -518,6 +615,7 @@ async def gateway(world: World, request: Request) -> Response:
         call.status = 401
         return JSONResponse({"type": "error", "error": {"type": "authentication_error"}}, 401)
     raw = await request.body()
+    call.body_bytes = len(raw)
     body = json.loads(raw)
     described(body, call)
     if world.capped.is_set():
@@ -1403,7 +1501,7 @@ async def cycle(world: World, phrase: Phrase, model: str, label: str) -> Run:
                 instructions=instructions,
                 parameters={"max_output_tokens": OUTPUT_TOKENS},
             )
-            payload = build_payload(request, MODELS[model], OUTPUT_TOKENS)
+            payload = build_payload(request, PROFILES[model], OUTPUT_TOKENS)
             answer = await client.post(
                 f"http://127.0.0.1:{world.port}/v1/messages",
                 json=payload,
@@ -1682,8 +1780,9 @@ def report_run(out: Out, world: World, run: Run) -> None:
         f"{len(mine)}; token d'ingresso {fed:,}, d'uscita {made:,}; per sguardo "
         f"{fed // looks:,} e {made // looks:,}"
     )
+    source = "prezzo della misura, fuori dal listino" if run.model == HAIKU_5_5 else "listino"
     out.say(
-        f"- dollari, listino di ELA, senza cache: {money(total([c.nocache for c in mine]))}; "
+        f"- dollari, {source} di ELA, senza cache: {money(total([c.nocache for c in mine]))}; "
         f"con la cache come le risposte la dichiarano: {money(total([c.billed for c in mine]))}"
     )
     for one in run.gestures:
@@ -1712,7 +1811,8 @@ def report_run(out: Out, world: World, run: Run) -> None:
             f"{one.thinking} effort {one.effort} → stato {one.status}, in {one.input_tokens} "
             f"+ scritti {one.cache_write_5m}/{one.cache_write_1h} + letti {one.cache_read}, out "
             f"{one.output_tokens}, {one.stop_reason}, completa {one.complete}, client "
-            f"andato {one.client_gone}, dopo il SIGINT {one.after_sigint}, {one.seconds:.1f} s"
+            f"andato {one.client_gone}, dopo il SIGINT {one.after_sigint}, {one.seconds:.1f} s, "
+            f"corpo {one.body_bytes} B" + ("" if one.tier is None else f", fascia {one.tier}")
         )
 
 
@@ -1784,14 +1884,60 @@ def facts(out: Out, world: World, runs: Sequence[Run]) -> None:
             )
         s = total([one[0] for one in pairs])
         c = total([one[1] for one in pairs])
+        label = "(c)" if model in RULE_MODELS else "(c, fuori dalla regola)"
         if not pairs or s is None or c is None or c == 0:
-            out.say(f"(c) {model}: non si legge (coppie {len(pairs)})")
+            out.say(f"{label} {model}: non si legge (coppie {len(pairs)})")
             continue
         out.say(
-            f"(c) {model}: sessione {money(s)} $, ciclo {money(c)} $ sulle {len(pairs)} frasi "
+            f"{label} {model}: sessione {money(s)} $, ciclo {money(c)} $ sulle {len(pairs)} frasi "
             f"che le due strade hanno finito; rapporto {s / c:.2f} → "
             f"{'TROVATO' if s > 2 * c else 'non trovato'}"
         )
+
+
+def bytes_and_tokens(calls: Sequence[Call]) -> dict[tuple[str, str], dict[str, Any]]:
+    """Per modello e per strada, sulle chiamate partite con il loro usage: il massimo di token
+    d'ingresso / byte del corpo e il massimo di token − byte, con la chiamata che li dà. La strada
+    viene dalla corsa: ``ciclo-…`` è il ciclo, ogni altra corsa una sessione."""
+    found: dict[tuple[str, str], dict[str, Any]] = {}
+    for call in calls:
+        if not call.forwarded or call.fed == 0 or call.body_bytes == 0:
+            continue
+        road = "ciclo" if call.run.startswith("ciclo") else "sessione"
+        now = found.setdefault(
+            (call.model or "", road),
+            {"calls": 0, "ratio": None, "ratio_call": None, "diff": None, "diff_call": None},
+        )
+        now["calls"] += 1
+        ratio = Decimal(call.fed) / Decimal(call.body_bytes)
+        diff = call.fed - call.body_bytes
+        if now["ratio"] is None or ratio > now["ratio"]:
+            now["ratio"], now["ratio_call"] = ratio, call.number
+        if now["diff"] is None or diff > now["diff"]:
+            now["diff"], now["diff_call"] = diff, call.number
+    return found
+
+
+def report_bytes(out: Out, calls: Sequence[Call]) -> None:
+    """I numeri della domanda 17: i token d'ingresso contro i byte del corpo, e il margine che la
+    documentazione scrive. La misura può solo non smentire «token ≤ byte + margine»."""
+    out.say("\n## I byte del corpo e i token d'ingresso (domanda 17)")
+    out.say(
+        "- il margine della documentazione (pagina dei prezzi, 2026-10-08, il prompt di sistema "
+        "degli strumenti, tool_choice auto): "
+        + ", ".join(f"{model} {tokens} token" for model, tokens in TOOL_PROMPT_TOKENS.items())
+        + "; il ciclo non ha strumenti"
+    )
+    for (model, road), seen in sorted(bytes_and_tokens(calls).items()):
+        out.say(
+            f"- {model}, {road}: {seen['calls']} chiamate; massimo token/byte "
+            f"{seen['ratio']:.4f} (chiamata {seen['ratio_call']}); massimo token − byte "
+            f"{seen['diff']} (chiamata {seen['diff_call']})"
+        )
+    out.say(
+        "- la misura può solo non smentire «token ≤ byte + margine», non dimostrarlo: vale per "
+        "queste chiamate"
+    )
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1857,12 +2003,16 @@ async def measure(out: Out, mode: str) -> int:
         f"\n## Il tetto: {CAP_USD} $, contato con il listino di ELA dopo ogni chiamata; può "
         "superarlo dell'ultima chiamata, e di quelle in volo con lei. Fuori dal libro di ELA."
     )
-    worst = {
-        model: worst_cost(MODELS[model], output_tokens=OUTPUT_TOKENS) for model in MEASURED_MODELS
-    }
+    worst = {model: worst_of(model) for model in MEASURED_MODELS}
     out.say(
         f"- il caso peggiore di una chiamata con max_tokens {OUTPUT_TOKENS} (ADR 0057 §2): "
         + ", ".join(f"{model} {money(value)} $" for model, value in worst.items())
+        + f"; per {HAIKU_5_5} con la fascia alta del prezzo della misura"
+    )
+    out.say(
+        f"- {HAIKU_5_5} non è nel listino di ELA: ha il prezzo della misura, dalla pagina dei "
+        f"prezzi letta il 2026-10-08 — fino a {HAIKU_5_5_BOUND:,} token d'ingresso "
+        f"{shown(HAIKU_5_5_LOW)}; oltre {shown(HAIKU_5_5_HIGH)} (dollari per milione)"
     )
     runs: list[Run] = []
     with tempfile.TemporaryDirectory(prefix="misura-m14.3-") as name:
@@ -1885,7 +2035,7 @@ async def measure(out: Out, mode: str) -> int:
                     for road in ("ciclo", "sessione"):
                         if world.capped.is_set():
                             break
-                        label = f"{road}-{model.split('-')[1]}-{phrase.number}"
+                        label = f"{road}-{SHORT[model]}-{phrase.number}"
                         if road == "ciclo":
                             run = await cycle(world, phrase, model, label)
                         else:
@@ -1938,6 +2088,7 @@ async def measure(out: Out, mode: str) -> int:
     )
     out.say(f"## I metodi MCP ricevuti: {sorted(set(world.mcp_methods))}")
     facts(out, world, runs)
+    report_bytes(out, world.calls)
     spent = total([one.billed for one in world.calls if one.forwarded])
     out.say(
         f"\n## La spesa della misura, fuori dal libro di ELA: {money(spent)} $ con la cache "
