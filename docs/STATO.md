@@ -85,6 +85,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 6 — I nodi | `M6.3` | Implementata | Task Runner: la camminata del grafo |
 | 6 — I nodi | `M6.3b` | Implementata | `ela task run` dice «steps executed» di uno step che non ha eseguito |
 | 6 — I nodi | `M6.3c` | Implementata | Un task fermato mentre il suo tool gira fa rispondere `run` con un `409`, e lascia lo step `RUNNING` |
+| 6 — I nodi | `M6.3d` | Implementata | Il «ferma» di un task che non ha ancora un piano risponde `404` |
 | 7 — Il modello | `M7.1` | Implementata | `ModelProvider` e provider Anthropic |
 | 7 — Il modello | `M7.2` | Implementata | Protocollo STARTED e `model.complete` |
 | 7 — Il modello | `M7.3` | Implementata | Model Router |
@@ -157,7 +158,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **58** | `docs/adr/NNNN-*.md` |
-| Milestone | **81, di cui 62 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **82, di cui 63 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **63** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **30** | i `Protocol` di `src/ela/ports.py` |

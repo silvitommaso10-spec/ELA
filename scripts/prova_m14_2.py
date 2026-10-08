@@ -17,9 +17,12 @@ mano», e le decisioni 4, 15 e 16 della review):
   «rispondi sì?»; con un «s» esegue la riga del blocco — il sì con la CLI —, con un «n» la prova si
   ferma: il resto del passo non avrebbe niente da misurare;
 * ``piano``: il task ``QUEUED``, l'autore ``MODEL`` con un risultato e il modello della rotta, e
-  ogni step dentro il catalogo che il Planner ha mandato — una capability, le condizioni nel suo
-  vocabolario, il rischio e la domanda del catalogo, nessun tratto, nessuno ``HIGH`` —; ogni riga è
-  una capability che il piano deve avere, e per ``model.complete`` un ``task_type`` della tabella;
+  ogni step dentro il catalogo **del codice** al commit del passo 1 — il catalogo e i verifier,
+  mai le funzioni del Planner: una capability, le condizioni nel suo vocabolario, il rischio e la
+  domanda del catalogo, nessun tratto, nessuno ``HIGH`` —; ogni riga è una capability che il piano
+  deve avere, e per ``model.complete`` un ``task_type`` della tabella. Il catalogo che il Planner
+  ha mandato si confronta con lo stesso: ogni sua capability c'è, con lo stesso rischio, la stessa
+  domanda e lo stesso vocabolario;
 * ``chiamata``: il risultato del task di pianificazione, con il modello, un costo e un
   ``finish_reason``; scrive **se la risposta era un oggetto JSON** e **i token d'uscita**
   (decisione 4);
@@ -133,9 +136,91 @@ def at_the_migration(printed: str) -> bool:
     return MIGRATION in printed
 
 
+def code_catalogue(
+    specs: Sequence[Any], verifiers: Sequence[Any], task_types: Sequence[str]
+) -> dict[str, dict[str, Any]]:
+    """What the code says of every capability a verifier checks: its risk, whether it asks, the
+    vocabulary of its verifier — and for ``model.complete`` the task types of the routing table.
+
+    Read from the catalogue and the verifiers, **never from the Planner's functions** (question 3
+    of the review of the summary, 2026-10-08): the Planner derives its catalogue and writes the
+    risk of a step from the same source, so a derivation gone wrong would make plan and catalogue
+    agree, and a check of one against the other would pass."""
+    vocabulary = {str(one.capability_id): sorted(one.conditions) for one in verifiers}
+    found: dict[str, dict[str, Any]] = {}
+    for spec in specs:
+        name = str(spec.id)
+        if name not in vocabulary:
+            continue
+        entry: dict[str, Any] = {
+            "risk": spec.risk.value,
+            "asks_the_user": spec.requires_authorization,
+            "success_conditions": vocabulary[name],
+        }
+        if name == MODEL_COMPLETE:
+            entry["task_types"] = sorted(task_types)
+        found[name] = entry
+    return found
+
+
+def read_code_catalogue() -> dict[str, dict[str, Any]]:
+    """:func:`code_catalogue` of the code of this checkout — the commit step 1 verified: the
+    production catalogue, and the verifiers of :func:`~ela.tools.registry.production_verifiers`,
+    the function the composition calls. Built with arguments nothing reads — a verifier's
+    vocabulary is an attribute of its class, its capability the constructor's —, so nothing is
+    opened: no database, no browser, no network. ``build`` would write the row of ``local``."""
+    from types import SimpleNamespace
+
+    from ela.permissions.capabilities import production_catalogue
+    from ela.routing.settings import RoutingSettings
+    from ela.tools.registry import production_verifiers
+
+    unread = SimpleNamespace(directory=ROOT, settings=SimpleNamespace(capture_ttl=None))
+    verifiers = production_verifiers(
+        root=ROOT,
+        router=None,  # type: ignore[arg-type]
+        captures=unread,  # type: ignore[arg-type]
+        fs_root=ROOT,
+        programs=None,  # type: ignore[arg-type]
+        browser=None,  # type: ignore[arg-type]
+        browser_seconds=0,
+    )
+    return code_catalogue(
+        production_catalogue().specs(),
+        verifiers.verifiers(),
+        RoutingSettings().policy().task_types(),
+    )
+
+
+def sent_failures(
+    sent: Mapping[str, Mapping[str, Any]], code: Mapping[str, Mapping[str, Any]]
+) -> list[str]:
+    """What the catalogue the Planner sent says and the code does not: every capability of it is
+    in the code, with the same risk, the same question and the same vocabulary."""
+    failures: list[str] = []
+    for name, entry in sent.items():
+        known = code.get(name)
+        if known is None:
+            failures.append(f"il catalogo mandato ha {name}, che il codice non ha")
+            continue
+        if entry.get("risk") != known["risk"]:
+            failures.append(
+                f"il catalogo mandato dice {name} {entry.get('risk')}, il codice {known['risk']}"
+            )
+        if bool(entry.get("asks_the_user")) != known["asks_the_user"]:
+            failures.append(
+                f"il catalogo mandato dice che {name} chiede: {bool(entry.get('asks_the_user'))}, "
+                f"il codice {known['asks_the_user']}"
+            )
+        if sorted(entry.get("success_conditions") or []) != known["success_conditions"]:
+            failures.append(f"il vocabolario mandato di {name} non è quello del suo verifier")
+    return failures
+
+
 def catalogue_of(instructions: str) -> dict[str, Mapping[str, Any]]:
-    """The catalogue the Planner sent the model, read from the planning task's own step: what a
-    plan of the model is checked against is what the model was told."""
+    """The catalogue the Planner sent the model, read from the planning task's own step: it is
+    checked against the code's (:func:`sent_failures`), and the plan is read against the code's
+    too — never against what the Planner itself derived."""
     if CATALOGUE_OPENS not in instructions:
         raise ValueError("the instructions carry no catalogue")
     listed = instructions.split(CATALOGUE_OPENS, 1)[1].split(CATALOGUE_CLOSES, 1)[0]
@@ -280,6 +365,9 @@ class Proof:
     start: spending.Ledger
     costs: list[Decimal] = field(default_factory=list)
     """The cost of each call ``chiamata`` read: what ``spesa`` adds up."""
+    code: Mapping[str, Mapping[str, Any]] = field(default_factory=read_code_catalogue)
+    """The catalogue of the code, read once, after step 1 verified the commit: what ``piano``
+    reads a plan against, and what the catalogue the Planner sent is checked against."""
 
 
 def filled(text: str, turn: Turn, note: str) -> str:
@@ -352,14 +440,16 @@ def a_plan(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
     turn.child_id = task.get("planning_task_id") or turn.child_id
     child = proof.api.get(f"/tasks/{turn.child_id}")
     (call,) = child.get("steps") or [{}]
-    catalogue = catalogue_of(str((call.get("arguments") or {}).get("instructions", "")))
+    sent = catalogue_of(str((call.get("arguments") or {}).get("instructions", "")))
     written_plan(proof, task)
-    failures = plan_failures(task, catalogue, block.lines)
+    failures = [*sent_failures(sent, proof.code), *plan_failures(task, proof.code, block.lines)]
     if failures:
         proof.report.failure(number, "; ".join(failures))
     else:
         proof.report.passed(
-            number, f"un piano di {len(task['steps'])} step dentro il catalogo, scritto da {MODEL}"
+            number,
+            f"un piano di {len(task['steps'])} step dentro il catalogo del codice, scritto da "
+            f"{MODEL}; il catalogo mandato è quello del codice",
         )
 
 

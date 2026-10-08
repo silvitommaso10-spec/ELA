@@ -15,11 +15,14 @@ and quotes no word of the plan (§57).
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
 
-from ela.domain import TaskState
+from ela.api.schemas import PlanIn
+from ela.composition import Ela
+from ela.domain import TaskId, TaskState
 from tests.api.support import echo_plan
 
 
@@ -101,3 +104,26 @@ async def test_a_plan_that_passes_is_queued_as_before(client: AsyncClient) -> No
 
     assert response.status_code == 200, response.text
     assert response.json()["state"] == TaskState.QUEUED.value
+
+
+async def test_a_plan_saved_before_the_check_still_waits_for_a_node_that_cannot_exist(
+    client: AsyncClient, ela: Ela
+) -> None:
+    """Decision 20 of the review of the summary: from the API ``UNKNOWN_CAPABILITY`` is reached no
+    more, and it stays true of the plans saved **before** the check — tasks ``QUEUED`` with a plan
+    by hand already in the database, which a migration does not revisit. The row is written as the
+    route wrote it then: ``start_planning``, ``plan`` and ``queue`` of the engine, author ``HAND``
+    (the default ``0014`` gives the rows it finds), and no question to the executor. The
+    orchestrator's own refusal is in ``tests/devices/test_orchestrator.py``."""
+    task_id = TaskId(UUID(await created(client)))
+    body = with_first_step(required_capabilities=["core.rm_rf"])
+    plan = PlanIn.model_validate(body).to_domain(task_id, ela.ids.new_uuid(), ela.clock.now())
+    await ela.engine.start_planning(task_id)
+    await ela.engine.plan(task_id, plan)
+    await ela.engine.queue(task_id, reason="planned through the API")
+
+    run = (await client.post(f"/tasks/{task_id}/run")).json()
+
+    assert run["outcome"] == "waiting_device"
+    assert "UNKNOWN_CAPABILITY" in (run["reason"] or "")
+    assert run["task"]["state"] == TaskState.QUEUED.value

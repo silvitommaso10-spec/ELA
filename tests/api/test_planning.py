@@ -19,11 +19,15 @@ from uuid import UUID
 import pytest
 from httpx import AsyncClient
 
-from ela.domain import TaskState
+from ela.api.approvals import answered_and_resumed
+from ela.api.schemas import ApprovalOut
+from ela.api.security import Identity, Kind
+from ela.domain import DeviceId, DeviceRole, TaskId, TaskState
 from ela.executive.planner import PLANNING_OUTPUT_TOKENS
 from ela.executive.spending import CAP_VARIABLE
 from ela.providers.anthropic.models import OPUS_5_5
 from tests.api.planning import GOAL, NO_PLAN, NOTE_PLAN, asked, created, said, with_a_model
+from tests.api.reasons import World
 from tests.api.support import echo_plan
 from tests.executive.planning import NO_PLAN_REASON, NOTE_BODY
 
@@ -330,3 +334,61 @@ async def test_the_planning_task_says_the_planner_wrote_its_plan(
 
         assert detail["plan_author"]["by"] == "PLANNER"
         assert [step["required_capabilities"] for step in detail["steps"]] == [["model.complete"]]
+
+
+# ----------------------------------------------------------------------------------------
+# The road of the pages: the console and the phone answer the child's question (decision 19)
+# ----------------------------------------------------------------------------------------
+
+A_CONSOLE = Identity(
+    kind=Kind.CONSOLE,
+    device_id=DeviceId(UUID("00000000-0000-4000-8000-0000000000c1")),
+    role=DeviceRole.CONSOLE,
+)
+"""Who a page of the Command Center is: the identity its middleware resolves."""
+
+
+async def answered_from_a_page(world: World, body: dict[str, Any], *, said_yes: bool) -> None:
+    """What the console and the phone call for a question, one conduct in one place (M17.2
+    dec. K.1): the answer, and after a yes the run it would otherwise wait for."""
+    await answered_and_resumed(
+        ApprovalOut.model_validate(body["approval"]),
+        said_yes=said_yes,
+        ela=world.ela,
+        identity=A_CONSOLE,
+        running=world.app.state.running,
+    )
+
+
+async def test_a_yes_from_a_page_runs_the_call_and_plans_the_task_with_the_model_s_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The proof gives its yes from the command line, so nothing else reaches this road: the
+    page's yes runs the planning task, and the run settles the task it plans."""
+    async with with_a_model(monkeypatch, tmp_path, said(NOTE_PLAN)) as (world, model):
+        task_id = await created(world.client)
+        body = await asked(world.client, task_id)
+
+        await answered_from_a_page(world, body, said_yes=True)
+
+        detail = (await world.client.get(f"/tasks/{task_id}")).json()
+        assert detail["state"] == S.QUEUED.value
+        assert detail["plan_author"]["by"] == "MODEL"
+        assert detail["plan_author"]["model"] == OPUS_5_5
+        assert len(model.messages.calls) == 1
+        assert (await world.client.get(f"/tasks/{task_id}/results")).json() == [], "not run"
+
+
+async def test_a_no_from_a_page_denies_the_task_it_plans_with_deny_by_planning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    async with with_a_model(monkeypatch, tmp_path) as (world, model):
+        task_id = await created(world.client)
+        body = await asked(world.client, task_id)
+
+        await answered_from_a_page(world, body, said_yes=False)
+
+        assert await state_of(world.client, task_id) == S.DENIED.value
+        reason = (await world.ela.runner.answer(TaskId(UUID(task_id)))).reason or ""
+        assert reason.startswith("deny_by_planning: PLANNING -> DENIED (the planning task ")
+        assert model.messages.calls == []

@@ -4500,10 +4500,13 @@ Lo script legge da questa sezione i blocchi con il marcatore sopra, con il letto
 - **`sì`**: legge il task di pianificazione e la sua domanda, te la mostra, e chiede «rispondi sì?». Con un «s» esegue il
   comando del blocco, il sì con la CLI; con un «n» la prova si ferma — **FERMATO** —.
 - **`piano`**: legge `GET /tasks/<id>` e vuole il task `QUEUED`, **l'autore `MODEL`** con un risultato e
-  `claude-opus-5-5`, e per ogni step una capability del catalogo che il Planner ha mandato, almeno una condizione nel
-  suo vocabolario, il rischio e la domanda del catalogo, nessun tratto preferito, nessuno step `HIGH`. Ogni riga del
-  blocco è una capability che il piano deve avere; per `model.complete`, un `task_type` della tabella delle rotte.
-  Scrive il piano nel file, step per step, con gli argomenti.
+  `claude-opus-5-5`, e per ogni step una capability **del catalogo del codice** — letto al commit che il passo 1 ha
+  verificato, dal catalogo e dai verifier, mai dalle funzioni del Planner —, almeno una condizione nel suo vocabolario,
+  il rischio e la domanda del catalogo, nessun tratto preferito, nessuno step `HIGH`. Ogni riga del blocco è una
+  capability che il piano deve avere; per `model.complete`, un `task_type` della tabella delle rotte. **Il catalogo che
+  il Planner ha mandato** lo confronta con lo stesso: ogni sua capability c'è nel codice, con lo stesso rischio, la
+  stessa domanda e lo stesso vocabolario. Un Planner che sbagliasse la derivazione scriverebbe piano e catalogo
+  d'accordo fra loro, e solo il codice lo vede. Scrive il piano nel file, step per step, con gli argomenti.
 - **`chiamata`**: il risultato del task di pianificazione — `claude-opus-5-5`, un costo, un `finish_reason` —, e scrive
   due misure: **se la risposta era un oggetto JSON**, e **quanti token d'uscita** ha usato.
 - **`rifiuto`**: il task `FAILED` con `planner.no_plan`, nessun piano, e le parole del modello stampate. **Se il modello

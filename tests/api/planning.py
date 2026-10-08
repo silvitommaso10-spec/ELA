@@ -4,7 +4,10 @@ ELA as ``build`` makes it — the cap and the key declared, as on the Mac of the
 real Anthropic adapter over the client double** of ``tests/providers``: the request the Planner
 makes is built, sent and read by the code that will send it for real, and no socket is opened
 (``tests/conftest.py``). The one thing replaced is the factory that would give the adapter the SDK's
-client, as ``tests/api/test_server.py`` replaces uvicorn.
+client, as ``tests/api/test_server.py`` replaces uvicorn — **here and nowhere else**, and with the
+default ``raising=True``: a factory renamed tomorrow fails the patch instead of letting the real one
+through. A parameter of ``build`` would have been a door in the product opened for the tests (review
+of the summary of M14.2, question 1).
 """
 
 from __future__ import annotations

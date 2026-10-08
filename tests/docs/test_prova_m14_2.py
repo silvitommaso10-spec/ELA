@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import re
 import subprocess
 import sys
@@ -245,6 +246,41 @@ def test_instructions_without_a_catalogue_are_refused() -> None:
         script().catalogue_of("You are the Planner.")
 
 
+@pytest.fixture(scope="module")
+def code() -> dict[str, Any]:
+    """The catalogue of the code, as the script reads it: never from the Planner's functions."""
+    read: dict[str, Any] = script().read_code_catalogue()
+    return read
+
+
+def test_the_code_s_catalogue_is_every_capability_a_verifier_checks(code: dict[str, Any]) -> None:
+    assert set(code) == {str(spec.id) for spec in production_catalogue().specs()}
+    assert code["workspace.write_note"] == {
+        "risk": "LOW",
+        "asks_the_user": False,
+        "success_conditions": ["note.content_matches", "note.exists"],
+    }
+    assert code["model.complete"]["risk"] == "MEDIUM"
+    assert code["model.complete"]["asks_the_user"] is True
+    assert "reasoning" in code["model.complete"]["task_types"]
+    assert code["fs.write"]["risk"] == "HIGH"
+
+
+def test_a_capability_no_verifier_checks_is_not_in_the_code_s_catalogue() -> None:
+    specs = list(production_catalogue().specs())
+
+    found = script().code_catalogue(specs, [], ["reasoning"])
+
+    assert found == {}
+
+
+def test_the_catalogue_the_planner_sends_in_the_suite_is_the_code_s(
+    offered: dict[str, Any], code: dict[str, Any]
+) -> None:
+    """The positive case of :func:`sent_failures`, on what the real Planner writes."""
+    assert script().sent_failures(offered, code) == []
+
+
 def step(**changed: Any) -> dict[str, Any]:
     base = {
         "required_capabilities": ["workspace.write_note"],
@@ -267,7 +303,7 @@ def planned(*steps: dict[str, Any], **changed: Any) -> dict[str, Any]:
     return {**task, **changed}
 
 
-def test_a_plan_inside_the_catalogue_passes(offered: dict[str, Any]) -> None:
+def test_a_plan_inside_the_catalogue_passes(code: dict[str, Any]) -> None:
     asked = step(
         required_capabilities=["model.complete"],
         success_conditions=["model.answered"],
@@ -276,7 +312,7 @@ def test_a_plan_inside_the_catalogue_passes(offered: dict[str, Any]) -> None:
         arguments={"input": "?", "task_type": "reasoning"},
     )
 
-    assert script().plan_failures(planned(step(), asked), offered, ["model.complete"]) == []
+    assert script().plan_failures(planned(step(), asked), code, ["model.complete"]) == []
 
 
 @pytest.mark.parametrize(
@@ -287,7 +323,7 @@ def test_a_plan_inside_the_catalogue_passes(offered: dict[str, Any]) -> None:
         (planned(plan_author={"by": "MODEL", "result_id": RESULT, "model": "claude-x"}), []),
         (planned(steps=[]), []),
         (planned(step(required_capabilities=["core.echo", "workspace.write_note"])), []),
-        (planned(step(required_capabilities=["fs.write"])), []),
+        (planned(step(required_capabilities=["home.lights"])), []),
         (planned(step(success_conditions=["echo.message_matches"])), []),
         (planned(step(success_conditions=[])), []),
         (planned(step(risk="MEDIUM")), []),
@@ -324,9 +360,9 @@ def test_a_plan_inside_the_catalogue_passes(offered: dict[str, Any]) -> None:
     ],
 )
 def test_a_plan_that_is_not_the_catalogue_s_fails(
-    offered: dict[str, Any], task: dict[str, Any], wanted: list[str]
+    code: dict[str, Any], task: dict[str, Any], wanted: list[str]
 ) -> None:
-    assert script().plan_failures(task, offered, wanted) != []
+    assert script().plan_failures(task, code, wanted) != []
 
 
 def test_a_high_step_fails_even_where_the_catalogue_says_high() -> None:
@@ -437,15 +473,21 @@ def test_a_word_outside_the_vocabulary_of_spesa_is_the_guides_error() -> None:
 class Ela:
     """An ELA mid-proof: a task, its planning task waiting for a yes, and what the API says."""
 
-    def __init__(self, task: dict[str, Any], child_state: str = "WAITING_APPROVAL") -> None:
+    def __init__(
+        self,
+        task: dict[str, Any],
+        child_state: str = "WAITING_APPROVAL",
+        child_steps: list[dict[str, Any]] | None = None,
+    ) -> None:
         self.task = task
         self.child_state = child_state
+        self.child_steps = child_steps or []
 
     def get(self, path: str) -> Any:
         if path == "/approvals":
             return [{"id": "q-1", "task_id": CHILD, "prompt": "la domanda", "worst_case": WORST}]
         if path == f"/tasks/{CHILD}":
-            return {"id": CHILD, "state": self.child_state, "steps": []}
+            return {"id": CHILD, "state": self.child_state, "steps": self.child_steps}
         if path == f"/tasks/{TASK}":
             return {"id": TASK, "planning_task_id": CHILD, **self.task}
         raise AssertionError(path)
@@ -585,3 +627,61 @@ def test_every_precondition_present_lets_the_proof_go_on() -> None:
 
     assert module.stopping(report, [("ELA risponde", lambda: True)]) is True
     assert report.stopped is None and report.passes == {1: 1}
+
+
+# ----------------------------------------------------------------------------------------
+# «piano» reads the catalogue of the code, and the one the Planner sent is checked against it
+# ----------------------------------------------------------------------------------------
+
+
+def sent(**changed: Any) -> list[dict[str, Any]]:
+    """The planning task's step, carrying the catalogue the Planner sent: one entry, the note."""
+    module = script()
+    entry = {
+        "capability": "workspace.write_note",
+        "risk": "LOW",
+        "asks_the_user": False,
+        "success_conditions": ["note.content_matches", "note.exists"],
+        **changed,
+    }
+    written = (
+        f"You are the Planner.\n{module.CATALOGUE_OPENS}{json.dumps([entry])}"
+        f"{module.CATALOGUE_CLOSES} (JSON Schema):\n{{}}\n"
+    )
+    return [{"arguments": {"instructions": written}}]
+
+
+def planned_against(catalogue: list[dict[str, Any]], *steps: dict[str, Any]) -> Any:
+    module = script()
+    proof = a_proof(Ela(planned(*steps), child_steps=catalogue), [])
+    walked(proof, {2: [module.base.Block(2, "piano", "workspace.write_note")]})
+    return proof.report
+
+
+def test_a_catalogue_sent_with_a_wrong_risk_fails_the_plan_that_agrees_with_it() -> None:
+    """Question 3 of the review of the summary: the check was circular. A Planner that derived a
+    wrong risk would send it and write it in the plan, and a plan read against what was sent
+    would pass. Read against the code, both fail."""
+    report = planned_against(sent(risk="SAFE"), step(risk="SAFE"))
+
+    assert report.failures == 1
+    (failed,) = [line for line in report.lines if "FALLITO" in line]
+    assert "SAFE" in failed and "LOW" in failed
+
+
+def test_a_catalogue_sent_that_asks_when_the_code_does_not_fails() -> None:
+    report = planned_against(sent(asks_the_user=True), step(requires_authorization=True))
+
+    assert report.failures == 1
+
+
+def test_a_catalogue_sent_with_a_capability_the_code_does_not_have_fails() -> None:
+    report = planned_against(sent(capability="home.lights"), step())
+
+    assert report.failures == 1
+
+
+def test_a_catalogue_sent_as_the_code_says_and_a_plan_inside_it_pass() -> None:
+    report = planned_against(sent(), step())
+
+    assert report.failures == 0 and report.ok

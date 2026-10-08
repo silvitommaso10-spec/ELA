@@ -176,6 +176,12 @@ muovere il task, e un piano che l'executor rifiuterebbe è un `422` con lo step 
 chiuso per le due porte. Gli argomenti di un piano a mano restano del Guardian, al `run`: un piano scritto a mano può
 voler mostrare un diniego.
 
+**`UNKNOWN_CAPABILITY` del Device Orchestrator non si raggiunge più dall'API**, e resta vera: per i piani salvati
+**prima** di questo controllo — task `QUEUED` con un piano a mano già nel database, che nessuna migrazione rilegge —
+il `run` aspetta un nodo che non può esistere, `waiting_device` con `UNKNOWN_CAPABILITY`, come prima di M14.2. Lo
+prova un test che scrive il piano come la rotta lo scriveva allora, con le operazioni dell'engine e senza la rotta
+(`tests/api/test_hand_plan_ready.py`); il rifiuto dell'orchestrator da solo è in `tests/devices/test_orchestrator.py`.
+
 ### 5. La porta: `engine.plan` e `queue`, nessun `run`
 
 Valido, il piano entra con `engine.plan` — che rifà `TaskGraph.from_plan` — e `engine.queue`: il padre `QUEUED`, come
@@ -275,6 +281,8 @@ Gli ADR non si riscrivono: queste righe si leggono con questo accanto, e lo Stat
 Scrivendo i test della rotta, il fermo di un task **senza piano** — `CREATED`, o `PLANNING` mentre ELA lo pianifica —
 rispondeva `404 task plan not found` per un fermo che l'engine aveva già scritto: `close_open_step` chiedeva il grafo di un
 task che non ne ha. Da M6.3c (ADR 0054 §5). Prima un test rosso, poi il fix: senza piano non c'è uno step da chiudere.
+La riparazione è **M6.3d** (`docs/milestones/M6.3d.md`): il difetto vive nella Fase 6 (ADR 0035 §1), e questa
+sezione ne resta la decisione.
 
 ### 12. La prova a mano
 
