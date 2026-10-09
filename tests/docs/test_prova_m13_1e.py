@@ -658,12 +658,26 @@ def test_the_comparison_of_a_task_pushed_out_is_the_comparison_of_the_rest(real:
 
 
 def watch(real: Real, answer: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
-    """Step 3 from its ``guarda`` on, with ``GET /tasks/<id>`` answering ``answer``."""
+    """Step 3 from its ``guarda`` up to its next command, with ``GET /tasks/<id>`` answering
+    ``answer``.
+
+    **No command runs here** (found on 2026-10-09, M14.3): the walk went on past the watch into
+    ``uv run ela task show <id>``, a real subprocess, which reached whatever ELA the ``.env`` of
+    the machine names — it passed only while ``ela serve`` was running on the Mac. A command the
+    walk would run now fails the test."""
     module = script()
     monkeypatch.setattr(module, "WATCH_SECONDS", 0)
     monkeypatch.setattr(module, "WATCH_PAUSE", 0)
+
+    def no_command(line: str) -> Any:
+        raise AssertionError(f"a test of the watch ran a command: {line}")
+
+    monkeypatch.setattr(module.base, "run", no_command)
     blocks = marked()[3]
-    after = blocks[[one.kind for one in blocks].index("guarda") :]
+    kinds = [one.kind for one in blocks]
+    start = kinds.index("guarda")
+    end = kinds.index("comando", start)
+    after = blocks[start:end]
     proof = proof_on({f"/tasks/{real.ids[3]}": answer, **real.answers(3)})
     proof.api.answers[f"/tasks/{real.ids[3]}"] = answer
     module.a_step(3, after, proof, module.Turn(task_id=real.ids[3]))
