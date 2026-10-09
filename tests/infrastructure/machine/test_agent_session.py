@@ -235,6 +235,22 @@ async def test_a_sweep_with_no_folder_of_the_sessions_sweeps_nothing(tmp_path: P
     assert await session.sweep() == 0
 
 
+def test_the_tools_tell_the_model_the_grammar_of_a_selector() -> None:
+    """Decision 44: the second round of the proof, 2026-10-09 — the model wrote ``custname`` and
+    ``Submit order`` as selectors, and ELA, as ADR 0052 §8 wants, made no gesture. The model could
+    not do better: the text of a page carries no attributes, and nobody told it the grammar. Who
+    chooses writes; who gives the tool says the grammar."""
+    from ela.infrastructure.machine.agent import ACT_DESCRIPTION, ACT_SCHEMA, READ_DESCRIPTION
+    from ela.tools.browser import SELECTOR_GRAMMAR
+
+    assert SELECTOR_GRAMMAR in ACT_DESCRIPTION
+    assert SELECTOR_GRAMMAR in READ_DESCRIPTION
+    for said in ("[selector, value]", "expect_text", "attributes", "exactly one element"):
+        assert said in ACT_DESCRIPTION, said
+    for name in ("site", "path", "fill", "click", "expect_text"):
+        assert ACT_SCHEMA["properties"][name].get("description"), name
+
+
 def test_the_two_tools_are_ela_s() -> None:
     assert frozenset({"mcp__ela__read", "mcp__ela__act"}) == TOOLS
 
@@ -277,7 +293,15 @@ NO_PROC = (
 async def _fake_model(request: Request) -> Response:
     body = json.loads(await request.body())
     tools = [str(one.get("name")) for one in body.get("tools") or []]
-    request.app.state.calls.append({"tools": tools, "model": body.get("model")})
+    request.app.state.calls.append(
+        {
+            "tools": tools,
+            "model": body.get("model"),
+            "descriptions": {
+                str(one.get("name")): str(one.get("description")) for one in body.get("tools") or []
+            },
+        }
+    )
     read = next((one for one in tools if one.endswith("read")), None)
     looked = "Example Domain" in json.dumps(body.get("messages") or [])
     if read is not None and not looked:
@@ -503,3 +527,16 @@ async def test_after_the_sweep_the_session_of_a_step_left_by_a_crash_starts(
         end = await asyncio.wait_for(launched.ended, 120)
 
     assert end.subtype == "success", end
+
+
+@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+async def test_the_model_receives_the_grammar_of_a_selector_with_the_tools(tmp_path: Path) -> None:
+    """What the model receives, read on the fake model: the description of ``act`` in every call
+    carries the grammar — the binary of the SDK sends what the adapter declares."""
+    from ela.tools.browser import SELECTOR_GRAMMAR
+
+    end, seen, gestures, calls, folder = await a_dry_session(tmp_path)
+
+    assert calls
+    assert all(SELECTOR_GRAMMAR in call["descriptions"]["mcp__ela__act"] for call in calls)
+    assert all(SELECTOR_GRAMMAR in call["descriptions"]["mcp__ela__read"] for call in calls)

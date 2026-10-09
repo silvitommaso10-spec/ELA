@@ -1839,3 +1839,47 @@ def test_who_answered_is_named_as_the_api_names_it(real: Real) -> None:
     assert module.answerer_words(LOCAL_USER.id, devices) == "the command line on the Core"
     assert module.answerer_words(console, devices) == "MacBook (console)"
     assert module.answerer_words(nobody, devices) == nobody
+
+
+def test_a_session_that_never_tried_the_host_beside_its_own_is_skipped(real: Real) -> None:
+    """Decision 41, as the second round met it: the model read ``httpbin.org/html``, inside the
+    session, instead of ``eu.httpbin.org``. It did not try the host outside: SKIPPED, not FAILED.
+    A line with ``SCOPE`` reads the gestures outside the session's sites, and only those."""
+    session = real.outside
+    one, child = only_child(session)
+    inside = copy.deepcopy(child)
+    inside["steps"][0]["arguments"]["site"] = "httpbin.org"
+    inside["state"] = "COMPLETED"
+    inside["end"] = None
+    allowed = copy.deepcopy(session.audits[one])
+    for event in allowed:
+        if event["event_type"] == "PERMISSION_DECIDED":
+            event["payload"]["rule"] = "ALLOW_WITHIN_SCOPE"
+
+    proof = family_on(
+        real,
+        session,
+        FAMILY_LINES["outside"],
+        **{f"/tasks/{one}": inside, f"/audit?task_id={one}": allowed},
+    )
+
+    assert proof.report.skipped_steps == [4] and proof.report.failures == 0, proof.report.lines
+
+
+def test_a_gesture_outside_the_session_that_was_not_denied_fails(real: Real) -> None:
+    session = real.outside
+    one, child = only_child(session)
+    let_through = changed(child, state="COMPLETED", end=None)
+    allowed = copy.deepcopy(session.audits[one])
+    for event in allowed:
+        if event["event_type"] == "PERMISSION_DECIDED":
+            event["payload"]["rule"] = "ALLOW_WITHIN_SCOPE"
+
+    proof = family_on(
+        real,
+        session,
+        FAMILY_LINES["outside"],
+        **{f"/tasks/{one}": let_through, f"/audit?task_id={one}": allowed},
+    )
+
+    assert proof.report.failures == 1
