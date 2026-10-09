@@ -599,6 +599,23 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
         pairs.append(pages.fragment(HERE, "pair", key="Costo massimo", value=found.worst_case))
     if found.left:
         pairs.append(pages.fragment(HERE, "pair", key="Resta nel mese", value=found.left))
+    # A guided session of the browser (M14.3, ADR 0060; decision 4): the model, the most it may
+    # spend, the looks and what leaves the machine are ELA's numbers and words — whatever the
+    # ceiling —; the sentence and the sites are the plan's, behind it like the goal.
+    if found.model:
+        pairs.append(pages.fragment(HERE, "pair", key="Modello", value=found.model))
+    if found.max_cost:
+        pairs.append(pages.fragment(HERE, "pair", key="Spesa massima", value=found.max_cost))
+    if found.looks is not None:
+        pairs.append(pages.fragment(HERE, "pair", key="Gesti massimi", value=str(found.looks)))
+    if found.sends:
+        pairs.append(pages.fragment(HERE, "pair", key="Che cosa esce", value=found.sends))
+    if seen and found.phrase:
+        pairs.append(
+            pages.fragment(HERE, "pair", key="La frase", value=visible(found.phrase, lines=False))
+        )
+    if seen and found.sites is not None:
+        pairs.append(pages.fragment(HERE, "pair", key="Siti", value=listed(found.sites)))
     if seen and found.targets:
         shown = ", ".join(visible(one, lines=False) for one in found.targets)
         pairs.append(pages.fragment(HERE, "pair", key="Su", value=shown))

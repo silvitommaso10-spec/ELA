@@ -10,9 +10,9 @@ The table is **closed**: a hint nobody has mapped is an error before any byte le
 (ADR 0020 §5), never a silent fallback to the default. Routing the user somewhere they did not
 ask, without a trace, is exactly what §33 forbids.
 
-Facts about each model are from the official model overview (read on 2026-10-06, M14.1); ADR 0057
-holds the same table for review — it revises the one of ADR 0020 §4, read on 2026-09-07 — and
-``tests/docs/test_adr_provider.py`` keeps the two equal.
+Facts about each model are from the official model overview (read on 2026-10-08, M14.6); ADR 0061
+holds the same table for review — it revises the one of ADR 0057 §3, read on 2026-10-06, which
+revised ADR 0020 §4 — and ``tests/docs/test_adr_provider.py`` keeps the two equal.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ __all__ = [
     "DEFAULT_MODEL",
     "EFFORT_LEVELS",
     "HAIKU_4_5",
+    "HAIKU_5_5",
     "LARGEST_OUTPUT_TOKENS",
     "MODELS",
     "OPUS_5_5",
@@ -37,6 +38,8 @@ __all__ = [
 
 OPUS_5_5: Final = "claude-opus-5-5"
 SONNET_5_5: Final = "claude-sonnet-5-5"
+HAIKU_5_5: Final = "claude-haiku-5-5"
+"""Haiku 5.5, whose Claude API ID and alias are the same name (the models page, 2026-10-08)."""
 HAIKU_4_5: Final = "claude-haiku-4-5-20251001"
 """Haiku 4.5 by its Claude API ID, the pinned snapshot, and not by the alias ``claude-haiku-4-5``
 (M14.1, review decision 8). An alias of a model before the 4.6 generation "resolves to the dated
@@ -82,12 +85,19 @@ MODELS: Final[Mapping[str, Model]] = MappingProxyType(
         SONNET_5_5: Model(
             SONNET_5_5, max_output_tokens=128_000, supports_effort=True, context_window=1_000_000
         ),
+        HAIKU_5_5: Model(
+            HAIKU_5_5, max_output_tokens=128_000, supports_effort=True, context_window=1_000_000
+        ),
         HAIKU_4_5: Model(
             HAIKU_4_5, max_output_tokens=64_000, supports_effort=False, context_window=200_000
         ),
     }
 )
-"""The three models the profiles name, and nothing else (M14.1, ADR 0057; review decision 8).
+"""The three models the profiles name, and Haiku 4.5 (M14.1, ADR 0057; M14.6, ADR 0061).
+
+Haiku 4.5 is named by no profile since M14.6 — the cheap profile is Haiku 5.5 — and stays here for
+the month: its costs are still counted and its reservations still closed on its name, and a model
+gone from the table would turn an open reservation of it into a call without a price.
 
 A model in this table is one a route can pin with a ``model_hint``: ``claude-opus-5`` costs more
 than ``claude-opus-5-5`` and answers worse, and keeping it would be a spend no profile asked for.
@@ -110,11 +120,11 @@ PROFILES: Final[Mapping[str, str]] = MappingProxyType(
         "coding": OPUS_5_5,
         "analysis": OPUS_5_5,
         "balanced": SONNET_5_5,
-        "fast": HAIKU_4_5,
-        "cheap": HAIKU_4_5,
-        "classification": HAIKU_4_5,
-        "extraction": HAIKU_4_5,
-        "routine": HAIKU_4_5,
+        "fast": HAIKU_5_5,
+        "cheap": HAIKU_5_5,
+        "classification": HAIKU_5_5,
+        "extraction": HAIKU_5_5,
+        "routine": HAIKU_5_5,
     }
 )
 """``model_hint`` → model. The keys are §25's two lists, plus the middle the spec implies."""

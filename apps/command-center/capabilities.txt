@@ -26,3 +26,4 @@ fs.write
 terminal.run
 browser.read
 browser.act
+browser.guided

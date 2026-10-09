@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,11 @@ from ela.composition.settings import Settings
 from ela.domain import TaskState
 from ela.executive.spending import CAP_VARIABLE, month_of
 from ela.ports import PROVIDER_UNAVAILABLE
+from ela.providers.anthropic import AnthropicGateway
+from ela.providers.anthropic.models import model_for_hint
+from ela.routing.settings import RoutingSettings
 from ela.tools import CREATES, OVERWRITES, READS
+from ela.tools.guided import GUIDED_MAX_TOKENS, GUIDED_ROUTE
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 from tests.api.reasons import example, opened
 from tests.providers.support import SECRET
@@ -46,6 +51,8 @@ SPEAK_TO_THE_END = EXAMPLES / "speak-on-a-node-to-the-end.json"
 COMPANION = EXAMPLES / "companion.json"
 ECHO = EXAMPLES / "echo.json"
 NOTE = "_nota"
+GUIDED = sorted(EXAMPLES.glob("guided-*.json"))
+"""The plans of the guided sessions of the guide's section 26 (M14.3)."""
 
 
 def example_plan() -> dict[str, Any]:
@@ -148,10 +155,11 @@ def test_every_example_explains_itself() -> None:
     twenty-two since the review of 2026-10-05 (decision Q), which gave §21 step 8 its own sentence;
     twenty-five since M14.1, which brought the three calls of §23 the first one does not make;
     twenty-six since M13.1e, which brought the button example.com does not have, for a failure after
-    a yes with no call to the model.
+    a yes with no call to the model; twenty-nine since M14.3, which brought the three sessions of
+    the guided browser of section 26.
     """
     found = sorted(EXAMPLES.glob("*.json"))
-    assert len(found) == 26, [path.name for path in found]
+    assert len(found) == 29, [path.name for path in found]
     for path in found:
         plan = json.loads(path.read_text(encoding="utf-8"))
         assert NOTE in plan, path.name
@@ -272,11 +280,11 @@ async def test_it_asks_for_consent_because_the_capability_does(
         ),
         (
             "ask-model-routine.json",
-            "0.216384 USD, claude-haiku-4-5-20251001, up to 195904 tokens in and 4096 out",
+            "0.508192 USD, claude-haiku-5-5, up to 995904 tokens in and 4096 out",
         ),
         (
             "ask-model-long.json",
-            "0.232768 USD, claude-haiku-4-5-20251001, up to 191808 tokens in and 8192 out",
+            "0.516384 USD, claude-haiku-5-5, up to 991808 tokens in and 8192 out",
         ),
     ],
 )
@@ -284,7 +292,9 @@ async def test_the_four_calls_of_section_23_ask_with_the_worst_case_the_guide_pr
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str, worst: str
 ) -> None:
     """The four questions of the hand test of M14.1 (§23 steps 4–7): the same plan, the same route,
-    the same price — the line ``ela approvals`` prints is the line the guide expects."""
+    the same price — the line ``ela approvals`` prints is the line the guide expects. Since M14.6
+    the cheap profile is Haiku 5.5, and the rows of the two cheap plans are the ones of the dated
+    annotation in §23 (ADR 0061)."""
     async with opened(
         monkeypatch, tmp_path, ELA_SPENDING_CAP_USD="30", ELA_ANTHROPIC_API_KEY=SECRET
     ) as world:
@@ -649,3 +659,28 @@ def guide_section_23_names(worst: str) -> bool:
     guide = (EXAMPLES.parent / "GETTING_STARTED.md").read_text(encoding="utf-8")
     section = guide[guide.index("## 23. ") :]
     return " ".join(f"worst case {worst}".split()) in " ".join(section.split())
+
+
+def test_the_guided_examples_are_found() -> None:
+    assert [path.name for path in GUIDED] == [
+        "guided-form.json",
+        "guided-outside.json",
+        "guided-youtube.json",
+    ]
+
+
+@pytest.mark.parametrize("path", GUIDED, ids=[path.name for path in GUIDED])
+async def test_a_guided_example_holds_two_calls_in_flight(path: Path) -> None:
+    """Decision 32 of the review of the summary of M14.3: the most a session may spend lets two
+    calls of its route be in flight at once, each at its worst case — the function the gateway
+    hands the session's budget —, or a session whose Claude Code sends two together stops with
+    ``guided.cost``. On Haiku 5.5 one call is 0,516384 $, and 0,60 $ held one."""
+    ((step,),) = [json.loads(path.read_text(encoding="utf-8"))["steps"]]
+    arguments = step["arguments"]
+    route = RoutingSettings().policy().route_for(arguments.get("task_type", GUIDED_ROUTE))
+    model = model_for_hint(route.profile)
+    assert model is not None
+    one = await AnthropicGateway(None, timeout=1.0).worst(model.id, GUIDED_MAX_TOKENS)
+
+    assert one is not None
+    assert Decimal(arguments["max_cost_usd"]) >= 2 * one, (arguments["max_cost_usd"], one)

@@ -8,6 +8,10 @@
   every caller does. One exception, by design: the delivery of an id the Core never minted has no
   task to lock (``api/nodes.py``, ADR 0038 §12).
 
+  **Extended by M14.3** (ADR 0060) to the room of the guided sessions, ``executive/sessions.py``,
+  which walks the child task of a gesture with the runner: the same lock — ELA's set, held by the
+  room as ``self._running`` — and the same two halves, read in the methods of its class too.
+
 Each reads the source with ``ast`` and is run against a fabricated module that breaks it: a rule
 that only ever passes proves nothing (CLAUDE.md, «Qualità»).
 """
@@ -20,10 +24,14 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parents[2] / "src" / "ela"
 API = PACKAGE / "api"
+SESSIONS = PACKAGE / "executive" / "sessions.py"
 LOCK = "running"
+HELD_LOCK = "_running"
+"""The lock as the room of the sessions holds it: an attribute of its own, the set of ``Ela``."""
 REACHES_THE_EXECUTOR = frozenset(
     {
         ("runner", "run"),
+        ("_runner", "run"),
         ("executor", "begin"),
         ("executor", "deliver"),
         ("executor", "close_open_step"),
@@ -37,9 +45,23 @@ NO_TASK_TO_LOCK = ("deliver_work", "held is None")
 
 
 def functions(module: ast.Module) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """The functions of the module, and the methods of its classes (M14.3)."""
     for node in module.body:
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             yield node
+        elif isinstance(node, ast.ClassDef):
+            yield from (
+                method
+                for method in node.body
+                if isinstance(method, ast.FunctionDef | ast.AsyncFunctionDef)
+            )
+
+
+def _is_the_lock(node: ast.expr) -> bool:
+    """``running``, or the room's ``self._running``."""
+    if isinstance(node, ast.Name):
+        return node.id == LOCK
+    return isinstance(node, ast.Attribute) and node.attr == HELD_LOCK
 
 
 # ----------------------------------------------------------------------------------------
@@ -51,9 +73,8 @@ def _checks_the_lock(node: ast.AST) -> bool:
     return (
         isinstance(node, ast.Compare)
         and len(node.ops) == 1
-        and isinstance(node.ops[0], ast.In)
-        and isinstance(node.comparators[0], ast.Name)
-        and node.comparators[0].id == LOCK
+        and isinstance(node.ops[0], ast.In | ast.NotIn)
+        and _is_the_lock(node.comparators[0])
     )
 
 
@@ -62,8 +83,7 @@ def _takes_the_lock(node: ast.AST) -> bool:
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "add"
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == LOCK
+        and _is_the_lock(node.func.value)
     )
 
 
@@ -160,7 +180,8 @@ def unlocked_reaches(source: str) -> list[str]:
 
 
 def api_modules() -> list[Path]:
-    return sorted(API.glob("*.py"))
+    """The modules of ``ela.api``, and the room of the guided sessions (M14.3)."""
+    return [*sorted(API.glob("*.py")), SESSIONS]
 
 
 def test_the_lock_of_a_task_is_taken_with_no_await_between_the_check_and_the_insert() -> None:
@@ -222,6 +243,30 @@ async def other(ela, task_id):
     return await ela.runner.run(task_id)
 """
     assert unlocked_reaches(source) == ["route:6", "other:11"]
+
+
+def test_a_method_that_walks_a_gesture_without_the_lock_is_reported() -> None:
+    """The room's form (M14.3): a method, the lock as ``self._running``, the runner as
+    ``self._runner`` — an await between the check and the insert, and a walk with no insert."""
+    source = """
+class Room:
+    async def _walk(self, child):
+        if child.id not in self._running:
+            await self._settle(child)
+            self._running.add(child.id)
+            await self._runner.run(child.id)
+
+    async def _elsewhere(self, child):
+        await self._runner.run(child.id)
+"""
+    assert awaits_inside_the_lock(source) == ["_walk:5"]
+    assert unlocked_reaches(source) == ["_elsewhere:10"]
+
+
+def test_the_room_walks_a_gesture_under_the_lock() -> None:
+    """The rule is not vacuous on the room: it reads the walk of a gesture there."""
+    source = SESSIONS.read_text(encoding="utf-8")
+    assert any(_takes_the_lock(node) for node in ast.walk(ast.parse(source)))
 
 
 def test_the_delivery_of_an_id_nobody_minted_is_the_one_exception() -> None:

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from ela.domain import (
     Actor,
     ActorKind,
+    Admission,
     Approval,
     ApprovalId,
     ApprovalStatus,
@@ -90,6 +91,7 @@ from ela.domain import (
     RawSpeech,
     RawTextLine,
     RawTranscript,
+    Reservation,
     RiskLevel,
     SensorCause,
     SensorState,
@@ -168,6 +170,34 @@ WORST_CASE: Final = WorstCase(
 )
 """The most one call to Haiku 4.5 can cost with 4096 tokens out: the window less the output in,
 the output out (M14.1, ADR 0057 §2)."""
+
+RESERVATION: Final = Reservation(
+    task_id=TASK_ID,
+    step_id=STEP_ID,
+    started_id=EXECUTION_ID,
+    amount=Decimal("0.60"),
+    currency="USD",
+    model="claude-haiku-5-5",
+    input_tokens=991_808,
+    output_tokens=8_192,
+)
+"""What the cap set aside for a guided session of the browser: its most, and the model and the
+tokens of one of its calls (M14.3, ADR 0060)."""
+
+ADMISSION: Final = Admission(
+    session=STEP_ID,
+    call=1,
+    model="claude-haiku-5-5",
+    max_tokens=8_192,
+    worst=Decimal("0.516384"),
+    request_bytes=4_096,
+)
+"""One call of that session, let out by its budget: the call, its worst case and its bytes."""
+
+SESSION_AUTHOR: Final = PlanAuthor(
+    by=PlanAuthorKind.SESSION, session=STEP_ID, model="claude-haiku-5-5"
+)
+"""A plan of a gesture, written by the model of a guided session (M14.3, ADR 0060)."""
 
 LEDGER: Final = Ledger(spent=Decimal("3.21"), reserved=Decimal("0.216384"), open=1, unknown=1)
 """A month with a cost written and a reservation held — the ``ela spend`` of M14.1 §8."""
@@ -647,6 +677,8 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         DEVICE_CAPABILITY,
         PROVIDER_USAGE,
         WORST_CASE,
+        RESERVATION,
+        ADMISSION,
         LEDGER,
         MODEL_AUTHOR,
         ERROR_METADATA,

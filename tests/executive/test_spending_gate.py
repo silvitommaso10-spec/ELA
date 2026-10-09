@@ -396,3 +396,48 @@ async def test_a_claim_that_lapses_with_its_call_unknown_stays_at_the_worst_case
     assert run.outcome is RunOutcome.FAILED
     _, held = await SpendingGate(w.results, Decimal(5)).ledger(w.now)
     assert (held.spent, held.reserved, held.open) == (Decimal(0), BOUND.amount, 1)
+
+
+# --------------------------------------------------------------------------------------
+# A call that spends, stopped before it acted (M14.3, decision 11)
+# --------------------------------------------------------------------------------------
+
+
+class _StoppedAfterTheReservation(FakeExecutionResultStore):
+    """The task is stopped in the instant after its reservation is written: the window between
+    the ``STARTED`` record and the call, where the executor's own look finds the stop."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stop: Callable[[], object] | None = None
+
+    async def reserve(
+        self,
+        record: ExecutionResult,
+        since: datetime,
+        until: datetime,
+        admits: Callable[[tuple[ExecutionResult, ...]], bool],
+    ) -> bool:
+        reserved = await super().reserve(record, since, until, admits)
+        if reserved and self.stop is not None:
+            await self.stop()  # type: ignore[misc]
+        return reserved
+
+
+async def test_a_call_that_spends_stopped_before_it_acted_closes_its_reservation_at_zero() -> None:
+    """Decision 11 of M14.3: «every open reservation closes». A call stopped before it acted sent
+    nothing, and says so — the reservation closes at zero instead of holding its worst case until
+    the month turns."""
+    store = _StoppedAfterTheReservation()
+    w = a_world(cap=Decimal(5), results=store)
+    task, step = await w.running(ECHO.id, conditions=(OK,))
+    store.stop = lambda: w.engine.cancel(task.id, reason="ferma")
+
+    execution = await w.execute(task.id, step.id)
+    month, held = await SpendingGate(store, Decimal(5)).ledger(w.clock.now())
+
+    assert execution.result is not None
+    assert execution.result.status is ExecutionStatus.CANCELLED
+    assert execution.result.usage is not None and execution.result.usage.sent is False
+    assert w.tool(ECHO.id).calls == ()
+    assert (held.spent, held.reserved, held.open, held.unknown) == (Decimal(0), Decimal(0), 0, 0)

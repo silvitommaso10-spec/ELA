@@ -17,7 +17,9 @@ the ports.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+import contextlib
+import json
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -27,6 +29,7 @@ from typing import Any, Final, NamedTuple, cast
 from uuid import UUID
 
 from ela.domain import (
+    Admission,
     Approval,
     ApprovalId,
     ApprovalStatus,
@@ -67,6 +70,7 @@ from ela.domain import (
     RawRecognition,
     RawSpeech,
     RawTranscript,
+    Reservation,
     RiskLevel,
     StepId,
     Task,
@@ -99,6 +103,7 @@ from ela.ports import (
     AuthorizationExpiredError,
     BrowserError,
     BrowserStopped,
+    CallRequest,
     Clock,
     Command,
     DeviceRevokedError,
@@ -107,6 +112,7 @@ from ela.ports import (
     EnrollmentExpiredError,
     EnrollmentRoleError,
     Field,
+    Forwarded,
     Glanced,
     IdentityConflictError,
     IdGenerator,
@@ -118,6 +124,10 @@ from ela.ports import (
     Prospect,
     Ran,
     RoutingError,
+    SessionEnd,
+    SessionHandle,
+    SessionHost,
+    SessionPlan,
     StopPoint,
     TaskStop,
     ToolPort,
@@ -130,7 +140,9 @@ from ela.ports import (
 
 __all__ = [
     "DEFAULT_START",
+    "FAKE_CALL_WORST",
     "FAKE_CONDITION",
+    "FAKE_SESSION_TOOLS",
     "FAKE_CURRENCY",
     "FAKE_WORST_CASE",
     "FakeApprovalStore",
@@ -167,6 +179,10 @@ __all__ = [
     "FakeEnrollmentStore",
     "FakeAssignmentStore",
     "FakeStop",
+    "FakeAgentSession",
+    "FakeModelGateway",
+    "SessionScript",
+    "finished",
 ]
 
 DEFAULT_START: Final = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -1788,3 +1804,180 @@ class FakeTextRecognition:
         """Record the call and report."""
         self.calls = (*self.calls, (source, languages, region))
         return self._report
+
+
+# --------------------------------------------------------------------------------------
+# The guided session of the browser (M14.3, ADR 0060)
+# --------------------------------------------------------------------------------------
+
+FAKE_CALL_WORST: Final = Decimal("0.01")
+"""The worst case of one call of a session to the fake model, whatever its ``max_tokens``."""
+
+FAKE_SESSION_TOOLS: Final = frozenset({"mcp__ela__act", "mcp__ela__read"})
+"""The two tools a session offers, by the names Claude Code gives them."""
+
+
+def _cost_of(body: bytes) -> ProviderUsage:
+    return ProviderUsage(
+        input_tokens=len(body) // 4,
+        output_tokens=10,
+        cost=Decimal("0.0001"),
+        currency=FAKE_CURRENCY,
+        request_bytes=len(body),
+    )
+
+
+class FakeModelGateway:
+    """Implements :class:`~ela.ports.ModelGateway` with nothing leaving the machine: every call it
+    is handed answers a scripted stream, and is counted in :attr:`forwarded` — the fake provider
+    that «counts zero» when a session is refused before the network."""
+
+    def __init__(
+        self,
+        *,
+        prices: Mapping[str, Decimal] | None = None,
+        status: int = 200,
+        chunks: Sequence[bytes] = (b"event: message_stop\ndata: {}\n\n",),
+        usage: Callable[[bytes], ProviderUsage | None] = _cost_of,
+    ) -> None:
+        self.forwarded: list[tuple[Admission, bytes, str | None]] = []
+        self._prices = {"fake-model": FAKE_CALL_WORST} if prices is None else dict(prices)
+        self._status = status
+        self._chunks = tuple(chunks)
+        self._usage = usage
+
+    async def read(self, body: bytes) -> CallRequest:
+        try:
+            data = json.loads(body)
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            return CallRequest(None, None, None, cached=False, request_bytes=len(body))
+        tools = data.get("tools")
+        model, max_tokens = data.get("model"), data.get("max_tokens")
+        return CallRequest(
+            model=model if isinstance(model, str) else None,
+            max_tokens=max_tokens if type(max_tokens) is int else None,
+            tools=(
+                tuple(str(one.get("name")) for one in tools if isinstance(one, dict))
+                if isinstance(tools, list)
+                else None
+            ),
+            cached="cache_control" in body.decode(errors="replace"),
+            request_bytes=len(body),
+        )
+
+    async def worst(self, model: str, max_tokens: int) -> Decimal | None:
+        return self._prices.get(model)
+
+    async def forward(self, admission: Admission, body: bytes, beta: str | None) -> Forwarded:
+        self.forwarded.append((admission, body, beta))
+        chunks = self._chunks
+        usage = self._usage(body)
+
+        async def answer() -> AsyncIterator[bytes]:
+            for chunk in chunks:
+                yield chunk
+
+        return Forwarded(
+            status=self._status,
+            content_type="text/event-stream",
+            chunks=answer(),
+            usage=lambda: usage,
+        )
+
+
+SessionScript = Callable[[SessionPlan, SessionHost], Awaitable[SessionEnd]]
+"""What a fake session does instead of a model: given the plan and the host, it calls back —
+``started``, ``gesture``, ``asked`` — and says how it ended."""
+
+
+def finished(text: str = "done", subtype: str = "success") -> SessionEnd:
+    """How a fake session ends: its last text, and the subtype of its end."""
+    return SessionEnd(
+        text=text, subtype=subtype, reported_cost="0", version="fake", denials=0, closed=True
+    )
+
+
+async def _starts_and_ends(plan: SessionPlan, host: SessionHost) -> SessionEnd:
+    """The default script: the two tools at the start, and the turn ended."""
+    refused = await host.started(tuple(sorted(FAKE_SESSION_TOOLS)))
+    if refused is not None:
+        return finished("", "error_during_execution")
+    return finished()
+
+
+class FakeAgentSession:
+    """Implements :class:`~ela.ports.AgentSession` with a script instead of Claude Code.
+
+    It records every launch and every interrupt; an interrupt cancels the script and ends the
+    session ``error_during_execution``, as Claude Code ends a turn it was interrupted in."""
+
+    def __init__(
+        self,
+        script: SessionScript = _starts_and_ends,
+        *,
+        unready: ErrorMetadata | None = None,
+        refused: ErrorMetadata | None = None,
+        left_running: bool = False,
+        held: asyncio.Event | None = None,
+    ) -> None:
+        self.launched: list[tuple[Reservation, SessionPlan]] = []
+        self.held = held
+        """When set, an interrupt waits for it before it reaches the script: the session stays
+        open in the room for as long as the test holds it."""
+        self.interrupted: list[StepId] = []
+        self.swept = 0
+        """How many times the start-up swept the folders of the sessions."""
+        self._script = script
+        self._unready = unready
+        self._refused = refused
+        self._left_running = left_running
+        self._alive: set[StepId] = set()
+
+    @property
+    def tools(self) -> frozenset[str]:
+        return FAKE_SESSION_TOOLS
+
+    async def ready(self) -> ErrorMetadata | None:
+        return self._unready
+
+    async def running(self, session: StepId) -> bool:
+        return session in self._alive
+
+    async def sweep(self) -> int:
+        self.swept += 1
+        return 0
+
+    async def launch(
+        self, reservation: Reservation, plan: SessionPlan, host: SessionHost
+    ) -> SessionHandle | ErrorMetadata:
+        if self._refused is not None:
+            return self._refused
+        self.launched.append((reservation, plan))
+        self._alive.add(plan.session)
+        interrupted = asyncio.Event()
+
+        async def run() -> SessionEnd:
+            work = asyncio.ensure_future(self._script(plan, host))
+            stop = asyncio.ensure_future(interrupted.wait())
+            try:
+                await asyncio.wait((work, stop), return_when=asyncio.FIRST_COMPLETED)
+                if work.done():
+                    return work.result()
+                work.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await work
+                return finished("", "error_during_execution")
+            finally:
+                stop.cancel()
+                if not self._left_running:
+                    self._alive.discard(plan.session)
+
+        async def interrupt() -> None:
+            self.interrupted.append(plan.session)
+            if self.held is not None:
+                await self.held.wait()
+            interrupted.set()
+
+        return SessionHandle(ended=asyncio.ensure_future(run()), interrupt=interrupt)

@@ -367,6 +367,10 @@ async def cancel_task(
     stopped = await ela.planner.stop_planning(identifier, reason=body.reason)
     if stopped is not None:
         await close_if_free(stopped.id, ela, running)
+    # And a guided session (M14.3, ADR 0060): the stop goes down to its live gestures — each a
+    # child task —, and the session itself hears the stop of its own task.
+    for gesture in await ela.sessions.stop_gestures(identifier, reason=body.reason):
+        await close_if_free(gesture.id, ela, running)
     task = await ela.repository.get(identifier)
     await settle_the_plan_of(task, ela)
     return await task_out(task, ela)

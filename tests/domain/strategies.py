@@ -16,6 +16,7 @@ from ela import domain
 from ela.domain import (
     Actor,
     ActorKind,
+    Admission,
     Approval,
     ApprovalStatus,
     Assignment,
@@ -77,6 +78,7 @@ from ela.domain import (
     RawSpeech,
     RawTextLine,
     RawTranscript,
+    Reservation,
     RiskLevel,
     SensorCause,
     SensorState,
@@ -161,6 +163,29 @@ worst_cases = st.builds(
     model=texts,
     input_tokens=counts,
     output_tokens=counts,
+    per_call=st.booleans(),
+)
+
+reservations = st.builds(
+    Reservation,
+    task_id=uuids,
+    step_id=uuids,
+    started_id=uuids,
+    amount=decimals,
+    currency=texts,
+    model=texts,
+    input_tokens=counts,
+    output_tokens=counts,
+)
+
+admissions = st.builds(
+    Admission,
+    session=uuids,
+    call=st.integers(min_value=1, max_value=10**4),
+    model=texts,
+    max_tokens=st.integers(min_value=1, max_value=10**6),
+    worst=decimals,
+    request_bytes=counts,
 )
 
 ledgers = st.builds(Ledger, spent=decimals, reserved=decimals, open=counts, unknown=counts)
@@ -211,15 +236,23 @@ task_steps = st.builds(
     expected_result=texts,
     success_conditions=st.lists(texts, max_size=3).map(tuple),
     requires_authorization=st.booleans(),
+    within=_optional(st.lists(texts, max_size=3).map(tuple)),
 )
 
-plan_authors = st.builds(
-    PlanAuthor, by=st.sampled_from([PlanAuthorKind.HAND, PlanAuthorKind.PLANNER])
-) | st.builds(
-    PlanAuthor,
-    by=st.just(PlanAuthorKind.MODEL),
-    result_id=uuids,
-    model=st.text(min_size=1, max_size=24),
+plan_authors = (
+    st.builds(PlanAuthor, by=st.sampled_from([PlanAuthorKind.HAND, PlanAuthorKind.PLANNER]))
+    | st.builds(
+        PlanAuthor,
+        by=st.just(PlanAuthorKind.MODEL),
+        result_id=uuids,
+        model=st.text(min_size=1, max_size=24),
+    )
+    | st.builds(
+        PlanAuthor,
+        by=st.just(PlanAuthorKind.SESSION),
+        session=uuids,
+        model=st.text(min_size=1, max_size=24),
+    )
 )
 
 task_plans = st.builds(
@@ -771,6 +804,8 @@ MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.DeviceCapability: device_capabilities,
     domain.ProviderUsage: provider_usages,
     domain.WorstCase: worst_cases,
+    domain.Reservation: reservations,
+    domain.Admission: admissions,
     domain.Ledger: ledgers,
     domain.ErrorMetadata: error_metadata,
     domain.ELAIdentity: ela_identities,

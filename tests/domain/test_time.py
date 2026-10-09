@@ -127,6 +127,10 @@ VALUE_OBJECTS = frozenset(
         "Ledger",
         # Who wrote a plan (M14.2): a value inside the plan, whose instant is the plan's.
         "PlanAuthor",
+        # The two passes of the cap (M14.3): a reservation is read off a STARTED record, whose
+        # instant is the record's, and an admission lives as long as one call of a session.
+        "Reservation",
+        "Admission",
     }
 )
 

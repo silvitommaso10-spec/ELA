@@ -36,8 +36,14 @@ def test_the_cheap_list_of_the_spec(policy: RoutePolicy, task_type: str) -> None
     assert policy.route_for(task_type).profile == CHEAP
 
 
-def test_the_table_is_exactly_the_seven_task_types(policy: RoutePolicy) -> None:
-    assert policy.task_types() == tuple(sorted(QUALITY_TASKS + CHEAP_TASKS))
+def test_the_table_is_exactly_the_seven_task_types_and_browsing(policy: RoutePolicy) -> None:
+    """The seven of §25, and ``browsing`` since M14.3 (ADR 0060): the route of a guided session."""
+    assert policy.task_types() == tuple(sorted((*QUALITY_TASKS, *CHEAP_TASKS, "browsing")))
+
+
+def test_browsing_is_the_cheap_profile(policy: RoutePolicy) -> None:
+    """Decision 25 of the review of M14.3: the cheap profile, which since M14.6 is Haiku 5.5."""
+    assert policy.route_for("browsing").profile == CHEAP
 
 
 def test_no_task_type_is_the_default_route(policy: RoutePolicy) -> None:

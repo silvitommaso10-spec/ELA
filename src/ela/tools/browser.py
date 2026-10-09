@@ -80,6 +80,8 @@ __all__ = [
     "NOT_INSTALLED",
     "OPENS",
     "SECRET_AUTOCOMPLETE",
+    "SELECTOR_EXAMPLES",
+    "SELECTOR_GRAMMAR",
     "SITE",
     "SECRET_FIELD",
     "STOPPED",
@@ -181,6 +183,18 @@ SECRET_AUTOCOMPLETE: Final[frozenset[str]] = frozenset(
 """The ``autocomplete`` tokens a field declares itself secret with (decision 6), beside
 ``type="password"`` and every ``cc-exp`` token. A site that does not declare its fields passes:
 the recognition is partial, and the question — which shows the values — is what remains."""
+
+SELECTOR_EXAMPLES: Final = ('input[name="custname"]', 'button:has-text("Submit order")')
+"""Two selectors as the grammar wants them: an attribute, and a text that Playwright's CSS finds."""
+
+SELECTOR_GRAMMAR: Final = (
+    "a selector is CSS as Playwright reads it, pseudo-classes included — "
+    f"{SELECTOR_EXAMPLES[0]}, {SELECTOR_EXAMPLES[1]} —, with no prefix such as text= or xpath=, "
+    "no '>>' and no quotes at its start; it must name exactly one element on the page"
+)
+"""The grammar of a selector, written once (decision 44 of the review of M14.3's second round): the
+refusal of :func:`_selector` says it, and so do the tools of a guided session to their model — who
+chooses writes, and who gives the tool says the grammar."""
 
 _ENGINE_SWITCH: Final = re.compile(r"^\s*(?:[\"']|//|\.\.|[\w-]+(?::[\w-]+)*=)")
 """The start of a selector that would make Playwright choose another engine (form H): quotes are
@@ -674,8 +688,8 @@ def _selector(selector: object, which: str) -> Outcome | None:
         return Outcome(
             {},
             ARGUMENTS_INVALID,
-            f"{which} would choose another engine than the one the question shows: no '>>', no "
-            "'name=' prefix, no quotes or '//' at the start",
+            f"{which} would choose another engine than the one the question shows: "
+            f"{SELECTOR_GRAMMAR}",
         )
     return None
 

@@ -18,6 +18,7 @@ from ela.api.security import CONSOLE_CODE_ROUTES, CONSOLE_ROUTES, Kind
 from ela.domain import DeviceRole
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
+from tests.docs.guided_ports import GUIDED_PORTS
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 from tests.docs.test_adr_placement import _rules_up_to
 
@@ -57,7 +58,8 @@ def test_the_conseguenze_count_what_the_tree_had_when_it_was_written() -> None:
             tuple(
                 p
                 for p in port_protocols()
-                if p.__name__ not in {"CommandLauncher", "LocalBeat", "Browser", "TaskStop"}
+                if p.__name__
+                not in {"CommandLauncher", "LocalBeat", "Browser", "TaskStop", *GUIDED_PORTS}
             )
         )
         == 26
@@ -80,7 +82,7 @@ def test_the_third_role_and_the_fifth_kind_are_in_the_tree() -> None:
     assert "CONSOLE" in {member.value for member in DeviceRole}
     assert len(DeviceRole) == 3
     assert Kind.CONSOLE.value == "console"
-    assert len(Kind) == 5
+    assert len([kind for kind in Kind if kind is not Kind.SESSION]) == 5  # ADR 0060's sixth
 
 
 def test_the_routes_it_documents_are_the_ones_the_console_serves() -> None:

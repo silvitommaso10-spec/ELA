@@ -152,6 +152,7 @@ from ela.ports import (
     CapabilityRegistryPort,
     Clock,
     ExecutionResultStore,
+    Guided,
     IdGenerator,
     Invocation,
     NotAllowedError,
@@ -451,10 +452,17 @@ class Envelope(NamedTuple):
         delivery in conflict, not a replica. Listed only when there is one, so the digest of every
         envelope without a verdict is the one it was — a replay of a delivery made before M13.3
         is still the same answer.
+
+        **The bytes of the request are in the usage** since M14.6 (ADR 0061), and listed the same
+        way: a usage without them has the digest it had before.
         """
         verdict: dict[str, JsonValue] = (
             {} if self.verdict is None else {"verdict": self.verdict.as_json()}
         )
+        usage: dict[str, JsonValue] | None = None
+        if self.usage is not None:
+            unsaid = {"request_bytes"} if self.usage.request_bytes is None else None
+            usage = self.usage.model_dump(mode="json", exclude=unsaid)
         return hashlib.sha256(
             json.dumps(
                 {
@@ -462,7 +470,7 @@ class Envelope(NamedTuple):
                     "status": None if self.status is None else self.status.value,
                     "output": dict(self.output),
                     "error": None if self.error is None else self.error.model_dump(mode="json"),
-                    "usage": None if self.usage is None else self.usage.model_dump(mode="json"),
+                    "usage": usage,
                     "duration_ms": self.duration_ms,
                     "exception": self.exception,
                     "node": dict(self.node),
@@ -1068,7 +1076,8 @@ class Executor:
         """
         self._running_here += 1
         try:
-            produced = await self._run_tool(tool, decision, arguments, stop)
+            spends = record is not None and record.worst_case is not None
+            produced = await self._run_tool(tool, decision, arguments, stop, spends=spends)
             if produced is None:
                 return None
             produced = _as_text(_counted(tool, produced), tool)
@@ -1975,6 +1984,7 @@ class Executor:
                     there,
                     prospect.visit,
                     spending,
+                    prospect.guided,
                 )
             },
         )
@@ -2032,6 +2042,7 @@ class Executor:
         there: Device | None = None,
         visit: Visit | None = None,
         spending: Foresight | None = None,
+        guided: Guided | None = None,
     ) -> dict[str, JsonValue]:
         """The facts of the question, kept beside it: what a surface shows without recomposing it.
 
@@ -2100,6 +2111,17 @@ class Executor:
             # the Core minted (M13.3, decision 10); and what ELA did not do (:data:`UNSEEN`).
             asked["machine"] = f"{there.name} ({str(there.id)[:8]})"
             asked["unseen"] = UNSEEN
+        if guided is not None:
+            # A guided session of the browser (M14.3, ADR 0060; decision 4): the sentence, the
+            # sites, the model, the most it may spend, the looks, the duration, and that the text
+            # of the pages goes to the model's provider — beside the worst case and the month.
+            asked["phrase"] = guided.phrase
+            asked["sites"] = list(guided.sites)
+            asked["model"] = guided.model
+            asked["max_cost"] = f"{guided.max_cost} {CURRENCY}"
+            asked["looks"] = guided.looks
+            asked["timeout_seconds"] = guided.timeout_seconds
+            asked["sends"] = guided.sends
         if spending is not None:
             asked["worst_case"] = worst_said(spending.worst)
             asked["left"] = (
@@ -2222,7 +2244,13 @@ class Executor:
         )
 
     async def _run_tool(
-        self, tool: ToolPort, decision: PermissionDecision, arguments: JsonMapping, stop: TaskStop
+        self,
+        tool: ToolPort,
+        decision: PermissionDecision,
+        arguments: JsonMapping,
+        stop: TaskStop,
+        *,
+        spends: bool = False,
     ) -> ExecutionResult | None:
         """The only call of a tool in the Core (rule 16), with an ALLOWED decision in hand.
 
@@ -2234,13 +2262,13 @@ class Executor:
         assert decision.outcome is PermissionOutcome.ALLOWED
         assert decision.capability_id == tool.capability_id
         if stop.is_set():
-            return self._stopped(tool, decision)
+            return self._stopped(tool, decision, spends=spends)
         try:
             return await tool.execute(decision, arguments, stop)
         except NotAllowedError:
             return None
         except ToolStopped:
-            return self._stopped(tool, decision)
+            return self._stopped(tool, decision, spends=spends)
         except Exception as error:  # a tool that fell over halfway: recorded, never hidden
             return ExecutionResult(
                 id=ExecutionId(self._ids.new_uuid()),
@@ -2255,8 +2283,14 @@ class Executor:
                 ),
             )
 
-    def _stopped(self, tool: ToolPort, decision: PermissionDecision) -> ExecutionResult:
-        """The result of a call that did not act: its task was stopped first (ADR 0054 §4)."""
+    def _stopped(
+        self, tool: ToolPort, decision: PermissionDecision, *, spends: bool = False
+    ) -> ExecutionResult:
+        """The result of a call that did not act: its task was stopped first (ADR 0054 §4).
+
+        A call that spends and did not act **sent nothing**, and says so (M14.3, decision 11): its
+        reservation closes at zero instead of staying at its worst case until the month turns —
+        «every open reservation closes». The fact is the one the ledger reads (ADR 0057 §4)."""
         return ExecutionResult(
             id=ExecutionId(self._ids.new_uuid()),
             created_at=self._clock.now(),
@@ -2270,6 +2304,7 @@ class Executor:
                 message=f"the task was stopped before {tool.name} acted",
                 tool_name=tool.name,
             ),
+            usage=(ProviderUsage(input_tokens=0, output_tokens=0, sent=False) if spends else None),
         )
 
     async def _record_execution(

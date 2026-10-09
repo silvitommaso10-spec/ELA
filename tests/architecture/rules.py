@@ -98,9 +98,11 @@ PLACEMENT_DEVICE_FIELD = "device"
 #: the first thing in ELA that reads the *machine* rather than the database — one door is easier
 #: to guard than a habit, and a second one would have no reason to be found.
 MACHINE_ADAPTER_DIR = Path("infrastructure") / "machine"
-MACHINE_LIBRARIES = frozenset({"ctypes", "playwright"})
+MACHINE_LIBRARIES = frozenset({"ctypes", "playwright", "claude_agent_sdk"})
 #: ``playwright`` since M13.4 (ADR 0052): a library that starts processes by itself — its Node
 #: driver, and the browser — so an ``import`` of it is a way out as much as ``subprocess`` is.
+#: ``claude_agent_sdk`` since M14.3 (ADR 0060): it starts the binary of Claude Code by itself, and
+#: its one importer is the adapter of the guided session, ``infrastructure/machine/agent.py``.
 #: Ways to start another process. Two spellings, because the rule is about *reaching outside* and
 #: neither spelling is more honest than the other: ``import subprocess`` shows up as an import,
 #: while ``asyncio.create_subprocess_exec(...)`` — the one this milestone actually uses — shows up
@@ -698,7 +700,12 @@ BASE_TOOL_MODULE = Path("tools") / "base.py"
 #: decides, as for rule 61: ``repository.plan(…)`` reads a plan and is not the door.
 PLAN_METHOD = "plan"
 PLAN_RECEIVERS = frozenset({"engine", "_engine"})
-PLAN_DOORS = frozenset({Path("api") / "tasks.py", Path("executive") / "planner.py"})
+PLAN_DOORS = frozenset(
+    {Path("api") / "tasks.py", Path("executive") / "planner.py", Path("executive") / "sessions.py"}
+)
+#: The third door since M14.3 (ADR 0060): the room of the guided sessions plans the child task of a
+#: gesture — one step, the capability the model asked for, the catalogue's risk, the session's
+#: sites as ``within`` — and the slug stays the one of M14.2, read with ADR 0060 beside it.
 #: Rule 63 (M14.2, ADR 0058): the plan is independent of the device (§13), so the Planner's module
 #: names nothing of the machines. A contract of import-linter cannot say it: the Planner imports the
 #: runner, and the runner the orchestrator.
@@ -710,6 +717,20 @@ DEVICE_WORDS = ("device", "orchestrat", "placement", "node")
 #: reason decision A of M13.1e forbids.
 END_KEY = "new_state"
 END_MODULES = frozenset({Path("tasks") / "engine.py", Path("tasks") / "ending.py"})
+#: Rule 65 (M14.3, ADR 0060): who spends passes the gate. The two passes of the cap — what the gate
+#: gives a ``STARTED`` record it reserved, and what the budget of a guided session gives one call
+#: it admitted —, minted in one module.
+ADMISSION_TYPE = "Admission"
+RESERVATION_TYPE = "Reservation"
+PASS_TYPES = frozenset({ADMISSION_TYPE, RESERVATION_TYPE})
+SPENDING_MODULE = Path("executive") / "spending.py"
+#: The field that holds the key of the model's provider: a package with a module that reads it is
+#: a package that holds the key, and calls the provider only in the two forms of the rule.
+KEY_FIELD = "anthropic_api_key"
+#: How a call leaves for the provider: the SDK's ``messages.create`` and an HTTP client's verbs.
+NETWORK_CALLS = frozenset({"create", "send", "post", "stream", "request"})
+#: Who launches a session, by the receiver's name — the heuristic of rules 61 and 62.
+SESSION_RECEIVERS = frozenset({"sessions", "_sessions"})
 
 #: The in-memory fakes: used by tests only, never by production code (ADR 0005).
 TESTING_PACKAGE = f"{ROOT_PACKAGE}.testing"
@@ -1624,10 +1645,12 @@ def check_plans_enter_by_two_doors(pkg_root: Path) -> list[Violation]:
     A plan enters a task by the Task Engine's ``plan`` — the graph checked, the trail and the audit
     written — and since M14.2 two modules open that door: ``api/tasks.py``, for a plan written by
     hand, which passes the executor's preconditions first; and the Planner, for the plan the model
-    wrote, which passes the same and the Guardian's arguments. A third caller would be a third way
-    in with neither. Reported: a call to ``.plan(`` whose receiver is named in
-    :data:`PLAN_RECEIVERS` — ``ela.engine``, ``self._engine``, ``engine``. A heuristic on names,
-    like rules 16 and 17: ``repository.plan(…)``, the read, has another receiver.
+    wrote, which passes the same and the Guardian's arguments. **Since M14.3 a third** (ADR 0060):
+    the room of the guided sessions, for the one step of a gesture, written by ELA from the
+    catalogue and narrowed to the session's sites. A fourth caller would be a fourth way in.
+    Reported: a call to ``.plan(`` whose receiver is named in :data:`PLAN_RECEIVERS` —
+    ``ela.engine``, ``self._engine``, ``engine``. A heuristic on names, like rules 16 and 17:
+    ``repository.plan(…)``, the read, has another receiver.
     """
     rule = "plans-enter-by-two-doors"
     found: list[Violation] = []
@@ -1731,8 +1754,9 @@ def check_who_calls_the_model_bounds_the_call(pkg_root: Path) -> list[Violation]
     closing a task — and is not a call to a model.
 
     **It sees only a call to ``.complete(``** (review decision 15): a session of Claude Code,
-    which M14.3 brings, spends on the same key without calling it, and this rule is blind to it —
-    the cap of that road is M14.3's to write. Calls at module level are rule 25's.
+    which M14.3 brings, spends on the same key without calling it — through ELA's gateway — and
+    **the other road is rule 65's** (ADR 0060): this rule is one of the two. Calls at module level
+    are rule 25's.
     """
     rule = "who-calls-the-model-bounds-the-call"
     found: list[Violation] = []
@@ -1760,6 +1784,153 @@ def check_who_calls_the_model_bounds_the_call(pkg_root: Path) -> list[Violation]
                     Violation(rule, name, f"{node.name}.{COMPLETE_METHOD}(", calls[0].lineno)
                 )
     return found
+
+
+def check_who_spends_passes_the_gate(pkg_root: Path) -> list[Violation]:
+    """Rule 65: whoever spends on the model's key passes the gate (M14.3, ADR 0060).
+
+    Rule 61 sees a call to ``.complete(``; a guided session of Claude Code spends on the same key
+    without calling it — through ELA's gateway — and this rule is the other road. Three parts:
+
+    1. **The passes are minted by the gate**: outside :data:`SPENDING_MODULE` nobody constructs an
+       ``Admission`` or a ``Reservation`` — the form of rules 12, 15 and 30.
+    2. **Who spends is found by reading the tree, not a list**: the methods of the ports that
+       receive a pass in a parameter — ``ModelGateway.forward``, ``AgentSession.launch`` —, and in
+       every package with a module that reads :data:`KEY_FIELD`, every function that calls the
+       provider (:data:`NETWORK_CALLS`) either is a method of a class that defines ``complete`` —
+       the road of ADR 0057 — or receives an ``Admission``. A module that reads the key and calls
+       out in another form fails here. **The vacuity**: on the real tree the ports have a method
+       for each pass, or the rule watches nothing and says so.
+    3. **Who launches a session declares its worst case**: a class that calls a method receiving a
+       ``Reservation`` on a receiver of :data:`SESSION_RECEIVERS` defines ``worst_case``, so that
+       the gate reserves before the launch — rule 61's form, extended.
+    """
+    rule = "who-spends-passes-the-gate"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) == SPENDING_MODULE:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f"{_call_name(node.func)}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and _call_name(node.func) in PASS_TYPES
+        )
+    spenders = _methods_receiving_a_pass(pkg_root)
+    for kind in sorted(PASS_TYPES - set(spenders.values())):
+        found.append(Violation(rule, "ela.ports", f"no port method receives a {kind}", 1))
+    for directory in sorted({path.parent for path in _source_files(pkg_root) if _reads_key(path)}):
+        for path in _source_files(directory):
+            found.extend(_calls_out_without_a_pass(path, pkg_root, rule))
+    launchers = {method for method, kind in spenders.items() if kind == RESERVATION_TYPE}
+    for path in _source_files(pkg_root):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            calls = [
+                call
+                for call in ast.walk(node)
+                if isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr in launchers
+                and _names_a_session(call.func.value)
+            ]
+            if calls and not _defines(node, WORST_CASE_METHOD):
+                found.append(
+                    Violation(rule, name, f"{node.name}.{calls[0].func.attr}(", calls[0].lineno)  # type: ignore[attr-defined]
+                )
+    return found
+
+
+def _methods_receiving_a_pass(pkg_root: Path) -> dict[str, str]:
+    """The methods of the protocols of ``ela.ports`` with a parameter annotated with a pass."""
+    path = pkg_root / "ports.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    methods: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for member in node.body:
+            if not isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            for argument in member.args.args + member.args.kwonlyargs:
+                kind = ast.unparse(argument.annotation) if argument.annotation else ""
+                if kind in PASS_TYPES:
+                    methods[member.name] = kind
+    return methods
+
+
+def _reads_key(path: Path) -> bool:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return any(
+        isinstance(node, ast.Attribute)
+        and node.attr == KEY_FIELD
+        and isinstance(node.ctx, ast.Load)
+        for node in ast.walk(tree)
+    )
+
+
+def _calls_out_without_a_pass(path: Path, pkg_root: Path, rule: str) -> list[Violation]:
+    """The functions of a module holding the key that call the provider outside the two roads."""
+    name = module_name(path, pkg_root)
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    on_the_road: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and _defines(node, COMPLETE_METHOD):
+            on_the_road.update(id(inner) for inner in ast.walk(node))
+    found: list[Violation] = []
+    for function in ast.walk(tree):
+        if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        if id(function) in on_the_road or _receives(function, ADMISSION_TYPE):
+            continue
+        outer = [
+            call
+            for call in _own_nodes(function)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr in NETWORK_CALLS
+        ]
+        found.extend(
+            Violation(rule, name, f"{function.name} -> .{call.func.attr}(", call.lineno)  # type: ignore[attr-defined]
+            for call in outer
+        )
+    return found
+
+
+def _own_nodes(function: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
+    """The nodes of ``function`` outside the functions nested in it, which are judged on their
+    own — and inherit nothing: a nested function of a road is on the road by its enclosing one."""
+    stack: list[ast.AST] = list(function.body)
+    while stack:
+        node = stack.pop()
+        yield node
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+
+
+def _receives(function: ast.FunctionDef | ast.AsyncFunctionDef, kind: str) -> bool:
+    return any(
+        argument.annotation is not None and ast.unparse(argument.annotation) == kind
+        for argument in function.args.args + function.args.kwonlyargs
+    )
+
+
+def _defines(node: ast.ClassDef, method: str) -> bool:
+    return any(
+        isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef) and member.name == method
+        for member in node.body
+    )
+
+
+def _names_a_session(receiver: ast.expr) -> bool:
+    if isinstance(receiver, ast.Name):
+        return receiver.id in SESSION_RECEIVERS
+    return isinstance(receiver, ast.Attribute) and receiver.attr in SESSION_RECEIVERS
 
 
 def check_approval_responders(pkg_root: Path) -> list[Violation]:
@@ -2022,6 +2193,11 @@ def check_provider_complete_callers(pkg_root: Path) -> list[Violation]:
     attribute in :data:`ENGINE_RECEIVERS` — ``self._engine.complete(...)``, the Task Engine
     closing a task (ADR 0008), which shares the name and nothing else. A heuristic on the name,
     like rules 5, 11, 12, 15, 16 and 17: ``complete_step`` is a different name and is rule 17's.
+
+    **It says where the call to** ``complete`` **is, and since M14.3 that is all it says** (ADR
+    0060): a guided session's calls leave through ELA's gateway, which does not call ``complete``,
+    each under the ``Admission`` of the session's budget — rule 65 — and the session itself under
+    the Guardian's decision on ``browser.guided``.
     """
     rule = "provider-complete-called-only-by-the-model-tool"
     found: list[Violation] = []
@@ -3596,6 +3772,7 @@ RULES: dict[str, Rule] = {
     "plans-enter-by-two-doors": check_plans_enter_by_two_doors,
     "the-planner-names-no-device": check_the_planner_names_no_device,
     "the-end-has-one-reader": check_the_end_has_one_reader,
+    "who-spends-passes-the-gate": check_who_spends_passes_the_gate,
 }
 
 
@@ -4065,6 +4242,25 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("plans-enter-by-two-doors", "PLAN_RECEIVERS", DETECTOR),
     Constant(
         "plans-enter-by-two-doors",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # who-spends-passes-the-gate (rule 65, M14.3)
+    Constant("who-spends-passes-the-gate", "SPENDING_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0060"),
+    Constant("who-spends-passes-the-gate", "PASS_TYPES", DETECTOR),
+    Constant("who-spends-passes-the-gate", "ADMISSION_TYPE", EXEMPTION, by=WHOLE, adr="ADR 0060"),
+    Constant("who-spends-passes-the-gate", "RESERVATION_TYPE", DETECTOR),
+    Constant("who-spends-passes-the-gate", "KEY_FIELD", DETECTOR),
+    Constant("who-spends-passes-the-gate", "NETWORK_CALLS", DETECTOR),
+    Constant("who-spends-passes-the-gate", "SESSION_RECEIVERS", DETECTOR),
+    Constant("who-spends-passes-the-gate", "COMPLETE_METHOD", EXEMPTION, by=WHOLE, adr="ADR 0057"),
+    Constant(
+        "who-spends-passes-the-gate", "WORST_CASE_METHOD", EXEMPTION, by=WHOLE, adr="ADR 0060"
+    ),
+    Constant(
+        "who-spends-passes-the-gate",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

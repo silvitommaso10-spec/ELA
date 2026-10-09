@@ -67,6 +67,8 @@ cambia, si scrive un nuovo ADR che sostituisce il precedente.
 | [0057](0057-spending-cap.md) | Il tetto di spesa: una riga del Core, il caso peggiore prenotato nella `STARTED`, e i modelli 5.5 | Accettata |
 | [0058](0058-planner.md) | Il Planner: una chiamata di `model.complete` in un task figlio, un piano validato prima della porta, e chi l'ha scritto | Accettata |
 | [0059](0059-the-reason-on-every-route.md) | La ragione di una fine su ogni rotta che porta lo stato di un task: una lettura sola nell'engine, chi ha detto no col nome del registro, e sotto il tetto solo parole di ELA | Accettata |
+| [0060](0060-guided-browser.md) | Il browser guidato dal modello: una sessione di Claude Code lanciata da ELA, ogni gesto un task figlio deciso dal Guardian, e ogni chiamata della sessione pesata sulla prenotazione prima di lasciare il Mac | Accettata |
+| [0061](0061-haiku-5-5.md) | Haiku 5.5 nel listino: due fasce di prezzo, il caso peggiore che le conosce, e i byte di una chiamata accanto al suo usage | Accettata |
 
 ## Template
 

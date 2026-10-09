@@ -28,9 +28,11 @@ import pytest
 from fastapi import FastAPI, Request, Response
 from httpx import ASGITransport, AsyncClient
 
+from ela.api import security
 from ela.api.security import (
     CODE_ROUTES,
     NODE_ROUTES,
+    SESSION_KEY_HEADER,
     SURFACES,
     Anonymous,
     Call,
@@ -59,15 +61,16 @@ from tests.composition.support import TOKEN
 OTHER = "y" * 40
 
 
-def test_the_application_serves_the_fifty_one_routes_of_the_adrs_and_its_schema(
+def test_the_application_serves_the_fifty_two_routes_of_the_adrs_and_its_schema(
     app: FastAPI,
 ) -> None:
     """Twelve routes (ADR 0023 §6), the two of ADR 0024 §5, the one of ADR 0025 §4, the one of
     ADR 0028 §8, the one of ADR 0032 §13, the three of ADR 0034 §9, the five of ADR 0037 §4,
     the three of ADR 0038 §11, the one of ADR 0039 §2, the eight of ADR 0043 §5, the eleven of
     ADR 0044, the one of ADR 0049 (``GET /tasks/finished``), the one of ADR 0057 §9
-    (``GET /spend``, M14.1) and the one of ADR 0058 §8 (``POST /tasks/{task_id}/planning``,
-    M14.2), plus ``/openapi.json``,
+    (``GET /spend``, M14.1), the one of ADR 0058 §8 (``POST /tasks/{task_id}/planning``,
+    M14.2) and the one of ADR 0060 (``POST /sessions/{session}/v1/messages``, the gateway of a
+    guided session, M14.3), plus ``/openapi.json``,
     which the loop below proves is behind the token like everything else — the schema of the API
     is not a page, and the pages of a surface are not in it: a browser cannot send a header,
     and what reaches them is a cookie."""
@@ -80,7 +83,8 @@ def test_the_application_serves_the_fifty_one_routes_of_the_adrs_and_its_schema(
     assert ("GET", "/tasks/finished") in paths
     assert ("GET", "/spend") in paths
     assert ("POST", "/tasks/{task_id}/planning") in paths
-    assert len(paths) == 52
+    assert ("POST", "/sessions/{session}/v1/messages") in paths
+    assert len(paths) == 53
     assert not {path for _, path in paths} & {"/docs", "/redoc"}
 
 
@@ -325,6 +329,24 @@ async def _the_core_on_a_page(client: AsyncClient, anonymous: AsyncClient, _: An
     return await client.get("/companion/")
 
 
+SESSION_PATH: Final = f"/sessions/{uuid.UUID(int=7)}/v1/messages"
+"""The gateway of a guided session nobody opened (M14.3, ADR 0060)."""
+
+
+async def _a_session_from_elsewhere(client: AsyncClient, anonymous: AsyncClient, _: Any) -> object:
+    """A session's path from a socket that is not loopback at both ends — the test client's host
+    is ``ela``, not an address —: a session never calls from elsewhere (M14.3)."""
+    return await anonymous.post(SESSION_PATH, content=b"{}", headers={SESSION_KEY_HEADER: OTHER})
+
+
+async def _the_core_on_a_session(
+    client: AsyncClient, anonymous: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> object:
+    """The Core's token presented as a session's, from this machine: the Core is not a session."""
+    monkeypatch.setattr(security, "from_this_machine", lambda request: True)
+    return await anonymous.post(SESSION_PATH, content=b"{}", headers={SESSION_KEY_HEADER: TOKEN})
+
+
 async def _a_form_from_somewhere_else(
     client: AsyncClient, anonymous: AsyncClient, _: Any
 ) -> object:
@@ -341,6 +363,8 @@ PRODUCED_BY: dict[Anonymous, Producer] = {
     Anonymous.UNKNOWN_CODE: _a_code_nobody_issued,
     Anonymous.EXPIRED_CODE: _a_code_past_its_expiry,
     Anonymous.CORE_ON_A_NODE_ROUTE: _the_core_on_a_node_route,
+    Anonymous.CORE_ON_A_SESSION: _the_core_on_a_session,
+    Anonymous.SESSION_FROM_ELSEWHERE: _a_session_from_elsewhere,
 }
 """One request per reason — the user's condition on the six (2026-09-11): a reason no request can
 produce does not enter."""
@@ -496,6 +520,12 @@ def test_a_code_is_not_an_identity_that_signs() -> None:
         _ = Identity(Kind.CODE, code="x").actor
 
 
+def test_a_session_is_not_an_identity_that_signs() -> None:
+    """The sixth kind (M14.3): a guided session calls its gateway, and signs nothing."""
+    with pytest.raises(ValueError, match="not an identity that signs"):
+        _ = Identity(Kind.SESSION).actor
+
+
 def test_every_kind_has_its_actor_and_none_falls_through() -> None:
     """The test half of the two defences: ``mypy`` stops whoever adds a member, this stops
     whoever gives it the wrong branch."""
@@ -507,6 +537,42 @@ def test_every_kind_has_its_actor_and_none_falls_through() -> None:
         Kind.CONSOLE: Identity(Kind.CONSOLE, device_id=node).actor.kind,
     }
 
-    assert set(signed) | {Kind.CODE} == set(Kind), "a member with no branch here"
+    assert set(signed) | {Kind.CODE, Kind.SESSION} == set(Kind), "a member with no branch here"
     assert signed[Kind.NODE] is ActorKind.DEVICE
     assert {signed[Kind.CORE], signed[Kind.COMPANION], signed[Kind.CONSOLE]} == {ActorKind.USER}
+
+
+@pytest.mark.parametrize(
+    ("path", "found"),
+    [
+        (f"/sessions/{uuid.UUID(int=7)}/v1/messages", uuid.UUID(int=7)),
+        (f"/sessions/{uuid.UUID(int=7)}", None),
+        ("/sessions/not-a-step/v1/messages", None),
+        ("/tasks/sessions/x/y", None),
+    ],
+)
+def test_a_session_s_ground_is_its_step_and_a_path_under_it(
+    path: str, found: uuid.UUID | None
+) -> None:
+    """M14.3: ``/sessions/<step>/…``, and nothing that only looks like it."""
+    assert security.session_of(path) == found
+
+
+@pytest.mark.parametrize(
+    ("headers", "reason"),
+    [({}, "missing"), ({SESSION_KEY_HEADER: OTHER}, "unknown_credential")],
+    ids=["no-token", "a-token-of-nobody"],
+)
+async def test_a_session_s_path_from_this_machine_wants_its_own_token(
+    client: AsyncClient,
+    anonymous: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    headers: dict[str, str],
+    reason: str,
+) -> None:
+    monkeypatch.setattr(security, "from_this_machine", lambda request: True)
+
+    answer = await anonymous.post(SESSION_PATH, content=b"{}", headers=headers)
+
+    assert answer.status_code == 401
+    assert (await client.get("/diagnostics")).json()["refused"] == {reason: 1}

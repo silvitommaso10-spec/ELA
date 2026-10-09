@@ -3,6 +3,8 @@
     "Il piano della prova a mano di M14.1 (GETTING_STARTED §23, passi 4 e 5) per il profilo economico.",
     "\"task_type\": \"routine\" è una delle tre voci economiche della tabella (spec §25): ELA la manda",
     "a Haiku 4.5, con l'id fissato (ADR 0057). Il caso peggiore che la domanda nomina è 0,216384 $.",
+    "Dal 2026-10-08 (M14.6, ADR 0061) il profilo economico è Haiku 5.5, e il caso peggiore è 0,508192 $:",
+    "la fascia alta, che la finestra meno l'uscita raggiunge sempre.",
     "Al passo 4 passa sotto il tetto piccolo dove la stessa domanda a Opus 5.5 è negata; al passo 5",
     "la prende il PC, che chiama con la sua chiave, e lo speso del mese sul Mac la conta.",
     "Questa chiave è ignorata dall'API (ADR 0025 §8): JSON non ha commenti."

@@ -177,6 +177,13 @@ class ApiSettings(BaseSettings):
             )
         return SecretStr(secret)
 
+    @property
+    def base_url(self) -> str:
+        """Where this ELA answers on loopback, as a URL: the address a guided session's gateway is
+        reached at (M14.3, ADR 0060). An IPv6 address between brackets."""
+        host = f"[{self.api_host}]" if ":" in self.api_host else self.api_host
+        return f"http://{host}:{self.api_port}"
+
     @field_validator("api_host")
     @classmethod
     def _loopback_only(cls, value: str) -> str:

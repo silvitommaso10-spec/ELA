@@ -37,8 +37,16 @@ from ela.domain import (
     RawTextLine,
 )
 from ela.executive import StopOfTask
-from ela.permissions import BROWSER_ACT, BROWSER_READ
-from ela.ports import ENVELOPE, NAVIGATION, ProbeFamily, StopPoint, ToolPort, ToolStopped
+from ela.permissions import BROWSER_ACT, BROWSER_GUIDED, BROWSER_READ
+from ela.ports import (
+    ENVELOPE,
+    GUIDED_STOPPED,
+    NAVIGATION,
+    ProbeFamily,
+    StopPoint,
+    ToolPort,
+    ToolStopped,
+)
 from ela.testing.fakes import (
     FakeBrowser,
     FakeClock,
@@ -92,6 +100,7 @@ from ela.tools.terminal import STOPPED as TERMINAL_STOPPED
 from ela.tools.terminal import TerminalRunTool
 from tests.docs.test_adr_travel import travelling
 from tests.routing.support import routing_for
+from tests.tools.guided import guided_world
 from tests.tools.support import allowed
 from tests.tools.test_browser_tools import ACT, READ, SITES
 from tests.tools.test_browser_tools import decision as browser_decision
@@ -353,6 +362,13 @@ def _browser_act(tmp_path: Path) -> Subject:
     )
 
 
+def _guided(tmp_path: Path) -> Subject:
+    world = guided_world()
+    return Subject(
+        world.tool, world.decision, world.arguments, lambda: bool(world.session.launched)
+    )
+
+
 def _launch(browser: FakeBrowser) -> Held:
     browser.launch_reached, browser.launch_released = asyncio.Event(), asyncio.Event()
     return Held(browser.launch_reached.wait, browser.launch_released.set)
@@ -370,6 +386,7 @@ SUBJECTS: dict[CapabilityId, Callable[[Path], Subject]] = {
     TERMINAL_RUN: _terminal,
     BROWSER_READ: _browser_read,
     BROWSER_ACT: _browser_act,
+    BROWSER_GUIDED: _guided,
 }
 WITH_A_WAIT = sorted(
     capability
@@ -449,8 +466,10 @@ PRODUCTION: dict[str, tuple[str | None, str | None]] = {
     "terminal.run": ("the exec of the program", None),
     "browser.read": ("the navigation", None),
     "browser.act": ("the first gesture", None),
+    "browser.guided": ("the launch of the session", None),
 }
-"""The table of proposal 2 of the SPEC, and of ADR 0054 §3."""
+"""The table of proposal 2 of the SPEC, and of ADR 0054 §3 — and since M14.3 the launch of a guided
+session (ADR 0060)."""
 
 
 def test_the_two_halves_of_production_are_the_table(tmp_path: Path) -> None:
@@ -603,6 +622,8 @@ def ok_after_the_point(capability: CapabilityId, result: ExecutionResult) -> boo
         return code == TERMINAL_STOPPED and result.output["ended"] == "stopped_with_the_task"
     if capability == BROWSER_ACT:
         return code == BROWSER_STOPPED and result.output["gestures"] == 1
+    if capability == BROWSER_GUIDED:
+        return code == GUIDED_STOPPED and result.usage is not None
     return result.status is ExecutionStatus.SUCCEEDED
 
 

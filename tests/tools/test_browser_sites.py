@@ -169,3 +169,18 @@ def test_a_text_keeps_its_beginning_on_a_character() -> None:
     kept, shown, _ = cut(odd)
     assert shown == TEXT_MAX_BYTES - 1, "an incomplete character at the end is given back"
     assert kept.encode() == odd.encode()[:shown]
+
+
+def test_the_refusal_of_a_selector_names_the_grammar_the_session_s_tools_name() -> None:
+    """Decision 44 of the review of M14.3's second round: the grammar of a selector is written
+    once, in ``ela.tools.browser``. The refusal says it, the tools of a guided session say it to
+    the model, and the two examples it gives are selectors the tool hands on as they stand."""
+    from ela.tools.browser import SELECTOR_EXAMPLES, SELECTOR_GRAMMAR
+
+    refused = _selector("text=Submit order", "click")
+
+    assert refused is not None and SELECTOR_GRAMMAR in refused.message
+    assert SELECTOR_EXAMPLES
+    for example in SELECTOR_EXAMPLES:
+        assert example in SELECTOR_GRAMMAR
+        assert _selector(example, "click") is None

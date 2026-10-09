@@ -75,8 +75,8 @@ async def test_usage_carries_tokens_cost_currency_and_latency() -> None:
     usage = (await provider.complete(request())).usage
 
     assert (usage.input_tokens, usage.output_tokens, usage.cached_input_tokens) == (1200, 340, 800)
-    # 1200×$2 + 340×$10 + 800×$0.2 per million, on claude-sonnet-5.
-    assert usage.cost == Decimal("0.00596")
+    # 1200×$2 + 340×$10 + 800×$0.10 per million, on claude-sonnet-5-5 (the page of 2026-10-08).
+    assert usage.cost == Decimal("0.00588")
     assert usage.currency == CURRENCY
     assert usage.latency_ms == 250
 

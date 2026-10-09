@@ -11,6 +11,7 @@ import pytest
 from ela.providers.anthropic.models import (
     DEFAULT_MODEL,
     HAIKU_4_5,
+    HAIKU_5_5,
     MODELS,
     OPUS_5_5,
     PROFILES,
@@ -37,11 +38,11 @@ def test_no_hint_is_the_default_model() -> None:
         ("quality", OPUS_5_5),
         ("analysis", OPUS_5_5),
         ("balanced", SONNET_5_5),
-        ("classification", HAIKU_4_5),
-        ("extraction", HAIKU_4_5),
-        ("cheap", HAIKU_4_5),
-        ("fast", HAIKU_4_5),
-        ("routine", HAIKU_4_5),
+        ("classification", HAIKU_5_5),
+        ("extraction", HAIKU_5_5),
+        ("cheap", HAIKU_5_5),
+        ("fast", HAIKU_5_5),
+        ("routine", HAIKU_5_5),
     ],
 )
 def test_the_profiles_of_the_spec(hint: str, expected: str) -> None:
@@ -94,11 +95,12 @@ async def test_the_output_budget_can_be_asked_for() -> None:
 
 
 async def test_the_default_budget_never_exceeds_what_the_model_can_produce() -> None:
+    """Haiku 4.5, named by its id since no profile names it (M14.6), produces at most 64 000."""
     provider, client = make_provider(
         answer(model=HAIKU_4_5), provider_settings=settings(anthropic_max_output_tokens=64_000)
     )
 
-    await provider.complete(request(model_hint="cheap"))
+    await provider.complete(request(model_hint=HAIKU_4_5))
 
     assert client is not None and client.messages.calls[0]["max_tokens"] == 64_000
 
@@ -142,12 +144,11 @@ async def test_an_invalid_effort_is_refused() -> None:
 
 
 async def test_effort_on_a_model_that_has_none_is_refused() -> None:
-    """Haiku 4.5 answers a 400 to ``effort``: ELA knows that before spending a round trip."""
+    """Haiku 4.5 answers a 400 to ``effort``: ELA knows that before spending a round trip. No
+    profile names it since M14.6; a route can still pin it by its id."""
     provider, client = make_provider()
 
-    result = await provider.complete(
-        request(model_hint="classification", parameters={"effort": "high"})
-    )
+    result = await provider.complete(request(model_hint=HAIKU_4_5, parameters={"effort": "high"}))
 
     assert result.error is not None
     assert HAIKU_4_5 in result.error.message

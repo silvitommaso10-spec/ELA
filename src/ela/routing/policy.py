@@ -92,13 +92,18 @@ DEFAULT_ROUTES: Final[Mapping[str, Route]] = MappingProxyType(
         "classification": Route(providers=(ANTHROPIC,), profile=CHEAP),
         "extraction": Route(providers=(ANTHROPIC,), profile=CHEAP),
         "routine": Route(providers=(ANTHROPIC,), profile=CHEAP),
+        "browsing": Route(providers=(ANTHROPIC,), profile=CHEAP),
     }
 )
-"""The seven task types of §25, four expensive and three cheap.
+"""The seven task types of §25, four expensive and three cheap — and ``browsing`` since M14.3.
 
 §25's cheap list reads «classificazione, estrazione, piccoli task, routine»: "piccoli task" is
 read as ``routine`` rather than given an entry of its own, because a size is not a kind of task
 and the two would have named the same route (ADR 0022 §4).
+
+``browsing`` is the route of a guided session of the browser (M14.3, ADR 0060; decision 25): the
+cheap profile, which since M14.6 is Haiku 5.5 — six sentences of six in the measure, like Sonnet
+5.5, for a tenth of the cost. A plan names another task type to choose another route.
 """
 
 DEFAULT_ROUTE: Final = Route(providers=(ANTHROPIC,), profile=BALANCED)

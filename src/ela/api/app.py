@@ -37,6 +37,7 @@ from ela.api import (
     pages,
     perception,
     results,
+    sessions,
     spend,
     system,
     tasks,
@@ -227,6 +228,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     ela: Ela = app.state.ela
     app.state.recovery = await ela.engine.recover()
+    # The gestures of a guided session whose session's task has ended (M14.3, ADR 0060): a crash, a
+    # restart with a question open. Found with a read of the repository and stopped — before the
+    # close below, which closes the steps they left open as it closes every ended task's.
+    app.state.orphans = await ela.sessions.close_orphans()
     # The steps a task that has ended left open (M6.3c, decision 2 of the review): what recover()
     # just ended, what a crash left between the end and the close, and the rows of before M6.3c.
     app.state.closed = await ela.executor.close_every_open_step()
@@ -239,6 +244,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # that landed between making the audio's file and unlinking it — one syscall wide, and exactly
     # the kind of rare leftover that would otherwise sit on a disk for a year (ADR 0034 §7).
     app.state.swept = ela.sweep_speech()
+    # And the folders of the guided sessions (M14.3, decision 34 of the review of the summary): a
+    # session's process outlives an ``ela serve`` killed with SIGKILL — measured, ADR 0060 §6 —, and
+    # its folder can hold Claude Code's logs with the text of the pages (§57). At start-up no
+    # session has a right to live: its gateway was this process. After ``close_orphans`` above.
+    app.state.sessions_swept = await ela.sweep_sessions()
     await ela.perception.tick()
     watching = asyncio.create_task(ela.perception.run())
     # And the heartbeat of ``local`` on its period (M13.3, ADR 0048 §2): what keeps the Device
@@ -271,9 +281,12 @@ def create_app(ela: Ela) -> FastAPI:
     )
     pages.ensure_readable(*(surface.templates for surface in SURFACES))
     app.state.ela = ela
-    app.state.running = set()
+    # The lock of ``run`` is ELA's since M14.3 (ADR 0060): the room of the guided sessions walks a
+    # gesture's child under it too, and the routes and the room must hold the same set.
+    app.state.running = ela.running
     app.state.recovery = RecoverySummary((), (), ())
     app.state.planned = ()
+    app.state.orphans = ()
     app.state.refused = Counter()
     # Raised when the process is asked to stop, so that a node holding a long-poll is answered at
     # the instant of the signal instead of at the end of its window (ADR 0038 §11). Who raises it is
@@ -298,6 +311,7 @@ def create_app(ela: Ela) -> FastAPI:
         context.router,
         perception.router,
         results.router,
+        sessions.router,
         spend.router,
         voice.router,
     ):

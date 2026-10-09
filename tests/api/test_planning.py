@@ -319,7 +319,12 @@ async def test_a_plan_by_hand_says_so_in_the_detail(client: AsyncClient) -> None
 
     detail = (await client.get(f"/tasks/{task_id}")).json()
 
-    assert detail["plan_author"] == {"by": "HAND", "result_id": None, "model": None}
+    assert detail["plan_author"] == {
+        "by": "HAND",
+        "result_id": None,
+        "session": None,
+        "model": None,
+    }
     assert detail["planning_task_id"] is None
     assert detail["no_plan"] is None
 

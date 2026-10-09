@@ -71,8 +71,15 @@ def coded_routes() -> dict[str | None, tuple[str, str]]:
     return rows
 
 
+def guided_text() -> str:
+    """ADR 0060, which adds the route of a guided session, ``browsing`` (M14.3)."""
+    return ADR_PATH.with_name("0060-guided-browser.md").read_text(encoding="utf-8")
+
+
 def test_the_routing_table_matches_the_code() -> None:
-    assert documented_routes(adr_text()) == coded_routes()
+    """ADR 0022's table, and the row ADR 0060 adds: an ADR is not rewritten."""
+    assert {**documented_routes(adr_text()), **documented_routes(guided_text())} == coded_routes()
+    assert set(documented_routes(guided_text())) == {"browsing"}
 
 
 def test_the_table_is_the_two_lists_of_the_spec() -> None:

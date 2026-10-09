@@ -8,6 +8,7 @@ is not merely a habit.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Final, cast
 
 import anthropic
@@ -143,6 +144,36 @@ def timeout_error() -> anthropic.APITimeoutError:
     return anthropic.APITimeoutError(request=httpx2.Request("POST", API_URL))
 
 
+class FakeRaw:
+    """What ``messages.with_raw_response.create`` gives back: the parsed message, and the request
+    that left — whose body is what the SDK serialized (M14.6, ADR 0061)."""
+
+    def __init__(self, message: Message, body: bytes) -> None:
+        self._message = message
+        self.http_request = httpx2.Request("POST", API_URL, content=body)
+
+    async def parse(self) -> Message:
+        return self._message
+
+
+class FakeRawMessages:
+    """``client.messages.with_raw_response``: the same answers, wrapped as the SDK wraps them."""
+
+    def __init__(self, messages: FakeMessages) -> None:
+        self._messages = messages
+
+    async def create(self, **payload: Any) -> FakeRaw:
+        body = sdk_body(payload)
+        self._messages.sent_bodies.append(body)
+        return FakeRaw(await self._messages.create(**payload), body)
+
+
+def sdk_body(payload: dict[str, Any]) -> bytes:
+    """The body as SDK 1.4.0 serializes it (``_utils/_json.py``): compact, and not ASCII-escaped —
+    so that a naive ``json.dumps`` of the payload would count another number of bytes."""
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode()
+
+
 class FakeMessages:
     """``client.messages``: hands out prepared answers in order and records what it was sent."""
 
@@ -150,6 +181,8 @@ class FakeMessages:
         self._answers = answers
         self._repeat = repeat
         self.calls: list[dict[str, Any]] = []
+        self.sent_bodies: list[bytes] = []
+        self.with_raw_response = FakeRawMessages(self)
 
     def prepare(self, *answers: Any) -> None:
         """More answers, after the ones the client was built with: for a test whose call comes

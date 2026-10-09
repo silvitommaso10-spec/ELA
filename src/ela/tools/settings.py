@@ -29,6 +29,7 @@ __all__ = [
     "VoiceSettings",
     "WorkspaceSettings",
     "default_capture_dir",
+    "sessions_dir_beside",
     "speech_dir_beside",
     "default_voice_enabled",
     "default_workspace_dir",
@@ -59,6 +60,18 @@ def speech_dir_beside(captures: Path) -> Path:
     keeps nothing, and a knob would suggest otherwise.
     """
     return captures.parent / "speech"
+
+
+def sessions_dir_beside(captures: Path) -> Path:
+    """``<the capture store's parent>/sessions``: the folders of the guided sessions (M14.3, ADR
+    0060), one per step, each the ``HOME`` and the ``CLAUDE_CONFIG_DIR`` of its session.
+
+    Derived from the capture store for the reason of :func:`speech_dir_beside`: a test that
+    redirects ``ELA_CAPTURE_DIR`` redirects this too. **Meant to stay empty** between sessions — a
+    session's folder is deleted at its end, because Claude Code leaves its logs there and they may
+    hold the text of the pages (§57) — and never inside the workspace.
+    """
+    return captures.parent / "sessions"
 
 
 class WorkspaceSettings(BaseSettings):

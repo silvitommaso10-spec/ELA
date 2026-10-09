@@ -41,6 +41,7 @@ here first); the third time it gets renamed. Rule 40 keeps that helper from ever
 to write a file instead of speaking.
 """
 
+from ela.infrastructure.machine.agent import ClaudeAgentSession
 from ela.infrastructure.machine.audition import (
     AUDITION_PHRASES,
     Audition,
@@ -100,6 +101,7 @@ from ela.infrastructure.machine.windows import (
 )
 
 __all__ = [
+    "ClaudeAgentSession",
     "AFPLAY",
     "AUDITION_PHRASES",
     "PMSET",

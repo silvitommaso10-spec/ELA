@@ -357,6 +357,17 @@ class PermissionGuardian:
                 risk,
                 targets,
             )
+        # 4-ter. The step's narrowing (M14.3, ADR 0060): a step may tighten the scope and never
+        #        widen it — the gestures of a guided session are held to the session's sites.
+        if step is not None and step.within is not None and not scope_covers(step.within, targets):
+            return _Verdict(
+                PermissionOutcome.DENIED,
+                Rule.SCOPE,
+                f"targets {_describe(targets)} of {capability.id} are not within the step's "
+                f"scope {list(step.within)}",
+                risk,
+                targets,
+            )
 
         # 5a. A grant that does not cover the call is a caller's incoherence: DENIED, needed or
         #     not (ADR 0011 §6). The Guardian never ignores a fact it was handed.

@@ -26,14 +26,16 @@ comparison in ``tests/contracts/test_protocols.py`` covers what ``isinstance`` c
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Final, Protocol, runtime_checkable
 from uuid import UUID
 
 from ela.domain import (
+    Admission,
     Approval,
     ApprovalId,
     ApprovalStatus,
@@ -64,11 +66,13 @@ from ela.domain import (
     ProviderRequest,
     ProviderResult,
     ProviderStatus,
+    ProviderUsage,
     RawCapture,
     RawObservation,
     RawRecognition,
     RawSpeech,
     RawTranscript,
+    Reservation,
     RiskLevel,
     StepId,
     Task,
@@ -83,6 +87,7 @@ from ela.domain import (
 __all__ = [
     "ANNOUNCED_FIELDS",
     "ANSWERS",
+    "AgentSession",
     "AlreadyExistsError",
     "ApprovalAlreadyAnsweredError",
     "ApprovalExpiredError",
@@ -109,6 +114,7 @@ __all__ = [
     "BrowserNotInstalled",
     "BrowserStopped",
     "BrowserUnsupported",
+    "CallRequest",
     "CapabilityRegistryPort",
     "Captured",
     "Clock",
@@ -125,7 +131,29 @@ __all__ = [
     "EnrollmentStore",
     "ExecutionResultStore",
     "Field",
+    "Forwarded",
+    "GUIDED_CACHE",
+    "GUIDED_CAP_BELOW_ONE_CALL",
+    "GUIDED_COST",
+    "GUIDED_DURATION",
+    "GUIDED_ERROR_CODES",
+    "GUIDED_FAILED",
+    "GUIDED_FOLDER_CHANGED",
+    "GUIDED_LOOKS",
+    "GUIDED_MAX_TOKENS",
+    "GUIDED_MODEL_CHANGED",
+    "GUIDED_NOT_INSTALLED",
+    "GUIDED_PERMISSION_ASKED",
+    "GUIDED_ROUTE_CHANGED",
+    "GUIDED_SESSION_GONE",
+    "GUIDED_STOPPED",
+    "GUIDED_TOOLS_CHANGED",
+    "GUIDED_UNCHECKED",
+    "GUIDED_UNRESERVED",
+    "Gesture",
+    "Gestures",
     "Glanced",
+    "Guided",
     "IdGenerator",
     "IdentityConflictError",
     "Invocation",
@@ -143,12 +171,14 @@ __all__ = [
     "LISTEN_UNSUPPORTED",
     "ListeningPort",
     "LocalBeat",
+    "ModelGateway",
     "ModelProvider",
     "ModelRouterPort",
     "NAVIGATION",
     "NotAllowedError",
     "NotFoundError",
     "Opened",
+    "OpenedSession",
     "PROVIDER_AUTHENTICATION_ERROR",
     "PROVIDER_BAD_REQUEST",
     "PROVIDER_ERROR_CODES",
@@ -197,6 +227,11 @@ __all__ = [
     "SPENDING_OVER_RESERVATION",
     "STARTED_ID",
     "ScreenCapturePort",
+    "SessionEnd",
+    "SessionHandle",
+    "SessionHost",
+    "SessionPlan",
+    "SessionTally",
     "SiteUnreachable",
     "SpeechPort",
     "StopPoint",
@@ -1359,6 +1394,26 @@ class Invocation:
 
 
 @dataclass(frozen=True, slots=True)
+class Guided:
+    """What a guided session of the browser would be, as the question names it (M14.3, ADR 0060).
+
+    The sentence the model starts from, the sites that are the boundary of every gesture, the model
+    the router chose — the one that will run, or the step fails —, the most the session may spend,
+    in dollars as a string of ``Decimal``, the looks and the seconds, and ``sends``, the tool's
+    sentence that the text of the pages goes to the model's provider (§57). The worst case and what
+    is left of the month are the question's own, as for every call that spends.
+    """
+
+    phrase: str
+    sites: tuple[str, ...]
+    model: str
+    max_cost: str
+    looks: int
+    timeout_seconds: int
+    sends: str
+
+
+@dataclass(frozen=True, slots=True)
 class Prospect:
     """What a call would meet on the machine **now**, read without running anything.
 
@@ -1380,6 +1435,9 @@ class Prospect:
     """What a browser call would do, when the call is one (M13.4, ADR 0052); ``None`` otherwise.
     It carries the site, what the tool calls it and the tool's sentence itself, because a site is
     not a :class:`Target`: nobody resolved it."""
+    guided: Guided | None = None
+    """What a guided session of the browser would be, when the call is one (M14.3, ADR 0060);
+    ``None`` otherwise."""
 
 
 def audited_numbers(declared: frozenset[str], output: JsonMapping) -> dict[str, JsonValue]:
@@ -2593,3 +2651,282 @@ class Browser(Protocol):
     async def close(self, page: str) -> None:
         """Close the page and its browser; nothing of it runs when this returns. Idempotent, and
         never raises: what cannot be closed any more is closed already."""
+
+
+# --------------------------------------------------------------------------------------
+# The guided session of the browser (M14.3, ADR 0060)
+# --------------------------------------------------------------------------------------
+
+
+GUIDED_LOOKS: Final = "guided.looks"
+"""ELA stopped the session: its model asked for one gesture more than the looks the yes allowed."""
+GUIDED_DURATION: Final = "guided.duration"
+"""ELA stopped the session at the end of the seconds the yes allowed, the wait for a yes included.
+"""
+GUIDED_COST: Final = "guided.cost"
+"""ELA stopped the session: a call did not fit in what is left of its reservation, or had no
+price."""
+GUIDED_TOOLS_CHANGED: Final = "guided.tools_changed"
+"""The tools of a call, or of the session's start, were not exactly the session's two (decision 22).
+"""
+GUIDED_MODEL_CHANGED: Final = "guided.model_changed"
+"""A call asked for another model than the one the router chose and the question named."""
+GUIDED_MAX_TOKENS: Final = "guided.max_tokens"
+"""A call with no ``max_tokens``, or more than the session declared."""
+GUIDED_CACHE: Final = "guided.cache"
+"""A call that asked for the cache, whose writes the worst case of ADR 0057 §2 does not price."""
+GUIDED_UNCHECKED: Final = "guided.unchecked"
+"""A call before the tools of the session's start were checked (decision 22)."""
+GUIDED_PERMISSION_ASKED: Final = "guided.permission_asked"
+"""The session asked for a permission — an anomaly, denied by the session —, and ELA stopped it."""
+GUIDED_NOT_INSTALLED: Final = "guided.not_installed"
+"""The binary of the session is not on this machine."""
+GUIDED_CAP_BELOW_ONE_CALL: Final = "guided.cap_below_one_call"
+"""The most the session may spend is below the worst case of one call: no call could go out."""
+GUIDED_FOLDER_CHANGED: Final = "guided.folder_changed"
+"""The session's folder does not hold exactly what ELA wrote, or cannot be prepared."""
+GUIDED_ROUTE_CHANGED: Final = "guided.route_changed"
+"""At the yes the router chose another model than the one the question named: never an effect
+other than the one approved."""
+GUIDED_STOPPED: Final = "guided.stopped"
+"""The task was stopped while the session ran, and ELA interrupted it: its calls are counted."""
+GUIDED_FAILED: Final = "guided.failed"
+"""The session ended with an error of its own, not one of ELA's limits."""
+GUIDED_UNRESERVED: Final = "guided.unreserved"
+"""The step has no reservation of the cap: a session spends, and nothing was set aside for it."""
+GUIDED_SESSION_GONE: Final = "guided.session_gone"
+"""A call or a gesture for a session that is not open."""
+GUIDED_ERROR_CODES: Final = frozenset(
+    {
+        GUIDED_LOOKS,
+        GUIDED_DURATION,
+        GUIDED_COST,
+        GUIDED_TOOLS_CHANGED,
+        GUIDED_MODEL_CHANGED,
+        GUIDED_MAX_TOKENS,
+        GUIDED_CACHE,
+        GUIDED_UNCHECKED,
+        GUIDED_PERMISSION_ASKED,
+        GUIDED_NOT_INSTALLED,
+        GUIDED_CAP_BELOW_ONE_CALL,
+        GUIDED_FOLDER_CHANGED,
+        GUIDED_ROUTE_CHANGED,
+        GUIDED_STOPPED,
+        GUIDED_FAILED,
+        GUIDED_UNRESERVED,
+        GUIDED_SESSION_GONE,
+    }
+)
+"""Every code a guided session can end with (M14.3, ADR 0060): the tool's ``error_codes``."""
+
+
+@dataclass(frozen=True, slots=True)
+class CallRequest:
+    """What one call of a guided session asks for, read from its body by the gateway's adapter:
+    numbers and names, never the text (§57). ``None`` where the body does not say — a doubt the
+    budget refuses (§33)."""
+
+    model: str | None
+    max_tokens: int | None
+    tools: tuple[str, ...] | None
+    cached: bool
+    request_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class Forwarded:
+    """A call on its way back from the provider: the status, the type of the body, the body
+    **event by event**, and what the call consumed once the body is over — ``None`` when the end
+    never came, an outcome nobody knows (ADR 0057 §10)."""
+
+    status: int
+    content_type: str
+    chunks: AsyncIterator[bytes]
+    usage: Callable[[], ProviderUsage | None]
+
+
+@runtime_checkable
+class ModelGateway(Protocol):
+    """Where a call of a guided session leaves the machine (§26, §30, §57; M14.3, ADR 0060): the
+    adapter that holds the key, beside the one :class:`ModelProvider` is.
+
+    The session never sees the key: it sends its calls to ELA's gateway with a token of its own,
+    and this port puts the key on a call **only with an** :class:`~ela.domain.Admission` — what the
+    budget of the session minted for it (architecture rule 65).
+    """
+
+    async def read(self, body: bytes) -> CallRequest:
+        """What the call in ``body`` asks for: its model, ``max_tokens``, the names of its tools,
+        whether it asks for the cache, and its bytes. A body that is not a call says nothing."""
+
+    async def worst(self, model: str, max_tokens: int) -> Decimal | None:
+        """The worst case of one call to ``model`` with ``max_tokens``, with the function of ADR
+        0057 §2 — the price list's —, or ``None`` for a model with no price."""
+
+    async def forward(self, admission: Admission, body: bytes, beta: str | None) -> Forwarded:
+        """Send ``body`` as it is to the provider with the key, and hand its answer back event by
+        event. Never raises: a call that could not leave answers with a status of its own and a
+        usage that says it was not sent."""
+
+
+@dataclass(frozen=True, slots=True)
+class OpenedSession:
+    """A guided session the room of ELA opened for a step (M14.3, ADR 0060): its id, the token the
+    session presents to the gateway — 32 random bytes, valid for this session only, from this
+    machine only, while it lives —, the reservation it spends, and the path of its gateway."""
+
+    session: StepId
+    token: str
+    reservation: Reservation
+    path: str
+
+
+@dataclass(frozen=True, slots=True)
+class Gesture:
+    """One gesture of a guided session, as it ended: the text the session reads — the result of
+    the child task, or the reason of its end —, how its task ended, and whether it was a
+    ``browser.act`` that acted."""
+
+    text: str
+    state: TaskState
+    acted: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SessionTally:
+    """A guided session, closed: what it consumed — the usage that closes its reservation — and its
+    numbers. Only numbers: the calls one by one as (model, input tokens, output tokens, bytes)."""
+
+    usage: ProviderUsage
+    calls: int
+    unknown: int
+    input_minus_bytes_max: int | None
+    looks: int
+    refused: int
+    acts: int
+    per_call: tuple[tuple[str, int, int, int], ...]
+
+
+@runtime_checkable
+class Gestures(Protocol):
+    """The room of the guided sessions (§19, §27; M14.3, ADR 0060): what ``browser.guided`` asks.
+
+    **Every gesture of a session is a child task** of the session's task, walked by the runner
+    with the Guardian, the grant, the tool, the verifier and the audit of every task: one door, and
+    no second one. The room also holds each session's budget and token, which the gateway reads.
+    """
+
+    async def open(
+        self, task_id: TaskId, step_id: StepId, *, sites: tuple[str, ...], tools: frozenset[str]
+    ) -> OpenedSession | ErrorMetadata:
+        """Open the session of this step on the reservation the cap holds for it, or say why not."""
+
+    async def start(self, session: StepId, tools: Sequence[str]) -> ErrorMetadata | None:
+        """The tools the session's start lists: exactly its two, or the session is halted
+        (decision 22). No call is admitted before this answered."""
+
+    async def gesture(
+        self, session: StepId, capability: CapabilityId, arguments: JsonMapping
+    ) -> Gesture:
+        """One gesture the model asked for: a child task, planned, walked, and waited for."""
+
+    async def halt(self, session: StepId, error: ErrorMetadata) -> None:
+        """Stop the session for ``error``: what the tool reads in :meth:`halted`."""
+
+    async def halted(self, session: StepId) -> ErrorMetadata:
+        """What ELA stopped the session for, once it does: awaited by the tool beside the end of
+        the session, the stop of its task and its duration."""
+
+    async def close(self, session: StepId, *, reason: str) -> SessionTally:
+        """Close the session: its live gestures stopped, its calls closed, its token gone."""
+
+    async def is_open(self, session: StepId) -> bool:
+        """Whether the session is still open in this room: a call of it can still be admitted."""
+
+    async def gesture_ids(self, task_id: TaskId, session: StepId, count: int) -> tuple[TaskId, ...]:
+        """The ids of the first ``count`` gestures of ``session``: derived, never stored."""
+
+
+@dataclass(frozen=True, slots=True)
+class SessionPlan:
+    """What a guided session is launched with, all of it written by ELA (M14.3, ADR 0060): the
+    sentence, ELA's instructions and what the two tools are — the grammar of a selector among it
+    (decision 44 of the review of the second round) —, the model and ``max_tokens`` the gateway
+    holds it to, the address of the gateway and the token, and how long it may last."""
+
+    session: StepId
+    goal: str
+    instructions: str
+    read_description: str
+    act_description: str
+    model: str
+    max_tokens: int
+    gateway: str
+    token: str
+    seconds: int
+
+
+@dataclass(frozen=True, slots=True)
+class SessionHost:
+    """What the session calls back into, while it runs: the tools of its start, each gesture its
+    model asks for, and a request for a permission — an anomaly, denied by the session (§33)."""
+
+    started: Callable[[tuple[str, ...]], Awaitable[ErrorMetadata | None]]
+    gesture: Callable[[str, JsonMapping], Awaitable[str]]
+    asked: Callable[[], Awaitable[None]]
+
+
+@dataclass(frozen=True, slots=True)
+class SessionEnd:
+    """How a guided session ended, as the session wrote it: its last text — content from outside
+    (ADR 0059) —, the subtype of its end, the cost Claude Code estimated beside ELA's (never in its
+    place), its version, the permissions it denied, and whether no process of it is left."""
+
+    text: str
+    subtype: str
+    reported_cost: str | None
+    version: str | None
+    denials: int
+    closed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SessionHandle:
+    """A session that was launched: what ends with it, and how to stop it — the interrupt first,
+    then the end of its input, then ``SIGKILL`` after a grace (decision 11)."""
+
+    ended: Awaitable[SessionEnd]
+    interrupt: Callable[[], Awaitable[None]]
+
+
+@runtime_checkable
+class AgentSession(Protocol):
+    """A session of Claude Code launched by ELA as a program (§19, §24; M14.3, ADR 0060).
+
+    It has **no tools of its own** — no shell, no file, no network —, only the two gestures of ELA,
+    in-process; its folder is ELA's, empty but for what ELA writes and checks before every launch;
+    its environment is closed, and its only way to a model is ELA's gateway, with a token.
+    """
+
+    @property
+    def tools(self) -> frozenset[str]:
+        """The names of the two tools every session offers its model: the budget holds every call
+        to exactly these."""
+
+    async def ready(self) -> ErrorMetadata | None:
+        """Whether a session could be launched now: the binary there, the folder preparable."""
+
+    async def running(self, session: StepId) -> bool:
+        """Whether a process of ``session`` is still running on this machine: read from the
+        kernel, never from what the session said."""
+
+    async def launch(
+        self, reservation: Reservation, plan: SessionPlan, host: SessionHost
+    ) -> SessionHandle | ErrorMetadata:
+        """Launch the session on money already set aside. An :class:`~ela.domain.ErrorMetadata`
+        when it could not start — its folder changed, its binary gone —, and nothing ran."""
+
+    async def sweep(self) -> int:
+        """At start-up, what a crash left: every session's folder deleted, and a session's process
+        still running killed first. No session has a right to live then — its gateway went with
+        the process that is starting again. Answers how many folders it deleted."""

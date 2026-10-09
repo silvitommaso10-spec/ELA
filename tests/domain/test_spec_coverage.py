@@ -71,6 +71,8 @@ LATER_ADDITIONS = frozenset(
         "WorstCase",
         "Ledger",
         "PlanAuthor",
+        "Reservation",
+        "Admission",
     }
 )
 """Models a later milestone added, each argued in its own ADR.

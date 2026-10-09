@@ -24,9 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ela.composition import SystemClock, UuidGenerator
 from ela.devices import DeviceRegistry, LocalHeartbeat, period_of
-from ela.domain import CapabilityId, RiskLevel
+from ela.domain import Actor, ActorKind, CapabilityId, RiskLevel
 from ela.executive import StopOfTask
+from ela.executive.sessions import SessionRoom
+from ela.executive.spending import SpendingGate
 from ela.infrastructure.machine import (
+    ClaudeAgentSession,
     DarwinListening,
     DarwinProbe,
     PlaywrightBrowser,
@@ -55,6 +58,7 @@ from ela.infrastructure.persistence.orm import Base
 from ela.node.runner import NEVER_STOPPED
 from ela.permissions import CapabilityRegistry, PermissionGuardian
 from ela.ports import (
+    AgentSession,
     ApprovalStore,
     AssignmentStore,
     AuditLog,
@@ -68,9 +72,11 @@ from ela.ports import (
     DeviceRegistryPort,
     EnrollmentStore,
     ExecutionResultStore,
+    Gestures,
     IdGenerator,
     ListeningPort,
     LocalBeat,
+    ModelGateway,
     ModelProvider,
     ModelRouterPort,
     PerceptionProbe,
@@ -87,10 +93,17 @@ from ela.ports import (
     VerifierRegistryPort,
 )
 from ela.providers import ProviderRegistry
-from ela.providers.anthropic import AnthropicProvider, AnthropicSettings, anthropic_provider
+from ela.providers.anthropic import (
+    AnthropicGateway,
+    AnthropicProvider,
+    AnthropicSettings,
+    anthropic_provider,
+)
 from ela.providers.ntfy import BELL_TIMEOUT_SECONDS, DEFAULT_NTFY_URL, NtfyBell
 from ela.routing import ModelRouter
+from ela.tasks.engine import TaskEngine
 from ela.testing.fakes import (
+    FakeAgentSession,
     FakeApprovalStore,
     FakeAssignmentStore,
     FakeAuditLog,
@@ -106,6 +119,7 @@ from ela.testing.fakes import (
     FakeLauncher,
     FakeListening,
     FakeLocalBeat,
+    FakeModelGateway,
     FakeModelProvider,
     FakeModelRouter,
     FakePermissionGuardian,
@@ -532,6 +546,35 @@ def _heartbeat() -> LocalHeartbeat:
     )
 
 
+def _room() -> SessionRoom:
+    """The room of the guided sessions (M14.3), over the fakes of every store it reads."""
+    repository, audit, results = FakeTaskRepository(), FakeAuditLog(), FakeExecutionResultStore()
+    engine = TaskEngine(
+        repository,
+        audit,
+        FakeClock(),
+        FakeIdGenerator(),
+        approvals=FakeApprovalStore(),
+        actor=Actor(kind=ActorKind.ELA, id="ela"),
+        orphan_after=timedelta(minutes=15),
+    )
+    return SessionRoom(
+        engine=engine,
+        repository=repository,
+        results=results,
+        capabilities=_registry(),
+        spending=SpendingGate(results, None),
+        gateway=FakeModelGateway(),
+        running=set(),
+    )
+
+
+def _agent_session() -> ClaudeAgentSession:
+    """The session of Claude Code, built as the composition builds it: nothing starts until a
+    session is launched, and the contract test launches none (M14.3)."""
+    return ClaudeAgentSession(Path(tempfile.gettempdir()) / "ela-contract-sessions")
+
+
 def nothing_runs() -> bool:
     """A Core with no tool running on ``local``: the heartbeat's question, answered."""
     return False
@@ -652,6 +695,15 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     LocalBeat: (
         Implementation("FakeLocalBeat", FakeLocalBeat),
         Implementation("LocalHeartbeat", _heartbeat),
+    ),
+    ModelGateway: (
+        Implementation("FakeModelGateway", FakeModelGateway),
+        Implementation("AnthropicGateway(no key)", lambda: AnthropicGateway(None, timeout=1.0)),
+    ),
+    Gestures: (Implementation("SessionRoom", _room),),
+    AgentSession: (
+        Implementation("FakeAgentSession", FakeAgentSession),
+        Implementation("ClaudeAgentSession", _agent_session),
     ),
     TaskStop: (
         Implementation("FakeStop", FakeStop),

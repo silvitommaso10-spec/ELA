@@ -310,15 +310,31 @@ def _pages_of_every_surface() -> frozenset[tuple[str, str]]:
     return found
 
 
-NODE_CALLED = NODE_ROUTES | CODE_ROUTES | _pages_of_every_surface()
+def _the_gateway_of_every_session() -> frozenset[tuple[str, str]]:
+    """The routes a guided session calls (M14.3, ADR 0060), **derived** from the router of
+    ``ela.api.sessions``: a session's gateway is called by Claude Code, from loopback, with the
+    session's token — never by a person, and so never by an ``ela`` command. Empty would mean this
+    set excuses nothing any more, so it refuses to be."""
+    from ela.api import sessions
+    from tests.api.routers import routes_of
+
+    found = frozenset(routes_of([sessions.router]))
+    assert found, "the gateway of a session has no route: nothing to excuse"
+    return found
+
+
+NODE_CALLED = (
+    NODE_ROUTES | CODE_ROUTES | _pages_of_every_surface() | _the_gateway_of_every_session()
+)
 """The routes no command calls, classified by name the way ``LATER_ROUTERS`` classifies, so a route
 added tomorrow without a command still fails above.
 
-The node's (ADR 0037 §4) are called by a node; a surface's (ADR 0043 §5, ADR 0044) are called by a
-browser, and a browser is not a terminal: there is no ``ela`` command for a page, and there is no
-page for a command. The perimeter of ADR 0024 §2 — a whole turn of ELA without ``curl`` — is about
-what a **person at this machine** can do, and it is untouched: everything the pages do,
-``ela task approve``, ``ela task run`` and ``ela task cancel`` already did."""
+The node's (ADR 0037 §4) are called by a node; a session's gateway (ADR 0060) by a guided session;
+a surface's (ADR 0043 §5, ADR 0044) are called by a browser, and a browser is not a terminal: there
+is no ``ela`` command for a page, and there is no page for a command. The perimeter of ADR 0024
+§2 — a whole turn of ELA without ``curl`` — is about what a **person at this machine** can do, and
+it is untouched: everything the pages do, ``ela task approve``, ``ela task run`` and ``ela task
+cancel`` already did."""
 
 
 def test_a_command_that_talks_to_ela_can_end_in_any_of_the_four_ways() -> None:
