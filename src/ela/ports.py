@@ -2922,3 +2922,8 @@ class AgentSession(Protocol):
     ) -> SessionHandle | ErrorMetadata:
         """Launch the session on money already set aside. An :class:`~ela.domain.ErrorMetadata`
         when it could not start — its folder changed, its binary gone —, and nothing ran."""
+
+    async def sweep(self) -> int:
+        """At start-up, what a crash left: every session's folder deleted, and a session's process
+        still running killed first. No session has a right to live then — its gateway went with
+        the process that is starting again. Answers how many folders it deleted."""

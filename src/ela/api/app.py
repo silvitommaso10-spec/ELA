@@ -244,6 +244,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # that landed between making the audio's file and unlinking it — one syscall wide, and exactly
     # the kind of rare leftover that would otherwise sit on a disk for a year (ADR 0034 §7).
     app.state.swept = ela.sweep_speech()
+    # And the folders of the guided sessions (M14.3, decision 34 of the review of the summary): a
+    # session's process outlives an ``ela serve`` killed with SIGKILL — measured, ADR 0060 §6 —, and
+    # its folder can hold Claude Code's logs with the text of the pages (§57). At start-up no
+    # session has a right to live: its gateway was this process. After ``close_orphans`` above.
+    app.state.sessions_swept = await ela.sweep_sessions()
     await ela.perception.tick()
     watching = asyncio.create_task(ela.perception.run())
     # And the heartbeat of ``local`` on its period (M13.3, ADR 0048 §2): what keeps the Device

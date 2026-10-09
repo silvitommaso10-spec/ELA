@@ -1927,6 +1927,8 @@ class FakeAgentSession:
         """When set, an interrupt waits for it before it reaches the script: the session stays
         open in the room for as long as the test holds it."""
         self.interrupted: list[StepId] = []
+        self.swept = 0
+        """How many times the start-up swept the folders of the sessions."""
         self._script = script
         self._unready = unready
         self._refused = refused
@@ -1942,6 +1944,10 @@ class FakeAgentSession:
 
     async def running(self, session: StepId) -> bool:
         return session in self._alive
+
+    async def sweep(self) -> int:
+        self.swept += 1
+        return 0
 
     async def launch(
         self, reservation: Reservation, plan: SessionPlan, host: SessionHost

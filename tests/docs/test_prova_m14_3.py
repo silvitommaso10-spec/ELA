@@ -795,7 +795,12 @@ def test_a_child_of_another_task_is_not_the_one_awaited(real: Real) -> None:
     module = script()
     session = real.refused
     proof = proof_on(
-        real, {"/approvals": session.asking, f"/tasks/{session.child}": session.child_asking}
+        real,
+        {
+            "/approvals": session.asking,
+            f"/tasks/{session.child}": session.child_asking,
+            f"/tasks/{real.accepted.task}/results": real.accepted.results,
+        },
     )
     turn = module.Turn(task_id=real.accepted.task, background=Running("outcome completed\n"))
 
@@ -807,7 +812,9 @@ def test_a_child_of_another_task_is_not_the_one_awaited(real: Real) -> None:
 
 def test_a_session_over_before_the_gesture_asked_is_skipped_and_the_step_ends(real: Real) -> None:
     module = script()
-    proof = proof_on(real, {"/approvals": []})
+    proof = proof_on(
+        real, {"/approvals": [], f"/tasks/{real.refused.task}/results": real.refused.results}
+    )
     turn = module.Turn(task_id=real.refused.task, background=Running("outcome completed\n"))
     todo = {
         5: [
@@ -825,7 +832,7 @@ def test_a_session_over_before_the_gesture_asked_is_skipped_and_the_step_ends(re
 
 def test_the_end_of_the_background_is_read_like_an_atteso(real: Real) -> None:
     module = script()
-    proof = proof_on(real, {})
+    proof = proof_on(real, {f"/tasks/{real.refused.task}/results": real.refused.results})
     turn = module.Turn(task_id=real.refused.task, background=Running(real.refused.run_output))
 
     walked_on(proof, {5: [block(5, "fine", "outcome completed")]}, turn)
@@ -836,7 +843,7 @@ def test_the_end_of_the_background_is_read_like_an_atteso(real: Real) -> None:
 
 def test_an_end_that_is_not_the_one_expected_fails(real: Real) -> None:
     module = script()
-    proof = proof_on(real, {})
+    proof = proof_on(real, {f"/tasks/{real.stopped.task}/results": real.stopped.results})
     turn = module.Turn(task_id=real.stopped.task, background=Running(real.stopped.run_output))
 
     walked_on(proof, {6: [block(6, "fine", "outcome completed")]}, turn)
@@ -1569,3 +1576,20 @@ def test_the_child_of_a_gesture_that_could_not_be_planned_is_written_and_not_fai
 
     assert proof.report.ok, proof.report.lines
     assert any("senza piano" in line for line in proof.report.lines)
+
+
+def test_a_check_of_step_1_that_raises_stops_the_proof_with_what_it_raised() -> None:
+    module = script()
+    report = module.base.Report(io.StringIO())
+
+    def unreachable() -> str | None:
+        raise ConnectionError("ELA does not answer")
+
+    held = module.stopping(report, [("ELA risponde", unreachable), ("mai", lambda: None)])
+
+    assert not held
+    assert report.stopped == (
+        1,
+        "la prova richiede «ELA risponde» (ConnectionError: ELA does not answer)",
+    )
+    assert report.passes == {}

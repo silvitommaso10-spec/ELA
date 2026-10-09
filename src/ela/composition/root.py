@@ -84,6 +84,7 @@ from ela.permissions import PermissionGuardian, production_catalogue
 from ela.ports import (
     SPEECH_NO_KEY,
     SPEECH_NO_PLAYER,
+    AgentSession,
     ApprovalStore,
     AuditLog,
     AuthorizationStore,
@@ -211,6 +212,10 @@ class Ela:
     sessions: SessionRoom
     """The room of the guided sessions (M14.3, ADR 0060): every gesture a child task, each
     session's budget and token — what the gateway's route reads, and the cancel route stops."""
+    agents: AgentSession
+    """The sessions of Claude Code themselves (M14.3, ADR 0060): on ``Ela`` for the reason
+    ``speech_dir`` is — the start-up sweep lives in the ``lifespan``, and ``ela.api`` reaches this
+    object and :meth:`sweep_sessions`, never the adapter (architecture rule 27)."""
     planner: Planner
     """ELA's Planner (§13; M14.2, ADR 0058): one call of the model, through a planning task, writes
     the plan of a task. It holds the engine, the runner and the registries — no provider, no device
@@ -325,6 +330,12 @@ class Ela:
         retain — it is a floor being swept at the one moment ELA is certain to reach.
         """
         return sweep_speech_files(self.speech_dir)
+
+    async def sweep_sessions(self) -> int:
+        """Kill a session's process a crash left running and delete every session's folder: at
+        start-up no session has a right to live (decision 34 of the review of the summary of
+        M14.3; ADR 0060 §6). Normally zero, like the voice's sweep."""
+        return await self.agents.sweep()
 
     async def aclose(self) -> None:
         """Release the database connections. Idempotent, as ``dispose`` is."""
@@ -832,6 +843,7 @@ async def build(
         runner=runner,
         running=running,
         sessions=sessions,
+        agents=agents,
         planner=planner,
         assignments=assignments,
         bell=rings,

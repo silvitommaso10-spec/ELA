@@ -46,7 +46,9 @@ LOOPBACK: Final = "http://127.0.0.1:8765"
 """Where a session reaches ELA's gateway: both ends of the socket on loopback."""
 
 MAX_COST: Final = "0.60"
-"""The most a session of the proof may spend: one call of Haiku 5.5 at its worst, 0,516384 $."""
+"""The most a session of these tests may spend: one call of Haiku 5.5 at its worst, 0,516384 $,
+fits, and two in flight at once do not — what the tests of the limits need. The proof's sessions
+have 1,10 $ (decision 32 of the review of the summary)."""
 
 GOAL: Final = "Apri YouTube e cerca il canale di MrBeast."
 

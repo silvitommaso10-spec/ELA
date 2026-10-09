@@ -176,7 +176,7 @@ che lui compone: può portare al sito parole del tuo obiettivo — nel percorso,
 fa qualcosa su un GET, lo fa. Il piano lo leggi prima di avviarlo, con i suoi argomenti; ma dichiara solo
 siti a cui una lettura non fa fare niente.
 
-**Da M14.3 il modello guida il browser da una frase** (§26, [ADR 0060](adr/0060-guided-browser.md)), e ogni lettura
+**Da M14.3 il modello guida il browser da una frase** (sezione 26, [ADR 0060](adr/0060-guided-browser.md)), e ogni lettura
 della sessione è un GET che compone **mentre la sessione gira**: non lo leggi prima — il tuo sì nomina la frase, i siti,
 il modello, il costo e la durata, non gli indirizzi —, e dentro i siti della sessione una lettura non chiede. Quel GET può
 portare al sito parole della frase **e del testo delle pagine lette nella sessione**, e se il sito fa qualcosa su un GET,
@@ -2786,7 +2786,7 @@ sito fa qualcosa su un GET, lo fa. `browser.read` resta `LOW` perché un piano d
 letto con i suoi argomenti (§5); dichiara solo siti a cui una lettura non fa fare niente.
 
 ***Annotato il 2026-10-09*** (M14.3, [ADR 0060](adr/0060-guided-browser.md)): **da M14.3 un `browser.read` e un
-`browser.act` li chiede anche il modello di una sessione guidata** (§26), un gesto alla volta. Ogni gesto è un task figlio,
+`browser.act` li chiede anche il modello di una sessione guidata** (sezione 26), un gesto alla volta. Ogni gesto è un task figlio,
 deciso dal Guardian come questi: `browser.read` resta `LOW` e dentro i siti della sessione non chiede — la sessione l'hai
 avviata tu, con un sì che nomina la frase, i siti, il modello, il costo e la durata —; `browser.act` resta `HIGH`, e chiede
 ogni volta anche lì. Il browser resta vuoto: M14.3 non porta nessun pezzo di profilo.
@@ -5178,8 +5178,9 @@ nel file; non c'è un verdetto.
 
 ## 26. Il browser guidato da un modello: la prova a mano di M14.3 e M14.6
 
-> **Scritta con l'implementazione il 2026-10-09** (`milestones/M14.3.md`, «La prova a mano», con le decisioni 17, 27 e 30
-> della review della SPEC), e `tests/docs/test_prova_m14_3.py` tiene lo script allineato a questa sezione. La si fa **sul
+> **Scritta con l'implementazione il 2026-10-09** (`milestones/M14.3.md`, «La prova a mano», con la decisione 17 della
+> sessione e le 27 e 30 della review della SPEC), **e riallineata lo stesso giorno alla review del riepilogo** (decisioni
+> 32, 35 e 38: le sessioni a 1,10 $, il gesto che non arriva, il margine con i due numeri), e `tests/docs/test_prova_m14_3.py` tiene lo script allineato a questa sezione. La si fa **sul
 > Mac, senza il PC**, sul branch di M14.3 e M14.6, con lo script `scripts/prova_m14_3.py`: una sessione guidata gira solo sul
 > Core. [ADR 0060](adr/0060-guided-browser.md) è `Proposta` fino a questa prova, e [ADR 0061](adr/0061-haiku-5-5.md) — Haiku
 > 5.5 e le sue due fasce — con lei: il passo 3 è la prova di M14.6. **La lancia Tommaso.**
@@ -5194,13 +5195,18 @@ suo verifier e il suo audit. `browser.read` resta `LOW` e dentro i siti della se
 Il sì è **uno per la sessione**, e la domanda nomina tutto ciò che il sì concede: la frase, i siti — una sessione può solo
 stringere `ELA_BROWSER_SITES` —, il modello, **il più che la sessione può spendere**, quanti gesti può chiedere, quanto può
 durare — l'attesa di un tuo sì compresa —, e che cosa esce dalla macchina: la frase, le istruzioni di ELA e il testo di ogni
-pagina letta vanno ad Anthropic. Mai il contesto di ELA, mai le tue cartelle o i tuoi programmi. **Il caso peggiore è per
-chiamata**: ELA pesa ogni chiamata della sessione prima che parta, contro ciò che resta del costo massimo, e una chiamata che
-non ci sta non parte — la sessione si ferma con `guided.cost`. A fine sessione il libro del mese scrive il costo vero.
+pagina letta vanno ad Anthropic, con l'esito di ogni gesto e ciò che Claude Code aggiunge di suo (le definizioni dei due
+strumenti, la sua versione: [ADR 0060](adr/0060-guided-browser.md) §8). Mai il contesto di ELA, mai le tue cartelle o i tuoi
+programmi. **Il caso peggiore è per chiamata**: ELA pesa ogni chiamata della sessione prima che parta, contro ciò che resta
+del costo massimo **meno le chiamate ancora in volo**, e una chiamata che non ci sta non parte — la sessione si ferma con
+`guided.cost`. A fine sessione il libro del mese scrive il costo vero. **Quindi il costo massimo decide quante chiamate
+stanno in volo insieme**: sotto il caso peggiore di una chiamata la sessione non parte (`guided.cap_below_one_call`); sotto
+due casi peggiori ne sta una alla volta, e **se Claude Code ne manda due insieme la sessione si ferma con `guided.cost`**.
+Su Haiku 5.5 una chiamata, al caso peggiore, è 0,516384 $, e due sono 1,032768 $.
 
 **Prima di cominciare, due cose da leggere per intero.** Una lettura della sessione è un GET che il modello compone mentre
 gira, e **non lo leggi prima**: può portare al sito parole della frase e delle pagine lette, e se il sito fa qualcosa su un
-GET, lo fa (§1). E **il consenso dei cookie di YouTube** vive su `consent.youtube.com`, fuori dalla sessione: la pagina dei
+GET, lo fa (sezione 1). E **il consenso dei cookie di YouTube** vive su `consent.youtube.com`, fuori dalla sessione: la pagina dei
 risultati si legge senza un click, e il canale si nomina da lì; **la pagina di un canale, invece, in M14.3 non si apre** —
 il consenso vorrebbe un click su un altro host, e il suo cookie morirebbe con il browser vuoto del gesto. La strada è M13.9,
 con un profilo che dura.
@@ -5211,7 +5217,7 @@ mostra ogni domanda — della sessione o di un gesto — e chiede «rispondi sì
 con la CLI, con un «n» la prova si ferma, perché il resto del passo non avrebbe niente da misurare.
 
 Lo script legge da questa sezione i blocchi con il marcatore sopra, con il lettore di `scripts/prova_m6_3c.py`: i tipi
-`comando`, `atteso` e `occhio` di §21 — l'`atteso` cerca le sue righe in ciò che hanno stampato **tutti** i comandi del
+`comando`, `atteso` e `occhio` della sezione 21 — l'`atteso` cerca le sue righe in ciò che hanno stampato **tutti** i comandi del
 blocco sopra, in ordine, come nella sezione 24 —, e nove suoi:
 
 - **`sì`** e **`no`**: leggono la domanda del task che la prima riga del blocco nomina — la sessione, `<id>`, o il gesto,
@@ -5220,28 +5226,34 @@ blocco sopra, in ordine, come nella sezione 24 —, e nove suoi:
 - **`sfondo`**: lancia la riga del blocco, `ela task run`, **in sfondo**: la sessione gira, e lo script intanto guarda.
 - **`aspetta`**: aspetta un figlio della sessione con la capability e lo stato della riga — `browser.act WAITING_APPROVAL`,
   il gesto che chiede —, e ne fa `<id del figlio>`. **Nessuna soglia di tempo**: aspetta finché lo vede, o finché la
-  sessione finisce da sé. **Se la sessione finisce senza chiedere il gesto, il passo è SALTATO e non FALLITO**: un gesto che
-  il modello non ha chiesto non è un errore di ELA.
+  sessione finisce. **Se la sessione finisce prima, lo script dice come è finita, con lo stato e il codice**: è **SALTATO**
+  solo se è finita da sé, o su un limite che il tuo sì ha concesso — `guided.looks`, `guided.duration` —; ogni altra fine,
+  `guided.cost` compreso, è **FALLITO** con il suo codice. Un salto chiude il suo giro, non il passo: il giro dopo, che
+  crea il suo task, va avanti.
 - **`fine`**: aspetta che la corsa in sfondo finisca, e cerca le righe del blocco in ciò che ha stampato, come un `atteso`.
-- **`sessione`**: il risultato della sessione — lo stato della riga, e il codice d'errore quando la riga lo nomina —, **la
+- **`sessione`**: il risultato della sessione — lo stato della riga, il codice d'errore quando la riga lo nomina e nessun
+  codice quando non lo nomina —, **la
   prenotazione chiusa** — nessuna prenotazione aperta in più rispetto al passo 1 —, **il costo vero**, il modello
   `claude-haiku-5-5`, nessuna chiamata dall'esito ignoto, **nessun processo della sessione rimasto**. Scrive nel file la
   risposta del modello, i gesti, le chiamate con i loro token e i loro byte, e il costo.
 - **`figli`**: ogni gesto è un task figlio scritto **dalla sessione** — l'autore `SESSION`, con lo step della sessione e il
   suo modello —, con **i siti della sessione** come confine del suo step, e ogni `browser.read` senza domanda. Ogni riga è
   un figlio che deve esserci: la capability, lo stato, e — quando la riga lo nomina — **la regola del Guardian** che l'ha
-  deciso, letta nell'audit. Se il modello non ha chiesto nessun gesto di quella capability, il passo è **SALTATO**, come
-  sopra. Scrive i figli nel file, uno per riga.
+  deciso, letta nell'audit. Se fra i figli non c'è nessun gesto di quella capability, il passo è **SALTATO**. Il figlio di
+  un gesto con argomenti che ELA non sa pianificare è cancellato prima di avere un piano, e la sessione lo legge come
+  negato: lo script lo scrive nel file, «senza piano», e non lo conta come un errore. Scrive i figli nel file, uno per
+  riga.
 - **`fascia`**: le chiamate della sessione del task della riga, **ricalcolate con la fascia bassa di Haiku 5.5** — il
   listino, non la funzione che il gateway usa — e confrontate con il costo che il libro ha scritto (la prova di M14.6).
-- **`spesa`**: `GET /spend`, confrontato con com'era al passo 1, come nella sezione 24.
+- **`spesa`**: `GET /spend`, confrontato con com'era al passo 1, come nella sezione 24. **Il costo di ogni sessione entra
+  nel conto quando la sessione finisce**, comunque finisca il suo passo.
 
 I segnaposto che riempie sono `<id>`, il task del passo; `<id del figlio>`, il figlio che `aspetta` ha trovato;
 `<approval-id>`, la domanda del task che il blocco nomina; e `<id del passo 2>`, il task della sessione del passo 2. Scrive
 tutto in `~/Downloads`, in `prova-m14.3-` con la data e l'ora, e l'ultima riga dice «La prova è passata» o che cosa manca.
 **Nessun `Ctrl-C`, nessun riavvio** dopo l'avvio.
 
-Sul Mac, il `.env` con la chiave del Mac e il tuo tetto (§23); **il `.env` si tocca al più per la riga dei siti**, che deve
+Sul Mac, il `.env` con la chiave del Mac e il tuo tetto (sezione 23); **il `.env` si tocca al più per la riga dei siti**, che deve
 avere i tre della prova:
 
 ```
@@ -5249,8 +5261,9 @@ ELA_BROWSER_SITES=["www.youtube.com", "example.com", "httpbin.org"]
 ```
 
 Il Core acceso dal codice del branch, dopo `uv run alembic upgrade head`. Le sessioni della prova sono **cinque**, tutte su
-Haiku 5.5, ognuna con **0,60 $** di costo massimo — la più piccola che lascia partire una chiamata, il cui caso peggiore è
-**0,516384 $** —; il loro costo vero, qualche centesimo, lo legge il passo 7.
+Haiku 5.5, ognuna con **1,10 $** di costo massimo: più di due casi peggiori di una chiamata, 2 × 0,516384 = 1,032768 $, così
+due chiamate stanno in volo insieme. Il caso peggiore di una chiamata, **0,516384 $**, è il costo massimo più piccolo con cui
+una sessione parte. Il loro costo vero, qualche centesimo, lo legge il passo 7.
 
 ```
 uv run python scripts/prova_m14_3.py
@@ -5261,16 +5274,17 @@ uv run python scripts/prova_m14_3.py
 Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch su `origin`, con l'albero
 pulito; ELA risponde; il Core gira da quel codice — `browser.guided` nel catalogo di `/diagnostics`, e lo schema dell'API
 con `POST /sessions/{session}/v1/messages` —; `uv run alembic current` dice `0014 (head)`; la rotta `browsing` va al
-profilo economico, che è `claude-haiku-5-5`; il provider del modello ha una chiave e c'è un tetto; ciò che resta del mese
-basta per **le cinque sessioni al loro costo massimo**, 5 × 0,60 = 3,00 $, calcolati con la funzione che il cancello usa per
-prenotare una sessione, dai piani che i comandi della sezione mandano; i tre siti sono nella riga; il binario che l'SDK
-porta c'è, e si può lanciare. **Se qualcosa manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca: il resto
-misurerebbe un'altra cosa.
+profilo economico, che è `claude-haiku-5-5` — letto dal `.env`: dal Core lo legge la domanda del passo 2 —; il provider
+del modello ha una chiave e c'è un tetto; ciò che resta del mese, il `left` di `/spend`, basta per **le cinque sessioni al
+loro costo massimo**, 5 × 1,10 = 5,50 $, calcolati con la funzione che il cancello usa per prenotare una sessione, dai piani
+che i comandi della sezione mandano; i tre siti sono nella riga; il binario che l'SDK porta c'è, e si può lanciare. **Se
+qualcosa manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca: per il margine, ciò che resta e ciò che le
+sessioni prenotano. Il resto misurerebbe un'altra cosa.
 
 ### 2. La frase della registrazione
 
 La frase di sempre, su YouTube. Il piano lo scrivi tu, con un file: uno step `browser.guided` con la frase, il sito
-`www.youtube.com`, 0,60 $, otto gesti e dieci minuti. La prima corsa si ferma alla domanda della sessione, e la domanda la
+`www.youtube.com`, 1,10 $, otto gesti e dieci minuti. La prima corsa si ferma alla domanda della sessione, e la domanda la
 leggi con `ela approvals`.
 
 <!-- prova: 2.comando -->
@@ -5293,12 +5307,12 @@ uv run ela approvals
 <!-- prova: 2.atteso -->
 ```
 capability browser.guided
-worst case 0.6 USD, claude-haiku-5-5, up to 991808 tokens in and 8192 out per call
+worst case 1.1 USD, claude-haiku-5-5, up to 991808 tokens in and 8192 out per call
 left this month
 sentence Apri YouTube e cerca il canale di MrBeast.
 sites ["www.youtube.com"]
 model claude-haiku-5-5
-most it may spend 0.6 USD
+most it may spend 1.1 USD
 looks 8
 sends the sentence, ELA's instructions and the text of every page read in the session go to anthropic, the model's provider
 timeout 600 s
@@ -5403,6 +5417,11 @@ Una frase che vuole un modulo inviato: un invio è `browser.act`, e chiede. **La
 sulla sessione, e la sessione aspetta la tua risposta. Due giri dello stesso piano. **Il primo con un no**: il gesto è
 `DENIED`, il modulo non parte, e il modello lo legge. **Il secondo con un sì**: il sì al gesto e il suo `run`, come per ogni
 task che chiede, e il modulo parte. `httpbin.org` rimanda indietro ciò che riceve; «ELA prova 26» è un marcatore.
+
+**Se dopo il no il modello chiede di nuovo il gesto**, la sessione aspetta anche quella risposta, fino alla sua durata, e lo
+script non la vede: la leggi da un altro terminale con `uv run ela approvals`, e rispondi con `uv run ela task deny`. Senza
+risposta la sessione finisce con `guided.duration` dopo dieci minuti, e i blocchi `fine` e `sessione` del primo giro sono
+FALLITO.
 
 <!-- prova: 5.comando -->
 ```

@@ -13,16 +13,17 @@ la migrazione, il margine che basta, il passo 1 che si ferma al primo che manca 
 ``spesa``. ``tests/docs/test_prova_m14_3.py`` legge la sezione con lo stesso lettore e tiene
 allineati i due, con un caso negativo per ogni confronto di questo file.
 
-I tipi di §21 — ``comando``, ``atteso``, ``occhio`` —, con l'``atteso`` confrontato con ciò che
-hanno stampato **tutti** i comandi del blocco che lo precede, e nove suoi, che la sezione spiega uno
-per uno:
+I tipi della sezione 21 — ``comando``, ``atteso``, ``occhio`` —, con l'``atteso`` confrontato con
+ciò che hanno stampato **tutti** i comandi del blocco che lo precede, e nove suoi, che la sezione
+spiega uno per uno:
 
 * ``sì`` e ``no``: la domanda del task che la prima riga del blocco nomina — la sessione,
   ``<id>``, o il gesto, ``<id del figlio>`` —, mostrata; «rispondi sì?» o «rispondi no?»; con un
   «s» le righe del blocco, con un «n» la prova si ferma;
 * ``sfondo``: ``ela task run`` lanciato in sfondo, perché la sessione gira mentre lo script guarda;
 * ``aspetta``: il figlio della sessione che chiede, **senza soglia di tempo** — finché lo vede, o
-  finché la sessione finisce da sé —; il figlio diventa ``<id del figlio>``;
+  finché la sessione finisce —; il figlio diventa ``<id del figlio>``. Se la sessione finisce prima,
+  lo script dice come è finita, con lo stato e il codice;
 * ``fine``: la corsa in sfondo finita, e le righe del blocco cercate in ciò che ha stampato;
 * ``sessione``: il risultato della sessione, la prenotazione chiusa, il costo vero, nessun processo
   rimasto;
@@ -32,10 +33,15 @@ per uno:
   listino, non la funzione del gateway — e confrontate con il costo del libro (la prova di M14.6);
 * ``spesa``: ``GET /spend`` confrontato con com'era al passo 1.
 
-**Un gesto che il modello non ha chiesto fa il passo SALTATO**, non FALLITO: ciò che il modello non
-ha dato non è un errore di ELA (la regola di M14.2, decisione 16). **Una precondizione del passo 1
-che cade ferma la prova** — FERMATO —, e così un no a una domanda. Si ferma ad aspettare solo per i
-sì, i no e l'occhio. La riga finale è quella di M6.3c. Tutto va anche nel file, in ``~/Downloads``.
+**Un gesto che la sessione non ha chiesto fa SALTATO solo se la sessione è finita da sé, o su un
+limite che il sì ha concesso** — ``guided.looks``, ``guided.duration`` —; ogni altra fine,
+``guided.cost`` compreso, è FALLITO con il suo codice (decisione 35 della review del riepilogo). Un
+salto chiude il suo giro, non il passo: il giro dopo, che crea il suo task, va avanti. **Il costo di
+ogni sessione entra nel conto della spesa quando la sessione finisce**, comunque finisca il passo.
+**Una precondizione del passo 1 che cade ferma la prova** — FERMATO, con la ragione: per il margine,
+ciò che resta e ciò che le sessioni prenotano (decisione 38) —, e così un no a una domanda. Si ferma
+ad aspettare solo per i sì, i no e l'occhio. La riga finale è quella di M6.3c. Tutto va anche nel
+file, in ``~/Downloads``.
 """
 
 from __future__ import annotations
@@ -48,7 +54,7 @@ import re
 import subprocess
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -63,6 +69,7 @@ import prova_m14_1 as spending  # noqa: E402 — the same
 import prova_m14_2 as planning  # noqa: E402 — the same
 
 from ela.cli.client import ApiRefusal  # noqa: E402
+from ela.ports import GUIDED_DURATION, GUIDED_LOOKS  # noqa: E402
 from ela.providers.anthropic.models import HAIKU_5_5  # noqa: E402
 from ela.providers.anthropic.pricing import (  # noqa: E402
     CENTS_OF_A_MICRO_DOLLAR,
@@ -120,6 +127,11 @@ WAIT: Final = 0.5
 """Seconds between two looks of ``aspetta``: a person answers in seconds, and every look reads the
 questions of the whole ELA."""
 SAID_NO: Final = "hai risposto no: il resto del passo non avrebbe niente da misurare"
+APPROVED_LIMITS: Final = frozenset({GUIDED_LOOKS, GUIDED_DURATION})
+"""The ends of a session on a limit the yes allowed: with these, a gesture never asked is SKIPPED
+(decision 35 (c)); any other end of ELA's is FAILED."""
+NOT_SO: Final = "e non è così"
+"""What step 1 says of a check that does not hold and has nothing more to say."""
 NO_QUESTION: Final = "senza la domanda il passo non ha niente da misurare"
 
 
@@ -243,6 +255,18 @@ def session_failures(
     if open_now != start_open:
         failures.append(f"le prenotazioni aperte sono {open_now}, al passo 1 {start_open}")
     return failures
+
+
+def ending_of(found: Mapping[str, Any] | None) -> tuple[str, bool]:
+    """How a session ended, said with its state and its code — never a judgement —, and whether a
+    gesture it never asked for is a skip: it ended by itself, or on a limit the yes allowed."""
+    if found is None:
+        return "senza un risultato: la sua prenotazione è aperta", False
+    status = str(found.get("status"))
+    code = (found.get("error") or {}).get("code")
+    said = status if code is None else f"{status} con {code}"
+    by_itself = status == "SUCCEEDED" and code is None
+    return said, by_itself or (status == "FAILED" and code in APPROVED_LIMITS)
 
 
 def cost_of(found: Mapping[str, Any] | None) -> Decimal | None:
@@ -460,8 +484,9 @@ class Proof:
     report: base.Report
     ask: base.Ask
     start: spending.Ledger
-    costs: list[Decimal] = field(default_factory=list)
-    """The cost of each session ``sessione`` read: what ``spesa`` adds up."""
+    costs: dict[str, Decimal] = field(default_factory=dict)
+    """The cost of each session, by its task, written once when the script sees the session ended
+    — whatever happens to its step after — : what ``spesa`` adds up (decision 35 (a))."""
     ids: dict[int, str] = field(default_factory=dict)
     """The task of each step: what ``<id del passo N>`` stands for."""
 
@@ -567,9 +592,20 @@ def asking_child(api: base.Api, task_id: str | None, capability: str) -> str | N
     return None
 
 
+def session_over(proof: Proof, task_id: str | None) -> Mapping[str, Any] | None:
+    """The result that closed a session the script has seen end, and its cost counted for
+    ``spesa`` — once per session, whatever its step does after (decision 35 (a))."""
+    found = the_session(proof.api.get(f"/tasks/{task_id}/results"))
+    cost = cost_of(found)
+    if task_id is not None and cost is not None:
+        proof.costs.setdefault(task_id, cost)
+    return found
+
+
 def a_wait(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
     """``aspetta``: no threshold of time (M6.3c, decision 7) — until the child asks, or until the
-    session ends by itself, and then the step is SKIPPED: the model never asked for the gesture."""
+    session ends. A session over before the gesture is said as it ended: SKIPPED if it ended by
+    itself or on a limit the yes allowed, FAILED with its code otherwise (decision 35)."""
     (line,) = block.lines
     capability = waited(line)
     while True:
@@ -580,10 +616,12 @@ def a_wait(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
             return
         if turn.background is None or turn.background.poll() is not None:
             turn.last = ended_background(turn, proof) if turn.background is not None else ""
-            proof.report.skipped(
-                number,
-                f"la sessione è finita senza chiedere un {capability}: è il modello, non ELA",
-            )
+            said, skipped = ending_of(session_over(proof, turn.task_id))
+            what = f"la sessione è finita {said}, senza un {capability} che chiede"
+            if skipped:
+                proof.report.skipped(number, what)
+            else:
+                proof.report.failure(number, what)
             raise Done
         time.sleep(WAIT)
 
@@ -591,6 +629,7 @@ def a_wait(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
 def an_end(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
     proof.report.say(f"    la corsa in sfondo: {turn.background_line}")
     turn.last = ended_background(turn, proof)
+    session_over(proof, turn.task_id)
     absent = base.missing(block.lines, turn.last)
     if absent:
         proof.report.failure(number, f"mancano {absent}", turn.last)
@@ -618,12 +657,10 @@ def written_session(report: base.Report, found: Mapping[str, Any]) -> None:
 def a_session(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
     (line,) = block.lines
     results = proof.api.get(f"/tasks/{turn.task_id}/results")
-    found = the_session(results)
+    found = session_over(proof, turn.task_id)
     if found is not None:
         written_session(proof.report, found)
     cost = cost_of(found)
-    if cost is not None:
-        proof.costs.append(cost)
     now = spending.Ledger.of(proof.api.get("/spend"))
     failures = session_failures(line, results, proof.start.open, now.open)
     if failures:
@@ -661,22 +698,26 @@ def a_family(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
         for child in children
     }
     for child in children:
-        arguments = (child["steps"][0].get("arguments") or {}) if child.get("steps") else {}
         end = (child.get("end") or {}).get("reason") or ""
+        if not child.get("steps"):
+            # Arguments ELA could not plan: the child is cancelled before it has a plan, and the
+            # session read the gesture as refused. The model's malformed gesture, not a broken rule.
+            report.say(f"    un gesto senza piano → {child.get('state')} {end}".rstrip())
+            continue
+        arguments = child["steps"][0].get("arguments") or {}
         report.say(
             f"    {capability_of(child)} {arguments.get('site')}{arguments.get('path', '')} → "
             f"{child.get('state')} {rules.get(str(child['id'])) or ''} {end}".rstrip()
         )
-    failures = [one for child in children for one in child_failures(child, session, sites)]
+    planned = [child for child in children if child.get("steps")]
+    failures = [one for child in planned for one in child_failures(child, session, sites)]
     matched = 0
     for line in block.lines:
         capability = wanted(line)[0]
-        if not asked_for(capability, children):
-            report.skipped(
-                number, f"il modello non ha chiesto un {capability}: non è un errore di ELA"
-            )
+        if not asked_for(capability, planned):
+            report.skipped(number, f"nessun gesto {capability} fra i figli della sessione")
             continue
-        why = unmatched(line, children, rules)
+        why = unmatched(line, planned, rules)
         if why is None:
             matched += 1
         else:
@@ -714,7 +755,7 @@ def a_tier(number: int, block: base.Block, proof: Proof) -> None:
 
 def a_ledger(number: int, block: base.Block, proof: Proof) -> None:
     now = spending.Ledger.of(proof.api.get("/spend"))
-    failures = planning.ledger_failures(block.lines, proof.start, now, proof.costs)
+    failures = planning.ledger_failures(block.lines, proof.start, now, list(proof.costs.values()))
     if failures:
         proof.report.failure(number, "; ".join(failures))
     else:
@@ -729,11 +770,15 @@ def a_step(number: int, todo: Sequence[base.Block], proof: Proof, turn: Turn | N
     report.say()
     report.say(f"—— passo {number} ——")
     turn = Turn() if turn is None else turn
+    blocks = list(todo)
+    index = 0
     try:
-        for block in todo:
-            a_block(number, block, turn, proof)
-    except Done:
-        return
+        while index < len(blocks):
+            index += 1
+            try:
+                a_block(number, blocks[index - 1], turn, proof)
+            except Done:
+                index = next_round(blocks, index)
     finally:
         if turn.task_id is not None:
             proof.ids[number] = turn.task_id
@@ -742,6 +787,16 @@ def a_step(number: int, todo: Sequence[base.Block], proof: Proof, turn: Turn | N
                 f"    la corsa in sfondo di {turn.task_id} gira ancora: la ferma la durata della "
                 f"sessione, o `uv run ela task cancel {turn.task_id}`"
             )
+
+
+def next_round(blocks: Sequence[base.Block], start: int) -> int:
+    """Where the step goes on after a round that ended early: the next block that creates its own
+    task — the second round of step 5 —, or the end of the step."""
+    for index in range(start, len(blocks)):
+        block = blocks[index]
+        if block.kind == "comando" and any(CREATE in f" {line} " for line in block.lines):
+            return index
+    return len(blocks)
 
 
 def a_block(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
@@ -783,6 +838,40 @@ def a_block(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
 # ----------------------------------------------------------------------------------------
 
 
+Why = Callable[[], "str | None"]
+"""A check of step 1: ``None`` if it holds, or why it does not."""
+
+
+def so(condition: bool) -> str | None:
+    return None if condition else NOT_SO
+
+
+def margin_short(left: str | None, needed: Decimal, sessions: int) -> str | None:
+    """Why what is left of the month is not enough for the sessions at their most — with the two
+    numbers, what is left and what they reserve (decision 38) —, or ``None``."""
+    if left is None:
+        return "e ELA non ha un tetto: GET /spend dice left null"
+    if Decimal(left) >= needed:
+        return None
+    return f"e restano {left} {CURRENCY}, mentre le {sessions} sessioni ne prenotano {needed}"
+
+
+def stopping(report: base.Report, checks: Sequence[tuple[str, Why]]) -> bool:
+    """The checks of step 1 in order; **the first that does not hold stops the proof** — FERMATO,
+    with why, or with what it raised —: the rest would measure something else."""
+    for what, check in checks:
+        try:
+            why = check()
+        except Exception as error:  # noqa: BLE001 — every miss is reported with what it said
+            report.stop(1, f"la prova richiede «{what}» ({type(error).__name__}: {error})")
+            return False
+        if why is not None:
+            report.stop(1, f"la prova richiede «{what}», {why}")
+            return False
+        report.passed(1, what)
+    return True
+
+
 def preconditions(report: base.Report, plans: Sequence[Path]) -> bool:
     """Step 1: what the proof requires of the world, the first one missing stops it (FERMATO)."""
     from ela.composition.settings import BrowserSettings
@@ -794,35 +883,42 @@ def preconditions(report: base.Report, plans: Sequence[Path]) -> bool:
             1, f"il margine delle sessioni non si calcola ({type(error).__name__}: {error})"
         )
         return False
-    checks: list[tuple[str, base.Check]] = [
+    checks: list[tuple[str, Why]] = [
         (
             "il Mac è sull'ultimo commit del branch su origin, con l'albero pulito",
-            lambda: planning.on_origin() is None,
+            lambda: planning.on_origin(),
         ),
-        ("ELA risponde", lambda: base.Api().get("/health") is not None),
+        ("ELA risponde", lambda: so(base.Api().get("/health") is not None)),
         (
             f"il Core gira dal codice del branch: {GUIDED} è nel catalogo di /diagnostics",
-            lambda: GUIDED in base.Api().get("/diagnostics")["capabilities"],
+            lambda: so(GUIDED in base.Api().get("/diagnostics")["capabilities"]),
         ),
         (
             f"lo schema dell'API ha {SESSION_ROUTE}",
-            lambda: SESSION_ROUTE in base.Api().get("/openapi.json")["paths"],
+            lambda: so(SESSION_ROUTE in base.Api().get("/openapi.json")["paths"]),
         ),
-        (f"uv run alembic current dice {planning.MIGRATION}", planning.migrated),
-        (f"la rotta di una sessione va a {MODEL}", lambda: route_model() == MODEL),
-        ("il provider del modello ha una chiave", spending.keyed),
-        ("il tetto è dichiarato", lambda: base.Api().get("/spend")["cap"] is not None),
+        (f"uv run alembic current dice {planning.MIGRATION}", lambda: so(planning.migrated())),
+        (
+            f"il .env manda la rotta di una sessione a {MODEL} (la domanda del passo 2 lo legge "
+            "dal Core)",
+            lambda: so(route_model() == MODEL),
+        ),
+        ("il provider del modello ha una chiave", lambda: so(spending.keyed())),
+        ("il tetto è dichiarato", lambda: so(base.Api().get("/spend")["cap"] is not None)),
         (
             f"restano almeno {needed} {CURRENCY}, {len(plans)} sessioni al loro costo massimo",
-            lambda: planning.enough_left(base.Api().get("/spend")["left"], needed) is None,
+            lambda: margin_short(base.Api().get("/spend")["left"], needed, len(plans)),
         ),
         (
             f"{', '.join(SITES)} sono fra i siti dichiarati",
-            lambda: not sites_missing(BrowserSettings().sites),
+            lambda: so(not sites_missing(BrowserSettings().sites)),
         ),
-        ("il binario di Claude Code che l'SDK porta c'è, e si può lanciare", binary_ready),
+        (
+            "il binario di Claude Code che l'SDK porta c'è, e si può lanciare",
+            lambda: so(binary_ready()),
+        ),
     ]
-    return planning.stopping(report, checks)
+    return stopping(report, checks)
 
 
 def default_out() -> Path:

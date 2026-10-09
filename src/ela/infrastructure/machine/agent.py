@@ -15,6 +15,10 @@ What a session is allowed, all of it written here and nothing chosen by the sess
   session;
 * **a folder of ELA's**, ``<sessions>/<step>/``, empty at birth but for the launcher, checked —
   exactly the launcher, with the fingerprint ELA wrote — right before the launch, and deleted after;
+  once launched it holds the **pid** of the process too, so that the start-up after a crash finds
+  it: ``ela serve`` killed with ``SIGKILL`` leaves ``claude`` running, reparented to ``launchd``,
+  for at least 120 s (measured on the Mac, 2026-10-09), and :meth:`ClaudeAgentSession.sweep`
+  kills it and deletes every folder;
 * **a closed environment**: the four names of a program of the terminal (ADR 0047 §6) and the ones
   of the session, the gateway and its token among them — never a key, never a variable of ELA's.
   The SDK builds the environment of ``claude`` from the one of the process that uses it, so
@@ -62,6 +66,7 @@ __all__ = [
     "GRACE_SECONDS",
     "LANGUAGE",
     "LAUNCHER",
+    "PID",
     "RESULT_CHARS",
     "SDK_NAMES",
     "SERVER",
@@ -77,7 +82,15 @@ TOOLS: Final = frozenset({f"mcp__{SERVER}__read", f"mcp__{SERVER}__act"})
 """The two tools every session offers its model, by the names Claude Code gives them."""
 
 LAUNCHER: Final = "launch"
-"""The one file ELA writes in a session's folder."""
+"""The file ELA writes in a session's folder before the launch: the only one the folder holds then.
+"""
+
+PID: Final = "pid"
+"""The file ELA writes in a session's folder once the process has started: its pid, which the
+start-up reads after a crash (decision 34 of the review of the summary of M14.3)."""
+
+PS: Final = "/bin/ps"
+"""Where the command of a process is read: the same path on macOS and Linux."""
 
 GRACE_SECONDS: Final = 5.0
 """How long ELA waits for a session to end after the interrupt and the end of its input, before
@@ -266,12 +279,59 @@ class ClaudeAgentSession:
                 message=f"the session did not start: {type(error).__name__}",
             )
         session.pid = _pid(client)
+        if session.pid is not None:
+            try:
+                (folder / PID).write_text(f"{session.pid}\n", encoding="utf-8")
+            except OSError as error:
+                # A process the start-up after a crash could not find is not launched.
+                await self._finish(session)
+                self._running.pop(plan.session, None)
+                shutil.rmtree(folder, ignore_errors=True)
+                return ErrorMetadata(
+                    code=GUIDED_FOLDER_CHANGED,
+                    message=f"the pid of the session cannot be written: {type(error).__name__}",
+                )
         ended = asyncio.ensure_future(self._run(plan, host, session))
 
         async def interrupt() -> None:
             await self._interrupt(session)
 
         return SessionHandle(ended=ended, interrupt=interrupt)
+
+    async def sweep(self) -> int:
+        """At start-up no session has a right to live — its gateway was the process that is
+        starting again —: every folder under the sessions' is deleted, and a process whose pid it
+        holds is killed first, with ``SIGKILL``, **if it is still the session's binary**. A pid is
+        a number the kernel gives again, and after a crash and a restart it can name another
+        program: that one is left alone. Answers how many folders it deleted."""
+        if not self._root.is_dir():
+            return 0
+        swept = 0
+        for folder in sorted(self._root.iterdir()):
+            if not folder.is_dir() or folder.is_symlink():
+                continue
+            pid = _written_pid(folder)
+            if pid is not None and _alive(pid) and await self._is_the_binary(pid):
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(pid, signal.SIGKILL)
+            shutil.rmtree(folder, ignore_errors=True)
+            swept += 1
+        return swept
+
+    async def _is_the_binary(self, pid: int) -> bool:
+        """Whether ``pid`` runs the session's binary: its command, read with ``ps``, starts with
+        the binary's path — the launcher ``exec``-s it, so ``claude`` is the process's command."""
+        reading = await asyncio.create_subprocess_exec(
+            PS,
+            "-o",
+            "command=",
+            "-p",
+            str(pid),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        said, _ = await reading.communicate()
+        return said.decode(errors="replace").strip().startswith(str(self._binary))
 
     async def _run(self, plan: SessionPlan, host: SessionHost, session: _Session) -> SessionEnd:
         client = session.client
@@ -399,15 +459,26 @@ def _options(
 
 
 def _changed(folder: Path, fingerprint: str) -> str | None:
-    """Why the folder is not exactly what ELA wrote, or ``None``: the launcher and nothing else,
-    with the fingerprint ELA wrote."""
+    """Why the folder is not exactly what ELA wrote, or ``None``: the launcher, with the fingerprint
+    ELA wrote — and, once the process has started, its pid, a number and nothing else."""
     found = sorted(path.name for path in folder.iterdir())
-    if found != [LAUNCHER]:
-        return f"the folder of the session holds {len(found)} entries, not ELA's launcher alone"
+    if found not in ([LAUNCHER], sorted([LAUNCHER, PID])):
+        return f"the folder of the session holds {len(found)} entries, not ELA's own files"
     written = hashlib.sha256((folder / LAUNCHER).read_bytes()).hexdigest()
     if written != fingerprint:
         return "the launcher of the session is not the one ELA wrote"
+    if PID in found and _written_pid(folder) is None:
+        return "the pid in the folder of the session is not the one ELA wrote"
     return None
+
+
+def _written_pid(folder: Path) -> int | None:
+    """The pid ELA wrote in a session's folder, or ``None``: no file, or not a number."""
+    try:
+        said = (folder / PID).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return int(said) if said.isdigit() else None
 
 
 def _pid(client: ClaudeSDKClient) -> int | None:

@@ -3,7 +3,8 @@
 - **Stato:** Proposta il **2026-10-09**, con l'implementazione di M14.3, dopo la SPEC decisa (le decisioni 1–17 della
   sessione, 18–20 della review dello script e 21–30 della review della SPEC, in `docs/milestones/M14.3.md`) e la misura
   di Tommaso del 2026-10-08 (`~/Downloads/misura-m14.3-20261008-222255.txt`, a `dac715b`). Diventa Accettata quando la
-  prova a mano della sezione 26 di `docs/GETTING_STARTED.md` passa sul Mac (§20).
+  prova a mano della sezione 26 di `docs/GETTING_STARTED.md` passa sul Mac (§17). Riletta lo stesso giorno dalla review del
+  riepilogo (decisioni 31–38): §6 ha la cartella e il processo che un crash lascia, §17 le sessioni a 1,10 $.
 - **Data:** 2026-10-09
 - **Riferimenti spec:** §13, §19, §24, §25, §27, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M14.3
@@ -177,6 +178,22 @@ stanza, e un piano a mano porta gli id dei suoi step: lo stesso file mandato a d
 sua prenotazione si chiude a zero: niente è uscito. Trovato scrivendo la prova a mano (`milestones/M14.3.md`,
 «L'implementazione, e dove si scosta»).
 
+**Ciò che un crash lascia, e l'avvio che lo spazza** (decisione 34 della review del riepilogo). ELA ferma una sessione
+con l'interrupt e, dopo la grazia, con `SIGKILL` al processo: codice che gira solo se `ela serve` gira. **Misurato sul Mac
+il 2026-10-09**, con il binario dell'SDK e il modello finto, nessuna spesa (`.git/m14.3-reference/sonde/probe_crash.py`): un
+processo che fa la parte di `ela serve` — il gateway e la sessione — ucciso con `SIGKILL`, in due momenti, un gesto in corso
+e una chiamata al modello in volo. **In tutti e due `claude` sopravvive**: adottato da `launchd` (ppid 1), vivo dopo 1 s,
+dopo 5 s e dopo 120 s, quando la sonda lo uccide; la cartella resta, con i file che Claude Code ci scrive. Quindi:
+(a) **al lancio ELA scrive il pid del processo nella cartella**, accanto al lanciatore, e il controllo della cartella conosce
+quel file — un numero e nient'altro —; (b) **all'avvio**, dopo `close_orphans` e accanto alla purga delle catture e allo
+spazzino della voce, **ELA legge ogni cartella delle sessioni**: se il pid è vivo, `SIGKILL`; poi cancella la cartella.
+All'avvio nessuna sessione ha diritto di vivere: il suo gateway era il processo che riparte. **Un pid il kernel lo ridà**, e
+dopo un crash e un riavvio può nominare un altro programma: ELA uccide il processo solo se il suo comando è il binario della
+sessione, e la cartella la cancella comunque. È la forma di ADR 0029 §1 — l'avvio è il solo momento che ELA raggiunge di
+certo — e di ADR 0034 §7 — uno spazzino che normalmente non trova niente —, e la cartella è §57 come i file di ADR 0047 §6:
+può tenere i registri di Claude Code con il testo delle pagine. Il port `AgentSession` ha `sweep`; il resto della finestra è
+il crash fra la partenza del processo e la scrittura del suo pid, un passo.
+
 **L'ambiente è chiuso**: i quattro nomi di un programma del terminale (ADR 0047 §6) e quelli della sessione — il gateway, il
 gettone, il traffico non essenziale spento, l'aggiornamento automatico, la telemetria e le segnalazioni spenti, il titolo
 spento, la cache spenta, la compattazione spenta, ogni modello di servizio uguale al modello del router,
@@ -296,7 +313,8 @@ documento della milestone, «L'implementazione, e dove si scosta».
 | `browsing` | `anthropic` | `cheap` |
 
 La rotta di una sessione, **il profilo economico**, che con M14.6 è Haiku 5.5 (decisione 25): sei frasi su sei nella misura,
-come Sonnet 5.5, a un decimo del costo. **`max_tokens` resta 8192**, una costante del tool: nessuna chiamata della misura ci è
+come Sonnet 5.5, a un diciannovesimo del costo: 0,004609 $ a sessione contro 0,088818 $ (il file della misura,
+`milestones/M14.3.md`, «La misura del 2026-10-08 — i numeri»). **`max_tokens` resta 8192**, una costante del tool: nessuna chiamata della misura ci è
 arrivata. Su Haiku 5.5 la sessione pensa nonostante `MAX_THINKING_TOKENS=0`, e il pensiero sta dentro `max_tokens`: il caso
 peggiore regge.
 
@@ -308,7 +326,7 @@ Port introdotti:
 |---|---|---|---|
 | `ModelGateway` | §26, §30, §57 | async | `read`, `worst`, `forward` |
 | `Gestures` | §19, §27 | async | `open`, `start`, `gesture`, `halt`, `halted`, `close`, `is_open`, `gesture_ids` |
-| `AgentSession` | §19, §24 | async | `tools`, `ready`, `running`, `launch` |
+| `AgentSession` | §19, §24 | async | `tools`, `ready`, `running`, `launch`, `sweep` |
 
 Un modo solo per port (ADR 0005 §1): i richiami della sessione verso l'host — gli strumenti dell'avvio, un gesto, un
 permesso chiesto — sono async anche loro. Il tool riceve **la decisione** con un gancio della base, `_decided`, perché i
@@ -333,7 +351,9 @@ Gli ADR non si riscrivono: queste righe si leggono con questo accanto.
 ### 17. La prova a mano
 
 La **sezione 26** di `docs/GETTING_STARTED.md`, con `scripts/prova_m14_3.py`, sul Mac, su Haiku 5.5, con le sessioni a
-0,60 $ e un margine di 3,00 $ calcolato dalla funzione del cancello. La lancia Tommaso.
+1,10 $ — più di due casi peggiori di una chiamata, 1,032768 $, così due chiamate stanno in volo insieme: con 0,60 $ ne stava
+una alla volta, e una sessione di Claude Code che ne mandava due si fermava con `guided.cost` — e un margine di 5,50 $
+calcolato dalla funzione del cancello. La lancia Tommaso.
 
 ## Alternative considerate
 

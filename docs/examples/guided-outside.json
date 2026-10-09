@@ -1,14 +1,16 @@
 {
   "_nota": [
-    "La negativa della prova a mano di M14.3 (GETTING_STARTED §26, passo 4): la sessione ha un",
+    "La negativa della prova a mano di M14.3 (GETTING_STARTED, sezione 26, passo 4): la sessione ha un",
     "sito solo, httpbin.org, e la frase le chiede di leggere example.com. Il gesto diventa un",
     "figlio come ogni altro, e il Guardian lo nega con Rule.SCOPE: lo scope del passo (`within`)",
     "stringe quello del catalogo, e un sito dichiarato in ELA_BROWSER_SITES ma non nella sessione",
     "resta fuori. Il modello legge il diniego e lo dice nella sua risposta.",
-    "`max_cost_usd` è il più che la sessione può spendere: 0,60 $, un dollaro scritto come testo,",
-    "perché un numero con la virgola mobile non è una cifra di denaro. Su Haiku 5.5 il caso peggiore",
-    "di una chiamata è 0,516384 $, e un tetto sotto quello non lascerebbe partire niente: la sessione",
-    "sarebbe rifiutata prima della domanda, con `guided.cap_below_one_call`.",
+    "`max_cost_usd` è il più che la sessione può spendere: 1,10 $, scritto come testo, perché un",
+    "numero con la virgola mobile non è una cifra di denaro. Su Haiku 5.5 il caso peggiore di una",
+    "chiamata è 0,516384 $, e ogni chiamata parte solo se ci sta, insieme a quelle in volo: 1,10 $",
+    "è più di due casi peggiori (1,032768 $), così due chiamate stanno in volo insieme. Sotto i due,",
+    "una chiamata alla volta, e se Claude Code ne manda due insieme la sessione si ferma con",
+    "`guided.cost`; sotto uno, la sessione è rifiutata prima della domanda (`guided.cap_below_one_call`).",
     "Questa chiave è ignorata dall'API (ADR 0025 §8)."
   ],
   "goal": "un sito fuori dalla sessione",
@@ -24,7 +26,7 @@
         "sites": [
           "httpbin.org"
         ],
-        "max_cost_usd": "0.60",
+        "max_cost_usd": "1.10",
         "looks": 4,
         "seconds": 300
       },
