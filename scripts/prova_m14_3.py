@@ -30,7 +30,8 @@ spiega uno per uno:
 * ``sessione``: il risultato della sessione, la prenotazione chiusa, il costo vero, nessun processo
   rimasto;
 * ``figli``: ogni gesto un figlio scritto dalla sessione, con i suoi siti come confine, e la regola
-  del Guardian letta nell'audit;
+  del Guardian letta nell'audit; la riga ``tutti dentro i siti della sessione`` vuole ogni gesto su
+  uno dei siti della sessione, anche nessuno (decisione 47);
 * ``fascia``: le chiamate di una sessione ricalcolate con la fascia bassa di Haiku 5.5 — il
   listino, non la funzione del gateway — e confrontate con il costo del libro (la prova di M14.6);
 * ``spesa``: ``GET /spend`` confrontato con com'era al passo 1.
@@ -74,6 +75,7 @@ from ela.api.tasks import ANSWERING_ROLES, LOCAL_ANSWERER  # noqa: E402
 from ela.cli.client import ApiRefusal  # noqa: E402
 from ela.cli.tasks import answered_words  # noqa: E402
 from ela.devices import LOCAL_USER  # noqa: E402
+from ela.permissions.guardian import Rule  # noqa: E402
 from ela.ports import GUIDED_DURATION, GUIDED_LOOKS  # noqa: E402
 from ela.providers.anthropic.models import HAIKU_5_5  # noqa: E402
 from ela.providers.anthropic.pricing import (  # noqa: E402
@@ -124,8 +126,11 @@ SESSION_AUTHOR: Final = "SESSION"
 DECIDED: Final = "PERMISSION_DECIDED"
 WAITING: Final = "WAITING_APPROVAL"
 STATES: Final = ("COMPLETED", "DENIED", "FAILED", "CANCELLED", "EXPIRED", WAITING)
-SCOPE: Final = "SCOPE"
-RULES: Final = ("SCOPE", "CATALOGUE", "ARGUMENTS", "DENY", "ALLOW", "ALLOW_WITHIN_SCOPE")
+RULES: Final = tuple(rule.value for rule in Rule)
+"""The rules a line of ``figli`` may name: the Guardian's own, ``ela.permissions.guardian.Rule``."""
+INSIDE: Final = "tutti dentro i siti della sessione"
+"""The line of ``figli`` that says every gesture went to one of the session's sites — none at all
+included (decision 47: what a proof with a real model that obeys can build)."""
 UNREAD: Final = "never-sent"
 """What stands for the key in the provider that prices a session for the margin: ``worst_case``
 reads the price list and sends nothing, and the script never reads the key of the ``.env``."""
@@ -803,15 +808,20 @@ def a_family(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
     failures = [one for child in planned for one in child_failures(child, session, sites)]
     matched = 0
     for line in block.lines:
-        capability, _, rule = wanted(line)
-        # A line with SCOPE is about a gesture outside the session's sites, and only those count:
-        # a model that read inside them instead did not try (decision 41, the second round).
-        pool = planned if rule != SCOPE else [c for c in planned if not inside(c, sites)]
-        if not asked_for(capability, pool):
-            where = " fuori dai siti della sessione" if rule == SCOPE else ""
-            report.skipped(number, f"nessun gesto {capability}{where} fra i figli della sessione")
+        if line == INSIDE:
+            outside = [child for child in planned if not inside(child, sites)]
+            failures.extend(
+                f"il gesto del figlio {child.get('id')} è andato a "
+                f"{child['steps'][0]['arguments'].get('site')}, fuori dai siti della sessione"
+                for child in outside
+            )
+            matched += 1
             continue
-        why = unmatched(line, pool, rules)
+        capability = wanted(line)[0]
+        if not asked_for(capability, planned):
+            report.skipped(number, f"nessun gesto {capability} fra i figli della sessione")
+            continue
+        why = unmatched(line, planned, rules)
         if why is None:
             matched += 1
         else:
