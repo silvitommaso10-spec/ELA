@@ -125,12 +125,21 @@ def test_the_refusals_of_the_budget_are_the_budget_s_codes() -> None:
     assert set(REFUSAL_ROW.findall(adr_text())) == {code.value for code in BudgetCode}
 
 
-def test_it_is_proposed_until_the_proof_by_hand() -> None:
+def test_it_was_accepted_only_after_the_proof_by_hand(shown: str = "2026-10-09") -> None:
+    """The form of ADR 0058: «Proposta» until section 26 of the guide passed on the Mac, and
+    accepted in the commit that records it, with the file and the commit it passed at (decision
+    49)."""
     (row,) = INDEX_ROW.findall((ADR_DIR / "README.md").read_text(encoding="utf-8"))
+    guide = (ROOT / "docs" / "GETTING_STARTED.md").read_text(encoding="utf-8")
+    section = guide.split("## 26. ", 1)[1].split("\n## ", 1)[0]
+    status = status_of(adr_text())
 
-    assert row[1] == "Proposta"
-    assert status_of(adr_text()).strip().startswith("Proposta il **2026-10-09**")
-    assert "sezione 26" in status_of(adr_text())
+    assert row[1] == "Accettata"
+    assert status.strip().startswith(f"Accettata il **{shown}**")
+    assert "sezione 26" in status and "prova-m14.3-20261009-104118.txt" in status
+    assert "`f58a6cb`" in status
+    assert "`Proposta` fino a questa prova" not in section
+    assert f"**Fatta da Tommaso il {shown} sul" in section
 
 
 def test_the_adrs_it_revises_say_so_on_their_state_line() -> None:

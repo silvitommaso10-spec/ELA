@@ -3,8 +3,8 @@
 The price list, the profiles, the date and the shares of the cache are read by
 ``test_adr_provider``, which reads them from this ADR since M14.6; this file holds what is only
 this ADR's: the table of its worst cases, the revisions it writes on ADR 0057 and on M14.1, the
-state it is in — «Proposta» until the proof of M14.3, which has the step that checks it —, and
-the field it adds to the usage.
+state it is in — «Proposta» until the proof of M14.3, which has the step that checks it, and
+Accettata since it passed —, and the field it adds to the usage.
 """
 
 from __future__ import annotations
@@ -62,13 +62,16 @@ def test_haiku_4_5_stays_in_the_list_and_no_profile_names_it() -> None:
     assert "**Haiku 4.5 resta nel listino**" in " ".join(adr_text().split())
 
 
-def test_it_is_proposed_until_the_proof_of_m14_3() -> None:
-    """Decision 27: no proof by hand of its own; the proof of M14.3 has the step that checks it."""
+def test_it_was_accepted_with_the_proof_of_m14_3(shown: str = "2026-10-09") -> None:
+    """Decision 27: no proof by hand of its own; accepted when the proof of M14.3, which has the
+    step that checks it, passed — with its file and its commit (decision 49)."""
     (row,) = INDEX_ROW.findall((ADR_DIR / "README.md").read_text(encoding="utf-8"))
+    status = status_of(adr_text())
 
-    assert row[1] == "Proposta"
-    assert status_of(adr_text()).strip().startswith("Proposta il **2026-10-08**")
-    assert "**Non ha una prova a mano sua**" in status_of(adr_text())
+    assert row[1] == "Accettata"
+    assert status.strip().startswith(f"Accettata il **{shown}**")
+    assert "prova-m14.3-20261009-104118.txt" in status and "`f58a6cb`" in status
+    assert "**Non ha una prova a mano sua**" in status
 
 
 def test_the_adr_it_revises_says_so_on_its_state_line_and_keeps_its_acceptance() -> None:

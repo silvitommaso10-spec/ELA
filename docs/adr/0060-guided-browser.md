@@ -1,10 +1,13 @@
 # 0060. Il browser guidato dal modello: una sessione di Claude Code lanciata da ELA, ogni gesto un task figlio deciso dal Guardian, e ogni chiamata della sessione pesata sulla prenotazione prima di lasciare il Mac
 
-- **Stato:** Proposta il **2026-10-09**, con l'implementazione di M14.3, dopo la SPEC decisa (le decisioni 1–17 della
-  sessione, 18–20 della review dello script e 21–30 della review della SPEC, in `docs/milestones/M14.3.md`) e la misura
-  di Tommaso del 2026-10-08 (`~/Downloads/misura-m14.3-20261008-222255.txt`, a `dac715b`). Diventa Accettata quando la
-  prova a mano della sezione 26 di `docs/GETTING_STARTED.md` passa sul Mac (§17). Riletta lo stesso giorno dalla review del
-  riepilogo (decisioni 31–38): §6 ha la cartella e il processo che un crash lascia, §17 le sessioni a 1,10 $.
+- **Stato:** Accettata il **2026-10-09**, quando la prova a mano della sezione 26 di `docs/GETTING_STARTED.md` è passata
+  sul Mac a `f58a6cb` (`~/Downloads/prova-m14.3-20261009-104118.txt`, 45 PASSATI al primo giro; §17). Aperta lo stesso
+  giorno con l'implementazione di M14.3, dopo la SPEC decisa (le decisioni 1–17 della sessione, 18–20 della review dello
+  script e 21–30 della review della SPEC, in `docs/milestones/M14.3.md`) e la misura di Tommaso del 2026-10-08
+  (`~/Downloads/misura-m14.3-20261008-222255.txt`, a `dac715b`); riletta dalla review del riepilogo (decisioni 31–38): §6 ha
+  la cartella e il processo che un crash lascia, §17 le sessioni a 1,10 $. Tre giri prima non erano passati: per lo script,
+  per lo strumento `act` che non diceva la grammatica del selettore, e per un criterio del passo 4 che la prova non poteva
+  costruire (`docs/milestones/M14.3.md`, «Il primo giro», «Il secondo giro», «Il terzo giro»).
 - **Data:** 2026-10-09
 - **Riferimenti spec:** §13, §19, §24, §25, §27, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M14.3
@@ -353,7 +356,11 @@ Gli ADR non si riscrivono: queste righe si leggono con questo accanto.
 La **sezione 26** di `docs/GETTING_STARTED.md`, con `scripts/prova_m14_3.py`, sul Mac, su Haiku 5.5, con le sessioni a
 1,10 $ — più di due casi peggiori di una chiamata, 1,032768 $, così due chiamate stanno in volo insieme: con 0,60 $ ne stava
 una alla volta, e una sessione di Claude Code che ne mandava due si fermava con `guided.cost` — e un margine di 5,50 $
-calcolato dalla funzione del cancello. La lancia Tommaso.
+calcolato dalla funzione del cancello. La lancia Tommaso. **Passata il 2026-10-09** a `f58a6cb`, sul Mac, 45 PASSATI al
+primo giro: cinque sessioni su Haiku 5.5 per 0,0032935 $ in tutto, ognuna chiusa con il suo costo vero e la fascia bassa
+uguale al libro; ogni gesto un figlio scritto dalla sessione e dentro i suoi siti; il no e il sì al gesto che invia, con i
+selettori che il modello ha scritto dalla grammatica degli strumenti, e il modulo partito; il «ferma» che chiude la
+sessione e il figlio che aspettava. Le misure sono in `docs/milestones/M14.3.md`, «Il quarto giro».
 
 ## Alternative considerate
 

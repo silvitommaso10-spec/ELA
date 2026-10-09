@@ -5182,8 +5182,11 @@ nel file; non c'è un verdetto.
 > sessione e le 27 e 30 della review della SPEC), **e riallineata lo stesso giorno alla review del riepilogo** (decisioni
 > 32, 35 e 38: le sessioni a 1,10 $, il gesto che non arriva, il margine con i due numeri), e `tests/docs/test_prova_m14_3.py` tiene lo script allineato a questa sezione. La si fa **sul
 > Mac, senza il PC**, sul branch di M14.3 e M14.6, con lo script `scripts/prova_m14_3.py`: una sessione guidata gira solo sul
-> Core. [ADR 0060](adr/0060-guided-browser.md) è `Proposta` fino a questa prova, e [ADR 0061](adr/0061-haiku-5-5.md) — Haiku
-> 5.5 e le sue due fasce — con lei: il passo 3 è la prova di M14.6. **La lancia Tommaso.**
+> Core. **Fatta da Tommaso il 2026-10-09 sul branch**, a `f58a6cb`, sul Mac: passata, 45 PASSATI al primo giro, nessun
+> FALLITO, nessun no, nessun SALTATO (`~/Downloads/prova-m14.3-20261009-104118.txt`); [ADR 0060](adr/0060-guided-browser.md)
+> e [ADR 0061](adr/0061-haiku-5-5.md) — Haiku 5.5 e le sue due fasce, il cui controllo è il passo 3 — sono Accettate, e le
+> misure sono in `milestones/M14.3.md`, «Il quarto giro». Tre giri prima non erano passati — per lo script, per lo
+> strumento `act` che non diceva la grammatica del selettore, per il criterio del passo 4 —, e ognuno è scritto lì.
 
 Da M14.3 ELA ha una capability nuova, `browser.guided`, `MEDIUM`: **una frase** — «apri YouTube e cerca il canale di
 MrBeast» — e **un modello che guida il browser di ELA**, un gesto alla volta, finché la frase è fatta o non si può fare.

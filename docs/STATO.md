@@ -427,7 +427,9 @@ che scrive un piano — non è lavoro agentico.**
 del 2026-10-08 non ha trovato nessuno dei tre fatti scritti prima dei numeri —, e per un ciclo nel browser le tre
 condizioni si leggono così: la **prima** è intatta; la **seconda** si legge **«ogni effetto della sessione è
 un'esecuzione dell'executor, con il Guardian»** — ogni gesto è un task figlio, e lo strato dei permessi di Claude Code
-non ha niente da decidere —; la **terza**, «ciò che si approva è ogni effetto, uno per uno».
+non ha niente da decidere —; la **terza**, «ciò che si approva è ogni effetto, uno per uno». ***Annotato il
+2026-10-09***: **la prova a mano di M14.3 è passata** sul Mac a `f58a6cb`, e ADR 0060 è Accettata: cinque sessioni di
+Claude Code su Haiku 5.5, ogni gesto un task figlio deciso dal Guardian, il sì al gesto che invia chiesto ogni volta.
 
 ### 5.8 Come si paga una sessione
 
@@ -477,7 +479,9 @@ chiave senza passare da `model.complete`, e il tetto di quella strada è di M14.
 un'annotazione datata. ***Annotato il 2026-10-09*** (M14.3, [ADR 0060](adr/0060-guided-browser.md) §2): **ora c'è**. Una
 sessione guidata prenota il suo costo massimo nella `STARTED` del suo step, e **ogni sua chiamata al modello passa da
 un gateway di ELA** che la pesa sulla prenotazione — speso nella sessione, in volo e caso peggiore — prima che lasci il
-Mac; la sessione non vede mai la chiave. La regola 65 trova chi spende leggendo l'albero.
+Mac; la sessione non vede mai la chiave. La regola 65 trova chi spende leggendo l'albero. ***Annotato il
+2026-10-09***: **provato** con la prova a mano di M14.3, passata a `f58a6cb`: cinque sessioni a 1,10 $ di costo massimo,
+0,0032935 $ di spesa vera, ogni prenotazione chiusa con il suo costo, e la fascia bassa di Haiku 5.5 uguale al libro.
 
 ### 5.10 Il design è una fase, non una rifinitura
 
@@ -910,7 +914,9 @@ Proposta finché la sezione 24 della guida non passa sul Mac). ***Annotato il 20
 M14.2 è passata** sul Mac a `f2b67c0`, e ADR 0058 è Accettata: ELA scrive i piani. ***Annotato il 2026-10-09***:
 **M14.6 è implementata** — Haiku 5.5 nel listino, [ADR 0061](adr/0061-haiku-5-5.md) — e **M14.3 è implementata, fino
 alla prova a mano** ([ADR 0060](adr/0060-guided-browser.md), Proposta finché la sezione 26 della guida non passa sul
-Mac): il modello guida il browser, un gesto alla volta, e ogni gesto è deciso dal Guardian.
+Mac): il modello guida il browser, un gesto alla volta, e ogni gesto è deciso dal Guardian. ***Annotato il
+2026-10-09***, più tardi: **la prova a mano di M14.3 è passata** sul Mac a `f58a6cb`, e ADR 0060 e ADR 0061 sono
+Accettate.
 
 **L'ordine è M14.1 → M14.2 → M14.3 → M14.4**, con M14.4 più avanti nella fila, dopo M13.5; ognuna ha la
 sua ragione. ***Annotato il 2026-10-08***: **M14.6 viene prima di M14.3**, sullo stesso branch (decisione 27 della review
