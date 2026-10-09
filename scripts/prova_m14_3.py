@@ -19,7 +19,9 @@ spiega uno per uno:
 
 * ``sì`` e ``no``: la domanda del task che la prima riga del blocco nomina — la sessione,
   ``<id>``, o il gesto, ``<id del figlio>`` —, mostrata; «rispondi sì?» o «rispondi no?»; con un
-  «s» le righe del blocco, con un «n» la prova si ferma;
+  «s» le righe del blocco, con un «n» la prova si ferma. La domanda deve essere in attesa quando
+  si mostra e subito prima del comando; una risposta data da un'altra superficie ferma la prova con
+  chi l'ha data, letto dall'audit nella forma di ADR 0059 — FERMATO, mai FALLITO (decisione 40);
 * ``sfondo``: ``ela task run`` lanciato in sfondo, perché la sessione gira mentre lo script guarda;
 * ``aspetta``: il figlio della sessione che chiede, **senza soglia di tempo** — finché lo vede, o
   finché la sessione finisce —; il figlio diventa ``<id del figlio>``. Se la sessione finisce prima,
@@ -68,7 +70,10 @@ import prova_m6_3c as base  # noqa: E402 — a sibling in scripts/, which is not
 import prova_m14_1 as spending  # noqa: E402 — the same
 import prova_m14_2 as planning  # noqa: E402 — the same
 
+from ela.api.tasks import ANSWERING_ROLES, LOCAL_ANSWERER  # noqa: E402
 from ela.cli.client import ApiRefusal  # noqa: E402
+from ela.cli.tasks import answered_words  # noqa: E402
+from ela.devices import LOCAL_USER  # noqa: E402
 from ela.ports import GUIDED_DURATION, GUIDED_LOOKS  # noqa: E402
 from ela.providers.anthropic.models import HAIKU_5_5  # noqa: E402
 from ela.providers.anthropic.pricing import (  # noqa: E402
@@ -133,6 +138,12 @@ APPROVED_LIMITS: Final = frozenset({GUIDED_LOOKS, GUIDED_DURATION})
 NOT_SO: Final = "e non è così"
 """What step 1 says of a check that does not hold and has nothing more to say."""
 NO_QUESTION: Final = "senza la domanda il passo non ha niente da misurare"
+REQUESTED: Final = "APPROVAL_REQUESTED"
+RESOLVED: Final = "APPROVAL_RESOLVED"
+ONLY_HERE: Final = "nella prova si risponde solo nel Terminale"
+ANSWERS: Final = {"GRANTED": "un sì", "REJECTED": "un no"}
+"""What an answer the audit records is called in the sentence that stops the proof (decision 40)."""
+ROLES: Final = {role.value: said for role, said in ANSWERING_ROLES.items()}
 
 
 # ----------------------------------------------------------------------------------------
@@ -529,16 +540,70 @@ def question_of(api: base.Api, task_id: str | None) -> Mapping[str, Any] | None:
     return None
 
 
+def answer_in(
+    events: Sequence[Mapping[str, Any]], approval_id: str | None
+) -> tuple[str, str] | None:
+    """The answer the audit records to ``approval_id`` — to the last question of the task when it
+    is ``None`` —: its status and who gave it, or ``None`` if nobody has answered."""
+    if approval_id is None:
+        asked = [
+            (one.get("payload") or {}).get("approval_id")
+            for one in events
+            if one.get("event_type") == REQUESTED
+        ]
+        approval_id = str(asked[-1]) if asked else None
+    for one in reversed(events):
+        payload: Mapping[str, Any] = one.get("payload") or {}
+        if one.get("event_type") == RESOLVED and payload.get("approval_id") == approval_id:
+            return str(payload.get("status")), str(payload.get("responded_by"))
+    return None
+
+
+def answerer_words(identity: str, devices: Sequence[Mapping[str, Any]]) -> str:
+    """Who answered, as the command line says it (ADR 0059), resolved as the API resolves it:
+    the Core's token by its fixed name, a row of the registry by its name with its role, an id the
+    registry does not know alone."""
+    if identity == LOCAL_USER.id:
+        answered: dict[str, Any] = {"identity": identity, "name": LOCAL_ANSWERER, "role": "LOCAL"}
+    else:
+        row = next((one for one in devices if str(one.get("id")) == identity), None)
+        answered = {
+            "identity": identity,
+            "name": None if row is None else row.get("name"),
+            "role": None if row is None else ROLES.get(str(row.get("role"))),
+        }
+    said = answered_words({"end": {"answered_by": answered}})
+    return identity if said is None else said
+
+
+def answered_elsewhere(api: base.Api, task_id: str | None, approval_id: str | None) -> str | None:
+    """Why the proof stops if the question was answered by someone else than this terminal — a
+    page, which also starts the run (``answered_and_resumed``) —, read from the machine; ``None``
+    if nobody else did (decision 40)."""
+    found = answer_in(api.get(f"/audit?task_id={task_id}"), approval_id)
+    if found is None or found[1] == LOCAL_USER.id:
+        return None
+    status, identity = found
+    approval = approval_id or "del task"
+    said = ANSWERS.get(status, f"una risposta {status}")
+    return (
+        f"la domanda {approval} aveva già {said} da {answerer_words(identity, api.get('/devices'))}"
+        f"; {ONLY_HERE}"
+    )
+
+
 def an_answer(number: int, block: base.Block, turn: Turn, proof: Proof, *, yes: bool) -> None:
     """``sì`` and ``no``: the question of the task the block's first line names, shown, and
-    Tommaso's answer given with the lines of the block."""
+    Tommaso's answer given with the lines of the block. **The question is still waiting** when he
+    is asked and right before the command; an answer from another surface stops the proof with who
+    gave it — FERMATO, never FAILED: the human step was done elsewhere (decision 40)."""
     report = proof.report
     on_child = CHILD in block.lines[0]
     target = turn.child_id if on_child else turn.task_id
     question = question_of(proof.api, target)
     if question is None:
-        report.failure(number, f"il task {target} non ha una domanda")
-        raise base.Stop(NO_QUESTION)
+        no_question(number, target, None, proof)
+    assert question is not None
     turn.approval_id = str(question["id"])
     report.say(f"    la domanda {question['id']}, del task {target}:")
     for line in shown(question):
@@ -546,13 +611,28 @@ def an_answer(number: int, block: base.Block, turn: Turn, proof: Proof, *, yes: 
     word = "sì" if yes else "no"
     if not base.yes_or_no(proof.ask, f"[{number}] Rispondi {word}? (s/n) "):
         raise base.Stop(SAID_NO)
+    if question_of(proof.api, target) is None:
+        no_question(number, target, turn.approval_id, proof)
     commands(block.lines, turn, proof)
     expected = after_answer(yes, on_child)
     state = proof.api.get(f"/tasks/{target}").get("state")
     if expected is None or state == expected:
         report.passed(number, f"il {word} al task {target}")
-    else:
-        report.failure(number, f"dopo il {word} il task {target} è {state}, non {expected}")
+        return
+    elsewhere = answered_elsewhere(proof.api, target, turn.approval_id)
+    if elsewhere is not None:
+        raise base.Stop(elsewhere)
+    report.failure(number, f"dopo il {word} il task {target} è {state}, non {expected}")
+
+
+def no_question(number: int, target: str | None, approval_id: str | None, proof: Proof) -> None:
+    """The question is not waiting: answered elsewhere — FERMATO with who —, or gone for another
+    reason — FAILED, and the proof stops, since the step has nothing left to measure."""
+    elsewhere = answered_elsewhere(proof.api, target, approval_id)
+    if elsewhere is not None:
+        raise base.Stop(elsewhere)
+    proof.report.failure(number, f"il task {target} non ha una domanda in attesa")
+    raise base.Stop(NO_QUESTION)
 
 
 def a_background(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:

@@ -647,7 +647,14 @@ def test_a_session_still_waiting_after_the_yes_fails(
     ran_with(monkeypatch)
     session = real.youtube
     waiting = changed(session.queued, state="WAITING_APPROVAL")
-    proof = proof_on(real, {"/approvals": session.question, f"/tasks/{session.task}": waiting})
+    proof = proof_on(
+        real,
+        {
+            "/approvals": session.question,
+            f"/tasks/{session.task}": waiting,
+            f"/audit?task_id={session.task}": session.audit,
+        },
+    )
 
     walked_on(proof, {2: [block(2, "sì", SESSION_YES)]}, script().Turn(task_id=session.task))
 
@@ -672,7 +679,10 @@ def test_a_no_to_the_question_stops_the_proof_and_says_why(
 
 
 def test_a_task_without_its_question_stops_the_proof(real: Real) -> None:
-    proof = proof_on(real, {"/approvals": []})
+    """No question waiting, and nobody but this terminal ever answered one: FAILED, and the proof
+    stops — the step has nothing to measure."""
+    session = real.youtube
+    proof = proof_on(real, {"/approvals": [], f"/audit?task_id={session.task}": session.audit})
 
     walked_on(proof, {2: [block(2, "sì", SESSION_YES)]}, script().Turn(task_id=real.youtube.task))
 
@@ -712,6 +722,7 @@ def test_a_gesture_not_denied_after_the_no_fails(
         {
             "/approvals": session.asking,
             f"/tasks/{session.child}": changed(session.child_answered, state="QUEUED"),
+            f"/audit?task_id={session.child}": session.audits[str(session.child)],
         },
     )
     turn = script().Turn(task_id=session.task, child_id=session.child)
@@ -872,7 +883,11 @@ def test_an_end_without_a_run_in_the_background_is_the_guides_error() -> None:
 
 def test_a_run_left_in_the_background_is_named_in_the_file(real: Real) -> None:
     module = script()
-    proof = proof_on(real, {"/approvals": []}, ["n"])
+    proof = proof_on(
+        real,
+        {"/approvals": [], f"/audit?task_id={real.youtube.task}": real.youtube.audit},
+        ["n"],
+    )
     turn = module.Turn(task_id=real.youtube.task, background=Running(code=None))
 
     walked_on(proof, {2: [block(2, "sì", SESSION_YES)]}, turn)
@@ -1808,3 +1823,19 @@ def test_every_task_of_the_section_is_created_with_the_sentence_of_its_plan() ->
             if created and planned:
                 (sentence,) = re.findall(r'task create "(.*)" --json', created[0])
                 assert sentence == module.arguments_of(ROOT / planned[0])["goal"], sentence
+
+
+def test_who_answered_is_named_as_the_api_names_it(real: Real) -> None:
+    """The Core's token by its fixed name, a row of the registry by its name and role, an id the
+    registry does not know alone — the resolution of ``ela.api.tasks.answerer``, in the words of
+    ``ela task show``."""
+    from ela.devices import LOCAL_USER
+
+    module = script()
+    console = str(uuid.uuid4())
+    devices = with_a_row(real, console, "MacBook", "CONSOLE")
+    nobody = str(uuid.uuid4())
+
+    assert module.answerer_words(LOCAL_USER.id, devices) == "the command line on the Core"
+    assert module.answerer_words(console, devices) == "MacBook (console)"
+    assert module.answerer_words(nobody, devices) == nobody
