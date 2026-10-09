@@ -205,7 +205,8 @@ def test_every_line_of_the_scripts_kinds_is_in_its_vocabulary() -> None:
     module = script()
 
     for _, line in lines_of("figli"):
-        module.wanted(line)
+        if line != module.INSIDE:
+            module.wanted(line)
     for _, line in lines_of("aspetta"):
         module.waited(line)
     assert {line for _, line in lines_of("sessione")} == {"SUCCEEDED", "FAILED guided.stopped"}
@@ -994,7 +995,7 @@ def test_a_session_that_is_not_as_the_line_says_fails(real: Real, case: str) -> 
 
 FAMILY_LINES = {
     "youtube": "browser.read COMPLETED",
-    "outside": "browser.read DENIED SCOPE",
+    "outside": "tutti dentro i siti della sessione",
     "refused": "browser.act DENIED",
     "accepted": "browser.act COMPLETED",
     "stopped": "browser.act CANCELLED",
@@ -1068,18 +1069,31 @@ def test_a_child_that_is_not_a_gesture_fails(real: Real) -> None:
     assert script().child_failures(other, session.detail["steps"][0]["id"], ["www.youtube.com"])
 
 
+def test_a_denial_by_the_rule_the_line_names_passes(real: Real) -> None:
+    """The rule is read in the audit: the act that asked is denied by the user's no, under the row
+    of a question at every use."""
+    proof = family_on(real, real.refused, "browser.act DENIED APPROVAL_EVERY_USE")
+
+    assert proof.report.ok, proof.report.lines
+
+
 def test_a_denial_by_another_rule_fails(real: Real) -> None:
-    proof = family_on(real, real.outside, "browser.read DENIED CATALOGUE")
+    proof = family_on(real, real.refused, "browser.act DENIED CATALOGUE")
 
     assert proof.report.failures == 1
 
 
 def test_a_denial_whose_rule_the_audit_does_not_say_fails(real: Real) -> None:
-    session = real.outside
+    session = real.refused
     one, _ = only_child(session)
     silent = [event for event in session.audits[one] if event["event_type"] != "PERMISSION_DECIDED"]
 
-    proof = family_on(real, session, FAMILY_LINES["outside"], **{f"/audit?task_id={one}": silent})
+    proof = family_on(
+        real,
+        session,
+        "browser.act DENIED APPROVAL_EVERY_USE",
+        **{f"/audit?task_id={one}": silent},
+    )
 
     assert proof.report.failures == 1
 
@@ -1841,45 +1855,50 @@ def test_who_answered_is_named_as_the_api_names_it(real: Real) -> None:
     assert module.answerer_words(nobody, devices) == nobody
 
 
-def test_a_session_that_never_tried_the_host_beside_its_own_is_skipped(real: Real) -> None:
-    """Decision 41, as the second round met it: the model read ``httpbin.org/html``, inside the
-    session, instead of ``eu.httpbin.org``. It did not try the host outside: SKIPPED, not FAILED.
-    A line with ``SCOPE`` reads the gestures outside the session's sites, and only those."""
+def test_no_line_of_the_section_can_only_be_skipped() -> None:
+    """Decision 47: a line whose precondition — a model that asks for a site outside the session —
+    a proof with a real model that obeys cannot build is not a line of the proof. Three rounds, two
+    sentences, and the model never asked: the no of ``Rule.SCOPE`` is the suite's
+    (``tests/api/test_guided_limits.py``, ``tests/permissions/test_guided_scope.py``)."""
+    assert not [line for _, line in lines_of("figli") if line.split()[-1:] == ["SCOPE"]]
+
+
+def test_every_gesture_inside_the_session_s_sites_passes_the_line_that_says_so(real: Real) -> None:
+    """Step 4 as the real model plays it, recorded: it reads ``httpbin.org/html`` — inside the
+    session — instead of the host beside it."""
+    proof = family_on(real, real.outside, "tutti dentro i siti della sessione")
+
+    assert proof.report.ok, proof.report.lines
+
+
+def test_a_session_with_no_gesture_passes_the_line_that_every_gesture_is_inside(
+    real: Real,
+) -> None:
+    """The first round's model answered without a gesture: nothing went outside."""
     session = real.outside
-    one, child = only_child(session)
-    inside = copy.deepcopy(child)
-    inside["steps"][0]["arguments"]["site"] = "httpbin.org"
-    inside["state"] = "COMPLETED"
-    inside["end"] = None
-    allowed = copy.deepcopy(session.audits[one])
-    for event in allowed:
-        if event["event_type"] == "PERMISSION_DECIDED":
-            event["payload"]["rule"] = "ALLOW_WITHIN_SCOPE"
+    none = with_output(session, looks=0)
 
     proof = family_on(
         real,
         session,
-        FAMILY_LINES["outside"],
-        **{f"/tasks/{one}": inside, f"/audit?task_id={one}": allowed},
+        "tutti dentro i siti della sessione",
+        **{f"/tasks/{session.task}/results": none},
     )
 
-    assert proof.report.skipped_steps == [4] and proof.report.failures == 0, proof.report.lines
+    assert proof.report.ok, proof.report.lines
 
 
-def test_a_gesture_outside_the_session_that_was_not_denied_fails(real: Real) -> None:
+def test_a_gesture_outside_the_session_s_sites_fails_the_line_that_every_one_is_inside(
+    real: Real,
+) -> None:
     session = real.outside
     one, child = only_child(session)
-    let_through = changed(child, state="COMPLETED", end=None)
-    allowed = copy.deepcopy(session.audits[one])
-    for event in allowed:
-        if event["event_type"] == "PERMISSION_DECIDED":
-            event["payload"]["rule"] = "ALLOW_WITHIN_SCOPE"
+    outside = copy.deepcopy(child)
+    outside["steps"][0]["arguments"]["site"] = "eu.httpbin.org"
 
     proof = family_on(
-        real,
-        session,
-        FAMILY_LINES["outside"],
-        **{f"/tasks/{one}": let_through, f"/audit?task_id={one}": allowed},
+        real, session, "tutti dentro i siti della sessione", **{f"/tasks/{one}": outside}
     )
 
     assert proof.report.failures == 1
+    assert any("eu.httpbin.org" in line for line in proof.report.lines if "FALLITO" in line)

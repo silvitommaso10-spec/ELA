@@ -8,8 +8,9 @@ runs the turn of its sentence (``tests/api/guided.py``). The commands of the gui
 command line in this process, and their output is what Tommaso reads; a run that goes on while a
 gesture asks is the one exception — two command lines in two threads would share one
 ``sys.stdout`` —, sent to its route and printed by the CLI's own renderer. Five sessions, as in
-section 26: the sentence of the registration, a site outside the session, a gesture that asks
-answered no and answered yes, and a stop while the gesture waits.
+section 26: the sentence of the registration, a host beside the session's site — which the model
+does not try, and reads the session's own instead, as the real one did in three rounds —, a gesture
+that asks answered no and answered yes, and a stop while the gesture waits.
 
 A negative case starts from one of these answers and changes it; nothing else is written by hand.
 """
@@ -82,8 +83,8 @@ def turns() -> ByGoal:
                 ]
             ),
             sentence(OUTSIDE): Script(
-                [call(), gesture("read", site="eu.httpbin.org", path="/html"), call()],
-                answer="ELA non mi ha lasciato leggere eu.httpbin.org: non è fra i siti.",
+                [call(), gesture("read", site="httpbin.org", path="/html"), call()],
+                answer="Moby-Dick. Non ho letto eu.httpbin.org: posso visitare solo httpbin.org.",
             ),
             sentence(FORM): Script(
                 [call(), act, call()], answer="Il modulo di httpbin.org: ecco com'è andata."
