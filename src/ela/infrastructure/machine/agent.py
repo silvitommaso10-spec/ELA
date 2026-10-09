@@ -62,11 +62,13 @@ from ela.ports import (
 )
 
 __all__ = [
+    "ACT_SCHEMA",
     "CLOSED_PATH",
     "GRACE_SECONDS",
     "LANGUAGE",
     "LAUNCHER",
     "PID",
+    "READ_SCHEMA",
     "RESULT_CHARS",
     "SDK_NAMES",
     "SERVER",
@@ -114,12 +116,18 @@ SDK_NAMES: Final = (
 """The variables the SDK sets for ``claude`` itself (``subprocess_cli.py`` at 0.2.165), which the
 launcher passes on by name."""
 
+SITE_SAID: Final = "one of the sites, a host name"
+PATH_SAID: Final = 'what follows the site, starting with "/"'
+
 READ_SCHEMA: Final[dict[str, Any]] = {
     "type": "object",
     "properties": {
-        "site": {"type": "string", "description": "one of the sites, a host name"},
-        "path": {"type": "string", "description": 'what follows the site, starting with "/"'},
-        "selector": {"type": "string", "description": "optional: the one element to read"},
+        "site": {"type": "string", "description": SITE_SAID},
+        "path": {"type": "string", "description": PATH_SAID},
+        "selector": {
+            "type": "string",
+            "description": "optional: the one element to read, a selector as the tool says",
+        },
     },
     "required": ["site", "path"],
     "additionalProperties": False,
@@ -127,14 +135,18 @@ READ_SCHEMA: Final[dict[str, Any]] = {
 ACT_SCHEMA: Final[dict[str, Any]] = {
     "type": "object",
     "properties": {
-        "site": {"type": "string"},
-        "path": {"type": "string"},
+        "site": {"type": "string", "description": SITE_SAID},
+        "path": {"type": "string", "description": PATH_SAID},
         "fill": {
             "type": "array",
+            "description": "pairs [selector, value], filled in order",
             "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
         },
-        "click": {"type": "string"},
-        "expect_text": {"type": "string"},
+        "click": {"type": "string", "description": "the selector of the one element to click"},
+        "expect_text": {
+            "type": "string",
+            "description": "the text the page must show after the click",
+        },
     },
     "required": ["site", "path", "fill", "click", "expect_text"],
     "additionalProperties": False,
@@ -418,21 +430,11 @@ def _options(
         text = await host.gesture(name, arguments)
         return {"content": [{"type": "text", "text": text}]}
 
-    @tool(
-        "read",
-        "Open one page of one of the sites and read its visible text.",
-        READ_SCHEMA,
-        annotations=notes,
-    )
+    @tool("read", plan.read_description, READ_SCHEMA, annotations=notes)
     async def read(arguments: dict[str, Any]) -> dict[str, Any]:
         return await gesture("read", arguments)
 
-    @tool(
-        "act",
-        "Fill fields and click on one page: the user is asked every time.",
-        ACT_SCHEMA,
-        annotations=notes,
-    )
+    @tool("act", plan.act_description, ACT_SCHEMA, annotations=notes)
     async def act(arguments: dict[str, Any]) -> dict[str, Any]:
         return await gesture("act", arguments)
 

@@ -86,6 +86,7 @@ from ela.ports import (
     ToolStopped,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
+from ela.tools.browser import SELECTOR_GRAMMAR
 from ela.tools.verify import COMMON_FAILURE_CODES, VERIFICATION_ARGUMENTS_INVALID, Verifier
 
 __all__ = [
@@ -97,8 +98,10 @@ __all__ = [
     "GUIDED_RESERVATIONS_CLOSED",
     "GUIDED_ROUTE",
     "INSTRUCTIONS",
+    "ACT_DESCRIPTION",
     "LAUNCH",
     "NOTHING_SENT",
+    "READ_DESCRIPTION",
     "BrowserGuidedTool",
     "BrowserGuidedVerifier",
 ]
@@ -134,6 +137,28 @@ When the goal is reached, or cannot be reached, stop and answer in the user's la
 two sentences, with the address that proves it.
 Use the tools read and act."""
 """ELA's instructions to the model of a session: ELA's words, and the sites the user declared."""
+
+READ_DESCRIPTION: Final = (
+    "Open one page of one of the sites and read its visible text: never its links, its images or "
+    "the attributes of its elements. selector, optional, is the one element to read; "
+    f"{SELECTOR_GRAMMAR}."
+)
+"""What the model is told of ``read`` (decision 44 of the review of the second round): the grammar
+of a selector is ``ela.tools.browser``'s, the one the refusal of a selector says."""
+
+ACT_DESCRIPTION: Final = (
+    "Fill fields and click on one page of one of the sites: the user is asked every time. fill is "
+    "a list of pairs [selector, value], filled in order; click is the selector of the one element "
+    "clicked after them; expect_text is the text the page must show after the click, which ELA's "
+    f"verifier looks for. Selectors: {SELECTOR_GRAMMAR}. ELA checks every element before the "
+    "first gesture, and if one is missing or not alone it makes no gesture at all. The text of a "
+    "page carries no attributes: build the selectors from what the goal names."
+)
+"""What the model is told of ``act`` (decision 44): the second round of the proof, 2026-10-09, had
+the model write ``custname`` and ``Submit order`` as selectors — nobody had told it the grammar —,
+and ELA, as ADR 0052 §8 wants, made no gesture. Who chooses writes; who gives the tool says the
+grammar. The adapter hands these to Claude Code as they stand, in
+:class:`~ela.ports.SessionPlan`."""
 
 SENDS: Final = (
     "the sentence, ELA's instructions and the text of every page read in the session go to {}, "
@@ -373,6 +398,8 @@ class BrowserGuidedTool(Tool):
             session=step,
             goal=prepared.goal,
             instructions=INSTRUCTIONS.format(sites=", ".join(prepared.sites), looks=prepared.looks),
+            read_description=READ_DESCRIPTION,
+            act_description=ACT_DESCRIPTION,
             model=prepared.worst.model,
             max_tokens=GUIDED_MAX_TOKENS,
             gateway=f"{self._gateway}{opened.path}",

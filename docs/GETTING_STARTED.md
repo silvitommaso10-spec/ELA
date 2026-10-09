@@ -5243,7 +5243,8 @@ blocco sopra, in ordine, come nella sezione 24 —, e nove suoi:
 - **`figli`**: ogni gesto è un task figlio scritto **dalla sessione** — l'autore `SESSION`, con lo step della sessione e il
   suo modello —, con **i siti della sessione** come confine del suo step, e ogni `browser.read` senza domanda. Ogni riga è
   un figlio che deve esserci: la capability, lo stato, e — quando la riga lo nomina — **la regola del Guardian** che l'ha
-  deciso, letta nell'audit. Se fra i figli non c'è nessun gesto di quella capability, il passo è **SALTATO**. Il figlio di
+  deciso, letta nell'audit. Se fra i figli non c'è nessun gesto di quella capability, il passo è **SALTATO**; una riga
+  con `SCOPE` legge solo i gesti **fuori dai siti della sessione**, e se non ce n'è nessuno è SALTATO anche lei. Il figlio di
   un gesto con argomenti che ELA non sa pianificare è cancellato prima di avere un piano, e la sessione lo legge come
   negato: lo script lo scrive nel file, «senza piano», e non lo conta come un errore. Scrive i figli nel file, uno per
   riga.
@@ -5376,7 +5377,9 @@ prova, il gesto diventa un figlio come ogni altro, e **il Guardian lo nega con `
 diniego, e lo dice nella risposta.
 
 **Il modello può non provare**: le istruzioni di ELA gli nominano i siti della sessione. Allora il blocco `figli` è
-**SALTATO** — è successo al primo giro, il 2026-10-09, con una frase che chiedeva `example.com` dicendo che era fuori —, e
+**SALTATO**, anche se al suo posto legge un indirizzo dentro la sessione — è successo al primo giro, il 2026-10-09, con una
+frase che chiedeva `example.com` dicendo che era fuori, e al secondo, quando ha letto `httpbin.org/html` invece di
+`eu.httpbin.org` —, e
 il no di `Rule.SCOPE` lo prova la suite con la sessione finta (`tests/api/test_guided_limits.py`, un gesto verso un sito
 fuori dalla sessione; `tests/permissions/test_guided_scope.py`, il Guardian sul confine dello step).
 
@@ -5428,6 +5431,14 @@ Una frase che vuole un modulo inviato: un invio è `browser.act`, e chiede. **La
 sulla sessione, e la sessione aspetta la tua risposta. Due giri dello stesso piano. **Il primo con un no**: il gesto è
 `DENIED`, il modulo non parte, e il modello lo legge. **Il secondo con un sì**: il sì al gesto e il suo `run`, come per ogni
 task che chiede, e il modulo parte. `httpbin.org` rimanda indietro ciò che riceve; «ELA prova 26» è un marcatore.
+
+**Il modello non vede gli attributi della pagina**: `read` gli dà il testo visibile, che non porta il nome di un campo, il
+suo tipo o la sua etichetta. Gli strumenti gli dicono la grammatica di un selettore — CSS come lo legge Playwright,
+`input[name="custname"]`, `button:has-text("Submit order")`, uno che nomini esattamente un elemento —, e la frase nomina il
+campo e il bottone: i selettori li costruisce da lì. Se non ci riesce, ELA controlla ogni elemento prima del primo gesto e
+non agisce — il figlio finisce `FAILED` con `browser.element_missing` —: è successo al secondo giro, il 2026-10-09, quando
+gli strumenti non dicevano la grammatica e il modello ha scritto `custname` e `Submit order`. Una lettura che restituisca i
+campi di un modulo è un limite dichiarato di M14.3, che si riapre con i numeri del terzo giro.
 
 **Se dopo il no il modello chiede di nuovo il gesto**, la sessione aspetta anche quella risposta, fino alla sua durata, e lo
 script non la vede: la leggi da un altro terminale con `uv run ela approvals`, e rispondi con `uv run ela task deny`. Senza

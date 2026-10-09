@@ -50,6 +50,7 @@ from ela.ports import (
     SessionHost,
     SessionPlan,
 )
+from ela.tools.guided import ACT_DESCRIPTION, READ_DESCRIPTION
 from tests.tools.test_terminal_limits import fired, skip_problems
 
 SENTINEL = "ELA_SENTINEL_OF_M14_3"
@@ -61,6 +62,8 @@ def plan(gateway: str = "http://127.0.0.1:1", seconds: int = 120) -> SessionPlan
         session=StepId(uuid.uuid4()),
         goal="Leggi example.com e dimmi il titolo.",
         instructions="You guide a web browser. Use the tools read and act.",
+        read_description=READ_DESCRIPTION,
+        act_description=ACT_DESCRIPTION,
         model="claude-haiku-5-5",
         max_tokens=8192,
         gateway=gateway,
@@ -240,7 +243,7 @@ def test_the_tools_tell_the_model_the_grammar_of_a_selector() -> None:
     ``Submit order`` as selectors, and ELA, as ADR 0052 §8 wants, made no gesture. The model could
     not do better: the text of a page carries no attributes, and nobody told it the grammar. Who
     chooses writes; who gives the tool says the grammar."""
-    from ela.infrastructure.machine.agent import ACT_DESCRIPTION, ACT_SCHEMA, READ_DESCRIPTION
+    from ela.infrastructure.machine.agent import ACT_SCHEMA
     from ela.tools.browser import SELECTOR_GRAMMAR
 
     assert SELECTOR_GRAMMAR in ACT_DESCRIPTION

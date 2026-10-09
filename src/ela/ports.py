@@ -2850,12 +2850,15 @@ class Gestures(Protocol):
 @dataclass(frozen=True, slots=True)
 class SessionPlan:
     """What a guided session is launched with, all of it written by ELA (M14.3, ADR 0060): the
-    sentence, ELA's instructions, the model and ``max_tokens`` the gateway holds it to, the address
-    of the gateway and the token, and how long it may last."""
+    sentence, ELA's instructions and what the two tools are — the grammar of a selector among it
+    (decision 44 of the review of the second round) —, the model and ``max_tokens`` the gateway
+    holds it to, the address of the gateway and the token, and how long it may last."""
 
     session: StepId
     goal: str
     instructions: str
+    read_description: str
+    act_description: str
     model: str
     max_tokens: int
     gateway: str

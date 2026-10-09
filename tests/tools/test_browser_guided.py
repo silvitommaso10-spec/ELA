@@ -34,10 +34,12 @@ from ela.ports import (
 from ela.testing.fakes import FakeAgentSession, FakeAuditLog, FakeStop, finished
 from ela.tools import ARGUMENTS_INVALID
 from ela.tools.guided import (
+    ACT_DESCRIPTION,
     GUIDED_CLOSED,
     GUIDED_GESTURES_AUDITED,
     GUIDED_MAX_TOKENS,
     GUIDED_RESERVATIONS_CLOSED,
+    READ_DESCRIPTION,
     BrowserGuidedVerifier,
 )
 from tests.domain.examples import STEP_ID, TASK_ID
@@ -267,6 +269,7 @@ async def test_a_session_launched_with_the_plan_ela_wrote() -> None:
     assert "www.youtube.com" in plan.instructions and "at most 8 gestures" in plan.instructions
     assert plan.seconds == 120 and plan.goal == ARGUMENTS["goal"]
     assert reservation.amount == Decimal("0.05")
+    assert (plan.read_description, plan.act_description) == (READ_DESCRIPTION, ACT_DESCRIPTION)
 
 
 # ----------------------------------------------------------------------------------------

@@ -124,6 +124,7 @@ SESSION_AUTHOR: Final = "SESSION"
 DECIDED: Final = "PERMISSION_DECIDED"
 WAITING: Final = "WAITING_APPROVAL"
 STATES: Final = ("COMPLETED", "DENIED", "FAILED", "CANCELLED", "EXPIRED", WAITING)
+SCOPE: Final = "SCOPE"
 RULES: Final = ("SCOPE", "CATALOGUE", "ARGUMENTS", "DENY", "ALLOW", "ALLOW_WITHIN_SCOPE")
 UNREAD: Final = "never-sent"
 """What stands for the key in the provider that prices a session for the margin: ``worst_case``
@@ -331,6 +332,15 @@ def child_failures(child: Mapping[str, Any], session: str, sites: Sequence[str])
     if capability == READ and step.get("requires_authorization"):
         failures.append(f"{where} è una lettura che chiede")
     return failures
+
+
+def inside(child: Mapping[str, Any], sites: Sequence[str]) -> bool:
+    """Whether the gesture of ``child`` went to one of the session's sites — the Guardian's own
+    reading of a site against a scope."""
+    from ela.permissions.scope import within_scope
+
+    (step,) = child["steps"]
+    return within_scope(sites, (step.get("arguments") or {}).get("site"))
 
 
 def wanted(line: str) -> tuple[str, str, str | None]:
@@ -793,11 +803,15 @@ def a_family(number: int, block: base.Block, turn: Turn, proof: Proof) -> None:
     failures = [one for child in planned for one in child_failures(child, session, sites)]
     matched = 0
     for line in block.lines:
-        capability = wanted(line)[0]
-        if not asked_for(capability, planned):
-            report.skipped(number, f"nessun gesto {capability} fra i figli della sessione")
+        capability, _, rule = wanted(line)
+        # A line with SCOPE is about a gesture outside the session's sites, and only those count:
+        # a model that read inside them instead did not try (decision 41, the second round).
+        pool = planned if rule != SCOPE else [c for c in planned if not inside(c, sites)]
+        if not asked_for(capability, pool):
+            where = " fuori dai siti della sessione" if rule == SCOPE else ""
+            report.skipped(number, f"nessun gesto {capability}{where} fra i figli della sessione")
             continue
-        why = unmatched(line, planned, rules)
+        why = unmatched(line, pool, rules)
         if why is None:
             matched += 1
         else:
