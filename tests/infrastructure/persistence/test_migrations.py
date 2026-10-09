@@ -53,6 +53,7 @@ TABLES = {
     "assignments",
 }
 REVISIONS = [
+    "0015",
     "0014",
     "0013",
     "0012",
@@ -345,6 +346,55 @@ def test_downgrade_of_the_author_of_a_plan_takes_it_away(db: Path) -> None:
     command.downgrade(config, "0013")
 
     assert "author" not in _tables(db)["task_plans"]
+
+
+def test_0015_gives_a_grant_its_bounds_and_its_revocation_and_takes_them_away(db: Path) -> None:
+    """``0015`` (M13.12, ADR 0062; decision 10): the limits of a policy with the terms they were
+    born under, and the instant of its revocation — two columns of ``authorizations``, nothing
+    else."""
+    config = config_for(db)
+    command.upgrade(config, "head")
+    columns = _tables(db)["authorizations"]
+    assert {"bounds", "revoked_at"} <= set(columns)
+
+    command.downgrade(config, "0014")
+
+    assert not {"bounds", "revoked_at"} & set(_tables(db)["authorizations"])
+
+
+def _a_grant_at_0014(db: Path, *, approval_id: str | None, expires_at: str | None) -> None:
+    command.upgrade(config_for(db), "0014")
+    engine = create_engine(f"sqlite:///{db.as_posix()}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO authorizations (id, created_at, capability_id, scope, granted_by,"
+                    " approval_id, task_id, step_id, expires_at, max_uses, metadata, uses)"
+                    " VALUES ('a1', '2026-01-01', 'browser.guided', '[]', 'tommaso',"
+                    " :approval, NULL, NULL, :expires, NULL, '{}', 0)"
+                ),
+                {"approval": approval_id, "expires": expires_at},
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0015_stops_on_a_standing_grant_without_an_end(db: Path) -> None:
+    """The migration defends the invariant of decision 3d: a row the mapper could not read would
+    stop every grant of its capability, and a step would end in an error instead of a question."""
+    _a_grant_at_0014(db, approval_id=None, expires_at=None)
+
+    with pytest.raises(Exception, match="1 standing authorization"):
+        command.upgrade(config_for(db), "0015")
+
+
+def test_0015_passes_with_a_standing_grant_that_ends(db: Path) -> None:
+    _a_grant_at_0014(db, approval_id=None, expires_at="2026-02-01")
+
+    command.upgrade(config_for(db), "0015")
+
+    assert "revoked_at" in _tables(db)["authorizations"]
 
 
 def test_downgrade_of_the_sensitivity_column_takes_it_away(db: Path) -> None:

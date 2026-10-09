@@ -11,9 +11,11 @@ import pytest
 from ela.domain import AuthorizationId
 from ela.ports import (
     AlreadyExistsError,
+    AuthorizationAlreadyRevokedError,
     AuthorizationExhaustedError,
     AuthorizationExpiredError,
     AuthorizationNotUsableError,
+    AuthorizationRevokedError,
     AuthorizationStore,
     NotFoundError,
     PortError,
@@ -75,7 +77,9 @@ async def test_uses_start_at_zero_and_consume_counts_up(
 async def test_without_a_use_limit_consume_never_exhausts(
     authorization_store: AuthorizationStore,
 ) -> None:
-    assert POLICY_AUTHORIZATION.max_uses is None and POLICY_AUTHORIZATION.expires_at is None
+    # A policy always ends since M13.12 (decision 3d): ``NOW`` is before its end.
+    assert POLICY_AUTHORIZATION.max_uses is None
+    assert POLICY_AUTHORIZATION.expires_at is not None and POLICY_AUTHORIZATION.expires_at > NOW
     await authorization_store.grant(POLICY_AUTHORIZATION)
     totals = [await authorization_store.consume(POLICY_AUTHORIZATION.id, now=NOW) for _ in range(5)]
     assert totals == [1, 2, 3, 4, 5]
@@ -185,3 +189,65 @@ async def test_for_capability_filters_in_grant_order(
     assert isinstance(grants, tuple)
     assert grants == (POLICY_AUTHORIZATION, SINGLE_USE_AUTHORIZATION)
     assert await authorization_store.for_capability(MODEL_COMPLETE) == (MODEL_AUTHORIZATION,)
+
+
+# --------------------------------------------------------------------------------------
+# The revocation of a policy (M13.12, ADR 0062; decision 5)
+# --------------------------------------------------------------------------------------
+
+
+async def test_revoke_writes_the_instant_once_and_returns_the_grant(
+    authorization_store: AuthorizationStore,
+) -> None:
+    await authorization_store.grant(POLICY_AUTHORIZATION)
+
+    gone = await authorization_store.revoke(POLICY_AUTHORIZATION.id, at=NOW)
+
+    assert gone.revoked_at == NOW
+    assert gone.model_copy(update={"revoked_at": None}) == POLICY_AUTHORIZATION
+    assert await authorization_store.get(POLICY_AUTHORIZATION.id) == gone
+
+
+async def test_revoke_twice_is_a_named_error_that_keeps_the_first_instant(
+    authorization_store: AuthorizationStore,
+) -> None:
+    await authorization_store.grant(POLICY_AUTHORIZATION)
+    await authorization_store.revoke(POLICY_AUTHORIZATION.id, at=NOW)
+
+    with pytest.raises(AuthorizationAlreadyRevokedError) as caught:
+        await authorization_store.revoke(POLICY_AUTHORIZATION.id, at=NOW + timedelta(hours=1))
+
+    assert caught.value.revoked_at == NOW
+    assert isinstance(caught.value, PortError)
+    assert (await authorization_store.get(POLICY_AUTHORIZATION.id)).revoked_at == NOW
+
+
+async def test_revoke_of_an_unknown_id_is_not_found(
+    authorization_store: AuthorizationStore,
+) -> None:
+    with pytest.raises(NotFoundError):
+        await authorization_store.revoke(POLICY_AUTHORIZATION.id, at=NOW)
+
+
+async def test_a_revoked_grant_is_not_consumed_and_the_error_says_revoked(
+    authorization_store: AuthorizationStore,
+) -> None:
+    await authorization_store.grant(POLICY_AUTHORIZATION)
+    await authorization_store.revoke(POLICY_AUTHORIZATION.id, at=NOW)
+
+    with pytest.raises(AuthorizationRevokedError) as caught:
+        await authorization_store.consume(POLICY_AUTHORIZATION.id, now=NOW)
+
+    assert isinstance(caught.value, AuthorizationNotUsableError)
+    assert caught.value.revoked_at == NOW
+    assert "revoked" in caught.value.reason
+    assert await authorization_store.uses(POLICY_AUTHORIZATION.id) == 0
+
+
+async def test_revoked_is_named_before_expired(authorization_store: AuthorizationStore) -> None:
+    """The order of the predicate (decision 4): revoked, then expired."""
+    await authorization_store.grant(POLICY_AUTHORIZATION)
+    await authorization_store.revoke(POLICY_AUTHORIZATION.id, at=NOW)
+
+    with pytest.raises(AuthorizationRevokedError):
+        await authorization_store.consume(POLICY_AUTHORIZATION.id, now=LATER + timedelta(days=1))

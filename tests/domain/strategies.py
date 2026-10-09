@@ -442,11 +442,12 @@ policy_authorizations = st.builds(
     approval_id=st.none(),
     task_id=_optional(uuids),
     step_id=_optional(uuids),
-    expires_at=_optional(utc_datetimes),
+    expires_at=utc_datetimes,
     max_uses=_optional(st.integers(min_value=1, max_value=100)),
     metadata=json_mappings,
 )
-"""A grant from a standing policy (§59): no approval, any binding, any use limit."""
+"""A grant from a standing policy (§59): no approval, any binding, any use limit — and always an
+end, since M13.12 (decision 3d)."""
 
 approval_authorizations = st.builds(
     Authorization,

@@ -746,6 +746,9 @@ def grant_for(
         granted_by="tommaso",
         task_id=None if task is None else task.id,
         step_id=None if step is None else step.id,
+        # A grant without ``approval_id`` always expires since M13.12 (decision 3d): the longest
+        # life a policy may have.
+        expires_at=created_at + timedelta(days=90),
     )
     return base.model_copy(update=changes)
 

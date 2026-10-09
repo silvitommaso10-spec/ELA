@@ -30,6 +30,7 @@ from ela.ports import (
     AlreadyExistsError,
     ApprovalAlreadyAnsweredError,
     AuthorizationExhaustedError,
+    AuthorizationRevokedError,
     NotFoundError,
 )
 from tests.contracts.test_approval_store import PENDING as PENDING_APPROVAL
@@ -205,6 +206,47 @@ async def test_concurrent_consumes_of_a_limited_grant_count_exactly_max_uses(
         await engine.dispose()
 
 
+async def test_a_revocation_among_concurrent_consumes_counts_only_what_came_before(
+    file_url: str,
+) -> None:
+    """Decision 5 of M13.12: ``consume`` refuses a revoked grant in the same ``UPDATE`` as the
+    expiry, so no spend slips between the revocation and the counter (ADR 0046 §3). The uses are
+    exactly the consumes that succeeded; every one that failed failed for the revocation; and a
+    consume after it fails."""
+    engine = make_engine(file_url)
+    try:
+        await create_schema(engine)
+        store = SqlAuthorizationStore(engine)
+        await store.grant(POLICY_AUTHORIZATION)
+        consumes = [store.consume(POLICY_AUTHORIZATION.id, now=NOW) for _ in range(20)]
+        outcomes = await asyncio.gather(
+            *consumes[:10],
+            store.revoke(POLICY_AUTHORIZATION.id, at=NOW),
+            *consumes[10:],
+            return_exceptions=True,
+        )
+        counted = [o for o in outcomes if isinstance(o, int)]
+        failed = [o for o in outcomes if isinstance(o, BaseException)]
+        assert await store.uses(POLICY_AUTHORIZATION.id) == len(counted)
+        assert all(isinstance(o, AuthorizationRevokedError) for o in failed)
+        with pytest.raises(AuthorizationRevokedError):
+            await store.consume(POLICY_AUTHORIZATION.id, now=NOW)
+    finally:
+        await engine.dispose()
+
+
+async def test_revoke_is_one_conditional_update_in_sql(
+    engine: AsyncEngine, statements: Attach
+) -> None:
+    store = SqlAuthorizationStore(engine)
+    await store.grant(POLICY_AUTHORIZATION)
+    recorded = statements(engine)
+    await store.revoke(POLICY_AUTHORIZATION.id, at=NOW)
+    updates = [s for s in recorded() if s.startswith("UPDATE authorizations")]
+    assert len(updates) == 1
+    assert "authorizations.revoked_at IS NULL" in updates[0]
+
+
 async def test_consume_is_one_conditional_update_in_sql(
     engine: AsyncEngine, statements: Attach
 ) -> None:
@@ -220,6 +262,7 @@ async def test_consume_is_one_conditional_update_in_sql(
     assert "authorizations.expires_at > ?" in statement
     assert "authorizations.max_uses IS NULL" in statement
     assert "authorizations.expires_at IS NULL" in statement
+    assert "authorizations.revoked_at IS NULL" in statement
 
 
 async def test_a_refused_consume_updates_nothing_and_reads_once_to_name_the_error(

@@ -165,15 +165,24 @@ def harness(
     return Harness(clock, ids, audit, catalogue, guardian)
 
 
+STANDING_LIFE: Final = timedelta(days=90)
+"""How long the standing grant of :func:`grant` lives: the longest a policy may (M13.12, ADR 0062).
+
+Since M13.12 a grant without ``approval_id`` always expires — an invariant of the domain
+(decision 3d) —, so the grant that had «no expiry» has the farthest end a policy can have."""
+
+
 def grant(spec: CapabilitySpec, **changes: Any) -> Authorization:
-    """A standing authorization for ``spec`` — no task, no step, no expiry, no use limit — then
-    ``changes`` applied. Its scope is the specification's scope unless overridden."""
+    """A standing authorization for ``spec`` — no task, no step, no use limit, the longest life a
+    policy may have — then ``changes`` applied. Its scope is the specification's scope unless
+    overridden."""
     base = Authorization(
         id=AuthorizationId(UUID("00000000-0000-4000-8000-000000000777")),
         created_at=NOW,
         capability_id=spec.id,
         scope=spec.scope,
         granted_by="tommaso",
+        expires_at=NOW + STANDING_LIFE,
     )
     return base.model_copy(update=changes)
 

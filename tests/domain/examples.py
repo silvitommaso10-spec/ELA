@@ -416,8 +416,10 @@ POLICY_AUTHORIZATION: Final = Authorization(
     scope=("workspace/notes",),
     granted_by="tommaso",
     approval_id=None,
+    expires_at=LATER,
     metadata={"origin": "policy"},
 )
+"""A grant without ``approval_id``: since M13.12 it always expires (decision 3d)."""
 
 AUDIT_EVENT: Final = AuditEvent(
     id=AUDIT_EVENT_ID,
