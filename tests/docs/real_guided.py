@@ -82,8 +82,8 @@ def turns() -> ByGoal:
                 ]
             ),
             sentence(OUTSIDE): Script(
-                [call(), gesture("read", site="example.com", path="/"), call()],
-                answer="ELA non mi ha lasciato leggere example.com: non è fra i siti.",
+                [call(), gesture("read", site="eu.httpbin.org", path="/html"), call()],
+                answer="ELA non mi ha lasciato leggere eu.httpbin.org: non è fra i siti.",
             ),
             sentence(FORM): Script(
                 [call(), act, call()], answer="Il modulo di httpbin.org: ecco com'è andata."
@@ -122,6 +122,8 @@ class Session:
     """The commands of the answer to the gesture, as Tommaso reads them."""
     child_answered: Any = None
     """``GET /tasks/<child>`` after the answer."""
+    audit: Any = None
+    """``GET /audit?task_id=<task>`` at the end: the yes to the session, and who gave it."""
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,8 @@ class Real:
     stopped: Session
     cancel_output: str
     spend_end: Any
+    devices: Any
+    """``GET /devices``: the registry that names who answered a question (ADR 0059)."""
 
 
 class Recorder:
@@ -200,6 +204,7 @@ class Recorder:
                 continue
             children[one] = response.json()
             audits[one] = await self.get(f"/audit?task_id={one}")
+        asked.setdefault("audit", await self.get(f"/audit?task_id={task}"))
         return Session(
             task=task,
             detail=detail,
@@ -289,6 +294,7 @@ async def recorded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Real:
             child_answered=await r.get(f"/tasks/{child}"),
         )
         spend_end = await r.get("/spend")
+        devices = await r.get("/devices")
     return Real(
         health=health,
         openapi=openapi,
@@ -302,6 +308,7 @@ async def recorded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Real:
         stopped=stopped,
         cancel_output=cancel_output,
         spend_end=spend_end,
+        devices=devices,
     )
 
 

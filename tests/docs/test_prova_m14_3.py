@@ -23,6 +23,7 @@ import json
 import re
 import subprocess
 import sys
+import uuid
 from decimal import Decimal
 from functools import cache
 from pathlib import Path
@@ -1593,3 +1594,217 @@ def test_a_check_of_step_1_that_raises_stops_the_proof_with_what_it_raised() -> 
         "la prova richiede «ELA risponde» (ConnectionError: ELA does not answer)",
     )
     assert report.passes == {}
+
+
+# Decision 40: a question answered elsewhere ----------------------------------------------
+
+
+def answered_by(events: Any, identity: str, status: str = "GRANTED") -> list[Any]:
+    """A real audit with the answer to its question given by ``identity``."""
+    changed_events = copy.deepcopy(events)
+    for one in changed_events:
+        if one["event_type"] == "APPROVAL_RESOLVED":
+            one["payload"]["responded_by"] = identity
+            one["payload"]["status"] = status
+            one["actor"]["id"] = identity
+    return changed_events
+
+
+def with_a_row(real: Real, identity: str, name: str, role: str) -> list[Any]:
+    """The real registry with one more row: the console or the phone that answered."""
+    row = {**copy.deepcopy(real.devices[0]), "id": identity, "name": name, "role": role}
+    return [*copy.deepcopy(real.devices), row]
+
+
+def elsewhere_on(real: Real, identity: str, name: str, role: str, monkeypatch: Any) -> Any:
+    ran_with(monkeypatch)
+    session = real.youtube
+    proof = proof_on(
+        real,
+        {
+            "/approvals": session.question,
+            f"/tasks/{session.task}": changed(session.queued, state="EXECUTING"),
+            f"/audit?task_id={session.task}": answered_by(session.audit, identity),
+            "/devices": with_a_row(real, identity, name, role),
+        },
+    )
+    todo = {5: [block(5, "sì", SESSION_YES)], 6: [block(6, "occhio", "Mai chiesto?")]}
+    proof.done = walked_on(proof, todo, script().Turn(task_id=session.task))
+    return proof
+
+
+@pytest.mark.parametrize(("role", "said"), [("CONSOLE", "console"), ("COMPANION", "phone")])
+def test_a_yes_given_by_a_page_before_the_terminal_s_stops_the_proof_and_names_who(
+    real: Real, monkeypatch: pytest.MonkeyPatch, role: str, said: str
+) -> None:
+    """Decision 40: the first round of 2026-10-09 — a yes from a page, which starts the run
+    (``answered_and_resumed``), before the terminal's. «EXECUTING, not QUEUED» said what the
+    script saw, not why: now it reads who answered, from the audit, and stops — never FAILED."""
+    (question,) = real.youtube.question
+    identity = str(uuid.uuid4())
+
+    proof = elsewhere_on(real, identity, "MacBook", role, monkeypatch)
+
+    assert proof.done == [5], "no step after it"
+    assert proof.report.failures == 0
+    assert proof.report.stopped == (
+        5,
+        f"la domanda {question['id']} aveva già un sì da MacBook ({said}); "
+        "nella prova si risponde solo nel Terminale",
+    )
+
+
+def test_an_answer_by_an_identity_the_registry_does_not_know_is_named_by_its_id(
+    real: Real, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    identity = str(uuid.uuid4())
+    session = real.youtube
+    ran_with(monkeypatch)
+    proof = proof_on(
+        real,
+        {
+            "/approvals": session.question,
+            f"/tasks/{session.task}": changed(session.queued, state="EXECUTING"),
+            f"/audit?task_id={session.task}": answered_by(session.audit, identity),
+            "/devices": real.devices,
+        },
+    )
+
+    walked_on(proof, {5: [block(5, "sì", SESSION_YES)]}, script().Turn(task_id=session.task))
+
+    assert proof.report.stopped is not None and f"un sì da {identity};" in proof.report.stopped[1]
+
+
+def test_a_question_gone_before_the_terminal_s_answer_runs_no_command_and_stops(
+    real: Real, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The precondition of the human step, checked right before the command: a question answered
+    elsewhere while Tommaso read it is not answered again."""
+    ran = ran_with(monkeypatch)
+    session = real.youtube
+    (question,) = session.question
+    identity = str(uuid.uuid4())
+    proof = proof_on(real, {})
+    proof.api = Later(
+        {
+            "/approvals": [],
+            f"/audit?task_id={session.task}": answered_by(session.audit, identity),
+            "/devices": with_a_row(real, identity, "iPhone", "COMPANION"),
+        },
+        session.question,
+    )
+
+    walked_on(proof, {5: [block(5, "sì", SESSION_YES)]}, script().Turn(task_id=session.task))
+
+    assert ran == []
+    assert proof.report.failures == 0
+    assert proof.report.stopped == (
+        5,
+        f"la domanda {question['id']} aveva già un sì da iPhone (phone); "
+        "nella prova si risponde solo nel Terminale",
+    )
+
+
+def test_a_yes_of_the_core_s_own_token_that_left_the_task_elsewhere_still_fails(
+    real: Real, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real audit: the yes is the command line's, the terminal's own — nobody else answered,
+    and a task that is not where the yes puts it is a failure of the step."""
+    ran_with(monkeypatch)
+    session = real.youtube
+    proof = proof_on(
+        real,
+        {
+            "/approvals": session.question,
+            f"/tasks/{session.task}": changed(session.queued, state="EXECUTING"),
+            f"/audit?task_id={session.task}": session.audit,
+            "/devices": real.devices,
+        },
+    )
+
+    walked_on(proof, {5: [block(5, "sì", SESSION_YES)]}, script().Turn(task_id=session.task))
+
+    assert proof.report.failures == 1 and proof.report.stopped is None
+
+
+def test_a_task_left_elsewhere_with_no_answer_in_its_audit_fails(
+    real: Real, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ran_with(monkeypatch)
+    session = real.youtube
+    silent = [one for one in session.audit if one["event_type"] != "APPROVAL_RESOLVED"]
+    proof = proof_on(
+        real,
+        {
+            "/approvals": session.question,
+            f"/tasks/{session.task}": changed(session.queued, state="EXECUTING"),
+            f"/audit?task_id={session.task}": silent,
+            "/devices": real.devices,
+        },
+    )
+
+    walked_on(proof, {5: [block(5, "sì", SESSION_YES)]}, script().Turn(task_id=session.task))
+
+    assert proof.report.failures == 1 and proof.report.stopped is None
+
+
+def test_a_no_to_a_gesture_already_answered_yes_elsewhere_stops_the_proof(
+    real: Real, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ran_with(monkeypatch)
+    session = real.refused
+    assert session.child is not None
+    (question,) = [one for one in session.asking if one["task_id"] == session.child]
+    identity = str(uuid.uuid4())
+    proof = proof_on(
+        real,
+        {
+            "/approvals": session.asking,
+            f"/tasks/{session.child}": changed(session.child_answered, state="QUEUED"),
+            f"/audit?task_id={session.child}": answered_by(session.audits[session.child], identity),
+            "/devices": with_a_row(real, identity, "MacBook", "CONSOLE"),
+        },
+    )
+    turn = script().Turn(task_id=session.task, child_id=session.child)
+
+    walked_on(proof, {5: [block(5, "no", CHILD_NO)]}, turn)
+
+    assert proof.report.failures == 0
+    assert proof.report.stopped == (
+        5,
+        f"la domanda {question['id']} aveva già un sì da MacBook (console); "
+        "nella prova si risponde solo nel Terminale",
+    )
+
+
+# Decision 41: the site beside the session's ----------------------------------------------
+
+
+def test_the_outside_session_asks_a_whole_address_on_a_host_beside_its_site() -> None:
+    """Decision 41: the first round's model never tried example.com, because ELA's instructions
+    name the session's sites. A host that resembles the session's and is not — ``eu.httpbin.org``
+    beside ``httpbin.org`` —, asked as a whole address, without telling the model it is outside."""
+    from ela.permissions.scope import within_scope
+
+    module = script()
+    arguments = module.arguments_of(ROOT / "docs" / "examples" / "guided-outside.json")
+    goal = str(arguments["goal"])
+
+    assert arguments["sites"] == ["httpbin.org"]
+    assert "https://eu.httpbin.org/" in goal
+    assert not within_scope(arguments["sites"], "eu.httpbin.org")
+    assert "eu.httpbin.org" not in module.SITES, "outside ELA_BROWSER_SITES too"
+    assert "fuori" not in goal and "non è fra" not in goal
+
+
+def test_every_task_of_the_section_is_created_with_the_sentence_of_its_plan() -> None:
+    module = script()
+    for blocks in marked().values():
+        for found in blocks:
+            if found.kind != "comando":
+                continue
+            created = [line for line in found.lines if module.CREATE in f" {line} "]
+            planned = [path for line in found.lines for path in module.PLAN_FILE.findall(line)]
+            if created and planned:
+                (sentence,) = re.findall(r'task create "(.*)" --json', created[0])
+                assert sentence == module.arguments_of(ROOT / planned[0])["goal"], sentence
