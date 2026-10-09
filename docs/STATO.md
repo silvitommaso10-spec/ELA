@@ -134,6 +134,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.9` | Proposta | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
 | 13 — Il permesso prima dell'azione | `M13.10` | Proposta | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
+| 13 — Il permesso prima dell'azione | `M13.12` | Proposta | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.2` | Implementata | Il Planner: ELA scrive i piani da sola |
@@ -161,7 +162,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **61** | `docs/adr/NNNN-*.md` |
-| Milestone | **85, di cui 68 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **86, di cui 68 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **65** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **33** | i `Protocol` di `src/ela/ports.py` |
@@ -223,7 +224,9 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   che dura, e le password in Bitwarden), **M13.10** (più passi e i file), **M13.11** (il browser sul
   PC), e una seconda riparazione, **M13.1d** (il blocco di `ela approvals` della guida, fermo a M13.1). **Registrata il
   2026-10-02**, dalla review della SPEC di M13.1c: una terza, **M13.1e** (la console, il telefono e la riga di comando
-  che mostrano un diniego o un fallimento senza il suo perché).
+  che mostrano un diniego o un fallimento senza il suo perché). **Registrata e aperta il 2026-10-09** da Tommaso, prima
+  di M13.9: **M13.12** (le policy di §59 — una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da
+  `browser.guided`).
   L'ordine e le condizioni stanno nella voce 5.11, e la fila che attraversa le fasi nella 5.10.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
@@ -283,7 +286,7 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 15 | 14 |
+| 15 | 15 |
 | 16 | 1 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
@@ -617,7 +620,8 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    `b5a8d7a`, e ADR 0059 è Accettata;
 5. **M14.3**; ***annotato il 2026-10-08***: con **M14.6** prima di lei, sullo stesso branch — Haiku 5.5 nel listino, decisa
    dalla review della SPEC di M14.3 (decisione 27) —, un merge e un giro di CI invece di due;
-6. **M13.9, M13.10, M13.11**;
+6. **M13.9, M13.10, M13.11**; ***annotato il 2026-10-09***: **prima di M13.9 viene M13.12**, le policy di §59, aperta da
+   Tommaso lo stesso giorno per la regola della 5.11 («Chi apre la milestone delle policy di §59»);
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -721,7 +725,8 @@ non l'ha più — viene alla fine della fila, 5.10 —; M13.6 la tiene.)
 M13.1d → M13.9 → M13.10 → M13.11 → M13.5 → M13.7 → M13.8**; dopo M13.1c e M13.1d, prima di M13.9,
 **comincia la Fase 14** — M14.1, M14.2, M14.3 —, e fra M13.5 e M13.7 viene M14.4. (***Annotato il 2026-10-02***:
 **M13.1e**, registrata dalla review della SPEC di M13.1c, viene dopo M14.1 e M14.2 e prima di M14.3. ***Annotato il
-2026-10-08***: fatta, con la prova a mano passata.) La fila intera, con
+2026-10-08***: fatta, con la prova a mano passata. ***Annotato il 2026-10-09***: **M13.12**, le policy di §59, viene dopo
+M14.3 e prima di M13.9 — qui sotto, «Chi apre la milestone delle policy di §59».) La fila intera, con
 M6.3c in testa, sta nella 5.10. M13.6 resta fuori dalla
 fila, con la sua condizione. **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e la ragione è di
 Tommaso: **tutto ciò che vuole dal browser e dal computer control passa da un modello che guarda e
@@ -841,7 +846,11 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   un profilo di ELA che dura, uno per macchina; le password in Bitwarden, prese una alla volta con la CLI
   ufficiale dopo un sì a ogni uso, e mai scritte in ELA; il profilo non accende la sincronizzazione di
   Chrome con l'account Google di Tommaso. Il suo ADR rivede apertamente le decisioni 3 e 6 di M13.4.
-  **Dopo M14.3.**
+  **Dopo M14.3.** ***Annotato il 2026-10-09***: e dopo **M13.12**, qui sotto.
+- **M13.12 — le policy di §59** (§59, §27, §29, §62). **Registrata e aperta da Tommaso il 2026-10-09**, per la regola di
+  «Chi apre la milestone delle policy di §59» (sotto): una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a
+  partire da `browser.guided`; scade sempre, si revoca, e la domanda che resta dice perché chiede. **Dopo M14.3, prima di
+  M13.9.**
 - **M13.10 — più passi e i file** (§19). **Registrata il 2026-09-30**: una sessione del browser fra gli
   step dello stesso task, una sequenza di gesti con ogni elemento aspettato quando serve — rivede la
   decisione 7 di M13.4 —, uno scaricamento come un `fs.write` e un caricamento come un `fs.read`, con la
@@ -898,6 +907,12 @@ scope — capability, sito, durata —, **mai abbassando il livello**; `HIGH` re
 nell'executor. La regola è quella dell'eseguibile firmato: **la prima milestone della fila che ha bisogno
 di un'azione `MEDIUM` senza domanda apre, subito prima di sé, la milestone che costruisce quel
 percorso**, con il suo numero. Tommaso non vuole che ogni lettura chieda: vuole crearsi le policy.
+
+***Annotato il 2026-10-09***: **aperta da Tommaso, prima di M13.9: è M13.12** ([`milestones/M13.12.md`](milestones/M13.12.md)).
+La prima azione `MEDIUM` che vuole girare senza domanda è la sessione guidata di M14.3, `browser.guided`, e la milestone
+costruisce il percorso per lei: la capability dichiara se una policy può coprirla e che cosa deve limitare, Tommaso crea la
+policy — siti, tetti per sessione, giorni da 1 a 90 — con un'anteprima che nomina ciò che approva, e la revoca; nessun
+livello si muove, e `HIGH` resta fuori. Le altre `MEDIUM` ricevono la dichiarazione nella milestone che ne ha bisogno.
 
 *Perché nessun ADR:* è una scelta d'ordine e di perimetro — quale milestone, quando, che cosa
 eredita, che cosa resta fuori — e nessuna riga di codice la contiene. Le parti tecniche prendono il
