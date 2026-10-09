@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,11 @@ from ela.composition.settings import Settings
 from ela.domain import TaskState
 from ela.executive.spending import CAP_VARIABLE, month_of
 from ela.ports import PROVIDER_UNAVAILABLE
+from ela.providers.anthropic import AnthropicGateway
+from ela.providers.anthropic.models import model_for_hint
+from ela.routing.settings import RoutingSettings
 from ela.tools import CREATES, OVERWRITES, READS
+from ela.tools.guided import GUIDED_MAX_TOKENS, GUIDED_ROUTE
 from ela.tools.settings import MAX_SPOKEN_CHARACTERS
 from tests.api.reasons import example, opened
 from tests.providers.support import SECRET
@@ -46,6 +51,8 @@ SPEAK_TO_THE_END = EXAMPLES / "speak-on-a-node-to-the-end.json"
 COMPANION = EXAMPLES / "companion.json"
 ECHO = EXAMPLES / "echo.json"
 NOTE = "_nota"
+GUIDED = sorted(EXAMPLES.glob("guided-*.json"))
+"""The plans of the guided sessions of the guide's section 26 (M14.3)."""
 
 
 def example_plan() -> dict[str, Any]:
@@ -652,3 +659,28 @@ def guide_section_23_names(worst: str) -> bool:
     guide = (EXAMPLES.parent / "GETTING_STARTED.md").read_text(encoding="utf-8")
     section = guide[guide.index("## 23. ") :]
     return " ".join(f"worst case {worst}".split()) in " ".join(section.split())
+
+
+def test_the_guided_examples_are_found() -> None:
+    assert [path.name for path in GUIDED] == [
+        "guided-form.json",
+        "guided-outside.json",
+        "guided-youtube.json",
+    ]
+
+
+@pytest.mark.parametrize("path", GUIDED, ids=[path.name for path in GUIDED])
+async def test_a_guided_example_holds_two_calls_in_flight(path: Path) -> None:
+    """Decision 32 of the review of the summary of M14.3: the most a session may spend lets two
+    calls of its route be in flight at once, each at its worst case — the function the gateway
+    hands the session's budget —, or a session whose Claude Code sends two together stops with
+    ``guided.cost``. On Haiku 5.5 one call is 0,516384 $, and 0,60 $ held one."""
+    ((step,),) = [json.loads(path.read_text(encoding="utf-8"))["steps"]]
+    arguments = step["arguments"]
+    route = RoutingSettings().policy().route_for(arguments.get("task_type", GUIDED_ROUTE))
+    model = model_for_hint(route.profile)
+    assert model is not None
+    one = await AnthropicGateway(None, timeout=1.0).worst(model.id, GUIDED_MAX_TOKENS)
+
+    assert one is not None
+    assert Decimal(arguments["max_cost_usd"]) >= 2 * one, (arguments["max_cost_usd"], one)

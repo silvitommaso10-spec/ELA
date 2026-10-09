@@ -181,7 +181,7 @@ def test_every_plan_the_section_sends_is_one_session_on_the_sites_of_the_proof()
     for plan in module.plans_of(marked()):
         arguments = module.arguments_of(plan)
         assert set(arguments["sites"]) <= set(module.SITES), plan.name
-        assert arguments["max_cost_usd"] == "0.60", plan.name
+        assert arguments["max_cost_usd"] == "1.10", plan.name
 
 
 def test_a_plan_that_is_not_one_session_is_refused(tmp_path: Path) -> None:
@@ -251,10 +251,11 @@ def test_the_margin_is_five_sessions_at_their_most_and_the_section_writes_it() -
     module = script()
     one_call = worst_cost(MODELS[HAIKU_5_5], output_tokens=GUIDED_MAX_TOKENS)
 
-    assert module.margin(module.plans_of(marked())) == Decimal("3.00")
+    assert module.margin(module.plans_of(marked())) == Decimal("5.50")
     assert one_call == Decimal("0.516384")
-    assert "5 × 0,60 = 3,00 $" in flat()
-    assert "**0,516384 $**" in flat()
+    assert 2 * one_call <= Decimal("1.10"), "two calls in flight at once (decision 32)"
+    assert "5 × 1,10 = 5,50 $" in flat()
+    assert "0,516384 $" in flat()
 
 
 def test_a_session_whose_most_is_below_one_call_is_not_reserved() -> None:
@@ -454,7 +455,7 @@ def test_step_1_goes_on_with_what_the_real_routes_answer(
 
 def test_exactly_the_margin_left_is_enough(real: Real, monkeypatch: pytest.MonkeyPatch) -> None:
     report = preconditions_on(
-        step_1(real, **{"/spend": changed(real.spend_start, left="3.00")}), monkeypatch
+        step_1(real, **{"/spend": changed(real.spend_start, left="5.50")}), monkeypatch
     )
 
     assert report.stopped is None, report.lines
@@ -492,11 +493,6 @@ NOT_AS_THE_PROOF_WANTS: dict[str, tuple[str, Any, str]] = {
         "/spend",
         lambda real: changed(real.spend_start, cap=None, left=None),
         "il tetto è dichiarato",
-    ),
-    "too-little-left": (
-        "/spend",
-        lambda real: changed(real.spend_start, left="2.99"),
-        "restano almeno 3.00 USD, 5 sessioni al loro costo massimo",
     ),
 }
 
@@ -571,7 +567,7 @@ def test_the_question_it_expects_is_the_one_ela_approvals_prints(real: Real) -> 
     ]
 
     assert module.base.missing(wanted, real.approvals_output) == []
-    assert module.base.missing(wanted, real.approvals_output.replace("0.6 USD", "0.5 USD"))
+    assert module.base.missing(wanted, real.approvals_output.replace("1.1 USD", "0.5 USD"))
 
 
 def test_every_outcome_it_expects_is_one_the_runs_print(real: Real) -> None:
@@ -907,7 +903,7 @@ def test_every_session_of_the_proof_passes_with_its_cost(real: Real, name: str) 
     )
 
     assert proof.report.ok, proof.report.lines
-    assert proof.costs == [Decimal(ended_of(session)["usage"]["cost"])]
+    assert proof.costs == {session.task: Decimal(ended_of(session)["usage"]["cost"])}
     assert (
         f"    la risposta del modello: {ended_of(session)['output']['text']!r}"
         in proof.report.lines
@@ -1166,14 +1162,18 @@ def test_exactly_the_bound_is_still_the_low_tier(real: Real) -> None:
 # «spesa» ---------------------------------------------------------------------------------
 
 
-def costs_of(real: Real) -> list[Decimal]:
-    return [Decimal(ended_of(session)["usage"]["cost"]) for session in sessions_of(real).values()]
+def costs_of(real: Real) -> dict[str, Decimal]:
+    """The cost of each session, by its task, as its result says it."""
+    return {
+        session.task: Decimal(ended_of(session)["usage"]["cost"])
+        for session in sessions_of(real).values()
+    }
 
 
 def test_the_spend_grown_by_the_five_sessions_with_nothing_reserved_passes(real: Real) -> None:
     module = script()
     proof = proof_on(real, {"/spend": real.spend_end})
-    proof.costs.extend(costs_of(real))
+    proof.costs.update(costs_of(real))
     lines = "\n".join(line for _, line in lines_of("spesa"))
 
     walked_on(proof, {7: [block(7, "spesa", lines)]}, module.Turn())
@@ -1184,7 +1184,7 @@ def test_the_spend_grown_by_the_five_sessions_with_nothing_reserved_passes(real:
 def test_a_session_missing_from_the_costs_fails_the_spend(real: Real) -> None:
     module = script()
     proof = proof_on(real, {"/spend": real.spend_end})
-    proof.costs.extend(costs_of(real)[:-1])
+    proof.costs.update(dict(list(costs_of(real).items())[:-1]))
     lines = "\n".join(line for _, line in lines_of("spesa"))
 
     walked_on(proof, {7: [block(7, "spesa", lines)]}, module.Turn())
@@ -1378,3 +1378,194 @@ def test_main_walks_the_section_with_the_ledger_of_its_start(
 
     assert walked == [list(range(2, 8))]
     assert code == 0, "the walk is the test's: nothing failed"
+
+
+# Decision 38: the margin, with its two numbers ------------------------------------------
+
+
+def test_too_little_left_stops_step_1_with_what_is_left_and_what_the_sessions_reserve(
+    real: Real, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Decision 38: ``left`` of ``/spend`` against the sum of the sessions' most, computed with the
+    function of the gate: below it, FERMATO with the two numbers."""
+    report = preconditions_on(
+        step_1(real, **{"/spend": changed(real.spend_start, left="5.49")}), monkeypatch
+    )
+
+    assert report.stopped is not None
+    assert "5.49" in report.stopped[1] and "5.50" in report.stopped[1], report.stopped
+
+
+def test_no_cap_left_stops_step_1_too(real: Real, monkeypatch: pytest.MonkeyPatch) -> None:
+    report = preconditions_on(
+        step_1(real, **{"/spend": changed(real.spend_start, left=None)}), monkeypatch
+    )
+
+    assert report.stopped is not None and "left" in report.stopped[1]
+
+
+# Decision 35: a gesture that never asked -------------------------------------------------
+
+
+WAIT_ACT = "browser.act WAITING_APPROVAL"
+
+
+def failed_with(session: Session, code: str) -> list[Any]:
+    """The session's real results, its end changed to a failure with ``code``."""
+    error = {"code": code, "message": f"the session ended with {code}", "retryable": False}
+    return with_ended(session, status="FAILED", error=error)
+
+
+def skipped_on(real: Real, results: Any, **more: Any) -> Any:
+    """``aspetta`` on a session that ended without asking: its results as given."""
+    session = real.refused
+    proof = proof_on(
+        real,
+        {"/approvals": [], f"/tasks/{session.task}/results": results, **more},
+    )
+    turn = script().Turn(task_id=session.task, background=Running("outcome completed\n"))
+    walked_on(proof, {5: [block(5, "aspetta", WAIT_ACT)]}, turn)
+    return proof
+
+
+def test_a_session_that_ended_by_itself_without_the_gesture_is_skipped_with_its_end(
+    real: Real,
+) -> None:
+    proof = skipped_on(real, real.refused.results)
+
+    assert proof.report.skipped_steps == [5] and proof.report.failures == 0
+    (said,) = [line for line in proof.report.lines if line.startswith("[5] SALTATO")]
+    assert "SUCCEEDED" in said
+    assert "è il modello" not in " ".join(proof.report.lines)
+
+
+@pytest.mark.parametrize("code", ["guided.looks", "guided.duration"])
+def test_a_session_stopped_on_a_limit_the_yes_allowed_is_skipped_with_its_code(
+    real: Real, code: str
+) -> None:
+    proof = skipped_on(real, failed_with(real.refused, code))
+
+    assert proof.report.skipped_steps == [5] and proof.report.failures == 0
+    (said,) = [line for line in proof.report.lines if line.startswith("[5] SALTATO")]
+    assert "FAILED" in said and code in said
+
+
+@pytest.mark.parametrize(
+    "code", ["guided.cost", "guided.stopped", "guided.tools_changed", "guided.failed"]
+)
+def test_any_other_end_before_the_gesture_fails_with_its_code(real: Real, code: str) -> None:
+    proof = skipped_on(real, failed_with(real.refused, code))
+
+    assert proof.report.failures == 1 and proof.report.skipped_steps == []
+    (said,) = [line for line in proof.report.lines if line.startswith("[5] FALLITO")]
+    assert code in said
+
+
+def test_a_session_with_no_result_fails_the_wait(real: Real) -> None:
+    started = [one for one in real.refused.results if one["status"] == "STARTED"]
+
+    proof = skipped_on(real, started)
+
+    assert proof.report.failures == 1
+
+
+def test_a_skipped_step_still_puts_its_session_in_the_spend(real: Real) -> None:
+    """Decision 35 (a): the cost of a session is counted when the session ends, not when its step
+    does — a step SKIPPED, and then the spend PASSED."""
+    module = script()
+    session = real.refused
+    cost = Decimal(ended_of(session)["usage"]["cost"])
+    start = module.spending.Ledger.of(real.spend_start)
+    now = changed(real.spend_start, spent=str(start.spent + cost))
+    proof = proof_on(
+        real,
+        {"/approvals": [], f"/tasks/{session.task}/results": session.results, "/spend": now},
+    )
+    turn = module.Turn(task_id=session.task, background=Running("outcome completed\n"))
+    lines = "\n".join(line for _, line in lines_of("spesa"))
+    todo = {5: [block(5, "aspetta", WAIT_ACT)], 7: [block(7, "spesa", lines)]}
+
+    walked_on(proof, todo, turn)
+
+    assert proof.report.skipped_steps == [5]
+    assert proof.report.failures == 0, proof.report.lines
+
+
+def test_a_session_read_twice_is_counted_once(real: Real) -> None:
+    module = script()
+    session = real.refused
+    proof = proof_on(
+        real,
+        {f"/tasks/{session.task}/results": session.results, "/spend": real.spend_end},
+        start=real.spend_end,
+    )
+    turn = module.Turn(task_id=session.task)
+
+    walked_on(
+        proof,
+        {5: [block(5, "sessione", "SUCCEEDED"), block(5, "sessione", "SUCCEEDED")]},
+        turn,
+    )
+
+    assert list(proof.costs.values()) == [Decimal(ended_of(session)["usage"]["cost"])]
+
+
+def test_after_a_skipped_wait_the_next_round_of_the_step_goes_on(
+    real: Real, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A wait that found nothing ends its round — the answer, the end, the reading of the session
+    would measure nothing —, never the round after it: step 5 has two."""
+    module = script()
+
+    def run(line: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(line, 0, json.dumps({"id": "t-2"}), "")
+
+    monkeypatch.setattr(module.base, "run", run)
+    session = real.refused
+    proof = proof_on(real, {"/approvals": [], f"/tasks/{session.task}/results": session.results})
+    turn = module.Turn(task_id=session.task, background=Running("outcome completed\n"))
+    todo = {
+        5: [
+            block(5, "aspetta", WAIT_ACT),
+            block(5, "no", CHILD_NO),
+            block(5, "occhio", "Il primo giro?"),
+            block(5, "comando", 'uv run ela task create "di nuovo" --json'),
+            block(5, "occhio", "Il secondo giro?"),
+        ]
+    }
+
+    walked_on(proof, todo, turn)
+
+    assert turn.task_id == "t-2"
+    assert proof.asked == ["[5] Il secondo giro? (s/n) "]
+
+
+# A gesture ELA could not plan ------------------------------------------------------------
+
+
+def test_the_child_of_a_gesture_that_could_not_be_planned_is_written_and_not_failed(
+    real: Real,
+) -> None:
+    """Arguments ELA cannot plan cancel the gesture's child before it has a plan: the model's
+    malformed gesture, which the session read as refused — not a child that broke a rule."""
+    session = real.youtube
+    one, child = only_child(session)
+    (step,) = session.detail["steps"]
+    looks = ended_of(session)["output"]["looks"]
+    second = script().gesture_ids(session.task, step["id"], looks + 1)[-1]
+    unplanned = changed(child, id=second, state="CANCELLED", steps=[], plan_author=None)
+    more = with_output(session, looks=looks + 1)
+
+    proof = family_on(
+        real,
+        session,
+        FAMILY_LINES["youtube"],
+        **{
+            f"/tasks/{session.task}/results": more,
+            f"/tasks/{second}": unplanned,
+            f"/audit?task_id={second}": [],
+        },
+    )
+
+    assert proof.report.ok, proof.report.lines
+    assert any("senza piano" in line for line in proof.report.lines)

@@ -292,3 +292,16 @@ async def test_a_gesture_whose_child_someone_else_walks_waits_for_its_end(
         g.ela.running.discard(child)
 
     assert done.state is TaskState.CANCELLED
+
+
+async def test_the_start_up_sweeps_the_folders_of_the_sessions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision 34 (b) of the review of the summary: at start-up no session has a right to live —
+    its gateway is gone with the process that held it —, so ELA sweeps the folders of the sessions
+    once, after ``close_orphans`` and beside the purge of the captures and the voice's sweep."""
+    async with guided(monkeypatch, tmp_path, Script([])) as g:
+        swept = g.app.state.sessions_swept
+
+    assert g.sessions.swept == 1
+    assert swept == 0

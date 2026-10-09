@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import uuid
 from collections.abc import AsyncIterator, Mapping
@@ -33,6 +34,7 @@ from starlette.routing import Route
 from ela.domain import ErrorMetadata, JsonMapping, Reservation, StepId
 from ela.infrastructure.machine.agent import (
     LAUNCHER,
+    PID,
     SDK_NAMES,
     TOOLS,
     ClaudeAgentSession,
@@ -141,6 +143,96 @@ async def test_a_folder_already_there_launches_nothing(tmp_path: Path) -> None:
 
     assert isinstance(launched, ErrorMetadata) and launched.code == GUIDED_FOLDER_CHANGED
     assert not await session.running(planned.session)
+
+
+def test_the_check_of_the_folder_knows_the_pid_ela_writes(tmp_path: Path) -> None:
+    """Decision 34 (a): at the launch ELA writes the process's pid beside the launcher; the check
+    of the folder knows that file — a number, and nothing else — as ELA's own."""
+    text = launcher_text(Path("/bin/claude"), ("PATH",))
+    (tmp_path / LAUNCHER).write_text(text, encoding="utf-8")
+    fingerprint = hashlib.sha256(text.encode()).hexdigest()
+    (tmp_path / PID).write_text("4242\n", encoding="utf-8")
+
+    assert _changed(tmp_path, fingerprint) is None
+    (tmp_path / PID).write_text("not a pid", encoding="utf-8")
+    assert _changed(tmp_path, fingerprint) is not None
+
+
+def a_leftover(root: Path, pid: int | None, content: str | None = None) -> Path:
+    """A session's folder as a crash leaves it: the launcher, the pid when the launch got that far,
+    and whatever the session wrote."""
+    folder = root / str(uuid.uuid4())
+    folder.mkdir(parents=True)
+    (folder / LAUNCHER).write_text("#!/bin/sh\n", encoding="utf-8")
+    if pid is not None:
+        (folder / PID).write_text(f"{pid}\n", encoding="utf-8")
+    if content is not None:
+        (folder / "registro.txt").write_text(content, encoding="utf-8")
+    return folder
+
+
+async def test_the_sweep_kills_a_session_s_process_and_deletes_its_folder(tmp_path: Path) -> None:
+    """Decision 34 (b), with a real process, as for the terminal: a session's process alive at
+    start-up — measured on the Mac, 2026-10-09: ``claude`` outlives an ``ela serve`` killed with
+    ``SIGKILL``, reparented to ``launchd``, for at least 120 s — is killed, and its folder deleted.
+    Here the session's binary is the interpreter of the tests, so the process is the binary's."""
+    session = ClaudeAgentSession(tmp_path / "sessions", binary=Path(sys.executable))
+    living = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(300)"])
+    try:
+        folder = a_leftover(tmp_path / "sessions", living.pid, "il testo di una pagina")
+
+        swept = await session.sweep()
+
+        assert living.wait(timeout=10) == -9
+        assert swept == 1 and not folder.exists()
+    finally:
+        if living.poll() is None:
+            living.kill()
+            living.wait()
+
+
+async def test_the_sweep_never_kills_a_process_that_is_not_the_session_s_binary(
+    tmp_path: Path,
+) -> None:
+    """A pid is a number the kernel gives again: after a crash and a restart it can name another
+    program. The sweep kills only a process whose command is the session's binary; the folder goes
+    anyway."""
+    session = ClaudeAgentSession(tmp_path / "sessions", binary=tmp_path / "claude")
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(300)"])
+    try:
+        folder = a_leftover(tmp_path / "sessions", other.pid)
+
+        swept = await session.sweep()
+
+        assert other.poll() is None, "another program's process is left alone"
+        assert swept == 1 and not folder.exists()
+    finally:
+        other.kill()
+        other.wait()
+
+
+async def test_the_sweep_deletes_what_has_no_pid_or_a_pid_that_is_not_a_number(
+    tmp_path: Path,
+) -> None:
+    session = ClaudeAgentSession(tmp_path / "sessions", binary=Path(sys.executable))
+    root = tmp_path / "sessions"
+    bare = a_leftover(root, None, "il testo di una pagina")
+    garbled = a_leftover(root, None)
+    (garbled / PID).write_text("x", encoding="utf-8")
+    gone = a_leftover(root, 2**22 + 7)
+    (root / "a-file").write_text("not a session", encoding="utf-8")
+
+    swept = await session.sweep()
+
+    assert swept == 3
+    assert not bare.exists() and not garbled.exists() and not gone.exists()
+    assert (root / "a-file").exists(), "only the folders of sessions are ELA's to sweep"
+
+
+async def test_a_sweep_with_no_folder_of_the_sessions_sweeps_nothing(tmp_path: Path) -> None:
+    session = ClaudeAgentSession(tmp_path / "never", binary=Path(sys.executable))
+
+    assert await session.sweep() == 0
 
 
 def test_the_two_tools_are_ela_s() -> None:
@@ -361,3 +453,53 @@ async def test_the_real_binary_stopped_during_a_gesture_ends_and_leaves_nothing(
     assert end.subtype != "success"
     assert end.closed
     assert not (tmp_path / "sessions" / str(planned.session)).exists()
+
+
+@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+async def test_a_launched_session_writes_its_pid_beside_the_launcher(tmp_path: Path) -> None:
+    """Decision 34 (a): the pid of the process the SDK started, in the session's folder, so that a
+    start-up after a crash finds it."""
+    session = ClaudeAgentSession(tmp_path / "sessions", grace=5.0)
+    waiting = asyncio.Event()
+    async with a_fake_model() as (url, calls):
+        planned = plan(url)
+
+        async def reading() -> None:
+            waiting.set()
+            await asyncio.Event().wait()
+
+        launched = await session.launch(RESERVATION, planned, _host(reading=reading))
+        assert isinstance(launched, SessionHandle)
+        await asyncio.wait_for(waiting.wait(), 120)
+        folder = tmp_path / "sessions" / str(planned.session)
+        written = (folder / PID).read_text(encoding="utf-8").strip()
+        process = session._running[planned.session].pid  # noqa: SLF001
+        await launched.interrupt()
+        await asyncio.wait_for(launched.ended, 60)
+
+    assert written == str(process)
+
+
+@pytest.mark.skipif(not RUNNABLE, reason=NO_BINARY)
+async def test_after_the_sweep_the_session_of_a_step_left_by_a_crash_starts(
+    tmp_path: Path,
+) -> None:
+    """Decision 34: a folder a crash left makes the next session of the same step fail with
+    ``guided.folder_changed`` (``test_a_folder_already_there_launches_nothing``); after the sweep
+    of the start-up the old content is gone, and the session starts and ends."""
+    session = ClaudeAgentSession(tmp_path / "sessions")
+    async with a_fake_model() as (url, calls):
+        planned = plan(url)
+        folder = tmp_path / "sessions" / str(planned.session)
+        folder.mkdir(parents=True)
+        (folder / "registro.txt").write_text("il testo di una pagina", encoding="utf-8")
+        refused = await session.launch(RESERVATION, planned, _host())
+        assert isinstance(refused, ErrorMetadata) and refused.code == GUIDED_FOLDER_CHANGED
+
+        await session.sweep()
+        assert not folder.exists()
+        launched = await session.launch(RESERVATION, planned, _host())
+        assert isinstance(launched, SessionHandle)
+        end = await asyncio.wait_for(launched.ended, 120)
+
+    assert end.subtype == "success", end
