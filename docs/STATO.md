@@ -122,6 +122,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.1c` | Implementata | In quattro rami di `run` un diniego o un fallimento arriva senza il suo perché |
 | 13 — Il permesso prima dell'azione | `M13.1d` | Implementata | Il blocco di `ela approvals` in GETTING_STARTED §6 non è quello che la CLI stampa |
 | 13 — Il permesso prima dell'azione | `M13.1e` | Implementata | La console, il telefono e la riga di comando mostrano un diniego o un fallimento senza il suo perché |
+| 13 — Il permesso prima dell'azione | `M13.1f` | Implementata | Un test della prova di M13.1e lanciava davvero `uv run ela task show`, e passava per caso |
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Implementata | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
@@ -160,7 +161,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **61** | `docs/adr/NNNN-*.md` |
-| Milestone | **84, di cui 67 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **85, di cui 68 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **65** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **33** | i `Protocol` di `src/ela/ports.py` |
