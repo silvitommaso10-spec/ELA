@@ -19,6 +19,7 @@ import pytest
 from httpx import AsyncClient
 
 from ela.api.console import _bounds
+from ela.api.schemas import LimitOut
 from ela.permissions import COST_PATTERN
 from ela.providers.anthropic.models import HAIKU_5_5
 from tests.api.guided import MAX_COST, Guided, Script, guided
@@ -61,11 +62,13 @@ async def posted(console: AsyncClient, path: str, fields: list[tuple[str, str]])
 
 
 def test_the_form_says_the_bounds_of_every_limit_the_catalogue_admits() -> None:
-    """An integer with its range, a cost with its pattern, and a limit whose schema says neither —
-    which the catalogue admits for an integer — as what it is."""
-    assert _bounds(1, 30, None) == "un intero da 1 a 30"
-    assert _bounds(None, None, COST_PATTERN) == "una cifra in dollari, con il punto: 1.10"
-    assert _bounds(None, None, None) == "un valore"
+    """Decision 25: an integer with its range — the catalogue refuses one without it —, and an
+    amount of money with its form."""
+    looks = LimitOut(name="looks", type="integer", minimum=1, maximum=30)
+    cost = LimitOut(name="max_cost_usd", type="string", pattern=COST_PATTERN)
+
+    assert _bounds(looks) == "un intero da 1 a 30"
+    assert _bounds(cost) == "una cifra in dollari, con il punto: 1.10"
 
 
 async def test_the_list_says_there_is_none_and_the_form_is_derived_from_the_declaration(
@@ -78,6 +81,8 @@ async def test_the_list_says_there_is_none_and_the_form_is_derived_from_the_decl
     assert 'value="browser.guided"' in page
     for site in ("www.youtube.com", "example.com", "httpbin.org"):
         assert f'value="{site}"' in page
+    assert "un intero da 1 a 30" in page and "un intero da 30 a 1800" in page
+    assert 'ela-field__help">un valore<' not in page
     for name in ("max_cost_usd", "looks", "seconds"):
         assert f'name="limit-{name}"' in page
     assert 'name="days"' in page and 'min="1"' in page and 'max="90"' in page

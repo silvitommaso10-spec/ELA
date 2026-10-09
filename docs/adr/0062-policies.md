@@ -1,8 +1,10 @@
 # 0062. Le policy di §59: una riga che Tommaso scrive, con i suoi confini e una fine, rende autonoma un'azione `MEDIUM` senza abbassarne il livello
 
 - **Stato:** **Proposta** il 2026-10-09, con l'implementazione di M13.12, dopo la SPEC decisa (le decisioni 1–15 della
-  sessione e 16–23 della review, in `docs/milestones/M13.12.md`). Diventa Accettata con un commit suo, quando la prova a
-  mano della sezione 27 di `docs/GETTING_STARTED.md` passa sul Mac (§15).
+  sessione e 16–23 della review, in `docs/milestones/M13.12.md`), e riletta lo stesso giorno dalla review del riepilogo
+  (decisioni 24–27). Diventa Accettata con un commit suo, quando la prova a mano della sezione 27 di
+  `docs/GETTING_STARTED.md` passa sul Mac, **sul branch e prima del merge**, all'ultimo commit del giro, con il file della
+  prova e il commit su cui è passata (§15, decisione 26).
 - **Data:** 2026-10-09
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §57, §59, §62
 - **Milestone:** M13.12
@@ -44,13 +46,22 @@ prospettiva del tool rifiuta prima (§7). **Una policy nomina un modello solo**:
 con il suo caso negativo — chi aggiunge un fornitore decide con un ADR se il modello passa dai termini a un fatto della
 chiamata (la forma di ADR 0045 §13).
 
-**Il catalogo rifiuta la dichiarazione alla costruzione**, con `InvalidCapabilityError` e la ragione, quando: la riga della
-capability, letta da `RISK_POLICY`, non è `APPROVAL_UNLESS_AUTHORIZED` — «no policy reaches a HIGH (ADR 0045 §3)», «it does
-not ask: it needs no policy»; una `CRITICAL` il catalogo la rifiuta prima, con il suo tetto —; i tetti sono vuoti; un tetto
-non è un argomento obbligatorio `integer`, o `string` con `COST_PATTERN`; un argomento mai coperto è obbligatorio; un
-argomento libero e obbligatorio non è una `string`; **le quattro classi non sono una partizione dello schema**; la
-capability non ha argomenti con lo scope. La partizione a mondo chiuso è ciò che fa smettere da sé le policy vecchie quando
-lo schema cresce: un argomento nuovo deve dire in quale classe sta, e la dichiarazione cambia (§4, `TERMS`).
+**Il catalogo rifiuta la dichiarazione alla costruzione**, con `InvalidCapabilityError` e la ragione, quando:
+
+| La dichiarazione | Perché si rifiuta |
+|---|---|
+| sta su una riga che non è `APPROVAL_UNLESS_AUTHORIZED`, letta da `RISK_POLICY` | «no policy reaches a HIGH (ADR 0045 §3)», «it does not ask: it needs no policy»; una `CRITICAL` il catalogo la rifiuta prima, con il suo tetto |
+| non ha tetti | una policy che non limita niente non è una policy |
+| sta su una capability senza argomenti con lo scope, o con uno che non è una lista | una policy nasce con uno scope, e la chiamata che «partirebbe» li porta tutti |
+| non mette ogni argomento dello schema in una classe sola | **il mondo chiuso**: un argomento nuovo deve dire in quale classe sta |
+| ha un tetto che non è un argomento obbligatorio `integer`, o `string` con `COST_PATTERN` | uno step senza il tetto, o con un testo che non è un numero, non si confronta |
+| ha un tetto `integer` senza `minimum` e `maximum` nello schema | il modulo di una policy ne mostra l'intervallo, «da 1 a 30» (decisione 25) |
+| ha un argomento mai coperto obbligatorio | ogni chiamata lo porterebbe, e nessuna policy coprirebbe mai |
+| ha un argomento libero, obbligatorio, che non è una `string` | la prospettiva di §7 non lo saprebbe riempire |
+
+La partizione a mondo chiuso è ciò che fa smettere da sé le policy vecchie quando lo schema cresce: un argomento nuovo deve
+dire in quale classe sta, e la dichiarazione cambia (§4, `TERMS`). `looks` e `seconds` di `browser.guided` hanno già il loro
+intervallo.
 
 `RISK_POLICY`, `Rule`, `ASKING_RULES` e `asks_at_every_use` stanno in un modulo loro, `ela/permissions/rows.py`, che il
 catalogo legge senza un ciclo con il Guardian; **i valori non cambiano**, e nemmeno `POLICY_VERSION`.
@@ -69,8 +80,13 @@ tipo rifiutasse fermerebbe ogni grant della capability alla lettura, e lo step f
 domanda. `max_uses` di una policy resta nullo, e gli usi si contano: **contano le spese, non le sessioni** — un grant si
 spende prima della `STARTED` (ADR 0046 §3), quindi una sessione rifiutata dopo, dal tetto del mese, conta un uso. **Una
 policy non si modifica**: la regola 15 aggiunge `bounds` ai campi che un `model_copy` fuori da `ela.permissions` non può
-nominare; `revoked_at` no, perché anche un `Device` ha quel campo e lo store finto dei nodi lo scrive — la revoca di una
-policy la tiene la regola 66 (§3), che lascia `.revoke(` sulle autorizzazioni alla sola rotta.
+nominare; `revoked_at` no, perché anche un `Device` ha quel campo e lo store finto dei nodi lo scrive. **Che cosa difende
+allora una revoca** (decisione 27): la regola 66 dice **chi** può revocare, e non impedisce che una copia in memoria letta
+prima della revoca, con `revoked_at=None`, arrivi al Guardian — che a quella copia dice sì. Quella copia non si spende per
+un'altra ragione: **la `UPDATE` condizionale di `consume`** (`AND revoked_at IS NULL`, §6) rilegge la riga, e la spesa è
+rifiutata con `AuthorizationRevokedError`; lo step chiede, e nessun tool parte. Lo vedono scattare
+`tests/executive/test_policy_question.py`, con una copia letta prima della revoca e consegnata dopo, e il contratto dello
+store, su tutti e due gli store (`tests/contracts/test_authorization_store.py`, un grant revocato non si spende).
 
 Colonne aggiunte:
 
@@ -249,9 +265,13 @@ Codici aggiunti a `ela.ports.WireCode`:
 | `policy.preview_changed` | `POLICY_PREVIEW_CHANGED` | l'anteprima va rifatta |
 | `policy.not_live` | `POLICY_NOT_LIVE` | la revoca di una policy che non è più viva |
 
-Un codice per controllo, come la SPEC scriveva (`policy.catalogue`, `policy.scope`…), avrebbe aperto il vocabolario chiuso
-del filo per una distinzione che il messaggio già porta; e la console sotto il tetto risponde `not_answerable`, come per una
-domanda che non può mostrare.
+**Un codice per tipo di rifiuto, non per controllo** (decisione 24): il nome del controllo, o il codice del tool, è la
+prima parola del messaggio, e **nessuno decide leggendola** — né il codice di `src/`, né un client, né uno script. È ADR
+0023 §10: **il codice serve a decidere, il messaggio a leggere**. Quale controllo ha rifiutato lo affermano i test unitari,
+da `PolicyRefusedError.check` (e il codice del tool da `PolicyWouldNotStartError.code`); sul filo lo afferma solo il
+confronto dei blocchi interi della guida, nella sezione 27. Un codice per controllo, come la SPEC scriveva
+(`policy.catalogue`, `policy.scope`…), avrebbe aperto il vocabolario chiuso del filo per una distinzione che nessun
+chiamante usa. La console sotto il tetto risponde `not_answerable`, come per una domanda che non può mostrare.
 
 ### 10. La CLI
 

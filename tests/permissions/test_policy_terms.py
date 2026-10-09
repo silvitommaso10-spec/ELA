@@ -8,6 +8,7 @@ with a limit that is not a number, with an argument nobody classified.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import pytest
@@ -128,6 +129,29 @@ def test_a_limit_must_be_required_and_a_number() -> None:
     words = dict(TERMED.input_schema)
     words["properties"] = {**dict(words["properties"]), "budget": {"type": "string"}}  # type: ignore[call-overload]
     assert "budget" in refusal(input_schema=words)
+
+
+def test_an_integer_limit_must_have_its_minimum_and_maximum() -> None:
+    """Decision 25: the form of a policy shows the range of an integer limit, and the catalogue
+    refuses one without it — built with a capability whose ``count`` has no ``maximum``."""
+    schema = dict(TERMED.input_schema)
+    schema["properties"] = {
+        **dict(schema["properties"]),
+        "count": {"type": "integer", "minimum": 1},
+    }  # type: ignore[call-overload]
+    assert "the integer limit 'count' has no minimum and maximum" in refusal(input_schema=schema)
+    unbounded = dict(TERMED.input_schema)
+    unbounded["properties"] = {**dict(unbounded["properties"]), "count": {"type": "integer"}}  # type: ignore[call-overload]
+    assert "'count'" in refusal(input_schema=unbounded)
+
+
+def test_the_integer_limits_of_browser_guided_have_their_range() -> None:
+    properties = browser_guided(SITES, model=MODEL).input_schema["properties"]
+    assert isinstance(properties, Mapping)
+    for name in ("looks", "seconds"):
+        declared = properties[name]
+        assert declared["type"] == "integer", name
+        assert {"minimum", "maximum"} <= set(declared), name
 
 
 def test_an_uncovered_argument_must_be_optional() -> None:

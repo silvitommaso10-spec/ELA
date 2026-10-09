@@ -12,16 +12,24 @@ from __future__ import annotations
 import dataclasses
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app
+from ela.api.policies import PolicyWouldNotStartError, preview_of
+from ela.api.schemas import PolicyIn
+from ela.api.security import Identity, Kind
 from ela.api.tasks import policies_that_covered
 from ela.domain import AuditEventType, AuthorizationId, CapabilityId, TaskId
-from ela.permissions import POLICY_PROSPECT, production_catalogue
+from ela.permissions import (
+    POLICY_PROSPECT,
+    PolicyCheck,
+    PolicyRefusedError,
+    production_catalogue,
+)
 from ela.ports import NotFoundError
 from ela.providers.anthropic.models import HAIKU_5_5, SONNET_5_5
 from tests.api.guided import (
@@ -118,25 +126,51 @@ async def test_the_creation_saves_the_policy_and_writes_who_created_it(
     assert POLICY_PROSPECT not in str(event.payload), "the sentence of the prospect is never saved"
 
 
+CORE: Final = Identity(Kind.CORE)
+"""The command line on the Core: who calls the route functions in-process, below."""
+
+
 @pytest.mark.parametrize(
-    ("body", "fragment"),
+    ("body", "check", "fragment"),
     [
-        ({**POLICY, "capability": "browser.act"}, "no policy reaches a HIGH"),
-        ({**POLICY, "capability": "fs.write", "scope": ["ELA"]}, "no policy reaches a HIGH"),
-        ({**POLICY, "scope": ["www.google.com"]}, "SCOPE"),
-        ({**POLICY, "days": 91}, "DAYS"),
-        ({**POLICY, "limits": {"max_cost_usd": "1"}}, "LIMITS"),
+        ({**POLICY, "capability": "browser.act"}, PolicyCheck.ADMITS, "no policy reaches a HIGH"),
+        (
+            {**POLICY, "capability": "fs.write", "scope": ["ELA"]},
+            PolicyCheck.ADMITS,
+            "no policy reaches a HIGH",
+        ),
+        (
+            {**POLICY, "scope": ["www.google.com"]},
+            PolicyCheck.SCOPE,
+            "the scope of a policy of browser.guided",
+        ),
+        ({**POLICY, "days": 91}, PolicyCheck.DAYS, "a policy lives from 1 to 90 days"),
+        (
+            {**POLICY, "limits": {"max_cost_usd": "1"}},
+            PolicyCheck.LIMITS,
+            "the limits of browser.guided are",
+        ),
     ],
     ids=["browser.act", "fs.write", "a-site-outside", "ninety-one-days", "missing-limits"],
 )
 async def test_a_refused_creation_is_a_422_and_writes_nothing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body: dict[str, Any], fragment: str
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    body: dict[str, Any],
+    check: PolicyCheck,
+    fragment: str,
 ) -> None:
+    """Decision 24 of the review of the summary: the code decides, the message is read (ADR 0023
+    §10). Which check refused is the exception's, ``PolicyRefusedError.check``; on the wire the
+    code, and the reason in its own words — never the first word of the message."""
     async with guided(monkeypatch, tmp_path, Script([])) as g:
         preview = await g.client.post("/policies/preview", json=body)
         made = await g.client.post("/policies", json={**body, "model": HAIKU_5_5})
         listed = (await g.client.get("/policies", params={"all": "true"})).json()
+        with pytest.raises(PolicyRefusedError) as caught:
+            await preview_of(PolicyIn.model_validate(body), g.ela, CORE)
 
+    assert caught.value.check is check
     for response in (preview, made):
         assert response.status_code == 422, response.text
         assert response.json()["error"]["code"] == "policy.refused"
@@ -147,17 +181,21 @@ async def test_a_refused_creation_is_a_422_and_writes_nothing(
 async def test_a_cost_below_one_call_would_not_start_and_the_tool_s_code_says_why(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Decision 7: «partirebbe», for a policy too — a defence that seems active is refused."""
+    """Decision 7: «partirebbe», for a policy too — a defence that seems active is refused. The
+    tool's code is the exception's (decision 24); on the wire, the code and the reason."""
     body = {**POLICY, "limits": {**POLICY["limits"], "max_cost_usd": "0.05"}}
     async with guided(monkeypatch, tmp_path, Script([])) as g:
         preview = await g.client.post("/policies/preview", json=body)
         made = await g.client.post("/policies", json={**body, "model": HAIKU_5_5})
+        with pytest.raises(PolicyWouldNotStartError) as caught:
+            await preview_of(PolicyIn.model_validate(body), g.ela, CORE)
 
+    assert caught.value.code == "guided.cap_below_one_call"
     for response in (preview, made):
         assert response.status_code == 422, response.text
         error = response.json()["error"]
         assert error["code"] == "policy.would_not_start"
-        assert error["message"].startswith("guided.cap_below_one_call:")
+        assert "0.05 USD is below the worst case of one call" in error["message"]
 
 
 async def test_a_confirmation_that_names_another_model_than_the_prospect_is_refused(
@@ -187,12 +225,14 @@ async def test_a_route_that_reads_another_model_than_the_declaration_would_not_s
         ) as client:
             preview = await client.post("/policies/preview", json=POLICY)
             listed = (await client.get("/policies")).json()["policies"]
+        with pytest.raises(PolicyWouldNotStartError) as caught:
+            await preview_of(PolicyIn.model_validate(POLICY), other, CORE)
 
+    assert caught.value.code == "policy.model_changed"
     assert preview.status_code == 422, preview.text
     error = preview.json()["error"]
     assert error["code"] == "policy.would_not_start"
-    assert error["message"].startswith("policy.model_changed: ")
-    assert SONNET_5_5 in error["message"] and HAIKU_5_5 in error["message"]
+    assert f"names {SONNET_5_5}, and the route now reads {HAIKU_5_5}" in error["message"]
     assert listed == []
 
 

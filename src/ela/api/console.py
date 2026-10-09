@@ -66,6 +66,7 @@ from ela.api.schemas import (
     DeviceOut,
     ExecutionResultOut,
     FinishedOut,
+    LimitOut,
     PolicyConfirmIn,
     PolicyIn,
     PolicyOut,
@@ -861,7 +862,7 @@ def _policy_form(terms: TermsOut) -> pages.Markup:
                 HERE,
                 "policy-limit",
                 name=limit.name,
-                bounds=_bounds(limit.minimum, limit.maximum, limit.pattern),
+                bounds=_bounds(limit),
             )
             for limit in terms.limits
         ),
@@ -870,12 +871,12 @@ def _policy_form(terms: TermsOut) -> pages.Markup:
     )
 
 
-def _bounds(minimum: int | None, maximum: int | None, pattern: str | None) -> str:
-    if minimum is not None and maximum is not None:
-        return f"un intero da {minimum} a {maximum}"
-    if pattern is not None:
-        return "una cifra in dollari, con il punto: 1.10"
-    return "un valore"
+def _bounds(limit: LimitOut) -> str:
+    """What a limit's field takes: an integer with its range — the catalogue refuses an integer
+    limit without one (decision 25) —, or the amount of money, the other type a limit may have."""
+    if limit.type == "integer":
+        return f"un intero da {limit.minimum} a {limit.maximum}"
+    return "una cifra in dollari, con il punto: 1.10"
 
 
 def _request_of(body: bytes) -> dict[str, object]:

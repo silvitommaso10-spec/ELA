@@ -244,8 +244,9 @@ def _check_policy_terms(
     of the schema in no class, in two, or a name the schema does not have — **the closed world that
     lets an old policy stop covering by itself the day the schema grows** —; with a limit that is
     not a required number — an ``integer``, or a ``string`` with ELA's pattern of an amount of
-    money —; with an uncovered argument a call must carry; with a required free argument that is
-    not a ``string``, which the prospect could not fill.
+    money —, or an ``integer`` without its ``minimum`` and ``maximum``, which the form of a policy
+    shows (decision 25 of the review of the summary); with an uncovered argument a call must carry;
+    with a required free argument that is not a ``string``, which the prospect could not fill.
     """
     refusal = no_policy_for(spec)
     if refusal is not None:
@@ -271,12 +272,15 @@ def _check_policy_terms(
         )
     for name in terms.limits:
         declared = dict(properties[name])
-        number = declared.get("type") == "integer" or (
-            declared.get("type") == "string" and declared.get("pattern") == COST_PATTERN
-        )
-        if name not in required or not number:
+        integer = declared.get("type") == "integer"
+        money = declared.get("type") == "string" and declared.get("pattern") == COST_PATTERN
+        if name not in required or not (integer or money):
             raise InvalidCapabilityError(
                 spec.id, f"the limit {name!r} is not a required integer or amount of money"
+            )
+        if integer and not {"minimum", "maximum"} <= set(declared):
+            raise InvalidCapabilityError(
+                spec.id, f"the integer limit {name!r} has no minimum and maximum in its schema"
             )
     for name in terms.uncovered:
         if name in required:

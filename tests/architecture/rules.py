@@ -776,8 +776,10 @@ DECIDE_METHOD = "decide"
 #: where the second may be called is rule 66). The persistence mapper reads grants back from rows,
 #: it does not coin them, and is the one exact-path exemption. ``bounds`` is a field a copy could
 #: widen since M13.12. ``revoked_at`` is not here, on purpose: it is a field of ``Device`` too
-#: (ADR 0037 §12), and a rule on names would report the revocation of a node. A policy un-revoked
-#: by a copy would have to be saved again, and who saves a grant is rule 66's.
+#: (ADR 0037 §12), and a rule on names would report the revocation of a node. Rule 66 says who may
+#: revoke, and does not stop a copy read before the revocation from reaching the Guardian: that
+#: copy is not spent because ``consume`` rereads the row (``revoked_at IS NULL``, ADR 0062 §2),
+#: which ``tests/executive/test_policy_question.py`` sees refuse.
 AUTHORIZATION_MODEL = "Authorization"
 AUTHORIZATION_WIDENING_FIELDS = frozenset(
     {

@@ -141,6 +141,51 @@ async def test_a_policy_revoked_between_the_decision_and_the_spend_asks_and_runs
     assert w.tool(TERMED.id).calls == ()
 
 
+class _RevokedAfterTheRead(FakeAuthorizationStore):
+    """The executor reads the policy **before** it is revoked: the copy it holds in memory, and
+    hands the Guardian, has ``revoked_at=None``; the revocation is written in the store right after
+    that read — between the decision and the spend. Nothing here fakes ``consume``: the store's own
+    rereads the row (decision 27 of the review of the summary)."""
+
+    def __init__(self, at: Any) -> None:
+        super().__init__()
+        self.at = at
+        self.handed: list[Any] = []
+
+    async def for_capability(self, capability_id: Any) -> Any:
+        found = await super().for_capability(capability_id)
+        self.handed.extend(found)
+        for one in found:
+            if one.approval_id is None and one.revoked_at is None:
+                await self.revoke(one.id, at=self.at)
+        return found
+
+
+async def test_a_copy_in_memory_from_before_the_revocation_is_not_spent_and_the_step_asks() -> None:
+    """Rule 66 says who may revoke; it does not stop a copy read before the revocation from
+    reaching the Guardian, which says yes to it. What stops the spend is ``consume``, which rereads
+    the row in its conditional ``UPDATE`` (``revoked_at IS NULL``, ADR 0062 §2): the step asks,
+    and the tool is never called."""
+    store = _RevokedAfterTheRead(at=FakeClock().now())
+    w = termed_world(store=store)
+    task, step = await running(w)
+    policy = policy_for(TERMED, created_at=w.now - timedelta(hours=1))
+    await w.store.grant(policy)
+
+    execution = await w.execute(task.id, step.id)
+
+    copy = next(one for one in store.handed if one.id == policy.id)
+    assert copy.revoked_at is None, "the copy handed over is from before the revocation"
+    assert (await w.store.get(policy.id)).revoked_at is not None
+    assert execution.decision.outcome is PermissionOutcome.ALLOWED
+    assert execution.decision.authorization_id == policy.id
+    assert execution.approval is not None
+    assert "revoked" in execution.approval.prompt
+    assert execution.task.state is TaskState.WAITING_APPROVAL
+    assert await w.store.uses(policy.id) == 0
+    assert w.tool(TERMED.id).calls == ()
+
+
 class _Unanswering(FakeAuthorizationStore):
     """A store of the authorizations that does not answer (decision 20)."""
 

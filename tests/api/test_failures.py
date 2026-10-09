@@ -679,7 +679,7 @@ RAISED: tuple[Raised, ...] = (
         "/policies/preview",
         422,
         "policy.would_not_start",
-        "guided.cap_below_one_call:",
+        "0.05 USD is below the worst case of one call",
         a_policy_that_could_not_pay_one_call,
     ),
     Raised(
