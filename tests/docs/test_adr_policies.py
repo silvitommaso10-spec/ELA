@@ -225,6 +225,34 @@ def test_the_store_that_does_not_answer_is_declared_in_the_conseguenze() -> None
     assert "tests/executive/test_policy_question.py" in flat
 
 
+REVISED = (
+    "0011-permission-guardian.md",
+    "0012-authorizations.md",
+    "0013-executor.md",
+    "0044-command-center.md",
+    "0045-filesystem-and-high.md",
+    "0060-guided-browser.md",
+)
+"""The ADRs whose lines M13.12 makes false or incomplete (decisions 13, 22 and 23)."""
+
+
+def status_of(text: str) -> str:
+    return text.split("- **Stato:**", 1)[1].split("\n- **", 1)[0]
+
+
+def test_the_adrs_it_revises_say_so_on_their_state_line() -> None:
+    """The form of ADR 0046 and ADR 0060: an ADR is not rewritten, its «Stato:» line points on."""
+    for name in REVISED:
+        status = status_of((ADR_PATH.parent / name).read_text(encoding="utf-8"))
+        assert "**Riletta da ADR 0062 (M13.12)**" in status, name
+
+
+def test_a_revised_adr_that_does_not_say_so_is_found() -> None:
+    text = (ADR_PATH.parent / REVISED[0]).read_text(encoding="utf-8")
+    silent = text.replace("**Riletta da ADR 0062 (M13.12)**", "", 1)
+    assert "**Riletta da ADR 0062 (M13.12)**" not in status_of(silent)
+
+
 def test_it_declares_no_constraints_section() -> None:
     """``tests/docs/test_simplifications.py`` admits «Vincoli dichiarati» only from 0020 to 0042."""
     assert "### Vincoli dichiarati" not in adr_text()

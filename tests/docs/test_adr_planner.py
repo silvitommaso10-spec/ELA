@@ -18,7 +18,7 @@ from ela.providers.anthropic.models import MODELS, OPUS_5_5
 from ela.providers.anthropic.pricing import worst_cost
 from tests.contracts.protocols import port_protocols
 from tests.docs.guided_ports import GUIDED_PORTS
-from tests.docs.test_adr_cli import coded_commands, documented_command_routes
+from tests.docs.test_adr_cli import coded_commands, commands_after_0061, documented_command_routes
 from tests.docs.test_adr_composition import coded_routes, routes_after_0057, routes_after_0059
 from tests.docs.test_adr_persistence import added_columns
 from tests.docs.test_adr_placement import _rules_up_to
@@ -82,7 +82,7 @@ def test_the_conseguenze_count_the_rules_the_contracts_the_ports_the_routes_and_
     assert "**cinquantuno**" in text
     assert len(coded_routes() - routes_after_0059()) == 51
     assert "**ventotto**" in text
-    assert len(coded_commands()) == 28
+    assert len(coded_commands() - commands_after_0061()) == 28  # ADR 0062's are later
 
 
 def test_the_route_it_adds_is_the_planner_s_and_the_command_calls_both() -> None:

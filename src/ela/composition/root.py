@@ -80,7 +80,12 @@ from ela.infrastructure.persistence import (
     missing_tables,
 )
 from ela.perception import PerceptionCore
-from ela.permissions import PermissionGuardian, production_catalogue
+from ela.permissions import (
+    GUIDED_ROUTE,
+    UNDECLARED_MODEL,
+    PermissionGuardian,
+    production_catalogue,
+)
 from ela.ports import (
     SPEECH_NO_KEY,
     SPEECH_NO_PLAYER,
@@ -103,10 +108,11 @@ from ela.ports import (
     TextRecognitionPort,
 )
 from ela.providers.anthropic import anthropic_gateway, anthropic_provider
+from ela.providers.anthropic.models import model_for_hint
 from ela.providers.elevenlabs import ElevenLabsVoice
 from ela.providers.ntfy import NtfyBell
 from ela.providers.registry import ProviderRegistry
-from ela.routing import ModelRouter
+from ela.routing import ModelRouter, RoutePolicy
 from ela.tasks.engine import LIVE_STATES, TaskEngine
 from ela.tools import (
     BROWSER_TIMEOUT_SECONDS,
@@ -403,6 +409,22 @@ def _kept_for(seconds: int) -> Callable[[], Awaitable[None]]:
     return kept
 
 
+def default_route_model(policy: RoutePolicy, task_type: str) -> str:
+    """The model the default route of ``task_type`` reads today (M13.12, ADR 0062; decision 16).
+
+    Read from the routing table and the provider's profiles, without the network and without the
+    key: the same answer the tool gets when it asks the provider for the worst case of one call. A
+    task type the table does not know, or a profile no model answers, is :data:`UNDECLARED_MODEL`:
+    no policy can be born under it, because the tool's prospect would refuse first.
+    """
+    try:
+        route = policy.route_for(task_type)
+    except RoutingError:
+        return UNDECLARED_MODEL
+    model = model_for_hint(route.profile)
+    return UNDECLARED_MODEL if model is None else model.id
+
+
 async def build(
     settings: Settings,
     *,
@@ -487,19 +509,6 @@ async def build(
         )
         enrollment = NodeEnrollment(SqlEnrollmentStore(database), devices, clock, ids)
 
-        # The scope of ``workspace.write_note`` and the life of a decision are configuration
-        # since M8.3 (ADR 0025 §5, §6): the catalogue and the Guardian have always accepted them,
-        # and until now this line was the reason they were constants.
-        capabilities = production_catalogue(
-            notes_scope=settings.core.notes_scope,
-            fs_scope=settings.filesystem.scope,
-            programs=settings.terminal.programs,
-            sites=settings.browser.sites,
-        )
-        guardian = PermissionGuardian(
-            capabilities, clock, ids, audit, decision_ttl=settings.core.decision_ttl
-        )
-
         # The order of ADR 0022 §7: a provider, a registry that holds it, a router over the two.
         provider = anthropic_provider(clock, ids, settings=settings.anthropic)
         providers = ProviderRegistry((provider,))
@@ -511,6 +520,22 @@ async def build(
                 f"ELA_MODEL_ROUTES cannot be used ({wrong.code}): {wrong}. Unset it to fall back "
                 "to the routing table of spec §25."
             ) from wrong
+
+        # The scope of ``workspace.write_note`` and the life of a decision are configuration
+        # since M8.3 (ADR 0025 §5, §6): the catalogue and the Guardian have always accepted them,
+        # and until now this line was the reason they were constants. Since M13.12 the catalogue
+        # comes after the router: the declaration of ``browser.guided`` names the model its default
+        # route reads, as it names the sites (ADR 0062; decision 16) — a policy names one model.
+        capabilities = production_catalogue(
+            notes_scope=settings.core.notes_scope,
+            fs_scope=settings.filesystem.scope,
+            programs=settings.terminal.programs,
+            sites=settings.browser.sites,
+            guided_model=default_route_model(policy, GUIDED_ROUTE),
+        )
+        guardian = PermissionGuardian(
+            capabilities, clock, ids, audit, decision_ttl=settings.core.decision_ttl
+        )
 
         # The same router object for both (ADR 0022 §10): the verifier of ``model.routed_as_asked``
         # recomputes the route, and a second policy would fail every verification.

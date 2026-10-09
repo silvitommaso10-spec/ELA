@@ -404,7 +404,7 @@ def test_single_use_authorization_carries_its_approval() -> None:
 
 
 def test_policy_authorization_has_no_approval() -> None:
-    authorization = _authorization(scope=("workspace/notes",))
+    authorization = _authorization(scope=("workspace/notes",), expires_at=MUCH_LATER)
     assert authorization.approval_id is None
     assert authorization.max_uses is None
 
@@ -441,8 +441,10 @@ def test_an_approval_born_authorization_is_single_use_and_bound(
 
 
 def test_a_policy_authorization_is_not_bound_by_the_invariant() -> None:
-    assert _authorization(max_uses=None).approval_id is None
-    assert _authorization(max_uses=3, task_id=TASK_ID).step_id is None
+    """Not by ADR 0012 §1's; it has one of its own since M13.12 — it always ends (decision 3d),
+    which ``tests/domain/test_policy_domain.py`` holds."""
+    assert _authorization(max_uses=None, expires_at=MUCH_LATER).approval_id is None
+    assert _authorization(max_uses=3, task_id=TASK_ID, expires_at=MUCH_LATER).step_id is None
 
 
 def test_the_invariant_survives_a_round_trip() -> None:

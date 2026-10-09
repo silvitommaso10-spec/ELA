@@ -1,0 +1,37 @@
+{
+  "_nota": [
+    "Il gesto che invia, dentro una sessione coperta (GETTING_STARTED, sezione 27, passo 7): la sessione",
+    "su httpbin.org sta nei tetti della policy e parte senza domanda; il gesto che invia il modulo è",
+    "browser.act, HIGH, e chiede comunque: nessuna policy raggiunge un HIGH (ADR 0045 §3). Con un no il",
+    "gesto è DENIED, e la sessione finisce senza inviarlo. «ELA prova 27» è un MARCATORE.",
+    "`max_cost_usd` è il più che la sessione può spendere, scritto come testo: una policy lo copre solo se è al più il tetto della policy, confrontato come numero (1.1 e 1.10 sono lo stesso tetto).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "inviare un modulo con il browser guidato, dentro una policy",
+  "steps": [
+    {
+      "id": "c0de1a27-0000-4b00-8a00-000000000004",
+      "goal": "compilare e inviare il modulo di prova",
+      "required_capabilities": [
+        "browser.guided"
+      ],
+      "arguments": {
+        "goal": "Su httpbin.org apri il modulo /forms/post, scrivi «ELA prova 27» nel campo custname e invia l'ordine con il bottone «Submit order».",
+        "sites": [
+          "httpbin.org"
+        ],
+        "max_cost_usd": "1.10",
+        "looks": 6,
+        "seconds": 300
+      },
+      "risk": "MEDIUM",
+      "expected_result": "la risposta del modello dice se il modulo è partito",
+      "success_conditions": [
+        "guided.closed",
+        "guided.gestures_audited",
+        "guided.reservations_closed"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

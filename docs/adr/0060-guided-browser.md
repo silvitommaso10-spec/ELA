@@ -8,6 +8,7 @@
   la cartella e il processo che un crash lascia, §17 le sessioni a 1,10 $. Tre giri prima non erano passati: per lo script,
   per lo strumento `act` che non diceva la grammatica del selettore, e per un criterio del passo 4 che la prova non poteva
   costruire (`docs/milestones/M14.3.md`, «Il primo giro», «Il secondo giro», «Il terzo giro»).
+  **Riletta da ADR 0062 (M13.12)** il 2026-10-09: «un sì copre una sessione» (§1) si legge «un sì, o una policy di Tommaso, copre una sessione».
 - **Data:** 2026-10-09
 - **Riferimenti spec:** §13, §19, §24, §25, §27, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M14.3

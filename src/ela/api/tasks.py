@@ -211,7 +211,25 @@ async def detail_of(task_id: TaskId, ela: Ela, planning: Planning | None = None)
         author=author,
         planning_task_id=None if child is None else child.id,
         no_plan=None if planning is None else planning.no_plan,
+        policies=await policies_that_covered(task_id, ela),
     )
+
+
+async def policies_that_covered(task_id: TaskId, ela: Ela) -> dict[UUID, UUID]:
+    """The policy of §59 that covered each step, read from the ``authorization_id`` of its results
+    when that grant has no ``approval_id`` (M13.12, ADR 0062; decision 9) — never composed. A grant
+    that is gone names nothing: the read does not fail for it."""
+    covered: dict[UUID, UUID] = {}
+    for result in await ela.results.for_task(task_id):
+        if result.authorization_id is None or result.step_id is None:
+            continue
+        try:
+            grant = await ela.authorizations.get(result.authorization_id)
+        except NotFoundError:
+            continue
+        if grant.approval_id is None:
+            covered[result.step_id] = grant.id
+    return covered
 
 
 @router.post("/{task_id}/plan", description=PLAN_IS_TEMPORARY)

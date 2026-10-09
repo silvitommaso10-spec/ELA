@@ -5,10 +5,11 @@ promise: every page is composed from what a route function returns, and this mod
 a port, a store, the catalogue or the executor through :class:`~ela.composition.Ela` — architecture
 rule 55, whose set of page modules is **derived** and no longer a single name.
 
-Four views, and not one more (dec. G): the home with the presence, the Approval Center, the Device
-Center, and a task as an **execution summary** — never a model's reasoning. What a view shows has
-to exist in a route first; nothing here reads the world a second way, and no route grew to serve
-these pages.
+Four views when M17.2 built it (dec. G): the home with the presence, the Approval Center, the
+Device Center, and a task as an **execution summary** — never a model's reasoning. **Five since
+M13.12** (ADR 0062, decision 23 of the review): the policies of §59, by the rule that every
+milestone adding a capacity adds its view (STATO 5.10). What a view shows has to exist in a route
+first; nothing here reads the world a second way, and no route grew to serve these pages.
 
 Two things it shares with the phone instead of writing them twice. The **conduct of a "yes"** —
 answer, then run — lives in ``api/approvals.py``, on the routes' side of the boundary (dec. K.1).
@@ -27,6 +28,7 @@ forward through the loopback can be seen by eye.
 from __future__ import annotations
 
 from typing import Annotated, Final
+from urllib.parse import parse_qsl
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, Response
@@ -53,7 +55,9 @@ from ela.api.companion import (
 )
 from ela.api.deps import ElaDep, IdentityDep, RunningDep
 from ela.api.devices import list_devices
+from ela.api.errors import ApiError
 from ela.api.nodes import enrolled
+from ela.api.policies import created, policies_of, preview_of, revoked_policy
 from ela.api.results import read_results
 from ela.api.schemas import (
     ApprovalOut,
@@ -62,9 +66,14 @@ from ela.api.schemas import (
     DeviceOut,
     ExecutionResultOut,
     FinishedOut,
+    PolicyConfirmIn,
+    PolicyIn,
+    PolicyOut,
+    PreviewOut,
     StepOut,
     TaskDetail,
     TaskOut,
+    TermsOut,
 )
 from ela.api.security import CONSOLE_SURFACE, Anonymous, Identity, note, welcome
 from ela.api.tasks import cancel_task, finished_tasks, list_tasks, read_task
@@ -428,6 +437,12 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
         pairs.append(pages.fragment(HERE, "pair", key="Gesti massimi", value=str(found.looks)))
     if found.sends:
         pairs.append(pages.fragment(HERE, "pair", key="Che cosa esce", value=found.sends))
+    # Why it asks, policy by policy (M13.12, ADR 0062; decision 8): short ids and numbers, never a
+    # site — above the ceiling, so the yes is offered with it or not at all (ADR 0045 §11).
+    if found.why is not None:
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Perché te lo chiedo", value="; ".join(found.why))
+        )
     if seen and found.phrase:
         pairs.append(
             pages.fragment(HERE, "pair", key="La frase", value=visible(found.phrase, lines=False))
@@ -642,6 +657,13 @@ async def summary(ela: ElaDep, identity: IdentityDep, id: UUID) -> Response:
             )
             or "nessuno ancora",
         ),
+        *(
+            # The policy of §59 that covered a step (M13.12, decision 9): read by the route from the
+            # grant of the step's result, never composed here.
+            pages.fragment(HERE, "pair", key="Coperto dalla policy", value=str(one.policy)[:8])
+            for one in detail.steps
+            if one.policy is not None
+        ),
     ]
     return pages.page(
         HERE,
@@ -736,6 +758,216 @@ async def _live(ela: ElaDep, id: UUID) -> TaskDetail:
     if found.state not in LIVE_STATES:
         raise NotFoundError("task", str(id))
     return found
+
+
+# ----------------------------------------------------------------------------------------
+# The policies of §59 (M13.12, ADR 0062): the fifth view
+# ----------------------------------------------------------------------------------------
+
+NO_POLICIES: Final = "Nessuna policy viva: ogni azione MEDIUM ti chiede il sì, una volta per volta."
+SITES_STAY: Final = (
+    "I siti di una policy restano sul Mac: crearne una si fa da lì. Revocarla si fa anche da qui."
+)
+"""Decision 18 of the review: a policy has no task, so no level — its sites are ``LOCAL_ONLY``
+content, and a console under a narrower ceiling neither shows them nor creates. It revokes: that
+takes away, it does not widen."""
+
+
+class PolicyOutOfReachError(ApiError):
+    """A creation from a console whose ceiling cannot show the sites a policy names (decision
+    18): the preview is a question, and a surface that cannot show all of it does not create
+    (ADR 0045 §11)."""
+
+    def __init__(self) -> None:
+        super().__init__(SITES_STAY)
+
+
+def _sites_seen(identity: Identity) -> bool:
+    """Whether this console may see the sites of a policy: ``LOCAL_ONLY`` content (decision 18)."""
+    return may_see(identity, PrivacyLevel.LOCAL_ONLY)
+
+
+@router.get("/policies")
+async def policies(ela: ElaDep, identity: IdentityDep) -> Response:
+    """The live policies, with «Revoca» for each, and the form of a new one — derived from the
+    catalogue and the declaration, read through the route (rule 55)."""
+    listed = await policies_of(ela, everything=False)
+    seen = _sites_seen(identity)
+    rows = (
+        pages.joined(_policy(one, seen) for one in listed.policies)
+        if listed.policies
+        else pages.fragment(HERE, "notice", text=NO_POLICIES)
+    )
+    forms = (
+        pages.joined(_policy_form(terms) for terms in listed.admitting)
+        if seen
+        else pages.fragment(HERE, "notice", text=SITES_STAY)
+    )
+    return pages.page(
+        HERE,
+        "policies",
+        sheets=WHERE,
+        nav=_nav(),
+        rows=rows,
+        forms=forms,
+        ceiling=_ceiling(identity),
+    )
+
+
+def _policy(one: PolicyOut, seen: bool) -> pages.Markup:
+    """One live policy: what it covers, until when, how often it served, who created it."""
+    who = one.created_by.name or one.created_by.identity
+    pairs = [
+        pages.fragment(
+            HERE, "pair", key="Siti", value=listed(one.scope) if seen else "restano sul Mac"
+        ),
+        pages.fragment(
+            HERE,
+            "pair",
+            key="Tetti per sessione",
+            value=", ".join(f"{name}={value}" for name, value in one.limits.items()),
+        ),
+        pages.fragment(HERE, "pair", key="Modello", value=one.model or "—"),
+        pages.fragment(HERE, "pair", key="Scade", value=when(one.expires_at)),
+        pages.fragment(HERE, "pair", key="Usi", value=str(one.uses)),
+        pages.fragment(
+            HERE,
+            "pair",
+            key="Creata da",
+            value=f"{who} ({one.created_by.role or '—'}), {when(one.created_at)}",
+        ),
+    ]
+    return pages.fragment(
+        HERE,
+        "policy",
+        capability=one.capability,
+        short=one.short,
+        pairs=pages.joined(pairs),
+        revoke=pages.fragment(HERE, "policy-revoke", id=one.id),
+    )
+
+
+def _policy_form(terms: TermsOut) -> pages.Markup:
+    """The form of a new policy of one capability: its sites, one field per declared limit with
+    the bounds of its schema, and the days with no value set (decision 3d)."""
+    return pages.fragment(
+        HERE,
+        "policy-form",
+        capability=terms.capability,
+        description=terms.description,
+        sites=pages.joined(pages.fragment(HERE, "policy-site", site=one) for one in terms.scope),
+        limits=pages.joined(
+            pages.fragment(
+                HERE,
+                "policy-limit",
+                name=limit.name,
+                bounds=_bounds(limit.minimum, limit.maximum, limit.pattern),
+            )
+            for limit in terms.limits
+        ),
+        days_min=terms.days_min,
+        days_max=terms.days_max,
+    )
+
+
+def _bounds(minimum: int | None, maximum: int | None, pattern: str | None) -> str:
+    if minimum is not None and maximum is not None:
+        return f"un intero da {minimum} a {maximum}"
+    if pattern is not None:
+        return "una cifra in dollari, con il punto: 1.10"
+    return "un valore"
+
+
+def _request_of(body: bytes) -> dict[str, object]:
+    """The form of a policy: the sites ticked — a key repeated —, a field per limit, the days."""
+    pairs = parse_qsl(body.decode("utf-8", "replace"))
+    fields = dict(pairs)
+    return {
+        "capability": fields.get("capability", ""),
+        "scope": [value for key, value in pairs if key == "scope"],
+        "limits": {
+            key.removeprefix("limit-"): value for key, value in pairs if key.startswith("limit-")
+        },
+        "days": fields.get("days", ""),
+        "model": fields.get("model", ""),
+    }
+
+
+@router.post("/policies/preview")
+async def policy_preview(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+    """The preview: what the creation would approve, and «Crea» — only where the sites are seen."""
+    if not _sites_seen(identity):
+        raise PolicyOutOfReachError
+    asked = _request_of(await request.body())
+    body = PolicyIn.model_validate({key: value for key, value in asked.items() if key != "model"})
+    shown = await preview_of(body, ela, identity)
+    return pages.page(
+        HERE,
+        "policy-preview",
+        sheets=WHERE,
+        nav=_nav(),
+        capability=shown.capability,
+        description=shown.description,
+        pairs=_preview_pairs(shown),
+        never=pages.joined(pages.fragment(HERE, "why", text=line) for line in shown.never),
+        create=pages.fragment(HERE, "policy-create", hidden=_hidden(body, shown)),
+        ceiling=_ceiling(identity),
+    )
+
+
+def _preview_pairs(shown: PreviewOut) -> pages.Markup:
+    return pages.joined(
+        [
+            pages.fragment(HERE, "pair", key="Siti", value=listed(shown.scope)),
+            pages.fragment(
+                HERE,
+                "pair",
+                key="Tetti per sessione",
+                value=", ".join(f"{name}={value}" for name, value in shown.limits.items()),
+            ),
+            pages.fragment(
+                HERE,
+                "pair",
+                key="Scade",
+                value=f"fra {shown.days} giorni, il {when(shown.expires_at)}",
+            ),
+            pages.fragment(HERE, "pair", key="Modello", value=shown.model or "—"),
+            pages.fragment(HERE, "pair", key="Che cosa esce", value=shown.sends or "—"),
+            pages.fragment(HERE, "pair", key="Una chiamata", value=shown.one_call or "—"),
+            pages.fragment(HERE, "pair", key="Il costo", value=shown.cost or "—"),
+        ]
+    )
+
+
+def _hidden(body: PolicyIn, shown: PreviewOut) -> pages.Markup:
+    """What «Crea» sends back: what the preview showed, with the model it named."""
+    fields = [
+        ("capability", body.capability),
+        *(("scope", one) for one in body.scope),
+        *((f"limit-{name}", value) for name, value in body.limits.items()),
+        ("days", str(body.days)),
+        ("model", shown.model or ""),
+    ]
+    return pages.joined(
+        pages.fragment(HERE, "policy-hidden", name=name, value=value) for name, value in fields
+    )
+
+
+@router.post("/policies")
+async def policy_create(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+    """The creation, through the route's function — and the list again."""
+    if not _sites_seen(identity):
+        raise PolicyOutOfReachError
+    await created(PolicyConfirmIn.model_validate(_request_of(await request.body())), ela, identity)
+    return RedirectResponse("/console/policies", status_code=303)
+
+
+@router.post("/policies/revoke")
+async def policy_revoke(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+    """The revocation, under any ceiling: it takes away, it does not widen (decision 18)."""
+    fields = form(await request.body())
+    await revoked_policy(UUID(fields.get("id", "")), ela, identity)
+    return RedirectResponse("/console/policies", status_code=303)
 
 
 # ----------------------------------------------------------------------------------------

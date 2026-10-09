@@ -1,0 +1,35 @@
+{
+  "_nota": [
+    "La stessa frase a 2,00 $ (GETTING_STARTED, sezione 27, passo 6): sopra il tetto di 1,10 $ della",
+    "policy, quindi chiede, e la riga «perché te lo chiedo» nomina il tetto superato.",
+    "`max_cost_usd` è il più che la sessione può spendere, scritto come testo: una policy lo copre solo se è al più il tetto della policy, confrontato come numero (1.1 e 1.10 sono lo stesso tetto).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "guidare il browser su YouTube oltre il tetto della policy",
+  "steps": [
+    {
+      "id": "c0de1a27-0000-4b00-8a00-000000000002",
+      "goal": "cercare il canale sulla pagina dei risultati",
+      "required_capabilities": [
+        "browser.guided"
+      ],
+      "arguments": {
+        "goal": "Apri YouTube e cerca il canale di MrBeast.",
+        "sites": [
+          "www.youtube.com"
+        ],
+        "max_cost_usd": "2.00",
+        "looks": 8,
+        "seconds": 300
+      },
+      "risk": "MEDIUM",
+      "expected_result": "la risposta del modello nomina il canale, con l'indirizzo che lo prova",
+      "success_conditions": [
+        "guided.closed",
+        "guided.gestures_audited",
+        "guided.reservations_closed"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

@@ -81,6 +81,16 @@ GUIDED_LIMITS: Final = {"max_cost_usd": "1.10", "looks": "10", "seconds": "300"}
 """The policy of the proof's step 4: 1,10 $, ten looks, five minutes."""
 
 
+WIDEST: Final = {
+    "max_cost_usd": "999999",
+    "looks": "30",
+    "seconds": "1800",
+    "budget": "999",
+    "count": "30",
+}
+"""The widest value of every limit the declarations of the tests name."""
+
+
 def policy_for(
     spec: CapabilitySpec,
     *,
@@ -97,14 +107,7 @@ def policy_for(
     given, a day of life, the terms of today — then ``changes``."""
     declared = spec.policy_terms if terms is None else terms
     assert declared is not None, f"{spec.id} declares no terms"
-    widest = {
-        "max_cost_usd": "999999",
-        "looks": "30",
-        "seconds": "1800",
-        "budget": "999",
-        "count": "30",
-    }
-    chosen = {name: widest[name] for name in declared.limits} if limits is None else limits
+    chosen = {name: WIDEST[name] for name in declared.limits} if limits is None else limits
     base = Authorization(
         id=AuthorizationId(UUID(f"{tail:08x}-0000-4000-8000-{tail:012d}")),
         created_at=created_at,
@@ -117,3 +120,9 @@ def policy_for(
         metadata={"origin": "policy"},
     )
     return base.model_copy(update=changes)
+
+
+def revoked(policy: Authorization, at: datetime) -> Authorization:
+    """``policy`` revoked at ``at``, as the store writes it: in the tests a copy is enough — in
+    production only the store's ``revoke`` writes the field (rule 66)."""
+    return policy.model_copy(update={"revoked_at": at})

@@ -31,7 +31,7 @@ from ela.providers.anthropic.pricing import worst_cost
 from ela.providers.anthropic.settings import DEFAULT_MAX_OUTPUT_TOKENS
 from tests.contracts.protocols import port_protocols
 from tests.docs.guided_ports import GUIDED_PORTS
-from tests.docs.test_adr_cli import coded_commands
+from tests.docs.test_adr_cli import coded_commands, commands_after_0061
 from tests.docs.test_adr_composition import coded_routes, routes_after_0057
 from tests.docs.test_adr_placement import _rules_up_to
 
@@ -72,7 +72,7 @@ def test_the_conseguenze_count_the_rules_the_ports_the_routes_and_the_commands_o
     assert "**cinquanta**" in text
     assert len(coded_routes() - routes_after_0057()) == 50
     assert "**ventotto**" in text
-    assert len(coded_commands()) == 28
+    assert len(coded_commands() - commands_after_0061()) == 28  # ADR 0062's are later
 
 
 def test_the_rules_it_names_are_registered_with_their_numbers() -> None:

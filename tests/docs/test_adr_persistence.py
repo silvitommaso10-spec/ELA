@@ -37,6 +37,7 @@ COLUMN_ADRS = {
     "0049": ADR_DIR / "0049-finished-on-the-homes.md",
     "0057": ADR_DIR / "0057-spending-cap.md",
     "0058": ADR_DIR / "0058-planner.md",
+    "0062": ADR_DIR / "0062-policies.md",
 }
 """ADRs that add a column to a table another ADR created (ADR 0021 §11: ``execution_results``
 gains ``usage``). An ADR is immutable, so the new column is documented by the ADR that decided
@@ -129,6 +130,7 @@ def test_each_adr_documents_its_own_tables() -> None:
     assert set(documented_tables(texts["0038"])) == {"assignments"}
     assert added_columns()["0021"] == {"execution_results": ("usage",)}
     assert added_columns()["0037"] == {"devices": ("revision", "revoked_at", "secret_hash")}
+    assert added_columns()["0062"] == {"authorizations": ("bounds", "revoked_at")}
 
 
 @pytest.mark.parametrize(

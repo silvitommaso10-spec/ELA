@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from click.testing import Result
@@ -19,6 +20,8 @@ from typer.testing import CliRunner
 
 from ela.cli import client, policies
 from ela.cli.app import app as ela_app
+from ela.domain import AuthorizationId, CapabilityId
+from ela.permissions import PolicyRequest, authorization_from_policy
 from ela.providers.anthropic.models import HAIKU_5_5
 from tests.api.guided import MAX_COST, Guided, Script, guided
 from tests.cli.support import LoopTransport, plain
@@ -58,6 +61,36 @@ async def invoke(runner: CliRunner, *arguments: str, input: str | None = None) -
     return await asyncio.to_thread(runner.invoke, ela_app, list(arguments), input=input)
 
 
+async def test_a_short_id_that_names_two_policies_is_refused_by_the_command(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Two policies whose ids start alike, saved through the port — a short id is eight characters,
+    and two that share them are one in four billion: built, never waited for."""
+    async with a_cli(monkeypatch, tmp_path) as (g, runner):
+        for tail in (1, 2):
+            grant = authorization_from_policy(
+                PolicyRequest(
+                    capability_id=CapabilityId("browser.guided"),
+                    scope=("www.youtube.com",),
+                    limits={"max_cost_usd": MAX_COST, "looks": "10", "seconds": "600"},
+                    days=1,
+                ),
+                catalogue=g.ela.capabilities,
+                granted_by="tommaso",
+                now=g.ela.clock.now(),
+                authorization_id=AuthorizationId(
+                    UUID(f"3f2a1b2c-0000-4000-8000-00000000000{tail}")
+                ),
+            )
+            await g.ela.authorizations.grant(grant)
+        refused = await invoke(runner, "policy", "revoke", "3f2a1b2c")
+        listed = (await g.client.get("/policies")).json()["policies"]
+
+    assert refused.exit_code != 0
+    assert "3f2a1b2c names more than one policy: give the whole id" in plain(refused.output)
+    assert [one["state"] for one in listed] == ["LIVE", "LIVE"]
+
+
 async def test_out_of_a_terminal_and_without_confirm_it_shows_and_does_not_create(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -67,7 +100,8 @@ async def test_out_of_a_terminal_and_without_confirm_it_shows_and_does_not_creat
 
     assert shown.exit_code == 0, shown.output
     out = plain(shown.output)
-    assert "www.youtube.com, httpbin.org" in out
+    # The sites are arguments, shown as every list of arguments is: borders visible (M13.2 dec. 12).
+    assert '["www.youtube.com", "httpbin.org"]' in out
     assert HAIKU_5_5 in out
     assert "0.516384 USD" in out
     assert "not created" in out and "--confirm" in out

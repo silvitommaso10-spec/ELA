@@ -30,7 +30,6 @@ from ela.domain import (
     CapabilitySpec,
     JsonMapping,
     PermissionOutcome,
-    RiskLevel,
     Task,
     TaskStep,
 )
@@ -48,16 +47,13 @@ from tests.permissions.support import (
     HIGH,
     NOTE,
     NOTE_ARGS,
+    TERMED,
+    TERMED_ARGS,
     born_of_a_yes,
     grant,
     harness,
     step_for,
 )
-
-MEDIUM_ECHO: Final = ECHO.model_copy(
-    update={"id": CapabilityId("core.echo_medium"), "risk": RiskLevel.MEDIUM}
-)
-"""The ``MEDIUM`` row, which the shared test catalogue has no capability for."""
 
 
 class _BrokenRegistry:
@@ -82,19 +78,26 @@ class Scenario:
     registry: CapabilityRegistryPort | None = None
 
 
-REGISTRY: Final = FakeCapabilityRegistry((*CATALOGUE, MEDIUM_ECHO))
+REGISTRY: Final = FakeCapabilityRegistry(CATALOGUE)
+"""The shared catalogue, whose ``MEDIUM`` row since M13.12 is ``test.termed``: it declares the terms
+of a policy, so a standing grant can cover it (decision 17 of the review)."""
 
 SCENARIOS: Final[dict[Rule, Scenario]] = {
-    Rule.ALLOW: Scenario(ECHO, ECHO_ARGS, grant(ECHO), step_for(ECHO.id)),
-    Rule.ALLOW_WITHIN_SCOPE: Scenario(NOTE, NOTE_ARGS, grant(NOTE), step_for(NOTE.id)),
+    # Since M13.12 a standing grant covers only a capability that declares the terms of a policy
+    # (decision 17 of the review): the grants of SAFE and LOW are born from a yes, in their task and
+    # step, and the MEDIUM is the capability of the tests that declares its terms.
+    Rule.ALLOW: Scenario(ECHO, ECHO_ARGS, born_of_a_yes(ECHO), step_for(ECHO.id), task=TASK),
+    Rule.ALLOW_WITHIN_SCOPE: Scenario(
+        NOTE, NOTE_ARGS, born_of_a_yes(NOTE), step_for(NOTE.id), task=TASK
+    ),
     Rule.APPROVAL_UNLESS_AUTHORIZED: Scenario(
-        MEDIUM_ECHO, ECHO_ARGS, grant(MEDIUM_ECHO), step_for(MEDIUM_ECHO.id)
+        TERMED, TERMED_ARGS, grant(TERMED), step_for(TERMED.id)
     ),
     Rule.APPROVAL_EVERY_USE: Scenario(
         HIGH, ECHO_ARGS, born_of_a_yes(HIGH), step_for(HIGH.id), task=TASK
     ),
     Rule.AUTHORIZATION_REQUIRED: Scenario(
-        GUARDED_ECHO, ECHO_ARGS, grant(GUARDED_ECHO), step_for(GUARDED_ECHO.id)
+        GUARDED_ECHO, ECHO_ARGS, born_of_a_yes(GUARDED_ECHO), step_for(GUARDED_ECHO.id), task=TASK
     ),
     Rule.DENY: Scenario(
         CRITICAL, ECHO_ARGS, born_of_a_yes(CRITICAL), step_for(CRITICAL.id), task=TASK

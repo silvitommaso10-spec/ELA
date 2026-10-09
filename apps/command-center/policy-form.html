@@ -1,0 +1,16 @@
+<form method="post" action="/console/policies/preview">
+  <input type="hidden" name="capability" value="{capability}">
+  <div class="ela-stack ela-stack--tight">
+    <p class="ela-title">{capability}</p>
+    <p class="ela-caption">{description}</p>
+    <p class="ela-eyebrow">Siti</p>
+    {sites}
+    {limits}
+    <div class="ela-field">
+      <label class="ela-field__label" for="policy-days-{capability}">Giorni</label>
+      <input class="ela-field__input" id="policy-days-{capability}" name="days" type="number" min="{days_min}" max="{days_max}" required>
+      <p class="ela-field__help">Da {days_min} a {days_max}: nessun valore preimpostato, la durata la scegli tu.</p>
+    </div>
+    <button class="ela-button ela-button--primary" type="submit">Anteprima</button>
+  </div>
+</form>

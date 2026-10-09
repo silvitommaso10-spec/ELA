@@ -34,7 +34,6 @@ from ela.permissions import (
     never_covered,
     production_catalogue,
     prospect_arguments,
-    revoked,
     short_id,
     shortfall,
     state_of,
@@ -50,6 +49,7 @@ from tests.permissions.policy_support import (
     TERMED,
     TERMED_ARGS,
     policy_for,
+    revoked,
 )
 from tests.permissions.support import CRITICAL, ECHO, HIGH
 
@@ -267,20 +267,13 @@ def test_the_generic_capability_of_the_tests_is_covered_the_same_way() -> None:
 
 
 # ----------------------------------------------------------------------------------------
-# Short id, revocation, state
+# Short id, state
 # ----------------------------------------------------------------------------------------
 
 
 def test_the_short_id_is_the_first_eight_characters() -> None:
     assert SHORT_ID == 8
     assert short_id(AuthorizationId(POLICY.id)) == str(POLICY.id)[:8]
-
-
-def test_revoked_writes_the_instant_and_nothing_else() -> None:
-    gone = revoked(POLICY, NOW + timedelta(hours=1))
-
-    assert gone.revoked_at == NOW + timedelta(hours=1)
-    assert gone.model_copy(update={"revoked_at": None}) == POLICY
 
 
 def test_the_state_of_a_policy() -> None:
@@ -383,6 +376,19 @@ def test_the_prospect_is_a_call_at_the_limits_on_the_sites_with_ela_s_sentence()
         "looks": 10,
         "seconds": 300,
     }
+
+
+def test_an_optional_free_argument_is_left_out_of_the_prospect() -> None:
+    """Only a **required** free argument needs ELA's sentence: an optional one, the tool does
+    without, as a step that does not write it."""
+    schema = dict(TERMED.input_schema)
+    schema["required"] = ["places", "budget", "count"]
+    optional = TERMED.model_copy(update={"input_schema": schema})
+
+    arguments = prospect_arguments(policy_for(optional), optional)
+
+    assert "text" not in arguments
+    assert set(arguments) == {"places", "budget", "count"}
 
 
 def test_never_covered_names_the_rows_that_ask_at_every_use_and_the_terms() -> None:

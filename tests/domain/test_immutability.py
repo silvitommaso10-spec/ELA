@@ -97,6 +97,11 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
     ``Reservation`` and ``Admission`` joined in M14.3 without a bag: they are the two passes of the
     cap, amounts and counts and a model's name, and a mapping beside them would be where a call's
     body would one day be put next to what it may cost (§57; ADR 0060).
+
+    ``PolicyTerms`` joined in M13.12 without a bag: it is the declaration of what a policy must
+    bound, names of arguments and two names, and a mapping beside it would be where a limit nobody
+    declared would one day be put (§59; ADR 0062). ``PolicyBounds`` carries one — the limits, by
+    name — and is checked where the others are.
     """
     without = sorted(model.__name__ for model in MODELS if not _payloads(model))
     assert without == [
@@ -118,6 +123,7 @@ def test_models_without_a_json_payload_are_the_expected_ones() -> None:
         "ModelRoute",
         "PerceptionChange",
         "PlanAuthor",
+        "PolicyTerms",
         "ProviderUsage",
         "RawCapture",
         "RawHeardSegment",

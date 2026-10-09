@@ -17,10 +17,17 @@ from typing import Any
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ela.domain import Authorization, AuthorizationId, PermissionOutcome, PolicyTerms, TaskStep
+from ela.domain import (
+    Authorization,
+    AuthorizationId,
+    PermissionOutcome,
+    PolicyTerms,
+    RiskLevel,
+    TaskStep,
+)
 from ela.executive import select_authorization
-from ela.permissions import Rule, revoked, targets_of
-from ela.testing.fakes import FakeCapabilityRegistry
+from ela.permissions import PermissionGuardian, Rule, targets_of
+from ela.testing.fakes import FakeAuditLog, FakeCapabilityRegistry, FakeClock, FakeIdGenerator
 from tests.domain.examples import APPROVAL_ID, NOW, TASK, TASK_STEP
 from tests.permissions.policy_support import (
     GUIDED,
@@ -29,8 +36,8 @@ from tests.permissions.policy_support import (
     MODEL,
     SITES,
     policy_for,
+    revoked,
 )
-from tests.permissions.support import harness
 
 STEP: TaskStep = TASK_STEP.model_copy(
     update={"required_capabilities": (GUIDED.id,), "arguments": GUIDED_ARGS}
@@ -104,7 +111,7 @@ def test_the_step_s_own_yes_comes_first() -> None:
 
 
 def test_a_policy_for_a_row_that_asks_at_every_use_is_never_handed_over() -> None:
-    high = GUIDED.model_copy(update={"risk": GUIDED.risk.__class__("HIGH")})
+    high = GUIDED.model_copy(update={"risk": RiskLevel.HIGH})
     found = select_authorization(
         ((policy_for(GUIDED), 0),),
         task=TASK,
@@ -217,7 +224,9 @@ def test_the_executor_hands_over_what_the_guardian_accepts_and_a_covering_policy
     world: tuple[dict[str, Any], list[Built]],
 ) -> None:
     arguments, built = world
-    h = harness(registry=FakeCapabilityRegistry((GUIDED,)))
+    guardian = PermissionGuardian(
+        FakeCapabilityRegistry((GUIDED,)), FakeClock(NOW), FakeIdGenerator(), FakeAuditLog()
+    )
     step = STEP.model_copy(update={"arguments": arguments})
     chosen = select_authorization(
         [(one.grant, one.uses) for one in built],
@@ -228,7 +237,7 @@ def test_the_executor_hands_over_what_the_guardian_accepts_and_a_covering_policy
         targets=targets_of(GUIDED, arguments),
         now=NOW,
     )
-    decision = h.guardian.decide(
+    decision = guardian.decide(
         GUIDED,
         arguments,
         task=TASK,

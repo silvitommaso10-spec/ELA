@@ -15,11 +15,11 @@ import pytest
 
 from ela.domain import AuditEventType, PermissionOutcome, TaskState
 from ela.executive import ASKED
-from ela.permissions import revoked, short_id
+from ela.permissions import short_id
 from ela.ports import AuthorizationRevokedError
 from ela.testing.fakes import FakeAuthorizationStore, FakeClock, FakeIdGenerator, FakeTool
 from tests.executive.support import World, fake_verifier, world
-from tests.permissions.policy_support import TERMED, TERMED_ARGS, policy_for
+from tests.permissions.policy_support import TERMED, TERMED_ARGS, policy_for, revoked
 from tests.permissions.support import CATALOGUE, GUARDED_ECHO
 
 
@@ -30,7 +30,7 @@ def termed_world(*, store: Any = None) -> World:
     w = world(
         tools=(tool,),
         verifiers=(verifier,),
-        catalogue=(*CATALOGUE, TERMED),
+        catalogue=CATALOGUE,
         store=store,
     )
     w.fake_tools = {TERMED.id: tool}
@@ -71,7 +71,7 @@ async def test_a_step_no_policy_covers_asks_and_the_question_says_why() -> None:
     assert execution.decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
     assert execution.approval is not None
     asked = execution.approval.metadata[ASKED]
-    assert asked["why"] == [f"budget 5 is above the 1.10 of policy {short_id(policy.id)}"]
+    assert list(asked["why"]) == [f"budget 5 is above the 1.10 of policy {short_id(policy.id)}"]
     assert execution.task.state is TaskState.WAITING_APPROVAL
     assert await w.store.uses(policy.id) == 0
     assert w.tool(TERMED.id).calls == ()
@@ -84,7 +84,7 @@ async def test_with_no_policy_the_question_says_so() -> None:
     execution = await w.execute(task.id, step.id)
 
     assert execution.approval is not None
-    assert execution.approval.metadata[ASKED]["why"] == ["no policy of yours for test.termed"]
+    assert list(execution.approval.metadata[ASKED]["why"]) == ["no policy of yours for test.termed"]
 
 
 async def test_a_capability_without_terms_has_no_line_why() -> None:
@@ -109,7 +109,7 @@ async def test_a_revoked_policy_asks_and_the_question_says_revoked() -> None:
 
     assert execution.decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
     assert execution.approval is not None
-    assert execution.approval.metadata[ASKED]["why"] == [
+    assert list(execution.approval.metadata[ASKED]["why"]) == [
         f"policy {short_id(policy.id)} was revoked on "
         f"{(w.now - timedelta(hours=1)).date().isoformat()}"
     ]

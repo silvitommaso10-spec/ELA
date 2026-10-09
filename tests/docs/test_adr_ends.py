@@ -19,7 +19,7 @@ from ela.cli.tasks import WHY_HEADERS
 from tests.architecture.rules import END_KEY, END_MODULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.guided_ports import GUIDED_PORTS
-from tests.docs.test_adr_cli import coded_commands
+from tests.docs.test_adr_cli import coded_commands, commands_after_0061
 from tests.docs.test_adr_composition import coded_routes, routes_after_0059
 from tests.docs.test_adr_placement import _rules_up_to
 
@@ -69,7 +69,7 @@ def test_the_conseguenze_count_the_rules_the_contracts_the_ports_the_routes_and_
     assert "**cinquantuno**" in text
     assert len(coded_routes() - routes_after_0059()) == 51
     assert "**ventotto**" in text
-    assert len(coded_commands()) == 28
+    assert len(coded_commands() - commands_after_0061()) == 28  # ADR 0062's are later
 
 
 def test_the_rule_it_names_is_registered_with_its_number_and_reads_what_it_says() -> None:

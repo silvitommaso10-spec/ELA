@@ -48,6 +48,7 @@ NODE_MACOS_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0039-node-macos.md"
 FINISHED_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0049-finished-on-the-homes.md"
 SPENDING_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0057-spending-cap.md"
 PLANNER_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0058-planner.md"
+POLICIES_ADR_PATH = REPO_ROOT / "docs" / "adr" / "0062-policies.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMMAND_ROW = re.compile(
@@ -83,6 +84,7 @@ def adr_text() -> str:
             FINISHED_ADR_PATH,
             SPENDING_ADR_PATH,
             PLANNER_ADR_PATH,
+            POLICIES_ADR_PATH,
         )
     )
 
@@ -96,9 +98,18 @@ def commands_after_0048() -> set[str]:
 
 
 def commands_after_0056() -> set[str]:
-    """The commands the ADRs after ADR 0056 added, read from them: ADR 0057's (M14.1)."""
+    """The commands the ADRs after ADR 0056 added, read from them: ADR 0057's (M14.1), and ADR
+    0062's since M13.12."""
     found = set(documented_commands_of(SPENDING_ADR_PATH.read_text(encoding="utf-8")))
     assert found, "ADR 0057 documents a command"
+    return found | commands_after_0061()
+
+
+def commands_after_0061() -> set[str]:
+    """The commands the ADRs after ADR 0061 added, read from them: what the tests of ADR 0057 to
+    ADR 0060 take away to keep counting the twenty-eight they saw — ADR 0062's (M13.12)."""
+    found = set(documented_commands_of(POLICIES_ADR_PATH.read_text(encoding="utf-8")))
+    assert found, "ADR 0062 documents a command"
     return found
 
 
@@ -227,10 +238,11 @@ def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:
     assert set(documented_commands()) == coded_commands()
 
 
-def test_there_are_twenty_eight_of_them() -> None:
-    """Twenty-six until ADR 0049 added ``ela task finished``, the client of its one route, and
-    twenty-seven until ADR 0057 added ``ela spend``, the client of its."""
-    assert len(coded_commands()) == 28
+def test_there_are_thirty_one_of_them() -> None:
+    """Twenty-six until ADR 0049 added ``ela task finished``, the client of its one route,
+    twenty-seven until ADR 0057 added ``ela spend``, the client of its, and twenty-eight until ADR
+    0062 added the three of ``ela policy``."""
+    assert len(coded_commands()) == 31
 
 
 def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
@@ -253,6 +265,9 @@ def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
         "node run",
         "task finished",
         "spend",
+        "policy create",
+        "policy list",
+        "policy revoke",
     }
 
 

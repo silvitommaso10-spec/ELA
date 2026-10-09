@@ -134,7 +134,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.9` | Proposta | Il browser con i tuoi account: un Chrome di ELA che dura, e le password che restano in Bitwarden |
 | 13 — Il permesso prima dell'azione | `M13.10` | Proposta | Più passi e i file: una sessione del browser fra gli step, una sequenza di gesti, e i file che entrano ed escono |
 | 13 — Il permesso prima dell'azione | `M13.11` | Proposta | Il browser sul PC: le capacità di M13.9 e M13.10 sul nodo Windows, e il verdetto che torna in busta |
-| 13 — Il permesso prima dell'azione | `M13.12` | Proposta | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
+| 13 — Il permesso prima dell'azione | `M13.12` | Implementata | Le policy di §59: una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da `browser.guided` |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1` | Implementata | Il tetto di spesa: la chiave di ELA, e un limite che ELA fa rispettare |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.1b` | Implementata | La docstring del tetto dice il secondo tetto giusto: il limite dell'organizzazione |
 | 14 — Il tetto, il Planner, e il modello che guarda e decide | `M14.2` | Implementata | Il Planner: ELA scrive i piani da sola |
@@ -161,14 +161,14 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **61** | `docs/adr/NNNN-*.md` |
-| Milestone | **86, di cui 68 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **65** | `RULES` in `tests/architecture/` |
+| ADR scritti | **62** | `docs/adr/NNNN-*.md` |
+| Milestone | **86, di cui 69 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Regole di architettura | **66** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **33** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **14** | `production_catalogue()` |
-| Rotte dell'API | **52** | i `router` di `ela.api` |
-| Comandi della CLI | **28** | l'albero Typer di `ela.cli` |
+| Rotte dell'API | **60** | i `router` di `ela.api` |
+| Comandi della CLI | **31** | l'albero Typer di `ela.cli` |
 | Vincoli dichiarati negli ADR | **200** | le sezioni «Vincoli dichiarati» |
 
 <!-- fine del blocco generato: i numeri -->
@@ -286,7 +286,7 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 15 | 15 |
+| 15 | 16 |
 | 16 | 1 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->

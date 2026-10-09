@@ -186,6 +186,11 @@ class AuthorizationRow(Base):
     max_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False)
     uses: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    bounds: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    """The limits of a policy of §59 and the terms they were born under (M13.12, migration
+    ``0015``); ``NULL`` for a grant born from a yes."""
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    """When the policy was revoked: written once, by one conditional ``UPDATE`` (decision 5)."""
 
 
 class ApprovalRow(Base):

@@ -29,6 +29,7 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<tetto in dollari>` | quanto il mese può spendere sulla chiave del modello, sotto il limite mensile dell'organizzazione | lo decidi tu (§9, §23) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
+| `<id della policy>` | l'id breve di una policy di §59, i primi otto caratteri del suo id | `ela policy list`, colonna `policy`; nella sezione 27 lo scrive `scripts/prova_m13_12.py`, dalla policy del passo 4 |
 | `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro, o della sezione 25, o della sessione della sezione 26 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, o `scripts/prova_m14_3.py`, al posto del segnaposto |
 | `<id del passo 3>` | l'id del task del passo 3 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
 | `<id del passo 4>` | l'id del task del passo 4 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
@@ -5628,6 +5629,400 @@ speso cresciuto dei costi delle chiamate
 prenotato com'era al passo 1
 ```
 
+## 27. Le policy di §59: la prova a mano di M13.12
+
+> **Scritta con l'implementazione il 2026-10-09** (`milestones/M13.12.md`, «La prova a mano», con la decisione 14 della
+> sessione e la 21 della review della SPEC), e `tests/docs/test_prova_m13_12.py` tiene lo script allineato a questa
+> sezione. La si fa **sul Mac, senza il PC**, sul branch di M13.12, con lo script `scripts/prova_m13_12.py`: una policy vive
+> nel database del Core, e `browser.guided` gira solo lì. **Non ancora fatta**: [ADR 0062](adr/0062-policies.md) resta
+> Proposta finché non passa.
+
+Da M13.12 **una sessione guidata può partire senza domanda**, se sta dentro una **policy** che ti sei creato tu: una riga
+con i suoi confini — i siti, il più che una sessione può spendere, quanti sguardi, quanto può durare — e **una fine**, da
+uno a novanta giorni, che scegli tu. Una policy **toglie la domanda, non l'avvio**: il task lo fai partire ancora tu. E
+**non abbassa nessun livello**: `browser.guided` resta `MEDIUM`, e `browser.act` — il gesto che invia — chiede a ogni
+invio, perché nessuna policy raggiunge un `HIGH`.
+
+Una sessione che non ci sta chiede come prima, e **la domanda dice perché**: una riga nuova, **`why I ask`**, che nomina
+le tue policy di `browser.guided` vive o finite da meno di trenta giorni, al più tre, ciascuna con la prima ragione per cui
+non copre — con l'id breve della policy e i numeri, mai un sito —, oppure «no policy of yours for browser.guided». La
+console e il telefono la mostrano nella coppia «Perché te lo chiedo».
+
+`ela policy create` ti mostra prima **l'anteprima** di ciò che approvi — i siti, i tetti, la scadenza con la data, il
+modello della rotta di default e che le pagine vanno ad Anthropic, e che **il tetto di costo è sulla prenotazione, non
+sulla spesa vera**, con il caso peggiore di una chiamata — e ciò che la policy **non copre mai**. In un terminale chiede
+«Create this policy? (s/N)», e crea solo con «s», «si» o «sì»; con `--confirm` crea senza chiedere. **La revoca non ferma
+una sessione già partita**: l'uscita lo dice, e il «ferma» è quello di sempre, `ela task cancel`.
+
+Lo script legge da questa sezione i blocchi con il marcatore sopra, con il lettore di `scripts/prova_m6_3c.py`, e usa i
+tipi della sezione 26 — `comando`, `atteso`, `occhio`, `no`, `sfondo`, `aspetta`, `fine`, `sessione`, `figli`, `spesa` —
+e cinque suoi:
+
+- **`perché`**: la riga `why I ask` della domanda del task del passo, letta da `GET /approvals`, deve dire ciò che il blocco
+  dice. **Dal secondo giro nello stesso mese** la riga del passo 2 non è più «no policy of yours for browser.guided»: nomina
+  le policy dei giri prima, e il passo la accetta **solo se ogni policy che nomina è revocata o scaduta** — una policy viva
+  è il FALLITO del passo —, e scrive nel file quale delle due ha letto.
+- **`nessuna`**: nessuna policy viva. Se ce n'è una — un rifiuto del passo 3 che ha creato davvero, o un'anteprima che ha
+  scritto —, lo script la revoca e il passo è **FALLITO**.
+- **`crea`**: lancia la riga del blocco **senza `--confirm`**: fuori da un terminale l'anteprima si stampa e non si crea
+  niente — lo script lo controlla —; te la mostra, e chiede «crei la policy?». Con un «s» rilancia la riga con `--confirm`,
+  e la policy diventa `<id della policy>`; con un «n» la prova si ferma — **FERMATO** —.
+- **`policy`**: lo stato e gli usi della policy del passo 4, da `ela policy list --all`: `LIVE 0`, `LIVE 1`, `REVOKED 2`.
+  **Gli usi contano le spese, non le sessioni**: una sessione rifiutata dopo la spesa, dal tetto del mese, conta un uso.
+- **`console`**: con nessuna domanda in attesa — lo script lo controlla —, ti chiede di creare dalla console una policy e
+  di revocarla; poi la ritrova in `GET /policies`, creata da una console e revocata.
+
+I segnaposto che riempie sono `<id>`, il task del passo; `<id del figlio>` e `<approval-id>`, come nella sezione 26; e
+`<id della policy>`, l'id breve della policy del passo 4. Scrive tutto in `~/Downloads`, in `prova-m13.12-` con la data e
+l'ora, e l'ultima riga dice «La prova è passata» o che cosa manca. **Nella prova si risponde solo nel Terminale dello
+script**: la console e il telefono restano chiusi fino al passo 9. **Nessun `Ctrl-C`, nessun riavvio** dopo l'avvio.
+
+Sul Mac, il `.env` della sezione 26, con i tre siti:
+
+```
+ELA_BROWSER_SITES=["www.youtube.com", "example.com", "httpbin.org"]
+```
+
+Il Core acceso dal codice del branch, **dopo `uv run alembic upgrade head`**: M13.12 porta la migrazione `0015`. Due
+sessioni partono, ai passi 5 e 7, su Haiku 5.5 e a 1,10 $ di costo massimo; le altre chiedono e si fermano. **La scadenza
+non si aspetta**: la prova la suite, con l'orologio finto.
+
+```
+uv run python scripts/prova_m13_12.py
+```
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch su `origin`, con l'albero
+pulito; ELA risponde; il Core gira da quel codice — `/policies` nello schema dell'API —; `uv run alembic current` dice
+`0015 (head)`; la rotta `browsing` va a `claude-haiku-5-5`; il provider del modello ha una chiave e c'è un tetto; i tre siti
+sono nella riga; il binario che l'SDK porta c'è; **nessuna policy viva** per `browser.guided`. E **il margine, passo per
+passo**: a ogni passo il mese deve avere libero ciò che il passo gli chiede — la prenotazione di una sessione che parte, o
+il caso peggiore di una domanda, che ELA nega se non ci sta — più il costo massimo delle sessioni partite prima, che
+potrebbero averlo speso. Lo script lo calcola con la funzione con cui il cancello prenota, dai piani che i comandi della
+sezione mandano: il passo che chiede di più è l'8, con **3,30 $**. **Se qualcosa manca, la prova si ferma lì** —
+**FERMATO** —, con ciò che manca.
+
+### 2. Senza policy, chiede
+
+La frase di sempre, su YouTube, dentro i tetti che la policy avrà. Senza una policy chiede, e la domanda dice perché.
+
+<!-- prova: 2.comando -->
+```
+uv run ela task create "Apri YouTube e cerca il canale di MrBeast." --json
+uv run ela task plan <id> --file docs/examples/policy-youtube.json
+uv run ela task run <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela approvals
+```
+
+<!-- prova: 2.atteso -->
+```
+capability browser.guided
+why I ask
+```
+
+<!-- prova: 2.perché -->
+```
+no policy of yours for browser.guided
+```
+
+<!-- prova: 2.comando -->
+```
+uv run ela task cancel <id>
+```
+
+<!-- prova: 2.atteso -->
+```
+state CANCELLED
+```
+
+### 3. I rifiuti
+
+Con `--confirm`, perché una creazione sbagliata creerebbe davvero. Nessuna policy raggiunge un `HIGH`; un tetto di costo
+sotto il caso peggiore di una chiamata non farebbe partire nessuna sessione; un sito fuori da `ELA_BROWSER_SITES` non è
+nello scope della capability.
+
+<!-- prova: 3.comando -->
+```
+uv run ela policy create browser.act --scope example.com --days 1 --confirm
+uv run ela policy create fs.write --scope notes --days 1 --confirm
+uv run ela policy create browser.guided --scope www.youtube.com --limit max_cost_usd=0.05 --limit looks=10 --limit seconds=300 --days 1 --confirm
+uv run ela policy create browser.guided --scope www.wikipedia.org --limit max_cost_usd=1.10 --limit looks=10 --limit seconds=300 --days 1 --confirm
+```
+
+<!-- prova: 3.atteso -->
+```
+policy.refused: ADMITS: no policy reaches a HIGH
+policy.refused: ADMITS: no policy reaches a HIGH
+policy.would_not_start: guided.cap_below_one_call:
+policy.refused: SCOPE: the scope of a policy of browser.guided
+```
+
+<!-- prova: 3.nessuna -->
+```
+nessuna policy viva
+```
+
+### 4. L'anteprima, e il sì
+
+La policy della prova: un giorno, `www.youtube.com` e `httpbin.org`, sessioni fino a 1,10 $, dieci sguardi, cinque
+minuti. Lo script lancia il comando senza `--confirm`, e ti mostra l'anteprima: leggila per intero — i due siti, i tetti,
+la scadenza, il modello, che le pagine vanno ad Anthropic, il caso peggiore di una chiamata, ciò che non copre mai — prima
+di dire sì.
+
+<!-- prova: 4.crea -->
+```
+uv run ela policy create browser.guided --scope www.youtube.com --scope httpbin.org --limit max_cost_usd=1.10 --limit looks=10 --limit seconds=300 --days 1
+```
+
+<!-- prova: 4.policy -->
+```
+LIVE 0
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela policy list
+```
+
+<!-- prova: 4.atteso -->
+```
+<id della policy> browser.guided
+what a policy must bound:
+browser.guided: --limit max_cost_usd=…, --limit looks=…, --limit seconds=…; never covered: task_type
+```
+
+### 5. Coperta, parte
+
+Lo stesso piano del passo 2: ora **parte senza domanda**, e finisce. `ela task show` dice quale policy l'ha coperto, e la
+policy conta un uso.
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create "Apri YouTube e cerca il canale di MrBeast." --json
+uv run ela task plan <id> --file docs/examples/policy-youtube.json
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 5.sessione -->
+```
+SUCCEEDED
+```
+
+<!-- prova: 5.figli -->
+```
+tutti dentro i siti della sessione
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task show <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+policy <id della policy>
+```
+
+<!-- prova: 5.policy -->
+```
+LIVE 1
+```
+
+<!-- prova: 5.occhio -->
+```
+La risposta del modello, nel file, nomina il canale di MrBeast?
+```
+
+### 6. Fuori, chiede
+
+La stessa frase a 2,00 $, sopra il tetto della policy; poi una frase su `example.com`, un sito di `ELA_BROWSER_SITES` che
+non è della policy. Tutte e due chiedono, e la domanda dice perché. Lo script le ferma.
+
+<!-- prova: 6.comando -->
+```
+uv run ela task create "Apri YouTube e cerca il canale di MrBeast, fino a 2 dollari." --json
+uv run ela task plan <id> --file docs/examples/policy-youtube-more.json
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 6.perché -->
+```
+max_cost_usd 2.00 is above the 1.10 of policy <id della policy>
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task cancel <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+state CANCELLED
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task create "Apri https://example.com/ e dimmi il titolo della pagina." --json
+uv run ela task plan <id> --file docs/examples/policy-example.json
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 6.perché -->
+```
+a value of sites is not among those of policy <id della policy>
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task cancel <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+state CANCELLED
+```
+
+### 7. L'invio chiede comunque
+
+Il modulo di `httpbin.org`, dentro la policy: la sessione **parte senza domanda**, ma il gesto che invia è `browser.act`,
+`HIGH`, e **chiede comunque**. Di' no: il modulo non parte, e la sessione finisce. «ELA prova 27» è un marcatore.
+
+<!-- prova: 7.comando -->
+```
+uv run ela task create "Su httpbin.org apri il modulo /forms/post, scrivi «ELA prova 27» nel campo custname e invia l'ordine con il bottone «Submit order»." --json
+uv run ela task plan <id> --file docs/examples/policy-form.json
+```
+
+<!-- prova: 7.sfondo -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 7.aspetta -->
+```
+browser.act WAITING_APPROVAL
+```
+
+<!-- prova: 7.no -->
+```
+uv run ela task deny <id del figlio> --approval <approval-id>
+```
+
+<!-- prova: 7.fine -->
+```
+outcome completed
+```
+
+<!-- prova: 7.sessione -->
+```
+SUCCEEDED
+```
+
+<!-- prova: 7.figli -->
+```
+browser.act DENIED
+```
+
+<!-- prova: 7.policy -->
+```
+LIVE 2
+```
+
+### 8. La revoca
+
+Dal Terminale. L'uscita dice della sessione già partita; poi lo stesso piano del passo 5 **chiede di nuovo**, e la domanda
+dice che la policy è revocata. Lo script la ferma.
+
+<!-- prova: 8.comando -->
+```
+uv run ela policy revoke <id della policy>
+```
+
+<!-- prova: 8.atteso -->
+```
+revoked policy <id della policy>
+a session already running under it goes on until it ends: to stop it, ela task cancel
+```
+
+<!-- prova: 8.policy -->
+```
+REVOKED 2
+```
+
+<!-- prova: 8.comando -->
+```
+uv run ela task create "Apri YouTube e cerca il canale di MrBeast." --json
+uv run ela task plan <id> --file docs/examples/policy-youtube.json
+uv run ela task run <id>
+```
+
+<!-- prova: 8.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 8.perché -->
+```
+policy <id della policy> was revoked on
+```
+
+<!-- prova: 8.comando -->
+```
+uv run ela task cancel <id>
+```
+
+<!-- prova: 8.atteso -->
+```
+state CANCELLED
+```
+
+### 9. La console, per ultima
+
+Con nessuna domanda in attesa, apri **`/console/policies`** sul Mac: crea dalla console una policy di un giorno su
+`www.youtube.com` — il modulo, l'anteprima, «Crea» —, guardala nell'elenco, e revocala. Lo script la ritrova revocata,
+creata da una console. Poi la spesa: le due sessioni sono nello speso, e nessuna prenotazione è rimasta aperta.
+
+<!-- prova: 9.console -->
+```
+una policy creata da una console, revocata
+```
+
+<!-- prova: 9.occhio -->
+```
+La vista delle policy della console mostrava la policy con i siti, i tetti, la scadenza e chi l'ha creata?
+```
+
+<!-- prova: 9.spesa -->
+```
+speso cresciuto dei costi delle chiamate
+prenotato com'era al passo 1
+```
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.
@@ -5648,3 +6043,5 @@ prenotato com'era al passo 1
 - [`adr/0044-command-center.md`](adr/0044-command-center.md) — il Command Center: la terza
   identità, il tetto derivato dal socket, e l'impronta che suona quando una capability arriva
   senza la sua vista.
+- [`adr/0062-policies.md`](adr/0062-policies.md) — le policy di §59: che cosa una policy deve
+  limitare, quando copre, come nasce e come si revoca.

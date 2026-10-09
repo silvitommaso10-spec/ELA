@@ -27,9 +27,16 @@ test goes through it.
 from __future__ import annotations
 
 import dataclasses
+import html
+import re
+import tempfile
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, Final
 
 import pytest
 from fastapi import FastAPI
@@ -38,11 +45,18 @@ from httpx import ASGITransport, AsyncClient, Response
 
 from ela.api import create_app
 from ela.api.app import FAILURES, NOT_YOUR_WORK
+from ela.api.console import PolicyOutOfReachError
 from ela.api.errors import (
     DatabaseUnavailableError,
     RevisionRequiredError,
     TaskAlreadyRunningError,
 )
+from ela.api.policies import (
+    PolicyNotLiveError,
+    PolicyPreviewChangedError,
+    PolicyWouldNotStartError,
+)
+from ela.api.security import surface_of
 from ela.audit.chain import AuditChainError
 from ela.composition import Ela, build
 from ela.devices import (
@@ -50,6 +64,7 @@ from ela.devices import (
     LocalDeviceNotRevocableError,
 )
 from ela.domain import (
+    AuthorizationId,
     CapabilityId,
     ExecutionId,
     ExecutionResult,
@@ -65,16 +80,19 @@ from ela.executive import (
     RunnerError,
     WorkNotYoursError,
 )
+from ela.permissions import PolicyRefusedError, PolicyRequest, authorization_from_policy
 from ela.ports import (
     AlreadyExistsError,
     ApprovalNotAnswerableError,
     AssignmentExpiredError,
     AssignmentNotUsableError,
+    AuthorizationAlreadyRevokedError,
     EnrollmentRoleError,
     IdentityConflictError,
     NotFoundError,
 )
 from ela.tasks.errors import GraphError, TaskError
+from tests.api.guided import MAX_COST, Guided, Script, guided
 from tests.api.support import (
     AUTHORIZED,
     BASE,
@@ -85,6 +103,7 @@ from tests.api.support import (
     served_paths,
     tamper_with_the_trail,
 )
+from tests.api.test_console_policies import FIELDS, a_console, posted
 from tests.api.test_nodes import enrolled
 from tests.api.test_nodes_work import ENVELOPE, taken
 
@@ -386,6 +405,84 @@ async def a_second_envelope_for_work_already_delivered(live: Live) -> Response:
     return await _delivery(live, order["assignment_id"], headers, output={"message": "altro"})
 
 
+# ----------------------------------------------------------------------------------------
+# The policies of §59 (M13.12, ADR 0062)
+# ----------------------------------------------------------------------------------------
+
+POLICY: Final[dict[str, Any]] = {
+    "capability": "browser.guided",
+    "scope": ["www.youtube.com"],
+    "limits": {"max_cost_usd": MAX_COST, "looks": "10", "seconds": "600"},
+    "days": 1,
+}
+
+
+@asynccontextmanager
+async def a_guided_ela() -> AsyncIterator[Guided]:
+    """The ELA of ``tests/api/guided.py``, with **settings this file chooses**, as the cap of a
+    renewal's: the birth of a policy passes through the tool's prospect, which needs the cap, the
+    key and the sites — and the ELA a scenario is handed declares none of the three."""
+    with pytest.MonkeyPatch.context() as monkeypatch, tempfile.TemporaryDirectory() as tmp:
+        async with guided(monkeypatch, Path(tmp), Script([])) as g:
+            yield g
+
+
+async def a_policy_on_a_site_nobody_declared(live: Live) -> Response:
+    """The pure checks refuse before the tool is asked: the ELA handed here declares no site."""
+    return await live.client.post(
+        "/policies/preview", json={**POLICY, "scope": ["www.youtube.com"]}
+    )
+
+
+async def a_policy_that_could_not_pay_one_call(live: Live) -> Response:
+    """«Partirebbe» (decision 7): the tool's own refusal, with its code first."""
+    async with a_guided_ela() as g:
+        return await g.client.post(
+            "/policies/preview",
+            json={**POLICY, "limits": {**POLICY["limits"], "max_cost_usd": "0.05"}},
+        )
+
+
+async def a_confirmation_that_names_another_model(live: Live) -> Response:
+    async with a_guided_ela() as g:
+        return await g.client.post("/policies", json={**POLICY, "model": "claude-sonnet-5-5"})
+
+
+async def a_revocation_of_a_policy_that_expired(live: Live) -> Response:
+    """A policy born two days ago for one day, prepared through ELA's own port — the clock of a
+    request cannot be asked to wait a day."""
+    async with a_guided_ela() as g:
+        ended = authorization_from_policy(
+            PolicyRequest(
+                capability_id=POLICY["capability"],
+                scope=tuple(POLICY["scope"]),
+                limits=POLICY["limits"],
+                days=1,
+            ),
+            catalogue=g.ela.capabilities,
+            granted_by="tommaso",
+            now=g.ela.clock.now() - timedelta(days=2),
+            authorization_id=AuthorizationId(g.ela.ids.new_uuid()),
+        )
+        await g.ela.authorizations.grant(ended)
+        return await g.client.post(f"/policies/{ended.id}/revoke")
+
+
+async def a_second_revocation_of_the_same_policy(live: Live) -> Response:
+    """Written once: the second is the store's own answer, with the instant of the first."""
+    async with a_guided_ela() as g:
+        shown = (await g.client.post("/policies/preview", json=POLICY)).json()
+        made = (await g.client.post("/policies", json={**POLICY, "model": shown["model"]})).json()
+        await g.client.post(f"/policies/{made['id']}/revoke")
+        return await g.client.post(f"/policies/{made['id']}/revoke")
+
+
+async def a_creation_from_a_console_that_cannot_see_the_sites(live: Live) -> Response:
+    """Decision 18: a console on the tailnet, under ``TRUSTED``, does not create."""
+    async with a_guided_ela() as g, a_console(g, away=True) as console:
+        return await posted(console, "/console/policies/preview", FIELDS)
+
+
 RAISED: tuple[Raised, ...] = (
     Raised(
         NotFoundError,
@@ -567,6 +664,60 @@ RAISED: tuple[Raised, ...] = (
         "is at its cap",
         a_renewal_of_work_already_at_its_cap,
     ),
+    Raised(
+        PolicyRefusedError,
+        "POST",
+        "/policies/preview",
+        422,
+        "policy.refused",
+        "the scope of a policy of",
+        a_policy_on_a_site_nobody_declared,
+    ),
+    Raised(
+        PolicyWouldNotStartError,
+        "POST",
+        "/policies/preview",
+        422,
+        "policy.would_not_start",
+        "guided.cap_below_one_call:",
+        a_policy_that_could_not_pay_one_call,
+    ),
+    Raised(
+        PolicyPreviewChangedError,
+        "POST",
+        "/policies",
+        409,
+        "policy.preview_changed",
+        "the preview named",
+        a_confirmation_that_names_another_model,
+    ),
+    Raised(
+        PolicyNotLiveError,
+        "POST",
+        "/policies/{policy_id}/revoke",
+        409,
+        "policy.not_live",
+        "expired at",
+        a_revocation_of_a_policy_that_expired,
+    ),
+    Raised(
+        AuthorizationAlreadyRevokedError,
+        "POST",
+        "/policies/{policy_id}/revoke",
+        409,
+        "policy.not_live",
+        "was already revoked at",
+        a_second_revocation_of_the_same_policy,
+    ),
+    Raised(
+        PolicyOutOfReachError,
+        "POST",
+        "/console/policies/preview",
+        409,
+        "not_answerable",
+        "restano sul Mac",
+        a_creation_from_a_console_that_cannot_see_the_sites,
+    ),
 )
 
 
@@ -591,10 +742,29 @@ async def test_every_failure_of_the_table_is_answered_that_way_by_the_applicatio
     response = await row.scenario(live)
 
     assert response.status_code == row.status, response.text
-    body = response.json()
-    assert set(body) == {"error"} and set(body["error"]) == {"code", "message"}
-    assert body["error"]["code"] == row.code
-    assert row.message in body["error"]["message"], body["error"]["message"]
+    code, message = told(response)
+    assert code == row.code
+    assert row.message in message, message
+
+
+REFUSED_PAGE: Final = re.compile(
+    r'<p class="ela-eyebrow">(?P<code>[^<]*)</p>\s*<p class="ela-body">(?P<message>[^<]*)</p>'
+)
+"""The two lines of ``refused.html`` that carry the failure: the code, then the sentence."""
+
+
+def told(response: Response) -> tuple[str, str]:
+    """The code and the sentence of a refusal, as its ground writes them: the JSON of the API, or —
+    under the prefix of a surface — the page the same failure becomes, with the same status and the
+    same sentence (dec. D of ``_handler``). M13.12 brought the first row only a page reaches: a
+    console that cannot see the sites of a policy."""
+    if surface_of(response.request.url.path) is None:
+        body = response.json()
+        assert set(body) == {"error"} and set(body["error"]) == {"code", "message"}
+        return body["error"]["code"], body["error"]["message"]
+    found = REFUSED_PAGE.search(response.text)
+    assert found is not None, response.text
+    return html.unescape(found["code"]), html.unescape(found["message"])
 
 
 DECLARED: dict[type[Exception], str] = {
@@ -732,8 +902,11 @@ def test_every_route_the_two_tables_name_is_a_route_the_application_serves(app: 
     assert named <= served, named - served
 
 
-TOLD_APART = ("conflict", "invalid")
-"""The shared codes whose rows must be distinguishable by their message."""
+TOLD_APART = ("conflict", "invalid", "not_answerable", "policy.not_live")
+"""The shared codes whose rows must be distinguishable by their message. M13.12 adds two: a
+console that cannot see the sites of a policy does not answer its preview, as one that cannot see
+a task does not answer its question; and a policy no longer live is either ended or revoked
+already, the store's own refusal."""
 SAID_THE_SAME_WAY = ("not_assigned",)
 """And the one whose rows must **not** be (M12.2, ADR 0038 §12).
 

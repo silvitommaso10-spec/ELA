@@ -1,6 +1,7 @@
 # 0012. Autorizzazioni: nascita da un'Approval, consumo atomico, invariante del grant monouso
 
 - **Stato:** Accettata
+  **Riletta da ADR 0062 (M13.12)** il 2026-10-09: un grant senza `approval_id` scade sempre e porta i suoi tetti, uno con `approval_id` non ne ha (§1); `consume` rifiuta un grant revocato nella stessa `UPDATE`, e l'errore nomina la revoca prima della scadenza (§3, §5); i grant di produzione nascono da due funzioni dello stesso package, e la regola 15 aggiunge `bounds` ai suoi campi (§7).
 - **Data:** 2026-09-05
 - **Riferimenti spec:** §27, §30, §31, §32, §33, §49, §57, §59, §62, §65
 - **Milestone:** M4.3

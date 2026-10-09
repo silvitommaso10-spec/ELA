@@ -1,0 +1,36 @@
+{
+  "_nota": [
+    "Una sessione su example.com (GETTING_STARTED, sezione 27, passo 6): un sito di ELA_BROWSER_SITES",
+    "che non è fra quelli della policy, quindi chiede, e la riga «perché te lo chiedo» lo dice senza",
+    "nominare il sito.",
+    "`max_cost_usd` è il più che la sessione può spendere, scritto come testo: una policy lo copre solo se è al più il tetto della policy, confrontato come numero (1.1 e 1.10 sono lo stesso tetto).",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "guidare il browser su example.com, fuori dalla policy",
+  "steps": [
+    {
+      "id": "c0de1a27-0000-4b00-8a00-000000000003",
+      "goal": "leggere il titolo della pagina",
+      "required_capabilities": [
+        "browser.guided"
+      ],
+      "arguments": {
+        "goal": "Apri https://example.com/ e dimmi il titolo della pagina.",
+        "sites": [
+          "example.com"
+        ],
+        "max_cost_usd": "1.10",
+        "looks": 4,
+        "seconds": 300
+      },
+      "risk": "MEDIUM",
+      "expected_result": "la risposta del modello dice il titolo",
+      "success_conditions": [
+        "guided.closed",
+        "guided.gestures_audited",
+        "guided.reservations_closed"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

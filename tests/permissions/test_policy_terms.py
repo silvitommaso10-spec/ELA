@@ -116,7 +116,7 @@ def test_a_scoped_argument_that_is_not_a_list_is_refused() -> None:
 def test_every_property_of_the_schema_is_in_exactly_one_class() -> None:
     """B1 of the critical re-read: an argument nobody classified would be covered in silence."""
     assert "route" in refusal(policy_terms=terms(uncovered=()))
-    assert "text" in refusal(policy_terms=terms(free=("text", "budget")))
+    assert "budget" in refusal(policy_terms=terms(free=("text", "budget")))
     assert "ghost" in refusal(policy_terms=terms(free=("text", "ghost")))
     assert "places" in refusal(policy_terms=terms(free=("text", "places")))
 

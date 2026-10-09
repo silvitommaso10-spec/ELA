@@ -9,15 +9,21 @@ again.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
-from ela.domain import AuditEventType
-from ela.permissions import POLICY_PROSPECT
-from ela.providers.anthropic.models import HAIKU_5_5
+from ela.api import create_app
+from ela.api.tasks import policies_that_covered
+from ela.domain import AuditEventType, AuthorizationId, CapabilityId, TaskId
+from ela.permissions import POLICY_PROSPECT, production_catalogue
+from ela.ports import NotFoundError
+from ela.providers.anthropic.models import HAIKU_5_5, SONNET_5_5
 from tests.api.guided import (
     MAX_COST,
     Guided,
@@ -28,6 +34,7 @@ from tests.api.guided import (
     question,
     run,
 )
+from tests.api.support import AUTHORIZED, BASE
 
 POLICY: dict[str, Any] = {
     "capability": "browser.guided",
@@ -105,7 +112,7 @@ async def test_the_creation_saves_the_policy_and_writes_who_created_it(
     (event,) = events
     assert event.actor.kind.value == "USER"
     assert event.payload["origin"] == "policy"
-    assert event.payload["scope"] == ["www.youtube.com", "httpbin.org"]
+    assert event.payload["scope"] == ("www.youtube.com", "httpbin.org")  # frozen by the domain
     assert event.payload["limits"] == {"max_cost_usd": MAX_COST, "looks": "10", "seconds": "600"}
     assert event.task_id is None and event.step_id is None
     assert POLICY_PROSPECT not in str(event.payload), "the sentence of the prospect is never saved"
@@ -163,6 +170,32 @@ async def test_a_confirmation_that_names_another_model_than_the_prospect_is_refu
     assert made.json()["error"]["code"] == "policy.preview_changed"
 
 
+async def test_a_route_that_reads_another_model_than_the_declaration_would_not_start(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision 16: the declaration names the model of the default route, and a prospect that
+    answers with another — a provider chosen now — gives birth to no policy. Built with a catalogue
+    that declares Sonnet 5.5 over a route that reads Haiku 5.5."""
+    async with guided(monkeypatch, tmp_path, Script([])) as g:
+        sites = g.ela.capabilities.get(CapabilityId("browser.guided")).scope
+        other = dataclasses.replace(
+            g.ela,
+            capabilities=production_catalogue(sites=sites, guided_model=SONNET_5_5),
+        )
+        async with AsyncClient(
+            transport=ASGITransport(app=create_app(other)), base_url=BASE, headers=AUTHORIZED
+        ) as client:
+            preview = await client.post("/policies/preview", json=POLICY)
+            listed = (await client.get("/policies")).json()["policies"]
+
+    assert preview.status_code == 422, preview.text
+    error = preview.json()["error"]
+    assert error["code"] == "policy.would_not_start"
+    assert error["message"].startswith("policy.model_changed: ")
+    assert SONNET_5_5 in error["message"] and HAIKU_5_5 in error["message"]
+    assert listed == []
+
+
 async def test_a_session_the_policy_covers_starts_without_a_question_and_spends_one_use(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -178,6 +211,29 @@ async def test_a_session_the_policy_covers_starts_without_a_question_and_spends_
     assert approvals == []
     assert detail["steps"][0]["policy"] == policy["id"]
     assert listed["policies"][0]["uses"] == 1
+
+
+class _Gone:
+    """A store that no longer has the grant a result names: never a ``404`` of the task's route."""
+
+    async def get(self, authorization_id: AuthorizationId) -> Any:
+        raise NotFoundError("authorization", str(authorization_id))
+
+
+async def test_a_grant_that_is_gone_names_no_policy_and_the_task_is_still_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Proposal 14: the policy of a step is read from the grant its result names, and a grant the
+    store does not answer for names nothing."""
+    async with guided(monkeypatch, tmp_path, Script([call()])) as g:
+        policy = await created(g)
+        task = TaskId(UUID(await planned(g)))
+        await run(g, str(task))
+        covered = await policies_that_covered(task, g.ela)
+        gone = await policies_that_covered(task, dataclasses.replace(g.ela, authorizations=_Gone()))
+
+    assert [str(one) for one in covered.values()] == [policy["id"]]
+    assert gone == {}
 
 
 async def test_a_session_beyond_a_limit_asks_and_the_question_says_why(

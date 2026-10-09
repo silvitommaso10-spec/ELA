@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from ela.domain import PermissionOutcome
-from ela.permissions import Rule, browser_act, revoked, short_id
+from ela.permissions import Rule, browser_act, short_id
 from ela.testing.fakes import FakeCapabilityRegistry
 from tests.permissions.policy_support import (
     GUIDED,
@@ -23,6 +23,7 @@ from tests.permissions.policy_support import (
     TERMED,
     TERMED_ARGS,
     policy_for,
+    revoked,
 )
 from tests.permissions.support import COMPLETE, ECHO, GUARDED_ECHO, NOTE, Harness, harness
 

@@ -34,13 +34,14 @@ from typing import Any, Final
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
-from ela.domain import CapabilityId, CapabilitySpec, RiskLevel, SensorName
+from ela.domain import CapabilityId, CapabilitySpec, PolicyTerms, RiskLevel, SensorName
 from ela.permissions.errors import (
     CapabilityNotFound,
     InvalidArgumentsError,
     InvalidCapabilityError,
     RiskNotAllowedError,
 )
+from ela.permissions.rows import no_policy_for
 from ela.ports import AlreadyExistsError
 
 __all__ = [
@@ -82,6 +83,9 @@ __all__ = [
     "BROWSER_READ",
     "COST_PATTERN",
     "GUIDED_INTRODUCED_AT",
+    "GUIDED_ROUTE",
+    "UNDECLARED_MODEL",
+    "is_valid_value",
     "LOOKS_MAX",
     "LOOKS_MIN",
     "SECONDS_MAX",
@@ -221,6 +225,69 @@ def check_capability(spec: CapabilitySpec) -> None:
             raise InvalidCapabilityError(
                 spec.id, f"prompt argument {name!r} is not required by input_schema"
             )
+    if spec.policy_terms is not None:
+        _check_policy_terms(spec, spec.policy_terms, properties, required)
+
+
+def _check_policy_terms(
+    spec: CapabilitySpec,
+    terms: PolicyTerms,
+    properties: Mapping[str, Any],
+    required: Sequence[str],
+) -> None:
+    """Refuse a declaration of ``policy_terms`` that would admit policies nobody could create, or
+    that would cover what they should not (M13.12, ADR 0062; decisions 1 and 2).
+
+    On a row that does not ask unless authorized — the same reason the birth gives —; with nothing
+    to bound; on a capability without a scope, or whose scoped arguments are not lists — a policy's
+    scope is a set of targets, and the call that «partirebbe» carries them all —; with an argument
+    of the schema in no class, in two, or a name the schema does not have — **the closed world that
+    lets an old policy stop covering by itself the day the schema grows** —; with a limit that is
+    not a required number — an ``integer``, or a ``string`` with ELA's pattern of an amount of
+    money —; with an uncovered argument a call must carry; with a required free argument that is
+    not a ``string``, which the prospect could not fill.
+    """
+    refusal = no_policy_for(spec)
+    if refusal is not None:
+        raise InvalidCapabilityError(spec.id, refusal)
+    if not terms.limits:
+        raise InvalidCapabilityError(spec.id, "a policy that bounds nothing is not a policy")
+    if not spec.scoped_arguments:
+        raise InvalidCapabilityError(spec.id, "a policy needs a scope, and this has none")
+    for name in spec.scoped_arguments:
+        if dict(properties[name]).get("type") != "array":
+            raise InvalidCapabilityError(
+                spec.id, f"the scoped argument {name!r} of a capability with policy terms is a list"
+            )
+    classes = (*terms.limits, *terms.uncovered, *terms.free, *spec.scoped_arguments)
+    unclassified = sorted(set(properties) - set(classes))
+    twice = sorted({name for name in classes if classes.count(name) > 1})
+    unknown = sorted(set(classes) - set(properties))
+    if unclassified or twice or unknown:
+        raise InvalidCapabilityError(
+            spec.id,
+            f"policy terms must put every argument in one class: unclassified {unclassified}, "
+            f"in two {twice}, not in the schema {unknown}",
+        )
+    for name in terms.limits:
+        declared = dict(properties[name])
+        number = declared.get("type") == "integer" or (
+            declared.get("type") == "string" and declared.get("pattern") == COST_PATTERN
+        )
+        if name not in required or not number:
+            raise InvalidCapabilityError(
+                spec.id, f"the limit {name!r} is not a required integer or amount of money"
+            )
+    for name in terms.uncovered:
+        if name in required:
+            raise InvalidCapabilityError(
+                spec.id, f"the uncovered argument {name!r} is required: no policy could cover"
+            )
+    for name in terms.free:
+        if name in required and dict(properties[name]).get("type") != "string":
+            raise InvalidCapabilityError(
+                spec.id, f"the free argument {name!r} is required and not a string"
+            )
 
 
 def _is_text_or_texts(declared: object) -> bool:
@@ -251,6 +318,12 @@ def validate_arguments(spec: CapabilitySpec, arguments: Mapping[str, object]) ->
         raise InvalidArgumentsError(
             spec.id, tuple(f"{error.json_path}: {error.message}" for error in errors)
         )
+
+
+def is_valid_value(schema: Mapping[str, object], value: object) -> bool:
+    """Whether ``value`` satisfies one property's ``schema`` — the limit of a policy against its
+    argument's schema (M13.12, decision 3b). Pure, with the draft every schema is read as."""
+    return bool(SCHEMA_VALIDATOR(_plain(schema)).is_valid(_plain(value)))
 
 
 class CapabilityRegistry:
@@ -406,6 +479,16 @@ BROWSER_INTRODUCED_AT: Final = datetime(2026, 9, 29, tzinfo=UTC)
 
 GUIDED_INTRODUCED_AT: Final = datetime(2026, 10, 8, tzinfo=UTC)
 """``created_at`` of ``browser.guided`` (M14.3, ADR 0060)."""
+
+GUIDED_ROUTE: Final = "browsing"
+"""The task type of a guided session when the plan names none: its default route (M14.3, decision
+25). Here since M13.12, because the declaration of ``browser.guided`` names it — a policy covers
+only the default route (decision 3c) —, and ``ela.tools.guided`` re-exports it."""
+
+UNDECLARED_MODEL: Final = "undeclared"
+"""The model of the default route in the catalogue built without settings, and **never a model**
+(M13.12, ADR 0062; the form of :data:`UNDECLARED_SITES`). The composition root writes the real one,
+read from the routing table, as it writes the sites: a policy names one model (decision 16)."""
 
 LOOKS_MIN: Final = 1
 LOOKS_MAX: Final = 30
@@ -1045,7 +1128,9 @@ def browser_act(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
     )
 
 
-def browser_guided(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
+def browser_guided(
+    sites: Sequence[str] = UNDECLARED_SITES, model: str = UNDECLARED_MODEL
+) -> CapabilitySpec:
     """``browser.guided``, **MEDIUM**: a model guides ELA's browser from a sentence, one gesture
     at a time, on the sites of the session (§19; M14.3, ADR 0060).
 
@@ -1059,6 +1144,11 @@ def browser_guided(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
 
     ``sites`` is the scope and the boundary of every gesture: one or more host names
     (:data:`SITE_PATTERN`), each a target of its own, each inside ``ELA_BROWSER_SITES``.
+
+    **A policy of §59 can cover it** (M13.12, ADR 0062): Tommaso's own standing yes for sessions on
+    some of its sites, bounded per session by the most it may spend, the looks and the seconds, on
+    the default route only — ``task_type`` is never covered, and ``model`` is what that route reads
+    today —; the sentence is free, the point of the policy.
     """
     return CapabilitySpec(
         id=BROWSER_GUIDED,
@@ -1089,6 +1179,13 @@ def browser_guided(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
         },
         scope=tuple(sites),
         scoped_arguments=("sites",),
+        policy_terms=PolicyTerms(
+            limits=("max_cost_usd", "looks", "seconds"),
+            uncovered=("task_type",),
+            free=("goal",),
+            route=GUIDED_ROUTE,
+            model=model,
+        ),
         requires_authorization=True,
         metadata={"introduced_in": "0.2"},
     )
@@ -1100,6 +1197,7 @@ def production_catalogue(
     fs_scope: str = UNDECLARED_FS_SCOPE,
     programs: Sequence[str] = UNDECLARED_PROGRAMS,
     sites: Sequence[str] = UNDECLARED_SITES,
+    guided_model: str = UNDECLARED_MODEL,
 ) -> CapabilityRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -1124,6 +1222,6 @@ def production_catalogue(
             terminal_run(programs),
             browser_read(sites),
             browser_act(sites),
-            browser_guided(sites),
+            browser_guided(sites, guided_model),
         )
     )

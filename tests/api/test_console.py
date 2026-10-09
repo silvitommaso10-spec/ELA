@@ -849,6 +849,17 @@ def test_a_guided_session_shows_its_numbers_whatever_the_ceiling_and_its_sentenc
     assert "Modello" not in nothing and "La frase" not in nothing
 
 
+def test_why_it_asks_is_shown_whatever_the_ceiling() -> None:
+    """M13.12, decision 8: the line «why I ask» names a policy by its short id and by numbers,
+    never a site — above the ceiling, so the yes is offered with it or not at all (ADR 0045 §11)."""
+    question = an_approval(why=("max_cost_usd 2.00 is above the 1.10 of policy 3f2a1b2c",))
+
+    for seen in (True, False):
+        pairs = _pairs(question, seen=seen)
+        assert "Perché te lo chiedo" in pairs and "above the 1.10 of policy 3f2a1b2c" in pairs
+    assert "Perché te lo chiedo" not in _pairs(an_approval(), seen=True)
+
+
 # ----------------------------------------------------------------------------------------
 # The refusals of the enrolment, each with its own sentence
 # ----------------------------------------------------------------------------------------

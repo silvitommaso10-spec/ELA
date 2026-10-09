@@ -31,6 +31,8 @@ from tests.permissions.support import (
     HIGH,
     NOTE,
     NOTE_ARGS,
+    TERMED,
+    TERMED_ARGS,
     Harness,
     grant,
     harness,
@@ -104,9 +106,10 @@ async def test_every_outcome_is_recorded(
 
 
 async def test_the_authorization_applied_is_in_the_event(h: Harness) -> None:
-    authorization = grant(COMPLETE)
+    # A policy of §59 on the capability that declares its terms (M13.12, decision 17).
+    authorization = grant(TERMED)
     decision = await h.guardian.authorize(
-        COMPLETE, COMPLETE_ARGS, authorization=authorization, authorization_uses=0
+        TERMED, TERMED_ARGS, authorization=authorization, authorization_uses=0
     )
     assert decision.outcome is PermissionOutcome.ALLOWED
     (event,) = await events(h)

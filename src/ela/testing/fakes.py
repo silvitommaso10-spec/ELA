@@ -99,8 +99,10 @@ from ela.ports import (
     AssignmentNodeBusyError,
     AssignmentStateError,
     AssignmentStillLiveError,
+    AuthorizationAlreadyRevokedError,
     AuthorizationExhaustedError,
     AuthorizationExpiredError,
+    AuthorizationRevokedError,
     BrowserError,
     BrowserStopped,
     CallRequest,
@@ -678,26 +680,36 @@ class FakeAssignmentStore:
 
 
 class FakeAuthorizationStore:
-    """Grants by id, with a use counter each (port :class:`~ela.ports.AuthorizationStore`)."""
+    """Grants by id, with a use counter each (port :class:`~ela.ports.AuthorizationStore`).
+
+    **It keeps rows, as the SQL store does, and reads them back** — the shape of the fake of the
+    assignments. A revocation writes ``revoked_at`` into the row and the read rebuilds the grant:
+    nothing here coins or widens a grant (rule 15), and ``ela.testing`` imports nothing but the
+    domain and the ports (contract 6) — so it cannot borrow a function of ``ela.permissions``
+    (M13.12, ADR 0062)."""
 
     def __init__(self) -> None:
-        self._grants: dict[AuthorizationId, Authorization] = {}
+        self._rows: dict[AuthorizationId, dict[str, Any]] = {}
         self._uses: dict[AuthorizationId, int] = {}
 
     async def grant(self, authorization: Authorization) -> None:
-        if authorization.id in self._grants:
+        if authorization.id in self._rows:
             raise AlreadyExistsError("authorization", authorization.id)
-        self._grants[authorization.id] = authorization
+        self._rows[authorization.id] = authorization.model_dump()
         self._uses[authorization.id] = 0
 
     async def get(self, authorization_id: AuthorizationId) -> Authorization:
         try:
-            return self._grants[authorization_id]
+            return Authorization.model_validate(self._rows[authorization_id])
         except KeyError:
             raise NotFoundError("authorization", authorization_id) from None
 
     async def for_capability(self, capability_id: CapabilityId) -> tuple[Authorization, ...]:
-        return tuple(a for a in self._grants.values() if a.capability_id == capability_id)
+        return tuple(
+            Authorization.model_validate(row)
+            for row in self._rows.values()
+            if row["capability_id"] == capability_id
+        )
 
     async def uses(self, authorization_id: AuthorizationId) -> int:
         try:
@@ -705,10 +717,22 @@ class FakeAuthorizationStore:
         except KeyError:
             raise NotFoundError("authorization", authorization_id) from None
 
+    async def revoke(self, authorization_id: AuthorizationId, *, at: datetime) -> Authorization:
+        """Same rules as the SQL store: unknown, already revoked — the first instant stays —, or
+        the instant written into the row, once."""
+        grant = await self.get(authorization_id)
+        if grant.revoked_at is not None:
+            raise AuthorizationAlreadyRevokedError(authorization_id, grant.revoked_at)
+        self._rows[authorization_id]["revoked_at"] = at
+        return await self.get(authorization_id)
+
     async def consume(self, authorization_id: AuthorizationId, *, now: datetime) -> int:
-        """Same rules as the SQL store, in the same order: unknown, expired, exhausted, count."""
+        """Same rules as the SQL store, in the same order: unknown, revoked, expired, exhausted,
+        count."""
         grant = await self.get(authorization_id)
         uses = self._uses[authorization_id]
+        if grant.revoked_at is not None:
+            raise AuthorizationRevokedError(authorization_id, grant.revoked_at)
         if grant.expires_at is not None and grant.expires_at <= now:
             raise AuthorizationExpiredError(authorization_id, grant.expires_at)
         if grant.max_uses is not None and uses >= grant.max_uses:

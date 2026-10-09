@@ -498,6 +498,7 @@ FULL = {
     "max_cost": "0.6 USD",
     "looks": 8,
     "sends": "the pages go to the provider",
+    "why": ["policy 1a2b3c4d revoked at 2026-10-01T00:00:00+00:00"],
 }
 EMPTY_QUESTION = {
     **QUESTION,
@@ -529,6 +530,7 @@ EMPTY_QUESTION = {
     "max_cost": "",
     "looks": None,
     "sends": "",
+    "why": None,
 }
 
 

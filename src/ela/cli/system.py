@@ -167,6 +167,7 @@ QUESTION_FIELDS: Final[frozenset[str]] = frozenset(
         "max_cost",
         "looks",
         "sends",
+        "why",
     }
 )
 """Every field of the question this surface shows, declared here so it can be checked.
@@ -242,6 +243,7 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         ("grant if you say yes", _terms(one.get("grant_uses"), one.get("grant_seconds"))),
         ("worst case", one.get("worst_case") or None),
         ("left this month", one.get("left") or None),
+        ("why I ask", None if one.get("why") is None else "; ".join(one["why"])),
         ("sentence", _seen(one.get("phrase"))),
         ("sites", None if sites is None else listed(sites)),
         ("model", one.get("model") or None),
@@ -269,7 +271,8 @@ def _rows(one: Mapping[str, Any]) -> list[tuple[str, Any]]:
         (name, value)
         for name, value in rows
         if value is not None
-        or name not in COMMAND_ROWS | NODE_ROWS | PAGE_ROWS | SPENDING_ROWS | SESSION_ROWS
+        or name
+        not in COMMAND_ROWS | NODE_ROWS | PAGE_ROWS | SPENDING_ROWS | SESSION_ROWS | POLICY_ROWS
     ]
 
 
@@ -299,6 +302,11 @@ SESSION_ROWS: Final[frozenset[str]] = frozenset(
 """The rows only a question about a guided session of the browser has (M14.3, ADR 0060; decision
 4): the sentence, the sites, the model, the most it may spend, the looks and what leaves the
 machine — absent, not dashed, for every other. The duration is the row ``timeout``."""
+
+POLICY_ROWS: Final[frozenset[str]] = frozenset({"why I ask"})
+"""The row only a question about a capability a policy of §59 can cover has (M13.12, ADR 0062;
+decision 8): why ELA asks, policy by policy — absent, not dashed, for every other. Beside the cost
+of a yes: what a policy of yours would have needed to cover it."""
 
 TARGET: Final = "target"
 """The row of a target whose question does not say what its tool calls it (M13.2 dec. 12)."""

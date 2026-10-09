@@ -35,11 +35,8 @@ the only errors that escape are a clock or an id generator that cannot even prod
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import StrEnum
-from types import MappingProxyType
 from typing import Final
 
 from ela.domain import (
@@ -62,6 +59,8 @@ from ela.domain import (
 )
 from ela.permissions.capabilities import validate_arguments
 from ela.permissions.errors import InvalidArgumentsError
+from ela.permissions.policies import UNCOVERED, UNUSABLE, shortfall
+from ela.permissions.rows import ASKING_RULES, RISK_POLICY, Rule, asks_at_every_use
 from ela.permissions.scope import scope_covers, targets_of
 from ela.ports import AuditLog, CapabilityRegistryPort, Clock, IdGenerator, NotFoundError
 
@@ -108,77 +107,6 @@ without a ceiling would let the shorter-lived of the two quietly outlive the lon
 
 GUARDIAN_ACTOR: Final = Actor(kind=ActorKind.SYSTEM, id="permission-guardian")
 """Who signs ``PERMISSION_DECIDED``: the Guardian acts on its own, nobody asked it to decide."""
-
-
-class Rule(StrEnum):
-    """Which check settled a decision; ``metadata["rule"]`` of every decision (ADR 0011 §3).
-
-    The first five are the rows of :data:`RISK_POLICY`, one per risk level; the others are the
-    checks that run before or beside the row, or the fail-safe.
-    """
-
-    ALLOW = "ALLOW"
-    ALLOW_WITHIN_SCOPE = "ALLOW_WITHIN_SCOPE"
-    APPROVAL_UNLESS_AUTHORIZED = "APPROVAL_UNLESS_AUTHORIZED"
-    APPROVAL_EVERY_USE = "APPROVAL_EVERY_USE"
-    """HIGH: a question at every use, and no standing policy of §59 reaches it (M13.1 dec. D, N).
-
-    Not ``APPROVAL_UNLESS_AUTHORIZED``: "unless authorized" would be false for the one row no
-    standing authorization can satisfy, and a rule name is what somebody reads in an audit a month
-    later (M17.2 dec. K.3, the precedent of a name that lied).
-    """
-    DENY = "DENY"
-    SCOPE = "SCOPE"
-    """A target outside the scope the capability declares — on **any** row (M13.1 dec. C).
-
-    A check and not a row: it is bound to the *fact* that a capability declares a scope, never to
-    one risk level, so the third row born tomorrow cannot quietly escape it. Until M13.1 this
-    denial signed itself ``ALLOW_WITHIN_SCOPE``, which named the row that allows and not the
-    boundary that refused: a false diagnosis is false even when the outcome is right.
-    """
-    CATALOGUE = "CATALOGUE"
-    ARGUMENTS = "ARGUMENTS"
-    STEP_MISMATCH = "STEP_MISMATCH"
-    AUTHORIZATION_MISMATCH = "AUTHORIZATION_MISMATCH"
-    AUTHORIZATION_REQUIRED = "AUTHORIZATION_REQUIRED"
-    INTERNAL_ERROR = "INTERNAL_ERROR"
-
-
-RISK_POLICY: Final[Mapping[RiskLevel, Rule]] = MappingProxyType(
-    {
-        RiskLevel.SAFE: Rule.ALLOW,
-        RiskLevel.LOW: Rule.ALLOW_WITHIN_SCOPE,
-        RiskLevel.MEDIUM: Rule.APPROVAL_UNLESS_AUTHORIZED,
-        RiskLevel.HIGH: Rule.APPROVAL_EVERY_USE,
-        RiskLevel.CRITICAL: Rule.DENY,
-    }
-)
-"""Policy by risk level (§29). Data, compared with the table of ADR 0011 and its revision in
-ADR 0045 by the tests; a level missing from it is denied.
-
-``HIGH`` stopped being ``DENY`` in M13.1, openly: §29 said HIGH and CRITICAL were not introduced
-in production "in the first version", v0.1 was tagged on 2026-09-07 and this work stands outside
-it. ``CRITICAL`` is still denied and has no capability: the day it gets one, that row moves the
-same way this one did, in the open."""
-
-ASKING_RULES: Final[frozenset[Rule]] = frozenset(
-    {Rule.APPROVAL_UNLESS_AUTHORIZED, Rule.APPROVAL_EVERY_USE}
-)
-"""The rows that end in a question when no usable grant covers the call.
-
-Derived from here and never re-listed: a row added to :data:`RISK_POLICY` that asks must say so
-once, and the executor reads the same set to know when a decision rests on its grant."""
-
-
-def asks_at_every_use(risk: RiskLevel) -> bool:
-    """Whether this row asks every time and is covered **only** by a grant born from a yes.
-
-    One definition, read by the Guardian when it judges a grant it was handed and by the executor
-    when it chooses which grant to hand over (M13.1 dec. D). Two copies of this rule would be two
-    answers to "does this grant cover", which is the thing ADR 0014 §2 exists to prevent — and the
-    cheaper of the two mistakes would be a task denied where the user should have been asked.
-    """
-    return RISK_POLICY.get(risk) is Rule.APPROVAL_EVERY_USE
 
 
 @dataclass(frozen=True, slots=True)
@@ -372,7 +300,9 @@ class PermissionGuardian:
         # 5a. A grant that does not cover the call is a caller's incoherence: DENIED, needed or
         #     not (ADR 0011 §6). The Guardian never ignores a fact it was handed.
         if authorization is not None:
-            mismatch = _mismatch(authorization, registered, task, step, targets, authorization_uses)
+            mismatch = _mismatch(
+                authorization, registered, task, step, targets, authorization_uses, arguments, now
+            )
             if mismatch is not None:
                 return _Verdict(
                     PermissionOutcome.DENIED,
@@ -404,7 +334,7 @@ class PermissionGuardian:
                 risk,
                 targets,
             )
-        unusable = _unusable(authorization, authorization_uses, now)
+        unusable = _unusable(authorization, authorization_uses, now, registered, arguments)
         if unusable is not None:
             return _Verdict(
                 PermissionOutcome.REQUIRES_APPROVAL,
@@ -413,10 +343,13 @@ class PermissionGuardian:
                 risk,
                 targets,
             )
+        # A grant without ``approval_id`` is a policy of §59, and the reason says so (M13.12,
+        # decision 9): «covered by policy …» is what the audit and the summary of a task read.
+        kind = "authorization" if authorization.approval_id is not None else "policy"
         return _Verdict(
             PermissionOutcome.ALLOWED,
             settled_by,
-            f"{capability.id} is covered by authorization {authorization.id}",
+            f"{capability.id} is covered by {kind} {authorization.id}",
             risk,
             targets,
             applied_authorization=authorization,
@@ -498,13 +431,20 @@ def _mismatch(
     step: TaskStep | None,
     targets: tuple[object, ...],
     uses: int,
+    arguments: JsonMapping,
+    now: datetime,
 ) -> str | None:
     """Why ``authorization`` does not *cover* this call, or ``None`` if it does (ADR 0011 §6).
 
-    A grant for another capability, another task or step, a scope that does not cover the
-    targets, or a use count that cannot be true: the wrong grant in the Guardian's hands, a
-    doubt whether or not a grant was needed. Checked before usability: a wrong grant that also
-    expired is still a wrong grant.
+    A grant for another capability, another task or step, or a use count that cannot be true: the
+    wrong grant in the Guardian's hands, a doubt whether or not a grant was needed. Checked before
+    usability: a wrong grant that also expired is still a wrong grant.
+
+    **For a grant born from a yes**, then, a scope that does not cover the targets. **For a policy
+    of §59** (``approval_id`` ``None``), the row first — no policy reaches a row that asks at every
+    use (ADR 0045 §3), and the reason names it — and then the half of the one predicate that says
+    *covers* (M13.12, ADR 0062; decision 4): the terms, the sites, the limits one at a time, the
+    arguments no policy covers. The other half, *usable*, is :func:`_unusable`'s.
     """
     if authorization.capability_id != spec.id:
         return f"authorization {authorization.id} is for {authorization.capability_id}"
@@ -512,25 +452,42 @@ def _mismatch(
         return f"authorization {authorization.id} is bound to task {authorization.task_id}"
     if authorization.step_id is not None and (step is None or step.id != authorization.step_id):
         return f"authorization {authorization.id} is bound to step {authorization.step_id}"
-    if not scope_covers(authorization.scope, targets):
-        return (
-            f"scope {list(authorization.scope)} of authorization {authorization.id} does not "
-            f"cover targets {_describe(targets)}"
-        )
     if uses < 0:
         return f"a use count of {uses} cannot be true"
-    if asks_at_every_use(spec.risk) and authorization.approval_id is None:
+    if authorization.approval_id is not None:
+        if not scope_covers(authorization.scope, targets):
+            return (
+                f"scope {list(authorization.scope)} of authorization {authorization.id} does not "
+                f"cover targets {_describe(targets)}"
+            )
+        return None
+    if asks_at_every_use(spec.risk):
         return (
             f"authorization {authorization.id} is a standing policy (§59) and {spec.id} is "
             f"{spec.risk.value}: only a grant born from an approval covers it"
         )
-    return None
+    found = shortfall(authorization, spec, arguments, now=now, gaps=UNCOVERED)
+    return None if found is None else found.reason
 
 
-def _unusable(authorization: Authorization, uses: int, now: datetime) -> str | None:
-    """Why a covering ``authorization`` cannot be used now — expired (closed bound, ADR 0005
-    §2-bis) or exhausted — or ``None`` if it can. Not an incoherence: the normal "ask" of §62."""
-    if authorization.expires_at is not None and authorization.expires_at <= now:
+def _unusable(
+    authorization: Authorization,
+    uses: int,
+    now: datetime,
+    spec: CapabilitySpec,
+    arguments: JsonMapping,
+) -> str | None:
+    """Why a covering ``authorization`` cannot be used now — revoked, expired (closed bound, ADR
+    0005 §2-bis) or exhausted — or ``None`` if it can. Not an incoherence: the normal "ask" of §62.
+
+    For a policy of §59 the revocation and the expiry are the other half of the one predicate
+    (M13.12, decision 4): revoked means not usable, so the step asks and is never denied.
+    """
+    if authorization.approval_id is None:
+        found = shortfall(authorization, spec, arguments, now=now, gaps=UNUSABLE)
+        if found is not None:
+            return found.reason
+    elif authorization.expires_at is not None and authorization.expires_at <= now:
         return f"authorization {authorization.id} expired at {authorization.expires_at.isoformat()}"
     if authorization.max_uses is not None and uses >= authorization.max_uses:
         return f"authorization {authorization.id} was used {uses} of {authorization.max_uses} times"

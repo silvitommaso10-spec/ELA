@@ -18,6 +18,8 @@ from urllib.parse import urlencode
 import pytest
 from httpx import AsyncClient
 
+from ela.api.console import _bounds
+from ela.permissions import COST_PATTERN
 from ela.providers.anthropic.models import HAIKU_5_5
 from tests.api.guided import MAX_COST, Guided, Script, guided
 from tests.api.support import outside_the_block
@@ -56,6 +58,14 @@ async def posted(console: AsyncClient, path: str, fields: list[tuple[str, str]])
         content=urlencode(fields),
         headers={"content-type": "application/x-www-form-urlencoded"},
     )
+
+
+def test_the_form_says_the_bounds_of_every_limit_the_catalogue_admits() -> None:
+    """An integer with its range, a cost with its pattern, and a limit whose schema says neither —
+    which the catalogue admits for an integer — as what it is."""
+    assert _bounds(1, 30, None) == "un intero da 1 a 30"
+    assert _bounds(None, None, COST_PATTERN) == "una cifra in dollari, con il punto: 1.10"
+    assert _bounds(None, None, None) == "un valore"
 
 
 async def test_the_list_says_there_is_none_and_the_form_is_derived_from_the_declaration(
