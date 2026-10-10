@@ -13,7 +13,9 @@ Its state is one file in ``BITWARDENCLI_APPDATA_DIR``; beside this script it wri
 environment —, which is how a test reads what the measure handed a child.
 
 What a test wants different it writes in ``fake-bw.json`` beside this script: ``"refuse"`` for
-``login``, ``unlock``, ``logout`` or ``delete`` is that command turned down.
+``login``, ``unlock``, ``lock``, ``logout`` or ``delete`` is that command turned down; ``"keeps"``
+for ``unlock`` is a new unlock that leaves the keys before it alive — **which of the two the real
+one does is what the measure is there to read (K2)**, so the fake can be either.
 """
 
 from __future__ import annotations
@@ -75,10 +77,11 @@ def fail(message: str) -> int:
     return 1
 
 
-def new_key(state: dict) -> str:
+def new_key(state: dict, *, keeps: bool = False) -> str:
     state["keys_made"] = state.get("keys_made", 0) + 1
     key = f"chiave-finta-di-sessione-numero-{state['keys_made']}-" + "k" * 40
-    state["valid_key"] = key
+    before = state.get("valid_keys", []) if keeps else []
+    state["valid_keys"] = [*before, key]
     return key
 
 
@@ -100,8 +103,7 @@ def main(arguments: list[str]) -> int:
         return 0
     command, rest = words[0], words[1:]
     account = state.get("account")
-    valid = state.get("valid_key")
-    open_ = account is not None and valid is not None and os.environ.get("BW_SESSION") == valid
+    open_ = account is not None and os.environ.get("BW_SESSION") in state.get("valid_keys", [])
 
     if command == "status":
         if account is None:
@@ -143,14 +145,16 @@ def main(arguments: list[str]) -> int:
     if command == "unlock":
         if wanted().get("unlock") == "refuse":
             return fail("Invalid master password.")
-        key = new_key(state)
+        key = new_key(state, keeps=wanted().get("unlock") == "keeps")
         save(state)
         sys.stdout.write(
             key if raw else f'Your vault is now unlocked!\n\n$ export BW_SESSION="{key}"'
         )
         return 0
     if command == "lock":
-        state["valid_key"] = None
+        if wanted().get("lock") == "refuse":
+            return fail("A vault that does not lock.")
+        state["valid_keys"] = []
         save(state)
         sys.stdout.write("Your vault is locked.")
         return 0
