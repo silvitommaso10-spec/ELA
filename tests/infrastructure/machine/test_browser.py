@@ -33,6 +33,7 @@ import asyncio
 import os
 import platform
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -92,6 +93,7 @@ from ela.tools.verifiers import (
     BrowserActVerifier,
     BrowserReadVerifier,
 )
+from tests.browser_leftovers import left, scratch, sweep
 
 INSTALL = "uv run playwright install --only-shell chromium"
 SYSTEM = platform.system()
@@ -238,35 +240,42 @@ def drivers() -> list[int]:
     )
 
 
-@pytest.fixture
-async def nothing_left_behind() -> AsyncIterator[None]:
+@pytest.fixture(autouse=True)
+async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     """A browser a test leaves that nobody holds is not left to the next test — nor to the loop,
     which at its end cancels every task and then waits for ever for a call of Playwright's that
     was in flight (measured, 2026-10-10: ``asyncio.run`` does not return). Killed here, by pid:
-    the test that left it has failed on its own assertion already, and this asserts nothing.
+    the test that left it has failed on its own assertion already.
+
+    **And nothing of it stays on the machine** (M13.4e, decisions 60 and 71): a killed browser
+    leaves the temporary profile Playwright made for it, and a browser stopped when its driver
+    died is nobody's descendant — both were found on this machine. So every test of this module
+    gives its drivers a temporary folder of its own; what the test left is found **by that
+    folder**, taken away, and then asserted to be nothing (``tests/browser_leftovers.py``).
 
     **An ``async`` fixture on purpose**: it is torn down inside the loop, so before the loop
     itself — a plain one is torn down after it in every test that asks for no other fixture of the
     loop's, which is where a red test hung instead of failing (the review of the repair)."""
+    folder = scratch()
+    monkeypatch.setenv("TMPDIR", str(folder))
     yield
-    left = started()
-    for pid, _ in left:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:  # gone on its own in between
-            continue
+    mine = [pid for pid, _ in started()]
+    sweep(folder, also=tuple(mine))
     others = asyncio.all_tasks() - {asyncio.current_task()}
     closing = [
         task
         for task in others
         if getattr(task.get_coro(), "__name__", "") in CLOSINGS_OF_THE_ADAPTER
     ]
-    if left or closing:
+    if mine or closing:
         # Only after a test that failed: either it left a process, killed above, or it returned
         # while a closing of the adapter's was still in flight — its processes dead already. The
         # calls that were in flight fail on a closed pipe: they are given the loop before it is
         # torn down, and what waits for ever — the task the stop wakes — is what the bound is for.
         await asyncio.wait(others, timeout=2)
+    still = left(folder)
+    shutil.rmtree(folder, ignore_errors=True)
+    assert not still, f"a test of the real browser left something on this machine: {still}"
 
 
 CLOSINGS_OF_THE_ADAPTER = frozenset({"_shut", "_dropped", "_stopped_once_started"})
@@ -1114,6 +1123,47 @@ async def test_a_browser_that_does_not_close_is_killed_when_the_grace_is_over(
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:  # the green run: the adapter has killed it already
                 continue
+
+
+async def test_the_profile_of_what_was_killed_is_taken_away_only_once_the_kernel_has_none_of_it(
+    served: list[Site],
+) -> None:
+    """Decision 58 of the review of M13.4e: the wait for the kernel inside the kill was held by no
+    test — remove it, and everything stayed green, because the kernel is usually quicker than the
+    next line. **A line no test holds does not stay in a path that kills.**
+
+    Built: the question the adapter asks the kernel — «is this process still there?» — is the
+    test's, and answers «alive» the first times whatever the kernel says. Every time it is asked
+    it looks at the profile of the browser: the question is asked, the folder is still there each
+    time it is, and it is gone when ``settle`` returns — taken away **after** the kernel had none
+    of what was killed, never before."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    stopping = asyncio.Event()
+    browser = stoppable(stopping)
+    await browser.open(web.origin + "/", lambda url: True, FakeStop())
+    (driver,) = drivers()
+    profile = profile_of([pid for pid, _ in started() if pid != driver])
+    os.kill(driver, signal.SIGSTOP)
+    asked: list[tuple[int, bool]] = []
+
+    def still_there(pid: int) -> bool:
+        asked.append((pid, profile.is_dir()))
+        return True if len(asked) <= 3 else known(pid)
+
+    browser._known = still_there  # type: ignore[attr-defined]  # noqa: SLF001 — the adapter's question
+    grace = Grace()
+
+    stopping.set()
+    settling = asyncio.create_task(browser.settle(grace))
+    await grace.asked.wait()
+    grace.over.set()
+    async with asyncio.timeout(30):
+        killed = await settling
+
+    assert killed, "the browser had not closed: it was killed"
+    assert len(asked) > 3, "the kernel was asked until it had none of what was killed"
+    assert all(there for _, there in asked), "and the profile was still there every time it was"
+    assert not profile.exists(), "taken away only then"
 
 
 async def test_settled_returns_only_when_the_task_the_stop_woke_has_ended(

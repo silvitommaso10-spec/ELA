@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -35,6 +36,7 @@ import pytest
 
 from ela.composition import Ela, Settings, build
 from ela.testing.fakes import FakeBrowser, FakePower
+from tests.browser_leftovers import left, scratch, sweep
 from tests.composition.closing import INTERRUPTED
 from tests.composition.support import create_schema, database_url, declare
 
@@ -82,7 +84,22 @@ def test_alive_says_so_of_a_process_that_runs() -> None:
     assert alive(os.getpid())
 
 
-def closed(mode: str, folder: Path, origin: str = "") -> tuple[int, list[tuple[int, str]]]:
+@pytest.fixture
+def profiles() -> Iterator[Path]:
+    """The temporary folder of the child's driver: where its browser's profile is, and by which
+    whatever a failing run leaves is found and taken away (M13.4e, decisions 60 and 71) — a
+    browser whose driver was killed with the child's group is in a group of its own."""
+    folder = scratch()
+    try:
+        yield folder
+    finally:
+        sweep(folder)
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def closed(
+    mode: str, folder: Path, profiles: Path, origin: str = ""
+) -> tuple[int, list[tuple[int, str]]]:
     """Run an ELA that closes in ``mode``: its exit code, and what its browser had started.
 
     The child is the leader of a session of its own, so a child that does not exit is killed with
@@ -96,6 +113,7 @@ def closed(mode: str, folder: Path, origin: str = "") -> tuple[int, list[tuple[i
         text=True,
         start_new_session=True,
         cwd=ROOT,
+        env={**os.environ, "TMPDIR": str(profiles)},
     )
     try:
         out, err = child.communicate(timeout=GUARD_SECONDS)
@@ -119,41 +137,45 @@ def closed(mode: str, folder: Path, origin: str = "") -> tuple[int, list[tuple[i
 @POSIX
 @pytest.mark.parametrize("mode", ["close", "fill"])
 def test_an_ela_closed_with_its_browser_at_work_exits_and_leaves_no_process(
-    mode: str, tmp_path: Path, origin: str
+    mode: str, tmp_path: Path, origin: str, profiles: Path
 ) -> None:
-    code, started = closed(mode, tmp_path / "ela", origin)
+    code, started = closed(mode, tmp_path / "ela", profiles, origin)
 
     assert code == 0
     assert len(started) > 1, "the control: a driver and its browser were running"
     assert [name for pid, name in started if alive(pid)] == []
+    assert not left(profiles), "nor a profile: the browser closed, and took its own away"
 
 
 @POSIX
 @pytest.mark.parametrize("mode", ["close-sigint", "fill-sigint"])
 def test_a_close_entered_with_a_cancellation_pending_still_closes_the_browser(
-    mode: str, tmp_path: Path, origin: str
+    mode: str, tmp_path: Path, origin: str, profiles: Path
 ) -> None:
-    """After a Ctrl-C uvicorn raises the ``SIGINT`` again when ``serve`` returns, and the handler
-    of ``asyncio.run`` cancels the task that is about to close ELA. The close runs to its end all
-    the same, gives the cancellation back, and the process ends as it ends today after a Ctrl-C."""
-    code, started = closed(mode, tmp_path / "ela", origin)
+    """Until the second part of M13.4e this was what a Ctrl-C did: uvicorn raised the ``SIGINT``
+    again when ``serve`` returned, and the handler of ``asyncio.run`` cancelled the task about to
+    close ELA. Since then the signals are ELA's and nobody cancels that task
+    (``tests/api/test_serving_signals.py``); **the care stays, for whoever closes ELA from a task
+    that is cancelled**: the close runs to its end all the same, and gives the cancellation back."""
+    code, started = closed(mode, tmp_path / "ela", profiles, origin)
 
     assert code == INTERRUPTED
     assert len(started) > 1, "the control: a driver and its browser were running"
     assert [name for pid, name in started if alive(pid)] == []
+    assert not left(profiles)
 
 
 @POSIX
 @pytest.mark.parametrize(("mode", "code"), [("pool", 0), ("pool-sigint", INTERRUPTED)])
 def test_the_database_is_released_whole_after_a_ctrl_c_too(
-    mode: str, code: int, tmp_path: Path
+    mode: str, code: int, tmp_path: Path, profiles: Path
 ) -> None:
     """What the database's release gains (decision 51). With more than one connection in the pool
     a close cancelled at its first wait closed one and left the others: the write-ahead log was
     not written back, and whoever copied ``ela.db`` alone did not have the last writes."""
     folder = tmp_path / "ela"
 
-    exited, _ = closed(mode, folder)
+    exited, _ = closed(mode, folder, profiles)
 
     assert sorted(file.name for file in folder.glob("ela.db*")) == ["ela.db"]
     assert exited == code
@@ -312,3 +334,106 @@ async def test_a_browser_that_cannot_be_settled_does_not_keep_the_database_open(
         await ela.aclose()
 
     assert pooled(ela) == 0
+
+
+# ----------------------------------------------------------------------------------------
+# The hurry: a second signal ends the grace (M13.4e, the second part — decision 55)
+# ----------------------------------------------------------------------------------------
+
+
+class Graced(Settling):
+    """A browser that has not closed: it waits for the whole grace, and then names what it killed
+    — what the real adapter does when the task its stop woke is still at work."""
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        await super().settle(grace)
+        await grace()
+        return ("node",)
+
+
+async def an_ela_whose_browser_has_not_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[Ela, Graced]:
+    declare(monkeypatch, tmp_path)
+    await create_schema(database_url(tmp_path))
+    made: list[Ela] = []
+
+    async def usable() -> bool:
+        return True
+
+    browser = Graced(lambda: made[0].stopping.is_set(), usable)
+    made.append(await build(Settings.load(), power=FakePower(), browser=browser))
+    return made[0], browser
+
+
+Told = list[tuple[tuple[str, ...], bool]]
+
+
+def recording(told: Told) -> Callable[[tuple[str, ...], bool], None]:
+    def killed(names: tuple[str, ...], hurried: bool) -> None:
+        told.append((names, hurried))
+
+    return killed
+
+
+async def test_a_hurry_raised_before_the_close_is_a_grace_that_is_over_at_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The second signal may arrive while the server is still stopping, before the close begins:
+    it is not lost. Whoever closes ELA is told the names **and that it was the hurry**."""
+    ela, _ = await an_ela_whose_browser_has_not_closed(monkeypatch, tmp_path)
+    hurry = asyncio.Event()
+    hurry.set()
+    told: Told = []
+
+    async with asyncio.timeout(4):  # under the grace: a close that waited it out fails here
+        await ela.aclose(killed=recording(told), hurry=hurry)
+
+    assert told == [(("node",), True)]
+    assert pooled(ela) == 0
+
+
+async def test_a_hurry_raised_while_the_close_waits_ends_the_grace_there(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ela, browser = await an_ela_whose_browser_has_not_closed(monkeypatch, tmp_path)
+    hurry = asyncio.Event()
+    told: Told = []
+
+    closing = asyncio.create_task(ela.aclose(killed=recording(told), hurry=hurry))
+    await browser.reached.wait()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert not closing.done() and told == [], "the grace has not run out, and nobody hurried"
+
+    hurry.set()
+    async with asyncio.timeout(4):
+        await closing
+
+    assert told == [(("node",), True)]
+    assert pooled(ela) == 0
+
+
+async def test_a_grace_that_runs_out_with_nobody_hurrying_is_said_to_have_run_out(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With a hurry nobody raises, and with none at all: the grace is the declared time, and
+    whoever closes ELA is told it was not the hurry."""
+    from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
+
+    ela, _ = await an_ela_whose_browser_has_not_closed(monkeypatch, tmp_path)
+    waited: list[float] = []
+    sleeping = asyncio.sleep
+
+    async def sleep(seconds: float) -> None:
+        waited.append(seconds)
+        await sleeping(0)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    told: Told = []
+
+    await ela.aclose(killed=recording(told), hurry=asyncio.Event())
+    await ela.aclose(killed=recording(told))
+
+    assert told == [(("node",), False), (("node",), False)]
+    assert waited == [BROWSER_CLOSE_GRACE_SECONDS, BROWSER_CLOSE_GRACE_SECONDS]
