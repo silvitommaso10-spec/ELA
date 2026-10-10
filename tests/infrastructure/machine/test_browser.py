@@ -1087,23 +1087,33 @@ async def test_a_browser_that_does_not_close_is_killed_when_the_grace_is_over(
         os.kill(pid, signal.SIGSTOP)
     grace = Grace()
 
-    stopping.set()
-    settling = asyncio.create_task(browser.settle(grace))
-    await grace.asked.wait()
-    assert not settling.done(), "the browser has not closed, and nothing has been killed yet"
-    assert all(known(pid) for pid, _ in before)
-    grace.over.set()
-    async with asyncio.timeout(30):  # the test's guard: an adapter that kills nothing fails here
-        killed = await settling
+    try:
+        stopping.set()
+        settling = asyncio.create_task(browser.settle(grace))
+        await grace.asked.wait()
+        assert not settling.done(), "the browser has not closed, and nothing has been killed yet"
+        assert all(known(pid) for pid, _ in before)
+        grace.over.set()
+        async with asyncio.timeout(30):  # the test's guard: an adapter that kills nothing fails
+            killed = await settling
 
-    assert killed.count("node") == 1, "the driver, called by the adapter what it is on every system"
-    assert len(killed) == 1 + len(theirs), "and every process the driver had started: the browser"
-    assert all("/" not in name for name in killed), "names, never a path"
-    assert [name for pid, name in before if known(pid)] == []
-    assert not profile.exists(), "a killed browser leaves its profile: the adapter takes it away"
-    assert browser._pages == {} and browser._closing == set()  # noqa: SLF001
-    watching = browser._watching  # noqa: SLF001 — the task the stop wakes
-    assert watching is not None and watching.done()
+        assert killed.count("node") == 1, "the driver, called by the adapter what it is everywhere"
+        assert len(killed) == 1 + len(theirs), "and every process the driver had started"
+        assert all("/" not in name for name in killed), "names, never a path"
+        assert [name for pid, name in before if known(pid)] == []
+        assert not profile.exists(), "a killed browser leaves its profile: the adapter removes it"
+        assert browser._pages == {} and browser._closing == set()  # noqa: SLF001
+        watching = browser._watching  # noqa: SLF001 — the task the stop wakes
+        assert watching is not None and watching.done()
+    finally:
+        # Only after a red run: a stopped browser whose driver was killed is nobody's descendant
+        # any more — ``nothing_left_behind`` cannot see it — and stays stopped for ever (found on
+        # this machine, 2026-10-10). Killed here by the pids this test froze, and nothing else.
+        for pid, _ in before:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:  # the green run: the adapter has killed it already
+                continue
 
 
 async def test_settled_returns_only_when_the_task_the_stop_woke_has_ended(
@@ -1122,7 +1132,10 @@ async def test_settled_returns_only_when_the_task_the_stop_woke_has_ended(
 
     async def killed_without_a_wait() -> tuple[str, ...]:
         for pid, _ in started():
-            os.kill(pid, signal.SIGKILL)
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:  # gone on its own once its parent was killed
+                continue
         return ("node",)
 
     browser._kill = killed_without_a_wait  # type: ignore[method-assign]  # noqa: SLF001
