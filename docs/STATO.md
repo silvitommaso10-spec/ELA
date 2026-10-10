@@ -873,7 +873,13 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   della sessione; il vault resta aperto un'ora; e WhatsApp Web è passato alla prova di M13.10. ***Annotato il
   2026-10-10***, la sera: lo script della misura è approvato e Tommaso la lancia; con la finestra del login
   aperta le capability della percezione si rifiutano e **la sonda non cambia** — ELA non legge il contenuto
-  dello schermo e non ascolta; sa che la finestra c'è (decisione 49).
+  dello schermo e non ascolta; sa che la finestra c'è (decisione 49). ***Annotato il 2026-10-10***, la notte:
+  **la misura di Tommaso è fatta** — 16 PASSATO, 0 RIAPRE, 1 SALTATO, 2 FALLITO —, i suoi numeri sono nella
+  SPEC e **la SPEC è decisa** (decisioni 63–65): il binario è Chrome for Testing del lock, quello solo; sono le
+  preferenze e i flag a tenere il browser scollegato dall'account, non il binario; dopo il sì la voce del vault
+  si legge una volta sola. I due FALLITO sono dello script — l'uscita dall'account non verificata —, non del
+  prodotto. **Il codice non è cominciato**: la review lo mette dopo la fine di M13.4e «come dice la decisione
+  62», e **le decisioni 55–62 non sono arrivate alla sessione** (domanda 68 della SPEC).
 - **M13.4b — una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta**
   (ADR 0052 §9 e §10).
   **Registrata il 2026-10-01** dalla review della SPEC di M6.3c, con l'ordine non deciso. ***Deciso il 2026-10-10***
