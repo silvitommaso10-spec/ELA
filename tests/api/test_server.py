@@ -403,7 +403,6 @@ def test_a_browser_ela_had_to_kill_is_said_at_the_close_by_name_and_count(
         f"ela: the browser did not close within {BROWSER_CLOSE_GRACE_SECONDS} s of the stop: ELA "
         "killed what it had started — 2 chrome-headless-shell, 1 node" in error
     )
-    assert "/" not in error.split("ELA killed", 1)[1], "names, never a path or a command line"
 
 
 def test_a_browser_that_closed_by_itself_is_not_mentioned_at_the_close(

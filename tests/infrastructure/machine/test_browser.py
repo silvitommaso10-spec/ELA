@@ -200,10 +200,9 @@ def started() -> list[tuple[int, str]]:
     out = subprocess.run(
         ["/bin/ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True, text=True, check=True
     ).stdout
-    rows = [line.split(None, 2) for line in out.splitlines()]
     children: dict[int, list[tuple[int, str]]] = {}
-    for pid, ppid, name in ((int(a), int(b), c) for a, b, c in rows):
-        children.setdefault(ppid, []).append((pid, name.rsplit("/", 1)[-1]))
+    for pid, (ppid, name) in _listed(out).items():
+        children.setdefault(ppid, []).append((pid, name))
     found: list[tuple[int, str]] = []
     todo = [os.getpid()]
     while todo:
@@ -227,12 +226,9 @@ def drivers() -> list[int]:
     out = subprocess.run(
         ["/bin/ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True, text=True, check=True
     ).stdout
-    rows = [line.split(None, 2) for line in out.splitlines()]
     mine = os.getpid()
     return sorted(
-        int(pid)
-        for pid, parent, name in rows
-        if int(parent) == mine and name.rsplit("/", 1)[-1] != "ps"
+        pid for pid, (parent, name) in _listed(out).items() if parent == mine and name != "ps"
     )
 
 
@@ -253,11 +249,22 @@ async def nothing_left_behind() -> AsyncIterator[None]:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:  # gone on its own in between
             continue
-    if left:
-        # Only after a test that failed. The calls that were in flight now fail on a closed pipe:
-        # they are given the loop before it is torn down, and what waits for ever — the task the
-        # stop wakes — is what the bound is for.
-        await asyncio.wait(asyncio.all_tasks() - {asyncio.current_task()}, timeout=2)
+    others = asyncio.all_tasks() - {asyncio.current_task()}
+    closing = [
+        task
+        for task in others
+        if getattr(task.get_coro(), "__name__", "") in CLOSINGS_OF_THE_ADAPTER
+    ]
+    if left or closing:
+        # Only after a test that failed: either it left a process, killed above, or it returned
+        # while a closing of the adapter's was still in flight — its processes dead already. The
+        # calls that were in flight fail on a closed pipe: they are given the loop before it is
+        # torn down, and what waits for ever — the task the stop wakes — is what the bound is for.
+        await asyncio.wait(others, timeout=2)
+
+
+CLOSINGS_OF_THE_ADAPTER = frozenset({"_shut", "_dropped", "_stopped_once_started"})
+"""The coroutines of the adapter that hold a call of Playwright's while they close something."""
 
 
 def decision(capability: str) -> PermissionDecision:
@@ -993,20 +1000,38 @@ class Grace:
     def __init__(self) -> None:
         self.asked = asyncio.Event()
         self.over = asyncio.Event()
+        self.dropped = False
 
     async def __call__(self) -> None:
         self.asked.set()
-        await self.over.wait()
+        try:
+            await self.over.wait()
+        except asyncio.CancelledError:
+            self.dropped = True
+            raise
 
 
-def alive(pid: int) -> bool:
-    """Whether the kernel knows ``pid`` as a process **that has not ended**. One that was killed
-    and nobody has collected yet — a zombie — runs nothing: it is its parent's to collect, in its
-    own time, and how long that takes is the machine's and not what is asserted here."""
-    state = subprocess.run(
-        ["/bin/ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False
-    ).stdout.strip()
-    return bool(state) and not state.startswith("Z")
+def known(pid: int) -> bool:
+    """Whether the kernel still has ``pid`` in its table — running, stopped, or ended and not yet
+    collected. What ``settle`` promises of what it killed is that it is not."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def profile_of(pids: list[int]) -> Path:
+    """The temporary profile of a browser, read from its own arguments: the folder Playwright
+    makes for it and takes away when the browser closes."""
+    said = subprocess.run(
+        ["/bin/ps", "-ww", "-o", "args=", "-p", ",".join(map(str, pids))],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    (folder,) = set(re.findall(r"--user-data-dir=(\S+)", said))
+    return Path(folder)
 
 
 async def test_settled_after_the_stop_nothing_of_the_adapter_runs_and_nothing_was_killed(
@@ -1021,44 +1046,92 @@ async def test_settled_after_the_stop_nothing_of_the_adapter_runs_and_nothing_wa
 
     stopping.set()
     killed = await browser.settle(grace)
+    await asyncio.sleep(0)
 
     assert killed == ()
     assert descendants() == []
     assert browser._pages == {} and browser._closing == set()  # noqa: SLF001
+    assert grace.asked.is_set() and grace.dropped, "the grace nobody needed is not left waiting"
 
 
+@pytest.mark.parametrize("frozen", ["the driver", "the browser", "the driver and the browser"])
 async def test_a_browser_that_does_not_close_is_killed_when_the_grace_is_over(
-    served: list[Site], nothing_left_behind: None
+    frozen: str, served: list[Site], nothing_left_behind: None
 ) -> None:
-    """The driver is stopped with a signal, so the closing ELA's stop begins is a call of
-    Playwright's that never comes back: a browser that does not close, built with an event. When
-    the grace — an event too — is over, what the adapter started is killed, its names come back,
-    and with the pipes closed the closing ends: nothing of the adapter is left in flight."""
+    """A browser that does not close, built with an event: a ``SIGSTOP``. To its driver, and the
+    closing ELA's stop begins is a call of Playwright's that never comes back. **To the browser
+    itself**, and nothing but a kill of its own takes it away — a browser whose driver dies goes
+    with its pipe, but not one that is stopped (the review of the repair: with only the driver
+    frozen this was green without killing the browser at all).
+
+    When the grace — an event too — is over, what the adapter started is killed and named; **the
+    kernel knows none of it any more** when ``settle`` returns — the driver is this process's
+    child, and nobody else would collect it —; and the temporary profile, which a browser takes
+    away when it closes and a killed one leaves, is taken away by the adapter."""
     web = site(served, {"/": (200, {}, "<p>x</p>")})
     stopping = asyncio.Event()
     browser = stoppable(stopping)
     await browser.open(web.origin + "/", lambda url: True, FakeStop())
     before = started()
     (driver,) = drivers()
-    os.kill(driver, signal.SIGSTOP)
+    theirs = [pid for pid, _ in before if pid != driver]
+    profile = profile_of(theirs)
+    assert profile.is_dir() and profile.name.startswith("playwright_chromiumdev_profile-")
+    for pid in [driver] * ("driver" in frozen) + theirs * ("browser" in frozen):
+        os.kill(pid, signal.SIGSTOP)
     grace = Grace()
 
     stopping.set()
     settling = asyncio.create_task(browser.settle(grace))
     await grace.asked.wait()
     assert not settling.done(), "the browser has not closed, and nothing has been killed yet"
-    assert all(alive(pid) for pid, _ in before)
+    assert all(known(pid) for pid, _ in before)
     grace.over.set()
     async with asyncio.timeout(30):  # the test's guard: an adapter that kills nothing fails here
         killed = await settling
 
     assert killed.count("node") == 1, "the driver, called by the adapter what it is on every system"
-    assert len(killed) > 1, "and what the driver had started: the browser"
+    assert len(killed) == 1 + len(theirs), "and every process the driver had started: the browser"
     assert all("/" not in name for name in killed), "names, never a path"
-    assert [name for pid, name in before if alive(pid)] == []
+    assert [name for pid, name in before if known(pid)] == []
+    assert not profile.exists(), "a killed browser leaves its profile: the adapter takes it away"
     assert browser._pages == {} and browser._closing == set()  # noqa: SLF001
     watching = browser._watching  # noqa: SLF001 — the task the stop wakes
     assert watching is not None and watching.done()
+
+
+async def test_settled_returns_only_when_the_task_the_stop_woke_has_ended(
+    served: list[Site], nothing_left_behind: None
+) -> None:
+    """After the kill the pipes are closed and every call in flight fails — but only once the loop
+    has run: ``settle`` waits for the task the stop woke, and does not return on having killed.
+    Here the kill is the test's, and gives the loop to nobody: what is asserted is not held by how
+    long the real one happens to take (the review of the repair)."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    stopping = asyncio.Event()
+    browser = stoppable(stopping)
+    await browser.open(web.origin + "/", lambda url: True, FakeStop())
+    (driver,) = drivers()
+    os.kill(driver, signal.SIGSTOP)
+
+    async def killed_without_a_wait() -> tuple[str, ...]:
+        for pid, _ in started():
+            os.kill(pid, signal.SIGKILL)
+        return ("node",)
+
+    browser._kill = killed_without_a_wait  # type: ignore[method-assign]  # noqa: SLF001
+    grace = Grace()
+
+    stopping.set()
+    settling = asyncio.create_task(browser.settle(grace))
+    await grace.asked.wait()
+    grace.over.set()
+    async with asyncio.timeout(30):
+        assert await settling == ("node",)
+
+    watching = browser._watching  # noqa: SLF001 — the task the stop wakes
+    assert watching is not None and watching.done()
+    assert browser._pages == {} and browser._closing == set()  # noqa: SLF001
 
 
 async def test_a_browser_is_not_settled_before_the_stop() -> None:
@@ -1121,6 +1194,48 @@ def test_what_ps_says_is_read_by_parent_and_a_line_it_cannot_place_is_left_out()
     assert sorted(table) == [100, 200, 201, 202, 203, 300]
     assert sorted(pid for pid, _ in _descendants(200, table)) == [201, 202, 203]
     assert _descendants(100, table) == [], "what somebody else started is nobody's to kill here"
+
+
+def test_the_name_of_a_process_cannot_write_a_row_of_the_table_the_adapter_kills_from() -> None:
+    """A name is whatever its process says it is, and ``ps`` prints it as it is — a line separator
+    of Unicode included. Read line by line as Python reads lines, a process called
+    ``x<U+2028>999 200 y`` would add a row: a process that is nobody's, listed as started by a
+    driver, and killed with it (the review of the repair, measured). The table is split where
+    ``ps`` ends its lines and nowhere else."""
+    said = (
+        "  200    50 MainThread\n"
+        "  201   200 x\u2028999 200 injected\n"
+        "  202   200 y\u2029998 200 z\n"
+    )
+
+    table = _listed(said)
+
+    assert sorted(table) == [200, 201, 202]
+    assert [pid for pid, _ in _descendants(200, table)] == [201, 202]
+
+
+def test_a_table_that_loops_is_walked_once() -> None:
+    """A parent that is its own grandchild is not something a kernel says, and is not something
+    the loop of ELA's close may hang on."""
+
+    class Looked(dict[int, tuple[int, str]]):
+        """The table, counting how often it is gone through: the test's guard. A walk that never
+        ends is stopped here, by the table itself — nothing else can stop a loop that waits for
+        nothing, and left alone it would fill the memory of whoever ran the suite."""
+
+        looks = 0
+
+        def items(self) -> Any:
+            self.looks += 1
+            if self.looks > len(self):
+                # Raised, not asserted: an ``assert`` here is rewritten to describe ``self``, and
+                # describing a table goes through it again.
+                raise AssertionError("the walk of a table that loops did not end")
+            return super().items()
+
+    table = Looked({1: (2, "a"), 2: (1, "b"), 3: (2, "c")})
+
+    assert sorted(_descendants(1, table)) == [(2, "b"), (3, "c")]
 
 
 async def test_an_adapter_that_cannot_read_the_process_of_its_driver_opens_nothing(

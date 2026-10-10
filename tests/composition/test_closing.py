@@ -77,7 +77,12 @@ def alive(pid: int) -> bool:
     return bool(state) and not state.startswith("Z")
 
 
-def closed(mode: str, folder: Path, origin: str) -> tuple[int, list[tuple[int, str]]]:
+def test_alive_says_so_of_a_process_that_runs() -> None:
+    """The control of the helper every «nothing is left» below rests on."""
+    assert alive(os.getpid())
+
+
+def closed(mode: str, folder: Path, origin: str = "") -> tuple[int, list[tuple[int, str]]]:
     """Run an ELA that closes in ``mode``: its exit code, and what its browser had started.
 
     The child is the leader of a session of its own, so a child that does not exit is killed with
@@ -101,7 +106,7 @@ def closed(mode: str, folder: Path, origin: str) -> tuple[int, list[tuple[int, s
             f"ELA closed with «{mode}» and did not exit within {GUARD_SECONDS} s: the loop was "
             "torn down with a call of the browser's in flight"
         )
-    rows = [json.loads(line) for line in out.splitlines() if line.startswith("{")]
+    rows = [json.loads(line) for line in out.split("\n") if line.startswith("{")]
     assert rows, f"the child said nothing before its close:\n{err}"
     return child.returncode, [(pid, name) for pid, name in rows[0]["started"]]
 
@@ -141,14 +146,14 @@ def test_a_close_entered_with_a_cancellation_pending_still_closes_the_browser(
 @POSIX
 @pytest.mark.parametrize(("mode", "code"), [("pool", 0), ("pool-sigint", INTERRUPTED)])
 def test_the_database_is_released_whole_after_a_ctrl_c_too(
-    mode: str, code: int, tmp_path: Path, origin: str
+    mode: str, code: int, tmp_path: Path
 ) -> None:
     """What the database's release gains (decision 51). With more than one connection in the pool
     a close cancelled at its first wait closed one and left the others: the write-ahead log was
     not written back, and whoever copied ``ela.db`` alone did not have the last writes."""
     folder = tmp_path / "ela"
 
-    exited, _ = closed(mode, folder, origin)
+    exited, _ = closed(mode, folder)
 
     assert sorted(file.name for file in folder.glob("ela.db*")) == ["ela.db"]
     assert exited == code
@@ -208,10 +213,11 @@ async def test_the_close_raises_the_stop_settles_the_browser_and_then_releases_t
     await ela.aclose()
 
     assert ela.stopping.is_set(), "closing is stopping: nobody had raised the stop"
-    assert browser.found == [(True, True)], (
-        "the browser is settled after the stop, and while the database still answers"
+    assert browser.found == [(True, True)], "the browser is settled after the stop"
+    assert pooled(ela) == 0, (
+        "and the database is released after the browser: released before, the connection the "
+        "browser's settling opened would still be in the pool"
     )
-    assert pooled(ela) == 0, "and then the database is released"
 
 
 async def test_the_grace_of_the_close_is_the_one_the_composition_declares(
@@ -292,7 +298,8 @@ async def test_a_close_cancelled_twice_while_the_browser_settles_still_runs_to_i
     with pytest.raises(asyncio.CancelledError):
         await closing
 
-    assert pooled(ela) == 0, "the database was released after the browser, not instead of it"
+    assert len(browser.settled) == 1, "the settling of the browser ran to its end, cancelled twice"
+    assert pooled(ela) == 0, "and the database was released after it, not instead of it"
 
 
 async def test_a_browser_that_cannot_be_settled_does_not_keep_the_database_open(

@@ -40,9 +40,12 @@ def started() -> list[tuple[int, str]]:
         ["/bin/ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True, text=True, check=True
     ).stdout
     children: dict[int, list[tuple[int, str]]] = {}
-    for line in out.splitlines():
-        pid, ppid, name = line.split(None, 2)
-        children.setdefault(int(ppid), []).append((int(pid), name.rsplit("/", 1)[-1]))
+    for line in out.split("\n"):
+        fields = line.split(None, 2)
+        if len(fields) == 3 and fields[0].isdigit() and fields[1].isdigit():
+            children.setdefault(int(fields[1]), []).append(
+                (int(fields[0]), fields[2].rsplit("/", 1)[-1])
+            )
     found: list[tuple[int, str]] = []
     todo = [os.getpid()]
     while todo:
