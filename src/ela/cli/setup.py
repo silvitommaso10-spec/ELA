@@ -127,6 +127,8 @@ VARIABLES: tuple[tuple[str, str], ...] = (
     ("ELA_CONTEXT_EVENTS_LIMIT", "10"),
     ("ELA_TERMINAL_TIMEOUT_SECONDS", "120"),
     ("ELA_TERMINAL_OUTPUT_MAX_BYTES", "65536"),
+    ("ELA_BROWSER_PROFILE_DIR", ""),
+    ("ELA_VAULT_PROGRAM", ""),
     ("ELA_NODE_CORE_URL", "http://127.0.0.1:8351"),
     ("ELA_NODE_STATE_DIR", "<home>/.ela"),
     ("ELA_NODE_NAME", "the machine's own name"),

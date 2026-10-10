@@ -171,16 +171,18 @@ def test_a_folder_that_is_a_link_stops_the_start_up_and_says_which_link(
     assert "symbolic link" in message and str(real) in message
 
 
+@pytest.mark.parametrize("how", ["inside", "is"])
 def test_a_folder_inside_ela_s_own_source_tree_stops_the_start_up(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, how: str
 ) -> None:
     """A checkout is something git reads, an editor indexes and a backup copies: cookies do not
     live there. The tree is asked of the module, as for ``ELA_FS_ROOT``."""
     installed = tmp_path / "site-packages" / "ela"
     installed.mkdir(parents=True)
     monkeypatch.setattr(ela, "__file__", str(installed / "__init__.py"))
+    profile = {"inside": installed.parent / "profile", "is": installed.parent}[how]
 
-    message = refused(monkeypatch, tmp_path, **{PROFILE: str(installed.parent / "profile")})
+    message = refused(monkeypatch, tmp_path, **{PROFILE: str(profile)})
 
     assert PROFILE in message
     assert "ELA's own source tree" in message
@@ -200,13 +202,15 @@ def test_the_checkout_this_suite_runs_from_is_refused_too(
 
 
 @pytest.mark.parametrize("copied", ["Mobile Documents", "CloudStorage"])
+@pytest.mark.parametrize("how", ["inside", "is"])
 def test_a_folder_macos_copies_elsewhere_stops_the_start_up(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, home: Path, copied: str
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, home: Path, copied: str, how: str
 ) -> None:
     """iCloud Drive and the providers of File Provider: what is under them leaves the machine."""
-    message = refused(
-        monkeypatch, tmp_path, **{PROFILE: str(home / "Library" / copied / "ela" / "profile")}
-    )
+    place = home / "Library" / copied
+    profile = {"inside": place / "ela" / "profile", "is": place}[how]
+
+    message = refused(monkeypatch, tmp_path, **{PROFILE: str(profile)})
 
     assert PROFILE in message
     assert f"Library/{copied}" in message
@@ -237,6 +241,23 @@ def test_where_the_folder_is_is_asked_of_the_path_resolved(
 
     assert PROFILE in message
     assert "Library/CloudStorage" in message
+
+
+def test_a_home_that_is_reached_through_a_link_is_where_the_link_leads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, home: Path
+) -> None:
+    """The other side of the same comparison: the two folders are resolved too. A home that is
+    a link — a home on another volume — does not make its copied folders invisible to a profile
+    written with the path they really have."""
+    door = tmp_path / "casa"
+    door.symlink_to(home)
+    monkeypatch.setenv("HOME", str(door))
+
+    message = refused(
+        monkeypatch, tmp_path, **{PROFILE: str(home / "Library" / "Mobile Documents" / "profile")}
+    )
+
+    assert "Library/Mobile Documents" in message
 
 
 @pytest.mark.parametrize("which", [WORKSPACE, CAPTURES], ids=["workspace", "captures"])
