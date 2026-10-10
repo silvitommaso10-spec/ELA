@@ -129,6 +129,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.4b` | Implementata | Una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta |
 | 13 — Il permesso prima dell'azione | `M13.4c` | Implementata | La fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti |
 | 13 — Il permesso prima dell'azione | `M13.4d` | Proposta | Lo shell del browser vuoto gira senza il sandbox di Chromium |
+| 13 — Il permesso prima dell'azione | `M13.4e` | Proposta | Alla chiusura di ELA nessuno aspetta il browser, e il processo può non uscire |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
@@ -164,7 +165,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **62** | `docs/adr/NNNN-*.md` |
-| Milestone | **88, di cui 71 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **89, di cui 71 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **66** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **33** | i `Protocol` di `src/ela/ports.py` |
@@ -633,7 +634,9 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    branch, **dopo M13.4b e prima del codice di M13.9** (decisione 27), senza una prova a mano sua, e il merge
    diventa «Merge M13.9+M13.4b+M13.4c»; **M13.4d** — il sandbox dello shell del browser vuoto — è registrata
    **fuori dalla fila** (decisione 39); e **WhatsApp Web esce dalla prova a mano di M13.9 ed entra in quella di
-   M13.10** (decisione 37);
+   M13.10** (decisione 37); ***annotato il 2026-10-10***, la sera, dalla review di M13.4b e M13.4c: **M13.4e** —
+   alla chiusura di ELA nessuno aspetta il browser — sta sullo stesso branch, **dopo M13.4c e prima del codice
+   di M13.9** (decisione 51), senza una prova a mano sua, e il merge diventa «Merge M13.9+M13.4b+M13.4c+M13.4e»;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -867,7 +870,10 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   tardi: **la SPEC è approvata** dalla review del revisore e di Tommaso, con le sue domande decise e la regola
   confermata com'è; **il codice non comincia** finché il file della misura non c'è e le righe che poggiano su di
   lui non sono decise. Una sessione con il profilo nomina un sito solo; le sue letture le copre il sì o la policy
-  della sessione; il vault resta aperto un'ora; e WhatsApp Web è passato alla prova di M13.10.
+  della sessione; il vault resta aperto un'ora; e WhatsApp Web è passato alla prova di M13.10. ***Annotato il
+  2026-10-10***, la sera: lo script della misura è approvato e Tommaso la lancia; con la finestra del login
+  aperta le capability della percezione si rifiutano e **la sonda non cambia** — ELA non legge il contenuto
+  dello schermo e non ascolta; sa che la finestra c'è (decisione 49).
 - **M13.4b — una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta**
   (ADR 0052 §9 e §10).
   **Registrata il 2026-10-01** dalla review della SPEC di M6.3c, con l'ordine non deciso. ***Deciso il 2026-10-10***
@@ -886,6 +892,12 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   sua: da quando la fermata è alzata nessuna navigazione e nessun gesto parte, e una pagina che entra in tabella
   dopo la fermata la chiude chi ce l'ha messa ([`milestones/M13.4c.md`](milestones/M13.4c.md)). ***Annotato il
   2026-10-10***, la sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9.
+- **M13.4e — alla chiusura di ELA nessuno aspetta il browser, e il processo può non uscire** (ADR 0038 §11,
+  ADR 0060 §7). **Registrata e scritta il 2026-10-10** dalla review di M13.4b e M13.4c (decisione 51), dopo che
+  la loro rilettura critica l'ha misurato: se il loop viene smontato con una chiamata del browser in volo, ELA
+  non esce. **Sul branch di M13.9, dopo M13.4c e prima del suo codice**, senza una prova a mano sua: la chiusura
+  di ELA aspetta il browser, e dopo una grazia dichiarata uccide ciò che l'adapter aveva avviato e lo scrive
+  ([`milestones/M13.4e.md`](milestones/M13.4e.md)).
 - **M13.4d — lo shell del browser vuoto gira senza il sandbox di Chromium** (ADR 0052 §1). **Registrata il
   2026-10-10** dalla review della SPEC di M13.9 (decisione 39): Playwright lo spegne di default, e l'adapter di
   M13.4 non lo riaccende. **Fuori dalla fila.** **Condizione d'ingresso: una misura sui runner della CI** — su
