@@ -56,7 +56,7 @@ from ela.domain import (
     RiskLevel,
 )
 from ela.infrastructure.machine import PlaywrightBrowser
-from ela.infrastructure.machine.browser import shell_folder
+from ela.infrastructure.machine.browser import _descendants, _listed, shell_folder
 from ela.permissions import BROWSER_ACT, BROWSER_READ
 from ela.ports import (
     NAVIGATION,
@@ -217,6 +217,23 @@ def started() -> list[tuple[int, str]]:
 def descendants() -> list[str]:
     """The same, by name."""
     return [name for _, name in started()]
+
+
+def drivers() -> list[int]:
+    """The drivers this worker has started: **its own children**, by pid. Not found by a name —
+    ``node`` is what macOS calls the process; a Linux kernel calls it by the name of its main
+    thread, ``MainThread``, and a test that looked for ``node`` passed on one runner and failed on
+    the other (the CI of 2026-10-10)."""
+    out = subprocess.run(
+        ["/bin/ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True, text=True, check=True
+    ).stdout
+    rows = [line.split(None, 2) for line in out.splitlines()]
+    mine = os.getpid()
+    return sorted(
+        int(pid)
+        for pid, parent, name in rows
+        if int(parent) == mine and name.rsplit("/", 1)[-1] != "ps"
+    )
 
 
 @pytest.fixture
@@ -983,11 +1000,13 @@ class Grace:
 
 
 def alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
+    """Whether the kernel knows ``pid`` as a process **that has not ended**. One that was killed
+    and nobody has collected yet — a zombie — runs nothing: it is its parent's to collect, in its
+    own time, and how long that takes is the machine's and not what is asserted here."""
+    state = subprocess.run(
+        ["/bin/ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    return bool(state) and not state.startswith("Z")
 
 
 async def test_settled_after_the_stop_nothing_of_the_adapter_runs_and_nothing_was_killed(
@@ -1020,7 +1039,7 @@ async def test_a_browser_that_does_not_close_is_killed_when_the_grace_is_over(
     browser = stoppable(stopping)
     await browser.open(web.origin + "/", lambda url: True, FakeStop())
     before = started()
-    (driver,) = [pid for pid, name in before if name == "node"]
+    (driver,) = drivers()
     os.kill(driver, signal.SIGSTOP)
     grace = Grace()
 
@@ -1033,7 +1052,9 @@ async def test_a_browser_that_does_not_close_is_killed_when_the_grace_is_over(
     async with asyncio.timeout(30):  # the test's guard: an adapter that kills nothing fails here
         killed = await settling
 
-    assert sorted(killed) == sorted(name for _, name in before), "names, and every one of them"
+    assert killed.count("node") == 1, "the driver, called by the adapter what it is on every system"
+    assert len(killed) > 1, "and what the driver had started: the browser"
+    assert all("/" not in name for name in killed), "names, never a path"
     assert [name for pid, name in before if alive(pid)] == []
     assert browser._pages == {} and browser._closing == set()  # noqa: SLF001
     watching = browser._watching  # noqa: SLF001 — the task the stop wakes
@@ -1073,8 +1094,33 @@ async def test_the_process_of_a_driver_is_read_where_playwright_keeps_it(
 
     await browser.open(web.origin + "/", lambda url: True, FakeStop())
 
-    drivers = [pid for pid, name in started() if name == "node"]
-    assert drivers and browser._driver_pids() == drivers  # noqa: SLF001
+    assert drivers(), "the control: this worker has started a driver"
+    assert browser._driver_pids() == drivers()  # noqa: SLF001
+
+
+def test_what_ps_says_is_read_by_parent_and_a_line_it_cannot_place_is_left_out() -> None:
+    """What the adapter kills past the grace is found here: a driver's own tree and nothing beside
+    it. The names are the two a kernel gives — a path on macOS, of which the last part is kept;
+    fifteen characters on Linux, where the driver is called by its main thread —, and a line that
+    is not a process is skipped instead of breaking ELA's close."""
+    said = (
+        "  100     1 /usr/sbin/somebody-else\n"
+        "  200    50 MainThread\n"
+        "  201   200 /cache/chrome-headless-shell\n"
+        "  202   201 chrome-headless\n"
+        "  203   201 Google Chrome Helper (Renderer)\n"
+        "  300     1 chrome-headless\n"
+        "garbage\n"
+        "  400   not-a-pid name\n"
+    )
+
+    table = _listed(said)
+
+    assert table[201] == (200, "chrome-headless-shell")
+    assert table[203] == (201, "Google Chrome Helper (Renderer)")
+    assert sorted(table) == [100, 200, 201, 202, 203, 300]
+    assert sorted(pid for pid, _ in _descendants(200, table)) == [201, 202, 203]
+    assert _descendants(100, table) == [], "what somebody else started is nobody's to kill here"
 
 
 async def test_an_adapter_that_cannot_read_the_process_of_its_driver_opens_nothing(

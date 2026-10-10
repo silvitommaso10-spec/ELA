@@ -68,13 +68,13 @@ def origin() -> Iterator[str]:
 
 
 def alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    """Whether the kernel knows ``pid`` as a process **that has not ended**. One that was killed
+    and nobody has collected yet — a zombie — runs nothing: it is its parent's to collect, in its
+    own time, and how long that takes is the machine's and not what is asserted here."""
+    state = subprocess.run(
+        ["/bin/ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    return bool(state) and not state.startswith("Z")
 
 
 def closed(mode: str, folder: Path, origin: str) -> tuple[int, list[tuple[int, str]]]:
@@ -119,7 +119,7 @@ def test_an_ela_closed_with_its_browser_at_work_exits_and_leaves_no_process(
     code, started = closed(mode, tmp_path / "ela", origin)
 
     assert code == 0
-    assert "node" in [name for _, name in started], "the control: a driver was running"
+    assert len(started) > 1, "the control: a driver and its browser were running"
     assert [name for pid, name in started if alive(pid)] == []
 
 
@@ -134,7 +134,7 @@ def test_a_close_entered_with_a_cancellation_pending_still_closes_the_browser(
     code, started = closed(mode, tmp_path / "ela", origin)
 
     assert code == INTERRUPTED
-    assert "node" in [name for _, name in started]
+    assert len(started) > 1, "the control: a driver and its browser were running"
     assert [name for pid, name in started if alive(pid)] == []
 
 

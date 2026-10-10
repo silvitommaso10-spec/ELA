@@ -101,7 +101,10 @@ GONE_SECONDS: Final = 2.0
 what is left after it is an entry nobody has collected yet."""
 LOOK_SECONDS: Final = 0.01
 DRIVER: Final = "node"
-"""What a driver is called when ``ps`` could not be asked for its name."""
+"""What a driver is called when ELA says it killed one: the binary Playwright starts it with. Said
+by the adapter, which started it, and **not read from** ``ps``: a Linux kernel calls that process
+by the name of its main thread — ``MainThread`` —, which names nothing to whoever reads the line
+(seen on the ubuntu runner on 2026-10-10)."""
 
 
 def shell_folder(environment: Mapping[str, str], system: str) -> Path | None:
@@ -286,7 +289,7 @@ class PlaywrightBrowser:
         doomed: list[tuple[int, str]] = []
         for driver in drivers:
             doomed.extend(_descendants(driver.pid, table))
-            doomed.append((driver.pid, table.get(driver.pid, (0, DRIVER))[1]))
+            doomed.append((driver.pid, DRIVER))
         for pid, _ in doomed:
             with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, signal.SIGKILL)
@@ -568,10 +571,18 @@ async def _processes() -> dict[int, tuple[int, str]]:
     except OSError:
         return {}
     said, _ = await asking.communicate()
+    return _listed(said.decode(errors="replace"))
+
+
+def _listed(said: str) -> dict[int, tuple[int, str]]:
+    """What ``ps -o pid=,ppid=,comm=`` printed, by pid: the parent, and the name without its path.
+    A line that is not «pid, parent, name» is not a process this can place: left out, and never an
+    error in the middle of ELA's close."""
     table: dict[int, tuple[int, str]] = {}
-    for line in said.decode(errors="replace").splitlines():
-        pid, parent, name = line.split(None, 2)
-        table[int(pid)] = (int(parent), name.rsplit("/", 1)[-1])
+    for line in said.splitlines():
+        fields = line.split(None, 2)
+        if len(fields) == 3 and fields[0].isdigit() and fields[1].isdigit():
+            table[int(fields[0])] = (int(fields[1]), fields[2].rsplit("/", 1)[-1])
     return table
 
 
