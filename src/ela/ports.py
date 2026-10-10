@@ -2699,7 +2699,9 @@ class Browser(Protocol):
 
     async def close(self, page: str) -> None:
         """Close the page and its browser; nothing of it runs when this returns. Idempotent, and
-        never raises: what cannot be closed any more is closed already."""
+        never raises: what cannot be closed any more is closed already. **The closing runs to its
+        end whoever waits for it** (M13.4b): a caller cancelled while it waits gets its
+        cancellation, and the page's processes still go."""
 
 
 # --------------------------------------------------------------------------------------

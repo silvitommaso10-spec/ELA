@@ -21,7 +21,10 @@ the truth of this module's sentence — «the site sees a visitor, not your acco
 §30 until M14.1. Both recognitions are partial: a password in an ordinary text field passes.
 
 **A page read is kept for the verifier**, under an opaque identifier in the result: the tool's word
-about *which* page, never about what it shows (form I). Every other ending closes the browser.
+about *which* page, never about what it shows (form I). Every other ending closes the browser —
+**every one** (M13.4b): a result that did not succeed, the task stopped before its point, a
+cancellation, an error this module does not name. Once ``open`` has returned, the page leaves
+:meth:`_BrowserTool._run` handed over or closed.
 """
 
 from __future__ import annotations
@@ -61,7 +64,6 @@ from ela.ports import (
     SiteUnreachable,
     StopPoint,
     TaskStop,
-    ToolStopped,
     Visit,
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
@@ -375,46 +377,48 @@ class _BrowserTool(Tool):
         site = looked.visit.site
         done = [0]
         opened: Opened | None = None
+        handed_over = False
         try:
-            async with asyncio.timeout(self._browsing.timeout_seconds):
-                opened = await self._browser.open(looked.visit.address, looked.allowed, stop)
-                outcome = await self._on_the_page(looked, opened, done, stop)
-        except ToolStopped:
-            # Stopped before the point (M6.3c): what was opened is closed, and the call leaves
-            # without acting — the executor records it.
-            if opened is not None:
-                await self._browser.close(opened.page)
-            raise
-        except TimeoutError:
-            outcome = Outcome(
-                self._partial(done),
-                TIMEOUT,
-                f"the page of {site} was still at work after {self._browsing.timeout_seconds} s: "
-                f"ELA closed the browser{self._after(done)}",
-            )
-        except BrowserNotInstalled:
-            outcome = Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
-        except SiteUnreachable as away:
-            outcome = Outcome({}, UNREACHABLE, f"the page of {site} did not answer: {away}")
-        except BrowserStopped:
-            outcome = Outcome(
-                self._partial(done),
-                STOPPED,
-                f"ELA stopped while the page of {site} was open{self._after(done)}",
-            )
-        except (BrowserFailed, PageGone) as failed:
-            outcome = Outcome(
-                self._partial(done),
-                FAILED,
-                f"the browser failed on the page of {site}: {type(failed).__name__}"
-                f"{': ' + str(failed) if str(failed) else ''}{self._after(done)}",
-            )
-        if opened is not None:
-            if outcome.succeeded:
+            try:
+                async with asyncio.timeout(self._browsing.timeout_seconds):
+                    opened = await self._browser.open(looked.visit.address, looked.allowed, stop)
+                    outcome = await self._on_the_page(looked, opened, done, stop)
+            except TimeoutError:
+                outcome = Outcome(
+                    self._partial(done),
+                    TIMEOUT,
+                    f"the page of {site} was still at work after "
+                    f"{self._browsing.timeout_seconds} s: ELA closed the browser"
+                    f"{self._after(done)}",
+                )
+            except BrowserNotInstalled:
+                outcome = Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
+            except SiteUnreachable as away:
+                outcome = Outcome({}, UNREACHABLE, f"the page of {site} did not answer: {away}")
+            except BrowserStopped:
+                outcome = Outcome(
+                    self._partial(done),
+                    STOPPED,
+                    f"ELA stopped while the page of {site} was open{self._after(done)}",
+                )
+            except (BrowserFailed, PageGone) as failed:
+                outcome = Outcome(
+                    self._partial(done),
+                    FAILED,
+                    f"the browser failed on the page of {site}: {type(failed).__name__}"
+                    f"{': ' + str(failed) if str(failed) else ''}{self._after(done)}",
+                )
+            if opened is not None and outcome.succeeded:
                 await self._browser.keep(opened.page)
-            else:
+                handed_over = True
+            return outcome
+        finally:
+            # Every way out (M13.4b): the page is handed over, or it is closed — once. A result
+            # that did not succeed; the task stopped before its point (M6.3c), which leaves with
+            # ``ToolStopped``; a cancellation, which leaves as the cancellation it is — turned into
+            # a result it would not cancel —; an error this method does not name.
+            if opened is not None and not handed_over:
                 await self._browser.close(opened.page)
-        return outcome
 
     async def _on_the_page(
         self, call: _Call, opened: Opened, done: list[int], stop: TaskStop

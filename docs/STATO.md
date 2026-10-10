@@ -126,7 +126,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.2` | Implementata | Il terminale: un comando è `argv`, e i programmi ammessi stanno nello scope |
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Implementata | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
-| 13 — Il permesso prima dell'azione | `M13.4b` | Proposta | Una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta |
+| 13 — Il permesso prima dell'azione | `M13.4b` | Implementata | Una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta |
 | 13 — Il permesso prima dell'azione | `M13.4c` | Proposta | La fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti |
 | 13 — Il permesso prima dell'azione | `M13.4d` | Proposta | Lo shell del browser vuoto gira senza il sandbox di Chromium |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
@@ -164,7 +164,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **62** | `docs/adr/NNNN-*.md` |
-| Milestone | **88, di cui 69 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **88, di cui 70 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **66** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **33** | i `Protocol` di `src/ela/ports.py` |
@@ -877,7 +877,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   rimasta aperta è collegata agli account di Tommaso ([`milestones/M13.4b.md`](milestones/M13.4b.md)).
   ***Annotato il 2026-10-10***, più tardi: la SPEC è approvata, e con la proprietà del tool entrano i due punti
   dell'adapter che la misura ha trovato accanto — chiudere arriva in fondo anche se chi lo aspetta è cancellato,
-  e un'apertura cancellata mentre il driver parte non lo lascia (decisione 26).
+  e un'apertura cancellata mentre il driver parte non lo lascia (decisione 26). ***Annotato il 2026-10-10***, la
+  sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9.
 - **M13.4c — la fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti**
   (ADR 0052 §10, ADR 0038 §11). **Registrata e scritta il 2026-10-10** dalla review della SPEC di M13.4b
   (decisione 27), che l'ha misurata: nei primi decimi di secondo di uno step la fermata non chiudeva niente, e

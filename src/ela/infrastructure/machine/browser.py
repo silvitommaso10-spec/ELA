@@ -23,6 +23,11 @@ What every page gets, measured before it was decided (M13.4, «Le misure»):
   ``handle_sigterm`` and ``handle_sighup`` **off** (M5-bis): Playwright starts its driver in ELA's
   process group, and with its handlers on a Ctrl-C closes the browser before ELA decides anything.
   The stop is ELA's, through the event of ADR 0038 §11;
+* **a closing that runs to its end whoever waits for it** (M13.4b): the three closings of a page,
+  and the stop of a driver whose opening was cancelled while it started, run in tasks of the
+  adapter's own, shielded and held until they end — a caller cancelled halfway gets its
+  cancellation, and the processes still go. Measured: cancelled in the caller's task, a close left
+  five processes outside the table, where not even ELA's stop found them;
 * no downloads, no service workers, no timeout of Playwright's — the tool's deadline is the one —,
   and **every request routed**, so that a navigation of the main frame the boundary refuses is
   aborted before it is sent; the document of the main frame is fetched by the route itself, without
@@ -40,7 +45,7 @@ import asyncio
 import contextlib
 import json
 import os
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, TypeVar
@@ -148,6 +153,7 @@ class PlaywrightBrowser:
         self._kept = kept
         self._pages: dict[str, _Open] = {}
         self._watching: asyncio.Task[None] | None = None
+        self._closing: set[asyncio.Task[None]] = set()
 
     def _launch(self) -> dict[str, Any]:
         return {
@@ -171,6 +177,36 @@ class PlaywrightBrowser:
         await self._stopping.wait()
         for page in list(self._pages):
             await self.close(page)
+        while self._closing:
+            # A closing whose caller was cancelled is nobody's to wait for any more: it ends
+            # before the stop is done with the browser (M13.4b, decision 26).
+            await asyncio.wait(self._closing)
+
+    def _carried(self, work: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
+        """Run a closing in a task of the adapter's own, held until it ends (M13.4b): whoever
+        waits for it may be cancelled — and cancelled again while it waits —, and what was
+        running is closed all the same."""
+        task = asyncio.create_task(work)
+        self._closing.add(task)
+        task.add_done_callback(self._closing.discard)
+        return task
+
+    async def _driver(self) -> Playwright:
+        """Playwright's driver, started in a task of its own (M13.4b). An opening cancelled while
+        the driver starts has nothing in its hands to stop — the process is nobody's yet —, so the
+        start is left to end, and what it started is stopped then."""
+        starting = asyncio.create_task(async_playwright().start())
+        try:
+            return await asyncio.shield(starting)
+        except asyncio.CancelledError:
+            self._carried(_stopped_once_started(starting))
+            raise
+
+    async def _dropped(self, token: str, playwright: Playwright) -> None:
+        """What an opening started and will not hand over: the page, if it reached the table, and
+        the driver in any case."""
+        await self.close(token)
+        await _quietly(playwright.stop)
 
     def _translated(self, error: BaseException) -> BaseException:
         if isinstance(error, BrowserError):
@@ -196,7 +232,7 @@ class PlaywrightBrowser:
     async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         self._refuse_if_stopping()
         self._watch()
-        playwright = await async_playwright().start()
+        playwright = await self._driver()
         token = uuid4().hex
         try:
             try:
@@ -266,12 +302,10 @@ class PlaywrightBrowser:
         except asyncio.CancelledError:
             # The tool's deadline, or a cancelled run: close what was started, and let the
             # cancellation be what it is — turned into anything else, the deadline would not fire.
-            await self.close(token)
-            await _quietly(playwright.stop)
+            await asyncio.shield(self._carried(self._dropped(token, playwright)))
             raise
         except Exception as error:
-            await self.close(token)
-            await _quietly(playwright.stop)
+            await asyncio.shield(self._carried(self._dropped(token, playwright)))
             raise self._translated(error) from None
 
     def _page(self, page: str) -> _Open:
@@ -351,9 +385,7 @@ class PlaywrightBrowser:
             return
         if opened.kept is not None and opened.kept is not asyncio.current_task():
             opened.kept.cancel()
-        await _quietly(opened.context.close)
-        await _quietly(opened.browser.close)
-        await _quietly(opened.playwright.stop)
+        await asyncio.shield(self._carried(_shut(opened)))
 
 
 async def _look(opened: _Open, selector: str | None, expect: str | None, seconds: float) -> Glanced:
@@ -373,6 +405,22 @@ async def _look(opened: _Open, selector: str | None, expect: str | None, seconds
         except PlaywrightTimeout:
             shown = False
     return Glanced(text=text, shown=shown, left=opened.refused[-1] if opened.refused else None)
+
+
+async def _shut(opened: _Open) -> None:
+    """The three closings of a page, in their order: its context, its browser, its driver."""
+    await _quietly(opened.context.close)
+    await _quietly(opened.browser.close)
+    await _quietly(opened.playwright.stop)
+
+
+async def _stopped_once_started(starting: asyncio.Task[Playwright]) -> None:
+    """Stop the driver an abandoned opening was starting, once its start has ended."""
+    try:
+        playwright = await starting
+    except Exception:  # noqa: BLE001 — a start that failed started nothing to stop
+        return
+    await _quietly(playwright.stop)
 
 
 async def _quietly(close: Callable[[], Awaitable[None]]) -> None:
