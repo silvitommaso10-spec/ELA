@@ -623,7 +623,10 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    dalla review della SPEC di M14.3 (decisione 27) —, un merge e un giro di CI invece di due;
 6. **M13.9, M13.10, M13.11**; ***annotato il 2026-10-09***: **prima di M13.9 viene M13.12**, le policy di §59, aperta da
    Tommaso lo stesso giorno per la regola della 5.11 («Chi apre la milestone delle policy di §59»); ***annotato il
-   2026-10-10***: M13.12 è fatta, con la prova a mano passata a `3178ec3`, e ADR 0062 è Accettata;
+   2026-10-10***: M13.12 è fatta, con la prova a mano passata a `3178ec3`, e ADR 0062 è Accettata; ***annotato il
+   2026-10-10***, più tardi: **M13.4b sta sul branch di M13.9, con il suo documento, prima del codice di M13.9**
+   (Tommaso e il revisore, decisione 6 della SPEC di M13.9) — l'ordine che la sua registrazione lasciava non
+   deciso è questo —, senza una prova a mano sua, e il merge è «Merge M13.9+M13.4b»;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -849,7 +852,18 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   un profilo di ELA che dura, uno per macchina; le password in Bitwarden, prese una alla volta con la CLI
   ufficiale dopo un sì a ogni uso, e mai scritte in ELA; il profilo non accende la sincronizzazione di
   Chrome con l'account Google di Tommaso. Il suo ADR rivede apertamente le decisioni 3 e 6 di M13.4.
-  **Dopo M14.3.** ***Annotato il 2026-10-09***: e dopo **M13.12**, qui sotto.
+  **Dopo M14.3.** ***Annotato il 2026-10-09***: e dopo **M13.12**, qui sotto. ***Annotato il 2026-10-10***: **la SPEC
+  è scritta**, sul branch `m13.9-browser-con-gli-account`, con le misure che non vogliono Tommaso prese prima e
+  quelle che lo vogliono — un login Google nel Chrome di ELA, l'account Bitwarden — affidate a
+  `scripts/misura_m13_9.py`, con la regola scritta prima dei numeri ([`milestones/M13.9.md`](milestones/M13.9.md)).
+  Il browser vuoto non cambia: il profilo lo raggiungono solo capability nuove.
+- **M13.4b — una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta**
+  (ADR 0052 §9 e §10).
+  **Registrata il 2026-10-01** dalla review della SPEC di M6.3c, con l'ordine non deciso. ***Deciso il 2026-10-10***
+  (decisione 6 della SPEC di M13.9): **sul branch di M13.9, prima del suo codice**, con il suo documento e senza una
+  prova a mano sua. La misura è scritta — oggi nessuna strada di produzione cancella il task di una richiesta mentre
+  il tool gira e lascia ELA viva dopo — e **la riparazione entra lo stesso**: con il profilo che dura una pagina
+  rimasta aperta è collegata agli account di Tommaso ([`milestones/M13.4b.md`](milestones/M13.4b.md)).
 - **M13.12 — le policy di §59** (§59, §27, §29, §62). **Registrata e aperta da Tommaso il 2026-10-09**, per la regola di
   «Chi apre la milestone delle policy di §59» (sotto): una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a
   partire da `browser.guided`; scade sempre, si revoca, e la domanda che resta dice perché chiede. **Dopo M14.3, prima di
