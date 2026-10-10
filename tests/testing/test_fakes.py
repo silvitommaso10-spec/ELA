@@ -26,6 +26,7 @@ from ela.ports import (
     ROUTING_UNKNOWN_TASK_TYPE,
     VERIFICATION_NOT_SUCCEEDED,
     AlreadyExistsError,
+    BrowserStopped,
     NotAllowedError,
     RoutingError,
 )
@@ -369,3 +370,28 @@ async def test_the_browser_holds_a_member_until_the_test_lets_it_go(member: str)
 def test_the_browser_holds_only_the_members_it_says() -> None:
     with pytest.raises(ValueError, match="click is not a member this fake holds"):
         FakeBrowser().hold("click")
+
+
+async def test_after_its_stop_the_browser_says_stopped_for_every_use_of_a_page() -> None:
+    """What the port promises of ELA's stop (M13.4c) and the real browser does: every use of a
+    page raises ``BrowserStopped`` — not «the page is gone», which is what a closed page says
+    while ELA is running."""
+    browser = FakeBrowser()
+    opened = await browser.open("https://example.com/", lambda url: True, FakeStop())
+
+    browser.stop()
+
+    for use in (
+        lambda: browser.count(opened.page, "h1"),
+        lambda: browser.field(opened.page, "h1"),
+        lambda: browser.fill(opened.page, "h1", "x"),
+        lambda: browser.click(opened.page, "h1"),
+        lambda: browser.text(opened.page, None),
+        lambda: browser.title(opened.page),
+        lambda: browser.left(opened.page),
+    ):
+        with pytest.raises(BrowserStopped):
+            await use()
+    with pytest.raises(BrowserStopped):
+        await browser.open("https://example.com/", lambda url: True, FakeStop())
+    await browser.close(opened.page)
