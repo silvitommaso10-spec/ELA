@@ -127,6 +127,8 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Implementata | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
 | 13 — Il permesso prima dell'azione | `M13.4b` | Proposta | Una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta |
+| 13 — Il permesso prima dell'azione | `M13.4c` | Proposta | La fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti |
+| 13 — Il permesso prima dell'azione | `M13.4d` | Proposta | Lo shell del browser vuoto gira senza il sandbox di Chromium |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
@@ -162,7 +164,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **62** | `docs/adr/NNNN-*.md` |
-| Milestone | **86, di cui 69 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **88, di cui 69 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **66** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **33** | i `Protocol` di `src/ela/ports.py` |
@@ -287,7 +289,7 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 15 | 16 |
+| 15 | 17 |
 | 16 | 1 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
@@ -626,7 +628,12 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    2026-10-10***: M13.12 è fatta, con la prova a mano passata a `3178ec3`, e ADR 0062 è Accettata; ***annotato il
    2026-10-10***, più tardi: **M13.4b sta sul branch di M13.9, con il suo documento, prima del codice di M13.9**
    (Tommaso e il revisore, decisione 6 della SPEC di M13.9) — l'ordine che la sua registrazione lasciava non
-   deciso è questo —, senza una prova a mano sua, e il merge è «Merge M13.9+M13.4b»;
+   deciso è questo —, senza una prova a mano sua, e il merge è «Merge M13.9+M13.4b»; ***annotato il 2026-10-10***,
+   dalla review delle due SPEC: **M13.4c** — la fermata di ELA alzata mentre il browser parte — sta sullo stesso
+   branch, **dopo M13.4b e prima del codice di M13.9** (decisione 27), senza una prova a mano sua, e il merge
+   diventa «Merge M13.9+M13.4b+M13.4c»; **M13.4d** — il sandbox dello shell del browser vuoto — è registrata
+   **fuori dalla fila** (decisione 39); e **WhatsApp Web esce dalla prova a mano di M13.9 ed entra in quella di
+   M13.10** (decisione 37);
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -856,7 +863,11 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   è scritta**, sul branch `m13.9-browser-con-gli-account`, con le misure che non vogliono Tommaso prese prima e
   quelle che lo vogliono — un login Google nel Chrome di ELA, l'account Bitwarden — affidate a
   `scripts/misura_m13_9.py`, con la regola scritta prima dei numeri ([`milestones/M13.9.md`](milestones/M13.9.md)).
-  Il browser vuoto non cambia: il profilo lo raggiungono solo capability nuove.
+  Il browser vuoto non cambia: il profilo lo raggiungono solo capability nuove. ***Annotato il 2026-10-10***, più
+  tardi: **la SPEC è approvata** dalla review del revisore e di Tommaso, con le sue domande decise e la regola
+  confermata com'è; **il codice non comincia** finché il file della misura non c'è e le righe che poggiano su di
+  lui non sono decise. Una sessione con il profilo nomina un sito solo; le sue letture le copre il sì o la policy
+  della sessione; il vault resta aperto un'ora; e WhatsApp Web è passato alla prova di M13.10.
 - **M13.4b — una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta**
   (ADR 0052 §9 e §10).
   **Registrata il 2026-10-01** dalla review della SPEC di M6.3c, con l'ordine non deciso. ***Deciso il 2026-10-10***
@@ -864,6 +875,19 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   prova a mano sua. La misura è scritta — oggi nessuna strada di produzione cancella il task di una richiesta mentre
   il tool gira e lascia ELA viva dopo — e **la riparazione entra lo stesso**: con il profilo che dura una pagina
   rimasta aperta è collegata agli account di Tommaso ([`milestones/M13.4b.md`](milestones/M13.4b.md)).
+  ***Annotato il 2026-10-10***, più tardi: la SPEC è approvata, e con la proprietà del tool entrano i due punti
+  dell'adapter che la misura ha trovato accanto — chiudere arriva in fondo anche se chi lo aspetta è cancellato,
+  e un'apertura cancellata mentre il driver parte non lo lascia (decisione 26).
+- **M13.4c — la fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti**
+  (ADR 0052 §10, ADR 0038 §11). **Registrata e scritta il 2026-10-10** dalla review della SPEC di M13.4b
+  (decisione 27), che l'ha misurata: nei primi decimi di secondo di uno step la fermata non chiudeva niente, e
+  un modulo partiva dopo. **Sul branch di M13.9, dopo M13.4b e prima del suo codice**, senza una prova a mano
+  sua: da quando la fermata è alzata nessuna navigazione e nessun gesto parte, e una pagina che entra in tabella
+  dopo la fermata la chiude chi ce l'ha messa ([`milestones/M13.4c.md`](milestones/M13.4c.md)).
+- **M13.4d — lo shell del browser vuoto gira senza il sandbox di Chromium** (ADR 0052 §1). **Registrata il
+  2026-10-10** dalla review della SPEC di M13.9 (decisione 39): Playwright lo spegne di default, e l'adapter di
+  M13.4 non lo riaccende. **Fuori dalla fila.** **Condizione d'ingresso: una misura sui runner della CI** — su
+  `ubuntu-24.04` il sandbox può non partire —, e dei tempi ([`milestones/M13.4d.md`](milestones/M13.4d.md)).
 - **M13.12 — le policy di §59** (§59, §27, §29, §62). **Registrata e aperta da Tommaso il 2026-10-09**, per la regola di
   «Chi apre la milestone delle policy di §59» (sotto): una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a
   partire da `browser.guided`; scade sempre, si revoca, e la domanda che resta dice perché chiede. **Dopo M14.3, prima di
@@ -872,7 +896,10 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
 - **M13.10 — più passi e i file** (§19). **Registrata il 2026-09-30**: una sessione del browser fra gli
   step dello stesso task, una sequenza di gesti con ogni elemento aspettato quando serve — rivede la
   decisione 7 di M13.4 —, uno scaricamento come un `fs.write` e un caricamento come un `fs.read`, con la
-  domanda che nomina il file. **Dopo M13.9.**
+  domanda che nomina il file. **Dopo M13.9.** ***Annotato il 2026-10-10***: **riceve WhatsApp Web nella sua prova a
+  mano**, dalla review della SPEC di M13.9 (decisione 37) — sul numero di Tommaso, un messaggio a se stesso, un
+  tentativo solo —: in M13.9 quel passo poteva essere solo saltato, perché l'elemento del click compare dopo la
+  scrittura, ed è questa la milestone che aspetta ogni elemento quando serve.
 - **M13.11 — il browser sul PC** (§19, §56). **Registrata il 2026-09-30**: le capacità di M13.9 e M13.10
   sul nodo Windows, con il verifier sul nodo e il verdetto in busta (ADR 0048 §7); rivede la decisione 1
   di M13.4. **Condizione d'ingresso: una misura sul PC** di che cosa lo Smart App Control lascia partire
@@ -971,7 +998,8 @@ della SPEC di M14.3); M14.5 resta fuori dalla fila.
   senza chiedere, dove il livello lo permette o una sua policy di §59 lo copre (5.11); mandare qualcosa a
   nome di Tommaso chiede ogni volta; «cercare» è navigare, un `browser.read`. È lavoro agentico (5.7).
   **Dopo M14.2**, e non aspetta M13.9: le pagine pubbliche non vogliono il login, e WhatsApp Web, che lo
-  vuole, passa nella prova a mano di M13.9.
+  vuole, passa nella prova a mano di M13.9. ***Annotato il 2026-10-10***: nella prova a mano di **M13.10**
+  (decisione 37 della review della SPEC di M13.9).
 - **M14.4 — il computer guidato dal modello** (§20). **Registrata il 2026-09-30** dalla review della
   registrazione: il meccanismo di M14.3 riusato sullo schermo, sotto la 5.7, sopra la capability di M13.5.
   **Subito dopo M13.5**, e se M13.5 non entra non entra nemmeno lei.
