@@ -190,6 +190,8 @@ class PlaywrightBrowser:
         self._settled = asyncio.Event()
         self._settled.set()
         self._drivers: weakref.WeakSet[Any] = weakref.WeakSet()
+        # The question the kill asks the kernel of what it killed — «is it still there?».
+        self._known: Callable[[int], bool] = _alive
 
     def _launch(self) -> dict[str, Any]:
         return {
@@ -305,7 +307,10 @@ class PlaywrightBrowser:
                 os.kill(pid, signal.SIGKILL)
         for driver in drivers:
             await driver.wait()
-        await _gone([pid for pid, _ in doomed])
+        # Only once the kernel has none of what was killed is its profile taken away: a browser
+        # killed a moment ago may still be writing in it (decision 58 — held by a test that asks
+        # the question itself).
+        await _gone([pid for pid, _ in doomed], self._known)
         for folder in profiles:
             if folder.is_dir() and not folder.is_symlink():
                 await asyncio.to_thread(shutil.rmtree, folder, True)
@@ -651,13 +656,14 @@ def _temporary_profiles(said: str) -> list[Path]:
     )
 
 
-async def _gone(pids: list[int]) -> None:
-    """Wait until the kernel knows none of ``pids``, asked every :data:`LOOK_SECONDS` and for no
-    longer than :data:`GONE_SECONDS` — a deadline on the loop's clock, as the launcher's."""
+async def _gone(pids: list[int], known: Callable[[int], bool]) -> None:
+    """Wait until the kernel knows none of ``pids`` — ``known`` is the question —, asked every
+    :data:`LOOK_SECONDS` and for no longer than :data:`GONE_SECONDS`: a deadline on the loop's
+    clock, as the launcher's."""
     deadline = asyncio.get_running_loop().time() + GONE_SECONDS
     left = list(pids)
     while left:
-        left = [pid for pid in left if _alive(pid)]
+        left = [pid for pid in left if known(pid)]
         if not left or asyncio.get_running_loop().time() >= deadline:
             return
         await asyncio.sleep(LOOK_SECONDS)

@@ -14,18 +14,29 @@ and exit code 2 like every configuration ELA cannot use; never a traceback (the 
 declared **and** present: if its address does not exist on this machine now — the tailnet is down
 — ELA listens on loopback alone, because local use does not depend on a third party's daemon, and
 ``/diagnostics`` says on which addresses it listens.
+
+**The stop signals are ELA's** (M13.4e, decisions 55 and 56; the measure is in
+``docs/milestones/M13.4e.md``). From the moment there is an ELA to close to the moment its close
+has ended, ``SIGINT``, ``SIGTERM`` and ``SIGHUP`` reach :class:`Signalled` and nobody else: the
+first raises the stop, the second the hurry, and none of them raises an exception or cancels a
+task — so the close always runs whole, and the loop is never torn down with a call of the
+browser's in flight. Only when ``_serve`` has returned does the process end, **as it ended
+before**: the signals it received are raised again, with the handlers ELA had found back in place.
 """
 
 from __future__ import annotations
 
 import asyncio
 import errno
+import signal
 import socket
 import sys
+import threading
 from collections import Counter
-from collections.abc import Sequence
-from contextlib import suppress
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager, suppress
 from types import FrameType
+from typing import Final
 
 import uvicorn
 
@@ -35,6 +46,8 @@ from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.composition.settings import ApiSettings
 
 __all__ = [
+    "STOP_SIGNALS",
+    "Signalled",
     "Stopping",
     "bound",
     "killed",
@@ -46,35 +59,96 @@ __all__ = [
 ]
 
 
+STOP_SIGNALS: Final[tuple[int, ...]] = tuple(
+    int(getattr(signal, name))
+    for name in ("SIGHUP", "SIGTERM", "SIGBREAK", "SIGINT")
+    if hasattr(signal, name)
+)
+"""The signals that stop ``ela serve`` — the ones this system has —, **in the order that decides
+how it ends**: the one that used to kill first comes first. Measured on the code before M13.4e's
+second part: a ``SIGHUP`` killed at once, a ``SIGTERM`` when the server had stopped, and a
+``SIGINT`` was the only one that reached the close."""
+
+
 class Stopping(uvicorn.Server):
-    """The server ELA serves with: a stop signal wakes whoever is waiting (ADR 0038 §11).
+    """The server ELA serves with: it leaves the signals to ELA (M13.4e, decision 56).
 
-    **Measured before it was written** (uvicorn 0.52.4, a handler waiting three seconds, ``SIGINT``
-    at one): ``Server.shutdown()`` closes the sockets, waits for the connections in flight and only
-    *then* sends ``lifespan.shutdown`` — so with the plain server a long-poll finished its own wait
-    (the answer at 3.56 s) and the lifespan arrived at requests already over. The signal handler is
-    the one place early enough, and uvicorn installs it with ``signal.signal``: raising the event
-    there answers at the instant of the signal and the server stops in 0.12 s.
+    **Measured before it was written** (uvicorn 0.52.4): while it serves, uvicorn replaces
+    whatever handler it finds for ``SIGINT`` and ``SIGTERM``; at the end it puts that handler back
+    **and raises every signal it captured again, into it**. A handler of ELA's installed before
+    ``serve`` would therefore never see the first signal when it arrives, and would then receive
+    it raised again — which whoever counts «a second signal» counts as one. So this server
+    captures nothing: the handlers ELA installed stay where they are for as long as it serves,
+    and :class:`Signalled` tells it to exit.
 
-    ``call_soon_threadsafe`` because a signal handler is not the loop, and a timeout instead of this
-    was refused on purpose: interrupting a handler that can be told is the wrong tool. The
-    middleware is untouched.
+    ADR 0038 §11 is kept by that handler and not here any more: the stop is still raised at the
+    instant of the signal, which is what wakes whoever is waiting.
+    """
+
+    @contextmanager
+    def capture_signals(self) -> Iterator[None]:
+        yield
+
+
+class Signalled:
+    """What ``ela serve`` does with a stop signal, for as long as there is an ELA to close.
+
+    It is called by Python in the main thread, between two instructions of whatever the loop is
+    running: it writes the signal down and **hands the rest to the loop** — a signal handler is
+    not the loop —, and it never raises and never cancels a task. That is the whole of how the
+    loop is not torn down with something in flight (decision 55).
+
+    **The first signal** raises ELA's stop — at the instant of the signal: a node holding a long
+    poll is answered then, not at the end of its window (ADR 0038 §11) — and tells the server to
+    exit; for a ``SIGHUP`` too, which uvicorn never looked at. **The second, whichever it is**,
+    raises the hurry — the grace of ELA's close is over at once — and tells the server not to
+    wait for its connections any longer, as uvicorn did at a second Ctrl-C. **From the third on**
+    nothing is left to raise.
     """
 
     def __init__(
-        self,
-        config: uvicorn.Config,
-        *,
-        stopping: asyncio.Event,
-        loop: asyncio.AbstractEventLoop,
+        self, loop: asyncio.AbstractEventLoop, stopping: asyncio.Event, received: list[int]
     ) -> None:
-        super().__init__(config)
-        self._stopping = stopping
+        self.received = received
+        self.hurry = asyncio.Event()
+        self.serving: uvicorn.Server | None = None
         self._loop = loop
+        self._stopping = stopping
 
-    def handle_exit(self, sig: int, frame: FrameType | None) -> None:
-        self._loop.call_soon_threadsafe(self._stopping.set)
-        super().handle_exit(sig, frame)
+    def __call__(self, number: int, frame: FrameType | None) -> None:
+        self.received.append(number)
+        again = len(self.received) > 1
+        self._loop.call_soon_threadsafe(self.hurry.set if again else self._stopping.set)
+        if self.serving is not None:
+            self.serving.should_exit = True
+            self.serving.force_exit = again
+
+
+@contextmanager
+def _held(told: Signalled) -> Iterator[None]:
+    """ELA's handler for the stop signals, from here to the end of the block; then the ones found.
+
+    Installed with ``signal.signal``, as uvicorn installs its own, and only from the main thread —
+    Python allows no other. Not with ``loop.add_signal_handler``: measured, a signal is then
+    delivered once to the loop's callback and once more to whoever raises it again.
+
+    **A ``SIGHUP`` found ignored stays ignored**: that is ``nohup ela serve``, which survives its
+    terminal today. ``SIGINT`` and ``SIGTERM`` are taken whatever was found, because uvicorn took
+    them so."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    hangup = getattr(signal, "SIGHUP", None)
+    found = {
+        number: signal.signal(number, told)
+        for number in STOP_SIGNALS
+        if number != hangup or signal.getsignal(number) is not signal.SIG_IGN
+    }
+    try:
+        yield
+    finally:
+        for number, handler in found.items():
+            signal.signal(number, handler)
 
 
 def bound(host: str, port: int) -> socket.socket:
@@ -142,58 +216,78 @@ async def _claimed(api: ApiSettings) -> list[socket.socket]:
         raise ConfigurationError(unavailable(api, refused, holder)) from None
 
 
-def killed(names: Sequence[str]) -> str:
-    """What ELA says when its close had to kill the browser (M13.4e): that it did not close within
-    the grace, and **the names of the processes with how many of each** — never a command line, a
-    path or an address. A name is enough to know what happened; a value may be somebody's."""
+def killed(names: Sequence[str], hurried: bool = False) -> str:
+    """What ELA says when its close had to kill the browser (M13.4e): **why the grace was over**
+    — its time ran out, or a second signal ended it — and **the names of the processes with how
+    many of each**; never a command line, a path or an address. A name is enough to know what
+    happened; a value may be somebody's."""
     counted = ", ".join(f"{count} {name}" for name, count in sorted(Counter(names).items()))
-    return (
-        f"ela: the browser did not close within {BROWSER_CLOSE_GRACE_SECONDS} s of the stop: ELA "
-        f"killed what it had started — {counted}"
+    why = (
+        "had not closed when a second signal arrived"
+        if hurried
+        else f"did not close within {BROWSER_CLOSE_GRACE_SECONDS} s of the stop"
     )
+    return f"ela: the browser {why}: ELA killed what it had started — {counted}"
 
 
-def _say_killed(names: Sequence[str]) -> None:
-    print(killed(names), file=sys.stderr)
+def _say_killed(names: Sequence[str], hurried: bool) -> None:
+    # After a SIGHUP the terminal may be gone, and stderr with it: a line that cannot be written
+    # is lost, and the close goes on to release the database (decision 56).
+    with suppress(OSError, ValueError):
+        print(killed(names, hurried), file=sys.stderr)
 
 
-async def _serve(settings: Settings) -> None:
+async def _serve(settings: Settings, received: list[int]) -> None:
     ela = await build(settings)
-    if ela.removed_from_environment:
-        # The names and never the values (M13.4, decision 4 of the review of 2026-09-30): a name
-        # is what somebody needs to find the line in their shell.
-        print(
-            f"ela: removed {', '.join(ela.removed_from_environment)} from ELA's environment: the "
-            "browser's driver must not inherit what turns its checks off (ADR 0052 §14)",
-            file=sys.stderr,
-        )
-    sockets: list[socket.socket] = []
-    try:
-        sockets = await _claimed(settings.api)
-        app = create_app(ela)
-        app.state.addresses = tuple(shown(listener) for listener in sockets)
-        # After the bind and before serving: the bell's tap opens the address this process ended
-        # up on, not the one the settings asked for. If the tailnet was not there, ELA is on
-        # loopback only and the bell is not ready — which ``/diagnostics`` says (M12.5 dec. E).
-        ela.serving_at(app.state.addresses)
-        server = Stopping(
-            uvicorn.Config(app, log_level="info"),
-            stopping=app.state.stopping,
-            loop=asyncio.get_running_loop(),
-        )
-        await server.serve(sockets=sockets)
-    finally:
-        for listener in sockets:
-            listener.close()
-        # The close waits for the browser, and past its grace kills what the browser's adapter had
-        # started (M13.4e): said here, inside the close, because after a Ctrl-C the close does not
-        # return a value — it gives back the cancellation it was entered with.
-        await ela.aclose(killed=_say_killed)
+    told = Signalled(asyncio.get_running_loop(), ela.stopping, received)
+    # From here there is an ELA to close, and the stop signals are ELA's until it is closed.
+    # Before, there is none: a Ctrl-C during the start cancels the start, as it always did.
+    with _held(told):
+        if ela.removed_from_environment:
+            # The names and never the values (M13.4, decision 4 of the review of 2026-09-30): a
+            # name is what somebody needs to find the line in their shell.
+            print(
+                f"ela: removed {', '.join(ela.removed_from_environment)} from ELA's environment: "
+                "the browser's driver must not inherit what turns its checks off (ADR 0052 §14)",
+                file=sys.stderr,
+            )
+        sockets: list[socket.socket] = []
+        try:
+            sockets = await _claimed(settings.api)
+            app = create_app(ela)
+            app.state.addresses = tuple(shown(listener) for listener in sockets)
+            # After the bind and before serving: the bell's tap opens the address this process
+            # ended up on, not the one the settings asked for. If the tailnet was not there, ELA
+            # is on loopback only and the bell is not ready — which ``/diagnostics`` says (M12.5
+            # dec. E).
+            ela.serving_at(app.state.addresses)
+            server = Stopping(uvicorn.Config(app, log_level="info"))
+            told.serving = server
+            if not received:  # a signal that came before the server serves: it never does
+                await server.serve(sockets=sockets)
+        finally:
+            for listener in sockets:
+                listener.close()
+            # The close waits for the browser, and past its grace — or at a second signal —
+            # kills what the browser's adapter had started (M13.4e): said here, inside the
+            # close, because it is the close that knows which of the two it was.
+            await ela.aclose(killed=_say_killed, hurry=told.hurry)
 
 
 def serve(settings: Settings) -> None:
-    """Build ELA and serve it until the server stops."""
-    asyncio.run(_serve(settings))
+    """Build ELA and serve it until the server stops — and then end as the signal ended it.
+
+    ``_serve`` returns normally whatever stopped it: the close has run whole. **Only then** the
+    signals it received are raised again, each once, in the order of :data:`STOP_SIGNALS` — the
+    way uvicorn gave a process its end, moved after the close. By now the handlers ELA had found
+    are back: a ``SIGINT`` is Python's ``KeyboardInterrupt``, from which come the 130 of ``ela
+    serve`` and the death by ``SIGINT`` of ``python -m ela.api``; a ``SIGTERM`` or a ``SIGHUP``
+    kills, as it did; and one that had been found ignored is raised into nothing."""
+    received: list[int] = []
+    asyncio.run(_serve(settings, received))
+    for number in STOP_SIGNALS:
+        if number in received:
+            signal.raise_signal(number)
 
 
 def main() -> int:

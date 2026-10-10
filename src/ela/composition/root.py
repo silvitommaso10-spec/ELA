@@ -385,26 +385,35 @@ class Ela:
         M14.3; ADR 0060 §6). Normally zero, like the voice's sweep."""
         return await self.agents.sweep()
 
-    async def aclose(self, *, killed: Callable[[tuple[str, ...]], None] | None = None) -> None:
+    async def aclose(
+        self,
+        *,
+        killed: Callable[[tuple[str, ...], bool], None] | None = None,
+        hurry: asyncio.Event | None = None,
+    ) -> None:
         """Close ELA: raise the stop, bring the browser to rest, release the database (M13.4e).
 
         **When this returns nothing of the browser runs any more**, so the loop is never torn down
         with one of its calls in flight — measured, that is a process that does not exit. In this
         order: the stop, for whoever closes ELA without a signal having raised it, because closing
-        is stopping and the stop is what closes the browser's pages; the browser, which past
-        :data:`BROWSER_CLOSE_GRACE_SECONDS` kills what it had started and names it — the names
-        reach ``killed``, for whoever closes ELA to say —; and the database, as before.
+        is stopping and the stop is what closes the browser's pages; the browser, which past its
+        grace kills what it had started and names it; and the database, as before.
 
-        **It runs to its end whoever is cancelled** (decision 51). After a Ctrl-C uvicorn raises
-        the ``SIGINT`` again when ``serve`` returns, the handler of ``asyncio.run`` cancels the
-        task that is about to call this, and this is entered with that cancellation pending. The
-        work runs in a task of its own; this waits for it through any number of cancellations, and
-        gives the cancellation back at the end — so a Ctrl-C ends ``ela serve`` as it always did.
-        What the database gains: every connection of the pool is closed, and the write-ahead log
-        written back; cancelled at its first wait, the release closed one connection and left the
-        others (measured). Idempotent.
+        **The grace is over at its time —** :data:`BROWSER_CLOSE_GRACE_SECONDS` **— or at the
+        hurry**, whichever comes first (decision 55): ``hurry`` is the event a second signal
+        raises, and whoever closes ELA with no signal has none. ``killed`` is handed the names of
+        what was killed **and whether it was the hurry that ended the grace**, for whoever closes
+        ELA to say which of the two happened.
+
+        **It runs to its end whoever is cancelled** (decision 51). The work runs in a task of its
+        own; this waits for it through any number of cancellations, and gives the cancellation
+        back at the end. Since the second part of M13.4e a signal cancels nobody — the handlers
+        are ELA's, ``ela.api.server`` —, and the care is for whoever closes ELA from a task that
+        is cancelled. What the database gains: every connection of the pool is closed, and the
+        write-ahead log written back; cancelled at its first wait, the release closed one
+        connection and left the others (measured). Idempotent.
         """
-        closing = asyncio.ensure_future(self._closed(killed))
+        closing = asyncio.ensure_future(self._closed(killed, hurry))
         interrupted = False
         while not closing.done():
             try:
@@ -415,12 +424,22 @@ class Ela:
         if interrupted:
             raise asyncio.CancelledError
 
-    async def _closed(self, killed: Callable[[tuple[str, ...]], None] | None) -> None:
+    async def _closed(
+        self,
+        killed: Callable[[tuple[str, ...], bool], None] | None,
+        hurry: asyncio.Event | None,
+    ) -> None:
         self.stopping.set()
+        hurried = False
+
+        async def grace() -> None:
+            nonlocal hurried
+            hurried = await _over(BROWSER_CLOSE_GRACE_SECONDS, hurry)
+
         try:
-            names = await self.browser.settle(_lasting(BROWSER_CLOSE_GRACE_SECONDS))
+            names = await self.browser.settle(grace)
             if names and killed is not None:
-                killed(names)
+                killed(names, hurried)
         finally:
             await self.database.dispose()
 
@@ -477,10 +496,24 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
     return play
 
 
+async def _over(seconds: int, hurry: asyncio.Event | None) -> bool:
+    """Wait until the grace of ELA's close is over: its ``seconds``, or the ``hurry`` if there is
+    one and it comes first (M13.4e, decision 55). ``True`` if it was the hurry — raised before
+    the wait or during it — that ended it: what whoever closes ELA says is which of the two."""
+    told = asyncio.ensure_future((hurry or asyncio.Event()).wait())
+    timed = asyncio.ensure_future(asyncio.sleep(seconds))
+    try:
+        await asyncio.wait({told, timed}, return_when=asyncio.FIRST_COMPLETED)
+        return told.done()
+    finally:
+        told.cancel()
+        timed.cancel()
+
+
 def _lasting(seconds: int) -> Callable[[], Awaitable[None]]:
     """A wait of ``seconds``, as a function the browser's adapter awaits: how long a page handed to
-    the verifier waits for its look — the tool's own time (form I) —, and how long ELA's close
-    waits for the browser (M13.4e). The adapter is given the wait, never the number."""
+    the verifier waits for its look — the tool's own time (form I). The adapter is given the wait,
+    never the number."""
 
     async def waited() -> None:
         await asyncio.sleep(seconds)

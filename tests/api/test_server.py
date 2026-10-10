@@ -159,9 +159,10 @@ async def test_a_stop_wakes_the_node_that_waits(app: Any, client: AsyncClient, e
     while a request is genuinely in flight, and what is asserted is the *timing*: the answer comes
     back in a fraction of the window, which is the difference between being told and waiting it out.
 
-    What this cannot show in one process is the signal itself reaching uvicorn; that half is
-    ``test_the_signal_handler_raises_the_event_for_whoever_waits``, and the two together are the
-    criterion.
+    What this cannot show in one process is the signal itself; that half is
+    ``test_the_first_signal_raises_the_stop_and_stops_the_server_and_the_second_the_hurry`` —
+    since M13.4e's second part the handler is ELA's and not uvicorn's —, and the two together are
+    the criterion.
     """
     _, headers = await enrolled(client, "TRUSTED", available_tools=["core-echo"])
     window = ela.settings.core.node_poll.total_seconds()
@@ -176,23 +177,6 @@ async def test_a_stop_wakes_the_node_that_waits(app: Any, client: AsyncClient, e
 
     assert answered.status_code == 204
     assert loop.time() - started < window / 2
-
-
-async def test_the_signal_handler_raises_the_event_for_whoever_waits(app: Any) -> None:
-    """``handle_exit`` is the method uvicorn installs with ``signal.signal``, so the event is raised
-    there — through ``call_soon_threadsafe``, because a signal handler is not the loop — and the
-    server's own stop still happens. A shutdown timeout was refused instead: interrupting a handler
-    that can be told is the wrong tool."""
-    stopping = asyncio.Event()
-    stopper = server.Stopping(
-        uvicorn.Config(app), stopping=stopping, loop=asyncio.get_running_loop()
-    )
-
-    stopper.handle_exit(signal.SIGINT, None)
-    await asyncio.sleep(0)
-
-    assert stopping.is_set()
-    assert stopper.should_exit
 
 
 def test_a_socket_is_bound_where_it_is_asked_and_refused_where_the_address_is_not_here() -> None:
@@ -808,7 +792,7 @@ def test_off_the_main_thread_ela_serves_and_leaves_the_signals_alone(
 
 @POSIX
 async def test_the_server_does_not_capture_the_signals_and_raises_none_again(
-    app: Any, found: dict[int, Any], raised: list[int]
+    app: Any, raised: list[int]
 ) -> None:
     """Measured, 2026-10-10 (uvicorn 0.52.4): while it serves uvicorn replaces whatever handler it
     finds for ``SIGINT`` and ``SIGTERM``, puts it back at the end **and raises every signal it
@@ -816,11 +800,12 @@ async def test_the_server_does_not_capture_the_signals_and_raises_none_again(
     first one twice. The server ELA serves with leaves the signals where it found them."""
     stopper = server.Stopping(uvicorn.Config(app))
     stopper._captured_signals.append(signal.SIGTERM)  # noqa: SLF001 — what uvicorn would raise
+    before = dispositions()
 
     with stopper.capture_signals():
-        assert dispositions() == found
+        assert dispositions() == before
 
-    assert dispositions() == found
+    assert dispositions() == before
     assert raised == []
 
 

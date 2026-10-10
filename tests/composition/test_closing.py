@@ -265,16 +265,21 @@ async def test_what_the_browser_had_to_kill_is_handed_to_whoever_closes_ela_and_
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     ela, browser = await an_ela(monkeypatch, tmp_path)
-    told: list[tuple[str, ...]] = []
+    told: list[tuple[tuple[str, ...], bool]] = []
 
-    await ela.aclose(killed=told.append)
+    def killed(names: tuple[str, ...], hurried: bool) -> None:
+        told.append((names, hurried))
+
+    await ela.aclose(killed=killed)
     assert told == [], "a browser that closed by itself is nothing to say"
 
     browser.killed = ("node", "chrome-headless-shell")
-    await ela.aclose(killed=told.append)
+    await ela.aclose(killed=killed)
     await ela.aclose()
 
-    assert told == [("node", "chrome-headless-shell")]
+    assert told == [(("node", "chrome-headless-shell"), False)], (
+        "the names, and that nobody hurried: the second part of M13.4e added the second"
+    )
     assert len(browser.settled) == 3, (
         "closing again settles again: it is idempotent, not remembered"
     )

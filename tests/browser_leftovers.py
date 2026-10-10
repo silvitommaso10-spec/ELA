@@ -100,7 +100,7 @@ def sweep(folder: Path, also: tuple[int, ...] = ()) -> None:
         except ProcessLookupError:  # gone on its own in between
             continue
     deadline = time.monotonic() + GONE_SECONDS
-    while named(folder) and time.monotonic() < deadline:
+    while doomed and named(folder) and time.monotonic() < deadline:
         time.sleep(LOOK_SECONDS)
     for profile in folder.glob(f"{PROFILE}*"):
         if profile.is_symlink():

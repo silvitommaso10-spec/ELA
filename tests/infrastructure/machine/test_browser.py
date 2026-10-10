@@ -58,6 +58,7 @@ from ela.domain import (
 )
 from ela.infrastructure.machine import PlaywrightBrowser
 from ela.infrastructure.machine.browser import (
+    _alive,
     _descendants,
     _gone,
     _listed,
@@ -1150,7 +1151,7 @@ async def test_the_profile_of_what_was_killed_is_taken_away_only_once_the_kernel
         asked.append((pid, profile.is_dir()))
         return True if len(asked) <= 3 else known(pid)
 
-    browser._known = still_there  # type: ignore[attr-defined]  # noqa: SLF001 — the adapter's question
+    browser._known = still_there  # noqa: SLF001 — the adapter's question to the kernel
     grace = Grace()
 
     stopping.set()
@@ -1293,13 +1294,13 @@ async def test_what_was_killed_is_waited_for_until_the_kernel_knows_it_no_more(
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
     try:
         child.kill()
-        waiting = asyncio.create_task(_gone([child.pid]))
+        waiting = asyncio.create_task(_gone([child.pid], _alive))
         for _ in range(5):
             await asyncio.sleep(0)
         assert known(child.pid) and not waiting.done()
 
         monkeypatch.setattr("ela.infrastructure.machine.browser.GONE_SECONDS", 0.0)
-        await _gone([child.pid])
+        await _gone([child.pid], _alive)
         assert known(child.pid), "the deadline, not the collecting, ended this wait"
     finally:
         child.wait()
