@@ -1,0 +1,10 @@
+Usage: bw lock [options]
+
+Lock the vault and destroy active session keys.
+
+Options:
+  -h, --help  display help for command
+
+  Examples:
+
+    bw lock

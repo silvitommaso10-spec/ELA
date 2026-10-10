@@ -1,0 +1,28 @@
+Usage: bw login [options] [email] [password]
+
+Log into a user account.
+
+Options:
+  --method <method>              Two-step login method.
+  --code <code>                  Two-step login code.
+  --sso [identifier]             Log in with Single-Sign On with optional
+                                 organization identifier.
+  --apikey                       Log in with an Api Key.
+  --passwordenv <passwordenv>    Environment variable storing your password
+  --passwordfile <passwordfile>  Path to a file containing your password as its
+                                 first line
+  --check                        Check login status.
+  -h, --help                     display help for command
+
+  Notes:
+
+    See docs for valid `method` enum values.
+
+    Pass `--raw` option to only return the session key.
+
+  Examples:
+
+    bw login
+    bw login john@example.com myPassword321 --raw
+    bw login john@example.com myPassword321 --method 1 --code 249213
+    bw login --sso

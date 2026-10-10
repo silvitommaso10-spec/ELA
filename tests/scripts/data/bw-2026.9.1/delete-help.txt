@@ -1,0 +1,22 @@
+Usage: bw delete [options] <object> <id>
+
+Delete an object from the vault.
+
+Arguments:
+  object                             Valid objects are: item, attachment,
+                                     folder, org-collection
+  id                                 Object's globally unique `id`.
+
+Options:
+  --itemid <itemid>                  Attachment's item id.
+  --organizationid <organizationid>  Organization id for an organization object.
+  -p, --permanent                    Permanently deletes the item instead of
+                                     soft-deleting it (item only).
+  -h, --help                         display help for command
+
+  Examples:
+
+    bw delete item 7063feab-4b10-472e-b64c-785e2b870b92
+    bw delete item 89c21cd2-fab0-4f69-8c6e-ab8a0168f69a --permanent
+    bw delete folder 5cdfbd80-d99f-409b-915b-f4c5d0241b02
+    bw delete attachment b857igwl1dzrs2 --itemid 310d5ffd-e9a2-4451-af87-ea054dce0f78

@@ -1,0 +1,15 @@
+Usage: bw create [options] <object> [encodedJson]
+
+Create an object in the vault.
+
+Arguments:
+  object                             Valid objects are: item, attachment,
+                                     folder, org-collection
+  encodedJson                        Encoded json of the object to create. Can
+                                     also be piped into stdin.
+
+Options:
+  --file <file>                      Path to file for attachment.
+  --itemid <itemid>                  Attachment's item id.
+  --organizationid <organizationid>  Organization id for an organization object.
+  -h, --help                         display help for command

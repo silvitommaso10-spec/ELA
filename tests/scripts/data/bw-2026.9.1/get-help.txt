@@ -1,0 +1,34 @@
+Usage: bw get [options] <object> <id>
+
+Get an object from the vault.
+
+Arguments:
+  object                             Valid objects are: item, username,
+                                     password, uri, totp, notes, exposed,
+                                     attachment, folder, collection,
+                                     org-collection, organization, template,
+                                     fingerprint, send
+  id                                 Search term or object's globally unique
+                                     `id`.
+
+Options:
+  --itemid <itemid>                  Attachment's item id.
+  --output <output>                  Output directory or filename for
+                                     attachment.
+  --organizationid <organizationid>  Organization id for an organization object.
+  -h, --help                         display help for command
+
+  If raw output is specified and no output filename or directory is given for
+  an attachment query, the attachment content is written to stdout.
+
+  Examples:
+
+    bw get item 99ee88d2-6046-4ea7-92c2-acac464b1412
+    bw get password https://google.com
+    bw get totp google.com
+    bw get notes google.com
+    bw get exposed yahoo.com
+    bw get attachment b857igwl1dzrs2 --itemid 99ee88d2-6046-4ea7-92c2-acac464b1412 --output ./photo.jpg
+    bw get attachment photo.jpg --itemid 99ee88d2-6046-4ea7-92c2-acac464b1412 --raw
+    bw get folder email
+    bw get template folder
