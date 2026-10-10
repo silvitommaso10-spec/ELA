@@ -56,7 +56,13 @@ from ela.domain import (
     RiskLevel,
 )
 from ela.infrastructure.machine import PlaywrightBrowser
-from ela.infrastructure.machine.browser import _descendants, _listed, shell_folder
+from ela.infrastructure.machine.browser import (
+    _descendants,
+    _gone,
+    _listed,
+    _temporary_profiles,
+    shell_folder,
+)
 from ela.permissions import BROWSER_ACT, BROWSER_READ
 from ela.ports import (
     NAVIGATION,
@@ -1212,6 +1218,50 @@ def test_the_name_of_a_process_cannot_write_a_row_of_the_table_the_adapter_kills
 
     assert sorted(table) == [200, 201, 202]
     assert [pid for pid, _ in _descendants(200, table)] == [201, 202]
+
+
+async def test_what_was_killed_is_waited_for_until_the_kernel_knows_it_no_more(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A process that was killed and that nobody has collected is still in the kernel's table:
+    built here with a child of the test's own, killed and not waited for. The adapter's wait does
+    not end while it is there, and ends once it is collected — an event, the collecting. And it
+    has a deadline of its own: with none left it returns, with the process still there."""
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+    try:
+        child.kill()
+        waiting = asyncio.create_task(_gone([child.pid]))
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert known(child.pid) and not waiting.done()
+
+        monkeypatch.setattr("ela.infrastructure.machine.browser.GONE_SECONDS", 0.0)
+        await _gone([child.pid])
+        assert known(child.pid), "the deadline, not the collecting, ended this wait"
+    finally:
+        child.wait()
+    await waiting
+    assert not known(child.pid)
+
+
+def test_only_a_temporary_profile_of_playwright_s_is_taken_away_after_a_kill() -> None:
+    """What the adapter removes after it killed a browser is read from the browser's own
+    arguments, and kept only if it is the folder Playwright makes for a browser of one page: not a
+    profile somebody chose, not a relative path, and a path with a space in it whole."""
+    said = (
+        "/cache/chrome-headless-shell --no-sandbox "
+        "--user-data-dir=/tmp/playwright_chromiumdev_profile-una --remote-debugging-pipe\n"
+        "/cache/chrome-headless-shell --type=renderer "
+        "--user-data-dir=/tmp/playwright_chromiumdev_profile-una --lang=en-US\n"
+        "/cache/chrome --user-data-dir=/Users/you/Library/A profile --flag\n"
+        "/cache/chrome --user-data-dir=playwright_chromiumdev_profile-relative\n"
+        "/cache/chrome --user-data-dir=/var/a b/playwright_chromiumdev_profile-due parti --x\n"
+    )
+
+    assert _temporary_profiles(said) == [
+        Path("/tmp/playwright_chromiumdev_profile-una"),
+        Path("/var/a b/playwright_chromiumdev_profile-due parti"),
+    ]
 
 
 def test_a_table_that_loops_is_walked_once() -> None:

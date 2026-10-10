@@ -15,7 +15,9 @@ the callback that stops a navigation, the deadline that closes — are proved by
 What every page gets, measured before it was decided (M13.4, «Le misure»):
 
 * **a driver and a browser of its own**, started for the page and closed with it (M3: 226 ms cold);
-  the profile is Playwright's temporary one — empty, and gone with the browser (form C);
+  the profile is Playwright's temporary one — empty, and gone with the browser (form C): the
+  browser takes its folder away when it closes, and **the adapter takes it away when it had to
+  kill the browser** (M13.4e) — a killed browser leaves it, with what the page had put in it;
 * **the Chrome Headless Shell of the version the lock names** (``headless=True``), which opened no
   connection of its own in thirty seconds, where the full Chromium and the installed Chrome talked
   to Google (M4);
@@ -56,9 +58,11 @@ import asyncio
 import contextlib
 import json
 import os
+import re
+import shutil
 import signal
 import weakref
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, TypeVar
@@ -100,6 +104,9 @@ GONE_SECONDS: Final = 2.0
 """How long the kernel is asked whether what was killed is gone: a ``SIGKILL`` is not refused, and
 what is left after it is an entry nobody has collected yet."""
 LOOK_SECONDS: Final = 0.01
+TEMPORARY_PROFILE: Final = "playwright_chromiumdev_profile-"
+"""How Playwright names the folder of the profile it makes for a browser of one page."""
+PROFILE_ARGUMENT: Final = re.compile(r"--user-data-dir=(.+?)(?= --|$)")
 DRIVER: Final = "node"
 """What a driver is called when ELA says it killed one: the binary Playwright starts it with. Said
 by the adapter, which started it, and **not read from** ``ps``: a Linux kernel calls that process
@@ -290,12 +297,18 @@ class PlaywrightBrowser:
         for driver in drivers:
             doomed.extend(_descendants(driver.pid, table))
             doomed.append((driver.pid, DRIVER))
+        # Read before the kill, from the browsers' own arguments: where each keeps its profile. A
+        # browser that closes takes that folder away; one that is killed leaves it.
+        profiles = await _profiles([pid for pid, _ in doomed])
         for pid, _ in doomed:
             with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, signal.SIGKILL)
         for driver in drivers:
             await driver.wait()
         await _gone([pid for pid, _ in doomed])
+        for folder in profiles:
+            if folder.is_dir() and not folder.is_symlink():
+                await asyncio.to_thread(shutil.rmtree, folder, True)
         return tuple(name for _, name in doomed)
 
     async def _dropped(self, token: str, playwright: Playwright) -> None:
@@ -579,7 +592,10 @@ def _listed(said: str) -> dict[int, tuple[int, str]]:
     A line that is not «pid, parent, name» is not a process this can place: left out, and never an
     error in the middle of ELA's close."""
     table: dict[int, tuple[int, str]] = {}
-    for line in said.splitlines():
+    # Split where ``ps`` ends a line and nowhere else: a name is whatever its process says it is,
+    # and one that carried a line separator of Unicode's would otherwise write a row of its own —
+    # a process that is nobody's, listed as started by a driver, and killed with it.
+    for line in said.split("\n"):
         fields = line.split(None, 2)
         if len(fields) == 3 and fields[0].isdigit() and fields[1].isdigit():
             table[int(fields[0])] = (int(fields[1]), fields[2].rsplit("/", 1)[-1])
@@ -587,16 +603,52 @@ def _listed(said: str) -> dict[int, tuple[int, str]]:
 
 
 def _descendants(of: int, table: Mapping[int, tuple[int, str]]) -> list[tuple[int, str]]:
-    """What ``of`` started, and what that started: pids and names, the nearest first."""
+    """What ``of`` started, and what that started: pids and names, the nearest first. Each once,
+    and never ``of`` itself: a table that loops — which a kernel does not say — is walked once."""
     found: list[tuple[int, str]] = []
+    seen = {of}
     todo = [of]
     while todo:
         parent = todo.pop()
         for pid, (above, name) in table.items():
-            if above == parent:
+            if above == parent and pid not in seen:
+                seen.add(pid)
                 found.append((pid, name))
                 todo.append(pid)
     return found
+
+
+async def _profiles(pids: Sequence[int]) -> list[Path]:
+    """The temporary profiles of the browsers among ``pids``, read from their own arguments."""
+    if not pids:
+        return []
+    try:
+        asking = await asyncio.create_subprocess_exec(
+            PS,
+            "-ww",
+            "-o",
+            "args=",
+            "-p",
+            ",".join(str(pid) for pid in pids),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return []
+    said, _ = await asking.communicate()
+    return _temporary_profiles(said.decode(errors="replace"))
+
+
+def _temporary_profiles(said: str) -> list[Path]:
+    """The folders ``--user-data-dir=`` names in what ``ps -o args=`` printed, **kept only if they
+    are Playwright's temporary profiles** — an absolute path whose last part begins as Playwright
+    names them. What is taken away after a kill is never a folder somebody chose."""
+    named = {Path(folder) for line in said.split("\n") for folder in PROFILE_ARGUMENT.findall(line)}
+    return sorted(
+        folder
+        for folder in named
+        if folder.is_absolute() and folder.name.startswith(TEMPORARY_PROFILE)
+    )
 
 
 async def _gone(pids: list[int]) -> None:
