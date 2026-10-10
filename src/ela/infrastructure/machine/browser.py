@@ -28,6 +28,11 @@ What every page gets, measured before it was decided (M13.4, «Le misure»):
   adapter's own, shielded and held until they end — a caller cancelled halfway gets its
   cancellation, and the processes still go. Measured: cancelled in the caller's task, a close left
   five processes outside the table, where not even ELA's stop found them;
+* **ELA's stop, whenever it is raised** (M13.4c): from that moment no navigation and no gesture
+  is handed to the driver, and the route lets no request through — so what can still reach a site
+  does not depend on how long the closing of the pages takes. An opening looks at the stop again
+  the instant its page is in the table, and closes it itself: the task that closes every page may
+  have come and gone while the browser was starting (measured: a form was sent after the stop);
 * no downloads, no service workers, no timeout of Playwright's — the tool's deadline is the one —,
   and **every request routed**, so that a navigation of the main frame the boundary refuses is
   aborted before it is sent; the document of the main frame is fetched by the route itself, without
@@ -134,7 +139,8 @@ class PlaywrightBrowser:
     """The port :class:`~ela.ports.Browser`, with Playwright and the Chrome Headless Shell.
 
     ``stopping`` is ELA's stop signal (ADR 0038 §11): when it is raised every page is closed, and
-    what was running raises :class:`~ela.ports.BrowserStopped`. ``environment`` is what the browser
+    what was running raises :class:`~ela.ports.BrowserStopped` — and **from then on nothing is
+    started or sent**, whenever it was raised (M13.4c). ``environment`` is what the browser
     receives, and nothing else (M6). ``kept`` is how long a page handed to the verifier may wait for
     its look — a function the composition gives, awaited once per page kept.
     """
@@ -256,12 +262,19 @@ class PlaywrightBrowser:
                 without following redirects; a redirect the boundary refuses is not followed, and
                 one it admits is handed to the page, which follows it through this route again.
                 """
-                if not (request.is_navigation_request() and request.frame.parent_frame is None):
-                    await route.continue_()
-                    return
-                if not allowed(request.url):
+                main = request.is_navigation_request() and request.frame.parent_frame is None
+                if main and not allowed(request.url):
                     refused.append(request.url)
                     await route.abort()
+                    return
+                if self._stopping.is_set():
+                    # ELA is stopping (M13.4c): nothing more leaves for a site — not a navigation
+                    # asked for an instant before, not the redirect after a form. Looked at after
+                    # the boundary and right before the request is let go, with no wait between.
+                    await route.abort()
+                    return
+                if not main:
+                    await route.continue_()
                     return
                 try:
                     response = await route.fetch(max_redirects=0)
@@ -285,6 +298,11 @@ class PlaywrightBrowser:
             # The last instant before the site sees anything (M6.3c, ADR 0054 §3): a stopped task
             # leaves here with ToolStopped, and the page and its browser are closed below.
             stop.listen(NAVIGATION)
+            # And ELA's own stop, looked at again now that the page is in the table (M13.4c): a
+            # stop raised while the browser was starting woke the task that closes every page
+            # before this page was there to be closed. Whoever puts a page in the table after the
+            # stop closes it — below. No wait stands between this look and the navigation.
+            self._refuse_if_stopping()
             try:
                 response = await page.goto(address, wait_until="load")
             except PlaywrightError as error:
@@ -309,10 +327,12 @@ class PlaywrightBrowser:
             raise self._translated(error) from None
 
     def _page(self, page: str) -> _Open:
+        """The page, to be used. **Not once ELA is stopping** (M13.4c): a page the stop has not
+        closed yet is in the table still, and a gesture asked of it then would leave."""
+        if self._stopping.is_set():
+            raise BrowserStopped("ELA is stopping: the browser was closed")
         found = self._pages.get(page)
         if found is None:
-            if self._stopping.is_set():
-                raise BrowserStopped("ELA is stopping: the browser was closed")
             raise PageGone("no page of ELA's has this identifier any more")
         return found
 

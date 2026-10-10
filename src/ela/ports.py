@@ -2641,7 +2641,9 @@ class Browser(Protocol):
       names it;
     * the browser is started so that a signal to ELA's process group does not close it: the stop is
       ELA's, through the stop signal of ADR 0038 §11, which raises :class:`BrowserStopped` in what
-      was running;
+      was running — and **from the moment it is raised no navigation and no gesture leaves**,
+      whenever that moment is: :meth:`open` and every use of a page raise
+      :class:`BrowserStopped`, and a page that was being opened is closed by its opening (M13.4c);
     * a page kept with :meth:`keep` waits for :meth:`glance`, and an implementation closes it
       itself if nobody looks before its deadline;
     * when :meth:`close` returns, the kernel knows no process of that page's browser any more.

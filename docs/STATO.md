@@ -127,7 +127,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.3` | Implementata | L'azione che viaggia: il verifier dove avviene l'effetto, e i tre debiti che la fase paga qui |
 | 13 — Il permesso prima dell'azione | `M13.4` | Implementata | Il browser: Playwright, e il costo che la SPEC misura prima di decidere |
 | 13 — Il permesso prima dell'azione | `M13.4b` | Implementata | Una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta |
-| 13 — Il permesso prima dell'azione | `M13.4c` | Proposta | La fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti |
+| 13 — Il permesso prima dell'azione | `M13.4c` | Implementata | La fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti |
 | 13 — Il permesso prima dell'azione | `M13.4d` | Proposta | Lo shell del browser vuoto gira senza il sandbox di Chromium |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
@@ -164,7 +164,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **62** | `docs/adr/NNNN-*.md` |
-| Milestone | **88, di cui 70 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **88, di cui 71 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **66** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **33** | i `Protocol` di `src/ela/ports.py` |
@@ -884,7 +884,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   (decisione 27), che l'ha misurata: nei primi decimi di secondo di uno step la fermata non chiudeva niente, e
   un modulo partiva dopo. **Sul branch di M13.9, dopo M13.4b e prima del suo codice**, senza una prova a mano
   sua: da quando la fermata è alzata nessuna navigazione e nessun gesto parte, e una pagina che entra in tabella
-  dopo la fermata la chiude chi ce l'ha messa ([`milestones/M13.4c.md`](milestones/M13.4c.md)).
+  dopo la fermata la chiude chi ce l'ha messa ([`milestones/M13.4c.md`](milestones/M13.4c.md)). ***Annotato il
+  2026-10-10***, la sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9.
 - **M13.4d — lo shell del browser vuoto gira senza il sandbox di Chromium** (ADR 0052 §1). **Registrata il
   2026-10-10** dalla review della SPEC di M13.9 (decisione 39): Playwright lo spegne di default, e l'adapter di
   M13.4 non lo riaccende. **Fuori dalla fila.** **Condizione d'ingresso: una misura sui runner della CI** — su
