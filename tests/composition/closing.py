@@ -120,6 +120,11 @@ async def main(mode: str, folder: Path, origin: str) -> None:
 
 
 if __name__ == "__main__":
+    # A process started from a terminal has Python's own handler of SIGINT, which is what makes
+    # ``asyncio.run`` install its own. A worker of the suite may ignore the signal, and an ignored
+    # signal is inherited across ``exec``: without this line the SIGINT below would be raised and
+    # dropped, and the close would never be entered cancelled.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
     try:
         asyncio.run(main(sys.argv[1], Path(sys.argv[2]), sys.argv[3]))
     except KeyboardInterrupt:

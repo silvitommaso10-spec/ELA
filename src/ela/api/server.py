@@ -22,6 +22,8 @@ import asyncio
 import errno
 import socket
 import sys
+from collections import Counter
+from collections.abc import Sequence
 from contextlib import suppress
 from types import FrameType
 
@@ -29,11 +31,13 @@ import uvicorn
 
 from ela.api.app import create_app
 from ela.composition import ConfigurationError, Settings, build, port_holder
+from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.composition.settings import ApiSettings
 
 __all__ = [
     "Stopping",
     "bound",
+    "killed",
     "listening_sockets",
     "main",
     "serve",
@@ -138,6 +142,21 @@ async def _claimed(api: ApiSettings) -> list[socket.socket]:
         raise ConfigurationError(unavailable(api, refused, holder)) from None
 
 
+def killed(names: Sequence[str]) -> str:
+    """What ELA says when its close had to kill the browser (M13.4e): that it did not close within
+    the grace, and **the names of the processes with how many of each** — never a command line, a
+    path or an address. A name is enough to know what happened; a value may be somebody's."""
+    counted = ", ".join(f"{count} {name}" for name, count in sorted(Counter(names).items()))
+    return (
+        f"ela: the browser did not close within {BROWSER_CLOSE_GRACE_SECONDS} s of the stop: ELA "
+        f"killed what it had started — {counted}"
+    )
+
+
+def _say_killed(names: Sequence[str]) -> None:
+    print(killed(names), file=sys.stderr)
+
+
 async def _serve(settings: Settings) -> None:
     ela = await build(settings)
     if ela.removed_from_environment:
@@ -166,7 +185,10 @@ async def _serve(settings: Settings) -> None:
     finally:
         for listener in sockets:
             listener.close()
-        await ela.aclose()
+        # The close waits for the browser, and past its grace kills what the browser's adapter had
+        # started (M13.4e): said here, inside the close, because after a Ctrl-C the close does not
+        # return a value — it gives back the cancellation it was entered with.
+        await ela.aclose(killed=_say_killed)
 
 
 def serve(settings: Settings) -> None:

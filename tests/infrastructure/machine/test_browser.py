@@ -60,6 +60,7 @@ from ela.infrastructure.machine.browser import shell_folder
 from ela.permissions import BROWSER_ACT, BROWSER_READ
 from ela.ports import (
     NAVIGATION,
+    BrowserFailed,
     BrowserNotInstalled,
     BrowserStopped,
     BrowserUnsupported,
@@ -1029,7 +1030,8 @@ async def test_a_browser_that_does_not_close_is_killed_when_the_grace_is_over(
     assert not settling.done(), "the browser has not closed, and nothing has been killed yet"
     assert all(alive(pid) for pid, _ in before)
     grace.over.set()
-    killed = await settling
+    async with asyncio.timeout(30):  # the test's guard: an adapter that kills nothing fails here
+        killed = await settling
 
     assert sorted(killed) == sorted(name for _, name in before), "names, and every one of them"
     assert [name for pid, name in before if alive(pid)] == []
@@ -1073,6 +1075,22 @@ async def test_the_process_of_a_driver_is_read_where_playwright_keeps_it(
 
     drivers = [pid for pid, name in started() if name == "node"]
     assert drivers and browser._driver_pids() == drivers  # noqa: SLF001
+
+
+async def test_an_adapter_that_cannot_read_the_process_of_its_driver_opens_nothing(
+    browser: PlaywrightBrowser, served: list[Site], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The negative of the fact above: the day the process is not where it is read, an opening
+    fails and says so, and stops the driver it had started — an adapter that could not kill what
+    it starts does not start it."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    monkeypatch.setattr("ela.infrastructure.machine.browser._process_of", lambda manager: None)
+
+    with pytest.raises(BrowserFailed, match="the process of the browser's driver cannot be read"):
+        await browser.open(web.origin + "/", lambda url: True, FakeStop())
+
+    assert web.requests == []
+    assert descendants() == []
 
 
 async def test_a_page_handed_over_and_never_looked_at_is_closed_at_its_deadline(

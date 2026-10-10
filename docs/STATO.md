@@ -129,7 +129,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.4b` | Implementata | Una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta |
 | 13 — Il permesso prima dell'azione | `M13.4c` | Implementata | La fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti |
 | 13 — Il permesso prima dell'azione | `M13.4d` | Proposta | Lo shell del browser vuoto gira senza il sandbox di Chromium |
-| 13 — Il permesso prima dell'azione | `M13.4e` | Proposta | Alla chiusura di ELA nessuno aspetta il browser, e il processo può non uscire |
+| 13 — Il permesso prima dell'azione | `M13.4e` | Implementata | Alla chiusura di ELA nessuno aspetta il browser, e il processo può non uscire |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
@@ -165,7 +165,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
 | ADR scritti | **62** | `docs/adr/NNNN-*.md` |
-| Milestone | **89, di cui 71 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| Milestone | **89, di cui 72 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **66** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **33** | i `Protocol` di `src/ela/ports.py` |
@@ -897,7 +897,9 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   la loro rilettura critica l'ha misurato: se il loop viene smontato con una chiamata del browser in volo, ELA
   non esce. **Sul branch di M13.9, dopo M13.4c e prima del suo codice**, senza una prova a mano sua: la chiusura
   di ELA aspetta il browser, e dopo una grazia dichiarata uccide ciò che l'adapter aveva avviato e lo scrive
-  ([`milestones/M13.4e.md`](milestones/M13.4e.md)).
+  ([`milestones/M13.4e.md`](milestones/M13.4e.md)). ***Annotato il 2026-10-10***, la sera: **implementata**, prima
+  i test rossi; aspetta la CI sul branch e il merge con M13.9. Restano scritte tre domande — un secondo Ctrl-C
+  mentre la chiusura aspetta, il `SIGTERM`, e se portare un browser a riposo è un membro del suo port.
 - **M13.4d — lo shell del browser vuoto gira senza il sandbox di Chromium** (ADR 0052 §1). **Registrata il
   2026-10-10** dalla review della SPEC di M13.9 (decisione 39): Playwright lo spegne di default, e l'adapter di
   M13.4 non lo riaccende. **Fuori dalla fila.** **Condizione d'ingresso: una misura sui runner della CI** — su

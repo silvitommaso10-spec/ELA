@@ -33,6 +33,12 @@ What every page gets, measured before it was decided (M13.4, «Le misure»):
   does not depend on how long the closing of the pages takes. An opening looks at the stop again
   the instant its page is in the table, and closes it itself: the task that closes every page may
   have come and gone while the browser was starting (measured: a form was sent after the stop);
+* **what ELA's close waits for** (M13.4e): :meth:`PlaywrightBrowser.settle` waits for the task the
+  stop wakes — which ends when no page, no closing and no opening of this adapter is in flight —
+  and, past the grace the composition gives, **kills what the adapter started**: its drivers, read
+  where Playwright keeps their process, and whatever they started. Measured: torn down with a call
+  of Playwright's in flight, the loop never ends — the cancelled call waits for an answer the
+  cancelled reader of the pipe does not deliver —, and ELA does not exit;
 * no downloads, no service workers, no timeout of Playwright's — the tool's deadline is the one —,
   and **every request routed**, so that a navigation of the main frame the boundary refuses is
   aborted before it is sent; the document of the main frame is fetched by the route itself, without
@@ -50,6 +56,8 @@ import asyncio
 import contextlib
 import json
 import os
+import signal
+import weakref
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -86,6 +94,14 @@ of the engine this module reads, and a test with an empty browsers folder holds 
 
 SHELL: Final = "chromium-headless-shell"
 """The name Playwright's registry gives the Chrome Headless Shell, in its ``browsers.json``."""
+
+PS: Final = "/bin/ps"
+GONE_SECONDS: Final = 2.0
+"""How long the kernel is asked whether what was killed is gone: a ``SIGKILL`` is not refused, and
+what is left after it is an entry nobody has collected yet."""
+LOOK_SECONDS: Final = 0.01
+DRIVER: Final = "node"
+"""What a driver is called when ``ps`` could not be asked for its name."""
 
 
 def shell_folder(environment: Mapping[str, str], system: str) -> Path | None:
@@ -163,6 +179,7 @@ class PlaywrightBrowser:
         self._opening = 0
         self._settled = asyncio.Event()
         self._settled.set()
+        self._drivers: weakref.WeakSet[Any] = weakref.WeakSet()
 
     def _launch(self) -> dict[str, Any]:
         return {
@@ -210,12 +227,73 @@ class PlaywrightBrowser:
         """Playwright's driver, started in a task of its own (M13.4b). An opening cancelled while
         the driver starts has nothing in its hands to stop — the process is nobody's yet —, so the
         start is left to end, and what it started is stopped then."""
-        starting = asyncio.create_task(async_playwright().start())
+        manager = async_playwright()
+        self._drivers.add(manager)
+        starting = asyncio.create_task(manager.start())
         try:
-            return await asyncio.shield(starting)
+            playwright = await asyncio.shield(starting)
         except asyncio.CancelledError:
             self._carried(_stopped_once_started(starting))
             raise
+        if _process_of(manager) is None:
+            # Where Playwright keeps the process of its driver is the one thing of its insides,
+            # beside a message, this adapter reads (M13.4e): without it ELA's close could not kill
+            # what was started here — so nothing is started.
+            await _quietly(playwright.stop)
+            raise BrowserFailed("the process of the browser's driver cannot be read")
+        return playwright
+
+    def _driver_pids(self) -> list[int]:
+        """The drivers this adapter started that have not ended, by pid."""
+        return sorted(process.pid for process in self._running_drivers())
+
+    def _running_drivers(self) -> list[asyncio.subprocess.Process]:
+        found = (_process_of(manager) for manager in list(self._drivers))
+        return [process for process in found if process is not None and process.returncode is None]
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        """What ELA's close waits for (M13.4e) — the composition's contract, beside the port:
+        after the stop, nothing of this adapter runs when this returns. Past ``grace`` what the
+        adapter started is killed, and named."""
+        if not self._stopping.is_set():
+            raise RuntimeError(
+                "a browser is settled after ELA's stop: the stop is what closes its pages"
+            )
+        watching = self._watching
+        if watching is None or watching.done():
+            return ()
+        waited = asyncio.ensure_future(grace())
+        try:
+            await asyncio.wait({watching, waited}, return_when=asyncio.FIRST_COMPLETED)
+            if watching.done():
+                return ()
+            # The grace is over and something of this adapter is still in flight: a browser that
+            # was told to close — the stop is the telling — and did not. Never SIGTERM first (the
+            # form of ADR 0060 §7). With the pipes closed every call of Playwright's in flight
+            # fails, so the task the stop woke ends, and is waited for.
+            killed = await self._kill()
+            await watching
+            return killed
+        finally:
+            waited.cancel()
+
+    async def _kill(self) -> tuple[str, ...]:
+        """``SIGKILL`` to every driver this adapter started and to whatever each of them started,
+        and their names. Returns when the kernel knows none of them: a driver is ELA's child and
+        its end is an event; a browser is its driver's, and is asked of the kernel."""
+        drivers = self._running_drivers()
+        table = await _processes()
+        doomed: list[tuple[int, str]] = []
+        for driver in drivers:
+            doomed.extend(_descendants(driver.pid, table))
+            doomed.append((driver.pid, table.get(driver.pid, (0, DRIVER))[1]))
+        for pid, _ in doomed:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+        for driver in drivers:
+            await driver.wait()
+        await _gone([pid for pid, _ in doomed])
+        return tuple(name for _, name in doomed)
 
     async def _dropped(self, token: str, playwright: Playwright) -> None:
         """What an opening started and will not hand over: the page, if it reached the table, and
@@ -464,6 +542,72 @@ async def _stopped_once_started(starting: asyncio.Task[Playwright]) -> None:
     except Exception:  # noqa: BLE001 — a start that failed started nothing to stop
         return
     await _quietly(playwright.stop)
+
+
+def _process_of(manager: object) -> asyncio.subprocess.Process | None:
+    """The process of a driver, read where Playwright keeps it (pinned in the lock) — the manager
+    of ``async_playwright()``, its connection, its transport. ``None`` before the driver is
+    started, and the day Playwright keeps it elsewhere: a test of the real browser holds it."""
+    connection = getattr(manager, "_connection", None)
+    process = getattr(getattr(connection, "_transport", None), "_proc", None)
+    return process if isinstance(process, asyncio.subprocess.Process) else None
+
+
+async def _processes() -> dict[int, tuple[int, str]]:
+    """Every process the kernel knows — its parent and its name —, as ``ps`` says it. Empty when
+    ``ps`` cannot be asked: then a driver is killed alone, and its browser goes with its pipe."""
+    try:
+        asking = await asyncio.create_subprocess_exec(
+            PS,
+            "-A",
+            "-o",
+            "pid=,ppid=,comm=",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return {}
+    said, _ = await asking.communicate()
+    table: dict[int, tuple[int, str]] = {}
+    for line in said.decode(errors="replace").splitlines():
+        pid, parent, name = line.split(None, 2)
+        table[int(pid)] = (int(parent), name.rsplit("/", 1)[-1])
+    return table
+
+
+def _descendants(of: int, table: Mapping[int, tuple[int, str]]) -> list[tuple[int, str]]:
+    """What ``of`` started, and what that started: pids and names, the nearest first."""
+    found: list[tuple[int, str]] = []
+    todo = [of]
+    while todo:
+        parent = todo.pop()
+        for pid, (above, name) in table.items():
+            if above == parent:
+                found.append((pid, name))
+                todo.append(pid)
+    return found
+
+
+async def _gone(pids: list[int]) -> None:
+    """Wait until the kernel knows none of ``pids``, asked every :data:`LOOK_SECONDS` and for no
+    longer than :data:`GONE_SECONDS` — a deadline on the loop's clock, as the launcher's."""
+    deadline = asyncio.get_running_loop().time() + GONE_SECONDS
+    left = list(pids)
+    while left:
+        left = [pid for pid in left if _alive(pid)]
+        if not left or asyncio.get_running_loop().time() >= deadline:
+            return
+        await asyncio.sleep(LOOK_SECONDS)
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 async def _quietly(close: Callable[[], Awaitable[None]]) -> None:

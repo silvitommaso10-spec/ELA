@@ -1078,6 +1078,10 @@ class FakeBrowser:
         self.launch_released: asyncio.Event | None = None
         """Held, when set, while «the browser starts» — before the navigation and its listening
         (M6.3c): the window where a stop finds the site not yet visited."""
+        self.killed: tuple[str, ...] = ()
+        """What :meth:`settle` answers it had to kill: nothing, unless the test says otherwise."""
+        self.settled: list[Callable[[], Awaitable[None]]] = []
+        """The grace of every :meth:`settle`, in order: what ELA's close gave it (M13.4e)."""
         self._open: dict[str, bool] = {}
         self._clicked = False
         self._stopped = False
@@ -1191,6 +1195,12 @@ class FakeBrowser:
     async def close(self, page: str) -> None:
         self.closed.append(page)
         self._open.pop(page, None)
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        """What ELA's close asks of the browser it was built with (the composition's contract,
+        M13.4e). Nothing was started, so nothing is waited for: the grace is kept, not awaited."""
+        self.settled.append(grace)
+        return self.killed
 
     def stop(self) -> None:
         """What the stop signal does to a real one: every page closed, what runs is stopped, and

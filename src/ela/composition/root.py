@@ -19,7 +19,7 @@ import tempfile
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Final, Protocol
 
 from ela.audit.verifier import AuditVerifier
 from ela.composition.errors import ConfigurationError
@@ -131,12 +131,26 @@ from ela.tools import (
 from ela.tools.settings import sessions_dir_beside, speech_dir_beside
 from ela.tools.terminal import CLOSED_PATH, LANGUAGE
 
-__all__ = ["ELA_ACTOR", "WORKSPACE_MODE", "Database", "Ela", "build"]
+__all__ = [
+    "BROWSER_CLOSE_GRACE_SECONDS",
+    "ELA_ACTOR",
+    "WORKSPACE_MODE",
+    "Database",
+    "Ela",
+    "Resting",
+    "build",
+]
 
 ELA_ACTOR = Actor(kind=ActorKind.ELA, id="ela")
 """Who ELA says it is in the audit trail when it acts on its own (§32)."""
 WORKSPACE_MODE = 0o700
 """The workspace holds the user's notes (§57): nobody else on the machine reads them."""
+BROWSER_CLOSE_GRACE_SECONDS: Final = 5
+"""How long ELA's close waits for its browser to be at rest before the browser's adapter kills what
+it had started (M13.4e). The form of ADR 0060 §7, and its five seconds: a declared grace, then
+``SIGKILL`` — against 26 ms measured for closing a page. **Not the shutdown timeout ADR 0038 §11
+refused**: that one interrupts a handler that can be told; this closes a child that was told — the
+stop is the telling — and did not leave."""
 
 
 class Database(Protocol):
@@ -148,6 +162,30 @@ class Database(Protocol):
     """
 
     async def dispose(self) -> None: ...
+
+
+class Resting(Browser, Protocol):
+    """A browser that can also be brought to rest when ELA closes (M13.4e, decision 51).
+
+    Two things and not one port, as :class:`Ringing` is: what a browser **does** — open, read,
+    act, hand a page over — is the port, and every tool and verifier needs only that; **settling
+    is done once, by whoever built it**, when ELA closes. So it is a contract of the composition,
+    not a member of :class:`~ela.ports.Browser` — whose members the tables of the ADRs hold one by
+    one, and this milestone has no ADR of its own to write one in. ADR 0063 decides whether it
+    moves into the port.
+    """
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        """After ELA's stop, bring this browser to rest: **nothing of it runs when this returns**
+        — no page, no closing, no opening in flight, no process of a driver or of a browser.
+
+        Called by ELA's own close, once the stop is raised: the stop is what closes the pages, and
+        this waits for that to be over. ``grace`` is how long the close waits — a function of the
+        composition's, awaited once. Past it the implementation **kills what it had started** and
+        returns the names of what it killed — the names of processes, never a command line — for
+        ELA to say; ``()`` when nothing had to be killed.
+        """
+        ...
 
 
 class Ringing(Bell, Protocol):
@@ -321,6 +359,10 @@ class Ela:
     without this the request would wait for it until its timeout («La ripresa» of M13.2). Built
     here, because the launcher is built before the application exists; ``create_app`` reads it.
     """
+    browser: Resting
+    """The browser every tool and verifier of the browser holds (M13.4), kept here for the one thing
+    ELA does to it as a whole: bring it to rest when ELA closes (M13.4e). A contract and not the
+    adapter — whatever browser ELA was built with is settled the same way."""
     speech_dir: Path
     """Where the audio of a sentence exists while it plays, and where nothing should ever be.
 
@@ -343,9 +385,44 @@ class Ela:
         M14.3; ADR 0060 §6). Normally zero, like the voice's sweep."""
         return await self.agents.sweep()
 
-    async def aclose(self) -> None:
-        """Release the database connections. Idempotent, as ``dispose`` is."""
-        await self.database.dispose()
+    async def aclose(self, *, killed: Callable[[tuple[str, ...]], None] | None = None) -> None:
+        """Close ELA: raise the stop, bring the browser to rest, release the database (M13.4e).
+
+        **When this returns nothing of the browser runs any more**, so the loop is never torn down
+        with one of its calls in flight — measured, that is a process that does not exit. In this
+        order: the stop, for whoever closes ELA without a signal having raised it, because closing
+        is stopping and the stop is what closes the browser's pages; the browser, which past
+        :data:`BROWSER_CLOSE_GRACE_SECONDS` kills what it had started and names it — the names
+        reach ``killed``, for whoever closes ELA to say —; and the database, as before.
+
+        **It runs to its end whoever is cancelled** (decision 51). After a Ctrl-C uvicorn raises
+        the ``SIGINT`` again when ``serve`` returns, the handler of ``asyncio.run`` cancels the
+        task that is about to call this, and this is entered with that cancellation pending. The
+        work runs in a task of its own; this waits for it through any number of cancellations, and
+        gives the cancellation back at the end — so a Ctrl-C ends ``ela serve`` as it always did.
+        What the database gains: every connection of the pool is closed, and the write-ahead log
+        written back; cancelled at its first wait, the release closed one connection and left the
+        others (measured). Idempotent.
+        """
+        closing = asyncio.ensure_future(self._closed(killed))
+        interrupted = False
+        while not closing.done():
+            try:
+                await asyncio.shield(closing)
+            except asyncio.CancelledError:
+                interrupted = True
+        closing.result()
+        if interrupted:
+            raise asyncio.CancelledError
+
+    async def _closed(self, killed: Callable[[tuple[str, ...]], None] | None) -> None:
+        self.stopping.set()
+        try:
+            names = await self.browser.settle(_lasting(BROWSER_CLOSE_GRACE_SECONDS))
+            if names and killed is not None:
+                killed(names)
+        finally:
+            await self.database.dispose()
 
 
 def _audition_speaker(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Speak:
@@ -400,13 +477,15 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
     return play
 
 
-def _kept_for(seconds: int) -> Callable[[], Awaitable[None]]:
-    """How long a page handed to the verifier waits for its look: the tool's own time (form I)."""
+def _lasting(seconds: int) -> Callable[[], Awaitable[None]]:
+    """A wait of ``seconds``, as a function the browser's adapter awaits: how long a page handed to
+    the verifier waits for its look — the tool's own time (form I) —, and how long ELA's close
+    waits for the browser (M13.4e). The adapter is given the wait, never the number."""
 
-    async def kept() -> None:
+    async def waited() -> None:
         await asyncio.sleep(seconds)
 
-    return kept
+    return waited
 
 
 def default_route_model(policy: RoutePolicy, task_type: str) -> str:
@@ -431,7 +510,7 @@ async def build(
     clock: Clock | None = None,
     power: PowerReading | None = None,
     bell: Ringing | None = None,
-    browser: Browser | None = None,
+    browser: Resting | None = None,
 ) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
 
@@ -637,7 +716,7 @@ async def build(
                     "TMPDIR": tempfile.gettempdir(),
                     "LANG": LANGUAGE,
                 },
-                kept=_kept_for(BROWSER_TIMEOUT_SECONDS),
+                kept=_lasting(BROWSER_TIMEOUT_SECONDS),
                 system=platform.system(),
             )
         browsing = Browsing(sites=settings.browser.sites, origin=https_origin)
@@ -877,6 +956,7 @@ async def build(
         context=context,
         speech=speech,
         stopping=stopping,
+        browser=browser,
         speech_dir=scratch,
         speech_online=playing,
         listening=listening,
