@@ -247,10 +247,20 @@ __all__ = [
     "ToolPort",
     "ToolRegistryPort",
     "ToolStopped",
+    "VAULT_LOCKED",
+    "VAULT_UNAUTHENTICATED",
+    "VAULT_UNLOCKED",
     "VERIFICATION_NOT_SUCCEEDED",
     "VERIFICATION_NO_CONDITIONS",
     "VERIFICATION_UNKNOWN_CONDITION",
     "VERIFICATION_WRONG_CAPABILITY",
+    "Vault",
+    "VaultEntry",
+    "VaultError",
+    "VaultFailed",
+    "VaultNotOpen",
+    "VaultTaken",
+    "VaultTimeout",
     "VerifierPort",
     "VerifierRegistryPort",
     "Visit",
@@ -2583,6 +2593,104 @@ class Secret:
 
     def __reduce_ex__(self, protocol: object) -> str:
         raise TypeError("a secret is not serialised and not copied")
+
+
+VAULT_UNAUTHENTICATED: Final = "unauthenticated"
+"""No account is signed in to the vault on this machine: its owner has to, with the vault's own
+program — ELA never does (M13.9, decision 16a)."""
+VAULT_LOCKED: Final = "locked"
+"""The vault is closed to whoever asks: no key was given, the key was ended by another unlock or
+by a lock, or the key is not the one that opens it."""
+VAULT_UNLOCKED: Final = "unlocked"
+"""The key ELA holds opens the vault now."""
+
+
+class VaultError(PortError):
+    """The vault did not give what it was asked for. Its text names the command and never anything
+    the vault printed: what a vault prints is its content."""
+
+
+class VaultNotOpen(VaultError):
+    """The vault is not open: ``state`` is :data:`VAULT_UNAUTHENTICATED` or :data:`VAULT_LOCKED`."""
+
+    def __init__(self, state: str) -> None:
+        self.state = state
+        super().__init__(f"the vault is {state}")
+
+
+class VaultTimeout(VaultError):
+    """The vault's program did not answer within its time, and was killed with its group."""
+
+
+class VaultFailed(VaultError):
+    """The vault's program could not be started, failed, or answered in a form ELA does not read."""
+
+
+@dataclass(frozen=True, slots=True)
+class VaultEntry:
+    """What ELA knows of an entry of the vault **before a yes**: enough to ask, and no value.
+
+    ``addresses`` are the addresses the entry is for — the ones its owner marked «never» left out
+    —, as the vault holds them: whether one of them is the site of a call is the tool's to say,
+    with ELA's own comparison of the host (decision 15c). ``username`` is **masked** by the
+    adapter — its first character, and for an address what follows the at sign (decision 31) —:
+    the whole username never leaves the adapter before a yes. ``has_password`` says whether there
+    is one, and nothing of it.
+    """
+
+    id: str
+    name: str
+    addresses: tuple[str, ...]
+    username: str
+    has_password: bool
+
+
+@dataclass(frozen=True, slots=True)
+class VaultTaken:
+    """What one reading of an entry gives **after a yes** (decision 64): the addresses, to compare
+    again with the page that is really open, and the username and the password to type —
+    each inside a :class:`Secret`. The comparison and the taking rest on the same reading. Nothing
+    else of the entry has a field here: the seed of a one-time code, the notes, whatever a later
+    version of the vault adds."""
+
+    addresses: tuple[str, ...]
+    username: Secret
+    password: Secret
+
+
+@runtime_checkable
+class Vault(Protocol):
+    """The vault the passwords stay in, and the one session key ELA may hold (M13.9, ADR 0063).
+
+    The master password never reaches this port: the owner unlocks the vault with its own
+    program, and what arrives is the session key, inside a :class:`Secret`. **Before a yes** only
+    :meth:`status` and :meth:`find` are called, and no value leaves the adapter (decision 28);
+    **after a yes**, :meth:`take`, once.
+
+    Every member raises :class:`VaultTimeout` when the vault's program does not answer in time,
+    and :class:`VaultFailed` when it cannot be started, fails, or cannot be read; :meth:`find`
+    and :meth:`take` raise :class:`VaultNotOpen` when the vault is not open.
+    """
+
+    async def status(self) -> str:
+        """One of :data:`VAULT_UNAUTHENTICATED`, :data:`VAULT_LOCKED`, :data:`VAULT_UNLOCKED`:
+        asked of the vault's program now, never remembered. The account's address, which that
+        program prints with it, is thrown away."""
+
+    async def unlock(self, key: Secret) -> bool:
+        """Whether ``key`` opens the vault: kept if it does, forgotten if it does not."""
+
+    async def lock(self) -> None:
+        """Close the vault — for every session of it on this machine — and forget the key."""
+
+    async def forget(self) -> None:
+        """Forget the key **without running anything**: for a program that changed or is gone."""
+
+    async def find(self, address: str) -> tuple[VaultEntry, ...]:
+        """The entries the vault matches to ``address``, each without any value."""
+
+    async def take(self, entry: str) -> VaultTaken:
+        """Read the entry with this id once, and give what is typed and what it is compared by."""
 
 
 class BrowserError(PortError):
