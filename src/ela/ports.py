@@ -231,6 +231,7 @@ __all__ = [
     "SPENDING_OVER_RESERVATION",
     "STARTED_ID",
     "ScreenCapturePort",
+    "Secret",
     "SessionEnd",
     "SessionHandle",
     "SessionHost",
@@ -2538,6 +2539,50 @@ class CommandLauncher(Protocol):
 NAVIGATION: Final = "the navigation"
 """Where :meth:`Browser.open` listens for the stop of its task: the request of the page leaves after
 it (M6.3c, ADR 0054 §3). ``browser.read``'s point, and only a listening for ``browser.act``."""
+
+
+class Secret:
+    """A value that is not printed, not serialised and not compared (M13.9, ADR 0063; decision 15a).
+
+    A password taken from the vault goes from the vault's adapter to the browser's, through the
+    tool that asked for it. The tool must not be able to leave it anywhere by accident — an
+    outcome, a message, an event, a log line, an exception —, so what carries it shows nothing of
+    itself to anything that writes: its text is ``<secret>``, it refuses to be serialised, copied,
+    compared or hashed, and it has no length, no items and no dictionary of attributes.
+
+    **It opens with one method**, :meth:`reveal`, and architecture rule 68 lets only the adapters
+    of ``ela.infrastructure.machine`` — the one that builds it and the one that types it into a
+    page — and the fakes of ``ela.testing`` call it. A secret is not a defence against whoever
+    reads the memory of ELA's process; it is a defence against ELA's own code writing it down.
+    """
+
+    __slots__ = ("__value",)
+
+    def __init__(self, value: str) -> None:
+        if not isinstance(value, str):
+            raise TypeError("a secret is text")
+        self.__value = value
+
+    def reveal(self) -> str:
+        """The value, for the adapter that has to use it and for nobody else (rule 68)."""
+        return self.__value
+
+    def __repr__(self) -> str:
+        return "<secret>"
+
+    def __format__(self, spec: str) -> str:
+        return format("<secret>", spec)
+
+    def __eq__(self, other: object) -> bool:
+        raise TypeError("a secret is not compared")
+
+    def __ne__(self, other: object) -> bool:
+        raise TypeError("a secret is not compared")
+
+    __hash__ = None  # type: ignore[assignment]  # not hashed: a set or a key would compare it
+
+    def __reduce_ex__(self, protocol: object) -> str:
+        raise TypeError("a secret is not serialised and not copied")
 
 
 class BrowserError(PortError):
