@@ -226,7 +226,8 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
   2026-10-02**, dalla review della SPEC di M13.1c: una terza, **M13.1e** (la console, il telefono e la riga di comando
   che mostrano un diniego o un fallimento senza il suo perché). **Registrata e aperta il 2026-10-09** da Tommaso, prima
   di M13.9: **M13.12** (le policy di §59 — una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a partire da
-  `browser.guided`).
+  `browser.guided`). ***Annotato il 2026-10-10***: **M13.12 è fatta**, con la prova a mano passata sul Mac a `3178ec3`, e
+  [ADR 0062](adr/0062-policies.md) è Accettata.
   L'ordine e le condizioni stanno nella voce 5.11, e la fila che attraversa le fasi nella 5.10.
 - **Fase 12 — i nodi. È chiusa** (2026-09-20, con M12.5). ELA ha smesso di essere un processo su
   una macchina e di essere usabile solo davanti a quella macchina: un'identità provabile per un
@@ -621,7 +622,8 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
 5. **M14.3**; ***annotato il 2026-10-08***: con **M14.6** prima di lei, sullo stesso branch — Haiku 5.5 nel listino, decisa
    dalla review della SPEC di M14.3 (decisione 27) —, un merge e un giro di CI invece di due;
 6. **M13.9, M13.10, M13.11**; ***annotato il 2026-10-09***: **prima di M13.9 viene M13.12**, le policy di §59, aperta da
-   Tommaso lo stesso giorno per la regola della 5.11 («Chi apre la milestone delle policy di §59»);
+   Tommaso lo stesso giorno per la regola della 5.11 («Chi apre la milestone delle policy di §59»); ***annotato il
+   2026-10-10***: M13.12 è fatta, con la prova a mano passata a `3178ec3`, e ADR 0062 è Accettata;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -726,7 +728,8 @@ M13.1d → M13.9 → M13.10 → M13.11 → M13.5 → M13.7 → M13.8**; dopo M13
 **comincia la Fase 14** — M14.1, M14.2, M14.3 —, e fra M13.5 e M13.7 viene M14.4. (***Annotato il 2026-10-02***:
 **M13.1e**, registrata dalla review della SPEC di M13.1c, viene dopo M14.1 e M14.2 e prima di M14.3. ***Annotato il
 2026-10-08***: fatta, con la prova a mano passata. ***Annotato il 2026-10-09***: **M13.12**, le policy di §59, viene dopo
-M14.3 e prima di M13.9 — qui sotto, «Chi apre la milestone delle policy di §59».) La fila intera, con
+M14.3 e prima di M13.9 — qui sotto, «Chi apre la milestone delle policy di §59». ***Annotato il 2026-10-10***: fatta, con
+la prova a mano passata.) La fila intera, con
 M6.3c in testa, sta nella 5.10. M13.6 resta fuori dalla
 fila, con la sua condizione. **La Fase 14 comincia prima che la Fase 13 sia chiusa**, e la ragione è di
 Tommaso: **tutto ciò che vuole dal browser e dal computer control passa da un modello che guarda e
@@ -850,7 +853,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
 - **M13.12 — le policy di §59** (§59, §27, §29, §62). **Registrata e aperta da Tommaso il 2026-10-09**, per la regola di
   «Chi apre la milestone delle policy di §59» (sotto): una policy che Tommaso si crea rende autonoma un'azione `MEDIUM`, a
   partire da `browser.guided`; scade sempre, si revoca, e la domanda che resta dice perché chiede. **Dopo M14.3, prima di
-  M13.9.**
+  M13.9.** ***Annotato il 2026-10-10***: **fatta**, con la prova a mano passata sul Mac a `3178ec3`, e ADR 0062 è
+  Accettata.
 - **M13.10 — più passi e i file** (§19). **Registrata il 2026-09-30**: una sessione del browser fra gli
   step dello stesso task, una sequenza di gesti con ogni elemento aspettato quando serve — rivede la
   decisione 7 di M13.4 —, uno scaricamento come un `fs.write` e un caricamento come un `fs.read`, con la
@@ -912,7 +916,10 @@ percorso**, con il suo numero. Tommaso non vuole che ogni lettura chieda: vuole 
 La prima azione `MEDIUM` che vuole girare senza domanda è la sessione guidata di M14.3, `browser.guided`, e la milestone
 costruisce il percorso per lei: la capability dichiara se una policy può coprirla e che cosa deve limitare, Tommaso crea la
 policy — siti, tetti per sessione, giorni da 1 a 90 — con un'anteprima che nomina ciò che approva, e la revoca; nessun
-livello si muove, e `HIGH` resta fuori. Le altre `MEDIUM` ricevono la dichiarazione nella milestone che ne ha bisogno.
+livello si muove, e `HIGH` resta fuori. Le altre `MEDIUM` ricevono la dichiarazione nella milestone che ne ha bisogno. ***Annotato
+il 2026-10-10***: **il percorso c'è** — M13.12 è fatta, con la prova a mano passata sul Mac a `3178ec3`, e
+[ADR 0062](adr/0062-policies.md) è Accettata: una policy di §59 la crea solo Tommaso, dalla rotta della creazione (la regola
+66).
 
 *Perché nessun ADR:* è una scelta d'ordine e di perimetro — quale milestone, quando, che cosa
 eredita, che cosa resta fuori — e nessuna riga di codice la contiene. Le parti tecniche prendono il

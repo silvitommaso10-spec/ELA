@@ -5634,8 +5634,10 @@ prenotato com'era al passo 1
 > **Scritta con l'implementazione il 2026-10-09** (`milestones/M13.12.md`, «La prova a mano», con la decisione 14 della
 > sessione e la 21 della review della SPEC), e `tests/docs/test_prova_m13_12.py` tiene lo script allineato a questa
 > sezione. La si fa **sul Mac, senza il PC**, sul branch di M13.12, con lo script `scripts/prova_m13_12.py`: una policy vive
-> nel database del Core, e `browser.guided` gira solo lì. **Non ancora fatta**: [ADR 0062](adr/0062-policies.md) resta
-> Proposta finché non passa.
+> nel database del Core, e `browser.guided` gira solo lì. **Fatta da Tommaso il 2026-10-10 sul branch**, a `3178ec3`, sul
+> Mac: passata, 44 PASSATI al primo giro, nessun FALLITO, nessun no, nessun SALTATO
+> (`~/Downloads/prova-m13.12-20261010-015254.txt`); [ADR 0062](adr/0062-policies.md) è Accettata, e le misure sono in
+> `milestones/M13.12.md`, «La prova a mano, il 2026-10-10 — passata».
 
 Da M13.12 **una sessione guidata può partire senza domanda**, se sta dentro una **policy** che ti sei creato tu: una riga
 con i suoi confini — i siti, il più che una sessione può spendere, quanti sguardi, quanto può durare — e **una fine**, da

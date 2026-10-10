@@ -1,10 +1,10 @@
 # 0062. Le policy di §59: una riga che Tommaso scrive, con i suoi confini e una fine, rende autonoma un'azione `MEDIUM` senza abbassarne il livello
 
-- **Stato:** **Proposta** il 2026-10-09, con l'implementazione di M13.12, dopo la SPEC decisa (le decisioni 1–15 della
-  sessione e 16–23 della review, in `docs/milestones/M13.12.md`), e riletta lo stesso giorno dalla review del riepilogo
-  (decisioni 24–27). Diventa Accettata con un commit suo, quando la prova a mano della sezione 27 di
-  `docs/GETTING_STARTED.md` passa sul Mac, **sul branch e prima del merge**, all'ultimo commit del giro, con il file della
-  prova e il commit su cui è passata (§15, decisione 26).
+- **Stato:** Accettata il **2026-10-10**, quando la prova a mano della sezione 27 di `docs/GETTING_STARTED.md` è passata
+  sul Mac, sul branch e prima del merge, a `3178ec3` (`~/Downloads/prova-m13.12-20261010-015254.txt`, 44 PASSATI al primo
+  giro; §15, decisione 26). Aperta il 2026-10-09 con l'implementazione di M13.12, dopo la SPEC decisa (le decisioni 1–15
+  della sessione e 16–23 della review, in `docs/milestones/M13.12.md`), e riletta lo stesso giorno dalla review del
+  riepilogo (decisioni 24–27).
 - **Data:** 2026-10-09
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §57, §59, §62
 - **Milestone:** M13.12
@@ -355,7 +355,12 @@ La **sezione 27** di `docs/GETTING_STARTED.md`, con `scripts/prova_m13_12.py`, s
 alembic upgrade head`, con i siti di oggi, su Haiku 5.5, con sessioni a 1,10 $: nove passi — la policy si crea con
 l'anteprima e la domanda, una sessione dentro parte senza domanda e conta un uso, una sopra un tetto chiede con la riga
 «perché te lo chiedo», la revoca, e dopo la revoca la domanda torna con la ragione. La scadenza la prova la suite, con
-l'orologio finto; il margine del mese, passo per passo, con la funzione del cancello.
+l'orologio finto; il margine del mese, passo per passo, con la funzione del cancello. **Passata il 2026-10-10** a `3178ec3`,
+sul Mac, 44 PASSATI al primo giro: la policy `aa3baeba`, creata dopo l'anteprima, `LIVE` con zero usi, poi uno, poi due,
+poi `REVOKED`; due sessioni su Haiku 5.5 partite senza domanda, per 0,0014524 $ in tutto, e nella seconda il `browser.act`
+che chiede comunque, negato; la riga «why I ask» con ognuna delle sue ragioni — nessuna policy, il tetto superato, il sito
+fuori, la revoca —; e una policy creata e revocata dalla console. Le misure sono in `docs/milestones/M13.12.md`, «La prova a
+mano, il 2026-10-10 — passata».
 
 ## Alternative considerate
 
