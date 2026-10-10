@@ -70,9 +70,36 @@ async def a_session(g: Guided, *, reserve: bool = True) -> tuple[TaskId, StepId,
         )
         assert await g.ela.spending.reserve(record, worst) is None
     opened = await g.ela.sessions.open(
-        task, step, sites=("www.youtube.com",), tools=FAKE_SESSION_TOOLS
+        task,
+        step,
+        capability=BROWSER_GUIDED,
+        sites=("www.youtube.com",),
+        tools=FAKE_SESSION_TOOLS,
     )
     return task, step, opened
+
+
+async def test_the_room_attests_an_open_session_and_nothing_of_one_that_is_over(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """M13.9, decision 29: what covers the reads a session's model writes is the room's word —
+    this session is open, in this task, of this capability, on these sites —, **read when it is
+    asked for**. A session that is over attests nothing, and neither does one that never was: the
+    executor finds no cover, and the read asks."""
+    from ela.domain import SessionCover
+
+    async with guided(monkeypatch, tmp_path, Script([])) as g:
+        task, step, opened = await a_session(g)
+        assert isinstance(opened, OpenedSession)
+
+        assert await g.ela.sessions.attest(step) == SessionCover(
+            session=step, task_id=task, capability_id=BROWSER_GUIDED, sites=("www.youtube.com",)
+        )
+        assert await g.ela.sessions.attest(StepId(uuid4())) is None, "a session that never was"
+
+        await g.ela.sessions.close(step, reason="the test is over")
+
+        assert await g.ela.sessions.attest(step) is None, "closed: it covers nothing any more"
 
 
 async def test_a_step_with_no_reservation_opens_no_session(

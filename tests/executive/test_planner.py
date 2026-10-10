@@ -10,7 +10,9 @@ through the door of a plan written by hand; the parent is ``QUEUED`` and **nobod
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -39,6 +41,7 @@ from tests.executive.planning import (
     ECHO_STEP,
     NO_PLAN,
     NO_PLAN_REASON,
+    NOTE_PLAN,
     NOTE_STEP,
     Planned,
     plan_of,
@@ -148,6 +151,27 @@ async def test_after_the_yes_one_call_writes_the_plan_and_the_task_is_queued(
         ("core.echo",),
         ("workspace.write_note",),
     ]
+
+
+async def test_a_plan_the_model_wrote_cannot_say_a_session_wrote_it(tmp_path: Path) -> None:
+    """M13.9, decision 29: the room is the only one that writes ``SESSION``. An answer of the
+    model that claims a session as its author, and gives a step the narrowing of a session's
+    gesture, is the model's answer all the same: whatever becomes of it, no plan of a session is
+    born on this route."""
+    answer = json.loads(NOTE_PLAN)
+    answer["author"] = {"by": "SESSION", "session": str(uuid4()), "model": "a-model"}
+    answer["plan"]["steps"][0]["within"] = ["www.youtube.com"]
+    world = Planned(tmp_path / "workspace", answer=json.dumps(answer))
+
+    task_id, planned = await world.planned()
+
+    if planned.outcome is PlanningOutcome.PLANNED:
+        plan = await world.repository.plan(task_id)
+        assert plan.author.by is PlanAuthorKind.MODEL and plan.author.session is None
+        assert all(step.within is None for step in plan.steps)
+    else:
+        with pytest.raises(NotFoundError):
+            await world.repository.plan(task_id)
 
 
 async def test_the_planner_writes_and_does_not_start(world: Planned) -> None:

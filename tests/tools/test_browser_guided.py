@@ -192,7 +192,11 @@ async def test_a_step_whose_session_is_open_already_launches_nothing_and_spends_
     at zero — a result with no usage would hold the month's worst case until its first day."""
     world = guided_world()
     opened = await world.room.open(
-        TaskId(TASK_ID), STEP_ID, sites=("www.youtube.com",), tools=world.session.tools
+        TaskId(TASK_ID),
+        STEP_ID,
+        capability=BROWSER_GUIDED,
+        sites=("www.youtube.com",),
+        tools=world.session.tools,
     )
     assert not isinstance(opened, ErrorMetadata)
 

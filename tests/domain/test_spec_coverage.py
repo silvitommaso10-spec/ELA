@@ -75,6 +75,8 @@ LATER_ADDITIONS = frozenset(
         "Admission",
         "PolicyTerms",
         "PolicyBounds",
+        "Covered",
+        "SessionCover",
     }
 )
 """Models a later milestone added, each argued in its own ADR.

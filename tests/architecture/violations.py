@@ -2036,6 +2036,32 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.ports import AuthorizationStore\n",
         "AuthorizationStore",
     ),
+    # --- the-room-s-word-is-the-room-s (rule 67, M13.9) ---
+    Case(
+        # A tool attesting its own session: the cover of a read on the tool's own say-so.
+        "a-tool-attests-its-own-session",
+        "the-room-s-word-is-the-room-s",
+        "tools/guided.py",
+        "from ela.domain import SessionCover\n"
+        "def attest(step, task, capability, sites):\n"
+        "    return SessionCover(\n"
+        "        session=step, task_id=task, capability_id=capability, sites=sites\n"
+        "    )\n",
+        "SessionCover(...)",
+    ),
+    Case(
+        # The executor asks the room; it does not write the answer — by attribute here.
+        "the-executor-writes-the-room-s-answer",
+        "the-room-s-word-is-the-room-s",
+        "executive/executor.py",
+        "from ela import domain\n"
+        "def covered(plan, task):\n"
+        "    return domain.SessionCover(\n"
+        "        session=plan.author.session, task_id=task.parent_id,\n"
+        "        capability_id='browser.guided_as_you', sites=(),\n"
+        "    )\n",
+        "SessionCover(...)",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
     Case(
@@ -2955,6 +2981,19 @@ ALLOWED: tuple[Case, ...] = (
         "api/nodes.py",
         "async def revoke(ela, device_id, actor):\n"
         "    return await ela.devices.revoke(device_id, by=actor)\n",
+        "",
+    ),
+    Case(
+        # Rule 67: the room is where the word about an open session is built.
+        "the-room-attests-an-open-session",
+        "the-room-s-word-is-the-room-s",
+        "executive/sessions.py",
+        "from ela.domain import SessionCover\n"
+        "def attest(session, live):\n"
+        "    return SessionCover(\n"
+        "        session=session, task_id=live.task_id,\n"
+        "        capability_id=live.capability, sites=live.sites,\n"
+        "    )\n",
         "",
     ),
 )

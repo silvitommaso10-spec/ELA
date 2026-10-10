@@ -41,7 +41,7 @@ from ela.permissions.errors import (
     InvalidCapabilityError,
     RiskNotAllowedError,
 )
-from ela.permissions.rows import no_policy_for
+from ela.permissions.rows import no_policy_for, no_session_covers, no_session_of
 from ela.ports import AlreadyExistsError
 
 __all__ = [
@@ -330,6 +330,35 @@ def is_valid_value(schema: Mapping[str, object], value: object) -> bool:
     return bool(SCHEMA_VALIDATOR(_plain(schema)).is_valid(_plain(value)))
 
 
+def _no_cover(spec: CapabilitySpec, catalogue: Mapping[CapabilityId, CapabilitySpec]) -> str | None:
+    """Why the catalogue refuses what ``spec`` declares its sessions cover, or ``None`` (M13.9, ADR
+    0063; decision 29) — **the first of the two defences**, the second being the Guardian's.
+
+    A session covers a capability that is in the catalogue and is not itself; on a row that asks
+    unless authorized, and no other; with a copy of that capability's schema that is its schema —
+    the copy is what a policy carries, and one that could drift would be a copy of nothing —; and
+    only if the session itself is asked for.
+    """
+    declared = spec.covers
+    if declared is None:
+        return None
+    if declared.capability_id == spec.id:
+        return f"{spec.id} covers itself"
+    covered = catalogue.get(declared.capability_id)
+    if covered is None:
+        return f"{spec.id} covers {declared.capability_id}, which is not in the catalogue"
+    if no_session_of(spec):
+        return f"{spec.id} is {spec.risk.value}: only a capability that asks may cover another"
+    if no_session_covers(covered) is not None:
+        return (
+            f"{spec.id} covers {covered.id}, which is {covered.risk.value}: a session covers "
+            "only a row that asks unless authorized"
+        )
+    if declared.input_schema != covered.input_schema:
+        return f"{spec.id} covers {covered.id} with a schema that is not {covered.id}'s"
+    return None
+
+
 class CapabilityRegistry:
     """The catalogue: specifications validated and frozen at construction (§28, §29).
 
@@ -348,6 +377,12 @@ class CapabilityRegistry:
             if spec.id in catalogue:
                 raise AlreadyExistsError("capability", spec.id)
             catalogue[spec.id] = spec
+        # What a capability covers is judged here and not one specification at a time: it is a
+        # fact about two of them (M13.9, decision 29).
+        for spec in catalogue.values():
+            refused = _no_cover(spec, catalogue)
+            if refused is not None:
+                raise InvalidCapabilityError(spec.id, refused)
         self._specs: Mapping[CapabilityId, CapabilitySpec] = MappingProxyType(catalogue)
 
     def get(self, capability_id: CapabilityId) -> CapabilitySpec:

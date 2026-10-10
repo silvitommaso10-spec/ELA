@@ -719,6 +719,13 @@ STORE_RECEIVERS = frozenset({"authorizations", "_authorizations"})
 GRANT_METHOD = "grant"
 REVOKE_METHOD = "revoke"
 STORE_PORT = "AuthorizationStore"
+#: Rule 67 (M13.9, ADR 0063): what covers a ``MEDIUM`` read a guided session's model wrote is the
+#: room's word about that session — open, in which task, of which capability, on which sites —,
+#: read when the step is decided. Outside :data:`SESSION_ROOM` nobody builds a
+#: :data:`SESSION_COVER_MODEL`: not a tool, not the executor that hands it to the Guardian, not a
+#: route. A word anybody could write would be a cover anybody could give themselves.
+SESSION_COVER_MODEL = "SessionCover"
+SESSION_ROOM = Path("executive") / "sessions.py"
 #: Rule 63 (M14.2, ADR 0058): the plan is independent of the device (§13), so the Planner's module
 #: names nothing of the machines. A contract of import-linter cannot say it: the Planner imports the
 #: runner, and the runner the orchestrator.
@@ -1741,6 +1748,29 @@ def check_a_policy_is_born_at_its_route(pkg_root: Path) -> list[Violation]:
                 relative == EXECUTOR_MODULE and _saves_a_yes(node, tree)
             ):
                 found.append(Violation(rule, name, f".{GRANT_METHOD}(", node.lineno))
+    return found
+
+
+def check_the_room_s_word_is_the_room_s(pkg_root: Path) -> list[Violation]:
+    """Rule 67: the word about an open guided session is built by the room (M13.9, ADR 0063).
+
+    Reported: any call :data:`SESSION_COVER_MODEL` ``(...)`` — by name or as an attribute —
+    outside :data:`SESSION_ROOM`. The executor asks the room and hands the answer to the Guardian;
+    a tool, a route or the executor itself building one would be a session covering its own reads
+    on its own say-so. A heuristic on names, like rules 12 and 15.
+    """
+    rule = "the-room-s-word-is-the-room-s"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) == SESSION_ROOM:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f"{SESSION_COVER_MODEL}(...)", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and _is_named(node.func, SESSION_COVER_MODEL)
+        )
     return found
 
 
@@ -3884,6 +3914,7 @@ RULES: dict[str, Rule] = {
     "the-end-has-one-reader": check_the_end_has_one_reader,
     "who-spends-passes-the-gate": check_who_spends_passes_the_gate,
     "a-policy-is-born-at-its-route": check_a_policy_is_born_at_its_route,
+    "the-room-s-word-is-the-room-s": check_the_room_s_word_is_the_room_s,
 }
 
 
@@ -4393,6 +4424,16 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-policy-is-born-at-its-route", "TOOLS_DIR", DETECTOR),
     Constant(
         "a-policy-is-born-at-its-route",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-room-s-word-is-the-room-s (rule 67, M13.9)
+    Constant("the-room-s-word-is-the-room-s", "SESSION_COVER_MODEL", DETECTOR),
+    Constant("the-room-s-word-is-the-room-s", "SESSION_ROOM", EXEMPTION, by=WHOLE, adr="ADR 0063"),
+    Constant(
+        "the-room-s-word-is-the-room-s",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

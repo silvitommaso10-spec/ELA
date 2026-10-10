@@ -880,6 +880,9 @@ async def build(
             authorization_ttl=settings.core.authorization_ttl,
             approval_ttl=settings.core.approval_ttl,
             spending=spending,
+            # The room of the guided sessions: asked for its word when a step a session's model
+            # wrote is decided, and by nobody else (M13.9, ADR 0063 §1).
+            sessions=sessions,
         )
         # And it is alive: the local node *is* this process, so ELA can say so about itself
         # without claiming anything it does not know (§16). A node registered and never heard

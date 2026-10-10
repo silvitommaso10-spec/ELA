@@ -37,6 +37,7 @@ from ela.domain import (
     PlanAuthor,
     PlanAuthorKind,
     PlanId,
+    SessionCover,
     StepId,
     Task,
     TaskId,
@@ -99,9 +100,11 @@ def gesture_key(number: int, session: StepId) -> str:
 
 @dataclass(slots=True)
 class _Live:
-    """One open session: its task, its budget, its token, its sites and its gestures."""
+    """One open session: its task, its capability, its budget, its token, its sites and its
+    gestures."""
 
     task_id: TaskId
+    capability: CapabilityId
     budget: SessionBudget
     token: str
     sites: tuple[str, ...]
@@ -156,7 +159,13 @@ class SessionRoom:
     # The tool's side ------------------------------------------------------------------------
 
     async def open(
-        self, task_id: TaskId, step_id: StepId, *, sites: tuple[str, ...], tools: frozenset[str]
+        self,
+        task_id: TaskId,
+        step_id: StepId,
+        *,
+        capability: CapabilityId,
+        sites: tuple[str, ...],
+        tools: frozenset[str],
     ) -> OpenedSession | ErrorMetadata:
         # A plan by hand carries the caller's step ids, so one file sent to two tasks gives two
         # sessions one step: the identity of the path, of the folder and of the place here. The
@@ -176,6 +185,7 @@ class SessionRoom:
             )
         live = _Live(
             task_id=task_id,
+            capability=capability,
             budget=SessionBudget(reservation, tools),
             token=secrets.token_urlsafe(32),
             sites=sites,
@@ -265,6 +275,20 @@ class SessionRoom:
 
     async def is_open(self, session: StepId) -> bool:
         return session in self._live
+
+    async def attest(self, session: StepId) -> SessionCover | None:
+        """The room's word about ``session``, for the step the executor is deciding now (M13.9,
+        ADR 0063; decision 29): open, in which task, of which capability, on which sites — or
+        ``None`` for a session that is over or never was. **Built here and nowhere else**
+        (architecture rule 67), and read from what is true at this moment: nobody is handed a
+        word to keep. A session is here only while its own step runs — :meth:`open` wants the
+        reservation of its ``STARTED`` record, which exists because that step was permitted."""
+        live = self._live.get(session)
+        if live is None or live.closed.is_set():
+            return None
+        return SessionCover(
+            session=session, task_id=live.task_id, capability_id=live.capability, sites=live.sites
+        )
 
     async def gesture_ids(self, task_id: TaskId, session: StepId, count: int) -> tuple[TaskId, ...]:
         return tuple(child_id(task_id, gesture_key(n, session)) for n in range(1, count + 1))

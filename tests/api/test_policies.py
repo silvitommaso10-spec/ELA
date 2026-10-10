@@ -310,6 +310,12 @@ async def test_the_revocation_is_written_once_and_the_session_asks_again(
     assert revoked.status_code == 200, revoked.text
     assert revoked.json()["policy"]["state"] == "REVOKED"
     assert "goes on until it ends" in revoked.json()["running"]
+    # M13.9, decision 29: a revocation does not stop a session already started — nor the reads
+    # that session covers —, and the output says where they end.
+    assert (
+        "The reads it covers go on with it, up to its own looks, seconds and cost"
+        in revoked.json()["running"]
+    )
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "policy.not_live"
     assert "revoked" in asked["why"][0]

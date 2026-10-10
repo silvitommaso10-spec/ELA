@@ -56,6 +56,7 @@ from ela.domain import (
     ModelRoute,
     PermissionDecision,
     PermissionOutcome,
+    PlanAuthor,
     PlanId,
     PowerSource,
     ProbeFamily,
@@ -72,6 +73,7 @@ from ela.domain import (
     RawTranscript,
     Reservation,
     RiskLevel,
+    SessionCover,
     StepId,
     Task,
     TaskEvent,
@@ -911,6 +913,8 @@ class GuardianCall(NamedTuple):
     step: TaskStep | None
     authorization: Authorization | None
     authorization_uses: int
+    author: PlanAuthor | None = None
+    session: SessionCover | None = None
 
 
 class FakePermissionGuardian:
@@ -942,10 +946,21 @@ class FakePermissionGuardian:
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
         authorization_uses: int = 0,
+        author: PlanAuthor | None = None,
+        session: SessionCover | None = None,
     ) -> PermissionDecision:
         self.calls = (
             *self.calls,
-            GuardianCall(capability, arguments, task, step, authorization, authorization_uses),
+            GuardianCall(
+                capability,
+                arguments,
+                task,
+                step,
+                authorization,
+                authorization_uses,
+                author,
+                session,
+            ),
         )
         outcome = self._outcomes.get(capability.id)
         if outcome is None:

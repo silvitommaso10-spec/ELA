@@ -199,17 +199,18 @@ def test_a_missing_table_signature_or_constant_is_detected() -> None:
         documented_constants("MIN_DAYS = 1")
 
 
-def test_the_conseguenze_count_the_totals_of_today() -> None:
-    """The pin on today's totals, taken over from ADR 0060: it moves to the ADR that changes
-    them."""
+def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
+    """The totals of the day ADR 0062 was written. The pin on **today's** totals moved to the ADR
+    that changed them — ADR 0063, ``test_adr_accounts.py`` —, as it had moved here from ADR 0060:
+    what is counted here is what came up to this ADR, and no later."""
     text = conseguenze()
     contracts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"][
         "importlinter"
     ]["contracts"]
 
     assert "**sessantasei**" in text
-    assert len(RULES) == 66
-    assert set(RULES) - set(_rules_up_to(65)) == {"a-policy-is-born-at-its-route"}
+    assert len(_rules_up_to(66)) == 66 <= len(RULES)
+    assert set(_rules_up_to(66)) - set(_rules_up_to(65)) == {"a-policy-is-born-at-its-route"}
     assert "**quindici**" in text and len(contracts) == 15
     assert "**trentatré**" in text and len(tuple(port_protocols())) == 33
     assert "**sessanta**" in text and len(coded_routes()) == 60

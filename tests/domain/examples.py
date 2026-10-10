@@ -46,6 +46,7 @@ from ela.domain import (
     ContextSource,
     ContextTask,
     ContextWork,
+    Covered,
     DecisionId,
     Device,
     DeviceAvailability,
@@ -98,6 +99,7 @@ from ela.domain import (
     SensorCause,
     SensorState,
     SensorStatus,
+    SessionCover,
     StepId,
     SystemPermission,
     Task,
@@ -419,6 +421,20 @@ POLICY_TERMS: Final = PolicyTerms(
 POLICY_BOUNDS: Final = PolicyBounds(terms=POLICY_TERMS, limits={"budget": "1.10"})
 """The limits of a policy and the terms they were born under (M13.12)."""
 
+COVERED: Final = Covered(
+    capability_id=CapabilityId("browser.read_as_you"),
+    input_schema={"type": "object", "properties": {"site": {"type": "string"}}},
+)
+"""What the capability of a session declares its reads are (M13.9, ADR 0063)."""
+
+SESSION_COVER: Final = SessionCover(
+    session=STEP_ID,
+    task_id=TASK_ID,
+    capability_id=CapabilityId("browser.guided_as_you"),
+    sites=("www.youtube.com",),
+)
+"""The room's word about an open guided session (M13.9, ADR 0063)."""
+
 POLICY_AUTHORIZATION: Final = Authorization(
     id=AuthorizationId(_uuid(16)),
     created_at=NOW,
@@ -708,6 +724,8 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         SINGLE_USE_AUTHORIZATION,
         POLICY_TERMS,
         POLICY_BOUNDS,
+        COVERED,
+        SESSION_COVER,
         AUDIT_EVENT,
         MODEL_ROUTE,
         PROVIDER_REQUEST,

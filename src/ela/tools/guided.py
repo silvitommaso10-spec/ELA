@@ -380,7 +380,11 @@ class BrowserGuidedTool(Tool):
         assert decision.task_id is not None and decision.step_id is not None
         step = decision.step_id
         opened = await self._gestures.open(
-            decision.task_id, step, sites=prepared.sites, tools=self._sessions.tools
+            decision.task_id,
+            step,
+            capability=self.capability_id,
+            sites=prepared.sites,
+            tools=self._sessions.tools,
         )
         if isinstance(opened, ErrorMetadata):
             # Nothing went out: the reservation closes at zero, not at the month's worst case.

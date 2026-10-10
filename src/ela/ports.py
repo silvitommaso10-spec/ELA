@@ -61,6 +61,7 @@ from ela.domain import (
     JsonValue,
     ModelRoute,
     PermissionDecision,
+    PlanAuthor,
     PowerSource,
     ProbeFamily,
     ProviderRequest,
@@ -74,6 +75,7 @@ from ela.domain import (
     RawTranscript,
     Reservation,
     RiskLevel,
+    SessionCover,
     StepId,
     Task,
     TaskEvent,
@@ -1355,8 +1357,14 @@ class PermissionGuardianPort(Protocol):
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
         authorization_uses: int = 0,
+        author: PlanAuthor | None = None,
+        session: SessionCover | None = None,
     ) -> PermissionDecision:
-        """Decide about one call of ``capability`` with ``arguments`` in this context."""
+        """Decide about one call of ``capability`` with ``arguments`` in this context.
+
+        ``author`` is who wrote the plan of ``step``, and ``session`` the room's word about an
+        open guided session (M13.9, ADR 0063): what covers a ``MEDIUM`` read that session's model
+        wrote, with no grant."""
 
 
 @runtime_checkable
@@ -1380,6 +1388,8 @@ class AuthorizingGuardianPort(Protocol):
         step: TaskStep | None = None,
         authorization: Authorization | None = None,
         authorization_uses: int = 0,
+        author: PlanAuthor | None = None,
+        session: SessionCover | None = None,
         device_id: DeviceId | None = None,
     ) -> PermissionDecision:
         """Decide about one call and append ``PERMISSION_DECIDED`` before returning.
@@ -2871,9 +2881,18 @@ class Gestures(Protocol):
     """
 
     async def open(
-        self, task_id: TaskId, step_id: StepId, *, sites: tuple[str, ...], tools: frozenset[str]
+        self,
+        task_id: TaskId,
+        step_id: StepId,
+        *,
+        capability: CapabilityId,
+        sites: tuple[str, ...],
+        tools: frozenset[str],
     ) -> OpenedSession | ErrorMetadata:
-        """Open the session of this step on the reservation the cap holds for it, or say why not."""
+        """Open the session of this step on the reservation the cap holds for it, or say why not.
+
+        ``capability`` is the capability of the session — which of the guided sessions this is
+        (M13.9, ADR 0063): what its gestures are, and what the room attests of it."""
 
     async def start(self, session: StepId, tools: Sequence[str]) -> ErrorMetadata | None:
         """The tools the session's start lists: exactly its two, or the session is halted

@@ -29,6 +29,13 @@ An ADR is immutable: ADR 0011 §3 keeps saying what it decided, and the row that
 the ADR that moved it (M13.1 dec. O). Additions do not exist here — the table has one row per risk
 level and the levels are §29's five — so a revision must name **every** level, and a revision that
 dropped one would fail ``test_policy_table_covers_every_risk_level``."""
+SIGNATURE_REVISING = "Firma rivista:"
+SIGNATURE_REVISING_ADRS = ((ADR_DIR / "0063-browser-with-your-accounts.md", SIGNATURE_REVISING),)
+"""ADRs that change what ``decide`` receives, under a label, with the whole signature rewritten.
+
+The same reason as the table's: ADR 0011 keeps the signature it decided, and the parameters M13.9
+added — who wrote the plan, and the room's word about an open session — are read from the ADR that
+added them (ADR 0063 §1)."""
 ROW = re.compile(r"^\| (SAFE|LOW|MEDIUM|HIGH|CRITICAL) \| `(\w+)` \| (.+) \|$")
 SIGNATURE = re.compile(r"```python\n(def decide\(.*?\) -> PermissionDecision: \.\.\.)\n```", re.S)
 
@@ -118,8 +125,29 @@ def test_policy_table_covers_every_risk_level() -> None:
     assert set(policy_of_today()) == set(RiskLevel)
 
 
+def signature_of_today() -> list[Parameter]:
+    """ADR 0011's signature, or the one the last ADR that revised it wrote."""
+    signature = documented_signature(ADR_PATH.read_text(encoding="utf-8"))
+    for path, label in SIGNATURE_REVISING_ADRS:
+        signature = documented_signature(section(path, label))
+    return signature
+
+
 def test_decide_signature_matches_the_port() -> None:
-    assert documented_signature(ADR_PATH.read_text(encoding="utf-8")) == coded_signature()
+    assert signature_of_today() == coded_signature()
+
+
+def test_the_signature_that_grew_is_read_from_the_adr_that_grew_it() -> None:
+    """ADR 0011 keeps the six parameters it decided, and that is history; the two M13.9 added come
+    after them, with a default each — a caller of yesterday is a caller of today."""
+    original = documented_signature(ADR_PATH.read_text(encoding="utf-8"))
+    today = signature_of_today()
+
+    assert today[: len(original)] == original
+    assert today[len(original) :] == [
+        ("author", "KEYWORD_ONLY", "None"),
+        ("session", "KEYWORD_ONLY", "None"),
+    ]
 
 
 def test_a_drifted_policy_table_is_detected() -> None:

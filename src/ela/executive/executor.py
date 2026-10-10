@@ -77,7 +77,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Final, NamedTuple, cast
+from typing import Final, NamedTuple, Protocol, cast
 from uuid import UUID, uuid5
 
 from ela.devices import LOCAL_DEVICE_ID, PlacementDecision, ensure_placed
@@ -107,9 +107,12 @@ from ela.domain import (
     JsonValue,
     PermissionDecision,
     PermissionOutcome,
+    PlanAuthor,
+    PlanAuthorKind,
     PrivacyLevel,
     ProviderUsage,
     RiskLevel,
+    SessionCover,
     StepId,
     StepState,
     Task,
@@ -186,21 +189,28 @@ __all__ = [
     "DEFAULT_APPROVAL_TTL",
     "DELIVERY_NAMESPACE",
     "EXECUTION_INTERRUPTED",
+    "EXECUTION_STOPPED",
     "GRANT_VANISHED",
     "MAX_APPROVAL_TTL",
+    "NOT_ACTED_REASON",
+    "NOT_REACHED",
     "NUMBERS",
+    "PASSED",
+    "POINT",
     "RECOVERED",
     "REPORTABLE",
+    "RESULT_NOT_TEXT",
     "STARTED_ID",
     "TOOL_EXCEPTION",
     "TOOL_REFUSED",
     "UNSEEN",
-    "RESULT_NOT_TEXT",
     "VERDICT",
     "VERIFICATION_EXCEPTION",
     "VERIFICATION_FAILED",
     "VERIFICATION_MISSING",
+    "Attesting",
     "Claimed",
+    "Closing",
     "Delivered",
     "Delivery",
     "Envelope",
@@ -211,12 +221,6 @@ __all__ = [
     "approved_targets",
     "check_envelope",
     "select_authorization",
-    "EXECUTION_STOPPED",
-    "NOT_ACTED_REASON",
-    "NOT_REACHED",
-    "PASSED",
-    "POINT",
-    "Closing",
 ]
 
 AUTHORIZATION_NAMESPACE: Final = UUID("2d9b7f61-8c4a-4e0b-9f3d-6a1e5c7b8d90")
@@ -826,6 +830,18 @@ def approved_targets(decision: PermissionDecision) -> tuple[str, ...]:
     return tuple(target for target in recorded if isinstance(target, str))
 
 
+class Attesting(Protocol):
+    """What the executor asks the room of the guided sessions: its word about one of them.
+
+    A contract of this package and not a port: the room (:mod:`ela.executive.sessions`) and the
+    executor live side by side, and the only reason this is not the room's own type is that the
+    room is built on the runner, which is built on the executor. ``None`` for a session that is
+    over, or that never was.
+    """
+
+    async def attest(self, session: StepId) -> SessionCover | None: ...
+
+
 class Executor:
     """The unit of work across the ports for one step (ADR 0013).
 
@@ -858,6 +874,7 @@ class Executor:
         authorization_ttl: timedelta = DEFAULT_AUTHORIZATION_TTL,
         approval_ttl: timedelta = DEFAULT_APPROVAL_TTL,
         spending: SpendingGate | None = None,
+        sessions: Attesting | None = None,
     ) -> None:
         if not timedelta(0) < approval_ttl <= MAX_APPROVAL_TTL:
             raise ValueError(
@@ -880,6 +897,10 @@ class Executor:
         self._bell = bell
         self._authorization_ttl = authorization_ttl
         self._approval_ttl = approval_ttl
+        self._sessions = sessions
+        """The room of the guided sessions, asked for its word when a step a session wrote is
+        decided (M13.9, ADR 0063; decision 29). Without one — a node, a test — nothing is ever
+        covered by a session: every such step asks."""
         self._spending = SpendingGate(results, None) if spending is None else spending
         """The month's cap (M14.1, ADR 0057). Without one given, no cap: no call that spends goes
         out (decision B) — the safe default for an executor composed without it."""
@@ -973,12 +994,21 @@ class Executor:
             return Execution(task, step_id, graph, None, None, None, request, None)
         granted = [a for a in requests if a.status is ApprovalStatus.GRANTED]
         authorization: Authorization | None
+        author: PlanAuthor | None = None
+        session: SessionCover | None = None
         if granted:
             authorization, uses = await self._grant(granted[-1], task, step, spec, now)
         else:
-            authorization, uses = await self._find_authorization(
-                spec, arguments, targets, task, step, now
-            )
+            # The room's word, read now and never kept (M13.9, decision 29): a session covers
+            # the reads its model wrote for as long as it is open, and a session that is over
+            # covers nothing — the step asks, as it always did.
+            author, session = await self._covered(task_id, spec)
+            if session is None:
+                authorization, uses = await self._find_authorization(
+                    spec, arguments, targets, task, step, now
+                )
+            else:
+                authorization, uses = None, 0
 
         decision = await self._guardian.authorize(
             spec,
@@ -987,6 +1017,8 @@ class Executor:
             step=step,
             authorization=authorization,
             authorization_uses=uses,
+            author=author,
+            session=session,
             device_id=device_id,
         )
         if decision.outcome is PermissionOutcome.DENIED:
@@ -1599,6 +1631,34 @@ class Executor:
     # ----------------------------------------------------------------------------------
     # What both halves share
     # ----------------------------------------------------------------------------------
+
+    async def _covered(
+        self, task_id: TaskId, spec: CapabilitySpec
+    ) -> tuple[PlanAuthor | None, SessionCover | None]:
+        """Who wrote the plan of ``task_id`` and, if a guided session did and is open and declares
+        ``spec`` as what it covers, the room's word about it (M13.9, ADR 0063; decision 29).
+
+        **The word is the room's, read at this moment**: this is the one place it is asked for,
+        and nothing here keeps it. It is handed to the Guardian only for the capability the
+        session's own capability declares — an ``act`` of the session is ``HIGH``, no session
+        covers it, and handing the word over for it would be an incoherence the Guardian denies:
+        the act **asks**, as it always did. The Guardian checks every part of the fact again.
+        """
+        if self._sessions is None:
+            return None, None
+        author = (await self._repository.plan(task_id)).author
+        if author.by is not PlanAuthorKind.SESSION or author.session is None:
+            return author, None
+        attested = await self._sessions.attest(author.session)
+        if attested is None:
+            return author, None
+        try:
+            declared = self._registry.get(attested.capability_id).covers
+        except NotFoundError:
+            return author, None
+        if declared is None or declared.capability_id != spec.id:
+            return author, None
+        return author, attested
 
     def _prepared(self, task_id: TaskId, graph: GraphState, step_id: StepId) -> Prepared:
         """The step and what one call needs to act on it (rows 3–5 of the pipeline).

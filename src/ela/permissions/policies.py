@@ -166,7 +166,14 @@ def _terms(
     if declared is None:
         return f"{capability.id} declares no terms for a policy (policy {short_id(policy.id)})"
     bounds = policy.bounds
-    if bounds is None or bounds.terms != declared or set(bounds.limits) != set(bounds.terms.limits):
+    if (
+        bounds is None
+        or bounds.terms != declared
+        or set(bounds.limits) != set(bounds.terms.limits)
+        # What the capability's sessions cover, with the covered schema, is part of what a policy
+        # was born under (M13.9, decision 29): the closed world of ADR 0062 §1, extended.
+        or bounds.covers != capability.covers
+    ):
         return (
             f"{capability.id} declares other terms than those policy {short_id(policy.id)} was "
             "created under"
@@ -511,6 +518,6 @@ def authorization_from_policy(
         scope=tuple(request.scope),
         granted_by=granted_by,
         expires_at=now + timedelta(days=days),
-        bounds=PolicyBounds(terms=capability.policy_terms, limits=limits),
+        bounds=PolicyBounds(terms=capability.policy_terms, limits=limits, covers=capability.covers),
         metadata={"origin": "policy"},
     )

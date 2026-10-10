@@ -164,9 +164,9 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **62** | `docs/adr/NNNN-*.md` |
+| ADR scritti | **63** | `docs/adr/NNNN-*.md` |
 | Milestone | **89, di cui 72 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
-| Regole di architettura | **66** | `RULES` in `tests/architecture/` |
+| Regole di architettura | **67** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **33** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **14** | `production_catalogue()` |
@@ -290,7 +290,7 @@ una prova. È successo il 2026-09-21, ed è il motivo per cui questa riga esiste
 
 | Fase | Documenti che la nominano |
 |---|---|
-| 15 | 17 |
+| 15 | 18 |
 | 16 | 1 |
 
 <!-- fine del blocco generato: le fasi che un documento nomina -->
