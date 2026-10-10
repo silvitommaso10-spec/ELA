@@ -165,7 +165,10 @@ quando niente di ciò che è stato letto è più a portata.
 - **Regola di architettura 67**: la parola della stanza la costruisce la stanza, e nessun altro — non un tool,
   non l'executor che la consegna, non una rotta.
 
-Con questo ADR le regole di architettura sono **sessantasette** (la 67), i contratti di import-linter restano
+- **Regola di architettura 68**: un `Secret` lo apre solo un adapter della macchina, o un finto — mai un tool,
+  una rotta o l'executor.
+
+Con questo ADR le regole di architettura sono **sessantotto** (la 67 e la 68), i contratti di import-linter restano
 **quindici**, i port diventano **trentaquattro** (`Vault`), le rotte dell'API sono **sessanta** e i comandi
 della CLI **trentuno**; le
 capability restano **quattordici**, le identità del middleware **sei**. *(I totali si aggiornano con le sezioni

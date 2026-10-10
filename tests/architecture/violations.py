@@ -2036,6 +2036,23 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.ports import AuthorizationStore\n",
         "AuthorizationStore",
     ),
+    # --- a-secret-is-opened-only-by-an-adapter (rule 68, M13.9) ---
+    Case(
+        # A tool opening the password it was handed: one statement from an outcome or a log.
+        "a-tool-opens-a-secret",
+        "a-secret-is-opened-only-by-an-adapter",
+        "tools/account.py",
+        "def typed(taken):\n    return {'password': taken.password.reveal()}\n",
+        ".reveal(",
+    ),
+    Case(
+        # A route opening the key it was sent, to answer with it.
+        "a-route-opens-a-secret",
+        "a-secret-is-opened-only-by-an-adapter",
+        "api/vault.py",
+        "def answered(key):\n    return key.reveal()\n",
+        ".reveal(",
+    ),
     # --- the-room-s-word-is-the-room-s (rule 67, M13.9) ---
     Case(
         # A tool attesting its own session: the cover of a read on the tool's own say-so.
@@ -2994,6 +3011,23 @@ ALLOWED: tuple[Case, ...] = (
         "        session=session, task_id=live.task_id,\n"
         "        capability_id=live.capability, sites=live.sites,\n"
         "    )\n",
+        "",
+    ),
+    Case(
+        # Rule 68: the adapter that types a password into a page opens the secret that carries it.
+        "the-browser-s-adapter-opens-a-secret",
+        "a-secret-is-opened-only-by-an-adapter",
+        "infrastructure/machine/account.py",
+        "async def fill_secret(page, selector, value):\n"
+        "    await page.fill(selector, value.reveal())\n",
+        "",
+    ),
+    Case(
+        # Rule 68: a fake stands in for an adapter, and does what it does.
+        "a-fake-opens-a-secret",
+        "a-secret-is-opened-only-by-an-adapter",
+        "testing/fakes.py",
+        "def filled(value):\n    return value.reveal()\n",
         "",
     ),
 )

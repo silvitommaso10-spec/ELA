@@ -726,6 +726,13 @@ STORE_PORT = "AuthorizationStore"
 #: route. A word anybody could write would be a cover anybody could give themselves.
 SESSION_COVER_MODEL = "SessionCover"
 SESSION_ROOM = Path("executive") / "sessions.py"
+#: Rule 68 (M13.9, ADR 0063): a password taken from the vault travels inside a ``Secret``, which
+#: shows nothing of itself and opens with one method, :data:`OPENING_METHOD`. Only the adapters of
+#: :data:`MACHINE_ADAPTER_DIR` — the one that reads it from the vault and the one that types it
+#: into a page — and the fakes of :data:`TESTING_DIR`, which stand in for those two, call it. A
+#: tool, a route or the executor opening one would hold a password where a result, a message or a
+#: log line is one statement away.
+OPENING_METHOD = "reveal"
 #: Rule 63 (M14.2, ADR 0058): the plan is independent of the device (§13), so the Planner's module
 #: names nothing of the machines. A contract of import-linter cannot say it: the Planner imports the
 #: runner, and the runner the orchestrator.
@@ -1770,6 +1777,32 @@ def check_the_room_s_word_is_the_room_s(pkg_root: Path) -> list[Violation]:
             Violation(rule, name, f"{SESSION_COVER_MODEL}(...)", node.lineno)
             for node in ast.walk(tree)
             if isinstance(node, ast.Call) and _is_named(node.func, SESSION_COVER_MODEL)
+        )
+    return found
+
+
+def check_a_secret_is_opened_only_by_an_adapter(pkg_root: Path) -> list[Violation]:
+    """Rule 68: only an adapter of the machine, or a fake, opens a ``Secret`` (M13.9, ADR 0063).
+
+    Reported: any call whose callee is an attribute named :data:`OPENING_METHOD`, outside
+    :data:`MACHINE_ADAPTER_DIR` and :data:`TESTING_DIR`. The type itself — in ``ela.ports`` —
+    defines the method and never calls it. A heuristic on a name, like rule 14: no other method
+    of ELA is called that.
+    """
+    rule = "a-secret-is-opened-only-by-an-adapter"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        relative = path.relative_to(pkg_root)
+        if relative.parts[0] == TESTING_DIR or relative.parts[:2] == MACHINE_ADAPTER_DIR.parts:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, f".{OPENING_METHOD}(", node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == OPENING_METHOD
         )
     return found
 
@@ -3915,6 +3948,7 @@ RULES: dict[str, Rule] = {
     "who-spends-passes-the-gate": check_who_spends_passes_the_gate,
     "a-policy-is-born-at-its-route": check_a_policy_is_born_at_its_route,
     "the-room-s-word-is-the-room-s": check_the_room_s_word_is_the_room_s,
+    "a-secret-is-opened-only-by-an-adapter": check_a_secret_is_opened_only_by_an_adapter,
 }
 
 
@@ -4424,6 +4458,29 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-policy-is-born-at-its-route", "TOOLS_DIR", DETECTOR),
     Constant(
         "a-policy-is-born-at-its-route",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # a-secret-is-opened-only-by-an-adapter (rule 68, M13.9)
+    Constant("a-secret-is-opened-only-by-an-adapter", "OPENING_METHOD", DETECTOR),
+    Constant(
+        "a-secret-is-opened-only-by-an-adapter",
+        "MACHINE_ADAPTER_DIR",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0063",
+    ),
+    Constant(
+        "a-secret-is-opened-only-by-an-adapter",
+        "TESTING_DIR",
+        EXEMPTION,
+        by=WHOLE,
+        adr="ADR 0063",
+    ),
+    Constant(
+        "a-secret-is-opened-only-by-an-adapter",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,
