@@ -13,6 +13,9 @@ and the verifier run here exactly as in production, with a local origin instead 
 * the stop, the deadline and the close, and **no process left** when the close returns;
 * a cancellation (M13.4b): a tool cancelled after the opening, a close and an opening cancelled
   halfway — **no process left** once the adapter's own closings are done, awaited as tasks;
+* ELA's stop, **whenever it is raised** (M13.4c): while the browser starts, at the last listening,
+  at the gate, with a page open — from then on no navigation and no gesture leaves, and the site
+  counts nothing. Each of those instants is built with an event, never with a time;
 * a ``SIGINT`` to ELA's process group does not close the page (M5-bis).
 
 **No sleep**: the pages answer to requests, and the deadline is an event. The one wait is the
@@ -608,6 +611,138 @@ async def test_the_stop_signal_closes_every_page_and_stops_what_runs(served: lis
         await browser.text(opened.page, None)
     with pytest.raises(BrowserStopped):
         await browser.open(web.origin + "/", lambda url: True, FakeStop())
+
+
+# ----------------------------------------------------------------------------------------
+# From the moment ELA's stop is raised nothing leaves, whenever that moment is (M13.4c)
+# ----------------------------------------------------------------------------------------
+
+
+class RaisedRightAfterTheFirstLook(asyncio.Event):
+    """ELA's stop, raised by itself the instant after somebody first looks at it.
+
+    The window of the defect, built as an event and not as a time: ``open`` looks at the stop
+    once, at its beginning, and then starts a driver, a browser, a context and a page before that
+    page is in the adapter's table. A stop raised in between found the table empty — the task that
+    closes every page woke, closed nothing and ended — and the page came after it. Measured on
+    2026-10-10 at 20, 80, 150 and 220 ms: each time ``open`` returned a page, and a form was sent.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._looked = False
+
+    def is_set(self) -> bool:
+        seen = super().is_set()
+        if not self._looked:
+            self._looked = True
+            self.set()
+        return seen
+
+
+class RaisesTheStopOfElaWhenListenedTo(FakeStop):
+    """A task's stop that is not raised — and, the instant the adapter listens to it, raises
+    **ELA's**: the last instant before the site sees anything."""
+
+    def __init__(self, stopping: asyncio.Event) -> None:
+        super().__init__()
+        self._stopping = stopping
+
+    def listen(self, where: str) -> None:
+        super().listen(where)
+        self._stopping.set()
+
+
+def stoppable(stopping: asyncio.Event) -> PlaywrightBrowser:
+    return PlaywrightBrowser(stopping, environment={}, kept=Kept(), system=SYSTEM)
+
+
+async def test_a_stop_of_ela_raised_while_the_browser_starts_opens_no_page_and_sends_nothing(
+    served: list[Site], nothing_left_behind: None
+) -> None:
+    """Whoever puts a page in the table after the stop closes it: nobody else will. No waiting for
+    the task that closes every page — it may have come and gone already."""
+    web = site(served, {"/": (200, {}, FORM)})
+    browser = stoppable(RaisedRightAfterTheFirstLook())
+
+    with pytest.raises(BrowserStopped):
+        await browser.open(web.origin + "/", lambda url: True, FakeStop())
+
+    assert web.requests == [], "the site saw a navigation after ELA had begun to stop"
+    assert descendants() == []
+
+
+async def test_a_stop_of_ela_raised_at_the_last_listening_sends_nothing(
+    served: list[Site], nothing_left_behind: None
+) -> None:
+    web = site(served, {"/": (200, {}, FORM)})
+    stopping = asyncio.Event()
+    browser = stoppable(stopping)
+    stop = RaisesTheStopOfElaWhenListenedTo(stopping)
+
+    with pytest.raises(BrowserStopped):
+        await browser.open(web.origin + "/", lambda url: True, stop)
+
+    assert stop.listened == [NAVIGATION]
+    assert web.requests == []
+    assert descendants() == []
+
+
+async def test_a_stop_of_ela_raised_while_a_navigation_is_at_the_gate_lets_nothing_through(
+    served: list[Site], nothing_left_behind: None
+) -> None:
+    """The navigation had left the page and was at the adapter's route when ELA began to stop:
+    the boundary admits it, and the gate does not send it."""
+    web = site(served, {"/": (200, {}, FORM)})
+    stopping = asyncio.Event()
+    browser = stoppable(stopping)
+    asked: list[str] = []
+
+    def admitted_while_ela_stops(address: str) -> bool:
+        asked.append(address)
+        stopping.set()
+        return True
+
+    with pytest.raises(BrowserStopped):
+        await browser.open(web.origin + "/", admitted_while_ela_stops, FakeStop())
+
+    assert asked == [web.origin + "/"], "the navigation did reach the gate"
+    assert web.requests == []
+
+
+async def test_after_the_stop_of_ela_no_gesture_reaches_a_page_that_is_still_open(
+    served: list[Site], nothing_left_behind: None
+) -> None:
+    """The stop is raised and, in the same turn of the loop — before the task that closes every
+    page has run —, a fill and a click are asked of a page that is still in the table."""
+    web = site(served, {"/": (200, {}, FORM)})
+    stopping = asyncio.Event()
+    browser = stoppable(stopping)
+    opened = await browser.open(web.origin + "/", lambda url: True, FakeStop())
+    before = list(web.requests)
+    page = browser._pages[opened.page].page  # noqa: SLF001 — the page as the driver holds it
+    handed: list[str] = []
+    locating = page.locator
+
+    def handed_to_the_driver(selector: str) -> object:
+        handed.append(selector)
+        return locating(selector)
+
+    page.locator = handed_to_the_driver  # type: ignore[method-assign, assignment]
+
+    stopping.set()
+    with pytest.raises(BrowserStopped):
+        await browser.fill(opened.page, "#nome", "ELA")
+    with pytest.raises(BrowserStopped):
+        await browser.click(opened.page, "#invia")
+    watching = browser._watching  # noqa: SLF001 — the task the signal wakes
+    assert watching is not None
+    await watching
+
+    assert handed == [], "a gesture was handed to the driver after ELA had begun to stop"
+    assert web.requests == before, "nothing was sent after the stop"
+    assert web.events == [], "and the page saw no gesture"
+    assert descendants() == []
 
 
 async def test_a_stopped_task_leaves_before_the_navigation_and_the_site_sees_nothing(
