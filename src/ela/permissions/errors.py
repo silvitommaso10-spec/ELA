@@ -17,6 +17,7 @@ __all__ = [
     "InvalidArgumentsError",
     "InvalidCapabilityError",
     "PermissionsError",
+    "PolicyRefusedError",
     "RiskNotAllowedError",
 ]
 
@@ -86,3 +87,18 @@ class ApprovalMismatchError(PermissionsError):
         self.check = check
         self.reason = reason
         super().__init__(f"approval {approval_id!r} does not authorise this call: {reason}")
+
+
+class PolicyRefusedError(PermissionsError):
+    """A policy of §59 that cannot be born (M13.12, ADR 0062; decision 6).
+
+    Raised by ``authorization_from_policy`` before any grant exists: the capability is not in the
+    catalogue, admits no policy, the scope, the limits or the days are wrong. ``check`` names the
+    check that failed (a member of ``PolicyCheck``), ``reason`` says why in words — numbers and
+    names, never more than what was asked for.
+    """
+
+    def __init__(self, check: str, reason: str) -> None:
+        self.check = check
+        self.reason = reason
+        super().__init__(f"{check}: {reason}")

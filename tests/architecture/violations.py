@@ -1972,6 +1972,70 @@ VIOLATIONS: tuple[Case, ...] = (
         'import os\ndef narrow(fd):\n    if hasattr(os, "fchmod"):\n        os.fchmod(fd, 0o600)\n',
         "hasattr(os",
     ),
+    # --- a-policy-is-born-at-its-route (rule 66, M13.12) ---
+    Case(
+        # Part 1: the executor minting a policy of its own — a standing yes nobody gave.
+        "the-executor-mints-a-policy",
+        "a-policy-is-born-at-its-route",
+        "executive/executor.py",
+        "from ela.permissions import authorization_from_policy\n"
+        "def mint(request, catalogue, now, i):\n"
+        "    return authorization_from_policy(\n"
+        "        request, catalogue=catalogue, granted_by='ela', now=now, authorization_id=i\n"
+        "    )\n",
+        "authorization_from_policy(",
+    ),
+    Case(
+        # Part 1, by attribute: a page minting one instead of calling the route's function.
+        "the-console-mints-a-policy",
+        "a-policy-is-born-at-its-route",
+        "api/console.py",
+        "from ela import permissions\n"
+        "def mint(request, catalogue, now, i):\n"
+        "    return permissions.authorization_from_policy(\n"
+        "        request, catalogue=catalogue, granted_by='x', now=now, authorization_id=i\n"
+        "    )\n",
+        "authorization_from_policy(",
+    ),
+    Case(
+        # Part 2: the executor saving what it read from the store — a grant no yes minted here.
+        "the-executor-saves-what-it-read",
+        "a-policy-is-born-at-its-route",
+        "executive/executor.py",
+        "class X:\n"
+        "    async def run(self, spec):\n"
+        "        grants = await self._authorizations.for_capability(spec)\n"
+        "        await self._authorizations.grant(grants[0])\n",
+        ".grant(",
+    ),
+    Case(
+        # Part 2: another module of the Core saving a grant at all.
+        "the-runner-saves-a-grant",
+        "a-policy-is-born-at-its-route",
+        "executive/runner.py",
+        "class X:\n"
+        "    async def run(self, grant):\n"
+        "        await self._authorizations.grant(grant)\n",
+        ".grant(",
+    ),
+    Case(
+        # Part 3: a capability revoking a policy — or anything outside the route doing it.
+        "a-tool-revokes-a-policy",
+        "a-policy-is-born-at-its-route",
+        "tools/notes.py",
+        "class X:\n"
+        "    async def run(self, policy, now):\n"
+        "        await self._authorizations.revoke(policy, at=now)\n",
+        ".revoke(",
+    ),
+    Case(
+        # Part 3: a tool holding the store the policies live in.
+        "a-tool-holds-the-store-of-the-policies",
+        "a-policy-is-born-at-its-route",
+        "tools/notes.py",
+        "from ela.ports import AuthorizationStore\n",
+        "AuthorizationStore",
+    ),
 )
 ALLOWED: tuple[Case, ...] = (
     Case(
@@ -2854,6 +2918,43 @@ ALLOWED: tuple[Case, ...] = (
         "content-stays-on-the-machine",
         "tools/model.py",
         "from ela.routing import ModelRouter\n",
+        "",
+    ),
+    Case(
+        # Rule 66: the route of the creation mints, saves and revokes — the one place that may.
+        "the-route-mints-saves-and-revokes-a-policy",
+        "a-policy-is-born-at-its-route",
+        "api/policies.py",
+        "from ela.permissions import authorization_from_policy\n"
+        "async def create(ela, request, now, i):\n"
+        "    grant = authorization_from_policy(\n"
+        "        request, catalogue=ela.capabilities, granted_by='x', now=now, authorization_id=i\n"
+        "    )\n"
+        "    await ela.authorizations.grant(grant)\n"
+        "    await ela.authorizations.revoke(grant.id, at=now)\n",
+        "",
+    ),
+    Case(
+        # Rule 66: the executor saves the grant a yes minted, bound in the same function.
+        "the-executor-saves-the-grant-of-a-yes",
+        "a-policy-is-born-at-its-route",
+        "executive/executor.py",
+        "from ela.permissions import authorization_from_approval\n"
+        "class X:\n"
+        "    async def run(self, approval, task, step, spec, now, i):\n"
+        "        grant = authorization_from_approval(\n"
+        "            approval, task=task, step=step, capability=spec, now=now, authorization_id=i\n"
+        "        )\n"
+        "        await self._authorizations.grant(grant)\n",
+        "",
+    ),
+    Case(
+        # Rule 66 filters on the receiver: revoking a node is the registry's, not a policy's.
+        "a-node-is-revoked-where-nodes-are",
+        "a-policy-is-born-at-its-route",
+        "api/nodes.py",
+        "async def revoke(ela, device_id, actor):\n"
+        "    return await ela.devices.revoke(device_id, by=actor)\n",
         "",
     ),
 )

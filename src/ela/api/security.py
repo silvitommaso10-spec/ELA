@@ -178,9 +178,17 @@ CONSOLE_ROUTES: Final = frozenset(
         ("POST", "/console/cancel"),
         ("GET", "/console/tokens.css"),
         ("GET", "/console/components.css"),
+        ("GET", "/console/policies"),
+        ("POST", "/console/policies/preview"),
+        ("POST", "/console/policies"),
+        ("POST", "/console/policies/revoke"),
     }
 )
-"""What the console's cookie may call: literal pairs, for the reason of :data:`COMPANION_ROUTES`."""
+"""What the console's cookie may call: literal pairs, for the reason of :data:`COMPANION_ROUTES`.
+
+The last four are the view of the policies of §59 (M13.12, ADR 0062): the list with the form, the
+preview, the creation and the revocation — the fifth view, by the rule that every milestone adding
+a capacity adds its view (STATO 5.10)."""
 CONSOLE_CODE_ROUTES: Final = frozenset({("POST", "/console/enroll")})
 """The one route a console's code opens, and the one route where a **form** carries it."""
 CONSOLE_COOKIE: Final = "ela_console"

@@ -76,6 +76,8 @@ from ela.domain import (
     PlanAuthor,
     PlanAuthorKind,
     PlanId,
+    PolicyBounds,
+    PolicyTerms,
     PowerSource,
     PrivacyLevel,
     ProviderRequest,
@@ -409,6 +411,14 @@ SINGLE_USE_AUTHORIZATION: Final = Authorization(
     metadata={"origin": "approval"},
 )
 
+POLICY_TERMS: Final = PolicyTerms(
+    limits=("budget",), uncovered=("route",), free=("text",), route="browsing", model="m"
+)
+"""What a policy of §59 must bound for a capability that admits one (M13.12, ADR 0062)."""
+
+POLICY_BOUNDS: Final = PolicyBounds(terms=POLICY_TERMS, limits={"budget": "1.10"})
+"""The limits of a policy and the terms they were born under (M13.12)."""
+
 POLICY_AUTHORIZATION: Final = Authorization(
     id=AuthorizationId(_uuid(16)),
     created_at=NOW,
@@ -416,8 +426,10 @@ POLICY_AUTHORIZATION: Final = Authorization(
     scope=("workspace/notes",),
     granted_by="tommaso",
     approval_id=None,
+    expires_at=LATER,
     metadata={"origin": "policy"},
 )
+"""A grant without ``approval_id``: since M13.12 it always expires (decision 3d)."""
 
 AUDIT_EVENT: Final = AuditEvent(
     id=AUDIT_EVENT_ID,
@@ -694,6 +706,8 @@ EXAMPLES: Final[dict[type[BaseModel], BaseModel]] = {
         PERMISSION_DECISION,
         APPROVAL,
         SINGLE_USE_AUTHORIZATION,
+        POLICY_TERMS,
+        POLICY_BOUNDS,
         AUDIT_EVENT,
         MODEL_ROUTE,
         PROVIDER_REQUEST,

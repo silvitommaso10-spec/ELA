@@ -5,7 +5,7 @@ their kind (``test_adr_catalogue``, ``test_adr_ports``, ``test_adr_composition``
 ``test_adr_routing``, ``test_adr_stop``); this file holds what is only this ADR's: the rows of its
 tool and its verifier, the codes of the budget, rule 65, the revisions it writes on the ADRs it
 revises, the state it is in — and **the pin on today's totals**, taken over from ADR 0059, because
-this ADR changes them.
+this ADR changed them; since M13.12 the pin is ADR 0062's.
 """
 
 from __future__ import annotations
@@ -18,11 +18,10 @@ from ela.api.security import Kind
 from ela.executive.spending import BudgetCode
 from ela.permissions import BROWSER_GUIDED, production_catalogue
 from ela.tools.guided import BrowserGuidedTool, BrowserGuidedVerifier
-from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
 from tests.docs.guided_ports import GUIDED_PORTS
-from tests.docs.test_adr_cli import coded_commands
-from tests.docs.test_adr_composition import coded_routes
+from tests.docs.test_adr_cli import coded_commands, commands_after_0061
+from tests.docs.test_adr_composition import coded_routes, routes_after_0061
 from tests.docs.test_adr_placement import _rules_up_to
 from tests.tools.test_remote_verification import STAYS, TRAVELS
 
@@ -64,22 +63,22 @@ def status_of(text: str) -> str:
     return text.split("- **Stato:**", 1)[1].split("\n- **", 1)[0]
 
 
-def test_the_conseguenze_count_the_totals_of_today() -> None:
-    """The pin on today's totals, taken over from ADR 0059: it moves to the ADR that changes
-    them."""
+def test_the_conseguenze_count_the_totals_of_their_day() -> None:
+    """The pin on today's totals, taken over from ADR 0059, moved on to ADR 0062 (M13.12): what
+    this ADR saw, counted without what came after it."""
     text = conseguenze()
     contracts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"][
         "importlinter"
     ]["contracts"]
 
     assert "**sessantacinque**" in text
-    assert len(RULES) == 65
-    assert set(RULES) - set(_rules_up_to(64)) == {"who-spends-passes-the-gate"}
+    assert len(_rules_up_to(65)) == 65  # rule 66 is ADR 0062's
+    assert set(_rules_up_to(65)) - set(_rules_up_to(64)) == {"who-spends-passes-the-gate"}
     assert "**quindici**" in text and len(contracts) == 15
     assert "**trentatré**" in text and len(tuple(port_protocols())) == 33
     assert {port.__name__ for port in port_protocols()} >= GUIDED_PORTS
-    assert "**cinquantadue**" in text and len(coded_routes()) == 52
-    assert "**ventotto**" in text and len(coded_commands()) == 28
+    assert "**cinquantadue**" in text and len(coded_routes() - routes_after_0061()) == 52
+    assert "**ventotto**" in text and len(coded_commands() - commands_after_0061()) == 28
     assert "**quattordici**" in text and len(production_catalogue().specs()) == 14
     assert "**quattro**" in text and len(TRAVELS) == 4 and BROWSER_GUIDED in STAYS
     assert "**sei**" in text and len(Kind) == 6

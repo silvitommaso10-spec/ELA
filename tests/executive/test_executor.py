@@ -57,6 +57,7 @@ from ela.testing.fakes import (
     FakeTool,
     FakeVerifier,
 )
+from tests.domain.examples import APPROVAL_ID
 from tests.executive.support import (
     BAD,
     BAD_FAILURE,
@@ -78,6 +79,7 @@ from tests.permissions.support import (
     NOTE_ARGS,
     SENSING_ECHO,
     STATED_ECHO,
+    TERMED,
 )
 from tests.tasks.support import result_for
 
@@ -703,8 +705,9 @@ async def test_an_exhausted_grant_found_in_the_store_asks_again_and_names_it(w: 
 
 
 async def test_a_usable_grant_found_in_the_store_is_consumed_and_used(w: World) -> None:
-    task, step = await w.running(GUARDED_ECHO.id)
-    policy = grant_for(GUARDED_ECHO, created_at=w.now, max_uses=3)
+    """A policy of §59, on the capability that declares its terms (M13.12, decision 17)."""
+    task, step = await w.running(TERMED.id)
+    policy = grant_for(TERMED, created_at=w.now, max_uses=3)
     await w.store.grant(policy)
     execution = await w.execute(task.id, step.id)
     assert execution.authorization == policy
@@ -717,8 +720,11 @@ async def test_a_usable_grant_found_in_the_store_is_consumed_and_used(w: World) 
 
 
 async def test_a_grant_the_decision_does_not_rest_on_is_not_consumed(w: World) -> None:
+    """A yes of this step for a ``SAFE`` that needs none: no policy covers a ``SAFE`` (M13.12)."""
     task, step = await w.running(ECHO.id)
-    policy = grant_for(ECHO, created_at=w.now, max_uses=1)
+    policy = grant_for(
+        ECHO, task=task, step=step, created_at=w.now, approval_id=APPROVAL_ID, max_uses=1
+    )
     await w.store.grant(policy)
     execution = await w.execute(task.id, step.id)
     assert execution.authorization == policy
@@ -731,13 +737,14 @@ async def test_a_grant_the_decision_does_not_rest_on_is_not_consumed(w: World) -
 
 
 async def test_a_grant_expiring_at_the_decisions_instant_is_not_consumed(w: World) -> None:
-    task, step = await w.running(GUARDED_ECHO.id)
-    at_now = grant_for(GUARDED_ECHO, created_at=w.now, expires_at=w.now)
+    task, step = await w.running(TERMED.id)
+    at_now = grant_for(TERMED, created_at=w.now, expires_at=w.now)
     await w.store.grant(at_now)
     execution = await w.execute(task.id, step.id)
     assert execution.decision.outcome is PermissionOutcome.REQUIRES_APPROVAL
+    assert execution.decision.authorization_id == at_now.id
     assert await w.store.uses(at_now.id) == 0
-    assert w.tool(GUARDED_ECHO.id).calls == ()
+    assert w.tool(TERMED.id).calls == ()
 
 
 # --------------------------------------------------------------------------------------
@@ -759,8 +766,8 @@ class _ForgetfulStore(FakeAuthorizationStore):
 
 async def test_a_grant_spent_by_someone_else_asks_again() -> None:
     w = world(store=_RacingStore())
-    task, step = await w.running(GUARDED_ECHO.id)
-    policy = grant_for(GUARDED_ECHO, created_at=w.now, max_uses=1)
+    task, step = await w.running(TERMED.id)
+    policy = grant_for(TERMED, created_at=w.now, max_uses=1)
     await w.store.grant(policy)
     execution = await w.execute(task.id, step.id)
     assert execution.decision.outcome is PermissionOutcome.ALLOWED
@@ -769,21 +776,21 @@ async def test_a_grant_spent_by_someone_else_asks_again() -> None:
     assert "was used 1 of 1 times" in execution.approval.prompt
     assert execution.task.state is TaskState.WAITING_APPROVAL
     assert execution.result is None
-    assert w.tool(GUARDED_ECHO.id).calls == ()
+    assert w.tool(TERMED.id).calls == ()
     assert (await w.event_types(task.id))[-2:] == [E.PERMISSION_DECIDED, E.APPROVAL_REQUESTED]
 
 
 async def test_a_grant_that_vanished_fails_the_step_and_runs_nothing() -> None:
     w = world(store=_ForgetfulStore())
-    task, step = await w.running(GUARDED_ECHO.id)
-    policy = grant_for(GUARDED_ECHO, created_at=w.now)
+    task, step = await w.running(TERMED.id)
+    policy = grant_for(TERMED, created_at=w.now)
     await w.store.grant(policy)
     execution = await w.execute(task.id, step.id)
     assert execution.decision.outcome is PermissionOutcome.ALLOWED
     assert execution.result is None and execution.approval is None
     assert execution.graph.states[step.id] is StepState.FAILED
     assert execution.task.state is TaskState.EXECUTING
-    assert w.tool(GUARDED_ECHO.id).calls == ()
+    assert w.tool(TERMED.id).calls == ()
     assert (await w.event_types(task.id))[-2:] == [E.PERMISSION_DECIDED, E.STEP_FAILED]
     failed = (await w.events(task.id))[-1]
     assert failed.error is not None

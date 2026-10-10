@@ -58,6 +58,7 @@ from ela.ports import AssignmentStateError, NotFoundError, StopPoint, TaskStop
 from ela.tasks.engine import OPERATIONS, TERMINAL_STATES
 from ela.tasks.errors import ClockSkewError
 from ela.testing.fakes import FakeAssignmentStore, FakeAuthorizationStore, FakeClock, FakeTool
+from tests.domain.examples import APPROVAL_ID
 from tests.executive.support import (
     BAD,
     SimulatedCrash,
@@ -638,7 +639,9 @@ async def test_a_task_stopped_before_the_grant_spends_no_yes_and_calls_no_tool()
     w = world()
     task, step = await w.running(GUARDED_ECHO.id)
     w.tool(GUARDED_ECHO.id).idempotent = False
-    granted = grant_for(GUARDED_ECHO, task=task, step=step, created_at=w.now, max_uses=1)
+    granted = grant_for(
+        GUARDED_ECHO, task=task, step=step, created_at=w.now, approval_id=APPROVAL_ID, max_uses=1
+    )
     await w.store.grant(granted)
     log: Any = w.audit
     appending = log.append

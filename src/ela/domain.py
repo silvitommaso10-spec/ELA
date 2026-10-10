@@ -111,6 +111,8 @@ __all__ = [
     "PlanAuthor",
     "PlanAuthorKind",
     "PlanId",
+    "PolicyBounds",
+    "PolicyTerms",
     "PowerSource",
     "PrivacyLevel",
     "ProbeFamily",
@@ -581,6 +583,13 @@ class AuditEventType(StrEnum):
     """
     PERMISSION_DECIDED = "PERMISSION_DECIDED"
     AUTHORIZATION_GRANTED = "AUTHORIZATION_GRANTED"
+    AUTHORIZATION_REVOKED = "AUTHORIZATION_REVOKED"
+    """Tommaso revoked a policy of §59 (M13.12, ADR 0062; decision 5).
+
+    Signed ``USER`` with the identity the middleware resolved — the name and the role are read from
+    the registry by whoever lists, as for a no (ADR 0059 §3). Written by the one route that revokes
+    (architecture rule 66). A revocation stops no session already running: the grant was spent
+    before it, and the stop of a task is the «ferma»."""
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"
     APPROVAL_RESOLVED = "APPROVAL_RESOLVED"
     TOOL_EXECUTED = "TOOL_EXECUTED"
@@ -1195,6 +1204,44 @@ class Enrollment(_DomainModel):
         return self
 
 
+class PolicyTerms(_DomainModel):
+    """What a standing policy of §59 must bound to cover a capability (M13.12, ADR 0062, dec. 1).
+
+    **It classifies every argument of the capability's schema**, and the catalogue refuses a
+    declaration that does not: ``limits`` — what a policy bounds per call, every one of them, no
+    more and no less —, ``uncovered`` — what a policy never covers: a call that carries one asks —,
+    ``free`` — what a policy leaves free, the point of it —, and the arguments with the scope, which
+    are the capability's ``scoped_arguments``. A closed world is what lets an old policy stop
+    covering by itself the day the schema grows: an argument added tomorrow has to say where it
+    stands, and the terms change.
+
+    ``route`` is the task type of the default route of a capability that calls a model, and
+    ``model`` the model that route reads today, written by the composition root as the sites are
+    (decisions 3c and 16): a policy names one model. Both ``None`` for a capability that calls none.
+    """
+
+    limits: tuple[str, ...]
+    uncovered: tuple[str, ...] = ()
+    free: tuple[str, ...] = ()
+    route: str | None = None
+    model: str | None = None
+
+
+class PolicyBounds(_DomainModel):
+    """The limits of a policy and the terms they were born under (M13.12, ADR 0062; decision 3).
+
+    ``limits`` maps every declared limit to a value **in words** — ``"1.10"``, ``"10"`` — read as a
+    ``Decimal``, never a float. The values are not validated here, on purpose (proposal 15): a row
+    the type refused would stop every grant of its capability at the read, and a step would end in
+    an error instead of a question. A value that is not a number is the predicate's «does not
+    cover» (``ela.permissions.policies``). ``terms`` is a copy of the declaration of the day: when
+    today's differs, the policy stops covering by itself (decision 4).
+    """
+
+    terms: PolicyTerms
+    limits: JsonMapping = _json_payload("Every declared limit, its value in words.")
+
+
 class CapabilitySpec(_DomainModel):
     """What an action can do, and under which conditions (§28).
 
@@ -1247,6 +1294,10 @@ class CapabilitySpec(_DomainModel):
     architecture rule 23 keeps arguments out of the audit. How long the microphone was really open
     is in the result, which is where a measurement belongs.
     """
+    policy_terms: PolicyTerms | None = None
+    """What a standing policy of §59 must bound to cover this capability, or ``None``: no policy
+    covers it (M13.12, ADR 0062; decision 1). Declared here, as ``prompt_arguments`` is, and only on
+    a row that asks unless authorized — the catalogue refuses it anywhere else (decision 2)."""
     requires_authorization: bool
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 
@@ -1300,9 +1351,11 @@ class Authorization(_DomainModel):
     """The grant the Guardian consumes. It is born in one of two ways (§30, §59).
 
     * From an :class:`Approval`: single use, ``max_uses=1``, ``approval_id`` set, bound to the
-      ``task_id``/``step_id`` it was granted for.
-    * From a standing policy (§59): reusable, ``approval_id`` is ``None``, and the scope says
-      how far it reaches.
+      ``task_id``/``step_id`` it was granted for, and no ``bounds``.
+    * From a standing policy (§59): reusable, ``approval_id`` is ``None``, the scope says how far
+      it reaches, ``bounds`` what it limits per call, and **it always ends** — ``expires_at`` is
+      required (M13.12, ADR 0062; decision 3d). Tommaso creates it, and only the route of its
+      creation does (architecture rule 66); it is revoked, never modified.
     """
 
     id: AuthorizationId
@@ -1315,17 +1368,30 @@ class Authorization(_DomainModel):
     step_id: StepId | None = None
     expires_at: UtcDatetime | None = None
     max_uses: Annotated[int, Field(gt=0)] | None = None
+    bounds: PolicyBounds | None = None
+    """The limits of a policy and the terms it was born under (M13.12); ``None`` for a yes."""
+    revoked_at: UtcDatetime | None = None
+    """When the policy was revoked (M13.12, decision 5): written once, by the store's ``revoke``."""
     metadata: JsonMapping = _json_payload(_METADATA_DESCRIPTION)
 
     @model_validator(mode="after")
     def _approval_born_grants_are_single_use_and_bound(self) -> Authorization:
-        """A grant with ``approval_id`` is single use and bound to its task and step (§30).
+        """A grant with ``approval_id`` is single use and bound to its task and step (§30), and
+        has no bounds; a grant without one always ends (M13.12, decision 3d).
 
-        The invariant of the docstring, enforced (M4.3, ADR 0012 §1): a hand-built or tampered
-        grant that claims an approval but is reusable or unbound is refused by the type.
+        The invariants of the docstring, enforced (M4.3, ADR 0012 §1; M13.12, ADR 0062): a
+        hand-built or tampered grant that claims an approval but is reusable or unbound is refused
+        by the type, and so is a standing policy without an end — a permission nobody rereads stops
+        being a choice.
         """
         if self.approval_id is None:
+            if self.expires_at is None:
+                raise ValueError(
+                    "a standing authorization (§59) always expires: expires_at is required"
+                )
             return self
+        if self.bounds is not None:
+            raise ValueError("an authorization born from an approval has no policy bounds")
         for name in ("task_id", "step_id"):
             if getattr(self, name) is None:
                 raise ValueError(f"an authorization born from an approval needs {name}")

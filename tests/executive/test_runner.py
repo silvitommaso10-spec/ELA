@@ -23,7 +23,7 @@ from ela.domain import (
 from ela.executive import RunnerError, RunOutcome
 from ela.testing.fakes import FakeLocalBeat
 from tests.executive.support import BAD, HEARTBEAT_TTL, OK, World, world
-from tests.permissions.support import CRITICAL, ECHO, GUARDED_ECHO, NOTE, grant
+from tests.permissions.support import CRITICAL, ECHO, GUARDED_ECHO, NOTE, TERMED, grant
 from tests.tasks.support import result_for
 
 E = AuditEventType
@@ -112,8 +112,8 @@ async def test_the_task_is_closed_on_the_result_of_the_last_step_in_topological_
 
 async def test_independent_steps_are_walked_in_the_order_of_the_plan(w: World) -> None:
     """With no dependencies ``ready()`` names them all; the runner takes the first, in order."""
-    task, steps = await w.queued(ECHO.id, NOTE.id, GUARDED_ECHO.id, chain=False)
-    await w.store.grant(grant(GUARDED_ECHO, max_uses=None, expires_at=None))
+    task, steps = await w.queued(ECHO.id, NOTE.id, TERMED.id, chain=False)
+    await w.store.grant(grant(TERMED))
 
     run = await w.runner.run(task.id)
 
@@ -424,8 +424,9 @@ async def test_a_rejected_request_leaves_the_task_denied_and_the_next_run_says_s
 
 
 async def test_a_standing_grant_lets_a_guarded_step_run_without_asking(w: World) -> None:
-    await w.store.grant(grant(GUARDED_ECHO, max_uses=None, expires_at=None))
-    task, _ = await w.queued(GUARDED_ECHO.id)
+    """A policy of §59 on the capability that declares its terms (M13.12, decision 17)."""
+    await w.store.grant(grant(TERMED))
+    task, _ = await w.queued(TERMED.id)
 
     run = await w.runner.run(task.id)
 

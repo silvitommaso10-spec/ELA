@@ -132,11 +132,15 @@ from ela.permissions import (
     ASKING_RULES,
     DEFAULT_AUTHORIZATION_TTL,
     SINGLE_USE,
+    UNCOVERED,
+    UNUSABLE,
     Rule,
     asks_at_every_use,
     authorization_from_approval,
     scope_covers,
+    shortfall,
     targets_of,
+    why_lines,
 )
 from ela.ports import (
     STARTED_ID,
@@ -681,15 +685,19 @@ def select_authorization(
     *,
     task: Task,
     step: TaskStep,
+    capability: CapabilitySpec,
+    arguments: Mapping[str, object],
     targets: Sequence[object],
     now: datetime,
-    risk: RiskLevel = RiskLevel.SAFE,
 ) -> Candidate | None:
     """The grant to hand the Guardian for this call, or ``None`` (ADR 0013 §3). Pure.
 
     A candidate **covers** the call if it was born from a yes when the row demands one (M13.1
-    dec. D), is not bound to another task or step, and its scope covers the targets; it is
-    **usable** if not expired at ``now`` (closed bound) and not exhausted.
+    dec. D), is not bound to another task or step, and its scope covers the targets — and, for a
+    policy of §59, if the half of the one predicate that says *covers* finds nothing (M13.12, ADR
+    0062; decision 4): the terms, the sites, the limits, the arguments. It is **usable** if not
+    revoked, not expired at ``now`` (closed bound) and not exhausted. ``capability`` is the
+    registered specification, as the Guardian's.
 
     Grants bound to this step come first, then the rest, in store order. The first covering and
     usable candidate wins; failing that, the first covering one (so the Guardian's reason — and
@@ -698,11 +706,13 @@ def select_authorization(
     incoherence and deny (ADR 0011 §6).
     """
     covering = [
-        candidate for candidate in candidates if _covers(candidate[0], task, step, targets, risk)
+        candidate
+        for candidate in candidates
+        if _covers(candidate[0], task, step, targets, capability, arguments, now)
     ]
     covering.sort(key=lambda candidate: 0 if candidate[0].step_id == step.id else 1)
     for candidate in covering:
-        if _usable(candidate, now):
+        if _usable(candidate, now, capability, arguments):
             return candidate
     return covering[0] if covering else None
 
@@ -712,23 +722,34 @@ def _covers(
     task: Task,
     step: TaskStep,
     targets: Sequence[object],
-    risk: RiskLevel,
+    capability: CapabilitySpec,
+    arguments: Mapping[str, object],
+    now: datetime,
 ) -> bool:
-    if asks_at_every_use(risk) and grant.approval_id is None:
-        # A standing policy of §59 never covers a row that asks at every use (M13.1 dec. D).
-        # Read here too, from the same predicate, so that the executor never hands the Guardian a
-        # grant it is about to call an incoherence: that would deny the step instead of asking.
-        return False
     if grant.task_id is not None and grant.task_id != task.id:
         return False
     if grant.step_id is not None and grant.step_id != step.id:
         return False
-    return scope_covers(grant.scope, targets)
+    if grant.approval_id is not None:
+        return scope_covers(grant.scope, targets)
+    if asks_at_every_use(capability.risk):
+        # A standing policy of §59 never covers a row that asks at every use (M13.1 dec. D).
+        # Read here too, from the same predicate, so that the executor never hands the Guardian a
+        # grant it is about to call an incoherence: that would deny the step instead of asking.
+        return False
+    # The half of the one predicate that says *covers* (M13.12, decision 4): the Guardian's own.
+    return shortfall(grant, capability, arguments, now=now, gaps=UNCOVERED) is None
 
 
-def _usable(candidate: Candidate, now: datetime) -> bool:
+def _usable(
+    candidate: Candidate, now: datetime, capability: CapabilitySpec, arguments: Mapping[str, object]
+) -> bool:
     grant, uses = candidate
-    if grant.expires_at is not None and grant.expires_at <= now:
+    if grant.approval_id is None:
+        # Revoked or expired: the half that says *usable* (M13.12, decision 4).
+        if shortfall(grant, capability, arguments, now=now, gaps=UNUSABLE) is not None:
+            return False
+    elif grant.expires_at is not None and grant.expires_at <= now:
         return False
     return grant.max_uses is None or uses < grant.max_uses
 
@@ -955,7 +976,9 @@ class Executor:
         if granted:
             authorization, uses = await self._grant(granted[-1], task, step, spec, now)
         else:
-            authorization, uses = await self._find_authorization(spec, targets, task, step, now)
+            authorization, uses = await self._find_authorization(
+                spec, arguments, targets, task, step, now
+            )
 
         decision = await self._guardian.authorize(
             spec,
@@ -1885,17 +1908,28 @@ class Executor:
     async def _find_authorization(
         self,
         spec: CapabilitySpec,
+        arguments: JsonMapping,
         targets: Sequence[object],
         task: Task,
         step: TaskStep,
         now: datetime,
     ) -> tuple[Authorization | None, int]:
+        """The grant for this call among the capability's, policies of §59 included.
+
+        A store that does not answer stops the run here with its error — before the Guardian and
+        before any tool (M13.12, decision 20 of the review): the rule is «never an execution»."""
         candidates = [
             (grant, await self._authorizations.uses(grant.id))
             for grant in await self._authorizations.for_capability(spec.id)
         ]
         selected = select_authorization(
-            candidates, task=task, step=step, targets=targets, now=now, risk=spec.risk
+            candidates,
+            task=task,
+            step=step,
+            capability=spec,
+            arguments=arguments,
+            targets=targets,
+            now=now,
         )
         return (None, 0) if selected is None else selected
 
@@ -1958,6 +1992,17 @@ class Executor:
             if isinstance(seen, Refusal):
                 return await self._denied_by_cap(task.id, step.id, decision, authorization, seen)
             spending = seen
+        # Why it asks, policy by policy, for a capability a policy of §59 can cover (M13.12,
+        # decision 8): the predicate's first reason, composed in ``ela.permissions`` and never
+        # here; read at the instant of the decision, so a policy born after it is not named.
+        why: tuple[str, ...] | None = None
+        if spec.policy_terms is not None:
+            why = why_lines(
+                await self._authorizations.for_capability(spec.id),
+                spec,
+                arguments,
+                now=decision.created_at,
+            )
         targets = approved_targets(decision)
         where = f" on {', '.join(targets)}" if targets else ""
         stated = _stated(spec, arguments)
@@ -1985,6 +2030,7 @@ class Executor:
                     prospect.visit,
                     spending,
                     prospect.guided,
+                    why,
                 )
             },
         )
@@ -2043,6 +2089,7 @@ class Executor:
         visit: Visit | None = None,
         spending: Foresight | None = None,
         guided: Guided | None = None,
+        why: tuple[str, ...] | None = None,
     ) -> dict[str, JsonValue]:
         """The facts of the question, kept beside it: what a surface shows without recomposing it.
 
@@ -2122,6 +2169,10 @@ class Executor:
             asked["looks"] = guided.looks
             asked["timeout_seconds"] = guided.timeout_seconds
             asked["sends"] = guided.sends
+        if why is not None:
+            # Why it asks (M13.12, decision 8): short ids and numbers, never a site — above the
+            # ceiling of every page.
+            asked["why"] = list(why)
         if spending is not None:
             asked["worst_case"] = worst_said(spending.worst)
             asked["left"] = (

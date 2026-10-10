@@ -209,6 +209,12 @@ def guided_adr_text() -> str:
     return ADR_PATH.with_name("0060-guided-browser.md").read_text(encoding="utf-8")
 
 
+def policies_adr_text() -> str:
+    """ADR 0062, which adds the four routes of the policies and the four pages of their view, and
+    the failures of their birth and their revocation (M13.12)."""
+    return ADR_PATH.with_name("0062-policies.md").read_text(encoding="utf-8")
+
+
 def routes_after_0048() -> set[tuple[str, str]]:
     """The routes the ADRs after ADR 0048 added, **read from them**: what the tests of an earlier
     ADR take away to keep counting what that ADR saw. Derived, so a route a later ADR documents is
@@ -239,9 +245,18 @@ def routes_after_0057() -> set[tuple[str, str]]:
 
 def routes_after_0059() -> set[tuple[str, str]]:
     """The routes the ADRs after ADR 0059 added, read from them: what the tests of ADR 0058 and of
-    ADR 0059 take away to keep counting the fifty-one they saw (M14.3) — ADR 0060's."""
+    ADR 0059 take away to keep counting the fifty-one they saw (M14.3) — ADR 0060's, and ADR
+    0062's since M13.12."""
     found = documented_routes(guided_adr_text())
     assert found, "ADR 0060 documents a route"
+    return found | routes_after_0061()
+
+
+def routes_after_0061() -> set[tuple[str, str]]:
+    """The routes the ADRs after ADR 0061 added, read from them: what the test of ADR 0060 takes
+    away to keep counting the fifty-two it saw (M13.12) — ADR 0062's, of the API and the console."""
+    found = documented_routes(policies_adr_text())
+    assert found, "ADR 0062 documents a route"
     return found
 
 
@@ -278,6 +293,7 @@ def test_the_routes_of_the_adrs_are_the_routes_of_the_code() -> None:
             | documented_routes(spending_adr_text())
             | documented_routes(planner_adr_text())
             | documented_routes(guided_adr_text())
+            | documented_routes(policies_adr_text())
         )
     )
     assert documented == coded_routes()
@@ -316,16 +332,17 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_fifty_two_of_them() -> None:
+def test_there_are_sixty_of_them() -> None:
     """Twenty until ADR 0037 §4 added five, twenty-five until ADR 0038 §11 added the three of the
     work, twenty-eight until ADR 0039 §2 added the one a node that restarted reads itself with,
     twenty-nine until ADR 0043 §5 added the eight pages of the companion, thirty-seven until
     ADR 0044 added the eleven of the Command Center, forty-eight until ADR 0049 added the one
     of the last outcomes, forty-nine until ADR 0057 added the one of the month's spending, fifty
-    until ADR 0058 added the one of the Planner, and fifty-one until ADR 0060 added the gateway of
-    a guided session; ``tests/api/test_security.py`` proves that every one of them is behind the
+    until ADR 0058 added the one of the Planner, fifty-one until ADR 0060 added the gateway of a
+    guided session, and fifty-two until ADR 0062 added the four of the policies and the four pages
+    of their view; ``tests/api/test_security.py`` proves that every one of them is behind the
     middleware, and which identity reaches which."""
-    assert len(coded_routes()) == 52
+    assert len(coded_routes()) == 60
 
 
 def test_the_route_of_m14_1_is_the_one_adr_0057_adds() -> None:
@@ -338,7 +355,22 @@ def test_the_route_of_m14_2_is_the_one_adr_0058_adds() -> None:
 
 
 def test_the_route_of_m14_3_is_the_one_adr_0060_adds() -> None:
-    assert routes_after_0059() == {("POST", "/sessions/{session}/v1/messages")}
+    assert documented_routes(guided_adr_text()) == {("POST", "/sessions/{session}/v1/messages")}
+
+
+def test_the_routes_of_m13_12_are_the_ones_adr_0062_adds() -> None:
+    """Four of the API and four of the console: the console's are read again, against the
+    middleware, by ``tests/docs/test_adr_command_center.py`` (decision 23)."""
+    assert routes_after_0061() == {
+        ("GET", "/policies"),
+        ("POST", "/policies/preview"),
+        ("POST", "/policies"),
+        ("POST", "/policies/{policy_id}/revoke"),
+        ("GET", "/console/policies"),
+        ("POST", "/console/policies/preview"),
+        ("POST", "/console/policies"),
+        ("POST", "/console/policies/revoke"),
+    }
 
 
 def test_the_one_route_of_the_restart_is_the_one_adr_0039_adds() -> None:
@@ -385,7 +417,19 @@ def test_the_error_table_is_the_one_the_application_installs() -> None:
         | documented_errors(nodes_adr_text())
         | documented_errors(work_adr_text())
         | documented_errors(companion_adr_text())
+        | documented_errors(policies_adr_text())
     ) == {failure.exception.__name__: failure.status for failure in FAILURES}
+
+
+def test_the_failures_m13_12_adds_are_the_ones_adr_0062_documents() -> None:
+    assert documented_errors(policies_adr_text()) == {
+        "PolicyRefusedError": 422,
+        "PolicyWouldNotStartError": 422,
+        "PolicyPreviewChangedError": 409,
+        "PolicyNotLiveError": 409,
+        "AuthorizationAlreadyRevokedError": 409,
+        "PolicyOutOfReachError": 409,
+    }
 
 
 def test_the_failure_m12_5_adds_is_the_one_adr_0043_documents() -> None:

@@ -102,9 +102,11 @@ __all__ = [
     "AssignmentStillLiveError",
     "AssignmentStore",
     "AuditLog",
+    "AuthorizationAlreadyRevokedError",
     "AuthorizationExhaustedError",
     "AuthorizationExpiredError",
     "AuthorizationNotUsableError",
+    "AuthorizationRevokedError",
     "AuthorizationStore",
     "AuthorizingGuardianPort",
     "Bell",
@@ -297,6 +299,16 @@ class WireCode(StrEnum):
     NOT_REVOCABLE = "not_revocable"
     REVISION_REQUIRED = "revision_required"
     DATABASE_UNAVAILABLE = "database_unavailable"
+    POLICY_REFUSED = "policy.refused"
+    """A policy of §59 that cannot be born (M13.12, ADR 0062): the check is the first word of the
+    message, the closed vocabulary of the wire is not widened by one code per check."""
+    POLICY_WOULD_NOT_START = "policy.would_not_start"
+    """«Partirebbe» (decision 7): the tool refused the call at the limits and on the sites of the
+    policy; its own code is the first word of the message."""
+    POLICY_PREVIEW_CHANGED = "policy.preview_changed"
+    """The confirmation named another model than the prospect does now: preview again."""
+    POLICY_NOT_LIVE = "policy.not_live"
+    """A revocation of a policy already revoked, or already ended."""
     UNAUTHORIZED = "unauthorized"
     """Every refusal of the middleware, whatever the reason was (ADR 0023 §7, ADR 0037 §13)."""
 
@@ -443,6 +455,27 @@ class AuthorizationExpiredError(AuthorizationNotUsableError):
     def __init__(self, authorization_id: AuthorizationId, expires_at: datetime) -> None:
         self.expires_at = expires_at
         super().__init__(authorization_id, f"it expired at {expires_at.isoformat()}")
+
+
+class AuthorizationRevokedError(AuthorizationNotUsableError):
+    """The grant was revoked at ``revoked_at`` (M13.12, ADR 0062; decision 5): named **before**
+    expired, in the order of the predicate, and refused in the same ``UPDATE`` that spends."""
+
+    def __init__(self, authorization_id: AuthorizationId, revoked_at: datetime) -> None:
+        self.revoked_at = revoked_at
+        super().__init__(authorization_id, f"it was revoked at {revoked_at.isoformat()}")
+
+
+class AuthorizationAlreadyRevokedError(PortError):
+    """``revoke`` of a grant already revoked: the revocation is written once (decision 5), and the
+    first instant stays."""
+
+    def __init__(self, authorization_id: AuthorizationId, revoked_at: datetime) -> None:
+        self.authorization_id = authorization_id
+        self.revoked_at = revoked_at
+        super().__init__(
+            f"authorization {authorization_id!r} was already revoked at {revoked_at.isoformat()}"
+        )
 
 
 class AuthorizationExhaustedError(AuthorizationNotUsableError):
@@ -1117,14 +1150,23 @@ class AuthorizationStore(Protocol):
     async def uses(self, authorization_id: AuthorizationId) -> int:
         """How many times the grant was used; :class:`NotFoundError` if unknown."""
 
+    async def revoke(self, authorization_id: AuthorizationId, *, at: datetime) -> Authorization:
+        """Write ``revoked_at`` once and return the revoked grant (M13.12, ADR 0062; decision 5).
+
+        :class:`NotFoundError` for an unknown id; :class:`AuthorizationAlreadyRevokedError` the
+        second time, with the first instant, which stays. One conditional ``UPDATE``. ``at`` is the
+        caller's fact: the store has no clock."""
+
     async def consume(self, authorization_id: AuthorizationId, *, now: datetime) -> int:
-        """Spend one use and return the new total — only if the grant exists, has not expired at
-        ``now`` (``expires_at <= now`` is expired, closed bound) and is not exhausted
+        """Spend one use and return the new total — only if the grant exists, is not revoked, has
+        not expired at ``now`` (``expires_at <= now`` is expired, closed bound) and is not exhausted
         (``uses < max_uses``). Otherwise nothing is counted and, in this order,
-        :class:`NotFoundError`, :class:`AuthorizationExpiredError` or
-        :class:`AuthorizationExhaustedError` is raised. The check and the count are one atomic
-        step: of two concurrent calls on a single-use grant exactly one returns. ``now`` is the
-        caller's fact, as ``authorization_uses`` is for the Guardian (ADR 0011 §5)."""
+        :class:`NotFoundError`, :class:`AuthorizationRevokedError`,
+        :class:`AuthorizationExpiredError` or :class:`AuthorizationExhaustedError` is raised (the
+        revocation since M13.12, in the same conditional ``UPDATE``). The check and the count are
+        one atomic step: of two concurrent calls on a single-use grant exactly one returns.
+        ``now`` is the caller's fact, as ``authorization_uses`` is for the Guardian (ADR 0011 §5).
+        """
 
 
 @runtime_checkable
@@ -1411,6 +1453,11 @@ class Guided:
     looks: int
     timeout_seconds: int
     sends: str
+    one_call: str
+    """The worst case of one call of the session, in dollars, or ``"no price"`` (M13.12, decision
+    9): what the preview of a policy names beside the most a session may spend — the limit is on
+    the reservation, and one call reserves this much. The question of a session does not show it:
+    it shows the worst case line, which already says «per call»."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1641,7 +1688,9 @@ class ToolRegistryPort(Protocol):
     Synchronous and read-only, like :class:`CapabilityRegistryPort`: a table of tools already
     built, fixed when the registry is. The key of every entry is the tool's own ``capability_id``
     — a tool cannot be registered under another capability — and two tools for one capability at
-    construction are an :class:`AlreadyExistsError`. The executor (M5) is the only caller.
+    construction are an :class:`AlreadyExistsError`. Its callers are the executor, the
+    orchestrator, the planner, the readiness of a plan, and since M13.12 the route of the policies,
+    which asks a tool its ``prospect`` before a policy is born (ADR 0062; decision 7).
     """
 
     def get(self, capability_id: CapabilityId) -> ToolPort:

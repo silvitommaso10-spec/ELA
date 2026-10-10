@@ -36,6 +36,7 @@ from ela.api import (
     nodes,
     pages,
     perception,
+    policies,
     results,
     sessions,
     spend,
@@ -47,6 +48,11 @@ from ela.api.errors import (
     DatabaseUnavailableError,
     RevisionRequiredError,
     TaskAlreadyRunningError,
+)
+from ela.api.policies import (
+    PolicyNotLiveError,
+    PolicyPreviewChangedError,
+    PolicyWouldNotStartError,
 )
 from ela.api.problems import problem
 from ela.api.security import SURFACES, identity_middleware, surface_of
@@ -63,11 +69,13 @@ from ela.executive import (
     RunnerError,
     WorkNotYoursError,
 )
+from ela.permissions import PolicyRefusedError
 from ela.ports import (
     AlreadyExistsError,
     ApprovalNotAnswerableError,
     AssignmentExpiredError,
     AssignmentNotUsableError,
+    AuthorizationAlreadyRevokedError,
     EnrollmentRoleError,
     IdentityConflictError,
     NotFoundError,
@@ -126,6 +134,12 @@ FAILURES: tuple[Failure, ...] = (
     Failure(LocalDeviceNotRevocableError, 409, WireCode.NOT_REVOCABLE),
     Failure(RevisionRequiredError, 428, WireCode.REVISION_REQUIRED),
     Failure(DatabaseUnavailableError, 503, WireCode.DATABASE_UNAVAILABLE),
+    Failure(PolicyRefusedError, 422, WireCode.POLICY_REFUSED),
+    Failure(PolicyWouldNotStartError, 422, WireCode.POLICY_WOULD_NOT_START),
+    Failure(PolicyPreviewChangedError, 409, WireCode.POLICY_PREVIEW_CHANGED),
+    Failure(PolicyNotLiveError, 409, WireCode.POLICY_NOT_LIVE),
+    Failure(AuthorizationAlreadyRevokedError, 409, WireCode.POLICY_NOT_LIVE),
+    Failure(console.PolicyOutOfReachError, 409, WireCode.NOT_ANSWERABLE),
     Failure(RequestValidationError, 422, WireCode.INVALID),
     Failure(ValueError, 422, WireCode.INVALID),
 )
@@ -310,6 +324,7 @@ def create_app(ela: Ela) -> FastAPI:
         nodes.router,
         context.router,
         perception.router,
+        policies.router,
         results.router,
         sessions.router,
         spend.router,

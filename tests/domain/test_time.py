@@ -131,6 +131,10 @@ VALUE_OBJECTS = frozenset(
         # instant is the record's, and an admission lives as long as one call of a session.
         "Reservation",
         "Admission",
+        # The policies of §59 (M13.12): the terms a capability declares and the bounds a policy
+        # carries are values inside a specification and a grant, whose instants are theirs.
+        "PolicyTerms",
+        "PolicyBounds",
     }
 )
 

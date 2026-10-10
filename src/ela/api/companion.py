@@ -610,6 +610,12 @@ def _pairs(found: ApprovalOut, seen: bool) -> pages.Markup:
         pairs.append(pages.fragment(HERE, "pair", key="Gesti massimi", value=str(found.looks)))
     if found.sends:
         pairs.append(pages.fragment(HERE, "pair", key="Che cosa esce", value=found.sends))
+    # Why it asks, policy by policy (M13.12, ADR 0062; decision 8): short ids and numbers, never a
+    # site — above the ceiling, so the yes is offered with it or not at all (ADR 0045 §11).
+    if found.why is not None:
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Perché te lo chiedo", value="; ".join(found.why))
+        )
     if seen and found.phrase:
         pairs.append(
             pages.fragment(HERE, "pair", key="La frase", value=visible(found.phrase, lines=False))

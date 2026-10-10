@@ -12,6 +12,7 @@ Two leaf values are reused as they are: :class:`~ela.domain.ProviderUsage` and
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Annotated, Final, Literal, TypedDict, cast
 from uuid import UUID
@@ -371,9 +372,13 @@ class StepOut(BaseModel):
     """The step's narrowing of its capability's scope (M14.3, ADR 0060): the sites of the guided
     session, on the plan of one of its gestures; ``None`` for every other step. Read here, written
     only by the room of the sessions — the route of a plan written by hand does not carry it."""
+    policy: UUID | None = None
+    """The policy of §59 that covered the step (M13.12, ADR 0062; decision 9): read from the
+    ``authorization_id`` of its result when that grant has no ``approval_id`` — never composed.
+    ``None`` for a step a yes covered, one nothing covered, and one whose grant is gone."""
 
     @classmethod
-    def of(cls, step: TaskStep, state: StepState) -> StepOut:
+    def of(cls, step: TaskStep, state: StepState, policy: UUID | None = None) -> StepOut:
         return cls(
             id=step.id,
             goal=step.goal,
@@ -387,6 +392,7 @@ class StepOut(BaseModel):
             success_conditions=step.success_conditions,
             requires_authorization=step.requires_authorization,
             within=step.within,
+            policy=policy,
         )
 
 
@@ -435,6 +441,7 @@ class TaskDetail(TaskOut):
         author: PlanAuthor | None = None,
         planning_task_id: UUID | None = None,
         no_plan: str | None = None,
+        policies: Mapping[UUID, UUID] | None = None,
     ) -> TaskDetail:
         detail = cls(
             **TaskOut.of(task, end).model_dump(),
@@ -445,8 +452,9 @@ class TaskDetail(TaskOut):
         )
         if graph is None:
             return detail
+        covered = {} if policies is None else policies
         steps = tuple(
-            StepOut.of(graph.graph.step(step_id), graph.states[step_id])
+            StepOut.of(graph.graph.step(step_id), graph.states[step_id], covered.get(step_id))
             for step_id in graph.graph.order
         )
         return detail.model_copy(update={"steps": steps})
@@ -593,6 +601,11 @@ class Asked(BaseModel):
     sends: str = ""
     """What leaves the machine, in the tool's sentence: the text of the pages goes to the model's
     provider (§57). Empty when the question is not about a session."""
+    why: tuple[str, ...] | None = None
+    """Why ELA asks, policy by policy, for a capability a policy of §59 can cover (M13.12, ADR
+    0062; decision 8): the first reason of the one predicate, or «no policy of yours for …». Short
+    ids and numbers, never a site: above the ceiling of every surface. ``None`` for a capability no
+    policy can cover."""
 
 
 class ApprovalOut(BaseModel):
@@ -642,6 +655,7 @@ class ApprovalOut(BaseModel):
     max_cost: str
     looks: int | None
     sends: str
+    why: tuple[str, ...] | None
 
     @classmethod
     def of(cls, approval: Approval) -> ApprovalOut:
@@ -1409,3 +1423,108 @@ class DiagnosticsOut(BaseModel):
     perception: PerceptionSummaryOut
     voice: VoiceOut
     listening: ListeningOut
+
+
+# --------------------------------------------------------------------------------------
+# The policies of §59 (M13.12, ADR 0062)
+# --------------------------------------------------------------------------------------
+
+
+class PolicyIn(BaseModel):
+    """What Tommaso asks for: a capability, the scope — for ``browser.guided`` the sites —, every
+    declared limit in words, and the days, **with no default** (decision 3d)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    capability: CapabilityId
+    scope: tuple[str, ...]
+    limits: dict[str, str] = Field(default_factory=dict)
+    days: int
+
+
+class PolicyConfirmIn(PolicyIn):
+    """The creation: what the preview showed, with the model it named (decision 9). A prospect
+    that now names another model refuses it — what is saved is what was approved."""
+
+    model: str
+
+
+class LimitOut(BaseModel):
+    """A limit a policy must carry, with the bounds of its argument's schema: what the console's
+    form and the CLI's help are derived from."""
+
+    name: str
+    type: str
+    minimum: int | None = None
+    maximum: int | None = None
+    pattern: str | None = None
+
+
+class TermsOut(BaseModel):
+    """A capability that admits a policy, and what a policy of it must bound (decision 1)."""
+
+    capability: CapabilityId
+    description: str
+    scope: tuple[str, ...]
+    limits: tuple[LimitOut, ...]
+    uncovered: tuple[str, ...]
+    free: tuple[str, ...]
+    model: str | None
+    days_min: int
+    days_max: int
+
+
+class PolicyOut(BaseModel):
+    """A policy as a person reads it (decision 9): its capability, its sites, its limits, its end,
+    its uses, who created it and when — the name and the role read from the registry at the read,
+    never written into the audit (ADR 0059 §3)."""
+
+    id: UUID
+    short: str
+    capability: CapabilityId
+    scope: tuple[str, ...]
+    limits: dict[str, str]
+    uncovered: tuple[str, ...]
+    model: str | None
+    state: str
+    created_at: datetime
+    created_by: AnswererOut
+    expires_at: datetime
+    revoked_at: datetime | None
+    uses: int
+    """How many times the policy covered a decision and was spent: counted before a session
+    starts, so a session refused after the spend — the month's cap — counts too."""
+
+
+class PoliciesOut(BaseModel):
+    """The policies — the live ones, or every one with ``all`` — and what can be created."""
+
+    policies: tuple[PolicyOut, ...]
+    admitting: tuple[TermsOut, ...]
+
+
+class PreviewOut(BaseModel):
+    """What the creation would approve, named and not saved (decision 9): it is a question, and
+    a surface that cannot show all of it does not create (ADR 0045 §11)."""
+
+    capability: CapabilityId
+    description: str
+    scope: tuple[str, ...]
+    limits: dict[str, str]
+    days: int
+    expires_at: datetime
+    model: str | None
+    sends: str
+    one_call: str
+    cost: str
+    """That the limit of cost is on the reservation, not on the real spend, with the worst case
+    of one call today."""
+    never: tuple[str, ...]
+    """What the policy never covers, derived from the catalogue and the declaration."""
+
+
+class RevokedOut(BaseModel):
+    """A policy revoked, and the sentence that says a session it already covered goes on."""
+
+    policy: PolicyOut
+    running: str

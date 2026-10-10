@@ -46,6 +46,7 @@ from ela.permissions.capabilities import (
     BROWSER_GUIDED,
     BROWSER_READ,
     COST_PATTERN,
+    GUIDED_ROUTE,
     LOOKS_MAX,
     LOOKS_MIN,
     SECONDS_MAX,
@@ -108,10 +109,6 @@ __all__ = [
 
 BROWSER_GUIDED_TOOL_NAME: Final = "browser-guided"
 BROWSER_GUIDED_VERIFIER_NAME: Final = "browser-guided-verifier"
-
-GUIDED_ROUTE: Final = "browsing"
-"""The task type of a session when the plan names none: the router's route for it is the cheap
-profile (M14.3, decision 25)."""
 
 GUIDED_MAX_TOKENS: Final = 8192
 """The ``max_tokens`` of every call of a session, held by the gateway (decision 25): no call of the
@@ -283,6 +280,9 @@ class BrowserGuidedTool(Tool):
                 looks=prepared.looks,
                 timeout_seconds=prepared.seconds,
                 sends=SENDS.format(prepared.route.provider),
+                one_call="no price"
+                if prepared.worst.amount is None
+                else f"{_said(prepared.worst.amount)} USD",
             )
         )
 

@@ -48,6 +48,8 @@ from tests.permissions.support import (
     NOTE_ARGS,
     OTHER_STEP,
     OTHER_TASK_ID,
+    TERMED,
+    TERMED_ARGS,
     UNCONSTRAINED_SCOPE,
     Harness,
     born_of_a_yes,
@@ -150,7 +152,7 @@ def test_a_step_that_requires_other_capabilities_denies_this_one(h: Harness) -> 
 
 def test_a_step_mismatch_beats_a_valid_authorization(h: Harness) -> None:
     decision = h.guardian.decide(
-        COMPLETE, COMPLETE_ARGS, step=step_for(ECHO.id), authorization=grant(COMPLETE)
+        TERMED, TERMED_ARGS, step=step_for(ECHO.id), authorization=grant(TERMED)
     )
     assert decision.outcome is DENIED
     assert rule_of(decision) is Rule.STEP_MISMATCH
@@ -158,7 +160,7 @@ def test_a_step_mismatch_beats_a_valid_authorization(h: Harness) -> None:
 
 @pytest.mark.parametrize(
     "step",
-    [None, step_for(), step_for(ECHO.id), step_for(NOTE.id, ECHO.id, COMPLETE.id)],
+    [None, step_for(), step_for(ECHO.id), step_for(NOTE.id, ECHO.id, TERMED.id)],
     ids=["no-step", "undeclared", "declared", "declared-among-others"],
 )
 def test_no_step_or_a_step_that_declares_it_leaves_the_policy_to_decide(
@@ -171,7 +173,7 @@ def test_no_step_or_a_step_that_declares_it_leaves_the_policy_to_decide(
 
 def test_a_step_that_declares_the_capability_relaxes_nothing(h: Harness) -> None:
     assert h.guardian.decide(CRITICAL, ECHO_ARGS, step=step_for(CRITICAL.id)).outcome is DENIED
-    without_grant = h.guardian.decide(COMPLETE, COMPLETE_ARGS, step=step_for(COMPLETE.id))
+    without_grant = h.guardian.decide(TERMED, TERMED_ARGS, step=step_for(TERMED.id))
     assert without_grant.outcome is REQUIRES_APPROVAL
 
 
@@ -237,7 +239,7 @@ def test_a_scope_that_constrains_no_argument_is_denied(h: Harness) -> None:
 
 
 def test_medium_without_authorization_requires_approval(h: Harness) -> None:
-    decision = h.guardian.decide(COMPLETE, COMPLETE_ARGS, task=TASK)
+    decision = h.guardian.decide(TERMED, TERMED_ARGS, task=TASK)
     assert decision.outcome is REQUIRES_APPROVAL
     assert rule_of(decision) is Rule.APPROVAL_UNLESS_AUTHORIZED
     assert "none was given" in decision.reason
@@ -245,8 +247,8 @@ def test_medium_without_authorization_requires_approval(h: Harness) -> None:
 
 
 def test_medium_with_a_valid_authorization_is_allowed(h: Harness) -> None:
-    authorization = grant(COMPLETE)
-    decision = h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=authorization)
+    authorization = grant(TERMED)
+    decision = h.guardian.decide(TERMED, TERMED_ARGS, authorization=authorization)
     assert decision.outcome is ALLOWED
     assert rule_of(decision) is Rule.APPROVAL_UNLESS_AUTHORIZED
     assert decision.authorization_id == authorization.id
@@ -340,8 +342,16 @@ def test_a_safe_capability_that_requires_authorization_asks_for_it(h: Harness) -
 
 
 def test_a_safe_capability_that_requires_authorization_is_allowed_with_one(h: Harness) -> None:
-    authorization = grant(GUARDED_ECHO)
-    decision = h.guardian.decide(GUARDED_ECHO, ECHO_ARGS, authorization=authorization)
+    """With a yes: no policy covers a ``SAFE`` — it does not ask unless something requires it
+    (M13.12, decision 17)."""
+    authorization = born_of_a_yes(GUARDED_ECHO)
+    decision = h.guardian.decide(
+        GUARDED_ECHO,
+        ECHO_ARGS,
+        task=TASK,
+        step=step_for(GUARDED_ECHO.id),
+        authorization=authorization,
+    )
     assert decision.outcome is ALLOWED
     assert rule_of(decision) is Rule.AUTHORIZATION_REQUIRED
     assert decision.authorization_id == authorization.id
@@ -350,7 +360,9 @@ def test_a_safe_capability_that_requires_authorization_is_allowed_with_one(h: Ha
 def test_a_step_that_requires_authorization_tightens_a_safe_capability(h: Harness) -> None:
     step = step_for(ECHO.id, requires_authorization=True)
     assert h.guardian.decide(ECHO, ECHO_ARGS, step=step).outcome is REQUIRES_APPROVAL
-    with_grant = h.guardian.decide(ECHO, ECHO_ARGS, step=step, authorization=grant(ECHO))
+    with_grant = h.guardian.decide(
+        ECHO, ECHO_ARGS, task=TASK, step=step, authorization=born_of_a_yes(ECHO)
+    )
     assert with_grant.outcome is ALLOWED
 
 
@@ -368,8 +380,8 @@ def test_a_denial_of_the_row_comes_before_the_question(h: Harness) -> None:
 
 
 def test_an_expired_authorization_requires_approval(h: Harness) -> None:
-    expired = grant(COMPLETE, expires_at=h.now - timedelta(seconds=1))
-    decision = h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=expired)
+    expired = grant(TERMED, expires_at=h.now - timedelta(seconds=1))
+    decision = h.guardian.decide(TERMED, TERMED_ARGS, authorization=expired)
     assert decision.outcome is REQUIRES_APPROVAL
     assert "expired" in decision.reason
     assert decision.authorization_id == expired.id, "echoed, even if not applied"
@@ -377,11 +389,11 @@ def test_an_expired_authorization_requires_approval(h: Harness) -> None:
 
 def test_expiry_is_closed_at_the_exact_instant(h: Harness) -> None:
     """ADR 0005 §2-bis: ``expires_at <= now`` is expired, also for the authorization."""
-    at_now = grant(COMPLETE, expires_at=h.now)
-    decision = h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=at_now)
+    at_now = grant(TERMED, expires_at=h.now)
+    decision = h.guardian.decide(TERMED, TERMED_ARGS, authorization=at_now)
     assert decision.outcome is REQUIRES_APPROVAL
-    just_after = grant(COMPLETE, expires_at=h.now + timedelta(microseconds=1))
-    decision = h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=just_after)
+    just_after = grant(TERMED, expires_at=h.now + timedelta(microseconds=1))
+    decision = h.guardian.decide(TERMED, TERMED_ARGS, authorization=just_after)
     assert decision.outcome is ALLOWED
 
 
@@ -392,9 +404,9 @@ def test_expiry_is_closed_at_the_exact_instant(h: Harness) -> None:
 def test_an_exhausted_authorization_requires_approval(
     h: Harness, max_uses: int, uses: int, outcome: PermissionOutcome
 ) -> None:
-    authorization = grant(COMPLETE, max_uses=max_uses)
+    authorization = grant(TERMED, max_uses=max_uses)
     decision = h.guardian.decide(
-        COMPLETE, COMPLETE_ARGS, authorization=authorization, authorization_uses=uses
+        TERMED, TERMED_ARGS, authorization=authorization, authorization_uses=uses
     )
     assert decision.outcome is outcome
     if outcome is REQUIRES_APPROVAL:
@@ -403,32 +415,32 @@ def test_an_exhausted_authorization_requires_approval(
 
 def test_without_a_use_limit_the_count_never_exhausts(h: Harness) -> None:
     decision = h.guardian.decide(
-        COMPLETE, COMPLETE_ARGS, authorization=grant(COMPLETE), authorization_uses=10**6
+        TERMED, TERMED_ARGS, authorization=grant(TERMED), authorization_uses=10**6
     )
     assert decision.outcome is ALLOWED
 
 
 def test_a_negative_use_count_is_a_doubt(h: Harness) -> None:
     decision = h.guardian.decide(
-        COMPLETE, COMPLETE_ARGS, authorization=grant(COMPLETE), authorization_uses=-1
+        TERMED, TERMED_ARGS, authorization=grant(TERMED), authorization_uses=-1
     )
     assert decision.outcome is DENIED
     assert "cannot be true" in decision.reason
 
 
 def test_an_authorization_for_another_capability_is_denied(h: Harness) -> None:
-    decision = h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=grant(ECHO))
+    decision = h.guardian.decide(TERMED, TERMED_ARGS, authorization=grant(ECHO))
     assert decision.outcome is DENIED
     assert rule_of(decision) is Rule.AUTHORIZATION_MISMATCH
     assert "does not cover" in decision.reason and "core.echo" in decision.reason
 
 
 def test_an_authorization_bound_to_a_task_needs_that_task(h: Harness) -> None:
-    bound = grant(COMPLETE, task_id=TASK.id)
+    bound = grant(TERMED, task_id=TASK.id)
     other = TASK.model_copy(update={"id": OTHER_TASK_ID})
 
     def outcome(task: Any) -> PermissionOutcome:
-        return h.guardian.decide(COMPLETE, COMPLETE_ARGS, task=task, authorization=bound).outcome
+        return h.guardian.decide(TERMED, TERMED_ARGS, task=task, authorization=bound).outcome
 
     assert outcome(TASK) is ALLOWED
     assert outcome(other) is DENIED
@@ -436,40 +448,51 @@ def test_an_authorization_bound_to_a_task_needs_that_task(h: Harness) -> None:
 
 
 def test_an_authorization_bound_to_a_step_needs_that_step(h: Harness) -> None:
-    step = step_for(COMPLETE.id)
-    bound = grant(COMPLETE, task_id=TASK.id, step_id=step.id)
-    allowed = h.guardian.decide(COMPLETE, COMPLETE_ARGS, task=TASK, step=step, authorization=bound)
+    step = step_for(TERMED.id)
+    bound = grant(TERMED, task_id=TASK.id, step_id=step.id)
+    allowed = h.guardian.decide(TERMED, TERMED_ARGS, task=TASK, step=step, authorization=bound)
     assert allowed.outcome is ALLOWED
-    other = OTHER_STEP.model_copy(update={"required_capabilities": (COMPLETE.id,)})
-    denied = h.guardian.decide(COMPLETE, COMPLETE_ARGS, task=TASK, step=other, authorization=bound)
+    other = OTHER_STEP.model_copy(update={"required_capabilities": (TERMED.id,)})
+    denied = h.guardian.decide(TERMED, TERMED_ARGS, task=TASK, step=other, authorization=bound)
     assert denied.outcome is DENIED
     assert str(step.id) in denied.reason
-    no_step = h.guardian.decide(COMPLETE, COMPLETE_ARGS, task=TASK, authorization=bound)
+    no_step = h.guardian.decide(TERMED, TERMED_ARGS, task=TASK, authorization=bound)
     assert no_step.outcome is DENIED
 
 
 def test_an_authorization_whose_scope_does_not_cover_the_targets_is_denied(h: Harness) -> None:
-    elsewhere = grant(GUARDED_NOTE, scope=("workspace/other",))
-    decision = h.guardian.decide(GUARDED_NOTE, NOTE_ARGS, authorization=elsewhere)
+    def decided(scope: tuple[str, ...]) -> PermissionDecision:
+        return h.guardian.decide(
+            GUARDED_NOTE,
+            NOTE_ARGS,
+            task=TASK,
+            step=step_for(GUARDED_NOTE.id),
+            authorization=born_of_a_yes(GUARDED_NOTE, scope=scope),
+        )
+
+    decision = decided(("workspace/other",))
     assert decision.outcome is DENIED
     assert "workspace/other" in decision.reason and "workspace/notes/briefing.md" in decision.reason
-    unscoped = grant(GUARDED_NOTE, scope=())
-    assert h.guardian.decide(GUARDED_NOTE, NOTE_ARGS, authorization=unscoped).outcome is DENIED
-    covering = grant(GUARDED_NOTE)
-    assert h.guardian.decide(GUARDED_NOTE, NOTE_ARGS, authorization=covering).outcome is ALLOWED
+    assert decided(()).outcome is DENIED
+    assert decided(GUARDED_NOTE.scope).outcome is ALLOWED
 
 
 def test_an_authorization_with_a_scope_for_a_capability_without_targets_is_denied(
     h: Harness,
 ) -> None:
-    """A scope on ``model.complete`` constrains nothing: a doubt, like on the capability."""
-    scoped = grant(COMPLETE, scope=("workspace/notes",))
-    assert h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=scoped).outcome is DENIED
+    """A scope on ``model.complete`` constrains nothing: a doubt, like on the capability. A grant
+    born from a yes since M13.12: a standing one there is not covered at all (decision 17)."""
+    scoped = born_of_a_yes(COMPLETE, scope=("workspace/notes",))
+    decision = h.guardian.decide(
+        COMPLETE, COMPLETE_ARGS, task=TASK, step=step_for(COMPLETE.id), authorization=scoped
+    )
+    assert decision.outcome is DENIED
+    assert "does not cover targets" in decision.reason
 
 
 def test_a_wrong_authorization_that_also_expired_is_still_wrong(h: Harness) -> None:
     wrong_and_old = grant(ECHO, expires_at=h.now - timedelta(days=1))
-    decision = h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=wrong_and_old)
+    decision = h.guardian.decide(TERMED, TERMED_ARGS, authorization=wrong_and_old)
     assert decision.outcome is DENIED
 
 
@@ -501,16 +524,16 @@ def test_a_non_positive_ttl_is_refused_at_construction(ttl: timedelta) -> None:
 
 
 def test_an_allowed_decision_never_outlives_its_authorization(h: Harness) -> None:
-    soon = grant(COMPLETE, expires_at=h.now + timedelta(minutes=1))
-    decision = h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=soon)
+    soon = grant(TERMED, expires_at=h.now + timedelta(minutes=1))
+    decision = h.guardian.decide(TERMED, TERMED_ARGS, authorization=soon)
     assert decision.outcome is ALLOWED
     assert decision.expires_at == soon.expires_at
-    later = grant(COMPLETE, expires_at=h.now + timedelta(hours=1))
-    assert h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=later).expires_at == (
+    later = grant(TERMED, expires_at=h.now + timedelta(hours=1))
+    assert h.guardian.decide(TERMED, TERMED_ARGS, authorization=later).expires_at == (
         h.now + DEFAULT_DECISION_TTL
     )
-    forever = grant(COMPLETE)
-    assert h.guardian.decide(COMPLETE, COMPLETE_ARGS, authorization=forever).expires_at == (
+    forever = grant(TERMED)
+    assert h.guardian.decide(TERMED, TERMED_ARGS, authorization=forever).expires_at == (
         h.now + DEFAULT_DECISION_TTL
     )
 
@@ -519,8 +542,10 @@ def test_an_unneeded_grant_about_to_expire_does_not_shorten_the_decision(h: Harn
     """ADR 0011 §9: the grant bounds the expiry only when the decision rests on it. A SAFE
     capability that needs no authorization is allowed by the policy row; a covering grant that
     expires in a second is not used, and the decision keeps the full TTL."""
-    about_to_expire = grant(ECHO, expires_at=h.now + timedelta(seconds=1))
-    decision = h.guardian.decide(ECHO, ECHO_ARGS, authorization=about_to_expire)
+    about_to_expire = born_of_a_yes(ECHO, expires_at=h.now + timedelta(seconds=1))
+    decision = h.guardian.decide(
+        ECHO, ECHO_ARGS, task=TASK, step=step_for(ECHO.id), authorization=about_to_expire
+    )
     assert decision.outcome is ALLOWED
     assert rule_of(decision) is Rule.ALLOW
     assert decision.expires_at == h.now + DEFAULT_DECISION_TTL
@@ -530,7 +555,7 @@ def test_an_unneeded_grant_about_to_expire_does_not_shorten_the_decision(h: Harn
 
 @pytest.mark.parametrize(
     "spec, arguments, outcome",
-    [(CRITICAL, ECHO_ARGS, DENIED), (COMPLETE, COMPLETE_ARGS, REQUIRES_APPROVAL)],
+    [(CRITICAL, ECHO_ARGS, DENIED), (TERMED, TERMED_ARGS, REQUIRES_APPROVAL)],
     ids=["denied", "requires-approval"],
 )
 def test_only_allowed_decisions_expire(
@@ -554,10 +579,10 @@ def test_the_decision_takes_its_id_and_instant_from_the_ports(h: Harness) -> Non
 
 
 def test_the_decision_echoes_its_context(h: Harness) -> None:
-    step = step_for(COMPLETE.id)
-    authorization = grant(COMPLETE, task_id=TASK.id, step_id=step.id)
+    step = step_for(TERMED.id)
+    authorization = grant(TERMED, task_id=TASK.id, step_id=step.id)
     decision = h.guardian.decide(
-        COMPLETE, COMPLETE_ARGS, task=TASK, step=step, authorization=authorization
+        TERMED, TERMED_ARGS, task=TASK, step=step, authorization=authorization
     )
     assert (decision.task_id, decision.step_id) == (TASK.id, step.id)
     assert decision.authorization_id == authorization.id
@@ -642,10 +667,10 @@ INCOHERENT_STEP = step_for(CapabilityId("other.capability"))
 
 
 def args_for(spec: CapabilitySpec) -> dict[str, Any]:
+    if spec.id == TERMED.id:
+        return dict(TERMED_ARGS)
     if spec.scoped_arguments:
         return dict(NOTE_ARGS)
-    if spec.id == COMPLETE.id:
-        return dict(COMPLETE_ARGS)
     return dict(ECHO_ARGS)
 
 
@@ -657,13 +682,17 @@ def authorization_in(state: AuthState, spec: CapabilitySpec, h: Harness) -> tupl
     """
     if state == "assente":
         return None, 0
+    # Since M13.12 a standing grant covers only a capability that declares the terms of a policy
+    # (decision 17 of the review): for every other, the grant is born from a yes, in this task
+    # and this step.
+    made = grant if spec.policy_terms is not None else born_of_a_yes
     if state == "valida":
-        return grant(spec), 0
+        return made(spec), 0
     if state == "scaduta":
-        return grant(spec, expires_at=h.now - timedelta(seconds=1)), 0
+        return made(spec, expires_at=h.now - timedelta(seconds=1)), 0
     if state == "esaurita":
-        return grant(spec, max_uses=1), 1
-    return grant(spec, task_id=OTHER_TASK_ID), 0
+        return made(spec, max_uses=1), 1
+    return made(spec, task_id=OTHER_TASK_ID), 0
 
 
 def decide_with(
@@ -678,7 +707,8 @@ def decide_with(
     return h.guardian.decide(
         spec,
         args_for(spec) if arguments is None else arguments,
-        step=step,
+        task=TASK,
+        step=step_for(spec.id) if step is None else step,
         authorization=authorization,
         authorization_uses=uses,
     )
@@ -691,7 +721,7 @@ def _spec_id(value: Any) -> str:
 @pytest.mark.parametrize(
     "spec, state",
     [(spec, state) for spec in (NOTE, HIGH, CRITICAL) for state in ("assente", "valida")]
-    + [(spec, state) for spec in (ECHO, COMPLETE) for state in STATES[2:]],
+    + [(spec, state) for spec in (ECHO, TERMED) for state in STATES[2:]],
     ids=_spec_id,
 )
 def test_family_1_an_incoherent_step_denies_whatever_the_risk_and_the_grant(

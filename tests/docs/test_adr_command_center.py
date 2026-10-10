@@ -85,17 +85,45 @@ def test_the_third_role_and_the_fifth_kind_are_in_the_tree() -> None:
     assert len([kind for kind in Kind if kind is not Kind.SESSION]) == 5  # ADR 0060's sixth
 
 
-def test_the_routes_it_documents_are_the_ones_the_console_serves() -> None:
-    """Eleven, and the two sheets among them: what ``ela.api`` serves of ``apps/`` is a route like
-    the others, behind the identity like the others."""
-    documented = {
+CONSOLE_ROW = re.compile(r"^\| `(GET|POST)` \| `(/console[\w.{}/-]*)` \| ([^|]+) \|$")
+"""A row of a table of the console's routes: a method, a path under ``/console``, what it does."""
+LATER_CONSOLE_ADRS = (ROOT / "docs" / "adr" / "0062-policies.md",)
+"""The ADRs after this one that add routes to the console (M13.12, decision 23 of the review)."""
+
+
+def console_rows(text: str) -> set[tuple[str, str]]:
+    return {
         (match.group(1), match.group(2))
-        for line in adr_text().splitlines()
-        if (match := re.match(r"^\| `(GET|POST)` \| `(/[\w.{}/-]*)` \| ([^|]+) \|$", line))
+        for line in text.splitlines()
+        if (match := CONSOLE_ROW.match(line))
     }
 
-    assert documented == CONSOLE_ROUTES | CONSOLE_CODE_ROUTES
-    assert len(documented) == 11
+
+def documented_console_routes(texts: tuple[str, ...]) -> set[tuple[str, str]]:
+    """The union of the tables of the console's routes, in the form of ADR 0046 §5."""
+    return set().union(*(console_rows(text) for text in texts))
+
+
+def console_texts() -> tuple[str, ...]:
+    return (adr_text(), *(path.read_text(encoding="utf-8") for path in LATER_CONSOLE_ADRS))
+
+
+def test_the_routes_the_adrs_document_are_the_ones_the_console_serves() -> None:
+    """Eleven from ADR 0044 — the two sheets among them —, and four more from ADR 0062, the view
+    of the policies (M13.12, decision 23): what ``ela.api`` serves under ``/console`` is the union
+    of the tables, and no single ADR is held to the whole count any more."""
+    assert len(console_rows(adr_text())) == 11
+    assert documented_console_routes(console_texts()) == CONSOLE_ROUTES | CONSOLE_CODE_ROUTES
+
+
+def test_a_table_that_forgets_a_route_is_found_on_the_union() -> None:
+    """The negative case, measured on the union: drop one row from either table."""
+    texts = console_texts()
+    for which, text in enumerate(texts):
+        row = next(line for line in text.splitlines() if CONSOLE_ROW.match(line))
+        forgotten = list(texts)
+        forgotten[which] = text.replace(row + "\n", "", 1)
+        assert documented_console_routes(tuple(forgotten)) != CONSOLE_ROUTES | CONSOLE_CODE_ROUTES
 
 
 def test_the_constraints_it_declares_are_the_ones_the_milestone_declares() -> None:

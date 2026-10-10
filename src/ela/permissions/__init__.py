@@ -1,5 +1,6 @@
-"""Permissions: the capability catalogue (M4.1, ADR 0010), the Guardian (M4.2, ADR 0011) and the
-birth of authorizations from approvals (M4.3, ADR 0012)."""
+"""Permissions: the capability catalogue (M4.1, ADR 0010), the Guardian (M4.2, ADR 0011), the
+birth of authorizations from approvals (M4.3, ADR 0012) and the policies of §59 (M13.12, ADR
+0062)."""
 
 from ela.permissions.authorizations import (
     CHECKS,
@@ -15,12 +16,14 @@ from ela.permissions.capabilities import (
     BROWSER_INTRODUCED_AT,
     BROWSER_READ,
     CORE_ECHO,
+    COST_PATTERN,
     DECLARES_AN_EMPTY_SCOPE,
     DEFAULT_NOTES_SCOPE,
     EXPECT_MAX_LENGTH,
     FILLS_MAX,
     FS_READ,
     FS_WRITE,
+    GUIDED_ROUTE,
     MAX_LISTEN_SECONDS,
     MAX_RISK,
     MODEL_COMPLETE,
@@ -35,6 +38,7 @@ from ela.permissions.capabilities import (
     SITE_PATTERN,
     TERMINAL_RUN,
     UNDECLARED_FS_SCOPE,
+    UNDECLARED_MODEL,
     UNDECLARED_PROGRAMS,
     UNDECLARED_SITES,
     V01_INTRODUCED_AT,
@@ -50,6 +54,7 @@ from ela.permissions.capabilities import (
     fs_read,
     fs_write,
     is_valid_scope_entry,
+    is_valid_value,
     model_complete,
     perception_capture_screen,
     perception_listen,
@@ -64,6 +69,7 @@ from ela.permissions.errors import (
     InvalidArgumentsError,
     InvalidCapabilityError,
     PermissionsError,
+    PolicyRefusedError,
     RiskNotAllowedError,
 )
 from ela.permissions.guardian import (
@@ -77,9 +83,62 @@ from ela.permissions.guardian import (
     Rule,
     asks_at_every_use,
 )
+from ela.permissions.policies import (
+    GAPS,
+    MAX_DAYS,
+    MIN_DAYS,
+    POLICY_CHECKS,
+    POLICY_PROSPECT,
+    SHORT_ID,
+    UNCOVERED,
+    UNUSABLE,
+    WHY_DAYS,
+    WHY_MAX,
+    Gap,
+    PolicyCheck,
+    PolicyRequest,
+    PolicyState,
+    Shortfall,
+    authorization_from_policy,
+    never_covered,
+    prospect_arguments,
+    short_id,
+    shortfall,
+    state_of,
+    why_lines,
+)
+from ela.permissions.rows import no_policy_for
 from ela.permissions.scope import scope_covers, targets_of, within_scope
 
 __all__ = [
+    "COST_PATTERN",
+    "GUIDED_ROUTE",
+    "UNDECLARED_MODEL",
+    "is_valid_value",
+    "PolicyRefusedError",
+    "GAPS",
+    "MAX_DAYS",
+    "MIN_DAYS",
+    "POLICY_CHECKS",
+    "POLICY_PROSPECT",
+    "SHORT_ID",
+    "UNCOVERED",
+    "UNUSABLE",
+    "WHY_DAYS",
+    "WHY_MAX",
+    "Gap",
+    "PolicyCheck",
+    "PolicyRequest",
+    "PolicyState",
+    "Shortfall",
+    "authorization_from_policy",
+    "never_covered",
+    "prospect_arguments",
+    "short_id",
+    "shortfall",
+    "state_of",
+    "why_lines",
+    "no_policy_for",
     "ASKING_RULES",
     "BROWSER_ACT",
     "BROWSER_GUIDED",

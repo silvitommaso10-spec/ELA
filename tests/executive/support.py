@@ -48,6 +48,7 @@ from ela.domain import (
     PlanAuthor,
     PlanAuthorKind,
     PlanId,
+    PolicyBounds,
     PowerSource,
     PrivacyLevel,
     RiskLevel,
@@ -94,6 +95,7 @@ from ela.testing.fakes import (
 )
 from tests.devices.nodes import node
 from tests.domain.examples import ELA_ACTOR, USER_INTENT
+from tests.permissions.policy_support import WIDEST
 from tests.permissions.support import ARGUMENTS, CATALOGUE, COMPLETE
 from tests.tasks.support import ORPHAN_AFTER
 
@@ -746,6 +748,16 @@ def grant_for(
         granted_by="tommaso",
         task_id=None if task is None else task.id,
         step_id=None if step is None else step.id,
+        # A grant without ``approval_id`` always expires since M13.12 (decision 3d): the longest
+        # life a policy may have; and, for a capability that declares the terms of a policy, its
+        # limits at their widest, under the terms of today.
+        expires_at=created_at + timedelta(days=90),
+        bounds=None
+        if spec.policy_terms is None
+        else PolicyBounds(
+            terms=spec.policy_terms,
+            limits={name: WIDEST[name] for name in spec.policy_terms.limits},
+        ),
     )
     return base.model_copy(update=changes)
 

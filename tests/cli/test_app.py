@@ -52,6 +52,9 @@ def test_every_command_of_the_milestone_is_there() -> None:
         "node revoke",
         "node run",
         "provider list",
+        "policy create",
+        "policy list",
+        "policy revoke",
         "voice",
         "voice preview",
         "voice audition",
@@ -63,7 +66,7 @@ async def test_the_help_lists_the_groups_without_reaching_ela(cli: Cli) -> None:
     result = await cli("--help")
 
     assert result.exit_code == 0
-    for group in ("task", "audit", "device", "provider"):
+    for group in ("task", "audit", "device", "provider", "policy"):
         assert group in result.stdout
 
 

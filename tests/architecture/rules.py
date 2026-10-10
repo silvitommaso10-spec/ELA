@@ -706,6 +706,19 @@ PLAN_DOORS = frozenset(
 #: The third door since M14.3 (ADR 0060): the room of the guided sessions plans the child task of a
 #: gesture — one step, the capability the model asked for, the catalogue's risk, the session's
 #: sites as ``within`` — and the slug stays the one of M14.2, read with ADR 0060 beside it.
+#: Rule 66 (M13.12, ADR 0062): a policy of §59 is born only at the route of its creation. Three
+#: parts: outside :data:`POLICY_ROUTE` nobody calls :data:`POLICY_FACTORY`; nobody saves a grant
+#: (``.grant(`` on a receiver of :data:`STORE_RECEIVERS`) but the route and the executor — and the
+#: executor only one bound, in the same function, from :data:`APPROVAL_FACTORY`; nobody revokes one
+#: but the route, and no module of ``ela.tools`` names :data:`STORE_PORT`. The receiver decides, as
+#: for rule 62: ``ela.devices.revoke(…)`` revokes a node, not a policy.
+POLICY_FACTORY = "authorization_from_policy"
+POLICY_ROUTE = Path("api") / "policies.py"
+APPROVAL_FACTORY = "authorization_from_approval"
+STORE_RECEIVERS = frozenset({"authorizations", "_authorizations"})
+GRANT_METHOD = "grant"
+REVOKE_METHOD = "revoke"
+STORE_PORT = "AuthorizationStore"
 #: Rule 63 (M14.2, ADR 0058): the plan is independent of the device (§13), so the Planner's module
 #: names nothing of the machines. A contract of import-linter cannot say it: the Planner imports the
 #: runner, and the runner the orchestrator.
@@ -758,12 +771,27 @@ DECISION_BUILDERS_EXEMPT = frozenset({PERMISSIONS_DIR, TESTING_DIR})
 #: which writes the audit event. No exemption: the fake *defines* ``decide``, it never calls it.
 DECIDE_METHOD = "decide"
 #: Rule 15 (ADR 0012): outside ``ela.permissions`` nobody builds an ``Authorization`` or widens one
-#: by ``model_copy`` — every production grant is born from ``authorization_from_approval``. The
-#: fakes may (rule 6 keeps them out of production); the persistence mapper reads grants back from
-#: rows, it does not coin them, and is the one exact-path exemption.
+#: by ``model_copy`` — every production grant is born from one of two functions of that package,
+#: ``authorization_from_approval`` and, since M13.12, ``authorization_from_policy`` (ADR 0062;
+#: where the second may be called is rule 66). The persistence mapper reads grants back from rows,
+#: it does not coin them, and is the one exact-path exemption. ``bounds`` is a field a copy could
+#: widen since M13.12. ``revoked_at`` is not here, on purpose: it is a field of ``Device`` too
+#: (ADR 0037 §12), and a rule on names would report the revocation of a node. Rule 66 says who may
+#: revoke, and does not stop a copy read before the revocation from reaching the Guardian: that
+#: copy is not spent because ``consume`` rereads the row (``revoked_at IS NULL``, ADR 0062 §2),
+#: which ``tests/executive/test_policy_question.py`` sees refuse.
 AUTHORIZATION_MODEL = "Authorization"
 AUTHORIZATION_WIDENING_FIELDS = frozenset(
-    {"approval_id", "task_id", "step_id", "scope", "expires_at", "max_uses", "capability_id"}
+    {
+        "approval_id",
+        "task_id",
+        "step_id",
+        "scope",
+        "expires_at",
+        "max_uses",
+        "capability_id",
+        "bounds",
+    }
 )
 #: ``ela.testing`` was exempt here too and never coined a grant — the fakes import
 #: ``Authorization`` as a type, they do not build one. Withdrawn by ADR 0027; unlike rule 12,
@@ -1674,6 +1702,88 @@ def _names_a_plan_receiver(receiver: ast.expr) -> bool:
     if isinstance(receiver, ast.Name):
         return receiver.id in PLAN_RECEIVERS
     return isinstance(receiver, ast.Attribute) and receiver.attr in PLAN_RECEIVERS
+
+
+def check_a_policy_is_born_at_its_route(pkg_root: Path) -> list[Violation]:
+    """Rule 66: a policy of §59 is born only at the route of its creation (M13.12, ADR 0062).
+
+    Three parts, each with its negative cases in ``violations.py``:
+
+    1. outside :data:`POLICY_ROUTE` nobody calls :data:`POLICY_FACTORY`, by name or as an
+       attribute — a standing yes is Tommaso's, and it is born where he creates it;
+    2. nobody saves a grant — ``.grant(`` on a receiver of :data:`STORE_RECEIVERS` — but the route
+       and :data:`EXECUTOR_MODULE`, and the executor only a grant bound, in the same function, from
+       :data:`APPROVAL_FACTORY`: **the executor never saves a grant without** ``approval_id``;
+    3. nobody revokes one but the route, and no module of ``ela.tools`` names :data:`STORE_PORT`:
+       **no capability creates or revokes a policy**.
+
+    A heuristic on names, like rules 16 and 62: the receiver decides, so ``ela.devices.revoke(…)``
+    — a node — is not a policy's revocation.
+    """
+    rule = "a-policy-is-born-at-its-route"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        relative = path.relative_to(pkg_root)
+        if relative == POLICY_ROUTE:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if relative.parts[0] == TOOLS_DIR and _names_the_store_port(node):
+                found.append(Violation(rule, name, STORE_PORT, getattr(node, "lineno", 0)))
+            if not isinstance(node, ast.Call):
+                continue
+            if _is_named(node.func, POLICY_FACTORY):
+                found.append(Violation(rule, name, f"{POLICY_FACTORY}(", node.lineno))
+            elif _on_the_store(node, REVOKE_METHOD):
+                found.append(Violation(rule, name, f".{REVOKE_METHOD}(", node.lineno))
+            elif _on_the_store(node, GRANT_METHOD) and not (
+                relative == EXECUTOR_MODULE and _saves_a_yes(node, tree)
+            ):
+                found.append(Violation(rule, name, f".{GRANT_METHOD}(", node.lineno))
+    return found
+
+
+def _on_the_store(call: ast.Call, method: str) -> bool:
+    callee = call.func
+    if not isinstance(callee, ast.Attribute) or callee.attr != method:
+        return False
+    receiver = callee.value
+    if isinstance(receiver, ast.Name):
+        return receiver.id in STORE_RECEIVERS
+    return isinstance(receiver, ast.Attribute) and receiver.attr in STORE_RECEIVERS
+
+
+def _names_the_store_port(node: ast.AST) -> bool:
+    if isinstance(node, ast.alias):
+        return node.name == STORE_PORT
+    if isinstance(node, ast.Name):
+        return node.id == STORE_PORT
+    return isinstance(node, ast.Attribute) and node.attr == STORE_PORT
+
+
+def _saves_a_yes(call: ast.Call, tree: ast.Module) -> bool:
+    """Whether the grant ``call`` saves is a name bound, in the innermost function around it, from
+    a call of :data:`APPROVAL_FACTORY`."""
+    around = [
+        function
+        for function in ast.walk(tree)
+        if isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef)
+        and any(inner is call for inner in ast.walk(function))
+    ]
+    if not around or len(call.args) != 1 or not isinstance(call.args[0], ast.Name):
+        return False
+    innermost = min(around, key=lambda function: len(list(ast.walk(function))))
+    bound = {
+        target.id
+        for node in ast.walk(innermost)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and _is_named(node.value.func, APPROVAL_FACTORY)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    return call.args[0].id in bound
 
 
 def check_the_planner_names_no_device(pkg_root: Path) -> list[Violation]:
@@ -3773,6 +3883,7 @@ RULES: dict[str, Rule] = {
     "the-planner-names-no-device": check_the_planner_names_no_device,
     "the-end-has-one-reader": check_the_end_has_one_reader,
     "who-spends-passes-the-gate": check_who_spends_passes_the_gate,
+    "a-policy-is-born-at-its-route": check_a_policy_is_born_at_its_route,
 }
 
 
@@ -4261,6 +4372,27 @@ CONSTANTS: tuple[Constant, ...] = (
     ),
     Constant(
         "who-spends-passes-the-gate",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # a-policy-is-born-at-its-route (rule 66, M13.12)
+    Constant("a-policy-is-born-at-its-route", "POLICY_FACTORY", DETECTOR),
+    Constant("a-policy-is-born-at-its-route", "POLICY_ROUTE", EXEMPTION, by=WHOLE, adr="ADR 0062"),
+    Constant(
+        "a-policy-is-born-at-its-route", "EXECUTOR_MODULE", EXEMPTION, by=WHOLE, adr="ADR 0062"
+    ),
+    Constant(
+        "a-policy-is-born-at-its-route", "APPROVAL_FACTORY", EXEMPTION, by=WHOLE, adr="ADR 0062"
+    ),
+    Constant("a-policy-is-born-at-its-route", "STORE_RECEIVERS", DETECTOR),
+    Constant("a-policy-is-born-at-its-route", "GRANT_METHOD", DETECTOR),
+    Constant("a-policy-is-born-at-its-route", "REVOKE_METHOD", DETECTOR),
+    Constant("a-policy-is-born-at-its-route", "STORE_PORT", DETECTOR),
+    Constant("a-policy-is-born-at-its-route", "TOOLS_DIR", DETECTOR),
+    Constant(
+        "a-policy-is-born-at-its-route",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

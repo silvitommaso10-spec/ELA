@@ -65,6 +65,8 @@ from ela.domain import (
     PermissionState,
     PlanAuthor,
     PlanAuthorKind,
+    PolicyBounds,
+    PolicyTerms,
     PowerSource,
     PrivacyLevel,
     ProviderRequest,
@@ -339,6 +341,23 @@ REMOTE_PRIVACY_LEVELS: Final = tuple(
 
 enrollments = _enrollments()
 
+policy_terms = st.builds(
+    PolicyTerms,
+    limits=st.lists(texts, min_size=1, max_size=3).map(tuple),
+    uncovered=st.lists(texts, max_size=2).map(tuple),
+    free=st.lists(texts, max_size=2).map(tuple),
+    route=_optional(texts),
+    model=_optional(texts),
+)
+"""What a capability declares a policy of §59 must bound (M13.12, ADR 0062)."""
+
+policy_bounds = st.builds(
+    PolicyBounds,
+    terms=policy_terms,
+    limits=st.dictionaries(texts, texts, max_size=3),
+)
+"""The limits of a policy, in words, never validated (proposal 15), and their terms."""
+
 capability_specs = st.builds(
     CapabilitySpec,
     id=capability_ids,
@@ -348,6 +367,7 @@ capability_specs = st.builds(
     input_schema=json_mappings,
     scope=st.lists(texts, max_size=3).map(tuple),
     scoped_arguments=st.lists(texts, max_size=3).map(tuple),
+    policy_terms=_optional(policy_terms),
     requires_authorization=st.booleans(),
     metadata=json_mappings,
 )
@@ -442,11 +462,14 @@ policy_authorizations = st.builds(
     approval_id=st.none(),
     task_id=_optional(uuids),
     step_id=_optional(uuids),
-    expires_at=_optional(utc_datetimes),
+    expires_at=utc_datetimes,
     max_uses=_optional(st.integers(min_value=1, max_value=100)),
+    bounds=_optional(policy_bounds),
+    revoked_at=_optional(utc_datetimes),
     metadata=json_mappings,
 )
-"""A grant from a standing policy (§59): no approval, any binding, any use limit."""
+"""A grant from a standing policy (§59): no approval, any binding, any use limit — and always an
+end, since M13.12 (decision 3d)."""
 
 approval_authorizations = st.builds(
     Authorization,
@@ -801,6 +824,8 @@ context_snapshots = st.builds(
 
 MODEL_STRATEGIES: Final[dict[type[BaseModel], st.SearchStrategy[BaseModel]]] = {
     domain.Actor: actors,
+    domain.PolicyTerms: policy_terms,
+    domain.PolicyBounds: policy_bounds,
     domain.DeviceCapability: device_capabilities,
     domain.ProviderUsage: provider_usages,
     domain.WorstCase: worst_cases,

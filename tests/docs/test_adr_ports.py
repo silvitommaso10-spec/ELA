@@ -11,7 +11,8 @@ that renames one (0020: ``ProviderRegistry`` -> ``ProviderRegistryPort``) says s
 "Port rinominati:", in a row that names the old port and repeats its members unchanged.
 Extensions only add, replacements only remove, introductions only bring new names, a rename
 changes nothing but the name; renames apply first, then introductions, then extensions, then
-replacements; the result is what the code must match. An ADR that
+replacements, then the extensions written after a replacement (ADR 0062); the result is what the
+code must match. An ADR that
 both extends and replaces (0012: ``AuthorizationStore`` with ``consume`` and without
 ``record_use``) has two tables, each under its label, and is read by section (ADR 0012 §8). A
 changed signature is checked by ``test_adr_guardian.py``, member by member here.
@@ -51,6 +52,10 @@ EXTENDING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0054-stopped-midway.md", EXTENDING),
     (ADR_DIR / "0057-spending-cap.md", EXTENDING),
 )
+LATER_EXTENDING_ADRS: tuple[Source, ...] = ((ADR_DIR / "0062-policies.md", EXTENDING),)
+"""The extensions of a port **after** a replacement shrank it (M13.12): ADR 0062 adds ``revoke``
+to the ``AuthorizationStore`` that ADR 0012 replaced, and a replacement read after it would take
+the member away again. Joined last, after the replacements."""
 REPLACING_ADRS: tuple[Source, ...] = (
     (ADR_DIR / "0010-capability-catalogue.md", None),
     (ADR_DIR / "0012-authorizations.md", REPLACING),
@@ -158,10 +163,12 @@ def all_documented_ports(
     replacements: tuple[str, ...] = (),
     introductions: tuple[str, ...] = (),
     renames: tuple[str, ...] = (),
+    later: tuple[str, ...] = (),
 ) -> dict[str, tuple[str, frozenset[str]]]:
     """ADR 0005, then every renaming ADR (same port, new name), then every introducing ADR (new
     ports only), then every extending ADR (members joined), then every replacing ADR (members
-    replaced, never more than before). Same mode throughout."""
+    replaced, never more than before), then every extension written after a replacement
+    (``later``, members joined). Same mode throughout."""
     union = documented_ports(base)
     for text in renames:
         old_names = renamed_ports(text)
@@ -186,6 +193,11 @@ def all_documented_ports(
             assert union[name][0] == mode, f"{name} changes mode in a replacement"
             assert members_ < union[name][1], f"a replacement of {name} only removes members"
             union[name] = (mode, members_)
+    for text in later:
+        for name, (mode, members_) in documented_ports(text).items():
+            assert name in union, f"{name} is extended before being introduced"
+            assert union[name][0] == mode, f"{name} changes mode in an extension"
+            union[name] = (mode, union[name][1] | members_)
     return union
 
 
@@ -213,7 +225,12 @@ def _with_introductions(
     introduced", which is the harness protecting an invariant, not the drift under test.
     """
     return all_documented_ports(
-        base, extensions, replacements, _read(INTRODUCING_ADRS), _read(RENAMING_ADRS)
+        base,
+        extensions,
+        replacements,
+        _read(INTRODUCING_ADRS),
+        _read(RENAMING_ADRS),
+        _read(LATER_EXTENDING_ADRS),
     )
 
 
@@ -224,6 +241,7 @@ def documented() -> dict[str, tuple[str, frozenset[str]]]:
         _read(REPLACING_ADRS),
         _read(INTRODUCING_ADRS),
         _read(RENAMING_ADRS),
+        _read(LATER_EXTENDING_ADRS),
     )
 
 
@@ -456,6 +474,27 @@ def test_a_replacement_applies_after_an_extension() -> None:
     replacement = "| `AuditLog` | §32 | async | `append`, `clear` |"
     result = all_documented_ports(base, (extension,), (replacement,))
     assert result["AuditLog"] == ("async", frozenset({"append", "clear"}))
+
+
+def test_an_extension_after_a_replacement_is_joined_last() -> None:
+    """ADR 0062: ``revoke`` joins the store ADR 0012 replaced; read as an ordinary extension, the
+    replacement would take it away, and the union would not be the code."""
+    base = "| `AuditLog` | §32 | async | `append`, `read` |"
+    replacement = "| `AuditLog` | §32 | async | `append` |"
+    later = "| `AuditLog` | §32 | async | `clear` |"
+    result = all_documented_ports(base, replacements=(replacement,), later=(later,))
+    assert result["AuditLog"] == ("async", frozenset({"append", "clear"}))
+    assert all_documented_ports(base, (later,), (replacement,))["AuditLog"][1] == {"append"}
+    text = ADR_PATH.read_text(encoding="utf-8")
+    as_early = all_documented_ports(
+        text,
+        (*_read(EXTENDING_ADRS), *_read(LATER_EXTENDING_ADRS)),
+        _read(REPLACING_ADRS),
+        _read(INTRODUCING_ADRS),
+        _read(RENAMING_ADRS),
+    )
+    assert "revoke" not in as_early["AuthorizationStore"][1]
+    assert "revoke" in documented()["AuthorizationStore"][1]
 
 
 def test_a_drifted_table_is_detected() -> None:

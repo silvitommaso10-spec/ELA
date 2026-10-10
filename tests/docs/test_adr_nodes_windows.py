@@ -181,12 +181,47 @@ def test_rule_40_reads_the_windows_module_and_the_three_methods() -> None:
 # ----------------------------------------------------------------------------------------
 
 
+WIRE_ROW = re.compile(r"^\| `([a-z_.]+)` \| `([A-Z_]+)` \| [^|]+ \|$")
+"""A row of a table of codes a later ADR adds to the vocabulary: the code, the member, when."""
+LATER_WIRE_ADRS = (ROOT / "docs" / "adr" / "0062-policies.md",)
+"""The ADRs after this one that add codes to ``WireCode`` (M13.12): an ADR is immutable, so the
+seventeen stay counted here, and a code added later lives in the ADR that added it."""
+
+
+def wire_codes_of(text: str) -> dict[str, str]:
+    """member → code, for every row of a table of added codes."""
+    return {
+        match.group(2): match.group(1)
+        for line in text.splitlines()
+        if (match := WIRE_ROW.match(line))
+    }
+
+
+def wire_codes_after_0040() -> dict[str, str]:
+    found: dict[str, str] = {}
+    for path in LATER_WIRE_ADRS:
+        added = wire_codes_of(path.read_text(encoding="utf-8"))
+        assert added, f"{path.name} documents the codes it adds"
+        found |= added
+    return found
+
+
 def test_the_vocabulary_of_the_wire_is_the_closed_list_the_adr_counts() -> None:
-    """«diciassette membri», in ``ela.ports`` — the one place both ends may import."""
-    assert len(WireCode) == 17
+    """«diciassette membri», in ``ela.ports`` — the one place both ends may import; and the codes a
+    later ADR added are the members of today, with the value it writes."""
+    later = wire_codes_after_0040()
+
+    assert {member: WireCode[member].value for member in later} == later
+    assert len(WireCode) - len(later) == 17
     assert WireCode.__module__ == "ela.ports"
     assert "`ela.ports.WireCode`" in adr_text()
     assert "diciassette membri" in adr_text()
+
+
+def test_a_later_table_that_forgets_a_code_is_found() -> None:
+    text = LATER_WIRE_ADRS[0].read_text(encoding="utf-8")
+    row = next(line for line in text.splitlines() if WIRE_ROW.match(line))
+    assert len(wire_codes_of(text.replace(row + "\n", "", 1))) == len(wire_codes_of(text)) - 1
 
 
 # ----------------------------------------------------------------------------------------

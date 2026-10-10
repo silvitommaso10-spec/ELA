@@ -10,6 +10,7 @@ from ela.domain import TaskEventType
 from ela.infrastructure.persistence.orm import Base
 from ela.tasks.graph import STEP_EVENTS
 from tests.architecture.rules import (
+    APPROVAL_FACTORY,
     AUDIT_ADAPTER,
     AUTHORIZATION_BUILDERS_EXEMPT,
     AUTHORIZATION_MODEL,
@@ -23,6 +24,7 @@ from tests.architecture.rules import (
     DEVICES_DIR,
     EXECUTE_METHOD,
     EXECUTOR_MODULE,
+    GRANT_METHOD,
     ORM_PACKAGE,
     PATHS_MODULE,
     PERMISSIONS_ALLOWED_EXTERNAL,
@@ -31,8 +33,11 @@ from tests.architecture.rules import (
     PLAN_DOORS,
     PLAN_METHOD,
     PLANNER_MODULE,
+    POLICY_FACTORY,
+    POLICY_ROUTE,
     PORTS_ALLOWED_INTERNAL,
     RESPOND_METHOD,
+    REVOKE_METHOD,
     RULES,
     SECURITY_MODULE,
     STATE_MACHINE_MODULE,
@@ -243,6 +248,18 @@ def test_the_two_doors_of_a_plan_really_open_it() -> None:
     for door in sorted(PLAN_DOORS):
         text = (PACKAGE_ROOT / door).read_text(encoding="utf-8")
         assert f"engine.{PLAN_METHOD}(" in text, door
+
+
+def test_the_route_of_the_policies_and_the_executor_really_do_what_rule_66_watches() -> None:
+    """Rule 66 would hold vacuously if nothing minted, saved or revoked a policy: the route does
+    all three, and the executor saves the grant of a yes, bound from its factory (M13.12)."""
+    route = (PACKAGE_ROOT / POLICY_ROUTE).read_text(encoding="utf-8")
+    assert f"{POLICY_FACTORY}(" in route
+    assert f"authorizations.{GRANT_METHOD}(" in route
+    assert f"authorizations.{REVOKE_METHOD}(" in route
+    executor = (PACKAGE_ROOT / EXECUTOR_MODULE).read_text(encoding="utf-8")
+    assert f"_authorizations.{GRANT_METHOD}(" in executor
+    assert f"{APPROVAL_FACTORY}(" in executor
 
 
 def test_the_planner_rule_63_reads_is_a_module_with_names() -> None:

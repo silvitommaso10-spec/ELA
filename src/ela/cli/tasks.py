@@ -303,6 +303,9 @@ def _step_block(one: dict[str, Any]) -> str:
             ("conditions", one["success_conditions"]),
             ("after", one["dependencies"]),
             ("authorization", one["requires_authorization"]),
+            # The policy of §59 that covered the step (M13.12, decision 9): the route read it from
+            # the grant of the step's result; only a step a policy covered has the row.
+            *(() if not one.get("policy") else (("policy", str(one["policy"])[:8]),)),
         ]
     )
     return f"{head}\n{indent(rows, '  ')}"

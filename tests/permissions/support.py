@@ -20,6 +20,7 @@ from ela.domain import (
     CapabilityId,
     CapabilitySpec,
     JsonMapping,
+    PolicyBounds,
     RiskLevel,
     SensorName,
     TaskId,
@@ -35,6 +36,7 @@ from ela.permissions import (
 from ela.ports import CapabilityRegistryPort
 from ela.testing.fakes import FakeAuditLog, FakeCapabilityRegistry, FakeClock, FakeIdGenerator
 from tests.domain.examples import APPROVAL_ID, NOW, OTHER_STEP_ID, STEP_ID, TASK_ID
+from tests.permissions.policy_support import TERMED, TERMED_ARGS, WIDEST
 
 ECHO: Final = core_echo()
 NOTE: Final = workspace_write_note()
@@ -109,7 +111,11 @@ CATALOGUE: Final = (
     CRITICAL,
     LOOSE_NOTE,
     UNCONSTRAINED_SCOPE,
+    TERMED,
 )
+"""Since M13.12 with ``test.termed``, the ``MEDIUM`` that declares what a policy of §59 must bound:
+a standing grant covers a capability only if it declares its terms (decision 17 of the review), and
+the generic tests of a standing grant — expiry, uses, binding — run on it."""
 
 ECHO_ARGS: Final = {"message": "hello"}
 STATED_ARGS: Final = {"message": "hello", "purpose": "showing the reviewer the failing test"}
@@ -129,6 +135,7 @@ ARGUMENTS: Final[Mapping[CapabilityId, JsonMapping]] = MappingProxyType(
         GUARDED_NOTE.id: NOTE_ARGS,
         LOOSE_NOTE.id: NOTE_ARGS,
         COMPLETE.id: COMPLETE_ARGS,
+        TERMED.id: TERMED_ARGS,
     }
 )
 """Arguments that satisfy each capability of the catalogue (ADR 0018).
@@ -165,15 +172,29 @@ def harness(
     return Harness(clock, ids, audit, catalogue, guardian)
 
 
+STANDING_LIFE: Final = timedelta(days=90)
+"""How long the standing grant of :func:`grant` lives: the longest a policy may (M13.12, ADR 0062).
+
+Since M13.12 a grant without ``approval_id`` always expires — an invariant of the domain
+(decision 3d) —, so the grant that had «no expiry» has the farthest end a policy can have."""
+
+
 def grant(spec: CapabilitySpec, **changes: Any) -> Authorization:
-    """A standing authorization for ``spec`` — no task, no step, no expiry, no use limit — then
-    ``changes`` applied. Its scope is the specification's scope unless overridden."""
+    """A standing authorization for ``spec`` — no task, no step, no use limit, the longest life a
+    policy may have — then ``changes`` applied. Its scope is the specification's scope unless
+    overridden; for a capability that declares the terms of a policy (M13.12), its limits at their
+    widest, under the terms of today — a policy that covers every call of the schema."""
+    terms = spec.policy_terms
     base = Authorization(
         id=AuthorizationId(UUID("00000000-0000-4000-8000-000000000777")),
         created_at=NOW,
         capability_id=spec.id,
         scope=spec.scope,
         granted_by="tommaso",
+        expires_at=NOW + STANDING_LIFE,
+        bounds=None
+        if terms is None
+        else PolicyBounds(terms=terms, limits={name: WIDEST[name] for name in terms.limits}),
     )
     return base.model_copy(update=changes)
 

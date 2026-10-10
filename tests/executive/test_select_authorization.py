@@ -6,14 +6,17 @@ from datetime import timedelta
 
 from ela.domain import AuthorizationId, StepId
 from ela.executive import approved_targets, select_authorization
+from ela.permissions import targets_of
 from tests.domain.examples import NOW, OTHER_STEP_ID, PERMISSION_DECISION, TASK, TASK_STEP
 from tests.executive.support import grant_for
-from tests.permissions.support import NOTE, OTHER_TASK_ID
+from tests.permissions.support import OTHER_TASK_ID, TERMED, TERMED_ARGS
 
-TARGETS = ("workspace/notes/briefing.md",)
-BOUND = grant_for(NOTE, task=TASK, step=TASK_STEP, created_at=NOW, max_uses=1, tail=701)
-POLICY = grant_for(NOTE, created_at=NOW, tail=702)
-OTHER_POLICY = grant_for(NOTE, created_at=NOW, tail=703)
+# The grants without ``approval_id`` here are policies of §59 on the capability that declares their
+# terms (M13.12, decision 17 of the review): on any other a standing grant covers nothing.
+TARGETS = targets_of(TERMED, TERMED_ARGS)
+BOUND = grant_for(TERMED, task=TASK, step=TASK_STEP, created_at=NOW, max_uses=1, tail=701)
+POLICY = grant_for(TERMED, created_at=NOW, tail=702)
+OTHER_POLICY = grant_for(TERMED, created_at=NOW, tail=703)
 
 
 def select(*candidates: tuple[object, int]) -> object:
@@ -21,6 +24,8 @@ def select(*candidates: tuple[object, int]) -> object:
         candidates,  # type: ignore[arg-type]
         task=TASK,
         step=TASK_STEP,
+        capability=TERMED,
+        arguments=TERMED_ARGS,
         targets=TARGETS,
         now=NOW,
     )
@@ -33,7 +38,7 @@ def test_no_candidate_is_none() -> None:
 def test_a_grant_that_does_not_cover_is_never_handed_over() -> None:
     other_task = BOUND.model_copy(update={"task_id": OTHER_TASK_ID})
     other_step = BOUND.model_copy(update={"step_id": OTHER_STEP_ID})
-    elsewhere = POLICY.model_copy(update={"scope": ("workspace/other",)})
+    elsewhere = POLICY.model_copy(update={"scope": ("beta.example",)})
     empty_scope = POLICY.model_copy(update={"scope": ()})
     for grant in (other_task, other_step, elsewhere, empty_scope):
         assert select((grant, 0)) is None, grant

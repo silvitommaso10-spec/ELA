@@ -51,6 +51,7 @@ from ela.domain import (
     PermissionDecision,
     PlanAuthor,
     PlanId,
+    PolicyBounds,
     PowerSource,
     PrivacyLevel,
     ProviderUsage,
@@ -258,6 +259,10 @@ def authorization_values(authorization: Authorization) -> dict[str, Any]:
         "step_id": authorization.step_id,
         "expires_at": authorization.expires_at,
         "max_uses": authorization.max_uses,
+        "bounds": None
+        if authorization.bounds is None
+        else authorization.bounds.model_dump(mode="json"),
+        "revoked_at": authorization.revoked_at,
         "metadata_": _plain(authorization.metadata),
     }
 
@@ -278,6 +283,8 @@ def row_to_authorization(row: AuthorizationRow) -> Authorization:
         step_id=None if row.step_id is None else StepId(row.step_id),
         expires_at=row.expires_at,
         max_uses=row.max_uses,
+        bounds=None if row.bounds is None else PolicyBounds.model_validate(row.bounds),
+        revoked_at=row.revoked_at,
         metadata=row.metadata_,
     )
 

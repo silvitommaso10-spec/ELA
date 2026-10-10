@@ -54,7 +54,7 @@ from tests.executive.support import (
     trail_of,
     world,
 )
-from tests.permissions.support import ECHO, ECHO_ARGS, GUARDED_ECHO, HIGH, NOTE
+from tests.permissions.support import ECHO, ECHO_ARGS, GUARDED_ECHO, HIGH, NOTE, TERMED
 from tests.tasks.support import ORPHAN_AFTER
 
 E = AuditEventType
@@ -578,8 +578,9 @@ async def test_window_7b_a_stored_result_without_its_audit_is_recorded_not_rerun
 async def test_window_7b_with_a_consumed_grant_names_it_and_reads_its_uses_now() -> None:
     """Decision E: ``uses`` is the store's count at the retry, and the payload says so."""
     w, crashes = crashing_world()
-    task, step = await w.running(GUARDED_ECHO.id)
-    policy = grant_for(GUARDED_ECHO, created_at=w.now, max_uses=3)
+    # A policy of §59, on the capability that declares its terms (M13.12, decision 17).
+    task, step = await w.running(TERMED.id)
+    policy = grant_for(TERMED, created_at=w.now, max_uses=3)
     await w.store.grant(policy)
     crashes.audit.arm("append", audit_of(E.TOOL_EXECUTED))
     with pytest.raises(SimulatedCrash):
