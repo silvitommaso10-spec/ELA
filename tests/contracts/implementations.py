@@ -29,6 +29,7 @@ from ela.executive import StopOfTask
 from ela.executive.sessions import SessionRoom
 from ela.executive.spending import SpendingGate
 from ela.infrastructure.machine import (
+    BitwardenVault,
     ClaudeAgentSession,
     DarwinListening,
     DarwinProbe,
@@ -89,6 +90,7 @@ from ela.ports import (
     TextRecognitionPort,
     ToolPort,
     ToolRegistryPort,
+    Vault,
     VerifierPort,
     VerifierRegistryPort,
 )
@@ -133,6 +135,7 @@ from ela.testing.fakes import (
     FakeTextRecognition,
     FakeTool,
     FakeToolRegistry,
+    FakeVault,
     FakeVerifier,
     FakeVerifierRegistry,
 )
@@ -516,6 +519,12 @@ def _screen_capture() -> ScreenCaptureCommand:
     return ScreenCaptureCommand(timeout=timedelta(seconds=1), runner=_no_helper)
 
 
+def _vault() -> BitwardenVault:
+    """The vault of the Core, built as the composition builds it: nothing is launched until
+    something is asked of it (M13.9)."""
+    return BitwardenVault("/nowhere/bw", environment={})
+
+
 def _browser() -> PlaywrightBrowser:
     """The browser of the Core, built as the composition builds it: nothing starts until a page
     is asked for (M13.4)."""
@@ -687,6 +696,10 @@ IMPLEMENTATIONS: dict[type, tuple[Implementation, ...]] = {
     Browser: (
         Implementation("FakeBrowser", FakeBrowser),
         Implementation("PlaywrightBrowser", _browser),
+    ),
+    Vault: (
+        Implementation("FakeVault", FakeVault),
+        Implementation("BitwardenVault", _vault),
     ),
     CommandLauncher: (
         Implementation("FakeLauncher", FakeLauncher),

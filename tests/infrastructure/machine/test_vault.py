@@ -389,16 +389,19 @@ async def test_an_entry_without_a_password_gives_none_and_says_so(bw: Bw) -> Non
 
 
 async def test_a_bw_that_does_not_answer_is_killed_with_its_group_at_the_deadline(bw: Bw) -> None:
+    """One launch, which never answers: the deadline is the only thing that ends it — and it is
+    short for this launch alone, so that no other launch of the test can run out of time on a
+    machine that is busy."""
     from ela.ports import VaultTimeout
 
-    made = await opened(bw, timeout_seconds=0.5)
-    bw.set(hang=["list"])
+    bw.set(hang=["status"])
+    made = vault(bw, timeout_seconds=2.0)
 
-    with pytest.raises(VaultTimeout, match="list items"):
-        await made.find(SITE)
+    with pytest.raises(VaultTimeout, match="bw status did not answer within 2 s"):
+        await made.status()
 
-    hung = bw.calls()[-1]
-    assert hung["argv"][0] == "list" and hung["group"] == hung["pid"], "in a group of its own"
+    (hung,) = bw.calls()
+    assert hung["group"] == hung["pid"], "in a group of its own"
     deadline = asyncio.get_running_loop().time() + 10
     while running(hung["pid"]) and asyncio.get_running_loop().time() < deadline:
         await asyncio.sleep(0.02)

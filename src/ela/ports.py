@@ -2660,7 +2660,8 @@ class VaultTaken:
 
 @runtime_checkable
 class Vault(Protocol):
-    """The vault the passwords stay in, and the one session key ELA may hold (M13.9, ADR 0063).
+    """The vault the passwords stay in, and the one session key ELA may hold (§19, §57; M13.9,
+    ADR 0063).
 
     The master password never reaches this port: the owner unlocks the vault with its own
     program, and what arrives is the session key, inside a :class:`Secret`. **Before a yes** only

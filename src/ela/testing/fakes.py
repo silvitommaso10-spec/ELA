@@ -89,6 +89,9 @@ from ela.ports import (
     NAVIGATION,
     PROVIDER_UNAVAILABLE,
     STARTED_ID,
+    VAULT_LOCKED,
+    VAULT_UNAUTHENTICATED,
+    VAULT_UNLOCKED,
     VERIFICATION_NO_CONDITIONS,
     VERIFICATION_NOT_SUCCEEDED,
     VERIFICATION_UNKNOWN_CONDITION,
@@ -127,6 +130,7 @@ from ela.ports import (
     Prospect,
     Ran,
     RoutingError,
+    Secret,
     SessionEnd,
     SessionHandle,
     SessionHost,
@@ -135,6 +139,10 @@ from ela.ports import (
     TaskStop,
     ToolPort,
     ToolStopped,
+    VaultEntry,
+    VaultFailed,
+    VaultNotOpen,
+    VaultTaken,
     VerifierPort,
     check_answer,
     check_limit,
@@ -145,46 +153,48 @@ __all__ = [
     "DEFAULT_START",
     "FAKE_CALL_WORST",
     "FAKE_CONDITION",
-    "FAKE_SESSION_TOOLS",
     "FAKE_CURRENCY",
+    "FAKE_SESSION_TOOLS",
     "FAKE_WORST_CASE",
+    "FakeAgentSession",
     "FakeApprovalStore",
+    "FakeAssignmentStore",
     "FakeAuditLog",
     "FakeAuthorizationStore",
     "FakeBell",
     "FakeBrowser",
-    "FakePage",
     "FakeCapabilityRegistry",
     "FakeClock",
-    "FakeLauncher",
     "FakeDeviceRegistry",
+    "FakeEnrollmentStore",
     "FakeExecutionResultStore",
     "FakeIdGenerator",
-    "FakeModelProvider",
-    "FakeModelRouter",
-    "FakePermissionGuardian",
-    "FakeProbe",
-    "FakeProviderRegistry",
+    "FakeLauncher",
     "FakeListening",
     "FakeLocalBeat",
+    "FakeModelGateway",
+    "FakeModelProvider",
+    "FakeModelRouter",
+    "FakePage",
+    "FakePermissionGuardian",
     "FakePower",
+    "FakeProbe",
+    "FakeProviderRegistry",
     "FakeScreenCapture",
     "FakeSpeech",
+    "FakeStop",
     "FakeTaskRepository",
     "FakeTextRecognition",
     "FakeTool",
     "FakeToolRegistry",
+    "FakeVault",
+    "FakeVaultEntry",
     "FakeVerifier",
     "FakeVerifierRegistry",
     "GuardianCall",
+    "SessionScript",
     "ToolCall",
     "VerifierCall",
-    "FakeEnrollmentStore",
-    "FakeAssignmentStore",
-    "FakeStop",
-    "FakeAgentSession",
-    "FakeModelGateway",
-    "SessionScript",
     "finished",
 ]
 
@@ -1061,6 +1071,96 @@ class FakePage:
     left_after_click: str | None = None
     shown: bool = True
     changes_to: dict[str | None, str] | None = None
+
+
+@dataclass
+class FakeVaultEntry:
+    """One entry of a :class:`FakeVault`: what the vault holds, and how its username is shown."""
+
+    id: str
+    name: str
+    addresses: tuple[str, ...]
+    username: str
+    password: str | None
+    shown: str = ""
+    """The username masked, as the adapter would give it before a yes."""
+
+
+class FakeVault:
+    """A vault a test fills (port :class:`~ela.ports.Vault`).
+
+    ``state`` is what the vault says of itself; ``key`` the session key that opens it. Before a
+    yes, :meth:`find` gives every entry **without a value** — the username as ``shown`` —; after
+    one, :meth:`take` gives the addresses and the two secrets. ``calls`` records what was asked,
+    in order; ``raising[member]`` is raised by that member instead of answering.
+    """
+
+    def __init__(
+        self,
+        entries: Iterable[FakeVaultEntry] = (),
+        *,
+        state: str = VAULT_UNLOCKED,
+        key: str = "the-key-of-the-fake-vault",
+    ) -> None:
+        self.entries: list[FakeVaultEntry] = list(entries)
+        self.state = state
+        self.key = key
+        self.calls: list[str] = []
+        self.raising: dict[str, Exception] = {}
+
+    def _asked(self, member: str, said: str = "") -> None:
+        self.calls.append(f"{member}:{said}" if said else member)
+        if member in self.raising:
+            raise self.raising[member]
+
+    async def status(self) -> str:
+        self._asked("status")
+        return self.state
+
+    async def unlock(self, key: Secret) -> bool:
+        self._asked("unlock")
+        if self.state == VAULT_UNAUTHENTICATED or key.reveal() != self.key:
+            return False
+        self.state = VAULT_UNLOCKED
+        return True
+
+    async def lock(self) -> None:
+        self._asked("lock")
+        if self.state == VAULT_UNLOCKED:
+            self.state = VAULT_LOCKED
+
+    async def forget(self) -> None:
+        self._asked("forget")
+        if self.state == VAULT_UNLOCKED:
+            self.state = VAULT_LOCKED
+
+    async def find(self, address: str) -> tuple[VaultEntry, ...]:
+        self._asked("find", address)
+        if self.state != VAULT_UNLOCKED:
+            raise VaultNotOpen(self.state)
+        return tuple(
+            VaultEntry(
+                id=entry.id,
+                name=entry.name,
+                addresses=entry.addresses,
+                username=entry.shown,
+                has_password=bool(entry.password),
+            )
+            for entry in self.entries
+        )
+
+    async def take(self, entry: str) -> VaultTaken:
+        self._asked("take", entry)
+        if self.state != VAULT_UNLOCKED:
+            raise VaultNotOpen(self.state)
+        for held in self.entries:
+            if held.id == entry and held.password:
+                return VaultTaken(
+                    addresses=held.addresses,
+                    username=Secret(held.username),
+                    password=Secret(held.password),
+                )
+        raise VaultFailed("bw get item failed: no such entry, or it could not be read")
 
 
 class FakeBrowser:

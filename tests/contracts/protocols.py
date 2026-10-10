@@ -46,6 +46,7 @@ REQUIRED_PORTS = frozenset(
         "TaskStop",
         "ModelGateway",
         "Gestures",
+        "Vault",
         "AgentSession",
     }
 )

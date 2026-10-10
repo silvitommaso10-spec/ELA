@@ -108,6 +108,45 @@ un numero massimo di sessioni: regge perché **l'avvio è di Tommaso** — una s
 chiesto —, e il giorno in cui ELA parte da sola si riesamina (annotazione per la Fase 15). **Una revoca non
 ferma una sessione già partita**: le sue letture continuano fino ai suoi tetti, e l'uscita della revoca lo dice.
 
+### 2. Il vault: le password restano in Bitwarden, e ELA tiene una chiave sola
+
+**La password principale non entra mai in ELA.** Lo sblocco lo fa Tommaso, con `bw`, nel suo terminale; a ELA
+arriva la chiave della sessione sbloccata, dentro un `Secret`, e vive **in memoria, nell'adapter**: mai su
+disco, in un log, in `argv`, nell'ambiente di ELA.
+
+**`Secret`** (`ela.ports`) è un valore che non si stampa, non si serializza, non si copia, non si confronta, e
+si apre con un metodo solo. Non è una difesa contro chi legge la memoria del processo: è una difesa contro il
+codice di ELA che lo scrive da qualche parte.
+
+Port introdotti:
+
+| Port | Spec | Modalità | Membri |
+|---|---|---|---|
+| `Vault` | §19, §57 | async | `status`, `unlock`, `lock`, `forget`, `find`, `take` |
+
+**I comandi che l'adapter compone sono un elenco chiuso**: `status`; `list items --url <indirizzo>`; `get item
+<id>`; `lock`. Mai `unlock`, `login`, `export`, `get totp`, `get uri`, `serve`, `sync`, né `--session`: la chiave
+va nell'ambiente del figlio, `BW_SESSION`, con `BW_NOINTERACTION`, oltre alle quattro variabili dell'ambiente
+chiuso (ADR 0047 §6, che si legge con questa riga accanto). Lo stdin del figlio è la fine di un file, il suo
+stderr non va a nessuno; nasce in un gruppo suo ed è ucciso con il gruppo allo scadere, o quando nessuno lo
+aspetta più.
+
+**Prima del sì nessuna password lascia l'adapter** (decisione 28, che rivede il secondo criterio della
+registrazione — «senza il sì, la CLI non viene chiamata» — per mano di Tommaso e del revisore). `find` chiede lo
+stato e l'elenco per l'indirizzo del sito, e restituisce l'id della voce, il nome, gli indirizzi, **il nome
+utente mascherato** — il primo carattere, e per un indirizzo la parte dalla chiocciola (decisione 31) — e se c'è
+una password: ogni valore è buttato lì. **Il costo, dichiarato**: per un istante passano dalla memoria
+dell'adapter tutte le voci che Bitwarden fa corrispondere a quell'indirizzo, intere — misurato, l'elenco porta
+la password.
+
+**Dopo il sì la voce si legge una volta sola** (decisione 64): `get item`. Da quella lettura escono gli
+indirizzi, per il riconfronto con la pagina aperta, e il nome utente e la password dentro un `Secret`; **tutto
+il resto si butta** — l'adapter tiene ciò che nomina, non toglie ciò che conosce. Riconfronto e presa stanno
+sullo stesso dato.
+
+**L'uscita di `bw` non entra in un'eccezione**, nemmeno per catena: un errore nomina il comando, ed è sollevato
+quando niente di ciò che è stato letto è più a portata.
+
 ## Alternative considerate
 
 - **Un grant della sessione con lo scope dei suoi siti**: è la forma delle policy di §59, e ADR 0060 l'aveva
@@ -127,6 +166,7 @@ ferma una sessione già partita**: le sue letture continuano fino ai suoi tetti,
   non l'executor che la consegna, non una rotta.
 
 Con questo ADR le regole di architettura sono **sessantasette** (la 67), i contratti di import-linter restano
-**quindici**, i port **trentatré**, le rotte dell'API **sessanta** e i comandi della CLI **trentuno**; le
+**quindici**, i port diventano **trentaquattro** (`Vault`), le rotte dell'API sono **sessanta** e i comandi
+della CLI **trentuno**; le
 capability restano **quattordici**, le identità del middleware **sei**. *(I totali si aggiornano con le sezioni
 che seguono: questo ADR si scrive con l'implementazione.)*

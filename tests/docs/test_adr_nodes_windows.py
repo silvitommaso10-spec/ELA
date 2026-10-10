@@ -304,6 +304,7 @@ def test_the_conseguenze_count_what_the_tree_has_today() -> None:
                 ADR_PATH.with_name("0052-browser.md"),
                 ADR_PATH.with_name("0054-stopped-midway.md"),
                 ADR_PATH.with_name("0060-guided-browser.md"),
+                ADR_PATH.with_name("0063-browser-with-your-accounts.md"),
             )
         )
         == 25

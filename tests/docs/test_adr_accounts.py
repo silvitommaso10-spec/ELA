@@ -41,7 +41,7 @@ def test_the_conseguenze_count_the_totals_of_today() -> None:
     assert len(RULES) == 67
     assert set(RULES) - set(_rules_up_to(66)) == {"the-room-s-word-is-the-room-s"}
     assert "**quindici**" in text and len(contracts) == 15
-    assert "**trentatré**" in text and len(tuple(port_protocols())) == 33
+    assert "**trentaquattro**" in text and len(tuple(port_protocols())) == 34
     assert "**sessanta**" in text and len(coded_routes()) == 60
     assert "**trentuno**" in text and len(coded_commands()) == 31
     assert "**quattordici**" in text and len(production_catalogue().specs()) == 14
