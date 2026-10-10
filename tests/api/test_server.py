@@ -23,10 +23,11 @@ import uvicorn
 from httpx import AsyncClient
 
 from ela.api import server
-from ela.composition import Ela, Settings
+from ela.composition import Ela, Settings, build
 from ela.composition.settings import (
     ApiSettings,
 )
+from ela.testing.fakes import FakeBrowser, FakePower
 from tests.api.test_nodes import enrolled
 from tests.composition.support import create_schema
 
@@ -368,6 +369,58 @@ def test_an_ipv6_loopback_is_written_as_a_url_writes_it() -> None:
     message = server.unavailable(api, OSError(errno.EADDRINUSE, "Address already in use"), None)
 
     assert message.startswith("ELA cannot listen on [::1]:8351: Address already in use.")
+
+
+def with_a_browser(monkeypatch: pytest.MonkeyPatch, browser: FakeBrowser) -> None:
+    """``_serve`` builds ELA itself: here with a browser the test holds."""
+
+    async def built(settings: Settings) -> Ela:
+        return await build(settings, power=FakePower(), browser=browser)
+
+    monkeypatch.setattr(server, "build", built)
+
+
+def test_a_browser_ela_had_to_kill_is_said_at_the_close_by_name_and_count(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """M13.4e, decision 51: past the grace ELA kills what the browser's adapter had started, and
+    writes it on stderr — the names of the processes and how many, never a command line."""
+    from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
+
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake_server(monkeypatch)
+    browser = FakeBrowser()
+    browser.killed = ("chrome-headless-shell", "chrome-headless-shell", "node")
+    with_a_browser(monkeypatch, browser)
+
+    server.serve(settings)
+
+    error = capsys.readouterr().err
+    assert (
+        f"ela: the browser did not close within {BROWSER_CLOSE_GRACE_SECONDS} s of the stop: ELA "
+        "killed what it had started — 2 chrome-headless-shell, 1 node" in error
+    )
+    assert "/" not in error.split("ELA killed", 1)[1], "names, never a path or a command line"
+
+
+def test_a_browser_that_closed_by_itself_is_not_mentioned_at_the_close(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake_server(monkeypatch)
+    browser = FakeBrowser()
+    with_a_browser(monkeypatch, browser)
+
+    server.serve(settings)
+
+    assert len(browser.settled) == 1, "the close did ask the browser to settle"
+    assert "killed" not in capsys.readouterr().err
 
 
 def test_main_returns_zero_when_the_server_stops(

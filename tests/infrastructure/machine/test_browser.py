@@ -16,6 +16,9 @@ and the verifier run here exactly as in production, with a local origin instead 
 * ELA's stop, **whenever it is raised** (M13.4c): while the browser starts, at the last listening,
   at the gate, with a page open — from then on no navigation and no gesture leaves, and the site
   counts nothing. Each of those instants is built with an event, never with a time;
+* what ELA's close waits for (M13.4e): after the stop the adapter is brought to rest, and **a
+  browser that does not close is killed when the grace is over** — its driver stopped by a signal,
+  the grace an event of the test's;
 * a ``SIGINT`` to ELA's process group does not close the page (M5-bis).
 
 **No sleep**: the pages answer to requests, and the deadline is an event. The one wait is the
@@ -958,6 +961,118 @@ async def test_after_the_stop_of_ela_no_closing_is_left_running(
 
     assert browser._closing == set()  # noqa: SLF001
     assert descendants() == []
+
+
+# ----------------------------------------------------------------------------------------
+# What ELA's close waits for: nothing of the adapter runs when it returns (M13.4e)
+# ----------------------------------------------------------------------------------------
+
+
+class Grace:
+    """How long ELA's close waits for the browser, as an event the test raises — never a time.
+    ``asked`` is set when the adapter starts to wait: the browser has not closed by itself."""
+
+    def __init__(self) -> None:
+        self.asked = asyncio.Event()
+        self.over = asyncio.Event()
+
+    async def __call__(self) -> None:
+        self.asked.set()
+        await self.over.wait()
+
+
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+async def test_settled_after_the_stop_nothing_of_the_adapter_runs_and_nothing_was_killed(
+    served: list[Site], nothing_left_behind: None
+) -> None:
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    stopping = asyncio.Event()
+    browser = stoppable(stopping)
+    await browser.open(web.origin + "/", lambda url: True, FakeStop())
+    await browser.open(web.origin + "/", lambda url: True, FakeStop())
+    grace = Grace()
+
+    stopping.set()
+    killed = await browser.settle(grace)
+
+    assert killed == ()
+    assert descendants() == []
+    assert browser._pages == {} and browser._closing == set()  # noqa: SLF001
+
+
+async def test_a_browser_that_does_not_close_is_killed_when_the_grace_is_over(
+    served: list[Site], nothing_left_behind: None
+) -> None:
+    """The driver is stopped with a signal, so the closing ELA's stop begins is a call of
+    Playwright's that never comes back: a browser that does not close, built with an event. When
+    the grace — an event too — is over, what the adapter started is killed, its names come back,
+    and with the pipes closed the closing ends: nothing of the adapter is left in flight."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    stopping = asyncio.Event()
+    browser = stoppable(stopping)
+    await browser.open(web.origin + "/", lambda url: True, FakeStop())
+    before = started()
+    (driver,) = [pid for pid, name in before if name == "node"]
+    os.kill(driver, signal.SIGSTOP)
+    grace = Grace()
+
+    stopping.set()
+    settling = asyncio.create_task(browser.settle(grace))
+    await grace.asked.wait()
+    assert not settling.done(), "the browser has not closed, and nothing has been killed yet"
+    assert all(alive(pid) for pid, _ in before)
+    grace.over.set()
+    killed = await settling
+
+    assert sorted(killed) == sorted(name for _, name in before), "names, and every one of them"
+    assert [name for pid, name in before if alive(pid)] == []
+    assert browser._pages == {} and browser._closing == set()  # noqa: SLF001
+    watching = browser._watching  # noqa: SLF001 — the task the stop wakes
+    assert watching is not None and watching.done()
+
+
+async def test_a_browser_is_not_settled_before_the_stop() -> None:
+    """The task that closes every page wakes on the stop: waiting for it without the stop would be
+    waiting out the grace for nothing, and then killing a browser nobody had asked to close."""
+    browser = stoppable(asyncio.Event())
+
+    with pytest.raises(RuntimeError, match="after ELA's stop"):
+        await browser.settle(Grace())
+
+
+async def test_a_browser_that_never_opened_a_page_is_settled_at_once_and_starts_nothing() -> None:
+    stopping = asyncio.Event()
+    browser = stoppable(stopping)
+    grace = Grace()
+
+    stopping.set()
+    killed = await browser.settle(grace)
+
+    assert killed == ()
+    assert not grace.asked.is_set()
+    assert descendants() == []
+
+
+async def test_the_process_of_a_driver_is_read_where_playwright_keeps_it(
+    browser: PlaywrightBrowser, served: list[Site]
+) -> None:
+    """The second private fact of the engine the adapter reads (the first is the message of a
+    missing executable): where Playwright keeps the process of its driver. The day it moves, this
+    fails — and an adapter that could not read it would have nothing to kill."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    assert browser._driver_pids() == []  # noqa: SLF001
+
+    await browser.open(web.origin + "/", lambda url: True, FakeStop())
+
+    drivers = [pid for pid, name in started() if name == "node"]
+    assert drivers and browser._driver_pids() == drivers  # noqa: SLF001
 
 
 async def test_a_page_handed_over_and_never_looked_at_is_closed_at_its_deadline(

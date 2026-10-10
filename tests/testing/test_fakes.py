@@ -395,3 +395,17 @@ async def test_after_its_stop_the_browser_says_stopped_for_every_use_of_a_page()
     with pytest.raises(BrowserStopped):
         await browser.open("https://example.com/", lambda url: True, FakeStop())
     await browser.close(opened.page)
+
+
+async def test_the_browser_is_settled_with_what_the_test_says_it_had_to_kill() -> None:
+    """M13.4e: what ELA's close asks of any browser. The fake starts nothing, so it has nothing to
+    wait for; it keeps the grace it was given and answers what the test decided."""
+    browser = FakeBrowser()
+
+    async def grace() -> None:
+        raise AssertionError("a browser with nothing running waits for no grace")
+
+    assert await browser.settle(grace) == ()
+    browser.killed = ("node",)
+    assert await browser.settle(grace) == ("node",)
+    assert browser.settled == [grace, grace]
