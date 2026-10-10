@@ -11,6 +11,8 @@ and the verifier run here exactly as in production, with a local origin instead 
 * **no gesture** when the page is not the plan's — the page reports every event it sees;
 * an empty profile for every page: a cookie does not pass;
 * the stop, the deadline and the close, and **no process left** when the close returns;
+* a cancellation (M13.4b): a tool cancelled after the opening, a close and an opening cancelled
+  halfway — **no process left** once the adapter's own closings are done, awaited as tasks;
 * a ``SIGINT`` to ELA's process group does not close the page (M5-bis).
 
 **No sleep**: the pages answer to requests, and the deadline is an event. The one wait is the
@@ -185,8 +187,8 @@ async def browser() -> AsyncIterator[PlaywrightBrowser]:
         await made.close(page)
 
 
-def descendants() -> list[str]:
-    """What this worker has started and the kernel still knows, by name — ``ps`` itself aside."""
+def started() -> list[tuple[int, str]]:
+    """What this worker has started and the kernel still knows — ``ps`` itself aside."""
     out = subprocess.run(
         ["/bin/ps", "-A", "-o", "pid=,ppid=,comm="], capture_output=True, text=True, check=True
     ).stdout
@@ -194,14 +196,32 @@ def descendants() -> list[str]:
     children: dict[int, list[tuple[int, str]]] = {}
     for pid, ppid, name in ((int(a), int(b), c) for a, b, c in rows):
         children.setdefault(ppid, []).append((pid, name.rsplit("/", 1)[-1]))
-    found: list[str] = []
+    found: list[tuple[int, str]] = []
     todo = [os.getpid()]
     while todo:
         for pid, name in children.get(todo.pop(), []):
             if name != "ps":
-                found.append(name)
+                found.append((pid, name))
                 todo.append(pid)
     return found
+
+
+def descendants() -> list[str]:
+    """The same, by name."""
+    return [name for _, name in started()]
+
+
+@pytest.fixture
+def nothing_left_behind() -> Iterator[None]:
+    """A browser a test leaves that nobody holds is not left to the next test — nor to the loop,
+    which at its end waits for a driver nobody stops. Killed here, by pid: the test that left it
+    has failed on its own assertion already, and this asserts nothing."""
+    yield
+    for pid, _ in started():
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:  # gone on its own in between
+            continue
 
 
 def decision(capability: str) -> PermissionDecision:
@@ -621,6 +641,124 @@ async def test_a_task_stopped_right_after_the_navigation_is_listened_to_reads_th
     assert opened.status == 200
     assert web.requests == ["GET /"]
     await browser.close(opened.page)
+
+
+# ----------------------------------------------------------------------------------------
+# A cancellation leaves no browser nobody holds (M13.4b)
+# ----------------------------------------------------------------------------------------
+
+
+async def closings(browser: PlaywrightBrowser) -> None:
+    """Wait for what the adapter is still closing: its own tasks, never a time (ADR 0006 §13)."""
+    await asyncio.gather(*list(browser._closing))  # noqa: SLF001 — the closings it carries
+
+
+NOT_YET = (
+    '<form method="post" action="/grazie"><input id="nome" name="nome" disabled>'
+    '<button id="invia">Invia</button></form>'
+)
+"""A form whose field cannot be written yet: Playwright's ``fill`` waits for it, and that wait is
+what «a gesture in flight» is here — a fact of the page, not a time."""
+
+
+async def test_a_tool_cancelled_after_the_opening_leaves_no_process_when_the_cancellation_is_back(
+    browser: PlaywrightBrowser, served: list[Site], nothing_left_behind: None
+) -> None:
+    """The page was open, a gesture was in flight, and the task was cancelled: when the
+    cancellation is back in the caller's hands the kernel knows no process of that page. If a
+    Playwright stops waiting for a disabled field the tool goes on to its end, the cancellation
+    finds nothing to cancel, and this fails saying so instead of passing."""
+    web = site(served, {"/": (200, {}, NOT_YET)})
+    arguments = {
+        "site": "sito0.example",
+        "path": "/",
+        "fill": [["#nome", "ELA"]],
+        "click": "#invia",
+        "expect_text": "Grazie ELA",
+        "purpose": "x",
+    }
+    reached = asyncio.Event()
+    filling = browser.fill
+
+    async def in_flight(page: str, selector: str, value: str) -> None:
+        reached.set()
+        await filling(page, selector, value)
+
+    browser.fill = in_flight  # type: ignore[method-assign]
+    tool = BrowserActTool(browsing(web), browser, CLOCK, FakeIdGenerator())
+    running = asyncio.create_task(tool.execute(decision(BROWSER_ACT), arguments, FakeStop()))
+    await reached.wait()
+    assert descendants(), "a driver and a browser run while the fill waits"
+
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+
+    assert descendants() == []
+    assert web.requests == ["GET /"], "nothing was sent"
+
+
+async def test_a_close_cancelled_halfway_still_runs_to_its_end(
+    browser: PlaywrightBrowser, served: list[Site], nothing_left_behind: None
+) -> None:
+    """``close`` takes the page out of the table and then waits for three closings: cancelled
+    there, it used to leave the browser running where nothing would find it again — not even
+    ELA's stop. The closing is the adapter's, and ends whoever was waiting for it."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    opened = await browser.open(web.origin + "/", lambda url: True, FakeStop())
+    closing = asyncio.create_task(browser.close(opened.page))
+    await asyncio.sleep(0)  # one turn of the loop: the close has begun, and is waiting
+
+    closing.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await closing
+    await closings(browser)
+
+    assert descendants() == []
+
+
+async def test_an_opening_cancelled_while_the_driver_starts_leaves_no_driver(
+    browser: PlaywrightBrowser, served: list[Site], nothing_left_behind: None
+) -> None:
+    """The driver is started before anything can close it: an opening cancelled in its first turn
+    used to leave a ``node`` nobody held, which outlived ELA's stop (measured at every delay up to
+    140 ms). What was started is stopped when its start ends."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    opening = asyncio.create_task(browser.open(web.origin + "/", lambda url: True, FakeStop()))
+    await asyncio.sleep(0)  # one turn of the loop: the opening has begun to start its driver
+
+    opening.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await opening
+    await closings(browser)
+
+    assert descendants() == []
+    assert web.requests == []
+
+
+async def test_after_the_stop_of_ela_no_closing_is_left_running(
+    served: list[Site], nothing_left_behind: None
+) -> None:
+    """Decision 26: a closing nobody waits for any more — its caller was cancelled — is still
+    carried to its end before the stop is done with the browser."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    stopping = asyncio.Event()
+    browser = PlaywrightBrowser(stopping, environment={}, kept=Kept(), system=SYSTEM)
+    first = await browser.open(web.origin + "/", lambda url: True, FakeStop())
+    await browser.open(web.origin + "/", lambda url: True, FakeStop())
+    watching = browser._watching  # noqa: SLF001 — the task the signal wakes
+    assert watching is not None
+    orphan = asyncio.create_task(browser.close(first.page))
+    await asyncio.sleep(0)
+    orphan.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await orphan
+
+    stopping.set()
+    await watching
+
+    assert browser._closing == set()  # noqa: SLF001
+    assert descendants() == []
 
 
 async def test_a_page_handed_over_and_never_looked_at_is_closed_at_its_deadline(

@@ -524,3 +524,120 @@ async def test_a_timeout_before_the_first_gesture_says_none_was_made() -> None:
     assert result.error is not None and result.error.code == TIMEOUT
     assert result.error.message.endswith("no gesture was made")
     assert result.output == {"gestures": 0}
+
+
+# ----------------------------------------------------------------------------------------
+# Every way out of the run leaves the page handed over or closed (M13.4b)
+# ----------------------------------------------------------------------------------------
+
+
+async def cancelled(running: asyncio.Task[object]) -> None:
+    """Cancel a tool held on its page, and say that what comes out is the cancellation itself:
+    turned into a result, it would not cancel."""
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+
+
+async def test_a_read_cancelled_after_the_opening_closes_its_page_and_stays_a_cancellation() -> (
+    None
+):
+    """The defect of the base class (decision 8): a ``CancelledError`` is not an ``Exception``, and
+    went through the ``try`` of the run past the block that closes."""
+    browser = FakeBrowser()
+    reached, _ = browser.hold("text")
+    running = asyncio.create_task(read(browser).execute(decision(BROWSER_READ), READ, FakeStop()))
+    await reached.wait()
+
+    await cancelled(running)
+
+    assert browser.closed == ["page-1"] and browser.kept == []
+
+
+async def test_an_action_cancelled_at_its_click_closes_its_page_and_makes_no_other_gesture() -> (
+    None
+):
+    browser = FakeBrowser()
+    browser.click_reached, browser.click_released = asyncio.Event(), asyncio.Event()
+    running = asyncio.create_task(act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop()))
+    await browser.click_reached.wait()
+
+    await cancelled(running)
+
+    assert browser.closed == ["page-1"] and browser.kept == []
+    assert browser.fills == [("input[name=custname]", "ELA prova 7431")]
+    assert browser.clicks == []
+
+
+async def test_an_action_cancelled_before_its_first_gesture_closes_its_page_and_makes_none() -> (
+    None
+):
+    browser = FakeBrowser()
+    reached, _ = browser.hold("count")
+    running = asyncio.create_task(act(browser).execute(decision(BROWSER_ACT), ACT, FakeStop()))
+    await reached.wait()
+
+    await cancelled(running)
+
+    assert browser.closed == ["page-1"] and browser.kept == []
+    assert browser.fills == [] and browser.clicks == []
+
+
+async def test_a_run_cancelled_while_the_browser_opens_has_no_page_to_close() -> None:
+    """Before ``open`` returns the page is the adapter's, which closes what it started: the tool
+    has nothing in its hands, and closes nothing."""
+    browser = FakeBrowser()
+    browser.launch_reached, browser.launch_released = asyncio.Event(), asyncio.Event()
+    running = asyncio.create_task(read(browser).execute(decision(BROWSER_READ), READ, FakeStop()))
+    await browser.launch_reached.wait()
+
+    await cancelled(running)
+
+    assert browser.closed == [] and browser.kept == []
+
+
+@pytest.mark.parametrize(
+    ("capability", "arguments", "member"),
+    [(BROWSER_READ, READ, "text"), (BROWSER_ACT, ACT, "fill")],
+    ids=["read", "act"],
+)
+async def test_an_error_the_run_does_not_name_closes_the_page_and_leaves_as_it_is(
+    capability: str, arguments: JsonMapping, member: str
+) -> None:
+    """A defect of ELA's own on the page — not one of the browser's errors the run knows —: the
+    executor makes a failed result of it, and until M13.4b nobody closed the page."""
+    browser = FakeBrowser()
+    browser.raising[member] = ZeroDivisionError("a defect of ELA's")
+    tool = read(browser) if capability == BROWSER_READ else act(browser)
+
+    with pytest.raises(ZeroDivisionError):
+        await tool.execute(decision(capability), arguments, FakeStop())
+
+    assert browser.closed == ["page-1"] and browser.kept == []
+
+
+async def test_a_cancellation_given_again_while_the_page_closes_is_still_a_cancellation() -> None:
+    """The page is closed by the adapter, whose close runs to its end whoever waits (the real
+    browser says so); what the tool owes is to ask for it once, and to let the cancellation out."""
+
+    class SlowToClose(FakeBrowser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.closing = asyncio.Event()
+
+        async def close(self, page: str) -> None:
+            await super().close(page)
+            self.closing.set()
+            await asyncio.Event().wait()
+
+    browser = SlowToClose()
+    reached, _ = browser.hold("text")
+    running = asyncio.create_task(read(browser).execute(decision(BROWSER_READ), READ, FakeStop()))
+    await reached.wait()
+    running.cancel()
+    async with asyncio.timeout(5):  # the test's guard: a run that never asks to close fails here
+        await browser.closing.wait()
+
+    await cancelled(running)
+
+    assert browser.closed == ["page-1"] and browser.kept == []

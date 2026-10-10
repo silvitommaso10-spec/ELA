@@ -103,7 +103,6 @@ from ela.ports import (
     AuthorizationExhaustedError,
     AuthorizationExpiredError,
     AuthorizationRevokedError,
-    BrowserError,
     BrowserStopped,
     CallRequest,
     Clock,
@@ -1058,12 +1057,14 @@ class FakeBrowser:
     each gesture — and to answer **when the test decides**. ``raising`` makes one member raise the
     given error; ``click_reached`` and ``click_released``, when set, hold the click until the test
     lets it go — the precondition of a stop given halfway, built instead of waited for.
+    :meth:`hold` does the same for ``count`` and ``text`` (M13.4b): a cancellation that arrives
+    **after the opening** needs the tool held on the page, and a read has no click to be held at.
     """
 
     def __init__(self, page: FakePage | None = None, *, installed: bool = True) -> None:
         self.page = FakePage() if page is None else page
         self.installed_answer = installed
-        self.raising: dict[str, BrowserError] = {}
+        self.raising: dict[str, Exception] = {}
         self.opened: list[str] = []
         self.allowed: list[Callable[[str], bool]] = []
         self.fills: list[tuple[str, str]] = []
@@ -1079,11 +1080,27 @@ class FakeBrowser:
         (M6.3c): the window where a stop finds the site not yet visited."""
         self._open: dict[str, bool] = {}
         self._clicked = False
+        self._held: dict[str, tuple[asyncio.Event, asyncio.Event]] = {}
 
     def _raise(self, member: str) -> None:
         error = self.raising.get(member)
         if error is not None:
             raise error
+
+    def hold(self, member: str) -> tuple[asyncio.Event, asyncio.Event]:
+        """Hold ``count`` or ``text`` from now on: the first event is set when the member is
+        reached, and the member answers when the test sets the second."""
+        if member not in ("count", "text"):
+            raise ValueError(f"{member} is not a member this fake holds")
+        self._held[member] = (asyncio.Event(), asyncio.Event())
+        return self._held[member]
+
+    async def _wait(self, member: str) -> None:
+        held = self._held.get(member)
+        if held is not None:
+            reached, released = held
+            reached.set()
+            await released.wait()
 
     def _on(self, page: str) -> None:
         if page not in self._open:
@@ -1112,6 +1129,7 @@ class FakeBrowser:
 
     async def count(self, page: str, selector: str) -> int:
         self._on(page)
+        await self._wait("count")
         self._raise("count")
         return self.page.counts.get(selector, 1)
 
@@ -1135,6 +1153,7 @@ class FakeBrowser:
 
     async def text(self, page: str, selector: str | None) -> str:
         self._on(page)
+        await self._wait("text")
         self._raise("text")
         return self.page.texts.get(selector, "")
 
