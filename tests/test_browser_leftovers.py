@@ -8,6 +8,7 @@ left, in the two cases a walk of the test's own descendants misses, and that aft
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -38,9 +39,8 @@ def folder() -> Iterator[Path]:
         yield made
     finally:
         sweep(made)
-        for other in made.iterdir():
-            other.rmdir()
-        made.rmdir()
+        # Whatever the sweep under test left, this folder is the test's: it goes with the test.
+        shutil.rmtree(made, ignore_errors=True)
 
 
 def state(pid: int) -> str:

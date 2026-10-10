@@ -76,10 +76,12 @@ class Stopping(uvicorn.Server):
     **Measured before it was written** (uvicorn 0.52.4): while it serves, uvicorn replaces
     whatever handler it finds for ``SIGINT`` and ``SIGTERM``; at the end it puts that handler back
     **and raises every signal it captured again, into it**. A handler of ELA's installed before
-    ``serve`` would therefore never see the first signal when it arrives, and would then receive
-    it raised again — which whoever counts «a second signal» counts as one. So this server
-    captures nothing: the handlers ELA installed stay where they are for as long as it serves,
-    and :class:`Signalled` tells it to exit.
+    ``serve`` would therefore not see a signal when it arrives, but only raised again when the
+    server has finished stopping: **the stop would be raised late** — after the connections in
+    flight were waited for, which is the long poll ADR 0038 §11 exists to wake —, and a
+    ``SIGHUP``, which uvicorn does not capture, would be the only signal ELA saw in time. So this
+    server captures nothing: the handlers ELA installed stay where they are for as long as it
+    serves, and :class:`Signalled` tells it to exit.
 
     ADR 0038 §11 is kept by that handler and not here any more: the stop is still raised at the
     instant of the signal, which is what wakes whoever is waiting.
@@ -148,7 +150,9 @@ def _held(told: Signalled) -> Iterator[None]:
         yield
     finally:
         for number, handler in found.items():
-            signal.signal(number, handler)
+            # ``None`` is what Python answers for a handler it did not install itself, and it
+            # refuses to install ``None``: what cannot be named is put back as the default.
+            signal.signal(number, signal.SIG_DFL if handler is None else handler)
 
 
 def bound(host: str, port: int) -> socket.socket:
@@ -230,11 +234,17 @@ def killed(names: Sequence[str], hurried: bool = False) -> str:
     return f"ela: the browser {why}: ELA killed what it had started — {counted}"
 
 
-def _say_killed(names: Sequence[str], hurried: bool) -> None:
-    # After a SIGHUP the terminal may be gone, and stderr with it: a line that cannot be written
-    # is lost, and the close goes on to release the database (decision 56).
+def _say(line: str) -> None:
+    """A line on stderr, **which may not be there**: after a ``SIGHUP`` the terminal is gone, and
+    ELA may have been started with no stderr at all. A line that cannot be written is lost, and
+    whatever was saying it goes on — the close to release the database (decision 56), the start
+    to serve."""
     with suppress(OSError, ValueError):
-        print(killed(names, hurried), file=sys.stderr)
+        print(line, file=sys.stderr)
+
+
+def _say_killed(names: Sequence[str], hurried: bool) -> None:
+    _say(killed(names, hurried))
 
 
 async def _serve(settings: Settings, received: list[int]) -> None:
@@ -246,10 +256,9 @@ async def _serve(settings: Settings, received: list[int]) -> None:
         if ela.removed_from_environment:
             # The names and never the values (M13.4, decision 4 of the review of 2026-09-30): a
             # name is what somebody needs to find the line in their shell.
-            print(
+            _say(
                 f"ela: removed {', '.join(ela.removed_from_environment)} from ELA's environment: "
-                "the browser's driver must not inherit what turns its checks off (ADR 0052 §14)",
-                file=sys.stderr,
+                "the browser's driver must not inherit what turns its checks off (ADR 0052 §14)"
             )
         sockets: list[socket.socket] = []
         try:

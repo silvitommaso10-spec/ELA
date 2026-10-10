@@ -10,10 +10,16 @@ fails.** Two facts made that a criterion and not a habit (2026-10-10):
   and stays stopped for ever: a cleanup that walks the test's own descendants cannot see it.
 
 So a test of the real browser gives the driver **a temporary folder of its own** — :func:`scratch`,
-through ``TMPDIR`` —, and everything it may leave is found **by that folder**: the profiles are in
-it, and a process of the browser's names it in its arguments, whoever its parent is now.
+through ``TMPDIR`` —, and what it may leave is found **by that folder**: the profiles are in it,
+and **the browser's main process** names it in its arguments, whoever its parent is now.
 :func:`sweep` takes both away, and :func:`left` says what is still there — which is what a fixture
 asserts is nothing.
+
+**What the folder does not find, measured** (the review of the repair): the processes a browser
+starts for itself — the GPU's, the network's, a renderer — do not name the profile. They end with
+the main process when they run; **stopped**, they stay. So whoever stops them — one test does —
+hands their pids to :func:`sweep` as ``also``, and a test with the browser in a process of its own
+hands over every pid that process said it had started.
 
 The folder is short on purpose, under ``/tmp``: a profile of Chrome holds a socket, and a long
 path does not fit in one.
@@ -65,11 +71,13 @@ def running(pid: int) -> bool:
 
 
 def named(folder: Path) -> list[int]:
-    """The processes that name ``folder`` in their arguments and are not yet collected: a browser
-    started with its profile there, and what that browser started — whoever their parent is now,
-    running or stopped. A process that has ended and waits to be collected (``Z``) is not one."""
+    """The processes that name ``folder`` in their arguments: the main process of a browser
+    started with its profile there — whoever its parent is now, running or stopped. Not the
+    processes that browser started for itself, which name no profile. **Nor one that has ended
+    and waits to be collected**: the kernel keeps its entry and not its arguments, so it names
+    nothing — measured, and held by a test, which is why no line here looks at its state."""
     inside = f"{folder}{os.sep}"
-    return [pid for pid, state, args in _table() if inside in args and not state.startswith("Z")]
+    return [pid for pid, _, args in _table() if inside in args]
 
 
 @dataclass(frozen=True)
@@ -90,9 +98,10 @@ def left(folder: Path) -> Left:
 
 
 def sweep(folder: Path, also: tuple[int, ...] = ()) -> None:
-    """Kill what still names ``folder`` — and ``also``, by pid: a driver names nothing —, wait
-    until the kernel has none of them running or stopped, and take the profiles away. By pid and
-    by this folder, and nothing else of the machine."""
+    """Kill what still names ``folder`` — and ``also``, by pid: a driver names nothing, and
+    neither do the processes a browser starts for itself —, wait until the kernel has none of
+    them running or stopped, and take the profiles away. By pid and by this folder, and nothing
+    else of the machine."""
     doomed = sorted({*named(folder), *also})
     for pid in doomed:
         try:

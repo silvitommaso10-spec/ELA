@@ -498,13 +498,16 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
 
 async def _over(seconds: int, hurry: asyncio.Event | None) -> bool:
     """Wait until the grace of ELA's close is over: its ``seconds``, or the ``hurry`` if there is
-    one and it comes first (M13.4e, decision 55). ``True`` if it was the hurry — raised before
-    the wait or during it — that ended it: what whoever closes ELA says is which of the two."""
+    one and it comes first (M13.4e, decision 55). ``True`` if the hurry — raised before the wait
+    or during it — ended it **before the time ran out**: what whoever closes ELA says is which of
+    the two. A hurry learnt of in the very turn in which the time is up did not end anything: the
+    grace was waited whole, and saying otherwise would be saying a second signal was obeyed at
+    once when it was not (the review of the repair)."""
     told = asyncio.ensure_future((hurry or asyncio.Event()).wait())
     timed = asyncio.ensure_future(asyncio.sleep(seconds))
     try:
         await asyncio.wait({told, timed}, return_when=asyncio.FIRST_COMPLETED)
-        return told.done()
+        return not timed.done()
     finally:
         told.cancel()
         timed.cancel()
