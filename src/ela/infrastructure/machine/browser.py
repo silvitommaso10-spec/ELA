@@ -160,6 +160,9 @@ class PlaywrightBrowser:
         self._pages: dict[str, _Open] = {}
         self._watching: asyncio.Task[None] | None = None
         self._closing: set[asyncio.Task[None]] = set()
+        self._opening = 0
+        self._settled = asyncio.Event()
+        self._settled.set()
 
     def _launch(self) -> dict[str, Any]:
         return {
@@ -180,13 +183,19 @@ class PlaywrightBrowser:
             self._watching = asyncio.create_task(self._close_all_on_stop())
 
     async def _close_all_on_stop(self) -> None:
+        """Close every page once the stop is raised, and **do not end while anything of this
+        adapter is still running** (M13.4b, decision 26): the pages in the table; the closings
+        nobody waits for any more, because their caller was cancelled; and what an opening that
+        was in flight when the stop was raised will close when it gets to look at the stop — it
+        puts nothing in the table and no closing in the set until then, so the stop waits for it.
+        No opening begins after the stop, so this ends."""
         await self._stopping.wait()
-        for page in list(self._pages):
-            await self.close(page)
-        while self._closing:
-            # A closing whose caller was cancelled is nobody's to wait for any more: it ends
-            # before the stop is done with the browser (M13.4b, decision 26).
-            await asyncio.wait(self._closing)
+        while self._pages or self._closing or self._opening:
+            for page in list(self._pages):
+                await self.close(page)
+            if self._closing:
+                await asyncio.wait(self._closing)
+            await self._settled.wait()
 
     def _carried(self, work: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
         """Run a closing in a task of the adapter's own, held until it ends (M13.4b): whoever
@@ -238,6 +247,18 @@ class PlaywrightBrowser:
     async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         self._refuse_if_stopping()
         self._watch()
+        # In flight from here to its end, whatever the end: the stop does not call itself done
+        # with the browser while an opening may still have something to close (decision 26).
+        self._opening += 1
+        self._settled.clear()
+        try:
+            return await self._opened(address, allowed, stop)
+        finally:
+            self._opening -= 1
+            if not self._opening:
+                self._settled.set()
+
+    async def _opened(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         playwright = await self._driver()
         token = uuid4().hex
         try:
@@ -270,7 +291,9 @@ class PlaywrightBrowser:
                 if self._stopping.is_set():
                     # ELA is stopping (M13.4c): nothing more leaves for a site — not a navigation
                     # asked for an instant before, not the redirect after a form. Looked at after
-                    # the boundary and right before the request is let go, with no wait between.
+                    # the boundary and right before the request is let go: ``route.fetch`` writes
+                    # to the driver in this same turn of the loop; ``route.continue_`` is handed
+                    # over by Playwright one turn later, and a request let go here has left.
                     await route.abort()
                     return
                 if not main:

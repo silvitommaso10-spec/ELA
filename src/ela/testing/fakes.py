@@ -1080,6 +1080,7 @@ class FakeBrowser:
         (M6.3c): the window where a stop finds the site not yet visited."""
         self._open: dict[str, bool] = {}
         self._clicked = False
+        self._stopped = False
         self._held: dict[str, tuple[asyncio.Event, asyncio.Event]] = {}
 
     def _raise(self, member: str) -> None:
@@ -1103,6 +1104,8 @@ class FakeBrowser:
             await released.wait()
 
     def _on(self, page: str) -> None:
+        if self._stopped:
+            raise BrowserStopped("ELA is stopping")
         if page not in self._open:
             raise PageGone(page)
 
@@ -1190,7 +1193,9 @@ class FakeBrowser:
         self._open.pop(page, None)
 
     def stop(self) -> None:
-        """What the stop signal does to a real one: every page closed, and what runs is stopped."""
+        """What the stop signal does to a real one: every page closed, what runs is stopped, and
+        from then on every use of a page says so (M13.4c) — not that the page is gone."""
+        self._stopped = True
         self._open.clear()
         for member in ("open", "count", "fill", "click", "text", "glance", "installed"):
             self.raising[member] = BrowserStopped("ELA is stopping")
