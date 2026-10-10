@@ -20,11 +20,15 @@ essere scritta (:func:`withheld`), e alla fine lo script rilegge il file e lo di
 
 Che cosa fa, nell'ordine:
 
-* **Bitwarden**, con una cartella dei dati sua, che alla fine cancella: dove sta ``bw`` e da chi è
-  firmato; l'unica domanda — bitwarden.com o bitwarden.eu —; ``bw login`` e ``bw unlock``, con la
-  chiave **solo in memoria** e, per i figli, **solo nell'ambiente**, mai in ``argv``; una **voce di
-  prova** con un valore inventato qui e l'indirizzo di una pagina locale, creata, riletta e
-  cancellata; che cosa invalida una chiave e quanto dura; e alla fine il vault chiuso, l'uscita
+* **Bitwarden**, con una cartella dei dati sua, che alla fine cancella: dove sta ``bw``, **e che
+  sia di Bitwarden prima di lanciarlo** — ``codesign --verify --strict`` deve passare e il team
+  della firma deve essere il suo: la password principale non si scrive in un programma che non è
+  il suo, e fra i posti in cui lo script cerca vale il primo che passa —; l'unica domanda —
+  bitwarden.com o bitwarden.eu —; ``bw login`` e ``bw unlock``, con la chiave **solo in memoria**
+  e, per i figli, **solo nell'ambiente**, mai in ``argv``; una **voce di prova** con un valore
+  inventato qui e l'indirizzo di una pagina locale, creata, riletta e cancellata; che cosa fa un
+  nuovo ``bw unlock`` alla chiave di prima, **chiesto mentre quella è ancora viva**, e quanto dura
+  una chiave; e alla fine ``bw lock``, letto su ogni chiave che la misura ha avuto, l'uscita
   dall'account, e la verifica di tutti e due. **Nessuna password vera entra nel vault.**
 * **Google**, in una cartella di profilo di prova, che alla fine cancella. **Prima** la finestra
   del binario lanciata senza automazione, su una cartella pulita (G1): è la riga che decide il
@@ -36,13 +40,14 @@ Che cosa fa, nell'ordine:
 Le parole dell'esito, una per significato: **PASSATO** — misurato, e la risposta lascia la decisione
 com'è —; **RIAPRE** — misurato, e la risposta riapre la riga che nomina —; **SALTATO** — non
 misurato, perché il mondo non l'ha dato: un login rifiutato da ``bw``, un binario che manca, un
-browser che ha sollevato —; **FALLITO** — un dovere dello script non verificato: la chiusura, il
-file, la cancellazione. Ogni passo che vuole la mano di Tommaso ha una precondizione che lo script
-verifica.
+browser che ha sollevato, un ``bw`` che Bitwarden non ha firmato —; **FALLITO** — un dovere dello
+script non verificato: la chiusura, il file, la cancellazione, **una recinzione che non ha
+tenuto**. Ogni passo che vuole la mano di Tommaso ha una precondizione che lo script verifica.
 
 **Le recinzioni restano**: mai la cartella di profilo del Chrome di Tommaso, mai il portachiavi —
 ogni lancio porta ``--use-mock-keychain``, riletto dal processo prima che lo script vada avanti —,
-e ogni cartella di prova nasce sotto una cartella temporanea di questo script. **Una cosa sola è
+e ogni cartella di prova nasce sotto una cartella temporanea di questo script. Una recinzione che
+non tiene è FALLITO con la sua frase, e ferma la parte di Google lì. **Una cosa sola è
 diversa dalla notte del 2026-10-10**: se Google rifiuta Chrome for Testing, la riga G1 vuole lo
 stesso login nel Chrome installato «nelle stesse condizioni», cioè in una finestra del suo binario
 lanciata da qui e non da Playwright — su una cartella di prova nuova, con ``--use-mock-keychain``.
@@ -158,6 +163,12 @@ SESSION_COOKIES: Final = frozenset({"SID", "__Secure-1PSID", "__Secure-3PSID"})
 first): looked for by name, their values never kept."""
 
 CLOSED_PATH: Final = "/usr/bin:/bin:/usr/sbin:/sbin"
+CODESIGN: Final = Path("/usr/bin/codesign")
+BITWARDEN_TEAM: Final = "LTZ2PFU5D6"
+BITWARDEN_S: Final = f'anchor apple generic and certificate leaf[subject.OU] = "{BITWARDEN_TEAM}"'
+"""What a ``bw`` must satisfy before this script launches it at all (decision 43): signed with a
+certificate Apple gave Bitwarden's team. The team is read from the certificate, by ``codesign``,
+and not from what the binary says of itself."""
 INVENTED_NAME: Final = "ELA-misura-M13.9-voce-di-prova"
 INVENTED_USER: Final = "utente-inventato-m139"
 SERVERS: Final = {
@@ -177,6 +188,13 @@ KNOWN: Final = {
 
 class Interrupted(BaseException):
     """The terminal was closed or the process told to end: cleaned up after, like a Ctrl-C."""
+
+
+class FenceBroken(RuntimeError):
+    """A fence of the measure did not hold: a browser launched without ``--use-mock-keychain``, a
+    folder that is not a test folder of the measure. Its text is a sentence of this script's, for
+    the file. **It is not a browser that broke**: the step is FALLITO and not SALTATO, and the
+    Google part stops there (decision 45)."""
 
 
 def on_signal(number: int, handler: Any) -> Any:
@@ -299,6 +317,8 @@ def tried[T](report: Report, what: str, call: Callable[[], T]) -> T | None:
     with the type of the error and never its message, which may carry an address or a value."""
     try:
         return call()
+    except FenceBroken:
+        raise
     except Exception as error:  # noqa: BLE001 — whatever a browser raises, the measure goes on
         report.skipped(f"{what}: non misurato, il browser ha sollevato {type(error).__name__}")
         return None
@@ -455,30 +475,66 @@ class Bw:
         return urlsplit(ran.out).hostname or "illeggibile"
 
 
-def find_bw(named: Path | None, *, search: bool) -> Path | None:
-    """Where ``bw`` is, without asking Tommaso. A path given is that path or nothing — a dry run
-    that named a fake must never fall back to the real one —; otherwise, when ``search`` is on, the
-    usual places, the PATH, and the copy the night of 2026-10-10 downloaded and checked."""
+def places_of_bw(named: Path | None, *, search: bool) -> list[Path]:
+    """Where a ``bw`` is, in the order they are tried, without asking Tommaso. A path given is that
+    path or nothing — a dry run that named a fake must never fall back to the real one —;
+    otherwise, when ``search`` is on, the usual places, the PATH, and the copy the night of
+    2026-10-10 downloaded. **Being here is not being launched**: :func:`not_of_bitwarden` first."""
     if named is not None:
-        return named if named.is_file() and os.access(named, os.X_OK) else None
+        return [named] if named.is_file() and os.access(named, os.X_OK) else []
     if not search:
-        return None
+        return []
     places = [
+        Path.home() / ".ela/bin/bw",
         Path.home() / ".local/bin/bw",
         Path("/opt/homebrew/bin/bw"),
         Path("/usr/local/bin/bw"),
         Path(shutil.which("bw") or "/nonexistent"),
         ROOT / ".git" / "m13.9-reference" / "bw" / "bin" / "bw",
     ]
-    return next((p for p in places if p.is_file() and os.access(p, os.X_OK)), None)
+    there = [place for place in places if place.is_file() and os.access(place, os.X_OK)]
+    return list(dict.fromkeys(there))
+
+
+def codesign(path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(CODESIGN), *arguments, str(path)], capture_output=True, text=True, check=False
+    )
+
+
+def team_of(path: Path) -> str:
+    """The team ``codesign`` reads in the signature of ``path``, or that there is none."""
+    shown = codesign(path, "-dv", "--verbose=2")
+    lines = (shown.stdout + shown.stderr).splitlines()
+    team = next((line for line in lines if line.startswith("TeamIdentifier=")), None)
+    return team.partition("=")[2] if team else "nessun team"
+
+
+def not_of_bitwarden(path: Path) -> str | None:
+    """Why ``path`` is not launched as the CLI of Bitwarden, or ``None`` (decision 43):
+    ``codesign --verify --strict`` must pass, and the signature must be of a certificate Apple gave
+    the team of Bitwarden. Asked **before** the first launch: what is launched as ``bw login`` is
+    what Tommaso types his master password into, and printing who signed it and going on would be
+    a defence that looks armed and never fires."""
+    if not CODESIGN.is_file():
+        return "la firma non si può verificare: su questa macchina non c'è codesign"
+    verified = codesign(path, "--verify", "--strict")
+    if verified.returncode != 0:
+        return f"codesign --verify --strict non passa (uscita {verified.returncode})"
+    if codesign(path, "--verify", "--strict", f"-R={BITWARDEN_S}").returncode != 0:
+        return (
+            "non è firmato da Bitwarden: la firma è buona, ma non è di un certificato che Apple "
+            f"ha dato al team {BITWARDEN_TEAM} (il suo team: {team_of(path)})"
+        )
+    return None
 
 
 def signed_by(path: Path) -> str:
     """Who signed ``path``, as ``codesign`` says it: a team's name, or why it could not be read."""
-    if platform.system() != "Darwin" or not Path("/usr/bin/codesign").exists():
-        return "non letto: non è un Mac"
+    if not CODESIGN.is_file():
+        return "non letto: su questa macchina non c'è codesign"
     done = subprocess.run(
-        ["/usr/bin/codesign", "-dv", "--verbose=2", str(path)],
+        [str(CODESIGN), "-dv", "--verbose=2", str(path)],
         capture_output=True,
         text=True,
         check=False,
@@ -558,7 +614,11 @@ def a_key(
     for _ in range(3):
         report.say(
             f"    Parte bw {command}: aspetta che mostri la sua domanda, e scrivi lì. Lo script "
-            "non legge ciò che scrivi."
+            "non legge ciò che scrivi, e ciò che scrivi può non comparire sullo schermo: è voluto."
+        )
+        report.say(
+            "    Se bw non mostra nessuna domanda entro venti secondi, premi Ctrl-C una volta "
+            "sola: lo script chiude da sé il vault e le cartelle, e lo scrive."
         )
         started = time.monotonic()
         ran = bw.run(command, "--raw", interactive=True)
@@ -607,12 +667,32 @@ def bitwarden(
     work: Path,
     mode: str,
     made: list[Vault],
+    signature: Callable[[Path], str | None],
 ) -> None:
-    """The second half of measure 4. The vault is appended to ``made`` **before** the login, so
+    """The second half of measure 4. In the real measure a ``bw`` is launched only once
+    ``signature`` has nothing against it — not even for its version —, and of each one set aside
+    the file says where it is and why. The vault is appended to ``made`` **before** the login, so
     that whatever interrupts the rest finds it and closes it."""
     real = mode == "vera"
-    report.step("dove sta bw, e da chi è firmato")
-    found = find_bw(bw_path, search=real)
+    report.step("dove sta bw, e che sia di Bitwarden prima di lanciarlo")
+    places = places_of_bw(bw_path, search=real)
+    found: Path | None = None
+    if real:
+        for place in places:
+            why = signature(place)
+            if why is None:
+                found = place
+                break
+            report.fact(f"scartato: {at(place)} — {why}")
+    elif places:
+        found = places[0]
+    if found is None and places:
+        report.skipped(
+            "nessun bw firmato da Bitwarden fra quelli trovati (codesign --verify --strict, e il "
+            f"team {BITWARDEN_TEAM}): la password principale non si scrive in un programma che "
+            "non è il suo, e i passi di Bitwarden non si fanno"
+        )
+        return
     if found is None:
         report.skipped(
             "il percorso dato con --bw non è un eseguibile: i passi di Bitwarden non si fanno"
@@ -621,14 +701,21 @@ def bitwarden(
             "nomina con --bw); i passi di Bitwarden non si fanno"
         )
         return
+    report.fact(f"dove: {at(found)}")
+    if real:
+        report.fact(
+            "firma: verificata prima di lanciarlo — codesign --verify --strict passa, e il "
+            f"certificato è del team {BITWARDEN_TEAM}"
+        )
+        report.fact(f"firma, per esteso: {signed_by(found)}")
+    else:
+        report.fact("firma: non verificata, a secco")
     data = work / "bw-data"
     data.mkdir(mode=0o700)
     bw = Bw(found, data)
     version = bw.run("--version")
     digest = hashlib.sha256(found.read_bytes()).hexdigest()
-    report.fact(f"dove: {at(found)}")
     report.fact(f"versione: {version.out}; sha256 del binario: {digest}")
-    report.fact(f"firma: {signed_by(found)}")
     state = bw.status()
     if not (data / "data.json").exists():
         report.failed(
@@ -774,31 +861,39 @@ def entry(report: Report, vault: Vault) -> None:
 
 
 def keys(report: Report, ask: Callable[[str], str], vault: Vault, *, real: bool) -> None:
-    """What ends a session key (K2): ``bw lock``, and a new ``bw unlock``."""
-    report.step("che cosa chiude una chiave: bw lock, e un nuovo bw unlock")
+    """What a new ``bw unlock`` does to the key before it (K2), **asked while that key is alive**:
+    a lock first would close it whatever an unlock does, and the file would read its own lock
+    (decision 44). What ``bw lock`` does is read at the closing, of every key the measure had."""
+    report.step("che cosa fa un nuovo bw unlock alla chiave di prima, ancora viva")
     bw, first = vault.bw, vault.key
-    locked = bw.run("lock", session=first)
-    after_lock = bw.status(first)
-    vault.unlocked_at = None
-    report.fact(f"K2: dopo bw lock ({locked.said}) la chiave di prima dice: {after_lock}")
+    before = bw.status(first)
+    if before != "unlocked":
+        vault.unlocked_at = None
+        report.skipped(f"la chiave di prima non apre più il vault ({before}): K2 non misurato")
+        return
     key, _ = a_key(report, ask, bw, "unlock", real=real)
     if key is None:
-        report.skipped("bw unlock non ha dato una chiave: K2 a metà, K3 non misurato")
+        report.skipped("bw unlock non ha dato una chiave: K2 non misurato")
         return
-    vault.keys.append(key)
-    new, old = bw.status(key), bw.status(first)
-    report.fact(f"K2: con la chiave nuova: {new}; con quella di prima: {old}")
+    old, new = bw.status(first), bw.status(key)
+    report.fact(
+        f"K2: subito dopo il nuovo unlock la chiave di prima dice: {old}; quella nuova: {new}"
+    )
     report.fact(
         f"K2: la chiave nuova è diversa da quella di prima: {'sì' if key != first else 'no'}"
     )
     if new != "unlocked":
+        if old != "unlocked":
+            vault.unlocked_at = None
         report.reopens("K1", "la chiave scritta da bw unlock --raw non apre il vault")
-    elif after_lock != "locked":
-        vault.unlocked_at = time.monotonic()
-        report.reopens("K2", "bw lock non ha chiuso la chiave di prima")
-    else:
-        vault.unlocked_at = time.monotonic()
-        report.passed("bw lock chiude, bw unlock riapre con una chiave sua")
+        return
+    if key != first:
+        vault.keys.append(key)
+    vault.unlocked_at = time.monotonic()
+    report.passed(
+        "K2, un fatto: un nuovo unlock chiude la chiave di prima: "
+        f"{'sì' if old != 'unlocked' else 'no'}"
+    )
 
 
 def still_open(report: Report, vault: Vault) -> None:
@@ -817,9 +912,10 @@ def still_open(report: Report, vault: Vault) -> None:
 
 
 def close_the_vault(report: Report, vault: Vault) -> None:
-    """The end, whatever happened before: the test entry swept, the vault locked, the account
-    left, the data folder gone. **What bw says is asked of bw**, not remembered: a login that
-    half-succeeded, or an interrupt, leave an account this still leaves."""
+    """The end, whatever happened before: the test entry swept, the vault locked — and what
+    ``bw lock`` did read on every key the measure had (K2) —, the account left, the data folder
+    gone. **What bw says is asked of bw**, not remembered: a login that half-succeeded, or an
+    interrupt, leave an account this still leaves."""
     report.step(
         "la fine di Bitwarden: il vault chiuso, l'uscita dall'account, la cartella cancellata"
     )
@@ -838,19 +934,24 @@ def close_the_vault(report: Report, vault: Vault) -> None:
         else:
             entries = "NON VERIFICABILE: il vault è chiuso"
     report.fact(f"voci di prova nel vault: {entries}")
-    locked = "non serviva"
+    after: list[str] = []
     if state != "unauthenticated":
-        bw.run("lock", session=vault.key)
-        locked = bw.status(vault.key)
+        lock = bw.run("lock", session=vault.key)
+        # Every key the measure had, not the last alone: a new unlock may have left the first alive.
+        after = [bw.status(key) for key in vault.keys] or [bw.status()]
         logout = bw.run("logout")
-        report.fact(f"dopo bw lock, con l'ultima chiave: {locked}; bw logout: {logout.said}")
+        report.fact(
+            f"K2: dopo bw lock ({lock.said}) le chiavi che la misura ha avuto dicono: "
+            + ", ".join(after)
+        )
+        report.fact(f"bw logout: {logout.said}")
     out = bw.status()
     report.fact(f"alla fine bw dice: {out}")
     vault.keys.clear()
     shutil.rmtree(bw.data, ignore_errors=True)
     gone = not bw.data.exists()
     report.fact(f"la cartella dei dati della misura non c'è più: {'sì' if gone else 'no'}")
-    if locked not in ("locked", "non serviva") or out != "unauthenticated" or not gone:
+    if any(said != "locked" for said in after) or out != "unauthenticated" or not gone:
         report.failed(
             "la chiusura non è verificata: vedi i fatti qui sopra. La cartella dei dati è "
             "cancellata, quindi questa macchina non tiene più la sessione; dal vault web, "
@@ -1089,10 +1190,10 @@ class Chrome:
 
     def _guard(self, profile: Path) -> Path:
         if FORBIDDEN_PROFILE in str(profile):
-            raise RuntimeError("the profile of the installed Chrome: the fence holds")
+            raise FenceBroken("la cartella è il profilo del Chrome installato")
         resolved = profile.resolve()
         if FORBIDDEN_PROFILE in str(resolved) or not resolved.is_relative_to(self._profiles):
-            raise RuntimeError("not a test folder of the measure: the fence holds")
+            raise FenceBroken("la cartella non è una cartella di prova della misura")
         return resolved
 
     def profile(self, name: str, *, preferences: bool) -> Path:
@@ -1141,9 +1242,7 @@ class Chrome:
         )
         if not keeps_the_fence(self._arguments_of(folder), folder):
             context.close()
-            raise RuntimeError(
-                "the browser was launched without --use-mock-keychain: the fence holds"
-            )
+            raise FenceBroken("il browser è partito senza --use-mock-keychain")
         return context
 
     @staticmethod
@@ -1182,7 +1281,7 @@ class Chrome:
         folder = self._guard(profile)
         arguments = BARE_WINDOW if bare else WINDOW_ARGUMENTS
         if not attaches_nothing(arguments):
-            raise RuntimeError("a window without automation with something attached")
+            raise FenceBroken("la finestra senza automazione ha qualcosa attaccato")
         child = subprocess.Popen(
             [str(binary), f"--user-data-dir={folder}", *arguments, address],
             env={
@@ -1197,7 +1296,7 @@ class Chrome:
         )
         try:
             if not keeps_the_fence(self._arguments_of(folder), folder):
-                raise RuntimeError("the window was launched outside the fence")
+                raise FenceBroken("la finestra è partita senza --use-mock-keychain")
             if self._simulated:
                 deadline = time.monotonic() + 30
                 while (
@@ -1347,16 +1446,24 @@ def google(
                 "non vuole farlo preme Invio senza entrare, e risponde «n»."
             )
             without_preferences(report, ask, browsers, where, kind, profiles)
+    except FenceBroken as broken:
+        report.failed(f"una recinzione non ha tenuto — {broken}: la parte di Google si ferma qui")
     finally:
         report.step("le cartelle di profilo di prova: cancellate, e verificato")
-        gone = [
-            tried(report, "la cancellazione", lambda one=one: browsers.remove(one))
-            for one in profiles
-        ]
+        gone = [removed(report, browsers, one) for one in profiles]
         if all(gone):
             report.passed(f"cancellate: {len(gone)}, e nessuna c'è più")
         else:
             report.failed("una cartella di profilo di prova è ancora lì")
+
+
+def removed(report: Report, browsers: Browsers, profile: Path) -> bool:
+    """Whether a test folder is gone. A folder the fence does not know is not touched, and said."""
+    try:
+        return bool(tried(report, "la cancellazione", lambda: browsers.remove(profile)))
+    except FenceBroken as broken:
+        report.failed(f"una recinzione non ha tenuto — {broken}: la cartella non si tocca")
+        return False
 
 
 def at_the_window(report: Report, ask: Callable[[str], str], real: bool) -> Callable[[], None]:
@@ -1639,6 +1746,7 @@ def measure(
     ask: Callable[[str], str],
     bw_path: Path | None,
     browsers: Callable[[Path, Callable[[], bool]], Browsers] | None = None,
+    signature: Callable[[Path], str | None] | None = None,
 ) -> int:
     head = subprocess.run(
         ["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
@@ -1663,7 +1771,7 @@ def measure(
     before = {one: on_signal(one, ended) for one in watched}
     try:
         report.say("\n# Bitwarden")
-        bitwarden(report, ask, bw_path, work, mode, vaults)
+        bitwarden(report, ask, bw_path, work, mode, vaults, signature or not_of_bitwarden)
         report.say("\n# Google, nel Chrome di ELA")
         where = Addresses.google() if local is None else Addresses.local(local.origin)
 
@@ -1740,6 +1848,7 @@ def main(
     argv: Sequence[str] | None = None,
     ask: Callable[[str], str] = input,
     browsers: Callable[[Path, Callable[[], bool]], Browsers] | None = None,
+    signature: Callable[[Path], str | None] | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument(
@@ -1765,7 +1874,14 @@ def main(
     report = Report(arguments.out or default_out(mode))
     report.say(f"# La misura di M13.9 ({mode})\n\nIl file: {at(report.path)}\n")
     try:
-        return measure(report, mode, ask=ask, bw_path=arguments.bw, browsers=browsers)
+        return measure(
+            report,
+            mode,
+            ask=ask,
+            bw_path=arguments.bw,
+            browsers=browsers,
+            signature=signature,
+        )
     finally:
         report.say(f"\nIl file: {at(report.path)}")
         report.close()

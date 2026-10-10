@@ -226,9 +226,11 @@ def run(
         made.append(NoBrowser(work, **browser))
         return made[0]
 
-    named = {} if signature is None else {"signature": signature}
     code = script().main(
-        [*arguments, "--out", str(out)], ask=ask or Tommaso(), browsers=browsers, **named
+        [*arguments, "--out", str(out)],
+        ask=ask or Tommaso(),
+        browsers=browsers,
+        signature=signature or vouched,
     )
     return code, out.read_text(encoding="utf-8"), made
 
