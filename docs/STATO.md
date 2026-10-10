@@ -879,7 +879,10 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   preferenze e i flag a tenere il browser scollegato dall'account, non il binario; dopo il sì la voce del vault
   si legge una volta sola. I due FALLITO sono dello script — l'uscita dall'account non verificata —, non del
   prodotto. **Il codice non è cominciato**: la review lo mette dopo la fine di M13.4e «come dice la decisione
-  62», e **le decisioni 55–62 non sono arrivate alla sessione** (domanda 68 della SPEC).
+  62», e **le decisioni 55–62 non sono arrivate alla sessione** (domanda 68 della SPEC). ***Annotato la stessa
+  notte***: arrivate, con la 70 e la 71; la domanda 68 è chiusa, le scelte della 69 confermate, e la SPEC
+  guadagna i tre criteri che eredita dalla seconda parte di M13.4e (decisione 59). L'ordine: la seconda parte
+  di M13.4e, poi il codice.
 - **M13.4b — una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta**
   (ADR 0052 §9 e §10).
   **Registrata il 2026-10-01** dalla review della SPEC di M6.3c, con l'ordine non deciso. ***Deciso il 2026-10-10***
@@ -906,6 +909,11 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   ([`milestones/M13.4e.md`](milestones/M13.4e.md)). ***Annotato il 2026-10-10***, la sera: **implementata**, prima
   i test rossi; aspetta la CI sul branch e il merge con M13.9. Restano scritte tre domande — un secondo Ctrl-C
   mentre la chiusura aspetta, il `SIGTERM`, e se portare un browser a riposo è un membro del suo port.
+  ***Annotato il 2026-10-10***, la notte: **decise** (decisioni 55–58). La milestone guadagna **una seconda
+  parte, i segnali**: dopo `SIGINT`, `SIGTERM` o `SIGHUP` la chiusura di ELA gira per intero e poi il processo
+  finisce come finiva; un secondo segnale fa finire subito la grazia; i gestori sono di ELA. Con la misura
+  prima della forma, e con un criterio della suite: un test che congela o uccide un browser non lascia né un
+  processo né una cartella.
 - **M13.4d — lo shell del browser vuoto gira senza il sandbox di Chromium** (ADR 0052 §1). **Registrata il
   2026-10-10** dalla review della SPEC di M13.9 (decisione 39): Playwright lo spegne di default, e l'adapter di
   M13.4 non lo riaccende. **Fuori dalla fila.** **Condizione d'ingresso: una misura sui runner della CI** — su
