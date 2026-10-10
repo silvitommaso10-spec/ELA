@@ -1143,7 +1143,8 @@ async def test_the_profile_of_what_was_killed_is_taken_away_only_once_the_kernel
     browser = stoppable(stopping)
     await browser.open(web.origin + "/", lambda url: True, FakeStop())
     (driver,) = drivers()
-    profile = profile_of([pid for pid, _ in started() if pid != driver])
+    theirs = [pid for pid, _ in started() if pid != driver]
+    profile = profile_of(theirs)
     os.kill(driver, signal.SIGSTOP)
     asked: list[tuple[int, bool]] = []
 
@@ -1165,6 +1166,39 @@ async def test_the_profile_of_what_was_killed_is_taken_away_only_once_the_kernel
     assert len(asked) > 3, "the kernel was asked until it had none of what was killed"
     assert all(there for _, there in asked), "and the profile was still there every time it was"
     assert not profile.exists(), "taken away only then"
+    assert {pid for pid, _ in asked} >= set(theirs) | {driver}, (
+        "asked of the browser's processes too, not of the driver alone: it is the browser that "
+        "may still be writing in the profile"
+    )
+
+
+async def test_the_question_the_adapter_asks_is_the_kernel_s_own() -> None:
+    """The test above answers the question itself; this is what production asks — the kernel,
+    which knows this process and does not know one that ended and was collected."""
+    browser = stoppable(asyncio.Event())
+    ended = await asyncio.create_subprocess_exec(sys.executable, "-c", "pass")
+    await ended.wait()
+
+    assert browser._known(os.getpid())  # noqa: SLF001 — the adapter's question to the kernel
+    assert not browser._known(ended.pid)  # noqa: SLF001
+
+
+async def test_the_profile_of_a_browser_of_these_tests_is_in_the_folder_the_test_gave_it(
+    served: list[Site],
+) -> None:
+    """The control of ``nothing_left_behind``: what a test leaves is found by the folder its
+    driver was given, so the driver must really be given it — else «nothing is left» would be
+    true of a folder nobody used."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    browser = stoppable(asyncio.Event())
+    opened = await browser.open(web.origin + "/", lambda url: True, FakeStop())
+    (driver,) = drivers()
+
+    profile = profile_of([pid for pid, _ in started() if pid != driver])
+
+    assert profile.parent == Path(os.environ["TMPDIR"])
+    assert profile.parent.name.startswith("ela-pw-")
+    await browser.close(opened.page)
 
 
 async def test_settled_returns_only_when_the_task_the_stop_woke_has_ended(

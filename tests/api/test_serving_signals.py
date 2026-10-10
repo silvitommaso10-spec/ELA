@@ -11,9 +11,10 @@ second Ctrl-C while the close waited tore the loop down with a call of the brows
 which is a process that does not exit.
 
 The ELA under test is a process of its own (``tests/api/serving.py``): the real ``ela serve``, the
-real signals, the real browser. Nothing here is an upper bound on a time: that the hurry and not
-the grace ended the wait is what the line on stderr says, and the guard is the test's and never
-the one that fires. What a failing run leaves is taken away by the folder the browser was given.
+real signals, the real browser. Nothing here is an upper bound on a time: that the hurry ended
+the wait **before the grace ran out** is what the line on stderr says — it is written only then —,
+and the guard is the test's and never the one that fires. What a failing run leaves is taken away
+by the pids the child named and by the folder its browser was given.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.browser_leftovers import Left, left, running, scratch, sweep
+from tests.browser_leftovers import Left, left, named, running, scratch, sweep
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32", reason="SIGHUP, a session and ps are POSIX's"
@@ -103,6 +104,9 @@ class Ended:
     database: tuple[str, ...]
     seconds: float
     left: Left
+    waited: bool
+    """Whether ELA's close began to wait for the browser: the child says so when the grace of the
+    close is asked for — the browser had not closed by itself when the close was entered."""
 
     def still_running(self) -> list[str]:
         return [name for pid, name in self.started if running(pid)]
@@ -118,12 +122,12 @@ def _reached(event: threading.Event, child: subprocess.Popen[str]) -> bool:
 
 
 def served(mode: str, folder: Path, origin: str, profiles: Path, *signals: int) -> Ended:
-    """Start ``ela serve`` with its browser in ``mode``, send it ``signals`` — the second once the
-    first has been taken: the server says it is shutting down —, and say how it ended.
+    """Start ``ela serve`` with its browser in ``mode``, send it ``signals`` — the second **when
+    ELA's close has begun to wait for the browser**, which the child says —, and say how it ended.
 
     The child is the leader of a session of its own. One that does not exit is killed with its
     group before the test fails; and whatever of its browser is left — a stopped process whose
-    driver has died is in nobody's group — is found by ``profiles`` and taken away."""
+    driver has died is in nobody's group — is taken away by its pid and by ``profiles``."""
     folder.mkdir()
     child = subprocess.Popen(
         [sys.executable, str(CHILD), mode, str(folder), origin, str(free_port())],
@@ -138,46 +142,59 @@ def served(mode: str, folder: Path, origin: str, profiles: Path, *signals: int) 
     said: list[str] = []
     errors: list[str] = []
     ready = threading.Event()
-    shutting = threading.Event()
+    waiting = threading.Event()
 
-    def listen(stream: Iterator[str], kept: list[str], event: threading.Event, sign: str) -> None:
+    def listen(stream: Iterator[str], kept: list[str], signs: dict[str, threading.Event]) -> None:
         for line in stream:
             kept.append(line)
-            if sign in line:
-                event.set()
+            for sign, event in signs.items():
+                if sign in line:
+                    event.set()
 
     readers = [
-        threading.Thread(target=listen, args=(child.stdout, said, ready, '"started"'), daemon=True),
         threading.Thread(
-            target=listen, args=(child.stderr, errors, shutting, "Shutting down"), daemon=True
+            target=listen,
+            args=(child.stdout, said, {'"started"': ready, '"grace"': waiting}),
+            daemon=True,
         ),
+        threading.Thread(target=listen, args=(child.stderr, errors, {}), daemon=True),
     ]
     for reader in readers:
         reader.start()
+
+    def heard() -> str:
+        for reader in readers:
+            reader.join(5)
+        return "".join(errors)
+
     started: tuple[tuple[int, str], ...] = ()
     try:
         if not _reached(ready, child):
-            pytest.fail(f"the child never said its browser was at work:\n{''.join(errors)}")
+            pytest.fail(f"the child never said its browser was at work:\n{heard()}")
         row = json.loads(next(line for line in said if '"started"' in line))
         started = tuple((pid, name) for pid, name in row["started"])
+        assert named(profiles), (
+            "the control: the browser's profile is in the folder this test gave its driver — "
+            "else «nothing is left» below would be true of a folder nobody used"
+        )
         began = time.monotonic()
-        os.kill(child.pid, signals[0])
+        child.send_signal(signals[0])
         for later in signals[1:]:
-            _reached(shutting, child)
-            try:
-                os.kill(child.pid, later)
-            except ProcessLookupError:  # it ended at the first: the assertions say so
-                break
+            if not _reached(waiting, child):
+                pytest.fail(
+                    "the close never began to wait for the browser, so there is no «inside the "
+                    f"close» to send {signal.Signals(later).name} into:\n{heard()}"
+                )
+            child.send_signal(later)
         try:
             child.wait(timeout=GUARD_SECONDS)
         except subprocess.TimeoutExpired:
-            pytest.fail(
-                f"ela serve did not exit within {GUARD_SECONDS} s of "
-                f"{[signal.Signals(number).name for number in signals]}:\n{''.join(errors)}"
-            )
+            names = [signal.Signals(number).name for number in signals]
+            os.killpg(child.pid, signal.SIGKILL)
+            child.wait()
+            pytest.fail(f"ela serve did not exit within {GUARD_SECONDS} s of {names}:\n{heard()}")
         seconds = time.monotonic() - began
-        for reader in readers:
-            reader.join(5)
+        error = heard()
         found = left(profiles)
     finally:
         if child.poll() is None:
@@ -186,11 +203,12 @@ def served(mode: str, folder: Path, origin: str, profiles: Path, *signals: int) 
         sweep(profiles, also=tuple(pid for pid, _ in started))
     return Ended(
         child.returncode,
-        "".join(errors),
+        error,
         started,
         tuple(sorted(file.name for file in folder.glob("ela.db*"))),
         seconds,
         found,
+        waiting.is_set(),
     )
 
 
@@ -209,12 +227,15 @@ def end_of(name: str) -> int:
 def test_with_its_browser_at_work_ela_closes_whole_and_then_ends_as_the_signal_ended_it(
     name: str, tmp_path: Path, origin: str, profiles: Path
 ) -> None:
-    """Criterion 12. A page is open when the signal arrives: the stop it raises puts the closing of
-    that page in flight, and the close is entered with it. The process exits, nothing it started
-    is left, the database is one file, and whoever launched it sees the end of that signal."""
+    """Criterion 12. A page is open when the signal arrives, and its browser is held: the stop the
+    signal raises tells the page to close, **and the close is entered with that closing in
+    flight** — the child says the close began to wait, and lets the browser go then. The close
+    waits for it, nobody is killed, nothing it started is left, the database is one file, and
+    whoever launched it sees the end of that signal."""
     ended = served("open", tmp_path / "ela", origin, profiles, numbered(name))
 
     assert len(ended.started) > 1, "the control: a driver and its browser were running"
+    assert ended.waited, "the control: the close was entered with the closing in flight"
     assert ended.database == ("ela.db",), "the close ran: the database was released whole"
     assert ended.still_running() == []
     assert not ended.left, "and nothing of the browser is left on this machine"
@@ -232,6 +253,7 @@ def test_a_browser_that_does_not_answer_is_killed_at_the_grace_and_then_ela_ends
     the database, and ends as the signal ended it."""
     ended = served("stuck", tmp_path / "ela", origin, profiles, numbered(name))
 
+    assert ended.waited
     assert WITHIN in ended.error and "1 node" in ended.error
     assert HURRIED not in ended.error
     assert ended.seconds >= GRACE_SECONDS, "killed at the grace, not at the signal"
@@ -245,13 +267,15 @@ def test_a_browser_that_does_not_answer_is_killed_at_the_grace_and_then_ela_ends
 def test_a_second_signal_inside_the_close_ends_the_grace_at_once(
     name: str, tmp_path: Path, origin: str, profiles: Path
 ) -> None:
-    """Criterion 14 (decision 55). The same browser that does not answer, and a second signal once
-    the first has been taken. **The line says the hurry ended the wait**, and it is written only
-    when the hurry came before the grace ran out: no time is asserted from above. The loop is not
-    torn down with anything in flight — the process exits —, and the end is the signal's."""
+    """Criterion 14 (decision 55). The same browser that does not answer, and a second signal
+    **sent when the close has begun to wait for it** — the child says when. During the close the
+    handler is still ELA's: the signal does not kill, it ends the grace. **The line says the hurry
+    ended the wait, and it is written only when the hurry came before the grace ran out**: no
+    time is asserted from above. The process exits, and the end is the signal's."""
     again = numbered(name)
     ended = served("stuck", tmp_path / "ela", origin, profiles, again, again)
 
+    assert ended.waited, "the control: the second signal was sent inside the close"
     assert HURRIED in ended.error and "1 node" in ended.error
     assert WITHIN not in ended.error
     assert ended.database == ("ela.db",)

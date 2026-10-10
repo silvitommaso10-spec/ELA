@@ -12,13 +12,17 @@ loopback. One thing is added, and only one: once ``build`` has returned, a task 
 ``ORIGIN`` — served by the test — with the browser ELA built, and puts it in the state ``MODE``
 names:
 
-* ``open`` — a page open. The stop a signal raises is what closes it: ELA's close is entered with
-  that closing in flight.
-* ``stuck`` — a page open, and **the driver stopped** (``SIGSTOP``): a browser that will not answer
+* ``open`` — a page open, and **the browser stopped** (``SIGSTOP``) until ELA's close begins to
+  wait for it. The stop a signal raises tells the page to close, and the browser cannot answer:
+  the close is entered **with that closing in flight** — built with an event, because left to
+  itself the browser closes while the server is still stopping (the review of the repair). When
+  the grace begins the browser is let go (``SIGCONT``), and closes within it.
+* ``stuck`` — a page open, and **the driver stopped** for good: a browser that will not answer
   when it is told to close.
 
-Then one line of JSON on stdout: the processes the browser had started. The test sends the signal
-after that line.
+Two lines of JSON on stdout: the processes the browser had started, when it is in its state — the
+test sends the signal after that line —; and ``{"grace": true}`` at the moment ELA's close begins
+to wait for the browser, which is when the test sends a second signal **inside the close**.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ import json
 import os
 import signal
 import sys
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,11 +60,29 @@ def main(mode: str, folder: Path, origin: str, port: str) -> None:
         # The browser ELA built, reached where its tools hold it: the one the close settles.
         browser = ela.tools.get(BROWSER_READ)._browser  # type: ignore[attr-defined]  # noqa: SLF001
         await browser.open(origin + "/", lambda url: True, FakeStop())
-        mine = os.getpid()
-        if mode == "stuck":
-            for pid in browser._driver_pids():  # noqa: SLF001 — the drivers the adapter started
-                os.kill(pid, signal.SIGSTOP)
-        print(json.dumps({"pid": mine, "started": started()}), flush=True)
+        drivers = set(browser._driver_pids())  # noqa: SLF001 — the drivers the adapter started
+        everything = started()
+        frozen = (
+            sorted(drivers) if mode == "stuck" else [p for p, _ in everything if p not in drivers]
+        )
+        for pid in frozen:
+            os.kill(pid, signal.SIGSTOP)
+        settling = browser.settle
+
+        async def settle(grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+            async def waited() -> None:
+                # The close has begun to wait for the browser: said, and — in ``open`` — the
+                # browser let go, so that the closing in flight ends within the grace.
+                print(json.dumps({"grace": True}), flush=True)
+                if mode == "open":
+                    for pid in frozen:
+                        os.kill(pid, signal.SIGCONT)
+                await grace()
+
+            return await settling(waited)  # type: ignore[no-any-return]
+
+        browser.settle = settle
+        print(json.dumps({"pid": os.getpid(), "started": everything}), flush=True)
 
     async def built(settings: Settings) -> Ela:
         made = await building(settings, power=FakePower())

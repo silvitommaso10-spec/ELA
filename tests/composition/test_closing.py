@@ -374,6 +374,11 @@ async def an_ela_whose_browser_has_not_closed(
 Told = list[tuple[tuple[str, ...], bool]]
 
 
+def nothing_pending() -> bool:
+    """Whether this task is the only one left: what the close started, it ended."""
+    return [task for task in asyncio.all_tasks() if not task.done()] == [asyncio.current_task()]
+
+
 def recording(told: Told) -> Callable[[tuple[str, ...], bool], None]:
     def killed(names: tuple[str, ...], hurried: bool) -> None:
         told.append((names, hurried))
@@ -391,11 +396,11 @@ async def test_a_hurry_raised_before_the_close_is_a_grace_that_is_over_at_once(
     hurry.set()
     told: Told = []
 
-    async with asyncio.timeout(4):  # under the grace: a close that waited it out fails here
-        await ela.aclose(killed=recording(told), hurry=hurry)
+    await ela.aclose(killed=recording(told), hurry=hurry)
 
-    assert told == [(("node",), True)]
+    assert told == [(("node",), True)], "a close that waited the grace out says it ran out"
     assert pooled(ela) == 0
+    assert nothing_pending(), "the two waits of the grace are nobody's to cancel at the teardown"
 
 
 async def test_a_hurry_raised_while_the_close_waits_ends_the_grace_there(
@@ -412,11 +417,11 @@ async def test_a_hurry_raised_while_the_close_waits_ends_the_grace_there(
     assert not closing.done() and told == [], "the grace has not run out, and nobody hurried"
 
     hurry.set()
-    async with asyncio.timeout(4):
-        await closing
+    await closing
 
     assert told == [(("node",), True)]
     assert pooled(ela) == 0
+    assert nothing_pending()
 
 
 async def test_a_grace_that_runs_out_with_nobody_hurrying_is_said_to_have_run_out(
@@ -442,3 +447,27 @@ async def test_a_grace_that_runs_out_with_nobody_hurrying_is_said_to_have_run_ou
 
     assert told == [(("node",), False), (("node",), False)]
     assert waited == [BROWSER_CLOSE_GRACE_SECONDS, BROWSER_CLOSE_GRACE_SECONDS]
+    assert nothing_pending()
+
+
+async def test_a_hurry_that_comes_as_the_grace_runs_out_did_not_end_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """«A second signal ended the wait» is said only when it ended it **before** the grace ran
+    out. Found by the review of the repair: a hurry the loop learnt of late — at the very wake in
+    which the time was up — was said to have ended a grace that had been waited whole. Built: the
+    time runs out and the hurry is raised in the same turn of the loop."""
+    ela, _ = await an_ela_whose_browser_has_not_closed(monkeypatch, tmp_path)
+    hurry = asyncio.Event()
+    sleeping = asyncio.sleep
+
+    async def sleep(seconds: float) -> None:
+        await sleeping(0)
+        hurry.set()
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    told: Told = []
+
+    await ela.aclose(killed=recording(told), hurry=hurry)
+
+    assert told == [(("node",), False)], "the grace ran out: that is what happened"
