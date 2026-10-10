@@ -9,6 +9,8 @@ Bitwarden's match by domain.
 
 from __future__ import annotations
 
+import asyncio
+import shlex
 import stat
 from datetime import timedelta
 from pathlib import Path
@@ -16,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from ela.domain import Actor, ActorKind
 from ela.ports import (
     VAULT_LOCKED,
     VAULT_UNAUTHENTICATED,
@@ -497,3 +500,362 @@ async def test_a_program_that_cannot_be_read_now_is_not_called_a_script(
     monkeypatch.setattr(module, "open", unreadable, raising=False)
 
     assert isinstance(await made.find(SITE), VaultEntry), "the launch says what became of it"
+
+
+# ----------------------------------------------------------------------------------------
+# The keeper of the key: every closing is told, with why, and one comes by itself
+# ----------------------------------------------------------------------------------------
+
+TOMMASO = Actor(kind=ActorKind.USER, id="the-user-of-the-test")
+
+
+class Told:
+    """Whoever is told of a closing — in ELA, the audit: what it received, in order."""
+
+    def __init__(self) -> None:
+        self.closings: list[Any] = []
+
+    async def __call__(self, closing: Any) -> None:
+        self.closings.append(closing)
+
+    @property
+    def said(self) -> list[tuple[str, Actor | None, bool, str | None]]:
+        return [(one.reason, one.by, one.locked, one.code) for one in self.closings]
+
+
+class Hour:
+    """The hour of the key, held by the test: every wait the keeper begins, and the event that
+    ends it."""
+
+    def __init__(self) -> None:
+        self.asked: list[float] = []
+        self.over = asyncio.Event()
+        self.cancelled = 0
+
+    async def __call__(self, seconds: float) -> None:
+        self.asked.append(seconds)
+        try:
+            await self.over.wait()
+        except asyncio.CancelledError:
+            self.cancelled += 1
+            raise
+
+
+async def turns(times: int = 5) -> None:
+    for _ in range(times):
+        await asyncio.sleep(0)
+
+
+async def test_a_command_that_closes_is_told_with_who_asked_and_that_the_vault_locked(
+    tmp_path: Path,
+) -> None:
+    told = Told()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), closed=told)
+    assert await made.open(Secret(KEY)) is None
+    assert told.said == [], "an opening is not a closing: the route that receives it writes it"
+
+    assert await made.close(TOMMASO) is None
+
+    assert told.said == [("command", TOMMASO, True, None)]
+
+
+async def test_a_command_that_could_not_lock_is_told_with_the_code_and_that_it_did_not(
+    tmp_path: Path,
+) -> None:
+    """«Forgets it and launches nothing, and says so»: the row carries why the vault's program
+    was not asked."""
+    told = Told()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), closed=told)
+    assert await made.open(Secret(KEY)) is None
+    program(tmp_path, b"\xcf\xfa\xed\xfe changed")
+
+    assert code_of(await made.close(TOMMASO)) == "vault.program_changed"
+
+    assert told.said == [("command", TOMMASO, False, "vault.program_changed")]
+
+
+async def test_a_command_that_locks_a_vault_ela_held_no_key_of_is_told_too(
+    tmp_path: Path,
+) -> None:
+    """``bw lock`` is the whole machine's: ELA closed what the owner had open in a terminal, on
+    their command, and the row says who asked."""
+    told = Told()
+    vault = FakeVault([MARIO])
+    made = await door(vault, program(tmp_path), closed=told)
+
+    assert await made.close(TOMMASO) is None
+
+    assert vault.calls[-1] == "lock"
+    assert told.said == [("command", TOMMASO, True, None)]
+
+
+async def test_a_command_that_held_nothing_and_ran_nothing_tells_nobody(tmp_path: Path) -> None:
+    told = Told()
+    undeclared = await door(None, None, closed=told)
+    gone = await door(FakeVault([MARIO]), tmp_path / "never-there", closed=told)
+
+    assert code_of(await undeclared.close(TOMMASO)) == "vault.undeclared"
+    assert code_of(await gone.close(TOMMASO)) == "vault.no_program"
+
+    assert told.said == []
+
+
+async def test_the_hour_running_out_at_a_use_is_told_as_the_time_and_by_nobody(
+    tmp_path: Path,
+) -> None:
+    told, clock = Told(), FakeClock()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), clock=clock, closed=told, wait=Hour())
+    assert await made.open(Secret(KEY)) is None
+    clock.advance(timedelta(hours=1))
+
+    assert code_of(await made.find(SITE)) == "vault.locked"
+
+    assert told.said == [("expired", None, True, None)]
+
+
+async def test_at_its_time_the_keeper_closes_the_vault_with_nobody_calling(tmp_path: Path) -> None:
+    """Decision 33: «a task of the keeper of the key — not a route: nobody is calling it»."""
+    from ela.tools.vault import VAULT_OPEN_SECONDS
+
+    told, hour = Told(), Hour()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), closed=told, wait=hour)
+
+    assert await made.open(Secret(KEY)) is None
+    await turns()
+    assert hour.asked == [float(VAULT_OPEN_SECONDS)], (
+        "one wait, of the whole hour, from the opening"
+    )
+    assert told.said == [] and "lock" not in vault.calls
+
+    hour.over.set()
+    await turns()
+
+    assert vault.calls[-1] == "lock"
+    assert told.said == [("expired", None, True, None)]
+    assert made.forgets_at is None
+
+
+async def test_at_its_time_with_a_program_that_changed_the_keeper_forgets_and_runs_nothing(
+    tmp_path: Path,
+) -> None:
+    told, hour = Told(), Hour()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), closed=told, wait=hour)
+    assert await made.open(Secret(KEY)) is None
+    program(tmp_path, b"\xcf\xfa\xed\xfe changed")
+
+    hour.over.set()
+    await turns()
+
+    assert vault.calls[-1] == "forget" and "lock" not in vault.calls
+    assert told.said == [("expired", None, False, "vault.program_changed")]
+
+
+async def test_a_close_before_the_time_ends_the_wait_and_the_time_closes_nothing_twice(
+    tmp_path: Path,
+) -> None:
+    told, hour = Told(), Hour()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), closed=told, wait=hour)
+    assert await made.open(Secret(KEY)) is None
+    await turns()
+
+    assert await made.close(TOMMASO) is None
+    await turns()
+    assert hour.cancelled == 1
+
+    hour.over.set()
+    await turns()
+
+    assert told.said == [("command", TOMMASO, True, None)]
+    assert vault.calls.count("lock") == 1
+
+
+async def test_a_second_opening_starts_the_hour_again_and_ends_the_first_wait(
+    tmp_path: Path,
+) -> None:
+    hour, clock = Hour(), FakeClock()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), clock=clock, wait=hour)
+    assert await made.open(Secret(KEY)) is None
+    await turns()
+    first = made.forgets_at
+    clock.advance(timedelta(minutes=10))
+
+    assert await made.open(Secret(KEY)) is None
+    await turns()
+
+    assert made.forgets_at == first + timedelta(minutes=10)
+    assert len(hour.asked) == 2 and hour.cancelled == 1
+
+
+async def test_a_key_that_did_not_open_starts_no_wait(tmp_path: Path) -> None:
+    hour = Hour()
+    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), program(tmp_path), wait=hour)
+
+    assert code_of(await made.open(Secret("another key"))) == "vault.key_refused"
+    await turns()
+
+    assert hour.asked == [] and made.forgets_at is None
+
+
+async def test_when_ela_stops_the_key_is_forgotten_and_nothing_is_launched(tmp_path: Path) -> None:
+    """«The stop of ELA forgets it»: no ``bw lock`` — a process started while ELA closes is one
+    more thing to wait for —, the wait of the hour ended, and the row that says why."""
+    told, hour = Told(), Hour()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), closed=told, wait=hour)
+    assert await made.open(Secret(KEY)) is None
+    await turns()
+
+    await made.stopped()
+
+    assert vault.calls[-1] == "forget" and "lock" not in vault.calls
+    assert told.said == [("stopped", None, False, None)]
+    assert made.forgets_at is None
+    assert hour.cancelled == 1
+    assert [task for task in asyncio.all_tasks() if task is not asyncio.current_task()] == []
+
+    await made.stopped()
+    assert told.said == [("stopped", None, False, None)], "once"
+
+
+async def test_a_stop_with_no_key_held_tells_nobody_and_a_vault_nobody_declared_stops_too(
+    tmp_path: Path,
+) -> None:
+    told = Told()
+    vault = FakeVault([MARIO])
+    made = await door(vault, program(tmp_path), closed=told)
+    undeclared = await door(None, None, closed=told)
+
+    await made.stopped()
+    await undeclared.stopped()
+
+    assert told.said == [] and "lock" not in vault.calls
+
+
+async def test_a_stop_while_the_keeper_is_closing_waits_for_it_to_be_over(tmp_path: Path) -> None:
+    """The loop is never torn down with a launch of the vault's program in flight: the stop ends
+    the keeper's own closing and returns only when it is over."""
+    hour = Hour()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), wait=hour)
+    assert await made.open(Secret(KEY)) is None
+    locking, ended = asyncio.Event(), asyncio.Event()
+
+    async def lock_that_hangs() -> None:
+        locking.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            ended.set()
+
+    vault.lock = lock_that_hangs  # type: ignore[method-assign]
+    hour.over.set()
+    await locking.wait()
+
+    await made.stopped()
+
+    assert ended.is_set()
+    assert [task for task in asyncio.all_tasks() if task is not asyncio.current_task()] == []
+
+
+async def test_the_key_is_forgotten_before_anybody_is_told(tmp_path: Path) -> None:
+    """A closing that cannot be written — a database that is gone — is still a key not held."""
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+
+    async def cannot_write(closing: Any) -> None:
+        raise OSError("the trail cannot be written")
+
+    made = await door(vault, program(tmp_path), closed=cannot_write, wait=Hour())
+    assert await made.open(Secret(KEY)) is None
+
+    with pytest.raises(OSError, match="cannot be written"):
+        await made.stopped()
+
+    assert vault.calls[-1] == "forget" and made.forgets_at is None
+
+
+async def test_a_key_ended_elsewhere_is_told_when_ela_learns_it(tmp_path: Path) -> None:
+    told, hour = Told(), Hour()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), closed=told, wait=hour)
+    assert await made.open(Secret(KEY)) is None
+    await turns()
+    vault.state = VAULT_LOCKED
+
+    await made.state()
+    await turns()
+
+    assert told.said == [("ended_elsewhere", None, False, None)]
+    assert hour.cancelled == 1
+
+
+def test_the_reasons_of_a_closing_are_a_closed_set() -> None:
+    from ela.tools import vault as module
+
+    assert set(module.CLOSING_REASONS) == {"command", "expired", "stopped", "ended_elsewhere"}
+
+
+# ----------------------------------------------------------------------------------------
+# The line to paste (decision 32)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_a_locked_vault_says_the_whole_line_to_paste_with_the_declared_program(
+    tmp_path: Path,
+) -> None:
+    at = program(tmp_path)
+    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at)
+
+    state = await made.state()
+
+    assert state.name == "locked"
+    assert state.opens_with == f"{at} unlock --raw | ela vault open"
+    assert state.opens_with in state.message
+    assert made.program == str(at)
+
+
+async def test_a_program_whose_path_has_a_space_is_quoted_in_the_line(tmp_path: Path) -> None:
+    """The line is pasted into a shell: a path that would split into two words is one word."""
+    folder = tmp_path / "Application Support"
+    folder.mkdir()
+    at = program(folder)
+    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at)
+
+    state = await made.state()
+
+    assert state.opens_with == f"'{at}' unlock --raw | ela vault open"
+    assert shlex.split(state.opens_with)[0] == str(at)
+
+
+@pytest.mark.parametrize(
+    ("vault_state", "name", "said"),
+    [
+        (VAULT_UNAUTHENTICATED, "unauthenticated", " login"),
+        ("unlocked", "unlocked", ""),
+    ],
+)
+async def test_only_a_locked_vault_has_a_line_to_paste(
+    tmp_path: Path, vault_state: str, name: str, said: str
+) -> None:
+    made = await door(FakeVault([MARIO], state=vault_state), program(tmp_path))
+
+    state = await made.state()
+
+    assert state.name == name and state.opens_with is None
+    assert said in state.message and bool(state.message) == bool(said)
+
+
+async def test_without_a_program_there_is_no_line_and_the_state_says_what_is_missing() -> None:
+    made = await door(None, None)
+
+    state = await made.state()
+
+    assert state.name == "undeclared" and state.opens_with is None
+    assert "ELA_VAULT_PROGRAM" in state.message
+    assert made.program is None
