@@ -20,7 +20,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -87,6 +87,8 @@ from ela.domain import (
 from ela.ports import (
     ANNOUNCED_FIELDS,
     NAVIGATION,
+    PROFILE_STEP,
+    PROFILE_WINDOW,
     PROVIDER_UNAVAILABLE,
     STARTED_ID,
     VAULT_LOCKED,
@@ -127,6 +129,7 @@ from ela.ports import (
     NotFoundError,
     Opened,
     PageGone,
+    ProfileBusy,
     Prospect,
     Ran,
     RoutingError,
@@ -162,6 +165,7 @@ __all__ = [
     "FakeAuditLog",
     "FakeAuthorizationStore",
     "FakeBell",
+    "FakeAccountBrowser",
     "FakeBrowser",
     "FakeCapabilityRegistry",
     "FakeClock",
@@ -1059,6 +1063,8 @@ class FakePage:
     element declares; ``left`` a navigation the boundary refused at the opening,
     ``left_after_click`` one the click started; ``shown`` whether an awaited text appears, and
     ``changes_to`` the text the page shows once the tool is done with it, for the verifier's look.
+    ``second_factor`` is whether the page asks for a one-time code — what only the browser with
+    the profile says (M13.9).
     """
 
     status: int | None = 200
@@ -1071,6 +1077,7 @@ class FakePage:
     left_after_click: str | None = None
     shown: bool = True
     changes_to: dict[str | None, str] | None = None
+    second_factor: bool = False
 
 
 @dataclass
@@ -1324,6 +1331,79 @@ class FakeBrowser:
         self._open.clear()
         for member in ("open", "count", "fill", "click", "text", "glance", "installed"):
             self.raising[member] = BrowserStopped("ELA is stopping")
+
+
+class FakeAccountBrowser(FakeBrowser):
+    """The browser with the profile that lasts, for the tools and the routes (port
+    ``AccountBrowser``, M13.9).
+
+    Everything :class:`FakeBrowser` is, and what the profile adds as the test says it:
+    ``holder`` is who holds the folder beside the pages of this fake itself — ``None``, or one of
+    the port's three names —; ``linked_answer`` and ``saved_answer`` what the profile says of
+    itself; ``windows`` every window that was opened, by its address; ``secrets`` what
+    :meth:`fill_secret` wrote, in order — **opened**, as the adapter opens it to type it, which is
+    the one thing a fake of this port may do with a secret (architecture rule 68).
+    ``raising`` is honoured by ``occupied``, ``window`` and ``fill_secret`` too.
+    """
+
+    def __init__(
+        self,
+        page: FakePage | None = None,
+        *,
+        installed: bool = True,
+        holder: str | None = None,
+        linked: bool = False,
+        saved: int = 0,
+    ) -> None:
+        super().__init__(page, installed=installed)
+        self.holder = holder
+        self.linked_answer = linked
+        self.saved_answer = saved
+        self.windows: list[str | None] = []
+        self.secrets: list[tuple[str, str]] = []
+
+    def _held_by(self) -> str | None:
+        return PROFILE_STEP if self._open else self.holder
+
+    async def occupied(self) -> str | None:
+        self._raise("occupied")
+        return self._held_by()
+
+    async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
+        self._raise("open")
+        holder = self._held_by()
+        if holder is not None:
+            raise ProfileBusy(holder)
+        return await super().open(address, allowed, stop)
+
+    async def field(self, page: str, selector: str) -> Field:
+        found = await super().field(page, selector)
+        return found if found.method is not None else replace(found, method="post")
+
+    async def glance(
+        self, page: str, *, selector: str | None, expect: str | None, seconds: float
+    ) -> Glanced:
+        glanced = await super().glance(page, selector=selector, expect=expect, seconds=seconds)
+        return replace(glanced, second_factor=self.page.second_factor)
+
+    async def window(self, address: str | None) -> None:
+        self._raise("window")
+        holder = self._held_by()
+        if holder is not None:
+            raise ProfileBusy(holder)
+        self.windows.append(address)
+        self.holder = PROFILE_WINDOW
+
+    async def linked(self) -> bool:
+        return self.linked_answer
+
+    async def saved(self) -> int:
+        return self.saved_answer
+
+    async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
+        self._on(page)
+        self._raise("fill_secret")
+        self.secrets.append((selector, value.reveal()))
 
 
 class FakeTool:

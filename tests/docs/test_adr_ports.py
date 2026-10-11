@@ -109,6 +109,7 @@ INTRODUCED_PORTS = frozenset(
         "Gestures",
         "AgentSession",
         "Vault",
+        "AccountBrowser",
     }
 )
 ROW = re.compile(r"^\| `(\w+)` \| ([^|]+) \| (sync|async) \| (.+) \|$")

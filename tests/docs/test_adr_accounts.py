@@ -44,7 +44,7 @@ def test_the_conseguenze_count_the_totals_of_today() -> None:
         "a-secret-is-opened-only-by-an-adapter",
     }
     assert "**quindici**" in text and len(contracts) == 15
-    assert "**trentaquattro**" in text and len(tuple(port_protocols())) == 34
+    assert "**trentacinque**" in text and len(tuple(port_protocols())) == 35
     assert "**sessantatré**" in text and len(coded_routes()) == 63
     assert "**trentaquattro**" in text.split("i port diventano", 1)[1].split("le rotte", 1)[1]
     assert len(coded_commands()) == 34

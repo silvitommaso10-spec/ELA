@@ -168,7 +168,7 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 | Milestone | **89, di cui 72 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **68** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
-| Port | **34** | i `Protocol` di `src/ela/ports.py` |
+| Port | **35** | i `Protocol` di `src/ela/ports.py` |
 | Capability di produzione | **14** | `production_catalogue()` |
 | Rotte dell'API | **63** | i `router` di `ela.api` |
 | Comandi della CLI | **34** | l'albero Typer di `ela.cli` |

@@ -182,6 +182,7 @@ async def test_a_page_opens_on_the_declared_folder_with_the_sandbox_and_without_
     opened = await browser.open(web.origin + "/", everywhere, FakeStop())
 
     assert opened.status == 200 and await browser.text(opened.page, None) == "Ciao"
+    assert len(browser._pages[opened.page].context.pages) == 1, "one page, not a blank one beside"
     arguments = arguments_of(profile)
     assert f"user-data-dir={profile}" in arguments
     for ours in LAUNCH_ARGUMENTS:
@@ -315,6 +316,7 @@ FORMS = """
 <form><input id="unsaid" type="password"></form>
 <form method="POST"><input id="capital" type="password"></form>
 <form method="get"><input name="method" value="post"><input id="named" type="password"></form>
+<form method="post"><input name="method" value="x"><input id="named-post" type="password"></form>
 <form method="post"><input id="overridden-field" type="password" formmethod="get">
   <button id="overriding" formmethod="get">b</button></form>
 <input id="alone" type="password">
@@ -331,6 +333,7 @@ FORMS = """
         ("#unsaid", "get"),
         ("#capital", "post"),
         ("#named", "get"),
+        ("#named-post", "post"),
         ("#overridden-field", "post"),
         ("#overriding", "get"),
         ("#alone", ""),
@@ -340,8 +343,9 @@ FORMS = """
 async def test_how_the_form_of_an_element_sends_is_read_from_the_attributes(
     browser: AccountChrome, served: list[Site], selector: str, method: str
 ) -> None:
-    """``#named``: a form with a field of its own called ``method`` answers ``form.method`` with
-    that field — the adapter reads the attribute. ``#overriding``: a button that sends carries its
+    """``#named`` and ``#named-post``: a form with a field of its own called ``method`` answers
+    ``form.method`` with that field — the adapter reads the attribute, so a form that posts is
+    seen to post whatever its fields are called. ``#overriding``: a button that sends carries its
     own method over the form's; a field that is not one does not (``#overridden-field``)."""
     web = site(served, {"/": (200, {}, FORMS)})
     opened = await browser.open(web.origin + "/", everywhere, FakeStop())

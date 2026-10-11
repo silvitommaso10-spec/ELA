@@ -123,6 +123,7 @@ Port introdotti:
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
 | `Vault` | §19, §57 | async | `status`, `unlock`, `lock`, `forget`, `find`, `take` |
+| `AccountBrowser` | §19, §57 | async | `installed`, `open`, `count`, `field`, `fill`, `click`, `text`, `title`, `left`, `keep`, `glance`, `close`, `occupied`, `window`, `linked`, `saved`, `fill_secret` |
 
 **I comandi che l'adapter compone sono un elenco chiuso**: `status`; `list items --url <indirizzo>`; `get item
 <id>`; `lock`. Mai `unlock`, `login`, `export`, `get totp`, `get uri`, `serve`, `sync`, né `--session`: la chiave
@@ -239,6 +240,96 @@ firmato da chi l'ha chiesta, o da ELA quando nessuno l'ha chiesta, con il perch�
 `stopped`, `ended_elsewhere`), se il programma del vault è stato lanciato e ha chiuso, e il suo codice quando
 non lo è stato. Una chiusura che nessuna rotta ha chiesto non resta senza riga.
 
+### 4. Il browser con il profilo: Chrome for Testing su una cartella di Tommaso
+
+**Il port è `AccountBrowser`** (la riga è nella tabella dei port introdotti, §2): i membri di `Browser`, con lo
+stesso contratto del gesto, della consegna e della fermata, e ciò che il profilo aggiunge — chi tiene la
+cartella (`occupied`), la finestra del login a mano (`window`), se il browser conosce un account Google
+(`linked`), quante password ha salvato il suo gestore (`saved`), e il campo riempito da un `Secret`
+(`fill_secret`). Il suo adapter, `ela/infrastructure/machine/account.py`, **eredita** l'adapter del browser
+vuoto: un driver e un browser per pagina, il cancello di ADR 0052 §6, la fermata di M13.4c, la chiusura che
+arriva in fondo di M13.4b, l'uccisione alla grazia di M13.4e. Cambia **quale** browser una pagina riceve, e che
+cosa si fa alla cartella prima che parta.
+
+**Il binario** è Chrome for Testing della versione del lock, dal registro di Playwright — mai il Chrome
+installato, il cui profilo ELA non apre, non legge, non copia e non elenca. **Con il sandbox**, che Playwright
+spegne di default. **Nessun lancio tocca il portachiavi**: `--use-mock-keychain` sta fra gli argomenti che ELA
+scrive, non fra quelli che spera da un default altrui; con lui `--disable-sync` e
+`--allow-browser-signin=false`. Le opzioni del lancio sono un insieme chiuso: niente HAR, niente tracing, niente
+video. **ELA non si traveste**: nessuno user agent, nessuno script iniettato, niente che tocchi
+`navigator.webdriver`.
+
+**La cartella** è `ELA_BROWSER_PROFILE_DIR`, facoltativa e senza default. La legge l'adapter e nessun altro
+modulo di ELA; nessun errore che esce dall'adapter ne porta il percorso. Prima di ogni lancio: se non c'è, ELA
+la crea `0700` — esattamente, qualunque sia la umask —; se c'è, deve essere una cartella vera, di chi lancia
+ELA, aperta a nessun altro, altrimenti `ProfileUnsafe`. **ELA non la stringe da sé.** Una cartella comparsa fra
+lo sguardo e la creazione — due aperture insieme, la prima volta — è riguardata come ogni altra.
+
+**Ciò che il profilo non tiene** si riscrive prima di **ogni** lancio, sopra ciò che il file dice — misurato
+sul file che Chrome stesso ha scritto:
+
+| Preferenza | Valore |
+|---|---|
+| `credentials_enable_service`, `credentials_enable_autosignin` | `false` |
+| `profile.password_manager_leak_detection` | `false` |
+| `autofill.profile_enabled`, `autofill.credit_card_enabled` | `false` |
+| `signin.allowed`, `signin.allowed_on_next_startup` | `false` |
+
+Sono loro, con i flag, a tenere il browser lontano da un account Google e dal salvare password — non il
+binario (misurato, G4 e G5). Dopo un login su una pagina di prova le tabelle del gestore sono vuote e la
+password non è in chiaro in nessun file della cartella. `linked` rilegge il file a ogni domanda, mai una copia;
+`saved` conta le righe del gestore senza leggerne nessuna, sul file com'è sul disco.
+
+**I service worker si tolgono prima di ogni lancio guidato**, e i nuovi sono bloccati. Il cancello è una rotta
+di Playwright, e un worker registrato nel profilo risponde senza che la rotta sia chiamata. *Misurato il
+2026-10-11 sul binario vero, con un worker lasciato*: la pagina è quella del worker, **il confine non è stato
+interrogato**, e il sito ha ricevuto lo stesso la richiesta — mandata dal browser per conto suo, accanto al suo
+worker. La finestra non li toglie: non ha un cancello, e i siti di Tommaso tengono i loro.
+
+**Un processo alla volta.** Chi tiene la cartella è derivato a ogni domanda, in quest'ordine: ciò che l'adapter
+ha in volo — una pagina, un'apertura, una chiusura —, la sua finestra, e poi il lock della cartella
+(`SingletonLock`). **Il lock si legge dal pid, non dal nome della macchina che porta davanti**: il nome di un
+Mac cambia con la rete su cui sta — misurato, un Mac che si chiamava con un indirizzo —, e un browser che gira
+sotto il nome di ieri gira lo stesso. Un lock lasciato da un processo che non c'è più non tiene niente. Su una
+cartella trovata occupata `open` e `window` sollevano `ProfileBusy` e **non lanciano niente**: è il secondo
+lancio che può uccidere il primo. Fra lo sguardo e il conto dell'apertura non c'è un'attesa: di due aperture
+insieme ne parte una. **Quando `close` torna la cartella è libera, chiunque l'abbia chiesto**: chi arriva mentre
+un altro sta già chiudendo aspetta quella chiusura.
+
+**Ciò che dura è la cartella.** Il browser si apre e si chiude con lo step; al lancio dopo passa ciò che la
+cartella tiene. Un cookie a cui il sito ha dato una scadenza si ritrova; **un cookie di sessione no**: un login
+su un sito che non ne dà altri vale per quello step. È dichiarato, e un test lo tiene.
+
+**Ciò che il port dice in più.** `Field.method`: come manda il modulo di un elemento, letto **dagli attributi,
+attraverso il prototipo** — un modulo risponde a `form.method` con un suo campo che si chiami `method`, e una
+pagina che volesse far passare un `get` per un `post` non dovrebbe fare altro —; un bottone che invia porta il
+suo `formmethod` sopra quello del modulo, un campo no. `Glanced.second_factor`: se la pagina mostra un campo
+`one-time-code` visibile. `fill_secret`: **l'eccezione del motore non esce, nemmeno come contesto di quella che
+esce** — misurato, il suo messaggio nomina la chiamata con ciò che è stato scritto.
+
+**La finestra** è lo stesso binario sulla stessa cartella **senza niente attaccato**: nessun driver, nessuna
+pipe, nessuna porta; l'uscita non va a nessuno; nasce in un gruppo suo, con l'ambiente chiuso. I suoi argomenti
+sono un elenco chiuso — la cartella, `--use-mock-keychain`, `--no-first-run`, `--no-default-browser-check`,
+`--disable-sync`, `--allow-browser-signin=false`, e un indirizzo se c'è. ELA ne tiene una cosa sola: l'attesa
+della fine. **Alla fermata di ELA è avvisata** — `SIGTERM`, a cui il browser esce da sé scrivendo i suoi cookie
+—, **aspettata entro la stessa grazia** delle pagine, **poi uccisa con il suo gruppo**, e nominata. Mai lasciata
+viva sulla cartella. *Misurato il 2026-10-11*: un processo fermo che non ha ancora detto che cosa fa di
+`SIGTERM` ne è terminato subito, dal kernel; un browser fermo quando è già su resta fermo, e lo toglie la
+grazia.
+
+**La chiusura di ELA** porta a riposo questo adapter come quello del browser vuoto. Un browser del profilo
+ucciso alla grazia **non perde la sua cartella**: l'adapter toglie solo i profili temporanei che Playwright
+nomina, mai una cartella dichiarata. Ciò che un browser ucciso aveva imparato un momento prima non è scritto —
+misurato, un cookie della pagina del browser ucciso non si ritrova —: è del browser, non di ciò che ELA toglie.
+
+**Ciò che parte verso Google a ogni lancio** (§57: che cosa, verso chi, perché). Il browser stesso, non una
+lettura di ELA, apre connessioni verso host di Google appena parte — misurato la notte del 2026-10-10:
+`accounts.google.com` (`ListAccounts`) e `www.google.com` —, **con i cookie che il profilo ha per quegli host**
+(letto, non misurato: la sonda non aveva un account). Non è un gesto, non passa dal confine, e niente di ciò
+che è stato provato lo toglie. È il binario che parla con chi l'ha fatto; si dichiara, qui e nella guida.
+
+**Solo sul Mac.** Su ogni altro sistema ogni uso solleva `BrowserUnsupported`, e nessuna cartella è creata.
+
 ## Alternative considerate
 
 - **Un grant della sessione con lo scope dei suoi siti**: è la forma delle policy di §59, e ADR 0060 l'aveva
@@ -261,7 +352,7 @@ non lo è stato. Una chiusura che nessuna rotta ha chiesto non resta senza riga.
   una rotta o l'executor.
 
 Con questo ADR le regole di architettura sono **sessantotto** (la 67 e la 68), i contratti di import-linter restano
-**quindici**, i port diventano **trentaquattro** (`Vault`), le rotte dell'API **sessantatré** e i comandi
+**quindici**, i port diventano **trentacinque** (`Vault` e `AccountBrowser`), le rotte dell'API **sessantatré** e i comandi
 della CLI **trentaquattro** (quelle del vault, e i suoi comandi); le
 capability restano **quattordici**, le identità del middleware **sei**. *(I totali si aggiornano con le sezioni
 che seguono: questo ADR si scrive con l'implementazione.)*

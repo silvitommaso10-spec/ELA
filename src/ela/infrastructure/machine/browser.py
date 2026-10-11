@@ -90,7 +90,7 @@ from ela.ports import (
     TaskStop,
 )
 
-__all__ = ["MISSING_EXECUTABLE", "PlaywrightBrowser", "shell_folder"]
+__all__ = ["MISSING_EXECUTABLE", "PlaywrightBrowser", "registry_folder", "shell_folder"]
 
 MISSING_EXECUTABLE = "Executable doesn't exist"
 """What Playwright says when the browser the lock names was never installed (M2): the one message
@@ -115,8 +115,14 @@ by the name of its main thread — ``MainThread`` —, which names nothing to wh
 
 
 def shell_folder(environment: Mapping[str, str], system: str) -> Path | None:
-    """The folder Playwright installs the shell of the lock's version into — found as its registry
-    finds it, never by launching anything (decision 2 of the review of 2026-09-30).
+    """The folder Playwright installs the shell of the lock's version into: :func:`registry_folder`
+    for the shell."""
+    return registry_folder(SHELL, environment, system)
+
+
+def registry_folder(name: str, environment: Mapping[str, str], system: str) -> Path | None:
+    """The folder Playwright installs the browser ``name`` of the lock's version into — found as
+    its registry finds it, never by launching anything (decision 2 of the review of 2026-09-30).
 
     ``PLAYWRIGHT_BROWSERS_PATH`` first — ``0`` for the folder inside the package, anything else a
     folder of its own —, then the cache folder of ``system``, named as ``platform.system()`` names
@@ -140,8 +146,8 @@ def shell_folder(environment: Mapping[str, str], system: str) -> Path | None:
     else:
         return None
     browsers = json.loads((package / "browsers.json").read_text(encoding="utf-8"))["browsers"]
-    (revision,) = [entry["revision"] for entry in browsers if entry["name"] == SHELL]
-    return registry.absolute() / f"{SHELL.replace('-', '_')}-{revision}"
+    (revision,) = [entry["revision"] for entry in browsers if entry["name"] == name]
+    return registry.absolute() / f"{name.replace('-', '_')}-{revision}"
 
 
 _T = TypeVar("_T")
@@ -152,7 +158,9 @@ class _Open:
     """One page, and everything that runs for it: closed together."""
 
     playwright: Playwright
-    browser: Chromium
+    browser: Chromium | None
+    """``None`` for a context that **is** its browser — the one of a profile that lasts (M13.9):
+    closing it closes the browser."""
     context: BrowserContext
     page: Page
     refused: list[str]
@@ -362,12 +370,11 @@ class PlaywrightBrowser:
         token = uuid4().hex
         try:
             try:
-                browser = await playwright.chromium.launch(**self._launch())
+                browser, context = await self._begun(playwright)
             except PlaywrightError as error:
                 if MISSING_EXECUTABLE in str(error):
                     raise BrowserNotInstalled("the browser ELA uses is not installed") from None
                 raise
-            context = await browser.new_context(accept_downloads=False, service_workers="block")
             context.set_default_timeout(0)
             context.set_default_navigation_timeout(0)
             refused: list[str] = []
@@ -415,7 +422,7 @@ class PlaywrightBrowser:
                 await route.fulfill(response=response)
 
             await context.route("**/*", gate)
-            page = await context.new_page()
+            page = await self._paged(context)
             self._pages[token] = _Open(playwright, browser, context, page, refused)
             # The last instant before the site sees anything (M6.3c, ADR 0054 §3): a stopped task
             # leaves here with ToolStopped, and the page and its browser are closed below.
@@ -447,6 +454,24 @@ class PlaywrightBrowser:
         except Exception as error:
             await asyncio.shield(self._carried(self._dropped(token, playwright)))
             raise self._translated(error) from None
+
+    async def _begun(self, playwright: Playwright) -> tuple[Chromium | None, BrowserContext]:
+        """The browser of one page and its context: the shell, launched, and an empty context of
+        its own. The seam of the adapter of the profile (M13.9), which launches another binary on
+        a folder that lasts."""
+        browser = await playwright.chromium.launch(**self._launch())
+        context = await browser.new_context(accept_downloads=False, service_workers="block")
+        return browser, context
+
+    async def _paged(self, context: BrowserContext) -> Page:
+        """The page of a context that has none yet."""
+        return await context.new_page()
+
+    async def _looked(
+        self, opened: _Open, selector: str | None, expect: str | None, seconds: float
+    ) -> Glanced:
+        """The verifier's one look: what this browser says of a page."""
+        return await _look(opened, selector, expect, seconds)
 
     def _page(self, page: str) -> _Open:
         """The page, to be used. **Not once ELA is stopping** (M13.4c): a page the stop has not
@@ -517,7 +542,9 @@ class PlaywrightBrowser:
         if opened.kept is not None:
             opened.kept.cancel()
         try:
-            return await self._on(page, lambda found: _look(found, selector, expect, seconds))
+            return await self._on(
+                page, lambda found: self._looked(found, selector, expect, seconds)
+            )
         finally:
             await self.close(page)
 
@@ -552,7 +579,8 @@ async def _look(opened: _Open, selector: str | None, expect: str | None, seconds
 async def _shut(opened: _Open) -> None:
     """The three closings of a page, in their order: its context, its browser, its driver."""
     await _quietly(opened.context.close)
-    await _quietly(opened.browser.close)
+    if opened.browser is not None:
+        await _quietly(opened.browser.close)
     await _quietly(opened.playwright.stop)
 
 

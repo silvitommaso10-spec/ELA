@@ -188,16 +188,23 @@ def test_before_a_driven_launch_the_service_workers_are_gone_and_before_the_wind
     assert not workers.exists()
 
 
-def test_a_link_where_the_workers_would_be_is_not_followed(tmp_path: Path) -> None:
+def test_a_link_where_the_workers_would_be_is_taken_away_and_not_followed(tmp_path: Path) -> None:
+    """The link goes — a browser launched on it would find, through it, whatever workers the
+    folder it leads to holds —, and what it points at is nobody's to remove."""
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     (elsewhere / "kept").write_text("somebody's", encoding="utf-8")
     profile = tmp_path / "profile"
     (profile / "Default").mkdir(parents=True)
-    (profile / "Default" / "Service Worker").symlink_to(elsewhere)
+    workers = profile / "Default" / "Service Worker"
+    workers.symlink_to(elsewhere)
+
+    account._prepared(profile, driven=False)
+    assert workers.is_symlink(), "before the window nothing of the workers is touched"
 
     account._prepared(profile, driven=True)
 
+    assert not workers.is_symlink() and not workers.exists()
     assert (elsewhere / "kept").is_file()
 
 
@@ -431,6 +438,44 @@ async def test_a_folder_of_another_user_is_refused(
 
     with pytest.raises(ProfileUnsafe, match="another user"):
         await chrome(profile).occupied()
+
+
+async def test_where_the_browser_is_not_installed_it_says_so_and_no_window_is_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A look at a file, where Playwright would launch the browser from: a registry that holds
+    nothing holds no Chrome for Testing. The folder of the profile is not made for it."""
+    from ela.ports import BrowserNotInstalled
+
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "an-empty-registry"))
+    made = chrome(tmp_path / "profile")
+
+    assert await made.installed() is False
+    with pytest.raises(BrowserNotInstalled):
+        await made.window(None)
+    assert made._window is None and not (tmp_path / "profile").exists()
+
+
+def test_where_it_is_installed_is_a_file_in_the_registry_of_the_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Built: a registry with the folder of the lock's revision and the binary in it — whatever
+    the processor's folder is called."""
+    import asyncio as loop
+
+    from ela.infrastructure.machine.browser import registry_folder
+
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path))
+    folder = registry_folder("chromium", os.environ, "Darwin")
+    assert folder is not None and folder.parent == tmp_path
+    binary = folder.joinpath("chrome-mac-x64", "Google Chrome for Testing.app", "Contents", "MacOS")
+    binary.mkdir(parents=True)
+    made = chrome(tmp_path / "profile")
+    assert loop.run(made.installed()) is False, "a folder is not a browser"
+
+    (binary / "Google Chrome for Testing").write_bytes(b"a binary")
+
+    assert loop.run(made.installed()) is True
 
 
 @pytest.mark.parametrize("system", ["Linux", "Windows"])

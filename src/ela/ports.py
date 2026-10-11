@@ -89,6 +89,7 @@ from ela.domain import (
 __all__ = [
     "ANNOUNCED_FIELDS",
     "ANSWERS",
+    "AccountBrowser",
     "AgentSession",
     "AlreadyExistsError",
     "ApprovalAlreadyAnsweredError",
@@ -183,6 +184,9 @@ __all__ = [
     "NotFoundError",
     "Opened",
     "OpenedSession",
+    "PROFILE_PROCESS",
+    "PROFILE_STEP",
+    "PROFILE_WINDOW",
     "PROVIDER_AUTHENTICATION_ERROR",
     "PROVIDER_BAD_REQUEST",
     "PROVIDER_ERROR_CODES",
@@ -203,6 +207,9 @@ __all__ = [
     "PerceptionProbe",
     "PermissionGuardianPort",
     "PortError",
+    "ProfileBusy",
+    "ProfileUndeclared",
+    "ProfileUnsafe",
     "Prospect",
     "ProviderRegistryPort",
     "ROUTING_EMPTY_ROUTES",
@@ -2732,6 +2739,36 @@ class BrowserFailed(BrowserError):
     """Anything else the engine raised, named by its type (ADR 0052): a poor diagnosis, and said."""
 
 
+PROFILE_STEP: Final = "step"
+"""The profile is held by a page of ELA's own: a step that is running."""
+PROFILE_WINDOW: Final = "window"
+"""The profile is held by the window ELA opened for the user to sign in by hand."""
+PROFILE_PROCESS: Final = "process"
+"""The profile is held by a process ELA did not start now — the lock of the folder names it, and
+the kernel knows it: a window left by an ELA that is gone, a browser somebody launched on it."""
+
+
+class ProfileUndeclared(BrowserError):
+    """No folder was declared for the profile of the browser with the user's accounts: ELA does
+    not invent a place for credentials (M13.9, ADR 0063)."""
+
+
+class ProfileUnsafe(BrowserError):
+    """The declared folder cannot hold the user's sessions as it is — wider than its owner alone,
+    somebody else's, a link, not a folder. The message says which, and never what is in it. ELA
+    does not narrow it by itself."""
+
+
+class ProfileBusy(BrowserError):
+    """A process already holds the profile, and ELA does not launch a second one on a folder it
+    found held: ``by`` is one of :data:`PROFILE_STEP`, :data:`PROFILE_WINDOW` and
+    :data:`PROFILE_PROCESS`. Retryable: what holds it ends."""
+
+    def __init__(self, by: str) -> None:
+        super().__init__(f"the profile of ELA's browser is held ({by})")
+        self.by = by
+
+
 @dataclass(frozen=True, slots=True)
 class Opened:
     """A page the browser opened, and what the opening met (M13.4).
@@ -2752,10 +2789,15 @@ class Opened:
 @dataclass(frozen=True, slots=True)
 class Field:
     """What an element declares of itself, lower-cased: its ``type`` and its ``autocomplete``
-    attributes, empty when absent. The tool decides what they mean (M13.4, ADR 0052)."""
+    attributes, empty when absent. The tool decides what they mean (M13.4, ADR 0052).
+
+    ``method`` is how the form the element is in sends what it holds — ``get`` or ``post``, as the
+    browser resolves it; empty for an element in no form —, and ``None`` from a browser that does
+    not look: the empty one, whose tools never ask (M13.9, ADR 0063)."""
 
     type: str
     autocomplete: str
+    method: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2766,11 +2808,16 @@ class Glanced:
     find exactly one element —; ``shown`` whether the text it waited for appeared, ``None`` when it
     waited for none; ``left`` the address of the last navigation the boundary refused since the
     opening.
+
+    ``second_factor`` is the one thing more the browser with the user's accounts says (M13.9,
+    ADR 0063): whether the page shows a field that asks for a one-time code. ``None`` from a
+    browser that does not look — the empty one.
     """
 
     text: str | None
     shown: bool | None
     left: str | None
+    second_factor: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2873,6 +2920,57 @@ class Browser(Protocol):
         never raises: what cannot be closed any more is closed already. **The closing runs to its
         end whoever waits for it** (M13.4b): a caller cancelled while it waits gets its
         cancellation, and the page's processes still go."""
+
+
+@runtime_checkable
+class AccountBrowser(Browser, Protocol):
+    """ELA's own browser **with the profile that lasts**: the sites the user signed in to (§19,
+    §57; M13.9, ADR 0063).
+
+    Every member of :class:`Browser`, with the same contract of the gesture and of the handing
+    over — a browser per page, started for it and closed with it; the stop; the boundary —, and
+    what the profile adds:
+
+    * **what lasts is the folder**, declared by the user and never read by anything but the
+      implementation: a call on a folder nobody declared raises :class:`ProfileUndeclared`, on one
+      that cannot hold credentials as it is :class:`ProfileUnsafe`;
+    * **one process at a time on it**: :meth:`open` and :meth:`window` raise :class:`ProfileBusy`
+      on a folder found held, and launch nothing;
+    * **when** :meth:`close` **returns the folder is free**, whoever asked — a caller that arrives
+      while another is already closing the page waits for that closing;
+    * :meth:`field` says how the element's form sends (:attr:`Field.method`), and :meth:`glance`
+      whether the page asks for a one-time code (:attr:`Glanced.second_factor`).
+    """
+
+    async def occupied(self) -> str | None:
+        """Who holds the profile now — :data:`PROFILE_STEP`, :data:`PROFILE_WINDOW`,
+        :data:`PROFILE_PROCESS` —, or ``None`` when it is free. Derived at every call, never
+        remembered.
+
+        :raises ProfileUndeclared, ProfileUnsafe, BrowserUnsupported:
+        """
+
+    async def window(self, address: str | None) -> None:
+        """Open the browser's window on the profile **with nothing attached to it** — no driver,
+        no pipe, no port —, for the user to sign in by hand, on ``address`` if one is given. ELA
+        keeps one thing of it: the wait for its end. Returns once it is started.
+
+        :raises ProfileUndeclared, ProfileUnsafe, ProfileBusy, BrowserNotInstalled,
+            BrowserUnsupported, BrowserStopped, BrowserFailed:
+        """
+
+    async def linked(self) -> bool:
+        """Whether the browser itself knows a Google account — one registered, a consent to sync.
+        Read from the profile at every call, never from a copy."""
+
+    async def saved(self) -> int:
+        """How many passwords the browser's own manager holds in the profile. Counted, never read:
+        ELA switches that manager off, and what the user saved by hand is theirs to remove."""
+
+    async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
+        """Write what ``value`` holds in the one element ``selector`` finds. The one place a
+        secret of the vault is opened beside the vault's own adapter; nothing of it is in what
+        this raises."""
 
 
 # --------------------------------------------------------------------------------------
