@@ -555,6 +555,10 @@ class BrowserGuidedTool(Tool):
             # ELA's word first: a session that finished its turn in the same instant ELA stopped it
             # — the gesture past its looks answered, a call refused — ended on ELA's limit.
             why = _why(stopped, halted, seconds, ended=ended.done())
+            if why is not None:
+                # The room hears it before the session does: from here no gesture is made and
+                # no read is covered, whatever the model sends while it is being interrupted.
+                await self._gestures.halt(step, why)
             if not ended.done():
                 await launched.interrupt()
             end = await ended

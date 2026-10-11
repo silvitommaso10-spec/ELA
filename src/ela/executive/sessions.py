@@ -52,6 +52,7 @@ from ela.executive.stops import StopOfTask
 from ela.ports import (
     GUIDED_FOLDER_CHANGED,
     GUIDED_SESSION_GONE,
+    GUIDED_STOPPED,
     GUIDED_UNRESERVED,
     CapabilityRegistryPort,
     ExecutionResultStore,
@@ -216,7 +217,9 @@ class SessionRoom:
         self, session: StepId, capability: CapabilityId, arguments: JsonMapping
     ) -> Gesture:
         live = self._live.get(session)
-        if live is None or live.closed.is_set():
+        if live is None or live.halted.done():
+            # Over, or being ended by ELA — the «ferma» of its task, a halt, its seconds: the
+            # room is closed by the tool a moment later, and no gesture is made in between.
             return Gesture(f"the session {session} is over", TaskState.CANCELLED, acted=False)
         live.looks += 1
         number = live.looks
@@ -283,9 +286,13 @@ class SessionRoom:
         ``None`` for a session that is over or never was. **Built here and nowhere else**
         (architecture rule 67), and read from what is true at this moment: nobody is handed a
         word to keep. A session is here only while its own step runs — :meth:`open` wants the
-        reservation of its ``STARTED`` record, which exists because that step was permitted."""
+        reservation of its ``STARTED`` record, which exists because that step was permitted.
+
+        **And not from the moment ELA ends it**: a session that was halted, whose task was
+        stopped, or whose seconds are over is still in the room until its tool closes it, and
+        has no word any more (re-read of 2026-10-11)."""
         live = self._live.get(session)
-        if live is None or live.closed.is_set():
+        if live is None or live.halted.done():
             return None
         return SessionCover(
             session=session, task_id=live.task_id, capability_id=live.capability, sites=live.sites
@@ -353,6 +360,9 @@ class SessionRoom:
         stopped: list[Task] = []
         for session, live in list(self._live.items()):
             if live.task_id == task_id:
+                # Halted here, where the stop arrives: the tool hears the stop of its task on
+                # its own, and until it closes the room no gesture is made and none is covered.
+                await self.halt(session, ErrorMetadata(code=GUIDED_STOPPED, message=reason))
                 stopped.extend(await self._stop_children(live, session, reason))
         return tuple(stopped)
 
