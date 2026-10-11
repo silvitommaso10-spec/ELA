@@ -77,6 +77,7 @@ __all__ = [
     "VaultDoor",
     "VaultProblem",
     "VaultState",
+    "WATCH_SECONDS",
     "host_of",
 ]
 
@@ -86,6 +87,12 @@ with an account (decision 64): about five times the slowest."""
 VAULT_OPEN_SECONDS: Final = 3600
 """How long ELA keeps the key, **from the opening**: an hour (decision 33). Logins are rare, and
 «for as short as possible» is not eight hours."""
+
+WATCH_SECONDS: Final = 60
+"""How often the keeper of the key looks at the clock while it waits for the hour to end. The
+wait itself is counted on the time of the loop, **which stands still while the machine sleeps**:
+a single wait of an hour would be an hour awake, and a key kept through a night. Asked of the
+clock every minute, the hour is the clock's, and a machine that wakes forgets within one."""
 
 UNDECLARED: Final = "vault.undeclared"
 """``ELA_VAULT_PROGRAM`` is not set: ELA does not look for the vault's program in the ``PATH``."""
@@ -231,7 +238,13 @@ class VaultDoor:
     """The vault, behind the identity of its program and the hour of its key.
 
     ``closed`` is told of every closing (:class:`VaultClosing`), after the key is forgotten;
-    ``wait`` is how the hour is waited for — a sleep, and an event in a test."""
+    ``wait`` is how the hour is waited for — a sleep, and an event in a test.
+
+    **One thing at a time.** Whatever asks the vault something — an opening, a closing, a use, the
+    state — holds the door while it does: a closing takes several steps, and until the vault has
+    answered its adapter still holds the key, so a use that slipped in between would be served by
+    a key ELA had already decided to forget. Only the stop of ELA does not wait its turn: it
+    forgets, and launches nothing."""
 
     def __init__(
         self,
@@ -253,6 +266,7 @@ class VaultDoor:
         self._wait = wait
         self._opened_at: datetime | None = None
         self._watching: asyncio.Future[None] | None = None
+        self._busy = asyncio.Lock()
 
     @classmethod
     async def fixed(
@@ -344,31 +358,42 @@ class VaultDoor:
         """Hand ELA the session key. It is kept only if the vault's program — the one of the
         start — says it opens the vault; otherwise it is forgotten, and the reason is said.
         **The hour starts here**, and the wait for its end with it."""
-        problem = await self._problem()
-        if problem is not None:
-            return problem
-        assert self._vault is not None
-        try:
-            opens = await self._vault.unlock(key)
-        except VaultError as error:
-            return self._said(error)
-        if not opens:
-            return VaultProblem(KEY_REFUSED, "that key does not open the vault: it was forgotten")
-        self._opened_at = self._clock.now()
-        self._unwatch()
-        self._watching = asyncio.ensure_future(self._expiring())
-        return None
+        async with self._busy:
+            problem = await self._problem()
+            if problem is not None:
+                return problem
+            assert self._vault is not None
+            try:
+                opens = await self._vault.unlock(key)
+            except VaultError as error:
+                return self._said(error)
+            if not opens:
+                return VaultProblem(
+                    KEY_REFUSED, "that key does not open the vault: it was forgotten"
+                )
+            self._opened_at = opened = self._clock.now()
+            self._unwatch()
+            self._watching = asyncio.ensure_future(
+                self._expiring(opened + timedelta(seconds=self._seconds))
+            )
+            return None
 
     async def close(self, by: Actor | None = None) -> VaultProblem | None:
         """Forget the key and ask the vault to lock, on the command of ``by``. **With a program
         that changed or is gone the key is forgotten and nothing is run**: what would be launched
         is not the program ELA vouched for. Whatever is returned, the key is not held any more."""
         self._unwatch()
-        return await self._close(BY_COMMAND, by)
+        async with self._busy:
+            return await self._close(BY_COMMAND, by)
 
     async def expire(self) -> bool:
-        """Close the vault if the hour of the key is over; whether it was closed here. Asked at
-        every use, on the clock: the wait below is not the only thing that ends the hour."""
+        """Close the vault if the hour of the key is over; whether it was closed here."""
+        async with self._busy:
+            return await self._expire()
+
+    async def _expire(self) -> bool:
+        """Asked at every use, on the clock and with the door held: the wait below is not the
+        only thing that ends the hour."""
         forgets_at = self.forgets_at
         if forgets_at is None or self._clock.now() < forgets_at:
             return False
@@ -392,11 +417,15 @@ class VaultDoor:
             watching.cancel()
         return watching
 
-    async def _expiring(self) -> None:
+    async def _expiring(self, at: datetime) -> None:
         """The keeper's own task (decision 33): at the end of the hour nobody may be calling.
-        It does not end itself: whoever closes first ends this wait."""
-        await self._wait(float(self._seconds))
-        await self._close(BY_TIME, None)
+        It waits a minute at a time and asks **the clock** whether it is ``at`` yet — never the
+        wait, whose time stands still while the machine sleeps (:data:`WATCH_SECONDS`). It does
+        not end itself: whoever closes first ends this wait."""
+        while (left := (at - self._clock.now()).total_seconds()) > 0:
+            await self._wait(min(left, float(WATCH_SECONDS)))
+        async with self._busy:
+            await self._close(BY_TIME, None)
 
     async def _close(self, reason: str, by: Actor | None) -> VaultProblem | None:
         held, self._opened_at = self._opened_at is not None, None
@@ -427,56 +456,60 @@ class VaultDoor:
 
     async def state(self) -> VaultState:
         """What the vault is now: asked of the program, never remembered."""
-        problem = await self._problem()
-        if problem is not None:
-            return VaultState(_STATES[problem.code], message=problem.message)
-        assert self._vault is not None
-        await self.expire()
-        try:
-            said = await self._vault.status()
-        except VaultError as error:
-            failed = self._said(error)
-            return VaultState(_STATES[failed.code], message=failed.message)
-        if said == VAULT_UNLOCKED:
-            return VaultState(said, self.forgets_at)
-        if self._opened_at is not None:
-            # The key ELA held was ended elsewhere — another unlock, a lock —: it opens nothing.
-            self._unwatch()
-            await self._forgotten(ELSEWHERE)
-        return VaultState(
-            said,
-            message=self._said(VaultNotOpen(said)).message,
-            opens_with=self._opens_with() if said == VAULT_LOCKED else None,
-        )
+        async with self._busy:
+            problem = await self._problem()
+            if problem is not None:
+                return VaultState(_STATES[problem.code], message=problem.message)
+            assert self._vault is not None
+            await self._expire()
+            try:
+                said = await self._vault.status()
+            except VaultError as error:
+                failed = self._said(error)
+                return VaultState(_STATES[failed.code], message=failed.message)
+            if said == VAULT_UNLOCKED:
+                return VaultState(said, self.forgets_at)
+            if self._opened_at is not None:
+                # The key ELA held was ended elsewhere — another unlock, a lock —: it opens
+                # nothing.
+                self._unwatch()
+                await self._forgotten(ELSEWHERE)
+            return VaultState(
+                said,
+                message=self._said(VaultNotOpen(said)).message,
+                opens_with=self._opens_with() if said == VAULT_LOCKED else None,
+            )
 
     # The entry ------------------------------------------------------------------------------
 
     async def find(self, site: str, wanted: str | None = None) -> VaultEntry | VaultProblem:
         """**Before the question**: the entry of the vault for ``site`` — the one ``wanted`` names
         by its id, or the only one whose host is the site —, without any value; or why not."""
-        problem = await self._problem()
-        if problem is not None:
-            return problem
-        assert self._vault is not None
-        await self.expire()
-        try:
-            listed = await self._vault.find(f"{HTTPS}://{site}")
-        except VaultError as error:
-            return self._said(error)
+        async with self._busy:
+            problem = await self._problem()
+            if problem is not None:
+                return problem
+            assert self._vault is not None
+            await self._expire()
+            try:
+                listed = await self._vault.find(f"{HTTPS}://{site}")
+            except VaultError as error:
+                return self._said(error)
         return _chosen(site, listed, wanted)
 
     async def take(self, site: str, entry: str) -> VaultTaken | VaultProblem:
         """**After the yes**: read ``entry`` once, compare it again with ``site`` on that very
         reading, and give what is typed; or why not — and then nothing was given."""
-        problem = await self._problem()
-        if problem is not None:
-            return problem
-        assert self._vault is not None
-        await self.expire()
-        try:
-            taken = await self._vault.take(entry)
-        except VaultError as error:
-            return self._said(error)
+        async with self._busy:
+            problem = await self._problem()
+            if problem is not None:
+                return problem
+            assert self._vault is not None
+            await self._expire()
+            try:
+                taken = await self._vault.take(entry)
+            except VaultError as error:
+                return self._said(error)
         if site not in _hosts(taken.addresses):
             return VaultProblem(
                 ENTRY_NOT_FOR_SITE,

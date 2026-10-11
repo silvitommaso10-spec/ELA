@@ -682,12 +682,13 @@ async def test_the_hour_is_the_clock_s_and_not_the_loop_s(tmp_path: Path) -> Non
     assert hour.asked == [60.0], "one wait, of a minute: never one as long as the hour"
 
 
-async def test_a_use_that_arrives_while_the_keeper_is_closing_does_not_get_the_vault(
-    tmp_path: Path,
+@pytest.mark.parametrize("closer", ["the keeper, at its time", "a command"])
+async def test_whatever_arrives_while_the_vault_is_closing_waits_for_the_closing_to_be_over(
+    tmp_path: Path, closer: str
 ) -> None:
-    """One thing at a time at the door. The keeper has begun to close — it is asking the vault to
-    lock, and until the vault answers its adapter still holds the key —: a use that arrives now
-    waits for the closing to be over, and finds the vault closed."""
+    """One thing at a time at the door. A closing has begun — the vault is being asked to lock,
+    and until it answers its adapter still holds the key —: a use that arrives now waits, and
+    finds the vault closed; the state is not said halfway; and a new key is taken only after."""
     hour = Hour()
     vault = FakeVault([MARIO], state=VAULT_LOCKED)
     made = await door(vault, program(tmp_path), wait=hour)
@@ -701,18 +702,31 @@ async def test_a_use_that_arrives_while_the_keeper_is_closing_does_not_get_the_v
         await lock()
 
     vault.lock = a_lock_that_takes_its_time  # type: ignore[method-assign]
-    hour.passes(timedelta(hours=1))
+    if closer == "a command":
+        closing = asyncio.ensure_future(made.close(TOMMASO))
+    else:
+        hour.passes(timedelta(hours=1))
     await locking.wait()
 
     using = asyncio.ensure_future(made.find(SITE))
     taking = asyncio.ensure_future(made.take(SITE, MARIO.id))
+    asking = asyncio.ensure_future(made.state())
+    opening = asyncio.ensure_future(made.open(Secret(KEY)))
     await asyncio.sleep(0.2)
-    assert not using.done() and not taking.done(), "they wait at the door"
+    waiting = (using, taking, asking, opening)
+    assert not any(one.done() for one in waiting), "they wait at the door"
 
     release.set()
 
     assert code_of(await using) == "vault.locked"
     assert code_of(await taking) == "vault.locked"
+    assert (await asking).name == "locked"
+    assert await opening is None, (
+        "and the key handed meanwhile is taken after, for an hour of its own"
+    )
+    assert made.forgets_at is not None
+    if closer == "a command":
+        assert await closing is None
 
 
 async def test_at_its_time_with_a_program_that_changed_the_keeper_forgets_and_runs_nothing(
