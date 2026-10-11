@@ -2840,6 +2840,13 @@ class Visit:
     gestures: tuple[str, ...]
     expect: str
     timeout_seconds: int
+    entry: str = ""
+    """The entry of the vault a login would read, **by its name** (M13.9, ADR 0063 §9): what the
+    yes covers. Empty for every call that is not a login. Never its id, which is the plan's, and
+    never a value."""
+    username: str = ""
+    """The username of that entry, **masked** as the vault's adapter gives it before a yes; empty
+    when the entry has none. The whole username does not leave the adapter."""
 
 
 @runtime_checkable

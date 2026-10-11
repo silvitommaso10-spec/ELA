@@ -401,8 +401,9 @@ class LoginTool(_OnTheProfile, _BrowserTool):
 
     async def prospect(self, arguments: JsonMapping) -> Prospect:
         """What the question names: the site, the address, **the entry** — by its name and its
-        username masked —, the fields, the click, the text awaited and the time. Before it, every
-        refusal of the profile and of the vault, each with its code; none of them names an entry.
+        username masked, in two fields of their own —, the fields, the click, the text awaited and
+        the time. Before it, every refusal of the profile and of the vault, each with its code;
+        none of them names an entry.
         """
         looked = self._shaped(arguments)
         if not isinstance(looked, Outcome):
@@ -416,14 +417,17 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         if isinstance(found, VaultProblem):
             return self._refused(found.code, found.message, found.code in {LOCKED, TIMEOUT})
         self._remember(looked.key, found.id)
-        named = f"«{found.name}»" + (f" ({found.username})" if found.username else "")
         username, word = looked.fills[0][0], looked.fills[1][0]
         gestures = (
-            f"types the username of the entry {named} of your vault into {username}",
+            f"types the username of that entry into {username}",
             f"types its password into {word}",
             f"clicks {looked.click}",
         )
-        return Prospect(visit=replace(looked.visit, gestures=gestures))
+        return Prospect(
+            visit=replace(
+                looked.visit, gestures=gestures, entry=found.name, username=found.username
+            )
+        )
 
     def _refused(self, code: str, message: str, retryable: bool) -> Prospect:
         return Prospect(

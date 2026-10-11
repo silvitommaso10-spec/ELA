@@ -581,6 +581,12 @@ class Asked(BaseModel):
     expect: str = ""
     """The text an action waits for on the page after the click (M13.4): what the verifier looks
     for. Empty for a read, and when the question is not about a page."""
+    entry: str = ""
+    """The entry of the vault a login would read, by its name (M13.9, ADR 0063 §9): what the yes
+    covers. The user's content, like the goal. Empty when the question is not a login."""
+    username: str = ""
+    """The username of that entry, **masked** — the whole one never leaves the vault's adapter.
+    Empty when the entry has none, and when the question is not a login."""
     worst_case: str = ""
     """The most the call can cost, in the executor's line — amount, model, tokens — when the call
     spends (M14.1, ADR 0057; decision H). Empty for a call that spends nothing."""
@@ -648,6 +654,8 @@ class ApprovalOut(BaseModel):
     address: str
     gestures: tuple[str, ...] | None
     expect: str
+    entry: str
+    username: str
     worst_case: str
     left: str
     phrase: str

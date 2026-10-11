@@ -2213,6 +2213,11 @@ class Executor:
             asked["timeout_seconds"] = visit.timeout_seconds
             if visit.expect:
                 asked["expect"] = visit.expect
+            if visit.entry:
+                # A login (M13.9, ADR 0063 §9): which entry of the vault the yes covers, by its
+                # name, and whose — the username masked, when the entry has one.
+                asked["entry"] = visit.entry
+                asked["username"] = visit.username
         if there is not None:
             # The name the node chose, which may change and is not unique, and the start of the id
             # the Core minted (M13.3, decision 10); and what ELA did not do (:data:`UNSEEN`).

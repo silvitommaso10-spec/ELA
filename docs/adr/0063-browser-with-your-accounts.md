@@ -513,6 +513,28 @@ davanti, quante finestre, mai un titolo —, non lo manda a un modello né in un
 aperta direbbe solo ciò che ELA sa già, perché la finestra l'ha aperta lei. *Con la finestra del login aperta
 ELA non legge il contenuto dello schermo e non ascolta; sa che la finestra c'è.*
 
+### 9. La domanda di un login: quale voce, e di chi
+
+Prima di dire sì a un login Tommaso deve poter leggere **quale voce** del suo vault ELA userebbe, e **di chi**.
+La domanda le porta in due campi suoi, accanto ai fatti di una pagina:
+
+| Campo | Che cosa porta | Quando manca |
+|---|---|---|
+| `entry` | il nome della voce | la domanda non è un login |
+| `username` | il nome utente della voce, mascherato | la voce non ne ha uno, o la domanda non è un login |
+
+Le righe dei gesti nominano i campi della pagina — «types the username of that entry into …» — e non ripetono la
+voce: quale voce è un fatto suo, non una parola dentro una frase.
+
+**Ogni superficie che offre un sì li mostra tutti e due, o non risponde** (ADR 0045 §11): la console e il
+telefono con «La voce» e «Nome utente», `ela approvals` con `entry` e `username`. Lo tiene la regola chiusa sui
+campi di una domanda, che non conosce questi due per nome: li trova perché la domanda li dichiara.
+
+**Sono contenuto di Tommaso, e stanno sotto il tetto**, come l'indirizzo e lo scopo di uno step: una superficie
+oltre il tetto del task non li legge. **Ciò che nessuna superficie riceve mai**: il nome utente intero e la
+password, che prima di un sì non lasciano l'adapter del vault, e l'id della voce, che è del piano. I due campi
+stanno accanto alla domanda, non nel suo testo: l'audit della domanda non li porta.
+
 ## Alternative considerate
 
 - **Un grant della sessione con lo scope dei suoi siti**: è la forma delle policy di §59, e ADR 0060 l'aveva
