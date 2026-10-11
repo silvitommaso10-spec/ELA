@@ -27,9 +27,10 @@ What a page gets here that an empty one does not:
   whose pid went to another process holds nothing;
 * **one profile of the browser's, by name**: every launch names ``Default``, the one ELA
   prepares — with no name the browser opens whichever was used last (measured);
-* **the reports of a crash inside the folder**: this version has no argument that switches its
-  collector off, and one that says where it writes (measured) — the folder's rules hold for what
-  it writes too;
+* **the reports of a crash inside the folder, and gone before every launch**: this version has
+  no argument that switches its collector off, and one that says where it writes (measured) —
+  the folder's rules hold for what it writes, and what a crash left does not pass to the launch
+  after;
 * **the preferences rewritten before every launch**, over whatever the file says
   (:data:`PREFERENCES`): they — with the flags of :data:`LAUNCH_ARGUMENTS` —, and not the binary,
   are what keeps the browser away from a Google account and from saving passwords (measured);
@@ -172,9 +173,10 @@ REPORTS_AT: Final = "--breakpad-dump-location"
 Playwright passes by itself, is not listened to on a Mac — the collector ran beside the browser
 all the same, and a crash wrote a megabyte of the process's memory in a folder of the binary's
 own, outside the profile. With this one the collector's folder is inside the folder of the
-profile, and the folder's rules hold for what a crash leaves. **What the system itself writes of
-a crash is not the browser's to move**: a report of its own, with no memory of the process in
-it (ADR 0063 §4)."""
+profile, and the folder's rules hold for what a crash leaves — **until the next launch, which
+takes it away** (:func:`_prepared`, decision 90). **What the system itself writes of a crash is
+not the browser's to move**: a report of its own, with no memory of the process in it (ADR 0063
+§4)."""
 
 
 def reports_in(profile: Path) -> str:
@@ -524,9 +526,20 @@ async def command_line(pid: int, environment: Mapping[str, str]) -> str | None:
     return said if said or process.returncode == 1 else None
 
 
+def _taken_away(place: Path) -> None:
+    """What is at ``place`` is gone: a folder with what it holds, a file — and of a link the
+    link, **never what it points at**: nothing is reached through it."""
+    if place.is_symlink() or place.is_file():
+        place.unlink(missing_ok=True)
+    else:
+        shutil.rmtree(place, ignore_errors=True)
+
+
 def _prepared(profile: Path, *, driven: bool) -> None:
-    """What is done to the folder before a launch: the preferences, always; and before a launch
-    Playwright drives, the service workers gone."""
+    """What is done to the folder before a launch: the preferences, always; **what a crash left,
+    always** (decision 90) — a report is memory of the process that held the sessions, it serves
+    nobody, and it does not pass to the launch after: the browser makes the folder of its
+    collector again —; and before a launch Playwright drives, the service workers gone."""
     default = profile / PREFERENCES_FILE[0]
     default.mkdir(mode=PROFILE_MODE, exist_ok=True)
     file = profile.joinpath(*PREFERENCES_FILE)
@@ -541,11 +554,9 @@ def _prepared(profile: Path, *, driven: bool) -> None:
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write(written)
     fresh.replace(file)
-    workers = profile.joinpath(*SERVICE_WORKERS)
-    if driven and workers.is_symlink():
-        workers.unlink()  # the link, never what it points at: no worker is reached through it
-    elif driven:
-        shutil.rmtree(workers, ignore_errors=True)
+    _taken_away(profile / REPORTS)
+    if driven:
+        _taken_away(profile.joinpath(*SERVICE_WORKERS))
 
 
 WEB: Final = frozenset({"https", "http"})
