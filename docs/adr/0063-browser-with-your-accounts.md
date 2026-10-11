@@ -185,9 +185,10 @@ letteralmente falsa.
   `<ambiente>/bin/python3 <ambiente>/bin/ela serve`. **L'interprete si prende com'è nominato, mai risolto**:
   quello di un ambiente virtuale è un link a quello da cui è nato, e il comando sta accanto al link. **Niente
   ricerca nel `PATH`.** *Su Windows* il comando porta la sua estensione, `ela.exe`, nella cartella degli script
-  dell'ambiente — accanto al suo interprete lo stesso —: lo misura il job di Windows della CI, dove il test del
-  comando gira. **Il Core su Windows non è supportato** (ADR 0040), e lì questa riga non viene mai composta: la
-  misura dice dove sta il comando, non che la riga funzioni su un PC (domanda 102 di `M13.9.md`).
+  dell'ambiente — accanto al suo interprete lo stesso —: **misurato l'11 ottobre sul job di Windows della CI**,
+  dove il test del comando gira: `<ambiente>\Scripts\ela.exe`, accanto a `python.exe`, ed è il comando di ELA.
+  **Il Core su Windows non è supportato** (ADR 0040), e lì questa riga non viene mai composta: la misura dice
+  dove sta il comando, non che la riga funzioni su un PC (domanda 102 di `M13.9.md`).
 - **Citati come li vuole una shell**: un percorso con uno spazio è una parola sola, in tutte e due le metà.
 - **Se ELA non sa nominare il proprio comando lo dice, e non stampa nessuna riga**: accanto all'interprete non
   c'è — ELA avviata in un altro modo —, e una riga che può non funzionare non è una riga. La frase dice che cosa
