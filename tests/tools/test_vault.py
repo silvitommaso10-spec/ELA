@@ -886,6 +886,136 @@ async def test_a_key_ended_elsewhere_is_told_when_ela_learns_it(tmp_path: Path) 
     assert hour.cancelled == 1
 
 
+# ----------------------------------------------------------------------------------------
+# What the critical re-read of 2026-10-11 found at the door
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("use", ["take", "state"])
+async def test_the_use_that_gives_a_password_looks_at_the_hour_like_every_other(
+    tmp_path: Path, use: str
+) -> None:
+    """ADR 0063 §3: «ogni uso riconfronta l'ora». Asserted until now on ``find`` alone — and
+    ``take`` is the use that hands a password out."""
+    told, clock = Told(), FakeClock()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), clock=clock, closed=told)
+    assert await made.open(Secret(KEY)) is None
+    clock.advance(timedelta(hours=1, seconds=1))
+    vault.calls.clear()
+
+    answer = await (made.take(SITE, MARIO.id) if use == "take" else made.state())
+
+    assert not any(call.startswith("take") for call in vault.calls), "no password after the hour"
+    assert made.forgets_at is None and "lock" in vault.calls
+    assert told.said == [("expired", None, True, None)]
+    if use == "take":
+        assert code_of(answer) == "vault.locked"
+    else:
+        assert answer.name == VAULT_LOCKED and answer.forgets_at is None
+
+
+@pytest.mark.parametrize("closing", ["by-a-command", "by-the-hour-at-a-use"])
+async def test_a_closing_whose_caller_is_cancelled_still_forgets_the_key_and_says_so(
+    tmp_path: Path, closing: str
+) -> None:
+    """A closing is not undone by whoever asked for it going away. The caller of a use has a
+    deadline — the thirty seconds of a step —, and a cancellation that lands while the door looks
+    at its program left the key in the adapter with no hour, no keeper and no row: a password
+    could be taken twelve hours later (re-read of 2026-10-11, defect 1)."""
+    told, clock = Told(), FakeClock()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), clock=clock, closed=told)
+    assert await made.open(Secret(KEY)) is None
+    looking, problem = asyncio.Event(), made._problem
+
+    async def a_look_that_takes_its_time() -> Any:
+        looking.set()
+        await asyncio.Event().wait()
+
+    made._problem = a_look_that_takes_its_time
+    if closing == "by-the-hour-at-a-use":
+        clock.advance(timedelta(hours=1, seconds=1))
+        made._problem = problem  # the use looks first, and its look passes
+
+        async def then_hangs() -> Any:
+            made._problem = a_look_that_takes_its_time
+            return await problem()
+
+        made._problem = then_hangs
+        asked = asyncio.ensure_future(made.take(SITE, MARIO.id))
+    else:
+        asked = asyncio.ensure_future(made.close(TOMMASO))
+    await asyncio.wait_for(looking.wait(), 5)
+
+    asked.cancel()
+    await asyncio.gather(asked, return_exceptions=True)
+    made._problem = problem
+    vault.calls.clear()
+    clock.advance(timedelta(hours=12))
+    later = await made.take(SITE, MARIO.id)
+
+    assert asked.cancelled(), "the caller's cancellation is the caller's"
+    assert code_of(later) == "vault.locked", "the key was forgotten: nothing is taken later"
+    assert not any(call.startswith("take") for call in vault.calls)
+    assert made.forgets_at is None
+    assert [(reason, locked) for reason, _, locked, _ in told.said] == [
+        ("command" if closing == "by-a-command" else "expired", False)
+    ], "the closing is told once, and says the vault was not asked to lock"
+    assert [task for task in asyncio.all_tasks() if task is not asyncio.current_task()] == []
+
+
+async def test_a_stop_while_the_keeper_is_closing_leaves_the_row_of_that_closing(
+    tmp_path: Path,
+) -> None:
+    """«Una chiusura che nessuna rotta ha chiesto non resta senza riga»: the keeper had begun
+    to close at its time when ELA stopped; its closing is cut short, and it is still told."""
+    told, hour = Told(), Hour()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), closed=told, wait=hour)
+    assert await made.open(Secret(KEY)) is None
+    locking = asyncio.Event()
+
+    async def lock_that_hangs() -> None:
+        locking.set()
+        await asyncio.Event().wait()
+
+    vault.lock = lock_that_hangs  # type: ignore[method-assign]
+    hour.passes(timedelta(hours=1))
+    await asyncio.wait_for(locking.wait(), 5)
+
+    await made.stopped()
+
+    assert told.said == [("expired", None, False, None)]
+    assert "forget" in vault.calls and made.forgets_at is None
+
+
+@pytest.mark.parametrize("use", ["find", "take"])
+async def test_a_key_ended_elsewhere_and_met_by_a_use_is_forgotten_and_told_there(
+    tmp_path: Path, use: str
+) -> None:
+    """Until now only ``state()`` forgot it. A use that finds the vault locked with a key held
+    left the hour running, and at its end the keeper ran ``bw lock`` — which is the whole
+    machine's, and closed the session the user had opened since (defect 8)."""
+    told, hour = Told(), Hour()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), closed=told, wait=hour)
+    assert await made.open(Secret(KEY)) is None
+    await turns()
+    vault.state = VAULT_LOCKED
+
+    answer = await (made.find(SITE) if use == "find" else made.take(SITE, MARIO.id))
+    await turns()
+    vault.calls.clear()
+    hour.passes(timedelta(hours=2))
+    await turns()
+
+    assert code_of(answer) == "vault.locked"
+    assert told.said == [("ended_elsewhere", None, False, None)]
+    assert made.forgets_at is None and hour.cancelled == 1
+    assert "lock" not in vault.calls, "the keeper is gone: nothing locks the user's own session"
+
+
 def test_the_reasons_of_a_closing_are_a_closed_set() -> None:
     from ela.tools import vault as module
 
