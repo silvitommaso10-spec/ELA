@@ -239,7 +239,7 @@ def test_with_its_browser_at_work_ela_closes_whole_and_then_ends_as_the_signal_e
     assert ended.database == ("ela.db",), "the close ran: the database was released whole"
     assert ended.still_running() == []
     assert not ended.left, "and nothing of the browser is left on this machine"
-    assert "killed" not in ended.error, "the browser closed by itself, within its grace"
+    assert "killed" not in ended.error, "the browser closed by itself, and nobody was killed"
     assert ended.code == end_of(name)
 
 

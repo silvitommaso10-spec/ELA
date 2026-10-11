@@ -869,22 +869,23 @@ def refuse_the_root(root: Path, own: Mapping[str, Path]) -> None:
             )
 
 
+def _same_folder(one: Path, other: Path) -> bool:
+    """What the volume says: whether two paths name one folder. A path that names nothing is the
+    same as no place."""
+    try:
+        return one.samefile(other)
+    except OSError:
+        return False
+
+
 def _within(folder: Path, place: Path) -> bool:
     """Whether ``folder`` is ``place`` or lies below it — **by its spelling, and by what the
-    volume says of what is there**. The volume of a Mac ignores the case of a name, and resolving
-    a path leaves a spelling as it was written: one folder has more than one spelling there, and
-    a comparison of spellings alone would call a folder typed in lower case a different place.
-    A part of the path that names nothing is the same as no place."""
+    volume says of what is there** (:func:`_same_folder`). The volume of a Mac ignores the case
+    of a name, and resolving a path leaves a spelling as it was written: one folder has more than
+    one spelling there, and a comparison of spellings alone would call a folder typed in lower
+    case a different place."""
     chain = (folder, *folder.parents)
-    if place in chain:
-        return True
-    for part in chain:
-        try:
-            if part.samefile(place):
-                return True
-        except OSError:
-            continue
-    return False
+    return place in chain or any(_same_folder(part, place) for part in chain)
 
 
 def refuse_the_profile(

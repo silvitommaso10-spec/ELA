@@ -16,7 +16,11 @@ names:
   wait for it. The stop a signal raises tells the page to close, and the browser cannot answer:
   the close is entered **with that closing in flight** — built with an event, because left to
   itself the browser closes while the server is still stopping (the review of the repair). When
-  the grace begins the browser is let go (``SIGCONT``), and closes within it.
+  the grace begins the browser is let go (``SIGCONT``), and closes. **In this mode the grace does
+  not run out by itself**: how long a machine takes to close a browser it has just let go is the
+  machine's — on the macOS runner, under the load of the suite, the grace was not enough
+  (2026-10-11) —, and what is asserted is that the close waits for the closing in flight and
+  kills nobody. A browser that never closed would meet the guard of the test.
 * ``stuck`` — a page open, and **the driver stopped** for good: a browser that will not answer
   when it is told to close.
 
@@ -77,6 +81,9 @@ def main(mode: str, folder: Path, origin: str, port: str) -> None:
                 if mode == "open":
                     for pid in frozen:
                         os.kill(pid, signal.SIGCONT)
+                    # No clock ends this wait: the close returns because the closing in flight
+                    # ended, and whoever waits here is cancelled then.
+                    await asyncio.Event().wait()
                 await grace()
 
             return await settling(waited)  # type: ignore[no-any-return]

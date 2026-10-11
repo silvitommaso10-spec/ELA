@@ -275,10 +275,48 @@ def test_a_folder_written_in_another_case_is_where_it_is_and_not_where_it_is_spe
     assert PROFILE in message and expected in message
 
 
+def test_what_the_volume_says_of_two_spellings_is_believed_on_every_system(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The same refusal with **the volume's answer handed by the test**: on a volume that tells
+    the cases of a name apart — the runner's — the test above has nothing to confuse and does not
+    run, and the line that believes the volume would be one no test of that system reaches (the
+    CI of 2026-10-11, where the gate of the coverage said so)."""
+    from ela.composition import settings as module
+
+    installed = tmp_path / "Site-Packages" / "ela"
+    installed.mkdir(parents=True)
+    monkeypatch.setattr(ela, "__file__", str(installed / "__init__.py"))
+    monkeypatch.setattr(
+        module, "_same_folder", lambda one, other: str(one).casefold() == str(other).casefold()
+    )
+
+    message = refused(
+        monkeypatch, tmp_path, **{PROFILE: str(tmp_path / "site-packages" / "profile")}
+    )
+
+    assert PROFILE in message and "ELA's own source tree" in message
+
+
+def test_two_paths_are_one_folder_when_the_volume_says_so_and_never_when_one_names_nothing(
+    tmp_path: Path,
+) -> None:
+    from ela.composition.settings import _same_folder
+
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "link").symlink_to(real)
+
+    assert _same_folder(real, tmp_path / "link") is True, "one folder, reached two ways"
+    assert _same_folder(real, tmp_path) is False
+    assert _same_folder(tmp_path / "nothing", real) is False
+    assert _same_folder(real, tmp_path / "nothing") is False
+
+
 def test_on_a_mac_the_two_spellings_are_one_folder_and_the_test_above_ran() -> None:
     """A skip on the system a test covers turns the suite red: the browser with the profile runs
-    on the Mac, whose volume ignores case, and there the test of the two spellings is not one a
-    count of skips may hide."""
+    on the Mac, whose volume ignores case, and there the test of the two spellings on the real
+    volume is not one a count of skips may hide."""
     assert sys.platform != "darwin" or IGNORES_CASE, ONE_SPELLING
 
 
