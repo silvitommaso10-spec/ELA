@@ -40,6 +40,7 @@ from ela.testing.fakes import (
     FakeAgentSession,
     FakeBrowser,
     FakePower,
+    FakeVault,
     finished,
 )
 from tests.api.support import AUTHORIZED, BASE
@@ -245,6 +246,7 @@ async def guided(
     *,
     session: FakeAgentSession | None = None,
     accounts: FakeAccountBrowser | None = None,
+    vault: FakeVault | None = None,
     **declared: str,
 ) -> AsyncIterator[Guided]:
     anthropic = Anthropic()
@@ -277,7 +279,7 @@ async def guided(
     settings = Settings.load()
     await create_schema(settings.persistence.db_url)
     browser = FakeBrowser()
-    ela = await build(settings, power=FakePower(), browser=browser, accounts=accounts)
+    ela = await build(settings, power=FakePower(), browser=browser, accounts=accounts, vault=vault)
     app = create_app(ela)
     script.app = app
     try:
