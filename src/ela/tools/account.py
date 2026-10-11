@@ -180,6 +180,9 @@ HELD_BY: Final = {
     PROFILE_PROCESS: "another process holds it — a browser somebody started on that folder",
 }
 SPENT: Final = "; the yes was spent, and nothing was typed"
+UNNAMED: Final = "(an entry of your vault that has no name)"
+"""What the question calls an entry the user never named: every surface that offers a yes shows
+the entry and whose it is (ADR 0063 §9), and an empty name would have shown neither."""
 REMEMBERED: Final = 256
 """How many questions a login tool remembers the entry of: the oldest goes first."""
 NEW_OR_NOT_A_PASSWORD: Final = frozenset({"new-password", "one-time-code", "cc-number", "cc-csc"})
@@ -378,7 +381,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
     ) -> None:
         super().__init__(BROWSER_LOGIN, browsing, browser, clock, ids, name=name)
         self._vault = vault
-        self._found: dict[str, str] = {}
+        self._found: dict[str, str | None] = {}
 
     def _gestures(self, arguments: JsonMapping, site: str, address: str) -> Outcome | _Call:
         username, word, click = (
@@ -453,7 +456,10 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         )
         return Prospect(
             visit=replace(
-                looked.visit, gestures=gestures, entry=found.name, username=found.username
+                looked.visit,
+                gestures=gestures,
+                entry=found.name or UNNAMED,
+                username=found.username,
             )
         )
 
@@ -466,9 +472,14 @@ class LoginTool(_OnTheProfile, _BrowserTool):
 
     def _remember(self, key: str, entry: str) -> None:
         """Which entry the question of this call named: what the yes covers. Kept in memory, for
-        the questions that are waiting — a bounded number, the oldest first out."""
-        self._found.pop(key, None)
-        self._found[key] = entry
+        the questions that are waiting — a bounded number, the oldest first out.
+
+        **One tool serves every task, and the key is the call.** Two questions for the same call
+        that named **different** entries — the same plan asked twice, with the vault changed in
+        between — leave ``None``: ELA cannot tell which of them a yes is for, and types neither
+        (re-read of 2026-10-11)."""
+        known = self._found.pop(key, entry)
+        self._found[key] = entry if known == entry else None
         while len(self._found) > REMEMBERED:
             del self._found[next(iter(self._found))]
 
@@ -523,14 +534,24 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         stop.listen(FIRST_GESTURE)
         entry = call.entry or self._found.get(call.key)
         if entry is None:
-            return self._none_typed(
-                ENTRY_FORGOTTEN,
-                "ELA was started again after it asked, and does not know any more which entry "
-                "of the vault the question named: ask again",
-            )
+            return self._none_typed(ENTRY_FORGOTTEN, self._forgotten(call.key))
         taken = await self._vault.take(site, entry)
         if isinstance(taken, VaultProblem):
             return self._none_typed(taken.code, taken.message, taken.code in {LOCKED, TIMEOUT})
+        # The reading took its seconds — the door, the program, the vault —, and the world went
+        # on meanwhile: the stop of the task is looked at again, and so is the field, before
+        # anything the vault gave is typed.
+        if stop.is_set():
+            del taken
+            return self._stopped(opened, done, site)
+        again = await self._browser.field(page, word)
+        if again.type != "password" or again.method != "post":
+            del taken
+            return self._none_typed(
+                NOT_A_PASSWORD_FIELD,
+                f"the page of {site} changed its password field, or the form it is in, while "
+                "the vault was asked: a password is not typed where the page would show it",
+            )
         await self._browser.fill_secret(page, username, taken.username)
         done[0] += 1
         if stop.is_set():
@@ -550,6 +571,21 @@ class LoginTool(_OnTheProfile, _BrowserTool):
                 self._left(site, origin_of(left)) + self._after(done),
             )
         return Outcome({"status": opened.status, "gestures": done[0], "page": page})
+
+    def _forgotten(self, key: str) -> str:
+        """Why the tool does not know which entry a yes is for — and the slate wiped, so that
+        the next question for this call is the only one."""
+        disagreed = key in self._found
+        self._found.pop(key, None)
+        if disagreed:
+            return (
+                "two questions for this same call named different entries of the vault, and ELA "
+                "does not guess which one the yes was for: ask again"
+            )
+        return (
+            "ELA was started again after it asked, and does not know any more which entry of "
+            "the vault the question named: ask again"
+        )
 
     def _none_typed(self, code: str, message: str, retryable: bool = False) -> Outcome:
         return Outcome({"gestures": 0}, code, message + SPENT, retryable=retryable)

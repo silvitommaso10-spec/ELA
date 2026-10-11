@@ -64,12 +64,15 @@ _UNREADABLE: Final = object()
 
 def masked(username: str) -> str:
     """A username as a question may show it (decision 31): its first character, and for an address
-    what follows the at sign. A name of one character does not show even that."""
+    what follows the at sign. A name of one character does not show even that.
+
+    **A name that begins with the at sign is a handle, not an address**: what follows the sign
+    is the whole of it, and is not shown (re-read of 2026-10-11)."""
     if not username:
         return ""
     local, at, domain = username.rpartition("@")
-    if not at:
-        local, domain = username, ""
+    if not at or not local:
+        local, at, domain = username, "", ""
     shown = local[0] if len(local) > 1 else ""
     return f"{shown}…{at}{domain}"
 

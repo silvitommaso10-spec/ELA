@@ -986,13 +986,22 @@ async def test_a_field_that_changed_while_the_vault_was_asked_gets_no_password(
 
 
 async def test_a_task_stopped_after_the_first_gesture_types_no_password(tmp_path: Path) -> None:
-    """No gesture follows a stop (M6.3c): the username was typed, and the password is not."""
+    """No gesture follows a stop (M6.3c): the username was typed, and the password is not. The
+    stop arrives **while the username is being typed** — one that is there when the vault has
+    answered types nothing at all, and is the test above."""
     vault = FakeVault([MARIO])
     browser = FakeAccountBrowser(page())
     tool = await login(browser, vault, tmp_path)
     await asked(tool)
+    stop, fill = FakeStop(), browser.fill_secret
 
-    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop(after=FIRST_GESTURE))
+    async def typed_while_the_user_says_stop(page_: str, selector: str, value: Secret) -> None:
+        await fill(page_, selector, value)
+        stop.event.set()
+
+    browser.fill_secret = typed_while_the_user_says_stop  # type: ignore[method-assign]
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, stop)
 
     assert result.error is not None and result.error.code == STOPPED
     assert result.output == {"status": 200, "gestures": 1}
