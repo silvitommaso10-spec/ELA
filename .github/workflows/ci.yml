@@ -51,6 +51,20 @@ jobs:
         id: playwright
         run: echo "version=$(uv run python -c 'import importlib.metadata as m; print(m.version("playwright"))')" >> "$GITHUB_OUTPUT"
 
+      # The browser with the profile of M13.9 (ADR 0063) is Chrome for Testing of the same lock, and
+      # runs on a Mac only: the macOS runner installs it beside the shell, and the tests of that
+      # adapter fail there — they do not skip — when it is missing. **What a runner installs is part
+      # of the cache's key**: a cache saved when the runner installed the shell alone would otherwise
+      # be restored as a hit, and the save below — which runs only on a miss — would never add it.
+      - name: Which browsers this runner installs
+        id: browsers
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            echo "set=shell-and-chrome-for-testing" >> "$GITHUB_OUTPUT"
+          else
+            echo "set=shell" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Restore the browser
         id: browser
         uses: actions/cache/restore@v6
@@ -58,10 +72,14 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
-          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ steps.browsers.outputs.set }}
 
       - name: Install the browser
         run: uv run playwright install --only-shell chromium
+
+      - name: Install Chrome for Testing
+        if: runner.os == 'macOS'
+        run: uv run playwright install --no-shell chromium
 
       - name: Save the browser
         if: always() && steps.browser.outputs.cache-hit != 'true'
@@ -70,7 +88,7 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
-          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ steps.browsers.outputs.set }}
 
       - name: make check
         run: make check
