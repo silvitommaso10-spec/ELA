@@ -38,6 +38,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -91,6 +92,9 @@ LOGIN: Final = "browser.login"
 FREE: Final = "free"
 STEP: Final = "step"
 LOCKED: Final = "locked"
+CLOSED: Final = frozenset({LOCKED, "unauthenticated"})
+"""A vault that is not open, for step 1: locked, or with no account signed in yet — the first
+``bw login`` of the proof is in step 2, on a data folder that may be new."""
 NOBODY: Final = "nessuna"
 """The line of ``domanda`` that says no question waits for the task of the step."""
 SESSION_RULE: Final = "SESSION"
@@ -109,6 +113,13 @@ SIGNALS: Final = {"SIGINT": signal.SIGINT, "SIGTERM": signal.SIGTERM}
 WAIT: Final = 0.05
 EXIT_SECONDS: Final = 60.0
 """How long ``chiude`` waits for ELA to end: well past the grace of the close."""
+HOLD_SECONDS: Final = 120.0
+"""How long ``chiude`` waits for the step to hold the profile: a run that never comes to hold it
+— a window holds it, ELA does not answer — is a failure of the step, and not a wait for ever."""
+SERVES: Final = re.compile(r"(?:^|[\s/])ela(?:\.cli)?\s+serve(?:\s|$)")
+"""The command line of an ELA that serves: ``ela serve``, or the module's ``ela.cli serve``."""
+NO_OWNERS: Final = "noowners"
+"""How ``mount`` says a volume ignores who owns its files: every user is their owner there."""
 SAID_NO: Final = "hai risposto no: i passi che restano non hanno niente da misurare"
 PROFILE_VARIABLE: Final = "ELA_BROWSER_PROFILE_DIR"
 LOCK: Final = "SingletonLock"
@@ -229,6 +240,44 @@ def device_of(printed: str) -> str | None:
     """The device ``hdiutil attach -nomount`` printed, or ``None``."""
     found = DEVICE.search(printed)
     return None if found is None else found.group(1)
+
+
+def mounted() -> bool:
+    """Whether a volume of the proof's name is mounted now."""
+    return MOUNT.exists()
+
+
+def _mounted_line(said: str, device: str) -> str | None:
+    """The line of ``mount`` that says ``device`` is what is mounted on the proof's volume."""
+    start = f"{device} on {MOUNT} ("
+    return next((line for line in said.splitlines() if line.startswith(start)), None)
+
+
+def mounted_on(said: str, device: str) -> bool:
+    """Whether the volume of the proof **is the device just made**: a volume of that name that
+    was already there is another device's, and macOS mounts the new one beside it under another
+    name."""
+    return _mounted_line(said, device) is not None
+
+
+def ignores_owners(said: str, device: str) -> bool:
+    """Whether the volume of the proof ignores who owns its files — how macOS mounts a disk
+    ``diskutil erasevolume`` made (measured). ``0700`` stops no other user of the machine there."""
+    line = _mounted_line(said, device)
+    return line is not None and NO_OWNERS in line.rpartition("(")[2].replace(")", "").split(", ")
+
+
+def serving(command: str) -> bool:
+    """Whether a command line is an ELA that serves."""
+    return SERVES.search(command) is not None
+
+
+def the_ela_among(listeners: Sequence[int], commands: Mapping[int, str]) -> int | None:
+    """Which of the processes that listen on ELA's port is ELA: the one whose command line is an
+    ELA that serves. ``None`` when none is, or more than one: a signal is sent to one process
+    the script can name, or to nobody."""
+    found = [pid for pid in listeners if serving(commands.get(pid, ""))]
+    return found[0] if len(found) == 1 else None
 
 
 def still_there(mounted: bool, info: str, device: str) -> list[str]:
@@ -360,30 +409,53 @@ def a_cover(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
 
 def a_disk(number: int, block: base.Block, proof: Proof) -> None:
     """``disco``: the RAM disk the passwords are moved on. Made, narrowed, handed to Tommaso, then
-    emptied, detached and looked for — **the script never reads a file of it**."""
+    emptied, detached and looked for — **the script never reads a file of it**.
+
+    **A volume of the proof's name that is already there is not touched**: it is not this run's
+    — a run that was killed while it waited left it, with what was exported, or it is the
+    user's —, and everything below would be done to it."""
     report = proof.report
     megabytes = int(block.lines[0])
+    if mounted():
+        report.failure(number, f"un volume {MOUNT} è già montato, e non è di questa prova")
+        raise base.Stop(
+            f"stacca {MOUNT} — dal Finder, o con `diskutil unmount` — e rilancia: lo script non "
+            "tocca un volume che non ha fatto"
+        )
     made = base.run(f"hdiutil attach -nomount ram://{blocks_of(megabytes)}")
     device = device_of(made.stdout)
     if made.returncode != 0 or device is None:
         report.failure(number, "il disco in RAM non è nato", made.stdout + made.stderr)
         raise base.Stop("senza il disco in RAM le password non si spostano")
+    emptied: subprocess.CompletedProcess[str] | None = None
     try:
         formatted = base.run(f'diskutil erasevolume HFS+ "{VOLUME}" {device}')
-        narrowed = base.run(f'chmod 700 "{MOUNT}"')
-        if formatted.returncode != 0 or narrowed.returncode != 0:
-            report.failure(number, f"il volume {MOUNT} non è pronto", formatted.stderr)
+        said = base.run("mount").stdout
+        if formatted.returncode != 0 or not mounted_on(said, device):
+            report.failure(
+                number, f"il volume {MOUNT} non è il disco appena fatto", formatted.stderr
+            )
             raise base.Stop("senza il disco in RAM le password non si spostano")
+        if base.run(f'chmod 700 "{MOUNT}"').returncode != 0:
+            report.failure(number, f"il volume {MOUNT} non si è stretto a 0700")
+            raise base.Stop("senza il disco in RAM le password non si spostano")
+        owners = (
+            "; il volume ignora i proprietari, e 0700 lì non ferma un altro utente di questo Mac"
+            if ignores_owners(said, device)
+            else ""
+        )
         report.say(
-            f"    il disco in RAM è {MOUNT}, di {megabytes} MB, 0700: non è cifrato, e ciò che "
-            "sta in memoria può finire nello swap"
+            f"    il disco in RAM è {MOUNT}, di {megabytes} MB, 0700{owners}: non è cifrato, e "
+            "ciò che sta in memoria può finire nello swap"
         )
         report.say(f"[{number}] A TE: {' '.join(block.lines[1:])}")
         proof.ask(f"[{number}] Premi Invio quando hai importato. ")
-        base.run(f'find "{MOUNT}" -mindepth 1 -delete')
+        emptied = base.run(f'find "{MOUNT}" -mindepth 1 -delete')
     finally:
         base.run(f"hdiutil detach {device} -force")
-    left = still_there(MOUNT.exists(), base.run("hdiutil info").stdout, device)
+    left = still_there(mounted(), base.run("hdiutil info").stdout, device)
+    if emptied is not None and emptied.returncode != 0:
+        left.insert(0, "il disco non è stato svuotato prima di essere staccato")
     if left:
         report.failure(number, "; ".join(left))
     else:
@@ -422,12 +494,13 @@ def a_measure(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -
 
 
 def ela_pid() -> int | None:
-    """The process that listens on ELA's port, as ``lsof`` names it."""
+    """The ELA that listens on ELA's port: who listens is asked of ``lsof``, and which of them is
+    ELA of their command lines (:func:`the_ela_among`)."""
     from ela.composition.settings import ApiSettings
 
     port = ApiSettings().api_port
     found = base.run(f"lsof -ti tcp:{port} -sTCP:LISTEN").stdout.split()
-    return int(found[0]) if found and found[0].isdigit() else None
+    return the_ela_among([int(one) for one in found if one.isdigit()], base.processes())
 
 
 def alive(pid: int) -> bool:
@@ -463,13 +536,24 @@ def a_close(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
         raise ValueError(f"{name!r} is not in the vocabulary of chiude")
     pid = ela_pid()
     if pid is None:
-        report.failure(number, "nessun processo ascolta sulla porta di ELA")
+        report.failure(
+            number,
+            "sulla porta di ELA non ascolta un processo `ela serve`, o ne ascolta più d'uno: "
+            "il segnale non si manda a un processo che lo script non sa nominare",
+        )
         return
     running = base.started(f"uv run ela task run {turn.task_id}")
     held = False
-    while running.poll() is None and not held:
+    deadline = time.monotonic() + HOLD_SECONDS
+    while running.poll() is None and not held and time.monotonic() < deadline:
         held = proof.api.get("/browser").get("state") == STEP
         time.sleep(WAIT)
+    if not held and running.poll() is None:
+        running.terminate()
+        report.failure(
+            number, f"in {HOLD_SECONDS:.0f} s lo step non ha tenuto il profilo: ELA non è fermata"
+        )
+        return
     if not held:
         report.skipped(number, "lo step è finito prima che il profilo risultasse tenuto")
         return
@@ -564,8 +648,9 @@ def narrow_and_left_out() -> str | None:
     mode = folder.stat().st_mode & 0o777
     if mode != 0o700:
         return f"e la cartella è {mode:o}"
-    base.run(f'tmutil addexclusion "{folder}"')
-    if EXCLUDED not in base.run(f'tmutil isexcluded "{folder}"').stdout:
+    quoted = shlex.quote(str(folder))
+    base.run(f"tmutil addexclusion {quoted}")
+    if EXCLUDED not in base.run(f"tmutil isexcluded {quoted}").stdout:
         return "e Time Machine non la esclude"
     return None
 
@@ -575,9 +660,9 @@ def vault_vouched() -> str | None:
     — looked at before the user types a master password into it."""
     found = base.Api().get("/vault")
     program = found.get("program")
-    if found.get("state") != LOCKED or not program:
+    if found.get("state") not in CLOSED or not program:
         return f"e il vault è {found.get('state')}: {found.get('message')}"
-    signed = base.run(f"codesign --verify -R='{BITWARDEN}' '{program}'")
+    signed = base.run(f"codesign --verify -R='{BITWARDEN}' {shlex.quote(str(program))}")
     if signed.returncode != 0:
         return f"e {program} non è firmato da Bitwarden"
     return None

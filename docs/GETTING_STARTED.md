@@ -6039,8 +6039,11 @@ prenotato com'era al passo 1
 
 Da M13.9 ELA ha **un secondo browser**: Chrome for Testing su una cartella tua, che **tiene i siti in cui sei entrato**.
 Non è il tuo Chrome, e il tuo profilo ELA non lo apre: in questo entri tu, una volta, **con le tue mani**, nella finestra
-che ELA ti apre — `ela browser open` —; di quella finestra ELA non legge niente, e **finché è aperta non guarda lo schermo
-e non ascolta**. Da lì in poi una lettura, un gesto o una sessione «come te» trovano il sito già aperto: sono capability
+che ELA ti apre — `ela browser open` —; di quella finestra ELA non legge niente attraverso il browser — nessun driver, nessuna
+porta: della cartella guarda solo se il browser conosce un account e quante password ha salvato —, e **finché è aperta
+non comincia a guardare lo schermo né ad ascoltare** (un ascolto partito prima arriva in fondo: è una domanda aperta della
+milestone). **Quando hai finito esci da quel browser con Cmd-Q**: chiudere la sola finestra lo lascia acceso, e per ELA
+la finestra è ancora aperta. Da lì in poi una lettura, un gesto o una sessione «come te» trovano il sito già aperto: sono capability
 nuove, e la loro domanda dice **«as you»**. Le capability del browser vuoto restano com'erano: lì il sito vede un
 visitatore.
 
@@ -6051,16 +6054,19 @@ chiave arriva a ELA da un tubo — `ela vault status` ti stampa la riga intera d
 dimentica allo scadere, alla chiusura, o quando glielo dici con `ela vault close`.
 
 Lo script legge da questa sezione i blocchi con il marcatore sopra, con il lettore di `scripts/prova_m6_3c.py`, e usa i
-tipi di sempre — `comando`, `atteso`, `occhio`, `sì` — e sette suoi:
+tipi di sempre — `comando`, `atteso`, `occhio`, `sì` — e i suoi:
 
-- **`mano`**: ciò che fai tu con le tue mani — incollare una riga nel tuo terminale, entrare in un sito, chiudere una
-  finestra. Lo script te lo dice e aspetta Invio; ciò che ne segue lo controlla il blocco dopo.
+- **`mano`**: ciò che fai tu con le tue mani — incollare una riga nel tuo terminale, entrare in un sito, uscire dal
+  browser di ELA. Lo script te lo dice e aspetta Invio; ciò che ne segue lo controlla il blocco dopo.
 - **`prosegui`**: una domanda su ciò che il mondo ha dato. Con un «n» la prova **si ferma lì — FERMATO, non FALLITO** —,
   prima di spendere: non è un difetto di ELA, e non è un passo saltato.
 - **`disco`**: il disco in RAM su cui le password si spostano. Lo script lo crea, lo stringe a `0700` e te lo dice; tu
   esporti lì e importi nel vault; lo script **cancella i file, stacca il disco e controlla** che il volume e il
   dispositivo non ci siano più. **Non legge i file**: ne guarda l'esistenza. Il disco non è cifrato, e ciò che sta in
-  memoria può finire nello swap.
+  memoria può finire nello swap. **macOS monta un disco così ignorando i proprietari** (misurato): `0700` lì non
+  ferma un altro utente di questo Mac, e lo script lo scrive nella riga del disco. **Un volume `ELA-prova` che c'è
+  già non è toccato**: lo script si ferma e ti dice di staccarlo. È ciò che resta se lo script muore mentre aspetta
+  il tuo Invio — il disco montato, con ciò che hai esportato —: staccalo dal Finder.
 - **`misura`**: quanto impiega il vault a elencare le voci di un sito, **sul vault pieno**, da fuori: il tempo di
   `ela vault status` — un lancio del programma del vault — e il tempo fra la richiesta del login e la sua domanda — due
   lanci —; la differenza è l'elenco. **Fino alla soglia del blocco la riga è PASSATO; sopra è RIAPRE**: si riapre che cosa
