@@ -32,11 +32,13 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+from playwright.async_api import async_playwright
 
 from ela.infrastructure.machine.account import (
     LAUNCH_ARGUMENTS,
     WINDOW_ARGUMENTS,
     AccountChrome,
+    reports_in,
 )
 from ela.infrastructure.machine.browser import registry_folder
 from ela.ports import (
@@ -150,6 +152,18 @@ def rows(profile: Path, file: str, table: str) -> int:
     return int(count)
 
 
+def cookies_in(profile: Path, which: str) -> int:
+    """How many cookies one profile of the folder keeps on its disk."""
+    database = sqlite3.connect(
+        f"{(profile / which / 'Cookies').as_uri()}?mode=ro&immutable=1", uri=True
+    )
+    try:
+        (count,) = database.execute("select count(*) from cookies").fetchone()
+    finally:
+        database.close()
+    return int(count)
+
+
 def holding(profile: Path, text: str) -> list[str]:
     """The files of the profile that hold ``text`` in the clear, in either of the two encodings
     a browser writes text in."""
@@ -192,11 +206,48 @@ async def test_a_page_opens_on_the_declared_folder_with_the_sandbox_and_without_
     assert profile.stat().st_mode & 0o777 == 0o700
     assert await browser.occupied() == PROFILE_STEP
     assert known(int(os.readlink(profile / "SingletonLock").rpartition("-")[2]))
+    assert reports_in(profile).removeprefix("--") in arguments
+    assert (profile / "Crashpad").is_dir(), (
+        "the collector of crashes keeps its folder inside the folder of the profile"
+    )
 
     await browser.close(opened.page)
 
     assert await browser.occupied() is None
     assert named(profile.parent) == [], "no process of that browser is left on the folder"
+
+
+async def test_a_step_runs_on_the_profile_ela_prepares_whichever_was_used_last(
+    browser: AccountChrome, profile: Path, served: list[Site]
+) -> None:
+    """Measured on 2026-10-11 (decision 79): with no name the browser opens the profile that was
+    used last, and a step ran on one whose preferences ELA does not rewrite. Here a second
+    profile is made and used last — by the driver itself, on the same binary and folder, as a
+    user leaves one after adding it from the window —, and a step of ELA's leaves its cookie in
+    ``Default`` all the same."""
+    web = site(served, {"/": (200, KEPT, "<p>x</p>")})
+    profile.mkdir(mode=0o700)
+    async with async_playwright() as playwright:
+        second = await playwright.chromium.launch_persistent_context(
+            str(profile),
+            channel="chromium",
+            headless=True,
+            args=["--use-mock-keychain", "--profile-directory=Profile 1"],
+            env={"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": "C.UTF-8"},
+        )
+        page = second.pages[0] if second.pages else await second.new_page()
+        await page.goto(web.origin + "/")
+        await second.close()
+    state = json.loads((profile / "Local State").read_text(encoding="utf-8"))
+    assert state["profile"]["last_used"] == "Profile 1", "the precondition: the second, last"
+    assert cookies_in(profile, "Profile 1") == 1 and not (profile / "Default").exists()
+
+    opened = await browser.open(web.origin + "/", everywhere, FakeStop())
+    await browser.close(opened.page)
+
+    assert cookies_in(profile, "Default") == 1, "the step ran on the profile ELA prepares"
+    assert cookies_in(profile, "Profile 1") == 1, "and left the other as it was"
+    assert await browser.profiles() == 2
 
 
 async def test_what_lasts_is_the_folder_a_cookie_with_an_end_is_found_by_the_next_launch(
@@ -666,6 +717,7 @@ async def test_the_window_has_nothing_attached_and_at_ela_s_stop_closes_by_itsel
     arguments = arguments_of(profile)
     assert arguments[:-1] == [
         f"user-data-dir={profile}",
+        reports_in(profile).removeprefix("--"),
         *(argument.removeprefix("--") for argument in WINDOW_ARGUMENTS[:-1]),
     ]
     assert arguments[-1] == f"{WINDOW_ARGUMENTS[-1].removeprefix('--')} {web.origin}/"
@@ -676,6 +728,7 @@ async def test_the_window_has_nothing_attached_and_at_ela_s_stop_closes_by_itsel
     async with asyncio.timeout(20):
         while "GET /" not in web.requests:
             await asyncio.sleep(0.05)
+    assert (profile / "Crashpad").is_dir(), "the window's collector writes inside the folder too"
 
     stopping.set()
     grace = Grace()

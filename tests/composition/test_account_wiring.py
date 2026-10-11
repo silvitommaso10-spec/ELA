@@ -362,7 +362,7 @@ async def test_the_adapter_asks_the_switch_at_every_launch_and_every_start_is_wi
 ) -> None:
     """Decision 34: a state of a running ELA, which a route of the user's changes and no tool
     does; it holds from then on, and comes back to «without a window» at every start."""
-    ela = await built(monkeypatch, tmp_path, {})
+    ela = await built(monkeypatch, tmp_path, {PROFILE: str(tmp_path / "a-profile")})
     try:
         adapter = ela.accounts
         assert isinstance(adapter, AccountChrome)

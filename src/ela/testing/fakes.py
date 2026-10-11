@@ -1355,11 +1355,13 @@ class FakeAccountBrowser(FakeBrowser):
         holder: str | None = None,
         linked: bool = False,
         saved: int = 0,
+        profiles: int = 1,
     ) -> None:
         super().__init__(page, installed=installed)
         self.holder = holder
         self.linked_answer = linked
         self.saved_answer = saved
+        self.profiles_answer = profiles
         self.windows: list[str | None] = []
         self.secrets: list[tuple[str, str]] = []
 
@@ -1402,6 +1404,10 @@ class FakeAccountBrowser(FakeBrowser):
     async def saved(self) -> int:
         self._raise("saved")
         return self.saved_answer
+
+    async def profiles(self) -> int:
+        self._raise("profiles")
+        return self.profiles_answer
 
     async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
         self._on(page)

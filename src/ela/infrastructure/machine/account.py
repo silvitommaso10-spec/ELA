@@ -22,7 +22,14 @@ What a page gets here that an empty one does not:
   **below its top too**: ``Default``, where the browser keeps what ELA reads and rewrites, is a
   folder of its own and never a link to another;
 * **one process at a time on it**: a launch on a folder found held is not attempted — it is the
-  launch that can kill the first;
+  launch that can kill the first. Held by what this adapter has in flight, or by a process the
+  folder's lock names **whose command line names the folder** (:func:`on_the_folder`): a lock
+  whose pid went to another process holds nothing;
+* **one profile of the browser's, by name**: every launch names ``Default``, the one ELA
+  prepares — with no name the browser opens whichever was used last (measured);
+* **the reports of a crash inside the folder**: this version has no argument that switches its
+  collector off, and one that says where it writes (measured) — the folder's rules hold for what
+  it writes too;
 * **the preferences rewritten before every launch**, over whatever the file says
   (:data:`PREFERENCES`): they — with the flags of :data:`LAUNCH_ARGUMENTS` —, and not the binary,
   are what keeps the browser away from a Google account and from saving passwords (measured);
@@ -89,14 +96,21 @@ from ela.ports import (
 )
 
 __all__ = [
+    "ANOTHER_PROGRAM",
+    "ELA_S_BROWSER",
     "LAUNCH_ARGUMENTS",
     "LAUNCH_OPTIONS",
+    "NAMED_PROFILE",
     "PREFERENCES",
     "PROFILE_MODE",
     "WINDOW_ARGUMENTS",
     "AccountChrome",
+    "command_line",
     "linked_in",
     "lock_holder",
+    "on_the_folder",
+    "profiles_in",
+    "reports_in",
     "saved_in",
     "with_preferences",
 ]
@@ -117,24 +131,52 @@ PROFILE_MODE: Final = 0o700
 PREFERENCES_MODE: Final = 0o600
 PROFILE_VARIABLE: Final = "ELA_BROWSER_PROFILE_DIR"
 
+PROFILE: Final = "Default"
+"""The one profile of the browser's, among those its folder may come to hold, that ELA prepares
+and uses: where the preferences are rewritten, the workers taken away, and every launch starts."""
 MOCK_KEYCHAIN: Final = "--use-mock-keychain"
 NO_SYNC: Final = "--disable-sync"
 NO_SIGNIN: Final = "--allow-browser-signin=false"
-LAUNCH_ARGUMENTS: Final = (MOCK_KEYCHAIN, NO_SYNC, NO_SIGNIN)
-"""What ELA adds to the arguments Playwright passes by itself. The first two Playwright passes
-too, on this system and in this version — written here so that they are ELA's own and not a
-default of somebody else's: **no launch touches the keychain**, and none starts the browser's
-sync. The third switches the browser's own sign-in off (measured: without it and the preferences
-the same binary registers a Google account)."""
+NAMED_PROFILE: Final = f"--profile-directory={PROFILE}"
+"""With no name the browser opens the profile that was used last (measured on 2026-10-11): a
+second one the user added from the window, which nothing here prepared. Named, it is this one —
+in the window and under the driver (decision 79)."""
+LAUNCH_ARGUMENTS: Final = (MOCK_KEYCHAIN, NO_SYNC, NO_SIGNIN, NAMED_PROFILE)
+"""What ELA adds to the arguments Playwright passes by itself, beside where the reports of a crash
+go (:func:`reports_in`). The first two Playwright passes too, on this system and in this version
+— written here so that they are ELA's own and not a default of somebody else's: **no launch
+touches the keychain**, and none starts the browser's sync. The third switches the browser's own
+sign-in off (measured: without it and the preferences the same binary registers a Google
+account). The fourth names the profile."""
 WINDOW_ARGUMENTS: Final = (
     MOCK_KEYCHAIN,
     "--no-first-run",
     "--no-default-browser-check",
     NO_SYNC,
     NO_SIGNIN,
+    NAMED_PROFILE,
 )
-"""What the window receives, beside its folder and — if there is one — an address: a closed list.
-Nothing in it attaches anything to the browser."""
+"""What the window receives, beside its folder, where the reports of a crash go and — if there is
+one — an address: a closed list. Nothing in it attaches anything to the browser."""
+REPORTS: Final = "Crashpad"
+"""The folder of the browser's own collector of crashes, inside the folder of the profile."""
+REPORTS_AT: Final = "--breakpad-dump-location"
+"""The argument this version of the browser reads for where its collector writes (measured on
+2026-10-11, decision 74). **None switches the collector off**: ``--disable-breakpad``, which
+Playwright passes by itself, is not listened to on a Mac — the collector ran beside the browser
+all the same, and a crash wrote a megabyte of the process's memory in a folder of the binary's
+own, outside the profile. With this one the collector's folder is inside the folder of the
+profile, and the folder's rules hold for what a crash leaves. **What the system itself writes of
+a crash is not the browser's to move**: a report of its own, with no memory of the process in
+it (ADR 0063 §4)."""
+
+
+def reports_in(profile: Path) -> str:
+    """The argument that keeps the reports of a crash inside ``profile``: composed with the
+    folder, like the one other argument of a launch that names it."""
+    return f"{REPORTS_AT}={profile / REPORTS}"
+
+
 LAUNCH_OPTIONS: Final = frozenset(
     {
         "channel",
@@ -163,9 +205,9 @@ PREFERENCES: Final[Mapping[str, Any]] = {
 offer to save a password and the automatic sign-in; the comparison of passwords with a service of
 Google's; the automatic filling and the remembered values of forms; the browser's own sign-in to a
 Google account."""
-PREFERENCES_FILE: Final = ("Default", "Preferences")
-SERVICE_WORKERS: Final = ("Default", "Service Worker")
-LOGINS: Final = ("Default", "Login Data")
+PREFERENCES_FILE: Final = (PROFILE, "Preferences")
+SERVICE_WORKERS: Final = (PROFILE, "Service Worker")
+LOGINS: Final = (PROFILE, "Login Data")
 LOCK: Final = "SingletonLock"
 """The link the browser leaves in its folder while it runs: ``<host>-<pid>``."""
 FIRST_PID: Final = 1
@@ -174,6 +216,15 @@ which asked of the kernel is «every process of my group»."""
 LAST_PID: Final = 2**31 - 1
 """The largest number a process can have on any system ELA runs on: a larger one, asked of the
 kernel, is an error of the question."""
+PS: Final = "/bin/ps"
+"""The system's own program that says what a process was started with."""
+PS_SECONDS: Final = 5.0
+"""How long that program may take: past it, what a process is has not been said."""
+ELA_S_BROWSER: Final = "browser"
+"""A process on the folder that is ELA's own binary: the one ``ela browser close`` may tell."""
+ANOTHER_PROGRAM: Final = "another"
+"""A process on the folder that is not ELA's binary, or that could not be read: it holds the
+folder, and ELA signals nothing it cannot name."""
 LINKED: Final = (
     ("account_info",),
     ("google", "services", "account_id"),
@@ -236,15 +287,54 @@ def linked_in(preferences: object) -> bool:
     return False
 
 
-def saved_in(profile: Path) -> int:
-    """How many rows the browser's own password manager holds: counted, and nothing of a row is
-    read. No file yet — a profile never launched — is none. Opened read-only and as it is on the
-    disk, so a browser that is running is neither waited for nor disturbed.
+def _own_folders(folder: Path) -> list[Path]:
+    """The folders ``folder`` holds of its own — **never a link**: ELA reads the profile of its
+    own browser, and nothing a link leads to. None, for a folder that is not there yet.
+
+    :raises BrowserFailed: a folder that is there and cannot be listed — by the system's type,
+        never its text, which names the path."""
+    refused: str | None = None
+    found: list[Path] = []
+    try:
+        with os.scandir(folder) as listed:
+            found = sorted(Path(one.path) for one in listed if one.is_dir(follow_symlinks=False))
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        refused = type(error).__name__
+    if refused is not None:
+        raise BrowserFailed(f"the profiles of ELA's browser cannot be listed ({refused})")
+    return found
+
+
+def _own_file(file: Path) -> bool:
+    """Whether ``file`` is a file of its own, and not a link to one."""
+    try:
+        return stat.S_ISREG(file.lstat().st_mode)
+    except OSError:
+        return False
+
+
+def profiles_in(folder: Path) -> int:
+    """How many profiles of the browser ``folder`` holds: its own folders that hold the browser's
+    ``Preferences`` — what the browser itself calls a profile. ELA prepares and uses one,
+    :data:`PROFILE`; a second is one the user added from inside the window (decision 79)."""
+    name = PREFERENCES_FILE[1]
+    return sum(1 for one in _own_folders(folder) if _own_file(one / name))
+
+
+def saved_in(folder: Path) -> int:
+    """How many rows the browser's own password manager holds, **in every profile of the
+    folder**: counted, and nothing of a row is read. No file yet — a profile never launched — is
+    none. Opened read-only and as it is on the disk, so a browser that is running is neither
+    waited for nor disturbed.
 
     :raises BrowserFailed: a file that is there and cannot be counted. Never «none»."""
-    file = profile.joinpath(*LOGINS)
-    if not file.is_file():
-        return 0
+    name = LOGINS[1]
+    return sum(_counted(one / name) for one in _own_folders(folder) if _own_file(one / name))
+
+
+def _counted(file: Path) -> int:
     try:
         with contextlib.closing(
             sqlite3.connect(f"{file.as_uri()}?mode=ro&immutable=1", uri=True)
@@ -280,6 +370,74 @@ def lock_holder(profile: Path, alive: Callable[[int], bool]) -> int | None:
     if not FIRST_PID < pid <= LAST_PID:
         return None
     return pid if alive(pid) else None
+
+
+def on_the_folder(command: str | None, profile: Path, executable: Path | None) -> str | None:
+    """What a process the folder's lock names is, read from its command line — **one function for
+    the two that ask** (decisions 80 and 82): whether the folder is held, and whether ELA may
+    tell that process to quit.
+
+    ``None``: it does not name the folder — the lock is what a browser that was killed left, and
+    its pid went to another process: nothing holds the folder. :data:`ELA_S_BROWSER`: ELA's own
+    binary on this folder, and the browser itself rather than one of its helpers.
+    :data:`ANOTHER_PROGRAM`: anything else that names the folder — and a command line that could
+    not be read (``command`` is ``None``), which is a doubt: **a doubt holds the folder, and is
+    told nothing**.
+
+    The command line is the system's, its arguments joined by spaces: the folder is looked for as
+    a whole argument, as it was written and as a path is made plain — a driver makes plain the
+    path it is given."""
+    if command is None:
+        return ANOTHER_PROGRAM
+    padded = f"{command} "
+    spellings = {str(profile), os.path.normpath(profile)}
+    if not any(f" --user-data-dir={spelling} " in padded for spelling in spellings):
+        return None
+    if executable is None or not command.startswith(f"{executable} --"):
+        return ANOTHER_PROGRAM
+    return ANOTHER_PROGRAM if " --type=" in padded else ELA_S_BROWSER
+
+
+async def command_line(pid: int, environment: Mapping[str, str]) -> str | None:
+    """What the system says process ``pid`` was started with: its arguments, joined by spaces.
+    Empty for a process that is not there any more; ``None`` when the system could not be asked,
+    or did not answer within :data:`PS_SECONDS` — never a guess.
+
+    **The one launch this module makes to look at a process, and made only when a lock names
+    one** (decision 82): the system's own program, at its absolute path, with the closed
+    environment of the browser, its input the end of a file and its errors nowhere."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            PS,
+            "-ww",
+            "-o",
+            "command=",
+            "-p",
+            str(pid),
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=dict(environment),
+            start_new_session=True,
+        )
+    except OSError:
+        return None
+    printed: bytes | None = None
+    try:
+        printed, _ = await asyncio.wait_for(process.communicate(), PS_SECONDS)
+    except TimeoutError:
+        pass
+    finally:
+        if process.returncode is None:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(process.pid, signal.SIGKILL)
+            await process.wait()
+    if printed is None:
+        return None
+    said = printed.decode("utf-8", "replace").strip()
+    # The program ends with 1 and prints nothing for a process that is not there: that is an
+    # answer. Anything else it could not say is not.
+    return said if said or process.returncode == 1 else None
 
 
 def _prepared(profile: Path, *, driven: bool) -> None:
@@ -362,6 +520,7 @@ class AccountChrome(PlaywrightBrowser):
         self._profile = profile
         self._shown = shown
         self._ended = ended
+        self._said_of: Callable[[int], Awaitable[str | None]] = self._asked
         self._window: asyncio.subprocess.Process | None = None
         self._windowing = False
         self._launching: asyncio.Future[None] | None = None
@@ -382,11 +541,13 @@ class AccountChrome(PlaywrightBrowser):
         return self._executable() is not None
 
     def _launch(self) -> dict[str, Any]:
+        profile = self._profile
+        assert profile is not None  # noqa: S101 — a launch is on a folder found usable
         return {
             "channel": CHROME,
             "headless": not self._shown(),
             "chromium_sandbox": True,
-            "args": list(LAUNCH_ARGUMENTS),
+            "args": [*LAUNCH_ARGUMENTS, reports_in(profile)],
             "env": self._environment,
             "handle_sigint": False,
             "handle_sigterm": False,
@@ -462,14 +623,37 @@ class AccountChrome(PlaywrightBrowser):
                 "nothing a link leads to"
             )
 
-    def _holder(self, profile: Path) -> str | None:
-        """Who holds the folder now: derived, in this order — what this adapter has in flight,
-        its window, and then the folder's own lock."""
+    def _mine(self) -> str | None:
+        """What this adapter itself has on the folder: a step of ELA's, or its window."""
         if self._pages or self._opening or self._closing:
             return PROFILE_STEP
         if self._windowing or self._window is not None:
             return PROFILE_WINDOW
-        return PROFILE_PROCESS if lock_holder(profile, self._known) is not None else None
+        return None
+
+    async def _asked(self, pid: int) -> str | None:
+        closed = {name: str(value) for name, value in self._environment.items()}
+        return await command_line(pid, closed)
+
+    async def _named(self, profile: Path) -> tuple[int, str] | None:
+        """The process the folder's lock names, and what it is (:func:`on_the_folder`) — or
+        ``None``: no lock, one left by a process that is gone, or one whose pid went to a process
+        that has nothing to do with the folder. **The system is asked what a process is only
+        when a lock names one the kernel knows.**"""
+        pid = lock_holder(profile, self._known)
+        if pid is None:
+            return None
+        what = on_the_folder(await self._said_of(pid), profile, self._executable())
+        return None if what is None else (pid, what)
+
+    async def _holder(self, profile: Path) -> str | None:
+        """Who holds the folder now: derived, in this order — what this adapter has in flight,
+        its window, and then the folder's own lock. Asking the system about the lock's process
+        takes its time, so what this adapter has in flight is **looked at again after it**: no
+        wait stands between the answer and whoever acts on it."""
+        if self._mine() is None and await self._named(profile) is not None:
+            return self._mine() or PROFILE_PROCESS
+        return self._mine()
 
     async def _folder(self) -> Path:
         """The folder, fit to be used: asked of the disk at every call, and **only on the system
@@ -482,7 +666,7 @@ class AccountChrome(PlaywrightBrowser):
         """The folder, usable and held by nobody — or the error that says which it is not. No
         wait stands between the look this ends with and what the caller does next."""
         profile = await self._folder()
-        holder = self._holder(profile)
+        holder = await self._holder(profile)
         if holder is not None:
             raise ProfileBusy(holder)
         return profile
@@ -501,7 +685,7 @@ class AccountChrome(PlaywrightBrowser):
             )
 
     async def occupied(self) -> str | None:
-        return self._holder(await self._folder())
+        return await self._holder(await self._folder())
 
     async def linked(self) -> bool:
         profile = await self._folder()
@@ -509,6 +693,9 @@ class AccountChrome(PlaywrightBrowser):
 
     async def saved(self) -> int:
         return await asyncio.to_thread(saved_in, await self._folder())
+
+    async def profiles(self) -> int:
+        return await asyncio.to_thread(profiles_in, await self._folder())
 
     # A page ---------------------------------------------------------------------------------
 
@@ -607,6 +794,7 @@ class AccountChrome(PlaywrightBrowser):
                 process = await asyncio.create_subprocess_exec(
                     str(executable),
                     f"--user-data-dir={profile}",
+                    reports_in(profile),
                     *WINDOW_ARGUMENTS,
                     *(() if address is None else (address,)),
                     stdin=asyncio.subprocess.DEVNULL,

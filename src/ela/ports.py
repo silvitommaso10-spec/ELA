@@ -2981,8 +2981,14 @@ class AccountBrowser(Browser, Protocol):
         Read from the profile at every call, never from a copy."""
 
     async def saved(self) -> int:
-        """How many passwords the browser's own manager holds in the profile. Counted, never read:
-        ELA switches that manager off, and what the user saved by hand is theirs to remove."""
+        """How many passwords the browser's own manager holds, **in every profile of the
+        browser's that the folder holds**. Counted, never read: ELA switches that manager off in
+        the profile it uses, and what the user saved by hand is theirs to remove."""
+
+    async def profiles(self) -> int:
+        """How many profiles of the browser's the folder holds. ELA prepares and uses one; a
+        second is one the user added from inside the window, which ELA neither prepares nor
+        uses — counted, so that the state can say so."""
 
     async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
         """Write what ``value`` holds in the one element ``selector`` finds. The one place a

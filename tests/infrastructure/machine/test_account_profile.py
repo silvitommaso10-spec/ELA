@@ -872,7 +872,8 @@ def a_browser_on(profile: Path, binary: str = BINARY) -> str:
         ("{binary} --user-data-dir={profile} --no-first-run", ELA_S_BROWSER),
         ("{binary} --no-first-run --user-data-dir={profile}", ELA_S_BROWSER),
         ("/Applications/Another Browser --user-data-dir={profile}", ANOTHER_PROGRAM),
-        ("{binary} Helper --type=renderer --user-data-dir={profile}", ANOTHER_PROGRAM),
+        ("{binary} Helper --user-data-dir={profile}", ANOTHER_PROGRAM),
+        ("{binary} --type=renderer --user-data-dir={profile}", ANOTHER_PROGRAM),
         ("{binary} --user-data-dir={profile}-of-another", None),
         ("{binary} --user-data-dir={profile}/Default", None),
         ("{binary} --user-data-dir=/somewhere/else", None),
@@ -886,6 +887,7 @@ def a_browser_on(profile: Path, binary: str = BINARY) -> str:
         "the-folder-named-last",
         "another-program-on-the-folder",
         "a-program-whose-path-begins-as-the-binary-s",
+        "a-helper-of-the-browser-s-own",
         "a-folder-whose-name-begins-as-this-one-s",
         "a-folder-inside-this-one",
         "the-binary-on-another-folder",
@@ -1066,6 +1068,10 @@ async def test_what_the_adapter_has_in_flight_is_looked_at_again_once_the_system
         await made._free()
     assert busy.value.by == PROFILE_WINDOW
 
+    made._windowing = False
+    made._said_of = Asked(a_browser_on(profile), then=a_window_starts)
+    assert await made.occupied() == PROFILE_WINDOW, "what this adapter has comes first, as ever"
+
 
 @pytest.mark.skipif(sys.platform == "win32", reason="the system's own ps is POSIX's")
 async def test_the_command_line_of_a_process_is_asked_of_the_system(tmp_path: Path) -> None:
@@ -1092,12 +1098,32 @@ async def test_a_system_that_cannot_be_asked_says_nothing_and_never_a_guess(
     monkeypatch.setattr(account, "PS", str(tmp_path / "no-such-program"))
     assert await command_line(os.getpid(), {}) is None
 
+    failing = tmp_path / "failing"
+    failing.write_text(f"#!{sys.executable}\nraise SystemExit(2)\n", encoding="utf-8")
+    failing.chmod(0o700)
+    monkeypatch.setattr(account, "PS", str(failing))
+    assert await command_line(os.getpid(), {}) is None, "it said nothing, and not «no such»"
+
     slow = tmp_path / "slow"
-    slow.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(60)\n", encoding="utf-8")
+    late = "import time\ntime.sleep(3)\nprint('an answer that came late')\n"
+    slow.write_text(f"#!{sys.executable}\n{late}", encoding="utf-8")
     slow.chmod(0o700)
     monkeypatch.setattr(account, "PS", str(slow))
     monkeypatch.setattr(account, "PS_SECONDS", 0.2)
     assert await command_line(os.getpid(), {}) is None
+
+
+async def test_a_process_that_is_not_there_is_an_answer_and_not_a_doubt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The system's program ends with 1 and prints nothing for a process that is gone: that is
+    «nothing holds the folder», said — given here on every system."""
+    gone = tmp_path / "gone"
+    gone.write_text(f"#!{sys.executable}\nraise SystemExit(1)\n", encoding="utf-8")
+    gone.chmod(0o700)
+    monkeypatch.setattr(account, "PS", str(gone))
+
+    assert await command_line(os.getpid(), {}) == ""
 
 
 async def test_what_the_adapter_itself_has_in_flight_holds_the_folder_before_any_lock(
