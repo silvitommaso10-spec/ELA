@@ -37,7 +37,11 @@ from ela.infrastructure.machine.account import (
     reports_in,
 )
 from ela.ports import (
+    PROFILE_PROCESS,
+    PROFILE_STEP,
     PROFILE_WINDOW,
+    SHUT_KILLED,
+    SHUT_QUIT,
     BrowserFailed,
     BrowserStopped,
     ProfileBusy,
@@ -396,6 +400,222 @@ async def test_an_end_nobody_could_write_down_does_not_stop_ela_s_close(
     assert len(told.said) == 1
     assert "window" in caplog.text and "OSError" in caplog.text
     assert ADDRESS not in caplog.text, "the address is the user's: the log names what failed"
+
+
+# ----------------------------------------------------------------------------------------
+# The command that ends it (decision 80): told, waited for, killed only past the grace
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_window_ela_started_is_told_and_waited_for_and_the_folder_is_free(
+    window: Window, tmp_path: Path
+) -> None:
+    """The red button of the window closes the window and leaves the browser running: the folder
+    stays held until somebody ends the process. The command does — and with a grace that does not
+    end, it returns because the window ended, and only because it was told."""
+    told = Told()
+    made = chrome(tmp_path / "profile", told)
+    await made.window(ADDRESS)
+    (one,) = await window.launches(1)
+
+    assert await asyncio.wait_for(made.shut(never), PATIENCE) == SHUT_QUIT
+
+    assert await gone(one["pid"])
+    assert [address for address, _ in told.said] == [ADDRESS], "its end is said by who waits"
+    assert await made.occupied() is None
+    made._stopping.set()
+    assert await made.settle(at_once) == ()
+    assert len(told.said) == 1, "the close of ELA does not tell it a second time"
+
+
+async def test_a_window_that_does_not_quit_when_told_is_killed_only_once_the_grace_is_over(
+    window: Window, tmp_path: Path
+) -> None:
+    window.set(deaf=True)
+    told = Told()
+    made = chrome(tmp_path / "profile", told)
+    await made.window(None)
+    (one,) = await window.launches(1)
+    over = asyncio.Event()
+
+    async def the_grace() -> None:
+        await over.wait()
+
+    shutting = asyncio.ensure_future(made.shut(the_grace))
+    await asyncio.sleep(0.3)
+    assert not shutting.done() and running(one["pid"]), "told and waited for: not killed yet"
+    assert await made.occupied() == PROFILE_WINDOW
+
+    over.set()
+    assert await asyncio.wait_for(shutting, PATIENCE) == SHUT_KILLED
+    assert await gone(one["pid"])
+    assert [address for address, _ in told.said] == [None], "killed or not, its end is said"
+    assert await made.occupied() is None
+
+
+async def test_with_nothing_on_the_folder_the_command_tells_nobody(
+    window: Window, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    signalled: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sent: signalled.append((pid, sent)))
+    made = chrome(tmp_path / "profile")
+
+    assert await made.shut(never) is None
+
+    assert signalled == [] and window.launched() == []
+
+
+async def test_a_step_of_ela_s_is_not_what_the_command_ends(window: Window, tmp_path: Path) -> None:
+    """A page ELA drives ends with its step, or with the stop of its task: the command is for
+    the browser a hand may be on."""
+    made = chrome(tmp_path / "profile")
+    made._opening = 1
+
+    with pytest.raises(ProfileBusy) as busy:
+        await made.shut(never)
+
+    assert busy.value.by == PROFILE_STEP
+
+
+async def test_once_ela_is_stopping_the_command_is_refused_and_the_close_ends_the_window(
+    window: Window, tmp_path: Path
+) -> None:
+    made = chrome(tmp_path / "profile")
+    await made.window(None)
+    (one,) = await window.launches(1)
+    made._stopping.set()
+
+    with pytest.raises(BrowserStopped):
+        await made.shut(never)
+
+    assert await asyncio.wait_for(made.settle(never), PATIENCE) == ()
+    assert await gone(one["pid"])
+
+
+async def test_a_window_that_is_being_started_is_waited_for_and_then_told(
+    window: Window, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    starting = Starting(monkeypatch, hold="after")
+    made = chrome(tmp_path / "profile")
+    asking = asyncio.ensure_future(made.window(None))
+    await asyncio.wait_for(starting.reached.wait(), PATIENCE)
+    (one,) = await window.launches(1)
+
+    shutting = asyncio.ensure_future(made.shut(never))
+    for _ in range(20):
+        await asyncio.sleep(0)
+    assert not shutting.done() and running(one["pid"]), "a launch is in flight: it is waited for"
+    starting.release.set()
+
+    assert await asyncio.wait_for(shutting, PATIENCE) == SHUT_QUIT
+    await asyncio.wait_for(asking, PATIENCE)
+    assert await gone(one["pid"])
+
+
+class Says:
+    """What the system would say of a process, one answer after the other, the last for ever."""
+
+    def __init__(self, *answers: str | None) -> None:
+        self.answers = list(answers)
+        self.of: list[int] = []
+
+    async def __call__(self, pid: int) -> str | None:
+        self.of.append(pid)
+        return self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+
+
+async def a_browser_ela_did_not_start(window: Window, profile: Path) -> dict[str, Any]:
+    """The program of the tests, started **by the test** on ``profile`` — a window that
+    relaunched itself, one left by an ELA that was killed —, with the lock a browser leaves."""
+    profile.mkdir(mode=0o700, exist_ok=True)
+    await asyncio.create_subprocess_exec(
+        str(window.binary), f"--user-data-dir={profile}", start_new_session=True
+    )
+    (one,) = await window.launches(1)
+    (profile / "SingletonLock").symlink_to(f"a-machine-{one['pid']}")
+    return one
+
+
+async def test_a_browser_ela_did_not_start_is_told_when_it_is_ela_s_binary_on_the_folder(
+    window: Window, tmp_path: Path
+) -> None:
+    """The same check that says the folder is held says whether ELA may tell that process: its
+    command line is ELA's own binary on this folder (decisions 80 and 82)."""
+    profile = tmp_path / "profile"
+    one = await a_browser_ela_did_not_start(window, profile)
+    made = chrome(profile)
+    made._said_of = Says(f"{window.binary} --user-data-dir={profile}")
+    assert await made.occupied() == PROFILE_PROCESS
+
+    assert await asyncio.wait_for(made.shut(never), PATIENCE) == SHUT_QUIT
+
+    assert await gone(one["pid"])
+    assert await made.occupied() is None, "the lock it left names nobody"
+
+
+@pytest.mark.parametrize(
+    "said",
+    ["/Applications/Another Browser --user-data-dir={profile}", None],
+    ids=["another-program", "a-command-line-nobody-could-read"],
+)
+async def test_a_process_that_is_not_ela_s_browser_is_told_nothing(
+    window: Window, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, said: str | None
+) -> None:
+    """ELA signals nothing it cannot name: the folder is held, the command says so, and the
+    process is the user's to end."""
+    profile = tmp_path / "profile"
+    one = await a_browser_ela_did_not_start(window, profile)
+    made = chrome(profile)
+    made._said_of = Says(None if said is None else said.format(profile=profile))
+    signalled: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sent: signalled.append((pid, sent)))
+
+    with pytest.raises(ProfileBusy) as busy:
+        await made.shut(at_once)
+
+    assert busy.value.by == PROFILE_PROCESS
+    assert [sent for _, sent in signalled if sent != 0] == [], "asked whether it lives, at most"
+    monkeypatch.undo()
+    assert running(one["pid"])
+
+
+async def test_a_browser_ela_did_not_start_that_does_not_quit_is_killed_alone(
+    window: Window, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Past the grace it is killed **by its pid**: the group of a process ELA did not start is
+    not ELA's to kill."""
+    window.set(deaf=True)
+    profile = tmp_path / "profile"
+    one = await a_browser_ela_did_not_start(window, profile)
+    made = chrome(profile)
+    made._said_of = Says(f"{window.binary} --user-data-dir={profile}")
+    groups: list[int] = []
+    monkeypatch.setattr(os, "killpg", lambda group, sent: groups.append(group))
+
+    assert await asyncio.wait_for(made.shut(at_once), PATIENCE) == SHUT_KILLED
+
+    assert await gone(one["pid"])
+    assert groups == []
+    assert await made.occupied() is None
+
+
+async def test_a_pid_that_is_no_longer_that_browser_when_the_grace_ends_is_not_killed(
+    window: Window, tmp_path: Path
+) -> None:
+    """The grace is seconds, and a pid is the system's to give again: what is killed is asked
+    of the system once more, right before, and anything but that browser is left alone."""
+    window.set(deaf=True)
+    profile = tmp_path / "profile"
+    one = await a_browser_ela_did_not_start(window, profile)
+    made = chrome(profile)
+    made._said_of = asked = Says(
+        f"{window.binary} --user-data-dir={profile}", "a program that has nothing to do with it"
+    )
+
+    assert await asyncio.wait_for(made.shut(at_once), PATIENCE) == SHUT_QUIT
+
+    assert asked.of == [one["pid"], one["pid"]]
+    assert running(one["pid"]), "whatever has that pid now was not killed"
 
 
 # ----------------------------------------------------------------------------------------

@@ -24,7 +24,15 @@ from ela.cli import client
 from ela.cli.app import app as ela_app
 from ela.cli.errors import OK, REFUSED
 from ela.composition import Ela, Settings, build
-from ela.ports import PROFILE_WINDOW, ProfileUndeclared
+from ela.ports import (
+    PROFILE_PROCESS,
+    PROFILE_STEP,
+    PROFILE_WINDOW,
+    SHUT_KILLED,
+    SHUT_QUIT,
+    ProfileBusy,
+    ProfileUndeclared,
+)
 from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakePower
 from tests.cli.support import LoopTransport
 from tests.composition.support import create_schema, database_url, declare
@@ -223,3 +231,82 @@ async def test_open_on_a_held_profile_exits_1_and_opens_nothing(browsed: Browsed
     assert result.exit_code == REFUSED
     assert "browser.profile_busy" in result.output and "its window is open" in result.output
     assert browsed.accounts.windows == []
+
+
+# ----------------------------------------------------------------------------------------
+# The profiles of the folder (decision 79), and close (decision 80)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_status_says_when_the_folder_holds_more_than_one_profile(browsed: Browsed) -> None:
+    """One profile is the browser's own first, and nothing to be told. A second is one the user
+    added from inside the window: ELA neither prepares nor uses it, and the state says so."""
+    browsed.accounts.profiles_answer = 2
+    browsed.accounts.saved_answer = 5
+
+    result = await browsed("browser", "status")
+
+    assert result.exit_code == OK, result.output
+    assert row(result.output, "profiles in the folder").startswith("2 — ")
+    assert "ELA prepares and uses one" in result.output
+    assert row(result.output, "saved passwords") == "5"
+
+
+async def test_status_of_a_held_profile_names_the_command_that_ends_the_browser(
+    browsed: Browsed,
+) -> None:
+    for holder in (PROFILE_WINDOW, PROFILE_PROCESS):
+        browsed.accounts.holder = holder
+
+        result = await browsed("browser", "status")
+
+        assert row(result.output, "state") == holder
+        assert "ela browser close" in result.output, holder
+
+
+@pytest.mark.parametrize(
+    ("outcome", "said"),
+    [(SHUT_QUIT, "it quit when told"), (SHUT_KILLED, "it did not quit when told, and was killed")],
+)
+async def test_close_ends_the_browser_a_hand_may_be_on_and_says_how(
+    browsed: Browsed, outcome: str, said: str
+) -> None:
+    browsed.accounts.holder = PROFILE_WINDOW
+    browsed.accounts.shut_answer = outcome
+
+    result = await browsed("browser", "close")
+
+    assert result.exit_code == OK, result.output
+    assert said in result.output and "the profile is free" in result.output
+    assert len(browsed.accounts.shuts) == 1
+    assert browsed.sent("/browser/close") == [{}]
+
+
+async def test_close_with_nothing_open_says_so(browsed: Browsed) -> None:
+    result = await browsed("browser", "close")
+
+    assert result.exit_code == OK, result.output
+    assert "no browser was open on the profile" in result.output
+    assert "free" not in result.output, "nothing was freed: nothing held it"
+
+
+async def test_close_does_not_end_a_step_and_exits_1(browsed: Browsed) -> None:
+    browsed.accounts.holder = PROFILE_STEP
+
+    result = await browsed("browser", "close")
+
+    assert result.exit_code == REFUSED
+    assert "browser.profile_busy" in result.output and "ela task stop" in result.output
+    assert browsed.accounts.shuts == []
+
+
+async def test_close_on_what_is_not_ela_s_browser_exits_1_and_says_whose_it_is_to_end(
+    browsed: Browsed,
+) -> None:
+    browsed.accounts.holder = PROFILE_PROCESS
+    browsed.accounts.raising["shut"] = ProfileBusy(PROFILE_PROCESS)
+
+    result = await browsed("browser", "close")
+
+    assert result.exit_code == REFUSED
+    assert "browser.profile_busy" in result.output and "not ELA's browser" in result.output

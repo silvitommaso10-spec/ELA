@@ -30,6 +30,8 @@ from ela.ports import (
     PROFILE_PROCESS,
     PROFILE_STEP,
     PROFILE_WINDOW,
+    SHUT_KILLED,
+    SHUT_QUIT,
     BrowserFailed,
     BrowserUnsupported,
     ProfileBusy,
@@ -42,7 +44,12 @@ from tests.api.test_console import LOOPBACK, code_for, opened
 from tests.composition.support import create_schema, database_url, declare
 
 SITES = ["posta.example", "video.example"]
-ROUTES = (("GET", "/browser"), ("POST", "/browser/window"), ("POST", "/browser/open"))
+ROUTES = (
+    ("GET", "/browser"),
+    ("POST", "/browser/window"),
+    ("POST", "/browser/open"),
+    ("POST", "/browser/close"),
+)
 UNDECLARED = "no folder was declared for ELA's browser: write ELA_BROWSER_PROFILE_DIR"
 UNSAFE = "the folder of ELA's browser is readable by others: 0755"
 
@@ -97,6 +104,7 @@ async def test_a_profile_nobody_holds_is_free_and_says_what_the_browser_says_of_
         "window": False,
         "linked": False,
         "saved": 0,
+        "profiles": 1,
         "sites": SITES,
     }
 
@@ -106,7 +114,7 @@ async def test_what_the_answer_may_carry_is_a_closed_set_of_fields(browsed: Brow
     here."""
     said = (await browsed.client.get("/browser")).json()
 
-    assert set(said) == {"state", "message", "window", "linked", "saved", "sites"}
+    assert set(said) == {"state", "message", "window", "linked", "saved", "profiles", "sites"}
     assert str(browsed.ela.settings.persistence.db_url) not in json.dumps(said)
 
 
@@ -359,6 +367,124 @@ async def test_a_window_that_could_not_start_after_the_look_is_refused_and_not_w
 
 
 # ----------------------------------------------------------------------------------------
+# The profiles of the folder (decision 79), and the command that ends the window (decision 80)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_state_says_how_many_profiles_of_the_browser_the_folder_holds(
+    browsed: Browsed,
+) -> None:
+    """A second profile added from inside the window is one ELA neither prepares nor uses: the
+    state says there is more than one, and what was saved in all of them is counted."""
+    browsed.accounts.profiles_answer = 2
+    browsed.accounts.saved_answer = 5
+
+    said = (await browsed.client.get("/browser")).json()
+
+    assert (said["profiles"], said["saved"]) == (2, 5)
+
+    browsed.accounts.raising["profiles"] = BrowserFailed("PermissionError")
+    assert (await browsed.client.get("/browser")).json()["profiles"] is None, "not read, not one"
+
+
+@pytest.mark.parametrize("holder", [PROFILE_WINDOW, PROFILE_PROCESS])
+@pytest.mark.parametrize("outcome", [SHUT_QUIT, SHUT_KILLED])
+async def test_closing_tells_the_browser_a_hand_may_be_on_and_who_asked_is_a_row_of_the_audit(
+    browsed: Browsed, holder: str, outcome: str
+) -> None:
+    browsed.accounts.holder = holder
+    browsed.accounts.shut_answer = outcome
+
+    answered = await browsed.client.post("/browser/close")
+
+    assert (answered.status_code, answered.json()) == (200, {"outcome": outcome})
+    assert len(browsed.accounts.shuts) == 1
+    (row,) = await browsed.events(AuditEventType.BROWSER_CLOSE_ASKED)
+    assert row.actor.kind is ActorKind.USER
+    assert row.task_id is None and row.capability_id is None
+    assert dict(row.payload) == {"outcome": outcome}
+    assert (await browsed.client.get("/browser")).json()["state"] == "free"
+
+
+async def test_the_grace_of_the_command_is_the_grace_of_ela_s_close(
+    browsed: Browsed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Told, waited for, and killed only once the grace is over — the same seconds ELA's own
+    close gives a browser. The adapter is handed the wait, never the number."""
+    import asyncio
+
+    from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
+
+    browsed.accounts.holder = PROFILE_WINDOW
+    await browsed.client.post("/browser/close")
+    (grace,) = browsed.accounts.shuts
+    waited: list[float] = []
+    real = asyncio.sleep
+
+    async def counted(seconds: float, *more: object) -> None:
+        waited.append(seconds)
+        await real(0)
+
+    monkeypatch.setattr(asyncio, "sleep", counted)
+    await grace()
+
+    assert waited == [BROWSER_CLOSE_GRACE_SECONDS]
+
+
+async def test_closing_with_nothing_open_says_so_and_writes_nothing(browsed: Browsed) -> None:
+    answered = await browsed.client.post("/browser/close")
+
+    assert (answered.status_code, answered.json()) == (200, {"outcome": "nothing"})
+    assert await browsed.events(AuditEventType.BROWSER_CLOSE_ASKED) == []
+
+
+async def test_closing_does_not_end_a_step_of_ela_s(browsed: Browsed) -> None:
+    browsed.accounts.holder = PROFILE_STEP
+
+    answered = await browsed.client.post("/browser/close")
+
+    assert answered.status_code == 409
+    said = answered.json()["error"]["message"]
+    assert said.startswith("browser.profile_busy: ") and "ela task stop" in said
+    assert browsed.accounts.shuts == []
+    assert await browsed.events(AuditEventType.BROWSER_CLOSE_ASKED) == []
+
+
+async def test_closing_signals_nothing_that_is_not_ela_s_browser(browsed: Browsed) -> None:
+    browsed.accounts.holder = PROFILE_PROCESS
+    browsed.accounts.raising["shut"] = ProfileBusy(PROFILE_PROCESS)
+
+    answered = await browsed.client.post("/browser/close")
+
+    assert answered.status_code == 409
+    said = answered.json()["error"]["message"]
+    assert said.startswith("browser.profile_busy: ") and "not ELA's browser" in said
+    assert await browsed.events(AuditEventType.BROWSER_CLOSE_ASKED) == []
+    assert (await browsed.client.get("/browser")).json()["state"] == "process"
+
+
+@pytest.mark.parametrize(
+    ("raised", "code"),
+    [
+        (ProfileUndeclared(UNDECLARED), "browser.profile_undeclared"),
+        (ProfileUnsafe(UNSAFE), "browser.profile_unsafe"),
+        (BrowserUnsupported("Linux"), "browser.unsupported_system"),
+        (BrowserFailed("OSError"), "browser.failed"),
+    ],
+)
+async def test_closing_on_a_profile_that_cannot_be_looked_at_says_why(
+    browsed: Browsed, raised: Exception, code: str
+) -> None:
+    browsed.accounts.raising["shut"] = raised
+
+    answered = await browsed.client.post("/browser/close")
+
+    assert answered.status_code == 409
+    assert answered.json()["error"]["message"].startswith(f"{code}: ")
+    assert await browsed.events(AuditEventType.BROWSER_CLOSE_ASKED) == []
+
+
+# ----------------------------------------------------------------------------------------
 # Whose routes these are
 # ----------------------------------------------------------------------------------------
 
@@ -372,6 +498,7 @@ async def test_without_the_core_s_token_nothing_of_the_browser_answers(
 
     assert answered.status_code == 401
     assert browsed.accounts.windows == [] and browsed.ela.window.shown is False
+    assert browsed.accounts.shuts == []
 
 
 @pytest.mark.parametrize(("method", "path"), ROUTES)

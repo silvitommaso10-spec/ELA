@@ -27,7 +27,14 @@ from httpx import ASGITransport, AsyncClient
 from ela.api import create_app
 from ela.composition import Ela, Settings, build
 from ela.domain import ActorKind, AuditEvent, AuditEventType
-from ela.ports import PROFILE_WINDOW, VAULT_LOCKED, ProfileUndeclared, Secret
+from ela.ports import (
+    PROFILE_PROCESS,
+    PROFILE_STEP,
+    PROFILE_WINDOW,
+    VAULT_LOCKED,
+    ProfileUndeclared,
+    Secret,
+)
 from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakePower, FakeVault
 from tests.api.support import AUTHORIZED, BASE, outside_the_block
 from tests.api.test_console import LOOPBACK, PHONE_PEER, TAILNET, code_for, opened
@@ -36,6 +43,7 @@ from tests.composition.support import create_schema, database_url, declare
 SITES = ["posta.example", "video.example"]
 UNDECLARED = "no folder was declared for the browser of ELA: write ELA_BROWSER_PROFILE_DIR"
 WINDOW, OPEN, LOCK = "/console/browser/window", "/console/browser/open", "/console/browser/lock"
+CLOSE = "/console/browser/close"
 
 
 @dataclass(frozen=True)
@@ -128,6 +136,8 @@ async def test_the_view_says_what_the_profile_and_the_vault_are_and_offers_its_f
     for site in ("", *SITES):
         assert f'name="site" value="{site}"' in page
     assert f'action="{LOCK}"' not in page, "a locked vault has nothing to close"
+    assert f'action="{CLOSE}"' not in page, "and a free profile no browser to end"
+    assert "Profili nella cartella" not in page, "one profile is nothing to be told"
     assert "<script" not in page
 
 
@@ -181,6 +191,41 @@ async def test_a_held_profile_says_who_holds_it_and_offers_no_second_window(
     assert ">sì<" in page and ">2<" in page
 
 
+@pytest.mark.parametrize("holder", [PROFILE_WINDOW, PROFILE_PROCESS])
+async def test_a_profile_a_hand_may_be_on_offers_the_button_that_ends_the_browser(
+    viewed: Viewed, holder: str
+) -> None:
+    """The red button of the window closes the window and leaves the browser running, and the
+    state still says it is open: the page says so, beside the button that ends it (decision
+    80)."""
+    viewed.accounts.holder = holder
+
+    async with viewed.console() as console:
+        page = await viewed.page(console)
+
+    assert f'action="{CLOSE}"' in page and 'name="browser" value="close"' in page
+    assert "pulsante rosso" in page
+
+
+async def test_a_step_of_ela_s_offers_no_button_to_end_it(viewed: Viewed) -> None:
+    viewed.accounts.holder = PROFILE_STEP
+
+    async with viewed.console() as console:
+        page = await viewed.page(console)
+
+    assert "step" in page and f'action="{CLOSE}"' not in page
+
+
+async def test_the_view_says_when_the_folder_holds_more_than_one_profile(viewed: Viewed) -> None:
+    viewed.accounts.profiles_answer = 2
+
+    async with viewed.console() as console:
+        page = await viewed.page(console)
+
+    assert "Profili nella cartella" in page and ">2<" in page
+    assert "ELA ne prepara e ne usa uno solo" in page
+
+
 # ----------------------------------------------------------------------------------------
 # What the view does, from the Mac
 # ----------------------------------------------------------------------------------------
@@ -218,6 +263,36 @@ async def test_the_window_is_opened_from_the_page_and_who_opened_it_is_written(
     assert row.actor.kind is ActorKind.USER
     assert dict(row.payload) == {"site": site or None}
     assert "window" in after and f'action="{OPEN}"' not in after
+
+
+@pytest.mark.parametrize("holder", [PROFILE_WINDOW, PROFILE_PROCESS])
+async def test_the_browser_is_ended_from_the_page_and_who_asked_is_written(
+    viewed: Viewed, holder: str
+) -> None:
+    viewed.accounts.holder = holder
+
+    async with viewed.console() as console:
+        answered = await console.post(CLOSE, data={"browser": "close"})
+        after = await viewed.page(console)
+
+    assert answered.status_code == 303 and answered.headers["location"] == "/console/browser"
+    assert len(viewed.accounts.shuts) == 1
+    (row,) = await viewed.events(AuditEventType.BROWSER_CLOSE_ASKED)
+    assert row.actor.kind is ActorKind.USER, "signed by the console that asked"
+    assert "free" in after and f'action="{CLOSE}"' not in after
+
+
+async def test_a_step_of_ela_s_is_not_ended_from_the_page_and_the_page_says_why(
+    viewed: Viewed,
+) -> None:
+    viewed.accounts.holder = PROFILE_STEP
+
+    async with viewed.console() as console:
+        refused = await console.post(CLOSE, data={"browser": "close"})
+
+    assert refused.status_code == 409
+    assert "browser.profile_busy" in refused.text
+    assert viewed.accounts.shuts == []
 
 
 async def test_a_site_nobody_declared_opens_nothing_and_the_page_says_why(
@@ -258,6 +333,8 @@ async def test_the_vault_is_closed_from_the_page_and_who_closed_it_is_written(
         (OPEN, {}),
         (LOCK, {}),
         (LOCK, {"vault": "open"}),
+        (CLOSE, {}),
+        (CLOSE, {"browser": "open"}),
     ],
 )
 async def test_a_form_that_does_not_say_what_it_asks_changes_nothing(
@@ -273,12 +350,17 @@ async def test_a_form_that_does_not_say_what_it_asks_changes_nothing(
 
     assert answered.status_code == 422
     assert viewed.ela.window.shown is False and viewed.accounts.windows == []
-    assert "lock" not in viewed.vault.calls
+    assert "lock" not in viewed.vault.calls and viewed.accounts.shuts == []
 
 
 @pytest.mark.parametrize(
     ("path", "fields"),
-    [(WINDOW, {"shown": "1"}), (OPEN, {"site": ""}), (LOCK, {"vault": "lock"})],
+    [
+        (WINDOW, {"shown": "1"}),
+        (OPEN, {"site": ""}),
+        (LOCK, {"vault": "lock"}),
+        (CLOSE, {"browser": "close"}),
+    ],
 )
 async def test_a_post_without_the_origin_of_ela_is_refused(
     viewed: Viewed, path: str, fields: dict[str, str]
@@ -289,7 +371,7 @@ async def test_a_post_without_the_origin_of_ela_is_refused(
 
     assert refused.status_code == 403
     assert viewed.ela.window.shown is False and viewed.accounts.windows == []
-    assert "lock" not in viewed.vault.calls
+    assert "lock" not in viewed.vault.calls and viewed.accounts.shuts == []
 
 
 # ----------------------------------------------------------------------------------------
@@ -331,6 +413,21 @@ async def test_away_from_the_mac_a_free_profile_offers_no_window_and_names_no_si
     assert f'action="{OPEN}"' not in there and f'action="{WINDOW}"' not in there
     for site in SITES:
         assert site not in there
+
+
+async def test_away_from_the_mac_the_browser_of_the_mac_is_not_ended(viewed: Viewed) -> None:
+    """What changes something on the Mac's screen is done at the Mac (decision 12): a window a
+    hand may be typing in is not ended from a phone."""
+    viewed.accounts.holder = PROFILE_WINDOW
+
+    async with viewed.console(away=True) as console:
+        page = await viewed.page(console)
+        refused = await console.post(CLOSE, data={"browser": "close"})
+
+    assert f'action="{CLOSE}"' not in page
+    assert refused.status_code == 409 and "si usano dal Mac" in refused.text
+    assert viewed.accounts.shuts == []
+    assert await viewed.events(AuditEventType.BROWSER_CLOSE_ASKED) == []
 
 
 async def test_away_from_the_mac_nothing_is_turned_and_nothing_is_opened(viewed: Viewed) -> None:
