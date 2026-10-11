@@ -12,7 +12,9 @@ hold:
 * **the key is kept for an hour from the opening**, never from its last use (decision 33): at
   that time it is forgotten and the vault is asked to lock — by a task of the door's own, because
   nobody may be calling —, and a use that comes later finds it closed, whoever did or did not
-  close it;
+  close it. **Asked to lock only if the key still opens** (decision 81): the lock is the whole
+  machine's, and a key that ended elsewhere is forgotten without closing what its owner opened
+  since;
 * **every closing is told, with why** — a command, the hour, the stop of ELA, a key ended
   elsewhere — to whoever the composition names: in ELA, the audit. The key is forgotten first;
 * **every refusal has a code of its own**, and a sentence that names the program to run and never
@@ -398,7 +400,7 @@ class VaultDoor:
         if forgets_at is None or self._clock.now() < forgets_at:
             return False
         self._unwatch()
-        await self._close(BY_TIME, None)
+        await self._close(BY_TIME, None, unless_ended=True)
         return True
 
     async def stopped(self) -> None:
@@ -425,14 +427,21 @@ class VaultDoor:
         while (left := (at - self._clock.now()).total_seconds()) > 0:
             await self._wait(min(left, float(WATCH_SECONDS)))
         async with self._busy:
-            await self._close(BY_TIME, None)
+            await self._close(BY_TIME, None, unless_ended=True)
 
-    async def _close(self, reason: str, by: Actor | None) -> VaultProblem | None:
+    async def _close(
+        self, reason: str, by: Actor | None, *, unless_ended: bool = False
+    ) -> VaultProblem | None:
         """Forget the hour, ask the vault to lock if its program is the one of the start, and
         tell. **Whoever asked may go away before it is over** — a use has the deadline of its
         step, ELA's stop ends the keeper —: what is left to do is then done on the way out, with
         nothing that waits between the cancellation and the key forgotten. A closing cut short
-        says so: the vault was not asked to lock, or did not answer (re-read of 2026-10-11)."""
+        says so: the vault was not asked to lock, or did not answer (re-read of 2026-10-11).
+
+        ``unless_ended`` is the hour running out (decision 81): the vault is first asked its
+        state **with the key ELA holds**, and if that key opens nothing any more it is forgotten
+        and nothing is locked — told as a key ended elsewhere, which is what ELA has just
+        learnt. **A state that cannot be read locks**: the safe side."""
         held, self._opened_at = self._opened_at is not None, None
         vault = self._vault
         problem: VaultProblem | None = None
@@ -440,11 +449,14 @@ class VaultDoor:
         try:
             problem = await self._problem()
             if vault is not None and problem is None:
-                try:
-                    await vault.lock()
-                    locked = True
-                except VaultError as error:
-                    problem = self._said(error)
+                if unless_ended and await _opens_nothing(vault):
+                    reason = ELSEWHERE
+                else:
+                    try:
+                        await vault.lock()
+                        locked = True
+                    except VaultError as error:
+                        problem = self._said(error)
         finally:
             if vault is not None and not locked:
                 await vault.forget()
@@ -536,6 +548,15 @@ class VaultDoor:
                 f"the entry of the vault is not for {site} any more: nothing was typed",
             )
         return taken
+
+
+async def _opens_nothing(vault: Vault) -> bool:
+    """Whether the vault says, of the key its adapter holds, that it opens nothing any more.
+    ``False`` for a state that could not be read: not knowing is not «it ended»."""
+    try:
+        return await vault.status() != VAULT_UNLOCKED
+    except VaultError:
+        return False
 
 
 def _chosen(
