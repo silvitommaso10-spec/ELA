@@ -23,7 +23,8 @@ from ela.tools import (
     CaptureStore,
     production_verifiers,
 )
-from tests.tools.browsers import SECONDS, a_browser
+from tests.docs.guided_ports import ACCOUNT_CAPABILITIES
+from tests.tools.browsers import SECONDS, a_browser, an_account_browser
 from tests.tools.guided import a_room, a_session
 from tests.tools.terminals import no_programs
 
@@ -37,9 +38,12 @@ def adr_text() -> str:
     return ADR_PATH.read_text(encoding="utf-8")
 
 
-AFTER_0045 = frozenset({"terminal.run", "browser.read", "browser.act", "browser.guided"})
-"""What the ADRs after this one added, each pinned by its own: the terminal (ADR 0047) and the
-browser (ADR 0052)."""
+AFTER_0045 = (
+    frozenset({"terminal.run", "browser.read", "browser.act", "browser.guided"})
+    | ACCOUNT_CAPABILITIES
+)
+"""What the ADRs after this one added, each pinned by its own: the terminal (ADR 0047), the
+browser (ADR 0052, ADR 0060), and the browser with the user's accounts (ADR 0063)."""
 
 
 def catalogue_today() -> tuple[str, ...]:
@@ -59,6 +63,7 @@ def verifiers_today(tmp_path: Path):  # type: ignore[no-untyped-def]
         gestures=a_room(),
         sessions=a_session(),
         audit=FakeAuditLog(),
+        accounts=an_account_browser(),
     )
 
 

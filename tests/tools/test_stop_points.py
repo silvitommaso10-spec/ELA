@@ -37,29 +37,41 @@ from ela.domain import (
     RawTextLine,
 )
 from ela.executive import StopOfTask
-from ela.permissions import BROWSER_ACT, BROWSER_GUIDED, BROWSER_READ
+from ela.permissions import (
+    BROWSER_ACT,
+    BROWSER_ACT_AS_YOU,
+    BROWSER_GUIDED,
+    BROWSER_LOGIN,
+    BROWSER_READ,
+    BROWSER_READ_AS_YOU,
+)
 from ela.ports import (
     ENVELOPE,
     GUIDED_STOPPED,
     NAVIGATION,
+    Field,
     ProbeFamily,
     StopPoint,
     ToolPort,
     ToolStopped,
 )
 from ela.testing.fakes import (
+    FakeAccountBrowser,
     FakeBrowser,
     FakeClock,
     FakeIdGenerator,
     FakeLauncher,
     FakeListening,
     FakeModelProvider,
+    FakePage,
     FakeProbe,
     FakeScreenCapture,
     FakeSpeech,
     FakeStop,
     FakeTextRecognition,
     FakeTool,
+    FakeVault,
+    FakeVaultEntry,
     FakeVerifier,
 )
 from ela.tools import (
@@ -91,6 +103,7 @@ from ela.tools import (
     VerifierRegistry,
     WriteNoteTool,
 )
+from ela.tools.account import AccountActTool, AccountReadTool, LoginTool
 from ela.tools.browser import STOPPED as BROWSER_STOPPED
 from ela.tools.browser import BrowserActTool, BrowserReadTool
 from ela.tools.captures import name_for, text_name_for
@@ -98,6 +111,7 @@ from ela.tools.model import ModelCompleteTool
 from ela.tools.programs import ProgramProblem, Programs, identity_of
 from ela.tools.terminal import STOPPED as TERMINAL_STOPPED
 from ela.tools.terminal import TerminalRunTool
+from ela.tools.vault import VaultDoor
 from tests.docs.test_adr_travel import travelling
 from tests.routing.support import routing_for
 from tests.tools.guided import guided_world
@@ -362,6 +376,63 @@ def _browser_act(tmp_path: Path) -> Subject:
     )
 
 
+def _read_as_you(tmp_path: Path) -> Subject:
+    browser = FakeAccountBrowser()
+    return Subject(
+        AccountReadTool(SITES, browser, FakeClock(), FakeIdGenerator()),
+        browser_decision(BROWSER_READ_AS_YOU),
+        dict(READ),
+        lambda: bool(browser.opened),
+        hold=lambda: _launch(browser),
+    )
+
+
+def _act_as_you(tmp_path: Path) -> Subject:
+    browser = FakeAccountBrowser()
+    return Subject(
+        AccountActTool(SITES, browser, FakeClock(), FakeIdGenerator()),
+        browser_decision(BROWSER_ACT_AS_YOU),
+        dict(ACT),
+        lambda: bool(browser.fills or browser.clicks),
+        hold=lambda: _launch(browser),
+    )
+
+
+def _login(tmp_path: Path) -> Subject:
+    """A login whose plan names its entry, on a vault that is open: what the port sees of it is
+    a secret typed, or a click."""
+    at = tmp_path / "bw"
+    at.write_bytes(b"\xcf\xfa\xed\xfe a native program")
+    at.chmod(0o700)
+    form = {
+        "#user": Field("text", "username", "post"),
+        "#word": Field("password", "current-password", "post"),
+        "#go": Field("submit", "", "post"),
+    }
+    browser = FakeAccountBrowser(FakePage(fields=form))
+    vault = FakeVault(
+        [FakeVaultEntry("an-id", "Il sito", (f"https://{ACT['site']}/",), "u", "w", "u")]
+    )
+    door = VaultDoor(vault, str(at), identity_of(str(at)[1:]), clock=FakeClock())
+    arguments = {
+        "site": ACT["site"],
+        "path": "/login",
+        "username_field": "#user",
+        "password_field": "#word",
+        "click": "#go",
+        "expect_text": "Benvenuto",
+        "purpose": "la prova",
+        "entry": "an-id",
+    }
+    return Subject(
+        LoginTool(SITES, browser, door, FakeClock(), FakeIdGenerator()),
+        browser_decision(BROWSER_LOGIN),
+        arguments,
+        lambda: bool(browser.secrets or browser.clicks),
+        hold=lambda: _launch(browser),
+    )
+
+
 def _guided(tmp_path: Path) -> Subject:
     world = guided_world()
     return Subject(
@@ -387,11 +458,25 @@ SUBJECTS: dict[CapabilityId, Callable[[Path], Subject]] = {
     BROWSER_READ: _browser_read,
     BROWSER_ACT: _browser_act,
     BROWSER_GUIDED: _guided,
+    BROWSER_READ_AS_YOU: _read_as_you,
+    BROWSER_ACT_AS_YOU: _act_as_you,
+    BROWSER_LOGIN: _login,
 }
 WITH_A_WAIT = sorted(
     capability
     for capability, build in SUBJECTS.items()
-    if build in {_screen, _listen, _screen_text, _terminal, _browser_read, _browser_act}
+    if build
+    in {
+        _screen,
+        _listen,
+        _screen_text,
+        _terminal,
+        _browser_read,
+        _browser_act,
+        _read_as_you,
+        _act_as_you,
+        _login,
+    }
 )
 """The tools with a wait of their own before the point (proposal 2): the hash of the program, the
 probe of the capture and of the microphone, the recognition, the start of the browser."""
@@ -467,6 +552,9 @@ PRODUCTION: dict[str, tuple[str | None, str | None]] = {
     "browser.read": ("the navigation", None),
     "browser.act": ("the first gesture", None),
     "browser.guided": ("the launch of the session", None),
+    "browser.read_as_you": ("the navigation", None),
+    "browser.act_as_you": ("the first gesture", None),
+    "browser.login": ("the first gesture", None),
 }
 """The table of proposal 2 of the SPEC, and of ADR 0054 §3 — and since M14.3 the launch of a guided
 session (ADR 0060)."""
@@ -620,7 +708,7 @@ def ok_after_the_point(capability: CapabilityId, result: ExecutionResult) -> boo
     code = None if result.error is None else result.error.code
     if capability == TERMINAL_RUN:
         return code == TERMINAL_STOPPED and result.output["ended"] == "stopped_with_the_task"
-    if capability == BROWSER_ACT:
+    if capability in {BROWSER_ACT, BROWSER_ACT_AS_YOU, BROWSER_LOGIN}:
         return code == BROWSER_STOPPED and result.output["gestures"] == 1
     if capability == BROWSER_GUIDED:
         return code == GUIDED_STOPPED and result.usage is not None

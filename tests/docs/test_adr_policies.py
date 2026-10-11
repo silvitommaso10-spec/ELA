@@ -33,7 +33,7 @@ from ela.permissions import (
 )
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import port_protocols
-from tests.docs.guided_ports import ACCOUNT_PORTS
+from tests.docs.guided_ports import ACCOUNT_PORTS, before_the_accounts
 from tests.docs.test_adr_cli import coded_commands, commands_after_0062
 from tests.docs.test_adr_composition import coded_routes, routes_after_0062
 from tests.docs.test_adr_guardian import Parameter
@@ -217,7 +217,7 @@ def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
     assert len(tuple(p for p in port_protocols() if p.__name__ not in ACCOUNT_PORTS)) == 33
     assert "**sessanta**" in text and len(coded_routes() - routes_after_0062()) == 60
     assert "**trentuno**" in text and len(coded_commands() - commands_after_0062()) == 31
-    assert "**quattordici**" in text and len(production_catalogue().specs()) == 14
+    assert "**quattordici**" in text and len(before_the_accounts()) == 14
     assert "**sei**" in text and len(Kind) == 6
 
 

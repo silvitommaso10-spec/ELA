@@ -71,7 +71,11 @@ def test_the_capability_is_the_one_the_spec_writes() -> None:
         properties["looks"]["maximum"] == LOOKS_MAX
         and properties["seconds"]["maximum"] == SECONDS_MAX
     )
-    assert [one.id for one in production_catalogue().specs()][-1] == BROWSER_GUIDED
+    ids = [one.id for one in production_catalogue().specs()]
+    assert ids[ids.index(BROWSER_GUIDED) - 1] == "browser.act", "after the two of ADR 0052"
+    assert all(
+        later.endswith(("_as_you", ".login")) for later in ids[ids.index(BROWSER_GUIDED) + 1 :]
+    )
 
 
 def test_an_empty_list_of_sites_is_an_answer_for_the_session_too() -> None:

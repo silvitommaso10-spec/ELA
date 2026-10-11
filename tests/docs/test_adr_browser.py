@@ -18,13 +18,13 @@ from ela.tools.browser import BrowserActTool, BrowserReadTool
 from ela.tools.verifiers import BrowserActVerifier, BrowserReadVerifier
 from tests.architecture.rules import MACHINE_LIBRARIES
 from tests.contracts.protocols import members, port_protocols
-from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS
+from tests.docs.guided_ports import ACCOUNT_CAPABILITIES, ACCOUNT_PORTS, GUIDED_PORTS
 from tests.docs.test_adr_composition import coded_routes, routes_after_0056
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.docs.test_adr_placement import _rules_up_to
 
-AFTER_0052 = frozenset({"browser.guided"})
-"""What ADR 0060 added after this one, pinned by its own test."""
+AFTER_0052 = frozenset({"browser.guided"}) | ACCOUNT_CAPABILITIES
+"""What ADR 0060 added after this one, and ADR 0063 after that: each pinned by its own test."""
 
 ROOT = Path(__file__).resolve().parents[2]
 ADR_PATH = ROOT / "docs" / "adr" / "0052-browser.md"

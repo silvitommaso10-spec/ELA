@@ -19,7 +19,7 @@ from ela.tools.programs import PROGRAM_CHANGED, Programs
 from ela.tools.terminal import TerminalRunTool
 from ela.tools.verifiers import TerminalRunVerifier
 from tests.contracts.protocols import port_protocols
-from tests.docs.guided_ports import ACCOUNT_PORTS, GUIDED_PORTS
+from tests.docs.guided_ports import ACCOUNT_CAPABILITIES, ACCOUNT_PORTS, GUIDED_PORTS
 from tests.docs.test_adr_composition import coded_routes, routes_after_0048
 from tests.docs.test_adr_filesystem import verifiers_today
 from tests.docs.test_adr_placement import _rules_up_to
@@ -53,7 +53,7 @@ def codes(cell: str) -> frozenset[str]:
 # ----------------------------------------------------------------------------------------
 
 
-AFTER_0047 = frozenset({"browser.read", "browser.act", "browser.guided"})
+AFTER_0047 = frozenset({"browser.read", "browser.act", "browser.guided"}) | ACCOUNT_CAPABILITIES
 """What ADR 0052 added, and pins itself: this ADR keeps the totals it saw."""
 
 

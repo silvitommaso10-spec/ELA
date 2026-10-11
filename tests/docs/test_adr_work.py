@@ -26,7 +26,7 @@ from tests.docs.test_adr_listening import ports_before
 from tests.docs.test_adr_nodes import documented_rules
 from tests.docs.test_adr_placement import _rules_up_to
 from tests.executive import test_assignment_recovery as recovery
-from tests.tools.browsers import SECONDS, a_browser
+from tests.tools.browsers import SECONDS, a_browser, an_account_browser
 from tests.tools.guided import a_room, a_session
 from tests.tools.terminals import no_programs
 
@@ -138,6 +138,7 @@ def test_the_verifier_table_says_what_each_verifier_declared_when_it_was_written
         gestures=a_room(),
         sessions=a_session(),
         audit=FakeAuditLog(),
+        accounts=an_account_browser(),
     )
     documented = {
         match.group(1): match.group(2) == "True"

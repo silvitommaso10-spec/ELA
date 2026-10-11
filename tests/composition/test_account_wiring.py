@@ -25,6 +25,13 @@ from ela.composition import Ela, Settings, build
 from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.composition.system import WindowSwitch, without_node_variables
 from ela.infrastructure.machine import AccountChrome, PlaywrightBrowser
+from ela.permissions import (
+    BROWSER_ACT,
+    BROWSER_ACT_AS_YOU,
+    BROWSER_LOGIN,
+    BROWSER_READ,
+    BROWSER_READ_AS_YOU,
+)
 from ela.ports import Browser
 from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakePower, FakeStop
 from ela.tools.terminal import CLOSED_PATH, LANGUAGE
@@ -82,6 +89,80 @@ async def test_the_profile_s_browser_is_chrome_on_the_declared_folder_with_the_c
         assert not profile.exists(), "building ELA makes no folder: the first use does"
     finally:
         await ela.aclose()
+
+
+# ----------------------------------------------------------------------------------------
+# Which tool holds which browser: a closed world, both ways (criterion 7)
+# ----------------------------------------------------------------------------------------
+
+EMPTY = frozenset({BROWSER_READ, BROWSER_ACT})
+"""The capabilities of the empty browser: a visitor, on every page."""
+WITH_THE_PROFILE = frozenset({BROWSER_READ_AS_YOU, BROWSER_ACT_AS_YOU, BROWSER_LOGIN})
+"""The capabilities of the browser with the user's accounts."""
+
+
+def holding_a_browser(tools: Any, verifiers: Any) -> dict[str, tuple[str, object]]:
+    """Every tool and every verifier that holds a browser, by its name: the capability it is of,
+    and the browser it holds."""
+    return {
+        one.name: (one.capability_id, one._browser)
+        for one in (*tools.tools(), *verifiers.verifiers())
+        if getattr(one, "_browser", None) is not None
+    }
+
+
+def misplaced(tools: Any, verifiers: Any, empty: object, accounts: object) -> list[str]:
+    """The tools and verifiers that hold the wrong browser, or a browser nobody classified."""
+    wrong: list[str] = []
+    for name, (capability, browser) in holding_a_browser(tools, verifiers).items():
+        if capability in EMPTY:
+            right = browser is empty
+        elif capability in WITH_THE_PROFILE:
+            right = browser is accounts
+        else:
+            right = False
+        if not right:
+            wrong.append(name)
+    return sorted(wrong)
+
+
+async def test_no_tool_of_the_empty_browser_can_open_the_profile_and_none_of_its_own_can_miss_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The seventh criterion, as ELA is built: the two tools of the empty browser and their
+    verifiers hold the empty browser — an object that has no folder —, the three of the profile
+    hold the other, and **every** tool that holds a browser is one of these."""
+    ela = await built(monkeypatch, tmp_path, {PROFILE: str(tmp_path / "state" / "profile")})
+    try:
+        held = holding_a_browser(ela.tools, ela.verifiers)
+
+        assert {capability for capability, _ in held.values()} == EMPTY | WITH_THE_PROFILE
+        assert len(held) == 2 * len(EMPTY | WITH_THE_PROFILE), "a tool and a verifier for each"
+        assert misplaced(ela.tools, ela.verifiers, ela.browser, ela.accounts) == []
+        assert ela.browser is not ela.accounts
+        assert not isinstance(ela.browser, AccountChrome), "the empty browser has no profile"
+        assert not hasattr(ela.browser, "_profile")
+    finally:
+        await ela.aclose()
+
+
+def test_a_tool_of_the_empty_browser_handed_the_profile_is_found(tmp_path: Path) -> None:
+    """The negative case, in both directions: registries built with the two browsers the wrong
+    way round — what a slip of one argument in the composition would do."""
+    from tests.tools.test_registry import _production
+
+    empty, accounts = FakeBrowser(), FakeAccountBrowser()
+    tools, verifiers, _ = _production(tmp_path)
+    right = holding_a_browser(tools, verifiers)
+    for one in (*tools.tools(), *verifiers.verifiers()):
+        if one.name in right:
+            one._browser = accounts if one.capability_id in EMPTY else empty
+
+    assert misplaced(tools, verifiers, empty, accounts) == sorted(right)
+    for one in (*tools.tools(), *verifiers.verifiers()):
+        if one.name in right:
+            one._browser = empty if one.capability_id in EMPTY else accounts
+    assert misplaced(tools, verifiers, empty, accounts) == []
 
 
 # ----------------------------------------------------------------------------------------

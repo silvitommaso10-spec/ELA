@@ -10,9 +10,26 @@ import tomllib
 from pathlib import Path
 
 from ela.api.security import Kind
-from ela.permissions import POLICY_VERSION, production_catalogue
+from ela.permissions import (
+    BROWSER_ACT_AS_YOU,
+    BROWSER_LOGIN,
+    BROWSER_READ_AS_YOU,
+    POLICY_VERSION,
+    production_catalogue,
+)
+from ela.ports import AccountBrowser
+from ela.testing.fakes import FakeAccountBrowser
+from ela.tools.account import (
+    AccountActTool,
+    AccountActVerifier,
+    AccountReadTool,
+    AccountReadVerifier,
+    LoginTool,
+    LoginVerifier,
+)
 from tests.architecture.rules import RULES
-from tests.contracts.protocols import port_protocols
+from tests.contracts.protocols import members, port_protocols
+from tests.docs.test_adr_browser import CODE, TOOL_ROW, VERIFIER_ROW, codes
 from tests.docs.test_adr_cli import coded_commands
 from tests.docs.test_adr_composition import coded_routes
 from tests.docs.test_adr_placement import _rules_up_to
@@ -49,9 +66,74 @@ def test_the_conseguenze_count_the_totals_of_today() -> None:
     assert "**sessantatré**" in text and len(coded_routes()) == 63
     assert "**trentaquattro**" in text.split("i port diventano", 1)[1].split("le rotte", 1)[1]
     assert len(coded_commands()) == 34
-    assert "**quattordici**" in text and len(production_catalogue().specs()) == 14
+    assert "**diciassette**" in text and len(production_catalogue().specs()) == 17
     assert "**sei**" in text and len(Kind) == 6
 
 
 def test_the_version_of_the_policy_is_the_one_this_adr_gives_it() -> None:
     assert f"`POLICY_VERSION` diventa `{POLICY_VERSION}`" in adr_text()
+
+
+# ----------------------------------------------------------------------------------------
+# §5 — the rows this ADR writes: the tools and the verifiers
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_tool_rows_are_the_running_tools() -> None:
+    rows = {
+        match.group(1): match.groups()
+        for line in adr_text().splitlines()
+        if (match := TOOL_ROW.match(line))
+    }
+    running = {
+        BROWSER_READ_AS_YOU: AccountReadTool,
+        BROWSER_ACT_AS_YOU: AccountActTool,
+        BROWSER_LOGIN: LoginTool,
+    }
+
+    assert set(rows) == set(running)
+    for capability, tool in running.items():
+        _, class_name, name, idempotent, errors, numbers = rows[capability]
+        assert class_name == tool.__name__
+        assert name == capability.replace(".", "-").replace("_", "-")
+        assert (idempotent == "sì") is tool.idempotent
+        assert codes(errors) == tool.error_codes
+        assert codes(numbers) == tool.audit_numbers
+
+
+def test_the_verifier_rows_are_the_running_verifiers() -> None:
+    rows = {
+        match.group(1): match.groups()
+        for line in adr_text().splitlines()
+        if (match := VERIFIER_ROW.match(line)) and match.group(2).endswith("Verifier")
+    }
+    running = (
+        AccountReadVerifier(FakeAccountBrowser(), 30.0),
+        AccountActVerifier(FakeAccountBrowser(), 30.0),
+        LoginVerifier(FakeAccountBrowser(), 30.0),
+    )
+
+    assert set(rows) == {verifier.capability_id for verifier in running}
+    for verifier in running:
+        _, class_name, name, conditions, failures = rows[verifier.capability_id]
+        assert class_name == type(verifier).__name__
+        assert name == verifier.name
+        assert codes(conditions) == verifier.conditions
+        assert codes(failures) == {
+            code for code in verifier.failure_codes if not code.startswith("verification.")
+        }
+
+
+def test_the_port_row_is_the_running_port() -> None:
+    line = next(line for line in adr_text().splitlines() if line.startswith("| `AccountBrowser` |"))
+
+    assert frozenset(CODE.findall(line.split("|")[4])) == frozenset(members(AccountBrowser))
+
+
+def test_a_tool_row_that_forgets_a_code_is_found() -> None:
+    """The negative case of the comparison above: one code less in a row is one code less read."""
+    row = next(line for line in adr_text().splitlines() if TOOL_ROW.match(line))
+    match = TOOL_ROW.match(row.replace("`browser.profile_busy`, ", "", 1))
+
+    assert match is not None
+    assert codes(match.group(5)) == AccountReadTool.error_codes - {"browser.profile_busy"}

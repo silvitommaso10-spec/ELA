@@ -8,8 +8,9 @@ been asked.
 
 from __future__ import annotations
 
-from ela.testing.fakes import FakeBrowser
+from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakeClock
 from ela.tools.browser import BROWSER_TIMEOUT_SECONDS, Browsing
+from ela.tools.vault import VaultDoor
 
 
 def no_sites() -> Browsing:
@@ -18,6 +19,18 @@ def no_sites() -> Browsing:
 
 def a_browser() -> FakeBrowser:
     return FakeBrowser()
+
+
+def an_account_browser() -> FakeAccountBrowser:
+    """The browser with the profile of a test that opens nothing (M13.9): another object than
+    :func:`a_browser`'s, as in production it is another browser."""
+    return FakeAccountBrowser()
+
+
+def a_door() -> VaultDoor:
+    """The door of a vault nobody declared: every use says which line to write, and nothing is
+    launched."""
+    return VaultDoor(None, None, None, clock=FakeClock())
 
 
 SECONDS: float = float(BROWSER_TIMEOUT_SECONDS)

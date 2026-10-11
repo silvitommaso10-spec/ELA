@@ -66,6 +66,9 @@ def test_the_levels_did_not_move() -> None:
         CapabilityId("browser.read"): RiskLevel.LOW,
         CapabilityId("browser.act"): RiskLevel.HIGH,
         CapabilityId("browser.guided"): RiskLevel.MEDIUM,
+        CapabilityId("browser.read_as_you"): RiskLevel.MEDIUM,
+        CapabilityId("browser.act_as_you"): RiskLevel.HIGH,
+        CapabilityId("browser.login"): RiskLevel.HIGH,
     }
 
 

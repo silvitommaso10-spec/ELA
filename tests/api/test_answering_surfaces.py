@@ -19,7 +19,16 @@ import pytest
 
 from ela.api.schemas import Asked
 from ela.cli.system import QUESTION_FIELDS, _questions
-from ela.permissions import BROWSER_ACT, BROWSER_READ, FS_READ, FS_WRITE, TERMINAL_RUN
+from ela.permissions import (
+    BROWSER_ACT,
+    BROWSER_ACT_AS_YOU,
+    BROWSER_LOGIN,
+    BROWSER_READ,
+    BROWSER_READ_AS_YOU,
+    FS_READ,
+    FS_WRITE,
+    TERMINAL_RUN,
+)
 from ela.testing.fakes import (
     FakeClock,
     FakeIdGenerator,
@@ -30,6 +39,8 @@ from ela.testing.fakes import (
     FakeScreenCapture,
     FakeSpeech,
     FakeTextRecognition,
+    FakeVault,
+    FakeVaultEntry,
 )
 from ela.tools import (
     CREATES,
@@ -39,9 +50,12 @@ from ela.tools import (
     CaptureStore,
     production_tools,
 )
+from ela.tools.account import ACTS_AS_YOU, LOGS_IN, READS_AS_YOU
 from ela.tools.browser import ACTS, OPENS, Browsing
+from ela.tools.programs import identity_of
 from ela.tools.terminal import RUNS
-from tests.tools.browsers import a_browser
+from ela.tools.vault import VaultDoor
+from tests.tools.browsers import a_browser, an_account_browser
 from tests.tools.guided import GATEWAY, a_room, a_session
 from tests.tools.terminals import a_launcher, a_terminal
 
@@ -228,15 +242,29 @@ def test_no_surface_owns_a_sentence_about_files(surface: str) -> None:
         )
 
 
+def an_open_door(folder: Path) -> VaultDoor:
+    """The door of a vault that is open and holds one entry for the site of the test: what a
+    login needs to get as far as its question."""
+    at = folder / "bw"
+    at.write_bytes(b"\xcf\xfa\xed\xfe a native program")
+    at.chmod(0o700)
+    entry = FakeVaultEntry("an-id", "Il sito", ("https://example.com/",), "u", "w", "u")
+    return VaultDoor(FakeVault([entry]), str(at), identity_of(str(at)[1:]), clock=FakeClock())
+
+
 async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path) -> None:
     """And the closed world on the other side: which capabilities fill ``does``, and with what.
 
     Every production tool is asked what it would do, with arguments that are valid for it. The
-    two that touch a file and the one that runs a program answer with their own sentence; the two
-    of the browser answer theirs in the visit, not in a target (M13.4) — a site is not a file
-    anybody resolved —; the nine that do not answer nothing — ``browser.guided`` among them, whose
+    two that touch a file and the one that runs a program answer with their own sentence; the
+    tools of the browser answer theirs in the visit, not in a target (M13.4) — a site is not a
+    file anybody resolved —; the others answer nothing — ``browser.guided`` among them, whose
     question is its own piece (M14.3) — so another that started answering would show up here
     without a line.
+
+    **«The site sees a visitor» stays where it is true** (M13.9, the third criterion of the
+    registration): the two of the empty browser say it, and the three of the browser with the
+    profile say «as you».
     """
     root = tmp_path.resolve() / "files"
     root.mkdir()
@@ -255,6 +283,8 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
         gestures=a_room(),
         sessions=a_session(),
         gateway=GATEWAY,
+        accounts=an_account_browser(),
+        vault=an_open_door(tmp_path),
     )
     arguments = {
         FS_READ: {"path": "ELA/c.md", "purpose": "x"},
@@ -265,6 +295,24 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
             "site": "example.com",
             "path": "/",
             "fill": [],
+            "click": "button",
+            "expect_text": "ok",
+            "purpose": "x",
+        },
+        BROWSER_READ_AS_YOU: {"site": "example.com", "path": "/", "purpose": "x"},
+        BROWSER_ACT_AS_YOU: {
+            "site": "example.com",
+            "path": "/",
+            "fill": [],
+            "click": "button",
+            "expect_text": "ok",
+            "purpose": "x",
+        },
+        BROWSER_LOGIN: {
+            "site": "example.com",
+            "path": "/login",
+            "username_field": "#user",
+            "password_field": "#word",
             "click": "button",
             "expect_text": "ok",
             "purpose": "x",
@@ -287,7 +335,14 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
         TERMINAL_RUN: RUNS,
         BROWSER_READ: OPENS,
         BROWSER_ACT: ACTS,
+        BROWSER_READ_AS_YOU: READS_AS_YOU,
+        BROWSER_ACT_AS_YOU: ACTS_AS_YOU,
+        BROWSER_LOGIN: LOGS_IN,
     }
+    for capability, found in said.items():
+        as_you = capability in {BROWSER_READ_AS_YOU, BROWSER_ACT_AS_YOU, BROWSER_LOGIN}
+        assert ("as you" in found.does) is as_you, capability
+        assert ("visitor" in found.does) is (capability in {BROWSER_READ, BROWSER_ACT}), capability
 
 
 def test_the_claims_are_about_fields_that_exist() -> None:
