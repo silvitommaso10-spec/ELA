@@ -45,6 +45,7 @@ from httpx import ASGITransport, AsyncClient, Response
 
 from ela.api import create_app
 from ela.api.app import FAILURES, NOT_YOUR_WORK
+from ela.api.browser import BrowserRefusedError
 from ela.api.console import PolicyOutOfReachError
 from ela.api.errors import (
     DatabaseUnavailableError,
@@ -495,6 +496,12 @@ async def a_key_of_the_vault_from_a_socket_that_is_not_this_machine_s(live: Live
     return await live.client.post("/vault/session", json={"key": "a key nobody tries"})
 
 
+async def a_window_on_a_site_nobody_declared(live: Live) -> Response:
+    """Refused before the profile is looked at, so on every machine: where ELA opens the window
+    is a declared site, or nowhere."""
+    return await live.client.post("/browser/open", json={"site": "altrove.example"})
+
+
 RAISED: tuple[Raised, ...] = (
     Raised(
         NotFoundError,
@@ -747,6 +754,15 @@ RAISED: tuple[Raised, ...] = (
         "vault.refused",
         "only from this machine",
         a_key_of_the_vault_from_a_socket_that_is_not_this_machine_s,
+    ),
+    Raised(
+        BrowserRefusedError,
+        "POST",
+        "/browser/open",
+        409,
+        "browser.refused",
+        "browser.site_undeclared",
+        a_window_on_a_site_nobody_declared,
     ),
 )
 

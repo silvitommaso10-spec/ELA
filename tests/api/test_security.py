@@ -61,7 +61,7 @@ from tests.composition.support import TOKEN
 OTHER = "y" * 40
 
 
-def test_the_application_serves_the_sixty_three_routes_of_the_adrs_and_its_schema(
+def test_the_application_serves_the_sixty_six_routes_of_the_adrs_and_its_schema(
     app: FastAPI,
 ) -> None:
     """Twelve routes (ADR 0023 §6), the two of ADR 0024 §5, the one of ADR 0025 §4, the one of
@@ -71,8 +71,8 @@ def test_the_application_serves_the_sixty_three_routes_of_the_adrs_and_its_schem
     (``GET /spend``, M14.1), the one of ADR 0058 §8 (``POST /tasks/{task_id}/planning``,
     M14.2) and the one of ADR 0060 (``POST /sessions/{session}/v1/messages``, the gateway of a
     guided session, M14.3), the eight of ADR 0062 (the four of ``/policies`` and the four of
-    ``/console/policies``, M13.12) and the three of ADR 0063 (the vault's, M13.9), plus
-    ``/openapi.json``,
+    ``/console/policies``, M13.12) and the six of ADR 0063 (the vault's and the browser's,
+    M13.9), plus ``/openapi.json``,
     which the loop below proves is behind the token like everything else — the schema of the API
     is not a page, and the pages of a surface are not in it: a browser cannot send a header,
     and what reaches them is a cookie."""
@@ -89,7 +89,8 @@ def test_the_application_serves_the_sixty_three_routes_of_the_adrs_and_its_schem
     assert ("POST", "/policies/{policy_id}/revoke") in paths
     assert ("GET", "/console/policies") in paths
     assert ("POST", "/vault/session") in paths
-    assert len(paths) == 64
+    assert ("POST", "/browser/open") in paths
+    assert len(paths) == 67
     assert not {path for _, path in paths} & {"/docs", "/redoc"}
 
 

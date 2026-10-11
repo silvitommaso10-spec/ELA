@@ -248,12 +248,12 @@ def test_the_commands_of_the_adr_are_the_commands_of_the_code() -> None:
     assert set(documented_commands()) == coded_commands()
 
 
-def test_there_are_thirty_four_of_them() -> None:
+def test_there_are_thirty_eight_of_them() -> None:
     """Twenty-six until ADR 0049 added ``ela task finished``, the client of its one route,
     twenty-seven until ADR 0057 added ``ela spend``, the client of its, twenty-eight until ADR
     0062 added the three of ``ela policy``, and thirty-one until ADR 0063 added the three of
-    ``ela vault``."""
-    assert len(coded_commands()) == 34
+    ``ela vault`` and the four of ``ela browser``."""
+    assert len(coded_commands()) == 38
 
 
 def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
@@ -282,6 +282,10 @@ def test_the_commands_after_adr_0024_are_the_ones_the_later_adrs_add() -> None:
         "vault status",
         "vault open",
         "vault close",
+        "browser status",
+        "browser window show",
+        "browser window hide",
+        "browser open",
     }
 
 

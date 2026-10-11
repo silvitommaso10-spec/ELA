@@ -73,6 +73,10 @@ INVOCATIONS: dict[str, tuple[str, ...]] = {
     "vault status": ("vault", "status"),
     "vault open": ("vault", "open"),
     "vault close": ("vault", "close"),
+    "browser status": ("browser", "status"),
+    "browser window show": ("browser", "window", "show"),
+    "browser window hide": ("browser", "window", "hide"),
+    "browser open": ("browser", "open"),
 }
 """One valid invocation per command that talks to ELA — valid, so that what is being tested is
 how it *ends* and not that its arguments were wrong. ``init`` and ``serve`` are not here: they

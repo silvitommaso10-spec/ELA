@@ -24,6 +24,7 @@ import pytest
 from ela.composition import Ela, Settings, build
 from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.composition.system import WindowSwitch, while_the_user_signs_in, without_node_variables
+from ela.domain import ActorKind, AuditEventType
 from ela.infrastructure.machine import AccountChrome, PlaywrightBrowser
 from ela.permissions import (
     BROWSER_ACT,
@@ -285,6 +286,36 @@ async def test_the_question_looks_at_the_profile_each_time_it_is_asked() -> None
     closed = await not_now()
 
     assert open_ is not None and closed is None
+
+
+# ----------------------------------------------------------------------------------------
+# The end of the sign-in window is told to the audit
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_end_of_a_sign_in_window_is_a_row_of_the_audit_signed_by_ela(ela: Ela) -> None:
+    """A closing no route asked for — the user closed the window, ELA stopped — would be left
+    without a row: who waits for the process writes it (ADR 0063 §8). The site if there was one,
+    and how long the window stayed open, in whole seconds: never an address, and nothing of what
+    was done in it — ELA does not know."""
+    adapter = ela.accounts
+    assert isinstance(adapter, AccountChrome)
+
+    await adapter._ended("https://www.youtube.com/feed/you?tab=1", 12.9)
+    await adapter._ended(None, 0.4)
+
+    closed = [
+        event
+        for event in await ela.audit.read()
+        if event.event_type is AuditEventType.BROWSER_WINDOW_CLOSED
+    ]
+    assert [dict(event.payload) for event in closed] == [
+        {"site": "www.youtube.com", "seconds": 12},
+        {"site": None, "seconds": 0},
+    ]
+    assert all(event.actor.kind is ActorKind.ELA for event in closed)
+    assert all(event.task_id is None for event in closed), "a window is no task's"
+    assert "feed" not in repr([(event.summary, event.payload) for event in closed])
 
 
 # ----------------------------------------------------------------------------------------
