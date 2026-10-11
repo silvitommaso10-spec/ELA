@@ -69,6 +69,9 @@ class Window:
         source = SOURCE.read_text(encoding="utf-8")
         self.binary.write_text(f"#!{sys.executable}\n{source}", encoding="utf-8")
         self.binary.chmod(self.binary.stat().st_mode | stat.S_IXUSR)
+        self.started: list[int] = []
+        """The pid of every process the test started, counted where it is started: one that was
+        ended before it could say it was ready is here all the same."""
 
     def set(self, **behaviour: bool) -> None:
         (self.folder / "behaviour.json").write_text(json.dumps(behaviour), encoding="utf-8")
@@ -97,21 +100,18 @@ def window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Window]:
     registry = tmp_path / "registry"
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(registry))
     made = Window(registry)
-    started: list[int] = []
     start = asyncio.create_subprocess_exec
 
     async def counted(*arguments: Any, **options: Any) -> Any:
-        # Counted where it is started, and not where it says it is ready: a test that fails
-        # before the program has written its line has started it all the same.
         process = await start(*arguments, **options)
-        started.append(process.pid)
+        made.started.append(process.pid)
         return process
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", counted)
     try:
         yield made
     finally:
-        for pid in started:
+        for pid in made.started:
             if running(pid):
                 os.kill(pid, signal.SIGKILL)
 
@@ -144,6 +144,18 @@ def chrome(profile: Path, told: Told | None = None) -> AccountChrome:
         shown=lambda: False,
         **({} if told is None else {"ended": told}),
     )
+
+
+@pytest.fixture
+def born_deaf() -> Iterator[None]:
+    """A process started while this holds ignores ``SIGTERM`` **from its first instant** — what
+    is ignored is inherited by a child —: a window that is told before it has run a line of its
+    own stays, as the browser that does not end when told."""
+    before = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, before)
 
 
 async def never() -> None:
@@ -218,6 +230,8 @@ async def test_a_window_with_no_address_is_started_with_none(
         "",
         " https://accounts.example/",
         "https://accounts.example/ --remote-debugging-port=9222",
+        "https://" + "@".join(("somebody:a-word", "accounts.example/")),
+        "https://[not-an-address/",
     ],
 )
 async def test_the_window_opens_on_an_https_address_of_a_site_or_on_none(
@@ -313,6 +327,33 @@ async def test_a_window_that_does_not_end_when_told_is_killed_at_the_grace_and_n
     assert [address for address, _ in told.said] == [None], "killed or not, its end is said"
 
 
+async def test_a_group_that_has_ended_and_is_not_collected_yet_is_a_group_with_nothing_to_kill(
+    window: Window, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The grace runs out on a window that has just ended and that the loop has not collected.
+    Asked to kill such a group, macOS answers «not permitted» — measured on 2026-10-11, where
+    Linux answers nothing. **The test gives that answer on every system**, once the group has
+    been ended for real: the close of ELA goes on, and does not end there with the system's
+    error."""
+    window.set(deaf=True)
+    made = chrome(tmp_path / "profile")
+    await made.window(None)
+    (one,) = await window.launches(1)
+    killpg = os.killpg
+
+    def not_permitted(group: int, sent: int) -> None:
+        killpg(group, sent)
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", not_permitted)
+
+    made._stopping.set()
+    names = await asyncio.wait_for(made.settle(at_once), PATIENCE)
+
+    assert names == (WINDOW_NAME,)
+    assert await gone(one["pid"])
+
+
 async def test_an_end_nobody_could_write_down_does_not_stop_ela_s_close(
     window: Window, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -388,11 +429,12 @@ async def test_a_caller_that_goes_away_while_the_window_starts_does_not_leave_it
 
 
 async def test_a_close_that_arrives_while_the_window_starts_waits_for_it_and_ends_it(
-    window: Window, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    window: Window, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, born_deaf: None
 ) -> None:
     """The stop is raised when the launch has passed its last look at it and the process does not
     exist yet. The close does not call the folder free while a window is being started on it: it
-    waits for the launch, and the window it started is told, waited for and — deaf — killed."""
+    waits for the launch, and the window it started is told, waited for and — deaf from its
+    first instant, because it is told in its first instant — killed."""
     window.set(deaf=True)
     starting = Starting(monkeypatch, hold="before")
     made = chrome(tmp_path / "profile")
@@ -408,9 +450,9 @@ async def test_a_close_that_arrives_while_the_window_starts_waits_for_it_and_end
     names = await asyncio.wait_for(settling, PATIENCE)
     await asyncio.wait_for(asking, PATIENCE)
 
-    (one,) = await window.launches(1)
+    (started,) = window.started
     assert names == (WINDOW_NAME,)
-    assert await gone(one["pid"])
+    assert await gone(started)
 
 
 async def test_a_stop_raised_while_the_folder_is_prepared_starts_no_window(

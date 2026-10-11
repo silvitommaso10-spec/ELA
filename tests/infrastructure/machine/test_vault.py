@@ -561,6 +561,36 @@ async def test_a_bw_that_does_not_answer_is_killed_with_its_group_at_the_deadlin
     assert not running(hung["pid"]), "and not left behind"
 
 
+async def test_a_group_that_has_ended_and_is_not_collected_yet_is_a_group_with_nothing_to_kill(
+    bw: Bw, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The time of a ``bw`` runs out the moment it ends, before the loop has collected it. Asked
+    to kill such a group, macOS answers «not permitted» — measured on 2026-10-11, where Linux
+    answers nothing. **The test gives that answer on every system**, once the group has been
+    ended for real: what leaves is the adapter's own «did not answer», and not the system's
+    error."""
+    from ela.ports import VaultTimeout
+
+    bw.set(hang=["status"])
+    made = vault(bw, timeout_seconds=2.0)
+    killpg = os.killpg
+
+    def not_permitted(group: int, sent: int) -> None:
+        killpg(group, sent)
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", not_permitted)
+
+    with pytest.raises(VaultTimeout):
+        await made.status()
+
+    (hung,) = bw.calls()
+    deadline = asyncio.get_running_loop().time() + 10
+    while running(hung["pid"]) and asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.02)
+    assert not running(hung["pid"])
+
+
 async def test_a_wait_that_is_cancelled_does_not_leave_bw_running_nor_what_it_started(
     bw: Bw,
 ) -> None:
