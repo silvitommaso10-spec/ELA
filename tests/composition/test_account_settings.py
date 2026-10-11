@@ -17,6 +17,8 @@ that is not there is said then, with its own code.
 
 from __future__ import annotations
 
+import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -31,6 +33,18 @@ from tests.composition.support import CAPTURES, FS_ROOT, WORKSPACE, declare
 PROFILE = "ELA_BROWSER_PROFILE_DIR"
 PROGRAM = "ELA_VAULT_PROGRAM"
 STATE = "ELA_NODE_STATE_DIR"
+
+
+def _ignores_case() -> bool:
+    """Whether the volume these tests build their folders on holds one folder under two
+    spellings: asked of the volume, by making a folder and looking for it in capitals."""
+    with tempfile.TemporaryDirectory() as made:
+        (Path(made) / "a-name").mkdir()
+        return (Path(made) / "A-NAME").is_dir()
+
+
+IGNORES_CASE = _ignores_case()
+ONE_SPELLING = "this volume tells the cases of a name apart: a folder has one spelling on it"
 
 
 def loaded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **extra: str) -> Settings:
@@ -138,7 +152,8 @@ def test_a_folder_that_is_already_there_is_accepted_as_it_is(
     """Whether it is narrow enough and the user's own is asked when it is used, with its own code
     (``browser.profile_unsafe``): the settings do not look, and do not narrow it."""
     profile = tmp_path / "profile"
-    profile.mkdir(mode=0o755)
+    profile.mkdir()
+    profile.chmod(0o755)  # set, and not left to the umask of whoever runs the suite
 
     assert loaded(monkeypatch, tmp_path, **{PROFILE: str(profile)}).accounts.browser_profile_dir
     assert profile.stat().st_mode & 0o777 == 0o755
@@ -225,6 +240,44 @@ def test_a_folder_beside_the_two_that_are_copied_is_accepted(
     beside = home / "Library" / "Application Support" / "ela-profile"
 
     assert loaded(monkeypatch, tmp_path, **{PROFILE: str(beside)}).accounts.browser_profile_dir
+
+
+@pytest.mark.skipif(not IGNORES_CASE, reason=ONE_SPELLING)
+@pytest.mark.parametrize("where", ["the-tree", "copied-elsewhere", "the-captures", "the-workspace"])
+def test_a_folder_written_in_another_case_is_where_it_is_and_not_where_it_is_spelled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, home: Path, where: str
+) -> None:
+    """The volume of a Mac ignores the case of a name, and resolving a path leaves its spelling as
+    it was written: a profile typed in lower case inside ELA's own tree, a folder that leaves the
+    machine or one of ELA's stores **is inside it**, whatever the comparison of two spellings
+    says. Where a folder is, is asked of the volume."""
+    extra: dict[str, str] = {}
+    if where == "the-tree":
+        installed = tmp_path / "Site-Packages" / "ela"
+        installed.mkdir(parents=True)
+        monkeypatch.setattr(ela, "__file__", str(installed / "__init__.py"))
+        profile, expected = tmp_path / "site-packages" / "profile", "ELA's own source tree"
+    elif where == "copied-elsewhere":
+        (home / "Library" / "Mobile Documents").mkdir(parents=True)
+        profile = home / "library" / "mobile documents" / "ela" / "profile"
+        expected = "leaves this machine"
+    else:
+        which = {"the-captures": CAPTURES, "the-workspace": WORKSPACE}[where]
+        store = tmp_path / "Stores" / "Theirs"
+        store.mkdir(parents=True)
+        extra[which] = str(store)
+        profile, expected = tmp_path / "stores" / "theirs" / "profile", "contain one another"
+
+    message = refused(monkeypatch, tmp_path, **extra, **{PROFILE: str(profile)})
+
+    assert PROFILE in message and expected in message
+
+
+def test_on_a_mac_the_two_spellings_are_one_folder_and_the_test_above_ran() -> None:
+    """A skip on the system a test covers turns the suite red: the browser with the profile runs
+    on the Mac, whose volume ignores case, and there the test of the two spellings is not one a
+    count of skips may hide."""
+    assert sys.platform != "darwin" or IGNORES_CASE, ONE_SPELLING
 
 
 def test_where_the_folder_is_is_asked_of_the_path_resolved(

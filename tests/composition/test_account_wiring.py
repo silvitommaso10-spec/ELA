@@ -278,6 +278,23 @@ async def test_a_window_ela_cannot_look_for_is_a_doubt_and_a_doubt_refuses(
     assert str(doubt) in reason
 
 
+async def test_a_holder_ela_has_no_sentence_for_is_a_doubt_too() -> None:
+    """Fail-safe: the one holder that lets ELA look and listen is a step of its own — nobody
+    types a password into a page ELA drives. A holder the port comes to name and this table does
+    not is not «nobody»: it is somebody ELA cannot say anything about."""
+    accounts = FakeAccountBrowser(holder="a-holder-nobody-wrote-a-sentence-for")
+
+    reason = await while_the_user_signs_in(accounts)()
+
+    assert reason is not None and "a-holder-nobody-wrote-a-sentence-for" in reason
+
+
+async def test_a_step_of_ela_s_own_is_no_hand_on_the_profile() -> None:
+    accounts = FakeAccountBrowser(holder=PROFILE_STEP)
+
+    assert await while_the_user_signs_in(accounts)() is None
+
+
 async def test_the_question_looks_at_the_profile_each_time_it_is_asked() -> None:
     accounts = FakeAccountBrowser(holder=PROFILE_WINDOW)
     not_now = while_the_user_signs_in(accounts)
@@ -303,6 +320,7 @@ async def test_the_end_of_a_sign_in_window_is_a_row_of_the_audit_signed_by_ela(e
 
     await adapter._ended("https://www.youtube.com/feed/you?tab=1", 12.9)
     await adapter._ended(None, 0.4)
+    await adapter._ended("https://somebody@accounts.example:8443/signin", 3.0)
 
     closed = [
         event
@@ -312,10 +330,13 @@ async def test_the_end_of_a_sign_in_window_is_a_row_of_the_audit_signed_by_ela(e
     assert [dict(event.payload) for event in closed] == [
         {"site": "www.youtube.com", "seconds": 12},
         {"site": None, "seconds": 0},
+        {"site": "accounts.example", "seconds": 3},
     ]
     assert all(event.actor.kind is ActorKind.ELA for event in closed)
     assert all(event.task_id is None for event in closed), "a window is no task's"
-    assert "feed" not in repr([(event.summary, event.payload) for event in closed])
+    said = repr([(event.summary, event.payload) for event in closed])
+    assert "feed" not in said
+    assert "somebody" not in said and "8443" not in said, "the site: no name, and no port"
 
 
 # ----------------------------------------------------------------------------------------
