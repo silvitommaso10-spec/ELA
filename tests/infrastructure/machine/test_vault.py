@@ -467,7 +467,9 @@ async def test_everything_the_adapter_launched_in_these_tests_is_on_the_closed_l
         ("m", "…"),
         ("m@example.com", "…@example.com"),
         ("", ""),
-        ("@example.com", "…@example.com"),
+        ("@example.com", "@…"),
+        ("@mario_rossi", "@…"),
+        ("@", "…"),
         ("a@b@c.example", "a…@c.example"),
     ],
 )

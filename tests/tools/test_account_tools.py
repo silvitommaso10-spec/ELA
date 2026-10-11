@@ -874,6 +874,117 @@ async def test_a_task_stopped_before_the_first_gesture_takes_no_password(tmp_pat
     assert browser.closed == ["page-1"]
 
 
+async def test_a_stop_that_arrives_while_the_vault_is_asked_types_nothing(
+    tmp_path: Path,
+) -> None:
+    """The reading of the entry takes seconds — the door, the program, ``bw get item`` —, and a
+    «ferma» given meanwhile found nobody looking: the username was typed after it (re-read of
+    2026-10-11, defect 4). Whatever the vault answered, nothing of it is typed."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+    stop, take = FakeStop(), vault.take
+
+    async def take_while_the_user_says_stop(entry: str) -> Any:
+        taken = await take(entry)
+        stop.event.set()
+        return taken
+
+    vault.take = take_while_the_user_says_stop  # type: ignore[method-assign]
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, stop)
+
+    assert result.error is not None and result.error.code == STOPPED
+    assert browser.secrets == [] and browser.clicks == []
+    assert result.output["gestures"] == 0
+    assert TYPED not in repr(result) and USERNAME not in repr(result)
+
+
+async def test_two_questions_for_the_same_call_that_named_different_entries_type_neither(
+    tmp_path: Path,
+) -> None:
+    """One tool serves every task, and what it remembers of a question is keyed by the call. The
+    same plan asked twice, with the vault changed in between: the second question named another
+    entry and took the place of the first — and a yes to the first typed the second's password
+    (re-read of 2026-10-11, defect 3). A yes covers the entry its question named: when ELA cannot
+    tell which that was, it types none, and the next question starts clean."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)  # the first question names Mario's entry
+    vault.entries = [ANNA]
+    second = await tool.prospect(LOGIN)  # the same call, asked again: it names Anna's
+    vault.calls.clear()
+
+    first_yes = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+    second_yes = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+    await asked(tool)
+    after_asking_again = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert second.visit is not None and second.visit.entry == ANNA.name
+    for refused in (first_yes, second_yes):
+        assert refused.error is not None and refused.error.code == ENTRY_FORGOTTEN
+    assert "different entries" in str(first_yes.error and first_yes.error.message)
+    assert not any(call.startswith("take") for call in vault.calls[:-1]), "nothing was read"
+    assert after_asking_again.status is ExecutionStatus.SUCCEEDED, after_asking_again.error
+    assert [typed for _, typed in browser.secrets] == [ANNA.username, ANNA.password]
+
+
+async def test_the_same_question_asked_again_with_the_same_entry_keeps_its_memory(
+    tmp_path: Path,
+) -> None:
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+    await asked(tool)
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+
+
+async def test_an_entry_with_no_name_is_still_named_in_the_question(tmp_path: Path) -> None:
+    """ADR 0063 §9: every surface that offers a yes shows the entry and its owner, or does not
+    answer. An entry the user never named reached the question with **neither** — the facts are
+    written only for a visit that names an entry (defect 6). It is named for what it is."""
+    nameless = FakeVaultEntry(MARIO.id, "", MARIO.addresses, USERNAME, TYPED, MARIO.shown)
+    tool = await login(FakeAccountBrowser(page()), FakeVault([nameless]), tmp_path)
+
+    visit = (await tool.prospect(LOGIN)).visit
+
+    assert visit is not None
+    assert visit.entry == "(an entry of your vault that has no name)"
+    assert visit.username == MARIO.shown
+
+
+async def test_a_field_that_changed_while_the_vault_was_asked_gets_no_password(
+    tmp_path: Path,
+) -> None:
+    """The page was looked at, then the vault was awaited for seconds, then the fields were
+    typed: a page that turns its password field into a text field meanwhile — or its form into
+    one that sends with GET — would have shown the password, or put it in an address. The field
+    is looked at again when the password is in hand, and before any of it is typed."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+    take = vault.take
+
+    async def take_while_the_page_changes(entry: str) -> Any:
+        browser.page.fields["#word"] = Field("text", "current-password", "post")
+        return await take(entry)
+
+    vault.take = take_while_the_page_changes  # type: ignore[method-assign]
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == NOT_A_PASSWORD_FIELD
+    assert browser.secrets == [] and browser.clicks == []
+    assert result.output["gestures"] == 0
+
+
 async def test_a_task_stopped_after_the_first_gesture_types_no_password(tmp_path: Path) -> None:
     """No gesture follows a stop (M6.3c): the username was typed, and the password is not."""
     vault = FakeVault([MARIO])
