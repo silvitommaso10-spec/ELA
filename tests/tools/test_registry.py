@@ -63,6 +63,7 @@ from ela.tools import (
     tools_v01,
     verifiers_v01,
 )
+from ela.tools.base import any_moment
 from tests.routing.support import routing_for
 from tests.tools.browsers import SECONDS, a_browser, a_door, an_account_browser, no_sites
 from tests.tools.guided import GATEWAY, a_room, a_session
@@ -262,6 +263,7 @@ def _production(tmp_path: Path) -> tuple[ToolRegistry, VerifierRegistry, Capture
         gateway=GATEWAY,
         accounts=an_account_browser(),
         vault=a_door(),
+        not_now=any_moment,
     )
     verifiers = production_verifiers(
         root=tmp_path,

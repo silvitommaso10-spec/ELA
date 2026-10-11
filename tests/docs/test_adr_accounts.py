@@ -6,10 +6,12 @@ grows with it. Today: the totals of today, which this ADR is the last to change.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
 from ela.api.security import Kind
+from ela.composition.system import SIGNING_IN
 from ela.permissions import (
     BROWSER_ACT_AS_YOU,
     BROWSER_GUIDED_AS_YOU,
@@ -18,7 +20,7 @@ from ela.permissions import (
     POLICY_VERSION,
     production_catalogue,
 )
-from ela.ports import AccountBrowser
+from ela.ports import PROFILE_PROCESS, PROFILE_WINDOW, AccountBrowser
 from ela.testing.fakes import FakeAccountBrowser, FakeAuditLog
 from ela.tools.account import (
     AccountActTool,
@@ -28,6 +30,7 @@ from ela.tools.account import (
     LoginTool,
     LoginVerifier,
 )
+from ela.tools.base import Perceiving
 from ela.tools.guided import SESSION_AS_YOU, BrowserGuidedTool, BrowserGuidedVerifier
 from tests.architecture.rules import RULES
 from tests.contracts.protocols import members, port_protocols
@@ -170,3 +173,52 @@ def test_the_session_with_the_profile_is_the_other_kind_and_its_gestures_are_the
     assert "unless the goal asks" in SESSION_AS_YOU.instructions
     covered = production_catalogue().get(BROWSER_GUIDED_AS_YOU).covers
     assert covered is not None and covered.capability_id == SESSION_AS_YOU.gestures.read
+
+
+# ----------------------------------------------------------------------------------------
+# §7 — while the user signs in by hand, ELA neither looks nor listens
+# ----------------------------------------------------------------------------------------
+
+NOT_NOW_ROW = re.compile(r"^\| `(perception\.[a-z_]+)` \| `(\w+)` \| `([a-z_.]+)` \| `([^`]+)` \|$")
+REASON_ROW = re.compile(r"^\| `(window|process|step)` \| `([^`]+)` \|$")
+
+
+def test_the_rows_of_the_tools_that_refuse_while_a_hand_is_on_the_profile_are_the_running_ones(
+    tmp_path: Path,
+) -> None:
+    """Every tool of the production registry that can be told «not now», with its code and its
+    words — a closed world: a tool that looks or listens and is not in the table is found."""
+    from tests.tools.test_registry import _production
+
+    rows = {
+        match.group(1): match.groups()[1:]
+        for line in adr_text().splitlines()
+        if (match := NOT_NOW_ROW.match(line))
+    }
+    tools, _, _ = _production(tmp_path)
+    running = {
+        tool.capability_id: (type(tool).__name__, tool.not_now_code, tool.meanwhile)
+        for tool in tools.tools()
+        if isinstance(tool, Perceiving)
+    }
+
+    assert rows == running
+    assert set(running) == {
+        tool.capability_id
+        for tool in tools.tools()
+        if str(tool.capability_id).startswith("perception.")
+    }, "every capability of perception is one that can be told «not now»"
+    for tool in tools.tools():
+        if isinstance(tool, Perceiving):
+            assert tool.not_now_code in tool.error_codes
+
+
+def test_the_reasons_of_the_adr_are_the_ones_the_composition_gives() -> None:
+    rows = {
+        match.group(1): match.group(2)
+        for line in adr_text().splitlines()
+        if (match := REASON_ROW.match(line))
+    }
+
+    assert rows == SIGNING_IN
+    assert set(rows) == {PROFILE_WINDOW, PROFILE_PROCESS}, "a step of ELA's own refuses nothing"

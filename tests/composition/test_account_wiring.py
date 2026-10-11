@@ -23,7 +23,7 @@ import pytest
 
 from ela.composition import Ela, Settings, build
 from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
-from ela.composition.system import WindowSwitch, without_node_variables
+from ela.composition.system import WindowSwitch, while_the_user_signs_in, without_node_variables
 from ela.infrastructure.machine import AccountChrome, PlaywrightBrowser
 from ela.permissions import (
     BROWSER_ACT,
@@ -32,8 +32,20 @@ from ela.permissions import (
     BROWSER_READ,
     BROWSER_READ_AS_YOU,
 )
-from ela.ports import Browser
+from ela.ports import (
+    PROFILE_PROCESS,
+    PROFILE_STEP,
+    PROFILE_WINDOW,
+    Browser,
+    BrowserFailed,
+    BrowserUnsupported,
+    ProfileUndeclared,
+    ProfileUnsafe,
+)
 from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakePower, FakeStop
+from ela.tools import PERCEPTION_CAPTURE_SCREEN, PERCEPTION_LISTEN, PERCEPTION_READ_SCREEN_TEXT
+from ela.tools.listen import LISTEN_LOGIN_WINDOW_OPEN
+from ela.tools.screen import SCREEN_LOGIN_WINDOW_OPEN
 from ela.tools.terminal import CLOSED_PATH, LANGUAGE
 from tests.composition.support import create_schema, database_url, declare
 from tests.composition.test_node_variables import driver_of_this_process, environment_names
@@ -163,6 +175,116 @@ def test_a_tool_of_the_empty_browser_handed_the_profile_is_found(tmp_path: Path)
         if one.name in right:
             one._browser = empty if one.capability_id in EMPTY else accounts
     assert misplaced(tools, verifiers, empty, accounts) == []
+
+
+# ----------------------------------------------------------------------------------------
+# While the user signs in by hand, ELA neither looks nor listens (decision 41)
+# ----------------------------------------------------------------------------------------
+
+LOOKS_OR_LISTENS = {
+    PERCEPTION_CAPTURE_SCREEN: SCREEN_LOGIN_WINDOW_OPEN,
+    PERCEPTION_READ_SCREEN_TEXT: SCREEN_LOGIN_WINDOW_OPEN,
+    PERCEPTION_LISTEN: LISTEN_LOGIN_WINDOW_OPEN,
+}
+"""Every capability of ELA that looks at the screen or listens, with the code it refuses with
+while the window is open. A closed world: a tool of ``perception.`` that is not here is found."""
+
+
+async def would_refuse(ela: Ela) -> dict[str, str | None]:
+    """What each tool of perception would refuse with now, asked as the executor asks before a
+    question — by capability, ``None`` for a call that would go on."""
+    found: dict[str, str | None] = {}
+    for tool in ela.tools.tools():
+        if str(tool.capability_id).startswith("perception."):
+            refusal = (await tool.prospect({})).refusal
+            found[tool.capability_id] = None if refusal is None else refusal.code
+    return found
+
+
+@pytest.mark.parametrize(
+    ("holder", "says"),
+    [
+        pytest.param(PROFILE_WINDOW, "where you sign in by hand is open", id="the-window"),
+        pytest.param(PROFILE_PROCESS, "ELA did not start", id="a-browser-left-on-the-folder"),
+    ],
+)
+async def test_while_the_user_may_be_signing_in_no_capability_of_perception_would_start(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, holder: str, says: str
+) -> None:
+    """The window ELA opened — and a browser on the folder that ELA did not start now: a window
+    left by an ELA that was killed is the same window, and the lock is all that names it."""
+    accounts = FakeAccountBrowser(holder=holder)
+    ela = await built(monkeypatch, tmp_path, {}, accounts=accounts)
+    try:
+        found = await would_refuse(ela)
+        (capture,) = [
+            one for one in ela.tools.tools() if one.capability_id == PERCEPTION_CAPTURE_SCREEN
+        ]
+        refusal = (await capture.prospect({})).refusal
+    finally:
+        await ela.aclose()
+
+    assert found == LOOKS_OR_LISTENS
+    assert refusal is not None and says in refusal.message
+
+
+@pytest.mark.parametrize("holder", [PROFILE_STEP, None], ids=["a-step-of-ela-s", "nobody"])
+async def test_a_profile_no_hand_is_on_refuses_nothing_of_perception(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, holder: str | None
+) -> None:
+    """A step of ELA's own on the profile is no sign-in: nobody is typing a password there."""
+    accounts = FakeAccountBrowser(holder=holder)
+    ela = await built(monkeypatch, tmp_path, {}, accounts=accounts)
+    try:
+        found = await would_refuse(ela)
+    finally:
+        await ela.aclose()
+
+    assert found == dict.fromkeys(LOOKS_OR_LISTENS)
+
+
+@pytest.mark.parametrize(
+    "nothing_here",
+    [ProfileUndeclared("no folder was declared"), BrowserUnsupported("Linux")],
+    ids=["no-folder-declared", "not-a-mac"],
+)
+async def test_where_there_is_no_profile_there_is_no_window_to_wait_for(
+    nothing_here: Exception,
+) -> None:
+    """ELA opens the window on a declared folder, on a Mac: where either is missing no window of
+    ELA's can be open, and looking and listening go on as before M13.9."""
+    accounts = FakeAccountBrowser(holder=PROFILE_WINDOW)
+    accounts.raising["occupied"] = nothing_here
+
+    assert await while_the_user_signs_in(accounts)() is None
+
+
+@pytest.mark.parametrize(
+    "doubt",
+    [ProfileUnsafe("the folder is a link"), BrowserFailed("the lock could not be read")],
+    ids=["an-unfit-folder", "a-look-that-failed"],
+)
+async def test_a_window_ela_cannot_look_for_is_a_doubt_and_a_doubt_refuses(
+    doubt: Exception,
+) -> None:
+    """Fail-safe: a folder is declared, and ELA cannot say whether a hand is on it."""
+    accounts = FakeAccountBrowser()
+    accounts.raising["occupied"] = doubt
+
+    reason = await while_the_user_signs_in(accounts)()
+
+    assert reason is not None and "could not be read" in reason
+    assert str(doubt) in reason
+
+
+async def test_the_question_looks_at_the_profile_each_time_it_is_asked() -> None:
+    accounts = FakeAccountBrowser(holder=PROFILE_WINDOW)
+    not_now = while_the_user_signs_in(accounts)
+
+    open_, accounts.holder = await not_now(), None
+    closed = await not_now()
+
+    assert open_ is not None and closed is None
 
 
 # ----------------------------------------------------------------------------------------

@@ -51,6 +51,7 @@ from ela.tools import (
     production_tools,
 )
 from ela.tools.account import ACTS_AS_YOU, LOGS_IN, READS_AS_YOU
+from ela.tools.base import any_moment
 from ela.tools.browser import ACTS, OPENS, Browsing
 from ela.tools.programs import identity_of
 from ela.tools.terminal import RUNS
@@ -285,6 +286,7 @@ async def test_the_sentences_are_the_ones_the_capabilities_write(tmp_path: Path)
         gateway=GATEWAY,
         accounts=an_account_browser(),
         vault=an_open_door(tmp_path),
+        not_now=any_moment,
     )
     arguments = {
         FS_READ: {"path": "ELA/c.md", "purpose": "x"},
