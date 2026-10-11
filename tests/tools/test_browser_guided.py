@@ -35,6 +35,7 @@ from ela.testing.fakes import FakeAgentSession, FakeAuditLog, FakeStop, finished
 from ela.tools import ARGUMENTS_INVALID
 from ela.tools.guided import (
     ACT_DESCRIPTION,
+    EMPTY_SESSION,
     GUIDED_CLOSED,
     GUIDED_GESTURES_AUDITED,
     GUIDED_MAX_TOKENS,
@@ -197,6 +198,7 @@ async def test_a_step_whose_session_is_open_already_launches_nothing_and_spends_
         capability=BROWSER_GUIDED,
         sites=("www.youtube.com",),
         tools=world.session.tools,
+        gestures=EMPTY_SESSION.gestures,
     )
     assert not isinstance(opened, ErrorMetadata)
 

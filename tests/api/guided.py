@@ -34,7 +34,14 @@ from ela.composition import Ela, Settings, build, root
 from ela.ports import Clock, IdGenerator, SessionEnd, SessionHost, SessionPlan
 from ela.providers.anthropic import AnthropicGateway, AnthropicProvider, AnthropicSettings
 from ela.providers.anthropic.models import HAIKU_5_5
-from ela.testing.fakes import FAKE_SESSION_TOOLS, FakeAgentSession, FakeBrowser, FakePower, finished
+from ela.testing.fakes import (
+    FAKE_SESSION_TOOLS,
+    FakeAccountBrowser,
+    FakeAgentSession,
+    FakeBrowser,
+    FakePower,
+    finished,
+)
 from tests.api.support import AUTHORIZED, BASE
 from tests.composition.support import create_schema, declare
 from tests.providers.support import SECRET, FakeAnthropic
@@ -237,6 +244,7 @@ async def guided(
     script: Script,
     *,
     session: FakeAgentSession | None = None,
+    accounts: FakeAccountBrowser | None = None,
     **declared: str,
 ) -> AsyncIterator[Guided]:
     anthropic = Anthropic()
@@ -269,7 +277,7 @@ async def guided(
     settings = Settings.load()
     await create_schema(settings.persistence.db_url)
     browser = FakeBrowser()
-    ela = await build(settings, power=FakePower(), browser=browser)
+    ela = await build(settings, power=FakePower(), browser=browser, accounts=accounts)
     app = create_app(ela)
     script.app = app
     try:

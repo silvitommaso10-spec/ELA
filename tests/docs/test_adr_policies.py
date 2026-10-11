@@ -160,8 +160,13 @@ def test_the_checks_of_the_birth_are_the_function_s_in_its_order() -> None:
 
 
 def test_the_declarations_are_the_catalogue_s() -> None:
-    assert documented_terms(adr_text()) == coded_terms()
-    assert set(coded_terms()) == {BROWSER_GUIDED}
+    """ADR 0062's table, and since M13.9 the row ADR 0063 adds in the same form: together they
+    are every capability that declares terms."""
+    accounts = ADR_PATH.with_name("0063-browser-with-your-accounts.md").read_text(encoding="utf-8")
+    here, later = documented_terms(adr_text()), documented_terms(accounts)
+
+    assert set(here) == {BROWSER_GUIDED} and not set(here) & set(later)
+    assert here | later == coded_terms()
 
 
 def test_the_signature_and_the_constants_are_the_code_s() -> None:

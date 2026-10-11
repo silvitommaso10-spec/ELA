@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from ela.domain import (
+    CapabilityId,
     ExecutionId,
     ExecutionResult,
     ExecutionStatus,
@@ -26,7 +27,7 @@ from ela.domain import (
     WorstCase,
 )
 from ela.executive.sessions import START_WAIT_SECONDS, gesture_key
-from ela.permissions import BROWSER_GUIDED, BROWSER_READ
+from ela.permissions import BROWSER_ACT, BROWSER_ACT_AS_YOU, BROWSER_GUIDED, BROWSER_READ
 from ela.ports import (
     GUIDED_FOLDER_CHANGED,
     GUIDED_SESSION_GONE,
@@ -37,6 +38,7 @@ from ela.ports import (
 from ela.providers.anthropic.models import HAIKU_5_5
 from ela.tasks.engine import child_id
 from ela.testing.fakes import FAKE_SESSION_TOOLS
+from ela.tools.guided import EMPTY_SESSION, SESSION_AS_YOU, SessionKind
 from tests.api.guided import Guided, Script, body_of, guided, planned
 
 
@@ -44,9 +46,11 @@ def tid(task: str) -> TaskId:
     return TaskId(UUID(task))
 
 
-async def a_session(g: Guided, *, reserve: bool = True) -> tuple[TaskId, StepId, Any]:
+async def a_session(
+    g: Guided, *, reserve: bool = True, kind: SessionKind = EMPTY_SESSION
+) -> tuple[TaskId, StepId, Any]:
     """A planned session's task, its step, and — with ``reserve`` — the ``STARTED`` record the cap
-    writes for it, then the session opened in the room."""
+    writes for it, then the session opened in the room as a session of ``kind``."""
     task = tid(await planned(g))
     plan = await g.ela.repository.plan(task)
     step = plan.steps[0].id
@@ -54,11 +58,11 @@ async def a_session(g: Guided, *, reserve: bool = True) -> tuple[TaskId, StepId,
         record = ExecutionResult(
             id=ExecutionId(uuid4()),
             created_at=g.ela.clock.now(),
-            capability_id=BROWSER_GUIDED,
+            capability_id=kind.capability,
             status=ExecutionStatus.STARTED,
             task_id=task,
             step_id=step,
-            tool_name="browser-guided",
+            tool_name=kind.tool_name,
         )
         worst = WorstCase(
             amount=Decimal("0.60"),
@@ -72,9 +76,10 @@ async def a_session(g: Guided, *, reserve: bool = True) -> tuple[TaskId, StepId,
     opened = await g.ela.sessions.open(
         task,
         step,
-        capability=BROWSER_GUIDED,
+        capability=kind.capability,
         sites=("www.youtube.com",),
         tools=FAKE_SESSION_TOOLS,
+        gestures=kind.gestures,
     )
     return task, step, opened
 
@@ -286,6 +291,38 @@ async def test_a_gesture_the_room_does_not_know_or_cannot_plan_is_refused(
     assert unknown.state is TaskState.DENIED and "no such gesture" in unknown.text
     assert unplannable.state is TaskState.DENIED and "can plan" in unplannable.text
     assert (tally.looks, tally.refused) == (2, 2)
+
+
+@pytest.mark.parametrize(
+    ("kind", "own", "foreign"),
+    [
+        pytest.param(SESSION_AS_YOU, BROWSER_ACT_AS_YOU, BROWSER_ACT, id="with-the-profile"),
+        pytest.param(EMPTY_SESSION, BROWSER_ACT, BROWSER_ACT_AS_YOU, id="on-the-empty-browser"),
+    ],
+)
+async def test_the_act_a_session_counts_is_its_own_kind_s(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    kind: SessionKind,
+    own: CapabilityId,
+    foreign: CapabilityId,
+) -> None:
+    """M13.9 (ADR 0063 §6): the gestures of a session are a datum of its opening. A session with
+    the profile counts ``browser.act_as_you`` among its acts and refuses the empty browser's — and
+    a session on the empty browser the other way round."""
+    unplannable: Any = {"site": "www.youtube.com", "path": object()}
+    async with guided(monkeypatch, tmp_path, Script([])) as g:
+        _, step, _ = await a_session(g, kind=kind)
+        refused = await g.ela.sessions.gesture(step, foreign, dict(unplannable))
+        counted = await g.ela.sessions.gesture(step, own, dict(unplannable))
+        again = await g.ela.sessions.gesture(step, own, dict(unplannable))
+        tally = await g.ela.sessions.close(step, reason="done")
+
+    assert refused.state is TaskState.DENIED and "no such gesture" in refused.text
+    assert counted.state is TaskState.DENIED and "can plan" in counted.text
+    assert again.state is TaskState.DENIED and "can plan" in again.text
+    # Its own act twice and the other kind's once: counting the wrong one would say one.
+    assert (tally.looks, tally.refused, tally.acts) == (3, 3, 2)
 
 
 async def test_the_room_is_bound_once(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

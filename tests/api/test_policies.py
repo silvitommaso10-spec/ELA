@@ -113,8 +113,11 @@ async def test_the_creation_saves_the_policy_and_writes_who_created_it(
     assert policy["model"] == HAIKU_5_5
     assert policy["created_by"]["name"] == "the command line on the Core"
     assert [one["id"] for one in listed["policies"]] == [policy["id"]]
-    (admitting,) = listed["admitting"]
-    assert admitting["capability"] == "browser.guided"
+    by_capability = {one["capability"]: one for one in listed["admitting"]}
+    assert set(by_capability) == {"browser.guided", "browser.guided_as_you"}, (
+        "the two sessions, each a capability of its own: a policy of one is not the other's"
+    )
+    admitting = by_capability["browser.guided"]
     assert [limit["name"] for limit in admitting["limits"]] == ["max_cost_usd", "looks", "seconds"]
     assert admitting["uncovered"] == ["task_type"]
     (event,) = events

@@ -32,6 +32,7 @@ from ela.permissions import (
     BROWSER_ACT,
     BROWSER_ACT_AS_YOU,
     BROWSER_GUIDED,
+    BROWSER_GUIDED_AS_YOU,
     BROWSER_LOGIN,
     BROWSER_READ,
     BROWSER_READ_AS_YOU,
@@ -92,6 +93,7 @@ STAYS = frozenset(
         BROWSER_READ_AS_YOU,
         BROWSER_ACT_AS_YOU,
         BROWSER_LOGIN,
+        BROWSER_GUIDED_AS_YOU,
     }
 )
 """ADR 0038 §14, as ADR 0045 extends it: the ones whose verifier reads the disk or the store of

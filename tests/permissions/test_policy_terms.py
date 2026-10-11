@@ -16,6 +16,7 @@ import pytest
 from ela.domain import CapabilityId, PolicyTerms, RiskLevel
 from ela.permissions import (
     BROWSER_GUIDED,
+    BROWSER_GUIDED_AS_YOU,
     GUIDED_ROUTE,
     RISK_POLICY,
     UNDECLARED_MODEL,
@@ -30,11 +31,17 @@ from ela.routing import DEFAULT_ROUTES, Route, RoutePolicy
 from tests.permissions.policy_support import MODEL, SITES, TERMED
 
 
-def test_browser_guided_declares_its_terms_and_it_is_the_only_one() -> None:
+def test_the_two_guided_sessions_declare_their_terms_and_no_other_capability_does() -> None:
+    """``browser.guided`` since M13.12, and ``browser.guided_as_you`` since M13.9 with the same
+    limits — the limits are a session's, whatever browser it guides. No single read, no act and
+    no login declares any: the catalogue would refuse a ``HIGH``, and a read has no limit to be
+    bounded by."""
     catalogue = production_catalogue(sites=SITES, guided_model=MODEL)
     declared = {spec.id: spec.policy_terms for spec in catalogue.specs() if spec.policy_terms}
 
-    assert declared == {
+    assert set(declared) == {BROWSER_GUIDED, BROWSER_GUIDED_AS_YOU}
+    assert declared[BROWSER_GUIDED_AS_YOU] == declared[BROWSER_GUIDED]
+    assert {BROWSER_GUIDED: declared[BROWSER_GUIDED]} == {
         BROWSER_GUIDED: PolicyTerms(
             limits=("max_cost_usd", "looks", "seconds"),
             uncovered=("task_type",),
@@ -69,6 +76,7 @@ def test_the_levels_did_not_move() -> None:
         CapabilityId("browser.read_as_you"): RiskLevel.MEDIUM,
         CapabilityId("browser.act_as_you"): RiskLevel.HIGH,
         CapabilityId("browser.login"): RiskLevel.HIGH,
+        CapabilityId("browser.guided_as_you"): RiskLevel.MEDIUM,
     }
 
 
@@ -213,4 +221,7 @@ def test_a_second_provider_on_the_route_would_be_found() -> None:
 
     found = routes_with_more_than_one_provider(RoutePolicy(two))
 
-    assert found == [ONE_MODEL.format(capability=BROWSER_GUIDED, count=2)]
+    assert found == [
+        ONE_MODEL.format(capability=BROWSER_GUIDED, count=2),
+        ONE_MODEL.format(capability=BROWSER_GUIDED_AS_YOU, count=2),
+    ]

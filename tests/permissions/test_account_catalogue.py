@@ -11,13 +11,26 @@ login's have **no argument that could carry a value**.
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 import pytest
 
-from ela.domain import Authorization, CapabilitySpec, PermissionOutcome, RiskLevel, TaskStep
+from ela.domain import (
+    Authorization,
+    CapabilitySpec,
+    PermissionOutcome,
+    PlanAuthor,
+    PlanAuthorKind,
+    RiskLevel,
+    SessionCover,
+    StepId,
+    TaskId,
+    TaskStep,
+)
 from ela.permissions import (
     BROWSER_ACT,
     BROWSER_ACT_AS_YOU,
+    BROWSER_GUIDED_AS_YOU,
     BROWSER_LOGIN,
     BROWSER_READ,
     BROWSER_READ_AS_YOU,
@@ -35,7 +48,7 @@ from ela.permissions import (
     check_capability,
     production_catalogue,
 )
-from ela.permissions.rows import no_policy_for
+from ela.permissions.rows import no_policy_for, no_session_covers
 from ela.testing.fakes import FakeAuditLog, FakeClock, FakeIdGenerator
 from tests.domain.examples import NOW, STEP_ID, TASK
 from tests.permissions.support import born_of_a_yes, grant
@@ -67,8 +80,13 @@ CALLS: dict[str, dict[str, Any]] = {
 EVERY = pytest.mark.parametrize("capability", sorted(CALLS))
 
 
+MODEL = "claude-haiku-5-5"
+"""The model the default route of a session reads, as the composition hands it to the catalogue:
+a policy carries the terms of the day it was born, and the model is one of them."""
+
+
 def catalogue(sites: tuple[str, ...] = SITES) -> Any:
-    return production_catalogue(sites=sites)
+    return production_catalogue(sites=sites, guided_model=MODEL)
 
 
 def decide(
@@ -241,7 +259,183 @@ def test_no_policy_of_59_can_be_born_for_any_of_the_three(capability: str) -> No
         )
 
 
-def test_the_three_come_after_the_guided_session_in_the_catalogue_the_composition_builds() -> None:
+def test_they_come_after_the_guided_session_in_the_catalogue_the_composition_builds() -> None:
     ids = [spec.id for spec in production_catalogue().specs()]
 
-    assert ids[-3:] == [BROWSER_READ_AS_YOU, BROWSER_ACT_AS_YOU, BROWSER_LOGIN]
+    assert ids[ids.index("browser.guided") + 1 :] == [
+        BROWSER_READ_AS_YOU,
+        BROWSER_ACT_AS_YOU,
+        BROWSER_LOGIN,
+        BROWSER_GUIDED_AS_YOU,
+    ]
+
+
+# ----------------------------------------------------------------------------------------
+# browser.guided_as_you: another capability, one site, and its reads covered by the session
+# ----------------------------------------------------------------------------------------
+
+SESSION = {
+    "goal": "Guarda se è arrivata la conferma dell'ordine.",
+    "sites": ["posta.example"],
+    "max_cost_usd": "1.10",
+    "looks": 10,
+    "seconds": 600,
+}
+SESSION_STEP = StepId(UUID("00000000-0000-4000-8000-0000000005e5"))
+SESSION_TASK = TaskId(UUID("00000000-0000-4000-8000-0000000005e6"))
+CHILD = TASK.model_copy(update={"parent_id": SESSION_TASK})
+WRITTEN_BY_THE_SESSION = PlanAuthor(
+    by=PlanAuthorKind.SESSION, session=SESSION_STEP, model="claude-haiku-5-5"
+)
+
+
+def attested(
+    capability: str = BROWSER_GUIDED_AS_YOU, sites: tuple[str, ...] = ("posta.example",)
+) -> SessionCover:
+    """What the room says of an open session of ``capability`` on ``sites``."""
+    return SessionCover(
+        session=SESSION_STEP,
+        task_id=SESSION_TASK,
+        capability_id=capability,  # type: ignore[arg-type]
+        sites=sites,
+    )
+
+
+def gesture(
+    capability: str, arguments: dict[str, Any], cover: SessionCover | None
+) -> tuple[Any, str]:
+    """The decision about a gesture a session's model wrote: a child of the session's task."""
+    specs = catalogue()
+    guardian = PermissionGuardian(specs, FakeClock(), FakeIdGenerator(), FakeAuditLog())
+    spec = specs.get(capability)
+    step = TaskStep(
+        id=STEP_ID,
+        created_at=NOW,
+        goal="un gesto della sessione",
+        required_capabilities=(capability,),  # type: ignore[arg-type]
+        arguments=arguments,
+        risk=spec.risk,
+        expected_result="la pagina",
+        requires_authorization=True,
+    )
+    decision = guardian.decide(
+        spec, arguments, task=CHILD, step=step, author=WRITTEN_BY_THE_SESSION, session=cover
+    )
+    return decision.outcome, str(decision.metadata["rule"])
+
+
+def policy(capability: str, sites: tuple[str, ...]) -> Authorization:
+    return authorization_from_policy(
+        PolicyRequest(
+            capability_id=capability,  # type: ignore[arg-type]
+            scope=sites,
+            limits={"max_cost_usd": "1.10", "looks": "10", "seconds": "600"},
+            days=1,
+        ),
+        catalogue=catalogue(),
+        granted_by="tommaso",
+        now=FakeClock().now(),
+        authorization_id=FakeIdGenerator().new_uuid(),  # type: ignore[arg-type]
+    )
+
+
+def test_the_session_with_the_profile_as_the_catalogue_holds_it() -> None:
+    specs = catalogue()
+    session, empty = specs.get(BROWSER_GUIDED_AS_YOU), specs.get("browser.guided")  # type: ignore[arg-type]
+
+    assert (session.risk, session.requires_authorization) == (RiskLevel.MEDIUM, True)
+    assert session.scope == SITES and session.scoped_arguments == ("sites",)
+    assert session.policy_terms == empty.policy_terms, "the limits are a session's, whichever it is"
+    assert session.input_schema["properties"]["sites"]["maxItems"] == 1
+    assert "maxItems" not in empty.input_schema["properties"]["sites"]
+    assert "you" in session.description and "empty" not in session.description
+    assert "any address of that site as you" in session.description
+    assert BROWSER_GUIDED_AS_YOU in DECLARES_AN_EMPTY_SCOPE
+
+
+def test_it_declares_that_its_reads_are_the_profile_s_with_their_very_schema() -> None:
+    """Decision 29: outside the terms of a policy, and with a copy of the covered capability's
+    schema — which the catalogue holds equal to the original, or does not build."""
+    specs = catalogue()
+    covered = specs.get(BROWSER_GUIDED_AS_YOU).covers
+
+    assert covered is not None and covered.capability_id == BROWSER_READ_AS_YOU
+    assert covered.input_schema == specs.get(BROWSER_READ_AS_YOU).input_schema
+    assert specs.get("browser.guided").covers is None, "a LOW read asks nobody: nothing to cover"  # type: ignore[arg-type]
+    assert no_session_covers(specs.get(BROWSER_READ_AS_YOU)) is None
+    for high in (BROWSER_ACT_AS_YOU, BROWSER_LOGIN):
+        assert no_session_covers(specs.get(high)) is not None, f"no session covers {high}"
+
+
+def test_a_session_with_the_profile_names_one_site_and_two_are_refused_before_the_question() -> (
+    None
+):
+    """Criterion 22: what the model reads on a site of the user's is not carried to another."""
+    assert decide(BROWSER_GUIDED_AS_YOU, SESSION)[0] is PermissionOutcome.REQUIRES_APPROVAL
+
+    two = {**SESSION, "sites": ["posta.example", "altro.example"]}
+
+    assert decide(BROWSER_GUIDED_AS_YOU, two) == (PermissionOutcome.DENIED, Rule.ARGUMENTS.value)
+
+
+def test_one_site_among_those_of_a_policy_that_lists_several_starts_without_a_question() -> None:
+    """The scope of a policy may list more than one; each session chooses one."""
+    standing = policy(BROWSER_GUIDED_AS_YOU, SITES)
+
+    for site in SITES:
+        outcome, _ = decide(
+            BROWSER_GUIDED_AS_YOU, {**SESSION, "sites": [site]}, authorization=standing
+        )
+        assert outcome is PermissionOutcome.ALLOWED, site
+
+
+def test_a_policy_of_one_session_does_not_cover_the_other_either_way() -> None:
+    """Criterion 7: ``browser.guided_as_you`` is another capability, and a standing yes for the
+    empty browser is not a yes for the browser with the user's accounts — nor the reverse."""
+    empty = {**SESSION, "sites": ["posta.example"]}
+
+    with_the_wrong_one, _ = decide(
+        BROWSER_GUIDED_AS_YOU, SESSION, authorization=policy("browser.guided", SITES)
+    )
+    the_reverse, _ = decide(
+        "browser.guided", empty, authorization=policy(BROWSER_GUIDED_AS_YOU, SITES)
+    )
+
+    assert with_the_wrong_one is PermissionOutcome.DENIED
+    assert the_reverse is PermissionOutcome.DENIED
+    assert decide("browser.guided", empty, authorization=policy("browser.guided", SITES))[0] is (
+        PermissionOutcome.ALLOWED
+    )
+
+
+def test_the_session_covers_the_reads_its_model_writes_on_its_site_and_nothing_else() -> None:
+    """The road A of decision 29, on the catalogue ELA builds: a read with the profile written by
+    the model of an open session with the profile is allowed under the session's own rule — no
+    question at every look —; an act asks, always; and another site is not the session's."""
+    assert gesture(BROWSER_READ_AS_YOU, READ, attested()) == (
+        PermissionOutcome.ALLOWED,
+        Rule.SESSION.value,
+    )
+    assert gesture(BROWSER_ACT_AS_YOU, ACT, attested()) == (
+        PermissionOutcome.DENIED,
+        Rule.SESSION_MISMATCH.value,
+    )
+    assert gesture(BROWSER_ACT_AS_YOU, ACT, None) == (
+        PermissionOutcome.REQUIRES_APPROVAL,
+        Rule.APPROVAL_EVERY_USE.value,
+    )
+    elsewhere = {**READ, "site": "altro.example"}
+    assert gesture(BROWSER_READ_AS_YOU, elsewhere, attested())[0] is not PermissionOutcome.ALLOWED
+
+
+def test_a_session_on_the_empty_browser_covers_no_read_with_the_profile() -> None:
+    """``browser.guided`` declares no cover: its word, presented for a read as the user, is a
+    mismatch — and without any word the read asks, as a ``MEDIUM`` does."""
+    assert gesture(BROWSER_READ_AS_YOU, READ, attested("browser.guided")) == (
+        PermissionOutcome.DENIED,
+        Rule.SESSION_MISMATCH.value,
+    )
+    assert gesture(BROWSER_READ_AS_YOU, READ, None) == (
+        PermissionOutcome.REQUIRES_APPROVAL,
+        Rule.APPROVAL_UNLESS_AUTHORIZED.value,
+    )

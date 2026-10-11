@@ -100,6 +100,7 @@ def test_it_is_in_the_catalogue_the_composition_builds_after_the_filesystem() ->
         "browser.read_as_you",
         "browser.act_as_you",
         "browser.login",
+        "browser.guided_as_you",
     ]
 
 

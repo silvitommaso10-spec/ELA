@@ -41,6 +41,7 @@ from ela.permissions import (
     BROWSER_ACT,
     BROWSER_ACT_AS_YOU,
     BROWSER_GUIDED,
+    BROWSER_GUIDED_AS_YOU,
     BROWSER_LOGIN,
     BROWSER_READ,
     BROWSER_READ_AS_YOU,
@@ -107,6 +108,7 @@ from ela.tools.account import AccountActTool, AccountReadTool, LoginTool
 from ela.tools.browser import STOPPED as BROWSER_STOPPED
 from ela.tools.browser import BrowserActTool, BrowserReadTool
 from ela.tools.captures import name_for, text_name_for
+from ela.tools.guided import SESSION_AS_YOU
 from ela.tools.model import ModelCompleteTool
 from ela.tools.programs import ProgramProblem, Programs, identity_of
 from ela.tools.terminal import STOPPED as TERMINAL_STOPPED
@@ -440,6 +442,13 @@ def _guided(tmp_path: Path) -> Subject:
     )
 
 
+def _guided_as_you(tmp_path: Path) -> Subject:
+    world = guided_world(kind=SESSION_AS_YOU)
+    return Subject(
+        world.tool, world.decision, world.arguments, lambda: bool(world.session.launched)
+    )
+
+
 def _launch(browser: FakeBrowser) -> Held:
     browser.launch_reached, browser.launch_released = asyncio.Event(), asyncio.Event()
     return Held(browser.launch_reached.wait, browser.launch_released.set)
@@ -461,6 +470,7 @@ SUBJECTS: dict[CapabilityId, Callable[[Path], Subject]] = {
     BROWSER_READ_AS_YOU: _read_as_you,
     BROWSER_ACT_AS_YOU: _act_as_you,
     BROWSER_LOGIN: _login,
+    BROWSER_GUIDED_AS_YOU: _guided_as_you,
 }
 WITH_A_WAIT = sorted(
     capability
@@ -555,6 +565,7 @@ PRODUCTION: dict[str, tuple[str | None, str | None]] = {
     "browser.read_as_you": ("the navigation", None),
     "browser.act_as_you": ("the first gesture", None),
     "browser.login": ("the first gesture", None),
+    "browser.guided_as_you": ("the launch of the session", None),
 }
 """The table of proposal 2 of the SPEC, and of ADR 0054 §3 — and since M14.3 the launch of a guided
 session (ADR 0060)."""
@@ -710,7 +721,7 @@ def ok_after_the_point(capability: CapabilityId, result: ExecutionResult) -> boo
         return code == TERMINAL_STOPPED and result.output["ended"] == "stopped_with_the_task"
     if capability in {BROWSER_ACT, BROWSER_ACT_AS_YOU, BROWSER_LOGIN}:
         return code == BROWSER_STOPPED and result.output["gestures"] == 1
-    if capability == BROWSER_GUIDED:
+    if capability in {BROWSER_GUIDED, BROWSER_GUIDED_AS_YOU}:
         return code == GUIDED_STOPPED and result.usage is not None
     return result.status is ExecutionStatus.SUCCEEDED
 
