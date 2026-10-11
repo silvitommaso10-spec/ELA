@@ -3,7 +3,7 @@
 
 **It is not the CLI of Bitwarden and proves nothing about it.** It answers what the real one
 answers **without an account** — those answers were recorded from the real ``bw`` 2026.9.1 on
-2026-10-10 and ``tests/scripts/test_misura_m13_9.py`` holds this file to them — and, with an
+2026-10-10 and ``tests/scripts/misura_m13_9_checks.py`` holds this file to them — and, with an
 account, what the help and the sources of the real one say: a session key printed alone with
 ``--raw``, a new ``unlock`` that ends the keys before it, ``lock`` that ends them all, a status that
 prints the account's address, a listing that carries every password.

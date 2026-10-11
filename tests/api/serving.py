@@ -4,7 +4,7 @@ part: decisions 55 and 56).
 Not a test: the child ``test_serving_signals.py`` starts, because what it asserts is how **a
 process ends after a signal** — and the process under test cannot be the one that runs the suite.
 
-    python tests/api/serving.py MODE FOLDER ORIGIN PORT
+    python tests/api/serving.py MODE FOLDER ORIGIN PORT [GRACE]
 
 It is ``ela serve`` itself — ``ela.cli.app.main`` with ``serve`` on its command line, so the real
 server, the real signals and the real end —, on a database in ``FOLDER`` and on ``PORT`` of
@@ -24,6 +24,11 @@ names:
 * ``stuck`` — a page open, and **the driver stopped** for good: a browser that will not answer
   when it is told to close.
 
+``GRACE`` is **a grace handed to this ELA**, in whole seconds, in the place of its own (decision
+76): what a test of the signals asserts — that ELA kills at the grace and not before, says so, and
+ends as the signal ended it — is as true of a second as of ELA's five, and one test alone watches
+those whole. Without it the grace is ELA's.
+
 Two lines of JSON on stdout: the processes the browser had started, when it is in its state — the
 test sends the signal after that line —; and ``{"grace": true}`` at the moment ELA's close begins
 to wait for the browser, which is when the test sends a second signal **inside the close**.
@@ -42,7 +47,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def main(mode: str, folder: Path, origin: str, port: str) -> None:
+def main(mode: str, folder: Path, origin: str, port: str, grace: str | None = None) -> None:
     sys.path.insert(0, str(ROOT))
     from tests.composition.closing import declare, started
 
@@ -51,7 +56,12 @@ def main(mode: str, folder: Path, origin: str, port: str) -> None:
 
     from ela.api import server
     from ela.cli.app import main as ela
-    from ela.composition import Ela, Settings
+    from ela.composition import Ela, Settings, root
+
+    if grace is not None:
+        # The two that read the number: the close that waits it, and the line that says it.
+        root.BROWSER_CLOSE_GRACE_SECONDS = int(grace)  # type: ignore[misc]
+        server.BROWSER_CLOSE_GRACE_SECONDS = int(grace)  # type: ignore[misc]
     from ela.permissions import BROWSER_READ
     from ela.testing.fakes import FakePower, FakeStop
     from tests.composition.support import create_schema
@@ -107,4 +117,4 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal.default_int_handler)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     signal.signal(signal.SIGHUP, signal.SIG_DFL)
-    main(sys.argv[1], Path(sys.argv[2]), sys.argv[3], sys.argv[4])
+    main(sys.argv[1], Path(sys.argv[2]), sys.argv[3], sys.argv[4], *sys.argv[5:6])

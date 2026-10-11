@@ -45,12 +45,17 @@ CHILD = Path(__file__).with_name("serving.py")
 ROOT = CHILD.parents[2]
 GUARD_SECONDS = 60
 GRACE_SECONDS = 5
+HANDED_SECONDS = 1
+"""The grace an ELA of these tests is handed, where the test is not the one that watches ELA's own
+whole (decision 76): what is asserted of a grace — killed at it and not before, said, and the end
+of the signal — does not ask for five seconds to be true."""
 PAGE = b"<p>a page of the test's</p>"
 SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"]
 """By name: read as numbers inside a test, never when the module is imported — a system without
 ``SIGHUP`` skips these tests, and must be able to read the file to skip them."""
 INTERRUPTED = 130
 WITHIN = f"ela: the browser did not close within {GRACE_SECONDS} s of the stop: ELA killed"
+WITHIN_THE_HANDED = WITHIN.replace(f"{GRACE_SECONDS} s", f"{HANDED_SECONDS} s")
 HURRIED = "ela: the browser had not closed when a second signal arrived: ELA killed"
 
 
@@ -121,16 +126,32 @@ def _reached(event: threading.Event, child: subprocess.Popen[str]) -> bool:
     return True
 
 
-def served(mode: str, folder: Path, origin: str, profiles: Path, *signals: int) -> Ended:
+def served(
+    mode: str,
+    folder: Path,
+    origin: str,
+    profiles: Path,
+    *signals: int,
+    grace: int | None = None,
+) -> Ended:
     """Start ``ela serve`` with its browser in ``mode``, send it ``signals`` — the second **when
     ELA's close has begun to wait for the browser**, which the child says —, and say how it ended.
+    ``grace`` is the grace that ELA is handed in the place of its own, in seconds.
 
     The child is the leader of a session of its own. One that does not exit is killed with its
     group before the test fails; and whatever of its browser is left — a stopped process whose
     driver has died is in nobody's group — is taken away by its pid and by ``profiles``."""
     folder.mkdir()
     child = subprocess.Popen(
-        [sys.executable, str(CHILD), mode, str(folder), origin, str(free_port())],
+        [
+            sys.executable,
+            str(CHILD),
+            mode,
+            str(folder),
+            origin,
+            str(free_port()),
+            *(() if grace is None else (str(grace),)),
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -243,6 +264,10 @@ def test_with_its_browser_at_work_ela_closes_whole_and_then_ends_as_the_signal_e
     assert ended.code == end_of(name)
 
 
+THE_WHOLE = "SIGTERM"
+"""The one signal after which the grace watched is ELA's own, whole: how ``pkill`` stops ELA."""
+
+
 @pytest.mark.parametrize("name", SIGNALS)
 def test_a_browser_that_does_not_answer_is_killed_at_the_grace_and_then_ela_ends(
     name: str, tmp_path: Path, origin: str, profiles: Path
@@ -250,17 +275,32 @@ def test_a_browser_that_does_not_answer_is_killed_at_the_grace_and_then_ela_ends
     """Criterion 13. The driver is stopped: told to close, the browser does not. **At the grace**
     — the line says it ran out, and the process did not end before that time: a lower bound, which
     a slow machine only makes truer — ELA kills what the adapter had started, says it, releases
-    the database, and ends as the signal ended it."""
-    ended = served("stuck", tmp_path / "ela", origin, profiles, numbered(name))
+    the database, and ends as the signal ended it.
 
+    **One of the three watches ELA's own grace, whole; the others a grace they hand ELA**
+    (decision 76): the number is what the line says and what the process waited, whichever it
+    is."""
+    handed = None if name == THE_WHOLE else HANDED_SECONDS
+    ended = served("stuck", tmp_path / "ela", origin, profiles, numbered(name), grace=handed)
+
+    waited, line = (GRACE_SECONDS, WITHIN) if handed is None else (handed, WITHIN_THE_HANDED)
     assert ended.waited
-    assert WITHIN in ended.error and "1 node" in ended.error
+    assert line in ended.error and "1 node" in ended.error
     assert HURRIED not in ended.error
-    assert ended.seconds >= GRACE_SECONDS, "killed at the grace, not at the signal"
+    assert ended.seconds >= waited, "killed at the grace, not at the signal"
     assert ended.database == ("ela.db",)
     assert ended.still_running() == []
     assert not ended.left, "a killed browser leaves its profile: the adapter takes it away"
     assert ended.code == end_of(name)
+
+
+def test_the_grace_one_test_watches_whole_is_the_one_ela_is_built_with() -> None:
+    """The number these tests wait and read is ELA's, and the one they hand is another."""
+    from ela.api import server
+    from ela.composition import root
+
+    assert GRACE_SECONDS == root.BROWSER_CLOSE_GRACE_SECONDS == server.BROWSER_CLOSE_GRACE_SECONDS
+    assert HANDED_SECONDS < GRACE_SECONDS and THE_WHOLE in SIGNALS
 
 
 @pytest.mark.parametrize("name", SIGNALS)

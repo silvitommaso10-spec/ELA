@@ -375,33 +375,39 @@ FORMS = """
 """
 
 
-@pytest.mark.parametrize(
-    ("selector", "method"),
-    [
-        ("#posted", "post"),
-        ("#post-button", "post"),
-        ("#got", "get"),
-        ("#unsaid", "get"),
-        ("#capital", "post"),
-        ("#named", "get"),
-        ("#named-post", "post"),
-        ("#overridden-field", "post"),
-        ("#overriding", "get"),
-        ("#alone", ""),
-        ("#link", ""),
-    ],
-)
+SENDS = {
+    "#posted": "post",
+    "#post-button": "post",
+    "#got": "get",
+    "#unsaid": "get",
+    "#capital": "post",
+    "#named": "get",
+    "#named-post": "post",
+    "#overridden-field": "post",
+    "#overriding": "get",
+    "#alone": "",
+    "#link": "",
+}
+"""How each element of :data:`FORMS` sends, by its selector."""
+
+
 async def test_how_the_form_of_an_element_sends_is_read_from_the_attributes(
-    browser: AccountChrome, served: list[Site], selector: str, method: str
+    browser: AccountChrome, served: list[Site]
 ) -> None:
     """``#named`` and ``#named-post``: a form with a field of its own called ``method`` answers
     ``form.method`` with that field — the adapter reads the attribute, so a form that posts is
     seen to post whatever its fields are called. ``#overriding``: a button that sends carries its
-    own method over the form's; a field that is not one does not (``#overridden-field``)."""
+    own method over the form's; a field that is not one does not (``#overridden-field``).
+
+    **One launch for every element of the page** (decision 76): each is a reading of an element
+    of its own, which changes nothing of the page — none of them leans on another, and what is
+    compared is the whole table, so a reading that is wrong is named by its selector."""
     web = site(served, {"/": (200, {}, FORMS)})
     opened = await browser.open(web.origin + "/", everywhere, FakeStop())
 
-    assert (await browser.field(opened.page, selector)).method == method
+    read = {selector: (await browser.field(opened.page, selector)).method for selector in SENDS}
+
+    assert read == SENDS
 
 
 @pytest.mark.parametrize(

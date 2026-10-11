@@ -5,7 +5,7 @@ dello zip confrontato con quello della release), lanciato **senza account** e co
 dati sua: i suoi aiuti, e ciò che risponde a chi non ha fatto un login. `bw login` e `bw unlock` non
 sono stati lanciati.
 
-`tests/scripts/test_misura_m13_9.py` le legge per due cose: ogni comando che
+`tests/scripts/misura_m13_9_checks.py` le legge per due cose: ogni comando che
 `scripts/misura_m13_9.py` compone sta nell'aiuto del comando vero, e il `bw` finto dei test risponde
 senza account ciò che quello vero ha risposto.
 
