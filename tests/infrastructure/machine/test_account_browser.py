@@ -223,10 +223,15 @@ async def test_a_page_opens_on_the_declared_folder_with_the_sandbox_and_without_
     browser: AccountChrome, profile: Path, served: list[Site]
 ) -> None:
     web = site(served, {"/": (200, {}, "<p>Ciao</p>")})
+    left = profile / "Crashpad" / "pending" / "what-a-crash-left.dmp"
+    left.parent.mkdir(parents=True)
+    profile.chmod(0o700)
+    left.write_bytes(b"memory of a process that fell")
 
     opened = await browser.open(web.origin + "/", everywhere, FakeStop())
 
     assert opened.status == 200 and await browser.text(opened.page, None) == "Ciao"
+    assert not left.exists(), "what a crash left did not pass to this launch (decision 90)"
     assert len(browser._pages[opened.page].context.pages) == 1, "one page, not a blank one beside"
     arguments = arguments_of(profile)
     assert f"user-data-dir={profile}" in arguments

@@ -280,6 +280,71 @@ def test_a_link_where_the_workers_would_be_is_taken_away_and_not_followed(tmp_pa
     assert (elsewhere / "kept").is_file()
 
 
+@pytest.mark.parametrize("driven", [True, False], ids=["a-driven-launch", "the-window"])
+def test_before_every_launch_what_a_crash_left_is_gone_and_nothing_else_of_the_folder(
+    tmp_path: Path, driven: bool
+) -> None:
+    """Decision 90: a report of a crash is memory of the process that held the user's sessions
+    — and, in the moment of a login, a password —, it serves nobody, and it does not pass to the
+    launch after. Taken away before **every** launch, the window's too: unlike the workers, it
+    is no site's. **And only that**: what the browser keeps of the user's stays where it is."""
+    reports = tmp_path / "Crashpad"
+    (reports / "pending").mkdir(parents=True)
+    (reports / "pending" / "a-report.dmp").write_bytes(b"memory of a process that fell")
+    (reports / "settings.dat").write_bytes(b"the collector's own settings")
+    kept = tmp_path / "Default" / "Cookies"
+    kept.parent.mkdir()
+    kept.write_bytes(b"the sessions of the user")
+    state = tmp_path / "Local State"
+    state.write_text("{}", encoding="utf-8")
+
+    account._prepared(tmp_path, driven=driven)
+
+    assert not reports.exists(), "what a crash left is not there for the launch after"
+    assert kept.read_bytes() == b"the sessions of the user" and state.is_file()
+    assert (tmp_path / "Default" / "Preferences").is_file()
+
+
+@pytest.mark.parametrize("driven", [True, False], ids=["a-driven-launch", "the-window"])
+def test_a_link_where_the_reports_would_be_is_taken_away_and_not_followed(
+    tmp_path: Path, driven: bool
+) -> None:
+    """The link goes — the collector would write, through it, a process's memory into whatever
+    folder it leads to —, and what it points at is nobody's to remove."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "kept").write_text("somebody's", encoding="utf-8")
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "Crashpad").symlink_to(elsewhere, target_is_directory=True)
+
+    account._prepared(profile, driven=driven)
+
+    assert not (profile / "Crashpad").is_symlink() and not (profile / "Crashpad").exists()
+    assert (elsewhere / "kept").is_file()
+
+
+def test_a_file_where_the_reports_would_be_is_taken_away_too(tmp_path: Path) -> None:
+    (tmp_path / "Crashpad").write_bytes(b"not a folder at all")
+
+    account._prepared(tmp_path, driven=False)
+
+    assert not (tmp_path / "Crashpad").exists()
+
+
+def test_the_folder_of_the_reports_is_the_one_every_launch_is_told_to_write_in(
+    tmp_path: Path,
+) -> None:
+    """What is taken away and where the collector is told to write are one name: a collector
+    told to write elsewhere would leave what nothing takes away."""
+    assert reports_in(tmp_path) == f"--breakpad-dump-location={tmp_path / account.REPORTS}"
+    (tmp_path / account.REPORTS).mkdir()
+
+    account._prepared(tmp_path, driven=True)
+
+    assert not (tmp_path / account.REPORTS).exists()
+
+
 # ----------------------------------------------------------------------------------------
 # Linked to a Google account, read from the file at every question
 # ----------------------------------------------------------------------------------------
