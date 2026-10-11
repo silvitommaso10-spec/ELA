@@ -8,6 +8,7 @@
   **ADR 0058 §9 e §10** (M14.2): i tre fatti di §4 su cui `browser.read` è `LOW` si riscrivono — il secondo è che un piano scritto dal modello lo avvia l'utente dopo averlo visto —; M14.3 è il giorno in cui il modello legge una pagina.
   **Riletta da ADR 0060 (M14.3)** il 2026-10-09: i tre fatti di §4 si riscrivono per il modello che legge la pagina
   dentro una sessione guidata, e il vincolo del GET si allarga al testo delle pagine lette (ADR 0060 §9).
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §1, lo shell «sempre senza finestra» e il suo sandbox sono del browser vuoto; §3 e §4, il profilo vuoto e i due livelli sono delle capability del browser vuoto; §6, per una lettura con il profilo il confine è il sito che nomina, e un service worker del profilo si toglie prima del lancio; §7, la domanda di `browser.login` si compone dopo aver chiesto al vault; §8, un campo segreto lo riempie `browser.login`, e nessun altro tool; §10, da quando la fermata di ELA è alzata niente parte più, e ciò che era già partito è aspettato entro una grazia e poi ucciso (M13.4b, M13.4c, M13.4e); §14, dall'ambiente escono anche `DEBUG…` e `PWDEBUG` (ADR 0063 §4 e §5, e «Conseguenze»).
 - **Data:** 2026-09-29
 - **Riferimenti spec:** §10, §18, §19, §20, §27, §28, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.4

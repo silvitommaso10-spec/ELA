@@ -4,6 +4,7 @@
   cambiano la forma di ciò che ELA fa sono §2 (i titoli non entrano, ed è una regola), §7 (il
   testo passa da stdout, dove i pixel non potevano), §8 (una lettura che significa due cose va
   spezzata) e §10 (un artefatto derivato eredita per costruzione).
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §1, e il tool che legge il testo di una cattura: si rifiuta come la cattura mentre una mano può essere sul profilo del browser (ADR 0063 §7).
 - **Contesto:** M10.3, la milestone in cui ELA capisce ciò che ha visto senza far uscire niente.
 - **Riferimenti spec:** §10, §11, §20, §28, §29, §33, §44, §45, §57, §58, §63
 - **Estende:** ADR 0002 (una regola nuova, la 36; e le regole 33 e 35 estese), ADR 0005 (un port

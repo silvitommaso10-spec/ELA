@@ -656,10 +656,39 @@ Errori aggiunti, nella forma della tabella di ADR 0023 §10:
 
 ## Conseguenze
 
-- **Si leggono con questo ADR accanto**: ADR 0045 §3 e ADR 0011 §6 — un terzo modo di coprire una riga che chiede
-  a meno di un'autorizzazione —; ADR 0046 §3 — un sì copre al massimo un effetto: qui copre fino a `looks`
-  letture —; l'alternativa scartata di ADR 0060; ADR 0062 §1, per il mondo chiuso esteso a `covers`; e ADR 0011,
-  per la firma di `decide`.
+**Righe riviste** — gli ADR non si riscrivono: si leggono con questo accanto, e la riga «Stato:» di ciascuno lo
+dice, con la sezione di questo ADR a cui guardare.
+
+- **ADR 0011** §6 — una riga che chiede a meno di un'autorizzazione ha un terzo modo di essere coperta; e la
+  firma di `decide` (§1).
+- **ADR 0028** §9 — ciò che ELA guarda senza una capability non cambia: si rifiutano le capability, e la sonda
+  resta com'è (§7).
+- **ADR 0029** — ciò che deve essere vero prima di una cattura ha una cosa in più, chiesta anche prima della
+  domanda (§7).
+- **ADR 0030** §1 — il tool che legge il testo di una cattura si rifiuta come la cattura (§7).
+- **ADR 0032** — ciò che il contesto riceve dalla percezione non cambia con la finestra aperta (§7).
+- **ADR 0036** — ciò che deve essere vero prima che un microfono si apra ha una cosa in più (§7).
+- **ADR 0038** §11 — il timeout di spegnimento rifiutato non è la grazia entro cui la chiusura porta a riposo i
+  browser: quello interromperebbe un handler che può essere avvisato, questa chiude un figlio che è stato
+  avvisato e non è uscito. E il gestore del segnale è di ELA, da quando c'è un'ELA da chiudere a quando la
+  chiusura è finita: non quello che uvicorn installa (`docs/milestones/M13.4e.md`, «La misura dei segnali»).
+- **ADR 0044** §4 e §5 — le rotte della console e le sue viste, con «Il browser di ELA» (§10).
+- **ADR 0045** §3 — il terzo modo di coprire una riga che chiede a meno di un'autorizzazione, che non è un
+  grant (§1).
+- **ADR 0046** §3 — «un sì copre al massimo un effetto»: il sì a una sessione con il profilo copre le letture
+  che il suo modello scrive, fino ai `looks` della sessione; e la riga di consumo della copertura di sessione
+  (§1).
+- **ADR 0047** §6 — il programma del vault riceve due variabili oltre a quelle dell'ambiente chiuso (§2).
+- **ADR 0052** §1, §3, §4, §6, §7, §8, §10 e §14 — ciò che lì è detto del browser è detto del browser vuoto:
+  quello con il profilo ha un altro binario, il sandbox acceso, una cartella che dura, un confine più stretto
+  per le letture, un tool che riempie un campo segreto, e un ambiente da cui esce anche ciò che fa scrivere il
+  driver (§4, §5, e la riga qui sotto).
+- **ADR 0060** §1, §4, §8 e §9 — una seconda capability di sessione, i suoi gesti, le sue risposte di §57; e
+  l'alternativa scartata, che torna come una copertura che non è un grant (§1, §6).
+- **ADR 0062** §1 — il mondo chiuso dei termini esteso a `covers` (§1).
+
+Le altre conseguenze:
+
 - **Regola di architettura 67**: la parola della stanza la costruisce la stanza, e nessun altro — non un tool,
   non l'executor che la consegna, non una rotta.
 

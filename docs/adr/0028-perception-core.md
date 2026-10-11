@@ -4,6 +4,7 @@
   cambiano la forma di ciò che ELA dice di sapere sono §3 (lo stato non viaggia mai da solo), §4
   (una causa che non può scattare non entra), §9 (nessuna capability finché non si legge
   contenuto) e §10 (l'audit registra ciò che ELA decide, non ciò che il mondo fa).
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §9, ciò che ELA guarda senza una capability: non cambia. Mentre una mano può essere sul profilo del browser si rifiutano le capability che guardano e ascoltano, e la sonda resta com'è — stato e non contenuto (ADR 0063 §7).
 - **Contesto:** M10.1, la prima milestone che tocca l'hardware del Mac.
 - **Riferimenti spec:** §10, §11, §33, §45, §51, §52, §57
 - **Estende:** ADR 0002 (le regole di architettura: tre nuove, 32, 33, 34), ADR 0005 (un port

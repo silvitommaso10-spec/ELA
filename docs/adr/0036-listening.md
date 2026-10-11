@@ -2,6 +2,7 @@
 
 - **Stato:** Accettata. SPEC di M11.2 approvata dall'utente, dodici decisioni A–L, ciascuna in
   review separata fra il 2026-09-09 e il 2026-09-10.
+  **Riletta da ADR 0063 (M13.9)** il 2026-10-11: ciò che deve essere vero prima che un microfono si apra ha una cosa in più, chiesta anche prima della domanda: che nessuno stia entrando a mano in un sito nella finestra di ELA (ADR 0063 §7).
 - **Data:** 2026-09-10
 - **Riferimenti spec:** §9, §10, §11, §20, §28, §29, §30, §33, §45, §57, §63
 - **Continua:** ADR 0028 §1, §2, §4, §9, §10; ADR 0029 §1, §3, §6, §7; ADR 0030 §8, §15, §16;
