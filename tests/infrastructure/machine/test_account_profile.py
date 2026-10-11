@@ -372,18 +372,41 @@ async def test_the_saved_passwords_are_counted_in_every_profile_the_folder_holds
     assert await chrome(profile).saved() == 5
 
 
-def test_no_password_is_counted_through_a_link(tmp_path: Path) -> None:
+@pytest.mark.parametrize("linked", ["a-profile", "its-file"])
+def test_what_a_link_leads_to_is_not_counted_and_is_not_called_none(
+    tmp_path: Path, linked: str
+) -> None:
     """ELA reads the profile of its own browser, and nothing a link leads to: not a profile
-    that is a link to another folder, and not a file of the passwords that is a link."""
+    that is a link to another folder, and not a file of the passwords that is a link. **And it
+    does not say «none» of it** (the re-read of the round): the browser follows both links, so
+    what is there is passwords ELA did not count — said as what cannot be counted."""
     elsewhere = tmp_path / "another-browser"
     logins(elsewhere, 7)
     profile = tmp_path / "profile"
     logins(profile, 1)
-    (profile / "Profile 1").symlink_to(elsewhere / "Default", target_is_directory=True)
-    (profile / "Profile 2").mkdir()
-    (profile / "Profile 2" / "Login Data").symlink_to(elsewhere / "Default" / "Login Data")
+    if linked == "a-profile":
+        (profile / "Profile 1").symlink_to(elsewhere / "Default", target_is_directory=True)
+    else:
+        (profile / "Profile 1").mkdir()
+        (profile / "Profile 1" / "Login Data").symlink_to(elsewhere / "Default" / "Login Data")
 
-    assert saved_in(profile) == 1
+    with pytest.raises(BrowserFailed, match="cannot be counted") as failed:
+        saved_in(profile)
+
+    assert str(tmp_path) not in said_by(failed.value)
+
+
+def test_a_link_the_browser_itself_leaves_in_its_folder_is_nothing_to_count(
+    tmp_path: Path,
+) -> None:
+    """The lock, its cookie and its socket are links the browser makes, and none leads to a
+    folder: they are not profiles, and they stop no count."""
+    logins(tmp_path, 2)
+    locked_by(tmp_path, 4321)
+    (tmp_path / "SingletonCookie").symlink_to("12345678901234567890")
+    (tmp_path / "RunningChromeVersion").symlink_to("153.0.8010.12:1")
+
+    assert saved_in(tmp_path) == 2
 
 
 def test_a_second_profile_that_cannot_be_counted_is_said_and_never_left_out(
@@ -397,28 +420,62 @@ def test_a_second_profile_that_cannot_be_counted_is_said_and_never_left_out(
         saved_in(tmp_path)
 
 
-async def test_the_folder_says_how_many_profiles_of_the_browser_it_holds(tmp_path: Path) -> None:
-    """A profile is a folder of the folder's own that holds the browser's ``Preferences``: what
-    the browser itself calls one. Counted, so that the state can say there is more than the one
-    ELA prepares and uses (decision 79)."""
+def listed(folder: Path, *names: str) -> None:
+    """The browser's own list of its profiles, as it keeps it in ``Local State`` — with, for
+    each, what the test would not want to see leave: a name and an account."""
+    cache = {name: {"name": "Persona 1", "user_name": "somebody@example.com"} for name in names}
+    (folder / "Local State").write_text(
+        json.dumps({"profile": {"info_cache": cache, "last_used": names[-1]}}), encoding="utf-8"
+    )
+
+
+async def test_the_folder_says_how_many_profiles_the_browser_itself_lists(tmp_path: Path) -> None:
+    """A profile is what **the browser itself lists** — the names in its ``Local State`` —, not
+    whatever folder holds a ``Preferences``: the browser keeps folders of its own beside its
+    profiles — the one of its profile picker, the one of a guest window — that are none
+    (the re-read of the round). Counted, so that the state can say there is more than the one ELA
+    prepares and uses (decision 79); read as presence, never as what a profile is called."""
     profile = tmp_path / "profile"
     profile.mkdir(mode=0o700)
     made = chrome(profile)
     assert profiles_in(profile) == 0 and await made.profiles() == 0, "before the first launch"
 
-    (profile / "Default").mkdir()
-    (profile / "Default" / "Preferences").write_text("{}", encoding="utf-8")
-    (profile / "Crashpad").mkdir()
-    (profile / "Local State").write_text("{}", encoding="utf-8")
-    assert await made.profiles() == 1
+    for name in ("Default", "System Profile", "Guest Profile", "Crashpad"):
+        (profile / name).mkdir()
+        (profile / name / "Preferences").write_text("{}", encoding="utf-8")
+    listed(profile, "Default")
+    assert profiles_in(profile) == 1 and await made.profiles() == 1
 
-    (profile / "Profile 1").mkdir()
-    (profile / "Profile 1" / "Preferences").write_text("{}", encoding="utf-8")
-    elsewhere = tmp_path / "another-browser" / "Default"
-    elsewhere.mkdir(parents=True)
-    (elsewhere / "Preferences").write_text("{}", encoding="utf-8")
-    (profile / "Profile 2").symlink_to(elsewhere, target_is_directory=True)
-    assert profiles_in(profile) == 2 and await made.profiles() == 2, "never through a link"
+    listed(profile, "Default", "Profile 1")
+    assert profiles_in(profile) == 2 and await made.profiles() == 2
+
+
+@pytest.mark.parametrize(
+    "written",
+    ["this is not json", "[]", '{"profile": 3}', '{"profile": {"info_cache": []}}'],
+    ids=["not-json", "not-an-object", "no-profiles", "a-list-that-is-no-list-of-names"],
+)
+def test_a_list_of_the_profiles_that_cannot_be_read_is_said_and_never_a_number(
+    tmp_path: Path, written: str
+) -> None:
+    (tmp_path / "Local State").write_text(written, encoding="utf-8")
+
+    with pytest.raises(BrowserFailed, match="cannot be listed") as failed:
+        profiles_in(tmp_path)
+
+    assert str(tmp_path) not in said_by(failed.value)
+
+
+def test_a_list_of_the_profiles_that_is_a_link_is_not_read_through(tmp_path: Path) -> None:
+    elsewhere = tmp_path / "another-browser"
+    elsewhere.mkdir()
+    listed(elsewhere, "Default", "Profile 1", "Profile 2")
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "Local State").symlink_to(elsewhere / "Local State")
+
+    with pytest.raises(BrowserFailed, match="cannot be listed"):
+        profiles_in(profile)
 
 
 def test_a_file_that_cannot_be_counted_is_said_and_never_called_none(tmp_path: Path) -> None:
@@ -909,6 +966,73 @@ def test_what_a_process_the_lock_names_is_is_read_from_its_command_line(
     assert on_the_folder(said, profile, Path(BINARY)) == what
 
 
+def test_the_folder_is_the_folder_however_its_path_is_written(tmp_path: Path) -> None:
+    """The re-read of the round: a browser started by hand on the folder names it as a shell
+    wrote it — with the slash a completion leaves at its end, through a link above it — and it
+    is on the folder all the same. Read as text only, it held nothing: a step was launched over
+    it, and ELA looked at the screen while a hand could be signing in."""
+    real = tmp_path / "real"
+    profile = real / "a profile"
+    profile.mkdir(parents=True)
+    (tmp_path / "link").symlink_to(real, target_is_directory=True)
+    binary = Path(BINARY)
+
+    assert on_the_folder(f"{BINARY} --user-data-dir={profile}/", profile, binary) == ELA_S_BROWSER
+    through = tmp_path / "link" / "a profile"
+    assert on_the_folder(f"{BINARY} --user-data-dir={through} --x", profile, binary) == (
+        ELA_S_BROWSER
+    )
+    assert on_the_folder(f"{BINARY} --user-data-dir={profile}/ --x", through, binary) == (
+        ELA_S_BROWSER
+    )
+    other = tmp_path / "another"
+    other.mkdir()
+    assert on_the_folder(f"{BINARY} --user-data-dir={other}/", profile, binary) is None
+
+
+@pytest.mark.parametrize(
+    "named", ["a profile", "./a profile", "../somewhere/a profile", ""], ids=repr
+)
+def test_a_folder_named_from_where_the_process_stands_is_a_doubt(
+    tmp_path: Path, named: str
+) -> None:
+    """Where that process stands ELA does not know: a path that does not begin at the root
+    cannot be said to be another folder. A doubt holds, and is told nothing."""
+    profile = tmp_path / "a profile"
+
+    assert on_the_folder(f"{BINARY} --user-data-dir={named} --x", profile, Path(BINARY)) == (
+        ANOTHER_PROGRAM
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "{binary} --user-data-dir={profile} two --no-first-run",
+        "{binary} --user-data-dir={profile} https://accounts.example/",
+        "{binary} --remote-debugging-pipe --user-data-dir={profile} about:blank",
+        "{binary} --user-data-dir={profile} --remote-debugging-port=9222",
+    ],
+    ids=[
+        "a-longer-folder-or-this-one-and-a-word",
+        "this-folder-and-then-what-is-no-switch",
+        "a-browser-somebody-drives",
+        "a-browser-with-a-port-open",
+    ],
+)
+def test_ela_tells_to_quit_only_what_is_plainly_its_browser_with_nothing_attached(
+    tmp_path: Path, command: str
+) -> None:
+    """The system prints the arguments joined by spaces: where the folder's name ends is plain
+    only when a switch follows it, or nothing. And a browser with a driver or a port attached is
+    a step of somebody's — another ELA on this folder —, not the browser a hand may be on. Each
+    holds the folder; none is told."""
+    profile = tmp_path / "a profile"
+    said = command.format(binary=BINARY, profile=profile)
+
+    assert on_the_folder(said, profile, Path(BINARY)) == ANOTHER_PROGRAM
+
+
 def test_a_command_line_nobody_could_read_is_a_doubt_and_a_doubt_holds_the_folder(
     tmp_path: Path,
 ) -> None:
@@ -1010,6 +1134,21 @@ async def test_a_process_ela_cannot_say_what_it_is_holds_the_folder(
     assert await made.occupied() == PROFILE_PROCESS
     with pytest.raises(ProfileBusy):
         await made.window(None)
+
+
+async def test_a_system_that_says_nothing_of_a_process_the_kernel_knows_is_a_doubt(
+    tmp_path: Path, installed: Path
+) -> None:
+    """The system's program ends the same way for a process that is gone and for every error of
+    its own (measured: a pid too large, a pid that is no number). So «nothing» is believed only
+    of a process the kernel does not know any more: of one it still knows, it is a doubt."""
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    locked_by(profile, os.getpid())
+    made = chrome(profile)
+    made._said_of = Asked("")
+
+    assert await made.occupied() == PROFILE_PROCESS
 
 
 async def test_another_program_on_the_folder_holds_it_too(tmp_path: Path, installed: Path) -> None:

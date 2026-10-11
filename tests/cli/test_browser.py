@@ -30,6 +30,7 @@ from ela.ports import (
     PROFILE_WINDOW,
     SHUT_KILLED,
     SHUT_QUIT,
+    SHUT_TOLD,
     ProfileBusy,
     ProfileUndeclared,
 )
@@ -281,6 +282,19 @@ async def test_close_ends_the_browser_a_hand_may_be_on_and_says_how(
     assert said in result.output and "the profile is free" in result.output
     assert len(browsed.accounts.shuts) == 1
     assert browsed.sent("/browser/close") == [{}]
+
+
+async def test_close_of_a_browser_ela_cannot_say_ended_says_that_and_not_that_it_is_free(
+    browsed: Browsed,
+) -> None:
+    browsed.accounts.holder = PROFILE_PROCESS
+    browsed.accounts.shut_answer = SHUT_TOLD
+
+    result = await browsed("browser", "close")
+
+    assert result.exit_code == OK, result.output
+    assert "it was told to quit" in result.output and "ela browser status" in result.output
+    assert "free" not in result.output and "it quit" not in result.output
 
 
 async def test_close_with_nothing_open_says_so(browsed: Browsed) -> None:

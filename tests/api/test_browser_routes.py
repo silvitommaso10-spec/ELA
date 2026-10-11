@@ -32,6 +32,7 @@ from ela.ports import (
     PROFILE_WINDOW,
     SHUT_KILLED,
     SHUT_QUIT,
+    SHUT_TOLD,
     BrowserFailed,
     BrowserStopped,
     BrowserUnsupported,
@@ -389,10 +390,13 @@ async def test_the_state_says_how_many_profiles_of_the_browser_the_folder_holds(
 
 
 @pytest.mark.parametrize("holder", [PROFILE_WINDOW, PROFILE_PROCESS])
-@pytest.mark.parametrize("outcome", [SHUT_QUIT, SHUT_KILLED])
+@pytest.mark.parametrize("outcome", [SHUT_QUIT, SHUT_KILLED, SHUT_TOLD])
 async def test_closing_tells_the_browser_a_hand_may_be_on_and_who_asked_is_a_row_of_the_audit(
     browsed: Browsed, holder: str, outcome: str
 ) -> None:
+    """Written whenever a process was told — also when ELA cannot say what became of it —, with
+    what held the profile when the command looked: the window ELA started, or a process it did
+    not. For that one this is the only row there is."""
     browsed.accounts.holder = holder
     browsed.accounts.shut_answer = outcome
 
@@ -403,8 +407,40 @@ async def test_closing_tells_the_browser_a_hand_may_be_on_and_who_asked_is_a_row
     (row,) = await browsed.events(AuditEventType.BROWSER_CLOSE_ASKED)
     assert row.actor.kind is ActorKind.USER
     assert row.task_id is None and row.capability_id is None
-    assert dict(row.payload) == {"outcome": outcome}
+    assert dict(row.payload) == {"outcome": outcome, "held_by": holder}
+
+
+async def test_a_browser_that_ended_frees_the_profile_for_the_state(browsed: Browsed) -> None:
+    browsed.accounts.holder = PROFILE_WINDOW
+
+    await browsed.client.post("/browser/close")
+
     assert (await browsed.client.get("/browser")).json()["state"] == "free"
+
+
+async def test_a_binary_that_is_not_installed_any_more_does_not_stop_the_window_being_ended(
+    browsed: Browsed,
+) -> None:
+    """The binary may go while a window of it runs — the lock's revision changed under a running
+    ELA —: nothing can be started, and what is running can still be ended."""
+    browsed.accounts.holder = PROFILE_WINDOW
+    browsed.accounts.installed_answer = False
+
+    answered = await browsed.client.post("/browser/close")
+
+    assert (answered.status_code, answered.json()) == (200, {"outcome": SHUT_QUIT})
+
+
+async def test_a_stop_that_arrives_while_the_browser_is_ended_is_said_as_the_stop(
+    browsed: Browsed,
+) -> None:
+    browsed.accounts.holder = PROFILE_WINDOW
+    browsed.accounts.raising["shut"] = BrowserStopped("ELA is stopping")
+
+    answered = await browsed.client.post("/browser/close")
+
+    assert answered.status_code == 409
+    assert answered.json()["error"]["message"].startswith("browser.stopped: ")
 
 
 async def test_the_grace_of_the_command_is_the_grace_of_ela_s_close(

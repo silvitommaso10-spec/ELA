@@ -25,6 +25,11 @@ from ela.permissions import (
 from ela.providers.anthropic.models import HAIKU_5_5
 from ela.routing import DEFAULT_ROUTES, Route, RoutePolicy
 
+NAMED_HERE = "claude-haiku-5-5"
+"""The model of the route, **written here and not read from the provider's own constant**: a
+model renamed in place would pass a comparison with the constant, and nobody would be told to
+read the policy again (the re-read of the round)."""
+
 REREAD = (
     "the model of the route a guided session runs on is not the one this test names. Whoever "
     "changes it re-reads the provider's policy for that model — how long it keeps what a "
@@ -40,11 +45,11 @@ async def test_the_built_catalogue_names_the_model_of_the_default_route(ela: Ela
 
         assert terms is not None
         assert terms.route == GUIDED_ROUTE
-        assert terms.model == HAIKU_5_5, REREAD
+        assert terms.model == HAIKU_5_5 == NAMED_HERE, REREAD
 
 
 def test_the_default_table_reads_the_cheap_profile() -> None:
-    assert default_route_model(RoutePolicy(), GUIDED_ROUTE) == HAIKU_5_5, REREAD
+    assert default_route_model(RoutePolicy(), GUIDED_ROUTE) == NAMED_HERE, REREAD
 
 
 def test_the_sentence_says_where_the_policy_is_dated_and_by_when_it_is_read_again() -> None:
