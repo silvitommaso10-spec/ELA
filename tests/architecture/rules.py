@@ -733,6 +733,17 @@ SESSION_ROOM = Path("executive") / "sessions.py"
 #: tool, a route or the executor opening one would hold a password where a result, a message or a
 #: log line is one statement away.
 OPENING_METHOD = "reveal"
+#: Rule 69 (M13.9, ADR 0063; the fifth criterion of the registration): the folder of the browser's
+#: profile holds the user's sessions, and is read by its adapter and by nothing else in ELA. The
+#: line that declares it is :data:`PROFILE_FIELD`; it is named by the settings, which declare and
+#: check it, and by the composition root, which hands the folder to the adapter under another
+#: name — :data:`PROFILE_READERS` — and by no other module: not a route, not a tool, not the
+#: audit. Whoever else needs to know something of the profile asks the port, which answers with
+#: facts.
+PROFILE_FIELD = "browser_profile_dir"
+PROFILE_READERS = frozenset(
+    {Path(COMPOSITION_DIR) / "settings.py", Path(COMPOSITION_DIR) / "root.py"}
+)
 #: Rule 63 (M14.2, ADR 0058): the plan is independent of the device (§13), so the Planner's module
 #: names nothing of the machines. A contract of import-linter cannot say it: the Planner imports the
 #: runner, and the runner the orchestrator.
@@ -1805,6 +1816,40 @@ def check_a_secret_is_opened_only_by_an_adapter(pkg_root: Path) -> list[Violatio
             and node.func.attr == OPENING_METHOD
         )
     return found
+
+
+def check_the_profile_s_folder_is_its_adapter_s(pkg_root: Path) -> list[Violation]:
+    """Rule 69: outside the settings and the composition root, nobody names the folder of the
+    browser's profile (M13.9, ADR 0063).
+
+    Reported: :data:`PROFILE_FIELD` as an attribute, a name, a parameter, a keyword or a string —
+    ``getattr`` reads by a string —, outside :data:`PROFILE_READERS`. The adapter receives the
+    folder under another name and never asks the settings; that only the composition builds the
+    adapter is rule 27's. A heuristic on a name: no other thing in ELA is called that.
+    """
+    rule = "the-profile-s-folder-is-its-adapter-s"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root):
+        if path.relative_to(pkg_root) in PROFILE_READERS:
+            continue
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.extend(
+            Violation(rule, name, PROFILE_FIELD, getattr(node, "lineno", 0))
+            for node in ast.walk(tree)
+            if _names_the_profile(node)
+        )
+    return found
+
+
+def _names_the_profile(node: ast.AST) -> bool:
+    if isinstance(node, ast.Attribute):
+        return node.attr == PROFILE_FIELD
+    if isinstance(node, ast.Name):
+        return node.id == PROFILE_FIELD
+    if isinstance(node, (ast.arg, ast.keyword)):
+        return node.arg == PROFILE_FIELD
+    return isinstance(node, ast.Constant) and node.value == PROFILE_FIELD
 
 
 def _on_the_store(call: ast.Call, method: str) -> bool:
@@ -3949,6 +3994,7 @@ RULES: dict[str, Rule] = {
     "a-policy-is-born-at-its-route": check_a_policy_is_born_at_its_route,
     "the-room-s-word-is-the-room-s": check_the_room_s_word_is_the_room_s,
     "a-secret-is-opened-only-by-an-adapter": check_a_secret_is_opened_only_by_an_adapter,
+    "the-profile-s-folder-is-its-adapter-s": check_the_profile_s_folder_is_its_adapter_s,
 }
 
 
@@ -4458,6 +4504,22 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-policy-is-born-at-its-route", "TOOLS_DIR", DETECTOR),
     Constant(
         "a-policy-is-born-at-its-route",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-profile-s-folder-is-its-adapter-s (rule 69, M13.9)
+    Constant("the-profile-s-folder-is-its-adapter-s", "PROFILE_FIELD", DETECTOR),
+    Constant(
+        "the-profile-s-folder-is-its-adapter-s",
+        "PROFILE_READERS",
+        EXEMPTION,
+        by=EACH,
+        adr="ADR 0063",
+    ),
+    Constant(
+        "the-profile-s-folder-is-its-adapter-s",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

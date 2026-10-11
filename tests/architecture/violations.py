@@ -2036,6 +2036,31 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.ports import AuthorizationStore\n",
         "AuthorizationStore",
     ),
+    # --- the-profile-s-folder-is-its-adapter-s (rule 69, M13.9) ---
+    Case(
+        # A route reading where the profile is, to answer with it — or to open it.
+        "a-route-reads-the-profile-s-folder",
+        "the-profile-s-folder-is-its-adapter-s",
+        "api/browser.py",
+        "def where(ela):\n    return str(ela.settings.accounts.browser_profile_dir)\n",
+        "browser_profile_dir",
+    ),
+    Case(
+        # A tool that is handed the folder: one statement from listing what is in it.
+        "a-tool-receives-the-profile-s-folder",
+        "the-profile-s-folder-is-its-adapter-s",
+        "tools/account.py",
+        "class Reads:\n    def __init__(self, browser_profile_dir):\n        self._at = 1\n",
+        "browser_profile_dir",
+    ),
+    Case(
+        # Read by a string, which no attribute shows.
+        "the-profile-s-folder-read-by-its-name",
+        "the-profile-s-folder-is-its-adapter-s",
+        "executive/executor.py",
+        "def where(settings):\n    return getattr(settings.accounts, 'browser_profile_dir')\n",
+        "browser_profile_dir",
+    ),
     # --- a-secret-is-opened-only-by-an-adapter (rule 68, M13.9) ---
     Case(
         # A tool opening the password it was handed: one statement from an outcome or a log.
@@ -3011,6 +3036,23 @@ ALLOWED: tuple[Case, ...] = (
         "        session=session, task_id=live.task_id,\n"
         "        capability_id=live.capability, sites=live.sites,\n"
         "    )\n",
+        "",
+    ),
+    Case(
+        # Rule 69: the composition root hands the folder to the adapter, under another name.
+        "the-root-hands-the-folder-to-the-adapter",
+        "the-profile-s-folder-is-its-adapter-s",
+        "composition/root.py",
+        "def handed(settings, adapter):\n"
+        "    return adapter(profile=settings.accounts.browser_profile_dir)\n",
+        "",
+    ),
+    Case(
+        # Rule 69: the adapter holds a folder it was given, and names no setting.
+        "the-adapter-holds-the-folder-it-was-given",
+        "the-profile-s-folder-is-its-adapter-s",
+        "infrastructure/machine/account.py",
+        "class Chrome:\n    def __init__(self, profile):\n        self._profile = profile\n",
         "",
     ),
     Case(
