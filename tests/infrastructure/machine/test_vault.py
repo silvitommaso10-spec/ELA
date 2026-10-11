@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import stat
 import sys
 from collections.abc import Iterator
@@ -86,6 +87,12 @@ class Bw:
 
     def commands(self) -> list[list[str]]:
         return [call["argv"] for call in self.calls()]
+
+    def grandchild(self) -> int | None:
+        """The pid of the child a ``bw`` that hangs started for itself, once it has said it."""
+        file = self.folder / "grandchild"
+        said = file.read_text(encoding="utf-8") if file.exists() else ""
+        return int(said) if said else None
 
 
 @pytest.fixture
@@ -173,8 +180,56 @@ async def test_the_key_is_in_the_child_s_environment_and_nowhere_else(bw: Bw) ->
             "BW_NOINTERACTION",
         }, "the closed environment, and the two of bw"
         assert call["environment"]["BW_NOINTERACTION"] == "true"
-        assert call["stdin"] == 0, "its stdin is the end of a file: nothing can be asked on it"
     assert "BW_SESSION" not in os.environ and KEY not in json.dumps(dict(os.environ))
+
+
+@pytest.fixture
+def something_typed() -> Iterator[bytes]:
+    """The stdin of this process holding a line somebody typed, for one test — under pytest it is
+    already the end of a file, and a child that inherited it would read nothing all the same."""
+    typed = b"a line somebody typed\n"
+    read, write = os.pipe()
+    os.write(write, typed)
+    os.close(write)
+    kept = os.dup(0)
+    os.dup2(read, 0)
+    os.close(read)
+    try:
+        yield typed
+    finally:
+        os.dup2(kept, 0)
+        os.close(kept)
+
+
+async def test_the_child_s_stdin_is_the_end_of_a_file_whatever_ela_s_own_is(
+    bw: Bw, something_typed: bytes
+) -> None:
+    """ADR 0063 §2: nothing can be asked on it, and nothing ELA was handed on its own stdin — the
+    key, by ``ela vault open`` — is there for ``bw`` to read."""
+    made = await opened(bw)
+    await made.find(SITE)
+    await made.take(ITEM["id"])
+    await made.lock()
+
+    assert [call["stdin"] for call in bw.calls()] == [0] * len(bw.calls())
+    assert os.read(0, 64) == something_typed, "the control: there was a line, and nobody read it"
+
+
+async def test_what_bw_writes_on_its_stderr_goes_nowhere(
+    bw: Bw, capfd: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """ADR 0063 §2: an error of ``bw`` can name the entry it could not read, or the account. It
+    does not reach ELA's own stderr, which is its log."""
+    made = await opened(bw)
+    bw.set(mutter=f"error: {SENTINEL} of the-account@example.invalid")
+    with caplog.at_level(logging.DEBUG):
+        await made.find(SITE)
+        await made.take(ITEM["id"])
+        await made.lock()
+
+    written = capfd.readouterr()
+    assert SENTINEL not in written.err and SENTINEL not in written.out
+    assert SENTINEL not in caplog.text
 
 
 async def test_locking_asks_bw_to_lock_and_forgets_the_key(bw: Bw) -> None:
@@ -186,6 +241,76 @@ async def test_locking_asks_bw_to_lock_and_forgets_the_key(bw: Bw) -> None:
     assert bw.state()["status"] == "locked"
     assert await made.status() == "locked"
     assert bw.calls()[-1]["environment"].get("BW_SESSION") is None, "the key was forgotten"
+
+
+async def test_a_lock_bw_refused_is_said_and_the_key_is_forgotten_all_the_same(bw: Bw) -> None:
+    """A vault that stayed open is not written down as locked: the adapter says the lock failed."""
+    from ela.ports import VaultFailed
+
+    made = await opened(bw)
+    bw.set(fail=["lock"])
+
+    with pytest.raises(VaultFailed, match="^bw lock failed$"):
+        await made.lock()
+
+    assert bw.state()["status"] == "unlocked", "the control: bw did not lock"
+    bw.set(fail=[])
+    assert await made.status() == "locked"
+    assert bw.calls()[-1]["environment"].get("BW_SESSION") is None, "the key was forgotten"
+
+
+async def test_a_status_bw_could_not_give_is_not_believed(bw: Bw) -> None:
+    from ela.ports import VaultFailed
+
+    bw.set(fail=["status"])
+
+    with pytest.raises(VaultFailed, match="^bw status failed$"):
+        await vault(bw).status()
+
+
+@pytest.mark.parametrize(
+    "said",
+    ['{"status": "half-open"}', '{"status": ["unlocked"]}', '{"status": {"is": "unlocked"}}', "[]"],
+    ids=["a-word-nobody-knows", "a-list", "an-object", "not-an-object"],
+)
+async def test_a_status_that_is_not_one_of_the_three_words_is_an_error_of_the_vault(
+    bw: Bw, said: str
+) -> None:
+    """Whatever ``bw`` printed in the place of the word — a list is not hashable, and looking it
+    up among the three words is a ``TypeError`` —: the adapter's own error, and no state."""
+    from ela.ports import VaultFailed
+
+    bw.set(raw={"status": said})
+
+    with pytest.raises(VaultFailed, match="did not say whether the vault is open"):
+        await vault(bw).status()
+
+
+async def test_a_key_no_environment_can_carry_is_an_error_of_the_vault_and_is_not_said(
+    bw: Bw,
+) -> None:
+    """A NUL cannot be in the environment of a process: the launch is refused by Python with a
+    ``ValueError``, before ``bw`` exists. The adapter's own error, with nothing of the key."""
+    from ela.ports import VaultFailed
+
+    made = vault(bw)
+    key = "a-key-with-a-nul-\x00-and-the-SENTINEL-in-it"
+
+    with pytest.raises(VaultFailed, match="could not be started") as caught:
+        await made.unlock(secret(key))
+
+    assert "SENTINEL" not in everything_said(caught.value)
+    assert bw.calls() == [], "nothing was launched"
+    assert await made.status() == "locked", "and the key was not kept"
+
+
+async def test_an_address_no_argument_can_carry_is_an_error_of_the_vault(bw: Bw) -> None:
+    from ela.ports import VaultFailed
+
+    made = await opened(bw)
+
+    with pytest.raises(VaultFailed, match="could not be started"):
+        await made.find("https://posta.example/\x00")
 
 
 async def test_forgetting_launches_nothing(bw: Bw) -> None:
@@ -260,16 +385,35 @@ async def test_an_output_that_cannot_be_read_gives_an_error_that_carries_none_of
     assert SENTINEL not in caplog.text
 
 
-async def test_a_listing_that_is_not_a_list_of_entries_is_an_error_and_not_a_guess(bw: Bw) -> None:
+@pytest.mark.parametrize(
+    "items",
+    [{"id": "not a list", "password": SENTINEL}, [ITEM, f"a line with {SENTINEL}"], [ITEM, [ITEM]]],
+    ids=["an-object", "a-text-among-the-entries", "a-list-among-the-entries"],
+)
+async def test_a_listing_that_is_not_a_list_of_entries_is_an_error_and_not_a_guess(
+    bw: Bw, items: Any
+) -> None:
     from ela.ports import VaultFailed
 
     made = await opened(bw)
-    bw.set(items={"id": "not a list", "password": SENTINEL})
+    bw.set(items=items)
 
-    with pytest.raises(VaultFailed) as caught:
+    with pytest.raises(VaultFailed, match="did not print a list of entries") as caught:
         await made.find(SITE)
 
     assert SENTINEL not in everything_said(caught.value)
+
+
+async def test_an_entry_whose_id_is_not_a_text_is_no_entry_to_ask_for(bw: Bw) -> None:
+    """The id is what ``get item`` is launched with after the yes: one that is not a text is not
+    one ELA can name, and is left out and not guessed."""
+    numbered = json.loads(json.dumps(ITEM)) | {"id": 7, "name": "Senza un id"}
+    bw.set(items=[numbered, ITEM])
+    made = await opened(bw)
+
+    found = await made.find(SITE)
+
+    assert [entry.name for entry in found] == ["La posta"]
 
 
 async def test_an_entry_without_a_login_is_no_entry_for_a_site(bw: Bw) -> None:
@@ -288,7 +432,7 @@ async def test_a_command_that_fails_is_an_error_that_says_which_and_nothing_else
     made = await opened(bw)
     bw.set(fail=["list"])
 
-    with pytest.raises(VaultFailed, match="list items"):
+    with pytest.raises(VaultFailed, match="^bw list items failed$"):
         await made.find(SITE)
 
 
@@ -368,11 +512,12 @@ async def test_an_entry_read_after_the_yes_that_cannot_be_read_carries_none_of_i
     assert SENTINEL not in everything_said(caught.value)
 
 
-async def test_an_entry_without_a_password_gives_none_and_says_so(bw: Bw) -> None:
+@pytest.mark.parametrize("password", [None, "", 7], ids=["none", "empty", "not-a-text"])
+async def test_an_entry_without_a_password_gives_none_and_says_so(bw: Bw, password: Any) -> None:
     from ela.ports import VaultFailed
 
     bare = json.loads(json.dumps(ITEM))
-    bare["login"]["password"] = None
+    bare["login"]["password"] = password
     bw.set(items=[bare])
     made = await opened(bw)
 
@@ -408,22 +553,33 @@ async def test_a_bw_that_does_not_answer_is_killed_with_its_group_at_the_deadlin
     assert not running(hung["pid"]), "and not left behind"
 
 
-async def test_a_wait_that_is_cancelled_does_not_leave_bw_running(bw: Bw) -> None:
+async def test_a_wait_that_is_cancelled_does_not_leave_bw_running_nor_what_it_started(
+    bw: Bw,
+) -> None:
+    """«Killed with its group»: the ``bw`` of the tests that hangs has started a child of its own
+    by then, and the child goes with it — a kill of the one process would leave it."""
     made = await opened(bw)
     bw.set(hang=["list"])
     finding = asyncio.create_task(made.find(SITE))
-    while len(bw.calls()) < 3:  # the unlock's status, find's status, and the listing that hangs
-        await asyncio.sleep(0.02)
+    try:
+        while bw.grandchild() is None:  # the listing hangs once its own child is started
+            await asyncio.sleep(0.02)
 
-    finding.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await finding
+        finding.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await finding
 
-    hung = bw.calls()[-1]
-    deadline = asyncio.get_running_loop().time() + 10
-    while running(hung["pid"]) and asyncio.get_running_loop().time() < deadline:
-        await asyncio.sleep(0.02)
-    assert not running(hung["pid"])
+        hung, child = bw.calls()[-1]["pid"], bw.grandchild()
+        assert child is not None
+        deadline = asyncio.get_running_loop().time() + 10
+        while (running(hung) or running(child)) and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.02)
+        assert not running(hung)
+        assert not running(child), "the child bw started is in its group, and went with it"
+    finally:
+        left = bw.grandchild()
+        if left is not None and running(left):
+            os.kill(left, signal.SIGKILL)  # a test that fails leaves no process either
 
 
 # ----------------------------------------------------------------------------------------

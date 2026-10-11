@@ -15,7 +15,13 @@ line, and writes beside it ``state.json``:
   in ``BW_SESSION``;
 * ``items`` — what the vault holds;
 * ``hang``, ``garbage``, ``fail`` — lists of command words (``status``, ``list``, ``get``,
-  ``lock``): that command never answers, answers something that is not JSON, or exits with 1.
+  ``lock``): that command never answers, answers something that is not JSON, or exits with 1;
+* ``raw`` — a command word and the text that command prints **as it is**, exiting with 0: a
+  status that is not one of the three words, an answer of another shape;
+* ``mutter`` — a text every call writes on its stderr, the place the real one writes its errors.
+
+A command that hangs **starts a child of its own first**, in its group, and writes that child's
+pid in ``grandchild``: what «killed with its group» has to take away with it.
 
 Beside it, it writes ``calls.jsonl``: for each call the arguments, **the whole environment it
 received**, how many bytes its stdin held, and its own pid — which is how a test reads what the
@@ -26,6 +32,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -51,13 +58,25 @@ def main(arguments: list[str]) -> int:
             + "\n"
         )
     word = arguments[0] if arguments else ""
+    if "mutter" in state:
+        print(state["mutter"], file=sys.stderr, flush=True)
     if word in state.get("hang", []):
+        child = subprocess.Popen(  # noqa: S603 — the interpreter of the suite, and a sleep
+            [sys.executable, "-c", "import time; time.sleep(600)"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        (HERE / "grandchild").write_text(str(child.pid), encoding="utf-8")
         time.sleep(600)
     if word in state.get("fail", []):
         print("the command failed", file=sys.stderr)
         return 1
     if word in state.get("garbage", []):
         print("this is not JSON {" + json.dumps(state.get("items", [])))
+        return 0
+    if word in state.get("raw", {}):
+        print(state["raw"][word])
         return 0
     opened = state["status"] == "unlocked" and os.environ.get("BW_SESSION") == state.get("key")
     if word == "status":

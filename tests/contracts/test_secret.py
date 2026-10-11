@@ -37,11 +37,23 @@ def test_it_opens_with_one_method_and_gives_back_what_it_was_given() -> None:
         lambda s: str(s),
         lambda s: f"{s}",
         lambda s: f"{s!r:>20}",
+        lambda s: f"{s:>20}",
+        lambda s: format(s, "^30"),
         lambda s: "%s and %r" % (s, s),  # noqa: UP031 — the form a log line uses
         lambda s: repr([s, {"k": s}, (s,)]),
         lambda s: format(s, ""),
     ],
-    ids=["repr", "str", "f-string", "format spec", "percent", "inside a container", "format"],
+    ids=[
+        "repr",
+        "str",
+        "f-string",
+        "the repr with a format spec",
+        "a format spec",
+        "format with a spec",
+        "percent",
+        "inside a container",
+        "format",
+    ],
 )
 def test_nothing_that_writes_it_down_writes_its_value(written: Any) -> None:
     said = written(secret())
@@ -66,6 +78,16 @@ def test_a_log_line_that_is_handed_one_says_secret(caplog: pytest.LogCaptureFixt
 def test_it_is_not_serialised_and_not_copied(serialise: Any) -> None:
     with pytest.raises(TypeError):
         serialise(secret())
+
+
+def test_the_state_a_serialiser_would_ask_for_is_refused() -> None:
+    """``object.__getstate__`` answers for every object since Python 3.11, and for one with slots
+    its answer is the slots and their values: whoever asks a secret for its state — a serialiser
+    of its own, a debugger's dump — would be handed the value by a method nobody wrote."""
+    one = secret()
+
+    with pytest.raises(TypeError, match="not serialised"):
+        one.__getstate__()
 
 
 def test_a_secret_inside_what_is_serialised_stops_the_serialisation() -> None:
