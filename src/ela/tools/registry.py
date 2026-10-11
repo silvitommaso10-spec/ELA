@@ -21,6 +21,7 @@ from typing import Final
 
 from ela.domain import CapabilityId
 from ela.ports import (
+    AccountBrowser,
     AgentSession,
     AlreadyExistsError,
     AuditLog,
@@ -39,6 +40,14 @@ from ela.ports import (
     TextRecognitionPort,
     ToolPort,
     VerifierPort,
+)
+from ela.tools.account import (
+    AccountActTool,
+    AccountActVerifier,
+    AccountReadTool,
+    AccountReadVerifier,
+    LoginTool,
+    LoginVerifier,
 )
 from ela.tools.browser import BrowserActTool, BrowserReadTool, Browsing
 from ela.tools.echo import EchoTool
@@ -60,6 +69,7 @@ from ela.tools.programs import Programs
 from ela.tools.screen import CaptureScreenTool, CaptureStore
 from ela.tools.screen_text import ReadScreenTextTool
 from ela.tools.terminal import Terminal, TerminalRunTool
+from ela.tools.vault import VaultDoor
 from ela.tools.verifiers import (
     ONLINE_SPEECH_VERIFIER_NAME,
     BrowserActVerifier,
@@ -299,6 +309,8 @@ def production_tools(
     gestures: Gestures,
     sessions: AgentSession,
     gateway: str,
+    accounts: AccountBrowser,
+    vault: VaultDoor,
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -333,6 +345,14 @@ def production_tools(
             # every gesture becomes a child task, and a session of Claude Code with no tools of its
             # own. The same router and providers as ``model.complete``: one route for the model.
             BrowserGuidedTool(gestures, sessions, router, providers, clock, ids, gateway=gateway),
+            # The browser with the user's accounts (M13.9, ADR 0063): **another browser**, and the
+            # same declared sites. The two tools of the empty browser are handed ``browser`` and
+            # these ``accounts`` — never the other way: no tool of the empty browser can open the
+            # folder of the profile, and a test of the composition holds it both ways. The login
+            # is the one tool that holds the door of the vault.
+            AccountReadTool(browsing, accounts, clock, ids),
+            AccountActTool(browsing, accounts, clock, ids),
+            LoginTool(browsing, accounts, vault, clock, ids),
         )
     )
 
@@ -427,6 +447,7 @@ def production_verifiers(
     gestures: Gestures,
     sessions: AgentSession,
     audit: AuditLog,
+    accounts: AccountBrowser,
 ) -> VerifierRegistry:
     """The verifiers of :func:`production_tools`, one per capability.
 
@@ -455,5 +476,9 @@ def production_verifiers(
             BrowserActVerifier(browser, browser_seconds),
             # What a guided session left behind: its processes, its calls, its gestures' tasks.
             BrowserGuidedVerifier(gestures, sessions, audit),
+            # The page a tool with the profile opened is looked at in the browser that opened it.
+            AccountReadVerifier(accounts, browser_seconds),
+            AccountActVerifier(accounts, browser_seconds),
+            LoginVerifier(accounts, browser_seconds),
         )
     )

@@ -330,6 +330,92 @@ che è stato provato lo toglie. È il binario che parla con chi l'ha fatto; si d
 
 **Solo sul Mac.** Su ogni altro sistema ogni uso solleva `BrowserUnsupported`, e nessuna cartella è creata.
 
+### 5. Le capability, i loro tool e i loro verifier
+
+Capability aggiunte:
+
+| Capability | Rischio | Scope | Argomenti scoped | Autorizzazione | Argomenti obbligatori | Argomenti opzionali |
+|---|---|---|---|---|---|---|
+| `browser.read_as_you` | MEDIUM | `undeclared` | `site` | sì | `site: string`, `path: string`, `purpose: string` | `selector: string` |
+| `browser.act_as_you` | HIGH | `undeclared` | `site` | sì | `site: string`, `path: string`, `fill: array`, `click: string`, `expect_text: string`, `purpose: string` | — |
+| `browser.login` | HIGH | `undeclared` | `site` | sì | `site: string`, `path: string`, `username_field: string`, `password_field: string`, `click: string`, `expect_text: string`, `purpose: string` | `entry: string` |
+
+**«As you» è la cosa che chi approva deve sapere, ed è la parola della domanda.** Gli schemi delle prime due sono
+quelli di `browser.read` e di `browser.act`, con le loro grammatiche e i loro limiti (ADR 0052 §5 e §8): ciò che
+cambia è il browser e la frase, non la forma della chiamata — «con il profilo» non è un argomento (ADR 0026 §7).
+Lo scope è `ELA_BROWSER_SITES`, e le capability stanno in `DECLARES_AN_EMPTY_SCOPE`. Nessuna viaggia, nessuna è
+ripiazzabile.
+
+**I livelli.** `browser.read_as_you` è `MEDIUM`: ciò che legge è contenuto di Tommaso (§57), e parte con le sue
+credenziali. Chiede a ogni uso: nessuna policy di §59 copre una lettura singola, e ciò che copre le letture
+scritte dal modello di una sessione è la sessione (§1). `browser.act_as_you` e `browser.login` sono `HIGH`:
+mandano qualcosa a nome suo, e ciò che è mandato non si riprende.
+
+**Le frasi**, che la domanda mostra: una lettura e un gesto dicono «where you are signed in» — ELA non sa, prima
+di aprire la pagina, se in quel sito c'è un login —; «il sito vede un visitatore» resta nelle frasi del browser
+vuoto, dove è vero. La frase del login dice «ELA keeps the password nowhere», e **non** «nowhere else»: dopo il
+click il modulo lo rimanda il cancello dell'adapter, e il valore ripassa dal processo di ELA.
+
+I tool, in `ela/tools/account.py`:
+
+| Capability | Tool | Nome | Idempotente | Codici d'errore | Numeri nell'audit |
+|---|---|---|---|---|---|
+| `browser.read_as_you` | `AccountReadTool` | `browser-read-as-you` | sì | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `shown`, `status`, `total` |
+| `browser.act_as_you` | `AccountActTool` | `browser-act-as-you` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `gestures`, `status` |
+| `browser.login` | `LoginTool` | `browser-login` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.login_form_get`, `browser.not_a_password_field`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system`, `vault.entry_ambiguous`, `vault.entry_forgotten`, `vault.entry_not_for_site`, `vault.failed`, `vault.locked`, `vault.no_entry`, `vault.no_password`, `vault.no_program`, `vault.program_changed`, `vault.program_gone`, `vault.program_is_a_script`, `vault.timeout`, `vault.unauthenticated`, `vault.undeclared` | `gestures`, `status` |
+
+I verifier, nello stesso modulo — guardano la pagina nel browser che l'ha aperta:
+
+| Capability | Verifier | Nome | Condizioni | Codici di fallimento |
+|---|---|---|---|---|
+| `browser.read_as_you` | `AccountReadVerifier` | `browser-read-as-you-verifier` | `browser.text_matches` | `browser.page_gone`, `browser.text_mismatch` |
+| `browser.act_as_you` | `AccountActVerifier` | `browser-act-as-you-verifier` | `browser.expect_visible` | `browser.expect_missing`, `browser.page_gone` |
+| `browser.login` | `LoginVerifier` | `browser-login-verifier` | `browser.expect_visible` | `browser.expect_missing`, `browser.page_gone`, `browser.second_factor` |
+
+Dove ciascuno ascolta la fermata del suo task (ADR 0054 §3) — nessuno viaggia, quindi su un nodo nessuno:
+
+| Capability | Qui | Su un nodo |
+|---|---|---|
+| `browser.read_as_you` | `the navigation` | `None` |
+| `browser.act_as_you` | `the first gesture` | `None` |
+| `browser.login` | `the first gesture` | `None` |
+
+Per il login il punto sta **prima che il vault sia interrogato**: un task fermato non prende nessuna password.
+
+**Prima della domanda** («partirebbe»), nell'ordine e ciascuno con il suo codice: gli argomenti; il sistema, la
+cartella del profilo, il binario, e chi tiene la cartella (`browser.unsupported_system`,
+`browser.profile_undeclared`, `browser.profile_unsafe`, `browser.not_installed`, `browser.profile_busy`); e, per
+un login, il programma del vault, lo stato del vault e la voce. Un rifiuto nato lì non costa un sì, e **non
+nomina mai una voce**. `browser.profile_busy` è ritentabile: ciò che tiene la cartella finisce.
+
+**Una lettura con il profilo non lascia il sito che nomina**: il confine della navigazione è l'origine di quel
+sito — quello di `browser.act` —, non ogni sito dichiarato. Un rimando verso un altro host, anche dichiarato, è
+`browser.left_site`: seguirlo porterebbe le credenziali di un secondo sito in una lettura che ne ha nominato
+uno.
+
+**`browser.login`, dopo il sì.** Il tool apre la pagina nel browser del profilo; guarda che sia sul sito della
+domanda, che i tre elementi ci siano una volta sola, che `password_field` sia `type="password"` —
+altrimenti `browser.not_a_password_field` —, che non si dichiari una password nuova, un codice a tempo o una
+carta, che `username_field` non si dichiari segreto, e che il modulo mandi con `POST` — altrimenti
+`browser.login_form_get`: mandata con `GET`, la password sarebbe in un indirizzo. **Solo allora** ascolta la
+fermata del suo task, al suo punto, e chiede al vault: una lettura sola della voce, riconfrontata con il sito
+su quella stessa lettura. Poi due `fill_secret` e un click. Ciò che fallisce dopo il sì ha il suo codice: il sì
+è speso, e niente è stato scritto in nessun campo.
+
+**La voce che il sì copre è quella che la domanda ha nominato.** Il piano può nominarla con `entry`, il suo id;
+senza, è la sola il cui host è quello del sito, e il tool **ricorda** — in memoria, per le domande che
+aspettano — quale voce ha trovato componendo la domanda. Dopo il sì legge quella, non quella che il vault
+terrebbe adesso. Se ELA è ripartita fra la domanda e il sì il tool non lo sa più: `vault.entry_forgotten`,
+niente è scritto, e lo step si richiede. *(È la domanda 73 della milestone.)*
+
+**Il secondo fattore** non entra in ELA: nessun codice a tempo, né preso dal vault. Se dopo il click la pagina
+mostra un campo `one-time-code` e il testo atteso non compare, il verifier fallisce con
+`browser.second_factor` — «do it by hand in ELA's window» — invece che con `browser.expect_missing`. Il
+riconoscimento è parziale, come quello dei campi segreti.
+
+**Il valore non viene mai dal piano**, e non entra nel modulo dei tool: il tool riceve due `Secret` dalla porta
+del vault e li passa all'adapter del browser — a nessun altro, in nessun esito, messaggio o evento.
+
 ## Alternative considerate
 
 - **Un grant della sessione con lo scope dei suoi siti**: è la forma delle policy di §59, e ADR 0060 l'aveva
@@ -364,5 +450,5 @@ che è stato provato lo toglie. È il binario che parla con chi l'ha fatto; si d
 Con questo ADR le regole di architettura sono **sessantanove** (la 67, la 68 e la 69), i contratti di import-linter restano
 **quindici**, i port diventano **trentacinque** (`Vault` e `AccountBrowser`), le rotte dell'API **sessantatré** e i comandi
 della CLI **trentaquattro** (quelle del vault, e i suoi comandi); le
-capability restano **quattordici**, le identità del middleware **sei**. *(I totali si aggiornano con le sezioni
+capability diventano **diciassette** (le tre di §5), le identità del middleware restano **sei**. *(I totali si aggiornano con le sezioni
 che seguono: questo ADR si scrive con l'implementazione.)*

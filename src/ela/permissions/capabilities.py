@@ -34,7 +34,14 @@ from typing import Any, Final
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
-from ela.domain import CapabilityId, CapabilitySpec, PolicyTerms, RiskLevel, SensorName
+from ela.domain import (
+    CapabilityId,
+    CapabilitySpec,
+    JsonValue,
+    PolicyTerms,
+    RiskLevel,
+    SensorName,
+)
 from ela.permissions.errors import (
     CapabilityNotFound,
     InvalidArgumentsError,
@@ -102,6 +109,14 @@ __all__ = [
     "PATH_MAX_LENGTH",
     "SELECTOR_MAX_LENGTH",
     "VALUE_MAX_LENGTH",
+    "ACCOUNTS_INTRODUCED_AT",
+    "BROWSER_ACT_AS_YOU",
+    "BROWSER_LOGIN",
+    "BROWSER_READ_AS_YOU",
+    "ENTRY_MAX_LENGTH",
+    "browser_act_as_you",
+    "browser_login",
+    "browser_read_as_you",
 ]
 
 MAX_RISK: Final = RiskLevel.HIGH
@@ -415,9 +430,20 @@ TERMINAL_RUN: Final = CapabilityId("terminal.run")
 BROWSER_READ: Final = CapabilityId("browser.read")
 BROWSER_ACT: Final = CapabilityId("browser.act")
 BROWSER_GUIDED: Final = CapabilityId("browser.guided")
+BROWSER_READ_AS_YOU: Final = CapabilityId("browser.read_as_you")
+BROWSER_ACT_AS_YOU: Final = CapabilityId("browser.act_as_you")
+BROWSER_LOGIN: Final = CapabilityId("browser.login")
 
 DECLARES_AN_EMPTY_SCOPE: Final[frozenset[CapabilityId]] = frozenset(
-    {TERMINAL_RUN, BROWSER_READ, BROWSER_ACT, BROWSER_GUIDED}
+    {
+        TERMINAL_RUN,
+        BROWSER_READ,
+        BROWSER_ACT,
+        BROWSER_GUIDED,
+        BROWSER_READ_AS_YOU,
+        BROWSER_ACT_AS_YOU,
+        BROWSER_LOGIN,
+    }
 )
 """The capabilities whose empty scope is **an answer** and not a doubt (M13.2 dec. 16).
 
@@ -502,6 +528,9 @@ SELECTOR_MAX_LENGTH: Final = 512
 VALUE_MAX_LENGTH: Final = 4096
 EXPECT_MAX_LENGTH: Final = 256
 FILLS_MAX: Final = 20
+ENTRY_MAX_LENGTH: Final = 64
+"""How long the id of an entry of the vault may be, in ``browser.login``: an id of Bitwarden's is
+thirty-six characters — a decision with room, not a measure of every vault."""
 """The limits of a browser call, **decisions and not measures** (M13.4 form H): enough for a contact
 form and an address with its query, and a ceiling to what a question makes somebody read."""
 
@@ -517,6 +546,8 @@ BROWSER_INTRODUCED_AT: Final = datetime(2026, 9, 29, tzinfo=UTC)
 """``created_at`` of the browser's two capabilities (M13.4, ADR 0052)."""
 
 GUIDED_INTRODUCED_AT: Final = datetime(2026, 10, 8, tzinfo=UTC)
+ACCOUNTS_INTRODUCED_AT: Final = datetime(2026, 10, 11, tzinfo=UTC)
+"""``created_at`` of the capabilities of the browser with the user's accounts (M13.9, ADR 0063)."""
 """``created_at`` of ``browser.guided`` (M14.3, ADR 0060)."""
 
 GUIDED_ROUTE: Final = "browsing"
@@ -1167,6 +1198,128 @@ def browser_act(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
     )
 
 
+def browser_read_as_you(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
+    """``browser.read_as_you``, **MEDIUM**: opens one page of a declared site in ELA's browser
+    **with the profile that lasts**, and reads its text (§19, §57; M13.9, ADR 0063).
+
+    **MEDIUM, with a question at every use**: what it reads is the user's own content — the mail,
+    the messages, what a site shows only to them —, and it leaves with their credentials. A site
+    that acts when an address is opened acts **as the user**. No policy of §59 covers a single
+    read (decision 29, the road C): what covers the reads a guided session's model writes is the
+    session itself.
+
+    The arguments are ``browser.read``'s, with its grammars and its limits (ADR 0052 §5): **what
+    changes is the browser and the sentence**, not the shape of the call — «with the profile» is
+    not an argument (ADR 0026 §7). The boundary of the navigation is narrower: the site the call
+    names and no other, where ``browser.read`` follows a redirect between declared sites.
+    """
+    return CapabilitySpec(
+        id=BROWSER_READ_AS_YOU,
+        created_at=ACCOUNTS_INTRODUCED_AT,
+        description=(
+            "Opens one page of a site you declared in ELA's own browser, which keeps the sites you "
+            "signed in to, and reads its text: where you are signed in, the site sees you."
+        ),
+        risk=RiskLevel.MEDIUM,
+        input_schema=browser_read(sites).input_schema,
+        scope=tuple(sites),
+        scoped_arguments=("site",),
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
+def browser_act_as_you(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
+    """``browser.act_as_you``, **HIGH**: fills fields and clicks on one page of a declared site,
+    in ELA's browser **with the profile that lasts** (§19, §57; M13.9, ADR 0063).
+
+    **HIGH**: where the user is signed in it acts as them, on their account there — what it sends
+    is sent in their name, and is not taken back. A question at every use, which no policy of §59
+    reaches (ADR 0045 §3) and no session covers. The arguments are ``browser.act``'s; a field that
+    declares itself secret is refused as there.
+    """
+    return CapabilitySpec(
+        id=BROWSER_ACT_AS_YOU,
+        created_at=ACCOUNTS_INTRODUCED_AT,
+        description=(
+            "Fills fields on one page of a site you declared and clicks, in ELA's own browser, "
+            "which keeps the sites you signed in to: where you are signed in it acts as you, and "
+            "what it sends cannot be taken back."
+        ),
+        risk=RiskLevel.HIGH,
+        input_schema=browser_act(sites).input_schema,
+        scope=tuple(sites),
+        scoped_arguments=("site",),
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
+def browser_login(sites: Sequence[str] = UNDECLARED_SITES) -> CapabilitySpec:
+    """``browser.login``, **HIGH**: takes one password from the user's vault, types it into the
+    login form of one page of a declared site, and sends the form (§19, §57; M13.9, ADR 0063).
+
+    **HIGH**: a yes covers **taking one password and filling one login, on one site** — a grant
+    born from the yes, used once, spent before the tool (ADR 0046). **The value never comes from
+    the plan**: the schema has no argument for it. It comes from the vault at the moment of the
+    gesture, inside a :class:`~ela.ports.Secret`. ``entry``, when it is there, is the id of the
+    entry of the vault and disambiguates; without it the entry is the only one whose host is the
+    site's.
+
+    The username and the password in the same page: a login in more pages is a sequence, and is
+    not this capability.
+    """
+    selector: dict[str, JsonValue] = {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": SELECTOR_MAX_LENGTH,
+    }
+    return CapabilitySpec(
+        id=BROWSER_LOGIN,
+        created_at=ACCOUNTS_INTRODUCED_AT,
+        description=(
+            "Takes one password from your vault, types it into the login form of a site you "
+            "declared, in ELA's own browser, and sends the form: you are signed in there as you. "
+            "ELA keeps the password nowhere."
+        ),
+        risk=RiskLevel.HIGH,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "site": {"type": "string", "pattern": SITE_PATTERN},
+                "path": {"type": "string", "pattern": PATH_PATTERN, "maxLength": PATH_MAX_LENGTH},
+                "username_field": selector,
+                "password_field": selector,
+                "click": selector,
+                "expect_text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": EXPECT_MAX_LENGTH,
+                },
+                "purpose": {"type": "string", "minLength": 1},
+                "entry": {"type": "string", "minLength": 1, "maxLength": ENTRY_MAX_LENGTH},
+            },
+            "required": [
+                "site",
+                "path",
+                "username_field",
+                "password_field",
+                "click",
+                "expect_text",
+                "purpose",
+            ],
+            "additionalProperties": False,
+        },
+        scope=tuple(sites),
+        scoped_arguments=("site",),
+        prompt_arguments=("purpose",),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
 def browser_guided(
     sites: Sequence[str] = UNDECLARED_SITES, model: str = UNDECLARED_MODEL
 ) -> CapabilitySpec:
@@ -1262,5 +1415,8 @@ def production_catalogue(
             browser_read(sites),
             browser_act(sites),
             browser_guided(sites, guided_model),
+            browser_read_as_you(sites),
+            browser_act_as_you(sites),
+            browser_login(sites),
         )
     )

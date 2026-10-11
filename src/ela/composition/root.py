@@ -957,6 +957,8 @@ async def build(
             gestures=sessions,
             sessions=agents,
             gateway=settings.api.base_url,
+            accounts=accounts,
+            vault=door,
         )
         verifiers = production_verifiers(
             root=root,
@@ -969,6 +971,7 @@ async def build(
             gestures=sessions,
             sessions=agents,
             audit=audit,
+            accounts=accounts,
         )
 
         # Which tools this machine has is not something the registry can know (ADR 0016 §4), and
