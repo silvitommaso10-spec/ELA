@@ -30,7 +30,12 @@ from typing import Any
 import pytest
 
 from ela.infrastructure.machine import account
-from ela.infrastructure.machine.account import WINDOW_ARGUMENTS, WINDOW_NAME, AccountChrome
+from ela.infrastructure.machine.account import (
+    WINDOW_ARGUMENTS,
+    WINDOW_NAME,
+    AccountChrome,
+    reports_in,
+)
 from ela.ports import (
     PROFILE_WINDOW,
     BrowserFailed,
@@ -193,7 +198,14 @@ async def test_the_window_is_the_binary_on_the_folder_with_the_closed_list_and_n
     await made.window(ADDRESS)
     (one,) = await window.launches(1)
 
-    assert one["argv"] == [f"--user-data-dir={profile}", *WINDOW_ARGUMENTS, ADDRESS]
+    assert one["argv"] == [
+        f"--user-data-dir={profile}",
+        reports_in(profile),
+        *WINDOW_ARGUMENTS,
+        ADDRESS,
+    ]
+    assert reports_in(profile) == f"--breakpad-dump-location={profile}/Crashpad"
+    assert "--profile-directory=Default" in one["argv"]
     assert worker.is_file(), "the window has no gate to go round: its sites keep their workers"
     received = {name: value for name, value in one["environment"].items() if name not in APPLE}
     assert received == ENVIRONMENT, "the closed environment, and nothing of ELA's own"
@@ -217,7 +229,7 @@ async def test_a_window_with_no_address_is_started_with_none_and_one_of_this_mac
     await made.window(address)
     (one,) = await window.launches(1)
 
-    expected = [f"--user-data-dir={profile}", *WINDOW_ARGUMENTS]
+    expected = [f"--user-data-dir={profile}", reports_in(profile), *WINDOW_ARGUMENTS]
     assert one["argv"] == (expected if address is None else [*expected, address])
     made._stopping.set()
     assert await asyncio.wait_for(made.settle(never), PATIENCE) == ()

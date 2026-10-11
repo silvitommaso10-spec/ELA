@@ -13,6 +13,8 @@ import json
 import os
 import socket
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,13 +22,19 @@ import pytest
 
 from ela.infrastructure.machine import account
 from ela.infrastructure.machine.account import (
+    ANOTHER_PROGRAM,
+    ELA_S_BROWSER,
     LAUNCH_ARGUMENTS,
     LAUNCH_OPTIONS,
     PREFERENCES,
     WINDOW_ARGUMENTS,
     AccountChrome,
+    command_line,
     linked_in,
     lock_holder,
+    on_the_folder,
+    profiles_in,
+    reports_in,
     saved_in,
     with_preferences,
 )
@@ -95,9 +103,6 @@ def locked_by(profile: Path, pid: int, host: str | None = None) -> None:
 
 def a_dead_pid() -> int:
     """The pid of a process that has ended and been collected: the kernel knows it no more."""
-    import subprocess
-    import sys
-
     child = subprocess.Popen([sys.executable, "-c", "pass"])
     child.wait()
     return child.pid
@@ -326,8 +331,8 @@ async def test_linked_is_read_from_the_file_every_time_it_is_asked(tmp_path: Pat
 # ----------------------------------------------------------------------------------------
 
 
-def logins(profile: Path, rows: int) -> Path:
-    file = profile / "Default" / "Login Data"
+def logins(profile: Path, rows: int, inside: str = "Default") -> Path:
+    file = profile / inside / "Login Data"
     file.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(file) as database:
         database.execute("create table logins (origin_url text, password_value blob)")
@@ -350,6 +355,70 @@ async def test_the_saved_passwords_are_counted(tmp_path: Path, rows: int) -> Non
 
 def test_a_profile_never_launched_has_saved_none(tmp_path: Path) -> None:
     assert saved_in(tmp_path) == 0
+
+
+async def test_the_saved_passwords_are_counted_in_every_profile_the_folder_holds(
+    tmp_path: Path,
+) -> None:
+    """A second profile the user added from inside the window is one ELA neither prepares nor
+    uses — and what was saved there was saved in ELA's browser all the same (decision 79)."""
+    profile = tmp_path / "profile"
+    logins(profile, 3)
+    logins(profile, 2, inside="Profile 1")
+    (profile / "Crashpad").mkdir()  # a folder of the browser's that is no profile
+    profile.chmod(0o700)
+
+    assert saved_in(profile) == 5
+    assert await chrome(profile).saved() == 5
+
+
+def test_no_password_is_counted_through_a_link(tmp_path: Path) -> None:
+    """ELA reads the profile of its own browser, and nothing a link leads to: not a profile
+    that is a link to another folder, and not a file of the passwords that is a link."""
+    elsewhere = tmp_path / "another-browser"
+    logins(elsewhere, 7)
+    profile = tmp_path / "profile"
+    logins(profile, 1)
+    (profile / "Profile 1").symlink_to(elsewhere / "Default", target_is_directory=True)
+    (profile / "Profile 2").mkdir()
+    (profile / "Profile 2" / "Login Data").symlink_to(elsewhere / "Default" / "Login Data")
+
+    assert saved_in(profile) == 1
+
+
+def test_a_second_profile_that_cannot_be_counted_is_said_and_never_left_out(
+    tmp_path: Path,
+) -> None:
+    logins(tmp_path, 2)
+    (tmp_path / "Profile 1").mkdir()
+    (tmp_path / "Profile 1" / "Login Data").write_bytes(b"this is not a database at all")
+
+    with pytest.raises(BrowserFailed, match="cannot be counted"):
+        saved_in(tmp_path)
+
+
+async def test_the_folder_says_how_many_profiles_of_the_browser_it_holds(tmp_path: Path) -> None:
+    """A profile is a folder of the folder's own that holds the browser's ``Preferences``: what
+    the browser itself calls one. Counted, so that the state can say there is more than the one
+    ELA prepares and uses (decision 79)."""
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    made = chrome(profile)
+    assert profiles_in(profile) == 0 and await made.profiles() == 0, "before the first launch"
+
+    (profile / "Default").mkdir()
+    (profile / "Default" / "Preferences").write_text("{}", encoding="utf-8")
+    (profile / "Crashpad").mkdir()
+    (profile / "Local State").write_text("{}", encoding="utf-8")
+    assert await made.profiles() == 1
+
+    (profile / "Profile 1").mkdir()
+    (profile / "Profile 1" / "Preferences").write_text("{}", encoding="utf-8")
+    elsewhere = tmp_path / "another-browser" / "Default"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / "Preferences").write_text("{}", encoding="utf-8")
+    (profile / "Profile 2").symlink_to(elsewhere, target_is_directory=True)
+    assert profiles_in(profile) == 2 and await made.profiles() == 2, "never through a link"
 
 
 def test_a_file_that_cannot_be_counted_is_said_and_never_called_none(tmp_path: Path) -> None:
@@ -789,17 +858,108 @@ def test_a_file_where_the_lock_would_be_holds_nothing(tmp_path: Path) -> None:
     assert lock_holder(tmp_path, lambda pid: True) is None
 
 
+BINARY = "/a registry/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/the binary"
+
+
+def a_browser_on(profile: Path, binary: str = BINARY) -> str:
+    """What the system prints of a browser that runs on ``profile``: its arguments, joined."""
+    return f"{binary} --use-mock-keychain --user-data-dir={profile} --disable-sync about:blank"
+
+
+@pytest.mark.parametrize(
+    ("command", "what"),
+    [
+        ("{binary} --user-data-dir={profile} --no-first-run", ELA_S_BROWSER),
+        ("{binary} --no-first-run --user-data-dir={profile}", ELA_S_BROWSER),
+        ("/Applications/Another Browser --user-data-dir={profile}", ANOTHER_PROGRAM),
+        ("{binary} Helper --type=renderer --user-data-dir={profile}", ANOTHER_PROGRAM),
+        ("{binary} --user-data-dir={profile}-of-another", None),
+        ("{binary} --user-data-dir={profile}/Default", None),
+        ("{binary} --user-data-dir=/somewhere/else", None),
+        ("{binary}", None),
+        ("/usr/sbin/a-daemon --that-has --nothing-to-do-with-it", None),
+        ("(the binary)", None),
+        ("", None),
+    ],
+    ids=[
+        "ela-s-binary-on-the-folder",
+        "the-folder-named-last",
+        "another-program-on-the-folder",
+        "a-program-whose-path-begins-as-the-binary-s",
+        "a-folder-whose-name-begins-as-this-one-s",
+        "a-folder-inside-this-one",
+        "the-binary-on-another-folder",
+        "the-binary-on-no-folder",
+        "a-program-that-has-nothing-to-do-with-it",
+        "a-process-that-has-ended-and-is-not-collected",
+        "a-process-that-is-gone",
+    ],
+)
+def test_what_a_process_the_lock_names_is_is_read_from_its_command_line(
+    tmp_path: Path, command: str, what: str | None
+) -> None:
+    """One function, for the two things that ask (decisions 80 and 82): the folder is held only
+    by a process whose command line names it, and ELA tells to quit only one that is its own
+    binary on it."""
+    profile = tmp_path / "a profile"
+    said = command.format(binary=BINARY, profile=profile)
+
+    assert on_the_folder(said, profile, Path(BINARY)) == what
+
+
+def test_a_command_line_nobody_could_read_is_a_doubt_and_a_doubt_holds_the_folder(
+    tmp_path: Path,
+) -> None:
+    """Fail-safe: the lock names a process the kernel knows, and ELA cannot say what it is. The
+    folder is held — and that process is not told anything."""
+    assert on_the_folder(None, tmp_path, Path(BINARY)) == ANOTHER_PROGRAM
+
+
+def test_where_the_browser_is_not_installed_no_process_is_ela_s_browser(tmp_path: Path) -> None:
+    assert on_the_folder(a_browser_on(tmp_path), tmp_path, None) == ANOTHER_PROGRAM
+
+
+def test_the_folder_is_named_as_it_was_written_or_as_a_path_is_made_plain(tmp_path: Path) -> None:
+    """A driver makes the path it is given plain before it hands it to the browser: the folder
+    written with a step back in it is the same folder."""
+    profile = tmp_path / "somewhere" / ".." / "a profile"
+
+    assert on_the_folder(a_browser_on(profile), profile, Path(BINARY)) == ELA_S_BROWSER
+    assert on_the_folder(a_browser_on(tmp_path / "a profile"), profile, Path(BINARY)) == (
+        ELA_S_BROWSER
+    )
+
+
+class Asked:
+    """What the system would say of a process, as the test says it — and which it was asked of."""
+
+    def __init__(self, said: str | None, then: Any = None) -> None:
+        self.said = said
+        self.of: list[int] = []
+        self.then = then
+
+    async def __call__(self, pid: int) -> str | None:
+        self.of.append(pid)
+        await asyncio.sleep(0)
+        if self.then is not None:
+            self.then()
+        return self.said
+
+
 async def test_a_folder_held_by_a_process_the_kernel_knows_is_busy_and_nothing_is_launched(
     tmp_path: Path, installed: Path
 ) -> None:
     """ELA does not launch a second process on a folder it found held: it is the launch that can
-    kill the first. Here the holder is this very test."""
+    kill the first. Here the lock names this very test, and the system is made to say that it is
+    a browser on the folder."""
     profile = tmp_path / "profile"
     profile.mkdir(mode=0o700)
     locked_by(profile, os.getpid())
     made = chrome(profile)
+    made._said_of = asked = Asked(a_browser_on(profile))
 
     assert await made.occupied() == PROFILE_PROCESS
+    assert asked.of == [os.getpid()]
     with pytest.raises(ProfileBusy) as busy:
         await made.open("https://example.com/", lambda address: True, FakeStop())
     assert busy.value.by == PROFILE_PROCESS
@@ -813,8 +973,131 @@ async def test_a_lock_left_by_a_process_that_is_gone_is_not_busy(tmp_path: Path)
     profile = tmp_path / "profile"
     profile.mkdir(mode=0o700)
     locked_by(profile, a_dead_pid())
+    made = chrome(profile)
+    made._said_of = asked = Asked(a_browser_on(profile))
 
-    assert await chrome(profile).occupied() is None
+    assert await made.occupied() is None
+    assert asked.of == [], "nothing is launched to ask about a process that is not there"
+
+
+async def test_a_lock_whose_pid_went_to_another_process_does_not_hold_the_folder(
+    tmp_path: Path, installed: Path
+) -> None:
+    """A browser that was killed leaves its lock, and the system gives its pid to whatever
+    starts next: a process that lasts would hold the folder for ever (decision 82). Here the pid
+    is this very test's — which the kernel knows, and which is no browser on the folder: asked of
+    the system for real."""
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    locked_by(profile, os.getpid())
+    made = chrome(profile)
+
+    assert await made.occupied() is None
+    await made._free()  # and a launch would go on: nothing is refused
+
+
+async def test_a_process_ela_cannot_say_what_it_is_holds_the_folder(
+    tmp_path: Path, installed: Path
+) -> None:
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    locked_by(profile, os.getpid())
+    made = chrome(profile)
+    made._said_of = Asked(None)
+
+    assert await made.occupied() == PROFILE_PROCESS
+    with pytest.raises(ProfileBusy):
+        await made.window(None)
+
+
+async def test_another_program_on_the_folder_holds_it_too(tmp_path: Path, installed: Path) -> None:
+    """Not ELA's binary, and on the folder all the same: a launch of ELA's would meet it."""
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    locked_by(profile, os.getpid())
+    made = chrome(profile)
+    made._said_of = Asked(a_browser_on(profile, binary="/Applications/Another Browser"))
+
+    assert await made.occupied() == PROFILE_PROCESS
+
+
+async def test_the_system_is_asked_what_a_process_is_only_when_a_lock_names_one(
+    tmp_path: Path,
+) -> None:
+    """One launch more, and only when there is a lock (decision 82): not at every capture and
+    every listening, which look at the folder too."""
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    made = chrome(profile)
+    made._said_of = asked = Asked(a_browser_on(profile))
+
+    assert await made.occupied() is None, "no lock"
+    locked_by(profile, os.getpid())
+    made._opening = 1
+    assert await made.occupied() == PROFILE_STEP, "a step of ELA's own: its lock is its own"
+    made._opening = 0
+    made._windowing = True
+    assert await made.occupied() == PROFILE_WINDOW
+    made._windowing = False
+    assert asked.of == []
+
+    assert await made.occupied() == PROFILE_PROCESS
+    assert asked.of == [os.getpid()]
+
+
+async def test_what_the_adapter_has_in_flight_is_looked_at_again_once_the_system_has_answered(
+    tmp_path: Path,
+) -> None:
+    """Asking the system takes its time, and a window may be started meanwhile: the answer this
+    ends with is looked at with no wait after it — a second opening that looks now finds the
+    first, whatever the lock said."""
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    locked_by(profile, os.getpid())
+    made = chrome(profile)
+
+    def a_window_starts() -> None:
+        made._windowing = True
+
+    made._said_of = Asked("a program that has nothing to do with it", then=a_window_starts)
+
+    assert await made.occupied() == PROFILE_WINDOW
+    with pytest.raises(ProfileBusy) as busy:
+        await made._free()
+    assert busy.value.by == PROFILE_WINDOW
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the system's own ps is POSIX's")
+async def test_the_command_line_of_a_process_is_asked_of_the_system(tmp_path: Path) -> None:
+    """The one launch the adapter makes to look at a process: its arguments as the system has
+    them — and nothing, for a process that is not there any more."""
+    named = f"--user-data-dir={tmp_path / 'a profile'}"
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", named])
+    environment = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
+    try:
+        said = await command_line(child.pid, environment)
+
+        assert said is not None and said.endswith(named) and "time.sleep(60)" in said
+    finally:
+        child.kill()
+        child.wait()
+    assert await command_line(child.pid, environment) == ""
+
+
+async def test_a_system_that_cannot_be_asked_says_nothing_and_never_a_guess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No program to ask with, or one that does not answer in its time: ``None``, which the
+    adapter reads as a doubt."""
+    monkeypatch.setattr(account, "PS", str(tmp_path / "no-such-program"))
+    assert await command_line(os.getpid(), {}) is None
+
+    slow = tmp_path / "slow"
+    slow.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(60)\n", encoding="utf-8")
+    slow.chmod(0o700)
+    monkeypatch.setattr(account, "PS", str(slow))
+    monkeypatch.setattr(account, "PS_SECONDS", 0.2)
+    assert await command_line(os.getpid(), {}) is None
 
 
 async def test_what_the_adapter_itself_has_in_flight_holds_the_folder_before_any_lock(
@@ -880,7 +1163,7 @@ def test_the_options_of_a_launch_are_the_closed_set(tmp_path: Path) -> None:
         False,
         False,
     )
-    assert options["args"] == list(LAUNCH_ARGUMENTS)
+    assert options["args"] == [*LAUNCH_ARGUMENTS, reports_in(tmp_path)]
     assert options["env"] == {"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": "C.UTF-8"}
     forbidden = {"record_har_path", "record_video_dir", "user_agent", "extra_http_headers"}
     assert not forbidden & set(options)
@@ -910,6 +1193,7 @@ def test_the_arguments_of_a_launch_and_of_the_window_are_closed_lists() -> None:
         "--use-mock-keychain",
         "--disable-sync",
         "--allow-browser-signin=false",
+        "--profile-directory=Default",
     )
     assert WINDOW_ARGUMENTS == (
         "--use-mock-keychain",
@@ -917,11 +1201,40 @@ def test_the_arguments_of_a_launch_and_of_the_window_are_closed_lists() -> None:
         "--no-default-browser-check",
         "--disable-sync",
         "--allow-browser-signin=false",
+        "--profile-directory=Default",
     )
     attached = ("--remote-debugging", "--headless", "--enable-automation", "--load-extension")
     disguised = ("--user-agent", "--disable-blink-features")
     for argument in (*LAUNCH_ARGUMENTS, *WINDOW_ARGUMENTS):
         assert not argument.startswith((*attached, *disguised, "--no-sandbox"))
+
+
+def test_every_launch_names_the_one_profile_ela_prepares(tmp_path: Path) -> None:
+    """Measured on 2026-10-11: with no name the browser opens the profile that was used last —
+    a second one the user added from the window, whose preferences ELA does not rewrite and whose
+    workers it does not take away. Named, it is ``Default`` in the window and under the driver
+    (decision 79). The name is the folder :data:`~account.PREFERENCES_FILE` is written in."""
+    named = f"--profile-directory={account.PREFERENCES_FILE[0]}"
+
+    assert named in LAUNCH_ARGUMENTS and named in WINDOW_ARGUMENTS
+    assert named in chrome(tmp_path)._launch()["args"]
+    assert account.SERVICE_WORKERS[0] == account.LOGINS[0] == account.PREFERENCES_FILE[0]
+
+
+def test_the_reports_of_a_crash_are_kept_inside_the_folder_of_the_profile(tmp_path: Path) -> None:
+    """Measured on 2026-10-11: this version has no argument that switches its collector of
+    crashes off — the one Playwright passes is not listened to on a Mac —, and a crash wrote a
+    megabyte of the process's memory in a folder of the binary's own, outside the profile. With
+    this argument the collector's folder is inside the folder of the profile, whose rules hold
+    for it too (decision 74). Composed with the folder, like the one other argument that names
+    it."""
+    profile = tmp_path / "a profile"
+
+    assert reports_in(profile) == f"--breakpad-dump-location={profile}/Crashpad"
+    assert chrome(profile)._launch()["args"][-1] == reports_in(profile)
+    assert not any(one.startswith("--disable-breakpad") for one in LAUNCH_ARGUMENTS), (
+        "it switches nothing off here: it is not written as if it did"
+    )
 
 
 async def test_once_ela_is_stopping_nothing_of_the_profile_is_started(tmp_path: Path) -> None:
