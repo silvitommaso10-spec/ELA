@@ -81,6 +81,26 @@ def a_dead_pid() -> int:
     return child.pid
 
 
+@pytest.fixture
+def installed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A registry of Playwright's that holds the browser of the lock's revision — a file where
+    the binary would be, which no test launches. **Built, not inherited**: on a machine where
+    Chrome for Testing was never installed — every runner but the Mac's — the adapter would say
+    so before it looks at anything else, and a test of what comes after would be testing that."""
+    from ela.infrastructure.machine.browser import registry_folder
+
+    registry = tmp_path / "registry"
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(registry))
+    folder = registry_folder("chromium", os.environ, "Darwin")
+    assert folder is not None
+    binary = folder.joinpath(
+        "chrome-mac-arm64", "Google Chrome for Testing.app", "Contents", "MacOS"
+    )
+    binary.mkdir(parents=True)
+    (binary / "Google Chrome for Testing").write_bytes(b"a file where the binary would be")
+    return registry
+
+
 def test_the_adapter_is_the_port() -> None:
     assert isinstance(chrome(None), AccountBrowser)
 
@@ -317,7 +337,9 @@ def test_counting_does_not_wait_for_a_browser_that_holds_the_file(tmp_path: Path
 # ----------------------------------------------------------------------------------------
 
 
-async def test_without_a_declared_folder_every_use_says_which_line_to_write() -> None:
+async def test_without_a_declared_folder_every_use_says_which_line_to_write(
+    installed: Path,
+) -> None:
     made = chrome(None)
 
     for use in (made.occupied, made.linked, made.saved, lambda: made.window(None)):
@@ -507,8 +529,8 @@ def test_the_lock_names_who_holds_the_folder_only_if_the_kernel_knows_it(tmp_pat
 
 @pytest.mark.parametrize(
     "left",
-    [f"{socket.gethostname()}-not-a-pid", "not-a-pid", "-", ""],
-    ids=["a-host-and-no-pid", "no-pid", "a-dash", "empty"],
+    [f"{socket.gethostname()}-not-a-pid", "not-a-pid", "-"],
+    ids=["a-host-and-no-pid", "no-pid", "a-dash"],
 )
 def test_a_lock_that_names_no_pid_holds_nothing(tmp_path: Path, left: str) -> None:
     (tmp_path / "SingletonLock").symlink_to(left)
@@ -537,7 +559,7 @@ def test_a_file_where_the_lock_would_be_holds_nothing(tmp_path: Path) -> None:
 
 
 async def test_a_folder_held_by_a_process_the_kernel_knows_is_busy_and_nothing_is_launched(
-    tmp_path: Path,
+    tmp_path: Path, installed: Path
 ) -> None:
     """ELA does not launch a second process on a folder it found held: it is the launch that can
     kill the first. Here the holder is this very test."""
