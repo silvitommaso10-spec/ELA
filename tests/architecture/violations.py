@@ -2061,7 +2061,34 @@ VIOLATIONS: tuple[Case, ...] = (
         "def where(settings):\n    return getattr(settings.accounts, 'browser_profile_dir')\n",
         "browser_profile_dir",
     ),
+    Case(
+        # A bare name — a module's own, or one it imported: no attribute, no parameter and no
+        # string says it.
+        "the-profile-s-folder-kept-under-its-name",
+        "the-profile-s-folder-is-its-adapter-s",
+        "tools/account.py",
+        "def where():\n    return browser_profile_dir\n",
+        "browser_profile_dir",
+    ),
+    Case(
+        # Handed on by keyword, to something that would open it.
+        "the-profile-s-folder-handed-on-by-keyword",
+        "the-profile-s-folder-is-its-adapter-s",
+        "api/browser.py",
+        "def handed(opener, folder):\n    return opener(browser_profile_dir=folder)\n",
+        "browser_profile_dir",
+    ),
     # --- a-secret-is-opened-only-by-an-adapter (rule 68, M13.9) ---
+    Case(
+        # An adapter that is not of the machine: the one that writes the audit, opening what it
+        # was handed to write it down. The exemption is the machine's adapters', not every
+        # adapter's.
+        "an-adapter-that-is-not-of-the-machine-opens-a-secret",
+        "a-secret-is-opened-only-by-an-adapter",
+        "infrastructure/persistence/audit.py",
+        "def written(event, key):\n    return {'key': key.reveal()}\n",
+        ".reveal(",
+    ),
     Case(
         # A tool opening the password it was handed: one statement from an outcome or a log.
         "a-tool-opens-a-secret",
