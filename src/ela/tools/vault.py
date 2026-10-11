@@ -428,22 +428,29 @@ class VaultDoor:
             await self._close(BY_TIME, None)
 
     async def _close(self, reason: str, by: Actor | None) -> VaultProblem | None:
+        """Forget the hour, ask the vault to lock if its program is the one of the start, and
+        tell. **Whoever asked may go away before it is over** — a use has the deadline of its
+        step, ELA's stop ends the keeper —: what is left to do is then done on the way out, with
+        nothing that waits between the cancellation and the key forgotten. A closing cut short
+        says so: the vault was not asked to lock, or did not answer (re-read of 2026-10-11)."""
         held, self._opened_at = self._opened_at is not None, None
         vault = self._vault
-        problem = await self._problem()
+        problem: VaultProblem | None = None
         locked = False
-        if vault is not None:
-            if problem is None:
+        try:
+            problem = await self._problem()
+            if vault is not None and problem is None:
                 try:
                     await vault.lock()
                     locked = True
                 except VaultError as error:
                     problem = self._said(error)
-            if not locked:
+        finally:
+            if vault is not None and not locked:
                 await vault.forget()
-        if held or locked:
-            code = None if problem is None else problem.code
-            await self._closed(VaultClosing(reason, by, locked, code))
+            if held or locked:
+                code = None if problem is None else problem.code
+                await self._closed(VaultClosing(reason, by, locked, code))
         return problem
 
     async def _forgotten(self, reason: str) -> None:
@@ -469,16 +476,27 @@ class VaultDoor:
                 return VaultState(_STATES[failed.code], message=failed.message)
             if said == VAULT_UNLOCKED:
                 return VaultState(said, self.forgets_at)
-            if self._opened_at is not None:
-                # The key ELA held was ended elsewhere — another unlock, a lock —: it opens
-                # nothing.
-                self._unwatch()
-                await self._forgotten(ELSEWHERE)
+            await self._ended_elsewhere()
             return VaultState(
                 said,
                 message=self._said(VaultNotOpen(said)).message,
                 opens_with=self._opens_with() if said == VAULT_LOCKED else None,
             )
+
+    async def _ended_elsewhere(self) -> None:
+        """The key ELA held was ended elsewhere — another unlock, a lock —: it opens nothing.
+        Forgotten **where ELA learns it**, whichever use that is, and its hour ended with it: a
+        keeper left running would lock, at its time, the session the user opened since."""
+        if self._opened_at is not None:
+            self._unwatch()
+            await self._forgotten(ELSEWHERE)
+
+    async def _met(self, error: VaultError) -> VaultProblem:
+        """What a use answers when the vault refused it — and, for a vault that is not open
+        while ELA holds a key, the key forgotten first."""
+        if isinstance(error, VaultNotOpen):
+            await self._ended_elsewhere()
+        return self._said(error)
 
     # The entry ------------------------------------------------------------------------------
 
@@ -490,11 +508,12 @@ class VaultDoor:
             if problem is not None:
                 return problem
             assert self._vault is not None
-            await self._expire()
+            if await self._expire():
+                return self._said(VaultNotOpen(VAULT_LOCKED))
             try:
                 listed = await self._vault.find(f"{HTTPS}://{site}")
             except VaultError as error:
-                return self._said(error)
+                return await self._met(error)
         return _chosen(site, listed, wanted)
 
     async def take(self, site: str, entry: str) -> VaultTaken | VaultProblem:
@@ -505,11 +524,12 @@ class VaultDoor:
             if problem is not None:
                 return problem
             assert self._vault is not None
-            await self._expire()
+            if await self._expire():
+                return self._said(VaultNotOpen(VAULT_LOCKED))
             try:
                 taken = await self._vault.take(entry)
             except VaultError as error:
-                return self._said(error)
+                return await self._met(error)
         if site not in _hosts(taken.addresses):
             return VaultProblem(
                 ENTRY_NOT_FOR_SITE,

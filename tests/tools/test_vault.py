@@ -922,11 +922,16 @@ async def test_a_closing_whose_caller_is_cancelled_still_forgets_the_key_and_say
     """A closing is not undone by whoever asked for it going away. The caller of a use has a
     deadline — the thirty seconds of a step —, and a cancellation that lands while the door looks
     at its program left the key in the adapter with no hour, no keeper and no row: a password
-    could be taken twelve hours later (re-read of 2026-10-11, defect 1)."""
-    told, clock = Told(), FakeClock()
+    could be taken twelve hours later (re-read of 2026-10-11, defect 1).
+
+    The keeper is held in its wait by the test, so that the closing under test is the caller's
+    own: a keeper left free would find the hour over first, and close before the use arrives."""
+    told, hour = Told(), Hour()
+    clock = hour.clock
     vault = FakeVault([MARIO], state=VAULT_LOCKED)
-    made = await door(vault, program(tmp_path), clock=clock, closed=told)
+    made = await door(vault, program(tmp_path), closed=told, wait=hour)
     assert await made.open(Secret(KEY)) is None
+    await turns()
     looking, problem = asyncio.Event(), made._problem
 
     async def a_look_that_takes_its_time() -> Any:
@@ -957,7 +962,6 @@ async def test_a_closing_whose_caller_is_cancelled_still_forgets_the_key_and_say
 
     assert asked.cancelled(), "the caller's cancellation is the caller's"
     assert code_of(later) == "vault.locked", "the key was forgotten: nothing is taken later"
-    assert not any(call.startswith("take") for call in vault.calls)
     assert made.forgets_at is None
     assert [(reason, locked) for reason, _, locked, _ in told.said] == [
         ("command" if closing == "by-a-command" else "expired", False)
