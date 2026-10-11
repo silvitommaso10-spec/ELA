@@ -523,14 +523,22 @@ class AccountChrome(PlaywrightBrowser):
             raise RuntimeError(
                 "a browser is settled after ELA's stop: the stop is what closes its pages"
             )
-        over = asyncio.ensure_future(grace())
+        counted: list[asyncio.Future[None]] = []
+
+        def the_grace() -> asyncio.Future[None]:
+            # One grace for the pages and the window, counted from the first that has to wait —
+            # and not at all when neither does.
+            if not counted:
+                counted.append(asyncio.ensure_future(grace()))
+            return asyncio.shield(counted[0])
+
         try:
-            names = await super().settle(lambda: asyncio.shield(over))
+            names = await super().settle(the_grace)
             window, watched = self._window, self._watched
             if watched is None:
                 return names
             if not watched.done():
-                await asyncio.wait({watched, over}, return_when=asyncio.FIRST_COMPLETED)
+                await asyncio.wait({watched, the_grace()}, return_when=asyncio.FIRST_COMPLETED)
             if not watched.done() and window is not None:
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(window.pid, signal.SIGKILL)
@@ -540,4 +548,5 @@ class AccountChrome(PlaywrightBrowser):
             watched.result()
             return names
         finally:
-            over.cancel()
+            for waiting in counted:
+                waiting.cancel()

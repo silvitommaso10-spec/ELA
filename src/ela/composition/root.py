@@ -28,6 +28,7 @@ from ela.composition.system import (
     PowerReading,
     SystemClock,
     UuidGenerator,
+    WindowSwitch,
     argument_limits,
     power_reading,
     without_node_variables,
@@ -55,6 +56,7 @@ from ela.executive.planner import Planner
 from ela.executive.sessions import SessionRoom
 from ela.executive.spending import SpendingGate
 from ela.infrastructure.machine import (
+    AccountChrome,
     Audition,
     BitwardenVault,
     ClaudeAgentSession,
@@ -98,6 +100,7 @@ from ela.permissions import (
 from ela.ports import (
     SPEECH_NO_KEY,
     SPEECH_NO_PLAYER,
+    AccountBrowser,
     AgentSession,
     ApprovalStore,
     AuditLog,
@@ -182,8 +185,7 @@ class Resting(Browser, Protocol):
     act, hand a page over — is the port, and every tool and verifier needs only that; **settling
     is done once, by whoever built it**, when ELA closes. So it is a contract of the composition,
     not a member of :class:`~ela.ports.Browser` — whose members the tables of the ADRs hold one by
-    one, and this milestone has no ADR of its own to write one in. ADR 0063 decides whether it
-    moves into the port.
+    one. **It stays so** (decision 57 of the review of M13.4e, written in ADR 0063).
     """
 
     async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
@@ -196,6 +198,16 @@ class Resting(Browser, Protocol):
         returns the names of what it killed — the names of processes, never a command line — for
         ELA to say; ``()`` when nothing had to be killed.
         """
+        ...
+
+
+class RestingAccounts(AccountBrowser, Protocol):
+    """The browser with the user's accounts, which is brought to rest like the empty one (M13.9,
+    criterion 29): the same contract of the composition, on the other port — and what it settles
+    includes the window it opened for the user."""
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        """As :meth:`Resting.settle`; when this returns nothing holds the folder of the profile."""
         ...
 
 
@@ -374,6 +386,12 @@ class Ela:
     """The browser every tool and verifier of the browser holds (M13.4), kept here for the one thing
     ELA does to it as a whole: bring it to rest when ELA closes (M13.4e). A contract and not the
     adapter — whatever browser ELA was built with is settled the same way."""
+    accounts: RestingAccounts
+    """The browser with the profile that lasts (M13.9, ADR 0063): Chrome for Testing on the folder
+    the user declared. Here beside :attr:`browser` for the same one thing — ELA's close brings
+    **every** browser it was built with to rest, a closed world a test holds."""
+    window: WindowSwitch
+    """Whether that browser has a window: the user's switch, off at every start (decision 34)."""
     vault: VaultDoor
     """The vault of the passwords, behind the door of the tools (M13.9, ADR 0063): the identity of
     its program fixed at the start, the key kept for an hour, every closing a row of the audit.
@@ -407,17 +425,18 @@ class Ela:
         killed: Callable[[tuple[str, ...], bool], None] | None = None,
         hurry: asyncio.Event | None = None,
     ) -> None:
-        """Close ELA: raise the stop, forget the key of the vault, bring the browser to rest,
-        release the database (M13.4e; the key since M13.9).
+        """Close ELA: raise the stop, forget the key of the vault, bring the browsers to rest,
+        release the database (M13.4e; the key and the second browser since M13.9).
 
-        **When this returns nothing of the browser runs any more**, so the loop is never torn down
+        **When this returns nothing of a browser runs any more**, so the loop is never torn down
         with one of its calls in flight — measured, that is a process that does not exit. In this
         order: the stop, for whoever closes ELA without a signal having raised it, because closing
-        is stopping and the stop is what closes the browser's pages; the key of the vault, which is
+        is stopping and the stop is what closes the browsers' pages; the key of the vault, which is
         forgotten and launches nothing — it waits for nobody, and its row is written while there is
-        a database to write it in —; the browser, which past its grace kills what it had started
-        and names it; and the database, as before. **Each is reached whatever the one before it
-        raised.**
+        a database to write it in —; **every browser ELA was built with, together and within one
+        grace** — the empty one and the one with the profile, whose window is among what it
+        settles —, each killing past the grace what it had started and naming it; and the
+        database, as before. **Each is reached whatever the one before it raised.**
 
         **The grace is over at its time —** :data:`BROWSER_CLOSE_GRACE_SECONDS` **— or at the
         hurry**, whichever comes first (decision 55): ``hurry`` is the event a second signal
@@ -460,7 +479,7 @@ class Ela:
             try:
                 await self.vault.stopped()
             finally:
-                names = await self.browser.settle(grace)
+                names = await _settled((self.browser, self.accounts), grace)
                 if names and killed is not None:
                     killed(names, hurried)
         finally:
@@ -517,6 +536,41 @@ def _sample(online: ElevenLabsVoice, player: OnlineSpeechCommand) -> Play:
         return await player.play(said)
 
     return play
+
+
+async def _settled(
+    browsers: Sequence[Resting | RestingAccounts], grace: Callable[[], Awaitable[None]]
+) -> tuple[str, ...]:
+    """Bring every browser to rest **together, within one grace** (M13.9, decision 59): the grace
+    is counted once, from the first browser that has to wait, and whoever else waits, waits for
+    the same. Every one of them is settled whatever another raised — the first failure is given
+    back once all have ended —, and what they killed is named in their order."""
+    counted: list[asyncio.Future[None]] = []
+
+    def the_one_grace() -> Awaitable[None]:
+        # Counted from the first that has to wait, and never while nobody does: a browser that
+        # closed by itself asks for no grace, and none runs behind a close that is over.
+        if not counted:
+            counted.append(asyncio.ensure_future(grace()))
+        return asyncio.shield(counted[0])
+
+    try:
+        ended = await asyncio.gather(
+            *(browser.settle(the_one_grace) for browser in browsers), return_exceptions=True
+        )
+    finally:
+        for waiting in counted:
+            waiting.cancel()
+    names: list[str] = []
+    failed: list[BaseException] = []
+    for one in ended:
+        if isinstance(one, BaseException):
+            failed.append(one)
+        else:
+            names.extend(one)
+    if failed:
+        raise failed[0]
+    return tuple(names)
 
 
 async def _over(seconds: int, hurry: asyncio.Event | None) -> bool:
@@ -600,6 +654,7 @@ async def build(
     bell: Ringing | None = None,
     browser: Resting | None = None,
     vault: Vault | None = None,
+    accounts: RestingAccounts | None = None,
 ) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
 
@@ -628,6 +683,10 @@ async def build(
     ``vault`` is the fifth (M13.9): it defaults to :class:`BitwardenVault` at the program of
     ``ELA_VAULT_PROGRAM`` — and to nothing at all when nobody declared one —, and a test that hands
     ELA a key names a vault of its own: the vault's real program asks for an account.
+
+    ``accounts`` is the sixth (M13.9): it defaults to :class:`AccountChrome` on the folder of
+    ``ELA_BROWSER_PROFILE_DIR`` — on none at all when nobody declared one —, which starts nothing
+    until a page or the window is asked for, and a test of the tools and the routes names a fake.
 
     :raises ConfigurationError: for anything that makes this configuration unusable — a schema
         nobody migrated, a routing table naming a provider that is not registered, an empty one.
@@ -812,6 +871,20 @@ async def build(
                 environment=closed_environment,
                 kept=_lasting(BROWSER_TIMEOUT_SECONDS),
                 system=platform.system(),
+            )
+        # The browser with the profile that lasts (M13.9, ADR 0063 §4): Chrome for Testing on the
+        # folder of ``ELA_BROWSER_PROFILE_DIR`` — the one place that reads that line, and the one
+        # module it is handed to (architecture rule 69) —, with the environment and the deadline of
+        # the empty browser, and the user's switch for the window, off at every start.
+        window = WindowSwitch()
+        if accounts is None:
+            accounts = AccountChrome(
+                stopping,
+                environment=closed_environment,
+                kept=_lasting(BROWSER_TIMEOUT_SECONDS),
+                system=platform.system(),
+                profile=settings.accounts.browser_profile_dir,
+                shown=lambda: window.shown,
             )
         # The vault (M13.9, ADR 0063 §2): the program of ``ELA_VAULT_PROGRAM``, with the same four
         # variables — the adapter adds the two of ``bw`` at each launch, and takes nothing from
@@ -1067,6 +1140,8 @@ async def build(
         speech=speech,
         stopping=stopping,
         browser=browser,
+        accounts=accounts,
+        window=window,
         vault=door,
         speech_dir=scratch,
         speech_online=playing,

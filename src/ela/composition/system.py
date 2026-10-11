@@ -42,6 +42,7 @@ from ela.tools.terminal import ArgumentLimits
 
 __all__ = [
     "LINUX_PAGES_IN_ONE_ARGUMENT",
+    "DRIVER_WRITES",
     "NODE_PREFIX",
     "WINDOWS_COMMAND_LINE",
     "PowerReading",
@@ -159,10 +160,45 @@ ELA made a page with an invalid certificate open (M4-ter). **A prefix and not a 
 variable Node reads tomorrow is one nobody here has heard of."""
 
 
+DRIVER_WRITES: Final = ("DEBUG", "PWDEBUG")
+"""What makes the driver **write what it is told** (M13.9, decision 22; ADR 0063, which revises
+ADR 0052 §14). Measured: with ``DEBUG=pw:api`` or ``pw:protocol`` in ELA's environment the driver
+writes the value of every ``fill`` on its stderr, and with ``DEBUG_FILE`` into a file — and since
+M13.9 a ``fill`` may carry a password of the vault. Prefixes, like ``NODE_``: ``DEBUG_FILE``,
+``DEBUG_COLORS`` and whatever the ``debug`` library reads tomorrow go with them."""
+
+
 def without_node_variables(environment: MutableMapping[str, str]) -> tuple[str, ...]:
-    """Remove from ``environment`` every variable whose name begins with ``NODE_``, and return the
-    names in order — **never the values**, which may be a path or a secret."""
-    removed = tuple(sorted(name for name in environment if name.startswith(NODE_PREFIX)))
+    """Remove from ``environment`` every variable whose name begins with ``NODE_`` — and, since
+    M13.9, with ``DEBUG`` or ``PWDEBUG`` (:data:`DRIVER_WRITES`) —, and return the names in order:
+    **never the values**, which may be a path or a secret."""
+    prefixes = (NODE_PREFIX, *DRIVER_WRITES)
+    removed = tuple(sorted(name for name in environment if name.startswith(prefixes)))
     for name in removed:
         del environment[name]
     return removed
+
+
+class WindowSwitch:
+    """Whether the browser with the user's accounts has a window (M13.9, ADR 0063; decisions 18a
+    and 34).
+
+    **The user's, and nobody else's**: it is no argument of any capability and no tool decides
+    it. A state of a running ELA — flipped by a route of the user's, read by the browser's adapter
+    at each launch, holding from then on — and **off at every start**: a browser that appears
+    while somebody is typing takes the keyboard, so a window is something the user asked for
+    today.
+    """
+
+    def __init__(self) -> None:
+        self._shown = False
+
+    @property
+    def shown(self) -> bool:
+        return self._shown
+
+    def show(self) -> None:
+        self._shown = True
+
+    def hide(self) -> None:
+        self._shown = False

@@ -350,8 +350,18 @@ che è stato provato lo toglie. È il binario che parla con chi l'ha fatto; si d
 
 - **Regola di architettura 68**: un `Secret` lo apre solo un adapter della macchina, o un finto — mai un tool,
   una rotta o l'executor.
+- **Regola di architettura 69**: la cartella del profilo la nominano le impostazioni, che la dichiarano e la
+  controllano, e il punto di composizione, che la consegna all'adapter — e nessun altro modulo: non una rotta,
+  non un tool, non l'audit. Chi vuole sapere qualcosa del profilo chiede al port, che risponde con fatti.
+- **`settle` resta un contratto del punto di composizione**, accanto ai due port e non dentro (decisione 57): ciò
+  che un browser fa è il port; portarlo a riposo lo fa una volta sola chi l'ha costruito. La chiusura di ELA
+  porta a riposo **ogni** browser che `build()` costruisce, insieme ed entro una grazia sola; un test lo tiene
+  a mondo chiuso.
+- **ADR 0052 §14 si legge con questa riga accanto**: dall'ambiente di ELA escono, oltre a ciò che comincia con
+  `NODE_`, anche `DEBUG…` e `PWDEBUG`, dal prefisso — con loro il driver scrive sul suo stderr il valore di ogni
+  `fill` (misurato), e da M13.9 un `fill` può portare una password.
 
-Con questo ADR le regole di architettura sono **sessantotto** (la 67 e la 68), i contratti di import-linter restano
+Con questo ADR le regole di architettura sono **sessantanove** (la 67, la 68 e la 69), i contratti di import-linter restano
 **quindici**, i port diventano **trentacinque** (`Vault` e `AccountBrowser`), le rotte dell'API **sessantatré** e i comandi
 della CLI **trentaquattro** (quelle del vault, e i suoi comandi); le
 capability restano **quattordici**, le identità del middleware **sei**. *(I totali si aggiornano con le sezioni

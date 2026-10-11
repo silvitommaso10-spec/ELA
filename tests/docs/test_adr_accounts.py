@@ -37,11 +37,12 @@ def test_the_conseguenze_count_the_totals_of_today() -> None:
         "importlinter"
     ]["contracts"]
 
-    assert "**sessantotto**" in text
-    assert len(RULES) == 68
+    assert "**sessantanove**" in text
+    assert len(RULES) == 69
     assert set(RULES) - set(_rules_up_to(66)) == {
         "the-room-s-word-is-the-room-s",
         "a-secret-is-opened-only-by-an-adapter",
+        "the-profile-s-folder-is-its-adapter-s",
     }
     assert "**quindici**" in text and len(contracts) == 15
     assert "**trentacinque**" in text and len(tuple(port_protocols())) == 35
