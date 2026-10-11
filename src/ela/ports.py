@@ -2762,6 +2762,11 @@ SHUT_QUIT: Final = "quit"
 """The browser a hand may be on was told to quit, and did."""
 SHUT_KILLED: Final = "killed"
 """It was told, did not quit within the grace, and was killed."""
+SHUT_TOLD: Final = "told"
+"""It was told, **and ELA cannot say it quit**: when the grace ended the system could not say
+what that process was any more, or ELA itself was stopping. It was not killed — ELA kills
+nothing it cannot name, and at its own close signals only what it started —, and the profile may
+still be held."""
 
 
 class ProfileUndeclared(BrowserError):
@@ -2988,10 +2993,12 @@ class AccountBrowser(Browser, Protocol):
         started — whose red button closes the window and leaves the browser running —, or a
         browser ELA did not start **whose command line is ELA's own binary on this folder**: a
         window that relaunched itself, one left by an ELA that was killed. Returns
-        :data:`SHUT_QUIT` or :data:`SHUT_KILLED`, and ``None`` when nothing held the folder.
+        :data:`SHUT_QUIT`, :data:`SHUT_KILLED` or :data:`SHUT_TOLD`, and ``None`` when nothing
+        held the folder.
 
-        A browser ELA did not start is killed by its pid alone, never with its group, and only
-        if the system still says it is that browser.
+        **Told once, however many ask**: a browser has one chance to end by itself, and a second
+        signal kills it (measured). A browser ELA did not start is killed by its pid alone,
+        never with its group, and only if the system still says that process is that browser.
 
         :raises ProfileBusy: ``by`` :data:`PROFILE_STEP` — a page ELA drives ends with its step,
             or with the stop of its task —, or :data:`PROFILE_PROCESS`: what holds the folder is

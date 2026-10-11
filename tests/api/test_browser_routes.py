@@ -548,6 +548,7 @@ async def test_a_browser_that_could_not_be_ended_after_the_look_is_refused_and_n
 async def test_without_the_core_s_token_nothing_of_the_browser_answers(
     browsed: Browsed, method: str, path: str
 ) -> None:
+    browsed.accounts.holder = PROFILE_WINDOW  # something to end, so that ending it would show
     async with AsyncClient(transport=ASGITransport(app=browsed.app), base_url=BASE) as nobody:
         answered = await nobody.request(method, path, json={})
 

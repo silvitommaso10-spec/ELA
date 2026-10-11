@@ -344,6 +344,8 @@ async def test_a_form_that_does_not_say_what_it_asks_changes_nothing(
     not a request to guess."""
     assert await viewed.ela.vault.open(Secret(viewed.vault.key)) is None
     viewed.vault.calls.clear()
+    if path == CLOSE:
+        viewed.accounts.holder = PROFILE_WINDOW  # something to end, so that ending it would show
 
     async with viewed.console() as console:
         answered = await console.post(path, data=fields)
@@ -365,6 +367,8 @@ async def test_a_form_that_does_not_say_what_it_asks_changes_nothing(
 async def test_a_post_without_the_origin_of_ela_is_refused(
     viewed: Viewed, path: str, fields: dict[str, str]
 ) -> None:
+    if path == CLOSE:
+        viewed.accounts.holder = PROFILE_WINDOW  # something to end, so that ending it would show
     async with viewed.console() as console:
         del console.headers["Origin"]
         refused = await console.post(path, data=fields)

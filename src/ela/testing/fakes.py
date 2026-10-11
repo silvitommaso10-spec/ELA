@@ -91,6 +91,7 @@ from ela.ports import (
     PROFILE_WINDOW,
     PROVIDER_UNAVAILABLE,
     SHUT_QUIT,
+    SHUT_TOLD,
     STARTED_ID,
     VAULT_LOCKED,
     VAULT_UNAUTHENTICATED,
@@ -1412,7 +1413,8 @@ class FakeAccountBrowser(FakeBrowser):
         if holder is None:
             return None
         self.shuts.append(grace)
-        self.holder = None
+        if self.shut_answer != SHUT_TOLD:
+            self.holder = None
         return self.shut_answer
 
     async def linked(self) -> bool:

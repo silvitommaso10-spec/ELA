@@ -42,9 +42,15 @@ from ela.api.security import Identity
 from ela.composition import Ela
 from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
 from ela.domain import AuditEvent, AuditEventId, AuditEventType, visible
-from ela.ports import PROFILE_STEP, BrowserError, ProfileBusy
+from ela.ports import PROFILE_STEP, BrowserError, BrowserStopped, ProfileBusy
 from ela.tools.account import PROFILE_BUSY, look_at
-from ela.tools.browser import BROWSER_TIMEOUT_SECONDS, FAILED, https_origin
+from ela.tools.browser import (
+    BROWSER_TIMEOUT_SECONDS,
+    FAILED,
+    NOT_INSTALLED,
+    STOPPED,
+    https_origin,
+)
 
 __all__ = [
     "FREE",
@@ -78,6 +84,9 @@ NOT_ELA_S: Final = (
 READ: Final = frozenset({None, PROFILE_BUSY})
 """The looks after which the folder is read for what the browser says of itself: a profile a
 browser can start on — free, or held."""
+ENDED: Final = READ | {NOT_INSTALLED}
+"""The looks after which a browser may be ended: those, and a binary that is not installed any
+more — nothing can be started then, and what is running can still be told to quit."""
 
 
 class BrowserRefusedError(ApiError):
@@ -178,15 +187,24 @@ async def window_shut(ela: Ela, identity: Identity) -> BrowserClosedOut:
     signalled. Written, signed by who asked, when a process was told.
 
     Refused, with the tools' own code, for a profile no browser can be on — the look every
-    route of the profile begins with."""
+    route of the profile begins with.
+
+    **The row is written once the browser has been told and waited for**, with what became of
+    it and with what held the profile when the command looked — the window ELA started, or a
+    process it did not. A signal is not taken back: a row that cannot be written is the audit's
+    error, answered to who asked."""
     look = await look_at(ela.accounts, BROWSER_TIMEOUT_SECONDS)
-    if look.code not in READ:
+    if look.code not in ENDED:
         raise BrowserRefusedError(look.code or FAILED, look.message)
     try:
         outcome = await ela.accounts.shut(_the_grace)
     except ProfileBusy as busy:
         raise BrowserRefusedError(
             PROFILE_BUSY, A_STEP if busy.by == PROFILE_STEP else NOT_ELA_S
+        ) from None
+    except BrowserStopped:
+        raise BrowserRefusedError(
+            STOPPED, "ELA was stopping: its own close ends the window it started"
         ) from None
     except BrowserError as failed:
         raise BrowserRefusedError(FAILED, f"the browser could not be ended: {failed}") from None
@@ -199,7 +217,7 @@ async def window_shut(ela: Ela, identity: Identity) -> BrowserClosedOut:
             event_type=AuditEventType.BROWSER_CLOSE_ASKED,
             actor=identity.actor,
             summary=f"browser: told to quit ({outcome})",
-            payload={"outcome": outcome},
+            payload={"outcome": outcome, "held_by": look.holder},
         )
     )
     return BrowserClosedOut(outcome=outcome)

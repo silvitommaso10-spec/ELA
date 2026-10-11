@@ -17,7 +17,11 @@ asserts is nothing.
 
 **What the folder does not find, measured** (the review of the repair): the processes a browser
 starts for itself — the GPU's, the network's, a renderer — do not name the profile. They end with
-the main process when they run; **stopped**, they stay. So whoever stops them — one test does —
+the main process when they run; **stopped**, they stay. *(Since M13.9's decision 74 one of them
+does name it, for the browser with the user's accounts: its collector of crashes keeps its
+database inside the profile's folder. It is a child of the system's and ends by itself a moment
+after its browser — so it is found by the folder, and taken away with it.)* So whoever stops
+them — one test does —
 hands their pids to :func:`sweep` as ``also``, and a test with the browser in a process of its own
 hands over every pid that process said it had started.
 

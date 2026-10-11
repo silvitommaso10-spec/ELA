@@ -562,6 +562,7 @@ async def test_the_window_is_told_once_however_many_ask(
         SHUT_KILLED,
     ], "and what became of it is said the same to both"
     assert await gone(one["pid"])
+    assert made._was_told == set(), "what has ended is not remembered as told: a pid comes back"
 
 
 async def test_a_window_the_command_told_is_not_told_again_by_ela_s_stop(
@@ -799,7 +800,7 @@ async def test_a_stop_during_the_grace_of_a_browser_ela_did_not_start_kills_nobo
     profile = tmp_path / "profile"
     one = await a_browser_ela_did_not_start(window, profile)
     made = chrome(profile)
-    made._said_of = Says(f"{window.binary} --user-data-dir={profile}")
+    made._said_of = asked = Says(f"{window.binary} --user-data-dir={profile}")
     signals = told(one["pid"], monkeypatch)
     shutting = asyncio.ensure_future(made.shut(never))
     await asyncio.sleep(0.2)
@@ -809,6 +810,9 @@ async def test_a_stop_during_the_grace_of_a_browser_ela_did_not_start_kills_nobo
 
     assert await asyncio.wait_for(shutting, PATIENCE) == SHUT_TOLD
     assert signals == [signal.SIGTERM] and running(one["pid"]), "told before the stop: not killed"
+    assert asked.of == [one["pid"]], (
+        "and nothing more is launched once ELA is stopping: the system is not asked again"
+    )
 
 
 async def test_a_browser_of_another_user_is_not_ela_s_to_signal(
@@ -827,10 +831,11 @@ async def test_a_browser_of_another_user_is_not_ela_s_to_signal(
             raise PermissionError(1, "Operation not permitted")
         kill(pid, sent)
 
-    monkeypatch.setattr(os, "kill", not_permitted)
-
-    with pytest.raises(ProfileBusy) as busy:
-        await made.shut(at_once)
+    # Undone before the test ends: what takes this test's process away is a signal too.
+    with monkeypatch.context() as refusing:
+        refusing.setattr(os, "kill", not_permitted)
+        with pytest.raises(ProfileBusy) as busy:
+            await made.shut(at_once)
 
     assert busy.value.by == PROFILE_PROCESS
 

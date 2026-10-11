@@ -86,6 +86,7 @@ from ela.ports import (
     PROFILE_WINDOW,
     SHUT_KILLED,
     SHUT_QUIT,
+    SHUT_TOLD,
     BrowserFailed,
     BrowserNotInstalled,
     BrowserUnsupported,
@@ -230,9 +231,20 @@ ELA_S_BROWSER: Final = "browser"
 ANOTHER_PROGRAM: Final = "another"
 """A process on the folder that is not ELA's binary, or that could not be read: it holds the
 folder, and ELA signals nothing it cannot name."""
-GONE_EVERY: Final = 0.05
+GONE_EVERY = 0.05
 """How often a browser ELA did not start, once told to quit, is asked of the kernel: it is no
 child of ELA's, and nothing tells ELA when it ends. Counted inside the grace, never beyond it."""
+GONE_TURNS: Final = 40
+"""How many times a browser ELA did not start is looked for once it was killed, before ELA says
+so: the kernel takes a killed process away at once, and its parent collects it when it will."""
+DATA_DIR: Final = " --user-data-dir="
+DRIVEN: Final = " --remote-debugging"
+"""How a command line says something is attached to the browser — a driver's pipe, a port: a
+browser somebody drives is a step of somebody's, not the browser a hand may be on."""
+LOCAL_STATE: Final = "Local State"
+LISTED: Final = ("profile", "info_cache")
+"""Where the browser keeps its own list of the profiles of its folder: read as presence — how
+many names —, never as what a profile is called or whose account it is."""
 LINKED: Final = (
     ("account_info",),
     ("google", "services", "account_id"),
@@ -296,50 +308,88 @@ def linked_in(preferences: object) -> bool:
 
 
 def _own_folders(folder: Path) -> list[Path]:
-    """The folders ``folder`` holds of its own — **never a link**: ELA reads the profile of its
-    own browser, and nothing a link leads to. None, for a folder that is not there yet.
+    """The folders ``folder`` holds of its own. None, for a folder that is not there yet.
 
     :raises BrowserFailed: a folder that is there and cannot be listed — by the system's type,
-        never its text, which names the path."""
+        never its text, which names the path —, **or one that holds a link to a folder**: the
+        browser would follow it, ELA reads nothing a link leads to, and what is there is then
+        something ELA did not count — never «none»."""
     refused: str | None = None
     found: list[Path] = []
+    linked = False
     try:
         with os.scandir(folder) as listed:
-            found = sorted(Path(one.path) for one in listed if one.is_dir(follow_symlinks=False))
+            for one in listed:
+                if one.is_dir(follow_symlinks=False):
+                    found.append(Path(one.path))
+                elif one.is_symlink() and one.is_dir():
+                    linked = True
     except FileNotFoundError:
         pass
     except OSError as error:
         refused = type(error).__name__
     if refused is not None:
         raise BrowserFailed(f"the profiles of ELA's browser cannot be listed ({refused})")
-    return found
-
-
-def _own_file(file: Path) -> bool:
-    """Whether ``file`` is a file of its own, and not a link to one."""
-    try:
-        return stat.S_ISREG(file.lstat().st_mode)
-    except OSError:
-        return False
+    if linked:
+        raise BrowserFailed(
+            "the passwords the browser saved cannot be counted: a profile of its folder is a "
+            "link, and ELA reads nothing a link leads to"
+        )
+    return sorted(found)
 
 
 def profiles_in(folder: Path) -> int:
-    """How many profiles of the browser ``folder`` holds: its own folders that hold the browser's
-    ``Preferences`` — what the browser itself calls a profile. ELA prepares and uses one,
-    :data:`PROFILE`; a second is one the user added from inside the window (decision 79)."""
-    name = PREFERENCES_FILE[1]
-    return sum(1 for one in _own_folders(folder) if _own_file(one / name))
+    """How many profiles **the browser itself lists** in ``folder`` (:data:`LISTED`): not every
+    folder that holds a ``Preferences`` — the browser keeps folders beside its profiles that are
+    none, the one of its profile picker among them. ELA prepares and uses one, :data:`PROFILE`;
+    a second is one the user added from inside the window (decision 79). No list yet — a folder
+    never launched — is none.
+
+    :raises BrowserFailed: a list that is there and cannot be read, or is a link. Never a
+        number."""
+    file = folder / LOCAL_STATE
+    try:
+        mode: int | None = file.lstat().st_mode
+    except FileNotFoundError:
+        return 0
+    except OSError:
+        mode = None
+    listed: object = None
+    if mode is not None and stat.S_ISREG(mode):
+        listed = _read(file)
+        for part in LISTED:
+            listed = listed.get(part) if isinstance(listed, dict) else None
+    if not isinstance(listed, dict):
+        raise BrowserFailed("the profiles of ELA's browser cannot be listed")
+    return len(listed)
 
 
 def saved_in(folder: Path) -> int:
-    """How many rows the browser's own password manager holds, **in every profile of the
-    folder**: counted, and nothing of a row is read. No file yet — a profile never launched — is
-    none. Opened read-only and as it is on the disk, so a browser that is running is neither
-    waited for nor disturbed.
+    """How many rows the browser's own password manager holds, **in every folder of its own the
+    profile's folder holds**: counted, and nothing of a row is read. No file yet — a profile
+    never launched — is none. Opened read-only and as it is on the disk, so a browser that is
+    running is neither waited for nor disturbed.
 
-    :raises BrowserFailed: a file that is there and cannot be counted. Never «none»."""
+    :raises BrowserFailed: a file that is there and cannot be counted — a link included, which
+        is not read through. Never «none»."""
     name = LOGINS[1]
-    return sum(_counted(one / name) for one in _own_folders(folder) if _own_file(one / name))
+    total = 0
+    uncounted = False
+    for one in _own_folders(folder):
+        file = one / name
+        try:
+            mode: int | None = file.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        except OSError:
+            mode = None
+        if mode is None or not stat.S_ISREG(mode):
+            uncounted = True
+            break
+        total += _counted(file)
+    if uncounted:
+        raise BrowserFailed("the passwords the browser saved cannot be counted")
+    return total
 
 
 def _counted(file: Path) -> int:
@@ -380,6 +430,19 @@ def lock_holder(profile: Path, alive: Callable[[int], bool]) -> int | None:
     return pid if alive(pid) else None
 
 
+def _same_place(value: str, profile: Path) -> bool:
+    """Whether ``value`` — a path that begins at the root, as a process was given it — is the
+    folder ``profile``, **however it is written**: with the slash a shell leaves at its end,
+    through a link above it, in other capitals on a volume that ignores them. Asked of the
+    system when both are there; compared as paths made plain when they are not."""
+    if os.path.normpath(value) == os.path.normpath(profile):
+        return True
+    try:
+        return os.path.samefile(value, profile)
+    except OSError:
+        return False
+
+
 def on_the_folder(command: str | None, profile: Path, executable: Path | None) -> str | None:
     """What a process the folder's lock names is, read from its command line — **one function for
     the two that ask** (decisions 80 and 82): whether the folder is held, and whether ELA may
@@ -387,23 +450,36 @@ def on_the_folder(command: str | None, profile: Path, executable: Path | None) -
 
     ``None``: it does not name the folder — the lock is what a browser that was killed left, and
     its pid went to another process: nothing holds the folder. :data:`ELA_S_BROWSER`: ELA's own
-    binary on this folder, and the browser itself rather than one of its helpers.
-    :data:`ANOTHER_PROGRAM`: anything else that names the folder — and a command line that could
-    not be read (``command`` is ``None``), which is a doubt: **a doubt holds the folder, and is
-    told nothing**.
+    binary on this folder, the browser itself rather than one of its helpers, **with nothing
+    attached to it** and the folder's name ending plainly. :data:`ANOTHER_PROGRAM`: anything
+    else that names the folder, **and every doubt** — a command line that could not be read
+    (``command`` is ``None``), a folder named from where that process stands, which ELA does not
+    know. **A doubt holds the folder, and is told nothing.**
 
-    The command line is the system's, its arguments joined by spaces: the folder is looked for as
-    a whole argument, as it was written and as a path is made plain — a driver makes plain the
-    path it is given."""
+    The command line is the system's, its arguments joined by spaces: where the folder's name
+    ends is tried at every space, and each try is compared with the folder as a place
+    (:func:`_same_place`). It ends *plainly* when a switch follows it, or nothing: only then is
+    the process told."""
     if command is None:
         return ANOTHER_PROGRAM
     padded = f"{command} "
-    spellings = {str(profile), os.path.normpath(profile)}
-    if not any(f" --user-data-dir={spelling} " in padded for spelling in spellings):
+    _, found, after = padded.partition(DATA_DIR)
+    if not found:
         return None
-    if executable is None or not command.startswith(f"{executable} --"):
+    words = after.split(" ")[:-1]
+    if not words or not words[0].startswith(os.sep):
         return ANOTHER_PROGRAM
-    return ANOTHER_PROGRAM if " --type=" in padded else ELA_S_BROWSER
+    plainly: bool | None = None
+    for end in range(1, len(words) + 1):
+        if _same_place(" ".join(words[:end]), profile):
+            plainly = end == len(words) or words[end].startswith("--")
+            break
+    if plainly is None:
+        return None
+    ours = executable is not None and command.startswith(f"{executable} --")
+    if not (ours and plainly) or " --type=" in padded or DRIVEN in padded:
+        return ANOTHER_PROGRAM
+    return ELA_S_BROWSER
 
 
 async def command_line(pid: int, environment: Mapping[str, str]) -> str | None:
@@ -529,6 +605,7 @@ class AccountChrome(PlaywrightBrowser):
         self._shown = shown
         self._ended = ended
         self._said_of: Callable[[int], Awaitable[str | None]] = self._asked
+        self._was_told: set[int] = set()
         self._window: asyncio.subprocess.Process | None = None
         self._windowing = False
         self._launching: asyncio.Future[None] | None = None
@@ -651,8 +728,28 @@ class AccountChrome(PlaywrightBrowser):
         pid = lock_holder(profile, self._known)
         if pid is None:
             return None
-        what = on_the_folder(await self._said_of(pid), profile, self._executable())
+        what = await self._what(pid, profile)
         return None if what is None else (pid, what)
+
+    async def _what(self, pid: int, profile: Path) -> str | None:
+        """What process ``pid`` is, on ``profile`` (:func:`on_the_folder`). **The system saying
+        nothing is believed only of a process the kernel does not know any more**: its program
+        ends the same way for a process that is gone and for every error of its own (measured),
+        so «nothing» of a process that is still there is a doubt."""
+        said = await self._said_of(pid)
+        if said == "" and self._known(pid):
+            said = None
+        return on_the_folder(said, profile, self._executable())
+
+    def _tell(self, pid: int) -> bool:
+        """Whether ``pid`` is to be told now: **once, however many ask**. A browser has one
+        chance to end by itself — measured on 2026-10-11: a second ``SIGTERM`` twenty
+        milliseconds after the first killed it, where one alone let it end and write its
+        cookies."""
+        if pid in self._was_told:
+            return False
+        self._was_told.add(pid)
+        return True
 
     async def _holder(self, profile: Path) -> str | None:
         """Who holds the folder now: derived, in this order — what this adapter has in flight,
@@ -828,12 +925,14 @@ class AccountChrome(PlaywrightBrowser):
         try:
             await asyncio.wait({ended, stopped}, return_when=asyncio.FIRST_COMPLETED)
             if not ended.done():
-                with contextlib.suppress(ProcessLookupError):
-                    process.terminate()
+                if self._tell(process.pid):
+                    with contextlib.suppress(ProcessLookupError):
+                        process.terminate()
                 await ended
         finally:
             stopped.cancel()
             self._window = None
+            self._was_told.discard(process.pid)
         try:
             await self._ended(address, asyncio.get_running_loop().time() - started)
         except Exception as error:
@@ -856,62 +955,100 @@ class AccountChrome(PlaywrightBrowser):
             raise ProfileBusy(PROFILE_STEP)
         window, watched = self._window, self._watched
         if window is not None and watched is not None:
-            return await self._told(window, watched, grace)
+            self._refuse_if_stopping()
+            return await self._end_window(window, watched, grace)
         named = await self._named(profile)
+        # Asking the system took its time, and ELA may have begun to stop meanwhile: at its own
+        # close ELA signals only what it started. No wait stands between this look and a signal.
+        self._refuse_if_stopping()
         if named is None:
             return None
         pid, what = named
         if what != ELA_S_BROWSER:
             raise ProfileBusy(PROFILE_PROCESS)
-        return await self._told_another(pid, profile, grace)
+        return await self._end_another(pid, profile, grace)
 
-    async def _told(
+    async def _end_window(
         self,
         window: asyncio.subprocess.Process,
         watched: asyncio.Task[None],
         grace: Callable[[], Awaitable[None]],
     ) -> str:
-        """The window ELA started: told as at ELA's stop, waited for through the wait ELA keeps
-        of it — which says its end to whoever is told —, and killed with its group, which is
-        ELA's own, once the grace is over."""
-        with contextlib.suppress(ProcessLookupError):
-            window.terminate()
+        """The window ELA started: told as at ELA's stop — **once** —, waited for through the
+        wait ELA keeps of it, which says its end to whoever is told, and killed with its group,
+        which is ELA's own, once the grace is over. How it ended is read from the process: whoever
+        asked a second time is answered the same."""
+        if self._tell(window.pid):
+            with contextlib.suppress(ProcessLookupError):
+                window.terminate()
         over = asyncio.ensure_future(grace())
         try:
             await asyncio.wait({watched, over}, return_when=asyncio.FIRST_COMPLETED)
-            if watched.done():
-                return SHUT_QUIT
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(window.pid, signal.SIGKILL)
-            await asyncio.wait({watched})
-            return SHUT_KILLED
+            if not watched.done():
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.killpg(window.pid, signal.SIGKILL)
+                await asyncio.wait({watched})
+            return SHUT_KILLED if window.returncode == -signal.SIGKILL else SHUT_QUIT
         finally:
             over.cancel()
 
-    async def _told_another(
+    async def _end_another(
         self, pid: int, profile: Path, grace: Callable[[], Awaitable[None]]
     ) -> str:
         """A browser ELA did not start, which the system said is ELA's binary on this folder:
-        told, asked of the kernel until it is gone or the grace is over, and then — **if the
-        system still says it is that browser** — killed by its pid. Never its group: a group ELA
-        did not make is not ELA's to kill."""
-        with contextlib.suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGTERM)
+        told once; asked of the kernel until it is gone, the grace is over, or ELA stops; and
+        then — **if the system still says that process is that browser** — killed by its pid.
+        Never its group: a group ELA did not make is not ELA's to kill. What ELA cannot name any
+        more it does not kill, **and does not call gone**: it was told, and that is all ELA
+        knows."""
+        if self._tell(pid):
+            refused = False
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                refused = True
+            if refused:
+                # Another user's: not ELA's to signal, and never the system's error.
+                self._was_told.discard(pid)
+                raise ProfileBusy(PROFILE_PROCESS)
         over = asyncio.ensure_future(grace())
+        stopped = asyncio.ensure_future(self._stopping.wait())
         try:
-            while self._known(pid) and not over.done():
-                await asyncio.wait({over}, timeout=GONE_EVERY)
+            while self._known(pid) and not over.done() and not stopped.done():
+                await asyncio.wait(
+                    {over, stopped}, timeout=GONE_EVERY, return_when=asyncio.FIRST_COMPLETED
+                )
             if not self._known(pid):
+                self._was_told.discard(pid)
                 return SHUT_QUIT
+            if stopped.done():
+                return SHUT_TOLD
             # A pid is the system's to give again, and one that ended and is not collected still
-            # answers: what is there now is asked once more, right before it is killed.
-            if await self._named(profile) != (pid, ELA_S_BROWSER):
+            # answers: what **that process** is now is asked once more, right before it is
+            # killed — of the process that was told, not of whatever the lock names by now.
+            what = await self._what(pid, profile)
+            if what is None:
+                self._was_told.discard(pid)
                 return SHUT_QUIT
-            with contextlib.suppress(ProcessLookupError):
+            if what != ELA_S_BROWSER or self._stopping.is_set():
+                return SHUT_TOLD
+            try:
                 os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                return SHUT_TOLD
+            for _ in range(GONE_TURNS):
+                if not self._known(pid):
+                    break
+                await asyncio.sleep(GONE_EVERY)
+            self._was_told.discard(pid)
             return SHUT_KILLED
         finally:
             over.cancel()
+            stopped.cancel()
 
     async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
         """What ELA's close waits for, on the profile: the pages, as the empty browser's, **and

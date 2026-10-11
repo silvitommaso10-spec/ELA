@@ -1,9 +1,14 @@
 """The profile of the browser with the user's accounts, **without a browser** (M13.9, ADR 0063).
 
 What the adapter does to the folder and reads from it is asserted here on folders the test
-builds: no process is started, so these run wherever the suite runs — the system is handed to the
-adapter as the composition hands it. What only the real binary can say is in
+builds: **no browser is started**, so these run wherever the suite runs — the system is handed to
+the adapter as the composition hands it. What only the real binary can say is in
 ``test_account_browser.py``.
+
+Since the review of 2026-10-11 the adapter asks the system what a process is, and the tests of
+that question start what it starts — the system's own ``ps``, or a small program of the test's in
+its place — and one child of the interpreter to ask about: each is collected by the test that
+started it.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import socket
 import sqlite3
 import subprocess
@@ -88,8 +94,8 @@ def said_by(error: BaseException) -> str:
 
 @pytest.fixture(autouse=True)
 def no_browser_of_this_machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """«No process is started» is built, and not hoped for: the registry these tests look in holds
-    no browser unless a test puts a file there — so a test that is red, or a mutant of the
+    """«No browser is started» is built, and not hoped for: the registry these tests look in
+    holds no browser unless a test puts a file there — so a test that is red, or a mutant of the
     adapter, finds nothing to launch where the machine's own Chrome for Testing would be."""
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "a-registry-with-nothing-in-it"))
 
@@ -1106,6 +1112,7 @@ async def test_a_lock_left_by_a_process_that_is_gone_is_not_busy(tmp_path: Path)
     assert asked.of == [], "nothing is launched to ask about a process that is not there"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the system's own ps is POSIX's")
 async def test_a_lock_whose_pid_went_to_another_process_does_not_hold_the_folder(
     tmp_path: Path, installed: Path
 ) -> None:
@@ -1229,11 +1236,13 @@ async def test_the_command_line_of_a_process_is_asked_of_the_system(tmp_path: Pa
     assert await command_line(child.pid, environment) == ""
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="a program that begins with #! is POSIX's")
 async def test_a_system_that_cannot_be_asked_says_nothing_and_never_a_guess(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No program to ask with, or one that does not answer in its time: ``None``, which the
-    adapter reads as a doubt."""
+    adapter reads as a doubt. **And the program that did not answer is not left running**: it is
+    killed with its group, and collected."""
     monkeypatch.setattr(account, "PS", str(tmp_path / "no-such-program"))
     assert await command_line(os.getpid(), {}) is None
 
@@ -1244,14 +1253,28 @@ async def test_a_system_that_cannot_be_asked_says_nothing_and_never_a_guess(
     assert await command_line(os.getpid(), {}) is None, "it said nothing, and not «no such»"
 
     slow = tmp_path / "slow"
-    late = "import time\ntime.sleep(3)\nprint('an answer that came late')\n"
-    slow.write_text(f"#!{sys.executable}\n{late}", encoding="utf-8")
+    slow.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(120)\n", encoding="utf-8")
     slow.chmod(0o700)
     monkeypatch.setattr(account, "PS", str(slow))
     monkeypatch.setattr(account, "PS_SECONDS", 0.2)
-    assert await command_line(os.getpid(), {}) is None
+    try:
+        # The guard is for a program that was not killed: the answer would then wait for it.
+        assert await asyncio.wait_for(command_line(os.getpid(), {}), 20) is None
+        assert started_as(slow) == [], "killed, and collected: nothing of it is left"
+    finally:
+        for left in started_as(slow):
+            os.kill(left, signal.SIGKILL)
 
 
+def started_as(program: Path) -> list[int]:
+    """The processes of this machine that were started as ``program``."""
+    said = subprocess.run(
+        ["/bin/ps", "-ww", "-A", "-o", "pid=,args="], capture_output=True, text=True, check=False
+    ).stdout
+    return [int(line.split()[0]) for line in said.splitlines() if str(program) in line]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a program that begins with #! is POSIX's")
 async def test_a_process_that_is_not_there_is_an_answer_and_not_a_doubt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

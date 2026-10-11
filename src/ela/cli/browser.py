@@ -39,13 +39,17 @@ ONLY_ONE_IS_ELA_S = "ELA prepares and uses one, and counts the passwords saved i
 CLOSED = {
     "quit": "it quit when told: the profile is free",
     "killed": "it did not quit when told, and was killed: the profile is free",
+    "told": (
+        "it was told to quit, and ELA cannot say that it did — it was not killed: look at "
+        "`ela browser status`, and quit it yourself if it is still there"
+    ),
     "nothing": "no browser was open on the profile: nobody was told",
 }
 """What ``close`` says, by what became of the browser."""
 
 
 def _status(payload: dict[str, Any]) -> str:
-    linked, saved, profiles = payload["linked"], payload["saved"], payload["profiles"]
+    linked, saved, profiles = payload["linked"], payload["saved"], payload.get("profiles")
     said: list[tuple[str, Any]] = [
         ("state", payload["state"]),
         ("window", "shown" if payload["window"] else "hidden"),

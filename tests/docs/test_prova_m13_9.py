@@ -520,7 +520,12 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
         "the window closed with the red button stayed open for ELA, and the command ended it"
     )
     step_7 = written.split("—— passo 7 ——", 1)[1].split("—— passo 8 ——", 1)[0]
-    assert "window" in step_7.split("ela browser close", 1)[0], "still open, before the command"
+    after_the_red_button = step_7.split("pulsante rosso", 1)[1].split("$ uv run ela browser close")[
+        0
+    ]
+    assert ["state", "window"] in [
+        line.split()[1:3] for line in after_the_red_button.splitlines()
+    ], "with the window closed by the red button the state still says it is open"
     assert WORD not in written and ENTRY.username not in written
     assert ENTRY.name not in written, "nothing of the vault enters the file"
     disk = [line for line in world.ran if not line.startswith("uv run ela ")]

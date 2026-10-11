@@ -1535,8 +1535,9 @@ class BrowserOpenedOut(BaseModel):
 
 class BrowserClosedOut(BaseModel):
     """What became of the browser a hand may be on (decision 80): ``quit`` — told, it ended —,
-    ``killed`` — it did not, and was killed once the grace was over —, or ``nothing``: no
-    browser held the profile, and nobody was told."""
+    ``killed`` — it did not, and was killed once the grace was over —, ``told`` — it was told,
+    and ELA cannot say it ended: it was not killed, and the profile may still be held —, or
+    ``nothing``: no browser held the profile, and nobody was told."""
 
     outcome: str
 

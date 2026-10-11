@@ -42,8 +42,10 @@ from ela.infrastructure.machine.account import (
 )
 from ela.infrastructure.machine.browser import registry_folder
 from ela.ports import (
+    PROFILE_PROCESS,
     PROFILE_STEP,
     PROFILE_WINDOW,
+    SHUT_QUIT,
     BrowserFailed,
     BrowserStopped,
     ProfileBusy,
@@ -141,6 +143,35 @@ def arguments_of(profile: Path) -> list[str]:
     return mains[0].split(" --")[1:]
 
 
+def processes() -> list[tuple[int, str]]:
+    """Every process of this machine, with its arguments as the kernel has them."""
+    said = subprocess.run(
+        ["/bin/ps", "-ww", "-A", "-o", "pid=,args="], capture_output=True, text=True, check=False
+    ).stdout
+    table = []
+    for line in said.splitlines():
+        pid, _, arguments = line.strip().partition(" ")
+        if pid.isdigit():
+            table.append((int(pid), arguments))
+    return table
+
+
+def browsers_on(profile: Path) -> list[int]:
+    """The processes of a browser on ``profile``: whatever was started with it as its folder —
+    the main process, and its helpers. **Not the collector of crashes**: since decision 74 it
+    keeps its database inside the folder, so it names the folder too, and it is a child of the
+    system's that ends by itself a moment after its browser — what is promised when a close
+    returns is that no browser is on the folder, and the fixture takes away, and asserts gone,
+    whatever else still names it."""
+    return [pid for pid, arguments in processes() if f"--user-data-dir={profile}" in arguments]
+
+
+def collectors_of(profile: Path) -> list[str]:
+    """The arguments of the collectors of crashes that write inside ``profile``."""
+    wanted = f"--database={profile / 'Crashpad'}"
+    return [arguments for _, arguments in processes() if wanted in arguments]
+
+
 def rows(profile: Path, file: str, table: str) -> int:
     database = sqlite3.connect(
         f"{(profile / 'Default' / file).as_uri()}?mode=ro&immutable=1", uri=True
@@ -207,14 +238,15 @@ async def test_a_page_opens_on_the_declared_folder_with_the_sandbox_and_without_
     assert await browser.occupied() == PROFILE_STEP
     assert known(int(os.readlink(profile / "SingletonLock").rpartition("-")[2]))
     assert reports_in(profile).removeprefix("--") in arguments
-    assert (profile / "Crashpad").is_dir(), (
-        "the collector of crashes keeps its folder inside the folder of the profile"
+    assert (profile / "Crashpad").is_dir() and collectors_of(profile), (
+        "the collector of crashes that runs beside this browser writes inside the folder of "
+        "the profile"
     )
 
     await browser.close(opened.page)
 
     assert await browser.occupied() is None
-    assert named(profile.parent) == [], "no process of that browser is left on the folder"
+    assert browsers_on(profile) == [], "no process of that browser is left on the folder"
 
 
 async def test_a_step_runs_on_the_profile_ela_prepares_whichever_was_used_last(
@@ -232,7 +264,7 @@ async def test_a_step_runs_on_the_profile_ela_prepares_whichever_was_used_last(
             str(profile),
             channel="chromium",
             headless=True,
-            args=["--use-mock-keychain", "--profile-directory=Profile 1"],
+            args=["--use-mock-keychain", "--profile-directory=Profile 1", reports_in(profile)],
             env={"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": "C.UTF-8"},
         )
         page = second.pages[0] if second.pages else await second.new_page()
@@ -247,7 +279,7 @@ async def test_a_step_runs_on_the_profile_ela_prepares_whichever_was_used_last(
 
     assert cookies_in(profile, "Default") == 1, "the step ran on the profile ELA prepares"
     assert cookies_in(profile, "Profile 1") == 1, "and left the other as it was"
-    assert await browser.profiles() == 2
+    assert await browser.profiles() == 2, "the browser's own list: the two, and no folder else"
 
 
 async def test_what_lasts_is_the_folder_a_cookie_with_an_end_is_found_by_the_next_launch(
@@ -584,7 +616,7 @@ async def test_whoever_asks_to_close_a_page_another_is_closing_returns_when_the_
 
     async def closes(who: str) -> None:
         await browser.close(opened.page)
-        seen.append((who, await browser.occupied(), named(profile.parent)))
+        seen.append((who, await browser.occupied(), browsers_on(profile)))
 
     await asyncio.gather(closes("first"), closes("second"))
 
@@ -625,7 +657,7 @@ async def test_a_stop_of_ela_raised_while_the_profile_s_browser_starts_sends_not
 
     assert web.requests == []
     assert await browser.settle(Grace()) == ()
-    assert named(profile.parent) == []
+    assert browsers_on(profile) == []
 
 
 async def test_a_profile_s_browser_that_does_not_close_is_killed_at_the_grace_and_keeps_its_folder(
@@ -663,7 +695,7 @@ async def test_a_profile_s_browser_that_does_not_close_is_killed_at_the_grace_an
         assert killed.count("node") == 1 and len(killed) == len(before)
         assert [name for pid, name in before if known(pid)] == []
         assert (profile / "Default" / "Preferences").is_file(), "the folder is not a temporary one"
-        assert named(profile.parent) == []
+        assert browsers_on(profile) == []
     finally:
         for pid, _ in before:
             try:
@@ -734,7 +766,9 @@ async def test_the_window_has_nothing_attached_and_at_ela_s_stop_closes_by_itsel
     async with asyncio.timeout(20):
         while "GET /" not in web.requests:
             await asyncio.sleep(0.05)
-    assert (profile / "Crashpad").is_dir(), "the window's collector writes inside the folder too"
+    assert (profile / "Crashpad").is_dir() and collectors_of(profile), (
+        "the window's collector writes inside the folder too"
+    )
 
     stopping.set()
     grace = Grace()
@@ -742,7 +776,7 @@ async def test_the_window_has_nothing_attached_and_at_ela_s_stop_closes_by_itsel
         killed = await browser.settle(grace)
 
     assert killed == (), "told, it left by itself: nothing was killed"
-    assert not known(pid) and named(profile.parent) == []
+    assert not known(pid) and browsers_on(profile) == []
     ((address, seconds),) = ended.said
     assert address == web.origin + "/" and seconds > 0
 
@@ -785,12 +819,46 @@ async def test_a_window_that_does_not_close_is_killed_at_the_grace_and_never_lef
             killed = await settling
 
         assert killed == ("Google Chrome for Testing",)
-        assert not known(pid) and named(profile.parent) == []
+        assert not known(pid) and browsers_on(profile) == []
     finally:
         with contextlib.suppress(ProcessLookupError):
             os.killpg(pid, signal.SIGKILL)
 
     assert await chrome(profile).occupied() is None
+
+
+async def test_a_window_another_ela_left_is_seen_for_what_it_is_and_ended_by_the_command(
+    profile: Path, served: list[Site]
+) -> None:
+    """Decisions 80 and 82, **with the system asked for real**: a second adapter on the folder —
+    an ELA that did not start that window, as after the first was killed — finds the folder held
+    because the command line of the process the lock names is ELA's own binary on it, and its
+    command tells that process, which ends by itself. Everywhere else the system's answer is the
+    test's: here it is the kernel's, of the real binary."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+    ended = Ended()
+    first = chrome(profile, ended=ended)
+    await first.window(web.origin + "/")
+    pid = await on_the_folder(profile)
+    async with asyncio.timeout(20):
+        while "GET /" not in web.requests:  # up: a browser told to quit as it starts may not hear
+            await asyncio.sleep(0.05)
+    another = chrome(profile)
+
+    assert await another.occupied() == PROFILE_PROCESS
+    with pytest.raises(ProfileBusy) as busy:
+        await another.open(web.origin + "/", everywhere, FakeStop())
+    assert busy.value.by == PROFILE_PROCESS
+    grace = Grace()
+    async with asyncio.timeout(30):
+        how = await another.shut(grace)
+        await ended.heard.wait()
+
+    assert how == SHUT_QUIT, "told, it ended by itself: the grace was never over"
+    assert not known(pid) and browsers_on(profile) == []
+    assert await another.occupied() is None and await first.occupied() is None
+    first._stopping.set()
+    assert await first.settle(Grace()) == ()
 
 
 async def test_a_window_the_user_closes_is_told_and_the_folder_is_free(
