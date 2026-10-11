@@ -38,21 +38,33 @@ from ela.infrastructure.machine import (
     spawn,
     spawn_powershell,
 )
+from ela.ports import (
+    PROFILE_PROCESS,
+    PROFILE_WINDOW,
+    AccountBrowser,
+    BrowserError,
+    BrowserUnsupported,
+    ProfileUndeclared,
+)
+from ela.tools.base import NotNow
 from ela.tools.terminal import ArgumentLimits
 
 __all__ = [
     "LINUX_PAGES_IN_ONE_ARGUMENT",
     "DRIVER_WRITES",
     "NODE_PREFIX",
+    "SIGNING_IN",
     "WINDOWS_COMMAND_LINE",
     "PowerReading",
     "SystemClock",
     "UuidGenerator",
+    "WindowSwitch",
     "argument_limits",
     "power_nobody_reads",
     "power_of_a_mac",
     "power_of_a_pc",
     "power_reading",
+    "while_the_user_signs_in",
     "without_node_variables",
 ]
 
@@ -202,3 +214,44 @@ class WindowSwitch:
 
     def hide(self) -> None:
         self._shown = False
+
+
+SIGNING_IN: Final = {
+    PROFILE_WINDOW: "the window of ELA's browser where you sign in by hand is open",
+    PROFILE_PROCESS: (
+        "a browser ELA did not start now is open on the profile of its browser, and you may be "
+        "signing in there"
+    ),
+}
+"""Who holds the profile while a hand may be on it, and the reason ELA gives for not looking: its
+own window, and a browser the folder's lock names that this ELA did not start — a window left by
+an ELA that was killed is the same window, and the lock is all that is left to name it. A step of
+ELA's own is not here: nobody is typing a password into a page ELA drives."""
+
+
+def while_the_user_signs_in(accounts: AccountBrowser) -> NotNow:
+    """The one question the tools that look at the screen or listen are handed (M13.9, ADR 0063
+    §7; decision 41): «not now?», answered by looking at who holds the profile **at each call**.
+
+    ELA reads nothing of the window through the browser — no driver, no pipe, no port —, and the
+    screen and the microphone would be another road to what is typed there. The tools do not
+    learn what the window is: they get the reason, or ``None``.
+
+    Where no folder is declared, or the system is not one the browser runs on, no window of
+    ELA's can be open and the answer is ``None``. **Any other failure to look is a doubt, and a
+    doubt refuses** (fail-safe): a folder is declared, and ELA cannot say whether a hand is on it.
+    """
+
+    async def not_now() -> str | None:
+        try:
+            holder = await accounts.occupied()
+        except (ProfileUndeclared, BrowserUnsupported):
+            return None
+        except BrowserError as doubt:
+            return (
+                "whether the window of ELA's browser where you sign in by hand is open could "
+                f"not be read ({doubt})"
+            )
+        return None if holder is None else SIGNING_IN.get(holder)
+
+    return not_now

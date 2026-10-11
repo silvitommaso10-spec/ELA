@@ -455,6 +455,50 @@ quel sito un modello può aprire qualunque indirizzo come Tommaso**, e la descri
 riesamina il giorno in cui ELA parte da sola (annotazione per la Fase 15).* Una revoca non ferma una sessione
 già partita: le sue letture come Tommaso continuano fino ai suoi tetti, e l'uscita della revoca lo dice.
 
+### 7. Mentre Tommaso entra a mano, ELA non guarda e non ascolta
+
+ELA apre una finestra perché Tommaso entri in un sito con le sue mani, e di quella finestra non legge niente
+attraverso il browser: nessun driver, nessuna pipe, nessuna porta (§8). **Quella garanzia è del browser, e
+finisce lì.** Lo schermo e il microfono sono un'altra strada verso ciò che viene scritto in quella finestra: una
+fotografia, una lettura o una registrazione fatte nel frattempo porterebbero la password.
+
+Perciò le capability che guardano lo schermo o ascoltano **si rifiutano finché una mano può essere sul profilo**
+(decisione 41), ciascuna con un codice suo, ritentabile — ciò che rende sbagliato il momento finisce:
+
+| Capability | Tool | Codice | Che cosa dice di non fare |
+|---|---|---|---|
+| `perception.capture_screen` | `CaptureScreenTool` | `screen.login_window_open` | `ELA does not photograph the screen meanwhile` |
+| `perception.read_screen_text` | `ReadScreenTextTool` | `screen.login_window_open` | `ELA does not read the screen meanwhile` |
+| `perception.listen` | `ListenTool` | `listen.login_window_open` | `ELA does not listen meanwhile` |
+
+**In due punti.** Prima della domanda — il loro «partirebbe», che questi tool non avevano: rifiutavano solo
+dentro la corsa, dopo che il sì era speso —, e dentro la corsa, dopo gli argomenti e prima di ogni altra cosa:
+una decisione che un grant o una policy ha già permesso non passa dalla domanda. Prima della domanda non si
+guarda nient'altro: il permesso del sistema e lo spazio restano della corsa, com'erano.
+
+**I tool non imparano che cos'è la finestra.** Ricevono dal punto di composizione una domanda sola — «non
+adesso?» —, che risponde con la ragione o con niente, e la dicono com'è arrivata. La domanda guarda chi tiene il
+profilo **a ogni chiamata**, mai da un ricordo:
+
+| Chi tiene il profilo | La ragione |
+|---|---|
+| `window` | `the window of ELA's browser where you sign in by hand is open` |
+| `process` | `a browser ELA did not start now is open on the profile of its browser, and you may be signing in there` |
+
+**Anche un browser che questa ELA non ha lanciato.** La finestra di un'ELA uccisa resta aperta, ed è la stessa
+finestra: di lei resta solo il lock della cartella, che nomina un processo vivo. Uno step di ELA sul profilo
+non è qui: in una pagina che ELA guida nessuno sta scrivendo una password.
+
+**Dove non c'è un profilo non c'è una finestra da aspettare**: senza una cartella dichiarata, o su un sistema
+dove quel browser non parte, la domanda risponde niente, e guardare e ascoltare restano com'erano. **Ogni altro
+sguardo che fallisce è un dubbio, e un dubbio rifiuta**: una cartella è dichiarata, ed ELA non sa dire se una
+mano c'è sopra.
+
+**Nessun codice nel Perception Core** (decisione 49). La sonda legge stato e non contenuto — l'applicazione
+davanti, quante finestre, mai un titolo —, non lo manda a un modello né in un registro, e con la finestra
+aperta direbbe solo ciò che ELA sa già, perché la finestra l'ha aperta lei. *Con la finestra del login aperta
+ELA non legge il contenuto dello schermo e non ascolta; sa che la finestra c'è.*
+
 ## Alternative considerate
 
 - **Un grant della sessione con lo scope dei suoi siti**: è la forma delle policy di §59, e ADR 0060 l'aveva

@@ -16,6 +16,7 @@ source (ADR 0005 §7) and never holds the Guardian or a store (contract of ``tes
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar
@@ -34,7 +35,16 @@ from ela.domain import (
 )
 from ela.ports import Clock, IdGenerator, NotAllowedError, Prospect, StopPoint, TaskStop
 
-__all__ = ["ARGUMENTS_INVALID", "FIRST_WRITE", "Outcome", "Tool", "check_decision"]
+__all__ = [
+    "ARGUMENTS_INVALID",
+    "FIRST_WRITE",
+    "NotNow",
+    "Outcome",
+    "Perceiving",
+    "Tool",
+    "any_moment",
+    "check_decision",
+]
 
 FIRST_WRITE = "the first write to the disk"
 """The point of no return of a tool that writes a file (M6.3c, ADR 0054 §3): the first ``mkdir``
@@ -70,6 +80,17 @@ class Outcome:
     @property
     def succeeded(self) -> bool:
         return self.code is None
+
+
+NotNow = Callable[[], Awaitable[str | None]]
+"""A question the composition answers for a tool that looks at the screen or listens (M13.9,
+ADR 0063 §7; decision 41): «is this a moment in which ELA must not?» — the reason, in words, or
+``None``. Asked at every call and never remembered: what makes a moment wrong opens and closes."""
+
+
+async def any_moment() -> str | None:
+    """The answer for a tool nobody handed a question to: there is no wrong moment."""
+    return None
 
 
 def check_decision(
@@ -212,3 +233,61 @@ class Tool(ABC):
 
         A tool with a point calls ``stop.listen(self.stop_point.here)`` there, with no ``await``
         between the call and the effect (M6.3c, ADR 0054 §3)."""
+
+
+class Perceiving(Tool):
+    """A tool that looks at the screen or listens, and so can be told «not now» (M13.9, ADR 0063
+    §7; decision 41).
+
+    ELA opens a window for the user to sign in by hand and reads nothing of it through the
+    browser; the screen and the microphone are another road to the same password. So the
+    composition hands each of these tools one question (:data:`NotNow`), and the tool refuses
+    with **a code of its own** (:attr:`not_now_code`), saying the reason as it was given and what
+    it does not do meanwhile — **in two places**:
+
+    * :meth:`prospect`, before the question: a yes to a call that cannot start is a yes wasted
+      (ADR 0045 §6-bis);
+    * the run, through :meth:`_withheld`, which a subclass asks once its arguments are a call: a
+      decision a grant or a policy allowed never passes through the question.
+
+    The tool does not learn what the reason is about. Retryable: what makes the moment wrong
+    ends.
+    """
+
+    not_now_code: ClassVar[str]
+    """The code this tool refuses with while the moment is wrong, among its :attr:`error_codes`."""
+    meanwhile: ClassVar[str]
+    """What the tool does not do meanwhile, in the words the user reads after the reason."""
+
+    def __init__(
+        self,
+        capability_id: CapabilityId,
+        clock: Clock,
+        ids: IdGenerator,
+        *,
+        name: str,
+        not_now: NotNow,
+    ) -> None:
+        super().__init__(capability_id, clock, ids, name=name)
+        self._not_now = not_now
+
+    async def prospect(self, arguments: JsonMapping) -> Prospect:
+        """«It would start», unless this is a moment in which ELA must not: nothing else is
+        looked at here — the permission and the store are the run's, as they were."""
+        refused = await self._withheld()
+        if refused is None:
+            return Prospect()
+        return Prospect(
+            refusal=ErrorMetadata(
+                code=self.not_now_code,
+                message=refused.message,
+                tool_name=self.name,
+                retryable=refused.retryable,
+            )
+        )
+
+    async def _withheld(self) -> Outcome | None:
+        reason = await self._not_now()
+        if reason is None:
+            return None
+        return Outcome({}, self.not_now_code, f"{reason}: {self.meanwhile}", retryable=True)

@@ -49,6 +49,7 @@ from ela.tools.account import (
     LoginTool,
     LoginVerifier,
 )
+from ela.tools.base import NotNow
 from ela.tools.browser import BrowserActTool, BrowserReadTool, Browsing
 from ela.tools.echo import EchoTool
 from ela.tools.errors import (
@@ -311,6 +312,7 @@ def production_tools(
     gateway: str,
     accounts: AccountBrowser,
     vault: VaultDoor,
+    not_now: NotNow,
 ) -> ToolRegistry:
     """What the composition root builds: v0.1's three, plus what the phases after it added.
 
@@ -318,13 +320,21 @@ def production_tools(
     exist and neither is redundant — ADR 0029 §13: *v0.1 does not get folded into, it gets stood
     beside*, and the precedent is M10.1's, where ``/perception`` was left out of the v0.1 route
     count rather than quietly folded in.
+
+    ``not_now`` is the one question the tools that look at the screen or listen are handed
+    (M13.9, ADR 0063 §7): mandatory, like the browser — whoever builds this registry says when
+    ELA must not look, and a registry built without an answer would look always.
     """
     return ToolRegistry(
         (
             *tools_v01(root=root, clock=clock, ids=ids, router=router, providers=providers).tools(),
-            CaptureScreenTool(captures, screen, probe, clock, ids),
-            ListenTool(captures, listening, probe, clock, ids, enabled=listen_enabled),
-            ReadScreenTextTool(captures, recognition, clock, ids, languages=languages),
+            CaptureScreenTool(captures, screen, probe, clock, ids, not_now=not_now),
+            ListenTool(
+                captures, listening, probe, clock, ids, enabled=listen_enabled, not_now=not_now
+            ),
+            ReadScreenTextTool(
+                captures, recognition, clock, ids, languages=languages, not_now=not_now
+            ),
             SpeakTool(speech, clock, ids, voice=voice, enabled=voice_enabled),
             SpeakOnlineTool(
                 speech_online, clock, ids, voice_id=voice_id, model=model, enabled=voice_enabled

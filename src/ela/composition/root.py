@@ -31,6 +31,7 @@ from ela.composition.system import (
     WindowSwitch,
     argument_limits,
     power_reading,
+    while_the_user_signs_in,
     without_node_variables,
 )
 from ela.context import ContextCore
@@ -959,6 +960,7 @@ async def build(
             gateway=settings.api.base_url,
             accounts=accounts,
             vault=door,
+            not_now=while_the_user_signs_in(accounts),
         )
         verifiers = production_verifiers(
             root=root,
