@@ -6154,6 +6154,18 @@ piano**: il nome utente e la password vengono dal vault. Per un altro sito la fo
 `docs/examples/login-from-the-vault.json`. **Serve a portata di mano la posta dell'account di Bitwarden**: il primo
 `bw login` da una cartella dei dati nuova chiede un codice arrivato per email.
 
+**Il programma del vault, la prima volta**, nel tuo terminale e prima della prova:
+
+- **Se il tuo account non sta sul server predefinito di Bitwarden** — per esempio su quello europeo —, a `bw` va detto
+  **prima del primo `bw login`**: `bw config server https://vault.bitwarden.eu`. Senza, il login risponde che la
+  password è sbagliata, ed è giusta.
+- **`bw login` stampa sullo schermo una chiave di sessione, ed è viva.** Non copiarla da nessuna parte, e fai
+  **subito `bw lock`**, che la chiude (misurato: `bw lock` chiude ogni chiave). La chiave che serve a ELA è un'altra, la
+  apri al passo 3, e arriva da un tubo: non passa mai per lo schermo.
+- **Dopo l'importazione del passo 2 il vault può avere una seconda voce per l'host del sito del login**: il browser da
+  cui esporti l'aveva salvata. Guarda nell'app di Bitwarden **prima del passo 6**: per `news.ycombinator.com` deve
+  restarne una sola, quella con l'indirizzo scritto sopra. Con due la domanda del login non nasce.
+
 Il Core gira dal codice del branch, riavviato dopo il `.env`: **nessuna migrazione**. Una sola sessione spende, quella del
 passo 8, su Haiku 5.5.
 
@@ -6178,10 +6190,16 @@ Una volta sola: se il tuo vault è già pieno, rispondi a questo passo premendo 
 <!-- prova: 2.disco -->
 ```
 64
-Esporta le password da Chrome e da Password di Apple dentro /Volumes/ELA-prova, e importale nel vault con `bw import`, nel tuo terminale. Il primo `bw login` chiede un codice arrivato per email.
+Esporta le password da Chrome e da Password di Apple dentro /Volumes/ELA-prova, e importale nel vault con `bw import`, nel tuo terminale. Se è il tuo primo `bw login` su questo Mac: prima `bw config server` se il tuo account sta su un altro server, poi il login, che chiede un codice arrivato per email, e subito dopo `bw lock` — la chiave che il login stampa non si copia da nessuna parte. Dopo l'importazione guarda che per il sito del login resti una voce sola.
 ```
 
 ### 3. Il vault si apre
+
+**La riga che `ela vault status` stampa porta due percorsi interi**: il programma del vault che hai dichiarato, e **il
+comando di ELA con cui questa ELA gira** — quello accanto al suo interprete, non un `ela` cercato nel `PATH`. Funziona
+incollata così com'è nel Terminale in cui l'hai appena letta, senza un ambiente attivato. **Va lanciata dalla cartella
+in cui avvii ELA**: il suo comando legge il token dal `.env` che sta lì, e la frase sopra la riga nomina quella
+cartella. Se ELA non sapesse nominare il proprio comando lo direbbe, e non stamperebbe nessuna riga.
 
 <!-- prova: 3.comando -->
 ```
@@ -6191,7 +6209,8 @@ uv run ela vault status
 <!-- prova: 3.atteso -->
 ```
 state locked
-unlock --raw | ela vault open
+unlock --raw |
+vault open
 ```
 
 <!-- prova: 3.mano -->
@@ -6306,7 +6325,7 @@ posto di `logout`, e rispondi «n»: il passo lo dice com'è.
 
 <!-- prova: 6.occhio -->
 ```
-Nel tuo vault c'è la voce del tuo account di news.ycombinator.com, con l'indirizzo https://news.ycombinator.com/login, e l'hai aggiunta tu a mano?
+Nel tuo vault c'è la voce del tuo account di news.ycombinator.com, con l'indirizzo https://news.ycombinator.com/login, l'hai aggiunta tu a mano, ed è la sola per quell'host (dopo l'importazione del passo 2 può essercene una seconda)?
 ```
 
 <!-- prova: 6.comando -->

@@ -171,8 +171,35 @@ stato lì `vault.no_program`, non dichiarato `vault.undeclared`; un programma ch
 **La chiave arriva da una pipe, e solo da questa macchina.**
 
 ```
-<il programma dichiarato> unlock --raw | ela vault open
+<il programma dichiarato> unlock --raw | <il comando di questa ELA> vault open
 ```
+
+**Tutte e due le metà sono percorsi assoluti** (decisione 98, review dell'11 ottobre a `1666739`: *corretto
+apertamente*). Fino a quel giorno la metà di destra era il nome `ela`, cercato nel `PATH` di chi incollava la
+riga: **proprio ciò che questo ADR rifiuta per la metà di sinistra**, ed è il programma che riceve la chiave del
+vault. Sul Mac della prova `ela` non è in nessun `PATH` — ELA si avvia con `uv run ela` —, e la riga, incollata
+com'era, rispondeva «command not found»: «la riga intera, mai con un segnaposto» (decisione 32) era
+letteralmente falsa.
+- **Il comando di ELA si deriva, non si scrive**: è quello installato **accanto all'interprete che esegue il
+  Core**. *Misurato l'11 ottobre con `ps` sull'ELA che gira*, avviata con `uv run ela serve`: il Core è
+  `<ambiente>/bin/python3 <ambiente>/bin/ela serve`. **L'interprete si prende com'è nominato, mai risolto**:
+  quello di un ambiente virtuale è un link a quello da cui è nato, e il comando sta accanto al link. **Niente
+  ricerca nel `PATH`.** *Su Windows* il comando porta la sua estensione, `ela.exe`, nella cartella degli script
+  dell'ambiente — accanto al suo interprete lo stesso —: lo misura il job di Windows della CI, dove il test del
+  comando gira. **Il Core su Windows non è supportato** (ADR 0040), e lì questa riga non viene mai composta: la
+  misura dice dove sta il comando, non che la riga funzioni su un PC (domanda 102 di `M13.9.md`).
+- **Citati come li vuole una shell**: un percorso con uno spazio è una parola sola, in tutte e due le metà.
+- **Se ELA non sa nominare il proprio comando lo dice, e non stampa nessuna riga**: accanto all'interprete non
+  c'è — ELA avviata in un altro modo —, e una riga che può non funzionare non è una riga. La frase dice che cosa
+  mandare a che cosa; `opens_with` è vuoto.
+- **Da quale cartella.** Il comando di ELA legge il token dell'API dal `.env` della cartella in cui è lanciato,
+  o dall'ambiente. Quando ELA ha letto un `.env`, **la frase accanto alla riga nomina quella cartella**; la riga
+  resta la riga, e funziona incollata nel Terminale in cui `ela vault status` l'ha appena stampata.
+- **Vale ovunque la riga compare**, perché nasce in un posto solo, la porta del vault: `ela vault status`, il
+  messaggio di `vault.locked` nell'esito di un task, la vista della console. `ela vault open`, se riceve un
+  terminale al posto di una pipe, rimanda a `vault status` e non scrive una mezza riga.
+- **Il test che mancava**: il comando, com'è derivato, **lanciato davvero** da una cartella che non è di ELA e
+  in un ambiente che non ha `ela` nel `PATH`, è il comando di ELA. Fino a qui i test affermavano la stringa.
 
 `ela vault open` legge la chiave dallo stdin e **rifiuta un terminale**: una chiave non si scrive e non si
 incolla. La manda a `POST /vault/session`, che la riceve **solo se i due capi del socket sono di loopback**
