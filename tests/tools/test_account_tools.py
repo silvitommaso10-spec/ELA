@@ -856,23 +856,29 @@ async def test_the_tool_remembers_a_bounded_number_of_questions(tmp_path: Path) 
     assert again.status is ExecutionStatus.SUCCEEDED, again.error
 
 
-async def test_a_task_stopped_before_the_first_gesture_takes_no_password(tmp_path: Path) -> None:
-    """The point of the tool is before the vault is asked: a stopped task leaves there."""
+async def test_a_task_stopped_by_the_time_the_page_is_checked_takes_no_password(
+    tmp_path: Path,
+) -> None:
+    """A task that is stopped when the page has been looked at is heard **before the vault is
+    asked**: no password is taken for a step that will type nothing."""
     vault = FakeVault([MARIO])
     browser = FakeAccountBrowser(page())
     tool = await login(browser, vault, tmp_path)
     await asked(tool)
     vault.calls.clear()
+    stop, field = FakeStop(), browser.field
 
-    class StoppedAtThePoint(FakeStop):
-        def listen(self, where: str) -> None:
-            if where == FIRST_GESTURE:
-                self.event.set()
-            super().listen(where)
+    async def looked_at_while_the_user_says_stop(page_: str, selector: str) -> Any:
+        found = await field(page_, selector)
+        stop.event.set()
+        return found
+
+    browser.field = looked_at_while_the_user_says_stop  # type: ignore[method-assign]
 
     with pytest.raises(ToolStopped):
-        await tool.execute(decision(BROWSER_LOGIN), LOGIN, StoppedAtThePoint())
+        await tool.execute(decision(BROWSER_LOGIN), LOGIN, stop)
 
+    assert stop.listened == [FIRST_GESTURE]
     assert vault.calls == [] and browser.secrets == []
     assert browser.closed == ["page-1"]
 
@@ -881,8 +887,10 @@ async def test_a_stop_that_arrives_while_the_vault_is_asked_types_nothing(
     tmp_path: Path,
 ) -> None:
     """The reading of the entry takes seconds — the door, the program, ``bw get item`` —, and a
-    «ferma» given meanwhile found nobody looking: the username was typed after it (re-read of
-    2026-10-11, defect 4). Whatever the vault answered, nothing of it is typed."""
+    «ferma» given meanwhile found nobody listening: the username was typed after it (re-read of
+    2026-10-11, defect 4). **The point of the tool is the last instant before its first gesture,
+    and that is after the vault has answered**: the task is heard there, as one stopped before
+    its point — whatever the vault gave is dropped, nothing is typed, and the page is closed."""
     vault = FakeVault([MARIO])
     browser = FakeAccountBrowser(page())
     tool = await login(browser, vault, tmp_path)
@@ -896,12 +904,36 @@ async def test_a_stop_that_arrives_while_the_vault_is_asked_types_nothing(
 
     vault.take = take_while_the_user_says_stop  # type: ignore[method-assign]
 
-    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, stop)
+    with pytest.raises(ToolStopped) as stopped:
+        await tool.execute(decision(BROWSER_LOGIN), LOGIN, stop)
 
-    assert result.error is not None and result.error.code == STOPPED
+    assert stop.listened == [FIRST_GESTURE], "heard once, at its point"
     assert browser.secrets == [] and browser.clicks == []
-    assert result.output["gestures"] == 0
-    assert TYPED not in repr(result) and USERNAME not in repr(result)
+    assert browser.closed == ["page-1"]
+    assert TYPED not in repr(stopped.value) and USERNAME not in repr(stopped.value)
+
+
+async def test_the_point_of_a_login_is_after_the_vault_has_answered(tmp_path: Path) -> None:
+    """A task that goes on listens once, when the vault has answered and the field has been
+    looked at again — the last instant before anything is typed."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+    vault.calls.clear()
+    seen: list[tuple[list[str], int]] = []
+
+    class Listening(FakeStop):
+        def listen(self, where: str) -> None:
+            seen.append((list(vault.calls), len(browser.secrets)))
+            super().listen(where)
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, Listening())
+
+    assert result.error is None
+    ((asked_of_the_vault, typed),) = seen
+    assert any(call.startswith("take") for call in asked_of_the_vault), "the vault has answered"
+    assert typed == 0, "and nothing is typed yet"
 
 
 async def test_two_questions_for_the_same_call_that_named_different_entries_type_neither(
@@ -990,8 +1022,9 @@ async def test_a_field_that_changed_while_the_vault_was_asked_gets_no_password(
 
 async def test_a_task_stopped_after_the_first_gesture_types_no_password(tmp_path: Path) -> None:
     """No gesture follows a stop (M6.3c): the username was typed, and the password is not. The
-    stop arrives **while the username is being typed** — one that is there when the vault has
-    answered types nothing at all, and is the test above."""
+    stop arrives **while the username is being typed**, past the point of the tool — one that is
+    there when the vault has answered is heard at the point and types nothing at all: the test
+    above."""
     vault = FakeVault([MARIO])
     browser = FakeAccountBrowser(page())
     tool = await login(browser, vault, tmp_path)
