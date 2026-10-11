@@ -3,6 +3,9 @@
     uv run python scripts/prova_m13_9.py --login PIANO.json   # contro l'ELA che gira
     uv run python scripts/prova_m13_9.py --login PIANO.json --out FILE
 
+Il piano del login della prova è ``docs/examples/login-news-ycombinator.json`` (decisione 95): il
+sito, i selettori che scelgono il solo modulo dell'accesso, e nessun valore.
+
 **La guida è la fonte di verità.** Lo script **parte da** ``scripts/prova_m13_12.py`` (la SPEC di
 M13.9, «La prova a mano»): legge dalla sezione 28 i blocchi con il marcatore sopra,
 ``<!-- prova: N.tipo -->``, con il lettore di ``scripts/prova_m6_3c.py``, e ne usa i tipi di
@@ -680,7 +683,10 @@ def login_plan_ready(login: Path | None) -> str | None:
     from ela.composition.settings import BrowserSettings
 
     if login is None:
-        return "e manca --login PIANO.json: il sito del login dal vault lo scegli tu"
+        return (
+            "e manca --login PIANO.json: nella prova è "
+            "docs/examples/login-news-ycombinator.json (la sezione 28 della guida)"
+        )
     try:
         plan = json.loads(login.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:

@@ -19,6 +19,7 @@ this file red. The last step, which stops ELA, is walked on its own with the mac
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import importlib.util
 import io
 import json
@@ -48,7 +49,15 @@ SCRIPT = ROOT / "scripts" / "prova_m13_9.py"
 SIBLINGS = ("prova_m6_3c", "prova_m14_1", "prova_m14_2", "prova_m14_3")
 PLACEHOLDER = re.compile(r"<[^>\s][^>]*>")
 LOGIN_PLAN = ROOT / "docs" / "examples" / "login-from-the-vault.json"
-SITES = ["www.youtube.com", "httpbin.org", "accounts.google.com", "example.com"]
+"""The shape of a login from the vault, for any site: what the tests of the script's own checks
+hand it."""
+PROOF_LOGIN = ROOT / "docs" / "examples" / "login-news-ycombinator.json"
+"""The plan of the login **of the proof** (decision 95): the one the guide launches the script
+with, and the one the walk below sends to a real ELA."""
+PROOF_SITE = "news.ycombinator.com"
+PROOF_ADDRESS = "https://news.ycombinator.com/login"
+"""The address the guide tells the user to give the entry of their vault."""
+SITES = ["www.youtube.com", "httpbin.org", "accounts.google.com", "example.com", PROOF_SITE]
 WORD = "-".join(("SENTINEL", "the", "word", "of", "the", "proof"))
 ENTRY = FakeVaultEntry(
     "11111111-2222-4333-8444-555555555555",
@@ -363,6 +372,66 @@ def test_after_the_stop_ela_is_gone_and_no_live_process_holds_the_profile() -> N
     assert module.left_running(True, "mac-4321", lambda pid: pid == 4321), "the folder is held"
 
 
+def declared_in_the_guide() -> list[str]:
+    """The sites the section tells the user to declare, read from its ``.env`` line."""
+    (line,) = re.findall(r"^ELA_BROWSER_SITES=(\[.*\])$", section(), re.MULTILINE)
+    found: list[str] = json.loads(line)
+    return found
+
+
+def test_the_login_plan_of_the_proof_is_the_one_the_guide_launches_on_a_site_it_declares() -> None:
+    """Decision 95: the site is ``news.ycombinator.com``, written with its whole host in the
+    ``.env`` line of the section; the plan is the file the launch command names; and the entry
+    of the vault the guide asks for carries an address of that host — the one ELA binds an entry
+    to a site by."""
+    from ela.tools.vault import host_of
+
+    module = script()
+    plan = json.loads(PROOF_LOGIN.read_text(encoding="utf-8"))
+    relative = PROOF_LOGIN.relative_to(ROOT).as_posix()
+
+    assert module.login_plan_failures(plan, declared_in_the_guide()) == []
+    assert proof_login()["site"] == PROOF_SITE and PROOF_SITE in declared_in_the_guide()
+    assert f"scripts/prova_m13_9.py --login {relative}" in section()
+    assert PROOF_ADDRESS in section() and host_of(PROOF_ADDRESS) == PROOF_SITE
+    assert proof_login()["path"] == PROOF_ADDRESS.removeprefix(f"https://{PROOF_SITE}")
+
+
+def test_the_login_plan_of_the_proof_carries_no_value_and_chooses_the_one_form_of_the_sign_in() -> (
+    None
+):
+    """Nothing of the user is in the plan — no username, no password, no entry of their vault:
+    they come from the vault, after the yes. And on a page with two forms — to sign in, and to
+    make an account — each selector says which: the two fields of the form that does not
+    create, and the button that says «login». The text awaited is what only a page from inside
+    shows, and is not a word of the sign-in page."""
+    asked = proof_login()
+
+    assert set(asked) == {
+        "site",
+        "path",
+        "username_field",
+        "password_field",
+        "click",
+        "expect_text",
+        "purpose",
+    }, "the closed set of what a login names: no value, and no entry"
+    the_one_form = "form:not(:has(input[name=creating])) "
+    assert asked["username_field"] == f"{the_one_form}input[name=acct]"
+    assert asked["password_field"] == f"{the_one_form}input[name=pw]"
+    assert asked["click"].endswith("[value=login]")
+    assert len({asked["username_field"], asked["password_field"], asked["click"]}) == 3
+    assert asked["expect_text"] == "logout", (
+        "not «login», which the page of whoever is outside shows"
+    )
+    after = json.loads(
+        (ROOT / "docs/examples/read-as-you-news-ycombinator.json").read_text(encoding="utf-8")
+    )
+    (reading,) = after["steps"]
+    assert reading["arguments"]["site"] == PROOF_SITE, "the reading after it is on the same site"
+    assert reading["required_capabilities"] == ["browser.read_as_you"]
+
+
 def test_the_plan_of_the_login_is_one_step_of_login_on_a_declared_site() -> None:
     module = script()
     plan = json.loads(LOGIN_PLAN.read_text(encoding="utf-8"))
@@ -437,12 +506,20 @@ class World:
             self.accounts.holder = None
 
 
+def proof_login() -> dict[str, str]:
+    """The arguments of the one step of the proof's login plan."""
+    (step,) = json.loads(PROOF_LOGIN.read_text(encoding="utf-8"))["steps"]
+    return dict(step["arguments"])
+
+
 def a_page() -> FakePage:
+    """A page that has what the proof's login plan names — its selectors, as it writes them."""
+    asked = proof_login()
     return FakePage(
         fields={
-            "#username": Field("text", "username", "post"),
-            "#current": Field("password", "current-password", "post"),
-            "button[type=submit]": Field("submit", "", "post"),
+            asked["username_field"]: Field("text", "username", "post"),
+            asked["password_field"]: Field("password", "current-password", "post"),
+            asked["click"]: Field("submit", "", "post"),
         },
         texts={None: "Le tue iscrizioni: un canale. Esci. ELA prova 9139"},
     )
@@ -457,7 +534,8 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     program = tmp_path / "bw"
     program.write_bytes(b"\xcf\xfa\xed\xfe a native program")
     program.chmod(program.stat().st_mode | stat.S_IXUSR)
-    accounts, vault = FakeAccountBrowser(a_page()), FakeVault([ENTRY], state="locked")
+    entry = dataclasses.replace(ENTRY, addresses=(PROOF_ADDRESS,))
+    accounts, vault = FakeAccountBrowser(a_page()), FakeVault([entry], state="locked")
     turns = Script([call(), gesture("read", site="www.youtube.com", path="/feed/channels"), call()])
     async with guided(
         monkeypatch,
@@ -497,7 +575,7 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
                 report,
                 world.ask,
                 module.spending.Ledger.of(api.get("/spend")),
-                login=LOGIN_PLAN,
+                login=PROOF_LOGIN,
             )
             todo = {number: blocks for number, blocks in marked().items() if number < 10}
             try:
@@ -513,7 +591,15 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     written = "\n".join(report.lines)
     assert report.ok, written
     assert report.failures == 0 and report.stopped is None and report.lost_at is None
-    assert accounts.secrets == [("#username", ENTRY.username), ("#current", WORD)], "the login"
+    asked = proof_login()
+    assert accounts.secrets == [
+        (asked["username_field"], ENTRY.username),
+        (asked["password_field"], WORD),
+    ], "the login: what the vault holds for the site of the plan, typed where the plan says"
+    step_6 = written.split("—— passo 6 ——", 1)[1].split("—— passo 7 ——", 1)[0]
+    assert "read-as-you-news-ycombinator.json" in step_6.split("browser.login", 1)[1], (
+        "after the login, the reading that finds the user inside, on the same site"
+    )
     assert accounts.windows == ["https://accounts.google.com/", None], "the two windows"
     assert "BROWSER_WINDOW_OPENED" in events and "VAULT_CLOSED" in events
     assert len(accounts.shuts) == 1 and "BROWSER_CLOSE_ASKED" in events, (

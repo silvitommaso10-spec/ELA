@@ -1,0 +1,33 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.9 per la LETTURA CHE TI RITROVA DENTRO dopo il login dal vault",
+    "(GETTING_STARTED, sezione 28, passo 6; decisione 95): la prima pagina di news.ycombinator.com, letta",
+    "come te, sullo stesso sito del login. Chi è dentro vi legge in alto il suo nome utente e `logout`; chi",
+    "è fuori, `login`. È un altro lancio del browser: se il cookie dell'accesso non dura oltre lo step del",
+    "login, qui si legge `login`, e il passo lo dice com'è.",
+    "`browser.read_as_you` è MEDIUM: ciò che torna è contenuto tuo, e chiede a ogni uso. La domanda dice",
+    "«as you». Il confine è il sito che il piano nomina.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "ritrovarmi dentro dopo il login",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-00000000000b",
+      "goal": "leggere la prima pagina del sito in cui sono entrato",
+      "required_capabilities": [
+        "browser.read_as_you"
+      ],
+      "arguments": {
+        "site": "news.ycombinator.com",
+        "path": "/",
+        "purpose": "la prova a mano del browser con i tuoi account"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "il testo della prima pagina, con in alto ciò che vede solo chi è entrato",
+      "success_conditions": [
+        "browser.text_matches"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

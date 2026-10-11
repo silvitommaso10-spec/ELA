@@ -29,10 +29,9 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<tetto in dollari>` | quanto il mese può spendere sulla chiave del modello, sotto il limite mensile dell'organizzazione | lo decidi tu (§9, §23) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
-| `<il piano del login>` | il file del piano di un login dal vault, sul sito che hai scelto tu | lo scrivi tu da `docs/examples/login-from-the-vault.json`, e lo dai a `scripts/prova_m13_9.py` con `--login` (sezione 28) |
+| `<il piano del login>` | il file del piano del login dal vault della sezione 28 | nella prova è `docs/examples/login-news-ycombinator.json`, e lo dai allo script con `--login`; per un altro sito lo scrivi da `docs/examples/login-from-the-vault.json` |
 | `<la cartella del profilo>` | la cartella in cui il browser di ELA tiene i siti in cui sei entrato | la scegli tu: sul Mac, fuori dal repository e da ciò che si sincronizza (sezione 28) |
 | `<il programma del vault>` | il percorso assoluto del programma `bw` di Bitwarden | dove l'hai installato: `which bw` lo dice (sezione 28) |
-| `<il sito del login>` | il sito del login dal vault della sezione 28 | lo scegli tu: il login in una pagina sola, e non un sito di soldi |
 | `<id della policy>` | l'id breve di una policy di §59, i primi otto caratteri del suo id | `ela policy list`, colonna `policy`; nella sezione 27 lo scrive `scripts/prova_m13_12.py`, dalla policy del passo 4 |
 | `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro, o della sezione 25, o della sessione della sezione 26 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, o `scripts/prova_m14_3.py`, al posto del segnaposto |
 | `<id del passo 3>` | l'id del task del passo 3 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
@@ -6118,14 +6117,21 @@ nome di una voce, né un nome utente. **Nella prova si risponde solo nel Termina
 telefono restano chiusi. **Nessun `Ctrl-C`, nessun riavvio** dopo l'avvio: ELA la ferma lo script, all'ultimo passo.
 
 Sul Mac, il `.env` dichiara la cartella del profilo, il programma del vault e i siti — quelli della prova, e **il sito
-del login dal vault, che scegli tu**: uno con il login in una pagina sola, e che non è un sito di soldi. **Scritto con
-il suo host intero**, com'è nella barra degli indirizzi della pagina in cui scrivi la password:
+del login dal vault**, che nella prova è **`news.ycombinator.com`** (decisione 95 dell'11 ottobre): ha il login in una
+pagina sola, sul suo host, e non è un sito di soldi. **Scritto con il suo host intero**, com'è nella barra degli
+indirizzi della pagina in cui scrivi la password:
 
 ```
 ELA_BROWSER_PROFILE_DIR=<la cartella del profilo>
 ELA_VAULT_PROGRAM=<il programma del vault>
-ELA_BROWSER_SITES=["www.youtube.com","httpbin.org","accounts.google.com","<il sito del login>"]
+ELA_BROWSER_SITES=["www.youtube.com","httpbin.org","accounts.google.com","news.ycombinator.com"]
 ```
+
+**La voce del vault la aggiungi tu, a mano, prima della prova**: una voce del tuo account di quel sito il cui
+indirizzo è **`https://news.ycombinator.com/login`**. ELA lega una voce a un sito per l'uguaglianza dell'host di
+quell'indirizzo — `https`, senza porta, senza nome né parola dentro —: una voce con un altro host, o senza indirizzo,
+per ELA non è di quel sito, e il login si ferma prima della domanda con `vault.no_entry`. Se nel vault ne hai più d'una
+per quell'host, la domanda non nasce (`vault.entry_ambiguous`) finché il piano non ne nomina una.
 
 **Che cosa serve a quel sito.** Un passo di `browser.login` sta su **un host solo**: la pagina in cui ELA scrive la
 password deve essere su quell'host, il suo modulo deve mandare con POST, la voce del tuo vault deve portare
@@ -6137,18 +6143,22 @@ indietro è come funziona un accesso centralizzato, e non è stato misurato: nes
 la pagina di accesso nel tuo browser e guarda l'host nella barra degli indirizzi mentre scrivi la password, e dopo che
 sei entrato. **E una verifica contro i programmi automatici nel modulo di accesso** — la casella o il controllo
 invisibile di un servizio che distingue le persone dai programmi — **può far rifiutare il login al sito**: ELA non si
-traveste, e l'esito lo dice. I candidati guardati l'11 ottobre sono nella SPEC di M13.9, sezione 18.
+traveste, e l'esito lo dice. I candidati guardati l'11 ottobre sono nella SPEC di M13.9, sezione 18: `www.chess.com` e
+`lichess.org` hanno quella verifica dentro il modulo, e sono scartati; `news.ycombinator.com` no.
 
-**Il piano del login lo scrivi tu**, prima della prova, da `docs/examples/login-from-the-vault.json`: il tuo sito, il
-percorso della sua pagina di login, i selettori del campo del nome utente, di quello della password e del bottone, e un
-testo che compare solo a chi è entrato. Nessun valore sta nel piano. **Serve a portata di mano la posta dell'account di
-Bitwarden**: il primo `bw login` da una cartella dei dati nuova chiede un codice arrivato per email.
+**Il piano del login della prova è scritto**: `docs/examples/login-news-ycombinator.json`. La pagina di accesso di quel
+sito ha **due moduli** — entrare, e creare un account —, e i selettori del piano scelgono il solo modulo dell'accesso: i
+due campi del modulo che non crea un account, e il pulsante che dice `login`. Il testo che aspetta è **`logout`**: lo mostra solo una pagina da dentro — misurato senza entrare, non sta
+nella pagina di accesso né nella prima pagina di chi è fuori, dove al suo posto c'è `login`. **Nessun valore sta nel
+piano**: il nome utente e la password vengono dal vault. Per un altro sito la forma è
+`docs/examples/login-from-the-vault.json`. **Serve a portata di mano la posta dell'account di Bitwarden**: il primo
+`bw login` da una cartella dei dati nuova chiede un codice arrivato per email.
 
 Il Core gira dal codice del branch, riavviato dopo il `.env`: **nessuna migrazione**. Una sola sessione spende, quella del
 passo 8, su Haiku 5.5.
 
 ```
-uv run python scripts/prova_m13_9.py --login <il piano del login>
+uv run python scripts/prova_m13_9.py --login docs/examples/login-news-ycombinator.json
 ```
 
 ### 1. Prima
@@ -6288,12 +6298,15 @@ Apri il risultato in un altro Terminale, con `uv run ela task results` e l'id de
 
 ### 6. Un login dal vault
 
-Sul sito che hai scelto tu. **La domanda nomina la voce e il nome utente mascherato**: li leggi nel tuo terminale, non
-in questo file.
+Su `news.ycombinator.com`, con la voce che hai aggiunto al vault. **La domanda nomina la voce e il nome utente
+mascherato**: li leggi nel tuo terminale, non in questo file. **L'accesso lo fa questo passo, con il tuo sì**: prima
+nessuno è entrato in quel sito dal browser di ELA. Dopo, **una lettura come te sullo stesso sito ti ritrova dentro** —
+è un altro lancio del browser: se il cookie dell'accesso non durasse oltre lo step del login, lì leggeresti `login` al
+posto di `logout`, e rispondi «n»: il passo lo dice com'è.
 
 <!-- prova: 6.occhio -->
 ```
-Il sito del tuo piano del login l'hai scelto tu, ha il login in una pagina sola, e non è un sito di soldi?
+Nel tuo vault c'è la voce del tuo account di news.ycombinator.com, con l'indirizzo https://news.ycombinator.com/login, e l'hai aggiunta tu a mano?
 ```
 
 <!-- prova: 6.comando -->
@@ -6330,6 +6343,38 @@ uv run ela task run <id>
 <!-- prova: 6.atteso -->
 ```
 outcome completed
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task create --json "ritrovarmi dentro dopo il login"
+uv run ela task plan <id> --file docs/examples/read-as-you-news-ycombinator.json
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 6.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 6.occhio -->
+```
+In un altro Terminale, `uv run ela task results` con l'id del task qui sopra: in alto nella pagina ci sono il tuo nome utente e «logout», e l'indirizzo è rimasto su news.ycombinator.com? Se al loro posto c'è «login», il cookie dell'accesso non è durato oltre lo step: rispondi n.
 ```
 
 ### 7. Il vault chiuso, e il profilo occupato
