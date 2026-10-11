@@ -603,11 +603,12 @@ async def test_the_question_of_a_login_names_the_entry_and_never_a_value(tmp_pat
     assert (visit.site, visit.address) == ("posta.example", "https://posta.example/login")
     assert visit.does == LOGS_IN and visit.expect == "Benvenuto"
     assert visit.timeout_seconds == 30
+    assert (visit.entry, visit.username) == ("La posta", "m…@example.com")
     assert visit.gestures == (
-        "types the username of the entry «La posta» (m…@example.com) of your vault into #user",
+        "types the username of that entry into #user",
         "types its password into #word",
         "clicks #go",
-    )
+    ), "which entry is a fact of its own, and the gestures name the fields"
     shown = repr(prospect)
     assert TYPED not in shown and USERNAME not in shown and MARIO.id not in shown
     assert browser.opened == []
@@ -623,7 +624,7 @@ async def test_an_entry_the_plan_names_is_the_one_the_question_names(tmp_path: P
     visit = (await tool.prospect({**LOGIN, "entry": ANNA.id})).visit
 
     assert visit is not None
-    assert "«La posta di Anna» (a…@example.com)" in visit.gestures[0]
+    assert (visit.entry, visit.username) == ("La posta di Anna", "a…@example.com")
 
 
 # ----------------------------------------------------------------------------------------
