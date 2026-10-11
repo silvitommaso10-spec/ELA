@@ -514,9 +514,16 @@ class Told:
 
     def __init__(self) -> None:
         self.closings: list[Any] = []
+        self.heard = asyncio.Event()
 
     async def __call__(self, closing: Any) -> None:
         self.closings.append(closing)
+        self.heard.set()
+
+    async def hears(self) -> None:
+        """Wait for a closing: the keeper looks at its program in a thread, so «a few turns of
+        the loop» is not when it is told."""
+        await asyncio.wait_for(self.heard.wait(), 5)
 
     @property
     def said(self) -> list[tuple[str, Actor | None, bool, str | None]]:
@@ -605,15 +612,18 @@ async def test_a_command_that_held_nothing_and_ran_nothing_tells_nobody(tmp_path
 async def test_the_hour_running_out_at_a_use_is_told_as_the_time_and_by_nobody(
     tmp_path: Path,
 ) -> None:
-    told, clock = Told(), FakeClock()
+    told, hour, clock = Told(), Hour(), FakeClock()
     vault = FakeVault([MARIO], state=VAULT_LOCKED)
-    made = await door(vault, program(tmp_path), clock=clock, closed=told, wait=Hour())
+    made = await door(vault, program(tmp_path), clock=clock, closed=told, wait=hour)
     assert await made.open(Secret(KEY)) is None
+    await turns()
     clock.advance(timedelta(hours=1))
 
     assert code_of(await made.find(SITE)) == "vault.locked"
+    await turns()
 
     assert told.said == [("expired", None, True, None)]
+    assert hour.cancelled == 1, "the wait is ended: the hour does not run out a second time"
 
 
 async def test_at_its_time_the_keeper_closes_the_vault_with_nobody_calling(tmp_path: Path) -> None:
@@ -632,7 +642,7 @@ async def test_at_its_time_the_keeper_closes_the_vault_with_nobody_calling(tmp_p
     assert told.said == [] and "lock" not in vault.calls
 
     hour.over.set()
-    await turns()
+    await told.hears()
 
     assert vault.calls[-1] == "lock"
     assert told.said == [("expired", None, True, None)]
@@ -649,7 +659,7 @@ async def test_at_its_time_with_a_program_that_changed_the_keeper_forgets_and_ru
     program(tmp_path, b"\xcf\xfa\xed\xfe changed")
 
     hour.over.set()
-    await turns()
+    await told.hears()
 
     assert vault.calls[-1] == "forget" and "lock" not in vault.calls
     assert told.said == [("expired", None, False, "vault.program_changed")]

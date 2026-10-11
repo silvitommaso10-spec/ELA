@@ -10,8 +10,11 @@ hold:
   an update ELA did not see start does not receive them. A program that begins as a script is
   refused: what would be fixed is a launcher of a few lines (decision 42);
 * **the key is kept for an hour from the opening**, never from its last use (decision 33): at
-  that time it is forgotten and the vault is asked to lock — and a use that comes later finds it
-  closed, whoever did or did not close it;
+  that time it is forgotten and the vault is asked to lock — by a task of the door's own, because
+  nobody may be calling —, and a use that comes later finds it closed, whoever did or did not
+  close it;
+* **every closing is told, with why** — a command, the hour, the stop of ELA, a key ended
+  elsewhere — to whoever the composition names: in ELA, the audit. The key is forgotten first;
 * **every refusal has a code of its own**, and a sentence that names the program to run and never
   an entry of the vault;
 * **an entry is bound to a site by the equality of the host, compared here** — not by the vault's
@@ -24,12 +27,16 @@ from __future__ import annotations
 
 import asyncio
 import re
+import shlex
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 from urllib.parse import urlsplit
 
+from ela.domain import Actor
 from ela.ports import (
+    VAULT_LOCKED,
     VAULT_UNAUTHENTICATED,
     VAULT_UNLOCKED,
     Clock,
@@ -44,6 +51,11 @@ from ela.ports import (
 from ela.tools.programs import Identity, identity_of
 
 __all__ = [
+    "BY_COMMAND",
+    "BY_STOP",
+    "BY_TIME",
+    "CLOSING_REASONS",
+    "ELSEWHERE",
     "ENTRY_AMBIGUOUS",
     "ENTRY_NOT_FOR_SITE",
     "FAILED",
@@ -61,6 +73,7 @@ __all__ = [
     "VAULT_CODES",
     "VAULT_OPEN_SECONDS",
     "VAULT_TIMEOUT_SECONDS",
+    "VaultClosing",
     "VaultDoor",
     "VaultProblem",
     "VaultState",
@@ -112,6 +125,16 @@ VAULT_CODES: Final[frozenset[str]] = frozenset(
     }
 )
 
+BY_COMMAND: Final = "command"
+"""Somebody asked: ``ela vault close``, or the console."""
+BY_TIME: Final = "expired"
+"""The hour of the key ran out."""
+BY_STOP: Final = "stopped"
+"""ELA stopped: the key is forgotten, and nothing is launched."""
+ELSEWHERE: Final = "ended_elsewhere"
+"""The vault said the key ELA held opens nothing any more: another unlock, a lock (K2)."""
+CLOSING_REASONS: Final[frozenset[str]] = frozenset({BY_COMMAND, BY_TIME, BY_STOP, ELSEWHERE})
+
 SCRIPT: Final = b"#!"
 HOST: Final = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*")
 """What a host is once it is plain: labels of letters, digits and hyphens, joined by dots."""
@@ -142,10 +165,37 @@ class VaultState:
     """What the vault is now, asked and never remembered: ``name`` is one of ``undeclared``,
     ``no_program``, ``changed``, ``gone``, ``is_a_script``, ``unauthenticated``, ``locked``,
     ``unlocked`` — or ``timeout`` and ``failed`` for a program that did not say —, and
-    ``forgets_at`` the instant ELA forgets the key, when it holds one that opens."""
+    ``forgets_at`` the instant ELA forgets the key, when it holds one that opens.
+
+    ``message`` is what there is to do about it, empty for a vault that is open; ``opens_with``
+    **the whole line to paste** in a terminal, for a vault that is locked and for no other
+    (decision 32): composed with the declared program, never with a placeholder."""
 
     name: str
     forgets_at: datetime | None = None
+    message: str = ""
+    opens_with: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class VaultClosing:
+    """ELA stopped holding the key of the vault, or locked it on a command: ``reason`` is one of
+    :data:`CLOSING_REASONS`; ``by`` who asked, ``None`` when nobody did; ``locked`` whether the
+    vault's program was asked to lock and did; ``code`` why it was not, when a lock was due.
+    Nothing of the vault is in here."""
+
+    reason: str
+    by: Actor | None
+    locked: bool
+    code: str | None
+
+
+Closed = Callable[[VaultClosing], Awaitable[None]]
+Wait = Callable[[float], Awaitable[None]]
+
+
+async def _nobody_is_told(closing: VaultClosing) -> None:
+    """Whoever builds a door without saying who is told of a closing: a test of something else."""
 
 
 def host_of(address: str) -> str | None:
@@ -178,7 +228,10 @@ def _hosts(addresses: tuple[str, ...]) -> frozenset[str]:
 
 
 class VaultDoor:
-    """The vault, behind the identity of its program and the hour of its key."""
+    """The vault, behind the identity of its program and the hour of its key.
+
+    ``closed`` is told of every closing (:class:`VaultClosing`), after the key is forgotten;
+    ``wait`` is how the hour is waited for — a sleep, and an event in a test."""
 
     def __init__(
         self,
@@ -188,13 +241,18 @@ class VaultDoor:
         *,
         clock: Clock,
         seconds: int = VAULT_OPEN_SECONDS,
+        closed: Closed = _nobody_is_told,
+        wait: Wait = asyncio.sleep,
     ) -> None:
         self._vault = vault
         self._program = program
         self._at_start = at_start
         self._clock = clock
         self._seconds = seconds
+        self._closed = closed
+        self._wait = wait
         self._opened_at: datetime | None = None
+        self._watching: asyncio.Future[None] | None = None
 
     @classmethod
     async def fixed(
@@ -204,11 +262,29 @@ class VaultDoor:
         *,
         clock: Clock,
         seconds: int = VAULT_OPEN_SECONDS,
+        closed: Closed = _nobody_is_told,
+        wait: Wait = asyncio.sleep,
     ) -> VaultDoor:
         """The door, with the identity of ``program`` read **now**, once, in a thread: the start
         of ELA, and nothing later."""
         at_start = None if program is None else await asyncio.to_thread(identity_of, program[1:])
-        return cls(vault, program, at_start, clock=clock, seconds=seconds)
+        return cls(vault, program, at_start, clock=clock, seconds=seconds, closed=closed, wait=wait)
+
+    @property
+    def program(self) -> str | None:
+        """The declared program, as it was written; ``None`` when nobody declared one."""
+        return self._program
+
+    @property
+    def forgets_at(self) -> datetime | None:
+        """When ELA forgets the key it holds; ``None`` when it holds none."""
+        opened = self._opened_at
+        return None if opened is None else opened + timedelta(seconds=self._seconds)
+
+    def _opens_with(self) -> str:
+        """The whole line to paste in a terminal (decision 32): the declared program, quoted as
+        a shell wants a path with a space in it, and never a placeholder."""
+        return f"{shlex.quote(self._program or '')} unlock --raw | ela vault open"
 
     # The program ----------------------------------------------------------------------------
 
@@ -258,21 +334,16 @@ class VaultDoor:
                     f"`{self._program} login` in your terminal",
                 )
             return VaultProblem(
-                LOCKED,
-                f"the vault is locked: run `{self._program} unlock --raw | ela vault open` in "
-                "your terminal",
+                LOCKED, f"the vault is locked: run `{self._opens_with()}` in your terminal"
             )
         return VaultProblem(TIMEOUT if isinstance(error, VaultTimeout) else FAILED, str(error))
 
     # The key --------------------------------------------------------------------------------
 
-    def _forgets_at(self) -> datetime | None:
-        opened = self._opened_at
-        return None if opened is None else opened + timedelta(seconds=self._seconds)
-
     async def open(self, key: Secret) -> VaultProblem | None:
         """Hand ELA the session key. It is kept only if the vault's program — the one of the
-        start — says it opens the vault; otherwise it is forgotten, and the reason is said."""
+        start — says it opens the vault; otherwise it is forgotten, and the reason is said.
+        **The hour starts here**, and the wait for its end with it."""
         problem = await self._problem()
         if problem is not None:
             return problem
@@ -284,51 +355,99 @@ class VaultDoor:
         if not opens:
             return VaultProblem(KEY_REFUSED, "that key does not open the vault: it was forgotten")
         self._opened_at = self._clock.now()
+        self._unwatch()
+        self._watching = asyncio.ensure_future(self._expiring())
         return None
 
-    async def close(self) -> VaultProblem | None:
-        """Forget the key and ask the vault to lock. **With a program that changed or is gone the
-        key is forgotten and nothing is run**: what would be launched is not the program ELA
-        vouched for. Whatever is returned, the key is not held any more."""
-        self._opened_at = None
-        vault = self._vault
-        problem = await self._problem()
-        if vault is None:
-            return problem
-        if problem is not None:
-            await vault.forget()
-            return problem
-        try:
-            await vault.lock()
-        except VaultError as error:
-            await vault.forget()
-            return self._said(error)
-        return None
+    async def close(self, by: Actor | None = None) -> VaultProblem | None:
+        """Forget the key and ask the vault to lock, on the command of ``by``. **With a program
+        that changed or is gone the key is forgotten and nothing is run**: what would be launched
+        is not the program ELA vouched for. Whatever is returned, the key is not held any more."""
+        self._unwatch()
+        return await self._close(BY_COMMAND, by)
 
     async def expire(self) -> bool:
-        """Close the vault if the hour of the key is over; whether it was closed here."""
-        forgets_at = self._forgets_at()
+        """Close the vault if the hour of the key is over; whether it was closed here. Asked at
+        every use, on the clock: the wait below is not the only thing that ends the hour."""
+        forgets_at = self.forgets_at
         if forgets_at is None or self._clock.now() < forgets_at:
             return False
-        await self.close()
+        self._unwatch()
+        await self._close(BY_TIME, None)
         return True
+
+    async def stopped(self) -> None:
+        """ELA is stopping: the key is forgotten **and nothing is launched** — a process started
+        while ELA closes is one more thing to wait for. The wait of the hour is ended, and a
+        closing of the keeper's own that was in flight is over when this returns: the loop is
+        never torn down with a launch of the vault's program in flight."""
+        watching = self._unwatch()
+        if watching is not None:
+            await asyncio.wait({watching})
+        await self._forgotten(BY_STOP)
+
+    def _unwatch(self) -> asyncio.Future[None] | None:
+        watching, self._watching = self._watching, None
+        if watching is not None:
+            watching.cancel()
+        return watching
+
+    async def _expiring(self) -> None:
+        """The keeper's own task (decision 33): at the end of the hour nobody may be calling.
+        It does not end itself: whoever closes first ends this wait."""
+        await self._wait(float(self._seconds))
+        await self._close(BY_TIME, None)
+
+    async def _close(self, reason: str, by: Actor | None) -> VaultProblem | None:
+        held, self._opened_at = self._opened_at is not None, None
+        vault = self._vault
+        problem = await self._problem()
+        locked = False
+        if vault is not None:
+            if problem is None:
+                try:
+                    await vault.lock()
+                    locked = True
+                except VaultError as error:
+                    problem = self._said(error)
+            if not locked:
+                await vault.forget()
+        if held or locked:
+            code = None if problem is None else problem.code
+            await self._closed(VaultClosing(reason, by, locked, code))
+        return problem
+
+    async def _forgotten(self, reason: str) -> None:
+        """The key dropped without asking the vault anything, and told if one was held."""
+        held, self._opened_at = self._opened_at is not None, None
+        if self._vault is not None:
+            await self._vault.forget()
+        if held:
+            await self._closed(VaultClosing(reason, None, False, None))
 
     async def state(self) -> VaultState:
         """What the vault is now: asked of the program, never remembered."""
         problem = await self._problem()
         if problem is not None:
-            return VaultState(_STATES[problem.code])
+            return VaultState(_STATES[problem.code], message=problem.message)
         assert self._vault is not None
         await self.expire()
         try:
             said = await self._vault.status()
         except VaultError as error:
-            return VaultState(_STATES[self._said(error).code])
-        if said != VAULT_UNLOCKED and self._opened_at is not None:
+            failed = self._said(error)
+            return VaultState(_STATES[failed.code], message=failed.message)
+        if said == VAULT_UNLOCKED:
+            return VaultState(said, self.forgets_at)
+        if self._opened_at is not None:
             # The key ELA held was ended elsewhere — another unlock, a lock —: it opens nothing.
-            self._opened_at = None
-            await self._vault.forget()
-        return VaultState(said, self._forgets_at() if said == VAULT_UNLOCKED else None)
+            self._unwatch()
+            await self._forgotten(ELSEWHERE)
+        return VaultState(
+            said,
+            message=self._said(VaultNotOpen(said)).message,
+            opens_with=self._opens_with() if said == VAULT_LOCKED else None,
+        )
 
     # The entry ------------------------------------------------------------------------------
 
