@@ -174,6 +174,36 @@ async def test_an_opening_is_a_row_of_the_audit_signed_by_who_handed_the_key(
     assert KEY not in row.model_dump_json()
 
 
+@pytest.mark.parametrize("closing", ["written", "not-written-either"])
+async def test_an_opening_nobody_could_write_down_is_not_kept(
+    vaulted: Vaulted, monkeypatch: pytest.MonkeyPatch, closing: str
+) -> None:
+    """The door takes the key before the row is written. A row that cannot be written — a
+    database that went away in between — must not leave ELA holding a key for an hour that the
+    audit knows nothing of: the key is forgotten, the vault asked to lock, and the failure is the
+    answer. Whether or not the closing can be written down either."""
+    append = vaulted.ela.audit.append
+    unwritable = {AuditEventType.VAULT_OPENED}
+    if closing == "not-written-either":
+        unwritable.add(AuditEventType.VAULT_CLOSED)
+
+    async def failing(event: AuditEvent) -> None:
+        if event.event_type in unwritable:
+            raise OSError("the audit could not be written")
+        await append(event)
+
+    monkeypatch.setattr(vaulted.ela.audit, "append", failing)
+
+    with pytest.raises(OSError, match="the audit could not be written"):
+        await vaulted.client.post("/vault/session", json={"key": KEY})
+
+    assert vaulted.ela.vault.forgets_at is None, "the door holds nothing"
+    assert vaulted.vault.calls[-1] == "lock", "and the vault was asked to lock"
+    monkeypatch.undo()
+    assert (await vaulted.client.get("/vault")).json()["state"] == "locked"
+    assert await vaulted.events(AuditEventType.VAULT_OPENED) == []
+
+
 @pytest.mark.parametrize(
     ("base", "peer"),
     [
@@ -218,13 +248,30 @@ async def test_a_key_that_does_not_open_is_refused_forgotten_and_not_said_back(
 
 @pytest.mark.parametrize(
     "body",
-    [{}, {"key": ""}, {"key": 7}, {"key": "SENTINEL" * 2000}, {"key": KEY, "password": "x"}],
-    ids=["no-key", "empty", "not-text", "too-long", "a-field-nobody-declared"],
+    [
+        {},
+        {"key": ""},
+        {"key": ["SENTINEL-in-a-list"]},
+        {"key": {"SENTINEL-as-a-name": "SENTINEL-as-a-value"}},
+        {"key": "SENTINEL" * 2000},
+        {"key": KEY, "master": "SENTINEL-the-master-password"},
+        {"key": "SENTINEL-a-key", "master": "x"},
+    ],
+    ids=[
+        "no-key",
+        "empty",
+        "a-list",
+        "an-object",
+        "too-long",
+        "a-field-nobody-declared",
+        "a-key-beside-a-field-nobody-declared",
+    ],
 )
 async def test_a_body_that_is_not_one_key_is_refused_without_being_said_back(
     vaulted: Vaulted, body: dict[str, object]
 ) -> None:
-    """The master password has no field to travel in: the route takes one key and nothing else."""
+    """The master password has no field to travel in: the route takes one key and nothing else —
+    and a refusal names the field that is wrong and **never what it held**, whoever's it was."""
     answered = await vaulted.client.post("/vault/session", json=body)
 
     assert answered.status_code == 422

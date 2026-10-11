@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from ela.domain import (
+    ApprovalId,
     CapabilityId,
     CapabilitySpec,
     PermissionOutcome,
@@ -31,7 +32,7 @@ from ela.domain import (
 )
 from ela.permissions import Rule, browser_act, browser_read
 from ela.testing.fakes import FakeClock, FakeIdGenerator, FakeTool
-from tests.executive.support import OK, World, fake_verifier, world
+from tests.executive.support import OK, World, fake_verifier, grant_for, world
 from tests.permissions.policy_support import GUIDED, GUIDED_ARGS, MODEL
 
 SITES = ("posta.example", "video.example")
@@ -161,6 +162,48 @@ async def test_a_read_an_open_session_wrote_runs_with_no_question_and_no_grant()
     assert execution.result is not None and execution.result.authorization_id is None
     assert w.tool(READ.id).calls != ()
     assert room.asked == [session[1].id]
+
+
+async def test_a_grant_that_covers_the_same_read_is_left_alone_while_the_session_covers_it() -> (
+    None
+):
+    """What lets the read run is the room's word and nothing beside it: a grant that covers the
+    same read — born from a yes to the same step — is not handed to the Guardian with the word,
+    which the Guardian would deny as an incoherence, and is not spent. **The control is the
+    second gesture**: with the session over, a grant of the same kind is what lets the same read
+    run, and is spent once."""
+    room = Room()
+    w = a_world(room)
+    session = await a_session(w, room)
+
+    async def a_read_with_a_grant(number: int) -> tuple[Any, Any]:
+        child, step = await a_gesture(w, session, READ, READ_ARGS, number=number)
+        grant = grant_for(
+            READ,
+            task=child,
+            step=step,
+            tail=700 + number,
+            created_at=w.now,
+            max_uses=1,
+            approval_id=ApprovalId(w.ids.new_uuid()),
+        )
+        await w.store.grant(grant)
+        return await w.execute(child.id, step.id), grant
+
+    covered, beside = await a_read_with_a_grant(1)
+
+    assert covered.decision.outcome is PermissionOutcome.ALLOWED
+    assert covered.decision.metadata["rule"] == Rule.SESSION.value
+    assert covered.authorization is None
+    assert await w.store.uses(beside.id) == 0, "not spent for a read the room covers"
+
+    room.open.clear()
+    granted, spent = await a_read_with_a_grant(2)
+
+    assert granted.decision.outcome is PermissionOutcome.ALLOWED
+    assert granted.decision.metadata["rule"] != Rule.SESSION.value
+    assert granted.authorization is not None and granted.authorization.id == spent.id
+    assert await w.store.uses(spent.id) == 1
 
 
 async def test_the_room_is_asked_when_the_step_is_decided_and_a_closed_session_covers_nothing() -> (
