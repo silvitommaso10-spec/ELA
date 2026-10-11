@@ -113,6 +113,8 @@ __all__ = [
     "AccountReadVerifier",
     "LoginTool",
     "LoginVerifier",
+    "ProfileLook",
+    "look_at",
 ]
 
 BROWSER_READ_AS_YOU_TOOL_NAME: Final = "browser-read-as-you"
@@ -189,6 +191,58 @@ def _held(holder: str) -> str:
     return f"ELA's browser with your accounts is in use — {HELD_BY.get(holder, holder)}"
 
 
+@dataclass(frozen=True, slots=True)
+class ProfileLook:
+    """The profile as one look found it, with nothing started (M13.9, ADR 0063 §8).
+
+    ``code`` is what a browser could not start for — the tools' own code, with ``message`` its
+    sentence —, or ``None`` for a profile that is usable and free. ``holder`` is who holds it
+    when the code is :data:`PROFILE_BUSY`. **One definition** for the tools, which refuse with
+    it before their question, and for the routes, which say it as a state: the order — the
+    system, the folder, the binary, who holds the folder — and the sentences are here.
+    """
+
+    code: str | None = None
+    message: str = ""
+    holder: str | None = None
+
+
+async def look_at(browser: AccountBrowser, seconds: float) -> ProfileLook:
+    """Look at the profile through its port, within ``seconds``. Nothing is started, and the
+    folder is not read from here: the port answers with facts."""
+    try:
+        async with asyncio.timeout(seconds):
+            holder = await browser.occupied()
+            installed = await browser.installed()
+    except TimeoutError:
+        return ProfileLook(
+            FAILED, f"the browser did not say whether it can start within {seconds:g} s"
+        )
+    except BrowserStopped:
+        return ProfileLook(STOPPED, "ELA was stopping: no browser was started")
+    except BrowserUnsupported as system:
+        return ProfileLook(
+            UNSUPPORTED_SYSTEM,
+            f"ELA's browser with your accounts runs on a Mac, and this is {system}",
+        )
+    except ProfileUndeclared as undeclared:
+        return ProfileLook(PROFILE_UNDECLARED, str(undeclared))
+    except ProfileUnsafe as unsafe:
+        return ProfileLook(PROFILE_UNSAFE, str(unsafe))
+    except BrowserFailed as failed:
+        return ProfileLook(FAILED, f"whether the browser can start could not be read: {failed}")
+    if not installed:
+        return ProfileLook(NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
+    if holder is not None:
+        return ProfileLook(PROFILE_BUSY, _held(holder), holder)
+    return ProfileLook()
+
+
+UNASKED: Final = frozenset({UNSUPPORTED_SYSTEM, PROFILE_BUSY})
+"""The refusals of the look whose sentence, before a question, ends by saying that none is
+asked: the two a reader could take for something the yes would have fixed."""
+
+
 class _OnTheProfile(_BrowserTool):
     """What the three tools share: the browser is the one with the profile, so the folder is
     looked at before the question and its refusals are named after the yes too."""
@@ -198,39 +252,13 @@ class _OnTheProfile(_BrowserTool):
     async def _installed(self) -> Outcome | None:
         """Before the question: the system, the folder, the binary, and who holds the folder.
         Nothing is started."""
-        try:
-            async with asyncio.timeout(self._browsing.timeout_seconds):
-                holder = await self._browser.occupied()
-                installed = await self._browser.installed()
-        except TimeoutError:
-            return Outcome(
-                {},
-                FAILED,
-                "the browser did not say whether it can start within "
-                f"{self._browsing.timeout_seconds} s",
-            )
-        except BrowserStopped:
-            return Outcome({}, STOPPED, "ELA was stopping: no browser was started")
-        except BrowserUnsupported as system:
-            return Outcome(
-                {},
-                UNSUPPORTED_SYSTEM,
-                f"ELA's browser with your accounts runs on a Mac, and this is {system}: no "
-                "question is asked",
-            )
-        except ProfileUndeclared as undeclared:
-            return Outcome({}, PROFILE_UNDECLARED, str(undeclared))
-        except ProfileUnsafe as unsafe:
-            return Outcome({}, PROFILE_UNSAFE, str(unsafe))
-        except BrowserFailed as failed:
-            return Outcome({}, FAILED, f"whether the browser can start could not be read: {failed}")
-        if not installed:
-            return Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
-        if holder is not None:
-            return Outcome(
-                {}, PROFILE_BUSY, f"{_held(holder)}: no question is asked", retryable=True
-            )
-        return None
+        look = await look_at(self._browser, self._browsing.timeout_seconds)
+        if look.code is None:
+            return None
+        unasked = ": no question is asked" if look.code in UNASKED else ""
+        return Outcome(
+            {}, look.code, f"{look.message}{unasked}", retryable=look.code == PROFILE_BUSY
+        )
 
     async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
         """The run of the empty browser's tool — and what only a profile can refuse, found by the

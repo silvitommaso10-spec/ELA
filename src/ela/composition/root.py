@@ -20,6 +20,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Protocol
+from urllib.parse import urlsplit
 
 from ela.audit.verifier import AuditVerifier
 from ela.composition.errors import ConfigurationError
@@ -631,6 +632,35 @@ def _vault_trail(
     return closed
 
 
+def _window_trail(
+    audit: AuditLog, clock: Clock, ids: IdGenerator
+) -> Callable[[str | None, float], Awaitable[None]]:
+    """Who is told that a sign-in window ended: the audit (M13.9, ADR 0063 §8).
+
+    Signed by ELA — no route asks for an end: the user closes the window, or ELA stops —, with
+    the site the window was opened on, if any, and how long it stayed open. **The site, never
+    the address**, and nothing of what was done there: ELA holds nothing of the window but the
+    wait for its end.
+    """
+
+    async def ended(address: str | None, seconds: float) -> None:
+        await audit.append(
+            AuditEvent(
+                id=AuditEventId(ids.new_uuid()),
+                created_at=clock.now(),
+                event_type=AuditEventType.BROWSER_WINDOW_CLOSED,
+                actor=ELA_ACTOR,
+                summary="browser: the sign-in window closed",
+                payload={
+                    "site": None if address is None else urlsplit(address).hostname,
+                    "seconds": int(seconds),
+                },
+            )
+        )
+
+    return ended
+
+
 def default_route_model(policy: RoutePolicy, task_type: str) -> str:
     """The model the default route of ``task_type`` reads today (M13.12, ADR 0062; decision 16).
 
@@ -886,6 +916,7 @@ async def build(
                 system=platform.system(),
                 profile=settings.accounts.browser_profile_dir,
                 shown=lambda: window.shown,
+                ended=_window_trail(audit, clock, ids),
             )
         # The vault (M13.9, ADR 0063 §2): the program of ``ELA_VAULT_PROGRAM``, with the same four
         # variables — the adapter adds the two of ``bw`` at each launch, and takes nothing from

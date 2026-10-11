@@ -334,6 +334,10 @@ class WireCode(StrEnum):
     """The vault did not take the key, or did not lock (M13.9, ADR 0063): the vault's own code is
     the first word of the message, as for ``policy.would_not_start`` — one code on the wire, not
     one per reason."""
+    BROWSER_REFUSED = "browser.refused"
+    """The window where the user signs in by hand was not opened (M13.9, ADR 0063 §8): the tools'
+    own code is the first word of the message — what a step with the profile would be refused
+    with before its question."""
     UNAUTHORIZED = "unauthorized"
     """Every refusal of the middleware, whatever the reason was (ADR 0023 §7, ADR 0037 §13)."""
 

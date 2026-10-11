@@ -1343,7 +1343,8 @@ class FakeAccountBrowser(FakeBrowser):
     itself; ``windows`` every window that was opened, by its address; ``secrets`` what
     :meth:`fill_secret` wrote, in order — **opened**, as the adapter opens it to type it, which is
     the one thing a fake of this port may do with a secret (architecture rule 68).
-    ``raising`` is honoured by ``occupied``, ``window`` and ``fill_secret`` too.
+    ``raising`` is honoured by ``occupied``, ``window``, ``linked``, ``saved`` and
+    ``fill_secret`` too.
     """
 
     def __init__(
@@ -1395,9 +1396,11 @@ class FakeAccountBrowser(FakeBrowser):
         self.holder = PROFILE_WINDOW
 
     async def linked(self) -> bool:
+        self._raise("linked")
         return self.linked_answer
 
     async def saved(self) -> int:
+        self._raise("saved")
         return self.saved_answer
 
     async def fill_secret(self, page: str, selector: str, value: Secret) -> None:

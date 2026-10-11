@@ -604,6 +604,17 @@ class AuditEventType(StrEnum):
     stop of ELA, a key ended elsewhere: a closing no route asked for would otherwise have no row.
     Signed by who asked, and by ELA when nobody did; the payload says why, whether the vault's
     program was asked to lock and did, and the code when it was not."""
+    BROWSER_WINDOW_OPENED = "BROWSER_WINDOW_OPENED"
+    """ELA opened the window where the user signs in to a site by hand (M13.9, ADR 0063 §8).
+
+    Written by the one route that opens it, signed ``USER``: who, when, and the site if one was
+    named. **Nothing of what happens in the window** — ELA does not read it."""
+    BROWSER_WINDOW_CLOSED = "BROWSER_WINDOW_CLOSED"
+    """The window where the user signs in by hand ended (M13.9, ADR 0063 §8).
+
+    Written by who waits for its process, which is who sees every end — the user closed it, ELA
+    stopped — and signed ``ELA``: no route asks for it. The site if one was named, and how long
+    the window stayed open, in whole seconds."""
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"
     APPROVAL_RESOLVED = "APPROVAL_RESOLVED"
     TOOL_EXECUTED = "TOOL_EXECUTED"

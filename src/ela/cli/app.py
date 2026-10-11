@@ -1,6 +1,6 @@
 """The ``ela`` command: every sub-command, and nothing else (ADR 0024 §3).
 
-Thirty-four commands, of three kinds (ADR 0024 §3, ADR 0039 §4): the ones whose life *is* one
+Thirty-eight commands, of three kinds (ADR 0024 §3, ADR 0039 §4): the ones whose life *is* one
 request, the two that are not calls at all — ``init``, which prepares the machine, and ``serve``,
 which starts the process — and, since M12.3, the one whose life is not one request: ``node run``,
 which opens a client and then stays. Nothing is composed here: the app holds commands, and each
@@ -13,6 +13,7 @@ import typer
 
 from ela.cli import (
     audit,
+    browser,
     context,
     node,
     nodes,
@@ -44,6 +45,7 @@ app.add_typer(nodes.providers, name="provider")
 app.add_typer(voice.app, name="voice")
 app.add_typer(policies.app, name="policy")
 app.add_typer(vault.app, name="vault")
+app.add_typer(browser.app, name="browser")
 
 app.command("health")(system.health)
 app.command("diagnostics")(system.diagnostics)

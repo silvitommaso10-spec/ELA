@@ -513,6 +513,79 @@ davanti, quante finestre, mai un titolo —, non lo manda a un modello né in un
 aperta direbbe solo ciò che ELA sa già, perché la finestra l'ha aperta lei. *Con la finestra del login aperta
 ELA non legge il contenuto dello schermo e non ascolta; sa che la finestra c'è.*
 
+### 8. La finestra, e le rotte del browser
+
+**Con una finestra o senza è di Tommaso** (decisioni 18a e 34). Non è un argomento di nessuna capability e
+nessun tool lo decide: è uno stato di ELA accesa, che cambia solo da una rotta di Tommaso, vale per gli step
+con il profilo che partono da quel momento, e **torna «senza finestra» a ogni avvio**. Il browser vuoto resta
+senza finestra.
+
+**La finestra del login a mano** (decisione 18b). ELA lancia il binario, da solo, sulla cartella del profilo,
+con gli argomenti dell'elenco chiuso di §4 e, se c'è, l'indirizzo `https` di un sito **dichiarato**. Non c'è
+un driver, non c'è una pipe né una porta di debug, lo stdout e lo stderr del processo non vanno a nessuno: di
+quella finestra ELA tiene una cosa sola, **l'attesa della sua fine**. Dentro la finestra il confine dei siti
+non c'è — sono le mani di Tommaso —; dove ELA la apre è un sito dichiarato, o nessuno. La chiude Tommaso; alla
+fermata di ELA riceve un `SIGTERM`, ed entro la grazia della chiusura è uccisa con il suo gruppo (§4). Non è
+una capability: nessun piano e nessun modello la apre. Finché è aperta ELA non guarda e non ascolta (§7).
+
+**Un processo alla volta sul profilo** (decisione 18c). Chi tiene la cartella è derivato a ogni domanda, mai
+ricordato: uno step di ELA, la finestra, o un processo che il lock della cartella nomina. La finestra che
+trova la cartella tenuta non si apre: ELA non lancia un secondo processo su una cartella che ha trovato
+occupata, perché è il lancio che può uccidere il primo.
+
+Rotte nuove, in `ela/api/browser.py`, che raggiunge `CORE` con il token:
+
+| Metodo | Percorso | Che cosa |
+|---|---|---|
+| `GET` | `/browser` | che cosa è il profilo, guardato attraverso il suo port: usabile o no e perché, libero o tenuto e da chi, con o senza finestra, collegato o no a un account |
+| `POST` | `/browser/window` | con la finestra, o senza: l'interruttore di Tommaso |
+| `POST` | `/browser/open` | la finestra del login a mano, su un sito dichiarato o su nessuno |
+
+**Lo stato è il rifiuto dei tool, o chi tiene la cartella.** `GET /browser` risponde `free`; oppure il nome di
+chi tiene il profilo, uno dei tre del port; oppure perché nessun browser può partirci, con il codice che uno
+step riceverebbe prima della sua domanda, senza il prefisso — una definizione sola, in `ela/tools/account.py`,
+per i tool e per le rotte. `linked` e `saved` sono ciò che il browser dice di sé — se conosce un account di chi
+l'ha fatto, quante password tiene il suo gestore —, **riletti a ogni richiesta, mai da una copia** (decisione
+63), e «non letto» dove la cartella non si è potuta leggere: non «no», e non «nessuna».
+
+**Una rotta non apre la cartella e non ne riceve il percorso** (decisione 35): chiede al port, che risponde
+con fatti. Lo tiene la regola 69.
+
+Errori aggiunti, nella forma della tabella di ADR 0023 §10:
+
+| Caso | Eccezione | Stato |
+|---|---|---|
+| la finestra non si apre: un sito non dichiarato, un profilo su cui nessun browser può partire, o tenuto | `BrowserRefusedError` | `409` |
+
+Codici aggiunti a `ela.ports.WireCode`:
+
+| Codice | Membro | Quando |
+|---|---|---|
+| `browser.refused` | `BROWSER_REFUSED` | la finestra del login a mano non si è aperta: il messaggio comincia con il codice dei tool |
+
+Il messaggio comincia con `browser.site_undeclared` per un sito che non è fra quelli dichiarati — il solo
+codice che è di queste rotte e non dei tool —, e altrimenti con il codice che uno step con il profilo
+riceverebbe: `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.unsupported_system`,
+`browser.not_installed`, `browser.profile_busy`, `browser.failed`.
+
+Un gruppo nuovo della CLI, **`ela browser`**:
+
+| Comando | Rotta | Uscite |
+|---|---|---|
+| `ela browser status` | `GET /browser` | `0` `1` `2` `3` |
+| `ela browser window show` | `POST /browser/window` | `0` `1` `2` `3` |
+| `ela browser window hide` | `POST /browser/window` | `0` `1` `2` `3` |
+| `ela browser open` | `POST /browser/open` | `0` `1` `2` `3` |
+
+`ela browser open` prende un sito, o niente.
+
+**L'audit**: tipi d'evento nuovi, senza contenuto. `BROWSER_WINDOW_OPENED` lo scrive la rotta che apre la
+finestra, firmato da chi l'ha chiesta, con il sito se c'era. `BROWSER_WINDOW_CLOSED` lo scrive **chi aspetta la
+fine del processo**, che è chi vede ogni fine — Tommaso che chiude la finestra, ELA che si ferma —, firmato da
+ELA: nessuna rotta la chiede, e una fine che nessuno ha chiesto resterebbe senza riga. Porta il sito, se
+c'era, e quanti secondi interi la finestra è rimasta aperta: mai un indirizzo, e niente di ciò che vi è stato
+fatto — ELA non lo sa. L'interruttore della finestra non è un evento: non apre niente.
+
 ### 9. La domanda di un login: quale voce, e di chi
 
 Prima di dire sì a un login Tommaso deve poter leggere **quale voce** del suo vault ELA userebbe, e **di chi**.
@@ -567,7 +640,7 @@ stanno accanto alla domanda, non nel suo testo: l'audit della domanda non li por
   `fill` (misurato), e da M13.9 un `fill` può portare una password.
 
 Con questo ADR le regole di architettura sono **sessantanove** (la 67, la 68 e la 69), i contratti di import-linter restano
-**quindici**, i port diventano **trentacinque** (`Vault` e `AccountBrowser`), le rotte dell'API **sessantatré** e i comandi
-della CLI **trentaquattro** (quelle del vault, e i suoi comandi); le
+**quindici**, i port diventano **trentacinque** (`Vault` e `AccountBrowser`), le rotte dell'API **sessantasei** e i comandi
+della CLI **trentotto** (quelle del vault e del browser, e i loro comandi); le
 capability diventano **diciotto** (quelle di §5), le identità del middleware restano **sei**. *(I totali si aggiornano con le sezioni
 che seguono: questo ADR si scrive con l'implementazione.)*
