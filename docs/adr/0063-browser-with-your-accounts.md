@@ -339,6 +339,7 @@ Capability aggiunte:
 | `browser.read_as_you` | MEDIUM | `undeclared` | `site` | sì | `site: string`, `path: string`, `purpose: string` | `selector: string` |
 | `browser.act_as_you` | HIGH | `undeclared` | `site` | sì | `site: string`, `path: string`, `fill: array`, `click: string`, `expect_text: string`, `purpose: string` | — |
 | `browser.login` | HIGH | `undeclared` | `site` | sì | `site: string`, `path: string`, `username_field: string`, `password_field: string`, `click: string`, `expect_text: string`, `purpose: string` | `entry: string` |
+| `browser.guided_as_you` | MEDIUM | `undeclared` | `sites` | sì | `goal: string`, `sites: array`, `max_cost_usd: string`, `looks: integer`, `seconds: integer` | `task_type: string` |
 
 **«As you» è la cosa che chi approva deve sapere, ed è la parola della domanda.** Gli schemi delle prime due sono
 quelli di `browser.read` e di `browser.act`, con le loro grammatiche e i loro limiti (ADR 0052 §5 e §8): ciò che
@@ -363,6 +364,7 @@ I tool, in `ela/tools/account.py`:
 | `browser.read_as_you` | `AccountReadTool` | `browser-read-as-you` | sì | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `shown`, `status`, `total` |
 | `browser.act_as_you` | `AccountActTool` | `browser-act-as-you` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `gestures`, `status` |
 | `browser.login` | `LoginTool` | `browser-login` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.login_form_get`, `browser.not_a_password_field`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system`, `vault.entry_ambiguous`, `vault.entry_forgotten`, `vault.entry_not_for_site`, `vault.failed`, `vault.locked`, `vault.no_entry`, `vault.no_password`, `vault.no_program`, `vault.program_changed`, `vault.program_gone`, `vault.program_is_a_script`, `vault.timeout`, `vault.unauthenticated`, `vault.undeclared` | `gestures`, `status` |
+| `browser.guided_as_you` | `BrowserGuidedTool` | `browser-guided-as-you` | no | `arguments.invalid`, `guided.cache`, `guided.cap_below_one_call`, `guided.cost`, `guided.duration`, `guided.failed`, `guided.folder_changed`, `guided.looks`, `guided.max_tokens`, `guided.model_changed`, `guided.not_installed`, `guided.permission_asked`, `guided.route_changed`, `guided.session_gone`, `guided.stopped`, `guided.tools_changed`, `guided.unchecked`, `guided.unreserved`, `provider.authentication_error`, `provider.bad_request`, `provider.malformed_response`, `provider.no_output`, `provider.rate_limited`, `provider.refusal`, `provider.rejected`, `provider.server_error`, `provider.spend_limit`, `provider.timeout`, `provider.unavailable`, `provider.unknown_model`, `provider.unknown_model_hint`, `provider.unreachable`, `provider.unsupported_parameter`, `routing.empty_routes`, `routing.unknown_provider`, `routing.unknown_task_type` | `acts`, `calls`, `input_minus_bytes_max`, `input_tokens`, `looks`, `output_tokens`, `refused`, `unknown_calls` |
 
 I verifier, nello stesso modulo — guardano la pagina nel browser che l'ha aperta:
 
@@ -371,6 +373,7 @@ I verifier, nello stesso modulo — guardano la pagina nel browser che l'ha aper
 | `browser.read_as_you` | `AccountReadVerifier` | `browser-read-as-you-verifier` | `browser.text_matches` | `browser.page_gone`, `browser.text_mismatch` |
 | `browser.act_as_you` | `AccountActVerifier` | `browser-act-as-you-verifier` | `browser.expect_visible` | `browser.expect_missing`, `browser.page_gone` |
 | `browser.login` | `LoginVerifier` | `browser-login-verifier` | `browser.expect_visible` | `browser.expect_missing`, `browser.page_gone`, `browser.second_factor` |
+| `browser.guided_as_you` | `BrowserGuidedVerifier` | `browser-guided-as-you-verifier` | `guided.closed`, `guided.gestures_audited`, `guided.reservations_closed` | `guided.gesture_unaudited`, `guided.left_running`, `guided.reservation_open` |
 
 Dove ciascuno ascolta la fermata del suo task (ADR 0054 §3) — nessuno viaggia, quindi su un nodo nessuno:
 
@@ -379,6 +382,7 @@ Dove ciascuno ascolta la fermata del suo task (ADR 0054 §3) — nessuno viaggia
 | `browser.read_as_you` | `the navigation` | `None` |
 | `browser.act_as_you` | `the first gesture` | `None` |
 | `browser.login` | `the first gesture` | `None` |
+| `browser.guided_as_you` | `the launch of the session` | `None` |
 
 Per il login il punto sta **prima che il vault sia interrogato**: un task fermato non prende nessuna password.
 
@@ -416,6 +420,41 @@ riconoscimento è parziale, come quello dei campi segreti.
 **Il valore non viene mai dal piano**, e non entra nel modulo dei tool: il tool riceve due `Secret` dalla porta
 del vault e li passa all'adapter del browser — a nessun altro, in nessun esito, messaggio o evento.
 
+### 6. La sessione guidata con il profilo
+
+`browser.guided_as_you` è la sessione di ADR 0060 — la stanza, il gateway, il bilancio, un task figlio per ogni
+gesto, il «ferma» — con queste differenze, e nessun'altra:
+
+- **È un'altra capability**: una policy di `browser.guided` non la copre, e viceversa — il Guardian nega un grant
+  presentato per un'altra capability.
+- **Nomina un sito solo** (decisione 30): lo schema ha `sites` di un elemento, e una chiamata che ne porta di più
+  è negata prima della domanda. Con un sito solo ciò che il modello legge non può finire nell'indirizzo di un
+  altro: non c'è un altro sito a cui la sessione possa mandare qualcosa. Lo scope di una policy può elencarne più
+  d'uno; ogni sessione ne sceglie uno.
+- **I suoi gesti sono quelli del profilo**: gli strumenti che il modello vede restano `read` e `act`; ciò che
+  chiedono è `browser.read_as_you` e `browser.act_as_you`. **La capability e i gesti di una sessione sono un
+  dato** — `SessionKind` nel tool, `SessionGestures` consegnato alla stanza quando la sessione si apre —, dove
+  fino a M13.9 erano costanti in due moduli. **Nessun gesto di login**: un modello non vede gli attributi dei
+  campi; la strada è la finestra, o uno step `browser.login` di un piano.
+- **Un `act` chiede sempre**: è `HIGH`, e il figlio aspetta il sì di Tommaso.
+- **Le sue letture le copre la sessione** (§1): `covers` nomina `browser.read_as_you`, fuori da `PolicyTerms`.
+
+Dichiarazioni aggiunte, nella forma della tabella di ADR 0062 §1:
+
+| Capability | Tetti | Mai coperti | Liberi | Rotta |
+|---|---|---|---|---|
+| `browser.guided_as_you` | `max_cost_usd`, `looks`, `seconds` | `task_type` | `goal` | `browsing` |
+
+**Che cosa esce** (§57), riscritto per questa sessione: il fornitore e il perché sono quelli di ADR 0060 §8; i
+dati sono la frase, il sito, le istruzioni di ELA, e **il testo delle pagine lette come Tommaso — contenuto
+suo**. La domanda e l'anteprima di una policy lo dicono nel campo `sends`. Le istruzioni al modello guadagnano
+una riga: non aprire un indirizzo che conferma, cancella, disiscrive o esce se la frase non lo chiede. **Dentro
+quel sito un modello può aprire qualunque indirizzo come Tommaso**, e la descrizione della capability lo dice.
+
+**Una policy della sessione non ha un numero massimo di sessioni**, e regge perché l'avvio è di Tommaso. *Si
+riesamina il giorno in cui ELA parte da sola (annotazione per la Fase 15).* Una revoca non ferma una sessione
+già partita: le sue letture come Tommaso continuano fino ai suoi tetti, e l'uscita della revoca lo dice.
+
 ## Alternative considerate
 
 - **Un grant della sessione con lo scope dei suoi siti**: è la forma delle policy di §59, e ADR 0060 l'aveva
@@ -450,5 +489,5 @@ del vault e li passa all'adapter del browser — a nessun altro, in nessun esito
 Con questo ADR le regole di architettura sono **sessantanove** (la 67, la 68 e la 69), i contratti di import-linter restano
 **quindici**, i port diventano **trentacinque** (`Vault` e `AccountBrowser`), le rotte dell'API **sessantatré** e i comandi
 della CLI **trentaquattro** (quelle del vault, e i suoi comandi); le
-capability diventano **diciassette** (le tre di §5), le identità del middleware restano **sei**. *(I totali si aggiornano con le sezioni
+capability diventano **diciotto** (quelle di §5), le identità del middleware restano **sei**. *(I totali si aggiornano con le sezioni
 che seguono: questo ADR si scrive con l'implementazione.)*

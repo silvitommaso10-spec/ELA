@@ -61,7 +61,7 @@ from ela.tools.errors import (
     VerifierNotFound,
 )
 from ela.tools.fs import FS_READ, FS_WRITE, FsReadTool, FsWriteTool
-from ela.tools.guided import BrowserGuidedTool, BrowserGuidedVerifier
+from ela.tools.guided import SESSION_AS_YOU, BrowserGuidedTool, BrowserGuidedVerifier
 from ela.tools.listen import ListenTool
 from ela.tools.model import ModelCompleteTool
 from ela.tools.notes import WriteNoteTool
@@ -353,6 +353,18 @@ def production_tools(
             AccountReadTool(browsing, accounts, clock, ids),
             AccountActTool(browsing, accounts, clock, ids),
             LoginTool(browsing, accounts, vault, clock, ids),
+            # The same session, with the profile (M13.9): the same room, the same gateway, and its
+            # gestures are the two tools above — never the empty browser's.
+            BrowserGuidedTool(
+                gestures,
+                sessions,
+                router,
+                providers,
+                clock,
+                ids,
+                gateway=gateway,
+                kind=SESSION_AS_YOU,
+            ),
         )
     )
 
@@ -480,5 +492,6 @@ def production_verifiers(
             AccountReadVerifier(accounts, browser_seconds),
             AccountActVerifier(accounts, browser_seconds),
             LoginVerifier(accounts, browser_seconds),
+            BrowserGuidedVerifier(gestures, sessions, audit, kind=SESSION_AS_YOU),
         )
     )

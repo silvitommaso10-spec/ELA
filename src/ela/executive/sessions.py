@@ -49,7 +49,6 @@ from ela.executive.planner import planning_id
 from ela.executive.runner import TaskRunner
 from ela.executive.spending import BudgetRefusal, SessionBudget, SpendingGate
 from ela.executive.stops import StopOfTask
-from ela.permissions.capabilities import BROWSER_ACT, BROWSER_READ
 from ela.ports import (
     GUIDED_FOLDER_CHANGED,
     GUIDED_SESSION_GONE,
@@ -61,6 +60,7 @@ from ela.ports import (
     ModelGateway,
     NotFoundError,
     OpenedSession,
+    SessionGestures,
     SessionTally,
     TaskRepository,
     VerifierRegistryPort,
@@ -90,8 +90,6 @@ check. A start that never arrives is a session halted, not a call let out."""
 _NAMESPACE: Final = UUID("1d9a5d6c-8f3b-4e47-9a0f-6c2d4b8e7a15")
 """The namespace of the ids of a gesture's plan and step, derived from the child's id."""
 
-_GESTURES: Final = frozenset({BROWSER_READ, BROWSER_ACT})
-
 
 def gesture_key(number: int, session: StepId) -> str:
     """The key of the ``number``-th gesture of ``session``."""
@@ -105,6 +103,7 @@ class _Live:
 
     task_id: TaskId
     capability: CapabilityId
+    gestures: SessionGestures
     budget: SessionBudget
     token: str
     sites: tuple[str, ...]
@@ -166,6 +165,7 @@ class SessionRoom:
         capability: CapabilityId,
         sites: tuple[str, ...],
         tools: frozenset[str],
+        gestures: SessionGestures,
     ) -> OpenedSession | ErrorMetadata:
         # A plan by hand carries the caller's step ids, so one file sent to two tasks gives two
         # sessions one step: the identity of the path, of the folder and of the place here. The
@@ -186,6 +186,7 @@ class SessionRoom:
         live = _Live(
             task_id=task_id,
             capability=capability,
+            gestures=gestures,
             budget=SessionBudget(reservation, tools),
             token=secrets.token_urlsafe(32),
             sites=sites,
@@ -219,9 +220,9 @@ class SessionRoom:
             return Gesture(f"the session {session} is over", TaskState.CANCELLED, acted=False)
         live.looks += 1
         number = live.looks
-        if capability == BROWSER_ACT:
+        if capability == live.gestures.act:
             live.acts += 1
-        if capability not in _GESTURES:
+        if capability not in (live.gestures.read, live.gestures.act):
             live.refused += 1
             return Gesture(f"gesture {number}: no such gesture", TaskState.DENIED, acted=False)
         # Shielded (M14.3): the interrupt of the session cancels the call of its in-process tool,
@@ -238,7 +239,7 @@ class SessionRoom:
             )
         if child.state is TaskState.DENIED:
             live.refused += 1
-        acted = capability == BROWSER_ACT and child.state is TaskState.COMPLETED
+        acted = capability == live.gestures.act and child.state is TaskState.COMPLETED
         return Gesture(await self._said(number, child), child.state, acted=acted)
 
     async def halt(self, session: StepId, error: ErrorMetadata) -> None:

@@ -240,6 +240,7 @@ __all__ = [
     "ScreenCapturePort",
     "Secret",
     "SessionEnd",
+    "SessionGestures",
     "SessionHandle",
     "SessionHost",
     "SessionPlan",
@@ -3127,6 +3128,24 @@ class SessionTally:
     per_call: tuple[tuple[str, int, int, int], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class SessionGestures:
+    """Which capability each of the two tools of a guided session asks for (M13.9, ADR 0063).
+
+    A fact of the capability of the session, handed to the room when the session opens: the
+    session on the empty browser reads with ``browser.read`` and acts with ``browser.act``; the
+    one with the profile, with their two of the profile. Until M13.9 the pair was a constant in
+    two modules, which was true while there was one kind of session."""
+
+    read: CapabilityId
+    act: CapabilityId
+
+    def named(self, tool: str) -> CapabilityId | None:
+        """The capability the session's tool ``tool`` asks for, or ``None``: the model's two
+        tools are called ``read`` and ``act``, whatever the session."""
+        return {"read": self.read, "act": self.act}.get(tool)
+
+
 @runtime_checkable
 class Gestures(Protocol):
     """The room of the guided sessions (§19, §27; M14.3, ADR 0060): what ``browser.guided`` asks.
@@ -3144,11 +3163,13 @@ class Gestures(Protocol):
         capability: CapabilityId,
         sites: tuple[str, ...],
         tools: frozenset[str],
+        gestures: SessionGestures,
     ) -> OpenedSession | ErrorMetadata:
         """Open the session of this step on the reservation the cap holds for it, or say why not.
 
         ``capability`` is the capability of the session — which of the guided sessions this is
-        (M13.9, ADR 0063): what its gestures are, and what the room attests of it."""
+        (M13.9, ADR 0063): what the room attests of it. ``gestures`` is what its two tools ask
+        for: a gesture of any other capability is refused, and the one that acts is counted."""
 
     async def start(self, session: StepId, tools: Sequence[str]) -> ErrorMetadata | None:
         """The tools the session's start lists: exactly its two, or the session is halted

@@ -37,6 +37,7 @@ from jsonschema.exceptions import SchemaError
 from ela.domain import (
     CapabilityId,
     CapabilitySpec,
+    Covered,
     JsonValue,
     PolicyTerms,
     RiskLevel,
@@ -111,10 +112,12 @@ __all__ = [
     "VALUE_MAX_LENGTH",
     "ACCOUNTS_INTRODUCED_AT",
     "BROWSER_ACT_AS_YOU",
+    "BROWSER_GUIDED_AS_YOU",
     "BROWSER_LOGIN",
     "BROWSER_READ_AS_YOU",
     "ENTRY_MAX_LENGTH",
     "browser_act_as_you",
+    "browser_guided_as_you",
     "browser_login",
     "browser_read_as_you",
 ]
@@ -433,6 +436,7 @@ BROWSER_GUIDED: Final = CapabilityId("browser.guided")
 BROWSER_READ_AS_YOU: Final = CapabilityId("browser.read_as_you")
 BROWSER_ACT_AS_YOU: Final = CapabilityId("browser.act_as_you")
 BROWSER_LOGIN: Final = CapabilityId("browser.login")
+BROWSER_GUIDED_AS_YOU: Final = CapabilityId("browser.guided_as_you")
 
 DECLARES_AN_EMPTY_SCOPE: Final[frozenset[CapabilityId]] = frozenset(
     {
@@ -443,6 +447,7 @@ DECLARES_AN_EMPTY_SCOPE: Final[frozenset[CapabilityId]] = frozenset(
         BROWSER_READ_AS_YOU,
         BROWSER_ACT_AS_YOU,
         BROWSER_LOGIN,
+        BROWSER_GUIDED_AS_YOU,
     }
 )
 """The capabilities whose empty scope is **an answer** and not a doubt (M13.2 dec. 16).
@@ -1383,6 +1388,73 @@ def browser_guided(
     )
 
 
+def browser_guided_as_you(
+    sites: Sequence[str] = UNDECLARED_SITES, model: str = UNDECLARED_MODEL
+) -> CapabilitySpec:
+    """``browser.guided_as_you``, **MEDIUM**: a model guides ELA's browser **with the profile that
+    lasts**, one gesture at a time, on **one site** (§19, §57; M13.9, ADR 0063).
+
+    The session of ``browser.guided`` — the room, the gateway, the budget, a child task for every
+    gesture —, and **another capability**: a policy of ``browser.guided`` does not cover it, and it
+    names one site only. With one site, what its model reads cannot end up in the address of
+    another: there is no other site the session could send anything to (decision 30). The scope of
+    a policy may list several; each session chooses one.
+
+    **Its gestures are the profile's**: a read is ``browser.read_as_you`` and an act is
+    ``browser.act_as_you``. An act asks, always — it is ``HIGH``. A read is ``MEDIUM``, and would
+    ask at every look: what covers the reads a session's model writes is **the session itself**,
+    declared here in ``covers`` — outside :class:`~ela.domain.PolicyTerms` —, read from the room
+    when each step is decided, and never a grant (decision 29). No session covers a ``HIGH``.
+
+    Its limits are the session's, as for ``browser.guided``: the most it may spend, the looks, the
+    seconds. **Inside its site a model may open any address as the user**: a site that acts when an
+    address is opened — a link that confirms, cancels, unsubscribes, signs out — acts.
+    """
+    covered = browser_read_as_you(sites)
+    return CapabilitySpec(
+        id=BROWSER_GUIDED_AS_YOU,
+        created_at=ACCOUNTS_INTRODUCED_AT,
+        description=(
+            "A model guides ELA's own browser, which keeps the sites you signed in to, from a "
+            "sentence, on one site you declared, one gesture at a time: it reads as you, each "
+            "act is asked, and the text of the pages — your own content — goes to the model's "
+            "provider. It can open any address of that site as you."
+        ),
+        risk=RiskLevel.MEDIUM,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string", "minLength": 1},
+                "sites": {
+                    "type": "array",
+                    "items": {"type": "string", "pattern": SITE_PATTERN},
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "uniqueItems": True,
+                },
+                "max_cost_usd": {"type": "string", "pattern": COST_PATTERN},
+                "looks": {"type": "integer", "minimum": LOOKS_MIN, "maximum": LOOKS_MAX},
+                "seconds": {"type": "integer", "minimum": SECONDS_MIN, "maximum": SECONDS_MAX},
+                "task_type": {"type": "string", "minLength": 1},
+            },
+            "required": ["goal", "sites", "max_cost_usd", "looks", "seconds"],
+            "additionalProperties": False,
+        },
+        scope=tuple(sites),
+        scoped_arguments=("sites",),
+        policy_terms=PolicyTerms(
+            limits=("max_cost_usd", "looks", "seconds"),
+            uncovered=("task_type",),
+            free=("goal",),
+            route=GUIDED_ROUTE,
+            model=model,
+        ),
+        covers=Covered(capability_id=covered.id, input_schema=covered.input_schema),
+        requires_authorization=True,
+        metadata={"introduced_in": "0.2"},
+    )
+
+
 def production_catalogue(
     *,
     notes_scope: str = DEFAULT_NOTES_SCOPE,
@@ -1418,5 +1490,6 @@ def production_catalogue(
             browser_read_as_you(sites),
             browser_act_as_you(sites),
             browser_login(sites),
+            browser_guided_as_you(sites, guided_model),
         )
     )
