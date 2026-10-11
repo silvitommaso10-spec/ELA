@@ -25,11 +25,19 @@ from fastapi import APIRouter, Request
 from ela.api.deps import ElaDep, IdentityDep
 from ela.api.errors import ApiError
 from ela.api.schemas import VaultKeyIn, VaultLockedOut, VaultOpenedOut, VaultOut
-from ela.api.security import from_this_machine
+from ela.api.security import Identity, from_this_machine
+from ela.composition import Ela
 from ela.domain import AuditEvent, AuditEventId, AuditEventType
 from ela.ports import Secret
 
-__all__ = ["NOT_LOCAL", "VaultKeyNotLocalError", "VaultRefusedError", "router"]
+__all__ = [
+    "NOT_LOCAL",
+    "VaultKeyNotLocalError",
+    "VaultRefusedError",
+    "router",
+    "vault_locked",
+    "vault_of",
+]
 
 router = APIRouter(tags=["vault"])
 
@@ -59,9 +67,9 @@ class VaultKeyNotLocalError(ApiError):
         )
 
 
-@router.get("/vault")
-async def vault(ela: ElaDep) -> VaultOut:
-    """What the vault is now, and for a locked one the line that opens it."""
+async def vault_of(ela: Ela) -> VaultOut:
+    """What the vault is now, asked of its program — what the route answers, and what a page
+    reads (architecture rule 55)."""
     state = await ela.vault.state()
     return VaultOut(
         state=state.name,
@@ -70,6 +78,21 @@ async def vault(ela: ElaDep) -> VaultOut:
         opens_with=state.opens_with,
         message=state.message,
     )
+
+
+async def vault_locked(ela: Ela, identity: Identity) -> VaultLockedOut:
+    """Forget the key and ask the vault to lock, for whoever asked: the route's whole work, and a
+    page's. Whatever this answers, ELA holds no key."""
+    problem = await ela.vault.close(identity.actor)
+    if problem is not None:
+        raise VaultRefusedError(problem.code, f"{problem.message}. {FORGOTTEN}")
+    return VaultLockedOut(locked=True)
+
+
+@router.get("/vault")
+async def vault(ela: ElaDep) -> VaultOut:
+    """What the vault is now, and for a locked one the line that opens it."""
+    return await vault_of(ela)
 
 
 @router.post("/vault/session")
@@ -102,7 +125,4 @@ async def opened(
 async def locked(ela: ElaDep, identity: IdentityDep) -> VaultLockedOut:
     """Forget the key and ask the vault to lock. Whatever this answers, ELA holds no key: a lock
     that could not be asked — a program that changed — is a refusal that says so."""
-    problem = await ela.vault.close(identity.actor)
-    if problem is not None:
-        raise VaultRefusedError(problem.code, f"{problem.message}. {FORGOTTEN}")
-    return VaultLockedOut(locked=True)
+    return await vault_locked(ela, identity)

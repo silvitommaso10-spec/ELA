@@ -142,6 +142,7 @@ FAILURES: tuple[Failure, ...] = (
     Failure(PolicyNotLiveError, 409, WireCode.POLICY_NOT_LIVE),
     Failure(AuthorizationAlreadyRevokedError, 409, WireCode.POLICY_NOT_LIVE),
     Failure(console.PolicyOutOfReachError, 409, WireCode.NOT_ANSWERABLE),
+    Failure(console.BrowserOutOfReachError, 409, WireCode.NOT_ANSWERABLE),
     Failure(vault.VaultRefusedError, 409, WireCode.VAULT_REFUSED),
     Failure(vault.VaultKeyNotLocalError, 403, WireCode.VAULT_REFUSED),
     Failure(browser.BrowserRefusedError, 409, WireCode.BROWSER_REFUSED),

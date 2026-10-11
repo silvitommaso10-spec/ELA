@@ -608,6 +608,43 @@ oltre il tetto del task non li legge. **Ciò che nessuna superficie riceve mai**
 password, che prima di un sì non lasciano l'adapter del vault, e l'id della voce, che è del piano. I due campi
 stanno accanto alla domanda, non nel suo testo: l'audit della domanda non li porta.
 
+### 10. La vista della console: «Il browser di ELA»
+
+La risposta all'impronta di ADR 0044 §6: le capability nuove non hanno una vista propria delle loro chiamate —
+una lettura, un gesto e un login con il profilo sono domande nell'Approval Center, con la loro frase e i campi
+di §9, e passi nella vista del task; una sessione con il profilo si guarda come quella di ADR 0060. **La vista
+che questo ADR aggiunge è «Il browser di ELA»**, la sesta: il profilo e il vault come `GET /browser` e
+`GET /vault` li dicono, la finestra che si accende e si spegne, la finestra del login a mano che si apre su un
+sito dichiarato o su nessuno, e il vault che si chiude. **Non lo apre**: una chiave non si incolla in una
+pagina, e nessun campo della vista potrebbe portarne una. Il telefono non ha questa vista.
+
+Rotte nuove, in `ela/api/console.py`, che raggiunge il cookie di una console:
+
+| Metodo | Percorso | Che cosa |
+|---|---|---|
+| `GET` | `/console/browser` | il profilo e il vault, e i moduli di ciò che questa console può fare |
+| `POST` | `/console/browser/window` | l'interruttore della finestra, dal Mac |
+| `POST` | `/console/browser/open` | la finestra del login a mano, dal Mac |
+| `POST` | `/console/browser/lock` | il vault chiuso, da qualunque console |
+
+**Ciò che cambia qualcosa sullo schermo del Mac si fa dal Mac.** L'interruttore e la finestra del login li usa
+una console il cui tetto è `LOCAL_ONLY` — i due capi del socket in loopback, come lo decide il middleware —;
+da fuori la vista dice gli stati e fa una cosa sola, quella che toglie: chiude il vault, come la revoca di una
+policy. Da fuori non si leggono nemmeno i siti dichiarati, né le frasi dei tool e del vault, che possono
+nominare una cartella o un programma del Mac.
+
+**La pagina non raggiunge niente attraverso ELA** (regola 55): chiama le funzioni delle rotte — quelle di
+`ela/api/browser.py`, e le due che `ela/api/vault.py` espone per lei.
+
+**Ogni modulo nomina ciò che chiede.** Un `POST` senza il suo campo — `shown`, `site`, `vault` — non è una
+richiesta da indovinare: `422`, e niente cambia. Il sito vuoto è «nessun sito», ed è una risposta.
+
+Errori aggiunti, nella forma della tabella di ADR 0023 §10:
+
+| Caso | Eccezione | Stato |
+|---|---|---|
+| la finestra o il suo interruttore chiesti da una console che non è al Mac | `BrowserOutOfReachError` | `409` |
+
 ## Alternative considerate
 
 - **Un grant della sessione con lo scope dei suoi siti**: è la forma delle policy di §59, e ADR 0060 l'aveva
@@ -640,7 +677,7 @@ stanno accanto alla domanda, non nel suo testo: l'audit della domanda non li por
   `fill` (misurato), e da M13.9 un `fill` può portare una password.
 
 Con questo ADR le regole di architettura sono **sessantanove** (la 67, la 68 e la 69), i contratti di import-linter restano
-**quindici**, i port diventano **trentacinque** (`Vault` e `AccountBrowser`), le rotte dell'API **sessantasei** e i comandi
-della CLI **trentotto** (quelle del vault e del browser, e i loro comandi); le
+**quindici**, i port diventano **trentacinque** (`Vault` e `AccountBrowser`), le rotte dell'API **settanta** e i comandi
+della CLI **trentotto** (quelle del vault e del browser con i loro comandi, e quelle della vista della console); le
 capability diventano **diciotto** (quelle di §5), le identità del middleware restano **sei**. *(I totali si aggiornano con le sezioni
 che seguono: questo ADR si scrive con l'implementazione.)*

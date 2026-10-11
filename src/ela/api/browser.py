@@ -41,6 +41,7 @@ from ela.tools.account import PROFILE_BUSY, look_at
 from ela.tools.browser import BROWSER_TIMEOUT_SECONDS, FAILED, https_origin
 
 __all__ = [
+    "FREE",
     "SITE_UNDECLARED",
     "BrowserRefusedError",
     "browser_of",
