@@ -1,0 +1,39 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.9 per una SESSIONE CON IL PROFILO (GETTING_STARTED, sezione 28,",
+    "passo 8): un modello guida il browser di ELA che tiene i tuoi siti, un gesto alla volta, su UN sito",
+    "solo. Le letture che il modello scrive le copre la sessione, e non chiedono; un gesto che invia",
+    "chiede sempre. Il testo delle pagine — contenuto tuo — va al fornitore del modello, e la domanda lo",
+    "dice. La frase chiede qualcosa che solo chi è collegato può dare: un canale a cui sei iscritto.",
+    "`max_cost_usd` è il più che la sessione può spendere: 1,10 $. Su Haiku 5.5 il caso peggiore di una",
+    "chiamata è 0,516384 $, e 1,10 $ è più di due: due chiamate stanno in volo insieme.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "guidare il browser con i miei account su YouTube",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000000008",
+      "goal": "trovare un canale a cui sono iscritto",
+      "required_capabilities": [
+        "browser.guided_as_you"
+      ],
+      "arguments": {
+        "goal": "Apri la pagina delle mie iscrizioni di YouTube e dimmi il nome di un canale a cui sono iscritto.",
+        "sites": [
+          "www.youtube.com"
+        ],
+        "max_cost_usd": "1.10",
+        "looks": 6,
+        "seconds": 300
+      },
+      "risk": "MEDIUM",
+      "expected_result": "la risposta del modello nomina un canale a cui sei iscritto",
+      "success_conditions": [
+        "guided.closed",
+        "guided.gestures_audited",
+        "guided.reservations_closed"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

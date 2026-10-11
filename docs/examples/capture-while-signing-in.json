@@ -1,0 +1,28 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.9 per una CATTURA CHE NON PARTE (GETTING_STARTED, sezione 28,",
+    "passo 4): con la finestra del login a mano aperta ELA non guarda lo schermo. La cattura è rifiutata",
+    "prima della domanda, con `screen.login_window_open`: nessuno ti chiede un sì per ciò che ELA sa già",
+    "che non farà.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "fotografare lo schermo mentre entro a mano",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000000004",
+      "goal": "fotografare lo schermo",
+      "required_capabilities": [
+        "perception.capture_screen"
+      ],
+      "arguments": {
+        "purpose": "la prova a mano del browser con i tuoi account"
+      },
+      "risk": "MEDIUM",
+      "expected_result": "nessuna cattura: la finestra del login è aperta",
+      "success_conditions": [
+        "capture.exists"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "_nota": [
+    "Il piano della prova a mano di M13.9 per un GESTO COME TE (GETTING_STARTED, sezione 28, passo 9): il",
+    "modulo di prova di httpbin.org, compilato e inviato dal browser di ELA con il profilo.",
+    "`browser.act_as_you` è HIGH: chiede a ogni uso, e nessuna policy né sessione lo copre. Su httpbin.org",
+    "non hai un account: il gesto è fatto con il tuo profilo, e il sito rimanda indietro ciò che riceve.",
+    "Il valore `ELA prova 9139` è un MARCATORE: sta nella domanda e nel risultato, e non nell'audit.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "compilare e inviare un modulo come me",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000000009",
+      "goal": "compilare il nome nel modulo di prova e inviarlo",
+      "required_capabilities": [
+        "browser.act_as_you"
+      ],
+      "arguments": {
+        "site": "httpbin.org",
+        "path": "/forms/post",
+        "fill": [
+          [
+            "input[name=custname]",
+            "ELA prova 9139"
+          ]
+        ],
+        "click": "form button",
+        "expect_text": "ELA prova 9139",
+        "purpose": "la prova a mano del browser con i tuoi account"
+      },
+      "risk": "HIGH",
+      "expected_result": "la pagina dopo l'invio mostra il nome scritto",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

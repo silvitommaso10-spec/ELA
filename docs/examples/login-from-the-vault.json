@@ -1,0 +1,39 @@
+{
+  "_nota": [
+    "La FORMA del piano di un login dal vault (GETTING_STARTED, sezione 28, passo 6). Il sito e i suoi",
+    "selettori li scegli tu, prima della prova: copia questo file e scrivi il TUO sito — uno con il login",
+    "in una pagina sola, dichiarato in ELA_BROWSER_SITES, e che non è un sito di soldi —, il percorso",
+    "della sua pagina di login, i selettori del campo del nome utente, di quello della password e del",
+    "bottone, e un testo che compare solo a chi è entrato.",
+    "Nessun valore sta nel piano: la password e il nome utente li prende ELA dal tuo vault, dopo il tuo",
+    "sì, dalla voce il cui indirizzo è quello del sito. `entry`, opzionale, è l'id di una voce quando il",
+    "vault ne ha più d'una per quel sito.",
+    "`browser.login` è HIGH: chiede a ogni uso. La domanda nomina la voce e il nome utente mascherato.",
+    "Questa chiave è ignorata dall'API (ADR 0025 §8)."
+  ],
+  "goal": "entrare in un sito con una password del mio vault",
+  "steps": [
+    {
+      "id": "c0de1a28-0000-4b00-8a00-000000000006",
+      "goal": "entrare nel sito",
+      "required_capabilities": [
+        "browser.login"
+      ],
+      "arguments": {
+        "site": "example.com",
+        "path": "/login",
+        "username_field": "#username",
+        "password_field": "#current",
+        "click": "button[type=submit]",
+        "expect_text": "Esci",
+        "purpose": "la prova a mano del browser con i tuoi account"
+      },
+      "risk": "HIGH",
+      "expected_result": "la pagina dopo il login mostra ciò che vede solo chi è entrato",
+      "success_conditions": [
+        "browser.expect_visible"
+      ],
+      "requires_authorization": true
+    }
+  ]
+}

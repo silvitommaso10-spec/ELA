@@ -29,6 +29,10 @@ parentesi **non si incollano**. `ela task run <id>` si scrive `ela task run 55ed
 | `<tetto in dollari>` | quanto il mese può spendere sulla chiave del modello, sotto il limite mensile dell'organizzazione | lo decidi tu (§9, §23) |
 | `<id del companion>` | l'id della riga dell'iPhone nel registro | `ela device list`, colonna `ID` (§13) |
 | `<id della console>` | l'id della riga del Command Center nel registro | `ela device list`, colonna `ID` (§14) |
+| `<il piano del login>` | il file del piano di un login dal vault, sul sito che hai scelto tu | lo scrivi tu da `docs/examples/login-from-the-vault.json`, e lo dai a `scripts/prova_m13_9.py` con `--login` (sezione 28) |
+| `<la cartella del profilo>` | la cartella in cui il browser di ELA tiene i siti in cui sei entrato | la scegli tu: sul Mac, fuori dal repository e da ciò che si sincronizza (sezione 28) |
+| `<il programma del vault>` | il percorso assoluto del programma `bw` di Bitwarden | dove l'hai installato: `which bw` lo dice (sezione 28) |
+| `<il sito del login>` | il sito del login dal vault della sezione 28 | lo scegli tu: il login in una pagina sola, e non un sito di soldi |
 | `<id della policy>` | l'id breve di una policy di §59, i primi otto caratteri del suo id | `ela policy list`, colonna `policy`; nella sezione 27 lo scrive `scripts/prova_m13_12.py`, dalla policy del passo 4 |
 | `<id del passo 2>` | l'id del task del passo 2 di §21, nel suo ultimo giro, o della sezione 25, o della sessione della sezione 26 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, o `scripts/prova_m14_3.py`, al posto del segnaposto |
 | `<id del passo 3>` | l'id del task del passo 3 di §21, nel suo ultimo giro, o della sezione 25 | lo scrive `scripts/prova_m6_3c.py`, o `scripts/prova_m13_1e.py`, al posto del segnaposto |
@@ -6025,6 +6029,425 @@ speso cresciuto dei costi delle chiamate
 prenotato com'era al passo 1
 ```
 
+## 28. Il browser con i tuoi account: la prova a mano di M13.9
+
+> **Scritta con l'implementazione l'11 ottobre 2026** (`milestones/M13.9.md`, «La prova a mano», con le decisioni 10, 24,
+> 37 e 48), e `tests/docs/test_prova_m13_9.py` tiene lo script allineato a questa sezione. La si fa **sul Mac, senza il
+> PC**, sul branch di M13.9, con lo script `scripts/prova_m13_9.py`: il browser con il profilo, il vault e la finestra del
+> login a mano vivono solo lì. **Non ancora fatta**: [ADR 0063](adr/0063-browser-with-your-accounts.md) resta Proposta
+> finché non passa.
+
+Da M13.9 ELA ha **un secondo browser**: Chrome for Testing su una cartella tua, che **tiene i siti in cui sei entrato**.
+Non è il tuo Chrome, e il tuo profilo ELA non lo apre: in questo entri tu, una volta, **con le tue mani**, nella finestra
+che ELA ti apre — `ela browser open` —; di quella finestra ELA non legge niente, e **finché è aperta non guarda lo schermo
+e non ascolta**. Da lì in poi una lettura, un gesto o una sessione «come te» trovano il sito già aperto: sono capability
+nuove, e la loro domanda dice **«as you»**. Le capability del browser vuoto restano com'erano: lì il sito vede un
+visitatore.
+
+**Le password restano nel tuo vault**, in Bitwarden. ELA non le conosce: quando un piano chiede un login, ELA chiede al
+vault **la sola voce di quel sito**, dopo il tuo sì, la scrive nel campo e non la tiene. **La password principale non
+entra mai in ELA**: il vault lo apri tu, nel tuo terminale, con il suo programma, che stampa una chiave di sessione; quella
+chiave arriva a ELA da un tubo — `ela vault status` ti stampa la riga intera da incollare —, vale un'ora, e ELA la
+dimentica allo scadere, alla chiusura, o quando glielo dici con `ela vault close`.
+
+Lo script legge da questa sezione i blocchi con il marcatore sopra, con il lettore di `scripts/prova_m6_3c.py`, e usa i
+tipi di sempre — `comando`, `atteso`, `occhio`, `sì` — e sette suoi:
+
+- **`mano`**: ciò che fai tu con le tue mani — incollare una riga nel tuo terminale, entrare in un sito, chiudere una
+  finestra. Lo script te lo dice e aspetta Invio; ciò che ne segue lo controlla il blocco dopo.
+- **`prosegui`**: una domanda su ciò che il mondo ha dato. Con un «n» la prova **si ferma lì — FERMATO, non FALLITO** —,
+  prima di spendere: non è un difetto di ELA, e non è un passo saltato.
+- **`disco`**: il disco in RAM su cui le password si spostano. Lo script lo crea, lo stringe a `0700` e te lo dice; tu
+  esporti lì e importi nel vault; lo script **cancella i file, stacca il disco e controlla** che il volume e il
+  dispositivo non ci siano più. **Non legge i file**: ne guarda l'esistenza. Il disco non è cifrato, e ciò che sta in
+  memoria può finire nello swap.
+- **`misura`**: quanto impiega il vault a elencare le voci di un sito, **sul vault pieno**, da fuori: il tempo di
+  `ela vault status` — un lancio del programma del vault — e il tempo fra la richiesta del login e la sua domanda — due
+  lanci —; la differenza è l'elenco. **Fino alla soglia del blocco la riga è PASSATO; sopra è RIAPRE**: si riapre che cosa
+  ELA chiede al vault prima del sì, **e una prova con un RIAPRE non è passata**. Nel file vanno i numeri, e nessun nome di
+  voce.
+- **`domanda`**: le domande in attesa per il task del passo: `nessuna` — un rifiuto è nato prima della domanda —, o una
+  capability.
+- **`coperte`**: le letture che il modello di una sessione ha scritto sono finite **senza chiederti niente**, coperte
+  dalla sessione: lo script le ritrova una per una, con la decisione che il Guardian ha scritto.
+- **`chiude`**: lo script lancia lo step del passo, aspetta che il profilo risulti tenuto da uno step, e **ferma ELA**
+  con il segnale del blocco; poi guarda che il processo sia uscito e che la cartella del profilo sia libera.
+
+I segnaposto che riempie sono `<id>`, il task del passo; `<approval-id>`, come nella sezione 26; e
+`<il piano del login>`, il file che gli dai con `--login`. Scrive tutto in `~/Downloads`, in `prova-m13.9-` con la data
+e l'ora, e l'ultima riga dice «La prova è passata» o che cosa manca. **Niente del tuo vault entra in quel file**: né il
+nome di una voce, né un nome utente. **Nella prova si risponde solo nel Terminale dello script**; la console e il
+telefono restano chiusi. **Nessun `Ctrl-C`, nessun riavvio** dopo l'avvio: ELA la ferma lo script, all'ultimo passo.
+
+Sul Mac, il `.env` dichiara la cartella del profilo, il programma del vault e i siti — quelli della prova, e **il sito
+del login dal vault, che scegli tu**: uno con il login in una pagina sola, e che non è un sito di soldi:
+
+```
+ELA_BROWSER_PROFILE_DIR=<la cartella del profilo>
+ELA_VAULT_PROGRAM=<il programma del vault>
+ELA_BROWSER_SITES=["www.youtube.com","httpbin.org","accounts.google.com","<il sito del login>"]
+```
+
+**Il piano del login lo scrivi tu**, prima della prova, da `docs/examples/login-from-the-vault.json`: il tuo sito, il
+percorso della sua pagina di login, i selettori del campo del nome utente, di quello della password e del bottone, e un
+testo che compare solo a chi è entrato. Nessun valore sta nel piano. **Serve a portata di mano la posta dell'account di
+Bitwarden**: il primo `bw login` da una cartella dei dati nuova chiede un codice arrivato per email.
+
+Il Core gira dal codice del branch, riavviato dopo il `.env`: **nessuna migrazione**. Una sola sessione spende, quella del
+passo 8, su Haiku 5.5.
+
+```
+uv run python scripts/prova_m13_9.py --login <il piano del login>
+```
+
+### 1. Prima
+
+Lo script controlla, e stampa **PASSATO** per ciascuno: il Mac è sull'ultimo commit del branch, con l'albero pulito; ELA
+risponde, e gira dal codice del branch; la rotta di una sessione, la chiave del modello, il tetto e ciò che il mese ha
+libero; i siti della prova sono dichiarati, e il piano del login è uno step di `browser.login` su un sito dichiarato; il
+profilo è dichiarato, il browser è installato e nessuno lo tiene; **la cartella del profilo è `0700`, e Time Machine la
+esclude** — lo script glielo chiede, e poi guarda —; **il vault è chiuso, e il suo programma è quello dichiarato, firmato
+da Bitwarden**, guardato prima che tu ci scriva la password principale. Nel file scrive lo sha256 del programma. **Se
+qualcosa manca, la prova si ferma lì** — **FERMATO** —, con ciò che manca.
+
+### 2. Le password si spostano
+
+Una volta sola: se il tuo vault è già pieno, rispondi a questo passo premendo Invio senza esportare niente.
+
+<!-- prova: 2.disco -->
+```
+64
+Esporta le password da Chrome e da Password di Apple dentro /Volumes/ELA-prova, e importale nel vault con `bw import`, nel tuo terminale. Il primo `bw login` chiede un codice arrivato per email.
+```
+
+### 3. Il vault si apre
+
+<!-- prova: 3.comando -->
+```
+uv run ela vault status
+```
+
+<!-- prova: 3.atteso -->
+```
+state locked
+unlock --raw | ela vault open
+```
+
+<!-- prova: 3.mano -->
+```
+Incolla nel tuo terminale la riga che `ela vault status` ha stampato qui sopra, e scrivi la password principale quando il programma del vault la chiede. Quella password non entra in ELA.
+```
+
+<!-- prova: 3.comando -->
+```
+uv run ela vault status
+```
+
+<!-- prova: 3.atteso -->
+```
+state unlocked
+```
+
+### 4. Il primo login a mano
+
+La finestra si apre su un sito di Google. **Con la finestra aperta ELA non guarda lo schermo**: una cattura è rifiutata
+prima della domanda.
+
+<!-- prova: 4.comando -->
+```
+uv run ela browser open accounts.google.com
+```
+
+<!-- prova: 4.atteso -->
+```
+the window is open on accounts.google.com: sign in, then close it. ELA reads nothing of it
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela task create --json "fotografare lo schermo mentre entro a mano"
+uv run ela task plan <id> --file docs/examples/capture-while-signing-in.json
+uv run ela task run <id>
+```
+
+<!-- prova: 4.atteso -->
+```
+outcome failed
+reason fail: EXECUTING -> FAILED (screen.login_window_open: the window of ELA's browser where you sign in by hand is open: ELA does not photograph the screen meanwhile)
+```
+
+<!-- prova: 4.domanda -->
+```
+nessuna
+```
+
+<!-- prova: 4.mano -->
+```
+Entra nel tuo account Google nella finestra, con il tuo secondo fattore, poi chiudi la finestra con Cmd-Q.
+```
+
+<!-- prova: 4.comando -->
+```
+uv run ela browser status
+```
+
+<!-- prova: 4.atteso -->
+```
+state free
+linked to an account no
+```
+
+### 5. Una lettura come te
+
+La pagina delle tue iscrizioni di YouTube, senza un modello e senza spesa. La domanda dice «as you». **È anche il
+controllo del passo 8**: se il testo che ELA legge al caricamento non porta i tuoi canali, la sessione non avrebbe
+niente da trovare, e la prova si ferma qui, prima di spendere.
+
+<!-- prova: 5.comando -->
+```
+uv run ela task create --json "leggere le mie iscrizioni"
+uv run ela task plan <id> --file docs/examples/read-as-you-youtube.json
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 5.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 5.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 5.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 5.prosegui -->
+```
+Apri il risultato in un altro Terminale, con `uv run ela task results` e l'id del task qui sopra: il testo porta il nome di canali a cui sei iscritto, e l'indirizzo è rimasto su www.youtube.com?
+```
+
+### 6. Un login dal vault
+
+Sul sito che hai scelto tu. **La domanda nomina la voce e il nome utente mascherato**: li leggi nel tuo terminale, non
+in questo file.
+
+<!-- prova: 6.occhio -->
+```
+Il sito del tuo piano del login l'hai scelto tu, ha il login in una pagina sola, e non è un sito di soldi?
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task create --json "entrare nel sito con una password del mio vault"
+uv run ela task plan <id> --file <il piano del login>
+```
+
+<!-- prova: 6.misura -->
+```
+10
+```
+
+<!-- prova: 6.domanda -->
+```
+browser.login
+```
+
+<!-- prova: 6.occhio -->
+```
+In un altro Terminale, `uv run ela approvals`: la domanda nomina la voce giusta del tuo vault, il nome utente mascherato e il sito?
+```
+
+<!-- prova: 6.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome completed
+```
+
+### 7. Il vault chiuso, e il profilo occupato
+
+Con il vault chiuso un login fallisce **prima della domanda**; con la finestra aperta uno step con il profilo fallisce
+**prima della domanda**.
+
+<!-- prova: 7.comando -->
+```
+uv run ela vault close
+```
+
+<!-- prova: 7.atteso -->
+```
+the vault is locked, and ELA forgot the key
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela task create --json "entrare con il vault chiuso"
+uv run ela task plan <id> --file <il piano del login>
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome failed
+reason fail: EXECUTING -> FAILED (vault.locked: the vault is locked: run
+```
+
+<!-- prova: 7.domanda -->
+```
+nessuna
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela browser open
+uv run ela task create --json "leggere con la finestra aperta"
+uv run ela task plan <id> --file docs/examples/read-as-you-youtube.json
+uv run ela task run <id>
+```
+
+<!-- prova: 7.atteso -->
+```
+outcome failed
+reason fail: EXECUTING -> FAILED (browser.profile_busy: ELA's browser with your accounts is in use — its window is open: close it, and ask again: no question is asked)
+```
+
+<!-- prova: 7.domanda -->
+```
+nessuna
+```
+
+<!-- prova: 7.mano -->
+```
+Chiudi la finestra del browser di ELA con Cmd-Q.
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela browser status
+```
+
+<!-- prova: 7.atteso -->
+```
+state free
+```
+
+### 8. Una sessione con il profilo
+
+Su un sito solo, con una frase che solo chi è collegato può soddisfare. **Chiede una volta**, e le letture che il modello
+scrive **non chiedono**: le copre la sessione.
+
+<!-- prova: 8.comando -->
+```
+uv run ela task create --json "guidare il browser con i miei account su YouTube"
+uv run ela task plan <id> --file docs/examples/guided-as-you-youtube.json
+uv run ela task run <id>
+```
+
+<!-- prova: 8.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 8.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 8.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 8.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 8.coperte -->
+```
+browser.read_as_you
+```
+
+<!-- prova: 8.occhio -->
+```
+Apri il risultato in un altro Terminale, con `uv run ela task results` e l'id del task qui sopra: la risposta del modello nomina un canale a cui sei iscritto?
+```
+
+### 9. Un gesto come te
+
+Un gesto che invia chiede sempre: nessuna policy e nessuna sessione lo copre.
+
+<!-- prova: 9.comando -->
+```
+uv run ela task create --json "compilare e inviare un modulo come me"
+uv run ela task plan <id> --file docs/examples/act-as-you.json
+uv run ela task run <id>
+```
+
+<!-- prova: 9.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 9.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 9.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 9.atteso -->
+```
+outcome completed
+```
+
+### 10. ELA si ferma con il profilo al lavoro
+
+Per ultimo, perché dopo questo passo ELA è ferma: lo script lancia una lettura con il profilo e **ferma ELA mentre uno
+step lo tiene**. Il processo deve uscire, e la cartella del profilo restare libera. Dopo, ELA la riavvii tu.
+
+<!-- prova: 10.comando -->
+```
+uv run ela task create --json "leggere mentre ELA si ferma"
+uv run ela task plan <id> --file docs/examples/read-as-you-youtube.json
+uv run ela task run <id>
+```
+
+<!-- prova: 10.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 10.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 10.chiude -->
+```
+SIGINT
+```
+
 ## Dove guardare dopo
 
 - [`spec/ELA_spec.md`](spec/ELA_spec.md) — che cos'è ELA, per intero. È la fonte di verità.
@@ -6047,3 +6470,5 @@ prenotato com'era al passo 1
   senza la sua vista.
 - [`adr/0062-policies.md`](adr/0062-policies.md) — le policy di §59: che cosa una policy deve
   limitare, quando copre, come nasce e come si revoca.
+- [`adr/0063-browser-with-your-accounts.md`](adr/0063-browser-with-your-accounts.md) — il browser con i tuoi
+  account, il vault e la finestra del login a mano: che cosa ELA tiene, e che cosa non legge mai.
