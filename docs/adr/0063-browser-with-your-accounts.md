@@ -450,12 +450,15 @@ uno.
 domanda, che i tre elementi ci siano una volta sola, che `password_field` sia `type="password"` —
 altrimenti `browser.not_a_password_field` —, che non si dichiari una password nuova, un codice a tempo o una
 carta, che `username_field` non si dichiari segreto, e che il modulo mandi con `POST` — altrimenti
-`browser.login_form_get`: mandata con `GET`, la password sarebbe in un indirizzo. **Solo allora** ascolta la
-fermata del suo task, al suo punto, e chiede al vault: una lettura sola della voce, riconfrontata con il sito
-su quella stessa lettura. **Il vault è un'attesa, e dopo si guarda di nuovo**: la fermata — arrivata mentre il
-vault rispondeva, la password è buttata e niente è scritto — e il campo, che con il modulo in cui sta deve
-essere ancora quello guardato prima, altrimenti `browser.not_a_password_field`. Poi due `fill_secret` e un
-click. Ciò che fallisce dopo il sì ha il suo codice: il sì è speso, e niente è stato scritto in nessun campo.
+`browser.login_form_get`: mandata con `GET`, la password sarebbe in un indirizzo. **Solo allora** chiede al
+vault — un task già fermato è ascoltato qui, prima, e non prende nessuna password —: una lettura sola della
+voce, riconfrontata con il sito su quella stessa lettura. **Il vault è un'attesa, e il punto del tool viene
+dopo.** Il campo, con il modulo in cui sta, deve essere ancora quello guardato prima, altrimenti
+`browser.not_a_password_field`; poi il tool **ascolta la fermata al suo punto, l'ultimo istante prima del primo
+gesto** (ADR 0054 §3): una fermata arrivata mentre il vault rispondeva è ascoltata lì — ciò che il vault ha
+dato è buttato, niente è scritto, e lo step si chiude come ogni step fermato prima del suo punto. Poi due
+`fill_secret` e un click, con uno sguardo alla fermata fra l'uno e l'altro. Ciò che fallisce dopo il sì ha il
+suo codice: il sì è speso, e niente è stato scritto in nessun campo.
 
 **La voce che il sì copre è quella che la domanda ha nominato.** Il piano può nominarla con `entry`, il suo id;
 senza, è la sola il cui host è quello del sito, e il tool **ricorda** — in memoria, per le domande che

@@ -878,7 +878,7 @@ async def test_a_task_stopped_by_the_time_the_page_is_checked_takes_no_password(
     with pytest.raises(ToolStopped):
         await tool.execute(decision(BROWSER_LOGIN), LOGIN, stop)
 
-    assert stop.listened == [FIRST_GESTURE]
+    assert stop.listened.count(FIRST_GESTURE) == 1
     assert vault.calls == [] and browser.secrets == []
     assert browser.closed == ["page-1"]
 
@@ -907,7 +907,7 @@ async def test_a_stop_that_arrives_while_the_vault_is_asked_types_nothing(
     with pytest.raises(ToolStopped) as stopped:
         await tool.execute(decision(BROWSER_LOGIN), LOGIN, stop)
 
-    assert stop.listened == [FIRST_GESTURE], "heard once, at its point"
+    assert stop.listened.count(FIRST_GESTURE) == 1, "heard once, at its point"
     assert browser.secrets == [] and browser.clicks == []
     assert browser.closed == ["page-1"]
     assert TYPED not in repr(stopped.value) and USERNAME not in repr(stopped.value)
@@ -925,7 +925,8 @@ async def test_the_point_of_a_login_is_after_the_vault_has_answered(tmp_path: Pa
 
     class Listening(FakeStop):
         def listen(self, where: str) -> None:
-            seen.append((list(vault.calls), len(browser.secrets)))
+            if where == FIRST_GESTURE:
+                seen.append((list(vault.calls), len(browser.secrets)))
             super().listen(where)
 
     result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, Listening())

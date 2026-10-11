@@ -534,7 +534,10 @@ class LoginTool(_OnTheProfile, _BrowserTool):
                 f"the login form of the page of {site} does not send with POST: sent with GET, "
                 "the password would be in an address",
             )
-        stop.listen(FIRST_GESTURE)
+        if stop.is_set():
+            # A task that is stopped by now is heard before the vault is asked: no password is
+            # taken for a step that will type nothing.
+            stop.listen(FIRST_GESTURE)
         entry = call.entry or self._found.get(call.key)
         if entry is None:
             return self._none_typed(ENTRY_FORGOTTEN, self._forgotten(call.key))
@@ -542,11 +545,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         if isinstance(taken, VaultProblem):
             return self._none_typed(taken.code, taken.message, taken.code in {LOCKED, TIMEOUT})
         # The reading took its seconds — the door, the program, the vault —, and the world went
-        # on meanwhile: the stop of the task is looked at again, and so is the field, before
-        # anything the vault gave is typed.
-        if stop.is_set():
-            del taken
-            return self._stopped(opened, done, site)
+        # on meanwhile: the field is looked at again before anything the vault gave is typed.
         again = await self._browser.field(page, word)
         if again.type != "password" or again.method != "post":
             del taken
@@ -555,6 +554,14 @@ class LoginTool(_OnTheProfile, _BrowserTool):
                 f"the page of {site} changed its password field, or the form it is in, while "
                 "the vault was asked: a password is not typed where the page would show it",
             )
+        try:
+            # The point of the tool: the last instant before its first gesture — after the vault
+            # has answered, so that a stop given while it was asked is heard here, and nothing
+            # is typed (ADR 0054 §3; re-read of 2026-10-11).
+            stop.listen(FIRST_GESTURE)
+        except BaseException:
+            del taken
+            raise
         await self._browser.fill_secret(page, username, taken.username)
         done[0] += 1
         if stop.is_set():
