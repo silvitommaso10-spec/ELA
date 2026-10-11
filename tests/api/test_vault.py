@@ -189,12 +189,12 @@ async def test_an_opening_nobody_could_write_down_is_not_kept(
 
     async def failing(event: AuditEvent) -> None:
         if event.event_type in unwritable:
-            raise OSError("the audit could not be written")
+            raise OSError(f"the audit could not write {event.event_type.value}")
         await append(event)
 
     monkeypatch.setattr(vaulted.ela.audit, "append", failing)
 
-    with pytest.raises(OSError, match="the audit could not be written"):
+    with pytest.raises(OSError, match="could not write VAULT_OPENED$"):
         await vaulted.client.post("/vault/session", json={"key": KEY})
 
     assert vaulted.ela.vault.forgets_at is None, "the door holds nothing"

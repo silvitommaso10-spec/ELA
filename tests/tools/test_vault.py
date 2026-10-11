@@ -712,6 +712,10 @@ async def test_whatever_arrives_while_the_vault_is_closing_waits_for_the_closing
     taking = asyncio.ensure_future(made.take(SITE, MARIO.id))
     asking = asyncio.ensure_future(made.state())
     opening = asyncio.ensure_future(made.open(Secret(KEY)))
+    # A wait of the clock, and not an event: what is asserted is that nothing happens. The door
+    # looks at its program in a thread before anything else, so a use that did not wait would
+    # need that thread's time to show itself. A machine slower than this could hide such a
+    # defect here; it cannot make a door that waits fail.
     await asyncio.sleep(0.2)
     waiting = (using, taking, asking, opening)
     assert not any(one.done() for one in waiting), "they wait at the door"

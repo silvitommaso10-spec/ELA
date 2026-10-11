@@ -121,7 +121,7 @@ def raw(folder: Path) -> str:
     value in any column of any table is here, whatever table it is."""
     files = sorted(path for path in folder.rglob("*") if path.is_file() and ".db" in path.name)
     assert files, "the database of this ELA is a file under the test's folder"
-    return "\\n".join(path.read_bytes().decode("utf-8", "replace") for path in files)
+    return "\n".join(path.read_bytes().decode("utf-8", "replace") for path in files)
 
 
 @pytest.fixture
@@ -135,7 +135,7 @@ async def places(
     reads a page — and what every place held at the end."""
     caplog.set_level(logging.DEBUG)
     program = tmp_path / "bw"
-    program.write_bytes(b"\\xcf\\xfa\\xed\\xfe a native program")
+    program.write_bytes(b"\xcf\xfa\xed\xfe a native program")
     program.chmod(program.stat().st_mode | stat.S_IXUSR)
     accounts = FakeAccountBrowser(
         FakePage(fields=dict(A_LOGIN_FORM), texts={None: f"Benvenuto. {ON_THE_PAGE}"})
@@ -186,8 +186,8 @@ async def places(
             ),
             question=json.dumps([asked, asked_session], ensure_ascii=False),
             result=json.dumps(results, ensure_ascii=False),
-            log="\\n".join((caplog.text, out, err)),
-            model="\\n".join((*sent, *handed, *script.read)),
+            log="\n".join((caplog.text, out, err)),
+            model="\n".join((*sent, *handed, *script.read)),
         ),
         accounts,
     )

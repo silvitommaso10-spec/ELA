@@ -18,6 +18,7 @@ one of them: this route's, the hour's, the stop of ELA.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Final
 
 from fastapi import APIRouter, Request
@@ -108,16 +109,24 @@ async def opened(
         raise VaultRefusedError(problem.code, problem.message)
     forgets_at = ela.vault.forgets_at
     assert forgets_at is not None  # noqa: S101 — the door has just set it
-    await ela.audit.append(
-        AuditEvent(
-            id=AuditEventId(ela.ids.new_uuid()),
-            created_at=ela.clock.now(),
-            event_type=AuditEventType.VAULT_OPENED,
-            actor=identity.actor,
-            summary="vault: opened",
-            payload={"forgets_at": forgets_at.isoformat()},
+    try:
+        await ela.audit.append(
+            AuditEvent(
+                id=AuditEventId(ela.ids.new_uuid()),
+                created_at=ela.clock.now(),
+                event_type=AuditEventType.VAULT_OPENED,
+                actor=identity.actor,
+                summary="vault: opened",
+                payload={"forgets_at": forgets_at.isoformat()},
+            )
         )
-    )
+    except BaseException:
+        # An opening nobody could write down is not kept (fail-safe): the key is forgotten and
+        # the vault asked to lock, whatever becomes of the closing's own row, and the failure of
+        # the audit is the answer.
+        with contextlib.suppress(Exception):
+            await ela.vault.close(identity.actor)
+        raise
     return VaultOpenedOut(forgets_at=forgets_at)
 
 
