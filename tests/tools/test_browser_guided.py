@@ -250,6 +250,31 @@ async def test_the_duration_stops_the_session() -> None:
     assert result.output["ending"] == "error_during_execution"
 
 
+async def test_when_ela_ends_a_session_the_room_hears_it_before_the_session_is_interrupted() -> (
+    None
+):
+    """The seconds are the tool's to count, and the room never heard of their end: a gesture the
+    model sent while it was being interrupted was still made — and, with the profile, covered
+    (re-read of 2026-10-11, defect 2). The room is halted first, and answers that the session is
+    over."""
+    answers: list[str] = []
+
+    async def asks_on_its_way_out(plan: SessionPlan, host: SessionHost) -> SessionEnd:
+        await host.started(("mcp__ela__act", "mcp__ela__read"))
+        try:
+            await asyncio.Event().wait()
+        finally:
+            answers.append(await host.gesture("read", {"site": "www.youtube.com", "path": "/"}))
+        return finished()
+
+    world = guided_world(session=FakeAgentSession(asks_on_its_way_out), sleep=at_once)
+
+    result = await world.tool.execute(world.decision, world.arguments, FakeStop())
+
+    assert result.error is not None and result.error.code == GUIDED_DURATION
+    assert len(answers) == 1 and "is over" in answers[0]
+
+
 async def test_a_session_that_ends_with_an_error_of_its_own_fails() -> None:
     async def failing(plan: SessionPlan, host: SessionHost) -> SessionEnd:
         await host.started(("mcp__ela__act", "mcp__ela__read"))

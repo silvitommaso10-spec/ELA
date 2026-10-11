@@ -18,7 +18,14 @@ from uuid import UUID
 
 import pytest
 
-from ela.domain import AuditEventType, ExecutionStatus, PermissionOutcome, TaskId, TaskState
+from ela.domain import (
+    AuditEventType,
+    ErrorMetadata,
+    ExecutionStatus,
+    PermissionOutcome,
+    TaskId,
+    TaskState,
+)
 from ela.permissions import BROWSER_ACT_AS_YOU, BROWSER_READ_AS_YOU, Rule
 from ela.testing.fakes import FakeAccountBrowser, FakePage
 from ela.tools.guided import SESSION_AS_YOU
@@ -204,3 +211,46 @@ async def test_an_act_with_the_profile_that_is_made_is_an_act_of_its_session(
     assert (refused.state, refused.acted) == (TaskState.DENIED, False)
     assert (tally.looks, tally.refused, tally.acts) == (3, 1, 2), "an act asked is an act counted"
     assert accounts.clicks == ["button[type=submit]"], "the act the user refused clicked nothing"
+
+
+# ----------------------------------------------------------------------------------------
+# A session that is ending covers nothing (re-read of 2026-10-11, defect 2)
+# ----------------------------------------------------------------------------------------
+
+
+async def ended_by(g: Guided, how: str, task: Any, step: Any) -> None:
+    """The three ways ELA ends a session before its tool has closed the room."""
+    if how == "the-ferma-of-its-task":
+        await g.ela.sessions.stop_gestures(task, reason="ferma")
+    else:
+        await g.ela.sessions.halt(
+            step, ErrorMetadata(code="guided.cost", message="a call the budget refused")
+        )
+
+
+@pytest.mark.parametrize("how", ["the-ferma-of-its-task", "a-halt-of-ela-s"])
+async def test_a_session_ela_is_ending_covers_no_read_and_makes_no_gesture(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, how: str
+) -> None:
+    """ADR 0063 §1: «una sessione è aperta nella stanza solo mentre il suo step gira». Between
+    the «ferma» — or a halt — and the moment the tool closes the room, a read the model had
+    pending arrived, was planned as a child of a task already stopped, and ran **as the user
+    with no question**. The room's word is over as soon as ELA ends the session, and so are its
+    gestures."""
+    accounts = the_profile()
+    async with guided(monkeypatch, tmp_path, Script([]), accounts=accounts) as g:
+        task, step, _ = await a_session(g, kind=SESSION_AS_YOU)
+        open_before = await g.ela.sessions.attest(step)
+        await ended_by(g, how, task, step)
+
+        attested = await g.ela.sessions.attest(step)
+        made = await g.ela.sessions.gesture(step, BROWSER_READ_AS_YOU, dict(READ))
+        kids = await children(g, str(task))
+        tally = await g.ela.sessions.close(step, reason="done")
+
+    assert open_before is not None, "the precondition: the session was open, and attested"
+    assert attested is None, "no word for a session ELA is ending"
+    assert made.state is TaskState.CANCELLED and "is over" in made.text
+    assert kids == [], "no child is planned for a gesture that arrives after the end"
+    assert accounts.opened == [], "and no page is opened as the user"
+    assert tally.looks == 0
