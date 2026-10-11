@@ -41,6 +41,7 @@ from ela.ports import Field, Secret
 from ela.testing.fakes import FakeAccountBrowser, FakePage, FakeVault, FakeVaultEntry
 from tests.api.guided import Script, call, gesture, guided
 from tests.cli.support import LoopTransport, plain
+from tests.composition.support import API_TOKEN, TOKEN
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "prova_m13_9.py"
@@ -301,10 +302,16 @@ def test_ela_is_the_listener_whose_command_line_is_ela_serve_and_no_other() -> N
 
 
 def test_the_listeners_are_asked_of_lsof_on_ela_s_port_and_judged_by_their_command_lines(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """The port is read from ELA's own settings, which want a token: **the test hands them
+    both, and stands in a folder with no ``.env``** — on the desk of whoever wrote it the
+    repository has one, and a test that read it passed there and nowhere else (the CI of
+    2026-10-11, red on both runners)."""
     module = script()
     asked: list[str] = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(API_TOKEN, TOKEN)
 
     def run(line: str) -> subprocess.CompletedProcess[str]:
         asked.append(line)
