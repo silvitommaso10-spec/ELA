@@ -868,19 +868,38 @@ def refuse_the_root(root: Path, own: Mapping[str, Path]) -> None:
             )
 
 
+def _within(folder: Path, place: Path) -> bool:
+    """Whether ``folder`` is ``place`` or lies below it — **by its spelling, and by what the
+    volume says of what is there**. The volume of a Mac ignores the case of a name, and resolving
+    a path leaves a spelling as it was written: one folder has more than one spelling there, and
+    a comparison of spellings alone would call a folder typed in lower case a different place.
+    A part of the path that names nothing is the same as no place."""
+    chain = (folder, *folder.parents)
+    if place in chain:
+        return True
+    for part in chain:
+        try:
+            if part.samefile(place):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def refuse_the_profile(
     profile: Path, *, tree: Path, home: Path, theirs: Mapping[str, Path]
 ) -> None:
     """Refuse a folder for the browser's profile that sits inside ``tree`` — ELA's own code — or
     inside one of the folders of ``home`` whose contents leave the machine, or that holds or sits
     inside one of ``theirs`` (M13.9, decision 35). Every place is compared **resolved**: a folder
-    reached through a link is where the link leads.
+    reached through a link is where the link leads. **And where a folder is, is asked of the
+    volume** (:func:`_within`): a spelling is not a place.
 
     A ``ValueError`` whose sentence names the variable: it is a check of the whole configuration,
     and has no field to point at.
     """
     resolved = profile.resolve()
-    if resolved == tree or tree in resolved.parents:
+    if _within(resolved, tree):
         raise ValueError(
             f"{PROFILE_VARIABLE} ({resolved}) is inside ELA's own source tree ({tree}). The "
             "sessions of your accounts do not live in a folder that a version control system "
@@ -889,14 +908,14 @@ def refuse_the_profile(
         )
     for copied in COPIED_ELSEWHERE:
         place = (home / copied).resolve()
-        if resolved == place or place in resolved.parents:
+        if _within(resolved, place):
             raise ValueError(
                 f"{PROFILE_VARIABLE} ({resolved}) is inside ~/{copied}: what is kept there "
                 "leaves this machine, and the sessions of your accounts would leave with it. "
                 "Choose a folder that stays here."
             )
     for what, place in theirs.items():
-        if resolved == place or resolved in place.parents or place in resolved.parents:
+        if _within(resolved, place) or _within(place, resolved):
             raise ValueError(
                 f"{PROFILE_VARIABLE} ({resolved}) and {what} ({place}) contain one another. The "
                 "folder that holds the sessions of your accounts is neither inside a folder ELA "

@@ -40,6 +40,7 @@ from ela.infrastructure.machine import (
 )
 from ela.ports import (
     PROFILE_PROCESS,
+    PROFILE_STEP,
     PROFILE_WINDOW,
     AccountBrowser,
     BrowserError,
@@ -227,6 +228,9 @@ SIGNING_IN: Final = {
 own window, and a browser the folder's lock names that this ELA did not start — a window left by
 an ELA that was killed is the same window, and the lock is all that is left to name it. A step of
 ELA's own is not here: nobody is typing a password into a page ELA drives."""
+NO_HAND: Final = frozenset({PROFILE_STEP})
+"""The holders that let ELA look and listen — said by name, so that a holder the port comes to
+answer with and nobody wrote a sentence for is a doubt, and not «nobody» (fail-safe)."""
 
 
 def while_the_user_signs_in(accounts: AccountBrowser) -> NotNow:
@@ -240,6 +244,8 @@ def while_the_user_signs_in(accounts: AccountBrowser) -> NotNow:
     Where no folder is declared, or the system is not one the browser runs on, no window of
     ELA's can be open and the answer is ``None``. **Any other failure to look is a doubt, and a
     doubt refuses** (fail-safe): a folder is declared, and ELA cannot say whether a hand is on it.
+    So is a holder this module has no sentence for: only the holders of :data:`NO_HAND` let ELA
+    look.
     """
 
     async def not_now() -> str | None:
@@ -252,6 +258,12 @@ def while_the_user_signs_in(accounts: AccountBrowser) -> NotNow:
                 "whether the window of ELA's browser where you sign in by hand is open could "
                 f"not be read ({doubt})"
             )
-        return None if holder is None else SIGNING_IN.get(holder)
+        if holder is None or holder in NO_HAND:
+            return None
+        return SIGNING_IN.get(
+            holder,
+            f"the profile of ELA's browser is held by something ELA has no word for ({holder}), "
+            "and you may be signing in there",
+        )
 
     return not_now
