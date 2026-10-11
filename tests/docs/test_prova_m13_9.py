@@ -22,6 +22,7 @@ import asyncio
 import importlib.util
 import io
 import json
+import os
 import re
 import shlex
 import stat
@@ -214,6 +215,10 @@ def test_a_reading_is_covered_only_by_one_decision_of_the_session() -> None:
     assert module.covered_failures("browser.read_as_you", [act], covered), "nothing was read"
     asked = {"c-1": [("REQUIRES_APPROVAL", "RISK"), ("ALLOWED", "AUTHORIZATION")]}
     assert module.covered_failures("browser.read_as_you", [read], asked), "a yes is not a cover"
+    after = {"c-1": [("REQUIRES_APPROVAL", "RISK"), ("ALLOWED", "SESSION")]}
+    assert module.covered_failures("browser.read_as_you", [read], after), (
+        "a read that asked first is not one the session covered, whatever came after"
+    )
     assert module.covered_failures("browser.read_as_you", [read], {}), "no decision at all"
     denied = a_child("c-1", "browser.read_as_you", "DENIED")
     assert module.covered_failures("browser.read_as_you", [denied], covered)
@@ -247,6 +252,97 @@ def test_the_ram_disk_is_sized_named_and_looked_for_after_it_is_detached() -> No
     assert module.still_there(False, "/dev/disk1 /dev/disk2", "/dev/disk9") == []
     assert module.still_there(True, "", "/dev/disk9")
     assert module.still_there(False, "image-path : ram://131072\n/dev/disk9", "/dev/disk9")
+
+
+MOUNTED = "/dev/disk9 on /Volumes/ELA-prova (hfs, local, nodev, nosuid, noowners, mounted by tu)"
+"""What ``mount`` says of a RAM disk ``diskutil erasevolume`` made, measured on 2026-10-11 on a
+disk of the measure's own: with ``noowners``, which is how such a volume is mounted."""
+
+
+def test_the_volume_of_the_proof_is_the_device_just_made_and_says_whether_it_knows_owners() -> None:
+    """Whose volume ``/Volumes/ELA-prova`` is, is asked of ``mount``: a volume of that name that
+    was already there — a run that was killed, or the user's — is another device's, and the new
+    one is mounted beside it under another name."""
+    module = script()
+    other = MOUNTED.replace("/dev/disk9", "/dev/disk4")
+    beside = "/dev/disk9 on /Volumes/ELA-prova 1 (hfs, local, nodev, nosuid, noowners)"
+
+    assert module.mounted_on(MOUNTED, "/dev/disk9") is True
+    assert module.mounted_on(other, "/dev/disk9") is False, "that volume is another device's"
+    assert module.mounted_on(f"{other}\n{beside}", "/dev/disk9") is False
+    assert module.mounted_on("/dev/disk91 on /Volumes/ELA-prova (hfs)", "/dev/disk9") is False
+    assert module.mounted_on("", "/dev/disk9") is False
+    assert module.ignores_owners(MOUNTED, "/dev/disk9") is True
+    assert module.ignores_owners(MOUNTED.replace("noowners, ", ""), "/dev/disk9") is False
+    assert module.ignores_owners(other, "/dev/disk9") is False
+
+
+def test_ela_is_the_listener_whose_command_line_is_ela_serve_and_no_other() -> None:
+    """The signal of step 10 goes to a process: which one is judged by what it runs, and not by
+    its being the first that listens on that number."""
+    module = script()
+    commands = {
+        310: "/usr/local/bin/another-server --port 8351",
+        4321: "/Users/tu/ELA/.venv/bin/python3 /Users/tu/ELA/.venv/bin/ela serve",
+        4400: "/Users/tu/ELA/.venv/bin/python -m ela.cli serve",
+        5000: "uv run ela task run 7",
+        5001: "/opt/tools/bin/cinderela serve",
+        5002: "/Users/tu/ELA/.venv/bin/ela server-of-something",
+    }
+
+    assert module.serving(commands[4321]) and module.serving(commands[4400])
+    assert not any(module.serving(commands[pid]) for pid in (310, 5000, 5001, 5002))
+    assert module.the_ela_among([310, 4321], commands) == 4321, "not the first that listens"
+    assert module.the_ela_among([4321, 310], commands) == 4321
+    assert module.the_ela_among([310], commands) is None, "a listener that is not ELA"
+    assert module.the_ela_among([], commands) is None
+    assert module.the_ela_among([4321, 4400], commands) is None, "two: nobody is signalled"
+    assert module.the_ela_among([9999], commands) is None, "a process that is gone"
+
+
+def test_the_listeners_are_asked_of_lsof_on_ela_s_port_and_judged_by_their_command_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = script()
+    asked: list[str] = []
+
+    def run(line: str) -> subprocess.CompletedProcess[str]:
+        asked.append(line)
+        return subprocess.CompletedProcess(line, 0, "310\n4321\n", "")
+
+    monkeypatch.setenv("ELA_API_PORT", "8399")
+    monkeypatch.setattr(module.base, "run", run)
+    monkeypatch.setattr(
+        module.base,
+        "processes",
+        lambda: {310: "/usr/local/bin/another-server", 4321: "/x/.venv/bin/ela serve"},
+    )
+
+    assert module.ela_pid() == 4321
+    assert asked == ["lsof -ti tcp:8399 -sTCP:LISTEN"], "who listens, and on ELA's port"
+
+
+def test_whether_a_process_is_there_and_what_the_lock_names_are_asked_of_the_machine(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The two looks of step 10 the other tests replace: asked here of a real process and of a
+    real link."""
+    module = script()
+    ended = subprocess.Popen([sys.executable, "-c", "pass"])  # noqa: S603 — the suite's own
+    ended.wait()
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    monkeypatch.setenv("ELA_BROWSER_PROFILE_DIR", str(profile))
+
+    assert module.alive(os.getpid()) is True
+    assert module.alive(ended.pid) is False
+    assert module.profile_lock() is None, "no lock in the folder"
+    (profile / "SingletonLock").symlink_to("the-mac.local-4321")
+    assert module.profile_lock() == "the-mac.local-4321"
+    (profile / "Another").symlink_to("the-mac.local-9")
+    assert module.profile_lock() == "the-mac.local-4321", "the lock, and no other link"
+    monkeypatch.setenv("ELA_BROWSER_PROFILE_DIR", "")
+    assert module.profile_lock() is None, "no folder declared"
 
 
 def test_after_the_stop_ela_is_gone_and_no_live_process_holds_the_profile() -> None:
@@ -309,6 +405,8 @@ class World:
             done = CliRunner().invoke(ela_app, shlex.split(line.removeprefix(prefix)))
             return subprocess.CompletedProcess(line, done.exit_code, plain(done.output), "")
         printed = "/dev/disk9\n" if line.startswith("hdiutil attach") else ""
+        if line == "mount":
+            printed = MOUNTED
         return subprocess.CompletedProcess(line, 0, printed, "")
 
     def ask(self, question: str) -> str:
@@ -370,6 +468,9 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
         )
         world = World(g.ela, accounts, vault, loop)
         monkeypatch.setattr(module.base, "run", world.run)
+        monkeypatch.setattr(
+            module, "mounted", lambda: False
+        )  # the desk's own /Volumes is not asked
         report = module.Report(io.StringIO())
         say = report.say
 
@@ -408,7 +509,19 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     assert "BROWSER_WINDOW_OPENED" in events and "VAULT_CLOSED" in events
     assert WORD not in written and ENTRY.username not in written
     assert ENTRY.name not in written, "nothing of the vault enters the file"
-    assert any(line.startswith("hdiutil detach /dev/disk9") for line in world.ran)
+    disk = [line for line in world.ran if not line.startswith("uv run ela ")]
+    assert disk == [
+        "hdiutil attach -nomount ram://131072",
+        'diskutil erasevolume HFS+ "ELA-prova" /dev/disk9',
+        "mount",
+        'chmod 700 "/Volumes/ELA-prova"',
+        'find "/Volumes/ELA-prova" -mindepth 1 -delete',
+        "hdiutil detach /dev/disk9 -force",
+        "hdiutil info",
+    ], "the machine is asked these lines, in this order, and no other"
+    assert any("ignora i proprietari" in line for line in report.lines), (
+        "what 0700 is worth on a volume that knows no owners is said"
+    )
 
 
 async def test_a_line_of_the_guide_the_command_line_does_not_print_is_a_failure(
@@ -483,6 +596,9 @@ class Running:
     def poll(self) -> int | None:
         return self.code
 
+    def terminate(self) -> None:
+        self.code = -15
+
 
 def a_proof(answers: dict[str, list[Any]], said: list[str] | None = None) -> Any:
     module = script()
@@ -541,6 +657,40 @@ def test_an_ela_that_stays_or_a_folder_still_held_is_a_failure(
 
     assert proof.report.failures == 1
     assert any(says in line for line in proof.report.lines)
+
+
+def test_without_an_ela_that_listens_step_10_fails_and_signals_nobody(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = script()
+    signalled = stopping(monkeypatch, lock=None, dies=True)
+    monkeypatch.setattr(module, "ela_pid", lambda: None)
+    proof = a_proof({"/browser": [{"state": "step"}]})
+
+    module.a_step(10, [block(10, "chiude", "SIGINT")], proof, module.guided.Turn(task_id="t-1"))
+
+    assert signalled == [] and proof.report.failures == 1
+    assert any("ela serve" in line for line in proof.report.lines)
+
+
+@pytest.mark.parametrize("held_by", ["window", "process"])
+def test_a_profile_held_by_anything_but_a_step_is_not_the_moment_to_stop_ela(
+    monkeypatch: pytest.MonkeyPatch, held_by: str
+) -> None:
+    """The step never holds the profile — a window does —, and the wait for it has an end: ELA
+    is not signalled, the run in the background is ended, and the step fails saying so."""
+    module = script()
+    signalled = stopping(monkeypatch, lock=None, dies=True)
+    monkeypatch.setattr(module, "HOLD_SECONDS", 0.2)
+    running = Running(None)
+    monkeypatch.setattr(module.base, "started", lambda line: running)
+    proof = a_proof({"/browser": [{"state": held_by}]})
+
+    module.a_step(10, [block(10, "chiude", "SIGINT")], proof, module.guided.Turn(task_id="t-1"))
+
+    assert signalled == [] and proof.report.failures == 1
+    assert running.code == -15, "the run in the background is not left waiting"
+    assert any("non ha tenuto il profilo" in line for line in proof.report.lines)
 
 
 def test_a_step_that_ended_before_it_held_the_profile_is_skipped_and_ela_is_left_alone(
@@ -648,12 +798,76 @@ def test_a_ram_disk_that_is_not_born_or_is_still_there_is_a_failure(
     def answer(line: str, printed: str = "", code: int = 0) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(line, code, printed, "")
 
+    ran: list[str] = []
+
+    def a_machine(**changed: Any) -> Any:
+        """The machine of a disk that is born and goes away — or that, at one word, changed."""
+
+        def run(line: str) -> subprocess.CompletedProcess[str]:
+            ran.append(line)
+            word = line.split()[0]
+            if word in changed:
+                return changed[word](line)  # type: ignore[no-any-return]
+            if line.startswith("hdiutil attach"):
+                return answer(line, "/dev/disk9\n")
+            return answer(line, MOUNTED if line == "mount" else "")
+
+        return run
+
+    def still(line: str) -> subprocess.CompletedProcess[str]:
+        return answer(line, "/dev/disk9\n" if not line.startswith("hdiutil detach") else "")
+
+    monkeypatch.setattr(module, "mounted", lambda: False)
     unborn = with_run(lambda line: answer(line, "hdiutil: attach failed", 1))
-    left = with_run(lambda line: answer(line, "/dev/disk9\n" if line.startswith("hdiutil") else ""))
+    born = with_run(a_machine())
+    left = with_run(a_machine(hdiutil=still))
+    another = with_run(
+        a_machine(mount=lambda line: answer(line, MOUNTED.replace("disk9", "disk4")))
+    )
+    unformatted = with_run(a_machine(diskutil=lambda line: answer(line, "", 1)))
+    wide = with_run(a_machine(chmod=lambda line: answer(line, "", 1)))
+    full = with_run(a_machine(find=lambda line: answer(line, "", 1)))
 
     assert unborn.failures == 1 and unborn.stopped is not None
+    assert born.failures == 0 and born.stopped is None, born.lines
     assert left.failures == 1, "hdiutil info still names the device"
     assert any("il dispositivo /dev/disk9 c'è ancora" in line for line in left.lines)
+    for refused in (another, unformatted, wide):
+        assert refused.failures == 1 and refused.stopped is not None, refused.lines
+    assert any("non è il disco appena fatto" in line for line in another.lines)
+    assert full.failures == 1 and any("non è stato svuotato" in line for line in full.lines)
+    assert ran.count("hdiutil detach /dev/disk9 -force") == 6, (
+        "a disk that was born is detached whatever came after, with the force a busy one needs"
+    )
+
+
+def test_a_volume_of_the_proof_s_name_that_is_already_there_is_not_touched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """What a run that was killed left, or the user's own: the new disk would be mounted beside
+    it under another name, and everything after would be done to the other one — narrowed,
+    filled with the exports, emptied. Nothing is made, and nothing is run."""
+    module = script()
+    ran: list[str] = []
+    monkeypatch.setattr(module, "mounted", lambda: True)
+    monkeypatch.setattr(module.base, "run", lambda line: ran.append(line))
+    proof = a_proof({})
+
+    module.base.walk(
+        proof.report,
+        {2: [block(2, "disco", "64\nEsporta e importa.")]},
+        lambda number, its: module.a_step(number, its, proof),
+    )
+
+    assert ran == [] and proof.report.failures == 1 and proof.report.stopped is not None
+    assert "già montato" in "\n".join(proof.report.lines)
+
+
+def test_the_volume_is_looked_for_where_macos_mounts_it() -> None:
+    module = script()
+
+    assert str(module.MOUNT) == "/Volumes/ELA-prova"
+    assert module.mounted() is module.MOUNT.exists()
 
 
 # ----------------------------------------------------------------------------------------
@@ -681,8 +895,9 @@ def step_1(
     real folder of the test."""
     module = script()
     profile = tmp_path / "profile"
-    profile.mkdir(mode=changed.pop("mode", 0o700))
-    profile.chmod(profile.stat().st_mode)
+    profile.mkdir()
+    profile.chmod(changed.pop("mode", 0o700))  # set, and not left to the umask of the suite
+    declared = "" if changed.pop("undeclared", False) else str(profile)
     program = tmp_path / "bw"
     program.write_bytes(b"a native program")
     signed, excluded = changed.pop("signed", True), changed.pop("excluded", True)
@@ -709,7 +924,7 @@ def step_1(
     monkeypatch.setattr(module.guided, "route_model", lambda: module.MODEL)
     monkeypatch.setattr(module.spending, "keyed", lambda: True)
     monkeypatch.setenv("ELA_BROWSER_SITES", json.dumps(SITES))
-    monkeypatch.setenv("ELA_BROWSER_PROFILE_DIR", str(profile))
+    monkeypatch.setenv("ELA_BROWSER_PROFILE_DIR", declared)
     report = module.Report(io.StringIO())
     module.preconditions(report, LOGIN_PLAN)
     return report, ran
@@ -730,6 +945,38 @@ def test_step_1_passes_on_a_ready_world_and_writes_the_digest_of_the_vaults_prog
         "the script asks, then looks"
     )
     assert any(f"-R='{module.BITWARDEN}'" in line for line in ran), "the maker's team, by codesign"
+    assert 'certificate leaf[subject.OU] = "LTZ2PFU5D6"' in module.BITWARDEN, (
+        "Bitwarden's team, written here too: measured by scripts/misura_m13_9.py"
+    )
+
+
+def test_a_vault_nobody_signed_in_to_yet_is_a_closed_vault_for_step_1(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The first ``bw login`` of the proof is in step 2: on a data folder that is new the vault
+    is ``unauthenticated`` at step 1, and that is not what stops the proof."""
+    answer = {"state": "unauthenticated", "program": str(tmp_path / "bw"), "message": "sign in"}
+
+    report, _ = step_1(monkeypatch, tmp_path, **{"/vault": answer})
+
+    assert report.stopped is None, report.lines
+
+
+def test_the_paths_step_1_hands_to_a_shell_are_quoted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The folder and the program are the user's, and are written into lines a shell reads: a
+    space, a quote or a dollar in either is a part of a name, and not of the line."""
+    odd = tmp_path / "a folder's $HOME `id`"
+    odd.mkdir()
+
+    report, ran = step_1(monkeypatch, odd)
+
+    assert report.stopped is None, report.lines
+    profile, program = odd / "profile", odd / "bw"
+    assert f"tmutil addexclusion {shlex.quote(str(profile))}" in ran
+    assert f"tmutil isexcluded {shlex.quote(str(profile))}" in ran
+    assert any(line.endswith(f" {shlex.quote(str(program))}") for line in ran)
 
 
 NOT_READY = [
@@ -745,6 +992,7 @@ NOT_READY = [
         id="a-profile-held",
     ),
     pytest.param({"mode": 0o755}, "la cartella del profilo è 0700", id="a-folder-open-to-others"),
+    pytest.param({"undeclared": True}, "la cartella del profilo è 0700", id="no-folder-declared"),
     pytest.param({"excluded": False}, "Time Machine la esclude", id="a-folder-time-machine-copies"),
     pytest.param(
         {"/openapi.json": {"paths": {"/vault": {}}}},
