@@ -176,7 +176,10 @@ adapter, and the value passes through ELA's process once more (measured; decisio
 
 HELD_BY: Final = {
     PROFILE_STEP: "another step of ELA's is using it",
-    PROFILE_WINDOW: "its window is open: close it, and ask again",
+    PROFILE_WINDOW: (
+        "its window is open: quit that browser (Cmd-Q — closing the window alone leaves it "
+        "running), and ask again"
+    ),
     PROFILE_PROCESS: "another process holds it — a browser somebody started on that folder",
 }
 SPENT: Final = "; the yes was spent, and nothing was typed"

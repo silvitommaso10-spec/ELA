@@ -89,8 +89,11 @@ def open_(
     ] = None,
 ) -> None:
     """Open the window where you sign in by hand. ELA reads nothing of it, and neither looks at
-    the screen nor listens while it is open; you close it."""
+    the screen nor listens while it is open; you end it, by quitting that browser."""
     with client.connect() as api:
         opened = api.post("/browser/open", {} if site is None else {"site": site})
     where = "" if opened["site"] is None else f" on {opened['site']}"
-    typer.echo(f"the window is open{where}: sign in, then close it. ELA reads nothing of it")
+    typer.echo(
+        f"the window is open{where}: sign in, then quit that browser (Cmd-Q — closing the window "
+        "alone leaves it running). ELA reads nothing of it"
+    )

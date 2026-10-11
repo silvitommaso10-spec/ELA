@@ -6160,7 +6160,7 @@ uv run ela browser open accounts.google.com
 
 <!-- prova: 4.atteso -->
 ```
-the window is open on accounts.google.com: sign in, then close it. ELA reads nothing of it
+the window is open on accounts.google.com: sign in, then quit that browser (Cmd-Q — closing the window alone leaves it running). ELA reads nothing of it
 ```
 
 <!-- prova: 4.comando -->
@@ -6325,7 +6325,7 @@ uv run ela task run <id>
 <!-- prova: 7.atteso -->
 ```
 outcome failed
-reason fail: EXECUTING -> FAILED (browser.profile_busy: ELA's browser with your accounts is in use — its window is open: close it, and ask again: no question is asked)
+reason fail: EXECUTING -> FAILED (browser.profile_busy: ELA's browser with your accounts is in use — its window is open: quit that browser (Cmd-Q — closing the window alone leaves it running), and ask again: no question is asked)
 ```
 
 <!-- prova: 7.domanda -->
