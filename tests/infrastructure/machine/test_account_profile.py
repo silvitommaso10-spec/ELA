@@ -64,6 +64,28 @@ def chrome(profile: Path | None, *, system: str = "Darwin", shown: bool = False)
     )
 
 
+def said_by(error: BaseException) -> str:
+    """Whatever an exception carries, and whatever it is chained to: the place a path hides."""
+    said, seen = [], set()
+    todo: list[BaseException | None] = [error]
+    while todo:
+        one = todo.pop()
+        if one is None or id(one) in seen:
+            continue
+        seen.add(id(one))
+        said.append(f"{one!r} {one} {one.args!r} {vars(one)!r}")
+        todo.extend([one.__cause__, one.__context__])
+    return "\n".join(said)
+
+
+@pytest.fixture(autouse=True)
+def no_browser_of_this_machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """«No process is started» is built, and not hoped for: the registry these tests look in holds
+    no browser unless a test puts a file there — so a test that is red, or a mutant of the
+    adapter, finds nothing to launch where the machine's own Chrome for Testing would be."""
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "a-registry-with-nothing-in-it"))
+
+
 def locked_by(profile: Path, pid: int, host: str | None = None) -> None:
     """The link a browser leaves in its folder while it runs, as the test says it."""
     (profile / "SingletonLock").symlink_to(
@@ -174,6 +196,25 @@ def test_before_the_first_launch_the_file_and_its_folder_are_made(tmp_path: Path
     file = tmp_path / "Default" / "Preferences"
     assert json.loads(file.read_text(encoding="utf-8")) == PREFERENCES
     assert file.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_a_link_where_the_new_file_is_written_is_not_followed(tmp_path: Path) -> None:
+    """The preferences are written beside the file and moved over it. A link left where they are
+    written — by whatever ran in the profile — would have ELA overwrite the file it leads to, at
+    every launch, and leave the preferences a link to it."""
+    victim = tmp_path / "a-file-of-the-user-s"
+    victim.write_text("what the user wrote", encoding="utf-8")
+    profile = tmp_path / "profile"
+    (profile / "Default").mkdir(parents=True)
+    (profile / "Default" / "Preferences.ela").symlink_to(victim)
+
+    account._prepared(profile, driven=False)
+
+    assert victim.read_text(encoding="utf-8") == "what the user wrote"
+    file = profile / "Default" / "Preferences"
+    assert file.is_file() and not file.is_symlink()
+    assert json.loads(file.read_text(encoding="utf-8")) == PREFERENCES
+    assert sorted(found.name for found in file.parent.iterdir()) == ["Preferences"]
 
 
 def test_a_file_that_is_not_json_is_replaced(tmp_path: Path) -> None:
@@ -409,6 +450,46 @@ async def test_a_folder_that_appears_while_ela_is_making_it_is_looked_at_like_an
     assert Path(profile).stat().st_mode & 0o777 == mode
 
 
+async def test_a_link_that_appears_while_ela_is_making_the_folder_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second look is the first one's equal: it does not follow a link either."""
+    monkeypatch.setattr(Appearing, "looks", 0)
+    real = tmp_path / "real"
+    real.mkdir(mode=0o700)
+    profile = Appearing(tmp_path / "profile")
+    Path(profile).symlink_to(real)
+
+    with pytest.raises(ProfileUnsafe, match="a link, or is not a folder"):
+        await chrome(profile).occupied()
+
+
+class Watched(type(Path())):  # type: ignore[misc]
+    """A folder that says how it was found when ELA came to narrow it."""
+
+    found: list[int] = []  # noqa: RUF012 — one list, emptied by the test that reads it
+
+    def chmod(self, mode: int, *, follow_symlinks: bool = True) -> None:
+        type(self).found.append(self.stat().st_mode & 0o7777)
+        super().chmod(mode, follow_symlinks=follow_symlinks)
+
+
+async def test_the_folder_ela_makes_is_never_wider_than_0700_not_even_for_an_instant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Made ``0700`` and then set ``0700`` — the second for a umask that would take a bit of the
+    owner's away. Made wider and narrowed after, it would be open to others between the two."""
+    monkeypatch.setattr(Watched, "found", [])
+    profile = Watched(tmp_path / "profile")
+    old = os.umask(0o022)
+    try:
+        assert await chrome(profile).occupied() is None
+    finally:
+        os.umask(old)
+
+    assert Watched.found == [0o700]
+
+
 @pytest.mark.parametrize("mode", [0o750, 0o705, 0o701, 0o777, 0o1700])
 async def test_a_folder_found_wider_is_refused_and_not_narrowed(tmp_path: Path, mode: int) -> None:
     """ELA does not narrow it by itself: a folder somebody widened was widened by somebody."""
@@ -432,9 +513,131 @@ async def test_a_folder_narrower_than_its_owner_s_whole_is_the_owner_s_business(
     tmp_path: Path,
 ) -> None:
     profile = tmp_path / "profile"
+    profile.mkdir()
+    profile.chmod(0o500)
+    try:
+        assert await chrome(profile).occupied() is None
+    finally:
+        profile.chmod(0o700)
+
+
+class Unmakeable(type(Path())):  # type: ignore[misc]
+    """A folder that is not there and that this user may not make: under a folder that cannot be
+    written — a volume that went away, a place of the system's."""
+
+    def mkdir(self, *arguments: Any, **options: Any) -> None:
+        raise PermissionError(13, "Permission denied", str(self))
+
+
+@pytest.mark.parametrize("why", ["under-a-file", "cannot-be-made"])
+async def test_a_folder_ela_cannot_look_at_or_make_is_refused_and_never_named(
+    tmp_path: Path, installed: Path, why: str
+) -> None:
+    """Whatever the system says of the folder — a part of its path is a file, a folder above it
+    cannot be written — is the adapter's own refusal: **an error of the browser**, which every
+    caller already answers, and not one of the system's, which nobody catches and which names
+    the path."""
+    if why == "under-a-file":
+        (tmp_path / "a-file").write_text("not a folder", encoding="utf-8")
+        profile = tmp_path / "a-file" / "profile"
+    else:
+        profile = Unmakeable(tmp_path / "profile")
+    made = chrome(profile)
+
+    uses = (
+        made.occupied,
+        made.linked,
+        made.saved,
+        lambda: made.window(None),
+        lambda: made.open("https://example.com/", lambda address: True, FakeStop()),
+    )
+    for use in uses:
+        with pytest.raises(ProfileUnsafe, match=VARIABLE) as refused:
+            await use()
+        assert str(tmp_path) not in said_by(refused.value)
+    assert not made._drivers and made._window is None
+
+
+@pytest.mark.parametrize("launch", ["the-window", "a-page"])
+async def test_a_folder_that_cannot_be_prepared_is_a_failure_of_the_browser_and_never_named(
+    tmp_path: Path, installed: Path, monkeypatch: pytest.MonkeyPatch, launch: str
+) -> None:
+    """A folder its owner narrowed passes the look, and cannot be written into: what the system
+    says of the write does not leave the adapter either."""
+    profile = tmp_path / "profile"
     profile.mkdir(mode=0o700)
 
-    assert await chrome(profile).occupied() is None
+    def unwritable(folder: Path, *, driven: bool) -> None:
+        raise PermissionError(13, "Permission denied", str(folder / "Default"))
+
+    monkeypatch.setattr(account, "_prepared", unwritable)
+    made = chrome(profile)
+
+    with pytest.raises(BrowserFailed, match="PermissionError") as failed:
+        if launch == "the-window":
+            await made.window(None)
+        else:
+            await made._begun(None)  # type: ignore[arg-type]  # refused before the engine is asked
+
+    assert str(tmp_path) not in said_by(failed.value)
+    assert made._window is None and await made.occupied() is None
+
+
+def another_browser(tmp_path: Path) -> Path:
+    """The ``Default`` of a browser that is not ELA's, with what a profile keeps in it."""
+    other = tmp_path / "another-browser" / "Default"
+    (other / "Service Worker" / "ScriptCache").mkdir(parents=True)
+    (other / "Service Worker" / "ScriptCache" / "index").write_text("a worker", encoding="utf-8")
+    (other / "Preferences").write_text(json.dumps({"signin": {"allowed": True}}), encoding="utf-8")
+    logins(other.parent, 4)
+    return other
+
+
+@pytest.mark.parametrize("found", ["a-link", "a-file"])
+async def test_a_default_that_is_not_a_folder_of_its_own_is_refused_and_nothing_is_reached(
+    tmp_path: Path, installed: Path, found: str
+) -> None:
+    """The folder is the user's own **below its top too**: with ``Default`` a link, ELA would
+    count the passwords of the folder it leads to, rewrite its preferences and take its workers
+    away at every launch — the profile of another browser, if that is where it leads."""
+    other = another_browser(tmp_path)
+    before = (other / "Preferences").read_text(encoding="utf-8")
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    if found == "a-link":
+        (profile / "Default").symlink_to(other)
+    else:
+        (profile / "Default").write_text("not a folder", encoding="utf-8")
+    made = chrome(profile)
+
+    uses = (
+        made.occupied,
+        made.linked,
+        made.saved,
+        lambda: made.window(None),
+        lambda: made.open("https://example.com/", lambda address: True, FakeStop()),
+    )
+    for use in uses:
+        with pytest.raises(ProfileUnsafe, match="Default"):
+            await use()
+
+    assert (other / "Preferences").read_text(encoding="utf-8") == before
+    assert (other / "Service Worker" / "ScriptCache" / "index").is_file()
+    assert not made._drivers and made._window is None
+
+
+async def test_a_folder_named_as_the_profiles_ela_takes_away_after_a_kill_is_refused(
+    tmp_path: Path,
+) -> None:
+    """After a kill at the grace ELA removes the temporary profiles Playwright made, which it
+    knows by their name. A declared folder is never one of them — and so it does not bear the
+    name."""
+    profile = tmp_path / "playwright_chromiumdev_profile-of-mine"
+    profile.mkdir(mode=0o700)
+
+    with pytest.raises(ProfileUnsafe, match="another name"):
+        await chrome(profile).occupied()
+    assert profile.is_dir()
 
 
 async def test_a_link_or_a_file_where_the_folder_would_be_is_refused(tmp_path: Path) -> None:
@@ -506,7 +709,8 @@ async def test_on_a_system_that_is_not_the_mac_every_use_says_so(
 ) -> None:
     made = chrome(tmp_path / "profile", system=system)
 
-    for use in (made.installed, made.occupied, lambda: made.window(None)):
+    uses = (made.installed, made.occupied, made.linked, made.saved, lambda: made.window(None))
+    for use in uses:
         with pytest.raises(BrowserUnsupported, match=system):
             await use()
     with pytest.raises(BrowserUnsupported):
@@ -535,6 +739,33 @@ def test_the_lock_names_who_holds_the_folder_only_if_the_kernel_knows_it(tmp_pat
 def test_a_lock_that_names_no_pid_holds_nothing(tmp_path: Path, left: str) -> None:
     (tmp_path / "SingletonLock").symlink_to(left)
 
+    assert lock_holder(tmp_path, lambda pid: True) is None
+
+
+@pytest.mark.parametrize(
+    "left",
+    ["h-²", "h-٣", "h-" + "9" * 30, "h-0", "h-1", "h-00", "h-4294967296"],
+    ids=[
+        "a-superscript",
+        "a-digit-of-another-script",
+        "thirty-nines",
+        "zero",
+        "one",
+        "zeros",
+        "2^32",
+    ],
+)
+def test_a_lock_that_names_what_cannot_be_a_browser_s_pid_holds_nothing_and_raises_nothing(
+    tmp_path: Path, left: str
+) -> None:
+    """Asked of the kernel as it is: a number no process can have is an error of the question —
+    which nobody catches —, zero is «every process of my group» and one is the system's own
+    first process, which answer for ever. None of them is a browser that runs."""
+    from ela.infrastructure.machine.browser import _alive
+
+    (tmp_path / "SingletonLock").symlink_to(left)
+
+    assert lock_holder(tmp_path, _alive) is None
     assert lock_holder(tmp_path, lambda pid: True) is None
 
 
@@ -627,6 +858,18 @@ def test_the_options_of_a_launch_are_the_closed_set(tmp_path: Path) -> None:
     options: dict[str, Any] = chrome(tmp_path)._launch()
 
     assert set(options) == LAUNCH_OPTIONS
+    assert {
+        "channel",
+        "headless",
+        "chromium_sandbox",
+        "args",
+        "env",
+        "handle_sigint",
+        "handle_sigterm",
+        "handle_sighup",
+        "accept_downloads",
+        "service_workers",
+    } == LAUNCH_OPTIONS, "the closed set, written here too: one more name is a decision"
     assert options["channel"] == "chromium", "Chrome for Testing of the lock, and no other binary"
     assert options["chromium_sandbox"] is True
     assert options["headless"] is True
