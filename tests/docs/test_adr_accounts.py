@@ -222,3 +222,62 @@ def test_the_reasons_of_the_adr_are_the_ones_the_composition_gives() -> None:
 
     assert rows == SIGNING_IN
     assert set(rows) == {PROFILE_WINDOW, PROFILE_PROCESS}, "a step of ELA's own refuses nothing"
+
+
+# ----------------------------------------------------------------------------------------
+# The ADRs this one revises say so
+# ----------------------------------------------------------------------------------------
+
+REVISED_MARK = "**Riletta da ADR 0063 (M13.9)**"
+REVISED_ROW = re.compile(r"^- \*\*ADR (\d{4})\b")
+
+
+def status_of(text: str) -> str:
+    return text.split("- **Stato:**", 1)[1].split("\n- **", 1)[0]
+
+
+def adrs() -> dict[str, Path]:
+    """Every ADR of the repository but this one, by its number."""
+    return {path.name[:4]: path for path in ADR_PATH.parent.glob("[0-9]*.md") if path != ADR_PATH}
+
+
+def revised_by_the_list() -> set[str]:
+    """The numbers of the ADRs the list «Righe riviste» of this ADR names, one bullet each."""
+    block = adr_text().split("**Righe riviste**", 1)[1].split("\n\n", 2)[1]
+    return {match.group(1) for line in block.splitlines() if (match := REVISED_ROW.match(line))}
+
+
+def revised_by_their_state() -> set[str]:
+    """The numbers of the ADRs whose «Stato:» line says this ADR is to be read beside them."""
+    return {
+        number
+        for number, path in adrs().items()
+        if REVISED_MARK in status_of(path.read_text(encoding="utf-8"))
+    }
+
+
+def test_the_adrs_it_revises_say_so_on_their_state_line_and_no_other_does() -> None:
+    """The form of ADR 0046, ADR 0060 and ADR 0062: an ADR is not rewritten, its «Stato:» line
+    points on. Closed both ways: every ADR the list names carries the mark, and every ADR that
+    carries the mark is in the list."""
+    listed = revised_by_the_list()
+
+    assert listed, "the list of the revised ADRs is there, one bullet per ADR"
+    assert listed == revised_by_their_state()
+    assert listed <= set(adrs()), "every bullet names an ADR of the repository"
+
+
+def test_a_revised_adr_that_does_not_say_so_is_found() -> None:
+    path = adrs()[sorted(revised_by_the_list())[0]]
+    silent = path.read_text(encoding="utf-8").replace(REVISED_MARK, "", 1)
+
+    assert REVISED_MARK not in status_of(silent)
+
+
+def test_the_mark_of_a_revised_adr_names_a_section_of_this_one() -> None:
+    """A mark that pointed nowhere would send a reader to a whole ADR: each says which section."""
+    for number in sorted(revised_by_their_state()):
+        status = status_of(adrs()[number].read_text(encoding="utf-8"))
+        after = status.split(REVISED_MARK, 1)[1]
+
+        assert "ADR 0063 §" in after or "ADR 0063, «Conseguenze»" in after, number
