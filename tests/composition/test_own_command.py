@@ -36,10 +36,21 @@ ON_POSIX = pytest.mark.skipif(WINDOWS, reason="the command with no extension is 
 
 def closed() -> dict[str, str]:
     """An environment with no environment activated and no ``ela`` in its ``PATH``: the system's
-    own folders, and what a process needs to start at all."""
+    own folders, and what a process needs to start at all.
+
+    **On Windows that includes the profile of the user** (measured on the CI's runner,
+    2026-10-11): a terminal there always has ``USERPROFILE``, and it is the only place a process
+    learns its home from — a POSIX system keeps it in the database of its users. Without it
+    ELA's command does not start: it stops on ``Path.home()``, importing its settings. An
+    environment with no profile is closed further than any terminal the line is pasted in."""
     if WINDOWS:
         root = os.environ["SYSTEMROOT"]
-        return {"SYSTEMROOT": root, "PATH": str(Path(root) / "System32"), "PYTHONUTF8": "1"}
+        return {
+            "SYSTEMROOT": root,
+            "PATH": str(Path(root) / "System32"),
+            "USERPROFILE": os.environ["USERPROFILE"],
+            "PYTHONUTF8": "1",
+        }
     return {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
 
 
