@@ -144,7 +144,9 @@ async def test_started_where_a_dotenv_is_the_sentence_names_that_folder(
         await ela.aclose()
 
     assert state.opens_with is not None
-    assert shlex.quote(str(tmp_path.resolve())) in state.message and ".env" in state.message
+    folder = shlex.quote(str(tmp_path.resolve()))
+    assert f"in the folder {folder} — " in state.message, "the folder, and not the file in it"
+    assert ".env" in state.message
 
 
 async def test_the_state_is_asked_of_the_vault_at_every_request(vaulted: Vaulted) -> None:

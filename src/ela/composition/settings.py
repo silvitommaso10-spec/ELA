@@ -934,7 +934,7 @@ def _sqlite_file(db_url: str) -> Path | None:
     return None if rest in {"", ":memory:"} else Path(rest)
 
 
-def _env_file() -> Path | None:
+def env_file() -> Path | None:
     """The ``.env`` this process would read, when there is one: ``None`` when nobody wrote it."""
     env = Path(".env").absolute()
     return env if env.exists() else None
@@ -1061,7 +1061,7 @@ class Settings(BaseModel):
         profile = f"the profile of ELA's browser ({PROFILE_VARIABLE})"
         for what, place in (
             ("the database", _sqlite_file(self.persistence.db_url)),
-            ("the .env ELA read", _env_file()),
+            ("the .env ELA read", env_file()),
             ("ELA's own source tree", _ela_source_tree()),
             (profile, self.accounts.browser_profile_dir),
         ):
@@ -1176,7 +1176,7 @@ class NodeConfig(BaseModel):
             "the folder a node keeps its secret in": self.node.node_state_dir,
             "ELA's own source tree": _ela_source_tree(),
         }
-        env = _env_file()
+        env = env_file()
         if env is not None:
             own["the .env ELA read"] = env
         refuse_the_root(

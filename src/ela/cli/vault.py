@@ -5,13 +5,15 @@ The passwords stay in the vault, and **the master password never enters ELA**: t
 by the user, in their terminal, with the vault's own program — which prints a session key on its
 stdout. That key reaches ELA through a pipe::
 
-    <the vault's program> unlock --raw | ela vault open
+    <the vault's program> unlock --raw | <ELA's own command> vault open
 
 ``open`` reads it **from its stdin and refuses a terminal**: a key is not typed and not pasted —
 typed, it would be in the scrollback; pasted as an argument, in the shell's history. It is sent to
 the Core alone and is never printed, accepted or refused. ``status`` prints what the vault is and,
-for a locked one, **that whole line** — composed by ELA with the program it vouches for, never
-with a placeholder: the ``bw`` to run is the declared one, not the first of the ``PATH``.
+for a locked one, **that whole line** — composed by ELA with the program it vouches for and with
+the command it runs with, **each by its absolute path** and never with a placeholder: the ``bw``
+to run is the declared one and the ``ela`` that receives the key is this one, neither the first
+of a ``PATH`` (decision 98).
 ``close`` locks the vault and makes ELA forget the key.
 """
 
@@ -32,10 +34,10 @@ app = typer.Typer(
     no_args_is_help=True, help="The vault of your passwords: its state, its key, its lock."
 )
 
-PIPE: Final = "unlock --raw | ela vault open"
 FROM_A_TERMINAL: Final = (
-    "the key of the vault is read from a pipe, never typed or pasted: run your vault's program "
-    f"as `<its path> {PIPE}` — `ela vault status` prints that line whole"
+    "the key of the vault is read from a pipe, never typed or pasted: `vault status` of this "
+    "command prints the whole line to paste, with the path of your vault's program and of this "
+    "command"
 )
 NO_KEY: Final = (
     "no key arrived on the pipe: the vault's program printed none (a wrong master password?). "

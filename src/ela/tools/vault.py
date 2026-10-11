@@ -18,7 +18,10 @@ hold:
 * **every closing is told, with why** — a command, the hour, the stop of ELA, a key ended
   elsewhere — to whoever the composition names: in ELA, the audit. The key is forgotten first;
 * **every refusal has a code of its own**, and a sentence that names the program to run and never
-  an entry of the vault;
+  an entry of the vault. For a locked vault it is **the whole line to paste** — the declared
+  program piped into ELA's own command, **both by their absolute path** (decisions 32 and 98):
+  neither is a name looked for in a ``PATH``. An ELA that cannot name its own command says so,
+  and gives no line;
 * **an entry is bound to a site by the equality of the host, compared here** — not by the vault's
   own match, which is by domain and does not look at the port (measured). The comparison runs
   before the question, on the listing, and again after the yes **on the very reading the password
@@ -178,7 +181,9 @@ class VaultState:
 
     ``message`` is what there is to do about it, empty for a vault that is open; ``opens_with``
     **the whole line to paste** in a terminal, for a vault that is locked and for no other
-    (decision 32): composed with the declared program, never with a placeholder."""
+    (decision 32): composed with the declared program and with ELA's own command, each by its
+    absolute path, never with a placeholder — and ``None`` for a locked vault too, when ELA
+    cannot name its own command (decision 98): no line rather than one that may not work."""
 
     name: str
     forgets_at: datetime | None = None
@@ -240,7 +245,10 @@ class VaultDoor:
     """The vault, behind the identity of its program and the hour of its key.
 
     ``closed`` is told of every closing (:class:`VaultClosing`), after the key is forgotten;
-    ``wait`` is how the hour is waited for — a sleep, and an event in a test.
+    ``wait`` is how the hour is waited for — a sleep, and an event in a test. ``command`` is the
+    absolute path of ELA's own command, ``None`` when the composition could not name it;
+    ``folder`` the folder of the ``.env`` ELA read, ``None`` when it read none — where the line
+    for a locked vault is to be run, because ELA's command reads its token there.
 
     **One thing at a time.** Whatever asks the vault something — an opening, a closing, a use, the
     state — holds the door while it does: a closing takes several steps, and until the vault has
@@ -258,10 +266,14 @@ class VaultDoor:
         seconds: int = VAULT_OPEN_SECONDS,
         closed: Closed = _nobody_is_told,
         wait: Wait = asyncio.sleep,
+        command: str | None = None,
+        folder: str | None = None,
     ) -> None:
         self._vault = vault
         self._program = program
         self._at_start = at_start
+        self._command = command
+        self._folder = folder
         self._clock = clock
         self._seconds = seconds
         self._closed = closed
@@ -280,11 +292,23 @@ class VaultDoor:
         seconds: int = VAULT_OPEN_SECONDS,
         closed: Closed = _nobody_is_told,
         wait: Wait = asyncio.sleep,
+        command: str | None = None,
+        folder: str | None = None,
     ) -> VaultDoor:
         """The door, with the identity of ``program`` read **now**, once, in a thread: the start
         of ELA, and nothing later."""
         at_start = None if program is None else await asyncio.to_thread(identity_of, program[1:])
-        return cls(vault, program, at_start, clock=clock, seconds=seconds, closed=closed, wait=wait)
+        return cls(
+            vault,
+            program,
+            at_start,
+            clock=clock,
+            seconds=seconds,
+            closed=closed,
+            wait=wait,
+            command=command,
+            folder=folder,
+        )
 
     @property
     def program(self) -> str | None:
@@ -297,10 +321,36 @@ class VaultDoor:
         opened = self._opened_at
         return None if opened is None else opened + timedelta(seconds=self._seconds)
 
-    def _opens_with(self) -> str:
-        """The whole line to paste in a terminal (decision 32): the declared program, quoted as
-        a shell wants a path with a space in it, and never a placeholder."""
-        return f"{shlex.quote(self._program or '')} unlock --raw | ela vault open"
+    def _opens_with(self) -> str | None:
+        """The whole line to paste in a terminal (decisions 32 and 98): the declared program
+        piped into **ELA's own command**, each by its absolute path and quoted as a shell wants a
+        path with a space in it — never a name looked for in the ``PATH``, and never a
+        placeholder. ``None`` when ELA cannot name its own command: no line rather than one that
+        may not work."""
+        if self._command is None:
+            return None
+        program = shlex.quote(self._program or "")
+        return f"{program} unlock --raw | {shlex.quote(self._command)} vault open"
+
+    def _locked(self) -> str:
+        """What a locked vault is answered with: the line, and where to run it — ELA's command
+        reads the token of the API from the ``.env`` of the folder it is launched in, so the
+        folder of the one ELA read is named. Without a command of its own to name, what to pipe
+        into what, and no line."""
+        line = self._opens_with()
+        if line is None:
+            return (
+                "the vault is locked, and ELA cannot name its own command on this machine, so it "
+                f"gives no line to paste: pipe the key that `{shlex.quote(self._program or '')} "
+                "unlock --raw` prints into `vault open` of the command you start ELA with"
+            )
+        where = "your terminal"
+        if self._folder is not None:
+            where = (
+                f"a terminal opened in the folder {shlex.quote(self._folder)} — ELA's command "
+                "reads the token of its API from the .env there"
+            )
+        return f"the vault is locked: run `{line}` in {where}"
 
     # The program ----------------------------------------------------------------------------
 
@@ -349,9 +399,7 @@ class VaultDoor:
                     "no account is signed in to the vault on this machine: run "
                     f"`{self._program} login` in your terminal",
                 )
-            return VaultProblem(
-                LOCKED, f"the vault is locked: run `{self._opens_with()}` in your terminal"
-            )
+            return VaultProblem(LOCKED, self._locked())
         return VaultProblem(TIMEOUT if isinstance(error, VaultTimeout) else FAILED, str(error))
 
     # The key --------------------------------------------------------------------------------

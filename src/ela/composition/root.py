@@ -24,13 +24,14 @@ from urllib.parse import urlsplit
 
 from ela.audit.verifier import AuditVerifier
 from ela.composition.errors import ConfigurationError
-from ela.composition.settings import Settings
+from ela.composition.settings import Settings, env_file
 from ela.composition.system import (
     PowerReading,
     SystemClock,
     UuidGenerator,
     WindowSwitch,
     argument_limits,
+    own_command,
     power_reading,
     while_the_user_signs_in,
     without_node_variables,
@@ -928,8 +929,16 @@ async def build(
             vault = BitwardenVault(
                 declared, environment=closed_environment, timeout_seconds=VAULT_TIMEOUT_SECONDS
             )
+        # The line a locked vault is answered with names ELA's own command by its path, and the
+        # folder of the ``.env`` this ELA read: its command reads the token there (decision 98).
+        command, read = own_command(), env_file()
         door = await VaultDoor.fixed(
-            vault, declared, clock=clock, closed=_vault_trail(audit, clock, ids)
+            vault,
+            declared,
+            clock=clock,
+            closed=_vault_trail(audit, clock, ids),
+            command=None if command is None else str(command),
+            folder=None if read is None else str(read.parent),
         )
         browsing = Browsing(sites=settings.browser.sites, origin=https_origin)
         # The engine and the month's cap before the tools since M14.3 (ADR 0060): the room of the

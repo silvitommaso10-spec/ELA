@@ -1447,7 +1447,9 @@ class VaultOut(BaseModel):
     ``unauthenticated``, ``locked``, ``unlocked`` — or ``timeout`` and ``failed`` for a program
     that did not say. ``forgets_at`` is when ELA forgets the key it holds, ``None`` when it holds
     none. ``program`` is the declared path. ``opens_with`` is **the whole line to paste** in a
-    terminal, for a locked vault and for no other (decision 32); ``message`` what there is to do,
+    terminal, for a locked vault and for no other (decision 32) — the declared program piped into
+    ELA's own command, each by its absolute path; ``None`` for a locked vault too, when ELA
+    cannot name its own command (decision 98) —; ``message`` what there is to do,
     empty for a vault that is open. **Nothing of the vault**: the account's address, which its
     program prints with the state, never leaves the adapter.
     """

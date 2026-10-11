@@ -1238,7 +1238,7 @@ async def test_the_sentence_says_from_which_folder_the_line_is_run(
 
     assert state.opens_with == without.opens_with, "the line is the same"
     assert shlex.quote(folder) in state.message and ".env" in state.message
-    assert "folder" not in without.message and ".env" not in without.message
+    assert without.message.endswith("` in your terminal") and ".env" not in without.message
 
 
 @pytest.mark.parametrize(

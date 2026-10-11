@@ -17,13 +17,19 @@ POSIX system — the total, and on Linux one more for a single argument —, the
 
 M13.4 adds what ELA takes **away** from its own environment before the browser's Node driver can
 inherit it (decision 4 of the review of 2026-09-30; ADR 0052 §14).
+
+M13.9 adds the one thing ELA says of **itself**: where its own command is, for the line that
+opens the vault (decision 98) — named with certainty, or not at all.
 """
 
 from __future__ import annotations
 
 import os
+import platform
+import sys
 from collections.abc import Awaitable, Callable, MutableMapping
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Final
 from uuid import UUID, uuid4
 
@@ -61,6 +67,7 @@ __all__ = [
     "UuidGenerator",
     "WindowSwitch",
     "argument_limits",
+    "own_command",
     "power_nobody_reads",
     "power_of_a_mac",
     "power_of_a_pc",
@@ -190,6 +197,39 @@ def without_node_variables(environment: MutableMapping[str, str]) -> tuple[str, 
     for name in removed:
         del environment[name]
     return removed
+
+
+OWN_COMMAND: Final = "ela"
+"""The name ELA's command line is installed under (``[project.scripts]``)."""
+
+
+def own_command(executable: str | None = None, system: str | None = None) -> Path | None:
+    """The command this ELA runs with, **named with certainty or not at all** (M13.9, decision
+    98): the one installed **beside the interpreter that runs this process**. ``None`` when
+    there is none there — ELA started some other way —: nothing is guessed, and nothing is
+    looked for in a ``PATH``.
+
+    Measured on 2026-10-11, with ``ps`` on a running ELA started by ``uv run ela serve``: the
+    Core is ``<environment>/bin/python3 <environment>/bin/ela serve``. **The interpreter is
+    taken as it is named, never resolved**: the interpreter of a virtual environment is a link
+    to the one it was made from, and the command is beside the link, not where it leads. On
+    Windows the command carries its extension, in the environment's folder of scripts — beside
+    its interpreter all the same.
+
+    It is the right half of the line ELA prints for a locked vault, so it is the program that
+    receives the key of the vault: a bare name there would be whichever program a ``PATH`` finds
+    first, which is what ADR 0063 refuses for the vault's own program.
+    """
+    interpreter = Path(sys.executable if executable is None else executable)
+    if not interpreter.is_absolute():
+        return None
+    name = OWN_COMMAND
+    if (platform.system() if system is None else system) == "Windows":
+        name = f"{OWN_COMMAND}.exe"
+    found = interpreter.parent / name
+    if found.is_file() and os.access(found, os.X_OK):
+        return found
+    return None
 
 
 class WindowSwitch:

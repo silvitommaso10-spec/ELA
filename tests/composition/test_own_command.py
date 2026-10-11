@@ -13,7 +13,8 @@ to the one it was made from, and the command is beside the link, not where it le
 
 This file runs on the three systems of the CI — it is named on the Windows job's line too —, so
 that «beside the interpreter» is measured on each: ``ela`` on a POSIX system, ``ela.exe`` on
-Windows.
+Windows. **Which name to expect is not asked of the machine** (ADR 0031 §6): each system has its
+own test, declared with a ``skipif`` that the summary shows.
 """
 
 from __future__ import annotations
@@ -29,7 +30,8 @@ import pytest
 from ela.composition.system import own_command
 
 WINDOWS = sys.platform == "win32"
-NAME = "ela.exe" if WINDOWS else "ela"
+ON_WINDOWS = pytest.mark.skipif(not WINDOWS, reason="the command with its extension is Windows's")
+ON_POSIX = pytest.mark.skipif(WINDOWS, reason="the command with no extension is POSIX's")
 
 
 def closed() -> dict[str, str]:
@@ -41,12 +43,22 @@ def closed() -> dict[str, str]:
     return {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
 
 
-def test_the_command_is_the_one_beside_the_interpreter_that_runs_this_process() -> None:
+@ON_POSIX
+def test_on_a_posix_system_the_command_is_ela_beside_the_interpreter_that_runs_this() -> None:
     found = own_command()
 
     assert found is not None, "the suite runs from an environment ELA is installed in"
     assert found.is_absolute() and found.is_file()
-    assert found.parent == Path(sys.executable).parent and found.name == NAME
+    assert found == Path(sys.executable).parent / "ela"
+
+
+@ON_WINDOWS
+def test_on_windows_the_command_is_ela_exe_beside_the_interpreter_that_runs_this() -> None:
+    found = own_command()
+
+    assert found is not None, "the suite runs from an environment ELA is installed in"
+    assert found.is_absolute() and found.is_file()
+    assert found == Path(sys.executable).parent / "ela.exe"
 
 
 def test_launched_where_no_ela_is_in_the_path_it_is_the_command_of_ela(tmp_path: Path) -> None:
@@ -116,20 +128,28 @@ def test_the_interpreter_is_taken_as_it_is_named_and_never_where_its_link_leads(
     assert own_command(str(venv / "python3"), "Darwin") == venv / "ela"
 
 
-@pytest.mark.parametrize("missing", ["no-command", "a-folder", "not-executable"])
-def test_an_interpreter_with_no_command_of_ela_beside_it_names_none(
-    tmp_path: Path, missing: str
-) -> None:
+def test_an_interpreter_with_no_command_of_ela_beside_it_names_none(tmp_path: Path) -> None:
     """ELA started some other way — ``python -m ela.cli`` from an interpreter nobody installed a
     command beside —: there is nothing to name with certainty, and nothing is named."""
     here = installed(tmp_path / "bin", "python3")
-    if missing == "a-folder":
-        (here / "ela").mkdir()
-    if missing == "not-executable" and not WINDOWS:
-        (here / "ela").write_text("not a program", encoding="utf-8")
-        (here / "ela").chmod(0o644)
-    if missing == "not-executable" and WINDOWS:
-        pytest.skip("Windows has no bit that says a file executes")
+
+    assert own_command(str(here / "python3"), "Darwin") is None
+
+
+def test_a_folder_named_as_the_command_is_not_the_command(tmp_path: Path) -> None:
+    here = installed(tmp_path / "bin", "python3")
+    (here / "ela").mkdir()
+
+    assert own_command(str(here / "python3"), "Darwin") is None
+
+
+@pytest.mark.skipif(WINDOWS, reason="Windows has no bit that says a file executes")
+def test_a_file_named_as_the_command_that_does_not_execute_is_not_the_command(
+    tmp_path: Path,
+) -> None:
+    here = installed(tmp_path / "bin", "python3")
+    (here / "ela").write_text("not a program", encoding="utf-8")
+    (here / "ela").chmod(0o644)
 
     assert own_command(str(here / "python3"), "Darwin") is None
 
