@@ -41,13 +41,22 @@ from ela.devices import (
     period_of,
 )
 from ela.devices.local import LOCAL_DEVICE_ID
-from ela.domain import Actor, ActorKind, RawSpeech, TaskId
+from ela.domain import (
+    Actor,
+    ActorKind,
+    AuditEvent,
+    AuditEventId,
+    AuditEventType,
+    RawSpeech,
+    TaskId,
+)
 from ela.executive import Assignments, Executor, TaskRunner
 from ela.executive.planner import Planner
 from ela.executive.sessions import SessionRoom
 from ela.executive.spending import SpendingGate
 from ela.infrastructure.machine import (
     Audition,
+    BitwardenVault,
     ClaudeAgentSession,
     DarwinListening,
     DarwinProbe,
@@ -106,6 +115,7 @@ from ela.ports import (
     SpeechPort,
     TaskRepository,
     TextRecognitionPort,
+    Vault,
 )
 from ela.providers.anthropic import anthropic_gateway, anthropic_provider
 from ela.providers.anthropic.models import model_for_hint
@@ -130,6 +140,7 @@ from ela.tools import (
 )
 from ela.tools.settings import sessions_dir_beside, speech_dir_beside
 from ela.tools.terminal import CLOSED_PATH, LANGUAGE
+from ela.tools.vault import VAULT_TIMEOUT_SECONDS, VaultClosing, VaultDoor
 
 __all__ = [
     "BROWSER_CLOSE_GRACE_SECONDS",
@@ -363,6 +374,11 @@ class Ela:
     """The browser every tool and verifier of the browser holds (M13.4), kept here for the one thing
     ELA does to it as a whole: bring it to rest when ELA closes (M13.4e). A contract and not the
     adapter — whatever browser ELA was built with is settled the same way."""
+    vault: VaultDoor
+    """The vault of the passwords, behind the door of the tools (M13.9, ADR 0063): the identity of
+    its program fixed at the start, the key kept for an hour, every closing a row of the audit.
+    On ``Ela`` for the routes that hand it the key and ask its state, and for the one thing ELA
+    does to it as a whole: forget the key when it closes."""
     speech_dir: Path
     """Where the audio of a sentence exists while it plays, and where nothing should ever be.
 
@@ -391,13 +407,17 @@ class Ela:
         killed: Callable[[tuple[str, ...], bool], None] | None = None,
         hurry: asyncio.Event | None = None,
     ) -> None:
-        """Close ELA: raise the stop, bring the browser to rest, release the database (M13.4e).
+        """Close ELA: raise the stop, forget the key of the vault, bring the browser to rest,
+        release the database (M13.4e; the key since M13.9).
 
         **When this returns nothing of the browser runs any more**, so the loop is never torn down
         with one of its calls in flight — measured, that is a process that does not exit. In this
         order: the stop, for whoever closes ELA without a signal having raised it, because closing
-        is stopping and the stop is what closes the browser's pages; the browser, which past its
-        grace kills what it had started and names it; and the database, as before.
+        is stopping and the stop is what closes the browser's pages; the key of the vault, which is
+        forgotten and launches nothing — it waits for nobody, and its row is written while there is
+        a database to write it in —; the browser, which past its grace kills what it had started
+        and names it; and the database, as before. **Each is reached whatever the one before it
+        raised.**
 
         **The grace is over at its time —** :data:`BROWSER_CLOSE_GRACE_SECONDS` **— or at the
         hurry**, whichever comes first (decision 55): ``hurry`` is the event a second signal
@@ -437,9 +457,12 @@ class Ela:
             hurried = await _over(BROWSER_CLOSE_GRACE_SECONDS, hurry)
 
         try:
-            names = await self.browser.settle(grace)
-            if names and killed is not None:
-                killed(names, hurried)
+            try:
+                await self.vault.stopped()
+            finally:
+                names = await self.browser.settle(grace)
+                if names and killed is not None:
+                    killed(names, hurried)
         finally:
             await self.database.dispose()
 
@@ -524,6 +547,35 @@ def _lasting(seconds: int) -> Callable[[], Awaitable[None]]:
     return waited
 
 
+def _vault_trail(
+    audit: AuditLog, clock: Clock, ids: IdGenerator
+) -> Callable[[VaultClosing], Awaitable[None]]:
+    """Who is told of every closing of the vault: the audit (M13.9, ADR 0063).
+
+    Signed by who asked, and by ELA when nobody did — the hour, the stop, a key ended elsewhere.
+    The row says why, whether the vault's program was asked to lock and did, and its code when it
+    was not: nothing of the vault is in a :class:`~ela.tools.vault.VaultClosing` to begin with.
+    """
+
+    async def closed(closing: VaultClosing) -> None:
+        await audit.append(
+            AuditEvent(
+                id=AuditEventId(ids.new_uuid()),
+                created_at=clock.now(),
+                event_type=AuditEventType.VAULT_CLOSED,
+                actor=closing.by or ELA_ACTOR,
+                summary=f"vault: closed ({closing.reason})",
+                payload={
+                    "reason": closing.reason,
+                    "locked": closing.locked,
+                    "code": closing.code,
+                },
+            )
+        )
+
+    return closed
+
+
 def default_route_model(policy: RoutePolicy, task_type: str) -> str:
     """The model the default route of ``task_type`` reads today (M13.12, ADR 0062; decision 16).
 
@@ -547,6 +599,7 @@ async def build(
     power: PowerReading | None = None,
     bell: Ringing | None = None,
     browser: Resting | None = None,
+    vault: Vault | None = None,
 ) -> Ela:
     """Build ELA from ``settings``, in one function and in the order of ADR 0023 §5.
 
@@ -571,6 +624,10 @@ async def build(
     nothing until a page is asked for, and a test that stops a task **while a gesture is in flight**
     names one that holds the click until the test lets it go — the precondition of form M, built
     instead of waited for, through the API as M6.3c's criterion asks.
+
+    ``vault`` is the fifth (M13.9): it defaults to :class:`BitwardenVault` at the program of
+    ``ELA_VAULT_PROGRAM`` — and to nothing at all when nobody declared one —, and a test that hands
+    ELA a key names a vault of its own: the vault's real program asks for an account.
 
     :raises ConfigurationError: for anything that makes this configuration unusable — a schema
         nobody migrated, a routing table naming a provider that is not registered, an empty one.
@@ -743,18 +800,32 @@ async def build(
         # ``tests/composition/test_browser_wiring.py`` —; a browser of ELA's own for every page,
         # with the four variables a program of the terminal gets (M6), started on the stop signal;
         # and a page handed to the verifier waits for its look no longer than the tool's time.
+        closed_environment = {
+            "PATH": CLOSED_PATH,
+            "HOME": str(Path.home()),
+            "TMPDIR": tempfile.gettempdir(),
+            "LANG": LANGUAGE,
+        }
         if browser is None:
             browser = PlaywrightBrowser(
                 stopping,
-                environment={
-                    "PATH": CLOSED_PATH,
-                    "HOME": str(Path.home()),
-                    "TMPDIR": tempfile.gettempdir(),
-                    "LANG": LANGUAGE,
-                },
+                environment=closed_environment,
                 kept=_lasting(BROWSER_TIMEOUT_SECONDS),
                 system=platform.system(),
             )
+        # The vault (M13.9, ADR 0063 §2): the program of ``ELA_VAULT_PROGRAM``, with the same four
+        # variables — the adapter adds the two of ``bw`` at each launch, and takes nothing from
+        # ``os.environ`` —, behind the door of the tools: the identity of the program fixed **now**,
+        # in a thread, and every closing told to the audit. Without a declared program there is a
+        # door and nothing behind it: every use says which line to write.
+        declared = settings.accounts.vault_program
+        if vault is None and declared is not None:
+            vault = BitwardenVault(
+                declared, environment=closed_environment, timeout_seconds=VAULT_TIMEOUT_SECONDS
+            )
+        door = await VaultDoor.fixed(
+            vault, declared, clock=clock, closed=_vault_trail(audit, clock, ids)
+        )
         browsing = Browsing(sites=settings.browser.sites, origin=https_origin)
         # The engine and the month's cap before the tools since M14.3 (ADR 0060): the room of the
         # guided sessions needs both, and the tool of ``browser.guided`` holds the room.
@@ -996,6 +1067,7 @@ async def build(
         speech=speech,
         stopping=stopping,
         browser=browser,
+        vault=door,
         speech_dir=scratch,
         speech_online=playing,
         listening=listening,

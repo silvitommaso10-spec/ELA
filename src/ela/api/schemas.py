@@ -21,6 +21,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SecretStr,
     SerializerFunctionWrapHandler,
     field_validator,
     model_serializer,
@@ -1428,6 +1429,46 @@ class DiagnosticsOut(BaseModel):
 # --------------------------------------------------------------------------------------
 # The policies of §59 (M13.12, ADR 0062)
 # --------------------------------------------------------------------------------------
+
+
+class VaultOut(BaseModel):
+    """What the vault is now, asked of its program at every request (M13.9, ADR 0063; 16e).
+
+    ``state`` is one of ``undeclared``, ``no_program``, ``changed``, ``gone``, ``is_a_script``,
+    ``unauthenticated``, ``locked``, ``unlocked`` — or ``timeout`` and ``failed`` for a program
+    that did not say. ``forgets_at`` is when ELA forgets the key it holds, ``None`` when it holds
+    none. ``program`` is the declared path. ``opens_with`` is **the whole line to paste** in a
+    terminal, for a locked vault and for no other (decision 32); ``message`` what there is to do,
+    empty for a vault that is open. **Nothing of the vault**: the account's address, which its
+    program prints with the state, never leaves the adapter.
+    """
+
+    state: str
+    forgets_at: datetime | None
+    program: str | None
+    opens_with: str | None
+    message: str
+
+
+class VaultKeyIn(BaseModel):
+    """The session key of the vault, as ``bw unlock --raw`` prints it — and nothing else: no
+    field here could carry the master password, which never enters ELA (16a)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: SecretStr = Field(min_length=1, max_length=4096)
+
+
+class VaultOpenedOut(BaseModel):
+    """The key opens and is kept: until when. The key itself is not said back."""
+
+    forgets_at: datetime
+
+
+class VaultLockedOut(BaseModel):
+    """The vault's program was asked to lock, and did; ELA holds no key."""
+
+    locked: bool
 
 
 class PolicyIn(BaseModel):

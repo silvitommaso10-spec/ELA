@@ -592,6 +592,18 @@ class AuditEventType(StrEnum):
     the registry by whoever lists, as for a no (ADR 0059 §3). Written by the one route that revokes
     (architecture rule 66). A revocation stops no session already running: the grant was spent
     before it, and the stop of a task is the «ferma»."""
+    VAULT_OPENED = "VAULT_OPENED"
+    """ELA was handed the session key of the vault, and it opens (M13.9, ADR 0063).
+
+    Written by the one route that receives a key, signed ``USER``: who, when, and until when ELA
+    keeps it. **Nothing of the vault** — not the key, not the account, not an entry."""
+    VAULT_CLOSED = "VAULT_CLOSED"
+    """ELA stopped holding the key of the vault, or locked it on a command (M13.9, ADR 0063).
+
+    Written by the keeper of the key, which is who sees every closing — a command, the hour, the
+    stop of ELA, a key ended elsewhere: a closing no route asked for would otherwise have no row.
+    Signed by who asked, and by ELA when nobody did; the payload says why, whether the vault's
+    program was asked to lock and did, and the code when it was not."""
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"
     APPROVAL_RESOLVED = "APPROVAL_RESOLVED"
     TOOL_EXECUTED = "TOOL_EXECUTED"

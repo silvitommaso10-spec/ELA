@@ -37,6 +37,7 @@ LATER_ROUTERS = (
     "policies",
     "sessions",
     "spend",
+    "vault",
     "voice",
 )
 """The router modules the phases after v0.1 added, kept beside the six rather than folded into
@@ -126,6 +127,9 @@ LATER_COMMANDS = (
     "policy revoke",
     "spend",
     "task finished",
+    "vault close",
+    "vault open",
+    "vault status",
     "voice",
     "voice audition",
     "voice preview",

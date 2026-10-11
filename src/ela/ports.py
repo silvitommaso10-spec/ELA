@@ -322,6 +322,10 @@ class WireCode(StrEnum):
     """The confirmation named another model than the prospect does now: preview again."""
     POLICY_NOT_LIVE = "policy.not_live"
     """A revocation of a policy already revoked, or already ended."""
+    VAULT_REFUSED = "vault.refused"
+    """The vault did not take the key, or did not lock (M13.9, ADR 0063): the vault's own code is
+    the first word of the message, as for ``policy.would_not_start`` — one code on the wire, not
+    one per reason."""
     UNAUTHORIZED = "unauthorized"
     """Every refusal of the middleware, whatever the reason was (ADR 0023 §7, ADR 0037 §13)."""
 
