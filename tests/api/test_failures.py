@@ -46,7 +46,7 @@ from httpx import ASGITransport, AsyncClient, Response
 from ela.api import create_app
 from ela.api.app import FAILURES, NOT_YOUR_WORK
 from ela.api.browser import BrowserRefusedError
-from ela.api.console import PolicyOutOfReachError
+from ela.api.console import BrowserOutOfReachError, PolicyOutOfReachError
 from ela.api.errors import (
     DatabaseUnavailableError,
     RevisionRequiredError,
@@ -485,6 +485,13 @@ async def a_creation_from_a_console_that_cannot_see_the_sites(live: Live) -> Res
         return await posted(console, "/console/policies/preview", FIELDS)
 
 
+async def a_window_asked_from_a_console_that_is_not_at_the_mac(live: Live) -> Response:
+    """M13.9: what opens on the Mac's screen is asked at the Mac — a console on the tailnet turns
+    no switch."""
+    async with a_guided_ela() as g, a_console(g, away=True) as console:
+        return await posted(console, "/console/browser/window", [("shown", "1")])
+
+
 async def a_lock_of_a_vault_whose_program_nobody_declared(live: Live) -> Response:
     """The door's own refusal, through the route: nothing to launch, and the route says that the
     key — had there been one — is not held."""
@@ -736,6 +743,15 @@ RAISED: tuple[Raised, ...] = (
         "not_answerable",
         "restano sul Mac",
         a_creation_from_a_console_that_cannot_see_the_sites,
+    ),
+    Raised(
+        BrowserOutOfReachError,
+        "POST",
+        "/console/browser/window",
+        409,
+        "not_answerable",
+        "si usano dal Mac",
+        a_window_asked_from_a_console_that_is_not_at_the_mac,
     ),
     Raised(
         VaultRefusedError,

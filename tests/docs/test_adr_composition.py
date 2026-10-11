@@ -348,7 +348,7 @@ def test_the_two_routes_of_m8_2_are_the_ones_adr_0024_adds() -> None:
     assert not added & documented_routes(adr_text())
 
 
-def test_there_are_sixty_six_of_them() -> None:
+def test_there_are_seventy_of_them() -> None:
     """Twenty until ADR 0037 §4 added five, twenty-five until ADR 0038 §11 added the three of the
     work, twenty-eight until ADR 0039 §2 added the one a node that restarted reads itself with,
     twenty-nine until ADR 0043 §5 added the eight pages of the companion, thirty-seven until
@@ -356,10 +356,10 @@ def test_there_are_sixty_six_of_them() -> None:
     of the last outcomes, forty-nine until ADR 0057 added the one of the month's spending, fifty
     until ADR 0058 added the one of the Planner, fifty-one until ADR 0060 added the gateway of a
     guided session, fifty-two until ADR 0062 added the four of the policies and the four pages of
-    their view, and sixty until ADR 0063 added the three of the vault and the three of the
-    browser; ``tests/api/test_security.py`` proves that every one of them is behind the
-    middleware, and which identity reaches which."""
-    assert len(coded_routes()) == 66
+    their view, and sixty until ADR 0063 added the three of the vault, the three of the browser
+    and the four pages of their view; ``tests/api/test_security.py`` proves that every one of
+    them is behind the middleware, and which identity reaches which."""
+    assert len(coded_routes()) == 70
 
 
 def test_the_route_of_m14_1_is_the_one_adr_0057_adds() -> None:
@@ -398,6 +398,10 @@ def test_the_routes_of_m13_9_are_the_ones_adr_0063_adds() -> None:
         ("GET", "/browser"),
         ("POST", "/browser/window"),
         ("POST", "/browser/open"),
+        ("GET", "/console/browser"),
+        ("POST", "/console/browser/window"),
+        ("POST", "/console/browser/open"),
+        ("POST", "/console/browser/lock"),
     }
     assert not routes_after_0062() & documented_routes(policies_adr_text())
 
@@ -456,6 +460,7 @@ def test_the_failures_m13_9_adds_are_the_ones_adr_0063_documents() -> None:
         "VaultRefusedError": 409,
         "VaultKeyNotLocalError": 403,
         "BrowserRefusedError": 409,
+        "BrowserOutOfReachError": 409,
     }
 
 
