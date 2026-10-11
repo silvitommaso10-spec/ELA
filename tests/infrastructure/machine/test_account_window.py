@@ -184,12 +184,17 @@ async def test_the_window_is_the_binary_on_the_folder_with_the_closed_list_and_n
     window: Window, tmp_path: Path
 ) -> None:
     profile = tmp_path / "profile"
+    worker = profile / "Default" / "Service Worker" / "ScriptCache" / "index"
+    worker.parent.mkdir(parents=True)
+    worker.write_text("a worker of a site the user signed in to", encoding="utf-8")
+    profile.chmod(0o700)
     made = chrome(profile)
 
     await made.window(ADDRESS)
     (one,) = await window.launches(1)
 
     assert one["argv"] == [f"--user-data-dir={profile}", *WINDOW_ARGUMENTS, ADDRESS]
+    assert worker.is_file(), "the window has no gate to go round: its sites keep their workers"
     received = {name: value for name, value in one["environment"].items() if name not in APPLE}
     assert received == ENVIRONMENT, "the closed environment, and nothing of ELA's own"
     assert one["session"] == one["pid"], "the leader of a session of its own, and not in ELA's"
@@ -202,16 +207,18 @@ async def test_the_window_is_the_binary_on_the_folder_with_the_closed_list_and_n
     assert await asyncio.wait_for(made.settle(never), PATIENCE) == ()
 
 
-async def test_a_window_with_no_address_is_started_with_none(
-    window: Window, tmp_path: Path
+@pytest.mark.parametrize("address", [None, "http://127.0.0.1:8080/a-page"])
+async def test_a_window_with_no_address_is_started_with_none_and_one_of_this_machine_with_it(
+    window: Window, tmp_path: Path, address: str | None
 ) -> None:
     profile = tmp_path / "profile"
     made = chrome(profile)
 
-    await made.window(None)
+    await made.window(address)
     (one,) = await window.launches(1)
 
-    assert one["argv"] == [f"--user-data-dir={profile}", *WINDOW_ARGUMENTS]
+    expected = [f"--user-data-dir={profile}", *WINDOW_ARGUMENTS]
+    assert one["argv"] == (expected if address is None else [*expected, address])
     made._stopping.set()
     assert await asyncio.wait_for(made.settle(never), PATIENCE) == ()
 
@@ -221,7 +228,8 @@ async def test_a_window_with_no_address_is_started_with_none(
     [
         "--remote-debugging-port=9222",
         "--user-data-dir=/somewhere/else",
-        "http://accounts.example/",
+        "ftp://accounts.example/",
+        "javascript:alert(1)",
         "file:///etc/hosts",
         "chrome://settings/passwords",
         "https://",
@@ -234,14 +242,16 @@ async def test_a_window_with_no_address_is_started_with_none(
         "https://[not-an-address/",
     ],
 )
-async def test_the_window_opens_on_an_https_address_of_a_site_or_on_none(
+async def test_the_window_opens_on_the_address_of_a_site_or_on_none(
     window: Window, tmp_path: Path, address: str
 ) -> None:
     """The list of what the window receives is closed **by the adapter**, whoever calls it: what
-    is not the address of a site is not handed to the binary — where it would be an argument."""
+    is not the address of a site is not handed to the binary — where it would be an argument of
+    the browser's own, or would open what is not a site. *Which* site, and that it is ``https``,
+    is the caller's to say (``tests/api/test_browser_routes.py``)."""
     made = chrome(tmp_path / "profile")
 
-    with pytest.raises(BrowserFailed, match="https"):
+    with pytest.raises(BrowserFailed, match="the address of a site"):
         await made.window(address)
 
     assert window.launched() == [] and made._window is None
@@ -440,6 +450,7 @@ async def test_a_close_that_arrives_while_the_window_starts_waits_for_it_and_end
     made = chrome(tmp_path / "profile")
     asking = asyncio.ensure_future(made.window(None))
     await asyncio.wait_for(starting.reached.wait(), PATIENCE)
+    assert await made.occupied() == PROFILE_WINDOW, "held from before the process exists"
 
     made._stopping.set()
     settling = asyncio.ensure_future(made.settle(at_once))

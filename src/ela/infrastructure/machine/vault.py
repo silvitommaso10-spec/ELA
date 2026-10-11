@@ -192,8 +192,10 @@ class BitwardenVault:
         finally:
             if process.returncode is None:
                 # Nobody waits for it any more — its time is over, or whoever asked was
-                # cancelled —: its whole group goes, and it is collected.
-                with contextlib.suppress(ProcessLookupError):
+                # cancelled —: its whole group goes, and it is collected. «Not permitted» is what
+                # macOS answers for a group whose only process has ended and is not collected yet
+                # (measured): a group with nothing left to kill, like one that is not there.
+                with contextlib.suppress(ProcessLookupError, PermissionError):
                     os.killpg(process.pid, signal.SIGKILL)
                 await process.wait()
         if not answered:

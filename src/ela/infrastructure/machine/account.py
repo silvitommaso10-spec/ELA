@@ -7,7 +7,9 @@ ELA, the closing that runs to its end, the kill past the grace — is **inherite
 what changes is *which* browser a page gets, and what is done to the folder before it starts.
 
 **The folder is read by this module and by nothing else in ELA.** It arrives from the composition;
-no error raised here carries its path, and no other module receives it.
+no error raised here carries its path — **what the system says of it does not leave either**: an
+``OSError`` names the path in its text, so it becomes an error of the browser that names its
+type —, and no other module receives it.
 
 What a page gets here that an empty one does not:
 
@@ -16,7 +18,9 @@ What a page gets here that an empty one does not:
 * **the sandbox on**, which Playwright turns off by default: a browser that opens pages of the web
   with the user's sessions in it does not run without;
 * **the same folder every time**, checked before every launch — the user's own, open to nobody
-  else, made by ELA ``0700`` if it is not there, never narrowed by ELA if it is found wider;
+  else, made by ELA ``0700`` if it is not there, never narrowed by ELA if it is found wider; and
+  **below its top too**: ``Default``, where the browser keeps what ELA reads and rewrites, is a
+  folder of its own and never a link to another;
 * **one process at a time on it**: a launch on a folder found held is not attempted — it is the
   launch that can kill the first;
 * **the preferences rewritten before every launch**, over whatever the file says
@@ -32,6 +36,8 @@ What a page gets here that an empty one does not:
 attached**: no driver, no pipe, no debugging port; its output goes nowhere; ELA keeps one thing of
 it, the wait for its end. At ELA's stop it is told — ``SIGTERM``, to which it exits by itself,
 writing its cookies —, waited for within the grace of the close, and then killed with its group.
+**It is never left behind**: the launch is a task of the adapter's own, which runs to its end
+whoever asked for it and went away, and which the close waits for before it calls the folder free.
 
 **ELA does not disguise itself**: no user agent, no script injected in a page, nothing that touches
 ``navigator.webdriver``. A site that refuses a driven browser is told so by the outcome.
@@ -42,6 +48,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import shutil
 import signal
@@ -51,12 +58,18 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final
+from urllib.parse import urlsplit
 
 from playwright.async_api import Browser as Chromium
 from playwright.async_api import BrowserContext, Page, Playwright
 from playwright.async_api import Error as PlaywrightError
 
-from ela.infrastructure.machine.browser import PlaywrightBrowser, _Open, registry_folder
+from ela.infrastructure.machine.browser import (
+    TEMPORARY_PROFILE,
+    PlaywrightBrowser,
+    _Open,
+    registry_folder,
+)
 from ela.ports import (
     PROFILE_PROCESS,
     PROFILE_STEP,
@@ -87,6 +100,8 @@ __all__ = [
     "saved_in",
     "with_preferences",
 ]
+
+_LOG = logging.getLogger(__name__)
 
 CHROME: Final = "chromium"
 """The name Playwright's registry and its channels give Chrome for Testing."""
@@ -153,6 +168,12 @@ SERVICE_WORKERS: Final = ("Default", "Service Worker")
 LOGINS: Final = ("Default", "Login Data")
 LOCK: Final = "SingletonLock"
 """The link the browser leaves in its folder while it runs: ``<host>-<pid>``."""
+FIRST_PID: Final = 1
+"""The system's own first process: it answers for ever, and is nobody's browser. Nor is zero,
+which asked of the kernel is «every process of my group»."""
+LAST_PID: Final = 2**31 - 1
+"""The largest number a process can have on any system ELA runs on: a larger one, asked of the
+kernel, is an error of the question."""
 LINKED: Final = (
     ("account_info",),
     ("google", "services", "account_id"),
@@ -244,14 +265,21 @@ def lock_holder(profile: Path, alive: Callable[[int], bool]) -> int | None:
     **Read by the pid, and not by the host** the lock names before it: a machine's own name
     changes with the network it is on — measured, a Mac that called itself by an address —, and a
     browser that is running under yesterday's name is running all the same. A lock that names a
-    pid the kernel knows is held, whatever it calls the machine."""
+    pid the kernel knows is held, whatever it calls the machine.
+
+    **Only what can be the pid of a browser is asked of the kernel**: digits of ASCII, above
+    :data:`FIRST_PID` and no larger than :data:`LAST_PID`. Anything else was not left by a browser
+    that runs, and holds nothing."""
     try:
-        pid = os.readlink(profile / LOCK).rpartition("-")[2]
+        named = os.readlink(profile / LOCK).rpartition("-")[2]
     except OSError:
         return None
-    if not pid.isdigit():
+    if not (named.isascii() and named.isdigit()):
         return None
-    return int(pid) if alive(int(pid)) else None
+    pid = int(named)
+    if not FIRST_PID < pid <= LAST_PID:
+        return None
+    return pid if alive(pid) else None
 
 
 def _prepared(profile: Path, *, driven: bool) -> None:
@@ -262,7 +290,12 @@ def _prepared(profile: Path, *, driven: bool) -> None:
     file = profile.joinpath(*PREFERENCES_FILE)
     written = json.dumps(with_preferences(_read(file)))
     fresh = file.with_name(f"{file.name}.ela")
-    descriptor = os.open(fresh, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, PREFERENCES_MODE)
+    # Whatever bears the name goes first — what a launch that was interrupted left, or a link —,
+    # and the file is then made new, by this call and through no link: nothing a link leads to
+    # is ever written.
+    fresh.unlink(missing_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    descriptor = os.open(fresh, flags, PREFERENCES_MODE)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write(written)
     fresh.replace(file)
@@ -271,6 +304,34 @@ def _prepared(profile: Path, *, driven: bool) -> None:
         workers.unlink()  # the link, never what it points at: no worker is reached through it
     elif driven:
         shutil.rmtree(workers, ignore_errors=True)
+
+
+WEB: Final = frozenset({"https", "http"})
+"""The schemes of an address of the web. *Which* address — ``https``, of a declared site — is
+the caller's to say, as it is for a page: here it is that the window is started on an address,
+and on nothing else."""
+
+
+def _of_a_site(address: str) -> bool:
+    """Whether ``address`` is the address of a site, and nothing beside it. What the window is
+    started with is an argument of the binary: anything that is not an address of the web would
+    be read as one of the browser's own — a debugging port, another folder — or would open what
+    is not a site: a file, a page of the browser's settings."""
+    if any(character.isspace() for character in address):
+        return False
+    try:
+        parts = urlsplit(address)
+        named = parts.username is not None or parts.password is not None
+    except ValueError:
+        return False
+    return parts.scheme in WEB and bool(parts.hostname) and not named
+
+
+def _seen(launching: asyncio.Future[None]) -> None:
+    """A launch whose caller went away has nobody to raise its failure to: looked at here, so
+    that it is not a warning of the loop's when the task is collected."""
+    if not launching.cancelled():
+        launching.exception()
 
 
 async def _nobody_is_told(address: str | None, seconds: float) -> None:
@@ -303,6 +364,7 @@ class AccountChrome(PlaywrightBrowser):
         self._ended = ended
         self._window: asyncio.subprocess.Process | None = None
         self._windowing = False
+        self._launching: asyncio.Future[None] | None = None
         self._watched: asyncio.Task[None] | None = None
 
     # The binary -----------------------------------------------------------------------------
@@ -338,12 +400,34 @@ class AccountChrome(PlaywrightBrowser):
     def _usable(self) -> Path:
         """The folder, fit to hold the user's sessions: made ``0700`` if it is not there, refused
         if it is found any other way. **ELA does not narrow it by itself**: a folder somebody
-        widened was widened by somebody."""
+        widened was widened by somebody.
+
+        **What the system says of it is a refusal of this adapter's**: a part of its path that is
+        a file, a folder above it that cannot be written. An ``OSError`` names the path in its
+        text — so what leaves names its type, and is raised once the handler of the system's is
+        over, chained to nothing."""
         profile = self._profile
         if profile is None:
             raise ProfileUndeclared(
                 f"{PROFILE_VARIABLE} is not set: write in the .env the absolute path of a folder "
                 "for ELA's browser to keep your sessions in, and restart ELA"
+            )
+        refused: str | None = None
+        try:
+            self._checked(profile)
+        except OSError as error:
+            refused = type(error).__name__
+        if refused is not None:
+            raise ProfileUnsafe(
+                f"the folder of {PROFILE_VARIABLE} cannot be looked at, or made ({refused})"
+            )
+        return profile
+
+    def _checked(self, profile: Path) -> None:
+        if profile.name.startswith(TEMPORARY_PROFILE):
+            raise ProfileUnsafe(
+                f"the folder of {PROFILE_VARIABLE} is named as the temporary profiles ELA takes "
+                "away after it kills a browser: give it another name"
             )
         try:
             found = profile.lstat()
@@ -351,7 +435,7 @@ class AccountChrome(PlaywrightBrowser):
             with contextlib.suppress(FileExistsError):
                 profile.mkdir(mode=PROFILE_MODE, parents=True)
                 profile.chmod(PROFILE_MODE)
-                return profile
+                return
             # Made between the look and the making — by a second opening that came at the same
             # time, or by anybody: looked at again like any folder found, and trusted for nothing.
             found = profile.lstat()
@@ -365,7 +449,18 @@ class AccountChrome(PlaywrightBrowser):
                 f"{stat.S_IMODE(found.st_mode):04o}): ELA wants 0700 and does not narrow it by "
                 "itself — chmod 700 it"
             )
-        return profile
+        # Below the top: where the browser keeps what ELA counts, rewrites and takes away. A link
+        # there would have ELA do all three to the folder it leads to.
+        try:
+            below = (profile / PREFERENCES_FILE[0]).lstat()
+        except FileNotFoundError:
+            return
+        if stat.S_ISLNK(below.st_mode) or not stat.S_ISDIR(below.st_mode):
+            raise ProfileUnsafe(
+                f"`{PREFERENCES_FILE[0]}`, inside the folder of {PROFILE_VARIABLE}, is a link, or "
+                "is not a folder: ELA reads and writes the profile of its own browser, and "
+                "nothing a link leads to"
+            )
 
     def _holder(self, profile: Path) -> str | None:
         """Who holds the folder now: derived, in this order — what this adapter has in flight,
@@ -376,28 +471,44 @@ class AccountChrome(PlaywrightBrowser):
             return PROFILE_WINDOW
         return PROFILE_PROCESS if lock_holder(profile, self._known) is not None else None
 
+    async def _folder(self) -> Path:
+        """The folder, fit to be used: asked of the disk at every call, and **only on the system
+        this browser runs on** — anywhere else no use of it looks at a folder, or makes one."""
+        if self._system != SUPPORTED:
+            raise BrowserUnsupported(self._system)
+        return await asyncio.to_thread(self._usable)
+
     async def _free(self) -> Path:
         """The folder, usable and held by nobody — or the error that says which it is not. No
         wait stands between the look this ends with and what the caller does next."""
-        if self._system != SUPPORTED:
-            raise BrowserUnsupported(self._system)
-        profile = await asyncio.to_thread(self._usable)
+        profile = await self._folder()
         holder = self._holder(profile)
         if holder is not None:
             raise ProfileBusy(holder)
         return profile
 
+    async def _prepare(self, profile: Path, *, driven: bool) -> None:
+        """:func:`_prepared`, in a thread — and what the system says of a folder that cannot be
+        written does not leave: its type, never its text, which names the path."""
+        refused: str | None = None
+        try:
+            await asyncio.to_thread(_prepared, profile, driven=driven)
+        except OSError as error:
+            refused = type(error).__name__
+        if refused is not None:
+            raise BrowserFailed(
+                f"the folder of {PROFILE_VARIABLE} could not be prepared for a launch ({refused})"
+            )
+
     async def occupied(self) -> str | None:
-        if self._system != SUPPORTED:
-            raise BrowserUnsupported(self._system)
-        return self._holder(await asyncio.to_thread(self._usable))
+        return self._holder(await self._folder())
 
     async def linked(self) -> bool:
-        profile = await asyncio.to_thread(self._usable)
+        profile = await self._folder()
         return linked_in(await asyncio.to_thread(_read, profile.joinpath(*PREFERENCES_FILE)))
 
     async def saved(self) -> int:
-        return await asyncio.to_thread(saved_in, await asyncio.to_thread(self._usable))
+        return await asyncio.to_thread(saved_in, await self._folder())
 
     # A page ---------------------------------------------------------------------------------
 
@@ -411,7 +522,7 @@ class AccountChrome(PlaywrightBrowser):
     async def _begun(self, playwright: Playwright) -> tuple[Chromium | None, BrowserContext]:
         profile = self._profile
         assert profile is not None  # noqa: S101 — ``open`` has just found it usable
-        await asyncio.to_thread(_prepared, profile, driven=True)
+        await self._prepare(profile, driven=True)
         context = await playwright.chromium.launch_persistent_context(
             str(profile), **self._launch()
         )
@@ -470,13 +581,27 @@ class AccountChrome(PlaywrightBrowser):
 
     async def window(self, address: str | None) -> None:
         self._refuse_if_stopping()
+        if address is not None and not _of_a_site(address):
+            raise BrowserFailed("the window opens on the address of a site, or on none")
         executable = self._executable()
         if executable is None:
             raise BrowserNotInstalled("the browser ELA uses is not installed")
         profile = await self._free()
+        # From the look of ``_free`` to this there is no wait: a second window, or a page, that
+        # looks now finds this one.
         self._windowing = True
+        launching = asyncio.ensure_future(self._launched(executable, profile, address))
+        launching.add_done_callback(_seen)
+        self._launching = launching
+        # Shielded: whoever asked may go away — a request dropped —, and the launch runs to its
+        # end all the same. A process that exists is the adapter's from its first instant: it is
+        # in the table, the folder is said held, and ELA's close finds it.
+        await asyncio.shield(launching)
+
+    async def _launched(self, executable: Path, profile: Path, address: str | None) -> None:
+        """Start the window, and keep the wait for its end. A task of the adapter's own."""
         try:
-            await asyncio.to_thread(_prepared, profile, driven=False)
+            await self._prepare(profile, driven=False)
             self._refuse_if_stopping()
             try:
                 process = await asyncio.create_subprocess_exec(
@@ -513,7 +638,16 @@ class AccountChrome(PlaywrightBrowser):
         finally:
             stopped.cancel()
             self._window = None
-        await self._ended(address, asyncio.get_running_loop().time() - started)
+        try:
+            await self._ended(address, asyncio.get_running_loop().time() - started)
+        except Exception as error:
+            # Whoever is told may fail — the audit, with a database that went away. Said here,
+            # where it happened, by its type: kept in this task, it would be raised by ELA's
+            # close hours later, in the place of the close.
+            _LOG.error(
+                "the end of a window of ELA's browser could not be told (%s)",
+                type(error).__name__,
+            )
 
     async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
         """What ELA's close waits for, on the profile: the pages, as the empty browser's, **and
@@ -534,13 +668,22 @@ class AccountChrome(PlaywrightBrowser):
 
         try:
             names = await super().settle(the_grace)
+            launching = self._launching
+            if launching is not None and not launching.done():
+                # A window is being started: the folder is not free until that has ended, one way
+                # or the other. The stop is raised, so what it starts is told at once — and is
+                # waited for and killed below, like a window that was already there.
+                await asyncio.wait({launching})
             window, watched = self._window, self._watched
             if watched is None:
                 return names
             if not watched.done():
                 await asyncio.wait({watched, the_grace()}, return_when=asyncio.FIRST_COMPLETED)
             if not watched.done() and window is not None:
-                with contextlib.suppress(ProcessLookupError):
+                # «Not permitted» is what macOS answers for a group whose only process has ended
+                # and is not collected yet (measured): a group with nothing left to kill, like
+                # one that is not there.
+                with contextlib.suppress(ProcessLookupError, PermissionError):
                     os.killpg(window.pid, signal.SIGKILL)
                 names = (*names, WINDOW_NAME)
             await asyncio.wait({watched})
