@@ -431,7 +431,9 @@ class World:
                 self.ela.vault.open(Secret(self.vault.key)), self.loop
             )
             assert opened.result(10) is None
-        if "chiudi la finestra" in said.lower():
+        if "chiudi la finestra" in said.lower() and "pulsante rosso" not in said.lower():
+            # Cmd-Q: the browser quits. With the red button it does not — the window is gone and
+            # the process stays, which is what the step after it is there to show.
             self.accounts.holder = None
 
 
@@ -514,6 +516,11 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     assert accounts.secrets == [("#username", ENTRY.username), ("#current", WORD)], "the login"
     assert accounts.windows == ["https://accounts.google.com/", None], "the two windows"
     assert "BROWSER_WINDOW_OPENED" in events and "VAULT_CLOSED" in events
+    assert len(accounts.shuts) == 1 and "BROWSER_CLOSE_ASKED" in events, (
+        "the window closed with the red button stayed open for ELA, and the command ended it"
+    )
+    step_7 = written.split("—— passo 7 ——", 1)[1].split("—— passo 8 ——", 1)[0]
+    assert "window" in step_7.split("ela browser close", 1)[0], "still open, before the command"
     assert WORD not in written and ENTRY.username not in written
     assert ENTRY.name not in written, "nothing of the vault enters the file"
     disk = [line for line in world.ran if not line.startswith("uv run ela ")]

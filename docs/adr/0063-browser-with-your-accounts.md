@@ -202,9 +202,12 @@ l'errore dell'audit è la risposta.
 
 **`bw lock` è di tutta la macchina**: `ela vault close` chiude anche ciò che Tommaso avesse aperto nel suo
 terminale; e un `bw unlock` di Tommaso finisce la chiave di ELA (misurato, K2), che ELA scopre **al primo uso
-che la incontra**: la dimentica lì, e lo dice. Se nessun uso la incontra prima dell'ora, allo scadere il custode
-chiede comunque `bw lock`, che chiude anche ciò che Tommaso avesse aperto dopo *(è la domanda 81 della
-milestone)*.
+che la incontra**: la dimentica lì, e lo dice. **Allo scadere dell'ora il custode chiede prima lo stato, con
+la sua chiave** (decisione 81, review dell'11 ottobre): se quella chiave non apre più — un `unlock` di Tommaso
+che nessun uso aveva ancora incontrato —, **la dimentica senza chiudere**, e la riga dice «finita altrove»;
+`bw lock` avrebbe chiuso la sessione che Tommaso ha aperto dopo. **Se lo stato non si legge, chiude**: è il
+lato sicuro. Vale dove l'ora scade — nell'attesa del custode, e a un uso che guarda l'orologio —, e non per un
+comando: `ela vault close` è Tommaso che dice «chiudi», e chiude.
 
 **La fermata di ELA la dimentica, e non lancia niente**: `Ela.aclose` chiama la porta prima di portare a riposo
 il browser e prima di rilasciare il database, e ogni passo è raggiunto qualunque cosa abbia sollevato quello
@@ -279,6 +282,30 @@ scrive, non fra quelli che spera da un default altrui; con lui `--disable-sync` 
 video. **ELA non si traveste**: nessuno user agent, nessuno script iniettato, niente che tocchi
 `navigator.webdriver`.
 
+**Ogni lancio nomina il profilo che ELA prepara** (decisione 79, review dell'11 ottobre):
+`--profile-directory=Default`, con il driver e nella finestra. *Misurato lo stesso giorno*, su una cartella con
+due profili del browser di cui il secondo usato per ultimo — ciò che resta dopo che Tommaso ne ha aggiunto uno
+da dentro la finestra —: **senza un nome il browser apre l'ultimo profilo usato**, e un cookie lasciato da un
+passo di ELA finiva nel secondo, le cui preferenze ELA non riscrive e i cui service worker non toglie. Con il
+nome finisce in `Default`, nei tre lanci — la finestra, il lancio guidato, il lancio guidato con la finestra.
+ELA non prepara e non usa gli altri profili; ne conta le password salvate, e lo stato dice quanti sono (§8).
+*Misurato insieme*: **un lancio guidato non ripristina pagine** — né con «continua da dove eri rimasto», né con
+«apri queste pagine», né dopo una finestra uccisa, là dove una finestra riaperta la pagina di prima la richiede
+—: niente carica prima che il cancello esista, e la tabella delle preferenze non guadagna una riga. Poggia sugli
+argomenti con cui Playwright lancia questa versione, che ELA non può togliere: `ignore_default_args` non è fra
+le opzioni dell'elenco chiuso.
+
+**I rapporti di un crash stanno dentro la cartella del profilo** (decisione 74, la stessa review):
+`--breakpad-dump-location=<cartella>/Crashpad`, composto dall'adapter con la cartella — il solo altro argomento
+che la nomina, con `--user-data-dir`. *Misurato lo stesso giorno, facendo cadere il browser*: **in questa
+versione nessun argomento spegne il raccoglitore dei crash** — `--disable-breakpad`, che Playwright passa già
+da sé, sul Mac non è ascoltato: il raccoglitore girava accanto al browser, e un crash scriveva **un minidump di
+più di un megabyte — memoria del processo** — nella cartella predefinita del binario, fuori dal profilo. Con
+questo argomento il suo database nasce nella cartella del profilo e un crash scrive lì e non altrove; il
+raccoglitore parte senza un indirizzo a cui mandare. Le regole della cartella — `0700`, fuori da ciò che si
+sincronizza, mai letta da chi non è il suo adapter — valgono allora anche per ciò che un crash lascia. **ELA
+non legge e non toglie quei file**: la guida dice dove sono.
+
 **La cartella** è `ELA_BROWSER_PROFILE_DIR`, facoltativa e senza default. La legge l'adapter e nessun altro
 modulo di ELA; nessun errore che esce dall'adapter ne porta il percorso — **nemmeno ciò che ne dice il
 sistema**: un `OSError` porta il percorso nel suo testo, ed esce come un errore del browser che ne dice il tipo.
@@ -291,14 +318,15 @@ comparsa fra lo sguardo e la creazione — due aperture insieme, la prima volta 
 sua e mai un link a un'altra: attraverso un link ELA farebbe le stesse cose alla cartella a cui porta — il
 profilo di un altro browser, se è lì che porta. Il file nuovo delle preferenze non è mai scritto attraverso un
 link. Una cartella che porta il nome dei profili temporanei che ELA toglie dopo un'uccisione è rifiutata. *Ciò
-che non è guardato*: una ACL sulla cartella, e i profili che Tommaso aggiungesse da dentro la finestra *(sono le
-domande 78 e 79 della milestone)*.
+che non è guardato* (decisione 78: dichiarato): **una ACL sulla cartella**. «Aperta a nessun altro» è guardato
+sui bit del modo, e una cartella `0700` con una ACL che lascia leggere ad altri passa: leggerla vorrebbe un
+programma del sistema lanciato a ogni sguardo, che sono anche quelli di ogni cattura e di ogni ascolto.
 
 **Chi tiene la cartella si legge dal lock, per il pid**: solo ciò che può essere il pid di un browser — cifre,
 sopra il primo processo del sistema, entro il massimo di un pid — è chiesto al kernel. Un lock che nomina
-altro non l'ha lasciato un browser che gira, e non tiene niente. *Il limite*: un lock rimasto da un browser
-ucciso, il cui pid il sistema ha poi dato a un altro processo, tiene la cartella finché qualcuno non lo toglie
-*(è la domanda 82 della milestone)*.
+altro non l'ha lasciato un browser che gira, e non tiene niente. **E un pid che il kernel conosce tiene la
+cartella solo se la riga di comando di quel processo la nomina** (decisione 82): un lock rimasto da un browser
+ucciso, il cui pid il sistema ha poi dato a un altro processo, non tiene niente — la tabella è in §8.
 
 **Ciò che il profilo non tiene** si riscrive prima di **ogni** lancio, sopra ciò che il file dice — misurato
 sul file che Chrome stesso ha scritto:
@@ -344,8 +372,9 @@ esce** — misurato, il suo messaggio nomina la chiamata con ciò che è stato s
 
 **La finestra** è lo stesso binario sulla stessa cartella **senza niente attaccato**: nessun driver, nessuna
 pipe, nessuna porta; l'uscita non va a nessuno; nasce in un gruppo suo, con l'ambiente chiuso. I suoi argomenti
-sono un elenco chiuso — la cartella, `--use-mock-keychain`, `--no-first-run`, `--no-default-browser-check`,
-`--disable-sync`, `--allow-browser-signin=false`, e un indirizzo se c'è. **L'elenco lo chiude l'adapter,
+sono un elenco chiuso — la cartella, dove vanno i rapporti di un crash, `--use-mock-keychain`,
+`--no-first-run`, `--no-default-browser-check`, `--disable-sync`, `--allow-browser-signin=false`,
+`--profile-directory=Default`, e un indirizzo se c'è. **L'elenco lo chiude l'adapter,
 chiunque lo chiami**: ciò che non è l'indirizzo di un sito — `http` o `https`, con un host, senza un nome né
 una parola dentro — non è passato al binario, dove sarebbe un suo argomento o aprirebbe ciò che non è un sito.
 Che sia `https`, e di un sito dichiarato, lo dice la rotta (§8). ELA ne tiene una cosa sola: l'attesa
@@ -354,9 +383,9 @@ della fine. **Alla fermata di ELA è avvisata** — `SIGTERM`, a cui il browser 
 viva sulla cartella: **il lancio è un compito dell'adapter**, che arriva in fondo anche se chi l'ha chiesto se
 ne va, e che la chiusura aspetta prima di dire libera la cartella. *Misurato il 2026-10-11*: un processo fermo
 che non ha ancora detto che cosa fa di `SIGTERM` ne è terminato subito, dal kernel; un browser fermo quando è
-già su resta fermo, e lo toglie la grazia. *Ciò che resta fuori*: un browser che si rilancia da sé da dentro la
-finestra finisce il processo che ELA aspetta e ne avvia uno che ELA non ha conosciuto — di lui resta il lock
-*(è la domanda 80 della milestone)*.
+già su resta fermo, e lo toglie la grazia. **Un browser che si rilancia da sé da dentro la finestra** finisce
+il processo che ELA aspetta e ne avvia uno che ELA non ha conosciuto: di lui resta il lock, lo stato dice
+`process`, e lo chiude il comando di §8 — non la chiusura di ELA, che avvisa solo ciò che ha avviato.
 
 **La chiusura di ELA** porta a riposo questo adapter come quello del browser vuoto. Un browser del profilo
 ucciso alla grazia **non perde la sua cartella**: l'adapter toglie solo i profili temporanei che Playwright
@@ -366,10 +395,21 @@ misurato, un cookie della pagina del browser ucciso non si ritrova —: è del b
 **Ciò che ELA lascia fuori dalla cartella del profilo** (decisione 47; misurato il 2026-10-11, con la finestra
 lanciata dall'adapter su una cartella di prova). La lista di preferenze di macOS di Chrome for Testing,
 `~/Library/Preferences/com.google.chrome.for.testing.plist`: è dell'applicazione, non di Tommaso, porta una
-chiave sola — `LastRunAppBundlePath` —, e un lancio non la cambia. E la cartella del raccoglitore dei crash,
-`~/Library/Application Support/Google/Chrome for Testing/Crashpad/`, di cui ogni lancio riscrive
-`settings.dat`: nessun rapporto vi è stato scritto, e **le regole della cartella del profilo non la coprono**
-*(è la domanda 74 della milestone)*.
+chiave sola — `LastRunAppBundlePath` —, e un lancio non la cambia. **La cartella predefinita del raccoglitore
+dei crash**, `~/Library/Application Support/Google/Chrome for Testing/Crashpad/`, di cui fino alla review
+dell'11 ottobre ogni lancio riscriveva `settings.dat`: con l'argomento qui sopra **un lancio di ELA non la tocca
+più**, e ciò che vi fosse rimasto è di prima. **E il rapporto che il sistema scrive da sé** quando il processo
+del browser cade: un file in `~/Library/Logs/DiagnosticReports`, come per ogni applicazione — i nomi delle
+funzioni di ogni thread, i registri di quello caduto, le librerie caricate; **niente della memoria del
+processo, non la riga di comando, non il percorso della cartella** (letto su quelli della sonda). Nessun
+argomento del browser lo sposta o lo spegne: si dichiara, e la guida dice come si toglie.
+
+**Dopo un crash della finestra il sistema può riaprire il browser senza gli argomenti di ELA** — misurato una
+volta, l'11 ottobre: cinque secondi dopo il crash provocato della finestra girava un Chrome for Testing senza
+nessun argomento, figlio di `launchd`, sulla sua cartella predefinita e senza `--use-mock-keychain`. Non è sulla
+cartella del profilo, e non è un processo di ELA: lo stato non lo vede e nessun comando lo chiude. Se sia stato
+il sistema da sé o un «Riapri» premuto in un suo dialogo, la sonda non lo distingue *(è la domanda 88 della
+milestone)*.
 
 **Ciò che parte verso Google a ogni lancio** (§57: che cosa, verso chi, perché). Il browser stesso, non una
 lettura di ELA, apre connessioni verso host di Google appena parte — misurato la notte del 2026-10-10:
@@ -466,7 +506,9 @@ aspettano — quale voce ha trovato componendo la domanda. Dopo il sì legge que
 terrebbe adesso. Se ELA è ripartita fra la domanda e il sì il tool non lo sa più: `vault.entry_forgotten`,
 niente è scritto, e lo step si richiede. **Il ricordo è per la chiamata, non per la domanda**: due domande
 nate dalla stessa chiamata che hanno nominato voci diverse — il vault è cambiato in mezzo — non si
-distinguono, e il tool non indovina: lo stesso codice, e niente è scritto. *(È la domanda 73 della milestone.)*
+distinguono, e il tool non indovina: lo stesso codice, e niente è scritto. *Decisa l'11 ottobre (domanda 73):
+resta così — ogni ramo finisce al sicuro, e un sì perso dopo un riavvio è un costo accettato. La forma giusta,
+ciò che il sì ha nominato consegnato al tool con il sì, è un'annotazione di M13.10, la cui SPEC la decide.*
 
 **Il secondo fattore** non entra in ELA: nessun codice a tempo, né preso dal vault. Se dopo il click la pagina
 mostra un campo `one-time-code` e il testo atteso non compare, il verifier fallisce con
@@ -503,13 +545,34 @@ Dichiarazioni aggiunte, nella forma della tabella di ADR 0062 §1:
 
 **Che cosa esce** (§57), riscritto per questa sessione: il fornitore e il perché sono quelli di ADR 0060 §8; i
 dati sono la frase, il sito, le istruzioni di ELA, e **il testo delle pagine lette come Tommaso — contenuto
-suo**. **La policy del fornitore, riletta il 2026-10-11**: la cancellazione entro trenta giorni e le sue
-eccezioni sono quelle di ADR 0060 §8; l'articolo nomina in più i modelli che il fornitore chiama *Covered
-Models*, per i quali la conservazione e una revisione valgono anche dove un accordo le avrebbe tolte, e i
-punteggi di una violazione segnalata, che restano più a lungo degli ingressi. *La rilettura è stata fatta con
-uno strumento che riporta le frasi che gli si chiedono, non con il testo intero: che cosa ha trovato, e che
-cosa non ha trovato, è la domanda 75 della milestone, e questo ADR non esce da Proposta prima che Tommaso abbia
-letto la pagina.* La domanda e l'anteprima di una policy lo dicono nel campo `sends`. Le istruzioni al modello guadagnano
+suo**. **La policy del fornitore, riletta il 2026-10-11, frase per frase, ognuna con la pagina da cui viene e
+la data che quella pagina mostra** (decisione 75):
+
+| Che cosa dice | La pagina | La data che mostra |
+|---|---|---|
+| «we automatically delete inputs and outputs on our backend within 30 days of receipt or generation» — per chi usa l'API, con le sue eccezioni: una conservazione più lunga scelta da chi usa il servizio, un accordo diverso, la Usage Policy, la legge | `privacy.claude.com/en/articles/7996866`, «How long do you store my organization's data?» | 1 luglio 2026 |
+| per ciò che è segnalato come violazione: «We retain inputs and outputs for up to 2 years and trust and safety classification scores for up to 7 years» | la stessa | 1 luglio 2026 |
+| «Additionally, for Covered Models, we require limited data retention and review as a part of our safety work» | la stessa, che rimanda alla pagina qui sotto | 1 luglio 2026 |
+| quali sono: «Mythos-class models and future models with similar capabilities that we designate as covered models»; per loro «Prompts submitted to, and outputs generated by, covered models are retained for 30 days», anche dove un accordo aveva tolto la conservazione; «By default, no Anthropic personnel can read your retained conversations», e una persona le legge solo per un percorso controllato, quando un sistema automatico le segnala; «For all other models, everything you use is unaffected and stays under the current terms» | `privacy.claude.com/en/articles/15425996`, «Data retention practices for Covered Models» | 5 settembre 2026 |
+| **l'addestramento**: «By default, we will not use your inputs or outputs from our commercial products (e.g. Claude for Work, Anthropic API, Claude Gov, etc.) to train our models», salvo ciò che chi usa il servizio segnala espressamente o sceglie di lasciar usare | `privacy.claude.com/en/articles/7996868`, «Is my data used for model training?» | 18 agosto 2026 |
+| lo stesso, nei termini del contratto: «Anthropic may not train models on Customer Content from Services» | `anthropic.com/legal/commercial-terms`, sezione B | in vigore dal 17 giugno 2025 |
+
+**La frase sull'addestramento non sta più dove ADR 0060 §8 l'aveva letta**: sull'articolo della conservazione,
+oggi, non c'è nessuna frase sull'addestramento — tre letture, due dell'11 ottobre con uno strumento che
+riassume e una terza lo stesso giorno, che ha chiesto le frasi fra virgolette —; sta nelle due pagine delle
+ultime due righe, ed è citata da lì. **ADR 0060 §8 si legge con questa tabella accanto.**
+
+**Nessun elenco dei modelli che il fornitore conserva è scritto in ELA**: quali modelli sono «covered» lo dice
+una pagina che cambia, e una copia a mano sarebbe sbagliata il giorno dopo. Ciò che ELA tiene è il modello
+della rotta nei termini di una policy, e **il test che lo tiene dice, nel messaggio con cui fallisce, che chi
+cambia il modello della rotta rilegge la policy del fornitore** per quel modello e la ridata qui. **La
+rilettura sta con quella del listino** (ADR 0061): una persona, entro il **2026-11-07**.
+
+*Come è stata letta*: con uno strumento che scarica la pagina e ne riporta le frasi che gli si chiedono, non
+con il testo intero davanti; le frasi fra virgolette sono quelle che lo strumento ha riportato. **Questo ADR
+non esce da Proposta prima che la prova a mano sia passata e Tommaso abbia letto le pagine per intero.** La
+domanda e l'anteprima di una policy lo dicono nel campo `sends`, che dice che cosa esce e verso chi, non per
+quanto resta. Le istruzioni al modello guadagnano
 una riga: non aprire un indirizzo che conferma, cancella, disiscrive o esce se la frase non lo chiede. **Dentro
 quel sito un modello può aprire qualunque indirizzo come Tommaso**, e la descrizione della capability lo dice.
 
@@ -517,7 +580,7 @@ quel sito un modello può aprire qualunque indirizzo come Tommaso**, e la descri
 riesamina il giorno in cui ELA parte da sola (annotazione per la Fase 15).* Una revoca non ferma una sessione
 già partita: le sue letture come Tommaso continuano fino ai suoi tetti, e l'uscita della revoca lo dice.
 
-### 7. Mentre Tommaso entra a mano, ELA non guarda e non ascolta
+### 7. Mentre Tommaso entra a mano, ELA non comincia a guardare né ad ascoltare
 
 ELA apre una finestra perché Tommaso entri in un sito con le sue mani, e di quella finestra non legge niente
 attraverso il browser: nessun driver, nessuna pipe, nessuna porta (§8). **Quella garanzia è del browser, e
@@ -538,9 +601,11 @@ dentro la corsa, dopo che il sì era speso —, **e dentro la corsa**, dopo gli 
 cosa: una decisione che un grant o una policy ha già permesso non passa dalla domanda. Prima della domanda non
 si guarda nient'altro: il permesso del sistema e lo spazio restano della corsa, com'erano.
 
-**Ciò che è cominciato prima non è fermato.** Il rifiuto guarda il profilo quando una cattura o un ascolto
-comincia: un ascolto già in corso quando la finestra si apre arriva in fondo, e scrive ciò che ha sentito *(è
-la domanda 77 della milestone)*.
+**Ciò che è cominciato prima non è fermato** (decisione 77, review dell'11 ottobre: dichiarato). Il rifiuto
+guarda il profilo quando una cattura o un ascolto comincia: un ascolto già in corso quando la finestra si apre
+arriva in fondo, e scrive ciò che ha sentito. *La frase della decisione 41 — «non guarda e non ascolta» — è
+corretta apertamente, l'11 ottobre 2026: con la finestra aperta ELA **non comincia** a guardare né ad
+ascoltare.* Il titolo di questa sezione e le frasi del prodotto dicono così.
 
 **I tool non imparano che cos'è la finestra.** Ricevono dal punto di composizione una domanda sola — «non
 adesso?» —, che risponde con la ragione o con niente, e la dicono com'è arrivata. La domanda guarda chi tiene il
@@ -564,7 +629,8 @@ tenitore che lascia guardare e ascoltare è uno step di ELA, detto per nome.
 **Nessun codice nel Perception Core** (decisione 49). La sonda legge stato e non contenuto — l'applicazione
 davanti, quante finestre, mai un titolo —, non lo manda a un modello né in un registro, e con la finestra
 aperta direbbe solo ciò che ELA sa già, perché la finestra l'ha aperta lei. *Con la finestra del login aperta
-ELA non legge il contenuto dello schermo e non ascolta; sa che la finestra c'è.*
+ELA non comincia a leggere il contenuto dello schermo né ad ascoltare; sa che la finestra c'è* (la frase della
+decisione 49, con la correzione della 77).
 
 ### 8. La finestra, e le rotte del browser
 
@@ -602,6 +668,12 @@ solo ciò che ha avviato**: la (c) della domanda 80 non è presa.
 ricordato: uno step di ELA, la finestra, o un processo che il lock della cartella nomina. La finestra che
 trova la cartella tenuta non si apre: ELA non lancia un secondo processo su una cartella che ha trovato
 occupata, perché è il lancio che può uccidere il primo.
+
+**Un binario che esce subito** (decisione 83: dichiarato). `window` torna appena il processo è avviato: se
+esce subito — bloccato dal sistema, caduto all'avvio — la rotta ha già scritto l'apertura e la riga di comando
+ha già detto che la finestra è aperta. La riga della chiusura, scritta subito dopo da chi aspetta il processo,
+è vera, e la traccia dice una finestra durata zero secondi. Aspettare prima di dirla aperta vorrebbe una soglia
+di tempo che questa macchina non sa fissare con un fatto.
 
 **Un lock tiene la cartella solo se la riga di comando del suo processo la nomina** (decisione 82, review
 dell'11 ottobre). Un browser ucciso lascia il lock, e il sistema dà quel pid a chi parte dopo: un processo che
@@ -793,7 +865,9 @@ dice, con la sezione di questo ADR a cui guardare.
   per le letture, un tool che riempie un campo segreto, e un ambiente da cui esce anche ciò che fa scrivere il
   driver (§4, §5, e la riga qui sotto).
 - **ADR 0060** §1, §4, §8 e §9 — una seconda capability di sessione, i suoi gesti, le sue risposte di §57; e
-  l'alternativa scartata, che torna come una copertura che non è un grant (§1, §6).
+  l'alternativa scartata, che torna come una copertura che non è un grant (§1, §6). **La quarta risposta di §8,
+  la policy del fornitore, si legge con la tabella di §6 accanto**: la frase sull'addestramento ha oggi un'altra
+  pagina, e l'articolo della conservazione dice cose che lì non c'erano.
 - **ADR 0062** §1 — il mondo chiuso dei termini esteso a `covers` (§1).
 
 Le altre conseguenze:

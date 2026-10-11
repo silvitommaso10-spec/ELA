@@ -6034,18 +6034,44 @@ prenotato com'era al passo 1
 > **Scritta con l'implementazione l'11 ottobre 2026** (`milestones/M13.9.md`, «La prova a mano», con le decisioni 10, 24,
 > 37 e 48), e `tests/docs/test_prova_m13_9.py` tiene lo script allineato a questa sezione. La si fa **sul Mac, senza il
 > PC**, sul branch di M13.9, con lo script `scripts/prova_m13_9.py`: il browser con il profilo, il vault e la finestra del
-> login a mano vivono solo lì. **Non ancora fatta**: [ADR 0063](adr/0063-browser-with-your-accounts.md) resta Proposta
-> finché non passa.
+> login a mano vivono solo lì. **Rivista lo stesso giorno** con le decisioni 72–87 della review sul branch a `8db38f8`:
+> `ela browser close` e il suo passo, dove stanno i rapporti di un crash, e che cosa serve al sito del login.
+> **Non ancora fatta**: [ADR 0063](adr/0063-browser-with-your-accounts.md) resta Proposta finché non passa.
 
 Da M13.9 ELA ha **un secondo browser**: Chrome for Testing su una cartella tua, che **tiene i siti in cui sei entrato**.
 Non è il tuo Chrome, e il tuo profilo ELA non lo apre: in questo entri tu, una volta, **con le tue mani**, nella finestra
 che ELA ti apre — `ela browser open` —; di quella finestra ELA non legge niente attraverso il browser — nessun driver, nessuna
 porta: della cartella guarda solo se il browser conosce un account e quante password ha salvato —, e **finché è aperta
-non comincia a guardare lo schermo né ad ascoltare** (un ascolto partito prima arriva in fondo: è una domanda aperta della
-milestone). **Quando hai finito esci da quel browser con Cmd-Q**: chiudere la sola finestra lo lascia acceso, e per ELA
-la finestra è ancora aperta. Da lì in poi una lettura, un gesto o una sessione «come te» trovano il sito già aperto: sono capability
-nuove, e la loro domanda dice **«as you»**. Le capability del browser vuoto restano com'erano: lì il sito vede un
-visitatore.
+non comincia a guardare lo schermo né ad ascoltare**. *Non comincia*: un ascolto che era già partito quando la finestra
+si apre arriva in fondo, e scrive ciò che ha sentito — se ELA sta ascoltando, aspetta che finisca prima di aprire la
+finestra. **Quando hai finito esci da quel browser con Cmd-Q.** Da lì in poi una lettura, un gesto o una sessione «come
+te» trovano il sito già aperto: sono capability nuove, e la loro domanda dice **«as you»**. Le capability del browser
+vuoto restano com'erano: lì il sito vede un visitatore.
+
+**Il pulsante rosso non basta.** Sul Mac il pulsante rosso chiude la finestra e **lascia il browser acceso**: per ELA è
+ancora aperto — `ela browser status` dice `window` —, ogni passo con il profilo è rifiutato, ed ELA non guarda e non
+ascolta. Lo fa uscire **`ela browser close`**, o il pulsante «Chiudi il browser» nella vista della console, dal Mac: ELA
+lo avvisa, lo aspetta, e solo se dopo cinque secondi è ancora lì lo termina. Vale anche per un browser di ELA che ELA
+non ha avviato adesso — una finestra che si è rilanciata da sé, quella rimasta da un'ELA uccisa: lo stato dice
+`process` —, ma **solo se è il browser di ELA su quella cartella**: qualunque altra cosa ELA non la tocca, e ti dice
+che è tua da chiudere. Uno step che sta lavorando non lo chiude questo comando: si ferma il suo task.
+
+**Nella cartella del profilo ELA usa un profilo solo**, quello con cui il browser nasce. Se dalla finestra ne aggiungi
+un altro, ELA non lo prepara e non lo usa — ogni suo lancio riapre il primo —; `ela browser status` ti dice che ce n'è
+più d'uno, e conta le password salvate in tutti.
+
+**Se il browser di ELA cade** — un crash, non una chiusura — restano due cose, e nessuna è spedita a qualcuno:
+
+- **un rapporto del browser, con memoria del processo**, dentro la cartella del profilo, in `Crashpad/`: sta sotto le
+  stesse regole della cartella, ed ELA non lo legge e non lo toglie. Si svuota così, con il browser di ELA chiuso:
+  `rm -rf "<la cartella del profilo>/Crashpad"` — il browser la ricrea al lancio dopo;
+- **un rapporto di macOS**, come per ogni applicazione, in `~/Library/Logs/DiagnosticReports`, con il nome che comincia
+  per `Google Chrome for Testing`: i nomi delle funzioni e i registri, **niente della memoria e niente della cartella**.
+  Si toglie dal Finder, o con `rm ~/Library/Logs/DiagnosticReports/"Google Chrome for Testing"*`.
+
+**Dopo un crash della finestra macOS può riaprire quel browser da sé** — visto una volta —: quello che ricompare **non è
+di ELA**, non sta sulla tua cartella e non ha le tue sessioni. Esci con Cmd-Q, e riapri la finestra con
+`ela browser open`.
 
 **Le password restano nel tuo vault**, in Bitwarden. ELA non le conosce: quando un piano chiede un login, ELA chiede al
 vault **la sola voce di quel sito**, dopo il tuo sì, la scrive nel campo e non la tiene. **La password principale non
@@ -6086,13 +6112,22 @@ nome di una voce, né un nome utente. **Nella prova si risponde solo nel Termina
 telefono restano chiusi. **Nessun `Ctrl-C`, nessun riavvio** dopo l'avvio: ELA la ferma lo script, all'ultimo passo.
 
 Sul Mac, il `.env` dichiara la cartella del profilo, il programma del vault e i siti — quelli della prova, e **il sito
-del login dal vault, che scegli tu**: uno con il login in una pagina sola, e che non è un sito di soldi:
+del login dal vault, che scegli tu**: uno con il login in una pagina sola, e che non è un sito di soldi. **Scritto con
+il suo host intero**, com'è nella barra degli indirizzi della pagina in cui scrivi la password:
 
 ```
 ELA_BROWSER_PROFILE_DIR=<la cartella del profilo>
 ELA_VAULT_PROGRAM=<il programma del vault>
 ELA_BROWSER_SITES=["www.youtube.com","httpbin.org","accounts.google.com","<il sito del login>"]
 ```
+
+**Che cosa serve a quel sito.** Un passo di `browser.login` sta su **un host solo**: la pagina in cui ELA scrive la
+password deve essere su quell'host, il suo modulo deve mandare con POST, la voce del tuo vault deve portare
+quell'indirizzo, e dopo l'accesso il sito non deve mandarti su un altro host per farti entrare. **Un sito con
+l'accesso centralizzato non va**: `it.wikipedia.org`, misurato l'11 ottobre, manda a `auth.wikimedia.org` per l'accesso
+e poi torna indietro — da `it.wikipedia.org` il modulo non si raggiunge, e il passo finisce `browser.left_site` senza
+scrivere niente. Per saperlo prima: apri la pagina di accesso nel tuo browser e guarda l'host nella barra degli
+indirizzi mentre scrivi la password, e dopo che sei entrato.
 
 **Il piano del login lo scrivi tu**, prima della prova, da `docs/examples/login-from-the-vault.json`: il tuo sito, il
 percorso della sua pagina di login, i selettori del campo del nome utente, di quello della password e del bottone, e un
@@ -6156,8 +6191,8 @@ state unlocked
 
 ### 4. Il primo login a mano
 
-La finestra si apre su un sito di Google. **Con la finestra aperta ELA non guarda lo schermo**: una cattura è rifiutata
-prima della domanda.
+La finestra si apre su un sito di Google. **Con la finestra aperta ELA non comincia a guardare lo schermo**: una cattura
+è rifiutata prima della domanda.
 
 <!-- prova: 4.comando -->
 ```
@@ -6290,7 +6325,8 @@ outcome completed
 ### 7. Il vault chiuso, e il profilo occupato
 
 Con il vault chiuso un login fallisce **prima della domanda**; con la finestra aperta uno step con il profilo fallisce
-**prima della domanda**.
+**prima della domanda**. **E il pulsante rosso**: chiusa così la finestra, il browser resta acceso e lo stato dice ancora
+`window`; `ela browser close` lo fa uscire, e la cartella è libera.
 
 <!-- prova: 7.comando -->
 ```
@@ -6341,7 +6377,28 @@ nessuna
 
 <!-- prova: 7.mano -->
 ```
-Chiudi la finestra del browser di ELA con Cmd-Q.
+Chiudi la finestra del browser di ELA con il pulsante rosso, in alto a sinistra. Non uscire con Cmd-Q: il browser deve restare acceso.
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela browser status
+```
+
+<!-- prova: 7.atteso -->
+```
+state window
+or run `ela browser close`, and ask again
+```
+
+<!-- prova: 7.comando -->
+```
+uv run ela browser close
+```
+
+<!-- prova: 7.atteso -->
+```
+it quit when told: the profile is free
 ```
 
 <!-- prova: 7.comando -->

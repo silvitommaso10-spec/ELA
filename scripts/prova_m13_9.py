@@ -14,7 +14,9 @@ solo ai bordi della macchina, e ha un caso negativo per ogni confronto di questo
 Sette tipi suoi, che la sezione spiega uno per uno:
 
 * ``mano``: ciò che fa Tommaso con le sue mani — incollare una riga nel suo terminale, entrare in
-  un sito nella finestra, chiuderla —; lo script lo dice e aspetta Invio;
+  un sito nella finestra, uscire dal browser, o chiudere la finestra con il pulsante rosso, che
+  lascia il browser acceso (il passo di ``ela browser close``) —; lo script lo dice e aspetta
+  Invio;
 * ``prosegui``: una domanda a Tommaso su ciò che il mondo ha dato; con un «n» la prova si ferma —
   **FERMATO**, non FALLITO — prima di spendere;
 * ``disco``: il disco in RAM su cui le password si spostano — creato, stretto a ``0700``, svuotato,
