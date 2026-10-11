@@ -6049,12 +6049,15 @@ te» trovano il sito già aperto: sono capability nuove, e la loro domanda dice 
 vuoto restano com'erano: lì il sito vede un visitatore.
 
 **Il pulsante rosso non basta.** Sul Mac il pulsante rosso chiude la finestra e **lascia il browser acceso**: per ELA è
-ancora aperto — `ela browser status` dice `window` —, ogni passo con il profilo è rifiutato, ed ELA non guarda e non
-ascolta. Lo fa uscire **`ela browser close`**, o il pulsante «Chiudi il browser» nella vista della console, dal Mac: ELA
-lo avvisa, lo aspetta, e solo se dopo cinque secondi è ancora lì lo termina. Vale anche per un browser di ELA che ELA
-non ha avviato adesso — una finestra che si è rilanciata da sé, quella rimasta da un'ELA uccisa: lo stato dice
-`process` —, ma **solo se è il browser di ELA su quella cartella**: qualunque altra cosa ELA non la tocca, e ti dice
-che è tua da chiudere. Uno step che sta lavorando non lo chiude questo comando: si ferma il suo task.
+ancora aperto — `ela browser status` dice `window` —, ogni passo con il profilo è rifiutato, ed ELA non comincia a
+guardare né ad ascoltare. Lo fa uscire **`ela browser close`**, o il pulsante «Chiudi il browser» nella vista della
+console, dal Mac: ELA lo avvisa — **una volta sola, anche se lo chiedi due volte**: un secondo avviso lo ucciderebbe
+—, lo aspetta, e solo se dopo cinque secondi è ancora lì lo termina. Vale anche per un browser di ELA che ELA non ha
+avviato adesso — una finestra che si è rilanciata da sé, quella rimasta da un'ELA uccisa: lo stato dice `process` —,
+ma **solo se è chiaramente il browser di ELA su quella cartella, senza niente attaccato**: qualunque altra cosa ELA
+non la tocca, e ti dice che è tua da chiudere. Se dopo l'avviso ELA non sa dire che quel browser sia uscito, te lo
+dice — «it was told to quit, and ELA cannot say that it did» — e non lo termina: guarda `ela browser status`. Uno step
+che sta lavorando non lo chiude questo comando: si ferma il suo task.
 
 **Nella cartella del profilo ELA usa un profilo solo**, quello con cui il browser nasce. Se dalla finestra ne aggiungi
 un altro, ELA non lo prepara e non lo usa — ogni suo lancio riapre il primo —; `ela browser status` ti dice che ce n'è
@@ -6069,9 +6072,10 @@ più d'uno, e conta le password salvate in tutti.
   per `Google Chrome for Testing`: i nomi delle funzioni e i registri, **niente della memoria e niente della cartella**.
   Si toglie dal Finder, o con `rm ~/Library/Logs/DiagnosticReports/"Google Chrome for Testing"*`.
 
-**Dopo un crash della finestra macOS può riaprire quel browser da sé** — visto una volta —: quello che ricompare **non è
-di ELA**, non sta sulla tua cartella e non ha le tue sessioni. Esci con Cmd-Q, e riapri la finestra con
-`ela browser open`.
+**Dopo un crash della finestra quel browser può ricomparire da solo** — è successo una volta, in una misura, cinque
+secondi dopo un crash provocato; se l'abbia riaperto macOS da sé o un «Riapri» di un suo dialogo non è stato
+distinto —: quello che ricompare **non è di ELA**, è partito senza gli argomenti di ELA, non sta sulla tua cartella e
+non ha le tue sessioni. Esci con Cmd-Q, e riapri la finestra con `ela browser open`.
 
 **Le password restano nel tuo vault**, in Bitwarden. ELA non le conosce: quando un piano chiede un login, ELA chiede al
 vault **la sola voce di quel sito**, dopo il tuo sì, la scrive nel campo e non la tiene. **La password principale non
@@ -6124,10 +6128,12 @@ ELA_BROWSER_SITES=["www.youtube.com","httpbin.org","accounts.google.com","<il si
 **Che cosa serve a quel sito.** Un passo di `browser.login` sta su **un host solo**: la pagina in cui ELA scrive la
 password deve essere su quell'host, il suo modulo deve mandare con POST, la voce del tuo vault deve portare
 quell'indirizzo, e dopo l'accesso il sito non deve mandarti su un altro host per farti entrare. **Un sito con
-l'accesso centralizzato non va**: `it.wikipedia.org`, misurato l'11 ottobre, manda a `auth.wikimedia.org` per l'accesso
-e poi torna indietro — da `it.wikipedia.org` il modulo non si raggiunge, e il passo finisce `browser.left_site` senza
-scrivere niente. Per saperlo prima: apri la pagina di accesso nel tuo browser e guarda l'host nella barra degli
-indirizzi mentre scrivi la password, e dopo che sei entrato.
+l'accesso centralizzato non va**: la pagina di accesso di `it.wikipedia.org`, misurato l'11 ottobre senza entrare,
+manda a `auth.wikimedia.org` — da `it.wikipedia.org` il cancello ferma quella navigazione e il modulo non si
+raggiunge: un passo di login lì finirebbe `browser.left_site` senza scrivere niente. Che dopo l'accesso si torni
+indietro è come funziona un accesso centralizzato, e non è stato misurato: nessuno è entrato. Per saperlo prima: apri
+la pagina di accesso nel tuo browser e guarda l'host nella barra degli indirizzi mentre scrivi la password, e dopo che
+sei entrato.
 
 **Il piano del login lo scrivi tu**, prima della prova, da `docs/examples/login-from-the-vault.json`: il tuo sito, il
 percorso della sua pagina di login, i selettori del campo del nome utente, di quello della password e del bottone, e un

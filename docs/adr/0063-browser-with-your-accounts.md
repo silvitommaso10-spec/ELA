@@ -385,7 +385,9 @@ ne va, e che la chiusura aspetta prima di dire libera la cartella. *Misurato il 
 che non ha ancora detto che cosa fa di `SIGTERM` ne è terminato subito, dal kernel; un browser fermo quando è
 già su resta fermo, e lo toglie la grazia. **Un browser che si rilancia da sé da dentro la finestra** finisce
 il processo che ELA aspetta e ne avvia uno che ELA non ha conosciuto: di lui resta il lock, lo stato dice
-`process`, e lo chiude il comando di §8 — non la chiusura di ELA, che avvisa solo ciò che ha avviato.
+`process`, e lo chiude il comando di §8 — non la chiusura di ELA, che avvisa solo ciò che ha avviato. *Il
+rilancio da dentro la finestra non è misurato* — non ci sono mani su quella finestra —: ciò che è provato, con
+il binario vero, è una finestra che un'altra ELA ha avviato, vista come `process` e chiusa dal comando.
 
 **La chiusura di ELA** porta a riposo questo adapter come quello del browser vuoto. Un browser del profilo
 ucciso alla grazia **non perde la sua cartella**: l'adapter toglie solo i profili temporanei che Playwright
@@ -605,7 +607,9 @@ si guarda nient'altro: il permesso del sistema e lo spazio restano della corsa, 
 guarda il profilo quando una cattura o un ascolto comincia: un ascolto già in corso quando la finestra si apre
 arriva in fondo, e scrive ciò che ha sentito. *La frase della decisione 41 — «non guarda e non ascolta» — è
 corretta apertamente, l'11 ottobre 2026: con la finestra aperta ELA **non comincia** a guardare né ad
-ascoltare.* Il titolo di questa sezione e le frasi del prodotto dicono così.
+ascoltare.* Il titolo di questa sezione, la guida, l'aiuto di `ela browser` e la didascalia della vista dicono
+così. **I rifiuti dei tool non sono cambiati**: dicono, a chi ha chiesto adesso una cattura o un ascolto, che
+ELA intanto non fotografa, non legge lo schermo, non ascolta — della richiesta che rifiutano, che non parte.
 
 **I tool non imparano che cos'è la finestra.** Ricevono dal punto di composizione una domanda sola — «non
 adesso?» —, che risponde con la ragione o con niente, e la dicono com'è arrivata. La domanda guarda chi tiene il
@@ -659,10 +663,26 @@ gruppo, che è di ELA; e per **un processo che ELA non ha avviato solo se la sua
 lock sulla cartella del profilo** — una finestra che si è rilanciata da sé, quella lasciata da un'ELA uccisa. È
 il controllo che dice anche se la cartella è tenuta: **una funzione sola**, `on_the_folder`, per le due domande
 (sotto). Un processo che ELA non ha avviato è ucciso **per pid, mai per gruppo**, e solo se il sistema,
-richiesto di nuovo allo scadere, dice che è ancora quel browser. **Che cosa il comando non fa**: non finisce uno
+richiesto di nuovo allo scadere **di quel processo — non di ciò che il lock nomina in quel momento** —, dice
+che è ancora quel browser. **Che cosa il comando non fa**: non finisce uno
 step di ELA — quello finisce con il suo task —, e non segnala niente che non sia il browser di ELA: una riga di
 comando che non si è potuta leggere è un dubbio, e il dubbio non riceve segnali. **Alla sua chiusura ELA avvisa
-solo ciò che ha avviato**: la (c) della domanda 80 non è presa.
+solo ciò che ha avviato**: la (c) della domanda 80 non è presa; una fermata di ELA arrivata mentre il comando
+chiedeva al sistema che cosa fosse quel processo non manda nessun segnale, e una arrivata durante la grazia la
+finisce senza uccidere.
+
+**Un browser è avvisato una volta sola, chiunque lo chieda** (rilettura critica del giro; *misurato l'11
+ottobre*, su un lancio senza finestra): un secondo `SIGTERM` arrivato venti millisecondi dopo il primo **uccide
+il browser** — esce con il segnale, dove con uno solo esce da sé —: ha una sola occasione di chiudersi scrivendo
+i suoi cookie. Due click sul pulsante, il comando due volte, o il comando e poi la fermata di ELA sarebbero
+stati un'uccisione prima della grazia, detta «uscito». L'adapter ricorda chi ha avvisato finché non lo vede
+finito; chi chiede di nuovo aspetta con il primo, e riceve la stessa risposta.
+
+**Tre esiti, e un quarto che non è un esito.** `quit`: avvisato, è uscito. `killed`: non è uscito, ed è stato
+ucciso allo scadere. **`told`: è stato avvisato, ed ELA non sa dire che sia uscito** — allo scadere il sistema
+non ha saputo dire che cosa fosse quel processo, o ELA si stava fermando —: non è stato ucciso, perché ELA non
+uccide ciò che non sa nominare, **e non è detto uscito**; il profilo può essere ancora tenuto, e la riga di
+comando dice di guardare lo stato. `nothing`: nessun browser teneva il profilo, e nessuno è stato avvisato.
 
 **Un processo alla volta sul profilo** (decisione 18c). Chi tiene la cartella è derivato a ogni domanda, mai
 ricordato: uno step di ELA, la finestra, o un processo che il lock della cartella nomina. La finestra che
@@ -684,16 +704,22 @@ riga di comando di quel processo (`/bin/ps`, al suo percorso assoluto, con l'amb
 
 | Che cosa dice la riga di comando | La cartella | `ela browser close` |
 |---|---|---|
-| non nomina la cartella, o il processo non c'è più | **libera**: il lock è un resto | niente da chiudere |
-| è il binario del lock, su questa cartella, e non un suo aiutante | tenuta | lo avvisa |
-| nomina la cartella ed è un altro programma | tenuta | rifiuta: non è il browser di ELA |
-| non si è potuta leggere | **tenuta: il dubbio rifiuta** | rifiuta |
+| non nomina nessuna cartella, o ne nomina un'altra con un percorso che parte dalla radice; o il processo non c'è più | **libera**: il lock è un resto | niente da chiudere |
+| è il binario del lock, su questa cartella, non un suo aiutante, **senza niente attaccato**, e il nome della cartella finisce in modo chiaro | tenuta | lo avvisa |
+| nomina la cartella ed è un altro programma; o è il binario del lock **con un driver o una porta attaccati** — un passo di qualcuno, un'altra ELA sulla stessa cartella | tenuta | rifiuta: non è il browser su cui può esserci una mano |
+| nomina una cartella **da dove quel processo sta** — un percorso che non parte dalla radice | **tenuta: il dubbio rifiuta** | rifiuta |
+| non si è potuta leggere; o il sistema non dice niente di un processo che il kernel conosce ancora | **tenuta: il dubbio rifiuta** | rifiuta |
 
-La cartella è cercata come argomento intero, come è scritta e come un percorso si rende piano. *Il limite*: il
-sistema stampa gli argomenti uniti da spazi, e due cartelle i cui nomi differiscono per ciò che segue uno
-spazio non si distinguono — nel verso che tiene la cartella. Ciò che l'adapter stesso ha in volo viene prima
-del lock, ed è **riguardato dopo la risposta del sistema**: fra quello sguardo e chi agisce non c'è nessuna
-attesa.
+**La cartella è riconosciuta come posto, comunque sia scritta** (rilettura critica del giro): con lo slash che
+una shell lascia in fondo, attraverso un link sopra di lei, con altre maiuscole su un volume che le ignora —
+chiesto al sistema quando le due ci sono, confrontato sui percorsi resi piani quando no. Letta come solo testo,
+un browser lanciato a mano con un'altra grafia non la teneva. *Il limite, e da che parte cade*: il sistema
+stampa gli argomenti uniti da spazi, e dove finisce il nome della cartella si prova a ogni spazio. **Finisce in
+modo chiaro quando lo segue uno switch, o niente: solo allora quel processo riceve un segnale**; in ogni altro
+caso tiene la cartella e non è avvisato. Il programma del sistema finisce allo stesso modo per un processo che
+non c'è e per ogni suo errore (misurato): «niente» è creduto solo di un processo che il kernel non conosce più.
+Ciò che l'adapter stesso ha in volo viene prima del lock, ed è **riguardato dopo la risposta del sistema**: fra
+quello sguardo e chi agisce non c'è nessuna attesa.
 
 Rotte nuove, in `ela/api/browser.py`, che raggiunge `CORE` con il token:
 
@@ -713,8 +739,12 @@ l'ha fatto, quante password tiene il suo gestore —, **riletti a ogni richiesta
 63), e «non letto» dove la cartella non si è potuta leggere: non «no», e non «nessuna». **`saved` conta in
 ogni profilo del browser che la cartella contiene, e `profiles` dice quanti sono** (decisione 79): ELA ne
 prepara e ne usa uno, `Default`, che ogni lancio nomina (§4); un secondo è uno che Tommaso ha aggiunto da
-dentro la finestra, e le superfici lo dicono quando c'è. Un profilo è una cartella della cartella — mai un
-link — che tiene il file `Preferences` del browser.
+dentro la finestra, e le superfici lo dicono quando c'è. **I profili sono quelli che il browser stesso elenca**
+— i nomi sotto `profile.info_cache` del suo `Local State`, letti come presenza, mai come il nome di un profilo
+o di chi è —: non ogni cartella con un `Preferences`, perché il browser tiene accanto ai profili cartelle sue
+che non lo sono. Le password si contano in ogni cartella della cartella che ha il suo file. **Ciò a cui porta un
+link non è letto, e non è detto «nessuna»**: un profilo che è un link, o un file delle password che lo è, il
+browser li seguirebbe — per ELA è ciò che non si è potuto contare, e le superfici dicono «non letto».
 
 **Una rotta non apre la cartella e non ne riceve il percorso** (decisione 35): chiede al port, che risponde
 con fatti. Lo tiene la regola 69.
@@ -723,7 +753,7 @@ Errori aggiunti, nella forma della tabella di ADR 0023 §10:
 
 | Caso | Eccezione | Stato |
 |---|---|---|
-| la finestra non si apre: un sito non dichiarato, un profilo su cui nessun browser può partire, o tenuto; o il browser non si chiude: lo tiene uno step, o un processo che non è il browser di ELA | `BrowserRefusedError` | `409` |
+| la finestra non si apre: un sito non dichiarato, un profilo su cui nessun browser può partire, o tenuto; o il browser non si chiude: un profilo di cui ELA non sa dire niente, uno step che lo tiene, un processo che non è il browser di ELA, ELA che si ferma, o un errore del browser | `BrowserRefusedError` | `409` |
 
 Codici aggiunti a `ela.ports.WireCode`:
 
@@ -747,7 +777,8 @@ Un gruppo nuovo della CLI, **`ela browser`**:
 | `ela browser close` | `POST /browser/close` | `0` `1` `2` `3` |
 
 `ela browser open` prende un sito, o niente. `ela browser close` non prende niente, e dice che cosa è stato del
-browser: è uscito quando avvisato, è stato ucciso, o non c'era niente da chiudere — che non è un errore.
+browser: è uscito quando avvisato; è stato ucciso; è stato avvisato ed ELA non sa dire che sia uscito; o non
+c'era niente da chiudere — che non è un errore.
 
 **L'audit**: tipi d'evento nuovi, senza contenuto. `BROWSER_WINDOW_OPENED` lo scrive la rotta che apre la
 finestra, firmato da chi l'ha chiesta, con il sito se c'era. `BROWSER_WINDOW_CLOSED` lo scrive **chi aspetta la
@@ -758,9 +789,12 @@ finestra è rimasta aperta: mai un indirizzo, e niente di ciò che vi è stato f
 senza riga* la finestra di un'ELA uccisa, che nessuno aspetta più, e una fine la cui riga non si scrive: questa
 è detta nel log, con il tipo dell'errore, e non ferma la chiusura di ELA. L'interruttore della finestra non è
 un evento: non apre niente. `BROWSER_CLOSE_ASKED` lo scrive la rotta del comando che chiude, firmato da chi
-l'ha chiesto, **solo quando un processo è stato avvisato**, con che cosa ne è stato — uscito, o ucciso. Per la
-finestra che ELA ha avviato la fine è una riga in più, di chi la aspetta; per un processo che ELA non ha
-avviato è la sola riga che c'è.
+l'ha chiesto, **quando un processo è stato avvisato**, con che cosa ne è stato — uscito, ucciso, o solo
+avvisato — e **con chi teneva il profilo quando il comando ha guardato**: la finestra di ELA, o un processo che
+ELA non aveva avviato. Per la finestra che ELA ha avviato la fine è una riga in più, di chi la aspetta, **e
+viene prima di questa**: la riga del comando è scritta quando il browser è stato avvisato e aspettato, perché
+porta l'esito. Per un processo che ELA non ha avviato è la sola riga che c'è. *Un segnale non si ritira*: se la
+riga non si scrive, l'errore dell'audit è la risposta a chi ha chiesto, e il segnale è partito.
 
 ### 9. La domanda di un login: quale voce, e di chi
 
