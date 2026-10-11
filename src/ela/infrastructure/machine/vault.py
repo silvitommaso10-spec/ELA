@@ -151,9 +151,9 @@ class BitwardenVault:
         said = _read(printed, "status")
         state = said.get("status") if isinstance(said, dict) else None
         del said, printed  # the account's address was in there: it goes no further
-        if state not in STATES:
+        if not isinstance(state, str) or state not in STATES:
             raise VaultFailed("bw status did not say whether the vault is open")
-        return str(state)
+        return state
 
     async def _run(
         self, command: tuple[str, ...], *value: str, key: Secret | None
@@ -174,7 +174,9 @@ class BitwardenVault:
                 env=environment,
                 start_new_session=True,
             )
-        except OSError as error:
+        except (OSError, ValueError) as error:
+            # A ``ValueError`` is Python's, before any process exists: a NUL in the key or in the
+            # value, which no environment and no argument can carry. Its name, and never its text.
             refused = type(error).__name__
         finally:
             del environment

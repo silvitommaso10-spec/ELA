@@ -2610,6 +2610,11 @@ class Secret:
     def __reduce_ex__(self, protocol: object) -> str:
         raise TypeError("a secret is not serialised and not copied")
 
+    def __getstate__(self) -> object:
+        # Every object answers this since Python 3.11, and one with slots answers with their
+        # values: the state is refused like the reduction it would be a part of.
+        raise TypeError("a secret is not serialised and not copied")
+
 
 VAULT_UNAUTHENTICATED: Final = "unauthenticated"
 """No account is signed in to the vault on this machine: its owner has to, with the vault's own

@@ -39,6 +39,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ADDRESS = "the-account-of-the-test@example.invalid"
+HANGS = 120
+"""How long a command that never answers stays, if nobody takes it away: longer than any wait of a
+test, and short enough that one a broken run left behind ends by itself."""
 
 
 def main(arguments: list[str]) -> int:
@@ -62,13 +65,13 @@ def main(arguments: list[str]) -> int:
         print(state["mutter"], file=sys.stderr, flush=True)
     if word in state.get("hang", []):
         child = subprocess.Popen(  # noqa: S603 — the interpreter of the suite, and a sleep
-            [sys.executable, "-c", "import time; time.sleep(600)"],
+            [sys.executable, "-c", f"import time; time.sleep({HANGS})"],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         (HERE / "grandchild").write_text(str(child.pid), encoding="utf-8")
-        time.sleep(600)
+        time.sleep(HANGS)
     if word in state.get("fail", []):
         print("the command failed", file=sys.stderr)
         return 1

@@ -96,8 +96,16 @@ class Bw:
 
 
 @pytest.fixture
-def bw(tmp_path: Path) -> Bw:
-    return Bw(tmp_path)
+def bw(tmp_path: Path) -> Iterator[Bw]:
+    """The ``bw`` of one test — and, when the test is over, nothing of what it started: a test
+    that fails leaves no process either (decision 71)."""
+    made = Bw(tmp_path)
+    try:
+        yield made
+    finally:
+        for pid in (made.grandchild(), *(call["pid"] for call in made.calls())):
+            if pid is not None and running(pid):
+                os.kill(pid, signal.SIGKILL)
 
 
 def vault(bw: Bw, **options: Any) -> Any:
@@ -561,25 +569,20 @@ async def test_a_wait_that_is_cancelled_does_not_leave_bw_running_nor_what_it_st
     made = await opened(bw)
     bw.set(hang=["list"])
     finding = asyncio.create_task(made.find(SITE))
-    try:
-        while bw.grandchild() is None:  # the listing hangs once its own child is started
-            await asyncio.sleep(0.02)
+    while bw.grandchild() is None:  # the listing hangs once its own child is started
+        await asyncio.sleep(0.02)
 
-        finding.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await finding
+    finding.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await finding
 
-        hung, child = bw.calls()[-1]["pid"], bw.grandchild()
-        assert child is not None
-        deadline = asyncio.get_running_loop().time() + 10
-        while (running(hung) or running(child)) and asyncio.get_running_loop().time() < deadline:
-            await asyncio.sleep(0.02)
-        assert not running(hung)
-        assert not running(child), "the child bw started is in its group, and went with it"
-    finally:
-        left = bw.grandchild()
-        if left is not None and running(left):
-            os.kill(left, signal.SIGKILL)  # a test that fails leaves no process either
+    hung, child = bw.calls()[-1]["pid"], bw.grandchild()
+    assert child is not None
+    deadline = asyncio.get_running_loop().time() + 10
+    while (running(hung) or running(child)) and asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.02)
+    assert not running(hung)
+    assert not running(child), "the child bw started is in its group, and went with it"
 
 
 # ----------------------------------------------------------------------------------------
