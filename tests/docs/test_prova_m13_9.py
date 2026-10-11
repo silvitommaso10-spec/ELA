@@ -1,0 +1,810 @@
+"""``scripts/prova_m13_9.py`` against section 28 of the guide (M13.9; the SPEC, «La prova a mano»).
+
+The guide is the source of truth and the script reads it; this file keeps the two aligned, in
+three ways.
+
+**The section and the script are one vocabulary**: every marker is a kind the script knows, every
+kind the script knows is used, every placeholder is one it fills, every plan it sends exists.
+
+**Every comparison has its negative case**: the script's judgements are pure functions, and each
+is called on an answer that passes and on that answer changed.
+
+**The section is walked whole, by the script, against a real ELA** — its routes, its command
+line, its Guardian, its database —, with fakes only at the edge of the machine: the browser with
+the profile, the vault's program, the session's model, ``hdiutil``. What the guide says a command
+prints is what the command printed here; a line of the guide that the CLI stopped printing turns
+this file red. The last step, which stops ELA, is walked on its own with the machine injected.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import importlib.util
+import io
+import json
+import re
+import shlex
+import stat
+import subprocess
+import sys
+from functools import cache
+from pathlib import Path
+from typing import Any
+
+import pytest
+from typer.testing import CliRunner
+
+from ela.cli import client as cli_client
+from ela.cli.app import app as ela_app
+from ela.ports import Field, Secret
+from ela.testing.fakes import FakeAccountBrowser, FakePage, FakeVault, FakeVaultEntry
+from tests.api.guided import Script, call, gesture, guided
+from tests.cli.support import LoopTransport, plain
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "scripts" / "prova_m13_9.py"
+SIBLINGS = ("prova_m6_3c", "prova_m14_1", "prova_m14_2", "prova_m14_3")
+PLACEHOLDER = re.compile(r"<[^>\s][^>]*>")
+LOGIN_PLAN = ROOT / "docs" / "examples" / "login-from-the-vault.json"
+SITES = ["www.youtube.com", "httpbin.org", "accounts.google.com", "example.com"]
+WORD = "-".join(("SENTINEL", "the", "word", "of", "the", "proof"))
+ENTRY = FakeVaultEntry(
+    "11111111-2222-4333-8444-555555555555",
+    "La voce della prova",
+    ("https://example.com/login",),
+    "mario.rossi@example.com",
+    WORD,
+    "m…@example.com",
+)
+
+
+@cache
+def script() -> Any:
+    """The script, loaded as a module with its siblings — and what was in ``sys.modules`` put
+    back, so that no other test finds them there."""
+    before = {name: sys.modules.pop(name, None) for name in SIBLINGS}
+    spec = importlib.util.spec_from_file_location("prova_m13_9", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        for name, found in before.items():
+            sys.modules.pop(name, None)
+            if found is not None:
+                sys.modules[name] = found
+    return module
+
+
+def guide() -> str:
+    return script().GUIDE.read_text(encoding="utf-8")
+
+
+def section() -> str:
+    return str(script().base.section(guide(), script().HEADING))
+
+
+def marked() -> dict[int, list[Any]]:
+    module = script()
+    found: dict[int, list[Any]] = module.base.steps(module.base.blocks(guide(), module.HEADING))
+    return found
+
+
+def block(number: int, kind: str, body: str) -> Any:
+    return script().base.Block(number, kind, body)
+
+
+# ----------------------------------------------------------------------------------------
+# The section and the script are one vocabulary
+# ----------------------------------------------------------------------------------------
+
+
+def test_every_marker_is_a_kind_the_script_knows_and_belongs_to_a_step_of_the_section() -> None:
+    module = script()
+    headings = {int(n) for n in re.findall(r"^### (\d+)\. ", section(), flags=re.MULTILINE)}
+    found = marked()
+
+    assert headings == set(range(1, 11))
+    assert set(found) == set(range(2, 11)), "step 1 is the script's own preconditions"
+    assert {one.kind for blocks in found.values() for one in blocks} <= set(module.KINDS)
+    markers = re.findall(r"<!-- prova: (\d+)\.(\w+) -->", section())
+    assert len(markers) == sum(len(blocks) for blocks in found.values()), "a marker with no block"
+
+
+def test_every_kind_of_the_script_is_used_by_the_section() -> None:
+    used = {one.kind for blocks in marked().values() for one in blocks}
+
+    assert used == set(script().KINDS)
+
+
+def test_it_comes_after_section_27_and_before_where_to_look() -> None:
+    text = guide()
+
+    assert text.index("## 27. ") < text.index("## 28. ") < text.index("## Dove guardare dopo")
+
+
+def test_every_placeholder_is_one_the_script_fills() -> None:
+    module = script()
+    written = {
+        found
+        for blocks in marked().values()
+        for one in blocks
+        for found in PLACEHOLDER.findall(one.body)
+    }
+
+    assert written == set(module.PLACEHOLDERS)
+    assert f"| `{module.LOGIN_PLAN}` |" in guide(), "the legend explains the placeholder"
+
+
+def test_every_plan_the_section_sends_is_an_example_of_the_repository() -> None:
+    module = script()
+    plans = {
+        plan
+        for blocks in marked().values()
+        for one in blocks
+        for line in one.lines
+        for plan in module.guided.PLAN_FILE.findall(line)
+    }
+
+    assert plans and all((ROOT / plan).is_file() for plan in plans)
+    assert module.SESSION_PLAN.relative_to(ROOT).as_posix() in plans
+    assert module.arguments_of(module.SESSION_PLAN)["sites"] == ["www.youtube.com"]
+    with pytest.raises(ValueError, match="not a session of"):
+        module.arguments_of(ROOT / "docs" / "examples" / "guided-youtube.json")
+
+
+def test_every_line_of_the_scripts_kinds_is_in_its_vocabulary() -> None:
+    module = script()
+    by_kind: dict[str, list[Any]] = {}
+    for blocks in marked().values():
+        for one in blocks:
+            by_kind.setdefault(one.kind, []).append(one)
+
+    assert all(float(one.lines[0]) > 0 for one in by_kind["misura"])
+    assert all(int(one.lines[0]) > 0 and len(one.lines) == 2 for one in by_kind["disco"])
+    assert {one.lines[0] for one in by_kind["chiude"]} <= set(module.SIGNALS)
+    assert {one.body for one in by_kind["coperte"]} == {"browser.read_as_you"}
+    assert {one.body for one in by_kind["domanda"]} == {module.NOBODY, module.LOGIN}
+    assert max(marked()) == 10 and marked()[10][-1].kind == "chiude", "the stop of ELA is last"
+
+
+def test_the_sites_of_the_proof_are_the_ones_the_section_tells_the_user_to_declare() -> None:
+    declared = re.search(r"^ELA_BROWSER_SITES=(\[.*\])$", section(), flags=re.MULTILINE)
+
+    assert declared is not None
+    assert json.loads(declared.group(1))[:-1] == list(script().SITES)
+
+
+def test_the_file_is_in_downloads_with_the_name_of_the_milestone() -> None:
+    out = script().default_out()
+
+    assert out.parent == Path.home() / "Downloads" and out.name.startswith("prova-m13.9-")
+    assert "`prova-m13.9-`" in section()
+
+
+# ----------------------------------------------------------------------------------------
+# Every comparison, with its negative case
+# ----------------------------------------------------------------------------------------
+
+
+def test_a_question_is_waiting_or_not_and_of_the_capability_the_block_names() -> None:
+    module = script()
+    mine = {"task_id": "t-1", "capability_id": "browser.login"}
+    other = {"task_id": "t-2", "capability_id": "browser.login"}
+
+    assert module.question_failures(module.NOBODY, [other], "t-1") == []
+    assert module.question_failures(module.NOBODY, [mine, other], "t-1")
+    assert module.question_failures("browser.login", [mine, other], "t-1") == []
+    assert module.question_failures("browser.login", [other], "t-1")
+    assert module.question_failures("browser.act_as_you", [mine], "t-1")
+    assert module.question_failures("browser.login", [mine, mine], "t-1")
+
+
+def a_child(identity: str, capability: str, state: str = "COMPLETED") -> dict[str, Any]:
+    return {"id": identity, "state": state, "steps": [{"required_capabilities": [capability]}]}
+
+
+def test_a_reading_is_covered_only_by_one_decision_of_the_session() -> None:
+    module = script()
+    read, act = a_child("c-1", "browser.read_as_you"), a_child("c-2", "browser.act_as_you")
+    covered = {"c-1": [("ALLOWED", "SESSION")], "c-2": [("REQUIRES_APPROVAL", "RISK")]}
+
+    assert module.covered_failures("browser.read_as_you", [read, act], covered) == []
+    assert module.covered_failures("browser.read_as_you", [act], covered), "nothing was read"
+    asked = {"c-1": [("REQUIRES_APPROVAL", "RISK"), ("ALLOWED", "AUTHORIZATION")]}
+    assert module.covered_failures("browser.read_as_you", [read], asked), "a yes is not a cover"
+    assert module.covered_failures("browser.read_as_you", [read], {}), "no decision at all"
+    denied = a_child("c-1", "browser.read_as_you", "DENIED")
+    assert module.covered_failures("browser.read_as_you", [denied], covered)
+
+
+def test_the_decisions_of_a_child_are_read_from_its_audit_in_order() -> None:
+    audit = [
+        {"event_type": "TASK_CREATED", "payload": {}},
+        {"event_type": "PERMISSION_DECIDED", "payload": {"outcome": "ALLOWED", "rule": "SESSION"}},
+    ]
+
+    assert script().decided(audit) == [("ALLOWED", "SESSION")]
+    assert script().decided(audit[:1]) == []
+
+
+def test_the_listing_is_a_difference_and_it_reopens_above_the_threshold_only() -> None:
+    module = script()
+
+    assert module.listing(2.5, 6.0) == 3.5
+    assert module.listing(4.0, 3.0) == 0.0, "a difference is never below nothing"
+    assert not module.reopens(10.0, 10.0), "at the threshold the line passes"
+    assert module.reopens(10.1, 10.0)
+
+
+def test_the_ram_disk_is_sized_named_and_looked_for_after_it_is_detached() -> None:
+    module = script()
+
+    assert module.blocks_of(64) == 131072
+    assert module.device_of("/dev/disk9          \n") == "/dev/disk9"
+    assert module.device_of("hdiutil: attach failed") is None
+    assert module.still_there(False, "/dev/disk1 /dev/disk2", "/dev/disk9") == []
+    assert module.still_there(True, "", "/dev/disk9")
+    assert module.still_there(False, "image-path : ram://131072\n/dev/disk9", "/dev/disk9")
+
+
+def test_after_the_stop_ela_is_gone_and_no_live_process_holds_the_profile() -> None:
+    module = script()
+
+    assert module.lock_pid("the-mac.local-4321") == 4321
+    assert module.lock_pid(None) is None and module.lock_pid("no-pid-here-x") is None
+    assert module.left_running(True, None, lambda pid: True) == []
+    assert module.left_running(True, "mac-4321", lambda pid: False) == [], "a dead holder is none"
+    assert module.left_running(False, None, lambda pid: False), "ELA did not end"
+    assert module.left_running(True, "mac-4321", lambda pid: pid == 4321), "the folder is held"
+
+
+def test_the_plan_of_the_login_is_one_step_of_login_on_a_declared_site() -> None:
+    module = script()
+    plan = json.loads(LOGIN_PLAN.read_text(encoding="utf-8"))
+
+    assert module.login_plan_failures(plan, ["example.com"]) == []
+    assert module.login_plan_failures(plan, ["www.youtube.com"]), "its site is not declared"
+    other = json.loads((ROOT / "docs/examples/act-as-you.json").read_text(encoding="utf-8"))
+    assert module.login_plan_failures(other, ["httpbin.org"]), "not a login"
+    assert module.login_plan_failures({"steps": []}, ["example.com"])
+
+
+def test_a_proof_with_a_reopened_measure_has_not_passed_and_says_so() -> None:
+    module = script()
+    clean, reopened = module.Report(io.StringIO()), module.Report(io.StringIO())
+    for report in (clean, reopened):
+        report.passed(2, "una cosa")
+    reopened.reopens(6, "l'elenco 12.0 s")
+    clean.verdict()
+    reopened.verdict()
+
+    assert clean.ok and clean.lines[-1] == "La prova è passata."
+    assert not reopened.ok
+    assert "[6] RIAPRE: l'elenco 12.0 s" in reopened.lines
+    assert reopened.lines[-1] == "La prova non è passata: un RIAPRE al passo 6."
+    assert "RIAPRE: 1" in reopened.lines[-2]
+
+
+# ----------------------------------------------------------------------------------------
+# The section walked whole, by the script, against a real ELA
+# ----------------------------------------------------------------------------------------
+
+
+class World:
+    """The edge of the machine of one walk: what ``base.run`` is asked — the command line of ELA
+    answered in process, ``hdiutil`` and its friends by a fake —, and Tommaso's hands."""
+
+    def __init__(self, ela: Any, accounts: FakeAccountBrowser, vault: FakeVault, loop: Any) -> None:
+        self.ela, self.accounts, self.vault, self.loop = ela, accounts, vault, loop
+        self.ran: list[str] = []
+        self.asked: list[str] = []
+        self.last_hand = ""
+
+    def run(self, line: str) -> subprocess.CompletedProcess[str]:
+        self.ran.append(line)
+        prefix = "uv run ela "
+        if line.startswith(prefix):
+            done = CliRunner().invoke(ela_app, shlex.split(line.removeprefix(prefix)))
+            return subprocess.CompletedProcess(line, done.exit_code, plain(done.output), "")
+        printed = "/dev/disk9\n" if line.startswith("hdiutil attach") else ""
+        return subprocess.CompletedProcess(line, 0, printed, "")
+
+    def ask(self, question: str) -> str:
+        """Tommaso: a yes to every question, and at «Premi Invio» the thing his hands were asked
+        for — said by the ``A TE`` line the script wrote just before."""
+        self.asked.append(question)
+        if "Premi Invio" in question:
+            self.hands()
+        return "s"
+
+    def hands(self) -> None:
+        said = self.last_hand
+        if "password principale" in said:
+            opened = asyncio.run_coroutine_threadsafe(
+                self.ela.vault.open(Secret(self.vault.key)), self.loop
+            )
+            assert opened.result(10) is None
+        if "chiudi la finestra" in said.lower():
+            self.accounts.holder = None
+
+
+def a_page() -> FakePage:
+    return FakePage(
+        fields={
+            "#username": Field("text", "username", "post"),
+            "#current": Field("password", "current-password", "post"),
+            "button[type=submit]": Field("submit", "", "post"),
+        },
+        texts={None: "Le tue iscrizioni: un canale. Esci. ELA prova 9139"},
+    )
+
+
+async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_passes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Steps 2 to 9, as written in the guide, run by the script itself. Every ``atteso`` of the
+    section is judged on what ELA's own command line printed."""
+    module = script()
+    program = tmp_path / "bw"
+    program.write_bytes(b"\xcf\xfa\xed\xfe a native program")
+    program.chmod(program.stat().st_mode | stat.S_IXUSR)
+    accounts, vault = FakeAccountBrowser(a_page()), FakeVault([ENTRY], state="locked")
+    turns = Script([call(), gesture("read", site="www.youtube.com", path="/feed/channels"), call()])
+    async with guided(
+        monkeypatch,
+        tmp_path,
+        turns,
+        accounts=accounts,
+        vault=vault,
+        ELA_BROWSER_SITES=json.dumps(SITES),
+        ELA_VAULT_PROGRAM=str(program),
+    ) as g:
+        loop = asyncio.get_running_loop()
+        transport = LoopTransport(g.app, loop)
+        monkeypatch.setattr(
+            cli_client,
+            "connect",
+            lambda: cli_client.open_client(g.ela.settings.api, transport=transport),
+        )
+        world = World(g.ela, accounts, vault, loop)
+        monkeypatch.setattr(module.base, "run", world.run)
+        report = module.Report(io.StringIO())
+        say = report.say
+
+        def said(text: str = "") -> None:
+            if "A TE:" in text:
+                world.last_hand = text
+            say(text)
+
+        report.say = said  # type: ignore[method-assign]
+
+        def walk() -> None:
+            api = module.base.Api()
+            proof = module.Proof(
+                api,
+                report,
+                world.ask,
+                module.spending.Ledger.of(api.get("/spend")),
+                login=LOGIN_PLAN,
+            )
+            todo = {number: blocks for number, blocks in marked().items() if number < 10}
+            try:
+                module.base.walk(
+                    report, todo, lambda number, its: module.a_step(number, its, proof)
+                )
+            finally:
+                api.close()
+
+        await asyncio.wait_for(asyncio.to_thread(walk), 120)
+        events = [event.event_type.value for event in await g.ela.audit.read()]
+
+    written = "\n".join(report.lines)
+    assert report.ok, written
+    assert report.failures == 0 and report.stopped is None and report.lost_at is None
+    assert accounts.secrets == [("#username", ENTRY.username), ("#current", WORD)], "the login"
+    assert accounts.windows == ["https://accounts.google.com/", None], "the two windows"
+    assert "BROWSER_WINDOW_OPENED" in events and "VAULT_CLOSED" in events
+    assert WORD not in written and ENTRY.username not in written
+    assert ENTRY.name not in written, "nothing of the vault enters the file"
+    assert any(line.startswith("hdiutil detach /dev/disk9") for line in world.ran)
+
+
+async def test_a_line_of_the_guide_the_command_line_does_not_print_is_a_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The negative case of the walk: one ``atteso`` changed, and the same script on the same ELA
+    reports it — FALLITO, with what was printed."""
+    module = script()
+    async with guided(
+        monkeypatch, tmp_path, Script([]), accounts=FakeAccountBrowser(), vault=None
+    ) as g:
+        loop = asyncio.get_running_loop()
+        transport = LoopTransport(g.app, loop)
+        monkeypatch.setattr(
+            cli_client,
+            "connect",
+            lambda: cli_client.open_client(g.ela.settings.api, transport=transport),
+        )
+        world = World(g.ela, FakeAccountBrowser(), FakeVault(), loop)
+        monkeypatch.setattr(module.base, "run", world.run)
+        report = module.Report(io.StringIO())
+
+        def walk() -> None:
+            api = module.base.Api()
+            proof = module.Proof(
+                api, report, world.ask, module.spending.Ledger.of(api.get("/spend"))
+            )
+            todo = {
+                7: [
+                    block(7, "comando", "uv run ela browser status"),
+                    block(7, "atteso", "state window"),
+                ]
+            }
+            try:
+                module.base.walk(
+                    report, todo, lambda number, its: module.a_step(number, its, proof)
+                )
+            finally:
+                api.close()
+
+        await asyncio.wait_for(asyncio.to_thread(walk), 60)
+
+    assert report.failures == 1 and not report.ok
+    assert any("FALLITO: mancano ['state window']" in line for line in report.lines)
+
+
+# ----------------------------------------------------------------------------------------
+# The kinds whose machine is injected
+# ----------------------------------------------------------------------------------------
+
+
+class Answers:
+    """An API that answers what the test wrote, by path: each answer once and the last for ever."""
+
+    def __init__(self, answers: dict[str, list[Any]]) -> None:
+        self.answers = {path: list(found) for path, found in answers.items()}
+
+    def get(self, path: str) -> Any:
+        found = self.answers[path]
+        return found.pop(0) if len(found) > 1 else found[0]
+
+    def close(self) -> None:
+        return None
+
+
+class Running:
+    """The run of a step in the background: over, or not."""
+
+    def __init__(self, code: int | None) -> None:
+        self.code = code
+
+    def poll(self) -> int | None:
+        return self.code
+
+
+def a_proof(answers: dict[str, list[Any]], said: list[str] | None = None) -> Any:
+    module = script()
+    answered = list(said or [])
+    return module.Proof(
+        api=Answers(answers),
+        report=module.Report(io.StringIO()),
+        ask=lambda question: answered.pop(0) if answered else "s",
+        start=module.spending.Ledger.of({"cap": "30", "spent": "0", "reserved": "0", "open": 0}),
+    )
+
+
+def stopping(monkeypatch: pytest.MonkeyPatch, *, lock: str | None, dies: bool) -> list[Any]:
+    """ELA as a process the test owns: pid 777, alive until it is signalled — or for ever."""
+    module = script()
+    signalled: list[Any] = []
+    monkeypatch.setattr(module, "ela_pid", lambda: 777)
+    monkeypatch.setattr(module, "alive", lambda pid: pid != 777 or not (signalled and dies))
+    monkeypatch.setattr(module, "profile_lock", lambda: lock)
+    monkeypatch.setattr(module, "EXIT_SECONDS", 0.2)
+    monkeypatch.setattr(module.base, "started", lambda line: Running(None))
+    monkeypatch.setattr(module.os, "kill", lambda pid, number: signalled.append((pid, number)))
+    return signalled
+
+
+def test_ela_is_stopped_once_a_step_holds_the_profile_and_nothing_is_left(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = script()
+    signalled = stopping(monkeypatch, lock=None, dies=True)
+    proof = a_proof({"/browser": [{"state": "free"}, {"state": "free"}, {"state": "step"}]})
+    turn = module.guided.Turn(task_id="t-1")
+
+    module.a_step(10, [block(10, "chiude", "SIGINT")], proof, turn)
+
+    assert signalled == [(777, module.signal.SIGINT)], "one signal, once the profile was held"
+    assert proof.report.ok, proof.report.lines
+    assert any("PASSATO: ELA è uscita" in line for line in proof.report.lines)
+
+
+@pytest.mark.parametrize(
+    ("lock", "dies", "says"),
+    [
+        (None, False, "ELA non è uscita"),
+        ("mac-888", True, "ancora tenuta dal processo 888"),
+    ],
+)
+def test_an_ela_that_stays_or_a_folder_still_held_is_a_failure(
+    monkeypatch: pytest.MonkeyPatch, lock: str | None, dies: bool, says: str
+) -> None:
+    module = script()
+    stopping(monkeypatch, lock=lock, dies=dies)
+    proof = a_proof({"/browser": [{"state": "step"}]})
+
+    module.a_step(10, [block(10, "chiude", "SIGINT")], proof, module.guided.Turn(task_id="t-1"))
+
+    assert proof.report.failures == 1
+    assert any(says in line for line in proof.report.lines)
+
+
+def test_a_step_that_ended_before_it_held_the_profile_is_skipped_and_ela_is_left_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = script()
+    signalled = stopping(monkeypatch, lock=None, dies=True)
+    monkeypatch.setattr(module.base, "started", lambda line: Running(0))
+    proof = a_proof({"/browser": [{"state": "free"}]})
+
+    module.a_step(10, [block(10, "chiude", "SIGINT")], proof, module.guided.Turn(task_id="t-1"))
+
+    assert signalled == [] and proof.report.skipped_steps == [10]
+
+
+def test_a_signal_the_section_does_not_know_and_a_kind_it_does_not_have_are_the_guides_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = script()
+    stopping(monkeypatch, lock=None, dies=True)
+    proof = a_proof({"/browser": [{"state": "step"}]})
+
+    with pytest.raises(ValueError, match="vocabulary of chiude"):
+        module.a_step(10, [block(10, "chiude", "SIGKILL")], proof, module.guided.Turn())
+    with pytest.raises(ValueError, match="not a kind of the section"):
+        module.a_step(2, [block(2, "fascia", "<id>")], proof)
+
+
+def test_a_no_to_what_the_world_gave_stops_the_proof_and_is_not_a_failure() -> None:
+    """Decision 50: FERMATO, before the session and its spending."""
+    module = script()
+    proof = a_proof({}, said=["n"])
+
+    module.base.walk(
+        proof.report,
+        {5: [block(5, "prosegui", "Il testo porta i tuoi canali?")], 8: [block(8, "mano", "x")]},
+        lambda number, its: module.a_step(number, its, proof),
+    )
+
+    assert proof.report.stopped == (5, module.SAID_NO)
+    assert proof.report.failures == 0 and not proof.report.ok
+    assert not any("passo 8" in line for line in proof.report.lines), "nothing after it was done"
+
+
+def measured(monkeypatch: pytest.MonkeyPatch, seconds: list[float], printed: str) -> Any:
+    module = script()
+    clock = iter(seconds)
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(
+        module.base, "run", lambda line: subprocess.CompletedProcess(line, 0, printed, "")
+    )
+    proof = a_proof({})
+    module.base.walk(
+        proof.report,
+        {6: [block(6, "misura", "10")]},
+        lambda number, its: module.a_step(number, its, proof, module.guided.Turn(task_id="t-1")),
+    )
+    return proof.report
+
+
+def test_the_measure_writes_three_numbers_and_passes_under_the_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = measured(monkeypatch, [0.0, 2.5, 10.0, 16.0], "outcome  waiting_approval")
+
+    assert report.ok, report.lines
+    assert any(
+        "status 2.5 s, fino alla domanda 6.0 s, l'elenco per differenza 3.5 s" in line
+        for line in report.lines
+    )
+
+
+def test_a_listing_above_the_threshold_reopens_and_the_proof_has_not_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = measured(monkeypatch, [0.0, 2.0, 10.0, 23.0], "outcome  waiting_approval")
+
+    assert report.reopened == [6] and not report.ok and report.failures == 0
+
+
+def test_a_login_that_did_not_reach_its_question_has_nothing_to_measure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = measured(monkeypatch, [0.0, 2.0, 10.0, 12.0], "outcome  failed")
+
+    assert report.failures == 1 and report.stopped is not None and report.reopened == []
+
+
+def test_a_ram_disk_that_is_not_born_or_is_still_there_is_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = script()
+    body = "64\nEsporta e importa."
+
+    def with_run(run: Any) -> Any:
+        monkeypatch.setattr(module.base, "run", run)
+        proof = a_proof({})
+        module.base.walk(
+            proof.report,
+            {2: [block(2, "disco", body)]},
+            lambda number, its: module.a_step(number, its, proof),
+        )
+        return proof.report
+
+    def answer(line: str, printed: str = "", code: int = 0) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(line, code, printed, "")
+
+    unborn = with_run(lambda line: answer(line, "hdiutil: attach failed", 1))
+    left = with_run(lambda line: answer(line, "/dev/disk9\n" if line.startswith("hdiutil") else ""))
+
+    assert unborn.failures == 1 and unborn.stopped is not None
+    assert left.failures == 1, "hdiutil info still names the device"
+    assert any("il dispositivo /dev/disk9 c'è ancora" in line for line in left.lines)
+
+
+# ----------------------------------------------------------------------------------------
+# Step 1, and the whole
+# ----------------------------------------------------------------------------------------
+
+
+def test_the_margin_and_the_plan_of_the_login_say_what_is_missing(tmp_path: Path) -> None:
+    module = script()
+    broken = tmp_path / "broken.json"
+    broken.write_text("{", encoding="utf-8")
+
+    assert module.margin_short("5.00", module.Decimal("0.60")) is None
+    assert "ne chiede 0.60" in str(module.margin_short("0.10", module.Decimal("0.60")))
+    assert module.margin_short(None, module.Decimal("0.60")) is not None
+    assert "--login" in str(module.login_plan_ready(None))
+    assert "non si legge" in str(module.login_plan_ready(broken))
+
+
+def step_1(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **changed: Any
+) -> tuple[Any, list[str]]:
+    """Step 1 on a world of the test's: the routes answer what a ready ELA answers — or that
+    changed —, ``codesign`` and ``tmutil`` are the fake's, and the folder of the profile is a
+    real folder of the test."""
+    module = script()
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=changed.pop("mode", 0o700))
+    profile.chmod(profile.stat().st_mode)
+    program = tmp_path / "bw"
+    program.write_bytes(b"a native program")
+    signed, excluded = changed.pop("signed", True), changed.pop("excluded", True)
+    answers = {
+        "/health": [{"status": "ok"}],
+        "/openapi.json": [{"paths": {"/browser": {}, "/vault": {}}}],
+        "/spend": [{"cap": "30", "left": "30", "spent": "0", "reserved": "0", "open": 0}],
+        "/browser": [{"state": "free", "message": ""}],
+        "/vault": [{"state": "locked", "program": str(program), "message": "the vault is locked"}],
+        **{path: [answer] for path, answer in changed.items()},
+    }
+    ran: list[str] = []
+
+    def run(line: str) -> subprocess.CompletedProcess[str]:
+        ran.append(line)
+        if line.startswith("codesign"):
+            return subprocess.CompletedProcess(line, 0 if signed else 1, "", "")
+        printed = "[Excluded]" if excluded and "isexcluded" in line else "[Included]"
+        return subprocess.CompletedProcess(line, 0, printed, "")
+
+    monkeypatch.setattr(module.base, "Api", lambda: Answers(answers))
+    monkeypatch.setattr(module.base, "run", run)
+    monkeypatch.setattr(module.planning, "on_origin", lambda: None)
+    monkeypatch.setattr(module.guided, "route_model", lambda: module.MODEL)
+    monkeypatch.setattr(module.spending, "keyed", lambda: True)
+    monkeypatch.setenv("ELA_BROWSER_SITES", json.dumps(SITES))
+    monkeypatch.setenv("ELA_BROWSER_PROFILE_DIR", str(profile))
+    report = module.Report(io.StringIO())
+    module.preconditions(report, LOGIN_PLAN)
+    return report, ran
+
+
+def test_step_1_passes_on_a_ready_world_and_writes_the_digest_of_the_vaults_program(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = script()
+
+    report, ran = step_1(monkeypatch, tmp_path)
+
+    assert report.stopped is None, report.lines
+    assert report.passes == {1: 12}
+    digest = module.hashlib.sha256(b"a native program").hexdigest()
+    assert f"    lo sha256 del programma del vault: {digest}" in report.lines
+    assert any(line.startswith("tmutil addexclusion") for line in ran), (
+        "the script asks, then looks"
+    )
+    assert any(f"-R='{module.BITWARDEN}'" in line for line in ran), "the maker's team, by codesign"
+
+
+NOT_READY = [
+    pytest.param(
+        {"/vault": {"state": "unlocked", "program": "/x", "message": ""}},
+        "il vault è chiuso",
+        id="a-vault-already-open",
+    ),
+    pytest.param({"signed": False}, "firmato da Bitwarden", id="a-program-nobody-signed"),
+    pytest.param(
+        {"/browser": {"state": "window", "message": "its window is open"}},
+        "nessuno lo tiene",
+        id="a-profile-held",
+    ),
+    pytest.param({"mode": 0o755}, "la cartella del profilo è 0700", id="a-folder-open-to-others"),
+    pytest.param({"excluded": False}, "Time Machine la esclude", id="a-folder-time-machine-copies"),
+    pytest.param(
+        {"/openapi.json": {"paths": {"/vault": {}}}},
+        "il Core gira dal codice del branch",
+        id="an-older-core",
+    ),
+    pytest.param(
+        {"/spend": {"cap": "30", "left": "0.10", "spent": "0", "reserved": "0", "open": 0}},
+        "restano almeno",
+        id="a-month-with-no-room",
+    ),
+]
+
+
+@pytest.mark.parametrize(("changed", "what"), NOT_READY)
+def test_step_1_stops_at_the_first_thing_the_world_lacks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, changed: dict[str, Any], what: str
+) -> None:
+    """Each negative starts from the ready world and changes one thing: FERMATO, with what."""
+    report, _ = step_1(monkeypatch, tmp_path, **changed)
+
+    assert report.stopped is not None and report.stopped[0] == 1
+    assert what in report.stopped[1], report.stopped
+    assert not any("sha256" in line for line in report.lines), "nothing is vouched for after a stop"
+
+
+def test_main_stops_at_step_1_and_the_file_says_what_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = script()
+
+    def fallen(report: Any, login: Path | None) -> bool:
+        report.stop(1, "la prova richiede «ELA risponde», e non è così")
+        return False
+
+    monkeypatch.setattr(module, "preconditions", fallen)
+    out = tmp_path / "prova.txt"
+
+    code = module.main(["--out", str(out), "--login", str(LOGIN_PLAN)])
+
+    written = out.read_text(encoding="utf-8")
+    assert code == 1
+    assert written.startswith("La prova a mano di M13.9, ")
+    assert "[1] FERMATO: la prova richiede «ELA risponde»" in written
+    assert "La prova non è passata" in written
+
+
+def test_main_walks_every_step_of_the_section_when_step_1_holds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = script()
+    walked: list[list[int]] = []
+    monkeypatch.setattr(module, "preconditions", lambda report, login: True)
+    monkeypatch.setattr(
+        module.base,
+        "Api",
+        lambda: Answers({"/spend": [{"cap": "30", "spent": "0", "reserved": "0", "open": 0}]}),
+    )
+    monkeypatch.setattr(module.base, "walk", lambda report, todo, one: walked.append(sorted(todo)))
+
+    code = module.main(["--out", str(tmp_path / "prova.txt"), "--login", str(LOGIN_PLAN)])
+
+    assert code == 0 and walked == [list(range(2, 11))]
