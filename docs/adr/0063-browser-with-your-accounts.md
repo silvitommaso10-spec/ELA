@@ -186,8 +186,8 @@ lancia niente.
 terminale; e un `bw unlock` di Tommaso finisce la chiave di ELA (misurato, K2), che ELA scopre al controllo dopo.
 
 **La fermata di ELA la dimentica, e non lancia niente**: `Ela.aclose` chiama la porta prima di portare a riposo
-il browser e prima di rilasciare il database, e ciascuno dei tre è raggiunto qualunque cosa abbia sollevato
-quello prima. Una chiusura del custode che fosse in volo è finita quando la porta torna: il ciclo non si smonta
+il browser e prima di rilasciare il database, e ogni passo è raggiunto qualunque cosa abbia sollevato quello
+prima. Una chiusura del custode che fosse in volo è finita quando la porta torna: il ciclo non si smonta
 con un lancio di `bw` in corso.
 
 **Lo stato è derivato, mai memorizzato**: `GET /vault` lo chiede a `bw status` a ogni richiesta. Per un vault
@@ -195,7 +195,7 @@ chiuso porta **la riga intera da incollare** (decisione 32), composta con il pro
 la shell vuole un percorso con uno spazio —, mai con un segnaposto: il `bw` da lanciare è quello di cui ELA ha
 fissato l'identità. L'indirizzo dell'account, che `bw status` stampa, non lascia l'adapter.
 
-Tre rotte nuove, in `ela/api/vault.py`, che raggiunge `CORE` con il token:
+Rotte nuove, in `ela/api/vault.py`, che raggiunge `CORE` con il token:
 
 | Metodo | Percorso | Che cosa |
 |---|---|---|
@@ -218,7 +218,7 @@ Codici aggiunti a `ela.ports.WireCode`:
 
 **Un codice sul filo, non uno per ragione** (ADR 0062 §9): il codice del vault — `vault.key_refused`,
 `vault.program_changed`, `vault.not_local`… — è la prima parola del messaggio, e nessuno decide leggendola.
-I due casi condividono il codice e si distinguono per lo stato: `403` è «non da qui», e il vault non è stato
+I casi della tabella condividono il codice e si distinguono per lo stato: `403` è «non da qui», e il vault non è stato
 interrogato.
 
 Un gruppo nuovo della CLI, **`ela vault`**:
@@ -232,7 +232,7 @@ Un gruppo nuovo della CLI, **`ela vault`**:
 `ela vault open` esce con `2` senza mandare niente quando lo stdin è un terminale, o quando dalla pipe non arriva
 nessuna chiave — `bw unlock` che ha fallito non ne stampa.
 
-**L'audit**: due tipi d'evento nuovi, senza contenuto. `VAULT_OPENED` lo scrive la rotta che riceve la chiave,
+**L'audit**: tipi d'evento nuovi, senza contenuto. `VAULT_OPENED` lo scrive la rotta che riceve la chiave,
 firmato da chi l'ha consegnata, con l'istante in cui ELA la dimenticherà. `VAULT_CLOSED` lo scrive **il custode
 della chiave**, che è chi vede ogni chiusura — un comando, l'ora, la fermata di ELA, una chiave finita altrove —:
 firmato da chi l'ha chiesta, o da ELA quando nessuno l'ha chiesta, con il perché (`command`, `expired`,
@@ -262,6 +262,6 @@ non lo è stato. Una chiusura che nessuna rotta ha chiesto non resta senza riga.
 
 Con questo ADR le regole di architettura sono **sessantotto** (la 67 e la 68), i contratti di import-linter restano
 **quindici**, i port diventano **trentaquattro** (`Vault`), le rotte dell'API **sessantatré** e i comandi
-della CLI **trentaquattro** (le tre del vault, e i suoi tre comandi); le
+della CLI **trentaquattro** (quelle del vault, e i suoi comandi); le
 capability restano **quattordici**, le identità del middleware **sei**. *(I totali si aggiornano con le sezioni
 che seguono: questo ADR si scrive con l'implementazione.)*
