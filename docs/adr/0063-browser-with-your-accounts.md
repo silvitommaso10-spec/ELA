@@ -41,11 +41,15 @@ un'autorizzazione»; che il bersaglio sia un sito della sessione. Una parte che 
 chiama, e si nega — come un grant che non copre (ADR 0011 §6).
 
 **La parola della stanza si legge al momento della decisione, mai da una copia.** La chiede l'executor, alla
-stanza, quando decide lo step; non la tiene. Una sessione chiusa non attesta niente: il suo figlio **chiede**,
-come un `MEDIUM` ha sempre fatto. Una sessione è aperta nella stanza solo mentre il suo step gira, e quello step
+stanza, quando decide lo step; non la tiene. Una sessione chiusa non attesta niente: un suo figlio che viene
+deciso dopo **chiede**, come un `MEDIUM` ha sempre fatto — e **dal momento in cui ELA la sta chiudendo**, per un
+«ferma», per un suo limite o perché i suoi secondi sono finiti, la stanza non la attesta più e non fa altri
+gesti: a un gesto risponde che la sessione è finita. Una sessione è aperta nella stanza solo mentre il suo step gira, e quello step
 gira perché è stato permesso: la stanza la apre con la prenotazione letta dal record `STARTED`.
 
-**Il Guardian non conta: conta la stanza**, che ferma la sessione ai suoi `looks`.
+**Il Guardian non conta.** I gesti li numera la stanza, e a fermare la sessione ai suoi `looks` è il tool che
+la ospita, che al gesto oltre risponde che sono finiti: il Guardian decide su un fatto che l'executor gli porta,
+non su un contatore suo.
 
 **Che cosa una sessione dichiara di coprire** è un fatto del catalogo, `covers`, **fuori da `PolicyTerms`**: la
 capability coperta, e **una copia del suo schema**. I `PolicyTerms` di `browser.guided` restano quelli che una
@@ -130,12 +134,19 @@ Port introdotti:
 va nell'ambiente del figlio, `BW_SESSION`, con `BW_NOINTERACTION`, oltre alle quattro variabili dell'ambiente
 chiuso (ADR 0047 §6, che si legge con questa riga accanto). Lo stdin del figlio è la fine di un file, il suo
 stderr non va a nessuno; nasce in un gruppo suo ed è ucciso con il gruppo allo scadere, o quando nessuno lo
-aspetta più.
+aspetta più. *Misurato il 2026-10-11*: a chi chiede di uccidere un gruppo il cui unico processo è finito e non
+è ancora stato raccolto macOS risponde «non permesso»; è un gruppo senza più niente da uccidere, e ciò che esce
+resta l'errore dell'adapter.
+
+**Ciò che `bw` risponde male, o che non si può nemmeno lanciare, è un errore del vault**: uno stato che non è
+una delle sue parole — nemmeno un testo —, un NUL nella chiave o nell'indirizzo, che nessun ambiente e nessun
+argomento può portare. Mai un'eccezione che una rotta non conosce, e mai con il valore dentro.
 
 **Prima del sì nessuna password lascia l'adapter** (decisione 28, che rivede il secondo criterio della
 registrazione — «senza il sì, la CLI non viene chiamata» — per mano di Tommaso e del revisore). `find` chiede lo
 stato e l'elenco per l'indirizzo del sito, e restituisce l'id della voce, il nome, gli indirizzi, **il nome
-utente mascherato** — il primo carattere, e per un indirizzo la parte dalla chiocciola (decisione 31) — e se c'è
+utente mascherato** — il primo carattere, e per un indirizzo la parte dalla chiocciola (decisione 31); di un
+nome che comincia con la chiocciola, che è un handle e non un indirizzo, solo la chiocciola — e se c'è
 una password: ogni valore è buttato lì. **Il costo, dichiarato**: per un istante passano dalla memoria
 dell'adapter tutte le voci che Bitwarden fa corrispondere a quell'indirizzo, intere — misurato, l'elenco porta
 la password.
@@ -183,8 +194,17 @@ il suo adapter tiene ancora la chiave: un'apertura, una chiusura, un uso e lo st
 chiedono, e chi arriva in mezzo aspetta. Solo la fermata di ELA non aspetta il suo turno: dimentica, e non
 lancia niente.
 
+**Una chiusura arriva in fondo anche se chi l'ha chiesta se ne va**: un uso ha la scadenza del suo step, e la
+fermata di ELA finisce il custode. Ciò che resta da fare è fatto sulla via d'uscita — la chiave dimenticata, la
+riga scritta —, e una chiusura tagliata lo dice: al vault non è stato chiesto di chiudersi, o non ha risposto.
+**Un'apertura la cui riga non si scrive non resta**: la chiave è dimenticata, al vault è chiesto di chiudersi, e
+l'errore dell'audit è la risposta.
+
 **`bw lock` è di tutta la macchina**: `ela vault close` chiude anche ciò che Tommaso avesse aperto nel suo
-terminale; e un `bw unlock` di Tommaso finisce la chiave di ELA (misurato, K2), che ELA scopre al controllo dopo.
+terminale; e un `bw unlock` di Tommaso finisce la chiave di ELA (misurato, K2), che ELA scopre **al primo uso
+che la incontra**: la dimentica lì, e lo dice. Se nessun uso la incontra prima dell'ora, allo scadere il custode
+chiede comunque `bw lock`, che chiude anche ciò che Tommaso avesse aperto dopo *(è la domanda 81 della
+milestone)*.
 
 **La fermata di ELA la dimentica, e non lancia niente**: `Ela.aclose` chiama la porta prima di portare a riposo
 il browser e prima di rilasciare il database, e ogni passo è raggiunto qualunque cosa abbia sollevato quello
@@ -260,10 +280,25 @@ video. **ELA non si traveste**: nessuno user agent, nessuno script iniettato, ni
 `navigator.webdriver`.
 
 **La cartella** è `ELA_BROWSER_PROFILE_DIR`, facoltativa e senza default. La legge l'adapter e nessun altro
-modulo di ELA; nessun errore che esce dall'adapter ne porta il percorso. Prima di ogni lancio: se non c'è, ELA
-la crea `0700` — esattamente, qualunque sia la umask —; se c'è, deve essere una cartella vera, di chi lancia
-ELA, aperta a nessun altro, altrimenti `ProfileUnsafe`. **ELA non la stringe da sé.** Una cartella comparsa fra
-lo sguardo e la creazione — due aperture insieme, la prima volta — è riguardata come ogni altra.
+modulo di ELA; nessun errore che esce dall'adapter ne porta il percorso — **nemmeno ciò che ne dice il
+sistema**: un `OSError` porta il percorso nel suo testo, ed esce come un errore del browser che ne dice il tipo.
+**Al primo sguardo, e prima di ogni lancio**: se non c'è, ELA la crea `0700` — esattamente, qualunque sia la
+umask, e mai più larga nemmeno per un istante —; se c'è, deve essere una cartella vera, di chi lancia ELA, con i
+bit del modo aperti a nessun altro, altrimenti `ProfileUnsafe`. **ELA non la stringe da sé.** Una cartella
+comparsa fra lo sguardo e la creazione — due aperture insieme, la prima volta — è riguardata come ogni altra.
+
+**Anche sotto la cima.** `Default`, dove il browser tiene ciò che ELA conta, riscrive e toglie, è una cartella
+sua e mai un link a un'altra: attraverso un link ELA farebbe le stesse cose alla cartella a cui porta — il
+profilo di un altro browser, se è lì che porta. Il file nuovo delle preferenze non è mai scritto attraverso un
+link. Una cartella che porta il nome dei profili temporanei che ELA toglie dopo un'uccisione è rifiutata. *Ciò
+che non è guardato*: una ACL sulla cartella, e i profili che Tommaso aggiungesse da dentro la finestra *(sono le
+domande 78 e 79 della milestone)*.
+
+**Chi tiene la cartella si legge dal lock, per il pid**: solo ciò che può essere il pid di un browser — cifre,
+sopra il primo processo del sistema, entro il massimo di un pid — è chiesto al kernel. Un lock che nomina
+altro non l'ha lasciato un browser che gira, e non tiene niente. *Il limite*: un lock rimasto da un browser
+ucciso, il cui pid il sistema ha poi dato a un altro processo, tiene la cartella finché qualcuno non lo toglie
+*(è la domanda 82 della milestone)*.
 
 **Ciò che il profilo non tiene** si riscrive prima di **ogni** lancio, sopra ciò che il file dice — misurato
 sul file che Chrome stesso ha scritto:
@@ -310,12 +345,18 @@ esce** — misurato, il suo messaggio nomina la chiamata con ciò che è stato s
 **La finestra** è lo stesso binario sulla stessa cartella **senza niente attaccato**: nessun driver, nessuna
 pipe, nessuna porta; l'uscita non va a nessuno; nasce in un gruppo suo, con l'ambiente chiuso. I suoi argomenti
 sono un elenco chiuso — la cartella, `--use-mock-keychain`, `--no-first-run`, `--no-default-browser-check`,
-`--disable-sync`, `--allow-browser-signin=false`, e un indirizzo se c'è. ELA ne tiene una cosa sola: l'attesa
+`--disable-sync`, `--allow-browser-signin=false`, e un indirizzo se c'è. **L'elenco lo chiude l'adapter,
+chiunque lo chiami**: ciò che non è l'indirizzo di un sito — `http` o `https`, con un host, senza un nome né
+una parola dentro — non è passato al binario, dove sarebbe un suo argomento o aprirebbe ciò che non è un sito.
+Che sia `https`, e di un sito dichiarato, lo dice la rotta (§8). ELA ne tiene una cosa sola: l'attesa
 della fine. **Alla fermata di ELA è avvisata** — `SIGTERM`, a cui il browser esce da sé scrivendo i suoi cookie
 —, **aspettata entro la stessa grazia** delle pagine, **poi uccisa con il suo gruppo**, e nominata. Mai lasciata
-viva sulla cartella. *Misurato il 2026-10-11*: un processo fermo che non ha ancora detto che cosa fa di
-`SIGTERM` ne è terminato subito, dal kernel; un browser fermo quando è già su resta fermo, e lo toglie la
-grazia.
+viva sulla cartella: **il lancio è un compito dell'adapter**, che arriva in fondo anche se chi l'ha chiesto se
+ne va, e che la chiusura aspetta prima di dire libera la cartella. *Misurato il 2026-10-11*: un processo fermo
+che non ha ancora detto che cosa fa di `SIGTERM` ne è terminato subito, dal kernel; un browser fermo quando è
+già su resta fermo, e lo toglie la grazia. *Ciò che resta fuori*: un browser che si rilancia da sé da dentro la
+finestra finisce il processo che ELA aspetta e ne avvia uno che ELA non ha conosciuto — di lui resta il lock
+*(è la domanda 80 della milestone)*.
 
 **La chiusura di ELA** porta a riposo questo adapter come quello del browser vuoto. Un browser del profilo
 ucciso alla grazia **non perde la sua cartella**: l'adapter toglie solo i profili temporanei che Playwright
@@ -411,14 +452,18 @@ altrimenti `browser.not_a_password_field` —, che non si dichiari una password 
 carta, che `username_field` non si dichiari segreto, e che il modulo mandi con `POST` — altrimenti
 `browser.login_form_get`: mandata con `GET`, la password sarebbe in un indirizzo. **Solo allora** ascolta la
 fermata del suo task, al suo punto, e chiede al vault: una lettura sola della voce, riconfrontata con il sito
-su quella stessa lettura. Poi due `fill_secret` e un click. Ciò che fallisce dopo il sì ha il suo codice: il sì
-è speso, e niente è stato scritto in nessun campo.
+su quella stessa lettura. **Il vault è un'attesa, e dopo si guarda di nuovo**: la fermata — arrivata mentre il
+vault rispondeva, la password è buttata e niente è scritto — e il campo, che con il modulo in cui sta deve
+essere ancora quello guardato prima, altrimenti `browser.not_a_password_field`. Poi due `fill_secret` e un
+click. Ciò che fallisce dopo il sì ha il suo codice: il sì è speso, e niente è stato scritto in nessun campo.
 
 **La voce che il sì copre è quella che la domanda ha nominato.** Il piano può nominarla con `entry`, il suo id;
 senza, è la sola il cui host è quello del sito, e il tool **ricorda** — in memoria, per le domande che
 aspettano — quale voce ha trovato componendo la domanda. Dopo il sì legge quella, non quella che il vault
 terrebbe adesso. Se ELA è ripartita fra la domanda e il sì il tool non lo sa più: `vault.entry_forgotten`,
-niente è scritto, e lo step si richiede. *(È la domanda 73 della milestone.)*
+niente è scritto, e lo step si richiede. **Il ricordo è per la chiamata, non per la domanda**: due domande
+nate dalla stessa chiamata che hanno nominato voci diverse — il vault è cambiato in mezzo — non si
+distinguono, e il tool non indovina: lo stesso codice, e niente è scritto. *(È la domanda 73 della milestone.)*
 
 **Il secondo fattore** non entra in ELA: nessun codice a tempo, né preso dal vault. Se dopo il click la pagina
 mostra un campo `one-time-code` e il testo atteso non compare, il verifier fallisce con
@@ -485,10 +530,14 @@ Perciò le capability che guardano lo schermo o ascoltano **si rifiutano finché
 | `perception.read_screen_text` | `ReadScreenTextTool` | `screen.login_window_open` | `ELA does not read the screen meanwhile` |
 | `perception.listen` | `ListenTool` | `listen.login_window_open` | `ELA does not listen meanwhile` |
 
-**In due punti.** Prima della domanda — il loro «partirebbe», che questi tool non avevano: rifiutavano solo
-dentro la corsa, dopo che il sì era speso —, e dentro la corsa, dopo gli argomenti e prima di ogni altra cosa:
-una decisione che un grant o una policy ha già permesso non passa dalla domanda. Prima della domanda non si
-guarda nient'altro: il permesso del sistema e lo spazio restano della corsa, com'erano.
+**Prima della domanda** — il loro «partirebbe», che questi tool non avevano: rifiutavano solo
+dentro la corsa, dopo che il sì era speso —, **e dentro la corsa**, dopo gli argomenti e prima di ogni altra
+cosa: una decisione che un grant o una policy ha già permesso non passa dalla domanda. Prima della domanda non
+si guarda nient'altro: il permesso del sistema e lo spazio restano della corsa, com'erano.
+
+**Ciò che è cominciato prima non è fermato.** Il rifiuto guarda il profilo quando una cattura o un ascolto
+comincia: un ascolto già in corso quando la finestra si apre arriva in fondo, e scrive ciò che ha sentito *(è
+la domanda 77 della milestone)*.
 
 **I tool non imparano che cos'è la finestra.** Ricevono dal punto di composizione una domanda sola — «non
 adesso?» —, che risponde con la ragione o con niente, e la dicono com'è arrivata. La domanda guarda chi tiene il
@@ -506,7 +555,8 @@ non è qui: in una pagina che ELA guida nessuno sta scrivendo una password.
 **Dove non c'è un profilo non c'è una finestra da aspettare**: senza una cartella dichiarata, o su un sistema
 dove quel browser non parte, la domanda risponde niente, e guardare e ascoltare restano com'erano. **Ogni altro
 sguardo che fallisce è un dubbio, e un dubbio rifiuta**: una cartella è dichiarata, ed ELA non sa dire se una
-mano c'è sopra.
+mano c'è sopra. È un dubbio anche chi tiene il profilo con un nome per cui ELA non ha una frase: il solo
+tenitore che lascia guardare e ascoltare è uno step di ELA, detto per nome.
 
 **Nessun codice nel Perception Core** (decisione 49). La sonda legge stato e non contenuto — l'applicazione
 davanti, quante finestre, mai un titolo —, non lo manda a un modello né in un registro, e con la finestra
@@ -524,9 +574,12 @@ senza finestra.
 con gli argomenti dell'elenco chiuso di §4 e, se c'è, l'indirizzo `https` di un sito **dichiarato**. Non c'è
 un driver, non c'è una pipe né una porta di debug, lo stdout e lo stderr del processo non vanno a nessuno: di
 quella finestra ELA tiene una cosa sola, **l'attesa della sua fine**. Dentro la finestra il confine dei siti
-non c'è — sono le mani di Tommaso —; dove ELA la apre è un sito dichiarato, o nessuno. La chiude Tommaso; alla
+non c'è — sono le mani di Tommaso —; dove ELA la apre è un sito dichiarato, o nessuno. **La finisce Tommaso,
+uscendo dal browser** (Cmd-Q): sul Mac chiudere la finestra lascia il processo acceso, ed ELA di quella finestra
+conosce solo la fine del processo — le frasi del prodotto dicono di uscire, non di chiudere. Alla
 fermata di ELA riceve un `SIGTERM`, ed entro la grazia della chiusura è uccisa con il suo gruppo (§4). Non è
-una capability: nessun piano e nessun modello la apre. Finché è aperta ELA non guarda e non ascolta (§7).
+una capability: nessun piano e nessun modello la apre. Finché è aperta ELA non comincia a guardare né ad
+ascoltare (§7).
 
 **Un processo alla volta sul profilo** (decisione 18c). Chi tiene la cartella è derivato a ogni domanda, mai
 ricordato: uno step di ELA, la finestra, o un processo che il lock della cartella nomina. La finestra che
@@ -542,7 +595,8 @@ Rotte nuove, in `ela/api/browser.py`, che raggiunge `CORE` con il token:
 | `POST` | `/browser/open` | la finestra del login a mano, su un sito dichiarato o su nessuno |
 
 **Lo stato è il rifiuto dei tool, o chi tiene la cartella.** `GET /browser` risponde `free`; oppure il nome di
-chi tiene il profilo, uno dei tre del port; oppure perché nessun browser può partirci, con il codice che uno
+chi tiene il profilo, come lo dice il port — `step`, `window`, `process` —; oppure perché nessun browser può
+partirci, con il codice che uno
 step riceverebbe prima della sua domanda, senza il prefisso — una definizione sola, in `ela/tools/account.py`,
 per i tool e per le rotte. `linked` e `saved` sono ciò che il browser dice di sé — se conosce un account di chi
 l'ha fatto, quante password tiene il suo gestore —, **riletti a ogni richiesta, mai da una copia** (decisione
@@ -581,10 +635,13 @@ Un gruppo nuovo della CLI, **`ela browser`**:
 
 **L'audit**: tipi d'evento nuovi, senza contenuto. `BROWSER_WINDOW_OPENED` lo scrive la rotta che apre la
 finestra, firmato da chi l'ha chiesta, con il sito se c'era. `BROWSER_WINDOW_CLOSED` lo scrive **chi aspetta la
-fine del processo**, che è chi vede ogni fine — Tommaso che chiude la finestra, ELA che si ferma —, firmato da
-ELA: nessuna rotta la chiede, e una fine che nessuno ha chiesto resterebbe senza riga. Porta il sito, se
-c'era, e quanti secondi interi la finestra è rimasta aperta: mai un indirizzo, e niente di ciò che vi è stato
-fatto — ELA non lo sa. L'interruttore della finestra non è un evento: non apre niente.
+fine del processo**, che è chi vede ogni fine di una finestra che questa ELA ha aperto — Tommaso che esce dal
+browser, ELA che si ferma —, firmato da ELA: nessuna rotta la chiede, e una fine che nessuno ha chiesto
+resterebbe senza riga. Porta il sito, se c'era — l'host, senza nome né porta —, e quanti secondi interi la
+finestra è rimasta aperta: mai un indirizzo, e niente di ciò che vi è stato fatto — ELA non lo sa. *Restano
+senza riga* la finestra di un'ELA uccisa, che nessuno aspetta più, e una fine la cui riga non si scrive: questa
+è detta nel log, con il tipo dell'errore, e non ferma la chiusura di ELA. L'interruttore della finestra non è
+un evento: non apre niente.
 
 ### 9. La domanda di un login: quale voce, e di chi
 
@@ -593,7 +650,7 @@ La domanda le porta in due campi suoi, accanto ai fatti di una pagina:
 
 | Campo | Che cosa porta | Quando manca |
 |---|---|---|
-| `entry` | il nome della voce | la domanda non è un login |
+| `entry` | il nome della voce; per una voce che Tommaso non ha nominato, una frase che lo dice | la domanda non è un login |
 | `username` | il nome utente della voce, mascherato | la voce non ne ha uno, o la domanda non è un login |
 
 Le righe dei gesti nominano i campi della pagina — «types the username of that entry into …» — e non ripetono la
@@ -634,7 +691,7 @@ policy. Da fuori non si leggono nemmeno i siti dichiarati, né le frasi dei tool
 nominare una cartella o un programma del Mac.
 
 **La pagina non raggiunge niente attraverso ELA** (regola 55): chiama le funzioni delle rotte — quelle di
-`ela/api/browser.py`, e le due che `ela/api/vault.py` espone per lei.
+`ela/api/browser.py`, e quelle che `ela/api/vault.py` espone per lei, `vault_of` e `vault_locked`.
 
 **Ogni modulo nomina ciò che chiede.** Un `POST` senza il suo campo — `shown`, `site`, `vault` — non è una
 richiesta da indovinare: `422`, e niente cambia. Il sito vuoto è «nessun sito», ed è una risposta.
@@ -678,7 +735,8 @@ dice, con la sezione di questo ADR a cui guardare.
 - **ADR 0046** §3 — «un sì copre al massimo un effetto»: il sì a una sessione con il profilo copre le letture
   che il suo modello scrive, fino ai `looks` della sessione; e la riga di consumo della copertura di sessione
   (§1).
-- **ADR 0047** §6 — il programma del vault riceve due variabili oltre a quelle dell'ambiente chiuso (§2).
+- **ADR 0047** §6 — il programma del vault riceve, oltre all'ambiente chiuso, `BW_NOINTERACTION` e, quando c'è
+  una chiave, `BW_SESSION` (§2).
 - **ADR 0052** §1, §3, §4, §6, §7, §8, §10 e §14 — ciò che lì è detto del browser è detto del browser vuoto:
   quello con il profilo ha un altro binario, il sandbox acceso, una cartella che dura, un confine più stretto
   per le letture, un tool che riempie un campo segreto, e un ambiente da cui esce anche ciò che fa scrivere il
@@ -697,7 +755,8 @@ Le altre conseguenze:
 - **Regola di architettura 69**: la cartella del profilo la nominano le impostazioni, che la dichiarano e la
   controllano, e il punto di composizione, che la consegna all'adapter — e nessun altro modulo: non una rotta,
   non un tool, non l'audit. Chi vuole sapere qualcosa del profilo chiede al port, che risponde con fatti.
-- **`settle` resta un contratto del punto di composizione**, accanto ai due port e non dentro (decisione 57): ciò
+- **`settle` resta un contratto del punto di composizione**, accanto ai port dei browser — `Browser` e
+  `AccountBrowser` — e non dentro (decisione 57): ciò
   che un browser fa è il port; portarlo a riposo lo fa una volta sola chi l'ha costruito. La chiusura di ELA
   porta a riposo **ogni** browser che `build()` costruisce, insieme ed entro una grazia sola; un test lo tiene
   a mondo chiuso.

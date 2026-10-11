@@ -750,8 +750,9 @@ class AccountSettings(BaseSettings):
     :meth:`Settings._a_profile_that_stays_where_it_is`, which knows the other sections.
 
     **Nothing is looked at beyond that, and nothing is made.** The folder is created, ``0700``,
-    when the browser is first used, and one found wider or somebody else's is refused then
-    (``browser.profile_unsafe``); a program that is not there is ``vault.no_program``, and its
+    the first time its adapter looks at it — a use of the browser, or a look at who holds it:
+    ``GET /browser``, a capture, a listening —, and one found wider or somebody else's is refused
+    then (``browser.profile_unsafe``); a program that is not there is ``vault.no_program``, and its
     identity is fixed by the tools when ELA starts.
 
     **A section of its own, and only the Core's**: the profile and the vault's key never travel to

@@ -533,11 +533,11 @@ SELECTOR_MAX_LENGTH: Final = 512
 VALUE_MAX_LENGTH: Final = 4096
 EXPECT_MAX_LENGTH: Final = 256
 FILLS_MAX: Final = 20
+"""The limits of a browser call, **decisions and not measures** (M13.4 form H): enough for a contact
+form and an address with its query, and a ceiling to what a question makes somebody read."""
 ENTRY_MAX_LENGTH: Final = 64
 """How long the id of an entry of the vault may be, in ``browser.login``: an id of Bitwarden's is
 thirty-six characters — a decision with room, not a measure of every vault."""
-"""The limits of a browser call, **decisions and not measures** (M13.4 form H): enough for a contact
-form and an address with its query, and a ceiling to what a question makes somebody read."""
 
 V01_INTRODUCED_AT: Final = datetime(2026, 9, 5, tzinfo=UTC)
 """``created_at`` of the three specifications: the catalogue is declared, it is not born at
@@ -551,9 +551,9 @@ BROWSER_INTRODUCED_AT: Final = datetime(2026, 9, 29, tzinfo=UTC)
 """``created_at`` of the browser's two capabilities (M13.4, ADR 0052)."""
 
 GUIDED_INTRODUCED_AT: Final = datetime(2026, 10, 8, tzinfo=UTC)
+"""``created_at`` of ``browser.guided`` (M14.3, ADR 0060)."""
 ACCOUNTS_INTRODUCED_AT: Final = datetime(2026, 10, 11, tzinfo=UTC)
 """``created_at`` of the capabilities of the browser with the user's accounts (M13.9, ADR 0063)."""
-"""``created_at`` of ``browser.guided`` (M14.3, ADR 0060)."""
 
 GUIDED_ROUTE: Final = "browsing"
 """The task type of a guided session when the plan names none: its default route (M14.3, decision

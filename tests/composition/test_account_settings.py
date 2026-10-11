@@ -11,8 +11,9 @@ the two folders macOS copies elsewhere, or that holds or sits inside what ``fs.r
 workspace or the capture store. A vault program that is not an absolute path: ELA never looks one
 up in the ``PATH``.
 
-**The settings create nothing**: the folder is made when the browser is first used, and a program
-that is not there is said then, with its own code.
+**The settings create nothing**: the folder is made the first time its adapter looks at it — a use
+of the browser, or a look at who holds it —, and a program that is not there is said then, with
+its own code.
 """
 
 from __future__ import annotations
@@ -137,7 +138,8 @@ def test_a_declared_folder_is_read_and_not_created(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The place the guide proposes — beside the node's secret — is accepted, and reading the
-    settings makes nothing: the folder is created, ``0700``, when the browser is first used."""
+    settings makes nothing: the folder is created, ``0700``, the first time its adapter looks at
+    it."""
     profile = tmp_path / "state" / "browser-profile"
 
     settings = loaded(monkeypatch, tmp_path, **{PROFILE: str(profile), STATE: str(profile.parent)})
