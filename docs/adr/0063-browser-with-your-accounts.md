@@ -322,6 +322,14 @@ ucciso alla grazia **non perde la sua cartella**: l'adapter toglie solo i profil
 nomina, mai una cartella dichiarata. Ciò che un browser ucciso aveva imparato un momento prima non è scritto —
 misurato, un cookie della pagina del browser ucciso non si ritrova —: è del browser, non di ciò che ELA toglie.
 
+**Ciò che ELA lascia fuori dalla cartella del profilo** (decisione 47; misurato il 2026-10-11, con la finestra
+lanciata dall'adapter su una cartella di prova). La lista di preferenze di macOS di Chrome for Testing,
+`~/Library/Preferences/com.google.chrome.for.testing.plist`: è dell'applicazione, non di Tommaso, porta una
+chiave sola — `LastRunAppBundlePath` —, e un lancio non la cambia. E la cartella del raccoglitore dei crash,
+`~/Library/Application Support/Google/Chrome for Testing/Crashpad/`, di cui ogni lancio riscrive
+`settings.dat`: nessun rapporto vi è stato scritto, e **le regole della cartella del profilo non la coprono**
+*(è la domanda 74 della milestone)*.
+
 **Ciò che parte verso Google a ogni lancio** (§57: che cosa, verso chi, perché). Il browser stesso, non una
 lettura di ELA, apre connessioni verso host di Google appena parte — misurato la notte del 2026-10-10:
 `accounts.google.com` (`ListAccounts`) e `www.google.com` —, **con i cookie che il profilo ha per quegli host**
