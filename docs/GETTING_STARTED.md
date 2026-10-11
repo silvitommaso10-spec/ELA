@@ -6066,8 +6066,9 @@ più d'uno, e conta le password salvate in tutti.
 **Se il browser di ELA cade** — un crash, non una chiusura — restano due cose, e nessuna è spedita a qualcuno:
 
 - **un rapporto del browser, con memoria del processo**, dentro la cartella del profilo, in `Crashpad/`: sta sotto le
-  stesse regole della cartella, ed ELA non lo legge e non lo toglie. Si svuota così, con il browser di ELA chiuso:
-  `rm -rf "<la cartella del profilo>/Crashpad"` — il browser la ricrea al lancio dopo;
+  stesse regole della cartella, ELA non lo legge, e **lo toglie al lancio dopo** — prima di ogni lancio quella
+  cartella è svuotata, e il browser la ricrea. Per non aspettare il lancio dopo, con il browser di ELA chiuso:
+  `rm -rf "<la cartella del profilo>/Crashpad"`;
 - **un rapporto di macOS**, come per ogni applicazione, in `~/Library/Logs/DiagnosticReports`, con il nome che comincia
   per `Google Chrome for Testing`: i nomi delle funzioni e i registri, **niente della memoria e niente della cartella**.
   Si toglie dal Finder, o con `rm ~/Library/Logs/DiagnosticReports/"Google Chrome for Testing"*`.
@@ -6075,7 +6076,8 @@ più d'uno, e conta le password salvate in tutti.
 **Dopo un crash della finestra quel browser può ricomparire da solo** — è successo una volta, in una misura, cinque
 secondi dopo un crash provocato; se l'abbia riaperto macOS da sé o un «Riapri» di un suo dialogo non è stato
 distinto —: quello che ricompare **non è di ELA**, è partito senza gli argomenti di ELA, non sta sulla tua cartella e
-non ha le tue sessioni. Esci con Cmd-Q, e riapri la finestra con `ela browser open`.
+non ha le tue sessioni. Esci con Cmd-Q, e riapri la finestra con `ela browser open`. ELA non lo vede e non lo chiude:
+si chiude a mano.
 
 **Le password restano nel tuo vault**, in Bitwarden. ELA non le conosce: quando un piano chiede un login, ELA chiede al
 vault **la sola voce di quel sito**, dopo il tuo sì, la scrive nel campo e non la tiene. **La password principale non
@@ -6133,7 +6135,9 @@ manda a `auth.wikimedia.org` — da `it.wikipedia.org` il cancello ferma quella 
 raggiunge: un passo di login lì finirebbe `browser.left_site` senza scrivere niente. Che dopo l'accesso si torni
 indietro è come funziona un accesso centralizzato, e non è stato misurato: nessuno è entrato. Per saperlo prima: apri
 la pagina di accesso nel tuo browser e guarda l'host nella barra degli indirizzi mentre scrivi la password, e dopo che
-sei entrato.
+sei entrato. **E una verifica contro i programmi automatici nel modulo di accesso** — la casella o il controllo
+invisibile di un servizio che distingue le persone dai programmi — **può far rifiutare il login al sito**: ELA non si
+traveste, e l'esito lo dice. I candidati guardati l'11 ottobre sono nella SPEC di M13.9, sezione 18.
 
 **Il piano del login lo scrivi tu**, prima della prova, da `docs/examples/login-from-the-vault.json`: il tuo sito, il
 percorso della sua pagina di login, i selettori del campo del nome utente, di quello della password e del bottone, e un

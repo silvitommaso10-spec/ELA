@@ -303,8 +303,11 @@ da sé, sul Mac non è ascoltato: il raccoglitore girava accanto al browser, e u
 più di un megabyte — memoria del processo** — nella cartella predefinita del binario, fuori dal profilo. Con
 questo argomento il suo database nasce nella cartella del profilo e un crash scrive lì e non altrove; il
 raccoglitore parte senza un indirizzo a cui mandare. Le regole della cartella — `0700`, fuori da ciò che si
-sincronizza, mai letta da chi non è il suo adapter — valgono allora anche per ciò che un crash lascia. **ELA
-non legge e non toglie quei file**: la guida dice dove sono.
+sincronizza, mai letta da chi non è il suo adapter — valgono allora anche per ciò che un crash lascia. **Ciò
+che un crash ha lasciato non passa al lancio dopo** (decisione 90, review del pomeriggio dell'11 ottobre): prima
+di ogni lancio, guidato o della finestra, l'adapter toglie quella cartella — di un link il link, mai ciò a cui
+porta —, e il browser la ricrea. Un rapporto è memoria del processo che teneva le sessioni, e non serve a
+nessuno: ELA non lo legge mai. Fra un crash e il lancio dopo sta nella cartella, sotto le sue regole.
 
 **La cartella** è `ELA_BROWSER_PROFILE_DIR`, facoltativa e senza default. La legge l'adapter e nessun altro
 modulo di ELA; nessun errore che esce dall'adapter ne porta il percorso — **nemmeno ciò che ne dice il
@@ -410,8 +413,9 @@ argomento del browser lo sposta o lo spegne: si dichiara, e la guida dice come s
 volta, l'11 ottobre: cinque secondi dopo il crash provocato della finestra girava un Chrome for Testing senza
 nessun argomento, figlio di `launchd`, sulla sua cartella predefinita e senza `--use-mock-keychain`. Non è sulla
 cartella del profilo, e non è un processo di ELA: lo stato non lo vede e nessun comando lo chiude. Se sia stato
-il sistema da sé o un «Riapri» premuto in un suo dialogo, la sonda non lo distingue *(è la domanda 88 della
-milestone)*.
+il sistema da sé o un «Riapri» premuto in un suo dialogo, la sonda non lo distingue. **Dichiarato, e non si
+rimisura** (decisione 88): un browser ricomparso dopo un crash non è di ELA, e si chiude a mano; rimisurarlo
+riaprirebbe un browser senza il portachiavi finto.
 
 **Ciò che parte verso Google a ogni lancio** (§57: che cosa, verso chi, perché). Il browser stesso, non una
 lettura di ELA, apre connessioni verso host di Google appena parte — misurato la notte del 2026-10-10:
@@ -662,7 +666,8 @@ ELA, consegnata all'adapter come attesa. Vale per la finestra che questa ELA ha 
 gruppo, che è di ELA; e per **un processo che ELA non ha avviato solo se la sua riga di comando è il binario del
 lock sulla cartella del profilo** — una finestra che si è rilanciata da sé, quella lasciata da un'ELA uccisa. È
 il controllo che dice anche se la cartella è tenuta: **una funzione sola**, `on_the_folder`, per le due domande
-(sotto). Un processo che ELA non ha avviato è ucciso **per pid, mai per gruppo**, e solo se il sistema,
+(sotto) — **con due risposte** (decisione 89): chi nomina la cartella la tiene, ed ELA non ci lancia sopra; solo
+il binario del lock sulla cartella riceve un segnale. Un processo che ELA non ha avviato è ucciso **per pid, mai per gruppo**, e solo se il sistema,
 richiesto di nuovo allo scadere **di quel processo — non di ciò che il lock nomina in quel momento** —, dice
 che è ancora quel browser. **Che cosa il comando non fa**: non finisce uno
 step di ELA — quello finisce con il suo task —, e non segnala niente che non sia il browser di ELA: una riga di
