@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shlex
 import stat
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ from ela.cli import client
 from ela.cli import vault as command
 from ela.cli.app import app as ela_app
 from ela.composition import Ela, Settings, build
+from ela.composition.system import own_command
 from ela.ports import VAULT_LOCKED
 from ela.testing.fakes import FakePower, FakeVault
 from tests.cli.support import Cli, LoopTransport
@@ -104,8 +106,9 @@ async def test_status_of_a_locked_vault_prints_the_whole_line_to_paste(vaulted: 
     result = await vaulted("vault", "status")
 
     assert result.exit_code == 0, result.output
-    line = f"'{vaulted.at}' unlock --raw | ela vault open"
+    line = f"'{vaulted.at}' unlock --raw | {shlex.quote(str(own_command()))} vault open"
     assert line in result.output.splitlines()
+    assert " | ela " not in result.output, "never a name to look for in the PATH (decision 98)"
     assert "<" not in result.output and "…" not in result.output
     assert "locked" in result.output and str(vaulted.at) in result.output
 
@@ -128,7 +131,9 @@ async def test_status_as_json_is_the_api_s_own_answer(vaulted: Vaulted) -> None:
 
     said = json.loads(result.output)
     assert said["state"] == "locked"
-    assert said["opens_with"] == f"'{vaulted.at}' unlock --raw | ela vault open"
+    assert said["opens_with"] == (
+        f"'{vaulted.at}' unlock --raw | {shlex.quote(str(own_command()))} vault open"
+    )
 
 
 # ----------------------------------------------------------------------------------------
@@ -158,7 +163,8 @@ async def test_open_refuses_a_terminal_and_sends_nothing(
     result = await vaulted("vault", "open", input=KEY + "\n")
 
     assert result.exit_code == 2
-    assert "unlock --raw | ela vault open" in result.output
+    assert "vault status" in result.output and "whole line" in result.output
+    assert "| ela vault open" not in result.output, "no line that may not work (decision 98)"
     assert vaulted.sent("/vault/session") == []
     assert vaulted.vault.calls == []
 

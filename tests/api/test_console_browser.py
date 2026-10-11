@@ -14,6 +14,7 @@ check of the forms of a yes, and no JavaScript.
 from __future__ import annotations
 
 import json
+import shlex
 import stat
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -26,6 +27,7 @@ from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app
 from ela.composition import Ela, Settings, build
+from ela.composition.system import own_command
 from ela.domain import ActorKind, AuditEvent, AuditEventType
 from ela.ports import (
     PROFILE_PROCESS,
@@ -129,7 +131,7 @@ async def test_the_view_says_what_the_profile_and_the_vault_are_and_offers_its_f
     assert "free" in page and "senza finestra" in page
     assert "Collegato a un account" in page and "Password salvate" in page
     assert "locked" in page
-    line = f"{viewed.program} unlock --raw | ela vault open"
+    line = f"{viewed.program} unlock --raw | {shlex.quote(str(own_command()))} vault open"
     assert page.count(line) == 2, "in the vault's sentence, and once more alone: to copy whole"
     assert f'action="{WINDOW}"' in page and 'name="shown" value="1"' in page
     assert f'action="{OPEN}"' in page

@@ -9,6 +9,7 @@ key enters ELA here and goes nowhere else: not into an answer, a refusal, the au
 from __future__ import annotations
 
 import logging
+import shlex
 import stat
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from httpx import ASGITransport, AsyncClient
 
 from ela.api import create_app
 from ela.composition import Ela, Settings, build
+from ela.composition.system import own_command
 from ela.domain import ActorKind, AuditEvent, AuditEventType
 from ela.ports import VAULT_LOCKED, VAULT_UNAUTHENTICATED, VaultTimeout
 from ela.testing.fakes import FakeClock, FakePower, FakeVault
@@ -105,18 +107,44 @@ async def test_without_a_declared_program_the_state_says_what_is_missing(
 
 
 async def test_a_locked_vault_answers_with_the_whole_line_to_paste(vaulted: Vaulted) -> None:
-    """Decision 32: the line is composed with the declared program, and with no placeholder."""
+    """Decisions 32 and 98: the line is composed with the declared program and with **the
+    command this ELA runs with** — both by their absolute path, neither a name to look for, and
+    no placeholder."""
+    command = own_command()
+    assert command is not None
+    line = f"{vaulted.at} unlock --raw | {shlex.quote(str(command))} vault open"
+
     said = (await vaulted.client.get("/vault")).json()
 
     assert said == {
         "state": "locked",
         "forgets_at": None,
         "program": str(vaulted.at),
-        "opens_with": f"{vaulted.at} unlock --raw | ela vault open",
-        "message": f"the vault is locked: run `{vaulted.at} unlock --raw | ela vault open` in "
-        "your terminal",
+        "opens_with": line,
+        "message": f"the vault is locked: run `{line}` in your terminal",
     }
-    assert "<" not in said["opens_with"]
+    assert "<" not in said["opens_with"] and " | ela " not in said["opens_with"]
+
+
+async def test_started_where_a_dotenv_is_the_sentence_names_that_folder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The command of the line reads its token from the ``.env`` of the folder it is launched
+    in: an ELA that read one says which folder that is, beside the line."""
+    at = tmp_path / "bw"
+    at.write_bytes(b"\xcf\xfa\xed\xfe a native program")
+    at.chmod(at.stat().st_mode | stat.S_IXUSR)
+    declare(monkeypatch, tmp_path, ELA_VAULT_PROGRAM=str(at))
+    (tmp_path / ".env").write_text("", encoding="utf-8")
+    await create_schema(database_url(tmp_path))
+    ela = await build(Settings.load(), power=FakePower(), vault=FakeVault(state=VAULT_LOCKED))
+    try:
+        state = await ela.vault.state()
+    finally:
+        await ela.aclose()
+
+    assert state.opens_with is not None
+    assert shlex.quote(str(tmp_path.resolve())) in state.message and ".env" in state.message
 
 
 async def test_the_state_is_asked_of_the_vault_at_every_request(vaulted: Vaulted) -> None:

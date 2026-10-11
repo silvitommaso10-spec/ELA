@@ -1148,31 +1148,97 @@ def test_the_reasons_of_a_closing_are_a_closed_set() -> None:
 # ----------------------------------------------------------------------------------------
 
 
+COMMAND = "/somewhere/ELA/.venv/bin/ela"
+"""ELA's own command, as the composition hands it to the door: an absolute path."""
+
+
 async def test_a_locked_vault_says_the_whole_line_to_paste_with_the_declared_program(
     tmp_path: Path,
 ) -> None:
     at = program(tmp_path)
-    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at)
+    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at, command=COMMAND)
 
     state = await made.state()
 
     assert state.name == "locked"
-    assert state.opens_with == f"{at} unlock --raw | ela vault open"
+    assert state.opens_with == f"{at} unlock --raw | {COMMAND} vault open"
     assert state.opens_with in state.message
     assert made.program == str(at)
 
 
-async def test_a_program_whose_path_has_a_space_is_quoted_in_the_line(tmp_path: Path) -> None:
+async def test_both_halves_of_the_line_are_absolute_paths_and_neither_is_a_name_to_look_for(
+    tmp_path: Path,
+) -> None:
+    """Decision 98. The right half is the program that receives the key of the vault: a bare
+    ``ela`` would be whichever the ``PATH`` of whoever pastes the line finds first — or none, as
+    on the machine of the proof — which is what the left half was already refused."""
+    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), program(tmp_path), command=COMMAND)
+
+    line = (await made.state()).opens_with
+
+    assert line is not None
+    left, right = (shlex.split(half) for half in line.split(" | "))
+    assert Path(left[0]).is_absolute() and left[1:] == ["unlock", "--raw"]
+    assert Path(right[0]).is_absolute() and right == [COMMAND, "vault", "open"]
+
+
+async def test_a_path_with_a_space_is_quoted_in_either_half_of_the_line(tmp_path: Path) -> None:
     """The line is pasted into a shell: a path that would split into two words is one word."""
     folder = tmp_path / "Application Support"
     folder.mkdir()
     at = program(folder)
-    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at)
+    spaced = "/Users/somebody/My ELA/.venv/bin/ela"
+    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at, command=spaced)
 
     state = await made.state()
 
-    assert state.opens_with == f"'{at}' unlock --raw | ela vault open"
-    assert shlex.split(state.opens_with)[0] == str(at)
+    assert state.opens_with == f"'{at}' unlock --raw | '{spaced}' vault open"
+    assert shlex.split(state.opens_with) == [
+        str(at),
+        "unlock",
+        "--raw",
+        "|",
+        spaced,
+        "vault",
+        "open",
+    ]
+
+
+async def test_an_ela_that_cannot_name_its_own_command_says_so_and_gives_no_line(
+    tmp_path: Path,
+) -> None:
+    """No line rather than one that may not work: the state has none to paste, and the sentence
+    — the one a task that met the locked vault ends with, too — says why, and what to pipe into
+    what."""
+    at = program(tmp_path)
+    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at)
+
+    state = await made.state()
+    met = await made.find(SITE)
+
+    assert state.name == "locked" and state.opens_with is None
+    assert "cannot name its own command" in state.message
+    assert " | " not in state.message and "ela vault open" not in state.message
+    assert f"{at} unlock --raw" in state.message, "the half ELA does vouch for is still said"
+    assert code_of(met) == "vault.locked" and met.message == state.message
+
+
+@pytest.mark.parametrize("folder", ["/Users/somebody/ELA", "/Users/somebody/My ELA"])
+async def test_the_sentence_says_from_which_folder_the_line_is_run(
+    tmp_path: Path, folder: str
+) -> None:
+    """ELA's command reads the token of the API from the ``.env`` of the folder it is launched
+    in: pasted in a terminal opened elsewhere the line would reach nothing. Where ELA read a
+    ``.env``, the sentence beside the line names that folder — the line itself stays the line."""
+    at = program(tmp_path)
+    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at, command=COMMAND, folder=folder)
+    bare = await door(FakeVault([MARIO], state=VAULT_LOCKED), at, command=COMMAND)
+
+    state, without = await made.state(), await bare.state()
+
+    assert state.opens_with == without.opens_with, "the line is the same"
+    assert shlex.quote(folder) in state.message and ".env" in state.message
+    assert "folder" not in without.message and ".env" not in without.message
 
 
 @pytest.mark.parametrize(
