@@ -615,6 +615,13 @@ class AuditEventType(StrEnum):
     Written by who waits for its process, which is who sees every end — the user closed it, ELA
     stopped — and signed ``ELA``: no route asks for it. The site if one was named, and how long
     the window stayed open, in whole seconds."""
+    BROWSER_CLOSE_ASKED = "BROWSER_CLOSE_ASKED"
+    """The user had ELA end the browser a hand may be on (M13.9, ADR 0063 §8; decision 80).
+
+    Written by the one route that asks, signed ``USER``, **only when a process was told**: who,
+    when, and whether it quit when told or was killed at the grace. For the window ELA started
+    the end itself is one more row, written by who waits for it; for a browser ELA did not start
+    this is the only row there is."""
     APPROVAL_REQUESTED = "APPROVAL_REQUESTED"
     APPROVAL_RESOLVED = "APPROVAL_RESOLVED"
     TOOL_EXECUTED = "TOOL_EXECUTED"

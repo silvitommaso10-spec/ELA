@@ -33,6 +33,7 @@ from ela.ports import (
     SHUT_KILLED,
     SHUT_QUIT,
     BrowserFailed,
+    BrowserStopped,
     BrowserUnsupported,
     ProfileBusy,
     ProfileUndeclared,
@@ -470,17 +471,35 @@ async def test_closing_signals_nothing_that_is_not_ela_s_browser(browsed: Browse
         (ProfileUnsafe(UNSAFE), "browser.profile_unsafe"),
         (BrowserUnsupported("Linux"), "browser.unsupported_system"),
         (BrowserFailed("OSError"), "browser.failed"),
+        (BrowserStopped("ELA is stopping"), "browser.stopped"),
     ],
 )
 async def test_closing_on_a_profile_that_cannot_be_looked_at_says_why(
     browsed: Browsed, raised: Exception, code: str
 ) -> None:
-    browsed.accounts.raising["shut"] = raised
+    """The look every route of the profile begins with, and its codes: nothing is told on a
+    folder ELA cannot say anything of."""
+    browsed.accounts.holder = PROFILE_WINDOW
+    browsed.accounts.raising["occupied"] = raised
 
     answered = await browsed.client.post("/browser/close")
 
     assert answered.status_code == 409
     assert answered.json()["error"]["message"].startswith(f"{code}: ")
+    assert browsed.accounts.shuts == []
+    assert await browsed.events(AuditEventType.BROWSER_CLOSE_ASKED) == []
+
+
+async def test_a_browser_that_could_not_be_ended_after_the_look_is_refused_and_not_written(
+    browsed: Browsed,
+) -> None:
+    browsed.accounts.holder = PROFILE_WINDOW
+    browsed.accounts.raising["shut"] = BrowserFailed("OSError")
+
+    answered = await browsed.client.post("/browser/close")
+
+    assert answered.status_code == 409
+    assert answered.json()["error"]["message"].startswith("browser.failed: ")
     assert await browsed.events(AuditEventType.BROWSER_CLOSE_ASKED) == []
 
 

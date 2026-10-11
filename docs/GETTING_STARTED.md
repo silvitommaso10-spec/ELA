@@ -6331,7 +6331,7 @@ uv run ela task run <id>
 <!-- prova: 7.atteso -->
 ```
 outcome failed
-reason fail: EXECUTING -> FAILED (browser.profile_busy: ELA's browser with your accounts is in use — its window is open: quit that browser (Cmd-Q — closing the window alone leaves it running), and ask again: no question is asked)
+reason fail: EXECUTING -> FAILED (browser.profile_busy: ELA's browser with your accounts is in use — its window is open: quit that browser (Cmd-Q — closing the window alone leaves it running), or run `ela browser close`, and ask again: no question is asked)
 ```
 
 <!-- prova: 7.domanda -->

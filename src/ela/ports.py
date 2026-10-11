@@ -2754,8 +2754,14 @@ PROFILE_STEP: Final = "step"
 PROFILE_WINDOW: Final = "window"
 """The profile is held by the window ELA opened for the user to sign in by hand."""
 PROFILE_PROCESS: Final = "process"
-"""The profile is held by a process ELA did not start now — the lock of the folder names it, and
-the kernel knows it: a window left by an ELA that is gone, a browser somebody launched on it."""
+"""The profile is held by a process ELA did not start now — the lock of the folder names it, the
+kernel knows it, **and its command line names the folder**: a window that relaunched itself, one
+left by an ELA that is gone, a browser somebody launched on it. A lock whose pid went to a
+process that has nothing to do with the folder holds nothing (M13.9, decision 82)."""
+SHUT_QUIT: Final = "quit"
+"""The browser a hand may be on was told to quit, and did."""
+SHUT_KILLED: Final = "killed"
+"""It was told, did not quit within the grace, and was killed."""
 
 
 class ProfileUndeclared(BrowserError):
@@ -2974,6 +2980,24 @@ class AccountBrowser(Browser, Protocol):
 
         :raises ProfileUndeclared, ProfileUnsafe, ProfileBusy, BrowserNotInstalled,
             BrowserUnsupported, BrowserStopped, BrowserFailed:
+        """
+
+    async def shut(self, grace: Callable[[], Awaitable[None]]) -> str | None:
+        """End the browser that holds the profile **for the user's hand** (M13.9, decision 80):
+        it is told to quit, waited for, and killed only once ``grace`` is over. The window ELA
+        started — whose red button closes the window and leaves the browser running —, or a
+        browser ELA did not start **whose command line is ELA's own binary on this folder**: a
+        window that relaunched itself, one left by an ELA that was killed. Returns
+        :data:`SHUT_QUIT` or :data:`SHUT_KILLED`, and ``None`` when nothing held the folder.
+
+        A browser ELA did not start is killed by its pid alone, never with its group, and only
+        if the system still says it is that browser.
+
+        :raises ProfileBusy: ``by`` :data:`PROFILE_STEP` — a page ELA drives ends with its step,
+            or with the stop of its task —, or :data:`PROFILE_PROCESS`: what holds the folder is
+            not ELA's browser, or could not be told, and ELA signals nothing it cannot name.
+        :raises ProfileUndeclared, ProfileUnsafe, BrowserUnsupported, BrowserStopped,
+            BrowserFailed:
         """
 
     async def linked(self) -> bool:

@@ -69,9 +69,9 @@ def test_the_conseguenze_count_the_totals_of_today() -> None:
     }
     assert "**quindici**" in text and len(contracts) == 15
     assert "**trentacinque**" in text and len(tuple(port_protocols())) == 35
-    assert "**settanta**" in text and len(coded_routes()) == 70
-    assert "**trentotto**" in text.split("i port diventano", 1)[1].split("le rotte", 1)[1]
-    assert len(coded_commands()) == 38
+    assert "**settantadue**" in text and len(coded_routes()) == 72
+    assert "**trentanove**" in text.split("i port diventano", 1)[1].split("le rotte", 1)[1]
+    assert len(coded_commands()) == 39
     assert "**diciotto**" in text and len(production_catalogue().specs()) == 18
     assert "**sei**" in text and len(Kind) == 6
 

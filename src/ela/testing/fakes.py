@@ -90,6 +90,7 @@ from ela.ports import (
     PROFILE_STEP,
     PROFILE_WINDOW,
     PROVIDER_UNAVAILABLE,
+    SHUT_QUIT,
     STARTED_ID,
     VAULT_LOCKED,
     VAULT_UNAUTHENTICATED,
@@ -1343,8 +1344,9 @@ class FakeAccountBrowser(FakeBrowser):
     itself; ``windows`` every window that was opened, by its address; ``secrets`` what
     :meth:`fill_secret` wrote, in order — **opened**, as the adapter opens it to type it, which is
     the one thing a fake of this port may do with a secret (architecture rule 68).
-    ``raising`` is honoured by ``occupied``, ``window``, ``linked``, ``saved`` and
-    ``fill_secret`` too.
+    ``raising`` is honoured by ``occupied``, ``window``, ``shut``, ``linked``, ``saved``,
+    ``profiles`` and ``fill_secret`` too. ``shuts`` is the grace of every browser that was told
+    to quit, and ``shut_answer`` how it ended.
     """
 
     def __init__(
@@ -1362,6 +1364,8 @@ class FakeAccountBrowser(FakeBrowser):
         self.linked_answer = linked
         self.saved_answer = saved
         self.profiles_answer = profiles
+        self.shut_answer: str = SHUT_QUIT
+        self.shuts: list[Callable[[], Awaitable[None]]] = []
         self.windows: list[str | None] = []
         self.secrets: list[tuple[str, str]] = []
 
@@ -1396,6 +1400,20 @@ class FakeAccountBrowser(FakeBrowser):
             raise ProfileBusy(holder)
         self.windows.append(address)
         self.holder = PROFILE_WINDOW
+
+    async def shut(self, grace: Callable[[], Awaitable[None]]) -> str | None:
+        """What the adapter does, as the test says it: a step is not ended, nothing is ``None``,
+        and whatever else holds the folder is told — ``shut_answer`` says how it ended — and the
+        folder is free. The grace is kept, never waited for."""
+        self._raise("shut")
+        holder = self._held_by()
+        if holder == PROFILE_STEP:
+            raise ProfileBusy(PROFILE_STEP)
+        if holder is None:
+            return None
+        self.shuts.append(grace)
+        self.holder = None
+        return self.shut_answer
 
     async def linked(self) -> bool:
         self._raise("linked")

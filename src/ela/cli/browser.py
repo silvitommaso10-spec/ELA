@@ -6,8 +6,9 @@ free or held and by whom, with a window or without, and whether the browser know
 its maker's. ``window show`` and ``window hide`` turn **your** switch: no capability has an
 argument for it and no tool decides it, and it is off again at every start of ELA. ``open`` opens
 the window where you sign in to a site with your own hands, on a site you declared or on none:
-**ELA reads nothing of that window**, and while it is open it neither looks at the screen nor
-listens.
+**ELA reads nothing of that window**, and while it is open it does not begin to look at the
+screen or to listen. ``close`` ends that browser: the red button of its window closes the window
+and leaves the browser running, and the profile stays held until the process ends.
 """
 
 from __future__ import annotations
@@ -33,19 +34,29 @@ app.add_typer(window, name="window")
 
 NOT_READ = "not read"
 """What a fact of the folder is when the folder could not be read: not «no», and not «none»."""
+ONLY_ONE_IS_ELA_S = "ELA prepares and uses one, and counts the passwords saved in all of them"
+"""What is said of a folder that holds more than one profile of the browser's (decision 79)."""
+CLOSED = {
+    "quit": "it quit when told: the profile is free",
+    "killed": "it did not quit when told, and was killed: the profile is free",
+    "nothing": "no browser was open on the profile: nobody was told",
+}
+"""What ``close`` says, by what became of the browser."""
 
 
 def _status(payload: dict[str, Any]) -> str:
-    linked, saved = payload["linked"], payload["saved"]
-    rows = fields(
-        [
-            ("state", payload["state"]),
-            ("window", "shown" if payload["window"] else "hidden"),
-            ("linked to an account", NOT_READ if linked is None else ("yes" if linked else "no")),
-            ("saved passwords", NOT_READ if saved is None else saved),
-            ("sites", ", ".join(payload["sites"]) or None),
-        ]
-    )
+    linked, saved, profiles = payload["linked"], payload["saved"], payload["profiles"]
+    said: list[tuple[str, Any]] = [
+        ("state", payload["state"]),
+        ("window", "shown" if payload["window"] else "hidden"),
+        ("linked to an account", NOT_READ if linked is None else ("yes" if linked else "no")),
+        ("saved passwords", NOT_READ if saved is None else saved),
+    ]
+    if profiles is not None and profiles > 1:
+        # One profile is the browser's own first, and nothing to be told.
+        said.append(("profiles in the folder", f"{profiles} — {ONLY_ONE_IS_ELA_S}"))
+    said.append(("sites", ", ".join(payload["sites"]) or None))
+    rows = fields(said)
     return f"{rows}\n{payload['message']}" if payload["message"] else rows
 
 
@@ -88,8 +99,8 @@ def open_(
         typer.Argument(help="One of the sites you declared; none opens the browser's own page."),
     ] = None,
 ) -> None:
-    """Open the window where you sign in by hand. ELA reads nothing of it, and neither looks at
-    the screen nor listens while it is open; you end it, by quitting that browser."""
+    """Open the window where you sign in by hand. ELA reads nothing of it, and does not begin
+    to look at the screen or to listen while it is open; you end it, by quitting that browser."""
     with client.connect() as api:
         opened = api.post("/browser/open", {} if site is None else {"site": site})
     where = "" if opened["site"] is None else f" on {opened['site']}"
@@ -97,3 +108,13 @@ def open_(
         f"the window is open{where}: sign in, then quit that browser (Cmd-Q — closing the window "
         "alone leaves it running). ELA reads nothing of it"
     )
+
+
+@app.command("close")
+@handled
+def close() -> None:
+    """End the browser where you sign in by hand: told to quit, waited for, and killed only if
+    it does not. The red button of its window leaves it running — this does not."""
+    with client.connect() as api:
+        closed = api.post("/browser/close", {})
+    typer.echo(CLOSED.get(closed["outcome"], closed["outcome"]))

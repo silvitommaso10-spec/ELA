@@ -62,6 +62,7 @@ def test_every_command_of_the_milestone_is_there() -> None:
         "browser window show",
         "browser window hide",
         "browser open",
+        "browser close",
         "voice",
         "voice preview",
         "voice audition",

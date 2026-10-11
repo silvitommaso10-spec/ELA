@@ -178,9 +178,12 @@ HELD_BY: Final = {
     PROFILE_STEP: "another step of ELA's is using it",
     PROFILE_WINDOW: (
         "its window is open: quit that browser (Cmd-Q — closing the window alone leaves it "
-        "running), and ask again"
+        "running), or run `ela browser close`, and ask again"
     ),
-    PROFILE_PROCESS: "another process holds it — a browser somebody started on that folder",
+    PROFILE_PROCESS: (
+        "another process holds it — a browser somebody started on that folder, or a window of "
+        "ELA's that outlived it: quit it, or run `ela browser close`"
+    ),
 }
 SPENT: Final = "; the yes was spent, and nothing was typed"
 UNNAMED: Final = "(an entry of your vault that has no name)"

@@ -1489,8 +1489,10 @@ class BrowserOut(BaseModel):
     ``unsupported_system``, ``profile_undeclared``, ``profile_unsafe``, ``not_installed``,
     ``failed``, ``stopped``. ``message`` is the sentence of that state, empty for a free profile.
     ``window`` is the user's switch. ``linked`` is whether the browser knows an account of its
-    maker's, and ``saved`` how many passwords its own manager holds — read again each time, and
-    ``None`` where the folder could not be read. ``sites`` are the declared ones, where the
+    maker's, and ``saved`` how many passwords its own manager holds — **in every profile of the
+    browser's that the folder holds**, which ``profiles`` counts: ELA prepares and uses one, and
+    a second is one the user added from inside the window (decision 79). Read again each time,
+    and ``None`` where the folder could not be read. ``sites`` are the declared ones, where the
     window may be opened. **Nothing of the folder**: not its path, not a file of it.
     """
 
@@ -1499,6 +1501,7 @@ class BrowserOut(BaseModel):
     window: bool
     linked: bool | None
     saved: int | None
+    profiles: int | None
     sites: tuple[str, ...]
 
 
@@ -1528,6 +1531,14 @@ class BrowserOpenedOut(BaseModel):
     """The window is open, on that site or on none. Nothing of what happens in it is ELA's."""
 
     site: str | None
+
+
+class BrowserClosedOut(BaseModel):
+    """What became of the browser a hand may be on (decision 80): ``quit`` — told, it ended —,
+    ``killed`` — it did not, and was killed once the grace was over —, or ``nothing``: no
+    browser held the profile, and nobody was told."""
+
+    outcome: str
 
 
 class PolicyIn(BaseModel):

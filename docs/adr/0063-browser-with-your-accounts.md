@@ -127,7 +127,7 @@ Port introdotti:
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
 | `Vault` | §19, §57 | async | `status`, `unlock`, `lock`, `forget`, `find`, `take` |
-| `AccountBrowser` | §19, §57 | async | `installed`, `open`, `count`, `field`, `fill`, `click`, `text`, `title`, `left`, `keep`, `glance`, `close`, `occupied`, `window`, `linked`, `saved`, `fill_secret` |
+| `AccountBrowser` | §19, §57 | async | `installed`, `open`, `count`, `field`, `fill`, `click`, `text`, `title`, `left`, `keep`, `glance`, `close`, `occupied`, `window`, `shut`, `linked`, `saved`, `profiles`, `fill_secret` |
 
 **I comandi che l'adapter compone sono un elenco chiuso**: `status`; `list items --url <indirizzo>`; `get item
 <id>`; `lock`. Mai `unlock`, `login`, `export`, `get totp`, `get uri`, `serve`, `sync`, né `--session`: la chiave
@@ -584,10 +584,44 @@ fermata di ELA riceve un `SIGTERM`, ed entro la grazia della chiusura è uccisa 
 una capability: nessun piano e nessun modello la apre. Finché è aperta ELA non comincia a guardare né ad
 ascoltare (§7).
 
+**Il comando che la finisce** (decisione 80, review dell'11 ottobre). Con il pulsante rosso la finestra si
+chiude e il processo resta: lo stato dice ancora `window`, ogni step con il profilo è rifiutato e la percezione
+pure. `ela browser close` — con la sua rotta e il suo pulsante nella vista — **avvisa** il browser su cui può
+esserci una mano, **lo aspetta, e solo allo scadere della grazia lo uccide**: la stessa grazia della chiusura di
+ELA, consegnata all'adapter come attesa. Vale per la finestra che questa ELA ha avviato, uccisa con il suo
+gruppo, che è di ELA; e per **un processo che ELA non ha avviato solo se la sua riga di comando è il binario del
+lock sulla cartella del profilo** — una finestra che si è rilanciata da sé, quella lasciata da un'ELA uccisa. È
+il controllo che dice anche se la cartella è tenuta: **una funzione sola**, `on_the_folder`, per le due domande
+(sotto). Un processo che ELA non ha avviato è ucciso **per pid, mai per gruppo**, e solo se il sistema,
+richiesto di nuovo allo scadere, dice che è ancora quel browser. **Che cosa il comando non fa**: non finisce uno
+step di ELA — quello finisce con il suo task —, e non segnala niente che non sia il browser di ELA: una riga di
+comando che non si è potuta leggere è un dubbio, e il dubbio non riceve segnali. **Alla sua chiusura ELA avvisa
+solo ciò che ha avviato**: la (c) della domanda 80 non è presa.
+
 **Un processo alla volta sul profilo** (decisione 18c). Chi tiene la cartella è derivato a ogni domanda, mai
 ricordato: uno step di ELA, la finestra, o un processo che il lock della cartella nomina. La finestra che
 trova la cartella tenuta non si apre: ELA non lancia un secondo processo su una cartella che ha trovato
 occupata, perché è il lancio che può uccidere il primo.
+
+**Un lock tiene la cartella solo se la riga di comando del suo processo la nomina** (decisione 82, review
+dell'11 ottobre). Un browser ucciso lascia il lock, e il sistema dà quel pid a chi parte dopo: un processo che
+dura avrebbe tenuto la cartella finché qualcuno non toglieva il link a mano. Quando il lock nomina un pid che
+il kernel conosce — **e solo allora: un lancio in più, mai a ogni cattura** — l'adapter chiede al sistema la
+riga di comando di quel processo (`/bin/ps`, al suo percorso assoluto, con l'ambiente chiuso del browser), e
+`on_the_folder` la legge:
+
+| Che cosa dice la riga di comando | La cartella | `ela browser close` |
+|---|---|---|
+| non nomina la cartella, o il processo non c'è più | **libera**: il lock è un resto | niente da chiudere |
+| è il binario del lock, su questa cartella, e non un suo aiutante | tenuta | lo avvisa |
+| nomina la cartella ed è un altro programma | tenuta | rifiuta: non è il browser di ELA |
+| non si è potuta leggere | **tenuta: il dubbio rifiuta** | rifiuta |
+
+La cartella è cercata come argomento intero, come è scritta e come un percorso si rende piano. *Il limite*: il
+sistema stampa gli argomenti uniti da spazi, e due cartelle i cui nomi differiscono per ciò che segue uno
+spazio non si distinguono — nel verso che tiene la cartella. Ciò che l'adapter stesso ha in volo viene prima
+del lock, ed è **riguardato dopo la risposta del sistema**: fra quello sguardo e chi agisce non c'è nessuna
+attesa.
 
 Rotte nuove, in `ela/api/browser.py`, che raggiunge `CORE` con il token:
 
@@ -596,6 +630,7 @@ Rotte nuove, in `ela/api/browser.py`, che raggiunge `CORE` con il token:
 | `GET` | `/browser` | che cosa è il profilo, guardato attraverso il suo port: usabile o no e perché, libero o tenuto e da chi, con o senza finestra, collegato o no a un account |
 | `POST` | `/browser/window` | con la finestra, o senza: l'interruttore di Tommaso |
 | `POST` | `/browser/open` | la finestra del login a mano, su un sito dichiarato o su nessuno |
+| `POST` | `/browser/close` | il browser su cui può esserci una mano, fatto uscire: avvisato, aspettato, ucciso solo allo scadere della grazia |
 
 **Lo stato è il rifiuto dei tool, o chi tiene la cartella.** `GET /browser` risponde `free`; oppure il nome di
 chi tiene il profilo, come lo dice il port — `step`, `window`, `process` —; oppure perché nessun browser può
@@ -603,7 +638,11 @@ partirci, con il codice che uno
 step riceverebbe prima della sua domanda, senza il prefisso — una definizione sola, in `ela/tools/account.py`,
 per i tool e per le rotte. `linked` e `saved` sono ciò che il browser dice di sé — se conosce un account di chi
 l'ha fatto, quante password tiene il suo gestore —, **riletti a ogni richiesta, mai da una copia** (decisione
-63), e «non letto» dove la cartella non si è potuta leggere: non «no», e non «nessuna».
+63), e «non letto» dove la cartella non si è potuta leggere: non «no», e non «nessuna». **`saved` conta in
+ogni profilo del browser che la cartella contiene, e `profiles` dice quanti sono** (decisione 79): ELA ne
+prepara e ne usa uno, `Default`, che ogni lancio nomina (§4); un secondo è uno che Tommaso ha aggiunto da
+dentro la finestra, e le superfici lo dicono quando c'è. Un profilo è una cartella della cartella — mai un
+link — che tiene il file `Preferences` del browser.
 
 **Una rotta non apre la cartella e non ne riceve il percorso** (decisione 35): chiede al port, che risponde
 con fatti. Lo tiene la regola 69.
@@ -612,13 +651,13 @@ Errori aggiunti, nella forma della tabella di ADR 0023 §10:
 
 | Caso | Eccezione | Stato |
 |---|---|---|
-| la finestra non si apre: un sito non dichiarato, un profilo su cui nessun browser può partire, o tenuto | `BrowserRefusedError` | `409` |
+| la finestra non si apre: un sito non dichiarato, un profilo su cui nessun browser può partire, o tenuto; o il browser non si chiude: lo tiene uno step, o un processo che non è il browser di ELA | `BrowserRefusedError` | `409` |
 
 Codici aggiunti a `ela.ports.WireCode`:
 
 | Codice | Membro | Quando |
 |---|---|---|
-| `browser.refused` | `BROWSER_REFUSED` | la finestra del login a mano non si è aperta: il messaggio comincia con il codice dei tool |
+| `browser.refused` | `BROWSER_REFUSED` | la finestra del login a mano non si è aperta, o il browser non si è chiuso: il messaggio comincia con il codice dei tool |
 
 Il messaggio comincia con `browser.site_undeclared` per un sito che non è fra quelli dichiarati — il solo
 codice che è di queste rotte e non dei tool —, e altrimenti con il codice che uno step con il profilo
@@ -633,8 +672,10 @@ Un gruppo nuovo della CLI, **`ela browser`**:
 | `ela browser window show` | `POST /browser/window` | `0` `1` `2` `3` |
 | `ela browser window hide` | `POST /browser/window` | `0` `1` `2` `3` |
 | `ela browser open` | `POST /browser/open` | `0` `1` `2` `3` |
+| `ela browser close` | `POST /browser/close` | `0` `1` `2` `3` |
 
-`ela browser open` prende un sito, o niente.
+`ela browser open` prende un sito, o niente. `ela browser close` non prende niente, e dice che cosa è stato del
+browser: è uscito quando avvisato, è stato ucciso, o non c'era niente da chiudere — che non è un errore.
 
 **L'audit**: tipi d'evento nuovi, senza contenuto. `BROWSER_WINDOW_OPENED` lo scrive la rotta che apre la
 finestra, firmato da chi l'ha chiesta, con il sito se c'era. `BROWSER_WINDOW_CLOSED` lo scrive **chi aspetta la
@@ -644,7 +685,10 @@ resterebbe senza riga. Porta il sito, se c'era — l'host, senza nome né porta 
 finestra è rimasta aperta: mai un indirizzo, e niente di ciò che vi è stato fatto — ELA non lo sa. *Restano
 senza riga* la finestra di un'ELA uccisa, che nessuno aspetta più, e una fine la cui riga non si scrive: questa
 è detta nel log, con il tipo dell'errore, e non ferma la chiusura di ELA. L'interruttore della finestra non è
-un evento: non apre niente.
+un evento: non apre niente. `BROWSER_CLOSE_ASKED` lo scrive la rotta del comando che chiude, firmato da chi
+l'ha chiesto, **solo quando un processo è stato avvisato**, con che cosa ne è stato — uscito, o ucciso. Per la
+finestra che ELA ha avviato la fine è una riga in più, di chi la aspetta; per un processo che ELA non ha
+avviato è la sola riga che c'è.
 
 ### 9. La domanda di un login: quale voce, e di chi
 
@@ -675,8 +719,9 @@ una lettura, un gesto e un login con il profilo sono domande nell'Approval Cente
 di §9, e passi nella vista del task; una sessione con il profilo si guarda come quella di ADR 0060. **La vista
 che questo ADR aggiunge è «Il browser di ELA»**, la sesta: il profilo e il vault come `GET /browser` e
 `GET /vault` li dicono, la finestra che si accende e si spegne, la finestra del login a mano che si apre su un
-sito dichiarato o su nessuno, e il vault che si chiude. **Non lo apre**: una chiave non si incolla in una
-pagina, e nessun campo della vista potrebbe portarne una. Il telefono non ha questa vista.
+sito dichiarato o su nessuno, quel browser che si fa uscire, e il vault che si chiude. **Non lo apre**: una
+chiave non si incolla in una pagina, e nessun campo della vista potrebbe portarne una. Il telefono non ha
+questa vista.
 
 Rotte nuove, in `ela/api/console.py`, che raggiunge il cookie di una console:
 
@@ -685,9 +730,12 @@ Rotte nuove, in `ela/api/console.py`, che raggiunge il cookie di una console:
 | `GET` | `/console/browser` | il profilo e il vault, e i moduli di ciò che questa console può fare |
 | `POST` | `/console/browser/window` | l'interruttore della finestra, dal Mac |
 | `POST` | `/console/browser/open` | la finestra del login a mano, dal Mac |
+| `POST` | `/console/browser/close` | il browser su cui può esserci una mano, fatto uscire, dal Mac |
 | `POST` | `/console/browser/lock` | il vault chiuso, da qualunque console |
 
-**Ciò che cambia qualcosa sullo schermo del Mac si fa dal Mac.** L'interruttore e la finestra del login li usa
+**Ciò che cambia qualcosa sullo schermo del Mac si fa dal Mac.** L'interruttore, la finestra del login e il
+pulsante che la fa uscire — offerto quando lo stato è `window` o `process`, accanto alla frase che spiega il
+pulsante rosso — li usa
 una console il cui tetto è `LOCAL_ONLY` — i due capi del socket in loopback, come lo decide il middleware —;
 da fuori la vista dice gli stati e fa una cosa sola, quella che toglie: chiude il vault, come la revoca di una
 policy. Da fuori non si leggono nemmeno i siti dichiarati, né le frasi dei tool e del vault, che possono
@@ -696,14 +744,14 @@ nominare una cartella o un programma del Mac.
 **La pagina non raggiunge niente attraverso ELA** (regola 55): chiama le funzioni delle rotte — quelle di
 `ela/api/browser.py`, e quelle che `ela/api/vault.py` espone per lei, `vault_of` e `vault_locked`.
 
-**Ogni modulo nomina ciò che chiede.** Un `POST` senza il suo campo — `shown`, `site`, `vault` — non è una
+**Ogni modulo nomina ciò che chiede.** Un `POST` senza il suo campo — `shown`, `site`, `browser`, `vault` — non è una
 richiesta da indovinare: `422`, e niente cambia. Il sito vuoto è «nessun sito», ed è una risposta.
 
 Errori aggiunti, nella forma della tabella di ADR 0023 §10:
 
 | Caso | Eccezione | Stato |
 |---|---|---|
-| la finestra o il suo interruttore chiesti da una console che non è al Mac | `BrowserOutOfReachError` | `409` |
+| la finestra, il suo interruttore o la sua chiusura chiesti da una console che non è al Mac | `BrowserOutOfReachError` | `409` |
 
 ## Alternative considerate
 
@@ -768,7 +816,7 @@ Le altre conseguenze:
   `fill` (misurato), e da M13.9 un `fill` può portare una password.
 
 Con questo ADR le regole di architettura sono **sessantanove** (la 67, la 68 e la 69), i contratti di import-linter restano
-**quindici**, i port diventano **trentacinque** (`Vault` e `AccountBrowser`), le rotte dell'API **settanta** e i comandi
-della CLI **trentotto** (quelle del vault e del browser con i loro comandi, e quelle della vista della console); le
+**quindici**, i port diventano **trentacinque** (`Vault` e `AccountBrowser`), le rotte dell'API **settantadue** e i comandi
+della CLI **trentanove** (quelle del vault e del browser con i loro comandi, e quelle della vista della console); le
 capability diventano **diciotto** (quelle di §5), le identità del middleware restano **sei**. *(I totali si aggiornano con le sezioni
 che seguono: questo ADR si scrive con l'implementazione.)*

@@ -120,6 +120,7 @@ def test_the_registry_holds_one_tool_and_one_verifier_per_capability(tmp_path: P
 
 
 LATER_COMMANDS = (
+    "browser close",
     "browser open",
     "browser status",
     "browser window hide",

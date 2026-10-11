@@ -142,6 +142,7 @@ async def test_status_as_json_is_the_api_s_own_answer(browsed: Browsed) -> None:
         "window": False,
         "linked": False,
         "saved": 0,
+        "profiles": 1,
         "sites": SITES,
     }
 

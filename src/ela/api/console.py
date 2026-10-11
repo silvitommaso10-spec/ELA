@@ -38,7 +38,7 @@ from fastapi.responses import RedirectResponse
 
 from ela.api import pages
 from ela.api.approvals import answered_and_resumed, pending_approvals
-from ela.api.browser import FREE, browser_of, window_opened, window_turned
+from ela.api.browser import FREE, browser_of, window_opened, window_shut, window_turned
 from ela.api.companion import (
     NO_FINISHED,
     NO_LIVE,
@@ -96,6 +96,8 @@ from ela.domain import (
     visible,
 )
 from ela.ports import (
+    PROFILE_PROCESS,
+    PROFILE_WINDOW,
     VAULT_UNLOCKED,
     ApprovalOutOfReachError,
     EnrollmentConsumedError,
@@ -1002,6 +1004,13 @@ FROM_THE_MAC: Final = (
 a narrower ceiling reads the states and closes the vault — that takes away, it does not widen."""
 NOT_READ: Final = "non letto"
 """A fact of the folder where the folder could not be read: not «no», and not «nessuna»."""
+A_HAND_MAY_BE_ON: Final = frozenset({PROFILE_WINDOW, PROFILE_PROCESS})
+"""The holders the view offers to end: the browser where the user signs in by hand. A step of
+ELA's ends with its task."""
+ONLY_ONE_IS_ELA_S: Final = (
+    "La cartella contiene più di un profilo del browser: ELA ne prepara e ne usa uno solo, e "
+    "conta le password salvate in tutti."
+)
 WITH_A_WINDOW: Final = "con finestra"
 WITHOUT_A_WINDOW: Final = "senza finestra"
 
@@ -1034,6 +1043,16 @@ async def browser_view(ela: ElaDep, identity: IdentityDep) -> Response:
         said=_said(profile.message, here),
         window=_window_form(profile) if here else pages.fragment(HERE, "notice", text=FROM_THE_MAC),
         open=_open_form(profile) if here and profile.state == FREE else pages.joined(()),
+        close=(
+            pages.fragment(HERE, "browser-close")
+            if here and profile.state in A_HAND_MAY_BE_ON
+            else pages.joined(())
+        ),
+        several=(
+            pages.fragment(HERE, "notice", text=ONLY_ONE_IS_ELA_S)
+            if _several(profile)
+            else pages.joined(())
+        ),
         vault=_vault_pairs(vault),
         told=pages.joined(
             _said(told, here) for told in (vault.message, vault.opens_with or "") if told
@@ -1055,22 +1074,31 @@ def _said(sentence: str, here: bool) -> pages.Markup:
     return pages.fragment(HERE, "notice", text=visible(sentence, lines=False))
 
 
+def _several(profile: BrowserOut) -> bool:
+    """Whether the folder holds more than the one profile ELA prepares and uses: one is the
+    browser's own first, and nothing to be told."""
+    return profile.profiles is not None and profile.profiles > 1
+
+
 def _profile_pairs(profile: BrowserOut) -> pages.Markup:
     linked = NOT_READ if profile.linked is None else ("sì" if profile.linked else "no")
     saved = NOT_READ if profile.saved is None else str(profile.saved)
-    return pages.joined(
-        [
-            pages.fragment(HERE, "pair", key="Stato", value=profile.state),
-            pages.fragment(
-                HERE,
-                "pair",
-                key="Finestra",
-                value=WITH_A_WINDOW if profile.window else WITHOUT_A_WINDOW,
-            ),
-            pages.fragment(HERE, "pair", key="Collegato a un account", value=linked),
-            pages.fragment(HERE, "pair", key="Password salvate", value=saved),
-        ]
-    )
+    pairs = [
+        pages.fragment(HERE, "pair", key="Stato", value=profile.state),
+        pages.fragment(
+            HERE,
+            "pair",
+            key="Finestra",
+            value=WITH_A_WINDOW if profile.window else WITHOUT_A_WINDOW,
+        ),
+        pages.fragment(HERE, "pair", key="Collegato a un account", value=linked),
+        pages.fragment(HERE, "pair", key="Password salvate", value=saved),
+    ]
+    if _several(profile):
+        pairs.append(
+            pages.fragment(HERE, "pair", key="Profili nella cartella", value=str(profile.profiles))
+        )
+    return pages.joined(pairs)
 
 
 def _window_form(profile: BrowserOut) -> pages.Markup:
@@ -1127,6 +1155,18 @@ async def browser_open(request: Request, ela: ElaDep, identity: IdentityDep) -> 
     if site is None:
         raise ValueError("the form of the window names its site, or the empty one")
     await window_opened(ela, identity, site or None)
+    return RedirectResponse("/console/browser", status_code=303)
+
+
+@router.post("/browser/close")
+async def browser_close(request: Request, ela: ElaDep, identity: IdentityDep) -> Response:
+    """End the browser where the user signs in by hand, from the Mac — and the view again. A
+    window a hand may be typing in is not ended from anywhere else (decision 12)."""
+    if not _at_the_mac(identity):
+        raise BrowserOutOfReachError
+    if form(await request.body()).get("browser") != "close":
+        raise ValueError("the form of the browser says browser=close")
+    await window_shut(ela, identity)
     return RedirectResponse("/console/browser", status_code=303)
 
 

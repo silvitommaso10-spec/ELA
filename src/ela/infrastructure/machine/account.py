@@ -43,6 +43,9 @@ What a page gets here that an empty one does not:
 attached**: no driver, no pipe, no debugging port; its output goes nowhere; ELA keeps one thing of
 it, the wait for its end. At ELA's stop it is told — ``SIGTERM``, to which it exits by itself,
 writing its cookies —, waited for within the grace of the close, and then killed with its group.
+**The user's command does the same to it, and nothing does it by itself**
+(:meth:`AccountChrome.shut`): the red button of a window closes the window and leaves the browser
+running.
 **It is never left behind**: the launch is a task of the adapter's own, which runs to its end
 whoever asked for it and went away, and which the close waits for before it calls the folder free.
 
@@ -81,6 +84,8 @@ from ela.ports import (
     PROFILE_PROCESS,
     PROFILE_STEP,
     PROFILE_WINDOW,
+    SHUT_KILLED,
+    SHUT_QUIT,
     BrowserFailed,
     BrowserNotInstalled,
     BrowserUnsupported,
@@ -225,6 +230,9 @@ ELA_S_BROWSER: Final = "browser"
 ANOTHER_PROGRAM: Final = "another"
 """A process on the folder that is not ELA's binary, or that could not be read: it holds the
 folder, and ELA signals nothing it cannot name."""
+GONE_EVERY: Final = 0.05
+"""How often a browser ELA did not start, once told to quit, is asked of the kernel: it is no
+child of ELA's, and nothing tells ELA when it ends. Counted inside the grace, never beyond it."""
 LINKED: Final = (
     ("account_info",),
     ("google", "services", "account_id"),
@@ -836,6 +844,74 @@ class AccountChrome(PlaywrightBrowser):
                 "the end of a window of ELA's browser could not be told (%s)",
                 type(error).__name__,
             )
+
+    async def shut(self, grace: Callable[[], Awaitable[None]]) -> str | None:
+        self._refuse_if_stopping()
+        profile = await self._folder()
+        launching = self._launching
+        if launching is not None and not launching.done():
+            # A window is being started: what is told is the window, once it is there.
+            await asyncio.wait({launching})
+        if self._pages or self._opening or self._closing:
+            raise ProfileBusy(PROFILE_STEP)
+        window, watched = self._window, self._watched
+        if window is not None and watched is not None:
+            return await self._told(window, watched, grace)
+        named = await self._named(profile)
+        if named is None:
+            return None
+        pid, what = named
+        if what != ELA_S_BROWSER:
+            raise ProfileBusy(PROFILE_PROCESS)
+        return await self._told_another(pid, profile, grace)
+
+    async def _told(
+        self,
+        window: asyncio.subprocess.Process,
+        watched: asyncio.Task[None],
+        grace: Callable[[], Awaitable[None]],
+    ) -> str:
+        """The window ELA started: told as at ELA's stop, waited for through the wait ELA keeps
+        of it — which says its end to whoever is told —, and killed with its group, which is
+        ELA's own, once the grace is over."""
+        with contextlib.suppress(ProcessLookupError):
+            window.terminate()
+        over = asyncio.ensure_future(grace())
+        try:
+            await asyncio.wait({watched, over}, return_when=asyncio.FIRST_COMPLETED)
+            if watched.done():
+                return SHUT_QUIT
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(window.pid, signal.SIGKILL)
+            await asyncio.wait({watched})
+            return SHUT_KILLED
+        finally:
+            over.cancel()
+
+    async def _told_another(
+        self, pid: int, profile: Path, grace: Callable[[], Awaitable[None]]
+    ) -> str:
+        """A browser ELA did not start, which the system said is ELA's binary on this folder:
+        told, asked of the kernel until it is gone or the grace is over, and then — **if the
+        system still says it is that browser** — killed by its pid. Never its group: a group ELA
+        did not make is not ELA's to kill."""
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGTERM)
+        over = asyncio.ensure_future(grace())
+        try:
+            while self._known(pid) and not over.done():
+                await asyncio.wait({over}, timeout=GONE_EVERY)
+            if not self._known(pid):
+                return SHUT_QUIT
+            # A pid is the system's to give again, and one that ended and is not collected still
+            # answers: what is there now is asked once more, right before it is killed.
+            if await self._named(profile) != (pid, ELA_S_BROWSER):
+                return SHUT_QUIT
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+            return SHUT_KILLED
+        finally:
+            over.cancel()
 
     async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
         """What ELA's close waits for, on the profile: the pages, as the empty browser's, **and
