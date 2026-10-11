@@ -191,7 +191,8 @@ async def test_open_with_no_site_opens_the_window_and_says_what_ela_does_not_do(
 
     assert result.exit_code == OK, result.output
     assert result.output.strip() == (
-        "the window is open: sign in, then close it. ELA reads nothing of it"
+        "the window is open: sign in, then quit that browser (Cmd-Q — closing the window alone "
+        "leaves it running). ELA reads nothing of it"
     )
     assert browsed.sent("/browser/open") == [{}]
     assert browsed.accounts.windows == [None]

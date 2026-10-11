@@ -311,14 +311,17 @@ async def test_a_browser_that_is_not_installed_is_said_with_the_command_that_ins
     ("holder", "said"),
     [
         (PROFILE_STEP, "another step of ELA's"),
-        (PROFILE_WINDOW, "its window is open"),
+        (PROFILE_WINDOW, "its window is open: quit that browser (Cmd-Q"),
         (PROFILE_PROCESS, "another process holds it"),
     ],
 )
 async def test_a_folder_that_is_held_is_busy_before_the_question_and_can_be_asked_again(
     tmp_path: Path, capability: str, holder: str, said: str
 ) -> None:
-    """Criterion 14: for the user's own window too. Retryable — what holds it ends."""
+    """Criterion 14: for the user's own window too. Retryable — what holds it ends. **And what
+    ends the window is a quit**: on the Mac a browser whose window is closed goes on running,
+    and holding the folder — a sentence that said «close it» would leave the user with a profile
+    that stays busy and nothing on the screen to close."""
     browser = FakeAccountBrowser(holder=holder)
     vault = FakeVault([MARIO])
     tool = tools(browser, await door(vault, tmp_path))[capability]
