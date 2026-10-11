@@ -455,7 +455,13 @@ Dichiarazioni aggiunte, nella forma della tabella di ADR 0062 §1:
 
 **Che cosa esce** (§57), riscritto per questa sessione: il fornitore e il perché sono quelli di ADR 0060 §8; i
 dati sono la frase, il sito, le istruzioni di ELA, e **il testo delle pagine lette come Tommaso — contenuto
-suo**. La domanda e l'anteprima di una policy lo dicono nel campo `sends`. Le istruzioni al modello guadagnano
+suo**. **La policy del fornitore, riletta il 2026-10-11**: la cancellazione entro trenta giorni e le sue
+eccezioni sono quelle di ADR 0060 §8; l'articolo nomina in più i modelli che il fornitore chiama *Covered
+Models*, per i quali la conservazione e una revisione valgono anche dove un accordo le avrebbe tolte, e i
+punteggi di una violazione segnalata, che restano più a lungo degli ingressi. *La rilettura è stata fatta con
+uno strumento che riporta le frasi che gli si chiedono, non con il testo intero: che cosa ha trovato, e che
+cosa non ha trovato, è la domanda 75 della milestone, e questo ADR non esce da Proposta prima che Tommaso abbia
+letto la pagina.* La domanda e l'anteprima di una policy lo dicono nel campo `sends`. Le istruzioni al modello guadagnano
 una riga: non aprire un indirizzo che conferma, cancella, disiscrive o esce se la frase non lo chiede. **Dentro
 quel sito un modello può aprire qualunque indirizzo come Tommaso**, e la descrizione della capability lo dice.
 
