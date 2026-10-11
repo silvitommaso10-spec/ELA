@@ -56,8 +56,9 @@ def program(folder: Path, content: bytes = b"\xcf\xfa\xed\xfe a native program")
 async def door(vault: FakeVault | None, at: Path | None, **options: Any) -> Any:
     from ela.tools.vault import VaultDoor
 
+    clock = options.pop("clock", None) or getattr(options.get("wait"), "clock", None)
     return await VaultDoor.fixed(
-        vault, None if at is None else str(at), clock=options.pop("clock", FakeClock()), **options
+        vault, None if at is None else str(at), clock=clock or FakeClock(), **options
     )
 
 
@@ -531,21 +532,29 @@ class Told:
 
 
 class Hour:
-    """The hour of the key, held by the test: every wait the keeper begins, and the event that
-    ends it."""
+    """The hour of the key, held by the test: its clock, every wait the keeper begins, and what
+    ends one — time going by."""
 
-    def __init__(self) -> None:
+    def __init__(self, clock: FakeClock | None = None) -> None:
+        self.clock = FakeClock() if clock is None else clock
         self.asked: list[float] = []
-        self.over = asyncio.Event()
         self.cancelled = 0
+        self._turn = asyncio.Event()
 
     async def __call__(self, seconds: float) -> None:
         self.asked.append(seconds)
         try:
-            await self.over.wait()
+            await self._turn.wait()
         except asyncio.CancelledError:
             self.cancelled += 1
             raise
+        self._turn.clear()
+
+    def passes(self, time: timedelta) -> None:
+        """``time`` goes by on the clock, and the wait in flight ends — however long it was
+        asked to be: a machine that slept wakes a wait late, not on time."""
+        self.clock.advance(time)
+        self._turn.set()
 
 
 async def turns(times: int = 5) -> None:
@@ -612,7 +621,8 @@ async def test_a_command_that_held_nothing_and_ran_nothing_tells_nobody(tmp_path
 async def test_the_hour_running_out_at_a_use_is_told_as_the_time_and_by_nobody(
     tmp_path: Path,
 ) -> None:
-    told, hour, clock = Told(), Hour(), FakeClock()
+    clock = FakeClock()
+    told, hour = Told(), Hour(clock)
     vault = FakeVault([MARIO], state=VAULT_LOCKED)
     made = await door(vault, program(tmp_path), clock=clock, closed=told, wait=hour)
     assert await made.open(Secret(KEY)) is None
@@ -627,8 +637,9 @@ async def test_the_hour_running_out_at_a_use_is_told_as_the_time_and_by_nobody(
 
 
 async def test_at_its_time_the_keeper_closes_the_vault_with_nobody_calling(tmp_path: Path) -> None:
-    """Decision 33: «a task of the keeper of the key — not a route: nobody is calling it»."""
-    from ela.tools.vault import VAULT_OPEN_SECONDS
+    """Decision 33: «a task of the keeper of the key — not a route: nobody is calling it». It
+    looks at the clock at every minute, and at the last one waits what is left."""
+    from ela.tools.vault import VAULT_OPEN_SECONDS, WATCH_SECONDS
 
     told, hour = Told(), Hour()
     vault = FakeVault([MARIO], state=VAULT_LOCKED)
@@ -636,17 +647,39 @@ async def test_at_its_time_the_keeper_closes_the_vault_with_nobody_calling(tmp_p
 
     assert await made.open(Secret(KEY)) is None
     await turns()
-    assert hour.asked == [float(VAULT_OPEN_SECONDS)], (
-        "one wait, of the whole hour, from the opening"
-    )
-    assert told.said == [] and "lock" not in vault.calls
+    assert hour.asked == [float(WATCH_SECONDS)] and WATCH_SECONDS == 60
 
-    hour.over.set()
+    hour.passes(timedelta(seconds=VAULT_OPEN_SECONDS - 90))
+    await turns()
+    hour.passes(timedelta(seconds=60))
+    await turns()
+    assert hour.asked == [60.0, 60.0, 30.0], "the last wait is of what is left of the hour"
+    assert told.said == [] and "lock" not in vault.calls, "not a second before"
+
+    hour.passes(timedelta(seconds=30))
     await told.hears()
 
     assert vault.calls[-1] == "lock"
     assert told.said == [("expired", None, True, None)]
     assert made.forgets_at is None
+    assert len(hour.asked) == 3, "and it waits no more"
+
+
+async def test_the_hour_is_the_clock_s_and_not_the_loop_s(tmp_path: Path) -> None:
+    """A machine that sleeps: the time of the loop stands still, and the clock does not. The wait
+    of a minute that was in flight ends three hours late — and the keeper, which asks the clock
+    and not the wait, closes at once: an hour from the opening is an hour of the clock."""
+    told, hour = Told(), Hour()
+    vault = FakeVault([MARIO], state=VAULT_LOCKED)
+    made = await door(vault, program(tmp_path), closed=told, wait=hour)
+    assert await made.open(Secret(KEY)) is None
+    await turns()
+
+    hour.passes(timedelta(hours=3))
+    await told.hears()
+
+    assert told.said == [("expired", None, True, None)]
+    assert hour.asked == [60.0], "one wait, of a minute: never one as long as the hour"
 
 
 async def test_at_its_time_with_a_program_that_changed_the_keeper_forgets_and_runs_nothing(
@@ -658,7 +691,7 @@ async def test_at_its_time_with_a_program_that_changed_the_keeper_forgets_and_ru
     assert await made.open(Secret(KEY)) is None
     program(tmp_path, b"\xcf\xfa\xed\xfe changed")
 
-    hour.over.set()
+    hour.passes(timedelta(hours=1))
     await told.hears()
 
     assert vault.calls[-1] == "forget" and "lock" not in vault.calls
@@ -678,7 +711,7 @@ async def test_a_close_before_the_time_ends_the_wait_and_the_time_closes_nothing
     await turns()
     assert hour.cancelled == 1
 
-    hour.over.set()
+    hour.passes(timedelta(hours=1))
     await turns()
 
     assert told.said == [("command", TOMMASO, True, None)]
@@ -688,7 +721,8 @@ async def test_a_close_before_the_time_ends_the_wait_and_the_time_closes_nothing
 async def test_a_second_opening_starts_the_hour_again_and_ends_the_first_wait(
     tmp_path: Path,
 ) -> None:
-    hour, clock = Hour(), FakeClock()
+    clock = FakeClock()
+    hour = Hour(clock)
     vault = FakeVault([MARIO], state=VAULT_LOCKED)
     made = await door(vault, program(tmp_path), clock=clock, wait=hour)
     assert await made.open(Secret(KEY)) is None
@@ -765,7 +799,7 @@ async def test_a_stop_while_the_keeper_is_closing_waits_for_it_to_be_over(tmp_pa
             ended.set()
 
     vault.lock = lock_that_hangs  # type: ignore[method-assign]
-    hour.over.set()
+    hour.passes(timedelta(hours=1))
     await locking.wait()
 
     await made.stopped()
