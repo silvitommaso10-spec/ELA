@@ -589,7 +589,7 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
         text = filled(block.body, turn, proof)
         report.looked(number, text, base.yes_or_no(proof.ask, f"[{number}] {text} (s/n) "))
     elif kind == "sì":
-        guided.an_answer(number, block, turn, proof, yes=True)
+        guided.an_answer(number, block, turn, proof, yes=True, shown=shown)
     elif kind == "mano":
         a_hand(number, block, proof)
     elif kind == "prosegui":
@@ -606,6 +606,23 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
         a_close(number, block, turn, proof)
     else:
         raise ValueError(f"step {number}: {kind!r} is not a kind of the section")
+
+
+SENTENCES: Final = (("description", "che cosa"), ("does", "che cosa fa"))
+"""The two sentences of a question that are ELA's own: the catalogue's, of the capability, and
+the tool's, of what the call does."""
+
+
+def shown(question: Mapping[str, Any]) -> list[str]:
+    """What this proof shows of a question before the answer: what the script of M14.3 shows,
+    and — right under the name of the capability — **the two sentences every surface that takes
+    a yes shows**. They are where a question of a capability with the profile says that ELA acts
+    signed in as the user; without them the answer was given here on the capability's name
+    alone (the proof of 2026-10-12, decision 107). Words of ELA's, never the user's: they may be
+    in the file — the entry of the vault and its username are the user's, and stay out of it."""
+    first, *rest = guided.shown(question)
+    ours = [f"    | {label}: {question[key]}" for key, label in SENTENCES if question.get(key)]
+    return [first, *ours, *rest]
 
 
 def a_step(
