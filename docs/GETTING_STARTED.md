@@ -6036,6 +6036,9 @@ prenotato com'era al passo 1
 > login a mano vivono solo lì. **Rivista lo stesso giorno** con le decisioni 72–87 della review sul branch a `8db38f8`:
 > `ela browser close` e il suo passo, dove stanno i rapporti di un crash, e che cosa serve al sito del login.
 > **Non ancora fatta**: [ADR 0063](adr/0063-browser-with-your-accounts.md) resta Proposta finché non passa.
+> **Il 12 ottobre 2026 la prova non è passata** al passo 6, e da allora il cancello del browser è riparato (M13.4f,
+> [ADR 0064](adr/0064-browser-boundary.md)): **la prova si rifà per intero** sul commit di quella riparazione, il passo 6
+> com'è scritto; fuori dai passi, sotto il passo 6, c'è una misura da fare solo se quel passo fallisce.
 
 Da M13.9 ELA ha **un secondo browser**: Chrome for Testing su una cartella tua, che **tiene i siti in cui sei entrato**.
 Non è il tuo Chrome, e il tuo profilo ELA non lo apre: in questo entri tu, una volta, **con le tue mani**, nella finestra
@@ -6416,6 +6419,23 @@ outcome completed
 ```
 In un altro Terminale, `uv run ela task results` con l'id del task qui sopra: in alto nella pagina ci sono il tuo nome utente e «logout», e l'indirizzo è rimasto su news.ycombinator.com? Se al loro posto c'è «login», il cookie dell'accesso non è durato oltre lo step: rispondi n.
 ```
+
+**Fuori dai passi — una misura che fai solo se questo passo fallisce** (M13.4f, decisione 119; lo script non la
+cammina). Il passo 6 parte **senza finestra**, com'è scritto qui sopra. Se il login non riesce, rifallo **con la
+finestra**: `uv run ela browser window show`; poi gli stessi comandi di questo passo con un task nuovo — crearlo,
+dargli lo stesso piano, il tuo sì, `task run` —; e alla fine `uv run ela browser window hide`. Che cosa ne esce è
+scritto prima di guardarlo:
+
+| Senza finestra | Con la finestra | Che cosa vuol dire | Che cosa si fa |
+|---|---|---|---|
+| riesce | — | il login dal vault funziona | fatto: la misura non si lancia |
+| il sito rifiuta | riesce | **un sito può rifiutare un browser che si dice senza finestra** | è un fatto di [ADR 0063](adr/0063-browser-with-your-accounts.md), e lì si decide se `browser.login` parte con la finestra |
+| il sito rifiuta | il sito rifiuta | **il sito rifiuta un browser guidato** | si sceglie un altro sito per il passo 6. **ELA non lo aggira** |
+
+«Rifiuta» e «riesce» si leggono nel risultato del login, con `uv run ela task results`: il modulo di nuovo con il suo
+campo, o una pagina d'errore, è un rifiuto; un'altra pagina, `200`, senza il campo e con il testo atteso, è riuscito.
+*Da M13.4f ([ADR 0064](adr/0064-browser-boundary.md)) le richieste di un login sono del browser, com'è da solo: fra «con
+la finestra» e «senza» cambia il nome con cui il browser si presenta, e nient'altro di ELA.*
 
 ### 7. Il vault chiuso, e il profilo occupato
 

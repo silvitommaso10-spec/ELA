@@ -4,6 +4,10 @@
   prova a mano della sezione 28 di `docs/GETTING_STARTED.md` passa sul Mac, sul branch e prima del merge.
   **La prova del 12 ottobre non è passata**, per il login dal vault: che cosa si è misurato da allora è in §11, e
   ciò che un login lascia da leggere quando non riesce in §5.
+  **Rivista da ADR 0064 (M13.4f)** il 2026-10-12: §2, il port ha `another`; §4, il cancello non è più una rotta di
+  Playwright, e la misura sui service worker è rifatta — la difesa resta —; §5, i due confronti di `browser.login`
+  sono il predicato dell'adapter, e i verifier dicono anche `browser.left_site` e `browser.another_page`; §11, la
+  strada «misurata e non presa» è presa.
 - **Data:** 2026-10-11
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.9, con M13.4b, M13.4c e M13.4e sullo stesso branch
@@ -129,7 +133,9 @@ Port introdotti:
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
 | `Vault` | §19, §57 | async | `status`, `unlock`, `lock`, `forget`, `find`, `take` |
-| `AccountBrowser` | §19, §57 | async | `installed`, `open`, `count`, `field`, `fill`, `click`, `text`, `title`, `left`, `keep`, `glance`, `close`, `occupied`, `window`, `shut`, `linked`, `saved`, `profiles`, `fill_secret`, `landed` |
+| `AccountBrowser` | §19, §57 | async | `installed`, `open`, `count`, `field`, `fill`, `click`, `text`, `title`, `left`, `another`, `keep`, `glance`, `close`, `occupied`, `window`, `shut`, `linked`, `saved`, `profiles`, `fill_secret`, `landed` |
+
+*`another` è di ADR 0064 (M13.4f), §5, ed è del port `Browser`: questo lo eredita.*
 
 **I comandi che l'adapter compone sono un elenco chiuso**: `status`; `list items --url <indirizzo>`; `get item
 <id>`; `lock`. Mai `unlock`, `login`, `export`, `get totp`, `get uri`, `serve`, `sync`, né `--session`: la chiave
@@ -384,6 +390,12 @@ di Playwright, e un worker registrato nel profilo risponde senza che la rotta si
 interrogato**, e il sito ha ricevuto lo stesso la richiesta — mandata dal browser per conto suo, accanto al suo
 worker. La finestra non li toglie: non ha un cancello, e i siti di Tommaso tengono i loro.
 
+***Rivista da ADR 0064 (M13.4f), il 2026-10-12.*** *Il cancello non è più una rotta di Playwright: è una sessione
+del browser, avvisata di ogni richiesta (ADR 0064 §2). La misura è rifatta con quel cancello, e dice lo stesso:
+**di una navigazione a cui risponde un worker la sessione non è avvisata**, e toglierli prima di ogni lancio
+guidato resta necessario. In più, attraverso il cancello un worker non si può nemmeno registrare, e ciò che
+chiede da sé è rifiutato (ADR 0064 §6).*
+
 **Un processo alla volta.** Chi tiene la cartella è derivato a ogni domanda, in quest'ordine: ciò che l'adapter
 ha in volo — una pagina, un'apertura, una chiusura —, la sua finestra, e poi il lock della cartella
 (`SingletonLock`). **Il lock si legge dal pid, non dal nome della macchina che porta davanti**: il nome di un
@@ -482,7 +494,9 @@ mandano qualcosa a nome suo, e ciò che è mandato non si riprende.
 **Le frasi**, che la domanda mostra: una lettura e un gesto dicono «where you are signed in» — ELA non sa, prima
 di aprire la pagina, se in quel sito c'è un login —; «il sito vede un visitatore» resta nelle frasi del browser
 vuoto, dove è vero. La frase del login dice «ELA keeps the password nowhere», e **non** «nowhere else»: dopo il
-click il modulo lo rimanda il cancello dell'adapter, e il valore ripassa dal processo di ELA.
+click il modulo lo rimanda il cancello dell'adapter, e il valore ripassa dal processo di ELA. *Rivista da ADR 0064
+(M13.4f), il 2026-10-12: il modulo lo manda il browser, e il cancello lo guarda senza rifarlo — il valore non
+ripassa più dal processo di ELA dopo il click. La frase resta com'è.*
 
 I tool, in `ela/tools/account.py`:
 
@@ -497,9 +511,9 @@ I verifier, nello stesso modulo — guardano la pagina nel browser che l'ha aper
 
 | Capability | Verifier | Nome | Condizioni | Codici di fallimento |
 |---|---|---|---|---|
-| `browser.read_as_you` | `AccountReadVerifier` | `browser-read-as-you-verifier` | `browser.text_matches` | `browser.page_gone`, `browser.text_mismatch` |
-| `browser.act_as_you` | `AccountActVerifier` | `browser-act-as-you-verifier` | `browser.expect_visible` | `browser.expect_missing`, `browser.page_gone` |
-| `browser.login` | `LoginVerifier` | `browser-login-verifier` | `browser.expect_visible` | `browser.expect_missing`, `browser.page_gone`, `browser.second_factor` |
+| `browser.read_as_you` | `AccountReadVerifier` | `browser-read-as-you-verifier` | `browser.text_matches` | `browser.page_gone`, `browser.text_mismatch`, `browser.left_site` |
+| `browser.act_as_you` | `AccountActVerifier` | `browser-act-as-you-verifier` | `browser.expect_visible` | `browser.expect_missing`, `browser.page_gone`, `browser.left_site`, `browser.another_page` |
+| `browser.login` | `LoginVerifier` | `browser-login-verifier` | `browser.expect_visible` | `browser.expect_missing`, `browser.page_gone`, `browser.second_factor`, `browser.left_site`, `browser.another_page` |
 | `browser.guided_as_you` | `BrowserGuidedVerifier` | `browser-guided-as-you-verifier` | `guided.closed`, `guided.gestures_audited`, `guided.reservations_closed` | `guided.gesture_unaudited`, `guided.left_running`, `guided.reservation_open` |
 
 Dove ciascuno ascolta la fermata del suo task (ADR 0054 §3) — nessuno viaggia, quindi su un nodo nessuno:
@@ -572,6 +586,12 @@ un altro sito non è raccontata**: dopo il click il tool confronta dove la pagin
 altrove è `browser.left_site` con la sola origine — la pagina è chiusa, non consegnata al verifier (§11).
 **Un costo**: una pagina il cui documento non finisce di arrivare nel tempo del tool chiude lo step con
 `browser.timeout` dopo i tre gesti, dove prima passava al verifier.
+
+***Rivista da ADR 0064 (M13.4f), il 2026-10-12.*** *«Dopo il click il tool confronta dove la pagina è» non è più
+un confronto del tool: è il predicato che l'adapter chiede a ogni uso della pagina, prima e dopo, per ogni tool
+(ADR 0064 §4). L'esito è lo stesso — `browser.left_site` con la sola origine, e la pagina non consegnata —, e
+così il confronto all'apertura. Se la pagina ne ha aperta un'altra il risultato lo dice (`another_page`), e il
+verifier risponde `browser.another_page` quando il testo non compare (ADR 0064 §5).*
 
 **Il valore non viene mai dal piano**, e non entra nel modulo dei tool: il tool riceve due `Secret` dalla porta
 del vault e li passa all'adapter del browser — a nessun altro, in nessun esito, messaggio o evento.
@@ -948,6 +968,11 @@ sezione 21, li racconta uno per uno.
 - **I cookie di un documento li scelgono due programmi**: su un modulo inviato da un altro sito, dove
   `SameSite` dice di no e il browser non ne manda nessuno, attraverso il cancello arrivano.
 
+***Rivista da ADR 0064 (M13.4f), il 2026-10-12.*** *Ciò che questa sezione misura è il cancello di allora, ed è
+riparato: le richieste sono del browser, il confine regge a ogni salto, e ogni tool trova la pagina dove è.
+**La strada qui sotto è presa**, in un'altra forma — la sessione è del browser e non della pagina, e il confronto
+sta nell'adapter e non nei tool (ADR 0064 §2 e §4).*
+
 **La strada misurata, e non presa in questa milestone**: che ogni tool confronti dove la pagina è con il suo
 confine; e lasciare al browser le sue richieste, guardandole prima che partano — ogni richiesta di documento, i
 salti di un rimando compresi — con il protocollo di debug del browser. Una sonda, sul browser del profilo, dice
@@ -974,7 +999,7 @@ dice, con la sezione di questo ADR a cui guardare.
   firma di `decide` (§1).
 - **ADR 0052** §6 — **corretta, non rivista**: la pagina non ripassa dalla route per seguire un rimando ammesso,
   e il confine non regge al secondo rimando di una catena; che cosa un sito vede del documento che il driver
-  scarica (§11). Una misura del 12 ottobre, non una decisione: la riparazione è di M13.4.
+  scarica (§11). Una misura del 12 ottobre, non una decisione: la riparazione è di M13.4 — fatta, in M13.4f (ADR 0064).
 - **ADR 0028** §9 — ciò che ELA guarda senza una capability non cambia: si rifiutano le capability, e la sonda
   resta com'è (§7).
 - **ADR 0029** — ciò che deve essere vero prima di una cattura ha una cosa in più, chiesta anche prima della

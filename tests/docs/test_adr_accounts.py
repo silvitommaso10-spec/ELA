@@ -52,17 +52,21 @@ def conseguenze() -> str:
     return adr_text().split("## Conseguenze", 1)[1]
 
 
-def test_the_conseguenze_count_the_totals_of_today() -> None:
-    """The pin on today's totals, taken over from ADR 0062: it moves to the ADR that changes
-    them."""
+def test_the_conseguenze_count_the_totals_as_this_adr_saw_them() -> None:
+    """The totals of the day ADR 0063 was written. The pin on **today's** totals moved to the ADR
+    that changed them — ADR 0064, ``test_adr_boundary.py`` —, as it had moved here from ADR
+    0062: the rules are counted up to this ADR's, and no later. *The other totals are the same
+    today as then* — M13.4f added a rule and no contract, port, route, command, capability or
+    identity —; the day a later ADR changes one of them, its line here takes the form of
+    ``test_adr_policies.py``: what there was up to this ADR."""
     text = conseguenze()
     contracts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"][
         "importlinter"
     ]["contracts"]
 
     assert "**sessantanove**" in text
-    assert len(RULES) == 69
-    assert set(RULES) - set(_rules_up_to(66)) == {
+    assert len(_rules_up_to(69)) == 69 <= len(RULES)
+    assert set(_rules_up_to(69)) - set(_rules_up_to(66)) == {
         "the-room-s-word-is-the-room-s",
         "a-secret-is-opened-only-by-an-adapter",
         "the-profile-s-folder-is-its-adapter-s",

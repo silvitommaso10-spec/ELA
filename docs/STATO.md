@@ -130,7 +130,7 @@ le dà, e una fase senza nome è una fase che non ha ancora consegnato una miles
 | 13 — Il permesso prima dell'azione | `M13.4c` | Implementata | La fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti |
 | 13 — Il permesso prima dell'azione | `M13.4d` | Proposta | Lo shell del browser vuoto gira senza il sandbox di Chromium |
 | 13 — Il permesso prima dell'azione | `M13.4e` | Implementata | Alla chiusura di ELA nessuno aspetta il browser, e il processo può non uscire |
-| 13 — Il permesso prima dell'azione | `M13.4f` | Proposta | Il confine del browser: i tool guardano dove la pagina è, e il cancello guarda le richieste del browser invece di rifarle |
+| 13 — Il permesso prima dell'azione | `M13.4f` | Implementata | Il confine del browser: i tool guardano dove la pagina è, e il cancello guarda le richieste del browser invece di rifarle |
 | 13 — Il permesso prima dell'azione | `M13.5` | Proposta | Computer control: il muro dichiarato prima di cominciare |
 | 13 — Il permesso prima dell'azione | `M13.6` | Proposta | Spostare un lavoro già in corso: il ripiazzamento, quando due capability sanno dichiararsi ripetibili |
 | 13 — Il permesso prima dell'azione | `M13.7` | Proposta | Il terminale su un nodo: il Job Object, e `argv` che su Windows diventa una stringa |
@@ -165,8 +165,8 @@ dimensione del sistema oggi, non la dimensione che aveva quando qualcuno l'ha an
 
 | Che cosa | Quanti | Contati leggendo |
 |---|---|---|
-| ADR scritti | **63** | `docs/adr/NNNN-*.md` |
-| Milestone | **90, di cui 73 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
+| ADR scritti | **64** | `docs/adr/NNNN-*.md` |
+| Milestone | **90, di cui 74 non più `Proposta`** | la riga `- **Stato:**` di ogni documento |
 | Regole di architettura | **70** | `RULES` in `tests/architecture/` |
 | Contratti import-linter | **15** | `pyproject.toml` |
 | Port | **35** | i `Protocol` di `src/ela/ports.py` |
