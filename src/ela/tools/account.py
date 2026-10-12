@@ -147,6 +147,8 @@ ACCOUNT_CODES: Final[frozenset[str]] = frozenset({PROFILE_UNDECLARED, PROFILE_UN
 
 BROWSER_SECOND_FACTOR: Final = "browser.second_factor"
 """After the click the page asks for a one-time code: ELA takes none and types none."""
+GESTURES_OF_A_LOGIN: Final = 3
+"""The username typed, the password typed, the click: after the third the form has been sent."""
 ENDED_AT: Final = "ended_at"
 """In the result of a login: where the page ended once the login had been sent — its host and
 its path, never its query (decision 106)."""
@@ -622,6 +624,18 @@ class LoginTool(_OnTheProfile, _BrowserTool):
                 ENDED_STATUS: landed.status,
                 PASSWORD_FIELD_STILL_THERE: still > 0,
             }
+        )
+
+    def _still_at_work(self, site: str, done: list[int]) -> str:
+        """A time that ran out **after the click** is not a page still at work: the password was
+        typed and the form was sent, and what the site did with it ELA does not know (decision
+        111). Said as it is — and never asked again: a login sent twice is sent twice."""
+        if done[0] < GESTURES_OF_A_LOGIN:
+            return super()._still_at_work(site, done)
+        return (
+            f"the login was sent to {site}, and the page it led to was still arriving after "
+            f"{self._browsing.timeout_seconds} s: ELA closed the browser and does not know how "
+            f"it ended — the site may have signed you in{self._after(done)}"
         )
 
     def _forgotten(self, key: str) -> str:

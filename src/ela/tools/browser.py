@@ -422,13 +422,7 @@ class _BrowserTool(Tool):
                     opened = await self._browser.open(looked.visit.address, looked.allowed, stop)
                     outcome = await self._on_the_page(looked, opened, done, stop)
             except TimeoutError:
-                outcome = Outcome(
-                    self._partial(done),
-                    TIMEOUT,
-                    f"the page of {site} was still at work after "
-                    f"{self._browsing.timeout_seconds} s: ELA closed the browser"
-                    f"{self._after(done)}",
-                )
+                outcome = Outcome(self._partial(done), TIMEOUT, self._still_at_work(site, done))
             except BrowserNotInstalled:
                 outcome = Outcome({}, NOT_INSTALLED, NOT_INSTALLED_MESSAGE)
             except SiteUnreachable as away:
@@ -495,6 +489,13 @@ class _BrowserTool(Tool):
         return (
             f"the page of {site} went to {left}, which is not {where}: the browser did not follow, "
             "and nothing was sent there"
+        )
+
+    def _still_at_work(self, site: str, done: list[int]) -> str:
+        """What the step says when its time ran out, with what had been done by then."""
+        return (
+            f"the page of {site} was still at work after {self._browsing.timeout_seconds} s: "
+            f"ELA closed the browser{self._after(done)}"
         )
 
     def _partial(self, done: list[int]) -> dict[str, JsonValue]:
