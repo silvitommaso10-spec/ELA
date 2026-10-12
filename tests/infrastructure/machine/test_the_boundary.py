@@ -956,6 +956,8 @@ async def test_a_session_that_never_answers_ends_the_step_in_its_time_and_leaves
 
     assert result.error is not None and result.error.code == TIMEOUT
     assert web.requests == [] and browser._pages == {}
+    await shell.closings(browser)
+    assert shell.descendants() == [], "what the opening had started is closed, not left"
 
 
 async def test_a_judge_that_raises_lets_nothing_leave_and_the_step_says_the_browser_failed(
@@ -1218,6 +1220,29 @@ async def test_a_secret_is_not_typed_and_a_landing_is_not_told_on_a_page_outside
     await made.close(opened.page)
 
     assert web.events == []
+
+
+@ON_A_MAC
+async def test_a_secret_typed_on_a_page_that_ends_elsewhere_meanwhile_is_said_as_typed(
+    with_the_profile: AccountChrome, served: list[Site]
+) -> None:
+    """The boundary admits the page when the typing begins and not when it ends: the gesture
+    happened, and the error says so — a tool counts it as made, and does not report that
+    nothing was typed."""
+    from ela.ports import LeftSite
+
+    web = site(served, {"/": (200, {}, shell.REPORTS + '<input id="f" type="password">')})
+    made = with_the_profile
+    allowed = Changing()
+    opened = await made.open(web.origin + "/", allowed, FakeStop())
+    allowed.closes_at = allowed.asked + 2
+
+    with pytest.raises(LeftSite) as typed:
+        await made.fill_secret(
+            opened.page, "#f", Secret("-".join(("a", "word", "of", "the", "test")))
+        )
+
+    assert typed.value.made is True
 
 
 async def test_a_tool_on_a_page_that_is_elsewhere_reads_nothing_and_says_where_by_its_origin(

@@ -201,6 +201,24 @@ async def test_a_login_that_finds_the_page_elsewhere_types_nothing_more(
     assert browser.kept == []
 
 
+async def test_a_login_counts_what_it_typed_when_the_page_is_found_elsewhere_after_it(
+    tmp_path: Path,
+) -> None:
+    """The username was typed, and the page was found elsewhere once it was: one gesture was
+    made, and the result says one — never that nothing was typed."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+    browser.moves_during["fill_secret"] = ELSEWHERE
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    said = nothing_of_that_page(result)
+    assert result.output == {"status": 200, "gestures": 1}
+    assert "1 gesture was made" in said and len(browser.secrets) == 1
+
+
 async def test_a_login_on_a_page_that_opened_elsewhere_asks_the_vault_for_nothing(
     tmp_path: Path,
 ) -> None:
