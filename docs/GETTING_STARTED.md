@@ -6434,8 +6434,9 @@ scritto prima di guardarlo:
 
 «Rifiuta» e «riesce» si leggono nel risultato del login, con `uv run ela task results`: il modulo di nuovo con il suo
 campo, o una pagina d'errore, è un rifiuto; un'altra pagina, `200`, senza il campo e con il testo atteso, è riuscito.
-*Da M13.4f ([ADR 0064](adr/0064-browser-boundary.md)) le richieste di un login sono del browser, com'è da solo: fra «con
-la finestra» e «senza» cambia il nome con cui il browser si presenta, e nient'altro di ELA.*
+*Da M13.4f ([ADR 0064](adr/0064-browser-boundary.md)) le richieste di un login le fa il browser, ed ELA non ne rifà
+nessuna — ciò che un sito vede di diverso dal browser da solo è scritto in quell'ADR, §7 —: fra «con la finestra» e
+«senza» cambia il nome con cui il browser si presenta, e nient'altro di ELA.*
 
 ### 7. Il vault chiuso, e il profilo occupato
 

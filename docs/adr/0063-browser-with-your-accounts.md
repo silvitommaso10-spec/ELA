@@ -495,8 +495,11 @@ mandano qualcosa a nome suo, e ciò che è mandato non si riprende.
 di aprire la pagina, se in quel sito c'è un login —; «il sito vede un visitatore» resta nelle frasi del browser
 vuoto, dove è vero. La frase del login dice «ELA keeps the password nowhere», e **non** «nowhere else»: dopo il
 click il modulo lo rimanda il cancello dell'adapter, e il valore ripassa dal processo di ELA. *Rivista da ADR 0064
-(M13.4f), il 2026-10-12: il modulo lo manda il browser, e il cancello lo guarda senza rifarlo — il valore non
-ripassa più dal processo di ELA dopo il click. La frase resta com'è.*
+(M13.4f), il 2026-10-12: il modulo lo manda il browser, e il cancello lo guarda senza rifarlo. **Il valore passa
+ancora dal processo di ELA dopo il click**: il driver consegna al client di Playwright, che gira lì, ogni
+richiesta della pagina con il suo corpo — letto nel codice del driver e del client, non misurato (ADR 0064 §8).
+L'adapter non lo legge e non lo tiene. La frase resta com'è, e resta vera. (Una prima stesura di questa nota
+diceva che il valore non ripassava più: l'ha trovata falsa la rilettura critica di M13.4f.)*
 
 I tool, in `ela/tools/account.py`:
 

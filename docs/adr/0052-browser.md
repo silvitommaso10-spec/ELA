@@ -17,8 +17,8 @@
   **Rivista da ADR 0064 (M13.4f)** il 2026-10-12, apertamente: §6, il cancello non è più una route che scarica il
   documento — una sessione del browser guarda ogni richiesta e non ne fa nessuna —, il confine regge a ogni salto
   di un rimando, e ogni uso di una pagina chiede al confine dove la pagina è; §9, i verifier dicono anche
-  `browser.left_site` e `browser.another_page`; §10, da quando la fermata è alzata non parte nessuna richiesta, di
-  nessun genere; §11, il port ha `another`; §14, ogni richiesta la fa il browser e ogni certificato lo giudica il
+  `browser.left_site` e `browser.another_page`; §10, da quando la fermata è alzata non parte nessuna richiesta di
+  cui il cancello è avvisato; §11, il port ha `another`; §14, ogni richiesta la fa il browser e ogni certificato lo giudica il
   browser.
 - **Data:** 2026-09-29
 - **Riferimenti spec:** §10, §18, §19, §20, §27, §28, §29, §30, §32, §33, §39, §57, §59, §62, §63

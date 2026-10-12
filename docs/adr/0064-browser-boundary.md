@@ -70,6 +70,10 @@ prima della prima richiesta di quella cosa (`told-of-a-page-opened.txt` per una 
 la sessione. Se il driver muore il browser muore con lui, e ciò che era in pausa non è mai partito. Nel modulo
 dell'adapter non resta nessuna route, e lo tiene la regola d'architettura 70.
 
+**Le risposte del cancello sono attività sue**, una per richiesta, tenute finché finiscono. *La chiusura di ELA
+non le aspetta*: chiude il browser, e una richiesta a cui il cancello non aveva ancora risposto non è mai
+partita.
+
 **I certificati li giudica il browser**: nessun documento è più scaricato dal driver, e le variabili con cui
 l'ambiente di ELA faceva accettare un certificato al driver (ADR 0052 §14) non cambiano più che cosa una pagina
 apre. Che il Core le tolga dal suo ambiente resta: il driver gira ancora.
@@ -93,10 +97,18 @@ senza lasciare niente acceso.
 della pagina: contare un elemento, leggerne gli attributi, scrivere, cliccare, leggere il testo e il titolo, dire
 che cosa il cancello ha rifiutato, scrivere un segreto, dire dove la pagina è finita, **e lo sguardo del
 verifier**. **Prima dell'uso**, che allora non avviene; **e di nuovo dopo**, e allora ciò che è stato letto si
-butta: una lettura fatta su una pagina che nel frattempo è finita fuori non entra in nessun risultato.
+butta: una lettura fatta su una pagina che nel frattempo è finita fuori non entra in nessun risultato. *Chi
+dice ciò che il cancello ha rifiutato (`left`) chiede prima e non dopo: della pagina non legge niente, e non
+c'è niente da buttare.*
+
+**E all'apertura, prima di dire qualunque cosa della pagina**: `open` chiede al confine dove la pagina è prima di
+restituirla. Lo stato del suo documento e il suo indirizzo sono detti di una pagina dentro il confine, o non
+sono detti: una pagina che ha risposto `404` altrove è `browser.left_site`, non `browser.http_status`.
 
 Fuori dal confine l'uso solleva `LeftSite`, che porta l'indirizzo — mai nella sua frase — e se l'uso era già
-stato fatto: **un gesto avvenuto è contato come avvenuto**. Il tool risponde `browser.left_site` con la sola
+stato fatto: **un gesto avvenuto è contato come avvenuto**. Così anche quando chi giudica ha sollevato sulla
+richiesta di quel gesto: il cancello lo dice **prima** di un uso, mai dopo — il gesto torna come fatto, ed è
+l'uso successivo a dire `browser.failed`. Il tool risponde `browser.left_site` con la sola
 origine, e il verifier lo stesso codice. Vale per `browser.read`, `browser.act`, `browser.read_as_you`,
 `browser.act_as_you`, `browser.login` — i cui due confronti erano questo —, e per ogni gesto di una sessione
 guidata, che è una chiamata di quegli stessi tool. Ogni finto del port lo applica come l'adapter, e un test
@@ -108,6 +120,14 @@ impedisce che una pagina fuori dal confine esista è il cancello; il predicato f
 mancato. `browser.left_site` ha perciò due frasi, mai una per tutte e due: «la pagina ha provato ad andare
 altrove, e non è partito niente», e «la pagina è altrove, ed ELA non ne ha letto niente».
 
+**Una pagina che non è su nessun sito.** Una pagina può lasciare il suo sito **senza nessuna richiesta**: andando
+su `about:blank`, o su un documento che il suo stesso script ha fatto (`blob:`). Il cancello non è avvisato di
+niente — non c'è niente di cui avvisarlo —, ed è il predicato a trovarla: nessun confine ammette un indirizzo
+che non è di un sito. Il gesto che l'ha mandata lì è contato come fatto, e di quella pagina ELA non legge niente
+(`a-page-at-no-site.txt`, con il controllo del browser da solo; un test lo tiene sui browser veri). Il tool lo
+dice con lo schema soltanto — `about://`, `blob://` —, che è ciò che resta dell'origine di un indirizzo senza
+un sito.
+
 ### 5. Una pagina sola
 
 ELA lavora su una pagina. **Di una pagina che non è quella non parte nessun documento**: né la sua navigazione,
@@ -117,16 +137,18 @@ Nemmeno un indirizzo dentro il confine è chiesto da quella pagina.
 **Su che cosa poggia** (decisione 126): l'avviso è sul browser, non su una pagina. Una pagina appena aperta non
 ha niente da accendere e nessuno deve arrivare prima di lei; la sua prima richiesta resta in pausa finché non
 risponde chi ha acceso l'avviso, e Playwright, senza una route, non ne accende uno suo (letto nel codice del suo
-driver). Misurato con 250 giri per modo sui due browser: il rifiuto in ogni giro, e nessuna richiesta arrivata
-(`hundreds-of-rounds.txt`).
+driver). Misurato con 250 giri per ciascun modo di aprire una pagina, e 50 con dieci finestre aperte da un click
+solo, sui browser veri: il rifiuto in ogni giro, e nessuna richiesta arrivata (`hundreds-of-rounds.txt`).
 
 **Ciò che la prima pagina fa caricare in una pagina vuota che ha aperto è una richiesta della prima pagina**
-(decisioni 132 e 133). Un'immagine, uno script, una `fetch` messi in una pagina vuota aperta dalla prima — o
-aperta con `javascript:`, o aperta dentro il confine e poi riscritta — il browser li carica come della prima
-pagina: la sessione ne è avvisata con la cornice della prima pagina, e arrivano **con i cookie che avrebbero dal
-suo documento, niente di più** (misura 14, e il test lo afferma accanto al suo controllo). È ciò che una pagina
-può già fare da sé. Una pagina aperta su un `blob:` è un documento suo: di lei non parte nemmeno un'immagine
-(misura 15).
+(decisioni 132 e 133). Un'immagine messa in una pagina vuota aperta dalla prima — o aperta con `javascript:`, o
+aperta dentro il confine e poi riscritta — il browser la carica come della prima pagina: la sessione ne è
+avvisata con la cornice della prima pagina, e arriva **con ogni intestazione che avrebbe dal suo documento —
+nome, valore e ordine, cookie compresi —, niente di più**; una pagina aperta con `javascript:` non dice nemmeno
+da dove viene, ed è il solo scarto (`own-and-written-every-header.txt`; il test lo afferma accanto al suo
+controllo). Per la pagina vuota e scritta lo stesso è misurato, sui cookie, di uno script e di una `fetch`
+(misura 14). È ciò che una pagina può già fare da sé. Una pagina aperta su un `blob:` è un documento suo: di lei
+non parte nemmeno un'immagine (misura 15).
 
 **Lo step lo dice sempre, e non fallisce per questo** (decisione 123): un sito che apre una finestra da sé
 farebbe fallire una lettura riuscita. Il browser dice alla sessione che una pagina è stata aperta, e da chi,
@@ -137,11 +159,18 @@ quando lo step è fallito per altro; se il testo atteso non compare, il verifier
 dice che il modulo non è stato inviato. *Misurato prima: senza questo codice il verifier diceva «ciò che il
 click ha inviato può essere arrivato lo stesso», e non era partito niente.*
 
+**Ciò che il risultato dice è ciò che il browser aveva annunciato quando lo step è finito.** Quando è il click
+dello step ad aprire la pagina, l'annuncio è arrivato prima che il click tornasse in ogni giro misurato, con un
+link e con un modulo, sui browser veri (`a-click-that-opens-another-page.txt`): il risultato portava l'origine,
+o — con il browser del profilo, in alcuni giri — che la pagina non aveva ancora chiesto niente. Niente lo
+garantisce; il verifier guarda dopo, e ha risposto `browser.another_page` in ogni giro.
+
 ### 6. I service worker
 
 **Di una navigazione a cui risponde un service worker la sessione non è avvisata**: il browser la manda al sito
-accanto al suo worker (misura 13, e di nuovo con l'adapter) — e in una misura la pagina era quella del worker,
-in un'altra quella del sito. Perciò
+accanto al suo worker (misura 13, e di nuovo con l'adapter). La pagina è quella del worker in ogni giro, anche
+con un worker che prima aspetta una sua richiesta (`what-the-reread-asked.txt`), e il sito riceve la navigazione
+lo stesso, senza che nessuno ne sia avvisato (`a-worker-in-charge-and-the-site.txt`; un test lo afferma). Perciò
 **togliere i worker del profilo prima di ogni lancio che ELA guida, e bloccarli, resta necessario** (ADR 0063
 §4). La difesa è nominata dove scatta:
 `test_a_launch_ela_drives_finds_no_worker_in_the_profile_and_the_gate_sees_the_request`, in
@@ -153,7 +182,8 @@ richiesta del suo script non ha una cornice della pagina —, e **ciò che un wo
 *Un test si è fermato qui, e si sa dove* (decisione 128; `a-test-that-stopped.txt`): con un worker al comando
 della navigazione il cancello chiedeva alla sessione della pagina le sue cornici, e la pagina non rispondeva
 mentre aspettava il worker, che aspettava il cancello. Per questo un worker è rifiutato da ciò che il browser ha
-annunciato di lui (§2), e non da una domanda alla pagina.
+annunciato di lui (§2), e non da una domanda alla pagina. Dopo la riparazione, otto giri su otto
+(`a-test-that-stopped-after.txt`).
 
 ### 7. Che cosa un sito vede di diverso dal browser da solo
 
@@ -175,7 +205,7 @@ cambiata, nessuno script di ELA nella pagina.
   volta.
 - **Le richieste di un worker condiviso sono rifiutate**: hanno una cornice loro, che non è della pagina. Il suo
   script parte, ed è la pagina a chiederlo; quelle di un worker dedicato portano la cornice della pagina, e
-  partono. Con il cancello di prima partivano tutte.
+  partono. Con il cancello di prima partivano tutte, come con il browser da solo (`what-the-reread-asked.txt`).
 - **Il browser del profilo chiede l'icona del sito**, come ogni browser: con una route Playwright la abortiva da
   sé.
 - **La cache del browser torna a essere quella del browser**: con una route era spenta.
@@ -199,6 +229,11 @@ cambiata, nessuno script di ELA nella pagina.
 - **La regola con cui il browser decide di rimandare una richiesta** la cui connessione è caduta: ciò che è
   misurato è quante volte un sito la riceve e su quali connessioni (§7), non la regola.
 - **Un avviso che smette a pagina aperta**: non è stato visto succedere, e non si sa provocarlo senza spegnerlo.
+- **Ciò che del corpo di una richiesta resta nel processo di ELA.** Il driver consegna al client di Playwright,
+  che gira nel processo di ELA, ogni richiesta della pagina con il suo corpo: letto nel codice del driver e del
+  client, non misurato. L'adapter non lo legge e non lo tiene; ma dopo il click di un login ciò che il modulo
+  manda passa di lì, com'era con il cancello di prima. Quanto vi resti non è misurato. *ADR 0063 §5 diceva che
+  dopo il click il valore non ripassava più da quel processo: è corretto lì.*
 - **Una versione nuova di Playwright**: la sessione del browser dipende da ciò che Playwright accende da sé nel
   browser; il lock fissa le versioni, e una versione nuova va rimisurata.
 

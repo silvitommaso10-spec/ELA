@@ -2968,11 +2968,15 @@ class Browser(Protocol):
     async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
         """Open ``address`` in a new, empty browser; a navigation ``allowed`` refuses is not sent.
 
+        **What it returns is said of a page inside its boundary** (M13.4f): the page that was
+        opened is asked where it is, like every use of it after, and one that is found elsewhere
+        raises :class:`LeftSite` — the status of its document is not said.
+
         ``stop`` is listened to **right before the navigation**, as :data:`NAVIGATION` (M6.3c): a
         stopped task leaves the page unopened and the site unvisited.
 
-        :raises BrowserNotInstalled, SiteUnreachable, BrowserStopped, BrowserFailed, ToolStopped:
-            and nothing stays open behind the exception.
+        :raises BrowserNotInstalled, SiteUnreachable, LeftSite, BrowserStopped, BrowserFailed:
+            and :class:`ToolStopped`; nothing stays open behind the exception.
         """
 
     async def count(self, page: str, selector: str) -> int:

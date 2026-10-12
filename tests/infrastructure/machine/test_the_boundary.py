@@ -1321,6 +1321,7 @@ async def test_no_use_of_a_page_that_is_not_inside_the_boundary_takes_place(
     with pytest.raises(LeftSite) as refused:
         await USES[use](browser, opened.page)
 
+    assert refused.value.made is False, "found outside before the use, which did not take place"
     assert refused.value.address == web.origin + "/"
     assert web.origin not in str(refused.value), "the sentence of the error names no address"
     assert web.events == [], "nothing was typed and nothing was clicked"
@@ -1397,14 +1398,15 @@ async def test_a_secret_is_not_typed_and_a_landing_is_not_told_on_a_page_outside
     opened = await made.open(web.origin + "/", allowed, FakeStop())
     allowed.closed = True
 
-    with pytest.raises(LeftSite):
+    with pytest.raises(LeftSite) as typed:
         await made.fill_secret(
             opened.page, "#f", Secret("-".join(("a", "word", "of", "the", "test")))
         )
-    with pytest.raises(LeftSite):
+    with pytest.raises(LeftSite) as told:
         await made.landed(opened.page)
     await made.close(opened.page)
 
+    assert typed.value.made is False and told.value.made is False, "before the use, not after"
     assert web.events == []
 
 
