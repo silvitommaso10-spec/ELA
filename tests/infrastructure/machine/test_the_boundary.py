@@ -459,6 +459,48 @@ async def test_every_frame_of_the_page_loads_what_it_loads_with_no_gate(
     assert asked() == bare
 
 
+MOVING = """
+<iframe id="moving" src="{off}/cross"></iframe>
+<button id="home" onclick="document.querySelector('#moving').src = '/plain'">home</button>
+<button id="away" onclick="document.querySelector('#moving').src = '{off}/again'">away</button>
+"""
+
+
+@ON_A_MAC
+async def test_a_frame_that_goes_to_another_site_and_comes_back_is_still_the_page_s(
+    with_the_profile: AccountChrome, served: list[Site]
+) -> None:
+    """In the browser of the profile a frame of another site has a session of its own, where
+    the frames inside it are found. When that frame goes home and then to the other site again
+    it is another one: the session the gate kept answers no more, and is made again — or the
+    frames inside the new document would be found nowhere, and what they load would be refused."""
+    a, off = two(served)
+    a.pages[("GET", "/")] = (200, HTML, MOVING.format(off=off.origin))
+    a.pages[("GET", "/plain")] = (200, HTML, "<p>home</p>")
+    off.pages[("GET", "/cross")] = (200, HTML, '<iframe src="/cross-nested"></iframe>')
+    off.pages[("GET", "/again")] = (200, HTML, '<iframe src="/again-nested"></iframe>')
+    for name in ("cross-nested", "again-nested"):
+        off.pages[("GET", f"/{name}")] = (200, HTML, f'<img src="/{name}.gif">')
+        off.pages[("GET", f"/{name}.gif")] = (200, GIF, PIXEL)
+    made = with_the_profile
+
+    opened = await made.open(a.origin + "/", only(a), FakeStop())
+    await off.arrived("GET /cross-nested.gif")
+    await made.click(opened.page, "#home")
+    await a.arrived("GET /plain")
+    await made.click(opened.page, "#away")
+    await off.arrived("GET /again-nested.gif")
+
+    assert off.requests == [
+        "GET /cross",
+        "GET /cross-nested",
+        "GET /cross-nested.gif",
+        "GET /again",
+        "GET /again-nested",
+        "GET /again-nested.gif",
+    ]
+
+
 def asking(served: list[Site]) -> tuple[Recording, Recording]:
     """Site A, whose page asks site B for something a browser asks permission for first; and B,
     which answers that question with a no."""
@@ -825,6 +867,37 @@ async def test_what_a_worker_of_the_page_asks_for_leaves_when_it_has_the_frame_o
     assert web.requests == expected[worker]
 
 
+async def test_what_a_worker_asks_for_is_not_taken_for_the_request_of_a_page_that_was_opened(
+    browser: Any, served: list[Site]
+) -> None:
+    """The page opens an empty page, which asks for nothing, and then starts a shared worker,
+    whose request is refused. The adapter says a page was opened **and that it had asked for
+    nothing**: what was refused is a worker's, and a worker is no page."""
+    from ela.ports import AnotherPage
+
+    opens = "window.open('about:blank'); " + WORKERS["shared"]
+    web = site(
+        served,
+        {
+            "/": (200, {}, SAYS % "" + f'<button id="go" onclick="{opens}">go</button>'),
+            "/shared.js": (
+                200,
+                SCRIPT,
+                "onconnect = (e) => { const tell = (text) => e.ports[0].postMessage(text); "
+                + ASKS % (("tell",) * 2)
+                + " };",
+            ),
+            "/asked": (200, {}, "x"),
+        },
+    )
+
+    opened = await browser.open(web.origin + "/", only(web), FakeStop())
+    await browser.click(opened.page, "#go")
+    assert await said_after(browser, opened.page, "#s", "waiting") == "failed"
+
+    assert await browser.another(opened.page) == AnotherPage(method=None, address=None)
+
+
 ASKING_WORKER = """
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
@@ -921,6 +994,22 @@ async def test_an_alert_that_tells_the_session_of_nothing_is_found_before_the_fi
         await browser.open(web.origin + "/", only(web), FakeStop())
 
     assert web.requests == [] and browser._pages == {}
+
+
+async def test_the_address_of_the_check_is_judged_like_any_other_once_the_page_is_open(
+    browser: Any, served: list[Site], judged: list[tuple[str, str, bool]]
+) -> None:
+    """The address the opening asks for to see that the gate is there is the check **only while
+    the opening asks for it**. A page that goes there later has tried to leave its site, and the
+    adapter says so like for any other address."""
+    web = site(served, {"/": (200, {}, f'<a id="go" href="{adapter.CHECK}">go</a>')})
+
+    opened = await browser.open(web.origin + "/", only(web), FakeStop())
+    del judged[:]
+    await browser.click(opened.page, "#go")
+    await decided(judged, adapter.CHECK, leaves=False)
+
+    assert await browser.left(opened.page) == adapter.CHECK
 
 
 async def never(*anything: Any) -> Any:

@@ -21,7 +21,7 @@ sessioni vere nel profilo — non entra in `main` con quel cancello.
 
 ## Decisione
 
-### 1. Quattro fatti misurati, e che cosa il confine è
+### 1. I fatti misurati, e che cosa il confine è
 
 1. **Il confine non fermava la richiesta del secondo salto.** Playwright non chiama una route per una richiesta
    nata da un rimando: in una catena — dentro, dentro, fuori — la richiesta arrivava al sito di fuori, con ciò
@@ -62,7 +62,9 @@ Una cornice è della pagina se sta nell'albero che la sessione della pagina cono
 di una cornice che ne ha una sua: nel browser del profilo le cornici dentro una cornice di un altro sito stanno
 solo lì (misura 12). **Una cornice che non si trova è rifiutata.** E ciò che il browser ha **annunciato** come
 un'altra cosa — una pagina, un worker — è rifiutato **senza chiedere niente alla pagina**: l'annuncio arriva
-prima della prima richiesta di quella cosa (misurato), e la pagina non sempre può rispondere (§6).
+prima della prima richiesta di quella cosa (`told-of-a-page-opened.txt` per una pagina, in ogni giro;
+`workers-and-targets.txt` per un worker, in ciò che è stato guardato), e la pagina non sempre può rispondere
+(§6). *Se un annuncio arrivasse dopo, la richiesta sarebbe rifiutata lo stesso, chiedendo alla pagina.*
 
 **Ciò che il cancello non fa mai**: spegnere l'avviso — ciò che era in pausa partirebbe (misura 6) — e staccare
 la sessione. Se il driver muore il browser muore con lui, e ciò che era in pausa non è mai partito. Nel modulo
@@ -145,7 +147,7 @@ in un'altra quella del sito. Perciò
 `test_a_launch_ela_drives_finds_no_worker_in_the_profile_and_the_gate_sees_the_request`, in
 `tests/infrastructure/machine/test_account_browser.py`.
 
-Il cancello aggiunge due cose, misurate: **un worker non si può registrare attraverso il cancello** — la
+Il cancello aggiunge, misurato: **un worker non si può registrare attraverso il cancello** — la
 richiesta del suo script non ha una cornice della pagina —, e **ciò che un worker chiede da sé è rifiutato**.
 
 *Un test si è fermato qui, e si sa dove* (decisione 128; `a-test-that-stopped.txt`): con un worker al comando
@@ -167,7 +169,10 @@ cambiata, nessuno script di ELA nella pagina.
 - **Un sito che chiude la connessione sotto una richiesta senza rispondere la riceve più di una volta**: il
   browser del profilo la rimanda da sé — due volte da solo, **tre attraverso il cancello**, in ogni giro
   (`a-site-that-answers-nothing.txt`); lo shell una e una. Vale anche per il `POST` di un login. Con il cancello
-  di prima era una, perché la mandava il driver.
+  di prima era una, perché la mandava il driver. *Che cosa cambia con il cancello, visto dal sito*
+  (`why-one-more-time.txt`): mentre la richiesta è in pausa il browser apre una seconda connessione, e quando la
+  prima cade rimanda la richiesta su quella, e poi su una terza; da solo ne ha una sola pronta, e rimanda una
+  volta.
 - **Le richieste di un worker condiviso sono rifiutate**: hanno una cornice loro, che non è della pagina. Il suo
   script parte, ed è la pagina a chiederlo; quelle di un worker dedicato portano la cornice della pagina, e
   partono. Con il cancello di prima partivano tutte.
@@ -191,8 +196,8 @@ cambiata, nessuno script di ELA nella pagina.
 - **Una risposta presa dalla cache del browser**: se passa dall'avviso prima di essere servita.
 - **Perché il browser attribuisca alla prima pagina** ciò che essa scrive in una pagina vuota: non è stato letto
   nel suo codice, è ciò che la sessione dice in ogni giro.
-- **Perché, attraverso il cancello, un `POST` senza risposta sia rimandato una volta in più** che dal browser da
-  solo.
+- **La regola con cui il browser decide di rimandare una richiesta** la cui connessione è caduta: ciò che è
+  misurato è quante volte un sito la riceve e su quali connessioni (§7), non la regola.
 - **Un avviso che smette a pagina aperta**: non è stato visto succedere, e non si sa provocarlo senza spegnerlo.
 - **Una versione nuova di Playwright**: la sessione del browser dipende da ciò che Playwright accende da sé nel
   browser; il lock fissa le versioni, e una versione nuova va rimisurata.
@@ -201,7 +206,7 @@ cambiata, nessuno script di ELA nella pagina.
 
 **Il port `Browser` guadagna un membro**, `another`, e `AccountBrowser` lo eredita. Nel suo contratto entra che
 ogni uso di una pagina chiede al confine dove la pagina è, che di un'altra pagina non parte nessun documento, e
-che cosa il confine non è. Due nomi nuovi: `LeftSite`, `AnotherPage`; `Glanced` porta `another`.
+che cosa il confine non è. I nomi nuovi: `LeftSite`, `AnotherPage`; `Glanced` porta `another`.
 
 Port estesi:
 

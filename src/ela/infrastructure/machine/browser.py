@@ -135,6 +135,9 @@ CHECK: Final = "http://127.0.0.1:9/ela-gate-check"
 itself refuses to open — the port is one it never connects to —, so that with the alert off no
 request can reach anybody, not even on this machine. With the alert on the gate is told of it,
 and that is how an opening knows the gate is there before the address of a site is asked for."""
+PAGE: Final = "page"
+"""What the browser calls a page among the things it announces; a frame that runs by itself is
+an ``iframe``, and a worker has a name of its own."""
 REFUSED: Final = "Aborted"
 """How a request the gate does not let go fails: as one somebody gave up — the page stays where
 it is, and shows no error of the browser's in its place (measured)."""
@@ -510,8 +513,12 @@ class PlaywrightBrowser:
         the site either, and the opening fails closed before any address of the site is asked
         for. With the alert on and nobody told, the request stays paused and this does not
         return: the tool's own time ends the step, and the page is closed like any other."""
-        with contextlib.suppress(PlaywrightError):
-            await page.goto(CHECK, wait_until="commit")
+        gate.proving = True
+        try:
+            with contextlib.suppress(PlaywrightError):
+                await page.goto(CHECK, wait_until="commit")
+        finally:
+            gate.proving = False
         if not gate.checked:
             raise BrowserFailed(
                 "the gate of the browser is not told of its requests: no address was asked for"
@@ -710,11 +717,15 @@ class _Gate:
         self.another: AnotherPage | None = None
         """The page the first page opened, once the browser has said so — before anything
         written in it is asked for (measured) —, with its first request once it has made one."""
+        self.proving = False
+        """Whether the opening is asking for :data:`CHECK` now: only then is that address the
+        check, and not something a page asks for — which the boundary judges like the rest."""
         self.checked = False
         self.broken = False
-        self._strangers: set[str] = set()
-        """What the browser announced that is not this page and is no frame: another page, a
-        worker. A request that names one of them as its frame is nobody's of this page."""
+        self._strangers: dict[str, str] = {}
+        """What the browser announced that is not this page and is no frame — another page, a
+        worker —, with what kind of thing it said it was. A request that names one of them as
+        its frame is nobody's of this page."""
         self._inside: set[str] = set()
         self._of_frames: dict[Frame, CDPSession] = {}
         self._judging: set[asyncio.Task[None]] = set()
@@ -734,10 +745,10 @@ class _Gate:
         a frame of another site inside the page is announced too, and is the page's."""
         born = event.get("targetInfo", {})
         kind, target = born.get("type"), str(born.get("targetId", ""))
-        if kind == "page" and born.get("openerId") == self._target:
+        if kind == PAGE and born.get("openerId") == self._target:
             self.another = self.another or AnotherPage(method=None, address=None)
         if target != self._target and kind != "iframe":
-            self._strangers.add(target)
+            self._strangers[target] = str(kind)
 
     def _told(self, event: Mapping[str, Any]) -> None:
         """A request is paused, and waits for this gate: answered in a task of the gate's own,
@@ -770,14 +781,17 @@ class _Gate:
         """Whether the request the gate was told of may leave."""
         request = event["request"]
         address = str(request["url"])
-        if address == CHECK:
+        if self.proving and address == CHECK:
             self.checked = True
             return False
         if self._stopping.is_set():
             return False
         frame = str(event.get("frameId", ""))
         if frame in self._strangers or not await self._of_the_page(frame):
-            if self.another is not None and self.another.address is None:
+            # The first thing the page that was opened asked for — its own request or a frame's
+            # written in it, never a worker's, which is no page.
+            of_a_page = self._strangers.get(frame, PAGE) == PAGE
+            if self.another is not None and self.another.address is None and of_a_page:
                 self.another = AnotherPage(method=str(request["method"]), address=address)
             return False
         of_the_main_frame = frame == self._main and event.get("resourceType") == "Document"
@@ -803,17 +817,27 @@ class _Gate:
             if one is self._page.main_frame:
                 continue
             try:
-                session = self._of_frames.get(one)
-                if session is None:
-                    session = self._of_frames[one] = await self._context.new_cdp_session(one)
-                self._inside.update(
-                    _frames_in((await session.send("Page.getFrameTree"))["frameTree"])
-                )
+                self._inside.update(await self._frames_under(one))
             except PlaywrightError:
                 # A frame with no session of its own is in the tree of the one above it; one
                 # that is gone has no request to make.
                 continue
         return frame in self._inside
+
+    async def _frames_under(self, frame: Frame) -> list[str]:
+        """The frames in the tree of a frame that has a session of its own. The session is kept
+        for the next time — and made again when it answers no more: a frame that went to
+        another site has another one."""
+        kept = self._of_frames.pop(frame, None)
+        if kept is not None:
+            with contextlib.suppress(PlaywrightError):
+                found = _frames_in((await kept.send("Page.getFrameTree"))["frameTree"])
+                self._of_frames[frame] = kept
+                return found
+        session = await self._context.new_cdp_session(frame)
+        found = _frames_in((await session.send("Page.getFrameTree"))["frameTree"])
+        self._of_frames[frame] = session
+        return found
 
 
 def _of_the_page(request: Request, page: Page) -> bool:
