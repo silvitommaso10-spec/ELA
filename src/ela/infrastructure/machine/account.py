@@ -93,6 +93,7 @@ from ela.ports import (
     BrowserUnsupported,
     Field,
     Glanced,
+    Landed,
     Opened,
     PageGone,
     ProfileBusy,
@@ -852,6 +853,20 @@ class AccountChrome(PlaywrightBrowser):
             return Field(
                 type=declared.lower(), autocomplete=autocomplete.lower(), method=str(method)
             )
+
+        return await self._on(page, read)
+
+    async def landed(self, page: str) -> Landed:
+        """Where the page is once the document its last gesture led to is parsed, and the
+        status of that document (decision 106). **The click has already waited for the
+        navigation it started** — measured on 2026-10-12 with a site that takes its time: when
+        it returns, the page is at the address the site's redirect led to —, so what is waited
+        for here is the document itself, which the count of an element needs."""
+
+        async def read(opened: _Open) -> Landed:
+            await opened.page.wait_for_load_state("domcontentloaded")
+            status = opened.documents[-1] if opened.documents else None
+            return Landed(address=opened.page.url, status=status)
 
         return await self._on(page, read)
 

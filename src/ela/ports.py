@@ -158,6 +158,7 @@ __all__ = [
     "Gesture",
     "Gestures",
     "Glanced",
+    "Landed",
     "Guided",
     "IdGenerator",
     "IdentityConflictError",
@@ -2842,6 +2843,19 @@ class Glanced:
 
 
 @dataclass(frozen=True, slots=True)
+class Landed:
+    """Where a page is once the document its last gesture led to is there (M13.9, decision 106).
+
+    ``address`` is the main frame's, whole: what part of it may be told, and to whom, the tool
+    says. ``status`` is the HTTP status of the last document the main frame was given — the
+    page's own, never the redirect's that led to it —, ``None`` when none came back.
+    """
+
+    address: str
+    status: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class Visit:
     """What a browser call would do, as the question names it (M13.4 dec. G, ADR 0052).
 
@@ -2967,8 +2981,15 @@ class AccountBrowser(Browser, Protocol):
     * **when** :meth:`close` **returns the folder is free**, whoever asked — a caller that arrives
       while another is already closing the page waits for that closing;
     * :meth:`field` says how the element's form sends (:attr:`Field.method`), and :meth:`glance`
-      whether the page asks for a one-time code (:attr:`Glanced.second_factor`).
+      whether the page asks for a one-time code (:attr:`Glanced.second_factor`);
+    * :meth:`landed` says where a page is after a gesture, and with which status — what a login
+      that did not work leaves to read (decision 106).
     """
+
+    async def landed(self, page: str) -> Landed:
+        """Where the main frame is **once the document the last gesture led to is there**, and
+        the status of that document. An event of the page — its document parsed —, with no time
+        of its own: the tool's deadline is around it, as around every other call."""
 
     async def occupied(self) -> str | None:
         """Who holds the profile now — :data:`PROFILE_STEP`, :data:`PROFILE_WINDOW`,

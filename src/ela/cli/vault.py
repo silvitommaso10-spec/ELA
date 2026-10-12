@@ -85,10 +85,13 @@ def open_() -> None:
     keeps it for an hour. Nothing is printed of it."""
     if stdin_is_a_terminal():
         fail(CONFIGURATION, FROM_A_TERMINAL)
-    key = sys.stdin.read().strip()
-    if not key:
-        fail(CONFIGURATION, NO_KEY)
+    # What it needs to talk to ELA, before the pipe is read (decision 107): launched where no
+    # token is to be found, it says so at once — the vault's program is still asking for the
+    # master password, and no key has been written into a pipe nobody will take.
     with client.connect() as api:
+        key = sys.stdin.read().strip()
+        if not key:
+            fail(CONFIGURATION, NO_KEY)
         opened = api.post("/vault/session", {"key": key})
     typer.echo(f"the vault is open: ELA forgets the key at {opened['forgets_at']}")
 

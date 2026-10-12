@@ -655,7 +655,14 @@ async def test_after_the_yes_the_entry_is_read_once_and_typed_through_the_browse
     result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, stop)
 
     assert result.status is ExecutionStatus.SUCCEEDED, result.error
-    assert result.output == {"status": 200, "gestures": 3, "page": "page-1"}
+    assert result.output == {
+        "status": 200,
+        "gestures": 3,
+        "page": "page-1",
+        "ended_at": "posta.example/login",
+        "ended_status": 200,
+        "password_field_still_there": True,
+    }
     assert browser.secrets == [("#user", USERNAME), ("#word", TYPED)]
     assert browser.clicks == ["#go"]
     assert browser.fills == [], "never through the fill that takes a plain value"

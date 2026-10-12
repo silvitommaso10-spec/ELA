@@ -52,7 +52,7 @@ def _status(payload: dict[str, Any]) -> str:
     linked, saved, profiles = payload["linked"], payload["saved"], payload.get("profiles")
     said: list[tuple[str, Any]] = [
         ("state", payload["state"]),
-        ("window", "shown" if payload["window"] else "hidden"),
+        ("steps run", "with a window" if payload["window"] else "without a window"),
         ("linked to an account", NOT_READ if linked is None else ("yes" if linked else "no")),
         ("saved passwords", NOT_READ if saved is None else saved),
     ]

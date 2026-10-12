@@ -126,6 +126,7 @@ from ela.ports import (
     Glanced,
     IdentityConflictError,
     IdGenerator,
+    Landed,
     ModelProvider,
     NotAllowedError,
     NotFoundError,
@@ -1066,7 +1067,10 @@ class FakePage:
     ``left_after_click`` one the click started; ``shown`` whether an awaited text appears, and
     ``changes_to`` the text the page shows once the tool is done with it, for the verifier's look.
     ``second_factor`` is whether the page asks for a one-time code — what only the browser with
-    the profile says (M13.9).
+    the profile says (M13.9). ``landed`` is where the page is after the click — ``None`` for
+    where it was opened —, ``landed_status`` the status of its document then, and
+    ``counts_after_click`` what a selector finds once the click was made: what a login leaves to
+    read (decision 106).
     """
 
     status: int | None = 200
@@ -1080,6 +1084,9 @@ class FakePage:
     shown: bool = True
     changes_to: dict[str | None, str] | None = None
     second_factor: bool = False
+    landed: str | None = None
+    landed_status: int | None = 200
+    counts_after_click: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -1262,6 +1269,8 @@ class FakeBrowser:
         self._on(page)
         await self._wait("count")
         self._raise("count")
+        if self._clicked and selector in self.page.counts_after_click:
+            return self.page.counts_after_click[selector]
         return self.page.counts.get(selector, 1)
 
     async def field(self, page: str, selector: str) -> Field:
@@ -1369,6 +1378,7 @@ class FakeAccountBrowser(FakeBrowser):
         self.shuts: list[Callable[[], Awaitable[None]]] = []
         self.windows: list[str | None] = []
         self.secrets: list[tuple[str, str]] = []
+        self.landings: list[str] = []
 
     def _held_by(self) -> str | None:
         return PROFILE_STEP if self._open else self.holder
@@ -1393,6 +1403,12 @@ class FakeAccountBrowser(FakeBrowser):
     ) -> Glanced:
         glanced = await super().glance(page, selector=selector, expect=expect, seconds=seconds)
         return replace(glanced, second_factor=self.page.second_factor)
+
+    async def landed(self, page: str) -> Landed:
+        self._on(page)
+        self._raise("landed")
+        self.landings.append(page)
+        return Landed(address=self.page.landed or self.opened[-1], status=self.page.landed_status)
 
     async def window(self, address: str | None) -> None:
         self._raise("window")

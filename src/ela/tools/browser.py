@@ -98,6 +98,7 @@ __all__ = [
     "cut",
     "https_origin",
     "origin_of",
+    "place_of",
 ]
 
 BROWSER_READ_TOOL_NAME: Final = "browser-read"
@@ -214,6 +215,25 @@ def origin_of(url: str) -> str:
         port = None
     host = parts.hostname or ""
     return f"{parts.scheme.lower()}://{host}" + ("" if port is None else f":{port}")
+
+
+def place_of(address: str) -> str:
+    """``host[:port]/path`` of ``address``: where a page is, as a result may say it (M13.9,
+    decision 106) — **never the query or the fragment**, where a site writes what it was asked
+    with, and never a user or a password written before the host. An address with no host is
+    told by what is left of it.
+
+    For a result, which is the user's own content coming back to the user: a path is in no
+    sentence of an error, because that goes to the audit (ADR 0052 §12)."""
+    parts = urlsplit(address)
+    if not parts.hostname:
+        return address.partition("?")[0].partition("#")[0]
+    try:
+        port = parts.port
+    except ValueError:  # a port that is not a number: the place is what can be said of it
+        port = None
+    host = parts.hostname + ("" if port is None else f":{port}")
+    return f"{host}{parts.path or '/'}"
 
 
 def https_origin(site: str) -> str:

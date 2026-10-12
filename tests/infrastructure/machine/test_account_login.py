@@ -63,6 +63,9 @@ FORM = """
 INSIDE = f'<a href="user">{USER}</a> | <a href="logout">logout</a>'
 OUTSIDE = '<a href="login">login</a>'
 IN = "logout"
+STILL_ARRIVING = 0.5
+"""How long the second half of a page is held back: long beside the instant a click returns in,
+which is when its address is the page's already."""
 """What only a page from inside shows: it is in neither the form nor the page of who is out."""
 
 
@@ -70,14 +73,17 @@ class LoginSite:
     """A site that signs in as a real one does, and what it received.
 
     ``POST /login`` with the right two values answers ``302`` to ``home`` — a relative address,
-    as sites write it — with the cookie of the access; with anything else it answers ``200`` and
-    the form again. ``/home`` shows :data:`INSIDE` to a request that carries that cookie, and
-    :data:`OUTSIDE` to any other.
+    as sites write it — with the cookie of the access; with anything else it answers ``401`` and
+    the form again — or, made with ``back``, with a redirect to ``again``, where the form is
+    served **in two halves with a pause between them**: a site that sends who failed back to its
+    form, on a connection that is slow. ``/home`` shows :data:`INSIDE` to a request that carries
+    that cookie, and :data:`OUTSIDE` to any other.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, back: bool = False) -> None:
         self.requests: list[str] = []
         self.cookies: list[str] = []
+        self.back = back
         site = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -90,6 +96,18 @@ class LoginSite:
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+
+            def _in_two_halves(self, first: str, then: str) -> None:
+                """A page that is still arriving when its address is already the page's: its
+                beginning, a pause, and only then the rest."""
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(first.encode()) + len(then.encode())))
+                self.end_headers()
+                self.wfile.write(first.encode())
+                self.wfile.flush()
+                time.sleep(STILL_ARRIVING)
+                self.wfile.write(then.encode())
 
             def _answer(self) -> None:
                 path = self.path.split("?")[0]
@@ -106,8 +124,12 @@ class LoginSite:
                         ends = formatdate(time.time() + 30 * 24 * 3600, usegmt=True)
                         cookie = f"{ACCESS}; Expires={ends}; Path=/; Secure; HttpOnly; SameSite=Lax"
                         self._page(302, "", {"Location": "home", "Set-Cookie": cookie})
+                    elif site.back:
+                        self._page(302, "", {"Location": "again"})
                     else:
-                        self._page(200, "<p>Bad login.</p>" + FORM)
+                        self._page(401, "<p>Bad login.</p>" + FORM)
+                elif path == "/again":
+                    self._in_two_halves("<p>Bad login.</p>" + " " * 4096, FORM)
                 elif path == "/login":
                     self._page(200, FORM)
                 elif path == "/home":
@@ -130,8 +152,8 @@ class LoginSite:
         self.server.server_close()
 
 
-def login_site(served: list[account.Site]) -> LoginSite:
-    made = LoginSite()
+def login_site(served: list[account.Site], *, back: bool = False) -> LoginSite:
+    made = LoginSite(back=back)
     served.append(made)  # type: ignore[arg-type] — closed with the others: it has ``close``
     return made
 
@@ -216,7 +238,33 @@ async def test_the_browser_says_where_a_login_ended_and_the_status_of_its_docume
     await browser.close(opened.page)
 
     assert (before.address, before.status) == (web.origin + "/login?from=the-test", 200)
-    assert (refused.address, refused.status, left) == (web.origin + "/login", 200, 1)
+    assert (refused.address, refused.status, left) == (web.origin + "/login", 401, 1), (
+        "the status of the page the site answered with, not the one the form was opened with"
+    )
     assert (inside.address, inside.status, gone) == (web.origin + "/home", 200, 0), (
         "the 302 of the redirect is not the status of the page it led to"
     )
+
+
+async def test_a_page_that_is_still_arriving_is_waited_for_before_it_is_asked_about(
+    profile: Path, served: list[account.Site]
+) -> None:
+    """A site that sends a refused login **back to its form with a redirect**: the page after a
+    redirect is asked for by the browser itself, and its address is the page's as soon as its
+    first bytes are there. Asked then, the page has no password field yet — and the result
+    would say the form was gone, which is what a login that worked looks like. What is waited
+    for is the document: an event of the page, not a time."""
+    web = login_site(served, back=True)
+    browser = chrome(profile)
+
+    opened = await browser.open(web.origin + "/login", everywhere, FakeStop())
+    await browser.fill_secret(opened.page, "input[name=acct]", Secret(USER))
+    await browser.fill_secret(opened.page, "input[name=pw]", Secret("not the word"))
+    await browser.click(opened.page, "input[type=submit]")
+    refused = await browser.landed(opened.page)
+    left = await browser.count(opened.page, "input[name=pw]")
+    await browser.close(opened.page)
+
+    assert web.requests == ["GET /login", "POST /login", "GET /again"]
+    assert (refused.address, refused.status) == (web.origin + "/again", 200)
+    assert left == 1, "the form is there: the second half of the page was waited for"

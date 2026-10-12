@@ -76,6 +76,7 @@ from ela.tools.browser import (
     _selector,
     boundary,
     origin_of,
+    place_of,
 )
 from ela.tools.vault import KEY_REFUSED, LOCKED, TIMEOUT, VAULT_CODES, VaultDoor, VaultProblem
 from ela.tools.verifiers import (
@@ -145,6 +146,14 @@ question and the yes. Nothing is typed, and the step is asked again."""
 ACCOUNT_CODES: Final[frozenset[str]] = frozenset({PROFILE_UNDECLARED, PROFILE_UNSAFE, PROFILE_BUSY})
 
 BROWSER_SECOND_FACTOR: Final = "browser.second_factor"
+ENDED_AT: Final = "ended_at"
+"""In the result of a login: where the page was once the login had been sent — its host and its
+path, never its query (decision 106)."""
+ENDED_STATUS: Final = "ended_status"
+"""The HTTP status of the document of that page; ``None`` when none came back. **Not** one of the
+numbers the audit takes from a result."""
+PASSWORD_FIELD_STILL_THERE: Final = "_".join(("password", "field", "still", "there"))
+"""Whether the password field the plan names was still on that page: the form again, or not."""
 """After the click the page asks for a one-time code: ELA takes none and types none."""
 
 NOT_INSTALLED_MESSAGE: Final = (
@@ -583,7 +592,23 @@ class LoginTool(_OnTheProfile, _BrowserTool):
                 LEFT_SITE,
                 self._left(site, origin_of(left)) + self._after(done),
             )
-        return Outcome({"status": opened.status, "gestures": done[0], "page": page})
+        # What the page is now that the login was sent (decision 106): where it ended, with
+        # which status, and whether the password field is still there — the three things that
+        # tell a login the site refused from one it took. **In the result and nowhere else**:
+        # the verifier's sentence, when the text does not appear, goes to the audit, and a path
+        # is in no sentence of the audit (ADR 0052 §12).
+        landed = await self._browser.landed(page)
+        still = await self._browser.count(page, word)
+        return Outcome(
+            {
+                "status": opened.status,
+                "gestures": done[0],
+                "page": page,
+                ENDED_AT: place_of(landed.address),
+                ENDED_STATUS: landed.status,
+                PASSWORD_FIELD_STILL_THERE: still > 0,
+            }
+        )
 
     def _forgotten(self, key: str) -> str:
         """Why the tool does not know which entry a yes is for — and the slate wiped, so that
@@ -701,6 +726,8 @@ class LoginVerifier(_PageVerifier):
             BROWSER_EXPECT_MISSING,
             "the text the plan expects did not appear on the page within "
             f"{self._seconds:g} s after the login was sent: the site may have refused it, or "
-            "signed you in all the same",
+            "signed you in all the same. Where the page had ended, the status of its document "
+            "and whether the password field was still there are in the result of this step "
+            "(`ela task results`), and in no other place",
             retryable=False,
         )

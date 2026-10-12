@@ -71,7 +71,15 @@ from uuid import uuid4
 
 import playwright
 from playwright.async_api import Browser as Chromium
-from playwright.async_api import BrowserContext, Page, Playwright, Request, Route, async_playwright
+from playwright.async_api import (
+    BrowserContext,
+    Page,
+    Playwright,
+    Request,
+    Response,
+    Route,
+    async_playwright,
+)
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
@@ -164,6 +172,9 @@ class _Open:
     context: BrowserContext
     page: Page
     refused: list[str]
+    documents: list[int] = field(default_factory=list)
+    """The status of every document the main frame was given, in the order they came: the last
+    is the page's own (M13.9, decision 106)."""
     kept: asyncio.Task[None] | None = None
     looking: bool = False
     tasks: set[asyncio.Task[None]] = field(default_factory=set)
@@ -423,7 +434,9 @@ class PlaywrightBrowser:
 
             await context.route("**/*", gate)
             page = await self._paged(context)
-            self._pages[token] = _Open(playwright, browser, context, page, refused)
+            documents: list[int] = []
+            page.on("response", lambda response: documents.extend(_document(response, page)))
+            self._pages[token] = _Open(playwright, browser, context, page, refused, documents)
             # The last instant before the site sees anything (M6.3c, ADR 0054 §3): a stopped task
             # leaves here with ToolStopped, and the page and its browser are closed below.
             stop.listen(NAVIGATION)
@@ -555,6 +568,16 @@ class PlaywrightBrowser:
         if opened.kept is not None and opened.kept is not asyncio.current_task():
             opened.kept.cancel()
         await asyncio.shield(self._carried(_shut(opened)))
+
+
+def _document(response: Response, page: Page) -> tuple[int, ...]:
+    """The status of ``response`` when it is **a document the main frame was given** — a
+    redirect's, and then the page's own —, and nothing for anything else the page loads: an
+    image, a script, the document of a frame inside it (M13.9, decision 106)."""
+    asked = response.request
+    if asked.is_navigation_request() and asked.frame is page.main_frame:
+        return (response.status,)
+    return ()
 
 
 async def _look(opened: _Open, selector: str | None, expect: str | None, seconds: float) -> Glanced:

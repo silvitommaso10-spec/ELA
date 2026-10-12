@@ -95,7 +95,7 @@ async def test_a_login_that_did_not_work_says_what_the_page_was_in_its_result_an
     audit = (await client.get("/audit", params={"task_id": task})).text
 
     assert ran["outcome"] == "failed" and "browser.expect_missing" in ran["reason"], ran
-    (result,) = results
+    (result,) = [one for one in results if one["status"] != "STARTED"]
     assert result["status"] == "SUCCEEDED", "the tool did what it was asked: the look said no"
     assert result["output"]["ended_at"] == f"posta.example/{ENDED}"
     assert result["output"]["ended_status"] == 200
