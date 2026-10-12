@@ -1154,6 +1154,24 @@ async def test_a_judge_that_raises_lets_nothing_leave_and_the_step_says_the_brow
     assert other.requests == [], "in doubt the request did not leave"
 
 
+async def test_a_judge_that_raises_on_the_first_address_opens_no_page_and_says_which_part_failed(
+    browser: Any, served: list[Site], judged: list[tuple[str, str, bool]]
+) -> None:
+    """Criterion 9, at the opening: the boundary raises on the very address the tool asked for.
+    Nothing is sent, no page stays open, and the opening says that the browser failed — not
+    that the site did not answer, which would send whoever reads it to look at the site."""
+    web = site(served, {"/": (200, {}, "<p>x</p>")})
+
+    def allowed(address: str) -> bool:
+        raise RuntimeError("the boundary of this test cannot say")
+
+    with pytest.raises(BrowserFailed):
+        await browser.open(web.origin + "/", allowed, FakeStop())
+
+    assert ("GET", web.origin + "/", False) in judged, "the gate was told, and made it fail"
+    assert web.requests == [] and browser._pages == {}
+
+
 def _raising(call: Any, allowed: Callable[[str], bool]) -> Any:
     """The call a tool would make, with the boundary of the test in the place of its own."""
     from dataclasses import replace
