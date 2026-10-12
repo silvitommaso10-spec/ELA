@@ -1481,3 +1481,36 @@ async def test_a_login_still_at_work_before_it_was_sent_does_not_say_it_was_sent
     assert result.error is not None and result.error.code == TIMEOUT
     assert "the login was sent" not in result.error.message
     assert "no gesture was made" in result.error.message and browser.secrets == []
+
+
+async def test_a_login_whose_time_ran_out_inside_the_click_does_not_say_two_gestures_and_no_more(
+    tmp_path: Path,
+) -> None:
+    """The click waits for the navigation it starts (measured): the commonest place for the time
+    of a login to run out after the form left is **inside the click**, which the count of the
+    gestures has not counted yet. «2 gestures were made» would read as a form never sent: the
+    failure says the click was asked, and that whether the login was sent ELA does not know."""
+    from ela.tools.browser import TIMEOUT
+
+    class ClickNeverReturns(FakeAccountBrowser):
+        async def click(self, page: str, selector: str) -> None:
+            await asyncio.Event().wait()
+
+    browser = ClickNeverReturns(page())
+    tool = LoginTool(
+        Browsing(sites=("posta.example",), timeout_seconds=1),
+        browser,
+        await door(FakeVault([MARIO]), tmp_path),
+        CLOCK,
+        FakeIdGenerator(),
+    )
+    await asked(tool)
+
+    async with asyncio.timeout(10):
+        result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == TIMEOUT
+    assert result.output == {"gestures": 2} and len(browser.secrets) == 2
+    said = result.error.message
+    assert "the click was asked" in said and "does not know whether the login was sent" in said
+    assert "the login was sent to" not in said, "nor does it say that it was"

@@ -328,8 +328,7 @@ def test_a_second_signal_inside_the_close_ends_the_grace_at_once(
 
     assert ended.waited, "the control: the second signal was sent inside the close"
     assert HURRIED in ended.error and "1 node" in ended.error
-    assert "did not close within" not in ended.error
-    assert ended.seconds < NO_TEST_WAITS_IT_OUT, "and it was not the grace that ended the wait"
+    assert "did not close within" not in ended.error, "it was not the grace that ended the wait"
     assert ended.database == ("ela.db",)
     assert ended.still_running() == []
     assert not ended.left

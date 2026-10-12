@@ -630,6 +630,15 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         """A time that ran out **after the click** is not a page still at work: the password was
         typed and the form was sent, and what the site did with it ELA does not know (decision
         111). Said as it is — and never asked again: a login sent twice is sent twice."""
+        if done[0] == GESTURES_OF_A_LOGIN - 1:
+            # Both values typed, and the third gesture not counted: the time ran out **inside
+            # the click**, which waits for the navigation it starts. The form may have left.
+            return (
+                f"the two values were typed on the page of {site} and the click was asked, and "
+                f"it had not returned after {self._browsing.timeout_seconds} s: ELA closed the "
+                "browser and does not know whether the login was sent, nor how it ended"
+                f"{self._after(done)}"
+            )
         if done[0] < GESTURES_OF_A_LOGIN:
             return super()._still_at_work(site, done)
         return (
