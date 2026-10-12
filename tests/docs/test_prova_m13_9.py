@@ -310,6 +310,25 @@ def test_ela_is_the_listener_whose_command_line_is_ela_serve_and_no_other() -> N
     assert module.the_ela_among([9999], commands) is None, "a process that is gone"
 
 
+def test_the_tests_of_the_proof_run_in_a_folder_of_their_own_with_no_env_file(
+    tmp_path: Path,
+) -> None:
+    """The script of the proof reads ELA's settings, as it must when the user runs it: the
+    variables, **and the** ``.env`` **of the folder it is run in**. A test of it that stood in
+    the folder the suite is launched from read the ``.env`` of whoever uses ELA on that machine
+    — and, the day that file declared the folder of the profile, two of these tests looked at
+    that folder: its mode, and the lock inside it (found on 2026-10-12, the day after the
+    profile first held real sessions). An empty variable does not hide the line of a file: it
+    is a line nobody wrote. Every test of this module stands where no ``.env`` is."""
+    here = Path.cwd().resolve()
+
+    assert here == tmp_path.resolve(), "a folder of the test's, not the one the suite runs in"
+    assert not (here / ".env").exists()
+    assert not [name for name in os.environ if name.startswith("ELA_")], (
+        "and nothing of ELA's inherited from whoever launched the suite"
+    )
+
+
 def test_the_listeners_are_asked_of_lsof_on_ela_s_port_and_judged_by_their_command_lines(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
