@@ -38,6 +38,7 @@ from ela.ports import (
     BrowserStopped,
     BrowserUnsupported,
     Field,
+    Landed,
     ProfileBusy,
     ProfileUndeclared,
     ProfileUnsafe,
@@ -1411,3 +1412,72 @@ async def test_a_text_that_is_missing_after_a_login_says_where_what_the_page_was
     assert "`ela task results`" in failure.message
     assert "accedi-rifiutato" not in failure.message and "posta.example" not in failure.message
     assert set(failure.details) == {"condition"}, "and no detail carries it either"
+
+
+async def test_a_login_still_at_work_after_it_was_sent_says_so_and_is_not_asked_again(
+    tmp_path: Path,
+) -> None:
+    """Decision 111. Since the login waits for the document its click led to, a page that does
+    not finish arriving ends the step on the tool's time **after the three gestures**. That is
+    not «the page was still at work»: the password was typed and the form was sent, and what
+    the site did with it nobody knows. The failure says exactly that — and it is not one to
+    try again: a login sent twice is sent twice."""
+    from ela.tools.browser import TIMEOUT
+
+    class NeverArrives(FakeAccountBrowser):
+        async def landed(self, page: str) -> Landed:
+            await asyncio.Event().wait()
+            raise AssertionError("never reached")
+
+    browser = NeverArrives(page())
+    tool = LoginTool(
+        # One second, and not none: the time has to run out **after** the vault answered and the
+        # gestures were made, and what ends it is the page that never arrives — not a wait of
+        # the test's.
+        Browsing(sites=("posta.example",), timeout_seconds=1),
+        browser,
+        await door(FakeVault([MARIO]), tmp_path),
+        CLOCK,
+        FakeIdGenerator(),
+    )
+    await asked(tool)
+
+    async with asyncio.timeout(10):
+        result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == TIMEOUT
+    assert result.output == {"gestures": 3}, "typed and sent: the three gestures were made"
+    said = result.error.message
+    assert "the login was sent" in said and "does not know how it ended" in said
+    assert "3 gestures were made" in said
+    assert result.error.retryable is False and LoginTool.idempotent is False
+    assert browser.closed == ["page-1"], "and the page is closed, not handed to the verifier"
+
+
+async def test_a_login_still_at_work_before_it_was_sent_does_not_say_it_was_sent(
+    tmp_path: Path,
+) -> None:
+    """The other side: the time runs out while the vault is asked, before anything is typed."""
+    from ela.tools.browser import TIMEOUT
+
+    class SlowToSay(FakeAccountBrowser):
+        async def field(self, page: str, selector: str) -> Field:
+            await asyncio.Event().wait()
+            raise AssertionError("never reached")
+
+    browser = SlowToSay(page())
+    tool = LoginTool(
+        Browsing(sites=("posta.example",), timeout_seconds=0),
+        browser,
+        await door(FakeVault([MARIO]), tmp_path),
+        CLOCK,
+        FakeIdGenerator(),
+    )
+    await asked(tool)
+
+    async with asyncio.timeout(10):
+        result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == TIMEOUT
+    assert "the login was sent" not in result.error.message
+    assert "no gesture was made" in result.error.message and browser.secrets == []
