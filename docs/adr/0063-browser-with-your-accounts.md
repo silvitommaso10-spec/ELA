@@ -2,6 +2,8 @@
 
 - **Stato:** Proposta il **2026-10-11**, con l'implementazione di M13.9. Diventa Accettata con un commit suo, quando la
   prova a mano della sezione 28 di `docs/GETTING_STARTED.md` passa sul Mac, sul branch e prima del merge.
+  **La prova del 12 ottobre non è passata**, per il login dal vault: che cosa si è misurato da allora è in §11, e
+  ciò che un login lascia da leggere quando non riesce in §5.
 - **Data:** 2026-10-11
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.9, con M13.4b, M13.4c e M13.4e sullo stesso branch
@@ -127,7 +129,7 @@ Port introdotti:
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
 | `Vault` | §19, §57 | async | `status`, `unlock`, `lock`, `forget`, `find`, `take` |
-| `AccountBrowser` | §19, §57 | async | `installed`, `open`, `count`, `field`, `fill`, `click`, `text`, `title`, `left`, `keep`, `glance`, `close`, `occupied`, `window`, `shut`, `linked`, `saved`, `profiles`, `fill_secret` |
+| `AccountBrowser` | §19, §57 | async | `installed`, `open`, `count`, `field`, `fill`, `click`, `text`, `title`, `left`, `keep`, `glance`, `close`, `occupied`, `window`, `shut`, `linked`, `saved`, `profiles`, `fill_secret`, `landed` |
 
 **I comandi che l'adapter compone sono un elenco chiuso**: `status`; `list items --url <indirizzo>`; `get item
 <id>`; `lock`. Mai `unlock`, `login`, `export`, `get totp`, `get uri`, `serve`, `sync`, né `--session`: la chiave
@@ -203,7 +205,9 @@ letteralmente falsa.
   in un ambiente che non ha `ela` nel `PATH`, è il comando di ELA. Fino a qui i test affermavano la stringa.
 
 `ela vault open` legge la chiave dallo stdin e **rifiuta un terminale**: una chiave non si scrive e non si
-incolla. La manda a `POST /vault/session`, che la riceve **solo se i due capi del socket sono di loopback**
+incolla. **Prima di leggere guarda di avere il token** (decisione 107, dalla prova del 12 ottobre): lanciato dove
+il token non c'è lo dice subito, mentre il programma del vault sta ancora chiedendo la password principale, e
+non prende una chiave che nessuno riceverà. La manda a `POST /vault/session`, che la riceve **solo se i due capi del socket sono di loopback**
 (`from_this_machine`, la coppia di ADR 0044): la tailnet non consegna una chiave, qualunque token porti. La rotta
 la tiene solo se il programma del vault, con quella chiave, dice che il vault è aperto; altrimenti è
 `vault.key_refused`, e la chiave è dimenticata. **Non torna indietro in nessuna risposta**, né in un rifiuto: il
@@ -549,6 +553,19 @@ mostra un campo `one-time-code` e il testo atteso non compare, il verifier falli
 `browser.second_factor` — «do it by hand in ELA's window» — invece che con `browser.expect_missing`. Il
 riconoscimento è parziale, come quello dei campi segreti.
 
+**Che cosa lascia da leggere un login che non riesce** (decisione 106, 2026-10-12). La prova del 12 ottobre è
+finita su `browser.expect_missing`, e nessuno sapeva che cosa il sito avesse risposto. **Il risultato** di
+`browser.login` porta tre cose della pagina com'era quando il tool l'ha lasciata: `ended_at`, dove era — **host e
+percorso**, mai la query né il frammento, mai un utente scritto prima dell'host —; `ended_status`, lo stato
+dell'ultimo documento dato alla cornice principale, quello della pagina e non del rimando che ci ha portato; e
+se il campo della password del piano c'era ancora. **Nel risultato e in nessun altro posto**: la frase di un
+fallimento del verifier va nell'audit, dove un percorso non entra (ADR 0052 §12), e dice solo dove leggerle;
+`ended_status` non è fra i numeri che l'audit prende da un risultato. **Le legge il tool, dopo il click** — che
+ha già aspettato la navigazione che ha avviato: misurato con un sito lento —, **e dopo che il documento è
+arrivato**, un evento della pagina: la pagina dopo un rimando la chiede il browser, e il suo indirizzo è già
+quello quando il suo modulo non c'è ancora. Il modulo di nuovo, con il suo campo, è un sito che ha rifiutato
+l'invio; una pagina senza il campo è un sito che l'ha accettato.
+
 **Il valore non viene mai dal piano**, e non entra nel modulo dei tool: il tool riceve due `Secret` dalla porta
 del vault e li passa all'adapter del browser — a nessun altro, in nessun esito, messaggio o evento.
 
@@ -891,6 +908,37 @@ Errori aggiunti, nella forma della tabella di ADR 0023 §10:
 | Caso | Eccezione | Stato |
 |---|---|---|
 | la finestra, il suo interruttore o la sua chiusura chiesti da una console che non è al Mac | `BrowserOutOfReachError` | `409` |
+
+### 11. Che cosa vede un sito, e ciò che il cancello non ferma — misurato il 2026-10-12
+
+Il cancello è quello di ADR 0052 §6, e il browser del profilo lo eredita. **Misurato dopo la prova del 12
+ottobre**, con server locali e nessun sito vero (le sonde e le loro uscite in `docs/milestones/M13.9.md`, sezione
+21):
+
+- **Il primo documento di ogni navigazione lo manda il processo del driver, non il browser** — un indirizzo
+  aperto, un link, il `POST` di un modulo. Porta il nome del browser, e **non è il browser**: le intestazioni
+  hanno un altro ordine e nomi minuscoli, mancano `Sec-Fetch-*` e `Accept-Language`, e su TLS il primo messaggio
+  è di un altro client — nessun ALPN, quindi HTTP/1.1 dove il browser parlerebbe HTTP/2. ADR 0052 §6 diceva già
+  che «la route è il driver»; non diceva che cosa ne vede un sito. **Un sito può rispondere a un login in modo
+  diverso**: è una causa candidata del login non riuscito della prova, **non un fatto**, perché nessun sito vero
+  è stato interrogato. **Nessun travestimento si aggiunge**, né si aggiungerà: non si imita ciò che non si è.
+- **Il documento dopo un rimando lo manda il browser, e il cancello non è chiamato.** La forma di un login vero
+  — un `POST`, un rimando con il cookie dell'accesso, la pagina dopo, un secondo lancio — **passa lo stesso**, e
+  un test del browser vero la tiene, senza finestra e con.
+- **Ma il cancello guarda così una sola risposta per navigazione**: in una catena, **un secondo rimando che esce
+  dal confine è seguito, e la richiesta arriva all'altro sito**, con ciò che il suo indirizzo porta e con i
+  cookie che il profilo tiene per lui. Regge che il tool non legge e non scrive su una pagina finita altrove —
+  `browser.left_site` —; **non regge che una navigazione fuori dal confine non parte**. È di M13.4, vale per
+  tutti e due i browser, e **non è riparato qui**.
+- **I cookie di un documento li scelgono due programmi**: quando il browser non ne manderebbe nessuno — un
+  modulo inviato da un altro sito, dove `SameSite` dice di no — il driver aggiunge tutti quelli che tiene per
+  quell'indirizzo.
+
+**La strada misurata, e non presa in questa milestone**: lasciare al browser le sue richieste e guardarle prima
+che partano — ogni richiesta di documento, i salti di un rimando compresi — con il protocollo di debug del
+browser. Una sonda dice che il confine regge anche al secondo rimando, che il sito riceve ciò che riceve dal
+browser da solo, e che i cookie tornano a essere del browser. È una riparazione di M13.4, con la sua lettera e
+il suo ADR: la proposta è la domanda 109 di `M13.9.md`, e la 110 dice del secondo rimando.
 
 ## Alternative considerate
 

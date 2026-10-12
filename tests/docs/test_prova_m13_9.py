@@ -549,6 +549,8 @@ def a_page() -> FakePage:
             asked["click"]: Field("submit", "", "post"),
         },
         texts={None: "Le tue iscrizioni: un canale. Esci. ELA prova 9139"},
+        landed="https://news.ycombinator.com/news",
+        counts_after_click={asked["password_field"]: 0},
     )
 
 

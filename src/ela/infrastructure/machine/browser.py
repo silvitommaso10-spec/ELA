@@ -398,7 +398,14 @@ class PlaywrightBrowser:
                 followed with no route in between — measured by the test of the real browser, and
                 the reason for the second branch. So the document of the main frame is fetched here
                 without following redirects; a redirect the boundary refuses is not followed, and
-                one it admits is handed to the page, which follows it through this route again.
+                one it admits is handed to the page, which follows it.
+
+                **Not through this route again** — measured on 2026-10-12, and until then written
+                here as if it were: Playwright calls no route for a request born of a redirect,
+                not even of one a route handed over. The request after an admitted redirect is
+                the browser's own, and **a second redirect of the chain is not looked at here**:
+                off the boundary, it is followed (ADR 0052 §6, corrected; ADR 0063 §11). Known,
+                written, and not repaired in M13.9.
                 """
                 main = request.is_navigation_request() and request.frame.parent_frame is None
                 if main and not allowed(request.url):
