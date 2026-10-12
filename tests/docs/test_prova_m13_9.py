@@ -53,6 +53,10 @@ SCRIPT = ROOT / "scripts" / "prova_m13_9.py"
 SIBLINGS = ("prova_m6_3c", "prova_m14_1", "prova_m14_2", "prova_m14_3")
 PLACEHOLDER = re.compile(r"<[^>\s][^>]*>")
 LOGIN_PLAN = ROOT / "docs" / "examples" / "login-from-the-vault.json"
+AS_YOU = frozenset(
+    {"browser.read_as_you", "browser.act_as_you", "browser.login", "browser.guided_as_you"}
+)
+"""The capabilities that act on the profile with the user's sessions: what the proof asks."""
 """The shape of a login from the vault, for any site: what the tests of the script's own checks
 hand it."""
 PROOF_LOGIN = ROOT / "docs" / "examples" / "login-news-ycombinator.json"
@@ -642,6 +646,21 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     ], "with the window closed by the red button the state still says it is open"
     assert WORD not in written and ENTRY.username not in written
     assert ENTRY.name not in written, "nothing of the vault enters the file"
+    questions = {
+        block.split("| capability: ", 1)[1].split("\n", 1)[0]: block.split("    $ ", 1)[0]
+        for block in written.split("    la domanda ")[1:]
+    }
+    assert set(questions) >= AS_YOU, "the four capabilities with the profile were each asked"
+    for capability in sorted(AS_YOU):
+        shown = questions[capability]
+        assert "    | che cosa: " in shown and "signed in" in shown, (
+            f"decision 107: what the user reads of a question of {capability} before the yes "
+            "says that ELA acts signed in as them — in a sentence, not only in the capability's "
+            f"name:\n{shown}"
+        )
+    for capability in sorted(AS_YOU - {"browser.guided_as_you"}):
+        assert "    | che cosa fa: " in questions[capability], "the tool's own sentence"
+        assert "as you" in questions[capability].split("| che cosa fa: ", 1)[1].split("\n")[0]
     disk = [line for line in world.ran if not line.startswith("uv run ela ")]
     assert disk == [
         "hdiutil attach -nomount ram://131072",
