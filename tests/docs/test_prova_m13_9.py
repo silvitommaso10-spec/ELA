@@ -42,7 +42,11 @@ from ela.ports import Field, Secret
 from ela.testing.fakes import FakeAccountBrowser, FakePage, FakeVault, FakeVaultEntry
 from tests.api.guided import Script, call, gesture, guided
 from tests.cli.support import LoopTransport, plain
-from tests.composition.support import API_TOKEN, TOKEN
+from tests.composition.support import (  # noqa: F401 — re-exported as a fixture
+    API_TOKEN,
+    TOKEN,
+    _only_the_declared_environment,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "prova_m13_9.py"
@@ -548,8 +552,13 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Steps 2 to 9, as written in the guide, run by the script itself. Every ``atteso`` of the
-    section is judged on what ELA's own command line printed."""
+    section is judged on what ELA's own command line printed.
+
+    **In a folder of the test's, like every test here**: the guide names its plans from the root
+    of the repository, so the test's folder is given a ``docs`` that leads there — and no
+    ``.env``, which the root of whoever uses ELA has."""
     module = script()
+    (tmp_path / "docs").symlink_to(ROOT / "docs", target_is_directory=True)
     program = tmp_path / "bw"
     program.write_bytes(b"\xcf\xfa\xed\xfe a native program")
     program.chmod(program.stat().st_mode | stat.S_IXUSR)
