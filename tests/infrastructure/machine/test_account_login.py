@@ -308,13 +308,13 @@ async def test_a_page_that_is_still_arriving_is_waited_for_before_it_is_asked_ab
     assert left == 1, "the form is there: the second half of the page was waited for"
 
 
-async def test_a_site_that_answers_nothing_to_the_login_leaves_the_form_and_no_status(
+async def test_a_site_that_answers_nothing_to_the_login_is_told_with_no_status(
     profile: Path, served: list[account.Site], launched: list[AccountChrome]
 ) -> None:
-    """The site takes what was sent and closes the connection. The page does not move — the
-    form is still there, with its field —, and **the status of the form that was opened is not
-    the status of what came after**: nothing came. Without that, a login nobody answered would
-    read as one the site refused."""
+    """The site takes what was sent and closes the connection. What the browser shows then is
+    a page of its own under the address that was asked for: no form, no field — which is also
+    what a login that worked looks like. **What tells them apart is the status, and there is
+    none**: the ``200`` of the form that was opened is not the status of what came after."""
     web = login_site(served, silent=True)
     browser = chrome(profile)
     launched.append(browser)
@@ -328,5 +328,7 @@ async def test_a_site_that_answers_nothing_to_the_login_leaves_the_form_and_no_s
     await browser.close(opened.page)
 
     assert web.requests == ["GET /login", "POST /login"]
-    assert (nothing.address, left) == (web.origin + "/login", 1), "the page did not move"
     assert nothing.status is None, "the 200 of the form is not the status of a login unanswered"
+    assert (nothing.address, left) == (web.origin + "/login", 0), (
+        "the address that was asked for, on a page of the browser's own"
+    )

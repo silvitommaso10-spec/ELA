@@ -158,7 +158,6 @@ __all__ = [
     "Gesture",
     "Gestures",
     "Glanced",
-    "Landed",
     "Guided",
     "IdGenerator",
     "IdentityConflictError",
@@ -175,6 +174,7 @@ __all__ = [
     "LISTEN_TRANSCRIPTION_FAILED",
     "LISTEN_TRANSCRIPTION_UNAVAILABLE",
     "LISTEN_UNSUPPORTED",
+    "Landed",
     "ListeningPort",
     "LocalBeat",
     "ModelGateway",
@@ -2895,7 +2895,9 @@ class Browser(Protocol):
       the page is closed, looked at, or refused — nothing passes from one page to the next;
     * a navigation of the main frame that ``allowed`` refuses **is not sent**, and
     :attr:`Opened.left`
-      names it;
+      names it. *Known not to hold in the adapter for the second redirect of a chain — measured
+      on 2026-10-12, written in ADR 0052 §6 and ADR 0063 §11, and not repaired yet: the
+      contract is this line, and the adapter is what is wrong*;
     * the browser is started so that a signal to ELA's process group does not close it: the stop is
       ELA's, through the stop signal of ADR 0038 §11, which raises :class:`BrowserStopped` in what
       was running — and **from the moment it is raised no navigation and no gesture leaves**,

@@ -172,9 +172,9 @@ class _Open:
     context: BrowserContext
     page: Page
     refused: list[str]
-    documents: list[int] = field(default_factory=list)
-    """The status of every document the main frame was given, in the order they came: the last
-    is the page's own (M13.9, decision 106)."""
+    documents: list[int | None] = field(default_factory=list)
+    """The status of every document the main frame asked for, in the order they were asked: the
+    last is the page's own, and ``None`` for one that never came (M13.9, decision 106)."""
     kept: asyncio.Task[None] | None = None
     looking: bool = False
     tasks: set[asyncio.Task[None]] = field(default_factory=set)
@@ -441,8 +441,9 @@ class PlaywrightBrowser:
 
             await context.route("**/*", gate)
             page = await self._paged(context)
-            documents: list[int] = []
-            page.on("response", lambda response: documents.extend(_document(response, page)))
+            documents: list[int | None] = []
+            page.on("request", lambda request: _asked(documents, request, page))
+            page.on("response", lambda response: _answered(documents, response, page))
             self._pages[token] = _Open(playwright, browser, context, page, refused, documents)
             # The last instant before the site sees anything (M6.3c, ADR 0054 §3): a stopped task
             # leaves here with ToolStopped, and the page and its browser are closed below.
@@ -577,14 +578,28 @@ class PlaywrightBrowser:
         await asyncio.shield(self._carried(_shut(opened)))
 
 
-def _document(response: Response, page: Page) -> tuple[int, ...]:
-    """The status of ``response`` when it is **a document the main frame was given** — a
-    redirect's, and then the page's own —, and nothing for anything else the page loads: an
-    image, a script, the document of a frame inside it (M13.9, decision 106)."""
-    asked = response.request
-    if asked.is_navigation_request() and asked.frame is page.main_frame:
-        return (response.status,)
-    return ()
+def _of_the_page(request: Request, page: Page) -> bool:
+    """Whether ``request`` asks for **a document of the main frame** — and not for anything else
+    the page loads: an image, a script, the document of a frame inside it."""
+    return request.is_navigation_request() and request.frame is page.main_frame
+
+
+def _asked(documents: list[int | None], request: Request, page: Page) -> None:
+    """A document of the main frame was asked for: it has no status until it comes (M13.9,
+    decision 106). The one of the page before it is not its own — a site that takes a login and
+    answers nothing would be told with the ``200`` of its form."""
+    if _of_the_page(request, page):
+        documents.append(None)
+
+
+def _answered(documents: list[int | None], response: Response, page: Page) -> None:
+    """A document of the main frame came: a redirect's, and then the page's own."""
+    if not _of_the_page(response.request, page):
+        return
+    if documents and documents[-1] is None:
+        documents[-1] = response.status
+    else:
+        documents.append(response.status)
 
 
 async def _look(opened: _Open, selector: str | None, expect: str | None, seconds: float) -> Glanced:

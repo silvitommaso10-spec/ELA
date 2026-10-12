@@ -1360,6 +1360,7 @@ def test_where_a_login_ended_is_in_no_number_the_audit_takes_from_the_result() -
         ("chrome-error://chromewebdata/?why=x#y", "chrome-error://chromewebdata/"),
         ("data:text/html,<p>the text of a page</p>", "data:"),
         ("https://[not-an-address/login", "an address that cannot be read"),
+        ("https:///login", "an address that cannot be read"),
     ],
     ids=[
         "query and fragment",
@@ -1373,6 +1374,7 @@ def test_where_a_login_ended_is_in_no_number_the_audit_takes_from_the_result() -
         "a page of the browser's own",
         "a page that is its own address",
         "not an address",
+        "a site with no name",
     ],
 )
 def test_the_place_of_an_address_is_its_host_and_its_path_and_nothing_else(

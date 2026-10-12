@@ -146,15 +146,15 @@ question and the yes. Nothing is typed, and the step is asked again."""
 ACCOUNT_CODES: Final[frozenset[str]] = frozenset({PROFILE_UNDECLARED, PROFILE_UNSAFE, PROFILE_BUSY})
 
 BROWSER_SECOND_FACTOR: Final = "browser.second_factor"
+"""After the click the page asks for a one-time code: ELA takes none and types none."""
 ENDED_AT: Final = "ended_at"
-"""In the result of a login: where the page was once the login had been sent — its host and its
-path, never its query (decision 106)."""
+"""In the result of a login: where the page ended once the login had been sent — its host and
+its path, never its query (decision 106)."""
 ENDED_STATUS: Final = "ended_status"
-"""The HTTP status of the document of that page; ``None`` when none came back. **Not** one of the
-numbers the audit takes from a result."""
+"""The HTTP status of the document of that page; ``None`` when the site answered nothing to what
+was sent. **Not** one of the numbers the audit takes from a result."""
 PASSWORD_FIELD_STILL_THERE: Final = "_".join(("password", "field", "still", "there"))
 """Whether the password field the plan names was still on that page: the form again, or not."""
-"""After the click the page asks for a one-time code: ELA takes none and types none."""
 
 NOT_INSTALLED_MESSAGE: Final = (
     "the browser ELA keeps your sessions in is not installed on this machine: run "
@@ -371,7 +371,9 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         frozenset({ARGUMENTS_INVALID, *BROWSER_CODES, *ACCOUNT_CODES, *VAULT_CODES})
         | {NOT_A_PASSWORD_FIELD, LOGIN_FORM_GET, ENTRY_FORGOTTEN}
     ) - {KEY_REFUSED}
-    output_keys: ClassVar[frozenset[str]] = frozenset({"status", "gestures", "page"})
+    output_keys: ClassVar[frozenset[str]] = frozenset(
+        {"status", "gestures", "page", ENDED_AT, ENDED_STATUS, PASSWORD_FIELD_STILL_THERE}
+    )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures"})
     """The status of the page of the form and how many gestures were made: never a selector, an
     entry, a username or the page."""
@@ -598,6 +600,18 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         # the verifier's sentence, when the text does not appear, goes to the audit, and a path
         # is in no sentence of the audit (ADR 0052 §12).
         landed = await self._browser.landed(page)
+        if origin_of(landed.address) != self._browsing.origin(site):
+            # The gate is asked about the first address of a navigation and about its first
+            # redirect, not about the rest of a chain (measured on 2026-10-12, ADR 0063 §11): a
+            # page that ended on another site is found here, by where it is. It is not handed
+            # to the verifier and nothing of it is told but its origin.
+            return Outcome(
+                {"status": opened.status, "gestures": done[0]},
+                LEFT_SITE,
+                f"after the login was sent the page of {site} ended at "
+                f"{origin_of(landed.address)}, which is not the site the question named: ELA "
+                "read nothing of that page" + self._after(done),
+            )
         still = await self._browser.count(page, word)
         return Outcome(
             {

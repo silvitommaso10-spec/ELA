@@ -217,23 +217,41 @@ def origin_of(url: str) -> str:
     return f"{parts.scheme.lower()}://{host}" + ("" if port is None else f":{port}")
 
 
+UNREADABLE: Final = "an address that cannot be read"
+"""What :func:`place_of` says of a text no address can be read from."""
+
+
 def place_of(address: str) -> str:
     """``host[:port]/path`` of ``address``: where a page is, as a result may say it (M13.9,
-    decision 106) — **never the query or the fragment**, where a site writes what it was asked
-    with, and never a user or a password written before the host. An address with no host is
-    told by what is left of it.
+    decision 106).
+
+    **Never the query or the fragment**, where a site writes what it was asked with; never a
+    user or a password written before the host; never what a site writes after a semicolon in
+    a step of the path, which is where some keep the id of a session. A page that is not a
+    site's is told by its scheme — and by its host when it has one, as the browser's own pages
+    do —, and **never by what follows**: for a page that is its own address, that is the page.
 
     For a result, which is the user's own content coming back to the user: a path is in no
     sentence of an error, because that goes to the audit (ADR 0052 §12)."""
-    parts = urlsplit(address)
-    if not parts.hostname:
-        return address.partition("?")[0].partition("#")[0]
+    try:
+        parts = urlsplit(address)
+    except ValueError:
+        return UNREADABLE
+    scheme, host = parts.scheme.lower(), parts.hostname or ""
+    path = "/".join(step.partition(";")[0] for step in parts.path.split("/")) or "/"
+    if scheme not in {"http", "https"}:
+        if host:
+            return f"{scheme}://{host}{path}"
+        return f"{scheme}:{parts.path}" if scheme == "about" else f"{scheme}:"
+    if not host:
+        return UNREADABLE
     try:
         port = parts.port
     except ValueError:  # a port that is not a number: the place is what can be said of it
         port = None
-    host = parts.hostname + ("" if port is None else f":{port}")
-    return f"{host}{parts.path or '/'}"
+    if ":" in host:
+        host = f"[{host}]"
+    return host + ("" if port is None else f":{port}") + path
 
 
 def https_origin(site: str) -> str:
