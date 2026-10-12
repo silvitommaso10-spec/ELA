@@ -496,16 +496,23 @@ navigator.serviceWorker.register("/worker.js").then(() => navigator.serviceWorke
 """
 
 
-async def planted(browser: AccountChrome, web: Site, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A worker in the profile, as the window leaves one: registered by a launch that lets it."""
-    launch = browser._launch
-    monkeypatch.setattr(browser, "_launch", lambda: {**launch(), "service_workers": "allow"})
-    opened = await browser.open(web.origin + "/register", everywhere, FakeStop())
-    async with asyncio.timeout(20):
-        while await browser.text(opened.page, "#state") != "registered":
-            await asyncio.sleep(0.05)
-    await browser.close(opened.page)
-    monkeypatch.undo()
+async def planted(browser: AccountChrome, web: Site) -> None:
+    """A worker in the profile, as the window leaves one: registered by a launch that lets it,
+    **with nothing of ELA's attached** — the same binary on the same folder, prepared as the
+    adapter prepares it, and no gate. *Through the gate a worker cannot be registered at all
+    (M13.4f): the request for its script has no frame of the page, and is refused.*"""
+    folder = await browser._folder()
+    await browser._prepare(folder, driven=True)
+    async with async_playwright() as playwright:
+        context = await playwright.chromium.launch_persistent_context(
+            str(folder), **{**browser._launch(), "service_workers": "allow"}
+        )
+        try:
+            page = context.pages[0]
+            await page.goto(web.origin + "/register")
+            await page.get_by_text("registered").wait_for(state="visible", timeout=20_000)
+        finally:
+            await context.close()
 
 
 def worker_site(served: list[Site]) -> Site:
@@ -528,7 +535,7 @@ async def test_a_launch_ela_drives_finds_no_worker_in_the_profile_and_the_gate_s
     launch that let it is not there for the page: the page is the network's, and the boundary
     was asked about its request — once, by the gate, before the page was used at all."""
     web = worker_site(served)
-    await planted(browser, web, monkeypatch)
+    await planted(browser, web)
     assert (profile / "Default" / "Service Worker").is_dir()
     at_the_gate: list[str] = []
 
@@ -558,7 +565,7 @@ async def test_with_the_worker_left_the_page_is_the_worker_s_and_the_gate_is_nev
     from ela.infrastructure.machine import account
 
     web = worker_site(served)
-    await planted(browser, web, monkeypatch)
+    await planted(browser, web)
     launch = browser._launch
     monkeypatch.setattr(browser, "_launch", lambda: {**launch(), "service_workers": "allow"})
     monkeypatch.setattr(account, "_prepared", lambda profile, *, driven: None)

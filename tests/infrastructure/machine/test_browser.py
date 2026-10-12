@@ -111,7 +111,12 @@ for (const kind of ["focus", "input", "change", "click"]) {
 
 
 class Site:
-    """A web server of the test's, and what it received."""
+    """A web server of the test's, and what it received.
+
+    **Not the request for its icon**, which a browser makes by itself for a page it shows: the
+    browser of the profile asks for it, the empty one does not — and until M13.4f nobody did,
+    because Playwright aborts that request itself as soon as a route is on (read in its driver).
+    It is answered, and not counted among what the test asked the browser for."""
 
     def __init__(self, pages: dict[str, tuple[int, dict[str, str], str]]) -> None:
         self.pages = pages
@@ -124,6 +129,11 @@ class Site:
         class Handler(BaseHTTPRequestHandler):
             def _answer(self) -> None:
                 path = self.path
+                if path == "/favicon.ico":
+                    self.send_response(404)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 if self.command == "POST" and path == "/event":
                     length = int(self.headers.get("Content-Length") or 0)
                     site.events.append(self.rfile.read(length).decode())

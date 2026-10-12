@@ -39,6 +39,7 @@ to wait for the browser, which is when the test sends a second signal **inside t
 from __future__ import annotations
 
 import asyncio
+import faulthandler
 import json
 import os
 import signal
@@ -47,6 +48,9 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+STILL_HERE_SECONDS = 35
+"""After how long a child of these tests says where it is: longer than any of them takes to end
+by itself, and shorter than the guard that kills it."""
 
 
 def main(mode: str, folder: Path, origin: str, port: str, grace: str | None = None) -> None:
@@ -116,6 +120,12 @@ def main(mode: str, folder: Path, origin: str, port: str, grace: str | None = No
 if __name__ == "__main__":
     # What a process started from a terminal finds. A worker of the suite may ignore ``SIGINT``,
     # and an ignored signal is inherited across ``exec``.
+    # A child that is still here after this long is one a test's guard is about to kill: it
+    # says where every thread of it is, on the stream the test puts in its failure — so that a
+    # red of these tests names the place, and is not only «did not exit» (seen once, under the
+    # load of the whole suite, on 2026-10-12, and not explained then). A child that ends as it
+    # should has ended long before.
+    faulthandler.dump_traceback_later(STILL_HERE_SECONDS, repeat=True, file=sys.stderr)
     signal.signal(signal.SIGINT, signal.default_int_handler)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     signal.signal(signal.SIGHUP, signal.SIG_DFL)

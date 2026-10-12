@@ -9,8 +9,9 @@ violation.
 address, the function that says which navigations of the main frame may be sent, the selector, the
 value, the closed environment, the deadline of a page nobody looks at. What stays here is what only
 the engine can do, and the branches of it — the translation of the engine's errors into the port's,
-the callback that stops a navigation, the deadline that closes — are proved by the real browser
-(``tests/infrastructure/machine/test_browser.py``), not by the gate: this folder is outside it.
+the session that stops a request, the deadline that closes — are proved by the real browser
+(``tests/infrastructure/machine/test_browser.py`` and ``test_the_boundary.py``), not by the
+coverage gate: this folder is outside it.
 
 What every page gets, measured before it was decided (M13.4, «Le misure»):
 
@@ -31,7 +32,7 @@ What every page gets, measured before it was decided (M13.4, «Le misure»):
   cancellation, and the processes still go. Measured: cancelled in the caller's task, a close left
   five processes outside the table, where not even ELA's stop found them;
 * **ELA's stop, whenever it is raised** (M13.4c): from that moment no navigation and no gesture
-  is handed to the driver, and the route lets no request through — so what can still reach a site
+  is handed to the driver, and the gate lets no request through — so what can still reach a site
   does not depend on how long the closing of the pages takes. An opening looks at the stop again
   the instant its page is in the table, and closes it itself: the task that closes every page may
   have come and gone while the browser was starting (measured: a form was sent after the stop);
@@ -41,15 +42,23 @@ What every page gets, measured before it was decided (M13.4, «Le misure»):
   where Playwright keeps their process, and whatever they started. Measured: torn down with a call
   of Playwright's in flight, the loop never ends — the cancelled call waits for an answer the
   cancelled reader of the pipe does not deliver —, and ELA does not exit;
-* no downloads, no service workers, no timeout of Playwright's — the tool's deadline is the one —,
-  and **every request routed**, so that a navigation of the main frame the boundary refuses is
-  aborted before it is sent; the document of the main frame is fetched by the route itself, without
-  following redirects, because Playwright does not call a route for a redirect (measured).
+* no downloads, no service workers, no timeout of Playwright's — the tool's deadline is the one.
 
-**That document is fetched by the driver, not by the browser**: its certificate is checked by Node,
-and Node reads its environment — ``NODE_TLS_REJECT_UNAUTHORIZED`` or ``NODE_EXTRA_CA_CERTS`` make an
-invalid certificate pass (measured, ADR 0052 §14). The rest of the page is the browser's, with the
-closed environment.
+**The gate looks at the browser's requests, and makes none** (M13.4f, ADR 0064; :class:`_Gate`).
+Until M13.4f it was a route of Playwright's that fetched the document of the main frame from the
+driver's process and handed it to the page. Measured on 2026-10-12: it was called for one hop of a
+chain of redirects, so the second left the boundary; the driver chose the cookies of that request
+beside the browser, and answered by itself a question the browser asks another site; the site saw
+a client that bore the browser's name without being it; and the certificate was judged by Node,
+which reads its environment. Now a session of the browser's own protocol is told of **every
+request of every page before it leaves**, and answers each: let go as it is, or made to fail.
+Every request, every cookie and every certificate is the browser's. No route is left in this
+folder, and a rule of the architecture holds it (rule 70).
+
+**And every use of a page asks the boundary where the page is** (ADR 0064 §4): before the use,
+which then does not take place, and once it is made, when what was read is thrown away —
+:class:`~ela.ports.LeftSite`. A second look, behind the gate: what keeps a page from being
+elsewhere is the gate, and this is what stops ELA if the gate has missed.
 """
 
 from __future__ import annotations
@@ -66,18 +75,18 @@ from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, TypeVar
-from urllib.parse import urljoin
 from uuid import uuid4
 
 import playwright
 from playwright.async_api import Browser as Chromium
 from playwright.async_api import (
     BrowserContext,
+    CDPSession,
+    Frame,
     Page,
     Playwright,
     Request,
     Response,
-    Route,
     async_playwright,
 )
 from playwright.async_api import Error as PlaywrightError
@@ -85,6 +94,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 from ela.ports import (
     NAVIGATION,
+    AnotherPage,
     BrowserError,
     BrowserFailed,
     BrowserNotInstalled,
@@ -92,6 +102,7 @@ from ela.ports import (
     BrowserUnsupported,
     Field,
     Glanced,
+    LeftSite,
     Opened,
     PageGone,
     SiteUnreachable,
@@ -115,6 +126,18 @@ LOOK_SECONDS: Final = 0.01
 TEMPORARY_PROFILE: Final = "playwright_chromiumdev_profile-"
 """How Playwright names the folder of the profile it makes for a browser of one page."""
 PROFILE_ARGUMENT: Final = re.compile(r"--user-data-dir=(.+?)(?= --|$)")
+ALERT: Final[Mapping[str, Any]] = {"patterns": [{"urlPattern": "*", "requestStage": "Request"}]}
+"""What the gate asks the browser to be told of (ADR 0064 §2): **every request of every page**,
+before it leaves. On the browser and not on a page: a page that was just opened has nothing to
+turn on, and nobody has to get to it first."""
+CHECK: Final = "http://127.0.0.1:9/ela-gate-check"
+"""The address every page asks for before its first navigation (ADR 0064 §3): one the browser
+itself refuses to open — the port is one it never connects to —, so that with the alert off no
+request can reach anybody, not even on this machine. With the alert on the gate is told of it,
+and that is how an opening knows the gate is there before the address of a site is asked for."""
+REFUSED: Final = "Aborted"
+"""How a request the gate does not let go fails: as one somebody gave up — the page stays where
+it is, and shows no error of the browser's in its place (measured)."""
 DRIVER: Final = "node"
 """What a driver is called when ELA says it killed one: the binary Playwright starts it with. Said
 by the adapter, which started it, and **not read from** ``ps``: a Linux kernel calls that process
@@ -172,6 +195,10 @@ class _Open:
     context: BrowserContext
     page: Page
     refused: list[str]
+    gate: _Gate
+    allowed: Callable[[str], bool]
+    """The boundary of the page: the function its tool handed to :meth:`PlaywrightBrowser.open`,
+    asked by the gate about a request and by every use of the page about where the page is."""
     documents: list[int | None] = field(default_factory=list)
     """The status of every document the main frame asked for, in the order they were asked: the
     last is the page's own, and ``None`` for one that never came (M13.9, decision 106)."""
@@ -389,64 +416,27 @@ class PlaywrightBrowser:
             context.set_default_timeout(0)
             context.set_default_navigation_timeout(0)
             refused: list[str] = []
-
-            async def gate(route: Route, request: Request) -> None:
-                """Stop a navigation of the main frame the boundary refuses, before it is sent.
-
-                **A redirect is looked at here, not left to the browser**: Playwright calls a route
-                only for the first address of a navigation, and a server's redirect would be
-                followed with no route in between — measured by the test of the real browser, and
-                the reason for the second branch. So the document of the main frame is fetched here
-                without following redirects; a redirect the boundary refuses is not followed, and
-                one it admits is handed to the page, which follows it.
-
-                **Not through this route again** — measured on 2026-10-12, and until then written
-                here as if it were: Playwright calls no route for a request born of a redirect,
-                not even of one a route handed over. The request after an admitted redirect is
-                the browser's own, and **a second redirect of the chain is not looked at here**:
-                off the boundary, it is followed (ADR 0052 §6, corrected; ADR 0063 §11). Known,
-                written, and not repaired in M13.9.
-                """
-                main = request.is_navigation_request() and request.frame.parent_frame is None
-                if main and not allowed(request.url):
-                    refused.append(request.url)
-                    await route.abort()
-                    return
-                if self._stopping.is_set():
-                    # ELA is stopping (M13.4c): nothing more leaves for a site — not a navigation
-                    # asked for an instant before, not the redirect after a form. Looked at after
-                    # the boundary and right before the request is let go: ``route.fetch`` writes
-                    # to the driver in this same turn of the loop; ``route.continue_`` is handed
-                    # over by Playwright one turn later, and a request let go here has left.
-                    await route.abort()
-                    return
-                if not main:
-                    await route.continue_()
-                    return
-                try:
-                    response = await route.fetch(max_redirects=0)
-                except PlaywrightError:
-                    # A site that does not answer: the route is resolved all the same, or the
-                    # navigation — which has no timeout of Playwright's — would wait for ever.
-                    await route.abort("failed")
-                    return
-                location = response.headers.get("location")
-                if 300 <= response.status < 400 and location:
-                    target = urljoin(request.url, location)
-                    if not allowed(target):
-                        refused.append(target)
-                        await route.abort()
-                        return
-                await route.fulfill(response=response)
-
-            await context.route("**/*", gate)
             page = await self._paged(context)
+            try:
+                gate = await self._gated(context, page, allowed, refused)
+            except (BrowserError, PlaywrightError):
+                raise
+            except Exception as error:
+                # Whatever it was, the gate is not there: nothing is asked of any site.
+                raise BrowserFailed(
+                    f"the gate of the browser could not be turned on ({type(error).__name__})"
+                ) from None
+            await self._proved(page, gate)
             documents: list[int | None] = []
             page.on("request", lambda request: _asked(documents, request, page))
             page.on("response", lambda response: _answered(documents, response, page))
-            self._pages[token] = _Open(playwright, browser, context, page, refused, documents)
+            self._pages[token] = _Open(
+                playwright, browser, context, page, refused, gate, allowed, documents
+            )
             # The last instant before the site sees anything (M6.3c, ADR 0054 §3): a stopped task
-            # leaves here with ToolStopped, and the page and its browser are closed below.
+            # leaves here with ToolStopped, and the page and its browser are closed below. **No
+            # use of the page stands between the check of the gate and this navigation**
+            # (ADR 0064 §3).
             stop.listen(NAVIGATION)
             # And ELA's own stop, looked at again now that the page is in the table (M13.4c): a
             # stop raised while the browser was starting woke the task that closes every page
@@ -460,6 +450,8 @@ class PlaywrightBrowser:
                     return Opened(page=token, status=None, address=page.url, left=refused[0])
                 if self._stopping.is_set():
                     raise
+                if gate.broken:
+                    raise BrowserFailed(UNJUDGED) from None
                 raise SiteUnreachable(type(error).__name__) from None
             return Opened(
                 page=token,
@@ -488,6 +480,43 @@ class PlaywrightBrowser:
         """The page of a context that has none yet."""
         return await context.new_page()
 
+    async def _attached(self, context: BrowserContext) -> CDPSession:
+        """A session of the browser's own, beside Playwright's: where the gate is told of every
+        request. Not a page's: a page that is opened later would have none."""
+        browser = context.browser
+        if browser is None:
+            raise BrowserFailed("the browser of the page cannot be reached: no gate, no page")
+        return await browser.new_browser_cdp_session()
+
+    async def _gated(
+        self,
+        context: BrowserContext,
+        page: Page,
+        allowed: Callable[[str], bool],
+        refused: list[str],
+    ) -> _Gate:
+        """The gate of ``page``, turned on: from here every request of every page of this
+        browser waits for it."""
+        session = await self._attached(context)
+        own = await context.new_cdp_session(page)
+        main = _frames_in((await own.send("Page.getFrameTree"))["frameTree"])[0]
+        gate = _Gate(session, own, context, page, main, allowed, self._stopping, refused)
+        await gate.on()
+        return gate
+
+    async def _proved(self, page: Page, gate: _Gate) -> None:
+        """Ask for :data:`CHECK`, which the browser itself would refuse, and see that the gate
+        was told of it (ADR 0064 §3): a gate that is told of nothing would be told of nothing of
+        the site either, and the opening fails closed before any address of the site is asked
+        for. With the alert on and nobody told, the request stays paused and this does not
+        return: the tool's own time ends the step, and the page is closed like any other."""
+        with contextlib.suppress(PlaywrightError):
+            await page.goto(CHECK, wait_until="commit")
+        if not gate.checked:
+            raise BrowserFailed(
+                "the gate of the browser is not told of its requests: no address was asked for"
+            )
+
     async def _looked(
         self, opened: _Open, selector: str | None, expect: str | None, seconds: float
     ) -> Glanced:
@@ -504,14 +533,29 @@ class PlaywrightBrowser:
             raise PageGone("no page of ELA's has this identifier any more")
         return found
 
+    def _within(self, opened: _Open, *, made: bool = False) -> None:
+        """**The one predicate** (ADR 0064 §4): the boundary of the page, asked where the page is.
+        Before a use, which then does not take place; and once it is made — ``made`` —, when what
+        was read is thrown away. A gate whose judge raised has let nothing go, and says so here:
+        the step failed on its browser, not on a text that did not appear."""
+        if opened.gate.broken:
+            raise BrowserFailed(UNJUDGED)
+        address = _where(opened.page)
+        if not opened.allowed(address):
+            raise LeftSite(address, made=made)
+
     async def _on(self, page: str, action: Callable[[_Open], Awaitable[_T]]) -> _T:
+        """A use of a page: the predicate, the use, the predicate again."""
         opened = self._page(page)
+        self._within(opened)
         try:
-            return await action(opened)
+            done = await action(opened)
         except PlaywrightError as error:
             if page not in self._pages and not self._stopping.is_set():
                 raise PageGone("the page was closed while ELA was using it") from None
             raise self._translated(error) from None
+        self._within(opened, made=True)
+        return done
 
     async def count(self, page: str, selector: str) -> int:
         return await self._on(page, lambda opened: opened.page.locator(selector).count())
@@ -540,8 +584,13 @@ class PlaywrightBrowser:
         return await self._on(page, lambda opened: opened.page.title())
 
     async def left(self, page: str) -> str | None:
-        refused = self._page(page).refused
-        return refused[-1] if refused else None
+        opened = self._page(page)
+        self._within(opened)
+        return opened.refused[-1] if opened.refused else None
+
+    async def another(self, page: str) -> AnotherPage | None:
+        opened = self._pages.get(page)
+        return None if opened is None else opened.gate.another
 
     async def keep(self, page: str) -> None:
         opened = self._pages.get(page)
@@ -576,6 +625,195 @@ class PlaywrightBrowser:
         if opened.kept is not None and opened.kept is not asyncio.current_task():
             opened.kept.cancel()
         await asyncio.shield(self._carried(_shut(opened)))
+
+
+UNJUDGED: Final = "the boundary could not be asked about a request of the page: nothing was sent"
+"""What a step says when whoever judges a request raised: the request was made to fail."""
+
+
+def _where(page: Page) -> str:
+    """Where the page is: the address of its main frame **as this adapter knows it** — the last
+    the driver told it, with no call more. It can be an instant behind the browser, and the
+    page can move between this and the use: it is the second look (ADR 0064 §4)."""
+    return page.url
+
+
+def _frames_in(tree: Mapping[str, Any]) -> list[str]:
+    """The ids of the frames of a tree as the browser gives it, the root first."""
+    found = [str(tree["frame"]["id"])]
+    for child in tree.get("childFrames", ()):
+        found.extend(_frames_in(child))
+    return found
+
+
+class _Gate:
+    """The gate of one page (M13.4f, ADR 0064 §2): **it looks, and makes no request**.
+
+    A session of the browser's own protocol, beside Playwright's, asks to be told of every
+    request of every page before it leaves (:data:`ALERT`), and answers each one:
+
+    * **a document of the main frame of the page ELA works on** — the first address of a
+      navigation or the hop of a redirect, whatever its method, a link that downloads too — is
+      judged by the boundary: refused, it fails here and its address is kept; admitted, it
+      leaves **as the browser made it**;
+    * **everything else that page loads**, and the documents of the frames inside it, leave:
+      the boundary is not what a page may load;
+    * **a request whose frame is no frame of that page fails**, whatever it is: another page's,
+      a shared worker's, a service worker's. ELA works on one page, and nobody would look at
+      another. The session is told of a request with its frame and nothing of its page: a frame
+      is the page's when the tree of the page has it, or the tree of a frame that has a session
+      of its own — the frames inside a frame of another site are only there (measured) —,
+      **and a frame that is found nowhere is refused**. What a dedicated worker of the page
+      asks for is told with the frame of the page, and leaves (measured);
+    * **what the browser has announced as something else is refused without asking the page**:
+      a page, a worker. The browser says so before that thing makes its first request
+      (measured), and the page cannot always be asked — while a worker answers a navigation
+      of the page, the page's own session answers nothing, and a gate that waited for it
+      would wait for the navigation that waits for the worker that waits for the gate
+      (measured: a test stopped there);
+    * **from ELA's stop on, every request fails** (M13.4c) — looked at last, right before a
+      request would be let go;
+    * **whoever judges raises, and the request fails**: in doubt nothing leaves, and the next
+      use of the page says the browser failed.
+
+    The alert is never turned off and the session is never let go of while the browser lives:
+    a request that is paused leaves when its alert goes (measured). When the driver dies the
+    browser dies with it, and what was paused never left.
+
+    **What it does not do**, and why (ADR 0064 §5): what the first page has loaded in an empty
+    page it opened is told to this session with the frame of the first page — it is the first
+    page that loads it, as it would in its own document —, and leaves like everything a page
+    loads. Every document of that other page has a frame of its own, and fails.
+    """
+
+    def __init__(
+        self,
+        session: CDPSession,
+        own: CDPSession,
+        context: BrowserContext,
+        page: Page,
+        main: str,
+        allowed: Callable[[str], bool],
+        stopping: asyncio.Event,
+        refused: list[str],
+    ) -> None:
+        self._session = session
+        self._own = own
+        self._context = context
+        self._page = page
+        self._target = main
+        """The id the browser knows the page by: that of its main frame when the page was made."""
+        self._main = main
+        self._allowed = allowed
+        self._stopping = stopping
+        self.refused = refused
+        self.another: AnotherPage | None = None
+        """The page the first page opened, once the browser has said so — before anything
+        written in it is asked for (measured) —, with its first request once it has made one."""
+        self.checked = False
+        self.broken = False
+        self._strangers: set[str] = set()
+        """What the browser announced that is not this page and is no frame: another page, a
+        worker. A request that names one of them as its frame is nobody's of this page."""
+        self._inside: set[str] = set()
+        self._of_frames: dict[Frame, CDPSession] = {}
+        self._judging: set[asyncio.Task[None]] = set()
+        session.on("Fetch.requestPaused", self._told)
+        session.on("Target.targetCreated", self._born)
+
+    async def on(self) -> None:
+        """Ask to be told of every page that is opened, and of every request."""
+        await self._session.send("Target.setDiscoverTargets", {"discover": True})
+        await self._session.send("Fetch.enable", dict(ALERT))
+
+    def _born(self, event: Mapping[str, Any]) -> None:
+        """The browser announces something: a page, a worker, a frame that runs by itself.
+
+        A page the page ELA works on opened is said, even if it never asks for anything. And
+        whatever is not this page and not a frame is kept as a stranger — a frame is not one:
+        a frame of another site inside the page is announced too, and is the page's."""
+        born = event.get("targetInfo", {})
+        kind, target = born.get("type"), str(born.get("targetId", ""))
+        if kind == "page" and born.get("openerId") == self._target:
+            self.another = self.another or AnotherPage(method=None, address=None)
+        if target != self._target and kind != "iframe":
+            self._strangers.add(target)
+
+    def _told(self, event: Mapping[str, Any]) -> None:
+        """A request is paused, and waits for this gate: answered in a task of the gate's own,
+        held until it ends."""
+        judging = asyncio.ensure_future(self._answered(event))
+        self._judging.add(judging)
+        judging.add_done_callback(self._judging.discard)
+
+    async def _answered(self, event: Mapping[str, Any]) -> None:
+        try:
+            leaves = await self._leaves(event)
+        except Exception:  # noqa: BLE001 — whoever judges could not say: in doubt it stays
+            self.broken = True
+            leaves = False
+        # ELA's stop, looked at last (M13.4c): the answer is written to the driver in this same
+        # turn of the loop, so a request let go here is one the stop had not reached.
+        if leaves and self._stopping.is_set():
+            leaves = False
+        answer: dict[str, Any] = {"requestId": event["requestId"]}
+        if not leaves:
+            answer["errorReason"] = REFUSED
+        # A request that is gone by now — its page closed, its frame gone elsewhere — cannot be
+        # answered, and has not left: the browser says so, and that is not a failure.
+        with contextlib.suppress(PlaywrightError):
+            await self._session.send(
+                "Fetch.continueRequest" if leaves else "Fetch.failRequest", answer
+            )
+
+    async def _leaves(self, event: Mapping[str, Any]) -> bool:
+        """Whether the request the gate was told of may leave."""
+        request = event["request"]
+        address = str(request["url"])
+        if address == CHECK:
+            self.checked = True
+            return False
+        if self._stopping.is_set():
+            return False
+        frame = str(event.get("frameId", ""))
+        if frame in self._strangers or not await self._of_the_page(frame):
+            if self.another is not None and self.another.address is None:
+                self.another = AnotherPage(method=str(request["method"]), address=address)
+            return False
+        of_the_main_frame = frame == self._main and event.get("resourceType") == "Document"
+        if of_the_main_frame and not self._allowed(address):
+            self.refused.append(address)
+            return False
+        return True
+
+    async def _of_the_page(self, frame: str) -> bool:
+        """Whether ``frame`` is a frame of the page ELA works on. Asked of the browser only for
+        a frame not seen before; whatever cannot be asked is not the page's."""
+        if frame == self._main or frame in self._inside:
+            return True
+        try:
+            tree = _frames_in((await self._own.send("Page.getFrameTree"))["frameTree"])
+        except PlaywrightError:
+            return False
+        self._main = tree[0]
+        self._inside.update(tree)
+        for one in self._page.frames:
+            if frame in self._inside:
+                break
+            if one is self._page.main_frame:
+                continue
+            try:
+                session = self._of_frames.get(one)
+                if session is None:
+                    session = self._of_frames[one] = await self._context.new_cdp_session(one)
+                self._inside.update(
+                    _frames_in((await session.send("Page.getFrameTree"))["frameTree"])
+                )
+            except PlaywrightError:
+                # A frame with no session of its own is in the tree of the one above it; one
+                # that is gone has no request to make.
+                continue
+        return frame in self._inside
 
 
 def _of_the_page(request: Request, page: Page) -> bool:
@@ -618,7 +856,12 @@ async def _look(opened: _Open, selector: str | None, expect: str | None, seconds
             shown = True
         except PlaywrightTimeout:
             shown = False
-    return Glanced(text=text, shown=shown, left=opened.refused[-1] if opened.refused else None)
+    return Glanced(
+        text=text,
+        shown=shown,
+        left=opened.refused[-1] if opened.refused else None,
+        another=opened.gate.another,
+    )
 
 
 async def _shut(opened: _Open) -> None:

@@ -101,6 +101,7 @@ from ela.ports import (
     VERIFICATION_UNKNOWN_CONDITION,
     VERIFICATION_WRONG_CAPABILITY,
     AlreadyExistsError,
+    AnotherPage,
     ApprovalAlreadyAnsweredError,
     ApprovalExpiredError,
     AssignmentExpiredError,
@@ -127,6 +128,7 @@ from ela.ports import (
     IdentityConflictError,
     IdGenerator,
     Landed,
+    LeftSite,
     ModelProvider,
     NotAllowedError,
     NotFoundError,
@@ -1070,7 +1072,11 @@ class FakePage:
     the profile says (M13.9). ``landed`` is where the page is after the click — ``None`` for
     where it was opened —, ``landed_status`` the status of its document then, and
     ``counts_after_click`` what a selector finds once the click was made: what a login leaves to
-    read (decision 106).
+    read (decision 106). ``another`` is the page this one opened, which was stopped — ``None``
+    when it opened none (M13.4f).
+
+    **Where the page is** is ``address`` from the opening, and ``landed`` once the click was
+    made: the boundary of the page is asked about it at every use (:class:`FakeBrowser`).
     """
 
     status: int | None = 200
@@ -1087,6 +1093,7 @@ class FakePage:
     landed: str | None = None
     landed_status: int | None = 200
     counts_after_click: dict[str, int] = field(default_factory=dict)
+    another: AnotherPage | None = None
 
 
 @dataclass
@@ -1190,6 +1197,14 @@ class FakeBrowser:
     lets it go — the precondition of a stop given halfway, built instead of waited for.
     :meth:`hold` does the same for ``count`` and ``text`` (M13.4b): a cancellation that arrives
     **after the opening** needs the tool held on the page, and a read has no click to be held at.
+
+    **Every use of a page asks the boundary where the page is, before and after, as the real
+    adapters do** (M13.4f, ADR 0064 §4) — the function the tool handed to :meth:`open`, about
+    the address the page of the script is at — and raises :class:`~ela.ports.LeftSite`: a fake
+    that did not would let a tool's test pass on a page the real browser refuses, and an
+    architecture test finds it. ``moves[member]`` is where the page is found **when that member
+    is reached**, ``moves_during[member]`` where it has gone **once the member has done its
+    work**: the page that ends elsewhere at a step of a tool, built instead of raced for.
     """
 
     def __init__(self, page: FakePage | None = None, *, installed: bool = True) -> None:
@@ -1213,7 +1228,11 @@ class FakeBrowser:
         """What :meth:`settle` answers it had to kill: nothing, unless the test says otherwise."""
         self.settled: list[Callable[[], Awaitable[None]]] = []
         """The grace of every :meth:`settle`, in order: what ELA's close gave it (M13.4e)."""
+        self.moves: dict[str, str] = {}
+        self.moves_during: dict[str, str] = {}
         self._open: dict[str, bool] = {}
+        self._boundaries: dict[str, Callable[[str], bool]] = {}
+        self._where: str | None = None
         self._clicked = False
         self._stopped = False
         self._held: dict[str, tuple[asyncio.Event, asyncio.Event]] = {}
@@ -1238,11 +1257,30 @@ class FakeBrowser:
             reached.set()
             await released.wait()
 
-    def _on(self, page: str) -> None:
+    def _on(self, page: str, member: str | None = None) -> None:
+        """The page, to be used by ``member``: there, and **inside its boundary**."""
         if self._stopped:
             raise BrowserStopped("ELA is stopping")
         if page not in self._open:
             raise PageGone(page)
+        if member is not None:
+            self._within(page, self.moves.get(member), made=False)
+
+    def _done(self, page: str, member: str) -> None:
+        """``member`` has done its work: the boundary is asked again, and what was read on a
+        page that ended elsewhere meanwhile is thrown away."""
+        if page in self._boundaries:
+            self._within(page, self.moves_during.get(member), made=True)
+
+    def _within(self, page: str, moved: str | None, *, made: bool) -> None:
+        if moved is not None:
+            self._where = moved
+        address = self._where
+        if address is None:
+            landed = self.page.landed if self._clicked else None
+            address = landed or self.page.address or self.opened[-1]
+        if not self._boundaries[page](address):
+            raise LeftSite(address, made=made)
 
     async def installed(self) -> bool:
         self._raise("installed")
@@ -1258,6 +1296,10 @@ class FakeBrowser:
         self.allowed.append(allowed)
         page = f"page-{len(self.opened)}"
         self._open[page] = False
+        self._boundaries[page] = allowed
+        # A page that was just opened has been clicked by nobody, and is where it was opened.
+        self._clicked = False
+        self._where = None
         return Opened(
             page=page,
             status=self.page.status,
@@ -1266,44 +1308,53 @@ class FakeBrowser:
         )
 
     async def count(self, page: str, selector: str) -> int:
-        self._on(page)
+        self._on(page, "count")
         await self._wait("count")
         self._raise("count")
+        self._done(page, "count")
         if self._clicked and selector in self.page.counts_after_click:
             return self.page.counts_after_click[selector]
         return self.page.counts.get(selector, 1)
 
     async def field(self, page: str, selector: str) -> Field:
-        self._on(page)
+        self._on(page, "field")
+        self._done(page, "field")
         return self.page.fields.get(selector, Field(type="text", autocomplete=""))
 
     async def fill(self, page: str, selector: str, value: str) -> None:
-        self._on(page)
+        self._on(page, "fill")
         self._raise("fill")
         self.fills.append((selector, value))
+        self._done(page, "fill")
 
     async def click(self, page: str, selector: str) -> None:
-        self._on(page)
+        self._on(page, "click")
         if self.click_reached is not None and self.click_released is not None:
             self.click_reached.set()
             await self.click_released.wait()
         self._raise("click")
         self.clicks.append(selector)
         self._clicked = True
+        self._done(page, "click")
 
     async def text(self, page: str, selector: str | None) -> str:
-        self._on(page)
+        self._on(page, "text")
         await self._wait("text")
         self._raise("text")
+        self._done(page, "text")
         return self.page.texts.get(selector, "")
 
     async def title(self, page: str) -> str:
-        self._on(page)
+        self._on(page, "title")
+        self._done(page, "title")
         return self.page.title
 
     async def left(self, page: str) -> str | None:
-        self._on(page)
+        self._on(page, "left")
         return self.page.left_after_click if self._clicked else self.page.left
+
+    async def another(self, page: str) -> AnotherPage | None:
+        return self.page.another if page in self._open else None
 
     async def keep(self, page: str) -> None:
         if page in self._open:
@@ -1317,12 +1368,17 @@ class FakeBrowser:
         self._raise("glance")
         if not self._open.get(page, False):
             raise PageGone(page)
+        # The look releases the page whatever it finds — also a page that is elsewhere, before
+        # the wait or once it has ended, of which it then says nothing.
         del self._open[page]
+        self._within(page, self.moves.get("glance"), made=False)
+        self._within(page, self.moves_during.get("glance"), made=True)
         texts = self.page.texts if self.page.changes_to is None else self.page.changes_to
         return Glanced(
             text=texts.get(selector) if selector in texts else None,
             shown=None if expect is None else self.page.shown,
             left=self.page.left_after_click if self._clicked else self.page.left,
+            another=self.page.another,
         )
 
     async def close(self, page: str) -> None:
@@ -1405,9 +1461,10 @@ class FakeAccountBrowser(FakeBrowser):
         return replace(glanced, second_factor=self.page.second_factor)
 
     async def landed(self, page: str) -> Landed:
-        self._on(page)
+        self._on(page, "landed")
         self._raise("landed")
         self.landings.append(page)
+        self._done(page, "landed")
         return Landed(address=self.page.landed or self.opened[-1], status=self.page.landed_status)
 
     async def window(self, address: str | None) -> None:
@@ -1446,9 +1503,10 @@ class FakeAccountBrowser(FakeBrowser):
         return self.profiles_answer
 
     async def fill_secret(self, page: str, selector: str, value: Secret) -> None:
-        self._on(page)
+        self._on(page, "fill_secret")
         self._raise("fill_secret")
         self.secrets.append((selector, value.reveal()))
+        self._done(page, "fill_secret")
 
 
 class FakeTool:

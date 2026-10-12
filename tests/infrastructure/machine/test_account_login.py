@@ -327,7 +327,12 @@ async def test_a_site_that_answers_nothing_to_the_login_is_told_with_no_status(
     left = await browser.count(opened.page, "input[name=pw]")
     await browser.close(opened.page)
 
-    assert web.requests == ["GET /login", "POST /login"]
+    assert web.requests[:2] == ["GET /login", "POST /login"]
+    assert set(web.requests[2:]) <= {"POST /login"}, (
+        "the form and the login, and nothing else — the login as many times as the browser "
+        "itself sends again a request whose connection was closed under it (measured on "
+        "2026-10-12: twice by the browser alone, three times through the gate; ADR 0064 §7)"
+    )
     assert nothing.status is None, "the 200 of the form is not the status of a login unanswered"
     assert (nothing.address, left) == (web.origin + "/login", 0), (
         "the address that was asked for, on a page of the browser's own"

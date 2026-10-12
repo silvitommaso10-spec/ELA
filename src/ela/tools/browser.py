@@ -32,8 +32,8 @@ from __future__ import annotations
 import asyncio
 import re
 from abc import abstractmethod
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, replace
 from typing import ClassVar, Final
 from urllib.parse import urlsplit
 
@@ -58,6 +58,7 @@ from ela.ports import (
     BrowserUnsupported,
     Clock,
     IdGenerator,
+    LeftSite,
     Opened,
     PageGone,
     Prospect,
@@ -70,6 +71,8 @@ from ela.tools.base import ARGUMENTS_INVALID, Outcome, Tool
 
 __all__ = [
     "ACTS",
+    "ANOTHER_PAGE",
+    "ASKED_FOR_NOTHING",
     "BROWSER_ACT_TOOL_NAME",
     "BROWSER_CODES",
     "BROWSER_READ_TOOL_NAME",
@@ -132,7 +135,10 @@ HTTP_STATUS: Final = "browser.http_status"
 """The page answered with a status of 400 or more: an error page is not the information asked, and
 not the form to fill."""
 LEFT_SITE: Final = "browser.left_site"
-"""A navigation of the main frame went outside the boundary, and was not sent (form F)."""
+"""A navigation of the main frame went outside the boundary, and was not sent (form F) — or
+**the page is outside it**, and ELA read nothing of it and did nothing on it (M13.4f, ADR 0064
+§4). Two sentences, never one for both: in the first nothing left; in the second the page is
+somewhere ELA does not work."""
 ELEMENT_MISSING: Final = "browser.element_missing"
 """A selector finds no element on the page."""
 ELEMENT_AMBIGUOUS: Final = "browser.element_ambiguous"
@@ -161,6 +167,14 @@ BROWSER_CODES: Final[frozenset[str]] = frozenset(
         FAILED,
     }
 )
+
+ANOTHER_PAGE: Final = "another_page"
+"""The key of a result that says its page opened another page, which was stopped (M13.4f,
+ADR 0064 §5): the origin of what that page first asked for — never the rest of the address —,
+or :data:`ASKED_FOR_NOTHING`. Absent when the page opened none. A step does not fail for it: a
+site that opens a window by itself would fail a read that worked."""
+ASKED_FOR_NOTHING: Final = "a page that had asked for nothing"
+"""What :data:`ANOTHER_PAGE` says of a page that was opened and had made no request by then."""
 
 SITE: Final = "site"
 """What the target of the two capabilities is called, in the tools' own word (M13.2 dec. 12)."""
@@ -433,6 +447,10 @@ class _BrowserTool(Tool):
                     STOPPED,
                     f"ELA stopped while the page of {site} was open{self._after(done)}",
                 )
+            except LeftSite as elsewhere:
+                # The one predicate, asked by whoever holds the page at every use of it
+                # (ADR 0064 §4): nothing of that page is in this result, whatever had been read.
+                outcome = self._elsewhere(site, elsewhere.address, done, opened)
             except (BrowserFailed, PageGone) as failed:
                 outcome = Outcome(
                     self._partial(done),
@@ -440,6 +458,8 @@ class _BrowserTool(Tool):
                     f"the browser failed on the page of {site}: {type(failed).__name__}"
                     f"{': ' + str(failed) if str(failed) else ''}{self._after(done)}",
                 )
+            if opened is not None:
+                outcome = await self._with_another_page(opened, outcome)
             if opened is not None and outcome.succeeded:
                 await self._browser.keep(opened.page)
                 handed_over = True
@@ -484,12 +504,51 @@ class _BrowserTool(Tool):
             {}, ELEMENT_AMBIGUOUS, f"{which} names {found} elements on the page of {site}"
         )
 
+    def _inside(self) -> str:
+        """What the boundary of this tool is, in the words of its refusals."""
+        return "a declared site" if not self.acts else "the site the question named"
+
     def _left(self, site: str, left: str) -> str:
-        where = "a declared site" if not self.acts else "the site the question named"
         return (
-            f"the page of {site} went to {left}, which is not {where}: the browser did not follow, "
-            "and nothing was sent there"
+            f"the page of {site} went to {left}, which is not {self._inside()}: the browser did "
+            "not follow, and nothing was sent there"
         )
+
+    def _elsewhere(
+        self, site: str, address: str, done: list[int], opened: Opened | None
+    ) -> Outcome:
+        """The page is outside the boundary: said by its origin alone, with what had been done
+        by then — and nothing of the page, which is not handed to the verifier either."""
+        made: dict[str, JsonValue] = self._partial(done)
+        if done[0] and opened is not None:
+            made = {"status": opened.status, **made}
+        return Outcome(
+            made,
+            LEFT_SITE,
+            f"the page of {site} is at {origin_of(address)}, which is not {self._inside()}: ELA "
+            f"read nothing of that page and does nothing more on it{self._after(done)}",
+        )
+
+    async def _with_another_page(self, opened: Opened, outcome: Outcome) -> Outcome:
+        """The outcome, saying that the page opened another page when it did (decision 123):
+        always — whatever the step did —, and with the origin alone."""
+        another = await self._browser.another(opened.page)
+        if another is None:
+            return outcome
+        said = ASKED_FOR_NOTHING if another.address is None else origin_of(another.address)
+        return replace(outcome, output={**outcome.output, ANOTHER_PAGE: said})
+
+    async def _gesture(self, done: list[int], gesture: Awaitable[None]) -> None:
+        """A gesture, counted when it was made — **also when the page was found elsewhere once
+        it was**: a gesture that happened is not reported as one that did not, or an action
+        would be asked again on that word."""
+        try:
+            await gesture
+        except LeftSite as elsewhere:
+            if elsewhere.made:
+                done[0] += 1
+            raise
+        done[0] += 1
 
     def _still_at_work(self, site: str, done: list[int]) -> str:
         """What the step says when its time ran out, with what had been done by then."""
@@ -516,7 +575,7 @@ class BrowserReadTool(_BrowserTool):
         SECRET_FIELD
     }
     output_keys: ClassVar[frozenset[str]] = frozenset(
-        {"address", "status", "title", "text", "shown", "total", "page"}
+        {"address", "status", "title", "text", "shown", "total", "page", ANOTHER_PAGE}
     )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "shown", "total"})
     """Numbers, and only numbers (ADR 0047 §10): never the address, the title or the text."""
@@ -579,7 +638,7 @@ class BrowserActTool(_BrowserTool):
     """Fills fields on one page of a declared site and clicks (§19, **HIGH**)."""
 
     error_codes: ClassVar[frozenset[str]] = frozenset({ARGUMENTS_INVALID, *BROWSER_CODES})
-    output_keys: ClassVar[frozenset[str]] = frozenset({"status", "gestures", "page"})
+    output_keys: ClassVar[frozenset[str]] = frozenset({"status", "gestures", "page", ANOTHER_PAGE})
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures"})
     """The status of the page of the form, and how many gestures were made: never a selector, a
     value or the page (ADR 0047 §10)."""
@@ -687,12 +746,10 @@ class BrowserActTool(_BrowserTool):
         for selector, value in call.fills:
             if done[0] and stop.is_set():
                 return self._stopped(opened, done, site)
-            await self._browser.fill(page, selector, value)
-            done[0] += 1
+            await self._gesture(done, self._browser.fill(page, selector, value))
         if done[0] and stop.is_set():
             return self._stopped(opened, done, site)
-        await self._browser.click(page, call.click)
-        done[0] += 1
+        await self._gesture(done, self._browser.click(page, call.click))
         left = await self._browser.left(page)
         if left is not None:
             return Outcome(

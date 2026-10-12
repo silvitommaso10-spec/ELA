@@ -66,10 +66,11 @@ from tests.tools.test_account_tools import (
 )
 from tests.tools.test_verifiers import succeeded
 
-ELSEWHERE = "https://altro.example/percorso;sessione=1?chiave=1#frammento"
-"""Where a page of these tests is found: an address whose origin may be told, and nothing else
-of it."""
-ORIGIN = "https://altro.example"
+ELSEWHERE = "https://fuori.example/percorso;sessione=1?chiave=1#frammento"
+"""Where a page of these tests is found: on a site nobody declared — the boundary of a read with
+the empty browser is every declared site —, at an address whose origin may be told, and
+nothing else of it."""
+ORIGIN = "https://fuori.example"
 SECRET = "-".join(("what", "the", "other", "page", "shows"))
 
 
@@ -227,7 +228,7 @@ async def test_a_login_whose_page_ended_elsewhere_after_the_click_says_the_three
     result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
 
     said = nothing_of_that_page(result)
-    assert result.output == {"gestures": 3}
+    assert result.output == {"status": 200, "gestures": 3}
     assert "3 gestures were made" in said
 
 
@@ -295,7 +296,7 @@ async def test_a_look_at_a_page_that_is_elsewhere_reads_nothing_and_says_left_si
 @pytest.mark.parametrize(
     ("another", "said", "unsaid"),
     [
-        (("GET", "https://altro.example/x?chiave=1"), "another page", "the form was not sent"),
+        (("GET", "https://fuori.example/x?chiave=1"), "another page", "the form was not sent"),
         (("POST", "https://posta.example/send?chiave=1"), "the form was not sent", "chiave"),
         ((None, None), "another page", "the form was not sent"),
     ],
@@ -332,7 +333,7 @@ async def test_a_text_that_appears_is_verified_whatever_the_page_tried_to_open(
     from ela.ports import AnotherPage
 
     made, verifier, condition, _, arguments = VERIFIERS[capability]
-    browser = made(FakePage(shown=True, another=AnotherPage("GET", "https://altro.example/x")))
+    browser = made(FakePage(shown=True, another=AnotherPage("GET", "https://fuori.example/x")))
     page_ = await handed(browser)
 
     failures = await verifier(browser, 30.0).verify(

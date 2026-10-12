@@ -59,6 +59,7 @@ from ela.ports import (
 )
 from ela.tools.base import ARGUMENTS_INVALID, Outcome
 from ela.tools.browser import (
+    ANOTHER_PAGE,
     BROWSER_CODES,
     FAILED,
     FIRST_GESTURE,
@@ -80,8 +81,10 @@ from ela.tools.browser import (
 )
 from ela.tools.vault import KEY_REFUSED, LOCKED, TIMEOUT, VAULT_CODES, VaultDoor, VaultProblem
 from ela.tools.verifiers import (
+    BROWSER_ANOTHER_PAGE,
     BROWSER_EXPECT_MISSING,
     BROWSER_EXPECT_VISIBLE,
+    BROWSER_LEFT_SITE,
     BROWSER_PAGE_GONE,
     LOOK_GRACE_SECONDS,
     BrowserActVerifier,
@@ -305,11 +308,9 @@ class _OnTheProfile(_BrowserTool):
                 f"ELA's browser with your accounts runs on a Mac, and this is {system}",
             )
 
-    def _left(self, site: str, left: str) -> str:
-        return (
-            f"the page of {site} went to {left}, which is not the site the question named: the "
-            "browser did not follow, and nothing was sent there"
-        )
+    def _inside(self) -> str:
+        """With the profile the boundary is the one site the call names, for a read too."""
+        return "the site the question named"
 
 
 class AccountReadTool(_OnTheProfile, BrowserReadTool):
@@ -374,7 +375,15 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         | {NOT_A_PASSWORD_FIELD, LOGIN_FORM_GET, ENTRY_FORGOTTEN}
     ) - {KEY_REFUSED}
     output_keys: ClassVar[frozenset[str]] = frozenset(
-        {"status", "gestures", "page", ENDED_AT, ENDED_STATUS, PASSWORD_FIELD_STILL_THERE}
+        {
+            "status",
+            "gestures",
+            "page",
+            ENDED_AT,
+            ENDED_STATUS,
+            PASSWORD_FIELD_STILL_THERE,
+            ANOTHER_PAGE,
+        }
     )
     audit_numbers: ClassVar[frozenset[str]] = frozenset({"status", "gestures"})
     """The status of the page of the form and how many gestures were made: never a selector, an
@@ -507,12 +516,9 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         then one reading of the entry, and the three gestures."""
         assert isinstance(call, _Login) and call.click is not None  # noqa: S101
         site, page = call.visit.site, opened.page
-        if origin_of(opened.address) != self._browsing.origin(site):
-            return self._none_typed(
-                LEFT_SITE,
-                f"the page ELA opened is at {origin_of(opened.address)}, which is not the site "
-                "the question named",
-            )
+        # Where the page is, the browser's adapter asks the boundary at every use of it — the
+        # first one below, and each one after (M13.4f, ADR 0064 §4): the two comparisons this
+        # tool made by itself until then are that one predicate.
         username, word = call.fills[0][0], call.fills[1][0]
         for selector, which in (
             (username, "username_field"),
@@ -578,17 +584,14 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         except BaseException:
             del taken
             raise
-        await self._browser.fill_secret(page, username, taken.username)
-        done[0] += 1
+        await self._gesture(done, self._browser.fill_secret(page, username, taken.username))
         if stop.is_set():
             return self._stopped(opened, done, site)
-        await self._browser.fill_secret(page, word, taken.password)
-        done[0] += 1
+        await self._gesture(done, self._browser.fill_secret(page, word, taken.password))
         del taken
         if stop.is_set():
             return self._stopped(opened, done, site)
-        await self._browser.click(page, call.click)
-        done[0] += 1
+        await self._gesture(done, self._browser.click(page, call.click))
         left = await self._browser.left(page)
         if left is not None:
             return Outcome(
@@ -601,19 +604,10 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         # tell a login the site refused from one it took. **In the result and nowhere else**:
         # the verifier's sentence, when the text does not appear, goes to the audit, and a path
         # is in no sentence of the audit (ADR 0052 §12).
+        # A page that ended on another site after the click is found by the predicate, at
+        # this use or at the one before it: it is not handed to the verifier, and nothing of
+        # it is told but its origin (``_elsewhere``).
         landed = await self._browser.landed(page)
-        if origin_of(landed.address) != self._browsing.origin(site):
-            # The gate is asked about the first address of a navigation and about its first
-            # redirect, not about the rest of a chain (measured on 2026-10-12, ADR 0063 §11): a
-            # page that ended on another site is found here, by where it is. It is not handed
-            # to the verifier and nothing of it is told but its origin.
-            return Outcome(
-                {"status": opened.status, "gestures": done[0]},
-                LEFT_SITE,
-                f"after the login was sent the page of {site} ended at "
-                f"{origin_of(landed.address)}, which is not the site the question named: ELA "
-                "read nothing of that page" + self._after(done),
-            )
         still = await self._browser.count(page, word)
         return Outcome(
             {
@@ -660,6 +654,19 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         return (
             "ELA was started again after it asked, and does not know any more which entry of "
             "the vault the question named: ask again"
+        )
+
+    def _elsewhere(
+        self, site: str, address: str, done: list[int], opened: Opened | None
+    ) -> Outcome:
+        """Before the first gesture a login that finds its page elsewhere has typed nothing, and
+        says so as every refusal of its own does; after it, as every action."""
+        if done[0]:
+            return super()._elsewhere(site, address, done, opened)
+        return self._none_typed(
+            LEFT_SITE,
+            f"the page of {site} is at {origin_of(address)}, which is not {self._inside()}: ELA "
+            "read nothing of that page",
         )
 
     def _none_typed(self, code: str, message: str, retryable: bool = False) -> Outcome:
@@ -722,6 +729,8 @@ class LoginVerifier(_PageVerifier):
         BROWSER_EXPECT_MISSING,
         BROWSER_SECOND_FACTOR,
         BROWSER_PAGE_GONE,
+        BROWSER_LEFT_SITE,
+        BROWSER_ANOTHER_PAGE,
     }
 
     def __init__(
@@ -758,6 +767,9 @@ class LoginVerifier(_PageVerifier):
                 "one-time code, and typed none",
                 retryable=False,
             )
+        another = self._opened_another(condition, glanced, "login")
+        if another is not None:
+            return another
         return self._failure(
             condition,
             BROWSER_EXPECT_MISSING,

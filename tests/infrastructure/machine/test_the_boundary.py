@@ -747,6 +747,84 @@ async def test_the_pages_of_the_browser_itself_ask_nothing_and_are_nobody_s_othe
     assert a.requests == ["GET /"] and off.requests == []
 
 
+@ON_A_MAC
+async def test_a_worker_cannot_be_registered_through_the_gate(
+    with_the_profile: AccountChrome,
+    served: list[Site],
+    judged: list[tuple[str, str, bool]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Found with the tests of M13.9 (decision 136): even from a launch that lets workers be —
+    which no launch ELA drives is —, the request for the script of a worker has no frame of the
+    page, and the gate refuses it. The site is never asked for the script."""
+    web = account.worker_site(served)
+    made = with_the_profile
+    launch = made._launch
+    monkeypatch.setattr(made, "_launch", lambda: {**launch(), "service_workers": "allow"})
+
+    opened = await made.open(web.origin + "/register", only(web), FakeStop())
+    await decided(judged, web.origin + "/worker.js", leaves=False)
+
+    assert await made.text(opened.page, "#state") == "registering"
+    assert "GET /worker.js" not in web.requests
+
+
+WORKERS = {
+    "dedicated": "new Worker('/w.js').onmessage = (e) => said(e.data);",
+    "shared": (
+        "const w = new SharedWorker('/shared.js'); w.port.onmessage = (e) => said(e.data); "
+        "w.port.start();"
+    ),
+}
+SAYS = (
+    "<p id='s'>waiting</p><script>const said = (text) => "
+    "document.querySelector('#s').textContent = text; %s</script>"
+)
+SCRIPT = {"Content-Type": "text/javascript"}
+ASKS = "fetch('/asked').then(() => %s('done'), () => %s('failed'));"
+
+
+@pytest.mark.parametrize(("worker", "says"), [("dedicated", "done"), ("shared", "failed")])
+async def test_what_a_worker_of_the_page_asks_for_leaves_when_it_has_the_frame_of_the_page(
+    browser: Any, served: list[Site], worker: str, says: str
+) -> None:
+    """What a **dedicated** worker of the page asks for — its script, what it imports, what it
+    fetches — is told to the gate with the frame of the page, and leaves like everything the
+    page loads. A **shared** worker asks with a frame of its own, which is no frame of the
+    page: its script is the page's request and leaves, what it then asks for is refused —
+    declared (ADR 0064 §7), and held here so that the day it changes somebody sees it."""
+    web = site(
+        served,
+        {
+            "/": (200, {}, SAYS % WORKERS[worker]),
+            "/w.js": (
+                200,
+                SCRIPT,
+                "importScripts('/imported.js'); " + ASKS % (("postMessage",) * 2),
+            ),
+            "/imported.js": (200, SCRIPT, "1;"),
+            "/shared.js": (
+                200,
+                SCRIPT,
+                "onconnect = (e) => { const tell = (text) => e.ports[0].postMessage(text); "
+                + ASKS % (("tell",) * 2)
+                + " };",
+            ),
+            "/asked": (200, {}, "x"),
+        },
+    )
+
+    opened = await browser.open(web.origin + "/", only(web), FakeStop())
+    said = await said_after(browser, opened.page, "#s", "waiting")
+
+    assert said == says
+    expected = {
+        "dedicated": ["GET /", "GET /w.js", "GET /imported.js", "GET /asked"],
+        "shared": ["GET /", "GET /shared.js"],
+    }
+    assert web.requests == expected[worker]
+
+
 ASKING_WORKER = """
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
@@ -769,10 +847,15 @@ async def test_what_a_worker_left_in_the_profile_asks_of_another_site_does_not_l
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Decision 136, the negative case, built: the profile launched **without** what ELA does
-    to it — its workers not taken away, and not blocked. The page is the worker's, and of the
-    navigation the worker answered the gate was not told: that is why the workers are taken
-    away. What the worker asks of another site by itself has no frame of the page, and is
-    refused like every request that is not the page's."""
+    to it — its workers not taken away, and not blocked. A worker is in charge of the page —
+    the request for the other site is one only the worker makes —, and of the navigation it
+    was handed the gate was not told: that is why the workers are taken away. What the worker
+    asks of another site by itself has no frame of the page, and is refused like every request
+    that is not the page's.
+
+    *Not asserted: whose answer the page shows.* The browser sends the navigation to the site
+    beside its worker and takes whichever answers first (measured: the worker's when it
+    answers at once, the site's when the worker first waits for a request of its own)."""
     from ela.infrastructure.machine import account as profiled
 
     off = site(served, {"/asked": (200, {}, "x")})
@@ -786,22 +869,19 @@ async def test_what_a_worker_left_in_the_profile_asks_of_another_site_does_not_l
         },
     )
     made = with_the_profile
+    await account.planted(made, web)
     launch = made._launch
-    # A launch that lets a worker be, as the window does — set on this adapter alone, and not
-    # through the fixture: ``account.planted`` undoes every patch of the test, ``judged`` too.
-    made._launch = lambda: {**launch(), "service_workers": "allow"}  # type: ignore[method-assign]
-    planting = await made.open(web.origin + "/register", everywhere, FakeStop())
-    assert await said_after(made, planting.page, "#state", "registering") == "registered"
-    await made.close(planting.page)
+    monkeypatch.setattr(made, "_launch", lambda: {**launch(), "service_workers": "allow"})
     monkeypatch.setattr(profiled, "_prepared", lambda profile, *, driven: None)
-    del judged[:]
 
-    opened = await made.open(web.origin + "/page", only(web), FakeStop())
+    # The guard of a test that once stopped here: the gate asked the page for its frames while
+    # the page waited for its worker, which waited for the gate. A worker is refused by what
+    # the browser announced of it, and the page is not asked.
+    async with asyncio.timeout(LONG):
+        opened = await made.open(web.origin + "/page", only(web), FakeStop())
     await decided(judged, off.origin + "/asked", leaves=False)
-    said = await made.text(opened.page, "p")
     await made.close(opened.page)
 
-    assert said == "from the worker"
     assert [one for one in judged if one[1] == web.origin + "/page"] == []
     assert off.requests == []
 

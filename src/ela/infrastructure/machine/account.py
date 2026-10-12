@@ -34,9 +34,10 @@ What a page gets here that an empty one does not:
 * **the preferences rewritten before every launch**, over whatever the file says
   (:data:`PREFERENCES`): they — with the flags of :data:`LAUNCH_ARGUMENTS` —, and not the binary,
   are what keeps the browser away from a Google account and from saving passwords (measured);
-* **no service worker left from before**: the gate is a route of Playwright's, and a worker
-  registered in the profile answers without the route being called (measured). The folder of the
-  workers is removed before every launch here, and new ones are blocked;
+* **no service worker left from before**: of a navigation a worker answers the gate is not told
+  — the browser sends the request to the site all the same, beside its worker (measured with the
+  gate of M13.4, and again with the one of M13.4f: ADR 0064 §6). The folder of the workers is
+  removed before every launch ELA drives, and new ones are blocked;
 * **no HAR, no tracing, no video**: the options of the launch are a closed set
   (:data:`LAUNCH_OPTIONS`).
 
@@ -876,6 +877,9 @@ class AccountChrome(PlaywrightBrowser):
         (measured). What leaves is built from the engine's type, and raised once the handler of
         the engine's is over — so nothing is chained to it."""
         opened = self._page(page)
+        # The one predicate, as around every use of a page (ADR 0064 §4): a secret is not typed
+        # on a page that is not inside its boundary.
+        self._within(opened)
         failed: BaseException | None = None
         try:
             await opened.page.locator(selector).fill(value.reveal())
@@ -886,6 +890,7 @@ class AccountChrome(PlaywrightBrowser):
                 failed = self._translated(error)
         if failed is not None:
             raise failed
+        self._within(opened, made=True)
 
     async def close(self, page: str) -> None:
         """Close the page — **and return only when no closing of this adapter is in flight**

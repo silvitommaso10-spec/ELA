@@ -29,6 +29,7 @@ import shlex
 import stat
 import subprocess
 import sys
+from collections.abc import Callable
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,7 @@ from typer.testing import CliRunner
 
 from ela.cli import client as cli_client
 from ela.cli.app import app as ela_app
-from ela.ports import Field, Secret
+from ela.ports import Field, Opened, Secret, TaskStop
 from ela.testing.fakes import FakeAccountBrowser, FakePage, FakeVault, FakeVaultEntry
 from tests.api.guided import Script, call, gesture, guided
 from tests.cli.support import LoopTransport, plain
@@ -549,9 +550,23 @@ def a_page() -> FakePage:
             asked["click"]: Field("submit", "", "post"),
         },
         texts={None: "Le tue iscrizioni: un canale. Esci. ELA prova 9139"},
-        landed="https://news.ycombinator.com/news",
         counts_after_click={asked["password_field"]: 0},
     )
+
+
+LANDS = "https://news.ycombinator.com/news"
+"""Where the page of the proof's login is once the login was sent."""
+
+
+class OneBrowserOfTheProof(FakeAccountBrowser):
+    """The browser of the whole proof, with one page for all its steps: **the page of the login
+    lands where a login lands, and the pages of the other steps stay where they were opened** —
+    each step has the boundary of its own site, and the fake asks it where the page is, as the
+    real one does (M13.4f)."""
+
+    async def open(self, address: str, allowed: Callable[[str], bool], stop: TaskStop) -> Opened:
+        self.page.landed = LANDS if address.startswith(LANDS.rsplit("/", 1)[0] + "/") else None
+        return await super().open(address, allowed, stop)
 
 
 async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_passes(
@@ -569,7 +584,7 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     program.write_bytes(b"\xcf\xfa\xed\xfe a native program")
     program.chmod(program.stat().st_mode | stat.S_IXUSR)
     entry = dataclasses.replace(ENTRY, addresses=(PROOF_ADDRESS,))
-    accounts, vault = FakeAccountBrowser(a_page()), FakeVault([entry], state="locked")
+    accounts, vault = OneBrowserOfTheProof(a_page()), FakeVault([entry], state="locked")
     turns = Script([call(), gesture("read", site="www.youtube.com", path="/feed/channels"), call()])
     async with guided(
         monkeypatch,

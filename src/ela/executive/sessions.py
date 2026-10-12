@@ -524,8 +524,10 @@ class SessionRoom:
         return "\n".join([f"gesture {number}: {child.state.value}", *_lines(done[-1])])
 
 
-_SHOWN: Final = ("address", "status", "title", "gestures", "text")
-"""What of a gesture's result the session reads, in this order: the text last, since it is long."""
+_SHOWN: Final = ("address", "status", "title", "gestures", "another_page", "text")
+"""What of a gesture's result the session reads, in this order: the text last, since it is long.
+``another_page`` is there since M13.4f (ADR 0064 §5): a page that opened another — which was
+stopped — is said to whoever guides the session, by the origin alone."""
 
 
 def _lines(output: JsonMapping) -> Iterable[str]:

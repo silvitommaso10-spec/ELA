@@ -92,6 +92,7 @@ __all__ = [
     "AccountBrowser",
     "AgentSession",
     "AlreadyExistsError",
+    "AnotherPage",
     "ApprovalAlreadyAnsweredError",
     "ApprovalExpiredError",
     "ApprovalNotAnswerableError",
@@ -175,6 +176,7 @@ __all__ = [
     "LISTEN_TRANSCRIPTION_UNAVAILABLE",
     "LISTEN_UNSUPPORTED",
     "Landed",
+    "LeftSite",
     "ListeningPort",
     "LocalBeat",
     "ModelGateway",
@@ -2750,6 +2752,24 @@ class BrowserFailed(BrowserError):
     """Anything else the engine raised, named by its type (ADR 0052): a poor diagnosis, and said."""
 
 
+class LeftSite(BrowserError):
+    """The page is not inside the boundary it was opened with (M13.4f, ADR 0064 §4).
+
+    Every use of a page asks the boundary where the page is — **before** the use, which then
+    does not take place, and again **once it is made**, when what was read is thrown away: a
+    page that ended elsewhere meanwhile gives nothing to anybody. ``address`` is where the page
+    is, whole, and is in no sentence of this error: what an origin is, and that nothing else of
+    an address is told, the tool says (``ela.tools.browser.origin_of``). ``made`` is whether the
+    use had been made when the page was found elsewhere — a gesture that happened is counted as
+    one that happened.
+    """
+
+    def __init__(self, address: str, *, made: bool = False) -> None:
+        super().__init__("the page is not inside the boundary it was opened with")
+        self.address = address
+        self.made = made
+
+
 PROFILE_STEP: Final = "step"
 """The profile is held by a page of ELA's own: a step that is running."""
 PROFILE_WINDOW: Final = "window"
@@ -2809,6 +2829,21 @@ class Opened:
 
 
 @dataclass(frozen=True, slots=True)
+class AnotherPage:
+    """A page the page ELA works on opened, and that was stopped (M13.4f, ADR 0064 §5).
+
+    ELA works on one page. Of any other **no document leaves** — not its navigation, not a link,
+    not a form, not a frame written in it —, and nothing of it is read. ``method`` and
+    ``address`` are those of the first request it asked for, which was refused; both ``None``
+    for a page that had asked for nothing when this was said. An address and not an origin: the
+    tool says what part of it may be told.
+    """
+
+    method: str | None
+    address: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Field:
     """What an element declares of itself, lower-cased: its ``type`` and its ``autocomplete``
     attributes, empty when absent. The tool decides what they mean (M13.4, ADR 0052).
@@ -2834,12 +2869,17 @@ class Glanced:
     ``second_factor`` is the one thing more the browser with the user's accounts says (M13.9,
     ADR 0063): whether the page shows a field that asks for a one-time code. ``None`` from a
     browser that does not look — the empty one.
+
+    ``another`` is the page this one opened, which was stopped, or ``None`` (M13.4f, ADR 0064
+    §5): what tells a text that did not appear because the page sent its form to another page
+    from one that did not appear for any other reason.
     """
 
     text: str | None
     shown: bool | None
     left: str | None
     second_factor: bool | None = None
+    another: AnotherPage | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2893,11 +2933,24 @@ class Browser(Protocol):
 
     * each :meth:`open` starts a browser of its own, with an empty profile, and **closes it** when
       the page is closed, looked at, or refused — nothing passes from one page to the next;
-    * a navigation of the main frame that ``allowed`` refuses **is not sent**, and
-    :attr:`Opened.left`
-      names it. *Known not to hold in the adapter for the second redirect of a chain — measured
-      on 2026-10-12, written in ADR 0052 §6 and ADR 0063 §11, and not repaired yet: the
-      contract is this line, and the adapter is what is wrong*;
+    * a request for a document of the main frame that ``allowed`` refuses **is not sent** — the
+      first address of a navigation or any hop of a chain of redirects, whatever its method —,
+      and :attr:`Opened.left` names it. **The requests that leave are the browser's own**: an
+      implementation looks at them and makes none in the browser's place (M13.4f, ADR 0064);
+    * **the boundary is not what a page may load**: an image, a script, a frame inside the page
+      come from wherever the page asks, as they always did (ADR 0052 §6). It is where ELA may
+      go, read and write;
+    * **every use of a page asks** ``allowed`` **where the page is**, before the use and once it
+      is made, and raises :class:`LeftSite` when the page is not inside: nothing is read,
+      written or looked at there, and what was read on a page that ended elsewhere meanwhile is
+      thrown away. All the members that are given a page, but :meth:`keep`, :meth:`close` and
+      :meth:`another`;
+    * ELA works on **one page**. Of a page that one opens **no document leaves** — not its
+      navigation, not a link, not a form, not a frame written in it —, nothing of it is read,
+      and :meth:`another` says it was opened. What the first page has loaded in an empty page it
+      opened is a request of the first page, and arrives as it would from its own document;
+    * **when in doubt nothing leaves**: an implementation that cannot tell whether it is told of
+      the browser's requests opens no page;
     * the browser is started so that a signal to ELA's process group does not close it: the stop is
       ELA's, through the stop signal of ADR 0038 §11, which raises :class:`BrowserStopped` in what
       was running — and **from the moment it is raised no navigation and no gesture leaves**,
@@ -2943,6 +2996,11 @@ class Browser(Protocol):
     async def left(self, page: str) -> str | None:
         """The address of the last navigation the boundary refused since the opening, or
         ``None``."""
+
+    async def another(self, page: str) -> AnotherPage | None:
+        """The page this one opened, which was stopped — ``None`` when it opened none. Not a use
+        of the page: nothing of it is read, and this never raises — of a page that is not there
+        any more it says ``None``."""
 
     async def keep(self, page: str) -> None:
         """Hand the page over to the verifier: it stays open until :meth:`glance`, or its deadline.
