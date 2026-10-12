@@ -6280,8 +6280,8 @@ linked to an account no
 ### 5. Una lettura come te
 
 La pagina delle tue iscrizioni di YouTube, senza un modello e senza spesa. La domanda dice «as you»: lo script te la
-mostra con le due frasi di ELA che ogni superficie mostra prima di un sì — `che cosa`, del catalogo, e `che cosa fa`,
-del tool —, subito sotto il nome della capability. **È anche il
+mostra con le frasi di ELA che ogni superficie mostra prima di un sì — `che cosa`, del catalogo, e per una lettura, un
+gesto o un login `che cosa fa`, del tool —, subito sotto il nome della capability. **È anche il
 controllo del passo 8**: se il testo che ELA legge al caricamento non porta i tuoi canali, la sessione non avrebbe
 niente da trovare, e la prova si ferma qui, prima di spendere.
 
@@ -6366,11 +6366,13 @@ uv run ela task run <id>
 outcome completed
 ```
 
-**Che cosa la pagina era quando il login è stato inviato** lo dice il risultato dello step, e nessun altro posto: dove
-era finita — host e percorso, mai ciò che sta dopo il punto di domanda —, con quale stato, e se il campo della password
-c'era ancora. **Se il login non riesce è da qui che si capisce che cosa è successo**: il modulo di nuovo, con il suo
-campo, è un sito che ha rifiutato l'invio; una pagina senza il campo è un sito che l'ha accettato, e ciò che manca è
-dopo. Il risultato di un login non porta niente del tuo vault né del testo di una pagina: lo script lo stampa nel file.
+**Dove la pagina è finita dopo l'invio del login** lo dice il risultato dello step, e nessun altro posto: l'host e il
+percorso — mai ciò che sta dopo il punto di domanda —, lo stato del suo documento, e se il campo della password c'era
+ancora. **Se il login non riesce è da qui che si capisce che cosa è successo, e si leggono insieme**: il modulo di
+nuovo, con il suo campo, è un sito che ha rifiutato l'invio; un'altra pagina, con `200` e senza il campo, è un sito che
+l'ha accettato, e ciò che manca è dopo; **nessuno stato** è un sito che non ha risposto; uno stato d'errore senza il
+campo è una pagina d'errore o di blocco, non un accesso. Il risultato di un login non porta niente del tuo vault né del
+testo di una pagina: lo script lo stampa nel file.
 
 <!-- prova: 6.comando -->
 ```

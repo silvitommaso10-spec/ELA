@@ -555,16 +555,23 @@ riconoscimento è parziale, come quello dei campi segreti.
 
 **Che cosa lascia da leggere un login che non riesce** (decisione 106, 2026-10-12). La prova del 12 ottobre è
 finita su `browser.expect_missing`, e nessuno sapeva che cosa il sito avesse risposto. **Il risultato** di
-`browser.login` porta tre cose della pagina com'era quando il tool l'ha lasciata: `ended_at`, dove era — **host e
-percorso**, mai la query né il frammento, mai un utente scritto prima dell'host —; `ended_status`, lo stato
-dell'ultimo documento dato alla cornice principale, quello della pagina e non del rimando che ci ha portato; e
-se il campo della password del piano c'era ancora. **Nel risultato e in nessun altro posto**: la frase di un
-fallimento del verifier va nell'audit, dove un percorso non entra (ADR 0052 §12), e dice solo dove leggerle;
-`ended_status` non è fra i numeri che l'audit prende da un risultato. **Le legge il tool, dopo il click** — che
-ha già aspettato la navigazione che ha avviato: misurato con un sito lento —, **e dopo che il documento è
-arrivato**, un evento della pagina: la pagina dopo un rimando la chiede il browser, e il suo indirizzo è già
-quello quando il suo modulo non c'è ancora. Il modulo di nuovo, con il suo campo, è un sito che ha rifiutato
-l'invio; una pagina senza il campo è un sito che l'ha accettato.
+`browser.login` porta tre cose della pagina com'era quando il tool l'ha lasciata: `ended_at`, dove è finita —
+**host e percorso**, mai la query né il frammento, mai un utente scritto prima dell'host, mai ciò che un sito
+scrive dopo un punto e virgola in un passo del percorso —; `ended_status`, lo stato dell'ultimo documento chiesto
+dalla cornice principale, quello della pagina e non del rimando che ci ha portato, **vuoto se a ciò che è stato
+inviato non è tornato niente**; e se il campo della password del piano c'era ancora. **Nel risultato e in nessun
+altro posto**: la frase di un fallimento del verifier va nell'audit, dove un percorso non entra (ADR 0052 §12),
+e dice solo dove leggerle; `ended_status` non è fra i numeri che l'audit prende da un risultato. **Le legge il
+tool, dopo il click** — che ha già aspettato la navigazione che ha avviato: misurato con un sito lento —, **e
+dopo che il documento è arrivato**, un evento della pagina: la pagina dopo un rimando la chiede il browser, e il
+suo indirizzo è già quello quando il suo modulo non c'è ancora. **Si leggono insieme**: il modulo di nuovo, con
+il suo campo, è un sito che ha rifiutato l'invio; un'altra pagina con `200` e senza il campo è un sito che l'ha
+accettato; nessuno stato è un sito che non ha risposto; uno stato d'errore senza il campo è una pagina d'errore
+o di blocco, e non un accesso. *Ciò che non dicono*: un sito che accede senza navigare. **Una pagina finita su
+un altro sito non è raccontata**: dopo il click il tool confronta dove la pagina è con il sito della domanda, e
+altrove è `browser.left_site` con la sola origine — la pagina è chiusa, non consegnata al verifier (§11).
+**Un costo**: una pagina il cui documento non finisce di arrivare nel tempo del tool chiude lo step con
+`browser.timeout` dopo i tre gesti, dove prima passava al verifier.
 
 **Il valore non viene mai dal piano**, e non entra nel modulo dei tool: il tool riceve due `Secret` dalla porta
 del vault e li passa all'adapter del browser — a nessun altro, in nessun esito, messaggio o evento.
@@ -912,33 +919,42 @@ Errori aggiunti, nella forma della tabella di ADR 0023 §10:
 ### 11. Che cosa vede un sito, e ciò che il cancello non ferma — misurato il 2026-10-12
 
 Il cancello è quello di ADR 0052 §6, e il browser del profilo lo eredita. **Misurato dopo la prova del 12
-ottobre**, con server locali e nessun sito vero (le sonde e le loro uscite in `docs/milestones/M13.9.md`, sezione
-21):
+ottobre**, con server su questa macchina e nessuna richiesta di ELA a un sito vero; le sonde, i test rossi
+parcheggiati e le loro uscite sono in `.git/m13.9-reference/review-d1bce52/`, e `docs/milestones/M13.9.md`,
+sezione 21, li racconta uno per uno.
 
 - **Il primo documento di ogni navigazione lo manda il processo del driver, non il browser** — un indirizzo
   aperto, un link, il `POST` di un modulo. Porta il nome del browser, e **non è il browser**: le intestazioni
-  hanno un altro ordine e nomi minuscoli, mancano `Sec-Fetch-*` e `Accept-Language`, e su TLS il primo messaggio
-  è di un altro client — nessun ALPN, quindi HTTP/1.1 dove il browser parlerebbe HTTP/2. ADR 0052 §6 diceva già
-  che «la route è il driver»; non diceva che cosa ne vede un sito. **Un sito può rispondere a un login in modo
-  diverso**: è una causa candidata del login non riuscito della prova, **non un fatto**, perché nessun sito vero
-  è stato interrogato. **Nessun travestimento si aggiunge**, né si aggiungerà: non si imita ciò che non si è.
+  hanno un altro ordine e nomi minuscoli, mancano `Sec-Fetch-*` e `Accept-Language`, e su TLS il suo primo
+  messaggio è di un altro client — senza ALPN, con altri cifrari. ADR 0052 §6 diceva già che «la route è il
+  driver»; non diceva che cosa ne vede un sito.
+- **Senza finestra il browser si chiama `HeadlessChrome`**, con il cancello e senza, e una pagina legge che è
+  guidato: non è del cancello, e ELA non lo cambia (decisione 19). Con la finestra — l'interruttore
+  dell'utente — si chiama `Chrome`.
+- **Un sito può rispondere a un login in modo diverso** per l'una o per l'altra cosa: sono le cause candidate
+  del login non riuscito della prova, **e nessuna è un fatto**, perché nessun sito vero è stato interrogato.
+  **Nessun travestimento si aggiunge**, né si aggiungerà: non si imita ciò che non si è.
 - **Il documento dopo un rimando lo manda il browser, e il cancello non è chiamato.** La forma di un login vero
   — un `POST`, un rimando con il cookie dell'accesso, la pagina dopo, un secondo lancio — **passa lo stesso**, e
   un test del browser vero la tiene, senza finestra e con.
 - **Ma il cancello guarda così una sola risposta per navigazione**: in una catena, **un secondo rimando che esce
-  dal confine è seguito, e la richiesta arriva all'altro sito**, con ciò che il suo indirizzo porta e con i
-  cookie che il profilo tiene per lui. Regge che il tool non legge e non scrive su una pagina finita altrove —
-  `browser.left_site` —; **non regge che una navigazione fuori dal confine non parte**. È di M13.4, vale per
-  tutti e due i browser, e **non è riparato qui**.
-- **I cookie di un documento li scelgono due programmi**: quando il browser non ne manderebbe nessuno — un
-  modulo inviato da un altro sito, dove `SameSite` dice di no — il driver aggiunge tutti quelli che tiene per
-  quell'indirizzo.
+  dal confine è seguito**. Misurato: la richiesta arriva all'altro sito, con ciò che il suo indirizzo porta e
+  **con il cookie che il profilo tiene per lui**; **una lettura porta nel risultato il testo di quella
+  pagina**, e un gesto **scrive su di lei** ciò che il piano dice — perché uno step risponde
+  `browser.left_site` quando il cancello ha rifiutato una navigazione, e nessun tool confronta dove la pagina
+  è. Fa eccezione `browser.login`, quando apre la pagina e, da questa milestone, dopo il click. È di M13.4 —
+  il cancello, e i tool `browser.read` e `browser.act` da cui quelli del profilo ereditano —, vale per tutti e
+  due i browser, e **non è riparato qui**.
+- **I cookie di un documento li scelgono due programmi**: su un modulo inviato da un altro sito, dove
+  `SameSite` dice di no e il browser non ne manda nessuno, attraverso il cancello arrivano.
 
-**La strada misurata, e non presa in questa milestone**: lasciare al browser le sue richieste e guardarle prima
-che partano — ogni richiesta di documento, i salti di un rimando compresi — con il protocollo di debug del
-browser. Una sonda dice che il confine regge anche al secondo rimando, che il sito riceve ciò che riceve dal
-browser da solo, e che i cookie tornano a essere del browser. È una riparazione di M13.4, con la sua lettera e
-il suo ADR: la proposta è la domanda 109 di `M13.9.md`, e la 110 dice del secondo rimando.
+**La strada misurata, e non presa in questa milestone**: che ogni tool confronti dove la pagina è con il suo
+confine; e lasciare al browser le sue richieste, guardandole prima che partano — ogni richiesta di documento, i
+salti di un rimando compresi — con il protocollo di debug del browser. Una sonda, sul browser del profilo, dice
+che il confine regge anche al secondo rimando — l'altro sito non riceve una richiesta né una connessione —, che
+il sito riceve ciò che riceve dal browser da solo, e che i cookie tornano a essere del browser. È una
+riparazione di M13.4, con la sua lettera e il suo ADR: la proposta è la domanda 109 di `M13.9.md`, e la 110 dice
+del secondo rimando.
 
 ## Alternative considerate
 
@@ -956,6 +972,9 @@ dice, con la sezione di questo ADR a cui guardare.
 
 - **ADR 0011** §6 — una riga che chiede a meno di un'autorizzazione ha un terzo modo di essere coperta; e la
   firma di `decide` (§1).
+- **ADR 0052** §6 — **corretta, non rivista**: la pagina non ripassa dalla route per seguire un rimando ammesso,
+  e il confine non regge al secondo rimando di una catena; che cosa un sito vede del documento che il driver
+  scarica (§11). Una misura del 12 ottobre, non una decisione: la riparazione è di M13.4.
 - **ADR 0028** §9 — ciò che ELA guarda senza una capability non cambia: si rifiutano le capability, e la sonda
   resta com'è (§7).
 - **ADR 0029** — ciò che deve essere vero prima di una cattura ha una cosa in più, chiesta anche prima della

@@ -609,15 +609,15 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
 
 
 SENTENCES: Final = (("description", "che cosa"), ("does", "che cosa fa"))
-"""The two sentences of a question that are ELA's own: the catalogue's, of the capability, and
-the tool's, of what the call does."""
+"""The sentences of a question that are ELA's own: the catalogue's, of the capability, and the
+tool's, of what the call does."""
 
 
 def shown(question: Mapping[str, Any]) -> list[str]:
     """What this proof shows of a question before the answer: what the script of M14.3 shows,
-    and — right under the name of the capability — **the two sentences every surface that takes
-    a yes shows**. They are where a question of a capability with the profile says that ELA acts
-    signed in as the user; without them the answer was given here on the capability's name
+    and — right under the name of the capability — **the sentences of ELA's that every surface
+    that takes a yes shows**. They are where a question of a capability with the profile says
+    that ELA acts signed in as the user; without them the answer was given here on its name
     alone (the proof of 2026-10-12, decision 107). Words of ELA's, never the user's: they may be
     in the file — the entry of the vault and its username are the user's, and stay out of it."""
     first, *rest = guided.shown(question)

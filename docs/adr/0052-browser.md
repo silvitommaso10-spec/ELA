@@ -11,8 +11,9 @@
   **Riletta da ADR 0063 (M13.9)** il 2026-10-11: §1, lo shell «sempre senza finestra» e il suo sandbox sono del browser vuoto; §3 e §4, il profilo vuoto e i due livelli sono delle capability del browser vuoto; §6, per una lettura con il profilo il confine è il sito che nomina, e un service worker del profilo si toglie prima del lancio; §7, la domanda di `browser.login` si compone dopo aver chiesto al vault; §8, un campo segreto lo riempie `browser.login`, e nessun altro tool; §10, da quando la fermata di ELA è alzata niente parte più, e ciò che era già partito è aspettato entro una grazia e poi ucciso (M13.4b, M13.4c, M13.4e); §14, dall'ambiente escono anche `DEBUG…` e `PWDEBUG` (ADR 0063 §4 e §5, e «Conseguenze»).
   **Corretta da ADR 0063 §11 (M13.9)** il 2026-10-12, da una misura: in §6 la pagina **non** ripassa dalla route
   per seguire un rimando ammesso — la richiesta dopo un rimando la manda il browser —, e quindi **un secondo
-  rimando fuori dal confine parte**; e ciò che un sito vede del documento che il driver scarica è scritto lì.
-  Non riparato: la riparazione avrà la sua lettera e il suo ADR.
+  rimando fuori dal confine parte, e una lettura o un gesto avvengono sulla pagina di un sito non dichiarato**;
+  e ciò che un sito vede del documento che il driver scarica è scritto lì. Non riparato: la riparazione avrà la
+  sua lettera e il suo ADR.
 - **Data:** 2026-09-29
 - **Riferimenti spec:** §10, §18, §19, §20, §27, §28, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.4
@@ -139,13 +140,16 @@ segue ripassando dalla route» è falso nella seconda metà: Playwright non chia
 da un rimando, nemmeno quando il rimando l'ha consegnato la route. I test del browser vero provavano che un
 rimando ammesso è seguito e letto — ed è vero —, non che ripassa. La richiesta dopo un rimando la manda il
 browser, e il cancello non la vede: **in una catena, un secondo rimando verso un sito fuori dal confine è
-seguito, e la richiesta arriva** — misurato con due server locali, nel browser vuoto e in quello del profilo.
+seguito, e la richiesta arriva** — misurato con server locali, nel browser vuoto e in quello del profilo.
 «Ogni navigazione della cornice principale fuori dal confine non parte» vale per il primo indirizzo e per il
-primo rimando, non per i successivi. Ciò che regge: il tool non legge e non scrive su una pagina finita su
-un'altra origine. E «la route è il driver» ha due conseguenze che qui non erano scritte: un sito vede, per il
-primo documento di ogni navigazione, un client che porta il nome del browser senza esserlo; e i cookie di quel
-documento li aggiunge il driver quando il browser non ne manderebbe — anche dove `SameSite` dice di no.
-**Non riparato in M13.9**: i test rossi sono scritti, e la proposta è la domanda 109 di `M13.9.md`.*
+primo rimando, non per i successivi. **E i tool non lo fermano**: «lo step fallisce `browser.left_site`» vale
+quando il cancello ha rifiutato una navigazione — nessun tool confronta dove la pagina è con il sito della
+domanda. Misurato: su quella catena `browser.read` porta nel risultato il testo della pagina dell'altro sito, e
+`browser.act` scrive su di lei ciò che il piano dice di scrivere. «La route è il driver», poi, ha conseguenze
+che qui non erano scritte: un sito vede, per il primo documento di ogni navigazione, un client che porta il
+nome del browser senza esserlo; e su un modulo inviato da un altro sito i cookie arrivano anche dove `SameSite`
+dice di no. **Non riparato in M13.9**: i test rossi sono scritti, e la proposta è la domanda 109 di
+`M13.9.md`; la 110 dice di questa catena.*
 
 ### 7. La domanda, e «partirebbe»: ADR 0045 §6-bis rivista per un browser
 

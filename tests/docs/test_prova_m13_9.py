@@ -652,7 +652,7 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
         block.split("| capability: ", 1)[1].split("\n", 1)[0]: block.split("    $ ", 1)[0]
         for block in written.split("    la domanda ")[1:]
     }
-    assert set(questions) >= AS_YOU, "the four capabilities with the profile were each asked"
+    assert set(questions) >= AS_YOU, "each capability with the profile was asked"
     for capability in sorted(AS_YOU):
         shown = questions[capability]
         assert "    | che cosa: " in shown, shown
