@@ -751,9 +751,16 @@ PROFILE_READERS = frozenset(
 #: and was called for one hop of a chain of redirects (measured on 2026-10-12). So the adapters of
 #: :data:`MACHINE_ADAPTER_DIR` call none of :data:`REDOING_CALLS` — a route, what a route does with
 #: a request, and the detaching of a session, which does not return with a request paused — and
-#: name none of :data:`SILENCING_COMMANDS`: an alert that is turned off lets go what it had paused.
+#: name none of :data:`COMMANDS_NEVER_SENT`, the same things said in the browser's own protocol:
+#: an alert that is turned off lets go what it had paused, an answer given in the site's place or
+#: changed on its way is a request redone, and a session detached by its target is a session
+#: detached. **What the rule cannot see** is a request let go with something changed — the same
+#: command the gate sends, with more in it: that is held by the test that compares what a site
+#: receives through the gate with what the browser alone sends.
 REDOING_CALLS = frozenset({"route", "unroute", "route_from_har", "fetch", "fulfill", "detach"})
-SILENCING_COMMANDS = frozenset({"Fetch.disable"})
+COMMANDS_NEVER_SENT = frozenset(
+    {"Fetch.disable", "Fetch.fulfillRequest", "Fetch.continueResponse", "Target.detachFromTarget"}
+)
 #: Rule 63 (M14.2, ADR 0058): the plan is independent of the device (§13), so the Planner's module
 #: names nothing of the machines. A contract of import-linter cannot say it: the Planner imports the
 #: runner, and the runner the orchestrator.
@@ -1866,7 +1873,7 @@ def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
     """Rule 70: the browser's adapter looks at a request, and never makes one (M13.4f, ADR 0064).
 
     Reported, under :data:`MACHINE_ADAPTER_DIR`: a call whose callee is an attribute named in
-    :data:`REDOING_CALLS`, and a text that names one of :data:`SILENCING_COMMANDS` — a docstring
+    :data:`REDOING_CALLS`, and a text that names one of :data:`COMMANDS_NEVER_SENT` — a docstring
     too, as for rule 36: what the adapter must never send is not written in it either. Scoped to
     the adapter because that is where Playwright is allowed to be (rule 32): outside it nothing
     can reach a route or a session — and ``route`` is the name of other things there, a model's
@@ -1887,7 +1894,7 @@ def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 found.extend(
                     Violation(rule, name, command, node.lineno)
-                    for command in sorted(SILENCING_COMMANDS)
+                    for command in sorted(COMMANDS_NEVER_SENT)
                     if command in node.value
                 )
     return found
@@ -4554,7 +4561,7 @@ CONSTANTS: tuple[Constant, ...] = (
     # the-gate-looks-and-does-not-redo (rule 70, M13.4f)
     Constant("the-gate-looks-and-does-not-redo", "MACHINE_ADAPTER_DIR", DETECTOR),
     Constant("the-gate-looks-and-does-not-redo", "REDOING_CALLS", DETECTOR),
-    Constant("the-gate-looks-and-does-not-redo", "SILENCING_COMMANDS", DETECTOR),
+    Constant("the-gate-looks-and-does-not-redo", "COMMANDS_NEVER_SENT", DETECTOR),
     Constant(
         "the-gate-looks-and-does-not-redo",
         "ROOT_PACKAGE",

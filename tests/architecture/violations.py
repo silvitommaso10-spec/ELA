@@ -2077,6 +2077,35 @@ VIOLATIONS: tuple[Case, ...] = (
         "async def let_go(session):\n    await session.detach()\n",
         ".detach(",
     ),
+    Case(
+        # The same route, said in the browser's own protocol: an answer given in the site's place.
+        "the-gate-answers-in-the-site-s-place",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def gate(session, event):\n"
+        "    answer = {'requestId': event['requestId'], 'responseCode': 200}\n"
+        "    await session.send('Fetch.fulfillRequest', answer)\n",
+        "Fetch.fulfillRequest",
+    ),
+    Case(
+        # An answer changed on its way to the page: what the page gets is not what the site sent.
+        "the-gate-changes-the-answer-of-the-site",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def gate(session, event):\n"
+        "    answer = {'requestId': event['requestId'], 'responseCode': 200}\n"
+        "    await session.send('Fetch.continueResponse', answer)\n",
+        "Fetch.continueResponse",
+    ),
+    Case(
+        # The session detached by its target: the same detaching, by another name.
+        "the-session-of-the-gate-is-detached-by-its-target",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/account.py",
+        "async def let_go(session, held):\n"
+        "    await session.send('Target.detachFromTarget', {'sessionId': held})\n",
+        "Target.detachFromTarget",
+    ),
     # --- the-profile-s-folder-is-its-adapter-s (rule 69, M13.9) ---
     Case(
         # A route reading where the profile is, to answer with it — or to open it.

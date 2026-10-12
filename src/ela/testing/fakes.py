@@ -1300,6 +1300,14 @@ class FakeBrowser:
         # A page that was just opened has been clicked by nobody, and is where it was opened.
         self._clicked = False
         self._where = None
+        # And it is asked where it is, as the adapters ask: what an opening returns is said of a
+        # page inside its boundary. A page found outside is closed, like every refused opening.
+        try:
+            self._within(page, None, made=False)
+        except LeftSite:
+            del self._open[page]
+            self.closed.append(page)  # an opening that raises leaves nothing open behind it
+            raise
         return Opened(
             page=page,
             status=self.page.status,

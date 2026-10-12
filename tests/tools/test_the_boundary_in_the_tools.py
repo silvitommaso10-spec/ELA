@@ -171,6 +171,26 @@ async def test_a_gesture_that_was_made_is_counted_when_the_page_is_found_elsewhe
     assert f"{done} gesture" in said
 
 
+@BROWSERS
+@pytest.mark.parametrize("build", [read_tool, act_tool])
+async def test_a_page_that_opened_elsewhere_says_nothing_of_itself_not_even_its_status(
+    made: Any, build: Any
+) -> None:
+    """The opening asks the boundary where the page is, like every use after it: a page that
+    answered an error elsewhere is ``browser.left_site`` and not ``browser.http_status`` — the
+    status of a page nobody asked for is not said —, and no gesture is made on it."""
+    browser = made(FakePage(address=ELSEWHERE, status=404, texts={None: SECRET, "h1": SECRET}))
+    tool, capability = build(browser)
+    arguments = {**READ, "selector": "h1"} if build is read_tool else ACT
+
+    result = await tool.execute(decision(capability), arguments, FakeStop())
+
+    nothing_of_that_page(result)
+    assert "status" not in result.output and result.output.get("gestures", 0) == 0
+    assert browser.fills == [] and browser.clicks == []
+    assert browser.kept == [] and browser.closed == ["page-1"]
+
+
 # ----------------------------------------------------------------------------------------
 # A login
 # ----------------------------------------------------------------------------------------

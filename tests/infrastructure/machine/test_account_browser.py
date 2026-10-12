@@ -69,6 +69,7 @@ from tests.infrastructure.machine.test_browser import (
 # the test left on the machine found by that folder, taken away, and asserted to be nothing.
 served = shell.served
 nothing_left_behind = shell.nothing_left_behind
+judged = shell.judged
 
 SYSTEM = platform.system()
 INSTALL = "uv run playwright install chromium"
@@ -527,41 +528,46 @@ def worker_site(served: list[Site]) -> Site:
 
 
 async def test_a_launch_ela_drives_finds_no_worker_in_the_profile_and_the_gate_sees_the_request(
-    browser: AccountChrome, profile: Path, served: list[Site], monkeypatch: pytest.MonkeyPatch
+    browser: AccountChrome,
+    profile: Path,
+    served: list[Site],
+    judged: list[tuple[str, str, bool]],
 ) -> None:
     """**Where the defence acts** (M13.4f, decision 136; ADR 0064): of a navigation a worker
     answers the gate is not told — the test after this one —, so before every launch ELA drives
     the workers of the profile are taken away, and new ones are blocked. A worker left by a
-    launch that let it is not there for the page: the page is the network's, and the boundary
-    was asked about its request — once, by the gate, before the page was used at all."""
+    launch that let it is not there for the page: the page is the network's, and **the gate was
+    told of its request** and let it go — what the gate saw, kept as it decides, and not what
+    the boundary was asked, which whoever holds the page asks too."""
     web = worker_site(served)
     await planted(browser, web)
     assert (profile / "Default" / "Service Worker").is_dir()
-    at_the_gate: list[str] = []
 
-    def admitted(address: str) -> bool:
-        at_the_gate.append(address)
-        return True
-
-    opened = await browser.open(web.origin + "/page", admitted, FakeStop())
-    asked_by_the_gate = list(at_the_gate)
+    opened = await browser.open(web.origin + "/page", everywhere, FakeStop())
 
     assert await browser.text(opened.page, None) == "from the network"
-    assert asked_by_the_gate == [web.origin + "/page"]
+    assert ("GET", web.origin + "/page", True) in judged
     assert "GET /page" in web.requests
 
 
-async def test_with_the_worker_left_the_page_is_the_worker_s_and_the_gate_is_never_asked(
-    browser: AccountChrome, served: list[Site], monkeypatch: pytest.MonkeyPatch
+async def test_with_the_worker_left_the_page_is_the_worker_s_and_the_gate_is_never_told(
+    browser: AccountChrome,
+    served: list[Site],
+    judged: list[tuple[str, str, bool]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The negative case, built: the same profile, launched without what ELA does to it — the
-    worker not removed, and workers not blocked. The page is the worker's, and **the boundary is
-    never asked** about the navigation. This is what the removal is for.
+    worker not removed, and workers not blocked. The page is the worker's, and **the gate is
+    never told** of the navigation. This is what the removal is for.
 
-    *Measured here on 2026-10-11, and not asserted*: the site received the request for the page
-    all the same — sent by the browser itself, beside its worker, and not by the gate. A
-    navigation that leaves without the boundary being asked is the thing the gate exists to
-    prevent."""
+    The site receives the request for the page all the same — sent by the browser itself,
+    beside its worker, with nobody asked: asserted beside the worker that asks another site
+    (``test_the_boundary.py``), where it was measured in every round. A navigation that leaves
+    without the boundary being asked is the thing the gate exists to prevent.
+
+    *The boundary is asked all the same, by the opening*: about where the page is (ADR 0064
+    §4), once the navigation is over — which is why what the gate was told is read from the
+    gate, and not from a boundary that keeps what it was asked."""
     from ela.infrastructure.machine import account
 
     web = worker_site(served)
@@ -569,17 +575,12 @@ async def test_with_the_worker_left_the_page_is_the_worker_s_and_the_gate_is_nev
     launch = browser._launch
     monkeypatch.setattr(browser, "_launch", lambda: {**launch(), "service_workers": "allow"})
     monkeypatch.setattr(account, "_prepared", lambda profile, *, driven: None)
-    at_the_gate: list[str] = []
 
-    def admitted(address: str) -> bool:
-        at_the_gate.append(address)
-        return True
-
-    opened = await browser.open(web.origin + "/page", admitted, FakeStop())
-    asked_by_the_gate = list(at_the_gate)
+    opened = await browser.open(web.origin + "/page", everywhere, FakeStop())
 
     assert await browser.text(opened.page, None) == "from the worker"
-    assert asked_by_the_gate == [], "the gate was not told of the navigation the worker answered"
+    told = [address for _, address, _ in judged]
+    assert web.origin + "/page" not in told, "the gate was told of the navigation after all"
 
 
 # ----------------------------------------------------------------------------------------

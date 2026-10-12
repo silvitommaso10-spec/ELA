@@ -266,7 +266,12 @@ Le altre conseguenze:
 
 - **Regola di architettura 70**: il cancello guarda le richieste del browser e non ne fa nessuna — nel modulo
   dell'adapter della macchina non c'è una route di Playwright, né ciò che una route fa di una richiesta, né lo
-  stacco di una sessione, né il comando che spegne l'avviso.
+  stacco di una sessione; e nemmeno le stesse cose dette nel protocollo del browser: il comando che spegne
+  l'avviso (`Fetch.disable`), una risposta data al posto del sito (`Fetch.fulfillRequest`) o cambiata per strada
+  (`Fetch.continueResponse`), una sessione staccata dal suo target (`Target.detachFromTarget`). **Ciò che la
+  regola non vede** è una richiesta lasciata andare con qualcosa di cambiato — lo stesso comando che il cancello
+  manda, con più cose dentro: lo tiene il test che confronta ciò che un sito riceve attraverso il cancello con
+  ciò che il browser manda da solo (`test_what_a_site_receives_through_the_gate_is_what_the_browser_alone_sends`).
 - **Una regola di comportamento, tenuta chiamando**: ogni membro del port che riceve una pagina e la usa chiede
   al confine dove la pagina è — trovato dalle firme del port, mai elencato
   (`tests/architecture/test_every_use_of_a_page_asks_the_boundary.py`); con i browser veri in

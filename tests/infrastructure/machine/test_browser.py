@@ -57,6 +57,7 @@ from ela.domain import (
     RiskLevel,
 )
 from ela.infrastructure.machine import PlaywrightBrowser
+from ela.infrastructure.machine import browser as adapter
 from ela.infrastructure.machine.browser import (
     _alive,
     _descendants,
@@ -291,6 +292,32 @@ async def nothing_left_behind(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
 
 CLOSINGS_OF_THE_ADAPTER = frozenset({"_shut", "_dropped", "_stopped_once_started"})
 """The coroutines of the adapter that hold a call of Playwright's while they close something."""
+
+
+@pytest.fixture
+def judged(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, bool]]:
+    """What the gate decided of every request it was told of — its method, its address, and
+    whether it leaves —, kept **as it decides**: a request the gate refused cannot leave after
+    that, so this is the event a «nothing arrived» is asserted after.
+
+    **Not what the boundary was asked**: since M13.4f the boundary is asked by whoever holds the
+    page too, at the opening and at every use (ADR 0064 §4), so a list a boundary of a test
+    keeps is not what the gate saw."""
+    seen: list[tuple[str, str, bool]] = []
+    deciding = adapter._Gate._leaves
+
+    async def kept(self: Any, event: dict[str, Any]) -> bool:
+        asked = (event["request"]["method"], event["request"]["url"])
+        try:
+            leaves = await deciding(self, event)
+        except Exception:
+            seen.append((*asked, False))  # whoever judges raised: the gate makes it fail
+            raise
+        seen.append((*asked, leaves))
+        return leaves
+
+    monkeypatch.setattr(adapter._Gate, "_leaves", kept)
+    return seen
 
 
 def decision(capability: str) -> PermissionDecision:

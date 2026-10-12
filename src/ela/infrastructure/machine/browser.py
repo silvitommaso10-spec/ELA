@@ -422,10 +422,13 @@ class PlaywrightBrowser:
             page = await self._paged(context)
             try:
                 gate = await self._gated(context, page, allowed, refused)
-            except (BrowserError, PlaywrightError):
+            except BrowserError:
                 raise
             except Exception as error:
-                # Whatever it was, the gate is not there: nothing is asked of any site.
+                if self._stopping.is_set():
+                    raise  # said below as what it is: ELA was stopping
+                # Whatever it was, the gate is not there: nothing is asked of any site, and the
+                # step says which part of the browser failed.
                 raise BrowserFailed(
                     f"the gate of the browser could not be turned on ({type(error).__name__})"
                 ) from None
@@ -456,6 +459,10 @@ class PlaywrightBrowser:
                 if gate.broken:
                     raise BrowserFailed(UNJUDGED) from None
                 raise SiteUnreachable(type(error).__name__) from None
+            # The page that was opened is asked where it is, like every use of it after
+            # (ADR 0064 §4): what this returns — its address, the status of its document — is
+            # said of a page inside the boundary, or not said.
+            self._within(self._pages[token])
             return Opened(
                 page=token,
                 status=None if response is None else response.status,
@@ -543,9 +550,11 @@ class PlaywrightBrowser:
     def _within(self, opened: _Open, *, made: bool = False) -> None:
         """**The one predicate** (ADR 0064 §4): the boundary of the page, asked where the page is.
         Before a use, which then does not take place; and once it is made — ``made`` —, when what
-        was read is thrown away. A gate whose judge raised has let nothing go, and says so here:
-        the step failed on its browser, not on a text that did not appear."""
-        if opened.gate.broken:
+        was read is thrown away. A gate whose judge raised has let nothing go, and says so here
+        — **before a use, never after one**: a gesture whose own request the judge raised on was
+        made, returns as made, and it is the next use that says the browser failed, with that
+        gesture counted."""
+        if opened.gate.broken and not made:
             raise BrowserFailed(UNJUDGED)
         address = _where(opened.page)
         if not opened.allowed(address):

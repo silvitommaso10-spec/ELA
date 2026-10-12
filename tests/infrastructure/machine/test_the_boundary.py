@@ -32,6 +32,8 @@ folder of its own under ``/tmp``, and nothing left on the machine.
 from __future__ import annotations
 
 import asyncio
+import functools
+import inspect
 import json
 import os
 import shutil
@@ -41,6 +43,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import urllib.request
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -68,6 +71,12 @@ from ela.tools.browser import (
     boundary,
     origin_of,
 )
+from ela.tools.verifiers import (
+    BROWSER_ANOTHER_PAGE,
+    BROWSER_EXPECT_VISIBLE,
+    BrowserActVerifier,
+)
+from tests.architecture.test_every_use_of_a_page_asks_the_boundary import ASKED_BEFORE_ONLY
 from tests.browser_leftovers import running
 from tests.infrastructure.machine import test_account_browser as account
 from tests.infrastructure.machine import test_browser as shell
@@ -75,6 +84,7 @@ from tests.infrastructure.machine.test_browser import CLOCK, Kept, Site, decisio
 
 served = shell.served
 nothing_left_behind = shell.nothing_left_behind
+judged = shell.judged
 profile = account.profile
 
 ON_A_MAC = pytest.mark.skipif(
@@ -90,6 +100,11 @@ PIXEL = bytes.fromhex(
 LONG = 20.0
 """The bound of a wait for an event of a browser: past it the test fails, saying what it waited
 for. Never the measure of anything."""
+NO_TEST_WAITS_FOR_EVER = 180.0
+"""The bound of every test of this file, put around each by the last lines of the file
+(decision 128): a test that waits for something that never comes is red **with the line it was
+waiting at**, instead of holding the suite. Never the measure of anything, and far from the time
+a test takes."""
 
 
 def empty(stopping: asyncio.Event | None = None, **more: str) -> PlaywrightBrowser:
@@ -119,23 +134,6 @@ async def with_the_profile(profile: Path) -> AsyncIterator[AccountChrome]:
     yield made
     for page in list(made._pages):
         await made.close(page)
-
-
-@pytest.fixture
-def judged(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, bool]]:
-    """What the gate decided of every request it was told of — its method, its address, and
-    whether it leaves —, kept **as it decides**: a request the gate refused cannot leave after
-    that, so this is the event a «nothing arrived» is asserted after."""
-    seen: list[tuple[str, str, bool]] = []
-    deciding = adapter._Gate._leaves
-
-    async def kept(self: Any, event: dict[str, Any]) -> bool:
-        leaves = await deciding(self, event)
-        seen.append((event["request"]["method"], event["request"]["url"], leaves))
-        return leaves
-
-    monkeypatch.setattr(adapter._Gate, "_leaves", kept)
-    return seen
 
 
 async def until(look: Callable[[], Any], what: str) -> Any:
@@ -608,7 +606,10 @@ FILLINGS = {
         "<form method=post action={off}/post><input name=a value=b></form>"
         "<script>document.forms[0].submit()</script>"
     ),
+    "follows": "<a href={off}/link>x</a><script>document.links[0].click()</script>",
 }
+DOCUMENTS = {"navigates": ("GET", "/nav"), "sends": ("POST", "/post"), "follows": ("GET", "/link")}
+"""What each filling that asks for a document of the opened page asks for."""
 FIRST = """
 <h1 id="first">first</h1>
 <script>
@@ -647,7 +648,7 @@ def filling(a: Recording, off: Recording) -> None:
     a.pages[("GET", "/inside")] = (200, HTML, "<p>inside</p>")
     for name in ("own.gif", "w.gif"):
         off.pages[("GET", f"/{name}")] = (200, GIF, PIXEL)
-    for name in ("frame", "nav"):
+    for name in ("frame", "nav", "link"):
         off.pages[("GET", f"/{name}")] = (200, HTML, "<p>elsewhere</p>")
     off.pages[("POST", "/post")] = (200, HTML, "<p>elsewhere</p>")
 
@@ -664,6 +665,12 @@ async def fill(
     await browser.click(page, f"#{way}-{what}")
 
 
+WITHOUT = {"written": (), "javascript": ("Referer",), "rewritten": ()}
+"""What a request put in the opened page lacks of the same request made by the first page's own
+document, for each way (``own-and-written-every-header.txt``): a page opened with
+``javascript:`` says no address it comes from."""
+
+
 @pytest.mark.parametrize("way", THE_FIRST_PAGE_S)
 async def test_what_the_first_page_loads_in_a_page_it_opened_arrives_as_from_its_own_document(
     browser: Any, served: list[Site], judged: list[tuple[str, str, bool]], way: str
@@ -672,8 +679,9 @@ async def test_what_the_first_page_loads_in_a_page_it_opened_arrives_as_from_its
     opened is, for the browser, **a request of the first page**: it leaves, as everything a page
     loads does. **The precondition is the control**: the same image asked by the first page's
     own document, which arrives with the one cookie that travels between sites. What is put in
-    the other page arrives the same way, with the same cookies — nothing more than the page can
-    already do —; and the frame written beside it, a document of that page, does not leave."""
+    the other page arrives the same way — **every header of it, name, value and order**, less
+    what :data:`WITHOUT` names: nothing more than the page can already do —; and the frame
+    written beside it, a document of that page, does not leave."""
     a, off = two(served)
     filling(a, off)
     given = [
@@ -695,24 +703,25 @@ async def test_what_the_first_page_loads_in_a_page_it_opened_arrives_as_from_its
     await off.arrived("GET /w.gif")
     await decided(judged, off.origin + "/frame", leaves=False)
 
-    own, put = off.cookies("GET /own.gif"), off.cookies("GET /w.gif")
-    assert own == "none=1", "the control: what the first page's own document sends, and no more"
-    assert put == own, "what was put in the other page arrives as from the first page's document"
+    own, put = off.headers("GET /own.gif"), off.headers("GET /w.gif")
+    assert off.cookies("GET /own.gif") == "none=1", "the control: what the first page's own sends"
+    assert put == [one for one in own if one[0] not in WITHOUT[way]], "and nothing more"
     assert off.requests == ["GET /set", "GET /own.gif", "GET /w.gif"], "and no document of it"
     assert await browser.another(opened.page) is not None, "and the adapter says a page was opened"
 
 
-@pytest.mark.parametrize("what", ["navigates", "sends"])
+@pytest.mark.parametrize("what", sorted(DOCUMENTS))
 @pytest.mark.parametrize("way", [*THE_FIRST_PAGE_S, "blob"])
 async def test_no_document_of_a_page_that_was_opened_leaves_however_it_was_filled(
     browser: Any, served: list[Site], judged: list[tuple[str, str, bool]], way: str, what: str
 ) -> None:
-    """Decisions 133 and 135: not its navigation and not a form — the requests that would carry
-    there every cookie a navigation carries —, for a page opened empty and written, opened with
-    ``javascript:``, opened inside the boundary and rewritten, or opened on a ``blob:``."""
+    """Decisions 133 and 135: not its navigation, not a link followed and not a form — the
+    requests that would carry there every cookie a navigation carries —, for a page opened
+    empty and written, opened with ``javascript:``, opened inside the boundary and rewritten,
+    or opened on a ``blob:``."""
     a, off = two(served)
     filling(a, off)
-    asked = ("GET", "/nav") if what == "navigates" else ("POST", "/post")
+    asked = DOCUMENTS[what]
 
     opened = await browser.open(a.origin + "/", only(a), FakeStop())
     await fill(browser, opened.page, judged, a, way, what)
@@ -732,10 +741,11 @@ async def test_of_a_page_opened_on_a_blob_not_even_an_image_leaves(
     filling(a, off)
 
     opened = await browser.open(a.origin + "/", only(a), FakeStop())
-    await fill(browser, opened.page, judged, a, "blob", "image")
+    await fill(browser, opened.page, judged, a, "blob", "loads")
     await decided(judged, off.origin + "/w.gif", leaves=False)
+    await decided(judged, off.origin + "/frame", leaves=False)
 
-    assert off.requests == []
+    assert off.requests == [], "neither the image nor the frame written beside it"
 
 
 async def test_a_read_of_a_page_that_opens_another_by_itself_succeeds_and_says_so(
@@ -770,12 +780,63 @@ async def test_a_read_of_a_page_that_opens_another_by_itself_succeeds_and_says_s
     assert found.address == off.origin + "/x?k=1" and off.requests == []
 
 
+@pytest.mark.parametrize(
+    ("way", "said", "unsaid"),
+    [
+        ("a link that opens elsewhere", "opened another page", "the form was not sent"),
+        ("a form that sends elsewhere", "the form was not sent", "opened another page"),
+    ],
+)
+async def test_a_click_that_opens_another_page_is_said_by_the_step_and_by_its_verifier(
+    browser: Any, served: list[Site], way: str, said: str, unsaid: str
+) -> None:
+    """Decision 123, end to end with the real browser, the real tool and its verifier: the
+    click of an action follows a link, or sends a form, **in another page**. The gesture was
+    made, so the step does not fail; its result says that the page opened another — measured
+    in every round on each browser (``a-click-that-opens-another-page.txt``): the browser
+    announces a page before the click that made it returns —; and the verifier, which does not
+    find the text, answers ``browser.another_page`` and not that the text is missing: for a
+    form, that the form was not sent. The origin alone, in both.
+
+    **The verifier looks after an event**: the refusal of what the other page asked for."""
+    from ela.tools.browser import ANOTHER_PAGE, ASKED_FOR_NOTHING
+
+    a, off = two(served)
+    html, _ = OPENS[way]
+    a.pages[("GET", "/")] = (200, HTML, html.format(off=off.origin) + "<p>first</p>")
+    names = {"sito.example": a.origin}
+    tool = BrowserActTool(
+        Browsing(sites=("sito.example",), origin=lambda name: names[name]),
+        browser,
+        CLOCK,
+        FakeIdGenerator(),
+    )
+    arguments = {"site": "sito.example", "path": "/", "fill": [], "click": "#go"}
+    arguments = {**arguments, "expect_text": "Grazie", "purpose": "x"}
+
+    result = await tool.execute(decision(BROWSER_ACT), arguments, FakeStop())
+    await another(browser, str(result.output["page"]))
+    (failure,) = await BrowserActVerifier(browser, 0.2).verify(
+        [BROWSER_EXPECT_VISIBLE], arguments, result
+    )
+
+    assert result.status is ExecutionStatus.SUCCEEDED and result.output["gestures"] == 1
+    assert result.output[ANOTHER_PAGE] in {off.origin, ASKED_FOR_NOTHING}
+    assert failure.code == BROWSER_ANOTHER_PAGE
+    assert said in failure.message and unsaid not in failure.message
+    assert off.origin in failure.message
+    assert "k=1" not in str(result.output) + failure.message, "the origin, and nothing else"
+    assert off.requests == [] and a.requests == ["GET /"]
+
+
 @ON_A_MAC
 async def test_the_pages_of_the_browser_itself_ask_nothing_and_are_nobody_s_other_page(
-    with_the_profile: AccountChrome, served: list[Site]
+    with_the_profile: AccountChrome, served: list[Site], judged: list[tuple[str, str, bool]]
 ) -> None:
     """Decision 127. The browser of the profile has pages of its own that nobody opened: a step
-    works beside them, and the adapter does not take them for a page the first page opened."""
+    works beside them, the gate is told of no request that is not the page's — every request
+    of every page passes it —, and the adapter does not take them for a page the first page
+    opened."""
     a, off = two(served)
     a.pages[("GET", "/")] = (200, HTML, "<p>Ciao</p>")
     made = with_the_profile
@@ -787,6 +848,8 @@ async def test_the_pages_of_the_browser_itself_ask_nothing_and_are_nobody_s_othe
 
     assert said == "Ciao" and stopped is None
     assert a.requests == ["GET /"] and off.requests == []
+    told = [address for _, address, _ in judged if address != adapter.CHECK]
+    assert told and all(address.startswith(a.origin + "/") for address in told)
 
 
 @ON_A_MAC
@@ -926,9 +989,9 @@ async def test_what_a_worker_left_in_the_profile_asks_of_another_site_does_not_l
     asks of another site by itself has no frame of the page, and is refused like every request
     that is not the page's.
 
-    *Not asserted: whose answer the page shows.* The browser sends the navigation to the site
-    beside its worker and takes whichever answers first (measured: the worker's when it
-    answers at once, the site's when the worker first waits for a request of its own)."""
+    The page shown is the worker's — measured in every round, also with a worker that first
+    waits for a request of its own (``what-the-reread-asked.txt``) —, and the site receives the
+    navigation all the same, sent by the browser beside its worker."""
     from ela.infrastructure.machine import account as profiled
 
     off = site(served, {"/asked": (200, {}, "x")})
@@ -953,9 +1016,12 @@ async def test_what_a_worker_left_in_the_profile_asks_of_another_site_does_not_l
     async with asyncio.timeout(LONG):
         opened = await made.open(web.origin + "/page", only(web), FakeStop())
     await decided(judged, off.origin + "/asked", leaves=False)
+    said = await made.text(opened.page, "p")
     await made.close(opened.page)
 
+    assert said == "from the worker", "the control: a worker is in charge of this page"
     assert [one for one in judged if one[1] == web.origin + "/page"] == []
+    assert "GET /page" in web.requests, "the browser sent the navigation beside its worker"
     assert off.requests == []
 
 
@@ -1053,8 +1119,9 @@ async def test_a_judge_that_raises_lets_nothing_leave_and_the_step_says_the_brow
     browser: Any, served: list[Site], judged: list[tuple[str, str, bool]]
 ) -> None:
     """Criterion 9. The boundary of this test raises when it is asked about the other site:
-    the request is made to fail instead of being left where it is, and the next use of the
-    page says that the browser failed — not that a text is missing."""
+    the request is made to fail instead of being left where it is — the click that started it
+    returns —, and **the next use** of the page says that the browser failed: not that a text
+    is missing. The gesture that was made is counted as made."""
     other = site(served, {"/": (200, {}, "<p>altrove</p>")})
     web = site(served, {"/": (200, {}, f'<a id="go" href="{other.origin}/">go</a>')})
     names = {"sito.example": web.origin}
@@ -1065,9 +1132,9 @@ async def test_a_judge_that_raises_lets_nothing_leave_and_the_step_says_the_brow
         return True
 
     opened = await browser.open(web.origin + "/", allowed, FakeStop())
+    await browser.click(opened.page, "#go")
+    await decided(judged, other.origin + "/", leaves=False)
     with pytest.raises(BrowserFailed):
-        await browser.click(opened.page, "#go")
-        await decided(judged, other.origin + "/", leaves=False)
         await browser.title(opened.page)
     await browser.close(opened.page)
     tool = BrowserActTool(
@@ -1079,20 +1146,11 @@ async def test_a_judge_that_raises_lets_nothing_leave_and_the_step_says_the_brow
     tool._gestures = lambda arguments, site, address: _raising(  # type: ignore[method-assign]
         BrowserActTool._gestures(tool, arguments, site, address), allowed
     )
-    result = await tool.execute(
-        decision(BROWSER_ACT),
-        {
-            "site": "sito.example",
-            "path": "/",
-            "fill": [],
-            "click": "#go",
-            "expect_text": "x",
-            "purpose": "x",
-        },
-        FakeStop(),
-    )
+    acting = {"site": "sito.example", "path": "/", "fill": [], "click": "#go", "expect_text": "x"}
+    result = await tool.execute(decision(BROWSER_ACT), {**acting, "purpose": "x"}, FakeStop())
 
     assert result.error is not None and result.error.code == FAILED
+    assert result.output["gestures"] == 1 and "1 gesture was made" in result.error.message
     assert other.requests == [], "in doubt the request did not leave"
 
 
@@ -1268,12 +1326,18 @@ async def test_no_use_of_a_page_that_is_not_inside_the_boundary_takes_place(
     assert web.events == [], "nothing was typed and nothing was clicked"
 
 
-@pytest.mark.parametrize("use", ["text", "title", "count", "glance"])
+ASKED_AFTER_TOO = sorted(set(USES) - set(ASKED_BEFORE_ONLY))
+"""Every use of a page but those that read nothing of it, named with their reason beside the
+test of the fakes: there is nothing of theirs to throw away."""
+
+
+@pytest.mark.parametrize("use", ASKED_AFTER_TOO)
 async def test_what_was_read_on_a_page_that_ended_elsewhere_meanwhile_is_thrown_away(
     browser: Any, served: list[Site], use: str
 ) -> None:
     """Decision 122. The boundary of this test admits the page when the use begins and not when
-    it ends: what was read is in nobody's hands — and a look releases the page all the same."""
+    it ends: what was read is in nobody's hands, a gesture is said as made — and a look
+    releases the page all the same."""
     from ela.ports import LeftSite
 
     web = site(served, {"/": (200, {}, USED)})
@@ -1281,11 +1345,44 @@ async def test_what_was_read_on_a_page_that_ended_elsewhere_meanwhile_is_thrown_
     opened = await browser.open(web.origin + "/", allowed, FakeStop())
     allowed.closes_at = allowed.asked + 2
 
-    with pytest.raises(LeftSite):
+    with pytest.raises(LeftSite) as found:
         await USES[use](browser, opened.page)
 
     assert allowed.asked == allowed.closes_at, "asked once before the use, and once after it"
+    assert found.value.made is True, "the use had been made when the page was found elsewhere"
     assert use != "glance" or opened.page not in browser._pages
+
+
+AT_NO_SITE = {
+    "about:blank": "location = 'about:blank'",
+    "a blob: of its own site": (
+        "location = window.URL.createObjectURL("
+        "new Blob(['<p>of the blob</p>'], {type: 'text/html'}))"
+    ),
+}
+
+
+@pytest.mark.parametrize("where", sorted(AT_NO_SITE))
+async def test_a_page_that_puts_itself_at_no_site_is_outside_every_boundary(
+    browser: Any, served: list[Site], where: str
+) -> None:
+    """A page can leave its site **with no request at all**: to ``about:blank``, or to a
+    document its own script made. The gate is told of nothing — there is nothing to be told
+    of —, and the predicate is what finds it (``a-page-at-no-site.txt``): the click that sent
+    the page there is said as made, and nothing of that page is read."""
+    from ela.ports import LeftSite
+
+    web = site(served, {"/": (200, {}, f'<p>x</p><button id="go" onclick="{AT_NO_SITE[where]}">')})
+    opened = await browser.open(web.origin + "/", only(web), FakeStop())
+
+    with pytest.raises(LeftSite) as clicked:
+        await browser.click(opened.page, "#go")
+    with pytest.raises(LeftSite) as read:
+        await browser.text(opened.page, None)
+
+    assert clicked.value.made is True and read.value.made is False
+    assert origin_of(read.value.address) in {"about://", "blob://"}
+    assert web.requests == ["GET /"]
 
 
 @ON_A_MAC
@@ -1330,15 +1427,22 @@ async def test_a_secret_typed_on_a_page_that_ends_elsewhere_meanwhile_is_said_as
         await made.fill_secret(
             opened.page, "#f", Secret("-".join(("a", "word", "of", "the", "test")))
         )
+    allowed.closed, allowed.closes_at = False, allowed.asked + 2
+    with pytest.raises(LeftSite) as told:
+        await made.landed(opened.page)
 
     assert typed.value.made is True
+    assert told.value.made is True, "and where it landed, read before it was elsewhere, is not said"
 
 
 async def test_a_tool_on_a_page_that_is_elsewhere_reads_nothing_and_says_where_by_its_origin(
     browser: Any, served: list[Site], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Criterion 3, with the real browser and the real tools: the page is found elsewhere at
-    the tool's first use of it. Nothing of the page is in the result, nothing was typed."""
+    """Criterion 3, with the real browser and the real tools: the page is found elsewhere **when
+    it is opened** — the opening asks the boundary where the page is, like every use after it —,
+    so not even the status of its document is said: a page that answered ``404`` elsewhere is
+    ``browser.left_site``, not ``browser.http_status``. Nothing of the page is in the result,
+    nothing was typed."""
     web = site(served, {"/": (200, {}, "<h1>secret of the page</h1>" + USED)})
     monkeypatch.setattr(adapter, "_where", lambda page: "https://altro.example/x?k=1")
     names = {"sito.example": web.origin}
@@ -1360,10 +1464,15 @@ async def test_a_tool_on_a_page_that_is_elsewhere_reads_nothing_and_says_where_b
         decision(BROWSER_ACT), acting, FakeStop()
     )
 
-    for result in (read, act):
+    missing = await BrowserReadTool(browsing, browser, CLOCK, FakeIdGenerator()).execute(
+        decision(BROWSER_READ), {**reading, "path": "/missing"}, FakeStop()
+    )
+
+    for result in (read, act, missing):
         assert result.error is not None and result.error.code == LEFT_SITE
         assert "https://altro.example" in result.error.message
         assert "k=1" not in result.error.message and "secret of the page" not in str(result)
+    assert "status" not in missing.output, "not even the status of a page that is elsewhere is said"
     assert web.events == [] and browser._pages == {}
 
 
@@ -1416,3 +1525,55 @@ async def test_a_certificate_the_browser_does_not_accept_opens_no_page_whatever_
     finally:
         for page in list(made._pages):
             await made.close(page)
+
+
+# ----------------------------------------------------------------------------------------
+# No test of this file waits for ever
+# ----------------------------------------------------------------------------------------
+
+
+BOUNDED: list[Any] = []
+"""Every test :func:`bounded` was put around — kept here and not written on the test, whose
+attributes pytest takes for words a ``-k`` selects by."""
+
+
+def bounded(test: Any, seconds: float = NO_TEST_WAITS_FOR_EVER) -> Any:
+    """``test``, failed when it has lasted ``seconds``: the ``TimeoutError`` carries, as its
+    cause, the line the test was waiting at."""
+
+    @functools.wraps(test)
+    async def within(*arguments: Any, **named: Any) -> None:
+        async with asyncio.timeout(seconds):
+            await test(*arguments, **named)
+
+    BOUNDED.append(within)
+    return within
+
+
+def test_every_test_of_this_file_that_waits_is_bounded() -> None:
+    """A test added below the last lines of the file would wait with no bound: found here."""
+    unbounded = [
+        name
+        for name, test in globals().items()
+        if name.startswith("test_") and inspect.iscoroutinefunction(test) and test not in BOUNDED
+    ]
+    assert unbounded == []
+
+
+async def test_a_test_that_waits_for_what_never_comes_is_red_where_it_waits() -> None:
+    async def waits() -> None:
+        await asyncio.Event().wait()
+
+    async with asyncio.timeout(LONG) as this_test:
+        with pytest.raises(TimeoutError) as ended:
+            await bounded(waits, 0.01)()
+
+    assert not this_test.expired(), "ended by its own bound, not by the one around this test"
+    waited_at = ended.value.__cause__
+    assert isinstance(waited_at, asyncio.CancelledError)
+    assert "Event().wait()" in "".join(traceback.format_exception(waited_at))
+
+
+for _name, _test in list(globals().items()):
+    if _name.startswith("test_") and inspect.iscoroutinefunction(_test):
+        globals()[_name] = bounded(_test)

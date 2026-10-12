@@ -31,7 +31,7 @@ from ela.tools.verifiers import (
     BrowserActVerifier,
     BrowserReadVerifier,
 )
-from tests.architecture.rules import REDOING_CALLS, RULES, SILENCING_COMMANDS
+from tests.architecture.rules import COMMANDS_NEVER_SENT, REDOING_CALLS, RULES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.boundary_additions import added_codes, added_members
 from tests.docs.test_adr_browser import codes
@@ -125,7 +125,9 @@ def test_the_address_of_the_check_is_the_one_the_adapter_asks_for() -> None:
 def test_the_rule_it_adds_is_the_seventieth_and_says_what_it_forbids() -> None:
     assert "**Regola di architettura 70**" in conseguenze()
     assert set(_rules_up_to(70)) - set(_rules_up_to(69)) == {THE_RULE}
-    assert "route" in REDOING_CALLS and "detach" in REDOING_CALLS and SILENCING_COMMANDS
+    assert "route" in REDOING_CALLS and "detach" in REDOING_CALLS
+    for command in COMMANDS_NEVER_SENT:
+        assert f"`{command}`" in conseguenze(), f"the rule of the ADR does not name {command}"
 
 
 def test_the_conseguenze_count_the_totals_of_today() -> None:
@@ -167,13 +169,14 @@ def revised_by_the_list() -> set[str]:
     return {match.group(1) for line in block.splitlines() if (match := REVISED_ROW.match(line))}
 
 
-def revised_by_their_state() -> set[str]:
+def written() -> dict[str, str]:
+    """The text of every ADR of the repository but this one, by its number."""
+    return {number: path.read_text(encoding="utf-8") for number, path in adrs().items()}
+
+
+def revised_by_their_state(texts: dict[str, str]) -> set[str]:
     """The numbers of the ADRs whose «Stato:» line says this ADR is to be read beside them."""
-    return {
-        number
-        for number, path in adrs().items()
-        if REVISED_MARK in status_of(path.read_text(encoding="utf-8"))
-    }
+    return {number for number, text in texts.items() if REVISED_MARK in status_of(text)}
 
 
 def test_the_adrs_it_revises_say_so_on_their_state_line_and_no_other_does() -> None:
@@ -181,14 +184,23 @@ def test_the_adrs_it_revises_say_so_on_their_state_line_and_no_other_does() -> N
     listed = revised_by_the_list()
 
     assert listed == {"0052", "0063"}
-    assert listed == revised_by_their_state()
+    assert listed == revised_by_their_state(written())
 
 
 def test_a_revised_adr_that_does_not_say_so_is_found() -> None:
-    path = adrs()[sorted(revised_by_the_list())[0]]
-    silent = path.read_text(encoding="utf-8").replace(REVISED_MARK, "", 1)
+    texts, listed = written(), revised_by_the_list()
+    silent = min(listed)
+    texts[silent] = texts[silent].replace(REVISED_MARK, "", 1)
 
-    assert REVISED_MARK not in status_of(silent)
+    assert revised_by_their_state(texts) == listed - {silent}
+
+
+def test_an_adr_that_says_so_and_is_not_in_the_list_is_found() -> None:
+    texts, listed = written(), revised_by_the_list()
+    unlisted = min(set(texts) - listed)
+    texts[unlisted] = texts[unlisted].replace("- **Stato:**", f"- **Stato:** {REVISED_MARK}", 1)
+
+    assert revised_by_their_state(texts) == listed | {unlisted}
 
 
 def test_it_stays_proposed_until_the_proof_of_m13_9_passes_on_this_repair() -> None:
