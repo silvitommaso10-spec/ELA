@@ -97,7 +97,10 @@ async def test_status_of_a_free_profile_says_every_fact_and_no_sentence(browsed:
     assert result.exit_code == OK, result.output
     said = result.output
     assert row(said, "state") == "free"
-    assert row(said, "window") == "hidden"
+    assert row(said, "steps run") == "without a window"
+    assert "window  " not in said.replace("without a window", ""), (
+        "one row says «window», and it is the state: the window where you sign in (decision 107)"
+    )
     assert row(said, "linked to an account") == "no"
     assert row(said, "saved passwords") == "0"
     assert row(said, "sites") == "posta.example, video.example"
@@ -128,7 +131,7 @@ async def test_status_says_a_linked_browser_and_a_shown_window(browsed: Browsed)
     result = await browsed("browser", "status")
 
     assert row(result.output, "state") == "window"
-    assert row(result.output, "window") == "shown"
+    assert row(result.output, "steps run") == "with a window"
     assert row(result.output, "linked to an account") == "yes"
     assert row(result.output, "saved passwords") == "3"
     assert "its window is open" in result.output.strip().splitlines()[-1]

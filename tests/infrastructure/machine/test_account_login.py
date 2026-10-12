@@ -189,3 +189,34 @@ async def test_a_login_as_a_site_does_it_passes_the_gate_and_the_next_launch_is_
     assert glanced.shown is True, "and showed what only who is in sees"
     assert web.cookies[3] == ACCESS, "the next launch found the cookie in the folder"
     assert IN in after
+
+
+async def test_the_browser_says_where_a_login_ended_and_the_status_of_its_document(
+    profile: Path, served: list[account.Site]
+) -> None:
+    """Decision 106, on the real browser: after the click the page is asked where it is **once
+    the document the click led to is there** — an event of the page, with no time of its own —,
+    and the status of that document is the last one the main frame was given: the redirect's is
+    not it. A login the site refuses ends on its form, which still has its password field."""
+    web = login_site(served)
+    browser = chrome(profile)
+
+    opened = await browser.open(web.origin + "/login?from=the-test", everywhere, FakeStop())
+    before = await browser.landed(opened.page)
+    await browser.fill_secret(opened.page, "input[name=acct]", Secret(USER))
+    await browser.fill_secret(opened.page, "input[name=pw]", Secret("not the word"))
+    await browser.click(opened.page, "input[type=submit]")
+    refused = await browser.landed(opened.page)
+    left = await browser.count(opened.page, "input[name=pw]")
+    await browser.fill_secret(opened.page, "input[name=acct]", Secret(USER))
+    await browser.fill_secret(opened.page, "input[name=pw]", Secret(WORD))
+    await browser.click(opened.page, "input[type=submit]")
+    inside = await browser.landed(opened.page)
+    gone = await browser.count(opened.page, "input[name=pw]")
+    await browser.close(opened.page)
+
+    assert (before.address, before.status) == (web.origin + "/login?from=the-test", 200)
+    assert (refused.address, refused.status, left) == (web.origin + "/login", 200, 1)
+    assert (inside.address, inside.status, gone) == (web.origin + "/home", 200, 0), (
+        "the 302 of the redirect is not the status of the page it led to"
+    )

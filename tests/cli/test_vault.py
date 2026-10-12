@@ -11,12 +11,14 @@ forget.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import shlex
 import stat
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 from click.testing import Result
@@ -167,6 +169,70 @@ async def test_open_refuses_a_terminal_and_sends_nothing(
     assert "| ela vault open" not in result.output, "no line that may not work (decision 98)"
     assert vaulted.sent("/vault/session") == []
     assert vaulted.vault.calls == []
+
+
+class Watched(io.BytesIO):
+    """A pipe that says whether anybody read from it."""
+
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self.touched: list[str] = []
+
+    def read(self, size: int | None = -1) -> bytes:
+        self.touched.append("read")
+        return super().read(size)
+
+    def read1(self, size: int | None = -1) -> bytes:
+        self.touched.append("read1")
+        return super().read1(size)
+
+    def readinto(self, buffer: Any) -> int:
+        self.touched.append("readinto")
+        return super().readinto(buffer)
+
+    def readline(self, size: int | None = -1) -> bytes:
+        self.touched.append("readline")
+        return super().readline(size)
+
+
+def watched(monkeypatch: pytest.MonkeyPatch, arrives: str) -> Watched:
+    """The stdin of the next command, as a pipe that is watched. The runner of the tests makes
+    the stdin of a command from a text and nothing else: here it is given this one instead."""
+    pipe = Watched(arrives.encode())
+    monkeypatch.setattr("typer.testing.make_input_stream", lambda input, charset: pipe)
+    return pipe
+
+
+async def test_open_looks_for_its_token_before_it_reads_the_pipe(
+    vaulted: Vaulted, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Decision 107, from the proof: launched from a folder with no ``.env`` the command read
+    the pipe first — the user had typed the master password for the vault's program by then —
+    and only afterwards found it could not talk to ELA. It looks for what it needs to talk to
+    ELA first, and reads nothing if it is not there."""
+    monkeypatch.delenv("ELA_API_TOKEN", raising=False)
+    monkeypatch.setattr(client, "connect", lambda: client.open_client(client.api_settings()))
+    pipe = watched(monkeypatch, KEY + "\n")
+
+    result = await vaulted("vault", "open")
+
+    assert result.exit_code == 2, result.output
+    assert "ELA_API_TOKEN" in result.output
+    assert pipe.touched == [], "the key the vault's program wrote was not taken"
+    assert vaulted.sent("/vault/session") == []
+
+
+async def test_a_pipe_is_read_when_the_token_is_there(
+    vaulted: Vaulted, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other side of the same seam: the pipe of the test is one the command does read."""
+    pipe = watched(monkeypatch, KEY + "\n")
+
+    result = await vaulted("vault", "open")
+
+    assert result.exit_code == 0, result.output
+    assert pipe.touched, "the precondition of the test above: this pipe sees a reading"
+    assert vaulted.sent("/vault/session") == [{"key": KEY}]
 
 
 @pytest.mark.parametrize("arrived", ["", "\n", "   \n"], ids=["nothing", "a-newline", "blanks"])

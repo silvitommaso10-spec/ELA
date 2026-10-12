@@ -1229,3 +1229,128 @@ async def test_a_login_s_verifier_without_a_text_or_a_page_says_which(tmp_path: 
 
     assert no_text.code == VERIFICATION_ARGUMENTS_INVALID
     assert no_page.code == BROWSER_PAGE_GONE
+
+
+# ----------------------------------------------------------------------------------------
+# What the page was when a login left it (decision 106)
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("landed", "still", "said"),
+    [
+        ("https://posta.example/inbox", 0, ("posta.example/inbox", False)),
+        (
+            "https://posta.example/login?failed=1&next=%2Finbox#top",
+            1,
+            ("posta.example/login", True),
+        ),
+    ],
+    ids=["a page of who is in", "the form again"],
+)
+async def test_the_result_of_a_login_says_where_the_page_ended_its_status_and_the_password_field(
+    tmp_path: Path, landed: str, still: int, said: tuple[str, bool]
+) -> None:
+    """Decision 106. The proof of 2026-10-12 ended with «the text did not appear», and nobody
+    could say whether the site had refused the login or had signed in and the cookie was lost.
+    The result of the step says the three things that tell the two apart — **and it is the
+    result that says them**: a failure's sentence goes to the audit, where a path never goes
+    (ADR 0052 §12). The query and the fragment of the address are in neither."""
+    browser = FakeAccountBrowser(
+        page(landed=landed, landed_status=200, counts_after_click={"#word": still})
+    )
+    tool = await login(browser, FakeVault([MARIO]), tmp_path)
+    await asked(tool)
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+    assert result.output == {
+        "status": 200,
+        "gestures": 3,
+        "page": "page-1",
+        "ended_at": said[0],
+        "ended_status": 200,
+        "password_field_still_there": said[1],
+    }
+    assert browser.landings == ["page-1"], "asked once, of the page the click was made on"
+
+
+async def test_a_document_that_never_came_back_has_no_status_to_tell(tmp_path: Path) -> None:
+    browser = FakeAccountBrowser(page(landed_status=None))
+    tool = await login(browser, FakeVault([MARIO]), tmp_path)
+    await asked(tool)
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.output["ended_status"] is None
+    assert result.output["ended_at"] == "posta.example/login", "where the page was opened"
+
+
+async def test_a_login_that_left_the_site_or_typed_nothing_is_not_asked_where_it_ended(
+    tmp_path: Path,
+) -> None:
+    """What the page was is the diagnosis of a login **that was sent and stayed**: one that
+    left the site says so with its own code, and one that typed nothing has nothing to tell."""
+    left = FakeAccountBrowser(page(left_after_click="https://altro.example/sso"))
+    tool = await login(left, FakeVault([MARIO]), tmp_path)
+    await asked(tool)
+    away = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    untyped = FakeAccountBrowser(page(counts={"#word": 0}))
+    tool = await login(untyped, FakeVault([MARIO]), tmp_path)
+    await asked(tool)
+    nothing = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert away.error is not None and away.error.code == LEFT_SITE
+    assert away.output == {"status": 200, "gestures": 3} and left.landings == []
+    assert nothing.error is not None and nothing.output == {"gestures": 0}
+    assert untyped.landings == []
+
+
+def test_where_a_login_ended_is_in_no_number_the_audit_takes_from_the_result() -> None:
+    """``ended_status`` is an integer, and the audit copies the integers a tool names: it names
+    the two it named before, and not this one — what the page was stays in the result."""
+    assert LoginTool.audit_numbers == {"status", "gestures"}
+
+
+@pytest.mark.parametrize(
+    ("address", "place"),
+    [
+        ("https://posta.example/login?failed=1&next=%2Finbox#top", "posta.example/login"),
+        ("https://posta.example", "posta.example/"),
+        ("https://posta.example:8443/a/b", "posta.example:8443/a/b"),
+        ("https://" + ":".join(("mario", "x")) + "@posta.example/a", "posta.example/a"),
+        ("https://POSTA.example/A", "posta.example/A"),
+        ("about:blank", "about:blank"),
+    ],
+    ids=["query and fragment", "no path", "a port", "a user before the host", "case", "no host"],
+)
+def test_the_place_of_an_address_is_its_host_and_its_path_and_nothing_else(
+    address: str, place: str
+) -> None:
+    from ela.tools.browser import place_of
+
+    assert place_of(address) == place
+
+
+async def test_a_text_that_is_missing_after_a_login_says_where_what_the_page_was_is_written() -> (
+    None
+):
+    """The failure points at the result and carries nothing of it: its sentence goes to the
+    audit. So the proof that fails says by itself where to read what happened."""
+    browser = FakeAccountBrowser(
+        FakePage(shown=False, landed="https://posta.example/accedi-rifiutato")
+    )
+
+    (failure,) = await LoginVerifier(browser, 30.0).verify(
+        [BROWSER_EXPECT_VISIBLE],
+        {"expect_text": "Benvenuto"},
+        succeeded(BROWSER_LOGIN, {"page": await kept(browser)}),
+    )
+
+    assert failure.code == BROWSER_EXPECT_MISSING
+    assert "in the result of this step" in failure.message
+    assert "`ela task results`" in failure.message
+    assert "accedi-rifiutato" not in failure.message and "posta.example" not in failure.message
+    assert set(failure.details) == {"condition"}, "and no detail carries it either"
