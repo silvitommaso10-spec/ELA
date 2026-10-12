@@ -519,9 +519,14 @@ def worker_site(served: list[Site]) -> Site:
     )
 
 
-async def test_a_worker_left_in_the_profile_is_gone_before_a_page_and_the_gate_sees_the_request(
+async def test_a_launch_ela_drives_finds_no_worker_in_the_profile_and_the_gate_sees_the_request(
     browser: AccountChrome, profile: Path, served: list[Site], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """**Where the defence acts** (M13.4f, decision 136; ADR 0064): of a navigation a worker
+    answers the gate is not told — the test after this one —, so before every launch ELA drives
+    the workers of the profile are taken away, and new ones are blocked. A worker left by a
+    launch that let it is not there for the page: the page is the network's, and the boundary
+    was asked about its request — once, by the gate, before the page was used at all."""
     web = worker_site(served)
     await planted(browser, web, monkeypatch)
     assert (profile / "Default" / "Service Worker").is_dir()
@@ -532,9 +537,10 @@ async def test_a_worker_left_in_the_profile_is_gone_before_a_page_and_the_gate_s
         return True
 
     opened = await browser.open(web.origin + "/page", admitted, FakeStop())
+    asked_by_the_gate = list(at_the_gate)
 
     assert await browser.text(opened.page, None) == "from the network"
-    assert at_the_gate == [web.origin + "/page"]
+    assert asked_by_the_gate == [web.origin + "/page"]
     assert "GET /page" in web.requests
 
 
@@ -563,9 +569,10 @@ async def test_with_the_worker_left_the_page_is_the_worker_s_and_the_gate_is_nev
         return True
 
     opened = await browser.open(web.origin + "/page", admitted, FakeStop())
+    asked_by_the_gate = list(at_the_gate)
 
     assert await browser.text(opened.page, None) == "from the worker"
-    assert at_the_gate == []
+    assert asked_by_the_gate == [], "the gate was not told of the navigation the worker answered"
 
 
 # ----------------------------------------------------------------------------------------

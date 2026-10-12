@@ -744,6 +744,16 @@ PROFILE_FIELD = "browser_profile_dir"
 PROFILE_READERS = frozenset(
     {Path(COMPOSITION_DIR) / "settings.py", Path(COMPOSITION_DIR) / "root.py"}
 )
+#: Rule 70 (M13.4f, ADR 0064): the gate of the browser **looks at** the requests the browser makes,
+#: and makes none in its place. Until M13.4f it was a route of Playwright's that fetched the
+#: document of the main frame itself and handed it to the page: the driver chose the cookies of
+#: that request beside the browser, answered by itself a question the browser asks another site,
+#: and was called for one hop of a chain of redirects (measured on 2026-10-12). So the adapters of
+#: :data:`MACHINE_ADAPTER_DIR` call none of :data:`REDOING_CALLS` — a route, what a route does with
+#: a request, and the detaching of a session, which does not return with a request paused — and
+#: name none of :data:`SILENCING_COMMANDS`: an alert that is turned off lets go what it had paused.
+REDOING_CALLS = frozenset({"route", "unroute", "route_from_har", "fetch", "fulfill", "detach"})
+SILENCING_COMMANDS = frozenset({"Fetch.disable"})
 #: Rule 63 (M14.2, ADR 0058): the plan is independent of the device (§13), so the Planner's module
 #: names nothing of the machines. A contract of import-linter cannot say it: the Planner imports the
 #: runner, and the runner the orchestrator.
@@ -1850,6 +1860,37 @@ def _names_the_profile(node: ast.AST) -> bool:
     if isinstance(node, (ast.arg, ast.keyword)):
         return node.arg == PROFILE_FIELD
     return isinstance(node, ast.Constant) and node.value == PROFILE_FIELD
+
+
+def check_the_gate_looks_and_does_not_redo(pkg_root: Path) -> list[Violation]:
+    """Rule 70: the browser's adapter looks at a request, and never makes one (M13.4f, ADR 0064).
+
+    Reported, under :data:`MACHINE_ADAPTER_DIR`: a call whose callee is an attribute named in
+    :data:`REDOING_CALLS`, and a text that names one of :data:`SILENCING_COMMANDS` — a docstring
+    too, as for rule 36: what the adapter must never send is not written in it either. Scoped to
+    the adapter because that is where Playwright is allowed to be (rule 32): outside it nothing
+    can reach a route or a session — and ``route`` is the name of other things there, a model's
+    router among them. A heuristic on a name, like rule 68.
+    """
+    rule = "the-gate-looks-and-does-not-redo"
+    found: list[Violation] = []
+    for path in _source_files(pkg_root / MACHINE_ADAPTER_DIR):
+        name = module_name(path, pkg_root)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in REDOING_CALLS
+            ):
+                found.append(Violation(rule, name, f".{node.func.attr}(", node.lineno))
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                found.extend(
+                    Violation(rule, name, command, node.lineno)
+                    for command in sorted(SILENCING_COMMANDS)
+                    if command in node.value
+                )
+    return found
 
 
 def _on_the_store(call: ast.Call, method: str) -> bool:
@@ -3995,6 +4036,7 @@ RULES: dict[str, Rule] = {
     "the-room-s-word-is-the-room-s": check_the_room_s_word_is_the_room_s,
     "a-secret-is-opened-only-by-an-adapter": check_a_secret_is_opened_only_by_an_adapter,
     "the-profile-s-folder-is-its-adapter-s": check_the_profile_s_folder_is_its_adapter_s,
+    "the-gate-looks-and-does-not-redo": check_the_gate_looks_and_does_not_redo,
 }
 
 
@@ -4504,6 +4546,17 @@ CONSTANTS: tuple[Constant, ...] = (
     Constant("a-policy-is-born-at-its-route", "TOOLS_DIR", DETECTOR),
     Constant(
         "a-policy-is-born-at-its-route",
+        "ROOT_PACKAGE",
+        SUBJECT,
+        why=INEVITABLE,
+        reason=_THE_PACKAGE_ITSELF,
+    ),
+    # the-gate-looks-and-does-not-redo (rule 70, M13.4f)
+    Constant("the-gate-looks-and-does-not-redo", "MACHINE_ADAPTER_DIR", DETECTOR),
+    Constant("the-gate-looks-and-does-not-redo", "REDOING_CALLS", DETECTOR),
+    Constant("the-gate-looks-and-does-not-redo", "SILENCING_COMMANDS", DETECTOR),
+    Constant(
+        "the-gate-looks-and-does-not-redo",
         "ROOT_PACKAGE",
         SUBJECT,
         why=INEVITABLE,

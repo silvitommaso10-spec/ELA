@@ -2036,6 +2036,47 @@ VIOLATIONS: tuple[Case, ...] = (
         "from ela.ports import AuthorizationStore\n",
         "AuthorizationStore",
     ),
+    # --- the-gate-looks-and-does-not-redo (rule 70, M13.4f) ---
+    Case(
+        # The gate of before: a route of Playwright's on the context, called for every request.
+        "the-gate-is-a-route",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def gated(context, gate):\n    await context.route('**/*', gate)\n",
+        ".route(",
+    ),
+    Case(
+        # The document of the main frame asked by the driver, in the browser's place.
+        "the-gate-fetches-the-document-itself",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def gate(handed):\n    return await handed.fetch(max_redirects=0)\n",
+        ".fetch(",
+    ),
+    Case(
+        # And handed to the page as if the site had answered it.
+        "the-gate-hands-the-page-what-it-fetched",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def gate(handed, response):\n    await handed.fulfill(response=response)\n",
+        ".fulfill(",
+    ),
+    Case(
+        # The alert turned off: what it had paused leaves (measured).
+        "the-alert-of-the-gate-is-turned-off",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def quiet(session):\n    await session.send('Fetch.disable')\n",
+        "Fetch.disable",
+    ),
+    Case(
+        # The session detached: with a request paused the call does not return (measured).
+        "the-session-of-the-gate-is-detached",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/account.py",
+        "async def let_go(session):\n    await session.detach()\n",
+        ".detach(",
+    ),
     # --- the-profile-s-folder-is-its-adapter-s (rule 69, M13.9) ---
     Case(
         # A route reading where the profile is, to answer with it — or to open it.
@@ -3089,6 +3130,24 @@ ALLOWED: tuple[Case, ...] = (
         "infrastructure/machine/account.py",
         "async def fill_secret(page, selector, value):\n"
         "    await page.fill(selector, value.reveal())\n",
+        "",
+    ),
+    Case(
+        # Rule 70: the gate asks to be told of the requests, and answers each: it sends none.
+        "the-gate-is-told-and-answers",
+        "the-gate-looks-and-does-not-redo",
+        "infrastructure/machine/browser.py",
+        "async def judged(session, event):\n"
+        "    await session.send('Fetch.enable', {'patterns': []})\n"
+        "    await session.send('Fetch.failRequest', {'requestId': event['requestId']})\n",
+        "",
+    ),
+    Case(
+        # Rule 70: ``route`` is a model's router too — outside the adapter it is not the gate's.
+        "a-tool-asks-the-router-of-the-models",
+        "the-gate-looks-and-does-not-redo",
+        "tools/model.py",
+        "async def routed(router, request):\n    return await router.route(request)\n",
         "",
     ),
     Case(
