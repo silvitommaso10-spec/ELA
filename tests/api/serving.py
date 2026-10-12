@@ -27,7 +27,9 @@ names:
 ``GRACE`` is **a grace handed to this ELA**, in whole seconds, in the place of its own (decision
 76): what a test of the signals asserts — that ELA kills at the grace and not before, says so, and
 ends as the signal ended it — is as true of a second as of ELA's five, and one test alone watches
-those whole. Without it the grace is ELA's.
+those whole. Without it the grace is ELA's. **The test of the second signal hands one that no
+test waits out** (decision 114 of M13.9): there the wait of the close must end at the signal, and
+a grace that could run out first made the test depend on how loaded the machine was.
 
 Two lines of JSON on stdout: the processes the browser had started, when it is in its state — the
 test sends the signal after that line —; and ``{"grace": true}`` at the moment ELA's close begins

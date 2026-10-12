@@ -57,6 +57,9 @@ INTERRUPTED = 130
 WITHIN = f"ela: the browser did not close within {GRACE_SECONDS} s of the stop: ELA killed"
 WITHIN_THE_HANDED = WITHIN.replace(f"{GRACE_SECONDS} s", f"{HANDED_SECONDS} s")
 HURRIED = "ela: the browser had not closed when a second signal arrived: ELA killed"
+NO_TEST_WAITS_IT_OUT = 60 * GUARD_SECONDS
+"""A grace handed to ELA that cannot run out inside a test: the guard of :func:`served` ends the
+test long before it. What ends the wait of the close is then an event, and never this clock."""
 
 
 @pytest.fixture
@@ -309,15 +312,24 @@ def test_a_second_signal_inside_the_close_ends_the_grace_at_once(
 ) -> None:
     """Criterion 14 (decision 55). The same browser that does not answer, and a second signal
     **sent when the close has begun to wait for it** — the child says when. During the close the
-    handler is still ELA's: the signal does not kill, it ends the grace. **The line says the hurry
-    ended the wait, and it is written only when the hurry came before the grace ran out**: no
-    time is asserted from above. The process exits, and the end is the signal's."""
+    handler is still ELA's: the signal does not kill, it ends the grace. The line says the hurry
+    ended the wait. The process exits, and the end is the signal's.
+
+    **The grace of this ELA is one no test waits out** (decision 114, 2026-10-12): with ELA's
+    own five seconds the second signal had to reach the close before a real clock ran out, and
+    on a loaded machine it did not — the test was red twice in a day, green alone every time,
+    and a green that depends on the load is a green by chance. Now only one thing can end the
+    wait: the second signal. If ELA did not hear it, the process does not exit, and the guard
+    of ``served`` says so."""
     again = numbered(name)
-    ended = served("stuck", tmp_path / "ela", origin, profiles, again, again)
+    ended = served(
+        "stuck", tmp_path / "ela", origin, profiles, again, again, grace=NO_TEST_WAITS_IT_OUT
+    )
 
     assert ended.waited, "the control: the second signal was sent inside the close"
     assert HURRIED in ended.error and "1 node" in ended.error
-    assert WITHIN not in ended.error
+    assert "did not close within" not in ended.error
+    assert ended.seconds < NO_TEST_WAITS_IT_OUT, "and it was not the grace that ended the wait"
     assert ended.database == ("ela.db",)
     assert ended.still_running() == []
     assert not ended.left
