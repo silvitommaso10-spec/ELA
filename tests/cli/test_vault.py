@@ -36,6 +36,9 @@ from tests.cli.support import Cli, LoopTransport
 from tests.composition.support import create_schema, database_url, declare
 
 PROGRAM = "ELA_VAULT_PROGRAM"
+THE_COMMAND_S_OWN_CONNECT = client.connect
+"""The function the command line talks through, as it is: taken before any fixture replaces it,
+so that a test that wants the real one gets the real one and not a copy of what it was."""
 KEY = "the-key-of-the-fake-vault"
 
 
@@ -211,7 +214,7 @@ async def test_open_looks_for_its_token_before_it_reads_the_pipe(
     and only afterwards found it could not talk to ELA. It looks for what it needs to talk to
     ELA first, and reads nothing if it is not there."""
     monkeypatch.delenv("ELA_API_TOKEN", raising=False)
-    monkeypatch.setattr(client, "connect", lambda: client.open_client(client.api_settings()))
+    monkeypatch.setattr(client, "connect", THE_COMMAND_S_OWN_CONNECT)
     pipe = watched(monkeypatch, KEY + "\n")
 
     result = await vaulted("vault", "open")

@@ -1280,6 +1280,7 @@ async def test_the_result_of_a_login_says_where_the_page_ended_its_status_and_th
         "ended_status": 200,
         "password_field_still_there": said[1],
     }
+    assert set(result.output) <= LoginTool.output_keys, "the tool declares what it produces"
     assert browser.landings == ["page-1"], "asked once, of the page the click was made on"
 
 
@@ -1315,6 +1316,30 @@ async def test_a_login_that_left_the_site_or_typed_nothing_is_not_asked_where_it
     assert untyped.landings == []
 
 
+async def test_a_login_whose_page_ended_on_another_site_is_not_handed_to_anybody(
+    tmp_path: Path,
+) -> None:
+    """The gate stops a navigation it is asked about, and it is not asked about every one: a
+    chain of redirects is looked at once (measured on 2026-10-12, ADR 0063 §11). So after the
+    click the tool asks the page where it **is** — it knows now —, and a page on another site is
+    not one whose text a verifier looks for, nor one that is told as where the login ended: the
+    step says it left the site, by its origin alone, and the page is closed."""
+    browser = FakeAccountBrowser(
+        page(landed="https://altro.example/sso/callback?code=SECRET-OF-A-CHAIN#frag")
+    )
+    tool = await login(browser, FakeVault([MARIO]), tmp_path)
+    await asked(tool)
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == LEFT_SITE
+    assert result.output == {"status": 200, "gestures": 3}, "no page, and nothing of where it is"
+    assert "https://altro.example" in result.error.message
+    assert "sso" not in result.error.message and "SECRET-OF-A-CHAIN" not in str(result)
+    assert "3 gestures were made" in result.error.message
+    assert browser.kept == [], "not handed to the verifier"
+
+
 def test_where_a_login_ended_is_in_no_number_the_audit_takes_from_the_result() -> None:
     """``ended_status`` is an integer, and the audit copies the integers a tool names: it names
     the two it named before, and not this one — what the page was stays in the result."""
@@ -1330,8 +1355,25 @@ def test_where_a_login_ended_is_in_no_number_the_audit_takes_from_the_result() -
         ("https://" + ":".join(("mario", "x")) + "@posta.example/a", "posta.example/a"),
         ("https://POSTA.example/A", "posta.example/A"),
         ("about:blank", "about:blank"),
+        ("http://[::1]:8080/a", "[::1]:8080/a"),
+        ("https://posta.example/login;jsessionid=ABC123/x;v=1?q=2", "posta.example/login/x"),
+        ("chrome-error://chromewebdata/?why=x#y", "chrome-error://chromewebdata/"),
+        ("data:text/html,<p>the text of a page</p>", "data:"),
+        ("https://[not-an-address/login", "an address that cannot be read"),
     ],
-    ids=["query and fragment", "no path", "a port", "a user before the host", "case", "no host"],
+    ids=[
+        "query and fragment",
+        "no path",
+        "a port",
+        "a user before the host",
+        "case",
+        "no host",
+        "an address of six",
+        "what a site writes after a semicolon in a path",
+        "a page of the browser's own",
+        "a page that is its own address",
+        "not an address",
+    ],
 )
 def test_the_place_of_an_address_is_its_host_and_its_path_and_nothing_else(
     address: str, place: str
@@ -1349,11 +1391,15 @@ async def test_a_text_that_is_missing_after_a_login_says_where_what_the_page_was
     browser = FakeAccountBrowser(
         FakePage(shown=False, landed="https://posta.example/accedi-rifiutato")
     )
+    told = {
+        "page": await kept(browser),
+        "ended_at": "posta.example/accedi-rifiutato",
+        "ended_status": 200,
+        "password_field_still_there": True,
+    }
 
     (failure,) = await LoginVerifier(browser, 30.0).verify(
-        [BROWSER_EXPECT_VISIBLE],
-        {"expect_text": "Benvenuto"},
-        succeeded(BROWSER_LOGIN, {"page": await kept(browser)}),
+        [BROWSER_EXPECT_VISIBLE], {"expect_text": "Benvenuto"}, succeeded(BROWSER_LOGIN, told)
     )
 
     assert failure.code == BROWSER_EXPECT_MISSING

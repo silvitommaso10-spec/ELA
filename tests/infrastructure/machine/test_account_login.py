@@ -15,7 +15,7 @@ did not get in. Here is the whole of it, on a site of the test's:
 **The site is on the loopback, like every site of these tests**, and that is what lets its
 cookie be ``Secure`` with no TLS: a browser keeps such a cookie from a page served in the clear
 only when the machine is talking to itself. Measured on 2026-10-12 under both of its names,
-``localhost`` and ``127.0.0.1``: the three tests say the same.
+``localhost`` and ``127.0.0.1``: the tests of the login itself say the same.
 
 **The first test is the precondition of the others** (ADR 0031 §6): the same site and the same
 browser with no gate at all. A site of the test's that the browser alone could not sign in to
@@ -27,8 +27,11 @@ these are: a folder of its own under ``/tmp`` for every test, and nothing left o
 
 from __future__ import annotations
 
+import asyncio
+import socket
 import threading
 import time
+from collections.abc import AsyncIterator
 from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -37,6 +40,7 @@ from urllib.parse import parse_qs
 import pytest
 from playwright.async_api import async_playwright
 
+from ela.infrastructure.machine.account import AccountChrome
 from ela.ports import Secret
 from ela.testing.fakes import FakeStop
 from tests.infrastructure.machine import test_account_browser as account
@@ -63,10 +67,10 @@ FORM = """
 INSIDE = f'<a href="user">{USER}</a> | <a href="logout">logout</a>'
 OUTSIDE = '<a href="login">login</a>'
 IN = "logout"
-STILL_ARRIVING = 0.5
-"""How long the second half of a page is held back: long beside the instant a click returns in,
-which is when its address is the page's already."""
 """What only a page from inside shows: it is in neither the form nor the page of who is out."""
+HELD_AT_MOST = 20.0
+"""The longest the second half of a page is held when no test lets it go: a test that failed
+before raising its event leaves no thread of the site waiting for ever."""
 
 
 class LoginSite:
@@ -75,15 +79,20 @@ class LoginSite:
     ``POST /login`` with the right two values answers ``302`` to ``home`` — a relative address,
     as sites write it — with the cookie of the access; with anything else it answers ``401`` and
     the form again — or, made with ``back``, with a redirect to ``again``, where the form is
-    served **in two halves with a pause between them**: a site that sends who failed back to its
-    form, on a connection that is slow. ``/home`` shows :data:`INSIDE` to a request that carries
+    served **in two halves, the second when the test says**: a site that sends who failed back
+    to its form, on a connection that is slow. Made ``silent``, it takes the ``POST`` and
+    answers nothing. ``/home`` shows :data:`INSIDE` to a request that carries
     that cookie, and :data:`OUTSIDE` to any other.
     """
 
-    def __init__(self, *, back: bool = False) -> None:
+    def __init__(self, *, back: bool = False, silent: bool = False) -> None:
         self.requests: list[str] = []
         self.cookies: list[str] = []
         self.back = back
+        self.silent = silent
+        self.rest = threading.Event()
+        """Raised by the test to let the second half of ``/again`` go: an instant the test
+        builds, not a time it waits."""
         site = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -106,7 +115,7 @@ class LoginSite:
                 self.end_headers()
                 self.wfile.write(first.encode())
                 self.wfile.flush()
-                time.sleep(STILL_ARRIVING)
+                site.rest.wait(HELD_AT_MOST)
                 self.wfile.write(then.encode())
 
             def _answer(self) -> None:
@@ -120,6 +129,12 @@ class LoginSite:
                 if self.command == "POST" and path == "/login":
                     length = int(self.headers.get("Content-Length") or 0)
                     sent = parse_qs(self.rfile.read(length).decode())
+                    if site.silent:
+                        # A site that takes what was sent and answers nothing: the connection is
+                        # closed under the request.
+                        self.close_connection = True
+                        self.connection.shutdown(socket.SHUT_RDWR)
+                        return
                     if sent.get("acct") == [USER] and sent.get("pw") == [WORD]:
                         ends = formatdate(time.time() + 30 * 24 * 3600, usegmt=True)
                         cookie = f"{ACCESS}; Expires={ends}; Path=/; Secure; HttpOnly; SameSite=Lax"
@@ -152,8 +167,22 @@ class LoginSite:
         self.server.server_close()
 
 
-def login_site(served: list[account.Site], *, back: bool = False) -> LoginSite:
-    made = LoginSite(back=back)
+@pytest.fixture
+async def launched(profile: Path) -> AsyncIterator[list[AccountChrome]]:
+    """The browsers a test made, **closed by ELA's own closing whatever the test did** — the one
+    with a window too: left to the cleanup of the leftovers it would be killed, and a browser
+    with a window that is killed is one the system may open again by itself."""
+    made: list[AccountChrome] = []
+    yield made
+    for browser in made:
+        for page in list(browser._pages):
+            await browser.close(page)
+
+
+def login_site(
+    served: list[account.Site], *, back: bool = False, silent: bool = False
+) -> LoginSite:
+    made = LoginSite(back=back, silent=silent)
     served.append(made)  # type: ignore[arg-type] — closed with the others: it has ``close``
     return made
 
@@ -189,13 +218,14 @@ async def test_the_site_of_these_tests_signs_in_the_browser_alone_with_no_gate(
 
 @pytest.mark.parametrize("shown", [False, True], ids=["without a window", "with a window"])
 async def test_a_login_as_a_site_does_it_passes_the_gate_and_the_next_launch_is_still_in(
-    profile: Path, served: list[account.Site], shown: bool
+    profile: Path, served: list[account.Site], launched: list[AccountChrome], shown: bool
 ) -> None:
     """Decision 105a. The form is sent, the redirect carries the cookie of the access, the page
     after it shows what only who is in sees — and the cookie is in the folder for the next
     launch, which a login exists for."""
     web = login_site(served)
     browser = chrome(profile, shown=lambda: shown)
+    launched.append(browser)
 
     opened = await browser.open(web.origin + "/login", everywhere, FakeStop())
     await browser.fill_secret(opened.page, "input[name=acct]", Secret(USER))
@@ -214,7 +244,7 @@ async def test_a_login_as_a_site_does_it_passes_the_gate_and_the_next_launch_is_
 
 
 async def test_the_browser_says_where_a_login_ended_and_the_status_of_its_document(
-    profile: Path, served: list[account.Site]
+    profile: Path, served: list[account.Site], launched: list[AccountChrome]
 ) -> None:
     """Decision 106, on the real browser: after the click the page is asked where it is **once
     the document the click led to is there** — an event of the page, with no time of its own —,
@@ -222,6 +252,7 @@ async def test_the_browser_says_where_a_login_ended_and_the_status_of_its_docume
     not it. A login the site refuses ends on its form, which still has its password field."""
     web = login_site(served)
     browser = chrome(profile)
+    launched.append(browser)
 
     opened = await browser.open(web.origin + "/login?from=the-test", everywhere, FakeStop())
     before = await browser.landed(opened.page)
@@ -247,24 +278,55 @@ async def test_the_browser_says_where_a_login_ended_and_the_status_of_its_docume
 
 
 async def test_a_page_that_is_still_arriving_is_waited_for_before_it_is_asked_about(
-    profile: Path, served: list[account.Site]
+    profile: Path, served: list[account.Site], launched: list[AccountChrome]
 ) -> None:
     """A site that sends a refused login **back to its form with a redirect**: the page after a
     redirect is asked for by the browser itself, and its address is the page's as soon as its
     first bytes are there. Asked then, the page has no password field yet — and the result
     would say the form was gone, which is what a login that worked looks like. What is waited
-    for is the document: an event of the page, not a time."""
+    for is the document: an event of the page, not a time.
+
+    **The instant is built**: the site holds the second half of the page until the test lets it
+    go, and the test first reads that the field is not there."""
     web = login_site(served, back=True)
     browser = chrome(profile)
+    launched.append(browser)
 
     opened = await browser.open(web.origin + "/login", everywhere, FakeStop())
     await browser.fill_secret(opened.page, "input[name=acct]", Secret(USER))
     await browser.fill_secret(opened.page, "input[name=pw]", Secret("not the word"))
     await browser.click(opened.page, "input[type=submit]")
+    arriving = await browser.count(opened.page, "input[name=pw]")
+    asyncio.get_running_loop().call_later(0.2, web.rest.set)
     refused = await browser.landed(opened.page)
     left = await browser.count(opened.page, "input[name=pw]")
     await browser.close(opened.page)
 
+    assert arriving == 0, "the precondition: the click returned on a page still arriving"
     assert web.requests == ["GET /login", "POST /login", "GET /again"]
     assert (refused.address, refused.status) == (web.origin + "/again", 200)
     assert left == 1, "the form is there: the second half of the page was waited for"
+
+
+async def test_a_site_that_answers_nothing_to_the_login_leaves_the_form_and_no_status(
+    profile: Path, served: list[account.Site], launched: list[AccountChrome]
+) -> None:
+    """The site takes what was sent and closes the connection. The page does not move — the
+    form is still there, with its field —, and **the status of the form that was opened is not
+    the status of what came after**: nothing came. Without that, a login nobody answered would
+    read as one the site refused."""
+    web = login_site(served, silent=True)
+    browser = chrome(profile)
+    launched.append(browser)
+
+    opened = await browser.open(web.origin + "/login", everywhere, FakeStop())
+    await browser.fill_secret(opened.page, "input[name=acct]", Secret(USER))
+    await browser.fill_secret(opened.page, "input[name=pw]", Secret(WORD))
+    await browser.click(opened.page, "input[type=submit]")
+    nothing = await browser.landed(opened.page)
+    left = await browser.count(opened.page, "input[name=pw]")
+    await browser.close(opened.page)
+
+    assert web.requests == ["GET /login", "POST /login"]
+    assert (nothing.address, left) == (web.origin + "/login", 1), "the page did not move"
+    assert nothing.status is None, "the 200 of the form is not the status of a login unanswered"

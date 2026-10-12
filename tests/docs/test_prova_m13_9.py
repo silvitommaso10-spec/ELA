@@ -655,7 +655,8 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     assert set(questions) >= AS_YOU, "the four capabilities with the profile were each asked"
     for capability in sorted(AS_YOU):
         shown = questions[capability]
-        assert "    | che cosa: " in shown and "signed in" in shown, (
+        assert "    | che cosa: " in shown, shown
+        assert "signed in" in shown.split("    | che cosa: ", 1)[1].split("\n", 1)[0], (
             f"decision 107: what the user reads of a question of {capability} before the yes "
             "says that ELA acts signed in as them — in a sentence, not only in the capability's "
             f"name:\n{shown}"
