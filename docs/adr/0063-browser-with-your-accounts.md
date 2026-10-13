@@ -1014,6 +1014,8 @@ dice, con la sezione di questo ADR a cui guardare.
   browser: quello interromperebbe un handler che può essere avvisato, questa chiude un figlio che è stato
   avvisato e non è uscito. E il gestore del segnale è di ELA, da quando c'è un'ELA da chiudere a quando la
   chiusura è finita: non quello che uvicorn installa (`docs/milestones/M13.4e.md`, «La misura dei segnali»).
+  *Dal 13 ottobre 2026*: per lo stesso tempo un segnale sveglia il loop **qualunque thread lo riceva** — consegnato
+  a un altro thread durante la chiusura, un secondo segnale non era sentito (misurato; «La terza parte»).
 - **ADR 0044** §4 e §5 — le rotte della console e le sue viste, con «Il browser di ELA» (§10).
 - **ADR 0045** §3 — il terzo modo di coprire una riga che chiede a meno di un'autorizzazione, che non è un
   grant (§1).

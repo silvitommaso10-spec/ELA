@@ -146,9 +146,9 @@ if __name__ == "__main__":
     # says where every thread of it is, on the stream the test puts in its failure — so that a
     # red of these tests names the place, and is not only «did not exit». Seen once, under the
     # load of the whole suite, on 2026-10-12: a mechanism that explains it was measured apart —
-    # a signal the system hands to another thread does not wake a loop that waits — and is
-    # question 141 of ``docs/milestones/M13.4f.md``; what this prints is how the next one will
-    # be told from it. A child that ends as it should has ended long before.
+    # a signal the system hands to another thread did not wake a loop that waits — and repaired
+    # on 2026-10-13 (``docs/milestones/M13.4e.md``, the third part); what this prints is how
+    # the next one will be told from it. A child that ends as it should has ended long before.
     faulthandler.dump_traceback_later(STILL_HERE_SECONDS, repeat=True, file=sys.stderr)
     signal.signal(signal.SIGINT, signal.default_int_handler)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)

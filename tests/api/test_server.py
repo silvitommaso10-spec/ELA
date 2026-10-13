@@ -637,7 +637,7 @@ async def test_a_signal_that_arrives_while_the_loop_sleeps_wakes_it() -> None:
 
 @POSIX
 async def test_a_signal_the_system_hands_to_another_thread_wakes_the_loop_too(
-    found: dict[int, Any],
+    found: dict[int, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Decision 141 (M13.4e, the third part). The system hands a signal sent to a process to
     **any** of its threads that does not block it; a handler of Python's runs in the main thread
@@ -646,11 +646,22 @@ async def test_a_signal_the_system_hands_to_another_thread_wakes_the_loop_too(
     second signal was heard only when something else woke the loop. Built here with a real
     signal sent **to a thread that is not the main one**, inside the block that holds ELA's
     handlers, while nothing is scheduled; the guard is the test's, and is the only other thing
-    that can wake the loop."""
+    that can wake the loop.
+
+    **And the loop goes back to sleep**: what the signal wrote is taken away the first time the
+    loop reads it. Left there, the loop would be woken at every turn until the close ended."""
     loop = asyncio.get_running_loop()
     stopping = asyncio.Event()
     guard = asyncio.Event()
     told = server.Signalled(loop, stopping, [])
+    drained: list[None] = []
+    draining = server._drained  # noqa: SLF001 — counted, and still the one that drains
+
+    def counted(reading: socket.socket) -> None:
+        drained.append(None)
+        draining(reading)
+
+    monkeypatch.setattr(server, "_drained", counted)
     released = threading.Event()
     elsewhere = threading.Thread(target=released.wait)
     elsewhere.start()
@@ -662,6 +673,7 @@ async def test_a_signal_the_system_hands_to_another_thread_wakes_the_loop_too(
 
     sender = threading.Timer(0.05, send)
     watchdog = threading.Timer(5.0, loop.call_soon_threadsafe, [guard.set])
+    before = dispositions()
     try:
         with server._held(told):  # noqa: SLF001 — what holds the handlers, and wakes the loop
             sender.start()
@@ -670,6 +682,8 @@ async def test_a_signal_the_system_hands_to_another_thread_wakes_the_loop_too(
             await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
             for wait in waits:
                 wait.cancel()
+            for _ in range(TURNS_OF_THE_LOOP):
+                await asyncio.sleep(0)
     finally:
         watchdog.cancel()
         sender.join()
@@ -678,7 +692,13 @@ async def test_a_signal_the_system_hands_to_another_thread_wakes_the_loop_too(
 
     assert stopping.is_set(), "the signal reached the handler"
     assert not guard.is_set(), "and it woke the loop itself: nothing else had to"
-    assert dispositions() == found
+    assert dispositions() == before, "and the handlers are the ones this test's loop had"
+    assert len(drained) == 1, "one signal, read once: the loop was not woken again by it"
+
+
+TURNS_OF_THE_LOOP = 5
+"""How many times the loop is let turn once a signal was heard: what it wrote is read once, or
+at every one of these."""
 
 
 def wakes() -> int:
@@ -717,13 +737,14 @@ def test_what_wakes_the_loop_is_ela_s_while_it_serves_and_closes_and_then_what_i
     with_a_browser(monkeypatch, browser)
     theirs, other = socket.socketpair()
     theirs.setblocking(False)
+    found_by_ela = theirs.fileno()
     serving: list[int] = []
 
     async def look() -> None:
         serving.append(wakes())
 
     fake.during = look
-    before = signal.set_wakeup_fd(theirs.fileno())
+    before = signal.set_wakeup_fd(found_by_ela)
     try:
         server.serve(settings)
         after = wakes()
@@ -732,9 +753,9 @@ def test_what_wakes_the_loop_is_ela_s_while_it_serves_and_closes_and_then_what_i
         theirs.close()
         other.close()
 
-    assert serving and serving[0] not in (-1, theirs.fileno()), "while it serves, ELA's own"
+    assert serving and serving[0] not in (-1, found_by_ela), "while it serves, ELA's own"
     assert browser.woken_by == serving[0], "and the same one while the close runs"
-    assert after == theirs.fileno(), "afterwards, the one it had found"
+    assert after == found_by_ela, "afterwards, the one it had found"
 
 
 class ReadsNothing:

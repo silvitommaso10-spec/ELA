@@ -22,6 +22,10 @@ first raises the stop, the second the hurry, and none of them raises an exceptio
 task — so the close always runs whole, and the loop is never torn down with a call of the
 browser's in flight. Only when ``_serve`` has returned does the process end, **as it ended
 before**: the signals it received are raised again, with the handlers ELA had found back in place.
+
+**And a signal wakes the loop, whichever thread the system hands it to** (M13.4e, the third
+part: decision 141 of the review of 2026-10-13): for the same span a descriptor of ELA's is where
+the system writes when a signal arrives, and the loop reads it (:func:`_woken`).
 """
 
 from __future__ import annotations
@@ -114,16 +118,63 @@ class Signalled:
         self.received = received
         self.hurry = asyncio.Event()
         self.serving: uvicorn.Server | None = None
-        self._loop = loop
+        self.loop = loop
         self._stopping = stopping
 
     def __call__(self, number: int, frame: FrameType | None) -> None:
         self.received.append(number)
         again = len(self.received) > 1
-        self._loop.call_soon_threadsafe(self.hurry.set if again else self._stopping.set)
+        self.loop.call_soon_threadsafe(self.hurry.set if again else self._stopping.set)
         if self.serving is not None:
             self.serving.should_exit = True
             self.serving.force_exit = again
+
+
+def _drained(reading: socket.socket) -> None:
+    """Take away what a signal wrote: the loop has woken, and that was the whole of its use."""
+    with suppress(OSError):
+        reading.recv(64)
+
+
+@contextmanager
+def _woken(loop: asyncio.AbstractEventLoop) -> Iterator[None]:
+    """A signal wakes ``loop`` from here to the end of the block, **whichever thread the system
+    hands it to**; then whatever woke it before (M13.4e, the third part: decision 141).
+
+    A handler installed with ``signal.signal`` runs in the main thread, when the main thread next
+    runs Python — and the system hands a signal sent to a process to any of its threads. Handed
+    to another one while the loop sleeps in its selector, nothing ran the handler until something
+    else woke the loop: measured on 2026-10-13 with these handlers, a second signal during the
+    close — when nothing else does — was not heard, and a first one waited for the next tick of
+    the server. With a descriptor the system writes into at every signal
+    (``signal.set_wakeup_fd``), and that the loop reads, the loop wakes at once: it is what
+    ``loop.add_signal_handler`` rests on, without what made ELA not use it (:func:`_held`).
+
+    **A loop that cannot be asked to read a descriptor is given none**: the one Python gives on
+    Windows sets a wake-up of its own when it is made (read in ``asyncio``; not measured there).
+    Called from the main thread only, like everything that touches the signals."""
+    reading, writing = socket.socketpair()
+    try:
+        reading.setblocking(False)
+        writing.setblocking(False)
+        try:
+            loop.add_reader(reading, _drained, reading)
+        except NotImplementedError:
+            read = False
+        else:
+            read = True
+        if not read:
+            yield
+            return
+        found = signal.set_wakeup_fd(writing.fileno(), warn_on_full_buffer=False)
+        try:
+            yield
+        finally:
+            signal.set_wakeup_fd(found)
+            loop.remove_reader(reading)
+    finally:
+        reading.close()
+        writing.close()
 
 
 @contextmanager
@@ -132,7 +183,9 @@ def _held(told: Signalled) -> Iterator[None]:
 
     Installed with ``signal.signal``, as uvicorn installs its own, and only from the main thread —
     Python allows no other. Not with ``loop.add_signal_handler``: measured, a signal is then
-    delivered once to the loop's callback and once more to whoever raises it again.
+    delivered once to the loop's callback and once more to whoever raises it again. **What that
+    call would have given and this one does not is the wake-up of the loop**, and it is added
+    here, for the same span (:func:`_woken`).
 
     **A ``SIGHUP`` found ignored stays ignored**: that is ``nohup ela serve``, which survives its
     terminal today. ``SIGINT`` and ``SIGTERM`` are taken whatever was found, because uvicorn took
@@ -147,7 +200,8 @@ def _held(told: Signalled) -> Iterator[None]:
         if number != hangup or signal.getsignal(number) is not signal.SIG_IGN
     }
     try:
-        yield
+        with _woken(told.loop):
+            yield
     finally:
         for number, handler in found.items():
             # ``None`` is what Python answers for a handler it did not install itself, and it
