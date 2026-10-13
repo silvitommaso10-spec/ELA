@@ -903,3 +903,80 @@ async def test_a_window_the_user_closes_is_told_and_the_folder_is_free(
     assert await browser.occupied() is None
     opened = await browser.open(web.origin + "/", everywhere, FakeStop())
     await browser.close(opened.page)
+
+
+# ----------------------------------------------------------------------------------------
+# A page with a window, and the fields read again (decisions 143 and 144 of 2026-10-13)
+# ----------------------------------------------------------------------------------------
+
+
+async def a_screen() -> bool:
+    return True
+
+
+async def test_a_page_asked_with_a_window_is_in_a_browser_that_has_one_with_the_switch_off(
+    profile: Path, served: list[Site]
+) -> None:
+    """Decision 143, on the real browser: the switch is off, and the browser of this one page
+    was not started without a window — with everything else a launch of ELA's has."""
+    web = site(served, {"/": (200, {}, LOGIN)})
+    browser = chrome(profile, on_a_screen=a_screen)
+
+    opened = await browser.open_shown(web.origin + "/", everywhere, FakeStop())
+    try:
+        arguments = arguments_of(profile)
+        found = await browser.count(opened.page, "#word")
+    finally:
+        await browser.close(opened.page)
+
+    assert f"user-data-dir={profile}" in arguments
+    assert not any(argument.startswith("headless") for argument in arguments), arguments
+    for ours in LAUNCH_ARGUMENTS:
+        assert ours.removeprefix("--") in arguments, ours
+    assert "no-sandbox" not in arguments
+    assert found == 1, "and it is a page like any other: the form is there"
+
+
+async def test_a_field_holds_what_was_typed_until_a_key_lands_in_it(
+    browser: AccountChrome, served: list[Site]
+) -> None:
+    """Decision 144. Whether a field still holds what a secret holds is the adapter's to say —
+    it opens the secret to compare it, as it opened it to type it. A key, as the keyboard sends
+    it to whatever has the focus in the page, lands in the field written last: after it that
+    field holds something else, and the other still holds what was typed."""
+    web = site(served, {"/": (200, {}, LOGIN)})
+    opened = await browser.open(web.origin + "/", everywhere, FakeStop())
+    await browser.fill_secret(opened.page, "#user", Secret("mario"))
+    await browser.fill_secret(opened.page, "#word", Secret(SENTINEL))
+
+    before = (
+        await browser.holds(opened.page, "#user", Secret("mario")),
+        await browser.holds(opened.page, "#word", Secret(SENTINEL)),
+    )
+    await browser._pages[opened.page].page.keyboard.press("x")
+    after = (
+        await browser.holds(opened.page, "#user", Secret("mario")),
+        await browser.holds(opened.page, "#word", Secret(SENTINEL)),
+    )
+
+    assert before == (True, True)
+    assert after == (True, False)
+    assert await browser.holds(opened.page, "#word", Secret(SENTINEL + "x")), (
+        "the whole of what the field holds is compared, and that is what it holds now"
+    )
+    assert not await browser.holds(opened.page, "#word", Secret(SENTINEL[:-1]))
+
+
+async def test_a_field_read_again_that_cannot_be_read_says_nothing_of_the_value(
+    browser: AccountChrome, served: list[Site]
+) -> None:
+    web = site(served, {"/": (200, {}, '<p id="text">not a field</p>')})
+    opened = await browser.open(web.origin + "/", everywhere, FakeStop())
+
+    with pytest.raises(BrowserFailed) as failed:
+        await browser.holds(opened.page, "#text", Secret(SENTINEL))
+
+    error: BaseException | None = failed.value
+    while error is not None:
+        assert SENTINEL not in f"{error!s} {error!r} {error.args}"
+        error = error.__cause__ or error.__context__

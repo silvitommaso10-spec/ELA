@@ -1224,21 +1224,44 @@ async def test_an_ela_that_cannot_name_its_own_command_says_so_and_gives_no_line
 
 
 @pytest.mark.parametrize("folder", ["/Users/somebody/ELA", "/Users/somebody/My ELA"])
-async def test_the_sentence_says_from_which_folder_the_line_is_run(
+async def test_the_line_enters_the_folder_of_ela_by_itself_and_leaves_the_terminal_where_it_was(
     tmp_path: Path, folder: str
 ) -> None:
-    """ELA's command reads the token of the API from the ``.env`` of the folder it is launched
-    in: pasted in a terminal opened elsewhere the line would reach nothing. Where ELA read a
-    ``.env``, the sentence beside the line names that folder — the line itself stays the line."""
+    """Decision 145 of the review of 2026-10-13, which revises decision 101 on a fact: twice the
+    line was pasted in a terminal that was not in ELA's folder, where ELA's command finds no
+    ``.env`` to read its token from. Where ELA read a ``.env``, **the line is a subshell that
+    enters that folder** — measured in ``zsh`` and in ``bash``: the vault's program still asks
+    on the terminal, ELA's command still reads a pipe, and whoever pasted it is still where they
+    were. The two halves are the two absolute paths of before."""
     at = program(tmp_path)
     made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at, command=COMMAND, folder=folder)
     bare = await door(FakeVault([MARIO], state=VAULT_LOCKED), at, command=COMMAND)
 
     state, without = await made.state(), await bare.state()
 
-    assert state.opens_with == without.opens_with, "the line is the same"
-    assert shlex.quote(folder) in state.message and ".env" in state.message
-    assert without.message.endswith("` in your terminal") and ".env" not in without.message
+    assert without.opens_with == f"{at} unlock --raw | {COMMAND} vault open"
+    assert state.opens_with == f"(cd {shlex.quote(folder)} && {without.opens_with})"
+    inside = shlex.split(state.opens_with.removeprefix("(").removesuffix(")"))
+    assert inside[:3] == ["cd", folder, "&&"], "the folder is one word, whatever is in its name"
+    assert inside[3:] == shlex.split(without.opens_with)
+
+
+@pytest.mark.parametrize("folder", [None, "/Users/somebody/My ELA"])
+async def test_the_sentence_beside_the_line_does_not_say_where_to_run_it_any_more(
+    tmp_path: Path, folder: str | None
+) -> None:
+    """Decision 145: the line works from any folder, so the sentence says to run it in a
+    terminal, and nothing about which. A sentence that named a folder was read after the line
+    had been pasted elsewhere."""
+    at = program(tmp_path)
+    made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at, command=COMMAND, folder=folder)
+
+    state = await made.state()
+    met = await made.find(SITE)
+
+    assert state.message == f"the vault is locked: run `{state.opens_with}` in your terminal"
+    assert "opened in the folder" not in state.message and ".env" not in state.message
+    assert code_of(met) == "vault.locked" and met.message == state.message
 
 
 @pytest.mark.parametrize(

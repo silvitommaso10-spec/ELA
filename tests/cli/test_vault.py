@@ -240,11 +240,18 @@ async def test_a_pipe_is_read_when_the_token_is_there(
 
 @pytest.mark.parametrize("arrived", ["", "\n", "   \n"], ids=["nothing", "a-newline", "blanks"])
 async def test_open_with_nothing_on_its_stdin_sends_nothing(vaulted: Vaulted, arrived: str) -> None:
-    """``bw unlock`` that failed — a wrong master password — prints no key: nothing is sent."""
+    """A ``bw unlock`` that failed prints no key: nothing is sent. **The sentence says the fact
+    and guesses no cause** (decision 146 of the review of 2026-10-13): it used to ask «a wrong
+    master password?», and on the day it was read the vault's program had not reached its
+    server — and had said so, on the line above. So it sends there."""
     result = await vaulted("vault", "open", input=arrived)
 
     assert result.exit_code == 2
-    assert "no key arrived" in result.output
+    assert "no key arrived on the pipe" in result.output
+    assert "the vault's program printed none" in result.output
+    assert "what it wrote is above this line" in result.output
+    assert "Nothing was sent to ELA" in result.output
+    assert "password" not in result.output and "?" not in result.output, "no cause is guessed"
     assert vaulted.sent("/vault/session") == []
 
 

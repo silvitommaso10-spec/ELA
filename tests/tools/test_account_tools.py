@@ -27,7 +27,12 @@ from ela.domain import (
     PermissionOutcome,
     RiskLevel,
 )
-from ela.permissions import BROWSER_ACT_AS_YOU, BROWSER_LOGIN, BROWSER_READ_AS_YOU
+from ela.permissions import (
+    BROWSER_ACT_AS_YOU,
+    BROWSER_LOGIN,
+    BROWSER_READ_AS_YOU,
+    production_catalogue,
+)
 from ela.ports import (
     PROFILE_PROCESS,
     PROFILE_STEP,
@@ -61,8 +66,10 @@ from ela.tools.account import (
     ACTS_AS_YOU,
     BROWSER_SECOND_FACTOR,
     ENTRY_FORGOTTEN,
+    FIELD_CHANGED,
     LOGIN_FORM_GET,
     LOGS_IN,
+    NO_WINDOW,
     NOT_A_PASSWORD_FIELD,
     PROFILE_BUSY,
     PROFILE_UNDECLARED,
@@ -1514,3 +1521,221 @@ async def test_a_login_whose_time_ran_out_inside_the_click_does_not_say_two_gest
     said = result.error.message
     assert "the click was asked" in said and "does not know whether the login was sent" in said
     assert "the login was sent to" not in said, "nor does it say that it was"
+
+
+# ----------------------------------------------------------------------------------------
+# A login always has a window (decisions 143 and 144 of the review of 2026-10-13)
+# ----------------------------------------------------------------------------------------
+
+
+@EVERY
+async def test_a_login_opens_its_page_with_a_window_and_the_other_two_as_the_switch_says(
+    capability: str, tmp_path: Path
+) -> None:
+    """Decision 143. Measured by the proof of 2026-10-13, on one site: without a window the site
+    gave the form back, with a window the same login went through. ``browser.login`` asks the
+    port for a page **with a window, whatever the user's switch says**; a read and an action
+    with the profile ask for a page, and the switch decides."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    tool = tools(browser, await door(vault, tmp_path))[capability]
+    assert (await tool.prospect(CALLS[capability])).refusal is None
+
+    result = await tool.execute(decision(capability), CALLS[capability], FakeStop())
+
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+    opened = [f"https://posta.example{CALLS[capability]['path']}"]
+    assert browser.opened == opened
+    assert browser.shown_opens == (opened if capability == BROWSER_LOGIN else [])
+
+
+def test_the_question_of_a_login_says_that_a_window_appears_and_no_other_question_does() -> None:
+    """Decision 143: said in the sentence of the tool — what the question shows as «what it
+    does» —, and written nowhere else: not in the sentence of the capability, and not in the
+    sentences of the tools that follow the switch."""
+    assert "a window of ELA's browser appears on your screen" in LOGS_IN
+    assert "window" not in READS_AS_YOU and "window" not in ACTS_AS_YOU
+    described = {spec.id: spec.description for spec in production_catalogue().specs()}
+    assert "window" not in described[BROWSER_LOGIN]
+
+
+async def test_a_login_that_cannot_have_a_window_is_refused_before_the_question(
+    tmp_path: Path,
+) -> None:
+    """Decision 143: with no window to be had a login does not start without one. Before the
+    question it is a refusal with a code of its own: it costs no yes, the vault is asked
+    nothing, and nothing is opened."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page(), screen=False)
+    tool = await login(browser, vault, tmp_path)
+
+    refusal = (await tool.prospect(LOGIN)).refusal
+
+    assert refusal is not None and refusal.code == NO_WINDOW
+    assert not refusal.retryable
+    assert "a login does not start without one" in refusal.message
+    assert refusal.message.endswith(": no question is asked")
+    assert vault.calls == [], "the vault is not asked for a login that will not start"
+    assert browser.opened == [] and browser.shown_opens == []
+    assert NO_WINDOW in LoginTool.error_codes
+    assert NO_WINDOW not in AccountReadTool.error_codes | AccountActTool.error_codes
+
+
+@pytest.mark.parametrize("capability", [BROWSER_READ_AS_YOU, BROWSER_ACT_AS_YOU])
+async def test_a_read_and_an_action_do_not_ask_whether_a_window_can_be_had(
+    capability: str, tmp_path: Path
+) -> None:
+    """They run as the switch says, and without a window they work (measured by the proof)."""
+    browser = FakeAccountBrowser(page(), screen=False)
+    browser.raising["can_show"] = BrowserFailed("nobody may ask")
+    tool = tools(browser, await door(None, None))[capability]
+
+    assert (await tool.prospect(CALLS[capability])).refusal is None
+
+
+@pytest.mark.parametrize(
+    "doubt",
+    [BrowserFailed("the session could not be read"), ProfileUnsafe("the folder is a link")],
+    ids=["a-reading-that-failed", "another-error-of-the-browser"],
+)
+async def test_a_doubt_about_the_window_refuses_a_login_like_no_window(
+    tmp_path: Path, doubt: Exception
+) -> None:
+    """Fail-safe: ELA could not tell that a window can be had, and a doubt is not a yes."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    tool = await login(browser, vault, tmp_path)
+    browser.raising["can_show"] = doubt
+
+    refusal = (await tool.prospect(LOGIN)).refusal
+
+    assert refusal is not None and refusal.code == NO_WINDOW
+    assert vault.calls == [] and browser.opened == []
+
+
+async def test_a_login_asked_while_ela_stops_says_the_stop_and_not_the_window(
+    tmp_path: Path,
+) -> None:
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    tool = await login(browser, vault, tmp_path)
+    browser.raising["can_show"] = BrowserStopped()
+
+    refusal = (await tool.prospect(LOGIN)).refusal
+
+    assert refusal is not None and refusal.code == STOPPED
+    assert vault.calls == []
+
+
+async def test_whether_a_window_can_be_had_is_asked_within_the_time_of_the_tool(
+    tmp_path: Path,
+) -> None:
+    """A reading that never answers is a doubt once the tool's time is over, never a wait."""
+
+    class NeverSays(FakeAccountBrowser):
+        async def can_show(self) -> bool:
+            await asyncio.Event().wait()
+            return True
+
+    vault = FakeVault([MARIO])
+    browser = NeverSays(page())
+    sites = Browsing(sites=SITES.sites, timeout_seconds=0)
+    tool = LoginTool(sites, browser, await door(vault, tmp_path), CLOCK, FakeIdGenerator())
+
+    refusal = (await tool.prospect(LOGIN)).refusal
+
+    assert refusal is not None and refusal.code == NO_WINDOW
+    assert vault.calls == []
+
+
+async def test_a_window_that_went_away_after_the_yes_spends_it_and_starts_nothing(
+    tmp_path: Path,
+) -> None:
+    """Between the question and the yes the session of the screen went away: the opening itself
+    refuses. The yes is spent, no browser was started, and the vault was not asked."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+    vault.calls.clear()
+    browser.screen = False
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == NO_WINDOW
+    assert not result.error.retryable
+    assert result.output == {"gestures": 0}
+    assert "the yes was spent" in result.error.message
+    assert vault.calls == [], "nothing is taken from the vault for a login that did not start"
+    assert browser.opened == [] and browser.secrets == [] and browser.clicks == []
+
+
+async def test_the_two_fields_are_read_again_right_before_the_click(tmp_path: Path) -> None:
+    """Decision 144. Measured on 2026-10-13: the window of a driven launch comes in front, with
+    the focus on the field just written — a key pressed in those seconds lands in the form. So
+    right before the click the tool asks the browser whether each field still holds what was
+    typed: **the comparison is the browser's adapter's**, which is handed the secrets as it was
+    handed them to type, and the tool gets a yes or a no."""
+    vault = FakeVault([MARIO])
+
+    class Counting(FakeAccountBrowser):
+        asked_before_the_click: list[tuple[str, str]] | None = None
+
+        async def click(self, page: str, selector: str) -> None:
+            self.asked_before_the_click = list(self.held)
+            await super().click(page, selector)
+
+    browser = Counting(page())
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.status is ExecutionStatus.SUCCEEDED, result.error
+    assert browser.asked_before_the_click == [("#user", USERNAME), ("#word", TYPED)]
+    assert browser.held == [("#user", USERNAME), ("#word", TYPED)], "asked once each, and before"
+    assert result.output["gestures"] == 3
+
+
+@pytest.mark.parametrize("changed", ["#user", "#word"], ids=["the-username", "the-password"])
+async def test_a_field_that_no_longer_holds_what_was_typed_stops_the_click(
+    tmp_path: Path, changed: str
+) -> None:
+    """Decision 144: it does not click, and says so with a code of its own. The two gestures
+    made are counted, nothing was sent, the page is closed — and no sentence carries a value."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    browser.changed.add(changed)
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == FIELD_CHANGED
+    assert not result.error.retryable, "a login is asked again by whoever reads this, not by ELA"
+    assert result.output == {"status": 200, "gestures": 2}
+    assert "ELA did not click" in result.error.message
+    assert "2 gestures were made" in result.error.message
+    assert browser.clicks == [], "the form was not sent"
+    assert browser.closed == ["page-1"] and browser.kept == []
+    said = result.model_dump_json()
+    assert TYPED not in said and USERNAME not in said
+    assert FIELD_CHANGED in LoginTool.error_codes
+    assert FIELD_CHANGED not in AccountReadTool.error_codes | AccountActTool.error_codes
+
+
+async def test_a_browser_that_fails_while_it_reads_a_field_again_does_not_click(
+    tmp_path: Path,
+) -> None:
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    browser.raising["holds"] = BrowserFailed("Error")
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == FAILED
+    assert result.output == {"gestures": 2}
+    assert browser.clicks == []
+    assert TYPED not in result.model_dump_json() and USERNAME not in result.model_dump_json()

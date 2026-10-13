@@ -44,6 +44,7 @@ from ela.infrastructure.machine.account import (
     saved_in,
     with_preferences,
 )
+from ela.infrastructure.machine.browser import PlaywrightBrowser
 from ela.ports import (
     PROFILE_PROCESS,
     PROFILE_STEP,
@@ -52,6 +53,8 @@ from ela.ports import (
     BrowserFailed,
     BrowserStopped,
     BrowserUnsupported,
+    NoWindow,
+    Opened,
     ProfileBusy,
     ProfileUndeclared,
     ProfileUnsafe,
@@ -1501,3 +1504,176 @@ async def test_once_ela_is_stopping_nothing_of_the_profile_is_started(tmp_path: 
     with pytest.raises(BrowserStopped):
         await made.installed()
     assert not (tmp_path / "profile").exists()
+
+
+# ----------------------------------------------------------------------------------------
+# A page with a window, whatever the switch says (decision 143 of the review of 2026-10-13)
+# ----------------------------------------------------------------------------------------
+
+AN_ADDRESS = "https://posta.example/login"
+
+
+async def a_screen() -> bool:
+    return True
+
+
+async def no_screen() -> bool:
+    return False
+
+
+async def nobody_may_ask() -> bool:
+    raise AssertionError("the system was asked whether there is a screen")
+
+
+def with_a_screen(
+    profile: Path,
+    screen: Any,
+    *,
+    system: str = "Darwin",
+    shown: bool = False,
+    stopping: asyncio.Event | None = None,
+) -> AccountChrome:
+    """The adapter, told how the system answers «is this process inside a session of the
+    screen» — and nothing started."""
+    return AccountChrome(
+        asyncio.Event() if stopping is None else stopping,
+        environment={"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": "C.UTF-8"},
+        kept=Kept(),
+        system=system,
+        profile=profile,
+        shown=lambda: shown,
+        on_a_screen=screen,
+    )
+
+
+@pytest.fixture
+def launches(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """Whether each launch the adapter came to was without a window — read where the launch
+    reads it, at the moment the opening it inherits is reached; and nothing is launched."""
+    seen: list[bool] = []
+
+    async def opened(self: AccountChrome, address: str, allowed: Any, stop: Any) -> Opened:
+        seen.append(self._launch()["headless"])
+        return Opened(page="page-1", status=200, address=address, left=None)
+
+    monkeypatch.setattr(PlaywrightBrowser, "open", opened)
+    return seen
+
+
+def everywhere(address: str) -> bool:
+    return True
+
+
+async def test_whether_a_window_can_be_had_is_asked_of_the_system_each_time(
+    tmp_path: Path,
+) -> None:
+    """A look, like every other of the profile's: asked at every call and never remembered, and
+    nothing is made or started."""
+    answers = [True, False]
+
+    async def answer() -> bool:
+        return answers.pop(0)
+
+    browser = with_a_screen(tmp_path / "profile", answer)
+
+    assert await browser.can_show() is True
+    assert await browser.can_show() is False
+    assert answers == [], "asked both times"
+    assert not (tmp_path / "profile").exists()
+
+
+async def test_an_adapter_nobody_told_of_a_screen_has_none(tmp_path: Path) -> None:
+    """Fail-safe: whoever builds the adapter without saying how the system answers gets «no»."""
+    assert await chrome(tmp_path / "profile").can_show() is False
+
+
+async def test_a_page_asked_with_a_window_is_launched_with_one_whatever_the_switch_says(
+    tmp_path: Path, launches: list[bool]
+) -> None:
+    """Decision 143. The switch is off — what every start of ELA finds —, and the launch of this
+    one opening has a window; the launch after it follows the switch again."""
+    browser = with_a_screen(tmp_path / "profile", a_screen)
+
+    opened = await browser.open_shown(AN_ADDRESS, everywhere, FakeStop())
+    between = browser._launch()["headless"]
+    await browser.open(AN_ADDRESS, everywhere, FakeStop())
+
+    assert opened.address == AN_ADDRESS
+    assert launches == [False, True], "with a window for the one, and as the switch says after"
+    assert between is True
+
+
+async def test_with_the_switch_on_every_launch_has_a_window(
+    tmp_path: Path, launches: list[bool]
+) -> None:
+    browser = with_a_screen(tmp_path / "profile", a_screen, shown=True)
+
+    await browser.open_shown(AN_ADDRESS, everywhere, FakeStop())
+    await browser.open(AN_ADDRESS, everywhere, FakeStop())
+
+    assert launches == [False, False]
+
+
+async def test_a_launch_with_a_window_that_fails_leaves_the_next_one_to_the_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def failing(self: AccountChrome, address: str, allowed: Any, stop: Any) -> Opened:
+        raise BrowserFailed("the launch failed")
+
+    monkeypatch.setattr(PlaywrightBrowser, "open", failing)
+    browser = with_a_screen(tmp_path / "profile", a_screen)
+
+    with pytest.raises(BrowserFailed):
+        await browser.open_shown(AN_ADDRESS, everywhere, FakeStop())
+
+    assert browser._launch()["headless"] is True
+
+
+async def test_with_no_screen_a_page_with_a_window_is_refused_and_nothing_is_launched(
+    tmp_path: Path, launches: list[bool]
+) -> None:
+    """Decision 143: it is not launched without. Nothing is launched at all, and nothing is made
+    — the folder is not even looked at. A page asked as the switch says is another matter."""
+    profile = tmp_path / "profile"
+    browser = with_a_screen(profile, no_screen)
+
+    with pytest.raises(NoWindow):
+        await browser.open_shown(AN_ADDRESS, everywhere, FakeStop())
+
+    assert launches == [] and not profile.exists()
+    await browser.open(AN_ADDRESS, everywhere, FakeStop())
+    assert launches == [True], "without a window, as the switch says: the screen is not asked"
+
+
+async def test_a_held_folder_refuses_a_page_with_a_window_like_any_other(
+    tmp_path: Path, launches: list[bool]
+) -> None:
+    browser = with_a_screen(tmp_path / "profile", a_screen)
+    browser._windowing = True  # what the adapter itself has on the folder: its window
+
+    with pytest.raises(ProfileBusy):
+        await browser.open_shown(AN_ADDRESS, everywhere, FakeStop())
+
+    assert launches == []
+    assert browser._launch()["headless"] is True, "and the next launch is the switch's"
+
+
+async def test_on_another_system_no_screen_is_asked_about(tmp_path: Path) -> None:
+    browser = with_a_screen(tmp_path / "profile", nobody_may_ask, system="Linux")
+
+    with pytest.raises(BrowserUnsupported):
+        await browser.can_show()
+    with pytest.raises(BrowserUnsupported):
+        await browser.open_shown(AN_ADDRESS, everywhere, FakeStop())
+    assert not (tmp_path / "profile").exists()
+
+
+async def test_a_stopping_ela_is_asked_nothing_about_a_window(tmp_path: Path) -> None:
+    stopping = asyncio.Event()
+    stopping.set()
+    browser = with_a_screen(tmp_path / "profile", nobody_may_ask, stopping=stopping)
+
+    with pytest.raises(BrowserStopped):
+        await browser.can_show()
+    with pytest.raises(BrowserStopped):
+        await browser.open_shown(AN_ADDRESS, everywhere, FakeStop())

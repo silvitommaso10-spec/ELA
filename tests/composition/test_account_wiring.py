@@ -21,10 +21,15 @@ from typing import Any
 
 import pytest
 
-from ela.composition import Ela, Settings, build
+from ela.composition import Ela, Settings, build, root
 from ela.composition.root import BROWSER_CLOSE_GRACE_SECONDS
-from ela.composition.system import WindowSwitch, while_the_user_signs_in, without_node_variables
-from ela.domain import ActorKind, AuditEventType
+from ela.composition.system import (
+    WindowSwitch,
+    a_session_of_the_screen,
+    while_the_user_signs_in,
+    without_node_variables,
+)
+from ela.domain import ActorKind, AuditEventType, ProbeFamily, RawObservation
 from ela.infrastructure.machine import AccountChrome, PlaywrightBrowser
 from ela.permissions import (
     BROWSER_ACT,
@@ -43,7 +48,7 @@ from ela.ports import (
     ProfileUndeclared,
     ProfileUnsafe,
 )
-from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakePower, FakeStop
+from ela.testing.fakes import FakeAccountBrowser, FakeBrowser, FakePower, FakeProbe, FakeStop
 from ela.tools import PERCEPTION_CAPTURE_SCREEN, PERCEPTION_LISTEN, PERCEPTION_READ_SCREEN_TEXT
 from ela.tools.listen import LISTEN_LOGIN_WINDOW_OPEN
 from ela.tools.screen import SCREEN_LOGIN_WINDOW_OPEN
@@ -303,6 +308,72 @@ async def test_the_question_looks_at_the_profile_each_time_it_is_asked() -> None
     closed = await not_now()
 
     assert open_ is not None and closed is None
+
+
+# ----------------------------------------------------------------------------------------
+# A session of the screen (M13.9, decision 143 of the review of 2026-10-13)
+# ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("read", "there"),
+    [
+        (RawObservation(on_console=True, screen_locked=False), True),
+        (RawObservation(on_console=False, screen_locked=False), True),
+        (RawObservation(on_console=True, screen_locked=True), True),
+        (RawObservation(), False),
+        (RawObservation(display_count=1, idle_seconds=3.0), False),
+    ],
+    ids=["at-the-screen", "not-the-one-in-front", "locked", "nothing-read", "no-session-read"],
+)
+async def test_a_window_can_be_had_where_the_system_read_a_session_of_the_screen(
+    read: RawObservation, there: bool
+) -> None:
+    """A login of ELA's wants a window, and a process outside a session of the screen can be
+    given none. The reading is the one the perception already makes — what the system says of
+    the session this process is in —, asked for that family alone: **a session that was read is
+    a session**, locked or not, in front or not; one that was not read is a doubt, and a doubt
+    is «no» (fail-safe)."""
+    probe = FakeProbe([read])
+
+    assert await a_session_of_the_screen(probe)() is there
+    assert probe.calls == (frozenset({ProbeFamily.SESSION}),)
+
+
+async def test_the_session_is_asked_of_the_system_every_time() -> None:
+    probe = FakeProbe([RawObservation(on_console=True), RawObservation()])
+    there = a_session_of_the_screen(probe)
+
+    assert [await there(), await there()] == [True, False]
+
+
+async def test_a_probe_that_breaks_its_promise_is_a_doubt_and_not_a_window() -> None:
+    """The port promises not to raise. One that does is not allowed to become «yes», nor to
+    take the question down with it."""
+    assert await a_session_of_the_screen(FakeProbe(fails=True))() is False
+
+
+async def test_the_browser_ela_builds_asks_the_probe_of_this_machine_whether_there_is_a_screen(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One reader of this machine: the question the browser's adapter is handed is built on the
+    same probe the perception reads with, and on no second one."""
+    handed: list[object] = []
+    building = root.a_session_of_the_screen
+
+    def recorded(probe: object) -> object:
+        handed.append(probe)
+        return building(probe)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(root, "a_session_of_the_screen", recorded)
+    ela = await built(monkeypatch, tmp_path, {PROFILE: str(tmp_path / "a-profile")})
+    try:
+        adapter = ela.accounts
+        assert isinstance(adapter, AccountChrome)
+        assert handed == [ela.perception._probe]
+        assert adapter._on_a_screen.__qualname__.startswith("a_session_of_the_screen.")
+    finally:
+        await ela.aclose()
 
 
 # ----------------------------------------------------------------------------------------

@@ -328,3 +328,46 @@ async def test_close_on_what_is_not_ela_s_browser_exits_1_and_says_whose_it_is_t
 
     assert result.exit_code == REFUSED
     assert "browser.profile_busy" in result.output and "not ELA's browser" in result.output
+
+
+# ----------------------------------------------------------------------------------------
+# A login always has a window (decision 143 of the review of 2026-10-13)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_status_says_that_a_login_runs_with_a_window_whatever_the_switch_says(
+    browsed: Browsed,
+) -> None:
+    """Decision 143: «``ela browser status`` says this too». A row of its own, beside the one of
+    the switch, which goes on saying what the other steps do."""
+    hidden = await browsed("browser", "status")
+    browsed.ela.window.show()
+    shown = await browsed("browser", "status")
+
+    for result in (hidden, shown):
+        assert row(result.output, "a login runs") == "with a window, whatever the switch says"
+    assert row(hidden.output, "steps run") == "without a window"
+    assert row(shown.output, "steps run") == "with a window"
+
+
+async def test_status_says_when_a_login_could_not_have_its_window(browsed: Browsed) -> None:
+    browsed.accounts.screen = False
+
+    result = await browsed("browser", "status")
+
+    assert row(result.output, "a login runs") == (
+        "with a window — and ELA cannot open one now: a login would not start"
+    )
+    assert row(result.output, "state") == "free", "the other steps are not touched by it"
+
+
+async def test_status_of_a_window_that_could_not_be_asked_about_says_not_read(
+    browsed: Browsed,
+) -> None:
+    browsed.accounts.raising["occupied"] = ProfileUndeclared(UNDECLARED)
+
+    result = await browsed("browser", "status")
+
+    assert (
+        row(result.output, "a login runs") == "with a window — whether one can be opened: not read"
+    )

@@ -574,3 +574,41 @@ async def test_a_console_s_cookie_is_not_the_core_s_token(
 
     assert answered.status_code == 401
     assert browsed.accounts.windows == [] and browsed.ela.window.shown is False
+
+
+# ----------------------------------------------------------------------------------------
+# A login always has a window (decision 143 of the review of 2026-10-13)
+# ----------------------------------------------------------------------------------------
+
+
+async def test_the_state_says_whether_a_login_could_have_its_window_now(browsed: Browsed) -> None:
+    """Decision 143: ``browser.login`` starts with a window whatever the switch says, and does
+    not start without one. The state says whether one can be had now — asked of the port at
+    every request, like every other fact —, beside the switch and not in its place."""
+    with_one = (await browsed.client.get("/browser")).json()
+    browsed.accounts.screen = False
+    without = (await browsed.client.get("/browser")).json()
+
+    assert with_one["login_window"] is True and without["login_window"] is False
+    assert with_one["window"] is False and without["window"] is False, "the switch is another"
+
+
+async def test_a_window_nobody_could_ask_about_is_not_read_and_the_state_stands(
+    browsed: Browsed,
+) -> None:
+    browsed.accounts.raising["can_show"] = BrowserFailed("the session could not be read")
+
+    said = (await browsed.client.get("/browser")).json()
+
+    assert said["state"] == "free" and said["login_window"] is None
+
+
+async def test_a_profile_no_browser_can_start_on_is_not_asked_about_a_window(
+    browsed: Browsed,
+) -> None:
+    browsed.accounts.raising["occupied"] = ProfileUndeclared(UNDECLARED)
+    browsed.accounts.raising["can_show"] = AssertionError("nobody may ask")
+
+    said = (await browsed.client.get("/browser")).json()
+
+    assert said["state"] == "profile_undeclared" and said["login_window"] is None
