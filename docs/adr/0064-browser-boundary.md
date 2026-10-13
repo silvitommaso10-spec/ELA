@@ -5,7 +5,9 @@
   che porta questa riparazione (`~/Downloads/prova-m13.9-20261013-181603.txt`: 52 PASSATO, tutti al primo giro,
   0 FALLITI, nessun no — decisione 130 di `docs/milestones/M13.4f.md`, decisioni 159 e 160 di
   `docs/milestones/M13.9.md`). Proposta il **2026-10-12**, con l'implementazione di M13.4f, per diventare
-  Accettata quando quella prova fosse passata su un commit con questa riparazione.
+  Accettata quando quella prova fosse passata su un commit con questa riparazione. *`6d3c470` era l'ultimo commit
+  del branch quando la prova è girata: i commit venuti dopo, questo compreso, portano solo documenti e i test dei
+  documenti.*
 - **Data:** 2026-10-12
 - **Riferimenti spec:** §19, §33, §57
 - **Milestone:** M13.4f
@@ -318,8 +320,8 @@ Le altre conseguenze:
   e `browser.another_page`.
 - **La prova di M13.9 si rifà per intero** sul commit di questa riparazione; il passo 6 com'è scritto, e la
   sezione 28 della guida porta, fuori dai passi, la misura con la finestra da fare solo se quel passo fallisce
-  (decisione 119). *Annotato il 2026-10-13: rifatta tre volte quel giorno; la terza, per intero e sull'ultimo
-  commit, `6d3c470`, è passata, ed è quella che accetta questo ADR — la riga dello stato.*
+  (decisione 119). *Annotato il 2026-10-13: rifatta tre volte quel giorno; la terza, per intero e sul commit che
+  era allora l'ultimo, `6d3c470`, è passata, ed è quella che accetta questo ADR — la riga dello stato.*
 
 Con questo ADR le regole di architettura sono **settanta** (la 70); i contratti di import-linter restano
 **quindici**, i port **trentacinque**, le rotte dell'API **settantadue** e i comandi della CLI **trentanove**; le

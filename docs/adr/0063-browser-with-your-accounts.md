@@ -5,6 +5,9 @@
   (`~/Downloads/prova-m13.9-20261013-181603.txt`: 52 PASSATO, tutti al primo giro, 0 FALLITI, nessun no —
   decisione 159 di `docs/milestones/M13.9.md`), e lo stesso giorno Tommaso ha letto per intero le pagine del
   fornitore, nelle parole della review: «le due pagine del fornitore che ADR 0063 §6 cita» (decisione 160; §6).
+  *`6d3c470` era l'ultimo commit del branch quando la prova è girata: i commit venuti dopo, questo compreso,
+  portano solo documenti e i test dei documenti, niente di ciò che la prova esercita (sezione 25, punto 1, di
+  quella SPEC).*
   Proposta il **2026-10-11**, con l'implementazione di M13.9, per diventare Accettata con un commit suo quando
   quella prova fosse passata.
   **La prova del 12 ottobre non è passata**, per il login dal vault: che cosa si è misurato da allora è in §11, e
@@ -747,7 +750,10 @@ non esce da Proposta prima che la prova a mano sia passata e Tommaso abbia letto
 ***Il 13 ottobre 2026 la prova è passata, e Tommaso le ha lette per intero*** — la review a `6d3c470` lo dice
 così: «Tommaso ha letto per intero, il 13 ottobre 2026, le due pagine del fornitore che ADR 0063 §6 cita»
 (decisione 160 di `docs/milestones/M13.9.md`) —: da quel giorno l'ADR è Accettata. *La tabella qui sopra nomina
-più di due indirizzi: quali due la review intenda non è scritto, ed è la domanda 164 di quella SPEC.* La
+più di due indirizzi: quali due la review intenda non è scritto, ed è la domanda 164 di quella SPEC. Quando la
+condizione è nata — la domanda 75 della stessa SPEC, decisa (a) — gli articoli da leggere erano due: quello
+della conservazione, e quello dei modelli «covered» a cui rimanda; le due righe sull'addestramento sono entrate
+nella tabella dopo, con la stessa decisione.* La
 domanda e l'anteprima di una policy lo dicono nel campo `sends`, che dice che cosa esce e verso chi, non per
 quanto resta. Le istruzioni al modello guadagnano
 una riga: non aprire un indirizzo che conferma, cancella, disiscrive o esce se la frase non lo chiede. **Dentro
@@ -891,7 +897,9 @@ non è più chiesto solo quando un lock nomina un processo). **Il fatto**: sulla
 della finestra uscito da sé, la chiusura tornata, e nella tabella ancora uno o due processi che il browser aveva
 avviato per sé. *Due giri rossi su tre, sullo stesso codice; sul Mac, in trentasei giri della stessa chiusura a
 macchina quieta e carica, non è successo* (`what-names-the-folder-when-the-close-returns-before.txt`, in
-`.git/m13.9-reference/review-c1d0ef8/`). La chiusura aspettava il processo principale, e non ciò che quello
+`.git/m13.9-reference/review-c1d0ef8/`). *Annotato il 2026-10-13, la sera: dei trentasei, trenta sono di una
+pagina guidata che si chiude da sé e sei della finestra alla fermata di ELA; la chiusura dal comando la sonda
+non la fa.* La chiusura aspettava il processo principale, e non ciò che quello
 aveva avviato. **Ora**, uscito il principale, la chiusura — `settle` alla fermata, `shut` al comando — chiede al
 sistema i processi di questo utente con il gruppo e la riga di comando di ciascuno (`/bin/ps`, con le regole
 dell'altro lancio), e va avanti **entro la stessa grazia, con il passo che c'è già, senza un tempo nuovo**

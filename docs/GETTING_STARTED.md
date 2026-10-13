@@ -6050,7 +6050,7 @@ prenotato com'era al passo 1
 > non era sull'ultimo commit, e le risposte a occhio sono arrivate in meno di quanto serve a lanciare un comando e
 > leggere. Da allora **lo script ti mette davanti ciò che devi guardare** (decisione 155), e **prima del login guarda
 > lui che in quel sito non sei già dentro** (decisione 151). La prova si rifà per intero. **Rifatta alle 18:16 dello
-> stesso giorno, sull'ultimo commit: è passata** — è quella scritta qui sopra, «Fatta da Tommaso il 13 ottobre 2026».
+> stesso giorno, sul commit che era allora l'ultimo: è passata** — è quella scritta qui sopra, «Fatta da Tommaso il 13 ottobre 2026».
 
 Da M13.9 ELA ha **un secondo browser**: Chrome for Testing su una cartella tua, che **tiene i siti in cui sei entrato**.
 Non è il tuo Chrome, e il tuo profilo ELA non lo apre: in questo entri tu, una volta, **con le tue mani**, nella finestra
