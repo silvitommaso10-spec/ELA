@@ -34,6 +34,7 @@ from ela.permissions import (
     production_catalogue,
 )
 from ela.ports import (
+    HELD,
     PROFILE_PROCESS,
     PROFILE_STEP,
     PROFILE_WINDOW,
@@ -1760,9 +1761,9 @@ async def test_a_login_whose_time_ran_out_while_the_fields_were_read_again_did_n
     from ela.tools.browser import TIMEOUT
 
     class ReadsForEver(FakeAccountBrowser):
-        async def holds(self, page: str, selector: str, value: Secret) -> bool:
+        async def holds(self, page: str, selector: str, value: Secret) -> str:
             await asyncio.Event().wait()
-            return True
+            return HELD
 
     browser = ReadsForEver(page())
     tool = LoginTool(
@@ -1784,3 +1785,46 @@ async def test_a_login_whose_time_ran_out_while_the_fields_were_read_again_did_n
     assert "ELA did not click" in said
     assert "does not know whether a key sent the form" in said
     assert "the login was sent to" not in said
+
+
+@pytest.mark.parametrize("shortened", ["#user", "#word"], ids=["the-username", "the-password"])
+async def test_a_field_that_holds_only_a_beginning_of_what_was_typed_is_said_as_the_page_s_doing(
+    tmp_path: Path, shortened: str
+) -> None:
+    """Decision 152 of the review of 2026-10-13. The comparison is whole, so the login is not
+    sent — and the refusal tells this case apart: the field holds a beginning of what ELA typed
+    and nothing else, which is a page that keeps less than it is given, not a key. **It does not
+    say how much**: a length is something of a password."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    browser.shortened.add(shortened)
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == FIELD_CHANGED
+    assert result.output == {"status": 200, "gestures": 2} and browser.clicks == []
+    said, _, counted = result.error.message.partition("; 2 gestures were made")
+    assert counted == "" and result.error.message.endswith("; 2 gestures were made")
+    assert "held only a beginning of what ELA had typed" in said
+    assert "the page keeps less than it is given" in said and "ELA did not click" in said
+    assert "a key" not in said, "it is not the keyboard, and the sentence does not say it is"
+    assert not any(character.isdigit() for character in said), "nor how much the field kept"
+    assert TYPED not in result.model_dump_json() and USERNAME not in result.model_dump_json()
+
+
+async def test_a_field_that_changed_is_not_said_as_a_page_that_keeps_less(tmp_path: Path) -> None:
+    """The two refusals are two sentences: a field that holds something else is still the one a
+    key may have landed in."""
+    vault = FakeVault([MARIO])
+    browser = FakeAccountBrowser(page())
+    browser.changed.add("#word")
+    tool = await login(browser, vault, tmp_path)
+    await asked(tool)
+
+    result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == FIELD_CHANGED
+    assert "keeps less" not in result.error.message
+    assert "does not know whether a key sent the form" in result.error.message

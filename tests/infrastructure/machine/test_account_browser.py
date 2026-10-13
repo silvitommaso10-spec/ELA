@@ -42,6 +42,9 @@ from ela.infrastructure.machine.account import (
 )
 from ela.infrastructure.machine.browser import registry_folder
 from ela.ports import (
+    HELD,
+    HELD_IN_PART,
+    NOT_HELD,
     PROFILE_PROCESS,
     PROFILE_STEP,
     PROFILE_WINDOW,
@@ -959,12 +962,12 @@ async def test_a_field_holds_what_was_typed_until_a_key_lands_in_it(
         await browser.holds(opened.page, "#word", Secret(SENTINEL)),
     )
 
-    assert before == (True, True)
-    assert after == (True, False)
-    assert await browser.holds(opened.page, "#word", Secret(SENTINEL + "x")), (
+    assert before == (HELD, HELD)
+    assert after == (HELD, NOT_HELD), "more than was typed is not what was typed"
+    assert await browser.holds(opened.page, "#word", Secret(SENTINEL + "x")) == HELD, (
         "the whole of what the field holds is compared, and that is what it holds now"
     )
-    assert not await browser.holds(opened.page, "#word", Secret(SENTINEL[:-1]))
+    assert await browser.holds(opened.page, "#word", Secret(SENTINEL[:-1])) == NOT_HELD
 
 
 async def test_what_is_not_a_field_cannot_be_read_again_and_the_failure_names_its_type_alone(
@@ -1001,7 +1004,7 @@ async def test_a_field_that_is_gone_holds_nothing_and_is_not_waited_for(
     async with asyncio.timeout(20):
         held = await browser.holds(opened.page, "#word", Secret(SENTINEL))
 
-    assert held is False
+    assert held == NOT_HELD
 
 
 async def test_a_selector_that_finds_two_fields_holds_nothing_either(
@@ -1013,8 +1016,8 @@ async def test_a_selector_that_finds_two_fields_holds_nothing_either(
     opened = await browser.open(web.origin + "/", everywhere, FakeStop())
     await browser.fill_secret(opened.page, "#user", Secret("mario"))
 
-    assert await browser.holds(opened.page, "#user", Secret("mario")) is True
-    assert await browser.holds(opened.page, "input", Secret("mario")) is False
+    assert await browser.holds(opened.page, "#user", Secret("mario")) == HELD
+    assert await browser.holds(opened.page, "input", Secret("mario")) == NOT_HELD
 
 
 async def test_a_field_that_holds_what_no_text_can_be_made_of_is_a_no_and_not_an_error(
@@ -1033,15 +1036,16 @@ async def test_a_field_that_holds_what_no_text_can_be_made_of_is_a_no_and_not_an
         "document.querySelector('#user').value = 'mario' + String.fromCharCode(0xD800)"
     )
 
-    assert await browser.holds(opened.page, "#user", Secret("mario")) is False
+    assert await browser.holds(opened.page, "#user", Secret("mario")) == NOT_HELD
 
 
-async def test_a_field_that_keeps_less_than_it_is_given_does_not_hold_what_was_typed(
+async def test_a_field_that_keeps_less_than_it_is_given_holds_a_beginning_of_what_was_typed(
     browser: AccountChrome, served: list[Site]
 ) -> None:
-    """A limit that is declared, held here so that it is seen: a field with a length of its own
-    keeps the beginning of what is typed into it, and the comparison is whole. A login on such a
-    page ends ``browser.field_changed`` and is not sent (ADR 0063 §5; question 152 of M13.9)."""
+    """Decision 152 of the review of 2026-10-13. A field with a length of its own keeps the
+    beginning of what is typed into it, and the comparison stays whole — a login there is not
+    sent —; **but it is told apart**: what such a field holds is a beginning of what was typed,
+    and the refusal says that it is the page that keeps less, not a key."""
     short = (
         '<form method="post" action="/in"><input id="word" type="password" maxlength="5"></form>'
     )
@@ -1049,5 +1053,6 @@ async def test_a_field_that_keeps_less_than_it_is_given_does_not_hold_what_was_t
     opened = await browser.open(web.origin + "/", everywhere, FakeStop())
     await browser.fill_secret(opened.page, "#word", Secret(SENTINEL))
 
-    assert await browser.holds(opened.page, "#word", Secret(SENTINEL)) is False
-    assert await browser.holds(opened.page, "#word", Secret(SENTINEL[:5])) is True
+    assert await browser.holds(opened.page, "#word", Secret(SENTINEL)) == HELD_IN_PART
+    assert await browser.holds(opened.page, "#word", Secret(SENTINEL[:5])) == HELD
+    assert await browser.holds(opened.page, "#word", Secret("x" + SENTINEL)) == NOT_HELD

@@ -540,6 +540,11 @@ def proof_login() -> dict[str, str]:
     return dict(step["arguments"])
 
 
+THE_PAGE_SAYS = "Le tue iscrizioni: un canale. Esci. ELA prova 9139"
+"""The text of the one page of the walk: what a reading as the user brings back. Not the text the
+proof's login awaits — «logout» —: before the login nobody is inside."""
+
+
 def a_page() -> FakePage:
     """A page that has what the proof's login plan names — its selectors, as it writes them."""
     asked = proof_login()
@@ -549,7 +554,7 @@ def a_page() -> FakePage:
             asked["password_field"]: Field("password", "current-password", "post"),
             asked["click"]: Field("submit", "", "post"),
         },
-        texts={None: "Le tue iscrizioni: un canale. Esci. ELA prova 9139"},
+        texts={None: THE_PAGE_SAYS},
         counts_after_click={asked["password_field"]: 0},
     )
 
@@ -569,11 +574,27 @@ class OneBrowserOfTheProof(FakeAccountBrowser):
         return await super().open(address, allowed, stop)
 
 
-async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_passes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Steps 2 to 9, as written in the guide, run by the script itself. Every ``atteso`` of the
-    section is judged on what ELA's own command line printed.
+@dataclasses.dataclass
+class Walked:
+    """One walk of the section: what the script wrote in its file, what the world was asked,
+    and what the browser and the vault of the walk saw."""
+
+    report: Any
+    world: World
+    accounts: FakeAccountBrowser
+    vault: FakeVault
+    events: list[str]
+
+    @property
+    def written(self) -> str:
+        return "\n".join(self.report.lines)
+
+
+async def walked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, page: FakePage, before: int = 10
+) -> Walked:
+    """The steps of the section before ``before``, as written in the guide, run by the script
+    itself against a real ELA whose browser shows ``page``.
 
     **In a folder of the test's, like every test here**: the guide names its plans from the root
     of the repository, so the test's folder is given a ``docs`` that leads there — and a ``.env``
@@ -587,7 +608,7 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     program.write_bytes(b"\xcf\xfa\xed\xfe a native program")
     program.chmod(program.stat().st_mode | stat.S_IXUSR)
     entry = dataclasses.replace(ENTRY, addresses=(PROOF_ADDRESS,))
-    accounts, vault = OneBrowserOfTheProof(a_page()), FakeVault([entry], state="locked")
+    accounts, vault = OneBrowserOfTheProof(page), FakeVault([entry], state="locked")
     turns = Script([call(), gesture("read", site="www.youtube.com", path="/feed/channels"), call()])
     async with guided(
         monkeypatch,
@@ -629,7 +650,7 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
                 module.spending.Ledger.of(api.get("/spend")),
                 login=PROOF_LOGIN,
             )
-            todo = {number: blocks for number, blocks in marked().items() if number < 10}
+            todo = {number: blocks for number, blocks in marked().items() if number < before}
             try:
                 module.base.walk(
                     report, todo, lambda number, its: module.a_step(number, its, proof)
@@ -640,9 +661,47 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
         await asyncio.wait_for(asyncio.to_thread(walk), 120)
         events = [event.event_type.value for event in await g.ela.audit.read()]
 
+    return Walked(report, world, accounts, vault, events)
+
+
+async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_passes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Steps 2 to 9, as written in the guide, run by the script itself. Every ``atteso`` of the
+    section is judged on what ELA's own command line printed."""
+    walk = await walked(monkeypatch, tmp_path, a_page())
+    report, world, accounts = walk.report, walk.world, walk.accounts
+    events = walk.events
+    on_the_screen = capsys.readouterr().out
+
     written = "\n".join(report.lines)
     assert report.ok, written
     assert report.failures == 0 and report.stopped is None and report.lost_at is None
+    # Decision 155: what the eye has to look at, the script puts in front of it — the result
+    # of the task it names, **on the screen and never in the file** —, for the questions of the
+    # steps that used to send the user to another Terminal with an id to copy.
+    assert THE_PAGE_SAYS in on_the_screen, "the result is put in front of whoever answers"
+    assert THE_PAGE_SAYS not in written and "un canale" not in written, (
+        "and nothing of the text of a page enters the file"
+    )
+    for step in (5, 6, 8):
+        its = written.split(f"—— passo {step} ——", 1)[1].split("—— passo", 1)[0]
+        assert "sullo schermo, e non in questo file" in its, f"step {step} says what it showed"
+    eyes = [
+        block.body
+        for blocks in marked().values()
+        for block in blocks
+        if block.kind in ("occhio", "prosegui")
+    ]
+    assert not any("task results" in asked_ for asked_ in eyes), (
+        "no question of the eye sends the user to launch the results by hand any more"
+    )
+    # Decision 151: step 6 begins by looking that the user is not inside the site yet — a read
+    # as them of the page it will read after the login —, and nothing of that read is written.
+    step_6 = written.split("—— passo 6 ——", 1)[1].split("—— passo 7 ——", 1)[0]
+    before_the_login = step_6.split("login-news-ycombinator.json", 1)[0]
+    assert "read-as-you-news-ycombinator.json" in before_the_login
+    assert "[6] PASSATO: nel sito del login non sei ancora dentro" in before_the_login
     asked = proof_login()
     assert accounts.secrets == [
         (asked["username_field"], ENTRY.username),
@@ -694,6 +753,79 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     ], "the machine is asked these lines, in this order, and no other"
     assert any("ignora i proprietari" in line for line in report.lines), (
         "what 0700 is worth on a volume that knows no owners is said"
+    )
+
+
+async def test_a_user_already_inside_the_site_of_the_login_stops_the_proof_before_the_login(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Decision 151 of the review of 2026-10-13. Step 6 is written for a site nobody has entered
+    yet: its last question — «is logout at the top?» — would have a yes whatever the login of
+    the day did. So before the login the script reads the page as the user and looks that **the
+    text the login's plan awaits is not there** — read from the plan, written by hand nowhere.
+    If it is, the proof stops — FERMATO, not FALLITO —, says how to leave the site by hand, and
+    spends no yes of a login and no password. Nothing of that read is in the file."""
+    awaited = proof_login()["expect_text"]
+    inside = dataclasses.replace(a_page(), texts={None: f"mario | {awaited} — la prima pagina"})
+
+    walk = await walked(monkeypatch, tmp_path, inside, before=8)
+
+    written = walk.written
+    assert not walk.report.ok and walk.report.failures == 0, written
+    assert walk.report.stopped is not None and walk.report.stopped[0] == 6, written
+    why = walk.report.stopped[1]
+    assert "uv run ela browser open news.ycombinator.com" in why and "Cmd-Q" in why
+    assert "—— passo 7 ——" not in written, "no step after it is walked"
+    assert walk.accounts.secrets == [] and walk.accounts.clicks == [], "no login was sent"
+    assert not any(call.startswith("take:") for call in walk.vault.calls), "no password was taken"
+    assert "login-news-ycombinator.json" not in written.split("—— passo 6 ——", 1)[1], (
+        "the login was not even planned"
+    )
+    assert "la prima pagina" not in written and "mario |" not in written, (
+        "nothing of what the read brought back is in the file"
+    )
+
+
+def test_the_text_the_login_awaits_is_read_from_its_plan_and_looked_for_whole() -> None:
+    """The pure halves of ``assente``: the text is the plan's own ``expect_text``, and it is
+    «there» when the read printed it — as it is written, wherever it is."""
+    module = script()
+
+    assert module.awaited_by(PROOF_LOGIN) == proof_login()["expect_text"] == "logout"
+    assert module.already_there("logout", "mario | logout\nla prima pagina")
+    assert module.already_there("logout", "x logout")
+    assert not module.already_there("logout", "login | la prima pagina")
+    assert not module.already_there("logout", "")
+
+
+def test_what_is_shown_on_the_screen_is_not_written_in_the_file(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Decision 155, on the function alone: the commands of a ``schermo`` are run by the script,
+    what they print goes to the screen, and the file gets one line that says a result was shown
+    — with the command, and nothing of what it printed."""
+    module = script()
+    ran: list[str] = []
+
+    def run(line: str) -> subprocess.CompletedProcess[str]:
+        ran.append(line)
+        return subprocess.CompletedProcess(line, 0, "il testo di una pagina tua\n", "")
+
+    monkeypatch.setattr(module.base, "run", run)
+    report = module.Report(io.StringIO())
+    proof = module.Proof(None, report, lambda question: "s", None, login=PROOF_LOGIN)
+    turn = module.guided.Turn()
+    turn.task_id = "the-task"
+    block = module.base.Block(5, "schermo", "uv run ela task results <id>")
+
+    module.a_block(5, block, turn, proof)
+
+    assert ran == ["uv run ela task results the-task"]
+    assert "il testo di una pagina tua" in capsys.readouterr().out
+    assert not any("il testo di una pagina tua" in line for line in report.lines)
+    assert any(
+        "uv run ela task results the-task" in line and "sullo schermo, e non in questo file" in line
+        for line in report.lines
     )
 
 

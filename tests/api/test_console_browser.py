@@ -13,7 +13,9 @@ check of the forms of a yes, and no JavaScript.
 
 from __future__ import annotations
 
+import html
 import json
+import re
 import shlex
 import stat
 from collections.abc import AsyncIterator
@@ -34,6 +36,7 @@ from ela.ports import (
     PROFILE_STEP,
     PROFILE_WINDOW,
     VAULT_LOCKED,
+    BrowserFailed,
     ProfileUndeclared,
     Secret,
 )
@@ -460,3 +463,56 @@ async def test_away_from_the_mac_the_vault_is_still_closed(viewed: Viewed) -> No
     assert f'action="{LOCK}"' in before
     assert closed.status_code == 303
     assert "lock" in viewed.vault.calls and viewed.ela.vault.forgets_at is None
+
+
+# ----------------------------------------------------------------------------------------
+# A login always has a window: the view says it (decision 150 of the review of 2026-10-13)
+# ----------------------------------------------------------------------------------------
+
+A_LOGIN = "Un login"
+
+
+def said_of_a_login(page: str) -> str:
+    """What the view says in the row of a login, as a reader sees it."""
+    plain = html.unescape(page)
+    assert plain.count(A_LOGIN) == 1, "one row, beside the one of the switch"
+    after = plain.split(A_LOGIN, 1)[1]
+    return re.sub(r"<[^>]+>", " ", after.split("Collegato a un account", 1)[0]).strip()
+
+
+async def test_the_view_says_that_a_login_has_a_window_whatever_the_switch_says(
+    viewed: Viewed,
+) -> None:
+    """The view said «senza finestra» while a login would have one: the same fact ``GET
+    /browser`` carries is a row of its own, beside the switch, and does not move with it."""
+    async with viewed.console() as console:
+        hidden = await viewed.page(console)
+        viewed.ela.window.show()
+        shown = await viewed.page(console)
+
+    assert "senza finestra" in hidden and "senza finestra" not in shown
+    for page in (hidden, shown):
+        assert said_of_a_login(page) == "con finestra, qualunque cosa dica l'interruttore"
+
+
+async def test_the_view_says_when_a_login_could_not_have_its_window(viewed: Viewed) -> None:
+    viewed.accounts.screen = False
+
+    async with viewed.console() as console:
+        page = await viewed.page(console)
+
+    assert said_of_a_login(page) == (
+        "con finestra — ed ELA non ha potuto dire di poterne aprire una adesso: un login non "
+        "partirebbe"
+    )
+
+
+async def test_the_view_says_not_read_where_the_window_could_not_be_asked_about(
+    viewed: Viewed,
+) -> None:
+    viewed.accounts.raising["can_show"] = BrowserFailed("the session could not be read")
+
+    async with viewed.console() as console:
+        page = await viewed.page(console)
+
+    assert said_of_a_login(page) == "con finestra — se una si possa aprire: non letto"

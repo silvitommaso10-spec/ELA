@@ -6043,6 +6043,10 @@ prenotato com'era al passo 1
 > ha ridato il modulo, con la finestra lo stesso login è riuscito. **Da allora `browser.login` parte sempre con la
 > finestra** (decisione 143): il passo 6 avvisa che compare, la misura fuori dai passi è uscita — al suo posto c'è il
 > fatto —, e **la riga che apre il vault funziona da qualunque cartella** (decisione 145).
+> **Lo stesso giorno, alle 15:28, la prova è passata per intero** — 48 su 48 —, ma **non è quella che accetta gli ADR**:
+> non era sull'ultimo commit, e le risposte a occhio sono arrivate in meno di quanto serve a lanciare un comando e
+> leggere. Da allora **lo script ti mette davanti ciò che devi guardare** (decisione 155), e **prima del login guarda
+> lui che in quel sito non sei già dentro** (decisione 151). La prova si rifà per intero.
 
 Da M13.9 ELA ha **un secondo browser**: Chrome for Testing su una cartella tua, che **tiene i siti in cui sei entrato**.
 Non è il tuo Chrome, e il tuo profilo ELA non lo apre: in questo entri tu, una volta, **con le tue mani**, nella finestra
@@ -6116,6 +6120,13 @@ tipi di sempre — `comando`, `atteso`, `occhio`, `sì` — e i suoi:
   dalla sessione: lo script le ritrova una per una, con la decisione che il Guardian ha scritto.
 - **`chiude`**: lo script lancia lo step del passo, aspetta che il profilo risulti tenuto da uno step, e **ferma ELA**
   con il segnale del blocco; poi guarda che il processo sia uscito e che la cartella del profilo sia libera.
+- **`schermo`**: i comandi del blocco li lancia lo script, e **ciò che stampano va sullo schermo e non nel file** — il
+  risultato di una lettura è contenuto tuo. Nel file resta che un risultato è stato mostrato, e di quale comando. Sta
+  prima delle domande che chiedono di guardare un risultato: **non devi aprire un altro Terminale né copiare un id**;
+  il giudizio resta tuo (decisione 155).
+- **`assente`**: i comandi del blocco li lancia lo script, **niente di ciò che stampano va nel file né sullo schermo**,
+  e lo script guarda che lì **non ci sia il testo che il piano del login aspetta** — lo legge dal piano. Se c'è, sei
+  già dentro quel sito: la prova **si ferma — FERMATO, non FALLITO —** e ti dice come uscirne a mano (decisione 151).
 
 I segnaposto che riempie sono `<id>`, il task del passo; `<approval-id>`, come nella sezione 26; e
 `<il piano del login>`, il file che gli dai con `--login`. Scrive tutto in `~/Downloads`, in `prova-m13.9-` con la data
@@ -6322,9 +6333,14 @@ uv run ela task run <id>
 outcome completed
 ```
 
+<!-- prova: 5.schermo -->
+```
+uv run ela task results <id>
+```
+
 <!-- prova: 5.prosegui -->
 ```
-Apri il risultato in un altro Terminale, con `uv run ela task results` e l'id del task qui sopra: il testo porta il nome di canali a cui sei iscritto, e l'indirizzo è rimasto su www.youtube.com?
+Qui sopra, sullo schermo, c'è il risultato della lettura: il testo porta il nome di canali a cui sei iscritto, e l'indirizzo è rimasto su www.youtube.com?
 ```
 
 ### 6. Un login dal vault
@@ -6344,16 +6360,49 @@ due campi subito prima del click: se non portano più ciò che ha scritto non cl
 tuo schermo — il login non partirebbe: `browser.no_window`, prima della domanda; `ela browser status` lo dice nella
 riga `a login runs`.
 
-**Se il browser di ELA è già dentro quel sito** — da una volta precedente che hai fatto questo passo: la sessione dura
-oltre lo step e oltre il lancio —, **esci prima da lì, a mano**: `uv run ela browser open news.ycombinator.com`,
-«logout» nella pagina, poi Cmd-Q. Altrimenti questo passo non parte da dove dice di partire — «prima nessuno è entrato
-in quel sito» —, e la sua ultima domanda, «in alto c'è logout?», avrebbe un sì anche con un login non riuscito. *Che
-cosa dice se il login di oggi è riuscito è il suo risultato*: dove la pagina è finita, e il campo della password. Lo
-script non lo chiede: è la domanda 151 di `milestones/M13.9.md`.
+**Prima del login lo script guarda che in quel sito tu non sia già dentro** (decisione 151): la sessione dura oltre lo
+step e oltre il lancio, e se ci fossi già l'ultima domanda di questo passo — «in alto c'è logout?» — avrebbe un sì
+anche con un login non riuscito. Lo fa con **una lettura come te della stessa pagina che leggerà dopo il login** — ha
+la sua domanda e il suo sì —, e guarda che il testo atteso dal piano del login **non** ci sia. Niente di quella lettura
+entra nel file. **Se c'è, la prova si ferma** e ti dice come uscire: `uv run ela browser open news.ycombinator.com`,
+«logout» nella pagina, poi Cmd-Q — non il pulsante rosso, che lascia il browser acceso: in quel caso `uv run ela
+browser close`. *Un limite*: guarda il testo che la lettura ha portato; se era tagliato prima, vale per la parte letta.
 
 <!-- prova: 6.occhio -->
 ```
 Nel tuo vault c'è la voce del tuo account di news.ycombinator.com, con l'indirizzo https://news.ycombinator.com/login, l'hai aggiunta tu a mano, ed è la sola per quell'host (dopo l'importazione del passo 2 può essercene una seconda)?
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task create --json "guardare che in quel sito non sono ancora dentro"
+uv run ela task plan <id> --file docs/examples/read-as-you-news-ycombinator.json
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome waiting_approval
+```
+
+<!-- prova: 6.sì -->
+```
+uv run ela task approve <id> --approval <approval-id>
+```
+
+<!-- prova: 6.comando -->
+```
+uv run ela task run <id>
+```
+
+<!-- prova: 6.atteso -->
+```
+outcome completed
+```
+
+<!-- prova: 6.assente -->
+```
+uv run ela task results <id>
 ```
 
 <!-- prova: 6.comando -->
@@ -6438,9 +6487,14 @@ uv run ela task run <id>
 outcome completed
 ```
 
+<!-- prova: 6.schermo -->
+```
+uv run ela task results <id>
+```
+
 <!-- prova: 6.occhio -->
 ```
-In un altro Terminale, `uv run ela task results` con l'id del task qui sopra: in alto nella pagina ci sono il tuo nome utente e «logout», e l'indirizzo è rimasto su news.ycombinator.com? Se al loro posto c'è «login», il cookie dell'accesso non è durato oltre lo step: rispondi n.
+Qui sopra, sullo schermo, c'è il risultato della lettura: in alto nella pagina ci sono il tuo nome utente e «logout», e l'indirizzo è rimasto su news.ycombinator.com? Se al loro posto c'è «login», il cookie dell'accesso non è durato oltre lo step: rispondi n.
 ```
 
 **Il fatto del 13 ottobre 2026** (al posto della misura «fuori dai passi», che è stata fatta ed è uscita: decisione
@@ -6581,9 +6635,14 @@ outcome completed
 browser.read_as_you
 ```
 
+<!-- prova: 8.schermo -->
+```
+uv run ela task results <id>
+```
+
 <!-- prova: 8.occhio -->
 ```
-Apri il risultato in un altro Terminale, con `uv run ela task results` e l'id del task qui sopra: la risposta del modello nomina un canale a cui sei iscritto?
+Qui sopra, sullo schermo, c'è il risultato della sessione: la risposta del modello nomina un canale a cui sei iscritto?
 ```
 
 ### 9. Un gesto come te

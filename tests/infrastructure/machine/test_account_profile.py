@@ -39,6 +39,7 @@ from ela.infrastructure.machine.account import (
     linked_in,
     lock_holder,
     on_the_folder,
+    process_table,
     profiles_in,
     reports_in,
     saved_in,
@@ -46,6 +47,9 @@ from ela.infrastructure.machine.account import (
 )
 from ela.infrastructure.machine.browser import PlaywrightBrowser
 from ela.ports import (
+    HELD,
+    HELD_IN_PART,
+    NOT_HELD,
     PROFILE_PROCESS,
     PROFILE_STEP,
     PROFILE_WINDOW,
@@ -1699,18 +1703,151 @@ async def test_a_page_with_a_window_asked_while_another_opening_is_under_way_giv
 
 
 def test_what_a_field_holds_is_compared_whole_whatever_it_is() -> None:
-    """Decision 144, and the re-read of 2026-10-13. The comparison of what a field holds with
-    what a secret holds is whole — a beginning is not the same —, and **it has an answer for
-    anything a field can hold**: half of a character, which no encoding takes, is a field that
-    does not hold what was typed, and not an error with the field in it."""
+    """Decisions 144 and 152, and the re-read of 2026-10-13. What a field holds is compared
+    whole with what a secret holds, and the answer is one of three: it holds it; **it holds a
+    beginning of it and nothing else** — a page that keeps less than it is given —; or it does
+    not. A field that holds nothing holds no beginning. And there is an answer for anything a
+    field can hold: half of a character, which no encoding takes, is a field that does not hold
+    what was typed, and not an error with the field in it."""
     half = "mario" + chr(0xD800)
 
-    assert account._same("mario", Secret("mario")) is True
-    assert account._same("mario ", Secret("mario")) is False
-    assert account._same("mari", Secret("mario")) is False
-    assert account._same("", Secret("mario")) is False
-    assert account._same(half, Secret("mario")) is False
-    assert account._same(half, Secret(half)) is True
+    assert account._held("mario", Secret("mario")) == HELD
+    assert account._held("mari", Secret("mario")) == HELD_IN_PART
+    assert account._held("m", Secret("mario")) == HELD_IN_PART
+    assert account._held("", Secret("mario")) == NOT_HELD, "nothing is not a beginning"
+    assert account._held("mario ", Secret("mario")) == NOT_HELD, "more is not what was typed"
+    assert account._held("ario", Secret("mario")) == NOT_HELD, "an end is not a beginning"
+    assert account._held("Mari", Secret("mario")) == NOT_HELD
+    assert account._held(half, Secret("mario")) == NOT_HELD
+    assert account._held(half, Secret(half)) == HELD
+    assert account._held("", Secret("")) == HELD
+
+
+# ----------------------------------------------------------------------------------------
+# Which processes name the folder: one reading (decision 153 of the review of 2026-10-13)
+# ----------------------------------------------------------------------------------------
+
+CLOSED = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the system's own ps is POSIX's")
+async def test_the_processes_of_this_user_are_asked_of_the_system_with_their_command_lines() -> (
+    None
+):
+    """The second launch this module makes to look at processes, with the first one's rules:
+    the system's own program, the closed environment, the processes **of this user** — a browser
+    of ELA's and what it started are no other's. A process this test started is among them, as
+    it was started; ended and collected, it is not."""
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "named so"])
+    try:
+        table = await process_table(CLOSED)
+
+        assert table is not None
+        assert table[child.pid].endswith("import time; time.sleep(60) named so")
+        assert os.getpid() in table
+    finally:
+        child.kill()
+        child.wait()
+    after = await process_table(CLOSED)
+    assert after is not None and child.pid not in after
+
+
+PRINTS = """#!{python}
+import sys
+open({said!r}, 'w').write(repr(sys.argv[1:]))
+print('  17 /a/program --flag')
+print('4242 /another one')
+print('  --user-data-dir=/the/folder')
+print('')
+print('   9 (ended)')
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a program that begins with #! is POSIX's")
+async def test_the_table_is_asked_for_this_user_alone_and_read_line_by_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What the program is started with, and how what it prints is read: a process is a line
+    that begins with its number; a line that begins with none belongs to the process above it —
+    an argument may hold a new line —, so a folder named there is still named by that process."""
+    said = tmp_path / "said"
+    program = tmp_path / "ps"
+    program.write_text(PRINTS.format(python=sys.executable, said=str(said)), encoding="utf-8")
+    program.chmod(0o700)
+    monkeypatch.setattr(account, "PS", str(program))
+
+    table = await process_table({})
+
+    assert table == {
+        17: "/a/program --flag",
+        4242: "/another one --user-data-dir=/the/folder",
+        9: "(ended)",
+    }
+    assert said.read_text(encoding="utf-8") == repr(
+        ["-ww", "-U", str(os.getuid()), "-o", "pid=,command="]
+    )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a program that begins with #! is POSIX's")
+async def test_a_table_the_system_did_not_give_is_none_and_never_an_empty_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No program to ask with, one that fails, one that does not answer in its time: ``None`` —
+    a doubt —, never «no process». And the program that did not answer is not left running."""
+    monkeypatch.setattr(account, "PS", str(tmp_path / "no-such-program"))
+    assert await process_table({}) is None
+
+    failing = tmp_path / "failing"
+    failing.write_text(
+        f"#!{sys.executable}\nprint('1 /sbin/launchd')\nraise SystemExit(2)\n", encoding="utf-8"
+    )
+    failing.chmod(0o700)
+    monkeypatch.setattr(account, "PS", str(failing))
+    assert await process_table({}) is None, "it ended badly: what it printed is not a table"
+
+    slow = tmp_path / "slow"
+    slow.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(120)\n", encoding="utf-8")
+    slow.chmod(0o700)
+    monkeypatch.setattr(account, "PS", str(slow))
+    monkeypatch.setattr(account, "PS_SECONDS", 0.2)
+    try:
+        assert await asyncio.wait_for(process_table({}), 20) is None
+        assert started_as(slow) == [], "killed, and collected: nothing of it is left"
+    finally:
+        for left in started_as(slow):
+            os.kill(left, signal.SIGKILL)
+
+
+async def test_what_names_the_folder_is_said_by_the_one_reading_of_a_command_line(
+    tmp_path: Path, installed: Path
+) -> None:
+    """One predicate (decision 153): a process names the folder when the function that says
+    whether the folder is held, and by what, does not answer «nothing» of its command line —
+    the browser itself, what it started for itself, another program on that folder. Not the
+    collector of crashes, which names a folder inside it; not a browser on another folder."""
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    made = chrome(profile)
+    binary = made._executable()
+
+    async def table() -> dict[int, str]:
+        return {
+            11: f"{binary} --user-data-dir={profile} --use-mock-keychain",
+            12: f"/a/helper --type=renderer --user-data-dir={profile} --lang=it",
+            13: f"/another/browser --user-data-dir={profile}",
+            14: f"/a/collector --database={profile}/Crashpad",
+            15: f"{binary} --user-data-dir={profile}-of-another",
+            16: "/sbin/launchd",
+        }
+
+    made._tabled = table  # type: ignore[method-assign]
+    assert await made._naming(profile) == [11, 12, 13]
+
+    async def nobody_says() -> None:
+        return None
+
+    made._tabled = nobody_says  # type: ignore[method-assign,assignment]
+    assert await made._naming(profile) is None, "a table that was not given is a doubt"
 
 
 async def test_on_another_system_no_screen_is_asked_about(tmp_path: Path) -> None:

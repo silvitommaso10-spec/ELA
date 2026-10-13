@@ -21,6 +21,7 @@ import logging
 import os
 import signal
 import stat
+import subprocess
 import sys
 import threading
 from collections.abc import Iterator
@@ -86,6 +87,10 @@ class Window:
     def set(self, **behaviour: bool) -> None:
         (self.folder / "behaviour.json").write_text(json.dumps(behaviour), encoding="utf-8")
 
+    def let_go(self) -> None:
+        """Let the process a program started for itself (``child``) end by itself."""
+        (self.folder / "release").write_text("", encoding="utf-8")
+
     def launched(self) -> list[dict[str, Any]]:
         file = self.folder / "launched.jsonl"
         if not file.exists():
@@ -121,8 +126,8 @@ def window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Window]:
     try:
         yield made
     finally:
-        for pid in made.started:
-            if running(pid):
+        for pid in (*made.started, *(one.get("child") or 0 for one in made.launched())):
+            if pid and running(pid):
                 os.kill(pid, signal.SIGKILL)
 
 
@@ -961,3 +966,244 @@ async def test_a_stop_raised_while_the_folder_is_prepared_starts_no_window(
 
     assert window.launched() == [] and made._window is None
     assert await made.settle(at_once) == ()
+
+
+# ----------------------------------------------------------------------------------------
+# When a close returns, no process names the folder any more (decision 153, 2026-10-13)
+# ----------------------------------------------------------------------------------------
+
+
+def naming(profile: Path) -> list[int]:
+    """The processes of this machine that name ``profile`` as a browser names its folder: the
+    test's own look, with the system's ``ps``."""
+    said = subprocess.run(
+        ["/bin/ps", "-ww", "-A", "-o", "pid=,args="], capture_output=True, text=True, check=False
+    ).stdout
+    wanted = f"--user-data-dir={profile}"
+    return [int(line.split()[0]) for line in said.splitlines() if wanted in line]
+
+
+TURNS = 10
+"""How many times the loop is let turn once the adapter has seen the main process end: a close
+that waited for nothing else has returned by then."""
+
+
+async def seen_to_end(made: AccountChrome, watched: asyncio.Task[None]) -> None:
+    """The adapter's own wait for the window has ended — and the loop has turned since."""
+    await asyncio.wait_for(asyncio.wait({watched}), PATIENCE)
+    for _ in range(TURNS):
+        await asyncio.sleep(0)
+
+
+async def with_a_child(window: Window, made: AccountChrome) -> dict[str, Any]:
+    """The window, whose program started a process of its own that names the folder and stays."""
+    window.set(child=True)
+    await made.window(None)
+    (one,) = await window.launches(1)
+    assert running(one["child"]) and one["child"] in naming(made._profile), (  # type: ignore[arg-type]
+        "the control: what the window started is there, and names the folder"
+    )
+    return one
+
+
+async def test_at_ela_s_stop_the_close_waits_for_what_the_window_started_too(
+    window: Window, tmp_path: Path
+) -> None:
+    """Decision 153. Seen on the CI of macOS on 2026-10-13, twice: the window was told, its main
+    process left by itself, the close returned — and processes the browser had started for
+    itself were still there, naming the folder. **When the close returns no process names the
+    folder any more**: with a grace that does not end, it returns because what the window had
+    started left too, and nothing was killed."""
+    profile = tmp_path / "profile"
+    made = chrome(profile, Told())
+    one = await with_a_child(window, made)
+    watched = made._watched
+    assert watched is not None
+
+    made._stopping.set()
+    settling = asyncio.ensure_future(made.settle(never))
+    await seen_to_end(made, watched)
+    returned_early = settling.done()
+    still_there = running(one["child"])
+    window.let_go()
+    names = await asyncio.wait_for(settling, PATIENCE)
+    left = naming(profile)
+
+    assert not running(one["pid"]) and still_there, "the control: the main left, its child not"
+    assert not returned_early, "the close returned with a process still naming the folder"
+    assert names == (), "everything left by itself: nothing was killed"
+    assert left == [], "and when it returned nothing named the folder"
+
+
+async def test_at_ela_s_stop_what_the_window_started_and_does_not_leave_is_killed_at_the_grace(
+    window: Window, tmp_path: Path
+) -> None:
+    """Past the grace the rule there already is: the group of the window is ELA's own — ELA
+    started it —, and ELA kills it, and says so."""
+    profile = tmp_path / "profile"
+    told = Told()
+    made = chrome(profile, told)
+    one = await with_a_child(window, made)
+    watched = made._watched
+    assert watched is not None
+    over = asyncio.Event()
+
+    made._stopping.set()
+    settling = asyncio.ensure_future(made.settle(over.wait))
+    await seen_to_end(made, watched)
+    returned_early = settling.done()
+    over.set()
+    names = await asyncio.wait_for(settling, PATIENCE)
+    left = naming(profile)
+
+    assert not returned_early
+    assert names == (WINDOW_NAME,), "what would not leave was killed, and the close says so"
+    assert left == [] and await gone(one["child"])
+    assert len(told.said) == 1, "and the end of the window is said once all the same"
+
+
+async def test_the_command_answers_only_when_what_the_window_started_has_left_too(
+    window: Window, tmp_path: Path
+) -> None:
+    """``ela browser close`` says «it quit: the profile is free»: not while a process the
+    window started still names the folder."""
+    profile = tmp_path / "profile"
+    made = chrome(profile, Told())
+    one = await with_a_child(window, made)
+    watched = made._watched
+    assert watched is not None
+
+    shutting = asyncio.ensure_future(made.shut(never))
+    await seen_to_end(made, watched)
+    answered_early = shutting.done()
+    window.let_go()
+    how = await asyncio.wait_for(shutting, PATIENCE)
+    left = naming(profile)
+
+    assert not answered_early, "the command answered with a process still naming the folder"
+    assert how == SHUT_QUIT and left == []
+    assert await gone(one["child"])
+
+
+async def test_the_command_kills_the_group_it_started_when_the_grace_is_over_and_says_killed(
+    window: Window, tmp_path: Path
+) -> None:
+    profile = tmp_path / "profile"
+    made = chrome(profile, Told())
+    one = await with_a_child(window, made)
+    watched = made._watched
+    assert watched is not None
+    over = asyncio.Event()
+
+    shutting = asyncio.ensure_future(made.shut(over.wait))
+    await seen_to_end(made, watched)
+    answered_early = shutting.done()
+    over.set()
+    how = await asyncio.wait_for(shutting, PATIENCE)
+
+    assert not answered_early
+    assert how == SHUT_KILLED, "the main had quit; what it started was killed: said as killed"
+    assert naming(profile) == [] and await gone(one["child"])
+
+
+class Known:
+    """The kernel's answer to «is this process still there», as the adapter asks it — and the
+    moment it first says no of one process."""
+
+    def __init__(self, made: AccountChrome, pid: int) -> None:
+        self.gone = asyncio.Event()
+        self._asking, self._pid = made._known, pid
+
+    def __call__(self, pid: int) -> bool:
+        there = self._asking(pid)
+        if pid == self._pid and not there:
+            self.gone.set()
+        return there
+
+
+async def another_with_a_child(
+    window: Window, profile: Path
+) -> tuple[AccountChrome, dict[str, Any], Known]:
+    """A browser ELA did not start, which the system says is ELA's binary on the folder, and
+    whose program started a process of its own that stays."""
+    window.set(child=True)
+    one = await a_browser_ela_did_not_start(window, profile)
+    made = chrome(profile)
+    made._said_of = Says(f"{window.binary} --user-data-dir={profile}")
+    known = Known(made, one["pid"])
+    made._known = known  # type: ignore[method-assign]
+    return made, one, known
+
+
+async def test_a_browser_ela_did_not_start_has_quit_only_when_nothing_of_it_names_the_folder(
+    window: Window, tmp_path: Path
+) -> None:
+    """The same sentence for a browser ELA did not start: told, its main process ends — and the
+    answer waits for what it had started, within the same grace."""
+    profile = tmp_path / "profile"
+    made, one, known = await another_with_a_child(window, profile)
+
+    shutting = asyncio.ensure_future(made.shut(never))
+    await asyncio.wait_for(known.gone.wait(), PATIENCE)
+    for _ in range(TURNS):
+        await asyncio.sleep(0)
+    answered_early = shutting.done()
+    window.let_go()
+    how = await asyncio.wait_for(shutting, PATIENCE)
+
+    assert not answered_early, "it answered «quit» with a process still naming the folder"
+    assert how == SHUT_QUIT and naming(profile) == []
+
+
+async def test_what_a_browser_ela_did_not_start_left_behind_is_not_killed_and_not_called_gone(
+    window: Window, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Past the grace the rule there already is: ELA kills only what it can still name. What
+    that browser had started is not ELA's browser, and its group is not ELA's: **nothing is
+    killed, and the answer is «told», not «quit»** — the folder is not said free."""
+    profile = tmp_path / "profile"
+    made, one, known = await another_with_a_child(window, profile)
+    signals = told(one["child"], monkeypatch)
+    groups: list[int] = []
+    monkeypatch.setattr(os, "killpg", lambda group, sent: groups.append(group))
+    over = asyncio.Event()
+
+    shutting = asyncio.ensure_future(made.shut(over.wait))
+    await asyncio.wait_for(known.gone.wait(), PATIENCE)
+    over.set()
+    how = await asyncio.wait_for(shutting, PATIENCE)
+
+    assert how == SHUT_TOLD, "the main process ended, and something of it still names the folder"
+    assert running(one["child"]) and one["child"] in naming(profile)
+    assert signals == [] and groups == [], "nothing ELA cannot name was signalled"
+
+
+async def test_a_look_at_the_processes_that_fails_is_a_doubt_and_not_an_empty_folder(
+    window: Window, tmp_path: Path
+) -> None:
+    """Fail-safe: the system could not say which processes there are. That is not «none names
+    the folder»: the close waits its grace, and then kills the group it started."""
+    profile = tmp_path / "profile"
+    made = chrome(profile, Told())
+    await made.window(None)
+    await window.launches(1)
+    watched = made._watched
+    assert watched is not None
+    asked: list[None] = []
+
+    async def nobody_says() -> None:
+        asked.append(None)
+
+    made._tabled = nobody_says  # type: ignore[attr-defined]
+    over = asyncio.Event()
+
+    made._stopping.set()
+    settling = asyncio.ensure_future(made.settle(over.wait))
+    await seen_to_end(made, watched)
+    returned_early = settling.done()
+    over.set()
+    names = await asyncio.wait_for(settling, PATIENCE)
+
+    assert asked, "the control: the system was asked"
+    assert not returned_early, "a look that failed was taken for an empty folder"
+    assert names == (WINDOW_NAME,)
