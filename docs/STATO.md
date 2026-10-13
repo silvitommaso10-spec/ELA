@@ -643,8 +643,8 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    ***annotato il 2026-10-13***: sullo stesso branch è entrata anche **M13.4f**, il confine del browser
    (decisione 109 della review del 12 ottobre), e il merge è «Merge M13.9+M13.4b+M13.4c+M13.4e+M13.4f» (decisione
    120); **M13.9 è fatta**, con la prova a mano passata per intero a `6d3c470`, e ADR 0063 e ADR 0064 sono
-   Accettate: prima del merge, che fa Tommaso, viene il giro conforme del costo (decisione 161;
-   [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2);
+   Accettate: il merge, che fa Tommaso, aspetta ciò che dice [`milestones/M13.9.md`](milestones/M13.9.md),
+   sezione 25, punto 2 — il giro conforme del costo (decisione 161), fatto, e la risposta alla domanda 165;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -893,9 +893,9 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   di M13.4e, poi il codice. ***Annotato il 2026-10-13***: **M13.9 è fatta**, con le sue riparazioni sullo stesso
   branch — M13.4b, M13.4c, M13.4e e M13.4f —: la prova a mano è passata sul Mac a `6d3c470`, l'ultimo commit
   del branch in quel momento (52 PASSATO, 0 FALLITI, nessun no), e [ADR 0063](adr/0063-browser-with-your-accounts.md)
-  e [ADR 0064](adr/0064-browser-boundary.md) sono Accettate. Prima del merge, che fa Tommaso, viene il giro
-  conforme del costo (decisione 161): dov'è arrivato è in [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25,
-  punto 2.
+  e [ADR 0064](adr/0064-browser-boundary.md) sono Accettate. Il merge, che fa Tommaso, aspetta ciò che
+  dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2: il giro conforme del costo (decisione
+  161), fatto — M13.9 resta sopra la soglia —, e la risposta alla domanda 165.
 - **M13.4b — una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta**
   (ADR 0052 §9 e §10).
   **Registrata il 2026-10-01** dalla review della SPEC di M6.3c, con l'ordine non deciso. ***Deciso il 2026-10-10***
@@ -907,8 +907,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   dell'adapter che la misura ha trovato accanto — chiudere arriva in fondo anche se chi lo aspetta è cancellato,
   e un'apertura cancellata mentre il driver parte non lo lascia (decisione 26). ***Annotato il 2026-10-10***, la
   sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9. ***Annotato il 2026-10-13***: la prova a mano di M13.9 è passata per
-  intero a `6d3c470`, con questa riparazione sul branch; prima del merge, che fa Tommaso con M13.9, viene il
-  giro conforme del costo (decisione 161).
+  intero a `6d3c470`, con questa riparazione sul branch; il merge, che fa Tommaso con M13.9, aspetta ciò
+  che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2.
 - **M13.4c — la fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti**
   (ADR 0052 §10, ADR 0038 §11). **Registrata e scritta il 2026-10-10** dalla review della SPEC di M13.4b
   (decisione 27), che l'ha misurata: nei primi decimi di secondo di uno step la fermata non chiudeva niente, e
@@ -916,8 +916,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   sua: da quando la fermata è alzata nessuna navigazione e nessun gesto parte, e una pagina che entra in tabella
   dopo la fermata la chiude chi ce l'ha messa ([`milestones/M13.4c.md`](milestones/M13.4c.md)). ***Annotato il
   2026-10-10***, la sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9. ***Annotato il 2026-10-13***: la prova a mano di M13.9 è passata per
-  intero a `6d3c470`, con questa riparazione sul branch; prima del merge, che fa Tommaso con M13.9, viene il
-  giro conforme del costo (decisione 161).
+  intero a `6d3c470`, con questa riparazione sul branch; il merge, che fa Tommaso con M13.9, aspetta ciò
+  che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2.
 - **M13.4e — alla chiusura di ELA nessuno aspetta il browser, e il processo può non uscire** (ADR 0038 §11,
   ADR 0060 §7). **Registrata e scritta il 2026-10-10** dalla review di M13.4b e M13.4c (decisione 51), dopo che
   la loro rilettura critica l'ha misurato: se il loop viene smontato con una chiamata del browser in volo, ELA
@@ -931,8 +931,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   finisce come finiva; un secondo segnale fa finire subito la grazia; i gestori sono di ELA. Con la misura
   prima della forma, e con un criterio della suite: un test che congela o uccide un browser non lascia né un
   processo né una cartella. ***Annotato il 2026-10-13***: la prova a mano di M13.9 è passata per
-  intero a `6d3c470`, con questa riparazione sul branch; prima del merge, che fa Tommaso con M13.9, viene il
-  giro conforme del costo (decisione 161).
+  intero a `6d3c470`, con questa riparazione sul branch; il merge, che fa Tommaso con M13.9, aspetta ciò
+  che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2.
 - **M13.4f — il confine del browser: guardare, non rifare** (ADR 0052 §6, [ADR 0064](adr/0064-browser-boundary.md)).
   **Registrata il 2026-10-12** dalla review della prova a mano di M13.9 (decisione 109), dopo che le misure fatte
   intorno a quella prova avevano trovato che il cancello di M13.4 guardava un rimando solo: il secondo di una
@@ -940,7 +940,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   una prova a mano sua: i tool guardano dove la pagina è, e il cancello guarda le richieste del browser invece di
   rifarle ([`milestones/M13.4f.md`](milestones/M13.4f.md)). ***Annotato il 2026-10-13***: implementata; la prova a
   mano di M13.9 è passata per intero a `6d3c470`, con questa riparazione sul branch, e ADR 0064 è Accettata;
-  prima del merge, che fa Tommaso con M13.9, viene il giro conforme del costo (decisione 161).
+  il merge, che fa Tommaso con M13.9, aspetta ciò che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25,
+  punto 2.
 - **M13.4d — lo shell del browser vuoto gira senza il sandbox di Chromium** (ADR 0052 §1). **Registrata il
   2026-10-10** dalla review della SPEC di M13.9 (decisione 39): Playwright lo spegne di default, e l'adapter di
   M13.4 non lo riaccende. **Fuori dalla fila.** **Condizione d'ingresso: una misura sui runner della CI** — su
