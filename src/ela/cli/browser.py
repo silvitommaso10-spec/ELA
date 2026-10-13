@@ -38,7 +38,9 @@ NOT_READ = "not read"
 """What a fact of the folder is when the folder could not be read: not «no», and not «none»."""
 A_LOGIN = {
     True: "with a window, whatever the switch says",
-    False: "with a window — and ELA cannot open one now: a login would not start",
+    False: (
+        "with a window — and ELA could not tell that it can open one now: a login would not start"
+    ),
     None: f"with a window — whether one can be opened: {NOT_READ}",
 }
 """What is said of a login (decision 143 of the review of 2026-10-13): it is started in a window

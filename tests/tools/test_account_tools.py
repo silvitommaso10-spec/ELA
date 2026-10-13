@@ -1674,8 +1674,9 @@ async def test_a_window_that_went_away_after_the_yes_spends_it_and_starts_nothin
 
 
 async def test_the_two_fields_are_read_again_right_before_the_click(tmp_path: Path) -> None:
-    """Decision 144. Measured on 2026-10-13: the window of a driven launch comes in front, with
-    the focus on the field just written — a key pressed in those seconds lands in the form. So
+    """Decision 144. Measured on 2026-10-13: the window of a driven launch comes in front — in
+    two rounds of three —, with the focus on the field just written; a key pressed in those
+    seconds lands in the form, which no real key was pressed to show. So
     right before the click the tool asks the browser whether each field still holds what was
     typed: **the comparison is the browser's adapter's**, which is handed the secrets as it was
     handed them to type, and the tool gets a yes or a no."""

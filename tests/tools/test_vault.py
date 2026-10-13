@@ -1230,9 +1230,10 @@ async def test_the_line_enters_the_folder_of_ela_by_itself_and_leaves_the_termin
     """Decision 145 of the review of 2026-10-13, which revises decision 101 on a fact: twice the
     line was pasted in a terminal that was not in ELA's folder, where ELA's command finds no
     ``.env`` to read its token from. Where ELA read a ``.env``, **the line is a subshell that
-    enters that folder** — measured in ``zsh`` and in ``bash``: the vault's program still asks
-    on the terminal, ELA's command still reads a pipe, and whoever pasted it is still where they
-    were. The two halves are the two absolute paths of before."""
+    enters that folder** — measured in ``zsh`` and in ``bash``, with two programs standing in
+    for the vault's and for ELA's command: the first still asks on the terminal, the second
+    still reads a pipe, and whoever pasted it is still where they were. The two halves are the
+    two absolute paths of before."""
     at = program(tmp_path)
     made = await door(FakeVault([MARIO], state=VAULT_LOCKED), at, command=COMMAND, folder=folder)
     bare = await door(FakeVault([MARIO], state=VAULT_LOCKED), at, command=COMMAND)

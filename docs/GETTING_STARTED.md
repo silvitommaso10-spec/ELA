@@ -6204,7 +6204,7 @@ Esporta le password da Chrome e da Password di Apple dentro /Volumes/ELA-prova, 
 
 **La riga che `ela vault status` stampa porta due percorsi interi**: il programma del vault che hai dichiarato, e **il
 comando di ELA con cui questa ELA gira** — quello accanto al suo interprete, non un `ela` cercato nel `PATH`. Funziona
-incollata così com'è, senza un ambiente attivato, **in qualunque Terminale e da qualunque cartella**: il comando di ELA
+incollata così com'è, senza un ambiente attivato, **da qualunque cartella** — misurato in `zsh` e in `bash` —: il comando di ELA
 legge il token dal `.env` della cartella in cui avvii ELA, e la riga **ci entra da sé**, fra parentesi — una sottoshell
 —, senza spostare il Terminale in cui la incolli (decisione 145: due volte era stata incollata altrove). Se ELA non
 sapesse nominare il proprio comando lo direbbe, e non stamperebbe nessuna riga. **Se dopo la riga leggi «no key arrived
@@ -6340,7 +6340,7 @@ login parte sempre con la finestra, qualunque cosa dica `ela browser window`, pe
 che si dice senza finestra — è ciò che ha fatto questo. La finestra dura i secondi del login e si chiude da sé.
 **Finché c'è, non scrivere**: prende la tastiera, e un tasto premuto in quei secondi finisce nel modulo. ELA rilegge i
 due campi subito prima del click: se non portano più ciò che ha scritto non clicca, lo step fallisce
-`browser.field_changed`, e il passo si rifà. Se ELA non potesse aprire una finestra — avviata fuori dalla sessione del
+`browser.field_changed`, e il passo si rifà — *ELA sa di non aver cliccato, non se un tuo Invio ha inviato il modulo*. Se ELA non potesse aprire una finestra — avviata fuori dalla sessione del
 tuo schermo — il login non partirebbe: `browser.no_window`, prima della domanda; `ela browser status` lo dice nella
 riga `a login runs`.
 

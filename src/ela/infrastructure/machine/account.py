@@ -601,6 +601,16 @@ async def _nobody_is_told(address: str | None, seconds: float) -> None:
     """Whoever builds this adapter without saying who is told that a window ended."""
 
 
+def _same(written: str, value: Secret) -> bool:
+    """Whether a field that holds ``written`` holds what ``value`` holds: **whole** — a
+    beginning is not the same —, in a time that does not say where the two part, and with an
+    answer for anything a field can hold: half of a character, which no encoding takes as it
+    is, makes two texts that differ, and not an error that would carry the field in it."""
+    return hmac.compare_digest(
+        written.encode("utf-8", "surrogatepass"), value.reveal().encode("utf-8", "surrogatepass")
+    )
+
+
 async def _no_screen_was_said() -> bool:
     """Whoever builds this adapter without saying how the system answers «is this process inside
     a session of the screen»: it is not (fail-safe) — a page asked with a window is refused."""
@@ -939,11 +949,17 @@ class AccountChrome(PlaywrightBrowser):
     async def holds(self, page: str, selector: str, value: Secret) -> bool:
         """Whether the field holds what ``value`` holds: read from the page and compared here,
         where the secret is opened to be typed — the tool gets a yes or a no (decision 144).
-        Compared whole, in a time that does not say where two values part."""
+
+        **A field that is not there holds nothing**, and is not waited for: a key pressed in the
+        window may be the one that sends the form, and the page that comes has no such field —
+        the read would wait for one until the time of the tool ran out. *Between the count and
+        the read the field can still go*: then the read waits, and the tool's time ends it."""
 
         async def read(opened: _Open) -> bool:
-            written = await opened.page.locator(selector).input_value()
-            return hmac.compare_digest(written.encode(), value.reveal().encode())
+            field = opened.page.locator(selector)
+            if await field.count() != 1:
+                return False
+            return _same(await field.input_value(), value)
 
         return await self._on(page, read)
 

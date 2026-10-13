@@ -1004,6 +1004,19 @@ async def test_a_field_that_is_gone_holds_nothing_and_is_not_waited_for(
     assert held is False
 
 
+async def test_a_selector_that_finds_two_fields_holds_nothing_either(
+    browser: AccountChrome, served: list[Site]
+) -> None:
+    """One element, as for every gesture: what was typed was typed in one field, and a selector
+    that finds two by the time of the click is not that field any more."""
+    web = site(served, {"/": (200, {}, LOGIN)})
+    opened = await browser.open(web.origin + "/", everywhere, FakeStop())
+    await browser.fill_secret(opened.page, "#user", Secret("mario"))
+
+    assert await browser.holds(opened.page, "#user", Secret("mario")) is True
+    assert await browser.holds(opened.page, "input", Secret("mario")) is False
+
+
 async def test_a_field_that_holds_what_no_text_can_be_made_of_is_a_no_and_not_an_error(
     browser: AccountChrome, served: list[Site]
 ) -> None:

@@ -338,8 +338,8 @@ class VaultDoor:
         # launched in. The line enters that folder by itself, in a subshell: it works from
         # whichever folder the terminal is in, and leaves the terminal there (decision 145 of
         # the review of 2026-10-13 — twice the line had been pasted somewhere else). Measured in
-        # zsh and in bash: the vault's program still asks on the terminal, and ELA's command
-        # still reads a pipe.
+        # zsh and in bash, with two programs standing in for the vault's and for ELA's command:
+        # the first still asks on the terminal, and the second still reads a pipe.
         return f"(cd {shlex.quote(self._folder)} && {line})"
 
     def _locked(self) -> str:

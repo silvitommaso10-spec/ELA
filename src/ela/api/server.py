@@ -152,8 +152,15 @@ def _woken(loop: asyncio.AbstractEventLoop) -> Iterator[None]:
 
     **A loop that cannot be asked to read a descriptor is given none**: the one Python gives on
     Windows sets a wake-up of its own when it is made (read in ``asyncio``; not measured there).
+    **And where no descriptor is left for the pair, ELA goes on without the wake-up** — as it
+    did before it had one —: this is entered when there is an ELA built and not yet closed, and
+    nothing here may keep its close from running.
     Called from the main thread only, like everything that touches the signals."""
-    reading, writing = socket.socketpair()
+    try:
+        reading, writing = socket.socketpair()
+    except OSError:
+        yield
+        return
     try:
         reading.setblocking(False)
         writing.setblocking(False)

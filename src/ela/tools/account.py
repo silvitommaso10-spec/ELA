@@ -26,9 +26,10 @@ reading. What fails there has its code; the yes is spent, and nothing was typed.
 **A login always has a window** (decisions 143 and 144 of the review of 2026-10-13): its page is
 opened in a browser that has one whatever the user's switch says — a site may refuse a browser
 that says it has none: measured on one site —, and where no window can be had the login does
-not start, before the question and before the vault is asked. A window takes the keyboard
-(measured): so right before the click the two fields are read again, and a field that no longer
-holds what was typed stops the click.
+not start, before the question and before the vault is asked. A window takes the keyboard —
+measured: in two rounds of three the browser came in front, with the focus on the field just
+written; no real key was pressed —: so right before the click the two fields are read again,
+and a field that no longer holds what was typed stops the click.
 """
 
 from __future__ import annotations
@@ -162,9 +163,15 @@ NO_WINDOW: Final = "browser.no_window"
 inside a session of the screen, or the system did not say: a login does not start without one
 (decision 143). Not retryable: nothing about a later attempt is different by itself."""
 FIELD_CHANGED: Final = "browser.field_changed"
-"""Right before the click, a field of the login form no longer held what ELA had typed in it:
-the window has the keyboard, and a key pressed in those seconds lands in the form (measured;
-decision 144). ELA did not click, and nothing was sent."""
+"""Right before the click, a field of the login form did not hold what ELA had typed in it — or
+was not there any more: the window has the keyboard, and a key pressed in those seconds lands in
+the form (decision 144; measured that the browser comes in front with the focus on the field,
+not with a real key); and a page may itself change what is typed into its field. **ELA did not
+click. Whether a key sent the form — a Return does, by itself — ELA does not know.**"""
+CLICK_ASKED: Final = 1
+"""What a login adds to the count of its gestures the instant before it asks for the click: a
+time that runs out with two gestures counted ran out **inside the click** if this is there, and
+while the two fields were being read again if it is not."""
 ACCOUNT_CODES: Final[frozenset[str]] = frozenset({PROFILE_UNDECLARED, PROFILE_UNSAFE, PROFILE_BUSY})
 
 BROWSER_SECOND_FACTOR: Final = "browser.second_factor"
@@ -646,8 +653,9 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             return self._stopped(opened, done, site)
         await self._gesture(done, self._browser.fill_secret(page, word, taken.password))
         # The window has the keyboard, and a key pressed since the first field was written
-        # lands in the form (measured on 2026-10-13; decision 144): the two fields are read
-        # again here, right before the click. The comparison is the browser's adapter's.
+        # lands in the form (decision 144; measured on 2026-10-13 that the browser comes in
+        # front with the focus on the field written last — not with a real key): the two fields
+        # are read again here, right before the click. The comparison is the adapter's.
         try:
             as_typed = await self._browser.holds(
                 page, username, taken.username
@@ -658,12 +666,14 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             return Outcome(
                 {"status": opened.status, "gestures": done[0]},
                 FIELD_CHANGED,
-                f"a field of the login form on the page of {site} no longer held what ELA had "
-                "typed in it — the window has the keyboard, and a key pressed meanwhile lands "
-                f"there: ELA did not click, and nothing was sent{self._after(done)}",
+                f"right before the click, a field of the login form on the page of {site} did "
+                "not hold what ELA had typed in it — a key pressed while its window had the "
+                "keyboard lands there, and a page may change what is typed —: ELA did not "
+                f"click, and does not know whether a key sent the form{self._after(done)}",
             )
         if stop.is_set():
             return self._stopped(opened, done, site)
+        done.append(CLICK_ASKED)
         await self._gesture(done, self._browser.click(page, call.click))
         left = await self._browser.left(page)
         if left is not None:
@@ -697,6 +707,16 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         """A time that ran out **after the click** is not a page still at work: the password was
         typed and the form was sent, and what the site did with it ELA does not know (decision
         111). Said as it is — and never asked again: a login sent twice is sent twice."""
+        if done[0] == GESTURES_OF_A_LOGIN - 1 and CLICK_ASKED not in done[1:]:
+            # Both values typed, and the click not asked yet: the time ran out while the two
+            # fields were being read again (decision 144). ELA did not click — and a key
+            # pressed in the window, which has the keyboard, may have sent the form by itself.
+            return (
+                f"the two values were typed on the page of {site}, and the two fields were "
+                f"being read again before the click when the {self._browsing.timeout_seconds} s "
+                "ran out: ELA closed the browser. ELA did not click, and does not know whether "
+                f"a key sent the form{self._after(done)}"
+            )
         if done[0] == GESTURES_OF_A_LOGIN - 1:
             # Both values typed, and the third gesture not counted: the time ran out **inside
             # the click**, which waits for the navigation it starts. The form may have left.

@@ -658,12 +658,18 @@ dice l'interruttore**: senza finestra funzionano, misurato dalla stessa prova.
   dentro il browser il fuoco è sul campo appena scritto; un tasto premuto in quei secondi finisce nel modulo.
   Perciò, scritti i due valori, il tool chiede al browser se ciascun campo porta ancora ciò che è stato
   scritto: **il confronto lo fa l'adapter**, a cui i `Secret` sono consegnati come gli sono consegnati per
-  scrivere, e al tool torna un sì o un no. Se uno dei due è cambiato **non clicca**: i due gesti sono contati,
-  niente è stato inviato, la pagina è chiusa, e nessuna frase porta un valore. *Che cosa non è misurato*: un
-  tasto vero — mandarne uno al sistema chiede un permesso che ELA non chiede: la sonda ha un modo in cui
-  aspetta il tasto di chi è al Mac, non lanciato —; ciò che il documento dice del fuoco non basta da solo,
-  perché lo dice uguale senza finestra: ciò che decide è quale applicazione è davanti. *E fra la rilettura e il
-  click resta un istante.*
+  scrivere, e al tool torna un sì o un no. Se uno dei due è cambiato — **o non c'è più** — **non clicca**: i
+  due gesti sono contati, la pagina è chiusa, e nessuna frase porta un valore. **ELA sa di non aver cliccato;
+  non sa se un tasto ha inviato il modulo**: un Invio premuto in quei secondi lo invia da sé, e la frase lo
+  dice così — «niente è stato inviato» era più di ciò che ELA può dire (*corretto dalla rilettura critica, lo
+  stesso giorno*). Lo stesso vale se il tempo del tool finisce **mentre** i campi sono riletti: la frase dice
+  che ELA non ha cliccato, e non «il click è stato chiesto». **Il confronto è intero**: un campo che tiene meno
+  di ciò che riceve — una lunghezza sua — o che la pagina riscrive non porta ciò che è stato scritto, e un
+  login lì finisce `browser.field_changed` senza essere inviato; *non so quanti siti lo facciano*, ed è la
+  domanda 152 di `docs/milestones/M13.9.md`. *Che cosa non è misurato*: un tasto vero — mandarne uno al sistema
+  chiede un permesso che ELA non chiede: la sonda ha un modo in cui aspetta il tasto di chi è al Mac, non
+  lanciato —; ciò che il documento dice del fuoco non basta da solo, perché lo dice uguale senza finestra: ciò
+  che decide è quale applicazione è davanti. *E fra la rilettura e il click resta un istante.*
 
 **Il valore non viene mai dal piano**, e non entra nel modulo dei tool: il tool riceve due `Secret` dalla porta
 del vault e li passa all'adapter del browser — a nessun altro, in nessun esito, messaggio o evento.
@@ -801,8 +807,8 @@ senza finestra.
 scritta: **`browser.login` parte con la finestra qualunque cosa dica l'interruttore** (§5). Non è un argomento
 della capability e un piano non lo sceglie: è com'è fatto il tool. L'interruttore resta di Tommaso, e resta ciò
 che decide per ogni altro step con il profilo. **`ela browser status` lo dice**, in una riga sua accanto a
-quella dell'interruttore: un login parte con la finestra, e — quando è così — che adesso ELA non può aprirne
-una, o che non ha potuto chiederlo; `GET /browser` porta lo stesso fatto in `login_window`.*
+quella dell'interruttore: un login parte con la finestra, e — quando è così — che adesso ELA non ha potuto dire
+di poterne aprire una, o che non ha potuto chiederlo; `GET /browser` porta lo stesso fatto in `login_window`.*
 
 **La finestra del login a mano** (decisione 18b). ELA lancia il binario, da solo, sulla cartella del profilo,
 con gli argomenti dell'elenco chiuso di §4 e, se c'è, l'indirizzo `https` di un sito **dichiarato**. Non c'è
