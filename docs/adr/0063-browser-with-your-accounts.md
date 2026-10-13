@@ -900,8 +900,11 @@ la cerca dopo. ***Dove si scosta dalla lettera della decisione, e perché*** (mi
 processo nomina più la cartella» è letto **dei processi del gruppo di quel browser**, non di ogni processo
 dell'utente. `on_the_folder` conta un dubbio — una riga di comando che nomina una cartella da dove sta il suo
 processo — come un processo che la nomina: è giusto del solo processo che un lock nomina, e su una tabella
-intera ha fatto aspettare ogni chiusura a una shell la cui riga di comando conteneva il testo di quell'argomento.
-È la domanda 158 di `docs/milestones/M13.9.md`. *Un browser guidato che si chiude da sé*: misurato sul Mac,
+intera ha fatto aspettare ogni chiusura a una shell la cui riga di comando conteneva il testo di quell'argomento:
+**ventiquattro test rossi in un giro**, ognuno una chiusura che aspettava la sua grazia per un processo che non
+era di nessun browser. Era la domanda 158 di `docs/milestones/M13.9.md`, **decisa (a) il 13 ottobre 2026** dalla
+review a `6d3c470`: **la promessa è dei processi di quel browser, e il predicato resta uno**. *Un browser guidato
+che si chiude da sé*: misurato sul Mac,
 in trenta giri nessun processo nominava la cartella quando la chiusura della pagina è tornata; sulla CI non è
 misurato, e la chiusura di una pagina resta com'è.
 
