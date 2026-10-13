@@ -6344,6 +6344,13 @@ due campi subito prima del click: se non portano più ciò che ha scritto non cl
 tuo schermo — il login non partirebbe: `browser.no_window`, prima della domanda; `ela browser status` lo dice nella
 riga `a login runs`.
 
+**Se il browser di ELA è già dentro quel sito** — da una volta precedente che hai fatto questo passo: la sessione dura
+oltre lo step e oltre il lancio —, **esci prima da lì, a mano**: `uv run ela browser open news.ycombinator.com`,
+«logout» nella pagina, poi Cmd-Q. Altrimenti questo passo non parte da dove dice di partire — «prima nessuno è entrato
+in quel sito» —, e la sua ultima domanda, «in alto c'è logout?», avrebbe un sì anche con un login non riuscito. *Che
+cosa dice se il login di oggi è riuscito è il suo risultato*: dove la pagina è finita, e il campo della password. Lo
+script non lo chiede: è la domanda 151 di `milestones/M13.9.md`.
+
 <!-- prova: 6.occhio -->
 ```
 Nel tuo vault c'è la voce del tuo account di news.ycombinator.com, con l'indirizzo https://news.ycombinator.com/login, l'hai aggiunta tu a mano, ed è la sola per quell'host (dopo l'importazione del passo 2 può essercene una seconda)?

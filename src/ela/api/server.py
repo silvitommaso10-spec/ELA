@@ -166,11 +166,15 @@ def _woken(loop: asyncio.AbstractEventLoop) -> Iterator[None]:
         if not read:
             yield
             return
-        found = signal.set_wakeup_fd(writing.fileno(), warn_on_full_buffer=False)
         try:
-            yield
+            found = signal.set_wakeup_fd(writing.fileno(), warn_on_full_buffer=False)
+            try:
+                yield
+            finally:
+                signal.set_wakeup_fd(found)
         finally:
-            signal.set_wakeup_fd(found)
+            # Whatever happened — the system refusing the descriptor included —, the loop is
+            # not left reading a socket that is about to be closed.
             loop.remove_reader(reading)
     finally:
         reading.close()

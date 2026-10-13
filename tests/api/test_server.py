@@ -758,6 +758,40 @@ def test_what_wakes_the_loop_is_ela_s_while_it_serves_and_closes_and_then_what_i
     assert after == found_by_ela, "afterwards, the one it had found"
 
 
+class Reading:
+    """A loop that writes down what it was asked to read, and to read no more."""
+
+    def __init__(self) -> None:
+        self.reads: list[object] = []
+
+    def add_reader(self, descriptor: object, *arguments: object) -> None:
+        self.reads.append(descriptor)
+
+    def remove_reader(self, descriptor: object) -> bool:
+        self.reads.remove(descriptor)
+        return True
+
+
+@POSIX
+def test_a_descriptor_the_system_refuses_leaves_the_loop_reading_nothing_of_ela_s(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wake-up is two halves — the loop reads, the system writes —, and the second can be
+    refused. Then the loop is not left reading a socket ELA is about to close, and what the
+    system said leaves as it is."""
+    loop = Reading()
+
+    def refused(descriptor: int, **options: object) -> int:
+        raise ValueError("set_wakeup_fd only works in main thread of the main interpreter")
+
+    monkeypatch.setattr(signal, "set_wakeup_fd", refused)
+
+    with pytest.raises(ValueError, match="main thread"), server._woken(cast(Any, loop)):  # noqa: SLF001
+        pytest.fail("the block is not entered with half a wake-up")
+
+    assert loop.reads == []
+
+
 class ReadsNothing:
     """A loop that cannot be asked to read a descriptor — the one Python gives on Windows, which
     wakes at a signal by a descriptor it sets itself when it is made."""
