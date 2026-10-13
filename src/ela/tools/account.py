@@ -48,6 +48,8 @@ from ela.permissions import (
     EXPECT_MAX_LENGTH,
 )
 from ela.ports import (
+    HELD,
+    HELD_IN_PART,
     PROFILE_PROCESS,
     PROFILE_STEP,
     PROFILE_WINDOW,
@@ -167,7 +169,9 @@ FIELD_CHANGED: Final = "browser.field_changed"
 was not there any more: the window has the keyboard, and a key pressed in those seconds lands in
 the form (decision 144; measured that the browser comes in front with the focus on the field,
 not with a real key); and a page may itself change what is typed into its field. **ELA did not
-click. Whether a key sent the form — a Return does, by itself — ELA does not know.**"""
+click. Whether a key sent the form — a Return does, by itself — ELA does not know.** One case
+has a sentence of its own (decision 152): a field that holds **only a beginning** of what was
+typed — a page that keeps less than it is given —, said without saying how much."""
 CLICK_ASKED: Final = 1
 """What a login adds to the count of its gestures the instant before it asks for the click: a
 time that runs out with two gestures counted ran out **inside the click** if this is there, and
@@ -657,12 +661,23 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         # front with the focus on the field written last — not with a real key): the two fields
         # are read again here, right before the click. The comparison is the adapter's.
         try:
-            as_typed = await self._browser.holds(
-                page, username, taken.username
-            ) and await self._browser.holds(page, word, taken.password)
+            held = await self._browser.holds(page, username, taken.username)
+            if held == HELD:
+                held = await self._browser.holds(page, word, taken.password)
         finally:
             del taken
-        if not as_typed:
+        if held == HELD_IN_PART:
+            # The comparison stays whole (decision 152): a login is not sent with less than the
+            # vault gave. But this case is told apart, and by no number: how much the field
+            # kept is something of what was typed.
+            return Outcome(
+                {"status": opened.status, "gestures": done[0]},
+                FIELD_CHANGED,
+                f"right before the click, a field of the login form on the page of {site} held "
+                "only a beginning of what ELA had typed in it — the page keeps less than it is "
+                f"given —: ELA did not click{self._after(done)}",
+            )
+        if held != HELD:
             return Outcome(
                 {"status": opened.status, "gestures": done[0]},
                 FIELD_CHANGED,

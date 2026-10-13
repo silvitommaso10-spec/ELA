@@ -1013,6 +1013,17 @@ ONLY_ONE_IS_ELA_S: Final = (
 )
 WITH_A_WINDOW: Final = "con finestra"
 WITHOUT_A_WINDOW: Final = "senza finestra"
+A_LOGIN: Final = {
+    True: "con finestra, qualunque cosa dica l'interruttore",
+    False: (
+        "con finestra — ed ELA non ha potuto dire di poterne aprire una adesso: un login non "
+        "partirebbe"
+    ),
+    None: f"con finestra — se una si possa aprire: {NOT_READ}",
+}
+"""What the view says of a login, beside the switch (decision 150 of the review of 2026-10-13):
+the view said «senza finestra» while a login would have one. The fact is ``GET /browser``'s
+``login_window``, and the row does not move with the switch."""
 
 
 class BrowserOutOfReachError(ApiError):
@@ -1091,6 +1102,7 @@ def _profile_pairs(profile: BrowserOut) -> pages.Markup:
             key="Finestra",
             value=WITH_A_WINDOW if profile.window else WITHOUT_A_WINDOW,
         ),
+        pages.fragment(HERE, "pair", key="Un login", value=A_LOGIN[profile.login_window]),
         pages.fragment(HERE, "pair", key="Collegato a un account", value=linked),
         pages.fragment(HERE, "pair", key="Password salvate", value=saved),
     ]

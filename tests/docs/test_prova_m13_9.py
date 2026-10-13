@@ -681,7 +681,7 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     # of the task it names, **on the screen and never in the file** —, for the questions of the
     # steps that used to send the user to another Terminal with an id to copy.
     assert THE_PAGE_SAYS in on_the_screen, "the result is put in front of whoever answers"
-    assert THE_PAGE_SAYS not in written and "un canale" not in written, (
+    assert THE_PAGE_SAYS not in written and "Le tue iscrizioni" not in written, (
         "and nothing of the text of a page enters the file"
     )
     for step in (5, 6, 8):
@@ -766,7 +766,9 @@ async def test_a_user_already_inside_the_site_of_the_login_stops_the_proof_befor
     If it is, the proof stops — FERMATO, not FALLITO —, says how to leave the site by hand, and
     spends no yes of a login and no password. Nothing of that read is in the file."""
     awaited = proof_login()["expect_text"]
-    inside = dataclasses.replace(a_page(), texts={None: f"mario | {awaited} — la prima pagina"})
+    inside = dataclasses.replace(
+        a_page(), texts={None: f"mario | {awaited} — SENTINELLA di chi è già dentro"}
+    )
 
     walk = await walked(monkeypatch, tmp_path, inside, before=8)
 
@@ -781,17 +783,27 @@ async def test_a_user_already_inside_the_site_of_the_login_stops_the_proof_befor
     assert "login-news-ycombinator.json" not in written.split("—— passo 6 ——", 1)[1], (
         "the login was not even planned"
     )
-    assert "la prima pagina" not in written and "mario |" not in written, (
+    assert "SENTINELLA" not in written and "mario |" not in written, (
         "nothing of what the read brought back is in the file"
     )
 
 
-def test_the_text_the_login_awaits_is_read_from_its_plan_and_looked_for_whole() -> None:
-    """The pure halves of ``assente``: the text is the plan's own ``expect_text``, and it is
-    «there» when the read printed it — as it is written, wherever it is."""
+def test_the_text_the_login_awaits_is_read_from_its_plan_and_looked_for_whole(
+    tmp_path: Path,
+) -> None:
+    """The pure halves of ``assente``: the text is the plan's own ``expect_text`` — of whichever
+    plan the proof was given, written by hand nowhere —, and it is «there» when the read printed
+    it, as it is written, wherever it is."""
     module = script()
+    another = json.loads(PROOF_LOGIN.read_text(encoding="utf-8"))
+    another["steps"][0]["arguments"].update(expect_text="Esci", site="posta.example")
+    plan = tmp_path / "another-login.json"
+    plan.write_text(json.dumps(another), encoding="utf-8")
 
     assert module.awaited_by(PROOF_LOGIN) == proof_login()["expect_text"] == "logout"
+    assert module.awaited_by(plan) == "Esci" and module.site_of(plan) == "posta.example"
+    assert module.site_of(PROOF_LOGIN) == PROOF_SITE
+    assert "uv run ela browser open posta.example" in module.inside_already("posta.example", "Esci")
     assert module.already_there("logout", "mario | logout\nla prima pagina")
     assert module.already_there("logout", "x logout")
     assert not module.already_there("logout", "login | la prima pagina")

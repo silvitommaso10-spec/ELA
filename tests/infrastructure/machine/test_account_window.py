@@ -858,6 +858,13 @@ async def test_a_pid_that_is_no_longer_that_browser_when_the_grace_ends_is_not_k
         f"{window.binary} --user-data-dir={profile}", "a program that has nothing to do with it"
     )
 
+    async def the_table_of_that_world() -> dict[int, tuple[int, str]]:
+        # The same world, as the system's table says it: that pid is another program's by now,
+        # and nothing names the folder (decision 153: the answer waits for that, too).
+        return {one["pid"]: (one["pid"], "a program that has nothing to do with it")}
+
+    made._tabled = the_table_of_that_world
+
     assert await asyncio.wait_for(made.shut(at_once), PATIENCE) == SHUT_QUIT
 
     assert asked.of == [one["pid"], one["pid"]]
@@ -939,7 +946,9 @@ async def test_a_close_that_arrives_while_the_window_starts_waits_for_it_and_end
     names = await asyncio.wait_for(settling, PATIENCE)
     await asyncio.wait_for(asking, PATIENCE)
 
-    (started,) = window.started
+    # The window first; after it, the system's own program, asked which processes name the
+    # folder once the window was killed (decision 153).
+    started, *_asked = window.started
     assert names == (WINDOW_NAME,)
     assert await gone(started)
 
@@ -1194,7 +1203,7 @@ async def test_a_look_at_the_processes_that_fails_is_a_doubt_and_not_an_empty_fo
     async def nobody_says() -> None:
         asked.append(None)
 
-    made._tabled = nobody_says  # type: ignore[attr-defined]
+    made._tabled = nobody_says  # type: ignore[assignment]
     over = asyncio.Event()
 
     made._stopping.set()
@@ -1207,3 +1216,90 @@ async def test_a_look_at_the_processes_that_fails_is_a_doubt_and_not_an_empty_fo
     assert asked, "the control: the system was asked"
     assert not returned_early, "a look that failed was taken for an empty folder"
     assert names == (WINDOW_NAME,)
+
+
+async def nobody_may_ask() -> None:
+    raise AssertionError("the system was asked which processes there are")
+
+
+async def test_a_window_its_user_quit_is_nothing_a_later_close_looks_for(
+    window: Window, tmp_path: Path
+) -> None:
+    """The wait is for what a close of ELA's ended. A window its user quit ended with nobody of
+    ELA's having told it: hours later ELA's stop finds nothing to wait for, and does not ask the
+    system which processes there are — whatever is on the folder by then is not that window."""
+    made = chrome(tmp_path / "profile", Told())
+    await made.window(None)
+    (one,) = await window.launches(1)
+    watched = made._watched
+    assert watched is not None
+
+    os.kill(one["pid"], signal.SIGTERM)  # what a quit is to the process: it ends by itself
+    await asyncio.wait_for(watched, PATIENCE)
+    made._tabled = nobody_may_ask
+    made._stopping.set()
+
+    assert await asyncio.wait_for(made.settle(never), PATIENCE) == ()
+
+
+async def test_a_window_a_command_has_seen_gone_is_not_looked_for_again_at_ela_s_stop(
+    window: Window, tmp_path: Path
+) -> None:
+    made = chrome(tmp_path / "profile", Told())
+    await made.window(None)
+    await window.launches(1)
+
+    assert await asyncio.wait_for(made.shut(never), PATIENCE) == SHUT_QUIT
+    made._tabled = nobody_may_ask
+    made._stopping.set()
+
+    assert await asyncio.wait_for(made.settle(never), PATIENCE) == ()
+
+
+async def test_a_command_that_cannot_see_the_processes_says_told_and_not_that_the_folder_is_free(
+    window: Window, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The doubt, for the command: the window ended, and the system would not say which
+    processes there are — before the kill of the group ELA started, and after it. ELA kills
+    what is its own, **and does not say the profile is free**: «told»."""
+    made = chrome(tmp_path / "profile", Told())
+    await made.window(None)
+    (one,) = await window.launches(1)
+
+    async def nobody_says() -> None:
+        return None
+
+    made._tabled = nobody_says  # type: ignore[assignment]
+    monkeypatch.setattr(account, "GONE_TURNS", 3)  # the turns a killed process is looked for
+
+    how = await asyncio.wait_for(made.shut(at_once), PATIENCE)
+
+    assert how == SHUT_TOLD
+    assert await gone(one["pid"])
+
+
+async def test_a_stop_that_arrives_while_the_group_is_read_signals_nobody(
+    window: Window, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """At its own close ELA signals only what it started, and **no wait stands between the last
+    look at the stop and a signal**. The group of a browser ELA did not start is read before
+    that look, not after it: a stop that arrives while the system is asked refuses the command,
+    and the browser is told nothing."""
+    profile = tmp_path / "profile"
+    one = await a_browser_ela_did_not_start(window, profile)
+    made = chrome(profile)
+    made._said_of = Says(f"{window.binary} --user-data-dir={profile}")
+    signals = told(one["pid"], monkeypatch)
+    tabled = made._tabled
+
+    async def a_stop_meanwhile() -> Any:
+        made._stopping.set()
+        return await tabled()
+
+    made._tabled = a_stop_meanwhile
+
+    with pytest.raises(BrowserStopped):
+        await asyncio.wait_for(made.shut(never), PATIENCE)
+
+    assert signals == [], "nothing ELA did not start was signalled at its stop"
+    assert running(one["pid"])

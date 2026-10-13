@@ -177,7 +177,10 @@ async def test_a_profile_no_browser_can_start_on_says_why_and_offers_no_window(
         page = await viewed.page(console)
 
     assert "profile_undeclared" in page and UNDECLARED in page
-    assert page.count("non letto") == 2, "neither fact of the folder was read: not «no», not «0»"
+    assert page.count("non letto") == 3, (
+        "neither fact of the folder was read — not «no», not «0» —, nor whether a login could "
+        "have its window"
+    )
     assert f'action="{OPEN}"' not in page, "a window that can only be refused is not offered"
     assert f'action="{WINDOW}"' in page, "the switch is the user's whatever the profile is"
 

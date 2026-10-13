@@ -14,7 +14,7 @@ il «FERMATO» con chi ha risposto. ``tests/docs/test_prova_m13_9.py`` legge la 
 stesso lettore e tiene allineati i due: cammina la sezione intera contro un'ELA vera, con finti
 solo ai bordi della macchina, e ha un caso negativo per ogni confronto di questo file.
 
-Sette tipi suoi, che la sezione spiega uno per uno:
+I tipi suoi, che la sezione spiega uno per uno:
 
 * ``mano``: ciò che fa Tommaso con le sue mani — incollare una riga nel suo terminale, entrare in
   un sito nella finestra, uscire dal browser, o chiudere la finestra con il pulsante rosso, che
@@ -30,6 +30,13 @@ Sette tipi suoi, che la sezione spiega uno per uno:
 * ``coperte``: le letture di una sessione sono finite senza domanda, coperte dalla sessione;
 * ``chiude``: ELA fermata mentre uno step ha il profilo; il processo esce, e la cartella del
   profilo resta libera.
+* ``schermo``: i comandi del blocco li lancia lo script, e **ciò che stampano va sullo schermo e
+  non nel file** — il risultato di una lettura è contenuto di Tommaso —: ciò che l'occhio deve
+  guardare gli è messo davanti, senza un altro Terminale e senza un id da copiare (decisione 155);
+* ``assente``: i comandi del blocco li lancia lo script, **niente di ciò che stampano va nel file
+  né sullo schermo**, e lo script guarda che lì non ci sia il testo che il piano del login
+  aspetta, letto dal piano: se c'è, Tommaso è già dentro quel sito, e la prova si ferma —
+  FERMATO — dicendo come uscirne a mano (decisione 151).
 
 **Niente del vault entra nel file**: né il nome di una voce, né un nome utente. Ciò che Tommaso
 deve leggere di una domanda di login lo legge nel suo terminale, e lo script lo chiede con un
@@ -77,6 +84,8 @@ KINDS: Final = (
     "domanda",
     "coperte",
     "chiude",
+    "schermo",
+    "assente",
 )
 ID = base.ID
 APPROVAL_ID: Final = guided.APPROVAL_ID
@@ -126,6 +135,10 @@ SERVES: Final = re.compile(r"(?:^|[\s/])ela(?:\.cli)?\s+serve(?:\s|$)")
 NO_OWNERS: Final = "noowners"
 """How ``mount`` says a volume ignores who owns its files: every user is their owner there."""
 SAID_NO: Final = "hai risposto no: i passi che restano non hanno niente da misurare"
+ON_THE_SCREEN: Final = "il risultato è sullo schermo, e non in questo file"
+"""What the file says of a command of ``schermo``: that its result was shown, and nothing of it."""
+NOWHERE: Final = "ciò che ha stampato non è in questo file né sullo schermo"
+"""What the file says of a command of ``assente``."""
 PROFILE_VARIABLE: Final = "ELA_BROWSER_PROFILE_DIR"
 LOCK: Final = "SingletonLock"
 
@@ -327,6 +340,37 @@ def login_plan_failures(plan: Mapping[str, Any], declared: Sequence[str]) -> lis
     return []
 
 
+def awaited_by(login: Path) -> str:
+    """The text the plan of the login awaits on the page it lands on: read from the plan, and
+    written by hand nowhere (decision 151)."""
+    (step,) = json.loads(login.read_text(encoding="utf-8"))["steps"]
+    return str(step["arguments"]["expect_text"])
+
+
+def site_of(login: Path) -> str:
+    """The site of the plan of the login."""
+    (step,) = json.loads(login.read_text(encoding="utf-8"))["steps"]
+    return str(step["arguments"]["site"])
+
+
+def already_there(awaited: str, printed: str) -> bool:
+    """Whether what a reading printed holds the text the login awaits: whoever reads it there
+    **before** the login is inside that site already."""
+    return awaited in printed
+
+
+def inside_already(site: str, awaited: str) -> str:
+    """Why the proof stops when the user is inside the site of the login already, and what to do
+    about it with their own hands."""
+    return (
+        f"nel browser di ELA sei già dentro {site}: la pagina che questo passo leggerà dopo il "
+        f"login porta già «{awaited}», il testo che il login aspetta, e l'ultima domanda del "
+        "passo avrebbe un sì comunque. Esci a mano — "
+        f"`uv run ela browser open {site}`, «logout» nella pagina, poi Cmd-Q (il pulsante rosso "
+        "lascia il browser acceso: in quel caso `uv run ela browser close`) — e rilancia la prova"
+    )
+
+
 def arguments_of(plan: Path) -> dict[str, Any]:
     """The arguments of the one step of a plan of a session with the profile."""
     (step,) = json.loads(plan.read_text(encoding="utf-8"))["steps"]
@@ -373,6 +417,45 @@ def a_go_on(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
     proof.report.say(f"    risposta di Tommaso: {'sì' if yes else 'no'}")
     if not yes:
         raise base.Stop(SAID_NO)
+
+
+def on_the_screen(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
+    """``schermo``: what the eye has to look at, put in front of it (decision 155). The commands
+    are run by the script and **what they print goes to the screen alone** — a reading's result
+    is the user's own content —; the file says which command was shown, and nothing of it."""
+    for line in block.lines:
+        asked = filled(line, turn, proof)
+        done = base.heard(asked, base.run(asked))
+        print(f"    $ {asked}", flush=True)
+        for one in (done.stdout + done.stderr).rstrip("\n").splitlines():
+            print(f"    | {one}", flush=True)
+        proof.report.say(f"    $ {asked} — {ON_THE_SCREEN}")
+
+
+def an_absence(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
+    """``assente``: before the login, the page the step will read after it does **not** hold the
+    text the login's plan awaits (decision 151) — or the user is inside that site already, and
+    the proof stops: FERMATO, with what to do by hand. Nothing the commands print is written
+    anywhere."""
+    if proof.login is None:
+        raise ValueError(f"step {number}: assente needs the plan of the login")
+    printed = ""
+    for line in block.lines:
+        asked = filled(line, turn, proof)
+        done = base.heard(asked, base.run(asked))
+        proof.report.say(f"    $ {asked} — {NOWHERE}")
+        if done.returncode != 0:
+            proof.report.failure(number, "il risultato della lettura non si è potuto leggere")
+            raise base.Stop("senza quella lettura non si sa se in quel sito sei già dentro")
+        printed += done.stdout
+    awaited, site = awaited_by(proof.login), site_of(proof.login)
+    if already_there(awaited, printed):
+        raise base.Stop(inside_already(site, awaited))
+    proof.report.passed(
+        number,
+        "nel sito del login non sei ancora dentro: il testo che il login aspetta, letto dal "
+        "suo piano, non c'è",
+    )
 
 
 def a_question(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> None:
@@ -604,6 +687,10 @@ def a_block(number: int, block: base.Block, turn: guided.Turn, proof: Proof) -> 
         a_cover(number, block, turn, proof)
     elif kind == "chiude":
         a_close(number, block, turn, proof)
+    elif kind == "schermo":
+        on_the_screen(number, block, turn, proof)
+    elif kind == "assente":
+        an_absence(number, block, turn, proof)
     else:
         raise ValueError(f"step {number}: {kind!r} is not a kind of the section")
 

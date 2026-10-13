@@ -86,7 +86,10 @@ from ela.domain import (
 )
 from ela.ports import (
     ANNOUNCED_FIELDS,
+    HELD,
+    HELD_IN_PART,
     NAVIGATION,
+    NOT_HELD,
     PROFILE_STEP,
     PROFILE_WINDOW,
     PROVIDER_UNAVAILABLE,
@@ -1426,9 +1429,10 @@ class FakeAccountBrowser(FakeBrowser):
     ``screen`` is whether a window can be had (decision 143): with ``False``, ``can_show`` says
     so and ``open_shown`` raises :class:`~ela.ports.NoWindow` and opens nothing. ``shown_opens``
     is every address that was opened **with a window**, beside ``opened``, which has them all.
-    ``held`` is what :meth:`holds` was asked, in order — opened, like ``secrets`` —, and
-    ``changed`` the fields a key landed in since they were written: they hold what was typed no
-    more (decision 144).
+    ``held`` is what :meth:`holds` was asked, in order — opened, like ``secrets`` —; ``changed``
+    the fields a key landed in since they were written — they hold what was typed no more
+    (decision 144) —, and ``shortened`` the fields whose page keeps less than it is given: they
+    hold a beginning of it (decision 152).
     """
 
     def __init__(
@@ -1448,6 +1452,7 @@ class FakeAccountBrowser(FakeBrowser):
         self.shown_opens: list[str] = []
         self.held: list[tuple[str, str]] = []
         self.changed: set[str] = set()
+        self.shortened: set[str] = set()
         self.linked_answer = linked
         self.saved_answer = saved
         self.profiles_answer = profiles
@@ -1487,12 +1492,14 @@ class FakeAccountBrowser(FakeBrowser):
         self.shown_opens.append(address)
         return opened
 
-    async def holds(self, page: str, selector: str, value: Secret) -> bool:
+    async def holds(self, page: str, selector: str, value: Secret) -> str:
         self._on(page, "holds")
         self._raise("holds")
         self.held.append((selector, value.reveal()))
         self._done(page, "holds")
-        return selector not in self.changed
+        if selector in self.changed:
+            return NOT_HELD
+        return HELD_IN_PART if selector in self.shortened else HELD
 
     async def field(self, page: str, selector: str) -> Field:
         found = await super().field(page, selector)

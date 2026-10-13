@@ -57,6 +57,16 @@ running.
 **It is never left behind**: the launch is a task of the adapter's own, which runs to its end
 whoever asked for it and went away, and which the close waits for before it calls the folder free.
 
+**When a close of the window returns, no process names the folder any more** (decision 153 of the
+review of 2026-10-13: on the CI of macOS the main process of a window had left by itself, the
+close had returned, and processes the browser had started for itself were still there). The
+close — ELA's own at its stop, and the user's command — goes on asking the system, **within the
+same grace**, which processes of that browser name the folder: the ones in the group of its main
+process, by the one reading of a command line this module knows its browser by
+(:func:`on_the_folder`). Past the grace the rule there already was holds:
+the group of a window ELA started is ELA's, and is killed; of a browser ELA did not start, what
+ELA cannot name is not killed, **and is not called gone**.
+
 **ELA does not disguise itself**: no user agent, no script injected in a page, nothing that touches
 ``navigator.webdriver``. A site that refuses a driven browser is told so by the outcome.
 """
@@ -69,6 +79,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import sqlite3
@@ -90,6 +101,9 @@ from ela.infrastructure.machine.browser import (
     registry_folder,
 )
 from ela.ports import (
+    HELD,
+    HELD_IN_PART,
+    NOT_HELD,
     PROFILE_PROCESS,
     PROFILE_STEP,
     PROFILE_WINDOW,
@@ -126,6 +140,7 @@ __all__ = [
     "linked_in",
     "lock_holder",
     "on_the_folder",
+    "process_table",
     "profiles_in",
     "reports_in",
     "saved_in",
@@ -536,6 +551,67 @@ async def command_line(pid: int, environment: Mapping[str, str]) -> str | None:
     return said if said or process.returncode == 1 else None
 
 
+PROCESS: Final = re.compile(r"\s*(\d+)\s+(\d+)\s(.*)")
+"""A line of the system's table that begins a process: its number, the number of its group, and
+what it was started with."""
+
+
+async def process_table(environment: Mapping[str, str]) -> dict[int, tuple[int, str]] | None:
+    """What the system says of **every process of this user**, by its number: the group it is
+    in, and what it was started with — ``None`` when the system could not be asked, ended badly,
+    or did not answer within :data:`PS_SECONDS`: never a guess, **and never «no process»**.
+
+    **The second launch this module makes to look at processes** (decision 153, which revises
+    decision 82 openly): the first is made when a lock names a process; this one when a browser
+    on the folder has ended and a close is about to return, and it is made with the first one's
+    rules — the system's own program at its absolute path, the closed environment of the
+    browser, its input the end of a file and its errors nowhere. Of this user alone: a browser
+    of ELA's and what it started are nobody else's.
+
+    A process is a line that begins with its number. **A line that begins with none belongs to
+    the process above it** — an argument may hold a new line —: what is named there is named by
+    that process."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            PS,
+            "-ww",
+            "-U",
+            str(os.getuid()),
+            "-o",
+            "pid=,pgid=,command=",
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=dict(environment),
+            start_new_session=True,
+        )
+    except OSError:
+        return None
+    printed: bytes | None = None
+    try:
+        printed, _ = await asyncio.wait_for(process.communicate(), PS_SECONDS)
+    except TimeoutError:
+        pass
+    finally:
+        if process.returncode is None:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(process.pid, signal.SIGKILL)
+            await process.wait()
+    if printed is None or process.returncode != 0:
+        return None
+    table: dict[int, tuple[int, str]] = {}
+    last: int | None = None
+    for line in printed.decode("utf-8", "replace").splitlines():
+        begun = PROCESS.fullmatch(line)
+        if begun is not None:
+            last = int(begun.group(1))
+            table[last] = (int(begun.group(2)), begun.group(3).strip())
+        elif last is not None and line.strip():
+            group, command = table[last]
+            table[last] = (group, f"{command} {line.strip()}")
+    return table
+
+
 def _taken_away(place: Path) -> None:
     """What is at ``place`` is gone: a folder with what it holds, a file — and of a link the
     link, **never what it points at**: nothing is reached through it."""
@@ -601,14 +677,23 @@ async def _nobody_is_told(address: str | None, seconds: float) -> None:
     """Whoever builds this adapter without saying who is told that a window ended."""
 
 
-def _same(written: str, value: Secret) -> bool:
-    """Whether a field that holds ``written`` holds what ``value`` holds: **whole** — a
-    beginning is not the same —, in a time that does not say where the two part, and with an
-    answer for anything a field can hold: half of a character, which no encoding takes as it
-    is, makes two texts that differ, and not an error that would carry the field in it."""
-    return hmac.compare_digest(
-        written.encode("utf-8", "surrogatepass"), value.reveal().encode("utf-8", "surrogatepass")
-    )
+def _held(written: str, value: Secret) -> str:
+    """What a field that holds ``written`` holds of what ``value`` holds: all of it
+    (:data:`~ela.ports.HELD`); **a beginning of it and nothing else**
+    (:data:`~ela.ports.HELD_IN_PART`) — a page that keeps less than it is given —; or neither
+    (:data:`~ela.ports.NOT_HELD`). A field that holds nothing holds no beginning.
+
+    **Whole** — a beginning is not the same —, in a time that does not say where two texts part,
+    and with an answer for anything a field can hold: half of a character, which no encoding
+    takes as it is, makes two texts that differ, and not an error that would carry the field in
+    it. How long the beginning is, is said to nobody."""
+    typed = value.reveal().encode("utf-8", "surrogatepass")
+    there = written.encode("utf-8", "surrogatepass")
+    if hmac.compare_digest(there, typed):
+        return HELD
+    if there and hmac.compare_digest(there, typed[: len(there)]):
+        return HELD_IN_PART
+    return NOT_HELD
 
 
 async def _no_screen_was_said() -> bool:
@@ -646,8 +731,11 @@ class AccountChrome(PlaywrightBrowser):
         self._on_a_screen = on_a_screen
         self._with_a_window = False
         self._said_of: Callable[[int], Awaitable[str | None]] = self._asked
+        self._tabled: Callable[[], Awaitable[Mapping[int, tuple[int, str]] | None]] = self._table
+        self._killed: set[int] = set()
         self._was_told: set[int] = set()
         self._window: asyncio.subprocess.Process | None = None
+        self._group: int | None = None
         self._windowing = False
         self._launching: asyncio.Future[None] | None = None
         self._watched: asyncio.Task[None] | None = None
@@ -760,6 +848,73 @@ class AccountChrome(PlaywrightBrowser):
     async def _asked(self, pid: int) -> str | None:
         closed = {name: str(value) for name, value in self._environment.items()}
         return await command_line(pid, closed)
+
+    async def _table(self) -> dict[int, tuple[int, str]] | None:
+        closed = {name: str(value) for name, value in self._environment.items()}
+        return await process_table(closed)
+
+    async def _group_of(self, pid: int) -> int | None:
+        """The group process ``pid`` is in, as the system says it now; ``None`` when it did not
+        say — the table was not given, or that process is not in it."""
+        table = await self._tabled()
+        found = None if table is None else table.get(pid)
+        return None if found is None else found[0]
+
+    async def _naming(self, profile: Path, group: int | None) -> list[int] | None:
+        """The processes **of that browser** that name ``profile``: the ones in ``group`` — the
+        group of its main process, where what a browser starts for itself stays — of whose
+        command line :func:`on_the_folder` does not answer «nothing». **The one reading** this
+        adapter knows its browser by; the group says whose processes are read.
+
+        ``None`` when the system did not say which processes there are, or the group is not
+        known: a doubt, **never «none»**.
+
+        *Why the group, and not every process of the user* (measured writing this, on
+        2026-10-13): that reading counts a doubt as a process that names the folder — a command
+        line that names a folder from where its process stands —, which is right of the one
+        process a lock names and wrong of a whole table: a shell whose own command line held
+        the text of such an argument made every close wait its grace."""
+        table = await self._tabled()
+        if table is None or group is None:
+            return None
+        binary = self._executable()
+        return sorted(
+            pid
+            for pid, (its, command) in table.items()
+            if its == group and on_the_folder(command, profile, binary) is not None
+        )
+
+    async def _unnamed(
+        self,
+        profile: Path,
+        group: int | None,
+        grace: Callable[[], asyncio.Future[Any]],
+        *also: asyncio.Future[Any],
+    ) -> bool:
+        """Wait until **no process of that browser names the folder any more**, within ``grace``
+        — asked for only if somebody does —, or until one of ``also`` is done. Whether nobody
+        does: a table the system did not give is not «nobody». No time of its own: the step is
+        the one a browser ELA did not start is asked of the kernel with (decision 153)."""
+        over: asyncio.Future[Any] | None = None
+        while True:
+            if await self._naming(profile, group) == []:
+                return True
+            over = grace() if over is None else over
+            if over.done() or any(one.done() for one in also):
+                return False
+            await asyncio.wait(
+                {over, *also}, timeout=GONE_EVERY, return_when=asyncio.FIRST_COMPLETED
+            )
+
+    async def _swept(self, profile: Path, group: int | None) -> bool:
+        """After a kill: whether nothing of that browser names the folder, looked for the turns
+        a killed process is looked for — the kernel takes it away at once, and its parent
+        collects it when it will."""
+        for _ in range(GONE_TURNS):
+            if await self._naming(profile, group) == []:
+                return True
+            await asyncio.sleep(GONE_EVERY)
+        return False
 
     async def _named(self, profile: Path) -> tuple[int, str] | None:
         """The process the folder's lock names, and what it is (:func:`on_the_folder`) — or
@@ -946,20 +1101,21 @@ class AccountChrome(PlaywrightBrowser):
             raise failed
         self._within(opened, made=True)
 
-    async def holds(self, page: str, selector: str, value: Secret) -> bool:
-        """Whether the field holds what ``value`` holds: read from the page and compared here,
-        where the secret is opened to be typed — the tool gets a yes or a no (decision 144).
+    async def holds(self, page: str, selector: str, value: Secret) -> str:
+        """What the field holds of what ``value`` holds: read from the page and compared here,
+        where the secret is opened to be typed — the tool gets one of three answers, and never
+        a value (decisions 144 and 152; :func:`_held`).
 
         **A field that is not there holds nothing**, and is not waited for: a key pressed in the
         window may be the one that sends the form, and the page that comes has no such field —
         the read would wait for one until the time of the tool ran out. *Between the count and
         the read the field can still go*: then the read waits, and the tool's time ends it."""
 
-        async def read(opened: _Open) -> bool:
+        async def read(opened: _Open) -> str:
             field = opened.page.locator(selector)
             if await field.count() != 1:
-                return False
-            return _same(await field.input_value(), value)
+                return NOT_HELD
+            return _held(await field.input_value(), value)
 
         return await self._on(page, read)
 
@@ -1013,6 +1169,10 @@ class AccountChrome(PlaywrightBrowser):
             except OSError as error:
                 raise BrowserFailed(type(error).__name__) from None
             self._window = process
+            # The group of the window is ELA's own — started in a session of its own —, and is
+            # what the close kills past the grace: kept beyond the end of its first process,
+            # which may leave before what it started.
+            self._group = process.pid
             self._watched = asyncio.create_task(self._waited(process, address))
         finally:
             self._windowing = False
@@ -1033,6 +1193,10 @@ class AccountChrome(PlaywrightBrowser):
                 await ended
         finally:
             stopped.cancel()
+            if process.pid not in self._was_told:
+                # It ended with nobody of ELA's having told it — its user quit it —: nothing of
+                # it is a close's to wait for, now or later.
+                self._group = None
             self._window = None
             self._was_told.discard(process.pid)
         try:
@@ -1058,8 +1222,15 @@ class AccountChrome(PlaywrightBrowser):
         window, watched = self._window, self._watched
         if window is not None and watched is not None:
             self._refuse_if_stopping()
-            return await self._end_window(window, watched, grace)
+            return await self._end_window(window, watched, profile, grace)
         named = await self._named(profile)
+        # The group of that browser, read while it is there: what it started for itself is in
+        # it, and is what the answer waits for once its main process has ended (decision 153).
+        group = (
+            await self._group_of(named[0])
+            if named is not None and named[1] == ELA_S_BROWSER
+            else None
+        )
         # Asking the system took its time, and ELA may have begun to stop meanwhile: at its own
         # close ELA signals only what it started. No wait stands between this look and a signal.
         self._refuse_if_stopping()
@@ -1068,34 +1239,51 @@ class AccountChrome(PlaywrightBrowser):
         pid, what = named
         if what != ELA_S_BROWSER:
             raise ProfileBusy(PROFILE_PROCESS)
-        return await self._end_another(pid, profile, grace)
+        return await self._end_another(pid, group, profile, grace)
 
     async def _end_window(
         self,
         window: asyncio.subprocess.Process,
         watched: asyncio.Task[None],
+        profile: Path,
         grace: Callable[[], Awaitable[None]],
     ) -> str:
         """The window ELA started: told as at ELA's stop — **once** —, waited for through the
         wait ELA keeps of it, which says its end to whoever is told, and killed with its group,
-        which is ELA's own, once the grace is over. How it ended is read from the process: whoever
-        asked a second time is answered the same."""
+        which is ELA's own, once the grace is over. **And it has not quit while a process it
+        started still names the folder** (decision 153): the same grace covers them, and past it
+        the same kill — the group is ELA's. How it ended is read from what was done to it:
+        whoever asked a second time is answered the same. If something names the folder even
+        after the kill, ELA does not call it gone."""
         if self._tell(window.pid):
             with contextlib.suppress(ProcessLookupError):
                 window.terminate()
         over = asyncio.ensure_future(grace())
         try:
             await asyncio.wait({watched, over}, return_when=asyncio.FIRST_COMPLETED)
-            if not watched.done():
-                with contextlib.suppress(ProcessLookupError, PermissionError):
-                    os.killpg(window.pid, signal.SIGKILL)
-                await asyncio.wait({watched})
-            return SHUT_KILLED if window.returncode == -signal.SIGKILL else SHUT_QUIT
+            if watched.done() and await self._unnamed(profile, window.pid, lambda: over):
+                killed = window.returncode == -signal.SIGKILL or window.pid in self._killed
+                self._released(window.pid)
+                return SHUT_KILLED if killed else SHUT_QUIT
+            self._killed.add(window.pid)
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(window.pid, signal.SIGKILL)
+            await asyncio.wait({watched})
+            if not await self._swept(profile, window.pid):
+                return SHUT_TOLD
+            self._released(window.pid)
+            return SHUT_KILLED
         finally:
             over.cancel()
 
+    def _released(self, group: int) -> None:
+        """Nothing of the window of ``group`` names the folder any more: no later close has it
+        to wait for. A window started since is another group, and is left alone."""
+        if self._group == group:
+            self._group = None
+
     async def _end_another(
-        self, pid: int, profile: Path, grace: Callable[[], Awaitable[None]]
+        self, pid: int, group: int | None, profile: Path, grace: Callable[[], Awaitable[None]]
     ) -> str:
         """A browser ELA did not start, which the system said is ELA's binary on this folder:
         told once; asked of the kernel until it is gone, the grace is over, or ELA stops; and
@@ -1124,7 +1312,7 @@ class AccountChrome(PlaywrightBrowser):
                 )
             if not self._known(pid):
                 self._was_told.discard(pid)
-                return SHUT_QUIT
+                return await self._left(profile, group, over, stopped)
             if stopped.done():
                 return SHUT_TOLD
             # A pid is the system's to give again, and one that ended and is not collected still
@@ -1133,7 +1321,7 @@ class AccountChrome(PlaywrightBrowser):
             what = await self._what(pid, profile)
             if what is None:
                 self._was_told.discard(pid)
-                return SHUT_QUIT
+                return await self._left(profile, group, over, stopped)
             if what != ELA_S_BROWSER or self._stopping.is_set():
                 return SHUT_TOLD
             try:
@@ -1147,15 +1335,33 @@ class AccountChrome(PlaywrightBrowser):
                     break
                 await asyncio.sleep(GONE_EVERY)
             self._was_told.discard(pid)
-            return SHUT_KILLED
+            # What it had started is not ELA's to kill, and ends with it or not: said killed
+            # only if nothing names the folder any more.
+            return SHUT_KILLED if await self._swept(profile, group) else SHUT_TOLD
         finally:
             over.cancel()
             stopped.cancel()
 
+    async def _left(
+        self,
+        profile: Path,
+        group: int | None,
+        over: asyncio.Future[Any],
+        stopped: asyncio.Future[Any],
+    ) -> str:
+        """The main process of a browser ELA did not start has ended. **It has quit when no
+        process names the folder any more** (decision 153), waited for within the same grace;
+        past it — or at ELA's stop — what is left is what that browser had started: ELA cannot
+        name it as its browser, does not kill it, **and does not call it gone**."""
+        unnamed = await self._unnamed(profile, group, lambda: over, stopped)
+        return SHUT_QUIT if unnamed else SHUT_TOLD
+
     async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
         """What ELA's close waits for, on the profile: the pages, as the empty browser's, **and
         the window** — told at the stop, waited for within the same grace, then killed with its
-        group. When this returns nothing holds the folder."""
+        group. When this returns nothing holds the folder, **and no process the window started
+        names it any more** (decision 153): they are waited for within the same grace, and
+        killed with the group past it."""
         if not self._stopping.is_set():
             raise RuntimeError(
                 "a browser is settled after ELA's stop: the stop is what closes its pages"
@@ -1177,20 +1383,31 @@ class AccountChrome(PlaywrightBrowser):
                 # or the other. The stop is raised, so what it starts is told at once — and is
                 # waited for and killed below, like a window that was already there.
                 await asyncio.wait({launching})
-            window, watched = self._window, self._watched
+            watched, group, profile = self._watched, self._group, self._profile
             if watched is None:
                 return names
             if not watched.done():
                 await asyncio.wait({watched, the_grace()}, return_when=asyncio.FIRST_COMPLETED)
-            if not watched.done() and window is not None:
+            # The main process ended when it was told: what it started may still name the
+            # folder, and the same grace covers it (decision 153). A window that ended with
+            # nobody of ELA's having told it, or one a command has seen gone, has no group left
+            # to wait for.
+            left = watched.done() and (
+                group is None or profile is None or await self._unnamed(profile, group, the_grace)
+            )
+            if not left and group is not None:
                 # «Not permitted» is what macOS answers for a group whose only process has ended
                 # and is not collected yet (measured): a group with nothing left to kill, like
                 # one that is not there.
+                self._killed.add(group)
                 with contextlib.suppress(ProcessLookupError, PermissionError):
-                    os.killpg(window.pid, signal.SIGKILL)
+                    os.killpg(group, signal.SIGKILL)
                 names = (*names, WINDOW_NAME)
             await asyncio.wait({watched})
+            if not left and profile is not None:
+                await self._swept(profile, group)
             self._watched = None
+            self._group = None
             watched.result()
             return names
         finally:

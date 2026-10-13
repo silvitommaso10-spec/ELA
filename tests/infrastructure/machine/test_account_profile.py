@@ -1743,7 +1743,9 @@ async def test_the_processes_of_this_user_are_asked_of_the_system_with_their_com
         table = await process_table(CLOSED)
 
         assert table is not None
-        assert table[child.pid].endswith("import time; time.sleep(60) named so")
+        group, command = table[child.pid]
+        assert command.endswith("import time; time.sleep(60) named so")
+        assert group == os.getpgid(child.pid), "and the group it is in"
         assert os.getpid() in table
     finally:
         child.kill()
@@ -1755,11 +1757,11 @@ async def test_the_processes_of_this_user_are_asked_of_the_system_with_their_com
 PRINTS = """#!{python}
 import sys
 open({said!r}, 'w').write(repr(sys.argv[1:]))
-print('  17 /a/program --flag')
-print('4242 /another one')
+print('  17    17 /a/program --flag')
+print('4242    17 /another one')
 print('  --user-data-dir=/the/folder')
 print('')
-print('   9 (ended)')
+print('   9     9 (ended)')
 """
 
 
@@ -1768,8 +1770,9 @@ async def test_the_table_is_asked_for_this_user_alone_and_read_line_by_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """What the program is started with, and how what it prints is read: a process is a line
-    that begins with its number; a line that begins with none belongs to the process above it —
-    an argument may hold a new line —, so a folder named there is still named by that process."""
+    that begins with its number and its group's; a line that begins with neither belongs to the
+    process above it — an argument may hold a new line —, so a folder named there is still named
+    by that process."""
     said = tmp_path / "said"
     program = tmp_path / "ps"
     program.write_text(PRINTS.format(python=sys.executable, said=str(said)), encoding="utf-8")
@@ -1779,12 +1782,12 @@ async def test_the_table_is_asked_for_this_user_alone_and_read_line_by_line(
     table = await process_table({})
 
     assert table == {
-        17: "/a/program --flag",
-        4242: "/another one --user-data-dir=/the/folder",
-        9: "(ended)",
+        17: (17, "/a/program --flag"),
+        4242: (17, "/another one --user-data-dir=/the/folder"),
+        9: (9, "(ended)"),
     }
     assert said.read_text(encoding="utf-8") == repr(
-        ["-ww", "-U", str(os.getuid()), "-o", "pid=,command="]
+        ["-ww", "-U", str(os.getuid()), "-o", "pid=,pgid=,command="]
     )
 
 
@@ -1799,7 +1802,7 @@ async def test_a_table_the_system_did_not_give_is_none_and_never_an_empty_one(
 
     failing = tmp_path / "failing"
     failing.write_text(
-        f"#!{sys.executable}\nprint('1 /sbin/launchd')\nraise SystemExit(2)\n", encoding="utf-8"
+        f"#!{sys.executable}\nprint('1 1 /sbin/launchd')\nraise SystemExit(2)\n", encoding="utf-8"
     )
     failing.chmod(0o700)
     monkeypatch.setattr(account, "PS", str(failing))
@@ -1821,33 +1824,74 @@ async def test_a_table_the_system_did_not_give_is_none_and_never_an_empty_one(
 async def test_what_names_the_folder_is_said_by_the_one_reading_of_a_command_line(
     tmp_path: Path, installed: Path
 ) -> None:
-    """One predicate (decision 153): a process names the folder when the function that says
-    whether the folder is held, and by what, does not answer «nothing» of its command line —
-    the browser itself, what it started for itself, another program on that folder. Not the
-    collector of crashes, which names a folder inside it; not a browser on another folder."""
+    """One predicate (decision 153): a process of that browser names the folder when the
+    function that says whether the folder is held, and by what, does not answer «nothing» of
+    its command line — the browser itself, what it started for itself. Not the collector of
+    crashes, which names a folder inside it; not a browser on another folder. **And of that
+    browser's group alone.**"""
     profile = tmp_path / "profile"
     profile.mkdir(mode=0o700)
     made = chrome(profile)
     binary = made._executable()
 
-    async def table() -> dict[int, str]:
+    async def table() -> dict[int, tuple[int, str]]:
         return {
-            11: f"{binary} --user-data-dir={profile} --use-mock-keychain",
-            12: f"/a/helper --type=renderer --user-data-dir={profile} --lang=it",
-            13: f"/another/browser --user-data-dir={profile}",
-            14: f"/a/collector --database={profile}/Crashpad",
-            15: f"{binary} --user-data-dir={profile}-of-another",
-            16: "/sbin/launchd",
+            11: (11, f"{binary} --user-data-dir={profile} --use-mock-keychain"),
+            12: (11, f"/a/helper --type=renderer --user-data-dir={profile} --lang=it"),
+            13: (11, f"/a/collector --database={profile}/Crashpad"),
+            14: (11, f"{binary} --user-data-dir={profile}-of-another"),
+            15: (11, "/sbin/launchd"),
+            21: (21, f"/another/browser --user-data-dir={profile}"),
         }
 
-    made._tabled = table  # type: ignore[method-assign]
-    assert await made._naming(profile) == [11, 12, 13]
+    made._tabled = table
+    assert await made._naming(profile, 11) == [11, 12]
+    assert await made._naming(profile, 21) == [21]
+    assert await made._naming(profile, 99) == [], "a group nothing is in names nothing"
+    assert await made._group_of(12) == 11 and await made._group_of(404) is None
+
+
+async def test_a_doubt_about_the_table_or_about_the_group_is_never_an_empty_folder(
+    tmp_path: Path, installed: Path
+) -> None:
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    made = chrome(profile)
+
+    async def somebody() -> dict[int, tuple[int, str]]:
+        return {11: (11, "/sbin/launchd")}
+
+    made._tabled = somebody
+    assert await made._naming(profile, None) is None, "a group nobody could say is a doubt"
 
     async def nobody_says() -> None:
         return None
 
-    made._tabled = nobody_says  # type: ignore[method-assign,assignment]
-    assert await made._naming(profile) is None, "a table that was not given is a doubt"
+    made._tabled = nobody_says
+    assert await made._naming(profile, 11) is None, "a table that was not given is a doubt"
+    assert await made._group_of(11) is None
+
+
+async def test_a_process_of_no_browser_whose_line_holds_the_words_of_a_folder_delays_no_close(
+    tmp_path: Path, installed: Path
+) -> None:
+    """Why the group (measured on 2026-10-13, writing decision 153): the one reading counts a
+    doubt — a command line that names a folder from where its process stands — as a process
+    that names the folder. That is right of the one process a lock names. Read of every process
+    of the user, it made **a shell whose own command line held the text of such an argument**
+    hold every close of the machine until its grace. A process outside the browser's group is
+    not read at all."""
+    profile = tmp_path / "profile"
+    profile.mkdir(mode=0o700)
+    made = chrome(profile)
+    a_doubt = "/bin/zsh -c grep -- --user-data-dir={profile} notes.txt"
+    assert on_the_folder(a_doubt, profile, None) is not None, "the control: a doubt of the reading"
+
+    async def table() -> dict[int, tuple[int, str]]:
+        return {700: (700, a_doubt)}
+
+    made._tabled = table
+    assert await made._naming(profile, 11) == []
 
 
 async def test_on_another_system_no_screen_is_asked_about(tmp_path: Path) -> None:

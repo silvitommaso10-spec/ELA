@@ -160,6 +160,8 @@ __all__ = [
     "Gestures",
     "Glanced",
     "Guided",
+    "HELD",
+    "HELD_IN_PART",
     "IdGenerator",
     "IdentityConflictError",
     "Invocation",
@@ -183,6 +185,7 @@ __all__ = [
     "ModelProvider",
     "ModelRouterPort",
     "NAVIGATION",
+    "NOT_HELD",
     "NoWindow",
     "NotAllowedError",
     "NotFoundError",
@@ -3029,6 +3032,16 @@ class Browser(Protocol):
         cancellation, and the page's processes still go."""
 
 
+HELD: Final = "held"
+"""A field holds exactly what was typed in it."""
+HELD_IN_PART: Final = "beginning"
+"""A field holds **a beginning** of what was typed in it, and nothing else: a page that keeps
+less than it is given — a length of its own. How much it kept is said to nobody (M13.9, decision
+152 of the review of 2026-10-13)."""
+NOT_HELD: Final = "changed"
+"""A field holds something else — more, other, or nothing —, or is not there any more."""
+
+
 class NoWindow(BrowserError):
     """A page was asked **with a window**, and this ELA cannot be given one — the system did not
     say that its process is inside a session of the screen. Nothing was launched: a page asked
@@ -3060,8 +3073,11 @@ class AccountBrowser(Browser, Protocol):
       says it has none (measured on one site, 2026-10-13) —, and :meth:`can_show` says whether a
       window can be had now. A page asked with a window is never opened without one
       (:class:`NoWindow`); every other page is opened as the switch says (decision 143);
-    * :meth:`holds` says whether a field still holds what a secret holds: the comparison is the
-      implementation's, which is handed the secret as it is handed it to type (decision 144).
+    * :meth:`holds` says what a field holds of what a secret holds — all of it, a beginning of
+      it, or neither —: the comparison is the implementation's, which is handed the secret as
+      it is handed it to type (decisions 144 and 152);
+    * **when a close of the window returns, no process names the folder any more** —
+      :meth:`shut`, and the close of ELA —, or it is not said to have quit (decision 153).
     """
 
     async def can_show(self) -> bool:
@@ -3082,10 +3098,11 @@ class AccountBrowser(Browser, Protocol):
             folder was looked at or made.
         """
 
-    async def holds(self, page: str, selector: str, value: Secret) -> bool:
-        """Whether the one element ``selector`` finds holds, now, exactly what ``value`` holds.
-        A use of the page like any other: the boundary is asked before it and after it. Nothing
-        of either value is in what this returns or raises."""
+    async def holds(self, page: str, selector: str, value: Secret) -> str:
+        """What the one element ``selector`` finds holds, now, of what ``value`` holds:
+        :data:`HELD`, :data:`HELD_IN_PART` or :data:`NOT_HELD` — the last also when no one
+        element is found. A use of the page like any other: the boundary is asked before it
+        and after it. Nothing of either value is in what this returns or raises."""
 
     async def landed(self, page: str) -> Landed:
         """Where the main frame is **once the document the last gesture led to is there**, and
@@ -3116,7 +3133,9 @@ class AccountBrowser(Browser, Protocol):
         browser ELA did not start **whose command line is ELA's own binary on this folder**: a
         window that relaunched itself, one left by an ELA that was killed. Returns
         :data:`SHUT_QUIT`, :data:`SHUT_KILLED` or :data:`SHUT_TOLD`, and ``None`` when nothing
-        held the folder.
+        held the folder. **It has quit, or was killed, only when no process names the folder
+        any more** (decision 153): what it had started is waited for within the same grace, and
+        what is left past it — and is not ELA's to kill — makes the answer :data:`SHUT_TOLD`.
 
         **Told once, however many ask**: a browser has one chance to end by itself, and a second
         signal kills it (measured). A browser ELA did not start is killed by its pid alone,
