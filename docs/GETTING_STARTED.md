@@ -6039,6 +6039,10 @@ prenotato com'era al passo 1
 > **Il 12 ottobre 2026 la prova non è passata** al passo 6, e da allora il cancello del browser è riparato (M13.4f,
 > [ADR 0064](adr/0064-browser-boundary.md)): **la prova si rifà per intero** sul commit di quella riparazione, il passo 6
 > com'è scritto; fuori dai passi, sotto il passo 6, c'è una misura da fare solo se quel passo fallisce.
+> **Il 13 ottobre 2026 la prova è stata rifatta, e non è passata per il solo login del passo 6**: senza finestra il sito
+> ha ridato il modulo, con la finestra lo stesso login è riuscito. **Da allora `browser.login` parte sempre con la
+> finestra** (decisione 143): il passo 6 avvisa che compare, la misura fuori dai passi è uscita — al suo posto c'è il
+> fatto —, e **la riga che apre il vault funziona da qualunque cartella** (decisione 145).
 
 Da M13.9 ELA ha **un secondo browser**: Chrome for Testing su una cartella tua, che **tiene i siti in cui sei entrato**.
 Non è il tuo Chrome, e il tuo profilo ELA non lo apre: in questo entri tu, una volta, **con le tue mani**, nella finestra
@@ -6200,9 +6204,12 @@ Esporta le password da Chrome e da Password di Apple dentro /Volumes/ELA-prova, 
 
 **La riga che `ela vault status` stampa porta due percorsi interi**: il programma del vault che hai dichiarato, e **il
 comando di ELA con cui questa ELA gira** — quello accanto al suo interprete, non un `ela` cercato nel `PATH`. Funziona
-incollata così com'è nel Terminale in cui l'hai appena letta, senza un ambiente attivato. **Va lanciata dalla cartella
-in cui avvii ELA**: il suo comando legge il token dal `.env` che sta lì, e la frase sopra la riga nomina quella
-cartella. Se ELA non sapesse nominare il proprio comando lo direbbe, e non stamperebbe nessuna riga.
+incollata così com'è, senza un ambiente attivato, **in qualunque Terminale e da qualunque cartella**: il comando di ELA
+legge il token dal `.env` della cartella in cui avvii ELA, e la riga **ci entra da sé**, fra parentesi — una sottoshell
+—, senza spostare il Terminale in cui la incolli (decisione 145: due volte era stata incollata altrove). Se ELA non
+sapesse nominare il proprio comando lo direbbe, e non stamperebbe nessuna riga. **Se dopo la riga leggi «no key arrived
+on the pipe»**, il programma del vault non ha stampato nessuna chiave: il perché l'ha scritto lui, sopra quella frase —
+una password sbagliata, o la rete: `bw unlock` chiede il suo server.
 
 <!-- prova: 3.comando -->
 ```
@@ -6213,7 +6220,7 @@ uv run ela vault status
 ```
 state locked
 unlock --raw |
-vault open
+(cd
 ```
 
 <!-- prova: 3.mano -->
@@ -6328,6 +6335,15 @@ nessuno è entrato in quel sito dal browser di ELA. Dopo, **una lettura come te 
 è un altro lancio del browser: se il cookie dell'accesso non durasse oltre lo step del login, lì leggeresti `login` al
 posto di `logout`, e rispondi «n»: il passo lo dice com'è.
 
+**Mentre ELA entra, sullo schermo compare una finestra del suo browser** (decisione 143, dal 13 ottobre 2026): il
+login parte sempre con la finestra, qualunque cosa dica `ela browser window`, perché un sito può rifiutare un browser
+che si dice senza finestra — è ciò che ha fatto questo. La finestra dura i secondi del login e si chiude da sé.
+**Finché c'è, non scrivere**: prende la tastiera, e un tasto premuto in quei secondi finisce nel modulo. ELA rilegge i
+due campi subito prima del click: se non portano più ciò che ha scritto non clicca, lo step fallisce
+`browser.field_changed`, e il passo si rifà. Se ELA non potesse aprire una finestra — avviata fuori dalla sessione del
+tuo schermo — il login non partirebbe: `browser.no_window`, prima della domanda; `ela browser status` lo dice nella
+riga `a login runs`.
+
 <!-- prova: 6.occhio -->
 ```
 Nel tuo vault c'è la voce del tuo account di news.ycombinator.com, con l'indirizzo https://news.ycombinator.com/login, l'hai aggiunta tu a mano, ed è la sola per quell'host (dopo l'importazione del passo 2 può essercene una seconda)?
@@ -6351,7 +6367,7 @@ browser.login
 
 <!-- prova: 6.occhio -->
 ```
-In un altro Terminale, `uv run ela approvals`: la domanda nomina la voce giusta del tuo vault, il nome utente mascherato e il sito?
+In un altro Terminale, `uv run ela approvals`: la domanda nomina la voce giusta del tuo vault, il nome utente mascherato e il sito, e dice che compare una finestra? Dopo il tuo sì la finestra del browser di ELA compare per qualche secondo: finché c'è, non scrivere.
 ```
 
 <!-- prova: 6.sì -->
@@ -6420,23 +6436,17 @@ outcome completed
 In un altro Terminale, `uv run ela task results` con l'id del task qui sopra: in alto nella pagina ci sono il tuo nome utente e «logout», e l'indirizzo è rimasto su news.ycombinator.com? Se al loro posto c'è «login», il cookie dell'accesso non è durato oltre lo step: rispondi n.
 ```
 
-**Fuori dai passi — una misura che fai solo se questo passo fallisce** (M13.4f, decisione 119; lo script non la
-cammina). Il passo 6 parte **senza finestra**, com'è scritto qui sopra. Se il login non riesce, rifallo **con la
-finestra**: `uv run ela browser window show`; poi gli stessi comandi di questo passo con un task nuovo — crearlo,
-dargli lo stesso piano, il tuo sì, `task run` —; e alla fine `uv run ela browser window hide`. Che cosa ne esce è
-scritto prima di guardarlo:
-
-| Senza finestra | Con la finestra | Che cosa vuol dire | Che cosa si fa |
-|---|---|---|---|
-| riesce | — | il login dal vault funziona | fatto: la misura non si lancia |
-| il sito rifiuta | riesce | **un sito può rifiutare un browser che si dice senza finestra** | è un fatto di [ADR 0063](adr/0063-browser-with-your-accounts.md), e lì si decide se `browser.login` parte con la finestra |
-| il sito rifiuta | il sito rifiuta | **il sito rifiuta un browser guidato** | si sceglie un altro sito per il passo 6. **ELA non lo aggira** |
-
-«Rifiuta» e «riesce» si leggono nel risultato del login, con `uv run ela task results`: il modulo di nuovo con il suo
-campo, o una pagina d'errore, è un rifiuto; un'altra pagina, `200`, senza il campo e con il testo atteso, è riuscito.
-*Da M13.4f ([ADR 0064](adr/0064-browser-boundary.md)) le richieste di un login le fa il browser, ed ELA non ne rifà
-nessuna — ciò che un sito vede di diverso dal browser da solo è scritto in quell'ADR, §7 —: fra «con la finestra» e
-«senza» cambia il nome con cui il browser si presenta, e nient'altro di ELA.*
+**Il fatto del 13 ottobre 2026** (al posto della misura «fuori dai passi», che è stata fatta ed è uscita: decisione
+147). Quel giorno questo passo partiva **senza finestra**: i tre gesti sono stati fatti, e il sito ha ridato il modulo —
+`ended_at news.ycombinator.com/login`, `ended_status 200`, il campo della password ancora lì. Subito dopo, a mano, lo
+stesso piano con `uv run ela browser window show` è finito su `news.ycombinator.com/`, `200`, senza il campo; e una
+lettura come te, poi, senza finestra, ha trovato in alto il nome utente e «logout». **Un sito può rifiutare un browser
+che si dice senza finestra**: misurato su questo sito solo, con un login per modo. Da allora `browser.login` parte con
+la finestra ([ADR 0063](adr/0063-browser-with-your-accounts.md), §5); gli altri passi con il profilo restano come dice
+`ela browser window`, e senza finestra funzionano. *ELA non cambia niente di ciò che il browser dice di sé: con la
+finestra si chiama `Chrome` perché ha una finestra ([ADR 0064](adr/0064-browser-boundary.md), §7).* **Se questo passo
+fallisse ancora**, con la finestra, e il risultato dicesse di nuovo il modulo con il suo campo, **il sito rifiuta un
+browser guidato**: si sceglie un altro sito per questo passo, ed ELA non lo aggira.
 
 ### 7. Il vault chiuso, e il profilo occupato
 

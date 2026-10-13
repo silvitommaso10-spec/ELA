@@ -101,12 +101,18 @@ class BrowserRefusedError(ApiError):
 async def browser_of(ela: Ela) -> BrowserOut:
     """What the profile is now. The state is ``free``, who holds it — one of the port's three
     names —, or the tools' refusal without its prefix; ``linked`` and ``saved`` are what the
-    browser says of itself, read again each time and ``None`` where nothing could be read."""
+    browser says of itself, read again each time and ``None`` where nothing could be read; and
+    whether a login could be given its window now is asked of the port the same way."""
     look = await look_at(ela.accounts, BROWSER_TIMEOUT_SECONDS)
     linked: bool | None = None
     saved: int | None = None
     profiles: int | None = None
+    login_window: bool | None = None
     if look.code in READ:
+        try:
+            login_window = await ela.accounts.can_show()
+        except BrowserError:
+            login_window = None
         try:
             linked = await ela.accounts.linked()
         except BrowserError:
@@ -124,6 +130,7 @@ async def browser_of(ela: Ela) -> BrowserOut:
         state=state,
         message=look.message,
         window=ela.window.shown,
+        login_window=login_window,
         linked=linked,
         saved=saved,
         profiles=profiles,

@@ -4,7 +4,9 @@ where you sign in by hand (M13.9, ADR 0063 §8; decisions 18 and 34).
 ``status`` prints what the profile is — looked at again at every call —: usable or not and why,
 free or held and by whom, with a window or without, and whether the browser knows an account of
 its maker's. ``window show`` and ``window hide`` turn **your** switch: no capability has an
-argument for it and no tool decides it, and it is off again at every start of ELA. ``open`` opens
+argument for it and no tool decides it, and it is off again at every start of ELA — **but a
+login is started in a window whatever the switch says**, and ``status`` says that too, with
+whether a window can be had now (decision 143 of the review of 2026-10-13). ``open`` opens
 the window where you sign in to a site with your own hands, on a site you declared or on none:
 **ELA reads nothing of that window**, and while it is open it does not begin to look at the
 screen or to listen. ``close`` ends that browser: the red button of its window closes the window
@@ -34,6 +36,13 @@ app.add_typer(window, name="window")
 
 NOT_READ = "not read"
 """What a fact of the folder is when the folder could not be read: not «no», and not «none»."""
+A_LOGIN = {
+    True: "with a window, whatever the switch says",
+    False: "with a window — and ELA cannot open one now: a login would not start",
+    None: f"with a window — whether one can be opened: {NOT_READ}",
+}
+"""What is said of a login (decision 143 of the review of 2026-10-13): it is started in a window
+whatever the switch says, and not started without — by whether one can be had now."""
 ONLY_ONE_IS_ELA_S = "ELA prepares and uses one, and counts the passwords saved in all of them"
 """What is said of a folder that holds more than one profile of the browser's (decision 79)."""
 CLOSED = {
@@ -53,6 +62,7 @@ def _status(payload: dict[str, Any]) -> str:
     said: list[tuple[str, Any]] = [
         ("state", payload["state"]),
         ("steps run", "with a window" if payload["window"] else "without a window"),
+        ("a login runs", A_LOGIN[payload.get("login_window")]),
         ("linked to an account", NOT_READ if linked is None else ("yes" if linked else "no")),
         ("saved passwords", NOT_READ if saved is None else saved),
     ]

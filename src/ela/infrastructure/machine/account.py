@@ -41,6 +41,12 @@ What a page gets here that an empty one does not:
 * **no HAR, no tracing, no video**: the options of the launch are a closed set
   (:data:`LAUNCH_OPTIONS`).
 
+**With a window or without** is the user's switch, read at each launch — **but for a page asked
+with a window** (:meth:`AccountChrome.open_shown`, decision 143 of the review of 2026-10-13): the
+one capability that signs in asks for it, because a site may refuse a browser that says it has no
+window (measured on one site). That launch has a window whatever the switch says, and is not
+made at all where the system did not say that this process is inside a session of the screen.
+
 **The window** (:meth:`AccountChrome.window`) is the same binary on the same folder **with nothing
 attached**: no driver, no pipe, no debugging port; its output goes nowhere; ELA keeps one thing of
 it, the wait for its end. At ELA's stop it is told — ``SIGTERM``, to which it exits by itself,
@@ -59,6 +65,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
 import json
 import logging
 import os
@@ -95,6 +102,7 @@ from ela.ports import (
     Field,
     Glanced,
     Landed,
+    NoWindow,
     Opened,
     PageGone,
     ProfileBusy,
@@ -593,13 +601,20 @@ async def _nobody_is_told(address: str | None, seconds: float) -> None:
     """Whoever builds this adapter without saying who is told that a window ended."""
 
 
+async def _no_screen_was_said() -> bool:
+    """Whoever builds this adapter without saying how the system answers «is this process inside
+    a session of the screen»: it is not (fail-safe) — a page asked with a window is refused."""
+    return False
+
+
 class AccountChrome(PlaywrightBrowser):
     """The port :class:`~ela.ports.AccountBrowser`, with Playwright and Chrome for Testing.
 
     ``profile`` is the folder the user declared, ``None`` when nobody did. ``shown`` says, at
     each launch, whether the browser has a window — the user's switch, never a tool's. ``ended``
     is told when a window opened by :meth:`window` has ended: on which address it was opened, and
-    how long it lasted.
+    how long it lasted. ``on_a_screen`` answers, each time it is asked, whether this process is
+    inside a session of the screen: where it is not, no window can be had (decision 143).
     """
 
     def __init__(
@@ -612,11 +627,14 @@ class AccountChrome(PlaywrightBrowser):
         profile: Path | None,
         shown: Callable[[], bool],
         ended: Callable[[str | None, float], Awaitable[None]] = _nobody_is_told,
+        on_a_screen: Callable[[], Awaitable[bool]] = _no_screen_was_said,
     ) -> None:
         super().__init__(stopping, environment=environment, kept=kept, system=system)
         self._profile = profile
         self._shown = shown
         self._ended = ended
+        self._on_a_screen = on_a_screen
+        self._with_a_window = False
         self._said_of: Callable[[int], Awaitable[str | None]] = self._asked
         self._was_told: set[int] = set()
         self._window: asyncio.subprocess.Process | None = None
@@ -643,7 +661,7 @@ class AccountChrome(PlaywrightBrowser):
         assert profile is not None  # noqa: S101 — a launch is on a folder found usable
         return {
             "channel": CHROME,
-            "headless": not self._shown(),
+            "headless": not (self._with_a_window or self._shown()),
             "chromium_sandbox": True,
             "args": [*LAUNCH_ARGUMENTS, reports_in(profile)],
             "env": self._environment,
@@ -824,6 +842,32 @@ class AccountChrome(PlaywrightBrowser):
         # opening that looks now finds this one.
         return await super().open(address, allowed, stop)
 
+    async def can_show(self) -> bool:
+        self._refuse_if_stopping()
+        if self._system != SUPPORTED:
+            raise BrowserUnsupported(self._system)
+        return await self._on_a_screen()
+
+    async def open_shown(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop
+    ) -> Opened:
+        """A page in a browser that has a window, whatever the switch says — and no page at all
+        where no window can be had: asked first, before the folder is looked at."""
+        if not await self.can_show():
+            raise NoWindow(
+                "the system did not say that ELA runs inside a session of the screen, and a "
+                "page asked with a window is not opened without one"
+            )
+        await self._free()
+        # From the look of ``_free`` to the count of this opening there is no wait, as in
+        # ``open`` — so no other launch can read what this one is given: a second opening
+        # that looks now finds this one, and is refused before it launches.
+        self._with_a_window = True
+        try:
+            return await super().open(address, allowed, stop)
+        finally:
+            self._with_a_window = False
+
     async def _begun(self, playwright: Playwright) -> tuple[Chromium | None, BrowserContext]:
         profile = self._profile
         assert profile is not None  # noqa: S101 — ``open`` has just found it usable
@@ -891,6 +935,17 @@ class AccountChrome(PlaywrightBrowser):
         if failed is not None:
             raise failed
         self._within(opened, made=True)
+
+    async def holds(self, page: str, selector: str, value: Secret) -> bool:
+        """Whether the field holds what ``value`` holds: read from the page and compared here,
+        where the secret is opened to be typed — the tool gets a yes or a no (decision 144).
+        Compared whole, in a time that does not say where two values part."""
+
+        async def read(opened: _Open) -> bool:
+            written = await opened.page.locator(selector).input_value()
+            return hmac.compare_digest(written.encode(), value.reveal().encode())
+
+        return await self._on(page, read)
 
     async def close(self, page: str) -> None:
         """Close the page — **and return only when no closing of this adapter is in flight**

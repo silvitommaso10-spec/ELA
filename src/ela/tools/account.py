@@ -22,6 +22,13 @@ yes, and never names an entry.
 field must be a password field, of a form that sends with ``POST`` —, listens for the stop of its
 task, and **only then** asks the vault: one reading, compared again with the site on that very
 reading. What fails there has its code; the yes is spent, and nothing was typed.
+
+**A login always has a window** (decisions 143 and 144 of the review of 2026-10-13): its page is
+opened in a browser that has one whatever the user's switch says — a site may refuse a browser
+that says it has none: measured on one site —, and where no window can be had the login does
+not start, before the question and before the vault is asked. A window takes the keyboard
+(measured): so right before the click the two fields are read again, and a field that no longer
+holds what was typed stops the click.
 """
 
 from __future__ import annotations
@@ -44,11 +51,13 @@ from ela.ports import (
     PROFILE_STEP,
     PROFILE_WINDOW,
     AccountBrowser,
+    BrowserError,
     BrowserFailed,
     BrowserStopped,
     BrowserUnsupported,
     Clock,
     IdGenerator,
+    NoWindow,
     Opened,
     ProfileBusy,
     ProfileUndeclared,
@@ -104,9 +113,11 @@ __all__ = [
     "BROWSER_READ_AS_YOU_VERIFIER_NAME",
     "BROWSER_SECOND_FACTOR",
     "ENTRY_FORGOTTEN",
+    "FIELD_CHANGED",
     "LOGIN_FORM_GET",
     "LOGS_IN",
     "NOT_A_PASSWORD_FIELD",
+    "NO_WINDOW",
     "PROFILE_BUSY",
     "PROFILE_UNDECLARED",
     "PROFILE_UNSAFE",
@@ -146,6 +157,14 @@ navigation."""
 ENTRY_FORGOTTEN: Final = "vault.entry_forgotten"
 """ELA does not know any more which entry the question named: it was started again between the
 question and the yes. Nothing is typed, and the step is asked again."""
+NO_WINDOW: Final = "browser.no_window"
+"""A login wants a window, and ELA could not tell that one can be had — its process is not
+inside a session of the screen, or the system did not say: a login does not start without one
+(decision 143). Not retryable: nothing about a later attempt is different by itself."""
+FIELD_CHANGED: Final = "browser.field_changed"
+"""Right before the click, a field of the login form no longer held what ELA had typed in it:
+the window has the keyboard, and a key pressed in those seconds lands in the form (measured;
+decision 144). ELA did not click, and nothing was sent."""
 ACCOUNT_CODES: Final[frozenset[str]] = frozenset({PROFILE_UNDECLARED, PROFILE_UNSAFE, PROFILE_BUSY})
 
 BROWSER_SECOND_FACTOR: Final = "browser.second_factor"
@@ -183,10 +202,17 @@ LOGS_IN: Final = (
     "takes one password from your vault, types it into this page and sends the form: you are "
     "signed in to this site as you. ELA keeps the password nowhere — not in the plan, in this "
     "question, in the result or in a log —, and ELA's browser stays signed in there for as long "
-    "as the site's cookie lasts"
+    "as the site's cookie lasts. While ELA signs in, a window of ELA's browser appears on your "
+    "screen: do not type until it is gone"
 )
-"""Not «nowhere else»: after the click the form is sent again by the gate of the browser's
-adapter, and the value passes through ELA's process once more (measured; decision 40)."""
+"""Not «nowhere else»: after the click the browser sends the form, and the driver hands the
+request — with its body — to its client in ELA's process (read in the driver's code; ADR 0063
+§5). **The window is said here and in no other sentence** (decision 143): this is what the
+question shows as what the yes does."""
+NO_WINDOW_MESSAGE: Final = (
+    "a login runs in a window of ELA's browser, and ELA could not tell that it can open one — "
+    "it did not find itself inside a session of your screen: a login does not start without one"
+)
 
 HELD_BY: Final = {
     PROFILE_STEP: "another step of ELA's is using it",
@@ -372,7 +398,7 @@ class LoginTool(_OnTheProfile, _BrowserTool):
 
     error_codes: ClassVar[frozenset[str]] = (
         frozenset({ARGUMENTS_INVALID, *BROWSER_CODES, *ACCOUNT_CODES, *VAULT_CODES})
-        | {NOT_A_PASSWORD_FIELD, LOGIN_FORM_GET, ENTRY_FORGOTTEN}
+        | {NOT_A_PASSWORD_FIELD, LOGIN_FORM_GET, ENTRY_FORGOTTEN, NO_WINDOW, FIELD_CHANGED}
     ) - {KEY_REFUSED}
     output_keys: ClassVar[frozenset[str]] = frozenset(
         {
@@ -457,6 +483,37 @@ class LoginTool(_OnTheProfile, _BrowserTool):
             entry=entry,
             key=json.dumps(dict(arguments), sort_keys=True, default=str),
         )
+
+    async def _installed(self) -> Outcome | None:
+        """What every tool of the profile looks at before its question — and whether a window
+        can be had, which only a login needs: asked last, of a profile a browser can start on."""
+        missing = await super()._installed()
+        if missing is not None:
+            return missing
+        try:
+            async with asyncio.timeout(self._browsing.timeout_seconds):
+                possible = await self._browser.can_show()
+        except BrowserStopped:
+            return Outcome({}, STOPPED, "ELA was stopping: no browser was started")
+        except (TimeoutError, BrowserError):
+            # Whether a window can be had could not be read: a doubt, and a doubt is not a yes.
+            possible = False
+        if possible:
+            return None
+        return Outcome({}, NO_WINDOW, f"{NO_WINDOW_MESSAGE}: no question is asked")
+
+    async def _opened(self, call: _Call, stop: TaskStop) -> Opened:
+        """The page of a login, opened **with a window whatever the switch says**."""
+        return await self._browser.open_shown(call.visit.address, call.allowed, stop)
+
+    async def _run(self, arguments: JsonMapping, stop: TaskStop) -> Outcome:
+        """The run of every tool of the profile — and the one thing only a page asked with a
+        window can be refused for, by the opening itself: the session of the screen went away
+        between the question and the yes. Nothing was started, and the vault was not asked."""
+        try:
+            return await super()._run(arguments, stop)
+        except NoWindow:
+            return self._none_typed(NO_WINDOW, NO_WINDOW_MESSAGE)
 
     async def prospect(self, arguments: JsonMapping) -> Prospect:
         """What the question names: the site, the address, **the entry** — by its name and its
@@ -588,7 +645,23 @@ class LoginTool(_OnTheProfile, _BrowserTool):
         if stop.is_set():
             return self._stopped(opened, done, site)
         await self._gesture(done, self._browser.fill_secret(page, word, taken.password))
-        del taken
+        # The window has the keyboard, and a key pressed since the first field was written
+        # lands in the form (measured on 2026-10-13; decision 144): the two fields are read
+        # again here, right before the click. The comparison is the browser's adapter's.
+        try:
+            as_typed = await self._browser.holds(
+                page, username, taken.username
+            ) and await self._browser.holds(page, word, taken.password)
+        finally:
+            del taken
+        if not as_typed:
+            return Outcome(
+                {"status": opened.status, "gestures": done[0]},
+                FIELD_CHANGED,
+                f"a field of the login form on the page of {site} no longer held what ELA had "
+                "typed in it — the window has the keyboard, and a key pressed meanwhile lands "
+                f"there: ELA did not click, and nothing was sent{self._after(done)}",
+            )
         if stop.is_set():
             return self._stopped(opened, done, site)
         await self._gesture(done, self._browser.click(page, call.click))

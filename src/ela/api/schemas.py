@@ -1496,11 +1496,17 @@ class BrowserOut(BaseModel):
     a second is one the user added from inside the window (decision 79). Read again each time,
     and ``None`` where the folder could not be read. ``sites`` are the declared ones, where the
     window may be opened. **Nothing of the folder**: not its path, not a file of it.
+
+    ``login_window`` is beside the switch and not in its place (decision 143 of the review of
+    2026-10-13): a login is started in a window whatever the switch says, and this is whether
+    one can be had **now** — asked of the port at every request, ``None`` where it could not be
+    asked.
     """
 
     state: str
     message: str
     window: bool
+    login_window: bool | None
     linked: bool | None
     saved: int | None
     profiles: int | None

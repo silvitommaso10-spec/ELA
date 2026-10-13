@@ -30,6 +30,7 @@ from ela.composition.system import (
     SystemClock,
     UuidGenerator,
     WindowSwitch,
+    a_session_of_the_screen,
     argument_limits,
     own_command,
     power_reading,
@@ -907,7 +908,9 @@ async def build(
         # The browser with the profile that lasts (M13.9, ADR 0063 §4): Chrome for Testing on the
         # folder of ``ELA_BROWSER_PROFILE_DIR`` — the one place that reads that line, and the one
         # module it is handed to (architecture rule 69) —, with the environment and the deadline of
-        # the empty browser, and the user's switch for the window, off at every start.
+        # the empty browser, and the user's switch for the window, off at every start. And the
+        # one question a page asked with a window needs answered — is this process inside a
+        # session of the screen —, built on the probe the perception reads this machine with.
         window = WindowSwitch()
         if accounts is None:
             accounts = AccountChrome(
@@ -918,6 +921,7 @@ async def build(
                 profile=settings.accounts.browser_profile_dir,
                 shown=lambda: window.shown,
                 ended=_window_trail(audit, clock, ids),
+                on_a_screen=a_session_of_the_screen(probe),
             )
         # The vault (M13.9, ADR 0063 §2): the program of ``ELA_VAULT_PROGRAM``, with the same four
         # variables — the adapter adds the two of ``bw`` at each launch, and takes nothing from

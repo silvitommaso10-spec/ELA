@@ -8,6 +8,10 @@
   Playwright, e la misura sui service worker è rifatta — la difesa resta —; §5, i due confronti di `browser.login`
   sono il predicato dell'adapter, e i verifier dicono anche `browser.left_site` e `browser.another_page`; §11, la
   strada «misurata e non presa» è presa.
+  **La prova del 13 ottobre**, sul commit di ADR 0064, non è passata per il solo login, che il sito ha rifiutato
+  senza finestra e accettato con: dalla review di quel giorno (decisioni 143–146) `browser.login` parte sempre
+  con la finestra e rilegge i due campi prima del click (§5, §8), la riga che apre il vault entra da sé nella
+  cartella di ELA e la frase di `ela vault open` non indovina una causa (§3).
 - **Data:** 2026-10-11
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.9, con M13.4b, M13.4c e M13.4e sullo stesso branch
@@ -133,7 +137,7 @@ Port introdotti:
 | Port | Spec | Modalità | Membri |
 |---|---|---|---|
 | `Vault` | §19, §57 | async | `status`, `unlock`, `lock`, `forget`, `find`, `take` |
-| `AccountBrowser` | §19, §57 | async | `installed`, `open`, `count`, `field`, `fill`, `click`, `text`, `title`, `left`, `another`, `keep`, `glance`, `close`, `occupied`, `window`, `shut`, `linked`, `saved`, `profiles`, `fill_secret`, `landed` |
+| `AccountBrowser` | §19, §57 | async | `installed`, `open`, `count`, `field`, `fill`, `click`, `text`, `title`, `left`, `another`, `keep`, `glance`, `close`, `occupied`, `window`, `shut`, `linked`, `saved`, `profiles`, `fill_secret`, `landed`, `can_show`, `open_shown`, `holds` |
 
 *`another` è di ADR 0064 (M13.4f), §5, ed è del port `Browser`: questo lo eredita.*
 
@@ -204,6 +208,25 @@ letteralmente falsa.
 - **Da quale cartella.** Il comando di ELA legge il token dell'API dal `.env` della cartella in cui è lanciato,
   o dall'ambiente. Quando ELA ha letto un `.env`, **la frase accanto alla riga nomina quella cartella**; la riga
   resta la riga, e funziona incollata nel Terminale in cui `ela vault status` l'ha appena stampata.
+  ***Rivista dalla review del 13 ottobre 2026 (decisione 145), su un fatto***: due volte, il 12 e il 13 ottobre,
+  la riga è stata incollata in una finestra che non era nella cartella di ELA — la frase accanto è letta dopo.
+  **Ora la riga entra da sé in quella cartella, dentro una sottoshell**:
+
+  ```
+  (cd <la cartella del .env> && <il programma dichiarato> unlock --raw | <il comando di questa ELA> vault open)
+  ```
+
+  Funziona da qualunque cartella e **non sposta il terminale di chi la incolla**; i due percorsi assoluti sono
+  quelli di prima, e la cartella è citata come li vuole una shell. Dove ELA non ha letto nessun `.env` la riga
+  resta senza sottoshell. **La frase accanto dice di lanciarla nel proprio terminale, e non più dove.**
+  *Misurato il 13 ottobre in `zsh` 5.9 e in `bash` 3.2, ciascuna una shell interattiva su un terminale suo,
+  partita in un'altra cartella* (`the_line_from_any_folder.py`, con la sua uscita, in
+  `.git/m13.9-reference/review-0d4455a/`): la domanda arriva sul terminale, la risposta scritta lì arriva al
+  primo programma senza essere mostrata, il secondo riceve da un tubo ciò che il primo ha stampato e gira nella
+  cartella di ELA, e dopo la riga la shell è dov'era. *Con la riga di prima, lanciata dalla stessa cartella, il
+  secondo programma gira lì e non trova nessun `.env`: è il fatto.* **Né `bw` né il comando di ELA sono stati
+  lanciati dalla sonda**: al loro posto due programmi suoi, che fanno con i loro flussi ciò che fanno quei due.
+  Con `bw` vero la sottoshell non è misurata, e non in altre shell.
 - **Vale ovunque la riga compare**, perché nasce in un posto solo, la porta del vault: `ela vault status`, il
   messaggio di `vault.locked` nell'esito di un task, la vista della console. `ela vault open`, se riceve un
   terminale al posto di una pipe, rimanda a `vault status` e non scrive una mezza riga.
@@ -213,7 +236,12 @@ letteralmente falsa.
 `ela vault open` legge la chiave dallo stdin e **rifiuta un terminale**: una chiave non si scrive e non si
 incolla. **Prima di leggere guarda di avere il token** (decisione 107, dalla prova del 12 ottobre): lanciato dove
 il token non c'è lo dice subito, mentre il programma del vault sta ancora chiedendo la password principale, e
-non prende una chiave che nessuno riceverà. La manda a `POST /vault/session`, che la riceve **solo se i due capi del socket sono di loopback**
+non prende una chiave che nessuno riceverà. **Quando sul tubo non arriva nessuna chiave dice il fatto, e non
+indovina una causa** (decisione 146, dalla prova del 13 ottobre): il programma del vault non ne ha stampata
+nessuna, ciò che ha scritto è sopra quella riga, e a ELA non è stato mandato niente. Chiedeva «a wrong master
+password?»; quel giorno `bw` non aveva raggiunto il suo server, e l'aveva scritto lui. *Fra le misure*: **`bw
+unlock` ha chiesto il suo server, e senza rete è caduto** — visto da Tommaso nel suo terminale il 13 ottobre,
+non da una sonda —; **che cosa faccia da scollegati non è misurato**. La manda a `POST /vault/session`, che la riceve **solo se i due capi del socket sono di loopback**
 (`from_this_machine`, la coppia di ADR 0044): la tailnet non consegna una chiave, qualunque token porti. La rotta
 la tiene solo se il programma del vault, con quella chiave, dice che il vault è aperto; altrimenti è
 `vault.key_refused`, e la chiave è dimenticata. **Non torna indietro in nessuna risposta**, né in un rifiuto: il
@@ -307,7 +335,9 @@ non lo è stato. Una chiusura che nessuna rotta ha chiesto non resta senza riga.
 stesso contratto del gesto, della consegna e della fermata, e ciò che il profilo aggiunge — chi tiene la
 cartella (`occupied`), la finestra del login a mano (`window`), se il browser conosce un account Google
 (`linked`), quante password ha salvato il suo gestore (`saved`), e il campo riempito da un `Secret`
-(`fill_secret`). Il suo adapter, `ela/infrastructure/machine/account.py`, **eredita** l'adapter del browser
+(`fill_secret`). *Dal 13 ottobre 2026 (decisioni 143 e 144)*: una pagina aperta **con la finestra qualunque
+cosa dica l'interruttore** (`open_shown`), se una finestra si può avere adesso (`can_show`), e se un campo porta
+ancora ciò che un `Secret` contiene (`holds`) — §5 e §8. Il suo adapter, `ela/infrastructure/machine/account.py`, **eredita** l'adapter del browser
 vuoto: un driver e un browser per pagina, il cancello di ADR 0052 §6, la fermata di M13.4c, la chiusura che
 arriva in fondo di M13.4b, l'uccisione alla grazia di M13.4e. Cambia **quale** browser una pagina riceve, e che
 cosa si fa alla cartella prima che parta.
@@ -507,7 +537,7 @@ I tool, in `ela/tools/account.py`:
 |---|---|---|---|---|---|
 | `browser.read_as_you` | `AccountReadTool` | `browser-read-as-you` | sì | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `shown`, `status`, `total` |
 | `browser.act_as_you` | `AccountActTool` | `browser-act-as-you` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system` | `gestures`, `status` |
-| `browser.login` | `LoginTool` | `browser-login` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.http_status`, `browser.left_site`, `browser.login_form_get`, `browser.not_a_password_field`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system`, `vault.entry_ambiguous`, `vault.entry_forgotten`, `vault.entry_not_for_site`, `vault.failed`, `vault.locked`, `vault.no_entry`, `vault.no_password`, `vault.no_program`, `vault.program_changed`, `vault.program_gone`, `vault.program_is_a_script`, `vault.timeout`, `vault.unauthenticated`, `vault.undeclared` | `gestures`, `status` |
+| `browser.login` | `LoginTool` | `browser-login` | no | `arguments.invalid`, `browser.element_ambiguous`, `browser.element_missing`, `browser.failed`, `browser.field_changed`, `browser.http_status`, `browser.left_site`, `browser.login_form_get`, `browser.no_window`, `browser.not_a_password_field`, `browser.not_installed`, `browser.profile_busy`, `browser.profile_undeclared`, `browser.profile_unsafe`, `browser.secret_field`, `browser.stopped`, `browser.timeout`, `browser.unreachable`, `browser.unsupported_system`, `vault.entry_ambiguous`, `vault.entry_forgotten`, `vault.entry_not_for_site`, `vault.failed`, `vault.locked`, `vault.no_entry`, `vault.no_password`, `vault.no_program`, `vault.program_changed`, `vault.program_gone`, `vault.program_is_a_script`, `vault.timeout`, `vault.unauthenticated`, `vault.undeclared` | `gestures`, `status` |
 | `browser.guided_as_you` | `BrowserGuidedTool` | `browser-guided-as-you` | no | `arguments.invalid`, `guided.cache`, `guided.cap_below_one_call`, `guided.cost`, `guided.duration`, `guided.failed`, `guided.folder_changed`, `guided.looks`, `guided.max_tokens`, `guided.model_changed`, `guided.not_installed`, `guided.permission_asked`, `guided.route_changed`, `guided.session_gone`, `guided.stopped`, `guided.tools_changed`, `guided.unchecked`, `guided.unreserved`, `provider.authentication_error`, `provider.bad_request`, `provider.malformed_response`, `provider.no_output`, `provider.rate_limited`, `provider.refusal`, `provider.rejected`, `provider.server_error`, `provider.spend_limit`, `provider.timeout`, `provider.unavailable`, `provider.unknown_model`, `provider.unknown_model_hint`, `provider.unreachable`, `provider.unsupported_parameter`, `routing.empty_routes`, `routing.unknown_provider`, `routing.unknown_task_type` | `acts`, `calls`, `input_minus_bytes_max`, `input_tokens`, `looks`, `output_tokens`, `refused`, `unknown_calls` |
 
 I verifier, nello stesso modulo — guardano la pagina nel browser che l'ha aperta:
@@ -596,6 +626,45 @@ un confronto del tool: è il predicato che l'adapter chiede a ogni uso della pag
 così il confronto all'apertura. Se la pagina ne ha aperta un'altra il risultato lo dice (`another_page`), e il
 verifier risponde `browser.another_page` quando il testo non compare (ADR 0064 §5).*
 
+**`browser.login` parte sempre con la finestra, qualunque cosa dica l'interruttore** (decisione 143 della
+review del 13 ottobre 2026: *rivede apertamente §8*, «nessun tool lo decide»). **Il fatto**: nella prova del 13
+ottobre, sul commit del cancello di ADR 0064, il login dal vault senza finestra ha fatto i suoi tre gesti e il
+sito ha ridato il modulo — `ended_at` sul percorso del login, `200`, il campo della password ancora lì —; lo
+stesso piano, subito dopo, con `ela browser window show`, è finito sulla prima pagina del sito senza il campo; e
+una lettura fatta poi senza finestra ha trovato il nome utente e «logout» (`docs/milestones/M13.9.md`, sezione
+23). È la seconda riga della regola scritta prima dei numeri (decisione 119): **un sito può rifiutare un
+browser che si dice senza finestra**. *Misurato su un sito solo, con un login per modo*: non dice quanti siti lo
+facciano, né che cosa quel sito guardi. **Il perché della decisione**: un login che fallisce spende un sì e una
+lettura del vault, e lascia al sito un tentativo sbagliato; chi approva è presente, perché il login chiede a
+ogni uso; **e non è un travestimento** — il browser non dice di sé niente di diverso da ciò che è: con la
+finestra si chiama `Chrome` perché ha una finestra (§11). **Le altre capability con il profilo restano come
+dice l'interruttore**: senza finestra funzionano, misurato dalla stessa prova.
+
+- **La domanda lo dice**, nella frase del tool — ciò che la domanda mostra come «che cosa fa» — e in nessun
+  altro posto: mentre ELA entra, sullo schermo compare una finestra del suo browser, e finché c'è non si scrive.
+- **Se una finestra non si può avere il login non parte senza** — `browser.no_window`. ELA lo chiede al sistema
+  con la lettura che la percezione fa già: se questo processo sta dentro una sessione dello schermo. Una
+  sessione letta è una sessione, bloccata o no, davanti o no; **una sessione non letta è un dubbio, e nel dubbio
+  il login non parte**. Prima della domanda è un rifiuto che non costa un sì e non chiede niente al vault; dopo
+  il sì — la sessione è andata via nel frattempo — lo dice l'apertura stessa: il sì è speso, nessun browser è
+  partito, e il vault non è stato aperto. **Non c'è un cammino del login che lanci senza finestra.** *Misurato
+  da dentro la sessione di Tommaso, dove la lettura dice di sì e il lancio con la finestra riesce*
+  (`a-session-of-the-screen.txt`); **il caso senza una sessione dello schermo non è misurato**: su questo Mac
+  non si costruisce senza uscire da quella sessione, e i test lo costruiscono consegnando la risposta. Che
+  cosa faccia il binario lanciato con la finestra fuori da una sessione, ELA non lo prova.
+- **I due campi sono riletti subito prima del click** (decisione 144) — `browser.field_changed`. *Misurato il
+  13 ottobre* (`does_the_window_take_the_keyboard.py`, con la sua uscita): il browser di un lancio con la
+  finestra **viene davanti** — in due giri su tre: nel terzo davanti è rimasta un'altra applicazione —, e
+  dentro il browser il fuoco è sul campo appena scritto; un tasto premuto in quei secondi finisce nel modulo.
+  Perciò, scritti i due valori, il tool chiede al browser se ciascun campo porta ancora ciò che è stato
+  scritto: **il confronto lo fa l'adapter**, a cui i `Secret` sono consegnati come gli sono consegnati per
+  scrivere, e al tool torna un sì o un no. Se uno dei due è cambiato **non clicca**: i due gesti sono contati,
+  niente è stato inviato, la pagina è chiusa, e nessuna frase porta un valore. *Che cosa non è misurato*: un
+  tasto vero — mandarne uno al sistema chiede un permesso che ELA non chiede: la sonda ha un modo in cui
+  aspetta il tasto di chi è al Mac, non lanciato —; ciò che il documento dice del fuoco non basta da solo,
+  perché lo dice uguale senza finestra: ciò che decide è quale applicazione è davanti. *E fra la rilettura e il
+  click resta un istante.*
+
 **Il valore non viene mai dal piano**, e non entra nel modulo dei tool: il tool riceve due `Secret` dalla porta
 del vault e li passa all'adapter del browser — a nessun altro, in nessun esito, messaggio o evento.
 
@@ -668,6 +737,12 @@ attraverso il browser: nessun driver, nessuna pipe, nessuna porta (§8). **Quell
 finisce lì.** Lo schermo e il microfono sono un'altra strada verso ciò che viene scritto in quella finestra: una
 fotografia, una lettura o una registrazione fatte nel frattempo porterebbero la password.
 
+***Dal 13 ottobre 2026 (decisione 143): per il login vale questa stessa regola, non una nuova.*** *Uno step di
+ELA che tiene il profilo — con la finestra o senza — non è «una mano»: i tool qui sotto non si rifiutano. Con la
+decisione 143 lo step che ha sempre la finestra è il login, e in quei secondi sullo schermo c'è il modulo con il
+nome utente in chiaro e la password come puntini: una cattura chiesta da un altro task lo fotografa. È la
+domanda 148 di `docs/milestones/M13.9.md`.*
+
 Perciò le capability che guardano lo schermo o ascoltano **si rifiutano finché una mano può essere sul profilo**
 (decisione 41), ciascuna con un codice suo, ritentabile — ciò che rende sbagliato il momento finisce:
 
@@ -721,6 +796,13 @@ decisione 49, con la correzione della 77).
 nessun tool lo decide: è uno stato di ELA accesa, che cambia solo da una rotta di Tommaso, vale per gli step
 con il profilo che partono da quel momento, e **torna «senza finestra» a ogni avvio**. Il browser vuoto resta
 senza finestra.
+
+***Rivista apertamente il 13 ottobre 2026 (decisione 143).*** *«Nessun tool lo decide» ha un'eccezione, ed è
+scritta: **`browser.login` parte con la finestra qualunque cosa dica l'interruttore** (§5). Non è un argomento
+della capability e un piano non lo sceglie: è com'è fatto il tool. L'interruttore resta di Tommaso, e resta ciò
+che decide per ogni altro step con il profilo. **`ela browser status` lo dice**, in una riga sua accanto a
+quella dell'interruttore: un login parte con la finestra, e — quando è così — che adesso ELA non può aprirne
+una, o che non ha potuto chiederlo; `GET /browser` porta lo stesso fatto in `login_window`.*
 
 **La finestra del login a mano** (decisione 18b). ELA lancia il binario, da solo, sulla cartella del profilo,
 con gli argomenti dell'elenco chiuso di §4 e, se c'è, l'indirizzo `https` di un sito **dichiarato**. Non c'è

@@ -183,6 +183,7 @@ __all__ = [
     "ModelProvider",
     "ModelRouterPort",
     "NAVIGATION",
+    "NoWindow",
     "NotAllowedError",
     "NotFoundError",
     "Opened",
@@ -3028,6 +3029,12 @@ class Browser(Protocol):
         cancellation, and the page's processes still go."""
 
 
+class NoWindow(BrowserError):
+    """A page was asked **with a window**, and this ELA cannot be given one — the system did not
+    say that its process is inside a session of the screen. Nothing was launched: a page asked
+    with a window is never opened without (M13.9, decision 143 of the review of 2026-10-13)."""
+
+
 @runtime_checkable
 class AccountBrowser(Browser, Protocol):
     """ELA's own browser **with the profile that lasts**: the sites the user signed in to (§19,
@@ -3047,8 +3054,38 @@ class AccountBrowser(Browser, Protocol):
     * :meth:`field` says how the element's form sends (:attr:`Field.method`), and :meth:`glance`
       whether the page asks for a one-time code (:attr:`Glanced.second_factor`);
     * :meth:`landed` says where a page is after a gesture, and with which status — what a login
-      that did not work leaves to read (decision 106).
+      that did not work leaves to read (decision 106);
+    * :meth:`open_shown` opens a page **in a browser that has a window, whatever the user's
+      switch says** — for the one capability that signs in: a site may refuse a browser that
+      says it has none (measured on one site, 2026-10-13) —, and :meth:`can_show` says whether a
+      window can be had now. A page asked with a window is never opened without one
+      (:class:`NoWindow`); every other page is opened as the switch says (decision 143);
+    * :meth:`holds` says whether a field still holds what a secret holds: the comparison is the
+      implementation's, which is handed the secret as it is handed it to type (decision 144).
     """
+
+    async def can_show(self) -> bool:
+        """Whether a browser started now could be given a window: asked of the system at every
+        call, never remembered, and nothing is started. ``False`` also where the system did not
+        say — a doubt is not a window.
+
+        :raises BrowserUnsupported, BrowserStopped:
+        """
+
+    async def open_shown(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop
+    ) -> Opened:
+        """:meth:`open`, in a browser that **has a window whatever the user's switch says**.
+        Everything else is :meth:`open`'s: the boundary, the stop, what it returns and raises.
+
+        :raises NoWindow: no window can be had now. Nothing was launched, and nothing of the
+            folder was looked at or made.
+        """
+
+    async def holds(self, page: str, selector: str, value: Secret) -> bool:
+        """Whether the one element ``selector`` finds holds, now, exactly what ``value`` holds.
+        A use of the page like any other: the boundary is asked before it and after it. Nothing
+        of either value is in what this returns or raises."""
 
     async def landed(self, page: str) -> Landed:
         """Where the main frame is **once the document the last gesture led to is there**, and

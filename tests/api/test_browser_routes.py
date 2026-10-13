@@ -104,6 +104,7 @@ async def test_a_profile_nobody_holds_is_free_and_says_what_the_browser_says_of_
         "state": "free",
         "message": "",
         "window": False,
+        "login_window": True,
         "linked": False,
         "saved": 0,
         "profiles": 1,
@@ -116,7 +117,16 @@ async def test_what_the_answer_may_carry_is_a_closed_set_of_fields(browsed: Brow
     here."""
     said = (await browsed.client.get("/browser")).json()
 
-    assert set(said) == {"state", "message", "window", "linked", "saved", "profiles", "sites"}
+    assert set(said) == {
+        "state",
+        "message",
+        "window",
+        "login_window",
+        "linked",
+        "saved",
+        "profiles",
+        "sites",
+    }
     assert str(browsed.ela.settings.persistence.db_url) not in json.dumps(said)
 
 

@@ -433,7 +433,7 @@ class _BrowserTool(Tool):
         try:
             try:
                 async with asyncio.timeout(self._browsing.timeout_seconds):
-                    opened = await self._browser.open(looked.visit.address, looked.allowed, stop)
+                    opened = await self._opened(looked, stop)
                     outcome = await self._on_the_page(looked, opened, done, stop)
             except TimeoutError:
                 outcome = Outcome(self._partial(done), TIMEOUT, self._still_at_work(site, done))
@@ -471,6 +471,10 @@ class _BrowserTool(Tool):
             # a result it would not cancel —; an error this method does not name.
             if opened is not None and not handed_over:
                 await self._browser.close(opened.page)
+
+    async def _opened(self, call: _Call, stop: TaskStop) -> Opened:
+        """The page of the call, opened: as the browser opens any page."""
+        return await self._browser.open(call.visit.address, call.allowed, stop)
 
     async def _on_the_page(
         self, call: _Call, opened: Opened, done: list[int], stop: TaskStop

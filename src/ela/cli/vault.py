@@ -14,6 +14,8 @@ for a locked one, **that whole line** — composed by ELA with the program it vo
 the command it runs with, **each by its absolute path** and never with a placeholder: the ``bw``
 to run is the declared one and the ``ela`` that receives the key is this one, neither the first
 of a ``PATH`` (decision 98).
+Where ELA read a ``.env`` the line is a subshell that enters its folder: it
+works from whichever folder the terminal is in, and leaves the terminal there (decision 145).
 ``close`` locks the vault and makes ELA forget the key.
 """
 
@@ -40,9 +42,12 @@ FROM_A_TERMINAL: Final = (
     "command"
 )
 NO_KEY: Final = (
-    "no key arrived on the pipe: the vault's program printed none (a wrong master password?). "
-    "Nothing was sent to ELA"
+    "no key arrived on the pipe: the vault's program printed none — what it wrote is above this "
+    "line. Nothing was sent to ELA"
 )
+"""The fact, and where to read why: no cause is guessed (decision 146 of the review of
+2026-10-13). It used to ask «a wrong master password?» — and the day it was read the vault's
+program had not reached its server, and had said so on the line above."""
 
 
 def stdin_is_a_terminal() -> bool:

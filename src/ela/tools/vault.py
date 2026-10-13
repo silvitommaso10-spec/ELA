@@ -247,8 +247,8 @@ class VaultDoor:
     ``closed`` is told of every closing (:class:`VaultClosing`), after the key is forgotten;
     ``wait`` is how the hour is waited for — a sleep, and an event in a test. ``command`` is the
     absolute path of ELA's own command, ``None`` when the composition could not name it;
-    ``folder`` the folder of the ``.env`` ELA read, ``None`` when it read none — where the line
-    for a locked vault is to be run, because ELA's command reads its token there.
+    ``folder`` the folder of the ``.env`` ELA read, ``None`` when it read none — which the line
+    for a locked vault enters by itself, because ELA's command reads its token there.
 
     **One thing at a time.** Whatever asks the vault something — an opening, a closing, a use, the
     state — holds the door while it does: a closing takes several steps, and until the vault has
@@ -322,21 +322,30 @@ class VaultDoor:
         return None if opened is None else opened + timedelta(seconds=self._seconds)
 
     def _opens_with(self) -> str | None:
-        """The whole line to paste in a terminal (decisions 32 and 98): the declared program
+        """The whole line to paste in a terminal (decisions 32, 98 and 145): the declared program
         piped into **ELA's own command**, each by its absolute path and quoted as a shell wants a
         path with a space in it — never a name looked for in the ``PATH``, and never a
-        placeholder. ``None`` when ELA cannot name its own command: no line rather than one that
-        may not work."""
+        placeholder —, inside a subshell that enters the folder of the ``.env`` ELA read, where
+        it read one. ``None`` when ELA cannot name its own command: no line rather than one
+        that may not work."""
         if self._command is None:
             return None
         program = shlex.quote(self._program or "")
-        return f"{program} unlock --raw | {shlex.quote(self._command)} vault open"
+        line = f"{program} unlock --raw | {shlex.quote(self._command)} vault open"
+        if self._folder is None:
+            return line
+        # ELA's command reads the token of the API from the ``.env`` of the folder it is
+        # launched in. The line enters that folder by itself, in a subshell: it works from
+        # whichever folder the terminal is in, and leaves the terminal there (decision 145 of
+        # the review of 2026-10-13 — twice the line had been pasted somewhere else). Measured in
+        # zsh and in bash: the vault's program still asks on the terminal, and ELA's command
+        # still reads a pipe.
+        return f"(cd {shlex.quote(self._folder)} && {line})"
 
     def _locked(self) -> str:
-        """What a locked vault is answered with: the line, and where to run it — ELA's command
-        reads the token of the API from the ``.env`` of the folder it is launched in, so the
-        folder of the one ELA read is named. Without a command of its own to name, what to pipe
-        into what, and no line."""
+        """What a locked vault is answered with: the line, to run in a terminal — **any**: where
+        ELA read a ``.env`` the line enters its folder by itself (decision 145). Without a
+        command of its own to name, what to pipe into what, and no line."""
         line = self._opens_with()
         if line is None:
             return (
@@ -344,13 +353,7 @@ class VaultDoor:
                 f"gives no line to paste: pipe the key that `{shlex.quote(self._program or '')} "
                 "unlock --raw` prints into `vault open` of the command you start ELA with"
             )
-        where = "your terminal"
-        if self._folder is not None:
-            where = (
-                f"a terminal opened in the folder {shlex.quote(self._folder)} — ELA's command "
-                "reads the token of its API from the .env there"
-            )
-        return f"the vault is locked: run `{line}` in {where}"
+        return f"the vault is locked: run `{line}` in your terminal"
 
     # The program ----------------------------------------------------------------------------
 

@@ -34,7 +34,7 @@ from typing import Final
 from uuid import UUID, uuid4
 
 from ela.devices import power_drawn_from, power_on_the_line
-from ela.domain import PowerSource
+from ela.domain import PowerSource, ProbeFamily
 from ela.infrastructure.machine import (
     PMSET,
     POWERSHELL,
@@ -51,6 +51,7 @@ from ela.ports import (
     AccountBrowser,
     BrowserError,
     BrowserUnsupported,
+    PerceptionProbe,
     ProfileUndeclared,
 )
 from ela.tools.base import NotNow
@@ -66,6 +67,7 @@ __all__ = [
     "SystemClock",
     "UuidGenerator",
     "WindowSwitch",
+    "a_session_of_the_screen",
     "argument_limits",
     "own_command",
     "power_nobody_reads",
@@ -271,6 +273,33 @@ ELA's own is not here: nobody is typing a password into a page ELA drives."""
 NO_HAND: Final = frozenset({PROFILE_STEP})
 """The holders that let ELA look and listen — said by name, so that a holder the port comes to
 answer with and nobody wrote a sentence for is a doubt, and not «nobody» (fail-safe)."""
+
+
+def a_session_of_the_screen(probe: PerceptionProbe) -> Callable[[], Awaitable[bool]]:
+    """The one question the browser with the user's accounts is handed about this machine
+    (M13.9, decision 143 of the review of 2026-10-13): «is this process inside a session of the
+    screen?», answered by reading the session **at each call** with the probe the perception
+    already reads with — the family of the session, and nothing else.
+
+    A login of ELA's is started in a window, and a process outside a session of the screen can
+    be given none. **A session that was read is a session** — locked or not, in front or not: a
+    window can be made in it. What the probe reads of the session it reads from the session's own
+    dictionary, so where there is none — or the probe did not answer — it reads nothing: **a
+    doubt, and a doubt is «no»** (fail-safe). The port promises not to raise; a probe that breaks
+    the promise is the same doubt.
+
+    *Measured from inside the user's session, where it says yes. The case with no session is not
+    built on the machine this was written on: it is what the system's documentation says of the
+    reading, and what the tests hand in.*"""
+
+    async def there() -> bool:
+        try:
+            read = await probe.read(frozenset({ProbeFamily.SESSION}))
+        except Exception:  # noqa: BLE001 — a probe that broke its promise: a doubt, not a window
+            return False
+        return read.on_console is not None
+
+    return there
 
 
 def while_the_user_signs_in(accounts: AccountBrowser) -> NotNow:

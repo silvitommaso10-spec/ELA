@@ -126,11 +126,13 @@ async def test_a_locked_vault_answers_with_the_whole_line_to_paste(vaulted: Vaul
     assert "<" not in said["opens_with"] and " | ela " not in said["opens_with"]
 
 
-async def test_started_where_a_dotenv_is_the_sentence_names_that_folder(
+async def test_started_where_a_dotenv_is_the_line_enters_that_folder_by_itself(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The command of the line reads its token from the ``.env`` of the folder it is launched
-    in: an ELA that read one says which folder that is, beside the line."""
+    in: an ELA that read one gives a line that enters that folder — the folder, and not the file
+    in it —, and the sentence beside it does not say where to run it any more (decision 145 of
+    the review of 2026-10-13)."""
     at = tmp_path / "bw"
     at.write_bytes(b"\xcf\xfa\xed\xfe a native program")
     at.chmod(at.stat().st_mode | stat.S_IXUSR)
@@ -145,8 +147,9 @@ async def test_started_where_a_dotenv_is_the_sentence_names_that_folder(
 
     assert state.opens_with is not None
     folder = shlex.quote(str(tmp_path.resolve()))
-    assert f"in the folder {folder} — " in state.message, "the folder, and not the file in it"
-    assert ".env" in state.message
+    assert state.opens_with.startswith(f"(cd {folder} && ") and state.opens_with.endswith(")")
+    assert state.message == f"the vault is locked: run `{state.opens_with}` in your terminal"
+    assert ".env" not in state.message
 
 
 async def test_the_state_is_asked_of_the_vault_at_every_request(vaulted: Vaulted) -> None:

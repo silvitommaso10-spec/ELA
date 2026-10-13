@@ -576,10 +576,13 @@ async def test_the_script_walks_the_section_against_a_real_ela_and_the_proof_pas
     section is judged on what ELA's own command line printed.
 
     **In a folder of the test's, like every test here**: the guide names its plans from the root
-    of the repository, so the test's folder is given a ``docs`` that leads there — and no
-    ``.env``, which the root of whoever uses ELA has."""
+    of the repository, so the test's folder is given a ``docs`` that leads there — and a ``.env``
+    of the test's own, with nothing in it: the root of whoever uses ELA has one, and since
+    decision 145 the line that opens the vault enters the folder of the one ELA read, which is
+    what step 3 of the guide looks for."""
     module = script()
     (tmp_path / "docs").symlink_to(ROOT / "docs", target_is_directory=True)
+    (tmp_path / ".env").write_text("", encoding="utf-8")
     program = tmp_path / "bw"
     program.write_bytes(b"\xcf\xfa\xed\xfe a native program")
     program.chmod(program.stat().st_mode | stat.S_IXUSR)

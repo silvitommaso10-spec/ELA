@@ -104,7 +104,8 @@ async def test_status_of_a_free_profile_says_every_fact_and_no_sentence(browsed:
     assert row(said, "linked to an account") == "no"
     assert row(said, "saved passwords") == "0"
     assert row(said, "sites") == "posta.example, video.example"
-    assert len(said.strip().splitlines()) == 5, "a free profile has nothing to be told"
+    assert row(said, "a login runs") == "with a window, whatever the switch says"
+    assert len(said.strip().splitlines()) == 6, "a free profile has nothing to be told"
 
 
 async def test_status_of_a_profile_that_cannot_be_used_says_why_and_reads_nothing(
@@ -144,6 +145,7 @@ async def test_status_as_json_is_the_api_s_own_answer(browsed: Browsed) -> None:
         "state": "free",
         "message": "",
         "window": False,
+        "login_window": True,
         "linked": False,
         "saved": 0,
         "profiles": 1,

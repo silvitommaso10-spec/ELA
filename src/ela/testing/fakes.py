@@ -132,6 +132,7 @@ from ela.ports import (
     ModelProvider,
     NotAllowedError,
     NotFoundError,
+    NoWindow,
     Opened,
     PageGone,
     ProfileBusy,
@@ -1419,8 +1420,15 @@ class FakeAccountBrowser(FakeBrowser):
     :meth:`fill_secret` wrote, in order — **opened**, as the adapter opens it to type it, which is
     the one thing a fake of this port may do with a secret (architecture rule 68).
     ``raising`` is honoured by ``occupied``, ``window``, ``shut``, ``linked``, ``saved``,
-    ``profiles`` and ``fill_secret`` too. ``shuts`` is the grace of every browser that was told
-    to quit, and ``shut_answer`` how it ended.
+    ``profiles``, ``fill_secret``, ``can_show`` and ``holds`` too. ``shuts`` is the grace of
+    every browser that was told to quit, and ``shut_answer`` how it ended.
+
+    ``screen`` is whether a window can be had (decision 143): with ``False``, ``can_show`` says
+    so and ``open_shown`` raises :class:`~ela.ports.NoWindow` and opens nothing. ``shown_opens``
+    is every address that was opened **with a window**, beside ``opened``, which has them all.
+    ``held`` is what :meth:`holds` was asked, in order — opened, like ``secrets`` —, and
+    ``changed`` the fields a key landed in since they were written: they hold what was typed no
+    more (decision 144).
     """
 
     def __init__(
@@ -1432,9 +1440,14 @@ class FakeAccountBrowser(FakeBrowser):
         linked: bool = False,
         saved: int = 0,
         profiles: int = 1,
+        screen: bool = True,
     ) -> None:
         super().__init__(page, installed=installed)
         self.holder = holder
+        self.screen = screen
+        self.shown_opens: list[str] = []
+        self.held: list[tuple[str, str]] = []
+        self.changed: set[str] = set()
         self.linked_answer = linked
         self.saved_answer = saved
         self.profiles_answer = profiles
@@ -1457,6 +1470,29 @@ class FakeAccountBrowser(FakeBrowser):
         if holder is not None:
             raise ProfileBusy(holder)
         return await super().open(address, allowed, stop)
+
+    async def can_show(self) -> bool:
+        self._raise("can_show")
+        return self.screen
+
+    async def open_shown(
+        self, address: str, allowed: Callable[[str], bool], stop: TaskStop
+    ) -> Opened:
+        """What the adapter does: with no window to be had nothing is opened; with one, the
+        page is opened as every other, and written down as one that has a window."""
+        self._raise("open_shown")
+        if not self.screen:
+            raise NoWindow("no window can be had")
+        opened = await self.open(address, allowed, stop)
+        self.shown_opens.append(address)
+        return opened
+
+    async def holds(self, page: str, selector: str, value: Secret) -> bool:
+        self._on(page, "holds")
+        self._raise("holds")
+        self.held.append((selector, value.reveal()))
+        self._done(page, "holds")
+        return selector not in self.changed
 
     async def field(self, page: str, selector: str) -> Field:
         found = await super().field(page, selector)
