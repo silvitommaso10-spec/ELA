@@ -23,6 +23,12 @@ names:
   kills nobody. A browser that never closed would meet the guard of the test.
 * ``stuck`` — a page open, and **the driver stopped** for good: a browser that will not answer
   when it is told to close.
+* ``elsewhere`` — ``stuck``, and **from the moment ELA's close begins to wait for the browser the
+  main thread takes no stop signal**: the system must hand the next one to another thread of
+  this process, which it may do by itself at any time (decision 141 of M13.9's review; M13.4e,
+  the third part). A thread that waits is there from before, so that there is one to hand it
+  to; and the main thread takes its signals again once the close is done with the browser, so
+  that the process ends as the signal ends it.
 
 ``GRACE`` is **a grace handed to this ELA**, in whole seconds, in the place of its own (decision
 76): what a test of the signals asserts — that ELA kills at the grace and not before, says so, and
@@ -44,6 +50,7 @@ import json
 import os
 import signal
 import sys
+import threading
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -51,6 +58,10 @@ ROOT = Path(__file__).resolve().parents[2]
 STILL_HERE_SECONDS = 35
 """After how long a child of these tests says where it is: longer than any of them takes to end
 by itself, and shorter than the guard that kills it."""
+STUCK = ("stuck", "elsewhere")
+"""The modes whose browser will not answer when it is told to close."""
+ELSEWHERE = "elsewhere"
+STOPS = ("SIGINT", "SIGTERM", "SIGHUP")
 
 
 def main(mode: str, folder: Path, origin: str, port: str, grace: str | None = None) -> None:
@@ -83,14 +94,21 @@ def main(mode: str, folder: Path, origin: str, port: str, grace: str | None = No
         drivers = set(browser._driver_pids())  # noqa: SLF001 — the drivers the adapter started
         everything = started()
         frozen = (
-            sorted(drivers) if mode == "stuck" else [p for p, _ in everything if p not in drivers]
+            sorted(drivers) if mode in STUCK else [p for p, _ in everything if p not in drivers]
         )
         for pid in frozen:
             os.kill(pid, signal.SIGSTOP)
         settling = browser.settle
+        stops = {getattr(signal, name) for name in STOPS}
+        if mode == ELSEWHERE:
+            # Started before the main thread stops taking the signals: a thread takes what the
+            # one that started it took.
+            threading.Thread(target=threading.Event().wait, daemon=True).start()
 
         async def settle(grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
             async def waited() -> None:
+                if mode == ELSEWHERE:
+                    signal.pthread_sigmask(signal.SIG_BLOCK, stops)
                 # The close has begun to wait for the browser: said, and — in ``open`` — the
                 # browser let go, so that the closing in flight ends within the grace.
                 print(json.dumps({"grace": True}), flush=True)
@@ -102,7 +120,11 @@ def main(mode: str, folder: Path, origin: str, port: str, grace: str | None = No
                     await asyncio.Event().wait()
                 await grace()
 
-            return await settling(waited)  # type: ignore[no-any-return]
+            try:
+                return await settling(waited)  # type: ignore[no-any-return]
+            finally:
+                if mode == ELSEWHERE:
+                    signal.pthread_sigmask(signal.SIG_UNBLOCK, stops)
 
         browser.settle = settle
         print(json.dumps({"pid": os.getpid(), "started": everything}), flush=True)

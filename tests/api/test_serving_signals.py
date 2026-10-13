@@ -333,3 +333,29 @@ def test_a_second_signal_inside_the_close_ends_the_grace_at_once(
     assert ended.still_running() == []
     assert not ended.left
     assert ended.code == end_of(name)
+
+
+@pytest.mark.parametrize("name", SIGNALS)
+def test_a_second_signal_the_system_hands_to_another_thread_ends_the_grace_at_once(
+    name: str, tmp_path: Path, origin: str, profiles: Path
+) -> None:
+    """Criterion 23 (decision 141; M13.4e, the third part). The same close that waits for a
+    browser that does not answer, the same grace no test waits out — and **the main thread of
+    that ELA takes no stop signal** from the moment its close begins to wait: the system hands
+    the second one to another thread, as it may by itself at any time. Measured on 2026-10-13:
+    such a signal was heard only when something else woke the loop, and while the close waits
+    nothing does — a second Ctrl-C did not shorten the close. ELA's handler must hear it all the
+    same: the line says the hurry ended the wait, and the process ends as the signal ends it. If
+    it did not hear it, the process does not exit, and the guard of ``served`` says so."""
+    again = numbered(name)
+    ended = served(
+        "elsewhere", tmp_path / "ela", origin, profiles, again, again, grace=NO_TEST_WAITS_IT_OUT
+    )
+
+    assert ended.waited, "the control: the second signal was sent inside the close"
+    assert HURRIED in ended.error and "1 node" in ended.error
+    assert "did not close within" not in ended.error, "it was not the grace that ended the wait"
+    assert ended.database == ("ela.db",)
+    assert ended.still_running() == []
+    assert not ended.left
+    assert ended.code == end_of(name)

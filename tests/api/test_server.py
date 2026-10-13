@@ -636,6 +636,134 @@ async def test_a_signal_that_arrives_while_the_loop_sleeps_wakes_it() -> None:
 
 
 @POSIX
+async def test_a_signal_the_system_hands_to_another_thread_wakes_the_loop_too(
+    found: dict[int, Any],
+) -> None:
+    """Decision 141 (M13.4e, the third part). The system hands a signal sent to a process to
+    **any** of its threads that does not block it; a handler of Python's runs in the main thread
+    when the main thread next runs Python; and a loop asleep in its selector runs none. Measured
+    on 2026-10-13 with ELA's own handler: handed to another thread while the close waited, a
+    second signal was heard only when something else woke the loop. Built here with a real
+    signal sent **to a thread that is not the main one**, inside the block that holds ELA's
+    handlers, while nothing is scheduled; the guard is the test's, and is the only other thing
+    that can wake the loop."""
+    loop = asyncio.get_running_loop()
+    stopping = asyncio.Event()
+    guard = asyncio.Event()
+    told = server.Signalled(loop, stopping, [])
+    released = threading.Event()
+    elsewhere = threading.Thread(target=released.wait)
+    elsewhere.start()
+    other = elsewhere.ident
+    assert other is not None and other != threading.main_thread().ident
+
+    def send() -> None:
+        signal.pthread_kill(other, signal.SIGTERM)
+
+    sender = threading.Timer(0.05, send)
+    watchdog = threading.Timer(5.0, loop.call_soon_threadsafe, [guard.set])
+    try:
+        with server._held(told):  # noqa: SLF001 — what holds the handlers, and wakes the loop
+            sender.start()
+            watchdog.start()
+            waits = [asyncio.ensure_future(stopping.wait()), asyncio.ensure_future(guard.wait())]
+            await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+            for wait in waits:
+                wait.cancel()
+    finally:
+        watchdog.cancel()
+        sender.join()
+        released.set()
+        elsewhere.join()
+
+    assert stopping.is_set(), "the signal reached the handler"
+    assert not guard.is_set(), "and it woke the loop itself: nothing else had to"
+    assert dispositions() == found
+
+
+def wakes() -> int:
+    """The descriptor a signal is written into now: read by putting it back at once."""
+    now = signal.set_wakeup_fd(-1)
+    signal.set_wakeup_fd(now)
+    return now
+
+
+class Woken(FakeBrowser):
+    """A browser that looks at what wakes the loop when ELA's close settles it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.woken_by: int | None = None
+
+    async def settle(self, grace: Callable[[], Awaitable[None]]) -> tuple[str, ...]:
+        self.woken_by = wakes()
+        return await super().settle(grace)
+
+
+@POSIX
+def test_what_wakes_the_loop_is_ela_s_while_it_serves_and_closes_and_then_what_it_found(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """Criterion 24: the descriptor a signal wakes the loop through is ELA's for as long as the
+    handlers are — while it serves **and while its close runs**, which is when nothing else wakes
+    the loop —, and afterwards it is the one ELA had found, whatever it was."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    browser = Woken()
+    with_a_browser(monkeypatch, browser)
+    theirs, other = socket.socketpair()
+    theirs.setblocking(False)
+    serving: list[int] = []
+
+    async def look() -> None:
+        serving.append(wakes())
+
+    fake.during = look
+    before = signal.set_wakeup_fd(theirs.fileno())
+    try:
+        server.serve(settings)
+        after = wakes()
+    finally:
+        signal.set_wakeup_fd(before)
+        theirs.close()
+        other.close()
+
+    assert serving and serving[0] not in (-1, theirs.fileno()), "while it serves, ELA's own"
+    assert browser.woken_by == serving[0], "and the same one while the close runs"
+    assert after == theirs.fileno(), "afterwards, the one it had found"
+
+
+class ReadsNothing:
+    """A loop that cannot be asked to read a descriptor — the one Python gives on Windows, which
+    wakes at a signal by a descriptor it sets itself when it is made."""
+
+    def add_reader(self, *arguments: object) -> None:
+        raise NotImplementedError
+
+
+@POSIX
+def test_a_loop_that_reads_no_descriptor_keeps_ela_s_handlers_and_gets_no_wake_up_of_ela_s(
+    found: dict[int, Any],
+) -> None:
+    """Criterion 24. Where the loop cannot read a descriptor ELA adds none — and the handlers
+    are installed all the same, and put back."""
+    told = server.Signalled(cast(Any, ReadsNothing()), asyncio.Event(), [])
+    before = wakes()
+
+    with server._held(told):  # noqa: SLF001 — what holds the handlers
+        during = wakes()
+        handlers = dispositions()
+
+    assert during == before == wakes()
+    assert all(handler is told for handler in handlers.values())
+    assert dispositions() == found
+
+
+@POSIX
 def test_a_handler_python_cannot_name_is_put_back_as_the_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
