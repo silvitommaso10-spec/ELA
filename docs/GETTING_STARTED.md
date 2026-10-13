@@ -6035,7 +6035,9 @@ prenotato com'era al passo 1
 > PC**, sul branch di M13.9, con lo script `scripts/prova_m13_9.py`: il browser con il profilo, il vault e la finestra del
 > login a mano vivono solo lì. **Rivista lo stesso giorno** con le decisioni 72–87 della review sul branch a `8db38f8`:
 > `ela browser close` e il suo passo, dove stanno i rapporti di un crash, e che cosa serve al sito del login.
-> **Non ancora fatta**: [ADR 0063](adr/0063-browser-with-your-accounts.md) resta Proposta finché non passa.
+> **Fatta da Tommaso il 13 ottobre 2026 sul branch**, a `6d3c470`, sul Mac, dopo i giri scritti qui sotto: **passata**,
+> 52 PASSATO al primo giro, nessun FALLITO, nessun no, nessun SALTATO (`~/Downloads/prova-m13.9-20261013-181603.txt`);
+> [ADR 0063](adr/0063-browser-with-your-accounts.md) è Accettata, e i fatti sono in `milestones/M13.9.md`, sezione 25.
 > **Il 12 ottobre 2026 la prova non è passata** al passo 6, e da allora il cancello del browser è riparato (M13.4f,
 > [ADR 0064](adr/0064-browser-boundary.md)): **la prova si rifà per intero** sul commit di quella riparazione, il passo 6
 > com'è scritto; fuori dai passi, sotto il passo 6, c'è una misura da fare solo se quel passo fallisce.
@@ -6046,7 +6048,8 @@ prenotato com'era al passo 1
 > **Lo stesso giorno, alle 15:28, la prova è passata per intero** — 48 su 48 —, ma **non è quella che accetta gli ADR**:
 > non era sull'ultimo commit, e le risposte a occhio sono arrivate in meno di quanto serve a lanciare un comando e
 > leggere. Da allora **lo script ti mette davanti ciò che devi guardare** (decisione 155), e **prima del login guarda
-> lui che in quel sito non sei già dentro** (decisione 151). La prova si rifà per intero.
+> lui che in quel sito non sei già dentro** (decisione 151). La prova si rifà per intero. **Rifatta alle 18:16 dello
+> stesso giorno, sull'ultimo commit: è passata** — è quella scritta qui sopra, «Fatta da Tommaso il 13 ottobre 2026».
 
 Da M13.9 ELA ha **un secondo browser**: Chrome for Testing su una cartella tua, che **tiene i siti in cui sei entrato**.
 Non è il tuo Chrome, e il tuo profilo ELA non lo apre: in questo entri tu, una volta, **con le tue mani**, nella finestra

@@ -1,7 +1,12 @@
 # 0063. Il browser con i tuoi account: un Chrome di ELA che dura, le password che restano in Bitwarden, e una sessione che copre le sue letture
 
-- **Stato:** Proposta il **2026-10-11**, con l'implementazione di M13.9. Diventa Accettata con un commit suo, quando la
-  prova a mano della sezione 28 di `docs/GETTING_STARTED.md` passa sul Mac, sul branch e prima del merge.
+- **Stato:** Accettata il **2026-10-13**, con un commit suo: la prova a mano della sezione 28 di
+  `docs/GETTING_STARTED.md` è passata sul Mac, sul branch e prima del merge, a `6d3c470`, l'ultimo commit
+  (`~/Downloads/prova-m13.9-20261013-181603.txt`: 52 PASSATO, tutti al primo giro, 0 FALLITI, nessun no —
+  decisione 159 di `docs/milestones/M13.9.md`), e lo stesso giorno Tommaso ha letto per intero le pagine del
+  fornitore, nelle parole della review: «le due pagine del fornitore che ADR 0063 §6 cita» (decisione 160; §6).
+  Proposta il **2026-10-11**, con l'implementazione di M13.9, per diventare Accettata con un commit suo quando
+  quella prova fosse passata.
   **La prova del 12 ottobre non è passata**, per il login dal vault: che cosa si è misurato da allora è in §11, e
   ciò che un login lascia da leggere quando non riesce in §5.
   **Rivista da ADR 0064 (M13.4f)** il 2026-10-12: §2, il port ha `another`; §4, il cancello non è più una rotta di
@@ -16,7 +21,8 @@
   questo ADR**: non era sull'ultimo commit, e le risposte a occhio sono arrivate in meno di quanto serve a
   guardare. Dalla review di quel pomeriggio (decisioni 148–153): la chiusura della finestra torna quando nessun
   processo di quel browser nomina più la cartella (§8), un campo che porta solo un inizio è detto così (§5), e
-  la vista della console dice del login (§10). La prova si rifà per intero.
+  la vista della console dice del login (§10). La prova si rifà per intero. **Rifatta alle 18:16 dello stesso
+  giorno, sul commit di quel giro: è quella in testa a questa riga.**
 - **Data:** 2026-10-11
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.9, con M13.4b, M13.4c e M13.4e sullo stesso branch
@@ -737,7 +743,11 @@ rilettura sta con quella del listino** (ADR 0061): una persona, entro il **2026-
 
 *Come è stata letta*: con uno strumento che scarica la pagina e ne riporta le frasi che gli si chiedono, non
 con il testo intero davanti; le frasi fra virgolette sono quelle che lo strumento ha riportato. **Questo ADR
-non esce da Proposta prima che la prova a mano sia passata e Tommaso abbia letto le pagine per intero.** La
+non esce da Proposta prima che la prova a mano sia passata e Tommaso abbia letto le pagine per intero.**
+***Il 13 ottobre 2026 la prova è passata, e Tommaso le ha lette per intero*** — la review a `6d3c470` lo dice
+così: «Tommaso ha letto per intero, il 13 ottobre 2026, le due pagine del fornitore che ADR 0063 §6 cita»
+(decisione 160 di `docs/milestones/M13.9.md`) —: da quel giorno l'ADR è Accettata. *La tabella qui sopra nomina
+più di due indirizzi: quali due la review intenda non è scritto, ed è la domanda 164 di quella SPEC.* La
 domanda e l'anteprima di una policy lo dicono nel campo `sends`, che dice che cosa esce e verso chi, non per
 quanto resta. Le istruzioni al modello guadagnano
 una riga: non aprire un indirizzo che conferma, cancella, disiscrive o esce se la frase non lo chiede. **Dentro

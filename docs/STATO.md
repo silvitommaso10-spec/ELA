@@ -883,7 +883,10 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   62», e **le decisioni 55–62 non sono arrivate alla sessione** (domanda 68 della SPEC). ***Annotato la stessa
   notte***: arrivate, con la 70 e la 71; la domanda 68 è chiusa, le scelte della 69 confermate, e la SPEC
   guadagna i tre criteri che eredita dalla seconda parte di M13.4e (decisione 59). L'ordine: la seconda parte
-  di M13.4e, poi il codice.
+  di M13.4e, poi il codice. ***Annotato il 2026-10-13***: **M13.9 è fatta**, con le sue riparazioni sullo stesso
+  branch — M13.4b, M13.4c, M13.4e e M13.4f —: la prova a mano è passata sul Mac a `6d3c470`, l'ultimo commit
+  (52 PASSATO, 0 FALLITI, nessun no), e [ADR 0063](adr/0063-browser-with-your-accounts.md) è Accettata. Aspetta
+  il merge di Tommaso.
 - **M13.4b — una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta**
   (ADR 0052 §9 e §10).
   **Registrata il 2026-10-01** dalla review della SPEC di M6.3c, con l'ordine non deciso. ***Deciso il 2026-10-10***

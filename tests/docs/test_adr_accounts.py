@@ -285,3 +285,24 @@ def test_the_mark_of_a_revised_adr_names_a_section_of_this_one() -> None:
         after = status.split(REVISED_MARK, 1)[1]
 
         assert "ADR 0063 §" in after or "ADR 0063, «Conseguenze»" in after, number
+
+
+# ----------------------------------------------------------------------------------------
+# Accepted, by the proof by hand
+# ----------------------------------------------------------------------------------------
+
+THE_PROOF = "prova-m13.9-20261013-181603.txt"
+"""The file of the proof by hand that passed (decision 159 of M13.9): the script wrote it."""
+PASSED_ON = "`6d3c470`"
+"""The commit the proof passed on: the last one of the branch that day."""
+
+
+def test_it_is_accepted_and_its_state_names_the_proof_and_the_commit_it_passed_on() -> None:
+    """Decision 160 of M13.9: accepted with a commit of its own, once the proof by hand had
+    passed on the last commit and the pages of the provider that §6 quotes had been read
+    whole. The state says which file and which commit: «Accettata» can be gone and looked at."""
+    status = status_of(adr_text())
+
+    assert status.strip().startswith("Accettata")
+    assert THE_PROOF in status
+    assert PASSED_ON in status
