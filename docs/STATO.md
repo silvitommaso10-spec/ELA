@@ -645,6 +645,8 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    120); **M13.9 è fatta**, con la prova a mano passata per intero a `6d3c470`, e ADR 0063 e ADR 0064 sono
    Accettate: il merge, che fa Tommaso, aspetta ciò che dice [`milestones/M13.9.md`](milestones/M13.9.md),
    sezione 25, punto 2 — il giro conforme del costo (decisione 161), fatto, e la risposta alla domanda 165;
+   ***annotato la notte dello stesso giorno***: decisa (c) — **il merge si fa**, e lo sforamento di M13.9, il
+   12,65 % contro una soglia del 10 %, è un debito datato a carico di M9.5 (ADR 0063 §12; la sezione 6, qui sotto);
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -895,7 +897,9 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   del branch in quel momento (52 PASSATO, 0 FALLITI, nessun no), e [ADR 0063](adr/0063-browser-with-your-accounts.md)
   e [ADR 0064](adr/0064-browser-boundary.md) sono Accettate. Il merge, che fa Tommaso, aspetta ciò che
   dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2: il giro conforme del costo (decisione
-  161), fatto — M13.9 resta sopra la soglia —, e la risposta alla domanda 165.
+  161), fatto — M13.9 resta sopra la soglia —, e la risposta alla domanda 165. ***Annotato la notte dello stesso
+  giorno***: decisa (c) — **il merge si fa**, e lo sforamento è un debito datato a carico di M9.5 (ADR 0063 §12; la
+  sezione 6).
 - **M13.4b — una cancellazione di asyncio che arriva a `browser.act` dopo l'apertura lascia la pagina aperta**
   (ADR 0052 §9 e §10).
   **Registrata il 2026-10-01** dalla review della SPEC di M6.3c, con l'ordine non deciso. ***Deciso il 2026-10-10***
@@ -908,7 +912,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   e un'apertura cancellata mentre il driver parte non lo lascia (decisione 26). ***Annotato il 2026-10-10***, la
   sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9. ***Annotato il 2026-10-13***: la prova a mano di M13.9 è passata per
   intero a `6d3c470`, con questa riparazione sul branch; il merge, che fa Tommaso con M13.9, aspetta ciò
-  che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2.
+  che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2. ***Deciso la notte***: il merge si fa (decisione
+  165; il debito di ADR 0063 §12 è di M13.9, a carico di M9.5).
 - **M13.4c — la fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti**
   (ADR 0052 §10, ADR 0038 §11). **Registrata e scritta il 2026-10-10** dalla review della SPEC di M13.4b
   (decisione 27), che l'ha misurata: nei primi decimi di secondo di uno step la fermata non chiudeva niente, e
@@ -917,7 +922,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   dopo la fermata la chiude chi ce l'ha messa ([`milestones/M13.4c.md`](milestones/M13.4c.md)). ***Annotato il
   2026-10-10***, la sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9. ***Annotato il 2026-10-13***: la prova a mano di M13.9 è passata per
   intero a `6d3c470`, con questa riparazione sul branch; il merge, che fa Tommaso con M13.9, aspetta ciò
-  che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2.
+  che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2. ***Deciso la notte***: il merge si fa (decisione
+  165; il debito di ADR 0063 §12 è di M13.9, a carico di M9.5).
 - **M13.4e — alla chiusura di ELA nessuno aspetta il browser, e il processo può non uscire** (ADR 0038 §11,
   ADR 0060 §7). **Registrata e scritta il 2026-10-10** dalla review di M13.4b e M13.4c (decisione 51), dopo che
   la loro rilettura critica l'ha misurato: se il loop viene smontato con una chiamata del browser in volo, ELA
@@ -932,7 +938,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   prima della forma, e con un criterio della suite: un test che congela o uccide un browser non lascia né un
   processo né una cartella. ***Annotato il 2026-10-13***: la prova a mano di M13.9 è passata per
   intero a `6d3c470`, con questa riparazione sul branch; il merge, che fa Tommaso con M13.9, aspetta ciò
-  che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2.
+  che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25, punto 2. ***Deciso la notte***: il merge si fa (decisione
+  165; il debito di ADR 0063 §12 è di M13.9, a carico di M9.5).
 - **M13.4f — il confine del browser: guardare, non rifare** (ADR 0052 §6, [ADR 0064](adr/0064-browser-boundary.md)).
   **Registrata il 2026-10-12** dalla review della prova a mano di M13.9 (decisione 109), dopo che le misure fatte
   intorno a quella prova avevano trovato che il cancello di M13.4 guardava un rimando solo: il secondo di una
@@ -941,7 +948,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   rifarle ([`milestones/M13.4f.md`](milestones/M13.4f.md)). ***Annotato il 2026-10-13***: implementata; la prova a
   mano di M13.9 è passata per intero a `6d3c470`, con questa riparazione sul branch, e ADR 0064 è Accettata;
   il merge, che fa Tommaso con M13.9, aspetta ciò che dice [`milestones/M13.9.md`](milestones/M13.9.md), sezione 25,
-  punto 2.
+  punto 2. ***Deciso la notte***: il merge si fa (decisione 165); con i suoi test M13.4f sta sotto la soglia del
+  costo di 2,55 s — un fatto, non un debito.
 - **M13.4d — lo shell del browser vuoto gira senza il sandbox di Chromium** (ADR 0052 §1). **Registrata il
   2026-10-10** dalla review della SPEC di M13.9 (decisione 39): Playwright lo spegne di default, e l'adapter di
   M13.4 non lo riaccende. **Fuori dalla fila.** **Condizione d'ingresso: una misura sui runner della CI** — su
@@ -1118,6 +1126,7 @@ pagato da chi doveva.
 | ADR 0047 §18 — gli skip sul sistema che il test copre, che nessuno vede | 2026-09-24 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0048 §9 — il terminale su un nodo, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
 | ADR 0048 §10 — il residuo di Linux del terminale, ridichiarato | 2026-09-25 | di M13.7 | **aperto** |
+| ADR 0063 §12 — il costo dei test di M13.9, sopra la soglia di ADR 0052 §16 | 2026-10-13 | di M9.5, la milestone sulla disciplina della suite | **aperto** |
 | ADR 0035 §7 — i numeri in coda a `CONSTANTS` non contano più niente | 2026-09-09 | della milestone sulla disciplina della suite | saldato da ADR 0036 §10 |
 | ADR 0036 §12 — `PROVIDER_CALLED` non lo scrive nessuno | 2026-09-10 | di chi aggiungerà il prossimo `AuditEventType` | saldato da ADR 0037 §14 |
 | ADR 0044 §8 — il battito di `local`, e la prima vista che l'ha reso visibile | 2026-09-20 | della Fase 13 | saldato da ADR 0048 §2 |

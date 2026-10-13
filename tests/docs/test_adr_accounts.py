@@ -306,3 +306,32 @@ def test_it_is_accepted_and_its_state_names_the_proof_and_the_commit_it_passed_o
     assert status.strip().startswith("Accettata")
     assert THE_PROOF in status
     assert PASSED_ON in status
+
+
+# ----------------------------------------------------------------------------------------
+# §12 — the dated debt of the cost, and the smallest defence it has
+# ----------------------------------------------------------------------------------------
+
+THE_DEBT = "### 12. Un debito datato: il costo dei test di M13.9, sopra la soglia di ADR 0052 §16"
+CHARGED_TO = (
+    "**Debito a carico di M9.5, la milestone sulla disciplina della suite**, dichiarato il "
+    "**2026-10-13**"
+)
+
+
+def test_the_debt_of_the_cost_is_dated_charged_and_named_by_who_pays_it() -> None:
+    """Decision 165 of M13.9. The tests of this milestone cost more than the threshold of ADR
+    0052 §16 allows, and the merge was made with the numbers written down as a dated debt: the
+    section has the form STATO reads, it carries the numbers of the conforming run, and the
+    milestone it is charged to names it among what it inherits. The day it is paid — by time
+    taken away, or by a rule M9.5 proposes with numbers of its own — the payment is written in an
+    ADR, and this test is turned."""
+    text = adr_text()
+
+    assert THE_DEBT in text
+    section = text.split(THE_DEBT, 1)[1].split("\n## ", 1)[0]
+    assert CHARGED_TO in section
+    for number in ("12,65 %", "16,19 %", "8,18 s"):
+        assert number in section, number
+    discipline = (ADR_PATH.parents[1] / "milestones" / "M9.5.md").read_text(encoding="utf-8")
+    assert "ADR 0063 §12" in discipline

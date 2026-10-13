@@ -5,6 +5,10 @@
   (`~/Downloads/prova-m13.9-20261013-181603.txt`: 52 PASSATO, tutti al primo giro, 0 FALLITI, nessun no —
   decisione 159 di `docs/milestones/M13.9.md`), e lo stesso giorno Tommaso ha letto per intero le pagine del
   fornitore, nelle parole della review: «le due pagine del fornitore che ADR 0063 §6 cita» (decisione 160; §6).
+  **Quali, lo dice la decisione 164**: i due articoli sulla conservazione, e lo stesso giorno quello
+  sull'addestramento; i termini del contratto restano citati e non letti per intero (§6).
+  **Con un debito datato**, dalla stessa sera: il costo dei suoi test, sopra la soglia di ADR 0052 §16, a carico
+  di M9.5 (§12; decisione 165).
   *`6d3c470` era l'ultimo commit del branch quando la prova è girata: i commit venuti dopo, questo compreso,
   portano solo documenti e i test dei documenti, niente di ciò che la prova esercita (sezione 25, punto 1, di
   quella SPEC).*
@@ -753,7 +757,13 @@ così: «Tommaso ha letto per intero, il 13 ottobre 2026, le due pagine del forn
 più di due indirizzi: quali due la review intenda non è scritto, ed è la domanda 164 di quella SPEC. Quando la
 condizione è nata — la domanda 75 della stessa SPEC, decisa (a) — gli articoli da leggere erano due: quello
 della conservazione, e quello dei modelli «covered» a cui rimanda; le due righe sull'addestramento sono entrate
-nella tabella dopo, con la stessa decisione.* La
+nella tabella dopo, con la stessa decisione.* ***Decisa la stessa notte, dalla review a `c4ed681`*** (decisione
+164): **le due pagine sono i due articoli sulla conservazione** — `privacy.claude.com/en/articles/7996866`,
+«How long do you store my organization's data?», e `privacy.claude.com/en/articles/15425996`, «Data retention
+practices for Covered Models» —, **letti per intero da Tommaso il 13 ottobre 2026**. Lo stesso giorno ha letto
+per intero anche l'articolo sull'uso per l'addestramento, `privacy.claude.com/en/articles/7996868`, «Is my data
+used for model training?», da cui questa sezione prende la frase. **I termini del contratto**
+(`anthropic.com/legal/commercial-terms`, sezione B) **restano citati, e non letti per intero.** La
 domanda e l'anteprima di una policy lo dicono nel campo `sends`, che dice che cosa esce e verso chi, non per
 quanto resta. Le istruzioni al modello guadagnano
 una riga: non aprire un indirizzo che conferma, cancella, disiscrive o esce se la frase non lo chiede. **Dentro
@@ -1139,6 +1149,34 @@ che il confine regge anche al secondo rimando — l'altro sito non riceve una ri
 il sito riceve ciò che riceve dal browser da solo, e che i cookie tornano a essere del browser. È una
 riparazione di M13.4, con la sua lettera e il suo ADR: la proposta è la domanda 109 di `M13.9.md`, e la 110 dice
 del secondo rimando.
+
+### 12. Un debito datato: il costo dei test di M13.9, sopra la soglia di ADR 0052 §16
+
+**Debito a carico di M9.5, la milestone sulla disciplina della suite**, dichiarato il **2026-10-13**, dalla
+review del giro conforme del costo (decisione 165 di `docs/milestones/M13.9.md`).
+
+**Il fatto**, misurato nel giro conforme del 13 ottobre 2026 — un `make check` nelle condizioni di ADR 0052 §16,
+348,42 s d'orologio (`docs/milestones/M13.9.md`, sezione 25, punto 2) —: **M13.9 da sola allunga il giro del
+12,65 %** — i soli suoi test, 39,11 s, contro un `make check` senza di lei —, **e del 16,19 % con ciò che non è
+diviso per milestone** — le parti di `make check` che non sono la suite, e la costruzione del Core più lenta —,
+**contro una soglia del 10 %**. Perché torni sotto, a quel giro vanno tolti **8,18 s**. **Le due voci più
+grandi**: i test del browser vero con il profilo (`test_account_browser.py` e `test_account_login.py`), 9,65 s
+di quel giro; e i casi che le regole d'architettura di questa milestone aggiungono ai test vecchi, in
+`tests/architecture/`, 6,52 s.
+
+**Non si ripara qui**: il merge si fa (decisione 165, (c)). **La soglia di ADR 0052 §16 resta com'è**: se una
+regola diversa per le milestone che portano un binario vero ha senso, la propone M9.5, con i suoi numeri, non
+questa. **Che cosa lo pagherebbe senza togliere una difesa**: raggruppare i lanci del browser vero, dove un
+lancio può servire più di un test senza che uno dipenda dall'altro; e misurare per milestone ciò che oggi non è
+diviso — è ciò che porta il numero dal 12,65 % al 16,19 %.
+
+*Un fatto accanto, che non è un debito*: M13.4f, sullo stesso branch, sta sotto la soglia con i suoi test, di
+2,55 s (ADR 0064; la stessa sezione di quella SPEC).
+
+**La difesa più piccola**:
+`tests/docs/test_adr_accounts.py::test_the_debt_of_the_cost_is_dated_charged_and_named_by_who_pays_it` tiene
+questa sezione nella forma che `docs/STATO.md` legge, con i suoi numeri, e tiene che il documento di M9.5 la
+nomini fra ciò che eredita. Il giorno in cui è pagato, il pagamento si scrive in un ADR, e il test si gira.
 
 ## Alternative considerate
 
