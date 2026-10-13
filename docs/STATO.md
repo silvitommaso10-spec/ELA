@@ -1060,6 +1060,22 @@ prendono il loro ADR con la milestone che le costruisce: il tetto con M14.1, che
 ADR 0021 e ADR 0022 (5.9); il Planner con M14.2; il browser guidato dal modello con M14.3, e lo schermo
 con M14.4.
 
+### 5.13 Un piano scritto a mano prova un pezzo, non è il prodotto
+
+Decisione di Tommaso del 2026-10-13, scritta dalla review di M13.9 dello stesso giorno (decisione 156).
+
+**Un piano scritto a mano prova un pezzo: non è il prodotto.** Le prove a mano di una capability nuova usano
+un piano in `docs/examples/`, scritto da chi l'ha costruita: dice che il pezzo funziona, e non che Tommaso
+può usarlo. **Ogni capability deve essere raggiungibile da una frase — dal Planner o da una sessione — prima
+che la sua fase si chiuda.** Una capability che si raggiunge solo con un piano a mano resta aperta nella
+sua fase, con il nome della milestone che la porta a una frase.
+
+*Il primo caso*: `browser.login`, che oggi lo raggiunge solo `docs/examples/login-news-ycombinator.json`.
+Lo porta a una frase M13.10 — il login chiesto dal modello dentro una sessione guidata, annotato lì lo stesso
+giorno.
+
+*Perché nessun ADR:* è una regola su quando una fase è chiusa, e nessuna riga di codice la contiene.
+
 ## 6. I debiti datati
 
 Un debito datato è un difetto **trovato lavorando e non riparato lì**, scritto in un ADR con la

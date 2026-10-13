@@ -12,6 +12,11 @@
   senza finestra e accettato con: dalla review di quel giorno (decisioni 143–146) `browser.login` parte sempre
   con la finestra e rilegge i due campi prima del click (§5, §8), la riga che apre il vault entra da sé nella
   cartella di ELA e la frase di `ela vault open` non indovina una causa (§3).
+  **La prova delle 15:28 dello stesso giorno, a `c1d0ef8`, è passata — 48 su 48 —, e non è quella che accetta
+  questo ADR**: non era sull'ultimo commit, e le risposte a occhio sono arrivate in meno di quanto serve a
+  guardare. Dalla review di quel pomeriggio (decisioni 148–153): la chiusura della finestra torna quando nessun
+  processo di quel browser nomina più la cartella (§8), un campo che porta solo un inizio è detto così (§5), e
+  la vista della console dice del login (§10). La prova si rifà per intero.
 - **Data:** 2026-10-11
 - **Riferimenti spec:** §19, §27, §29, §30, §32, §33, §39, §57, §59, §62, §63
 - **Milestone:** M13.9, con M13.4b, M13.4c e M13.4e sullo stesso branch
@@ -650,7 +655,9 @@ dice l'interruttore**: senza finestra funzionano, misurato dalla stessa prova.
   partito, e il vault non è stato aperto. **Non c'è un cammino del login che lanci senza finestra.** *Misurato
   da dentro la sessione di Tommaso, dove la lettura dice di sì e il lancio con la finestra riesce*
   (`a-session-of-the-screen.txt`); **il caso senza una sessione dello schermo non è misurato**: su questo Mac
-  non si costruisce senza uscire da quella sessione, e i test lo costruiscono consegnando la risposta. Che
+  non si costruisce senza uscire da quella sessione, e i test lo costruiscono consegnando la risposta. *Deciso
+  il 13 ottobre (decisione 149)*: resta così — nel dubbio non parte —, e il caso senza sessione si misura il
+  giorno che ELA gira così. Che
   cosa faccia il binario lanciato con la finestra fuori da una sessione, ELA non lo prova.
 - **I due campi sono riletti subito prima del click** (decisione 144) — `browser.field_changed`. *Misurato il
   13 ottobre* (`does_the_window_take_the_keyboard.py`, con la sua uscita): il browser di un lancio con la
@@ -665,8 +672,12 @@ dice l'interruttore**: senza finestra funzionano, misurato dalla stessa prova.
   stesso giorno*). Lo stesso vale se il tempo del tool finisce **mentre** i campi sono riletti: la frase dice
   che ELA non ha cliccato, e non «il click è stato chiesto». **Il confronto è intero**: un campo che tiene meno
   di ciò che riceve — una lunghezza sua — o che la pagina riscrive non porta ciò che è stato scritto, e un
-  login lì finisce `browser.field_changed` senza essere inviato; *non so quanti siti lo facciano*, ed è la
-  domanda 152 di `docs/milestones/M13.9.md`. *Che cosa non è misurato*: un tasto vero — mandarne uno al sistema
+  login lì finisce `browser.field_changed` senza essere inviato; *non so quanti siti lo facciano*.
+  ***Deciso il 13 ottobre (decisione 152): resta il confronto con ciò che è stato scritto***, e il caso è detto
+  per ciò che è: l'adapter risponde una di tre cose — il campo porta ciò che è stato scritto, **ne porta solo
+  un inizio**, o non lo porta —, e per «solo un inizio» la frase dice che è la pagina a tenere meno di ciò che
+  riceve, non una tastiera, **senza dire quanto**: una lunghezza è qualcosa di una password. Un campo vuoto non
+  è un inizio. *Che cosa non è misurato*: un tasto vero — mandarne uno al sistema
   chiede un permesso che ELA non chiede: la sonda ha un modo in cui aspetta il tasto di chi è al Mac, non
   lanciato —; ciò che il documento dice del fuoco non basta da solo, perché lo dice uguale senza finestra: ciò
   che decide è quale applicazione è davanti. *E fra la rilettura e il click resta un istante.*
@@ -746,8 +757,8 @@ fotografia, una lettura o una registrazione fatte nel frattempo porterebbero la 
 ***Dal 13 ottobre 2026 (decisione 143): per il login vale questa stessa regola, non una nuova.*** *Uno step di
 ELA che tiene il profilo — con la finestra o senza — non è «una mano»: i tool qui sotto non si rifiutano. Con la
 decisione 143 lo step che ha sempre la finestra è il login, e in quei secondi sullo schermo c'è il modulo con il
-nome utente in chiaro e la password come puntini: una cattura chiesta da un altro task lo fotografa. È la
-domanda 148 di `docs/milestones/M13.9.md`.*
+nome utente in chiaro e la password come puntini: una cattura chiesta da un altro task lo fotografa.*
+***Deciso il 13 ottobre (decisione 148): resta com'è.*** *Una cattura dello schermo chiede il suo sì.*
 
 Perciò le capability che guardano lo schermo o ascoltano **si rifiutano finché una mano può essere sul profilo**
 (decisione 41), ciascuna con un codice suo, ritentabile — ciò che rende sbagliato il momento finisce:
@@ -862,6 +873,37 @@ esce subito — bloccato dal sistema, caduto all'avvio — la rotta ha già scri
 ha già detto che la finestra è aperta. La riga della chiusura, scritta subito dopo da chi aspetta il processo,
 è vera, e la traccia dice una finestra durata zero secondi. Aspettare prima di dirla aperta vorrebbe una soglia
 di tempo che questa macchina non sa fissare con un fatto.
+
+**Quando una chiusura della finestra torna, nessun processo di quel browser nomina più la cartella**
+(decisione 153 della review del 13 ottobre 2026; *rivede apertamente la decisione 82*, qui sotto: il sistema
+non è più chiesto solo quando un lock nomina un processo). **Il fatto**: sulla CI di macOS, a `77b4bfe` e a
+`eba94c8`, due test di questa sezione hanno trovato — alla fermata di ELA e al comando — il processo principale
+della finestra uscito da sé, la chiusura tornata, e nella tabella ancora uno o due processi che il browser aveva
+avviato per sé. *Due giri rossi su tre, sullo stesso codice; sul Mac, in trentasei giri della stessa chiusura a
+macchina quieta e carica, non è successo* (`what-names-the-folder-when-the-close-returns-before.txt`, in
+`.git/m13.9-reference/review-c1d0ef8/`). La chiusura aspettava il processo principale, e non ciò che quello
+aveva avviato. **Ora**, uscito il principale, la chiusura — `settle` alla fermata, `shut` al comando — chiede al
+sistema i processi di questo utente con il gruppo e la riga di comando di ciascuno (`/bin/ps`, con le regole
+dell'altro lancio), e va avanti **entro la stessa grazia, con il passo che c'è già, senza un tempo nuovo**
+finché nessuno, **nel gruppo di quel browser**, nomina la cartella: letto con **la stessa funzione**,
+`on_the_folder`. Passata la grazia vale la regola che c'era:
+
+- *la finestra che ELA ha avviato*: il suo gruppo è di ELA, ed ELA lo uccide, e lo dice — `killed` dal comando,
+  il nome della finestra fra ciò che la chiusura di ELA ha ucciso;
+- *un browser che ELA non ha avviato*: ELA uccide per pid solo ciò che il sistema dice ancora essere quel
+  browser; **ciò che quello aveva avviato non lo sa nominare, non lo uccide, e risponde `told`, non `quit`**;
+- *una lettura dei processi che non riesce* è un dubbio, mai «nessuno»: la chiusura aspetta la sua grazia, ed
+  ELA non dice la cartella libera.
+
+Una finestra che il suo utente ha chiuso da sé, senza che ELA l'avvisasse, non è di nessuna chiusura: ELA non
+la cerca dopo. ***Dove si scosta dalla lettera della decisione, e perché*** (misurato scrivendola): «nessun
+processo nomina più la cartella» è letto **dei processi del gruppo di quel browser**, non di ogni processo
+dell'utente. `on_the_folder` conta un dubbio — una riga di comando che nomina una cartella da dove sta il suo
+processo — come un processo che la nomina: è giusto del solo processo che un lock nomina, e su una tabella
+intera ha fatto aspettare ogni chiusura a una shell la cui riga di comando conteneva il testo di quell'argomento.
+È la domanda 158 di `docs/milestones/M13.9.md`. *Un browser guidato che si chiude da sé*: misurato sul Mac,
+in trenta giri nessun processo nominava la cartella quando la chiusura della pagina è tornata; sulla CI non è
+misurato, e la chiusura di una pagina resta com'è.
 
 **Un lock tiene la cartella solo se la riga di comando del suo processo la nomina** (decisione 82, review
 dell'11 ottobre). Un browser ucciso lascia il lock, e il sistema dà quel pid a chi parte dopo: un processo che
@@ -996,6 +1038,11 @@ che questo ADR aggiunge è «Il browser di ELA»**, la sesta: il profilo e il va
 sito dichiarato o su nessuno, quel browser che si fa uscire, e il vault che si chiude. **Non lo apre**: una
 chiave non si incolla in una pagina, e nessun campo della vista potrebbe portarne una. Il telefono non ha
 questa vista.
+
+***Dal 13 ottobre 2026 (decisione 150).*** *La vista diceva «senza finestra» mentre un login ne avrebbe avuta
+una: accanto alla riga dell'interruttore ne ha una del login — «Un login» —, con lo stesso fatto che
+`GET /browser` porta in `login_window`: con finestra, qualunque cosa dica l'interruttore; che ELA adesso non ha
+potuto dire di poterne aprire una; o che non ha potuto chiederlo. La riga non si muove con l'interruttore.*
 
 Rotte nuove, in `ela/api/console.py`, che raggiunge il cookie di una console:
 
