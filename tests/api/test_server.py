@@ -776,9 +776,9 @@ class Reading:
 def test_a_descriptor_the_system_refuses_leaves_the_loop_reading_nothing_of_ela_s(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The wake-up is two halves — the loop reads, the system writes —, and the second can be
-    refused. Then the loop is not left reading a socket ELA is about to close, and what the
-    system said leaves as it is."""
+    """The loop reads a descriptor and the system writes into it — and the system can refuse.
+    Then the loop is not left reading a socket ELA is about to close, and what the system said
+    leaves as it is."""
     loop = Reading()
 
     def refused(descriptor: int, **options: object) -> int:
@@ -790,6 +790,44 @@ def test_a_descriptor_the_system_refuses_leaves_the_loop_reading_nothing_of_ela_
         pytest.fail("the block is not entered with half a wake-up")
 
     assert loop.reads == []
+
+
+@POSIX
+def test_a_wake_up_that_cannot_be_made_does_not_keep_ela_from_being_closed(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: Asked,
+    found: dict[int, Any],
+    raised: list[int],
+) -> None:
+    """Found by the re-read of 2026-10-13. The wake-up is made of a pair of sockets, and a
+    system with no descriptor left refuses them — at the one moment when there is an ELA built
+    and not yet closed. ELA serves without the wake-up, as it did before it had one, **and its
+    close runs**: the handlers are ELA's all the same, and afterwards the ones it found."""
+    asyncio.run(create_schema(settings.persistence.db_url))
+    fake = fake_server(monkeypatch)
+    browser = Looking()
+    with_a_browser(monkeypatch, browser)
+    before = wakes()
+
+    class NoPairLeft:
+        """The module ``socket`` as ELA's server sees it — and only ELA's server: the loop makes
+        a pair of its own to be born —, with no descriptor left for a pair."""
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(socket, name)
+
+        def socketpair(self, *arguments: object) -> None:
+            raise OSError(errno.EMFILE, "Too many open files")
+
+    monkeypatch.setattr(server, "socket", NoPairLeft())
+
+    server.serve(settings)
+
+    assert fake.served, "it served"
+    assert browser.found, "and its close settled the browser"
+    assert all(isinstance(handler, server.Signalled) for handler in browser.found.values())
+    assert dispositions() == found and wakes() == before
 
 
 class ReadsNothing:

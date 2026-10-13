@@ -58,6 +58,7 @@ from ela.ports import (
     ProfileBusy,
     ProfileUndeclared,
     ProfileUnsafe,
+    Secret,
 )
 from ela.testing.fakes import FakeStop
 
@@ -1656,6 +1657,60 @@ async def test_a_held_folder_refuses_a_page_with_a_window_like_any_other(
 
     assert launches == []
     assert browser._launch()["headless"] is True, "and the next launch is the switch's"
+
+
+async def test_a_page_with_a_window_asked_while_another_opening_is_under_way_gives_it_no_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The window is given to one launch, and no other may read it. An opening as the switch
+    says is under way — counted, and about to read how it is launched — when a page with a
+    window is asked for: **the one under way launches as the switch says**. What holds it is
+    where the window is set: after the last wait of the look at the folder, with no wait before
+    the opening is counted (the re-read of 2026-10-13 found no test on that order)."""
+    launched: list[bool] = []
+    let_go = asyncio.Event()
+
+    async def opened(self: AccountChrome, address: str, allowed: Any, stop: Any) -> Opened:
+        await let_go.wait()
+        launched.append(self._launch()["headless"])
+        return Opened(page="page-1", status=200, address=address, left=None)
+
+    monkeypatch.setattr(PlaywrightBrowser, "_opened", opened)
+    browser = with_a_screen(tmp_path / "profile", a_screen)
+    under_way = asyncio.ensure_future(browser.open(AN_ADDRESS, everywhere, FakeStop()))
+    try:
+        while not browser._opening:
+            await asyncio.sleep(0)
+        # It reads how it is launched at its next turn: the first wait of the other, which is
+        # its look at the folder.
+        let_go.set()
+        await browser.open_shown(AN_ADDRESS, everywhere, FakeStop())
+        await under_way
+    finally:
+        under_way.cancel()
+        watching = browser._watching
+        if watching is not None:
+            watching.cancel()
+        await asyncio.gather(
+            under_way, *([] if watching is None else [watching]), return_exceptions=True
+        )
+
+    assert launched == [True, False], "as the switch says for the one, with a window for the other"
+
+
+def test_what_a_field_holds_is_compared_whole_whatever_it_is() -> None:
+    """Decision 144, and the re-read of 2026-10-13. The comparison of what a field holds with
+    what a secret holds is whole — a beginning is not the same —, and **it has an answer for
+    anything a field can hold**: half of a character, which no encoding takes, is a field that
+    does not hold what was typed, and not an error with the field in it."""
+    half = "mario" + chr(0xD800)
+
+    assert account._same("mario", Secret("mario")) is True
+    assert account._same("mario ", Secret("mario")) is False
+    assert account._same("mari", Secret("mario")) is False
+    assert account._same("", Secret("mario")) is False
+    assert account._same(half, Secret("mario")) is False
+    assert account._same(half, Secret(half)) is True
 
 
 async def test_on_another_system_no_screen_is_asked_about(tmp_path: Path) -> None:

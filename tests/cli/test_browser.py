@@ -358,8 +358,8 @@ async def test_status_says_when_a_login_could_not_have_its_window(browsed: Brows
     result = await browsed("browser", "status")
 
     assert row(result.output, "a login runs") == (
-        "with a window — and ELA cannot open one now: a login would not start"
-    )
+        "with a window — and ELA could not tell that it can open one now: a login would not start"
+    ), "«could not tell»: the same answer is given for a doubt, and a doubt is not «cannot»"
     assert row(result.output, "state") == "free", "the other steps are not touched by it"
 
 

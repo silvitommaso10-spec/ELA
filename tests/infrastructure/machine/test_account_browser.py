@@ -967,16 +967,74 @@ async def test_a_field_holds_what_was_typed_until_a_key_lands_in_it(
     assert not await browser.holds(opened.page, "#word", Secret(SENTINEL[:-1]))
 
 
-async def test_a_field_read_again_that_cannot_be_read_says_nothing_of_the_value(
+async def test_what_is_not_a_field_cannot_be_read_again_and_the_failure_names_its_type_alone(
     browser: AccountChrome, served: list[Site]
 ) -> None:
+    """The secret is never handed to the engine to be compared — the field is read, and the
+    comparison is made here —, so the engine has nothing of it to say: what leaves is the type
+    of the engine's failure, as for every other use of a page."""
     web = site(served, {"/": (200, {}, '<p id="text">not a field</p>')})
     opened = await browser.open(web.origin + "/", everywhere, FakeStop())
 
     with pytest.raises(BrowserFailed) as failed:
         await browser.holds(opened.page, "#text", Secret(SENTINEL))
 
+    assert str(failed.value) == "Error"
     error: BaseException | None = failed.value
     while error is not None:
         assert SENTINEL not in f"{error!s} {error!r} {error.args}"
         error = error.__cause__ or error.__context__
+
+
+async def test_a_field_that_is_gone_holds_nothing_and_is_not_waited_for(
+    browser: AccountChrome, served: list[Site]
+) -> None:
+    """Found by the re-read of 2026-10-13: a key pressed in the window may be the Return that
+    sends the form, and then the page that comes has no such field. Reading it again must not
+    wait for a field to appear — it would wait until the time of the tool ran out —: a field
+    that is not there holds nothing of what was typed."""
+    web = site(served, {"/": (200, {}, LOGIN)})
+    opened = await browser.open(web.origin + "/", everywhere, FakeStop())
+    await browser.fill_secret(opened.page, "#word", Secret(SENTINEL))
+    await browser._pages[opened.page].page.evaluate("document.querySelector('#word').remove()")
+
+    async with asyncio.timeout(20):
+        held = await browser.holds(opened.page, "#word", Secret(SENTINEL))
+
+    assert held is False
+
+
+async def test_a_field_that_holds_what_no_text_can_be_made_of_is_a_no_and_not_an_error(
+    browser: AccountChrome, served: list[Site]
+) -> None:
+    """Found by the re-read: a page can put in its field half of a character — a lone surrogate
+    —, which cannot be turned into bytes to be compared. It is a field that does not hold what
+    was typed: an answer, and not an error that would carry the field in it. *Measured here, on
+    2026-10-13*: this driver hands such a half over as a character of replacement, so the
+    comparison never meets one on this road — and it does not rest on that
+    (``test_account_profile.py`` hands it one)."""
+    web = site(served, {"/": (200, {}, LOGIN)})
+    opened = await browser.open(web.origin + "/", everywhere, FakeStop())
+    await browser.fill_secret(opened.page, "#user", Secret("mario"))
+    await browser._pages[opened.page].page.evaluate(
+        "document.querySelector('#user').value = 'mario' + String.fromCharCode(0xD800)"
+    )
+
+    assert await browser.holds(opened.page, "#user", Secret("mario")) is False
+
+
+async def test_a_field_that_keeps_less_than_it_is_given_does_not_hold_what_was_typed(
+    browser: AccountChrome, served: list[Site]
+) -> None:
+    """A limit that is declared, held here so that it is seen: a field with a length of its own
+    keeps the beginning of what is typed into it, and the comparison is whole. A login on such a
+    page ends ``browser.field_changed`` and is not sent (ADR 0063 §5; question 152 of M13.9)."""
+    short = (
+        '<form method="post" action="/in"><input id="word" type="password" maxlength="5"></form>'
+    )
+    web = site(served, {"/": (200, {}, short)})
+    opened = await browser.open(web.origin + "/", everywhere, FakeStop())
+    await browser.fill_secret(opened.page, "#word", Secret(SENTINEL))
+
+    assert await browser.holds(opened.page, "#word", Secret(SENTINEL)) is False
+    assert await browser.holds(opened.page, "#word", Secret(SENTINEL[:5])) is True

@@ -1642,7 +1642,10 @@ async def test_whether_a_window_can_be_had_is_asked_within_the_time_of_the_tool(
     sites = Browsing(sites=SITES.sites, timeout_seconds=0)
     tool = LoginTool(sites, browser, await door(vault, tmp_path), CLOCK, FakeIdGenerator())
 
-    refusal = (await tool.prospect(LOGIN)).refusal
+    # The guard is the test's, and never the one that fires: a tool that waited for ever would
+    # be a red here, and not a suite that hangs (found by the re-read of 2026-10-13).
+    async with asyncio.timeout(10):
+        refusal = (await tool.prospect(LOGIN)).refusal
 
     assert refusal is not None and refusal.code == NO_WINDOW
     assert vault.calls == []
@@ -1716,6 +1719,10 @@ async def test_a_field_that_no_longer_holds_what_was_typed_stops_the_click(
     assert result.output == {"status": 200, "gestures": 2}
     assert "ELA did not click" in result.error.message
     assert "2 gestures were made" in result.error.message
+    # What ELA knows is that it did not click. A key pressed in the window may be the Return
+    # that sends a form by itself: «nothing was sent» is more than ELA can say (the re-read).
+    assert "nothing was sent" not in result.error.message
+    assert "does not know whether a key sent the form" in result.error.message
     assert browser.clicks == [], "the form was not sent"
     assert browser.closed == ["page-1"] and browser.kept == []
     said = result.model_dump_json()
@@ -1739,3 +1746,40 @@ async def test_a_browser_that_fails_while_it_reads_a_field_again_does_not_click(
     assert result.output == {"gestures": 2}
     assert browser.clicks == []
     assert TYPED not in result.model_dump_json() and USERNAME not in result.model_dump_json()
+
+
+async def test_a_login_whose_time_ran_out_while_the_fields_were_read_again_did_not_click(
+    tmp_path: Path,
+) -> None:
+    """Found by the re-read of 2026-10-13. Between the second value and the click there is now a
+    wait that is not the click: the two fields read again. A time that runs out there has two
+    gestures counted, as one that runs out inside the click has — and **the click was never
+    asked**. The failure says what ELA did, and what it does not know: a key pressed in the
+    window may have sent the form by itself."""
+    from ela.tools.browser import TIMEOUT
+
+    class ReadsForEver(FakeAccountBrowser):
+        async def holds(self, page: str, selector: str, value: Secret) -> bool:
+            await asyncio.Event().wait()
+            return True
+
+    browser = ReadsForEver(page())
+    tool = LoginTool(
+        Browsing(sites=("posta.example",), timeout_seconds=1),
+        browser,
+        await door(FakeVault([MARIO]), tmp_path),
+        CLOCK,
+        FakeIdGenerator(),
+    )
+    await asked(tool)
+
+    async with asyncio.timeout(10):
+        result = await tool.execute(decision(BROWSER_LOGIN), LOGIN, FakeStop())
+
+    assert result.error is not None and result.error.code == TIMEOUT
+    assert result.output == {"gestures": 2} and browser.clicks == []
+    said = result.error.message
+    assert "the click was asked" not in said, "it was not"
+    assert "ELA did not click" in said
+    assert "does not know whether a key sent the form" in said
+    assert "the login was sent to" not in said
