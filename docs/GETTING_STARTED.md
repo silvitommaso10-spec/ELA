@@ -6037,7 +6037,8 @@ prenotato com'era al passo 1
 > `ela browser close` e il suo passo, dove stanno i rapporti di un crash, e che cosa serve al sito del login.
 > **Fatta da Tommaso il 13 ottobre 2026 sul branch**, a `6d3c470`, sul Mac, dopo i giri scritti qui sotto: **passata**,
 > 52 PASSATO al primo giro, nessun FALLITO, nessun no, nessun SALTATO (`~/Downloads/prova-m13.9-20261013-181603.txt`);
-> [ADR 0063](adr/0063-browser-with-your-accounts.md) è Accettata, e i fatti sono in `milestones/M13.9.md`, sezione 25.
+> [ADR 0063](adr/0063-browser-with-your-accounts.md) è Accettata, e così [ADR 0064](adr/0064-browser-boundary.md); i
+> fatti sono in `milestones/M13.9.md`, sezione 25.
 > **Il 12 ottobre 2026 la prova non è passata** al passo 6, e da allora il cancello del browser è riparato (M13.4f,
 > [ADR 0064](adr/0064-browser-boundary.md)): **la prova si rifà per intero** sul commit di quella riparazione, il passo 6
 > com'è scritto; fuori dai passi, sotto il passo 6, c'è una misura da fare solo se quel passo fallisce.

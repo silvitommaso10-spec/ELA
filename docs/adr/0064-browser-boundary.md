@@ -1,8 +1,11 @@
 # 0064. Il confine del browser: guardare, non rifare
 
-- **Stato:** Proposta il **2026-10-12**, con l'implementazione di M13.4f. Diventa Accettata con un commit suo,
-  come ADR 0063, quando la prova a mano di M13.9 — la sezione 28 di `docs/GETTING_STARTED.md` — passa sul commit
-  di questa riparazione (decisione 130 di `docs/milestones/M13.4f.md`).
+- **Stato:** Accettata il **2026-10-13**, con un commit suo, come ADR 0063: la prova a mano di M13.9 — la
+  sezione 28 di `docs/GETTING_STARTED.md` — è passata per intero sul Mac a `6d3c470`, l'ultimo commit del branch,
+  che porta questa riparazione (`~/Downloads/prova-m13.9-20261013-181603.txt`: 52 PASSATO, tutti al primo giro,
+  0 FALLITI, nessun no — decisione 130 di `docs/milestones/M13.4f.md`, decisioni 159 e 160 di
+  `docs/milestones/M13.9.md`). Proposta il **2026-10-12**, con l'implementazione di M13.4f, per diventare
+  Accettata quando quella prova fosse passata su un commit con questa riparazione.
 - **Data:** 2026-10-12
 - **Riferimenti spec:** §19, §33, §57
 - **Milestone:** M13.4f

@@ -34,6 +34,7 @@ from ela.tools.verifiers import (
 from tests.architecture.rules import COMMANDS_NEVER_SENT, REDOING_CALLS, RULES
 from tests.contracts.protocols import members, port_protocols
 from tests.docs.boundary_additions import added_codes, added_members
+from tests.docs.test_adr_accounts import PASSED_ON, THE_PROOF
 from tests.docs.test_adr_browser import codes
 from tests.docs.test_adr_cli import coded_commands
 from tests.docs.test_adr_composition import coded_routes
@@ -203,7 +204,12 @@ def test_an_adr_that_says_so_and_is_not_in_the_list_is_found() -> None:
     assert revised_by_their_state(texts) == listed | {unlisted}
 
 
-def test_it_stays_proposed_until_the_proof_of_m13_9_passes_on_this_repair() -> None:
-    """Decision 130. The day the proof passes, the state changes with a commit of its own —
-    and this line with it."""
-    assert status_of(adr_text()).strip().startswith("Proposta")
+def test_it_is_accepted_and_its_state_names_the_proof_and_the_commit_it_passed_on() -> None:
+    """Decision 130: it stayed proposed until the proof of M13.9 passed on a commit that carries
+    this repair; that day the state changed with a commit of its own — decision 160 of M13.9 —,
+    and it says which file and which commit, as ADR 0063 does."""
+    status = status_of(adr_text())
+
+    assert status.strip().startswith("Accettata")
+    assert THE_PROOF in status
+    assert PASSED_ON in status
