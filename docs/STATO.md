@@ -638,6 +638,10 @@ della sua registrazione. Dopo M13.4, in quest'ordine:
    M13.10** (decisione 37); ***annotato il 2026-10-10***, la sera, dalla review di M13.4b e M13.4c: **M13.4e** —
    alla chiusura di ELA nessuno aspetta il browser — sta sullo stesso branch, **dopo M13.4c e prima del codice
    di M13.9** (decisione 51), senza una prova a mano sua, e il merge diventa «Merge M13.9+M13.4b+M13.4c+M13.4e»;
+   ***annotato il 2026-10-13***: sullo stesso branch è entrata anche **M13.4f**, il confine del browser
+   (decisione 109 della review del 12 ottobre), e il merge è «Merge M13.9+M13.4b+M13.4c+M13.4e+M13.4f» (decisione
+   120); **M13.9 è fatta**, con la prova a mano passata per intero a `6d3c470`, e ADR 0063 e ADR 0064 sono
+   Accettate: resta il merge di Tommaso;
 7. **M13.5**, con la condizione d'ingresso invariata: se il grant TCC non tiene, apre la milestone
    dell'eseguibile firmato (5.11);
 8. **M14.4**, il computer guidato dal modello, subito dopo M13.5;
@@ -897,14 +901,16 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   ***Annotato il 2026-10-10***, più tardi: la SPEC è approvata, e con la proprietà del tool entrano i due punti
   dell'adapter che la misura ha trovato accanto — chiudere arriva in fondo anche se chi lo aspetta è cancellato,
   e un'apertura cancellata mentre il driver parte non lo lascia (decisione 26). ***Annotato il 2026-10-10***, la
-  sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9.
+  sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9. ***Annotato il 2026-10-13***: la prova a mano di M13.9 è passata per
+  intero a `6d3c470`, con questa riparazione sul branch; resta il merge di Tommaso, con M13.9.
 - **M13.4c — la fermata di ELA alzata mentre `open` avvia il browser non ferma né la navigazione né i gesti**
   (ADR 0052 §10, ADR 0038 §11). **Registrata e scritta il 2026-10-10** dalla review della SPEC di M13.4b
   (decisione 27), che l'ha misurata: nei primi decimi di secondo di uno step la fermata non chiudeva niente, e
   un modulo partiva dopo. **Sul branch di M13.9, dopo M13.4b e prima del suo codice**, senza una prova a mano
   sua: da quando la fermata è alzata nessuna navigazione e nessun gesto parte, e una pagina che entra in tabella
   dopo la fermata la chiude chi ce l'ha messa ([`milestones/M13.4c.md`](milestones/M13.4c.md)). ***Annotato il
-  2026-10-10***, la sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9.
+  2026-10-10***, la sera: **implementata**, prima i test rossi; aspetta la CI sul branch e il merge con M13.9. ***Annotato il 2026-10-13***: la prova a mano di M13.9 è passata per
+  intero a `6d3c470`, con questa riparazione sul branch; resta il merge di Tommaso, con M13.9.
 - **M13.4e — alla chiusura di ELA nessuno aspetta il browser, e il processo può non uscire** (ADR 0038 §11,
   ADR 0060 §7). **Registrata e scritta il 2026-10-10** dalla review di M13.4b e M13.4c (decisione 51), dopo che
   la loro rilettura critica l'ha misurato: se il loop viene smontato con una chiamata del browser in volo, ELA
@@ -917,7 +923,8 @@ decide**. La voce della Fase 14, la 5.12, lo dice dall'altra parte.
   parte, i segnali**: dopo `SIGINT`, `SIGTERM` o `SIGHUP` la chiusura di ELA gira per intero e poi il processo
   finisce come finiva; un secondo segnale fa finire subito la grazia; i gestori sono di ELA. Con la misura
   prima della forma, e con un criterio della suite: un test che congela o uccide un browser non lascia né un
-  processo né una cartella.
+  processo né una cartella. ***Annotato il 2026-10-13***: la prova a mano di M13.9 è passata per
+  intero a `6d3c470`, con questa riparazione sul branch; resta il merge di Tommaso, con M13.9.
 - **M13.4d — lo shell del browser vuoto gira senza il sandbox di Chromium** (ADR 0052 §1). **Registrata il
   2026-10-10** dalla review della SPEC di M13.9 (decisione 39): Playwright lo spegne di default, e l'adapter di
   M13.4 non lo riaccende. **Fuori dalla fila.** **Condizione d'ingresso: una misura sui runner della CI** — su

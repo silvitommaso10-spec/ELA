@@ -318,7 +318,8 @@ Le altre conseguenze:
   e `browser.another_page`.
 - **La prova di M13.9 si rifà per intero** sul commit di questa riparazione; il passo 6 com'è scritto, e la
   sezione 28 della guida porta, fuori dai passi, la misura con la finestra da fare solo se quel passo fallisce
-  (decisione 119).
+  (decisione 119). *Annotato il 2026-10-13: rifatta tre volte quel giorno; la terza, per intero e sull'ultimo
+  commit, `6d3c470`, è passata, ed è quella che accetta questo ADR — la riga dello stato.*
 
 Con questo ADR le regole di architettura sono **settanta** (la 70); i contratti di import-linter restano
 **quindici**, i port **trentacinque**, le rotte dell'API **settantadue** e i comandi della CLI **trentanove**; le
